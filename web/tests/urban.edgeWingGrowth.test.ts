@@ -11,11 +11,22 @@ import native from './fixtures/urban-wing-v11.json';
 
 it('keeps the complete xrv97g outer house while thickening only free open-edge land', () => {
   const options = makeOptions({
-    seed: 'xrv97g', size: 'town', relief: 'flat', coast: 'none', river: 'major', walls: 'auto',
-    workflow: 'list', settlementMode: 'list', mapSize: 1500, biome: 'desert', culture: 'kraal',
-    language: 'sanskrit', heightScale: 120, contours: true, landuse: true,
-    settlements: { list: [{ population: 2000, culture: 'european-organic',
-      position: { x: 578, y: 430 }, options: { size: 'town', cultureMix: null, plan: null }, name: 'Tanavati' }] },
+    seed: 'xrv97g',
+    size: 'town',
+    relief: 'flat',
+    coast: 'none',
+    river: 'major',
+    walls: 'auto',
+    workflow: 'list',
+    settlementMode: 'list',
+    mapSize: 1500,
+    biome: 'desert',
+    culture: 'kraal',
+    language: 'sanskrit',
+    heightScale: 120,
+    contours: true,
+    landuse: true,
+    settlements: { list: [{ population: 2000, culture: 'european-organic', position: { x: 578, y: 430 }, options: { size: 'town', cultureMix: null, plan: null }, name: 'Tanavati' }] },
   });
   const originalFinish = edgeRoofs.finishEdgeRoofs;
   const snapshots: { poly: Polygon; protectedLand: MultiPoly; reached: boolean[] }[] = [];
@@ -32,16 +43,28 @@ it('keeps the complete xrv97g outer house while thickening only free open-edge l
       expect(input.eligible(b.parcel!)).toBe(true);
       const block = input.parcels[b.parcel!].block;
       const peers = input.buildings.filter(p => p.parcel !== undefined && input.parcels[p.parcel].block === block);
-      const streetAt = makeStreetAt(input.streets.list.filter(s => s.ribbon)
-        .map(s => ({ path: s.path, widths: s.widths, width: s.widths[0] })),
-      input.parcels.filter(p => ['place', 'market', 'quay', 'green'].includes(String(p.use))).map(p => p.poly));
-      snapshots.push({ poly: structuredClone(b.poly), protectedLand: structuredClone(input.protectedLand),
-        reached: blockReach(input.blocks[block].poly, peers.map(p => p.poly), streetAt) });
+      const streetAt = makeStreetAt(
+        input.streets.list.filter(s => s.ribbon).map(s => ({ path: s.path, widths: s.widths, width: s.widths[0] })),
+        input.parcels.filter(p => ['place', 'market', 'quay', 'green'].includes(String(p.use))).map(p => p.poly),
+      );
+      snapshots.push({
+        poly: structuredClone(b.poly),
+        protectedLand: structuredClone(input.protectedLand),
+        reached: blockReach(
+          input.blocks[block].poly,
+          peers.map(p => p.poly),
+          streetAt,
+        ),
+      });
     }
     return originalFinish(input);
   });
   let world: ReturnType<typeof generate>;
-  try { world = generate(options); } finally { spy.mockRestore(); }
+  try {
+    world = generate(options);
+  } finally {
+    spy.mockRestore();
+  }
   const urban = world.urban!;
   expect(snapshots).toHaveLength(1);
   const old = snapshots[0].poly;
@@ -54,7 +77,8 @@ it('keeps the complete xrv97g outer house while thickening only free open-edge l
     return !lost.failed && mpArea(lost.pieces) <= 1e-6;
   });
   expect(b).toBeDefined();
-  const added = tryDifference(b!.poly, old), lost = tryDifference(old, b!.poly);
+  const added = tryDifference(b!.poly, old),
+    lost = tryDifference(old, b!.poly);
   expect(added.failed || lost.failed).toBe(false);
   expect(mpArea(lost.pieces)).toBeLessThanOrEqual(1e-6);
   expect.soft(mpArea(added.pieces), 'the free outer wing must actually grow').toBeGreaterThan(45);
@@ -67,20 +91,23 @@ it('keeps the complete xrv97g outer house while thickening only free open-edge l
   const parcel = urban.parcels[b!.parcel!];
   expect(mpArea(tryDifference(b!.poly, parcel.poly).pieces)).toBeLessThanOrEqual(1e-6);
   expect(mpArea(tryDifference(added.pieces, urban.blocks[parcel.block]).pieces)).toBeLessThanOrEqual(1e-6);
-  for (let i = 0; i < urban.buildings.length; i++) if (urban.buildings[i] !== b) {
-    const hit = tryIntersection(added.pieces, urban.buildings[i].poly);
-    expect(hit.failed).toBe(false);
-    expect(mpArea(hit.pieces)).toBeLessThanOrEqual(1e-6);
-  }
-  for (let i = 0; i < urban.parcels.length; i++) if (i !== b!.parcel) {
-    const hit = tryIntersection(added.pieces, urban.parcels[i].poly);
-    expect(hit.failed).toBe(false);
-    expect(mpArea(hit.pieces)).toBeLessThanOrEqual(1e-6);
-  }
+  for (let i = 0; i < urban.buildings.length; i++)
+    if (urban.buildings[i] !== b) {
+      const hit = tryIntersection(added.pieces, urban.buildings[i].poly);
+      expect(hit.failed).toBe(false);
+      expect(mpArea(hit.pieces)).toBeLessThanOrEqual(1e-6);
+    }
+  for (let i = 0; i < urban.parcels.length; i++)
+    if (i !== b!.parcel) {
+      const hit = tryIntersection(added.pieces, urban.parcels[i].poly);
+      expect(hit.failed).toBe(false);
+      expect(mpArea(hit.pieces)).toBeLessThanOrEqual(1e-6);
+    }
   const qi = urban.blockInfo[parcel.block].quarter;
-  for (let i = 0; i < urban.quarters.length; i++) if (i !== qi) {
-    const hit = tryIntersection(added.pieces, urban.quarters[i].poly.outer);
-    expect(hit.failed).toBe(false);
-    expect(mpArea(hit.pieces)).toBeLessThanOrEqual(1e-6);
-  }
+  for (let i = 0; i < urban.quarters.length; i++)
+    if (i !== qi) {
+      const hit = tryIntersection(added.pieces, urban.quarters[i].poly.outer);
+      expect(hit.failed).toBe(false);
+      expect(mpArea(hit.pieces)).toBeLessThanOrEqual(1e-6);
+    }
 }, 120000);

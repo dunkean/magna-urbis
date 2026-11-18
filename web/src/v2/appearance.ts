@@ -31,8 +31,7 @@ function boolean(value: unknown, name: string, required = false): void {
   if ((required || value !== undefined) && typeof value !== 'boolean') throw new Error(`${name}: expected a boolean.`);
 }
 function number(value: unknown, name: string, min: number, max: number, required = false): void {
-  if ((required || value !== undefined) && (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max))
-    throw new Error(`${name}: expected a number in ${min}–${max}.`);
+  if ((required || value !== undefined) && (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max)) throw new Error(`${name}: expected a number in ${min}–${max}.`);
 }
 export function validateAppearance(value: unknown): asserts value is V2Appearance {
   object(value, 'appearance');
@@ -41,7 +40,11 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
   if (value.terrainStyle !== undefined && (typeof value.terrainStyle !== 'string' || !isTerrainStyle(value.terrainStyle))) throw new Error('appearance.terrainStyle: unknown terrain style.');
   enumeration(value.renderer, ['classic', 'bench'], 'appearance.renderer');
   enumeration(value.vegetation, ['classic', 'canopy'], 'appearance.vegetation');
-  enumeration(value.diagnostic, DIAGNOSTICS.map(diagnostic => diagnostic.id), 'appearance.diagnostic');
+  enumeration(
+    value.diagnostic,
+    DIAGNOSTICS.map(diagnostic => diagnostic.id),
+    'appearance.diagnostic',
+  );
   enumeration(value.resourcePotential, POTENTIAL_IDS, 'appearance.resourcePotential');
   for (const key of ['contours', 'landuse', 'labels', 'legend', 'cartouche', 'textured', 'painted', 'lakes', 'oxbows', 'roads', 'buildings', 'unifiedDefaults']) boolean(value[key], `appearance.${key}`);
   if (value.colors !== undefined) validateRenderColors(value.colors);
@@ -58,9 +61,9 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
   }
   if (value.fantasy !== undefined) {
     object(value.fantasy, 'appearance.fantasy');
-    number(value.fantasy.density, 'appearance.fantasy.density', .3, 2, true);
-    number(value.fantasy.size, 'appearance.fantasy.size', .1, 2, true);
-    number(value.fantasy.spacing, 'appearance.fantasy.spacing', .3, 2, true);
+    number(value.fantasy.density, 'appearance.fantasy.density', 0.3, 2, true);
+    number(value.fantasy.size, 'appearance.fantasy.size', 0.1, 2, true);
+    number(value.fantasy.spacing, 'appearance.fantasy.spacing', 0.3, 2, true);
     boolean(value.fantasy.followLanduse, 'appearance.fantasy.followLanduse');
   }
   if (value.city !== undefined) {
@@ -73,11 +76,13 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     enumeration(value.city.ground, CITY_GROUND_STYLES, 'appearance.city.ground');
     enumeration(value.city.colors, ['materials', 'uses'], 'appearance.city.colors');
     enumeration(value.city.refinement, ['source', 'noise'], 'appearance.city.refinement');
-    boolean(value.city.painted, 'appearance.city.painted'); boolean(value.city.plan, 'appearance.city.plan'); boolean(value.city.trees3d, 'appearance.city.trees3d');
+    boolean(value.city.painted, 'appearance.city.painted');
+    boolean(value.city.plan, 'appearance.city.plan');
+    boolean(value.city.trees3d, 'appearance.city.trees3d');
     number(value.city.opacity, 'appearance.city.opacity', 0, 1);
     number(value.city.width, 'appearance.city.width', 0, 5);
     // New controls use .2–3; keep the former upper bound valid for retained projects.
-    number(value.city.exaggeration, 'appearance.city.exaggeration', .2, 5);
+    number(value.city.exaggeration, 'appearance.city.exaggeration', 0.2, 5);
     number(value.city.treeDistance, 'appearance.city.treeDistance', 200, 1500);
     if (value.city.layers !== undefined) {
       object(value.city.layers, 'appearance.city.layers');
@@ -89,7 +94,12 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
   }
 }
 
-export interface V2ExportDisplay extends DisplayOpts { vegetation?: VegetationStyle; semanticLegend?: readonly SemanticLegendEntry[]; raster?: boolean; fieldOutlines?: boolean }
+export interface V2ExportDisplay extends DisplayOpts {
+  vegetation?: VegetationStyle;
+  semanticLegend?: readonly SemanticLegendEntry[];
+  raster?: boolean;
+  fieldOutlines?: boolean;
+}
 /** The one place that turns settings + retained products into a resolved appearance (call per change, never per frame). */
 export function resolveSettingsAppearance(settings: V2Settings, world: World | undefined, target: RenderTarget, flags?: ResolveFlags): ResolvedAppearance {
   const o = settings.options;
@@ -97,16 +107,27 @@ export function resolveSettingsAppearance(settings: V2Settings, world: World | u
   const appearance = { style: o.style, ...settings.appearance, composition: withoutHiddenStyle(settings.appearance?.composition) ?? presetComposition(o.style === 'atlas' ? 'atlas' : 'parchment') };
   // The land-use painters (2D canvas, SVG export, legend) read the shared value; the recipe is its source of truth.
   setLanduseForestTone(appearance.composition.vegetation.forestTone);
-  return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest },
-    worldCapabilities(world), target, { ...flags, biome: world?.options.biome ?? o.biome });
+  return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest }, worldCapabilities(world), target, { ...flags, biome: world?.options.biome ?? o.biome });
 }
 /** Classic-renderer / export display options derived from the resolved cartography. */
 export function resolvedDisplayOptions(r: ResolvedAppearance): V2ExportDisplay {
   const c = r.cartography;
-  return { ...(r.palette.colors ? { colors: r.palette.colors } : {}), buildings: r.city.visible, layers: { roads: c.roads }, style: r.palette.mapStyle, contours: r.ground.contours,
-    text: r.composition.text, landuse: c.landuse, labels: c.labels, legend: c.legend, cartouche: c.cartouche, painted: c.painted, vegetation: r.vegetation.symbols,
+  return {
+    ...(r.palette.colors ? { colors: r.palette.colors } : {}),
+    buildings: r.city.visible,
+    layers: { roads: c.roads },
+    style: r.palette.mapStyle,
+    contours: r.ground.contours,
+    text: r.composition.text,
+    landuse: c.landuse,
+    labels: c.labels,
+    legend: c.legend,
+    cartouche: c.cartouche,
+    painted: c.painted,
+    vegetation: r.vegetation.symbols,
     ...(r.composition.variant === 'topographic' && !r.ground.layers.relief ? { raster: false } : {}),
-    fieldOutlines: r.composition.variant === 'topographic' && r.composition.landuse.rural === 'outlines' && r.composition.landuse.classes.field };
+    fieldOutlines: r.composition.variant === 'topographic' && r.composition.landuse.rural === 'outlines' && r.composition.landuse.classes.field,
+  };
 }
 /** Export starts from the same persisted preferences as the viewer, including explicit false values. */
 export function appearanceDisplayOptions(settings: V2Settings, world?: World): V2ExportDisplay {
@@ -116,11 +137,10 @@ export function appearanceDisplayOptions(settings: V2Settings, world?: World): V
 export function svgOptionsForDisplay(options: RenderOptions, display?: Partial<V2ExportDisplay>, brushes?: BrushSources): RenderOptions {
   if (!display) return options;
   const result = { ...options };
-  for (const key of ['text', 'style', 'colors', 'buildings', 'contours', 'landuse', 'labels', 'legend', 'cartouche', 'vegetation', 'semanticLegend', 'raster', 'fieldOutlines'] as const)
-    if (display[key] !== undefined) Object.assign(result, { [key]: display[key] });
+  for (const key of ['text', 'style', 'colors', 'buildings', 'contours', 'landuse', 'labels', 'legend', 'cartouche', 'vegetation', 'semanticLegend', 'raster', 'fieldOutlines'] as const) if (display[key] !== undefined) Object.assign(result, { [key]: display[key] });
   result.layers = { ...display.layers, ...options.layers };
   if (display.painted !== undefined) {
-    result.brushes = display.painted ? brushes ?? options.brushes : undefined;
+    result.brushes = display.painted ? (brushes ?? options.brushes) : undefined;
     if (display.painted && !result.brushes) throw new Error('Painted textures are still loading.');
   }
   return result;

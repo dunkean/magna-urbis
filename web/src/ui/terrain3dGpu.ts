@@ -30,8 +30,7 @@ import { renderV2ZoneUniform, setSeasonCalendarGpu } from '../../../rust/bridge/
 import { terrainLights } from '../render/terrainLighting';
 import { groundCoverActive } from '../render/materialLook';
 import { MATERIALS, type MaterialImages } from '../render/buildingMaterials';
-import { Terrain3d, paddedMaterial, fullPatchIndices, patchClipKey, clippedPatchIndices,
-  type FrameGeometry, type Patch, type PatchDraw, type Terrain3dOptions, type Terrain3dTile, type Terrain3dTileContent } from './terrain3d';
+import { Terrain3d, paddedMaterial, fullPatchIndices, patchClipKey, clippedPatchIndices, type FrameGeometry, type Patch, type PatchDraw, type Terrain3dOptions, type Terrain3dTile, type Terrain3dTileContent } from './terrain3d';
 import { SOFT_LAYER_FROM, caveUniform, UrbanBuildingPass, type Batch, type BuildingFrame, type Sector } from './urbanBuilding3d';
 import type { ForestTextures, HeightLayer } from './terrainGl';
 import * as WGSL from './terrain3dWgsl.generated';
@@ -46,20 +45,32 @@ const ARRAY_STRIDE: Record<string, number> = { float: 4, int: 4, uint: 4, bool: 
 /** CPU image of a program's storage block; unknown names are ignored, as absent GL uniforms are. */
 class Params {
   readonly bytes: Uint8Array<ArrayBuffer>;
-  private f32: Float32Array; private i32: Int32Array; private u32: Uint32Array;
+  private f32: Float32Array;
+  private i32: Int32Array;
+  private u32: Uint32Array;
   constructor(private layout: ParamsLayout) {
     const buffer = new ArrayBuffer(layout.size);
-    this.bytes = new Uint8Array(buffer); this.f32 = new Float32Array(buffer); this.i32 = new Int32Array(buffer); this.u32 = new Uint32Array(buffer);
+    this.bytes = new Uint8Array(buffer);
+    this.f32 = new Float32Array(buffer);
+    this.i32 = new Int32Array(buffer);
+    this.u32 = new Uint32Array(buffer);
   }
-  set(name: string, ...values: number[]): void { this.write(name, values); }
-  setArray(name: string, values: ArrayLike<number>): void { this.write(name, values); }
+  set(name: string, ...values: number[]): void {
+    this.write(name, values);
+  }
+  setArray(name: string, values: ArrayLike<number>): void {
+    this.write(name, values);
+  }
   private write(name: string, values: ArrayLike<number>): void {
     const field = this.layout.fields[name];
     if (!field) return;
-    const components = COMPONENTS[field.type], stride = ARRAY_STRIDE[field.type] / 4, elements = Math.max(1, field.count);
+    const components = COMPONENTS[field.type],
+      stride = ARRAY_STRIDE[field.type] / 4,
+      elements = Math.max(1, field.count);
     const view = /^(u|uvec)/.test(field.type) ? this.u32 : /^(int|ivec|bool)/.test(field.type) ? this.i32 : this.f32;
     for (let k = 0; k < values.length && k < elements * components; k++) {
-      const element = Math.floor(k / components), component = k % components;
+      const element = Math.floor(k / components),
+        component = k % components;
       view[field.offset / 4 + element * stride + component] = view === this.u32 ? values[k] >>> 0 : values[k];
     }
   }
@@ -69,10 +80,20 @@ class Params {
 class Pool {
   private chunks: { buffer: GPUBuffer; staging: Uint8Array<ArrayBuffer>; used: number }[] = [];
   private at = 0;
-  constructor(private device: GPUDevice, private usage: GPUBufferUsageFlags, private chunkSize: number, private align: number, private label: string) {}
-  begin(): void { for (const chunk of this.chunks) chunk.used = 0; this.at = 0; }
+  constructor(
+    private device: GPUDevice,
+    private usage: GPUBufferUsageFlags,
+    private chunkSize: number,
+    private align: number,
+    private label: string,
+  ) {}
+  begin(): void {
+    for (const chunk of this.chunks) chunk.used = 0;
+    this.at = 0;
+  }
   alloc(data: ArrayBufferView): { buffer: GPUBuffer; offset: number } {
-    const size = data.byteLength, bytes = new Uint8Array(data.buffer, data.byteOffset, size);
+    const size = data.byteLength,
+      bytes = new Uint8Array(data.buffer, data.byteOffset, size);
     for (;;) {
       let chunk = this.chunks[this.at];
       if (!chunk) {
@@ -81,7 +102,11 @@ class Pool {
         this.chunks.push(chunk);
       }
       const offset = Math.ceil(chunk.used / this.align) * this.align;
-      if (offset + size <= chunk.staging.length) { chunk.staging.set(bytes, offset); chunk.used = offset + size; return { buffer: chunk.buffer, offset }; }
+      if (offset + size <= chunk.staging.length) {
+        chunk.staging.set(bytes, offset);
+        chunk.used = offset + size;
+        return { buffer: chunk.buffer, offset };
+      }
       this.at++;
     }
   }
@@ -91,33 +116,104 @@ class Pool {
       if (chunk.used) this.device.queue.writeBuffer(chunk.buffer, 0, chunk.staging, 0, Math.ceil(chunk.used / 4) * 4);
     }
   }
-  destroy(): void { for (const chunk of this.chunks) chunk.buffer.destroy(); this.chunks = []; }
+  destroy(): void {
+    for (const chunk of this.chunks) chunk.buffer.destroy();
+    this.chunks = [];
+  }
 }
 
 const mipCount = (width: number, height: number): number => Math.floor(Math.log2(Math.max(width, height, 1))) + 1;
 
-const SAMPLES = 4, DEPTH: GPUTextureFormat = 'depth32float';
+const SAMPLES = 4,
+  DEPTH: GPUTextureFormat = 'depth32float';
 const T = WGSL.WGSL3D_TEXTURES;
-const TERRAIN_TEXTURES = ['material', 'previousMaterial', 'macroField', 'uShoreRing', 'canopyWater', 'previousCanopyWater',
-  'uForestField', 'uForestBank', 'uOccupation', 'uLandDetail', 'uForestBeach', 'uForestBrushAtlas', 'semanticTile', 'previousSemanticTile', 'drapedMaterial', 'previousDrapedMaterial'] as const;
-type TerrainTexture = typeof TERRAIN_TEXTURES[number];
+const TERRAIN_TEXTURES = [
+  'material',
+  'previousMaterial',
+  'macroField',
+  'uShoreRing',
+  'canopyWater',
+  'previousCanopyWater',
+  'uForestField',
+  'uForestBank',
+  'uOccupation',
+  'uLandDetail',
+  'uForestBeach',
+  'uForestBrushAtlas',
+  'semanticTile',
+  'previousSemanticTile',
+  'drapedMaterial',
+  'previousDrapedMaterial',
+] as const;
+type TerrainTexture = (typeof TERRAIN_TEXTURES)[number];
 const PATCH_BUFFERS: GPUVertexBufferLayout[] = [
-  { arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x2' },
-    { shaderLocation: 2, offset: 20, format: 'float32x2' }, { shaderLocation: 3, offset: 28, format: 'float32' }, { shaderLocation: 4, offset: 32, format: 'float32x2' }] },
+  {
+    arrayStride: 40,
+    attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x3' },
+      { shaderLocation: 1, offset: 12, format: 'float32x2' },
+      { shaderLocation: 2, offset: 20, format: 'float32x2' },
+      { shaderLocation: 3, offset: 28, format: 'float32' },
+      { shaderLocation: 4, offset: 32, format: 'float32x2' },
+    ],
+  },
   { arrayStride: 12, attributes: [{ shaderLocation: 5, offset: 0, format: 'float32x3' }] },
 ];
-const BILLBOARD_BUFFERS: GPUVertexBufferLayout[] = [{ arrayStride: 48, stepMode: 'instance', attributes: [
-  { shaderLocation: 0, offset: 0, format: 'float32x4' }, { shaderLocation: 1, offset: 16, format: 'float32x4' }, { shaderLocation: 2, offset: 32, format: 'float32x4' },
-] }];
-const TREE_BUFFERS: GPUVertexBufferLayout[] = [{ arrayStride: TREE_STRIDE * 4, stepMode: 'instance', attributes: [
-  { shaderLocation: 0, offset: 0, format: 'float32x4' }, { shaderLocation: 1, offset: 16, format: 'float32x4' }, { shaderLocation: 2, offset: 32, format: 'float32x4' },
-] }];
-const ROOF_BUFFERS: GPUVertexBufferLayout[] = [{ arrayStride: 20, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x2' }] }];
+const BILLBOARD_BUFFERS: GPUVertexBufferLayout[] = [
+  {
+    arrayStride: 48,
+    stepMode: 'instance',
+    attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x4' },
+      { shaderLocation: 1, offset: 16, format: 'float32x4' },
+      { shaderLocation: 2, offset: 32, format: 'float32x4' },
+    ],
+  },
+];
+const TREE_BUFFERS: GPUVertexBufferLayout[] = [
+  {
+    arrayStride: TREE_STRIDE * 4,
+    stepMode: 'instance',
+    attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x4' },
+      { shaderLocation: 1, offset: 16, format: 'float32x4' },
+      { shaderLocation: 2, offset: 32, format: 'float32x4' },
+    ],
+  },
+];
+const ROOF_BUFFERS: GPUVertexBufferLayout[] = [
+  {
+    arrayStride: 20,
+    attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x3' },
+      { shaderLocation: 1, offset: 12, format: 'float32x2' },
+    ],
+  },
+];
 const BUILDING_BUFFERS: Record<'color' | 'tex', GPUVertexBufferLayout[]> = {
-  color: [{ arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' }, { shaderLocation: 2, offset: 24, format: 'float32x3' },
-    { shaderLocation: 4, offset: 36, format: 'float32' }] }],
-  tex: [{ arrayStride: 40, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' },
-    { shaderLocation: 2, offset: 24, format: 'float32x2' }, { shaderLocation: 3, offset: 32, format: 'float32' }, { shaderLocation: 4, offset: 36, format: 'float32' }] }],
+  color: [
+    {
+      arrayStride: 40,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x3' },
+        { shaderLocation: 1, offset: 12, format: 'float32x3' },
+        { shaderLocation: 2, offset: 24, format: 'float32x3' },
+        { shaderLocation: 4, offset: 36, format: 'float32' },
+      ],
+    },
+  ],
+  tex: [
+    {
+      arrayStride: 40,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x3' },
+        { shaderLocation: 1, offset: 12, format: 'float32x3' },
+        { shaderLocation: 2, offset: 24, format: 'float32x2' },
+        { shaderLocation: 3, offset: 32, format: 'float32' },
+        { shaderLocation: 4, offset: 36, format: 'float32' },
+      ],
+    },
+  ],
 };
 /** Mipmaps: each level is drawn from the previous one with bilinear taps at the 2×2 block centres. */
 const MIP_WGSL = `
@@ -138,7 +234,10 @@ const DEPTH_WGSL = `
 }
 @fragment fn fs(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> { return vec4<f32>(textureLoad(depth, vec2<i32>(p.xy), 0), 0.0, 0.0, 1.0); }`;
 
-export interface GpuImage { texture: GPUTexture; view: GPUTextureView }
+export interface GpuImage {
+  texture: GPUTexture;
+  view: GPUTextureView;
+}
 const image = (texture: WebGLTexture): GpuImage => texture as GpuImage;
 type Entry = { pipeline?: GPURenderPipeline; failed?: boolean };
 // Natural water is a runtime parameter (uNaturalWater), not a pipeline: Satellite and Satellite-2 share one ground.
@@ -154,7 +253,8 @@ class Gpu3d {
   readonly pipelineLayouts: Record<'terrain' | 'sky' | 'building' | 'billboard' | 'tree', GPUPipelineLayout>;
   readonly billboardSampler: GPUSampler;
   readonly samplers: { nearest: GPUSampler; linear: GPUSampler; aniso: GPUSampler; repeat: GPUSampler };
-  readonly mip: GPUShaderModule; readonly depth: GPUShaderModule;
+  readonly mip: GPUShaderModule;
+  readonly depth: GPUShaderModule;
   private pipelines = new Map<string, Entry>();
   readonly listeners = new Set<() => void>();
   /** Views to recover when the device is lost (not destroyed by this module). */
@@ -173,33 +273,42 @@ class Gpu3d {
       repeat: device.createSampler({ label: 'building materials', ...linear, maxAnisotropy: 4, addressModeU: 'repeat', addressModeV: 'repeat' }),
     };
     this.billboardSampler = device.createSampler({ label: 'relief brushes', ...linear, lodMaxClamp: 4 });
-    const F = GPUShaderStage.FRAGMENT, both = GPUShaderStage.VERTEX | F;
-    const texture = (name: string): GPUBindGroupLayoutEntry => ({ binding: T[name], visibility: F,
-      texture: name === 'macroField' ? { sampleType: 'unfilterable-float' } : name === 'uForestBrushAtlas' || name === 'albedoTex' || name === 'normalTex' ? { sampleType: 'float', viewDimension: '2d-array' } : { sampleType: 'float' } });
+    const F = GPUShaderStage.FRAGMENT,
+      both = GPUShaderStage.VERTEX | F;
+    const texture = (name: string): GPUBindGroupLayoutEntry => ({
+      binding: T[name],
+      visibility: F,
+      texture: name === 'macroField' ? { sampleType: 'unfilterable-float' } : name === 'uForestBrushAtlas' || name === 'albedoTex' || name === 'normalTex' ? { sampleType: 'float', viewDimension: '2d-array' } : { sampleType: 'float' },
+    });
     const sampler = (binding: number, type: GPUSamplerBindingType): GPUBindGroupLayoutEntry => ({ binding, visibility: F, sampler: { type } });
     this.layouts = {
-      terrain: device.createBindGroupLayout({ label: 'terrain 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } },
-        sampler(1, 'non-filtering'), sampler(2, 'filtering'), sampler(3, 'filtering'), ...TERRAIN_TEXTURES.map(texture)] }),
+      terrain: device.createBindGroupLayout({ label: 'terrain 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }, sampler(1, 'non-filtering'), sampler(2, 'filtering'), sampler(3, 'filtering'), ...TERRAIN_TEXTURES.map(texture)] }),
       sky: device.createBindGroupLayout({ label: 'sky', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }] }),
-      building: device.createBindGroupLayout({ label: 'buildings 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage', hasDynamicOffset: true } },
-        sampler(4, 'filtering'), texture('albedoTex'), texture('normalTex')] }),
+      building: device.createBindGroupLayout({ label: 'buildings 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage', hasDynamicOffset: true } }, sampler(4, 'filtering'), texture('albedoTex'), texture('normalTex')] }),
       tree: device.createBindGroupLayout({ label: 'near trees', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }] }),
       billboard: device.createBindGroupLayout({ label: 'relief brushes', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }, sampler(2, 'filtering'), texture('billboardAtlas')] }),
     };
-    this.pipelineLayouts = Object.fromEntries(Object.entries(this.layouts).map(([name, layout]) =>
-      [name, device.createPipelineLayout({ label: name, bindGroupLayouts: [layout] })])) as Gpu3d['pipelineLayouts'];
+    this.pipelineLayouts = Object.fromEntries(Object.entries(this.layouts).map(([name, layout]) => [name, device.createPipelineLayout({ label: name, bindGroupLayouts: [layout] })])) as Gpu3d['pipelineLayouts'];
   }
   /** A pipeline once created; its asynchronous creation starts on first request. */
   pipeline(key: string, samples = SAMPLES): GPURenderPipeline | undefined {
     const cacheKey = `${samples}:${key}`;
     let entry = this.pipelines.get(cacheKey);
     if (!entry) {
-      const created: Entry = entry = {}, started = performance.now();
+      const created: Entry = (entry = {}),
+        started = performance.now();
       this.pipelines.set(cacheKey, created);
-      this.device.createRenderPipelineAsync(this.descriptor(key, samples)).then(pipeline => {
-        console.debug(`WebGPU 3D pipeline ${key}: ${Math.round(performance.now() - started)} ms`);
-        created.pipeline = pipeline; for (const listener of this.listeners) listener();
-      }, error => { created.failed = true; if (!this.lost) console.error(`WebGPU 3D pipeline ${key}:`, error); });
+      this.device.createRenderPipelineAsync(this.descriptor(key, samples)).then(
+        pipeline => {
+          console.debug(`WebGPU 3D pipeline ${key}: ${Math.round(performance.now() - started)} ms`);
+          created.pipeline = pipeline;
+          for (const listener of this.listeners) listener();
+        },
+        error => {
+          created.failed = true;
+          if (!this.lost) console.error(`WebGPU 3D pipeline ${key}:`, error);
+        },
+      );
     }
     return entry.pipeline;
   }
@@ -208,7 +317,9 @@ class Gpu3d {
     this.pipelines.set(`${samples}:${key}`, { pipeline: await this.device.createRenderPipelineAsync(this.descriptor(key, samples)) });
     console.debug(`WebGPU 3D pipeline ${key}: ${Math.round(performance.now() - started)} ms (prepare)`);
   }
-  ready(key: string, samples: number): boolean { return !!this.pipelines.get(`${samples}:${key}`)?.pipeline; }
+  ready(key: string, samples: number): boolean {
+    return !!this.pipelines.get(`${samples}:${key}`)?.pipeline;
+  }
   /** Complete a requested look before it is captured or first shown. */
   async settled(key: string, samples = SAMPLES): Promise<void> {
     for (;;) {
@@ -219,64 +330,93 @@ class Gpu3d {
     }
   }
   private descriptor(key: string, samples: number): GPURenderPipelineDescriptor {
-    const multisample = { count: samples }, target = [{ format: this.format }];
+    const multisample = { count: samples },
+      target = [{ format: this.format }];
     const depthStencil = (write: boolean): GPUDepthStencilState => ({ format: DEPTH, depthWriteEnabled: write, depthCompare: write ? 'less-equal' : 'always' });
-    if (key === 'sky') return { label: key, layout: this.pipelineLayouts.sky, vertex: { module: this.modules.skyVs, entryPoint: 'main' },
-      fragment: { module: this.modules.skyFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(false), multisample };
+    if (key === 'sky') return { label: key, layout: this.pipelineLayouts.sky, vertex: { module: this.modules.skyVs, entryPoint: 'main' }, fragment: { module: this.modules.skyFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(false), multisample };
     // Underdark mushrooms: their modules are created with their first pipeline, so ordinary maps compile none of it.
     // The cave roof (Underdark): one mesh, created with its first pipeline.
     if (key === 'roof') {
       this.modules.roofVs ??= this.device.createShaderModule({ label: 'roofVs', code: WGSL.roofVs });
       this.modules.roofFs ??= this.device.createShaderModule({ label: 'roofFs', code: WGSL.roofFs });
-      return { label: key, layout: this.pipelineLayouts.tree, vertex: { module: this.modules.roofVs, entryPoint: 'main', buffers: ROOF_BUFFERS },
-        fragment: { module: this.modules.roofFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
+      return { label: key, layout: this.pipelineLayouts.tree, vertex: { module: this.modules.roofVs, entryPoint: 'main', buffers: ROOF_BUFFERS }, fragment: { module: this.modules.roofFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
     }
     if (key === 'fungus') {
       this.modules.fungusVs ??= this.device.createShaderModule({ label: 'fungusVs', code: WGSL.fungusVs });
       this.modules.fungusFs ??= this.device.createShaderModule({ label: 'fungusFs', code: WGSL.fungusFs });
-      return { label: key, layout: this.pipelineLayouts.tree, vertex: { module: this.modules.fungusVs, entryPoint: 'main', buffers: TREE_BUFFERS },
-        fragment: { module: this.modules.fungusFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
+      return { label: key, layout: this.pipelineLayouts.tree, vertex: { module: this.modules.fungusVs, entryPoint: 'main', buffers: TREE_BUFFERS }, fragment: { module: this.modules.fungusFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
     }
-    if (key === 'tree') return { label: key, layout: this.pipelineLayouts.tree,
-      vertex: { module: this.modules.treeVs, entryPoint: 'main', buffers: TREE_BUFFERS },
-      fragment: { module: this.modules.treeFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
-    if (key === 'billboard') return { label: key, layout: this.pipelineLayouts.billboard,
-      vertex: { module: this.modules.billboardVs, entryPoint: 'main', buffers: BILLBOARD_BUFFERS },
-      fragment: { module: this.modules.billboardFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample: { count: samples, alphaToCoverageEnabled: samples > 1 } };
+    if (key === 'tree')
+      return { label: key, layout: this.pipelineLayouts.tree, vertex: { module: this.modules.treeVs, entryPoint: 'main', buffers: TREE_BUFFERS }, fragment: { module: this.modules.treeFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
+    if (key === 'billboard')
+      return {
+        label: key,
+        layout: this.pipelineLayouts.billboard,
+        vertex: { module: this.modules.billboardVs, entryPoint: 'main', buffers: BILLBOARD_BUFFERS },
+        fragment: { module: this.modules.billboardFs, entryPoint: 'main', targets: target },
+        depthStencil: depthStencil(true),
+        multisample: { count: samples, alphaToCoverageEnabled: samples > 1 },
+      };
     if (key.startsWith('buildingColor') || key.startsWith('buildingTex')) {
-      const kind = key.startsWith('buildingTex') ? 'tex' : 'color', vs = kind === 'tex' ? 'buildingTexVs' : 'buildingColorVs', fs = kind === 'tex' ? 'buildingTexFs' : 'buildingColorFs';
-      return { label: key, layout: this.pipelineLayouts.building, vertex: { module: this.modules[vs], entryPoint: 'main', buffers: BUILDING_BUFFERS[kind] },
-        fragment: { module: this.modules[fs], entryPoint: 'main', targets: target }, depthStencil: { ...depthStencil(true), ...(key.endsWith('.snow') ? { depthBias: -2, depthBiasSlopeScale: -1 } : {}) }, multisample };
+      const kind = key.startsWith('buildingTex') ? 'tex' : 'color',
+        vs = kind === 'tex' ? 'buildingTexVs' : 'buildingColorVs',
+        fs = kind === 'tex' ? 'buildingTexFs' : 'buildingColorFs';
+      return {
+        label: key,
+        layout: this.pipelineLayouts.building,
+        vertex: { module: this.modules[vs], entryPoint: 'main', buffers: BUILDING_BUFFERS[kind] },
+        fragment: { module: this.modules[fs], entryPoint: 'main', targets: target },
+        depthStencil: { ...depthStencil(true), ...(key.endsWith('.snow') ? { depthBias: -2, depthBiasSlopeScale: -1 } : {}) },
+        multisample,
+      };
     }
     const vertex: GPUVertexState = { module: this.modules.terrainVs, entryPoint: 'main', buffers: PATCH_BUFFERS };
-    if (key === 'map') return { label: key, layout: this.pipelineLayouts.terrain, vertex,
-      fragment: { module: this.modules.mapFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
-    const [ground, v2, forest, brushes, underdark] = key.split('.').slice(1).map(Number), o = WGSL.WGSL3D_OVERRIDES;
-    return { label: key, layout: this.pipelineLayouts.terrain, vertex, depthStencil: depthStencil(true), multisample,
-      fragment: { module: this.modules.groundFs, entryPoint: 'main', targets: target,
-        constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes, [o.uUnderdark]: underdark } } };
+    if (key === 'map') return { label: key, layout: this.pipelineLayouts.terrain, vertex, fragment: { module: this.modules.mapFs, entryPoint: 'main', targets: target }, depthStencil: depthStencil(true), multisample };
+    const [ground, v2, forest, brushes, underdark] = key.split('.').slice(1).map(Number),
+      o = WGSL.WGSL3D_OVERRIDES;
+    return {
+      label: key,
+      layout: this.pipelineLayouts.terrain,
+      vertex,
+      depthStencil: depthStencil(true),
+      multisample,
+      fragment: { module: this.modules.groundFs, entryPoint: 'main', targets: target, constants: { [o.groundEnabled]: ground, [o.uRenderV2]: v2, [o.uForest]: forest, [o.uForestBrushes]: brushes, [o.uUnderdark]: underdark } },
+    };
   }
   private mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
   /** Fills mip levels 1.. of every layer of a 2D (array) texture from level 0. */
   generateMipmaps(texture: GPUTexture): void {
     if (texture.mipLevelCount < 2) return;
     let pipeline = this.mipPipelines.get(texture.format);
-    if (!pipeline) this.mipPipelines.set(texture.format, pipeline = this.device.createRenderPipeline({ label: `mipmaps ${texture.format}`, layout: 'auto',
-      vertex: { module: this.mip, entryPoint: 'vs' }, fragment: { module: this.mip, entryPoint: 'fs', targets: [{ format: texture.format }] } }));
+    if (!pipeline)
+      this.mipPipelines.set(
+        texture.format,
+        (pipeline = this.device.createRenderPipeline({ label: `mipmaps ${texture.format}`, layout: 'auto', vertex: { module: this.mip, entryPoint: 'vs' }, fragment: { module: this.mip, entryPoint: 'fs', targets: [{ format: texture.format }] } })),
+      );
     const encoder = this.device.createCommandEncoder({ label: 'mipmaps' });
-    for (let layer = 0; layer < texture.depthOrArrayLayers; layer++) for (let level = 1; level < texture.mipLevelCount; level++) {
-      const view = (mip: number): GPUTextureView => texture.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1 });
-      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: view(level), loadOp: 'clear', storeOp: 'store' }] });
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view(level - 1) }, { binding: 1, resource: this.samplers.linear }] }));
-      pass.draw(3); pass.end();
-    }
+    for (let layer = 0; layer < texture.depthOrArrayLayers; layer++)
+      for (let level = 1; level < texture.mipLevelCount; level++) {
+        const view = (mip: number): GPUTextureView => texture.createView({ dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1 });
+        const pass = encoder.beginRenderPass({ colorAttachments: [{ view: view(level), loadOp: 'clear', storeOp: 'store' }] });
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(
+          0,
+          this.device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: view(level - 1) },
+              { binding: 1, resource: this.samplers.linear },
+            ],
+          }),
+        );
+        pass.draw(3);
+        pass.end();
+      }
     this.device.queue.submit([encoder.finish()]);
   }
   private depthPipeline?: GPURenderPipeline;
   depthReadback(): GPURenderPipeline {
-    return this.depthPipeline ??= this.device.createRenderPipeline({ label: 'depth readback', layout: 'auto',
-      vertex: { module: this.depth, entryPoint: 'vs' }, fragment: { module: this.depth, entryPoint: 'fs', targets: [{ format: 'r32float' }] } });
+    return (this.depthPipeline ??= this.device.createRenderPipeline({ label: 'depth readback', layout: 'auto', vertex: { module: this.depth, entryPoint: 'vs' }, fragment: { module: this.depth, entryPoint: 'fs', targets: [{ format: 'r32float' }] } }));
   }
 }
 
@@ -299,7 +439,10 @@ export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
       device.lost.then(info => {
         gpu.lost = true;
         if (destroyedHere.has(device)) return;
-        if (ready === gpu) { ready = undefined; shared = undefined; }
+        if (ready === gpu) {
+          ready = undefined;
+          shared = undefined;
+        }
         console.warn(`WebGPU 3D device lost (${info.reason}): ${info.message}`);
         for (const listener of [...gpu.lostListeners]) listener();
       });
@@ -311,16 +454,28 @@ export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
       // Throws (GPUPipelineError) if the translated shaders or the layouts are refused.
       await Promise.all([1, SAMPLES].flatMap(samples => ['sky', 'map', PREVIEW_GROUND, 'buildingColor', 'buildingTex', 'tree', 'billboard'].map(key => gpu.adopt(key, samples))));
       if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la préparation de la vue 3D.');
-      return ready = gpu;
-    } catch (error) { destroyedHere.add(device); device.destroy(); throw error; }
-  })().catch(error => { shared = undefined; throw error; });
+      return (ready = gpu);
+    } catch (error) {
+      destroyedHere.add(device);
+      device.destroy();
+      throw error;
+    }
+  })().catch(error => {
+    shared = undefined;
+    throw error;
+  });
   return shared.then(gpu => !!gpu);
 }
 
 /** Starts creating a ground pipeline (frames at rest) before the 3D view is opened, on the device the view
  * will use: the 2D map calls it while idle once its own look is ready (terrainGpu.ts prewarmLikely). */
 export function prewarmTerrain3dGround(renderV2: number, forest: number, brushes: number): void {
-  void prepareTerrain3dGpu(false).then(ok => { if (ok && ready && !ready.lost) ready.pipeline(groundKey(1, renderV2, forest, brushes), SAMPLES); }, () => {});
+  void prepareTerrain3dGpu(false).then(
+    ok => {
+      if (ok && ready && !ready.lost) ready.pipeline(groundKey(1, renderV2, forest, brushes), SAMPLES);
+    },
+    () => {},
+  );
 }
 
 /** The WebGPU 3D view on `canvas`, or undefined while (or when) prepareTerrain3dGpu has no device.
@@ -351,7 +506,8 @@ class Terrain3dGpu extends Terrain3d {
   /** Buffers released while a frame is being recorded, destroyed after its submit. */
   private garbage: GPUBuffer[] = [];
   private targets?: { width: number; height: number; samples: number; color: GPUTexture; colorView: GPUTextureView; depth: GPUTexture; depthView: GPUTextureView };
-  private blank!: GpuImage; private emptyUnfilterable!: GpuImage;
+  private blank!: GpuImage;
+  private emptyUnfilterable!: GpuImage;
   private brushes!: { image: GpuImage; full: boolean };
   private ring?: { layer: object; revision: number; image: GpuImage; x: number; y: number; width: number };
   private lastGroundPipelines = new Map<number, GPURenderPipeline>();
@@ -369,20 +525,29 @@ class Terrain3dGpu extends Terrain3d {
     const settings = this.groundSettings;
     return groundKey(+!!settings, settings?.renderV2 ?? 0, +(!!this.forest && !settings?.underdark), +!!settings?.forestBrushes, +!!settings?.underdark);
   }
-  private pipeline(key: string): GPURenderPipeline | undefined { return this.gpu.pipeline(key, this.samples); }
+  private pipeline(key: string): GPURenderPipeline | undefined {
+    return this.gpu.pipeline(key, this.samples);
+  }
   private readonly redraw = (): void => this.request();
   private onDeviceLost?: () => void;
-  private readonly deviceLost = (): void => { const callback = this.onDeviceLost; this.onDeviceLost = undefined; if (!this.disposed) callback?.(); };
+  private readonly deviceLost = (): void => {
+    const callback = this.onDeviceLost;
+    this.onDeviceLost = undefined;
+    if (!this.disposed) callback?.();
+  };
 
   constructor(canvas: HTMLCanvasElement, gpu: Gpu3d, onChange: () => void, onRender?: () => void, options: Terrain3dOptions = {}, onDeviceLost?: () => void) {
     super(canvas, onChange, onRender, options);
     this.onDeviceLost = onDeviceLost;
     const context = canvas.getContext('webgpu');
     if (!context) throw new Error('WebGPU indisponible sur ce canevas.');
-    this.gpu = gpu; this.device = gpu.device; this.context = context;
+    this.gpu = gpu;
+    this.device = gpu.device;
+    this.context = context;
     this.maxFramebufferDimension = this.device.limits.maxTextureDimension2D;
     context.configure({ device: this.device, format: gpu.format, alphaMode: 'opaque' });
-    gpu.listeners.add(this.redraw); gpu.lostListeners.add(this.deviceLost);
+    gpu.listeners.add(this.redraw);
+    gpu.lostListeners.add(this.deviceLost);
     this.params = new Pool(this.device, GPUBufferUsage.STORAGE, 256 * 1024, this.device.limits.minStorageBufferOffsetAlignment, '3d parameters');
     this.seamPool = new Pool(this.device, GPUBufferUsage.VERTEX, 4 * 1024 * 1024, 4, '3d seams');
     this.fullIndices = this.indexBuffer(fullPatchIndices());
@@ -400,13 +565,16 @@ class Terrain3dGpu extends Terrain3d {
   /** The context is taken by the constructor, once the subclass fields exist. */
   protected override attach(): void {}
   protected override prepareMapShader(): void {}
-  protected override contextLost(): boolean { return !!this.gpu?.lost; }
+  protected override contextLost(): boolean {
+    return !!this.gpu?.lost;
+  }
 
   private image(width: number, height: number, format: GPUTextureFormat, data: ArrayBufferView, bytesPerTexel: number, mips?: ArrayBufferView[]): GpuImage {
     const levels = mips ?? [data];
     const texture = this.device.createTexture({ size: [width, height], format, mipLevelCount: levels.length, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     levels.forEach((level, mip) => {
-      const w = Math.max(1, width >> mip), h = Math.max(1, height >> mip);
+      const w = Math.max(1, width >> mip),
+        h = Math.max(1, height >> mip);
       this.device.queue.writeTexture({ texture, mipLevel: mip }, level as BufferSource, { bytesPerRow: w * bytesPerTexel, rowsPerImage: h }, [w, h]);
     });
     return { texture, view: texture.createView() };
@@ -424,18 +592,24 @@ class Terrain3dGpu extends Terrain3d {
   }
   private indexBuffer(indices: Uint16Array): { buffer: GPUBuffer; count: number } {
     const buffer = this.device.createBuffer({ label: 'patch indices', size: Math.ceil(indices.byteLength / 4) * 4, usage: GPUBufferUsage.INDEX, mappedAtCreation: true });
-    new Uint16Array(buffer.getMappedRange()).set(indices); buffer.unmap();
+    new Uint16Array(buffer.getMappedRange()).set(indices);
+    buffer.unmap();
     return { buffer, count: indices.length };
   }
   private patchIndices(tile: Terrain3dTile, clip: Terrain3dTile): { buffer: GPUBuffer; count: number } {
     const key = patchClipKey(tile, clip);
     if (!key) return this.fullIndices;
     let cached = this.patchIndexCache.get(key);
-    if (cached) { this.patchIndexCache.delete(key); this.patchIndexCache.set(key, cached); return cached; }
-    this.patchIndexCache.set(key, cached = this.indexBuffer(clippedPatchIndices(key)));
+    if (cached) {
+      this.patchIndexCache.delete(key);
+      this.patchIndexCache.set(key, cached);
+      return cached;
+    }
+    this.patchIndexCache.set(key, (cached = this.indexBuffer(clippedPatchIndices(key))));
     if (this.patchIndexCache.size > 64) {
       const oldest = this.patchIndexCache.keys().next().value!;
-      this.garbage.push(this.patchIndexCache.get(oldest)!.buffer); this.patchIndexCache.delete(oldest);
+      this.garbage.push(this.patchIndexCache.get(oldest)!.buffer);
+      this.patchIndexCache.delete(oldest);
     }
     return cached;
   }
@@ -453,35 +627,47 @@ class Terrain3dGpu extends Terrain3d {
       const a = source[3] / 255;
       return this.image(1, 1, 'rgba8unorm', new Uint8Array([Math.round(source[0] * a), Math.round(source[1] * a), Math.round(source[2] * a), source[3]]), 4);
     }
-    const padded = paddedMaterial(source), width = padded.width, height = padded.height;
-    const texture = this.device.createTexture({ label: 'material', size: [width, height], format: 'rgba8unorm', mipLevelCount: mipCount(width, height),
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+    const padded = paddedMaterial(source),
+      width = padded.width,
+      height = padded.height;
+    const texture = this.device.createTexture({ label: 'material', size: [width, height], format: 'rgba8unorm', mipLevelCount: mipCount(width, height), usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
     this.device.queue.copyExternalImageToTexture({ source: padded }, { texture, premultipliedAlpha: true }, [width, height]);
     this.gpu.generateMipmaps(texture);
     return { texture, view: texture.createView() } satisfies GpuImage;
   }
-  protected override deleteTexture(texture: WebGLTexture): void { image(texture).texture.destroy(); }
+  protected override deleteTexture(texture: WebGLTexture): void {
+    image(texture).texture.destroy();
+  }
   protected override uploadWaterMask(water: NonNullable<Terrain3dTileContent['water']>): WebGLTexture {
     return this.image(water.n, water.n, 'r8unorm', water.alpha, 1);
   }
   protected override uploadForest(field: ForestField): ForestTextures {
-    return { field, texture: this.rgbaImage(field, true), bank: field.bank ? this.rgbaImage({ n: field.n, rgba: field.bank }, true) : undefined,
-      beach: field.beach ? this.image(field.beach.n, field.beach.n, 'r8unorm', field.beach.data, 1) : undefined };
+    return { field, texture: this.rgbaImage(field, true), bank: field.bank ? this.rgbaImage({ n: field.n, rgba: field.bank }, true) : undefined, beach: field.beach ? this.image(field.beach.n, field.beach.n, 'r8unorm', field.beach.data, 1) : undefined };
   }
   protected override releaseForest(textures: ForestTextures | undefined): void {
     if (!textures) return;
-    this.deleteTexture(textures.texture); if (textures.bank) this.deleteTexture(textures.bank); if (textures.beach) this.deleteTexture(textures.beach);
+    this.deleteTexture(textures.texture);
+    if (textures.bank) this.deleteTexture(textures.bank);
+    if (textures.beach) this.deleteTexture(textures.beach);
   }
-  protected override uploadOccupation(occupation: ForestOccupation): WebGLTexture { return this.rgbaImage(occupation, true); }
-  protected override uploadLandDetail(detail: LandDetail): WebGLTexture { return this.rgbaImage(detail, true); }
+  protected override uploadOccupation(occupation: ForestOccupation): WebGLTexture {
+    return this.rgbaImage(occupation, true);
+  }
+  protected override uploadLandDetail(detail: LandDetail): WebGLTexture {
+    return this.rgbaImage(detail, true);
+  }
   protected override uploadMesh(patch: Patch, values: Float32Array): void {
     const buffer = this.device.createBuffer({ label: `patch ${patch.tile.key}`, size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(buffer, 0, values.buffer, values.byteOffset, values.byteLength);
-    patch.vao = buffer; patch.vertices = undefined;
+    patch.vao = buffer;
+    patch.vertices = undefined;
   }
-  protected override releaseMesh(patch: Patch): void { (patch.vao as GPUBuffer | undefined)?.destroy(); }
+  protected override releaseMesh(patch: Patch): void {
+    (patch.vao as GPUBuffer | undefined)?.destroy();
+  }
   protected override uploadBillboards(values: Float32Array, atlas?: HTMLCanvasElement): void {
-    this.gpuBillboardBuffer?.destroy(); this.gpuBillboardBuffer = undefined;
+    this.gpuBillboardBuffer?.destroy();
+    this.gpuBillboardBuffer = undefined;
     if (!values.length) return;
     this.gpuBillboardBuffer = this.device.createBuffer({ label: 'relief instances', size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(this.gpuBillboardBuffer, 0, values.buffer, values.byteOffset, values.byteLength);
@@ -492,108 +678,168 @@ class Terrain3dGpu extends Terrain3d {
     this.pipeline('billboard');
   }
   protected override uploadTrees(values: Float32Array): void {
-    this.gpuTreeBuffer?.destroy(); this.gpuTreeBuffer = undefined;
+    this.gpuTreeBuffer?.destroy();
+    this.gpuTreeBuffer = undefined;
     if (!values.length) return;
     this.gpuTreeBuffer = this.device.createBuffer({ label: 'near trees', size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(this.gpuTreeBuffer, 0, values.buffer, values.byteOffset, values.byteLength);
     this.pipeline('tree');
   }
   protected override uploadFungi(values: Float32Array): void {
-    this.gpuFungusBuffer?.destroy(); this.gpuFungusBuffer = undefined;
+    this.gpuFungusBuffer?.destroy();
+    this.gpuFungusBuffer = undefined;
     if (!values.length) return;
     this.gpuFungusBuffer = this.device.createBuffer({ label: 'underdark mushrooms', size: values.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(this.gpuFungusBuffer, 0, values.buffer, values.byteOffset, values.byteLength);
     this.pipeline('fungus');
   }
   protected override uploadRoof(mesh: { vertices: Float32Array; indices: Uint32Array } | undefined): void {
-    if (this.gpuRoof) { this.garbage.push(this.gpuRoof.vertices, this.gpuRoof.indices); this.gpuRoof = undefined; }
+    if (this.gpuRoof) {
+      this.garbage.push(this.gpuRoof.vertices, this.gpuRoof.indices);
+      this.gpuRoof = undefined;
+    }
     this.roofCount = mesh?.indices.length ?? 0;
     if (!mesh) return;
     const make = (data: Float32Array | Uint32Array, usage: number, label: string): GPUBuffer => {
       const buffer = this.device.createBuffer({ label, size: data.byteLength, usage: usage | GPUBufferUsage.COPY_DST });
-      this.device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength); return buffer;
+      this.device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength);
+      return buffer;
     };
     this.gpuRoof = { vertices: make(mesh.vertices, GPUBufferUsage.VERTEX, 'cave roof'), indices: make(mesh.indices, GPUBufferUsage.INDEX, 'cave roof indices') };
     this.pipeline('roof');
   }
   private recordRoof(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
     if (!this.roofShown() || !this.gpuRoof) return;
-    const pipeline = this.pipeline('roof'); if (!pipeline) return;
-    const p = this.roofParams ??= new Params(WGSL.WGSL3D_PARAMS.roof), c = this.camera, glow = this.townGlowUniform();
-    p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
-    p.setArray('eye', frame.eye); p.setArray('uCavern', this.cavernParameters()); p.setArray('uReveal', this.roofReveal());
-    p.setArray('uTownGlow', glow.values); p.set('uTownGlowCount', glow.count);
+    const pipeline = this.pipeline('roof');
+    if (!pipeline) return;
+    const p = (this.roofParams ??= new Params(WGSL.WGSL3D_PARAMS.roof)),
+      c = this.camera,
+      glow = this.townGlowUniform();
+    p.setArray('matrix', frame.matrix);
+    p.set('cameraOrigin', c.x, frame.targetHeight, c.y);
+    p.set('exaggeration', c.exaggeration);
+    p.setArray('eye', frame.eye);
+    p.setArray('uCavern', this.cavernParameters());
+    p.setArray('uReveal', this.roofReveal());
+    p.setArray('uTownGlow', glow.values);
+    p.set('uTownGlowCount', glow.count);
     const slot = this.params.alloc(p.bytes);
-    pass.setPipeline(pipeline); pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [
-      { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
-    pass.setVertexBuffer(0, this.gpuRoof.vertices); pass.setIndexBuffer(this.gpuRoof.indices, 'uint32'); pass.drawIndexed(this.roofCount);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [{ binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
+    pass.setVertexBuffer(0, this.gpuRoof.vertices);
+    pass.setIndexBuffer(this.gpuRoof.indices, 'uint32');
+    pass.drawIndexed(this.roofCount);
   }
   private recordFungi(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
     if (!this.fungusCount || !this.gpuFungusBuffer || !this.groundSettings?.underdark) return;
-    const pipeline = this.pipeline('fungus'); if (!pipeline) return;
-    const p = this.fungusParams ??= new Params(WGSL.WGSL3D_PARAMS.fungus), c = this.camera, glow = this.townGlowUniform();
-    p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
-    p.setArray('fungusFade', this.fungusFade()); p.setArray('uReveal', this.roofShown() ? this.roofReveal() : [0, 0, 0, 1]); p.setArray('eye', frame.eye); p.setArray('uCavern', this.cavernParameters());
-    p.setArray('uTownGlow', glow.values); p.set('uTownGlowCount', glow.count);
-    pass.setPipeline(pipeline); pass.setVertexBuffer(0, this.gpuFungusBuffer);
+    const pipeline = this.pipeline('fungus');
+    if (!pipeline) return;
+    const p = (this.fungusParams ??= new Params(WGSL.WGSL3D_PARAMS.fungus)),
+      c = this.camera,
+      glow = this.townGlowUniform();
+    p.setArray('matrix', frame.matrix);
+    p.set('cameraOrigin', c.x, frame.targetHeight, c.y);
+    p.set('exaggeration', c.exaggeration);
+    p.setArray('fungusFade', this.fungusFade());
+    p.setArray('uReveal', this.roofShown() ? this.roofReveal() : [0, 0, 0, 1]);
+    p.setArray('eye', frame.eye);
+    p.setArray('uCavern', this.cavernParameters());
+    p.setArray('uTownGlow', glow.values);
+    p.set('uTownGlowCount', glow.count);
+    pass.setPipeline(pipeline);
+    pass.setVertexBuffer(0, this.gpuFungusBuffer);
     let first = 0;
     for (let lod = 0; lod < 3; lod++) {
-      const count = this.fungusTiers[lod]; if (!count) continue;
+      const count = this.fungusTiers[lod];
+      if (!count) continue;
       p.set('fungusLod', lod);
       const slot = this.params.alloc(p.bytes);
-      pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [
-        { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
-      pass.draw(FUNGUS_LOD_VERTICES[lod], count, 0, first); first += count;
+      pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [{ binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
+      pass.draw(FUNGUS_LOD_VERTICES[lod], count, 0, first);
+      first += count;
     }
   }
   private recordTrees(pass: GPURenderPassEncoder, frame: FrameGeometry): void {
     if (!this.treesShown() || !this.gpuTreeBuffer || this.groundSettings?.underdark) return;
-    const pipeline = this.pipeline('tree'); if (!pipeline) return;
-    const p = this.treeParams, c = this.camera;
-    p.setArray('matrix', frame.matrix); p.set('cameraOrigin', c.x, frame.targetHeight, c.y); p.set('exaggeration', c.exaggeration);
-    p.setArray('treeFade', this.forestTreesUniform(frame)); p.setArray('eye', frame.eye); p.setArray('treeLight', this.treeLight());
-    p.set('fogDistance', this.fogDistance()); p.set('uNight', this.lookSettings.ambience === 'night' ? 1 : 0);
+    const pipeline = this.pipeline('tree');
+    if (!pipeline) return;
+    const p = this.treeParams,
+      c = this.camera;
+    p.setArray('matrix', frame.matrix);
+    p.set('cameraOrigin', c.x, frame.targetHeight, c.y);
+    p.set('exaggeration', c.exaggeration);
+    p.setArray('treeFade', this.forestTreesUniform(frame));
+    p.setArray('eye', frame.eye);
+    p.setArray('treeLight', this.treeLight());
+    p.set('fogDistance', this.fogDistance());
+    p.set('uNight', this.lookSettings.ambience === 'night' ? 1 : 0);
     const slot = this.params.alloc(p.bytes);
-    pass.setPipeline(pipeline); pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [
-      { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
-    pass.setVertexBuffer(0, this.gpuTreeBuffer); pass.draw(TREE_VERTICES, this.treeCount);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, this.device.createBindGroup({ layout: this.gpu.layouts.tree, entries: [{ binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } }] }));
+    pass.setVertexBuffer(0, this.gpuTreeBuffer);
+    pass.draw(TREE_VERTICES, this.treeCount);
   }
-  protected override billboardsReady(): boolean { return !this.billboardCount || !!this.pipeline('billboard'); }
+  protected override billboardsReady(): boolean {
+    return !this.billboardCount || !!this.pipeline('billboard');
+  }
   private recordBillboards(pass: GPURenderPassEncoder, frame: FrameGeometry, blend: number): boolean {
-    if (!this.billboardCount || !this.gpuBillboardBuffer || !this.gpuBillboardAtlas || blend<=0) return false;
-    const pipeline=this.pipeline('billboard'); if (!pipeline) return true;
-    const p=this.billboardParams,c=this.camera;
-    p.setArray('matrix',frame.matrix); p.set('cameraOrigin',c.x,frame.targetHeight,c.y); p.set('cameraRight',Math.cos(c.yaw),-Math.sin(c.yaw));
-    p.set('exaggeration',c.exaggeration); p.set('raisedBlend',blend); p.setArray('eye',frame.eye); p.set('fogDistance',this.fogDistance()); p.set('uNight',this.lookSettings.ambience==='night'?1:0);
-    const slot=this.params.alloc(p.bytes);
-    pass.setPipeline(pipeline); pass.setBindGroup(0,this.device.createBindGroup({ layout:this.gpu.layouts.billboard,entries:[
-      { binding:0,resource:{buffer:slot.buffer,offset:slot.offset,size:p.bytes.byteLength} },{ binding:2,resource:this.gpu.billboardSampler },{ binding:T.billboardAtlas,resource:image(this.gpuBillboardAtlas.texture).view },
-    ] }));
-    pass.setVertexBuffer(0,this.gpuBillboardBuffer); pass.draw(6,this.billboardCount); return false;
+    if (!this.billboardCount || !this.gpuBillboardBuffer || !this.gpuBillboardAtlas || blend <= 0) return false;
+    const pipeline = this.pipeline('billboard');
+    if (!pipeline) return true;
+    const p = this.billboardParams,
+      c = this.camera;
+    p.setArray('matrix', frame.matrix);
+    p.set('cameraOrigin', c.x, frame.targetHeight, c.y);
+    p.set('cameraRight', Math.cos(c.yaw), -Math.sin(c.yaw));
+    p.set('exaggeration', c.exaggeration);
+    p.set('raisedBlend', blend);
+    p.setArray('eye', frame.eye);
+    p.set('fogDistance', this.fogDistance());
+    p.set('uNight', this.lookSettings.ambience === 'night' ? 1 : 0);
+    const slot = this.params.alloc(p.bytes);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(
+      0,
+      this.device.createBindGroup({
+        layout: this.gpu.layouts.billboard,
+        entries: [
+          { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } },
+          { binding: 2, resource: this.gpu.billboardSampler },
+          { binding: T.billboardAtlas, resource: image(this.gpuBillboardAtlas.texture).view },
+        ],
+      }),
+    );
+    pass.setVertexBuffer(0, this.gpuBillboardBuffer);
+    pass.draw(6, this.billboardCount);
+    return false;
   }
 
   private ensureTargets(width: number, height: number): NonNullable<Terrain3dGpu['targets']> {
     const samples = this.samples;
     if (this.targets?.width === width && this.targets.height === height && this.targets.samples === samples) return this.targets;
-    this.targets?.color.destroy(); this.targets?.depth.destroy();
+    this.targets?.color.destroy();
+    this.targets?.depth.destroy();
     const color = this.device.createTexture({ label: '3d colour', size: [width, height], format: this.gpu.format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT });
     const depth = this.device.createTexture({ label: '3d depth', size: [width, height], format: DEPTH, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
-    return this.targets = { width, height, samples, color, colorView: color.createView(), depth, depthView: depth.createView() };
+    return (this.targets = { width, height, samples, color, colorView: color.createView(), depth, depthView: depth.createView() });
   }
   /** The ground variant once created; meanwhile the last drawn one, or the preview, stands in. */
   private terrainPipeline(): GPURenderPipeline | undefined {
     if (this.useMapShader) return this.pipeline('map');
-    const settings = this.groundSettings, forest = !!this.forest && !settings?.underdark;
+    const settings = this.groundSettings,
+      forest = !!this.forest && !settings?.underdark;
     const target = this.pipeline(groundKey(+!!settings, settings?.renderV2 ?? 0, +forest, +!!settings?.forestBrushes, +!!settings?.underdark));
     this.mark('groundVariant', target ? 'ready' : 'pending');
-    if (target) { this.lastGroundPipelines.set(this.samples, target); return target; }
-    return settings ? this.pipeline(PREVIEW_GROUND) : this.lastGroundPipelines.get(this.samples) ?? this.pipeline(PREVIEW_GROUND);
+    if (target) {
+      this.lastGroundPipelines.set(this.samples, target);
+      return target;
+    }
+    return settings ? this.pipeline(PREVIEW_GROUND) : (this.lastGroundPipelines.get(this.samples) ?? this.pipeline(PREVIEW_GROUND));
   }
   /** Unlike the live preview, a newly opened view must have its actual material available. */
   async prepareVariant(): Promise<void> {
     const settings = this.groundSettings;
-    const key = this.useMapShader ? 'map'
-      : this.groundKeyNow();
+    const key = this.useMapShader ? 'map' : this.groundKeyNow();
     // The view opens on the multisampled ground (frames at rest); the single-sample one follows in the background.
     await this.gpu.settled(key, SAMPLES);
     this.gpu.pipeline(key, 1);
@@ -602,57 +848,96 @@ class Terrain3dGpu extends Terrain3d {
   private brushAtlas(enabled: boolean): GPUTextureView {
     if (enabled && !this.brushes.full) {
       const pixels = unzlibSync(Uint8Array.from(atob(atlas.zlib), c => c.charCodeAt(0)));
-      const layers = atlas.families.length * atlas.variants, levels = boxMips(pixels, atlas.size, atlas.size, 2, layers);
+      const layers = atlas.families.length * atlas.variants,
+        levels = boxMips(pixels, atlas.size, atlas.size, 2, layers);
       this.brushes.image.texture.destroy();
-      this.brushes = { image: this.arrayImage(atlas.size, layers, levels.length, levels.map(l => l.data)), full: true };
+      this.brushes = {
+        image: this.arrayImage(
+          atlas.size,
+          layers,
+          levels.length,
+          levels.map(l => l.data),
+        ),
+        full: true,
+      };
     }
     return this.brushes.image.view;
   }
 
   protected override renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
-    const device = this.device, gpu = this.gpu, layer = this.layer!, c = this.camera, settings = this.groundSettings;
-    this.prepareBillboards(); this.prepareTrees(frame); this.prepareFungi(); const raisedBlend=this.raisedBlend(frame);
+    const device = this.device,
+      gpu = this.gpu,
+      layer = this.layer!,
+      c = this.camera,
+      settings = this.groundSettings;
+    this.prepareBillboards();
+    this.prepareTrees(frame);
+    this.prepareFungi();
+    const raisedBlend = this.raisedBlend(frame);
     const targets = this.ensureTargets(w, h);
-    this.params.begin(); this.seamPool.begin();
+    this.params.begin();
+    this.seamPool.begin();
     const encoder = device.createCommandEncoder({ label: 'terrain 3d' });
-    const pass = encoder.beginRenderPass({ label: 'terrain 3d',
-      colorAttachments: [{ view: targets.samples > 1 ? targets.colorView : this.context.getCurrentTexture().createView(), resolveTarget: targets.samples > 1 ? this.context.getCurrentTexture().createView() : undefined, clearValue: [0, 0, 0, 1], loadOp: 'clear', storeOp: targets.samples > 1 ? 'discard' : 'store' }],
-      depthStencilAttachment: { view: targets.depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' } });
+    const pass = encoder.beginRenderPass({
+      label: 'terrain 3d',
+      colorAttachments: [
+        {
+          view: targets.samples > 1 ? targets.colorView : this.context.getCurrentTexture().createView(),
+          resolveTarget: targets.samples > 1 ? this.context.getCurrentTexture().createView() : undefined,
+          clearValue: [0, 0, 0, 1],
+          loadOp: 'clear',
+          storeOp: targets.samples > 1 ? 'discard' : 'store',
+        },
+      ],
+      depthStencilAttachment: { view: targets.depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
+    });
     const sky = this.pipeline('sky');
     if (sky) {
       this.skyParams.set('height', h);
-      this.skyParams.set('uNight', this.groundSettings?.underdark?2:this.lookSettings.ambience==='night'?1:0);
+      this.skyParams.set('uNight', this.groundSettings?.underdark ? 2 : this.lookSettings.ambience === 'night' ? 1 : 0);
       const slot = this.params.alloc(this.skyParams.bytes);
       pass.setPipeline(sky);
       pass.setBindGroup(0, device.createBindGroup({ layout: gpu.layouts.sky, entries: [{ binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: this.skyParams.bytes.byteLength } }] }));
       pass.draw(3);
     }
-    const pipeline = this.terrainPipeline(), p = this.terrainParams, empty = this.blank.view;
+    const pipeline = this.terrainPipeline(),
+      p = this.terrainParams,
+      empty = this.blank.view;
     p.set('proceduralPreview', settings ? 1 : 0);
     const textures: Partial<Record<TerrainTexture, GPUTextureView>> = { macroField: image(this.macroTexture).view };
     p.set('uQuality', this.frameQuality);
-    p.setArray('matrix', frame.matrix); p.set('exaggeration', c.exaggeration); p.setArray('eye', frame.eye);
-    p.set('raisedBlend',raisedBlend);
-    p.set('fogDistance', this.fogDistance()); p.set('showTileBounds', this.tileBounds ? 1 : 0);
-    p.set('uNight',this.lookSettings.ambience==='night'?1:0); p.set('uNaturalWater',this.lookSettings.waterLook==='natural'?1:0); p.set('displayWaterVisible',this.lookSettings.waterVisible===false?0:1);
-    p.set('displayWaterBand',layer.width*.016);
+    p.setArray('matrix', frame.matrix);
+    p.set('exaggeration', c.exaggeration);
+    p.setArray('eye', frame.eye);
+    p.set('raisedBlend', raisedBlend);
+    p.set('fogDistance', this.fogDistance());
+    p.set('showTileBounds', this.tileBounds ? 1 : 0);
+    p.set('uNight', this.lookSettings.ambience === 'night' ? 1 : 0);
+    p.set('uNaturalWater', this.lookSettings.waterLook === 'natural' ? 1 : 0);
+    p.set('displayWaterVisible', this.lookSettings.waterVisible === false ? 0 : 1);
+    p.set('displayWaterBand', layer.width * 0.016);
     p.setArray('uWaterSeason', waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
     const canopy = settings ?? this.forestSettings;
     if (canopy) {
       const lights = terrainLights(canopy.lighting);
-      p.set('uMaterialSeed', canopy.seed >>> 0); p.set('uMaterialClimate', canopy.climate.temperature, canopy.climate.precipitation);
+      p.set('uMaterialSeed', canopy.seed >>> 0);
+      p.set('uMaterialClimate', canopy.climate.temperature, canopy.climate.precipitation);
       p.setArray('uForestTrees', this.forestTreesUniform(frame));
       p.set('groundEye', c.x + frame.eye[0], (frame.targetHeight + frame.eye[1]) / c.exaggeration, c.y + frame.eye[2]);
       p.set('groundLight', lights.primary[0], lights.primary[2], lights.primary[1]);
-      p.set('uGroundCover',lights.primary[0],lights.primary[2],lights.primary[1],groundCoverActive(settings?.renderV2??0,!!settings?.forestBrushes,!!settings&&!!this.forest,this.lookSettings.groundCover));
+      p.set('uGroundCover', lights.primary[0], lights.primary[2], lights.primary[1], groundCoverActive(settings?.renderV2 ?? 0, !!settings?.forestBrushes, !!settings && !!this.forest, this.lookSettings.groundCover));
       p.set('groundLight2', lights.secondary[0], lights.secondary[2], lights.secondary[1]);
       p.set('groundStrength', canopy.lighting.enabled ? canopy.lighting.strength : 0);
-      p.set('macroRect', layer.x, layer.y, layer.width); p.set('macroN', layer.n);
+      p.set('macroRect', layer.x, layer.y, layer.width);
+      p.set('macroN', layer.n);
     }
     if (settings) {
       const v2 = settings.renderV2 ?? 0;
-      p.set('uV2WaterVisible', settings.waterVisible === false ? 0 : 1); p.setArray('uV2GlacierSources', renderV2GlacierSources(layer, settings.climate));
-      p.set('uV2Season', settings.v2Season ?? .5); setSeasonCalendarGpu(p, settings.climateZone, settings.v2Calendar); p.set('uMaterialZone', renderV2ZoneUniform(settings.climateZone));
+      p.set('uV2WaterVisible', settings.waterVisible === false ? 0 : 1);
+      p.setArray('uV2GlacierSources', renderV2GlacierSources(layer, settings.climate));
+      p.set('uV2Season', settings.v2Season ?? 0.5);
+      setSeasonCalendarGpu(p, settings.climateZone, settings.v2Calendar);
+      p.set('uMaterialZone', renderV2ZoneUniform(settings.climateZone));
       // Shore ring and relief light (rgba16float: shore distance, openness, sky occlusion, horizon tangent toward
       // the light); a new light azimuth re-bakes the last channel off the frame path and bumps the revision.
       const pixels = v2 > 0 ? shoreRingPixels(layer, settings.lighting.azimuth, this.ringChanged) : undefined;
@@ -664,77 +949,145 @@ class Terrain3dGpu extends Terrain3d {
       const ring = pixels?.grid;
       p.set('uShoreRingRect', ring?.x ?? 0, ring?.y ?? 0, ring?.width ?? 1);
       const contours = settings.contours;
-      p.set('groundContours', contours ? 1 : 0); p.set('groundContourStep', contours?.step ?? 1); p.set('groundContourOpacity', contours?.opacity ?? 0);
-      p.set('groundFlatSlope', contours?.flat ? .004 : .012);
-      if (contours) { const value = contours.color.replace('#', ''); p.set('groundContourColor', parseInt(value.slice(0, 2), 16) / 255, parseInt(value.slice(2, 4), 16) / 255, parseInt(value.slice(4, 6), 16) / 255); }
+      p.set('groundContours', contours ? 1 : 0);
+      p.set('groundContourStep', contours?.step ?? 1);
+      p.set('groundContourOpacity', contours?.opacity ?? 0);
+      p.set('groundFlatSlope', contours?.flat ? 0.004 : 0.012);
+      if (contours) {
+        const value = contours.color.replace('#', '');
+        p.set('groundContourColor', parseInt(value.slice(0, 2), 16) / 255, parseInt(value.slice(2, 4), 16) / 255, parseInt(value.slice(4, 6), 16) / 255);
+      }
     }
     textures.uShoreRing = this.ring?.image.view ?? empty;
-    const field = this.forest, applied = this.occupation, beach = field?.field.beach;
+    const field = this.forest,
+      applied = this.occupation,
+      beach = field?.field.beach;
     textures.uForestField = field ? image(field.texture).view : empty;
     p.set('uForestRect', field?.field.x ?? 0, field?.field.y ?? 0, field?.field.width ?? 1);
     textures.uForestBank = field?.bank ? image(field.bank).view : empty;
-    p.set('uHasForestBank', field?.bank ? 1 : 0); p.set('uForestBankDensity', field?.field.bankDensity ?? 1);
+    p.set('uHasForestBank', field?.bank ? 1 : 0);
+    p.set('uForestBankDensity', field?.field.bankDensity ?? 1);
     textures.uForestBeach = field?.beach ? image(field.beach).view : empty;
-    p.set('uHasForestBeach', field?.beach ? 1 : 0); p.set('uForestBeachRect', beach?.x ?? 0, beach?.y ?? 0, beach?.width ?? 1);
+    p.set('uHasForestBeach', field?.beach ? 1 : 0);
+    p.set('uForestBeachRect', beach?.x ?? 0, beach?.y ?? 0, beach?.width ?? 1);
     textures.uOccupation = applied ? image(applied.texture).view : empty;
-    p.set('uHasOccupation', applied ? 1 : 0); p.set('uOccupationRect', applied?.data.x ?? 0, applied?.data.y ?? 0, applied?.data.width ?? 1);
+    p.set('uHasOccupation', applied ? 1 : 0);
+    p.set('uOccupationRect', applied?.data.x ?? 0, applied?.data.y ?? 0, applied?.data.width ?? 1);
     p.set('uOccupationN', applied?.data.n ?? 1);
     p.set('uPaperMap', settings?.paperMap ? 1 : 0);
     // Underdark: the cave mask in the forest beach slot (terrain3d.ts), forest off.
-    p.set('uHasCave', settings?.underdark && this.caveTexture ? 1 : 0); p.setArray('uCavern', this.cavernParameters()); p.setArray('uFungusArea', this.fungusArea()); { const lamps = this.townGlowUniform(); p.setArray('uCaveLamps', lamps.values); p.set('uCaveLampCount', lamps.count); }
-    { const g = settings?.townGlow ?? new Float32Array(0), a = new Float32Array(64); for (let k = 0; k < Math.min(16, g.length / 3 | 0); k++) a.set(g.subarray(k * 3, k * 3 + 3), k * 4); p.setArray('uTownGlow', a); p.set('uTownGlowCount', Math.min(16, g.length / 3 | 0)); }
-    { const f = settings?.farmBeds ?? new Float32Array(128); p.setArray('uFarmBeds', f); let n = 0; for (let k = 0; k < 32; k++) if (f[k * 4 + 2] > 0) n = k + 1; p.set('uFarmBedCount', n); }
+    p.set('uHasCave', settings?.underdark && this.caveTexture ? 1 : 0);
+    p.setArray('uCavern', this.cavernParameters());
+    p.setArray('uFungusArea', this.fungusArea());
+    {
+      const lamps = this.townGlowUniform();
+      p.setArray('uCaveLamps', lamps.values);
+      p.set('uCaveLampCount', lamps.count);
+    }
+    {
+      const g = settings?.townGlow ?? new Float32Array(0),
+        a = new Float32Array(64);
+      for (let k = 0; k < Math.min(16, (g.length / 3) | 0); k++) a.set(g.subarray(k * 3, k * 3 + 3), k * 4);
+      p.setArray('uTownGlow', a);
+      p.set('uTownGlowCount', Math.min(16, (g.length / 3) | 0));
+    }
+    {
+      const f = settings?.farmBeds ?? new Float32Array(128);
+      p.setArray('uFarmBeds', f);
+      let n = 0;
+      for (let k = 0; k < 32; k++) if (f[k * 4 + 2] > 0) n = k + 1;
+      p.set('uFarmBedCount', n);
+    }
     if (settings?.underdark) {
       textures.uForestBeach = this.caveTexture ? image(this.caveTexture).view : empty;
-      p.set('uHasForestBeach', 0); p.set('uForestBeachRect', layer.x, layer.y, layer.width);
+      p.set('uHasForestBeach', 0);
+      p.set('uForestBeachRect', layer.x, layer.y, layer.width);
     }
     const detail = this.landDetail;
     textures.uLandDetail = detail ? image(detail.texture).view : empty;
-    p.set('uHasLandDetail', detail ? 1 : 0); p.set('uLandDetailRect', detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1); p.set('uLandDetailN', detail?.data.n ?? 1);
+    p.set('uHasLandDetail', detail ? 1 : 0);
+    p.set('uLandDetailRect', detail?.data.x ?? 0, detail?.data.y ?? 0, detail?.data.width ?? 1);
+    p.set('uLandDetailN', detail?.data.n ?? 1);
     textures.uForestBrushAtlas = this.brushAtlas(!!settings?.forestBrushes);
     if (pipeline) {
       pass.setPipeline(pipeline);
       for (const draw of draws) {
-        const { patch, material } = draw, tile = patch.tile;
+        const { patch, material } = draw,
+          tile = patch.tile;
         p.set('patchOffset', tile.x - c.x, patch.heightOrigin * c.exaggeration - frame.targetHeight, tile.y - c.y);
-        p.set('physicalOrigin', tile.x, patch.heightOrigin, tile.y); p.set('patchRect', tile.x, tile.y, tile.width);
-        p.set('morph', draw.morph); p.setArray('textureRect', draw.textureRect); p.setArray('previousRect', draw.previousRect); p.set('textureBlend', material.blend);
-        textures.material = image(material.to.texture).view; textures.previousMaterial = image(material.from.texture).view;
-        for (const [ref,name,flag] of [[material.to,'drapedMaterial','hasRaisedMaterial'],[material.from,'previousDrapedMaterial','hasPreviousRaisedMaterial']] as const) {
-          const raised=this.raisedMaterials.get(ref.texture); textures[name]=raised?image(raised).view:empty; p.set(flag,raised?1:0);
+        p.set('physicalOrigin', tile.x, patch.heightOrigin, tile.y);
+        p.set('patchRect', tile.x, tile.y, tile.width);
+        p.set('morph', draw.morph);
+        p.setArray('textureRect', draw.textureRect);
+        p.setArray('previousRect', draw.previousRect);
+        p.set('textureBlend', material.blend);
+        textures.material = image(material.to.texture).view;
+        textures.previousMaterial = image(material.from.texture).view;
+        for (const [ref, name, flag] of [
+          [material.to, 'drapedMaterial', 'hasRaisedMaterial'],
+          [material.from, 'previousDrapedMaterial', 'hasPreviousRaisedMaterial'],
+        ] as const) {
+          const raised = this.raisedMaterials.get(ref.texture);
+          textures[name] = raised ? image(raised).view : empty;
+          p.set(flag, raised ? 1 : 0);
         }
-        for (const [ref, name] of [[material.to, 'canopyWater'], [material.from, 'previousCanopyWater']] as const) {
+        for (const [ref, name] of [
+          [material.to, 'canopyWater'],
+          [material.from, 'previousCanopyWater'],
+        ] as const) {
           const mask = this.waterMasks.get(ref.texture);
           textures[name] = mask ? image(mask.texture).view : empty;
           p.set(name === 'canopyWater' ? 'hasCanopyWater' : 'hasPreviousCanopyWater', mask ? 1 : 0);
           p.set(`${name}Rect`, mask?.rect[0] ?? 0, mask?.rect[1] ?? 0, mask?.rect[2] ?? 1);
         }
-        for (const [ref, name, flag] of [[material.to, 'semanticTile', 'hasSemanticTile'], [material.from, 'previousSemanticTile', 'hasPreviousSemanticTile']] as const) {
+        for (const [ref, name, flag] of [
+          [material.to, 'semanticTile', 'hasSemanticTile'],
+          [material.from, 'previousSemanticTile', 'hasPreviousSemanticTile'],
+        ] as const) {
           const overlay = this.semanticTiles.get(ref.texture);
           textures[name] = overlay ? image(overlay.texture).view : empty;
           p.set(flag, overlay?.semantic ? 1 : 0);
-          p.setArray(name === 'semanticTile' ? 'semanticRect' : 'previousSemanticRect', this.overlayRect(ref,tile));
-          p.set(name === 'semanticTile' ? 'hasGroundTile' : 'hasPreviousGroundTile',overlay?.atlas ? 1 : 0);
-          p.setArray(name === 'semanticTile' ? 'groundRect' : 'previousGroundRect',this.overlayRect(ref,tile,true));
+          p.setArray(name === 'semanticTile' ? 'semanticRect' : 'previousSemanticRect', this.overlayRect(ref, tile));
+          p.set(name === 'semanticTile' ? 'hasGroundTile' : 'hasPreviousGroundTile', overlay?.atlas ? 1 : 0);
+          p.setArray(name === 'semanticTile' ? 'groundRect' : 'previousGroundRect', this.overlayRect(ref, tile, true));
         }
-        const slot = this.params.alloc(p.bytes), seams = this.seamPool.alloc(draw.correction), indices = this.patchIndices(tile, draw.clip);
-        pass.setBindGroup(0, device.createBindGroup({ layout: gpu.layouts.terrain, entries: [
-          { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } },
-          { binding: 1, resource: gpu.samplers.nearest }, { binding: 2, resource: gpu.samplers.linear }, { binding: 3, resource: gpu.samplers.aniso },
-          ...TERRAIN_TEXTURES.map(name => ({ binding: T[name], resource: name === 'macroField' ? textures.macroField ?? this.emptyUnfilterable.view : textures[name] ?? empty })),
-        ] }));
-        pass.setVertexBuffer(0, patch.vao as GPUBuffer); pass.setVertexBuffer(1, seams.buffer, seams.offset, draw.correction.byteLength);
-        pass.setIndexBuffer(indices.buffer, 'uint16'); pass.drawIndexed(indices.count);
+        const slot = this.params.alloc(p.bytes),
+          seams = this.seamPool.alloc(draw.correction),
+          indices = this.patchIndices(tile, draw.clip);
+        pass.setBindGroup(
+          0,
+          device.createBindGroup({
+            layout: gpu.layouts.terrain,
+            entries: [
+              { binding: 0, resource: { buffer: slot.buffer, offset: slot.offset, size: p.bytes.byteLength } },
+              { binding: 1, resource: gpu.samplers.nearest },
+              { binding: 2, resource: gpu.samplers.linear },
+              { binding: 3, resource: gpu.samplers.aniso },
+              ...TERRAIN_TEXTURES.map(name => ({ binding: T[name], resource: name === 'macroField' ? (textures.macroField ?? this.emptyUnfilterable.view) : (textures[name] ?? empty) })),
+            ],
+          }),
+        );
+        pass.setVertexBuffer(0, patch.vao as GPUBuffer);
+        pass.setVertexBuffer(1, seams.buffer, seams.offset, draw.correction.byteLength);
+        pass.setIndexBuffer(indices.buffer, 'uint16');
+        pass.drawIndexed(indices.count);
       }
     }
     const buildings = this.buildings as UrbanBuildingPassGpu;
     buildings.target = { pass, params: this.params, samples: this.samples };
     let pending: boolean;
-    try { pending = buildings.draw(this.buildingFrame(frame)); } finally { buildings.target = undefined; }
-    this.recordTrees(pass, frame); this.recordRoof(pass, frame); this.recordFungi(pass, frame);
-    pending = this.recordBillboards(pass,frame,raisedBlend) || pending;
+    try {
+      pending = buildings.draw(this.buildingFrame(frame));
+    } finally {
+      buildings.target = undefined;
+    }
+    this.recordTrees(pass, frame);
+    this.recordRoof(pass, frame);
+    this.recordFungi(pass, frame);
+    pending = this.recordBillboards(pass, frame, raisedBlend) || pending;
     pass.end();
-    this.params.flush(); this.seamPool.flush();
+    this.params.flush();
+    this.seamPool.flush();
     device.queue.submit([encoder.finish()]);
     for (const buffer of this.garbage.splice(0)) buffer.destroy();
     return pending || !pipeline;
@@ -742,57 +1095,85 @@ class Terrain3dGpu extends Terrain3d {
 
   /** Colour from the canvas (same task as the draw), depth resolved from sample 0 and read back. */
   protected override async captureFrame(near: number, far: number): Promise<{ color: HTMLCanvasElement; depth: HTMLCanvasElement }> {
-    const width = this.canvas.width, height = this.canvas.height, targets = this.targets;
+    const width = this.canvas.width,
+      height = this.canvas.height,
+      targets = this.targets;
     if (!targets || targets.width !== width || targets.height !== height) throw new Error('Capture 3D indisponible.');
-    const color = document.createElement('canvas'); color.width = width; color.height = height;
+    const color = document.createElement('canvas');
+    color.width = width;
+    color.height = height;
     color.getContext('2d')!.drawImage(this.canvas, 0, 0);
-    const device = this.device, pipeline = this.gpu.depthReadback();
+    const device = this.device,
+      pipeline = this.gpu.depthReadback();
     const resolved = device.createTexture({ label: 'depth readback', size: [width, height], format: 'r32float', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
-    const bytesPerRow = Math.ceil(width * 4 / 256) * 256;
+    const bytesPerRow = Math.ceil((width * 4) / 256) * 256;
     const readback = device.createBuffer({ label: 'depth readback', size: bytesPerRow * height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
     try {
       const encoder = device.createCommandEncoder({ label: 'depth readback' });
       const pass = encoder.beginRenderPass({ colorAttachments: [{ view: resolved.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [1, 0, 0, 1] }] });
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: targets.depth.createView({ aspect: 'depth-only' }) }] }));
-      pass.draw(3); pass.end();
+      pass.draw(3);
+      pass.end();
       encoder.copyTextureToBuffer({ texture: resolved }, { buffer: readback, bytesPerRow, rowsPerImage: height }, [width, height]);
       device.queue.submit([encoder.finish()]);
       await readback.mapAsync(GPUMapMode.READ);
-      const rows = new Float32Array(readback.getMappedRange()), inverse = new Float32Array(width * height), stride = bytesPerRow / 4;
+      const rows = new Float32Array(readback.getMappedRange()),
+        inverse = new Float32Array(width * height),
+        stride = bytesPerRow / 4;
       // As captureWebGlFrame: inverse distance from GL window depth, normalized over the rendered geometry.
-      let low = Infinity, high = -Infinity;
-      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-        const d = rows[y * stride + x], i = y * width + x;
-        if (!(d < 1)) continue;   // Sky, outside the rendered geometry.
-        inverse[i] = (far + near - (2 * d - 1) * (far - near)) / (2 * near * far);
-        low = Math.min(low, inverse[i]); high = Math.max(high, inverse[i]);
-      }
+      let low = Infinity,
+        high = -Infinity;
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+          const d = rows[y * stride + x],
+            i = y * width + x;
+          if (!(d < 1)) continue; // Sky, outside the rendered geometry.
+          inverse[i] = (far + near - (2 * d - 1) * (far - near)) / (2 * near * far);
+          low = Math.min(low, inverse[i]);
+          high = Math.max(high, inverse[i]);
+        }
       readback.unmap();
-      const depth = document.createElement('canvas'); depth.width = width; depth.height = height;
-      const context = depth.getContext('2d')!, data = context.createImageData(width, height);
+      const depth = document.createElement('canvas');
+      depth.width = width;
+      depth.height = height;
+      const context = depth.getContext('2d')!,
+        data = context.createImageData(width, height);
       for (let i = 0; i < inverse.length; i++) {
-        const value = inverse[i] ? (high > low ? 1 + Math.round(254 * (inverse[i] - low) / (high - low)) : 255) : 0;
-        data.data[i * 4] = data.data[i * 4 + 1] = data.data[i * 4 + 2] = value; data.data[i * 4 + 3] = 255;
+        const value = inverse[i] ? (high > low ? 1 + Math.round((254 * (inverse[i] - low)) / (high - low)) : 255) : 0;
+        data.data[i * 4] = data.data[i * 4 + 1] = data.data[i * 4 + 2] = value;
+        data.data[i * 4 + 3] = 255;
       }
       context.putImageData(data, 0, 0);
       return { color, depth };
-    } finally { resolved.destroy(); readback.destroy(); }
+    } finally {
+      resolved.destroy();
+      readback.destroy();
+    }
   }
 
   protected override disposeBackend(): void {
-    this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.deviceLost);
+    this.gpu.listeners.delete(this.redraw);
+    this.gpu.lostListeners.delete(this.deviceLost);
     this.releaseForest(this.forest);
     if (this.occupation) this.deleteTexture(this.occupation.texture);
     if (this.landDetail) this.deleteTexture(this.landDetail.texture);
-    this.gpuFungusBuffer?.destroy(); this.gpuRoof?.vertices.destroy(); this.gpuRoof?.indices.destroy(); this.gpuBillboardBuffer?.destroy(); if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
-    for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
+    this.gpuFungusBuffer?.destroy();
+    this.gpuRoof?.vertices.destroy();
+    this.gpuRoof?.indices.destroy();
+    this.gpuBillboardBuffer?.destroy();
+    if (this.gpuBillboardAtlas) this.deleteTexture(this.gpuBillboardAtlas.texture);
+    for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture);
+    this.raisedMaterials.clear();
     for (const texture of [this.material, this.macroTexture, this.caveTexture, this.blank, this.emptyUnfilterable, this.brushes.image, this.ring?.image]) if (texture) this.deleteTexture(texture);
     this.fullIndices.buffer.destroy();
     for (const indices of this.patchIndexCache.values()) indices.buffer.destroy();
     this.patchIndexCache.clear();
-    this.targets?.color.destroy(); this.targets?.depth.destroy(); this.targets = undefined;
-    this.params.destroy(); this.seamPool.destroy();
+    this.targets?.color.destroy();
+    this.targets?.depth.destroy();
+    this.targets = undefined;
+    this.params.destroy();
+    this.seamPool.destroy();
     this.context.unconfigure();
   }
 }
@@ -803,7 +1184,10 @@ class UrbanBuildingPassGpu extends UrbanBuildingPass {
   private readonly params = new Params(WGSL.WGSL3D_PARAMS.building);
   private atlases?: { albedo: GPUTexture; normal: GPUTexture };
   private placeholder: GPUTexture;
-  constructor(private gpu: Gpu3d, onTexturesReady?: () => void) {
+  constructor(
+    private gpu: Gpu3d,
+    onTexturesReady?: () => void,
+  ) {
     super(undefined, onTexturesReady);
     this.placeholder = gpu.device.createTexture({ label: 'no building material', size: [1, 1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING });
   }
@@ -812,19 +1196,23 @@ class UrbanBuildingPassGpu extends UrbanBuildingPass {
     this.gpu.device.queue.writeBuffer(buffer, 0, values.buffer, values.byteOffset, values.byteLength);
     batch.gpu = buffer;
   }
-  protected override releaseBatch(batch: Batch): void { batch.gpu?.destroy(); batch.gpu = undefined; }
+  protected override releaseBatch(batch: Batch): void {
+    batch.gpu?.destroy();
+    batch.gpu = undefined;
+  }
   /** Material atlases as mipmapped 2D arrays (uploadMaterialArrays, display-space albedo). */
   protected override uploadTextures(images: MaterialImages): void {
-    const tile = MATERIALS.tile, count = MATERIALS.layers.length, device = this.gpu.device;
+    const tile = MATERIALS.tile,
+      count = MATERIALS.layers.length,
+      device = this.gpu.device;
     const make = (bitmap: ImageBitmap, label: string): GPUTexture => {
-      const texture = device.createTexture({ label, size: [tile, tile, count], format: 'rgba8unorm', mipLevelCount: mipCount(tile, tile),
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
-      for (let layer = 0; layer < count; layer++)
-        device.queue.copyExternalImageToTexture({ source: bitmap, origin: { x: 0, y: layer * tile } }, { texture, origin: { x: 0, y: 0, z: layer } }, [tile, tile]);
+      const texture = device.createTexture({ label, size: [tile, tile, count], format: 'rgba8unorm', mipLevelCount: mipCount(tile, tile), usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+      for (let layer = 0; layer < count; layer++) device.queue.copyExternalImageToTexture({ source: bitmap, origin: { x: 0, y: layer * tile } }, { texture, origin: { x: 0, y: 0, z: layer } }, [tile, tile]);
       this.gpu.generateMipmaps(texture);
       return texture;
     };
-    this.atlases?.albedo.destroy(); this.atlases?.normal.destroy();
+    this.atlases?.albedo.destroy();
+    this.atlases?.normal.destroy();
     this.atlases = { albedo: make(images.albedo, 'building albedo'), normal: make(images.normal, 'building normals') };
   }
   protected override render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
@@ -833,29 +1221,54 @@ class UrbanBuildingPassGpu extends UrbanBuildingPass {
     const pipeline = this.gpu.pipeline(textured ? 'buildingTex' : 'buildingColor', target.samples);
     const snowPipeline = shown.some(s => s.cached?.batches.some(b => b.snow)) ? this.gpu.pipeline(textured ? 'buildingTex.snow' : 'buildingColor.snow', target.samples) : undefined;
     if (!pipeline) return;
-    const { pass, params } = target, p = this.params, device = this.gpu.device;
-    const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }), normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });
+    const { pass, params } = target,
+      p = this.params,
+      device = this.gpu.device;
+    const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }),
+      normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });
     pass.setPipeline(pipeline);
-    p.setArray('matrix', frame.matrix); p.set('exaggeration', frame.exaggeration); p.set('useTex', this.atlases ? 2 : 0); p.set('softFrom', SOFT_LAYER_FROM);
-    p.set('uNight',frame.cave||!this.night?0:this.lightsOn?1:2); p.setArray('uCave',caveUniform(frame,this.lightsOn)); p.setArray('uCaveEye',frame.cave?.eye??[0,0,0]);
+    p.setArray('matrix', frame.matrix);
+    p.set('exaggeration', frame.exaggeration);
+    p.set('useTex', this.atlases ? 2 : 0);
+    p.set('softFrom', SOFT_LAYER_FROM);
+    p.set('uNight', frame.cave || !this.night ? 0 : this.lightsOn ? 1 : 2);
+    p.setArray('uCave', caveUniform(frame, this.lightsOn));
+    p.setArray('uCaveEye', frame.cave?.eye ?? [0, 0, 0]);
     let group: GPUBindGroup | undefined, groupBuffer: GPUBuffer | undefined;
     for (const sector of shown) {
       p.set('offset', sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
-      p.set('sectorOrigin',sector.origin[0],sector.origin[1]);
+      p.set('sectorOrigin', sector.origin[0], sector.origin[1]);
       for (const batch of sector.cached!.batches) {
         if (!batch.gpu) continue;
         pass.setPipeline(batch.snow && snowPipeline ? snowPipeline : pipeline);
-        if (textured) { p.setArray('material', batch.color); p.setArray('tint', batch.tint); p.set('recolored', batch.recolored ? 1 : 0); }
+        if (textured) {
+          p.setArray('material', batch.color);
+          p.setArray('tint', batch.tint);
+          p.set('recolored', batch.recolored ? 1 : 0);
+        }
         const slot = params.alloc(p.bytes);
         if (slot.buffer !== groupBuffer) {
           groupBuffer = slot.buffer;
-          group = device.createBindGroup({ layout: this.gpu.layouts.building, entries: [{ binding: 0, resource: { buffer: slot.buffer, offset: 0, size: p.bytes.byteLength } },
-            { binding: 4, resource: this.gpu.samplers.repeat }, { binding: T.albedoTex, resource: albedo }, { binding: T.normalTex, resource: normal }] });
+          group = device.createBindGroup({
+            layout: this.gpu.layouts.building,
+            entries: [
+              { binding: 0, resource: { buffer: slot.buffer, offset: 0, size: p.bytes.byteLength } },
+              { binding: 4, resource: this.gpu.samplers.repeat },
+              { binding: T.albedoTex, resource: albedo },
+              { binding: T.normalTex, resource: normal },
+            ],
+          });
         }
         pass.setBindGroup(0, group!, [slot.offset]);
-        pass.setVertexBuffer(0, batch.gpu); pass.draw(batch.count);
+        pass.setVertexBuffer(0, batch.gpu);
+        pass.draw(batch.count);
       }
     }
   }
-  protected override disposeBackend(): void { this.atlases?.albedo.destroy(); this.atlases?.normal.destroy(); this.atlases = undefined; this.placeholder.destroy(); }
+  protected override disposeBackend(): void {
+    this.atlases?.albedo.destroy();
+    this.atlases?.normal.destroy();
+    this.atlases = undefined;
+    this.placeholder.destroy();
+  }
 }

@@ -8,9 +8,14 @@ import { taperSpringBank } from '../render/riverHeadwaters';
 export interface RetainedWaterMaterial {
   field: string;
   sea?: { distance: string; n: number };
-  n: number; width: number; referenceWidth: number; path: string;
+  n: number;
+  width: number;
+  referenceWidth: number;
+  path: string;
   /** Accumulated crop origin in the original material coordinates. */
-  x?: number; y?: number; extent?: number;
+  x?: number;
+  y?: number;
+  extent?: number;
 }
 const fields = new WeakMap<RetainedWaterMaterial, Float32Array>();
 const tapered = new WeakMap<Decor, string>();
@@ -25,7 +30,8 @@ export function retainedWaterMaterial(decor: Decor): RetainedWaterMaterial {
 export function decorWaterSvg(decor: Decor, style: TerrainStyle, showLakes = true, colors?: RenderColors): string {
   let geometry = tapered.get(decor);
   if (geometry === undefined) {
-    const material = decor.meta.waterMaterial, springs = (decor.raster.geometry?.springs ?? []).map(p => ({ x: p.x + (material?.x ?? 0), y: p.y + (material?.y ?? 0) }));
+    const material = decor.meta.waterMaterial,
+      springs = (decor.raster.geometry?.springs ?? []).map(p => ({ x: p.x + (material?.x ?? 0), y: p.y + (material?.y ?? 0) }));
     geometry = decor.meta.waterSvg.replace(/(<path\b[^>]*\bd=")([^"]*)(")/g, (_, before, d, after) => before + taperSpringBank(d, springs) + after);
     tapered.set(decor, geometry);
   }
@@ -42,7 +48,10 @@ export function waterAppearanceSvg(geometry: string, source: RetainedWaterMateri
   if (!showLakes) return svg.replace(/<path\b[^>]*class="water-lakes"[^>]*\/>/g, '');
   if (!source?.path) return svg;
   let field = fields.get(source);
-  if (!field) { field = decodeWaterField(source.field); fields.set(source, field); }
+  if (!field) {
+    field = decodeWaterField(source.field);
+    fields.set(source, field);
+  }
   const material = source.path ? lakeMaterialSvg(field, source.n, source.width, source.path, 'retained-lake-material', style, source.referenceWidth, colors) : '';
   return svg + (source.extent ? cropWaterSvg(material, source.x ?? 0, source.y ?? 0, source.extent) : material);
 }

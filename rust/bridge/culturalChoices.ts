@@ -12,17 +12,23 @@ interface Culture {
   growth?: Culture & { minPop: number };
 }
 export interface CulturalChoiceContext {
-  population?: number; phases?: number; zone?: string; recipe?: string; preset?: string;
+  population?: number;
+  phases?: number;
+  zone?: string;
+  recipe?: string;
+  preset?: string;
   params?: Record<string, unknown>;
 }
 export function culturalChoice(culture: string, field: string, context: CulturalChoiceContext = {}): string | undefined {
   const source = (catalogue.cultures as unknown as Record<string, Culture>)[culture];
   if (!source) return undefined;
-  const population = context.population ?? 2500, grown = !!source.growth && population >= source.growth.minPop;
-  const data = grown ? source.growth! : source, plan = { ...data.plan };
-  const phases = population < 1200 ? 1 : context.phases || (data.ring ? [...data.phaseCount ?? []].reverse().find(([threshold]) => population >= threshold)?.[1] ?? 1 : 1);
+  const population = context.population ?? 2500,
+    grown = !!source.growth && population >= source.growth.minPop;
+  const data = grown ? source.growth! : source,
+    plan = { ...data.plan };
+  const phases = population < 1200 ? 1 : context.phases || (data.ring ? ([...(data.phaseCount ?? [])].reverse().find(([threshold]) => population >= threshold)?.[1] ?? 1) : 1);
   const zone = context.zone;
-  let recipe = context.recipe && context.recipe !== 'auto' ? context.recipe : zone ? source.recipes?.find(r => r.zone === zone)?.id ?? 'core' : 'core';
+  let recipe = context.recipe && context.recipe !== 'auto' ? context.recipe : zone ? (source.recipes?.find(r => r.zone === zone)?.id ?? 'core') : 'core';
   const presets = catalogue.presets as unknown as Record<string, { params: Record<string, unknown> }>;
   if (grown && presets[`${culture}/grown-${recipe}`]) recipe = `grown-${recipe}`;
   const preset = context.preset && context.preset !== 'culture' ? context.preset : `${culture}/${recipe}`;
@@ -42,8 +48,8 @@ export function culturalChoice(culture: string, field: string, context: Cultural
     if (form?.form === 'grove') plan.pattern = 'dispersed';
   }
   if (field === 'preset') return preset;
-  if (field === 'tissue') return zone ? String(params.streetOp ?? plan.pattern ?? 'organic') : plan.pattern ?? 'organic';
-  if (field === 'fortification') return plan.fortification === 'auto' ? population >= 1000 ? 'wall' : 'none' : plan.fortification ?? 'none';
+  if (field === 'tissue') return zone ? String(params.streetOp ?? plan.pattern ?? 'organic') : (plan.pattern ?? 'organic');
+  if (field === 'fortification') return plan.fortification === 'auto' ? (population >= 1000 ? 'wall' : 'none') : (plan.fortification ?? 'none');
   if (field === 'axisAlignment') return plan.orientation ?? 'road';
   if (field === 'operator') return params.plotOp === 'burgage' ? 'strips' : typeof params.plotOp === 'string' ? params.plotOp : undefined;
   return undefined;

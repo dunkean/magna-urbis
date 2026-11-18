@@ -8,10 +8,22 @@ import { MORPHOLOGIES } from '../src/gen/urban/morphology';
 
 const P = MORPHOLOGIES['european-organic'];
 const options: BenchOptions = {
-  culture: 'european-organic', zone: 'core', mode: 'micro', microScale: 2.5,
-  microFrontage: 'perimeter', recipe: 'core', placement: 'skew', rings: 2,
-  density: 1, count: 8, radius: 160, monument: 'none', relief: 'hill',
-  reliefSlope: 18, river: 'none', riverWidth: 14,
+  culture: 'european-organic',
+  zone: 'core',
+  mode: 'micro',
+  microScale: 2.5,
+  microFrontage: 'perimeter',
+  recipe: 'core',
+  placement: 'skew',
+  rings: 2,
+  density: 1,
+  count: 8,
+  radius: 160,
+  monument: 'none',
+  relief: 'hill',
+  reliefSlope: 18,
+  river: 'none',
+  riverWidth: 14,
 };
 
 describe('legacy buildPlot with the retained parcel cuts', () => {
@@ -22,7 +34,8 @@ describe('legacy buildPlot with the retained parcel cuts', () => {
     ['courtyard', 189, '5dd9553ebf014cc1bca371f42314b76b975ac371c6cbc8c92afe57037f4b195f'],
   ] as const)('replays the old programme on new %s parcels', (plotOp, count, hash) => {
     const o: BenchOptions = { ...options, stages: { plots: { preset: 'morph/european-organic', params: { plotOp } } } };
-    const layout = benchLayout(o, 'gja3b8'), partition = benchParcels(layout, '1tup5tm', o);
+    const layout = benchLayout(o, 'gja3b8'),
+      partition = benchParcels(layout, '1tup5tm', o);
     const before = JSON.stringify(partition);
     const data = partition.plots.map(({ plot }, i) => buildPlot(structuredClone(plot), 0.9, P, new Rng('rollback:' + i)));
     expect(partition.plots).toHaveLength(count);

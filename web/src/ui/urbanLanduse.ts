@@ -29,16 +29,42 @@ import { generateUrbanLanduse, urbanLanduseRenderWorld, type UrbanLanduseInput, 
 
 /** `biome`: the biome of the map, when the map has one; the panel setting otherwise. */
 type Context = Omit<UrbanLanduseInput, 'biome'> & { biome?: BiomeName };
-interface Settings { seed: string; biome: BiomeName; style: MapStyle; vegetation: VegetationStyle; painted: boolean; opacity: number; visible: boolean; enabled: boolean; hiddenKinds: LandKind[]; showFarms: boolean; visiblePaddocks?: boolean; concreteFieldBoundaries?: boolean }
+interface Settings {
+  seed: string;
+  biome: BiomeName;
+  style: MapStyle;
+  vegetation: VegetationStyle;
+  painted: boolean;
+  opacity: number;
+  visible: boolean;
+  enabled: boolean;
+  hiddenKinds: LandKind[];
+  showFarms: boolean;
+  visiblePaddocks?: boolean;
+  concreteFieldBoundaries?: boolean;
+}
 const biomeLabels = ['Campagne tempérée', 'Forêt', 'Désert et oasis', 'Steppe', 'Forêt tropicale', 'Toundra', 'Outreterre', 'Cavernes'];
 /** Satellite and Illustrated grounds paint every rural class themselves, as on V2.
  * Other grounds draw vegetation classes only for a cartographic look. */
 function overlayLandKinds(r: ReturnType<typeof resolveBenchAppearance>): true | ((kind: LandKind) => boolean) {
   return cityOverlayLandKinds(r);
 }
-const landKinds: [LandKind, string][] = [['forest', 'Forêts'], ['orchard', 'Vergers'], ['field', 'Champs et sillons'], ['garden', 'Jardins'], ['meadow', 'Prairies'], ['pasture', 'Pâturages'], ['marsh', 'Marais'], ['commons', 'Terrains communaux']];
+const landKinds: [LandKind, string][] = [
+  ['forest', 'Forêts'],
+  ['orchard', 'Vergers'],
+  ['field', 'Champs et sillons'],
+  ['garden', 'Jardins'],
+  ['meadow', 'Prairies'],
+  ['pasture', 'Pâturages'],
+  ['marsh', 'Marais'],
+  ['commons', 'Terrains communaux'],
+];
 
-export function createUrbanLanduse(options: { map: SVGSVGElement; before: Element; onChange(): void; onPlanChange?(): void;
+export function createUrbanLanduse(options: {
+  map: SVGSVGElement;
+  before: Element;
+  onChange(): void;
+  onPlanChange?(): void;
   getView(): { view: View; width: number; height: number };
   getBackground(): { image?: HTMLCanvasElement; opacity: number };
   /** Render3D forest owns woodland: hide the cartoon forest fill and canopy, keep farmland. */
@@ -64,8 +90,13 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       for (const key of ['visiblePaddocks', 'concreteFieldBoundaries'] as const) if (saved[key] === true) settings[key] = true;
       if (Number.isFinite(saved.opacity)) settings.opacity = Math.max(0, Math.min(1, saved.opacity));
     }
-  } catch { /* Broken optional settings retain the defaults. */ }
-  const panel = document.createElement('details'); panel.className = 'stage map-group'; panel.id = 'landuseStage'; panel.open = true;
+  } catch {
+    /* Broken optional settings retain the defaults. */
+  }
+  const panel = document.createElement('details');
+  panel.className = 'stage map-group';
+  panel.id = 'landuseStage';
+  panel.open = true;
   panel.innerHTML = `<summary>Occupation des sols</summary><div class="stage-controls" data-map-body>
     <div class="map-line"><span class="map-icon" role="img" aria-label="Occupation des sols" title="Occupation des sols">🌾</span>
       <label class="map-field map-grow" title="Génère l’occupation du territoire à chaque changement du plan. Décoché : rien n’est généré tant que vous ne cliquez pas sur Générer."><input id="landuseEnabled" type="checkbox">auto</label>
@@ -94,70 +125,131 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   localizeCityInspector(panel);
   options.before.parentElement!.insertBefore(panel, options.before);
   let reddit = document.querySelector<HTMLElement>('[data-reddit-rural]');
-  if (!reddit) { reddit = document.createElement('details'); reddit.className = 'advanced'; reddit.innerHTML = '<summary>Options Reddit (27/10)</summary>'; panel.querySelector('.map-detail')!.append(reddit); }
-  reddit.insertAdjacentHTML('beforeend', [
-    ['visiblePaddocks', 'Enclos, pâtures et étables visibles', 'Dessine les clôtures à portail, le bétail et les travées des étables des fermes présentes.'],
-    ['concreteFieldBoundaries', 'Limites agricoles matérialisées', 'Porte les limites des champs par des haies ou fossés et souligne les chemins agricoles existants.'],
-  ].map(([key, label, title]) => `<label title="${title}"><input data-rural-option="${key}" type="checkbox">${label}</label>`).join(''));
+  if (!reddit) {
+    reddit = document.createElement('details');
+    reddit.className = 'advanced';
+    reddit.innerHTML = '<summary>Options Reddit (27/10)</summary>';
+    panel.querySelector('.map-detail')!.append(reddit);
+  }
+  reddit.insertAdjacentHTML(
+    'beforeend',
+    [
+      ['visiblePaddocks', 'Enclos, pâtures et étables visibles', 'Dessine les clôtures à portail, le bétail et les travées des étables des fermes présentes.'],
+      ['concreteFieldBoundaries', 'Limites agricoles matérialisées', 'Porte les limites des champs par des haies ou fossés et souligne les chemins agricoles existants.'],
+    ]
+      .map(([key, label, title]) => `<label title="${title}"><input data-rural-option="${key}" type="checkbox">${label}</label>`)
+      .join(''),
+  );
   const q = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
-  const seed = q<HTMLInputElement>('landuseSeed'), biome = q<HTMLSelectElement>('landuseBiome');
-  const style = q<HTMLSelectElement>('landuseStyle'), painted = q<HTMLInputElement>('landusePainted');
+  const seed = q<HTMLInputElement>('landuseSeed'),
+    biome = q<HTMLSelectElement>('landuseBiome');
+  const style = q<HTMLSelectElement>('landuseStyle'),
+    painted = q<HTMLInputElement>('landusePainted');
   const vegetation = q<HTMLSelectElement>('landuseVegetation');
-  const opacity = q<HTMLInputElement>('landuseOpacity'), visible = q<HTMLInputElement>('showLanduse');
-  opacity.dataset.renderDefault = '1'; visible.dataset.renderDefault = 'true';
-  const panelVisible = q<HTMLInputElement>('landuseVisible'), farms = q<HTMLInputElement>('landuseFarms');
-  panelVisible.dataset.renderDefault = 'true'; farms.dataset.renderDefault = 'true';
+  const opacity = q<HTMLInputElement>('landuseOpacity'),
+    visible = q<HTMLInputElement>('showLanduse');
+  opacity.dataset.renderDefault = '1';
+  visible.dataset.renderDefault = 'true';
+  const panelVisible = q<HTMLInputElement>('landuseVisible'),
+    farms = q<HTMLInputElement>('landuseFarms');
+  panelVisible.dataset.renderDefault = 'true';
+  farms.dataset.renderDefault = 'true';
   const enabled = q<HTMLInputElement>('landuseEnabled');
-  const button = q<HTMLButtonElement>('landuseGenerate'), status = q<HTMLElement>('landuseStatus');
+  const button = q<HTMLButtonElement>('landuseGenerate'),
+    status = q<HTMLElement>('landuseStatus');
   let layer = options.map.querySelector<SVGGElement>('#landuseLayer');
-  if (!layer) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.id = 'landuseLayer'; }
+  if (!layer) {
+    layer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    layer.id = 'landuseLayer';
+  }
   const landuseLayer = layer;
   landuseLayer.style.pointerEvents = 'none';
   biome.replaceChildren(...BIOME_NAMES.map((id, i) => new Option(biomeLabels[i], id)));
   style.replaceChildren(...STYLE_LIST.map(s => new Option(s.label, s.id)));
-  seed.value = settings.seed; biome.value = settings.biome; style.value = settings.style;
-  painted.checked = settings.painted; opacity.value = String(settings.opacity); visible.checked = settings.visible;
+  seed.value = settings.seed;
+  biome.value = settings.biome;
+  style.value = settings.style;
+  painted.checked = settings.painted;
+  opacity.value = String(settings.opacity);
+  visible.checked = settings.visible;
   enabled.checked = settings.enabled;
-  panelVisible.checked = settings.visible; farms.checked = settings.showFarms;
+  panelVisible.checked = settings.visible;
+  farms.checked = settings.showFarms;
   const landKindInputs = Array.from(panel.querySelectorAll<HTMLInputElement>('[data-land-kind]'));
   for (const box of landKindInputs) {
     box.dataset.renderDefault = 'true';
     box.checked = !settings.hiddenKinds.includes(box.dataset.landKind as LandKind);
     box.onchange = () => {
       settings.hiddenKinds = landKindInputs.filter(b => !b.checked).map(b => b.dataset.landKind as LandKind);
-      renderWorld = undefined; renderScene = undefined; draw(); options.onChange();
+      renderWorld = undefined;
+      renderScene = undefined;
+      draw();
+      options.onChange();
     };
   }
-  vegetation.value = settings.vegetation; vegetation.disabled = settings.painted;
+  vegetation.value = settings.vegetation;
+  vegetation.disabled = settings.painted;
   const active = (): boolean => settings.enabled || manual;
-  let context: Context | undefined, waiting = false, scene: UrbanLanduseScene | undefined;
+  let context: Context | undefined,
+    waiting = false,
+    scene: UrbanLanduseScene | undefined;
   let sample: ReturnType<typeof fantasyLanduseSample> | undefined;
-  let worker: Worker | undefined, fallback = false, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
-  let previous: Context | undefined, previousKey = '', previousWaiting = false;
+  let worker: Worker | undefined,
+    fallback = false,
+    id = 0,
+    timer: ReturnType<typeof setTimeout> | undefined;
+  let previous: Context | undefined,
+    previousKey = '',
+    previousWaiting = false;
   let v1Style: V1LandscapeStyle | undefined;
-  let applied = false, requested = false, withoutForest = false;
+  let applied = false,
+    requested = false,
+    withoutForest = false;
   let renderer: CanvasRenderer | undefined, renderWorld: World | undefined, renderScene: Scene | undefined;
-  let canvas: HTMLCanvasElement | undefined, host: SVGForeignObjectElement | undefined, frame = 0, rendererDpr = 1;
+  let canvas: HTMLCanvasElement | undefined,
+    host: SVGForeignObjectElement | undefined,
+    frame = 0,
+    rendererDpr = 1;
   let brushImages: BrushImages | undefined, brushPromise: Promise<void> | undefined;
-  let groundRevision = 0, renderMaskKey = '';
+  let groundRevision = 0,
+    renderMaskKey = '';
   /** One ground painter reused across 3D tiles: its path, furrow and forest-wash caches outlive a tile. */
   let groundPainter: { world: World; scene: Scene | undefined; key: string; canvas: HTMLCanvasElement; painter: CanvasRenderer } | undefined;
 
   function state(text: string, busy = false): void {
-    status.textContent = text; button.setAttribute('aria-busy', String(busy));
+    status.textContent = text;
+    button.setAttribute('aria-busy', String(busy));
   }
   function summary(stats: UrbanLanduseScene['stats']): string {
-    return `${stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])} · ${stats.fieldHa ?? 0} ${urbanText(['ha cultivés','ha cultivated','公顷耕地','ha cultivadas','ha cultivados'])} · ${stats.strips ?? 0} ${urbanText(['bandes','strips','条带','franjas','faixas'])} · ${stats.ms} ms`;
+    return `${stats.areas} ${urbanText(['zones', 'zones', '个区域', 'zonas', 'zonas'])} · ${stats.fieldHa ?? 0} ${urbanText(['ha cultivés', 'ha cultivated', '公顷耕地', 'ha cultivadas', 'ha cultivados'])} · ${stats.strips ?? 0} ${urbanText(['bandes', 'strips', '条带', 'franjas', 'faixas'])} · ${stats.ms} ms`;
   }
   const refreshLocale = (): void => {
-    const styles: Record<string, readonly [string,string,string,string,string]> = { parchment:['Parchemin','Parchment','羊皮纸','Pergamino','Pergaminho'], atlas:['Atlas','Atlas','图集','Atlas','Atlas'], watabou:['Simple (classique)','Plain (classic)','简洁（经典）','Sencillo (clásico)','Simples (clássico)'], engraving:['Gravure','Engraving','版画','Grabado','Gravura'], cadastre:['Cadastre 1:1250','Cadastre 1:1250','地籍图 1:1250','Catastro 1:1250','Cadastro 1:1250'], blueprint:['Plan bleu','Blueprint','蓝图','Plano azul','Planta azul'], illuminated:['Enluminé','Illuminated','手抄本','Iluminado','Iluminado'], topographic:['Topographique','Topographic','地形图','Topográfico','Topográfico'], night:['Nuit','Night','夜间','Noche','Noite'] };
+    const styles: Record<string, readonly [string, string, string, string, string]> = {
+      parchment: ['Parchemin', 'Parchment', '羊皮纸', 'Pergamino', 'Pergaminho'],
+      atlas: ['Atlas', 'Atlas', '图集', 'Atlas', 'Atlas'],
+      watabou: ['Simple (classique)', 'Plain (classic)', '简洁（经典）', 'Sencillo (clásico)', 'Simples (clássico)'],
+      engraving: ['Gravure', 'Engraving', '版画', 'Grabado', 'Gravura'],
+      cadastre: ['Cadastre 1:1250', 'Cadastre 1:1250', '地籍图 1:1250', 'Catastro 1:1250', 'Cadastro 1:1250'],
+      blueprint: ['Plan bleu', 'Blueprint', '蓝图', 'Plano azul', 'Planta azul'],
+      illuminated: ['Enluminé', 'Illuminated', '手抄本', 'Iluminado', 'Iluminado'],
+      topographic: ['Topographique', 'Topographic', '地形图', 'Topográfico', 'Topográfico'],
+      night: ['Nuit', 'Night', '夜间', 'Noche', 'Noite'],
+    };
     for (const option of Array.from(style.options)) if (styles[option.value]) option.textContent = urbanText(styles[option.value]);
-    if (scene && active()) { q('landuseState').textContent = `${scene.stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}`; if (button.getAttribute('aria-busy') !== 'true') status.textContent = summary(scene.stats); }
-    else if (button.getAttribute('aria-busy') !== 'true' && !active()) status.textContent = urbanText(['Auto désactivé : ouvrez ⚙ et cliquez sur Générer.','Auto disabled: open ⚙ and click Generate.','自动模式已禁用：打开 ⚙ 并点击生成。','Auto desactivado: abre ⚙ y pulsa Generar.','Auto desativado: abra ⚙ e clique em Gerar.']);
-    else if (button.getAttribute('aria-busy') !== 'true' && (!context || waiting)) status.textContent = context ? urbanText(['En attente des quartiers…','Waiting for districts…','等待街区…','Esperando los barrios…','Aguardando os bairros…']) : urbanText(['En attente du décor…','Waiting for the decor…','等待场景…','Esperando el decor…','Aguardando o decor…']);
+    if (scene && active()) {
+      q('landuseState').textContent = `${scene.stats.areas} ${urbanText(['zones', 'zones', '个区域', 'zonas', 'zonas'])}`;
+      if (button.getAttribute('aria-busy') !== 'true') status.textContent = summary(scene.stats);
+    } else if (button.getAttribute('aria-busy') !== 'true' && !active())
+      status.textContent = urbanText(['Auto désactivé : ouvrez ⚙ et cliquez sur Générer.', 'Auto disabled: open ⚙ and click Generate.', '自动模式已禁用：打开 ⚙ 并点击生成。', 'Auto desactivado: abre ⚙ y pulsa Generar.', 'Auto desativado: abra ⚙ e clique em Gerar.']);
+    else if (button.getAttribute('aria-busy') !== 'true' && (!context || waiting))
+      status.textContent = context
+        ? urbanText(['En attente des quartiers…', 'Waiting for districts…', '等待街区…', 'Esperando los barrios…', 'Aguardando os bairros…'])
+        : urbanText(['En attente du décor…', 'Waiting for the decor…', '等待场景…', 'Esperando el decor…', 'Aguardando o decor…']);
   };
   window.addEventListener('magna-locale-change', refreshLocale);
-  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) refreshLocale(); });
+  window.addEventListener('storage', event => {
+    if (event.key === LOCALE_KEY) refreshLocale();
+  });
   refreshLocale();
   function visibility(): void {
     // Terrain redraws replace the SVG children. Restore this retained overlay
@@ -167,40 +259,73 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     const painting = options.map.querySelector('#fantasyPainting');
     // The painting is lazily appended by the terrain renderer.
     if (painting && painting.nextSibling !== landuseLayer) options.map.insertBefore(painting, landuseLayer);
-    landuseLayer.style.display = active() && settings.visible ? '' : 'none'; landuseLayer.setAttribute('opacity', String(settings.opacity));
+    landuseLayer.style.display = active() && settings.visible ? '' : 'none';
+    landuseLayer.setAttribute('opacity', String(settings.opacity));
   }
   function draw(): void {
     groundRevision++;
-    const appearance = resolveBenchAppearance(), composition = appearance.composition;
+    const appearance = resolveBenchAppearance(),
+      composition = appearance.composition;
     const maskKey = cityOverlayLandKey(appearance);
-    if (renderMaskKey !== maskKey) { renderMaskKey = maskKey; renderScene = undefined; }
+    if (renderMaskKey !== maskKey) {
+      renderMaskKey = maskKey;
+      renderScene = undefined;
+    }
     visibility();
-    renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
-    if (!active() || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
+    renderer?.dispose();
+    renderer = undefined;
+    cancelAnimationFrame(frame);
+    if (!active() || !scene || !context) {
+      landuseLayer.replaceChildren();
+      canvas = undefined;
+      host = undefined;
+      renderWorld = undefined;
+      renderScene = undefined;
+      return;
+    }
     if (!canvas) {
       const ring = (r: { x: number; y: number }[]): string => r.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join('') + 'Z';
       const water = cityWaterCutsLand(appearance) ? context.raster.geometry?.water : undefined;
-      if (water?.length) {   // dry land = the world rectangle minus the vector water (evenodd): smooth edges, no raster staircase
-        const w = context.raster.width, rings = water.flatMap(g => g.filter(r => r.length >= 3)).map(ring).join('');
+      if (water?.length) {
+        // dry land = the world rectangle minus the vector water (evenodd): smooth edges, no raster staircase
+        const w = context.raster.width,
+          rings = water
+            .flatMap(g => g.filter(r => r.length >= 3))
+            .map(ring)
+            .join('');
         landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><path d="M0,0H${w}V${w}H0Z${rings}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
       } else {
-        const dry = new CityGround(context.raster).land().flatMap(s => [s.outer, ...s.holes]).map(r => ring(r)).join('');
+        const dry = new CityGround(context.raster)
+          .land()
+          .flatMap(s => [s.outer, ...s.holes])
+          .map(r => ring(r))
+          .join('');
         landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><path d="${dry}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
       }
       host = landuseLayer.querySelector('foreignObject')!;
-      canvas = document.createElement('canvas'); canvas.id = 'landuseCanvas'; canvas.style.display = 'block'; host.append(canvas);
+      canvas = document.createElement('canvas');
+      canvas.id = 'landuseCanvas';
+      canvas.style.display = 'block';
+      host.append(canvas);
     }
-    if (withoutForest !== (!v1Style && !!options.forestMaterial?.())) { withoutForest = !withoutForest; renderWorld = undefined; renderScene = undefined; }
-    renderWorld ??= urbanLanduseRenderWorld({ ...scene, landuse: scene.landuse && { ...scene.landuse,
-      areas: scene.landuse.areas.filter(a => !settings.hiddenKinds.includes(a.kind) && !(withoutForest && a.kind === 'forest')),
-      farmsteads: settings.showFarms ? scene.landuse.farmsteads : [] } }, context.raster);
-    if (renderWorld.landuse && (settings.visiblePaddocks || settings.concreteFieldBoundaries)) (renderWorld.landuse as RuralRenderLayer).ruralDetails = {
-      visiblePaddocks: settings.visiblePaddocks, concreteFieldBoundaries: settings.concreteFieldBoundaries };
+    if (withoutForest !== (!v1Style && !!options.forestMaterial?.())) {
+      withoutForest = !withoutForest;
+      renderWorld = undefined;
+      renderScene = undefined;
+    }
+    renderWorld ??= urbanLanduseRenderWorld(
+      { ...scene, landuse: scene.landuse && { ...scene.landuse, areas: scene.landuse.areas.filter(a => !settings.hiddenKinds.includes(a.kind) && !(withoutForest && a.kind === 'forest')), farmsteads: settings.showFarms ? scene.landuse.farmsteads : [] } },
+      context.raster,
+    );
+    if (renderWorld.landuse && (settings.visiblePaddocks || settings.concreteFieldBoundaries)) (renderWorld.landuse as RuralRenderLayer).ruralDetails = { visiblePaddocks: settings.visiblePaddocks, concreteFieldBoundaries: settings.concreteFieldBoundaries };
     const pal = { ...biomePalette(appearance.palette.mapStyle, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
-    renderer = createCanvasRenderer(canvas, renderWorld, pal, { colors: getBenchRenderColors(),
-      dpr: rendererDpr, scene: renderScene, ...cityCountrysideCanvasOptions(appearance, scene.mapSize),
+    renderer = createCanvasRenderer(canvas, renderWorld, pal, {
+      colors: getBenchRenderColors(),
+      dpr: rendererDpr,
+      scene: renderScene,
+      ...cityCountrysideCanvasOptions(appearance, scene.mapSize),
       brushes: composition.vegetation.painted ? brushImages : undefined,
       terrain: () => {
         if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
@@ -208,93 +333,159 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
         if (composition.variant === 'parchment' && appearance.ground.layers.relief) return v1LandCanvas(context!.raster, 'parchment', scene!.options.biome);
         if (!background.image || background.opacity <= 0) return null;
         if (background.opacity === 1) return background.image;
-        const base = document.createElement('canvas'); base.width = background.image.width; base.height = background.image.height;
-        const ctx = base.getContext('2d')!; ctx.fillStyle = pal.paper; ctx.fillRect(0, 0, base.width, base.height);
-        ctx.globalAlpha = background.opacity; ctx.drawImage(background.image, 0, 0); return base;
+        const base = document.createElement('canvas');
+        base.width = background.image.width;
+        base.height = background.image.height;
+        const ctx = base.getContext('2d')!;
+        ctx.fillStyle = pal.paper;
+        ctx.fillRect(0, 0, base.width, base.height);
+        ctx.globalAlpha = background.opacity;
+        ctx.drawImage(background.image, 0, 0);
+        return base;
       },
     });
-    renderScene = renderer.scene; renderer.setOverlays({ labels: false, legend: false, cartouche: false });
+    renderScene = renderer.scene;
+    renderer.setOverlays({ labels: false, legend: false, cartouche: false });
     updateView();
-    if (composition.vegetation.painted && !brushPromise) brushPromise = decodeBrushes(BRUSH_SOURCES).then(images => {
-      brushImages = images ?? undefined; if (resolveBenchAppearance().composition.vegetation.painted && brushImages) draw();
-    });
+    if (composition.vegetation.painted && !brushPromise)
+      brushPromise = decodeBrushes(BRUSH_SOURCES).then(images => {
+        brushImages = images ?? undefined;
+        if (resolveBenchAppearance().composition.vegetation.painted && brushImages) draw();
+      });
   }
   function updateView(): void {
     visibility();
     cancelAnimationFrame(frame);
     if (!renderer || !canvas || !host || !active() || !settings.visible) return;
-    if (rendererDpr !== (window.devicePixelRatio || 1)) { draw(); return; }
-    const { view, width, height } = options.getView(), w = width / view.scale, h = height / view.scale;
-    host.setAttribute('x', String(view.cx - w / 2)); host.setAttribute('y', String(view.cy - h / 2));
-    host.setAttribute('width', String(w)); host.setAttribute('height', String(h));
-    canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
-    const cw = Math.max(1, Math.round(width * rendererDpr)), ch = Math.max(1, Math.round(height * rendererDpr));
+    if (rendererDpr !== (window.devicePixelRatio || 1)) {
+      draw();
+      return;
+    }
+    const { view, width, height } = options.getView(),
+      w = width / view.scale,
+      h = height / view.scale;
+    host.setAttribute('x', String(view.cx - w / 2));
+    host.setAttribute('y', String(view.cy - h / 2));
+    host.setAttribute('width', String(w));
+    host.setAttribute('height', String(h));
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    const cw = Math.max(1, Math.round(width * rendererDpr)),
+      ch = Math.max(1, Math.round(height * rendererDpr));
     if (canvas.width !== cw) canvas.width = cw;
     if (canvas.height !== ch) canvas.height = ch;
     frame = requestAnimationFrame(() => {
       renderer?.draw(view);
       if (canvas && context) {
         feedLanduse(canvas, view.cx - w / 2, view.cy - h / 2, w, h, context.raster.width);
-        const ctx = canvas.getContext('2d')!, s = resolveBenchAppearance().composition.landuse, k = view.scale * rendererDpr;
-        ctx.save(); ctx.setTransform(k, 0, 0, k, (width / 2 - view.cx * view.scale) * rendererDpr, (height / 2 - view.cy * view.scale) * rendererDpr);
+        const ctx = canvas.getContext('2d')!,
+          s = resolveBenchAppearance().composition.landuse,
+          k = view.scale * rendererDpr;
+        ctx.save();
+        ctx.setTransform(k, 0, 0, k, (width / 2 - view.cx * view.scale) * rendererDpr, (height / 2 - view.cy * view.scale) * rendererDpr);
         drawRuralSemantic(ctx, scene?.landuse, { look: s.rural, opacity: s.opacity, classes: s.classes, mpp: 1 / view.scale, viewport: { minX: view.cx - w / 2, minY: view.cy - h / 2, maxX: view.cx + w / 2, maxY: view.cy + h / 2 } });
         ctx.restore();
       }
     });
   }
   function cancel(): void {
-    ++id; clearTimeout(timer); worker?.terminate(); worker = undefined;
+    ++id;
+    clearTimeout(timer);
+    worker?.terminate();
+    worker = undefined;
   }
   function receive(response: UrbanLanduseResponse): void {
     if (response.id !== id) return;
-    worker?.terminate(); worker = undefined;
-    if ('error' in response) { state(`${urbanText(['Occupation du territoire','Land use','土地利用','Uso del territorio','Uso do território'])} : ${response.error}`); return; }
-    scene = response.scene; applied = requested; renderWorld = undefined; renderScene = undefined; draw(); notify();
+    worker?.terminate();
+    worker = undefined;
+    if ('error' in response) {
+      state(`${urbanText(['Occupation du territoire', 'Land use', '土地利用', 'Uso del territorio', 'Uso do território'])} : ${response.error}`);
+      return;
+    }
+    scene = response.scene;
+    applied = requested;
+    renderWorld = undefined;
+    renderScene = undefined;
+    draw();
+    notify();
     const stats = scene.stats;
-    q('landuseState').textContent = `${stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}`;
+    q('landuseState').textContent = `${stats.areas} ${urbanText(['zones', 'zones', '个区域', 'zonas', 'zonas'])}`;
     state(summary(stats));
   }
   function generate(): void {
     cancel();
     if (!active() || !context || waiting) return;
     scene = undefined;
-    notify(); draw();
-    const streetAlignedHomes = context.ruralOptions?.streetAlignedHomes, denserSmallholdings = context.ruralOptions?.denserSmallholdings, fieldEnclosure = context.ruralOptions?.fieldEnclosure, fieldMaterial = context.ruralOptions?.fieldMaterial;
-    const request = { id, input: { ...context, runtime: executionRuntime, seed: settings.seed || context.seed, biome: isUnderdarkBiome(settings.biome) ? settings.biome : context.biome ?? settings.biome,
-      ...((streetAlignedHomes || denserSmallholdings || fieldEnclosure !== undefined) ? { ruralOptions: { streetAlignedHomes, denserSmallholdings, fieldEnclosure, fieldMaterial } } : {}) } };
+    notify();
+    draw();
+    const streetAlignedHomes = context.ruralOptions?.streetAlignedHomes,
+      denserSmallholdings = context.ruralOptions?.denserSmallholdings,
+      fieldEnclosure = context.ruralOptions?.fieldEnclosure,
+      fieldMaterial = context.ruralOptions?.fieldMaterial;
+    const request = {
+      id,
+      input: {
+        ...context,
+        runtime: executionRuntime,
+        seed: settings.seed || context.seed,
+        biome: isUnderdarkBiome(settings.biome) ? settings.biome : (context.biome ?? settings.biome),
+        ...(streetAlignedHomes || denserSmallholdings || fieldEnclosure !== undefined ? { ruralOptions: { streetAlignedHomes, denserSmallholdings, fieldEnclosure, fieldMaterial } } : {}),
+      },
+    };
     requested = !!request.input.city;
-    state(urbanText(['Génération des champs et de la végétation…','Generating fields and vegetation…','正在生成田地和植被…','Generando campos y vegetación…','Gerando campos e vegetação…']), true);
+    state(urbanText(['Génération des champs et de la végétation…', 'Generating fields and vegetation…', '正在生成田地和植被…', 'Generando campos y vegetación…', 'Gerando campos e vegetação…']), true);
     const runFallback = (): void => {
-      worker?.terminate(); worker = undefined; fallback = true;
+      worker?.terminate();
+      worker = undefined;
+      fallback = true;
       // Give the browser a frame to display the busy state, including file:// without workers.
       timer = setTimeout(async () => {
         if (request.id !== id) return;
-        try { receive({ id: request.id, scene: await generateUrbanLanduse(request.input) }); }
-        catch (error) { receive({ id: request.id, error: String(error) }); }
+        try {
+          receive({ id: request.id, scene: await generateUrbanLanduse(request.input) });
+        } catch (error) {
+          receive({ id: request.id, error: String(error) });
+        }
       }, 0);
     };
-    if (fallback) { runFallback(); return; }
+    if (fallback) {
+      runFallback();
+      return;
+    }
     try {
-      worker = new LanduseWorker(); worker.onmessage = (event: MessageEvent<UrbanLanduseResponse>) => receive(event.data);
-      worker.onerror = event => { event.preventDefault(); if (request.id === id) runFallback(); };
+      worker = new LanduseWorker();
+      worker.onmessage = (event: MessageEvent<UrbanLanduseResponse>) => receive(event.data);
+      worker.onerror = event => {
+        event.preventDefault();
+        if (request.id === id) runFallback();
+      };
       // Structured cloning keeps the decor's retained buffers available to the other stages.
       worker.postMessage(request);
-    } catch { runFallback(); }
+    } catch {
+      runFallback();
+    }
   }
   function schedule(): void {
     button.disabled = !context || waiting;
     visible.disabled = !active();
     panelVisible.disabled = !active();
-    if (!active()) { q('landuseState').textContent = ''; state(urbanText(['Auto désactivé : ouvrez ⚙ et cliquez sur Générer.','Auto disabled: open ⚙ and click Generate.','自动模式已禁用：打开 ⚙ 并点击生成。','Auto desactivado: abre ⚙ y pulsa Generar.','Auto desativado: abra ⚙ e clique em Gerar.'])); return; }
-    q('landuseState').textContent = scene ? `${scene.stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}` : '';
-    if (!context || waiting) { state(context ? urbanText(['En attente des quartiers…','Waiting for districts…','等待街区…','Esperando los barrios…','Aguardando os bairros…']) : urbanText(['En attente du décor…','Waiting for the decor…','等待场景…','Esperando el decor…','Aguardando o decor…'])); return; }
+    if (!active()) {
+      q('landuseState').textContent = '';
+      state(urbanText(['Auto désactivé : ouvrez ⚙ et cliquez sur Générer.', 'Auto disabled: open ⚙ and click Generate.', '自动模式已禁用：打开 ⚙ 并点击生成。', 'Auto desactivado: abre ⚙ y pulsa Generar.', 'Auto desativado: abra ⚙ e clique em Gerar.']));
+      return;
+    }
+    q('landuseState').textContent = scene ? `${scene.stats.areas} ${urbanText(['zones', 'zones', '个区域', 'zonas', 'zonas'])}` : '';
+    if (!context || waiting) {
+      state(context ? urbanText(['En attente des quartiers…', 'Waiting for districts…', '等待街区…', 'Esperando los barrios…', 'Aguardando os bairros…']) : urbanText(['En attente du décor…', 'Waiting for the decor…', '等待场景…', 'Esperando el decor…', 'Aguardando o decor…']));
+      return;
+    }
     if (scene) {
-      q('landuseState').textContent = `${scene.stats.areas} ${urbanText(['zones','zones','个区域','zonas','zonas'])}`;
+      q('landuseState').textContent = `${scene.stats.areas} ${urbanText(['zones', 'zones', '个区域', 'zonas', 'zonas'])}`;
       state(summary(scene.stats));
       return;
     }
     q('landuseState').textContent = '';
-    state(urbanText(['Préparation des paysages…','Preparing landscapes…','正在准备景观…','Preparando paisajes…','Preparando paisagens…']), true);
+    state(urbanText(['Préparation des paysages…', 'Preparing landscapes…', '正在准备景观…', 'Preparando paisajes…', 'Preparando paisagens…']), true);
     timer = setTimeout(generate, 120);
   }
   function notify(): void {
@@ -303,27 +494,71 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     options.onScene?.(active() ? scene : undefined, applied);
   }
   enabled.onchange = () => {
-    settings.enabled = enabled.checked; if (settings.enabled) manual = false; cancel(); draw(); notify(); schedule(); options.onChange();
+    settings.enabled = enabled.checked;
+    if (settings.enabled) manual = false;
+    cancel();
+    draw();
+    notify();
+    schedule();
+    options.onChange();
   };
   button.onclick = () => {
-    settings.seed = seed.value.trim(); settings.biome = biome.value as BiomeName;
-    manual = true; options.onChange(); generate();
+    settings.seed = seed.value.trim();
+    settings.biome = biome.value as BiomeName;
+    manual = true;
+    options.onChange();
+    generate();
   };
-  window.addEventListener('bench-render-colors-change', () => { draw(); });
-  style.onchange = () => { settings.style = style.value as MapStyle; draw(); options.onChange(); };
-  vegetation.onchange = () => { settings.vegetation = vegetation.value as VegetationStyle; draw(); options.onChange(); };
-  painted.onchange = () => { settings.painted = painted.checked; vegetation.disabled = settings.painted; draw(); options.onChange(); };
-  opacity.oninput = () => { settings.opacity = Number(opacity.value); visibility(); options.onChange(); };
-  const setVisible = (value: boolean): void => { settings.visible = value; visible.checked = value; panelVisible.checked = value; visibility(); updateView(); options.onChange(); };
+  window.addEventListener('bench-render-colors-change', () => {
+    draw();
+  });
+  style.onchange = () => {
+    settings.style = style.value as MapStyle;
+    draw();
+    options.onChange();
+  };
+  vegetation.onchange = () => {
+    settings.vegetation = vegetation.value as VegetationStyle;
+    draw();
+    options.onChange();
+  };
+  painted.onchange = () => {
+    settings.painted = painted.checked;
+    vegetation.disabled = settings.painted;
+    draw();
+    options.onChange();
+  };
+  opacity.oninput = () => {
+    settings.opacity = Number(opacity.value);
+    visibility();
+    options.onChange();
+  };
+  const setVisible = (value: boolean): void => {
+    settings.visible = value;
+    visible.checked = value;
+    panelVisible.checked = value;
+    visibility();
+    updateView();
+    options.onChange();
+  };
   visible.onchange = () => setVisible(visible.checked);
   panelVisible.onchange = () => setVisible(panelVisible.checked);
-  farms.onchange = () => { settings.showFarms = farms.checked; renderWorld = undefined; renderScene = undefined; draw(); options.onChange(); };
+  farms.onchange = () => {
+    settings.showFarms = farms.checked;
+    renderWorld = undefined;
+    renderScene = undefined;
+    draw();
+    options.onChange();
+  };
   for (const box of Array.from(reddit.querySelectorAll<HTMLInputElement>('[data-rural-option]'))) {
     const key = box.dataset.ruralOption as 'visiblePaddocks' | 'concreteFieldBoundaries';
     box.checked = !!settings[key];
     box.onchange = () => {
-      if (box.checked) settings[key] = true; else delete settings[key];
-      renderWorld = undefined; renderScene = undefined; draw();
+      if (box.checked) settings[key] = true;
+      else delete settings[key];
+      renderWorld = undefined;
+      renderScene = undefined;
+      draw();
       options.onChange();
     };
   }
@@ -333,51 +568,97 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     draw();
   });
   // This module is lazy-loaded after the urban view may already be selected.
-  const selectedV1 = options.map.querySelector<HTMLButtonElement>('[data-urban-view="v1"][aria-pressed="true"]')
-    ?? document.querySelector<HTMLButtonElement>('[data-urban-view="v1"][aria-pressed="true"]');
+  const selectedV1 = options.map.querySelector<HTMLButtonElement>('[data-urban-view="v1"][aria-pressed="true"]') ?? document.querySelector<HTMLButtonElement>('[data-urban-view="v1"][aria-pressed="true"]');
   if (selectedV1) v1Style = document.querySelector<HTMLSelectElement>('[data-v1-style]')?.value === 'atlas' ? 'atlas' : 'parchment';
-  visibility(); schedule();
-  window.addEventListener('bench-composition-change', () => { if (benchOverlayChange()) return; renderWorld = undefined; renderScene = undefined; draw(); });
+  visibility();
+  schedule();
+  window.addEventListener('bench-composition-change', () => {
+    if (benchOverlayChange()) return;
+    renderWorld = undefined;
+    renderScene = undefined;
+    draw();
+  });
   return {
-    get landuse() { return active() ? scene?.landuse : undefined; },
-    get groundRevision() { return groundRevision; },
+    get landuse() {
+      return active() ? scene?.landuse : undefined;
+    },
+    get groundRevision() {
+      return groundRevision;
+    },
     drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {
       if (!active() || !settings.visible || !renderWorld || !scene) return;
-      const r = resolveBenchAppearance(), painted = r.composition.vegetation.painted && !!brushImages;
+      const r = resolveBenchAppearance(),
+        painted = r.composition.vegetation.painted && !!brushImages;
       const key = JSON.stringify([r.palette.mapStyle, scene.options.biome, r.palette.colors, r.vegetation.symbols, painted, r.composition.vegetation.cartographic, r.ground.traits.fantasy, r.ground.traits.satelliteVariant, r.ground.traits.paperMap]);
       if (!groundPainter || groundPainter.world !== renderWorld || groundPainter.scene !== renderScene || groundPainter.key !== key) {
         groundPainter?.painter.dispose();
-        const target = document.createElement('canvas'); target.width = target.height = size;
-        const painter = createCanvasRenderer(target, renderWorld, { ...biomePalette(r.palette.mapStyle, scene.options.biome), frameKind: 'none' }, {
-          colors: r.palette.colors, dpr: 1, scene: renderScene, transparentBackground: true, raster: false, terrain: () => null,
-          vegetation: r.vegetation.symbols, brushes: painted ? brushImages : undefined,
-          mask: { landuse: overlayLandKinds(r) },
-          furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
-        });
+        const target = document.createElement('canvas');
+        target.width = target.height = size;
+        const painter = createCanvasRenderer(
+          target,
+          renderWorld,
+          { ...biomePalette(r.palette.mapStyle, scene.options.biome), frameKind: 'none' },
+          {
+            colors: r.palette.colors,
+            dpr: 1,
+            scene: renderScene,
+            transparentBackground: true,
+            raster: false,
+            terrain: () => null,
+            vegetation: r.vegetation.symbols,
+            brushes: painted ? brushImages : undefined,
+            mask: { landuse: overlayLandKinds(r) },
+            furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
+          },
+        );
         painter.setOverlays({ labels: false, legend: false, cartouche: false });
         groundPainter = { world: renderWorld, scene: renderScene, key, canvas: target, painter };
       }
       const { canvas: target, painter } = groundPainter;
       if (target.width !== size) target.width = target.height = size;
       painter.draw({ cx: region.x + region.width / 2, cy: region.y + region.width / 2, scale: size / region.width });
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(target, 0, 0); ctx.restore();
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(target, 0, 0);
+      ctx.restore();
     },
-    get sample() { return sample; },
+    get sample() {
+      return sample;
+    },
     updateView,
     refreshBackground: draw,
     /** Re-evaluate the Render3D forest suppression after a style or forest change. */
-    refreshForest(): void { if (withoutForest !== (!v1Style && !!options.forestMaterial?.())) draw(); },
+    refreshForest(): void {
+      if (withoutForest !== (!v1Style && !!options.forestMaterial?.())) draw();
+    },
     set(next?: Context, pending = false): void {
-      context = next; waiting = pending;
-      const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief, ruralOptions: next.ruralOptions,
-        forest: next.forest?.key ?? (next.forest && { seed: next.forest.input?.seed,
-          climate: next.forest.input?.climate, settings: next.forest.settings }) }) : '';
+      context = next;
+      waiting = pending;
+      const key = next
+        ? JSON.stringify({
+            seed: next.seed,
+            city: next.city,
+            neighbours: next.neighbours,
+            relief: next.relief,
+            ruralOptions: next.ruralOptions,
+            forest: next.forest?.key ?? (next.forest && { seed: next.forest.input?.seed, climate: next.forest.input?.climate, settings: next.forest.settings }),
+          })
+        : '';
       if (next?.raster === previous?.raster && next?.layouts === previous?.layouts && next?.roads === previous?.roads && key === previousKey && pending === previousWaiting) return;
       const samePlan = next?.raster === previous?.raster && next?.layouts === previous?.layouts && next?.roads === previous?.roads;
-      previous = next; previousKey = key; previousWaiting = pending;
-      cancel(); manual = manual && samePlan; scene = undefined; draw(); notify(); q('landuseState').textContent = '';
+      previous = next;
+      previousKey = key;
+      previousWaiting = pending;
+      cancel();
+      manual = manual && samePlan;
+      scene = undefined;
+      draw();
+      notify();
+      q('landuseState').textContent = '';
       schedule();
     },
-    share(params: URLSearchParams): void { params.set('landuse', JSON.stringify(settings)); },
+    share(params: URLSearchParams): void {
+      params.set('landuse', JSON.stringify(settings));
+    },
   };
 }

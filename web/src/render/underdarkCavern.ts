@@ -20,11 +20,12 @@ export interface UnderdarkCavern3d {
   /** Modelled mushrooms: 0 none, 1 the default abundance, up to 2. */
   fungi: number;
 }
-export const UNDERDARK_CAVERN_DEFAULTS: Readonly<UnderdarkCavern3d> = Object.freeze({ roof: 40, darkness: .45, fungi: 1 });
+export const UNDERDARK_CAVERN_DEFAULTS: Readonly<UnderdarkCavern3d> = Object.freeze({ roof: 40, darkness: 0.45, fungi: 1 });
 export const UNDERDARK_CAVERN_LIMITS = { roof: [10, 150], darkness: [0, 1], fungi: [0, 2] } as const;
 /** The recipe's 3D Underdark parameters, each defaulted. */
 export function underdarkCavernOf(recipe: Pick<CompositionRecipe, 'effects'> | undefined): UnderdarkCavern3d {
-  const u = recipe?.effects.underdark, d = UNDERDARK_CAVERN_DEFAULTS;
+  const u = recipe?.effects.underdark,
+    d = UNDERDARK_CAVERN_DEFAULTS;
   const pick = (v: number | undefined, key: keyof UnderdarkCavern3d): number => {
     const [lo, hi] = UNDERDARK_CAVERN_LIMITS[key];
     return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v!)) : d[key];
@@ -32,28 +33,74 @@ export function underdarkCavernOf(recipe: Pick<CompositionRecipe, 'effects'> | u
   return { roof: pick(u?.roof, 'roof'), darkness: pick(u?.darkness, 'darkness'), fungi: pick(u?.fungi, 'fungi') };
 }
 
-interface CaveLayer { x: number; y: number; width: number; n: number; data: Float32Array; cave?: Uint8Array }
+interface CaveLayer {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  data: Float32Array;
+  cave?: Uint8Array;
+}
 /** Per cell of the layer grid (texel centres at (i + .5) · cell): `roof` the absolute roof height (m); `texels` RGBA
  * for the ground shader: rock 0-1 (the soft field), roof above `base` (m), chamber openness 0-1, local clearance (m). */
-export interface CavernField { n: number; x: number; y: number; width: number; base: number; roof: Float32Array; texels: Float32Array;
+export interface CavernField {
+  n: number;
+  x: number;
+  y: number;
+  width: number;
+  base: number;
+  roof: Float32Array;
+  texels: Float32Array;
   /** 0-1 per cell: how far the rock rises towards the roof (full from 2.5 cells inside a mass; islands of a cell or two stay low). */
-  wall: Float32Array }
+  wall: Float32Array;
+}
 
-const smooth = (a: number, b: number, v: number): number => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
-const D1 = 1, D2 = Math.SQRT2;
-const FORWARD: readonly [number, number, number][] = [[-1, 0, D1], [0, -1, D1], [-1, -1, D2], [1, -1, D2]];
-const BACKWARD: readonly [number, number, number][] = [[1, 0, D1], [0, 1, D1], [1, 1, D2], [-1, 1, D2]];
+const smooth = (a: number, b: number, v: number): number => {
+  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const D1 = 1,
+  D2 = Math.SQRT2;
+const FORWARD: readonly [number, number, number][] = [
+  [-1, 0, D1],
+  [0, -1, D1],
+  [-1, -1, D2],
+  [1, -1, D2],
+];
+const BACKWARD: readonly [number, number, number][] = [
+  [1, 0, D1],
+  [0, 1, D1],
+  [1, 1, D2],
+  [-1, 1, D2],
+];
 
 /** Chamfer distance (cells) to the nearest seed, with the seed's index. */
 function chamfer(n: number, seed: (i: number) => boolean): { dist: Float32Array; near: Int32Array } {
-  const dist = new Float32Array(n * n), near = new Int32Array(n * n);
-  for (let i = 0; i < n * n; i++) { const s = seed(i); dist[i] = s ? 0 : 1e9; near[i] = s ? i : -1; }
-  for (const [pass, steps] of [[0, FORWARD], [1, BACKWARD]] as const) {
+  const dist = new Float32Array(n * n),
+    near = new Int32Array(n * n);
+  for (let i = 0; i < n * n; i++) {
+    const s = seed(i);
+    dist[i] = s ? 0 : 1e9;
+    near[i] = s ? i : -1;
+  }
+  for (const [pass, steps] of [
+    [0, FORWARD],
+    [1, BACKWARD],
+  ] as const) {
     for (let k = 0; k < n * n; k++) {
-      const i = pass ? n * n - 1 - k : k, x = i % n, y = (i - x) / n;
+      const i = pass ? n * n - 1 - k : k,
+        x = i % n,
+        y = (i - x) / n;
       for (const [dx, dy, w] of steps) {
-        const ax = x + dx, ay = y + dy; if (ax < 0 || ay < 0 || ax >= n || ay >= n) continue;
-        const j = ay * n + ax, d = dist[j] + w; if (d < dist[i]) { dist[i] = d; near[i] = near[j]; }
+        const ax = x + dx,
+          ay = y + dy;
+        if (ax < 0 || ay < 0 || ax >= n || ay >= n) continue;
+        const j = ay * n + ax,
+          d = dist[j] + w;
+        if (d < dist[i]) {
+          dist[i] = d;
+          near[i] = near[j];
+        }
       }
     }
   }
@@ -64,51 +111,74 @@ function chamfer(n: number, seed: (i: number) => boolean): { dist: Float32Array;
 export function cavernField(layer: CaveLayer, clearance: number): CavernField | undefined {
   const { n, data, cave } = layer;
   if (!cave || cave.length !== n * n || data.length !== n * n || n < 4) return undefined;
-  const cell = layer.width / n, open = (i: number): boolean => cave[i] < 128;
+  const cell = layer.width / n,
+    open = (i: number): boolean => cave[i] < 128;
   // Open cells: distance to the wall; rock cells: their nearest opening (its floor is the floor of that wall).
-  const toRock = chamfer(n, i => !open(i)).dist, opening = chamfer(n, open), toOpen = opening.near;
+  const toRock = chamfer(n, i => !open(i)).dist,
+    opening = chamfer(n, open),
+    toOpen = opening.near;
   // Chamber size: the inscribed radius spread around at half its decay, so the walls of a great chamber, and the rock
   // just behind them, know the chamber they bound (a dome there, a low vault along a passage).
   const size = new Float32Array(n * n);
   for (let i = 0; i < n * n; i++) size[i] = open(i) ? toRock[i] : 0;
-  for (const [pass, steps] of [[0, FORWARD], [1, BACKWARD], [0, FORWARD], [1, BACKWARD]] as const) {
+  for (const [pass, steps] of [
+    [0, FORWARD],
+    [1, BACKWARD],
+    [0, FORWARD],
+    [1, BACKWARD],
+  ] as const) {
     for (let k = 0; k < n * n; k++) {
-      const i = pass ? n * n - 1 - k : k, x = i % n, y = (i - x) / n;
+      const i = pass ? n * n - 1 - k : k,
+        x = i % n,
+        y = (i - x) / n;
       for (const [dx, dy, w] of steps) {
-        const ax = x + dx, ay = y + dy; if (ax < 0 || ay < 0 || ax >= n || ay >= n) continue;
-        const v = size[ay * n + ax] - .5 * w; if (v > size[i]) size[i] = v;
+        const ax = x + dx,
+          ay = y + dy;
+        if (ax < 0 || ay < 0 || ax >= n || ay >= n) continue;
+        const v = size[ay * n + ax] - 0.5 * w;
+        if (v > size[i]) size[i] = v;
       }
     }
   }
   let base = Infinity;
   for (let i = 0; i < n * n; i++) base = Math.min(base, data[i]);
-  const local = new Float32Array(n * n), floor = new Float32Array(n * n);
+  const local = new Float32Array(n * n),
+    floor = new Float32Array(n * n);
   let roof = new Float32Array(n * n);
   for (let i = 0; i < n * n; i++) {
     floor[i] = open(i) || toOpen[i] < 0 ? data[i] : data[toOpen[i]];
     // A 200 m chamber keeps 1.2 of the clearance, a great one 2. A passage is a vault: its apex never lower than
     // 1.5 × its half-width (about 3 × the spread size at its wall), up to 2.2 × the clearance.
-    local[i] = Math.max(clearance * (.4 + 1.6 * smooth(0, 1, size[i] * cell / 400)), Math.min(3 * size[i] * cell, 2.2 * clearance));
+    local[i] = Math.max(clearance * (0.4 + 1.6 * smooth(0, 1, (size[i] * cell) / 400)), Math.min(3 * size[i] * cell, 2.2 * clearance));
     roof[i] = floor[i] + local[i];
   }
   // The nearest-opening floors meet in seams inside the rock: a few box passes over rock cells smooth them.
   for (let pass = 0; pass < 3; pass++) {
     const next = roof.slice();
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-      const i = y * n + x; if (open(i)) continue;
-      let sum = 0, count = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const ax = x + dx, ay = y + dy; if (ax < 0 || ay < 0 || ax >= n || ay >= n) continue;
-        sum += roof[ay * n + ax]; count++;
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++) {
+        const i = y * n + x;
+        if (open(i)) continue;
+        let sum = 0,
+          count = 0;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const ax = x + dx,
+              ay = y + dy;
+            if (ax < 0 || ay < 0 || ax >= n || ay >= n) continue;
+            sum += roof[ay * n + ax];
+            count++;
+          }
+        next[i] = Math.max(sum / count, floor[i] + 0.9 * local[i]);
       }
-      next[i] = Math.max(sum / count, floor[i] + .9 * local[i]);
-    }
     roof = next;
   }
   const texels = new Float32Array(n * n * 4);
   for (let i = 0; i < n * n; i++) {
-    texels[i * 4] = cave[i] / 255; texels[i * 4 + 1] = roof[i] - base;
-    texels[i * 4 + 2] = open(i) ? smooth(0, 1, toRock[i] * cell / 250) : 0; texels[i * 4 + 3] = local[i];
+    texels[i * 4] = cave[i] / 255;
+    texels[i * 4 + 1] = roof[i] - base;
+    texels[i * 4 + 2] = open(i) ? smooth(0, 1, (toRock[i] * cell) / 250) : 0;
+    texels[i * 4 + 3] = local[i];
   }
   // A mass rises to the roof from 1 to 2.5 cells inside it; a grain of rock (no cell that deep) stays a low ledge.
   const wall = new Float32Array(n * n);
@@ -118,32 +188,53 @@ export function cavernField(layer: CaveLayer, clearance: number): CavernField | 
 
 /** Bilinear roof height (m) at a world point, same texel convention as the shaders. */
 export function cavernRoofAt(field: CavernField, x: number, y: number): number {
-  const n = field.n, g = (x - field.x) / field.width * n - .5, h = (y - field.y) / field.width * n - .5;
-  const i = Math.floor(g), j = Math.floor(h), fx = g - i, fy = h - j;
+  const n = field.n,
+    g = ((x - field.x) / field.width) * n - 0.5,
+    h = ((y - field.y) / field.width) * n - 0.5;
+  const i = Math.floor(g),
+    j = Math.floor(h),
+    fx = g - i,
+    fy = h - j;
   const at = (a: number, b: number): number => field.roof[Math.min(n - 1, Math.max(0, b)) * n + Math.min(n - 1, Math.max(0, a))];
   return (at(i, j) * (1 - fx) + at(i + 1, j) * fx) * (1 - fy) + (at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx) * fy;
 }
 /** Bilinear wall weight (CavernField.wall). */
 export function cavernWallAt(field: CavernField, x: number, y: number): number {
-  const n = field.n, g = (x - field.x) / field.width * n - .5, h = (y - field.y) / field.width * n - .5;
-  const i = Math.floor(g), j = Math.floor(h), fx = g - i, fy = h - j;
+  const n = field.n,
+    g = ((x - field.x) / field.width) * n - 0.5,
+    h = ((y - field.y) / field.width) * n - 0.5;
+  const i = Math.floor(g),
+    j = Math.floor(h),
+    fx = g - i,
+    fy = h - j;
   const at = (a: number, b: number): number => field.wall[Math.min(n - 1, Math.max(0, b)) * n + Math.min(n - 1, Math.max(0, a))];
   return (at(i, j) * (1 - fx) + at(i + 1, j) * fx) * (1 - fy) + (at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx) * fy;
 }
 /** Bilinear texel channel (0 rock, 1 roof - base, 2 openness, 3 clearance). */
 export function cavernTexelAt(field: CavernField, x: number, y: number, channel: number): number {
-  const n = field.n, g = (x - field.x) / field.width * n - .5, h = (y - field.y) / field.width * n - .5;
-  const i = Math.floor(g), j = Math.floor(h), fx = g - i, fy = h - j;
+  const n = field.n,
+    g = ((x - field.x) / field.width) * n - 0.5,
+    h = ((y - field.y) / field.width) * n - 0.5;
+  const i = Math.floor(g),
+    j = Math.floor(h),
+    fx = g - i,
+    fy = h - j;
   const at = (a: number, b: number): number => field.texels[(Math.min(n - 1, Math.max(0, b)) * n + Math.min(n - 1, Math.max(0, a))) * 4 + channel];
   return (at(i, j) * (1 - fx) + at(i + 1, j) * fx) * (1 - fy) + (at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx) * fy;
 }
 
 /** IEEE half floats of the texels (WebGPU rgba16float upload), rounded to nearest. */
 export function halfFloats(values: Float32Array): Uint16Array {
-  const out = new Uint16Array(values.length), f = new Float32Array(1), u = new Uint32Array(f.buffer);
+  const out = new Uint16Array(values.length),
+    f = new Float32Array(1),
+    u = new Uint32Array(f.buffer);
   for (let i = 0; i < values.length; i++) {
-    f[0] = values[i]; const x = u[0], sign = (x >>> 16) & 0x8000, e = ((x >>> 23) & 255) - 112, m = x & 0x7fffff;
-    if (e <= 0) out[i] = sign | (e < -10 ? 0 : ((m | 0x800000) >>> (1 - e)) + 0x1000 >>> 13);
+    f[0] = values[i];
+    const x = u[0],
+      sign = (x >>> 16) & 0x8000,
+      e = ((x >>> 23) & 255) - 112,
+      m = x & 0x7fffff;
+    if (e <= 0) out[i] = sign | (e < -10 ? 0 : (((m | 0x800000) >>> (1 - e)) + 0x1000) >>> 13);
     else if (e >= 31) out[i] = sign | 0x7c00;
     else out[i] = sign | Math.min(0x7bff, ((e << 10) | (m >>> 13)) + ((m >>> 12) & 1));
   }
@@ -152,7 +243,7 @@ export function halfFloats(values: Float32Array): Uint16Array {
 /** Fog of the cave (world units of the 3D view, exaggeration included): dissolving into darkness from `start` to `end`. */
 export function cavernFog(orbitDistance: number, exaggeration: number, darkness: number): [number, number] {
   const reach = Math.max(orbitDistance, 260 * exaggeration);
-  return [reach * (1.35 - .5 * darkness), reach * (3.6 - 1.6 * darkness)];
+  return [reach * (1.35 - 0.5 * darkness), reach * (3.6 - 1.6 * darkness)];
 }
 /** Uniform `uCavern` of the ground shader: roof base (m), darkness, fog start and end (world units). */
 export function cavernUniform(field: CavernField | undefined, cavern: UnderdarkCavern3d, orbitDistance: number, exaggeration: number): [number, number, number, number] {
@@ -237,23 +328,36 @@ vec3 cavernFog(vec3 c,float d){
 /** Roof of the cave as a mesh (the lid of the section model): a grid of at most `side` points a side over the field,
  * at the roof height (+ .6 m over the cut). Vertex: x, z (m, absolute), y, rock 0-1, openness. */
 export function cavernRoofMesh(field: CavernField, side = 257): { vertices: Float32Array; indices: Uint32Array } {
-  const m = Math.max(2, Math.min(side, field.n + 1)), vertices = new Float32Array(m * m * 5), indices = new Uint32Array((m - 1) * (m - 1) * 6);
-  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
-    const x = field.x + i / (m - 1) * field.width, y = field.y + j / (m - 1) * field.width, o = (j * m + i) * 5;
-    vertices[o] = x; vertices[o + 1] = cavernRoofAt(field, x, y) + .6; vertices[o + 2] = y;
-    vertices[o + 3] = cavernTexelAt(field, x, y, 0); vertices[o + 4] = cavernTexelAt(field, x, y, 2);
-  }
+  const m = Math.max(2, Math.min(side, field.n + 1)),
+    vertices = new Float32Array(m * m * 5),
+    indices = new Uint32Array((m - 1) * (m - 1) * 6);
+  for (let j = 0; j < m; j++)
+    for (let i = 0; i < m; i++) {
+      const x = field.x + (i / (m - 1)) * field.width,
+        y = field.y + (j / (m - 1)) * field.width,
+        o = (j * m + i) * 5;
+      vertices[o] = x;
+      vertices[o + 1] = cavernRoofAt(field, x, y) + 0.6;
+      vertices[o + 2] = y;
+      vertices[o + 3] = cavernTexelAt(field, x, y, 0);
+      vertices[o + 4] = cavernTexelAt(field, x, y, 2);
+    }
   let k = 0;
-  for (let j = 0; j + 1 < m; j++) for (let i = 0; i + 1 < m; i++) {
-    const a = j * m + i, b = a + 1, c = a + m, d = c + 1;
-    indices.set([a, c, b, b, c, d], k); k += 6;
-  }
+  for (let j = 0; j + 1 < m; j++)
+    for (let i = 0; i + 1 < m; i++) {
+      const a = j * m + i,
+        b = a + 1,
+        c = a + m,
+        d = c + 1;
+      indices.set([a, c, b, b, c, d], k);
+      k += 6;
+    }
   return { vertices, indices };
 }
 /** Cutaway of the roof around the orbit target (m): focus x, y, radius, width of the section band. */
 export function cavernReveal(x: number, y: number, orbitDistance: number, exaggeration: number): [number, number, number, number] {
-  const radius = Math.max(220, 1.1 * orbitDistance / Math.max(exaggeration, .2));
-  return [x, y, radius, radius * .02];
+  const radius = Math.max(220, (1.1 * orbitDistance) / Math.max(exaggeration, 0.2));
+  return [x, y, radius, radius * 0.02];
 }
 /** The roof (lid) of the cave, cut away around the focus. Translated to WGSL by web/scripts/wgsl_shaders_3d.ts. */
 export const CAVERN_ROOF_GLSL = {

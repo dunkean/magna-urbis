@@ -1,11 +1,14 @@
 /** Semantic operation masks, cell-centred over the map. No height samples. */
 export const TERRAIN_ZONE_KINDS = ['sea', 'flat', 'hills', 'mountains', 'high-mountains'] as const;
-export type TerrainZoneKind = typeof TERRAIN_ZONE_KINDS[number];
-export interface TerrainZones { version: 1; resolution: number; weights: number[] }
+export type TerrainZoneKind = (typeof TERRAIN_ZONE_KINDS)[number];
+export interface TerrainZones {
+  version: 1;
+  resolution: number;
+  weights: number[];
+}
 export function parseTerrainZones(value: unknown, copy = true): TerrainZones {
   const z = value as TerrainZones;
-  if (!z || z.version !== 1 || !Number.isInteger(z.resolution) || z.resolution < 8 || z.resolution > 128
-    || !Array.isArray(z.weights) || z.weights.length !== z.resolution ** 2 * 5) throw new Error('Zones invalides : cinq masques carrés 8–128² attendus.');
+  if (!z || z.version !== 1 || !Number.isInteger(z.resolution) || z.resolution < 8 || z.resolution > 128 || !Array.isArray(z.weights) || z.weights.length !== z.resolution ** 2 * 5) throw new Error('Zones invalides : cinq masques carrés 8–128² attendus.');
   for (let i = 0; i < z.weights.length; i += 5) {
     let total = 0;
     for (let k = 0; k < 5; k++) {

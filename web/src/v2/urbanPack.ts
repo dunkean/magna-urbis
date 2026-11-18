@@ -22,9 +22,17 @@ import type { RustTownSnapshot } from './rustUrban';
  * unpacks them (client.ts), because a renderer's workers and page share one ~4 GB JS heap. A 20k town moves a few MB,
  * a 1M town about 460 MB. */
 export const HEAVY_RESULT_BYTES = 128 * 2 ** 20;
-interface PackedPartitions { packedPartitions: 1; buffer: ArrayBuffer }
-interface PackedSites { packedSites: 1; buffer: ArrayBuffer }
-interface SceneFromSites { sceneFromSites: 1 }
+interface PackedPartitions {
+  packedPartitions: 1;
+  buffer: ArrayBuffer;
+}
+interface PackedSites {
+  packedSites: 1;
+  buffer: ArrayBuffer;
+}
+interface SceneFromSites {
+  sceneFromSites: 1;
+}
 /** The snapshot fields that hold partitions; they often share one array. */
 const FIELDS = ['partitions', 'cadastralPartitions', 'programmePartitions'] as const;
 type Snapshot = Partial<Record<(typeof FIELDS)[number] | 'sites' | 'scene', unknown>>;
@@ -34,7 +42,9 @@ const isSceneFromSites = (value: unknown): value is SceneFromSites => !!value &&
 /** A heavy town's urban layer (or a naming copy of it): sent without the arrays it shares with the last projection of its
  * snapshot (rustTownProjection.ts); the receiver projects the unpacked snapshot again and puts those arrays back, so their
  * rings stay shared with the parcels and the scene there instead of arriving as a second, cloned copy. */
-interface ProjectedUrban { projectedUrban: { key: string; population: number; culture: string; shared: string[] } }
+interface ProjectedUrban {
+  projectedUrban: { key: string; population: number; culture: string; shared: string[] };
+}
 const isProjectedUrban = (value: unknown): value is ProjectedUrban => !!value && typeof value === 'object' && typeof (value as ProjectedUrban).projectedUrban === 'object';
 
 /** A shallow copy of `world` whose registered town partitions and site visuals are packed, and the buffers to transfer.
@@ -43,7 +53,8 @@ const isProjectedUrban = (value: unknown): value is ProjectedUrban => !!value &&
 export function packWorldPartitions<T extends World | undefined>(world: T): { world: T; transfer: ArrayBuffer[] } {
   const cities = world?.debug?.v2RustCities as Record<string, Snapshot | undefined> | undefined;
   if (!world || !cities) return { world, transfer: [] };
-  const placeholders = new Map<Partition[], PackedPartitions>(), transfer: ArrayBuffer[] = [];
+  const placeholders = new Map<Partition[], PackedPartitions>(),
+    transfer: ArrayBuffer[] = [];
   let packedCities: Record<string, Snapshot | undefined> | undefined;
   for (const [key, snapshot] of Object.entries(cities)) {
     let packed: Snapshot | undefined;
@@ -55,14 +66,17 @@ export function packWorldPartitions<T extends World | undefined>(world: T): { wo
         const pack = packOf(partitions);
         if (!pack) continue;
         placeholder = { packedPartitions: 1, buffer: pack.slice(0) };
-        placeholders.set(partitions, placeholder); transfer.push(placeholder.buffer);
+        placeholders.set(partitions, placeholder);
+        transfer.push(placeholder.buffer);
       }
       (packed ??= { ...snapshot })[field] = placeholder;
     }
-    const sites = snapshot?.sites, sitesPack = Array.isArray(sites) ? siteVisualsPackOf(sites) : undefined;
+    const sites = snapshot?.sites,
+      sitesPack = Array.isArray(sites) ? siteVisualsPackOf(sites) : undefined;
     if (sitesPack) {
       const placeholder: PackedSites = { packedSites: 1, buffer: sitesPack.slice(0) };
-      (packed ??= { ...snapshot }).sites = placeholder; transfer.push(placeholder.buffer);
+      (packed ??= { ...snapshot }).sites = placeholder;
+      transfer.push(placeholder.buffer);
       const scene = snapshot?.scene as PlacementBatch | undefined;
       if (scene && siteVisualSceneSource(scene) === sites) packed.scene = { sceneFromSites: 1 } satisfies SceneFromSites;
     }
@@ -77,13 +91,16 @@ export function packWorldPartitions<T extends World | undefined>(world: T): { wo
       if (!urban || !source) return undefined;
       const shared = Object.keys(source.urban).filter(field => Array.isArray((urban as unknown as Record<string, unknown>)[field]) && (urban as unknown as Record<string, unknown>)[field] === (source.urban as unknown as Record<string, unknown>)[field]);
       if (!shared.length) return undefined;
-      const rest: Record<string, unknown> = { ...urban }; for (const field of shared) delete rest[field];
+      const rest: Record<string, unknown> = { ...urban };
+      for (const field of shared) delete rest[field];
       return { ...rest, projectedUrban: { key, population: source.population, culture: source.culture, shared } } as unknown as UrbanLayer;
     };
     const markers = new Map<UrbanLayer, UrbanLayer>();
     const settlements = world.settlements?.map(place => {
-      const m = marker(place.urban, place.key); if (!m || !place.urban) return place;
-      markers.set(place.urban, m); return { ...place, urban: m };
+      const m = marker(place.urban, place.key);
+      if (!m || !place.urban) return place;
+      markers.set(place.urban, m);
+      return { ...place, urban: m };
     });
     // The main town's own urban layer: the same object as its settlement's, or a naming copy of it.
     const mainKey = world.settlements?.find(place => place.main)?.key;
@@ -109,9 +126,15 @@ export function unpackWorldPartitions<T extends World | undefined>(world: T): T 
   }
   const projected = new Map<string, UrbanLayer>();
   const project = (m: ProjectedUrban): UrbanLayer => {
-    const { projectedUrban: { key, population, culture, shared }, ...rest } = m;
+    const {
+      projectedUrban: { key, population, culture, shared },
+      ...rest
+    } = m;
     let urban = projected.get(key);
-    if (!urban) { urban = projectRustTown(cities[key] as unknown as RustTownSnapshot, population, culture); projected.set(key, urban); }
+    if (!urban) {
+      urban = projectRustTown(cities[key] as unknown as RustTownSnapshot, population, culture);
+      projected.set(key, urban);
+    }
     const out: Record<string, unknown> = { ...rest };
     for (const field of shared) out[field] = (urban as unknown as Record<string, unknown>)[field];
     return out as unknown as UrbanLayer;

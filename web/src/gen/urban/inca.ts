@@ -30,13 +30,18 @@ const empty = (lot: Polygon, use: string): CompoundOut => ({ parcels: [{ poly: l
 
 /** Index of the lot edge nearest a point (the side facing the plaza or the street). */
 function edgeNear(P: Polygon, p: Vec2): number {
-  let bi = 0, bd = Infinity;
+  let bi = 0,
+    bd = Infinity;
   for (let i = 0; i < P.length; i++) {
-    const a = P[i], b = P[(i + 1) % P.length];
+    const a = P[i],
+      b = P[(i + 1) % P.length];
     if (dist(a, b) < 8) continue;
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const d = dist(m, p);
-    if (d < bd) { bd = d; bi = i; }
+    if (d < bd) {
+      bd = d;
+      bi = i;
+    }
   }
   return bi;
 }
@@ -45,14 +50,15 @@ function edgeNear(P: Polygon, p: Vec2): number {
 function ranges(out: CompoundOut, P: Polygon, depth: number, arch: string, skip: number, margin = 1): void {
   for (let i = 0; i < P.length; i++) {
     if (i === skip) continue;
-    const a = P[i], b = P[(i + 1) % P.length];
+    const a = P[i],
+      b = P[(i + 1) % P.length];
     const L = dist(a, b);
     if (L < 14) continue;
     const r = alongEdge(P, i, depth, L - 2 * (depth * 0.6 + 3), margin);
-    if (r && !out.buildings.some((x) => overlapBB(x.poly, r))) out.buildings.push({ poly: r, kind: 'landmark', parcel: 0, arch, roof: 'gable', material: 'stone', storeys: 1, orientation: Math.atan2(b.y - a.y, b.x - a.x) });
+    if (r && !out.buildings.some(x => overlapBB(x.poly, r))) out.buildings.push({ poly: r, kind: 'landmark', parcel: 0, arch, roof: 'gable', material: 'stone', storeys: 1, orientation: Math.atan2(b.y - a.y, b.x - a.x) });
   }
 }
-const overlapBB = (A: Polygon, B: Polygon): boolean => A.some((q) => pointInRing(B, q)) || B.some((q) => pointInRing(A, q));
+const overlapBB = (A: Polygon, B: Polygon): boolean => A.some(q => pointInRing(B, q)) || B.some(q => pointInRing(A, q));
 
 /** The great plaza: an open paved place with the ushnu near its middle and kallanka halls on its long sides. */
 function incaPlaza(lot: Polygon, cx: CompoundCtx): CompoundOut {
@@ -73,12 +79,25 @@ function incaPlaza(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const halls = area(P) > 9000 ? 2 : 1;
   const done: number[] = [];
   for (let k = 0; k < halls; k++) {
-    const e = k === 0 ? e1 : longestEdge(P, (a, b) => !done.some((d) => { const A = P[d], B = P[(d + 1) % P.length]; const ua = { x: B.x - A.x, y: B.y - A.y }, ub = { x: b.x - a.x, y: b.y - a.y }; return Math.abs((ua.x * ub.y - ua.y * ub.x) / (Math.hypot(ua.x, ua.y) * Math.hypot(ub.x, ub.y) || 1)) < 0.4 && dist(A, a) < 5; }) && !done.includes(P.indexOf(a)));
+    const e =
+      k === 0
+        ? e1
+        : longestEdge(
+            P,
+            (a, b) =>
+              !done.some(d => {
+                const A = P[d],
+                  B = P[(d + 1) % P.length];
+                const ua = { x: B.x - A.x, y: B.y - A.y },
+                  ub = { x: b.x - a.x, y: b.y - a.y };
+                return Math.abs((ua.x * ub.y - ua.y * ub.x) / (Math.hypot(ua.x, ua.y) * Math.hypot(ub.x, ub.y) || 1)) < 0.4 && dist(A, a) < 5;
+              }) && !done.includes(P.indexOf(a)),
+          );
     if (e < 0) break;
     done.push(e);
     const L = dist(P[e], P[(e + 1) % P.length]);
     const r = alongEdge(P, e, cx.rng.range(11, 15), Math.min(70, L * 0.55), 1.2);
-    if (r && !(u0 && overlapBB(r, u0)) && !out.buildings.some((b) => overlapBB(b.poly, r))) out.buildings.push({ poly: r, kind: 'landmark', parcel: 0, arch: 'kallanka', roof: 'gable', material: 'stone', storeys: 1 });
+    if (r && !(u0 && overlapBB(r, u0)) && !out.buildings.some(b => overlapBB(b.poly, r))) out.buildings.push({ poly: r, kind: 'landmark', parcel: 0, arch: 'kallanka', roof: 'gable', material: 'stone', storeys: 1 });
   }
   return out;
 }
@@ -91,18 +110,23 @@ function incaTemple(lot: Polygon, cx: CompoundCtx): CompoundOut {
   ranges(out, P, cx.rng.range(7.5, 10), 'temple-shrine', front);
   // the curved wall: an apsidal hall on the side opposite the plaza
   const opp = (front + Math.floor(P.length / 2)) % P.length;
-  const a = P[opp], b = P[(opp + 1) % P.length];
+  const a = P[opp],
+    b = P[(opp + 1) % P.length];
   const L = dist(a, b);
   const ang = Math.atan2(b.y - a.y, b.x - a.x);
   const ins = inscribed(P, [], 1).c;
-  const W = Math.min(16, L * 0.35), Lh = Math.min(28, L * 0.5);
+  const W = Math.min(16, L * 0.35),
+    Lh = Math.min(28, L * 0.5);
   const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   const c = { x: m.x + (ins.x - m.x) * 0.35, y: m.y + (ins.y - m.y) * 0.35 };
   const apse: Vec2[] = [];
   const nrm = { x: -Math.sin(ang), y: Math.cos(ang) };
-  for (let i = 0; i <= 8; i++) { const t = Math.PI + (i / 8) * Math.PI; apse.push({ x: c.x + Math.cos(ang) * (Math.cos(t) * W / 2) + nrm.x * (Math.sin(t) * W / 2 - Lh / 2), y: c.y + Math.sin(ang) * (Math.cos(t) * W / 2) + nrm.y * (Math.sin(t) * W / 2 - Lh / 2) }); }
+  for (let i = 0; i <= 8; i++) {
+    const t = Math.PI + (i / 8) * Math.PI;
+    apse.push({ x: c.x + Math.cos(ang) * ((Math.cos(t) * W) / 2) + nrm.x * ((Math.sin(t) * W) / 2 - Lh / 2), y: c.y + Math.sin(ang) * ((Math.cos(t) * W) / 2) + nrm.y * ((Math.sin(t) * W) / 2 - Lh / 2) });
+  }
   const curved = orientPos([...apse, { x: c.x + Math.cos(ang) * (W / 2) + nrm.x * (Lh / 2), y: c.y + Math.sin(ang) * (W / 2) + nrm.y * (Lh / 2) }, { x: c.x - Math.cos(ang) * (W / 2) + nrm.x * (Lh / 2), y: c.y - Math.sin(ang) * (W / 2) + nrm.y * (Lh / 2) }]);
-  if (fits(P, curved, 1.5) && !out.buildings.some((x) => overlapBB(x.poly, curved))) {
+  if (fits(P, curved, 1.5) && !out.buildings.some(x => overlapBB(x.poly, curved))) {
     out.buildings.push({ poly: curved, kind: 'landmark', parcel: 0, arch: 'sun-temple', roof: 'gable', material: 'stone', storeys: 1, orientation: ang });
     out.landmarks.push({ kind: 'sun-temple', poly: curved });
   }
@@ -137,18 +161,26 @@ export function registerInca(): void {
  * shaded on the downhill side, the treads cultivated; a stair climbs each flight up its fall line.
  */
 export function andenes(ctx: UrbanCtx, footprint: Polygon[], reach: number): { lines: UrbanLine[]; fields: Polygon[] } {
-  const g = ctx.terrain.height, n = g.w, cell = g.cell;
+  const g = ctx.terrain.height,
+    n = g.w,
+    cell = g.cell;
   const fp = rasterizePolys(footprint, n, n, cell);
   const dF = distanceField(fp, n, n, cell).dist;
-  let lo = Infinity, hi = -Infinity;
-  for (let i = 0; i < g.data.length; i++) if (dF[i] < reach) { lo = Math.min(lo, g.data[i]); hi = Math.max(hi, g.data[i]); }
+  let lo = Infinity,
+    hi = -Infinity;
+  for (let i = 0; i < g.data.length; i++)
+    if (dF[i] < reach) {
+      lo = Math.min(lo, g.data[i]);
+      hi = Math.max(hi, g.data[i]);
+    }
   if (!(hi > lo)) return { lines: [], fields: [] };
   // (the step: ~2.5 m of height; on gentle ground a wider tread, never closer than ~6 m on the map)
   const step = Math.max(2, Math.min(3.5, (hi - lo) / 45));
   const out: UrbanLine[] = [];
   const slopeAt = (q: Vec2) => sampleGrid(ctx.terrain.slope, q.x, q.y);
   const ok = (q: Vec2): boolean => {
-    const ix = Math.min(n - 1, Math.max(0, Math.floor(q.x / cell))), iy = Math.min(n - 1, Math.max(0, Math.floor(q.y / cell)));
+    const ix = Math.min(n - 1, Math.max(0, Math.floor(q.x / cell))),
+      iy = Math.min(n - 1, Math.max(0, Math.floor(q.y / cell)));
     const d = dF[iy * n + ix];
     if (d < 25 || d > reach) return false;
     if (ctx.isWater(q)) return false;
@@ -160,54 +192,65 @@ export function andenes(ctx: UrbanCtx, footprint: Polygon[], reach: number): { l
   const sm = mask.slice();
   for (let pass = 0; pass < 2; pass++) {
     const src = sm.slice();
-    for (let iy = 1; iy < n - 1; iy++) for (let ix = 1; ix < n - 1; ix++) {
-      let t = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) t += src[(iy + dy) * n + ix + dx];
-      sm[iy * n + ix] = t / 9;
-    }
+    for (let iy = 1; iy < n - 1; iy++)
+      for (let ix = 1; ix < n - 1; ix++) {
+        let t = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) t += src[(iy + dy) * n + ix + dx];
+        sm[iy * n + ix] = t / 9;
+      }
   }
-  let land: MultiPoly = isoRegions(sm, n, cell, 0.5, 3000).map((ph) => ({ outer: ph.outer, holes: [] }));
-  const roadRb: MultiPoly = (ctx.world.roads ?? []).map((r) => ribbon(r.path, r.width + 8)).filter((r) => r.length >= 3).map((r) => ({ outer: r, holes: [] }));
+  let land: MultiPoly = isoRegions(sm, n, cell, 0.5, 3000).map(ph => ({ outer: ph.outer, holes: [] }));
+  const roadRb: MultiPoly = (ctx.world.roads ?? [])
+    .map(r => ribbon(r.path, r.width + 8))
+    .filter(r => r.length >= 3)
+    .map(r => ({ outer: r, holes: [] }));
   if (land.length && roadRb.length) land = differenceS(land, roadRb);
   if (land.length && ctx.water.length) land = differenceS(land, ctx.water);
   if (!land.length) return { lines: [], fields: [] };
   // ---- flights: lobes of the suitable land round seeds on the steepest ground nearest the town, each wider along
   // the contour than down the slope
   const seeds: { p: Vec2; s: number }[] = [];
-  for (let iy = 1; iy < n - 1; iy += 2) for (let ix = 1; ix < n - 1; ix += 2) {
-    const i = iy * n + ix;
-    if (sm[i] < 0.75) continue;
-    const p = { x: (ix + 0.5) * cell, y: (iy + 0.5) * cell };
-    seeds.push({ p, s: slopeAt(p) * 2 - dF[i] / reach });
-  }
+  for (let iy = 1; iy < n - 1; iy += 2)
+    for (let ix = 1; ix < n - 1; ix += 2) {
+      const i = iy * n + ix;
+      if (sm[i] < 0.75) continue;
+      const p = { x: (ix + 0.5) * cell, y: (iy + 0.5) * cell };
+      seeds.push({ p, s: slopeAt(p) * 2 - dF[i] / reach });
+    }
   seeds.sort((a, b) => b.s - a.s);
   const flights: Polygon[] = [];
   const centres: Vec2[] = [];
   const maxF = Math.min(9, 3 + Math.round(reach / 120));
   for (const sd of seeds) {
     if (flights.length >= maxF) break;
-    const R = 70 + (Math.abs(Math.sin(sd.p.x * 0.013 + sd.p.y * 0.007)) * 80);
-    if (centres.some((c) => dist(c, sd.p) < R + 70)) continue;
+    const R = 70 + Math.abs(Math.sin(sd.p.x * 0.013 + sd.p.y * 0.007)) * 80;
+    if (centres.some(c => dist(c, sd.p) < R + 70)) continue;
     // the contour direction at the seed: the lobe is stretched along it
     const h = (q: Vec2) => ctx.heightAt(q);
-    const gx = h({ x: sd.p.x + 10, y: sd.p.y }) - h({ x: sd.p.x - 10, y: sd.p.y }), gy = h({ x: sd.p.x, y: sd.p.y + 10 }) - h({ x: sd.p.x, y: sd.p.y - 10 });
+    const gx = h({ x: sd.p.x + 10, y: sd.p.y }) - h({ x: sd.p.x - 10, y: sd.p.y }),
+      gy = h({ x: sd.p.x, y: sd.p.y + 10 }) - h({ x: sd.p.x, y: sd.p.y - 10 });
     const along = Math.atan2(gx, -gy);
-    const lobe = orientPos(Array.from({ length: 28 }, (_, k) => {
-      const t = (k / 28) * 2 * Math.PI;
-      const w = 1 + 0.12 * Math.sin(t * 3 + sd.p.x * 0.1);
-      const u = Math.cos(t) * R * 1.5 * w, v = Math.sin(t) * R * 0.75 * w;
-      return { x: sd.p.x + u * Math.cos(along) - v * Math.sin(along), y: sd.p.y + u * Math.sin(along) + v * Math.cos(along) };
-    }));
+    const lobe = orientPos(
+      Array.from({ length: 28 }, (_, k) => {
+        const t = (k / 28) * 2 * Math.PI;
+        const w = 1 + 0.12 * Math.sin(t * 3 + sd.p.x * 0.1);
+        const u = Math.cos(t) * R * 1.5 * w,
+          v = Math.sin(t) * R * 0.75 * w;
+        return { x: sd.p.x + u * Math.cos(along) - v * Math.sin(along), y: sd.p.y + u * Math.sin(along) + v * Math.cos(along) };
+      }),
+    );
     // (its top and bottom edges follow two contours: the band of height round the seed's)
-    const h0 = ctx.heightAt(sd.p), Hh = step * (4 + Math.round(Math.abs(Math.sin(sd.p.y * 0.011)) * 6));
+    const h0 = ctx.heightAt(sd.p),
+      Hh = step * (4 + Math.round(Math.abs(Math.sin(sd.p.y * 0.011)) * 6));
     const band = new Float32Array(n * n);
     const lb = bboxOf(lobe);
-    for (let iy = Math.max(0, Math.floor(lb.y0 / cell) - 1); iy <= Math.min(n - 1, Math.ceil(lb.y1 / cell) + 1); iy++) for (let ix = Math.max(0, Math.floor(lb.x0 / cell) - 1); ix <= Math.min(n - 1, Math.ceil(lb.x1 / cell) + 1); ix++) {
-      const hh = g.data[iy * n + ix];
-      band[iy * n + ix] = Math.abs(hh - h0) <= Hh / 2 ? 1 : 0;
-    }
+    for (let iy = Math.max(0, Math.floor(lb.y0 / cell) - 1); iy <= Math.min(n - 1, Math.ceil(lb.y1 / cell) + 1); iy++)
+      for (let ix = Math.max(0, Math.floor(lb.x0 / cell) - 1); ix <= Math.min(n - 1, Math.ceil(lb.x1 / cell) + 1); ix++) {
+        const hh = g.data[iy * n + ix];
+        band[iy * n + ix] = Math.abs(hh - h0) <= Hh / 2 ? 1 : 0;
+      }
     let m: MultiPoly = [{ outer: lobe, holes: [] }];
-    const bandP: MultiPoly = isoRegions(band, n, cell, 0.5, 800).map((ph) => ({ outer: ph.outer, holes: [] }));
+    const bandP: MultiPoly = isoRegions(band, n, cell, 0.5, 800).map(ph => ({ outer: ph.outer, holes: [] }));
     if (bandP.length) m = intersectionS(m, bandP);
     m = intersectionS(m, land);
     for (const f of flights) m = differenceS(m, [{ outer: f, holes: [] }]);
@@ -216,15 +259,16 @@ export function andenes(ctx: UrbanCtx, footprint: Polygon[], reach: number): { l
     // (the raster edges smoothed: a flight's sides are curved banks, not steps)
     const f0 = ps.reduce((a, b) => (area(b) > area(a) ? b : a));
     const f = orientPos(chaikin(f0, 2, true));
-    if (f.length < 3 || flights.some((o) => o.some((q) => pointInRing(f, q)) || f.some((q) => pointInRing(o, q)))) continue;
+    if (f.length < 3 || flights.some(o => o.some(q => pointInRing(f, q)) || f.some(q => pointInRing(o, q)))) continue;
     flights.push(f);
     centres.push(sd.p);
   }
-  const inFlight = (q: Vec2): number => flights.findIndex((f) => pointInRing(f, q));
+  const inFlight = (q: Vec2): number => flights.findIndex(f => pointInRing(f, q));
   // ---- the retaining walls: the contours inside each flight, their risers shaded on the downhill side
   const down = (q: Vec2): Vec2 => {
     const h = (p: Vec2) => ctx.heightAt(p);
-    const gx = h({ x: q.x + 4, y: q.y }) - h({ x: q.x - 4, y: q.y }), gy = h({ x: q.x, y: q.y + 4 }) - h({ x: q.x, y: q.y - 4 });
+    const gx = h({ x: q.x + 4, y: q.y }) - h({ x: q.x - 4, y: q.y }),
+      gy = h({ x: q.x, y: q.y + 4 }) - h({ x: q.x, y: q.y - 4 });
     const L = Math.hypot(gx, gy) || 1;
     return { x: -gx / L, y: -gy / L };
   };
@@ -237,13 +281,27 @@ export function andenes(ctx: UrbanCtx, footprint: Polygon[], reach: number): { l
         if (run.length >= 3 && polylineLength(run) > 14) {
           const wall = simplify(run, 0.4);
           out.push({ kind: 'andene', path: wall, width: 1 });
-          out.push({ kind: 'andene-riser', path: wall.map((q) => { const d = down(q); return { x: q.x + d.x * 0.95, y: q.y + d.y * 0.95 }; }), width: 1.5 });
+          out.push({
+            kind: 'andene-riser',
+            path: wall.map(q => {
+              const d = down(q);
+              return { x: q.x + d.x * 0.95, y: q.y + d.y * 0.95 };
+            }),
+            width: 1.5,
+          });
         }
         run = [];
       };
       for (const q of pts) {
         const f = inFlight(q);
-        if (f >= 0 && (fi < 0 || f === fi)) { run.push(q); fi = f; } else { flush(); fi = f; if (f >= 0) run.push(q); }
+        if (f >= 0 && (fi < 0 || f === fi)) {
+          run.push(q);
+          fi = f;
+        } else {
+          flush();
+          fi = f;
+          if (f >= 0) run.push(q);
+        }
       }
       flush();
     }
@@ -253,9 +311,18 @@ export function andenes(ctx: UrbanCtx, footprint: Polygon[], reach: number): { l
     const f = flights[k];
     const path: Vec2[] = [];
     let q = c;
-    for (let i = 0; i < 60 && pointInRing(f, q); i++) { path.unshift(q); const d = down(q); q = { x: q.x - d.x * 4, y: q.y - d.y * 4 }; }
+    for (let i = 0; i < 60 && pointInRing(f, q); i++) {
+      path.unshift(q);
+      const d = down(q);
+      q = { x: q.x - d.x * 4, y: q.y - d.y * 4 };
+    }
     q = c;
-    for (let i = 0; i < 60; i++) { const d = down(q); q = { x: q.x + d.x * 4, y: q.y + d.y * 4 }; if (!pointInRing(f, q)) break; path.push(q); }
+    for (let i = 0; i < 60; i++) {
+      const d = down(q);
+      q = { x: q.x + d.x * 4, y: q.y + d.y * 4 };
+      if (!pointInRing(f, q)) break;
+      path.push(q);
+    }
     if (path.length >= 4) out.push({ kind: 'terrace-stair', path, width: 1.4 });
   });
   return { lines: out, fields: flights };
@@ -264,21 +331,27 @@ export function andenes(ctx: UrbanCtx, footprint: Polygon[], reach: number): { l
 /** Canalized streams: stone channel walls along both banks of the watercourses inside the town footprint. */
 export function canals(ctx: UrbanCtx, footprint: MultiPoly): UrbanLine[] {
   const out: UrbanLine[] = [];
-  const inside = (q: Vec2) => footprint.some((ph) => pointInRing(ph.outer, q) && !ph.holes.some((h) => pointInRing(h, q)));
+  const inside = (q: Vec2) => footprint.some(ph => pointInRing(ph.outer, q) && !ph.holes.some(h => pointInRing(h, q)));
   for (const rv of ctx.terrain.rivers) {
     const pl = rv.path;
     for (const side of [1, -1]) {
       let run: Vec2[] = [];
-      const flush = () => { if (run.length >= 2 && polylineLength(run) > 25) out.push({ kind: 'canal-wall', path: run, width: 1 }); run = []; };
+      const flush = () => {
+        if (run.length >= 2 && polylineLength(run) > 25) out.push({ kind: 'canal-wall', path: run, width: 1 });
+        run = [];
+      };
       for (let i = 0; i < pl.length; i++) {
-        const a = pl[Math.max(0, i - 1)], b = pl[Math.min(pl.length - 1, i + 1)];
+        const a = pl[Math.max(0, i - 1)],
+          b = pl[Math.min(pl.length - 1, i + 1)];
         const L = dist(a, b) || 1;
-        const nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
+        const nx = -(b.y - a.y) / L,
+          ny = (b.x - a.x) / L;
         const hw = Math.max(1.6, rv.width[i] / 2) + 0.6;
         const q = { x: pl[i].x + nx * hw * side, y: pl[i].y + ny * hw * side };
         // (the town on this bank: the footprint excludes the water itself)
         const bank = { x: pl[i].x + nx * (hw + 6) * side, y: pl[i].y + ny * (hw + 6) * side };
-        if (inside(bank) && rv.width[i] < 14) run.push(q); else flush();
+        if (inside(bank) && rv.width[i] < 14) run.push(q);
+        else flush();
       }
       flush();
     }

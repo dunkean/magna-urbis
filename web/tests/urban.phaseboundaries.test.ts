@@ -10,8 +10,7 @@ describe('urban phase boundaries', () => {
     const w = generate(makeOptions({ seed: 'p4uefz', size: 'city', culture: 'european-organic' }));
     const u = w.urban!;
     for (let i = 1; i < u.phases.length; i++) {
-      expect(mpArea(difference(u.phases[i - 1].region, u.phases[i].region)),
-        `phase ${i + 1} must retain the older districts`).toBeLessThanOrEqual(0.05);
+      expect(mpArea(difference(u.phases[i - 1].region, u.phases[i].region)), `phase ${i + 1} must retain the older districts`).toBeLessThanOrEqual(0.05);
     }
     const index = new GridIndex<number>(40);
     u.quarters.forEach((q, i) => index.insertPts(q.poly.outer, i));
@@ -19,8 +18,7 @@ describe('urban phase boundaries', () => {
       const bb = bboxOf(q.poly.outer);
       for (const j of index.query(bb.x0, bb.y0, bb.x1, bb.y1)) {
         if (j <= i) continue;
-        expect(mpArea(intersection(q.poly, u.quarters[j].poly)),
-          `quarters ${i}/${j} (${q.zone}/${u.quarters[j].zone}) must be disjoint`).toBeLessThanOrEqual(0.05);
+        expect(mpArea(intersection(q.poly, u.quarters[j].poly)), `quarters ${i}/${j} (${q.zone}/${u.quarters[j].zone}) must be disjoint`).toBeLessThanOrEqual(0.05);
       }
     });
     const buildings = new GridIndex<number>(40);
@@ -32,8 +30,7 @@ describe('urban phase boundaries', () => {
       for (const j of buildings.query(bb.x0, bb.y0, bb.x1, bb.y1)) {
         const c = u.buildings[j];
         if (j <= i || c.parcel === undefined || u.parcels[c.parcel].block === block) continue;
-        expect(mpArea(intersection(b.poly, c.poly)),
-          `buildings ${i}/${j} in separate blocks must be disjoint`).toBeLessThanOrEqual(0.05);
+        expect(mpArea(intersection(b.poly, c.poly)), `buildings ${i}/${j} in separate blocks must be disjoint`).toBeLessThanOrEqual(0.05);
       }
     });
   });

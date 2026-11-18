@@ -26,12 +26,16 @@ export function primitiveHouse(pl: Plot, cov: number, P: MorphologyParams, rng: 
   const width = long ? rng.range(5.2, 7.2) : Math.sqrt(size / ratio);
   const length = long ? Math.max(width * 1.4, Math.min(width * ratio, size / width)) : width * ratio;
   const bow = rng.fork('bow').range(0.14, 0.28);
-  const shape = (L: number) => (c: { x: number; y: number }, s: number) => round ? hut(c, Math.sqrt(size / Math.PI) * s, typology === 'tipi' ? 12 : 16, angle)
-    : typology === 'longhouse' && P.arch.material !== 'bark' ? bowSided(c, angle, L * s, width * s, bow)
-      // An Iroquoian longhouse shelters several families. Shrinking it into a 9 m cottage loses that programme.
-      // The sampled rounded end reduces the OBB length slightly, so retain a 12.5 m nominal length when fitting.
-      : iroquoian ? apsidal(c, angle, Math.max(12.5, L * s), width * s)
-        : rect(c, angle, L * s, width * s);
+  const shape = (L: number) => (c: { x: number; y: number }, s: number) =>
+    round
+      ? hut(c, Math.sqrt(size / Math.PI) * s, typology === 'tipi' ? 12 : 16, angle)
+      : typology === 'longhouse' && P.arch.material !== 'bark'
+        ? bowSided(c, angle, L * s, width * s, bow)
+        : // An Iroquoian longhouse shelters several families. Shrinking it into a 9 m cottage loses that programme.
+          // The sampled rounded end reduces the OBB length slightly, so retain a 12.5 m nominal length when fitting.
+          iroquoian
+          ? apsidal(c, angle, Math.max(12.5, L * s), width * s)
+          : rect(c, angle, L * s, width * s);
   const minScale = long ? Math.max(0.6, 4.7 / width) : 0.6;
   // Reserve the complete shared 1.6 m passage at the outset. Later access trimming must not shorten a clan
   // longhouse into detached fragments; the other primitive cultures retain their established fitting/RNG.
@@ -45,7 +49,9 @@ export function primitiveHouse(pl: Plot, cov: number, P: MorphologyParams, rng: 
   if ((!house || !shapeOkObb(house)) && iroquoian) {
     const clan = fitClanLonghouse(pl, preferredAngle);
     if (clan) {
-      house = clan.house; angle = clan.angle; householdLot = clan.lot;
+      house = clan.house;
+      angle = clan.angle;
+      householdLot = clan.lot;
       // A real full-width side passage was reserved before fitting, including the granary below.
       pl.gated = true;
     }
@@ -57,12 +63,22 @@ export function primitiveHouse(pl: Plot, cov: number, P: MorphologyParams, rng: 
       const hr = rng.fork('hut:' + i);
       if (!hr.chance(0.6)) continue;
       const radius = Math.sqrt(size / Math.PI) * hr.range(0.85, 1.05);
-      const fp = fitIn(pl.poly, (c, s) => hut(c, radius * s, typology === 'tipi' ? 12 : 16, angle), out.map((b) => b.poly), { margin: 0.8, gap: 1.2, minScale: 0.8, nc: 24 });
+      const fp = fitIn(
+        pl.poly,
+        (c, s) => hut(c, radius * s, typology === 'tipi' ? 12 : 16, angle),
+        out.map(b => b.poly),
+        { margin: 0.8, gap: 1.2, minScale: 0.8, nc: 24 },
+      );
       if (fp && area(fp) >= 16 && shapeOkObb(fp)) out.push({ ...out[0], poly: fp });
     }
   }
   if (typology !== 'tipi' && typology !== 'ger' && area(pl.poly) > 220 && rng.fork('granary').chance(0.36)) {
-    const shed = fitIn(householdLot, (c, s) => rect(c, angle, 6.3 * s, 5.8 * s), out.map((b) => b.poly), { margin, gap: iroquoian ? 1.7 : 1.2, minScale: 0.8, nc: 24 });
+    const shed = fitIn(
+      householdLot,
+      (c, s) => rect(c, angle, 6.3 * s, 5.8 * s),
+      out.map(b => b.poly),
+      { margin, gap: iroquoian ? 1.7 : 1.2, minScale: 0.8, nc: 24 },
+    );
     if (shed && shapeOkObb(shed)) out.push({ poly: shed, kind: 'shed', arch: P.id === 'barbarian-town' ? 'granary-on-posts' : 'granary', roof: 'gable', material: P.id === 'barbarian-town' ? 'timber' : P.arch.material, storeys: 1, orientation: angle });
   }
   return out;
@@ -70,41 +86,60 @@ export function primitiveHouse(pl: Plot, cov: number, P: MorphologyParams, rng: 
 
 /** Last resort for a real clan dwelling; the existing successful fits and their draws stay unchanged. */
 function fitClanLonghouse(pl: Plot, preferredAngle: number): { house: Polygon; lot: Polygon; angle: number } | null {
-  const box = obb(pl.poly), axis = Math.atan2(box.u.y, box.u.x);
+  const box = obb(pl.poly),
+    axis = Math.atan2(box.u.y, box.u.x);
   const angles = [preferredAngle, preferredAngle + Math.PI / 2, axis];
-  const [fa, fb] = pl.front, frontLength = dist(fa, fb);
+  const [fa, fb] = pl.front,
+    frontLength = dist(fa, fb);
   if (frontLength < 1e-6) return null;
   const tangent = { x: (fb.x - fa.x) / frontLength, y: (fb.y - fa.y) / frontLength };
-  const margin = 0.5, length = 12, width = 4.7;
+  const margin = 0.5,
+    length = 12,
+    width = 4.7;
   for (const [which, side] of [pl.sideA, pl.sideB].entries()) {
     let inward = { x: -side.d.y, y: side.d.x };
     if ((inward.x * tangent.x + inward.y * tangent.y) * (which ? -1 : 1) < 0) inward = { x: -inward.x, y: -inward.y };
     const keep = { p: { x: side.p.x + inward.x * 1.6, y: side.p.y + inward.y * 1.6 }, n: inward };
     // Four largest connected pieces per side, three axes and <=50 centres each: <=1200 fixed-size
     // candidate checks. The clipping cost depends only on the input polygon, not a raster/map extent.
-    const lots = clipPlot(pl.poly, [keep], isConvex(pl.poly, 1e-3)).filter((lot) => lot.length >= 3 && area(lot) >= 16)
-      .sort((a, b) => area(b) - area(a)).slice(0, 4);
+    const lots = clipPlot(pl.poly, [keep], isConvex(pl.poly, 1e-3))
+      .filter(lot => lot.length >= 3 && area(lot) >= 16)
+      .sort((a, b) => area(b) - area(a))
+      .slice(0, 4);
     for (const lot of lots) {
       const pole = inscribed(lot, [], 0.5).c;
       for (const angle of angles) {
         // A long footprint needs centres distributed over its feasible rectangle, rather than only the
         // deepest circular poles. Exactly one pole plus a fixed 7 by 7 grid, independent of lot/map extent.
-        const u = { x: Math.cos(angle), y: Math.sin(angle) }, v = { x: -u.y, y: u.x };
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        const u = { x: Math.cos(angle), y: Math.sin(angle) },
+          v = { x: -u.y, y: u.x };
+        let x0 = Infinity,
+          y0 = Infinity,
+          x1 = -Infinity,
+          y1 = -Infinity;
         for (const p of lot) {
-          const x = p.x * u.x + p.y * u.y, y = p.x * v.x + p.y * v.y;
-          x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+          const x = p.x * u.x + p.y * u.y,
+            y = p.x * v.x + p.y * v.y;
+          x0 = Math.min(x0, x);
+          x1 = Math.max(x1, x);
+          y0 = Math.min(y0, y);
+          y1 = Math.max(y1, y);
         }
-        x0 += length / 2 + margin; x1 -= length / 2 + margin;
-        y0 += width / 2 + margin; y1 -= width / 2 + margin;
+        x0 += length / 2 + margin;
+        x1 -= length / 2 + margin;
+        y0 += width / 2 + margin;
+        y1 -= width / 2 + margin;
         const cands: Vec2[] = [pole];
-        if (x1 >= x0 && y1 >= y0) for (let ix = 0; ix < 7; ix++) for (let iy = 0; iy < 7; iy++) {
-          const x = x0 + (x1 - x0) * ix / 6, y = y0 + (y1 - y0) * iy / 6;
-          cands.push({ x: u.x * x + v.x * y, y: u.y * x + v.y * y });
-        }
+        if (x1 >= x0 && y1 >= y0)
+          for (let ix = 0; ix < 7; ix++)
+            for (let iy = 0; iy < 7; iy++) {
+              const x = x0 + ((x1 - x0) * ix) / 6,
+                y = y0 + ((y1 - y0) * iy) / 6;
+              cands.push({ x: u.x * x + v.x * y, y: u.y * x + v.y * y });
+            }
         // Fit a 12 m nominal clan dwelling; the sampled apsidal ends give ~11.77 m at this width.
         // Keep both this length and the habitable width when fitting short lots.
-        const house = fitIn(lot, (c) => apsidal(c, angle, length, width), [], { margin, gap: 0, minScale: 1, cands });
+        const house = fitIn(lot, c => apsidal(c, angle, length, width), [], { margin, gap: 0, minScale: 1, cands });
         if (house && shapeOkObb(house) && 2 * obb(house).hu > 11.5 && polyInside(pl.poly, house) && fits(pl.poly, house, [], margin, 0)) return { house, lot, angle };
       }
     }

@@ -22,7 +22,8 @@ const QIBLA_SAHEL = 0.05;
  */
 export function buttressed(c: Vec2, ang: number, hu: number, hv: number, step: number, w: number, d: number): Polygon {
   const parts: Polygon[] = [rectAt(c, ang, -hu, hu, -hv, hv)];
-  const nU = Math.max(1, Math.floor((2 * hu) / step)), nV = Math.max(1, Math.floor((2 * hv) / step));
+  const nU = Math.max(1, Math.floor((2 * hu) / step)),
+    nV = Math.max(1, Math.floor((2 * hv) / step));
   for (let i = 0; i <= nU; i++) {
     const u = -hu + (2 * hu * i) / nU;
     parts.push(rectAt(c, ang, u - w / 2, u + w / 2, -hv - d, -hv + 0.3), rectAt(c, ang, u - w / 2, u + w / 2, hv - 0.3, hv + d));
@@ -31,7 +32,7 @@ export function buttressed(c: Vec2, ang: number, hu: number, hv: number, step: n
     const v = -hv + (2 * hv * j) / nV;
     parts.push(rectAt(c, ang, -hu - d, -hu + 0.3, v - w / 2, v + w / 2), rectAt(c, ang, hu - 0.3, hu + d, v - w / 2, v + w / 2));
   }
-  const u = unionS([{ outer: parts[0], holes: [] }], ...parts.slice(1).map((p) => [{ outer: p, holes: [] }]));
+  const u = unionS([{ outer: parts[0], holes: [] }], ...parts.slice(1).map(p => [{ outer: p, holes: [] }]));
   let best = u[0]?.outer ?? parts[0];
   for (const ph of u) if (area(ph.outer) > area(best)) best = ph.outer;
   return orientPos(best);
@@ -56,7 +57,9 @@ function mudMosque(lot: Polygon, cx: CompoundCtx, great = true): CompoundOut {
   const hall = buttressed({ x: c.x + Math.cos(ang) * ((L + hallU0) / 2), y: c.y + Math.sin(ang) * ((L + hallU0) / 2) }, ang, (L - hallU0) / 2 - 1.2, H - 1.2, 3.2, 1.1, 0.8);
   if (!fits(P, hall, 1)) return out;
   // the tower-minarets on the qibla wall (three for the great mosque, one pyramidal minaret for the small one)
-  const towers: Vec2[] = great ? [-0.55, 0, 0.55].map((k) => ({ x: c.x + Math.cos(ang) * (L + 0.6) - Math.sin(ang) * k * H, y: c.y + Math.sin(ang) * (L + 0.6) + Math.cos(ang) * k * H })) : [{ x: c.x + Math.cos(ang) * (L - 2) - Math.sin(ang) * (H + 1.5), y: c.y + Math.sin(ang) * (L - 2) + Math.cos(ang) * (H + 1.5) }];
+  const towers: Vec2[] = great
+    ? [-0.55, 0, 0.55].map(k => ({ x: c.x + Math.cos(ang) * (L + 0.6) - Math.sin(ang) * k * H, y: c.y + Math.sin(ang) * (L + 0.6) + Math.cos(ang) * k * H }))
+    : [{ x: c.x + Math.cos(ang) * (L - 2) - Math.sin(ang) * (H + 1.5), y: c.y + Math.sin(ang) * (L - 2) + Math.cos(ang) * (H + 1.5) }];
   // (the towers are part of the wall: one footprint with the hall; their tops drawn as small squares)
   let body = hall;
   for (const t of towers) {
@@ -107,4 +110,3 @@ export function registerSahel(): void {
   registered = true;
   registerBuilders({ 'mud-mosque': (l, c) => mudMosque(l, c, true), 'sahel-mosque': (l, c) => mudMosque(l, c, false), 'sahel-palace': sahelPalace });
 }
-

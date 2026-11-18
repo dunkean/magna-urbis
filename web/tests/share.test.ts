@@ -3,7 +3,11 @@ import { makeOptions, fromQuery, toQuery, applyOverride, DEFAULTS } from '../src
 import { generate } from '../src/gen/pipeline';
 import { fullQuery, uiStateFromQuery, pinsToString, pinsFromString, previewFlags, cropAround, bugReport } from '../src/ui/share';
 
-const pins = [{ x: 123.4, y: 567.8, note: 'roof, odd; "shape" & more' }, { x: 10, y: 20, note: '' }, { x: 5.5, y: 6.5, note: 'café ☃' }];
+const pins = [
+  { x: 123.4, y: 567.8, note: 'roof, odd; "shape" & more' },
+  { x: 10, y: 20, note: '' },
+  { x: 5.5, y: 6.5, note: 'café ☃' },
+];
 const view = { cx: 800.2, cy: 900.1, scale: 0.4123 };
 
 describe('share state (pins, view)', () => {
@@ -22,18 +26,26 @@ describe('share state (pins, view)', () => {
   it('never changes the options, the options hash or the generated world', () => {
     const base = 'seed=share1&size=hamlet&culture=french-organic';
     const o = fromQuery(base);
-    const withUi = fromQuery(base + '&' + new URLSearchParams(fullQuery(o, pins, view)).toString().split('&').filter((kv) => /^(pins|view)=/.test(kv)).join('&'));
+    const withUi = fromQuery(
+      base +
+        '&' +
+        new URLSearchParams(fullQuery(o, pins, view))
+          .toString()
+          .split('&')
+          .filter(kv => /^(pins|view)=/.test(kv))
+          .join('&'),
+    );
     expect(withUi).toEqual(o);
     expect(toQuery(withUi)).toBe(toQuery(o));
     expect(fromQuery(fullQuery(o, [], null))).toEqual(o);
     expect(fullQuery(o, [], null)).toMatch(/^id=1[rz][A-Za-z0-9_-]+$/);
-    const a = generate(withUi), b = generate(o);
+    const a = generate(withUi),
+      b = generate(o);
     expect(JSON.stringify(a.urban)).toBe(JSON.stringify(b.urban));
     // The vertex count of the slowest measured block follows wall-clock timing too.
-    const det = (st: Record<string, unknown>): string => JSON.stringify(Object.entries(st)
-      .filter(([k]) => !/(^|\.)ms(\.|$)/.test(k) && k !== 'urban.slowestBlockVerts'));
+    const det = (st: Record<string, unknown>): string => JSON.stringify(Object.entries(st).filter(([k]) => !/(^|\.)ms(\.|$)/.test(k) && k !== 'urban.slowestBlockVerts'));
     expect(det(a.stats)).toBe(det(b.stats));
-    const worldData = (w: unknown): string => JSON.stringify(w, (key, value) => key === 'stats' ? undefined : value);
+    const worldData = (w: unknown): string => JSON.stringify(w, (key, value) => (key === 'stats' ? undefined : value));
     expect(worldData(a)).toBe(worldData(b));
   });
 });
@@ -41,12 +53,19 @@ describe('share state (pins, view)', () => {
 describe('bug report', () => {
   it('previewFlags are accepted by scripts/preview.ts (applyOverride round trip)', () => {
     const o = fromQuery('seed=x%20y&size=village&style=atlas&culture=roman-core&walls=single&suburbs=some&shanty=many&lang=english&site=hill&eager=20000&map=3000&sprawl=1.5&contours=0&roads=3&seaLevel=0.2&settl=3&cathedral=yes');
-    const flags = previewFlags(o).match(/'[^']*'|\S+/g)!.map((t) => t.replace(/^'|'$/g, ''));
+    const flags = previewFlags(o)
+      .match(/'[^']*'|\S+/g)!
+      .map(t => t.replace(/^'|'$/g, ''));
     const t = makeOptions({});
     for (let i = 0; i < flags.length; i++) {
       const [a, v] = [flags[i], flags[i + 1]];
-      if (a === '--seed') t.seed = v; else if (a === '--size') t.size = v as never; else if (a === '--style') t.style = v as never;
-      else if (a === '--opt') { const eq = v.indexOf('='); applyOverride(t, v.slice(0, eq), v.slice(eq + 1)); } else continue;
+      if (a === '--seed') t.seed = v;
+      else if (a === '--size') t.size = v as never;
+      else if (a === '--style') t.style = v as never;
+      else if (a === '--opt') {
+        const eq = v.indexOf('=');
+        applyOverride(t, v.slice(0, eq), v.slice(eq + 1));
+      } else continue;
       i++;
     }
     expect(toQuery(t)).toBe(toQuery(o));

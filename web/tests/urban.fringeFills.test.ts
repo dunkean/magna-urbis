@@ -7,38 +7,54 @@ import { streetStrips } from '../src/gen/urban/openfringe';
 import { finalizeFootprints } from '../src/gen/urban/footprintFinal';
 import native from './fixtures/urban-fringe-fills-v15.json';
 
-type NativeCase = { i: number; kind: string; arch: string; roof: Polygon; owner: Polygon;
-  front: [Vec2, Vec2]; block: Polygon; peers: { i: number; poly: Polygon }[];
-  occupied: { i: number; poly: Polygon }[] };
-const fixture = native as unknown as { streets: { path: Vec2[]; width: number; widths?: number[] }[];
-  places: Polygon[]; water: { outer: Polygon; holes: Polygon[] }[];
+type NativeCase = { i: number; kind: string; arch: string; roof: Polygon; owner: Polygon; front: [Vec2, Vec2]; block: Polygon; peers: { i: number; poly: Polygon }[]; occupied: { i: number; poly: Polygon }[] };
+const fixture = native as unknown as {
+  streets: { path: Vec2[]; width: number; widths?: number[] }[];
+  places: Polygon[];
+  water: { outer: Polygon; holes: Polygon[] }[];
   walls: { path: Vec2[]; thickness?: number }[];
-  lines: { path: Vec2[]; width?: number; closed?: boolean }[]; cases: NativeCase[] };
+  lines: { path: Vec2[]; width?: number; closed?: boolean }[];
+  cases: NativeCase[];
+};
 const streetAt = makeStreetAt(fixture.streets, fixture.places);
-const reserve = [...fixture.water,
-  ...fixture.streets.flatMap((s) => streetStrips(s.path, s.widths ?? s.width)),
-  ...fixture.walls.flatMap((w) => streetStrips([...w.path, w.path[0]], Math.max(w.thickness ?? 1, 5.6))),
-  ...fixture.lines.flatMap((l) => streetStrips(l.closed ? [...l.path, l.path[0]] : l.path, l.width ?? 1)),
+const reserve = [
+  ...fixture.water,
+  ...fixture.streets.flatMap(s => streetStrips(s.path, s.widths ?? s.width)),
+  ...fixture.walls.flatMap(w => streetStrips([...w.path, w.path[0]], Math.max(w.thickness ?? 1, 5.6))),
+  ...fixture.lines.flatMap(l => streetStrips(l.closed ? [...l.path, l.path[0]] : l.path, l.width ?? 1)),
 ];
-const room = (f: NativeCase) => f.peers.findIndex((p) => p.i === f.i);
+const room = (f: NativeCase) => f.peers.findIndex(p => p.i === f.i);
 const rect = (x: number): Polygon => [
-  { x, y: 0 }, { x: x + 10, y: 0 }, { x: x + 10, y: 10 }, { x, y: 10 },
+  { x, y: 0 },
+  { x: x + 10, y: 0 },
+  { x: x + 10, y: 10 },
+  { x, y: 10 },
 ];
 
 describe('native fringe infill decisions', () => {
   it('preserves the served near-triangular native roof 1072 byte for byte', () => {
-    const f = fixture.cases.find((c) => c.i === 1072)!;
-    const before = blockReach(f.block, f.peers.map((p) => p.poly), streetAt);
-    const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 },
-      ...f.occupied.map((p) => ({ poly: p.poly, kind: 'landmark' })),
-      ...Array.from({ length: 49 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
-    const source = JSON.stringify(f.roof), backLand: { outer: Polygon; holes: Polygon[] }[] = [];
-    const result = finalizeFootprints({ buildings,
-      parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: 78 }], backLand,
-      placementClear: () => false, allowFillRemoval: true, validateRemoval: () => true,
+    const f = fixture.cases.find(c => c.i === 1072)!;
+    const before = blockReach(
+      f.block,
+      f.peers.map(p => p.poly),
+      streetAt,
+    );
+    const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 }, ...f.occupied.map(p => ({ poly: p.poly, kind: 'landmark' })), ...Array.from({ length: 49 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
+    const source = JSON.stringify(f.roof),
+      backLand: { outer: Polygon; holes: Polygon[] }[] = [];
+    const result = finalizeFootprints({
+      buildings,
+      parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: 78 }],
+      backLand,
+      placementClear: () => false,
+      allowFillRemoval: true,
+      validateRemoval: () => true,
       validateParts: (_, parts) => {
-        const after = blockReach(f.block,
-          f.peers.flatMap((p) => p.i === f.i ? parts : [p.poly]), streetAt);
+        const after = blockReach(
+          f.block,
+          f.peers.flatMap(p => (p.i === f.i ? parts : [p.poly])),
+          streetAt,
+        );
         return after.every((served, j) => served || !before[j]);
       },
     });
@@ -49,42 +65,67 @@ describe('native fringe infill decisions', () => {
   }, 30_000);
 
   it('does not classify a long capped matchstick as a plausible triangle', () => {
-    const stick: Polygon = [{ x: 0, y: 0 }, { x: 0.1, y: 0 },
-      { x: 14, y: 2 }, { x: 0, y: 2 }];
-    const buildings = [{ poly: stick, kind: 'house', parcel: 0 },
-      ...Array.from({ length: 49 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
-    const result = finalizeFootprints({ buildings,
-      parcels: [{ poly: [{ x: -1, y: -1 }, { x: 15, y: -1 },
-        { x: 15, y: 3 }, { x: -1, y: 3 }], use: 'plot', block: 0 }], backLand: [],
-      placementClear: () => false, allowFillRemoval: true, validateRemoval: () => true,
+    const stick: Polygon = [
+      { x: 0, y: 0 },
+      { x: 0.1, y: 0 },
+      { x: 14, y: 2 },
+      { x: 0, y: 2 },
+    ];
+    const buildings = [{ poly: stick, kind: 'house', parcel: 0 }, ...Array.from({ length: 49 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
+    const result = finalizeFootprints({
+      buildings,
+      parcels: [
+        {
+          poly: [
+            { x: -1, y: -1 },
+            { x: 15, y: -1 },
+            { x: 15, y: 3 },
+            { x: -1, y: 3 },
+          ],
+          use: 'plot',
+          block: 0,
+        },
+      ],
+      backLand: [],
+      placementClear: () => false,
+      allowFillRemoval: true,
+      validateRemoval: () => true,
     });
     expect(result.removed).toEqual([0]);
   });
 
   it('keeps a real small room from roof 647 and returns its unusable arms to the yard', () => {
-    const f = fixture.cases.find((c) => c.i === 647)!;
-    const before = blockReach(f.block, f.peers.map((p) => p.poly), streetAt);
-    const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 },
-      ...f.occupied.map((p) => ({ poly: p.poly, kind: 'landmark' })),
-      ...Array.from({ length: 50 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
+    const f = fixture.cases.find(c => c.i === 647)!;
+    const before = blockReach(
+      f.block,
+      f.peers.map(p => p.poly),
+      streetAt,
+    );
+    const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 }, ...f.occupied.map(p => ({ poly: p.poly, kind: 'landmark' })), ...Array.from({ length: 50 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
     const backLand: { outer: Polygon; holes: Polygon[] }[] = [];
-    const result = finalizeFootprints({ buildings,
-      parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: 42 }], backLand,
-      openQuarterEdge: () => false, tipConstrained: () => true,
-      placementClear: (p) => {
+    const result = finalizeFootprints({
+      buildings,
+      parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: 42 }],
+      backLand,
+      openQuarterEdge: () => false,
+      tipConstrained: () => true,
+      placementClear: p => {
         const hit = tryIntersection(p, reserve);
         return !hit.failed && mpArea(hit.pieces) <= 1e-6;
       },
       validateParts: (_, parts) => {
-        const after = blockReach(f.block,
-          f.peers.flatMap((p) => p.i === f.i ? parts : [p.poly]), streetAt);
+        const after = blockReach(
+          f.block,
+          f.peers.flatMap(p => (p.i === f.i ? parts : [p.poly])),
+          streetAt,
+        );
         return after.every((served, j) => served || !before[j]);
       },
     });
     expect(result.invalid).not.toContain(0);
     expect(result.removed).toEqual([]);
     expect(area(buildings[0].poly)).toBeGreaterThanOrEqual(0.65 * area(f.roof));
-    expect(area(buildings[0].poly)).toBeLessThan(0.70 * area(f.roof));
+    expect(area(buildings[0].poly)).toBeLessThan(0.7 * area(f.roof));
     expect(2 * inscribed(buildings[0].poly, [], 0.05).r).toBeGreaterThanOrEqual(3.2);
     expect(minNeck(buildings[0].poly)?.w ?? Infinity).toBeGreaterThanOrEqual(3.2);
     expect(mpArea(tryDifference(buildings[0].poly, f.owner).pieces)).toBeLessThanOrEqual(1e-6);
@@ -93,17 +134,16 @@ describe('native fringe infill decisions', () => {
 
   for (const reason of ['access', 'budget', 'free exterior'] as const) {
     it(`refuses a loss-making native 647 crop when ${reason} is unproved`, () => {
-      const f = fixture.cases.find((c) => c.i === 647)!;
-      const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 },
-        ...f.occupied.map((p) => ({ poly: p.poly, kind: 'landmark' })),
-        ...(reason === 'budget' ? [] : Array.from({ length: 50 }, (_, j) =>
-          ({ poly: rect(3000 + 20 * j), kind: 'house' })))];
+      const f = fixture.cases.find(c => c.i === 647)!;
+      const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 }, ...f.occupied.map(p => ({ poly: p.poly, kind: 'landmark' })), ...(reason === 'budget' ? [] : Array.from({ length: 50 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' })))];
       const land: { outer: Polygon; holes: Polygon[] }[] = [];
-      const result = finalizeFootprints({ buildings,
-        parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: 42 }], backLand: land,
+      const result = finalizeFootprints({
+        buildings,
+        parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: 42 }],
+        backLand: land,
         openQuarterEdge: () => reason === 'free exterior',
         tipConstrained: () => reason !== 'free exterior',
-        placementClear: (p) => {
+        placementClear: p => {
           const hit = tryIntersection(p, reserve);
           return !hit.failed && mpArea(hit.pieces) <= 1e-6;
         },
@@ -115,26 +155,36 @@ describe('native fringe infill decisions', () => {
     }, 30_000);
   }
 
-  for (const id of [723, 912]) it(`returns irreparable ordinary roof ${id} to its owner yard`, () => {
-    const f = fixture.cases.find((c) => c.i === id)!;
-    const before = blockReach(f.block, f.peers.map((p) => p.poly), streetAt);
-    const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 },
-      ...f.occupied.map((p) => ({ poly: p.poly, kind: 'landmark' })),
-      ...Array.from({ length: 50 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
-    const backLand: { outer: Polygon; holes: Polygon[] }[] = [];
-    const result = finalizeFootprints({ buildings,
-      parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: id }], backLand,
-      placementClear: () => false, validateParts: () => false,
-      allowFillRemoval: true,
-      validateRemoval: (i, pending) => {
-        expect(i).toBe(0);
-        expect(pending).toEqual([0]);
-        const after = blockReach(f.block, f.peers.filter((p) => p.i !== f.i).map((p) => p.poly), streetAt);
-        return after.every((served, j) => served || !before[j < room(f) ? j : j + 1]);
-      },
-    });
-    expect(result.removed).toEqual([0]);
-    expect(result.invalid).toEqual([]);
-    expect(backLand).toEqual([{ outer: f.roof, holes: [] }]);
-  }, 30_000);
+  for (const id of [723, 912])
+    it(`returns irreparable ordinary roof ${id} to its owner yard`, () => {
+      const f = fixture.cases.find(c => c.i === id)!;
+      const before = blockReach(
+        f.block,
+        f.peers.map(p => p.poly),
+        streetAt,
+      );
+      const buildings = [{ poly: f.roof, kind: f.kind, arch: f.arch, parcel: 0 }, ...f.occupied.map(p => ({ poly: p.poly, kind: 'landmark' })), ...Array.from({ length: 50 }, (_, j) => ({ poly: rect(3000 + 20 * j), kind: 'house' }))];
+      const backLand: { outer: Polygon; holes: Polygon[] }[] = [];
+      const result = finalizeFootprints({
+        buildings,
+        parcels: [{ poly: f.owner, front: f.front, use: 'plot', block: id }],
+        backLand,
+        placementClear: () => false,
+        validateParts: () => false,
+        allowFillRemoval: true,
+        validateRemoval: (i, pending) => {
+          expect(i).toBe(0);
+          expect(pending).toEqual([0]);
+          const after = blockReach(
+            f.block,
+            f.peers.filter(p => p.i !== f.i).map(p => p.poly),
+            streetAt,
+          );
+          return after.every((served, j) => served || !before[j < room(f) ? j : j + 1]);
+        },
+      });
+      expect(result.removed).toEqual([0]);
+      expect(result.invalid).toEqual([]);
+      expect(backLand).toEqual([{ outer: f.roof, holes: [] }]);
+    }, 30_000);
 });

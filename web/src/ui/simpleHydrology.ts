@@ -1,6 +1,8 @@
 /** V2 hydrology types; the implementation lives in Rust vector_water. */
 export interface SimpleHydrology {
-  n: number; width: number; cellArea: number;
+  n: number;
+  width: number;
+  cellArea: number;
   /** Signed heights used for the computation (metres). */
   height: Float32Array;
   /** Water surface after filling (metres). */

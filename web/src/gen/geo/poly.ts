@@ -21,8 +21,13 @@ export function orientPos(p: Polygon): Polygon {
 /** Interior angle (radians, 0..2π) at vertex i of a positively oriented polygon. */
 export function interiorAngle(p: Polygon, i: number): number {
   const n = p.length;
-  const a = p[(i - 1 + n) % n], b = p[i], c = p[(i + 1) % n];
-  const ux = a.x - b.x, uy = a.y - b.y, vx = c.x - b.x, vy = c.y - b.y;
+  const a = p[(i - 1 + n) % n],
+    b = p[i],
+    c = p[(i + 1) % n];
+  const ux = a.x - b.x,
+    uy = a.y - b.y,
+    vx = c.x - b.x,
+    vy = c.y - b.y;
   // angle from (b→c) counter-clockwise to (b→a) is the interior angle for a positive ring
   let ang = Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
   ang = -ang;
@@ -59,11 +64,17 @@ export function cleanRing(p: Polygon, minEdge = 0.3, colDeg = 1, triMax = Infini
     const n = pts.length;
     for (let i = 0; i < n; i++) {
       const a = keep.length ? keep[keep.length - 1] : pts[(i - 1 + n) % n];
-      const b = pts[i], c = pts[(i + 1) % n];
-      const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y;
-      const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+      const b = pts[i],
+        c = pts[(i + 1) % n];
+      const ux = b.x - a.x,
+        uy = b.y - a.y,
+        vx = c.x - b.x,
+        vy = c.y - b.y;
+      const lu = Math.hypot(ux, uy),
+        lv = Math.hypot(vx, vy);
       if (lu < 1e-9 || lv < 1e-9) continue;
-      const s = (ux * vy - uy * vx) / (lu * lv), co = (ux * vx + uy * vy) / (lu * lv);
+      const s = (ux * vy - uy * vx) / (lu * lv),
+        co = (ux * vx + uy * vy) / (lu * lv);
       if (Math.abs(s) < colSin && co > 0 && 0.5 * Math.abs(ux * vy - uy * vx) <= triMax) continue; // straight through
       if (co < -0.99 && 0.5 * Math.abs(ux * vy - uy * vx) < 0.05) continue; // hair / spike (out and back)
       keep.push(b);
@@ -78,11 +89,16 @@ export function cleanRing(p: Polygon, minEdge = 0.3, colDeg = 1, triMax = Infini
 
 /** Proper segment intersection (excluding shared endpoints). Returns t along ab or -1. */
 export function segSegT(a: Vec2, b: Vec2, c: Vec2, d: Vec2): { t: number; u: number } | null {
-  const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y;
+  const rx = b.x - a.x,
+    ry = b.y - a.y,
+    sx = d.x - c.x,
+    sy = d.y - c.y;
   const den = rx * sy - ry * sx;
   if (Math.abs(den) < 1e-12) return null;
-  const qx = c.x - a.x, qy = c.y - a.y;
-  const t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
+  const qx = c.x - a.x,
+    qy = c.y - a.y;
+  const t = (qx * sy - qy * sx) / den,
+    u = (qx * ry - qy * rx) / den;
   if (t < 0 || t > 1 || u < 0 || u > 1) return null;
   return { t, u };
 }
@@ -95,10 +111,12 @@ export function isSimple(p: Polygon): boolean {
   if (n < 3) return false;
   if (n > 32) return isSimpleSweep(p);
   for (let i = 0; i < n; i++) {
-    const a = p[i], b = p[(i + 1) % n];
+    const a = p[i],
+      b = p[(i + 1) % n];
     for (let j = i + 1; j < n; j++) {
       if (j === i || (j + 1) % n === i || (i + 1) % n === j) continue;
-      const c = p[j], d = p[(j + 1) % n];
+      const c = p[j],
+        d = p[(j + 1) % n];
       const r = segSegT(a, b, c, d);
       if (r && r.t > 1e-9 && r.t < 1 - 1e-9 && r.u > 1e-9 && r.u < 1 - 1e-9) return false;
     }
@@ -106,27 +124,47 @@ export function isSimple(p: Polygon): boolean {
   return true;
 }
 function isSimpleSweep(p: Polygon): boolean {
-  const n = p.length, x0 = new Float64Array(n), x1 = new Float64Array(n), y0 = new Float64Array(n), y1 = new Float64Array(n);
+  const n = p.length,
+    x0 = new Float64Array(n),
+    x1 = new Float64Array(n),
+    y0 = new Float64Array(n),
+    y1 = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    const a = p[i], b = p[(i + 1) % n];
-    x0[i] = Math.min(a.x, b.x); x1[i] = Math.max(a.x, b.x); y0[i] = Math.min(a.y, b.y); y1[i] = Math.max(a.y, b.y);
+    const a = p[i],
+      b = p[(i + 1) % n];
+    x0[i] = Math.min(a.x, b.x);
+    x1[i] = Math.max(a.x, b.x);
+    y0[i] = Math.min(a.y, b.y);
+    y1[i] = Math.max(a.y, b.y);
   }
   const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => x0[a] - x0[b]);
   for (let k = 0; k < n; k++) {
-    const e = order[k], right = x1[e], bottom = y0[e], top = y1[e];
+    const e = order[k],
+      right = x1[e],
+      bottom = y0[e],
+      top = y1[e];
     for (let m = k + 1; m < n; m++) {
       const f = order[m];
       if (x0[f] > right) break;
       if (y0[f] > top || y1[f] < bottom) continue;
       // Same pair, same order and same skip rule as the all-pairs loop (i < j).
-      const i = e < f ? e : f, j = e < f ? f : e;
+      const i = e < f ? e : f,
+        j = e < f ? f : e;
       if ((j + 1) % n === i || (i + 1) % n === j) continue;
-      const a = p[i], b = p[(i + 1) % n], c = p[j], d = p[(j + 1) % n];
-      const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y;
+      const a = p[i],
+        b = p[(i + 1) % n],
+        c = p[j],
+        d = p[(j + 1) % n];
+      const rx = b.x - a.x,
+        ry = b.y - a.y,
+        sx = d.x - c.x,
+        sy = d.y - c.y;
       const den = rx * sy - ry * sx;
       if (Math.abs(den) < 1e-12) continue;
-      const qx = c.x - a.x, qy = c.y - a.y;
-      const t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
+      const qx = c.x - a.x,
+        qy = c.y - a.y;
+      const t = (qx * sy - qy * sx) / den,
+        u = (qx * ry - qy * rx) / den;
       if (t < 0 || t > 1 || u < 0 || u > 1) continue;
       if (t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9) return false;
     }
@@ -137,14 +175,17 @@ function isSimpleSweep(p: Polygon): boolean {
 export function pointInRing(p: Polygon, pt: Vec2): boolean {
   let inside = false;
   for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-    const a = p[i], b = p[j];
-    if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    const a = p[i],
+      b = p[j];
+    if (a.y > pt.y !== b.y > pt.y && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
   }
   return inside;
 }
 
 export function distToSeg(p: Vec2, a: Vec2, b: Vec2): number {
-  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    l2 = dx * dx + dy * dy;
   const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
@@ -155,12 +196,17 @@ export function minNeck(p: Polygon): { w: number; a: Vec2; b: Vec2 } | null {
   const positive = polygonArea(p) >= 0;
   let best: { w: number; a: Vec2; b: Vec2 } | null = null;
   for (let i = 0; i < p.length; i++) {
-    const prev = p[(i - 1 + p.length) % p.length], a = p[i], next = p[(i + 1) % p.length];
+    const prev = p[(i - 1 + p.length) % p.length],
+      a = p[i],
+      next = p[(i + 1) % p.length];
     const cross = (a.x - prev.x) * (next.y - a.y) - (a.y - prev.y) * (next.x - a.x);
     if ((positive ? cross : -cross) >= -1e-7) continue;
     for (let j = 0; j < p.length; j++) {
       if (j === i || (j + 1) % p.length === i || j === (i - 1 + p.length) % p.length) continue;
-      const c = p[j], d = p[(j + 1) % p.length], dx = d.x - c.x, dy = d.y - c.y;
+      const c = p[j],
+        d = p[(j + 1) % p.length],
+        dx = d.x - c.x,
+        dy = d.y - c.y;
       const len2 = dx * dx + dy * dy;
       if (len2 < 1e-12) continue;
       const t = ((a.x - c.x) * dx + (a.y - c.y) * dy) / len2;
@@ -171,13 +217,16 @@ export function minNeck(p: Polygon): { w: number; a: Vec2; b: Vec2 } | null {
       const b = { x: c.x + t * dx, y: c.y + t * dy };
       const w = dist(a, b);
       if (best && w >= best.w) continue;
-      const inside = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95].every((f) => pointInRing(p, { x: a.x + f * (b.x - a.x), y: a.y + f * (b.y - a.y) }));
+      const inside = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95].every(f => pointInRing(p, { x: a.x + f * (b.x - a.x), y: a.y + f * (b.y - a.y) }));
       if (!inside) continue;
       let crossed = false;
       for (let k = 0; k < p.length; k++) {
         if (k === i || (k + 1) % p.length === i || k === j) continue;
         const hit = segSegT(a, b, p[k], p[(k + 1) % p.length]);
-        if (hit && hit.t > 1e-5 && hit.t < 1 - 1e-5 && hit.u > 1e-5 && hit.u < 1 - 1e-5) { crossed = true; break; }
+        if (hit && hit.t > 1e-5 && hit.t < 1 - 1e-5 && hit.u > 1e-5 && hit.u < 1 - 1e-5) {
+          crossed = true;
+          break;
+        }
       }
       if (!crossed) best = { w, a, b };
     }
@@ -203,8 +252,16 @@ export function perimeter(p: Polygon): number {
 }
 
 export function bboxOf(p: Vec2[]): { x0: number; y0: number; x1: number; y1: number } {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const q of p) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y; }
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const q of p) {
+    if (q.x < x0) x0 = q.x;
+    if (q.x > x1) x1 = q.x;
+    if (q.y < y0) y0 = q.y;
+    if (q.y > y1) y1 = q.y;
+  }
   return { x0, y0, x1, y1 };
 }
 
@@ -214,33 +271,59 @@ export function convexHull(pts: Vec2[]): Vec2[] {
   const p = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
   if (p.length < 3) return p;
   const cr = (o: Vec2, a: Vec2, b: Vec2) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lo: Vec2[] = [], hi: Vec2[] = [];
-  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
-  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
-  lo.pop(); hi.pop();
+  const lo: Vec2[] = [],
+    hi: Vec2[] = [];
+  for (const q of p) {
+    while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop();
+    lo.push(q);
+  }
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i];
+    while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop();
+    hi.push(q);
+  }
+  lo.pop();
+  hi.pop();
   return lo.concat(hi);
 }
 
-export interface OBB { c: Vec2; u: Vec2; v: Vec2; hu: number; hv: number; /** long axis = u, hu >= hv */ }
+export interface OBB {
+  c: Vec2;
+  u: Vec2;
+  v: Vec2;
+  hu: number;
+  hv: number; /** long axis = u, hu >= hv */
+}
 
 /** Minimum-area oriented bounding box; `u` is the long axis. */
 export function obb(pts: Vec2[]): OBB {
   const h = convexHull(pts);
-  let best: OBB | null = null, bestA = Infinity;
+  let best: OBB | null = null,
+    bestA = Infinity;
   for (let i = 0; i < h.length; i++) {
-    const a = h[i], b = h[(i + 1) % h.length];
+    const a = h[i],
+      b = h[(i + 1) % h.length];
     const l = dist(a, b);
     if (l < 1e-9) continue;
-    const ux = (b.x - a.x) / l, uy = (b.y - a.y) / l;
-    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    const ux = (b.x - a.x) / l,
+      uy = (b.y - a.y) / l;
+    let u0 = Infinity,
+      u1 = -Infinity,
+      v0 = Infinity,
+      v1 = -Infinity;
     for (const q of h) {
-      const pu = q.x * ux + q.y * uy, pv = -q.x * uy + q.y * ux;
-      if (pu < u0) u0 = pu; if (pu > u1) u1 = pu; if (pv < v0) v0 = pv; if (pv > v1) v1 = pv;
+      const pu = q.x * ux + q.y * uy,
+        pv = -q.x * uy + q.y * ux;
+      if (pu < u0) u0 = pu;
+      if (pu > u1) u1 = pu;
+      if (pv < v0) v0 = pv;
+      if (pv > v1) v1 = pv;
     }
     const A = (u1 - u0) * (v1 - v0);
     if (A < bestA) {
       bestA = A;
-      const cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+      const cu = (u0 + u1) / 2,
+        cv = (v0 + v1) / 2;
       const c = { x: cu * ux - cv * uy, y: cu * uy + cv * ux };
       let o: OBB = { c, u: { x: ux, y: uy }, v: { x: -uy, y: ux }, hu: (u1 - u0) / 2, hv: (v1 - v0) / 2 };
       if (o.hv > o.hu) o = { c, u: o.v, v: { x: -o.v.x, y: -o.v.y }, hu: o.hv, hv: o.hu };
@@ -265,22 +348,32 @@ export function inscribed(outer: Polygon, holes: Polygon[] = [], precision = 0.5
   // radius with that threshold; the full search could only return a larger one)
   const rings = [outer, ...holes];
   const bb = bboxOf(outer);
-  const w = bb.x1 - bb.x0, h = bb.y1 - bb.y0;
+  const w = bb.x1 - bb.x0,
+    h = bb.y1 - bb.y0;
   const narrowSide = Math.min(w, h);
   if (narrowSide <= 0) return { c: outer[0], r: 0 };
   // Bound the initial grid for slivers before the search's iteration guard applies.
   // Promising cells are still refined below to the requested precision.
   const cellSize = Math.max(narrowSide, precision, Math.max(w, h) / 1000);
   // (flat coordinates; the same arithmetic as pointInRing / distToSeg, without a point object per edge)
-  const RX = rings.map((r) => Float64Array.from(r, (q) => q.x)), RY = rings.map((r) => Float64Array.from(r, (q) => q.y));
+  const RX = rings.map(r => Float64Array.from(r, q => q.x)),
+    RY = rings.map(r => Float64Array.from(r, q => q.y));
   const sd = (x: number, y: number): number => {
-    let inside = false, md = Infinity;
+    let inside = false,
+      md = Infinity;
     for (let ri = 0; ri < RX.length; ri++) {
-      const X = RX[ri], Y = RY[ri], m = X.length;
+      const X = RX[ri],
+        Y = RY[ri],
+        m = X.length;
       for (let i = 0, j = m - 1; i < m; j = i++) {
-        const ax = X[i], ay = Y[i], bx = X[j], by = Y[j];
-        if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
-        const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+        const ax = X[i],
+          ay = Y[i],
+          bx = X[j],
+          by = Y[j];
+        if (ay > y !== by > y && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
+        const dx = bx - ax,
+          dy = by - ay,
+          l2 = dx * dx + dy * dy;
         const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
         const d = Math.hypot(x - ax - t * dx, y - ay - t * dy);
         if (d < md) md = d;
@@ -288,9 +381,19 @@ export function inscribed(outer: Polygon, holes: Polygon[] = [], precision = 0.5
     }
     return inside ? md : -md;
   };
-  interface Cell { x: number; y: number; h: number; d: number; max: number; seq: number }
+  interface Cell {
+    x: number;
+    y: number;
+    h: number;
+    d: number;
+    max: number;
+    seq: number;
+  }
   let seq = 0;
-  const mk = (x: number, y: number, hh: number): Cell => { const d = sd(x, y); return { x, y, h: hh, d, max: d + hh * Math.SQRT2, seq: seq++ }; };
+  const mk = (x: number, y: number, hh: number): Cell => {
+    const d = sd(x, y);
+    return { x, y, h: hh, d, max: d + hh * Math.SQRT2, seq: seq++ };
+  };
   // max-heap on `max`, ties to the earliest pushed (the pop order of the former sorted array: an insertion went
   // before its equals and pops came from the end)
   const heap: Cell[] = [];
@@ -298,11 +401,17 @@ export function inscribed(outer: Polygon, holes: Polygon[] = [], precision = 0.5
   const push = (c: Cell) => {
     let i = heap.length;
     heap.push(c);
-    while (i > 0) { const p = (i - 1) >> 1; if (!above(c, heap[p])) break; heap[i] = heap[p]; i = p; }
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!above(c, heap[p])) break;
+      heap[i] = heap[p];
+      i = p;
+    }
     heap[i] = c;
   };
   const pop = (): Cell => {
-    const top = heap[0], last = heap.pop()!;
+    const top = heap[0],
+      last = heap.pop()!;
     const m = heap.length;
     if (m) {
       let i = 0;
@@ -311,18 +420,28 @@ export function inscribed(outer: Polygon, holes: Polygon[] = [], precision = 0.5
         if (c >= m) break;
         if (c + 1 < m && above(heap[c + 1], heap[c])) c++;
         if (!above(heap[c], last)) break;
-        heap[i] = heap[c]; i = c;
+        heap[i] = heap[c];
+        i = c;
       }
       heap[i] = last;
     }
     return top;
   };
-  const queue = { get length() { return heap.length; }, pop };
+  const queue = {
+    get length() {
+      return heap.length;
+    },
+    pop,
+  };
   let hh = cellSize / 2;
   for (let x = bb.x0; x < bb.x1; x += cellSize) for (let y = bb.y0; y < bb.y1; y += cellSize) push(mk(x + hh, y + hh, hh));
   // centroid-ish seed
-  let sx = 0, sy = 0;
-  for (const q of outer) { sx += q.x; sy += q.y; }
+  let sx = 0,
+    sy = 0;
+  for (const q of outer) {
+    sx += q.x;
+    sy += q.y;
+  }
   let best = mk(sx / outer.length, sy / outer.length, 0);
   const bbc = mk(bb.x0 + w / 2, bb.y0 + h / 2, 0);
   if (bbc.d > best.d) best = bbc;
@@ -332,8 +451,10 @@ export function inscribed(outer: Polygon, holes: Polygon[] = [], precision = 0.5
     if (c.d > best.d) best = c;
     if (c.max - best.d <= precision) continue;
     hh = c.h / 2;
-    push(mk(c.x - hh, c.y - hh, hh)); push(mk(c.x + hh, c.y - hh, hh));
-    push(mk(c.x - hh, c.y + hh, hh)); push(mk(c.x + hh, c.y + hh, hh));
+    push(mk(c.x - hh, c.y - hh, hh));
+    push(mk(c.x + hh, c.y - hh, hh));
+    push(mk(c.x - hh, c.y + hh, hh));
+    push(mk(c.x + hh, c.y + hh, hh));
   }
   return { c: { x: best.x, y: best.y }, r: Math.max(0, best.d) };
 }
@@ -343,7 +464,8 @@ export function convexWidth(p: Polygon): number {
   let best = Infinity;
   const n = p.length;
   for (let i = 0; i < n; i++) {
-    const a = p[i], b = p[(i + 1) % n];
+    const a = p[i],
+      b = p[(i + 1) % n];
     const l = Math.hypot(b.x - a.x, b.y - a.y);
     if (l < 1e-9) continue;
     let far = 0;

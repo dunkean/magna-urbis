@@ -30,9 +30,7 @@ export interface M4Catalogue {
   arsenal?: boolean;
 }
 
-export const DEFAULT_M4: Required<M4Catalogue> = {
-  castle: 'castle', cathedral: 'cathedral-close', palace: 'palace-eu', monastery: 'monastery', marketHall: true, arena: 0.04, shanty: 'zone', port: true, activities: true, arsenal: false,
-};
+export const DEFAULT_M4: Required<M4Catalogue> = { castle: 'castle', cathedral: 'cathedral-close', palace: 'palace-eu', monastery: 'monastery', marketHall: true, arena: 0.04, shanty: 'zone', port: true, activities: true, arsenal: false };
 
 export interface M4Flags {
   castle: CastleVariant | null;
@@ -84,11 +82,20 @@ export function m4Flags(opts: Options, culture: Culture, pop: number, archetype:
   const sh = opts.shantytowns ?? 'auto';
   const shanty = sh === 'auto' ? (town && pop >= 9000 ? 'some' : 'none') : town ? sh : 'none';
   return {
-    castle: castles ? castle : null, castles, cathedral, palace, monasteries, monastery: cat.monastery, marketHall: cat.marketHall && town,
+    castle: castles ? castle : null,
+    castles,
+    cathedral,
+    palace,
+    monasteries,
+    monastery: cat.monastery,
+    marketHall: cat.marketHall && town,
     // Fantasy and primitive cultures keep their own plan unless explicitly asked for shanty belts.
-    port: cat.port && opts.port !== 'no', arena,
-    activities: opts.activities === 'yes' || (opts.activities !== 'no' && !culture.fantasy && cat.activities), suburbs,
-    shanty: (culture.fantasy || culture.render.primitive) && sh === 'auto' ? 'none' : shanty, shantyKind: cat.shanty,
+    port: cat.port && opts.port !== 'no',
+    arena,
+    activities: opts.activities === 'yes' || (opts.activities !== 'no' && !culture.fantasy && cat.activities),
+    suburbs,
+    shanty: (culture.fantasy || culture.render.primitive) && sh === 'auto' ? 'none' : shanty,
+    shantyKind: cat.shanty,
   };
 }
 
@@ -97,9 +104,22 @@ export function registerM4(): void {
   if (registered) return;
   registered = true;
   registerBuilders({
-    'm4-castle': buildCastle, 'm4-cathedral-close': buildCathedralClose, 'm4-palace-eu': buildPalace, 'm4-palace': buildPalace,
-    'm4-monastery': buildMonastery, 'm4-madrasa': buildMadrasa, 'm4-shipyard': buildShipyard, 'm4-ropewalk': buildRopewalk,
-    'm4-watermill': buildWatermill, 'm4-windmill': buildWindmill, 'm4-tannery': buildTannery, 'm4-gallows': buildGallows,
-    'm4-lazar-house': buildLazarHouse, 'm4-cemetery': buildCemetery, 'm4-arena': buildArena, hospital: buildHospital, 'm4-shanty': buildShanty,
+    'm4-castle': buildCastle,
+    'm4-cathedral-close': buildCathedralClose,
+    'm4-palace-eu': buildPalace,
+    'm4-palace': buildPalace,
+    'm4-monastery': buildMonastery,
+    'm4-madrasa': buildMadrasa,
+    'm4-shipyard': buildShipyard,
+    'm4-ropewalk': buildRopewalk,
+    'm4-watermill': buildWatermill,
+    'm4-windmill': buildWindmill,
+    'm4-tannery': buildTannery,
+    'm4-gallows': buildGallows,
+    'm4-lazar-house': buildLazarHouse,
+    'm4-cemetery': buildCemetery,
+    'm4-arena': buildArena,
+    hospital: buildHospital,
+    'm4-shanty': buildShanty,
   });
 }

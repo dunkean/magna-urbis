@@ -37,7 +37,8 @@ try {
       // These examples use the ordinary city/village preset extents.
       const mapExtent = app.options().size === 'village' ? 1600 : 3600;
       const scale = Math.max(Math.min(innerWidth, innerHeight) / extent, innerWidth / mapExtent);
-      const halfWidth = innerWidth / (2 * scale), halfHeight = innerHeight / (2 * scale);
+      const halfWidth = innerWidth / (2 * scale),
+        halfHeight = innerHeight / (2 * scale);
       const view = { cx: Math.max(halfWidth, Math.min(mapExtent - halfWidth, center.x)), cy: Math.max(halfHeight, Math.min(mapExtent - halfHeight, center.y)), scale };
       app.setView(view);
       return view;
@@ -49,7 +50,8 @@ try {
     await page.screenshot({ path: path.join(output, name + '.png'), timeout: 90000 });
     const capture = { image: name + '.png', implementation: 'typescript', settings: Object.fromEntries(query), view, viewport: { width: 1600, height: 1000 }, capture: 'Application screenshot; no retouching' };
     const index = manifest.findIndex(item => item.image === capture.image);
-    if (index < 0) manifest.push(capture); else manifest[index] = capture;
+    if (index < 0) manifest.push(capture);
+    else manifest[index] = capture;
     console.log(`Captured ${name}`);
     await page.close();
   }

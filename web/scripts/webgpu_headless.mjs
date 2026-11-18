@@ -33,7 +33,7 @@ export async function findAdapterLuid(deviceId = process.env.MAGNA_GPU_DEVICE_ID
     const want = `device=${deviceId.toLowerCase()}`;
     for (let attempt = 0; attempt < 60; attempt++) {
       const text = await page.evaluate(() => {
-        const walk = n => (n.shadowRoot ? walk(n.shadowRoot) : '') + [...n.childNodes].map(c => c.nodeType === 3 ? c.textContent : walk(c) + '\n').join('');
+        const walk = n => (n.shadowRoot ? walk(n.shadowRoot) : '') + [...n.childNodes].map(c => (c.nodeType === 3 ? c.textContent : walk(c) + '\n')).join('');
         return walk(document.body);
       });
       const line = text.split('\n').find(l => l.toLowerCase().includes(want) && l.includes('LUID='));
@@ -50,10 +50,7 @@ export async function findAdapterLuid(deviceId = process.env.MAGNA_GPU_DEVICE_ID
 /** Launches headless Chrome whose WebGL and WebGPU both run on the selected card (default: RTX 5090). */
 export async function launchWebGpuChrome(options = {}) {
   const luid = await findAdapterLuid();
-  return chromium.launch({
-    channel: 'chrome', headless: true, timeout: 30000, ...options,
-    args: [...BASE_ARGS, `--use-adapter-luid=${luid}`, ...(options.args ?? [])],
-  });
+  return chromium.launch({ channel: 'chrome', headless: true, timeout: 30000, ...options, args: [...BASE_ARGS, `--use-adapter-luid=${luid}`, ...(options.args ?? [])] });
 }
 
 /** Returns a one-line description of the WebGPU adapter and WebGL renderer seen by a page. */
@@ -69,7 +66,10 @@ export async function describeAdapter(page) {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   // WebGPU needs a secure context: serve a blank local page.
-  const server = createServer((_, r) => { r.setHeader('content-type', 'text/html'); r.end('<!doctype html><title>gpu</title>'); }).listen(0, '127.0.0.1');
+  const server = createServer((_, r) => {
+    r.setHeader('content-type', 'text/html');
+    r.end('<!doctype html><title>gpu</title>');
+  }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   let browser;
   try {

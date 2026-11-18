@@ -31,7 +31,8 @@ function parseCity(params: URLSearchParams): ExternalCityHints {
   const hints: ExternalCityHints = { source: 'watabou-city', seed: seedOf(params, 'mfcg') };
   const name = params.get('name')?.trim();
   if (name) hints.name = name;
-  const population = positive(params, 'population'), size = positive(params, 'size');
+  const population = positive(params, 'population'),
+    size = positive(params, 'size');
   if (population !== undefined) hints.population = Math.round(population);
   else if (size !== undefined) hints.population = populationFromSize(size);
   const river = flag(params, 'river');
@@ -45,8 +46,13 @@ function parseCity(params: URLSearchParams): ExternalCityHints {
     const value = flag(params, param);
     if (value !== undefined) hints[key] = value;
   };
-  set('walls', 'walls'); set('citadel', 'citadel'); set('urbanCastle', 'urban_castle'); set('plaza', 'plaza');
-  set('temple', 'temple'); set('shantytown', 'shantytown'); set('farms', 'farms');
+  set('walls', 'walls');
+  set('citadel', 'citadel');
+  set('urbanCastle', 'urban_castle');
+  set('plaza', 'plaza');
+  set('temple', 'temple');
+  set('shantytown', 'shantytown');
+  set('farms', 'farms');
   if (flag(params, 'hub')) hints.roads = 4;
   return hints;
 }
@@ -58,17 +64,29 @@ function parseVillage(params: URLSearchParams): ExternalCityHints {
   const pop = positive(params, 'pop');
   if (pop !== undefined) hints.population = Math.round(pop);
   if (params.has('tags')) {
-    const tags = new Set((params.get('tags') ?? '').split(',').map(tag => tag.trim().toLowerCase()).filter(Boolean));
+    const tags = new Set(
+      (params.get('tags') ?? '')
+        .split(',')
+        .map(tag => tag.trim().toLowerCase())
+        .filter(Boolean),
+    );
     // A village without a water tag lies inland, away from rivers.
-    hints.river = 'none'; hints.coast = 'none';
-    if (tags.has('estuary')) { hints.river = 'river'; hints.coast = 'random'; }
+    hints.river = 'none';
+    hints.coast = 'none';
+    if (tags.has('estuary')) {
+      hints.river = 'river';
+      hints.coast = 'random';
+    }
     if (tags.has('island') || tags.has('coast')) hints.coast = 'random';
     if (tags.has('confluence')) hints.river = 'major';
     else if (tags.has('river')) hints.river = 'stream';
     if (tags.has('highway')) hints.roads = 4;
     else if (tags.has('dead end')) hints.roads = 1;
     else if (tags.has('isolated')) hints.roads = 0;
-    if (tags.has('palisade')) { hints.walls = true; hints.palisade = true; }
+    if (tags.has('palisade')) {
+      hints.walls = true;
+      hints.palisade = true;
+    }
     if (tags.has('no square')) hints.plaza = false;
     if (tags.has('sparse')) hints.sprawl = 1.5;
     else if (tags.has('dense')) hints.sprawl = 0.75;
@@ -86,7 +104,11 @@ export function parseWatabouUrl(text: string): ExternalCityHints | null {
   const compact = text.replace(/\s/g, '');
   if (!/^https?:\/\//i.test(compact)) return null;
   let url: URL;
-  try { url = new URL(compact); } catch { return null; }
+  try {
+    url = new URL(compact);
+  } catch {
+    return null;
+  }
   if (url.hostname.toLowerCase() !== 'watabou.github.io') return null;
   const path = url.pathname.toLowerCase();
   if (/^\/(city-generator|city)(\/|$)/.test(path)) return parseCity(url.searchParams);

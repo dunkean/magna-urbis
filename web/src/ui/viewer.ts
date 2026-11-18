@@ -27,16 +27,34 @@ export interface ViewerOptions {
   onView?: (v: View, w: number, h: number) => void;
 }
 
-export interface FrameRequest { seq: number; view: View; w: number; h: number; dpr: number; /** minimap size in device px */ mini: number }
-export interface FrameSource { request(r: FrameRequest): void }
+export interface FrameRequest {
+  seq: number;
+  view: View;
+  w: number;
+  h: number;
+  dpr: number;
+  /** minimap size in device px */ mini: number;
+}
+export interface FrameSource {
+  request(r: FrameRequest): void;
+}
 /** A renderer on this thread can present its own layers without creating a bitmap. */
 export interface DirectFrameSource {
   element: HTMLElement;
   draw(r: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number };
 }
 export interface PresentedFrame {
-  seq: number; ver?: number; view: View; w: number; h: number; dpr: number;
-  bitmap?: ImageBitmap; mini?: ImageBitmap; ms: number; band: number; scale: number;
+  seq: number;
+  ver?: number;
+  view: View;
+  w: number;
+  h: number;
+  dpr: number;
+  bitmap?: ImageBitmap;
+  mini?: ImageBitmap;
+  ms: number;
+  band: number;
+  scale: number;
 }
 
 export interface Viewer {
@@ -65,7 +83,8 @@ export interface Viewer {
 const sameView = (a: View, b: View): boolean => a.cx === b.cx && a.cy === b.cy && a.scale === b.scale;
 /** Time constant of the eased zoom (the camera covers 63 % of what is left in this time), and the wheel delta, in
  * pixels, from which a wheel event is a notch to ease rather than a touchpad or pinch step to follow. */
-const ZOOM_EASE_MS = 45, WHEEL_NOTCH_PX = 40;
+const ZOOM_EASE_MS = 45,
+  WHEEL_NOTCH_PX = 40;
 
 export function createViewer(o: ViewerOptions): Viewer {
   const { container, canvas, minimap } = o;
@@ -75,40 +94,73 @@ export function createViewer(o: ViewerOptions): Viewer {
   const originalOpacity = canvas.style.opacity;
   let mapSize = 1000;
   let view: View = { cx: 500, cy: 500, scale: 0.5 };
-  let w = 1, h = 1, dpr = 1;
-  let dirty = false, raf = 0, destroyed = false, paused = false;
+  let w = 1,
+    h = 1,
+    dpr = 1;
+  let dirty = false,
+    raf = 0,
+    destroyed = false,
+    paused = false;
   /** Eased zoom: the view the camera is moving to, and the time of its last step. */
-  let zoomTarget: View | null = null, zoomStamp = 0;
+  let zoomTarget: View | null = null,
+    zoomStamp = 0;
   // async mode state
   let bmCtx: ImageBitmapRenderingContext | null = null;
   let shown: { view: View; w: number; h: number } | null = null;
   let req: { view: View; w: number; h: number; dpr: number } | null = null;
-  let seq = 0, inflight = 0, requestSeq = 0, force = false;
-  let miniBase: ImageBitmap | HTMLCanvasElement | null = null, marker = '#a33';
-  const closeMini = (): void => { if (miniBase && 'close' in miniBase) miniBase.close(); miniBase = null; miniShown = undefined; };
+  let seq = 0,
+    inflight = 0,
+    requestSeq = 0,
+    force = false;
+  let miniBase: ImageBitmap | HTMLCanvasElement | null = null,
+    marker = '#a33';
+  const closeMini = (): void => {
+    if (miniBase && 'close' in miniBase) miniBase.close();
+    miniBase = null;
+    miniShown = undefined;
+  };
   /** Size last written to the canvas style by the direct mode. */
-  let directW = 0, directH = 0;
+  let directW = 0,
+    directH = 0;
   const detachDirect = (): void => {
     if (!direct) return;
-    direct?.element.remove(); direct = null; canvas.style.opacity = originalOpacity; directW = directH = 0;
+    direct?.element.remove();
+    direct = null;
+    canvas.style.opacity = originalOpacity;
+    directW = directH = 0;
     delete canvas.dataset.presentation;
   };
-  const resetRequests = (): void => { inflight = 0; requestSeq = 0; req = null; shown = null; canvas.style.transform = ''; force = true; };
+  const resetRequests = (): void => {
+    inflight = 0;
+    requestSeq = 0;
+    req = null;
+    shown = null;
+    canvas.style.transform = '';
+    force = true;
+  };
 
   const size = (): void => {
     const r = container.getBoundingClientRect();
     dpr = window.devicePixelRatio || 1;
-    w = Math.max(1, Math.round(r.width)); h = Math.max(1, Math.round(r.height));
+    w = Math.max(1, Math.round(r.width));
+    h = Math.max(1, Math.round(r.height));
     if (!source && !direct) {
-      const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+      const pw = Math.round(w * dpr),
+        ph = Math.round(h * dpr);
       if (canvas.width !== pw) canvas.width = pw;
       if (canvas.height !== ph) canvas.height = ph;
-      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
     }
     if (minimap) {
       const mw = Math.round(minimap.clientWidth || 140);
       const px = Math.round(mw * dpr);
-      if (minimap.width !== px) { minimap.width = px; minimap.height = px; closeMini(); force = true; } // the renderer redraws it at the new size
+      if (minimap.width !== px) {
+        minimap.width = px;
+        minimap.height = px;
+        closeMini();
+        force = true;
+      } // the renderer redraws it at the new size
     }
   };
   const invalidate = (): void => {
@@ -119,7 +171,10 @@ export function createViewer(o: ViewerOptions): Viewer {
   /** Pan/zoom the displayed bitmap to the current view (CSS transform: compositor only). */
   function applyTransform(): void {
     if (!shown) return;
-    if (sameView(shown.view, view) && shown.w === w && shown.h === h) { canvas.style.transform = ''; return; }
+    if (sameView(shown.view, view) && shown.w === w && shown.h === h) {
+      canvas.style.transform = '';
+      return;
+    }
     const k = view.scale / shown.view.scale;
     const tx = (shown.view.cx - view.cx) * view.scale + (w - shown.w) / 2;
     const ty = (shown.view.cy - view.cy) * view.scale + (h - shown.h) / 2;
@@ -129,10 +184,14 @@ export function createViewer(o: ViewerOptions): Viewer {
   let miniShown: { base: ImageBitmap | HTMLCanvasElement | null; size: number; marker: string; x: number; y: number; rw: number; rh: number } | undefined;
   function drawMiniOverlay(): void {
     if (!minimap || !miniBase) return;
-    const k = minimap.width / mapSize, r = viewRect(view, w, h, 0);
+    const k = minimap.width / mapSize,
+      r = viewRect(view, w, h, 0);
     // A frame of a gesture usually moves the rectangle by a fraction of a miniature pixel: a redraw would change
     // nothing on screen, yet every changed canvas costs the page a raster and a compositor update.
-    const x = Math.round(r.minX * k * 4), y = Math.round(r.minY * k * 4), rw = Math.round((r.maxX - r.minX) * k * 4), rh = Math.round((r.maxY - r.minY) * k * 4);
+    const x = Math.round(r.minX * k * 4),
+      y = Math.round(r.minY * k * 4),
+      rw = Math.round((r.maxX - r.minX) * k * 4),
+      rh = Math.round((r.maxY - r.minY) * k * 4);
     const shown = miniShown;
     if (shown && shown.base === miniBase && shown.size === minimap.width && shown.marker === marker && shown.x === x && shown.y === y && shown.rw === rw && shown.rh === rh) return;
     const ctx = minimap.getContext('2d');
@@ -141,7 +200,8 @@ export function createViewer(o: ViewerOptions): Viewer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, minimap.width, minimap.height);
     ctx.drawImage(miniBase, 0, 0, minimap.width, minimap.height);
-    ctx.strokeStyle = marker; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = marker;
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(r.minX * k, r.minY * k, (r.maxX - r.minX) * k, (r.maxY - r.minY) * k);
   }
   function sendRequest(): void {
@@ -158,15 +218,22 @@ export function createViewer(o: ViewerOptions): Viewer {
   /** One step of the eased zoom: the scale covers a share of what is left (geometric), around the screen point that the
    * current view and the target have in common (the cursor of a wheel zoom), which therefore stays put. */
   function stepZoom(now: number): void {
-    const target = zoomTarget!, dt = Math.max(0, Math.min(64, now - zoomStamp)); zoomStamp = now;
+    const target = zoomTarget!,
+      dt = Math.max(0, Math.min(64, now - zoomStamp));
+    zoomStamp = now;
     const ratio = target.scale / view.scale;
     // Within 0.4 % of the scale and a pixel of the place: the camera takes the target itself.
     if (Math.abs(Math.log(ratio)) < 0.004 && Math.abs(target.cx - view.cx) * target.scale < 1 && Math.abs(target.cy - view.cy) * target.scale < 1) {
-      view = target; zoomTarget = null; return;
+      view = target;
+      zoomTarget = null;
+      return;
     }
-    const share = 1 - Math.exp(-dt / ZOOM_EASE_MS), scale = view.scale * Math.pow(ratio, share), spread = 1 / view.scale - 1 / target.scale;
+    const share = 1 - Math.exp(-dt / ZOOM_EASE_MS),
+      scale = view.scale * Math.pow(ratio, share),
+      spread = 1 / view.scale - 1 / target.scale;
     if (Math.abs(ratio - 1) > 1e-6) {
-      const qx = (target.cx - view.cx) / spread, qy = (target.cy - view.cy) / spread;
+      const qx = (target.cx - view.cx) / spread,
+        qy = (target.cy - view.cy) / spread;
       view = { cx: view.cx + qx / view.scale - qx / scale, cy: view.cy + qy / view.scale - qy / scale, scale };
     } else view = { cx: view.cx + (target.cx - view.cx) * share, cy: view.cy + (target.cy - view.cy) * share, scale: target.scale };
     invalidate();
@@ -182,13 +249,26 @@ export function createViewer(o: ViewerOptions): Viewer {
     if (direct) {
       try {
         // Only when the size changed: a style write per frame makes the page recompute styles per frame.
-        if (directW !== w || directH !== h) { directW = w; directH = h; canvas.style.width = w + 'px'; canvas.style.height = h + 'px'; }
+        if (directW !== w || directH !== h) {
+          directW = w;
+          directH = h;
+          canvas.style.width = w + 'px';
+          canvas.style.height = h + 'px';
+        }
         const st = direct.draw({ seq: ++seq, view: { ...view }, w, h, dpr, mini: minimap ? minimap.width : 0 });
         // A miniature returned by the draw is new content, even in the same canvas object.
-        if (st.mini) { if (miniBase !== st.mini) { closeMini(); miniBase = st.mini; } miniShown = undefined; }
+        if (st.mini) {
+          if (miniBase !== st.mini) {
+            closeMini();
+            miniBase = st.mini;
+          }
+          miniShown = undefined;
+        }
         drawMiniOverlay();
         o.onFrame?.(st.ms, st.band, st.scale);
-      } catch (error) { o.onError?.(error instanceof Error ? error : new Error(String(error))); }
+      } catch (error) {
+        o.onError?.(error instanceof Error ? error : new Error(String(error)));
+      }
       return;
     }
     if (source) {
@@ -202,9 +282,15 @@ export function createViewer(o: ViewerOptions): Viewer {
       const st = renderer.draw(view);
       if (minimap) renderer.drawMinimap(minimap, view, w, h);
       o.onFrame?.(st.ms, st.band, view.scale);
-    } catch (error) { o.onError?.(error instanceof Error ? error : new Error(String(error))); }
+    } catch (error) {
+      o.onError?.(error instanceof Error ? error : new Error(String(error)));
+    }
   }
-  const set = (v: View): void => { zoomTarget = null; view = clampView(v, mapSize, w, h); invalidate(); };
+  const set = (v: View): void => {
+    zoomTarget = null;
+    view = clampView(v, mapSize, w, h);
+    invalidate();
+  };
   const fit = (): void => set(fitView(mapSize, w, h));
   const zoomBy = (f: number, sx = w / 2, sy = h / 2): void => set(zoomAt(view, f, sx, sy, w, h));
   /** Zoom by `f` around a screen point, eased: successive calls move the target, as direct jumps would move the view. */
@@ -215,7 +301,10 @@ export function createViewer(o: ViewerOptions): Viewer {
   };
 
   size();
-  const ro = new ResizeObserver(() => { size(); invalidate(); });
+  const ro = new ResizeObserver(() => {
+    size();
+    invalidate();
+  });
   ro.observe(container);
 
   // --- pointers (drag = pan, two pointers = pinch) ---
@@ -233,20 +322,21 @@ export function createViewer(o: ViewerOptions): Viewer {
     const [a, b] = [...pts.values()];
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   };
-  canvas.addEventListener('pointerdown', (e) => {
+  canvas.addEventListener('pointerdown', e => {
     pts.set(e.pointerId, local(e));
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add('drag');
     if (pts.size === 2) pinch = { d: dist() };
   });
-  canvas.addEventListener('pointermove', (e) => {
+  canvas.addEventListener('pointermove', e => {
     const prev = pts.get(e.pointerId);
     if (!prev) return;
     const cur = local(e);
     if (pts.size === 2 && pinch) {
       const m0 = mid();
       pts.set(e.pointerId, cur);
-      const m1 = mid(), d = dist();
+      const m1 = mid(),
+        d = dist();
       let v = panBy(view, m1.x - m0.x, m1.y - m0.y);
       if (pinch.d > 0 && d > 0) v = zoomAt(v, d / pinch.d, m1.x, m1.y, w, h);
       pinch.d = d;
@@ -266,16 +356,20 @@ export function createViewer(o: ViewerOptions): Viewer {
   };
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const p = local(e);
-    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-    // A wheel notch is a large step (16 % and more): eased. Touchpads and pinch gestures (ctrl+wheel) send many small
-    // steps that are already continuous: followed directly, unless a notch is still being eased.
-    if (zoomTarget || Math.abs(dy) >= WHEEL_NOTCH_PX && !e.ctrlKey) easeZoomBy(Math.exp(-dy * 0.0015), p.x, p.y);
-    else zoomBy(Math.exp(-dy * 0.0015), p.x, p.y);
-  }, { passive: false });
-  canvas.addEventListener('dblclick', (e) => {
+  canvas.addEventListener(
+    'wheel',
+    e => {
+      e.preventDefault();
+      const p = local(e);
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      // A wheel notch is a large step (16 % and more): eased. Touchpads and pinch gestures (ctrl+wheel) send many small
+      // steps that are already continuous: followed directly, unless a notch is still being eased.
+      if (zoomTarget || (Math.abs(dy) >= WHEEL_NOTCH_PX && !e.ctrlKey)) easeZoomBy(Math.exp(-dy * 0.0015), p.x, p.y);
+      else zoomBy(Math.exp(-dy * 0.0015), p.x, p.y);
+    },
+    { passive: false },
+  );
+  canvas.addEventListener('dblclick', e => {
     const p = local(e);
     easeZoomBy(e.shiftKey ? 0.5 : 2, p.x, p.y);
   });
@@ -283,14 +377,31 @@ export function createViewer(o: ViewerOptions): Viewer {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
     switch (e.key) {
-      case '+': case '=': easeZoomBy(1.4); break;
-      case '-': case '_': easeZoomBy(1 / 1.4); break;
-      case '0': fit(); break;
-      case 'ArrowLeft': set(panBy(view, 80, 0)); break;
-      case 'ArrowRight': set(panBy(view, -80, 0)); break;
-      case 'ArrowUp': set(panBy(view, 0, 80)); break;
-      case 'ArrowDown': set(panBy(view, 0, -80)); break;
-      default: return;
+      case '+':
+      case '=':
+        easeZoomBy(1.4);
+        break;
+      case '-':
+      case '_':
+        easeZoomBy(1 / 1.4);
+        break;
+      case '0':
+        fit();
+        break;
+      case 'ArrowLeft':
+        set(panBy(view, 80, 0));
+        break;
+      case 'ArrowRight':
+        set(panBy(view, -80, 0));
+        break;
+      case 'ArrowUp':
+        set(panBy(view, 0, 80));
+        break;
+      case 'ArrowDown':
+        set(panBy(view, 0, -80));
+        break;
+      default:
+        return;
     }
     e.preventDefault();
   };
@@ -302,32 +413,66 @@ export function createViewer(o: ViewerOptions): Viewer {
     const r = minimap.getBoundingClientRect();
     set({ ...view, cx: ((e.clientX - r.left) / r.width) * mapSize, cy: ((e.clientY - r.top) / r.height) * mapSize });
   };
-  minimap?.addEventListener('pointerdown', (e) => { minimap.setPointerCapture(e.pointerId); mini(e); });
+  minimap?.addEventListener('pointerdown', e => {
+    minimap.setPointerCapture(e.pointerId);
+    mini(e);
+  });
   minimap?.addEventListener('pointermove', mini);
 
   return {
     setRenderer(r, size2, keepView = false) {
-      detachDirect(); source = null; resetRequests(); size();
+      detachDirect();
+      source = null;
+      resetRequests();
+      size();
       renderer?.dispose();
       const sizeChanged = size2 !== mapSize;
-      renderer = r; mapSize = size2;
-      if (!keepView || sizeChanged) { zoomTarget = null; view = fitView(mapSize, w, h); }
+      renderer = r;
+      mapSize = size2;
+      if (!keepView || sizeChanged) {
+        zoomTarget = null;
+        view = fitView(mapSize, w, h);
+      }
       invalidate();
     },
-    setSource(src) { detachDirect(); source = src; resetRequests(); invalidate(); },
+    setSource(src) {
+      detachDirect();
+      source = src;
+      resetRequests();
+      invalidate();
+    },
     setDirectSource(src) {
-      if (direct?.element !== src.element) { detachDirect(); container.insertBefore(src.element, canvas); }
-      direct = src; source = null; resetRequests();
-      canvas.style.opacity = '0'; canvas.dataset.presentation = 'direct';
+      if (direct?.element !== src.element) {
+        detachDirect();
+        container.insertBefore(src.element, canvas);
+      }
+      direct = src;
+      source = null;
+      resetRequests();
+      canvas.style.opacity = '0';
+      canvas.dataset.presentation = 'direct';
       invalidate();
     },
     present(f, accept = true) {
       // An answer from a previous source must never replace the current view or release its request.
-      if (!source || f.seq !== requestSeq) { f.bitmap?.close(); f.mini?.close(); return false; }
+      if (!source || f.seq !== requestSeq) {
+        f.bitmap?.close();
+        f.mini?.close();
+        return false;
+      }
       inflight = 0;
-      if (!accept) { f.bitmap?.close(); f.mini?.close(); force = true; invalidate(); return false; }
+      if (!accept) {
+        f.bitmap?.close();
+        f.mini?.close();
+        force = true;
+        invalidate();
+        return false;
+      }
       let presented = false;
-      if (f.mini) { closeMini(); miniBase = f.mini; }
+      if (f.mini) {
+        closeMini();
+        miniBase = f.mini;
+      }
       if (f.bitmap) {
         bmCtx ??= canvas.getContext('bitmaprenderer');
         if (bmCtx) {
@@ -336,13 +481,16 @@ export function createViewer(o: ViewerOptions): Viewer {
         } else {
           const c = canvas.getContext('2d');
           if (c) {
-            canvas.width = Math.max(1, Math.round(f.w * f.dpr)); canvas.height = Math.max(1, Math.round(f.h * f.dpr));
-            c.drawImage(f.bitmap, 0, 0); presented = true;
+            canvas.width = Math.max(1, Math.round(f.w * f.dpr));
+            canvas.height = Math.max(1, Math.round(f.h * f.dpr));
+            c.drawImage(f.bitmap, 0, 0);
+            presented = true;
           }
           f.bitmap.close();
         }
         if (presented) {
-          canvas.style.width = f.w + 'px'; canvas.style.height = f.h + 'px';
+          canvas.style.width = f.w + 'px';
+          canvas.style.height = f.h + 'px';
           shown = { view: f.view, w: f.w, h: f.h };
           applyTransform();
           o.onFrame?.(f.ms, f.band, f.scale);
@@ -356,12 +504,21 @@ export function createViewer(o: ViewerOptions): Viewer {
       const sizeChanged = size2 !== mapSize;
       mapSize = size2;
       if (markerColor) marker = markerColor;
-      if (!keepView || sizeChanged) { zoomTarget = null; view = fitView(mapSize, w, h); }
+      if (!keepView || sizeChanged) {
+        zoomTarget = null;
+        view = fitView(mapSize, w, h);
+      }
       force = true;
       invalidate();
     },
-    fit, setView: set, zoomBy: (f) => zoomBy(f), invalidate,
-    setPaused(value: boolean) { paused = value; if (!paused) invalidate(); },
+    fit,
+    setView: set,
+    zoomBy: f => zoomBy(f),
+    invalidate,
+    setPaused(value: boolean) {
+      paused = value;
+      if (!paused) invalidate();
+    },
     getView: () => view,
     async waitForFrame() {
       const started = performance.now();
@@ -372,13 +529,22 @@ export function createViewer(o: ViewerOptions): Viewer {
       }
     },
     clear() {
-      detachDirect(); source = null; renderer = null; resetRequests(); closeMini();
-      dirty = false; if (raf) cancelAnimationFrame(raf); raf = 0;
+      detachDirect();
+      source = null;
+      renderer = null;
+      resetRequests();
+      closeMini();
+      dirty = false;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
       canvas.width = canvas.width;
     },
     destroy() {
-      destroyed = true; ro.disconnect(); window.removeEventListener('keydown', key);
-      closeMini(); detachDirect();
+      destroyed = true;
+      ro.disconnect();
+      window.removeEventListener('keydown', key);
+      closeMini();
+      detachDirect();
       if (raf) cancelAnimationFrame(raf);
     },
   };

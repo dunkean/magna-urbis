@@ -54,7 +54,15 @@ export interface GenerateOptions {
 }
 
 type TerrainStage = ReturnType<typeof terrainForExtent>;
-interface MainStage { site: World['site']; roads: World['roads']; bridges: World['bridges']; urban: World['urban']; debug: World['debug']; stats: Record<string, number | string>; warnings: string[] }
+interface MainStage {
+  site: World['site'];
+  roads: World['roads'];
+  bridges: World['bridges'];
+  urban: World['urban'];
+  debug: World['debug'];
+  stats: Record<string, number | string>;
+  warnings: string[];
+}
 export interface GenerationCache {
   terrain?: { key: string; value: TerrainStage };
   main?: { key: string; value: MainStage };
@@ -130,9 +138,7 @@ export function generate(options: Options, onStage?: (stage: string, partial?: W
   }
   // the main settlement is generated with its effective size class (custom maps: from the population)
   const mainConfigured = optionsForMainSettlement(worldOptions);
-  const mainSpec = worldOptions.workflow === 'list' && worldOptions.settlements &&
-    typeof worldOptions.settlements === 'object' && 'list' in worldOptions.settlements
-    ? worldOptions.settlements.list[0] : undefined;
+  const mainSpec = worldOptions.workflow === 'list' && worldOptions.settlements && typeof worldOptions.settlements === 'object' && 'list' in worldOptions.settlements ? worldOptions.settlements.list[0] : undefined;
   const size = mainSpec?.options?.size ?? effectiveSize(mainConfigured);
   const warnings: string[] = [];
   let mainOpts: Options = size !== mainConfigured.size ? { ...mainConfigured, size } : mainConfigured;
@@ -153,13 +159,17 @@ export function generate(options: Options, onStage?: (stage: string, partial?: W
   if (mainHit) {
     onStage?.('town', world);
     const v = structuredClone(cache!.main!.value);
-    world.site = v.site; world.roads = v.roads; world.bridges = v.bridges; world.urban = v.urban;
+    world.site = v.site;
+    world.roads = v.roads;
+    world.bridges = v.bridges;
+    world.urban = v.urban;
     if (v.debug) world.debug = v.debug;
     Object.assign(stats, v.stats);
     warnings.push(...v.warnings);
     cache!.hits!.main = true;
   } else {
-    const statsBefore = new Set(Object.keys(stats)), warningsBefore = warnings.length;
+    const statsBefore = new Set(Object.keys(stats)),
+      warningsBefore = warnings.length;
     const t1 = performance.now();
     onStage?.('site & roads', world);
     // the culture's site preferences apply unless the options set their own
@@ -177,7 +187,9 @@ export function generate(options: Options, onStage?: (stage: string, partial?: W
     stats['site.x'] = r(world.site.center.x);
     stats['site.y'] = r(world.site.center.y);
     stats['site.archetype'] = world.site.archetype;
-    stats['site.offers'] = Object.entries(world.site.offers).map(([k, v]) => `${k}:${v}`).join(' ');
+    stats['site.offers'] = Object.entries(world.site.offers)
+      .map(([k, v]) => `${k}:${v}`)
+      .join(' ');
     stats['site.crossing'] = world.site.crossing ? 1 : 0;
     stats['site.harbor'] = world.site.harbor ? 1 : 0;
     stats['site.citadel'] = world.site.citadelSpot ? 1 : 0;
@@ -208,10 +220,9 @@ export function generate(options: Options, onStage?: (stage: string, partial?: W
       }
     }
     if (cache) {
-      cache.main = mk ? { key: mk, value: structuredClone({
-        site: world.site, roads: world.roads, bridges: world.bridges, urban: world.urban, debug: world.debug,
-        stats: Object.fromEntries(Object.entries(stats).filter(([k]) => !statsBefore.has(k))), warnings: warnings.slice(warningsBefore),
-      }) } : undefined;
+      cache.main = mk
+        ? { key: mk, value: structuredClone({ site: world.site, roads: world.roads, bridges: world.bridges, urban: world.urban, debug: world.debug, stats: Object.fromEntries(Object.entries(stats).filter(([k]) => !statsBefore.has(k))), warnings: warnings.slice(warningsBefore) }) }
+        : undefined;
     }
   }
   const t3b = performance.now();
@@ -246,7 +257,10 @@ export function generate(options: Options, onStage?: (stage: string, partial?: W
     const newBridges: NonNullable<World['bridges']> = [];
     for (const s of settlements) {
       if (s.main || s.detail === 'farmstead') continue;
-      if (lazy) { s.detail = 'lazy'; continue; }
+      if (lazy) {
+        s.detail = 'lazy';
+        continue;
+      }
       const res = generateSettlementUrban(world, s);
       if (!res) continue;
       s.urban = res.urban;
@@ -261,9 +275,9 @@ export function generate(options: Options, onStage?: (stage: string, partial?: W
   stats['settlements'] = settlements.length;
   stats['settlements.requested'] = plan.requested;
   stats['settlements.pop'] = totalPop;
-  stats['settlements.lazy'] = lazy ? settlements.filter((s) => s.detail === 'lazy').length : 0;
+  stats['settlements.lazy'] = lazy ? settlements.filter(s => s.detail === 'lazy').length : 0;
   for (const cls of ['city', 'town', 'village', 'hamlet', 'farmstead'] as const) {
-    const c = settlements.filter((s) => !s.main && s.cls === cls).length;
+    const c = settlements.filter(s => !s.main && s.cls === cls).length;
     if (c) stats['settlements.' + cls] = c;
   }
 
@@ -310,11 +324,12 @@ export function generateSettlementDetail(world: World, index: number): ReturnTyp
  * landmark names ("<town> Castle"). Applied after naming, so no other name or random stream moves.
  */
 export function applyNameOverrides(world: World): void {
-  const o = world.options, names = world.names;
+  const o = world.options,
+    names = world.names;
   if (o.workflow !== 'list' || !names || !world.settlements || !o.settlements || typeof o.settlements !== 'object' || !('list' in o.settlements)) return;
   const specs = o.settlements.list;
   // the same keys as the planner: the first entry is the main settlement, then `key` or the list index
-  const byKey = new Map(specs.map((spec, k) => [k === 0 ? 'main' : spec.key ?? String(k), spec]));
+  const byKey = new Map(specs.map((spec, k) => [k === 0 ? 'main' : (spec.key ?? String(k)), spec]));
   for (const s of world.settlements) {
     const name = cleanSettlementName(byKey.get(s.main ? 'main' : s.key)?.name);
     if (!name) continue;

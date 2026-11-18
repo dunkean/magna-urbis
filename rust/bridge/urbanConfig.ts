@@ -6,9 +6,12 @@ export interface ProgrammeContext {
   /** Specialisation axis. Missing/null: automatic (population, cultural profile, declared port siting).
    * An explicit empty object means no specialisation. */
   functions?: ProgrammeFunctionWeights | null;
-  resources: string[]; period: string; mode: 'strict' | 'inspired' | 'fantasy';
+  resources: string[];
+  period: string;
+  mode: 'strict' | 'inspired' | 'fantasy';
   /** Explicit navigable access, never derived from visible water. */
-  navigableAccess: boolean; lore: string[];
+  navigableAccess: boolean;
+  lore: string[];
   /** Settlement condition (Rust `services.json` states); absent = `thriving`. */
   state?: ProgrammeState;
   /** Share of empty buildings, 0..1; absent or null = the state's default. */
@@ -17,11 +20,97 @@ export interface ProgrammeContext {
 /** A single structure without a town: one intent on one unsubdivided domain. */
 export type ProgrammeIsolatedIntent = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower' | 'activity';
 /** Site templates of `urban/activities.json`, for the `activity` intent. */
-export const ACTIVITY_TEMPLATES = ['small_farm',  'large_estate',  'orchard_press',  'vineyard',  'olive_estate',  'rice_terraces',  'pastoral_enclosure',  'seasonal_upland_pasture',  'forest_logging',  'forest_charcoal',  'forest_sawmill',  'resin_tar',  'hunting_post',  'hardrock_mine',  'alluvial_workings',  'smelter_cluster',  'stone_quarry',  'clay_brickyard',  'pottery_cluster',  'saltworks',  'river_watermill',  'windmill_site',  'riverside_fulling',  'riverside_tannery',  'river_fishing',  'coastal_fishing',  'shipyard',  'trade_outpost',  'road_waystation',  'caravan_waystation',  'ferry_crossing',  'bridge_toll',  'border_outpost',  'hill_watch',  'village_workshops',  'weavers_district',  'monastic_farm',  'pilgrimage_stop',  'maori_food_store',  'budj_bim_eel_complex',  'andean_storeway',  'arctic_hunting_camp',  'fantasy_fungal_hamlet',  'fantasy_dwarven_mine',  'urban_harbour_quarter',  'tanners_quarter',  'monastery_compound',  'detached_fishing_camp',  'urban_kilns_strip',  'mining_workers_hamlet',  'country_chapel',  'country_temple',  'roadside_shrine',  'rural_monastery',  'lime_works',  'glassworks',  'hammer_forge',  'paper_mill_site',  'upland_fulling',  'tide_mill_site',  'tithe_grange',  'kiln_croft',  'coast_beacon',  'signal_station',  'ancient_stones',  'barrow_field',  'summit_cairn_site',  'hermit_retreat',  'pilgrim_chapel_site',  'holy_spring',  'lone_tomb',  'sacred_grove_site',  'wayside_marker_site',  'wayside_calvary',  'wayside_memorial',  'wayside_well',  'cemetery_chapel_site',  'summit_sanctuary',  'cliff_monastery_site',  'rock_sanctuary',  'crag_tower',  'stack_hermitage',  'lost_ruins',  'gorge_tomb',  'forgotten_stones'] as const;
+export const ACTIVITY_TEMPLATES = [
+  'small_farm',
+  'large_estate',
+  'orchard_press',
+  'vineyard',
+  'olive_estate',
+  'rice_terraces',
+  'pastoral_enclosure',
+  'seasonal_upland_pasture',
+  'forest_logging',
+  'forest_charcoal',
+  'forest_sawmill',
+  'resin_tar',
+  'hunting_post',
+  'hardrock_mine',
+  'alluvial_workings',
+  'smelter_cluster',
+  'stone_quarry',
+  'clay_brickyard',
+  'pottery_cluster',
+  'saltworks',
+  'river_watermill',
+  'windmill_site',
+  'riverside_fulling',
+  'riverside_tannery',
+  'river_fishing',
+  'coastal_fishing',
+  'shipyard',
+  'trade_outpost',
+  'road_waystation',
+  'caravan_waystation',
+  'ferry_crossing',
+  'bridge_toll',
+  'border_outpost',
+  'hill_watch',
+  'village_workshops',
+  'weavers_district',
+  'monastic_farm',
+  'pilgrimage_stop',
+  'maori_food_store',
+  'budj_bim_eel_complex',
+  'andean_storeway',
+  'arctic_hunting_camp',
+  'fantasy_fungal_hamlet',
+  'fantasy_dwarven_mine',
+  'urban_harbour_quarter',
+  'tanners_quarter',
+  'monastery_compound',
+  'detached_fishing_camp',
+  'urban_kilns_strip',
+  'mining_workers_hamlet',
+  'country_chapel',
+  'country_temple',
+  'roadside_shrine',
+  'rural_monastery',
+  'lime_works',
+  'glassworks',
+  'hammer_forge',
+  'paper_mill_site',
+  'upland_fulling',
+  'tide_mill_site',
+  'tithe_grange',
+  'kiln_croft',
+  'coast_beacon',
+  'signal_station',
+  'ancient_stones',
+  'barrow_field',
+  'summit_cairn_site',
+  'hermit_retreat',
+  'pilgrim_chapel_site',
+  'holy_spring',
+  'lone_tomb',
+  'sacred_grove_site',
+  'wayside_marker_site',
+  'wayside_calvary',
+  'wayside_memorial',
+  'wayside_well',
+  'cemetery_chapel_site',
+  'summit_sanctuary',
+  'cliff_monastery_site',
+  'rock_sanctuary',
+  'crag_tower',
+  'stack_hermitage',
+  'lost_ruins',
+  'gorge_tomb',
+  'forgotten_stones',
+] as const;
 export type ProgrammeIntent = 'settlement' | ProgrammeIsolatedIntent;
 export type ProgrammeState = 'thriving' | 'declining' | 'abandoned' | 'ruined';
 export const PROGRAMME_FUNCTIONS = ['agricultural', 'commerce', 'artisan', 'riverine', 'port', 'capital'] as const;
-export type ProgrammeFunction = typeof PROGRAMME_FUNCTIONS[number];
+export type ProgrammeFunction = (typeof PROGRAMME_FUNCTIONS)[number];
 export type ProgrammeFunctionWeights = Partial<Record<ProgrammeFunction, number>>;
 /** Reject unsupported keys/weights explicitly, never clamp or drop an intent. */
 export function normalizeProgrammeFunctions(value: unknown): ProgrammeFunctionWeights {
@@ -37,7 +126,14 @@ export function normalizeProgrammeFunctions(value: unknown): ProgrammeFunctionWe
 }
 export const defaultProgrammeContext = (): ProgrammeContext => ({ intent: 'settlement', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] });
 /** Pure configuration boundary; the legacy web editor must not load Rust/WASM. */
-export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden';
+export interface ParcelConfig {
+  preset: string;
+  culture?: string;
+  recipe: string;
+  zone: string;
+  density: number;
+  params: Record<string, unknown>;
+  operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden';
   streetAlignedHomes?: boolean;
   denserSmallholdings?: boolean;
   /** Town lot enclosure 0..1 (absent = culture default, see urban/enclosures.json). */
@@ -51,24 +147,45 @@ export interface ParcelConfig { preset: string; culture?: string; recipe: string
   /** User edits; the layout stage reads `quarters`, the parcel stage `parcels`. */
   overrides?: UrbanEdits;
   /** Parcel operator per growth zone (`core`, `middle`, `edge`, `faubourg`, `village`); absent = `operator`. */
-  zoneOperators?: Record<string, ParcelConfig['operator']> }
+  zoneOperators?: Record<string, ParcelConfig['operator']>;
+}
 /** Another culture and/or street tissue for one growth zone (Rust `PhaseOverride`); absent = the settlement's own. */
-export interface PhaseOverride { culture?: string; recipe?: string; tissue?: string }
+export interface PhaseOverride {
+  culture?: string;
+  recipe?: string;
+  tissue?: string;
+}
 /** One source of a facet mix: a culture id and its weight. */
-export interface StyleShare { culture: string; weight: number }
+export interface StyleShare {
+  culture: string;
+  weight: number;
+}
 /** Weighted cultures; each lot, block or quarter (`spread`, default `lot`) draws one from the seed. */
-export interface StyleMix { styles: StyleShare[]; spread?: 'lot' | 'block' | 'quarter' }
+export interface StyleMix {
+  styles: StyleShare[];
+  spread?: 'lot' | 'block' | 'quarter';
+}
 /** Sources of one facet: for the whole place, for a growth zone (core, middle, edge, faubourg, village) or for a quarter (its index). */
-export interface FacetMix { city?: StyleMix; zones?: Record<string, StyleMix>; quarters?: Record<string, StyleMix> }
+export interface FacetMix {
+  city?: StyleMix;
+  zones?: Record<string, StyleMix>;
+  quarters?: Record<string, StyleMix>;
+}
 export const STYLE_FACETS = ['streets', 'plots', 'houses', 'monuments', 'rural'] as const;
-export type StyleFacet = typeof STYLE_FACETS[number];
+export type StyleFacet = (typeof STYLE_FACETS)[number];
 /** Style sheet of a place (Rust `urban::StyleSheet`): streets = street pattern of a zone (heaviest culture of its mix),
  * plots = cadastral cut, houses = homes, monuments = singular and utility buildings, rural = farm types. */
 export type StyleSheet = Partial<Record<StyleFacet, FacetMix>>;
 const mixUsable = (mix?: StyleMix): boolean => !!mix?.styles?.some(s => s.culture && Number.isFinite(s.weight) && s.weight > 0);
 /** No facet of the sheet chooses anything. */
 export function styleSheetEmpty(sheet?: StyleSheet): boolean {
-  return !sheet || STYLE_FACETS.every(facet => { const f = sheet[facet]; return !f || !mixUsable(f.city) && !Object.values(f.zones ?? {}).some(mixUsable) && !Object.values(f.quarters ?? {}).some(mixUsable); });
+  return (
+    !sheet ||
+    STYLE_FACETS.every(facet => {
+      const f = sheet[facet];
+      return !f || (!mixUsable(f.city) && !Object.values(f.zones ?? {}).some(mixUsable) && !Object.values(f.quarters ?? {}).some(mixUsable));
+    })
+  );
 }
 /** User edits of single quarters (keyed by quarter index, Rust `UrbanOverrides`)
  * and single lots (keyed by parcel id, Rust `ParcelOverrides`). */
@@ -88,12 +205,19 @@ export interface BlockOverride {
   houseConfig?: Partial<import('./housesContract').HouseConfig>;
 }
 /** A user-drawn polygon in world metres (outer ring, optional holes); rounded to 0.1 m by the UI. */
-export interface EditShape { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }
+export interface EditShape {
+  outer: { x: number; y: number }[];
+  holes?: { x: number; y: number }[][];
+}
 export interface QuarterOverride {
   /** Architecture inherited by the quarter's buildings, independently of its street culture. */
   buildingCulture?: string;
   houseConfig?: Partial<import('./housesContract').HouseConfig>;
-  culture?: string; tissue?: string; density?: number; role?: string; wealth?: number;
+  culture?: string;
+  tissue?: string;
+  density?: number;
+  role?: string;
+  wealth?: number;
   /** 'core': the quarter is city core, so a modern style's tall buildings (top of its height ladder) are allowed whatever the population. */
   zone?: string;
   /** New outline of the quarter. The engine clips it, so the applied shape can be smaller. */
@@ -107,7 +231,9 @@ export interface ParcelOverride {
   /** Architecture inherited by every building of this parcel. */
   culture?: string;
   houseConfig?: Partial<import('./housesContract').HouseConfig>;
-  role?: string; function?: string; households?: number;
+  role?: string;
+  function?: string;
+  households?: number;
   /** New outline of the lot, clipped to its block. Neighbours give up or take back the difference. */
   shape?: EditShape;
   /** 'merge': the lot is absorbed by its best neighbour (default of « Supprimer »).
@@ -121,39 +247,109 @@ export interface ParcelOverride {
 export interface FootprintConfig {
   mechanism: 'auto' | 'legacy' | 'planned' | 'accessibility' | 'ribbon' | 'fusion';
   family: 'auto' | 'circle' | 'rectangle' | 'polygon' | 'compact' | 'elongated' | 'linear' | 'fan' | 'fingers' | 'dendritic' | 'lobed' | 'archipelago' | 'composite';
-  budget: 'population' | 'radius'; grossDensity: number; aspect: number; orientation: number; nuclei: number; irregularity: number; anisotropy: number; separation: number; epochs: number;
-  cohesion: number; satellites: number; branchDepth: number; gapSize: number;
+  budget: 'population' | 'radius';
+  grossDensity: number;
+  aspect: number;
+  orientation: number;
+  nuclei: number;
+  irregularity: number;
+  anisotropy: number;
+  separation: number;
+  epochs: number;
+  cohesion: number;
+  satellites: number;
+  branchDepth: number;
+  gapSize: number;
 }
 /** `auto` or one of Rust urban::fortification::STYLES; the native resolver
  * retains the cultural style when an explicit style does not fit the kind. */
 export const FORTIFICATION_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curtain', 'flanked', 'concentric', 'rammed-earth', 'wengcheng', 'bastioned'] as const;
-export type FortificationStyle = typeof FORTIFICATION_STYLES[number];
+export type FortificationStyle = (typeof FORTIFICATION_STYLES)[number];
 export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOperators' | 'streetAlignedHomes' | 'denserSmallholdings' | 'plotEnclosure' | 'fieldEnclosure' | 'countrysideEnclosures' | 'enclosureMaterial'> {
   phaseOverrides?: Record<string, PhaseOverride>;
   programme: ProgrammeContext;
-  axisAlignment: 'regional' | 'culture'; mixCulture: string; mixMode: 'phases' | 'sectors'; mixShare: number; mixAngle: number; exitTreatment: 'legacy' | 'adaptive' | 'closed'; peripheralRoad: 'auto' | 'none' | 'partial' | 'full'; siteAdaptation: number;
-  scope: 'settlement' | 'district'; settlementForm: 'auto' | 'nucleated' | 'ribbon' | SettlementKind; suburbs: 'auto' | 'none' | 'few' | 'many'; phases: number;
+  axisAlignment: 'regional' | 'culture';
+  mixCulture: string;
+  mixMode: 'phases' | 'sectors';
+  mixShare: number;
+  mixAngle: number;
+  exitTreatment: 'legacy' | 'adaptive' | 'closed';
+  peripheralRoad: 'auto' | 'none' | 'partial' | 'full';
+  siteAdaptation: number;
+  scope: 'settlement' | 'district';
+  settlementForm: 'auto' | 'nucleated' | 'ribbon' | SettlementKind;
+  suburbs: 'auto' | 'none' | 'few' | 'many';
+  phases: number;
   /** Informal town periphery: 0 disables, 1 cultural default, maximum 3. */
   shantyScale: number;
-  count: number; rings: number; radius: number; radiusScale: number; placement: 'center' | 'rectangle' | 'skew' | 'notched'; monument: string;
-  fortification: 'culture' | 'none' | 'wall' | 'palisade'; fortificationStyle: FortificationStyle;
-  wallStiffness: number | null; wallTerrain: number | null; wallRelief: number | null; wallTowerSpacing: number | null; ditchWetness: number | null;
-  riverControlMode: '' | 'none' | 'bank-walls' | 'bank-walls-chain'; portEnclosure: '' | 'auto' | 'inside' | 'separate' | 'outside'; plannedWall: '' | 'rect' | 'follow'; heightsCastle: '' | 'none' | 'force'; wallExtension: '' | 'auto' | 'concentric' | 'attached';
+  count: number;
+  rings: number;
+  radius: number;
+  radiusScale: number;
+  placement: 'center' | 'rectangle' | 'skew' | 'notched';
+  monument: string;
+  fortification: 'culture' | 'none' | 'wall' | 'palisade';
+  fortificationStyle: FortificationStyle;
+  wallStiffness: number | null;
+  wallTerrain: number | null;
+  wallRelief: number | null;
+  wallTowerSpacing: number | null;
+  ditchWetness: number | null;
+  riverControlMode: '' | 'none' | 'bank-walls' | 'bank-walls-chain';
+  portEnclosure: '' | 'auto' | 'inside' | 'separate' | 'outside';
+  plannedWall: '' | 'rect' | 'follow';
+  heightsCastle: '' | 'none' | 'force';
+  wallExtension: '' | 'auto' | 'concentric' | 'attached';
   /** Moat of the town circuits: '' by culture and site (default, omitted from the native payload), 'none' (no moat: suburbs
    * and fields come up to the wall), 'dry' or 'wet' (one ditch kind for the whole circuit). */
   moat: '' | 'none' | 'dry' | 'wet';
-  oldEnclosureCitadel: boolean; medievalWalls: boolean; riverControl: boolean; dryDitches: boolean; gateVillages: boolean;
+  oldEnclosureCitadel: boolean;
+  medievalWalls: boolean;
+  riverControl: boolean;
+  dryDitches: boolean;
+  gateVillages: boolean;
   /** 0: inherited ribbons; 1: organic gate markets and branching lanes. */
   gateVillage: number;
-  maxStreetGrade: number; maxLaneGrade: number; maxStairGrade: number; allowStairs: boolean;
-  powerHighGround: boolean; mergeParallelStreets: boolean; parallelMerge: number; regularGridOutline: boolean;
+  maxStreetGrade: number;
+  maxLaneGrade: number;
+  maxStairGrade: number;
+  allowStairs: boolean;
+  powerHighGround: boolean;
+  mergeParallelStreets: boolean;
+  parallelMerge: number;
+  regularGridOutline: boolean;
   /** Roads round of 2026-10-31, each on by default: widths by settlement size, regional = main street in the built land, end polish, low rural houses. */
-  roadWidthBySize: boolean; townMainRoad: boolean; polishRoadEnds: boolean; lowRuralHouses: boolean; /** Share (0..1) of village, hamlet and faubourg homes keeping their outbuildings (farms included). */ outbuildings: number; /** House plans: one body per home (`simple`) or the forms grammar (`complex`: wings, cross-wings, composite roofs, chimneys, dormers). */ houseComplexity: 'simple' | 'complex'; /** Density of singular and utility buildings (monuments, inns, stables, warehouses…): 1 the catalogue's counts, 0 only the nucleus landmark, up to 3. */ singularDensity: number; /** Back buildings of town lots (0..1): share of the under-built core and middle lots that build the ground behind their house (the others keep their court or garden); only a body on a street or a lane is a house, the others are low dependencies. */ backBuildings: number; /** Style sheet of a hybrid place: per facet, the cultures it draws from (empty facet: the place's own culture). */ styleSheet: StyleSheet;
+  roadWidthBySize: boolean;
+  townMainRoad: boolean;
+  polishRoadEnds: boolean;
+  lowRuralHouses: boolean;
+  /** Share (0..1) of village, hamlet and faubourg homes keeping their outbuildings (farms included). */ outbuildings: number;
+  /** House plans: one body per home (`simple`) or the forms grammar (`complex`: wings, cross-wings, composite roofs, chimneys, dormers). */ houseComplexity: 'simple' | 'complex';
+  /** Density of singular and utility buildings (monuments, inns, stables, warehouses…): 1 the catalogue's counts, 0 only the nucleus landmark, up to 3. */ singularDensity: number;
+  /** Back buildings of town lots (0..1): share of the under-built core and middle lots that build the ground behind their house (the others keep their court or garden); only a body on a street or a lane is a house, the others are low dependencies. */ backBuildings: number;
+  /** Style sheet of a hybrid place: per facet, the cultures it draws from (empty facet: the place's own culture). */ styleSheet: StyleSheet;
   /** Road invariants, default on in Rust and shared by every city consumer. */
-  riverSpurFilter?: boolean; harbourBridgeClearance?: boolean; wallGatePolicy?: boolean; smallRoadLoops?: boolean; isolatedAccess?: boolean;
+  riverSpurFilter?: boolean;
+  harbourBridgeClearance?: boolean;
+  wallGatePolicy?: boolean;
+  smallRoadLoops?: boolean;
+  isolatedAccess?: boolean;
   /** Under test, off by default: access-way mouths on the axis, crossing remnants, joined road ends, small-place capacity tolerance. */
-  roadMouths: boolean; roadRemnants: boolean; roadEndJoins: boolean; smallPlaceCapacity: boolean;
-  naturalCampApproaches: boolean; streetFrontage: boolean; alignEnclosedGrid: boolean; hideUnusedQuarters: boolean; deepBlockLanes: boolean; villageBridgeBudget: boolean; linksJoinRoads: boolean; roadNetworkPrune: boolean; villageStreets: boolean; organicBranchVariation: number; ribbonWidthVariation: number;
+  roadMouths: boolean;
+  roadRemnants: boolean;
+  roadEndJoins: boolean;
+  smallPlaceCapacity: boolean;
+  naturalCampApproaches: boolean;
+  streetFrontage: boolean;
+  alignEnclosedGrid: boolean;
+  hideUnusedQuarters: boolean;
+  deepBlockLanes: boolean;
+  villageBridgeBudget: boolean;
+  linksJoinRoads: boolean;
+  roadNetworkPrune: boolean;
+  villageStreets: boolean;
+  organicBranchVariation: number;
+  ribbonWidthVariation: number;
   campRingWobble?: number | null;
   /** Large camps: one ring (default, omitted from the native payload), concentric rows or several daughter camps. */
   campGrowth: 'ring' | 'concentric' | 'clusters';
@@ -171,12 +367,123 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOpera
   /** Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`…); absent = unknown. */
   siteArchetype?: string;
   siteArchetypes?: Record<string, string>;
-  footprint: FootprintConfig; tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters'; accessMode: 'adaptive' | 'cultural' | 'none'; accessDepth: number; accessBudget: number;
+  footprint: FootprintConfig;
+  tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters';
+  accessMode: 'adaptive' | 'cultural' | 'none';
+  accessDepth: number;
+  accessBudget: number;
 }
 /** Native plan grammars (Rust `urban::kinds::Kind`), distinct from demographic classes. */
 export type SettlementKind = 'single' | 'ruin' | 'farmstead' | 'camp' | 'hamlet' | 'street-village' | 'nucleated-village' | 'market-town' | 'walled-town' | 'city' | 'metropolis';
-export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
-export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, scope: 'settlement', settlementForm: 'auto', suburbs: 'auto', shantyScale: 1, phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', wallStiffness: null, wallTerrain: null, wallRelief: null, wallTowerSpacing: null, ditchWetness: null, riverControlMode: '', portEnclosure: '', plannedWall: '', heightsCastle: '', wallExtension: '', moat: '', oldEnclosureCitadel: false, medievalWalls: false, riverControl: false, dryDitches: false, gateVillages: false, gateVillage: 0, maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, shelteredHarbour: false, portDetachment: 1, portShelter: 0, portType: 'auto', lagoonCanals: null, powerHighGround: false, mergeParallelStreets: false, parallelMerge: 0, roadWidthBySize: true, townMainRoad: true, polishRoadEnds: true, lowRuralHouses: true, outbuildings: 0.5, houseComplexity: 'simple', singularDensity: 1, backBuildings: 0.5, styleSheet: {}, roadMouths: false, roadRemnants: false, roadEndJoins: false, smallPlaceCapacity: false, naturalCampApproaches: false, campRingWobble: null, streetFrontage: false, alignEnclosedGrid: false, hideUnusedQuarters: false, deepBlockLanes: false, villageBridgeBudget: false, linksJoinRoads: false, roadNetworkPrune: false, villageStreets: false, organicBranchVariation: 0, ribbonWidthVariation: 0, campGrowth: 'ring', zoneDensity: 'phases', regularGridOutline: false, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
+export const defaultFootprintConfig = (): FootprintConfig => ({
+  mechanism: 'auto',
+  family: 'auto',
+  budget: 'population',
+  grossDensity: 0,
+  aspect: 1.4,
+  orientation: 0,
+  nuclei: 3,
+  irregularity: 0.2,
+  anisotropy: 0.65,
+  separation: 1.3,
+  epochs: 3,
+  cohesion: 0.85,
+  satellites: 0.15,
+  branchDepth: 0.2,
+  gapSize: 60,
+});
+export const defaultLayoutConfig = (): LayoutConfig => ({
+  programme: defaultProgrammeContext(),
+  axisAlignment: 'regional',
+  mixCulture: '',
+  mixMode: 'phases',
+  mixShare: 0.5,
+  mixAngle: 0,
+  exitTreatment: 'adaptive',
+  peripheralRoad: 'auto',
+  siteAdaptation: 1,
+  scope: 'settlement',
+  settlementForm: 'auto',
+  suburbs: 'auto',
+  shantyScale: 1,
+  phases: 0,
+  preset: 'culture',
+  culture: 'site',
+  recipe: 'auto',
+  zone: 'auto',
+  density: 1,
+  count: 4,
+  rings: 1,
+  radius: 0,
+  radiusScale: 1,
+  placement: 'center',
+  params: {},
+  monument: 'none',
+  fortification: 'culture',
+  fortificationStyle: 'auto',
+  wallStiffness: null,
+  wallTerrain: null,
+  wallRelief: null,
+  wallTowerSpacing: null,
+  ditchWetness: null,
+  riverControlMode: '',
+  portEnclosure: '',
+  plannedWall: '',
+  heightsCastle: '',
+  wallExtension: '',
+  moat: '',
+  oldEnclosureCitadel: false,
+  medievalWalls: false,
+  riverControl: false,
+  dryDitches: false,
+  gateVillages: false,
+  gateVillage: 0,
+  maxStreetGrade: 0.12,
+  maxLaneGrade: 0.18,
+  maxStairGrade: 0.65,
+  allowStairs: true,
+  shelteredHarbour: false,
+  portDetachment: 1,
+  portShelter: 0,
+  portType: 'auto',
+  lagoonCanals: null,
+  powerHighGround: false,
+  mergeParallelStreets: false,
+  parallelMerge: 0,
+  roadWidthBySize: true,
+  townMainRoad: true,
+  polishRoadEnds: true,
+  lowRuralHouses: true,
+  outbuildings: 0.5,
+  houseComplexity: 'simple',
+  singularDensity: 1,
+  backBuildings: 0.5,
+  styleSheet: {},
+  roadMouths: false,
+  roadRemnants: false,
+  roadEndJoins: false,
+  smallPlaceCapacity: false,
+  naturalCampApproaches: false,
+  campRingWobble: null,
+  streetFrontage: false,
+  alignEnclosedGrid: false,
+  hideUnusedQuarters: false,
+  deepBlockLanes: false,
+  villageBridgeBudget: false,
+  linksJoinRoads: false,
+  roadNetworkPrune: false,
+  villageStreets: false,
+  organicBranchVariation: 0,
+  ribbonWidthVariation: 0,
+  campGrowth: 'ring',
+  zoneDensity: 'phases',
+  regularGridOutline: false,
+  footprint: defaultFootprintConfig(),
+  tissue: 'culture',
+  accessMode: 'adaptive',
+  accessDepth: 0,
+  accessBudget: 4,
+});
 export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' });
 
 /** Keep the Rust contract strict while discarding fields leaked by older UI versions. */
@@ -192,11 +499,12 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   const config = contractFields(defaults, saved as Partial<LayoutConfig>);
   config.shantyScale = typeof saved?.shantyScale === 'number' && Number.isFinite(saved.shantyScale) ? Math.max(0, Math.min(3, saved.shantyScale)) : 1;
   config.suburbs ||= defaults.suburbs; // an unset bench control sent an empty value, which the engine refuses
-  config.gateVillage = typeof saved?.gateVillage === 'number' && Number.isFinite(saved.gateVillage)
-    ? Math.max(0, Math.min(1, saved.gateVillage)) : saved?.gateVillages === true ? 1 : 0;
+  config.gateVillage = typeof saved?.gateVillage === 'number' && Number.isFinite(saved.gateVillage) ? Math.max(0, Math.min(1, saved.gateVillage)) : saved?.gateVillages === true ? 1 : 0;
   if (saved?.portShelter === undefined && saved?.shelteredHarbour) config.portShelter = 1;
   if (saved?.medievalWalls) {
-    config.wallStiffness ??= 1; config.wallTerrain ??= 1; config.wallTowerSpacing ??= 30;
+    config.wallStiffness ??= 1;
+    config.wallTerrain ??= 1;
+    config.wallTowerSpacing ??= 30;
   }
   if (saved?.riverControl && !config.riverControlMode) config.riverControlMode = 'bank-walls-chain';
   // dryDitches keeps the old local-supply draw until wetness is explicitly chosen.

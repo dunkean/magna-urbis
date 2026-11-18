@@ -30,10 +30,7 @@
 import type { Rect4, View } from '../view';
 
 /** Context attributes of the compositor canvas. `getContext('webgl2', ...)` on that canvas returns this context. */
-export const LIVE_CONTEXT_ATTRIBUTES: WebGLContextAttributes = {
-  alpha: true, premultipliedAlpha: true, antialias: false, depth: true, stencil: true,
-  preserveDrawingBuffer: false, powerPreference: 'high-performance',
-};
+export const LIVE_CONTEXT_ATTRIBUTES: WebGLContextAttributes = { alpha: true, premultipliedAlpha: true, antialias: false, depth: true, stencil: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
 
 export type LiveLayerName = 'ground' | 'water' | 'overlay' | 'city' | 'text';
 /** Bottom to top. */
@@ -43,9 +40,12 @@ export interface LiveFrame {
   readonly gl: WebGL2RenderingContext;
   /** Clamped view of this frame; `scale` is CSS pixels per metre. */
   readonly view: View;
-  readonly cssW: number; readonly cssH: number; readonly dpr: number;
+  readonly cssW: number;
+  readonly cssH: number;
+  readonly dpr: number;
   /** Size of the target in device pixels (`round(cssW * dpr)`, `round(cssH * dpr)`). */
-  readonly width: number; readonly height: number;
+  readonly width: number;
+  readonly height: number;
   /** World square shown by the frame, in map metres. */
   readonly rect: Rect4;
   /** Map metres -> clip space, a column-major 3x3 for `uniformMatrix3fv` (y down on screen, as the 2D canvas). */
@@ -62,7 +62,12 @@ export interface LiveFrame {
   readonly quality: 'full' | 'light';
 }
 
-export interface LiveLayerStats { drawCalls: number; triangles: number; /** CPU submission time of the last draw. */ ms: number; [key: string]: number }
+export interface LiveLayerStats {
+  drawCalls: number;
+  triangles: number;
+  /** CPU submission time of the last draw. */ ms: number;
+  [key: string]: number;
+}
 
 export interface LiveLayer {
   readonly name: LiveLayerName;
@@ -94,22 +99,31 @@ export function resetLiveState(gl: WebGL2RenderingContext, target: WebGLFramebuf
   gl.viewport(0, 0, width, height);
   gl.bindVertexArray(null);
   gl.useProgram(null);
-  gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE);
-  gl.depthMask(true); gl.colorMask(true, true, true, true); gl.stencilMask(0xff);
-  gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.STENCIL_TEST);
+  gl.disable(gl.CULL_FACE);
+  gl.depthMask(true);
+  gl.colorMask(true, true, true, true);
+  gl.stencilMask(0xff);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
 }
 
 /** The matrices of a frame. */
 export function liveFrameMatrices(view: View, cssW: number, cssH: number, dpr: number): { worldToClip: Float32Array; worldToPixel: [number, number, number, number]; width: number; height: number } {
-  const width = Math.max(1, Math.round(cssW * dpr)), height = Math.max(1, Math.round(cssH * dpr));
-  const s = view.scale * dpr, tx = width / 2 - view.cx * s, ty = height / 2 - view.cy * s;
+  const width = Math.max(1, Math.round(cssW * dpr)),
+    height = Math.max(1, Math.round(cssH * dpr));
+  const s = view.scale * dpr,
+    tx = width / 2 - view.cx * s,
+    ty = height / 2 - view.cy * s;
   // clip.x = px * 2 / width - 1; clip.y = 1 - py * 2 / height
-  return {
-    width, height, worldToPixel: [s, s, tx, ty],
-    worldToClip: new Float32Array([2 * s / width, 0, 0, 0, -2 * s / height, 0, 2 * tx / width - 1, 1 - 2 * ty / height, 1]),
-  };
+  return { width, height, worldToPixel: [s, s, tx, ty], worldToClip: new Float32Array([(2 * s) / width, 0, 0, 0, (-2 * s) / height, 0, (2 * tx) / width - 1, 1 - (2 * ty) / height, 1]) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -149,8 +163,11 @@ export interface LiveGroundOptions {
  * of a `w` x `h` view at `view`. `revision` changes with every new placement; `style` with palette, family or text settings. */
 export interface LiveTextPlacement {
   readonly placed: readonly import('../mapLabels').PlacedMapLabel[];
-  readonly view: View; readonly w: number; readonly h: number;
-  readonly palette: import('../styles').Palette; readonly family: string;
+  readonly view: View;
+  readonly w: number;
+  readonly h: number;
+  readonly palette: import('../styles').Palette;
+  readonly family: string;
   readonly revision: number;
 }
 export interface LiveTextOptions {
@@ -187,13 +204,20 @@ export type LiveMode = 'compositor' | 'classic';
 
 /** LiveLayerStats of the last frame plus what the compositor did with the layer. Not `extends LiveLayerStats`: its
  * numeric index signature refuses the two flags (TS2411). */
-export interface LiveLayerState { drawCalls: number; triangles: number; /** CPU time of the layer in the last frame (draw or stand-in), measured by the compositor. */ ms: number;
-  /** `ready` answered true for the last frame. */ ready: boolean; /** The stand-in was drawn instead. */ standIn: boolean; [key: string]: number | boolean }
+export interface LiveLayerState {
+  drawCalls: number;
+  triangles: number;
+  /** CPU time of the layer in the last frame (draw or stand-in), measured by the compositor. */ ms: number;
+  /** `ready` answered true for the last frame. */ ready: boolean;
+  /** The stand-in was drawn instead. */ standIn: boolean;
+  [key: string]: number | boolean;
+}
 /** `globalThis.__muLive`, always defined by the V2 page once a renderer exists. */
 export interface LiveStats {
   mode: LiveMode;
   /** The compositor presented the last frame of the 2D view (false: the classic path did, with `reason`). */
-  active: boolean; reason?: string;
+  active: boolean;
+  reason?: string;
   /** Compositor frames since `reset()`. */
   frames: number;
   /** CPU time of the last frames, oldest first (at most 4000): whole frame, then per layer. */

@@ -25,14 +25,21 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string,
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 const defaultValue = (key: string, value: unknown): unknown => value ?? (key === 'sprawl' ? 1 : key === 'cultureMix' || key === 'plan' ? null : key === 'sitePrefs' ? undefined : key === 'size' ? undefined : key === 'roads' ? 0 : 'auto');
 const copy = <T>(value: T): T => structuredClone(value);
-const listOf = (o: Options): SettlementSpec[] => o.settlements && typeof o.settlements === 'object' && 'list' in o.settlements ? o.settlements.list : [];
-const cultureLabel = (id: string): string => CULTURE_LIST.find((c) => c.id === id)?.label ?? id;
+const listOf = (o: Options): SettlementSpec[] => (o.settlements && typeof o.settlements === 'object' && 'list' in o.settlements ? o.settlements.list : []);
+const cultureLabel = (id: string): string => CULTURE_LIST.find(c => c.id === id)?.label ?? id;
 const ICON_PIN = '<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>';
 const ICON_DEL = '<svg class="ico" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>';
 
 /** -1: the general theme; 0+: a place (0 is the main town). */
 export type SettlementTarget = number;
-export interface SettlementMarker { target: SettlementTarget; badge: string; name: string; explicit: boolean; pos?: { x: number; y: number }; selected: boolean }
+export interface SettlementMarker {
+  target: SettlementTarget;
+  badge: string;
+  name: string;
+  explicit: boolean;
+  pos?: { x: number; y: number };
+  selected: boolean;
+}
 
 export interface SettlementsUI {
   readonly picking: number | null;
@@ -58,8 +65,14 @@ export interface Generated {
   all(): (GeneratedPlace & { cls: string })[];
 }
 
-export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Options, changeEditor: (change: (o: Options) => Options) => void,
-  onPicking: (active: boolean) => void = () => undefined, generated: Generated = { all: () => [] }, onGenerate: () => void = () => undefined): SettlementsUI {
+export function initSettlementsUI(
+  registry: ControlRegistry,
+  getOpts: () => Options,
+  changeEditor: (change: (o: Options) => Options) => void,
+  onPicking: (active: boolean) => void = () => undefined,
+  generated: Generated = { all: () => [] },
+  onGenerate: () => void = () => undefined,
+): SettlementsUI {
   const modeEl = document.getElementById('settlMode') as HTMLSelectElement;
   const choices = document.getElementById('settlementChoices')!;
   const actions = document.getElementById('compositionActions')!;
@@ -91,18 +104,30 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
   let picking: number | null = null;
   let lastDraft: Options = getOpts();
 
-  registry.add({ el: msEl, live: false,
-    read: (o) => ({ ...o, mapSize: msEl.value && Number.isFinite(Number(msEl.value)) ? Math.max(MAP_SIZE_MIN, Math.min(MAP_SIZE_MAX, Math.round(Number(msEl.value)))) : mapSizeOf(o) }),
-    write: (o) => { if (document.activeElement !== msEl) msEl.value = String(mapSizeOf(o)); },
+  registry.add({
+    el: msEl,
+    live: false,
+    read: o => ({ ...o, mapSize: msEl.value && Number.isFinite(Number(msEl.value)) ? Math.max(MAP_SIZE_MIN, Math.min(MAP_SIZE_MAX, Math.round(Number(msEl.value)))) : mapSizeOf(o) }),
+    write: o => {
+      if (document.activeElement !== msEl) msEl.value = String(mapSizeOf(o));
+    },
   });
   // Type shortcuts adjust population; a custom extent does not silently override the visible type.
   sizeEl.addEventListener('change', () => {
     const value = Number(popEl.value);
     if (!(value > 0) || sizeForPop(value) !== sizeEl.value) popEl.value = String(SIZE_SHORTCUT[sizeEl.value as Options['size']]);
   });
-  popEl.addEventListener('change', () => { if (Number(popEl.value) > 0) sizeEl.value = sizeForPop(Number(popEl.value)); });
+  popEl.addEventListener('change', () => {
+    if (Number(popEl.value) > 0) sizeEl.value = sizeForPop(Number(popEl.value));
+  });
   popEl.placeholder = 'auto';
-  registry.add({ el: sizeEl, read: (o) => ({ ...o, size: sizeEl.value as Options['size'] }), write: (o) => { sizeEl.value = o.size; } });
+  registry.add({
+    el: sizeEl,
+    read: o => ({ ...o, size: sizeEl.value as Options['size'] }),
+    write: o => {
+      sizeEl.value = o.size;
+    },
+  });
 
   // position: automatic (by the chosen site) or a click on the map; coordinates stay editable
   const modeRow = el('div', { class: 'seg' });
@@ -117,16 +142,20 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
   const positionLabel = el('label', {}, mainMessage('position'));
   positionBox.append(positionLabel, modeRow, siteCell, coords, posHint);
   // The fields show metres; a taken-over place keeps its exact position until its field is really edited.
-  const exactOr = (input: HTMLInputElement): number => input.dataset.exact && String(Math.round(Number(input.dataset.exact))) === input.value ? Number(input.dataset.exact) : Number(input.value);
-  registry.add({ el: positionBox,
-    read: (o) => {
+  const exactOr = (input: HTMLInputElement): number => (input.dataset.exact && String(Math.round(Number(input.dataset.exact))) === input.value ? Number(input.dataset.exact) : Number(input.value));
+  registry.add({
+    el: positionBox,
+    read: o => {
       if (!xEl.value && !yEl.value) return { ...o, center: undefined };
-      const x = exactOr(xEl), y = exactOr(yEl);
+      const x = exactOr(xEl),
+        y = exactOr(yEl);
       return xEl.value && yEl.value && Number.isFinite(x) && Number.isFinite(y) ? { ...o, center: { x, y } } : o;
     },
-    write: (o) => {
-      xEl.value = o.center ? String(Math.round(o.center.x)) : ''; yEl.value = o.center ? String(Math.round(o.center.y)) : '';
-      xEl.dataset.exact = o.center ? String(o.center.x) : ''; yEl.dataset.exact = o.center ? String(o.center.y) : '';
+    write: o => {
+      xEl.value = o.center ? String(Math.round(o.center.x)) : '';
+      yEl.value = o.center ? String(Math.round(o.center.y)) : '';
+      xEl.dataset.exact = o.center ? String(o.center.x) : '';
+      yEl.dataset.exact = o.center ? String(o.center.y) : '';
       showPositionMode();
     },
   });
@@ -137,10 +166,12 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     siteCell.hidden = fixed || picking !== null;
   }
   positionBox.addEventListener('input', showPositionMode);
-  positionBox.addEventListener('change', (e) => {
+  positionBox.addEventListener('change', e => {
     showPositionMode();
     if (e.target !== xEl && e.target !== yEl) return;
-    if (!!xEl.value !== !!yEl.value) { posHint.textContent = mainMessage('coordHint'); }
+    if (!!xEl.value !== !!yEl.value) {
+      posHint.textContent = mainMessage('coordHint');
+    }
   });
 
   function setPicking(value: number | null): void {
@@ -153,8 +184,8 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     if (wasPicking !== (value !== null)) onPicking(value !== null);
   }
   /** Key of a listed place in the generated map. */
-  const keyOf = (o: Options, target: SettlementTarget): string => target <= 0 ? 'main' : listOf(o)[target]?.key ?? String(target);
-  const generatedPlace = (key: string) => generated.all().find((p) => p.key === key);
+  const keyOf = (o: Options, target: SettlementTarget): string => (target <= 0 ? 'main' : (listOf(o)[target]?.key ?? String(target)));
+  const generatedPlace = (key: string) => generated.all().find(p => p.key === key);
   const displayName = (o: Options, target: SettlementTarget): string => {
     const spec = listOf(o)[target];
     return cleanSettlementName(spec?.name) ?? generatedPlace(keyOf(o, target))?.name ?? (target === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${target + 1}`);
@@ -165,19 +196,28 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     const box = el('div', { class: 'card' + (selected === index ? ' sel' : ''), 'data-settlement': String(index) });
     const head = el('div', { class: 'card-head' });
     const main = el('button', { type: 'button', class: 'card-main settlement-choice', 'aria-pressed': String(selected === index), title: mainMessage('editPlace') });
-    const badge = el('span', { class: 'badge' }); badge.append(el('span', {}, index === 0 ? '★' : String(index + 1)));
-    const txt = el('span', { class: 'txt' }); txt.append(el('b', {}, title), el('small', {}, meta));
+    const badge = el('span', { class: 'badge' });
+    badge.append(el('span', {}, index === 0 ? '★' : String(index + 1)));
+    const txt = el('span', { class: 'txt' });
+    txt.append(el('b', {}, title), el('small', {}, meta));
     main.append(badge, txt);
     main.addEventListener('click', onOpen);
     const tools = el('span', { class: 'card-tools' });
     const placeBtn = el('button', { type: 'button', class: 'secondary icon', title: mainMessage('placeMap'), 'aria-label': `${mainMessage('placeMap')}: ${title}` });
-    placeBtn.innerHTML = ICON_PIN; placeBtn.addEventListener('click', onPlace);
+    placeBtn.innerHTML = ICON_PIN;
+    placeBtn.addEventListener('click', onPlace);
     const delBtn = el('button', { type: 'button', class: 'secondary icon', title: mainMessage(onDelete ? 'delete' : 'keepPlace'), 'aria-label': `${mainMessage('delete')}: ${title}` });
-    delBtn.innerHTML = ICON_DEL; delBtn.disabled = !onDelete;
+    delBtn.innerHTML = ICON_DEL;
+    delBtn.disabled = !onDelete;
     if (onDelete) delBtn.addEventListener('click', onDelete);
     tools.append(placeBtn, delBtn);
-    head.append(main, tools); box.append(head);
-    if (selected === index) { const body = el('div', { class: 'card-body' }); body.append(editor); box.append(body); }
+    head.append(main, tools);
+    box.append(head);
+    if (selected === index) {
+      const body = el('div', { class: 'card-body' });
+      body.append(editor);
+      box.append(body);
+    }
     return box;
   }
 
@@ -191,17 +231,51 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     if (mode === 'list') {
       specs.forEach((spec, index) => {
         const settings = optionsForSettlement(o, spec);
-        choices.append(card(index, displayName(o, index),
-          `${mainSizeLabel(settings.size)} · ${spec.population.toLocaleString(savedLocale())} · ${cultureLabel(settings.culture)}${settings.cultureMix ? ' + mix' : ''}${spec.position ? '' : ' · auto'}`,
-          () => changeEditor((draft) => { selected = selected === index ? -1 : index; setPicking(null); render(draft); return draft; }),
-          () => { changeEditor((draft) => { selected = index; render(draft); return draft; }); setPicking(index); },
-          specs.length > 1 ? () => removeAt(index) : null));
+        choices.append(
+          card(
+            index,
+            displayName(o, index),
+            `${mainSizeLabel(settings.size)} · ${spec.population.toLocaleString(savedLocale())} · ${cultureLabel(settings.culture)}${settings.cultureMix ? ' + mix' : ''}${spec.position ? '' : ' · auto'}`,
+            () =>
+              changeEditor(draft => {
+                selected = selected === index ? -1 : index;
+                setPicking(null);
+                render(draft);
+                return draft;
+              }),
+            () => {
+              changeEditor(draft => {
+                selected = index;
+                render(draft);
+                return draft;
+              });
+              setPicking(index);
+            },
+            specs.length > 1 ? () => removeAt(index) : null,
+          ),
+        );
       });
     } else {
       // the displayed region, read-only until one place is touched
       places.forEach((p, index) => {
-        choices.append(card(index, p.name ?? (index === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${index + 1}`), `${mainSizeLabel(generatedSettlementSize(o, p))} · ${p.population.toLocaleString(savedLocale())} · ${cultureLabel(o.culture)}`,
-          () => takeOver(index), () => { takeOver(index); setPicking(index); }, places.length > 1 ? () => { takeOver(-1); removeAt(index); } : null));
+        choices.append(
+          card(
+            index,
+            p.name ?? (index === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${index + 1}`),
+            `${mainSizeLabel(generatedSettlementSize(o, p))} · ${p.population.toLocaleString(savedLocale())} · ${cultureLabel(o.culture)}`,
+            () => takeOver(index),
+            () => {
+              takeOver(index);
+              setPicking(index);
+            },
+            places.length > 1
+              ? () => {
+                  takeOver(-1);
+                  removeAt(index);
+                }
+              : null,
+          ),
+        );
       });
     }
     const count = mode === 'list' ? specs.length : places.length;
@@ -213,26 +287,31 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     if (theme) themeSlot.append(editor);
     themeSummary.textContent = `${cultureLabel(o.culture)} · ${o.language && o.language !== 'auto' ? `${mainMessage('placeNames')} ${o.language}` : mainMessage('namesFrom')}`;
     themeButton.setAttribute('aria-pressed', String(theme));
-    themeHint.textContent = mode === 'list'
-      ? mainMessage('editPlacesHint') : mainMessage(count ? 'generatedPlacesHint' : 'emptyPlacesHint');
+    themeHint.textContent = mode === 'list' ? mainMessage('editPlacesHint') : mainMessage(count ? 'generatedPlacesHint' : 'emptyPlacesHint');
     autoGenerate.textContent = mainMessage(mode === 'list' ? 'regenerateAll' : 'generatePlaces');
     autoGenerate.title = mainMessage(mode === 'list' ? 'replacePlacesHelp' : 'generatePlacesHelp');
     if (document.activeElement !== autoPop) autoPop.value = String(o.population > 0 ? o.population : mode === 'list' && specs[0] ? specs[0].population : 3000);
     clearButton.hidden = mode !== 'list' && !count;
     heading.textContent = theme ? mainMessage('general') : displayName(o, selected);
     cultureLabelEl.textContent = mainMessage(theme ? 'themeCulture' : 'culture');
-    nameRow.hidden = theme; kindRow.hidden = theme; positionBox.hidden = theme; langRow.hidden = !theme;
-    nameEl.value = !theme ? cleanSettlementName(specs[selected]?.name) ?? '' : '';
-    nameEl.placeholder = !theme ? generatedPlace(keyOf(o, selected))?.name ?? mainMessage('generatedName') : '';
+    nameRow.hidden = theme;
+    kindRow.hidden = theme;
+    positionBox.hidden = theme;
+    langRow.hidden = !theme;
+    nameEl.value = !theme ? (cleanSettlementName(specs[selected]?.name) ?? '') : '';
+    nameEl.placeholder = !theme ? (generatedPlace(keyOf(o, selected))?.name ?? mainMessage('generatedName')) : '';
     resetButton.hidden = theme;
     removeButton.disabled = theme || specs.length <= 1;
     showPositionMode();
   }
   window.addEventListener('magna-locale-change', () => {
     positionLabel.textContent = mainMessage('position');
-    auto.textContent = mainMessage('autoSite'); auto.title = mainMessage('autoSiteHelp');
-    pick.textContent = mainMessage(picking === null ? 'pickMap' : 'pickingMap'); pick.title = mainMessage('pickHelp');
-    xEl.setAttribute('aria-label', mainMessage('positionX')); yEl.setAttribute('aria-label', mainMessage('positionY'));
+    auto.textContent = mainMessage('autoSite');
+    auto.title = mainMessage('autoSiteHelp');
+    pick.textContent = mainMessage(picking === null ? 'pickMap' : 'pickingMap');
+    pick.title = mainMessage('pickHelp');
+    xEl.setAttribute('aria-label', mainMessage('positionX'));
+    yEl.setAttribute('aria-label', mainMessage('positionY'));
     posHint.textContent = mainMessage(!!xEl.value !== !!yEl.value ? 'coordHint' : picking === null ? 'dragHint' : 'pickingHint');
     const count = mode === 'list' ? listOf(lastDraft).length : generated.all().length;
     placesTitle.textContent = `${mainMessage('places')}${count ? ` (${count})` : ''}`;
@@ -244,22 +323,31 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     cultureLabelEl.textContent = mainMessage(selected < 0 ? 'themeCulture' : 'culture');
     if (selected >= 0 && !generatedPlace(keyOf(lastDraft, selected))?.name) nameEl.placeholder = mainMessage('generatedName');
     for (const box of Array.from(choices.querySelectorAll<HTMLElement>('[data-settlement]'))) {
-      const index = Number(box.dataset.settlement), spec = listOf(lastDraft)[index], place = generated.all()[index];
+      const index = Number(box.dataset.settlement),
+        spec = listOf(lastDraft)[index],
+        place = generated.all()[index];
       const titleNode = box.querySelector<HTMLElement>('.card-main b');
-      if (titleNode) titleNode.textContent = mode === 'list' ? displayName(lastDraft, index) : place?.name ?? (index === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${index + 1}`);
+      if (titleNode) titleNode.textContent = mode === 'list' ? displayName(lastDraft, index) : (place?.name ?? (index === 0 ? mainMessage('mainTown') : `${mainMessage('place')} ${index + 1}`));
       const title = titleNode?.textContent ?? '';
       const meta = box.querySelector<HTMLElement>('.card-main small');
       if (meta && mode === 'list' && spec) {
         const settings = optionsForSettlement(lastDraft, spec);
         meta.textContent = `${mainSizeLabel(settings.size)} · ${spec.population.toLocaleString(savedLocale())} · ${cultureLabel(settings.culture)}${settings.cultureMix ? ' + mix' : ''}${spec.position ? '' : ' · auto'}`;
       } else if (meta && place) meta.textContent = `${mainSizeLabel(generatedSettlementSize(lastDraft, place))} · ${place.population.toLocaleString(savedLocale())} · ${cultureLabel(lastDraft.culture)}`;
-      const main = box.querySelector<HTMLElement>('.card-main'); if (main) main.title = mainMessage('editPlace');
+      const main = box.querySelector<HTMLElement>('.card-main');
+      if (main) main.title = mainMessage('editPlace');
       const buttons = box.querySelectorAll<HTMLButtonElement>('.card-tools button');
-      if (buttons[0]) { buttons[0].title = mainMessage('placeMap'); buttons[0].setAttribute('aria-label', `${mainMessage('placeMap')}: ${title}`); }
-      if (buttons[1]) { buttons[1].title = mainMessage(buttons[1].disabled ? 'keepPlace' : 'delete'); buttons[1].setAttribute('aria-label', `${mainMessage('delete')}: ${title}`); }
+      if (buttons[0]) {
+        buttons[0].title = mainMessage('placeMap');
+        buttons[0].setAttribute('aria-label', `${mainMessage('placeMap')}: ${title}`);
+      }
+      if (buttons[1]) {
+        buttons[1].title = mainMessage(buttons[1].disabled ? 'keepPlace' : 'delete');
+        buttons[1].setAttribute('aria-label', `${mainMessage('delete')}: ${title}`);
+      }
     }
   });
-  const editorOptions = (o: Options): Options => selected >= 0 && mode === 'list' && listOf(o)[selected] ? optionsForSettlement(o, listOf(o)[selected]) : o;
+  const editorOptions = (o: Options): Options => (selected >= 0 && mode === 'list' && listOf(o)[selected] ? optionsForSettlement(o, listOf(o)[selected]) : o);
   function capture(input: Options, base: Options): Options {
     // Environment and display settings are shared, including while a place is selected.
     const town = new Set<string>([...SETTLEMENT_OVERRIDE_KEYS, 'culture', 'population', 'siteType', 'center']);
@@ -277,7 +365,11 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
       for (const key of SETTLEMENT_OVERRIDE_KEYS) if (key !== 'language' && !same(defaultValue(key, input[key]), defaultValue(key, old[key]))) Object.assign(options, { [key]: input[key] });
       const spec: SettlementSpec = { ...previous, options };
       if (!same(input.population, old.population)) spec.population = Math.max(POP_MIN, Math.min(POP_MAX, Math.round(input.population || previous.population)));
-      if (input.culture !== old.culture) { spec.culture = input.culture; options.cultureMix = input.cultureMix ?? null; options.plan = input.plan ?? null; }
+      if (input.culture !== old.culture) {
+        spec.culture = input.culture;
+        options.cultureMix = input.cultureMix ?? null;
+        options.plan = input.plan ?? null;
+      }
       if (input.siteType !== old.siteType) spec.siteType = input.siteType && input.siteType !== 'auto' ? input.siteType : undefined;
       if (!same(input.center, old.center)) spec.position = input.center;
       specs[selected] = spec;
@@ -289,85 +381,142 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
   }
   /** The displayed automatic region becomes the editable list (same keys and positions: the same map). */
   function takeOver(index: SettlementTarget): void {
-    if (mode === 'list') { if (index >= 0) changeEditor((draft) => { selected = index; render(draft); return draft; }); return; }
-    changeEditor((draft) => {
+    if (mode === 'list') {
+      if (index >= 0)
+        changeEditor(draft => {
+          selected = index;
+          render(draft);
+          return draft;
+        });
+      return;
+    }
+    changeEditor(draft => {
       const places = generated.all();
       const next = places.length ? regionAsList(draft, places) : settlementComposition(draft, true);
-      mode = 'list'; selected = index; setPicking(null);
-      render(next); return next;
+      mode = 'list';
+      selected = index;
+      setPicking(null);
+      render(next);
+      return next;
     });
   }
-  modeEl.addEventListener('change', () => { if (modeEl.value === 'list') takeOver(0); else generateAuto(); });
-  themeButton.addEventListener('click', () => changeEditor((draft) => { selected = -1; setPicking(null); render(draft); return draft; }));
+  modeEl.addEventListener('change', () => {
+    if (modeEl.value === 'list') takeOver(0);
+    else generateAuto();
+  });
+  themeButton.addEventListener('click', () =>
+    changeEditor(draft => {
+      selected = -1;
+      setPicking(null);
+      render(draft);
+      return draft;
+    }),
+  );
 
   /** Automatic region around a town of the target population, generated right away. */
   function generateAuto(): void {
     const target = Math.max(POP_MIN, Math.min(POP_MAX, Math.round(Number(autoPop.value) || 3000)));
-    changeEditor((draft) => {
-      mode = 'automatic'; selected = -1; setPicking(null);
+    changeEditor(draft => {
+      mode = 'automatic';
+      selected = -1;
+      setPicking(null);
       const next: Options = { ...draft, settlementMode: 'automatic', population: target, size: sizeForPop(target), center: undefined, siteType: 'auto', settlements: 'auto' };
-      render(next); return next;
+      render(next);
+      return next;
     });
     onGenerate();
   }
   autoGenerate.addEventListener('click', generateAuto);
-  autoPop.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); generateAuto(); } });
+  autoPop.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      generateAuto();
+    }
+  });
 
   // one by one: a village of the theme culture, selected and ready to be named and placed
   const addButton = document.getElementById('settlAdd') as HTMLButtonElement;
   addButton.addEventListener('click', () => {
     if (mode !== 'list') takeOver(-1);
-    changeEditor((draft) => {
+    changeEditor(draft => {
       const next = appendSettlementDraft(draft, true, 300, '');
-      selected = listOf(next).length - 1; setPicking(null);
-      render(next); return next;
+      selected = listOf(next).length - 1;
+      setPicking(null);
+      render(next);
+      return next;
     });
     nameEl.focus();
   });
   clearButton.addEventListener('click', () => {
-    changeEditor((draft) => {
-      mode = 'list'; selected = 0; setPicking(null);
+    changeEditor(draft => {
+      mode = 'list';
+      selected = 0;
+      setPicking(null);
       const next: Options = { ...draft, settlementMode: 'list', settlements: { list: [{ population: 300 }] } };
-      render(next); return next;
+      render(next);
+      return next;
     });
     nameEl.focus();
   });
   nameEl.addEventListener('change', () => {
     // read before changeEditor: its capture re-renders the editor from the draft
     const name = cleanSettlementName(nameEl.value);
-    changeEditor((draft) => {
+    changeEditor(draft => {
       const specs = copy(listOf(draft));
       if (selected < 0 || !specs[selected]) return draft;
-      if (name) specs[selected].name = name; else delete specs[selected].name;
-      const next = { ...draft, settlements: { list: specs } }; render(next); return next;
+      if (name) specs[selected].name = name;
+      else delete specs[selected].name;
+      const next = { ...draft, settlements: { list: specs } };
+      render(next);
+      return next;
     });
   });
-  nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameEl.blur(); });
+  nameEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') nameEl.blur();
+  });
   function removeAt(index: number): void {
-    changeEditor((draft) => {
+    changeEditor(draft => {
       const specs = copy(listOf(draft));
       if (index < 0 || specs.length <= 1) return draft;
       specs.splice(index, 1);
       selected = selected === index ? -1 : selected > index ? selected - 1 : selected;
       setPicking(null);
-      const next = { ...draft, settlements: { list: specs } }; render(next); return next;
+      const next = { ...draft, settlements: { list: specs } };
+      render(next);
+      return next;
     });
   }
   removeButton.addEventListener('click', () => removeAt(selected));
-  resetButton.addEventListener('click', () => changeEditor((draft) => {
-    const specs = copy(listOf(draft)), previous = specs[selected];
-    if (!previous) return draft;
-    const { population, position, name, key } = previous;
-    specs[selected] = { population, position, ...(name ? { name } : {}), ...(key ? { key } : {}) };
-    const next = { ...draft, settlements: { list: specs } }; render(next); return next;
-  }));
+  resetButton.addEventListener('click', () =>
+    changeEditor(draft => {
+      const specs = copy(listOf(draft)),
+        previous = specs[selected];
+      if (!previous) return draft;
+      const { population, position, name, key } = previous;
+      specs[selected] = { population, position, ...(name ? { name } : {}), ...(key ? { key } : {}) };
+      const next = { ...draft, settlements: { list: specs } };
+      render(next);
+      return next;
+    }),
+  );
   pick.addEventListener('click', () => setPicking(picking !== null ? null : selected));
-  auto.addEventListener('click', () => { xEl.value = ''; yEl.value = ''; setPicking(null); positionBox.dispatchEvent(new Event('change')); });
-  window.addEventListener('keydown', (event) => { if (event.key === 'Escape' && picking !== null) { event.preventDefault(); setPicking(null); } });
+  auto.addEventListener('click', () => {
+    xEl.value = '';
+    yEl.value = '';
+    setPicking(null);
+    positionBox.dispatchEvent(new Event('change'));
+  });
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && picking !== null) {
+      event.preventDefault();
+      setPicking(null);
+    }
+  });
   function load(o: Options): void {
-    mode = o.settlementMode === 'list' || o.workflow === 'list' || o.workflow === 'environment' && !o.settlementMode && listOf(o).length > 0 ? 'list' : 'automatic';
+    mode = o.settlementMode === 'list' || o.workflow === 'list' || (o.workflow === 'environment' && !o.settlementMode && listOf(o).length > 0) ? 'list' : 'automatic';
     selected = mode === 'list' ? Math.min(selected, listOf(o).length - 1) : -1;
-    setPicking(null); render(o);
+    setPicking(null);
+    render(o);
   }
   const inExtent = (p: { x: number; y: number }): boolean => {
     const extent = Number(msEl.value) || mapSizeOf(getOpts());
@@ -378,37 +527,56 @@ export function initSettlementsUI(registry: ControlRegistry, getOpts: () => Opti
     if (mode !== 'list') takeOver(target);
     const position = { x: Math.round(p.x), y: Math.round(p.y) };
     setPicking(null);
-    changeEditor((draft) => {
+    changeEditor(draft => {
       const specs = copy(listOf(draft));
       if (!specs[target]) return draft;
-      specs[target].position = position; selected = target;
+      specs[target].position = position;
+      selected = target;
       const next = { ...draft, settlements: { list: specs } };
-      render(next); return next;
+      render(next);
+      return next;
     });
   }
   load(getOpts());
-  return { get picking() { return picking; }, get mode() { return mode; }, editorOptions, capture, load,
-    composition(o) { return settlementComposition(o, mode === 'list'); },
-    place(point) { if (picking !== null) move(picking, point); },
-    cancelPick() { setPicking(null); },
-    select(target) { takeOver(target); },
+  return {
+    get picking() {
+      return picking;
+    },
+    get mode() {
+      return mode;
+    },
+    editorOptions,
+    capture,
+    load,
+    composition(o) {
+      return settlementComposition(o, mode === 'list');
+    },
+    place(point) {
+      if (picking !== null) move(picking, point);
+    },
+    cancelPick() {
+      setPicking(null);
+    },
+    select(target) {
+      takeOver(target);
+    },
     move,
     markers(o) {
       if (mode !== 'list') {
         return generated.all().map((p, index) => ({ target: index, badge: index === 0 ? '★' : String(index + 1), name: p.name ?? '', explicit: false, pos: p.center, selected: false }));
       }
-      return listOf(o).map((spec, index) => ({
-        target: index, badge: index === 0 ? '★' : String(index + 1), name: displayName(o, index), explicit: !!spec.position,
-        pos: spec.position ?? generatedPlace(keyOf(o, index))?.center, selected: selected === index,
-      }));
+      return listOf(o).map((spec, index) => ({ target: index, badge: index === 0 ? '★' : String(index + 1), name: displayName(o, index), explicit: !!spec.position, pos: spec.position ?? generatedPlace(keyOf(o, index))?.center, selected: selected === index }));
     },
-    refresh() { render(lastDraft); },
+    refresh() {
+      render(lastDraft);
+    },
   };
 }
 
 export function showSettlementWarnings(stats: Record<string, number | string>): void {
   const warning = document.getElementById('settlWarn');
   if (!warning) return;
-  const count = Number(stats['settlements'] ?? 0), text = String(stats['settlements.warning'] ?? '');
+  const count = Number(stats['settlements'] ?? 0),
+    text = String(stats['settlements.warning'] ?? '');
   warning.textContent = (count ? `${count} places · ${Number(stats['settlements.pop'] ?? 0).toLocaleString('en')} inhabitants. ` : '') + text;
 }

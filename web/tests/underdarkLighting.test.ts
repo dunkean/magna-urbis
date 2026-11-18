@@ -27,10 +27,10 @@ describe('Underdark inhabited-period lighting', () => {
     expect(underdarkLightingLook(off, 'day').townGlow).toEqual(on.townGlow);
 
     for (const ambience of ['day', 'night'] as const) {
-      const composition = presetComposition('satellite'); composition.effects.ambience = ambience;
+      const composition = presetComposition('satellite');
+      composition.effects.ambience = ambience;
       const resolved = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view3d', { biome: 'underdark' });
-      const look = cityGroundSettings(resolved, 'render3d', { seed: 'cave', climate: { temperature: 12, precipitation: 800 },
-        sourceCell: 4, relief: 'cavern', ...underdarkSceneLook('underdark', ambience, towns) });
+      const look = cityGroundSettings(resolved, 'render3d', { seed: 'cave', climate: { temperature: 12, precipitation: 800 }, sourceCell: 4, relief: 'cavern', ...underdarkSceneLook('underdark', ambience, towns) });
       expect(look?.underdark).toBe(true);
       expect(look?.townGlow).toEqual(ambience === 'day' ? on.townGlow : undefined);
       expect(look?.farmBeds).toEqual(on.farmBeds);
@@ -39,9 +39,9 @@ describe('Underdark inhabited-period lighting', () => {
   });
 
   it('keeps a dark cave and its fog when the existing building uniforms switch lamps off', () => {
-    const frame = { cave: { light: .7, fog: [100, 300], eye: [0, 0, 0] } } as BuildingFrame;
-    expect(caveUniform(frame, true)).toEqual([1, .7, 100, 300]);
-    expect(caveUniform(frame, false)).toEqual([2, .08, 100, 300]);
+    const frame = { cave: { light: 0.7, fog: [100, 300], eye: [0, 0, 0] } } as BuildingFrame;
+    expect(caveUniform(frame, true)).toEqual([1, 0.7, 100, 300]);
+    expect(caveUniform(frame, false)).toEqual([2, 0.08, 100, 300]);
     expect(caveUniform({} as BuildingFrame, false)).toEqual([0, 1, 1e9, 2e9]);
   });
 });

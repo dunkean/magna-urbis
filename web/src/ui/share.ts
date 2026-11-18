@@ -7,8 +7,16 @@
 import { Options, toQuery, mapId } from '../gen/options';
 import { generationMapSize } from '../gen/pipeline';
 
-export interface Pin { x: number; y: number; note: string }
-export interface ViewState { cx: number; cy: number; scale: number }
+export interface Pin {
+  x: number;
+  y: number;
+  note: string;
+}
+export interface ViewState {
+  cx: number;
+  cy: number;
+  scale: number;
+}
 
 const r1 = (n: number): number => Math.round(n * 10) / 10;
 const sig = (n: number): number => Number(n.toPrecision(4));
@@ -16,18 +24,24 @@ export const MAX_NOTE = 120;
 
 /** `x,y,note;x,y,note` (notes are URL-encoded so `,` and `;` are safe). */
 export function pinsToString(pins: Pin[]): string {
-  return pins.map((p) => `${r1(p.x)},${r1(p.y)},${encodeURIComponent(p.note)}`).join(';');
+  return pins.map(p => `${r1(p.x)},${r1(p.y)},${encodeURIComponent(p.note)}`).join(';');
 }
 export function pinsFromString(s: string | null): Pin[] {
   if (!s) return [];
   const out: Pin[] = [];
   for (const part of s.split(';')) {
-    const i1 = part.indexOf(','), i2 = part.indexOf(',', i1 + 1);
+    const i1 = part.indexOf(','),
+      i2 = part.indexOf(',', i1 + 1);
     if (i1 < 0) continue;
-    const x = Number(part.slice(0, i1)), y = Number(part.slice(i1 + 1, i2 < 0 ? undefined : i2));
+    const x = Number(part.slice(0, i1)),
+      y = Number(part.slice(i1 + 1, i2 < 0 ? undefined : i2));
     if (!Number.isFinite(x) || !Number.isFinite(y) || part.slice(0, i1).trim() === '') continue;
     let note = i2 < 0 ? '' : part.slice(i2 + 1);
-    try { note = decodeURIComponent(note); } catch { /* keep raw */ }
+    try {
+      note = decodeURIComponent(note);
+    } catch {
+      /* keep raw */
+    }
     out.push({ x, y, note: note.slice(0, MAX_NOTE) });
   }
   return out;
@@ -36,7 +50,7 @@ export const viewToString = (v: ViewState): string => `${r1(v.cx)},${r1(v.cy)},$
 export function viewFromString(s: string | null): ViewState | null {
   if (!s) return null;
   const [cx, cy, scale] = s.split(',').map(Number);
-  return [cx, cy, scale].every((n) => Number.isFinite(n)) && scale > 0 ? { cx, cy, scale } : null;
+  return [cx, cy, scale].every(n => Number.isFinite(n)) && scale > 0 ? { cx, cy, scale } : null;
 }
 
 /** The query of a link: the generation options, then the UI state (pins, view) when present. */
@@ -78,11 +92,12 @@ export function bugReport(o: Options, pins: Pin[], view: ViewState, linkBase: st
   const ms = generationMapSize(o);
   const link = linkBase + '?' + (displayQuery ?? fullQuery(o, pins, view));
   const q = new URLSearchParams(toQuery(o));
-  const key = ['seed', 'size', 'culture', 'style', ...[...q.keys()].filter((k) => !['seed', 'size', 'culture', 'style', 'hm', 'hscale', 'hsea'].includes(k))]
-    .map((k) => `${k}=${k === 'seed' ? o.seed : q.get(k) ?? (o as unknown as Record<string, unknown>)[k]}`).join(', ');
+  const key = ['seed', 'size', 'culture', 'style', ...[...q.keys()].filter(k => !['seed', 'size', 'culture', 'style', 'hm', 'hscale', 'hsea'].includes(k))].map(k => `${k}=${k === 'seed' ? o.seed : (q.get(k) ?? (o as unknown as Record<string, unknown>)[k])}`).join(', ');
   const L = ['### Bug report', '', `Link: ${link}`, '', `Seed and options: ${key}`, `Map: ${ms} m`, `View: centre ${r1(view.cx)}, ${r1(view.cy)} m, ${sig(view.scale)} px/m (about ${Math.round(viewW / view.scale)} m wide)`, ''];
-  if (pins.length) { L.push('Pins (x, y in meters from the map top-left):'); pins.forEach((p, i) => L.push(`${i + 1}. ${r1(p.x)}, ${r1(p.y)} - ${p.note || '(no note)'}`)); }
-  else L.push('Pins: none');
+  if (pins.length) {
+    L.push('Pins (x, y in meters from the map top-left):');
+    pins.forEach((p, i) => L.push(`${i + 1}. ${r1(p.x)}, ${r1(p.y)} - ${p.note || '(no note)'}`));
+  } else L.push('Pins: none');
   if (o.importedHeight) L.push('', 'Note: a custom imported heightmap was used and is not in the link.');
   L.push('', 'Agent: reproduce each location with:');
   const flags = previewFlags(o);

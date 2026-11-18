@@ -27,8 +27,11 @@ export type KindedBridgeLike = { a: Vec2; b: Vec2; width: number; kind?: string;
 export const isKinded = (b: object): boolean => typeof (b as { kind?: unknown }).kind === 'string';
 
 export function bridgeShapes(b: KindedBridgeLike): BridgeShapes {
-  const dx = b.b.x - b.a.x, dy = b.b.y - b.a.y, L = Math.hypot(dx, dy) || 1;
-  const t = { x: dx / L, y: dy / L }, n = { x: -t.y, y: t.x };
+  const dx = b.b.x - b.a.x,
+    dy = b.b.y - b.a.y,
+    L = Math.hypot(dx, dy) || 1;
+  const t = { x: dx / L, y: dy / L },
+    n = { x: -t.y, y: t.x };
   const h = b.width / 2;
   const at = (s: number, o: number): Vec2 => ({ x: b.a.x + t.x * s + n.x * o, y: b.a.y + t.y * s + n.y * o });
   if (b.kind === 'ford') {
@@ -39,26 +42,33 @@ export function bridgeShapes(b: KindedBridgeLike): BridgeShapes {
     return { deck: track, deckAlpha: 0.5, lines: [], seams: null, stones };
   }
   const pad = b.kind === 'arch' ? 0.6 : 0.35;
-  const s0 = -pad, s1 = L + pad;
+  const s0 = -pad,
+    s1 = L + pad;
   // rails: straight, or bowed outward (drum and humpback bridges)
   const bow = b.kind === 'timber-arch' ? Math.max(0.5, Math.min(1.6, 0.1 * L)) : b.arch === 'hump' ? Math.max(0.35, Math.min(1, 0.06 * L)) : 0;
   const N = bow > 0 ? 10 : 1;
   const rail = (sg: number): Vec2[] => {
     const pts: Vec2[] = [];
     for (let i = 0; i <= N; i++) {
-      const f = i / N, s = s0 + (s1 - s0) * f;
+      const f = i / N,
+        s = s0 + (s1 - s0) * f;
       pts.push(at(s, sg * (h + bow * Math.sin(Math.PI * f))));
     }
     return pts;
   };
-  const r1 = rail(1), r2 = rail(-1);
+  const r1 = rail(1),
+    r2 = rail(-1);
   const deck = [...r1, ...r2.slice().reverse()];
   const lines: { pts: Vec2[]; w: number }[] = [];
   const railW = b.kind === 'arch' ? 0.7 : b.kind === 'timber-arch' ? 0.45 : 0.35;
   lines.push({ pts: r1, w: railW }, { pts: r2, w: railW });
   if (b.kind === 'arch') {
     // abutment wings splayed on both banks
-    for (const [s, dir] of [[s0, -1], [s1, 1]] as [number, number][]) for (const sg of [1, -1]) lines.push({ pts: [at(s, sg * h), at(s + dir * 1.4, sg * (h + 1.4))], w: railW });
+    for (const [s, dir] of [
+      [s0, -1],
+      [s1, 1],
+    ] as [number, number][])
+      for (const sg of [1, -1]) lines.push({ pts: [at(s, sg * h), at(s + dir * 1.4, sg * (h + 1.4))], w: railW });
   }
   let seams: BridgeShapes['seams'] = null;
   if (b.kind === 'footbridge' || b.kind === 'timber-arch') {
@@ -75,7 +85,7 @@ export function townBridgesSvg(bridges: readonly object[], pal: Palette): string
     if (!isKinded(b)) continue;
     const sh = bridgeShapes(b as KindedBridgeLike);
     if (sh.deck) o += `<path d="${pathD(sh.deck, true)}" fill="${pal.bridgeDeck}"${sh.deckAlpha < 1 ? ` fill-opacity="${sh.deckAlpha}"` : ''} stroke="none"/>`;
-    if (sh.seams) o += `<path d="${pathD(sh.seams.pts, false)}" fill="none" stroke="${pal.bridgeInk}" stroke-opacity="0.45" stroke-width="${f1(sh.seams.w)}" stroke-dasharray="${sh.seams.dash.map((x) => x.toFixed(2)).join(' ')}" stroke-linecap="butt"/>`;
+    if (sh.seams) o += `<path d="${pathD(sh.seams.pts, false)}" fill="none" stroke="${pal.bridgeInk}" stroke-opacity="0.45" stroke-width="${f1(sh.seams.w)}" stroke-dasharray="${sh.seams.dash.map(x => x.toFixed(2)).join(' ')}" stroke-linecap="butt"/>`;
     for (const l of sh.lines) o += `<path d="${pathD(l.pts, false)}" fill="none" stroke="${pal.bridgeInk}" stroke-width="${l.w.toFixed(2)}" stroke-linecap="butt"/>`;
     for (const st of sh.stones) o += `<circle cx="${f1(st.c.x)}" cy="${f1(st.c.y)}" r="${st.r.toFixed(2)}" fill="${pal.bridgeDeck}" stroke="${pal.bridgeInk}" stroke-width="0.15"/>`;
   }

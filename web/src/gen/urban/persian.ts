@@ -20,7 +20,7 @@ import type { MultiPoly } from '../geo/bool';
 import { fits, alongEdge, minus, largest } from './m4/kit';
 import { rectAt, inMP } from './m4/lots';
 
-const overlap = (A: Polygon, B: Polygon): boolean => A.some((q) => pointInRing(B, q)) || B.some((q) => pointInRing(A, q));
+const overlap = (A: Polygon, B: Polygon): boolean => A.some(q => pointInRing(B, q)) || B.some(q => pointInRing(A, q));
 /** Qibla from Iran: south-west (map angle, y down). */
 const QIBLA_IR = (3 * Math.PI) / 4;
 
@@ -45,22 +45,30 @@ function fitRect(P: Polygon, c: Vec2, ang: number, hu: number, hv: number, margi
  */
 export function bestRect(P: Polygon, ang: number, hu: number, hv: number, margin: number): { r: Polygon; c: Vec2; hu: number; hv: number } | null {
   const o = obb(P);
-  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
   let best: { r: Polygon; c: Vec2; hu: number; hv: number } | null = null;
-  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
-    const c = { x: o.c.x + ca * i * hu * 0.12 - sa * j * hv * 0.12, y: o.c.y + sa * i * hu * 0.12 + ca * j * hv * 0.12 };
-    if (!pointInRing(P, c)) continue;
-    for (const asp of [0.75, 1, 1.33]) {
-      const a = Math.sqrt(asp);
-      const at = (k: number) => rectAt(c, ang, -hu * k * a, hu * k * a, -hv * k / a, hv * k / a);
-      let lo = 0, hi = 1;
-      if (fits(P, at(1), margin)) lo = 1;
-      else for (let it = 0; it < 7; it++) { const m = (lo + hi) / 2; if (fits(P, at(m), margin)) lo = m; else hi = m; }
-      if (lo < 0.2) continue;
-      const A = hu * hv * lo * lo;
-      if (!best || A > best.hu * best.hv) best = { r: at(lo), c, hu: hu * lo * a, hv: hv * lo / a };
+  for (let i = -2; i <= 2; i++)
+    for (let j = -2; j <= 2; j++) {
+      const c = { x: o.c.x + ca * i * hu * 0.12 - sa * j * hv * 0.12, y: o.c.y + sa * i * hu * 0.12 + ca * j * hv * 0.12 };
+      if (!pointInRing(P, c)) continue;
+      for (const asp of [0.75, 1, 1.33]) {
+        const a = Math.sqrt(asp);
+        const at = (k: number) => rectAt(c, ang, -hu * k * a, hu * k * a, (-hv * k) / a, (hv * k) / a);
+        let lo = 0,
+          hi = 1;
+        if (fits(P, at(1), margin)) lo = 1;
+        else
+          for (let it = 0; it < 7; it++) {
+            const m = (lo + hi) / 2;
+            if (fits(P, at(m), margin)) lo = m;
+            else hi = m;
+          }
+        if (lo < 0.2) continue;
+        const A = hu * hv * lo * lo;
+        if (!best || A > best.hu * best.hv) best = { r: at(lo), c, hu: hu * lo * a, hv: (hv * lo) / a };
+      }
     }
-  }
   return best;
 }
 
@@ -75,7 +83,7 @@ function maidan(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const d = Math.max(6, Math.min(9, f.hv * 0.16));
   const placed: Polygon[] = [];
   const add = (poly: Polygon | null, arch: string, storeys: number, roof: CompoundOut['buildings'][number]['roof'] = 'flat') => {
-    if (!poly || placed.some((o) => overlap(o, poly))) return;
+    if (!poly || placed.some(o => overlap(o, poly))) return;
     placed.push(poly);
     out.buildings.push({ poly, kind: 'landmark', parcel: 0, arch, roof, material: 'brick', storeys });
   };
@@ -84,7 +92,10 @@ function maidan(lot: Polygon, cx: CompoundCtx): CompoundOut {
   // corners; the bazaar portal (qeysarie) and the palace gate stand in the middles of the two longest sides
   const fr = bestRect(P, f.ang, f.hu, f.hv, 0.4);
   const order = P.map((_, i) => i).sort((x, y) => dist(P[(y + 1) % P.length], P[y]) - dist(P[(x + 1) % P.length], P[x]));
-  const portal = new Map<number, string>([[order[0], 'qeysarie-portal'], [order[1], 'ali-qapu']]);
+  const portal = new Map<number, string>([
+    [order[0], 'qeysarie-portal'],
+    [order[1], 'ali-qapu'],
+  ]);
   for (let i = 0; i < P.length; i++) {
     const L = dist(P[i], P[(i + 1) % P.length]);
     if (L < 22) continue;
@@ -101,7 +112,10 @@ function maidan(lot: Polygon, cx: CompoundCtx): CompoundOut {
   }
   // the pool down the long axis
   const pool = fitRect(P, fr ? fr.c : f.c, f.ang, (fr ? fr.hu : f.hu) * 0.4, Math.min(6, f.hv * 0.12), d + 10);
-  if (pool) { out.water.push(pool.r); out.landmarks.push({ kind: 'maidan-pool', poly: pool.r }); }
+  if (pool) {
+    out.water.push(pool.r);
+    out.landmarks.push({ kind: 'maidan-pool', poly: pool.r });
+  }
   out.landmarks.push({ kind: 'maidan', poly: P });
   void cx;
   return out;
@@ -128,7 +142,8 @@ function fridayMosque(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const dq = Math.max(8, Math.min(24, hv * 0.42));
   const qib = R(hu - dq * 1.6, hu, -dq * 0.8, dq * 0.8);
   // the four iwans (deep vaulted halls open to the court) and the riwaqs between them
-  const iw = Math.max(5, hv * 0.22), id = Math.max(5, dr * 1.4);
+  const iw = Math.max(5, hv * 0.22),
+    id = Math.max(5, dr * 1.4);
   const parts: [Polygon, string, number][] = [
     [qib, 'dome-chamber', 2],
     [R(hu - dq * 1.6 - id, hu - dq * 1.6 - 0.01, -iw / 2, iw / 2), 'qibla-iwan', 3],
@@ -143,7 +158,7 @@ function fridayMosque(lot: Polygon, cx: CompoundCtx): CompoundOut {
   parts.push([R(-hu, -hu + dr, -hv + dr + g, -iw / 2 - g), 'riwaq', 1], [R(-hu, -hu + dr, iw / 2 + g, hv - dr - g), 'riwaq', 1]);
   parts.push([R(hu - dr, hu, -hv + dr + g, -dq * 0.8 - g), 'riwaq', 1], [R(hu - dr, hu, dq * 0.8 + g, hv - dr - g), 'riwaq', 1]);
   for (const [poly, arch, st] of parts) {
-    if (!fits(P, poly, 0.5) || out.buildings.some((b) => overlap(b.poly, poly))) continue;
+    if (!fits(P, poly, 0.5) || out.buildings.some(b => overlap(b.poly, poly))) continue;
     out.buildings.push({ poly, kind: 'landmark', parcel: 0, arch, roof: arch === 'dome-chamber' ? 'dome' : 'flat', material: 'brick', storeys: st, orientation: ang });
   }
   // the dome and the two minarets flanking the qibla iwan
@@ -153,7 +168,7 @@ function fridayMosque(lot: Polygon, cx: CompoundCtx): CompoundOut {
   for (const sg of [-1, 1]) {
     const mc = { x: c.x + Math.cos(ang) * (hu - dq * 1.6 - id * 0.5) - Math.sin(ang) * sg * (iw / 2 + 2.2), y: c.y + Math.sin(ang) * (hu - dq * 1.6 - id * 0.5) + Math.cos(ang) * sg * (iw / 2 + 2.2) };
     const m = orientPos(disk(mc, 1.9, 10));
-    if (fits(P, m, 0.5) && !out.buildings.some((b) => overlap(b.poly, m))) out.buildings.push({ poly: m, kind: 'landmark', parcel: 0, arch: 'minaret', roof: 'dome', material: 'brick', storeys: 8 });
+    if (fits(P, m, 0.5) && !out.buildings.some(b => overlap(b.poly, m))) out.buildings.push({ poly: m, kind: 'landmark', parcel: 0, arch: 'minaret', roof: 'dome', material: 'brick', storeys: 8 });
   }
   // the court and its ablution pool
   const sahn = R(-hu + dr, hu - dq * 1.6 - id, -hv + dr, hv - dr);
@@ -182,14 +197,11 @@ function caravanserai(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const R = (u0: number, u1: number, v0: number, v1: number) => rectAt(ins.c, f.ang, u0, u1, v0, v1);
   const d = Math.max(4.6, Math.min(7, hu * 0.22));
   const gw = 4.5;
-  const ranges = [
-    R(-hu, hu, -hv, -hv + d), R(-hu, -gw / 2, hv - d, hv), R(gw / 2, hu, hv - d, hv),
-    R(-hu, -hu + d, -hv + d + 0.01, hv - d - 0.01), R(hu - d, hu, -hv + d + 0.01, hv - d - 0.01),
-  ];
+  const ranges = [R(-hu, hu, -hv, -hv + d), R(-hu, -gw / 2, hv - d, hv), R(gw / 2, hu, hv - d, hv), R(-hu, -hu + d, -hv + d + 0.01, hv - d - 0.01), R(hu - d, hu, -hv + d + 0.01, hv - d - 0.01)];
   for (const r of ranges) if (fits(P, r, 0.5)) out.buildings.push({ poly: r, kind: 'landmark', parcel: 0, arch: 'caravanserai-cells', roof: 'flat', material: 'brick', storeys: 1 });
   // the portal (pishtaq) beside the gate passage
   const portal = R(-gw / 2 - 3, -gw / 2, hv - d - 2.5, hv);
-  if (fits(P, portal, 0.3) && !out.buildings.some((b) => overlap(b.poly, portal))) out.buildings.push({ poly: portal, kind: 'landmark', parcel: 0, arch: 'caravanserai-portal', roof: 'flat', material: 'brick', storeys: 2 });
+  if (fits(P, portal, 0.3) && !out.buildings.some(b => overlap(b.poly, portal))) out.buildings.push({ poly: portal, kind: 'landmark', parcel: 0, arch: 'caravanserai-portal', roof: 'flat', material: 'brick', storeys: 2 });
   const pool = R(-2, 2, -2, 2);
   if (hu > 14) out.water.push(pool);
   out.landmarks.push({ kind: 'caravanserai', poly: R(-hu, hu, -hv, hv) });
@@ -209,24 +221,28 @@ function chaharBagh(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const f = frameOf(P);
   const L = 400;
   const cw = Math.max(2.4, Math.min(4.5, ins.r * 0.06));
-  const chU = rectAt(ins.c, f.ang, -L, L, -cw / 2, cw / 2), chV = rectAt(ins.c, f.ang, -cw / 2, cw / 2, -L, L);
+  const chU = rectAt(ins.c, f.ang, -L, L, -cw / 2, cw / 2),
+    chV = rectAt(ins.c, f.ang, -cw / 2, cw / 2, -L, L);
   // the channels are parcels of water (two crossing strips): the four parterres are the rest
   const quarters = minus(P, chU, chV);
   for (const q of quarters) out.parcels.push({ poly: q, use: 'green' });
   // (the channels: the lot minus the parterres, as one or more water parcels)
   const chans = minus(P, ...quarters);
-  for (const c of chans) { out.parcels.push({ poly: c, use: 'tank' }); out.water.push(c); }
+  for (const c of chans) {
+    out.parcels.push({ poly: c, use: 'tank' });
+    out.water.push(c);
+  }
   if (!out.parcels.length) return { parcels: [{ poly: lot, use: 'green' }], buildings: [], lines: [], water: [], landmarks: [] };
   // the pavilion at the crossing: an octagon on its own island in the central pool
   const pv = Math.max(4, Math.min(11, ins.r * 0.16));
   const oct = orientPos(Array.from({ length: 8 }, (_, k) => ({ x: ins.c.x + Math.cos(f.ang + ((k + 0.5) / 8) * Math.PI * 2) * pv, y: ins.c.y + Math.sin(f.ang + ((k + 0.5) / 8) * Math.PI * 2) * pv })));
   // (it stands in the largest parterre corner touching the crossing: built on land, never on the water)
-  const host = out.parcels.findIndex((p) => p.use === 'green' && fits(p.poly, oct, 0));
+  const host = out.parcels.findIndex(p => p.use === 'green' && fits(p.poly, oct, 0));
   if (host >= 0) out.buildings.push({ poly: oct, kind: 'landmark', parcel: host, arch: 'garden-pavilion', roof: 'dome', material: 'brick', storeys: 2 });
   else {
     // the pavilion in the middle of the largest parterre
     const big = largest(quarters);
-    const bi = big ? out.parcels.findIndex((p) => p.poly === big) : -1;
+    const bi = big ? out.parcels.findIndex(p => p.poly === big) : -1;
     if (big && bi >= 0) {
       const bc = inscribed(big, [], 1);
       const o2 = orientPos(Array.from({ length: 8 }, (_, k) => ({ x: bc.c.x + Math.cos(((k + 0.5) / 8) * Math.PI * 2) * Math.min(pv, bc.r * 0.5), y: bc.c.y + Math.sin(((k + 0.5) / 8) * Math.PI * 2) * Math.min(pv, bc.r * 0.5) })));
@@ -237,10 +253,11 @@ function chaharBagh(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const tr = cx.rng;
   for (const q of quarters) {
     const o = obb(q);
-    for (let u = -o.hu + 5; u <= o.hu - 5; u += 9) for (let v = -o.hv + 5; v <= o.hv - 5; v += 9) {
-      const p = { x: o.c.x + o.u.x * u + o.v.x * v, y: o.c.y + o.u.y * u + o.v.y * v };
-      if (pointInRing(q, p) && distToRing(q, p) > 3) out.trees!.push({ x: p.x, y: p.y, r: tr.range(2.6, 3.6) });
-    }
+    for (let u = -o.hu + 5; u <= o.hu - 5; u += 9)
+      for (let v = -o.hv + 5; v <= o.hv - 5; v += 9) {
+        const p = { x: o.c.x + o.u.x * u + o.v.x * v, y: o.c.y + o.u.y * u + o.v.y * v };
+        if (pointInRing(q, p) && distToRing(q, p) > 3) out.trees!.push({ x: p.x, y: p.y, r: tr.range(2.6, 3.6) });
+      }
   }
   out.landmarks.push({ kind: 'chahar-bagh', poly: P });
   out.lines.push({ kind: 'compound-wall', path: P, closed: true, width: 1.2 });
@@ -251,12 +268,17 @@ function chaharBagh(lot: Polygon, cx: CompoundCtx): CompoundOut {
 export function bazaarRoofs(streets: Streets, old: MultiPoly, nucleus: Vec2): UrbanLine[] {
   const out: UrbanLine[] = [];
   // the two radials with the longest run in the old town
-  const runs = streets.list.filter((s) => s.ribbon && s.role === 'radial' && s.path.length >= 2).map((s) => {
-    const pts = s.path.filter((q) => inMP(old, q));
-    let L = 0;
-    for (let i = 1; i < s.path.length; i++) if (inMP(old, s.path[i]) && inMP(old, s.path[i - 1])) L += dist(s.path[i - 1], s.path[i]);
-    return { s, L, near: pts.length ? Math.min(...pts.map((q) => dist(q, nucleus))) : Infinity };
-  }).filter((r) => r.L > 40 && r.near < 120).sort((a, b) => b.L - a.L).slice(0, 1);
+  const runs = streets.list
+    .filter(s => s.ribbon && s.role === 'radial' && s.path.length >= 2)
+    .map(s => {
+      const pts = s.path.filter(q => inMP(old, q));
+      let L = 0;
+      for (let i = 1; i < s.path.length; i++) if (inMP(old, s.path[i]) && inMP(old, s.path[i - 1])) L += dist(s.path[i - 1], s.path[i]);
+      return { s, L, near: pts.length ? Math.min(...pts.map(q => dist(q, nucleus))) : Infinity };
+    })
+    .filter(r => r.L > 40 && r.near < 120)
+    .sort((a, b) => b.L - a.L)
+    .slice(0, 1);
   for (const { s } of runs) {
     let run: Vec2[] = [];
     const flush = () => {
@@ -266,7 +288,9 @@ export function bazaarRoofs(streets: Streets, old: MultiPoly, nucleus: Vec2): Ur
         // the domes: one every 8 m along the vault
         let acc = 0;
         for (let i = 1; i < run.length; i++) {
-          const a = run[i - 1], b = run[i], l = dist(a, b);
+          const a = run[i - 1],
+            b = run[i],
+            l = dist(a, b);
           for (let t = (8 - acc) % 8; t < l; t += 8) {
             const c = { x: a.x + ((b.x - a.x) * t) / l, y: a.y + ((b.y - a.y) * t) / l };
             const d = orientPos(disk(c, Math.min(2.2, w * 0.3), 10));
@@ -277,7 +301,10 @@ export function bazaarRoofs(streets: Streets, old: MultiPoly, nucleus: Vec2): Ur
       }
       run = [];
     };
-    for (const q of s.path) { if (inMP(old, q)) run.push(q); else flush(); }
+    for (const q of s.path) {
+      if (inMP(old, q)) run.push(q);
+      else flush();
+    }
     flush();
   }
   return out;
@@ -295,10 +322,10 @@ export function qanats(ctx: UrbanCtx, footprint: MultiPoly, rng: Rng, n: number)
   const ring = big.outer;
   const S = ctx.mapSize;
   const used: Vec2[] = [];
-  for (let k = 0; k < n * 4 && out.filter((l) => l.kind === 'qanat').length < n; k++) {
+  for (let k = 0; k < n * 4 && out.filter(l => l.kind === 'qanat').length < n; k++) {
     const i = rng.int(0, ring.length - 1);
     const st = ring[i];
-    if (used.some((u) => dist(u, st) < 150)) continue;
+    if (used.some(u => dist(u, st) < 150)) continue;
     // climb: the steepest ascent of the smoothed ground, a little wandering
     const pl: Polyline = [st];
     let p = st;
@@ -306,12 +333,16 @@ export function qanats(ctx: UrbanCtx, footprint: MultiPoly, rng: Rng, n: number)
     const L = rng.range(350, 800);
     for (let s = 0; s < L; s += 20) {
       const h0 = ctx.heightAt(p);
-      let best = hdg, bh = -Infinity;
+      let best = hdg,
+        bh = -Infinity;
       for (const da of [-0.5, -0.25, 0, 0.25, 0.5]) {
         const a = hdg + da;
         const q = { x: p.x + Math.cos(a) * 30, y: p.y + Math.sin(a) * 30 };
         const h = ctx.heightAt(q) - Math.abs(da) * 0.3;
-        if (h > bh) { bh = h; best = a; }
+        if (h > bh) {
+          bh = h;
+          best = a;
+        }
       }
       hdg = best + rng.range(-0.08, 0.08);
       const q = { x: p.x + Math.cos(hdg) * 20, y: p.y + Math.sin(hdg) * 20 };
@@ -323,7 +354,10 @@ export function qanats(ctx: UrbanCtx, footprint: MultiPoly, rng: Rng, n: number)
     if (pl.length < 8) continue;
     used.push(st);
     out.push({ kind: 'qanat', path: pl.slice().reverse(), width: 0.6 });
-    for (let j = 1; j < pl.length; j += 1 + (j % 2)) { const d = orientPos(disk(pl[j], 3.6, 12)); out.push({ kind: 'qanat-shaft', path: d.concat([d[0]]), closed: true, width: 1 }); }
+    for (let j = 1; j < pl.length; j += 1 + (j % 2)) {
+      const d = orientPos(disk(pl[j], 3.6, 12));
+      out.push({ kind: 'qanat-shaft', path: d.concat([d[0]]), closed: true, width: 1 });
+    }
   }
   return out;
 }

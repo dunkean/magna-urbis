@@ -12,7 +12,6 @@ import type { SitePrefs } from '../options';
 import type { M4Catalogue } from './m4/index';
 import type { CampSpec } from './camps/index';
 
-
 export type EnclosureShape = 'organic' | 'rect' | 'rounded-rect' | 'square' | 'oval' | 'circle' | 'terraces';
 export interface EnclosureSpec {
   shape: EnclosureShape;
@@ -27,8 +26,18 @@ export interface EnclosureSpec {
   orientation?: 'road' | 'cardinal' | 'terrain' | 'water';
   aspect?: Range;
 }
-export interface SectorSpec { morphology: MorphRef; share: number; culture?: string }
-export interface PhaseSpec { morphology: MorphRef; enclosure: EnclosureSpec; share?: number; sectors?: SectorSpec[]; culture?: string }
+export interface SectorSpec {
+  morphology: MorphRef;
+  share: number;
+  culture?: string;
+}
+export interface PhaseSpec {
+  morphology: MorphRef;
+  enclosure: EnclosureSpec;
+  share?: number;
+  sectors?: SectorSpec[];
+  culture?: string;
+}
 export type NucleusKind = 'market' | 'forum' | 'mosque' | 'drum-tower' | 'castle' | 'temple' | 'grove' | 'ushnu' | 'precinct' | 'mortuary' | 'maidan' | 'mud-mosque' | 'wizard-tower' | 'clocktower' | 'none';
 export interface NucleusSpec {
   kind: NucleusKind;
@@ -147,18 +156,21 @@ export interface Culture {
    */
   waterBuild?: boolean;
 }
-export type UrbanGrowthRecipe = Pick<Culture, 'nucleus' | 'core' | 'ring' | 'phaseCount' | 'faubourg' | 'faubShare' | 'render'>
-  & Partial<Pick<Culture, 'm4' | 'landmarks' | 'waterBuild'>>;
+export type UrbanGrowthRecipe = Pick<Culture, 'nucleus' | 'core' | 'ring' | 'phaseCount' | 'faubourg' | 'faubShare' | 'render'> & Partial<Pick<Culture, 'm4' | 'landmarks' | 'waterBuild'>>;
 /** Second culture distributed by growth phases or by sectors: the two modes the native engine also takes. */
-export interface CultureMix { id: string; t: number; mode: 'phases' | 'sectors' }
+export interface CultureMix {
+  id: string;
+  t: number;
+  mode: 'phases' | 'sectors';
+}
 export interface PlanOverride {
   nucleus?: Partial<NucleusSpec>;
   phases?: PhaseSpec[];
   faubourg?: MorphRef | null;
 }
 
-export const CULTURES: Record<string, Culture> = Object.fromEntries(CULTURE_LIST.map((c) => [c.id, c]));
-export const CULTURE_IDS = CULTURE_LIST.map((c) => c.id);
+export const CULTURES: Record<string, Culture> = Object.fromEntries(CULTURE_LIST.map(c => [c.id, c]));
+export const CULTURE_IDS = CULTURE_LIST.map(c => c.id);
 export const getCulture = (id: string | undefined): Culture => CULTURES[id ?? ''] ?? CULTURES['european-organic'];
 
 /** Resolve scale without mutating the preset, so generating a city cannot change a later village. */
@@ -167,7 +179,11 @@ export function populationCulture(id: string | undefined, pop: number): Culture 
   return c.urbanGrowth && pop >= c.urbanGrowth.minPop ? { ...c, ...c.urbanGrowth.recipe, camp: undefined } : c;
 }
 
-export interface ResolvedSector { morph: MorphologyParams; share: number; culture: string }
+export interface ResolvedSector {
+  morph: MorphologyParams;
+  share: number;
+  culture: string;
+}
 export interface ResolvedPhase {
   morph: MorphologyParams;
   enc: EnclosureSpec;
@@ -211,17 +227,16 @@ export function resolvePlan(cultureId: string, pop: number, mix?: CultureMix | n
   let faubRef: MorphRef | null = c.faubourg;
   let faubShare = c.faubShare;
   if (override?.phases?.length) {
-    specs = override.phases.map((p) => ({ culture: c.id, ...p }));
-    const given = specs.map((p) => p.share ?? 0);
-    shares = given.every((x) => x > 0) ? given : SHARES[Math.min(5, specs.length)] ?? specs.map(() => 1 / specs.length);
+    specs = override.phases.map(p => ({ culture: c.id, ...p }));
+    const given = specs.map(p => p.share ?? 0);
+    shares = given.every(x => x > 0) ? given : (SHARES[Math.min(5, specs.length)] ?? specs.map(() => 1 / specs.length));
   } else if (m && mix!.mode === 'phases') {
     // growth phases: the primary culture builds the old town (all its phases, weight 1 − t), the secondary builds
     // the extension rings around it (weight t) with its own morphology
     const t = Math.max(0.1, Math.min(0.9, mix!.t));
     const n1 = countFor(c, pop);
     const n2 = Math.max(1, Math.min(3, Math.round((n1 * t) / (1 - t))));
-    const ext: PhaseSpec = m.ring ? { ...m.ring, culture: m.id }
-      : { morphology: m.core.morphology, enclosure: { shape: 'organic', wall: m.core.enclosure.wall, fossil: 'street', towers: m.core.enclosure.towers }, culture: m.id };
+    const ext: PhaseSpec = m.ring ? { ...m.ring, culture: m.id } : { morphology: m.core.morphology, enclosure: { shape: 'organic', wall: m.core.enclosure.wall, fossil: 'street', towers: m.core.enclosure.towers }, culture: m.id };
     specs = [...phaseSpecs(c, n1), ...Array.from({ length: n2 }, () => ({ ...ext, share: undefined }))];
     const group = (list: PhaseSpec[], total: number): number[] => {
       const base = SHARES[Math.min(5, list.length)];
@@ -238,7 +253,7 @@ export function resolvePlan(cultureId: string, pop: number, mix?: CultureMix | n
     shares = SHARES[Math.min(5, n)];
   }
   // phases with an explicit share keep it; the others share the rest in the default proportions
-  if (!override?.phases?.length && !(m && mix!.mode === 'phases') && specs.some((p) => p.share)) {
+  if (!override?.phases?.length && !(m && mix!.mode === 'phases') && specs.some(p => p.share)) {
     const fixed = specs.reduce((a, p) => a + (p.share ?? 0), 0);
     const free = shares.reduce((a, x, k) => a + (specs[k].share ? 0 : x), 0);
     shares = shares.map((x, k) => specs[k].share ?? (free > 0 ? (x / free) * Math.max(0.05, 1 - fixed) : 0));
@@ -247,7 +262,7 @@ export function resolvePlan(cultureId: string, pop: number, mix?: CultureMix | n
   const phases: ResolvedPhase[] = specs.map((sp, k) => {
     const morph = resolveMorph(sp.morphology);
     const pc = CULTURES[sp.culture ?? c.id] ?? c;
-    let sectors: ResolvedSector[] = (sp.sectors ?? []).map((s) => ({ morph: resolveMorph(s.morphology), share: s.share, culture: s.culture ?? pc.id }));
+    let sectors: ResolvedSector[] = (sp.sectors ?? []).map(s => ({ morph: resolveMorph(s.morphology), share: s.share, culture: s.culture ?? pc.id }));
     if (m && mix!.mode === 'sectors' && (k > 0 || specs.length === 1)) {
       sectors = [...sectors, { morph: resolveMorph((m.ring ?? m.core).morphology), share: mix!.t, culture: m.id }];
     }
@@ -258,8 +273,8 @@ export function resolvePlan(cultureId: string, pop: number, mix?: CultureMix | n
   // landmarks: one per role and culture present (deduplicated by role + kind)
   const landmarks: ResolvedPlan['landmarks'] = [];
   for (const cc of cultures) {
-    if (!phases.some((p) => p.culture === cc.id || p.sectors.some((s) => s.culture === cc.id))) continue;
-    for (const l of cc.landmarks) if (!landmarks.some((x) => x.role === l.role && x.kind === l.kind)) landmarks.push({ ...l, culture: cc.id });
+    if (!phases.some(p => p.culture === cc.id || p.sectors.some(s => s.culture === cc.id))) continue;
+    for (const l of cc.landmarks) if (!landmarks.some(x => x.role === l.role && x.kind === l.kind)) landmarks.push({ ...l, culture: cc.id });
   }
   return { culture: c, cultures, nucleus, phases, faubourg, faubShare, landmarks, render: c.render, mix: m ? mix! : undefined };
 }
@@ -283,7 +298,7 @@ const b64e = (s: string): string => {
 };
 const b64d = (s: string): string => {
   const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
-  return new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+  return new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0)));
 };
 export function planToString(p: PlanOverride | null | undefined): string {
   return p ? b64e(JSON.stringify(p)) : '';
@@ -298,7 +313,9 @@ export function planFromString(s: string | null | undefined): PlanOverride | nul
     if (o.nucleus && typeof o.nucleus === 'object') out.nucleus = o.nucleus;
     if (o.faubourg !== undefined) out.faubourg = o.faubourg;
     return out;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export type { Zone };

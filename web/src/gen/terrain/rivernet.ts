@@ -1,8 +1,6 @@
 import type { Rng } from '../core/rng';
 import { Vec2, Polyline, dist, polylineLength, chaikin, resample } from '../core/geom';
-import {
-  nearestOn, firstCrossing, selfIntersects, pointAt, tangentAt, bezier, insertVertex, blendEnd, rot, lengths, slicePolyline,
-} from '../core/pline';
+import { nearestOn, firstCrossing, selfIntersects, pointAt, tangentAt, bezier, insertVertex, blendEnd, rot, lengths, slicePolyline } from '../core/pline';
 import type { River, RiverClass } from '../types';
 
 /**
@@ -18,7 +16,11 @@ export const WIDTH_K = 0.0024;
 export const widthOfArea = (a: number): number => WIDTH_K * Math.sqrt(Math.max(0, a));
 export const areaOfWidth = (w: number): number => (w / WIDTH_K) * (w / WIDTH_K);
 
-export interface RiverScale { brook: number; stream: number; river: number }
+export interface RiverScale {
+  brook: number;
+  stream: number;
+  river: number;
+}
 export function scaleFor(widthK: number): RiverScale {
   const k = Math.max(0.85, Math.min(2, widthK));
   return { brook: 3.6 * k, stream: 9.5 * k, river: 26 * k };
@@ -93,8 +95,11 @@ export function assembleChannels(inp: AssembleInput): GeoChan[] {
   const edgeSet = new Map<number, { ext: Polyline; w0: number }>();
   if (inp.nEdge > 0 && inp.main) {
     const dMax = 0.14 * S;
-    const cands = chans.map((c, i) => ({ c, i })).filter(({ c }) => !c.forced && c.lakeSrc < 0 && c.end !== 'lake' && c.path.length > 3 && (c.end === 'host' || c.end === 'sea' || dist(c.path[0], c.path[c.path.length - 1]) > 0.5 * S))
-      .map(({ c, i }) => ({ c, i, ...toEdge(c.path[0], S) })).filter((e) => e.d < dMax && e.d > 8);
+    const cands = chans
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => !c.forced && c.lakeSrc < 0 && c.end !== 'lake' && c.path.length > 3 && (c.end === 'host' || c.end === 'sea' || dist(c.path[0], c.path[c.path.length - 1]) > 0.5 * S))
+      .map(({ c, i }) => ({ c, i, ...toEdge(c.path[0], S) }))
+      .filter(e => e.d < dMax && e.d > 8);
     cands.sort((a, b) => b.c.endAcc - a.c.endAcc || a.i - b.i);
     const erng = rng.fork('edgefed');
     for (const cd of cands) {
@@ -110,7 +115,10 @@ export function assembleChannels(inp: AssembleInput): GeoChan[] {
       const c2 = { x: Hk.x - dirH.x * D * 0.4, y: Hk.y - dirH.y * D * 0.4 };
       const ext: Polyline = [{ ...cd.e }, ...bezier(cd.e, c1, c2, Hk, Math.max(6, Math.round(D / 9)))];
       let acc0 = 0;
-      for (let i = 1; i < cd.c.path.length; i++) { acc0 += dist(cd.c.path[i - 1], cd.c.path[i]); if (acc0 > sH + 1e-6) ext.push(cd.c.path[i]); }
+      for (let i = 1; i < cd.c.path.length; i++) {
+        acc0 += dist(cd.c.path[i - 1], cd.c.path[i]);
+        if (acc0 > sH + 1e-6) ext.push(cd.c.path[i]);
+      }
       if (selfIntersects(ext)) continue;
       if (ext.slice(0, Math.max(2, Math.round(D / 9) + 2)).some((p, i) => i > 0 && inp.isWet(p))) continue;
       if (inp.main && firstCrossing(ext, inp.main)) continue;
@@ -150,7 +158,10 @@ export function assembleChannels(inp: AssembleInput): GeoChan[] {
       if (s < skip) continue;
       for (const [id, f] of fin) {
         const thr = 9 + 0.5 * (wEst + f.wEst);
-        if (nearestOn(f.path, rs[k]).d < thr) { contact = { s, id }; break; }
+        if (nearestOn(f.path, rs[k]).d < thr) {
+          contact = { s, id };
+          break;
+        }
       }
     }
     let hostId = -1;
@@ -177,11 +188,16 @@ export function assembleChannels(inp: AssembleInput): GeoChan[] {
       const f = fin.get(best.id)!;
       const nn = nearestOn(f.path, last);
       if (nn.d > 170) continue;
-      hostId = best.id; hostPath = f.path; J = nn.pt;
+      hostId = best.id;
+      hostPath = f.path;
+      J = nn.pt;
     }
     if (!hostPath && (end === 'edge' || end === 'none')) {
       const te = toEdge(path[path.length - 1], S);
-      if (te.d < 40) { path = path.concat([te.e]); end = 'edge'; } else continue;
+      if (te.d < 40) {
+        path = path.concat([te.e]);
+        end = 'edge';
+      } else continue;
     }
 
     // ---- shape the confluence
@@ -195,7 +211,9 @@ export function assembleChannels(inp: AssembleInput): GeoChan[] {
       const qPt = pointAt(path, Math.max(0, Lp - 28)).pt;
       const side = th.x * (qPt.y - Jv.y) - th.y * (qPt.x - Jv.x) >= 0 ? 1 : -1;
       const approachAng = (() => {
-        const dx = Jv.x - qPt.x, dy = Jv.y - qPt.y, l = Math.hypot(dx, dy) || 1;
+        const dx = Jv.x - qPt.x,
+          dy = Jv.y - qPt.y,
+          l = Math.hypot(dx, dy) || 1;
         return Math.acos(Math.max(-1, Math.min(1, (dx * th.x + dy * th.y) / l)));
       })();
       const cur = path.slice();
@@ -236,13 +254,24 @@ export function assembleChannels(inp: AssembleInput): GeoChan[] {
 const movingAvg = (a: number[], r: number): number[] => {
   const out = new Array<number>(a.length);
   for (let i = 0; i < a.length; i++) {
-    let s = 0, n = 0;
-    for (let k = -r; k <= r; k++) { const j = i + k; if (j >= 0 && j < a.length) { s += a[j]; n++; } }
+    let s = 0,
+      n = 0;
+    for (let k = -r; k <= r; k++) {
+      const j = i + k;
+      if (j >= 0 && j < a.length) {
+        s += a[j];
+        n++;
+      }
+    }
     out[i] = s / n;
   }
   return out;
 };
-const cummax = (a: number[]): number[] => { const o = a.slice(); for (let i = 1; i < o.length; i++) o[i] = Math.max(o[i], o[i - 1]); return o; };
+const cummax = (a: number[]): number[] => {
+  const o = a.slice();
+  for (let i = 1; i < o.length; i++) o[i] = Math.max(o[i], o[i - 1]);
+  return o;
+};
 
 export interface HydraulicsInput {
   rivers: River[];
@@ -269,7 +298,10 @@ export function assignHydraulics(inp: HydraulicsInput): void {
   // drop rivers whose host vanished (e.g. clipped away)
   for (let k = rivers.length - 1; k >= 0; k--) {
     const r = rivers[k];
-    if (r.mouth === 'river' && r.host !== undefined && !byId.has(r.host)) { byId.delete(r.id!); rivers.splice(k, 1); }
+    if (r.mouth === 'river' && r.host !== undefined && !byId.has(r.host)) {
+      byId.delete(r.id!);
+      rivers.splice(k, 1);
+    }
   }
   const children = new Map<number, { r: River; at: number }[]>();
   const lakeIn = new Map<number, River[]>();
@@ -305,7 +337,7 @@ export function assignHydraulics(inp: HydraulicsInput): void {
       }
     }
     const lam = r.main ? inp.lam : r.edgeFed ? Math.min(inp.lam, inp.lamEdge) : inp.lamBrook;
-    let intA = r.path.map((p) => lam * inp.aint(p, r));
+    let intA = r.path.map(p => lam * inp.aint(p, r));
     intA = movingAvg(cummax(intA), 6);
     const extS = ext;
     const sumTrib = new Array<number>(n).fill(0);
@@ -324,7 +356,10 @@ export function assignHydraulics(inp: HydraulicsInput): void {
     if (r.main && inp.estuary > 1) {
       const L = lengths(r.path);
       const T = L[n - 1] || 1;
-      const k = (x: number) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
+      const k = (x: number) => {
+        const t = Math.max(0, Math.min(1, x));
+        return t * t * (3 - 2 * t);
+      };
       width = width.map((w, i) => w * (1 + (inp.estuary - 1) * k((L[i] / T - 0.88) / 0.12)));
     }
     width = cummax(width);

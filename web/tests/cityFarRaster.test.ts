@@ -7,9 +7,13 @@ describe('far town raster', () => {
     expect(farTownAlpha(FAR_TOWN_FADE[1])).toBe(1);
     expect(farTownAlpha(20)).toBe(1);
     let last = 0;
-    for (let mpp = FAR_TOWN_FADE[0]; mpp <= FAR_TOWN_FADE[1]; mpp += .05) { const a = farTownAlpha(mpp); expect(a).toBeGreaterThanOrEqual(last); last = a; }
+    for (let mpp = FAR_TOWN_FADE[0]; mpp <= FAR_TOWN_FADE[1]; mpp += 0.05) {
+      const a = farTownAlpha(mpp);
+      expect(a).toBeGreaterThanOrEqual(last);
+      last = a;
+    }
     // Below the top of the band the buildings are drawn; above it the raster alone stands for them, fully opaque.
-    expect(farTownBuildingsShown(FAR_TOWN_FADE[1] - .01)).toBe(true);
+    expect(farTownBuildingsShown(FAR_TOWN_FADE[1] - 0.01)).toBe(true);
     expect(farTownBuildingsShown(FAR_TOWN_FADE[1])).toBe(false);
   });
 });

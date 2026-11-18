@@ -4,7 +4,8 @@ import { decodeDecor, encodeDecor, type Decor } from '../src/ui/decor';
 
 describe('shared vector urban geography', () => {
   it('retains a diagonal coast between coarse cells and physical water holes', () => {
-    const n = 16, width = 160;
+    const n = 16,
+      width = 160;
     const height = Float32Array.from({ length: n * n }, (_, i) => ((i % n) + Math.floor(i / n) + 1) * 10 - 150);
     const land = landRings(height, n, width);
     expect(land.length).toBe(1);

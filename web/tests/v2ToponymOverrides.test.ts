@@ -8,8 +8,13 @@ import { renameMap } from '../src/v2/mapNaming';
 import { DEFAULTS } from '../src/gen/options';
 import type { World } from '../src/gen/types';
 
-const base = () => { const s = defaultSettings(); s.options.seed = '42'; return s; };
-const town = { id: 'settlement:east', town: 'east' }, river = { id: 'river:abc', kind: 'river' };
+const base = () => {
+  const s = defaultSettings();
+  s.options.seed = '42';
+  return s;
+};
+const town = { id: 'settlement:east', town: 'east' },
+  river = { id: 'river:abc', kind: 'river' };
 
 describe('V2 toponym overrides', () => {
   it('renames, refuses empty text, resets to the generated name and toggles visibility', () => {
@@ -35,13 +40,16 @@ describe('V2 toponym overrides', () => {
 
   it('is kept by the project file and left out of the MU3 code', () => {
     const settings = base();
-    renameToponym(settings, town, 'Le Gué'); renameToponym(settings, river, 'Blackwater'); setToponymHidden(settings, { id: 'hill:x' }, true);
+    renameToponym(settings, town, 'Le Gué');
+    renameToponym(settings, river, 'Blackwater');
+    setToponymHidden(settings, { id: 'hill:x' }, true);
     settings.naming!.labels!['free:note'] = { kind: 'free', text: 'Camp', anchor: { x: 1, y: 2 } };
     const restored = parseProject(serializeProject(settings)).settings;
     expect(restored.naming?.places).toEqual({ east: 'Le Gué' });
     expect(restored.naming?.labels?.[river.id]).toMatchObject({ text: 'Blackwater' });
     expect(restored.naming?.labels?.['hill:x']).toEqual({ hidden: true });
-    const code = encodeCityCode(settings), shared = decodeCityCode(code).settings;
+    const code = encodeCityCode(settings),
+      shared = decodeCityCode(code).settings;
     expect(code).not.toContain('Blackwater');
     expect(shared.naming?.places).toBeUndefined();
     expect(Object.keys(shared.naming?.labels ?? {})).toEqual(['free:note']);
@@ -51,15 +59,38 @@ describe('V2 toponym overrides', () => {
   it('survives a change of toponym culture; reset gives the name of the current culture', () => {
     const grid = { w: 24, h: 24, cell: 50, data: new Float32Array(576) };
     const source = {
-      seed: 'overrides', mapSize: 1200, stats: {}, options: { ...DEFAULTS, culture: 'bastide', language: 'auto' },
-      terrain: { height: grid, slope: grid, water: new Uint8Array(576).fill(1), seaFraction: .5, lakes: [],
-        rivers: [1, 2].map(id => ({ id, main: id === 1, path: [{ x: 0, y: id * 100 }, { x: 1200, y: id * 100 }], width: [8, 8] })) },
-      site: { center: { x: 500, y: 500 }, reserveRadius: 100 }, roads: [],
-      settlements: [{ key: 'main', main: true, population: 3000, culture: 'bastide', center: { x: 500, y: 500 }, detail: 'main' }, { key: 'east', population: 500, culture: 'bastide', center: { x: 900, y: 500 } }],
+      seed: 'overrides',
+      mapSize: 1200,
+      stats: {},
+      options: { ...DEFAULTS, culture: 'bastide', language: 'auto' },
+      terrain: {
+        height: grid,
+        slope: grid,
+        water: new Uint8Array(576).fill(1),
+        seaFraction: 0.5,
+        lakes: [],
+        rivers: [1, 2].map(id => ({
+          id,
+          main: id === 1,
+          path: [
+            { x: 0, y: id * 100 },
+            { x: 1200, y: id * 100 },
+          ],
+          width: [8, 8],
+        })),
+      },
+      site: { center: { x: 500, y: 500 }, reserveRadius: 100 },
+      roads: [],
+      settlements: [
+        { key: 'main', main: true, population: 3000, culture: 'bastide', center: { x: 500, y: 500 }, detail: 'main' },
+        { key: 'east', population: 500, culture: 'bastide', center: { x: 900, y: 500 } },
+      ],
     } as unknown as World;
-    const settings = base(); settings.options.culture = 'bastide';
+    const settings = base();
+    settings.options.culture = 'bastide';
     const entry = (world: World, id: string) => world.names!.entries.find(e => e.id === id)!;
-    renameToponym(settings, town, 'Le Gué'); renameToponym(settings, { id: 'river:2', kind: 'river' }, 'My River');
+    renameToponym(settings, town, 'Le Gué');
+    renameToponym(settings, { id: 'river:2', kind: 'river' }, 'My River');
     const original = renameMap(source, settings);
     settings.naming!.toponymCulture = 'japanese-jokamachi';
     const japanese = renameMap(original, settings);
@@ -73,9 +104,33 @@ describe('V2 toponym overrides', () => {
   });
 
   it('renames a generated label without pinning it', () => {
-    const world = { names: { family: 'english', town: 'Town', entries: [{ id: river.id, kind: 'river', text: 'Elm River', rank: 2, anchor: { x: 0, y: 0 }, path: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }] } } as unknown as World;
+    const world = {
+      names: {
+        family: 'english',
+        town: 'Town',
+        entries: [
+          {
+            id: river.id,
+            kind: 'river',
+            text: 'Elm River',
+            rank: 2,
+            anchor: { x: 0, y: 0 },
+            path: [
+              { x: 0, y: 0 },
+              { x: 5, y: 5 },
+            ],
+          },
+        ],
+      },
+    } as unknown as World;
     applyLabelEdits(world, { [river.id]: { text: 'Blackwater', mode: 'label' } });
-    expect(world.names!.entries[0]).toMatchObject({ text: 'Blackwater', path: [{ x: 0, y: 0 }, { x: 5, y: 5 }] });
+    expect(world.names!.entries[0]).toMatchObject({
+      text: 'Blackwater',
+      path: [
+        { x: 0, y: 0 },
+        { x: 5, y: 5 },
+      ],
+    });
     expect(world.names!.entries[0].forceVisible).toBeUndefined();
   });
 });

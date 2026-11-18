@@ -14,22 +14,27 @@ const empty = (lot: Polygon, kind: string): CompoundOut => ({ parcels: [{ poly: 
 
 /** A mosque or open market carrying a sector morphology does not provide its shop programme. */
 export function hasSwahiliBazaar(quarters: { kind: string; served: boolean; morph?: string }[]): boolean {
-  return quarters.some((q) => q.kind === 'quarter' && q.served && q.morph === 'swahili-bazaar');
+  return quarters.some(q => q.kind === 'quarter' && q.served && q.morph === 'swahili-bazaar');
 }
 
 /** A coast can consume an angular sector completely; retain its programme on a real served core quarter. */
 export function swahiliBazaarQuarter(quarters: { id: number; poly: Polygon; eligible: boolean; marketFront: boolean }[], center: Vec2, share: number): number | undefined {
   const P = MORPHOLOGIES['swahili-bazaar'];
-  const candidates = quarters.filter((q) => q.eligible && area(q.poly) >= P.minBlock && 2 * obb(q.poly).hv >= P.minWidth);
+  const candidates = quarters.filter(q => q.eligible && area(q.poly) >= P.minBlock && 2 * obb(q.poly).hv >= P.minWidth);
   const total = candidates.reduce((sum, q) => sum + area(q.poly), 0);
   if (!total || !(share > 0)) return undefined;
-  const target = total * share, radius = Math.sqrt(total / Math.PI);
-  let best: number | undefined, score = Infinity;
+  const target = total * share,
+    radius = Math.sqrt(total / Math.PI);
+  let best: number | undefined,
+    score = Infinity;
   for (const q of candidates) {
     const p = polygonCentroid(q.poly);
     // Compare relative programme sizes so a tiny remnant does not win merely by being closest to the mosque.
     const value = Math.hypot(p.x - center.x, p.y - center.y) / Math.max(1, radius) + Math.abs(Math.log(area(q.poly) / target)) - (q.marketFront ? 1 : 0);
-    if (value < score) { score = value; best = q.id; }
+    if (value < score) {
+      score = value;
+      best = q.id;
+    }
   }
   return best;
 }
@@ -37,7 +42,8 @@ export function swahiliBazaarQuarter(quarters: { id: number; poly: Polygon; elig
 /** A compact flat-roofed prayer hall and open forecourt, rather than a domed North-African hypostyle plan. */
 function mosque(lot: Polygon, cx: CompoundCtx, friday = false): CompoundOut {
   const kind = friday ? 'swahili-juma-mosque' : 'swahili-mosque';
-  const out = empty(lot, kind), o = obb(lot);
+  const out = empty(lot, kind),
+    o = obb(lot);
   const f = bestRect(lot, cx.angle, Math.min(friday ? 24 : 13, o.hu), Math.min(friday ? 30 : 18, o.hv), 1);
   if (!f || Math.min(f.hu, f.hv) < 5) return out;
   const R = (u0: number, u1: number, v0: number, v1: number) => rectAt(f.c, cx.angle, u0, u1, v0, v1);
@@ -55,15 +61,31 @@ function mosque(lot: Polygon, cx: CompoundCtx, friday = false): CompoundOut {
 
 /** Mansion court with a wide veranda on the inside; the street entrance remains an actual open passage. */
 function merchantHouse(lot: Polygon, cx: CompoundCtx): CompoundOut {
-  const out = empty(lot, 'swahili-merchant-house'), P = orientPos(lot);
-  let edge = 0, length = 0;
-  for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], l = Math.hypot(b.x - a.x, b.y - a.y); if (l > length) { length = l; edge = i; } }
+  const out = empty(lot, 'swahili-merchant-house'),
+    P = orientPos(lot);
+  let edge = 0,
+    length = 0;
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i],
+      b = P[(i + 1) % P.length],
+      l = Math.hypot(b.x - a.x, b.y - a.y);
+    if (l > length) {
+      length = l;
+      edge = i;
+    }
+  }
   if (length < 10) return out;
-  const a = P[edge], b = P[(edge + 1) % P.length], n = { x: -(b.y - a.y) / length, y: (b.x - a.x) / length };
+  const a = P[edge],
+    b = P[(edge + 1) % P.length],
+    n = { x: -(b.y - a.y) / length, y: (b.x - a.x) / length };
   const pl: Plot = { poly: P, block: 0, zone: 'middle', front: [a, b], nrm: n, sideA: { p: a, d: n }, sideB: { p: b, d: n }, rank: 1, depth: 50, wide: true, sideFronts: [], run: 0, order: 0 };
   const params = deepMerge(MORPHOLOGIES['swahili-stone'], { houseArea: { middle: [area(P), area(P)] }, courtyardShare: [0.3, 0.4], arch: { typology: 'swahili-merchant-mansion', storeys: [2, 3] } });
-  out.buildings.push(...buildOn(pl, 0.78, params, cx.rng).filter((bld) => bld.kind !== 'garden').map((bld) => ({ ...bld, kind: 'landmark' as const, parcel: 0 })));
-  const courts = out.buildings.flatMap((bld) => bld.courtyards ?? []);
+  out.buildings.push(
+    ...buildOn(pl, 0.78, params, cx.rng)
+      .filter(bld => bld.kind !== 'garden')
+      .map(bld => ({ ...bld, kind: 'landmark' as const, parcel: 0 })),
+  );
+  const courts = out.buildings.flatMap(bld => bld.courtyards ?? []);
   for (const court of courts.slice(0, 1)) out.lines.push({ kind: 'veranda-edge', path: court.concat([court[0]]), width: 0.35 });
   if (out.buildings.length) out.landmarks.push({ kind: 'swahili-merchant-house', poly: out.buildings[0].poly });
   return out;
@@ -71,7 +93,8 @@ function merchantHouse(lot: Polygon, cx: CompoundCtx): CompoundOut {
 
 /** Small coastal stone fort: four bastions round an open court, a curtain with an open town-side gate. */
 function fort(lot: Polygon, cx: CompoundCtx): CompoundOut {
-  const out = empty(lot, 'swahili-fort'), o = obb(lot);
+  const out = empty(lot, 'swahili-fort'),
+    o = obb(lot);
   const f = bestRect(lot, cx.angle, Math.min(35, o.hu), Math.min(30, o.hv), 1.5);
   if (!f || Math.min(f.hu, f.hv) < 12) return out;
   const R = (u0: number, u1: number, v0: number, v1: number) => rectAt(f.c, cx.angle, u0, u1, v0, v1);
@@ -90,12 +113,14 @@ export function registerSwahili(): void {
 
 /** Door glyphs occupy the real 1.8 m gaps cut through courtyard fronts. No geometry or access is changed. */
 export function swahiliDoorLines(buildings: UrbanBuilding[], parcels: UrbanParcel[]): UrbanLine[] {
-  const out: UrbanLine[] = [], seen = new Set<string>();
+  const out: UrbanLine[] = [],
+    seen = new Set<string>();
   for (const b of buildings) {
     if ((b.arch !== 'swahili-stone-house' && b.arch !== 'swahili-seafront-house') || !b.courtyards?.length || b.parcel === undefined) continue;
     const front = parcels[b.parcel]?.front;
     if (!front) continue;
-    const [a, c] = front, L = Math.hypot(c.x - a.x, c.y - a.y);
+    const [a, c] = front,
+      L = Math.hypot(c.x - a.x, c.y - a.y);
     if (L < 4) continue;
     const t = { x: (c.x - a.x) / L, y: (c.y - a.y) / L };
     let n = { x: -t.y, y: t.x };
@@ -104,13 +129,15 @@ export function swahiliDoorLines(buildings: UrbanBuilding[], parcels: UrbanParce
     const d = (p: Vec2) => (p.x - a.x) * n.x + (p.y - a.y) * n.y;
     const runs: [number, number][] = [];
     for (let i = 0; i < b.poly.length; i++) {
-      const p = b.poly[i], q = b.poly[(i + 1) % b.poly.length];
+      const p = b.poly[i],
+        q = b.poly[(i + 1) % b.poly.length];
       if (Math.abs(d(p)) < 0.03 && Math.abs(d(q)) < 0.03) runs.push([Math.min(u(p), u(q)), Math.max(u(p), u(q))]);
     }
     runs.sort((x, y) => x[0] - y[0]);
     let end = runs[0]?.[1] ?? L;
     for (let i = 1; i < runs.length; i++) {
-      const start = runs[i][0], gap = start - end;
+      const start = runs[i][0],
+        gap = start - end;
       if (gap >= 1.5 && gap <= 2.2 && end >= 0 && start <= L) {
         const key = b.parcel + ':' + end.toFixed(2);
         if (!seen.has(key)) {

@@ -8,23 +8,36 @@ import { expectInvariants } from './cultureCases';
 // Sprawl (POLISH.md "Global settlement parameter"): for the same population, sprawl 0.5 → 1 → 2 grows the extent,
 // lowers the built coverage, loosens the plots, adds gardens and spreads the faubourgs, relative to each culture's
 // baseline (a medina stays denser than a European town at the same sprawl).
-interface M { foot: number; cov: number; plot: number; garden: number; faub: number }
+interface M {
+  foot: number;
+  cov: number;
+  plot: number;
+  garden: number;
+  faub: number;
+}
 function measure(w: World): M {
   const u = w.urban!;
   const foot = u.footprintH.reduce((a, p) => a + area(p.outer), 0);
-  let blockA = 0, built = 0;
-  u.blockInfo.forEach((b, i) => { if (b.kind === 'block') blockA += area(u.blocks[i]); });
+  let blockA = 0,
+    built = 0;
+  u.blockInfo.forEach((b, i) => {
+    if (b.kind === 'block') blockA += area(u.blocks[i]);
+  });
   for (const b of u.buildings) if (b.parcel !== undefined && u.blockInfo[u.parcels[b.parcel].block].kind === 'block') built += area(b.poly);
-  const plots = u.parcels.filter((p) => p.use === 'plot');
+  const plots = u.parcels.filter(p => p.use === 'plot');
   const garden = u.backLand.reduce((a, p) => a + area(p.outer), 0);
   return { foot, cov: built / blockA, plot: plots.reduce((a, p) => a + area(p.poly), 0) / plots.length, garden: garden / blockA, faub: Number(w.stats['urban.ha.faubourg'] ?? 0) };
 }
 const run = (o: Partial<Options>, s: number): World => generate(makeOptions({ ...o, sprawl: s }));
 
 describe('sprawl', () => {
-  for (const o of [{ seed: '1', size: 'town', population: 4000 }, { seed: '2', size: 'town', population: 4500, culture: 'medina' }, { seed: '3', size: 'city', population: 15000 }] as Partial<Options>[]) {
+  for (const o of [
+    { seed: '1', size: 'town', population: 4000 },
+    { seed: '2', size: 'town', population: 4500, culture: 'medina' },
+    { seed: '3', size: 'city', population: 15000 },
+  ] as Partial<Options>[]) {
     it(`monotonic effects: ${o.culture ?? 'european-organic'} ${o.size} seed ${o.seed}`, () => {
-      const ws = [0.5, 1, 2].map((s) => run(o, s));
+      const ws = [0.5, 1, 2].map(s => run(o, s));
       const m = ws.map(measure);
       for (const w of ws) expect(w.urban!.population).toBe(o.population);
       expect(m[0].foot, 'extent grows with sprawl').toBeLessThan(m[1].foot);
@@ -46,7 +59,7 @@ describe('sprawl', () => {
     expect(md.foot, 'medina extent').toBeLessThan(eo.foot);
   }, 200000);
   it('camps loosen too (kraal village)', () => {
-    const f = [0.5, 1, 2].map((s) => measure(run({ seed: '1', size: 'village', culture: 'kraal' }, s)).foot);
+    const f = [0.5, 1, 2].map(s => measure(run({ seed: '1', size: 'village', culture: 'kraal' }, s)).foot);
     expect(f[0]).toBeLessThan(f[1]);
     expect(f[1]).toBeLessThan(f[2]);
   }, 200000);

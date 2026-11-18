@@ -1,18 +1,26 @@
 /** Pure view math shared by the canvas renderer and the viewer. */
-export interface View { cx: number; cy: number; /** CSS pixels per meter */ scale: number }
-export interface Rect4 { minX: number; minY: number; maxX: number; maxY: number }
+export interface View {
+  cx: number;
+  cy: number;
+  /** CSS pixels per meter */ scale: number;
+}
+export interface Rect4 {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
 
 /** CSS pixels per metre: enough to frame encounter areas on large displays. */
 export const MAX_SCALE = 128;
 
 export function viewRect(v: View, w: number, h: number, pad = 0): Rect4 {
-  const hw = w / (2 * v.scale) + pad, hh = h / (2 * v.scale) + pad;
+  const hw = w / (2 * v.scale) + pad,
+    hh = h / (2 * v.scale) + pad;
   return { minX: v.cx - hw, minY: v.cy - hh, maxX: v.cx + hw, maxY: v.cy + hh };
 }
-export const worldToScreen = (v: View, w: number, h: number, x: number, y: number): [number, number] =>
-  [(x - v.cx) * v.scale + w / 2, (y - v.cy) * v.scale + h / 2];
-export const screenToWorld = (v: View, w: number, h: number, sx: number, sy: number): [number, number] =>
-  [(sx - w / 2) / v.scale + v.cx, (sy - h / 2) / v.scale + v.cy];
+export const worldToScreen = (v: View, w: number, h: number, x: number, y: number): [number, number] => [(x - v.cx) * v.scale + w / 2, (y - v.cy) * v.scale + h / 2];
+export const screenToWorld = (v: View, w: number, h: number, sx: number, sy: number): [number, number] => [(sx - w / 2) / v.scale + v.cx, (sy - h / 2) / v.scale + v.cy];
 
 export function fitScale(mapSize: number, w: number, h: number, margin = 24): number {
   return Math.max(1, Math.min(w, h) - margin) / mapSize;

@@ -3,33 +3,52 @@
 import { chromium } from 'playwright';
 import { forestBeachCoverageAt } from '../../rust/bridge/terrainForestBeach.ts';
 
-const N = 256, WIDTH = 4000, X0 = -2000, Y0 = -2000, SEED = 123456789, TEMPERATURE = 18;
+const N = 256,
+  WIDTH = 4000,
+  X0 = -2000,
+  Y0 = -2000,
+  SEED = 123456789,
+  TEMPERATURE = 18;
 
 // Synthetic coast: sea in the west, gentle shelf and low beaches, hills inland, bays and islets.
 function makeLayer() {
-  const data = new Float32Array(N * N), cell = WIDTH / N;
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const x = X0 + (i + .5) * cell, y = Y0 + (j + .5) * cell;
-    const shoreX = -600 + 350 * Math.sin(y / 420) + 150 * Math.sin(y / 130 + 1);
-    const t = (x - shoreX) / 300;
-    let h = t < 0 ? -30 + 30 * Math.exp(t * .6) - 20 * (1 - Math.exp(t * .15)) : 2 + 3.5 * t + 6 * Math.max(0, t - 3);
-    h += 25 * Math.max(0, Math.sin(x / 500) * Math.cos(y / 600)) * Math.min(1, Math.max(0, t / 4));
-    h += 4 * Math.sin(x / 90 + y / 70) * Math.min(1, Math.max(0, t));
-    h -= 14 * Math.exp(-((x - 1200) ** 2 + (y + 200) ** 2) / 250000) + 22 * Math.exp(-((x - 1000) ** 2 + (y - 900) ** 2) / 90000);
-    h += 5 * Math.exp(-((x + 1400) ** 2 + (y - 300) ** 2) / 20000);
-    data[j * N + i] = h;
-  }
+  const data = new Float32Array(N * N),
+    cell = WIDTH / N;
+  for (let j = 0; j < N; j++)
+    for (let i = 0; i < N; i++) {
+      const x = X0 + (i + 0.5) * cell,
+        y = Y0 + (j + 0.5) * cell;
+      const shoreX = -600 + 350 * Math.sin(y / 420) + 150 * Math.sin(y / 130 + 1);
+      const t = (x - shoreX) / 300;
+      let h = t < 0 ? -30 + 30 * Math.exp(t * 0.6) - 20 * (1 - Math.exp(t * 0.15)) : 2 + 3.5 * t + 6 * Math.max(0, t - 3);
+      h += 25 * Math.max(0, Math.sin(x / 500) * Math.cos(y / 600)) * Math.min(1, Math.max(0, t / 4));
+      h += 4 * Math.sin(x / 90 + y / 70) * Math.min(1, Math.max(0, t));
+      h -= 14 * Math.exp(-((x - 1200) ** 2 + (y + 200) ** 2) / 250000) + 22 * Math.exp(-((x - 1000) ** 2 + (y - 900) ** 2) / 90000);
+      h += 5 * Math.exp(-((x + 1400) ** 2 + (y - 300) ** 2) / 20000);
+      data[j * N + i] = h;
+    }
   return { x: X0, y: Y0, width: WIDTH, n: N, data };
 }
 const layer = makeLayer();
 
 // Points: texel centres of a 512 grid, then random points.
-const G = 512, RAND = 40 * G, W = G, H = G + RAND / G;
+const G = 512,
+  RAND = 40 * G,
+  W = G,
+  H = G + RAND / G;
 const pts = new Float32Array(W * H * 2);
 let k = 0;
-for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { pts[k++] = X0 + (i + .5) * WIDTH / G; pts[k++] = Y0 + (j + .5) * WIDTH / G; }
-let s = 12345; const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
-for (let q = 0; q < RAND; q++) { pts[k++] = X0 + rnd() * WIDTH; pts[k++] = Y0 + rnd() * WIDTH; }
+for (let j = 0; j < G; j++)
+  for (let i = 0; i < G; i++) {
+    pts[k++] = X0 + ((i + 0.5) * WIDTH) / G;
+    pts[k++] = Y0 + ((j + 0.5) * WIDTH) / G;
+  }
+let s = 12345;
+const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+for (let q = 0; q < RAND; q++) {
+  pts[k++] = X0 + rnd() * WIDTH;
+  pts[k++] = Y0 + rnd() * WIDTH;
+}
 
 // GLSL copied verbatim from: web/src/ui/terrainGl.ts (bw, bd, level, forestRootSurface/Cell),
 // rust/bridge/terrainMaterial.ts (sstep, surfaceHash, surfaceCorner, surfaceNoise, surfaceFbm,
@@ -126,46 +145,81 @@ void main(){
 const browser = await chromium.launch({ channel: 'chrome', args: ['--use-angle=vulkan'] });
 const page = await browser.newPage();
 await page.setContent('<canvas id=c width=4 height=4></canvas>');
-const out = await page.evaluate(({ FS, layerData, pts, N, W, H, X0, Y0, WIDTH, SEED }) => {
-  const gl = document.getElementById('c').getContext('webgl2');
-  if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('webgl2 / float render target unavailable');
-  const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
-  const p = gl.createProgram();
-  gl.attachShader(p, sh(gl.VERTEX_SHADER, '#version 300 es\nvoid main(){vec2 v=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(v*2.-1.,0.,1.);}'));
-  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-  gl.useProgram(p);
-  const tex = (unit, internal, fmt, w, h, data) => {
-    const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, fmt, gl.FLOAT, data);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); return t;
-  };
-  tex(0, gl.R32F, gl.RED, N, N, new Float32Array(layerData));
-  tex(1, gl.RG32F, gl.RG, W, H, new Float32Array(pts));
-  gl.uniform1i(gl.getUniformLocation(p, 'uField'), 0); gl.uniform1i(gl.getUniformLocation(p, 'uPts'), 1);
-  gl.uniform1i(gl.getUniformLocation(p, 'uFieldN'), N); gl.uniform2f(gl.getUniformLocation(p, 'uFieldOrigin'), X0, Y0);
-  gl.uniform1f(gl.getUniformLocation(p, 'uFieldCell'), WIDTH / N); gl.uniform1ui(gl.getUniformLocation(p, 'uMaterialSeed'), SEED); gl.uniform2f(gl.getUniformLocation(p, 'uMaterialClimate'), TEMPERATURE, 1500);
-  gl.activeTexture(gl.TEXTURE2);
-  const rt = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, rt);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, W, H);
-  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rt, 0);
-  gl.viewport(0, 0, W, H); gl.drawArrays(gl.TRIANGLES, 0, 3);
-  const res = new Float32Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, res);
-  const r = new Float32Array(W * H); for (let i = 0; i < r.length; i++) r[i] = res[i * 4];
-  return Array.from(r);
-}, { FS, layerData: Array.from(layer.data), pts: Array.from(pts), N, W, H, X0, Y0, WIDTH, SEED });
+const out = await page.evaluate(
+  ({ FS, layerData, pts, N, W, H, X0, Y0, WIDTH, SEED }) => {
+    const gl = document.getElementById('c').getContext('webgl2');
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('webgl2 / float render target unavailable');
+    const sh = (t, src) => {
+      const s = gl.createShader(t);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      return s;
+    };
+    const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, '#version 300 es\nvoid main(){vec2 v=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(v*2.-1.,0.,1.);}'));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    gl.useProgram(p);
+    const tex = (unit, internal, fmt, w, h, data) => {
+      const t = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, fmt, gl.FLOAT, data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      return t;
+    };
+    tex(0, gl.R32F, gl.RED, N, N, new Float32Array(layerData));
+    tex(1, gl.RG32F, gl.RG, W, H, new Float32Array(pts));
+    gl.uniform1i(gl.getUniformLocation(p, 'uField'), 0);
+    gl.uniform1i(gl.getUniformLocation(p, 'uPts'), 1);
+    gl.uniform1i(gl.getUniformLocation(p, 'uFieldN'), N);
+    gl.uniform2f(gl.getUniformLocation(p, 'uFieldOrigin'), X0, Y0);
+    gl.uniform1f(gl.getUniformLocation(p, 'uFieldCell'), WIDTH / N);
+    gl.uniform1ui(gl.getUniformLocation(p, 'uMaterialSeed'), SEED);
+    gl.uniform2f(gl.getUniformLocation(p, 'uMaterialClimate'), TEMPERATURE, 1500);
+    gl.activeTexture(gl.TEXTURE2);
+    const rt = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, rt);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, W, H);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rt, 0);
+    gl.viewport(0, 0, W, H);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const res = new Float32Array(W * H * 4);
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, res);
+    const r = new Float32Array(W * H);
+    for (let i = 0; i < r.length; i++) r[i] = res[i * 4];
+    return Array.from(r);
+  },
+  { FS, layerData: Array.from(layer.data), pts: Array.from(pts), N, W, H, X0, Y0, WIDTH, SEED },
+);
 await browser.close();
 
-let max = 0, sum = 0, bad = 0, nonzero = 0, worst = -1;
+let max = 0,
+  sum = 0,
+  bad = 0,
+  nonzero = 0,
+  worst = -1;
 const total = W * H;
 for (let i = 0; i < total; i++) {
   const ts = forestBeachCoverageAt(layer, SEED, pts[i * 2], pts[i * 2 + 1], TEMPERATURE);
   const d = Math.abs(ts - out[i]);
   if (out[i] > 0 || ts > 0) nonzero++;
-  sum += d; if (d > max) { max = d; worst = i; } if (d > 1 / 255) bad++;
+  sum += d;
+  if (d > max) {
+    max = d;
+    worst = i;
+  }
+  if (d > 1 / 255) bad++;
 }
 console.log(`points ${total}, nonzero ${nonzero}, max diff ${max.toFixed(5)} (${(max * 255).toFixed(2)}/255), mean ${(sum / total).toExponential(3)}, > 1/255: ${bad}`);
 if (worst >= 0) console.log(`worst at (${pts[worst * 2]}, ${pts[worst * 2 + 1]}): glsl ${out[worst]} ts ${forestBeachCoverageAt(layer, SEED, pts[worst * 2], pts[worst * 2 + 1], TEMPERATURE)}`);
-if (max > 2 / 255) { console.error('FAIL'); process.exit(1); }
+if (max > 2 / 255) {
+  console.error('FAIL');
+  process.exit(1);
+}
 console.log('OK');

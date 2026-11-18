@@ -10,17 +10,25 @@ self.onmessage = ({ data }: MessageEvent<ContourWorkerRequest>) => {
   if (data.terrain) terrain = data.terrain as TerrainData;
   const source = terrain;
   queue = queue.then(async () => {
-    const response: ContourWorkerResponse = { id: data.id }, transfer: ArrayBuffer[] = [];
+    const response: ContourWorkerResponse = { id: data.id },
+      transfer: ArrayBuffer[] = [];
     const paths = (p: { thin: string; index: string }): { thin: Uint8Array; index: Uint8Array } => {
-      const thin = encoder.encode(p.thin), index = encoder.encode(p.index);
-      transfer.push(thin.buffer, index.buffer); return { thin, index };
+      const thin = encoder.encode(p.thin),
+        index = encoder.encode(p.index);
+      transfer.push(thin.buffer, index.buffer);
+      return { thin, index };
     };
     try {
       await loadRenderGeometry();
       if (!source) throw new Error('Contour samples are missing.');
       if (data.fine) response.blocks = cityFineContourBlocks(source, data.landform, data.scale, data.fine).map(({ key, block }) => ({ key, ...paths(block) }));
-      else { const p = cityContourPaths(source, data.landform, data.scale, data.topographic, undefined, data.detail, data.sparse); response.paths = { step: p.step, ...paths(p) }; }
-    } catch (error) { response.error = String(error); }
+      else {
+        const p = cityContourPaths(source, data.landform, data.scale, data.topographic, undefined, data.detail, data.sparse);
+        response.paths = { step: p.step, ...paths(p) };
+      }
+    } catch (error) {
+      response.error = String(error);
+    }
     self.postMessage(response, { transfer });
   });
 };

@@ -13,9 +13,25 @@ import { roleLabel } from './cityRoles';
 
 export const RPG_PIN_KINDS = { stable: 'Stables', cave: 'Cave entrance', inn: 'Inn', quest: 'Quest', label: 'Label' };
 export type RpgPinKind = keyof typeof RPG_PIN_KINDS;
-export interface RpgPin { id: string; kind: RpgPinKind; text: string; x: number; y: number }
-export interface LandmarkLabel { id: string; kind: 'castle' | 'church' | 'square' | 'gate'; text: string; x: number; y: number }
-export interface MapAnnotations { enabled: boolean; pins?: RpgPin[]; landmarks?: LandmarkLabel[] }
+export interface RpgPin {
+  id: string;
+  kind: RpgPinKind;
+  text: string;
+  x: number;
+  y: number;
+}
+export interface LandmarkLabel {
+  id: string;
+  kind: 'castle' | 'church' | 'square' | 'gate';
+  text: string;
+  x: number;
+  y: number;
+}
+export interface MapAnnotations {
+  enabled: boolean;
+  pins?: RpgPin[];
+  landmarks?: LandmarkLabel[];
+}
 export type MapLabelWorld = Pick<World, 'names'> & { site?: { center: Vec2 }; urban?: unknown; mapAnnotations?: MapAnnotations; options?: { labels?: boolean; distanceUnit?: import('../gen/units').DistanceUnit } };
 
 /** Only placed programme features get labels: unmet demands have no map position. */
@@ -23,19 +39,29 @@ export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partiti
   const out: LandmarkLabel[] = [];
   const add = (id: string, role: string | undefined, label: string | undefined, points: Vec2[], market = false): void => {
     if (!points.length || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return;
-    let area = 0, x = 0, y = 0;
-    points.forEach((p, i) => { const q = points[(i + 1) % points.length], a = p.x * q.y - q.x * p.y; area += a; x += (p.x + q.x) * a; y += (p.y + q.y) * a; });
-    const anchor = Math.abs(area) > 1e-8 ? { x: x / (3 * area), y: y / (3 * area) }
-      : { x: points.reduce((n, p) => n + p.x, 0) / points.length, y: points.reduce((n, p) => n + p.y, 0) / points.length };
+    let area = 0,
+      x = 0,
+      y = 0;
+    points.forEach((p, i) => {
+      const q = points[(i + 1) % points.length],
+        a = p.x * q.y - q.x * p.y;
+      area += a;
+      x += (p.x + q.x) * a;
+      y += (p.y + q.y) * a;
+    });
+    const anchor = Math.abs(area) > 1e-8 ? { x: x / (3 * area), y: y / (3 * area) } : { x: points.reduce((n, p) => n + p.x, 0) / points.length, y: points.reduce((n, p) => n + p.y, 0) / points.length };
     const kind = role?.startsWith('defence.') || role?.startsWith('elite.') ? 'castle' : role?.startsWith('worship.') ? 'church' : 'square';
     out.push({ id, kind, text: label || (role ? roleLabel(role) : market ? roleLabel('commerce.market') : 'Monument'), ...anchor });
   };
   const major = (role?: string): boolean => !!role && /^(defence\.(keep|castle|kasbah|fort|fortress)|elite\.palace|worship\.(cathedral|temple\.major)|commerce\.market)(\.|$)/.test(role);
   for (const l of layouts) {
-    l.enclosures?.forEach((e, ei) => e.gates.forEach((p, i) => {
-      if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push({ id: `${l.key}:gate:${ei}:${i}`, kind: 'gate', text: roleLabel('defence.gate'), ...p });
-    }));
-    const partition = partitions.find(p => p.key === l.key), programme = partition?.programme ?? l.programme;
+    l.enclosures?.forEach((e, ei) =>
+      e.gates.forEach((p, i) => {
+        if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push({ id: `${l.key}:gate:${ei}:${i}`, kind: 'gate', text: roleLabel('defence.gate'), ...p });
+      }),
+    );
+    const partition = partitions.find(p => p.key === l.key),
+      programme = partition?.programme ?? l.programme;
     const allocations = new Map((programme?.allocations ?? []).map(a => [a.parcelId, a as typeof a & { label?: string; landmark?: boolean }]));
     const placedDemands = new Set<string>();
     for (const p of partition?.parcels ?? []) {
@@ -53,9 +79,15 @@ export function nativeLandmarkLabels(layouts: Layout[] = [], partitions: Partiti
 }
 
 export interface MapLabel {
-  id: string; kind: string; text: string; st: KindStyle;
+  id: string;
+  kind: string;
+  text: string;
+  st: KindStyle;
   detail?: number;
-  x: number; y: number; path?: Vec2[]; span?: number;
+  x: number;
+  y: number;
+  path?: Vec2[];
+  span?: number;
   /** Street rank when kind === 'street'. */
   rank?: number;
   /** Explicit annotation: importance levels and de-duplication never drop it. */
@@ -70,7 +102,8 @@ export type Measure = (text: string, size: number, st: KindStyle) => number;
 
 const labelCache = new WeakMap<MapLabelWorld, { key: string; labels: MapLabel[] }>();
 export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palette, text: Readonly<TextSettings> = DEFAULT_TEXT): MapLabel[] {
-  const key = JSON.stringify([text, style, pal.fontFamily, pal.ink, pal.inkSoft, pal.lab]), cached = labelCache.get(world);
+  const key = JSON.stringify([text, style, pal.fontFamily, pal.ink, pal.inkSoft, pal.lab]),
+    cached = labelCache.get(world);
   if (cached?.key === key) return cached.labels;
   const names = world.names;
   const styles = kindStyles(style, pal);
@@ -78,14 +111,28 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
   for (const e of names?.entries ?? []) {
     let st = styles[e.kind];
     if (!st || (e as typeof e & { hidden?: boolean }).hidden || !e.text?.trim()) continue;
-    if(e.kind==='church'&&(e.parts?.role||e.parts?.generic)&&!/^church$|^cathedral$/.test(e.parts?.generic??'')&&!/church|cathedral|parish|minster/.test(e.parts?.role??''))st={...st,symbol:'ring'};
+    if (e.kind === 'church' && (e.parts?.role || e.parts?.generic) && !/^church$|^cathedral$/.test(e.parts?.generic ?? '') && !/church|cathedral|parish|minster/.test(e.parts?.role ?? '')) st = { ...st, symbol: 'ring' };
     if (e.kind === 'street') st = streetRankStyle(st, e.rank);
     // Underdark caverns reuse the hill entry but have no summit: no triangle.
     if (e.parts?.role === 'terrain.cavern') st = { ...st, symbol: undefined };
     // Underdark tunnels reuse the hill entry and are lettered along their passage like a road.
     if (e.parts?.role?.startsWith('terrain.tunnel.') && styles.road) st = { ...styles.road, symbol: undefined };
     if (e.manual || e.forceVisible) st = { ...st, shape: 'point', symbol: undefined, stretch: 0, minScale: 0, maxScale: Infinity, priority: 110 };
-    out.push({ id: e.id, kind: e.kind==='building'&&(e.detail??1)<.2?'landmark':e.kind, text: e.text, st, x: e.anchor.x, y: e.anchor.y, path: e.path, span: e.span, rank: e.rank,detail:e.detail, manual: e.manual || e.forceVisible || undefined, author: e.manual || e.forceVisible || undefined, scope: e.cityKey ?? 'main' });
+    out.push({
+      id: e.id,
+      kind: e.kind === 'building' && (e.detail ?? 1) < 0.2 ? 'landmark' : e.kind,
+      text: e.text,
+      st,
+      x: e.anchor.x,
+      y: e.anchor.y,
+      path: e.path,
+      span: e.span,
+      rank: e.rank,
+      detail: e.detail,
+      manual: e.manual || e.forceVisible || undefined,
+      author: e.manual || e.forceVisible || undefined,
+      scope: e.cityKey ?? 'main',
+    });
   }
   if (world.mapAnnotations?.enabled) {
     for (const l of world.mapAnnotations.landmarks ?? []) if (l.text.trim()) out.push({ ...l, manual: true, st: { ...styles[l.kind], minScale: 0, maxScale: Infinity } });
@@ -98,29 +145,50 @@ export function buildMapLabels(world: MapLabelWorld, style: MapStyle, pal: Palet
   if (world.site && !world.urban) out.push({ id: 'site', kind: 'site', text: ' ', ...world.site.center, st: { ...styles.village, symbol: 'ring', minPx: 18, maxPx: 18, minScale: 0, maxScale: Infinity, priority: 105 } }); // fixed px size: the ring never follows the zoom
   const edits = new Map((names?.entries ?? []).filter(e => e.labelStyle).map(e => [e.id, e.labelStyle!]));
   const result = styleTextLabels(out, text, pal).map(l => {
-    const edit = edits.get(l.id); if (!edit) return l;
+    const edit = edits.get(l.id);
+    if (!edit) return l;
     const factor = edit.size ?? 1;
-    return { ...l, st: { ...l.st, color: edit.color ?? l.st.color, bold: edit.bold ?? l.st.bold, italic: edit.italic ?? l.st.italic,
-      sizeM: l.st.sizeM * factor, minPx: l.st.minPx * factor, maxPx: l.st.maxPx * factor } };
-  }); labelCache.set(world, { key, labels: result });
+    return { ...l, st: { ...l.st, color: edit.color ?? l.st.color, bold: edit.bold ?? l.st.bold, italic: edit.italic ?? l.st.italic, sizeM: l.st.sizeM * factor, minPx: l.st.minPx * factor, maxPx: l.st.maxPx * factor } };
+  });
+  labelCache.set(world, { key, labels: result });
   return result;
 }
 
-export interface GlyphPos { ch: string; x: number; y: number; a: number; size: number; w: number }
+export interface GlyphPos {
+  ch: string;
+  x: number;
+  y: number;
+  a: number;
+  size: number;
+  w: number;
+}
 export interface PlacedMapLabel {
-  label: MapLabel; size: number; spacing: number;
+  label: MapLabel;
+  size: number;
+  spacing: number;
   /** Glyph centres (screen px), angle in radians, size (small caps use smaller glyphs). */
   glyphs: GlyphPos[];
   /** Straight labels: centre and width. */
-  cx: number; cy: number; width: number;
+  cx: number;
+  cy: number;
+  width: number;
   /** Curved labels: the smoothed screen-space window the text follows (reading direction). */
   path?: [number, number][];
   symbol?: { x: number; y: number; r: number };
 }
-interface Box { x0: number; y0: number; x1: number; y1: number }
-interface LGlyph { ch: string; size: number; w: number }
+interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+interface LGlyph {
+  ch: string;
+  size: number;
+  w: number;
+}
 /** Joining scripts and combining sequences must be shaped as a complete run by the browser. */
-export const shapedText = (text:string):boolean => /[\u0300-\u036f\u0590-\u0fff\u1100-\u11ff\u1ab0-\u1aff\u200c-\u200f\u2066-\u2069]/u.test(text);
+export const shapedText = (text: string): boolean => /[\u0300-\u036f\u0590-\u0fff\u1100-\u11ff\u1ab0-\u1aff\u200c-\u200f\u2066-\u2069]/u.test(text);
 
 const SMALL_CAP = 0.82;
 
@@ -128,9 +196,12 @@ const SMALL_CAP = 0.82;
 export function layoutGlyphs(text: string, st: KindStyle, size: number, spacingPx: number, measure: Measure): { glyphs: LGlyph[]; total: number } {
   // Memoised per (measure function, style object, text, size, spacing): a pan keeps size and spacing, so labels are laid out
   // once per zoom. Results are shared and read-only. A caller with a fresh `measure` per call simply misses.
-  let byStyle = layoutMemo.get(measure); if (!byStyle) layoutMemo.set(measure, byStyle = new WeakMap());
-  let memo = byStyle.get(st); if (!memo) byStyle.set(st, memo = new Map());
-  const key = `${size}|${spacingPx}|${text}`, hit = memo.get(key);
+  let byStyle = layoutMemo.get(measure);
+  if (!byStyle) layoutMemo.set(measure, (byStyle = new WeakMap()));
+  let memo = byStyle.get(st);
+  if (!memo) byStyle.set(st, (memo = new Map()));
+  const key = `${size}|${spacingPx}|${text}`,
+    hit = memo.get(key);
   if (hit) return hit;
   const result = layoutGlyphsUncached(text, st, size, spacingPx, measure);
   if (memo.size >= 8) memo.delete(memo.keys().next().value!);
@@ -139,11 +210,15 @@ export function layoutGlyphs(text: string, st: KindStyle, size: number, spacingP
 }
 const layoutMemo = new WeakMap<Measure, WeakMap<KindStyle, Map<string, { glyphs: LGlyph[]; total: number }>>>();
 function layoutGlyphsUncached(text: string, st: KindStyle, size: number, spacingPx: number, measure: Measure): { glyphs: LGlyph[]; total: number } {
-  if(shapedText(text)){const width=measure(text,size,st);return {glyphs:[{ch:text,size,w:width+spacingPx}],total:width};}
+  if (shapedText(text)) {
+    const width = measure(text, size, st);
+    return { glyphs: [{ ch: text, size, w: width + spacingPx }], total: width };
+  }
   const glyphs: LGlyph[] = [];
   let newWord = true;
   for (const raw of text) {
-    let ch = raw, s = size;
+    let ch = raw,
+      s = size;
     if (st.caps === 'upper') ch = raw.toUpperCase();
     else if (st.caps === 'small') {
       ch = raw.toUpperCase();
@@ -160,7 +235,9 @@ function layoutGlyphsUncached(text: string, st: KindStyle, size: number, spacing
 const overlaps = (a: Box, b: Box): boolean => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
 
 export interface PlaceOptions {
-  maxLabels?: number; pad?: number; margin?: number;
+  maxLabels?: number;
+  pad?: number;
+  margin?: number;
   /** Scale used for the minScale / maxScale visibility tests (default: view.scale). The SVG export runs at a notional scale. */
   visScale?: number;
   /** Screen rectangles kept free of labels (cartouche, legend). */
@@ -186,13 +263,17 @@ function straight(l: MapLabel, glyphs: LGlyph[], total: number, x0: number, y: n
  * A label is accepted when it fits on screen, is legible and does not overlap an accepted label.
  */
 export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: number, measure: Measure, o: PlaceOptions = {}): PlacedMapLabel[] {
-  const sc = view.scale, vis = o.visScale ?? view.scale, pad = o.pad ?? 2.5, margin = o.margin ?? 4, maxLabels = o.maxLabels ?? 320;
+  const sc = view.scale,
+    vis = o.visScale ?? view.scale,
+    pad = o.pad ?? 2.5,
+    margin = o.margin ?? 4,
+    maxLabels = o.maxLabels ?? 320;
   const cands: { l: MapLabel; i: number }[] = [];
   labels.forEach((l, i) => {
     if (vis < l.st.minScale || vis > l.st.maxScale) return;
     cands.push({ l, i });
   });
-  const kept = (l: MapLabel): number => o.previous?.has(l) ? 1 : 0;
+  const kept = (l: MapLabel): number => (o.previous?.has(l) ? 1 : 0);
   cands.sort((a, b) => b.l.st.priority - a.l.st.priority || kept(b.l) - kept(a.l) || a.i - b.i);
   const placed: PlacedMapLabel[] = [];
   const boxes: Box[] = [...(o.reserved ?? [])];
@@ -215,7 +296,10 @@ export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: num
 
     if (st.shape === 'path' && l.path && l.path.length >= 2) {
       const r = placePath(l, view, w, h, size0, measure, free, padBox, margin);
-      if (r) { res = r.p; resBoxes = r.boxes; }
+      if (r) {
+        res = r.p;
+        resBoxes = r.boxes;
+      }
     } else if (st.shape === 'area') {
       if (sx < -w * 0.2 || sx > w * 1.2 || sy < -h * 0.2 || sy > h * 1.2) continue;
       const maxW = l.span ? l.span * sc * 1.02 : Infinity;
@@ -230,7 +314,10 @@ export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: num
       let spacing = size * st.spacing;
       if (st.stretch > 0 && Number.isFinite(maxW) && lay.total < maxW * 0.8 && l.text.length > 2) {
         const extra = Math.min(size * st.stretch, (maxW * 0.85 - lay.total) / (l.text.length - 1));
-        if (extra > 0) { spacing += extra; lay = layoutGlyphs(l.text, st, size, spacing, measure); }
+        if (extra > 0) {
+          spacing += extra;
+          lay = layoutGlyphs(l.text, st, size, spacing, measure);
+        }
       }
       const b: Box = { x0: sx - lay.total / 2, y0: sy - size * 0.62, x1: sx + lay.total / 2, y1: sy + size * 0.62 };
       if (!onScreen(b)) continue;
@@ -244,7 +331,12 @@ export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: num
       const lay = layoutGlyphs(l.text, st, size, size * st.spacing, measure);
       const r = st.symbol ? Math.max(2.2, size * 0.26) : 0;
       const tries: { x0: number; y: number }[] = st.symbol
-        ? [{ x0: sx + r + 3, y: sy }, { x0: sx - r - 3 - lay.total, y: sy }, { x0: sx - lay.total / 2, y: sy - r - size * 0.75 }, { x0: sx - lay.total / 2, y: sy + r + size * 0.8 }]
+        ? [
+            { x0: sx + r + 3, y: sy },
+            { x0: sx - r - 3 - lay.total, y: sy },
+            { x0: sx - lay.total / 2, y: sy - r - size * 0.75 },
+            { x0: sx - lay.total / 2, y: sy + r + size * 0.8 },
+          ]
         : [{ x0: sx - lay.total / 2, y: sy }];
       const sym = st.symbol ? { x: sx, y: sy, r } : undefined;
       const symBox: Box | null = sym ? { x0: sx - r - 1, y0: sy - r - 1, x1: sx + r + 1, y1: sy + r + 1 } : null;
@@ -260,7 +352,10 @@ export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: num
         break;
       }
     }
-    if (res) { placed.push(res); for (const b of resBoxes) boxes.push(b); }
+    if (res) {
+      placed.push(res);
+      for (const b of resBoxes) boxes.push(b);
+    }
   }
   return placed;
 }
@@ -268,14 +363,14 @@ export function placeMapLabels(labels: MapLabel[], view: View, w: number, h: num
 /* ---- curved labels along a polyline ---- */
 const NAN_PT: [number, number] = [NaN, NaN];
 
-function placePath(
-  l: MapLabel, view: View, w: number, h: number, size: number, measure: Measure,
-  free: (b: Box[]) => boolean, padBox: (b: Box) => Box, margin: number,
-): { p: PlacedMapLabel; boxes: Box[] } | null {
+function placePath(l: MapLabel, view: View, w: number, h: number, size: number, measure: Measure, free: (b: Box[]) => boolean, padBox: (b: Box) => Box, margin: number): { p: PlacedMapLabel; boxes: Box[] } | null {
   const st = l.st;
   const src = l.path!;
   // screen-space polyline, quick reject when entirely outside the viewport
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   const pts: [number, number][] = new Array(src.length);
   for (let i = 0; i < src.length; i++) {
     const [x, y] = worldToScreen(view, w, h, src[i].x, src[i].y);
@@ -294,21 +389,31 @@ function placePath(
   const step = 3;
   const inside = (x: number, y: number, m: number): boolean => x >= m && y >= m && x <= w - m && y <= h - m;
   const P: [number, number][] = [];
-  const cut = (): void => { if (P.length && !Number.isNaN(P[P.length - 1][0])) P.push(NAN_PT); };
+  const cut = (): void => {
+    if (P.length && !Number.isNaN(P[P.length - 1][0])) P.push(NAN_PT);
+  };
   let carry = 0;
   let prev = pts[0];
   if (inside(prev[0], prev[1], -40)) P.push(prev);
   for (let i = 1; i < pts.length; i++) {
     const cur = pts[i];
-    const dx = cur[0] - prev[0], dy = cur[1] - prev[1];
+    const dx = cur[0] - prev[0],
+      dy = cur[1] - prev[1];
     const sl = Math.hypot(dx, dy);
     const far = Math.max(prev[0], cur[0]) < -60 || Math.min(prev[0], cur[0]) > w + 60 || Math.max(prev[1], cur[1]) < -60 || Math.min(prev[1], cur[1]) > h + 60;
-    if (far) { cut(); carry = 0; prev = cur; continue; }
+    if (far) {
+      cut();
+      carry = 0;
+      prev = cur;
+      continue;
+    }
     if (sl > 0) {
       let t = step - carry;
       while (t <= sl) {
-        const x = prev[0] + (dx * t) / sl, y = prev[1] + (dy * t) / sl;
-        if (inside(x, y, -40)) P.push([x, y]); else cut();
+        const x = prev[0] + (dx * t) / sl,
+          y = prev[1] + (dy * t) / sl;
+        if (inside(x, y, -40)) P.push([x, y]);
+        else cut();
         t += step;
       }
       carry = sl - (t - step);
@@ -318,7 +423,10 @@ function placePath(
   const runs: [number, number][][] = [];
   let run: [number, number][] = [];
   for (const p of P) {
-    if (Number.isNaN(p[0])) { if (run.length) runs.push(run); run = []; } else run.push(p);
+    if (Number.isNaN(p[0])) {
+      if (run.length) runs.push(run);
+      run = [];
+    } else run.push(p);
   }
   if (run.length) runs.push(run);
 
@@ -331,11 +439,18 @@ function placePath(
     for (let it = 0; it < 2; it++) {
       const out: [number, number][] = new Array(S0.length);
       for (let i = 0; i < S0.length; i++) {
-        let sx = 0, sy = 0, n = 0;
-        for (let k = Math.max(0, i - win); k <= Math.min(S0.length - 1, i + win); k++) { sx += S0[k][0]; sy += S0[k][1]; n++; }
+        let sx = 0,
+          sy = 0,
+          n = 0;
+        for (let k = Math.max(0, i - win); k <= Math.min(S0.length - 1, i + win); k++) {
+          sx += S0[k][0];
+          sy += S0[k][1];
+          n++;
+        }
         out[i] = [sx / n, sy / n];
       }
-      out[0] = S0[0]; out[S0.length - 1] = S0[S0.length - 1];
+      out[0] = S0[0];
+      out[S0.length - 1] = S0[S0.length - 1];
       S0 = out;
     }
     const n = S0.length;
@@ -346,7 +461,8 @@ function placePath(
     const ang = new Float32Array(n);
     const d = Math.max(1, Math.round(size / step / 1.5));
     for (let i = 0; i < n; i++) {
-      const a = S0[Math.max(0, i - d)], b = S0[Math.min(n - 1, i + d)];
+      const a = S0[Math.max(0, i - d)],
+        b = S0[Math.min(n - 1, i + d)];
       ang[i] = Math.atan2(b[1] - a[1], b[0] - a[0]);
     }
     const wlen = lay.total + size * 0.4;
@@ -357,13 +473,21 @@ function placePath(
       let i1 = i0;
       while (i1 < n - 1 && cum[i1] < s0 + wlen) i1++;
       // curvature over the window (unwrapped angles)
-      let total = 0, prevA = ang[i0], mn = 0, mx = 0, acc = 0, sharp = false;
+      let total = 0,
+        prevA = ang[i0],
+        mn = 0,
+        mx = 0,
+        acc = 0,
+        sharp = false;
       for (let i = i0 + 1; i <= i1; i++) {
         let da = ang[i] - prevA;
         while (da > Math.PI) da -= 2 * Math.PI;
         while (da < -Math.PI) da += 2 * Math.PI;
-        total += Math.abs(da); acc += da; prevA = ang[i];
-        mn = Math.min(mn, acc); mx = Math.max(mx, acc);
+        total += Math.abs(da);
+        acc += da;
+        prevA = ang[i];
+        mn = Math.min(mn, acc);
+        mx = Math.max(mx, acc);
         if (Math.abs(da) > 0.16) sharp = true;
       }
       if (sharp || mx - mn > 1.25) continue;
@@ -386,18 +510,27 @@ function placePath(
         const adv = g.w - spacing0;
         const c = at(x + (dir * adv) / 2);
         glyphs.push({ ch: g.ch, x: c.x, y: c.y, a: flip ? c.a + Math.PI : c.a, size: g.size, w: adv });
-        if (!inside(c.x, c.y, margin)) { ok = false; break; }
+        if (!inside(c.x, c.y, margin)) {
+          ok = false;
+          break;
+        }
         x += dir * g.w;
       }
       if (!ok) continue;
       const boxes: Box[] = [];
       for (let gi = 0; gi < glyphs.length; gi += 3) {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        let x0 = Infinity,
+          y0 = Infinity,
+          x1 = -Infinity,
+          y1 = -Infinity;
         for (let k = gi; k < Math.min(glyphs.length, gi + 3); k++) {
           const g = glyphs[k];
-          const hw = Math.abs(Math.cos(g.a)) * g.w / 2 + Math.abs(Math.sin(g.a)) * size * 0.6;
-          const hh = Math.abs(Math.sin(g.a)) * g.w / 2 + Math.abs(Math.cos(g.a)) * size * 0.6;
-          x0 = Math.min(x0, g.x - hw); x1 = Math.max(x1, g.x + hw); y0 = Math.min(y0, g.y - hh); y1 = Math.max(y1, g.y + hh);
+          const hw = (Math.abs(Math.cos(g.a)) * g.w) / 2 + Math.abs(Math.sin(g.a)) * size * 0.6;
+          const hh = (Math.abs(Math.sin(g.a)) * g.w) / 2 + Math.abs(Math.cos(g.a)) * size * 0.6;
+          x0 = Math.min(x0, g.x - hw);
+          x1 = Math.max(x1, g.x + hw);
+          y0 = Math.min(y0, g.y - hh);
+          y1 = Math.max(y1, g.y + hh);
         }
         boxes.push(padBox({ x0, y0, x1, y1 }));
       }
@@ -409,11 +542,9 @@ function placePath(
     }
   }
   if (!best) return null;
-  const g0 = best.glyphs[0], gN = best.glyphs[best.glyphs.length - 1];
-  return {
-    p: { label: l, size, spacing: spacing0, glyphs: best.glyphs, cx: (g0.x + gN.x) / 2, cy: (g0.y + gN.y) / 2, width: lay.total, path: best.path },
-    boxes: best.boxes,
-  };
+  const g0 = best.glyphs[0],
+    gN = best.glyphs[best.glyphs.length - 1];
+  return { p: { label: l, size, spacing: spacing0, glyphs: best.glyphs, cx: (g0.x + gN.x) / 2, cy: (g0.y + gN.y) / 2, width: lay.total, path: best.path }, boxes: best.boxes };
 }
 
 /** Rough text width estimator for environments without a canvas (Node SVG export). */
@@ -421,7 +552,7 @@ export function estimateWidth(text: string, size: number, st: Pick<KindStyle, 'i
   let w = 0;
   for (const ch of text) {
     let k = 0.5;
-    if ('ilj.,;:\'!|'.includes(ch)) k = 0.27;
+    if ("ilj.,;:'!|".includes(ch)) k = 0.27;
     else if ('ftr()[]- '.includes(ch)) k = 0.36;
     else if ('mwMW'.includes(ch)) k = 0.8;
     else if (ch >= 'A' && ch <= 'Z') k = 0.66;

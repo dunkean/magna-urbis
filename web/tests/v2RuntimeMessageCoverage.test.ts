@@ -33,7 +33,11 @@ describe('engine and bridge presentation-message coverage', () => {
   it('extracts bridge templates and progress without treating stage IDs as presentation text', () => {
     const rows = bridgeMessageLiterals("throw new Error(`Invalid coast ${mask}`); progress?.('Computing terrain…', { stage: 'coast-id', detail: 'Preparing coast…' }); const reason = { reason: 'No route available' };");
     expect(rows.map(row => row.source)).toEqual(['Invalid coast {value1}', 'Computing terrain…', 'Preparing coast…', 'No route available']);
-    expect(bridgeMessageLiterals("const refuse = (code: string, message: string) => { throw new Error(message); }; refuse('code', 'An authored refusal.'); throw new Error(String(value ?? 'Fallback error.')); const error = (message: string) => { throw new Error('Failure: ' + message); }; error('A reason.');").map(row => row.source)).toEqual(['An authored refusal.', 'Fallback error.', 'Failure: {value1}', 'A reason.']);
+    expect(
+      bridgeMessageLiterals(
+        "const refuse = (code: string, message: string) => { throw new Error(message); }; refuse('code', 'An authored refusal.'); throw new Error(String(value ?? 'Fallback error.')); const error = (message: string) => { throw new Error('Failure: ' + message); }; error('A reason.');",
+      ).map(row => row.source),
+    ).toEqual(['An authored refusal.', 'Fallback error.', 'Failure: {value1}', 'A reason.']);
   });
 
   it('does not let broad diagnostic wrappers hide new untranslated prose', () => {
@@ -46,7 +50,8 @@ describe('engine and bridge presentation-message coverage', () => {
   it('can render every added declaration in both directions without losing or inventing slots', () => {
     for (const [fr, en] of [...engineRuntimeEntries, ...engineRuntimeTemplates]) {
       const sample = (source: string) => runtimeMessageSample({ source, format: /\{[A-Za-z_]/u.test(source) });
-      const english = message(sample(fr), 'en'), french = message(sample(en), 'fr');
+      const english = message(sample(fr), 'en'),
+        french = message(sample(en), 'fr');
       expect(english, fr).not.toContain('undefined');
       expect(french, en).not.toContain('undefined');
       // Synonyms in the existing catalog may choose another natural translation.

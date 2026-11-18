@@ -7,8 +7,10 @@ const ring = (k: number, n: number) => Array.from({ length: n }, (_, i) => ({ x:
 describe('packed land-use transport', () => {
   it('rebuilds the same areas, values and key order after a structured clone', () => {
     const areas = Array.from({ length: 80 }, (_, k) => ({
-      kind: k % 2 ? 'field' : 'meadow', poly: ring(k, 3 + (k % 5)),
-      ...(k % 3 === 0 ? { holes: [ring(k + 100, 4)] } : {}), ...(k % 7 === 0 ? { holes: undefined } : {}),
+      kind: k % 2 ? 'field' : 'meadow',
+      poly: ring(k, 3 + (k % 5)),
+      ...(k % 3 === 0 ? { holes: [ring(k + 100, 4)] } : {}),
+      ...(k % 7 === 0 ? { holes: undefined } : {}),
       ...(k % 4 === 0 ? { stripAngle: k / 10, strips: [ring(k + 200, 4), ring(k + 300, 5)] } : {}),
       ...(k % 9 === 0 ? { fieldLayout: 'parcel' } : {}),
     }));

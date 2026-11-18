@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { PathGeometry } from '../src/render/gpu/displayList';
-import {
-  DISC_STRIDE, JOIN_STRIDE, SEGMENT_STRIDE, STROKE_CLOSED, STROKE_DOT, STROKE_END, STROKE_START,
-  fillFans, strokeSegments, type StrokeOptions,
-} from '../src/render/gpu/tessellate';
+import { DISC_STRIDE, JOIN_STRIDE, SEGMENT_STRIDE, STROKE_CLOSED, STROKE_DOT, STROKE_END, STROKE_START, fillFans, strokeSegments, type StrokeOptions } from '../src/render/gpu/tessellate';
 
 function geometry(points: number[], starts: number[], closed: number[]): PathGeometry {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
   for (let i = 0; i < points.length; i += 2) {
-    x0 = Math.min(x0, points[i]); y0 = Math.min(y0, points[i + 1]);
-    x1 = Math.max(x1, points[i]); y1 = Math.max(y1, points[i + 1]);
+    x0 = Math.min(x0, points[i]);
+    y0 = Math.min(y0, points[i + 1]);
+    x1 = Math.max(x1, points[i]);
+    y1 = Math.max(y1, points[i + 1]);
   }
   return { points: new Float32Array(points), starts: new Uint32Array(starts), closed: new Uint8Array(closed), bbox: [x0, y0, x1, y1] };
 }

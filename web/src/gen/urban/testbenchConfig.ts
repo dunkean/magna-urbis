@@ -3,11 +3,19 @@ import { CULTURES, getCulture, type Culture } from './culture';
 import { applySprawl, deepMerge, MORPHOLOGIES, resolveMorph, type MorphologyParams, type MorphRef, type Zone } from './morphology';
 
 export const BENCH_STAGES = ['streets', 'plots', 'buildings'] as const;
-export type BenchStage = typeof BENCH_STAGES[number];
+export type BenchStage = (typeof BENCH_STAGES)[number];
 type DeepPartial<T> = T extends readonly unknown[] ? T : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 export type BenchParams = DeepPartial<MorphologyParams>;
-export interface BenchStageConfig { preset?: string; params?: BenchParams }
-export interface BenchRecipe { id: string; label: string; ref: MorphRef; zone: Zone }
+export interface BenchStageConfig {
+  preset?: string;
+  params?: BenchParams;
+}
+export interface BenchRecipe {
+  id: string;
+  label: string;
+  ref: MorphRef;
+  zone: Zone;
+}
 
 export function benchRecipes(culture: Culture): BenchRecipe[] {
   const recipes: BenchRecipe[] = [];
@@ -34,9 +42,7 @@ export function benchRecipes(culture: Culture): BenchRecipe[] {
 
 // Include explicit cultural overrides as well as every registered morphology (e.g. souk).
 export const BENCH_PRESETS: Record<string, { label: string; ref: MorphRef }> = Object.fromEntries([
-  ...Object.values(CULTURES).flatMap(c => benchRecipes(c).map(r => [
-    `${c.id}/${r.id}`, { label: `${c.label} / ${r.label}`, ref: r.ref },
-  ] as const)),
+  ...Object.values(CULTURES).flatMap(c => benchRecipes(c).map(r => [`${c.id}/${r.id}`, { label: `${c.label} / ${r.label}`, ref: r.ref }] as const)),
   ...Object.keys(MORPHOLOGIES).map(id => [`morph/${id}`, { label: id, ref: id }] as const),
 ]);
 
@@ -44,7 +50,32 @@ export const BENCH_OPERATORS = {
   streetOp: ['organic', 'grid'],
   closeOp: ['closes', 'culDeSacTree', 'hutong', 'roji', 'none'],
   plotOp: ['burgage', 'courtyard', 'siheyuan', 'machiya', 'compound', 'garden', 'wholeBlock'],
-  buildingOp: ['streetFrontRow', 'streetFrontRowExperimental', 'courtyardHouse', 'shopRow', 'pavilionCompound', 'yashiki', 'machiya', 'detached', 'treeHouse', 'hall', 'longhouse', 'kancha', 'yardHouse', 'tomb', 'venetian', 'konak', 'sahelCompound', 'giebelhaus', 'hanok', 'gnome', 'primitive', 'fungalHouse', 'duergarHall', 'perimeterBlock'],
+  buildingOp: [
+    'streetFrontRow',
+    'streetFrontRowExperimental',
+    'courtyardHouse',
+    'shopRow',
+    'pavilionCompound',
+    'yashiki',
+    'machiya',
+    'detached',
+    'treeHouse',
+    'hall',
+    'longhouse',
+    'kancha',
+    'yardHouse',
+    'tomb',
+    'venetian',
+    'konak',
+    'sahelCompound',
+    'giebelhaus',
+    'hanok',
+    'gnome',
+    'primitive',
+    'fungalHouse',
+    'duergarHall',
+    'perimeterBlock',
+  ],
   orientation: ['road', 'cardinal', 'terrain', 'water'],
 } as const;
 
@@ -58,7 +89,8 @@ export const BENCH_METHODS = {
   ],
   buildings: [
     { id: 'buildPlot', aliases: ['streetFrontRow', 'detached', 'longhouse'] },
-    ...BENCH_OPERATORS.buildingOp.filter(id => !['streetFrontRow', 'detached', 'longhouse'].includes(id))
+    ...BENCH_OPERATORS.buildingOp
+      .filter(id => !['streetFrontRow', 'detached', 'longhouse'].includes(id))
       .map(id => ({ id: ({ streetFrontRowExperimental: 'buildPlotExperimental', primitive: 'primitiveHouse', gnome: 'gnomeHouse', fungalHouse: 'treeHouse + adaptation fongique', perimeterBlock: 'buildPerimeterBlock' } as Record<string, string>)[id] ?? id, aliases: [id] })),
   ],
 };
@@ -75,26 +107,76 @@ export function benchMethodFields(stage: 'plots' | 'buildings', P: MorphologyPar
     return ['coverage', 'frontage', 'plotDepth', ...tilt, 'wideLotChance', 'deepFill', ...(P.plotOp === 'siheyuan' ? ['houseArea' as const] : [])];
   }
   switch (P.buildingOp) {
-    case 'perimeterBlock': return ['blockCourtShare', 'blockSolidChance', 'blockInfillChance', 'arch'];
-    case 'streetFrontRowExperimental': case 'streetFrontRow': case 'detached': case 'longhouse': case 'venetian':
+    case 'perimeterBlock':
+      return ['blockCourtShare', 'blockSolidChance', 'blockInfillChance', 'arch'];
+    case 'streetFrontRowExperimental':
+    case 'streetFrontRow':
+    case 'detached':
+    case 'longhouse':
+    case 'venetian':
       return ['coverage', 'buildDepth', 'setback', 'bigCourtChance', 'houseVariation', 'arch'];
-    case 'courtyardHouse': return ['coverage', 'houseArea', 'roomDepth', 'courtyardShare', 'arch'];
-    case 'kancha': return ['roomDepth', 'arch'];
-    case 'shopRow': case 'pavilionCompound': case 'hall': case 'duergarHall': return ['arch'];
-    case 'yardHouse': case 'konak': case 'giebelhaus': case 'gnome': case 'primitive': return ['coverage', 'arch'];
-    case 'machiya': case 'sahelCompound': case 'hanok': return ['coverage'];
-    default: return [];
+    case 'courtyardHouse':
+      return ['coverage', 'houseArea', 'roomDepth', 'courtyardShare', 'arch'];
+    case 'kancha':
+      return ['roomDepth', 'arch'];
+    case 'shopRow':
+    case 'pavilionCompound':
+    case 'hall':
+    case 'duergarHall':
+      return ['arch'];
+    case 'yardHouse':
+    case 'konak':
+    case 'giebelhaus':
+    case 'gnome':
+    case 'primitive':
+      return ['coverage', 'arch'];
+    case 'machiya':
+    case 'sahelCompound':
+    case 'hanok':
+      return ['coverage'];
+    default:
+      return [];
   }
 }
 
 export const BENCH_FIELDS: Record<BenchStage, readonly (keyof MorphologyParams)[]> = {
-  streets: ['streetOp', 'closeOp', 'orientation', 'laneSpacing', 'wardArea', 'accessDepth', 'fieldTwist', 'curvature', 'fieldNoise', 'fieldWavelength', 'fieldRandom', 'gridSpacing', 'gridSkew', 'blockSize', 'minBlock', 'minWidth', 'widthByRank', 'widthScale', 'widthJitter', 'placeThreshold', 'deadEndRatio', 'slitDepth', 'plotDepth', 'contourFollow', 'contourBlend', 'longCut'],
+  streets: [
+    'streetOp',
+    'closeOp',
+    'orientation',
+    'laneSpacing',
+    'wardArea',
+    'accessDepth',
+    'fieldTwist',
+    'curvature',
+    'fieldNoise',
+    'fieldWavelength',
+    'fieldRandom',
+    'gridSpacing',
+    'gridSkew',
+    'blockSize',
+    'minBlock',
+    'minWidth',
+    'widthByRank',
+    'widthScale',
+    'widthJitter',
+    'placeThreshold',
+    'deadEndRatio',
+    'slitDepth',
+    'plotDepth',
+    'contourFollow',
+    'contourBlend',
+    'longCut',
+  ],
   plots: ['plotOp', 'streetOp', 'houseArea', 'coverage', 'frontage', 'plotDepth', 'plotTilt', 'wideLotChance', 'deepFill'],
   buildings: ['buildingOp', 'arch', 'houseArea', 'roomDepth', 'courtyardShare', 'coverage', 'buildDepth', 'setback', 'bigCourtChance', 'houseVariation', 'frontage', 'blockCourtShare', 'blockSolidChance', 'blockInfillChance', 'footprintConformity', 'cornerFill'],
 };
 
 export interface BenchMorphOptions {
-  culture: string; zone: Zone; density: number; recipe?: string;
+  culture: string;
+  zone: Zone;
+  density: number;
+  recipe?: string;
   stages?: Partial<Record<BenchStage, BenchStageConfig>>;
 }
 
@@ -108,8 +190,7 @@ export function validateBenchParams(stage: BenchStage, value: unknown): asserts 
     } else if (Array.isArray(example)) {
       if (!Array.isArray(v) || v.length !== example.length) throw new Error(`${key} : ${example.length} valeurs attendues.`);
       v.forEach((item, i) => check(item, example[i], key));
-      if (v.length === 2 && v.every(item => typeof item === 'number') && v[0] > v[1]
-        && !['gridSpacing', 'laneSpacing'].includes(key)) throw new Error(`${key} : minimum supérieur au maximum.`);
+      if (v.length === 2 && v.every(item => typeof item === 'number') && v[0] > v[1] && !['gridSpacing', 'laneSpacing'].includes(key)) throw new Error(`${key} : minimum supérieur au maximum.`);
     } else if (example && typeof example === 'object') {
       if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(`${key} : objet attendu.`);
       for (const [k, item] of Object.entries(v)) {
@@ -135,9 +216,7 @@ export function validateBenchParams(stage: BenchStage, value: unknown): asserts 
 
 export function benchMorph(options: BenchMorphOptions, stage: BenchStage): MorphologyParams {
   const culture = getCulture(options.culture);
-  const ref = options.recipe
-    ? benchRecipes(culture).find(r => r.id === options.recipe)?.ref
-    : options.zone === 'village' ? culture.village.morphology ?? culture.core.morphology : culture.core.morphology;
+  const ref = options.recipe ? benchRecipes(culture).find(r => r.id === options.recipe)?.ref : options.zone === 'village' ? (culture.village.morphology ?? culture.core.morphology) : culture.core.morphology;
   if (options.recipe && !ref) throw new Error(`Recette inconnue : ${options.recipe}`);
   const config = options.stages?.[stage];
   const preset = config?.preset && config.preset !== 'culture' ? BENCH_PRESETS[config.preset] : undefined;

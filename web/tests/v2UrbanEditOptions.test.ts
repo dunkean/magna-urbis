@@ -29,8 +29,13 @@ describe('contextual urban editor choices', () => {
     expect(choices('elven').every(choice => !choice.note)).toBe(true);
   });
   it('subtracts reserved holes from the usable area', () => {
-    const ring = (size: number) => [{x:0,y:0},{x:size,y:0},{x:size,y:size},{x:0,y:size}];
-    expect(polygonArea({outer:ring(100),holes:[ring(80)]})).toBe(3600);
+    const ring = (size: number) => [
+      { x: 0, y: 0 },
+      { x: size, y: 0 },
+      { x: size, y: size },
+      { x: 0, y: size },
+    ];
+    expect(polygonArea({ outer: ring(100), holes: [ring(80)] })).toBe(3600);
   });
   it('words a refused forced use by its cause', () => {
     expect(forcedUseRefusal('forme', 'worship.parish')).toBe('This lot is too small for Parish church. Enlarge it by merging it with a neighbour.');
@@ -39,11 +44,11 @@ describe('contextual urban editor choices', () => {
   });
   it('localizes the building and district lists while preserving their stable role identifiers', () => {
     const roles = urbanField('role', '', 'parcel').options!;
-    expect(roles.find(choice=>choice.value==='civic.wizard-tower')?.label).toBe('Wizard tower');
-    expect(translate('Wizard tower','en')).toBe('Wizard tower');
-    expect(translate('Wizard tower','fr')).toBe('Tour du mage');
-    expect(translate('Parish church','en')).toBe('Parish church');
-    expect(translate('Parish church','fr')).toBe('Église paroissiale');
-    expect(urbanField('role','','quarter').options!.find(choice=>choice.value==='craft:tanners')?.label).toBe('Tanners district');
+    expect(roles.find(choice => choice.value === 'civic.wizard-tower')?.label).toBe('Wizard tower');
+    expect(translate('Wizard tower', 'en')).toBe('Wizard tower');
+    expect(translate('Wizard tower', 'fr')).toBe('Tour du mage');
+    expect(translate('Parish church', 'en')).toBe('Parish church');
+    expect(translate('Parish church', 'fr')).toBe('Église paroissiale');
+    expect(urbanField('role', '', 'quarter').options!.find(choice => choice.value === 'craft:tanners')?.label).toBe('Tanners district');
   });
 });

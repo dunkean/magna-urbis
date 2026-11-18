@@ -22,15 +22,20 @@ describe('map information outside compact viewports', () => {
 
   it('retains the displayed map information until the replacement bitmap arrives', () => {
     const state = new FrameHandoff();
-    const old = meta('Old hold'), next = meta('New colony');
-    state.begin(1); state.content(1, 1, true, old); state.presented(1, 1);
-    state.begin(2); state.content(2, 2, true, next);
+    const old = meta('Old hold'),
+      next = meta('New colony');
+    state.begin(1);
+    state.content(1, 1, true, old);
+    state.presented(1, 1);
+    state.begin(2);
+    state.content(2, 2, true, next);
     expect(state.displayedMeta?.mapInfo).toBe(old.mapInfo);
     state.presented(2, 1);
     expect(state.displayedMeta?.mapInfo).toBe(old.mapInfo);
     state.presented(2, 2);
     expect(state.displayedMeta?.mapInfo).toBe(next.mapInfo);
-    state.content(1, 3, true, old); state.presented(1, 3);
+    state.content(1, 3, true, old);
+    state.presented(1, 3);
     expect(state.displayedMeta?.mapInfo).toBe(next.mapInfo);
   });
 });

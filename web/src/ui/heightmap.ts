@@ -16,12 +16,14 @@ export async function readHeightmap(file: File): Promise<ImportedHeight> {
     im.onerror = () => reject(new Error('not an image'));
     im.src = url;
   });
-  const w = img.naturalWidth, h = img.naturalHeight;
+  const w = img.naturalWidth,
+    h = img.naturalHeight;
   if (!w || !h) throw new Error('empty image');
   const side = Math.min(w, h);
   const out = Math.min(MAX_IMPORT_PX, side);
   const c = document.createElement('canvas');
-  c.width = out; c.height = out;
+  c.width = out;
+  c.height = out;
   const ctx = c.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('no canvas');
   ctx.imageSmoothingEnabled = true;

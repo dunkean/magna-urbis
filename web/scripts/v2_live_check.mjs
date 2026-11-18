@@ -17,26 +17,20 @@ const report = { url: base.href, started: new Date().toISOString(), checks: [], 
 await mkdir(out, { recursive: true });
 const args = ['--enable-unsafe-webgpu'];
 if (process.env.MAGNA_TEST_ADAPTER_LUID) args.push(`--use-adapter-luid=${process.env.MAGNA_TEST_ADAPTER_LUID}`);
-const context = await chromium.launchPersistentContext(profile, {
-  channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true,
-  viewport: { width: 1500, height: 1000 }, acceptDownloads: true, args,
-});
+const context = await chromium.launchPersistentContext(profile, { channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true, viewport: { width: 1500, height: 1000 }, acceptDownloads: true, args });
 const page = await context.newPage();
 page.setDefaultTimeout(30000);
 page.on('pageerror', error => report.errors.push(error.stack ?? error.message));
-page.on('console', message => { if (message.type() === 'error') report.console.push(message.text()); });
+page.on('console', message => {
+  if (message.type() === 'error') report.console.push(message.text());
+});
 page.on('response', response => {
   if (response.url().includes('/neural/')) report.models.push({ url: response.url(), status: response.status() });
 });
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const weights = () => report.models.filter(r => /\/(?:coarse|base|decoder)[^/]*\?/.test(r.url));
 async function state() {
-  return page.evaluate(() => ({
-    busy: document.querySelector('#app')?.getAttribute('aria-busy'),
-    footer: document.querySelector('#footer-status')?.textContent,
-    toast: document.querySelector('#toast')?.textContent,
-    log: document.querySelector('#job-log')?.textContent,
-  }));
+  return page.evaluate(() => ({ busy: document.querySelector('#app')?.getAttribute('aria-busy'), footer: document.querySelector('#footer-status')?.textContent, toast: document.querySelector('#toast')?.textContent, log: document.querySelector('#job-log')?.textContent }));
 }
 async function record(name, extra = {}) {
   const current = await state();
@@ -55,10 +49,7 @@ async function recipe(change) {
 async function run(name, selector = '#generate-region') {
   await page.locator(selector).click();
   const warning = page.locator('#neural-download-warning');
-  await Promise.race([
-    warning.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
-    page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false', null, { timeout: 30000 }).catch(() => {}),
-  ]);
+  await Promise.race([warning.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}), page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false', null, { timeout: 30000 }).catch(() => {})]);
   if (await warning.isVisible()) await warning.locator('[data-continue]').click();
   await page.waitForFunction(() => document.querySelector('#app')?.getAttribute('aria-busy') === 'false', null, { timeout: 300000 });
   const current = await record(name);
@@ -71,17 +62,23 @@ async function project(name) {
   await page.locator('#export-format').selectOption('project');
   const pending = page.waitForEvent('download', { timeout: 120000 });
   await page.locator('#export-go').click();
-  const download = await pending, path = resolve(out, `${name}.project.json`);
+  const download = await pending,
+    path = resolve(out, `${name}.project.json`);
   await download.saveAs(path);
   await page.locator('#export-dialog').waitFor({ state: 'hidden' });
-  const value = JSON.parse(await readFile(path, 'utf8')), world = value.world;
+  const value = JSON.parse(await readFile(path, 'utf8')),
+    world = value.world;
   assert(world?.terrain?.height, 'Project export has no physical terrain');
-  const buildings = (world.urban?.buildings ?? []).map(b => ({
-    nativeRequestId: b.nativeRequestId, poly: b.poly, roof: b.roof, storeys: b.storeys,
-  }));
-  return { path, height: hash(world.terrain.height), buildings,
-    main: world.settlements?.find(s => s.main), settings: value.settings,
-    names: world.names?.entries.map(e=>({id:e.id,kind:e.kind,profile:e.parts?.profile,text:e.text})), regionProfile:world.names?.regionParts?.profile };
+  const buildings = (world.urban?.buildings ?? []).map(b => ({ nativeRequestId: b.nativeRequestId, poly: b.poly, roof: b.roof, storeys: b.storeys }));
+  return {
+    path,
+    height: hash(world.terrain.height),
+    buildings,
+    main: world.settlements?.find(s => s.main),
+    settings: value.settings,
+    names: world.names?.entries.map(e => ({ id: e.id, kind: e.kind, profile: e.parts?.profile, text: e.text })),
+    regionProfile: world.names?.regionParts?.profile,
+  };
 }
 async function reopen(path) {
   await page.locator('#import-open').click();
@@ -95,12 +92,14 @@ async function editHouse(before) {
   // Selection is a public toolbar control; opening a city preserves its focused view.
   await page.locator('#inspect-mode').check();
   await page.locator('#inspect-target').selectOption('house');
-  const box = await page.locator('#map').boundingBox(), main = before.main;
+  const box = await page.locator('#map').boundingBox(),
+    main = before.main;
   const scale = Math.min(3, Math.min(box.height, box.width) / Math.max(600, main.radius * 3));
   let selected;
   for (const building of before.buildings) {
     const p = building.poly.reduce((p, v) => ({ x: p.x + v.x / building.poly.length, y: p.y + v.y / building.poly.length }), { x: 0, y: 0 });
-    const x = box.x + box.width / 2 + (p.x - main.center.x) * scale, y = box.y + box.height / 2 + (p.y - main.center.y) * scale;
+    const x = box.x + box.width / 2 + (p.x - main.center.x) * scale,
+      y = box.y + box.height / 2 + (p.y - main.center.y) * scale;
     if (x < box.x + 40 || x > box.x + box.width - 400 || y < box.y + 170 || y > box.y + box.height - 170) continue;
     await page.mouse.click(x, y);
     // The click may land on a neighbour (non-convex centroid, overlap): edit the house the panel actually opened.
@@ -131,18 +130,27 @@ async function editHouse(before) {
   report.checks.push({ name: 'house-retained', id: selected.nativeRequestId, before: selected.roof, after: changed.roof, outline: 'red' });
   return after;
 }
-const progress = setInterval(() => void state().then(s => {
-  if (s.busy === 'true') console.log(s.log?.split('\n').at(-1));
-}).catch(() => {}), 15000);
+const progress = setInterval(
+  () =>
+    void state()
+      .then(s => {
+        if (s.busy === 'true') console.log(s.log?.split('\n').at(-1));
+      })
+      .catch(() => {}),
+  15000,
+);
 try {
   // Explicit test mode disables autosave restoration. No test hooks replace the UI or engine.
-  const url = new URL(base); url.searchParams.set('test', '1'); url.searchParams.set('lang', 'fr');
+  const url = new URL(base);
+  url.searchParams.set('test', '1');
+  url.searchParams.set('lang', 'fr');
   await page.goto(url.href, { waitUntil: 'domcontentloaded' });
   await page.locator('#boot-splash').waitFor({ state: 'detached' });
   report.build = await page.locator('#build-info').textContent();
   report.gpu = await page.evaluate(async () => {
     const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
-    const canvas = document.createElement('canvas'), gl = canvas.getContext('webgl2');
+    const canvas = document.createElement('canvas'),
+      gl = canvas.getContext('webgl2');
     const debug = gl?.getExtension('WEBGL_debug_renderer_info');
     const renderer = debug && gl.getParameter(debug.UNMASKED_RENDERER_WEBGL);
     gl?.getExtension('WEBGL_lose_context')?.loseContext();
@@ -150,31 +158,41 @@ try {
   });
   assert(report.gpu.vendor, 'No real WebGPU adapter');
   await page.locator('#source-neural').click();
-  await page.waitForFunction(()=>document.querySelector('#source-neural').getAttribute('aria-busy')!=='true');
-  if(await page.locator('#hardware-dialog').isVisible()) {
+  await page.waitForFunction(() => document.querySelector('#source-neural').getAttribute('aria-busy') !== 'true');
+  if (await page.locator('#hardware-dialog').isVisible()) {
     assert(await page.locator('#neural-model-manager').isVisible());
     await page.locator('#hardware-dialog [data-close]').first().click();
   }
   if (process.env.MAGNA_V2_RECIPE) {
     const input = JSON.parse(await readFile(resolve(process.env.MAGNA_V2_RECIPE), 'utf8'));
-    await recipe(value => { for (const key of Object.keys(value)) delete value[key]; Object.assign(value, input.settings ?? input); });
+    await recipe(value => {
+      for (const key of Object.keys(value)) delete value[key];
+      Object.assign(value, input.settings ?? input);
+    });
   } else {
     // The web engine choice CPU is an explicit compute with Automatic engine off (Settings writes the same).
-    await recipe(value => { delete value.runtime.autoBackend; value.runtime.compute = 'cpu'; });
+    await recipe(value => {
+      delete value.runtime.autoBackend;
+      value.runtime.compute = 'cpu';
+    });
     const count = weights().length;
     await page.locator('#generate-region').click();
     await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
     // The failure toast follows a capability re-check that names the alternative (reportGenerationFailure).
     await page.waitForFunction(() => /WebGPU/.test(document.querySelector('#toast')?.textContent ?? '')).catch(() => {});
     const rejected = await record('cpu-rejected-before-download');
-    assert.match(rejected.toast, /WebGPU/); assert.equal(weights().length, count);
+    assert.match(rejected.toast, /WebGPU/);
+    assert.equal(weights().length, count);
     assert.equal(await page.locator('#neural-download-warning').count(), 0);
-    await recipe(value => { value.runtime.autoBackend = true; value.runtime.compute = 'auto'; });
+    await recipe(value => {
+      value.runtime.autoBackend = true;
+      value.runtime.compute = 'auto';
+    });
     await page.locator('#family-tab-settlements').click();
     await page.locator('#settlements-name-origin-profile').selectOption('english');
     await page.locator('#settlements-name-origin-language').selectOption('en');
     await page.waitForFunction(() => document.querySelector('#map-names-apply').getAttribute('aria-busy') === 'false');
-    assert.equal(await page.locator('#settlements-name-origin-profile').inputValue(),'english');
+    assert.equal(await page.locator('#settlements-name-origin-profile').inputValue(), 'english');
     await page.locator('#family-tab-region').click();
   }
   await run('01-neural');
@@ -186,26 +204,32 @@ try {
   assert.doesNotMatch(full3d.toast ?? '', /toDataURL|recursive use|unsafe aliasing/);
   await page.screenshot({ path: resolve(out, '02-complete-map-3d.png') });
   await page.locator('#view3d').click();
-  const before = await project('before'); assert(before.buildings.length > 0);
-  if(!process.env.MAGNA_V2_RECIPE) {
-    assert.equal(before.regionProfile,'english');
-    assert(before.names.every(e=>!e.profile || e.profile==='english'),'Global name origin did not reach every generated name');
+  const before = await project('before');
+  assert(before.buildings.length > 0);
+  if (!process.env.MAGNA_V2_RECIPE) {
+    assert.equal(before.regionProfile, 'english');
+    assert(
+      before.names.every(e => !e.profile || e.profile === 'english'),
+      'Global name origin did not reach every generated name',
+    );
     await page.locator('#family-tab-cities').click();
     await page.locator('[data-town="main"]').click();
     await page.locator('#city-name-origin-profile').selectOption('french');
     await page.waitForFunction(() => document.querySelector('#map-names-apply').getAttribute('aria-busy') === 'false');
     const local = await project('local-name-origin');
-    assert.equal(local.names.find(e=>e.id==='settlement:main')?.profile,'french');
-    assert.equal(local.regionProfile,'english');
-    assert.equal(local.height,before.height); assert.deepEqual(local.buildings,before.buildings);
+    assert.equal(local.names.find(e => e.id === 'settlement:main')?.profile, 'french');
+    assert.equal(local.regionProfile, 'english');
+    assert.equal(local.height, before.height);
+    assert.deepEqual(local.buildings, before.buildings);
     await page.locator('#city-name-origin-profile').selectOption('');
     await page.waitForFunction(() => document.querySelector('#map-names-apply').getAttribute('aria-busy') === 'false');
-    await record('name-origin-global-and-local',{architectureRetained:true,terrainRetained:true});
+    await record('name-origin-global-and-local', { architectureRetained: true, terrainRetained: true });
   }
   const edited = await editHouse(before);
   await reopen(edited.path);
   const restored = await project('reopened');
-  assert.equal(restored.height, edited.height); assert.deepEqual(restored.buildings, edited.buildings);
+  assert.equal(restored.height, edited.height);
+  assert.deepEqual(restored.buildings, edited.buildings);
   report.checks.push({ name: 'save-reopen', exactHeights: true, exactBuildings: true });
   await page.locator('#view3d').click();
   await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true', null, { timeout: 120000 });
@@ -219,16 +243,24 @@ try {
   // Seeds unique to this run: the persistent profile keeps finished reliefs on disk, and a fixed seed would replay
   // the previous run's relief ("Relief et hydrologie réutilisés · disk") without any inference to cancel or run offline.
   const runTag = Date.now().toString(36);
-  await recipe(value => { value.options.seed = `${value.options.seed}-cancel-${runTag}`; });
+  await recipe(value => {
+    value.options.seed = `${value.options.seed}-cancel-${runTag}`;
+  });
   await page.locator('#family-tab-region').click();
   const cancelRun = log => log.slice(log.lastIndexOf(`-cancel-${runTag}`));
   await page.locator('#generate-region').click();
   // 'Neuronal WASM · calcul coarse → base → decoder' (rust/bridge/neuralBrowser.ts) is posted right before GPU inference;
   // fast GPUs may finish the whole run before it can be caught: then cancellation is skipped with its reason.
-  const inference = await page.waitForFunction(() => {
-    if (/calcul coarse|computing coarse/.test(document.querySelector('#progress-label')?.textContent ?? '')) return 'inference';
-    return document.querySelector('#app')?.getAttribute('aria-busy') === 'false' && 'finished';
-  }, null, { timeout: 120000, polling: 20 }).then(handle => handle.jsonValue());
+  const inference = await page
+    .waitForFunction(
+      () => {
+        if (/calcul coarse|computing coarse/.test(document.querySelector('#progress-label')?.textContent ?? '')) return 'inference';
+        return document.querySelector('#app')?.getAttribute('aria-busy') === 'false' && 'finished';
+      },
+      null,
+      { timeout: 120000, polling: 20 },
+    )
+    .then(handle => handle.jsonValue());
   if (inference === 'inference') {
     await page.locator('#cancel-job').click();
     await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
@@ -243,25 +275,40 @@ try {
   await run('05-after-gpu-cancel');
   const count = weights().length;
   await page.route('**/neural/**', route => route.abort('internetdisconnected'));
-  await recipe(value => { value.options.seed = `${value.options.seed}-offline-${runTag}`; });
+  await recipe(value => {
+    value.options.seed = `${value.options.seed}-offline-${runTag}`;
+  });
   await run('06-model-cache-offline');
   assert.equal(weights().length, count, 'Offline inference transferred model weights');
   assert.deepEqual(report.errors, []);
   assert.doesNotMatch(report.console.join('\n'), /recursive use of an object|unsafe aliasing|RuntimeError|unreachable|toDataURL/);
   report.ok = true;
 } catch (error) {
-  report.ok = false; report.failure = error.stack ?? String(error);
+  report.ok = false;
+  report.failure = error.stack ?? String(error);
   await record('failure').catch(() => {});
-  if (await page.locator('#building-inspector').count()) report.inspector = await page.locator('#building-inspector').textContent().catch(() => undefined);
+  if (await page.locator('#building-inspector').count())
+    report.inspector = await page
+      .locator('#building-inspector')
+      .textContent()
+      .catch(() => undefined);
   await page.screenshot({ path: resolve(out, 'failure.png') }).catch(() => {});
   if (await page.locator('#expert-open').isVisible()) {
-    await page.locator('#expert-open').click().catch(() => {});
-    const failedRecipe = await page.locator('#expert-json').inputValue().catch(() => undefined);
+    await page
+      .locator('#expert-open')
+      .click()
+      .catch(() => {});
+    const failedRecipe = await page
+      .locator('#expert-json')
+      .inputValue()
+      .catch(() => undefined);
     if (failedRecipe) await writeFile(resolve(out, 'failure.recipe.json'), failedRecipe);
   }
-  console.error(report.failure); process.exitCode = 1;
+  console.error(report.failure);
+  process.exitCode = 1;
 } finally {
-  clearInterval(progress); report.finished = new Date().toISOString();
+  clearInterval(progress);
+  report.finished = new Date().toISOString();
   await writeFile(resolve(out, 'report.json'), JSON.stringify(report, null, 2));
   await context.close();
   console.log(`Live workshop: ${report.ok ? 'PASS' : 'FAIL'} · ${resolve(out, 'report.json')}`);

@@ -9,9 +9,16 @@ import { renameMap } from '../src/v2/mapNaming';
 
 class RetainedStore implements TerrainStore {
   readonly data = new Map<string, TerrainLayer>();
-  async get(key: string): Promise<TerrainLayer | undefined> { const value = this.data.get(key); return value ? structuredClone(value) : undefined; }
-  async put(key: string, value: TerrainLayer): Promise<void> { this.data.set(key, structuredClone(value)); }
-  async clear(): Promise<void> { this.data.clear(); }
+  async get(key: string): Promise<TerrainLayer | undefined> {
+    const value = this.data.get(key);
+    return value ? structuredClone(value) : undefined;
+  }
+  async put(key: string, value: TerrainLayer): Promise<void> {
+    this.data.set(key, structuredClone(value));
+  }
+  async clear(): Promise<void> {
+    this.data.clear();
+  }
 }
 function settings(): V2Settings {
   const settings = defaultSettings();
@@ -20,8 +27,17 @@ function settings(): V2Settings {
   settings.extent = 1200;
   settings.settlementCount = 1;
   settings.options.seed = 'magna-urbis-v2';
-  settings.options = { ...settings.options, population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no',
-    importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: Float32Array.from({ length: 64 }, (_, i) => 20 + i % 8 * .1) } };
+  settings.options = {
+    ...settings.options,
+    population: 80,
+    size: 'hamlet',
+    coast: 'none',
+    river: 'none',
+    relief: 'flat',
+    walls: 'none',
+    castle: 'no',
+    importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: Float32Array.from({ length: 64 }, (_, i) => 20 + (i % 8) * 0.1) },
+  };
   return settings;
 }
 // Captured historical .2 layout and its original 64-bit FP32-pixel fingerprint.
@@ -29,7 +45,8 @@ const OLD_BENCH_KEY = '["mu-v2-bench-terrain-2026-10-28.2","procedural","magna-u
 
 describe('V2 retained generation pipeline', () => {
   it('keeps metre heightmap imports usable by the classic TypeScript engine', async () => {
-    const s = settings(), image = s.options.importedHeight!;
+    const s = settings(),
+      image = s.options.importedHeight!;
     s.terrain = { sketch: { version: 1, resolution: 8, processing: 'surface', heights: Array.from(image.elevations!) } };
     delete s.options.importedHeight;
     const world = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
@@ -39,25 +56,34 @@ describe('V2 retained generation pipeline', () => {
   });
 
   it('replays an independent urban seed without changing the retained terrain, sites or regional roads', async () => {
-    const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
-    const region = await planRegion(terrain, s), original = structuredClone(region);
+    const s = settings(),
+      terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const region = await planRegion(terrain, s),
+      original = structuredClone(region);
     const first = await generateTown(region, s, 'main');
     s.urban = { backend: 'typescript', local: { main: { seed: 'another-city-draw' } } };
     const next = await generateTown(first, s, 'main');
     const repeat = await generateTown(region, s, 'main');
-    expect(next.urban).not.toEqual(first.urban); expect(next.urban).toEqual(repeat.urban);
-    expect(next.seed).toBe(region.seed); expect(next.terrain.height.data).toBe(region.terrain.height.data);
+    expect(next.urban).not.toEqual(first.urban);
+    expect(next.urban).toEqual(repeat.urban);
+    expect(next.seed).toBe(region.seed);
+    expect(next.terrain.height.data).toBe(region.terrain.height.data);
     expect(next.roads).toEqual(region.roads);
     expect(next.settlements!.map(({ key, center, radius }) => ({ key, center, radius }))).toEqual(region.settlements!.map(({ key, center, radius }) => ({ key, center, radius })));
     delete s.urban.local!.main.seed;
     const restored = await generateTown(next, s, 'main');
-    expect(restored.urban).toEqual(first.urban); expect(region).toEqual(original);
+    expect(restored.urban).toEqual(first.urban);
+    expect(region).toEqual(original);
   });
   it('edits and persists map names without changing retained terrain, roads or buildings', async () => {
-    const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
-    const region = await planRegion(terrain, s), town = await generateTown(region, s, 'main');
-    const originalNames = structuredClone(town.names), key = terrainCacheKey(s);
-    s.options.language = 'english'; s.naming = { title: 'The Copper Coast', places: { main: 'Valmont' } };
+    const s = settings(),
+      terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const region = await planRegion(terrain, s),
+      town = await generateTown(region, s, 'main');
+    const originalNames = structuredClone(town.names),
+      key = terrainCacheKey(s);
+    s.options.language = 'english';
+    s.naming = { title: 'The Copper Coast', places: { main: 'Valmont' } };
     const named = renameMap(town, s);
     expect(named.names?.town).toBe('The Copper Coast');
     expect(named.names?.family).toBe('english');
@@ -69,52 +95,70 @@ describe('V2 retained generation pipeline', () => {
     expect(named.roads).toBe(town.roads);
     expect(named.urban?.buildings).toBe(town.urban?.buildings);
     expect(named.urban?.streets).toEqual(town.urban?.streets);
-    expect(town.names).toEqual(originalNames); expect(terrainCacheKey(s)).toBe(key);
+    expect(town.names).toEqual(originalNames);
+    expect(terrainCacheKey(s)).toBe(key);
     const loaded = parseProject(serializeProject(s, named));
-    expect(loaded.settings.naming).toEqual(s.naming); expect(loaded.world?.names).toEqual(named.names);
+    expect(loaded.settings.naming).toEqual(s.naming);
+    expect(loaded.world?.names).toEqual(named.names);
     const rebuilt = renameMap(await generateTown(named, s, 'main'), s);
     expect(rebuilt.names?.town).toBe('The Copper Coast');
     expect(rebuilt.settlements?.find(place => place.main)?.name).toBe('Valmont');
   });
   it('starts with a 6 km region independent of later settlement settings and their terrain cache key', () => {
-    const settings = defaultSettings(), originalKey = terrainCacheKey(settings);
+    const settings = defaultSettings(),
+      originalKey = terrainCacheKey(settings);
     expect(settings.extent).toBe(6000);
-    settings.options.population = 100000; settings.settlementCount = 12;
-    settings.options.culture = 'medina'; settings.options.sprawl = 2;
+    settings.options.population = 100000;
+    settings.settlementCount = 12;
+    settings.options.culture = 'medina';
+    settings.options.sprawl = 2;
     expect(adaptedExtent(settings)).toBe(6000);
     expect(terrainCacheKey(settings)).toBe(originalKey);
   });
   it('retains the optional automatic extent recommendation and accepts a fixed extent', () => {
-    const small = defaultSettings(); small.extent = 'auto'; small.generation = 'procedural'; small.runtime!.source = 'procedural';
+    const small = defaultSettings();
+    small.extent = 'auto';
+    small.generation = 'procedural';
+    small.runtime!.source = 'procedural';
     const large = structuredClone(small);
-    large.options.population = 100000; large.settlementCount = 12;
-    expect(adaptedExtent(large)).toBe(40000);expect(adaptedExtent(small)).toBe(40000);
+    large.options.population = 100000;
+    large.settlementCount = 12;
+    expect(adaptedExtent(large)).toBe(40000);
+    expect(adaptedExtent(small)).toBe(40000);
     large.extent = 4000;
     expect(adaptedExtent(large)).toBe(4000);
     small.generation = 'neural';
     expect(adaptedExtent(small)).toBe(40000);
   });
   it('keys only the terrain dependencies, including FP32 content and generation runtime', () => {
-    const a = settings(), b = structuredClone(a);
-    b.options.style = 'atlas'; b.options.culture = 'medina'; b.options.biome = 'desert';
+    const a = settings(),
+      b = structuredClone(a);
+    b.options.style = 'atlas';
+    b.options.culture = 'medina';
+    b.options.biome = 'desert';
     b.appearance = { style: 'night', contours: false, landuse: false, labels: true };
     b.local.main = { sprawl: 1.5 };
     expect(terrainCacheKey(b)).toBe(terrainCacheKey(a));
-    b.options.importedHeight!.elevations![0] += .001;
+    b.options.importedHeight!.elevations![0] += 0.001;
     expect(terrainCacheKey(b)).not.toBe(terrainCacheKey(a));
     b.options.importedHeight!.elevations!.set(a.options.importedHeight!.elevations!);
     b.runtime = { backend: 'rust', source: 'procedural', compute: 'cpu' };
     expect(terrainCacheKey(b)).not.toBe(terrainCacheKey(a));
     const transport = structuredClone(b);
-    transport.runtime!.localServer = 'http://127.0.0.1:18791'; transport.runtime!.pythonServer = 'http://127.0.0.1:18793';
+    transport.runtime!.localServer = 'http://127.0.0.1:18791';
+    transport.runtime!.pythonServer = 'http://127.0.0.1:18793';
     expect(terrainCacheKey(transport)).toBe(terrainCacheKey(b));
     b.generation = transport.generation = 'neural';
     b.runtime!.source = transport.runtime!.source = 'neural-wasm';
-    b.runtime!.neuralAssets = './neural/'; transport.runtime!.neuralAssets = 'https://models.example.test/custom-neural/';
+    b.runtime!.neuralAssets = './neural/';
+    transport.runtime!.neuralAssets = 'https://models.example.test/custom-neural/';
     expect(terrainCacheKey(transport)).not.toBe(terrainCacheKey(b));
   });
   it('a village after a relief run with a fallback neural source still matches the retained terrain', () => {
-    const relief = defaultSettings(); relief.generation = 'neural'; relief.extent = 4000; delete relief.options.importedHeight;
+    const relief = defaultSettings();
+    relief.generation = 'neural';
+    relief.extent = 4000;
+    delete relief.options.importedHeight;
     relief.runtime = { backend: 'native', compute: 'auto', source: 'neural-python', localServer: 'http://127.0.0.1:8791', pythonServer: 'http://127.0.0.1:8793' };
     const world = { seed: relief.options.seed, mapSize: 4000, stats: { 'v2.terrainKey': terrainCacheKey({ ...relief, extent: 4000 }) } } as never;
     for (const runtime of [
@@ -122,14 +166,18 @@ describe('V2 retained generation pipeline', () => {
       { backend: 'native', compute: 'auto', source: 'neural' },
       { backend: 'native', compute: 'cpu', source: 'neural-wasm', localServer: 'http://127.0.0.1:18791' },
     ] as V2Settings['runtime'][]) {
-      const village = structuredClone(relief); village.runtime = runtime;
+      const village = structuredClone(relief);
+      village.runtime = runtime;
       expect(retainedTerrainMatchesSettings(world, village)).toBe(true);
     }
-    const changed = structuredClone(relief); changed.options.relief = 'mountains';
+    const changed = structuredClone(relief);
+    changed.options.relief = 'mountains';
     expect(retainedTerrainMatchesSettings(world, changed)).toBe(false);
   });
   it('restores persistent terrain across cache instances and protects cached arrays from callers', async () => {
-    const store = new RetainedStore(), first = new TerrainCache(store), s = settings();
+    const store = new RetainedStore(),
+      first = new TerrainCache(store),
+      s = settings();
     const generated = await generateTerrain(s, undefined, first);
     expect(generated.stats['v2.cache']).toBe('miss');
     const original = generated.terrain.height.data[0];
@@ -149,7 +197,8 @@ describe('V2 retained generation pipeline', () => {
     expect(biome.terrain.height.data).toEqual(memory.terrain.height.data);
   });
   it('creates sites and routes without urban plans, then generates a town deterministically without changing terrain', async () => {
-    const s = settings(), t = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const s = settings(),
+      t = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
     const region = await planRegion(t, s);
     expect(region.site).toBeDefined();
     expect(region.settlements).toHaveLength(1);
@@ -162,13 +211,16 @@ describe('V2 retained generation pipeline', () => {
     expect(individual.terrain.height.data).toEqual(t.terrain.height.data);
     expect(individual.roads).toEqual(region.roads);
     expect(region.urban).toBeUndefined();
-    const changed = structuredClone(s); changed.options.relief = 'mountains';
+    const changed = structuredClone(s);
+    changed.options.relief = 'mountains';
     await expect(generateTown(region, changed, 'main')).rejects.toThrow('topography');
-    changed.options.relief = s.options.relief; changed.options.population = 500;
+    changed.options.relief = s.options.relief;
+    changed.options.population = 500;
     await expect(generateTown(region, changed, 'main')).rejects.toThrow('Placement settings');
   });
   it('round trips complete worlds, FP32 imports, costs with Infinity and a seed-only recipe', async () => {
-    const s = settings(), t = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const s = settings(),
+      t = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
     s.appearance = { style: 'cadastre', contours: false, landuse: true, labels: false };
     const region = await planRegion(t, s);
     region.site!.cost.data[0] = Infinity;
@@ -184,16 +236,20 @@ describe('V2 retained generation pipeline', () => {
   });
   it('keeps an already created auto-sized terrain when the requested composition changes', async () => {
     const s = settings();
-    s.extent = 'auto'; s.options.mapSize = 1200;
+    s.extent = 'auto';
+    s.options.mapSize = 1200;
     const t = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
-    delete s.options.mapSize; s.options.population = 500; s.settlementCount = 2;
+    delete s.options.mapSize;
+    s.options.population = 500;
+    s.settlementCount = 2;
     expect(adaptedExtent(s)).toBeGreaterThan(t.mapSize);
     const region = await planRegion(t, s);
     expect(region.mapSize).toBe(t.mapSize);
     expect(region.terrain.height.data).toEqual(t.terrain.height.data);
   });
   it('applies local morphology without replanning and retains local metadata on the generated town', async () => {
-    const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const s = settings(),
+      terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
     const region = await planRegion(terrain, s);
     s.local.main = { sprawl: 1.5, walls: 'none', language: 'japanese' };
     const town = await generateTown(region, s, 'main');
@@ -212,44 +268,70 @@ describe('V2 retained generation pipeline', () => {
     s.options.center = { x: NaN, y: 1 };
     expect(() => serializeProject(s)).toThrow('non fini');
     delete s.options.center;
-    s.generation = 'neural'; delete s.options.importedHeight;
+    s.generation = 'neural';
+    delete s.options.importedHeight;
     await expect(generateTerrain(s)).rejects.toThrow('modèle neuronal');
   });
   it('continues a coherent saved .2 project without changing historical keys, terrain or complete geometry', async () => {
     // The classic TypeScript engine is a local/desktop choice now: a web-profile load converts it to Rust in the browser.
     vi.stubGlobal('window', { location: { hostname: 'localhost', protocol: 'http:', search: '?profile=local' } });
-    onTestFinished(() => { vi.unstubAllGlobals(); });
-    const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const s = settings(),
+      terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
     const region = await planRegion(terrain, s);
-    region.stats['v2.terrainKey'] = OLD_BENCH_KEY; region.stats['v2.engine'] = 'mu-v2-bench-terrain-2026-10-28.2';
+    region.stats['v2.terrainKey'] = OLD_BENCH_KEY;
+    region.stats['v2.engine'] = 'mu-v2-bench-terrain-2026-10-28.2';
     const loaded = parseProject(serializeProject(s, region, [{ type: 'note', value: 'Keep all geometry.' }]));
-    const oldStats = structuredClone(loaded.world!.stats), oldHeight = loaded.world!.terrain.height.data.slice(), oldRoads = structuredClone(loaded.world!.roads);
+    const oldStats = structuredClone(loaded.world!.stats),
+      oldHeight = loaded.world!.terrain.height.data.slice(),
+      oldRoads = structuredClone(loaded.world!.roads);
     expect(retainedTerrainMatchesSettings(loaded.world!, loaded.settings)).toBe(true);
     const town = await generateTown(loaded.world!, loaded.settings, 'main');
     expect(town.urban?.buildings.length).toBeGreaterThan(0);
-    expect(town.terrain.height.data).toEqual(oldHeight); expect(town.roads).toEqual(oldRoads);
-    expect(town.stats['v2.terrainKey']).toBe(OLD_BENCH_KEY); expect(loaded.world!.stats).toEqual(oldStats);
+    expect(town.terrain.height.data).toEqual(oldHeight);
+    expect(town.roads).toEqual(oldRoads);
+    expect(town.stats['v2.terrainKey']).toBe(OLD_BENCH_KEY);
+    expect(loaded.world!.stats).toEqual(oldStats);
     expect(loaded.mods).toEqual([{ type: 'note', value: 'Keep all geometry.' }]);
     for (const change of [
-      (draft: V2Settings) => { draft.options.seed = 'different'; },
-      (draft: V2Settings) => { draft.extent = 2400; },
-      (draft: V2Settings) => { draft.options.relief = 'mountains'; },
-      (draft: V2Settings) => { draft.options.importedHeight!.elevations![0] += .001; },
+      (draft: V2Settings) => {
+        draft.options.seed = 'different';
+      },
+      (draft: V2Settings) => {
+        draft.extent = 2400;
+      },
+      (draft: V2Settings) => {
+        draft.options.relief = 'mountains';
+      },
+      (draft: V2Settings) => {
+        draft.options.importedHeight!.elevations![0] += 0.001;
+      },
     ]) {
-      const draft = structuredClone(s); change(draft);
+      const draft = structuredClone(s);
+      change(draft);
       expect(retainedTerrainMatchesSettings(loaded.world!, draft)).toBe(false);
       await expect(generateTown(loaded.world!, draft, 'main')).rejects.toThrow('topography');
     }
   });
   it('accepts the identical .1 TypeScript retained pipeline but does not relabel the old mixed Rust/TS pipeline', async () => {
-    const s = settings(), terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
-    const region = await planRegion(terrain, s), key = JSON.parse(OLD_BENCH_KEY);
-    key[0] = 'mu-v2-ts-2026-10-28.1'; key.splice(10, 1); region.stats['v2.terrainKey'] = JSON.stringify(key);
-    const oldPlan = JSON.parse(String(region.stats['v2.planKey'])); oldPlan.splice(8, 2); region.stats['v2.planKey'] = JSON.stringify(oldPlan);
+    const s = settings(),
+      terrain = await generateTerrain(s, undefined, new TerrainCache(new RetainedStore()));
+    const region = await planRegion(terrain, s),
+      key = JSON.parse(OLD_BENCH_KEY);
+    key[0] = 'mu-v2-ts-2026-10-28.1';
+    key.splice(10, 1);
+    region.stats['v2.terrainKey'] = JSON.stringify(key);
+    const oldPlan = JSON.parse(String(region.stats['v2.planKey']));
+    oldPlan.splice(8, 2);
+    region.stats['v2.planKey'] = JSON.stringify(oldPlan);
     expect(retainedTerrainMatchesSettings(region, s)).toBe(true);
-    const town = await generateTown(region, s, 'main'); expect(town.urban?.buildings.length).toBeGreaterThan(0);
+    const town = await generateTown(region, s, 'main');
+    expect(town.urban?.buildings.length).toBeGreaterThan(0);
     expect(town.stats['v2.terrainKey']).toBe(region.stats['v2.terrainKey']);
-    const mixed = structuredClone(s); mixed.runtime!.backend = 'rust';
+    const mixed = structuredClone(s);
+    mixed.runtime!.backend = 'rust';
     expect(retainedTerrainMatchesSettings(region, mixed)).toBe(false);
   });
 });

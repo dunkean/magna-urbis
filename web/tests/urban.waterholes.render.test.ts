@@ -7,7 +7,12 @@ import { polygonArea } from '../src/gen/core/geom';
 import { pathD } from '../src/render/util';
 import { orientPos } from '../src/gen/geo/poly';
 
-const box = (x0: number, y0: number, x1: number, y1: number) => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+const box = (x0: number, y0: number, x1: number, y1: number) => [
+  { x: x0, y: y0 },
+  { x: x1, y: y0 },
+  { x: x1, y: y1 },
+  { x: x0, y: y1 },
+];
 function fixture() {
   const w = fakeWorld({ mapSize: 1000, buildings: 0, streets: 0, clusters: 1, landAreas: 0 });
   const poly = { outer: box(100, 100, 900, 900), holes: [box(400, 400, 600, 600)] };
@@ -48,7 +53,7 @@ describe('quarter lake holes reach both rendering paths', () => {
     expect(streets).toContain(pathD(orientPos(other.outer), true));
     const scene = buildScene(w).poly.get('u-streets')!;
     expect(scene.polys).toHaveLength(2);
-    expect(scene.polys.every((ring) => polygonArea(ring) > 0)).toBe(true);
+    expect(scene.polys.every(ring => polygonArea(ring) > 0)).toBe(true);
     expect(polygonArea(scene.holes![0]![0])).toBeLessThan(0);
   });
 });

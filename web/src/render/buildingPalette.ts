@@ -1,8 +1,17 @@
 /** Shared display palette. Colours are final display sRGB, 0..1, never multipliers.
  * Lot swatches and intensity variation belong here; renderers may bucket tone for batching. */
 export type PaletteRgb = [number, number, number];
-export interface CultureIdentity { family: string; wall: PaletteRgb; roof: PaletteRgb; stone: PaletteRgb; accent: PaletteRgb }
-export interface BuildingTint { wall: PaletteRgb; roof: PaletteRgb }
+export interface CultureIdentity {
+  family: string;
+  wall: PaletteRgb;
+  roof: PaletteRgb;
+  stone: PaletteRgb;
+  accent: PaletteRgb;
+}
+export interface BuildingTint {
+  wall: PaletteRgb;
+  roof: PaletteRgb;
+}
 type Swatch = [string, string, string, string];
 const FAMILIES: Record<string, Swatch> = {
   european: ['c8bba3', '956551', 'b8af9b', '75818a'],
@@ -44,42 +53,99 @@ const GROUPS: Record<string, string> = {
   ochre: 'sahel ksar-oasis hausa-kano native-pueblo',
   brick: 'hanseatic flemish-cloth-town indus-planned newar',
   eastasian: 'chinese korean russian-kremlin vietnamese-citadel',
-  japanese: 'japanese-jokamachi', norse: 'barbarian-norse norse-ringfort',
+  japanese: 'japanese-jokamachi',
+  norse: 'barbarian-norse norse-ringfort',
   timber: 'barbarian barbarian-celtic celtic-oppidum native-iroquoian slavic-gord maori-pa pnw-plank-village',
   tropical: 'indian-temple stilt-town khmer kraal yoruba ethiopian-highland great-zimbabwe javanese-courts dravidian-temple bagan mississippian guarani-village budj-bim',
   felt: 'mongol-ordu nomad-camp native-plains inuit-camp siberian-camp',
-  mesoamerican: 'aztec maya inca', highland: 'himalayan-terraces caucasian-highland tibetan-monastery',
-  elven: 'elven', dwarven: 'dwarven', drow: 'drow-enclave', duergar: 'duergar-hold', necropolis: 'necropolis', wizard: 'wizard-city',
-  gnomish: 'gnomish', orcish: 'orcish', halfling: 'halfling', myconid: 'myconid-colony', swamp: 'lizardfolk-swamp', tidal: 'merfolk-tidal', giant: 'giant-hold', goblin: 'goblin-warren',
+  mesoamerican: 'aztec maya inca',
+  highland: 'himalayan-terraces caucasian-highland tibetan-monastery',
+  elven: 'elven',
+  dwarven: 'dwarven',
+  drow: 'drow-enclave',
+  duergar: 'duergar-hold',
+  necropolis: 'necropolis',
+  wizard: 'wizard-city',
+  gnomish: 'gnomish',
+  orcish: 'orcish',
+  halfling: 'halfling',
+  myconid: 'myconid-colony',
+  swamp: 'lizardfolk-swamp',
+  tidal: 'merfolk-tidal',
+  giant: 'giant-hold',
+  goblin: 'goblin-warren',
 };
 // Local variations retain the family's dominant character.
 const LOCAL: Record<string, Partial<Record<'wall' | 'roof' | 'stone' | 'accent', string>>> = {
   'swahili-stone-town': { wall: 'ddd5bf', roof: 'c6bba1', stone: 'd1c7af' },
-  'venetian-lagoon': { wall: 'd4b8a0', roof: 'ac7059' }, 'italian-comune': { wall: 'c5a486', roof: 'a56d52' },
-  persian: { wall: 'd7c49c', roof: 'b7b19a', accent: '6d9d9c' }, ottoman: { wall: 'd6c9b1', roof: 'a47660' },
-  'hadhrami-tower': { wall: 'c4a17d', roof: 'b99d7e' }, sahel: { wall: 'b88b5d', roof: 'ac8058' },
-  'ksar-oasis': { wall: 'b58b67', roof: 'ac835f' }, 'hausa-kano': { wall: 'bd9670' },
-  'flemish-cloth-town': { wall: 'ae7963', roof: '8b6054' }, 'indus-planned': { wall: 'b68e72', roof: 'b59b7c' },
-  newar: { wall: 'ad7861', roof: 'a17057' }, 'russian-kremlin': { wall: 'd1c9b3', roof: '779080' },
-  'native-plains': { wall: 'c5b69a', roof: 'b9a789' }, 'inuit-camp': { wall: 'd5d9d3', roof: 'c5cfc9' },
-  'siberian-camp': { wall: 'a08b71', roof: '97846e' }, inca: { wall: 'b8b19c', roof: 'a18e65', stone: 'b8b19c' },
-  maya: { wall: 'd6d0b7', roof: 'b3a078' }, 'tibetan-monastery': { wall: 'd8d0b8', roof: '99876c', accent: '9d594c' },
-  'dravidian-temple': { wall: 'c4baa1', roof: 'b6ad95' }, 'indian-temple': { wall: 'cbb391', roof: 'ac8766' },
-  bagan: { wall: 'b39473', roof: 'a7775d' }, 'great-zimbabwe': { wall: 'aea58d', roof: 'aa956c' },
+  'venetian-lagoon': { wall: 'd4b8a0', roof: 'ac7059' },
+  'italian-comune': { wall: 'c5a486', roof: 'a56d52' },
+  persian: { wall: 'd7c49c', roof: 'b7b19a', accent: '6d9d9c' },
+  ottoman: { wall: 'd6c9b1', roof: 'a47660' },
+  'hadhrami-tower': { wall: 'c4a17d', roof: 'b99d7e' },
+  sahel: { wall: 'b88b5d', roof: 'ac8058' },
+  'ksar-oasis': { wall: 'b58b67', roof: 'ac835f' },
+  'hausa-kano': { wall: 'bd9670' },
+  'flemish-cloth-town': { wall: 'ae7963', roof: '8b6054' },
+  'indus-planned': { wall: 'b68e72', roof: 'b59b7c' },
+  newar: { wall: 'ad7861', roof: 'a17057' },
+  'russian-kremlin': { wall: 'd1c9b3', roof: '779080' },
+  'native-plains': { wall: 'c5b69a', roof: 'b9a789' },
+  'inuit-camp': { wall: 'd5d9d3', roof: 'c5cfc9' },
+  'siberian-camp': { wall: 'a08b71', roof: '97846e' },
+  inca: { wall: 'b8b19c', roof: 'a18e65', stone: 'b8b19c' },
+  maya: { wall: 'd6d0b7', roof: 'b3a078' },
+  'tibetan-monastery': { wall: 'd8d0b8', roof: '99876c', accent: '9d594c' },
+  'dravidian-temple': { wall: 'c4baa1', roof: 'b6ad95' },
+  'indian-temple': { wall: 'cbb391', roof: 'ac8766' },
+  bagan: { wall: 'b39473', roof: 'a7775d' },
+  'great-zimbabwe': { wall: 'aea58d', roof: 'aa956c' },
 };
-const WALL: Record<string, string> = { timber: '8c745a', wood: '8c745a', brick: 'ae7c65', stone: 'b9b3a2', earth: 'bba17b', plaster: 'dfd6c0', bamboo: 'aa986b', wattle: 'ad9670', hide: 'bbae94', coral: 'd5cbb3',
+const WALL: Record<string, string> = {
+  timber: '8c745a',
+  wood: '8c745a',
+  brick: 'ae7c65',
+  stone: 'b9b3a2',
+  earth: 'bba17b',
+  plaster: 'dfd6c0',
+  bamboo: 'aa986b',
+  wattle: 'ad9670',
+  hide: 'bbae94',
+  coral: 'd5cbb3',
   // Modern walls: board-marked concrete, curtain-wall glass (the sky it reflects, darkened), dark steel cladding, cut limestone.
-  concrete: 'a8a7a1', glass: '6e8c96', steel: '5b6267', ashlar: 'd9cdb1' };
-const ROOF: Record<string, string> = { tile: 'a77960', slate: '747c80', thatch: 'b3a077', reed: 'b3a077', palm: 'ac9870', bamboo: 'a0946d', shingle: '8e8069', bark: '81745f', turf: '85916b', hide: 'b6a78d', felt: 'a59c88', earth: 'b7a17f', plaster: 'd1c5a9', stone: 'a6a69a', snow: 'd9e0db', metal: '8d9996', lead: '828a8c', ruin: 'd8d0bd',
+  concrete: 'a8a7a1',
+  glass: '6e8c96',
+  steel: '5b6267',
+  ashlar: 'd9cdb1',
+};
+const ROOF: Record<string, string> = {
+  tile: 'a77960',
+  slate: '747c80',
+  thatch: 'b3a077',
+  reed: 'b3a077',
+  palm: 'ac9870',
+  bamboo: 'a0946d',
+  shingle: '8e8069',
+  bark: '81745f',
+  turf: '85916b',
+  hide: 'b6a78d',
+  felt: 'a59c88',
+  earth: 'b7a17f',
+  plaster: 'd1c5a9',
+  stone: 'a6a69a',
+  snow: 'd9e0db',
+  metal: '8d9996',
+  lead: '828a8c',
+  ruin: 'd8d0bd',
   // Modern covers: grey-blue zinc sheets, dark bitumen felt, glazed atria and domes.
-  zinc: '8a96a2', bitumen: '4b4b4c', glass: '7d9aa3' };
+  zinc: '8a96a2',
+  bitumen: '4b4b4c',
+  glass: '7d9aa3',
+};
 // Repeated entries are weights: Europe remains mostly aged terracotta, with
 // occasional slate. These are related building colours, never random accents.
 const SWATCHES: Partial<Record<string, { wall: string[]; roof: string[] }>> = {
-  european: {
-    wall: ['d8c9a9', 'c2a271', 'b9b8ae', 'e4dfce', '897058'],
-    roof: ['b87650', 'a36145', '985e47', '82543f', '704c3e', 'a36145', '985e47', '687176'],
-  },
+  european: { wall: ['d8c9a9', 'c2a271', 'b9b8ae', 'e4dfce', '897058'], roof: ['b87650', 'a36145', '985e47', '82543f', '704c3e', 'a36145', '985e47', '687176'] },
   sand: { wall: ['cfb68c', 'c29d69', 'bd9581', 'e0d6bc'], roof: ['c3ab85', 'ac906b', 'd0b994', 'b69b7c'] },
   ochre: { wall: ['bf9464', 'a7794e', 'c39e7a', 'aa805c'], roof: ['b18c61', '96704b', 'b99b74', 'a17c55'] },
   brick: { wall: ['ae7458', '965a43', '7c5040', 'ba8969'], roof: ['a15d42', '8c503b', '704638', 'ae7051'] },
@@ -112,7 +178,9 @@ function lotHash(seed: number, salt: number): number {
  * the neutral European identity; buildingTint instead falls back by material.
  * Returns fresh arrays, safe for consumers to modify. */
 export function cultureIdentity(culture: string): CultureIdentity {
-  const family = familyOf(culture) ?? 'european', s = FAMILIES[family], local = LOCAL[culture];
+  const family = familyOf(culture) ?? 'european',
+    s = FAMILIES[family],
+    local = LOCAL[culture];
   return { family, wall: rgb(local?.wall ?? s[0]), roof: rgb(local?.roof ?? s[1]), stone: rgb(local?.stone ?? s[2]), accent: rgb(local?.accent ?? s[3]) };
 }
 
@@ -131,42 +199,61 @@ export function tintedWallColor(base: PaletteRgb, tint: string, wall: string): P
   const asked = rgb(tint.replace('#', ''));
   if (asked.some(v => !Number.isFinite(v))) return base;
   const lightness = (c: PaletteRgb): number => (Math.max(...c) + Math.min(...c)) / 2;
-  const max = Math.max(...asked), min = Math.min(...asked), l = lightness(asked), d = max - min;
+  const max = Math.max(...asked),
+    min = Math.min(...asked),
+    l = lightness(asked),
+    d = max - min;
   const s = d < 1e-6 ? 0 : d / (1 - Math.abs(2 * l - 1) || 1e-6);
   const h = d < 1e-6 ? 0 : max === asked[0] ? ((asked[1] - asked[2]) / d + 6) % 6 : max === asked[1] ? (asked[2] - asked[0]) / d + 2 : (asked[0] - asked[1]) / d + 4;
   // Pinks, magentas and reds read as toy colours on a whole building: they keep only a hint of their hue; blues,
   // greens, bronzes and warm stone keep a little more.
-  const garish = h > 4.3 || h < .35;
-  const s2 = Math.min(s, garish ? .12 : wall === 'glass' || wall === 'steel' ? .28 : .24), own = lightness(base), l2 = Math.max(own - .18, Math.min(own + .18, l));
-  const c = (1 - Math.abs(2 * l2 - 1)) * s2, x = c * (1 - Math.abs(h % 2 - 1)), m = l2 - c / 2;
+  const garish = h > 4.3 || h < 0.35;
+  const s2 = Math.min(s, garish ? 0.12 : wall === 'glass' || wall === 'steel' ? 0.28 : 0.24),
+    own = lightness(base),
+    l2 = Math.max(own - 0.18, Math.min(own + 0.18, l));
+  const c = (1 - Math.abs(2 * l2 - 1)) * s2,
+    x = c * (1 - Math.abs((h % 2) - 1)),
+    m = l2 - c / 2;
   const hue: PaletteRgb = h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x];
-  return base.map((v, i) => clamp(v + (hue[i] + m - v) * .75)) as PaletteRgb;
+  return base.map((v, i) => clamp(v + (hue[i] + m - v) * 0.75)) as PaletteRgb;
 }
 
 export function buildingTint(culture: string, wall: string, cover: string, tone: number, role = 'dwelling'): BuildingTint {
-  const known = !!familyOf(culture), p = cultureIdentity(culture), t = Number.isFinite(tone) ? clamp(tone) : 0.5;
-  const seed = Math.round(t * 15), wh = lotHash(seed, 0x68bc21eb), rh = lotHash(seed, 0x02e5be93);
+  const known = !!familyOf(culture),
+    p = cultureIdentity(culture),
+    t = Number.isFinite(tone) ? clamp(tone) : 0.5;
+  const seed = Math.round(t * 15),
+    wh = lotHash(seed, 0x68bc21eb),
+    rh = lotHash(seed, 0x02e5be93);
   const masonry = /monument|tower|minaret|temple|mosque|church|cathedral|worship|religious|civic|defen|palace|castle|keep|citadel/.test(role);
-  let w = known ? p.wall : rgb(WALL[wall] ?? WALL.plaster), r = known ? p.roof : rgb(ROOF[cover] ?? ROOF.tile);
+  let w = known ? p.wall : rgb(WALL[wall] ?? WALL.plaster),
+    r = known ? p.roof : rgb(ROOF[cover] ?? ROOF.tile);
   if (known) {
-    const swatches = SWATCHES[p.family], family = FAMILIES[p.family];
+    const swatches = SWATCHES[p.family],
+      family = FAMILIES[p.family];
     const choose = (kind: 'wall' | 'roof', h: number): PaletteRgb => {
-      const dominant = p[kind], options = swatches?.[kind];
+      const dominant = p[kind],
+        options = swatches?.[kind];
       if (!options) {
         // Other cultures use three restrained local shades of their own
         // dominant colour; no foreign palette is introduced by the fallback.
         const shade = Math.floor(h * 3) - 1;
         return dominant.map((v, i) => clamp(v + shade * [0.045, 0.035, 0.02][i])) as PaletteRgb;
       }
-      const selected = rgb(options[Math.floor(h * options.length)]), base = rgb(family[kind === 'wall' ? 0 : 1]);
+      const selected = rgb(options[Math.floor(h * options.length)]),
+        base = rgb(family[kind === 'wall' ? 0 : 1]);
       return selected.map((v, i) => clamp(v + dominant[i] - base[i])) as PaletteRgb;
     };
-    w = choose('wall', wh); r = choose('roof', rh);
-    w = mix(w, rgb(WALL[wall] ?? WALL.plaster), 0.10);
+    w = choose('wall', wh);
+    r = choose('roof', rh);
+    w = mix(w, rgb(WALL[wall] ?? WALL.plaster), 0.1);
     // Thatch, turf and metal retain their material character within local hues.
     const organic = /^(thatch|reed|palm|turf|bark|bamboo|snow|metal|lead|zinc|bitumen|glass)$/.test(cover);
     r = mix(r, rgb(ROOF[cover] ?? ROOF.tile), organic ? 0.85 : 0.08);
-    if (masonry) { w = mix(p.stone, p.wall, 0.45); if (/^(earth|plaster|stone)$/.test(cover)) r = mix(r, w, 0.45); }
+    if (masonry) {
+      w = mix(p.stone, p.wall, 0.45);
+      if (/^(earth|plaster|stone)$/.test(cover)) r = mix(r, w, 0.45);
+    }
     // Ruin stubs (massing.rs `ruin_piece`): broken wall tops in pale weathered stone.
     if (cover === 'ruin') r = mix(w, rgb(ROOF.ruin), 0.45);
   }

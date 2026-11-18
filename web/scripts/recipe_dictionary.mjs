@@ -15,4 +15,6 @@ try {
   delete params.render;
   await writeFile(new URL('../src/ui/recipeDictionary.json', import.meta.url), JSON.stringify(params, null, 2) + '\n');
   console.log('Updated recipe compression dictionary.');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

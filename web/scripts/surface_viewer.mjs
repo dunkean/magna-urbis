@@ -18,7 +18,10 @@ if (!['forward_plus', 'mobile', 'gl_compatibility'].includes(renderer)) throw ne
 if (rendering >= 0) args.splice(rendering, 2);
 const option = args.indexOf('--godot');
 let godot = process.env.GODOT;
-if (option >= 0) { godot = args[option + 1]; args.splice(option, 2); }
+if (option >= 0) {
+  godot = args[option + 1];
+  args.splice(option, 2);
+}
 godot ??= ['godot', 'godot4'].find(name => spawnSync(name, ['--version'], { windowsHide: true, stdio: 'ignore' }).status === 0);
 if (!godot) throw new Error('Set GODOT or pass --godot <Godot 4.7.2 executable>. See viewer-local/README.md.');
 if (godot.includes('/') || godot.includes('\\')) godot = path.resolve(godot);
@@ -43,8 +46,9 @@ const check = args.indexOf('--check');
 if (check >= 0) {
   args.splice(check, 1);
   const result = spawnSync(godot, ['--headless', '--path', project, '--script', 'diagnostics/check.gd'], { encoding: 'utf8', windowsHide: true });
-  process.stdout.write(result.stdout ?? ''); process.stderr.write(result.stderr ?? '');
-  process.exit(/(?:SCRIPT|SHADER) ERROR|ERROR:/.test((result.stdout ?? '') + (result.stderr ?? '')) ? 1 : result.status ?? 1);
+  process.stdout.write(result.stdout ?? '');
+  process.stderr.write(result.stderr ?? '');
+  process.exit(/(?:SCRIPT|SHADER) ERROR|ERROR:/.test((result.stdout ?? '') + (result.stderr ?? '')) ? 1 : (result.status ?? 1));
 }
 if (!args.includes('--world')) throw new Error('Required: --world <surface-world.json>. Options: --assets <resolved.json> --top --width <metres> --live-url <url> --capture <png> --frames 120 --metrics <json> --tour <directory>.');
 // This cartographic viewer has no audio scene. Avoid requiring a workstation

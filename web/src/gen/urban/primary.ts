@@ -23,24 +23,39 @@ import { planMoat, offsetCurtain } from './moat';
 import type { Tri } from '../options';
 
 export interface Quarter {
-  lp: LPoly; phase: number; zone: Zone; age: number; kind: 'quarter' | 'market' | 'place' | 'lot';
+  lp: LPoly;
+  phase: number;
+  zone: Zone;
+  age: number;
+  kind: 'quarter' | 'market' | 'place' | 'lot';
   /** Morphology of the quarter (its phase's or sector's); the culture that built it. */
-  morph?: MorphologyParams; culture?: string;
+  morph?: MorphologyParams;
+  culture?: string;
   /** Landmark lots (M4): the lot id and the compound builder that fills it. */
-  lot?: string; compound?: string;
+  lot?: string;
+  compound?: string;
 }
 
 /** A landmark lot reserved at level 1 (M4): an exact piece of the partition, filled later by its builder. */
 export interface ReservedLot {
-  id: string; kind: string; poly: Polygon; phase: number; zone: Zone;
+  id: string;
+  kind: string;
+  poly: Polygon;
+  phase: number;
+  zone: Zone;
   /** Streets registered for it that cut the partition (connectors to the network). */
   cuts: Polyline[];
   /** Kind of the piece: a compound lot (default), an open place (quay apron, pier) or an ordinary quarter. */
   piece?: 'lot' | 'place' | 'quarter';
 }
 export interface ReserveApi {
-  streets: Streets; market: Polygon | null; marketStreet: number; radialLines: Polyline[];
-  enclosure: MultiPoly; footprint: MultiPoly; phases: PhasePlan[];
+  streets: Streets;
+  market: Polygon | null;
+  marketStreet: number;
+  radialLines: Polyline[];
+  enclosure: MultiPoly;
+  footprint: MultiPoly;
+  phases: PhasePlan[];
   /** Points where the radials cross the enclosure (future gates). */
   gates: Vec2[];
   /** Authoritative curtain contacts, with the same directions and widths as the final wall openings. */
@@ -49,30 +64,39 @@ export interface ReserveApi {
   cuts: Polyline[];
 }
 
-export interface WallLine { ring: Polygon; gates: { p: Vec2; dir: Vec2; width: number; street: number }[] }
+export interface WallLine {
+  ring: Polygon;
+  gates: { p: Vec2; dir: Vec2; width: number; street: number }[];
+}
 
 /** The same physical radial contacts supply landmark access and the final wall openings. */
 export function radialWallGates(st: StreetRec, ring: Polygon): WallLine['gates'] {
   const gates: WallLine['gates'] = [];
   const add = (p: Vec2, i: number) => {
-    if (gates.some((g) => dist(g.p, p) < 12)) return;
-    const a = st.path[i - 1], b = st.path[i], length = dist(a, b);
+    if (gates.some(g => dist(g.p, p) < 12)) return;
+    const a = st.path[i - 1],
+      b = st.path[i],
+      length = dist(a, b);
     if (length < 1e-9) return;
     gates.push({ p, dir: { x: (b.x - a.x) / length, y: (b.y - a.y) / length }, width: st.widths[i], street: st.id });
   };
-  for (let i = 1; i < st.path.length; i++) for (let k = 0; k < ring.length; k++) {
-    const a = st.path[i - 1], b = st.path[i];
-    const hit = segSegT(a, b, ring[k], ring[(k + 1) % ring.length]);
-    if (hit) add({ x: a.x + (b.x - a.x) * hit.t, y: a.y + (b.y - a.y) * hit.t }, i);
-  }
+  for (let i = 1; i < st.path.length; i++)
+    for (let k = 0; k < ring.length; k++) {
+      const a = st.path[i - 1],
+        b = st.path[i];
+      const hit = segSegT(a, b, ring[k], ring[(k + 1) % ring.length]);
+      if (hit) add({ x: a.x + (b.x - a.x) * hit.t, y: a.y + (b.y - a.y) * hit.t }, i);
+    }
   // insidePieces snaps its terminal cut to the one-centimetre grid. Recover that contact only within
   // the maximum displacement of that rounding, along the actual terminal street segment.
   const snapReach = Math.SQRT2 / (2 * SNAP);
   for (const end of [0, st.path.length - 1]) {
     if (st.path.length < 2) break;
-    const e = st.path[end], n = st.path[end === 0 ? 1 : end - 1], length = dist(n, e);
+    const e = st.path[end],
+      n = st.path[end === 0 ? 1 : end - 1],
+      length = dist(n, e);
     if (length < 1e-9 || distToRing(ring, e) > snapReach || !pointInRing(ring, n) || distToRing(ring, n) <= snapReach) continue;
-    const beyond = { x: e.x + (e.x - n.x) * (2 / SNAP) / length, y: e.y + (e.y - n.y) * (2 / SNAP) / length };
+    const beyond = { x: e.x + ((e.x - n.x) * (2 / SNAP)) / length, y: e.y + ((e.y - n.y) * (2 / SNAP)) / length };
     for (let k = 0; k < ring.length; k++) {
       const hit = segSegT(n, beyond, ring[k], ring[(k + 1) % ring.length]);
       if (!hit) continue;
@@ -101,17 +125,17 @@ const waterLot = (lot: ReservedLot) => lot.piece === 'place' && WATER_LOT_KINDS.
 
 function largestSimple(pieces: MultiPoly): Polygon | null {
   let best: Polygon | null = null;
-  for (const ph of pieces) for (const simple of ph.holes.length ? openHoles(ph) : [ph]) {
-    if (!simple.holes.length && (!best || area(simple.outer) > area(best))) best = simple.outer;
-  }
+  for (const ph of pieces)
+    for (const simple of ph.holes.length ? openHoles(ph) : [ph]) {
+      if (!simple.holes.length && (!best || area(simple.outer) > area(best))) best = simple.outer;
+    }
   return best;
 }
 
 /** A water cut must keep the piece reached by the existing approach, rather than an isolated larger island. */
 function servedLotPiece(lot: ReservedLot, pieces: MultiPoly): Polygon | null {
-  const simple = pieces.flatMap((ph) => ph.holes.length ? openHoles(ph) : [ph]);
-  const reached = !lot.cuts.length ? simple : simple.filter((ph) => lot.cuts.some((cut) =>
-    cut.some((p) => pointInRing(ph.outer, p) || distToRing(ph.outer, p) < 0.6) || insidePieces(ph.outer, cut).length > 0));
+  const simple = pieces.flatMap(ph => (ph.holes.length ? openHoles(ph) : [ph]));
+  const reached = !lot.cuts.length ? simple : simple.filter(ph => lot.cuts.some(cut => cut.some(p => pointInRing(ph.outer, p) || distToRing(ph.outer, p) < 0.6) || insidePieces(ph.outer, cut).length > 0));
   return largestSimple(reached);
 }
 
@@ -132,7 +156,7 @@ export function clipMarketToLand(candidate: Polygon, core: MultiPoly, water: Mul
   return safe && safe.length >= 3 && (unchangedRing(dry, cleaned) || area(safe) > 0.4 * targetArea) ? safe : null;
 }
 
-const inMP = (m: MultiPoly, p: Vec2) => m.some((ph) => pointInRing(ph.outer, p) && !ph.holes.some((h) => pointInRing(h, p)));
+const inMP = (m: MultiPoly, p: Vec2) => m.some(ph => pointInRing(ph.outer, p) && !ph.holes.some(h => pointInRing(h, p)));
 
 /** Smooth a road polyline for use as an urban street. */
 export function smoothStreet(pl: Polyline): Polyline {
@@ -147,7 +171,10 @@ function pointFromEnd(pl: Polyline, s: number): Vec2 {
   let acc = 0;
   for (let i = pl.length - 1; i > 0; i--) {
     const d = dist(pl[i], pl[i - 1]);
-    if (acc + d >= s) { const t = (s - acc) / d; return { x: pl[i].x + (pl[i - 1].x - pl[i].x) * t, y: pl[i].y + (pl[i - 1].y - pl[i].y) * t }; }
+    if (acc + d >= s) {
+      const t = (s - acc) / d;
+      return { x: pl[i].x + (pl[i - 1].x - pl[i].x) * t, y: pl[i].y + (pl[i - 1].y - pl[i].y) * t };
+    }
     acc += d;
   }
   return pl[0];
@@ -155,7 +182,7 @@ function pointFromEnd(pl: Polyline, s: number): Vec2 {
 
 /** Market polygon: hull of the points where the radials are at ~r from the nucleus, scaled to the target area. */
 export function makeMarket(center: Vec2, radials: Polyline[], target: number, rng: Rng, mainAngle: number): Polygon {
-  const reaching = radials.filter((pl) => dist(pl[pl.length - 1], center) < 6);
+  const reaching = radials.filter(pl => dist(pl[pl.length - 1], center) < 6);
   let s = Math.sqrt(target / Math.PI) * 1.15;
   let poly: Polygon = [];
   for (let it = 0; it < 6; it++) {
@@ -167,8 +194,10 @@ export function makeMarket(center: Vec2, radials: Polyline[], target: number, rn
     if (pts.length < 3) {
       // through-route: a spindle along the main axis
       const ang = pts.length >= 1 ? Math.atan2(pts[0].y - center.y, pts[0].x - center.x) : mainAngle;
-      const L = s * 1.6, W = s * 0.9;
-      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const L = s * 1.6,
+        W = s * 0.9;
+      const ca = Math.cos(ang),
+        sa = Math.sin(ang);
       const at = (u: number, v: number) => ({ x: center.x + u * ca - v * sa, y: center.y + u * sa + v * ca });
       pts.length = 0;
       pts.push(at(L, 0), at(0.2 * L, W * 0.55), at(-0.25 * L, W * 0.5), at(-L * 0.9, 0), at(-0.2 * L, -W * 0.5), at(0.25 * L, -W * 0.55));
@@ -185,8 +214,14 @@ export function makeMarket(center: Vec2, radials: Polyline[], target: number, rn
 }
 
 function orientedRectP(c: Vec2, ang: number, len: number, wid: number): Polygon {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
-  const pts: [number, number][] = [[-len / 2, -wid / 2], [len / 2, -wid / 2], [len / 2, wid / 2], [-len / 2, wid / 2]];
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
+  const pts: [number, number][] = [
+    [-len / 2, -wid / 2],
+    [len / 2, -wid / 2],
+    [len / 2, wid / 2],
+    [-len / 2, wid / 2],
+  ];
   return orientPos(pts.map(([u, w]) => ({ x: c.x + u * ca - w * sa, y: c.y + u * sa + w * ca })));
 }
 
@@ -196,19 +231,32 @@ function orientedRectP(c: Vec2, ang: number, len: number, wid: number): Polygon 
  */
 function gridRadial(pl: Polyline, enc: MultiPoly, center: Vec2, ang: number): Polyline | null {
   let entry = -1;
-  for (let i = 0; i < pl.length; i++) if (inMP(enc, pl[i])) { entry = i; break; }
+  for (let i = 0; i < pl.length; i++)
+    if (inMP(enc, pl[i])) {
+      entry = i;
+      break;
+    }
   if (entry <= 0) return null;
   // exact gate point on the enclosure boundary
-  const a = pl[entry - 1], b = pl[entry];
+  const a = pl[entry - 1],
+    b = pl[entry];
   let g = b;
-  for (const ph of enc) for (let k = 0; k < ph.outer.length; k++) {
-    const r = segSegT(a, b, ph.outer[k], ph.outer[(k + 1) % ph.outer.length]);
-    if (r) g = { x: a.x + (b.x - a.x) * r.t, y: a.y + (b.y - a.y) * r.t };
-  }
-  const axes = [0, 1, 2, 3].map((k) => ({ x: Math.cos(ang + (k * Math.PI) / 2), y: Math.sin(ang + (k * Math.PI) / 2) }));
+  for (const ph of enc)
+    for (let k = 0; k < ph.outer.length; k++) {
+      const r = segSegT(a, b, ph.outer[k], ph.outer[(k + 1) % ph.outer.length]);
+      if (r) g = { x: a.x + (b.x - a.x) * r.t, y: a.y + (b.y - a.y) * r.t };
+    }
+  const axes = [0, 1, 2, 3].map(k => ({ x: Math.cos(ang + (k * Math.PI) / 2), y: Math.sin(ang + (k * Math.PI) / 2) }));
   const toC = { x: center.x - g.x, y: center.y - g.y };
-  let d = axes[0], bd = -Infinity;
-  for (const ax of axes) { const v = ax.x * toC.x + ax.y * toC.y; if (v > bd) { bd = v; d = ax; } }
+  let d = axes[0],
+    bd = -Infinity;
+  for (const ax of axes) {
+    const v = ax.x * toC.x + ax.y * toC.y;
+    if (v > bd) {
+      bd = v;
+      d = ax;
+    }
+  }
   const t1 = d.x * toC.x + d.y * toC.y;
   const corner = { x: g.x + d.x * t1, y: g.y + d.y * t1 };
   const tail = dist(corner, center) > 3 ? [g, corner, center] : [g, center];
@@ -234,7 +282,8 @@ function radialPath(path: Polyline, near: (p: Vec2) => boolean): Polyline | null
 /** Cut a polyline where it first enters polygon `poly` (walking from start); returns the part before. */
 function cutAtPolygon(pl: Polyline, poly: Polygon): Polyline {
   for (let i = 1; i < pl.length; i++) {
-    const a = pl[i - 1], b = pl[i];
+    const a = pl[i - 1],
+      b = pl[i];
     let bt = Infinity;
     for (let k = 0; k < poly.length; k++) {
       const r = segSegT(a, b, poly[k], poly[(k + 1) % poly.length]);
@@ -253,8 +302,8 @@ function cutAtPolygon(pl: Polyline, poly: Polygon): Polyline {
 function ringRuns(ring: Polygon, ok: (p: Vec2) => boolean, minLen: number): Polyline[] {
   const n = ring.length;
   const flags = ring.map(ok);
-  if (flags.every((f) => f)) return [ring.concat([ring[0]])];
-  if (!flags.some((f) => f)) return [];
+  if (flags.every(f => f)) return [ring.concat([ring[0]])];
+  if (!flags.some(f => f)) return [];
   let s0 = flags.findIndex((f, i) => !f && flags[(i + 1) % n]);
   s0 = (s0 + 1) % n;
   const runs: Polyline[] = [];
@@ -262,7 +311,10 @@ function ringRuns(ring: Polygon, ok: (p: Vec2) => boolean, minLen: number): Poly
   for (let k = 0; k <= n; k++) {
     const i = (s0 + k) % n;
     if (flags[i] && k < n) cur.push(ring[i]);
-    else { if (cur.length >= 2 && polylineLength(cur) >= minLen) runs.push(cur); cur = []; }
+    else {
+      if (cur.length >= 2 && polylineLength(cur) >= minLen) runs.push(cur);
+      cur = [];
+    }
   }
   return runs;
 }
@@ -310,8 +362,8 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
   const P = ctx.params;
   let footprint = inp.faubourg.length ? union(inp.enclosure, inp.faubourg) : inp.enclosure;
   const preLots = inp.preLots ?? [];
-  const nearPre = (p: Vec2, d: number) => preLots.some((L) => pointInRing(L, p) || distToRing(L, p) < d);
-  const nearFoot = (p: Vec2) => footprint.some((ph) => pointInRing(ph.outer, p) || distToRing(ph.outer, p) < 25);
+  const nearPre = (p: Vec2, d: number) => preLots.some(L => pointInRing(L, p) || distToRing(L, p) < d);
+  const nearFoot = (p: Vec2) => footprint.some(ph => pointInRing(ph.outer, p) || distToRing(ph.outer, p) < 25);
   // ---- radial candidates from the roads
   const rawRadials: { pl: Polyline; major: boolean }[] = [];
   for (const rd of inp.roads) {
@@ -320,7 +372,7 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
     let sp = smoothStreet(pl);
     if (inp.axis) {
       // planned towns with axes: the road stops at the gate on the axis enclosure; the axes run inside
-      const hull = orientPos(convexHull(inp.axis.extent.flatMap((ph) => ph.outer)));
+      const hull = orientPos(convexHull(inp.axis.extent.flatMap(ph => ph.outer)));
       if (hull.length >= 3 && pointInRing(hull, sp[sp.length - 1])) sp = cutAtPolygon(sp, hull);
       if (sp.length < 2 || polylineLength(sp) < 15) continue;
     } else if (inp.gridCore ? inp.gridCore.length : P.streetOp === 'grid') sp = gridRadial(sp, inp.gridCore ?? inp.enclosure, ctx.center, inp.mainAngle) ?? sp;
@@ -330,7 +382,8 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
       if (big && pointInRing(big.outer, sp[sp.length - 1])) {
         // the road enters through the gate and stops 12 m inside (a gate forecourt)
         const cut = cutAtPolygon(sp, big.outer);
-        const e = cut[cut.length - 1], q = cut[cut.length - 2] ?? e;
+        const e = cut[cut.length - 1],
+          q = cut[cut.length - 2] ?? e;
         const l = dist(e, q) || 1;
         sp = cut.concat([{ x: e.x + ((e.x - q.x) / l) * 12, y: e.y + ((e.y - q.y) / l) * 12 }]);
       }
@@ -343,16 +396,23 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
   for (const r of rawRadials) {
     const e = r.pl[r.pl.length - 1];
     if (dist(e, ctx.center) < 6) continue;
-    let best: Vec2 | null = null, bd = 15;
+    let best: Vec2 | null = null,
+      bd = 15;
     for (const o of rawRadials) {
       if (o === r) continue;
       for (let i = 1; i < o.pl.length; i++) {
-        const a = o.pl[i - 1], b = o.pl[i];
-        const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+        const a = o.pl[i - 1],
+          b = o.pl[i];
+        const dx = b.x - a.x,
+          dy = b.y - a.y,
+          l2 = dx * dx + dy * dy || 1;
         const t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.y - a.y) * dy) / l2));
         const q = { x: a.x + t * dx, y: a.y + t * dy };
         const d = dist(q, e);
-        if (d < bd) { bd = d; best = q; }
+        if (d < bd) {
+          bd = d;
+          best = q;
+        }
       }
     }
     if (best) r.pl = r.pl.slice(0, -1).concat([best]);
@@ -363,33 +423,53 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
   if (inp.nucleus && inp.nucleus.area > 0) {
     const nu = inp.nucleus;
     const A = nu.area;
-    const shapeAt = (c: Vec2) => nu.shape === 'circle' ? disk(c, Math.sqrt(A / Math.PI), 24)
-      : orientedRectP(c, nu.angle, Math.sqrt(A * (nu.shape === 'rect' ? 1.3 : 1)), Math.sqrt(A / (nu.shape === 'rect' ? 1.3 : 1)));
+    const shapeAt = (c: Vec2) => (nu.shape === 'circle' ? disk(c, Math.sqrt(A / Math.PI), 24) : orientedRectP(c, nu.angle, Math.sqrt(A * (nu.shape === 'rect' ? 1.3 : 1)), Math.sqrt(A / (nu.shape === 'rect' ? 1.3 : 1))));
     // planned nuclei (castle, temple, forum) are nudged — by at most half their size — onto dry, flat land
     let nc = ctx.center;
     if (nu.shape !== 'hull') {
       const half = Math.sqrt(A) / 2;
       const wet = (c: Vec2): number => {
         let w = 0;
-        for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) {
-          const q = { x: c.x + (i / 4) * half, y: c.y + (j / 4) * half };
-          if (ctx.isWater(q) || !inMP(core, q)) w++;
-        }
+        for (let i = -4; i <= 4; i++)
+          for (let j = -4; j <= 4; j++) {
+            const q = { x: c.x + (i / 4) * half, y: c.y + (j / 4) * half };
+            if (ctx.isWater(q) || !inMP(core, q)) w++;
+          }
         return w;
       };
       let bw = wet(nc) * 100;
-      for (let r = 0.1; r <= 0.5 && bw > 0; r += 0.1) for (let k = 0; k < 12; k++) {
-        const c = { x: ctx.center.x + Math.cos((k * Math.PI) / 6) * r * half * 2, y: ctx.center.y + Math.sin((k * Math.PI) / 6) * r * half * 2 };
-        const sc = wet(c) * 100 + r * 10;
-        if (sc < bw) { bw = sc; nc = c; }
-      }
+      for (let r = 0.1; r <= 0.5 && bw > 0; r += 0.1)
+        for (let k = 0; k < 12; k++) {
+          const c = { x: ctx.center.x + Math.cos((k * Math.PI) / 6) * r * half * 2, y: ctx.center.y + Math.sin((k * Math.PI) / 6) * r * half * 2 };
+          const sc = wet(c) * 100 + r * 10;
+          if (sc < bw) {
+            bw = sc;
+            nc = c;
+          }
+        }
     }
-    const mk = nu.shape === 'hull' ? makeMarket(ctx.center, rawRadials.map((r) => r.pl), A, rng.fork('market'), inp.mainAngle) : shapeAt(nc);
+    const mk =
+      nu.shape === 'hull'
+        ? makeMarket(
+            ctx.center,
+            rawRadials.map(r => r.pl),
+            A,
+            rng.fork('market'),
+            inp.mainAngle,
+          )
+        : shapeAt(nc);
     market = clipMarketToLand(mk, core, ctx.water, A);
   } else if (inp.marketArea > 0) {
-    const mk = P.streetOp === 'grid'
-      ? orientedRectP(ctx.center, inp.mainAngle, Math.sqrt(inp.marketArea * 1.25), Math.sqrt(inp.marketArea / 1.25))
-      : makeMarket(ctx.center, rawRadials.map((r) => r.pl), inp.marketArea, rng.fork('market'), inp.mainAngle);
+    const mk =
+      P.streetOp === 'grid'
+        ? orientedRectP(ctx.center, inp.mainAngle, Math.sqrt(inp.marketArea * 1.25), Math.sqrt(inp.marketArea / 1.25))
+        : makeMarket(
+            ctx.center,
+            rawRadials.map(r => r.pl),
+            inp.marketArea,
+            rng.fork('market'),
+            inp.mainAngle,
+          );
     market = clipMarketToLand(mk, core, ctx.water, inp.marketArea);
   }
   // ---- register radials (cut at the market)
@@ -410,19 +490,28 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
       pl = crank(pl, sPos, (kr.chance(0.5) ? 1 : -1) * kr.range(9, 14), kr.range(18, 28));
     }
     const w = P.widthByRank[r.major ? 0 : 1] * P.widthScale;
-    const id = streets.add(pl, jitterWidths(pl, w, P.widthJitter, () => wr.float()), r.major ? 0 : 1, 'radial', 1);
-    radials.push(id); radialLines.push(pl);
+    const id = streets.add(
+      pl,
+      jitterWidths(pl, w, P.widthJitter, () => wr.float()),
+      r.major ? 0 : 1,
+      'radial',
+      1,
+    );
+    radials.push(id);
+    radialLines.push(pl);
   }
   // ---- axes (planned towns): gate to gate through the nucleus
   const axisEnds: Vec2[] = [];
   if (inp.axis) {
     // the axes span the whole planned enclosure (crossing a river on bridges)
-    const hull = convexHull(inp.axis.extent.flatMap((ph) => ph.outer));
-    if (hull.length >= 3) for (const ax of axisLines(ctx.center, inp.axis.angle, orientPos(hull), market, inp.axis.count ?? 4)) {
-      const id = streets.add(ax.line, inp.axis.width, 0, 'radial', 1);
-      radials.push(id); radialLines.push(ax.line);
-      axisEnds.push(ax.end);
-    }
+    const hull = convexHull(inp.axis.extent.flatMap(ph => ph.outer));
+    if (hull.length >= 3)
+      for (const ax of axisLines(ctx.center, inp.axis.angle, orientPos(hull), market, inp.axis.count ?? 4)) {
+        const id = streets.add(ax.line, inp.axis.width, 0, 'radial', 1);
+        radials.push(id);
+        radialLines.push(ax.line);
+        axisEnds.push(ax.end);
+      }
   }
   // ---- spiral arms (elven): paths winding out from the grove
   if (inp.spiral && market) {
@@ -438,26 +527,42 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
       const line = armD.length >= 2 ? afterExit(armD, [{ outer: market, holes: [] }]) : null;
       if (!line) continue;
       let piece: Polyline | null = null;
-      for (const comp of inp.enclosure) { const pcs = insidePieces(comp.outer, line); if (pcs.length && pcs[0].pts.length >= 2) { piece = pcs[0].pts; break; } }
+      for (const comp of inp.enclosure) {
+        const pcs = insidePieces(comp.outer, line);
+        if (pcs.length && pcs[0].pts.length >= 2) {
+          piece = pcs[0].pts;
+          break;
+        }
+      }
       if (!piece || polylineLength(piece) < 60) continue;
       const pl = simplify(piece, 0.3);
       const w = P.widthByRank[1] * P.widthScale;
-      const id = streets.add(pl, jitterWidths(pl, w, P.widthJitter, () => sr.float()), 1, 'radial', 1);
-      radials.push(id); radialLines.push(pl);
+      const id = streets.add(
+        pl,
+        jitterWidths(pl, w, P.widthJitter, () => sr.float()),
+        1,
+        'radial',
+        1,
+      );
+      radials.push(id);
+      radialLines.push(pl);
     }
   }
   // ---- extra radials in wide angular gaps (large towns)
   if (inp.extraRadials) {
     const encR = Math.sqrt(mpArea(inp.enclosure) / Math.PI);
     if (encR > 170) {
-      const angs = radialLines.map((pl) => {
-        const q = pl.find((p) => dist(p, ctx.center) > Math.min(encR * 0.7, 150)) ?? pl[0];
-        return Math.atan2(q.y - ctx.center.y, q.x - ctx.center.x);
-      }).sort((a, b) => a - b);
+      const angs = radialLines
+        .map(pl => {
+          const q = pl.find(p => dist(p, ctx.center) > Math.min(encR * 0.7, 150)) ?? pl[0];
+          return Math.atan2(q.y - ctx.center.y, q.x - ctx.center.x);
+        })
+        .sort((a, b) => a - b);
       const gaps: [number, number][] = [];
       if (!angs.length) gaps.push([0, 2 * Math.PI]);
       for (let i = 0; i < angs.length; i++) {
-        const a = angs[i], b = i + 1 < angs.length ? angs[i + 1] : angs[0] + 2 * Math.PI;
+        const a = angs[i],
+          b = i + 1 < angs.length ? angs[i + 1] : angs[0] + 2 * Math.PI;
         gaps.push([a, b]);
       }
       const er = rng.fork('extraRadials');
@@ -470,14 +575,21 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
           const th = a + (gap * j) / (k + 1) + er.range(-0.2, 0.2);
           let pl = traceRadial(ctx, th, market, inp.enclosure, er);
           if (!pl) continue;
-          if (preLots.length && pl.some((q) => preLots.some((L) => pointInRing(L, q) || distToRing(L, q) < 12))) continue;
+          if (preLots.length && pl.some(q => preLots.some(L => pointInRing(L, q) || distToRing(L, q) < 12))) continue;
           if (inp.phases.length >= 2 && inp.phases[0].fossil) {
             pl = afterExit(pl, inp.phases[0].region);
             if (!pl || polylineLength(pl) < 60) continue;
           }
           const w = P.widthByRank[1] * P.widthScale * 0.9;
-          const id = streets.add(pl, jitterWidths(pl, w, P.widthJitter, () => er.float()), 1, 'radial', 1);
-          radials.push(id); radialLines.push(pl);
+          const id = streets.add(
+            pl,
+            jitterWidths(pl, w, P.widthJitter, () => er.float()),
+            1,
+            'radial',
+            1,
+          );
+          radials.push(id);
+          radialLines.push(pl);
         }
       }
     }
@@ -485,7 +597,7 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
   // ---- fossilized rings (older enclosure lines inside the latest one)
   const n = inp.phases.length;
   const enc = inp.enclosure;
-  const encInnerOK = (p: Vec2) => inMP(enc, p) && enc.every((ph) => distToRing(ph.outer, p) > 4) && !nearWater(ctx, p, 4) && !nearPre(p, 6);
+  const encInnerOK = (p: Vec2) => inMP(enc, p) && enc.every(ph => distToRing(ph.outer, p) > 4) && !nearWater(ctx, p, 4) && !nearPre(p, 6);
   for (let k = 0; k < n - 1; k++) {
     const ph = inp.phases[k];
     if (!ph.fossil) continue;
@@ -497,20 +609,46 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
         for (const pl0 of arcs) {
           const pl = pl0;
           const w = P.widthByRank[1] * P.widthScale * 0.95;
-          streets.add(pl, jitterWidths(pl, w, P.widthJitter, () => wr.float()), 1, 'ring', k + 1);
+          streets.add(
+            pl,
+            jitterWidths(pl, w, P.widthJitter, () => wr.float()),
+            1,
+            'ring',
+            k + 1,
+          );
         }
         // the stretches of the old line that were built over keep a narrow lane (no seam between two quarters
         // meeting without a street: their plots front the lane)
         if (arcs.length && arcs[0] !== full) {
           const cum = [0];
           for (let i = 1; i < full.length; i++) cum.push(cum[i - 1] + dist(full[i - 1], full[i]));
-          const at = (q: Vec2) => { let bs = 0, bd = Infinity; for (let i = 1; i < full.length; i++) { const a2 = full[i - 1], b2 = full[i]; const dx = b2.x - a2.x, dy = b2.y - a2.y, l2 = dx * dx + dy * dy || 1; const t = Math.max(0, Math.min(1, ((q.x - a2.x) * dx + (q.y - a2.y) * dy) / l2)); const d = Math.hypot(q.x - a2.x - t * dx, q.y - a2.y - t * dy); if (d < bd) { bd = d; bs = cum[i - 1] + t * Math.sqrt(l2); } } return bs; };
-          const spans = arcs.map((a2) => [at(a2[0]), at(a2[a2.length - 1])].sort((x, y) => x - y) as [number, number]).sort((x, y) => x[0] - y[0]);
+          const at = (q: Vec2) => {
+            let bs = 0,
+              bd = Infinity;
+            for (let i = 1; i < full.length; i++) {
+              const a2 = full[i - 1],
+                b2 = full[i];
+              const dx = b2.x - a2.x,
+                dy = b2.y - a2.y,
+                l2 = dx * dx + dy * dy || 1;
+              const t = Math.max(0, Math.min(1, ((q.x - a2.x) * dx + (q.y - a2.y) * dy) / l2));
+              const d = Math.hypot(q.x - a2.x - t * dx, q.y - a2.y - t * dy);
+              if (d < bd) {
+                bd = d;
+                bs = cum[i - 1] + t * Math.sqrt(l2);
+              }
+            }
+            return bs;
+          };
+          const spans = arcs.map(a2 => [at(a2[0]), at(a2[a2.length - 1])].sort((x, y) => x - y) as [number, number]).sort((x, y) => x[0] - y[0]);
           let s0 = 0;
           const L = cum[cum.length - 1];
           const lw = P.widthByRank[3] * P.widthScale;
           for (const [a2, b2] of [...spans, [L, L] as [number, number]]) {
-            if (a2 - s0 > 12) { const lane = slicePl(full, cum, s0, a2); if (lane.length >= 2) streets.add(lane, lw, 3, 'lane', k + 1); }
+            if (a2 - s0 > 12) {
+              const lane = slicePl(full, cum, s0, a2);
+              if (lane.length >= 2) streets.add(lane, lw, 3, 'lane', k + 1);
+            }
             s0 = Math.max(s0, b2);
           }
         }
@@ -521,30 +659,43 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
   // ---- switchback ramp (dwarven): from the lowest to the highest point of the enclosure, legs along the contour
   if (inp.switchbacks) {
     const sw = inp.switchbacks;
-    const u = { x: Math.cos(sw.angle), y: Math.sin(sw.angle) }, v = { x: -u.y, y: u.x };
+    const u = { x: Math.cos(sw.angle), y: Math.sin(sw.angle) },
+      v = { x: -u.y, y: u.x };
     let big = inp.enclosure[0];
     for (const ph of inp.enclosure) if (area(ph.outer) > area(big.outer)) big = ph;
     if (big) {
-      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      let u0 = Infinity,
+        u1 = -Infinity,
+        v0 = Infinity,
+        v1 = -Infinity;
       for (const q of big.outer) {
-        const pu = (q.x - ctx.center.x) * u.x + (q.y - ctx.center.y) * u.y, pv = (q.x - ctx.center.x) * v.x + (q.y - ctx.center.y) * v.y;
-        u0 = Math.min(u0, pu); u1 = Math.max(u1, pu); v0 = Math.min(v0, pv); v1 = Math.max(v1, pv);
+        const pu = (q.x - ctx.center.x) * u.x + (q.y - ctx.center.y) * u.y,
+          pv = (q.x - ctx.center.x) * v.x + (q.y - ctx.center.y) * v.y;
+        u0 = Math.min(u0, pu);
+        u1 = Math.max(u1, pu);
+        v0 = Math.min(v0, pv);
+        v1 = Math.max(v1, pv);
       }
       const at = (pu: number, pv: number): Vec2 => ({ x: ctx.center.x + u.x * pu + v.x * pv, y: ctx.center.y + u.y * pu + v.y * pv });
-      const uA = u0 + (u1 - u0) * 0.22, uB = u1 - (u1 - u0) * 0.22;
+      const uA = u0 + (u1 - u0) * 0.22,
+        uB = u1 - (u1 - u0) * 0.22;
       // climb from the lower side (v sign by the terrain) toward the upper side
-      const hLow = ctx.heightAt(at(0, v0 + 20)), hHigh = ctx.heightAt(at(0, v1 - 20));
+      const hLow = ctx.heightAt(at(0, v0 + 20)),
+        hHigh = ctx.heightAt(at(0, v1 - 20));
       const dir = hLow <= hHigh ? 1 : -1;
-      const vs = dir > 0 ? v0 : v1, ve = dir > 0 ? v1 : v0;
+      const vs = dir > 0 ? v0 : v1,
+        ve = dir > 0 ? v1 : v0;
       const zig: Vec2[] = [];
       // start at the lowest road end (the lower gate), if any
-      const ends = radialLines.map((pl) => pl[pl.length - 1]).sort((a2, b2) => ctx.heightAt(a2) - ctx.heightAt(b2));
+      const ends = radialLines.map(pl => pl[pl.length - 1]).sort((a2, b2) => ctx.heightAt(a2) - ctx.heightAt(b2));
       if (ends.length) zig.push(ends[0]);
       let side = 0;
       for (let k = 0; ; k++) {
         const pv = vs + dir * sw.pitch * (k + 0.5);
         if ((ve - pv) * dir < sw.pitch * 0.3) break;
-        zig.push(at(side ? uB : uA, pv)); zig.push(at(side ? uA : uB, pv)); side = 1 - side;
+        zig.push(at(side ? uB : uA, pv));
+        zig.push(at(side ? uA : uB, pv));
+        side = 1 - side;
       }
       // keep the part inside the enclosure (the first long inside piece)
       if (zig.length >= 3) {
@@ -553,7 +704,12 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
         for (const p2 of insidePieces(big.outer, zig)) {
           let cur: Vec2[] = [];
           const dense = resampleAt(p2.pts, 4);
-          for (const q of dense) { if (ctx.isWater(q)) { if (cur.length >= 2) dryRuns.push({ pts: cur }); cur = []; } else cur.push(q); }
+          for (const q of dense) {
+            if (ctx.isWater(q)) {
+              if (cur.length >= 2) dryRuns.push({ pts: cur });
+              cur = [];
+            } else cur.push(q);
+          }
           if (cur.length >= 2) dryRuns.push({ pts: cur });
         }
         dryRuns.sort((a2, b2) => polylineLength(b2.pts) - polylineLength(a2.pts));
@@ -562,13 +718,17 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
         // quarter without a connected street, and the quarter would never be split)
         const gateP = ends.length ? ends[0] : null;
         const touches = (r: { pts: Vec2[] }) => !!gateP && (dist(r.pts[0], gateP) < 15 || dist(r.pts[r.pts.length - 1], gateP) < 15);
-        let pc0 = dryRuns.find((r) => touches(r) && polylineLength(r.pts) > 80) ?? dryRuns[0];
+        let pc0 = dryRuns.find(r => touches(r) && polylineLength(r.pts) > 80) ?? dryRuns[0];
         if (pc0 && gateP && !touches(pc0)) {
-          const e0 = pc0.pts[0], e1 = pc0.pts[pc0.pts.length - 1];
+          const e0 = pc0.pts[0],
+            e1 = pc0.pts[pc0.pts.length - 1];
           const near = dist(e0, gateP) <= dist(e1, gateP) ? e0 : e1;
           const n = Math.max(2, Math.ceil(dist(near, gateP) / 3));
           let dry = true;
-          for (let k = 1; k < n && dry; k++) { const q = { x: gateP.x + ((near.x - gateP.x) * k) / n, y: gateP.y + ((near.y - gateP.y) * k) / n }; if (ctx.isWater(q) || !pointInRing(big.outer, q)) dry = false; }
+          for (let k = 1; k < n && dry; k++) {
+            const q = { x: gateP.x + ((near.x - gateP.x) * k) / n, y: gateP.y + ((near.y - gateP.y) * k) / n };
+            if (ctx.isWater(q) || !pointInRing(big.outer, q)) dry = false;
+          }
           if (dry) pc0 = { pts: near === e0 ? [gateP, ...pc0.pts] : [...pc0.pts, gateP] };
         }
         // ... and it must cut the hold through: a ramp ending inside the hold (its upper stretch lost to a stream)
@@ -580,9 +740,11 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
           for (const atEnd of [true, false]) {
             const e = atEnd ? pts0[pts0.length - 1] : pts0[0];
             if (distToRing(ring, e) < 0.05) continue;
-            let best: Vec2 | null = null, bd = Infinity;
+            let best: Vec2 | null = null,
+              bd = Infinity;
             for (let i = 0; i < ring.length; i++) {
-              const a2 = ring[i], b2 = ring[(i + 1) % ring.length];
+              const a2 = ring[i],
+                b2 = ring[(i + 1) % ring.length];
               const m = Math.max(1, Math.ceil(dist(a2, b2) / 4));
               for (let j = 0; j <= m; j++) {
                 const q = { x: a2.x + ((b2.x - a2.x) * j) / m, y: a2.y + ((b2.y - a2.y) * j) / m };
@@ -591,27 +753,35 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
                 const n = Math.max(2, Math.ceil(d / 3));
                 let dry = true;
                 for (let k = 1; k < n && dry; k++) if (ctx.isWater({ x: e.x + ((q.x - e.x) * k) / n, y: e.y + ((q.y - e.y) * k) / n })) dry = false;
-                if (dry) { bd = d; best = q; }
+                if (dry) {
+                  bd = d;
+                  best = q;
+                }
               }
             }
-            if (best) { if (atEnd) pts0.push(best); else pts0.unshift(best); }
+            if (best) {
+              if (atEnd) pts0.push(best);
+              else pts0.unshift(best);
+            }
           }
         }
         const pc = pc0 ? { pts: simplify(pc0.pts, 0.3) } : undefined;
         if (pc && polylineLength(pc.pts) > 80) {
           const id = streets.add(pc.pts, sw.width, 1, 'radial', 1);
           rampId = id;
-          radials.push(id); radialLines.push(pc.pts);
+          radials.push(id);
+          radialLines.push(pc.pts);
         }
       }
     }
   }
   // ---- concentric rings around the nucleus (pradakshina streets: Madurai's Chitrai, Avani Moola, Masi streets)
   if (inp.nucleusRings && market) {
-    const encOK = (p: Vec2) => inMP(enc, p) && enc.every((ph) => distToRing(ph.outer, p) > 6) && !nearWater(ctx, p, 5) && !nearPre(p, 6);
+    const encOK = (p: Vec2) => inMP(enc, p) && enc.every(ph => distToRing(ph.outer, p) > 6) && !nearWater(ctx, p, 5) && !nearPre(p, 6);
     const nr = rng.fork('nrings');
     // at least two rings between the nucleus and the edge of a small town (40 m minimum spacing)
-    const halfEnc = Math.sqrt(mpArea(enc)) / 2, halfNuc = Math.sqrt(area(market)) / 2;
+    const halfEnc = Math.sqrt(mpArea(enc)) / 2,
+      halfNuc = Math.sqrt(area(market)) / 2;
     const spacing = Math.max(40, Math.min(inp.nucleusRings.spacing, (halfEnc - halfNuc) / 2.6));
     for (let k = 1; k < 20; k++) {
       const ringP = outsetConvex(convexHull(market), k * spacing * nr.range(0.92, 1.08) + inp.nucleusRings.width / 2);
@@ -619,13 +789,20 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
       // dense resample so the runs are cut close to the enclosure and the water
       const dense: Vec2[] = [];
       for (let i = 0; i < ringP.length; i++) {
-        const a = ringP[i], b = ringP[(i + 1) % ringP.length];
+        const a = ringP[i],
+          b = ringP[(i + 1) % ringP.length];
         const m = Math.max(1, Math.ceil(dist(a, b) / 6));
         for (let j = 0; j < m; j++) dense.push({ x: a.x + ((b.x - a.x) * j) / m, y: a.y + ((b.y - a.y) * j) / m });
       }
       for (const run of ringRuns(dense, encOK, 50)) {
         const pl = simplify(run, 0.3);
-        streets.add(pl, jitterWidths(pl, inp.nucleusRings.width, P.widthJitter, () => nr.float()), 1, 'ring', 1);
+        streets.add(
+          pl,
+          jitterWidths(pl, inp.nucleusRings.width, P.widthJitter, () => nr.float()),
+          1,
+          'ring',
+          1,
+        );
       }
     }
   }
@@ -640,109 +817,140 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
     let hit = false;
     for (const rid of radials) {
       const r = streets.list[rid];
-      for (let i = 1; i < r.path.length && !hit; i++) for (let j = 1; j < st.path.length && !hit; j++) {
-        if (segSegT(r.path[i - 1], r.path[i], st.path[j - 1], st.path[j])) hit = true;
-      }
+      for (let i = 1; i < r.path.length && !hit; i++)
+        for (let j = 1; j < st.path.length && !hit; j++) {
+          if (segSegT(r.path[i - 1], r.path[i], st.path[j - 1], st.path[j])) hit = true;
+        }
       if (hit) break;
     }
     if (hit) streets.connected.add(st.id);
   }
   // Resolve each curtain's physical openings once, before landmarks can request an approach through them.
   // Reservation and the final walls use the same globally deduplicated radial and axis contacts.
-  const curtainWalls: WallLine[] = enc.map((comp) => {
-    const ring = comp.outer, gates: WallLine['gates'] = [];
+  const curtainWalls: WallLine[] = enc.map(comp => {
+    const ring = comp.outer,
+      gates: WallLine['gates'] = [];
     for (const id of radials) {
       const st = streets.list[id];
-      for (const g of radialWallGates(st, ring)) if (!gates.some((existing) => dist(existing.p, g.p) < 12)) gates.push(g);
+      for (const g of radialWallGates(st, ring)) if (!gates.some(existing => dist(existing.p, g.p) < 12)) gates.push(g);
     }
     // axis ends on the wall are gates (the lines end exactly on it)
-    for (const e of axisEnds) if (distToRing(ring, e) < 1 && !gates.some((g) => dist(g.p, e) < 12)) {
-      const length = dist(ctx.center, e) || 1;
-      gates.push({ p: e, dir: { x: (e.x - ctx.center.x) / length, y: (e.y - ctx.center.y) / length }, width: inp.axis!.width, street: -1 });
-    }
+    for (const e of axisEnds)
+      if (distToRing(ring, e) < 1 && !gates.some(g => dist(g.p, e) < 12)) {
+        const length = dist(ctx.center, e) || 1;
+        gates.push({ p: e, dir: { x: (e.x - ctx.center.x) / length, y: (e.y - ctx.center.y) / length }, width: inp.axis!.width, street: -1 });
+      }
     return { ring, gates };
   });
   // ---- landmark lots (M4): reserved as exact pieces before the quarters; their connectors cut the partition
   const lots: ReservedLot[] = [];
   const extraCuts: Polyline[] = [];
   if (inp.reserve) {
-    const gatePts = curtainWalls.flatMap((wall) => wall.gates.map((gate) => gate.p));
+    const gatePts = curtainWalls.flatMap(wall => wall.gates.map(gate => gate.p));
     for (const l of inp.reserve({ streets, market, marketStreet, radialLines, enclosure: enc, footprint, phases: inp.phases, gates: gatePts, gateWalls: curtainWalls, cuts: extraCuts })) {
       const dry = waterLot(l) ? [{ outer: l.poly, holes: [] }] : dryPieces(l.poly, ctx.water);
       const safe = unchangedRing(dry, l.poly) ? l.poly : servedLotPiece(l, dry);
-      if (safe && safe.length >= 3 && area(safe) > 20) { updateLotRing(l, safe); lots.push(l); }
+      if (safe && safe.length >= 3 && area(safe) > 20) {
+        updateLotRing(l, safe);
+        lots.push(l);
+      }
     }
   }
   // ---- walls and gates
   const walls = inp.walled ? curtainWalls : [];
-  const moatWalls = inp.moatWallOffset ? walls.flatMap((w) => { const out = offsetCurtain(w, inp.moatWallOffset!); return out ? [out] : []; }) : walls;
-  const moat = planMoat(ctx, moatWalls, [...streets.list, ...inp.roads.map((r) => ({ path: r.path, widths: r.path.map(() => r.major ? 10 : 6) }))], lots.map((l) => l.poly), inp.moat, inp.customaryMoat);
+  const moatWalls = inp.moatWallOffset
+    ? walls.flatMap(w => {
+        const out = offsetCurtain(w, inp.moatWallOffset!);
+        return out ? [out] : [];
+      })
+    : walls;
+  const moat = planMoat(
+    ctx,
+    moatWalls,
+    [...streets.list, ...inp.roads.map(r => ({ path: r.path, widths: r.path.map(() => (r.major ? 10 : 6)) }))],
+    lots.map(l => l.poly),
+    inp.moat,
+    inp.customaryMoat,
+  );
   // ---- quarters: phase bands minus the market, cut by the radials
   const cutters: Polygon[] = [];
   // (the ramp's cutter overshoots its ends by 0.5 m: a ramp led exactly onto the wall must still cut the band
   // through, not leave a slit joined by a hairline)
   const overshoot = (pl: Polyline): Polyline => {
     if (pl.length < 2) return pl;
-    const ext = (a: Vec2, b: Vec2): Vec2 => { const l = dist(a, b) || 1; return { x: a.x + ((a.x - b.x) / l) * 0.5, y: a.y + ((a.y - b.y) / l) * 0.5 }; };
+    const ext = (a: Vec2, b: Vec2): Vec2 => {
+      const l = dist(a, b) || 1;
+      return { x: a.x + ((a.x - b.x) / l) * 0.5, y: a.y + ((a.y - b.y) / l) * 0.5 };
+    };
     return [ext(pl[0], pl[1]), ...pl, ext(pl[pl.length - 1], pl[pl.length - 2])];
   };
   for (const id of radials) {
     const rb = ribbon(id === rampId ? overshoot(streets.list[id].path) : streets.list[id].path, 0.04);
     if (rb.length >= 3) cutters.push(rb);
   }
-  for (const c of extraCuts) { const rb = ribbon(c, 0.04); if (rb.length >= 3) cutters.push(rb); }
-  for (const l of lots) for (const c of l.cuts) {
+  for (const c of extraCuts) {
     const rb = ribbon(c, 0.04);
     if (rb.length >= 3) cutters.push(rb);
   }
+  for (const l of lots)
+    for (const c of l.cuts) {
+      const rb = ribbon(c, 0.04);
+      if (rb.length >= 3) cutters.push(rb);
+    }
   const cutMP: MultiPoly = cutters.length ? union(cutters[0], ...cutters.slice(1)) : [];
   const quarters: Quarter[] = [];
-  const bands: { mp: MultiPoly; phase: number; zone: Zone; age: number; place?: boolean; lot?: ReservedLot }[] = inp.phases.map((ph, k) => ({
-    mp: k === 0 && market ? difference(ph.band, market) : ph.band, phase: ph.id, zone: ph.zone, age: ph.age,
-  }));
+  const bands: { mp: MultiPoly; phase: number; zone: Zone; age: number; place?: boolean; lot?: ReservedLot }[] = inp.phases.map((ph, k) => ({ mp: k === 0 && market ? difference(ph.band, market) : ph.band, phase: ph.id, zone: ph.zone, age: ph.age }));
   // ---- open places (partition pieces): just inside the gates, and at crossings of radials with old wall lines
   const places: Polygon[] = [];
   const pr = rng.fork('places');
-  const gP = P.gatePlaces ?? 0, cP = P.crossPlaces ?? 0;
-  const quad = (c: Vec2, u: Vec2, a0: number, a1: number, w0: number, w1: number): Polygon => orientPos([
-    { x: c.x + u.x * a0 - u.y * w0, y: c.y + u.y * a0 + u.x * w0 }, { x: c.x + u.x * a1 - u.y * w1, y: c.y + u.y * a1 + u.x * w1 },
-    { x: c.x + u.x * a1 + u.y * w1, y: c.y + u.y * a1 - u.x * w1 }, { x: c.x + u.x * a0 + u.y * w0, y: c.y + u.y * a0 - u.x * w0 },
-  ]);
-  for (const w of walls) for (const g of w.gates) {
-    if (!pr.chance(gP)) continue;
-    const hw = g.width / 2;
-    // g.dir points into the town (the roads run from the map edge to the centre): a funnel widening inward
-    const D = pr.range(24, 40), w0 = hw + pr.range(4, 7), w1 = hw + pr.range(8, 15);
-    places.push(quad(g.p, g.dir, 4.5, 4.5 + D, w0, w1));
-  }
+  const gP = P.gatePlaces ?? 0,
+    cP = P.crossPlaces ?? 0;
+  const quad = (c: Vec2, u: Vec2, a0: number, a1: number, w0: number, w1: number): Polygon =>
+    orientPos([
+      { x: c.x + u.x * a0 - u.y * w0, y: c.y + u.y * a0 + u.x * w0 },
+      { x: c.x + u.x * a1 - u.y * w1, y: c.y + u.y * a1 + u.x * w1 },
+      { x: c.x + u.x * a1 + u.y * w1, y: c.y + u.y * a1 - u.x * w1 },
+      { x: c.x + u.x * a0 + u.y * w0, y: c.y + u.y * a0 - u.x * w0 },
+    ]);
+  for (const w of walls)
+    for (const g of w.gates) {
+      if (!pr.chance(gP)) continue;
+      const hw = g.width / 2;
+      // g.dir points into the town (the roads run from the map edge to the centre): a funnel widening inward
+      const D = pr.range(24, 40),
+        w0 = hw + pr.range(4, 7),
+        w1 = hw + pr.range(8, 15);
+      places.push(quad(g.p, g.dir, 4.5, 4.5 + D, w0, w1));
+    }
   if (cP > 0) {
     for (const st of streets.list) {
       if (st.role !== 'ring' || st.id === marketStreet) continue;
       for (const rid of radials) {
         const r = streets.list[rid];
-        for (let i = 1; i < r.path.length; i++) for (let j = 1; j < st.path.length; j++) {
-          const x = segSegT(r.path[i - 1], r.path[i], st.path[j - 1], st.path[j]);
-          if (!x || !pr.chance(cP)) continue;
-          const p = { x: r.path[i - 1].x + (r.path[i].x - r.path[i - 1].x) * x.t, y: r.path[i - 1].y + (r.path[i].y - r.path[i - 1].y) * x.t };
-          const l = dist(r.path[i - 1], r.path[i]) || 1;
-          const u = { x: (r.path[i].x - r.path[i - 1].x) / l, y: (r.path[i].y - r.path[i - 1].y) / l };
-          const s2 = pr.range(11, 16);
-          places.push(quad(p, u, -s2 * pr.range(0.8, 1.3), s2 * pr.range(0.8, 1.3), s2 * pr.range(0.7, 1.1), s2 * pr.range(0.7, 1.1)));
-        }
+        for (let i = 1; i < r.path.length; i++)
+          for (let j = 1; j < st.path.length; j++) {
+            const x = segSegT(r.path[i - 1], r.path[i], st.path[j - 1], st.path[j]);
+            if (!x || !pr.chance(cP)) continue;
+            const p = { x: r.path[i - 1].x + (r.path[i].x - r.path[i - 1].x) * x.t, y: r.path[i - 1].y + (r.path[i].y - r.path[i - 1].y) * x.t };
+            const l = dist(r.path[i - 1], r.path[i]) || 1;
+            const u = { x: (r.path[i].x - r.path[i - 1].x) / l, y: (r.path[i].y - r.path[i - 1].y) / l };
+            const s2 = pr.range(11, 16);
+            places.push(quad(p, u, -s2 * pr.range(0.8, 1.3), s2 * pr.range(0.8, 1.3), s2 * pr.range(0.7, 1.1), s2 * pr.range(0.7, 1.1)));
+          }
       }
     }
   }
   if (places.length) {
     let pl: MultiPoly = union(places[0], ...places.slice(1));
     if (market) pl = difference(pl, market);
-    if (lots.length) pl = difference(pl, ...lots.map((l) => l.poly));
+    if (lots.length) pl = difference(pl, ...lots.map(l => l.poly));
     if (ctx.water.length) pl = dryPieces(pl, ctx.water);
     const enclosed = bands.slice();
     for (const b of enclosed) {
       const inter = intersection(b.mp, pl);
       if (!inter.length) continue;
       b.mp = difference(b.mp, pl);
-      const pieces = inter.filter((ph) => area(ph.outer) > 120);
+      const pieces = inter.filter(ph => area(ph.outer) > 120);
       if (pieces.length) bands.push({ mp: pieces, phase: b.phase, zone: b.zone, age: b.age, place: true });
     }
   }
@@ -750,15 +958,15 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
   if (lots.length) {
     // the lots are exact pieces: removed from every band (and the earlier lots from the later ones), then added
     // as bands of their own; lots outside the footprint (precincts in the fields, mills, quays) extend it
-    for (const b of bands) b.mp = difference(b.mp, ...lots.map((l) => l.poly));
+    for (const b of bands) b.mp = difference(b.mp, ...lots.map(l => l.poly));
     const taken: Polygon[] = [];
     for (const l of lots) {
       const mp = taken.length ? difference(l.poly, ...taken) : difference(l.poly);
       taken.push(l.poly);
-      const pcs = mp.filter((ph) => !ph.holes.length && area(ph.outer) > 20);
+      const pcs = mp.filter(ph => !ph.holes.length && area(ph.outer) > 20);
       if (pcs.length) bands.push({ mp: pcs, phase: l.phase, zone: l.zone, age: l.piece === 'quarter' ? 0.4 : 0.5, lot: l.piece === 'quarter' ? undefined : l, place: l.piece === 'place' });
     }
-    footprint = union(footprint, ...lots.map((l) => l.poly));
+    footprint = union(footprint, ...lots.map(l => l.poly));
   }
   // Every source band (including extra lots and faubourgs) stays off natural water and the defensive ditch.
   if (ctx.water.length || moat.length) {
@@ -775,8 +983,7 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
           const kept = tryIntersection(safe, b.mp);
           b.mp = kept.failed ? [] : kept.pieces;
           if (b.mp.length) updateLotRing(b.lot, safe);
-        }
-        else b.mp = [];
+        } else b.mp = [];
       }
       // Preserve the established snapped ditch partition. Only natural-water clipping rebuilds a lot.
       if (moat.length) b.mp = differenceSafeS(b.mp, moat);
@@ -785,24 +992,28 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
   // label sources
   const src = new GridIndex<{ a: Vec2; b: Vec2; lab: number }>(20);
   for (const st of streets.list) for (let i = 1; i < st.path.length; i++) src.insertSeg(st.path[i - 1], st.path[i], { a: st.path[i - 1], b: st.path[i], lab: st.id });
-  const wallRings = walls.map((w) => w.ring);
+  const wallRings = walls.map(w => w.ring);
   const labelOf = (p: Vec2): number => {
-    let best = LAB_OPEN, bd = 0.12;
+    let best = LAB_OPEN,
+      bd = 0.12;
     for (const s of src.queryPt(p, 0.2)) {
       const d = distSeg(p, s.a, s.b);
-      if (d < bd) { bd = d; best = s.lab; }
+      if (d < bd) {
+        bd = d;
+        best = s.lab;
+      }
     }
     if (best !== LAB_OPEN) return best;
     if (nearWaterBoundary(ctx, p, 0.3)) return LAB_WATER;
-    if (wallRings.some((r) => distToRing(r, p) < 0.3)) return LAB_WALL;
+    if (wallRings.some(r => distToRing(r, p) < 0.3)) return LAB_WALL;
     return LAB_OPEN;
   };
   for (const b of bands) {
     let pieces = cutMP.length ? difference(b.mp, cutMP) : b.mp;
     // any remaining hole (a band no radial crosses): open it with a lane
     let guard = 0;
-    while (pieces.some((ph) => ph.holes.length) && guard++ < 6) {
-      const ph = pieces.find((x) => x.holes.length)!;
+    while (pieces.some(ph => ph.holes.length) && guard++ < 6) {
+      const ph = pieces.find(x => x.holes.length)!;
       const h = ph.holes[0];
       let ri = 0;
       for (let i = 1; i < h.length; i++) if (h[i].x > h[ri].x) ri = i;
@@ -818,17 +1029,17 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
       pieces = difference(pieces, rb);
     }
     // pieces that still have holes are split through them (exact partition; the cuts are open land)
-    if (pieces.some((ph) => ph.holes.length)) pieces = pieces.flatMap((ph) => (ph.holes.length ? openHoles(ph) : [ph]));
+    if (pieces.some(ph => ph.holes.length)) pieces = pieces.flatMap(ph => (ph.holes.length ? openHoles(ph) : [ph]));
     // Later street/ditch cuts may snap a previously exact bank back toward water. Restore the actual shoreline
     // before registering any terrestrial quarter; opening new water holes must also preserve that exact bank.
     if (ctx.water.length && (!b.lot || !waterLot(b.lot))) {
-      pieces = dryPieces(pieces, ctx.water).flatMap((ph) => ph.holes.length ? openHoles(ph, 0, true) : [ph]);
+      pieces = dryPieces(pieces, ctx.water).flatMap(ph => (ph.holes.length ? openHoles(ph, 0, true) : [ph]));
     }
     for (const ph of pieces) {
       const pts = ph.outer;
       if (area(pts) < (b.lot ? 20 : 150)) continue;
       const lab = pts.map((p, i) => labelOf(mid(p, pts[(i + 1) % pts.length])));
-      if (!lab.some((l) => l >= 0) && !b.lot) continue; // no street access: not urbanized
+      if (!lab.some(l => l >= 0) && !b.lot) continue; // no street access: not urbanized
       if (b.lot && b.lot.piece !== 'place') quarters.push({ lp: { pts, lab }, phase: b.phase, zone: b.zone, age: b.age, kind: 'lot', lot: b.lot.id, compound: b.lot.kind });
       else if (b.lot) quarters.push({ lp: { pts, lab }, phase: b.phase, zone: b.zone, age: b.age, kind: 'place', lot: b.lot.id });
       else quarters.push({ lp: { pts, lab }, phase: b.phase, zone: b.zone, age: b.age, kind: b.place ? 'place' : 'quarter' });
@@ -840,7 +1051,9 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
 
 const mid = (a: Vec2, b: Vec2): Vec2 => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 function distSeg(p: Vec2, a: Vec2, b: Vec2): number {
-  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    l2 = dx * dx + dy * dy;
   const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
@@ -869,7 +1082,10 @@ function traceRadial(ctx: UrbanCtx, th: number, market: Polygon | null, enc: Mul
   let wob = 0;
   const pts: Vec2[] = [];
   for (let s = 0; s < 3000; s += 8) {
-    if (!inMP(enc, p) && s > 30) { pts.push(p); break; }
+    if (!inMP(enc, p) && s > 30) {
+      pts.push(p);
+      break;
+    }
     pts.push(p);
     const radial = Math.atan2(p.y - c.y, p.x - c.x);
     let dh = radial - h;
@@ -888,7 +1104,7 @@ function traceRadial(ctx: UrbanCtx, th: number, market: Polygon | null, enc: Mul
     const pcs = insidePieces(market, line);
     if (pcs.length) {
       const last = pcs[0].pts[pcs[0].pts.length - 1];
-      const k = line.findIndex((q) => !pointInRing(market, q));
+      const k = line.findIndex(q => !pointInRing(market, q));
       if (k < 0) return null;
       line = [last, ...line.slice(k)];
     }
@@ -896,7 +1112,11 @@ function traceRadial(ctx: UrbanCtx, th: number, market: Polygon | null, enc: Mul
   const out: Vec2[] = [];
   for (const comp of enc) {
     const pcs = insidePieces(comp.outer, line);
-    for (const pc of pcs) if (pc.pts.length >= 2 && polylineLength(pc.pts) > 40) { out.push(...pc.pts); break; }
+    for (const pc of pcs)
+      if (pc.pts.length >= 2 && polylineLength(pc.pts) > 40) {
+        out.push(...pc.pts);
+        break;
+      }
     if (out.length) break;
   }
   return out.length >= 2 ? simplify(chaikin(out, 1, false), 0.3) : null;
@@ -930,19 +1150,23 @@ export function breakRing(pl: Polyline, radials: Polyline[], perKm: number, rng:
   if (nGaps <= 0 || L < 200) return [pl];
   // arclength of the radial crossings
   const cross: number[] = [];
-  for (let i = 1; i < pl.length; i++) for (const r of radials) {
-    for (let j = 1; j < r.length; j++) {
-      const x = segSegT(pl[i - 1], pl[i], r[j - 1], r[j]);
-      if (x) cross.push(cum[i - 1] + x.t * (cum[i] - cum[i - 1]));
+  for (let i = 1; i < pl.length; i++)
+    for (const r of radials) {
+      for (let j = 1; j < r.length; j++) {
+        const x = segSegT(pl[i - 1], pl[i], r[j - 1], r[j]);
+        if (x) cross.push(cum[i - 1] + x.t * (cum[i] - cum[i - 1]));
+      }
+      // radials starting or ending on the ring (T junctions)
+      for (const e of [r[0], r[r.length - 1]]) {
+        const a = pl[i - 1],
+          b = pl[i];
+        const dx = b.x - a.x,
+          dy = b.y - a.y,
+          l2 = dx * dx + dy * dy || 1;
+        const t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.y - a.y) * dy) / l2));
+        if (Math.hypot(e.x - a.x - t * dx, e.y - a.y - t * dy) < 1) cross.push(cum[i - 1] + t * Math.sqrt(l2));
+      }
     }
-    // radials starting or ending on the ring (T junctions)
-    for (const e of [r[0], r[r.length - 1]]) {
-      const a = pl[i - 1], b = pl[i];
-      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.y - a.y) * dy) / l2));
-      if (Math.hypot(e.x - a.x - t * dx, e.y - a.y - t * dy) < 1) cross.push(cum[i - 1] + t * Math.sqrt(l2));
-    }
-  }
   if (!cross.length) return [pl];
   const gaps: [number, number][] = [];
   for (let g = 0; g < nGaps * 4 && gaps.length < nGaps; g++) {
@@ -950,7 +1174,7 @@ export function breakRing(pl: Polyline, radials: Polyline[], perKm: number, rng:
     const s0 = rng.range(20, L - len - 20);
     if (s0 < 20) continue;
     const s1 = s0 + len;
-    if (cross.some((c) => c > s0 - 35 && c < s1 + 35)) continue;
+    if (cross.some(c => c > s0 - 35 && c < s1 + 35)) continue;
     if (gaps.some(([a, b]) => s0 < b + 60 && s1 > a - 60)) continue;
     gaps.push([s0, s1]);
   }
@@ -959,8 +1183,11 @@ export function breakRing(pl: Polyline, radials: Polyline[], perKm: number, rng:
   const out: Polyline[] = [];
   let s = 0;
   // every arc keeps at least one radial crossing (it stays joined to the network)
-  const keep = (a: number, b: number) => b - a > 25 && cross.some((c) => c >= a - 0.5 && c <= b + 0.5);
-  for (const [a, b] of gaps) { if (keep(s, a)) out.push(slicePl(pl, cum, s, a)); s = b; }
+  const keep = (a: number, b: number) => b - a > 25 && cross.some(c => c >= a - 0.5 && c <= b + 0.5);
+  for (const [a, b] of gaps) {
+    if (keep(s, a)) out.push(slicePl(pl, cum, s, a));
+    s = b;
+  }
   if (keep(s, L)) out.push(slicePl(pl, cum, s, L));
   return out;
 }
@@ -968,12 +1195,14 @@ export function breakRing(pl: Polyline, radials: Polyline[], perKm: number, rng:
 /** The part of a polyline (starting inside `region`) after it first leaves the region, starting on its boundary. */
 function afterExit(pl: Polyline, region: MultiPoly): Polyline | null {
   for (let i = 1; i < pl.length; i++) {
-    const a = pl[i - 1], b = pl[i];
+    const a = pl[i - 1],
+      b = pl[i];
     let bt = Infinity;
-    for (const comp of region) for (let k = 0; k < comp.outer.length; k++) {
-      const r = segSegT(a, b, comp.outer[k], comp.outer[(k + 1) % comp.outer.length]);
-      if (r && r.t < bt) bt = r.t;
-    }
+    for (const comp of region)
+      for (let k = 0; k < comp.outer.length; k++) {
+        const r = segSegT(a, b, comp.outer[k], comp.outer[(k + 1) % comp.outer.length]);
+        if (r && r.t < bt) bt = r.t;
+      }
     if (bt < Infinity) {
       const e = { x: a.x + (b.x - a.x) * bt, y: a.y + (b.y - a.y) * bt };
       return [e, ...pl.slice(i)];

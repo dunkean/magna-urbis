@@ -13,7 +13,7 @@ export class IndexedTerrainStore implements TerrainStore {
   private db?: Promise<IDBDatabase>;
   private open(): Promise<IDBDatabase> {
     if (typeof indexedDB === 'undefined') return Promise.reject(new Error('IndexedDB indisponible'));
-    return this.db ??= new Promise<IDBDatabase>((resolve, reject) => {
+    return (this.db ??= new Promise<IDBDatabase>((resolve, reject) => {
       let abandoned = false;
       const request = indexedDB.open('magna-urbis-v2', 2);
       request.onupgradeneeded = () => {
@@ -22,13 +22,28 @@ export class IndexedTerrainStore implements TerrainStore {
       };
       request.onsuccess = () => {
         const db = request.result;
-        if (abandoned) { db.close(); return; }
-        db.onversionchange = () => { db.close(); this.db = undefined; };
+        if (abandoned) {
+          db.close();
+          return;
+        }
+        db.onversionchange = () => {
+          db.close();
+          this.db = undefined;
+        };
         resolve(db);
       };
-      request.onerror = () => { abandoned = true; reject(request.error); };
-      request.onblocked = () => { abandoned = true; reject(new Error('Le cache est utilisé par un ancien onglet.')); };
-    }).catch(error => { this.db = undefined; throw error; });
+      request.onerror = () => {
+        abandoned = true;
+        reject(request.error);
+      };
+      request.onblocked = () => {
+        abandoned = true;
+        reject(new Error('Le cache est utilisé par un ancien onglet.'));
+      };
+    }).catch(error => {
+      this.db = undefined;
+      throw error;
+    }));
   }
   async get(key: string): Promise<TerrainLayer | undefined> {
     const db = await this.open();
@@ -51,8 +66,10 @@ export class IndexedTerrainStore implements TerrainStore {
       const request = store.index('saved').openKeyCursor();
       request.onsuccess = () => {
         const cursor = request.result;
-        if (cursor) { entries.push({ key: cursor.primaryKey, saved: Number(cursor.key) }); cursor.continue(); }
-        else {
+        if (cursor) {
+          entries.push({ key: cursor.primaryKey, saved: Number(cursor.key) });
+          cursor.continue();
+        } else {
           // Index order is timestamp then primary key ascending; stable sorting keeps
           // the previous getAll()/sort eviction order when timestamps are tied.
           entries.sort((a, b) => b.saved - a.saved);
@@ -87,22 +104,37 @@ export class TerrainCache {
   async get(key: string): Promise<{ terrain: TerrainLayer; source: 'memory' | 'disk' } | undefined> {
     const memory = this.memory.get(key);
     if (memory) {
-      this.memory.delete(key); this.memory.set(key, memory);
+      this.memory.delete(key);
+      this.memory.set(key, memory);
       return { terrain: structuredClone(memory), source: 'memory' };
     }
     try {
       const terrain = await this.store.get(key);
-      if (terrain) { this.retain(key, terrain); return { terrain, source: 'disk' }; }
-    } catch { /* Private browsing, quota, unavailable storage: generation remains usable. */ }
+      if (terrain) {
+        this.retain(key, terrain);
+        return { terrain, source: 'disk' };
+      }
+    } catch {
+      /* Private browsing, quota, unavailable storage: generation remains usable. */
+    }
     return undefined;
   }
   async put(key: string, terrain: TerrainLayer): Promise<boolean> {
     this.retain(key, terrain);
-    try { await this.store.put(key, terrain); return true; } catch { return false; }
+    try {
+      await this.store.put(key, terrain);
+      return true;
+    } catch {
+      return false;
+    }
   }
   async clear(): Promise<void> {
     this.memory.clear();
-    try { await this.store.clear(); } catch { /* No persistent cache to clear. */ }
+    try {
+      await this.store.clear();
+    } catch {
+      /* No persistent cache to clear. */
+    }
   }
 }
 

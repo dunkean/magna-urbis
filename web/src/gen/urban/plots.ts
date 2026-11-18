@@ -66,34 +66,49 @@ export interface Plot {
 /** Wealth of a frontage at p on a street of the given rank (0 poor … 1 rich). */
 export type WealthAt = (p: Vec2, rank: number) => number;
 
-interface Run { pts: Vec2[]; edges: number[]; rank: number; street: number; len: number; prio: number }
+interface Run {
+  pts: Vec2[];
+  edges: number[];
+  rank: number;
+  street: number;
+  len: number;
+  prio: number;
+}
 
 const TURN = (20 * Math.PI) / 180;
 
 function turnAt(a: Vec2, b: Vec2, c: Vec2): number {
-  const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y;
+  const ux = b.x - a.x,
+    uy = b.y - a.y,
+    vx = c.x - b.x,
+    vy = c.y - b.y;
   return Math.abs(Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy));
 }
 
-const unit = (a: Vec2, b: Vec2): Vec2 => { const l = dist(a, b) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
+const unit = (a: Vec2, b: Vec2): Vec2 => {
+  const l = dist(a, b) || 1;
+  return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+};
 const leftN = (d: Vec2): Vec2 => ({ x: -d.y, y: d.x });
 
 /** A nearer narrow lane must not hide contact with a wider street's ribbon. */
 export function plotFrontOnStreet(streets: Streets, a: Vec2, b: Vec2): boolean {
   const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  const contact = (d: number, hw: number): boolean => d < 14 &&
-    (Math.abs(d - hw) < Math.max(0.8, 0.3 * hw) || (d < hw * 1.3 && d > hw * 0.7));
+  const contact = (d: number, hw: number): boolean => d < 14 && (Math.abs(d - hw) < Math.max(0.8, 0.3 * hw) || (d < hw * 1.3 && d > hw * 0.7));
   const nearest = streets.nearest(m, 14);
   if (nearest && contact(nearest.d, nearest.hw)) return true;
   let served = false;
   streets.forEachSeg(m.x - 14, m.y - 14, m.x + 14, m.y + 14, (st, i) => {
     if (served || !st.ribbon) return;
-    const p = st.path[i], q = st.path[i + 1];
-    const dx = q.x - p.x, dy = q.y - p.y, l2 = dx * dx + dy * dy;
+    const p = st.path[i],
+      q = st.path[i + 1];
+    const dx = q.x - p.x,
+      dy = q.y - p.y,
+      l2 = dx * dx + dy * dy;
     // Only broaden the old nearest-centerline check for contact along the frontage,
     // rather than accepting an unrelated wide street's terminal near its midpoint.
     for (let k = 0; k <= 4; k++) {
-      const v = { x: a.x + (b.x - a.x) * k / 4, y: a.y + (b.y - a.y) * k / 4 };
+      const v = { x: a.x + ((b.x - a.x) * k) / 4, y: a.y + ((b.y - a.y) * k) / 4 };
       const t = l2 ? Math.max(0, Math.min(1, ((v.x - p.x) * dx + (v.y - p.y) * dy) / l2)) : 0;
       const d = Math.hypot(v.x - p.x - t * dx, v.y - p.y - t * dy);
       const hw = (st.widths[i] * (1 - t) + st.widths[i + 1] * t) / 2;
@@ -109,27 +124,33 @@ export function refreshPlotFrame(pl: Plot, streetFront?: (a: Vec2, b: Vec2) => b
   const poly = pl.poly;
   if (poly.length < 3) return;
   const old = pl.front;
-  const badEnd = old.some((p) => distToRing(poly, p) > 0.02)
-    || distToRing(poly, { x: (old[0].x + old[1].x) / 2, y: (old[0].y + old[1].y) / 2 }) > 0.25;
-  const badSide = [pl.sideA, pl.sideB].some((s) => {
+  const badEnd = old.some(p => distToRing(poly, p) > 0.02) || distToRing(poly, { x: (old[0].x + old[1].x) / 2, y: (old[0].y + old[1].y) / 2 }) > 0.25;
+  const badSide = [pl.sideA, pl.sideB].some(s => {
     const q = { x: s.p.x + s.d.x * 0.5, y: s.p.y + s.d.y * 0.5 };
     return !pointInRing(poly, q) && distToRing(poly, q) > 0.02;
   });
   if (!badEnd && !badSide) return;
   const oldT = unit(old[0], old[1]);
   const oldM = { x: (old[0].x + old[1].x) / 2, y: (old[0].y + old[1].y) / 2 };
-  let best = -1, score = -Infinity;
+  let best = -1,
+    score = -Infinity;
   for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length], t = unit(a, b);
+    const a = poly[i],
+      b = poly[(i + 1) % poly.length],
+      t = unit(a, b);
     if (streetFront && !streetFront(a, b)) continue;
     const align = t.x * oldT.x + t.y * oldT.y;
     if (align < 0.7) continue;
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const s = dist(a, b) * align - 3 * distToSeg(mid, old[0], old[1]) - distToSeg(oldM, a, b);
-    if (s > score) { score = s; best = i; }
+    if (s > score) {
+      score = s;
+      best = i;
+    }
   }
   if (best < 0) return;
-  const a = poly[best], b = poly[(best + 1) % poly.length];
+  const a = poly[best],
+    b = poly[(best + 1) % poly.length];
   // A frontage on the merged boundary may span several collinear edges. Keep the existing
   // served segment if both its endpoints still lie on the boundary; otherwise use the edge.
   const front: [Vec2, Vec2] = distToSeg(old[0], a, b) < 0.02 && distToSeg(old[1], a, b) < 0.02 ? old : [a, b];
@@ -141,16 +162,22 @@ export function refreshPlotFrame(pl: Plot, streetFront?: (a: Vec2, b: Vec2) => b
     let direction = fallback.x * pl.nrm.x + fallback.y * pl.nrm.y > 0.05 ? fallback : pl.nrm;
     let bestScore = -Infinity;
     for (let i = 0; i < poly.length; i++) {
-      const v = poly[i], w = poly[(i + 1) % poly.length];
+      const v = poly[i],
+        w = poly[(i + 1) % poly.length];
       if (distToSeg(p, v, w) > 0.02) continue;
       for (const step of [-1, 1]) {
-        let from = p, k = step > 0 ? (i + 1) % poly.length : i;
+        let from = p,
+          k = step > 0 ? (i + 1) % poly.length : i;
         for (let walk = 0; walk < poly.length; walk++) {
           const to = poly[k];
           if (dist(from, to) > 0.02) {
-            const d = unit(from, to), inward = d.x * pl.nrm.x + d.y * pl.nrm.y;
+            const d = unit(from, to),
+              inward = d.x * pl.nrm.x + d.y * pl.nrm.y;
             if (inward > 0.05) {
-              if (inward > bestScore) { bestScore = inward; direction = d; }
+              if (inward > bestScore) {
+                bestScore = inward;
+                direction = d;
+              }
               break;
             }
             // Fragmented frontage edges are not side lines. Follow them to the
@@ -166,24 +193,29 @@ export function refreshPlotFrame(pl: Plot, streetFront?: (a: Vec2, b: Vec2) => b
   };
   pl.sideA = side(front[0], pl.sideA.d);
   pl.sideB = side(front[1], pl.sideB.d);
-  pl.depth = Math.max(0, ...poly.map((q) => (q.x - front[0].x) * pl.nrm.x + (q.y - front[0].y) * pl.nrm.y));
+  pl.depth = Math.max(0, ...poly.map(q => (q.x - front[0].x) * pl.nrm.x + (q.y - front[0].y) * pl.nrm.y));
 }
 
 /** Point and inward normal at arclength s along an open polyline (normal averaged over ±win). */
 function pointAt(pl: Vec2[], cum: number[], s: number): { p: Vec2; seg: number } {
   let i = 1;
   while (i < pl.length - 1 && cum[i] < s) i++;
-  const a = pl[i - 1], b = pl[i];
+  const a = pl[i - 1],
+    b = pl[i];
   const L = cum[i] - cum[i - 1] || 1;
   const t = Math.max(0, Math.min(1, (s - cum[i - 1]) / L));
   return { p: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, seg: i - 1 };
 }
 function normalAt(pl: Vec2[], cum: number[], s: number, win: number): Vec2 {
-  const a = pointAt(pl, cum, Math.max(0, s - win)).p, b = pointAt(pl, cum, Math.min(cum[cum.length - 1], s + win)).p;
+  const a = pointAt(pl, cum, Math.max(0, s - win)).p,
+    b = pointAt(pl, cum, Math.min(cum[cum.length - 1], s + win)).p;
   return leftN(unit(a, b));
 }
 
-export interface PlotResult { plots: Plot[]; back: Polygon[] }
+export interface PlotResult {
+  plots: Plot[];
+  back: Polygon[];
+}
 export const PLOT_DEBUG: { on: boolean; fails: { why: string; dBoundary: number; inside: boolean; block: number }[]; stages: Record<string, number>[]; dump?: number; polys?: Record<string, unknown> } = { on: false, fails: [], stages: [] };
 
 function polyCenter(p: Polygon): Vec2 {
@@ -201,10 +233,22 @@ export function openHoles(ph: PolyH, depth = 0, exact = false, axis?: Vec2): Mul
   const bb = bboxOf(ph.outer);
   const W = axis ? Math.hypot(bb.x1 - bb.x0, bb.y1 - bb.y0) + 10 : Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0) + 10;
   const at = (u: number, v: number): Vec2 => ({ x: c.x + axis!.x * u - axis!.y * v, y: c.y + axis!.y * u + axis!.x * v });
-  const left = axis ? [at(-W, -W), at(0, -W), at(0, W), at(-W, W)]
-    : [{ x: c.x - W, y: bb.y0 - W }, { x: c.x, y: bb.y0 - W }, { x: c.x, y: bb.y1 + W }, { x: c.x - W, y: bb.y1 + W }];
-  const right = axis ? [at(0, -W), at(W, -W), at(W, W), at(0, W)]
-    : [{ x: c.x, y: bb.y0 - W }, { x: c.x + W, y: bb.y0 - W }, { x: c.x + W, y: bb.y1 + W }, { x: c.x, y: bb.y1 + W }];
+  const left = axis
+    ? [at(-W, -W), at(0, -W), at(0, W), at(-W, W)]
+    : [
+        { x: c.x - W, y: bb.y0 - W },
+        { x: c.x, y: bb.y0 - W },
+        { x: c.x, y: bb.y1 + W },
+        { x: c.x - W, y: bb.y1 + W },
+      ];
+  const right = axis
+    ? [at(0, -W), at(W, -W), at(W, W), at(0, W)]
+    : [
+        { x: c.x, y: bb.y0 - W },
+        { x: c.x + W, y: bb.y0 - W },
+        { x: c.x + W, y: bb.y1 + W },
+        { x: c.x, y: bb.y1 + W },
+      ];
   const out: MultiPoly = [];
   for (const half of [left, right]) {
     const pieces = exact ? tryIntersection([ph], half).pieces : intersectionS([ph], half);
@@ -213,17 +257,15 @@ export function openHoles(ph: PolyH, depth = 0, exact = false, axis?: Vec2): Mul
   return out;
 }
 
-export function cutPlots(
-  block: Polygon, bi: number, zone: Zone, infill: number, P: MorphologyParams, streets: Streets, rng: Rng, wealthAt?: WealthAt,
-  axis = detectPlotFrame(block).u,
-): PlotResult {
+export function cutPlots(block: Polygon, bi: number, zone: Zone, infill: number, P: MorphologyParams, streets: Streets, rng: Rng, wealthAt?: WealthAt, axis = detectPlotFrame(block).u): PlotResult {
   axis = varyPlotAxis(axis, P.streetOp === 'grid' ? 0 : P.plotTilt, rng);
   const B = orientPos(block);
   const n = B.length;
   // ---- 1. frontage classification
   const fr: { rank: number; street: number }[] = [];
   for (let i = 0; i < n; i++) {
-    const a = B[i], b = B[(i + 1) % n];
+    const a = B[i],
+      b = B[(i + 1) % n];
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const ns = streets.nearest(m, 14);
     let ok = false;
@@ -231,7 +273,8 @@ export function cutPlots(
       const tol = Math.max(0.8, 0.3 * ns.hw);
       if (Math.abs(ns.d - ns.hw) < tol || (ns.d < ns.hw * 1.3 && ns.d > ns.hw * 0.7)) {
         // the street must lie on the outer side of the edge
-        const d = unit(a, b), o = { x: d.y, y: -d.x };
+        const d = unit(a, b),
+          o = { x: d.y, y: -d.x };
         const q = { x: m.x + o.x * ns.d, y: m.y + o.y * ns.d };
         const back = streets.nearest(q, ns.hw + 1.5);
         ok = !!back;
@@ -241,31 +284,52 @@ export function cutPlots(
   }
   // ---- 2. runs
   const isF = (i: number) => fr[(i + n) % n].street >= 0;
-  const brk = (i: number): boolean => { // break between edge i-1 and edge i
+  const brk = (i: number): boolean => {
+    // break between edge i-1 and edge i
     const i0 = (i - 1 + n) % n;
     if (isF(i0) !== isF(i)) return true;
     if (!isF(i)) return false;
     return turnAt(B[i0], B[i], B[(i + 1) % n]) > TURN;
   };
   let start = -1;
-  for (let i = 0; i < n; i++) if (brk(i)) { start = i; break; }
+  for (let i = 0; i < n; i++)
+    if (brk(i)) {
+      start = i;
+      break;
+    }
   const runs: Run[] = [];
   const pushRun = (edges: number[]) => {
     if (!edges.length || !isF(edges[0])) return;
-    const pts = [B[edges[0]], ...edges.map((e) => B[(e + 1) % n])];
+    const pts = [B[edges[0]], ...edges.map(e => B[(e + 1) % n])];
     let len = 0;
     for (let k = 1; k < pts.length; k++) len += dist(pts[k - 1], pts[k]);
-    let rank = 99; const cnt = new Map<number, number>();
-    for (const e of edges) { rank = Math.min(rank, fr[e].rank); cnt.set(fr[e].street, (cnt.get(fr[e].street) ?? 0) + dist(B[e], B[(e + 1) % n])); }
-    let street = -1, bl = -1;
-    for (const [s, l] of cnt) if (l > bl) { bl = l; street = s; }
+    let rank = 99;
+    const cnt = new Map<number, number>();
+    for (const e of edges) {
+      rank = Math.min(rank, fr[e].rank);
+      cnt.set(fr[e].street, (cnt.get(fr[e].street) ?? 0) + dist(B[e], B[(e + 1) % n]));
+    }
+    let street = -1,
+      bl = -1;
+    for (const [s, l] of cnt)
+      if (l > bl) {
+        bl = l;
+        street = s;
+      }
     runs.push({ pts, edges, rank, street, len, prio: 0 });
   };
   if (start < 0) {
     // one closed frontage loop (a street all around): open it at the sharpest vertex
     if (!isF(0)) return { plots: [], back: [B] };
-    let si = 0, st = -1;
-    for (let i = 0; i < n; i++) { const t = turnAt(B[(i - 1 + n) % n], B[i], B[(i + 1) % n]); if (t > st) { st = t; si = i; } }
+    let si = 0,
+      st = -1;
+    for (let i = 0; i < n; i++) {
+      const t = turnAt(B[(i - 1 + n) % n], B[i], B[(i + 1) % n]);
+      if (t > st) {
+        st = t;
+        si = i;
+      }
+    }
     const edges: number[] = [];
     for (let k = 0; k < n; k++) edges.push((si + k) % n);
     pushRun(edges);
@@ -273,12 +337,15 @@ export function cutPlots(
     let cur: number[] = [];
     for (let k = 0; k < n; k++) {
       const i = (start + k) % n;
-      if (k > 0 && brk(i)) { pushRun(cur); cur = []; }
+      if (k > 0 && brk(i)) {
+        pushRun(cur);
+        cur = [];
+      }
       cur.push(i);
     }
     pushRun(cur);
   }
-  const good = runs.filter((r) => r.len >= 4);
+  const good = runs.filter(r => r.len >= 4);
   if (!good.length) return { plots: [], back: [B] };
   // priority: lower rank first, then longer
   good.sort((a, b) => a.rank - b.rank || b.len - a.len);
@@ -310,22 +377,30 @@ export function cutPlots(
     });
     // smooth depths along the run
     depth = depth.map((_, j) => {
-      let s = 0, w = 0;
-      for (let k = Math.max(0, j - 2); k <= Math.min(depth.length - 1, j + 2); k++) { s += depth[k]; w++; }
+      let s = 0,
+        w = 0;
+      for (let k = Math.max(0, j - 2); k <= Math.min(depth.length - 1, j + 2); k++) {
+        s += depth[k];
+        w++;
+      }
       return Math.min(depth[j] + 2, s / w);
     });
     // The rear boundary also follows a block axis. Run priority assigns corners
     // by subtracting earlier strips, without introducing diagonal seams.
     const limit = Math.max(...pl.map((p, j) => p.x * inward.x + p.y * inward.y + depth[j]));
-    let T: MultiPoly = clipPlot(B, [{ p: { x: inward.x * limit, y: inward.y * limit }, n: { x: -inward.x, y: -inward.y } }], isConvex(B, 1e-3))
-      .map((outer) => ({ outer, holes: [] }));
+    let T: MultiPoly = clipPlot(B, [{ p: { x: inward.x * limit, y: inward.y * limit }, n: { x: -inward.x, y: -inward.y } }], isConvex(B, 1e-3)).map(outer => ({ outer, holes: [] }));
     if (taken.length) {
-      const tb = T.length ? bboxOf(T.flatMap((ph) => ph.outer)) : null;
-      const prev = tb ? taken.filter((ph) => { const b = bboxOf(ph.outer); return !(b.x0 > tb.x1 || b.x1 < tb.x0 || b.y0 > tb.y1 || b.y1 < tb.y0); }) : [];
-      if (prev.length) T = differenceS(T, ...prev.map((ph) => [ph] as MultiPoly));
+      const tb = T.length ? bboxOf(T.flatMap(ph => ph.outer)) : null;
+      const prev = tb
+        ? taken.filter(ph => {
+            const b = bboxOf(ph.outer);
+            return !(b.x0 > tb.x1 || b.x1 < tb.x0 || b.y0 > tb.y1 || b.y1 < tb.y0);
+          })
+        : [];
+      if (prev.length) T = differenceS(T, ...prev.map(ph => [ph] as MultiPoly));
     }
     // keep the pieces touching the run
-    T = T.filter((ph) => {
+    T = T.filter(ph => {
       if (area(ph.outer) < 4) return false;
       for (let j = 1; j < pl.length; j++) {
         const m = { x: (pl[j - 1].x + pl[j].x) / 2, y: (pl[j - 1].y + pl[j].y) / 2 };
@@ -338,11 +413,14 @@ export function cutPlots(
     // territory is opened by splitting the piece through it
     const T2: MultiPoly = [];
     for (const ph of T) {
-      const keep = ph.holes.filter((h) => {
+      const keep = ph.holes.filter(h => {
         const c = polyCenter(h);
-        return taken.some((t) => pointInRing(t.outer, c));
+        return taken.some(t => pointInRing(t.outer, c));
       });
-      if (!keep.length) { T2.push({ outer: ph.outer, holes: [] }); continue; }
+      if (!keep.length) {
+        T2.push({ outer: ph.outer, holes: [] });
+        continue;
+      }
       for (const piece of openHoles({ outer: ph.outer, holes: keep }, 0, false, axis)) T2.push(piece);
     }
     T = T2;
@@ -362,17 +440,28 @@ export function cutPlots(
     for (let j = 1; j < pl.length; j++) cum.push(cum[j - 1] + dist(pl[j - 1], pl[j]));
     const L = cum[cum.length - 1];
     for (const ph of T) {
-      if (ph.holes.length) { leftovers.push(ph.outer); continue; }
+      if (ph.holes.length) {
+        leftovers.push(ph.outer);
+        continue;
+      }
       // frontage interval of this piece along the run
-      let s0 = -1, s1 = -1;
+      let s0 = -1,
+        s1 = -1;
       for (let s = 0.25; s <= L - 0.25; s += 0.5) {
         const pa = pointAt(pl, cum, s);
         const nn = leftN(unit(pl[pa.seg], pl[pa.seg + 1]));
         const q = { x: pa.p.x + nn.x * 0.08, y: pa.p.y + nn.y * 0.08 };
-        if (pointInRing(ph.outer, q)) { if (s0 < 0) s0 = s; s1 = s; }
+        if (pointInRing(ph.outer, q)) {
+          if (s0 < 0) s0 = s;
+          s1 = s;
+        }
       }
-      if (s0 < 0 || s1 - s0 < 2.5) { leftovers.push(ph.outer); continue; }
-      s0 = Math.max(0, s0 - 0.25); s1 = Math.min(L, s1 + 0.25);
+      if (s0 < 0 || s1 - s0 < 2.5) {
+        leftovers.push(ph.outer);
+        continue;
+      }
+      s0 = Math.max(0, s0 - 0.25);
+      s1 = Math.min(L, s1 + 0.25);
       const FL = s1 - s0;
       // plot widths
       // plot widths: log-normal around a median set by the wealth of the frontage (rich runs: wider lots, more
@@ -385,13 +474,19 @@ export function cutPlots(
       while (acc < FL) {
         let w = Math.max(fwMin * 0.85, Math.min(fwMax * 1.25, med * Math.exp(0.2 * rng.gauss())));
         if (rng.chance(P.wideLotChance * (0.4 + 1.2 * wl))) w *= rng.range(1.8, 2.8);
-        widths.push(w); acc += w;
+        widths.push(w);
+        acc += w;
       }
-      if (widths.length > 1 && acc - FL > 0.5 * widths[widths.length - 1]) { acc -= widths.pop()!; }
+      if (widths.length > 1 && acc - FL > 0.5 * widths[widths.length - 1]) {
+        acc -= widths.pop()!;
+      }
       const k = FL / acc;
       const cuts: number[] = [];
       let s = s0;
-      for (let j = 0; j < widths.length - 1; j++) { s += widths[j] * k; cuts.push(s); }
+      for (let j = 0; j < widths.length - 1; j++) {
+        s += widths[j] * k;
+        cuts.push(s);
+      }
       // Keep every cut in the retained cadastral frame, even on curved frontages.
       let rem = lpoly(ph.outer, 0);
       let prevS = s0;
@@ -421,13 +516,19 @@ export function cutPlots(
           const tn = normalAt(pl, cum, sc, 1);
           const probe = { x: tp.p.x + tn.x * 0.08, y: tp.p.y + tn.y * 0.08 };
           const [A, Bp] = res;
-          if (pointInRing(A.pts, probe)) { plotPoly = A.pts; rem = Bp; }
-          else { plotPoly = Bp.pts; rem = A; }
+          if (pointInRing(A.pts, probe)) {
+            plotPoly = A.pts;
+            rem = Bp;
+          } else {
+            plotPoly = Bp.pts;
+            rem = A;
+          }
         } else {
           plotPoly = rem.pts;
           side = { p: pointAt(pl, cum, s1).p, d: plotDirection(normalAt(pl, cum, s1, 3), axis) };
         }
-        const fa = pointAt(pl, cum, prevS).p, fb = pointAt(pl, cum, sc).p;
+        const fa = pointAt(pl, cum, prevS).p,
+          fb = pointAt(pl, cum, sc).p;
         const nrm = normalAt(pl, cum, (prevS + sc) / 2, Math.max(2, w / 2));
         plots.push({ poly: plotPoly, block: bi, zone, front: [fa, fb], nrm, sideA: prevSide, sideB: side, rank: run.rank, depth, wide: w > fwMax * 1.5, sideFronts: [], run: runNo, order: order++ });
         prevSide = side;
@@ -436,25 +537,32 @@ export function cutPlots(
     }
   }
   // ---- 5. back land = block − territories
-  let backMP: MultiPoly = taken.length ? differenceS(B, ...taken.map((ph) => [ph] as MultiPoly)) : [{ outer: B, holes: [] }];
+  let backMP: MultiPoly = taken.length ? differenceS(B, ...taken.map(ph => [ph] as MultiPoly)) : [{ outer: B, holes: [] }];
   // area accounting: the snapped boolean occasionally drops a real sliver; redo it exactly if so
   const covered = taken.reduce((a, ph) => a + area(ph.outer), 0) + mpArea(backMP);
   const tolA = Math.max(0.3, 0.001 * area(B));
-  if (taken.length && area(B) - covered > tolA) backMP = difference(B, ...taken.map((ph) => [ph] as MultiPoly));
+  if (taken.length && area(B) - covered > tolA) backMP = difference(B, ...taken.map(ph => [ph] as MultiPoly));
   // polygon-clipping can drop a thin wedge along near-collinear edges: retry against a block scaled by 1e-5
   // about its centroid (≈ 0.5 mm), which lifts the degeneracy
   if (taken.length && area(B) - taken.reduce((a, ph) => a + area(ph.outer), 0) - mpArea(backMP) > tolA) {
-    let cx = 0, cy = 0;
-    for (const q of B) { cx += q.x / B.length; cy += q.y / B.length; }
-    const Bs = B.map((q) => ({ x: cx + (q.x - cx) * (1 + 1e-5), y: cy + (q.y - cy) * (1 + 1e-5) }));
-    const alt = difference(Bs, ...taken.map((ph) => [ph] as MultiPoly)).filter((ph) => area(ph.outer) > 0.05);
+    let cx = 0,
+      cy = 0;
+    for (const q of B) {
+      cx += q.x / B.length;
+      cy += q.y / B.length;
+    }
+    const Bs = B.map(q => ({ x: cx + (q.x - cx) * (1 + 1e-5), y: cy + (q.y - cy) * (1 + 1e-5) }));
+    const alt = difference(Bs, ...taken.map(ph => [ph] as MultiPoly)).filter(ph => area(ph.outer) > 0.05);
     if (mpArea(alt) > mpArea(backMP)) backMP = alt;
   }
   const gardens: Polygon[] = [...leftovers];
   for (const ph of backMP) {
-    if (!ph.holes.length) { gardens.push(ph.outer); continue; }
+    if (!ph.holes.length) {
+      gardens.push(ph.outer);
+      continue;
+    }
     // rare: back land around an island of plots; keep it exact by cutting it open with the island
-    const pieces = differenceS(ph.outer, ...ph.holes.map((h) => [{ outer: h, holes: [] }] as MultiPoly));
+    const pieces = differenceS(ph.outer, ...ph.holes.map(h => [{ outer: h, holes: [] }] as MultiPoly));
     for (const q of pieces) gardens.push(q.outer);
   }
   // ---- 6. cleanup: slivers, acute wedges and tiny pieces merge into the neighbour sharing the longest edge
@@ -463,17 +571,21 @@ export function cutPlots(
   // neighbouring plots instead of swelling a single one
   let gardenCells = gardens;
   if (deepFill && plots.length) {
-    const pa = plots.map((p) => area(p.poly)).sort((a, b) => a - b);
+    const pa = plots.map(p => area(p.poly)).sort((a, b) => a - b);
     const med = pa[Math.floor(pa.length / 2)];
     gardenCells = [];
     for (const g of gardens) {
       const ag = area(g);
       const k = Math.min(8, Math.round(ag / Math.max(60, med)));
-      if (k < 2) { gardenCells.push(g); continue; }
+      if (k < 2) {
+        gardenCells.push(g);
+        continue;
+      }
       const o = plotBounds(g, axis);
       const conv = isConvex(g, 1e-3);
       for (let j = 0; j < k; j++) {
-        const s0 = -o.hu + (2 * o.hu * j) / k, s1 = -o.hu + (2 * o.hu * (j + 1)) / k;
+        const s0 = -o.hu + (2 * o.hu * j) / k,
+          s1 = -o.hu + (2 * o.hu * (j + 1)) / k;
         const hps = [] as { p: Vec2; n: Vec2 }[];
         if (j > 0) hps.push({ p: { x: o.c.x + o.u.x * s0, y: o.c.y + o.u.y * s0 }, n: o.u });
         if (j < k - 1) hps.push({ p: { x: o.c.x + o.u.x * s1, y: o.c.y + o.u.y * s1 }, n: { x: -o.u.x, y: -o.u.y } });
@@ -481,8 +593,12 @@ export function cutPlots(
       }
     }
   }
-  const cells: Cell[] = plots.map((p) => ({ poly: p.poly, plot: p as Plot | null })).concat(gardenCells.map((g) => ({ poly: g, plot: null })));
-  const minAng = (p: Polygon) => { let m = Infinity; for (let i = 0; i < p.length; i++) m = Math.min(m, interiorAngle(p, i)); return m; };
+  const cells: Cell[] = plots.map(p => ({ poly: p.poly, plot: p as Plot | null })).concat(gardenCells.map(g => ({ poly: g, plot: null })));
+  const minAng = (p: Polygon) => {
+    let m = Infinity;
+    for (let i = 0; i < p.length; i++) m = Math.min(m, interiorAngle(p, i));
+    return m;
+  };
   const isBad = (c: Cell): boolean => {
     const a = area(c.poly);
     if (a < (c.plot ? 35 : 25)) return true;
@@ -500,16 +616,22 @@ export function cutPlots(
   const shared = (X: Polygon, Y: Polygon): number => {
     let s2 = 0;
     for (let k = 0; k < X.length; k++) {
-      const a = X[k], b = X[(k + 1) % X.length];
+      const a = X[k],
+        b = X[(k + 1) % X.length];
       const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      for (let j = 0; j < Y.length; j++) if (distToSeg(m, Y[j], Y[(j + 1) % Y.length]) < 0.05) { s2 += dist(a, b); break; }
+      for (let j = 0; j < Y.length; j++)
+        if (distToSeg(m, Y[j], Y[(j + 1) % Y.length]) < 0.05) {
+          s2 += dist(a, b);
+          break;
+        }
     }
     return s2;
   };
-  const bbs = cells.map((c) => bboxOf(c.poly));
-  const bad = cells.map((c) => isBad(c));
+  const bbs = cells.map(c => bboxOf(c.poly));
+  const bad = cells.map(c => isBad(c));
   const near = (i: number, j: number) => {
-    const a = bbs[i], b = bbs[j];
+    const a = bbs[i],
+      b = bbs[j];
     return !(b.x0 > a.x1 + 0.1 || b.x1 < a.x0 - 0.1 || b.y0 > a.y1 + 0.1 || b.y1 < a.y0 - 0.1);
   };
   for (let pass = 0; pass < 3; pass++) {
@@ -517,14 +639,18 @@ export function cutPlots(
     for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
       if (!c || !bad[i]) continue;
-      let best = -1, bl = 0;
+      let best = -1,
+        bl = 0;
       for (let j = 0; j < cells.length; j++) {
         if (j === i || !cells[j] || !near(i, j)) continue;
         let sh = shared(c.poly, cells[j].poly);
         if (sh <= 0) continue;
         if (c.plot && cells[j].plot) sh *= 1.5; // plots prefer plots
         if (!c.plot && cells[j].plot && area(c.poly) > 150 && !deepFill) sh *= 0.5; // real gardens stay gardens
-        if (sh > bl) { bl = sh; best = j; }
+        if (sh > bl) {
+          bl = sh;
+          best = j;
+        }
       }
       if (best < 0) continue;
       const st = stitchUnion(cells[best].poly, c.poly);
@@ -536,9 +662,15 @@ export function cutPlots(
       if (!merged1) continue;
       const tgt = cells[best];
       // a plot swallowed by a garden keeps its frontage: the merged cell becomes the plot
-      if (c.plot && !tgt.plot) { if (dist(c.plot.front[0], c.plot.front[1]) >= 4.5) tgt.plot = c.plot; }
-      else if (c.plot && tgt.plot && dist(tgt.plot.front[1], c.plot.front[0]) < 0.05) { tgt.plot.front = [tgt.plot.front[0], c.plot.front[1]]; tgt.plot.sideB = c.plot.sideB; }
-      else if (c.plot && tgt.plot && dist(c.plot.front[1], tgt.plot.front[0]) < 0.05) { tgt.plot.front = [c.plot.front[0], tgt.plot.front[1]]; tgt.plot.sideA = c.plot.sideA; }
+      if (c.plot && !tgt.plot) {
+        if (dist(c.plot.front[0], c.plot.front[1]) >= 4.5) tgt.plot = c.plot;
+      } else if (c.plot && tgt.plot && dist(tgt.plot.front[1], c.plot.front[0]) < 0.05) {
+        tgt.plot.front = [tgt.plot.front[0], c.plot.front[1]];
+        tgt.plot.sideB = c.plot.sideB;
+      } else if (c.plot && tgt.plot && dist(c.plot.front[1], tgt.plot.front[0]) < 0.05) {
+        tgt.plot.front = [c.plot.front[0], tgt.plot.front[1]];
+        tgt.plot.sideA = c.plot.sideA;
+      }
       tgt.poly = merged1;
       tgt.grown = true;
       bbs[best] = bboxOf(tgt.poly);
@@ -550,8 +682,16 @@ export function cutPlots(
   }
   if (PLOT_DEBUG.on) {
     const sumA = (xs: Polygon[]) => xs.reduce((a, x) => a + area(x), 0);
-    if (PLOT_DEBUG.dump === bi) PLOT_DEBUG.polys = { B, taken: taken.map((t) => t.outer), takenHoles: taken.flatMap((t) => t.holes), back: backMP.map((t) => t.outer) };
-    PLOT_DEBUG.stages.push({ block: bi, B: area(B), plots: sumA(plots.map((p) => p.poly)), gardens: sumA(gardens), cells: sumA(cells.filter(Boolean).map((c) => (c as { poly: Polygon }).poly)), taken: taken.reduce((a, ph) => a + area(ph.outer), 0), back: backMP.reduce((a, ph) => a + area(ph.outer), 0) });
+    if (PLOT_DEBUG.dump === bi) PLOT_DEBUG.polys = { B, taken: taken.map(t => t.outer), takenHoles: taken.flatMap(t => t.holes), back: backMP.map(t => t.outer) };
+    PLOT_DEBUG.stages.push({
+      block: bi,
+      B: area(B),
+      plots: sumA(plots.map(p => p.poly)),
+      gardens: sumA(gardens),
+      cells: sumA(cells.filter(Boolean).map(c => (c as { poly: Polygon }).poly)),
+      taken: taken.reduce((a, ph) => a + area(ph.outer), 0),
+      back: backMP.reduce((a, ph) => a + area(ph.outer), 0),
+    });
   }
   const merged: Plot[] = [];
   const keepBack: Polygon[] = [];
@@ -581,11 +721,22 @@ export function cutPlots(
     let L = 0;
     // (start at the edge nearest the plot's frontage: most plots are proved on their first edge)
     let k0 = 0;
-    if (hint) { let bd = Infinity; for (let k = 0; k < P.length; k++) { const d = distToSeg(hint, P[k], P[(k + 1) % P.length]); if (d < bd) { bd = d; k0 = k; } } }
+    if (hint) {
+      let bd = Infinity;
+      for (let k = 0; k < P.length; k++) {
+        const d = distToSeg(hint, P[k], P[(k + 1) % P.length]);
+        if (d < bd) {
+          bd = d;
+          k0 = k;
+        }
+      }
+    }
     for (let kk = 0; kk < P.length && L < 3.6; kk++) {
       const k = (k0 + kk) % P.length;
-      const a = P[k], b = P[(k + 1) % P.length];
-      const le = dist(a, b), m = Math.max(1, Math.ceil(le / 0.5));
+      const a = P[k],
+        b = P[(k + 1) % P.length];
+      const le = dist(a, b),
+        m = Math.max(1, Math.ceil(le / 0.5));
       for (let j = 0; j < m; j++) {
         const t = (j + 0.5) / m;
         if (onStreet({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })) L += le / m;
@@ -596,16 +747,23 @@ export function cutPlots(
   for (let i = 0; i < merged.length; i++) {
     const p = merged[i];
     if (!p || frontLen(p.poly, { x: (p.front[0].x + p.front[1].x) / 2, y: (p.front[0].y + p.front[1].y) / 2 }) >= 3.6) continue;
-    let best = -1, bl = 0;
+    let best = -1,
+      bl = 0;
     for (let j = 0; j < merged.length; j++) {
       if (j === i || !merged[j] || frontLen(merged[j].poly, { x: (merged[j].front[0].x + merged[j].front[1].x) / 2, y: (merged[j].front[0].y + merged[j].front[1].y) / 2 }) < 3.6) continue;
       const sh = shared(p.poly, merged[j].poly);
-      if (sh > bl) { bl = sh; best = j; }
+      if (sh > bl) {
+        bl = sh;
+        best = j;
+      }
     }
     let joined: Polygon | null = null;
     if (best >= 0) {
       joined = stitchUnion(merged[best].poly, p.poly);
-      if (!joined) { const u = unionS(merged[best].poly, p.poly); if (u.length === 1 && !u[0].holes.length) joined = u[0].outer; }
+      if (!joined) {
+        const u = unionS(merged[best].poly, p.poly);
+        if (u.length === 1 && !u[0].holes.length) joined = u[0].outer;
+      }
     }
     if (joined) merged[best].poly = joined;
     else keepBack.push(p.poly);
@@ -616,7 +774,8 @@ export function cutPlots(
     const t = unit(p.front[0], p.front[1]);
     const segs: [Vec2, Vec2][] = [];
     for (let k = 0; k < p.poly.length; k++) {
-      const a = p.poly[k], b = p.poly[(k + 1) % p.poly.length];
+      const a = p.poly[k],
+        b = p.poly[(k + 1) % p.poly.length];
       const l = dist(a, b);
       if (l < 1) continue;
       const u = unit(a, b);
@@ -628,29 +787,40 @@ export function cutPlots(
     const out: [Vec2, Vec2][] = [];
     for (const sg of segs) {
       const last = out[out.length - 1];
-      if (last && dist(last[1], sg[0]) < 0.01) { last[1] = sg[1]; continue; }
+      if (last && dist(last[1], sg[0]) < 0.01) {
+        last[1] = sg[1];
+        continue;
+      }
       out.push([sg[0], sg[1]]);
     }
     p.sideFronts = out.filter(([a, b]) => dist(a, b) >= 3.5);
   }
   // exactness guard: a merge that fell back to a snapped union may overlap a neighbour; the later cell loses the
   // overlap (the partition stays exact)
-  const cellsF: { poly: Polygon; plot: Plot | null }[] = merged.filter((p) => p.poly.length >= 3).map((p) => ({ poly: p.poly, plot: p as Plot | null }))
-    .concat(keepBack.map((g) => ({ poly: g, plot: null })));
-  const bbF = cellsF.map((c) => bboxOf(c.poly));
-  for (let i = 0; i < cellsF.length; i++) for (let j = i + 1; j < cellsF.length; j++) {
-    const a = bbF[i], b = bbF[j];
-    if (b.x0 >= a.x1 || b.x1 <= a.x0 || b.y0 >= a.y1 || b.y1 <= a.y0) continue;
-    const ov = intersectionS(cellsF[i].poly, cellsF[j].poly);
-    if (!ov.length || mpArea(ov) <= 0.02) continue;
-    const d = differenceS(cellsF[j].poly, cellsF[i].poly).filter((ph) => !ph.holes.length);
-    if (!d.length) continue;
-    const big = d.reduce((x, y) => (area(y.outer) > area(x.outer) ? y : x));
-    cellsF[j].poly = big.outer;
-    bbF[j] = bboxOf(big.outer);
-    // smaller leftovers (rare) become back land
-    for (const ph of d) if (ph !== big && area(ph.outer) > 0.5) { cellsF.push({ poly: ph.outer, plot: null }); bbF.push(bboxOf(ph.outer)); }
-  }
+  const cellsF: { poly: Polygon; plot: Plot | null }[] = merged
+    .filter(p => p.poly.length >= 3)
+    .map(p => ({ poly: p.poly, plot: p as Plot | null }))
+    .concat(keepBack.map(g => ({ poly: g, plot: null })));
+  const bbF = cellsF.map(c => bboxOf(c.poly));
+  for (let i = 0; i < cellsF.length; i++)
+    for (let j = i + 1; j < cellsF.length; j++) {
+      const a = bbF[i],
+        b = bbF[j];
+      if (b.x0 >= a.x1 || b.x1 <= a.x0 || b.y0 >= a.y1 || b.y1 <= a.y0) continue;
+      const ov = intersectionS(cellsF[i].poly, cellsF[j].poly);
+      if (!ov.length || mpArea(ov) <= 0.02) continue;
+      const d = differenceS(cellsF[j].poly, cellsF[i].poly).filter(ph => !ph.holes.length);
+      if (!d.length) continue;
+      const big = d.reduce((x, y) => (area(y.outer) > area(x.outer) ? y : x));
+      cellsF[j].poly = big.outer;
+      bbF[j] = bboxOf(big.outer);
+      // smaller leftovers (rare) become back land
+      for (const ph of d)
+        if (ph !== big && area(ph.outer) > 0.5) {
+          cellsF.push({ poly: ph.outer, plot: null });
+          bbF.push(bboxOf(ph.outer));
+        }
+    }
   // last sliver pass: tiny or degenerate cells (a few m², spikes) join the neighbour sharing the longest edge
   const degenerate = (c: { poly: Polygon; plot: Plot | null }) => {
     const a = area(c.poly);
@@ -661,15 +831,22 @@ export function cutPlots(
   for (let i = 0; i < cellsF.length; i++) {
     const c = cellsF[i];
     if (!c || !degenerate(c)) continue;
-    let best = -1, bl = 0;
+    let best = -1,
+      bl = 0;
     for (let j = 0; j < cellsF.length; j++) {
       if (j === i || !cellsF[j]) continue;
       const sh = shared(c.poly, cellsF[j].poly) * (cellsF[j].plot ? 1.2 : 1);
-      if (sh > bl) { bl = sh; best = j; }
+      if (sh > bl) {
+        bl = sh;
+        best = j;
+      }
     }
     if (best < 0) continue;
     let u: Polygon | null = stitchUnion(cellsF[best].poly, c.poly);
-    if (!u) { const r = unionS(cellsF[best].poly, c.poly); if (r.length === 1 && !r[0].holes.length) u = r[0].outer; }
+    if (!u) {
+      const r = unionS(cellsF[best].poly, c.poly);
+      if (r.length === 1 && !r[0].holes.length) u = r[0].outer;
+    }
     if (!u || !isSimple(u)) continue;
     cellsF[best].poly = u;
     if (c.plot && !cellsF[best].plot) cellsF[best].plot = c.plot;
@@ -685,18 +862,34 @@ export function cutPlots(
     if (minAng(c.poly) >= (12 * Math.PI) / 180 || area(c.poly) < 150) continue;
     const cut = truncateAcute(c.poly, (12 * Math.PI) / 180, 0.5);
     if (cut.length < 3 || !isSimple(cut) || minAng(cut) < (12 * Math.PI) / 180) continue;
-    const tips = differenceS(c.poly, cut).filter((ph) => !ph.holes.length && area(ph.outer) > 0.01);
+    const tips = differenceS(c.poly, cut).filter(ph => !ph.holes.length && area(ph.outer) > 0.01);
     // (all or nothing: the neighbours change only when every tip finds a home)
     const pending = new Map<number, Polygon>();
-    let ok = true, drop = 0;
+    let ok = true,
+      drop = 0;
     for (const tp of tips) {
-      let best = -1, bl = 0;
-      for (let j = 0; j < cellsF.length; j++) { if (j === i) continue; const sh = shared(tp.outer, pending.get(j) ?? cellsF[j].poly); if (sh > bl) { bl = sh; best = j; } }
+      let best = -1,
+        bl = 0;
+      for (let j = 0; j < cellsF.length; j++) {
+        if (j === i) continue;
+        const sh = shared(tp.outer, pending.get(j) ?? cellsF[j].poly);
+        if (sh > bl) {
+          bl = sh;
+          best = j;
+        }
+      }
       let u: Polygon | null = best >= 0 ? stitchUnion(pending.get(best) ?? cellsF[best].poly, tp.outer) : null;
       if (u && (!isSimple(u) || minAng(u) < (12 * Math.PI) / 180)) u = null;
-      if (u) { pending.set(best, u); continue; }
-      if (lost + drop + area(tp.outer) < 0.002 * blockA) { drop += area(tp.outer); continue; }
-      ok = false; break;
+      if (u) {
+        pending.set(best, u);
+        continue;
+      }
+      if (lost + drop + area(tp.outer) < 0.002 * blockA) {
+        drop += area(tp.outer);
+        continue;
+      }
+      ok = false;
+      break;
     }
     if (!ok) continue;
     c.poly = cut;
@@ -712,25 +905,34 @@ export function cutPlots(
       c.plot.blockPoly = B;
       const sides = houseBoundarySides(B, c.poly, c.plot.front);
       if (sides.length) c.plot.boundarySides = sides;
-      c.plot.streetSides = P.plotOp === 'siheyuan'
-        ? c.poly.flatMap((a, i) => {
-          const b = c.poly[(i + 1) % c.poly.length];
-          return plotFrontOnStreet(streets, a, b) ? [[a, b] as [Vec2, Vec2]] : [];
-        }) : sides.filter(([a, b]) => plotFrontOnStreet(streets, a, b));
+      c.plot.streetSides =
+        P.plotOp === 'siheyuan'
+          ? c.poly.flatMap((a, i) => {
+              const b = c.poly[(i + 1) % c.poly.length];
+              return plotFrontOnStreet(streets, a, b) ? [[a, b] as [Vec2, Vec2]] : [];
+            })
+          : sides.filter(([a, b]) => plotFrontOnStreet(streets, a, b));
       plotsF.push(c.plot);
     } else backF.push(c.poly);
   }
   if (P.plotOp !== 'siheyuan' && P.plotOp !== 'machiya') return { plots: plotsF, back: backF };
   // Back-land merges can leave a compound fronting several hutongs with only one recorded facade.
   // Refine just those oversized lots, using every actual street edge and preserving the exact partition.
-  const refined: Plot[] = [], back = [...backF];
-  const firstRun = Math.max(-1, ...plotsF.map((p) => p.run)) + 1;
+  const refined: Plot[] = [],
+    back = [...backF];
+  const firstRun = Math.max(-1, ...plotsF.map(p => p.run)) + 1;
   for (const [i, p] of plotsF.entries()) {
     const maximum = P.plotOp === 'machiya' ? 15000 : Math.max(1600, P.houseArea[zone][1] * 1.8);
-    if (area(p.poly) <= maximum) { refined.push(p); continue; }
+    if (area(p.poly) <= maximum) {
+      refined.push(p);
+      continue;
+    }
     const parts = cutCourtyards(p.poly, bi, zone, P, streets, rng.fork('siheyuan:' + i), axis);
-    if (parts.plots.length < 2) { refined.push(p); continue; }
-    refined.push(...parts.plots.map((q) => ({ ...q, run: firstRun + i, wealth: p.wealth, fade: p.fade })));
+    if (parts.plots.length < 2) {
+      refined.push(p);
+      continue;
+    }
+    refined.push(...parts.plots.map(q => ({ ...q, run: firstRun + i, wealth: p.wealth, fade: p.fade })));
     back.push(...parts.back);
   }
   return { plots: refined, back };

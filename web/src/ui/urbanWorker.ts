@@ -1,7 +1,9 @@
 import { createUrbanEngine, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
 import { runActivityPlacement } from './urbanActivityPlacement';
 
-let pending: UrbanRequest | undefined, raster: UrbanRequest['raster'], running = false;
+let pending: UrbanRequest | undefined,
+  raster: UrbanRequest['raster'],
+  running = false;
 let engine: ReturnType<typeof createUrbanEngine> | undefined;
 self.onmessage = (event: MessageEvent<UrbanRequest>) => {
   engine ??= createUrbanEngine(event.data.runtime);
@@ -14,7 +16,8 @@ async function drain(): Promise<void> {
   try {
     const e = await engine!;
     while (pending) {
-      const request = pending; pending = undefined;
+      const request = pending;
+      pending = undefined;
       if (raster && !request.raster) request.raster = raster;
       raster = undefined;
       // A parcel pack is transferred, never copied: the page materialises it and this worker keeps nothing.
@@ -24,5 +27,7 @@ async function drain(): Promise<void> {
   } catch (error) {
     if (pending) self.postMessage({ id: pending.id, error: String(error) } satisfies UrbanResponse);
     pending = undefined;
-  } finally { running = false; }
+  } finally {
+    running = false;
+  }
 }

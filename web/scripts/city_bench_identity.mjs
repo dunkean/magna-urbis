@@ -12,8 +12,7 @@ export function settlementIdentity(expected, entries) {
   if (actual && actual.culture !== expected.culture) issues.push('Applied culture differs from the scenario.');
   if (actual && !finitePoint(actual.center)) issues.push('Applied settlement centre is missing or invalid.');
   if (position != null && !finitePoint(position)) issues.push('Pinned scenario position is invalid.');
-  const displacementM = finitePoint(position) && finitePoint(actual?.center)
-    ? Math.hypot(actual.center.x - position.x, actual.center.y - position.y) : null;
+  const displacementM = finitePoint(position) && finitePoint(actual?.center) ? Math.hypot(actual.center.x - position.x, actual.center.y - position.y) : null;
   // Permit only floating-point round trips, not a silent relocation or rounding
   // to a different fixture. The input and output both use metric world space.
   if (displacementM !== null && displacementM > 1e-6) issues.push('Applied centre differs from the pinned scenario position.');
@@ -21,6 +20,7 @@ export function settlementIdentity(expected, entries) {
     matches: issues.length === 0,
     expected: { key: expected.key, population: expected.population, culture: expected.culture, position: position ?? null },
     actual: actual ? { key: actual.key, population: actual.population, culture: actual.culture, center: actual.center } : null,
-    displacementM, issues,
+    displacementM,
+    issues,
   };
 }

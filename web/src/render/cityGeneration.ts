@@ -22,9 +22,7 @@ export const parcelFitOf = (settings?: PlacementBatchSettings): boolean => setti
 export const CITY_NATIVE_RASTER_MAP_SIZE = 40000;
 /** Side of the settlement raster sent to the engine (V2 rule): the display grid side, or on a map above
  * 40 km with a grid under 1024 the native terrain side (at least 16, at most 1024). */
-export const cityRasterSide = (o: { mapSize: number; gridSide: number; nativeSide?: number }): number =>
-  o.mapSize > CITY_NATIVE_RASTER_MAP_SIZE && o.nativeSide && o.gridSide < CITY_RASTER_RESOLUTION
-    ? Math.min(CITY_RASTER_RESOLUTION, Math.max(16, o.nativeSide)) : o.gridSide;
+export const cityRasterSide = (o: { mapSize: number; gridSide: number; nativeSide?: number }): number => (o.mapSize > CITY_NATIVE_RASTER_MAP_SIZE && o.nativeSide && o.gridSide < CITY_RASTER_RESOLUTION ? Math.min(CITY_RASTER_RESOLUTION, Math.max(16, o.nativeSide)) : o.gridSide);
 /** Settlement raster of a native terrain for city generation and display (City Bench): the same rule, the grid being the native terrain. */
 export function citySettlementRaster(t: TerrainData): SettlementRaster {
   const side = t.physical?.n ?? t.resolution;
@@ -33,8 +31,7 @@ export function citySettlementRaster(t: TerrainData): SettlementRaster {
 
 /** Reviewed v7 generation choices are the city defaults, not hidden sheet-only switches.
  * Explicit layout values (including false and zero) still override these defaults. */
-export const CITY_LAYOUT_DEFAULTS = Object.freeze({ naturalCampApproaches: true, streetFrontage: true, alignEnclosedGrid: true,
-  hideUnusedQuarters: true, organicBranchVariation: .5, ribbonWidthVariation: .5 });
+export const CITY_LAYOUT_DEFAULTS = Object.freeze({ naturalCampApproaches: true, streetFrontage: true, alignEnclosedGrid: true, hideUnusedQuarters: true, organicBranchVariation: 0.5, ribbonWidthVariation: 0.5 });
 export function defaultCityLayoutConfig(): import('../../../rust/bridge/urbanConfig').LayoutConfig {
   return { ...defaultLayoutConfig(), ...CITY_LAYOUT_DEFAULTS };
 }
@@ -45,10 +42,12 @@ export const cityTownRoads = regionalStreets;
 /** Site archetype of each town in the quarters request (layout `siteArchetypes`, read by urban/kinds.rs): an explicit
  * per-site rule, else the requested site type, else the archetype the placement chose. */
 export function citySiteArchetypes(sites: readonly { key: string; siteType?: string; archetype?: string }[], explicit?: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(sites.flatMap(s => {
-    const archetype = explicit?.[s.key] ?? (s.siteType && s.siteType !== 'auto' ? s.siteType : s.archetype);
-    return archetype ? [[s.key, archetype]] : [];
-  }));
+  return Object.fromEntries(
+    sites.flatMap(s => {
+      const archetype = explicit?.[s.key] ?? (s.siteType && s.siteType !== 'auto' ? s.siteType : s.archetype);
+      return archetype ? [[s.key, archetype]] : [];
+    }),
+  );
 }
 
 /** Quarter labels receive the same cultural place name on both pages. */

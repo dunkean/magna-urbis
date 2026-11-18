@@ -2,9 +2,7 @@
  * A style ID selects one coherent recipe/variant bundle. Facets contain exact
  * atlas declarations, never translated labels or guessed architectural usages.
  */
-import type {
-  ArchitectureTypology, HistoricalMode, HouseCatalogue, HouseRole, Layout, Placement, Recipe, SourceDigest,
-} from './housesContract';
+import type { ArchitectureTypology, HistoricalMode, HouseCatalogue, HouseRole, Layout, Placement, Recipe, SourceDigest } from './housesContract';
 
 export const BUILDING_STYLE_SCHEMA = 'building-styles-1';
 export type BuildingMorphology = 'single' | 'linear' | 'courtyard' | 'compound' | 'terraced' | 'ring' | 'specialized';
@@ -85,9 +83,7 @@ export interface BuildingStyleEntry {
   constraints: BuildingStyleConstraints;
 }
 
-export type BuildingStyleFacet = 'pack' | 'tradition' | 'recipe' | 'variant' | 'role' | 'profile'
-  | 'layout' | 'typology' | 'morphology' | 'footprint' | 'roof' | 'material' | 'era'
-  | 'source' | 'confidence' | 'settlement_archetype' | 'compound_pattern' | 'subtradition';
+export type BuildingStyleFacet = 'pack' | 'tradition' | 'recipe' | 'variant' | 'role' | 'profile' | 'layout' | 'typology' | 'morphology' | 'footprint' | 'roof' | 'material' | 'era' | 'source' | 'confidence' | 'settlement_archetype' | 'compound_pattern' | 'subtradition';
 
 export interface BuildingStyleIndex {
   schema_version: typeof BUILDING_STYLE_SCHEMA;

@@ -22,7 +22,11 @@ export interface ViewLoadingOptions {
 
 export const VIEW_LOADING_TIMEOUT_MS = 60_000;
 
-interface JobRecord { key?: string; label: string; active: boolean }
+interface JobRecord {
+  key?: string;
+  label: string;
+  active: boolean;
+}
 
 export class ViewLoadingTracker {
   private readonly jobs = new Set<JobRecord>();
@@ -36,8 +40,12 @@ export class ViewLoadingTracker {
   }
 
   /** Number of jobs in flight. */
-  get pending(): number { return this.jobs.size; }
-  get busy(): boolean { return this.busyState; }
+  get pending(): number {
+    return this.jobs.size;
+  }
+  get busy(): boolean {
+    return this.busyState;
+  }
 
   /** Starts a job. A key supersedes (ends) the previous job of that key, so a stale request cannot keep the spinner. */
   begin(key?: string): ViewJob {
@@ -47,25 +55,40 @@ export class ViewLoadingTracker {
     if (key !== undefined) this.keyed.set(key, record);
     this.arm();
     this.update();
-    return { end: () => this.complete(record), get active() { return record.active; } };
+    return {
+      end: () => this.complete(record),
+      get active() {
+        return record.active;
+      },
+    };
   }
 
   /** Ends the current job of `key`, if any (a cancelled 3D opening, for example). */
-  end(key: string): void { this.complete(this.keyed.get(key)); }
+  end(key: string): void {
+    this.complete(this.keyed.get(key));
+  }
 
   /** Drops every job (the view is shown complete). */
   clear(): void {
     for (const record of this.jobs) record.active = false;
-    this.jobs.clear(); this.keyed.clear();
-    this.disarm(); this.update();
+    this.jobs.clear();
+    this.keyed.clear();
+    this.disarm();
+    this.update();
   }
 
-  dispose(): void { this.disarm(); for (const record of this.jobs) record.active = false; this.jobs.clear(); this.keyed.clear(); }
+  dispose(): void {
+    this.disarm();
+    for (const record of this.jobs) record.active = false;
+    this.jobs.clear();
+    this.keyed.clear();
+  }
 
   private complete(record: JobRecord | undefined): void {
     if (!this.finish(record)) return;
     // A completion is progress: the safety timeout restarts while other jobs remain.
-    if (this.jobs.size) this.arm(); else this.disarm();
+    if (this.jobs.size) this.arm();
+    else this.disarm();
     this.update();
   }
 
@@ -88,7 +111,12 @@ export class ViewLoadingTracker {
     }, this.timeoutMs);
   }
 
-  private disarm(): void { if (this.timer !== undefined) { clearTimeout(this.timer); this.timer = undefined; } }
+  private disarm(): void {
+    if (this.timer !== undefined) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+  }
 
   private update(): void {
     const busy = this.jobs.size > 0;

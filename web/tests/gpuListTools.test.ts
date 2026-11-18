@@ -12,9 +12,12 @@ const record = (w: number, h: number): { canvas: RecordingCanvas; ctx: CanvasRen
 describe('display list marks and split', () => {
   it('marks a section boundary, stops merging across it and splits there', () => {
     const { canvas, ctx } = record(100, 100);
-    const a = newPath(), b = newPath();
-    a.rect(0, 0, 10, 10); b.rect(20, 0, 10, 10);
-    ctx.fillStyle = '#ff0000'; ctx.fill(a);
+    const a = newPath(),
+      b = newPath();
+    a.rect(0, 0, 10, 10);
+    b.rect(20, 0, 10, 10);
+    ctx.fillStyle = '#ff0000';
+    ctx.fill(a);
     (ctx as unknown as RecordingContext).mark(CRISP_MARK);
     ctx.fill(b); // same state: it would have joined the first op without the mark
     const list = canvas.finish();
@@ -23,23 +26,29 @@ describe('display list marks and split', () => {
     expect(markIndex(list, CRISP_MARK)).toBe(1);
     expect(markIndex(list, 'other')).toBe(-1);
     const [prefix, suffix] = splitList(list, markIndex(list, CRISP_MARK));
-    expect(prefix.ops.length).toBe(1); expect(prefix.ops[0]).toBe(list.ops[0]);
-    expect(suffix.ops.length).toBe(1); expect(suffix.ops[0]).toBe(list.ops[1]);
+    expect(prefix.ops.length).toBe(1);
+    expect(prefix.ops[0]).toBe(list.ops[0]);
+    expect(suffix.ops.length).toBe(1);
+    expect(suffix.ops[0]).toBe(list.ops[1]);
     expect([prefix.width, prefix.height, suffix.width, suffix.height]).toEqual([100, 100, 100, 100]);
     expect(prefix.stats.ops + suffix.stats.ops).toBe(2);
   });
 
   it('records no mark unless asked: an unmarked list is as before', () => {
     const { canvas, ctx } = record(100, 100);
-    const a = newPath(), b = newPath();
-    a.rect(0, 0, 10, 10); b.rect(20, 0, 10, 10);
-    ctx.fill(a); ctx.fill(b);
+    const a = newPath(),
+      b = newPath();
+    a.rect(0, 0, 10, 10);
+    b.rect(20, 0, 10, 10);
+    ctx.fill(a);
+    ctx.fill(b);
     const list = canvas.finish();
     expect(list.ops.length).toBe(1);
     expect(list.marks).toBeUndefined();
     expect(markIndex(list, CRISP_MARK)).toBe(-1);
     // A mark belongs to the list it was set in.
-    (ctx as unknown as RecordingContext).mark(CRISP_MARK); ctx.fill(a);
+    (ctx as unknown as RecordingContext).mark(CRISP_MARK);
+    ctx.fill(a);
     expect(canvas.finish().marks).toEqual([{ name: CRISP_MARK, at: 0 }]);
     ctx.fill(a);
     expect(canvas.finish().marks).toBeUndefined();
@@ -50,35 +59,54 @@ describe('cullList', () => {
   it('drops the paths and ops that cannot touch the box and keeps the others as they are', () => {
     const { canvas, ctx } = record(200, 100);
     ctx.setTransform(2, 0, 0, 2, 0, 0);
-    const inside = newPath(), outside = newPath(), line = newPath(), away = newPath();
-    inside.rect(10, 10, 10, 10);    // device 20..40
-    outside.rect(10, 200, 10, 10);  // device y 400..420
-    line.moveTo(0, 60); line.lineTo(50, 60); // device y 120, 20 px under the box
+    const inside = newPath(),
+      outside = newPath(),
+      line = newPath(),
+      away = newPath();
+    inside.rect(10, 10, 10, 10); // device 20..40
+    outside.rect(10, 200, 10, 10); // device y 400..420
+    line.moveTo(0, 60);
+    line.lineTo(50, 60); // device y 120, 20 px under the box
     away.rect(0, 300, 10, 10);
-    ctx.fillStyle = '#00ff00'; ctx.fill(inside); ctx.fill(outside); // one op, two paths
+    ctx.fillStyle = '#00ff00';
+    ctx.fill(inside);
+    ctx.fill(outside); // one op, two paths
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 30; ctx.stroke(line);                          // 60 px wide: reaches the box
-    ctx.lineWidth = 1; ctx.strokeStyle = '#0000ff'; ctx.stroke(line); // 2 px wide: does not
-    ctx.save(); ctx.clip(away); ctx.fillStyle = '#ff0000'; ctx.fill(inside); ctx.restore(); // clipped away
-    ctx.globalCompositeOperation = 'destination-in'; ctx.fill(outside); // acts on the whole clip: kept
+    ctx.lineWidth = 30;
+    ctx.stroke(line); // 60 px wide: reaches the box
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#0000ff';
+    ctx.stroke(line); // 2 px wide: does not
+    ctx.save();
+    ctx.clip(away);
+    ctx.fillStyle = '#ff0000';
+    ctx.fill(inside);
+    ctx.restore(); // clipped away
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.fill(outside); // acts on the whole clip: kept
     const list = canvas.finish();
     expect(list.ops.length).toBe(5);
     const culled = cullList(list, [0, 0, 200, 100]);
     expect(culled.ops.length).toBe(3);
     const fill = culled.ops[0] as FillOp;
-    expect(fill.paths.length).toBe(1); expect(fill.paths[0]).toBe(inside);
+    expect(fill.paths.length).toBe(1);
+    expect(fill.paths[0]).toBe(inside);
     expect((list.ops[0] as FillOp).paths.length).toBe(2); // the recorded op is not touched
     expect(culled.ops[1]).toBe(list.ops[1]);
     expect((culled.ops[1] as StrokeOp).width).toBe(30);
     expect(culled.ops[2]).toBe(list.ops[4]);
     expect((culled.ops[2] as FillOp).composite).toBe('destination-in');
-    expect(culled.width).toBe(200); expect(culled.stats.ops).toBe(3);
+    expect(culled.width).toBe(200);
+    expect(culled.stats.ops).toBe(3);
   });
 
   it('returns the list itself when nothing is dropped', () => {
     const { canvas, ctx } = record(200, 100);
-    const a = newPath(); a.rect(10, 10, 10, 10);
-    ctx.fill(a); ctx.lineWidth = 2; ctx.stroke(a);
+    const a = newPath();
+    a.rect(10, 10, 10, 10);
+    ctx.fill(a);
+    ctx.lineWidth = 2;
+    ctx.stroke(a);
     const list = canvas.finish();
     expect(cullList(list, [0, 0, 200, 100])).toBe(list);
   });
@@ -88,10 +116,15 @@ describe('cullList', () => {
 const crossings = (g: PathGeometry, x: number, y: number): number => {
   let n = 0;
   for (let s = 0; s + 1 < g.starts.length; s++) {
-    const from = g.starts[s], count = g.starts[s + 1] - from;
+    const from = g.starts[s],
+      count = g.starts[s + 1] - from;
     for (let i = 0; i < count; i++) {
-      const j = (i + 1) % count, ax = g.points[(from + i) * 2], ay = g.points[(from + i) * 2 + 1], bx = g.points[(from + j) * 2], by = g.points[(from + j) * 2 + 1];
-      if ((ay > y) !== (by > y) && x < ax + (y - ay) / (by - ay) * (bx - ax)) n++;
+      const j = (i + 1) % count,
+        ax = g.points[(from + i) * 2],
+        ay = g.points[(from + i) * 2 + 1],
+        bx = g.points[(from + j) * 2],
+        by = g.points[(from + j) * 2 + 1];
+      if (ay > y !== by > y && x < ax + ((y - ay) / (by - ay)) * (bx - ax)) n++;
     }
   }
   return n;
@@ -116,13 +149,22 @@ describe('clipGeometry and clipList', () => {
     const { canvas, ctx } = record(100, 100);
     const line = newPath();
     // 201 vertices every 50 px from x = -5000 to 5000, zigzagging between y = 50 and 51.
-    for (let i = 0; i <= 200; i++) { const x = -5000 + i * 50, y = 50 + i % 2; if (i) line.lineTo(x, y); else line.moveTo(x, y); }
-    ctx.lineJoin = 'round'; ctx.lineWidth = 2; ctx.stroke(line);
-    ctx.setLineDash([4, 2]); ctx.stroke(line);
+    for (let i = 0; i <= 200; i++) {
+      const x = -5000 + i * 50,
+        y = 50 + (i % 2);
+      if (i) line.lineTo(x, y);
+      else line.moveTo(x, y);
+    }
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2;
+    ctx.stroke(line);
+    ctx.setLineDash([4, 2]);
+    ctx.stroke(line);
     const list = canvas.finish();
     expect(list.ops.length).toBe(2);
     const cut = clipList(list, [0, 0, 100, 100]);
-    const solid = cut.ops[0] as StrokeOp, kept = solid.paths[0].geometry(1);
+    const solid = cut.ops[0] as StrokeOp,
+      kept = solid.paths[0].geometry(1);
     expect(solid.paths[0]).not.toBe(line);
     // The window is the box, its 32 px margin and the 3.5 px reach of the stroke: the four segments from -50 to 150.
     expect(kept.points.length).toBe(10);
@@ -144,22 +186,41 @@ describe('clipGeometry and clipList', () => {
 
   it('cuts the map-sized polygons of fills and clips and keeps their winding in the box', () => {
     const { canvas, ctx } = record(100, 100);
-    const big = newPath(), small = newPath(), away = newPath();
+    const big = newPath(),
+      small = newPath(),
+      away = newPath();
     // A 96-sided ring of radius 2000 around the box, with a square hole inside the box.
-    for (let i = 0; i < 96; i++) { const a = i / 96 * Math.PI * 2, x = 50 + 2000 * Math.cos(a), y = 50 + 2000 * Math.sin(a); if (i) big.lineTo(x, y); else big.moveTo(x, y); }
-    big.closePath(); big.rect(40, 40, 20, 20);
-    small.rect(45, 45, 10, 10); away.rect(1000, 1000, 100, 100);
-    ctx.fillStyle = '#00ff00'; ctx.fill(big, 'evenodd');
+    for (let i = 0; i < 96; i++) {
+      const a = (i / 96) * Math.PI * 2,
+        x = 50 + 2000 * Math.cos(a),
+        y = 50 + 2000 * Math.sin(a);
+      if (i) big.lineTo(x, y);
+      else big.moveTo(x, y);
+    }
+    big.closePath();
+    big.rect(40, 40, 20, 20);
+    small.rect(45, 45, 10, 10);
+    away.rect(1000, 1000, 100, 100);
+    ctx.fillStyle = '#00ff00';
+    ctx.fill(big, 'evenodd');
     ctx.stroke(big);
-    ctx.save(); ctx.clip(big, 'evenodd');
-    ctx.fillStyle = '#ff0000'; ctx.fill(small); ctx.fillStyle = '#0000ff'; ctx.fill(small);
+    ctx.save();
+    ctx.clip(big, 'evenodd');
+    ctx.fillStyle = '#ff0000';
+    ctx.fill(small);
+    ctx.fillStyle = '#0000ff';
+    ctx.fill(small);
     ctx.restore();
-    ctx.save(); ctx.clip(away); ctx.fill(small); ctx.restore(); // nothing of this clip is in the box
+    ctx.save();
+    ctx.clip(away);
+    ctx.fill(small);
+    ctx.restore(); // nothing of this clip is in the box
     const list = canvas.finish();
     expect(list.ops.length).toBe(5);
     const cut = clipList(list, [0, 0, 100, 100]);
     expect(cut.ops.length).toBe(4);
-    const fill = cut.ops[0] as FillOp, outline = fill.paths[0].geometry(1);
+    const fill = cut.ops[0] as FillOp,
+      outline = fill.paths[0].geometry(1);
     expect(fill.paths[0]).not.toBe(big);
     expect(fill.rule).toBe('evenodd');
     // The ring became the window (the box and its margin); the hole inside the box is untouched.
@@ -171,7 +232,9 @@ describe('clipGeometry and clipList', () => {
     const stroke = cut.ops[1] as StrokeOp;
     expect(stroke.paths[0]).not.toBe(big);
     expect(stroke.paths[0].geometry(1).bbox).toEqual([40, 40, 60, 60]);
-    const a = cut.ops[2] as FillOp, b = cut.ops[3] as FillOp, before = (list.ops[2] as FillOp).clip!;
+    const a = cut.ops[2] as FillOp,
+      b = cut.ops[3] as FillOp,
+      before = (list.ops[2] as FillOp).clip!;
     expect(a.clip).toBe(b.clip); // one node for the ops that shared one
     expect(a.clip).not.toBe(before);
     expect(a.clip!.path).toBe(fill.paths[0]); // the same cut outline, made once
@@ -182,8 +245,14 @@ describe('clipGeometry and clipList', () => {
 
   it('returns the list itself when no polygon is worth cutting', () => {
     const { canvas, ctx } = record(100, 100);
-    const a = newPath(); a.rect(-50, -50, 300, 300);
-    ctx.fill(a); ctx.save(); ctx.clip(a); ctx.fillStyle = '#ff0000'; ctx.fill(a); ctx.restore();
+    const a = newPath();
+    a.rect(-50, -50, 300, 300);
+    ctx.fill(a);
+    ctx.save();
+    ctx.clip(a);
+    ctx.fillStyle = '#ff0000';
+    ctx.fill(a);
+    ctx.restore();
     const list = canvas.finish();
     expect(clipList(list, [0, 0, 100, 100])).toBe(list);
   });

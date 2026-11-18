@@ -1,5 +1,9 @@
 import { encodeRecipe, decodeRecipe } from './recipe';
-export interface SituationPin { x: number; y: number; note: string }
+export interface SituationPin {
+  x: number;
+  y: number;
+  note: string;
+}
 export interface CitySituation {
   v: 1;
   q: string;
@@ -18,7 +22,7 @@ export async function encodeSituation(situation: CitySituation): Promise<string>
 }
 export async function decodeSituation(text: string): Promise<CitySituation> {
   const input = text.trim();
-  const recipe = decodeRecipe(input.startsWith('MU2.') ? input : /MU2\.[A-Za-z0-9_-]+/.exec(input)?.[0] ?? input);
+  const recipe = decodeRecipe(input.startsWith('MU2.') ? input : (/MU2\.[A-Za-z0-9_-]+/.exec(input)?.[0] ?? input));
   if (recipe.stage !== 'city' || recipe.terrain) throw new Error('Code de ville invalide.');
   const params = new URLSearchParams(recipe.query);
   const view = params.has('situationView') ? JSON.parse(params.get('situationView')!) : undefined;

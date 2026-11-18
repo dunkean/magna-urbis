@@ -16,7 +16,8 @@ if (argument === '--check') {
 } else {
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(argument)) throw Error('Use a semantic version, e.g. 0.3.1 or 0.4.0-alpha.1');
   if (contents.slice(1).some(text => !cargoPattern.test(text))) throw Error('Desktop package missing from Cargo.toml or Cargo.lock');
-  const config = JSON.parse(contents[0]); config.version = argument;
+  const config = JSON.parse(contents[0]);
+  config.version = argument;
   await writeFile(join(root, files[0]), `${JSON.stringify(config, null, 2)}\n`);
   for (let i = 1; i < files.length; i++) await writeFile(join(root, files[i]), contents[i].replace(cargoPattern, `$1${argument}$3`));
   console.log(`Version set to ${argument}. Commit the changes, then push tag desktop-v${argument} to build and publish with GitHub Actions.`);

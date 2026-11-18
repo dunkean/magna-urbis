@@ -17,18 +17,13 @@ import { Vec2, Polygon, dist, polygonArea } from '../core/geom';
 import { distanceField, forCellsNearPolyline, smoothstep } from '../core/field';
 import { rasterizePolys } from '../geo/raster';
 import type { World, Settlement, SiteArchetype } from '../types';
-import {
-  Options, SettlementClass, CountClass, COUNT_CLASSES, SettlementSpec, SettlementOverrides, SitePrefs,
-  classOfPop, SettlementCounts,
-} from '../options';
+import { Options, SettlementClass, CountClass, COUNT_CLASSES, SettlementSpec, SettlementOverrides, SitePrefs, classOfPop, SettlementCounts } from '../options';
 import { getCulture } from '../urban/culture';
 import { BIG_RIVER_W } from '../site/site';
 import { resolvePosition } from '../site/position';
 
 /** Population ranges used for counted / automatic settlements (log-uniform). */
-export const CLASS_POP: Record<CountClass, [number, number]> = {
-  farmstead: [5, 12], hamlet: [20, 80], village: [150, 600], town: [1000, 5000], city: [20000, 60000],
-};
+export const CLASS_POP: Record<CountClass, [number, number]> = { farmstead: [5, 12], hamlet: [20, 80], village: [150, 600], town: [1000, 5000], city: [20000, 60000] };
 
 /** Projected radius (m) of the built extent of a settlement of `pop` inhabitants. */
 export function extentRadius(pop: number): number {
@@ -38,7 +33,16 @@ export function extentRadius(pop: number): number {
 }
 
 /** Central-place spacing of a class (m), log-interpolated: villages 2.3 km, market towns 9 km, cities 15 km. */
-const SPACING: [number, number][] = [[5, 450], [40, 1000], [300, 2300], [1000, 3800], [3000, 9000], [20000, 15000], [100000, 24000], [1e6, 40000]];
+const SPACING: [number, number][] = [
+  [5, 450],
+  [40, 1000],
+  [300, 2300],
+  [1000, 3800],
+  [3000, 9000],
+  [20000, 15000],
+  [100000, 24000],
+  [1e6, 40000],
+];
 export function classSpacing(pop: number): number {
   if (pop <= SPACING[0][0]) return SPACING[0][1];
   for (let i = 1; i < SPACING.length; i++) {
@@ -53,7 +57,8 @@ export function classSpacing(pop: number): number {
 }
 /** Minimum center distance between two settlements: spacing of the smaller one, growing with the size ratio. */
 export function pairSpacing(pa: number, pb: number): number {
-  const lo = Math.min(pa, pb), hi = Math.max(pa, pb);
+  const lo = Math.min(pa, pb),
+    hi = Math.max(pa, pb);
   return classSpacing(lo) * Math.pow(hi / Math.max(1, lo), 0.1);
 }
 /** Extents (plus a gardens ring) never overlap, whatever the relaxation. */
@@ -61,8 +66,22 @@ export function extentGap(pa: number, pb: number): number {
   return extentRadius(pa) + extentRadius(pb) + 60 + 0.25 * Math.max(extentRadius(pa), extentRadius(pb));
 }
 
-export interface PlanRequest { key: string; cls: CountClass | SettlementClass; pop: number; culture: string; siteType?: SiteArchetype; position?: Vec2; options?: SettlementOverrides; explicit: boolean }
-export interface PlanResult { settlements: Settlement[]; warnings: string[]; requested: number; ms?: Record<string, number> }
+export interface PlanRequest {
+  key: string;
+  cls: CountClass | SettlementClass;
+  pop: number;
+  culture: string;
+  siteType?: SiteArchetype;
+  position?: Vec2;
+  options?: SettlementOverrides;
+  explicit: boolean;
+}
+export interface PlanResult {
+  settlements: Settlement[];
+  warnings: string[];
+  requested: number;
+  ms?: Record<string, number>;
+}
 
 const logUniform = (r: Rng, [a, b]: [number, number]): number => Math.round(a * Math.pow(b / a, r.float()));
 
@@ -89,14 +108,13 @@ export const AUTO_SMALL_TOP = 0.35;
 
 /** Requests in placement order (stable keys). */
 export function settlementRequests(opts: Options, usableKm2: number, mainPop: number, root: Rng): PlanRequest[] {
-  const s = opts.workflow === 'automatic' ? 'auto' : opts.settlements ?? 'auto';
+  const s = opts.workflow === 'automatic' ? 'auto' : (opts.settlements ?? 'auto');
   if (s === 'none') return [];
   const out: PlanRequest[] = [];
   if (typeof s === 'object' && 'list' in s) {
     s.list.forEach((it: SettlementSpec, k) => {
       if (opts.workflow === 'list' && k === 0) return;
-      out.push({ key: it.key ?? String(k), cls: classOfPop(it.population), pop: it.population, culture: it.culture ?? opts.culture,
-        siteType: it.siteType, position: it.position, options: it.options, explicit: true });
+      out.push({ key: it.key ?? String(k), cls: classOfPop(it.population), pop: it.population, culture: it.culture ?? opts.culture, siteType: it.siteType, position: it.position, options: it.options, explicit: true });
     });
     return out;
   }
@@ -118,16 +136,23 @@ export function clipConvex(subject: Polygon, clip: Polygon): Polygon {
   let out = subject;
   const ccw = polygonArea(clip) > 0;
   for (let i = 0; i < clip.length && out.length; i++) {
-    const a = clip[i], b = clip[(i + 1) % clip.length];
-    const inside = (p: Vec2): boolean => { const c = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x); return ccw ? c >= 0 : c <= 0; };
+    const a = clip[i],
+      b = clip[(i + 1) % clip.length];
+    const inside = (p: Vec2): boolean => {
+      const c = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+      return ccw ? c >= 0 : c <= 0;
+    };
     const inp = out;
     out = [];
     for (let j = 0; j < inp.length; j++) {
-      const P = inp[j], Q = inp[(j + 1) % inp.length];
-      const pin = inside(P), qin = inside(Q);
+      const P = inp[j],
+        Q = inp[(j + 1) % inp.length];
+      const pin = inside(P),
+        qin = inside(Q);
       if (pin) out.push(P);
       if (pin !== qin) {
-        const dx = Q.x - P.x, dy = Q.y - P.y;
+        const dx = Q.x - P.x,
+          dy = Q.y - P.y;
         const den = (b.x - a.x) * dy - (b.y - a.y) * dx;
         if (Math.abs(den) > 1e-12) {
           const t = ((b.y - a.y) * (P.x - a.x) - (b.x - a.x) * (P.y - a.y)) / den;
@@ -141,14 +166,29 @@ export function clipConvex(subject: Polygon, clip: Polygon): Polygon {
 
 export function circle(c: Vec2, r: number, n = 28): Polygon {
   const out: Polygon = [];
-  for (let i = 0; i < n; i++) { const a = (i / n) * 2 * Math.PI; out.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r }); }
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * 2 * Math.PI;
+    out.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
+  }
   return out;
 }
 
 /** Voronoi cells of the settlement sites, clipped to the map. */
 export function voronoiRegions(centers: Vec2[], S: number): Polygon[] {
-  if (centers.length === 1) return [[{ x: 0, y: 0 }, { x: S, y: 0 }, { x: S, y: S }, { x: 0, y: S }]];
-  const del = Delaunay.from(centers, (p) => p.x, (p) => p.y);
+  if (centers.length === 1)
+    return [
+      [
+        { x: 0, y: 0 },
+        { x: S, y: 0 },
+        { x: S, y: S },
+        { x: 0, y: S },
+      ],
+    ];
+  const del = Delaunay.from(
+    centers,
+    p => p.x,
+    p => p.y,
+  );
   const vor = del.voronoi([0, 0, S, S]);
   return centers.map((_, i) => {
     const cp = vor.cellPolygon(i);
@@ -162,12 +202,15 @@ export function voronoiRegions(centers: Vec2[], S: number): Polygon[] {
  * Plan all settlements. `world` holds the terrain, the main site, the main roads and the main urban layer.
  */
 export function planSettlements(world: World, opts: Options, root: Rng, mainOptions: Options = opts, projectedPopulation = 100): PlanResult {
-  const terrain = world.terrain, site = world.site!;
+  const terrain = world.terrain,
+    site = world.site!;
   // Retained worlds own their physical extent (V2 Rust terrains can exceed the legacy preset limit).
   const S = world.mapSize;
   const { w: n, cell } = terrain.height;
   const N = n * n;
-  const H = terrain.height.data, water = terrain.water, slope = terrain.slope.data;
+  const H = terrain.height.data,
+    water = terrain.water,
+    slope = terrain.slope.data;
   const f = site.fields;
   const warnings: string[] = [];
   const r = root.fork('settlements');
@@ -180,40 +223,75 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
   for (const ph of foot) footArea += Math.abs(polygonArea(ph.outer));
   const mainR = Math.max(extentRadius(mainPop) * 0.6, Math.sqrt(footArea / Math.PI) * 1.15, site.reserveRadius);
   const main: Settlement = {
-    key: 'main', index: 0, main: true, cls: classOfPop(mainPop), population: mainPop, culture: mainOptions.culture, center: site.center,
-    archetype: site.archetype, radius: mainR, extent: [], region: [], detail: 'main', urban: world.urban,
-    crossing: site.crossing, harbor: site.harbor,
+    key: 'main',
+    index: 0,
+    main: true,
+    cls: classOfPop(mainPop),
+    population: mainPop,
+    culture: mainOptions.culture,
+    center: site.center,
+    archetype: site.archetype,
+    radius: mainR,
+    extent: [],
+    region: [],
+    detail: 'main',
+    urban: world.urban,
+    crossing: site.crossing,
+    harbor: site.harbor,
     ...(opts.workflow === 'list' ? { fixed: !!mainOptions.center } : {}),
   };
 
   // ---- fields shared by all candidates
   const footMask = new Uint8Array(N);
-  if (foot.length) rasterizePolys(foot.map((ph) => ph.outer), n, n, cell, footMask);
-  else forCellsNearPolyline([site.center, site.center], n, n, cell, mainR, (i) => { footMask[i] = 1; });
+  if (foot.length)
+    rasterizePolys(
+      foot.map(ph => ph.outer),
+      n,
+      n,
+      cell,
+      footMask,
+    );
+  else
+    forCellsNearPolyline([site.center, site.center], n, n, cell, mainR, i => {
+      footMask[i] = 1;
+    });
   const dFoot = distanceField(footMask, n, n, cell).dist;
   const roadMask = new Uint8Array(N);
-  for (const rd of world.roads ?? []) forCellsNearPolyline(rd.path, n, n, cell, cell * 0.75, (i) => { roadMask[i] = 1; });
+  for (const rd of world.roads ?? [])
+    forCellsNearPolyline(rd.path, n, n, cell, cell * 0.75, i => {
+      roadMask[i] = 1;
+    });
   const dRoad = distanceField(roadMask, n, n, cell).dist;
   const bigMask = new Uint8Array(N);
   for (const rv of terrain.rivers) {
     for (let i = 1; i < rv.path.length; i++) {
       const wd = Math.max(rv.width[i - 1], rv.width[i]);
       if (wd < BIG_RIVER_W) continue;
-      forCellsNearPolyline([rv.path[i - 1], rv.path[i]], n, n, cell, wd / 2 + cell * 0.8, (idx) => { if (water[idx] === 3) bigMask[idx] = 1; });
+      forCellsNearPolyline([rv.path[i - 1], rv.path[i]], n, n, cell, wd / 2 + cell * 0.8, idx => {
+        if (water[idx] === 3) bigMask[idx] = 1;
+      });
     }
   }
   const dBig = distanceField(bigMask, n, n, cell).dist;
-  const confl: Vec2[] = terrain.rivers.filter((rv) => rv.mouth === 'river' && Math.max(...rv.width) >= 2.5).map((rv) => rv.path[rv.path.length - 1]);
+  const confl: Vec2[] = terrain.rivers.filter(rv => rv.mouth === 'river' && Math.max(...rv.width) >= 2.5).map(rv => rv.path[rv.path.length - 1]);
   const hb = blurGrid(terrain.height, Math.max(2, Math.round(300 / cell)), 2).data;
   const slopeS = f.slopeS;
   // buildable land (summed-area table)
   const build = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (water[i] === 0 && slope[i] < 0.2 && f.hab[i] >= 1) build[i] = 1;
   const sat = new Int32Array((n + 1) * (n + 1));
-  for (let y = 0; y < n; y++) { let row = 0; for (let x = 0; x < n; x++) { row += build[y * n + x]; sat[(y + 1) * (n + 1) + x + 1] = sat[y * (n + 1) + x + 1] + row; } }
+  for (let y = 0; y < n; y++) {
+    let row = 0;
+    for (let x = 0; x < n; x++) {
+      row += build[y * n + x];
+      sat[(y + 1) * (n + 1) + x + 1] = sat[y * (n + 1) + x + 1] + row;
+    }
+  }
   const frac = (x: number, y: number, rad: number): number => {
-    const x0 = Math.max(0, Math.floor((x - rad) / cell)), x1 = Math.min(n - 1, Math.floor((x + rad) / cell));
-    const y0 = Math.max(0, Math.floor((y - rad) / cell)), y1 = Math.min(n - 1, Math.floor((y + rad) / cell));
+    const x0 = Math.max(0, Math.floor((x - rad) / cell)),
+      x1 = Math.min(n - 1, Math.floor((x + rad) / cell));
+    const y0 = Math.max(0, Math.floor((y - rad) / cell)),
+      y1 = Math.min(n - 1, Math.floor((y + rad) / cell));
     const s = sat[(y1 + 1) * (n + 1) + x1 + 1] - sat[y0 * (n + 1) + x1 + 1] - sat[(y1 + 1) * (n + 1) + x0] + sat[y0 * (n + 1) + x0];
     const full = Math.max(1, Math.round((2 * rad) / cell) + 1) ** 2;
     return s / Math.max((x1 - x0 + 1) * (y1 - y0 + 1), full);
@@ -227,8 +305,7 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
   // Automatic companions may together have at most the main settlement's population. Explicit counts and lists
   // describe a user-chosen composition and are deliberately exempt from this regional budget.
   let remainingAutoPopulation = mainPop;
-  const prefsFor = (q: PlanRequest): SitePrefs =>
-    q.options?.sitePrefs ?? (opts.workflow === 'list' && q.culture === opts.culture ? opts.sitePrefs : undefined) ?? getCulture(q.culture).sitePrefs ?? {};
+  const prefsFor = (q: PlanRequest): SitePrefs => q.options?.sitePrefs ?? (opts.workflow === 'list' && q.culture === opts.culture ? opts.sitePrefs : undefined) ?? getCulture(q.culture).sitePrefs ?? {};
   const noise = new Noise2D(r.fork('noise'));
 
   // ---- candidate grid (~40–60 m stride)
@@ -240,7 +317,7 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
   /** Archetype of a site from the features around it (for labels and the urban plan). */
   const archetypeAt = (i: number, ext: number, p: Vec2): SiteArchetype => {
     if (f.dSea[i] < ext + 70) return 'harbor';
-    if (confl.some((c) => dist(c, p) < ext + 150)) return 'confluence';
+    if (confl.some(c => dist(c, p) < ext + 150)) return 'confluence';
     if (dBig[i] < ext + 60) return 'bridge';
     if (H[i] - hb[i] > 8 && slopeS[i] < 0.12) return 'hilltop';
     if ((opts.relief === 'valley' || opts.relief === 'mountains') && f.dMain[i] < 900) return 'valley';
@@ -248,14 +325,23 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
   };
   const matches = (a: SiteArchetype, i: number, ext: number, p: Vec2): boolean => {
     switch (a) {
-      case 'harbor': return f.dSea[i] < ext + 60;
-      case 'estuary': return f.dSea[i] < 700 && dBig[i] < ext + 60;
-      case 'bridge': case 'meander': return dBig[i] < ext + 60;
-      case 'confluence': return confl.some((c) => dist(c, p) < ext + 150);
-      case 'hilltop': return H[i] - hb[i] > 6;
-      case 'valley': return f.dMain[i] < 900 && f.hab[i] > 2.5;
-      case 'plain': return slopeS[i] < 0.05;
-      default: return true;
+      case 'harbor':
+        return f.dSea[i] < ext + 60;
+      case 'estuary':
+        return f.dSea[i] < 700 && dBig[i] < ext + 60;
+      case 'bridge':
+      case 'meander':
+        return dBig[i] < ext + 60;
+      case 'confluence':
+        return confl.some(c => dist(c, p) < ext + 150);
+      case 'hilltop':
+        return H[i] - hb[i] > 6;
+      case 'valley':
+        return f.dMain[i] < 900 && f.hab[i] > 2.5;
+      case 'plain':
+        return slopeS[i] < 0.05;
+      default:
+        return true;
     }
   };
 
@@ -265,7 +351,8 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
     const ext = extentRadius(pop);
     const cu = getCulture(culture);
     const prefs = override ?? cu.sitePrefs ?? {};
-    const mountain = prefs.mountainFace ?? 0, wood = prefs.woodland ?? 0;
+    const mountain = prefs.mountainFace ?? 0,
+      wood = prefs.woodland ?? 0;
     // hard constraints: dry land, map margin, not too steep (dwarves and elves tolerate more), buildable ground
     const edge = Math.min(p.x, p.y, S - p.x, S - p.y);
     // (the urban engine keeps a 3 % band along the map border unbuilt)
@@ -311,7 +398,10 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
       const ts = performance.now();
       const rep = [8, 40, 300, 3000, 30000][band];
       l = [];
-      for (const i of cand) { const s = scoreOf(i, rep, culture, prefs); if (s > -Infinity) l.push({ i, s }); }
+      for (const i of cand) {
+        const s = scoreOf(i, rep, culture, prefs);
+        if (s > -Infinity) l.push({ i, s });
+      }
       l.sort((a, b) => b.s - a.s || a.i - b.i);
       sorted.set(key, l);
       tSort += performance.now() - ts;
@@ -338,13 +428,20 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
     const m = new Map<number, Map<number, number>>();
     return (a: number, b: number): number => {
       let r = m.get(a);
-      if (!r) { r = new Map(); m.set(a, r); }
+      if (!r) {
+        r = new Map();
+        m.set(a, r);
+      }
       let v = r.get(b);
-      if (v === undefined) { v = f(a, b); r.set(b, v); }
+      if (v === undefined) {
+        v = f(a, b);
+        r.set(b, v);
+      }
       return v;
     };
   };
-  const pairSp = memo2(pairSpacing), extGap = memo2(extentGap);
+  const pairSp = memo2(pairSpacing),
+    extGap = memo2(extentGap);
   const okAgainst = (p: Vec2, pop: number, relax: number): boolean => {
     const ext = extentRadius(pop);
     const ci = Math.min(n - 1, Math.floor(p.y / cell)) * n + Math.min(n - 1, Math.floor(p.x / cell));
@@ -356,13 +453,18 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
     }
     // only the placed settlements within the largest possible spacing (buckets of 2 km)
     const R = Math.max(pairSp(maxPopNM, pop), extGap(maxPopNM, pop));
-    const bx0 = Math.floor((p.x - R) / BUCKET), bx1 = Math.floor((p.x + R) / BUCKET), by0 = Math.floor((p.y - R) / BUCKET), by1 = Math.floor((p.y + R) / BUCKET);
-    for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) for (const o of buckets.get(by * 4096 + bx) ?? []) {
-      const d = dist(o.center, p);
-      const gap = o.main ? ext + mainR + 80 : extGap(o.population, pop);
-      if (d < gap) return false;
-      if (d < relax * pairSp(o.population, pop)) return false;
-    }
+    const bx0 = Math.floor((p.x - R) / BUCKET),
+      bx1 = Math.floor((p.x + R) / BUCKET),
+      by0 = Math.floor((p.y - R) / BUCKET),
+      by1 = Math.floor((p.y + R) / BUCKET);
+    for (let by = by0; by <= by1; by++)
+      for (let bx = bx0; bx <= bx1; bx++)
+        for (const o of buckets.get(by * 4096 + bx) ?? []) {
+          const d = dist(o.center, p);
+          const gap = o.main ? ext + mainR + 80 : extGap(o.population, pop);
+          if (d < gap) return false;
+          if (d < relax * pairSp(o.population, pop)) return false;
+        }
     return true;
   };
   // cells that no settlement of a band can take any more (inside an extent gap or the tightest spacing of a
@@ -374,14 +476,20 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
     const m = blocked[b]!;
     const pm = BAND_MIN[b];
     const R = o.main ? extentRadius(pm) + mainR + 80 : Math.max(extentGap(o.population, pm), 0.48 * pairSpacing(o.population, pm));
-    const cx = Math.floor(o.center.x / cell), cy = Math.floor(o.center.y / cell), rc = Math.floor(R / cell) - 1;
-    for (let y = Math.max(0, cy - rc); y <= Math.min(n - 1, cy + rc); y++) for (let x = Math.max(0, cx - rc); x <= Math.min(n - 1, cx + rc); x++) {
-      if ((x - cx) ** 2 + (y - cy) ** 2 <= rc * rc) m[y * n + x] = 1;
-    }
+    const cx = Math.floor(o.center.x / cell),
+      cy = Math.floor(o.center.y / cell),
+      rc = Math.floor(R / cell) - 1;
+    for (let y = Math.max(0, cy - rc); y <= Math.min(n - 1, cy + rc); y++)
+      for (let x = Math.max(0, cx - rc); x <= Math.min(n - 1, cx + rc); x++) {
+        if ((x - cx) ** 2 + (y - cy) ** 2 <= rc * rc) m[y * n + x] = 1;
+      }
   };
   const blockedFor = (pop: number): Uint8Array => {
     const b = bandOf(pop);
-    if (!blocked[b]) { blocked[b] = new Uint8Array(N); for (const o of placed) block(b, o); }
+    if (!blocked[b]) {
+      blocked[b] = new Uint8Array(N);
+      for (const o of placed) block(b, o);
+    }
     return blocked[b]!;
   };
   let requested = 0;
@@ -395,7 +503,8 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
     if (q.position) {
       const prefs = prefsFor(q);
       const p = resolvePosition(terrain, S, q.position, {
-        inset: 0.03 * S + 0.8 * ext + 40, maxMove: 400,
+        inset: 0.03 * S + 0.8 * ext + 40,
+        maxMove: 400,
         slopeMax: 0.3 + 0.25 * (prefs.mountainFace ?? 0) + 0.08 * (prefs.woodland ?? 0),
         // An explicit position may lie against another settlement (the urban stage keeps their land apart);
         // only a centre on another one's cell moves, so that each settlement keeps its own region.
@@ -432,7 +541,10 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
           return false;
         };
         if (tryList(true)) break;
-        if (q.siteType && tryList(false)) { warnings.push(`settlement ${q.key}: no ${q.siteType} site available, placed on the best other site`); break; }
+        if (q.siteType && tryList(false)) {
+          warnings.push(`settlement ${q.key}: no ${q.siteType} site available, placed on the best other site`);
+          break;
+        }
       }
       if (!chosen) {
         if (q.explicit) warnings.push(`settlement ${q.key} (${q.cls}, ${q.pop} inh.) could not be placed: not enough room`);
@@ -451,17 +563,17 @@ export function planSettlements(world: World, opts: Options, root: Rng, mainOpti
     const center = q.position || water[pi] || !okAgainst(p, q.pop, relaxed) ? c.p : p;
     const archetype = q.siteType && matches(q.siteType, c.i, ext, center) ? q.siteType : archetypeAt(c.i, ext, center);
     const cls = classOfPop(q.pop);
-    placed.push({
-      key: q.key, index: placed.length, cls, population: q.pop, culture: q.culture, center, archetype, radius: ext,
-      extent: [], region: [], fixed: !!q.position, options: q.options, detail: cls === 'farmstead' ? 'farmstead' : 'eager',
-    });
+    placed.push({ key: q.key, index: placed.length, cls, population: q.pop, culture: q.culture, center, archetype, radius: ext, extent: [], region: [], fixed: !!q.position, options: q.options, detail: cls === 'farmstead' ? 'farmstead' : 'eager' });
     if (!q.explicit) remainingAutoPopulation -= q.pop;
     for (let b = 0; b < 5; b++) if (blocked[b]) block(b, placed[placed.length - 1]);
     addBucket(placed[placed.length - 1]);
   }
 
   // ---- regions (Voronoi cells) and extents (disc clipped to the cell)
-  const regions = voronoiRegions(placed.map((s) => s.center), S);
+  const regions = voronoiRegions(
+    placed.map(s => s.center),
+    S,
+  );
   placed.forEach((s, k) => {
     s.region = regions[k];
     s.extent = clipConvex(circle(s.center, s.radius), regions[k]);

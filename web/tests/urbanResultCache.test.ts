@@ -12,7 +12,11 @@ describe('urban result cache', () => {
     expect(await urbanCacheKey({ id: 1, seed: 's', kind: 'quarters', raster: { water: new Float32Array([1, 2]) } }, { ...ctx, engine: '2' })).not.toBe(a);
   });
   it('evicts least recently used entries until the budget fits', () => {
-    const entries = [{ key: 'a', bytes: 40, time: 3 }, { key: 'b', bytes: 40, time: 1 }, { key: 'c', bytes: 40, time: 2 }];
+    const entries = [
+      { key: 'a', bytes: 40, time: 3 },
+      { key: 'b', bytes: 40, time: 1 },
+      { key: 'c', bytes: 40, time: 2 },
+    ];
     expect(planEviction(entries, 10, 100)).toEqual(['b']);
     expect(planEviction(entries, 10, 200)).toEqual([]);
     expect(planEviction(entries, 50, 100)).toEqual(['b', 'c']);

@@ -21,10 +21,13 @@ it('defaults every site option off and retains each opt-in through share queries
 
 it('keeps disabled native payloads identical to missing options and sends explicit true options', async () => {
   const payloads: UrbanRequest[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith('/urban')) payloads.push(JSON.parse(String(init?.body)));
-    return new Response(JSON.stringify(url.endsWith('/raster') ? { ok: true } : { id: 1, layouts: [] }), { headers: { 'content-type': 'application/json' } });
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/urban')) payloads.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify(url.endsWith('/raster') ? { ok: true } : { id: 1, layouts: [] }), { headers: { 'content-type': 'application/json' } });
+    }),
+  );
   const runtime = { profile: 'local' as const, server: 'http://site-options.test:8795' };
   const raster = { width: 100, n: 2, height: new Float32Array(4), water: new Uint8Array(4), waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4).fill(-1) };
   for (const enabled of [false, true]) {

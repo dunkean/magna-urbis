@@ -17,7 +17,14 @@ export const AUTHORED_CORPUS_SHA256 = '72fa7b7d7ed46a85b6cad23ec6ed6f11679529535
 export const CORPUS_FINGERPRINT = 'bae38bc101a567e331ba69fa94621e1fd6b9a6305880930d2708256e52a5975d';
 export const CORPUS_SHA256 = CORPUS_FINGERPRINT;
 export type ToponymKind = 'place' | 'town' | 'city' | 'village' | 'hamlet' | 'river' | 'lake' | 'sea' | 'forest' | 'hill' | 'region' | 'farm';
-export interface ToponymContext { seed: string | number; key: string; kind: ToponymKind; culture: string; language?: string; source?: NameSource }
+export interface ToponymContext {
+  seed: string | number;
+  key: string;
+  kind: ToponymKind;
+  culture: string;
+  language?: string;
+  source?: NameSource;
+}
 type Country = { settlements: string[]; water: string[]; lakes: string[]; relief: string[]; regions: string[] };
 type Generator = { pattern: { variants: Array<{ concat: string[]; space?: boolean; space_pos?: number }> }; arrays: Record<string, string[]> };
 const countries: Record<string, Country> = pack.countries;
@@ -78,20 +85,26 @@ export function generateToponymRecord(context: ToponymContext): ToponymRecord {
   const profile = { ...selected };
   const source = context.source ?? 'auto';
   const r = new Rng(seed).fork(`toponym:${ALGORITHM_VERSION}`).fork(profile.id).fork(kind).fork(key);
-  if (source === 'invented' || source === 'mixed' && r.fork('source').chance(.5)) profile.sourceMode = profile.generator ? 'generator' : 'constructed';
-  if (source === 'geographic' || source === 'mixed' && profile.sourceMode !== 'constructed') {
+  if (source === 'invented' || (source === 'mixed' && r.fork('source').chance(0.5))) profile.sourceMode = profile.generator ? 'generator' : 'constructed';
+  if (source === 'geographic' || (source === 'mixed' && profile.sourceMode !== 'constructed')) {
     if (profile.country) profile.sourceMode = 'country';
     else profile.diagnostic = `No geographic corpus for ${profile.id}; using its invented names`;
   }
-  const record = (proper: string, cultural: string, opaque: boolean, sourceMode: ToponymSourceMode,
-    coherence: ToponymCoherence, corpusLabel?: string): ToponymRecord =>
-    ({ proper, cultural, kind, opaque, profile: profile.id, sourceMode, coherence, ...(profile.diagnostic ? { diagnostic: profile.diagnostic } : {}), ...(corpusLabel === undefined ? {} : { corpusLabel }) });
+  const record = (proper: string, cultural: string, opaque: boolean, sourceMode: ToponymSourceMode, coherence: ToponymCoherence, corpusLabel?: string): ToponymRecord => ({
+    proper,
+    cultural,
+    kind,
+    opaque,
+    profile: profile.id,
+    sourceMode,
+    coherence,
+    ...(profile.diagnostic ? { diagnostic: profile.diagnostic } : {}),
+    ...(corpusLabel === undefined ? {} : { corpusLabel }),
+  });
   const settlement = SETTLEMENT_KINDS.has(kind);
   if (profile.sourceMode === 'country' && profile.country) {
     const country = countries[profile.country];
-    const pool = settlement ? country?.settlements : kind === 'river' ? country?.water
-      : kind === 'lake' ? country?.lakes : kind === 'hill' ? country?.relief
-      : kind === 'region' ? country?.regions : undefined;
+    const pool = settlement ? country?.settlements : kind === 'river' ? country?.water : kind === 'lake' ? country?.lakes : kind === 'hill' ? country?.relief : kind === 'region' ? country?.regions : undefined;
     if (pool?.length) {
       const name = r.fork(`geographic:${kind}`).pick(pool);
       return record(name, name, isOpaqueCorpusLabel(kind, name), 'country', 'modern-geographic', name);
@@ -104,9 +117,7 @@ export function generateToponymRecord(context: ToponymContext): ToponymRecord {
   // Complete English feature generators have no semantic boundaries. Typed roots
   // keep the cultural generic localizable without parsing their output.
   const root = authoredProper(profile, kind, r.fork('authored-root'));
-  const cultural = settlement ? root.proper : root.template
-    ? root.template.replace('{proper}', root.proper)
-    : formatToponym(profile, kind as ToponymForm, root.proper);
+  const cultural = settlement ? root.proper : root.template ? root.template.replace('{proper}', root.proper) : formatToponym(profile, kind as ToponymForm, root.proper);
   return record(root.proper, cultural, false, 'constructed', 'fictional-phonotactic');
 }
 

@@ -6,15 +6,16 @@ import type { NameKind } from '../gen/names/types';
 import { PALETTES, MapStyle, Palette } from './styles';
 
 /** Label font stack per style (defined with the style tokens in styles.ts). */
-export const FONT_STACKS: Record<MapStyle, string> = Object.fromEntries(
-  (Object.keys(PALETTES) as MapStyle[]).map((k) => [k, PALETTES[k].fontFamily]),
-) as Record<MapStyle, string>;
+export const FONT_STACKS: Record<MapStyle, string> = Object.fromEntries((Object.keys(PALETTES) as MapStyle[]).map(k => [k, PALETTES[k].fontFamily])) as Record<MapStyle, string>;
 
 export type LabelShape = 'point' | 'area' | 'path';
 export type Symbol = 'dot' | 'ring' | 'cross' | 'tri' | 'square';
 
 export interface KindStyle {
-  family?: string; halo?: string; haloOpacity?: number; haloWidth?: number;
+  family?: string;
+  halo?: string;
+  haloOpacity?: number;
+  haloWidth?: number;
   shape: LabelShape;
   italic: boolean;
   bold: boolean;
@@ -25,8 +26,11 @@ export interface KindStyle {
   stretch: number;
   color: string;
   /** Font size = clamp(sizeM * scale, minPx, maxPx). */
-  sizeM: number; minPx: number; maxPx: number;
-  minScale: number; maxScale: number;
+  sizeM: number;
+  minPx: number;
+  maxPx: number;
+  minScale: number;
+  maxScale: number;
   priority: number;
   symbol?: Symbol;
 }
@@ -34,8 +38,10 @@ export interface KindStyle {
 const INF = 1e9;
 
 export function kindStyles(_style: MapStyle, pal: Palette): Record<NameKind, KindStyle> {
-  const ink = pal.ink, soft = pal.inkSoft;
-  const water = pal.lab.water, wood = pal.lab.wood;
+  const ink = pal.ink,
+    soft = pal.inkSoft;
+  const water = pal.lab.water,
+    wood = pal.lab.wood;
   const wi = pal.lab.waterItalic;
   const areaCaps = pal.lab.areaCaps;
   const base: KindStyle = { shape: 'point', italic: false, bold: false, caps: 'none', spacing: 0, stretch: 0, color: ink, sizeM: 6, minPx: 10, maxPx: 14, minScale: 0, maxScale: INF, priority: 30 };
@@ -57,7 +63,7 @@ export function kindStyles(_style: MapStyle, pal: Palette): Record<NameKind, Kin
     village: k({ shape: 'point', symbol: 'dot', bold: false, sizeM: 14, minPx: 11.5, maxPx: 16, maxScale: 0.7, priority: 75 }),
     farm: k({ shape: 'point', italic: true, color: soft, sizeM: 6, minPx: 9.5, maxPx: 11, minScale: 0.22, priority: 28 }),
     bridge: k({ shape: 'point', italic: true, sizeM: 6, minPx: 10, maxPx: 12, minScale: 0.5, priority: 34 }),
-    building: k({shape:'point',sizeM:5,minPx:9,maxPx:12,minScale:.7,priority:25}),
+    building: k({ shape: 'point', sizeM: 5, minPx: 9, maxPx: 12, minScale: 0.7, priority: 25 }),
   };
 }
 

@@ -14,9 +14,14 @@ export function isRect(p: Polygon): boolean {
 export interface CoverageReport {
   /** Area-weighted built share of the blocks per phase id (faubourg phases have the highest id). */
   byPhase: Map<number, { built: number; area: number; blocks: number; zone: string; rect: number; n: number }>;
-  minWidth: number; maxAspect: number; narrow: number; long: number; buildings: number;
+  minWidth: number;
+  maxAspect: number;
+  narrow: number;
+  long: number;
+  buildings: number;
   /** Faubourg coverage within 150 m of the enclosure (gate side) and beyond (the ribbon fades out). */
-  faubNear: number; faubFar: number;
+  faubNear: number;
+  faubFar: number;
 }
 
 export function coverage(w: World, landmarkKinds = new Set(['church', 'cathedral', 'landmark'])): CoverageReport {
@@ -31,7 +36,9 @@ export function coverage(w: World, landmarkKinds = new Set(['church', 'cathedral
     const info = u.blockInfo[i];
     if (info.kind !== 'block') return;
     const rec = byPhase.get(info.phase) ?? { built: 0, area: 0, blocks: 0, zone: info.zone, rect: 0, n: 0 };
-    rec.built += blockBuilt[i]; rec.area += area(poly); rec.blocks++;
+    rec.built += blockBuilt[i];
+    rec.area += area(poly);
+    rec.blocks++;
     byPhase.set(info.phase, rec);
   });
   for (const b of u.buildings) {
@@ -43,22 +50,37 @@ export function coverage(w: World, landmarkKinds = new Set(['church', 'cathedral
     if (isRect(b.poly)) rec.rect++;
   }
   // faubourgs: near the enclosure vs far
-  const enc = u.phases.filter((ph) => ph.zone !== 'faubourg').flatMap((ph) => ph.region.map((r) => r.outer));
-  let nb = 0, na = 0, fb = 0, fa = 0;
+  const enc = u.phases.filter(ph => ph.zone !== 'faubourg').flatMap(ph => ph.region.map(r => r.outer));
+  let nb = 0,
+    na = 0,
+    fb = 0,
+    fa = 0;
   u.blocks.forEach((poly, i) => {
     const info = u.blockInfo[i];
     if (info.kind !== 'block' || info.zone !== 'faubourg') return;
     const c = poly.reduce((s, q) => ({ x: s.x + q.x / poly.length, y: s.y + q.y / poly.length }), { x: 0, y: 0 });
-    const d = enc.length ? Math.min(...enc.map((r) => distToRing(r, c))) : 0;
-    if (d <= 150) { nb += blockBuilt[i]; na += area(poly); } else { fb += blockBuilt[i]; fa += area(poly); }
+    const d = enc.length ? Math.min(...enc.map(r => distToRing(r, c))) : 0;
+    if (d <= 150) {
+      nb += blockBuilt[i];
+      na += area(poly);
+    } else {
+      fb += blockBuilt[i];
+      fa += area(poly);
+    }
   });
-  let minWidth = Infinity, maxAspect = 0, narrow = 0, long = 0, n = 0;
+  let minWidth = Infinity,
+    maxAspect = 0,
+    narrow = 0,
+    long = 0,
+    n = 0;
   for (const b of u.buildings) {
     if (landmarkKinds.has(b.kind)) continue;
     n++;
     const o = obb(b.poly);
-    const wdt = 2 * o.hv, asp = o.hu / Math.max(1e-6, o.hv);
-    minWidth = Math.min(minWidth, wdt); maxAspect = Math.max(maxAspect, asp);
+    const wdt = 2 * o.hv,
+      asp = o.hu / Math.max(1e-6, o.hv);
+    minWidth = Math.min(minWidth, wdt);
+    maxAspect = Math.max(maxAspect, asp);
     if (wdt < 4.4) narrow++;
     if (asp > 3.05) long++;
   }

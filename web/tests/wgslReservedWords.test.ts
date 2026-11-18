@@ -6,7 +6,8 @@ import * as generated3d from '../src/ui/terrain3dWgsl.generated';
 
 // WGSL reserved words (spec "Reserved Words"): an identifier spelled like one fails to compile on recent
 // Tint ("'from' is a reserved keyword"), so no shader may use them as variable, parameter, member or function names.
-const RESERVED = new Set(`NULL Self abstract active alignas alignof as asm asm_fragment async attribute auto await become
+const RESERVED = new Set(
+  `NULL Self abstract active alignas alignof as asm asm_fragment async attribute auto await become
 cast catch class co_await co_return co_yield coherent column_major common compile compile_fragment concept const_cast
 consteval constexpr constinit crate debugger decltype delete demote demote_to_helper do dynamic_cast enum explicit export
 extends extern external fallthrough filter final finally friend from fxgroup get goto groupshared highp impl implements
@@ -15,7 +16,8 @@ new nil noexcept noinline nointerpolation non_coherent noncoherent noperspective
 packoffset partition pass patch pixelfragment precise precision premerge priv protected pub public readonly ref regardless
 register reinterpret_cast require resource restrict self set shared sizeof smooth snorm static static_assert static_cast
 std subroutine super target template this thread_local throw trait try type typedef typeid typename typeof union unless
-unorm unsafe unsized use using varying virtual volatile wgsl where with writeonly yield`.split(/\s+/));
+unorm unsafe unsized use using varying virtual volatile wgsl where with writeonly yield`.split(/\s+/),
+);
 
 const root = join(__dirname, '..', '..');
 
@@ -37,8 +39,7 @@ function sources(): [string, string][] {
   for (const [name, value] of Object.entries(generated)) if (typeof value === 'string') out.push([`terrainWgsl.generated:${name}`, value]);
   for (const [name, value] of Object.entries(generated3d)) if (typeof value === 'string') out.push([`terrain3dWgsl.generated:${name}`, value]);
   const inline = [join(root, 'rust', 'bridge'), join(root, 'web', 'src')];
-  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
-    entry.isDirectory() ? walk(join(dir, entry.name)) : entry.name.endsWith('.ts') && !entry.name.includes('.generated.') ? [join(dir, entry.name)] : []);
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(entry => (entry.isDirectory() ? walk(join(dir, entry.name)) : entry.name.endsWith('.ts') && !entry.name.includes('.generated.') ? [join(dir, entry.name)] : []));
   for (const file of inline.flatMap(walk)) {
     const text = readFileSync(file, 'utf8');
     if (!text.includes('createShaderModule')) continue;

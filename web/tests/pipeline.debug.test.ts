@@ -5,11 +5,21 @@ import { terrainForExtent } from '../src/gen/terrain/hydrology';
 import { makeOptions } from '../src/gen/options';
 import { worldToJson } from '../src/ui/exportWorld';
 import { createHash } from 'node:crypto';
-const hash = (v: unknown): string => createHash('sha256').update(JSON.stringify(v, (_key, item: unknown) => ArrayBuffer.isView(item) ? createHash('sha256').update(new Uint8Array(item.buffer, item.byteOffset, item.byteLength)).digest('hex') : item)).digest('hex');
+const hash = (v: unknown): string =>
+  createHash('sha256')
+    .update(
+      JSON.stringify(v, (_key, item: unknown) =>
+        ArrayBuffer.isView(item)
+          ? createHash('sha256')
+              .update(new Uint8Array(item.buffer, item.byteOffset, item.byteLength))
+              .digest('hex')
+          : item,
+      ),
+    )
+    .digest('hex');
 const terrainHash = (v: object): Record<string, string> => Object.fromEntries(Object.entries(v).map(([key, value]) => [key, hash(key === 'rivers' ? (value as { name?: string }[]).map(({ name: _name, ...river }) => river) : value)]));
 
-const options = makeOptions({ seed: 'debug-stages', workflow: 'list', mapSize: 2400, river: 'river',
-  settlements: { list: [{ population: 140 }, { population: 30, position: { x: 300, y: 400 } }] } });
+const options = makeOptions({ seed: 'debug-stages', workflow: 'list', mapSize: 2400, river: 'river', settlements: { list: [{ population: 140 }, { population: 30, position: { x: 300, y: 400 } }] } });
 
 describe('developer generation stages', () => {
   it('keeps display changes out of the session identity, including imported pixels in it', () => {

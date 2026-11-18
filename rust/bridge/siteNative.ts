@@ -13,10 +13,16 @@ const nativeServers = new Map<string, Promise<boolean>>();
 function nativeAvailable(runtime: ExecutionRuntime): Promise<boolean> {
   let known = nativeServers.get(runtime.server);
   if (!known) {
-    known = nativeFetch(runtime, '/status', { cache: 'no-store' }, 1500).then(r => r.json())
-      .then((status: { capabilities?: unknown }) => Array.isArray(status.capabilities) && status.capabilities.includes('site.choose-v1'), () => false);
+    known = nativeFetch(runtime, '/status', { cache: 'no-store' }, 1500)
+      .then(r => r.json())
+      .then(
+        (status: { capabilities?: unknown }) => Array.isArray(status.capabilities) && status.capabilities.includes('site.choose-v1'),
+        () => false,
+      );
     nativeServers.set(runtime.server, known);
-    void known.then(ok => { if (!ok) nativeServers.delete(runtime.server); });
+    void known.then(ok => {
+      if (!ok) nativeServers.delete(runtime.server);
+    });
   }
   return known;
 }
@@ -25,12 +31,12 @@ function nativeAvailable(runtime: ExecutionRuntime): Promise<boolean> {
 export async function chooseSiteRust(terrain: TerrainLayer, opts: Options, mapSize: number, root: Rng, runtime?: ExecutionRuntime, displayOnly = false): Promise<SiteLayer> {
   const body = encodeSiteRequest(terrain, opts, mapSize, root, displayOnly);
   const { w: n, cell } = terrain.height;
-  if (runtime?.profile === 'local' && await nativeAvailable(runtime)) {
+  if (runtime?.profile === 'local' && (await nativeAvailable(runtime))) {
     // Consume the whole reply body so the keep-alive connection is free.
     const reply = new Uint8Array(await (await nativeRequest(runtime, '/site/choose', new Blob([body]))).arrayBuffer());
     return decodeSiteReply(reply, n, cell, displayOnly);
   }
-  const wasm = await loadCoreWasm() as unknown as { site_choose?: (request: Uint8Array) => Uint8Array };
+  const wasm = (await loadCoreWasm()) as unknown as { site_choose?: (request: Uint8Array) => Uint8Array };
   if (typeof wasm.site_choose !== 'function') throw new Error('Rust/WASM site_choose export missing: rebuild the WASM packages.');
   return decodeSiteReply(wasm.site_choose(body), n, cell, displayOnly);
 }

@@ -17,30 +17,23 @@ export type CityArchitecture = UrbanSceneMode;
 export const CITY_ARCHITECTURES: readonly CityArchitecture[] = ['silhouette', 'compact', 'detailed'];
 /** City volumes are the default display in both pages: fast, follow the city silhouette, windows in 3D. */
 export const DEFAULT_CITY_ARCHITECTURE: CityArchitecture = 'silhouette';
-export const cityArchitectureOf = (value: unknown): CityArchitecture =>
-  CITY_ARCHITECTURES.includes(value as CityArchitecture) ? value as CityArchitecture : DEFAULT_CITY_ARCHITECTURE;
+export const cityArchitectureOf = (value: unknown): CityArchitecture => (CITY_ARCHITECTURES.includes(value as CityArchitecture) ? (value as CityArchitecture) : DEFAULT_CITY_ARCHITECTURE);
 
 /** Display defaults of one city: the V2 table (`appearanceRecipe.ts`), imported by City Bench instead of a private copy. */
-export const CITY_DISPLAY_DEFAULTS = Object.freeze({
-  view: DEFAULT_CITY.view, palette: DEFAULT_CITY.palette, buildingStyle: DEFAULT_CITY.buildingStyle,
-  opacity: DEFAULT_CITY.opacity, width: DEFAULT_CITY.width, groundBlend: DEFAULT_CITY.groundBlend,
-  layers: DEFAULT_CITY_LAYERS,
-});
+export const CITY_DISPLAY_DEFAULTS = Object.freeze({ view: DEFAULT_CITY.view, palette: DEFAULT_CITY.palette, buildingStyle: DEFAULT_CITY.buildingStyle, opacity: DEFAULT_CITY.opacity, width: DEFAULT_CITY.width, groundBlend: DEFAULT_CITY.groundBlend, layers: DEFAULT_CITY_LAYERS });
 
 /** Building plans drawn by the native house renderer (houses crate: compact, detailed). City volumes
  * (`generator_version: 'silhouette'`) are plan silhouettes with roof pans and shadows (cityMassing.ts),
  * drawn by cityGl, or by drawCity on the Canvas 2D path, in both pages. */
-export const usesNativeHouseRenderer = (scene: { generator_version?: string } | undefined): boolean =>
-  !!scene && scene.generator_version !== 'silhouette';
+export const usesNativeHouseRenderer = (scene: { generator_version?: string } | undefined): boolean => !!scene && scene.generator_version !== 'silhouette';
 
 /** The 2D city engine rule of both pages (`render=auto|gpu|cpu`). WebGL2 (cityGl) draws the plan and
  * the city volumes unless this returns why Canvas 2D (drawCity) must draw the frame instead. */
-export function cityGlBlockReason(o: {
-  mode: RenderMode; appearance: ResolvedAppearance; palette: string; ready: boolean; compare?: boolean;
-}): string | null {
+export function cityGlBlockReason(o: { mode: RenderMode; appearance: ResolvedAppearance; palette: string; ready: boolean; compare?: boolean }): string | null {
   const base = cityGlBlocker({ mode: o.mode, compare: !!o.compare, parchment: o.palette === 'parchment', ready: o.ready });
   if (base) return base;
-  const r = o.appearance, c = r.composition;
+  const r = o.appearance,
+    c = r.composition;
   if (c.landuse.urban !== 'off') return 'urban-landuse';
   if (groundRoadLook(c.networks.roads.look)) return 'natural-roads';
   if (r.city.buildingStyle !== 'cartographic') return 'building-style';

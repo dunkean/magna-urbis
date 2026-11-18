@@ -1,73 +1,405 @@
 /* Map editing shares the workshop's glass, brass and compact form language. */
-.v2-edit-actions{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
-.v2-edit-actions button{font-size:11px;padding:7px 9px;min-height:32px}
-.v2-edit-actions>label{flex:1 1 110px;min-width:0}
-.v2-edit-actions button[aria-pressed=true]{border-color:var(--gold);background:#dcb86f22;color:#f6e1b3}
-.v2-edit-actions .danger{color:#efb09d;border-color:#d78d7555}
-.v2-edit-hint{font-size:11px;line-height:1.6;color:var(--muted);margin:8px 0}
-.v2-edit-panel{border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;background:#ffffff03}
-.v2-edit-panel h3{font-size:19px;margin-bottom:8px}
-.v2-edit-panel label{display:block;font-size:11px;color:#d2cdbd;margin:10px 0 5px}
-.v2-edit-panel .row label{flex:1;min-width:0}
-.v2-edit-panel input[type=color]{height:34px;padding:3px}
-.v2-edit-panel [role=status]{font-size:11px;line-height:1.5;color:var(--gold);margin-top:8px}
-.v2-edit-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;overflow:hidden}
+.v2-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.v2-edit-actions button {
+  font-size: 11px;
+  padding: 7px 9px;
+  min-height: 32px;
+}
+.v2-edit-actions > label {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+.v2-edit-actions button[aria-pressed='true'] {
+  border-color: var(--gold);
+  background: #dcb86f22;
+  color: #f6e1b3;
+}
+.v2-edit-actions .danger {
+  color: #efb09d;
+  border-color: #d78d7555;
+}
+.v2-edit-hint {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.v2-edit-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+  background: #ffffff03;
+}
+.v2-edit-panel h3 {
+  font-size: 19px;
+  margin-bottom: 8px;
+}
+.v2-edit-panel label {
+  display: block;
+  font-size: 11px;
+  color: #d2cdbd;
+  margin: 10px 0 5px;
+}
+.v2-edit-panel .row label {
+  flex: 1;
+  min-width: 0;
+}
+.v2-edit-panel input[type='color'] {
+  height: 34px;
+  padding: 3px;
+}
+.v2-edit-panel [role='status'] {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--gold);
+  margin-top: 8px;
+}
+.v2-edit-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 6;
+  overflow: hidden;
+}
 /* Map-space outlines belong to 2D; the 3D viewer projects its own selection. */
-.map-area:has(>.city3d:not([hidden])) [data-urban-selection],.map-area:has(>.city3d:not([hidden])) .urban-selection-name{display:none!important}
-body:has(#inspect-mode:not(:checked)) [data-urban-selection],body:has(#inspect-mode:not(:checked)) .urban-selection-name{display:none!important}
-.v2-edit-overlay .edit-handle{pointer-events:all;cursor:move;fill:#fff7e4;stroke:#9b671d;stroke-width:2}
-.v2-edit-overlay .edit-line{fill:none;stroke:#e7ab39;stroke-width:3;pointer-events:stroke;cursor:move}
-.v2-edit-overlay .edit-label{pointer-events:all;cursor:move}
-.map-topbar .edit-open{font-size:11px;padding:7px 10px}
-.v2-town-move-hint{position:absolute;top:165px;left:22px;z-index:4;max-width:380px;padding:8px 12px;font-size:11px;pointer-events:none}
-.v2-moving-towns canvas{cursor:grab}
-.map-area:has(>.city3d:not([hidden]))>.v2-town-move-hint{display:none}
-#cityShapeEditor .se-handle{filter:drop-shadow(0 1px 2px #0006)}
-.map-area .city-shape-toolbar{background:#26271ff5;border:1px solid #dcb86f66;color:#eee9db;border-radius:8px;top:85px;z-index:12;box-shadow:0 5px 20px #0004}
-.map-area .city-shape-toolbar small{color:#c5bda6}
-.map-area .city-shape-toolbar button{background:#ffffff08;border-color:#ffffff25;color:#eee9db}
-.map-area .city-shape-toolbar button:hover{background:#dcb86f22}
-@media(max-width:720px){.map-area .city-shape-toolbar{top:122px}.v2-edit-actions button{min-height:36px}}
+.map-area:has(> .city3d:not([hidden])) [data-urban-selection],
+.map-area:has(> .city3d:not([hidden])) .urban-selection-name {
+  display: none !important;
+}
+body:has(#inspect-mode:not(:checked)) [data-urban-selection],
+body:has(#inspect-mode:not(:checked)) .urban-selection-name {
+  display: none !important;
+}
+.v2-edit-overlay .edit-handle {
+  pointer-events: all;
+  cursor: move;
+  fill: #fff7e4;
+  stroke: #9b671d;
+  stroke-width: 2;
+}
+.v2-edit-overlay .edit-line {
+  fill: none;
+  stroke: #e7ab39;
+  stroke-width: 3;
+  pointer-events: stroke;
+  cursor: move;
+}
+.v2-edit-overlay .edit-label {
+  pointer-events: all;
+  cursor: move;
+}
+.map-topbar .edit-open {
+  font-size: 11px;
+  padding: 7px 10px;
+}
+.v2-town-move-hint {
+  position: absolute;
+  top: 165px;
+  left: 22px;
+  z-index: 4;
+  max-width: 380px;
+  padding: 8px 12px;
+  font-size: 11px;
+  pointer-events: none;
+}
+.v2-moving-towns canvas {
+  cursor: grab;
+}
+.map-area:has(> .city3d:not([hidden])) > .v2-town-move-hint {
+  display: none;
+}
+#cityShapeEditor .se-handle {
+  filter: drop-shadow(0 1px 2px #0006);
+}
+.map-area .city-shape-toolbar {
+  background: #26271ff5;
+  border: 1px solid #dcb86f66;
+  color: #eee9db;
+  border-radius: 8px;
+  top: 85px;
+  z-index: 12;
+  box-shadow: 0 5px 20px #0004;
+}
+.map-area .city-shape-toolbar small {
+  color: #c5bda6;
+}
+.map-area .city-shape-toolbar button {
+  background: #ffffff08;
+  border-color: #ffffff25;
+  color: #eee9db;
+}
+.map-area .city-shape-toolbar button:hover {
+  background: #dcb86f22;
+}
+@media (max-width: 720px) {
+  .map-area .city-shape-toolbar {
+    top: 122px;
+  }
+  .v2-edit-actions button {
+    min-height: 36px;
+  }
+}
 /* Names panel: towns, the picked label, then the full list. */
-.map-label-editor{display:grid;gap:10px;margin:4px 0 12px}
-.map-label-editor .map-label-status{margin:0;padding:8px 10px;border-radius:6px;background:#dcb86f1a;border:1px solid #dcb86f44}
-.map-label-editor details{border:1px solid var(--line);border-radius:8px;padding:6px 10px}
-.map-label-editor summary{cursor:pointer;font-weight:600;padding:2px 0}
-.map-label-editor input[type=text],.map-label-editor input[type=search],.map-label-editor select{width:100%;min-width:0;box-sizing:border-box}
-.map-label-town-rows{display:grid;gap:6px;margin-top:6px}
-.map-label-card{display:grid;gap:8px;border:1px solid #dcb86f88;border-radius:8px;padding:10px;background:#dcb86f0d}
-.map-label-card-head{display:flex;justify-content:space-between;gap:8px;font-size:.85em;opacity:.85}
-.map-label-kind{font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.map-label-check{display:flex;gap:6px;align-items:flex-start;font-size:.9em}
-.map-label-actions{display:flex;flex-wrap:wrap;gap:6px}
-.map-label-style-row{display:flex;flex-wrap:wrap;gap:8px 12px;margin:6px 0}
-.map-label-field{display:flex;gap:6px;align-items:center}
-.map-label-style .map-label-field:last-child{display:grid;gap:4px;margin-top:4px}
-.map-label-size input,.map-label-style input[type=number]{width:4.5rem}
-.map-label-list{display:grid;gap:6px}
-.map-label-list[open]{display:grid}
-.map-label-list select[size]{min-height:12rem}
-.map-label-marker{position:fixed;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border:2px solid #e0533d;border-radius:50%;box-shadow:0 0 0 3px #fff9,0 0 12px #e0533d88;pointer-events:none;z-index:40}
-.map-label-marker[hidden]{display:none}
-.map-label-list h3{margin:0;font-size:15px;color:var(--gold)}
-.map-label-list .hint{margin:0;font-size:11px;line-height:1.5}
-.map-label-filters{display:grid;grid-template-columns:1fr 1fr;gap:5px}.map-label-filters>select:first-child{grid-column:1/-1}
-.map-label-results{max-height:310px;overflow:auto;scrollbar-width:thin;display:grid;align-content:start;gap:3px;min-width:0}
-.map-label-group{position:sticky;top:0;background:var(--panel,#272923);padding:7px 3px;margin:0;font-size:11px;color:var(--gold);z-index:1}
-.map-label-result{display:grid;grid-template-columns:minmax(0,1fr) 26px 26px;gap:3px;align-items:center;min-width:0}
-.map-label-result .map-label-name{padding:5px 7px!important;font-size:11px!important;text-overflow:ellipsis}
-.map-label-result.is-selected .map-label-name{border-color:var(--gold);color:var(--gold);background:#dcb86f14}
-.map-label-icon{display:grid;place-items:center;width:26px;height:26px;padding:0!important;border:1px solid transparent;border-radius:5px;background:none;color:var(--muted);cursor:pointer}
-.map-label-icon:hover:not(:disabled){border-color:#dcb86f66;color:var(--gold)}
-.map-label-icon:disabled{opacity:.25;cursor:default}
-.map-label-eye[data-eye=shown]{color:var(--gold)}
-.map-label-eye[data-eye=undrawn]{opacity:.4}
-.map-label-eye[data-eye=hidden]{color:#e0533d}
-.map-label-pick{display:flex;align-items:center;justify-content:center;gap:6px}
-.map-label-pick[aria-pressed=true]{border-color:var(--gold);color:var(--gold);background:#dcb86f22}
-.place-title-rename{display:inline-grid;place-items:center;width:24px;height:24px;margin-left:6px;padding:0!important;vertical-align:middle;border:1px solid transparent;border-radius:5px;background:none;color:var(--muted);cursor:pointer}
-.place-title-rename:hover{border-color:#dcb86f66;color:var(--gold)}
-.place-title-input{font:inherit;font-size:18px!important;padding:3px 8px!important}
-.map-label-bulk{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:10px;color:var(--muted)}
-.map-label-bulk>span{width:100%}.map-label-bulk button,.map-label-pager button{font-size:10px!important;padding:5px 7px!important}
-.map-label-pager{display:flex;align-items:center;justify-content:space-between;gap:5px}.map-label-pager small{text-align:center}
+.map-label-editor {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+.map-label-editor .map-label-status {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #dcb86f1a;
+  border: 1px solid #dcb86f44;
+}
+.map-label-editor details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.map-label-editor summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 2px 0;
+}
+.map-label-editor input[type='text'],
+.map-label-editor input[type='search'],
+.map-label-editor select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.map-label-town-rows {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.map-label-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dcb86f88;
+  border-radius: 8px;
+  padding: 10px;
+  background: #dcb86f0d;
+}
+.map-label-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+.map-label-kind {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.map-label-check {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 0.9em;
+}
+.map-label-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.map-label-style-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 6px 0;
+}
+.map-label-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.map-label-style .map-label-field:last-child {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+.map-label-size input,
+.map-label-style input[type='number'] {
+  width: 4.5rem;
+}
+.map-label-list {
+  display: grid;
+  gap: 6px;
+}
+.map-label-list[open] {
+  display: grid;
+}
+.map-label-list select[size] {
+  min-height: 12rem;
+}
+.map-label-marker {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 2px solid #e0533d;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 3px #fff9,
+    0 0 12px #e0533d88;
+  pointer-events: none;
+  z-index: 40;
+}
+.map-label-marker[hidden] {
+  display: none;
+}
+.map-label-list h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--gold);
+}
+.map-label-list .hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.map-label-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.map-label-filters > select:first-child {
+  grid-column: 1/-1;
+}
+.map-label-results {
+  max-height: 310px;
+  overflow: auto;
+  scrollbar-width: thin;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+}
+.map-label-group {
+  position: sticky;
+  top: 0;
+  background: var(--panel, #272923);
+  padding: 7px 3px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--gold);
+  z-index: 1;
+}
+.map-label-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px 26px;
+  gap: 3px;
+  align-items: center;
+  min-width: 0;
+}
+.map-label-result .map-label-name {
+  padding: 5px 7px !important;
+  font-size: 11px !important;
+  text-overflow: ellipsis;
+}
+.map-label-result.is-selected .map-label-name {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: #dcb86f14;
+}
+.map-label-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0 !important;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.map-label-icon:hover:not(:disabled) {
+  border-color: #dcb86f66;
+  color: var(--gold);
+}
+.map-label-icon:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.map-label-eye[data-eye='shown'] {
+  color: var(--gold);
+}
+.map-label-eye[data-eye='undrawn'] {
+  opacity: 0.4;
+}
+.map-label-eye[data-eye='hidden'] {
+  color: #e0533d;
+}
+.map-label-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.map-label-pick[aria-pressed='true'] {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: #dcb86f22;
+}
+.place-title-rename {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0 !important;
+  vertical-align: middle;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.place-title-rename:hover {
+  border-color: #dcb86f66;
+  color: var(--gold);
+}
+.place-title-input {
+  font: inherit;
+  font-size: 18px !important;
+  padding: 3px 8px !important;
+}
+.map-label-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--muted);
+}
+.map-label-bulk > span {
+  width: 100%;
+}
+.map-label-bulk button,
+.map-label-pager button {
+  font-size: 10px !important;
+  padding: 5px 7px !important;
+}
+.map-label-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+}
+.map-label-pager small {
+  text-align: center;
+}

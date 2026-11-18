@@ -9,24 +9,37 @@ import type { NameDisplayLanguage, NameParts } from '../src/gen/names/types';
 
 const point = (x: number, y = 500) => ({ x, y });
 function place(key: string, x: number, culture = 'bastide'): Settlement {
-  return { key, index: 0, main: key === 'main', cls: 'village', population: 700, culture, center: point(x),
-    archetype: 'plain', radius: 80, extent: [], region: [], detail: key === 'main' ? 'main' : 'lazy' } as Settlement;
+  return { key, index: 0, main: key === 'main', cls: 'village', population: 700, culture, center: point(x), archetype: 'plain', radius: 80, extent: [], region: [], detail: key === 'main' ? 'main' : 'lazy' } as Settlement;
 }
 function world(): World {
   const grid = { w: 8, h: 8, cell: 125, data: new Float32Array(64) };
-  return { seed: 'namebench-integration', mapSize: 1000, stats: {},
+  return {
+    seed: 'namebench-integration',
+    mapSize: 1000,
+    stats: {},
     options: { ...DEFAULTS, culture: 'bastide', language: 'auto' },
-    terrain: { height: grid, slope: grid, water: new Uint8Array(64), rivers: [
-      { id: 7, main: true, path: [point(0, 200), point(500, 200), point(1000, 200)], width: [8, 8, 8] },
-      { id: 23, path: [point(0, 700), point(500, 700), point(1000, 700)], width: [4, 4, 4] },
-    ], lakes: [], seaFraction: 0, seaLevel: 0, flow: grid, coastline: [],
-      receiver: new Int32Array(64).fill(-1), filled: new Float32Array(64), downSide: 'S', seaSide: null },
+    terrain: {
+      height: grid,
+      slope: grid,
+      water: new Uint8Array(64),
+      rivers: [
+        { id: 7, main: true, path: [point(0, 200), point(500, 200), point(1000, 200)], width: [8, 8, 8] },
+        { id: 23, path: [point(0, 700), point(500, 700), point(1000, 700)], width: [4, 4, 4] },
+      ],
+      lakes: [],
+      seaFraction: 0,
+      seaLevel: 0,
+      flow: grid,
+      coastline: [],
+      receiver: new Int32Array(64).fill(-1),
+      filled: new Float32Array(64),
+      downSide: 'S',
+      seaSide: null,
+    },
     site: { center: point(500), reserveRadius: 80 } as World['site'],
     roads: [{ path: [point(500), point(700), point(900)], kind: 'major', width: 8 }],
     settlements: [place('main', 500), place('village:4', 900, 'persian'), place('village:9', 200, 'korean')],
-    urban: { population: 700, footprint: [], quarters: [], squares: [], streets: [], landmarks: [],
-      walls: [{ gates: [point(700)] }], sites: [{ id: 'keep', kind: 'castle', anchor: point(500), lot: [] }],
-    } as unknown as UrbanLayer,
+    urban: { population: 700, footprint: [], quarters: [], squares: [], streets: [], landmarks: [], walls: [{ gates: [point(700)] }], sites: [{ id: 'keep', kind: 'castle', anchor: point(500), lot: [] }] } as unknown as UrbanLayer,
   } as World;
 }
 function name(w: World): World {
@@ -36,10 +49,14 @@ function name(w: World): World {
   return w;
 }
 const box = (x: number, y: number, side = 100) => [
-  { x, y }, { x: x + side, y }, { x: x + side, y: y + side }, { x, y: y + side },
+  { x, y },
+  { x: x + side, y },
+  { x: x + side, y: y + side },
+  { x, y: y + side },
 ];
 function richWorld(culture: string): World {
-  const w = world(); w.options.culture = culture;
+  const w = world();
+  w.options.culture = culture;
   const u = w.urban!;
   u.landmarks = [{ kind: 'mosque', poly: box(200, 200) }];
   u.sites!.push({ id: 'worship', kind: 'madrasa', role: 'worship', lot: box(200, 200), anchor: { x: 250, y: 250 } });
@@ -59,7 +76,8 @@ const namedPlaces = (w: World) => Object.fromEntries(w.settlements!.map(p => [p.
 
 describe('Namebench pipeline integration', () => {
   it('keeps settlement names stable under reorder, insertion and repeated naming', () => {
-    const original = name(world()), expected = namedPlaces(original);
+    const original = name(world()),
+      expected = namedPlaces(original);
     const reordered = world();
     reordered.settlements = [reordered.settlements![2], place('hamlet:42', 100, 'elven'), reordered.settlements![0], reordered.settlements![1]];
     name(reordered);
@@ -83,9 +101,16 @@ describe('Namebench pipeline integration', () => {
 
   it('resolves manual names before castles, roads and gates, then renames semantic references only', () => {
     const w = world();
-    w.options = { ...w.options, workflow: 'list', settlements: { list: [
-      { population: 700, name: 'Le Havre' }, { key: 'village:4', population: 700, name: 'Avignon' },
-    ] } };
+    w.options = {
+      ...w.options,
+      workflow: 'list',
+      settlements: {
+        list: [
+          { population: 700, name: 'Le Havre' },
+          { key: 'village:4', population: 700, name: 'Avignon' },
+        ],
+      },
+    };
     name(w);
     expect(w.names!.entries.find(e => e.kind === 'castle')?.text).toBe('Château du Havre');
     expect(w.names!.entries.find(e => e.kind === 'gate')?.text).toBe("Porte d'Avignon");
@@ -115,7 +140,9 @@ describe('Namebench pipeline integration', () => {
   });
 
   it('retains a finer cultural connector when manually renaming a destination', () => {
-    const w = world(); w.options.culture = 'persian'; name(w);
+    const w = world();
+    w.options.culture = 'persian';
+    name(w);
     expect(w.names!.profile).toBe('persian');
     setSettlementName(w, 'village:4', 'Neyshabur');
     expect(w.names!.entries.find(e => e.kind === 'gate')?.text).toBe('Darvāzeh-ye Neyshabur');
@@ -123,9 +150,11 @@ describe('Namebench pipeline integration', () => {
   });
 
   it('renames retained maps without mutating source names or geometry', () => {
-    const source = name(world()), before = structuredClone(source);
+    const source = name(world()),
+      before = structuredClone(source);
     const settings = defaultSettings();
-    settings.options.culture = 'bastide'; settings.options.language = 'english';
+    settings.options.culture = 'bastide';
+    settings.options.language = 'english';
     settings.naming = { title: 'Copper Coast', places: { main: 'Valmont', 'village:4': 'Rivermeet' } };
     const renamed = renameMap(source, settings);
     expect(source).toEqual(before);
@@ -155,13 +184,18 @@ describe('Namebench pipeline integration', () => {
     expect(w.names!.entries.filter(e => e.kind === 'square').every(e => square.test(e.text))).toBe(true);
     expect(w.names!.entries.filter(e => e.kind === 'quarter').every(e => quarter.test(e.text))).toBe(true);
     expect(w.names!.entries.find(e => e.kind === 'church')?.text).toMatch(worship);
-    const labels = w.names!.entries.filter(e => ['street', 'square', 'quarter', 'church'].includes(e.kind)).map(e => e.text).join(' ');
+    const labels = w
+      .names!.entries.filter(e => ['street', 'square', 'quarter', 'church'].includes(e.kind))
+      .map(e => e.text)
+      .join(' ');
     expect(labels).not.toMatch(/Shiva|Vishnu|Brahma|Mandira|Gopura|Sharia|Madrasa|Bab /);
     expect(w.urban!.sites!.find(s => s.id === 'worship')?.name).toBe(w.names!.entries.find(e => e.kind === 'church')?.canonicalText);
   });
 
   it('preserves a minority site cultural grammar when its town reference changes', () => {
-    const w = world(); w.urban!.sites![0].culture = 'swahili-stone-town'; name(w);
+    const w = world();
+    w.urban!.sites![0].culture = 'swahili-stone-town';
+    name(w);
     expect(w.names!.entries.find(e => e.kind === 'castle')?.text).toMatch(/^Ngome/);
     setSettlementName(w, 'main', 'Valmont');
     expect(w.names!.entries.find(e => e.kind === 'castle')?.text).toMatch(/^Ngome.*Valmont$/);
@@ -191,7 +225,8 @@ describe('Namebench pipeline integration', () => {
 
   it.each(['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'] as const)('round trips cultural and %s partial display with stable identities, overrides and geometry', language => {
     const source = name(richWorld('persian'));
-    const settings = defaultSettings(); settings.options.culture = 'persian';
+    const settings = defaultSettings();
+    settings.options.culture = 'persian';
     settings.naming = { places: { main: 'Valmont', 'village:4': 'TsingTao' }, mode: 'cultural' };
     const cultural = renameMap(source, settings);
     settings.naming = { ...settings.naming, mode: 'localized', displayLanguage: language };
@@ -210,5 +245,4 @@ describe('Namebench pipeline integration', () => {
     expect(restored.names!.entries).toEqual(cultural.names!.entries);
     expect(restored.names!.region).toBe(cultural.names!.region);
   });
-
 });

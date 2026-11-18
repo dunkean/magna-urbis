@@ -42,20 +42,32 @@ export class Streets {
 
   /** Nearest street segment to p within r: street id, distance and the local half width. */
   nearest(p: Vec2, r: number, filter?: (s: StreetRec) => boolean): { s: number; d: number; hw: number; seg: number } | null {
-    let bs = -1, bd = r, bseg = 0, bt = 0;
-    this.idx.forEachIn(p.x - r, p.y - r, p.x + r, p.y + r, (ref) => {
+    let bs = -1,
+      bd = r,
+      bseg = 0,
+      bt = 0;
+    this.idx.forEachIn(p.x - r, p.y - r, p.x + r, p.y + r, ref => {
       const st = this.list[ref.s];
       if (!st.ribbon || (filter && !filter(st))) return;
-      const a = st.path[ref.i], b = st.path[ref.i + 1];
-      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+      const a = st.path[ref.i],
+        b = st.path[ref.i + 1];
+      const dx = b.x - a.x,
+        dy = b.y - a.y,
+        l2 = dx * dx + dy * dy;
       const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
-      const ex = p.x - a.x - t * dx, ey = p.y - a.y - t * dy;
+      const ex = p.x - a.x - t * dx,
+        ey = p.y - a.y - t * dy;
       // Most entries in the coarse index cell miss the current search radius.
       // Reject by either component before hypot, keeping the exact distance and
       // original tie order for every segment that can still win.
       if (Math.abs(ex) > bd || Math.abs(ey) > bd) return;
       const d = Math.hypot(ex, ey);
-      if (d < bd || (d === bd && bs >= 0 && ref.s < bs)) { bd = d; bs = ref.s; bseg = ref.i; bt = t; }
+      if (d < bd || (d === bd && bs >= 0 && ref.s < bs)) {
+        bd = d;
+        bs = ref.s;
+        bseg = ref.i;
+        bt = t;
+      }
     });
     if (bs < 0) return null;
     const st = this.list[bs];
@@ -65,18 +77,28 @@ export class Streets {
 
   /** Visits the street segments whose index cells meet the box (segment = path[i] → path[i + 1]; may repeat). */
   forEachSeg(x0: number, y0: number, x1: number, y1: number, cb: (st: StreetRec, i: number) => void): void {
-    this.idx.forEachIn(x0, y0, x1, y1, (ref) => cb(this.list[ref.s], ref.i));
+    this.idx.forEachIn(x0, y0, x1, y1, ref => cb(this.list[ref.s], ref.i));
   }
 
   /** Demotes a street that never joined the network: it stays a partition boundary but is no longer a street. */
-  demote(id: number): void { this.list[id].ribbon = false; }
+  demote(id: number): void {
+    this.list[id].ribbon = false;
+  }
 
   query(poly: Polygon, margin: number): StreetRec[] {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const q of poly) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const q of poly) {
+      x0 = Math.min(x0, q.x);
+      y0 = Math.min(y0, q.y);
+      x1 = Math.max(x1, q.x);
+      y1 = Math.max(y1, q.y);
+    }
     const ids = new Set<number>();
     for (const ref of this.idx.query(x0 - margin, y0 - margin, x1 + margin, y1 + margin)) ids.add(ref.s);
-    return [...ids].sort((a, b) => a - b).map((i) => this.list[i]);
+    return [...ids].sort((a, b) => a - b).map(i => this.list[i]);
   }
 }
 
@@ -85,7 +107,9 @@ export function jitterWidths(path: Polyline, w: number, j: number, rnd: () => nu
   if (j <= 0) return path.map(() => w);
   const out: number[] = [];
   let acc = 0;
-  const ph = rnd() * 100, f1 = 1 / (40 + rnd() * 50), f2 = 1 / (15 + rnd() * 15);
+  const ph = rnd() * 100,
+    f1 = 1 / (40 + rnd() * 50),
+    f2 = 1 / (15 + rnd() * 15);
   for (let i = 0; i < path.length; i++) {
     if (i > 0) acc += dist(path[i - 1], path[i]);
     const m = 1 + j * (0.65 * Math.sin(acc * f1 * 6.283 + ph) + 0.35 * Math.sin(acc * f2 * 6.283 + ph * 1.7));

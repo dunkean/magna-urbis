@@ -21,7 +21,8 @@ export function placeForExport(world: World & MapLabelWorld, pal: Palette, measu
   const sc = exportScale(S);
   const labels = buildMapLabels(world, pal.name, pal, text);
   // keep the cartouche (top-left) and the legend (bottom-left) free; panel units are 1/u meters, u = S/1600
-  const u = S / 1600, k = sc;
+  const u = S / 1600,
+    k = sc;
   const reserved = [{ x0: 14 * u * k, y0: 14 * u * k, x1: 22 * u * k + 252 * u * k, y1: 22 * u * k + 112 * u * k }];
   if (legend) reserved.push({ x0: 14 * u * k, y0: S * k - (22 + 330) * u * k, x1: 22 * u * k + 340 * u * k, y1: S * k });
   const placed = placeMapLabels(labels, { cx: S / 2, cy: S / 2, scale: sc }, S * sc, S * sc, measure, { ...textPlacement(text), margin: 14, visScale: sc * 0.45, reserved });
@@ -39,40 +40,56 @@ export function placedMapLabelsSvg(placed: PlacedMapLabel[], pal: Palette, scale
   if (!placed.length) return '';
   const k = 1 / scale; // screen px -> meters
   const family = FONT_STACKS[pal.name] ?? pal.fontFamily;
-  let defs = '', body = '';
+  let defs = '',
+    body = '';
   placed.forEach((pl, i) => {
     const st = pl.label.st;
     const size = pl.size * k;
-    const halo = Math.max(2.4, pl.size * (st.haloWidth ?? .26)) * k;
-    const attrs = `font-family="${esc(st.family ?? family)}" font-size="${f1(size)}" fill="${st.color}"${st.italic ? ' font-style="italic"' : ''}${st.bold ? ' font-weight="600"' : ''}` +
+    const halo = Math.max(2.4, pl.size * (st.haloWidth ?? 0.26)) * k;
+    const attrs =
+      `font-family="${esc(st.family ?? family)}" font-size="${f1(size)}" fill="${st.color}"${st.italic ? ' font-style="italic"' : ''}${st.bold ? ' font-weight="600"' : ''}` +
       ` stroke="${st.halo ?? pal.lab.halo}" stroke-width="${f1(halo)}" stroke-opacity="${st.haloOpacity ?? pal.lab.haloOp}" stroke-linejoin="round" paint-order="stroke"` +
-      (pl.spacing && !shapedText(pl.label.text) ? ` letter-spacing="${f1(pl.spacing * k)}"` : '') + (shapedText(pl.label.text) ? ` direction="${/[\u0590-\u08ff]/u.test(pl.label.text)?'rtl':'ltr'}" unicode-bidi="plaintext"` : '');
+      (pl.spacing && !shapedText(pl.label.text) ? ` letter-spacing="${f1(pl.spacing * k)}"` : '') +
+      (shapedText(pl.label.text) ? ` direction="${/[\u0590-\u08ff]/u.test(pl.label.text) ? 'rtl' : 'ltr'}" unicode-bidi="plaintext"` : '');
     // runs of equal glyph size (small caps produce several)
     const runs: { s: string; size: number }[] = [];
     for (const g of pl.glyphs) {
       const last = runs[runs.length - 1];
-      if (last && last.size === g.size) last.s += g.ch; else runs.push({ s: g.ch, size: g.size });
+      if (last && last.size === g.size) last.s += g.ch;
+      else runs.push({ s: g.ch, size: g.size });
     }
-    const tspans = runs.map((r) => `<tspan${r.size !== pl.size ? ` font-size="${f1(r.size * k)}"` : ''} xml:space="preserve">${esc(r.s)}</tspan>`).join('');
+    const tspans = runs.map(r => `<tspan${r.size !== pl.size ? ` font-size="${f1(r.size * k)}"` : ''} xml:space="preserve">${esc(r.s)}</tspan>`).join('');
     const dy = f1(pl.size * 0.34 * k);
     if (pl.path && pl.path.length >= 2) {
       const d = pl.path.map(([x, y], j) => (j ? 'L' : 'M') + f1(x * k) + ' ' + f1(y * k)).join('');
       defs += `<path id="lp${i}" d="${d}"/>`;
       body += `<text ${attrs}><textPath xlink:href="#lp${i}" href="#lp${i}" startOffset="50%" text-anchor="middle"><tspan dy="${dy}">${tspans}</tspan></textPath></text>`;
     } else {
-      const shaped=shapedText(pl.label.text),x0 = shaped ? pl.glyphs[0].x : pl.glyphs[0].x - pl.glyphs[0].w / 2;
-      body += `<text x="${f1(x0 * k)}" y="${f1((pl.cy) * k + pl.size * 0.34 * k)}" ${attrs}${shaped?' text-anchor="middle"':''}>${tspans}</text>`;
+      const shaped = shapedText(pl.label.text),
+        x0 = shaped ? pl.glyphs[0].x : pl.glyphs[0].x - pl.glyphs[0].w / 2;
+      body += `<text x="${f1(x0 * k)}" y="${f1(pl.cy * k + pl.size * 0.34 * k)}" ${attrs}${shaped ? ' text-anchor="middle"' : ''}>${tspans}</text>`;
     }
     if (pl.symbol) {
       const { x, y, r } = pl.symbol;
-      const X = x * k, Y = y * k, R = r * k;
+      const X = x * k,
+        Y = y * k,
+        R = r * k;
       const c = st.color;
       switch (st.symbol) {
-        case 'cross': body += `<path d="M${f1(X)} ${f1(Y - R * 1.25)}V${f1(Y + R * 1.25)}M${f1(X - R * 0.85)} ${f1(Y - R * 0.3)}H${f1(X + R * 0.85)}" stroke="${c}" stroke-width="${f1(1.6 * k)}" fill="none"/>`; break;
-        case 'tri': body += `<path d="M${f1(X)} ${f1(Y - R * 1.1)}L${f1(X + R * 1.1)} ${f1(Y + R * 0.8)}L${f1(X - R * 1.1)} ${f1(Y + R * 0.8)}Z" fill="${c}"/>`; break;
-        case 'square': body += `<rect x="${f1(X - R * 0.9)}" y="${f1(Y - R * 0.9)}" width="${f1(R * 1.8)}" height="${f1(R * 1.8)}" fill="${c}"/>`; break;
-        case 'ring': body += `<circle cx="${f1(X)}" cy="${f1(Y)}" r="${f1(R * 0.7)}" fill="none" stroke="${c}" stroke-width="${f1(1.1 * k)}"/>`; break;
-        default: body += `<circle cx="${f1(X)}" cy="${f1(Y)}" r="${f1(R * 0.75)}" fill="${c}"/>`;
+        case 'cross':
+          body += `<path d="M${f1(X)} ${f1(Y - R * 1.25)}V${f1(Y + R * 1.25)}M${f1(X - R * 0.85)} ${f1(Y - R * 0.3)}H${f1(X + R * 0.85)}" stroke="${c}" stroke-width="${f1(1.6 * k)}" fill="none"/>`;
+          break;
+        case 'tri':
+          body += `<path d="M${f1(X)} ${f1(Y - R * 1.1)}L${f1(X + R * 1.1)} ${f1(Y + R * 0.8)}L${f1(X - R * 1.1)} ${f1(Y + R * 0.8)}Z" fill="${c}"/>`;
+          break;
+        case 'square':
+          body += `<rect x="${f1(X - R * 0.9)}" y="${f1(Y - R * 0.9)}" width="${f1(R * 1.8)}" height="${f1(R * 1.8)}" fill="${c}"/>`;
+          break;
+        case 'ring':
+          body += `<circle cx="${f1(X)}" cy="${f1(Y)}" r="${f1(R * 0.7)}" fill="none" stroke="${c}" stroke-width="${f1(1.1 * k)}"/>`;
+          break;
+        default:
+          body += `<circle cx="${f1(X)}" cy="${f1(Y)}" r="${f1(R * 0.75)}" fill="${c}"/>`;
       }
     }
   });

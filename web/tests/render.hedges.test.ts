@@ -9,7 +9,10 @@ import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { fakeWorld, mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
 const rect = (x: number, y: number, w: number, h = w): Polygon => [
-  { x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h },
+  { x, y },
+  { x: x + w, y },
+  { x: x + w, y: y + h },
+  { x, y: y + h },
 ];
 const areas: (LandArea & { enclosed?: boolean })[] = [
   { kind: 'field', poly: rect(100, 100, 200), holes: [rect(150, 150, 30)], enclosed: true },
@@ -31,13 +34,18 @@ describe('subdued rural hedges', () => {
     expect(hedges.lines.reduce((s, [a, b]) => s + Math.hypot(b.x - a.x, b.y - a.y), 0)).toBeCloseTo(1520);
     expect(hedges.lines.filter(([a, b]) => a.x === 300 && b.x === 300)).toHaveLength(1);
     expect(JSON.stringify(areas)).toBe(before);
-    const reversed = areas.slice().reverse().map((a) => ({ ...a, poly: a.poly.slice().reverse(), holes: a.holes?.map((h) => h.slice().reverse()) }));
+    const reversed = areas
+      .slice()
+      .reverse()
+      .map(a => ({ ...a, poly: a.poly.slice().reverse(), holes: a.holes?.map(h => h.slice().reverse()) }));
     expect(fieldHedges(reversed, 1)).toEqual(hedges);
   });
 
   it('uses the same boundaries and tree positions in SVG and the indexed Canvas scene', () => {
-    const w = world(), hedges = fieldHedges(areas, 1), scene = buildScene(w, 1000);
-    expect(scene.lines.find((l) => l.name === 'hedges')!.lines).toEqual(hedges.lines);
+    const w = world(),
+      hedges = fieldHedges(areas, 1),
+      scene = buildScene(w, 1000);
+    expect(scene.lines.find(l => l.name === 'hedges')!.lines).toEqual(hedges.lines);
     const trees = scene.poly.get('hedge-trees')!.polys;
     expect(trees).toHaveLength(hedges.trees.length);
     trees.forEach((ring, i) => {
@@ -55,7 +63,9 @@ describe('subdued rural hedges', () => {
   });
 
   it('keeps Canvas boundaries below road widths and fades them at intermediate zoom', () => {
-    const w = world(), m = mockCanvas(900, 700), ctx = m.canvas.getContext('2d') as Record<string, unknown>;
+    const w = world(),
+      m = mockCanvas(900, 700),
+      ctx = m.canvas.getContext('2d') as Record<string, unknown>;
     const strokes: { color: unknown; alpha: number; width: number }[] = [];
     const stroke = ctx.stroke as (...args: unknown[]) => void;
     ctx.stroke = (...args: unknown[]) => {
@@ -67,7 +77,7 @@ describe('subdued rural hedges', () => {
     for (const scale of [0.1, 0.6, 2]) {
       strokes.length = 0;
       r.draw({ cx: 300, cy: 300, scale });
-      const hedge = strokes.find((s) => s.color === style.color)!;
+      const hedge = strokes.find(s => s.color === style.color)!;
       expect(hedge).toBeDefined();
       expect(hedge.alpha).toBeCloseTo(style.alpha * Math.min(1, scale / 0.3));
       expect(hedge.width * scale).toBeCloseTo(Math.max(style.width * scale, 0.35));
@@ -75,6 +85,6 @@ describe('subdued rural hedges', () => {
     const cadastre = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'cadastre', { Path2D: MockPath2D as never, dpr: 1, terrain: () => null });
     strokes.length = 0;
     cadastre.draw({ cx: 300, cy: 300, scale: 0.6 });
-    expect(strokes.some((s) => s.color === fieldHedgeStyle(PALETTES.cadastre, 1).color)).toBe(false);
+    expect(strokes.some(s => s.color === fieldHedgeStyle(PALETTES.cadastre, 1).color)).toBe(false);
   });
 });

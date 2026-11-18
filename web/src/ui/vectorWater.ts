@@ -7,12 +7,18 @@ export interface VectorWaterSettings {
   /** Upstream area that starts a river, km². */
   riverArea: number;
   /** Minimum depth of a lake cell, metres, and minimum lake surface, hectares. */
-  lakeDepth: number; lakeArea: number;
+  lakeDepth: number;
+  lakeArea: number;
   riverMode: 'vector' | 'grid';
-  flatSlope: number; sinuosity: number; widthScale: number;
+  flatSlope: number;
+  sinuosity: number;
+  widthScale: number;
   /** Lakes from the climate's water budget instead of filling every depression. */
   balance: boolean;
-  braiding: number; anabranching: boolean; terrainInfluence: boolean; avulsions: boolean;
+  braiding: number;
+  anabranching: boolean;
+  terrainInfluence: boolean;
+  avulsions: boolean;
   /** Confluence angle from the climate (Seybold et al. 2017) or as the drainage draws it. */
   confluence: 'climate' | 'drainage';
   deltas: boolean;
@@ -28,7 +34,10 @@ export interface VectorWater {
   lakeLevel?: Float32Array;
   /** 1 open lake, 2 closed lake, per submerged cell (budget on). */
   lakeKind?: Uint8Array;
-  lakes: number; closedLakes: number; lakeAreaKm2: number; riverCells: number;
+  lakes: number;
+  closedLakes: number;
+  lakeAreaKm2: number;
+  riverCells: number;
   rivers?: RiverNetwork;
   /** Author-edited channels are authoritative even when a raw drainage display was selected. */
   editedNetwork?: boolean;
@@ -39,7 +48,8 @@ export interface VectorWater {
   metrics: RiverMetrics;
   runoff: { r0: number; e0: number; aridity: number };
   confluenceAngle?: number;
-  hydrologyMs: number; balanceMs: number;
+  hydrologyMs: number;
+  balanceMs: number;
 }
 
 export { computeVectorWater } from '../../../rust/bridge/waterNative';

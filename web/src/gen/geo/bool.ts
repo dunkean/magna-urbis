@@ -7,14 +7,17 @@ import type { Vec2, Polygon } from '../core/geom';
 import { cleanRing, orientPos, area } from './poly';
 import { GridIndex } from './spatial';
 
-export interface PolyH { outer: Polygon; holes: Polygon[] }
+export interface PolyH {
+  outer: Polygon;
+  holes: Polygon[];
+}
 export type MultiPoly = PolyH[];
 
 type Ring = [number, number][];
 type Geom = Ring[][];
 
 const toRing = (p: Polygon): Ring => {
-  const r: Ring = p.map((q) => [q.x, q.y] as [number, number]);
+  const r: Ring = p.map(q => [q.x, q.y] as [number, number]);
   if (r.length) r.push([p[0].x, p[0].y]);
   return r;
 };
@@ -30,7 +33,7 @@ export const toGeom = (m: MultiPoly | PolyH | Polygon): Geom => {
     return p.length >= 3 ? [[toRing(p)]] : [];
   }
   const list = Array.isArray(m) ? (m as MultiPoly) : [m as PolyH];
-  return list.filter((ph) => ph.outer.length >= 3).map((ph) => [toRing(ph.outer), ...ph.holes.filter((h) => h.length >= 3).map(toRing)]);
+  return list.filter(ph => ph.outer.length >= 3).map(ph => [toRing(ph.outer), ...ph.holes.filter(h => h.length >= 3).map(toRing)]);
 };
 
 /** Converts a polygon-clipping result into cleaned, positively oriented PolyH list (holes negative → stored positive). */
@@ -57,21 +60,37 @@ export const BOOL_AREA_EPS = 1e-6;
 
 /** Debug hook: called with the inputs of boolean operations slower than 300 ms. */
 export let SLOW_LOG: ((op: string, snapped: boolean, a: unknown, b: unknown, ms: number) => void) | null = null;
-export const setSlowLog = (f: typeof SLOW_LOG) => { SLOW_LOG = f; };
+export const setSlowLog = (f: typeof SLOW_LOG) => {
+  SLOW_LOG = f;
+};
 
 /** Grid of the snapped booleans (1 mm: robust, while a snapped T-vertex moves a shared edge by < 0.7 mm). */
 export const BOOL_GRID = 1000;
-const snapGeom = (g: Geom): Geom => g.map((pg) => pg.map((r) => r.map(([x, y]) => [Math.round(x * BOOL_GRID) / BOOL_GRID, Math.round(y * BOOL_GRID) / BOOL_GRID] as [number, number])));
+const snapGeom = (g: Geom): Geom => g.map(pg => pg.map(r => r.map(([x, y]) => [Math.round(x * BOOL_GRID) / BOOL_GRID, Math.round(y * BOOL_GRID) / BOOL_GRID] as [number, number])));
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 const ringBox = (r: Ring): Box => {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of r) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const [x, y] of r) {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+  }
   return { x0, y0, x1, y1 };
 };
 const geomBox = (g: Geom): Box => {
   const b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-  for (const pg of g) { const r = ringBox(pg[0]); b.x0 = Math.min(b.x0, r.x0); b.y0 = Math.min(b.y0, r.y0); b.x1 = Math.max(b.x1, r.x1); b.y1 = Math.max(b.y1, r.y1); }
+  for (const pg of g) {
+    const r = ringBox(pg[0]);
+    b.x0 = Math.min(b.x0, r.x0);
+    b.y0 = Math.min(b.y0, r.y0);
+    b.x1 = Math.max(b.x1, r.x1);
+    b.y1 = Math.max(b.y1, r.y1);
+  }
   return b;
 };
 /** Boxes overlap or touch (a margin keeps the test conservative). */
@@ -80,25 +99,34 @@ const boxMeets = (a: Box, b: Box): boolean => !(a.x0 > b.x1 + 1e-6 || a.x1 < b.x
 /** Sutherland–Hodgman clip of a closed ring ([first] repeated last) to a box; open vertex list out. */
 export function clipRingBox(r: Ring, b: Box): [number, number][] {
   let pts: [number, number][] = r.slice(0, -1);
-  const planes: [(p: [number, number]) => number][] = [[(p) => p[0] - b.x0], [(p) => b.x1 - p[0]], [(p) => p[1] - b.y0], [(p) => b.y1 - p[1]]];
+  const planes: [(p: [number, number]) => number][] = [[p => p[0] - b.x0], [p => b.x1 - p[0]], [p => p[1] - b.y0], [p => b.y1 - p[1]]];
   for (const [side] of planes) {
     if (!pts.length) break;
     const out: [number, number][] = [];
     for (let i = 0; i < pts.length; i++) {
-      const P = pts[i], Q = pts[(i + 1) % pts.length];
-      const sp = side(P), sq = side(Q);
+      const P = pts[i],
+        Q = pts[(i + 1) % pts.length];
+      const sp = side(P),
+        sq = side(Q);
       if (sp >= 0) out.push(P);
-      if ((sp >= 0) !== (sq >= 0)) { const t = sp / (sp - sq); out.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t]); }
+      if (sp >= 0 !== sq >= 0) {
+        const t = sp / (sp - sq);
+        out.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t]);
+      }
     }
     pts = out;
   }
   const dedup: [number, number][] = [];
-  for (const p of pts) { const l = dedup[dedup.length - 1]; if (!l || l[0] !== p[0] || l[1] !== p[1]) dedup.push(p); }
+  for (const p of pts) {
+    const l = dedup[dedup.length - 1];
+    if (!l || l[0] !== p[0] || l[1] !== p[1]) dedup.push(p);
+  }
   while (dedup.length > 1 && dedup[0][0] === dedup[dedup.length - 1][0] && dedup[0][1] === dedup[dedup.length - 1][1]) dedup.pop();
   return dedup;
 }
 
-const TRIM_MIN = 96, TRIM_MARGIN = 60;
+const TRIM_MIN = 96,
+  TRIM_MARGIN = 60;
 /**
  * A clip polygon with many vertices is replaced by its rings clipped to the subject's box grown by TRIM_MARGIN,
  * when that is exact for the boolean: every edge reaching within 1 m of the subject's box lies wholly inside the
@@ -117,8 +145,12 @@ function trimPolygon(pg: Ring[], sb: Box): Ring[] | null {
   if (ob.x0 >= cb.x0 && ob.y0 >= cb.y0 && ob.x1 <= cb.x1 && ob.y1 <= cb.y1) return pg;
   for (const r of pg) {
     for (let i = 0; i + 1 < r.length; i++) {
-      const [ax, ay] = r[i], [bx, by] = r[i + 1];
-      const sx0 = Math.min(ax, bx), sx1 = Math.max(ax, bx), sy0 = Math.min(ay, by), sy1 = Math.max(ay, by);
+      const [ax, ay] = r[i],
+        [bx, by] = r[i + 1];
+      const sx0 = Math.min(ax, bx),
+        sx1 = Math.max(ax, bx),
+        sy0 = Math.min(ay, by),
+        sy1 = Math.max(ay, by);
       if (sx0 > nb.x1 || sx1 < nb.x0 || sy0 > nb.y1 || sy1 < nb.y0) continue;
       if (sx0 < cb.x0 || sx1 > cb.x1 || sy0 < cb.y0 || sy1 > cb.y1) return pg;
     }
@@ -126,20 +158,31 @@ function trimPolygon(pg: Ring[], sb: Box): Ring[] | null {
   const out: Ring[] = [];
   for (let k = 0; k < pg.length; k++) {
     const c = clipRingBox(pg[k], cb);
-    if (c.length < 3) { if (k === 0) return null; continue; }
+    if (c.length < 3) {
+      if (k === 0) return null;
+      continue;
+    }
     out.push([...c, [c[0][0], c[0][1]]]);
   }
   return out;
 }
 
-interface PreparedOperand { geom: Geom; boxes: Box[]; valid: boolean; nearby: (box: Box) => Geom }
+interface PreparedOperand {
+  geom: Geom;
+  boxes: Box[];
+  valid: boolean;
+  nearby: (box: Box) => Geom;
+}
 
 function run(op: 'union' | 'intersection' | 'difference', a: Operand, rest: Operand[], snapped = false, failClosed = false, onFailure?: () => void, retryCoarse = true, preserveEdges = false, areaFloor = BOOL_AREA_EPS, prepared?: PreparedOperand[], subjectGeom?: Geom): MultiPoly {
   const result = (g: Geom) => fromGeom(g, preserveEdges ? areaFloor : 0.01, snapped, preserveEdges);
   let ga = subjectGeom ?? toGeom(a);
-  const ready = prepared?.filter((p) => p.geom.length);
-  let gr = ready ? ready.map((p) => p.geom) : rest.map(toGeom).filter((g) => g.length);
-  if (snapped) { ga = snapGeom(ga); gr = gr.map(snapGeom); }
+  const ready = prepared?.filter(p => p.geom.length);
+  let gr = ready ? ready.map(p => p.geom) : rest.map(toGeom).filter(g => g.length);
+  if (snapped) {
+    ga = snapGeom(ga);
+    gr = gr.map(snapGeom);
+  }
   if (!ga.length) return op === 'union' && gr.length ? run('union', rest[0], rest.slice(1), snapped) : [];
   if (!gr.length) return op === 'intersection' ? [] : result(ga);
   if (op !== 'union') {
@@ -148,14 +191,13 @@ function run(op: 'union' | 'intersection' | 'difference', a: Operand, rest: Oper
     // shrink to the few pieces near a lot. (The engine still runs when nothing is left to subtract: it normalizes
     // the subject's rings.)
     const sb = geomBox(ga);
-    gr = gr.map((g, i) => g.length > 1 ? (!snapped && ready ? ready[i].nearby(sb)
-      : g.filter((pg) => boxMeets(ringBox(pg[0]), sb))) : g);
-    if (op === 'difference') gr = gr.filter((g) => g.length);
-    else if (gr.some((g) => !g.length)) return [];
+    gr = gr.map((g, i) => (g.length > 1 ? (!snapped && ready ? ready[i].nearby(sb) : g.filter(pg => boxMeets(ringBox(pg[0]), sb))) : g));
+    if (op === 'difference') gr = gr.filter(g => g.length);
+    else if (gr.some(g => !g.length)) return [];
     // long clip rings far larger than the subject (river ribbons, coastlines) are cut down to a box around it
-    gr = gr.map((g) => g.map((pg) => trimPolygon(pg, sb)).filter((pg): pg is Ring[] => pg !== null));
-    if (op === 'difference') gr = gr.filter((g) => g.length);
-    else if (gr.some((g) => !g.length)) return [];
+    gr = gr.map(g => g.map(pg => trimPolygon(pg, sb)).filter((pg): pg is Ring[] => pg !== null));
+    if (op === 'difference') gr = gr.filter(g => g.length);
+    else if (gr.some(g => !g.length)) return [];
   }
   const f = polygonClipping[op] as (g: Geom, ...r: Geom[]) => Geom;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -169,16 +211,25 @@ function run(op: 'union' | 'intersection' | 'difference', a: Operand, rest: Oper
       // Coincident banks far from the origin can make the sweep tree inconsistent. Retry in local coordinates
       // without snapping or moving one operand relative to another; area remains an exact-frame measurement.
       const bb = geomBox(ga);
-      const move = (g: Geom, dx: number, dy: number): Geom => g.map((pg) => pg.map((r) => r.map(([x, y]) => [x + dx, y + dy] as [number, number])));
-      try { return result(move(f(move(ga, -bb.x0, -bb.y0), ...gr.map((g) => move(g, -bb.x0, -bb.y0))), bb.x0, bb.y0)); } catch { /* Still unproved: fail closed below. */ }
+      const move = (g: Geom, dx: number, dy: number): Geom => g.map(pg => pg.map(r => r.map(([x, y]) => [x + dx, y + dy] as [number, number])));
+      try {
+        return result(move(f(move(ga, -bb.x0, -bb.y0), ...gr.map(g => move(g, -bb.x0, -bb.y0))), bb.x0, bb.y0));
+      } catch {
+        /* Still unproved: fail closed below. */
+      }
     }
-    if (!retryCoarse) { onFailure?.(); return []; }
+    if (!retryCoarse) {
+      onFailure?.();
+      return [];
+    }
     // retry on coarser snapping (polygon-clipping can fail on nearly coincident edges)
-    const q = (g: Geom): Geom => g.map((pg) => pg.map((r) => r.map(([x, y]) => [Math.round(x * 20) / 20, Math.round(y * 20) / 20] as [number, number])));
-    try { return fromGeom(f(q(ga), ...gr.map(q)), 0.01, true); } catch {
+    const q = (g: Geom): Geom => g.map(pg => pg.map(r => r.map(([x, y]) => [Math.round(x * 20) / 20, Math.round(y * 20) / 20] as [number, number])));
+    try {
+      return fromGeom(f(q(ga), ...gr.map(q)), 0.01, true);
+    } catch {
       onFailure?.();
       if (failClosed) return [];
-      if (op === 'union') return fromGeom(ga).concat(...gr.map((g) => fromGeom(g)));
+      if (op === 'union') return fromGeom(ga).concat(...gr.map(g => fromGeom(g)));
       return op === 'difference' ? fromGeom(ga) : [];
     }
   }
@@ -198,7 +249,11 @@ export const unionS = (a: Operand, ...rest: Operand[]): MultiPoly => run('union'
 export function resolve(p: Polygon): MultiPoly {
   const g = toGeom(p);
   if (!g.length) return [];
-  try { return fromGeom(polygonClipping.union(g as never) as unknown as Geom); } catch { return fromGeom(g); }
+  try {
+    return fromGeom(polygonClipping.union(g as never) as unknown as Geom);
+  } catch {
+    return fromGeom(g);
+  }
 }
 export const intersectionS = (a: Operand, ...rest: Operand[]): MultiPoly => run('intersection', a, rest, true);
 export const differenceS = (a: Operand, ...rest: Operand[]): MultiPoly => run('difference', a, rest, true);
@@ -208,54 +263,104 @@ export const differenceSafeS = (a: Operand, ...rest: Operand[]): MultiPoly => ru
 /** Checked operations distinguish an empty geometric result from an engine failure, without returning unsafe land. */
 export function tryDifference(a: Operand, ...rest: Operand[]): { pieces: MultiPoly; failed: boolean } {
   let failed = false;
-  const pieces = run('difference', a, rest, false, true, () => { failed = true; }, false, true);
+  const pieces = run(
+    'difference',
+    a,
+    rest,
+    false,
+    true,
+    () => {
+      failed = true;
+    },
+    false,
+    true,
+  );
   return { pieces, failed };
 }
 export function tryDifferenceS(a: Operand, ...rest: Operand[]): { pieces: MultiPoly; failed: boolean } {
   let failed = false;
-  const pieces = run('difference', a, rest, true, true, () => { failed = true; }, false, true);
+  const pieces = run(
+    'difference',
+    a,
+    rest,
+    true,
+    true,
+    () => {
+      failed = true;
+    },
+    false,
+    true,
+  );
   return { pieces, failed };
 }
 export function tryIntersection(a: Operand, ...rest: Operand[]): { pieces: MultiPoly; failed: boolean } {
   let failed = false;
   // Keep raw positive areas here: callers must measure aggregate residue before applying any numerical floor.
-  const pieces = run('intersection', a, rest, false, true, () => { failed = true; }, false, true, Number.MIN_VALUE);
+  const pieces = run(
+    'intersection',
+    a,
+    rest,
+    false,
+    true,
+    () => {
+      failed = true;
+    },
+    false,
+    true,
+    Number.MIN_VALUE,
+  );
   return { pieces, failed };
 }
 
 /** Snapshot stable operands once; each query retains checked failure handling and raw residue measurement. */
 export function prepareIntersection(...operands: Operand[]): (subject: Operand) => { pieces: MultiPoly; failed: boolean } {
-  const prepared = operands.map((operand) => {
-    const geom = toGeom(operand), boxes = geom.map((p) => ringBox(p[0]));
-    const valid = geom.every((p) => p.every((ring) => ring.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))));
-    const grid = new GridIndex<number>(64), large: number[] = [];
+  const prepared = operands.map(operand => {
+    const geom = toGeom(operand),
+      boxes = geom.map(p => ringBox(p[0]));
+    const valid = geom.every(p => p.every(ring => ring.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))));
+    const grid = new GridIndex<number>(64),
+      large: number[] = [];
     boxes.forEach((b, i) => {
-      const cells = (Math.floor(b.x1 / 64) - Math.floor(b.x0 / 64) + 1)
-        * (Math.floor(b.y1 / 64) - Math.floor(b.y0 / 64) + 1);
+      const cells = (Math.floor(b.x1 / 64) - Math.floor(b.x0 / 64) + 1) * (Math.floor(b.y1 / 64) - Math.floor(b.y0 / 64) + 1);
       if (!Number.isFinite(cells) || cells > 256) large.push(i);
       else grid.insertBox(b.x0, b.y0, b.x1, b.y1, i);
     });
     const nearby = (b: Box): Geom => {
       // Invalid bounds must preserve the engine's checked failure path.
       if (!valid || ![b.x0, b.x1, b.y0, b.y1].every(Number.isFinite)) return geom.filter((_, i) => boxMeets(boxes[i], b));
-      const cells = (Math.floor((b.x1 + 1e-6) / 64) - Math.floor((b.x0 - 1e-6) / 64) + 1)
-        * (Math.floor((b.y1 + 1e-6) / 64) - Math.floor((b.y0 - 1e-6) / 64) + 1);
+      const cells = (Math.floor((b.x1 + 1e-6) / 64) - Math.floor((b.x0 - 1e-6) / 64) + 1) * (Math.floor((b.y1 + 1e-6) / 64) - Math.floor((b.y0 - 1e-6) / 64) + 1);
       if (!Number.isFinite(cells) || cells > 256) return geom.filter((_, i) => boxMeets(boxes[i], b));
       const candidates = new Set([...grid.query(b.x0 - 1e-6, b.y0 - 1e-6, b.x1 + 1e-6, b.y1 + 1e-6), ...large]);
-      return [...candidates].filter((i) => boxMeets(boxes[i], b)).sort((a, z) => a - z).map((i) => geom[i]);
+      return [...candidates]
+        .filter(i => boxMeets(boxes[i], b))
+        .sort((a, z) => a - z)
+        .map(i => geom[i]);
     };
     return { geom, boxes, valid, nearby };
   });
-  return (subject) => {
+  return subject => {
     // polygon-clipping may not terminate on NaN coordinates. Checked prepared proofs fail closed
     // before entering its sweep rather than interpreting malformed land as an empty intersection.
-    if (prepared.some((p) => !p.valid)) return { pieces: [], failed: true };
+    if (prepared.some(p => !p.valid)) return { pieces: [], failed: true };
     // Reuse this checked conversion in run instead of allocating every ring twice.
     const subjectGeom = toGeom(subject);
-    if (subjectGeom.some((p) => p.some((ring) => ring.some(([x, y]) =>
-      !Number.isFinite(x) || !Number.isFinite(y))))) return { pieces: [], failed: true };
+    if (subjectGeom.some(p => p.some(ring => ring.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))))) return { pieces: [], failed: true };
     let failed = false;
-    const pieces = run('intersection', subject, operands, false, true, () => { failed = true; }, false, true, Number.MIN_VALUE, prepared, subjectGeom);
+    const pieces = run(
+      'intersection',
+      subject,
+      operands,
+      false,
+      true,
+      () => {
+        failed = true;
+      },
+      false,
+      true,
+      Number.MIN_VALUE,
+      prepared,
+      subjectGeom,
+    );
     return { pieces, failed };
   };
 }
@@ -273,7 +378,7 @@ export function repairRing(p: Polygon): Polygon {
 
 /** Union of many polygons in balanced batches (much faster than one huge call for hundreds of inputs). */
 export function unionMany(list: Operand[], batch = 24, snapped = false): MultiPoly {
-  let cur: MultiPoly[] = list.map((o) => (Array.isArray(o) && (o.length === 0 || 'x' in (o[0] as object)) ? (o as Polygon).length >= 3 ? [{ outer: orientPos(o as Polygon), holes: [] }] : [] : Array.isArray(o) ? (o as MultiPoly) : [o as PolyH])).filter((m) => m.length);
+  let cur: MultiPoly[] = list.map(o => (Array.isArray(o) && (o.length === 0 || 'x' in (o[0] as object)) ? ((o as Polygon).length >= 3 ? [{ outer: orientPos(o as Polygon), holes: [] }] : []) : Array.isArray(o) ? (o as MultiPoly) : [o as PolyH])).filter(m => m.length);
   if (!cur.length) return [];
   while (cur.length > 1) {
     const next: MultiPoly[] = [];
@@ -292,13 +397,13 @@ export function unionMany(list: Operand[], batch = 24, snapped = false): MultiPo
  * Exact for a caller that only reads the result near the kept operands.
  */
 export function unionManyPruned(list: Operand[], keep: (o: Operand) => boolean, batch = 24, snapped = false): MultiPoly {
-  let cur: MultiPoly[] = list.map((o) => (Array.isArray(o) && (o.length === 0 || 'x' in (o[0] as object)) ? (o as Polygon).length >= 3 ? [{ outer: orientPos(o as Polygon), holes: [] }] : [] : Array.isArray(o) ? (o as MultiPoly) : [o as PolyH])).filter((m) => m.length);
-  cur = cur.map((m) => (keep(m) ? m : []));
+  let cur: MultiPoly[] = list.map(o => (Array.isArray(o) && (o.length === 0 || 'x' in (o[0] as object)) ? ((o as Polygon).length >= 3 ? [{ outer: orientPos(o as Polygon), holes: [] }] : []) : Array.isArray(o) ? (o as MultiPoly) : [o as PolyH])).filter(m => m.length);
+  cur = cur.map(m => (keep(m) ? m : []));
   if (!cur.length) return [];
   while (cur.length > 1) {
     const next: MultiPoly[] = [];
     for (let i = 0; i < cur.length; i += batch) {
-      const grp = cur.slice(i, i + batch).filter((m) => m.length);
+      const grp = cur.slice(i, i + batch).filter(m => m.length);
       next.push(grp.length === 0 ? [] : grp.length === 1 ? grp[0] : (snapped ? unionS : union)(grp[0], ...grp.slice(1)));
     }
     cur = next;

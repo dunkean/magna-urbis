@@ -2,7 +2,7 @@ import { CLIMATE_ZONES, type ClimateZone } from './terrainClimate';
 
 /** `uMaterialZone` value: CLIMATE_ZONES index + 1. 0 (also the GLSL default of
  * a program that never sets it) keeps the climate-only Render v2 look. */
-export const renderV2ZoneUniform = (zone?: ClimateZone): number => zone ? CLIMATE_ZONES.indexOf(zone) + 1 : 0;
+export const renderV2ZoneUniform = (zone?: ClimateZone): number => (zone ? CLIMATE_ZONES.indexOf(zone) + 1 : 0);
 
 type Tint = readonly [number, number, number];
 type Year<T> = readonly [T, T, T, T];
@@ -29,25 +29,194 @@ export interface ZoneSeason {
    * bring the snow early (arctic autumn). Snow and fresh-water freezing follow it; sea ice changes sheet versus drift. */
   thaw?: Year<number>;
 }
-const NO_ICE: Year<number> = [0, 0, 0, 0], STEADY: Year<number> = [1, 1, 1, 1];
+const NO_ICE: Year<number> = [0, 0, 0, 0],
+  STEADY: Year<number> = [1, 1, 1, 1];
 export const ZONE_SEASONS: Readonly<Record<ClimateZone, ZoneSeason>> = {
-  temperate: { herb: [[.86, .80, .70], [.98, 1.12, .90], [.96, 1.06, .92], [1.06, .96, .78]], leaf: [0, .62, 1, .85], seaIce: NO_ICE, wet: STEADY, snow: [.12, 0, 0, 0], rain: .1, cool: 1, larch: 0, thaw: [0, 5.3, 0, 3] },
-  mediterranean: { herb: [[.90, 1.08, .86], [.92, 1.12, .84], [1.18, 1.02, .74], [1.10, .98, .78]], leaf: [.82, .92, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: -.75, cool: 0, larch: 0 },
-  continental: { herb: [[.85, .80, .72], [.96, 1.12, .90], [.97, 1.05, .93], [1.08, .94, .74]], leaf: [0, .55, 1, .80], seaIce: [.55, .10, 0, 0], wet: STEADY, snow: [.85, .05, 0, .05], rain: .25, cool: 6, larch: .1, thaw: [0, 10.5, 0, 4] },
-  nordic: { herb: [[.80, .76, .72], [.94, 1.04, .88], [.98, 1.04, .96], [1.08, .94, .76]], leaf: [0, .40, 1, .75], seaIce: [.75, .30, 0, .05], wet: STEADY, snow: [1, .25, 0, .10], rain: 0, cool: 7, larch: .12, thaw: [0, 4.5, 0, 0] },
-  alpine: { herb: [[.85, .82, .76], [.98, 1.10, .90], [1, 1.06, .96], [1.07, .95, .78]], leaf: [0, .40, 1, .75], seaIce: NO_ICE, wet: STEADY, snow: [1, .35, 0, .20], rain: .15, cool: 9, larch: .35 },
-  arctic: { herb: [[.90, .88, .86], [.92, .92, .84], [.98, 1.02, .88], [1.12, .90, .72]], leaf: [0, .30, 1, .65], seaIce: [.82, .70, .62, .68], wet: STEADY, snow: [1, .80, .05, .55], rain: .2, cool: 6, larch: 0, thaw: [0, 0, 0, -3.5] },
-  steppe: { herb: [[.92, .86, .76], [.86, 1.14, .82], [1.06, .98, .84], [1.04, .94, .80]], leaf: [0, .60, 1, .70], seaIce: [.30, 0, 0, 0], wet: STEADY, snow: [.60, 0, 0, .05], rain: .3, cool: 6, larch: 0 },
-  desert: { herb: [[.90, .90, .92], [.96, 1.02, .90], [1.08, 1, .88], [1.02, .97, .90]], leaf: [.90, 1, 1, .95], seaIce: NO_ICE, wet: STEADY, snow: NO_ICE, rain: 0, cool: 0, larch: 0 },
-  savanna: { herb: [[1.12, 1, .74], [1.04, 1.02, .80], [.72, 1.14, .74], [.92, 1.08, .78]], leaf: [.30, .55, 1, .80], seaIce: NO_ICE, wet: [.2, .6, 1.6, 1.1], snow: NO_ICE, rain: .95, cool: 0, larch: 0 },
-  tropical: { herb: [[1.10, 1.02, .82], [1, 1.02, .96], [.92, 1.06, .92], [.96, 1.04, .94]], leaf: [.85, .95, 1, 1], seaIce: NO_ICE, wet: [.7, .9, 1.3, 1.2], snow: NO_ICE, rain: .45, cool: 0, larch: 0 },
-  wetland: { herb: [[.92, .84, .70], [.92, 1.14, .90], [.96, 1.07, .92], [1.08, .95, .74]], leaf: [0, .62, 1, .85], seaIce: [.10, 0, 0, 0], wet: [.9, 1.35, .75, 1], snow: [.30, 0, 0, 0], rain: 0, cool: 2, larch: 0, thaw: [0, 5.3, 0, 3] },
+  temperate: {
+    herb: [
+      [0.86, 0.8, 0.7],
+      [0.98, 1.12, 0.9],
+      [0.96, 1.06, 0.92],
+      [1.06, 0.96, 0.78],
+    ],
+    leaf: [0, 0.62, 1, 0.85],
+    seaIce: NO_ICE,
+    wet: STEADY,
+    snow: [0.12, 0, 0, 0],
+    rain: 0.1,
+    cool: 1,
+    larch: 0,
+    thaw: [0, 5.3, 0, 3],
+  },
+  mediterranean: {
+    herb: [
+      [0.9, 1.08, 0.86],
+      [0.92, 1.12, 0.84],
+      [1.18, 1.02, 0.74],
+      [1.1, 0.98, 0.78],
+    ],
+    leaf: [0.82, 0.92, 1, 0.95],
+    seaIce: NO_ICE,
+    wet: STEADY,
+    snow: NO_ICE,
+    rain: -0.75,
+    cool: 0,
+    larch: 0,
+  },
+  continental: {
+    herb: [
+      [0.85, 0.8, 0.72],
+      [0.96, 1.12, 0.9],
+      [0.97, 1.05, 0.93],
+      [1.08, 0.94, 0.74],
+    ],
+    leaf: [0, 0.55, 1, 0.8],
+    seaIce: [0.55, 0.1, 0, 0],
+    wet: STEADY,
+    snow: [0.85, 0.05, 0, 0.05],
+    rain: 0.25,
+    cool: 6,
+    larch: 0.1,
+    thaw: [0, 10.5, 0, 4],
+  },
+  nordic: {
+    herb: [
+      [0.8, 0.76, 0.72],
+      [0.94, 1.04, 0.88],
+      [0.98, 1.04, 0.96],
+      [1.08, 0.94, 0.76],
+    ],
+    leaf: [0, 0.4, 1, 0.75],
+    seaIce: [0.75, 0.3, 0, 0.05],
+    wet: STEADY,
+    snow: [1, 0.25, 0, 0.1],
+    rain: 0,
+    cool: 7,
+    larch: 0.12,
+    thaw: [0, 4.5, 0, 0],
+  },
+  alpine: {
+    herb: [
+      [0.85, 0.82, 0.76],
+      [0.98, 1.1, 0.9],
+      [1, 1.06, 0.96],
+      [1.07, 0.95, 0.78],
+    ],
+    leaf: [0, 0.4, 1, 0.75],
+    seaIce: NO_ICE,
+    wet: STEADY,
+    snow: [1, 0.35, 0, 0.2],
+    rain: 0.15,
+    cool: 9,
+    larch: 0.35,
+  },
+  arctic: {
+    herb: [
+      [0.9, 0.88, 0.86],
+      [0.92, 0.92, 0.84],
+      [0.98, 1.02, 0.88],
+      [1.12, 0.9, 0.72],
+    ],
+    leaf: [0, 0.3, 1, 0.65],
+    seaIce: [0.82, 0.7, 0.62, 0.68],
+    wet: STEADY,
+    snow: [1, 0.8, 0.05, 0.55],
+    rain: 0.2,
+    cool: 6,
+    larch: 0,
+    thaw: [0, 0, 0, -3.5],
+  },
+  steppe: {
+    herb: [
+      [0.92, 0.86, 0.76],
+      [0.86, 1.14, 0.82],
+      [1.06, 0.98, 0.84],
+      [1.04, 0.94, 0.8],
+    ],
+    leaf: [0, 0.6, 1, 0.7],
+    seaIce: [0.3, 0, 0, 0],
+    wet: STEADY,
+    snow: [0.6, 0, 0, 0.05],
+    rain: 0.3,
+    cool: 6,
+    larch: 0,
+  },
+  desert: {
+    herb: [
+      [0.9, 0.9, 0.92],
+      [0.96, 1.02, 0.9],
+      [1.08, 1, 0.88],
+      [1.02, 0.97, 0.9],
+    ],
+    leaf: [0.9, 1, 1, 0.95],
+    seaIce: NO_ICE,
+    wet: STEADY,
+    snow: NO_ICE,
+    rain: 0,
+    cool: 0,
+    larch: 0,
+  },
+  savanna: {
+    herb: [
+      [1.12, 1, 0.74],
+      [1.04, 1.02, 0.8],
+      [0.72, 1.14, 0.74],
+      [0.92, 1.08, 0.78],
+    ],
+    leaf: [0.3, 0.55, 1, 0.8],
+    seaIce: NO_ICE,
+    wet: [0.2, 0.6, 1.6, 1.1],
+    snow: NO_ICE,
+    rain: 0.95,
+    cool: 0,
+    larch: 0,
+  },
+  tropical: {
+    herb: [
+      [1.1, 1.02, 0.82],
+      [1, 1.02, 0.96],
+      [0.92, 1.06, 0.92],
+      [0.96, 1.04, 0.94],
+    ],
+    leaf: [0.85, 0.95, 1, 1],
+    seaIce: NO_ICE,
+    wet: [0.7, 0.9, 1.3, 1.2],
+    snow: NO_ICE,
+    rain: 0.45,
+    cool: 0,
+    larch: 0,
+  },
+  wetland: {
+    herb: [
+      [0.92, 0.84, 0.7],
+      [0.92, 1.14, 0.9],
+      [0.96, 1.07, 0.92],
+      [1.08, 0.95, 0.74],
+    ],
+    leaf: [0, 0.62, 1, 0.85],
+    seaIce: [0.1, 0, 0, 0],
+    wet: [0.9, 1.35, 0.75, 1],
+    snow: [0.3, 0, 0, 0],
+    rain: 0,
+    cool: 2,
+    larch: 0,
+    thaw: [0, 5.3, 0, 3],
+  },
 };
 /** Edits of the zone's year from the appearance panel. An absent field keeps the zone's value. */
 export interface SeasonCalendar {
-  thawSpring?: number; thawAutumn?: number; /** °C added to the winter low, like the thaws: negative is colder. */ winterCold?: number; rain?: number;
-  leafWinter?: number; leafSpring?: number; leafAutumn?: number; larch?: number;
-  seaIceWinter?: number; seaIceSpring?: number; seaIceSummer?: number; seaIceAutumn?: number;
+  thawSpring?: number;
+  thawAutumn?: number;
+  /** °C added to the winter low, like the thaws: negative is colder. */ winterCold?: number;
+  rain?: number;
+  leafWinter?: number;
+  leafSpring?: number;
+  leafAutumn?: number;
+  larch?: number;
+  seaIceWinter?: number;
+  seaIceSpring?: number;
+  seaIceSummer?: number;
+  seaIceAutumn?: number;
   /** Strength of the seasonal colours of herbs and crops: 0 none, 1 the zone's, 2 doubled. */
   greenery?: number;
   /** Amplitude of the drifts that break snow into patches. */
@@ -58,28 +227,45 @@ export interface SeasonCalendar {
 export type SeasonCalendarKey = keyof SeasonCalendar;
 /** Field, labels and range of each calendar control. */
 export const SEASON_CALENDAR_FIELDS: readonly { key: SeasonCalendarKey; en: string; fr: string; min: number; max: number; step: number }[] = [
-  { key: 'thawSpring', en: 'Spring thaw of the snow line (°C)', fr: 'Dégel de printemps de la limite des neiges (°C)', min: -10, max: 20, step: .5 },
-  { key: 'thawAutumn', en: 'Autumn thaw of the snow line (°C)', fr: 'Dégel d’automne de la limite des neiges (°C)', min: -10, max: 20, step: .5 },
-  { key: 'winterCold', en: 'Winter temperature shift (°C, negative is colder)', fr: 'Décalage de température hivernale (°C, négatif = plus froid)', min: -20, max: 10, step: .5 },
-  { key: 'snowPatches', en: 'Snow patchiness', fr: 'Morcellement de la neige', min: 0, max: 1, step: .05 },
-  { key: 'crownSnow', en: 'Snow on tree crowns', fr: 'Neige sur les houppiers', min: 0, max: 1, step: .05 },
-  { key: 'rain', en: 'Rain regime (−1 winter, +1 summer)', fr: 'Régime des pluies (−1 hiver, +1 été)', min: -1, max: 1, step: .05 },
-  { key: 'greenery', en: 'Seasonal colour strength', fr: 'Intensité des couleurs de saison', min: 0, max: 2, step: .05 },
-  { key: 'leafWinter', en: 'Deciduous leaves in winter', fr: 'Feuillage caduc en hiver', min: 0, max: 1, step: .05 },
-  { key: 'leafSpring', en: 'Deciduous leaves in spring', fr: 'Feuillage caduc au printemps', min: 0, max: 1, step: .05 },
-  { key: 'leafAutumn', en: 'Deciduous leaves in autumn', fr: 'Feuillage caduc en automne', min: 0, max: 1, step: .05 },
-  { key: 'larch', en: 'Larch share of conifers', fr: 'Part de mélèzes parmi les conifères', min: 0, max: 1, step: .05 },
-  { key: 'seaIceWinter', en: 'Sea ice in winter', fr: 'Banquise en hiver', min: 0, max: 1, step: .02 },
-  { key: 'seaIceSpring', en: 'Sea ice in spring', fr: 'Banquise au printemps', min: 0, max: 1, step: .02 },
-  { key: 'seaIceSummer', en: 'Sea ice in summer', fr: 'Banquise en été', min: 0, max: 1, step: .02 },
-  { key: 'seaIceAutumn', en: 'Sea ice in autumn', fr: 'Banquise en automne', min: 0, max: 1, step: .02 },
+  { key: 'thawSpring', en: 'Spring thaw of the snow line (°C)', fr: 'Dégel de printemps de la limite des neiges (°C)', min: -10, max: 20, step: 0.5 },
+  { key: 'thawAutumn', en: 'Autumn thaw of the snow line (°C)', fr: 'Dégel d’automne de la limite des neiges (°C)', min: -10, max: 20, step: 0.5 },
+  { key: 'winterCold', en: 'Winter temperature shift (°C, negative is colder)', fr: 'Décalage de température hivernale (°C, négatif = plus froid)', min: -20, max: 10, step: 0.5 },
+  { key: 'snowPatches', en: 'Snow patchiness', fr: 'Morcellement de la neige', min: 0, max: 1, step: 0.05 },
+  { key: 'crownSnow', en: 'Snow on tree crowns', fr: 'Neige sur les houppiers', min: 0, max: 1, step: 0.05 },
+  { key: 'rain', en: 'Rain regime (−1 winter, +1 summer)', fr: 'Régime des pluies (−1 hiver, +1 été)', min: -1, max: 1, step: 0.05 },
+  { key: 'greenery', en: 'Seasonal colour strength', fr: 'Intensité des couleurs de saison', min: 0, max: 2, step: 0.05 },
+  { key: 'leafWinter', en: 'Deciduous leaves in winter', fr: 'Feuillage caduc en hiver', min: 0, max: 1, step: 0.05 },
+  { key: 'leafSpring', en: 'Deciduous leaves in spring', fr: 'Feuillage caduc au printemps', min: 0, max: 1, step: 0.05 },
+  { key: 'leafAutumn', en: 'Deciduous leaves in autumn', fr: 'Feuillage caduc en automne', min: 0, max: 1, step: 0.05 },
+  { key: 'larch', en: 'Larch share of conifers', fr: 'Part de mélèzes parmi les conifères', min: 0, max: 1, step: 0.05 },
+  { key: 'seaIceWinter', en: 'Sea ice in winter', fr: 'Banquise en hiver', min: 0, max: 1, step: 0.02 },
+  { key: 'seaIceSpring', en: 'Sea ice in spring', fr: 'Banquise au printemps', min: 0, max: 1, step: 0.02 },
+  { key: 'seaIceSummer', en: 'Sea ice in summer', fr: 'Banquise en été', min: 0, max: 1, step: 0.02 },
+  { key: 'seaIceAutumn', en: 'Sea ice in autumn', fr: 'Banquise en automne', min: 0, max: 1, step: 0.02 },
 ];
-const SNOW_PATCHES = .4, CROWN_SNOW = .7;
+const SNOW_PATCHES = 0.4,
+  CROWN_SNOW = 0.7;
 /** The zone's own values, in calendar form. A map without a zone follows the temperate year. */
 export function zoneCalendar(zone: ClimateZone = 'temperate'): Required<SeasonCalendar> {
-  const z = ZONE_SEASONS[zone], thaw = z.thaw ?? NO_ICE;
-  return { thawSpring: thaw[1], thawAutumn: thaw[3], winterCold: -z.cool, rain: z.rain, leafWinter: z.leaf[0], leafSpring: z.leaf[1], leafAutumn: z.leaf[3], larch: z.larch,
-    seaIceWinter: z.seaIce[0], seaIceSpring: z.seaIce[1], seaIceSummer: z.seaIce[2], seaIceAutumn: z.seaIce[3], greenery: 1, snowPatches: SNOW_PATCHES, crownSnow: CROWN_SNOW };
+  const z = ZONE_SEASONS[zone],
+    thaw = z.thaw ?? NO_ICE;
+  return {
+    thawSpring: thaw[1],
+    thawAutumn: thaw[3],
+    winterCold: -z.cool,
+    rain: z.rain,
+    leafWinter: z.leaf[0],
+    leafSpring: z.leaf[1],
+    leafAutumn: z.leaf[3],
+    larch: z.larch,
+    seaIceWinter: z.seaIce[0],
+    seaIceSpring: z.seaIce[1],
+    seaIceSummer: z.seaIce[2],
+    seaIceAutumn: z.seaIce[3],
+    greenery: 1,
+    snowPatches: SNOW_PATCHES,
+    crownSnow: CROWN_SNOW,
+  };
 }
 const edited = (calendar?: SeasonCalendar): boolean => !!calendar && Object.values(calendar).some(value => typeof value === 'number' && Number.isFinite(value));
 /** The zone's year with the panel's edits applied; herb colours are scaled by the colour strength. */
@@ -93,37 +279,80 @@ export function calendarSeason(zone: ClimateZone = 'temperate', calendar?: Seaso
 /** Uniform values of the calendar; `uV2Calendar` 0 keeps the compiled zone tables. */
 export function seasonCalendarUniforms(zone?: ClimateZone, calendar?: SeasonCalendar): { on: number; leaf: number[]; ice: number[]; thaw: number[]; climate: number[]; snow: number[] } {
   const c = { ...zoneCalendar(zone), ...Object.fromEntries(Object.entries(calendar ?? {}).filter(([, v]) => typeof v === 'number')) } as Required<SeasonCalendar>;
-  return { on: edited(calendar) ? 1 : 0, leaf: [c.leafWinter, c.leafSpring, 1, c.leafAutumn], ice: [c.seaIceWinter, c.seaIceSpring, c.seaIceSummer, c.seaIceAutumn],
-    thaw: [0, c.thawSpring, 0, c.thawAutumn], climate: [c.rain, -c.winterCold, c.larch, c.greenery], snow: [c.snowPatches, c.crownSnow, 0, 0] };
+  return {
+    on: edited(calendar) ? 1 : 0,
+    leaf: [c.leafWinter, c.leafSpring, 1, c.leafAutumn],
+    ice: [c.seaIceWinter, c.seaIceSpring, c.seaIceSummer, c.seaIceAutumn],
+    thaw: [0, c.thawSpring, 0, c.thawAutumn],
+    climate: [c.rain, -c.winterCold, c.larch, c.greenery],
+    snow: [c.snowPatches, c.crownSnow, 0, 0],
+  };
 }
 /** Sets the calendar uniforms on a WebGL program; `u` resolves a uniform location. */
 export function setSeasonCalendarGl(gl: WebGL2RenderingContext, u: (name: string) => WebGLUniformLocation | null, zone?: ClimateZone, calendar?: SeasonCalendar): void {
   const v = seasonCalendarUniforms(zone, calendar);
-  gl.uniform1i(u('uV2Calendar'), v.on); gl.uniform4fv(u('uV2CalLeaf'), v.leaf); gl.uniform4fv(u('uV2CalIce'), v.ice); gl.uniform4fv(u('uV2CalThaw'), v.thaw);
-  gl.uniform4fv(u('uV2CalClimate'), v.climate); gl.uniform4fv(u('uV2CalSnow'), v.snow);
+  gl.uniform1i(u('uV2Calendar'), v.on);
+  gl.uniform4fv(u('uV2CalLeaf'), v.leaf);
+  gl.uniform4fv(u('uV2CalIce'), v.ice);
+  gl.uniform4fv(u('uV2CalThaw'), v.thaw);
+  gl.uniform4fv(u('uV2CalClimate'), v.climate);
+  gl.uniform4fv(u('uV2CalSnow'), v.snow);
 }
 /** Same for a WebGPU parameter block. */
 export function setSeasonCalendarGpu(p: { set(name: string, ...values: number[]): void; setArray(name: string, values: ArrayLike<number>): void }, zone?: ClimateZone, calendar?: SeasonCalendar): void {
   const v = seasonCalendarUniforms(zone, calendar);
-  p.set('uV2Calendar', v.on); p.setArray('uV2CalLeaf', v.leaf); p.setArray('uV2CalIce', v.ice); p.setArray('uV2CalThaw', v.thaw); p.setArray('uV2CalClimate', v.climate); p.setArray('uV2CalSnow', v.snow);
+  p.set('uV2Calendar', v.on);
+  p.setArray('uV2CalLeaf', v.leaf);
+  p.setArray('uV2CalIce', v.ice);
+  p.setArray('uV2CalThaw', v.thaw);
+  p.setArray('uV2CalClimate', v.climate);
+  p.setArray('uV2CalSnow', v.snow);
 }
 /** Weights of the four seasons at a point of the annual cycle; they sum to 1. */
 export function seasonWeights(season: number): Year<number> {
-  const at = (season % 1 + 1) % 1 * 4, i = Math.floor(at) % 4, f = at - Math.floor(at), w = [0, 0, 0, 0];
-  w[i] = 1 - f; w[(i + 1) % 4] = f;
+  const at = (((season % 1) + 1) % 1) * 4,
+    i = Math.floor(at) % 4,
+    f = at - Math.floor(at),
+    w = [0, 0, 0, 0];
+  w[i] = 1 - f;
+  w[(i + 1) % 4] = f;
   return w as unknown as Year<number>;
 }
-const glslFloats = (values: readonly number[]): string => values.map(v => Number.isInteger(v) ? `${v}.` : String(v)).join(',');
+const glslFloats = (values: readonly number[]): string => values.map(v => (Number.isInteger(v) ? `${v}.` : String(v))).join(',');
 const zoneTable = (name: string, type: string, rows: readonly string[]): string => `const ${type} ${name}[${rows.length}]=${type}[${rows.length}](${rows.join(',')});`;
 const seasonRows = CLIMATE_ZONES.map(zone => ZONE_SEASONS[zone]);
 const RENDER_V2_SEASON_GLSL = [
-  zoneTable('V2_SEASON_HERB', 'vec3', seasonRows.flatMap(row => row.herb.map(c => `vec3(${glslFloats(c)})`))),
-  zoneTable('V2_SEASON_LEAF', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.leaf)})`)),
-  zoneTable('V2_SEASON_ICE', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.seaIce)})`)),
-  zoneTable('V2_SEASON_WET', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.wet)})`)),
-  zoneTable('V2_SEASON_THAW', 'vec4', seasonRows.map(row => `vec4(${glslFloats(row.thaw ?? NO_ICE)})`)),
+  zoneTable(
+    'V2_SEASON_HERB',
+    'vec3',
+    seasonRows.flatMap(row => row.herb.map(c => `vec3(${glslFloats(c)})`)),
+  ),
+  zoneTable(
+    'V2_SEASON_LEAF',
+    'vec4',
+    seasonRows.map(row => `vec4(${glslFloats(row.leaf)})`),
+  ),
+  zoneTable(
+    'V2_SEASON_ICE',
+    'vec4',
+    seasonRows.map(row => `vec4(${glslFloats(row.seaIce)})`),
+  ),
+  zoneTable(
+    'V2_SEASON_WET',
+    'vec4',
+    seasonRows.map(row => `vec4(${glslFloats(row.wet)})`),
+  ),
+  zoneTable(
+    'V2_SEASON_THAW',
+    'vec4',
+    seasonRows.map(row => `vec4(${glslFloats(row.thaw ?? NO_ICE)})`),
+  ),
   // x rain regime, y winter cooling, z larch share.
-  zoneTable('V2_SEASON_CLIMATE', 'vec3', seasonRows.map(row => `vec3(${glslFloats([row.rain, row.cool, row.larch])})`)),
+  zoneTable(
+    'V2_SEASON_CLIMATE',
+    'vec3',
+    seasonRows.map(row => `vec3(${glslFloats([row.rain, row.cool, row.larch])})`),
+  ),
 ].join('\n');
 
 /** Per-zone appearance table of the Render v2 series, indexed by CLIMATE_ZONES.

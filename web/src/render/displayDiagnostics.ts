@@ -39,13 +39,18 @@ export const RESOURCE_LEGENDS: Record<ResourceOverlay, string> = {
   'res-alluvial': 'Alluvial share of the soil, 0 to 1: transparent → ochre.',
   'res-potential': 'Resource potential 0 to 1 (pick the resource below): transparent → yellow → dark green.',
   'res-deposits': 'Small deposits (disc size = recoverable ore) and activity anchors (diamonds), coloured by family or kind.',
-  'res-sites': 'Activity sites, coloured by category (extraction, energy, water, forest, pastoral), with a thin line to the parent settlement; network nodes (tolls, ferries, inns, border posts) as crimson circles; installations (quarry faces, heaps, weirs, piers, corrals…) outlined by ground kind.',
+  'res-sites':
+    'Activity sites, coloured by category (extraction, energy, water, forest, pastoral), with a thin line to the parent settlement; network nodes (tolls, ferries, inns, border posts) as crimson circles; installations (quarry faces, heaps, weirs, piers, corrals…) outlined by ground kind.',
 };
 export type DiagnosticId = HydrologyOverlay | VectorOverlay | ResourceOverlay | 'elevation';
 export const isResourceDiagnostic = (id: string | null | undefined): id is ResourceOverlay => !!id && id.startsWith('res-');
 export interface DiagnosticDefinition {
-  id: DiagnosticId; label: string; group: string; source: 'terrain' | 'rust' | 'vector' | 'resources' | 'none';
-  composition: 'overlay' | 'replacement'; legend: string;
+  id: DiagnosticId;
+  label: string;
+  group: string;
+  source: 'terrain' | 'rust' | 'vector' | 'resources' | 'none';
+  composition: 'overlay' | 'replacement';
+  legend: string;
 }
 export const DIAGNOSTICS: DiagnosticDefinition[] = [
   { id: 'none', label: 'Aucun', group: '', source: 'none', composition: 'overlay', legend: '' },

@@ -9,9 +9,10 @@ export const SMALL_PLACE_BATCH_POPULATION = 8000;
  * The user can explicitly build such a dependency from Cities instead. */
 export function boundedSmallPlaceRun(world: World, settings: V2Settings, keys: readonly string[], limit: number): boolean {
   if (!keys.length || keys.length > SMALL_PLACE_BATCH_SIZE) return false;
-  const selected = new Set(keys), seats = townSeats(world, settings), chosen = seats.filter(seat => selected.has(seat.key));
-  if (chosen.length !== selected.size || chosen.some(seat => seat.built || seat.population > limit)
-    || chosen.reduce((sum, seat) => sum + seat.population, 0) > SMALL_PLACE_BATCH_POPULATION) return false;
+  const selected = new Set(keys),
+    seats = townSeats(world, settings),
+    chosen = seats.filter(seat => selected.has(seat.key));
+  if (chosen.length !== selected.size || chosen.some(seat => seat.built || seat.population > limit) || chosen.reduce((sum, seat) => sum + seat.population, 0) > SMALL_PLACE_BATCH_POPULATION) return false;
   if ((settings.urban?.backend ?? settings.runtime?.backend) === 'typescript') return true;
   const run = planTownRun(seats, keys);
   return !run.cascaded.size && run.order.length === selected.size && run.order.every(key => selected.has(key));
@@ -37,14 +38,18 @@ export function boundedSmallPlaceRun(world: World, settings: V2Settings, keys: r
 /** A secondary place the background pass may build: not built yet and at most `limit` inhabitants. */
 export function smallPlaceCandidates(world: World, limit: number, backend: string): Settlement[] {
   if (!(limit > 0)) return [];
-  return (world.settlements ?? []).filter(place => !place.main && !place.urban && place.population <= limit
-    // The classic TypeScript backend draws farmsteads with the land use (generateTowns skips them too).
-    && (place.detail === 'lazy' || place.detail === 'farmstead' && backend !== 'typescript'));
+  return (world.settlements ?? []).filter(
+    place =>
+      !place.main &&
+      !place.urban &&
+      place.population <= limit &&
+      // The classic TypeScript backend draws farmsteads with the land use (generateTowns skips them too).
+      (place.detail === 'lazy' || (place.detail === 'farmstead' && backend !== 'typescript')),
+  );
 }
 
 /** Next place to build: a targeted candidate first, then the nearest to `focus` (the view, else the main town). */
-export function nextSmallPlace(world: World, limit: number, backend: string, focus: { x: number; y: number } | undefined,
-  skip: ReadonlySet<string> = new Set(), priority: readonly string[] = [], canonical = false): string | undefined {
+export function nextSmallPlace(world: World, limit: number, backend: string, focus: { x: number; y: number } | undefined, skip: ReadonlySet<string> = new Set(), priority: readonly string[] = [], canonical = false): string | undefined {
   const candidates = smallPlaceCandidates(world, limit, backend).filter(place => !skip.has(place.key));
   for (const key of priority) if (candidates.some(place => place.key === key)) return key;
   const origin = focus ?? world.settlements?.find(place => place.main)?.center ?? { x: world.mapSize / 2, y: world.mapSize / 2 };
@@ -103,10 +108,11 @@ export class SmallPlaceQueue {
     // A manual build can resolve a dependency without changing the recipe. Recheck deferred
     // places on a new pass, while keeping them skipped within an unchanged blocked pass.
     this.deferred.clear();
-    const epoch = this.loopEpoch = this.epoch;
+    const epoch = (this.loopEpoch = this.epoch);
     const run: Promise<void> = this.loop(epoch).finally(async () => {
-      try { await this.release(epoch); }
-      finally {
+      try {
+        await this.release(epoch);
+      } finally {
         if (this.loopEpoch === epoch) this.loopEpoch = -1;
         if (this.running === run) this.running = undefined;
       }
@@ -123,7 +129,9 @@ export class SmallPlaceQueue {
     }
   }
   /** Drops the pass: no new place starts and a result still on its way is discarded. */
-  cancel(): void { this.epoch++; }
+  cancel(): void {
+    this.epoch++;
+  }
   /** Cancels, then waits until the engine is free (the place being computed, if any, completes and is dropped). */
   async stop(): Promise<void> {
     const epoch = this.epoch;
@@ -136,7 +144,9 @@ export class SmallPlaceQueue {
     this.priority = [key, ...this.priority.filter(item => item !== key)];
     this.start();
   }
-  get busy(): boolean { return !!this.inflight; }
+  get busy(): boolean {
+    return !!this.inflight;
+  }
 
   private async release(epoch: number): Promise<void> {
     if (this.releaseEpoch !== epoch) return;
@@ -148,10 +158,19 @@ export class SmallPlaceQueue {
     for (;;) {
       await this.host.idle();
       if (epoch !== this.epoch) return;
-      while (this.inflight) { await this.inflight.catch(() => undefined); if (epoch !== this.epoch) return; }
+      while (this.inflight) {
+        await this.inflight.catch(() => undefined);
+        if (epoch !== this.epoch) return;
+      }
       const base = this.host.base();
       if (!base) return;
-      if (base.recipe !== this.recipe) { await this.release(epoch); this.recipe = base.recipe; this.attempted.clear(); this.retrySingles.clear(); this.deferred.clear(); }
+      if (base.recipe !== this.recipe) {
+        await this.release(epoch);
+        this.recipe = base.recipe;
+        this.attempted.clear();
+        this.retrySingles.clear();
+        this.deferred.clear();
+      }
       const keys: string[] = [];
       const batchSize = Math.max(1, Math.min(SMALL_PLACE_BATCH_SIZE, Math.floor(this.host.batchSize ?? SMALL_PLACE_BATCH_SIZE)));
       const populationLimit = Math.max(1, this.host.batchPopulation ?? SMALL_PLACE_BATCH_POPULATION);
@@ -164,9 +183,13 @@ export class SmallPlaceQueue {
         if (this.retrySingles.has(key) && keys.length) break;
         const residents = base.world.settlements!.find(place => place.key === key)!.population;
         if (keys.length && population + residents > populationLimit) break;
-        if (this.host.canBuild && !this.host.canBuild(base.world, [...keys, key])) { this.deferred.add(key); continue; }
+        if (this.host.canBuild && !this.host.canBuild(base.world, [...keys, key])) {
+          this.deferred.add(key);
+          continue;
+        }
         population += residents;
-        keys.push(key); this.attempted.add(key);
+        keys.push(key);
+        this.attempted.add(key);
         if (this.retrySingles.delete(key)) break;
       }
       if (!keys.length) return;
@@ -175,20 +198,38 @@ export class SmallPlaceQueue {
       const job = this.host.build(base.world, keys);
       this.inflight = job;
       let result: World;
-      try { result = await job; }
-      catch (error) {
+      try {
+        result = await job;
+      } catch (error) {
         await this.release(epoch);
-        if (epoch !== this.epoch) { keys.forEach(key => this.attempted.delete(key)); return; }
+        if (epoch !== this.epoch) {
+          keys.forEach(key => this.attempted.delete(key));
+          return;
+        }
         // An atomic batch failed: isolate its bad place without losing the other results forever.
-        if (keys.length > 1) for (const key of keys) { this.attempted.delete(key); this.retrySingles.add(key); }
-        this.host.onError?.(keys, error); continue;
+        if (keys.length > 1)
+          for (const key of keys) {
+            this.attempted.delete(key);
+            this.retrySingles.add(key);
+          }
+        this.host.onError?.(keys, error);
+        continue;
+      } finally {
+        if (this.inflight === job) this.inflight = undefined;
       }
-      finally { if (this.inflight === job) this.inflight = undefined; }
       await this.host.idle();
       // Dropped, not failed: the next pass tries this place again.
-      if (epoch !== this.epoch) { keys.forEach(key => this.attempted.delete(key)); return; }
+      if (epoch !== this.epoch) {
+        keys.forEach(key => this.attempted.delete(key));
+        return;
+      }
       // The map changed under the build (rename, edit…): try this place again on the new map.
-      if (this.host.base()?.world !== base.world) { await this.release(epoch); this.deferred.clear(); keys.forEach(key => this.attempted.delete(key)); continue; }
+      if (this.host.base()?.world !== base.world) {
+        await this.release(epoch);
+        this.deferred.clear();
+        keys.forEach(key => this.attempted.delete(key));
+        continue;
+      }
       await this.host.apply(result, keys);
       this.deferred.clear();
     }

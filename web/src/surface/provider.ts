@@ -1,25 +1,38 @@
 import { assertNotAborted, type Bounds, type TerrainGrid } from './model';
 
 export interface TerrainRequest {
-  bounds: Bounds; spacingM: number; worldVersion: string; signal?: AbortSignal;
+  bounds: Bounds;
+  spacingM: number;
+  worldVersion: string;
+  signal?: AbortSignal;
 }
 /** InfiniteDiffusion adapter implements this contract; interpolation is never a new source LOD. */
 export interface TerrainProvider {
   readonly id: string;
   request(request: TerrainRequest): Promise<TerrainGrid>;
 }
-export interface VersionedTerrainResult { worldVersion: string; requestId: number; terrain: TerrainGrid }
+export interface VersionedTerrainResult {
+  worldVersion: string;
+  requestId: number;
+  terrain: TerrainGrid;
+}
 
 /** Suppresses late results after edit, navigation, cancellation or a newer request. */
 export class SurfaceTerrainSession {
   private serial = 0;
   private controller?: AbortController;
-  constructor(private provider: TerrainProvider, public worldVersion: string) {}
+  constructor(
+    private provider: TerrainProvider,
+    public worldVersion: string,
+  ) {}
   invalidate(worldVersion: string): void {
     this.worldVersion = worldVersion;
     this.cancel();
   }
-  cancel(): void { this.serial++; this.controller?.abort(); }
+  cancel(): void {
+    this.serial++;
+    this.controller?.abort();
+  }
   async request(request: Omit<TerrainRequest, 'worldVersion'>): Promise<VersionedTerrainResult> {
     this.cancel();
     const requestId = this.serial;

@@ -31,32 +31,48 @@ const restoring = new Set<Bench>();
 try {
   const saved = JSON.parse(sessionStorage.getItem(sessionKey) ?? '{}');
   for (const bench of Object.keys(benches) as Bench[]) if (typeof saved[bench] === 'string') contexts.set(bench, saved[bench]);
-} catch { /* Navigation still retains live frames when browser storage is unavailable. */ }
+} catch {
+  /* Navigation still retains live frames when browser storage is unavailable. */
+}
 try {
   const saved = JSON.parse(sessionStorage.getItem(uiKey) ?? '{}');
   for (const bench of Object.keys(benches) as Bench[]) if (saved[bench]?.fields && saved[bench]?.panels) uiContexts.set(bench, saved[bench]);
-} catch { /* The applied URLs remain available independently of UI drafts. */ }
+} catch {
+  /* The applied URLs remain available independently of UI drafts. */
+}
 let active: Bench | undefined;
 
 function persistUi(): void {
-  try { sessionStorage.setItem(uiKey, JSON.stringify(Object.fromEntries(uiContexts))); } catch { /* Storage unavailable or full. */ }
+  try {
+    sessionStorage.setItem(uiKey, JSON.stringify(Object.fromEntries(uiContexts)));
+  } catch {
+    /* Storage unavailable or full. */
+  }
 }
 function rememberUi(bench: Bench): void {
   if (loading.has(bench) || restoring.has(bench)) return;
   try {
-    const frame = loaded.get(bench), doc = frame?.contentDocument;
+    const frame = loaded.get(bench),
+      doc = frame?.contentDocument;
     if (doc?.defaultView?.magnaBenchContext?.ready()) {
       const snapshot = captureBenchUi(doc);
       // Hidden documents have no scroll boxes; retain the position captured
       // before hiding the atelier instead of replacing it with zeroes.
       if (frame?.hidden && uiContexts.has(bench)) snapshot.scroll = uiContexts.get(bench)!.scroll;
-      uiContexts.set(bench, snapshot); persistUi();
+      uiContexts.set(bench, snapshot);
+      persistUi();
     }
-  } catch { /* File origins may restrict access to the child document. */ }
+  } catch {
+    /* File origins may restrict access to the child document. */
+  }
 }
 function resumeUi(bench: Bench, frame: HTMLIFrameElement): void {
   let doc: Document | null;
-  try { doc = frame.contentDocument; } catch { return; }
+  try {
+    doc = frame.contentDocument;
+  } catch {
+    return;
+  }
   if (!doc) return;
   const document = doc;
   // With no snapshot to restore, pagehide must still capture edits made just
@@ -65,12 +81,20 @@ function resumeUi(bench: Bench, frame: HTMLIFrameElement): void {
   const restore = (): void => {
     if (frame.contentDocument !== document) return;
     const hook = document.defaultView?.magnaBenchContext;
-    if (!hook?.ready()) { setTimeout(restore, 100); return; }
+    if (!hook?.ready()) {
+      setTimeout(restore, 100);
+      return;
+    }
     const snapshot = uiContexts.get(bench);
     if (snapshot) restoreBenchUi(document, snapshot);
     restoring.delete(bench);
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const save = (): void => { clearTimeout(timer); timer = setTimeout(() => { if (frame.contentDocument === document) rememberUi(bench); }, 200); };
+    const save = (): void => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (frame.contentDocument === document) rememberUi(bench);
+      }, 200);
+    };
     for (const event of ['input', 'change', 'click', 'toggle', 'scroll']) document.addEventListener(event, save, true);
   };
   restore();
@@ -78,7 +102,11 @@ function resumeUi(bench: Bench, frame: HTMLIFrameElement): void {
 
 function remember(bench: Bench, query: string): void {
   contexts.set(bench, query);
-  try { sessionStorage.setItem(sessionKey, JSON.stringify(Object.fromEntries(contexts))); } catch { /* Private mode or storage quota. */ }
+  try {
+    sessionStorage.setItem(sessionKey, JSON.stringify(Object.fromEntries(contexts)));
+  } catch {
+    /* Private mode or storage quota. */
+  }
 }
 
 function currentUrl(bench: Bench): URL | undefined {
@@ -86,7 +114,9 @@ function currentUrl(bench: Bench): URL | undefined {
   try {
     const url = new URL(frame.contentWindow!.location.href);
     if (url.href !== 'about:blank') return url;
-  } catch { return undefined; /* File origins can prevent reading applied settings. */ }
+  } catch {
+    return undefined; /* File origins can prevent reading applied settings. */
+  }
   return new URL(frame.src);
 }
 
@@ -106,7 +136,7 @@ function syncRoute(): void {
   // changed the hash, but before hashchange activates the destination.
   if (location.hash.slice(1).split('?')[0] !== active) return;
   const url = currentUrl(active);
-  const params = url ? sketchQuery(url).toString() : contexts.get(active) ?? sketchQuery(new URL(loaded.get(active)!.src)).toString();
+  const params = url ? sketchQuery(url).toString() : (contexts.get(active) ?? sketchQuery(new URL(loaded.get(active)!.src)).toString());
   remember(active, params);
   // Mark visited history entries: returning to one resumes its live atelier,
   // even if its old URL predates the latest edits in that atelier.
@@ -132,7 +162,7 @@ function navigate(): void {
   }
   const separator = route.indexOf('?');
   const key = separator < 0 ? route : route.slice(0, separator);
-  active = Object.hasOwn(benches, key) ? key as Bench : undefined;
+  active = Object.hasOwn(benches, key) ? (key as Bench) : undefined;
   home.hidden = !!active;
   frames.hidden = !active;
   actions.hidden = !active;
@@ -143,16 +173,21 @@ function navigate(): void {
   for (const [bench, frame] of loaded) frame.hidden = bench !== active;
   document.title = `${active ? benchTitle(active) : shellLabel('home')} · Magna Urbis`;
   if (!active) return;
-  const bench = active, definition = benches[bench];
+  const bench = active,
+    definition = benches[bench];
   const url = new URL(definition.path, location.href);
   url.hash = '';
-  url.search = separator < 0 ? contexts.get(bench) ?? definition.query : route.slice(separator + 1);
-  applyExecutionProfile(url); applyExecutionOptions(url);
+  url.search = separator < 0 ? (contexts.get(bench) ?? definition.query) : route.slice(separator + 1);
+  applyExecutionProfile(url);
+  applyExecutionOptions(url);
   if (bench === 'settlements') url.searchParams.set('stage', 'settlements');
   if (definition.path === 'terrainbench.html') placeSketchInFragment(url);
   let frame = loaded.get(bench);
   if (!frame) {
-    if (!resume && separator >= 0) { uiContexts.delete(bench); persistUi(); }
+    if (!resume && separator >= 0) {
+      uiContexts.delete(bench);
+      persistUi();
+    }
     frame = document.createElement('iframe');
     frame.title = `${shellLabel('workshop')} ${benchTitle(bench)} — Magna Urbis`;
     frame.dataset.bench = bench;
@@ -169,13 +204,17 @@ function navigate(): void {
       try {
         frame!.contentWindow!.addEventListener('hashchange', updateStandalone);
         frame!.contentWindow!.addEventListener('popstate', updateStandalone);
-      } catch { /* The standalone link still works with restricted file origins. */ }
+      } catch {
+        /* The standalone link still works with restricted file origins. */
+      }
     });
     loaded.set(bench, frame);
     frames.append(frame);
   } else if (!resume && separator >= 0 && sketchQuery(currentUrl(bench) ?? new URL(frame.src)).toString() !== sketchQuery(url).toString()) {
     loading.add(bench);
-    restoring.delete(bench); uiContexts.delete(bench); persistUi();
+    restoring.delete(bench);
+    uiContexts.delete(bench);
+    persistUi();
     remember(bench, sketchQuery(url).toString());
     frame.src = url.href;
   }
@@ -228,11 +267,15 @@ window.addEventListener('message', event => {
 });
 function reloadActive(): void {
   if (!active) return;
-  const bench = active, frame = loaded.get(bench);
+  const bench = active,
+    frame = loaded.get(bench);
   if (!frame) return;
   const url = applyExecutionOptions(new URL(currentUrl(bench)?.href ?? frame.src));
   // An execution change restarts the atelier on the same map settings, as the profile picker does.
-  loading.add(bench); restoring.delete(bench); uiContexts.delete(bench); persistUi();
+  loading.add(bench);
+  restoring.delete(bench);
+  uiContexts.delete(bench);
+  persistUi();
   remember(bench, sketchQuery(url).toString());
   frame.src = url.href;
 }
@@ -241,7 +284,13 @@ installBenchExecution({
   reload: reloadActive,
   frames: () => {
     const order = [...loaded].sort(([a], [b]) => Number(b === active) - Number(a === active));
-    return order.flatMap(([, frame]) => { try { return frame.contentWindow ? [frame.contentWindow] : []; } catch { return []; } });
+    return order.flatMap(([, frame]) => {
+      try {
+        return frame.contentWindow ? [frame.contentWindow] : [];
+      } catch {
+        return [];
+      }
+    });
   },
 });
 installRecipeSharing({
@@ -256,8 +305,13 @@ installRecipeSharing({
     const stage = recipe.stage;
     // An import must replay the recipe even when that atelier already has UI drafts.
     active = undefined;
-    loaded.get(stage)?.remove(); loaded.delete(stage); loading.delete(stage); restoring.delete(stage);
-    uiContexts.delete(stage); persistUi(); remember(stage, recipe.query);
+    loaded.get(stage)?.remove();
+    loaded.delete(stage);
+    loading.delete(stage);
+    restoring.delete(stage);
+    uiContexts.delete(stage);
+    persistUi();
+    remember(stage, recipe.query);
     history.pushState(null, '', `#${recipe.stage}?${recipe.query}`);
     navigate();
   },

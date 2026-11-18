@@ -12,63 +12,102 @@ vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', async () => {
   const town = (warnings: string[]) => [{ key: 'town', parcels: [], warnings }];
   const bytes = (buf: ArrayBuffer) => new Uint8Array(buf);
   class SettlementTerrain {
-    private next = 0; private layouts = 0; private partitions = 0;
+    private next = 0;
+    private layouts = 0;
+    private partitions = 0;
     constructor() {
       // Packages with the parcel pack exports (`resident.rs`).
-      if (calls.packs) Object.assign(this, {
-        urban_parcels_resident_pack: (_seed: string, id: number) => {
-          if (id !== this.layouts) throw new Error('[urban_resident_stale]');
-          calls.list.push('parcels-pack:' + id); this.partitions = ++this.next;
-          return bytes(writeParcelPack(town([]), { partitionsId: this.partitions }));
-        },
-        urban_programme_resident_pack: (l: number, p: number) => {
-          if (l !== this.layouts || p !== this.partitions) throw new Error('[urban_resident_stale]');
-          calls.list.push(`programme-pack:${l}:${p}`); this.partitions = ++this.next;
-          return bytes(writeParcelPack(town(['p']), { partitionsId: this.partitions }));
-        },
-        retain_partitions_pack: (pack: Uint8Array) => { calls.retained.push('pack:' + pack.byteLength); return this.partitions = ++this.next; },
-        urban_parcel_pack_resident: () => { throw new Error('unused'); },
-        urban_built_capacity_resident: (p: number) => {
-          if (p !== this.partitions) throw new Error('[urban_resident_stale]');
-          calls.list.push(`built-pack:${p}`);
-          return bytes(writeParcelPack(town(['built']), { partitionsId: 0 }, ['core', 'allocations', 'floorNeed', 'adjacency', 'environment']));
-        },
-      });
+      if (calls.packs)
+        Object.assign(this, {
+          urban_parcels_resident_pack: (_seed: string, id: number) => {
+            if (id !== this.layouts) throw new Error('[urban_resident_stale]');
+            calls.list.push('parcels-pack:' + id);
+            this.partitions = ++this.next;
+            return bytes(writeParcelPack(town([]), { partitionsId: this.partitions }));
+          },
+          urban_programme_resident_pack: (l: number, p: number) => {
+            if (l !== this.layouts || p !== this.partitions) throw new Error('[urban_resident_stale]');
+            calls.list.push(`programme-pack:${l}:${p}`);
+            this.partitions = ++this.next;
+            return bytes(writeParcelPack(town(['p']), { partitionsId: this.partitions }));
+          },
+          retain_partitions_pack: (pack: Uint8Array) => {
+            calls.retained.push('pack:' + pack.byteLength);
+            return (this.partitions = ++this.next);
+          },
+          urban_parcel_pack_resident: () => {
+            throw new Error('unused');
+          },
+          urban_built_capacity_resident: (p: number) => {
+            if (p !== this.partitions) throw new Error('[urban_resident_stale]');
+            calls.list.push(`built-pack:${p}`);
+            return bytes(writeParcelPack(town(['built']), { partitionsId: 0 }, ['core', 'allocations', 'floorNeed', 'adjacency', 'environment']));
+          },
+        });
     }
     free(): void {}
     set_urban_geometry(): void {}
-    urban_quarters_resident(): string { calls.list.push('quarters'); this.layouts = ++this.next; this.partitions = 0; return JSON.stringify([{ key: 'town', culture: 'c', center: { x: 0, y: 0 }, quarters: [], streets: [], blocks: [], warnings: [] }]); }
-    retain_layouts_json(json: string): number { calls.retained.push('layouts:' + json); this.layouts = ++this.next; this.partitions = 0; return this.layouts; }
-    retain_partitions_json(json: string): number { calls.retained.push('partitions:' + json); return this.partitions = ++this.next; }
-    resident_layouts_id(): number { return this.layouts; }
-    resident_partitions_id(): number { return this.partitions; }
-    resident_layouts_len(): number { return 1; }
+    urban_quarters_resident(): string {
+      calls.list.push('quarters');
+      this.layouts = ++this.next;
+      this.partitions = 0;
+      return JSON.stringify([{ key: 'town', culture: 'c', center: { x: 0, y: 0 }, quarters: [], streets: [], blocks: [], warnings: [] }]);
+    }
+    retain_layouts_json(json: string): number {
+      calls.retained.push('layouts:' + json);
+      this.layouts = ++this.next;
+      this.partitions = 0;
+      return this.layouts;
+    }
+    retain_partitions_json(json: string): number {
+      calls.retained.push('partitions:' + json);
+      return (this.partitions = ++this.next);
+    }
+    resident_layouts_id(): number {
+      return this.layouts;
+    }
+    resident_partitions_id(): number {
+      return this.partitions;
+    }
+    resident_layouts_len(): number {
+      return 1;
+    }
     urban_parcels_resident(_seed: string, id: number): string {
       if (id !== this.layouts) throw new Error('[urban_resident_stale]');
-      calls.list.push('parcels:' + id); this.partitions = ++this.next; return JSON.stringify([{ key: 'town', parcels: [], warnings: [] }]);
+      calls.list.push('parcels:' + id);
+      this.partitions = ++this.next;
+      return JSON.stringify([{ key: 'town', parcels: [], warnings: [] }]);
     }
     urban_programme_resident(l: number, p: number): string {
       if (l !== this.layouts || p !== this.partitions) throw new Error('[urban_resident_stale]');
-      calls.list.push(`programme:${l}:${p}`); this.partitions = ++this.next; return JSON.stringify([{ key: 'town', parcels: [], warnings: ['p'] }]);
+      calls.list.push(`programme:${l}:${p}`);
+      this.partitions = ++this.next;
+      return JSON.stringify([{ key: 'town', parcels: [], warnings: ['p'] }]);
     }
     urban_building_sites_resident(_seed: string, l: number, p: number): string {
       if (l !== this.layouts || p !== this.partitions) throw new Error('[urban_resident_stale]');
-      calls.list.push(`sites:${l}:${p}`); return '[{"id":"a"}]';
+      calls.list.push(`sites:${l}:${p}`);
+      return '[{"id":"a"}]';
     }
-    urban_building_sites_total_resident(): number { return 1; }
+    urban_building_sites_total_resident(): number {
+      return 1;
+    }
   }
   // Every package export `wasmRuntime.ts` selects; only the settlement terrain is used here.
-  return { default: vi.fn(), SettlementTerrain, TerrainEngine: undefined, TerrainPipeline: undefined, GenerationNoisePlan: undefined, HydrologyEngine: undefined,
-    erosion_defaults: undefined, flood_hydrology: undefined, erode_relief: undefined, set_erosion_tuning: undefined };
+  return { default: vi.fn(), SettlementTerrain, TerrainEngine: undefined, TerrainPipeline: undefined, GenerationNoisePlan: undefined, HydrologyEngine: undefined, erosion_defaults: undefined, flood_hydrology: undefined, erode_relief: undefined, set_erosion_tuning: undefined };
 });
 import { createUrbanEngine } from '../../rust/bridge/urban';
 import { packOf, responsePartitions } from '../../rust/bridge/urbanParcelPack';
 
 // An empty but valid WASM module: `compileWasm` checks `ok` and compiles what it downloads.
 const emptyWasm = () => ({ ok: true, status: 200, headers: new Headers(), arrayBuffer: async () => new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]).buffer });
-const raster = (): SettlementRaster => ({ width: 100, n: 2, height: new Float32Array(4), water: new Uint8Array(4),
-  waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4) });
-afterEach(() => { vi.unstubAllGlobals(); calls.list.length = 0; calls.retained.length = 0; calls.packs = false; });
+const raster = (): SettlementRaster => ({ width: 100, n: 2, height: new Float32Array(4), water: new Uint8Array(4), waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4) });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  calls.list.length = 0;
+  calls.retained.length = 0;
+  calls.packs = false;
+});
 
 describe('resident urban products', () => {
   it('chains quarters, parcels, programme and building sites by ids without re-sending geometry', async () => {
@@ -120,8 +159,7 @@ describe('resident urban products', () => {
     const sites = await engine.run({ id: 4, kind: 'buildingSites', seed: '42', layouts: quarters.layouts, partitions: responsePartitions(programme) });
     expect(sites.placementRequests).toEqual([{ id: 'a' }]);
     // Built capacity: a partial pack completed with the request's parcels.
-    const built = await engine.run({ id: 5, kind: 'builtCapacity', seed: '42', partitions: responsePartitions(programme),
-      scene: { buildings: [], refusals: [], open_spaces: [] } as never });
+    const built = await engine.run({ id: 5, kind: 'builtCapacity', seed: '42', partitions: responsePartitions(programme), scene: { buildings: [], refusals: [], open_spaces: [] } as never });
     expect(built.partitionsPack).toBeUndefined();
     expect(built.partitions?.[0].warnings).toEqual(['built']);
     expect(built.partitions?.[0].parcels).toBe(responsePartitions(programme)![0].parcels);

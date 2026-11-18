@@ -60,14 +60,19 @@ function splitCsv(text: string, sep: string): string[][] {
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (quoted) {
-      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (c === '"') quoted = false;
+      if (c === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (c === '"') quoted = false;
       else cell += c;
     } else if (c === '"' && cell === '') quoted = true;
-    else if (c === sep) { row.push(cell); cell = ''; }
-    else if (c === '\n' || c === '\r') {
+    else if (c === sep) {
+      row.push(cell);
+      cell = '';
+    } else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++;
-      row.push(cell); cell = '';
+      row.push(cell);
+      cell = '';
       if (row.some(v => v.trim())) rows.push(row);
       row = [];
     } else cell += c;
@@ -86,24 +91,135 @@ function pickSeparator(headerLine: string): string {
  *  Picked by field count (only the columns read here differ between same-length layouts). */
 const FMG_CSV_LAYOUTS: readonly (readonly string[])[] = [
   // Current FMG (TypeScript), 34 and 32 columns.
-  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Group', 'Type', 'Population',
-    'Market', 'Product', 'Wealth', 'Prosperity', 'Balance', 'Adjustments', 'X', 'Y', 'Latitude', 'Longitude', 'Elevation',
-    'Temperature', 'Temperature likeness', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple', 'Shanty Town', 'Emblem', 'Preview link', 'Tags'],
-  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Group', 'Type', 'Population',
-    'Market', 'Product', 'Wealth', 'Treasury', 'X', 'Y', 'Latitude', 'Longitude', 'Elevation',
-    'Temperature', 'Temperature likeness', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple', 'Shanty Town', 'Emblem', 'Preview link', 'Tags'],
+  [
+    'Id',
+    'Burg',
+    'Province',
+    'Province Full Name',
+    'State',
+    'State Full Name',
+    'Culture',
+    'Religion',
+    'Group',
+    'Type',
+    'Population',
+    'Market',
+    'Product',
+    'Wealth',
+    'Prosperity',
+    'Balance',
+    'Adjustments',
+    'X',
+    'Y',
+    'Latitude',
+    'Longitude',
+    'Elevation',
+    'Temperature',
+    'Temperature likeness',
+    'Capital',
+    'Port',
+    'Citadel',
+    'Walls',
+    'Plaza',
+    'Temple',
+    'Shanty Town',
+    'Emblem',
+    'Preview link',
+    'Tags',
+  ],
+  [
+    'Id',
+    'Burg',
+    'Province',
+    'Province Full Name',
+    'State',
+    'State Full Name',
+    'Culture',
+    'Religion',
+    'Group',
+    'Type',
+    'Population',
+    'Market',
+    'Product',
+    'Wealth',
+    'Treasury',
+    'X',
+    'Y',
+    'Latitude',
+    'Longitude',
+    'Elevation',
+    'Temperature',
+    'Temperature likeness',
+    'Capital',
+    'Port',
+    'Citadel',
+    'Walls',
+    'Plaza',
+    'Temple',
+    'Shanty Town',
+    'Emblem',
+    'Preview link',
+    'Tags',
+  ],
   // Classic FMG (azgaar.github.io), 26 and 25 columns ("City Generator Link" in older builds).
-  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Group', 'Population', 'X', 'Y',
-    'Latitude', 'Longitude', 'Elevation', 'Temperature', 'Temperature likeness', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple',
-    'Shanty Town', 'Emblem', 'Preview link'],
-  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Population', 'X', 'Y',
-    'Latitude', 'Longitude', 'Elevation', 'Temperature', 'Temperature likeness', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple',
-    'Shanty Town', 'Emblem', 'Preview link'],
+  [
+    'Id',
+    'Burg',
+    'Province',
+    'Province Full Name',
+    'State',
+    'State Full Name',
+    'Culture',
+    'Religion',
+    'Group',
+    'Population',
+    'X',
+    'Y',
+    'Latitude',
+    'Longitude',
+    'Elevation',
+    'Temperature',
+    'Temperature likeness',
+    'Capital',
+    'Port',
+    'Citadel',
+    'Walls',
+    'Plaza',
+    'Temple',
+    'Shanty Town',
+    'Emblem',
+    'Preview link',
+  ],
+  [
+    'Id',
+    'Burg',
+    'Province',
+    'Province Full Name',
+    'State',
+    'State Full Name',
+    'Culture',
+    'Religion',
+    'Population',
+    'X',
+    'Y',
+    'Latitude',
+    'Longitude',
+    'Elevation',
+    'Temperature',
+    'Temperature likeness',
+    'Capital',
+    'Port',
+    'Citadel',
+    'Walls',
+    'Plaza',
+    'Temple',
+    'Shanty Town',
+    'Emblem',
+    'Preview link',
+  ],
   // Older classic builds, 21 and 20 columns.
-  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Population', 'X', 'Y',
-    'Latitude', 'Longitude', 'Elevation', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple', 'Shanty Town'],
-  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Population',
-    'Latitude', 'Longitude', 'Elevation', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple', 'Shanty Town'],
+  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Population', 'X', 'Y', 'Latitude', 'Longitude', 'Elevation', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple', 'Shanty Town'],
+  ['Id', 'Burg', 'Province', 'Province Full Name', 'State', 'State Full Name', 'Culture', 'Religion', 'Population', 'Latitude', 'Longitude', 'Elevation', 'Capital', 'Port', 'Citadel', 'Walls', 'Plaza', 'Temple', 'Shanty Town'],
 ];
 
 function parseBurgCsv(text: string): ExternalCityHints | null {
@@ -127,8 +243,7 @@ function parseBurgCsv(text: string): ExternalCityHints | null {
     row = rows[0];
     if (!/^\d+$/.test(row[0]?.trim() ?? '')) return null;
     const temperatureAt = row.findIndex(cell => /^-?\d+(?:\.\d+)?\s*°/.test(cell.trim()));
-    const layout = FMG_CSV_LAYOUTS.find(columns => columns.length <= row.length && temperatureAt >= 0 && columns.indexOf('Temperature') === temperatureAt)
-      ?? FMG_CSV_LAYOUTS.find(columns => columns.length === row.length);
+    const layout = FMG_CSV_LAYOUTS.find(columns => columns.length <= row.length && temperatureAt >= 0 && columns.indexOf('Temperature') === temperatureAt) ?? FMG_CSV_LAYOUTS.find(columns => columns.length === row.length);
     if (!layout) return null;
     header = layout.map(h => h.toLowerCase());
   }
@@ -166,7 +281,10 @@ function parseBurgCsv(text: string): ExternalCityHints | null {
     temple: flag('temple'),
     shantytown: flag('shanty town'),
     link: get('preview link'),
-    tags: (get('tags') ?? '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
+    tags: (get('tags') ?? '')
+      .split(',')
+      .map(t => t.trim().toLowerCase())
+      .filter(Boolean),
   });
 }
 
@@ -174,13 +292,16 @@ function parseBurgCsv(text: string): ExternalCityHints | null {
 
 function parseBurgJson(text: string): ExternalCityHints | null {
   let data: unknown;
-  try { data = JSON.parse(text); } catch { return null; }
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
   if (isFmgExport(data)) return parseFmgExport(data);
   const burg = Array.isArray(data) ? data.find(isBurg) : data;
   if (!isBurg(burg)) return null;
-  const on = (v: unknown) => typeof v === 'number' ? v > 0 : v === true;
-  const cultureName = typeof burg.culture === 'string' ? burg.culture
-    : typeof burg.cultureName === 'string' ? burg.cultureName : undefined;
+  const on = (v: unknown) => (typeof v === 'number' ? v > 0 : v === true);
+  const cultureName = typeof burg.culture === 'string' ? burg.culture : typeof burg.cultureName === 'string' ? burg.cultureName : undefined;
   return toHints({
     id: String(burg.i),
     name: typeof burg.name === 'string' ? burg.name : undefined,
@@ -201,16 +322,16 @@ function parseBurgJson(text: string): ExternalCityHints | null {
 }
 
 type Json = Record<string, unknown>;
-const isFmgExport = (value: unknown): value is Json =>
-  !!value && typeof value === 'object' && (value as Json).format === 'fmg-burg-v1';
+const isFmgExport = (value: unknown): value is Json => !!value && typeof value === 'object' && (value as Json).format === 'fmg-burg-v1';
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
-const obj = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? v as Json : {});
+const obj = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
 const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
 
 /** The export script's object: population in people, elevation m, temperature °C, precipitation mm. */
 function parseFmgExport(d: Json): ExternalCityHints {
-  const culture = obj(d.culture), biome = obj(d.biome);
+  const culture = obj(d.culture),
+    biome = obj(d.biome);
   const coast = d.coast === null ? null : obj(d.coast);
   const sea = num(coast?.sea);
   return toHints({
@@ -228,8 +349,7 @@ function parseFmgExport(d: Json): ExternalCityHints {
     biomeName: str(biome.name),
     river: typeof d.river === 'boolean' ? (d.river ? (d.confluence === true ? 'major' : 'river') : 'none') : undefined,
     // A lake shore is not a sea coast.
-    coast: coast === null ? 'none' : coast.water === 'ocean' ? (sea !== undefined ? coastSide(sea) : 'random')
-      : coast.water === 'lake' ? 'none' : undefined,
+    coast: coast === null ? 'none' : coast.water === 'ocean' ? (sea !== undefined ? coastSide(sea) : 'random') : coast.water === 'lake' ? 'none' : undefined,
     capital: bool(d.capital),
     port: bool(d.port),
     citadel: bool(d.citadel),
@@ -276,21 +396,34 @@ function temperatureToCelsius(text: string): number | undefined {
   const v = Number.parseFloat(match[1]);
   if (!Number.isFinite(v)) return undefined;
   switch (match[2].trim()) {
-    case '°F': return (v - 32) * 5 / 9;
-    case 'K': return v - 273.15;
-    case '°R': return v * 5 / 9 - 273.15;
-    case '°De': return 100 - v * 2 / 3;
-    case '°N': return v * 100 / 33;
-    case '°Ré': return v * 5 / 4;
-    case '°Rø': return (v - 7.5) * 40 / 21;
-    default: return v;
+    case '°F':
+      return ((v - 32) * 5) / 9;
+    case 'K':
+      return v - 273.15;
+    case '°R':
+      return (v * 5) / 9 - 273.15;
+    case '°De':
+      return 100 - (v * 2) / 3;
+    case '°N':
+      return (v * 100) / 33;
+    case '°Ré':
+      return (v * 5) / 4;
+    case '°Rø':
+      return ((v - 7.5) * 40) / 21;
+    default:
+      return v;
   }
 }
 
 // ---------- mapping ----------
 
 const slug = (text: string): string =>
-  text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 /** FMG heights use exponent 2: 30 → 144 m, 50 → 1024 m, 60 (Highland type) → 1764 m. */
 function reliefFor(elevationM: number | undefined, highland: boolean, river: boolean): Relief | undefined {
@@ -323,10 +456,15 @@ function zoneFromClimate(t: number, rain: number | undefined, wet: boolean): Cli
 
 /** FMG biome first (refined by temperature and rain), else temperature and rain alone; high towns get the alpine zone. */
 function climateFor(b: BurgFields, wet: boolean): { biome?: BiomeName; zone?: ClimateZone } {
-  const t = b.temperatureC, rain = b.precipitationMm;
+  const t = b.temperatureC,
+    rain = b.precipitationMm;
   const fmg = b.biomeId !== undefined || b.biomeName ? fmgBiome(b.biomeId, b.biomeName) : undefined;
-  let biome = fmg?.biome, zone = fmg?.zone;
-  if (fmg?.name === 'Grassland' && rain !== undefined && rain >= 700) { biome = 'temperate'; zone = 'temperate'; }
+  let biome = fmg?.biome,
+    zone = fmg?.zone;
+  if (fmg?.name === 'Grassland' && rain !== undefined && rain >= 700) {
+    biome = 'temperate';
+    zone = 'temperate';
+  }
   if (zone === 'temperate' && t !== undefined) zone = t < 6 ? 'continental' : t >= 15 && (rain ?? 1000) < 900 ? 'mediterranean' : zone;
   if (zone === 'wetland' && t !== undefined && t >= 22) biome = 'tropical';
   if (!zone && t !== undefined) zone = zoneFromClimate(t, rain, wet);
@@ -338,8 +476,7 @@ function climateFor(b: BurgFields, wet: boolean): { biome?: BiomeName; zone?: Cl
 function toHints(b: BurgFields): ExternalCityHints {
   const base = b.link ? parseWatabouUrl(b.link) : null;
   const keywords = new Set([b.type, b.cultureType, ...b.tags].filter((k): k is string => !!k).map(k => k.toLowerCase()));
-  const seed = base?.seed
-    ?? (b.mfcgSeed ? `mfcg-${b.mfcgSeed}` : ['fmg', slug(b.id), slug(b.name ?? '')].filter(Boolean).join('-'));
+  const seed = base?.seed ?? (b.mfcgSeed ? `mfcg-${b.mfcgSeed}` : ['fmg', slug(b.id), slug(b.name ?? '')].filter(Boolean).join('-'));
   const hints: ExternalCityHints = { ...base, source: 'azgaar-burg', seed };
   if (b.name) hints.name = b.name;
   if (b.population !== undefined && b.population > 0) hints.population = Math.round(b.population);
@@ -366,11 +503,10 @@ function toHints(b: BurgFields): ExternalCityHints {
   if (climate.zone) hints.climateZone = climate.zone;
   if (b.temperatureC !== undefined) {
     // FMG lowers temperature by 6.5 °C per km; Magna Urbis climate values are sea-level means.
-    hints.temperature = Math.round((b.temperatureC + 6.5 * Math.max(0, b.elevationM ?? 0) / 1000) * 10) / 10;
+    hints.temperature = Math.round((b.temperatureC + (6.5 * Math.max(0, b.elevationM ?? 0)) / 1000) * 10) / 10;
   }
   if (b.precipitationMm !== undefined && b.precipitationMm >= 0) hints.precipitation = Math.round(b.precipitationMm);
-  const nameBase = (b.cultureBase !== undefined ? fmgBaseOf(b.cultureBase) : undefined)
-    ?? (b.cultureName ? fmgNameBase(b.cultureName) : undefined);
+  const nameBase = (b.cultureBase !== undefined ? fmgBaseOf(b.cultureBase) : undefined) ?? (b.cultureName ? fmgNameBase(b.cultureName) : undefined);
   // Several MU cultures can fit one name base: the culture type narrows them, the town's seed draws one.
   const culture = pickMuCulture(nameBase, b.cultureType ?? b.type, seed);
   if (culture) hints.culture = culture;

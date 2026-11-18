@@ -11,11 +11,5 @@ export function installSurfaceProcessorTiming() {
 
 /** Call immediately on receipt, before decoding/summarizing the packet. */
 export function captureSurfaceProcessorTiming(message) {
-  return {
-    processorTiming: message.processorTiming,
-    pageReceiveNowMs: performance.now(),
-    pageTimeOriginMs: performance.timeOrigin,
-    pageReceiveUtcMs: Date.now(),
-    visibilityState: document.visibilityState,
-  };
+  return { processorTiming: message.processorTiming, pageReceiveNowMs: performance.now(), pageTimeOriginMs: performance.timeOrigin, pageReceiveUtcMs: Date.now(), visibilityState: document.visibilityState };
 }

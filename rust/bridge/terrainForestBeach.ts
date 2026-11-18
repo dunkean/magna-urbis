@@ -2,8 +2,20 @@
 // world-space grid. Mirrors level(0) of web/src/ui/terrainGl.ts and surfaceRootBeach/surfaceFbm/
 // surfaceNoise/surfaceHash of terrainMaterial.ts. Keep in sync; see web/scripts/forest_beach_parity.mjs.
 
-export interface ForestBeachLayer { x: number; y: number; width: number; n: number; data: Float32Array }
-export interface ForestBeachGrid { x: number; y: number; width: number; n: number; data: Uint8Array }
+export interface ForestBeachLayer {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  data: Float32Array;
+}
+export interface ForestBeachGrid {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  data: Uint8Array;
+}
 
 const sstep = (a: number, b: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -11,34 +23,63 @@ const sstep = (a: number, b: number, x: number): number => {
 };
 
 // Uniform cubic B-spline weights and derivative weights (terrainGl.ts bw/bd), written into w/d.
-const wx = new Float64Array(4), wy = new Float64Array(4), dx = new Float64Array(4), dy = new Float64Array(4);
+const wx = new Float64Array(4),
+  wy = new Float64Array(4),
+  dx = new Float64Array(4),
+  dy = new Float64Array(4);
 function weights(t: number, w: Float64Array, d: Float64Array): void {
-  const t2 = t * t, t3 = t2 * t, u = 1 - t;
-  w[0] = u * u * u / 6; w[1] = (3 * t3 - 6 * t2 + 4) / 6; w[2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; w[3] = t3 / 6;
-  d[0] = -.5 * u * u; d[1] = 1.5 * t2 - 2 * t; d[2] = -1.5 * t2 + t + .5; d[3] = .5 * t2;
+  const t2 = t * t,
+    t3 = t2 * t,
+    u = 1 - t;
+  w[0] = (u * u * u) / 6;
+  w[1] = (3 * t3 - 6 * t2 + 4) / 6;
+  w[2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6;
+  w[3] = t3 / 6;
+  d[0] = -0.5 * u * u;
+  d[1] = 1.5 * t2 - 2 * t;
+  d[2] = -1.5 * t2 + t + 0.5;
+  d[3] = 0.5 * t2;
 }
 
 /** Height, dh/dx, dh/dy of the base layer at world (level(0, world)). */
-let sh = 0, sgx = 0, sgy = 0;
+let sh = 0,
+  sgx = 0,
+  sgy = 0;
 function surface(layer: ForestBeachLayer, cell: number, wxm: number, wym: number): void {
-  const n = layer.n, data = layer.data;
-  const gx0 = (wxm - layer.x) / cell - .5, gy0 = (wym - layer.y) / cell - .5;
-  const fx = Math.floor(gx0), fy = Math.floor(gy0);
-  weights(gx0 - fx, wx, dx); weights(gy0 - fy, wy, dy);
-  const bx = fx - 1, by = fy - 1, last = n - 1;
-  let h = 0, gx = 0, gy = 0;
+  const n = layer.n,
+    data = layer.data;
+  const gx0 = (wxm - layer.x) / cell - 0.5,
+    gy0 = (wym - layer.y) / cell - 0.5;
+  const fx = Math.floor(gx0),
+    fy = Math.floor(gy0);
+  weights(gx0 - fx, wx, dx);
+  weights(gy0 - fy, wy, dy);
+  const bx = fx - 1,
+    by = fy - 1,
+    last = n - 1;
+  let h = 0,
+    gx = 0,
+    gy = 0;
   for (let j = 0; j < 4; j++) {
-    let row = by + j; row = row < 0 ? 0 : row > last ? last : row;
+    let row = by + j;
+    row = row < 0 ? 0 : row > last ? last : row;
     const o = row * n;
-    let r = 0, rd = 0;
+    let r = 0,
+      rd = 0;
     for (let i = 0; i < 4; i++) {
-      let col = bx + i; col = col < 0 ? 0 : col > last ? last : col;
+      let col = bx + i;
+      col = col < 0 ? 0 : col > last ? last : col;
       const v = data[o + col];
-      r += v * wx[i]; rd += v * dx[i];
+      r += v * wx[i];
+      rd += v * dx[i];
     }
-    h += r * wy[j]; gx += rd * wy[j]; gy += r * dy[j];
+    h += r * wy[j];
+    gx += rd * wy[j];
+    gy += r * dy[j];
   }
-  sh = h; sgx = gx / cell; sgy = gy / cell;
+  sh = h;
+  sgx = gx / cell;
+  sgy = gy / cell;
 }
 
 function hash(cx: number, cy: number, cz: number, salt: number): number {
@@ -54,73 +95,109 @@ function corner(cx: number, cy: number, cz: number, fx: number, fy: number, fz: 
 }
 
 function noise(px: number, py: number, pz: number, salt: number): number {
-  const flx = Math.floor(px), fly = Math.floor(py), flz = Math.floor(pz);
-  const fx = px - flx, fy = py - fly, fz = pz - flz;
-  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10), uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10), uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
-  const a0 = corner(flx, fly, flz, fx, fy, fz, 0, 0, 0, salt), a1 = corner(flx, fly, flz, fx, fy, fz, 1, 0, 0, salt);
-  const a2 = corner(flx, fly, flz, fx, fy, fz, 0, 1, 0, salt), a3 = corner(flx, fly, flz, fx, fy, fz, 1, 1, 0, salt);
-  const b0 = corner(flx, fly, flz, fx, fy, fz, 0, 0, 1, salt), b1 = corner(flx, fly, flz, fx, fy, fz, 1, 0, 1, salt);
-  const b2 = corner(flx, fly, flz, fx, fy, fz, 0, 1, 1, salt), b3 = corner(flx, fly, flz, fx, fy, fz, 1, 1, 1, salt);
-  const x0 = a0 + (a1 - a0) * ux, x1 = a2 + (a3 - a2) * ux, x2 = b0 + (b1 - b0) * ux, x3 = b2 + (b3 - b2) * ux;
-  const y0 = x0 + (x1 - x0) * uy, y1 = x2 + (x3 - x2) * uy;
+  const flx = Math.floor(px),
+    fly = Math.floor(py),
+    flz = Math.floor(pz);
+  const fx = px - flx,
+    fy = py - fly,
+    fz = pz - flz;
+  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10),
+    uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10),
+    uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
+  const a0 = corner(flx, fly, flz, fx, fy, fz, 0, 0, 0, salt),
+    a1 = corner(flx, fly, flz, fx, fy, fz, 1, 0, 0, salt);
+  const a2 = corner(flx, fly, flz, fx, fy, fz, 0, 1, 0, salt),
+    a3 = corner(flx, fly, flz, fx, fy, fz, 1, 1, 0, salt);
+  const b0 = corner(flx, fly, flz, fx, fy, fz, 0, 0, 1, salt),
+    b1 = corner(flx, fly, flz, fx, fy, fz, 1, 0, 1, salt);
+  const b2 = corner(flx, fly, flz, fx, fy, fz, 0, 1, 1, salt),
+    b3 = corner(flx, fly, flz, fx, fy, fz, 1, 1, 1, salt);
+  const x0 = a0 + (a1 - a0) * ux,
+    x1 = a2 + (a3 - a2) * ux,
+    x2 = b0 + (b1 - b0) * ux,
+    x3 = b2 + (b3 - b2) * ux;
+  const y0 = x0 + (x1 - x0) * uy,
+    y1 = x2 + (x3 - x2) * uy;
   return (y0 + (y1 - y0) * uz) * 5.25;
 }
 
 // surfaceFbm at z=0; returns value * sqrt(retained variance fraction) (the only form the beach uses).
 function fbm(x: number, y: number, scale: number, octaves: number, footprint: number, salt: number): number {
-  let value = 0, kept = 0, total = 0, s = scale, a = 1;
+  let value = 0,
+    kept = 0,
+    total = 0,
+    s = scale,
+    a = 1;
   for (let i = 0; i < octaves; i++) {
     total += a * a;
-    if (footprint < s * .25) {
-      const fade = 1 - sstep(s * .125, s * .25, footprint);
+    if (footprint < s * 0.25) {
+      const fade = 1 - sstep(s * 0.125, s * 0.25, footprint);
       value += a * fade * noise(x / s, y / s, 0, (salt + Math.imul(i, 0x9e37)) >>> 0);
       kept += a * fade * a * fade;
     }
-    a *= .5; s *= .5;
+    a *= 0.5;
+    s *= 0.5;
   }
   if (kept > 0) value /= Math.sqrt(kept);
   return value * Math.sqrt(kept / total);
 }
 
 const FP = 30;
-const DIRS = Array.from({ length: 12 }, (_, i) => [Math.cos(i * .523598776), Math.sin(i * .523598776)] as const);
+const DIRS = Array.from({ length: 12 }, (_, i) => [Math.cos(i * 0.523598776), Math.sin(i * 0.523598776)] as const);
 
 /** forestBeachCoverage(world) in 0..1; `temperature` is the sea-level climate temperature (uMaterialClimate.x). */
 export function forestBeachCoverageAt(layer: ForestBeachLayer, seed: number, wxm: number, wym: number, temperature: number): number {
   const cell = layer.width / layer.n;
   surface(layer, cell, wxm, wym);
-  const h = sh, gx = sgx, gy = sgy, slope = Math.hypot(gx, gy);
-  if (h < 0 || h >= 12 || slope >= .5) return 0;
+  const h = sh,
+    gx = sgx,
+    gy = sgy,
+    slope = Math.hypot(gx, gy);
+  if (h < 0 || h >= 12 || slope >= 0.5) return 0;
   const r = Math.max(300, 2 * cell);
-  let shore = Math.max(h, 0) / Math.max(slope, .0001), openness = 0;
+  let shore = Math.max(h, 0) / Math.max(slope, 0.0001),
+    openness = 0;
   for (let i = 0; i < 12; i++) {
     const d = DIRS[i];
     surface(layer, cell, wxm + d[0] * r, wym + d[1] * r);
-    if (sh < 0) { shore = Math.min(shore, r); openness += 1 / 12; }
-    surface(layer, cell, wxm + d[0] * r * .5, wym + d[1] * r * .5);
-    if (sh < 0) shore = Math.min(shore, r * .5);
+    if (sh < 0) {
+      shore = Math.min(shore, r);
+      openness += 1 / 12;
+    }
+    surface(layer, cell, wxm + d[0] * r * 0.5, wym + d[1] * r * 0.5);
+    if (sh < 0) shore = Math.min(shore, r * 0.5);
   }
-  if (openness <= .15) return 0;
+  if (openness <= 0.15) return 0;
   // surfaceRootBeach
   const s = seed >>> 0;
-  const reach = fbm(wxm, wym, 20000, 3, FP, s + 7), grove = fbm(wxm, wym, 4800, 4, FP, s + 3), fine = fbm(wxm, wym, 240, 4, FP, s + 5);
+  const reach = fbm(wxm, wym, 20000, 3, FP, s + 7),
+    grove = fbm(wxm, wym, 4800, 4, FP, s + 3),
+    fine = fbm(wxm, wym, 240, 4, FP, s + 5);
   // surfaceBeachWidth multiplies by sqrt(variance) already folded into the fbm values above
-  const supply = 40 + 80 * sstep(8, 22, temperature), along = sstep(-.8, .8, .65 * reach + .5 * grove);
-  const width = supply * (.4 + .8 * along) * sstep(.15, .4, openness) * (1 + .35 * fine);
-  return Math.min(1, Math.max(0, (Math.min(width, 20 * FP) - shore + FP) / FP)) * (1 - sstep(4, 12, h)) * (1 - sstep(.2, .5, slope));
+  const supply = 40 + 80 * sstep(8, 22, temperature),
+    along = sstep(-0.8, 0.8, 0.65 * reach + 0.5 * grove);
+  const width = supply * (0.4 + 0.8 * along) * sstep(0.15, 0.4, openness) * (1 + 0.35 * fine);
+  return Math.min(1, Math.max(0, (Math.min(width, 20 * FP) - shore + FP) / FP)) * (1 - sstep(4, 12, h)) * (1 - sstep(0.2, 0.5, slope));
 }
 
 /** Bakes forestBeachCoverage on a resolution x resolution grid of texel centres (row j = increasing world y). */
 export function forestBeachGrid(layer: ForestBeachLayer, seed: number, resolution: number, temperature: number): ForestBeachGrid {
-  const data = new Uint8Array(resolution * resolution), c = layer.width / resolution;
+  const data = new Uint8Array(resolution * resolution),
+    c = layer.width / resolution;
   for (let j = 0; j < resolution; j++) {
-    const wy0 = layer.y + (j + .5) * c;
-    for (let i = 0; i < resolution; i++) data[j * resolution + i] = Math.round(forestBeachCoverageAt(layer, seed, layer.x + (i + .5) * c, wy0, temperature) * 255);
+    const wy0 = layer.y + (j + 0.5) * c;
+    for (let i = 0; i < resolution; i++) data[j * resolution + i] = Math.round(forestBeachCoverageAt(layer, seed, layer.x + (i + 0.5) * c, wy0, temperature) * 255);
   }
   return { x: layer.x, y: layer.y, width: layer.width, n: resolution, data };
 }
 
-export interface ShoreRingGrid { x: number; y: number; width: number; n: number; data: Float32Array }
+export interface ShoreRingGrid {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  data: Float32Array;
+}
 
 /** Resolution used by the callers: about 16 m texels, 128..2048. */
 export const shoreRingResolution = (width: number): number => Math.min(2048, Math.max(128, 2 ** Math.ceil(Math.log2(width / 16))));
@@ -129,37 +206,68 @@ export const shoreRingResolution = (width: number): number => Math.min(2048, Mat
  * shore = smallest ring distance with height < 0 or 65000, openness = share of the r-ring below 0). Only
  * evaluated where the base height is < 40 m; the shader keeps its own per-pixel condition. */
 export function shoreRingGrid(layer: ForestBeachLayer, resolution: number): ShoreRingGrid {
-  const data = new Float32Array(resolution * resolution * 2), c = layer.width / resolution, cell = layer.width / layer.n;
-  const r = Math.max(300, 2 * cell), r2 = r * .5, none = 65000;
-  const dx = DIRS.map(d => d[0]), dy = DIRS.map(d => d[1]);
+  const data = new Float32Array(resolution * resolution * 2),
+    c = layer.width / resolution,
+    cell = layer.width / layer.n;
+  const r = Math.max(300, 2 * cell),
+    r2 = r * 0.5,
+    none = 65000;
+  const dx = DIRS.map(d => d[0]),
+    dy = DIRS.map(d => d[1]);
   // Exact skips: the B-spline weights are non-negative and sum to 1, so a ring sample is below 0 only if one of its
   // 4x4 base cells is, and surely below 0 when all are. Ring box (radius r plus the stencil) without a negative cell:
   // shore = none, open = 0; with only negative cells: shore = r/2, open = 1.
-  const n = layer.n, last = n - 1, src = layer.data, neg = new Int32Array((n + 1) * (n + 1));
+  const n = layer.n,
+    last = n - 1,
+    src = layer.data,
+    neg = new Int32Array((n + 1) * (n + 1));
   for (let y = 0; y < n; y++) {
     let row = 0;
-    for (let x = 0; x < n; x++) { if (src[y * n + x] < 0) row++; neg[(y + 1) * (n + 1) + x + 1] = neg[y * (n + 1) + x + 1] + row; }
+    for (let x = 0; x < n; x++) {
+      if (src[y * n + x] < 0) row++;
+      neg[(y + 1) * (n + 1) + x + 1] = neg[y * (n + 1) + x + 1] + row;
+    }
   }
-  const lo = (w: number, origin: number): number => Math.min(last, Math.max(0, Math.floor((w - r - origin) / cell - .5) - 1));
-  const hi = (w: number, origin: number): number => Math.min(last, Math.max(0, Math.floor((w + r - origin) / cell - .5) + 2));
+  const lo = (w: number, origin: number): number => Math.min(last, Math.max(0, Math.floor((w - r - origin) / cell - 0.5) - 1));
+  const hi = (w: number, origin: number): number => Math.min(last, Math.max(0, Math.floor((w + r - origin) / cell - 0.5) + 2));
   for (let j = 0; j < resolution; j++) {
-    const wy0 = layer.y + (j + .5) * c, ya = lo(wy0, layer.y), yb = hi(wy0, layer.y) + 1;
+    const wy0 = layer.y + (j + 0.5) * c,
+      ya = lo(wy0, layer.y),
+      yb = hi(wy0, layer.y) + 1;
     for (let i = 0; i < resolution; i++) {
-      const o = (j * resolution + i) * 2, wx0 = layer.x + (i + .5) * c, xa = lo(wx0, layer.x), xb = hi(wx0, layer.x) + 1;
+      const o = (j * resolution + i) * 2,
+        wx0 = layer.x + (i + 0.5) * c,
+        xa = lo(wx0, layer.x),
+        xb = hi(wx0, layer.x) + 1;
       const below = neg[yb * (n + 1) + xb] - neg[ya * (n + 1) + xb] - neg[yb * (n + 1) + xa] + neg[ya * (n + 1) + xa];
-      if (below === 0) { data[o] = none; continue; }
+      if (below === 0) {
+        data[o] = none;
+        continue;
+      }
       // Open water: every sample of the ring is below 0 (shore = r/2, every direction open).
-      if (below === (yb - ya) * (xb - xa)) { data[o] = r2; data[o + 1] = 1; continue; }
+      if (below === (yb - ya) * (xb - xa)) {
+        data[o] = r2;
+        data[o + 1] = 1;
+        continue;
+      }
       surface(layer, cell, wx0, wy0);
-      if (sh >= 40) { data[o] = none; continue; }
-      let shore = none, open = 0;
+      if (sh >= 40) {
+        data[o] = none;
+        continue;
+      }
+      let shore = none,
+        open = 0;
       for (let k = 0; k < 12; k++) {
         surface(layer, cell, wx0 + dx[k] * r, wy0 + dy[k] * r);
-        if (sh < 0) { shore = r; open++; }
+        if (sh < 0) {
+          shore = r;
+          open++;
+        }
         surface(layer, cell, wx0 + dx[k] * r2, wy0 + dy[k] * r2);
         if (sh < 0 && r2 < shore) shore = r2;
       }
-      data[o] = shore; data[o + 1] = open / 12;
+      data[o] = shore;
+      data[o + 1] = open / 12;
     }
   }
   return { x: layer.x, y: layer.y, width: layer.width, n: resolution, data };
@@ -171,10 +279,12 @@ const shoreCache = new WeakMap<Float32Array, Map<string, ShoreRingGrid>>();
 const shoreKey = (layer: ForestBeachLayer): string => `1:${layer.x}:${layer.y}:${layer.width}:${layer.n}:${shoreRingResolution(layer.width)}`;
 /** Publish an off-thread result only against the exact samples/frame that produced it. */
 export function retainShoreRing(layer: ForestBeachLayer, grid: ShoreRingGrid): void {
-  if (grid.x !== layer.x || grid.y !== layer.y || grid.width !== layer.width || grid.n !== shoreRingResolution(layer.width)
-    || grid.data.length !== grid.n * grid.n * 2) return;
+  if (grid.x !== layer.x || grid.y !== layer.y || grid.width !== layer.width || grid.n !== shoreRingResolution(layer.width) || grid.data.length !== grid.n * grid.n * 2) return;
   let entries = shoreCache.get(layer.data);
-  if (!entries) { entries = new Map(); shoreCache.set(layer.data, entries); }
+  if (!entries) {
+    entries = new Map();
+    shoreCache.set(layer.data, entries);
+  }
   if (!entries.has(shoreKey(layer))) entries.set(shoreKey(layer), grid);
 }
 /** One ring per immutable height-array/frame revision, shared by 2D and 3D. */
@@ -189,9 +299,14 @@ export function shoreRingFor(layer: ForestBeachLayer): ShoreRingGrid {
   return g;
 }
 
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+const f32 = new Float32Array(1),
+  u32 = new Uint32Array(f32.buffer);
 function toHalf(v: number): number {
-  f32[0] = v; const x = u32[0], s = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
+  f32[0] = v;
+  const x = u32[0],
+    s = (x >>> 16) & 0x8000,
+    e = ((x >>> 23) & 0xff) - 112,
+    m = x & 0x7fffff;
   if (e <= 0) return e < -10 ? s : s | ((m | 0x800000) >> (14 - e));
   return e >= 31 ? s | 0x7bff : s | (e << 10) | (m >> 13);
 }
@@ -204,35 +319,59 @@ function toHalf(v: number): number {
 
 /** Land heights of a layer on a coarse grid (mean pyramid, level 0 first) and their sky occlusion code (0..255),
  * on a grid of n/2: occlusion is a broad field, and half the resolution is a quarter of the bake. */
-export interface ReliefField { x: number; y: number; width: number; n: number; levels: Float32Array[]; sky: Uint8Array }
+export interface ReliefField {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  levels: Float32Array[];
+  sky: Uint8Array;
+}
 /** What a horizon bake reads: the pyramid alone travels to the worker. */
 export type ReliefHeights = Pick<ReliefField, 'width' | 'n' | 'levels'>;
 
 /** Relief grid: about 32 m texels on a regional map, never finer than the ring it is resampled into. */
-export const reliefResolution = (layer: ForestBeachLayer): number =>
-  Math.min(1024, shoreRingResolution(layer.width), 2 ** Math.floor(Math.log2(Math.max(16, layer.n))));
+export const reliefResolution = (layer: ForestBeachLayer): number => Math.min(1024, shoreRingResolution(layer.width), 2 ** Math.floor(Math.log2(Math.max(16, layer.n))));
 /** Horizon tangents are stored as tangent * HORIZON_CODE in 8 bits (up to 2.55, a 68.6 degree horizon). */
 const HORIZON_CODE = 100;
 /** The cast shadow is re-baked when the light azimuth leaves a bucket of this many degrees. */
 const AZIMUTH_BUCKET = 4;
-const lightBucket = (azimuth: number): number => { const b = Math.round(azimuth / AZIMUTH_BUCKET) % (360 / AZIMUTH_BUCKET); return b < 0 ? b + 360 / AZIMUTH_BUCKET : b; };
+const lightBucket = (azimuth: number): number => {
+  const b = Math.round(azimuth / AZIMUTH_BUCKET) % (360 / AZIMUTH_BUCKET);
+  return b < 0 ? b + 360 / AZIMUTH_BUCKET : b;
+};
 
 /** Box means of the land surface (the sea is flat at 0) at the relief resolution, then a 2x2 mean pyramid. */
 function reliefLevels(layer: ForestBeachLayer, n: number): Float32Array[] {
-  const src = layer.data, sn = layer.n, ratio = sn / n, base = new Float32Array(n * n);
+  const src = layer.data,
+    sn = layer.n,
+    ratio = sn / n,
+    base = new Float32Array(n * n);
   for (let j = 0; j < n; j++) {
-    const y0 = Math.min(sn - 1, Math.floor(j * ratio)), y1 = Math.min(sn, Math.max(y0 + 1, Math.floor((j + 1) * ratio)));
+    const y0 = Math.min(sn - 1, Math.floor(j * ratio)),
+      y1 = Math.min(sn, Math.max(y0 + 1, Math.floor((j + 1) * ratio)));
     for (let i = 0; i < n; i++) {
-      const x0 = Math.min(sn - 1, Math.floor(i * ratio)), x1 = Math.min(sn, Math.max(x0 + 1, Math.floor((i + 1) * ratio)));
+      const x0 = Math.min(sn - 1, Math.floor(i * ratio)),
+        x1 = Math.min(sn, Math.max(x0 + 1, Math.floor((i + 1) * ratio)));
       let sum = 0;
-      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const h = src[y * sn + x]; if (h > 0) sum += h; }
+      for (let y = y0; y < y1; y++)
+        for (let x = x0; x < x1; x++) {
+          const h = src[y * sn + x];
+          if (h > 0) sum += h;
+        }
       base[j * n + i] = sum / ((y1 - y0) * (x1 - x0));
     }
   }
   const levels = [base];
   for (let m = n >> 1; m >= 4; m >>= 1) {
-    const from = levels[levels.length - 1], w = m * 2, to = new Float32Array(m * m);
-    for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) { const o = 2 * j * w + 2 * i; to[j * m + i] = .25 * (from[o] + from[o + 1] + from[o + w] + from[o + w + 1]); }
+    const from = levels[levels.length - 1],
+      w = m * 2,
+      to = new Float32Array(m * m);
+    for (let j = 0; j < m; j++)
+      for (let i = 0; i < m; i++) {
+        const o = 2 * j * w + 2 * i;
+        to[j * m + i] = 0.25 * (from[o] + from[o + 1] + from[o + w] + from[o + w + 1]);
+      }
     levels.push(to);
   }
   return levels;
@@ -240,11 +379,22 @@ function reliefLevels(layer: ForestBeachLayer, n: number): Float32Array[] {
 
 /** Bilinear height of pyramid level `shift` (m x m texels) at level-0 texel coordinates (texel i is centred on i). */
 function reliefAt(level: Float32Array, m: number, shift: number, px: number, py: number): number {
-  const scale = 1 / (1 << shift), last = m - 1;
-  let gx = (px + .5) * scale - .5, gy = (py + .5) * scale - .5;
-  gx = gx < 0 ? 0 : gx > last ? last : gx; gy = gy < 0 ? 0 : gy > last ? last : gy;
-  const x0 = gx | 0, y0 = gy | 0, x1 = x0 < last ? x0 + 1 : last, y1 = y0 < last ? y0 + 1 : last, fx = gx - x0, fy = gy - y0;
-  const a = level[y0 * m + x0], b = level[y0 * m + x1], c = level[y1 * m + x0], d = level[y1 * m + x1];
+  const scale = 1 / (1 << shift),
+    last = m - 1;
+  let gx = (px + 0.5) * scale - 0.5,
+    gy = (py + 0.5) * scale - 0.5;
+  gx = gx < 0 ? 0 : gx > last ? last : gx;
+  gy = gy < 0 ? 0 : gy > last ? last : gy;
+  const x0 = gx | 0,
+    y0 = gy | 0,
+    x1 = x0 < last ? x0 + 1 : last,
+    y1 = y0 < last ? y0 + 1 : last,
+    fx = gx - x0,
+    fy = gy - y0;
+  const a = level[y0 * m + x0],
+    b = level[y0 * m + x1],
+    c = level[y1 * m + x0],
+    d = level[y1 * m + x1];
   return a + (b - a) * fx + (c - a + (a - b - c + d) * fx) * fy;
 }
 
@@ -253,7 +403,9 @@ function reliefAt(level: Float32Array, m: number, shift: number, px: number, py:
  * whose texels match its distance, chosen with `growth` so that a texel is about the gap to the next sample: a
  * ridge between two samples still weighs in a box mean. */
 function reliefRay(field: ReliefHeights, dirX: number, dirY: number, reach: number, first: number, growth: number, drop: number): Float64Array {
-  const cell = field.width / field.n, top = field.levels.length - 1, out: number[] = [];
+  const cell = field.width / field.n,
+    top = field.levels.length - 1,
+    out: number[] = [];
   for (let d = first; d * cell <= reach && d < field.n; d *= growth) out.push(dirX * d, dirY * d, Math.min(top, Math.max(0, Math.floor(Math.log2(d)) - drop)), 1 / (d * cell));
   return Float64Array.from(out);
 }
@@ -263,22 +415,29 @@ function reliefRay(field: ReliefHeights, dirX: number, dirY: number, reach: numb
  * cos^2(e) of that azimuth's irradiance on level ground. Valleys, gorges and cliff feet come out high, ridges,
  * plateaus and plains at 0. */
 function reliefSky(field: ReliefHeights): Uint8Array {
-  const n = field.n, levels = field.levels, base = levels[0], sky = new Uint8Array(n * n), rays: Float64Array[] = [];
-  for (let a = 0; a < 16; a++) rays.push(reliefRay(field, Math.cos(a * Math.PI / 8), Math.sin(a * Math.PI / 8), 1500, a & 1 ? Math.SQRT2 : 1, 2, 0));
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const h = base[j * n + i];
-    if (h <= 0) continue;   // open water
-    let open = 0;
-    for (let a = 0; a < 16; a++) {
-      const ray = rays[a]; let t = 0;
-      for (let k = 0; k < ray.length; k += 4) {
-        const shift = ray[k + 2], v = (reliefAt(levels[shift], n >> shift, shift, i + ray[k], j + ray[k + 1]) - h) * ray[k + 3];
-        if (v > t) t = v;
+  const n = field.n,
+    levels = field.levels,
+    base = levels[0],
+    sky = new Uint8Array(n * n),
+    rays: Float64Array[] = [];
+  for (let a = 0; a < 16; a++) rays.push(reliefRay(field, Math.cos((a * Math.PI) / 8), Math.sin((a * Math.PI) / 8), 1500, a & 1 ? Math.SQRT2 : 1, 2, 0));
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) {
+      const h = base[j * n + i];
+      if (h <= 0) continue; // open water
+      let open = 0;
+      for (let a = 0; a < 16; a++) {
+        const ray = rays[a];
+        let t = 0;
+        for (let k = 0; k < ray.length; k += 4) {
+          const shift = ray[k + 2],
+            v = (reliefAt(levels[shift], n >> shift, shift, i + ray[k], j + ray[k + 1]) - h) * ray[k + 3];
+          if (v > t) t = v;
+        }
+        open += 1 / (1 + t * t);
       }
-      open += 1 / (1 + t * t);
+      sky[j * n + i] = Math.round(255 * (1 - open / 16));
     }
-    sky[j * n + i] = Math.round(255 * (1 - open / 16));
-  }
   return sky;
 }
 
@@ -287,31 +446,49 @@ function reliefSky(field: ReliefHeights): Uint8Array {
  * up to 4 km. A slope facing
  * away from the light carries its own gradient, so attached and cast shadows are one continuous field. */
 export function reliefHorizon(field: ReliefHeights, azimuth: number): Uint8Array {
-  const n = field.n, levels = field.levels, base = levels[0], out = new Uint8Array(n * n), a = azimuth * Math.PI / 180;
+  const n = field.n,
+    levels = field.levels,
+    base = levels[0],
+    out = new Uint8Array(n * n),
+    a = (azimuth * Math.PI) / 180;
   const ray = reliefRay(field, Math.sin(a), -Math.cos(a), 4000, 1, 2 ** (1 / 3), 2);
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const h = base[j * n + i]; let t = 0;
-    for (let k = 0; k < ray.length; k += 4) {
-      const shift = ray[k + 2], v = (reliefAt(levels[shift], n >> shift, shift, i + ray[k], j + ray[k + 1]) - h) * ray[k + 3];
-      if (v > t) t = v;
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) {
+      const h = base[j * n + i];
+      let t = 0;
+      for (let k = 0; k < ray.length; k += 4) {
+        const shift = ray[k + 2],
+          v = (reliefAt(levels[shift], n >> shift, shift, i + ray[k], j + ray[k + 1]) - h) * ray[k + 3];
+        if (v > t) t = v;
+      }
+      out[j * n + i] = Math.min(255, Math.round(t * HORIZON_CODE));
     }
-    out[j * n + i] = Math.min(255, Math.round(t * HORIZON_CODE));
-  }
   return out;
 }
 
 /** A relief code grid resampled (bilinear) onto the ring's texels, as the half floats of code * scale. */
 function reliefChannel(codes: Uint8Array, n: number, resolution: number, scale: number): Uint16Array {
   const lut = new Uint16Array(255 * 16 + 1);
-  for (let i = 0; i < lut.length; i++) lut[i] = toHalf(i / 16 * scale);
-  const out = new Uint16Array(resolution * resolution), ratio = n / resolution, last = n - 1;
+  for (let i = 0; i < lut.length; i++) lut[i] = toHalf((i / 16) * scale);
+  const out = new Uint16Array(resolution * resolution),
+    ratio = n / resolution,
+    last = n - 1;
   for (let j = 0; j < resolution; j++) {
-    let gy = (j + .5) * ratio - .5; gy = gy < 0 ? 0 : gy > last ? last : gy;
-    const y0 = gy | 0, y1 = y0 < last ? y0 + 1 : last, fy = gy - y0;
+    let gy = (j + 0.5) * ratio - 0.5;
+    gy = gy < 0 ? 0 : gy > last ? last : gy;
+    const y0 = gy | 0,
+      y1 = y0 < last ? y0 + 1 : last,
+      fy = gy - y0;
     for (let i = 0; i < resolution; i++) {
-      let gx = (i + .5) * ratio - .5; gx = gx < 0 ? 0 : gx > last ? last : gx;
-      const x0 = gx | 0, x1 = x0 < last ? x0 + 1 : last, fx = gx - x0;
-      const a = codes[y0 * n + x0], b = codes[y0 * n + x1], c = codes[y1 * n + x0], d = codes[y1 * n + x1];
+      let gx = (i + 0.5) * ratio - 0.5;
+      gx = gx < 0 ? 0 : gx > last ? last : gx;
+      const x0 = gx | 0,
+        x1 = x0 < last ? x0 + 1 : last,
+        fx = gx - x0;
+      const a = codes[y0 * n + x0],
+        b = codes[y0 * n + x1],
+        c = codes[y1 * n + x0],
+        d = codes[y1 * n + x1];
       out[j * resolution + i] = lut[Math.round((a + (b - a) * fx + (c - a + (a - b - c + d) * fx) * fy) * 16)];
     }
   }
@@ -324,16 +501,19 @@ export function reliefHorizonChannel(field: ReliefHeights, azimuth: number, reso
 
 /** Direction-free relief products of a height layer. */
 export function reliefField(layer: ForestBeachLayer): ReliefField {
-  const n = reliefResolution(layer), heights = { width: layer.width, n, levels: reliefLevels(layer, n) };
+  const n = reliefResolution(layer),
+    heights = { width: layer.width, n, levels: reliefLevels(layer, n) };
   return { x: layer.x, y: layer.y, ...heights, sky: reliefSky({ width: layer.width, n: n >> 1, levels: heights.levels.slice(1) }) };
 }
 const reliefCache = new WeakMap<Float32Array, Map<string, ReliefField>>();
 /** Publish an off-thread relief field only against the exact samples/frame that produced it. */
 export function retainReliefField(layer: ForestBeachLayer, field: ReliefField): void {
-  if (field.x !== layer.x || field.y !== layer.y || field.width !== layer.width || field.n !== reliefResolution(layer)
-    || field.sky.length !== (field.n >> 1) * (field.n >> 1) || field.levels[0]?.length !== field.n * field.n) return;
+  if (field.x !== layer.x || field.y !== layer.y || field.width !== layer.width || field.n !== reliefResolution(layer) || field.sky.length !== (field.n >> 1) * (field.n >> 1) || field.levels[0]?.length !== field.n * field.n) return;
   let entries = reliefCache.get(layer.data);
-  if (!entries) { entries = new Map(); reliefCache.set(layer.data, entries); }
+  if (!entries) {
+    entries = new Map();
+    reliefCache.set(layer.data, entries);
+  }
   if (!entries.has(shoreKey(layer))) entries.set(shoreKey(layer), field);
 }
 /** One relief field per immutable height-array/frame revision, shared by 2D and 3D. */
@@ -351,41 +531,81 @@ export function reliefFieldFor(layer: ForestBeachLayer): ReliefField {
 /** Bakes the A channel off the frame path. The display preparation worker replaces this main-thread task. */
 export type ReliefHorizonBaker = (field: ReliefHeights, azimuth: number, resolution: number) => Promise<Uint16Array>;
 let horizonBaker: ReliefHorizonBaker = (field, azimuth, resolution) =>
-  new Promise(resolve => { setTimeout(() => resolve(reliefHorizonChannel(field, azimuth, resolution)), 0); });
-export function setReliefHorizonBaker(baker: ReliefHorizonBaker): void { horizonBaker = baker; }
+  new Promise(resolve => {
+    setTimeout(() => resolve(reliefHorizonChannel(field, azimuth, resolution)), 0);
+  });
+export function setReliefHorizonBaker(baker: ReliefHorizonBaker): void {
+  horizonBaker = baker;
+}
 
 /** Texels of the ring texture (RGBA half floats: shore distance, openness, sky occlusion, horizon tangent toward
  * the light). `revision` changes when a new horizon has been written: the renderers upload again then. */
-export interface ShoreRingPixels { grid: ShoreRingGrid; half: Uint16Array; revision: number }
-interface RingLight extends ShoreRingPixels { relief: ReliefField; bucket: number; wanted: number; baking: boolean; listeners: Set<() => void> }
+export interface ShoreRingPixels {
+  grid: ShoreRingGrid;
+  half: Uint16Array;
+  revision: number;
+}
+interface RingLight extends ShoreRingPixels {
+  relief: ReliefField;
+  bucket: number;
+  wanted: number;
+  baking: boolean;
+  listeners: Set<() => void>;
+}
 const ringLights = new WeakMap<ShoreRingGrid, RingLight>();
 
 function bakeHorizon(ring: RingLight): void {
-  const target = ring.wanted; ring.baking = true;
-  horizonBaker({ width: ring.relief.width, n: ring.relief.n, levels: ring.relief.levels }, target * AZIMUTH_BUCKET, ring.grid.n).then(channel => {
-    const half = ring.half;
-    if (channel.length * 4 === half.length) { for (let i = 0, o = 3; i < channel.length; i++, o += 4) half[o] = channel[i]; ring.bucket = target; ring.revision++; }
-    ring.baking = false;
-    if (ring.wanted !== target) bakeHorizon(ring);   // the light moved on during the bake
-    const listeners = [...ring.listeners]; ring.listeners.clear();
-    for (const listener of listeners) listener();
-  }, error => { ring.baking = false; ring.wanted = ring.bucket; console.warn('Relief horizon bake failed:', error); });
+  const target = ring.wanted;
+  ring.baking = true;
+  horizonBaker({ width: ring.relief.width, n: ring.relief.n, levels: ring.relief.levels }, target * AZIMUTH_BUCKET, ring.grid.n).then(
+    channel => {
+      const half = ring.half;
+      if (channel.length * 4 === half.length) {
+        for (let i = 0, o = 3; i < channel.length; i++, o += 4) half[o] = channel[i];
+        ring.bucket = target;
+        ring.revision++;
+      }
+      ring.baking = false;
+      if (ring.wanted !== target) bakeHorizon(ring); // the light moved on during the bake
+      const listeners = [...ring.listeners];
+      ring.listeners.clear();
+      for (const listener of listeners) listener();
+    },
+    error => {
+      ring.baking = false;
+      ring.wanted = ring.bucket;
+      console.warn('Relief horizon bake failed:', error);
+    },
+  );
 }
 
 /** Ring texels for a height layer under a light at `azimuth` (degrees clockwise from north). The first call bakes
  * the horizon of that light at once (view preparation); a later change of azimuth bucket keeps the current texels,
  * bakes the new horizon off the frame path and calls `changed` (once) when a new revision is ready to upload. */
 export function shoreRingPixels(layer: ForestBeachLayer, azimuth: number, changed?: () => void): ShoreRingPixels {
-  const grid = shoreRingFor(layer), bucket = lightBucket(azimuth);
+  const grid = shoreRingFor(layer),
+    bucket = lightBucket(azimuth);
   let ring = ringLights.get(grid);
   if (!ring) {
-    const relief = reliefFieldFor(layer), start = performance.now(), n = grid.n, half = new Uint16Array(n * n * 4);
-    const sky = reliefChannel(relief.sky, relief.n >> 1, n, 1 / 255), horizon = reliefHorizonChannel(relief, bucket * AZIMUTH_BUCKET, n);
-    for (let i = 0, o = 0; i < n * n; i++, o += 4) { half[o] = toHalf(grid.data[2 * i]); half[o + 1] = toHalf(grid.data[2 * i + 1]); half[o + 2] = sky[i]; half[o + 3] = horizon[i]; }
+    const relief = reliefFieldFor(layer),
+      start = performance.now(),
+      n = grid.n,
+      half = new Uint16Array(n * n * 4);
+    const sky = reliefChannel(relief.sky, relief.n >> 1, n, 1 / 255),
+      horizon = reliefHorizonChannel(relief, bucket * AZIMUTH_BUCKET, n);
+    for (let i = 0, o = 0; i < n * n; i++, o += 4) {
+      half[o] = toHalf(grid.data[2 * i]);
+      half[o + 1] = toHalf(grid.data[2 * i + 1]);
+      half[o + 2] = sky[i];
+      half[o + 3] = horizon[i];
+    }
     performance.measure('displayprep:relief:pixels', { start });
     ring = { grid, half, revision: 1, relief, bucket, wanted: bucket, baking: false, listeners: new Set() };
     ringLights.set(grid, ring);
-  } else if (bucket !== ring.wanted) { ring.wanted = bucket; if (!ring.baking) bakeHorizon(ring); }
+  } else if (bucket !== ring.wanted) {
+    ring.wanted = bucket;
+    if (!ring.baking) bakeHorizon(ring);
+  }
   if (changed && ring.baking) ring.listeners.add(changed);
   return ring;
 }
@@ -395,9 +615,12 @@ export function shoreRingTexture(gl: WebGL2RenderingContext, pixels: ShoreRingPi
   const grid = pixels.grid;
   const texture = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, grid.n, grid.n, 0, gl.RGBA, gl.HALF_FLOAT, pixels.half);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return texture;
 }

@@ -5,8 +5,7 @@ export function coastalRiverMouths(svg: string, raster: { width: number; n: numb
   // Nested crops already carry their parent's repaired banks, in its coordinates.
   if (/<svg\b/.test(svg)) return svg;
   const cell = raster.width / raster.n;
-  const sea = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < raster.width && y < raster.width
-    && raster.water[Math.floor(y / cell) * raster.n + Math.floor(x / cell)] === 1;
+  const sea = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < raster.width && y < raster.width && raster.water[Math.floor(y / cell) * raster.n + Math.floor(x / cell)] === 1;
   return svg.replace(/<path\b([^>]*?)\bd="([^"]*)"([^>]*)>/g, (element, before: string, data: string, after: string) => {
     if (/water-lakes|data-coastal-mouths|fill="none"/.test(before + after) || !/^[MLZ\d\s.,eE+-]+$/.test(data)) return element;
     let changed = false;
@@ -16,15 +15,23 @@ export function coastalRiverMouths(svg: string, raster: { width: number; n: numb
       const points = Array.from({ length: values.length / 2 }, (_, i) => ({ x: values[2 * i], y: values[2 * i + 1] }));
       const m = points.length / 2;
       if (m < 3 || !Number.isInteger(m)) return ring;
-      const a = points[m - 1], b = points[m], prev = points[m - 2], next = points[m + 1];
-      const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
-      let dx = x - (prev.x + next.x) / 2, dy = y - (prev.y + next.y) / 2;
-      const length = Math.hypot(dx, dy), width = Math.hypot(a.x - b.x, a.y - b.y);
-      if (length < .01 || width < .01) return ring;
-      dx /= length; dy /= length;
+      const a = points[m - 1],
+        b = points[m],
+        prev = points[m - 2],
+        next = points[m + 1];
+      const x = (a.x + b.x) / 2,
+        y = (a.y + b.y) / 2;
+      let dx = x - (prev.x + next.x) / 2,
+        dy = y - (prev.y + next.y) / 2;
+      const length = Math.hypot(dx, dy),
+        width = Math.hypot(a.x - b.x, a.y - b.y);
+      if (length < 0.01 || width < 0.01) return ring;
+      dx /= length;
+      dy /= length;
       // The two banks must actually end in a cross-section of the downstream axis.
-      if (Math.abs((a.x - b.x) * dx + (a.y - b.y) * dy) > width * .35) return ring;
-      const step = Math.max(.5, cell / 2), limit = 2 * Math.max(cell, sourceCell);
+      if (Math.abs((a.x - b.x) * dx + (a.y - b.y) * dy) > width * 0.35) return ring;
+      const step = Math.max(0.5, cell / 2),
+        limit = 2 * Math.max(cell, sourceCell);
       let shore = 0;
       while (shore <= limit && !sea(x + dx * shore, y + dy * shore)) shore += step;
       if (shore > limit) return ring;

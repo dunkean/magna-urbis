@@ -5,27 +5,87 @@ import { buildCityBuildings, buildCityScene, districtRoleLabel, drawCity, pickCi
 import { cityGlOverlayLayers } from '../src/render/cityGl';
 import { mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
-const square = (x: number, y: number, size: number): Shape => ({ outer: [{ x, y }, { x: x + size, y }, { x: x + size, y: y + size }, { x, y: y + size }], holes: [] });
+const square = (x: number, y: number, size: number): Shape => ({
+  outer: [
+    { x, y },
+    { x: x + size, y },
+    { x: x + size, y: y + size },
+    { x, y: y + size },
+  ],
+  holes: [],
+});
 /** A 20 x 20 grid of 40 m blocks, each cut into four parcels; districts carry the stream B roles. */
 function city(): { layout: Layout; partition: Partition } {
-  const blocks = [], parcels = [], allocations = [];
-  for (let j = 0; j < 20; j++) for (let i = 0; i < 20; i++) {
-    const b = blocks.length;
-    blocks.push({ shape: square(i * 50, j * 50, 40), quarter: i < 10 ? 0 : 1, kind: 'block', axis: { x: 1, y: 0 }, zone: 'core', phase: 0 });
-    for (let k = 0; k < 4; k++) {
-      const id = `p${b}-${k}`;
-      parcels.push({ id, shape: square(i * 50 + (k % 2) * 20, j * 50 + Math.floor(k / 2) * 20, 20), block: b, use: 'plot' as const, front: null, axis: { x: 1, y: 0 }, rank: 0 });
-      allocations.push({ parcelId: id, demandId: 'd', function: 'domestic', culture: 'x', architecturePack: 'x', capacity: 1, unit: 'domesticUnits' as const, score: 1, reasons: [],
-        ...(b === 0 && k === 0 ? { role: 'worship.parish', landmark: true, households: 0 } : { role: 'dwelling.row', households: 2 }) });
+  const blocks = [],
+    parcels = [],
+    allocations = [];
+  for (let j = 0; j < 20; j++)
+    for (let i = 0; i < 20; i++) {
+      const b = blocks.length;
+      blocks.push({ shape: square(i * 50, j * 50, 40), quarter: i < 10 ? 0 : 1, kind: 'block', axis: { x: 1, y: 0 }, zone: 'core', phase: 0 });
+      for (let k = 0; k < 4; k++) {
+        const id = `p${b}-${k}`;
+        parcels.push({ id, shape: square(i * 50 + (k % 2) * 20, j * 50 + Math.floor(k / 2) * 20, 20), block: b, use: 'plot' as const, front: null, axis: { x: 1, y: 0 }, rank: 0 });
+        allocations.push({
+          parcelId: id,
+          demandId: 'd',
+          function: 'domestic',
+          culture: 'x',
+          architecturePack: 'x',
+          capacity: 1,
+          unit: 'domesticUnits' as const,
+          score: 1,
+          reasons: [],
+          ...(b === 0 && k === 0 ? { role: 'worship.parish', landmark: true, households: 0 } : { role: 'dwelling.row', households: 2 }),
+        });
+      }
     }
-  }
   const district = (id: number, role: string, wealth: number) => ({ id, center: 0, phase: 0, tissue: 'organic', quarters: [id], role, wealth });
-  const layout = { key: 'c', culture: 'x', center: { x: 500, y: 500 }, quarters: [{ shape: square(0, 0, 500), phase: 0 }, { shape: square(500, 0, 500), phase: 0 }],
-    streets: [{ path: [{ x: 45, y: 0 }, { x: 45, y: 1000 }], widths: [5, 5], rank: 1, role: 'street' }], blocks, warnings: [],
-    enclosures: [{ path: [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 1000 }, { x: 0, y: 1000 }], kind: 'wall', gates: [{ x: 500, y: 0 }], towers: [{ x: 0, y: 0 }] }],
-    structure: { version: 1, mechanism: 'auto', family: 'compact', reserve: [], allocated: [square(0, 0, 1000)], centers: [{ id: 0, point: { x: 500, y: 500 }, weight: 1 }],
-      districts: [district(0, 'religious', 0.8), district(1, 'poor', 0.1)], history: [],
-      metrics: { targetArea: 0, allocatedArea: 0, streetArea: 0, reservedArea: 0, grossDensity: 0, plannedPopulation: 0, shortfallArea: 0, components: 1, accessAdded: 0 } },
+  const layout = {
+    key: 'c',
+    culture: 'x',
+    center: { x: 500, y: 500 },
+    quarters: [
+      { shape: square(0, 0, 500), phase: 0 },
+      { shape: square(500, 0, 500), phase: 0 },
+    ],
+    streets: [
+      {
+        path: [
+          { x: 45, y: 0 },
+          { x: 45, y: 1000 },
+        ],
+        widths: [5, 5],
+        rank: 1,
+        role: 'street',
+      },
+    ],
+    blocks,
+    warnings: [],
+    enclosures: [
+      {
+        path: [
+          { x: 0, y: 0 },
+          { x: 1000, y: 0 },
+          { x: 1000, y: 1000 },
+          { x: 0, y: 1000 },
+        ],
+        kind: 'wall',
+        gates: [{ x: 500, y: 0 }],
+        towers: [{ x: 0, y: 0 }],
+      },
+    ],
+    structure: {
+      version: 1,
+      mechanism: 'auto',
+      family: 'compact',
+      reserve: [],
+      allocated: [square(0, 0, 1000)],
+      centers: [{ id: 0, point: { x: 500, y: 500 }, weight: 1 }],
+      districts: [district(0, 'religious', 0.8), district(1, 'poor', 0.1)],
+      history: [],
+      metrics: { targetArea: 0, allocatedArea: 0, streetArea: 0, reservedArea: 0, grossDensity: 0, plannedPopulation: 0, shortfallArea: 0, components: 1, accessAdded: 0 },
+    },
   } as unknown as Layout;
   const partition = { key: 'c', parcels, warnings: [], programme: { allocations } } as unknown as Partition;
   return { layout, partition };
@@ -33,24 +93,48 @@ function city(): { layout: Layout; partition: Partition } {
 
 describe('City Bench canvas scene', () => {
   it('hides names, glyphs and centre pins at every LOD in canvas and GL overlays without hiding geometry', () => {
-    const { layout, partition } = city(), scene = buildCityScene([layout], [partition]);
+    const { layout, partition } = city(),
+      scene = buildCityScene([layout], [partition]);
     const layers: CityLayers = { reserve: false, allocated: false, centers: true, domains: false, quarters: false, blocks: true, streets: true, enclosures: false, parcels: true, gardens: false, places: false, fronts: false, axes: false, access: false };
-    class CityPath extends MockPath2D { addPath(path: MockPath2D): void { this.ops += path.ops; } }
+    class CityPath extends MockPath2D {
+      addPath(path: MockPath2D): void {
+        this.ops += path.ops;
+      }
+    }
     vi.stubGlobal('Path2D', CityPath);
     try {
-      for (const overlay of [false, true]) for (const lod of ['far', 'mid', 'near', 'close'] as const) {
-        const { canvas, log, reset } = mockCanvas(1000, 1000), ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-        const options: CityDrawOptions = { viewport: { minX: 0, minY: 0, maxX: 1000, maxY: 1000 }, mpp: 1, dpr: 1, lod, view: 'roles', palette: 'atlas', width: 1,
-          layers: overlay ? cityGlOverlayLayers(layers) : layers, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' } };
-        const shown = drawCity(ctx, scene, options);
-        // Names come from the text layer (scale-driven, any LOD); centre pins are crosses (moveTo/lineTo), landmark glyphs are gone.
-        expect(log.calls.fillText).toBeGreaterThan(0); expect(log.calls.lineTo).toBeGreaterThan(0);
-        reset();
-        const hidden = drawCity(ctx, scene, { ...options, labels: false });
-        expect(log.calls.fillText ?? 0).toBe(0); expect(log.calls.strokeText ?? 0).toBe(0); expect(log.calls.lineTo ?? 0).toBe(0);
-        expect(hidden.blocks).toBe(shown.blocks); expect(hidden.parcels).toBe(shown.parcels); expect(hidden.streets).toBe(shown.streets);
-      }
-    } finally { vi.unstubAllGlobals(); }
+      for (const overlay of [false, true])
+        for (const lod of ['far', 'mid', 'near', 'close'] as const) {
+          const { canvas, log, reset } = mockCanvas(1000, 1000),
+            ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+          const options: CityDrawOptions = {
+            viewport: { minX: 0, minY: 0, maxX: 1000, maxY: 1000 },
+            mpp: 1,
+            dpr: 1,
+            lod,
+            view: 'roles',
+            palette: 'atlas',
+            width: 1,
+            layers: overlay ? cityGlOverlayLayers(layers) : layers,
+            buildingsVisible: false,
+            appearance: { style: 'cartographic', diagnostic: 'none' },
+          };
+          const shown = drawCity(ctx, scene, options);
+          // Names come from the text layer (scale-driven, any LOD); centre pins are crosses (moveTo/lineTo), landmark glyphs are gone.
+          expect(log.calls.fillText).toBeGreaterThan(0);
+          expect(log.calls.lineTo).toBeGreaterThan(0);
+          reset();
+          const hidden = drawCity(ctx, scene, { ...options, labels: false });
+          expect(log.calls.fillText ?? 0).toBe(0);
+          expect(log.calls.strokeText ?? 0).toBe(0);
+          expect(log.calls.lineTo ?? 0).toBe(0);
+          expect(hidden.blocks).toBe(shown.blocks);
+          expect(hidden.parcels).toBe(shown.parcels);
+          expect(hidden.streets).toBe(shown.streets);
+        }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('indexes the plan once, culls by viewport, picks by bins and reads optional role contracts', () => {
@@ -71,9 +155,13 @@ describe('City Bench canvas scene', () => {
     expect(scene.walls[0].towers).toEqual([{ x: 0, y: 0 }]);
     // Silhouettes: building picked before its parcel, both through the bins.
     const at = (p: Point): Point => p;
-    const batch = { schema_version: '1', generator_version: 'silhouette', refusals: [], open_spaces: [], buildings: [
-      { id: 'b0', parcel_id: 'p0-0', function: 'collective', footprint: [square(2, 2, 10)], roof_footprint: [square(2, 2, 10)], diagnostics: [] },
-    ] } as unknown as PlacementBatch;
+    const batch = {
+      schema_version: '1',
+      generator_version: 'silhouette',
+      refusals: [],
+      open_spaces: [],
+      buildings: [{ id: 'b0', parcel_id: 'p0-0', function: 'collective', footprint: [square(2, 2, 10)], roof_footprint: [square(2, 2, 10)], diagnostics: [] }],
+    } as unknown as PlacementBatch;
     const buildings = buildCityBuildings(batch, scene);
     expect(buildings.items[0]).toMatchObject({ family: 'worship', landmark: true });
     const hit = pickCity(scene, buildings, at({ x: 5, y: 5 }));
@@ -98,9 +186,16 @@ describe('City Bench canvas scene', () => {
     expect(districtRoleLabel('', 'Quartier des tanneurs', 'es')).toBe('Artesanía · curtidores');
     expect(districtRoleLabel('commoner', 'Quartier populaire', 'en')).toBe('Commoners');
     // The page language (`<html lang>`) picks the locale; Spanish and Japanese are translated.
-    for (const [lang, expected] of [['es', 'Artesanía · curtidores'], ['ja', '工房 · 皮なめし職人']] as const) {
+    for (const [lang, expected] of [
+      ['es', 'Artesanía · curtidores'],
+      ['ja', '工房 · 皮なめし職人'],
+    ] as const) {
       vi.stubGlobal('document', { documentElement: { lang } });
-      try { expect(districtRoleLabel('craft:tanners', 'Quartier des tanneurs')).toBe(expected); } finally { vi.unstubAllGlobals(); }
+      try {
+        expect(districtRoleLabel('craft:tanners', 'Quartier des tanneurs')).toBe(expected);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     }
   });
 

@@ -3,9 +3,7 @@ import type { Point, RoadOutput } from './settlements';
 
 type Bounds = [number, number, number, number];
 const EPS = 1e-8;
-const bounds = (points: Point[]): Bounds => points.reduce<Bounds>((b, p) => [
-  Math.min(b[0], p.x), Math.min(b[1], p.y), Math.max(b[2], p.x), Math.max(b[3], p.y),
-], [Infinity, Infinity, -Infinity, -Infinity]);
+const bounds = (points: Point[]): Bounds => points.reduce<Bounds>((b, p) => [Math.min(b[0], p.x), Math.min(b[1], p.y), Math.max(b[2], p.x), Math.max(b[3], p.y)], [Infinity, Infinity, -Infinity, -Infinity]);
 const overlaps = (a: Bounds, b: Bounds): boolean => a[0] <= b[2] + EPS && a[2] >= b[0] - EPS && a[1] <= b[3] + EPS && a[3] >= b[1] - EPS;
 const interpolate = (a: Point, b: Point, t: number): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 const same = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) < EPS && Math.abs(a.y - b.y) < EPS;
@@ -14,28 +12,45 @@ const same = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) < EPS && Math.
  * A superset: callers keep their exact test, so a filter over the candidates equals the linear filter, in order. */
 function boxGrid(boxes: Bounds[]): (q: Bounds, pad: number) => number[] {
   const finite = (b: Bounds): boolean => b.every(Number.isFinite);
-  const spans = boxes.filter(finite).map(b => Math.max(b[2] - b[0], b[3] - b[1])).sort((a, b) => a - b);
-  const cell = Math.max(1, 2 * (spans[spans.length >> 1] ?? 0)), K = 1 << 20;
+  const spans = boxes
+    .filter(finite)
+    .map(b => Math.max(b[2] - b[0], b[3] - b[1]))
+    .sort((a, b) => a - b);
+  const cell = Math.max(1, 2 * (spans[spans.length >> 1] ?? 0)),
+    K = 1 << 20;
   const at = (v: number): number => Math.floor(v / cell);
-  const cells = new Map<number, number[]>(), wide: number[] = [];
+  const cells = new Map<number, number[]>(),
+    wide: number[] = [];
   boxes.forEach((b, i) => {
     if (!finite(b)) return;
-    const x0 = at(b[0] - EPS), y0 = at(b[1] - EPS), x1 = at(b[2] + EPS), y1 = at(b[3] + EPS);
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 256 || Math.max(-x0, -y0, x1, y1) >= K / 2) { wide.push(i); return; }
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const key = (y + K / 2) * K + x + K / 2, list = cells.get(key);
-      if (list) list.push(i); else cells.set(key, [i]);
+    const x0 = at(b[0] - EPS),
+      y0 = at(b[1] - EPS),
+      x1 = at(b[2] + EPS),
+      y1 = at(b[3] + EPS);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 256 || Math.max(-x0, -y0, x1, y1) >= K / 2) {
+      wide.push(i);
+      return;
     }
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const key = (y + K / 2) * K + x + K / 2,
+          list = cells.get(key);
+        if (list) list.push(i);
+        else cells.set(key, [i]);
+      }
   });
   return (q, pad) => {
-    const x0 = at(q[0] - pad), y0 = at(q[1] - pad), x1 = at(q[2] + pad), y1 = at(q[3] + pad);
-    if (!(Number.isFinite(x0) && Number.isFinite(y0) && Number.isFinite(x1) && Number.isFinite(y1))
-      || (x1 - x0 + 1) * (y1 - y0 + 1) > 4096 || Math.max(-x0, -y0, x1, y1) >= K / 2) return boxes.map((_, i) => i);
+    const x0 = at(q[0] - pad),
+      y0 = at(q[1] - pad),
+      x1 = at(q[2] + pad),
+      y1 = at(q[3] + pad);
+    if (!(Number.isFinite(x0) && Number.isFinite(y0) && Number.isFinite(x1) && Number.isFinite(y1)) || (x1 - x0 + 1) * (y1 - y0 + 1) > 4096 || Math.max(-x0, -y0, x1, y1) >= K / 2) return boxes.map((_, i) => i);
     const out = [...wide];
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const list = cells.get((y + K / 2) * K + x + K / 2);
-      if (list) for (const i of list) out.push(i);
-    }
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const list = cells.get((y + K / 2) * K + x + K / 2);
+        if (list) for (const i of list) out.push(i);
+      }
     out.sort((a, b) => a - b);
     return out.filter((i, j) => j === 0 || out[j - 1] !== i);
   };
@@ -46,7 +61,7 @@ function oriented(ring: Point[], positive: boolean): Point[] {
     const q = ring[(i + 1) % ring.length];
     return sum + p.x * q.y - p.y * q.x;
   }, 0);
-  return (area >= 0) === positive ? ring : [...ring].reverse();
+  return area >= 0 === positive ? ring : [...ring].reverse();
 }
 
 /** Native ownership for both transport clipping and an SVG nonzero union mask.
@@ -57,40 +72,51 @@ export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
   const shapes: Shape[] = [];
   for (const layout of layouts) {
     const allocated = layout.structure && layout.structure.mechanism !== 'legacy' ? layout.structure.allocated : layout.quarters.map(q => q.shape);
-    for (const shape of allocated) if (shape.outer.length >= 3) {
-      shapes.push({ outer: oriented(shape.outer, true), holes: shape.holes.map(hole => oriented(hole, false)) });
-    }
+    for (const shape of allocated)
+      if (shape.outer.length >= 3) {
+        shapes.push({ outer: oriented(shape.outer, true), holes: shape.holes.map(hole => oriented(hole, false)) });
+      }
     // The regional road through the built land runs between the blocks, outside every
     // allocated shape: the town draws it there (its width, junctions and surface), so
     // its span within half a road and 3 m of a block is owned too; in the fields the
     // regional layer keeps it.
     const blocks = layout.blocks.map(b => ({ ring: b.shape.outer, box: bounds(b.shape.outer) }));
     const near = boxGrid(blocks.map(b => b.box));
-    const nearBlock = (p: Point, reach: number): boolean => near([p.x, p.y, p.x, p.y], reach).some(i => {
-      const { ring, box } = blocks[i];
-      return p.x >= box[0] - reach && p.x <= box[2] + reach && p.y >= box[1] - reach && p.y <= box[3] + reach
-        && ring.some((q, j) => segmentDistance(p, ring[(j + 1) % ring.length], q) <= reach);
-    });
+    const nearBlock = (p: Point, reach: number): boolean =>
+      near([p.x, p.y, p.x, p.y], reach).some(i => {
+        const { ring, box } = blocks[i];
+        return p.x >= box[0] - reach && p.x <= box[2] + reach && p.y >= box[1] - reach && p.y <= box[3] + reach && ring.some((q, j) => segmentDistance(p, ring[(j + 1) % ring.length], q) <= reach);
+      });
     for (const street of layout.streets) {
       const regional = street.role === 'regional' || street.role === 'approach';
       if (!regional && !['bridge', 'ford', 'causeway'].includes(street.role)) continue;
       for (let i = 1; i < street.path.length; i++) {
-        const a = street.path[i - 1], b = street.path[i];
+        const a = street.path[i - 1],
+          b = street.path[i];
         if (regional) {
           const w = Math.max(street.widths[i - 1] ?? 0, street.widths[i] ?? 0) * 0.5 + 3;
           if (!nearBlock(a, w) && !nearBlock(b, w) && !nearBlock(interpolate(a, b, 0.5), w)) continue;
         }
-        const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
+        const dx = b.x - a.x,
+          dy = b.y - a.y,
+          length = Math.hypot(dx, dy);
         if (length <= EPS) continue;
-        const wa = street.widths[i - 1] ?? street.widths.at(-1) ?? 3, wb = street.widths[i] ?? wa;
+        const wa = street.widths[i - 1] ?? street.widths.at(-1) ?? 3,
+          wb = street.widths[i] ?? wa;
         // The SVG draws a constant width per segment. Taking its widest end
         // also contains variable-width ribbons, plus one metre for the casing.
         const halfWidth = Math.max(0, wa, wb) * 0.5 + 1;
-        const nx = -dy / length * halfWidth, ny = dx / length * halfWidth;
-        shapes.push({ outer: [
-          { x: a.x + nx, y: a.y + ny }, { x: a.x - nx, y: a.y - ny },
-          { x: b.x - nx, y: b.y - ny }, { x: b.x + nx, y: b.y + ny },
-        ], holes: [] });
+        const nx = (-dy / length) * halfWidth,
+          ny = (dx / length) * halfWidth;
+        shapes.push({
+          outer: [
+            { x: a.x + nx, y: a.y + ny },
+            { x: a.x - nx, y: a.y - ny },
+            { x: b.x - nx, y: b.y - ny },
+            { x: b.x + nx, y: b.y + ny },
+          ],
+          holes: [],
+        });
       }
     }
   }
@@ -98,7 +124,9 @@ export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
 }
 
 function segmentDistance(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    l2 = dx * dx + dy * dy;
   const t = l2 > EPS ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
@@ -107,12 +135,13 @@ function segmentDistance(p: Point, a: Point, b: Point): number {
 function inRing(point: Point, ring: Point[]): number {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[j], b = ring[i], dx = b.x - a.x, dy = b.y - a.y;
+    const a = ring[j],
+      b = ring[i],
+      dx = b.x - a.x,
+      dy = b.y - a.y;
     const length = Math.hypot(dx, dy);
-    if (length > EPS && Math.abs((point.x - a.x) * dy - (point.y - a.y) * dx) <= EPS * length
-      && point.x >= Math.min(a.x, b.x) - EPS && point.x <= Math.max(a.x, b.x) + EPS
-      && point.y >= Math.min(a.y, b.y) - EPS && point.y <= Math.max(a.y, b.y) + EPS) return 0;
-    if ((a.y > point.y) !== (b.y > point.y) && point.x < a.x + (point.y - a.y) * dx / dy) inside = !inside;
+    if (length > EPS && Math.abs((point.x - a.x) * dy - (point.y - a.y) * dx) <= EPS * length && point.x >= Math.min(a.x, b.x) - EPS && point.x <= Math.max(a.x, b.x) + EPS && point.y >= Math.min(a.y, b.y) - EPS && point.y <= Math.max(a.y, b.y) + EPS) return 0;
+    if (a.y > point.y !== b.y > point.y && point.x < a.x + ((point.y - a.y) * dx) / dy) inside = !inside;
   }
   return inside ? 1 : -1;
 }
@@ -124,13 +153,20 @@ function inShape(point: Point, shape: Shape): boolean {
 }
 
 function cutsAtRing(a: Point, b: Point, ring: Point[], cuts: number[]): void {
-  const dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    length2 = dx * dx + dy * dy;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const c = ring[j], d = ring[i], ex = d.x - c.x, ey = d.y - c.y;
+    const c = ring[j],
+      d = ring[i],
+      ex = d.x - c.x,
+      ey = d.y - c.y;
     const det = dx * ey - dy * ex;
     if (Math.abs(det) > 1e-12 * Math.sqrt(length2 * (ex * ex + ey * ey))) {
-      const cx = c.x - a.x, cy = c.y - a.y;
-      const t = (cx * ey - cy * ex) / det, u = (cx * dy - cy * dx) / det;
+      const cx = c.x - a.x,
+        cy = c.y - a.y;
+      const t = (cx * ey - cy * ex) / det,
+        u = (cx * dy - cy * dx) / det;
       if (t > 0 && t < 1 && u >= -EPS && u <= 1 + EPS) cuts.push(t);
     } else if (Math.abs((c.x - a.x) * dy - (c.y - a.y) * dx) <= EPS * Math.sqrt(length2)) {
       // A road following a district edge changes ownership at its endpoints.
@@ -145,11 +181,18 @@ function cutsAtRing(a: Point, b: Point, ring: Point[], cuts: number[]): void {
 /** Avoid doubled regional pieces even when their input vertices differ. */
 function uncovered(a: Point, b: Point, covered: Map<string, [number, number][]>): [number, number][] {
   const length = Math.hypot(b.x - a.x, b.y - a.y);
-  let ux = (b.x - a.x) / length, uy = (b.y - a.y) / length;
-  if (ux < -EPS || Math.abs(ux) <= EPS && uy < 0) { ux = -ux; uy = -uy; }
+  let ux = (b.x - a.x) / length,
+    uy = (b.y - a.y) / length;
+  if (ux < -EPS || (Math.abs(ux) <= EPS && uy < 0)) {
+    ux = -ux;
+    uy = -uy;
+  }
   const line = `${Math.round(ux * 1e9)},${Math.round(uy * 1e9)},${Math.round((ux * a.y - uy * a.x) * 1e7)}`;
-  const from = ux * a.x + uy * a.y, to = ux * b.x + uy * b.y;
-  const lo = Math.min(from, to), hi = Math.max(from, to), intervals = covered.get(line) ?? [];
+  const from = ux * a.x + uy * a.y,
+    to = ux * b.x + uy * b.y;
+  const lo = Math.min(from, to),
+    hi = Math.max(from, to),
+    intervals = covered.get(line) ?? [];
   const remaining: [number, number][] = [];
   let cursor = lo;
   for (const [start, end] of intervals) {
@@ -160,7 +203,8 @@ function uncovered(a: Point, b: Point, covered: Map<string, [number, number][]>)
     if (cursor >= hi - EPS) break;
   }
   if (cursor < hi - EPS) remaining.push([cursor, hi]);
-  intervals.push([lo, hi]); intervals.sort((a, b) => a[0] - b[0]);
+  intervals.push([lo, hi]);
+  intervals.sort((a, b) => a[0] - b[0]);
   const merged: [number, number][] = [];
   for (const span of intervals) {
     const last = merged[merged.length - 1];
@@ -168,10 +212,13 @@ function uncovered(a: Point, b: Point, covered: Map<string, [number, number][]>)
     else merged.push([...span]);
   }
   covered.set(line, merged);
-  return remaining.map(([start, end]): [number, number] => {
-    const a = (start - from) / (to - from), b = (end - from) / (to - from);
-    return [Math.min(a, b), Math.max(a, b)];
-  }).sort((a, b) => a[0] - b[0]);
+  return remaining
+    .map(([start, end]): [number, number] => {
+      const a = (start - from) / (to - from),
+        b = (end - from) / (to - from);
+      return [Math.min(a, b), Math.max(a, b)];
+    })
+    .sort((a, b) => a[0] - b[0]);
 }
 
 /** Keep original regional geometry outside attributed land and crossing ribbons.
@@ -190,28 +237,37 @@ export function prepareUrbanRoadClip(layouts: Layout[]): (streets: Street[]) => 
   // A regional piece lying wholly inside the cadastre's blocks is a retired
   // trajectory (e.g. through plots released by the occupancy trim): the plan
   // replaced it, so it is not drawn. A piece reaching the fields stays whole.
-  const blocks = layouts.filter(l => l.structure && l.structure.mechanism !== 'legacy')
-    .flatMap(l => l.blocks.filter(b => b.shape.outer.length >= 3).map(b => ({ shape: b.shape, bounds: bounds(b.shape.outer) })));
+  const blocks = layouts.filter(l => l.structure && l.structure.mechanism !== 'legacy').flatMap(l => l.blocks.filter(b => b.shape.outer.length >= 3).map(b => ({ shape: b.shape, bounds: bounds(b.shape.outer) })));
   const blockGrid = boxGrid(blocks.map(b => b.bounds));
-  const inBlock = (p: Point): boolean => blockGrid([p.x, p.y, p.x, p.y], 0).some(i => { const b = blocks[i];
-    return p.x >= b.bounds[0] && p.x <= b.bounds[2] && p.y >= b.bounds[1] && p.y <= b.bounds[3] && inShape(p, b.shape); });
+  const inBlock = (p: Point): boolean =>
+    blockGrid([p.x, p.y, p.x, p.y], 0).some(i => {
+      const b = blocks[i];
+      return p.x >= b.bounds[0] && p.x <= b.bounds[2] && p.y >= b.bounds[1] && p.y <= b.bounds[3] && inShape(p, b.shape);
+    });
   const retired = (s: Street): boolean => s.path.every((p, i) => i === 0 || [0.02, 0.5, 0.98].every(t => inBlock(interpolate(s.path[i - 1], p, t))));
   return streets => clipUrbanStreets(streets, masks).filter(s => !blocks.length || !retired(s));
 }
 
 function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Bounds }[]): Street[] {
-  const result: Street[] = [], covered = new Map<string, [number, number][]>(), maskGrid = boxGrid(masks.map(mask => mask.bounds));
+  const result: Street[] = [],
+    covered = new Map<string, [number, number][]>(),
+    maskGrid = boxGrid(masks.map(mask => mask.bounds));
   for (const street of streets) {
-    let path: Point[] = [], widths: number[] = [];
+    let path: Point[] = [],
+      widths: number[] = [];
     const flush = (): void => {
       if (path.length > 1) result.push({ path, widths, rank: street.rank, role: street.role });
-      path = []; widths = [];
+      path = [];
+      widths = [];
     };
     for (let i = 1; i < street.path.length; i++) {
-      const a = street.path[i - 1], b = street.path[i];
+      const a = street.path[i - 1],
+        b = street.path[i];
       if (same(a, b)) continue;
       const segmentBounds: Bounds = [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
-      const relevant = maskGrid(segmentBounds, EPS).map(i => masks[i]).filter(mask => overlaps(mask.bounds, segmentBounds));
+      const relevant = maskGrid(segmentBounds, EPS)
+        .map(i => masks[i])
+        .filter(mask => overlaps(mask.bounds, segmentBounds));
       const cuts = [0, 1];
       for (const { shape } of relevant) {
         cutsAtRing(a, b, shape.outer, cuts);
@@ -222,18 +278,31 @@ function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Boun
       const wa = street.widths[i - 1] ?? street.widths.at(-1) ?? 4;
       const wb = street.widths[i] ?? wa;
       for (let j = 1; j < unique.length; j++) {
-        const from = unique[j - 1], to = unique[j];
+        const from = unique[j - 1],
+          to = unique[j];
         const mid = interpolate(a, b, (from + to) * 0.5);
-        if (relevant.some(mask => inShape(mid, mask.shape))) { flush(); continue; }
-        const start = interpolate(a, b, from), end = interpolate(a, b, to);
+        if (relevant.some(mask => inShape(mid, mask.shape))) {
+          flush();
+          continue;
+        }
+        const start = interpolate(a, b, from),
+          end = interpolate(a, b, to);
         if (same(start, end)) continue;
         const spans = uncovered(start, end, covered);
-        if (!spans.length) { flush(); continue; }
+        if (!spans.length) {
+          flush();
+          continue;
+        }
         for (const [lo, hi] of spans) {
-          const p = interpolate(start, end, lo), q = interpolate(start, end, hi);
+          const p = interpolate(start, end, lo),
+            q = interpolate(start, end, hi);
           if (path.length && !same(path[path.length - 1], p)) flush();
-          if (!path.length) { path.push(p); widths.push(wa + (wb - wa) * (from + (to - from) * lo)); }
-          path.push(q); widths.push(wa + (wb - wa) * (from + (to - from) * hi));
+          if (!path.length) {
+            path.push(p);
+            widths.push(wa + (wb - wa) * (from + (to - from) * lo));
+          }
+          path.push(q);
+          widths.push(wa + (wb - wa) * (from + (to - from) * hi));
         }
       }
     }
@@ -243,10 +312,5 @@ function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Boun
 }
 
 export function regionalOutsideUrban(roads: RoadOutput | undefined, layouts: Layout[]): Street[] {
-  return outsideUrbanStreets(roads?.segments.map(segment => ({
-    path: segment.path,
-    widths: segment.path.map(() => segment.width),
-    rank: segment.class === 'highway' ? 0 : segment.class === 'main' ? 1 : 2,
-    role: 'regional',
-  })) ?? [], layouts);
+  return outsideUrbanStreets(roads?.segments.map(segment => ({ path: segment.path, widths: segment.path.map(() => segment.width), rank: segment.class === 'highway' ? 0 : segment.class === 'main' ? 1 : 2, role: 'regional' })) ?? [], layouts);
 }

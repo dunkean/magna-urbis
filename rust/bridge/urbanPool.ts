@@ -12,13 +12,17 @@ export type PoolArgs = Record<string, string | undefined>;
  * (`export_resident`) image of the coordinator's resident products: decoded
  * once by each helper, never re-parsed per slice. */
 export type PoolShared = Record<string, string | Uint8Array | undefined>;
-export type PoolMessage =
-  | { type: 'init'; module: WebAssembly.Module }
-  | { type: 'raster'; version: number; raster: SettlementRaster }
-  | { type: 'job'; id: number; version: number; batch: number; op: PoolOp; args: PoolArgs; shared?: PoolShared };
+export type PoolMessage = { type: 'init'; module: WebAssembly.Module } | { type: 'raster'; version: number; raster: SettlementRaster } | { type: 'job'; id: number; version: number; batch: number; op: PoolOp; args: PoolArgs; shared?: PoolShared };
 export type PoolReply = { id: number; json?: string; error?: string };
 
-interface Helper { worker: Worker; version: number; batch: number; busy: boolean; broken: boolean; pending?: (reply: PoolReply) => void }
+interface Helper {
+  worker: Worker;
+  version: number;
+  batch: number;
+  busy: boolean;
+  broken: boolean;
+  pending?: (reply: PoolReply) => void;
+}
 
 export interface UrbanPool {
   /** Participants including the calling worker. */
@@ -34,16 +38,31 @@ export interface UrbanPool {
 
 export function createUrbanPool(size: number, module: WebAssembly.Module): UrbanPool {
   const helpers: Helper[] = [];
-  let raster: SettlementRaster | undefined, version = 0, batch = 0, nextId = 1;
+  let raster: SettlementRaster | undefined,
+    version = 0,
+    batch = 0,
+    nextId = 1;
   for (let i = 0; i < size - 1; i++) {
     try {
       const worker = new Worker(new URL('./urbanPoolWorker.ts', import.meta.url), { type: 'module', name: `magna-urban-pool-${i}` });
       const helper: Helper = { worker, version: -1, batch: -1, busy: false, broken: false };
-      worker.onmessage = (event: MessageEvent<PoolReply>) => { const done = helper.pending; helper.pending = undefined; done?.(event.data); };
-      worker.onerror = event => { event.preventDefault(); helper.broken = true; const done = helper.pending; helper.pending = undefined; done?.({ id: -1, error: 'urban pool worker failed' }); };
+      worker.onmessage = (event: MessageEvent<PoolReply>) => {
+        const done = helper.pending;
+        helper.pending = undefined;
+        done?.(event.data);
+      };
+      worker.onerror = event => {
+        event.preventDefault();
+        helper.broken = true;
+        const done = helper.pending;
+        helper.pending = undefined;
+        done?.({ id: -1, error: 'urban pool worker failed' });
+      };
       worker.postMessage({ type: 'init', module } satisfies PoolMessage);
       helpers.push(helper);
-    } catch { break; }
+    } catch {
+      break;
+    }
   }
   const send = (helper: Helper, op: PoolOp, args: PoolArgs, shared: PoolShared | undefined, current: number): Promise<PoolReply> =>
     new Promise(resolve => {
@@ -58,38 +77,55 @@ export function createUrbanPool(size: number, module: WebAssembly.Module): Urban
       helper.batch = current;
     });
   return {
-    get size() { return helpers.filter(h => !h.broken).length + 1; },
+    get size() {
+      return helpers.filter(h => !h.broken).length + 1;
+    },
     setRaster(next) {
-      raster = next; version++;
+      raster = next;
+      version++;
       // Eager: helpers build their terrain while the caller runs the first stage.
-      for (const helper of helpers) if (!helper.broken) {
-        helper.worker.postMessage({ type: 'raster', version, raster } satisfies PoolMessage);
-        helper.version = version;
-      }
+      for (const helper of helpers)
+        if (!helper.broken) {
+          helper.worker.postMessage({ type: 'raster', version, raster } satisfies PoolMessage);
+          helper.version = version;
+        }
     },
     run(op, jobs, shared, local) {
       const current = ++batch;
       const results: { json?: string; failed?: true; error?: unknown }[] = new Array(jobs.length);
-      let next = 0, done = 0;
+      let next = 0,
+        done = 0;
       return new Promise<string[]>((resolve, reject) => {
         // The first error in job order wins, as in the serial call.
         const settle = () => {
           if (done !== jobs.length) return;
           const failed = results.find(r => r.failed);
           // Rethrow the raw value: callers format it exactly like a serial throw.
-          if (failed) reject(failed.error); else resolve(results.map(r => r.json!));
+          if (failed) reject(failed.error);
+          else resolve(results.map(r => r.json!));
         };
         const runLocal = (i: number) => {
-          try { results[i] = { json: local(jobs[i]) }; } catch (error) { results[i] = { failed: true, error }; }
+          try {
+            results[i] = { json: local(jobs[i]) };
+          } catch (error) {
+            results[i] = { failed: true, error };
+          }
           done++;
         };
         const give = (helper: Helper) => {
-          if (helper.broken || next >= jobs.length) { helper.busy = false; return; }
+          if (helper.broken || next >= jobs.length) {
+            helper.busy = false;
+            return;
+          }
           const i = next++;
           helper.busy = true;
           void send(helper, op, jobs[i], shared, current).then(reply => {
             // Re-run failed slices locally: same result or the serial error.
-            if (reply.json === undefined) runLocal(i); else { results[i] = { json: reply.json }; done++; }
+            if (reply.json === undefined) runLocal(i);
+            else {
+              results[i] = { json: reply.json };
+              done++;
+            }
             give(helper);
             settle();
           });
@@ -98,13 +134,19 @@ export function createUrbanPool(size: number, module: WebAssembly.Module): Urban
         // The calling worker takes slices too, yielding between them so the
         // helpers' replies can be answered with the next slice.
         const step = () => {
-          if (next < jobs.length) { runLocal(next++); setTimeout(step, 0); }
+          if (next < jobs.length) {
+            runLocal(next++);
+            setTimeout(step, 0);
+          }
           settle();
         };
         step();
       });
     },
-    dispose() { for (const h of helpers) h.worker.terminate(); helpers.length = 0; },
+    dispose() {
+      for (const h of helpers) h.worker.terminate();
+      helpers.length = 0;
+    },
   };
 }
 
@@ -112,6 +154,6 @@ export function createUrbanPool(size: number, module: WebAssembly.Module): Urban
 export function ranges(total: number, parts: number): [number, number][] {
   const out: [number, number][] = [];
   const count = Math.max(1, Math.min(total, parts));
-  for (let k = 0; k < count; k++) out.push([Math.floor(total * k / count), Math.floor(total * (k + 1) / count)]);
+  for (let k = 0; k < count; k++) out.push([Math.floor((total * k) / count), Math.floor((total * (k + 1)) / count)]);
   return out.filter(([a, b]) => b > a);
 }

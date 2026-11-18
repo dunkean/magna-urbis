@@ -8,29 +8,35 @@ import { mpArea, tryDifference, prepareIntersection } from '../geo/bool';
 const distance = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
 
 /** The caller supplies physical-clearance, all-owner-land and whole-block-access checks. */
-export function reconstructCompactRoom(poly: Polygon, owner: Polygon, occupied: Polygon[],
-  front: [Vec2, Vec2] | undefined, clear: (candidate: Polygon) => boolean,
-  validate: (candidate: Polygon) => boolean, retainedLevels: readonly number[] = [0.85, 0.70]): Polygon | null {
+export function reconstructCompactRoom(poly: Polygon, owner: Polygon, occupied: Polygon[], front: [Vec2, Vec2] | undefined, clear: (candidate: Polygon) => boolean, validate: (candidate: Polygon) => boolean, retainedLevels: readonly number[] = [0.85, 0.7]): Polygon | null {
   if (poly.length < 3 || owner.length < 3) return null;
-  const oldArea = area(poly), oldCenter = polygonCentroid(poly);
+  const oldArea = area(poly),
+    oldCenter = polygonCentroid(poly);
   if (oldArea < 12 || !Number.isFinite(oldArea)) return null;
   // Occupied roofs stay unchanged until this synchronous search returns.
   const occupiedIntersections = occupied.map(other => prepareIntersection(other));
   const oldContacts = occupiedIntersections.map(intersect => intersect(poly));
-  if (oldContacts.some((hit) => hit.failed)) return null;
-  const bounds = bboxOf(owner), box = obb(poly);
+  if (oldContacts.some(hit => hit.failed)) return null;
+  const bounds = bboxOf(owner),
+    box = obb(poly);
   const axes: Vec2[] = [];
   const addAxis = (axis: Vec2): void => {
     const length = Math.hypot(axis.x, axis.y);
     if (length < 1e-6) return;
     const u = { x: axis.x / length, y: axis.y / length };
-    if (axes.every((v) => Math.abs(v.x * u.x + v.y * u.y) < 0.995)) axes.push(u);
+    if (axes.every(v => Math.abs(v.x * u.x + v.y * u.y) < 0.995)) axes.push(u);
   };
   if (front) addAxis({ x: front[1].x - front[0].x, y: front[1].y - front[0].y });
-  let longest = 0, wall = box.u;
+  let longest = 0,
+    wall = box.u;
   for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length], length = distance(a, b);
-    if (length > longest) { longest = length; wall = { x: b.x - a.x, y: b.y - a.y }; }
+    const a = poly[i],
+      b = poly[(i + 1) % poly.length],
+      length = distance(a, b);
+    if (length > longest) {
+      longest = length;
+      wall = { x: b.x - a.x, y: b.y - a.y };
+    }
   }
   addAxis(wall);
   addAxis(box.u);
@@ -40,15 +46,13 @@ export function reconstructCompactRoom(poly: Polygon, owner: Polygon, occupied: 
   offsets.push([1, 1], [1, -1], [-1, 1], [-1, -1], [2, 2], [2, -2], [-2, 2], [-2, -2]);
   const accept = (candidate: Polygon, minimum: number): boolean => {
     const a = area(candidate);
-    if (a < minimum * oldArea - 1e-6 || a >= 0.95 * oldArea || !isSimple(candidate)
-      || distance(polygonCentroid(candidate), oldCenter) > 18 + 1e-6) return false;
+    if (a < minimum * oldArea - 1e-6 || a >= 0.95 * oldArea || !isSimple(candidate) || distance(polygonCentroid(candidate), oldCenter) > 18 + 1e-6) return false;
     const bb = bboxOf(candidate);
-    if (bb.x0 < bounds.x0 - 1e-6 || bb.y0 < bounds.y0 - 1e-6
-      || bb.x1 > bounds.x1 + 1e-6 || bb.y1 > bounds.y1 + 1e-6
-      || !polyInside(owner, candidate)) return false;
+    if (bb.x0 < bounds.x0 - 1e-6 || bb.y0 < bounds.y0 - 1e-6 || bb.x1 > bounds.x1 + 1e-6 || bb.y1 > bounds.y1 + 1e-6 || !polyInside(owner, candidate)) return false;
     // A concave plot can contain every vertex while a long chord crosses its
     // notch. The exact native difference, not vertices alone, proves ownership.
-    const escaped = tryDifference(candidate, owner), added = tryDifference(candidate, poly);
+    const escaped = tryDifference(candidate, owner),
+      added = tryDifference(candidate, poly);
     if (escaped.failed || mpArea(escaped.pieces) > 1e-6 || added.failed) return false;
     for (let i = 0; i < occupied.length; i++) {
       const newContact = added.pieces.length ? occupiedIntersections[i](added.pieces) : { pieces: [], failed: false };
@@ -60,23 +64,25 @@ export function reconstructCompactRoom(poly: Polygon, owner: Polygon, occupied: 
   // 70% lower bound, while keeping the owner's full access contract.
   for (const retained of retainedLevels) {
     let trials = 0;
-    for (const centre of centers) for (const axis of axes) for (const aspect of [1.5, 1, 2, 3]) {
-      const v = { x: -axis.y, y: axis.x };
-      const halfU = Math.sqrt(oldArea * retained * aspect) / 2;
-      const halfV = oldArea * retained / (4 * halfU);
-      for (const [du, dv] of offsets) {
-        if (++trials > 640) break;
-        const cx = centre.x + axis.x * du + v.x * dv;
-        const cy = centre.y + axis.y * du + v.y * dv;
-        const candidate: Polygon = [
-          { x: cx - axis.x * halfU - v.x * halfV, y: cy - axis.y * halfU - v.y * halfV },
-          { x: cx + axis.x * halfU - v.x * halfV, y: cy + axis.y * halfU - v.y * halfV },
-          { x: cx + axis.x * halfU + v.x * halfV, y: cy + axis.y * halfU + v.y * halfV },
-          { x: cx - axis.x * halfU + v.x * halfV, y: cy - axis.y * halfU + v.y * halfV },
-        ];
-        if (accept(candidate, retained)) return candidate;
-      }
-    }
+    for (const centre of centers)
+      for (const axis of axes)
+        for (const aspect of [1.5, 1, 2, 3]) {
+          const v = { x: -axis.y, y: axis.x };
+          const halfU = Math.sqrt(oldArea * retained * aspect) / 2;
+          const halfV = (oldArea * retained) / (4 * halfU);
+          for (const [du, dv] of offsets) {
+            if (++trials > 640) break;
+            const cx = centre.x + axis.x * du + v.x * dv;
+            const cy = centre.y + axis.y * du + v.y * dv;
+            const candidate: Polygon = [
+              { x: cx - axis.x * halfU - v.x * halfV, y: cy - axis.y * halfU - v.y * halfV },
+              { x: cx + axis.x * halfU - v.x * halfV, y: cy + axis.y * halfU - v.y * halfV },
+              { x: cx + axis.x * halfU + v.x * halfV, y: cy + axis.y * halfU + v.y * halfV },
+              { x: cx - axis.x * halfU + v.x * halfV, y: cy - axis.y * halfU + v.y * halfV },
+            ];
+            if (accept(candidate, retained)) return candidate;
+          }
+        }
   }
   return null;
 }

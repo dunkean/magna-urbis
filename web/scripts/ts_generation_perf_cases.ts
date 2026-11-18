@@ -1,7 +1,6 @@
 import type { BenchOptions } from '../src/gen/urban/testbench';
 
-const base: BenchOptions = { culture: 'european-organic', recipe: 'core', zone: 'core', density: 1,
-  count: 6, radius: 240, placement: 'rectangle', monument: 'none' };
+const base: BenchOptions = { culture: 'european-organic', recipe: 'core', zone: 'core', density: 1, count: 6, radius: 240, placement: 'rectangle', monument: 'none' };
 
 /** Browser- and Node-compatible inputs for generation latency and exact parity checks. */
 export const TS_GENERATION_PERF_CASES: [string, BenchOptions, string][] = [

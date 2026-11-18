@@ -12,10 +12,10 @@ import { recordGenerationValidity } from '../src/v2/stageValidity';
 const recipe = defaultSettings();
 recipe.generation = 'procedural';
 recipe.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
-recipe.extent = 1200; recipe.settlementCount = 1;
+recipe.extent = 1200;
+recipe.settlementCount = 1;
 recipe.region = { placement: { mode: 'list', list: [regionSpec('main', 80)] } };
-Object.assign(recipe.options, { population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no',
-  importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: new Float32Array(64).fill(20) } });
+Object.assign(recipe.options, { population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no', importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: new Float32Array(64).fill(20) } });
 let terrain: World, region: World, complete: World;
 beforeAll(async () => {
   terrain = await generateTerrain(recipe, undefined, new TerrainCache());
@@ -27,7 +27,8 @@ function controls(source: World = complete) {
   const settings = structuredClone(recipe);
   let world = structuredClone(source);
   return {
-    settings: () => settings, world: () => world,
+    settings: () => settings,
+    world: () => world,
     targets: () => undefined as string[] | undefined,
     redraw: vi.fn(async () => {}),
     generate: vi.fn(async (action: FullGenerationAction, keys?: string[], through?: V2TownStage) => {
@@ -52,7 +53,8 @@ describe('full generation uses product validity from any tab', () => {
   });
 
   it('starts from settlements when only placement settings change and reuses terrain', async () => {
-    const api = controls(), height = api.world().terrain.height.data;
+    const api = controls(),
+      height = api.world().terrain.height.data;
     api.settings().options.population = 100;
     expect(firstPendingGeneration(api.settings(), api.world())?.id).toBe('settle-sites');
     await runRemainingGeneration('cities', api);
@@ -61,7 +63,8 @@ describe('full generation uses product validity from any tab', () => {
   });
 
   it.each(['region', 'settlements', 'cities', 'map'] as const)('runs only missing cities from %s', async family => {
-    const api = controls(region), height = api.world().terrain.height.data;
+    const api = controls(region),
+      height = api.world().terrain.height.data;
     await runRemainingGeneration(family, api);
     expect(api.generate.mock.calls).toEqual([['towns', ['main'], 'buildings']]);
     expect(api.world().terrain.height.data).toBe(height);
@@ -71,16 +74,22 @@ describe('full generation uses product validity from any tab', () => {
     const api = controls(terrain);
     await runRemainingGeneration('map', api);
     expect(api.generate.mock.calls).toEqual([['region'], ['towns', ['main'], 'buildings']]);
-    api.generate.mockClear(); api.redraw.mockClear();
+    api.generate.mockClear();
+    api.redraw.mockClear();
     expect(await runRemainingGeneration('settlements', api)).toBe(true);
-    expect(api.generate).not.toHaveBeenCalled(); expect(api.redraw).not.toHaveBeenCalled();
+    expect(api.generate).not.toHaveBeenCalled();
+    expect(api.redraw).not.toHaveBeenCalled();
   });
 
   it('retains completion fingerprints across project save/reopen', () => {
     // The Classic engine of this recipe is a local-profile choice: the web profile reopens it on Rust (WebGPU/CPU only).
     vi.stubGlobal('window', { location: { hostname: 'localhost', protocol: 'http:', search: '?profile=local' } });
     let restored: ReturnType<typeof parseProject>;
-    try { restored = parseProject(serializeProject(recipe, complete)); } finally { vi.unstubAllGlobals(); }
+    try {
+      restored = parseProject(serializeProject(recipe, complete));
+    } finally {
+      vi.unstubAllGlobals();
+    }
     expect(firstPendingGeneration(restored.settings, restored.world)).toBeUndefined();
     restored.settings.urban = { houses: { floors: 3 } };
     expect(firstPendingGeneration(restored.settings, restored.world)?.id).toBe('city-buildings');
@@ -103,7 +112,8 @@ describe('full generation uses product validity from any tab', () => {
   });
 
   it('does not continue after failure or cancellation', async () => {
-    const api = controls(terrain); api.generate.mockResolvedValue(false);
+    const api = controls(terrain);
+    api.generate.mockResolvedValue(false);
     expect(await runRemainingGeneration('settlements', api)).toBe(false);
     expect(api.generate.mock.calls).toEqual([['region']]);
     expect(api.redraw).not.toHaveBeenCalled();

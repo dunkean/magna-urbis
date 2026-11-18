@@ -10,7 +10,7 @@ export function settlementEnvironment(settings: V2Settings): string {
  * those places (zero empties the region). */
 export function recommendedCounts(settings: V2Settings, density = 1): Record<string, number> {
   const baseline = regionalPopulation(settings);
-  return regionalPopulation({...settings,region:{...settings.region,placement:{...settings.region?.placement,counts:undefined},demography:{density:baseline.defaultDensity*Math.max(0,density)}}}).counts;
+  return regionalPopulation({ ...settings, region: { ...settings.region, placement: { ...settings.region?.placement, counts: undefined }, demography: { density: baseline.defaultDensity * Math.max(0, density) } } }).counts;
 }
 export function recommendedCulture(settings: V2Settings, random = Math.random): string {
   return randomCulture(settings, true, random);

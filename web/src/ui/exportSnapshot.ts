@@ -5,14 +5,17 @@ import type { World } from '../gen/types';
 import type { MapStyle } from '../render/styles';
 import type { DisplayOpts } from './protocol';
 
-export interface ExportSnapshot { name: string; gen: number; display: DisplayOpts; world: World | null; brushes?: BrushSources }
+export interface ExportSnapshot {
+  name: string;
+  gen: number;
+  display: DisplayOpts;
+  world: World | null;
+  brushes?: BrushSources;
+}
 /** Capture identity and display choices before any await; rerolls cannot rename an earlier image. */
 export function exportSnapshot(options: Options, world: World | null, gen: number, presentedGen: number, layers?: Partial<ExportLayers>): ExportSnapshot {
   if (gen !== presentedGen || (world && (world.options.seed !== options.seed || world.options.size !== options.size))) {
     throw new Error('the requested map has not been presented');
   }
-  return { name: `magna-urbis-${options.seed}-${options.size}`, gen, world, display: {
-    ...(layers ? { layers: { ...layers } } : {}),
-    style: options.style as MapStyle, contours: options.contours, landuse: options.landuse, labels: options.labels, legend: options.legend,
-  } };
+  return { name: `magna-urbis-${options.seed}-${options.size}`, gen, world, display: { ...(layers ? { layers: { ...layers } } : {}), style: options.style as MapStyle, contours: options.contours, landuse: options.landuse, labels: options.labels, legend: options.legend } };
 }

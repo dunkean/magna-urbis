@@ -23,23 +23,31 @@ function fakeWorld(n: number, cell: number): World {
 
 describe('bounded settlement cost field', () => {
   it('stays bounded on rolling land and equals a float64 Dijkstra', () => {
-    const n = 768, cell = 20000 / n;
+    const n = 768,
+      cell = 20000 / n;
     const w = fakeWorld(n, cell);
-    const start = { x: 18303, y: 14000 }, limit = 3459;
+    const start = { x: 18303, y: 14000 },
+      limit = 3459;
     const t0 = performance.now();
     const g = boundedCost(w, start, limit);
     expect(performance.now() - t0).toBeLessThan(5000);
-    const H = w.terrain.height.data, water = w.terrain.water;
+    const H = w.terrain.height.data,
+      water = w.terrain.water;
     const s0 = Math.floor(start.y / cell) * n + Math.floor(start.x / cell);
     const ref = dijkstra(n, n, s0, (c, m, dd) => {
       if (water[m]) return Infinity;
       const gr = Math.abs(H[m] - H[c]) / (dd * cell);
       return dd * cell * (1 + 100 * gr * gr);
     });
-    let finite = 0, bad = 0, err = 0;
+    let finite = 0,
+      bad = 0,
+      err = 0;
     for (let i = 0; i < n * n; i++) {
       const v = g.data[i];
-      if (ref[i] > limit) { if (v !== Infinity) bad++; continue; }
+      if (ref[i] > limit) {
+        if (v !== Infinity) bad++;
+        continue;
+      }
       finite++;
       err = Math.max(err, Math.abs(v - ref[i]));
     }

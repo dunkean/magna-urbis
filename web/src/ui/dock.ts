@@ -20,18 +20,27 @@ export function styleSwatch(id: MapStyle): string {
 }
 
 const RELIEF_ART: [Relief, string][] = [
-  ['flat', 'Flat'], ['hills', 'Rolling hills'], ['valley', 'Valley'], ['mountains', 'Mountains'],
+  ['flat', 'Flat'],
+  ['hills', 'Rolling hills'],
+  ['valley', 'Valley'],
+  ['mountains', 'Mountains'],
 ];
 
 type Coast = Options['coast'];
 type River = Options['river'];
 const COAST_ART: [Coast, string][] = [
-  ['none', 'No coast'], ['random', 'Coast on a random side'],
-  ['N', 'Coast to the north'], ['E', 'Coast to the east'],
-  ['S', 'Coast to the south'], ['W', 'Coast to the west'],
+  ['none', 'No coast'],
+  ['random', 'Coast on a random side'],
+  ['N', 'Coast to the north'],
+  ['E', 'Coast to the east'],
+  ['S', 'Coast to the south'],
+  ['W', 'Coast to the west'],
 ];
 const RIVER_ART: [River, string][] = [
-  ['none', 'No river'], ['stream', 'Stream'], ['river', 'River'], ['major', 'Major river'],
+  ['none', 'No river'],
+  ['stream', 'Stream'],
+  ['river', 'River'],
+  ['major', 'Major river'],
 ];
 
 export interface Dock {
@@ -39,7 +48,11 @@ export interface Dock {
   sync(o: { biome: BiomeName; relief: Relief; coast: Coast; river: River; style: MapStyle }): void;
 }
 export interface DockActions {
-  biome(v: BiomeName): void; relief(v: Relief): void; coast(v: Coast): void; river(v: River): void; style(v: MapStyle): void;
+  biome(v: BiomeName): void;
+  relief(v: Relief): void;
+  coast(v: Coast): void;
+  river(v: River): void;
+  style(v: MapStyle): void;
 }
 
 /** One tooltip for the whole rail (the rail scrolls, so per-button pseudo-elements would be clipped). */
@@ -52,12 +65,17 @@ function tooltip(host: HTMLElement): void {
     if (!b) return;
     const r = b.getBoundingClientRect();
     tip.textContent = b.dataset.tip!;
-    tip.style.left = `${r.left - 8}px`; tip.style.top = `${r.top + r.height / 2}px`;
+    tip.style.left = `${r.left - 8}px`;
+    tip.style.top = `${r.top + r.height / 2}px`;
     tip.hidden = false;
   };
-  const hide = (): void => { tip.hidden = true; };
-  host.addEventListener('pointerover', show); host.addEventListener('focusin', show);
-  host.addEventListener('pointerout', hide); host.addEventListener('focusout', hide);
+  const hide = (): void => {
+    tip.hidden = true;
+  };
+  host.addEventListener('pointerover', show);
+  host.addEventListener('focusin', show);
+  host.addEventListener('pointerout', hide);
+  host.addEventListener('focusout', hide);
   host.addEventListener('scroll', hide);
 }
 
@@ -81,7 +99,8 @@ export function initDock(host: HTMLElement, on: DockActions): Dock {
       const b = el('button', { type: 'button', class: 'dot', ['data-' + kind]: id, 'data-tip': label, 'aria-label': label, 'aria-pressed': 'false' });
       b.innerHTML = railIcon(kind === 'relief' ? id : `${kind}-${id}`);
       b.addEventListener('click', () => pick(id));
-      out.set(id, b); row.append(b);
+      out.set(id, b);
+      row.append(b);
     }
     return out;
   };
@@ -91,7 +110,8 @@ export function initDock(host: HTMLElement, on: DockActions): Dock {
     const b = el('button', { type: 'button', class: 'dot', 'data-biome': id, 'data-tip': label, 'aria-label': `Biome: ${label}`, 'aria-pressed': 'false' });
     b.innerHTML = railIcon(id);
     b.addEventListener('click', () => on.biome(id));
-    biomeButtons.set(id, b); biomes.append(b);
+    biomeButtons.set(id, b);
+    biomes.append(b);
   }
   const reliefButtons = glyphs(reliefs, 'relief', RELIEF_ART, on.relief);
   const coastButtons = glyphs(coasts, 'coast', COAST_ART, on.coast);
@@ -100,13 +120,20 @@ export function initDock(host: HTMLElement, on: DockActions): Dock {
     const b = el('button', { type: 'button', class: 'dot swatch', 'data-style': id, 'data-tip': label, 'aria-label': `Style: ${label}`, 'aria-pressed': 'false' });
     b.style.background = styleSwatch(id);
     b.addEventListener('click', () => on.style(id));
-    styleButtons.set(id, b); styles.append(b);
+    styleButtons.set(id, b);
+    styles.append(b);
   }
   tooltip(host.closest<HTMLElement>('#rail') ?? host);
   return {
     sync(o) {
-      const mark = <T>(buttons: Map<T, HTMLButtonElement>, value: T): void => { for (const [id, b] of buttons) b.setAttribute('aria-pressed', String(id === value)); };
-      mark(biomeButtons, o.biome); mark(reliefButtons, o.relief); mark(coastButtons, o.coast); mark(riverButtons, o.river); mark(styleButtons, o.style);
+      const mark = <T>(buttons: Map<T, HTMLButtonElement>, value: T): void => {
+        for (const [id, b] of buttons) b.setAttribute('aria-pressed', String(id === value));
+      };
+      mark(biomeButtons, o.biome);
+      mark(reliefButtons, o.relief);
+      mark(coastButtons, o.coast);
+      mark(riverButtons, o.river);
+      mark(styleButtons, o.style);
     },
   };
 }

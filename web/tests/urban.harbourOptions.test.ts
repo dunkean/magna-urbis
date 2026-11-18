@@ -8,12 +8,34 @@ const keys = ['shelteredHarbour'] as const;
 afterEach(() => vi.unstubAllGlobals());
 
 it('frames detached port districts and works even beyond allocated land', () => {
-  const shape = (x: number, y: number) => ({ outer: [{ x, y }, { x: x + 10, y: y + 10 }, { x, y: y + 10 }], holes: [] });
-  const layout = { quarters: [{ shape: shape(0, 0) }], structure: { allocated: [shape(0, 0)],
-    portDistricts: [{ shapes: [shape(-200, 500)] }], quays: [{ shape: shape(-210, 510) }] },
-    streets: [{ role: 'mole', path: [{ x: -210, y: 520 }, { x: -210, y: 700 }], widths: [8, 8] }] } as unknown as Layout;
+  const shape = (x: number, y: number) => ({
+    outer: [
+      { x, y },
+      { x: x + 10, y: y + 10 },
+      { x, y: y + 10 },
+    ],
+    holes: [],
+  });
+  const layout = {
+    quarters: [{ shape: shape(0, 0) }],
+    structure: { allocated: [shape(0, 0)], portDistricts: [{ shapes: [shape(-200, 500)] }], quays: [{ shape: shape(-210, 510) }] },
+    streets: [
+      {
+        role: 'mole',
+        path: [
+          { x: -210, y: 520 },
+          { x: -210, y: 700 },
+        ],
+        widths: [8, 8],
+      },
+    ],
+  } as unknown as Layout;
   const extent = layoutExtent([layout])!;
-  for (const p of [{ x: 0, y: 0 }, { x: -214, y: 704 }, { x: -200, y: 500 }]) {
+  for (const p of [
+    { x: 0, y: 0 },
+    { x: -214, y: 704 },
+    { x: -200, y: 500 },
+  ]) {
     expect(Math.abs(p.x - extent.center.x)).toBeLessThanOrEqual(extent.radius);
     expect(Math.abs(p.y - extent.center.y)).toBeLessThanOrEqual(extent.radius);
   }
@@ -33,10 +55,13 @@ it('defaults the harbour option off and retains each opt-in through share querie
 
 it('keeps disabled native payloads identical to missing options and sends explicit true options', async () => {
   const payloads: UrbanRequest[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith('/urban')) payloads.push(JSON.parse(String(init?.body)));
-    return new Response(JSON.stringify(url.endsWith('/raster') ? { ok: true } : { id: 1, layouts: [] }), { headers: { 'content-type': 'application/json' } });
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/urban')) payloads.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify(url.endsWith('/raster') ? { ok: true } : { id: 1, layouts: [] }), { headers: { 'content-type': 'application/json' } });
+    }),
+  );
   const runtime = { profile: 'local' as const, server: 'http://site-options.test:8795' };
   const raster = { width: 100, n: 2, height: new Float32Array(4), water: new Uint8Array(4), waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4).fill(-1) };
   for (const enabled of [false, true]) {
@@ -51,8 +76,7 @@ it('keeps disabled native payloads identical to missing options and sends explic
   }
   for (const value of [0, 0.5, 1]) {
     const engine = await createUrbanEngine(runtime);
-    await engine.run({ id: 1, kind: 'quarters', seed: 'port-params', runtime, raster,
-      layoutConfig: { ...defaultLayoutConfig(), portDetachment: value, portShelter: value } });
+    await engine.run({ id: 1, kind: 'quarters', seed: 'port-params', runtime, raster, layoutConfig: { ...defaultLayoutConfig(), portDetachment: value, portShelter: value } });
     const native = payloads.at(-1)!.layoutConfig!;
     expect(native.portDetachment ?? 1).toBe(value);
     expect(native.portShelter ?? 0).toBe(value);

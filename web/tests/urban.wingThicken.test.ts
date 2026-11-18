@@ -8,7 +8,8 @@ import { bboxOf } from '../src/gen/geo/poly';
 import native from './fixtures/compact-pins-v11.json';
 
 describe('same-owner narrow wing thickening', () => {
-  const poly = fixture.poly as Polygon, owner = fixture.owner as Polygon;
+  const poly = fixture.poly as Polygon,
+    owner = fixture.owner as Polygon;
 
   it('retains every original roof byte while making the xrv97g wing habitable', () => {
     const before = JSON.stringify([poly, owner]);
@@ -16,7 +17,8 @@ describe('same-owner narrow wing thickening', () => {
     expect(roof).not.toBeNull();
     expect(thickenNarrowWing(poly, owner, [], () => true)).toEqual(roof);
     expect(JSON.stringify([poly, owner])).toBe(before);
-    const added = tryDifference(roof!, poly), lost = tryDifference(poly, roof!);
+    const added = tryDifference(roof!, poly),
+      lost = tryDifference(poly, roof!);
     expect(added.failed || lost.failed).toBe(false);
     expect(mpArea(lost.pieces)).toBeLessThan(1e-6);
     expect(mpArea(added.pieces)).toBeGreaterThan(0);
@@ -33,8 +35,12 @@ describe('same-owner narrow wing thickening', () => {
 
   it('rejects a neighbour occupying the proposed owner land and honours the access validator', () => {
     expect(thickenNarrowWing(poly, owner, [owner], () => true)).toBeNull();
-    const far: Polygon = [{ x: -100, y: -100 }, { x: -90, y: -100 },
-      { x: -90, y: -90 }, { x: -100, y: -90 }];
+    const far: Polygon = [
+      { x: -100, y: -100 },
+      { x: -90, y: -100 },
+      { x: -90, y: -90 },
+      { x: -100, y: -90 },
+    ];
     expect(thickenNarrowWing(poly, owner, [far, owner], () => true)).toBeNull();
     expect(thickenNarrowWing(poly, owner, [], () => false)).toBeNull();
     const roof = thickenNarrowWing(poly, owner, [], candidate => {
@@ -47,10 +53,14 @@ describe('same-owner narrow wing thickening', () => {
   it('rejects inward roof claims yet finds a whole-wing candidate in a bounded exterior domain', () => {
     const f = native.cases.find(c => c.i === 736)!;
     expect(thickenNarrowWing(f.roof, f.owner, f.occupied, () => true)).toBeNull();
-    const b = bboxOf(f.owner), margin = 16;
-    const exterior: Polygon = [{ x: b.x0 - margin, y: b.y0 - margin },
-      { x: b.x1 + margin, y: b.y0 - margin }, { x: b.x1 + margin, y: b.y1 + margin },
-      { x: b.x0 - margin, y: b.y1 + margin }];
+    const b = bboxOf(f.owner),
+      margin = 16;
+    const exterior: Polygon = [
+      { x: b.x0 - margin, y: b.y0 - margin },
+      { x: b.x1 + margin, y: b.y0 - margin },
+      { x: b.x1 + margin, y: b.y1 + margin },
+      { x: b.x0 - margin, y: b.y1 + margin },
+    ];
     const grown = thickenNarrowWing(f.roof, exterior, f.occupied, () => true);
     expect(grown).not.toBeNull();
     const added = tryDifference(grown!, f.roof);

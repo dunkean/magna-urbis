@@ -8,7 +8,11 @@ export interface BenchContextHook {
   comparison?: import('./cityComparison').ComparisonApi;
   coldViewport?(): unknown;
 }
-declare global { interface Window { magnaBenchContext?: BenchContextHook } }
+declare global {
+  interface Window {
+    magnaBenchContext?: BenchContextHook;
+  }
+}
 export interface BenchUiContext {
   fields: { selector: string; value: string; checked?: boolean }[];
   panels: { selector: string; open: boolean }[];
@@ -27,7 +31,8 @@ export function captureBenchUi(doc: Document): BenchUiContext {
     .filter(field => !field.matches('[type=file],[type=password]') && !field.closest('[data-execution-profile]'))
     .map(field => ({ selector: selector(field), value: field.value, ...(field.localName === 'input' ? { checked: (field as HTMLInputElement).checked } : {}) }));
   const panels = Array.from(doc.querySelectorAll<HTMLDetailsElement | HTMLDialogElement>('details,dialog')).map(panel => ({ selector: selector(panel), open: panel.open }));
-  const scroll = Array.from(doc.querySelectorAll<HTMLElement>('body,main,aside,section,form,dialog,details,div')).filter(element => element.scrollTop || element.scrollLeft)
+  const scroll = Array.from(doc.querySelectorAll<HTMLElement>('body,main,aside,section,form,dialog,details,div'))
+    .filter(element => element.scrollTop || element.scrollLeft)
     .map(element => ({ selector: selector(element), x: element.scrollLeft, y: element.scrollTop }));
   return { fields, panels, scroll, extra: doc.defaultView?.magnaBenchContext?.capture?.() };
 }

@@ -7,13 +7,20 @@ import { getLanguage } from '../../src/v2/i18n';
 import { markAllStagesStale, resetSettings } from '../../src/v2/settingsReset';
 import { regionalPopulation } from '../../src/v2/regionalPopulation';
 
-const fresh = (): V2Settings => { const s = defaultSettings(); applySceneClock(s, DEFAULT_SCENE); return s; };
+const fresh = (): V2Settings => {
+  const s = defaultSettings();
+  applySceneClock(s, DEFAULT_SCENE);
+  return s;
+};
 
 describe('settings reset', () => {
   it('restores the fresh-page defaults and keeps the runtime choice and the interface language', () => {
     const language = getLanguage();
     const edited = fresh();
-    edited.options.seed = 'edited'; edited.options.culture = 'roman'; edited.extent = 12000; edited.settlementCount = 7;
+    edited.options.seed = 'edited';
+    edited.options.culture = 'roman';
+    edited.extent = 12000;
+    edited.settlementCount = 7;
     edited.local = { main: { population: 9000 } };
     edited.region = { placement: { mode: 'counts' } } as V2Settings['region'];
     edited.urban = { backend: 'native', local: { main: {} }, buildings: { 'main/1': {} as never } };
@@ -37,8 +44,7 @@ describe('settings reset', () => {
   it('drops the chosen settlement counts, population and density: the automatic list applies again', () => {
     const edited = fresh();
     edited.local = { main: { population: 4000 } };
-    edited.region = { demography: { population: 0, density: 3, counts: { city: 0, town: 5, village: 0, hamlet: 0, farmstead: 0 }, isolatedCount: 9, followCulture: false },
-      placement: { mode: 'counts', counts: { village: 4 } } } as V2Settings['region'];
+    edited.region = { demography: { population: 0, density: 3, counts: { city: 0, town: 5, village: 0, hamlet: 0, farmstead: 0 }, isolatedCount: 9, followCulture: false }, placement: { mode: 'counts', counts: { village: 4 } } } as V2Settings['region'];
     const next = resetSettings(edited);
     expect(next.region?.demography).toBeUndefined();
     expect(next.region?.placement).toBeUndefined();

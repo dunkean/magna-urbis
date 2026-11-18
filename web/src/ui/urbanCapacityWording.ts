@@ -5,9 +5,16 @@ import { urbanText } from './urbanPanelLocale';
 export function urbanCapacityWarningText(value: string): string {
   const match = /^Capacité : (.*) — ([0-9]+) % des ménages logés\.$/u.exec(value);
   if (!match) return value;
-  const steps = match[1].replace('les îlots réels logent moins que la prévision du tissu', urbanText([
-    'l’estimation parcellaire sur les îlots réels est inférieure à la prévision du tissu','the parcel estimate on actual blocks is below the fabric forecast','实际街区的地块估算低于街区结构预测','la estimación parcelaria de las manzanas reales es inferior a la previsión del tejido','a estimativa de lotes nas quadras reais é inferior à previsão do tecido',
-  ]));
+  const steps = match[1].replace(
+    'les îlots réels logent moins que la prévision du tissu',
+    urbanText([
+      'l’estimation parcellaire sur les îlots réels est inférieure à la prévision du tissu',
+      'the parcel estimate on actual blocks is below the fabric forecast',
+      '实际街区的地块估算低于街区结构预测',
+      'la estimación parcelaria de las manzanas reales es inferior a la previsión del tejido',
+      'a estimativa de lotes nas quadras reais é inferior à previsão do tecido',
+    ]),
+  );
   return urbanText([
     `Capacité parcellaire estimée après affectation (ancien rapport) : ${steps} — ${match[2]} % du besoin en ménages couvert selon le modèle. Capacité habitante non évaluée.`,
     `Estimated parcel capacity after allocation (legacy report): ${steps} — ${match[2]}% of household need covered by the model. Housing capacity not assessed.`,
@@ -17,4 +24,11 @@ export function urbanCapacityWarningText(value: string): string {
   ]);
 }
 export const PARCEL_CAPACITY_SCOPE = 'Les valeurs parcellaires décrivent le modèle d’affectation ; elles ne prouvent pas des ménages logés.';
-export const urbanCapacityScopeText = (): string => urbanText([PARCEL_CAPACITY_SCOPE,'Parcel values describe the allocation model; they do not prove that households are housed.','地块数值描述分配模型；不能证明家庭已获得住房。','Los valores parcelarios describen el modelo de asignación; no prueban que haya hogares alojados.','Os valores dos lotes descrevem o modelo de alocação; não comprovam que domicílios estejam alojados.']);
+export const urbanCapacityScopeText = (): string =>
+  urbanText([
+    PARCEL_CAPACITY_SCOPE,
+    'Parcel values describe the allocation model; they do not prove that households are housed.',
+    '地块数值描述分配模型；不能证明家庭已获得住房。',
+    'Los valores parcelarios describen el modelo de asignación; no prueban que haya hogares alojados.',
+    'Os valores dos lotes descrevem o modelo de alocação; não comprovam que domicílios estejam alojados.',
+  ]);

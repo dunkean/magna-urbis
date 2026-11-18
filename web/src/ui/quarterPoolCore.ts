@@ -3,25 +3,36 @@ import type { World, UrbanLayer } from '../gen/types';
 import type { QuarterExecutor } from './megaQueue';
 import { megaHosts } from '../gen/urban/mega/detail';
 
-export type QuarterRequest =
-  | { type: 'world'; revision: number; world: World }
-  | { type: 'quarter'; revision: number; job: number; key: number };
-export interface QuarterResult { type: 'quarter'; revision: number; job: number; key: number; layer?: UrbanLayer | null; error?: string; fatal?: boolean }
+export type QuarterRequest = { type: 'world'; revision: number; world: World } | { type: 'quarter'; revision: number; job: number; key: number };
+export interface QuarterResult {
+  type: 'quarter';
+  revision: number;
+  job: number;
+  key: number;
+  layer?: UrbanLayer | null;
+  error?: string;
+  fatal?: boolean;
+}
 export type QuarterWorkerHandle = Pick<Worker, 'postMessage' | 'terminate' | 'onmessage' | 'onerror' | 'onmessageerror'>;
 interface Job {
-  id: number; key: number; revision: number;
-  resolve: (layer: UrbanLayer | null) => void; reject: (error: Error) => void;
+  id: number;
+  key: number;
+  revision: number;
+  resolve: (layer: UrbanLayer | null) => void;
+  reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
-interface Slot { worker: QuarterWorkerHandle; revision: number; job?: Job }
+interface Slot {
+  worker: QuarterWorkerHandle;
+  revision: number;
+  job?: Job;
+}
 
 /** Leave CPU capacity for rendering, and avoid multiplying worker heaps on small devices. */
 export function quarterWorkerCount(cores: number, memoryGiB?: number): number {
   const threads = Number.isFinite(cores) ? Math.max(1, Math.floor(cores)) : 1;
   const cpuLimit = threads >= 8 ? 4 : threads >= 4 ? 2 : 1;
-  const memoryLimit = memoryGiB !== undefined && Number.isFinite(memoryGiB) && memoryGiB > 0
-    ? memoryGiB <= 2 ? 1 : memoryGiB <= 4 ? 2 : 4
-    : 4;
+  const memoryLimit = memoryGiB !== undefined && Number.isFinite(memoryGiB) && memoryGiB > 0 ? (memoryGiB <= 2 ? 1 : memoryGiB <= 4 ? 2 : 4) : 4;
   return Math.min(cpuLimit, memoryLimit);
 }
 
@@ -29,11 +40,15 @@ export function quarterWorkerCount(cores: number, memoryGiB?: number): number {
 export function worldForQuarters(world: World): World {
   const { flow: _f, receiver: _r, filled: _fi, ...terrain } = world.terrain;
   return {
-    seed: world.seed, options: world.options, mapSize: world.mapSize,
-    terrain: terrain as World['terrain'], site: world.site,
-    roads: world.roads, bridges: world.bridges,
+    seed: world.seed,
+    options: world.options,
+    mapSize: world.mapSize,
+    terrain: terrain as World['terrain'],
+    site: world.site,
+    roads: world.roads,
+    bridges: world.bridges,
     urban: world.urban?.macro ? world.urban : undefined,
-    settlements: world.settlements?.map((s) => ({ ...s, urban: s.urban?.macro ? s.urban : undefined })),
+    settlements: world.settlements?.map(s => ({ ...s, urban: s.urban?.macro ? s.urban : undefined })),
     stats: {},
   };
 }
@@ -47,7 +62,12 @@ export class QuarterPool implements QuarterExecutor {
   private slots: Slot[] = [];
   private stopped = false;
 
-  constructor(world: World, private makeWorker: () => QuarterWorkerHandle, concurrency = 2, private timeoutMs = 60000) {
+  constructor(
+    world: World,
+    private makeWorker: () => QuarterWorkerHandle,
+    concurrency = 2,
+    private timeoutMs = 60000,
+  ) {
     this.world = worldForQuarters(world);
     this.hosts = megaHosts(world);
     this.concurrency = Number.isFinite(concurrency) ? Math.max(1, Math.min(8, Math.floor(concurrency))) : 1;
@@ -65,7 +85,7 @@ export class QuarterPool implements QuarterExecutor {
     if (this.stopped) return Promise.reject(new Error('quarter workers stopped'));
     return new Promise((resolve, reject) => {
       try {
-        let slot = this.slots.find((s) => !s.job);
+        let slot = this.slots.find(s => !s.job);
         if (!slot) {
           if (this.slots.length >= this.concurrency) throw new Error('quarter workers busy');
           const worker = this.makeWorker();
@@ -76,7 +96,8 @@ export class QuarterPool implements QuarterExecutor {
           worker.onerror = (): void => this.fail(new Error('quarter worker failed'));
           worker.onmessageerror = (): void => this.fail(new Error('quarter worker message could not be cloned'));
         }
-        const id = ++this.serial, revision = this.revision;
+        const id = ++this.serial,
+          revision = this.revision;
         const timer = setTimeout(() => this.fail(new Error('quarter worker timed out')), this.timeoutMs);
         slot.job = { id, key, revision, resolve, reject, timer };
         if (slot.revision !== revision) {
@@ -91,21 +112,31 @@ export class QuarterPool implements QuarterExecutor {
     });
   }
 
-  stop(): void { this.fail(new Error('quarter workers stopped')); }
+  stop(): void {
+    this.fail(new Error('quarter workers stopped'));
+  }
 
   private receive(slot: Slot, result: QuarterResult): void {
     const job = slot.job;
     if (this.stopped || !job || result.type !== 'quarter' || result.job !== job.id || result.key !== job.key || result.revision !== job.revision) return;
-    if (result.fatal) { this.fail(new Error(result.error ?? 'quarter world not ready')); return; }
-    clearTimeout(job.timer); slot.job = undefined;
+    if (result.fatal) {
+      this.fail(new Error(result.error ?? 'quarter world not ready'));
+      return;
+    }
+    clearTimeout(job.timer);
+    slot.job = undefined;
     // Isolate this quarter; the queue retries it once using the complete original World.
-    job.resolve(result.error ? null : result.layer ?? null);
+    job.resolve(result.error ? null : (result.layer ?? null));
   }
 
   private fail(error: Error): void {
     this.stopped = true;
     for (const slot of this.slots) {
-      if (slot.job) { clearTimeout(slot.job.timer); slot.job.reject(error); slot.job = undefined; }
+      if (slot.job) {
+        clearTimeout(slot.job.timer);
+        slot.job.reject(error);
+        slot.job = undefined;
+      }
       slot.worker.terminate();
     }
     this.slots = [];

@@ -37,7 +37,10 @@ const decoded = new Map<string, DecodedArchive>();
 // invalid/colliding payload cannot borrow another caller's integrity check.
 const decoding = new Map<string, Map<string, Promise<DecodedArchive>>>();
 let cacheEpoch = 0;
-let cacheBytes = 0, hits = 0, misses = 0, evictions = 0;
+let cacheBytes = 0,
+  hits = 0,
+  misses = 0,
+  evictions = 0;
 
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -60,7 +63,8 @@ function exactJsonKey(value: unknown): string {
 }
 function intern<T>(values: Map<string, T>, value: T): T {
   if (!value || typeof value !== 'object') return value;
-  const key = exactJsonKey(value), previous = values.get(key);
+  const key = exactJsonKey(value),
+    previous = values.get(key);
   if (previous !== undefined) return previous;
   values.set(key, value);
   return value;
@@ -88,38 +92,38 @@ function shareVisibleChunk(buildings: PlacedBuilding[], start: number): void {
     if (building.simplification !== 'architectural_plan') continue;
     const surfaces = new Map<string, Surface>();
     const surface = (value: Surface) => intern(surfaces, value);
-    const footprint = surface(building.footprint), roof_footprint = surface(building.roof_footprint);
-    const courtyards = surface(building.courtyards), circulation = surface(building.circulation);
-    const volumes = building.volumes && mapChanged(building.volumes, volume => {
-      const footprint = surface(volume.footprint);
-      const levels = mapChanged(volume.levels, level => {
-        const footprint = surface(level.footprint);
-        const slots = level.materials ? intern(materials, level.materials) : level.materials;
-        return footprint === level.footprint && slots === level.materials ? level
-          : { ...level, footprint, ...(slots !== level.materials ? { materials: slots } : {}) };
+    const footprint = surface(building.footprint),
+      roof_footprint = surface(building.roof_footprint);
+    const courtyards = surface(building.courtyards),
+      circulation = surface(building.circulation);
+    const volumes =
+      building.volumes &&
+      mapChanged(building.volumes, volume => {
+        const footprint = surface(volume.footprint);
+        const levels = mapChanged(volume.levels, level => {
+          const footprint = surface(level.footprint);
+          const slots = level.materials ? intern(materials, level.materials) : level.materials;
+          return footprint === level.footprint && slots === level.materials ? level : { ...level, footprint, ...(slots !== level.materials ? { materials: slots } : {}) };
+        });
+        const slots = intern(materials, volume.materials),
+          roof_spec = intern(roofs, volume.roof_spec);
+        const foundationFootprint = surface(volume.foundation.footprint);
+        const foundation = foundationFootprint === volume.foundation.footprint ? volume.foundation : { ...volume.foundation, footprint: foundationFootprint };
+        return footprint === volume.footprint && levels === volume.levels && slots === volume.materials && roof_spec === volume.roof_spec && foundation === volume.foundation ? volume : { ...volume, footprint, levels, materials: slots, roof_spec, foundation };
       });
-      const slots = intern(materials, volume.materials), roof_spec = intern(roofs, volume.roof_spec);
-      const foundationFootprint = surface(volume.foundation.footprint);
-      const foundation = foundationFootprint === volume.foundation.footprint ? volume.foundation : { ...volume.foundation, footprint: foundationFootprint };
-      return footprint === volume.footprint && levels === volume.levels && slots === volume.materials && roof_spec === volume.roof_spec && foundation === volume.foundation
-        ? volume : { ...volume, footprint, levels, materials: slots, roof_spec, foundation };
-    });
-    const structural_foundations = building.structural_foundations && mapChanged(building.structural_foundations, foundation => {
-      const footprint = surface(foundation.footprint);
-      return footprint === foundation.footprint ? foundation : { ...foundation, footprint };
-    });
-    if (footprint !== building.footprint || roof_footprint !== building.roof_footprint || courtyards !== building.courtyards || circulation !== building.circulation
-      || volumes !== building.volumes || structural_foundations !== building.structural_foundations) {
-      buildings[position] = { ...building, footprint, roof_footprint, courtyards, circulation, volumes,
-        ...(structural_foundations !== building.structural_foundations ? { structural_foundations } : {}) };
+    const structural_foundations =
+      building.structural_foundations &&
+      mapChanged(building.structural_foundations, foundation => {
+        const footprint = surface(foundation.footprint);
+        return footprint === foundation.footprint ? foundation : { ...foundation, footprint };
+      });
+    if (footprint !== building.footprint || roof_footprint !== building.roof_footprint || courtyards !== building.courtyards || circulation !== building.circulation || volumes !== building.volumes || structural_foundations !== building.structural_foundations) {
+      buildings[position] = { ...building, footprint, roof_footprint, courtyards, circulation, volumes, ...(structural_foundations !== building.structural_foundations ? { structural_foundations } : {}) };
     }
   }
 }
 export function isArchivedPlan(value: unknown): value is ArchivedPlanReference {
-  return record(value) && value.format === COMPACT_PLAN_ARCHIVE_FORMAT
-    && typeof value.archive_id === 'string' && ID_PATTERN.test(value.archive_id)
-    && Number.isInteger(value.index) && (value.index as number) >= 0
-    && (value.index as number) < PLAN_ARCHIVE_MAX_RECORDS;
+  return record(value) && value.format === COMPACT_PLAN_ARCHIVE_FORMAT && typeof value.archive_id === 'string' && ID_PATTERN.test(value.archive_id) && Number.isInteger(value.index) && (value.index as number) >= 0 && (value.index as number) < PLAN_ARCHIVE_MAX_RECORDS;
 }
 function reference(value: unknown): ArchivedPlanReference | undefined {
   if (!record(value) || value.format !== COMPACT_PLAN_ARCHIVE_FORMAT) return undefined;
@@ -137,7 +141,11 @@ function base64(bytes: Uint8Array): string {
 function fromBase64(value: string): Uint8Array<ArrayBuffer> {
   if (value.length > Math.ceil(MAX_COMPRESSED_BYTES / 3) * 4) throw new Error('Retained-plan archive exceeds compressed byte budget.');
   let binary: string;
-  try { binary = atob(value); } catch { throw new Error('Invalid retained-plan archive base64.'); }
+  try {
+    binary = atob(value);
+  } catch {
+    throw new Error('Invalid retained-plan archive base64.');
+  }
   if (binary.length > MAX_COMPRESSED_BYTES) throw new Error('Retained-plan archive exceeds compressed byte budget.');
   return Uint8Array.from(binary, character => character.charCodeAt(0));
 }
@@ -183,24 +191,29 @@ export async function archivePlanBatch(batch: PlacementBatch): Promise<Placement
   }
   const encoder = new TextEncoder();
   for (let offset = 0; offset < pending.length;) {
-    const positions: number[] = [], records: Uint8Array<ArrayBuffer>[] = [];
+    const positions: number[] = [],
+      records: Uint8Array<ArrayBuffer>[] = [];
     let byteLength = 0;
     while (offset < pending.length && positions.length < PLAN_ARCHIVE_MAX_RECORDS) {
       const bytes = encoder.encode(JSON.stringify(buildings[pending[offset]].resolved));
       if (bytes.length > MAX_RAW_BYTES) throw new Error('Retained plan exceeds uncompressed byte budget.');
       const nextSize = byteLength + bytes.length + (records.length ? 1 : 0);
       if (nextSize > MAX_RAW_BYTES) break;
-      positions.push(pending[offset++]); records.push(bytes); byteLength = nextSize;
+      positions.push(pending[offset++]);
+      records.push(bytes);
+      byteLength = nextSize;
     }
     const raw = new Uint8Array(byteLength);
     let cursor = 0;
     for (const [index, bytes] of records.entries()) {
       if (index) raw[cursor++] = 10;
-      raw.set(bytes, cursor); cursor += bytes.length;
+      raw.set(bytes, cursor);
+      cursor += bytes.length;
     }
     const compressed = await gzipPlanBytes(raw);
     if (compressed.byteLength > MAX_COMPRESSED_BYTES) throw new Error('Retained-plan archive exceeds compressed byte budget.');
-    const id = await archiveId(compressed), source = base64(compressed);
+    const id = await archiveId(compressed),
+      source = base64(compressed);
     if (archives[id] !== undefined && archives[id] !== source) throw new Error('Conflicting retained-plan archive identity.');
     archives[id] = source;
     for (const [index, position] of positions.entries()) {
@@ -219,7 +232,8 @@ function recordSpans(raw: Uint8Array): Uint32Array<ArrayBuffer> {
   for (let offset = 0; offset < raw.length; offset++) {
     if (raw[offset] !== 10) continue;
     if (offset === start) throw new Error('Empty retained-plan archive record.');
-    spans.push(start, offset); start = offset + 1;
+    spans.push(start, offset);
+    start = offset + 1;
     if (spans.length >= PLAN_ARCHIVE_MAX_RECORDS * 2) throw new Error('Too many retained plans in archive.');
   }
   if (start === raw.length) throw new Error('Empty retained-plan archive record.');
@@ -230,20 +244,27 @@ function recordSpans(raw: Uint8Array): Uint32Array<ArrayBuffer> {
 function retain(id: string, value: DecodedArchive): void {
   if (value.bytes > PLAN_ARCHIVE_CACHE_BYTES) return;
   const old = decoded.get(id);
-  if (old) { decoded.delete(id); cacheBytes -= old.bytes; }
+  if (old) {
+    decoded.delete(id);
+    cacheBytes -= old.bytes;
+  }
   while (decoded.size >= PLAN_ARCHIVE_CACHE_COUNT || cacheBytes + value.bytes > PLAN_ARCHIVE_CACHE_BYTES) {
     const oldest = decoded.keys().next().value;
     if (oldest === undefined) break;
     cacheBytes -= decoded.get(oldest)!.bytes;
-    decoded.delete(oldest); evictions++;
+    decoded.delete(oldest);
+    evictions++;
   }
-  decoded.set(id, value); cacheBytes += value.bytes;
+  decoded.set(id, value);
+  cacheBytes += value.bytes;
 }
 
 function decode(id: string, source: string): Promise<DecodedArchive> {
   const cached = decoded.get(id);
   if (cached?.source === source) {
-    decoded.delete(id); decoded.set(id, cached); hits++;
+    decoded.delete(id);
+    decoded.set(id, cached);
+    hits++;
     return Promise.resolve(cached);
   }
   const sources = decoding.get(id) ?? new Map<string, Promise<DecodedArchive>>();
@@ -258,7 +279,8 @@ function decode(id: string, source: string): Promise<DecodedArchive> {
     sources.delete(source);
     if (!sources.size) decoding.delete(id);
   });
-  sources.set(source, promise); decoding.set(id, sources);
+  sources.set(source, promise);
+  decoding.set(id, sources);
   return promise;
 }
 
@@ -269,7 +291,7 @@ async function decodeUncached(id: string, source: string, epoch: number): Promis
   // fflate's single-member decoder allocates from this footer; validate it before
   // entering its worker, then verify the actual result too.
   if (!expectedSize || expectedSize > MAX_RAW_BYTES) throw new Error('Retained-plan archive exceeds uncompressed byte budget.');
-  if (await archiveId(compressed) !== id) throw new Error('Retained-plan archive integrity mismatch.');
+  if ((await archiveId(compressed)) !== id) throw new Error('Retained-plan archive integrity mismatch.');
   const raw = await gunzipPlanBytes(compressed);
   if (raw.byteLength !== expectedSize || raw.byteLength > MAX_RAW_BYTES) throw new Error('Invalid retained-plan archive output size.');
   const spans = recordSpans(raw);
@@ -291,7 +313,8 @@ export async function resolveArchivedPlan(building: Pick<PlacedBuilding, 'resolv
   if (typeof source !== 'string') throw new Error(`Missing retained-plan archive ${ref.archive_id}; register the restored scene first.`);
   registered.set(ref, source);
   const value = await decode(ref.archive_id, source);
-  const start = value.spans[ref.index * 2], end = value.spans[ref.index * 2 + 1];
+  const start = value.spans[ref.index * 2],
+    end = value.spans[ref.index * 2 + 1];
   if (start === undefined || end === undefined) throw new Error('Invalid retained-plan archive record index.');
   const resolved: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(value.raw.subarray(start, end)));
   if (!record(resolved) || resolved.format !== 'compact-plan-1') throw new Error('Archive record is not a native compact plan.');
@@ -305,6 +328,11 @@ export function planArchiveCacheStats() {
 export function clearPlanArchiveCache(): void {
   // Existing consumers still receive their result; clearing ownership does
   // not cancel shared physical work or another client's awaited promise.
-  cacheEpoch++; decoding.clear();
-  decoded.clear(); cacheBytes = 0; hits = 0; misses = 0; evictions = 0;
+  cacheEpoch++;
+  decoding.clear();
+  decoded.clear();
+  cacheBytes = 0;
+  hits = 0;
+  misses = 0;
+  evictions = 0;
 }

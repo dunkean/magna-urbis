@@ -5,8 +5,7 @@ import { lpoly, splitByChord } from '../geo/split';
 import { mpArea, tryDifference, tryIntersection, union } from '../geo/bool';
 
 /** The caller validates physical reserve, actual owners, open land and whole-block access. */
-export function thickenNarrowWing(poly: Polygon, owner: Polygon, occupied: Polygon[],
-  validate: (candidate: Polygon) => boolean): Polygon | null {
+export function thickenNarrowWing(poly: Polygon, owner: Polygon, occupied: Polygon[], validate: (candidate: Polygon) => boolean): Polygon | null {
   const originalArea = area(poly);
   if (poly.length < 3 || owner.length < 3 || !isSimple(poly) || !Number.isFinite(originalArea) || originalArea < 12) return null;
   let source = poly;
@@ -18,7 +17,10 @@ export function thickenNarrowWing(poly: Polygon, owner: Polygon, occupied: Polyg
     if (!cut) break;
     const parts = cut.map(p => p.pts).sort((a, b) => area(b) - area(a));
     if (Math.abs(area(parts[0]) + area(parts[1]) - area(source)) > 1e-5) break;
-    if (area(parts[1]) >= 12 && area(parts[1]) <= 0.15 * originalArea) { wing = parts[1]; break; }
+    if (area(parts[1]) >= 12 && area(parts[1]) <= 0.15 * originalArea) {
+      wing = parts[1];
+      break;
+    }
     // Boolean cleanup can leave a small spur before the real habitable wing.
     // Ignore it for locating the wing; every proposal still retains the whole original roof.
     if (area(parts[1]) >= 12) break;
@@ -28,63 +30,80 @@ export function thickenNarrowWing(poly: Polygon, owner: Polygon, occupied: Polyg
   // original boundary still supplies candidate edges; physical proofs decide.
   wing ??= source;
   const straightRuns = poly.flatMap((a, i) => {
-    const mid = poly[(i + 1) % poly.length], b = poly[(i + 2) % poly.length];
-    const ux = mid.x - a.x, uy = mid.y - a.y, vx = b.x - mid.x, vy = b.y - mid.y;
-    const u = Math.hypot(ux, uy), v = Math.hypot(vx, vy);
-    return u > 0.1 && v > 0.1 && ux * vx + uy * vy > 0
-      && Math.abs(ux * vy - uy * vx) <= 0.01 * u * v ? [{ a, b, i }] : [];
+    const mid = poly[(i + 1) % poly.length],
+      b = poly[(i + 2) % poly.length];
+    const ux = mid.x - a.x,
+      uy = mid.y - a.y,
+      vx = b.x - mid.x,
+      vy = b.y - mid.y;
+    const u = Math.hypot(ux, uy),
+      v = Math.hypot(vx, vy);
+    return u > 0.1 && v > 0.1 && ux * vx + uy * vy > 0 && Math.abs(ux * vy - uy * vx) <= 0.01 * u * v ? [{ a, b, i }] : [];
   });
-  const ranked = (raw: { a: Polygon[number]; b: Polygon[number]; i: number }[]) => raw
-    .map(e => ({ ...e, length: Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) }))
-    .filter(e => e.length >= 5).sort((a, b) => b.length - a.length);
+  const ranked = (raw: { a: Polygon[number]; b: Polygon[number]; i: number }[]) =>
+    raw
+      .map(e => ({ ...e, length: Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) }))
+      .filter(e => e.length >= 5)
+      .sort((a, b) => b.length - a.length);
   // A split can omit a straight outer run when an extra collinear vertex lies on it.
   // Try those short runs first, then retain the established wing-edge search.
-  const roofFrame = obb(poly), axes = [roofFrame.u, { x: -roofFrame.u.y, y: roofFrame.u.x }];
+  const roofFrame = obb(poly),
+    axes = [roofFrame.u, { x: -roofFrame.u.y, y: roofFrame.u.x }];
   for (const [i, a] of poly.entries()) {
-    const b = poly[(i + 1) % poly.length], length = Math.hypot(b.x - a.x, b.y - a.y);
+    const b = poly[(i + 1) % poly.length],
+      length = Math.hypot(b.x - a.x, b.y - a.y);
     if (length < 5) continue;
     const axis = { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
-    if (!axes.some((u) => Math.abs(u.x * axis.y - u.y * axis.x) < 1e-6)) axes.push(axis);
+    if (!axes.some(u => Math.abs(u.x * axis.y - u.y * axis.x) < 1e-6)) axes.push(axis);
   }
-  const alignedRuns = poly.flatMap((a, i) => axes.flatMap((axis) => {
-    const distances = poly.map((p) => (p.x - a.x) * axis.x + (p.y - a.y) * axis.y);
-    return [Math.min(...distances), Math.max(...distances)].map((d) => ({
-      a, b: { x: a.x + d * axis.x, y: a.y + d * axis.y }, i,
-    }));
-  }));
-  const edges = [...ranked(straightRuns).filter(e => e.length <= 12),
+  const alignedRuns = poly.flatMap((a, i) =>
+    axes.flatMap(axis => {
+      const distances = poly.map(p => (p.x - a.x) * axis.x + (p.y - a.y) * axis.y);
+      return [Math.min(...distances), Math.max(...distances)].map(d => ({ a, b: { x: a.x + d * axis.x, y: a.y + d * axis.y }, i }));
+    }),
+  );
+  const edges = [
+    ...ranked(straightRuns).filter(e => e.length <= 12),
     ...ranked(wing.map((a, i) => ({ a, b: wing![(i + 1) % wing!.length], i }))),
     ...ranked(poly.map((a, i) => ({ a, b: poly[(i + 1) % poly.length], i }))),
-    ...ranked(alignedRuns).sort((a, b) => a.length - b.length)];
+    ...ranked(alignedRuns).sort((a, b) => a.length - b.length),
+  ];
   let trials = 0;
-  let best: Polygon | null = null, bestArea = originalArea;
-  for (const edge of edges) for (const side of [1, -1]) for (const depth of [3.6, 2, 2.5, 3, 3.5, 4, 4.5, 5])
-    for (const cap of [3, 0, 0.5, 1, 1.5, 2, 2.5, 4]) {
-      if (++trials > 64000) return best;
-      const t = { x: (edge.b.x - edge.a.x) / edge.length, y: (edge.b.y - edge.a.y) / edge.length };
-      const n = { x: side * t.y, y: -side * t.x };
-      const a = { x: edge.a.x - t.x * cap, y: edge.a.y - t.y * cap };
-      const b = { x: edge.b.x + t.x * cap, y: edge.b.y + t.y * cap };
-      const slab: Polygon = [a, b, { x: b.x + n.x * depth, y: b.y + n.y * depth },
-        { x: a.x + n.x * depth, y: a.y + n.y * depth }];
-      const joined = union(poly, slab);
-      if (joined.length !== 1 || joined[0].holes.length) continue;
-      const candidate = joined[0].outer;
-      if (!isSimple(candidate)) continue;
-      const neck = minNeck(candidate), box = obb(candidate);
-      if ((neck?.w ?? Infinity) < 3.59 || 2 * inscribed(candidate, [], 0.05, 1.8).r < 3.6
-        || 2 * box.hv < 4.45 || box.hu / Math.max(1e-6, box.hv) > 3) continue;
-      const added = tryDifference(candidate, poly), lost = tryDifference(poly, candidate);
-      if (added.failed || lost.failed || mpArea(lost.pieces) > 1e-6
-        || mpArea(added.pieces) < 1e-6 || mpArea(added.pieces) > 0.1 * originalArea
-        || Math.abs(area(candidate) - originalArea - mpArea(added.pieces)) > 1e-5) continue;
-      const escaped = tryDifference(added.pieces, owner);
-      if (escaped.failed || mpArea(escaped.pieces) > 1e-6) continue;
-      if (occupied.some((other) => {
-        const blocked = tryIntersection(added.pieces, other);
-        return blocked.failed || mpArea(blocked.pieces) > 1e-6;
-      })) continue;
-      if (area(candidate) > bestArea && validate(candidate)) { best = candidate; bestArea = area(candidate); }
-    }
+  let best: Polygon | null = null,
+    bestArea = originalArea;
+  for (const edge of edges)
+    for (const side of [1, -1])
+      for (const depth of [3.6, 2, 2.5, 3, 3.5, 4, 4.5, 5])
+        for (const cap of [3, 0, 0.5, 1, 1.5, 2, 2.5, 4]) {
+          if (++trials > 64000) return best;
+          const t = { x: (edge.b.x - edge.a.x) / edge.length, y: (edge.b.y - edge.a.y) / edge.length };
+          const n = { x: side * t.y, y: -side * t.x };
+          const a = { x: edge.a.x - t.x * cap, y: edge.a.y - t.y * cap };
+          const b = { x: edge.b.x + t.x * cap, y: edge.b.y + t.y * cap };
+          const slab: Polygon = [a, b, { x: b.x + n.x * depth, y: b.y + n.y * depth }, { x: a.x + n.x * depth, y: a.y + n.y * depth }];
+          const joined = union(poly, slab);
+          if (joined.length !== 1 || joined[0].holes.length) continue;
+          const candidate = joined[0].outer;
+          if (!isSimple(candidate)) continue;
+          const neck = minNeck(candidate),
+            box = obb(candidate);
+          if ((neck?.w ?? Infinity) < 3.59 || 2 * inscribed(candidate, [], 0.05, 1.8).r < 3.6 || 2 * box.hv < 4.45 || box.hu / Math.max(1e-6, box.hv) > 3) continue;
+          const added = tryDifference(candidate, poly),
+            lost = tryDifference(poly, candidate);
+          if (added.failed || lost.failed || mpArea(lost.pieces) > 1e-6 || mpArea(added.pieces) < 1e-6 || mpArea(added.pieces) > 0.1 * originalArea || Math.abs(area(candidate) - originalArea - mpArea(added.pieces)) > 1e-5) continue;
+          const escaped = tryDifference(added.pieces, owner);
+          if (escaped.failed || mpArea(escaped.pieces) > 1e-6) continue;
+          if (
+            occupied.some(other => {
+              const blocked = tryIntersection(added.pieces, other);
+              return blocked.failed || mpArea(blocked.pieces) > 1e-6;
+            })
+          )
+            continue;
+          if (area(candidate) > bestArea && validate(candidate)) {
+            best = candidate;
+            bestArea = area(candidate);
+          }
+        }
   return best;
 }

@@ -44,10 +44,12 @@ export const runtimeMessageAllowlist = new Map([
 ]);
 
 function files(directory, extension) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    const path = resolve(directory, entry.name);
-    return entry.isDirectory() ? files(path, extension) : path.endsWith(extension) ? [path] : [];
-  }).sort();
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap(entry => {
+      const path = resolve(directory, entry.name);
+      return entry.isDirectory() ? files(path, extension) : path.endsWith(extension) ? [path] : [];
+    })
+    .sort();
 }
 
 /** Rust lexer: comments, raw strings and character literals cannot masquerade as code. */
@@ -56,18 +58,29 @@ function rustTokens(source) {
   const lex = /\/\/[^\n]*|\/\*|(?:br|r)(#*)"|b?"(?:\\[\s\S]|[^"\\])*"|'(?:\\(?:u\{[\da-fA-F]+\}|x[\da-fA-F]{2}|.)|[^'\\\r\n])'|[A-Za-z_][A-Za-z_0-9]*|[^\s]/gy;
   let offset = 0;
   while (offset < source.length) {
-    if (/\s/u.test(source[offset])) { offset++; continue; }
+    if (/\s/u.test(source[offset])) {
+      offset++;
+      continue;
+    }
     lex.lastIndex = offset;
     const match = lex.exec(source);
-    if (!match) { offset++; continue; }
-    const start = offset; offset = lex.lastIndex;
+    if (!match) {
+      offset++;
+      continue;
+    }
+    const start = offset;
+    offset = lex.lastIndex;
     if (match[0].startsWith('//')) continue;
     if (match[0] === '/*') {
       let depth = 1;
       while (offset < source.length && depth) {
-        if (source.startsWith('/*', offset)) { depth++; offset += 2; }
-        else if (source.startsWith('*/', offset)) { depth--; offset += 2; }
-        else offset++;
+        if (source.startsWith('/*', offset)) {
+          depth++;
+          offset += 2;
+        } else if (source.startsWith('*/', offset)) {
+          depth--;
+          offset += 2;
+        } else offset++;
       }
       continue;
     }
@@ -77,10 +90,12 @@ function rustTokens(source) {
       value = source.slice(offset, end < 0 ? source.length : end);
       offset = end < 0 ? source.length : end + 1 + match[1].length;
     } else if (/^b?"/u.test(match[0])) {
-      value = match[0].replace(/^b?"|"$/gu, '')
-        .replace(/\\\r?\n\s*/gu, '').replace(/\\u\{([\da-fA-F]+)\}/gu, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+      value = match[0]
+        .replace(/^b?"|"$/gu, '')
+        .replace(/\\\r?\n\s*/gu, '')
+        .replace(/\\u\{([\da-fA-F]+)\}/gu, (_, n) => String.fromCodePoint(parseInt(n, 16)))
         .replace(/\\x([\da-fA-F]{2})/gu, (_, n) => String.fromCharCode(parseInt(n, 16)))
-        .replace(/\\([nrt0"'\\])/gu, (_, c) => ({ n: '\n', r: '\r', t: '\t', 0: '\0' }[c] ?? c));
+        .replace(/\\([nrt0"'\\])/gu, (_, c) => ({ n: '\n', r: '\r', t: '\t', 0: '\0' })[c] ?? c);
     }
     tokens.push({ text: match[0], value, start, end: offset });
   }
@@ -92,7 +107,10 @@ function withoutRustTests(tokens) {
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].text === '#' && tokens[i + 1]?.text === '[') {
       const end = tokens.findIndex((t, j) => j > i && t.text === ']');
-      const attribute = tokens.slice(i, end + 1).map(t => t.text).join('');
+      const attribute = tokens
+        .slice(i, end + 1)
+        .map(t => t.text)
+        .join('');
       if (/^#\[(?:test|cfg\(test\))\]$/u.test(attribute)) {
         i = end;
         while (i < tokens.length && !['{', ';'].includes(tokens[i].text)) i++;
@@ -114,12 +132,16 @@ function withoutRustTests(tokens) {
 }
 
 export function rustMessageLiterals(source) {
-  const tokens = withoutRustTests(rustTokens(source)), result = [];
+  const tokens = withoutRustTests(rustTokens(source)),
+    result = [];
   const stack = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token.value !== undefined) {
-      const context = tokens.slice(Math.max(0, i - 18), i).map(t => t.value === undefined ? t.text : 'STRING').join(' ');
+      const context = tokens
+        .slice(Math.max(0, i - 18), i)
+        .map(t => (t.value === undefined ? t.text : 'STRING'))
+        .join(' ');
       const calls = stack.map(item => item.call).join(' ');
       if (/\b(?:starts_with|ends_with|contains|strip_prefix|strip_suffix|replace|include_str|include_bytes)\b/u.test(stack.at(-1)?.call ?? '')) continue;
       const error = /\b(?:Err|ok_or|ok_or_else|map_err|bail|ensure)\b/u.test(calls);
@@ -127,7 +149,7 @@ export function rustMessageLiterals(source) {
       const trace = /\b(?:println|eprintln|print|eprint|assert|assert_eq|assert_ne|debug_assert|expect|panic)\b/u.test(calls);
       const field = /\b(?:reason|message|warning|detail|label|status)\s*[:=]\s*(?:Some\s*\()?$/u.test(context);
       // Prose also catches indirect error closures and warning/reason helpers.
-      if (!trace && (error || prose || field && /\s/u.test(token.value)) && token.value.trim()) {
+      if (!trace && (error || prose || (field && /\s/u.test(token.value))) && token.value.trim()) {
         result.push({ source: token.value, offset: token.start, format: stack.at(-1)?.call === 'format' });
       }
       continue;
@@ -145,19 +167,25 @@ function messageParameters(tree, parameters = new Map()) {
     const fn = ts.isFunctionDeclaration(node) ? node : ts.isVariableDeclaration(node) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) ? node.initializer : undefined;
     if (fn) {
       const name = ts.isFunctionDeclaration(node) ? node.name?.text : node.name.getText(tree);
-      const indices = fn.parameters.flatMap((parameter, index) => /^(?:message|reason|detail)$/u.test(parameter.name.getText(tree)) && parameter.type?.kind === ts.SyntaxKind.StringKeyword ? [index] : []);
+      const indices = fn.parameters.flatMap((parameter, index) => (/^(?:message|reason|detail)$/u.test(parameter.name.getText(tree)) && parameter.type?.kind === ts.SyntaxKind.StringKeyword ? [index] : []));
       if (name && indices.length) parameters.set(name, indices);
     }
     ts.forEachChild(node, visit);
   }
-  visit(tree); return parameters;
+  visit(tree);
+  return parameters;
 }
 
 export function bridgeMessageLiterals(source, file = 'bridge.ts', sharedParameters) {
-  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS), result = [];
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS),
+    result = [];
   const parameters = messageParameters(tree, new Map(sharedParameters));
-  const bindings = new Map(), resolving = new Set();
-  function bind(node) { if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) bindings.set(node.name.text, node.initializer); ts.forEachChild(node, bind); }
+  const bindings = new Map(),
+    resolving = new Set();
+  function bind(node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) bindings.set(node.name.text, node.initializer);
+    ts.forEachChild(node, bind);
+  }
   bind(tree);
   function collect(node) {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) result.push({ source: node.text, offset: node.getStart(tree), format: false });
@@ -172,17 +200,23 @@ export function bridgeMessageLiterals(source, file = 'bridge.ts', sharedParamete
       result.push({ source: text, offset: node.getStart(tree), format: true });
       // Literal fallback messages inside interpolations are independently user-facing.
       for (const span of node.templateSpans) collectFallback(span.expression);
-    } else if (ts.isConditionalExpression(node)) { collect(node.whenTrue); collect(node.whenFalse); }
-    else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    } else if (ts.isConditionalExpression(node)) {
+      collect(node.whenTrue);
+      collect(node.whenFalse);
+    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
       let slot = 0;
-      const concatenate = value => ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value) ? value.text : ts.isBinaryExpression(value) && value.operatorToken.kind === ts.SyntaxKind.PlusToken ? concatenate(value.left) + concatenate(value.right) : `{value${++slot}}`;
+      const concatenate = value =>
+        ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value) ? value.text : ts.isBinaryExpression(value) && value.operatorToken.kind === ts.SyntaxKind.PlusToken ? concatenate(value.left) + concatenate(value.right) : `{value${++slot}}`;
       result.push({ source: concatenate(node), offset: node.getStart(tree), format: slot > 0 });
-    }
-    else if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)) { collect(node.left); collect(node.right); }
-    else if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) collect(node.expression);
+    } else if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)) {
+      collect(node.left);
+      collect(node.right);
+    } else if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)) collect(node.expression);
     else if (ts.isCallExpression(node) && node.expression.getText(tree) === 'String' && node.arguments[0]) collect(node.arguments[0]);
     else if (ts.isIdentifier(node) && bindings.has(node.text) && !resolving.has(node.text)) {
-      resolving.add(node.text); collect(bindings.get(node.text)); resolving.delete(node.text);
+      resolving.add(node.text);
+      collect(bindings.get(node.text));
+      resolving.delete(node.text);
     }
   }
   function collectFallback(node) {
@@ -194,10 +228,10 @@ export function bridgeMessageLiterals(source, file = 'bridge.ts', sharedParamete
       if (node.arguments?.[0]) collect(node.arguments[0]);
     } else if (ts.isPropertyAssignment(node) && /^(?:reason|message|detail|error)$/u.test(node.name.getText(tree))) {
       // Object schemas/tables use these keys too; only prose is presentation copy.
-      const before = result.length; collect(node.initializer);
+      const before = result.length;
+      collect(node.initializer);
       for (let i = result.length - 1; i >= before; i--) if (!/\s/u.test(result[i].source)) result.splice(i, 1);
-    }
-    else if (ts.isCallExpression(node) && /(?:^|\.)(?:onProgress|progress|reportProgress)$/u.test(node.expression.getText(tree))) {
+    } else if (ts.isCallExpression(node) && /(?:^|\.)(?:onProgress|progress|reportProgress)$/u.test(node.expression.getText(tree))) {
       if (node.arguments[0]) collect(node.arguments[0]);
       for (const argument of node.arguments.slice(1)) visit(argument);
     } else if (ts.isCallExpression(node) && parameters.has(node.expression.getText(tree))) {

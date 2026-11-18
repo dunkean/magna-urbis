@@ -11,8 +11,7 @@ import type { ExternalCityHints } from './types';
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 /** Map width for one imported town, kept tight around it: 3 km at 2,500 inhabitants, about 4 km at
  * 5,000, 6 km at 12,000, 11.5 km at 50,000; rounded to 500 m within 1.5–40 km. */
-export const importExtent = (population: number): number =>
-  clamp(Math.round(3000 * Math.pow(population / 2500, .45) / 500) * 500, 1500, 40000);
+export const importExtent = (population: number): number => clamp(Math.round((3000 * Math.pow(population / 2500, 0.45)) / 500) * 500, 1500, 40000);
 
 /** Turns external city hints into V2 settings: a modified clone of `base`, validated. Absent hints keep `base`. */
 export function applyExternalCity(hints: ExternalCityHints, base: V2Settings): V2Settings {
@@ -41,7 +40,7 @@ export function applyExternalCity(hints: ExternalCityHints, base: V2Settings): V
   }
   if (hints.culture && defaults.cultures.includes(hints.culture)) o.culture = hints.culture;
   if (hints.language && TOPONYM_PROFILES.some(p => p.id === hints.language)) o.language = hints.language;
-  if (hints.sprawl !== undefined && Number.isFinite(hints.sprawl)) o.sprawl = clamp(hints.sprawl, .5, 2);
+  if (hints.sprawl !== undefined && Number.isFinite(hints.sprawl)) o.sprawl = clamp(hints.sprawl, 0.5, 2);
   if (hints.walls !== undefined) o.walls = hints.walls ? 'single' : 'none';
   if (hints.walls !== false && hints.palisade) o.wallStyle = 'palisade';
   if (hints.citadel || hints.urbanCastle) o.castle = 'yes';
@@ -54,21 +53,26 @@ export function applyExternalCity(hints: ExternalCityHints, base: V2Settings): V
   // Magna Urbis reads 0 road exits as automatic, so an isolated source town keeps the automatic exits.
   if (hints.roads !== undefined && Number.isFinite(hints.roads)) o.roads = Math.round(clamp(hints.roads, 0, 20));
   if (hints.relief && defaults.reliefs.includes(hints.relief)) {
-    if (hints.relief !== o.relief) { settings.terrain ??= {}; settings.terrain.relief = hints.relief as NonNullable<V2Settings['terrain']>['relief']; }
-    else if (settings.terrain) delete settings.terrain.relief;
+    if (hints.relief !== o.relief) {
+      settings.terrain ??= {};
+      settings.terrain.relief = hints.relief as NonNullable<V2Settings['terrain']>['relief'];
+    } else if (settings.terrain) delete settings.terrain.relief;
   }
   const name = hints.name?.trim().slice(0, 200);
-  if (name) { settings.naming ??= {}; settings.naming.places = { ...settings.naming.places, main: name }; }
+  if (name) {
+    settings.naming ??= {};
+    settings.naming.places = { ...settings.naming.places, main: name };
+  }
   // Only the imported town for now: a one-place list fixes its population (the automatic plan would
   // derive the places from the map area), with no farmsteads or isolated buildings around it.
   const population = o.population > 0 ? o.population : 2500;
   settings.extent = importExtent(population);
-  settings.region = { ...settings.region,
-    placement: { ...settings.region?.placement, mode: 'list', farmDensity: 0, remotePlaces: 0,
-      list: [{ key: 'main', name: name ?? '', population, culture: o.culture, siteType: 'auto', sitePrefs: {} }] },
+  settings.region = {
+    ...settings.region,
+    placement: { ...settings.region?.placement, mode: 'list', farmDensity: 0, remotePlaces: 0, list: [{ key: 'main', name: name ?? '', population, culture: o.culture, siteType: 'auto', sitePrefs: {} }] },
     // An imported culture is the source's choice: the environment must not re-pick it.
-    demography: { ...settings.region?.demography, isolatedCount: 0,
-      ...(hints.culture && o.culture === hints.culture ? { followCulture: false } : {}) } };
+    demography: { ...settings.region?.demography, isolatedCount: 0, ...(hints.culture && o.culture === hints.culture ? { followCulture: false } : {}) },
+  };
   // The receiver's engine choice is not part of the source: start on Automatic.
   if (settings.runtime) settings.runtime.autoBackend = true;
   validateSettings(settings);

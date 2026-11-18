@@ -1,15 +1,20 @@
 import type { Layout, Parcel } from '../../../rust/bridge/urban';
 
 const escape = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const area = (ring: { x: number; y: number }[]): number => Math.abs(ring.reduce((sum, p, i) => {
-  const q = ring[(i + 1) % ring.length]; return sum + p.x * q.y - q.x * p.y;
-}, 0)) / 2;
+const area = (ring: { x: number; y: number }[]): number =>
+  Math.abs(
+    ring.reduce((sum, p, i) => {
+      const q = ring[(i + 1) % ring.length];
+      return sum + p.x * q.y - q.x * p.y;
+    }, 0),
+  ) / 2;
 const uses: Record<string, string> = { plot: 'Terrain constructible', garden: 'Jardin voulu', place: 'Place', compound: 'Enclos / domaine', market: 'Marché', reserve: 'Réserve', common: 'Commun', residual: 'Résidu non constructible', court: 'Cour et circulation conservées' };
 const accesses: Record<string, string> = { public: 'Rue publique', collective: 'Accès collectif', private: 'Accès privé', unserved: 'Sans desserte', reserved: 'Espace réservé', attached: 'Arrière-fond rattaché' };
 
 /** Read the applied native parcel. No reconstruction from the diagnostic polygons. */
 export function parcelInspectionHtml(parcel: Parcel, layout: Layout, ordinal: number): string {
-  const block = layout.blocks[parcel.block], quarter = block && layout.quarters[block.quarter];
+  const block = layout.blocks[parcel.block],
+    quarter = block && layout.quarters[block.quarter];
   const phase = layout.phases?.[block?.phase ?? quarter?.phase ?? 0];
   const surface = Math.max(0, area(parcel.shape.outer) - parcel.shape.holes.reduce((sum, ring) => sum + area(ring), 0));
   const rows: [string, string][] = [
@@ -18,7 +23,7 @@ export function parcelInspectionHtml(parcel: Parcel, layout: Layout, ordinal: nu
     ['Culture / recette', `${phase?.culture ?? layout.culture} · ${phase?.recipe ?? 'recette du quartier'}`],
     ['Surface cadastrale', `${surface.toFixed(1)} m²${parcel.shape.holes.length ? ` · ${parcel.shape.holes.length} exclusion(s)` : ''}`],
     ['Façade utile', parcel.access ? `${parcel.access.frontLength.toFixed(2)} m` : 'Non conservée dans cet ancien plan'],
-    ['Desserte', parcel.access ? accesses[parcel.access.kind] ?? parcel.access.kind : 'Non qualifiée dans cet ancien plan'],
+    ['Desserte', parcel.access ? (accesses[parcel.access.kind] ?? parcel.access.kind) : 'Non qualifiée dans cet ancien plan'],
   ];
   if (parcel.id) rows.unshift(['Identité', parcel.id]);
   if (parcel.family) rows.push(['Famille foncière', parcel.family]);

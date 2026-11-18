@@ -8,12 +8,16 @@ import { effectiveTerrainSettings, migrateTerrainClimate, defaultTerrainSettings
 import { DEFAULT_FRACTAL_DETAIL } from '../../rust/bridge/terrainAdjust';
 
 describe('V2 climate zones', () => {
-  const settings = (biome: string, terrain: object = {}) => ({ options: { seed: 's', biome, coast: 'none', river: 'none', relief: 'hills' }, terrain } as never);
+  const settings = (biome: string, terrain: object = {}) => ({ options: { seed: 's', biome, coast: 'none', river: 'none', relief: 'hills' }, terrain }) as never;
   it('derives the zone from the biome, honours an explicit zone and migrates legacy names', () => {
     expect(effectiveTerrainSettings(settings('desert'), 5000).climateZone).toBe('desert');
     const wet = effectiveTerrainSettings(settings('forest', { climate: 'wetland' }), 5000);
-    expect(wet.climateZone).toBe('wetland'); expect(wet.climate).toBe('oceanic'); expect(wet.climateValues!.precipitation).toBe(750);
-    const legacy = { climate: 'arid' }; migrateTerrainClimate(legacy); expect(legacy.climate).toBe('desert');
+    expect(wet.climateZone).toBe('wetland');
+    expect(wet.climate).toBe('oceanic');
+    expect(wet.climateValues!.precipitation).toBe(750);
+    const legacy = { climate: 'arid' };
+    migrateTerrainClimate(legacy);
+    expect(legacy.climate).toBe('desert');
     expect(() => validateTerrainSettings({ climate: 'cold', islandMode: 'peninsula' })).not.toThrow();
     expect(() => validateTerrainSettings({ climate: 'moist' })).toThrow();
   });
@@ -25,33 +29,40 @@ describe('V2 climate zones', () => {
     expect(allTerrainFields.some(field => field.path === 'options.layer')).toBe(false);
   });
   it('selects Underdark without storing a climate sentinel, then returns to the chosen surface climate', () => {
-    const draft = defaultSettings(); draft.options.biome = 'forest';
+    const draft = defaultSettings();
+    draft.options.biome = 'forest';
     const climate = effectiveTerrainSettings(draft, 6000).climateZone;
     setTerrainClimateChoice(draft, 'underdark');
     expect(terrainClimateChoice(draft)).toBe('underdark');
-    expect(draft.options.biome).toBe('underdark'); expect(draft.options.culture).toBe(UNDERDARK_CULTURES[0]);
+    expect(draft.options.biome).toBe('underdark');
+    expect(draft.options.culture).toBe(UNDERDARK_CULTURES[0]);
     expect(draft.terrain!.climate).toBe(climate);
     expect(effectiveTerrainSettings(draft, 6000).underdark).toBe(true);
     setTerrainClimateChoice(draft, 'desert');
     expect(terrainClimateChoice(draft)).toBe('desert');
-    expect(draft.options.biome).toBe(climateZoneBiome.desert); expect(draft.options.culture).toBe('european-organic');
+    expect(draft.options.biome).toBe(climateZoneBiome.desert);
+    expect(draft.options.culture).toBe('european-organic');
     expect(effectiveTerrainSettings(draft, 6000).underdark).toBeUndefined();
     expect(() => validateTerrainSettings(draft.terrain)).not.toThrow();
   });
   it('keeps custom values and matching cultures in Underdark, and leaves custom editing available', () => {
     const draft = defaultSettings();
-    setTerrainClimateChoice(draft, 'custom'); draft.terrain!.climateValues!.temperature = 17;
+    setTerrainClimateChoice(draft, 'custom');
+    draft.terrain!.climateValues!.temperature = 17;
     const values = { ...draft.terrain!.climateValues };
     draft.options.culture = UNDERDARK_CULTURES[1];
     setTerrainClimateChoice(draft, 'underdark');
     expect(terrainClimateChoice(draft)).toBe('underdark');
-    expect(draft.terrain!.climateValues).toEqual(values); expect(draft.options.culture).toBe(UNDERDARK_CULTURES[1]);
+    expect(draft.terrain!.climateValues).toEqual(values);
+    expect(draft.options.culture).toBe(UNDERDARK_CULTURES[1]);
     setTerrainClimateChoice(draft, 'custom');
-    expect(terrainClimateChoice(draft)).toBe('custom'); expect(draft.terrain!.climateValues!.temperature).toBe(17);
+    expect(terrainClimateChoice(draft)).toBe('custom');
+    expect(draft.terrain!.climateValues!.temperature).toBe(17);
     expect(draft.options.biome).toBe('temperate');
     draft.options.culture = 'european-organic';
     setTerrainClimateChoice(draft, 'nordic');
-    expect(draft.terrain!.climateValues).toBeUndefined(); expect(draft.options.culture).toBe('european-organic');
+    expect(draft.terrain!.climateValues).toBeUndefined();
+    expect(draft.options.culture).toBe('european-organic');
   });
 });
 describe('V2 Terrainbench control parity', () => {
@@ -94,8 +105,10 @@ describe('V2 Terrainbench control parity', () => {
     let mask = 0;
     for (const direction of coastDirections) mask = toggleCoastDirection(mask, direction);
     expect(mask).toBe(255);
-    mask = toggleCoastDirection(mask, 'NE'); expect(mask).toBe(253);
-    mask = toggleCoastDirection(mask, 'SW'); expect(mask).toBe(221);
+    mask = toggleCoastDirection(mask, 'NE');
+    expect(mask).toBe(253);
+    mask = toggleCoastDirection(mask, 'SW');
+    expect(mask).toBe(221);
     expect(toggleCoastDirection(0, 'S')).toBe(16);
   });
   it('writes nested histogram arrays and removes optional overrides for inherited defaults', () => {
@@ -112,13 +125,16 @@ describe('V2 Terrainbench control parity', () => {
   });
   it('converts visible lake and forest percentages back to the core’s fractions', () => {
     const field = allTerrainFields.find(field => field.path === 'terrain.hydrology.lakeCoverage')!;
-    expect(field.toInput?.(.05)).toBe(5); expect(field.fromInput?.(5)).toBe(.05);
+    expect(field.toInput?.(0.05)).toBe(5);
+    expect(field.fromInput?.(5)).toBe(0.05);
     const forest = allTerrainFields.find(field => field.path === 'terrain.forest.clearings')!;
-    expect(forest.toInput?.(.45)).toBe(45); expect(forest.fromInput?.(45)).toBe(.45);
+    expect(forest.toInput?.(0.45)).toBe(45);
+    expect(forest.fromInput?.(45)).toBe(0.45);
   });
   it('provides French copy for every visible label, option and explanation', () => {
-    for (const field of allTerrainFields) for (const text of [field.label, field.help, ...(field.options?.map(option => option.label) ?? [])]) {
-      if (text) expect(terrainControlMessages[text]?.fr, text).toBeTruthy();
-    }
+    for (const field of allTerrainFields)
+      for (const text of [field.label, field.help, ...(field.options?.map(option => option.label) ?? [])]) {
+        if (text) expect(terrainControlMessages[text]?.fr, text).toBeTruthy();
+      }
   });
 });

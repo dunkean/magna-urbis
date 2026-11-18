@@ -6,21 +6,28 @@ import { toQuery, fromQuery, makeOptions } from '../src/gen/options';
 
 describe('rng', () => {
   it('is deterministic', () => {
-    const a = new Rng('x'), b = new Rng('x');
+    const a = new Rng('x'),
+      b = new Rng('x');
     for (let i = 0; i < 50; i++) expect(a.float()).toBe(b.float());
   });
   it('fork is independent of parent consumption and of sibling forks', () => {
-    const a = new Rng('seed'), b = new Rng('seed');
-    a.float(); a.float(); a.fork('other').float();
-    const fa = a.fork('river'), fb = b.fork('river');
+    const a = new Rng('seed'),
+      b = new Rng('seed');
+    a.float();
+    a.float();
+    a.fork('other').float();
+    const fa = a.fork('river'),
+      fb = b.fork('river');
     for (let i = 0; i < 20; i++) expect(fa.float()).toBe(fb.float());
     expect(new Rng('seed').fork('a').float()).not.toBe(new Rng('seed').fork('b').float());
   });
   it('ranges', () => {
     const r = new Rng(1);
     for (let i = 0; i < 500; i++) {
-      const v = r.int(3, 6); expect(v >= 3 && v <= 6).toBe(true);
-      const f = r.range(-2, 2); expect(f >= -2 && f < 2).toBe(true);
+      const v = r.int(3, 6);
+      expect(v >= 3 && v <= 6).toBe(true);
+      const f = r.range(-2, 2);
+      expect(f >= -2 && f < 2).toBe(true);
     }
   });
 });
@@ -30,7 +37,11 @@ describe('heap', () => {
     const h = new MinHeap<number>();
     const r = new Rng(3);
     const keys: number[] = [];
-    for (let i = 0; i < 200; i++) { const k = r.float(); keys.push(k); h.push(k, k); }
+    for (let i = 0; i < 200; i++) {
+      const k = r.float();
+      keys.push(k);
+      h.push(k, k);
+    }
     keys.sort((a, b) => a - b);
     for (const k of keys) expect(h.pop()).toBe(k);
   });

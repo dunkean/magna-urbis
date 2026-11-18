@@ -18,13 +18,30 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, acceptDownloads: true });
   page = await context.newPage();
   page.on('pageerror', error => result.errors.push(error.message));
-  page.on('console', message => { if (message.type() === 'error') result.errors.push(message.text()); });
+  page.on('console', message => {
+    if (message.type() === 'error') result.errors.push(message.text());
+  });
   await page.goto(`${base}/v2.html?empty&lang=fr`, { waitUntil: 'networkidle' });
   await page.locator('#terrain-only').waitFor({ state: 'visible' });
-  const reveal = async selector => { await page.locator(selector).evaluate(element => { const sections=[]; for(let parent=element.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)sections.push(parent); for(const section of sections.reverse())section.open=true; }); };
-  const setInput = async (selector, value) => { await reveal(selector); await page.locator(selector).fill(String(value)); await page.locator(selector).dispatchEvent('change'); };
-  const select = async (selector, value) => { await reveal(selector); await page.locator(selector).selectOption(value); };
-  const close = async id => { if (await page.locator(id).evaluate(el => el.open)) await page.locator(`${id} [data-close]`).last().click(); };
+  const reveal = async selector => {
+    await page.locator(selector).evaluate(element => {
+      const sections = [];
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) sections.push(parent);
+      for (const section of sections.reverse()) section.open = true;
+    });
+  };
+  const setInput = async (selector, value) => {
+    await reveal(selector);
+    await page.locator(selector).fill(String(value));
+    await page.locator(selector).dispatchEvent('change');
+  };
+  const select = async (selector, value) => {
+    await reveal(selector);
+    await page.locator(selector).selectOption(value);
+  };
+  const close = async id => {
+    if (await page.locator(id).evaluate(el => el.open)) await page.locator(`${id} [data-close]`).last().click();
+  };
   const job = async selector => {
     const before = await page.locator('#job-log').textContent();
     await page.locator(selector).click();
@@ -48,7 +65,8 @@ try {
       await page.locator('.export-crop [data-action="export"]').click();
     }
     const download = await pending;
-    const path = `${out}/${name}`; await download.saveAs(path);
+    const path = `${out}/${name}`;
+    await download.saveAs(path);
     await page.locator('#export-dialog').waitFor({ state: 'hidden' });
     return readFile(path);
   };
@@ -61,7 +79,8 @@ try {
 
   await setInput('#seed', 'v2-ui-evidence');
   await select('#terrain-backend', 'typescript');
-  await setInput('#terrain-width', '2.4'); await page.locator('#terrain-width').blur();
+  await setInput('#terrain-width', '2.4');
+  await page.locator('#terrain-width').blur();
   await select('[data-setting-path="options.relief"]', 'flat');
   await select('[data-setting-path="options.coast"]', 'none');
   await select('[data-setting-path="options.river"]', 'stream');
@@ -70,7 +89,8 @@ try {
   assert.equal(terrain.world.stats['v2.stage'], 'terrain');
   assert.equal(terrain.settings.runtime.backend, 'typescript');
   assert.equal(terrain.world.stats.backend, 'typescript-cpu');
-  assert(!terrain.world.urban); assert(!terrain.world.settlements?.length);
+  assert(!terrain.world.urban);
+  assert(!terrain.world.settlements?.length);
   const terrainHash = hashTerrain(terrain.world.terrain);
   result.checks.terrain = { hash: terrainHash, rivers: terrain.world.terrain.rivers.length, grid: terrain.world.terrain.height.w };
   await page.screenshot({ path: `${out}/01-topography.png`, fullPage: true });
@@ -82,7 +102,8 @@ try {
   const region = await project('02-region');
   assert.equal(hashTerrain(region.world.terrain), terrainHash);
   assert(region.world.settlements.length >= 2, 'Expected at least two retained settlements');
-  assert(!region.world.urban); assert(region.world.settlements.every(s => !s.urban));
+  assert(!region.world.urban);
+  assert(region.world.settlements.every(s => !s.urban));
   result.checks.region = { settlements: region.world.settlements.length, roads: region.world.roads.length, terrainRetained: true };
   await page.screenshot({ path: `${out}/02-placements.png`, fullPage: true });
 
@@ -115,23 +136,29 @@ try {
   // Select a real exported building via the public map interaction and persist its local modification.
   await page.locator('[data-town="main"]').click();
   await page.locator('#inspect-mode').check();
-  const main = rebuilt.world.settlements.find(s => s.main), map = await page.locator('#map').boundingBox();
+  const main = rebuilt.world.settlements.find(s => s.main),
+    map = await page.locator('#map').boundingBox();
   const scale = Math.min(3, Math.min(map.height, map.width) / Math.max(600, main.radius * 3));
   let editedHouse = false;
   for (const building of rebuilt.world.urban.buildings) {
     const p = building.poly.reduce((s, p) => ({ x: s.x + p.x / building.poly.length, y: s.y + p.y / building.poly.length }), { x: 0, y: 0 });
-    const x = map.x + map.width / 2 + (p.x - main.center.x) * scale, y = map.y + map.height / 2 + (p.y - main.center.y) * scale;
+    const x = map.x + map.width / 2 + (p.x - main.center.x) * scale,
+      y = map.y + map.height / 2 + (p.y - main.center.y) * scale;
     if (x < map.x + 60 || x > map.x + map.width - 360 || y < map.y + 180 || y > map.y + map.height - 180) continue;
     await page.mouse.click(x, y);
     if (await page.locator('#house-height').count()) {
-      await setInput('#house-height', 9.5); await setInput('#house-storeys', 3);
-      await page.locator('#house-roof').selectOption('hip'); await page.locator('#house-apply').click();
-      editedHouse = true; break;
+      await setInput('#house-height', 9.5);
+      await setInput('#house-storeys', 3);
+      await page.locator('#house-roof').selectOption('hip');
+      await page.locator('#house-apply').click();
+      editedHouse = true;
+      break;
     }
   }
   assert(editedHouse, 'Could not inspect a real building through the canvas');
   const edited = await project('06-house-edit');
-  assert.equal(edited.mods.length, 1); assert.equal(edited.mods[0].patch.height, 9.5);
+  assert.equal(edited.mods.length, 1);
+  assert.equal(edited.mods[0].patch.height, 9.5);
   result.checks.house = { persisted: true, height: edited.mods[0].patch.height, storeys: edited.mods[0].patch.storeys };
   await page.screenshot({ path: `${out}/03-house-inspector.png`, fullPage: true });
   await page.locator('#editor-close').click();
@@ -142,7 +169,8 @@ try {
   const afterStyle = hash(await page.locator('#map-canvas').screenshot());
   assert.notEqual(afterStyle, beforeStyle, 'Changing map style should redraw the same world');
   const svg = (await exportFile('svg', '07-atlas.svg')).toString();
-  assert.match(svg, /<svg/); assert(svg.length > 1000);
+  assert.match(svg, /<svg/);
+  assert(svg.length > 1000);
   result.checks.styleAndSvg = { redrawn: true, bytes: svg.length };
 
   await page.locator('#export-open').click();
@@ -151,18 +179,22 @@ try {
   await close('#export-dialog');
   const png = await exportFile('png', '08-cropped-layers.png', true);
   assert.equal(png.subarray(1, 4).toString(), 'PNG');
-  assert.equal(png.readUInt32BE(16), 1600); assert.equal(png.readUInt32BE(20), 800);
+  assert.equal(png.readUInt32BE(16), 1600);
+  assert.equal(png.readUInt32BE(20), 800);
   result.checks.croppedLayers = { width: 1600, height: 800, bytes: png.length };
 
   const recipe = await exportFile('recipe', '09-recipe.json');
   const savedProject = Buffer.from(JSON.stringify(edited));
-  await page.reload({ waitUntil: 'networkidle' }); await page.locator('#terrain-only').waitFor();
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('#terrain-only').waitFor();
   await importData(savedProject, 'restored.project.json');
   const restored = await project('10-restored');
-  assert.equal(hashTerrain(restored.world.terrain), terrainHash); assert.equal(restored.mods.length, 1);
+  assert.equal(hashTerrain(restored.world.terrain), terrainHash);
+  assert.equal(restored.mods.length, 1);
   assert.equal(restored.mods[0].patch.height, 9.5);
   result.checks.projectImport = { terrainExact: true, modificationsRetained: true };
-  await page.reload({ waitUntil: 'networkidle' }); await page.locator('#terrain-only').waitFor();
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('#terrain-only').waitFor();
   await importData(recipe, 'cached.recipe.json');
   result.checks.diskCacheLog = await job('#terrain-only');
   assert.match(result.checks.diskCacheLog, /disk/);
@@ -174,7 +206,8 @@ try {
   const oneClick = await project('12-one-click');
   assert.equal(hashTerrain(oneClick.world.terrain), terrainHash);
   assert.equal(oneClick.world.stats['v2.stage'], 'terrain');
-  assert(!oneClick.world.urban); assert(!oneClick.world.settlements?.length);
+  assert(!oneClick.world.urban);
+  assert(!oneClick.world.settlements?.length);
   result.checks.oneClick = { terrainOnly: true, terrainRetained: true };
   await page.screenshot({ path: `${out}/05-one-click.png`, fullPage: true });
 
@@ -189,11 +222,15 @@ try {
 
   // A real PNG import goes through image decoding and the same terrain worker as a user file.
   const heightPng = await page.evaluate(async () => {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
-    const ctx = canvas.getContext('2d'), image = ctx.createImageData(32, 32);
-    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-      const h = Math.round(255 * (x + y) / 62); image.data.set([h, h, h, 255], (y * 32 + x) * 4);
-    }
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 32;
+    const ctx = canvas.getContext('2d'),
+      image = ctx.createImageData(32, 32);
+    for (let y = 0; y < 32; y++)
+      for (let x = 0; x < 32; x++) {
+        const h = Math.round((255 * (x + y)) / 62);
+        image.data.set([h, h, h, 255], (y * 32 + x) * 4);
+      }
     ctx.putImageData(image, 0, 0);
     return canvas.toDataURL('image/png').split(',')[1];
   });
@@ -202,7 +239,8 @@ try {
   await page.waitForFunction(() => document.querySelector('#import-height-info').textContent.includes('32 × 32'));
   await close('#import-dialog');
   await page.locator('#tab-terrain').click();
-  await setInput('[data-option="heightScale"]', 200); await setInput('[data-option="importSea"]', 20);
+  await setInput('[data-option="heightScale"]', 200);
+  await setInput('[data-option="importSea"]', 20);
   await job('#terrain-only');
   const importedHeight = await project('13-heightmap-import');
   assert.equal(importedHeight.settings.options.importedHeight.w, 32);
@@ -210,17 +248,21 @@ try {
   assert.notEqual(hashTerrain(importedHeight.world.terrain), terrainHash);
   result.checks.heightmapImport = { dimensions: [32, 32], replacedTerrain: true };
 
-  await page.locator('#export-open').click(); await page.locator('#export-format').selectOption('heightmap');
+  await page.locator('#export-open').click();
+  await page.locator('#export-format').selectOption('heightmap');
   const heightDownloads = [];
-  const collectHeight = download => heightDownloads.push(download); page.on('download', collectHeight);
-  await page.locator('#export-go').click(); await page.locator('#export-dialog').waitFor({ state: 'hidden' });
+  const collectHeight = download => heightDownloads.push(download);
+  page.on('download', collectHeight);
+  await page.locator('#export-go').click();
+  await page.locator('#export-dialog').waitFor({ state: 'hidden' });
   for (let i = 0; i < 100 && heightDownloads.length < 2; i++) await page.waitForTimeout(50);
   page.off('download', collectHeight);
   assert.equal(heightDownloads.length, 2, 'Heightmap export must deliver image and altitude metadata');
   for (const download of heightDownloads) await download.saveAs(`${out}/${download.suggestedFilename()}`);
   const metadataDownload = heightDownloads.find(d => d.suggestedFilename().endsWith('.json'));
   const metadata = JSON.parse(await readFile(await metadataDownload.path()));
-  assert(metadata.maxHeight > metadata.minHeight); assert.equal(metadata.mapSize, 2400);
+  assert(metadata.maxHeight > metadata.minHeight);
+  assert.equal(metadata.mapSize, 2400);
   result.checks.heightmapExport = { files: 2, minHeight: metadata.minHeight, maxHeight: metadata.maxHeight };
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -234,8 +276,16 @@ try {
   assert.deepEqual(result.errors, [], 'Browser errors');
   result.ok = true;
 } catch (error) {
-  result.ok = false; result.error = error.stack; process.exitCode = 1;
-  if (page) { await page.screenshot({ path: `${out}/failure.png`, fullPage: true }).catch(() => {}); result.log = await page.locator('#job-log').textContent().catch(() => ''); }
+  result.ok = false;
+  result.error = error.stack;
+  process.exitCode = 1;
+  if (page) {
+    await page.screenshot({ path: `${out}/failure.png`, fullPage: true }).catch(() => {});
+    result.log = await page
+      .locator('#job-log')
+      .textContent()
+      .catch(() => '');
+  }
 } finally {
   await browser?.close();
   await writeFile(`${out}/results.json`, JSON.stringify(result, null, 2));

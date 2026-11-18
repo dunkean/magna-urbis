@@ -5,11 +5,14 @@ import { fullQuery, uiStateFromQuery } from '../src/ui/share';
 import { appearanceQuery, paintedFromQuery } from '../src/ui/renderAppearance';
 import { planToString } from '../src/gen/urban/culture';
 
-const plan = { nucleus: { kind: 'market' }, phases: [
-  { morphology: 'posad', enclosure: { shape: 'organic', wall: 'palisade', fossil: 'street', towers: 'square' } },
-  { morphology: 'celtic-oppidum-town', enclosure: { shape: 'oval', wall: 'wall', fossil: 'street', towers: 'square' } },
-  { morphology: 'oppidum', enclosure: { shape: 'circle', wall: 'wall', fossil: 'street', towers: 'square' } },
-] } as const;
+const plan = {
+  nucleus: { kind: 'market' },
+  phases: [
+    { morphology: 'posad', enclosure: { shape: 'organic', wall: 'palisade', fossil: 'street', towers: 'square' } },
+    { morphology: 'celtic-oppidum-town', enclosure: { shape: 'oval', wall: 'wall', fossil: 'street', towers: 'square' } },
+    { morphology: 'oppidum', enclosure: { shape: 'circle', wall: 'wall', fossil: 'street', towers: 'square' } },
+  ],
+} as const;
 
 describe('compact reproducible map IDs', () => {
   it('keeps fixed v1 fixtures and short seeds small without compression overhead', () => {
@@ -23,17 +26,30 @@ describe('compact reproducible map IDs', () => {
   });
 
   it('round-trips every serialized field, workflow, list draft and imported-height marker', () => {
-    const query = 'seed=owrcg3&size=city&relief=mountains&coast=S&river=major&walls=double&castle=yes&roads=8&style=atlas'
-      + '&culture=russian-kremlin&population=3000&biome=underdark-caverns&moat=yes&cathedral=no&palace=yes'
-      + '&monasteries=no&port=yes&arena=yes&activities=yes&suburbs=many&castles=3&shanty=many&site=auto'
-      + '&center=123.456,789.1&seaLevel=-0.123456&contours=0&landuse=0&lang=english&labels=0&legend=1'
-      + '&sprawl=1.2345&mix=wizard-city:0.5:sectors&plan=' + planToString(plan as never)
-      + '&map=2500&settl=L300&eager=20000&hm=custom&hscale=145&hsea=-5';
+    const query =
+      'seed=owrcg3&size=city&relief=mountains&coast=S&river=major&walls=double&castle=yes&roads=8&style=atlas' +
+      '&culture=russian-kremlin&population=3000&biome=underdark-caverns&moat=yes&cathedral=no&palace=yes' +
+      '&monasteries=no&port=yes&arena=yes&activities=yes&suburbs=many&castles=3&shanty=many&site=auto' +
+      '&center=123.456,789.1&seaLevel=-0.123456&contours=0&landuse=0&lang=english&labels=0&legend=1' +
+      '&sprawl=1.2345&mix=wizard-city:0.5:sectors&plan=' +
+      planToString(plan as never) +
+      '&map=2500&settl=L300&eager=20000&hm=custom&hscale=145&hsea=-5';
     for (const mode of ['', '&mode=a', '&mode=l', '&mode=e&compose=l']) {
-      const original = fromQuery(query + mode + '&set2=' + encodeURIComponent(JSON.stringify([
-        [3000, 'russian-kremlin', null, 123.456, 789.1], [300, 'elven', 'hilltop', 800, 900],
-      ])) + '&prefs=' + encodeURIComponent('{"weights":{"hilltop":2},"waterSide":"S","margin":0.25}'));
-      const id = mapId(original), loaded = fromQuery(new URLSearchParams({ id }));
+      const original = fromQuery(
+        query +
+          mode +
+          '&set2=' +
+          encodeURIComponent(
+            JSON.stringify([
+              [3000, 'russian-kremlin', null, 123.456, 789.1],
+              [300, 'elven', 'hilltop', 800, 900],
+            ]),
+          ) +
+          '&prefs=' +
+          encodeURIComponent('{"weights":{"hilltop":2},"waterSide":"S","margin":0.25}'),
+      );
+      const id = mapId(original),
+        loaded = fromQuery(new URLSearchParams({ id }));
       expect(toQuery(loaded)).toBe(toQuery(original));
       expect(generationUid(loaded)).toBe(generationUid(original));
       expect(wantsCustomHeight('?id=' + encodeMapId(query))).toBe(true);
@@ -42,9 +58,7 @@ describe('compact reproducible map IDs', () => {
   });
 
   it('preserves the reported plan and compresses it substantially', () => {
-    const o = fromQuery('seed=owrcg3&relief=mountains&walls=none&culture=russian-kremlin&population=3000'
-      + '&port=yes&activities=yes&suburbs=many&shanty=many&seaLevel=0&mix=wizard-city:0.5:sectors'
-      + '&plan=' + planToString(plan as never) + '&map=2500&mode=a');
+    const o = fromQuery('seed=owrcg3&relief=mountains&walls=none&culture=russian-kremlin&population=3000' + '&port=yes&activities=yes&suburbs=many&shanty=many&seaLevel=0&mix=wizard-city:0.5:sectors' + '&plan=' + planToString(plan as never) + '&map=2500&mode=a');
     const id = mapId(o);
     expect(id.startsWith('1z')).toBe(true);
     // Frozen compressed fixture guards the v1 vocabulary/dictionary against incompatible edits.

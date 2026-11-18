@@ -3,10 +3,19 @@ import { buildCityBuildings, type CityPalette } from '../src/render/cityCanvas';
 import { buildingColors, DEFAULT_LAYERS, roofMaterialTable, type CityGlStyleState } from '../src/render/cityGlStyle';
 import type { PlacementBatch } from '../../rust/bridge/urbanArchitecture';
 
-const shape = { outer: [{ x: 0, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 10 }, { x: 0, y: 10 }], holes: [] };
+const shape = {
+  outer: [
+    { x: 0, y: 0 },
+    { x: 12, y: 0 },
+    { x: 12, y: 10 },
+    { x: 0, y: 10 },
+  ],
+  holes: [],
+};
 function buildings(culture: string, tone: number) {
-  return buildCityBuildings({ buildings: [{ id: 'lot', parcel_id: 'parcel', function: 'domestic', culture: { culture }, footprint: [shape], roof_footprint: [],
-    programme: { massing: [{ floors: 1, eave_m: 3, rise_m: 0, roof: 'flat', wall: 'plaster', cover: 'earth', tone }] } }] } as unknown as PlacementBatch);
+  return buildCityBuildings({
+    buildings: [{ id: 'lot', parcel_id: 'parcel', function: 'domestic', culture: { culture }, footprint: [shape], roof_footprint: [], programme: { massing: [{ floors: 1, eave_m: 3, rise_m: 0, roof: 'flat', wall: 'plaster', cover: 'earth', tone }] } }],
+  } as unknown as PlacementBatch);
 }
 const state = (palette: CityPalette): CityGlStyleState => ({ view: 'buildings', lod: 'close', palette, layers: DEFAULT_LAYERS, buildingsVisible: true, diagnostic: 'none' });
 
@@ -14,15 +23,22 @@ describe('city plan palette', () => {
   it('retains native culture and resolved wall, cover and tone on the plan and roof faces', () => {
     const b = buildings('medina', 0.73);
     expect(b.items[0].material).toEqual({ culture: 'medina', wall: 'plaster', cover: 'earth', tone: 0.73 });
-    expect(b.roofs?.cover[0]).toBe('earth'); expect(b.roofs?.wall?.[0]).toBe('plaster'); expect(b.roofs?.tone[0]).toBeCloseTo(0.73);
+    expect(b.roofs?.cover[0]).toBe('earth');
+    expect(b.roofs?.wall?.[0]).toBe('plaster');
+    expect(b.roofs?.tone[0]).toBeCloseTo(0.73);
   });
 
   it('shows culture and independent lot tone on roofs in every palette without id jitter', () => {
     for (const palette of ['parchment', 'ink', 'terrain', 'atlas', 'growth'] as const) {
-      const a = buildings('medina', 0.15), b = buildings('japanese-jokamachi', 0.15), c = buildings('medina', 0.85), s = state(palette);
+      const a = buildings('medina', 0.15),
+        b = buildings('japanese-jokamachi', 0.15),
+        c = buildings('medina', 0.85),
+        s = state(palette);
       const roof = (v: typeof a) => Array.from(buildingColors(v, s).fill.slice(4, 7));
-      expect(roof(a), palette).not.toEqual(roof(b)); expect(roof(a), palette).not.toEqual(roof(c));
-      a.items[0].id = 'another-id'; expect(roof(a), palette).toEqual(roof(buildings('medina', 0.15)));
+      expect(roof(a), palette).not.toEqual(roof(b));
+      expect(roof(a), palette).not.toEqual(roof(c));
+      a.items[0].id = 'another-id';
+      expect(roof(a), palette).toEqual(roof(buildings('medina', 0.15)));
     }
   });
 
@@ -38,8 +54,12 @@ describe('city plan palette', () => {
   });
 
   it('keeps role/use diagnostics independent of culture and disables texture for ink maps', () => {
-    const a = buildings('medina', 0.15), b = buildings('japanese-jokamachi', 0.85);
-    for (const s of [{ ...state('terrain'), view: 'roles' as const }, { ...state('terrain'), diagnostic: 'uses' }]) {
+    const a = buildings('medina', 0.15),
+      b = buildings('japanese-jokamachi', 0.85);
+    for (const s of [
+      { ...state('terrain'), view: 'roles' as const },
+      { ...state('terrain'), diagnostic: 'uses' },
+    ]) {
       expect(buildingColors(a, s).fill).toEqual(buildingColors(b, s).fill);
       expect(roofMaterialTable(a, s).every(v => v === 0)).toBe(true);
     }
@@ -47,18 +67,63 @@ describe('city plan palette', () => {
   });
 
   it('preserves terrace relief in every palette, including a uniform building colour', () => {
-    const b = buildCityBuildings({ buildings: [{ id: 'tiers', parcel_id: 'parcel', function: 'domestic', footprint: [shape], roof_footprint: [],
-      programme: { massing: [{ floors: 3, eave_m: 9, rise_m: 0, roof: 'flat', wall: 'earth', cover: 'earth', volumes: [
-        { ring: [[0, 0], [6, 0], [6, 10], [0, 10]], eave_m: 9, rise_m: 0, roof: 'flat', ridges: [] },
-        { ring: [[6, 0], [12, 0], [12, 10], [6, 10]], eave_m: 3, rise_m: 0, roof: 'flat', ridges: [] },
-      ] }] } }] } as unknown as PlacementBatch);
+    const b = buildCityBuildings({
+      buildings: [
+        {
+          id: 'tiers',
+          parcel_id: 'parcel',
+          function: 'domestic',
+          footprint: [shape],
+          roof_footprint: [],
+          programme: {
+            massing: [
+              {
+                floors: 3,
+                eave_m: 9,
+                rise_m: 0,
+                roof: 'flat',
+                wall: 'earth',
+                cover: 'earth',
+                volumes: [
+                  {
+                    ring: [
+                      [0, 0],
+                      [6, 0],
+                      [6, 10],
+                      [0, 10],
+                    ],
+                    eave_m: 9,
+                    rise_m: 0,
+                    roof: 'flat',
+                    ridges: [],
+                  },
+                  {
+                    ring: [
+                      [6, 0],
+                      [12, 0],
+                      [12, 10],
+                      [6, 10],
+                    ],
+                    eave_m: 3,
+                    rise_m: 0,
+                    roof: 'flat',
+                    ridges: [],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    } as unknown as PlacementBatch);
     expect(b.items[0].flat).toBe(true);
-    for (const palette of ['parchment', 'ink', 'terrain', 'atlas', 'growth'] as const) for (const custom of [false, true]) {
-      const s = { ...state(palette), ...(custom ? { colors: { building: '#b7a78f' } } : {}) };
-      const fill = buildingColors(b, s).fill;
-      const faces = Array.from(b.roofs!.light, (light, k) => ({ light, color: Array.from(fill.slice(4 * (k + 1), 4 * (k + 1) + 3)).join(',') }));
-      expect(new Set(faces.map(f => f.color)).size, `${palette}, custom=${custom}`).toBeGreaterThan(3);
-      expect(faces.find(f => Math.abs(f.light + 0.05) < 0.001)!.color).not.toEqual(faces.find(f => Math.abs(f.light - 0.045) < 0.001)!.color);
-    }
+    for (const palette of ['parchment', 'ink', 'terrain', 'atlas', 'growth'] as const)
+      for (const custom of [false, true]) {
+        const s = { ...state(palette), ...(custom ? { colors: { building: '#b7a78f' } } : {}) };
+        const fill = buildingColors(b, s).fill;
+        const faces = Array.from(b.roofs!.light, (light, k) => ({ light, color: Array.from(fill.slice(4 * (k + 1), 4 * (k + 1) + 3)).join(',') }));
+        expect(new Set(faces.map(f => f.color)).size, `${palette}, custom=${custom}`).toBeGreaterThan(3);
+        expect(faces.find(f => Math.abs(f.light + 0.05) < 0.001)!.color).not.toEqual(faces.find(f => Math.abs(f.light - 0.045) < 0.001)!.color);
+      }
   });
 });

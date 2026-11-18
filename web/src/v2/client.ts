@@ -78,16 +78,23 @@ export class StudioClient {
   private benchActive = false;
   private appearanceRevision = 0;
   private brushSourcesSent = false;
-  private appearanceWork:Promise<void>=Promise.resolve();
-  private appearanceRequest=0;
+  private appearanceWork: Promise<void> = Promise.resolve();
+  private appearanceRequest = 0;
   private readiness?: RenderReadiness;
   private view3dActive = false;
   set3dActive(value: boolean): void {
     if (this.view3dActive && !value) this.canvas.dataset.renderPending = '1';
-    this.view3dActive = value; this.viewer.setPaused(value); this.bench?.setSuspended(value);
-    if (value) { clearTimeout(this.benchMiniTimer); this.benchMiniTimer = undefined; }
+    this.view3dActive = value;
+    this.viewer.setPaused(value);
+    this.bench?.setSuspended(value);
+    if (value) {
+      clearTimeout(this.benchMiniTimer);
+      this.benchMiniTimer = undefined;
+    }
   }
-  begin3dRequest(): RenderReadiness { return this.readiness = new RenderReadiness('3d'); }
+  begin3dRequest(): RenderReadiness {
+    return (this.readiness = new RenderReadiness('3d'));
+  }
   /** Coarse coverage releases the opening card; exact visible refinement has its own mark. */
   async waitFor3d(view: { active: boolean; stats(): { programsReady?: boolean; lod?: { tiles: number; ready: number; pending: number; covered?: boolean } } }, request = this.readiness): Promise<void> {
     request?.mark('fields-ready');
@@ -96,12 +103,19 @@ export class StudioClient {
     const until = performance.now() + 90_000;
     for (;;) {
       if (!view.active || request !== this.readiness) return;
-      const stats = view.stats(), lod = stats.lod;
+      const stats = view.stats(),
+        lod = stats.lod;
       if (stats.programsReady) request?.mark('programs-ready');
-      if (lod?.covered) { request?.mark('first-useful-frame'); request?.mark('first-covered-frame'); }
+      if (lod?.covered) {
+        request?.mark('first-useful-frame');
+        request?.mark('first-covered-frame');
+      }
       if (lod && lod.tiles > 0 && lod.ready >= lod.tiles && lod.pending === 0 && stats.programsReady && !this.bench?.derivedPending()) {
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-        if (request === this.readiness) { request?.mark('first-covered-frame'); request?.mark('visible-complete'); }
+        if (request === this.readiness) {
+          request?.mark('first-covered-frame');
+          request?.mark('visible-complete');
+        }
         return;
       }
       if (performance.now() > until) throw new Error('The 3D view did not finish drawing within 90 seconds.');
@@ -115,12 +129,13 @@ export class StudioClient {
   /** Presentation creates a names product. Its identity changes with its inputs,
    * never merely because the same retained map is shown in another style. */
   private presentWorld(world: World): World {
-    const key = JSON.stringify([getLanguage(), getDistanceUnit(), this.appearanceSettings?.naming?.mode,this.appearanceSettings?.naming?.mapLanguage,this.appearanceSettings?.naming?.script]);
+    const key = JSON.stringify([getLanguage(), getDistanceUnit(), this.appearanceSettings?.naming?.mode, this.appearanceSettings?.naming?.mapLanguage, this.appearanceSettings?.naming?.script]);
     const inputs = [world.terrain, world.roads, world.landuse, world.settlements, world.names, world.options, world.debug, world.urban, world.site, world.stats, world.seed, world.mapSize];
     const hit = this.presentations.get(world);
     if (hit?.key === key && inputs.every((input, i) => input === hit.inputs[i])) return hit.world;
     const shown = mapPresentation(world, this.appearanceSettings);
-    this.presentations.set(world, { key, inputs, world: shown }); return shown;
+    this.presentations.set(world, { key, inputs, world: shown });
+    return shown;
   }
   private benchMiniSize = 0;
   private benchMiniDue = false;
@@ -131,12 +146,19 @@ export class StudioClient {
   private showRequest = 0;
   /** The bench set() in flight, if any. */
   private benchSetting?: Promise<void>;
-  private classicBackground?:{world:World;key:string;url:string};
-  private retained?:{id:number;world:World};
-  private pendingDraw: { gen:number; resolve:()=>void; reject:(e:Error)=>void; timer:ReturnType<typeof setTimeout> } | null = null;
+  private classicBackground?: { world: World; key: string; url: string };
+  private retained?: { id: number; world: World };
+  private pendingDraw: { gen: number; resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> } | null = null;
   private display: DisplayOpts = { style: 'parchment', contours: true, landuse: true, labels: true, legend: false, cartouche: false };
   readonly viewer: Viewer;
-  constructor(private canvas: HTMLCanvasElement, container: HTMLElement, minimap: HTMLCanvasElement, private onProgress: (p: V2Progress) => void, private onError: (e: Error) => void, onView?: () => void) {
+  constructor(
+    private canvas: HTMLCanvasElement,
+    container: HTMLElement,
+    minimap: HTMLCanvasElement,
+    private onProgress: (p: V2Progress) => void,
+    private onError: (e: Error) => void,
+    onView?: () => void,
+  ) {
     this.viewer = createViewer({ canvas, container, minimap, onError, onView });
     this.attachEngine();
   }
@@ -144,59 +166,138 @@ export class StudioClient {
     this.engine.onmessage = ({ data: m }) => {
       if (m.type !== 'progress') publishWasmThreads(m.wasm);
       const lazy = this.resourceRequests.get(m.id);
-      if (lazy) { this.resourceRequests.delete(m.id); if (m.type === 'resources') lazy.resolve(m.payload); else if (m.type === 'error') lazy.reject(new Error(m.error)); return; }
+      if (lazy) {
+        this.resourceRequests.delete(m.id);
+        if (m.type === 'resources') lazy.resolve(m.payload);
+        else if (m.type === 'error') lazy.reject(new Error(m.error));
+        return;
+      }
       if (m.id !== this.pending?.id) return;
       if (m.type === 'progress') {
         if (m.progress.stage === 'runtime-fallback') {
           if (m.progress.detail) markNativeUnavailable(m.progress.detail);
           if (this.runtimePreference) this.recordRuntime(browserRuntimeSettings(this.runtimePreference));
-        }
-        else (this.pending!.progress ?? this.onProgress)(m.progress);
-      }
-      else if (m.type === 'result' && m.heavy) {
+        } else (this.pending!.progress ?? this.onProgress)(m.progress);
+      } else if (m.type === 'result' && m.heavy) {
         // A heavy town: free the worker's copy (its whole heap) before materialising the page's, then unpack.
-        const p = this.pending!; this.pending = null; this.replaceEngine();
-        void import('../render/cityBuildingsParallel').then(module => module.releaseCityBuildingWorkers(), () => undefined);
-        setTimeout(() => { try { p.resolve(internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(m.world)))); } catch (error) { p.reject(error instanceof Error ? error : new Error(String(error))); } }, HEAVY_RELEASE_MS);
+        const p = this.pending!;
+        this.pending = null;
+        this.replaceEngine();
+        void import('../render/cityBuildingsParallel').then(
+          module => module.releaseCityBuildingWorkers(),
+          () => undefined,
+        );
+        setTimeout(() => {
+          try {
+            p.resolve(internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(m.world))));
+          } catch (error) {
+            p.reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        }, HEAVY_RELEASE_MS);
+      } else if (m.type === 'result') {
+        const p = this.pending!;
+        this.pending = null;
+        const world = internTerrain(this.world, unpackWorldPartitions(unpackWorldLanduse(m.world)));
+        this.retained = { id: m.id, world };
+        p.resolve(world);
+      } else if (m.type === 'error') {
+        const p = this.pending!;
+        this.pending = null;
+        p.reject(new Error(m.error));
       }
-      else if (m.type === 'result') { const p = this.pending!; this.pending = null; const world=internTerrain(this.world,unpackWorldPartitions(unpackWorldLanduse(m.world))); this.retained={id:m.id,world};p.resolve(world); }
-      else if (m.type === 'error') { const p = this.pending!; this.pending = null; p.reject(new Error(m.error)); }
     };
-    this.engine.onerror = e => { this.failResources(new Error(e.message || 'engine worker error')); wasmWorkerFailed(e.message || 'engine worker error'); this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.')); this.pending = null; this.retained=undefined;this.engine.terminate(); this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2'))); this.attachEngine(); this.onEngineReset?.(); };
+    this.engine.onerror = e => {
+      this.failResources(new Error(e.message || 'engine worker error'));
+      wasmWorkerFailed(e.message || 'engine worker error');
+      this.pending?.reject(new Error(e.message || 'Le moteur de génération a été interrompu.'));
+      this.pending = null;
+      this.retained = undefined;
+      this.engine.terminate();
+      this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2')));
+      this.attachEngine();
+      this.onEngineReset?.();
+    };
   }
   /** A fresh engine worker in place of the current one (its retained world and native session caches are dropped). */
   private replaceEngine(): void {
     this.failResources(new Error('The generation worker was replaced.'));
-    this.retained = undefined; this.engine.terminate();
-    this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2'))); this.attachEngine();
+    this.retained = undefined;
+    this.engine.terminate();
+    this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2')));
+    this.attachEngine();
   }
   async init(): Promise<void> {
     // Composite and Minimal own their surfaces; start the classic worker only when it is actually selected.
     if (!this.appearanceSettings || this.resolve(this.appearanceSettings, this.world ?? undefined, true).path !== 'classic') return;
-    let render:Worker;
-    try{render=new RenderWorker();}catch{return;}
+    let render: Worker;
+    try {
+      render = new RenderWorker();
+    } catch {
+      return;
+    }
     const ready = await new Promise<boolean>(resolve => {
       const timeout = setTimeout(() => resolve(false), 5000);
-      render.onmessage = ({ data }: MessageEvent<RResponse>) => { if (data.type === 'ready') { clearTimeout(timeout); resolve(data.ok); } };
-      render.onerror = () => { clearTimeout(timeout); resolve(false); };
+      render.onmessage = ({ data }: MessageEvent<RResponse>) => {
+        if (data.type === 'ready') {
+          clearTimeout(timeout);
+          resolve(data.ok);
+        }
+      };
+      render.onerror = () => {
+        clearTimeout(timeout);
+        resolve(false);
+      };
       render.postMessage({ type: 'init', dpr: window.devicePixelRatio || 1 });
     });
-    if (!ready) { render.terminate(); return; }
-    this.render = render;this.brushSourcesSent=false;
+    if (!ready) {
+      render.terminate();
+      return;
+    }
+    this.render = render;
+    this.brushSourcesSent = false;
     this.viewer.setSource({ request: frame => render.postMessage({ type: 'view', ...frame }) });
     render.onmessage = ({ data: m }: MessageEvent<RResponse>) => {
-      if(this.benchActive||this.minimalActive){if(m.type==='frame')this.viewer.present(m,false);return;}
+      if (this.benchActive || this.minimalActive) {
+        if (m.type === 'frame') this.viewer.present(m, false);
+        return;
+      }
       if (m.type === 'content') this.viewer.contentChanged(m.mapSize, true, m.marker);
       else if (m.type === 'frame') {
-        const shown=this.viewer.present(m, m.gen === this.drawingId);
-        if(shown){reportDrawnLabels(m.labels.map(label=>label.id));this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
-        if(shown&&m.gen===this.pendingDraw?.gen){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
+        const shown = this.viewer.present(m, m.gen === this.drawingId);
+        if (shown) {
+          reportDrawnLabels(m.labels.map(label => label.id));
+          this.canvas.dataset.renderer = 'Classic Canvas';
+          this.canvas.dataset.renderStyle = this.display.style;
+          this.canvas.dataset.cityRender = '{}';
+        }
+        if (shown && m.gen === this.pendingDraw?.gen) {
+          clearTimeout(this.pendingDraw.timer);
+          this.pendingDraw.resolve();
+          this.pendingDraw = null;
+        }
+      } else if (m.type === 'error') {
+        const error = new Error(m.error);
+        if (this.pendingDraw) {
+          clearTimeout(this.pendingDraw.timer);
+          this.pendingDraw.reject(error);
+          this.pendingDraw = null;
+        } else this.onError(error);
       }
-      else if (m.type === 'error') { const error=new Error(m.error); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.reject(error);this.pendingDraw=null;}else this.onError(error); }
     };
-    render.onerror = e => {const error=new Error(e.message || 'Le rendu de la carte a été interrompu.');if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.reject(error);this.pendingDraw=null;}else this.onError(error);};
+    render.onerror = e => {
+      const error = new Error(e.message || 'Le rendu de la carte a été interrompu.');
+      if (this.pendingDraw) {
+        clearTimeout(this.pendingDraw.timer);
+        this.pendingDraw.reject(error);
+        this.pendingDraw = null;
+      } else this.onError(error);
+    };
     render.postMessage({ type: 'display', display: this.display });
-    if(this.display.painted){this.brushSourcesSent=true;const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');render.postMessage({type:'brushes',sources:BRUSH_SOURCES});}
+    if (this.display.painted) {
+      this.brushSourcesSent = true;
+      const { BRUSH_SOURCES } = await import('../render/assets/brushAssets');
+      render.postMessage({ type: 'brushes', sources: BRUSH_SOURCES });
+    }
   }
   /** The engine in use changed (native ⇄ browser): Settings shows it; no notice is raised. */
   onRuntimeStatusChange?: () => void;
@@ -209,14 +310,20 @@ export class StudioClient {
     if (this.runtimePreference) this.runtimeFallback.update(this.runtimePreference, effective);
     this.onRuntimeStatusChange?.();
   }
-  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?:V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string,
-    progress?: (p: V2Progress) => void, keepUrbanLanes = false): Promise<World> {
+  run(action: Action, settings: V2Settings, world?: World, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, progress?: (p: V2Progress) => void, keepUrbanLanes = false): Promise<World> {
     if (this.pending) return Promise.reject(new Error('Un calcul est déjà en cours.'));
     // The display's code and GPU preparation do not depend on the result: load them while the engine computes.
     if (this.resolve(settings, world, true).path !== 'minimal') {
       void import('./benchRenderer').catch(() => undefined);
-      void import('../ui/terrainRenderer').then(module => module.prewarmTerrainRenderer(), () => undefined);
-      if (['town', 'towns', 'all'].includes(action)) void import('../render/cityBuildingsParallel').then(module => module.prewarmCityBuildingWorkers(), () => undefined);
+      void import('../ui/terrainRenderer').then(
+        module => module.prewarmTerrainRenderer(),
+        () => undefined,
+      );
+      if (['town', 'towns', 'all'].includes(action))
+        void import('../render/cityBuildingsParallel').then(
+          module => module.prewarmCityBuildingWorkers(),
+          () => undefined,
+        );
     }
     const id = ++this.id;
     return new Promise((resolve, reject) => {
@@ -229,39 +336,51 @@ export class StudioClient {
         settings = selected.settings;
         this.recordRuntime(selected.nativeOffline ? settings : this.runtimePreference!);
         selected.notes.forEach(label => (progress ?? this.onProgress)({ stage: 'runtime-info', label, completed: 0, total: 0 }));
-        if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural-wasm'
-          && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
-          const controller = new AbortController(); this.neuralDownload = controller;
+        if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural-wasm' && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
+          const controller = new AbortController();
+          this.neuralDownload = controller;
           try {
-            await prepareBrowserNeuralDownload(new URL(settings.runtime.neuralAssets ?? './neural/', document.baseURI).href,
-              controller.signal, event => (progress ?? this.onProgress)(event), settings.runtime.compute);
-          } finally { if (this.neuralDownload === controller) this.neuralDownload = undefined; }
+            await prepareBrowserNeuralDownload(new URL(settings.runtime.neuralAssets ?? './neural/', document.baseURI).href, controller.signal, event => (progress ?? this.onProgress)(event), settings.runtime.compute);
+          } finally {
+            if (this.neuralDownload === controller) this.neuralDownload = undefined;
+          }
         }
-        if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural'
-          && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
-          const neuralServer = await ensureDesktopNeuralServer(settings.runtime.neuralServer ?? 'http://127.0.0.1:8792',
-            label => this.onProgress({ stage: 'neural-startup', label, completed: 0, total: 0 }));
+        if (['terrain', 'all'].includes(action) && settings.runtime?.source === 'neural' && !settings.options.importedHeight && !settings.decor && !settings.terrain?.sketch?.processing) {
+          const neuralServer = await ensureDesktopNeuralServer(settings.runtime.neuralServer ?? 'http://127.0.0.1:8792', label => this.onProgress({ stage: 'neural-startup', label, completed: 0, total: 0 }));
           settings = { ...settings, runtime: { ...settings.runtime, neuralServer } };
         }
         // Cancellation may have replaced the worker while native weights were loading.
         if (this.pending?.id !== id) return;
         // A resent world carries its town partitions packed (copies: the page keeps its objects).
-        const sent=packedWorldInput(action,world,this.retained);
-        this.engine.postMessage({ id, action, settings, ...sent.input,key, keys, townStage,terrainStage,cityOutput,keepUrbanLanes,assetBase:document.baseURI },sent.transfer);
+        const sent = packedWorldInput(action, world, this.retained);
+        this.engine.postMessage({ id, action, settings, ...sent.input, key, keys, townStage, terrainStage, cityOutput, keepUrbanLanes, assetBase: document.baseURI }, sent.transfer);
       };
-      void dispatch().catch(error => { if (this.pending?.id === id) { this.pending=null;reject(error instanceof Error?error:new Error(String(error))); } });
+      void dispatch().catch(error => {
+        if (this.pending?.id === id) {
+          this.pending = null;
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
     });
   }
   cancel(): void {
     this.neuralDownload?.abort();
     if (!this.pending) return;
     this.pending.reject(new DOMException('Calcul annulé. La carte précédente est conservée.', 'AbortError'));
-    this.pending = null;this.retained=undefined; this.engine.terminate(); this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2'))); this.attachEngine();
+    this.pending = null;
+    this.retained = undefined;
+    this.engine.terminate();
+    this.engine = new EngineWorker(runtimeWorkerOptions(wasmWorkerOptions('magna-v2')));
+    this.attachEngine();
     // Requests of the terminated worker never answer: settle them instead of caching a promise that hangs.
     this.failResources(new DOMException('Computation cancelled.', 'AbortError'));
     this.onEngineReset?.();
   }
-  private failResources(error: Error): void { for (const request of this.resourceRequests.values()) request.reject(error); this.resourceRequests.clear(); this.resourceCache = undefined; }
+  private failResources(error: Error): void {
+    for (const request of this.resourceRequests.values()) request.reject(error);
+    this.resourceRequests.clear();
+    this.resourceCache = undefined;
+  }
   /** Resource payload of the world's terrain, fetched once per terrain (lazily: only when a resource layer is drawn). */
   resources(world: World): Promise<ResourcePayload | undefined> {
     const settings = this.appearanceSettings;
@@ -272,240 +391,445 @@ export class StudioClient {
     const payload = new Promise<ResourcePayload | undefined>((resolve, reject) => {
       this.resourceRequests.set(id, { resolve, reject });
       // Resources read the terrain only: a world the worker does not hold goes without its towns.
-      try { const sent = packedWorldInput('region', world === this.retained?.world ? world : townlessWorld(world), this.retained); this.engine.postMessage({ type: 'resources', id, settings, ...sent.input }, sent.transfer); }
-      catch (error) { this.resourceRequests.delete(id); reject(error instanceof Error ? error : new Error(String(error))); }
+      try {
+        const sent = packedWorldInput('region', world === this.retained?.world ? world : townlessWorld(world), this.retained);
+        this.engine.postMessage({ type: 'resources', id, settings, ...sent.input }, sent.transfer);
+      } catch (error) {
+        this.resourceRequests.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
     this.resourceCache = { key, payload };
-    payload.catch(() => { if (this.resourceCache?.payload === payload) this.resourceCache = undefined; });
+    payload.catch(() => {
+      if (this.resourceCache?.payload === payload) this.resourceCache = undefined;
+    });
     return payload;
   }
   /** End a background pass without dropping the worker's retained map. FIFO behind its last batch. */
-  releaseUrbanLanes():void{this.engine.postMessage({type:'release-urban-lanes'});}
+  releaseUrbanLanes(): void {
+    this.engine.postMessage({ type: 'release-urban-lanes' });
+  }
   /** Imported projects replace the old worker source; release its heavyweight archives. */
-  invalidateRetained():void{this.retained=undefined;this.engine.postMessage({type:'release'});}
-  async clear():Promise<void>{
+  invalidateRetained(): void {
+    this.retained = undefined;
+    this.engine.postMessage({ type: 'release' });
+  }
+  async clear(): Promise<void> {
     this.viewer.clear();
-    this.minimalActive=false;this.minimal?.dispose();this.minimal=undefined;this.minimalBackground=undefined;
-    this.resolutions=[];this.presentations=new WeakMap();this.resourceCache=undefined;
-    this.benchActive=false;this.appearanceRevision++;this.bench?.dispose();this.bench=undefined;this.benchSetting=undefined;this.classicBackground=undefined;
-    this.invalidateRetained();this.world=null;this.syncRenderer?.dispose();this.syncRenderer=null;
-    if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
-    this.render?.terminate();this.render=null;await this.init();
+    this.minimalActive = false;
+    this.minimal?.dispose();
+    this.minimal = undefined;
+    this.minimalBackground = undefined;
+    this.resolutions = [];
+    this.presentations = new WeakMap();
+    this.resourceCache = undefined;
+    this.benchActive = false;
+    this.appearanceRevision++;
+    this.bench?.dispose();
+    this.bench = undefined;
+    this.benchSetting = undefined;
+    this.classicBackground = undefined;
+    this.invalidateRetained();
+    this.world = null;
+    this.syncRenderer?.dispose();
+    this.syncRenderer = null;
+    if (this.pendingDraw) {
+      clearTimeout(this.pendingDraw.timer);
+      this.pendingDraw.resolve();
+      this.pendingDraw = null;
+    }
+    this.render?.terminate();
+    this.render = null;
+    await this.init();
   }
   async show(world: World, keepView = false, requested?: RenderReadiness): Promise<void> {
     const nextRequest = requested ?? new RenderReadiness(this.view3dActive ? '3d' : '2d');
     this.readiness = nextRequest;
     // A preference redraw (language, units) or a new world may start while a style switch is still preparing its
     // renderer: whichever show() started last owns the map, an older one returns once its await is over.
-    const showRequest = ++this.showRequest, superseded = (): boolean => showRequest !== this.showRequest;
+    const showRequest = ++this.showRequest,
+      superseded = (): boolean => showRequest !== this.showRequest;
     const mapChanged = this.world?.mapSize !== world.mapSize;
-    if(this.world!==world){this.benchMiniRevision=-1;this.resolutions=[];if(this.world?.stats['v2.terrainKey']!==world.stats['v2.terrainKey'])this.resourceCache=undefined;}
+    if (this.world !== world) {
+      this.benchMiniRevision = -1;
+      this.resolutions = [];
+      if (this.world?.stats['v2.terrainKey'] !== world.stats['v2.terrainKey']) this.resourceCache = undefined;
+    }
     this.world = world;
     // A language/unit change redraws the same retained world with different labels.
     this.benchMiniRevision = -1;
     const minimalSettings = this.appearanceSettings;
     const minimalAppearance = minimalSettings && this.resolve(minimalSettings, world, true);
     if (minimalSettings && minimalAppearance?.path === 'minimal') {
-      this.benchActive=false;this.bench?.dispose();this.bench=undefined;this.benchSetting=undefined;
-      this.syncRenderer?.dispose();this.syncRenderer=null;
-      this.render?.terminate();this.render=null;
+      this.benchActive = false;
+      this.bench?.dispose();
+      this.bench = undefined;
+      this.benchSetting = undefined;
+      this.syncRenderer?.dispose();
+      this.syncRenderer = null;
+      this.render?.terminate();
+      this.render = null;
       const { MinimalRenderer } = await import('./minimalRenderer');
       if (superseded()) return;
       this.minimal ??= new MinimalRenderer(() => this.viewer.invalidate());
       await this.minimal.set(world, minimalSettings, minimalAppearance, {}, nextRequest);
       if (superseded()) return;
-      this.minimalBackground=undefined;this.minimalActive=true;
+      this.minimalBackground = undefined;
+      this.minimalActive = true;
       this.viewer.setDirectSource({ element: this.minimal.element, draw: frame => this.drawMinimal(frame) });
       this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
       return;
     }
-    this.minimalActive=false;this.minimal?.dispose();this.minimal=undefined;this.minimalBackground=undefined;
-    if (!renderGeometryReady()) { await loadRenderGeometry(); if (superseded()) return; }
+    this.minimalActive = false;
+    this.minimal?.dispose();
+    this.minimal = undefined;
+    this.minimalBackground = undefined;
+    if (!renderGeometryReady()) {
+      await loadRenderGeometry();
+      if (superseded()) return;
+    }
     world = this.presentWorld(world);
-    this.syncRenderer?.dispose(); this.syncRenderer = null;
-    const settings=this.appearanceSettings;
-    const resolved=settings&&this.resolve(settings,world,true);
-    const useBench=!!settings&&resolved!.path==='composite';
-    if(useBench){
-      const {BenchRenderer}=await import('./benchRenderer');
-      if(superseded())return;
-      this.bench??=new BenchRenderer(()=>{if(this.benchActive&&this.world&&!this.bench?.redrawOnly){this.benchMiniRevision=-1;}if(this.benchActive&&this.world&&!this.view3dActive)this.viewer.contentChanged(this.world.mapSize,true);});
+    this.syncRenderer?.dispose();
+    this.syncRenderer = null;
+    const settings = this.appearanceSettings;
+    const resolved = settings && this.resolve(settings, world, true);
+    const useBench = !!settings && resolved!.path === 'composite';
+    if (useBench) {
+      const { BenchRenderer } = await import('./benchRenderer');
+      if (superseded()) return;
+      this.bench ??= new BenchRenderer(() => {
+        if (this.benchActive && this.world && !this.bench?.redrawOnly) {
+          this.benchMiniRevision = -1;
+        }
+        if (this.benchActive && this.world && !this.view3dActive) this.viewer.contentChanged(this.world.mapSize, true);
+      });
       this.bench.setSuspended(this.view3dActive);
-      this.bench.resourceSource=w=>this.resources(w);
+      this.bench.resourceSource = w => this.resources(w);
       // One bench set() at a time: two interleaved sets (style switch + language redraw) share the renderer's passes and
       // could leave the older look on screen. A newer show() waits for the one in flight; a superseded one gives up.
-      while(this.benchSetting){await this.benchSetting.catch(()=>{});if(superseded())return;}
+      while (this.benchSetting) {
+        await this.benchSetting.catch(() => {});
+        if (superseded()) return;
+      }
       this.benchPreparing++;
       const request = nextRequest;
-      const setting=this.bench.set(world,settings!,resolved!,{},this.view3dActive ? new RenderReadiness('2d') : request);this.benchSetting=setting;
-      try{await setting;}finally{this.benchPreparing--;if(this.benchSetting===setting)this.benchSetting=undefined;}
+      const setting = this.bench.set(world, settings!, resolved!, {}, this.view3dActive ? new RenderReadiness('2d') : request);
+      this.benchSetting = setting;
+      try {
+        await setting;
+      } finally {
+        this.benchPreparing--;
+        if (this.benchSetting === setting) this.benchSetting = undefined;
+      }
       // A newer show() already installed its look (e.g. parchment through the render worker): never put this older one back.
-      if(superseded())return;
-      if(!this.benchActive)this.render?.postMessage({type:'release'});
-      this.benchActive=true;
-      this.viewer.setDirectSource({element:this.bench.element,draw:frame=>this.drawBench(frame)});
-      this.viewer.contentChanged(world.mapSize,keepView&&!mapChanged);
+      if (superseded()) return;
+      if (!this.benchActive) this.render?.postMessage({ type: 'release' });
+      this.benchActive = true;
+      this.viewer.setDirectSource({ element: this.bench.element, draw: frame => this.drawBench(frame) });
+      this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
       return;
     }
-    this.benchActive=false;
-    if (!this.render) { await this.init(); if (superseded()) return; }
-    if(this.render)this.viewer.setSource({request:frame=>this.render!.postMessage({type:'view',...frame})});
+    this.benchActive = false;
+    if (!this.render) {
+      await this.init();
+      if (superseded()) return;
+    }
+    if (this.render) this.viewer.setSource({ request: frame => this.render!.postMessage({ type: 'view', ...frame }) });
     if (this.render) {
       const channel = new MessageChannel();
       const gen = ++this.drawingId;
-      if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}
-      const drawn=new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{this.pendingDraw=null;reject(new Error('Le rendu de la carte a dépassé 60 secondes.'));},60000);this.pendingDraw={gen,resolve,reject,timer};});
+      if (this.pendingDraw) {
+        clearTimeout(this.pendingDraw.timer);
+        this.pendingDraw.resolve();
+        this.pendingDraw = null;
+      }
+      const drawn = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.pendingDraw = null;
+          reject(new Error('Le rendu de la carte a dépassé 60 secondes.'));
+        }, 60000);
+        this.pendingDraw = { gen, resolve, reject, timer };
+      });
       this.render.postMessage({ type: 'attach', gen, port: channel.port1, display: this.display }, [channel.port1]);
-      const projected=packWorldLanduse(renderProjection(world));
-      channel.port2.postMessage({ type: 'world', gen, world:projected.world,final: true, stage: 'done' },projected.transfer);
+      const projected = packWorldLanduse(renderProjection(world));
+      channel.port2.postMessage({ type: 'world', gen, world: projected.world, final: true, stage: 'done' }, projected.transfer);
       channel.port2.close();
       this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
       return drawn;
     } else {
-      const displayed={...world,options:{...world.options,contours:this.display.contours??world.options.contours,landuse:this.display.landuse??world.options.landuse,labels:this.display.labels??world.options.labels}};
-      const images=this.display.painted?await(await import('./benchRenderer')).paintedBrushes():undefined;
-      this.syncRenderer = createCanvasRenderer(this.canvas, displayWorld(displayed, this.display.layers, this.display.buildings), this.display.style, { colors: this.display.colors, brushes:images??undefined,vegetation:this.display.vegetation,get dpr() { return window.devicePixelRatio || 1; } });
-      this.syncRenderer.setOverlays({ cartouche: this.display.cartouche??false, legend: this.display.legend??false,labels:this.display.labels??true });
+      const displayed = { ...world, options: { ...world.options, contours: this.display.contours ?? world.options.contours, landuse: this.display.landuse ?? world.options.landuse, labels: this.display.labels ?? world.options.labels } };
+      const images = this.display.painted ? await (await import('./benchRenderer')).paintedBrushes() : undefined;
+      this.syncRenderer = createCanvasRenderer(this.canvas, displayWorld(displayed, this.display.layers, this.display.buildings), this.display.style, {
+        colors: this.display.colors,
+        brushes: images ?? undefined,
+        vegetation: this.display.vegetation,
+        get dpr() {
+          return window.devicePixelRatio || 1;
+        },
+      });
+      this.syncRenderer.setOverlays({ cartouche: this.display.cartouche ?? false, legend: this.display.legend ?? false, labels: this.display.labels ?? true });
       this.viewer.setRenderer(this.syncRenderer, world.mapSize, keepView);
       return Promise.resolve();
     }
   }
   private drawMinimal(frame: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number } {
-    const renderer=this.minimal;
-    if (!renderer || !this.minimalActive || this.view3dActive) return { ms:0, band:0, scale:frame.view.scale };
-    renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
+    const renderer = this.minimal;
+    if (!renderer || !this.minimalActive || this.view3dActive) return { ms: 0, band: 0, scale: frame.view.scale };
+    renderer.drawLive(frame.view, frame.w, frame.h, frame.dpr);
     let mini: HTMLCanvasElement | undefined;
-    if(frame.mini && (this.benchMiniRevision!==this.appearanceRevision || this.benchMiniSize!==frame.mini)) {
-      mini=renderer.drawMini(frame.mini);this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;
+    if (frame.mini && (this.benchMiniRevision !== this.appearanceRevision || this.benchMiniSize !== frame.mini)) {
+      mini = renderer.drawMini(frame.mini);
+      this.benchMiniRevision = this.appearanceRevision;
+      this.benchMiniSize = frame.mini;
     }
-    this.canvas.dataset.renderer='minimal';this.canvas.dataset.renderStyle='minimal';
-    this.canvas.dataset.renderFrameMs=String(renderer.stats.frameMs);
-    this.canvas.dataset.renderGeometryBuildMs=String(renderer.stats.geometryBuildMs);
-    this.canvas.dataset.renderFeatures=String(renderer.stats.features);
-    this.canvas.dataset.terrainBackend='cpu';this.canvas.dataset.renderPending='0';this.canvas.dataset.renderPasses='[]';this.canvas.dataset.cityRender='{}';
-    return { mini, ms:renderer.stats.frameMs, band:0, scale:frame.view.scale };
+    this.canvas.dataset.renderer = 'minimal';
+    this.canvas.dataset.renderStyle = 'minimal';
+    this.canvas.dataset.renderFrameMs = String(renderer.stats.frameMs);
+    this.canvas.dataset.renderGeometryBuildMs = String(renderer.stats.geometryBuildMs);
+    this.canvas.dataset.renderFeatures = String(renderer.stats.features);
+    this.canvas.dataset.terrainBackend = 'cpu';
+    this.canvas.dataset.renderPending = '0';
+    this.canvas.dataset.renderPasses = '[]';
+    this.canvas.dataset.cityRender = '{}';
+    return { mini, ms: renderer.stats.frameMs, band: 0, scale: frame.view.scale };
   }
-  private drawBench(frame:FrameRequest):{mini?:HTMLCanvasElement;ms:number;band:number;scale:number}{
-    const started=performance.now();
-    const renderer=this.bench;
-    if(!renderer||!this.benchActive||this.view3dActive)return{ms:0,band:0,scale:frame.view.scale};
-    let mini:HTMLCanvasElement|undefined;
+  private drawBench(frame: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number } {
+    const started = performance.now();
+    const renderer = this.bench;
+    if (!renderer || !this.benchActive || this.view3dActive) return { ms: 0, band: 0, scale: frame.view.scale };
+    let mini: HTMLCanvasElement | undefined;
     // The whole-map miniature costs as much as a full frame: the live view shows first, the miniature follows in a later frame.
-    if(frame.mini&&!this.benchPreparing&&(this.benchMiniRevision!==this.appearanceRevision||this.benchMiniSize!==frame.mini)){
-      if(this.benchMiniDue){
-        this.benchMiniDue=false;mini=renderer.drawMini(frame.mini);
+    if (frame.mini && !this.benchPreparing && (this.benchMiniRevision !== this.appearanceRevision || this.benchMiniSize !== frame.mini)) {
+      if (this.benchMiniDue) {
+        this.benchMiniDue = false;
+        mini = renderer.drawMini(frame.mini);
         // Content still arriving (progressive display, dirty tiles): keep the revision stale so the miniature is drawn again.
-        if(renderer.miniComplete){this.benchMiniRevision=this.appearanceRevision;this.benchMiniSize=frame.mini;}
-        else if(!this.benchMiniTimer)this.benchMiniTimer=setTimeout(()=>{this.benchMiniTimer=undefined;if(!this.benchActive)return;this.benchMiniDue=true;this.viewer.invalidate();},MINI_DELAY_MS);
-      }else if(!this.benchMiniTimer)this.benchMiniTimer=setTimeout(()=>{this.benchMiniTimer=undefined;if(!this.benchActive)return;this.benchMiniDue=true;this.viewer.invalidate();},MINI_DELAY_MS);
+        if (renderer.miniComplete) {
+          this.benchMiniRevision = this.appearanceRevision;
+          this.benchMiniSize = frame.mini;
+        } else if (!this.benchMiniTimer)
+          this.benchMiniTimer = setTimeout(() => {
+            this.benchMiniTimer = undefined;
+            if (!this.benchActive) return;
+            this.benchMiniDue = true;
+            this.viewer.invalidate();
+          }, MINI_DELAY_MS);
+      } else if (!this.benchMiniTimer)
+        this.benchMiniTimer = setTimeout(() => {
+          this.benchMiniTimer = undefined;
+          if (!this.benchActive) return;
+          this.benchMiniDue = true;
+          this.viewer.invalidate();
+        }, MINI_DELAY_MS);
     }
     // Restore the live camera after a miniature capture, in this same animation frame.
-    renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
-    this.noteBenchStats(renderer);renderer.noteFrame(started);
-    return{mini,ms:performance.now()-started,band:0,scale:frame.view.scale};
+    renderer.drawLive(frame.view, frame.w, frame.h, frame.dpr);
+    this.noteBenchStats(renderer);
+    renderer.noteFrame(started);
+    return { mini, ms: performance.now() - started, band: 0, scale: frame.view.scale };
   }
-  private benchStatsAt=0;
-  private benchStatsTimer?:ReturnType<typeof setTimeout>;
+  private benchStatsAt = 0;
+  private benchStatsTimer?: ReturnType<typeof setTimeout>;
   /** Diagnostics of the map renderer on the canvas (`data-*`, read by the loading spinner, the test scripts and the
    * probes). The pending count is exact after every frame, written only when it changes. The others are serialized at
    * most every BENCH_STATS_MS, and once more after the last frame: written in every frame of a gesture, a dozen
    * attribute mutations (two of them JSON of the town and pass statistics) made the page recompute styles per frame. */
-  private noteBenchStats(renderer:BenchRenderer):void{
-    const data=this.canvas.dataset,pending=String(renderer.pendingWork());
-    if(data.renderPending!==pending)data.renderPending=pending;
-    if(performance.now()-this.benchStatsAt>=BENCH_STATS_MS){this.writeBenchStats(renderer);return;}
-    this.benchStatsTimer??=setTimeout(()=>{this.benchStatsTimer=undefined;if(this.benchActive&&this.bench)this.writeBenchStats(this.bench);},BENCH_STATS_MS);
+  private noteBenchStats(renderer: BenchRenderer): void {
+    const data = this.canvas.dataset,
+      pending = String(renderer.pendingWork());
+    if (data.renderPending !== pending) data.renderPending = pending;
+    if (performance.now() - this.benchStatsAt >= BENCH_STATS_MS) {
+      this.writeBenchStats(renderer);
+      return;
+    }
+    this.benchStatsTimer ??= setTimeout(() => {
+      this.benchStatsTimer = undefined;
+      if (this.benchActive && this.bench) this.writeBenchStats(this.bench);
+    }, BENCH_STATS_MS);
   }
-  private writeBenchStats(renderer:BenchRenderer):void{
-    this.benchStatsAt=performance.now();
-    const data=this.canvas.dataset,set=(key:string,value:string):void=>{if(data[key]!==value)data[key]=value;};
-    set('renderer',String(renderer.stats.renderer));set('renderStyle',String(renderer.stats.style));
-    set('terrainBackend',String(renderer.stats.terrainBackend));
-    set('renderRequest',String(renderer.requestId??''));
-    set('renderCache',String(renderer.stats.frameCache??'miss'));
-    const storage=renderer.retainedStorage();
-    set('renderFrameBytes',String(storage.frames));set('renderRetainedBytes',String(storage.bytes));
-    set('cityRender',JSON.stringify(renderer.stats.city??{}));set('renderPending',String(renderer.pendingWork()));set('renderPasses',JSON.stringify(renderer.stats.passes??[]));
+  private writeBenchStats(renderer: BenchRenderer): void {
+    this.benchStatsAt = performance.now();
+    const data = this.canvas.dataset,
+      set = (key: string, value: string): void => {
+        if (data[key] !== value) data[key] = value;
+      };
+    set('renderer', String(renderer.stats.renderer));
+    set('renderStyle', String(renderer.stats.style));
+    set('terrainBackend', String(renderer.stats.terrainBackend));
+    set('renderRequest', String(renderer.requestId ?? ''));
+    set('renderCache', String(renderer.stats.frameCache ?? 'miss'));
+    const storage = renderer.retainedStorage();
+    set('renderFrameBytes', String(storage.frames));
+    set('renderRetainedBytes', String(storage.bytes));
+    set('cityRender', JSON.stringify(renderer.stats.city ?? {}));
+    set('renderPending', String(renderer.pendingWork()));
+    set('renderPasses', JSON.stringify(renderer.stats.passes ?? []));
   }
   /** Progressive display finished (captures and test scripts wait for it). */
-  displaySettled():Promise<void>{if(this.minimalActive)return this.minimal!.settled();return this.benchActive&&this.bench?this.bench.settled():Promise.resolve();}
+  displaySettled(): Promise<void> {
+    if (this.minimalActive) return this.minimal!.settled();
+    return this.benchActive && this.bench ? this.bench.settled() : Promise.resolve();
+  }
   /** Display work still owed to the 2D view (tiles, textures, programs); 0 in 3D, whose readiness is awaited separately. */
-  displayPending():number{return !this.view3dActive&&this.benchActive&&this.bench?this.bench.pendingWork():0;}
-  prepareViewportCapture():void{if(this.minimalActive)this.minimal?.prepareCapture();if(this.benchActive)this.bench?.prepareCapture();}
+  displayPending(): number {
+    return !this.view3dActive && this.benchActive && this.bench ? this.bench.pendingWork() : 0;
+  }
+  prepareViewportCapture(): void {
+    if (this.minimalActive) this.minimal?.prepareCapture();
+    if (this.benchActive) this.bench?.prepareCapture();
+  }
   /** Resolve the appearance for the current products. `previewAware`: a stage-preview world is inspected through its elevation. */
-  private resolve(settings:V2Settings,world:World|undefined,previewAware:boolean):ResolvedAppearance{
-    const preview=previewAware&&!!world&&!!world.stats['v2.previewStage'];
-    const hit=this.resolutions.find(entry=>entry.settings===settings&&entry.world===world&&entry.preview===preview);
-    if(hit)return hit.resolved;
-    const resolved=resolveSettingsAppearance(settings,world,'view2d',{preview});
-    this.resolutions=[{settings,world,preview,resolved},...this.resolutions.slice(0,3)];return resolved;
+  private resolve(settings: V2Settings, world: World | undefined, previewAware: boolean): ResolvedAppearance {
+    const preview = previewAware && !!world && !!world.stats['v2.previewStage'];
+    const hit = this.resolutions.find(entry => entry.settings === settings && entry.world === world && entry.preview === preview);
+    if (hit) return hit.resolved;
+    const resolved = resolveSettingsAppearance(settings, world, 'view2d', { preview });
+    this.resolutions = [{ settings, world, preview, resolved }, ...this.resolutions.slice(0, 3)];
+    return resolved;
   }
   /** Appearance changes redraw retained geometry. They never enter the generation worker. */
-  setAppearance(settings:V2Settings):Promise<void>{
-    const request=++this.appearanceRequest;
+  setAppearance(settings: V2Settings): Promise<void> {
+    const request = ++this.appearanceRequest;
     const readiness = new RenderReadiness(this.view3dActive ? '3d' : '2d');
-    const snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined};
-    const work=this.appearanceWork.catch(()=>{}).then(()=>{if(request!==this.appearanceRequest)return;this.readiness=readiness;return this.applyAppearance(snapshot);});this.appearanceWork=work;return work;
+    const snapshot = { ...settings, appearance: settings.appearance ? structuredClone(settings.appearance) : undefined };
+    const work = this.appearanceWork
+      .catch(() => {})
+      .then(() => {
+        if (request !== this.appearanceRequest) return;
+        this.readiness = readiness;
+        return this.applyAppearance(snapshot);
+      });
+    this.appearanceWork = work;
+    return work;
   }
-  private async applyAppearance(settings:V2Settings):Promise<void>{
-    const previousSettings=this.appearanceSettings,previousDisplay=this.display;
+  private async applyAppearance(settings: V2Settings): Promise<void> {
+    const previousSettings = this.appearanceSettings,
+      previousDisplay = this.display;
     try {
-    this.appearanceSettings=settings;this.appearanceRevision++;
-    const display=this.resolve(settings,this.world??undefined,false);
-    this.display={...this.display,...resolvedDisplayOptions(display),colors:display.palette.colors};
-    const needsBench=this.resolve(settings,this.world??undefined,true).path!=='classic';
-    if(this.render&&!needsBench&&display.cartography.painted&&!this.brushSourcesSent){const {BRUSH_SOURCES}=await import('../render/assets/brushAssets');this.render.postMessage({type:'brushes',sources:BRUSH_SOURCES});this.brushSourcesSent=true;}
-    if(this.world&&(!this.render||this.benchActive||this.minimalActive||needsBench))await this.show(this.world,true,this.readiness);
-    else if(this.world){if(!sameDisplay(previousDisplay,this.display))this.render?.postMessage({type:'display',display:this.display});this.canvas.dataset.renderer='Classic Canvas';this.canvas.dataset.renderStyle=this.display.style;this.canvas.dataset.cityRender='{}';}
-    else if(this.render&&!needsBench&&!sameDisplay(previousDisplay,this.display))this.render.postMessage({type:'display',display:this.display});
-    } catch(error) {
-      this.appearanceSettings=previousSettings;this.display=previousDisplay;
-      if(this.render&&!this.benchActive)this.render.postMessage({type:'display',display:this.display});
+      this.appearanceSettings = settings;
+      this.appearanceRevision++;
+      const display = this.resolve(settings, this.world ?? undefined, false);
+      this.display = { ...this.display, ...resolvedDisplayOptions(display), colors: display.palette.colors };
+      const needsBench = this.resolve(settings, this.world ?? undefined, true).path !== 'classic';
+      if (this.render && !needsBench && display.cartography.painted && !this.brushSourcesSent) {
+        const { BRUSH_SOURCES } = await import('../render/assets/brushAssets');
+        this.render.postMessage({ type: 'brushes', sources: BRUSH_SOURCES });
+        this.brushSourcesSent = true;
+      }
+      if (this.world && (!this.render || this.benchActive || this.minimalActive || needsBench)) await this.show(this.world, true, this.readiness);
+      else if (this.world) {
+        if (!sameDisplay(previousDisplay, this.display)) this.render?.postMessage({ type: 'display', display: this.display });
+        this.canvas.dataset.renderer = 'Classic Canvas';
+        this.canvas.dataset.renderStyle = this.display.style;
+        this.canvas.dataset.cityRender = '{}';
+      } else if (this.render && !needsBench && !sameDisplay(previousDisplay, this.display)) this.render.postMessage({ type: 'display', display: this.display });
+    } catch (error) {
+      this.appearanceSettings = previousSettings;
+      this.display = previousDisplay;
+      if (this.render && !this.benchActive) this.render.postMessage({ type: 'display', display: this.display });
       throw error;
     }
   }
-  async prepare3dBackground():Promise<void>{
+  async prepare3dBackground(): Promise<void> {
     // A style switch may still be setting up the bench and compiling its look. Capturing earlier
     // would cache the old map or its preview, or enter a second synchronous pipeline compilation.
-    for(;;){const work=this.appearanceWork;await work;if(work===this.appearanceWork)break;}
-    if(this.minimalActive){await this.minimal?.settled();this.minimalBackground??=this.minimal?.groundBackground();return;}
-    if(this.benchActive){await this.bench?.exactReady();if(!this.bench?.groundBackground())this.bench?.backgroundUrl();return;}
-    if(!this.world)return;
-    const key=JSON.stringify(this.display);
-    if(this.classicBackground?.world===this.world&&this.classicBackground.key===key)return;
-    const {renderSvg}=await import('../render/svg');
-    const brushes=this.display.painted?(await import('../render/assets/brushAssets')).BRUSH_SOURCES:undefined;
-    const svg=renderSvg(this.world,{...this.display,brushes,width:2048,labels:false,legend:false,cartouche:false,layers:{city:false,streets:false,roads:false,labels:false,decor:false}}); // roads: vectors per 3D tile (city3d), not this map raster
-    this.classicBackground={world:this.world,key,url:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`};
-  }
-  groundBackground():HTMLCanvasElement|undefined{if(this.minimalActive)return this.minimalBackground??=this.minimal?.groundBackground();return this.benchActive?this.bench?.groundBackground():undefined;}
-  backgroundUrl():string|undefined{if(this.minimalActive)return this.groundBackground()?.toDataURL('image/png');return this.benchActive?this.bench?.backgroundUrl():this.classicBackground?.url;}
-  /** The classic 3D background already holds the land use. */
-  physicalGround(){return this.benchActive?this.bench?.physicalGround():undefined;}
-  async exportBench(settings:V2Settings,resolved:ResolvedAppearance,size:number,layers:Partial<ExportLayers>):Promise<HTMLCanvasElement>{
-    // Style switches may still be preparing the shared GPU resources. Export waits for that work.
-    for(;;){const work=this.appearanceWork;await work;if(work===this.appearanceWork)break;}
-    if(!this.world)throw new Error('Create a region first.');
-    if (resolved.path === 'minimal') {
-      const { MinimalRenderer } = await import('./minimalRenderer'), renderer = new MinimalRenderer(() => {});
-      try { await renderer.set(this.world, settings, resolved, layers); return await renderer.capture(size); } finally { renderer.dispose(); }
+    for (;;) {
+      const work = this.appearanceWork;
+      await work;
+      if (work === this.appearanceWork) break;
     }
-    const {BenchRenderer}=await import('./benchRenderer');
+    if (this.minimalActive) {
+      await this.minimal?.settled();
+      this.minimalBackground ??= this.minimal?.groundBackground();
+      return;
+    }
+    if (this.benchActive) {
+      await this.bench?.exactReady();
+      if (!this.bench?.groundBackground()) this.bench?.backgroundUrl();
+      return;
+    }
+    if (!this.world) return;
+    const key = JSON.stringify(this.display);
+    if (this.classicBackground?.world === this.world && this.classicBackground.key === key) return;
+    const { renderSvg } = await import('../render/svg');
+    const brushes = this.display.painted ? (await import('../render/assets/brushAssets')).BRUSH_SOURCES : undefined;
+    const svg = renderSvg(this.world, { ...this.display, brushes, width: 2048, labels: false, legend: false, cartouche: false, layers: { city: false, streets: false, roads: false, labels: false, decor: false } }); // roads: vectors per 3D tile (city3d), not this map raster
+    this.classicBackground = { world: this.world, key, url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` };
+  }
+  groundBackground(): HTMLCanvasElement | undefined {
+    if (this.minimalActive) return (this.minimalBackground ??= this.minimal?.groundBackground());
+    return this.benchActive ? this.bench?.groundBackground() : undefined;
+  }
+  backgroundUrl(): string | undefined {
+    if (this.minimalActive) return this.groundBackground()?.toDataURL('image/png');
+    return this.benchActive ? this.bench?.backgroundUrl() : this.classicBackground?.url;
+  }
+  /** The classic 3D background already holds the land use. */
+  physicalGround() {
+    return this.benchActive ? this.bench?.physicalGround() : undefined;
+  }
+  async exportBench(settings: V2Settings, resolved: ResolvedAppearance, size: number, layers: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
+    // Style switches may still be preparing the shared GPU resources. Export waits for that work.
+    for (;;) {
+      const work = this.appearanceWork;
+      await work;
+      if (work === this.appearanceWork) break;
+    }
+    if (!this.world) throw new Error('Create a region first.');
+    if (resolved.path === 'minimal') {
+      const { MinimalRenderer } = await import('./minimalRenderer'),
+        renderer = new MinimalRenderer(() => {});
+      try {
+        await renderer.set(this.world, settings, resolved, layers);
+        return await renderer.capture(size);
+      } finally {
+        renderer.dispose();
+      }
+    }
+    const { BenchRenderer } = await import('./benchRenderer');
     // Use the viewer's async GPU path for exports too. Forcing the raster path recompiles the
     // satellite material in synchronous WebGL even when the viewer already runs on WebGPU.
-    const world=mapPresentation(this.world,settings),snapshot={...settings,appearance:settings.appearance?structuredClone(settings.appearance):undefined},renderer=new BenchRenderer(()=>{},false,this.bench?.rasterContext(),this.bench?.sharedResources());
-    renderer.resourceSource=w=>this.resources(w);
-    let rendered:HTMLCanvasElement|undefined;
-    try{
-      await renderer.set(world,snapshot,resolved,layers);
-      rendered=await renderer.capture(size);const copy=document.createElement('canvas');copy.width=copy.height=size;copy.getContext('2d')!.drawImage(rendered,0,0);return copy;
-    }finally{if(rendered)rendered.width=rendered.height=0;renderer.dispose();}
+    const world = mapPresentation(this.world, settings),
+      snapshot = { ...settings, appearance: settings.appearance ? structuredClone(settings.appearance) : undefined },
+      renderer = new BenchRenderer(() => {}, false, this.bench?.rasterContext(), this.bench?.sharedResources());
+    renderer.resourceSource = w => this.resources(w);
+    let rendered: HTMLCanvasElement | undefined;
+    try {
+      await renderer.set(world, snapshot, resolved, layers);
+      rendered = await renderer.capture(size);
+      const copy = document.createElement('canvas');
+      copy.width = copy.height = size;
+      copy.getContext('2d')!.drawImage(rendered, 0, 0);
+      return copy;
+    } finally {
+      if (rendered) rendered.width = rendered.height = 0;
+      renderer.dispose();
+    }
   }
   setDisplay(patch: Partial<DisplayOpts>): void {
-    const next={...this.display,...patch};if(sameDisplay(this.display,next))return;this.display=next;
-    if (this.render) { if(!this.benchActive)this.render.postMessage({ type: 'display', display: this.display }); }
-    else if (this.world) this.show({ ...this.world, options: { ...this.world.options, contours: this.display.contours ?? true, landuse: this.display.landuse ?? true, labels: this.display.labels } }, true);
+    const next = { ...this.display, ...patch };
+    if (sameDisplay(this.display, next)) return;
+    this.display = next;
+    if (this.render) {
+      if (!this.benchActive) this.render.postMessage({ type: 'display', display: this.display });
+    } else if (this.world) this.show({ ...this.world, options: { ...this.world.options, contours: this.display.contours ?? true, landuse: this.display.landuse ?? true, labels: this.display.labels } }, true);
   }
   /** Page unload: the job is dropped, not rejected, so its continuation cannot touch a UI that is being torn down. */
-  destroy(): void { clearTimeout(this.benchStatsTimer);this.neuralDownload?.abort();this.pending=null;this.retained=undefined;this.minimal?.dispose();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }
+  destroy(): void {
+    clearTimeout(this.benchStatsTimer);
+    this.neuralDownload?.abort();
+    this.pending = null;
+    this.retained = undefined;
+    this.minimal?.dispose();
+    this.bench?.dispose();
+    if (this.pendingDraw) {
+      clearTimeout(this.pendingDraw.timer);
+      this.pendingDraw.resolve();
+      this.pendingDraw = null;
+    }
+    this.engine.terminate();
+    this.render?.terminate();
+    this.syncRenderer?.dispose();
+    this.viewer.destroy();
+  }
 }

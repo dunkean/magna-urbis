@@ -11,11 +11,23 @@ import { resolvePosition } from '../src/gen/site/position';
 import type { TerrainLayer, World } from '../src/gen/types';
 
 function flatTerrain(size = 2000): TerrainLayer {
-  const n = 100, cell = size / n, N = n * n;
+  const n = 100,
+    cell = size / n,
+    N = n * n;
   return {
-    height: createGrid(n, n, cell, 30), slope: createGrid(n, n, cell), flow: createGrid(n, n, cell),
-    water: new Uint8Array(N), filled: new Float32Array(N).fill(30), receiver: new Int32Array(N).fill(-1),
-    rivers: [], lakes: [], coastline: [], seaLevel: 0, seaFraction: 0, downSide: 'S', seaSide: null,
+    height: createGrid(n, n, cell, 30),
+    slope: createGrid(n, n, cell),
+    flow: createGrid(n, n, cell),
+    water: new Uint8Array(N),
+    filled: new Float32Array(N).fill(30),
+    receiver: new Int32Array(N).fill(-1),
+    rivers: [],
+    lakes: [],
+    coastline: [],
+    seaLevel: 0,
+    seaFraction: 0,
+    downSide: 'S',
+    seaSide: null,
   };
 }
 
@@ -45,7 +57,8 @@ describe('settlement centre overrides', () => {
   });
 
   it('uses the exact dry centre outside the automatic central band and roots its cost there', () => {
-    const terrain = flatTerrain(), center = { x: 280, y: 1472 };
+    const terrain = flatTerrain(),
+      center = { x: 280, y: 1472 };
     const opts = makeOptions({ size: 'hamlet', relief: 'flat', river: 'none', center, sitePrefs: { weights: { hilltop: 100 } } });
     const site = chooseSite(terrain, opts, 2000, new Rng('magna-urbis:1'));
     expect(site.center).toEqual(center);
@@ -99,10 +112,19 @@ describe('settlement centre overrides', () => {
   });
 
   it('omits off-map or large-margin secondary centres rather than moving them more than 400 m', () => {
-    const terrain = flatTerrain(), opts = makeOptions({ mapSize: 2000, population: 100, size: 'hamlet', center: { x: 1500, y: 1500 }, settlements: { list: [
-      { population: 40, position: { x: -1000, y: 450 } },
-      { population: 1000, position: { x: 0, y: 0 } },
-    ] } });
+    const terrain = flatTerrain(),
+      opts = makeOptions({
+        mapSize: 2000,
+        population: 100,
+        size: 'hamlet',
+        center: { x: 1500, y: 1500 },
+        settlements: {
+          list: [
+            { population: 40, position: { x: -1000, y: 450 } },
+            { population: 1000, position: { x: 0, y: 0 } },
+          ],
+        },
+      });
     const root = new Rng('magna-urbis:1');
     const world: World = { options: opts, seed: opts.seed, mapSize: 2000, terrain, site: chooseSite(terrain, opts, 2000, root), stats: {} };
     const plan = planSettlements(world, opts, root);
@@ -112,17 +134,27 @@ describe('settlement centre overrides', () => {
   });
 
   it('keeps village coordinates exact and corrects conflicting centres without duplicate Voronoi sites', () => {
-    const terrain = flatTerrain(), opts = makeOptions({ mapSize: 2000, population: 100, size: 'hamlet', center: { x: 1000, y: 1000 }, settlements: { list: [
-      { population: 40, position: { x: 450, y: 450 } },
-      { population: 40, position: { x: 1000, y: 1000 } },
-    ] } });
+    const terrain = flatTerrain(),
+      opts = makeOptions({
+        mapSize: 2000,
+        population: 100,
+        size: 'hamlet',
+        center: { x: 1000, y: 1000 },
+        settlements: {
+          list: [
+            { population: 40, position: { x: 450, y: 450 } },
+            { population: 40, position: { x: 1000, y: 1000 } },
+          ],
+        },
+      });
     const root = new Rng('magna-urbis:1');
     const world: World = { options: opts, seed: opts.seed, mapSize: 2000, terrain, site: chooseSite(terrain, opts, 2000, root), stats: {} };
     const plan = planSettlements(world, opts, root);
     expect(plan.settlements).toHaveLength(3);
     expect(plan.settlements[1].center).toEqual({ x: 450, y: 450 });
     expect(plan.warnings.join(' ')).toMatch(/moved/);
-    const main = plan.settlements[0], moved = plan.settlements[2];
+    const main = plan.settlements[0],
+      moved = plan.settlements[2];
     // Explicit positions may touch another settlement: only the shared centre moves, by a cell or so.
     expect(dist(main.center, moved.center)).toBeGreaterThan(0);
     expect(dist(main.center, moved.center)).toBeLessThan(main.radius);
@@ -131,12 +163,13 @@ describe('settlement centre overrides', () => {
 
   it('moves eager urban geometry, regional roads and the main settlement to the chosen centre deterministically', () => {
     const options = makeOptions({ seed: 'placement-eager', mapSize: 4000, population: 300, importedHeight, relief: 'flat', river: 'none', center: { x: 850, y: 1325 }, settlements: 'none', castle: 'no', walls: 'none' });
-    const a = generate(options), b = generate({ ...fromQuery(toQuery(options)), importedHeight });
+    const a = generate(options),
+      b = generate({ ...fromQuery(toQuery(options)), importedHeight });
     expect(a.site!.center).toEqual(options.center);
     expect(a.settlements![0].center).toEqual(options.center);
     expect(a.urban!.buildings.length).toBeGreaterThan(10);
-    expect(Math.min(...a.roads!.map((road) => dist(road.path[road.path.length - 1], options.center!)))).toBeLessThan(1);
-    const centres = a.urban!.buildings.map((building) => polygonCentroid(building.poly));
+    expect(Math.min(...a.roads!.map(road => dist(road.path[road.path.length - 1], options.center!)))).toBeLessThan(1);
+    const centres = a.urban!.buildings.map(building => polygonCentroid(building.poly));
     const mean = { x: centres.reduce((s, c) => s + c.x, 0) / centres.length, y: centres.reduce((s, c) => s + c.y, 0) / centres.length };
     expect(dist(mean, options.center!)).toBeLessThan(400);
     expect(JSON.stringify(a.urban)).toBe(JSON.stringify(b.urban));
@@ -153,7 +186,8 @@ describe('settlement centre overrides', () => {
   }, 120000);
 
   it('honours explicit footprint clearance even below the automatic twenty-percent band', () => {
-    const terrain = flatTerrain(20000), center = { x: 800, y: 10000 };
+    const terrain = flatTerrain(20000),
+      center = { x: 800, y: 10000 };
     const opts = makeOptions({ size: 'city', center, sitePrefs: { margin: 0.1, centerInset: 2000 } });
     const site = chooseSite(terrain, opts, 20000, new Rng('magna-urbis:clearance'));
     expect(site.center).toEqual({ x: 2000, y: 10000 });
@@ -168,7 +202,6 @@ describe('settlement centre overrides', () => {
     const w = generate(opts);
     expect(w.site!.center.x).toBeGreaterThanOrEqual(clearance);
     expect(w.urban!.macro!.center).toEqual(w.site!.center);
-    expect(w.urban!.macro!.quarters.flatMap((q) => q.pts).every((p) => p.x >= 0 && p.x <= w.mapSize && p.y >= 0 && p.y <= w.mapSize)).toBe(true);
+    expect(w.urban!.macro!.quarters.flatMap(q => q.pts).every(p => p.x >= 0 && p.x <= w.mapSize && p.y >= 0 && p.y <= w.mapSize)).toBe(true);
   }, 120000);
-
 });

@@ -19,9 +19,11 @@ describe('V2 retained-map render controls', () => {
   });
   it('accepts every displayed numeric bound and choice without changing generation inputs', () => {
     for (const field of renderControlFields) {
-      const choices = field.type === 'number' ? [field.min, field.max] : field.type === 'boolean' ? [false, true] : field.options?.map(option => option.value).filter(value => value !== 'custom') ?? [];
+      const choices = field.type === 'number' ? [field.min, field.max] : field.type === 'boolean' ? [false, true] : (field.options?.map(option => option.value).filter(value => value !== 'custom') ?? []);
       for (const choice of choices) {
-        const settings = defaultSettings(), generation = structuredClone(settings), key = terrainCacheKey(settings);
+        const settings = defaultSettings(),
+          generation = structuredClone(settings),
+          key = terrainCacheKey(settings);
         delete generation.appearance;
         const value = field.fromInput ? field.fromInput(choice) : choice;
         writeAppearanceControl(settings, field.path, value);
@@ -34,9 +36,11 @@ describe('V2 retained-map render controls', () => {
     }
   });
   it('reads legacy and style-dependent defaults without expanding a saved recipe or losing inactive values', () => {
-    const settings = defaultSettings(), original = structuredClone(settings);
+    const settings = defaultSettings(),
+      original = structuredClone(settings);
     const defaults = renderControlValues(settings);
-    expect(defaults.renderer).toBe('bench'); expect(defaults.city?.painted).toBe(true);
+    expect(defaults.renderer).toBe('bench');
+    expect(defaults.city?.painted).toBe(true);
     expect(settings).toEqual(original);
     writeAppearanceControl(settings, 'appearance.composition.effects.lighting.strength', 2.2);
     expect(settings.appearance?.composition?.effects.lighting).toMatchObject({ enabled: true, azimuth: 315, elevation: 45, strength: 2.2, exaggeration: 2 });
@@ -49,8 +53,12 @@ describe('V2 retained-map render controls', () => {
     expect(settings.appearance?.city?.layers?.fronts).toBe(true);
   });
   it('has intentional English and French copy for every field and choice', () => {
-    for (const field of renderControlFields) for (const text of [field.label, field.help, ...(field.options?.map(option => option.label) ?? [])]) {
-      if (text) { expect(renderControlMessages[text]?.en, text).toBeTruthy(); expect(renderControlMessages[text]?.fr, text).toBeTruthy(); }
-    }
+    for (const field of renderControlFields)
+      for (const text of [field.label, field.help, ...(field.options?.map(option => option.label) ?? [])]) {
+        if (text) {
+          expect(renderControlMessages[text]?.en, text).toBeTruthy();
+          expect(renderControlMessages[text]?.fr, text).toBeTruthy();
+        }
+      }
   });
 });

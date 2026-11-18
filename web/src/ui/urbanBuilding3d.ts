@@ -11,16 +11,51 @@ import { ROOF_PLANE_LIGHT_GLSL } from '../render/roofPlaneLight';
 
 type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
-export interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number;
+export interface BuildingFrame {
+  matrix: Float32Array;
+  cameraX: number;
+  cameraY: number;
+  targetHeight: number;
+  exaggeration: number;
+  focal: number;
+  distance: number;
   /** Underdark 3D (render/underdarkCavern.ts): the town lantern light level, the cave fog start and end (m), and the eye (x, y, height above the ground). */
-  cave?: { light: number; fog: [number, number]; eye: [number, number, number] } }
+  cave?: { light: number; fog: [number, number]; eye: [number, number, number] };
+}
 /** `stride`: floats per vertex, 10: position, normal, uv in tiles + material layer (textured) or colour, then the
  * vertex's ground: the display exaggeration lifts a building's base with the relief, never its own height. */
-export interface Batch { color: Vec3; tint: Vec3; recolored: boolean; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; /** Snow overlays need their own depth bias in both backends. */ snow?: boolean; /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer; count: number; stride: number; /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean; /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[] }
-interface Entry { building: Building3dVisual; bounds: Bounds }
+export interface Batch {
+  color: Vec3;
+  tint: Vec3;
+  recolored: boolean;
+  values: number[];
+  buffer?: WebGLBuffer;
+  vao?: WebGLVertexArrayObject;
+  /** Snow overlays need their own depth bias in both backends. */ snow?: boolean;
+  /** WebGPU backend's vertex buffer. */ gpu?: GPUBuffer;
+  count: number;
+  stride: number;
+  /** Untextured batches carry the colour per vertex (one batch, one draw per sector). */ vcolor?: boolean;
+  /** Distinct vertex colours of a vcolor batch (inspection). */ palette?: Vec3[];
+}
+interface Entry {
+  building: Building3dVisual;
+  bounds: Bounds;
+}
 /** `yard`: lot boundaries only, in a sector of their own: they change level far earlier than buildings and for a fraction of the cost. */
-export interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; yard?: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; yardLevel?: number; batches: Batch[]; used: number } }
-const SECTOR = 256, MAX_CACHE_BYTES = 96 * 1024 * 1024;
+export interface Sector {
+  origin: [number, number];
+  entries: Entry[];
+  bounds: Bounds;
+  width: number;
+  featureLodEligible: boolean;
+  overview: boolean;
+  shown: boolean;
+  yard?: boolean;
+  cached?: { overview: boolean; featureLod?: BuildingFeatureLod; yardLevel?: number; batches: Batch[]; used: number };
+}
+const SECTOR = 256,
+  MAX_CACHE_BYTES = 96 * 1024 * 1024;
 // Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
 // works (city walls, bridges: facadePosition.y = -10000) are left as they are.
 const nightWindows = `
@@ -233,80 +268,145 @@ void main(){
   float light=buildingLight(N,normalize(n));color=vec4(buildingCave(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5),facadePosition,litWindow>.5,N),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
-export const SOFT_LAYER_FROM = Math.min(...Object.entries(MATERIALS.road).filter(([k]) => k !== 'wall').map(([, v]) => v));
+export const SOFT_LAYER_FROM = Math.min(
+  ...Object.entries(MATERIALS.road)
+    .filter(([k]) => k !== 'wall')
+    .map(([, v]) => v),
+);
 /** GLSL sources translated to WGSL for the WebGPU backend (web/scripts/wgsl_shaders_3d.ts). */
 export const BUILDING_3D_GLSL = { colorVertex: vertexColor, colorFragment: fragmentColor, texVertex, texFragment };
 function program(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const p = gl.createProgram()!;
-  for (const [kind, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
-    const shader = gl.createShader(kind)!; gl.shaderSource(shader, source); gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { const reason = gl.getShaderInfoLog(shader); gl.deleteShader(shader); gl.deleteProgram(p); throw new Error(`Bâtiments 3D : ${reason}`); }
-    gl.attachShader(p, shader); gl.deleteShader(shader);
+  for (const [kind, source] of [
+    [gl.VERTEX_SHADER, vs],
+    [gl.FRAGMENT_SHADER, fs],
+  ] as const) {
+    const shader = gl.createShader(kind)!;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const reason = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      gl.deleteProgram(p);
+      throw new Error(`Bâtiments 3D : ${reason}`);
+    }
+    gl.attachShader(p, shader);
+    gl.deleteShader(shader);
   }
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { const reason = gl.getProgramInfoLog(p); gl.deleteProgram(p); throw new Error(`Bâtiments 3D : ${reason}`); }
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    const reason = gl.getProgramInfoLog(p);
+    gl.deleteProgram(p);
+    throw new Error(`Bâtiments 3D : ${reason}`);
+  }
   return p;
 }
 function rgb(color: string): Vec3 {
-  if (color.startsWith('rgb')) return color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(v => v / 255) as Vec3;
+  if (color.startsWith('rgb'))
+    return color
+      .match(/[\d.]+/g)!
+      .slice(0, 3)
+      .map(Number)
+      .map(v => v / 255) as Vec3;
   return [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255) as Vec3;
 }
 function bounds(building: Building3dVisual): Bounds {
   const box: Bounds = [Infinity, Infinity, building.ground_z_m, -Infinity, -Infinity, building.ground_z_m + building3dHeight(building)];
   const features = isBuildingProjection(building) ? [] : building.structural_features;
-  for (const surface of [building.footprint, building.roof_footprint, ...features.map(f => f.surface)]) for (const shape of surface) for (const p of shape.outer) {
-    box[0] = Math.min(box[0], p.x); box[1] = Math.min(box[1], p.y); box[3] = Math.max(box[3], p.x); box[4] = Math.max(box[4], p.y);
-  }
+  for (const surface of [building.footprint, building.roof_footprint, ...features.map(f => f.surface)])
+    for (const shape of surface)
+      for (const p of shape.outer) {
+        box[0] = Math.min(box[0], p.x);
+        box[1] = Math.min(box[1], p.y);
+        box[3] = Math.max(box[3], p.x);
+        box[4] = Math.max(box[4], p.y);
+      }
   if (!isBuildingProjection(building)) for (const foundation of [...building.volumes.map(v => v.foundation), ...(building.structural_foundations ?? [])]) if (foundation) box[2] = Math.min(box[2], foundation.z_min_m);
-  for (const feature of features) { box[2] = Math.min(box[2], feature.z_m); box[5] = Math.max(box[5], feature.z_m + feature.height_m); }
-  for (const feature of features) for (const p of feature.vertices3d) {
-    const point = [p.x, p.y, p.z]; for (let i = 0; i < 3; i++) { box[i] = Math.min(box[i], point[i]); box[i + 3] = Math.max(box[i + 3], point[i]); }
+  for (const feature of features) {
+    box[2] = Math.min(box[2], feature.z_m);
+    box[5] = Math.max(box[5], feature.z_m + feature.height_m);
   }
+  for (const feature of features)
+    for (const p of feature.vertices3d) {
+      const point = [p.x, p.y, p.z];
+      for (let i = 0; i < 3; i++) {
+        box[i] = Math.min(box[i], point[i]);
+        box[i + 3] = Math.max(box[i + 3], point[i]);
+      }
+    }
   return box;
 }
 function rayBox(origin: Vec3, direction: Vec3, box: Bounds, maximum: number): boolean {
-  let near = 0, far = maximum;
+  let near = 0,
+    far = maximum;
   for (let i = 0; i < 3; i++) {
-    if (Math.abs(direction[i]) < 1e-12) { if (origin[i] < box[i] || origin[i] > box[i + 3]) return false; continue; }
-    const a = (box[i] - origin[i]) / direction[i], b = (box[i + 3] - origin[i]) / direction[i];
-    near = Math.max(near, Math.min(a, b)); far = Math.min(far, Math.max(a, b)); if (far < near) return false;
+    if (Math.abs(direction[i]) < 1e-12) {
+      if (origin[i] < box[i] || origin[i] > box[i + 3]) return false;
+      continue;
+    }
+    const a = (box[i] - origin[i]) / direction[i],
+      b = (box[i + 3] - origin[i]) / direction[i];
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+    if (far < near) return false;
   }
   return true;
 }
 
 /** Material layer of a display material id `city3d:<cover|wall|road>:<key>` (city3dMeshes.ts); -1 for any other material. */
 function materialLayer(id: string | undefined): number {
-  const m = /^city3d:(cover|wall|road):(.+)$/.exec(id ?? ''); if (!m) return -1;
-  return m[1] === 'cover' ? coverLayer(m[2]) : m[1] === 'wall' ? wallLayer(m[2]) : MATERIALS.road[m[2]] ?? -1;
+  const m = /^city3d:(cover|wall|road):(.+)$/.exec(id ?? '');
+  if (!m) return -1;
+  return m[1] === 'cover' ? coverLayer(m[2]) : m[1] === 'wall' ? wallLayer(m[2]) : (MATERIALS.road[m[2]] ?? -1);
 }
 /** Procedural grain classes of the flat-colour program (materialGrain). Roof covers take the class of the family the
  * 2D plan gives the same pan (`roofGrain`: cover, flatness, culture), so both views show one cover; wall materials
  * follow. At most 31 (all in use): the class is stored in thirty-seconds on the normal's length. */
-const ROOF_CLASS: Record<CoverGrain, number> = { tile: 1, pantile: 2, glazed: 3, slate: 4, slab: 5, paving: 6, thatch: 7, reed: 8, palm: 9, turf: 10, shingle: 11, bark: 12, bamboo: 13,
-  earth: 14, lime: 15, metal: 16, felt: 17, hide: 18 };
+const ROOF_CLASS: Record<CoverGrain, number> = { tile: 1, pantile: 2, glazed: 3, slate: 4, slab: 5, paving: 6, thatch: 7, reed: 8, palm: 9, turf: 10, shingle: 11, bark: 12, bamboo: 13, earth: 14, lime: 15, metal: 16, felt: 17, hide: 18 };
 /** Walls: lime plaster (rain streaks), timber frame (posts and rails under the plaster), boards and logs, brick, stone
  * courses, adobe and rammed earth, wattle and daub, upright bamboo, coral rag, hide (the stitched skins of the tent roof). */
-const WALL_CLASS: Record<string, number> = { plaster: 19, timber: 20, wood: 21, brick: 22, stone: 23, earth: 24, wattle: 25, bamboo: 26, coral: 27, hide: 18,
+const WALL_CLASS: Record<string, number> = {
+  plaster: 19,
+  timber: 20,
+  wood: 21,
+  brick: 22,
+  stone: 23,
+  earth: 24,
+  wattle: 25,
+  bamboo: 26,
+  coral: 27,
+  hide: 18,
   // Modern walls: cut limestone in large dressed courses, board-marked concrete (formwork panels, stains), curtain
   // wall (a regular grid of mullions on a smooth surface), steel cladding (the standing-seam class: upright joints).
-  ashlar: 29, concrete: 30, glass: 31, steel: 16 };
+  ashlar: 29,
+  concrete: 30,
+  glass: 31,
+  steel: 16,
+};
 /** Class of a roof face under snow: the mantle is uneven, thinner in places (materialGrain). */
 const SNOW_CLASS = 28;
 /** Class of a window lit at night (city3dMeshes.ts `LIT_WINDOW`), in every appearance and in both programs: past the
  * grain classes, it only tells the shaders which faces glow (buildingNight). */
 const LIT_CLASS = 32;
 /** The matches of the two material id patterns read for every triangle, kept per id (a scene has a few dozen ids). */
-const displayMaterials = new Map<string, RegExpExecArray | null>(), materialTints = new Map<string, RegExpExecArray | null>();
+const displayMaterials = new Map<string, RegExpExecArray | null>(),
+  materialTints = new Map<string, RegExpExecArray | null>();
 function displayMaterial(id: string): RegExpExecArray | null {
   let m = displayMaterials.get(id);
-  if (m === undefined) { if (displayMaterials.size > 4096) displayMaterials.clear(); displayMaterials.set(id, m = /^city3d:(cover|wall):([a-z]+)$/.exec(id)); }
+  if (m === undefined) {
+    if (displayMaterials.size > 4096) displayMaterials.clear();
+    displayMaterials.set(id, (m = /^city3d:(cover|wall):([a-z]+)$/.exec(id)));
+  }
   return m;
 }
 /** The `@rrggbb` / `@rgb` tint suffix of a material id. */
 function materialTint(raw: string | undefined): RegExpExecArray | null {
   const key = raw ?? '';
   let m = materialTints.get(key);
-  if (m === undefined) { if (materialTints.size > 4096) materialTints.clear(); materialTints.set(key, m = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(key)); }
+  if (m === undefined) {
+    if (materialTints.size > 4096) materialTints.clear();
+    materialTints.set(key, (m = /@([0-9a-f]{6}|[0-9a-f]{3})$/.exec(key)));
+  }
   return m;
 }
 /** Grain class of a face from its display material id `city3d:<cover|wall>:<key>`; 0 (no grain) for openings, roads,
@@ -315,17 +415,22 @@ function materialClass(id: string | undefined, normal: readonly number[], cultur
   const m = displayMaterial(id ?? '');
   if (!m) return 0;
   if (m[1] === 'wall') return WALL_CLASS[m[2]] ?? 0;
-  const grain = roofGrain(m[2], Math.abs(normal[2]) > .995 * (Math.hypot(normal[0], normal[1], normal[2]) || 1), culture);
+  const grain = roofGrain(m[2], Math.abs(normal[2]) > 0.995 * (Math.hypot(normal[0], normal[1], normal[2]) || 1), culture);
   return grain ? ROOF_CLASS[grain] : 0;
 }
 /** Texture coordinates (in tiles) of a point of a face, in world metres: vertical faces along the face and down (image upright),
  * pitched faces u along the ridge and v down the slope (stretched by the slope), flat faces on the plan. */
 function faceUv(p: readonly number[], normal: readonly number[], layer: number): [number, number] {
   if (layer < 0) return [0, 0];
-  const e = layerExtent(layer), nx = normal[0], ny = normal[1], nz = Math.abs(normal[2]), h = Math.hypot(nx, ny);
+  const e = layerExtent(layer),
+    nx = normal[0],
+    ny = normal[1],
+    nz = Math.abs(normal[2]),
+    h = Math.hypot(nx, ny);
   if (nz < 0.3 && h > 1e-6) return [(p[0] * -ny + p[1] * nx) / h / e, -p[2] / e];
   if (h < 0.02) return [p[0] / e, p[1] / e];
-  const dx = nx / h, dy = ny / h;
+  const dx = nx / h,
+    dy = ny / h;
   return [(-p[0] * dy + p[1] * dx) / e, (p[0] * dx + p[1] * dy) / Math.max(nz, 0.2) / e];
 }
 
@@ -333,7 +438,7 @@ function faceUv(p: readonly number[], normal: readonly number[], layer: number):
  * Off-screen sectors require no roof traversal or GPU buffers. Plan (x,y),
  * altitude z become GL (x,z,y), before display exaggeration. */
 /** `uCave` of the building shaders: off, or on with the lantern light level and the fog range (m). */
-export const caveUniform = (frame: BuildingFrame, lightsOn = true): [number, number, number, number] => frame.cave ? [lightsOn ? 1 : 2, lightsOn ? frame.cave.light : .08, frame.cave.fog[0], frame.cave.fog[1]] : [0, 1, 1e9, 2e9];
+export const caveUniform = (frame: BuildingFrame, lightsOn = true): [number, number, number, number] => (frame.cave ? [lightsOn ? 1 : 2, lightsOn ? frame.cave.light : 0.08, frame.cave.fog[0], frame.cave.fog[1]] : [0, 1, 1e9, 2e9]);
 export class UrbanBuildingPass {
   protected night = false;
   protected lightsOn = false;
@@ -353,27 +458,41 @@ export class UrbanBuildingPass {
   private index = new Map<string, Sector>();
   /** `onTexturesReady`: asks the host for a frame once the material atlases are on the GPU. */
   /** `gl` is undefined for the WebGPU backend (terrain3dGpu.ts), which overrides the GPU hooks. */
-  constructor(private gl: WebGL2RenderingContext | undefined, protected onTexturesReady?: () => void) {}
+  constructor(
+    private gl: WebGL2RenderingContext | undefined,
+    protected onTexturesReady?: () => void,
+  ) {}
 
   setScene(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance): void {
-    this.night=appearance.ambience==='night';
-    this.lightsOn=appearance.lightsOn??this.night;
-    appearance={...appearance,ambience:undefined,lightsOn:undefined};
+    this.night = appearance.ambience === 'night';
+    this.lightsOn = appearance.lightsOn ?? this.night;
+    appearance = { ...appearance, ambience: undefined, lightsOn: undefined };
     const key = JSON.stringify(appearance) + roofSeasonKey();
     if (this.source === scene && this.appearanceKey === key) return;
-    this.clear(); this.source = scene; this.appearance = { ...appearance }; this.appearanceKey = key;
+    this.clear();
+    this.source = scene;
+    this.appearance = { ...appearance };
+    this.appearanceKey = key;
     this.snowAltitudes = townRoofAltitudes(scene?.buildings ?? []);
     const sectors = new Map<string, Sector>();
     for (const building of scene?.buildings ?? []) {
       const box = bounds(building);
       const p = isBuildingProjection(building) ? { x: (box[0] + box[3]) / 2, y: (box[1] + box[4]) / 2 } : building.transform.origin;
-      const yard = isYardMesh(building), origin: [number, number] = [Math.floor(p.x / SECTOR) * SECTOR, Math.floor(p.y / SECTOR) * SECTOR], key = `${origin}${yard ? '/yard' : ''}`;
+      const yard = isYardMesh(building),
+        origin: [number, number] = [Math.floor(p.x / SECTOR) * SECTOR, Math.floor(p.y / SECTOR) * SECTOR],
+        key = `${origin}${yard ? '/yard' : ''}`;
       let sector = sectors.get(key);
-      if (!sector) { sector = { origin, entries: [], bounds: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], width: 0, featureLodEligible: false, overview: false, shown: false, yard }; sectors.set(key, sector); }
+      if (!sector) {
+        sector = { origin, entries: [], bounds: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], width: 0, featureLodEligible: false, overview: false, shown: false, yard };
+        sectors.set(key, sector);
+      }
       sector.entries.push({ building, bounds: box });
       sector.featureLodEligible ||= !isBuildingProjection(building) && hasBuildingFeatureLod(building.structural_features);
       sector.width += yard ? 1 : Math.max(1, Math.min(box[3] - box[0], box[4] - box[1])); // a yard sector's `pixels` are pixels per metre
-      for (let i = 0; i < 3; i++) { sector.bounds[i] = Math.min(sector.bounds[i], box[i]); sector.bounds[i + 3] = Math.max(sector.bounds[i + 3], box[i + 3]); }
+      for (let i = 0; i < 3; i++) {
+        sector.bounds[i] = Math.min(sector.bounds[i], box[i]);
+        sector.bounds[i + 3] = Math.max(sector.bounds[i + 3], box[i + 3]);
+      }
     }
     this.sectors = [...sectors.values()];
     for (const sector of this.sectors) sector.width /= sector.entries.length;
@@ -384,20 +503,33 @@ export class UrbanBuildingPass {
    * their bounds and drop their GPU cache; the others keep their buffers.
    * Returns the ids it could not place (not in the scene). */
   replaceBuildings(changes: readonly Building3dVisual[]): string[] {
-    const touched = new Set<Sector>(), missing: string[] = [];
+    const touched = new Set<Sector>(),
+      missing: string[] = [];
     for (const building of changes) {
-      const sector = this.index.get(building.id), entry = sector?.entries.find(e => e.building.id === building.id);
-      if (!sector || !entry) { missing.push(building.id); continue; }
-      entry.building = building; entry.bounds = bounds(building); touched.add(sector);
+      const sector = this.index.get(building.id),
+        entry = sector?.entries.find(e => e.building.id === building.id);
+      if (!sector || !entry) {
+        missing.push(building.id);
+        continue;
+      }
+      entry.building = building;
+      entry.bounds = bounds(building);
+      touched.add(sector);
     }
     for (const sector of touched) {
-      sector.bounds = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]; sector.width = 0; sector.featureLodEligible = false;
+      sector.bounds = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      sector.width = 0;
+      sector.featureLodEligible = false;
       for (const { building, bounds: box } of sector.entries) {
         sector.featureLodEligible ||= !isBuildingProjection(building) && hasBuildingFeatureLod(building.structural_features);
         sector.width += Math.max(1, Math.min(box[3] - box[0], box[4] - box[1]));
-        for (let i = 0; i < 3; i++) { sector.bounds[i] = Math.min(sector.bounds[i], box[i]); sector.bounds[i + 3] = Math.max(sector.bounds[i + 3], box[i + 3]); }
+        for (let i = 0; i < 3; i++) {
+          sector.bounds[i] = Math.min(sector.bounds[i], box[i]);
+          sector.bounds[i + 3] = Math.max(sector.bounds[i + 3], box[i + 3]);
+        }
       }
-      sector.width /= sector.entries.length; this.release(sector);
+      sector.width /= sector.entries.length;
+      this.release(sector);
     }
     return missing;
   }
@@ -411,25 +543,29 @@ export class UrbanBuildingPass {
     // Vertices go straight into one growing Float32Array per batch: the values the number list held, rounded to
     // single precision as its conversion did. `seen` holds the colour objects already checked against the palette
     // (a building's faces share a few of them), so the palette is scanned once per colour, not once per triangle.
-    const groups = new Map<string, { batch: Batch; data: Float32Array; length: number; seen: Set<Vec3> }>(), textured = !!this.appearance.textured;
+    const groups = new Map<string, { batch: Batch; data: Float32Array; length: number; seen: Set<Vec3> }>(),
+      textured = !!this.appearance.textured;
     const catalogue = { materials: this.source?.materials ?? [] };
     for (const { building } of sector.entries) {
-      const colors = new Map<string, Map<string, Vec3>>(), culture = building.culture?.culture ?? '';
-      let h = 2166136261; for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
-      const tone = Math.round((h >>> 0) / 0xffffffff * 15) / 15;
+      const colors = new Map<string, Map<string, Vec3>>(),
+        culture = building.culture?.culture ?? '';
+      let h = 2166136261;
+      for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
+      const tone = Math.round(((h >>> 0) / 0xffffffff) * 15) / 15;
       const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
       const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
       // Terrain structures follow the relief whole; a building keeps its real height above its ground.
       const ground = /^city3d-(wall|bridge|quay|harbour)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m;
       const paintFace = (face: BuildingTriangle, snow = 0): void => {
-        const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = materialTint(raw);
+        const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating),
+          tm = materialTint(raw);
         const id = tm ? raw.slice(0, tm.index) : raw;
         // Thin enclosures already carry their final yard colours. A roof/wall
         // atlas and its normal-map highlights turn subpixel copings into white
         // parcel outlines; retain the same matte material at every yard LOD.
         const layer = textured && !snow && face.surface !== 'yard' ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
         let surfaceColors = colors.get(face.surface);
-        if (!surfaceColors) colors.set(face.surface, surfaceColors = new Map());
+        if (!surfaceColors) colors.set(face.surface, (surfaceColors = new Map()));
         let c = surfaceColors.get(String(raw));
         if (!c) {
           // The paint is read for the first face of each material and surface only.
@@ -437,68 +573,98 @@ export class UrbanBuildingPass {
           c = rgb(face.surface === 'roof' ? paint.roof : paint.wall);
           if (this.appearance.diagnostic === 'none' || face.surface === 'yard') {
             if (tm?.[1].length === 6) c = rgb(`#${tm[1]}`);
-            else if (tm) c = c.map((v, i) => Math.min(1, v * parseInt(tm[1][i], 16) / 8)) as Vec3;
+            else if (tm) c = c.map((v, i) => Math.min(1, (v * parseInt(tm[1][i], 16)) / 8)) as Vec3;
             else if (culture && !building.id.startsWith('city3d-')) {
               const material = (s: string): string => /(?:^|[:/_-])(timber|wood|brick|stone|earth|plaster|bamboo|wattle|hide|coral|tile|slate|thatch|reed|palm|shingle|bark|turf|felt|snow|metal|lead)(?:$|[:/_-])/.exec(s)?.[1] ?? '';
-              const w = material(face.materials.coating || face.materials.infill), r = material(face.materials.cladding);
+              const w = material(face.materials.coating || face.materials.infill),
+                r = material(face.materials.cladding);
               const p = buildingTint(culture, w, r, tone, role + (/tower|minaret|stone/.test(id) ? ' monument' : ''));
               c = face.surface === 'roof' ? p.roof : p.wall;
             }
           }
           if (face.surface === 'roof' && this.appearance.diagnostic === 'none' && this.appearance.colors?.building) c = rgb(this.appearance.colors.building);
-          const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? '');   // switch treeHouseGreens: forest greens, whatever the colour mode
-          if (tree) c = rgb(tm?.[1].length === 6 ? `#${tm[1]}` : tree[1] === 'crown' ? '#5f8247' : '#4b5a36');   // a canopy layer may carry its own green
+          const tree = /^city3d:tree:(crown|trunk)$/.exec(id ?? ''); // switch treeHouseGreens: forest greens, whatever the colour mode
+          if (tree) c = rgb(tm?.[1].length === 6 ? `#${tm[1]}` : tree[1] === 'crown' ? '#5f8247' : '#4b5a36'); // a canopy layer may carry its own green
           if (id === 'city3d:water') c = rgb('#' + (tm?.[1] ?? '8aaeb8'));
           surfaceColors.set(String(raw), c);
         }
-        if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * .4);
-        const recolored = this.appearance.diagnostic === 'none' && (!!this.appearance.colors?.building && face.surface === 'roof' || tm?.[1].length === 6 || !!culture && !building.id.startsWith('city3d-'));
+        if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * 0.4);
+        const recolored = this.appearance.diagnostic === 'none' && ((!!this.appearance.colors?.building && face.surface === 'roof') || tm?.[1].length === 6 || (!!culture && !building.id.startsWith('city3d-')));
         // Flat-colour program only: the material class rides on the normal's length (see materialGrain); a snowed face
         // takes the snow class in place of its cover's.
-        const cls = !textured && face.surface !== 'yard' && this.appearance.style === 'cartographic' && this.appearance.diagnostic === 'none' ? snow >= .4 ? SNOW_CLASS : materialClass(id, face.normal, culture) : 0;
+        const cls = !textured && face.surface !== 'yard' && this.appearance.style === 'cartographic' && this.appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : materialClass(id, face.normal, culture)) : 0;
         const unit = (1 + (id === 'city3d:wall:lit' ? LIT_CLASS : cls) / 32) / (Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
         const color = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
         let group = groups.get(color);
         if (!group) {
-          const mean = MATERIALS.layers[layer]?.mean_rgb, shade = c;
-          const tint = mean && recolored ? shade.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3
-            : tm?.[1].length === 3 ? [...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3 : [1, 1, 1] as Vec3;
+          const mean = MATERIALS.layers[layer]?.mean_rgb,
+            shade = c;
+          const tint = mean && recolored ? (shade.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3) : tm?.[1].length === 3 ? ([...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3) : ([1, 1, 1] as Vec3);
           group = { batch: { color: textured ? c : [1, 1, 1], tint, recolored, values: [], count: 0, stride: 10, vcolor: !textured, palette: [] }, data: new Float32Array(4096), length: 0, seen: new Set() };
           groups.set(color, group);
         }
-        const batch = group.batch, points = face.points;
+        const batch = group.batch,
+          points = face.points;
         // A snowed face has a colour of its own (never seen before): it is compared by value, as every colour was.
-        if (batch.palette && (snow || !group.seen.has(c))) { if (!snow) group.seen.add(c); if (!batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c); }
-        if (group.length + points.length * 10 > group.data.length) { const grown = new Float32Array(Math.max(group.data.length * 2, group.length + points.length * 10)); grown.set(group.data.subarray(0, group.length)); group.data = grown; }
-        const data = group.data; let at = group.length;
+        if (batch.palette && (snow || !group.seen.has(c))) {
+          if (!snow) group.seen.add(c);
+          if (!batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
+        }
+        if (group.length + points.length * 10 > group.data.length) {
+          const grown = new Float32Array(Math.max(group.data.length * 2, group.length + points.length * 10));
+          grown.set(group.data.subarray(0, group.length));
+          group.data = grown;
+        }
+        const data = group.data;
+        let at = group.length;
         for (let i = 0; i < points.length; i++) {
           const p = points[i];
-          data[at++] = p[0] - sector.origin[0]; data[at++] = p[2]; data[at++] = p[1] - sector.origin[1];
-          data[at++] = face.normal[0] * unit; data[at++] = face.normal[2] * unit; data[at++] = face.normal[1] * unit;
-          if (textured) { const [u, v] = faceUv(p, face.normal, layer); data[at++] = u; data[at++] = v; data[at++] = layer; } else { data[at++] = c[0]; data[at++] = c[1]; data[at++] = c[2]; }
+          data[at++] = p[0] - sector.origin[0];
+          data[at++] = p[2];
+          data[at++] = p[1] - sector.origin[1];
+          data[at++] = face.normal[0] * unit;
+          data[at++] = face.normal[2] * unit;
+          data[at++] = face.normal[1] * unit;
+          if (textured) {
+            const [u, v] = faceUv(p, face.normal, layer);
+            data[at++] = u;
+            data[at++] = v;
+            data[at++] = layer;
+          } else {
+            data[at++] = c[0];
+            data[at++] = c[1];
+            data[at++] = c[2];
+          }
           data[at++] = face.ground?.[i] ?? Math.min(p[2], ground);
         }
         group.length = at;
       };
       const snow = this.appearance.style !== 'silhouette' && this.appearance.diagnostic === 'none' ? mapGroundSnow(this.snowAltitudes.get(building.id) ?? building.ground_z_m, this.appearance.roofSnow) : 0;
       const heat = snow ? buildingHeat(building.function) : 0;
-      eachBuildingTriangle(building, face => {
-        // Snow whitens the roof triangle itself: no inset overlay per triangle, so neither triangulation seams nor
-        // a border draw stripes, and nothing needs a depth bias. Walls, steep faces and cover-only geometry
-        // (chimneys, parapets, walls, trees, civil works) keep their material. Each face keeps its own share of the
-        // mantle (pitch, cover, exposure, the heat of the building's use: roofSnowShare, one rule for every roof), in
-        // eighths so the batches stay few.
-        const material = face.material ?? face.materials.cladding;
-        const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
-        const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * .4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
-        paintFace(face, snow * Math.round(share * 8) / 8);
-      }, overview, featureLod, yardLevel);
+      eachBuildingTriangle(
+        building,
+        face => {
+          // Snow whitens the roof triangle itself: no inset overlay per triangle, so neither triangulation seams nor
+          // a border draw stripes, and nothing needs a depth bias. Walls, steep faces and cover-only geometry
+          // (chimneys, parapets, walls, trees, civil works) keep their material. Each face keeps its own share of the
+          // mantle (pitch, cover, exposure, the heat of the building's use: roofSnowShare, one rule for every roof), in
+          // eighths so the batches stay few.
+          const material = face.material ?? face.materials.cladding;
+          const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
+          const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * 0.4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
+          paintFace(face, (snow * Math.round(share * 8)) / 8);
+        },
+        overview,
+        featureLod,
+        yardLevel,
+      );
     }
     const batches: Batch[] = [];
     for (const { batch, data, length } of groups.values()) {
       if (!length) continue;
       this.upload(batch, data.slice(0, length));
-      batch.count = length / batch.stride; batches.push(batch);
+      batch.count = length / batch.stride;
+      batches.push(batch);
     }
     batches.sort((a, b) => Number(a.snow) - Number(b.snow));
     sector.cached = { overview, featureLod, yardLevel, batches, used: this.tick };
@@ -506,108 +672,202 @@ export class UrbanBuildingPass {
   /** Vertex buffer of a batch (10 floats per vertex). */
   protected upload(batch: Batch, values: Float32Array): void {
     const gl = this.gl!;
-    batch.vao = gl.createVertexArray()!; batch.buffer = gl.createBuffer()!;
-    gl.bindVertexArray(batch.vao); gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer); gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, batch.stride * 4, 0);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, batch.stride * 4, 12);
-    if (batch.vcolor) { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 40, 24); }
-    else { gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 40, 24); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 40, 32); }
-    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 1, gl.FLOAT, false, 40, 36);
+    batch.vao = gl.createVertexArray()!;
+    batch.buffer = gl.createBuffer()!;
+    gl.bindVertexArray(batch.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, batch.stride * 4, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, batch.stride * 4, 12);
+    if (batch.vcolor) {
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 40, 24);
+    } else {
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 40, 24);
+      gl.enableVertexAttribArray(3);
+      gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 40, 32);
+    }
+    gl.enableVertexAttribArray(4);
+    gl.vertexAttribPointer(4, 1, gl.FLOAT, false, 40, 36);
     gl.bindVertexArray(null);
   }
   /** Material atlases on the GPU (textured appearance). */
-  protected uploadTextures(images: MaterialImages): void { this.textures = uploadMaterialArrays(this.gl!, images, false); }
+  protected uploadTextures(images: MaterialImages): void {
+    this.textures = uploadMaterialArrays(this.gl!, images, false);
+  }
   draw(frame: BuildingFrame): boolean {
-    const started = performance.now(); let pending = false, prepared = 0;
+    const started = performance.now();
+    let pending = false,
+      prepared = 0;
     if (!this.sectors.length) return false;
     ++this.tick;
     // Textured materials: the atlases load once (the flat colours show until they arrive).
     const wantTex = !!this.appearance.textured;
     if (wantTex && !this.texturesRequested) {
       this.texturesRequested = true;
-      loadMaterialImages().then(images => { if (!this.sectors.length) return; this.uploadTextures(images); this.onTexturesReady?.(); }, e => { this.texturesRequested = false; console.warn('Matières texturées indisponibles', e); });
+      loadMaterialImages().then(
+        images => {
+          if (!this.sectors.length) return;
+          this.uploadTextures(images);
+          this.onTexturesReady?.();
+        },
+        e => {
+          this.texturesRequested = false;
+          console.warn('Matières texturées indisponibles', e);
+        },
+      );
     }
-    const stats = { drawCalls: 0, sectors: 0, triangles: 0 }, shown: Sector[] = [];
+    const stats = { drawCalls: 0, sectors: 0, triangles: 0 },
+      shown: Sector[] = [];
     for (const sector of this.sectors) {
       sector.shown = false;
-      const b = sector.bounds, point = [(b[0] + b[3]) / 2 - frame.cameraX, (b[2] + b[5]) / 2 * frame.exaggeration - frame.targetHeight, (b[1] + b[4]) / 2 - frame.cameraY];
+      const b = sector.bounds,
+        point = [(b[0] + b[3]) / 2 - frame.cameraX, ((b[2] + b[5]) / 2) * frame.exaggeration - frame.targetHeight, (b[1] + b[4]) / 2 - frame.cameraY];
       const radius = Math.hypot(b[3] - b[0], (b[5] - b[2]) * frame.exaggeration, b[4] - b[1]) / 2;
-      const m = frame.matrix, depth = m[3] * point[0] + m[7] * point[1] + m[11] * point[2] + m[15];
-      if (depth > radius && radius * frame.focal / depth < .35) continue;
+      const m = frame.matrix,
+        depth = m[3] * point[0] + m[7] * point[1] + m[11] * point[2] + m[15];
+      if (depth > radius && (radius * frame.focal) / depth < 0.35) continue;
       let outside = false;
-      for (const axis of [0, 1, 2]) for (const sign of [-1, 1]) {
-        const plane = [m[3] + sign * m[axis], m[7] + sign * m[4 + axis], m[11] + sign * m[8 + axis], m[15] + sign * m[12 + axis]];
-        if (plane[0] * point[0] + plane[1] * point[1] + plane[2] * point[2] + plane[3] < -radius * Math.hypot(plane[0], plane[1], plane[2])) outside = true;
-      }
+      for (const axis of [0, 1, 2])
+        for (const sign of [-1, 1]) {
+          const plane = [m[3] + sign * m[axis], m[7] + sign * m[4 + axis], m[11] + sign * m[8 + axis], m[15] + sign * m[12 + axis]];
+          if (plane[0] * point[0] + plane[1] * point[1] + plane[2] * point[2] + plane[3] < -radius * Math.hypot(plane[0], plane[1], plane[2])) outside = true;
+        }
       if (outside) continue;
-      const pixels = sector.width * frame.focal / Math.max(1, depth - radius), yardLevel = sector.yard ? yardLod(pixels, sector.cached?.yardLevel) : undefined;
+      const pixels = (sector.width * frame.focal) / Math.max(1, depth - radius),
+        yardLevel = sector.yard ? yardLod(pixels, sector.cached?.yardLevel) : undefined;
       const overview = yardLevel !== undefined ? yardLevel > 0 : sector.cached?.overview ? pixels < 10 : pixels < 7;
       const featureMpp = overview && sector.featureLodEligible ? buildingFeatureMetresPerPixel(m, point, radius, frame.focal) : undefined;
       const featureLod = featureMpp === undefined ? undefined : buildingFeatureLod(featureMpp, frame.exaggeration, sector.cached?.featureLod);
       if (!sector.cached || sector.cached.overview !== overview || sector.cached.yardLevel !== yardLevel || !sameBuildingFeatureLod(sector.cached.featureLod, featureLod)) {
-        if (prepared && performance.now() - started > 8) { pending = true; if (!sector.cached) continue; }
-        else { this.prepare(sector, overview, featureLod, yardLevel); ++prepared; }
+        if (prepared && performance.now() - started > 8) {
+          pending = true;
+          if (!sector.cached) continue;
+        } else {
+          this.prepare(sector, overview, featureLod, yardLevel);
+          ++prepared;
+        }
       }
-      sector.shown = true; sector.overview = sector.cached!.overview; sector.cached!.used = this.tick;
-      for (const batch of sector.cached!.batches) { stats.drawCalls++; stats.triangles += batch.count / 3; }
-      stats.sectors++; shown.push(sector);
+      sector.shown = true;
+      sector.overview = sector.cached!.overview;
+      sector.cached!.used = this.tick;
+      for (const batch of sector.cached!.batches) {
+        stats.drawCalls++;
+        stats.triangles += batch.count / 3;
+      }
+      stats.sectors++;
+      shown.push(sector);
     }
     this.render(frame, shown, wantTex);
     this.lastDraw = stats;
     let bytes = this.sectors.reduce((total, sector) => total + (sector.cached?.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0) ?? 0), 0);
-    if (bytes > MAX_CACHE_BYTES) for (const sector of this.sectors.filter(s => s.cached && !s.shown).sort((a, b) => a.cached!.used - b.cached!.used)) {
-      bytes -= sector.cached!.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0); this.release(sector); if (bytes <= MAX_CACHE_BYTES) break;
-    }
+    if (bytes > MAX_CACHE_BYTES)
+      for (const sector of this.sectors.filter(s => s.cached && !s.shown).sort((a, b) => a.cached!.used - b.cached!.used)) {
+        bytes -= sector.cached!.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0);
+        this.release(sector);
+        if (bytes <= MAX_CACHE_BYTES) break;
+      }
     return pending;
   }
   /** Draws the batches of the shown sectors (flat or textured program). */
   protected render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
     const gl = this.gl!;
     const texProgram = textured ? (this.texProgram ??= program(gl, texVertex, texFragment)) : undefined;
-    const p = texProgram ?? (this.colorProgram ??= program(gl, vertexColor, fragmentColor)); gl.useProgram(p);
-    gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+    const p = texProgram ?? (this.colorProgram ??= program(gl, vertexColor, fragmentColor));
+    gl.useProgram(p);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.CULL_FACE);
     if (texProgram) {
       gl.uniform1i(gl.getUniformLocation(p, 'useTex'), this.textures ? 2 : 0);
       gl.uniform1f(gl.getUniformLocation(p, 'softFrom'), SOFT_LAYER_FROM);
-      gl.uniform1i(gl.getUniformLocation(p, 'albedoTex'), 10); gl.uniform1i(gl.getUniformLocation(p, 'normalTex'), 11);
-      gl.activeTexture(gl.TEXTURE0 + 10); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.albedo ?? null);
-      gl.activeTexture(gl.TEXTURE0 + 11); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.normal ?? null);
+      gl.uniform1i(gl.getUniformLocation(p, 'albedoTex'), 10);
+      gl.uniform1i(gl.getUniformLocation(p, 'normalTex'), 11);
+      gl.activeTexture(gl.TEXTURE0 + 10);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.albedo ?? null);
+      gl.activeTexture(gl.TEXTURE0 + 11);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.normal ?? null);
       gl.activeTexture(gl.TEXTURE0);
     }
-    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix); gl.uniform1f(gl.getUniformLocation(p, 'exaggeration'), frame.exaggeration);
-    gl.uniform1i(gl.getUniformLocation(p,'uNight'),frame.cave||!this.night?0:this.lightsOn?1:2);
-    gl.uniform4fv(gl.getUniformLocation(p,'uCave'),caveUniform(frame,this.lightsOn)); gl.uniform3fv(gl.getUniformLocation(p,'uCaveEye'),frame.cave?.eye??[0,0,0]);
+    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix);
+    gl.uniform1f(gl.getUniformLocation(p, 'exaggeration'), frame.exaggeration);
+    gl.uniform1i(gl.getUniformLocation(p, 'uNight'), frame.cave || !this.night ? 0 : this.lightsOn ? 1 : 2);
+    gl.uniform4fv(gl.getUniformLocation(p, 'uCave'), caveUniform(frame, this.lightsOn));
+    gl.uniform3fv(gl.getUniformLocation(p, 'uCaveEye'), frame.cave?.eye ?? [0, 0, 0]);
     for (const sector of shown) {
       gl.uniform3f(gl.getUniformLocation(p, 'offset'), sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
-      gl.uniform2f(gl.getUniformLocation(p,'sectorOrigin'),sector.origin[0],sector.origin[1]);
+      gl.uniform2f(gl.getUniformLocation(p, 'sectorOrigin'), sector.origin[0], sector.origin[1]);
       for (const batch of sector.cached!.batches) {
         // Centimetres of physical separation are below depth precision in a
         // town-wide view. Bias only snow; never lift the roof or its walls.
-        if (batch.snow) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -2); }
-        else gl.disable(gl.POLYGON_OFFSET_FILL);
+        if (batch.snow) {
+          gl.enable(gl.POLYGON_OFFSET_FILL);
+          gl.polygonOffset(-1, -2);
+        } else gl.disable(gl.POLYGON_OFFSET_FILL);
         if (texProgram) {
-          gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint);
+          gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color);
+          gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint);
           gl.uniform1i(gl.getUniformLocation(p, 'recolored'), batch.recolored ? 1 : 0);
         }
-        gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count);
+        gl.bindVertexArray(batch.vao!);
+        gl.drawArrays(gl.TRIANGLES, 0, batch.count);
       }
     }
-    gl.disable(gl.POLYGON_OFFSET_FILL); gl.bindVertexArray(null);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.bindVertexArray(null);
   }
   pick(origin: BuildingVector, direction: BuildingVector): { id?: string; distance: number } {
-    let distance = Infinity, id: string | undefined;
-    for (const sector of this.sectors) if (sector.shown && rayBox(origin, direction, sector.bounds, distance)) for (const entry of sector.entries) {
-      if (!rayBox(origin, direction, entry.bounds, distance)) continue;
-      eachBuildingTriangle(entry.building, face => { const hit = buildingRayDistance(origin, direction, face.points); if (hit !== null && hit < distance) { distance = hit; id = entry.building.id; } }, sector.overview, sector.cached?.featureLod, sector.cached?.yardLevel);
-    }
+    let distance = Infinity,
+      id: string | undefined;
+    for (const sector of this.sectors)
+      if (sector.shown && rayBox(origin, direction, sector.bounds, distance))
+        for (const entry of sector.entries) {
+          if (!rayBox(origin, direction, entry.bounds, distance)) continue;
+          eachBuildingTriangle(
+            entry.building,
+            face => {
+              const hit = buildingRayDistance(origin, direction, face.points);
+              if (hit !== null && hit < distance) {
+                distance = hit;
+                id = entry.building.id;
+              }
+            },
+            sector.overview,
+            sector.cached?.featureLod,
+            sector.cached?.yardLevel,
+          );
+        }
     return { id, distance };
   }
-  private release(sector: Sector): void { for (const batch of sector.cached?.batches ?? []) this.releaseBatch(batch); sector.cached = undefined; }
-  protected releaseBatch(batch: Batch): void { this.gl!.deleteBuffer(batch.buffer!); this.gl!.deleteVertexArray(batch.vao!); }
-  private clear(): void { for (const sector of this.sectors) this.release(sector); this.sectors = []; this.index.clear(); }
-  dispose(): void { this.clear(); this.disposeBackend(); this.source = undefined; }
+  private release(sector: Sector): void {
+    for (const batch of sector.cached?.batches ?? []) this.releaseBatch(batch);
+    sector.cached = undefined;
+  }
+  protected releaseBatch(batch: Batch): void {
+    this.gl!.deleteBuffer(batch.buffer!);
+    this.gl!.deleteVertexArray(batch.vao!);
+  }
+  private clear(): void {
+    for (const sector of this.sectors) this.release(sector);
+    this.sectors = [];
+    this.index.clear();
+  }
+  dispose(): void {
+    this.clear();
+    this.disposeBackend();
+    this.source = undefined;
+  }
   protected disposeBackend(): void {
     const gl = this.gl!;
-    if (this.colorProgram) gl.deleteProgram(this.colorProgram); if (this.texProgram) gl.deleteProgram(this.texProgram); if (this.textures) { gl.deleteTexture(this.textures.albedo); gl.deleteTexture(this.textures.normal); }
+    if (this.colorProgram) gl.deleteProgram(this.colorProgram);
+    if (this.texProgram) gl.deleteProgram(this.texProgram);
+    if (this.textures) {
+      gl.deleteTexture(this.textures.albedo);
+      gl.deleteTexture(this.textures.normal);
+    }
   }
 }

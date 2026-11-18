@@ -31,9 +31,15 @@ import { burgageHouse } from './houses';
 import { burgageHouseExperimental } from './housesExperimental';
 import { plotBounds } from './plotAxes';
 
-export interface HalfPlane { p: Vec2; n: Vec2 }
+export interface HalfPlane {
+  p: Vec2;
+  n: Vec2;
+}
 export type BldgKind = 'house' | 'rear' | 'back' | 'barn' | 'shed' | 'garden' | 'hall' | 'landmark' | 'church' | 'cathedral' | 'hut' | 'pit';
-export interface Bldg { poly: Polygon; kind: BldgKind }
+export interface Bldg {
+  poly: Polygon;
+  kind: BldgKind;
+}
 
 export const BLD_STATS = { on: false, zone: 'core', plot: 0, raw: 0, norm: 0, fin: 0 };
 
@@ -46,28 +52,55 @@ export function clipPlot(plot: Polygon, hps: HalfPlane[], convex: boolean): Poly
   // Sutherland–Hodgman against a convex region is exact and never leaves the subject; for a concave subject it
   // may produce a zero-width bridge when the result is disconnected: detect that and use a boolean instead.
   let cur = plot;
-  for (const h of hps) { cur = clipHalfPlaneConvex(cur, h.p, h.n); if (cur.length < 3) return []; }
+  for (const h of hps) {
+    cur = clipHalfPlaneConvex(cur, h.p, h.n);
+    if (cur.length < 3) return [];
+  }
   // a concave subject may give a simple result that bridges across a concavity: accept it only when it stays inside
   if (convex || (isSimple(cur) && polyInside(plot, cur))) return [cur];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const q of plot) { minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x); minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y); }
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const q of plot) {
+    minX = Math.min(minX, q.x);
+    maxX = Math.max(maxX, q.x);
+    minY = Math.min(minY, q.y);
+    maxY = Math.max(maxY, q.y);
+  }
   const m = 5;
-  let reg: Polygon = [{ x: minX - m, y: minY - m }, { x: maxX + m, y: minY - m }, { x: maxX + m, y: maxY + m }, { x: minX - m, y: maxY + m }];
-  for (const h of hps) { reg = clipHalfPlaneConvex(reg, h.p, h.n); if (reg.length < 3) return []; }
-  return intersection(plot, reg).map((ph) => ph.outer);
+  let reg: Polygon = [
+    { x: minX - m, y: minY - m },
+    { x: maxX + m, y: minY - m },
+    { x: maxX + m, y: maxY + m },
+    { x: minX - m, y: maxY + m },
+  ];
+  for (const h of hps) {
+    reg = clipHalfPlaneConvex(reg, h.p, h.n);
+    if (reg.length < 3) return [];
+  }
+  return intersection(plot, reg).map(ph => ph.outer);
 }
 
 const dot = (a: Vec2, b: Vec2) => a.x * b.x + a.y * b.y;
 
 /** True when some edge of either convex polygon separates them (touching allowed within 1 cm). */
 function separated(A: Polygon, B: Polygon): boolean {
-  for (const [P, Q] of [[A, B], [B, A]] as [Polygon, Polygon][]) {
+  for (const [P, Q] of [
+    [A, B],
+    [B, A],
+  ] as [Polygon, Polygon][]) {
     const n = P.length;
     for (let i = 0; i < n; i++) {
-      const a = P[i], b = P[(i + 1) % n];
+      const a = P[i],
+        b = P[(i + 1) % n];
       const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       let all = true;
-      for (const q of Q) if (((b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x)) / l > 0.01) { all = false; break; }
+      for (const q of Q)
+        if (((b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x)) / l > 0.01) {
+          all = false;
+          break;
+        }
       if (all) return true;
     }
   }
@@ -80,10 +113,12 @@ function separated(A: Polygon, B: Polygon): boolean {
  * and no vertex of either strictly inside the other (≥ 1 cm from its boundary). False means "maybe".
  */
 export function clearOf(A: Polygon, B: Polygon): boolean {
-  const a = bboxOf(A), b = bboxOf(B);
+  const a = bboxOf(A),
+    b = bboxOf(B);
   if (a.x0 >= b.x1 - 0.01 || b.x0 >= a.x1 - 0.01 || a.y0 >= b.y1 - 0.01 || b.y0 >= a.y1 - 0.01) return true;
   for (let i = 0; i < A.length; i++) {
-    const p = A[i], q = A[(i + 1) % A.length];
+    const p = A[i],
+      q = A[(i + 1) % A.length];
     for (let j = 0; j < B.length; j++) {
       const r = segSegT(p, q, B[j], B[(j + 1) % B.length]);
       if (r && r.t > 1e-6 && r.t < 1 - 1e-6 && r.u > 1e-6 && r.u < 1 - 1e-6) return false;
@@ -91,12 +126,13 @@ export function clearOf(A: Polygon, B: Polygon): boolean {
   }
   const inQ = (Q: Polygon, v: Vec2) => pointInRing(Q, v) && distToRing(Q, v) > 0.01;
   // vertices, and points along the edges (collinear overlaps put every vertex on the other's boundary)
-  const strictlyIn = (P: Polygon, Q: Polygon) => P.some((v, i) => {
-    if (inQ(Q, v)) return true;
-    const w = P[(i + 1) % P.length];
-    for (const t of [0.25, 0.5, 0.75]) if (inQ(Q, { x: v.x + (w.x - v.x) * t, y: v.y + (w.y - v.y) * t })) return true;
-    return false;
-  });
+  const strictlyIn = (P: Polygon, Q: Polygon) =>
+    P.some((v, i) => {
+      if (inQ(Q, v)) return true;
+      const w = P[(i + 1) % P.length];
+      for (const t of [0.25, 0.5, 0.75]) if (inQ(Q, { x: v.x + (w.x - v.x) * t, y: v.y + (w.y - v.y) * t })) return true;
+      return false;
+    });
   if (strictlyIn(A, B) || strictlyIn(B, A)) return false;
   // all vertices on or outside the other, no crossing: overlapping only when one lies on the other (shared ring)
   const cA = { x: A.reduce((s, v) => s + v.x, 0) / A.length, y: A.reduce((s, v) => s + v.y, 0) / A.length };
@@ -111,7 +147,10 @@ export function dropOverlaps(list: Bldg[]): Bldg[] {
       if (clearOf(b.poly, k.poly)) continue;
       if (isConvex(b.poly, 1e-3) && isConvex(k.poly, 1e-3) && separated(b.poly, k.poly)) continue;
       const r = intersectionS(b.poly, k.poly);
-      if (r.length && r.reduce((s, ph) => s + area(ph.outer), 0) > 0.02) { ok = false; break; }
+      if (r.length && r.reduce((s, ph) => s + area(ph.outer), 0) > 0.02) {
+        ok = false;
+        break;
+      }
     }
     if (ok) kept.push(b);
   }
@@ -131,13 +170,22 @@ export function trimOverlaps(list: Bldg[]): Bldg[] {
       const kb = bboxOf(k.poly);
       for (const p of pieces) {
         const pb = bboxOf(p);
-        if (pb.x0 >= kb.x1 - 0.01 || pb.x1 <= kb.x0 + 0.01 || pb.y0 >= kb.y1 - 0.01 || pb.y1 <= kb.y0 + 0.01) { next.push(p); continue; }
-        if (clearOf(p, k.poly) || (isConvex(p, 1e-3) && isConvex(k.poly, 1e-3) && separated(p, k.poly))) { next.push(p); continue; }
+        if (pb.x0 >= kb.x1 - 0.01 || pb.x1 <= kb.x0 + 0.01 || pb.y0 >= kb.y1 - 0.01 || pb.y1 <= kb.y0 + 0.01) {
+          next.push(p);
+          continue;
+        }
+        if (clearOf(p, k.poly) || (isConvex(p, 1e-3) && isConvex(k.poly, 1e-3) && separated(p, k.poly))) {
+          next.push(p);
+          continue;
+        }
         const r = intersectionS(p, k.poly);
-        if (!r.length || r.reduce((s2, ph) => s2 + area(ph.outer), 0) <= 0.02) { next.push(p); continue; }
+        if (!r.length || r.reduce((s2, ph) => s2 + area(ph.outer), 0) <= 0.02) {
+          next.push(p);
+          continue;
+        }
         for (const ph of differenceS(p, k.poly)) if (!ph.holes.length && area(ph.outer) > 1) next.push(cleanRing(ph.outer, 0.005, 0.5, 0.002, false));
       }
-      pieces = next.filter((p) => p.length >= 3);
+      pieces = next.filter(p => p.length >= 3);
       if (!pieces.length) break;
     }
     for (const p of pieces) if (shapeOK(p)) kept.push({ poly: p, kind: b.kind });
@@ -150,14 +198,17 @@ export function shapeOf(p: Polygon): { w: number; asp: number; hu: number } {
   const o = obb(p);
   return { w: 2 * o.hv, asp: o.hu / Math.max(1e-6, o.hv), hu: o.hu };
 }
-const shapeOK = (p: Polygon) => { const s = shapeOf(p); return s.w >= MIN_BW && s.asp <= MAX_ASPECT && area(p) >= MIN_BW * MIN_BW * 0.6; };
+const shapeOK = (p: Polygon) => {
+  const s = shapeOf(p);
+  return s.w >= MIN_BW && s.asp <= MAX_ASPECT && area(p) >= MIN_BW * MIN_BW * 0.6;
+};
 
 /**
  * No matchsticks: pieces longer than MAX_ASPECT × their width are cut across their long axis; pieces thinner
  * than MIN_BW join a neighbouring piece of the same plot when the union is well shaped, else they stay unbuilt.
  */
 export function normalizeFootprints(list: Bldg[], axis?: Vec2): Bldg[] {
-  const queue = list.map((b) => ({ b, depth: 0 }));
+  const queue = list.map(b => ({ b, depth: 0 }));
   const out: Bldg[] = [];
   let guard = 0;
   while (queue.length && guard++ < 200) {
@@ -169,11 +220,15 @@ export function normalizeFootprints(list: Bldg[], axis?: Vec2): Bldg[] {
       const k = Math.ceil(s.asp / (MAX_ASPECT * 0.85));
       const conv = isConvex(b.poly, 1e-3);
       for (let j = 0; j < k; j++) {
-        const s0 = -o.hu + (2 * o.hu * j) / k, s1 = -o.hu + (2 * o.hu * (j + 1)) / k;
+        const s0 = -o.hu + (2 * o.hu * j) / k,
+          s1 = -o.hu + (2 * o.hu * (j + 1)) / k;
         const hps: HalfPlane[] = [];
         if (j > 0) hps.push({ p: { x: o.c.x + o.u.x * s0, y: o.c.y + o.u.y * s0 }, n: o.u });
         if (j < k - 1) hps.push({ p: { x: o.c.x + o.u.x * s1, y: o.c.y + o.u.y * s1 }, n: { x: -o.u.x, y: -o.u.y } });
-        for (const r of clipPlot(b.poly, hps, conv)) { const c = cleanRing(r, 0.005, 0.5, 0.002, false); if (c.length >= 3 && area(c) > 1) queue.push({ b: { poly: c, kind: b.kind }, depth: depth + 1 }); }
+        for (const r of clipPlot(b.poly, hps, conv)) {
+          const c = cleanRing(r, 0.005, 0.5, 0.002, false);
+          if (c.length >= 3 && area(c) > 1) queue.push({ b: { poly: c, kind: b.kind }, depth: depth + 1 });
+        }
       }
       continue;
     }
@@ -191,7 +246,11 @@ export function normalizeFootprints(list: Bldg[], axis?: Vec2): Bldg[] {
       const u = stitchUnion(o.poly, b.poly);
       if (!u) continue;
       const su = shapeOf(u);
-      if (su.w >= MIN_BW && su.asp <= MAX_ASPECT) { res[j] = { poly: u, kind: o.kind }; res[i] = null; merged = true; }
+      if (su.w >= MIN_BW && su.asp <= MAX_ASPECT) {
+        res[j] = { poly: u, kind: o.kind };
+        res[i] = null;
+        merged = true;
+      }
     }
     if (!merged) res[i] = null;
   }
@@ -213,8 +272,12 @@ export function courtyardRing(Q: Polygon, rd: number, axis: Vec2, opt: { minCour
   if (court.length < 3 || area(court) < 9 || shapeOf(court).w < 3) return null;
   // (a court smaller than the caller's minimum is a failure for it: the ring is not built)
   if (opt.minCourt !== undefined && !(area(court) >= opt.minCourt)) return null;
-  let cx = 0, cy = 0;
-  for (const p of court) { cx += p.x; cy += p.y; }
+  let cx = 0,
+    cy = 0;
+  for (const p of court) {
+    cx += p.x;
+    cy += p.y;
+  }
   const c = { x: cx / court.length, y: cy / court.length };
   const m = { x: -axis.y, y: axis.x };
   const pieces: Polygon[] = [];
@@ -224,7 +287,10 @@ export function courtyardRing(Q: Polygon, rd: number, axis: Vec2, opt: { minCour
     for (const h of half) {
       // convex lot: the U is built exactly (outer chain of the half, then the court chain backwards)
       const u = ch.length >= 3 && isConvex(q, 1e-3) ? uPiece(h, ch, c, nrm) : null;
-      if (u && area(u) > 4 && polyInside(q, u)) { pieces.push(u); continue; }
+      if (u && area(u) > 4 && polyInside(q, u)) {
+        pieces.push(u);
+        continue;
+      }
       const d = ch.length >= 3 ? difference(h, ch) : [{ outer: h, holes: [] }];
       // (a boolean that fell back to coarse snapping may leave cm slivers outside the lot: keep exact pieces only)
       for (const ph of d) if (!ph.holes.length && area(ph.outer) > 4 && polyInside(q, ph.outer)) pieces.push(ph.outer);
@@ -251,7 +317,8 @@ function courtOf(q: Polygon, rd: number): Polygon {
  * the split line through p (normal n). Null when either has no edge on the line.
  */
 function uPiece(h0: Polygon, ch0: Polygon, p: Vec2, n: Vec2): Polygon | null {
-  const H = orientPos(h0), C = orientPos(ch0);
+  const H = orientPos(h0),
+    C = orientPos(ch0);
   const onL = (v: Vec2) => Math.abs((v.x - p.x) * n.x + (v.y - p.y) * n.y) < 1e-6;
   const hi = H.findIndex((v, i) => onL(v) && onL(H[(i + 1) % H.length]));
   const ci = C.findIndex((v, i) => onL(v) && onL(C[(i + 1) % C.length]));
@@ -272,7 +339,8 @@ function insetConvexSafe(p: Polygon, d: number): Polygon {
   const n = q.length;
   let cur: Polygon = q;
   for (let i = 0; i < n && cur.length >= 3; i++) {
-    const a = q[i], b = q[(i + 1) % n];
+    const a = q[i],
+      b = q[(i + 1) % n];
     const l = dist(a, b);
     if (l < 1e-6) continue;
     // inward normal of a positive ring: left of the edge
@@ -290,34 +358,46 @@ function insetConvexSafe(p: Polygon, d: number): Polygon {
 export function rectify(Q: Polygon, o: Vec2, t: Vec2, n: Vec2): Polygon | null {
   const tc = (p: Vec2) => (p.x - o.x) * t.x + (p.y - o.y) * t.y;
   const nc = (p: Vec2) => (p.x - o.x) * n.x + (p.y - o.y) * n.y;
-  let d0 = Infinity, d1 = -Infinity;
-  for (const p of Q) { const d = nc(p); d0 = Math.min(d0, d); d1 = Math.max(d1, d); }
+  let d0 = Infinity,
+    d1 = -Infinity;
+  for (const p of Q) {
+    const d = nc(p);
+    d0 = Math.min(d0, d);
+    d1 = Math.max(d1, d);
+  }
   if (d1 - d0 < 2) return null;
   // t-interval of the cross-section at depth d
   const section = (d: number): [number, number] | null => {
-    let lo = Infinity, hi = -Infinity;
+    let lo = Infinity,
+      hi = -Infinity;
     for (let i = 0; i < Q.length; i++) {
-      const a = Q[i], b = Q[(i + 1) % Q.length];
-      const da = nc(a) - d, db = nc(b) - d;
+      const a = Q[i],
+        b = Q[(i + 1) % Q.length];
+      const da = nc(a) - d,
+        db = nc(b) - d;
       if ((da <= 0 && db >= 0) || (da >= 0 && db <= 0)) {
         const k = da === db ? 0 : da / (da - db);
         const tt = tc(a) + (tc(b) - tc(a)) * k;
-        lo = Math.min(lo, tt); hi = Math.max(hi, tt);
+        lo = Math.min(lo, tt);
+        hi = Math.max(hi, tt);
       }
     }
     return lo < hi ? [lo, hi] : null;
   };
   const e = Math.min(0.3, (d1 - d0) * 0.05);
-  const s0 = section(d0 + e), s1 = section(d1 - e);
+  const s0 = section(d0 + e),
+    s1 = section(d1 - e);
   if (!s0 || !s1) return null;
-  const u0 = Math.max(s0[0], s1[0]), u1 = Math.min(s0[1], s1[1]);
+  const u0 = Math.max(s0[0], s1[0]),
+    u1 = Math.min(s0[1], s1[1]);
   if (u1 - u0 < MIN_BW) return null;
   const at = (u: number, d: number): Vec2 => ({ x: o.x + t.x * u + n.x * d, y: o.y + t.y * u + n.y * d });
   const R = orientPos([at(u0, d0), at(u1, d0), at(u1, d1), at(u0, d1)]);
   // keep it inside the piece (exact when the piece is convex)
   const hps: HalfPlane[] = [];
   for (let i = 0; i < R.length; i++) {
-    const a = R[i], b = R[(i + 1) % R.length];
+    const a = R[i],
+      b = R[(i + 1) % R.length];
     hps.push({ p: a, n: { x: -(b.y - a.y), y: b.x - a.x } });
   }
   const inside = clipPlot(Q, hps, isConvex(Q, 1e-3));
@@ -326,33 +406,37 @@ export function rectify(Q: Polygon, o: Vec2, t: Vec2, n: Vec2): Polygon | null {
 }
 
 /** Court decision shared along a frontage run (neighbouring plots' courts join). */
-export interface CourtHint { court: boolean; f: number }
+export interface CourtHint {
+  court: boolean;
+  f: number;
+}
 
 /** Buildings of a plot plus its unbuilt garden (kind 'garden', not a building). */
 export function buildPlot(pl: Plot, cov: number, P: MorphologyParams, rng: Rng, hint?: CourtHint): Bldg[] {
   let raw = buildPlotRaw(pl, cov, P, rng, hint);
   // dense zones: an irregular plot whose layout falls far short of the target is built over its whole depth
   if (cov >= 0.66 && pl.zone !== 'village') {
-    const built = raw.filter((b) => b.kind !== 'garden').reduce((s, b) => s + area(b.poly), 0);
+    const built = raw.filter(b => b.kind !== 'garden').reduce((s, b) => s + area(b.poly), 0);
     if (built < (cov - 0.2) * area(pl.poly)) raw = buildPlotRaw(pl, 0.9, P, rng, { court: false, f: 0.5 });
   }
-  const gardens = raw.filter((b) => b.kind === 'garden');
-  const rawB = raw.filter((b) => b.kind !== 'garden');
+  const gardens = raw.filter(b => b.kind === 'garden');
+  const rawB = raw.filter(b => b.kind !== 'garden');
   const norm = normalizeFootprints(rawB);
   let fin = trimOverlaps(norm);
   // Sparse suburbs keep real yard space even on shallow or widening lots.
   // Cap only programmes that overshoot their owner-area budget; established
   // sparse corner houses keep their complete original geometry.
   if (pl.zone === 'faubourg' && P.faubFade !== false) {
-    const roofs = fin, budget = Math.min(0.45, Math.max(0.35, cov)) * area(pl.poly);
+    const roofs = fin,
+      budget = Math.min(0.45, Math.max(0.35, cov)) * area(pl.poly);
     const built = roofs.reduce((sum, b) => sum + area(b.poly), 0);
-    const retainedWing = roofs.some((b) => !isConvex(b.poly, 1e-3) && (minNeck(b.poly)?.w ?? Infinity) < 3.59);
+    const retainedWing = roofs.some(b => !isConvex(b.poly, 1e-3) && (minNeck(b.poly)?.w ?? Infinity) < 3.59);
     if (built > budget && !retainedWing) {
-      const origin = pl.front[0], u = { x: pl.nrm.y, y: -pl.nrm.x }, v = pl.nrm;
-      const depths = roofs.flatMap((b) => b.poly.map((p) => (p.x - origin.x) * v.x + (p.y - origin.y) * v.y));
-      const cut = (limit: number, axis: Vec2): Bldg[] => roofs.flatMap((b) => clipPlot(b.poly,
-        [{ p: { x: origin.x + axis.x * limit, y: origin.y + axis.y * limit }, n: { x: -axis.x, y: -axis.y } }], isConvex(b.poly, 1e-3))
-        .map((poly) => ({ ...b, poly })));
+      const origin = pl.front[0],
+        u = { x: pl.nrm.y, y: -pl.nrm.x },
+        v = pl.nrm;
+      const depths = roofs.flatMap(b => b.poly.map(p => (p.x - origin.x) * v.x + (p.y - origin.y) * v.y));
+      const cut = (limit: number, axis: Vec2): Bldg[] => roofs.flatMap(b => clipPlot(b.poly, [{ p: { x: origin.x + axis.x * limit, y: origin.y + axis.y * limit }, n: { x: -axis.x, y: -axis.y } }], isConvex(b.poly, 1e-3)).map(poly => ({ ...b, poly })));
       const search = (axis: Vec2, lo: number, hi: number): number => {
         for (let i = 0; i < 16; i++) {
           const mid = (lo + hi) / 2;
@@ -363,17 +447,17 @@ export function buildPlot(pl: Plot, cov: number, P: MorphologyParams, rng: Rng, 
       };
       const depth = search(v, Math.min(...depths), Math.max(...depths));
       let kept = cut(depth, v);
-      if (depth - Math.min(...depths) < MIN_BW || kept.some((b) => shapeOf(b.poly).w < MIN_BW || shapeOf(b.poly).asp > MAX_ASPECT)) {
-        const positions = roofs.flatMap((b) => b.poly.map((p) => (p.x - origin.x) * u.x + (p.y - origin.y) * u.y));
+      if (depth - Math.min(...depths) < MIN_BW || kept.some(b => shapeOf(b.poly).w < MIN_BW || shapeOf(b.poly).asp > MAX_ASPECT)) {
+        const positions = roofs.flatMap(b => b.poly.map(p => (p.x - origin.x) * u.x + (p.y - origin.y) * u.y));
         kept = cut(search(u, Math.min(...positions), Math.max(...positions)), u);
       }
-      kept = kept.filter((b) => shapeOf(b.poly).w >= MIN_BW && shapeOf(b.poly).asp <= MAX_ASPECT);
+      kept = kept.filter(b => shapeOf(b.poly).w >= MIN_BW && shapeOf(b.poly).asp <= MAX_ASPECT);
       // Density alone cannot justify replacing the front dwelling with a
       // matchstick or leaving only its rear shed. Keep that programme intact.
-      if (!kept.some((b) => b.kind === 'house' || b.kind === 'hall')) kept = roofs;
-      const freed = roofs.flatMap((b) => difference(b.poly, ...kept.map((b) => b.poly))
-        .flatMap((p) => p.holes.length ? [] : [{ poly: p.outer, kind: 'garden' as const }]));
-      fin = kept; gardens.push(...freed);
+      if (!kept.some(b => b.kind === 'house' || b.kind === 'hall')) kept = roofs;
+      const freed = roofs.flatMap(b => difference(b.poly, ...kept.map(b => b.poly)).flatMap(p => (p.holes.length ? [] : [{ poly: p.outer, kind: 'garden' as const }])));
+      fin = kept;
+      gardens.push(...freed);
     }
   }
 
@@ -441,11 +525,11 @@ export function buildPlotExperimental(pl: Plot, cov: number, P: MorphologyParams
   let raw = buildPlotRawExperimental(pl, cov, P, rng, hint);
   // dense zones: an irregular plot whose layout falls far short of the target is built over its whole depth
   if (cov >= 0.66 && pl.zone !== 'village') {
-    const built = raw.filter((b) => b.kind !== 'garden').reduce((s, b) => s + area(b.poly), 0);
+    const built = raw.filter(b => b.kind !== 'garden').reduce((s, b) => s + area(b.poly), 0);
     if (built < (cov - 0.2) * area(pl.poly)) raw = buildPlotRawExperimental(pl, 0.9, P, rng, { court: false, f: 0.5 });
   }
-  const gardens = raw.filter((b) => b.kind === 'garden');
-  const rawB = raw.filter((b) => b.kind !== 'garden');
+  const gardens = raw.filter(b => b.kind === 'garden');
+  const rawB = raw.filter(b => b.kind !== 'garden');
   const norm = normalizeFootprints(rawB, pl.zone === 'village' ? undefined : pl.axis);
   const fin = trimOverlaps(norm);
   if (BLD_STATS.on && pl.zone === BLD_STATS.zone) {
@@ -504,12 +588,11 @@ function buildPlotRawExperimental(pl: Plot, cov: number, P: MorphologyParams, rn
  * Farmstead around a yard (Hakenhof / Dreiseithof): house along the street, barn along one side from the street
  * backwards (an L), and on larger farms a shed closing the back of the yard (a U).
  */
-function farmstead(
-  pl: Plot, poly: Polygon, convex: boolean, fa: Vec2, t: Vec2, n: Vec2, W: number, D: number,
-  band: (d0: number, d1: number) => HalfPlane[], add: (h: HalfPlane[], k: Bldg['kind'], min?: number) => void,
-  addGarden: (from: number) => void, rng: Rng,
-): Bldg[] {
-  void pl; void poly; void convex; void n;
+function farmstead(pl: Plot, poly: Polygon, convex: boolean, fa: Vec2, t: Vec2, n: Vec2, W: number, D: number, band: (d0: number, d1: number) => HalfPlane[], add: (h: HalfPlane[], k: Bldg['kind'], min?: number) => void, addGarden: (from: number) => void, rng: Rng): Bldg[] {
+  void pl;
+  void poly;
+  void convex;
+  void n;
   const out: Bldg[] = [];
   const sb = rng.range(1, 4);
   const lat = (u0: number, u1: number): HalfPlane[] => [

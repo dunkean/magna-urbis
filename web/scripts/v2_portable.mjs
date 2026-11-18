@@ -17,7 +17,8 @@ async function* resourceFiles(dir, prefix = '') {
   entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (/[\\/:*?"<>|\x00-\x1f]/.test(entry.name) || entry.name === '.' || entry.name === '..') throw new Error(`Invalid Windows resource name: ${entry.name}`);
-    const path = join(dir, entry.name), relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const path = join(dir, entry.name),
+      relative = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink()) throw new Error(`Symbolic link in resources: ${path}`);
     if (excluded(entry.name)) continue;
     if (entry.isDirectory()) yield* resourceFiles(path, relative);
@@ -27,22 +28,31 @@ async function* resourceFiles(dir, prefix = '') {
 }
 
 export async function createPortable({ binary, resources, output }) {
-  binary = resolve(binary); resources = resolve(resources); output = resolve(output);
+  binary = resolve(binary);
+  resources = resolve(resources);
+  output = resolve(output);
   const binaryInfo = await lstat(binary).catch(() => null);
   if (!binaryInfo?.isFile() || !binaryInfo.size) throw new Error(`Missing or empty desktop executable: ${binary}`);
   const resourceInfo = await lstat(resources).catch(() => null);
   if (!resourceInfo?.isDirectory()) throw new Error(`Missing resource directory: ${resources}`);
   await checkResources(resources, 'windows-x64');
   // Validate the entire tree before opening the output, including symlinks and file types.
-  const files = []; for await (const file of resourceFiles(resources)) files.push(file);
+  const files = [];
+  for await (const file of resourceFiles(resources)) files.push(file);
   await mkdir(dirname(output), { recursive: true });
   const temp = `${output}.${process.pid}.${Date.now()}.tmp`;
   let stream, failure;
   try {
     stream = createWriteStream(temp, { flags: 'wx' });
-    stream.on('error', error => { failure = error; });
+    stream.on('error', error => {
+      failure = error;
+    });
     const zip = new Zip((error, data, final) => {
-      if (error) { failure = error; stream.destroy(error); return; }
+      if (error) {
+        failure = error;
+        stream.destroy(error);
+        return;
+      }
       stream.write(data);
       if (final) stream.end();
     });
@@ -63,20 +73,25 @@ export async function createPortable({ binary, resources, output }) {
     await add('README.txt', new TextEncoder().encode(readme));
     await add('magna-urbis-v2-desktop.exe', binary);
     for (const file of files) await add(`resources/${file.name}`, file.path);
-    zip.end(); await finished(stream);
+    zip.end();
+    await finished(stream);
     await rename(temp, output);
   } catch (error) {
-    stream?.destroy(); await rm(temp, { force: true }); throw error;
+    stream?.destroy();
+    await rm(temp, { force: true });
+    throw error;
   }
   return output;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const options = Object.fromEntries(process.argv.slice(2).map(arg => {
-    const match = /^--(binary|resources|output)=(.+)$/.exec(arg);
-    if (!match) throw new Error(`Expected --binary=, --resources= or --output=: ${arg}`);
-    return [match[1], match[2]];
-  }));
+  const options = Object.fromEntries(
+    process.argv.slice(2).map(arg => {
+      const match = /^--(binary|resources|output)=(.+)$/.exec(arg);
+      if (!match) throw new Error(`Expected --binary=, --resources= or --output=: ${arg}`);
+      return [match[1], match[2]];
+    }),
+  );
   if (!options.output) throw new Error('Provide --output=<zip path>');
   const target = join(root, 'rust/desktop-v2/target/release');
   const result = await createPortable({ binary: options.binary ?? join(target, 'magna-urbis-v2-desktop.exe'), resources: options.resources ?? join(target, 'resources'), output: options.output });

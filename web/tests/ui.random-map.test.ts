@@ -7,8 +7,11 @@ import { styleSwatch } from '../src/ui/dock';
 import { STYLE_LIST } from '../src/render/styles';
 import { BIOME_CULTURES, surprisePatch } from '../src/ui/randomMap';
 
-const known = new Set(CULTURE_LIST.map((c) => c.id));
-const randomFor = (seed: string) => { const rng = new Rng(seed); return () => rng.float(); };
+const known = new Set(CULTURE_LIST.map(c => c.id));
+const randomFor = (seed: string) => {
+  const rng = new Rng(seed);
+  return () => rng.float();
+};
 
 describe('surprise map', () => {
   it('only suggests cultures that exist, for every biome', () => {
@@ -49,7 +52,7 @@ describe('surprise map', () => {
 
 describe('style dock', () => {
   it('draws a distinct swatch for every style', () => {
-    const swatches = STYLE_LIST.map((s) => styleSwatch(s.id));
+    const swatches = STYLE_LIST.map(s => styleSwatch(s.id));
     expect(new Set(swatches).size).toBe(STYLE_LIST.length);
     for (const swatch of swatches) expect(swatch).toMatch(/^conic-gradient\(/);
   });

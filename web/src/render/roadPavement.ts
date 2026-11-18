@@ -20,13 +20,19 @@ const ERA_PAVEMENT: Readonly<Record<string, RoadPavement>> = { modern: 'asphalt'
 const CULTURE_PAVEMENT: Readonly<Record<string, RoadPavement>> = { 'american-grid': 'asphalt' };
 
 /** Surface of the roads a culture builds. */
-export const culturePavement = (culture: string | undefined, era?: string): RoadPavement =>
-  ERA_PAVEMENT[era ?? cultureEra(culture) ?? ''] || (culture && CULTURE_PAVEMENT[culture]) || 'earth';
+export const culturePavement = (culture: string | undefined, era?: string): RoadPavement => ERA_PAVEMENT[era ?? cultureEra(culture) ?? ''] || (culture && CULTURE_PAVEMENT[culture]) || 'earth';
 
 /** A settlement as the regional roads see it. */
-export interface PavementSite { x: number; y: number; pavement: RoadPavement }
+export interface PavementSite {
+  x: number;
+  y: number;
+  pavement: RoadPavement;
+}
 /** The settlements of a map, or undefined when none of them is paved. `key` identifies the set. */
-export interface PavementSites { key: string; sites: readonly PavementSite[] }
+export interface PavementSites {
+  key: string;
+  sites: readonly PavementSite[];
+}
 type Place = { center: { x: number; y: number }; culture?: string; era?: string };
 export function pavementSites(places: readonly Place[]): PavementSites | undefined {
   const sites = places.map(p => ({ x: p.center.x, y: p.center.y, pavement: culturePavement(p.culture, p.era) }));
@@ -38,30 +44,47 @@ const layoutSites = new WeakMap<readonly Layout[], PavementSites | null>();
 export function layoutPavementSites(layouts: readonly Layout[] | undefined): PavementSites | undefined {
   if (!layouts?.length) return undefined;
   let sites = layoutSites.get(layouts);
-  if (sites === undefined) layoutSites.set(layouts, sites = pavementSites(layouts as readonly (Layout & { era?: string })[]) ?? null);
+  if (sites === undefined) layoutSites.set(layouts, (sites = pavementSites(layouts as readonly (Layout & { era?: string })[]) ?? null));
   return sites ?? undefined;
 }
 /** Surface of a regional road at one point: that of the nearest settlement. */
 export function pavementAt(sites: PavementSites | undefined, x: number, y: number): RoadPavement {
   if (!sites) return 'earth';
-  let best = Infinity, out: RoadPavement = 'earth';
-  for (const s of sites.sites) { const d = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y); if (d < best) { best = d; out = s.pavement; } }
+  let best = Infinity,
+    out: RoadPavement = 'earth';
+  for (const s of sites.sites) {
+    const d = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y);
+    if (d < best) {
+      best = d;
+      out = s.pavement;
+    }
+  }
   return out;
 }
 /** A path cut where its surface changes. One piece, the path itself, when the map has no paved settlement. */
 export function splitByPavement<P extends { x: number; y: number }>(path: readonly P[], sites: PavementSites | undefined): { path: readonly P[]; pavement: RoadPavement }[] {
   if (!sites || path.length < 2) return [{ path, pavement: 'earth' }];
   const out: { path: P[]; pavement: RoadPavement }[] = [];
-  let pavement = pavementAt(sites, path[0].x, path[0].y), piece: P[] = [path[0]];
+  let pavement = pavementAt(sites, path[0].x, path[0].y),
+    piece: P[] = [path[0]];
   for (let i = 1; i < path.length; i++) {
-    const b = path[i], next = pavementAt(sites, b.x, b.y);
+    const b = path[i],
+      next = pavementAt(sites, b.x, b.y);
     if (next !== pavement) {
       // The change lies on this segment: a few bisections place it.
-      let lo = 0, hi = 1; const a = path[i - 1];
-      for (let k = 0; k < 7; k++) { const t = (lo + hi) / 2; if (pavementAt(sites, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t) === pavement) lo = t; else hi = t; }
+      let lo = 0,
+        hi = 1;
+      const a = path[i - 1];
+      for (let k = 0; k < 7; k++) {
+        const t = (lo + hi) / 2;
+        if (pavementAt(sites, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t) === pavement) lo = t;
+        else hi = t;
+      }
       const cut = { ...a, x: a.x + (b.x - a.x) * hi, y: a.y + (b.y - a.y) * hi };
-      piece.push(cut); out.push({ path: piece, pavement });
-      piece = [cut]; pavement = next;
+      piece.push(cut);
+      out.push({ path: piece, pavement });
+      piece = [cut];
+      pavement = next;
     }
     piece.push(b);
   }
@@ -70,15 +93,21 @@ export function splitByPavement<P extends { x: number; y: number }>(path: readon
 }
 
 const heaviest = (mix: StyleMix | undefined): string | undefined => {
-  let best: string | undefined, weight = 0;
-  for (const s of mix?.styles ?? []) if (s.culture && s.weight > weight) { best = s.culture; weight = s.weight; }
+  let best: string | undefined,
+    weight = 0;
+  for (const s of mix?.styles ?? [])
+    if (s.culture && s.weight > weight) {
+      best = s.culture;
+      weight = s.weight;
+    }
   return best;
 };
 const inRing = (ring: readonly Point[], x: number, y: number): boolean => {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i], b = ring[j];
-    if (a.y > y !== b.y > y && x < a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y)) inside = !inside;
+    const a = ring[i],
+      b = ring[j];
+    if (a.y > y !== b.y > y && x < a.x + ((b.x - a.x) * (y - a.y)) / (b.y - a.y)) inside = !inside;
   }
   return inside;
 };
@@ -88,19 +117,28 @@ export function layoutStreetPavements(layout: Layout | undefined): readonly Road
   if (!layout) return undefined;
   let out = streetPavements.get(layout);
   if (out !== undefined) return out ?? undefined;
-  const era = (layout as { era?: string }).era, own = culturePavement(layout.culture, era);
+  const era = (layout as { era?: string }).era,
+    own = culturePavement(layout.culture, era);
   const facet = (layout.config as { styleSheet?: StyleSheet } | undefined)?.styleSheet?.streets;
-  const ofMix = (mix: StyleMix | undefined): RoadPavement | undefined => { const c = heaviest(mix); return c ? culturePavement(c) : undefined; };
+  const ofMix = (mix: StyleMix | undefined): RoadPavement | undefined => {
+    const c = heaviest(mix);
+    return c ? culturePavement(c) : undefined;
+  };
   const city = ofMix(facet?.city) ?? own;
   const quarters = layout.quarters.map((q, i) => ofMix(facet?.quarters?.[String(i)]) ?? ofMix(q.zone ? facet?.zones?.[q.zone] : undefined) ?? city);
   if (city === 'earth' && quarters.every(p => p === 'earth')) out = null;
   else if (quarters.every(p => p === city)) out = layout.streets.map(() => city);
-  else out = layout.streets.map(s => {
-    // A street belongs to the quarter that holds its middle.
-    const a = s.path[(s.path.length - 1) >> 1], b = s.path[s.path.length >> 1]; if (!a || !b) return city;
-    const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2, q = layout.quarters.findIndex(k => inRing(k.shape.outer, x, y));
-    return q < 0 ? city : quarters[q];
-  });
+  else
+    out = layout.streets.map(s => {
+      // A street belongs to the quarter that holds its middle.
+      const a = s.path[(s.path.length - 1) >> 1],
+        b = s.path[s.path.length >> 1];
+      if (!a || !b) return city;
+      const x = (a.x + b.x) / 2,
+        y = (a.y + b.y) / 2,
+        q = layout.quarters.findIndex(k => inRing(k.shape.outer, x, y));
+      return q < 0 ? city : quarters[q];
+    });
   streetPavements.set(layout, out);
   return out ?? undefined;
 }

@@ -14,7 +14,13 @@ import { measureDisplayProduct, productRevision } from '../render/displayProduct
  * though crowns rooted outside may overhang it; 12 covered way (small road or track): no crown is rooted on it, the
  * stands on both sides are untouched and their crowns close over it. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6, marsh: 10 };
-const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, CLEARING = 11, COVERED_WAY = 12, RANGE = 8, MIN_HALF = .6;
+const BUILT = 7,
+  OCCUPIED = 8,
+  CLEARANCE = 9,
+  CLEARING = 11,
+  COVERED_WAY = 12,
+  RANGE = 8,
+  MIN_HALF = 0.6;
 /** Class 13: Underdark fungus beds (land use 'garden' with cultivation 'fungal'), the cultivated floor of cave
  * settlements. No plot, row or parcel is drawn for them on the surface ground: the Underdark ground and its mushroom
  * layer read this class (its bilinear share over the 2x2 texels gives an organic patch) for dense low mushrooms. */
@@ -28,20 +34,30 @@ export function withBuildingOccupation(source: ForestOccupation | undefined, sce
   if (slot.value) return slot.value.detail === source?.detail ? slot.value : { ...slot.value, detail: source?.detail };
   const shapes = buildingOccupationShapes(scene);
   if (!shapes) return source;
-  return slot.value = withOccupationShapes(source, shapes);
+  return (slot.value = withOccupationShapes(source, shapes));
 }
-export interface OccupationMergeSlot { value?: ForestOccupation; pending?: Promise<ForestOccupation | undefined> }
+export interface OccupationMergeSlot {
+  value?: ForestOccupation;
+  pending?: Promise<ForestOccupation | undefined>;
+}
 const noOccupation = {};
 const merged = new WeakMap<object, Map<string, OccupationMergeSlot>>();
 /** Footprint revision, independent from scene wrappers, palette, and building visibility. */
 export function occupationMergeSlot(source: ForestOccupation | undefined, scene: Building3dScene): OccupationMergeSlot {
   const buildings = scene.occupationBuildings ?? scene.buildings;
-  const key = `1:${source?.key ?? ''}:${source?.x}:${source?.y}:${source?.width}:${source?.n}:`
-    + buildings.map(building => buildingOccupationSurfaces(building).map(productRevision).join('.')).join(',');
+  const key = `1:${source?.key ?? ''}:${source?.x}:${source?.y}:${source?.width}:${source?.n}:` + buildings.map(building => buildingOccupationSurfaces(building).map(productRevision).join('.')).join(',');
   const owner = source?.rgba ?? noOccupation;
-  let entries = merged.get(owner); if (!entries) { entries = new Map(); merged.set(owner, entries); }
+  let entries = merged.get(owner);
+  if (!entries) {
+    entries = new Map();
+    merged.set(owner, entries);
+  }
   let slot = entries.get(key);
-  if (!slot) { slot = {}; entries.set(key, slot); if (entries.size > 8) entries.delete(entries.keys().next().value!); }
+  if (!slot) {
+    slot = {};
+    entries.set(key, slot);
+    if (entries.size > 8) entries.delete(entries.keys().next().value!);
+  }
   return slot;
 }
 type OccupationShape = { outer: Polygon; holes: Polygon[] };
@@ -54,23 +70,35 @@ export function buildingOccupationShapes(scene: Building3dScene | undefined): Oc
 /** Shapes as one transferable list: [shapes, (rings, (points, x, y…)…)…]. */
 export function packOccupationShapes(shapes: readonly OccupationShape[]): Float64Array {
   let size = 1;
-  for (const shape of shapes) { size += 2 + 2 * shape.outer.length; for (const hole of shape.holes) size += 1 + 2 * hole.length; }
+  for (const shape of shapes) {
+    size += 2 + 2 * shape.outer.length;
+    for (const hole of shape.holes) size += 1 + 2 * hole.length;
+  }
   const out = new Float64Array(size);
   let at = 0;
   out[at++] = shapes.length;
   for (const shape of shapes) {
     out[at++] = 1 + shape.holes.length;
-    for (const ring of [shape.outer, ...shape.holes]) { out[at++] = ring.length; for (const p of ring) { out[at++] = p.x; out[at++] = p.y; } }
+    for (const ring of [shape.outer, ...shape.holes]) {
+      out[at++] = ring.length;
+      for (const p of ring) {
+        out[at++] = p.x;
+        out[at++] = p.y;
+      }
+    }
   }
   return out;
 }
 export function unpackOccupationShapes(data: Float64Array): OccupationShape[] {
   let at = 0;
-  const shapes: OccupationShape[] = [], count = data[at++];
+  const shapes: OccupationShape[] = [],
+    count = data[at++];
   for (let s = 0; s < count; s++) {
-    const rings: Polygon[] = [], ringCount = data[at++];
+    const rings: Polygon[] = [],
+      ringCount = data[at++];
     for (let r = 0; r < ringCount; r++) {
-      const ring: Polygon = [], points = data[at++];
+      const ring: Polygon = [],
+        points = data[at++];
       for (let k = 0; k < points; k++, at += 2) ring.push({ x: data[at], y: data[at + 1] });
       rings.push(ring);
     }
@@ -83,69 +111,129 @@ export function withOccupationShapes(source: ForestOccupation | undefined, shape
   return measureDisplayProduct('merge', () => buildOccupationShapes(source, shapes));
 }
 function buildOccupationShapes(source: ForestOccupation | undefined, shapes: readonly OccupationShape[]): ForestOccupation {
-  let x0 = source?.x ?? Infinity, y0 = source?.y ?? Infinity, x1 = source ? source.x + source.width : -Infinity, y1 = source ? source.y + source.width : -Infinity;
-  for (const shape of shapes) for (const p of shape.outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-  const side = Math.max(x1 - x0, y1 - y0), cell = Math.max(.5, side / (1536 - RANGE * 2));
-  const n = Math.min(1536, Math.ceil(side / cell) + RANGE * 2), x = Math.floor(x0 / cell) * cell - RANGE * cell, y = Math.floor(y0 / cell) * cell - RANGE * cell;
-  const cls = new Uint8Array(n * n), dOpen = new Float32Array(n * n).fill(-RANGE), dForest = new Float32Array(n * n).fill(-RANGE);
+  let x0 = source?.x ?? Infinity,
+    y0 = source?.y ?? Infinity,
+    x1 = source ? source.x + source.width : -Infinity,
+    y1 = source ? source.y + source.width : -Infinity;
+  for (const shape of shapes)
+    for (const p of shape.outer) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
+  const side = Math.max(x1 - x0, y1 - y0),
+    cell = Math.max(0.5, side / (1536 - RANGE * 2));
+  const n = Math.min(1536, Math.ceil(side / cell) + RANGE * 2),
+    x = Math.floor(x0 / cell) * cell - RANGE * cell,
+    y = Math.floor(y0 / cell) * cell - RANGE * cell;
+  const cls = new Uint8Array(n * n),
+    dOpen = new Float32Array(n * n).fill(-RANGE),
+    dForest = new Float32Array(n * n).fill(-RANGE);
   if (source) {
     // Reproject distances bilinearly, in metres. Thresholding them and running another cell distance transform
     // destroyed the polygon edge whenever accepted buildings caused the occupation grid to be resized.
     // The four taps are unrolled with the row terms hoisted (2.4 M texels per merge); each sum is rounded to
     // single precision as the accumulation in the Float32Array was, so the bytes are the same.
-    const sn = source.n, last = sn - 1, data = source.rgba, f = Math.fround;
+    const sn = source.n,
+      last = sn - 1,
+      data = source.rgba,
+      f = Math.fround;
     for (let j = 0; j < n; j++) {
-      const gy = (y + (j + .5) * cell - source.y) / source.width * sn, sy = Math.floor(gy);
+      const gy = ((y + (j + 0.5) * cell - source.y) / source.width) * sn,
+        sy = Math.floor(gy);
       if (sy < 0 || sy >= sn) continue;
-      const by = Math.floor(gy - .5), fy = gy - .5 - by;
-      const r0 = Math.max(0, Math.min(last, by)) * sn, r1 = Math.max(0, Math.min(last, by + 1)) * sn;
+      const by = Math.floor(gy - 0.5),
+        fy = gy - 0.5 - by;
+      const r0 = Math.max(0, Math.min(last, by)) * sn,
+        r1 = Math.max(0, Math.min(last, by + 1)) * sn;
       for (let i = 0; i < n; i++) {
-        const gx = (x + (i + .5) * cell - source.x) / source.width * sn, sx = Math.floor(gx);
+        const gx = ((x + (i + 0.5) * cell - source.x) / source.width) * sn,
+          sx = Math.floor(gx);
         if (sx < 0 || sx >= sn) continue;
         const index = j * n + i;
         cls[index] = data[(sy * sn + sx) * 4 + 2];
-        const bx = Math.floor(gx - .5), fx = gx - .5 - bx, c0 = Math.max(0, Math.min(last, bx)), c1 = Math.max(0, Math.min(last, bx + 1));
-        const k00 = (r0 + c0) * 4, k01 = (r0 + c1) * 4, k10 = (r1 + c0) * 4, k11 = (r1 + c1) * 4;
-        const w00 = (1 - fx) * (1 - fy) * source.width / sn / cell, w01 = fx * (1 - fy) * source.width / sn / cell;
-        const w10 = (1 - fx) * fy * source.width / sn / cell, w11 = fx * fy * source.width / sn / cell;
-        dOpen[index] = f(f(f(f((data[k00] - 128) / 16 * w00) + (data[k01] - 128) / 16 * w01) + (data[k10] - 128) / 16 * w10) + (data[k11] - 128) / 16 * w11);
-        dForest[index] = f(f(f(f((data[k00 + 1] - 128) / 16 * w00) + (data[k01 + 1] - 128) / 16 * w01) + (data[k10 + 1] - 128) / 16 * w10) + (data[k11 + 1] - 128) / 16 * w11);
+        const bx = Math.floor(gx - 0.5),
+          fx = gx - 0.5 - bx,
+          c0 = Math.max(0, Math.min(last, bx)),
+          c1 = Math.max(0, Math.min(last, bx + 1));
+        const k00 = (r0 + c0) * 4,
+          k01 = (r0 + c1) * 4,
+          k10 = (r1 + c0) * 4,
+          k11 = (r1 + c1) * 4;
+        const w00 = ((1 - fx) * (1 - fy) * source.width) / sn / cell,
+          w01 = (fx * (1 - fy) * source.width) / sn / cell;
+        const w10 = ((1 - fx) * fy * source.width) / sn / cell,
+          w11 = (fx * fy * source.width) / sn / cell;
+        dOpen[index] = f(f(f(f(((data[k00] - 128) / 16) * w00) + ((data[k01] - 128) / 16) * w01) + ((data[k10] - 128) / 16) * w10) + ((data[k11] - 128) / 16) * w11);
+        dForest[index] = f(f(f(f(((data[k00 + 1] - 128) / 16) * w00) + ((data[k01 + 1] - 128) / 16) * w01) + ((data[k10 + 1] - 128) / 16) * w10) + ((data[k11 + 1] - 128) / 16) * w11);
       }
     }
   }
-  const occupied = (from: number, to: number): void => { cls.fill(OCCUPIED, from, to); };
+  const occupied = (from: number, to: number): void => {
+    cls.fill(OCCUPIED, from, to);
+  };
   for (const shape of shapes) {
     const rings = [shape.outer, ...shape.holes];
     fillRings(rings, x, y, cell, n, occupied);
     // Conservative boundary cells preserve walls and supports thinner than one
     // texel. Only the boundary rim is widened; courtyard interiors stay free.
-    const mark = (i: number, j: number): void => { if (i >= 0 && j >= 0 && i < n && j < n) occupied(j * n + i, j * n + i + 1); };
-    for (const ring of rings) for (let k = 0; k < ring.length; k++) {
-      const a = ring[k], b = ring[(k + 1) % ring.length];
-      const ax = (a.x - x) / cell, ay = (a.y - y) / cell, bx = (b.x - x) / cell, by = (b.y - y) / cell;
-      let i = Math.floor(ax), j = Math.floor(ay);
-      const endX = Math.floor(bx), endY = Math.floor(by), dx = bx - ax, dy = by - ay, sx = Math.sign(dx), sy = Math.sign(dy);
-      const tx = dx ? 1 / Math.abs(dx) : Infinity, ty = dy ? 1 / Math.abs(dy) : Infinity;
-      let nextX = dx ? (sx > 0 ? i + 1 - ax : ax - i) * tx : Infinity;
-      let nextY = dy ? (sy > 0 ? j + 1 - ay : ay - j) * ty : Infinity;
-      mark(i, j);
-      for (let step = 0; (i !== endX || j !== endY) && step < n * 2 + 4; step++) {
-        if (Math.abs(nextX - nextY) < 1e-12) { mark(i + sx, j); mark(i, j + sy); i += sx; j += sy; nextX += tx; nextY += ty; }
-        else if (nextX < nextY) { i += sx; nextX += tx; }
-        else { j += sy; nextY += ty; }
+    const mark = (i: number, j: number): void => {
+      if (i >= 0 && j >= 0 && i < n && j < n) occupied(j * n + i, j * n + i + 1);
+    };
+    for (const ring of rings)
+      for (let k = 0; k < ring.length; k++) {
+        const a = ring[k],
+          b = ring[(k + 1) % ring.length];
+        const ax = (a.x - x) / cell,
+          ay = (a.y - y) / cell,
+          bx = (b.x - x) / cell,
+          by = (b.y - y) / cell;
+        let i = Math.floor(ax),
+          j = Math.floor(ay);
+        const endX = Math.floor(bx),
+          endY = Math.floor(by),
+          dx = bx - ax,
+          dy = by - ay,
+          sx = Math.sign(dx),
+          sy = Math.sign(dy);
+        const tx = dx ? 1 / Math.abs(dx) : Infinity,
+          ty = dy ? 1 / Math.abs(dy) : Infinity;
+        let nextX = dx ? (sx > 0 ? i + 1 - ax : ax - i) * tx : Infinity;
+        let nextY = dy ? (sy > 0 ? j + 1 - ay : ay - j) * ty : Infinity;
         mark(i, j);
+        for (let step = 0; (i !== endX || j !== endY) && step < n * 2 + 4; step++) {
+          if (Math.abs(nextX - nextY) < 1e-12) {
+            mark(i + sx, j);
+            mark(i, j + sy);
+            i += sx;
+            j += sy;
+            nextX += tx;
+            nextY += ty;
+          } else if (nextX < nextY) {
+            i += sx;
+            nextX += tx;
+          } else {
+            j += sy;
+            nextY += ty;
+          }
+          mark(i, j);
+        }
       }
-    }
   }
   const cleared = source?.clearings?.length ? forestClearingRaster(source.clearings, x, y, cell, n) : undefined;
   // Conservative class cells still exclude roots from thin walls; the visible ground follows actual polygons.
-  const built = forestClearingRaster(shapes, x, y, cell, n), rgba = new Uint8Array(n * n * 4);
+  const built = forestClearingRaster(shapes, x, y, cell, n),
+    rgba = new Uint8Array(n * n * 4);
   let hash = 0x811c9dc5;
   for (let i = 0; i < n * n; i++) {
     const at = i * 4;
-    dOpen[i] = Math.max(dOpen[i], built[i] / cell); dForest[i] = Math.min(dForest[i], -built[i] / cell);
-    rgba[at] = Math.max(0, Math.min(255, Math.round(128 + 16 * dOpen[i]))); rgba[at + 1] = Math.max(0, Math.min(255, Math.round(128 + 16 * dForest[i])));
-    rgba[at + 2] = cls[i]; rgba[at + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - 16 * cleared[i] / cell))) : 255;
+    dOpen[i] = Math.max(dOpen[i], built[i] / cell);
+    dForest[i] = Math.min(dForest[i], -built[i] / cell);
+    rgba[at] = Math.max(0, Math.min(255, Math.round(128 + 16 * dOpen[i])));
+    rgba[at + 1] = Math.max(0, Math.min(255, Math.round(128 + 16 * dForest[i])));
+    rgba[at + 2] = cls[i];
+    rgba[at + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - (16 * cleared[i]) / cell))) : 255;
     hash = Math.imul(hash ^ cls[i] ^ rgba[at] ^ rgba[at + 3], 0x01000193);
   }
   return { x, y, width: n * cell, n, rgba, detail: source?.detail, ways: source?.ways, clearings: source?.clearings, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
@@ -161,80 +249,127 @@ function buildOccupationShapes(source: ForestOccupation | undefined, shapes: rea
 export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2, corridors: readonly ForestCorridor[] = [], clearings: readonly ForestClearing[] = []): ForestOccupation | undefined {
   const shapes: { rings: Polygon[]; cls: number; forest: boolean }[] = [];
   for (const area of landuse.areas) {
-    const cls = area.cultivation === 'fungal' ? FUNGUS_BED : CLASS[area.kind] ?? 0;
-    if (cls || area.kind === 'forest') shapes.push({ rings: [area.poly, ...area.holes ?? []], cls, forest: !cls });
+    const cls = area.cultivation === 'fungal' ? FUNGUS_BED : (CLASS[area.kind] ?? 0);
+    if (cls || area.kind === 'forest') shapes.push({ rings: [area.poly, ...(area.holes ?? [])], cls, forest: !cls });
   }
   for (const ring of landuse.reserve) shapes.push({ rings: [ring], cls: BUILT, forest: false });
   for (const path of landuse.ways ?? []) {
     if (path.length < 2) continue;
     shapes.push({ rings: [offsetRibbon(path, 12)], cls: CLEARANCE, forest: false });
   }
-  for (const shape of clearings) shapes.push({ rings: [shape.outer, ...shape.holes ?? []], cls: CLEARING, forest: false });
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const s of shapes) for (const p of s.rings[0]) {
-    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
-  }
+  for (const shape of clearings) shapes.push({ rings: [shape.outer, ...(shape.holes ?? [])], cls: CLEARING, forest: false });
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const s of shapes)
+    for (const p of s.rings[0]) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
   if (!(maxX > minX && maxY > minY)) return undefined;
-  const side = Math.max(maxX - minX, maxY - minY), cell = Math.max(minCell, side / (maxN - 2 * RANGE));
+  const side = Math.max(maxX - minX, maxY - minY),
+    cell = Math.max(minCell, side / (maxN - 2 * RANGE));
   const n = Math.min(maxN, Math.ceil(side / cell) + 2 * RANGE);
   // Cell-aligned origin: identical layers produce identical texel centres.
-  const x = (Math.floor(minX / cell) - RANGE) * cell, y = (Math.floor(minY / cell) - RANGE) * cell;
-  const cls = new Uint8Array(n * n), open = new Uint8Array(n * n), forest = new Uint8Array(n * n);
+  const x = (Math.floor(minX / cell) - RANGE) * cell,
+    y = (Math.floor(minY / cell) - RANGE) * cell;
+  const cls = new Uint8Array(n * n),
+    open = new Uint8Array(n * n),
+    forest = new Uint8Array(n * n);
   // Built reserves override fields and woods drawn below them.
   for (const s of shapes.sort((a, b) => Number(a.cls === BUILT) - Number(b.cls === BUILT))) {
     fillRings(s.rings, x, y, cell, n, (from, to) => {
       cls.fill(s.cls, from, to);
       // Towns and defensive clearings contribute their polygon distance below, never a distance to filled cells.
-      if (s.cls !== BUILT && s.cls !== CLEARING) { open.fill(s.forest ? 0 : 1, from, to); forest.fill(s.forest ? 1 : 0, from, to); }
+      if (s.cls !== BUILT && s.cls !== CLEARING) {
+        open.fill(s.forest ? 0 : 1, from, to);
+        forest.fill(s.forest ? 1 : 0, from, to);
+      }
     });
   }
   // Forest clearings (farmsteads, road corridors) open only wild or wooded ground: fields and plots keep their class.
   // They never widen the raster: corridors outside the rural land use stay with the forest field.
-  const clearing = (rings: Polygon[]): void => fillRings(rings, x, y, cell, n, (from, to) => {
-    for (let i = from; i < to; i++) if (cls[i] !== BUILT && (!cls[i] || forest[i])) { cls[i] = CLEARING; open[i] = 1; forest[i] = 0; }
-  });
+  const clearing = (rings: Polygon[]): void =>
+    fillRings(rings, x, y, cell, n, (from, to) => {
+      for (let i = from; i < to; i++)
+        if (cls[i] !== BUILT && (!cls[i] || forest[i])) {
+          cls[i] = CLEARING;
+          open[i] = 1;
+          forest[i] = 0;
+        }
+    });
   for (const ring of farmClearings(landuse)) clearing([ring]);
   // Corridors are distance fields, not rasterized ribbons: a road a few texels wide filled cell by cell left a
   // staircase edge in the ground and the crowns. Each texel keeps its exact signed distance (texels, positive
   // inside) to the nearest corridor capsule; it is merged into the open/forest fields below.
-  const ways = [...corridors, ...landuse.forestCorridors ?? []];
-  const corridor = corridorDistance(ways.filter(way => !way.covered), x, y, cell, n);
+  const ways = [...corridors, ...(landuse.forestCorridors ?? [])];
+  const corridor = corridorDistance(
+    ways.filter(way => !way.covered),
+    x,
+    y,
+    cell,
+    n,
+  );
   if (corridor) for (let i = 0; i < n * n; i++) if (corridor[i] > 0 && cls[i] !== BUILT && (!cls[i] || forest[i])) cls[i] = CLEARING;
   // Covered ways only mark their own strip: the open and forest fields keep the stands whole on both sides.
-  const covered = corridorDistance(ways.filter(way => way.covered), x, y, cell, n);
+  const covered = corridorDistance(
+    ways.filter(way => way.covered),
+    x,
+    y,
+    cell,
+    n,
+  );
   if (covered) for (let i = 0; i < n * n; i++) if (covered[i] > 0 && cls[i] !== BUILT && (!cls[i] || forest[i]) && cls[i] !== CLEARING) cls[i] = COVERED_WAY;
   // A 12 m lane can be thinner than a texel on a large map. Keep every crossed
   // cell open, as for thin building walls, rather than dropping the whole lane.
-  for (const path of landuse.ways ?? []) for (let i = 1; i < path.length; i++) {
-    visitSegmentCells({ w: n, h: n, cell }, { x: path[i - 1].x - x, y: path[i - 1].y - y },
-      { x: path[i].x - x, y: path[i].y - y }, at => { cls[at] = CLEARANCE; open[at] = 1; forest[at] = 0; });
-  }
+  for (const path of landuse.ways ?? [])
+    for (let i = 1; i < path.length; i++) {
+      visitSegmentCells({ w: n, h: n, cell }, { x: path[i - 1].x - x, y: path[i - 1].y - y }, { x: path[i].x - x, y: path[i].y - y }, at => {
+        cls[at] = CLEARANCE;
+        open[at] = 1;
+        forest[at] = 0;
+      });
+    }
   // Defensive clearings override reserves, fields and circulation alike.
-  for (const shape of clearings) fillRings([shape.outer, ...shape.holes ?? []], x, y, cell, n, (from, to) => {
-    cls.fill(CLEARING, from, to);
-  });
+  for (const shape of clearings)
+    fillRings([shape.outer, ...(shape.holes ?? [])], x, y, cell, n, (from, to) => {
+      cls.fill(CLEARING, from, to);
+    });
   const cleared = clearings.length ? forestClearingRaster(clearings, x, y, cell, n) : undefined;
-  const dOpen = signedDistance(open, n), dForest = signedDistance(forest, n);
+  const dOpen = signedDistance(open, n),
+    dForest = signedDistance(forest, n);
   const groundPolygons = [...landuse.reserve.map(outer => ({ outer })), ...clearings];
   if (groundPolygons.length) {
     const ground = forestClearingRaster(groundPolygons, x, y, cell, n);
     for (let i = 0; i < n * n; i++) {
       const d = ground[i] / cell;
-      dOpen[i] = Math.max(dOpen[i], d); dForest[i] = Math.min(dForest[i], -d);
+      dOpen[i] = Math.max(dOpen[i], d);
+      dForest[i] = Math.min(dForest[i], -d);
     }
   }
   // Union with the corridors: open grows to max(open, corridor), forest shrinks to min(forest, -corridor).
   // Every ground a corridor crosses is open afterwards (fields and plots already were), so the union is exact.
-  if (corridor) for (let i = 0; i < n * n; i++) {
-    const d = corridor[i]; if (d <= -RANGE) continue;
-    if (d > dOpen[i]) dOpen[i] = d;
-    if (-d < dForest[i]) dForest[i] = -d;
-    if (d > 0) { open[i] = 1; forest[i] = 0; }
-  }
+  if (corridor)
+    for (let i = 0; i < n * n; i++) {
+      const d = corridor[i];
+      if (d <= -RANGE) continue;
+      if (d > dOpen[i]) dOpen[i] = d;
+      if (-d < dForest[i]) dForest[i] = -d;
+      if (d > 0) {
+        open[i] = 1;
+        forest[i] = 0;
+      }
+    }
   const rgba = new Uint8Array(n * n * 4);
   const enc = (d: number): number => Math.max(0, Math.min(255, Math.round(128 + 16 * d)));
   for (let i = 0, o = 0; i < n * n; i++, o += 4) {
-    rgba[o] = enc(dOpen[i]); rgba[o + 1] = enc(dForest[i]); rgba[o + 2] = cls[i]; rgba[o + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - 16 * cleared[i] / cell))) : 255;
+    rgba[o] = enc(dOpen[i]);
+    rgba[o + 1] = enc(dForest[i]);
+    rgba[o + 2] = cls[i];
+    rgba[o + 3] = cleared ? Math.max(0, Math.min(255, Math.round(128 - (16 * cleared[i]) / cell))) : 255;
   }
   let hash = 0x811c9dc5;
   for (const word of new Uint32Array(rgba.buffer)) hash = Math.imul(hash ^ word, 0x01000193);
@@ -245,53 +380,76 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
  * half width interpolated along each segment; -RANGE (saturated) beyond reach. Undefined without corridors. */
 function corridorDistance(corridors: readonly ForestCorridor[], x0: number, y0: number, cell: number, n: number): Float32Array | undefined {
   if (!corridors.length) return undefined;
-  const out = new Float32Array(n * n).fill(-RANGE), reach = RANGE * cell;
+  const out = new Float32Array(n * n).fill(-RANGE),
+    reach = RANGE * cell;
   // A corridor narrower than the texel pitch is sampled at texel centres only: the field then dips below zero
   // between samples and the bilinear read breaks the lane into a chain of beads (and the class channel into dots).
   // Flooring the half width at MIN_HALF texels keeps every point of the centre line inside the interpolated
   // zero contour (worst bilinear dip on a line is half a texel), so the corridor stays one continuous lane.
   const floor = MIN_HALF * cell;
-  for (const c of corridors) for (let k = 1; k < c.path.length; k++) {
-    const a = c.path[k - 1], b = c.path[k];
-    const ha = Math.max(floor, typeof c.half === 'number' ? c.half : c.half[k - 1]), hb = Math.max(floor, typeof c.half === 'number' ? c.half : c.half[k]);
-    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy, r = Math.max(ha, hb) + reach;
-    const i0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - r - x0) / cell)), i1 = Math.min(n - 1, Math.ceil((Math.max(a.x, b.x) + r - x0) / cell));
-    const j0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - r - y0) / cell)), j1 = Math.min(n - 1, Math.ceil((Math.max(a.y, b.y) + r - y0) / cell));
-    for (let j = j0; j <= j1; j++) {
-      const py = y0 + (j + .5) * cell - a.y;
-      for (let i = i0; i <= i1; i++) {
-        const px = x0 + (i + .5) * cell - a.x, t = l2 > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / l2)) : 0;
-        // Most texels of a segment's box already hold a nearer capsule: compare squared lengths first, so the
-        // square root is taken only where this segment wins (this loop is the cost of the occupation raster).
-        const ex = px - t * dx, ey = py - t * dy, at = j * n + i, room = ha + (hb - ha) * t - out[at] * cell;
-        if (room <= 0 || ex * ex + ey * ey >= room * room) continue;
-        const d = (ha + (hb - ha) * t - Math.sqrt(ex * ex + ey * ey)) / cell;
-        if (d > out[at]) out[at] = d;
+  for (const c of corridors)
+    for (let k = 1; k < c.path.length; k++) {
+      const a = c.path[k - 1],
+        b = c.path[k];
+      const ha = Math.max(floor, typeof c.half === 'number' ? c.half : c.half[k - 1]),
+        hb = Math.max(floor, typeof c.half === 'number' ? c.half : c.half[k]);
+      const dx = b.x - a.x,
+        dy = b.y - a.y,
+        l2 = dx * dx + dy * dy,
+        r = Math.max(ha, hb) + reach;
+      const i0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - r - x0) / cell)),
+        i1 = Math.min(n - 1, Math.ceil((Math.max(a.x, b.x) + r - x0) / cell));
+      const j0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - r - y0) / cell)),
+        j1 = Math.min(n - 1, Math.ceil((Math.max(a.y, b.y) + r - y0) / cell));
+      for (let j = j0; j <= j1; j++) {
+        const py = y0 + (j + 0.5) * cell - a.y;
+        for (let i = i0; i <= i1; i++) {
+          const px = x0 + (i + 0.5) * cell - a.x,
+            t = l2 > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / l2)) : 0;
+          // Most texels of a segment's box already hold a nearer capsule: compare squared lengths first, so the
+          // square root is taken only where this segment wins (this loop is the cost of the occupation raster).
+          const ex = px - t * dx,
+            ey = py - t * dy,
+            at = j * n + i,
+            room = ha + (hb - ha) * t - out[at] * cell;
+          if (room <= 0 || ex * ex + ey * ey >= room * room) continue;
+          const d = (ha + (hb - ha) * t - Math.sqrt(ex * ex + ey * ey)) / cell;
+          if (d > out[at]) out[at] = d;
+        }
       }
     }
-  }
   return out;
 }
 
 /** Even-odd scanline fill of texel centres inside the rings, as [from, to) index spans. */
 export function fillRings(rings: Polygon[], x0: number, y0: number, cell: number, n: number, span: (from: number, to: number) => void): void {
-  let top = n, bottom = -1;
+  let top = n,
+    bottom = -1;
   const rows = new Map<number, number[]>();
-  for (const ring of rings) for (let k = 0; k < ring.length; k++) {
-    const a = ring[k], b = ring[(k + 1) % ring.length];
-    if (a.y === b.y) continue;
-    const lo = Math.max(0, Math.ceil((Math.min(a.y, b.y) - y0) / cell - 0.5)), hi = Math.min(n - 1, Math.ceil((Math.max(a.y, b.y) - y0) / cell - 0.5) - 1);
-    for (let j = lo; j <= hi; j++) {
-      const yc = y0 + (j + 0.5) * cell, t = (yc - a.y) / (b.y - a.y);
-      let list = rows.get(j); if (!list) rows.set(j, list = []);
-      list.push(a.x + t * (b.x - a.x)); top = Math.min(top, j); bottom = Math.max(bottom, j);
+  for (const ring of rings)
+    for (let k = 0; k < ring.length; k++) {
+      const a = ring[k],
+        b = ring[(k + 1) % ring.length];
+      if (a.y === b.y) continue;
+      const lo = Math.max(0, Math.ceil((Math.min(a.y, b.y) - y0) / cell - 0.5)),
+        hi = Math.min(n - 1, Math.ceil((Math.max(a.y, b.y) - y0) / cell - 0.5) - 1);
+      for (let j = lo; j <= hi; j++) {
+        const yc = y0 + (j + 0.5) * cell,
+          t = (yc - a.y) / (b.y - a.y);
+        let list = rows.get(j);
+        if (!list) rows.set(j, (list = []));
+        list.push(a.x + t * (b.x - a.x));
+        top = Math.min(top, j);
+        bottom = Math.max(bottom, j);
+      }
     }
-  }
   for (let j = top; j <= bottom; j++) {
-    const xs = rows.get(j); if (!xs) continue;
+    const xs = rows.get(j);
+    if (!xs) continue;
     xs.sort((a, b) => a - b);
     for (let k = 0; k + 1 < xs.length; k += 2) {
-      const from = Math.max(0, Math.ceil((xs[k] - x0) / cell - 0.5)), to = Math.min(n - 1, Math.ceil((xs[k + 1] - x0) / cell - 0.5) - 1);
+      const from = Math.max(0, Math.ceil((xs[k] - x0) / cell - 0.5)),
+        to = Math.min(n - 1, Math.ceil((xs[k + 1] - x0) / cell - 0.5) - 1);
       if (from <= to) span(j * n + from, j * n + to + 1);
     }
   }
@@ -303,36 +461,61 @@ export function fillRings(rings: Polygon[], x0: number, y0: number, cell: number
  * on the other side) gives both signs: d = ±(distance + 1/2).
  */
 /** Reach of the transform: the retained R/G channels saturate at |d| = 8 texels (128 + 16 d), so past 12 texels the exact value is never read. */
-const REACH = 12, FAR = REACH * REACH;
+const REACH = 12,
+  FAR = REACH * REACH;
 const ROOTS = Float64Array.from({ length: FAR + 1 }, (_, i) => Math.sqrt(i));
 function signedDistance(mask: Uint8Array, n: number): Float32Array {
   // Squared distance to the nearest boundary texel of the same column, capped at FAR.
-  const column = new Uint8Array(n * n).fill(FAR), last = new Int32Array(n).fill(-REACH);
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const i = y * n + x, m = mask[i];
-    if ((x > 0 && mask[i - 1] !== m) || (x < n - 1 && mask[i + 1] !== m) || (y > 0 && mask[i - n] !== m) || (y < n - 1 && mask[i + n] !== m)) last[x] = y;
-    const dy = y - last[x]; if (dy < REACH) column[i] = dy * dy;
-  }
+  const column = new Uint8Array(n * n).fill(FAR),
+    last = new Int32Array(n).fill(-REACH);
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const i = y * n + x,
+        m = mask[i];
+      if ((x > 0 && mask[i - 1] !== m) || (x < n - 1 && mask[i + 1] !== m) || (y > 0 && mask[i - n] !== m) || (y < n - 1 && mask[i + n] !== m)) last[x] = y;
+      const dy = y - last[x];
+      if (dy < REACH) column[i] = dy * dy;
+    }
   last.fill(n + REACH);
-  for (let y = n - 1; y >= 0; y--) for (let x = 0; x < n; x++) {
-    const i = y * n + x; if (column[i] === 0) last[x] = y;
-    const dy = last[x] - y; if (dy < REACH && dy * dy < column[i]) column[i] = dy * dy;
-  }
+  for (let y = n - 1; y >= 0; y--)
+    for (let x = 0; x < n; x++) {
+      const i = y * n + x;
+      if (column[i] === 0) last[x] = y;
+      const dy = last[x] - y;
+      if (dy < REACH && dy * dy < column[i]) column[i] = dy * dy;
+    }
   // Row pass: exact min over q of (x − q)² + g(q), capped at FAR, as the lower envelope of the parabolas
   // of the texels within reach (Felzenszwalb & Huttenlocher 2012): linear per row. Texels with g = FAR
   // never go below FAR. Values are small integers, so the result is exact.
-  const squared = new Uint8Array(n * n).fill(FAR), d = new Float32Array(n * n);
-  const v = new Int32Array(n), z = new Float64Array(n + 1);
+  const squared = new Uint8Array(n * n).fill(FAR),
+    d = new Float32Array(n * n);
+  const v = new Int32Array(n),
+    z = new Float64Array(n + 1);
   for (let y = 0; y < n; y++) {
     const row = y * n;
     let k = -1;
     for (let q = 0; q < n; q++) {
-      const g = column[row + q]; if (g >= FAR) continue;
+      const g = column[row + q];
+      if (g >= FAR) continue;
       const fq = g + q * q;
-      if (k < 0) { k = 0; v[0] = q; z[0] = -Infinity; z[1] = Infinity; continue; }
-      let p = v[k], s = (fq - column[row + p] - p * p) / (2 * (q - p));
-      while (s <= z[k]) { k--; p = v[k]; s = (fq - column[row + p] - p * p) / (2 * (q - p)); }
-      k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+      if (k < 0) {
+        k = 0;
+        v[0] = q;
+        z[0] = -Infinity;
+        z[1] = Infinity;
+        continue;
+      }
+      let p = v[k],
+        s = (fq - column[row + p] - p * p) / (2 * (q - p));
+      while (s <= z[k]) {
+        k--;
+        p = v[k];
+        s = (fq - column[row + p] - p * p) / (2 * (q - p));
+      }
+      k++;
+      v[k] = q;
+      z[k] = s;
+      z[k + 1] = Infinity;
     }
     if (k < 0) continue;
     for (let x = 0, j = 0; x < n; x++) {

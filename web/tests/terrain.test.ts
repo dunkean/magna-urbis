@@ -8,7 +8,8 @@ const base = { size: 'village' as const };
 describe('determinism', () => {
   it('same seed -> identical SVG; different seed differs', () => {
     const o = makeOptions({ ...base, seed: 'det', relief: 'hills', coast: 'S', river: 'river' });
-    const a = renderSvg(generate(o)), b = renderSvg(generate(o));
+    const a = renderSvg(generate(o)),
+      b = renderSvg(generate(o));
     expect(a).toBe(b);
     const c = renderSvg(generate({ ...o, seed: 'det2' }));
     expect(c).not.toBe(a);
@@ -16,18 +17,27 @@ describe('determinism', () => {
 });
 
 describe('hydrology invariants', () => {
-  const cases: [Relief, CoastOpt, RiverOpt][] = [['hills', 'S', 'river'], ['valley', 'none', 'major'], ['mountains', 'none', 'stream'], ['flat', 'E', 'river'], ['hills', 'N', 'none']];
+  const cases: [Relief, CoastOpt, RiverOpt][] = [
+    ['hills', 'S', 'river'],
+    ['valley', 'none', 'major'],
+    ['mountains', 'none', 'stream'],
+    ['flat', 'E', 'river'],
+    ['hills', 'N', 'none'],
+  ];
   for (const [relief, coast, river] of cases) {
     it(`${relief}/${coast}/${river}: every cell drains to an outlet; rivers on land`, () => {
       const w = generate(makeOptions({ ...base, seed: '7', relief, coast, river }));
       const t = w.terrain;
       const n = t.height.w;
       // every cell reaches an outlet (receiver -1) without cycles; outlets are edge or sea cells
-      let bad = 0, bad2 = 0;
+      let bad = 0,
+        bad2 = 0;
       for (let i = 0; i < n * n; i++) {
-        let c = i, steps = 0;
+        let c = i,
+          steps = 0;
         while (t.receiver[c] >= 0 && steps++ <= n * n) c = t.receiver[c];
-        const x = c % n, y = (c / n) | 0;
+        const x = c % n,
+          y = (c / n) | 0;
         const isEdge = x === 0 || y === 0 || x === n - 1 || y === n - 1;
         if (steps > n * n || !(isEdge || t.water[c] === 1)) bad++;
         // filled surface never below terrain, and non-increasing downstream
@@ -37,13 +47,14 @@ describe('hydrology invariants', () => {
       }
       expect(bad).toBe(0);
       expect(bad2).toBe(0);
-      if (river !== 'none') expect(t.rivers.some((r) => r.main)).toBe(true);
+      if (river !== 'none') expect(t.rivers.some(r => r.main)).toBe(true);
       // river vertices are on non-sea cells except near the mouth (last 12%)
       for (const r of t.rivers) {
         const lim = Math.floor(r.path.length * 0.88);
         for (let i = 0; i < lim; i++) {
           const p = r.path[i];
-          const cx = Math.floor(p.x / t.height.cell), cy = Math.floor(p.y / t.height.cell);
+          const cx = Math.floor(p.x / t.height.cell),
+            cy = Math.floor(p.y / t.height.cell);
           if (cx < 0 || cy < 0 || cx >= n || cy >= n) continue;
           expect(t.water[cy * n + cx]).not.toBe(1);
         }
@@ -56,7 +67,7 @@ describe('hydrology invariants', () => {
 
   it('main river widens downstream', () => {
     const w = generate(makeOptions({ ...base, seed: '3', relief: 'hills', coast: 'S', river: 'river' }));
-    const m = w.terrain.rivers.find((r) => r.main)!;
+    const m = w.terrain.rivers.find(r => r.main)!;
     const k = Math.floor(m.width.length / 4);
     const up = m.width.slice(0, k).reduce((a, b) => a + b, 0) / k;
     const down = m.width.slice(-k).reduce((a, b) => a + b, 0) / k;

@@ -14,26 +14,44 @@ export const LIVE_MODE_STORAGE_KEY = 'magna-urbis-live';
 const valid = (value: unknown): value is LiveMode => LIVE_MODES.includes(value as LiveMode);
 const listeners = new Set<(mode: LiveMode) => void>();
 let stored: string | null = null;
-try { stored = globalThis.localStorage?.getItem(LIVE_MODE_STORAGE_KEY) ?? null; } catch { /* Storage is optional. */ }
+try {
+  stored = globalThis.localStorage?.getItem(LIVE_MODE_STORAGE_KEY) ?? null;
+} catch {
+  /* Storage is optional. */
+}
 let override: LiveMode | null = null;
-if (typeof location !== 'undefined') { const v = new URLSearchParams(location.search).get('live'); if (valid(v)) override = v; }
+if (typeof location !== 'undefined') {
+  const v = new URLSearchParams(location.search).get('live');
+  if (valid(v)) override = v;
+}
 let preference: LiveMode = valid(stored) ? stored : 'compositor';
 
 export const getLiveMode = (): LiveMode => override ?? preference;
 
 export function setLiveMode(mode: LiveMode): void {
-  override = null; preference = mode;
-  try { globalThis.localStorage?.setItem(LIVE_MODE_STORAGE_KEY, mode); } catch { /* Private mode remains usable. */ }
+  override = null;
+  preference = mode;
+  try {
+    globalThis.localStorage?.setItem(LIVE_MODE_STORAGE_KEY, mode);
+  } catch {
+    /* Private mode remains usable. */
+  }
   // An explicit choice supersedes the URL for this browser and future reloads.
   if (typeof history !== 'undefined' && typeof location !== 'undefined') {
-    const url = new URL(location.href); url.searchParams.delete('live');
-    try { history.replaceState(history.state, '', url); } catch { /* Sandboxed hosts may disallow history changes. */ }
+    const url = new URL(location.href);
+    url.searchParams.delete('live');
+    try {
+      history.replaceState(history.state, '', url);
+    } catch {
+      /* Sandboxed hosts may disallow history changes. */
+    }
   }
   for (const listener of listeners) listener(mode);
 }
 
 export function onLiveModeChange(listener: (mode: LiveMode) => void): () => void {
-  listeners.add(listener); return () => listeners.delete(listener);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 /** Debug and probe scripts drive the policy through this hook. */

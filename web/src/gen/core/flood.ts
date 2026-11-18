@@ -1,6 +1,10 @@
 import { D8 } from './grid';
 
-export interface FloodResult { filled: Float32Array; receiver: Int32Array; order: Int32Array }
+export interface FloodResult {
+  filled: Float32Array;
+  receiver: Int32Array;
+  order: Int32Array;
+}
 
 /**
  * Priority-flood depression filling with epsilon (Barnes, Lehman & Mulla 2014), typed-array heap.
@@ -22,24 +26,31 @@ export function priorityFloodFast(h: Float32Array, w: number, hh: number, outlet
     while (i > 0) {
       const p = (i - 1) >> 1;
       if (hk[p] <= key) break;
-      hk[i] = hk[p]; hv[i] = hv[p]; i = p;
+      hk[i] = hk[p];
+      hv[i] = hv[p];
+      i = p;
     }
-    hk[i] = key; hv[i] = val;
+    hk[i] = key;
+    hv[i] = val;
   };
   const pop = (): number => {
     const top = hv[0];
     hn--;
     if (hn > 0) {
-      const lk = hk[hn], lv = hv[hn];
+      const lk = hk[hn],
+        lv = hv[hn];
       let i = 0;
       for (;;) {
         let c = 2 * i + 1;
         if (c >= hn) break;
         if (c + 1 < hn && hk[c + 1] < hk[c]) c++;
         if (hk[c] >= lk) break;
-        hk[i] = hk[c]; hv[i] = hv[c]; i = c;
+        hk[i] = hk[c];
+        hv[i] = hv[c];
+        i = c;
       }
-      hk[i] = lk; hv[i] = lv;
+      hk[i] = lk;
+      hv[i] = lv;
     }
     return top;
   };
@@ -47,23 +58,28 @@ export function priorityFloodFast(h: Float32Array, w: number, hh: number, outlet
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
       if ((outlet && outlet[i]) || x === 0 || y === 0 || x === w - 1 || y === hh - 1) {
-        closed[i] = 1; filled[i] = h[i]; push(i, h[i]);
+        closed[i] = 1;
+        filled[i] = h[i];
+        push(i, h[i]);
       }
     }
   }
   let no = 0;
   // neighbour offsets in D8 order (interior cells skip the bounds tests; same visiting order)
-  const DX = D8.map((d) => d[0]), DY = D8.map((d) => d[1]);
-  const OFF = D8.map((d) => d[1] * w + d[0]);
+  const DX = D8.map(d => d[0]),
+    DY = D8.map(d => d[1]);
+  const OFF = D8.map(d => d[1] * w + d[0]);
   while (hn > 0) {
     const c = pop();
     order[no++] = c;
-    const cx = c % w, cy = (c / w) | 0;
+    const cx = c % w,
+      cy = (c / w) | 0;
     const fc = filled[c];
     const inner = cx > 0 && cy > 0 && cx < w - 1 && cy < hh - 1;
     for (let k = 0; k < 8; k++) {
       if (!inner) {
-        const nx = cx + DX[k], ny = cy + DY[k];
+        const nx = cx + DX[k],
+          ny = cy + DY[k];
         if (nx < 0 || ny < 0 || nx >= w || ny >= hh) continue;
       }
       const n = c + OFF[k];

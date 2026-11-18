@@ -9,12 +9,17 @@ describe('render worker World projection', () => {
     const world = fakeWorld({ buildings: 0, streets: 0, landAreas: 0 });
     world.options.biome = 'underdark-caverns';
     const ring = (x: number, y: number, size: number) => [
-      { x, y }, { x: x + size, y }, { x: x + size, y: y + size }, { x, y: y + size },
+      { x, y },
+      { x: x + size, y },
+      { x: x + size, y: y + size },
+      { x, y: y + size },
     ];
     world.terrain.caverns = {
       floor: [{ outer: ring(10, 10, 100), holes: [ring(40, 40, 10)] }],
-      solid: [{ outer: ring(0, 0, 120), holes: [ring(10, 10, 100)] },
-        { outer: ring(40, 40, 10), holes: [] }],
+      solid: [
+        { outer: ring(0, 0, 120), holes: [ring(10, 10, 100)] },
+        { outer: ring(40, 40, 10), holes: [] },
+      ],
       mask: new Uint8Array([0, 1, 0, 1]),
       clearance: new Float32Array([0, 30, 0, 12]),
       chambers: [{ center: { x: 60, y: 60 }, radius: 50 }],
@@ -30,17 +35,18 @@ describe('render worker World projection', () => {
     expect(exported.world.terrain.caverns.solid).toEqual(world.terrain.caverns.solid);
     expect(exported.world.terrain.caverns.mask).toEqual({ omitted: 'Uint8Array', length: 4 });
     expect(worldToJson(world)).toBe(before);
-    expect(worldForRender({ ...world, options: { ...world.options, biome: 'underdark' } })
-      .options.biome).toBe('underdark');
+    expect(worldForRender({ ...world, options: { ...world.options, biome: 'underdark' } }).options.biome).toBe('underdark');
   });
 
   it('keeps only desert material rasters and does not mutate the retained export World', () => {
     const world = fakeWorld({ buildings: 0, streets: 0, landAreas: 0 });
     world.options.biome = 'desert';
-    const dWater = new Float32Array([100, 1000]), hab = new Float32Array([10, 40]);
+    const dWater = new Float32Array([100, 1000]),
+      hab = new Float32Array([10, 40]);
     world.site = { cost: new Float32Array([1]), fields: { dWater, hab, slope: new Float32Array([2]) } } as unknown as World['site'];
     const debugWorld = { ...world, debug: { sentinel: true } };
-    const before = JSON.stringify(debugWorld), result = worldForRender(debugWorld);
+    const before = JSON.stringify(debugWorld),
+      result = worldForRender(debugWorld);
     expect(Object.keys(result.site!.fields).sort()).toEqual(['dWater', 'hab']);
     expect(result.site!.fields.dWater).toBe(dWater);
     expect(result.site!.fields.hab).toBe(hab);

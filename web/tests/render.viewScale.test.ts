@@ -22,7 +22,10 @@ function arcCanvas(w: number, h: number) {
         return undefined;
       };
     },
-    set(t, name: string, v) { t[name] = v; return true; },
+    set(t, name: string, v) {
+      t[name] = v;
+      return true;
+    },
   });
   return { canvas: { width: w, height: h, getContext: () => ctx }, arcs };
 }
@@ -44,12 +47,16 @@ describe('view scale invariants', () => {
   });
 
   it('a vector raster is re-made once the zoom changes by more than a small factor, and never exceeds its budget', () => {
-    const size = 8000, w = 1400, h = 1000, dpr = 2;
+    const size = 8000,
+      w = 1400,
+      h = 1000,
+      dpr = 2;
     let view = { cx: 4000, cy: 4000, scale: w / size };
     let raster = viewRasterRegion(viewRect(view, w, h), view.scale * dpr, size);
     for (let step = 0; step < 40; step++) {
       view = zoomAt(view, 1.15, w * 0.6, h * 0.4, w, h);
-      const rect = viewRect(view, w, h), density = view.scale * dpr;
+      const rect = viewRect(view, w, h),
+        density = view.scale * dpr;
       if (!viewRasterFits(raster, rect, density, size)) raster = viewRasterRegion(rect, density, size);
       // The drawn raster covers the view at no less than the screen density / COARSE: never a stretched map raster.
       expect(viewRasterFits(raster, rect, density, size)).toBe(true);

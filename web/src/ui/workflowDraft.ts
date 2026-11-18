@@ -15,8 +15,7 @@ export function freshMapOptions(applied: Options, seed: string): Options {
 /** Resolve the existing implicit population before converting the main map into a list item. */
 export function mainSettlementSpec(theme: Options): SettlementSpec {
   const size = effectiveSize(theme);
-  const population = theme.population > 0 ? theme.population
-    : mainPopulation({ ...theme, size }, new Rng('magna-urbis:' + theme.seed));
+  const population = theme.population > 0 ? theme.population : mainPopulation({ ...theme, size }, new Rng('magna-urbis:' + theme.seed));
   return { population, position: theme.center, options: { size } };
 }
 
@@ -32,28 +31,29 @@ export function newSettlementSpec(theme: Options, population: number, culture: s
 
 /** Automatic and legacy maps retain their main settlement when an instance is added. */
 export function appendSettlementDraft(theme: Options, individual: boolean, population: number, culture: string): Options {
-  const previous = theme.settlements && typeof theme.settlements === 'object' && 'list' in theme.settlements
-    ? structuredClone(theme.settlements.list) : [];
-  const instances = individual || theme.workflow && previous.length
-    ? previous : [mainSettlementSpec(theme), ...previous];
+  const previous = theme.settlements && typeof theme.settlements === 'object' && 'list' in theme.settlements ? structuredClone(theme.settlements.list) : [];
+  const instances = individual || (theme.workflow && previous.length) ? previous : [mainSettlementSpec(theme), ...previous];
   return { ...theme, settlementMode: 'list', settlements: { list: [...instances, newSettlementSpec(theme, population, culture)] } };
 }
 
 /** Automatic composition keeps implicit population and its original size preset. */
 export function settlementComposition(theme: Options, individual: boolean): Options {
   const list = theme.settlements && typeof theme.settlements === 'object' && 'list' in theme.settlements ? theme.settlements.list : [];
-  return individual ? { ...theme, workflow: 'list', settlements: { list: list.length ? list : [mainSettlementSpec(theme)] } }
-    : { ...theme, workflow: 'automatic', settlements: list.length ? theme.settlements : 'auto' };
+  return individual ? { ...theme, workflow: 'list', settlements: { list: list.length ? list : [mainSettlementSpec(theme)] } } : { ...theme, workflow: 'automatic', settlements: list.length ? theme.settlements : 'auto' };
 }
 
 /** A settlement of a displayed map, as the page knows it (worker summary or World). */
-export interface GeneratedPlace { key: string; name?: string; population: number; center: { x: number; y: number } }
+export interface GeneratedPlace {
+  key: string;
+  name?: string;
+  population: number;
+  center: { x: number; y: number };
+}
 
 /** Match the generation preset and the editor, rather than the separate regional population class. */
 export function generatedSettlementSize(theme: Options, place: Pick<GeneratedPlace, 'key' | 'population'>): Options['size'] {
   if (place.key !== 'main') return sizeForPop(place.population);
-  const first = theme.workflow === 'list' && theme.settlements && typeof theme.settlements === 'object' && 'list' in theme.settlements
-    ? theme.settlements.list[0] : undefined;
+  const first = theme.workflow === 'list' && theme.settlements && typeof theme.settlements === 'object' && 'list' in theme.settlements ? theme.settlements.list[0] : undefined;
   return first?.options?.size ?? effectiveSize(optionsForMainSettlement(theme));
 }
 
@@ -64,11 +64,9 @@ export function generatedSettlementSize(theme: Options, place: Pick<GeneratedPla
 export function regionAsList(theme: Options, places: GeneratedPlace[]): Options {
   // exact positions: a rounded main centre would shift its site and redraw its plan
   const at = (p: GeneratedPlace) => ({ x: p.center.x, y: p.center.y });
-  const main = places.find((p) => p.key === 'main');
+  const main = places.find(p => p.key === 'main');
   const auto = { ...theme, workflow: 'automatic' as const };
   const first: SettlementSpec = { ...mainSettlementSpec(auto), ...(main ? { position: at(main) } : {}), ...(main?.name ? { name: main.name } : {}) };
-  const rest = places.filter((p) => p.key !== 'main').map((p): SettlementSpec => ({
-    population: p.population, position: at(p), key: p.key, ...(p.name ? { name: p.name } : {}),
-  }));
+  const rest = places.filter(p => p.key !== 'main').map((p): SettlementSpec => ({ population: p.population, position: at(p), key: p.key, ...(p.name ? { name: p.name } : {}) }));
   return { ...theme, workflow: 'list', settlementMode: 'list', center: undefined, settlements: { list: [first, ...rest] } };
 }

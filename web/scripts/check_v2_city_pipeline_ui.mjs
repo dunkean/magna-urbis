@@ -21,12 +21,30 @@ try {
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/v2.html?empty&lang=fr&threads=off`);
   await page.locator('#expert-open').click();
   const settings = JSON.parse(await page.locator('#expert-json').inputValue());
-  settings.generation = 'procedural'; settings.extent = 4000; settings.settlementCount = 3;
+  settings.generation = 'procedural';
+  settings.extent = 4000;
+  settings.settlementCount = 3;
   settings.runtime = { backend: 'typescript', source: 'procedural', compute: 'cpu' };
   settings.terrain = undefined;
   settings.urban = { backend: 'rust', through: 'layout' };
-  Object.assign(settings.options, { seed: 'city-pipeline-ui', population: 80, size: 'hamlet', relief: 'flat', coast: 'none', river: 'none', walls: 'none', castle: 'no', workflow: 'list',
-    settlements: { list: [{ key: 'main', population: 80, position: { x: 2000, y: 2000 } }, { key: 'east', population: 80, position: { x: 3300, y: 2000 } }, { key: 'west', population: 80, position: { x: 700, y: 2000 } }] } });
+  Object.assign(settings.options, {
+    seed: 'city-pipeline-ui',
+    population: 80,
+    size: 'hamlet',
+    relief: 'flat',
+    coast: 'none',
+    river: 'none',
+    walls: 'none',
+    castle: 'no',
+    workflow: 'list',
+    settlements: {
+      list: [
+        { key: 'main', population: 80, position: { x: 2000, y: 2000 } },
+        { key: 'east', population: 80, position: { x: 3300, y: 2000 } },
+        { key: 'west', population: 80, position: { x: 700, y: 2000 } },
+      ],
+    },
+  });
   await page.locator('#expert-json').fill(JSON.stringify(settings));
   await page.locator('#expert-apply').click();
   assert.equal(await page.locator('#expert-error').textContent(), '');
@@ -39,10 +57,14 @@ try {
     assert.match(await page.locator('#footer-status').textContent(), /Carte prête/);
   };
   const project = async label => {
-    await page.locator('#export-open').click(); await page.locator('#export-format').selectOption('project');
-    const pending = page.waitForEvent('download'); await page.locator('#export-go').click();
-    const download = await pending, path = resolve(out, `${label}.json`);
-    await download.saveAs(path); await page.locator('#export-dialog').waitFor({ state: 'hidden' });
+    await page.locator('#export-open').click();
+    await page.locator('#export-format').selectOption('project');
+    const pending = page.waitForEvent('download');
+    await page.locator('#export-go').click();
+    const download = await pending,
+      path = resolve(out, `${label}.json`);
+    await download.saveAs(path);
+    await page.locator('#export-dialog').waitFor({ state: 'hidden' });
     return JSON.parse(await readFile(path, 'utf8'));
   };
   assert.deepEqual(await page.locator('.chain-family-tab').evaluateAll(tabs => tabs.map(tab => tab.id)), ['family-tab-region', 'family-tab-settlements', 'family-tab-cities', 'family-tab-map']);
@@ -52,8 +74,10 @@ try {
   await job('#family-settlements .family-run');
   let data = await project('01-placed');
   assert.equal(data.world.settlements.length, 3);
-  assert(!data.world.urban); assert(data.world.settlements.every(place => !place.urban));
-  const terrain = JSON.stringify(data.world.terrain.height), roads = JSON.stringify(data.world.roads);
+  assert(!data.world.urban);
+  assert(data.world.settlements.every(place => !place.urban));
+  const terrain = JSON.stringify(data.world.terrain.height),
+    roads = JSON.stringify(data.world.roads);
   await page.locator('#family-tab-cities').click();
   assert.match(await page.locator('#city-scope-count').textContent(), /3 \/ 3 villes/);
   await job('#family-cities .family-run');
@@ -64,15 +88,18 @@ try {
   assert.equal(await page.locator('#row-city-parcels').getAttribute('data-led'), 'pending');
   const west = JSON.stringify(data.world.settlements.find(place => place.key === 'west').urban);
   const westNative = JSON.stringify(data.world.debug.v2RustCities.west);
-  await page.locator('[data-city-select="main"]').check(); await page.locator('[data-city-select="east"]').check();
+  await page.locator('[data-city-select="main"]').check();
+  await page.locator('[data-city-select="east"]').check();
   assert.equal(await page.locator('#city-scope').inputValue(), 'selection');
   assert.match(await page.locator('#city-scope-count').textContent(), /2 \/ 3 villes/);
   await job('#row-city-parcels .stage-run');
   data = await project('03-subset-parcels');
-  assert.equal(data.world.debug.v2RustCities.main.stage, 'parcels'); assert.equal(data.world.debug.v2RustCities.east.stage, 'parcels');
+  assert.equal(data.world.debug.v2RustCities.main.stage, 'parcels');
+  assert.equal(data.world.debug.v2RustCities.east.stage, 'parcels');
   assert.equal(JSON.stringify(data.world.settlements.find(place => place.key === 'west').urban), west);
   assert.equal(JSON.stringify(data.world.debug.v2RustCities.west), westNative);
-  assert.equal(JSON.stringify(data.world.terrain.height), terrain); assert.equal(JSON.stringify(data.world.roads), roads);
+  assert.equal(JSON.stringify(data.world.terrain.height), terrain);
+  assert.equal(JSON.stringify(data.world.roads), roads);
   assert.equal(await page.locator('#row-city-parcels').getAttribute('data-led'), 'valid');
   await job('#row-city-houses .stage-run');
   data = await project('04-subset-houses');
@@ -102,6 +129,12 @@ try {
   await page.locator('#city-scope').selectOption('all');
   assert(await page.locator('#family-cities .family-run').isEnabled());
   assert.deepEqual(errors, []);
-  await writeFile(resolve(out, 'report.json'), JSON.stringify({ separatePlacement: true, allCitiesLayout: true, selectedCitiesParcels: true, selectedCitiesHouses: true, earlierStop: true, untouchedNeighbours: true, retainedTerrainAndRegionalRoads: true, bilingual: true, emptySelectionBlocked: true, errors }, null, 2));
+  await writeFile(
+    resolve(out, 'report.json'),
+    JSON.stringify({ separatePlacement: true, allCitiesLayout: true, selectedCitiesParcels: true, selectedCitiesHouses: true, earlierStop: true, untouchedNeighbours: true, retainedTerrainAndRegionalRoads: true, bilingual: true, emptySelectionBlocked: true, errors }, null, 2),
+  );
   console.log('Cities pipeline UI: separate placement, all/subset stages, preserved neighbours, bilingual scope and empty selection passed.');
-} finally { await browser.close(); await server.close(); }
+} finally {
+  await browser.close();
+  await server.close();
+}

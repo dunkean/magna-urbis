@@ -3,66 +3,101 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
-const out='out/v2-editing';await mkdir(out,{recursive:true});
-const browser=await chromium.launch({channel:'msedge',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
-const page=await browser.newPage({viewport:{width:1500,height:1000},acceptDownloads:true});
-const errors=[];page.on('pageerror',error=>errors.push(error.message));
-const reveal=selector=>page.locator(selector).evaluate(element=>{for(let p=element.parentElement;p;p=p.parentElement){if(p.tagName==='DETAILS')p.open=true;if(p.classList.contains('stage-body')&&p.hidden)document.querySelector(`[aria-controls="${p.id}"]`)?.click();}});
-try{
-  await page.goto(`${process.env.MAGNA_V2_URL??'http://127.0.0.1:5174'}/v2.html?lang=en`);
-  await page.locator('#labels-open').waitFor({state:'attached'});
-  await reveal('#import-open');await page.locator('#import-open').click();
+const out = 'out/v2-editing';
+await mkdir(out, { recursive: true });
+const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1500, height: 1000 }, acceptDownloads: true });
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+const reveal = selector =>
+  page.locator(selector).evaluate(element => {
+    for (let p = element.parentElement; p; p = p.parentElement) {
+      if (p.tagName === 'DETAILS') p.open = true;
+      if (p.classList.contains('stage-body') && p.hidden) document.querySelector(`[aria-controls="${p.id}"]`)?.click();
+    }
+  });
+try {
+  await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5174'}/v2.html?lang=en`);
+  await page.locator('#labels-open').waitFor({ state: 'attached' });
+  await reveal('#import-open');
+  await page.locator('#import-open').click();
   await page.locator('#project-file').setInputFiles(`${out}/fixture.json`);
-  await page.waitForFunction(()=>document.querySelector('#app').getAttribute('aria-busy')==='false'&&document.querySelector('#map-name').textContent==='Editor fixture');
-  const map=await page.locator('#map').boundingBox();
-  const scale=(Math.min(map.width,map.height)-24)/1000;
-  const point=(x,y)=>({x:map.x+map.width/2+(x-500)*scale,y:map.y+map.height/2+(y-500)*scale});
+  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false' && document.querySelector('#map-name').textContent === 'Editor fixture');
+  const map = await page.locator('#map').boundingBox();
+  const scale = (Math.min(map.width, map.height) - 24) / 1000;
+  const point = (x, y) => ({ x: map.x + map.width / 2 + (x - 500) * scale, y: map.y + map.height / 2 + (y - 500) * scale });
   await page.locator('[data-network-tool=rivers]').click();
-  await page.mouse.click(point(500,400).x,point(500,400).y);
-  await page.getByRole('button',{name:'Delete river and tributaries',exact:true}).click();
-  await page.waitForFunction(()=>document.querySelector('#map-metrics').textContent.startsWith('1 '));
+  await page.mouse.click(point(500, 400).x, point(500, 400).y);
+  await page.getByRole('button', { name: 'Delete river and tributaries', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('#map-metrics').textContent.startsWith('1 '));
   await page.locator('#family-tab-settlements').click();
-  await reveal('[data-network-quick=roads]');await page.locator('[data-network-quick=roads]').click();
-  await page.mouse.click(point(300,600).x,point(300,600).y);
-  await page.getByRole('button',{name:'Delete road',exact:true}).click();
+  await reveal('[data-network-quick=roads]');
+  await page.locator('[data-network-quick=roads]').click();
+  await page.mouse.click(point(300, 600).x, point(300, 600).y);
+  await page.getByRole('button', { name: 'Delete road', exact: true }).click();
   await page.waitForTimeout(350);
   await page.locator('[data-network-quick=draw]').click();
   await page.locator('[data-route-method]').selectOption('free');
-  await page.mouse.click(point(200,700).x,point(200,700).y);await page.mouse.click(point(650,700).x,point(650,700).y);
-  await page.getByRole('button',{name:'Finish road',exact:true}).click();
+  await page.mouse.click(point(200, 700).x, point(200, 700).y);
+  await page.mouse.click(point(650, 700).x, point(650, 700).y);
+  await page.getByRole('button', { name: 'Finish road', exact: true }).click();
   await page.waitForTimeout(350);
-  const handle=page.locator('.v2-network-overlay:not([hidden]) [data-role=vertex]').first();
-  const h=await handle.boundingBox();assert(h);
-  await page.mouse.move(h.x+h.width/2,h.y+h.height/2);await page.mouse.down();await page.mouse.move(h.x+h.width/2+25,h.y+h.height/2-35,{steps:5});await page.mouse.up();
+  const handle = page.locator('.v2-network-overlay:not([hidden]) [data-role=vertex]').first();
+  const h = await handle.boundingBox();
+  assert(h);
+  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(h.x + h.width / 2 + 25, h.y + h.height / 2 - 35, { steps: 5 });
+  await page.mouse.up();
   await page.waitForTimeout(350);
-  await page.screenshot({path:`${out}/roads.png`});
+  await page.screenshot({ path: `${out}/roads.png` });
   await page.locator('#labels-open').click();
-  const labels=page.locator('.map-label-editor');
+  const labels = page.locator('.map-label-editor');
   // A new label is placed by one click on the map, then typed in place.
-  await labels.getByRole('button',{name:'+ Add a label',exact:true}).click();
-  await page.mouse.click(point(320,270).x,point(320,270).y);
-  const text=labels.getByRole('textbox',{name:'Label text',exact:true});
-  await text.fill('North watch');await text.dispatchEvent('change');
+  await labels.getByRole('button', { name: '+ Add a label', exact: true }).click();
+  await page.mouse.click(point(320, 270).x, point(320, 270).y);
+  const text = labels.getByRole('textbox', { name: 'Label text', exact: true });
+  await text.fill('North watch');
+  await text.dispatchEvent('change');
   await page.waitForTimeout(350);
   await labels.locator('.map-label-style summary').click();
-  await labels.locator('input[type=color]').fill('#aa3322');await labels.locator('input[type=color]').dispatchEvent('change');
+  await labels.locator('input[type=color]').fill('#aa3322');
+  await labels.locator('input[type=color]').dispatchEvent('change');
   await page.waitForTimeout(350);
-  assert(await page.locator('.map-label-marker:not([hidden])').count()===1,'the selected label is marked on the map');
-  await reveal('#expert-open');await page.locator('#expert-open').click();
-  const settings=JSON.parse(await page.locator('#expert-json').inputValue());
-  const entry=Object.values(settings.naming.labels).find(e=>e.text==='North watch');
-  assert(entry);assert(Math.hypot(entry.anchor.x-320,entry.anchor.y-270)<3,'placed where clicked');assert.equal(entry.style.color,'#aa3322');
+  assert((await page.locator('.map-label-marker:not([hidden])').count()) === 1, 'the selected label is marked on the map');
+  await reveal('#expert-open');
+  await page.locator('#expert-open').click();
+  const settings = JSON.parse(await page.locator('#expert-json').inputValue());
+  const entry = Object.values(settings.naming.labels).find(e => e.text === 'North watch');
+  assert(entry);
+  assert(Math.hypot(entry.anchor.x - 320, entry.anchor.y - 270) < 3, 'placed where clicked');
+  assert.equal(entry.style.color, '#aa3322');
   await page.locator('[data-close="expert-dialog"]').first().click();
-  await reveal('#export-open');await page.locator('#export-open').click();await page.locator('#export-format').selectOption('project');
-  const downloaded=page.waitForEvent('download');await page.locator('#export-go').click();const download=await downloaded;
-  const saved=JSON.parse(await readFile(await download.path(),'utf8'));
-  assert.deepEqual(saved.world.terrain.rivers.map(r=>r.id),[3]);assert.equal(saved.world.roads.length,1);
-  assert.equal(saved.world.names.town,'Editor fixture');assert(saved.world.names.entries.some(e=>e.text==='North watch'));
-  if(await page.locator('#export-dialog').isVisible())await page.locator('[data-close="export-dialog"]').first().click();
+  await reveal('#export-open');
+  await page.locator('#export-open').click();
+  await page.locator('#export-format').selectOption('project');
+  const downloaded = page.waitForEvent('download');
+  await page.locator('#export-go').click();
+  const download = await downloaded;
+  const saved = JSON.parse(await readFile(await download.path(), 'utf8'));
+  assert.deepEqual(
+    saved.world.terrain.rivers.map(r => r.id),
+    [3],
+  );
+  assert.equal(saved.world.roads.length, 1);
+  assert.equal(saved.world.names.town, 'Editor fixture');
+  assert(saved.world.names.entries.some(e => e.text === 'North watch'));
+  if (await page.locator('#export-dialog').isVisible()) await page.locator('[data-close="export-dialog"]').first().click();
   await chooseWorkshopPreference(page, 'language', 'fr');
-  assert.match(await page.locator('#editor-dock').innerText(),/Noms et étiquettes/);
-  await page.screenshot({path:`${out}/labels.png`});
-  assert.deepEqual(errors,[]);
-  await writeFile(`${out}/report.json`,JSON.stringify({labels:true,errors},null,2));
+  assert.match(await page.locator('#editor-dock').innerText(), /Noms et étiquettes/);
+  await page.screenshot({ path: `${out}/labels.png` });
+  assert.deepEqual(errors, []);
+  await writeFile(`${out}/report.json`, JSON.stringify({ labels: true, errors }, null, 2));
   console.log('V2 editing browser check passed');
-}catch(error){await page.screenshot({path:`${out}/failure.png`}).catch(()=>{});console.error('Browser errors:',errors);throw error;}finally{await browser.close();}
+} catch (error) {
+  await page.screenshot({ path: `${out}/failure.png` }).catch(() => {});
+  console.error('Browser errors:', errors);
+  throw error;
+} finally {
+  await browser.close();
+}

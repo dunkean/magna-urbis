@@ -12,19 +12,36 @@ import type { TerrainLayer, World } from '../src/gen/types';
 
 class MemoryStore implements TerrainStore {
   readonly entries = new Map<string, TerrainLayer>();
-  async get(key: string) { const result = this.entries.get(key); return result ? structuredClone(result) : undefined; }
-  async put(key: string, terrain: TerrainLayer) { this.entries.set(key, structuredClone(terrain)); }
-  async clear() { this.entries.clear(); }
+  async get(key: string) {
+    const result = this.entries.get(key);
+    return result ? structuredClone(result) : undefined;
+  }
+  async put(key: string, terrain: TerrainLayer) {
+    this.entries.set(key, structuredClone(terrain));
+  }
+  async clear() {
+    this.entries.clear();
+  }
 }
 function recipe(seed: string): V2Settings {
   const settings = defaultSettings();
   settings.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
   settings.extent = 1200;
   settings.settlementCount = 1;
-  settings.options = { ...settings.options, seed, size: 'hamlet', population: 80, biome: 'forest', coast: 'S', river: 'none', relief: 'flat',
+  settings.options = {
+    ...settings.options,
+    seed,
+    size: 'hamlet',
+    population: 80,
+    biome: 'forest',
+    coast: 'S',
+    river: 'none',
+    relief: 'flat',
     // 16² is the smallest import every engine accepts (sourceDefinition): the tests switch to Rust/native runtimes.
-    walls: 'none', castle: 'no', importedHeight: { w: 16, h: 16, rgba: new Uint8Array(0),
-      elevations: Float32Array.from({ length: 256 }, (_, i) => Math.floor(i / 16) > 11 ? -8 : 25 + (i % 16) * .05) } };
+    walls: 'none',
+    castle: 'no',
+    importedHeight: { w: 16, h: 16, rgba: new Uint8Array(0), elevations: Float32Array.from({ length: 256 }, (_, i) => (Math.floor(i / 16) > 11 ? -8 : 25 + (i % 16) * 0.05)) },
+  };
   return settings;
 }
 function expectExactArray(actual: ArrayBufferView, expected: ArrayBufferView) {
@@ -61,16 +78,18 @@ describe('V2 project composition', () => {
     const terrain = await generateTerrain(settings, undefined, new TerrainCache(new MemoryStore()));
     const region = await planRegion(terrain, settings);
     const world = await generateTown(region, settings, 'main');
-    source = { format: 'magna-urbis-v2', version: 1, engine: V2_ENGINE_VERSION, settings, world,
-      mods: [{ type: 'building', settlement: 'main', index: 0, signature: 'source-building', patch: { storeys: 3 } }] };
+    source = { format: 'magna-urbis-v2', version: 1, engine: V2_ENGINE_VERSION, settings, world, mods: [{ type: 'building', settlement: 'main', index: 0, signature: 'source-building', patch: { storeys: 3 } }] };
   });
 
   it('imports the exact territory, keeps the current city recipe, and removes source city geometry', async () => {
     const current = recipe('different-city-world');
-    current.options.culture = 'medina'; current.options.population = 400; current.options.biome = 'desert';
+    current.options.culture = 'medina';
+    current.options.population = 400;
+    current.options.biome = 'desert';
     current.local.main = { sprawl: 1.4, castle: 'yes' };
-    current.urban = { backend: 'rust', layout: { density: .8 }, local: { main: { houses: { floors: 2 } } } };
-    const original = structuredClone(source.world!), cache = new TerrainCache(new MemoryStore());
+    current.urban = { backend: 'rust', layout: { density: 0.8 }, local: { main: { houses: { floors: 2 } } } };
+    const original = structuredClone(source.world!),
+      cache = new TerrainCache(new MemoryStore());
     const result = await composeTerrain(source, current, cache);
     expectPhysicalEquality(result.world!.terrain, original.terrain);
     expect(result.world!.terrain.rivers).toEqual(original.terrain.rivers);
@@ -125,12 +144,14 @@ describe('V2 project composition', () => {
   it('imports an urban recipe while retaining the current territory and invalidating all previous geometry', async () => {
     const current = recipe('kept-territory');
     current.extent = 3600;
-    current.options.biome = 'desert'; current.options.style = 'atlas';
+    current.options.biome = 'desert';
+    current.options.style = 'atlas';
     current.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
     const currentWorld = await generateTerrain(current, undefined, new TerrainCache(new MemoryStore()));
     const urbanSource = structuredClone(source);
     delete urbanSource.world;
-    urbanSource.settings.options.culture = 'medina'; urbanSource.settings.options.population = 300;
+    urbanSource.settings.options.culture = 'medina';
+    urbanSource.settings.options.population = 300;
     urbanSource.settings.options.center = { x: 450, y: 450 };
     urbanSource.settings.settlementCount = 2;
     urbanSource.settings.local.main = { sprawl: 1.2 };

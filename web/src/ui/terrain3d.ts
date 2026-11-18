@@ -43,27 +43,51 @@ import { BILLBOARD_3D_GLSL, RAISED_MATERIAL_GLSL, terrain3dRaisedBlend, terrain3
 
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
 export interface Terrain3dCamera {
-  x: number; y: number; distance: number; yaw: number; pitch: number; exaggeration: number;
+  x: number;
+  y: number;
+  distance: number;
+  yaw: number;
+  pitch: number;
+  exaggeration: number;
   /** In walk mode x/y locate the walker; pitch is the downward viewing angle. */
   navigation?: 'orbit' | 'walk' | 'fly';
   /** Absolute physical altitude in free-flight mode, in world metres. */
-  flightAltitude?:number;
+  flightAltitude?: number;
   /** Capture-only measurements from the actual eye, including terrain clearance. */
-  heightAboveTargetMetres?: number; altitudeMetres?: number; viewAngleDegrees?: number; azimuthDegrees?: number; verticalFovDegrees?: number;
+  heightAboveTargetMetres?: number;
+  altitudeMetres?: number;
+  viewAngleDegrees?: number;
+  azimuthDegrees?: number;
+  verticalFovDegrees?: number;
 }
 
 /** Lake levels on cells (`mask` > 0: lake cell), and the continuous shore field the 2D map draws (`field`, over `width` m from
  * the origin): when present, the field alone decides where the lake is, so the flat 3D water and the painted lake share one shore. */
-interface WaterSurface { n: number; levels: Float32Array; mask: Float32Array; field?: LakeField; width?: number }
+interface WaterSurface {
+  n: number;
+  levels: Float32Array;
+  mask: Float32Array;
+  field?: LakeField;
+  width?: number;
+}
 /** A square material request in the terrain's metre coordinate system. */
-export interface Terrain3dTile { key: string; x: number; y: number; width: number; level: number; pixels: number;
+export interface Terrain3dTile {
+  key: string;
+  x: number;
+  y: number;
+  width: number;
+  level: number;
+  pixels: number;
   /** Cheap cached map while navigating; exact requests retain the original capture painter. */
-  preview?: boolean; exact?: boolean;
+  preview?: boolean;
+  exact?: boolean;
   prepare?<T>(work: Generator<void, T>): Promise<T>;
 }
 /** Final signed metre coefficients at cell centres, optionally including a halo. */
 export interface Terrain3dTileContent {
-  texture: TexImageSource; height?: HeightLayer; gutter?: number;
+  texture: TexImageSource;
+  height?: HeightLayer;
+  gutter?: number;
   water?: { x: number; y: number; width: number; n: number; alpha: Uint8Array };
   /** Albedo and coverage of physical ground, before lighting; same world extent and gutter. */
   ground?: TexImageSource;
@@ -71,7 +95,12 @@ export interface Terrain3dTileContent {
    * alpha is water cover (it also clears the canopy), so tints cannot travel in it. */
   semantic?: TexImageSource;
 }
-export interface Terrain3dLookSettings { paperMap?: boolean; ambience?: 'day' | 'night'; waterLook?: 'ink' | 'natural'; waterVisible?: boolean; groundCover?: boolean;
+export interface Terrain3dLookSettings {
+  paperMap?: boolean;
+  ambience?: 'day' | 'night';
+  waterLook?: 'ink' | 'natural';
+  waterVisible?: boolean;
+  groundCover?: boolean;
   /** Underdark world: the material ground draws the cave floor, rock masses (the layer's cave mask) and cave water, no trees. */
   underdark?: boolean;
   /** Underdark: lantern glow around towns on the cave floor, x, y, radius (m) per town, up to 16. */
@@ -81,12 +110,22 @@ export interface Terrain3dLookSettings { paperMap?: boolean; ambience?: 'day' | 
   /** Underdark: fungal farm lots (underdarkFarmBeds), up to 32. */
   farmBeds?: Float32Array;
   /** Underdark 3D display: roof of the section cut, darkness, mushrooms (render/underdarkCavern.ts); defaults when absent. */
-  cavern?: UnderdarkCavern3d }
+  cavern?: UnderdarkCavern3d;
+}
 export interface Terrain3dGroundSettings extends Terrain3dLookSettings {
-  seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
+  seed: number;
+  climate: { temperature: number; precipitation: number };
+  sourceCell: number;
   /** V2 climate zone (Render v2 styles); absent keeps the climate-only look. */
   climateZone?: ClimateZone;
-  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; paperMap?: boolean; v2Season?: number; v2Calendar?: SeasonCalendar; waterVisible?: boolean;
+  lighting: TerrainLighting;
+  displacement: boolean;
+  forestBrushes?: boolean;
+  renderV2?: number;
+  paperMap?: boolean;
+  v2Season?: number;
+  v2Calendar?: SeasonCalendar;
+  waterVisible?: boolean;
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
 export type Terrain3dForestSettings = Pick<Terrain3dGroundSettings, 'seed' | 'climate' | 'lighting'>;
@@ -116,8 +155,16 @@ export const TERRAIN_3D_MAX_SCALE = 8;
 export const TERRAIN_GROUND_MAX_SCALE = 128;
 type Vec3 = [number, number, number];
 const FOV = TERRAIN_3D_FOV;
-const GRID = 64, TILE_PIXELS = 512, MAX_LEAVES = 64, MAX_CACHE = 192, CACHE_BYTES = 128 * 1024 * 1024, HEIGHT_GRIDS = 1024;
-const SPLIT_ERROR = 2.4, MERGE_ERROR = 1.7, MORPH_MS = 220, TEXTURE_FADE_MS = 200;
+const GRID = 64,
+  TILE_PIXELS = 512,
+  MAX_LEAVES = 64,
+  MAX_CACHE = 192,
+  CACHE_BYTES = 128 * 1024 * 1024,
+  HEIGHT_GRIDS = 1024;
+const SPLIT_ERROR = 2.4,
+  MERGE_ERROR = 1.7,
+  MORPH_MS = 220,
+  TEXTURE_FADE_MS = 200;
 const clamp = (value: number, low: number, high: number): number => Math.max(low, Math.min(high, value));
 const mapWaterGlsl = `
 uniform int uNaturalWater; uniform int uNight; uniform int displayWaterVisible; uniform float displayWaterBand;
@@ -492,18 +539,26 @@ export const TERRAIN_3D_GLSL = { vertex: vertexShader, ground: fragmentShader, m
 function program(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
   const result = gl.createProgram();
   if (!result) throw new Error('Impossible de créer la vue 3D.');
-  for (const [kind, source] of [[gl.VERTEX_SHADER, vertex], [gl.FRAGMENT_SHADER, fragment]] as const) {
+  for (const [kind, source] of [
+    [gl.VERTEX_SHADER, vertex],
+    [gl.FRAGMENT_SHADER, fragment],
+  ] as const) {
     const shader = gl.createShader(kind)!;
-    gl.shaderSource(shader, source); gl.compileShader(shader);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      const message = gl.getShaderInfoLog(shader); gl.deleteShader(shader); gl.deleteProgram(result);
+      const message = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      gl.deleteProgram(result);
       throw new Error(`Shader terrain 3D : ${message}`);
     }
-    gl.attachShader(result, shader); gl.deleteShader(shader);
+    gl.attachShader(result, shader);
+    gl.deleteShader(shader);
   }
   gl.linkProgram(result);
   if (!gl.getProgramParameter(result, gl.LINK_STATUS)) {
-    const message = gl.getProgramInfoLog(result); gl.deleteProgram(result);
+    const message = gl.getProgramInfoLog(result);
+    gl.deleteProgram(result);
     throw new Error(`Programme terrain 3D : ${message}`);
   }
   return result;
@@ -511,60 +566,81 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string): 
 
 function multiply(a: Float32Array, b: Float32Array): Float32Array {
   const out = new Float32Array(16);
-  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
-    for (let k = 0; k < 4; k++) out[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
-  }
+  for (let c = 0; c < 4; c++)
+    for (let r = 0; r < 4; r++) {
+      for (let k = 0; k < 4; k++) out[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+    }
   return out;
 }
 function normalize(v: Vec3): Vec3 {
-  const scale = 1 / Math.max(1e-12, Math.hypot(...v)); return [v[0] * scale, v[1] * scale, v[2] * scale];
+  const scale = 1 / Math.max(1e-12, Math.hypot(...v));
+  return [v[0] * scale, v[1] * scale, v[2] * scale];
 }
-function cross(a: Vec3, b: Vec3): Vec3 { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
 function lookAt(eye: Vec3, target: Vec3): Float32Array {
   const z = normalize([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]);
-  const x = normalize(cross([0, 1, 0], z)), y = cross(z, x);
+  const x = normalize(cross([0, 1, 0], z)),
+    y = cross(z, x);
   const dot = (v: Vec3): number => -(v[0] * eye[0] + v[1] * eye[1] + v[2] * eye[2]);
   return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, dot(x), dot(y), dot(z), 1]);
 }
 function perspective(aspect: number, near: number, far: number): Float32Array {
-  const f = 1 / Math.tan(FOV / 2), q = 1 / (near - far);
+  const f = 1 / Math.tan(FOV / 2),
+    q = 1 / (near - far);
   return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * q, -1, 0, 0, 2 * far * near * q, 0]);
 }
 
 /** Cubic B-spline of cell-centred samples, identical to TerrainGl's surface. */
 function spline(data: Float32Array, n: number, u: number, v: number): number {
-  const gx = clamp(u, 0, 1) * n - .5, gy = clamp(v, 0, 1) * n - .5;
-  const bx = Math.floor(gx), by = Math.floor(gy);
-  splineWeights(gx - bx, wx); splineWeights(gy - by, wy);
+  const gx = clamp(u, 0, 1) * n - 0.5,
+    gy = clamp(v, 0, 1) * n - 0.5;
+  const bx = Math.floor(gx),
+    by = Math.floor(gy);
+  splineWeights(gx - bx, wx);
+  splineWeights(gy - by, wy);
   return splineSum(data, n, bx, by);
 }
-const wx = new Float64Array(4), wy = new Float64Array(4);
+const wx = new Float64Array(4),
+  wy = new Float64Array(4);
 function splineWeights(t: number, out: Float64Array): void {
   const cube = t ** 3;
-  out[0] = (1 - t) ** 3 / 6; out[1] = (3 * cube - 6 * t * t + 4) / 6; out[2] = (-3 * cube + 3 * t * t + 3 * t + 1) / 6; out[3] = cube / 6;
+  out[0] = (1 - t) ** 3 / 6;
+  out[1] = (3 * cube - 6 * t * t + 4) / 6;
+  out[2] = (-3 * cube + 3 * t * t + 3 * t + 1) / 6;
+  out[3] = cube / 6;
 }
 function splineSum(data: Float32Array, n: number, bx: number, by: number): number {
   let height = 0;
-  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-    height += data[clamp(by + y - 1, 0, n - 1) * n + clamp(bx + x - 1, 0, n - 1)] * wx[x] * wy[y];
-  }
+  for (let y = 0; y < 4; y++)
+    for (let x = 0; x < 4; x++) {
+      height += data[clamp(by + y - 1, 0, n - 1) * n + clamp(bx + x - 1, 0, n - 1)] * wx[x] * wy[y];
+    }
   return height;
 }
 function lakeHeight(water: WaterSurface, u: number, v: number): number | undefined {
   const { n, mask, levels, field, width } = water;
-  const gx = clamp(u, 0, 1) * n - .5, gy = clamp(v, 0, 1) * n - .5;
-  const bx = Math.floor(gx), by = Math.floor(gy);
-  splineWeights(gx - bx, wx); splineWeights(gy - by, wy);
+  const gx = clamp(u, 0, 1) * n - 0.5,
+    gy = clamp(v, 0, 1) * n - 0.5;
+  const bx = Math.floor(gx),
+    by = Math.floor(gy);
+  splineWeights(gx - bx, wx);
+  splineWeights(gy - by, wy);
   // The spline of the ±1 cell mask rounds the cell staircase only; the shore field is the lake's one definition.
   if (field && width ? lakeSample(field, width, clamp(u, 0, 1) * width, clamp(v, 0, 1) * width) < 0 : splineSum(mask, n, bx, by) <= 0) return undefined;
-  let height = 0, weight = 0;
+  let height = 0,
+    weight = 0;
   // Dry controls need not carry a water elevation. Excluding them keeps the
   // lake horizontal right up to its B-spline shore, including old .decor files.
-  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-    const i = clamp(by + y - 1, 0, n - 1) * n + clamp(bx + x - 1, 0, n - 1);
-    if (mask[i] <= 0 || !Number.isFinite(levels[i])) continue;
-    const w = wx[x] * wy[y]; height += levels[i] * w; weight += w;
-  }
+  for (let y = 0; y < 4; y++)
+    for (let x = 0; x < 4; x++) {
+      const i = clamp(by + y - 1, 0, n - 1) * n + clamp(bx + x - 1, 0, n - 1);
+      if (mask[i] <= 0 || !Number.isFinite(levels[i])) continue;
+      const w = wx[x] * wy[y];
+      height += levels[i] * w;
+      weight += w;
+    }
   return weight > 0 ? height / weight : undefined;
 }
 
@@ -575,43 +651,66 @@ export function gridEdgeVertex(edge: number, i: number): number {
 }
 /** Triangles of a whole patch: the grid, then the four skirts. */
 export function fullPatchIndices(): Uint16Array {
-  const side = GRID + 1, surfaceVertices = side * side, count = GRID * GRID * 6 + GRID * 4 * 6;
+  const side = GRID + 1,
+    surfaceVertices = side * side,
+    count = GRID * GRID * 6 + GRID * 4 * 6;
   const indices = new Uint16Array(count);
   let at = 0;
-  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
-    const a = y * side + x, b = a + 1, c = a + side, d = c + 1;
-    indices.set([a, c, b, b, c, d], at); at += 6;
-  }
-  for (let edge = 0; edge < 4; edge++) for (let i = 0; i < GRID; i++) {
-    const a = gridEdgeVertex(edge, i), b = gridEdgeVertex(edge, i + 1);
-    const sa = surfaceVertices + edge * side + i, sb = sa + 1;
-    indices.set([a, sa, b, b, sa, sb], at); at += 6;
-  }
+  for (let y = 0; y < GRID; y++)
+    for (let x = 0; x < GRID; x++) {
+      const a = y * side + x,
+        b = a + 1,
+        c = a + side,
+        d = c + 1;
+      indices.set([a, c, b, b, c, d], at);
+      at += 6;
+    }
+  for (let edge = 0; edge < 4; edge++)
+    for (let i = 0; i < GRID; i++) {
+      const a = gridEdgeVertex(edge, i),
+        b = gridEdgeVertex(edge, i + 1);
+      const sa = surfaceVertices + edge * side + i,
+        sb = sa + 1;
+      indices.set([a, sa, b, b, sa, sb], at);
+      at += 6;
+    }
   return indices;
 }
 /** The cell rectangle of `clip` inside `tile`'s grid (cache key), or undefined when it covers the whole tile. */
 export function patchClipKey(tile: Terrain3dTile, clip: Terrain3dTile): string | undefined {
   if (clip === tile || (clip.x === tile.x && clip.y === tile.y && clip.width === tile.width)) return undefined;
   const step = tile.width / GRID;
-  const x0 = clamp(Math.round((clip.x - tile.x) / step), 0, GRID), y0 = clamp(Math.round((clip.y - tile.y) / step), 0, GRID);
-  const x1 = clamp(Math.round((clip.x + clip.width - tile.x) / step), x0, GRID), y1 = clamp(Math.round((clip.y + clip.width - tile.y) / step), y0, GRID);
+  const x0 = clamp(Math.round((clip.x - tile.x) / step), 0, GRID),
+    y0 = clamp(Math.round((clip.y - tile.y) / step), 0, GRID);
+  const x1 = clamp(Math.round((clip.x + clip.width - tile.x) / step), x0, GRID),
+    y1 = clamp(Math.round((clip.y + clip.width - tile.y) / step), y0, GRID);
   return `${x0}/${y0}/${x1}/${y1}`;
 }
 /** Triangles of a clipped patch (patchClipKey): its cells, and only the real source-boundary skirts. */
 export function clippedPatchIndices(key: string): Uint16Array {
-  const [x0, y0, x1, y1] = key.split('/').map(Number), side = GRID + 1;
-  const indices: number[] = [], count = side * side;
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-    const a = y * side + x, b = a + 1, c = a + side, d = c + 1;
-    indices.push(a, c, b, b, c, d);
-  }
+  const [x0, y0, x1, y1] = key.split('/').map(Number),
+    side = GRID + 1;
+  const indices: number[] = [],
+    count = side * side;
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const a = y * side + x,
+        b = a + 1,
+        c = a + side,
+        d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
   // Keep only real source-boundary skirts. Interior fallback boundaries are
   // actual triangle edges, welded to their neighbours by the geometry pass.
   for (let edge = 0; edge < 4; edge++) {
     if (!(edge === 0 ? y0 === 0 : edge === 1 ? y1 === GRID : edge === 2 ? x0 === 0 : x1 === GRID)) continue;
-    const first = edge < 2 ? x0 : y0, last = edge < 2 ? x1 : y1;
+    const first = edge < 2 ? x0 : y0,
+      last = edge < 2 ? x1 : y1;
     for (let i = first; i < last; i++) {
-      const a = gridEdgeVertex(edge, i), b = gridEdgeVertex(edge, i + 1), sa = count + edge * side + i, sb = sa + 1;
+      const a = gridEdgeVertex(edge, i),
+        b = gridEdgeVertex(edge, i + 1),
+        sa = count + edge * side + i,
+        sb = sa + 1;
       indices.push(a, sa, b, b, sa, sb);
     }
   }
@@ -624,11 +723,15 @@ function materialSize(source: TexImageSource): { width: number; height: number }
   return { width, height };
 }
 function materialBytes(source: TexImageSource): number {
-  const size = materialSize(source); let width = size.width + 2, height = size.height + 2, bytes = 0;
+  const size = materialSize(source);
+  let width = size.width + 2,
+    height = size.height + 2,
+    bytes = 0;
   for (;;) {
     bytes += width * height * 4;
     if (width === 1 && height === 1) return bytes;
-    width = Math.max(1, width >> 1); height = Math.max(1, height >> 1);
+    width = Math.max(1, width >> 1);
+    height = Math.max(1, height >> 1);
   }
 }
 /** A material image with a duplicated one-texel border: every mip keeps a continuous edge; UVs
@@ -637,10 +740,15 @@ export function paddedMaterial(source: TexImageSource): HTMLCanvasElement {
   const { width, height } = materialSize(source);
   let drawable = source as CanvasImageSource;
   if (typeof ImageData !== 'undefined' && source instanceof ImageData) {
-    const bitmap = document.createElement('canvas'); bitmap.width = width; bitmap.height = height;
-    bitmap.getContext('2d')!.putImageData(source, 0, 0); drawable = bitmap;
+    const bitmap = document.createElement('canvas');
+    bitmap.width = width;
+    bitmap.height = height;
+    bitmap.getContext('2d')!.putImageData(source, 0, 0);
+    drawable = bitmap;
   }
-  const padded = document.createElement('canvas'); padded.width = width + 2; padded.height = height + 2;
+  const padded = document.createElement('canvas');
+  padded.width = width + 2;
+  padded.height = height + 2;
   const context = padded.getContext('2d')!;
   context.drawImage(drawable, 1, 1, width, height);
   context.drawImage(drawable, 0, 0, width, 1, 1, 0, width, 1);
@@ -654,48 +762,80 @@ export function paddedMaterial(source: TexImageSource): HTMLCanvasElement {
 const SKIRT_FLOATS = 4 * (GRID + 1) * 3;
 const skirtCorrections = new WeakMap<Float32Array, Float32Array>();
 function skirtCorrection(stitched: TerrainStitchedPiece): Float32Array {
-  const cached = skirtCorrections.get(stitched.correction); if (cached) return cached;
-  const side = GRID + 1, count = side * side, correction = new Float32Array(stitched.correction.buffer);
-  for (let edge = 0; edge < 4; edge++) for (let i = 0; i < side; i++) {
-    const from = gridEdgeVertex(edge, i) * 3, to = (count + edge * side + i) * 3;
-    correction[to] = correction[from]; correction[to + 1] = correction[from + 1]; correction[to + 2] = correction[from + 2];
-  }
-  skirtCorrections.set(stitched.correction, correction); return correction;
+  const cached = skirtCorrections.get(stitched.correction);
+  if (cached) return cached;
+  const side = GRID + 1,
+    count = side * side,
+    correction = new Float32Array(stitched.correction.buffer);
+  for (let edge = 0; edge < 4; edge++)
+    for (let i = 0; i < side; i++) {
+      const from = gridEdgeVertex(edge, i) * 3,
+        to = (count + edge * side + i) * 3;
+      correction[to] = correction[from];
+      correction[to + 1] = correction[from + 1];
+      correction[to + 2] = correction[from + 2];
+    }
+  skirtCorrections.set(stitched.correction, correction);
+  return correction;
 }
 /** A stitched source that still draws the same surface: its join can be kept. */
 function sameSurface(a: TerrainStitchPiece, b: TerrainStitchPiece): boolean {
-  const before = a as RenderPiece, after = b as RenderPiece;
+  const before = a as RenderPiece,
+    after = b as RenderPiece;
   return before.patch === after.patch && before.field === after.field && before.heightOrigin === after.heightOrigin && before.morph === after.morph;
 }
 /** Whether two seam snapshots differ beyond what a mesh could show. Only the listed vertices of each (the stitch's
  * `touched`) can hold a correction; every other value is zero in both, so the comparison reads those alone. */
 function seamDiffers(a: Float32Array, aTouched: readonly number[], b: Float32Array, bTouched: readonly number[] | undefined): boolean {
-  if (!bTouched) { for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-7) return true; return false; }
-  for (const list of [aTouched, bTouched]) for (const vertex of list) {
-    const at = vertex * 3;
-    if (Math.abs(a[at] - b[at]) > 1e-7 || Math.abs(a[at + 1] - b[at + 1]) > 1e-7 || Math.abs(a[at + 2] - b[at + 2]) > 1e-7) return true;
+  if (!bTouched) {
+    for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-7) return true;
+    return false;
   }
+  for (const list of [aTouched, bTouched])
+    for (const vertex of list) {
+      const at = vertex * 3;
+      if (Math.abs(a[at] - b[at]) > 1e-7 || Math.abs(a[at + 1] - b[at + 1]) > 1e-7 || Math.abs(a[at + 2] - b[at + 2]) > 1e-7) return true;
+    }
   return false;
 }
 /** One patch mesh, rebuilt then copied by the upload (10 floats per vertex, skirts included). */
 const meshValues = new Float32Array(((GRID + 1) * (GRID + 1) + 4 * (GRID + 1)) * 10);
 const parentValue = new Float64Array(3);
 function addParentVertex(heights: Float32Array, seam: Float32Array | undefined, step: number, x: number, y: number, weight: number, out: Float64Array): void {
-  const side = GRID + 1, x0 = Math.max(0, x - 1), x1 = Math.min(GRID, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(GRID, y + 1), i = y * side + x;
+  const side = GRID + 1,
+    x0 = Math.max(0, x - 1),
+    x1 = Math.min(GRID, x + 1),
+    y0 = Math.max(0, y - 1),
+    y1 = Math.min(GRID, y + 1),
+    i = y * side + x;
   out[0] += heights[i] * weight;
-  out[1] += (heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step) * weight;
-  out[2] += (heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step) * weight;
-  if (seam) { const at = i * 3; out[0] += seam[at] * weight; out[1] += seam[at + 1] * weight; out[2] += seam[at + 2] * weight; }
+  out[1] += ((heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step)) * weight;
+  out[2] += ((heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step)) * weight;
+  if (seam) {
+    const at = i * 3;
+    out[0] += seam[at] * weight;
+    out[1] += seam[at + 1] * weight;
+    out[2] += seam[at + 2] * weight;
+  }
 }
 /** Height and gradient of the parent's triangles at a world point, as the GPU interpolates them. */
 function parentSample(tile: Terrain3dTile, heights: Float32Array, seam: Float32Array | undefined, x: number, y: number, out: Float64Array): void {
-  const step = tile.width / GRID, gx = clamp((x - tile.x) / step, 0, GRID), gy = clamp((y - tile.y) / step, 0, GRID);
-  const ix = Math.min(GRID - 1, Math.floor(gx)), iy = Math.min(GRID - 1, Math.floor(gy)), tx = gx - ix, ty = gy - iy;
+  const step = tile.width / GRID,
+    gx = clamp((x - tile.x) / step, 0, GRID),
+    gy = clamp((y - tile.y) / step, 0, GRID);
+  const ix = Math.min(GRID - 1, Math.floor(gx)),
+    iy = Math.min(GRID - 1, Math.floor(gy)),
+    tx = gx - ix,
+    ty = gy - iy;
   out[0] = out[1] = out[2] = 0;
   if (tx + ty <= 1) {
-    addParentVertex(heights, seam, step, ix, iy, 1 - tx - ty, out); addParentVertex(heights, seam, step, ix + 1, iy, tx, out); addParentVertex(heights, seam, step, ix, iy + 1, ty, out);
+    addParentVertex(heights, seam, step, ix, iy, 1 - tx - ty, out);
+    addParentVertex(heights, seam, step, ix + 1, iy, tx, out);
+    addParentVertex(heights, seam, step, ix, iy + 1, ty, out);
   } else {
-    addParentVertex(heights, seam, step, ix + 1, iy, 1 - ty, out); addParentVertex(heights, seam, step, ix, iy + 1, 1 - tx, out); addParentVertex(heights, seam, step, ix + 1, iy + 1, tx + ty - 1, out);
+    addParentVertex(heights, seam, step, ix + 1, iy, 1 - ty, out);
+    addParentVertex(heights, seam, step, ix, iy + 1, 1 - tx, out);
+    addParentVertex(heights, seam, step, ix + 1, iy + 1, tx + ty - 1, out);
   }
 }
 
@@ -739,15 +879,54 @@ export interface Patch {
   pendingTextureGutter?: number;
   pendingTexturePixels?: number;
 }
-interface Node { patch: Patch; children?: Node[]; error: number; wantsSplit: boolean; blend: number; updated: number; ready: boolean; visible: boolean; moving: boolean; birth: number; birthUpdated: number }
-export interface MaterialRef { texture: WebGLTexture; tile?: Terrain3dTile; pixels: number; gutter?:number }
-export interface PatchMaterial { from: MaterialRef; to: MaterialRef; blend: number; ready: boolean }
-export interface FrameGeometry { eye: Vec3; targetHeight: number; matrix: Float32Array; focal: number; right: Vec3; up: Vec3; forward: Vec3 }
-interface RenderPiece extends TerrainStitchPiece { patch: Patch; morph: number; field: Float32Array; heightOrigin: number }
+interface Node {
+  patch: Patch;
+  children?: Node[];
+  error: number;
+  wantsSplit: boolean;
+  blend: number;
+  updated: number;
+  ready: boolean;
+  visible: boolean;
+  moving: boolean;
+  birth: number;
+  birthUpdated: number;
+}
+export interface MaterialRef {
+  texture: WebGLTexture;
+  tile?: Terrain3dTile;
+  pixels: number;
+  gutter?: number;
+}
+export interface PatchMaterial {
+  from: MaterialRef;
+  to: MaterialRef;
+  blend: number;
+  ready: boolean;
+}
+export interface FrameGeometry {
+  eye: Vec3;
+  targetHeight: number;
+  matrix: Float32Array;
+  focal: number;
+  right: Vec3;
+  up: Vec3;
+  forward: Vec3;
+}
+interface RenderPiece extends TerrainStitchPiece {
+  patch: Patch;
+  morph: number;
+  field: Float32Array;
+  heightOrigin: number;
+}
 /** One patch draw of a frame, backend independent: mesh, clip, material blend and seam corrections. */
 export interface PatchDraw {
-  patch: Patch; morph: number; clip: Terrain3dTile; material: PatchMaterial;
-  textureRect: [number, number, number, number]; previousRect: [number, number, number, number];
+  patch: Patch;
+  morph: number;
+  clip: Terrain3dTile;
+  material: PatchMaterial;
+  textureRect: [number, number, number, number];
+  previousRect: [number, number, number, number];
   /** Per-vertex seam corrections, skirts included (vertex attribute 5). */
   correction: Float32Array;
 }
@@ -795,7 +974,9 @@ export class Terrain3d {
   protected macroTexture!: WebGLTexture;
   protected caveTexture?: WebGLTexture;
   /** Underdark section cut (refreshCavern). */
-  protected cavern?: CavernField; private cavernLayer?: HeightLayer; private cavernClearance?: number;
+  protected cavern?: CavernField;
+  private cavernLayer?: HeightLayer;
+  private cavernClearance?: number;
   private shoreRing?: { layer: object; revision: number; texture: WebGLTexture };
   /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
   protected readonly ringChanged = (): void => this.request();
@@ -819,8 +1000,14 @@ export class Terrain3d {
   private treeJobs = 0;
   private treeProgram?: WebGLProgram;
   /** Underdark mushrooms (terrain3dFungi.ts): instance count, stream key, jobs in flight, revision of the cavern field. */
-  protected fungusCount = 0; protected fungusTiers: [number, number, number] = [0, 0, 0]; private fungusKey = ''; private fungusJobs = 0; private cavernRevision = 0;
-  private fungusProgram?: WebGLProgram; private fungusVao?: WebGLVertexArrayObject; private fungusBuffer?: WebGLBuffer;
+  protected fungusCount = 0;
+  protected fungusTiers: [number, number, number] = [0, 0, 0];
+  private fungusKey = '';
+  private fungusJobs = 0;
+  private cavernRevision = 0;
+  private fungusProgram?: WebGLProgram;
+  private fungusVao?: WebGLVertexArrayObject;
+  private fungusBuffer?: WebGLBuffer;
   private treeVao?: WebGLVertexArrayObject;
   private treeBuffer?: WebGLBuffer;
   /** Semantic tile of a material tile: follows it through parent fallbacks and fades. */
@@ -868,7 +1055,7 @@ export class Terrain3d {
   private heightRange = 0;
   private maxSlope = 0;
   protected maxFramebufferDimension = 8192;
-  protected camera: Terrain3dCamera = { x: 0, y: 0, distance: 1000, yaw: 0, pitch: .8, exaggeration: 1 };
+  protected camera: Terrain3dCamera = { x: 0, y: 0, distance: 1000, yaw: 0, pitch: 0.8, exaggeration: 1 };
   private active = false;
   private width = 1;
   private height = 1;
@@ -897,22 +1084,37 @@ export class Terrain3d {
   private status: Partial<Record<Terrain3dStatus, string>> = {};
   private silent = false;
 
-  constructor(protected canvas: HTMLCanvasElement, private onChange: () => void, private onRender?: () => void, protected options: Terrain3dOptions = {}) {
-    this.element = options.element ?? canvas; this.silent = !!options.silent;
-    this.attach(); this.element.style.touchAction = 'none'; this.interactions();
-    this.unlistenQuality = onDisplayQualityChange(() => { this.invalidateTiles(); this.billboardDirty = true; this.request(); });
+  constructor(
+    protected canvas: HTMLCanvasElement,
+    private onChange: () => void,
+    private onRender?: () => void,
+    protected options: Terrain3dOptions = {},
+  ) {
+    this.element = options.element ?? canvas;
+    this.silent = !!options.silent;
+    this.attach();
+    this.element.style.touchAction = 'none';
+    this.interactions();
+    this.unlistenQuality = onDisplayQualityChange(() => {
+      this.invalidateTiles();
+      this.billboardDirty = true;
+      this.request();
+    });
   }
   /** Records a status attribute, shown on the element unless the view is silent. */
   protected mark(key: Terrain3dStatus, value: string): void {
     this.status[key] = value;
     if (!this.silent) this.element.dataset[key] = value;
   }
-  getStatus(key: Terrain3dStatus): string | undefined { return this.status[key]; }
+  getStatus(key: Terrain3dStatus): string | undefined {
+    return this.status[key];
+  }
   /** A silent view becomes the displayed one: its status attributes replace the previous view's. */
   showStatus(): void {
     this.silent = false;
     for (const key of ['renderer', 'terrainShader', 'groundVariant'] as const) {
-      if (this.status[key] === undefined) delete this.element.dataset[key]; else this.element.dataset[key] = this.status[key];
+      if (this.status[key] === undefined) delete this.element.dataset[key];
+      else this.element.dataset[key] = this.status[key];
     }
   }
 
@@ -922,42 +1124,70 @@ export class Terrain3d {
     const canvas = this.canvas;
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, stencil: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('La vue 3D nécessite WebGL2.');
-    this.gl = gl; this.initialize(); this.mark('renderer', 'webgl');
-    canvas.addEventListener('webglcontextlost', event => {
-      event.preventDefault(); cancelAnimationFrame(this.frame); this.frame = 0;
-      ++this.epoch; this.patches.clear(); this.root = undefined;
-    }, { signal: this.events.signal });
-    canvas.addEventListener('webglcontextrestored', () => {
-      if (this.disposed) return;
-      this.initialize();
-      if (this.textureSource) this.setTexture(this.textureSource, this.billboardSource);
-      this.request();
-    }, { signal: this.events.signal });
+    this.gl = gl;
+    this.initialize();
+    this.mark('renderer', 'webgl');
+    canvas.addEventListener(
+      'webglcontextlost',
+      event => {
+        event.preventDefault();
+        cancelAnimationFrame(this.frame);
+        this.frame = 0;
+        ++this.epoch;
+        this.patches.clear();
+        this.root = undefined;
+      },
+      { signal: this.events.signal },
+    );
+    canvas.addEventListener(
+      'webglcontextrestored',
+      () => {
+        if (this.disposed) return;
+        this.initialize();
+        if (this.textureSource) this.setTexture(this.textureSource, this.billboardSource);
+        this.request();
+      },
+      { signal: this.events.signal },
+    );
   }
 
   private initialize(): void {
     const gl = this.gl;
     this.msaa = undefined;
     this.maxFramebufferDimension = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
-    this.raisedMaterials.clear(); this.billboardProgram = undefined; this.billboardVao = undefined; this.billboardBuffer = undefined; this.billboardAtlas = undefined; this.billboardDirty = true;
+    this.raisedMaterials.clear();
+    this.billboardProgram = undefined;
+    this.billboardVao = undefined;
+    this.billboardBuffer = undefined;
+    this.billboardAtlas = undefined;
+    this.billboardDirty = true;
     const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
     this.textureAnisotropy = anisotropy ? { parameter: anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, value: Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) } : undefined;
     this.uniformLocations = new WeakMap();
     this.clippedIndices.clear();
     this.mapProgram = this.lastGround = undefined;
-    this.groundVariants?.reset(); this.groundVariants = new ShaderVariants(gl, () => this.request());
+    this.groundVariants?.reset();
+    this.groundVariants = new ShaderVariants(gl, () => this.request());
     this.selectTerrainProgram(!!this.groundSettings || !!this.forestField);
     this.skyProgram = program(gl, skyVertex, skyFragment);
-    this.buildings?.dispose(); this.buildings = new UrbanBuildingPass(gl, () => this.request());
+    this.buildings?.dispose();
+    this.buildings = new UrbanBuildingPass(gl, () => this.request());
     this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
-    const side = GRID + 1, surfaceVertices = side * side, indices = fullPatchIndices();
-    this.indices = gl.createBuffer()!; this.indexCount = indices.length;
-    gl.bindVertexArray(null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indices); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    const side = GRID + 1,
+      surfaceVertices = side * side,
+      indices = fullPatchIndices();
+    this.indices = gl.createBuffer()!;
+    this.indexCount = indices.length;
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indices);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     this.seams = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.seams); gl.bufferData(gl.ARRAY_BUFFER, (surfaceVertices + 4 * side) * 3 * 4, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.seams);
+    gl.bufferData(gl.ARRAY_BUFFER, (surfaceVertices + 4 * side) * 3 * 4, gl.DYNAMIC_DRAW);
     this.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
-    this.macroTexture=this.uploadMacroField(this.layer);
-    this.caveTexture=undefined;this.refreshCavern(true);
+    this.macroTexture = this.uploadMacroField(this.layer);
+    this.caveTexture = undefined;
+    this.refreshCavern(true);
     this.shoreRing = undefined;
     this.empty = this.uploadMacroField();
     // A restored context comes back empty: re-upload the retained forest rasters.
@@ -969,91 +1199,120 @@ export class Terrain3d {
     if (this.useMapShader) this.prepareMapShader();
     this.mark('terrainShader', this.useMapShader ? 'map' : 'procedural');
   }
-  protected prepareMapShader(): void { this.mapProgram ??= program(this.gl, vertexShader, TERRAIN_3D_MAP_FRAGMENT); }
-  getShaderProfile(): 'map' | 'procedural' { return this.useMapShader ? 'map' : 'procedural'; }
+  protected prepareMapShader(): void {
+    this.mapProgram ??= program(this.gl, vertexShader, TERRAIN_3D_MAP_FRAGMENT);
+  }
+  getShaderProfile(): 'map' | 'procedural' {
+    return this.useMapShader ? 'map' : 'procedural';
+  }
   /** The settings' ground variant once linked; meanwhile the last drawn one, or the variant without
    * ground material (the projected map, quick to compile), stands in. */
   private groundShader(settings: Terrain3dGroundSettings | undefined): WebGLProgram {
     const forest = !!this.forest && !settings?.underdark;
     // The Underdark ground (cave floor, section cut, cave light) is compiled only into the Underdark variant.
-    const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes,
-      uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank), uUnderdark: +!!settings?.underdark };
+    const v = { groundEnabled: +!!settings, uRenderV2: settings?.renderV2 ?? 0, uForest: +forest, uForestBrushes: +!!settings?.forestBrushes, uHasOccupation: +!!this.occupation, uHasForestBank: +(forest && !!this.forest?.bank), uUnderdark: +!!settings?.underdark };
     const variant = (constants: typeof v, wait: boolean) => this.groundVariants.get(Object.values(constants).join('.'), () => [vertexShader, specializeShader(glLandDetailUnit(this.gl) === undefined ? withoutLandDetail(fragmentShader) : fragmentShader, constants)], wait);
     const target = variant(v, false);
     this.mark('groundVariant', target ? 'ready' : 'pending');
-    if (target) return this.lastGround = target;
+    if (target) return (this.lastGround = target);
     const preview = variant({ groundEnabled: 0, uRenderV2: 0, uForest: 0, uForestBrushes: 0, uHasOccupation: 0, uHasForestBank: 0, uUnderdark: 0 }, true);
     if (!this.lastGround && !preview) throw new Error('Shader terrain 3D indisponible.');
     // A material transition uses the lightweight preview, without an old
     // forest/material variant that may be costly or expect different inputs.
-    return settings ? preview! : this.lastGround ?? preview!;
+    return settings ? preview! : (this.lastGround ?? preview!);
   }
   /** Uniform locations are constant for one linked program and GL context.
    * Inactive uniforms (null in the map shader) are cached as well. */
   private uniform(name: string, shader = this.terrainProgram): WebGLUniformLocation | null {
     let locations = this.uniformLocations.get(shader);
-    if (!locations) { locations = new Map(); this.uniformLocations.set(shader, locations); }
+    if (!locations) {
+      locations = new Map();
+      this.uniformLocations.set(shader, locations);
+    }
     if (!locations.has(name)) locations.set(name, this.gl.getUniformLocation(shader, name));
     return locations.get(name)!;
   }
   /** Underdark cavern texels (RGBA16F, linear: soft rock 0-1, roof above the base, openness, clearance; see
    * render/underdarkCavern.ts): the shader's rim, occlusion and section cut read them. */
-  protected uploadCavern(field:CavernField):WebGLTexture {
-    const gl=this.gl,texture=gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D,texture);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,field.n,field.n,0,gl.RGBA,gl.FLOAT,field.texels);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  protected uploadCavern(field: CavernField): WebGLTexture {
+    const gl = this.gl,
+      texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, field.n, field.n, 0, gl.RGBA, gl.FLOAT, field.texels);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return texture;
   }
   /** Underdark: the section cut (roof field) and its texels, rebuilt when the layer or the roof clearance changes.
    * The roof clamps the mesh height (surface()), so every rock mass stops at the roof of its chamber. */
   protected refreshCavern(force = false): void {
-    const layer = this.layer, settings = this.groundSettings;
+    const layer = this.layer,
+      settings = this.groundSettings;
     const clearance = settings?.underdark && layer?.cave ? (settings.cavern ?? UNDERDARK_CAVERN_DEFAULTS).roof : undefined;
     if (!force && layer === this.cavernLayer && clearance === this.cavernClearance) return;
     const had = !!this.cavern;
-    this.cavernLayer = layer; this.cavernClearance = clearance;
+    this.cavernLayer = layer;
+    this.cavernClearance = clearance;
     this.cavern = layer && clearance !== undefined ? cavernField(layer, clearance) : undefined;
     if (this.caveTexture) this.deleteTexture(this.caveTexture);
-    this.caveTexture = this.cavern ? this.uploadCavern(this.cavern) : undefined; this.cavernRevision++;
+    this.caveTexture = this.cavern ? this.uploadCavern(this.cavern) : undefined;
+    this.cavernRevision++;
     this.uploadRoof(this.cavern ? cavernRoofMesh(this.cavern) : undefined);
-    if (had || this.cavern) { this.clearPatches(); this.request(); }
+    if (had || this.cavern) {
+      this.clearPatches();
+      this.request();
+    }
   }
-  protected uploadMacroField(layer?:HeightLayer):WebGLTexture {
-    const gl=this.gl,texture=gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D,texture);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.R32F,layer?.n??1,layer?.n??1,0,gl.RED,gl.FLOAT,layer?.data??new Float32Array(1));
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  protected uploadMacroField(layer?: HeightLayer): WebGLTexture {
+    const gl = this.gl,
+      texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, layer?.n ?? 1, layer?.n ?? 1, 0, gl.RED, gl.FLOAT, layer?.data ?? new Float32Array(1));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return texture;
   }
   private rectangleIndices(tile: Terrain3dTile, clip: Terrain3dTile): { buffer: WebGLBuffer; count: number } {
     const key = patchClipKey(tile, clip);
     if (!key) return { buffer: this.indices, count: this.indexCount };
     const cached = this.clippedIndices.get(key);
-    if (cached) { this.clippedIndices.delete(key); this.clippedIndices.set(key, cached); return cached; }
+    if (cached) {
+      this.clippedIndices.delete(key);
+      this.clippedIndices.set(key, cached);
+      return cached;
+    }
     const indices = clippedPatchIndices(key);
-    const gl = this.gl, buffer = gl.createBuffer()!;
-    gl.bindVertexArray(null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-    const result = { buffer, count: indices.length }; this.clippedIndices.set(key, result);
+    const gl = this.gl,
+      buffer = gl.createBuffer()!;
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    const result = { buffer, count: indices.length };
+    this.clippedIndices.set(key, result);
     if (this.clippedIndices.size > 64) {
       const oldest = this.clippedIndices.keys().next().value!;
-      gl.deleteBuffer(this.clippedIndices.get(oldest)!.buffer); this.clippedIndices.delete(oldest);
+      gl.deleteBuffer(this.clippedIndices.get(oldest)!.buffer);
+      this.clippedIndices.delete(oldest);
     }
     return result;
   }
   protected uploadTexture(source: TexImageSource | Uint8Array): WebGLTexture {
-    const gl = this.gl, texture = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, texture); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);
+    const gl = this.gl,
+      texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     if (source instanceof Uint8Array) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
     else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, paddedMaterial(source));
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.generateMipmap(gl.TEXTURE_2D);
     // A capability query here synchronizes every tile upload with the preceding canopy draw.
     if (this.textureAnisotropy) gl.texParameterf(gl.TEXTURE_2D, this.textureAnisotropy.parameter, this.textureAnisotropy.value);
@@ -1061,95 +1320,158 @@ export class Terrain3d {
   }
 
   setSurface(layer: HeightLayer, water?: WaterSurface, waterVisible = true): void {
-    if (this.layer?.data === layer.data && this.layer.n === layer.n && this.layer.width === layer.width && this.layer.x === layer.x
-      && this.layer.y === layer.y && this.water?.mask === water?.mask && this.water?.levels === water?.levels
-      && this.water?.n === water?.n && this.waterVisible === waterVisible) return;
-    this.layer = layer; this.water = water; this.waterVisible = waterVisible;
+    if (
+      this.layer?.data === layer.data &&
+      this.layer.n === layer.n &&
+      this.layer.width === layer.width &&
+      this.layer.x === layer.x &&
+      this.layer.y === layer.y &&
+      this.water?.mask === water?.mask &&
+      this.water?.levels === water?.levels &&
+      this.water?.n === water?.n &&
+      this.waterVisible === waterVisible
+    )
+      return;
+    this.layer = layer;
+    this.water = water;
+    this.waterVisible = waterVisible;
     this.billboardDirty = true;
-    this.deleteTexture(this.macroTexture);this.macroTexture=this.uploadMacroField(layer);
+    this.deleteTexture(this.macroTexture);
+    this.macroTexture = this.uploadMacroField(layer);
     this.refreshCavern();
-    let low = Infinity, high = -Infinity, slope = 0;
+    let low = Infinity,
+      high = -Infinity,
+      slope = 0;
     const cell = layer.width / layer.n;
     for (let i = 0; i < layer.data.length; i++) {
-      const value = layer.data[i]; low = Math.min(low, value); high = Math.max(high, value);
-      if (i % layer.n + 1 < layer.n) slope = Math.max(slope, Math.abs(layer.data[i + 1] - value) / cell);
+      const value = layer.data[i];
+      low = Math.min(low, value);
+      high = Math.max(high, value);
+      if ((i % layer.n) + 1 < layer.n) slope = Math.max(slope, Math.abs(layer.data[i + 1] - value) / cell);
       if (i + layer.n < layer.data.length) slope = Math.max(slope, Math.abs(layer.data[i + layer.n] - value) / cell);
     }
     this.maxSlope = slope * Math.SQRT2;
-    this.heightRange = Math.max(0, high - low); this.clearPatches(); this.limitCamera(); this.request();
+    this.heightRange = Math.max(0, high - low);
+    this.clearPatches();
+    this.limitCamera();
+    this.request();
   }
   setHeightSampler(sample: ((x: number, y: number, metresPerPixel: number) => number) | undefined): void {
     if (sample === this.heightSampler) return;
-    this.heightSampler = sample; this.clearPatches(); this.request();
+    this.heightSampler = sample;
+    this.clearPatches();
+    this.request();
     this.billboardDirty = true;
   }
   setGroundMaterial(settings: Terrain3dGroundSettings | undefined): void {
     const previous = this.groundSettings;
-    if(settings && (settings.ambience!==undefined || settings.waterLook!==undefined))this.setLook(settings);
+    if (settings && (settings.ambience !== undefined || settings.waterLook !== undefined)) this.setLook(settings);
     // Compile before committing the switch: a failed optional material keeps
     // the current renderer and retained geometry usable.
     this.selectTerrainProgram(!!settings || !!this.forest);
     this.groundSettings = settings;
     this.refreshCavern();
-    const framed = this.townFrame, sites = settings?.townSites ?? settings?.townGlow;
+    const framed = this.townFrame,
+      sites = settings?.townSites ?? settings?.townGlow;
     if (framed && sites && sites.length >= 3) {
       const c = this.camera;
       if (Math.abs(c.x - framed.x) < 1 && Math.abs(c.y - framed.y) < 1 && Math.abs(c.distance - framed.distance) < 1) {
         const near = clamp(sites[2] * 1.6, 320, 700);
         this.camera = { ...c, x: sites[0], y: sites[1], distance: near, pitch: this.framingPitch(sites[0], sites[1], near) };
-        this.limitCamera(); this.request();
+        this.limitCamera();
+        this.request();
       }
       this.townFrame = undefined;
     }
-    if(settings?.renderV2 && !previous?.renderV2 && !this.textureSource){
-      this.deleteTexture(this.material);this.material=this.uploadTexture(new Uint8Array([0,0,0,0]));
+    if (settings?.renderV2 && !previous?.renderV2 && !this.textureSource) {
+      this.deleteTexture(this.material);
+      this.material = this.uploadTexture(new Uint8Array([0, 0, 0, 0]));
     }
-    if (!!previous?.displacement !== !!settings?.displacement || settings?.displacement && (previous?.seed !== settings.seed
-      || previous?.sourceCell !== settings.sourceCell
-      || previous?.climate.temperature !== settings.climate.temperature
-      || previous?.climate.precipitation !== settings.climate.precipitation)) this.clearPatches();
+    if (
+      !!previous?.displacement !== !!settings?.displacement ||
+      (settings?.displacement && (previous?.seed !== settings.seed || previous?.sourceCell !== settings.sourceCell || previous?.climate.temperature !== settings.climate.temperature || previous?.climate.precipitation !== settings.climate.precipitation))
+    )
+      this.clearPatches();
     this.limitCamera();
     this.request();
   }
-  setRenderV2Season(season:number):void { if(this.groundSettings?.renderV2){this.groundSettings={...this.groundSettings,v2Season:season};this.request();} }
-  setLook(look: Terrain3dLookSettings): void {
-    if(this.lookSettings.paperMap===look.paperMap && this.lookSettings.ambience===look.ambience && this.lookSettings.waterLook===look.waterLook && this.lookSettings.waterVisible===look.waterVisible && this.lookSettings.groundCover===look.groundCover)return;
-    this.lookSettings={...look};this.request();
+  setRenderV2Season(season: number): void {
+    if (this.groundSettings?.renderV2) {
+      this.groundSettings = { ...this.groundSettings, v2Season: season };
+      this.request();
+    }
   }
-  setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
+  setLook(look: Terrain3dLookSettings): void {
+    if (this.lookSettings.paperMap === look.paperMap && this.lookSettings.ambience === look.ambience && this.lookSettings.waterLook === look.waterLook && this.lookSettings.waterVisible === look.waterVisible && this.lookSettings.groundCover === look.groundCover) return;
+    this.lookSettings = { ...look };
+    this.request();
+  }
+  setTileBoundaries(visible: boolean): void {
+    this.tileBounds = visible;
+    this.request();
+  }
   /** Ground cuts (town moats): built once per set of circuits; a new set reshapes the patches. */
-  setGroundCuts(cuts: UrbanGroundCuts): void { if (cuts === this.groundCuts) return; this.groundCuts = cuts; this.clearPatches(); this.request(); }
+  setGroundCuts(cuts: UrbanGroundCuts): void {
+    if (cuts === this.groundCuts) return;
+    this.groundCuts = cuts;
+    this.clearPatches();
+    this.request();
+  }
   /** Presentation consumes the same immutable native scene as the map. */
   setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
     const changed = this.buildingScene !== scene || this.buildingsVisible !== visible;
-    this.buildingScene = scene; this.buildingAppearance = appearance; this.buildingsVisible = visible;
+    this.buildingScene = scene;
+    this.buildingAppearance = appearance;
+    this.buildingsVisible = visible;
     // Footprints painted on a map have no foundation to clear. Carving their
     // hidden meshes into the terrain creates false, grid-shaped terraces.
-    if (changed) { this.buildingGround = new UrbanBuildingGround(visible ? scene : undefined); this.billboardDirty = true; this.clearPatches(); this.setForest(this.forestField, this.forestOccupation); }
-    this.buildings.setScene(visible ? scene : undefined, appearance); this.request();
+    if (changed) {
+      this.buildingGround = new UrbanBuildingGround(visible ? scene : undefined);
+      this.billboardDirty = true;
+      this.clearPatches();
+      this.setForest(this.forestField, this.forestOccupation);
+    }
+    this.buildings.setScene(visible ? scene : undefined, appearance);
+    this.request();
   }
   /** Swap a few buildings of the current scene (native exteriors in or out):
    * only their sectors rebuild; relief, patches and forest stay untouched. */
   replaceBuildings(changes: readonly Building3dVisual[]): string[] {
     if (!this.buildingsVisible || !changes.length) return [];
-    const missing = this.buildings.replaceBuildings(changes); this.request(); return missing;
+    const missing = this.buildings.replaceBuildings(changes);
+    this.request();
+    return missing;
   }
   /** Render3D forest: texture uploads only, no mesh or material tile rebuild. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation, settings = this.forestSettings): void {
     this.forestSettings = settings ?? { seed: 0, climate: { temperature: 18, precipitation: 1000 }, lighting: DEFAULT_TERRAIN_LIGHTING };
-    this.forestField = field; this.forestOccupation = occupation;
+    this.forestField = field;
+    this.forestOccupation = occupation;
     if (this.mergedOccupationSource !== occupation || this.mergedOccupationScene !== this.buildingScene) {
-      const source = occupation, scene = this.buildingScene, merge = this.options.mergeOccupation;
-      this.mergedOccupationSource = source; this.mergedOccupationScene = scene;
+      const source = occupation,
+        scene = this.buildingScene,
+        merge = this.options.mergeOccupation;
+      this.mergedOccupationSource = source;
+      this.mergedOccupationScene = scene;
       const buildings = scene?.occupationBuildings ?? scene?.buildings;
       if (!merge || !source || !scene || !buildings?.length || occupationMergeSlot(source, scene).value) this.mergedOccupation = withBuildingOccupation(source, scene);
       else {
         // The merge of a whole town took ~0.5 s on the page at opening (an average machine: seconds): off-thread now.
-        this.mergedOccupation = source; this.occupationMerges++;
+        this.mergedOccupation = source;
+        this.occupationMerges++;
         const current = (): boolean => !this.disposed && this.mergedOccupationSource === source && this.mergedOccupationScene === scene;
-        void merge(source, scene).catch(() => current() ? withBuildingOccupation(source, scene) : undefined).then(result => {
-          if (current() && result) { this.mergedOccupation = result; this.setForest(this.forestField, this.forestOccupation); }
-        }).finally(() => { this.occupationMerges--; this.request(); });
+        void merge(source, scene)
+          .catch(() => (current() ? withBuildingOccupation(source, scene) : undefined))
+          .then(result => {
+            if (current() && result) {
+              this.mergedOccupation = result;
+              this.setForest(this.forestField, this.forestOccupation);
+            }
+          })
+          .finally(() => {
+            this.occupationMerges--;
+            this.request();
+          });
       }
     }
     occupation = this.mergedOccupation;
@@ -1169,41 +1491,71 @@ export class Terrain3d {
     }
     this.request();
   }
-  protected uploadForest(field: ForestField): ForestTextures { return forestTextures(this.gl, field); }
-  protected releaseForest(textures: ForestTextures | undefined): void { deleteForestTextures(this.gl, textures); }
-  protected uploadOccupation(occupation: ForestOccupation): WebGLTexture { return forestTexture(this.gl, occupation, true); }
-  protected uploadLandDetail(detail: LandDetail): WebGLTexture { return forestTexture(this.gl, detail, true); }
-  protected deleteTexture(texture: WebGLTexture): void { this.gl.deleteTexture(texture); }
+  protected uploadForest(field: ForestField): ForestTextures {
+    return forestTextures(this.gl, field);
+  }
+  protected releaseForest(textures: ForestTextures | undefined): void {
+    deleteForestTextures(this.gl, textures);
+  }
+  protected uploadOccupation(occupation: ForestOccupation): WebGLTexture {
+    return forestTexture(this.gl, occupation, true);
+  }
+  protected uploadLandDetail(detail: LandDetail): WebGLTexture {
+    return forestTexture(this.gl, detail, true);
+  }
+  protected deleteTexture(texture: WebGLTexture): void {
+    this.gl.deleteTexture(texture);
+  }
   protected uploadWaterMask(water: NonNullable<Terrain3dTileContent['water']>): WebGLTexture {
-    const gl=this.gl,mask=gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D,mask);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,water.n,water.n,0,gl.RED,gl.UNSIGNED_BYTE,water.alpha);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const gl = this.gl,
+      mask = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, mask);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, water.n, water.n, 0, gl.RED, gl.UNSIGNED_BYTE, water.alpha);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return mask;
   }
   /** Patch vertex buffer (10 floats per vertex, see buildMesh); sets patch.vao and patch.vertices. */
   protected uploadMesh(patch: Patch, values: Float32Array): void {
     const gl = this.gl;
-    patch.vao = gl.createVertexArray()!; patch.vertices = gl.createBuffer()!;
-    gl.bindVertexArray(patch.vao); gl.bindBuffer(gl.ARRAY_BUFFER, patch.vertices); gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 40, 0);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 40, 12);
-    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 40, 20);
-    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 40, 28);
-    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 40, 32);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indices); gl.bindVertexArray(null);
+    patch.vao = gl.createVertexArray()!;
+    patch.vertices = gl.createBuffer()!;
+    gl.bindVertexArray(patch.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, patch.vertices);
+    gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 40, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 40, 12);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 40, 20);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 40, 28);
+    gl.enableVertexAttribArray(4);
+    gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 40, 32);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indices);
+    gl.bindVertexArray(null);
   }
   /** Deletes the GPU objects of a patch mesh (the caller resets the fields). */
   protected releaseMesh(patch: Patch): void {
     if (patch.vao) this.gl.deleteVertexArray(patch.vao);
     if (patch.vertices) this.gl.deleteBuffer(patch.vertices);
   }
-  protected contextLost(): boolean { return this.gl.isContextLost(); }
+  protected contextLost(): boolean {
+    return this.gl.isContextLost();
+  }
   setTileLoader(loader: ((tile: Terrain3dTile) => Promise<TexImageSource | Terrain3dTileContent>) | undefined, requireHeights = false): void {
-    if (this.requireHeights !== requireHeights) { this.requireHeights = requireHeights; this.clearPatches(); }
+    if (this.requireHeights !== requireHeights) {
+      this.requireHeights = requireHeights;
+      this.clearPatches();
+    }
     if (this.tileLoader === loader) return;
-    this.tileLoader = loader; this.invalidateTiles();
+    this.tileLoader = loader;
+    this.invalidateTiles();
   }
   /** Repaint the ground textures: all of them, the tiles overlapping a world `region`, or one tile by its key.
    * A tile keeps showing its current texture until the replacement is built and uploaded (swap on ready). */
@@ -1214,7 +1566,8 @@ export class Terrain3d {
     this.request();
   }
   private applyStaleTiles(): void {
-    const stale = this.staleTiles; if (!stale) return;
+    const stale = this.staleTiles;
+    if (!stale) return;
     this.staleTiles = undefined;
     // A material revision cancels tile work through patch.revision below. Geometry jobs,
     // height grids and tree placement belong to the surface epoch, which stays intact.
@@ -1222,29 +1575,45 @@ export class Terrain3d {
     const drop = !this.tileLoader;
     for (const patch of this.patches.values()) {
       const t = patch.tile;
-      if (stale !== 'all' && !stale.some(r => typeof r === 'string' ? r === t.key : t.x < r.maxX && t.x + t.width > r.minX && t.y < r.maxY && t.y + t.width > r.minY)) continue;
+      if (stale !== 'all' && !stale.some(r => (typeof r === 'string' ? r === t.key : t.x < r.maxX && t.x + t.width > r.minX && t.y < r.maxY && t.y + t.width > r.minY))) continue;
       ++patch.revision;
       if (patch.pendingTexture) this.releaseMaterial(patch.pendingTexture);
-      patch.pendingTexture = undefined; patch.pendingTextureBytes = 0; patch.pendingHeights = undefined;
+      patch.pendingTexture = undefined;
+      patch.pendingTextureBytes = 0;
+      patch.pendingHeights = undefined;
       patch.status = 'idle';
       if (drop) {
         if (patch.texture) this.releaseMaterial(patch.texture);
-        patch.texture = undefined; patch.textureBytes = 0; patch.textureFadeStart = 0; patch.textureProgress = 0; patch.materialParent = undefined;
+        patch.texture = undefined;
+        patch.textureBytes = 0;
+        patch.textureFadeStart = 0;
+        patch.textureProgress = 0;
+        patch.materialParent = undefined;
       }
     }
   }
   getLodInfo(): typeof this.lod & { covered: boolean } {
-    const missing = !!this.tileLoader && this.desired.some(p => p.tile.level > 0 && (p.status === 'idle' || p.status === 'loading' || p.preview && !this.frameInteracting));
-    const covered = this.active && this.lod.tiles > 0 && this.displayedPieces.length > 0
-      && this.displayedPieces.every(piece => !!(piece.source as RenderPiece).patch.vao);
+    const missing = !!this.tileLoader && this.desired.some(p => p.tile.level > 0 && (p.status === 'idle' || p.status === 'loading' || (p.preview && !this.frameInteracting)));
+    const covered = this.active && this.lod.tiles > 0 && this.displayedPieces.length > 0 && this.displayedPieces.every(piece => !!(piece.source as RenderPiece).patch.vao);
     return { ...this.lod, covered, pending: this.jobs.size + Math.max(0, this.preparation.pending - this.treeJobs) + Number(missing) + Number(!!this.staleTiles) + this.occupationMerges };
   }
 
   private clearPatches(): void {
     ++this.epoch;
-    this.preparation.clear(); this.meshJobs.clear(); this.treeKey = ''; this.fungusKey = ''; this.treeReadyKey = ''; this.billboardDirty = true; this.geometryNeeded = [];
+    this.preparation.clear();
+    this.meshJobs.clear();
+    this.treeKey = '';
+    this.fungusKey = '';
+    this.treeReadyKey = '';
+    this.billboardDirty = true;
+    this.geometryNeeded = [];
     for (const patch of this.patches.values()) this.releasePatch(patch);
-    this.patches.clear(); this.heightGrids.clear(); this.root = undefined; this.desired = []; this.protected.clear(); this.splits.clear();
+    this.patches.clear();
+    this.heightGrids.clear();
+    this.root = undefined;
+    this.desired = [];
+    this.protected.clear();
+    this.splits.clear();
     this.displayedGrids = [];
     this.displayedPieces = [];
     this.stitchUpdated = 0;
@@ -1252,8 +1621,10 @@ export class Terrain3d {
   /** `carved`: false skips the building footings and moat cuts, giving the natural drawn ground that those
    * footings and structures are themselves seated on (groundAt). */
   private surface(x: number, y: number, metresPerPixel: number, detail = true, carved = true): number {
-    const layer = this.layer; if (!layer) return 0;
-    const u = (x - layer.x) / layer.width, v = (y - layer.y) / layer.width;
+    const layer = this.layer;
+    if (!layer) return 0;
+    const u = (x - layer.x) / layer.width,
+      v = (y - layer.y) / layer.width;
     // The mountain field is canonical. Only the optional centimetre ground
     // residual is filtered to the mesh footprint to avoid geometric aliasing.
     const footprint = this.groundSettings?.displacement ? metresPerPixel : 0;
@@ -1262,7 +1633,8 @@ export class Terrain3d {
     // Underdark: rock stops at the roof of its chamber (the section cut); floors stay below it.
     if (this.cavern) {
       // Rock rises as a steep wall from its contour to the roof and stops there: the lid rests on the walls.
-      const roof = cavernRoofAt(this.cavern, x, y), wall = cavernWallAt(this.cavern, x, y);
+      const roof = cavernRoofAt(this.cavern, x, y),
+        wall = cavernWallAt(this.cavern, x, y);
       height = Math.min(height, roof);
       if (wall > 0) height += (roof - height) * wall;
     }
@@ -1293,8 +1665,10 @@ export class Terrain3d {
   /** Select the nearest actual building face using its physical native geometry. */
   pickBuilding(x: number, y: number): string | undefined {
     if (!this.layer || !this.active || !this.buildingScene || !this.buildingsVisible) return undefined;
-    const frame = this.frameGeometry(), c = this.camera;
-    const u = (x - this.width / 2) / frame.focal, v = (this.height / 2 - y) / frame.focal;
+    const frame = this.frameGeometry(),
+      c = this.camera;
+    const u = (x - this.width / 2) / frame.focal,
+      v = (this.height / 2 - y) / frame.focal;
     const ray: Vec3 = [0, 1, 2].map(i => frame.forward[i] + u * frame.right[i] + v * frame.up[i]) as Vec3;
     const origin: BuildingVector = [c.x + frame.eye[0], c.y + frame.eye[2], (frame.targetHeight + frame.eye[1]) / c.exaggeration];
     const direction: BuildingVector = [ray[0], ray[2], ray[1] / c.exaggeration];
@@ -1302,14 +1676,19 @@ export class Terrain3d {
     // Ground occludes buildings behind hills, just as the depth buffer does.
     const glOrigin: Vec3 = [origin[0], origin[2] * c.exaggeration, origin[1]];
     let ground = Infinity;
-    for (const grid of this.displayedGrids) { const hit = raycastGrid(grid, glOrigin, ray); if (hit !== null) ground = Math.min(ground, hit); }
-    return nearest <= ground + .01 ? id : undefined;
+    for (const grid of this.displayedGrids) {
+      const hit = raycastGrid(grid, glOrigin, ray);
+      if (hit !== null) ground = Math.min(ground, hit);
+    }
+    return nearest <= ground + 0.01 ? id : undefined;
   }
   /** Pick the nearest visible terrain triangle in CSS pixels, including LOD morphs and refined heights. */
   screenToWorld(x: number, y: number): [number, number] | null {
     if (!this.layer || !this.active) return null;
-    const frame = this.frameGeometry(), c = this.camera;
-    const u = (x - this.width / 2) / frame.focal, v = (this.height / 2 - y) / frame.focal;
+    const frame = this.frameGeometry(),
+      c = this.camera;
+    const u = (x - this.width / 2) / frame.focal,
+      v = (this.height / 2 - y) / frame.focal;
     const direction: Vec3 = [0, 1, 2].map(i => frame.forward[i] + u * frame.right[i] + v * frame.up[i]) as Vec3;
     const origin: Vec3 = [c.x + frame.eye[0], frame.targetHeight + frame.eye[1], c.y + frame.eye[2]];
     let nearest = Infinity;
@@ -1327,85 +1706,134 @@ export class Terrain3d {
       if (height !== null) break;
     }
     if (height === null) return null;
-    const frame = this.frameGeometry(), c = this.camera;
+    const frame = this.frameGeometry(),
+      c = this.camera;
     const relative: Vec3 = [x - c.x - frame.eye[0], height - frame.targetHeight - frame.eye[1], y - c.y - frame.eye[2]];
     const dot = (axis: Vec3): number => relative[0] * axis[0] + relative[1] * axis[1] + relative[2] * axis[2];
     const depth = dot(frame.forward);
-    return depth > 0 ? [this.width / 2 + frame.focal * dot(frame.right) / depth, this.height / 2 - frame.focal * dot(frame.up) / depth] : null;
+    return depth > 0 ? [this.width / 2 + (frame.focal * dot(frame.right)) / depth, this.height / 2 - (frame.focal * dot(frame.up)) / depth] : null;
   }
   /** One camera basis per text update; canonical terrain heights also reject anchors behind hills. */
   labelProjector(): { scale: number; project(x: number, y: number): [number, number] | null } | undefined {
     if (!this.layer || !this.active) return undefined;
-    const frame = this.frameGeometry(), c = this.camera, width = this.width, height = this.height, layer = this.layer;
-    const ex = c.x + frame.eye[0], ey = c.y + frame.eye[2], ez = frame.targetHeight + frame.eye[1];
+    const frame = this.frameGeometry(),
+      c = this.camera,
+      width = this.width,
+      height = this.height,
+      layer = this.layer;
+    const ex = c.x + frame.eye[0],
+      ey = c.y + frame.eye[2],
+      ez = frame.targetHeight + frame.eye[1];
     const far = Math.max(c.distance * 4, this.layer.width * 2 + this.heightRange * c.exaggeration * 2);
-    return { scale: frame.focal / Math.max(1, c.distance), project: (x, y) => {
-      const z = (this.heightAt(x, y) ?? 0) * c.exaggeration + .6;
-      const dx = x - ex, dy = z - ez, dz = y - ey;
-      const dot = (axis: Vec3): number => dx * axis[0] + dy * axis[1] + dz * axis[2];
-      const depth = dot(frame.forward); if (depth <= .02 || depth > far) return null;
-      const sx = width / 2 + frame.focal * dot(frame.right) / depth, sy = height / 2 - frame.focal * dot(frame.up) / depth;
-      if (sx < 0 || sy < 0 || sx > width || sy > height) return null;
-      for (let i = 1; i < 24; i++) {
-        const f = i / 24, x = ex + dx * f, y = ey + dz * f;
-        if (x < layer.x || y < layer.y || x > layer.x + layer.width || y > layer.y + layer.width) continue;
-        const ground = this.surface(x, y, 0, false) * c.exaggeration;
-        if (ground > ez + dy * f + .8) return null;
-      }
-      return [sx, sy];
-    } };
+    return {
+      scale: frame.focal / Math.max(1, c.distance),
+      project: (x, y) => {
+        const z = (this.heightAt(x, y) ?? 0) * c.exaggeration + 0.6;
+        const dx = x - ex,
+          dy = z - ez,
+          dz = y - ey;
+        const dot = (axis: Vec3): number => dx * axis[0] + dy * axis[1] + dz * axis[2];
+        const depth = dot(frame.forward);
+        if (depth <= 0.02 || depth > far) return null;
+        const sx = width / 2 + (frame.focal * dot(frame.right)) / depth,
+          sy = height / 2 - (frame.focal * dot(frame.up)) / depth;
+        if (sx < 0 || sy < 0 || sx > width || sy > height) return null;
+        for (let i = 1; i < 24; i++) {
+          const f = i / 24,
+            x = ex + dx * f,
+            y = ey + dz * f;
+          if (x < layer.x || y < layer.y || x > layer.x + layer.width || y > layer.y + layer.width) continue;
+          const ground = this.surface(x, y, 0, false) * c.exaggeration;
+          if (ground > ez + dy * f + 0.8) return null;
+        }
+        return [sx, sy];
+      },
+    };
   }
   private patch(level: number, ix: number, iy: number): Patch {
-    const layer = this.layer!, key = `${level}/${ix}/${iy}`;
+    const layer = this.layer!,
+      key = `${level}/${ix}/${iy}`;
     let patch = this.patches.get(key);
     if (!patch) {
-      const width = layer.width / 2 ** level, x = layer.x + ix * width, y = layer.y + iy * width;
+      const width = layer.width / 2 ** level,
+        x = layer.x + ix * width,
+        y = layer.y + iy * width;
       const centre = this.surface(x + width / 2, y + width / 2, width / TILE_PIXELS, false);
-      let low = centre, high = centre;
-      for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      let low = centre,
+        high = centre;
+      for (const [u, v] of [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ]) {
         const height = this.surface(x + u * width, y + v * width, width / TILE_PIXELS, false);
-        low = Math.min(low, height); high = Math.max(high, height);
+        low = Math.min(low, height);
+        high = Math.max(high, height);
       }
       // Keep selection bounds independent of whether a mesh has been built or
       // evicted. Changing them during preparation makes adjacent LODs oscillate.
-      const padding = Math.min(this.heightRange, this.maxSlope * width * .6 + this.heightRange * .003);
-      low -= padding; high += padding;
-      patch = { tile: { key, x, y, width, level, pixels: TILE_PIXELS }, textureBytes: 0, meshBytes: 0,
-        heightOrigin: centre, minHeight: low, maxHeight: high, used: this.clock, status: 'idle', revision: 0, textureFadeStart: 0, textureProgress: 0, textureUpdated: 0,
-        hasHeight: false, coherentReady: false, pendingTextureBytes: 0 };
+      const padding = Math.min(this.heightRange, this.maxSlope * width * 0.6 + this.heightRange * 0.003);
+      low -= padding;
+      high += padding;
+      patch = {
+        tile: { key, x, y, width, level, pixels: TILE_PIXELS },
+        textureBytes: 0,
+        meshBytes: 0,
+        heightOrigin: centre,
+        minHeight: low,
+        maxHeight: high,
+        used: this.clock,
+        status: 'idle',
+        revision: 0,
+        textureFadeStart: 0,
+        textureProgress: 0,
+        textureUpdated: 0,
+        hasHeight: false,
+        coherentReady: false,
+        pendingTextureBytes: 0,
+      };
       this.patches.set(key, patch);
     }
-    patch.used = this.clock; return patch;
+    patch.used = this.clock;
+    return patch;
   }
   private frameGeometry(): FrameGeometry {
-    const c = this.camera, targetHeight = this.heightAt(c.x, c.y)! * c.exaggeration;
+    const c = this.camera,
+      targetHeight = this.heightAt(c.x, c.y)! * c.exaggeration;
     if (c.navigation === 'walk' || c.navigation === 'fly') {
-      const eye: Vec3 = [0, c.navigation==='fly'?(c.flightAltitude??targetHeight/c.exaggeration+30)*c.exaggeration-targetHeight:WALK_EYE_HEIGHT, 0];
+      const eye: Vec3 = [0, c.navigation === 'fly' ? (c.flightAltitude ?? targetHeight / c.exaggeration + 30) * c.exaggeration - targetHeight : WALK_EYE_HEIGHT, 0];
       const forward: Vec3 = [-Math.sin(c.yaw) * Math.cos(c.pitch), -Math.sin(c.pitch), -Math.cos(c.yaw) * Math.cos(c.pitch)];
-      const right = normalize(cross(forward, [0, 1, 0])), up = cross(right, forward);
+      const right = normalize(cross(forward, [0, 1, 0])),
+        up = cross(right, forward);
       const view = lookAt(eye, [forward[0], eye[1] + forward[1], forward[2]]);
       const far = Math.max(c.distance * 4, this.layer!.width * 2 + this.heightRange * c.exaggeration * 2);
-      return { eye, targetHeight, matrix: multiply(perspective(this.width / this.height, .02, far), view),
-        focal: this.height / (2 * Math.tan(FOV / 2)), right, up, forward };
+      return { eye, targetHeight, matrix: multiply(perspective(this.width / this.height, 0.02, far), view), focal: this.height / (2 * Math.tan(FOV / 2)), right, up, forward };
     }
     const eye: Vec3 = [Math.sin(c.yaw) * Math.cos(c.pitch) * c.distance, Math.sin(c.pitch) * c.distance, Math.cos(c.yaw) * Math.cos(c.pitch) * c.distance];
-    const ex = c.x + eye[0], ey = c.y + eye[2];
-    const clearance = Math.max(.15, c.distance * .0015);
+    const ex = c.x + eye[0],
+      ey = c.y + eye[2];
+    const clearance = Math.max(0.15, c.distance * 0.0015);
     const ground = this.heightAt(ex, ey)! * c.exaggeration - targetHeight;
     eye[1] = Math.max(eye[1], ground + clearance);
-    const forward = normalize([-eye[0], -eye[1], -eye[2]]), right = normalize(cross(forward, [0, 1, 0])), up = cross(right, forward);
+    const forward = normalize([-eye[0], -eye[1], -eye[2]]),
+      right = normalize(cross(forward, [0, 1, 0])),
+      up = cross(right, forward);
     const view = lookAt(eye, [0, 0, 0]);
     const far = Math.max(c.distance * 4, this.layer!.width * 2 + this.heightRange * c.exaggeration * 2);
-    const matrix = multiply(perspective(this.width / this.height, Math.max(.02, c.distance * .0002), far), view);
+    const matrix = multiply(perspective(this.width / this.height, Math.max(0.02, c.distance * 0.0002), far), view);
     return { eye, targetHeight, matrix, focal: this.height / (2 * Math.tan(FOV / 2)), right, up, forward };
   }
   private nodeError(patch: Patch, frame: FrameGeometry): number {
-    const tile = patch.tile, c = this.camera;
-    const x = tile.x + tile.width / 2 - c.x, y = (patch.minHeight + patch.maxHeight) / 2 * c.exaggeration - frame.targetHeight;
+    const tile = patch.tile,
+      c = this.camera;
+    const x = tile.x + tile.width / 2 - c.x,
+      y = ((patch.minHeight + patch.maxHeight) / 2) * c.exaggeration - frame.targetHeight;
     const z = tile.y + tile.width / 2 - c.y;
     const relative: Vec3 = [x - frame.eye[0], y - frame.eye[1], z - frame.eye[2]];
     const dot = (v: Vec3): number => relative[0] * v[0] + relative[1] * v[1] + relative[2] * v[2];
-    const half = tile.width / 2, vertical = (patch.maxHeight - patch.minHeight) * c.exaggeration / 2;
+    const half = tile.width / 2,
+      vertical = ((patch.maxHeight - patch.minHeight) * c.exaggeration) / 2;
     const extent = (plane: Vec3): number => Math.abs(plane[0]) * half + Math.abs(plane[1]) * vertical + Math.abs(plane[2]) * half;
     const tan = Math.tan(FOV / 2);
     const outside = (axis: Vec3, tangent: number, sign: number): boolean => {
@@ -1414,91 +1842,132 @@ export class Terrain3d {
     };
     // AABB/plane support tests avoid the very loose overlapping spheres that
     // consume the leaf budget around a quadtree junction at close zoom.
-    if (dot(frame.forward) + extent(frame.forward) <= .02
-      || outside(frame.right, tan * this.width / this.height, 1) || outside(frame.right, tan * this.width / this.height, -1)
-      || outside(frame.up, tan, 1) || outside(frame.up, tan, -1)) return -1;
-    const ex = c.x + frame.eye[0], ey = c.y + frame.eye[2];
-    const dx = Math.max(tile.x - ex, 0, ex - tile.x - tile.width), dz = Math.max(tile.y - ey, 0, ey - tile.y - tile.width);
+    if (dot(frame.forward) + extent(frame.forward) <= 0.02 || outside(frame.right, (tan * this.width) / this.height, 1) || outside(frame.right, (tan * this.width) / this.height, -1) || outside(frame.up, tan, 1) || outside(frame.up, tan, -1)) return -1;
+    const ex = c.x + frame.eye[0],
+      ey = c.y + frame.eye[2];
+    const dx = Math.max(tile.x - ex, 0, ex - tile.x - tile.width),
+      dz = Math.max(tile.y - ey, 0, ey - tile.y - tile.width);
     const eyeHeight = frame.targetHeight + frame.eye[1];
     const dy = Math.max(patch.minHeight * c.exaggeration - eyeHeight, 0, eyeHeight - patch.maxHeight * c.exaggeration);
-    const distance = Math.max(c.distance * .12, Math.hypot(dx, dz, dy));
-    return tile.width / GRID * frame.focal / distance;
+    const distance = Math.max(c.distance * 0.12, Math.hypot(dx, dz, dy));
+    return ((tile.width / GRID) * frame.focal) / distance;
   }
   private select(frame: FrameGeometry): void {
     ++this.clock;
-    const maxLevel = Math.max(0, Math.ceil(Math.log2(this.layer!.width / (TILE_PIXELS / (this.maxScale() * this.dpr())))),
-      Math.ceil(Math.log2(this.layer!.width / (GRID * 2 / this.maxScale()))));
+    const maxLevel = Math.max(0, Math.ceil(Math.log2(this.layer!.width / (TILE_PIXELS / (this.maxScale() * this.dpr())))), Math.ceil(Math.log2(this.layer!.width / ((GRID * 2) / this.maxScale()))));
     const make = (patch: Patch, error: number): Node => ({ patch, error, wantsSplit: false, blend: 0, updated: this.now, ready: false, visible: true, moving: false, birth: 1, birthUpdated: 0 });
-    const rootPatch = this.patch(0, 0, 0), wanted = make(rootPatch, this.nodeError(rootPatch, frame));
-    const leaves: Node[] = [wanted], splits = new Set<string>();
+    const rootPatch = this.patch(0, 0, 0),
+      wanted = make(rootPatch, this.nodeError(rootPatch, frame));
+    const leaves: Node[] = [wanted],
+      splits = new Set<string>();
     while (leaves.length < MAX_LEAVES - 3) {
-      let candidate: Node | undefined, priority = 0;
+      let candidate: Node | undefined,
+        priority = 0;
       for (const node of leaves) {
         const threshold = this.splits.has(node.patch.tile.key) ? MERGE_ERROR : SPLIT_ERROR;
         const score = node.error / threshold;
-        if (score > 1 && node.patch.tile.level < maxLevel && score > priority) { candidate = node; priority = score; }
+        if (score > 1 && node.patch.tile.level < maxLevel && score > priority) {
+          candidate = node;
+          priority = score;
+        }
       }
       if (!candidate) break;
-      const tile = candidate.patch.tile, [ix, iy] = tile.key.split('/').slice(1).map(Number), children: Node[] = [];
-      for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
-        const patch = this.patch(tile.level + 1, ix * 2 + x, iy * 2 + y), error = this.nodeError(patch, frame);
-        if (error >= 0) children.push(make(patch, error));
+      const tile = candidate.patch.tile,
+        [ix, iy] = tile.key.split('/').slice(1).map(Number),
+        children: Node[] = [];
+      for (let y = 0; y < 2; y++)
+        for (let x = 0; x < 2; x++) {
+          const patch = this.patch(tile.level + 1, ix * 2 + x, iy * 2 + y),
+            error = this.nodeError(patch, frame);
+          if (error >= 0) children.push(make(patch, error));
+        }
+      if (!children.length) {
+        candidate.error = 0;
+        continue;
       }
-      if (!children.length) { candidate.error = 0; continue; }
-      candidate.children = children; candidate.wantsSplit = true; splits.add(tile.key);
+      candidate.children = children;
+      candidate.wantsSplit = true;
+      splits.add(tile.key);
       leaves.splice(leaves.indexOf(candidate), 1, ...children);
     }
     const close = (node: Node): void => {
-      node.wantsSplit = false; node.error = this.nodeError(node.patch, frame); node.visible = node.error >= 0;
+      node.wantsSplit = false;
+      node.error = this.nodeError(node.patch, frame);
+      node.visible = node.error >= 0;
       node.children?.forEach(close);
     };
     const reconcile = (next: Node, previous?: Node): Node => {
       if (!previous || previous.patch !== next.patch) return next;
-      if (!previous.visible) { previous.birth = 0; previous.birthUpdated = 0; }
-      previous.error = next.error; previous.visible = true; previous.wantsSplit = !!next.children;
+      if (!previous.visible) {
+        previous.birth = 0;
+        previous.birthUpdated = 0;
+      }
+      previous.error = next.error;
+      previous.visible = true;
+      previous.wantsSplit = !!next.children;
       if (next.children) {
         const old = new Map(previous.children?.map(child => [child.patch.tile.key, child]));
         previous.children = next.children.map(child => {
-          const oldChild = old.get(child.patch.tile.key), result = reconcile(child, oldChild);
-          if (result !== oldChild && previous.blend > 0) { result.birth = 0; result.birthUpdated = 0; }
+          const oldChild = old.get(child.patch.tile.key),
+            result = reconcile(child, oldChild);
+          if (result !== oldChild && previous.blend > 0) {
+            result.birth = 0;
+            result.birthUpdated = 0;
+          }
           return result;
         });
       } else previous.children?.forEach(close);
       return previous;
     };
-    this.root = reconcile(wanted, this.root); this.splits = splits;
+    this.root = reconcile(wanted, this.root);
+    this.splits = splits;
     this.desired = leaves.filter(node => node.error >= 0).map(node => node.patch);
-    this.desired.sort((a, b) => Math.hypot(a.tile.x + a.tile.width / 2 - this.camera.x, a.tile.y + a.tile.width / 2 - this.camera.y)
-      - Math.hypot(b.tile.x + b.tile.width / 2 - this.camera.x, b.tile.y + b.tile.width / 2 - this.camera.y));
-    this.protected = new Set(this.desired.map(p => p.tile.key)); this.protected.add(rootPatch.tile.key);
+    this.desired.sort((a, b) => Math.hypot(a.tile.x + a.tile.width / 2 - this.camera.x, a.tile.y + a.tile.width / 2 - this.camera.y) - Math.hypot(b.tile.x + b.tile.width / 2 - this.camera.x, b.tile.y + b.tile.width / 2 - this.camera.y));
+    this.protected = new Set(this.desired.map(p => p.tile.key));
+    this.protected.add(rootPatch.tile.key);
   }
   private *grid(patch: Patch): Generator<void, Float32Array> {
     if (patch.heights) return patch.heights;
-    const key = patch.tile.key, known = this.heightGrids.get(key);
-    if (known) { this.heightGrids.delete(key); this.heightGrids.set(key, known); return patch.heights = known; }
-    const side = GRID + 1, heights = new Float32Array(side * side), step = patch.tile.width / GRID;
+    const key = patch.tile.key,
+      known = this.heightGrids.get(key);
+    if (known) {
+      this.heightGrids.delete(key);
+      this.heightGrids.set(key, known);
+      return (patch.heights = known);
+    }
+    const side = GRID + 1,
+      heights = new Float32Array(side * side),
+      step = patch.tile.width / GRID;
     for (let y = 0; y < side; y++) {
       for (let x = 0; x < side; x++) heights[y * side + x] = this.surface(patch.tile.x + x * step, patch.tile.y + y * step, step);
       yield;
     }
     this.heightGrids.set(key, heights);
     if (this.heightGrids.size > HEIGHT_GRIDS) this.heightGrids.delete(this.heightGrids.keys().next().value!);
-    patch.heights = heights; return heights;
+    patch.heights = heights;
+    return heights;
   }
   private *decodedGrid(tile: Terrain3dTile, layer: HeightLayer): Generator<void, Float32Array> {
-    if (layer.n < 2 || layer.data.length !== layer.n * layer.n || !(layer.width > 0)
-      || tile.x < layer.x || tile.y < layer.y || tile.x + tile.width > layer.x + layer.width + 1e-5
-      || tile.y + tile.width > layer.y + layer.width + 1e-5) throw new Error('Grille de relief 3D incomplète.');
-    const side = GRID + 1, heights = new Float32Array(side * side), step = tile.width / GRID, base = this.layer!;
+    if (layer.n < 2 || layer.data.length !== layer.n * layer.n || !(layer.width > 0) || tile.x < layer.x || tile.y < layer.y || tile.x + tile.width > layer.x + layer.width + 1e-5 || tile.y + tile.width > layer.y + layer.width + 1e-5)
+      throw new Error('Grille de relief 3D incomplète.');
+    const side = GRID + 1,
+      heights = new Float32Array(side * side),
+      step = tile.width / GRID,
+      base = this.layer!;
     const baseSample = (wx: number, wy: number): number => spline(layer.data, layer.n, (wx - layer.x) / layer.width, (wy - layer.y) / layer.width);
     const settings = this.groundSettings;
-    const sample = settings?.displacement ? createGroundDisplacementSampler(baseSample, {
-      seed: settings.seed, climate: [settings.climate.temperature, settings.climate.precipitation], sourceCell: settings.sourceCell,
-      macroSampler: (wx, wy) => spline(base.data, base.n, (wx - base.x) / base.width, (wy - base.y) / base.width),
-    }) : baseSample;
+    const sample = settings?.displacement
+      ? createGroundDisplacementSampler(baseSample, {
+          seed: settings.seed,
+          climate: [settings.climate.temperature, settings.climate.precipitation],
+          sourceCell: settings.sourceCell,
+          macroSampler: (wx, wy) => spline(base.data, base.n, (wx - base.x) / base.width, (wy - base.y) / base.width),
+        })
+      : baseSample;
     for (let y = 0; y < side; y++) {
       for (let x = 0; x < side; x++) {
-        const wx = tile.x + x * step, wy = tile.y + y * step;
+        const wx = tile.x + x * step,
+          wy = tile.y + y * step;
         let height = sample(wx, wy, step);
         if (!Number.isFinite(height)) throw new Error('Altitude 3D non finie.');
         height = this.buildingGround.constrain(wx, wy, height);
@@ -1518,19 +1987,29 @@ export class Terrain3d {
     const tile = patch.tile;
     for (const candidate of this.patches.values()) {
       const child = candidate.tile;
-      if (child.level < tile.level || child.x < tile.x || child.y < tile.y
-        || child.x + child.width > tile.x + tile.width + 1e-5 || child.y + child.width > tile.y + tile.width + 1e-5) continue;
+      if (child.level < tile.level || child.x < tile.x || child.y < tile.y || child.x + child.width > tile.x + tile.width + 1e-5 || child.y + child.width > tile.y + tile.width + 1e-5) continue;
       this.releaseMesh(candidate);
-      candidate.vao = undefined; candidate.vertices = undefined; candidate.meshBytes = 0;
-      candidate.field = undefined; candidate.seamSnapshot = candidate.seamTouched = undefined; candidate.parentSeam = undefined;
+      candidate.vao = undefined;
+      candidate.vertices = undefined;
+      candidate.meshBytes = 0;
+      candidate.field = undefined;
+      candidate.seamSnapshot = candidate.seamTouched = undefined;
+      candidate.parentSeam = undefined;
     }
-    patch.heights = heights; patch.hasHeight = true; patch.pendingHeights = undefined;
+    patch.heights = heights;
+    patch.hasHeight = true;
+    patch.pendingHeights = undefined;
     if (patch.pendingTexture) {
       if (patch.texture) this.releaseMaterial(patch.texture);
-      patch.texture = patch.pendingTexture; patch.textureBytes = patch.pendingTextureBytes;
-      patch.textureGutter=patch.pendingTextureGutter; patch.texturePixels=patch.pendingTexturePixels;
-      patch.pendingTexture = undefined; patch.pendingTextureBytes = 0; patch.textureFadeStart = 0;
-      patch.textureProgress = 0; patch.materialParent = undefined;
+      patch.texture = patch.pendingTexture;
+      patch.textureBytes = patch.pendingTextureBytes;
+      patch.textureGutter = patch.pendingTextureGutter;
+      patch.texturePixels = patch.pendingTexturePixels;
+      patch.pendingTexture = undefined;
+      patch.pendingTextureBytes = 0;
+      patch.textureFadeStart = 0;
+      patch.textureProgress = 0;
+      patch.materialParent = undefined;
       patch.coherentReady = true;
     }
   }
@@ -1539,53 +2018,76 @@ export class Terrain3d {
     return !!this.root && visit(this.root);
   }
   private *buildMesh(patch: Patch): Generator<void, void> {
-    const tile = patch.tile, side = GRID + 1, count = side * side;
+    const tile = patch.tile,
+      side = GRID + 1,
+      count = side * side;
     const heights = yield* this.grid(patch);
-    const values = new Float32Array(meshValues.length), field = new Float32Array(count * 6);
-    const step = tile.width / GRID, [level, ix, iy] = tile.key.split('/').map(Number);
+    const values = new Float32Array(meshValues.length),
+      field = new Float32Array(count * 6);
+    const step = tile.width / GRID,
+      [level, ix, iy] = tile.key.split('/').map(Number);
     const parent = level ? this.patch(level - 1, Math.floor(ix / 2), Math.floor(iy / 2)) : patch;
-    const seam = parent === patch ? undefined : parent.seamSnapshot, parentHeights = yield* this.grid(parent);
-    const skirt = Math.max(.05, tile.width * .12);
+    const seam = parent === patch ? undefined : parent.seamSnapshot,
+      parentHeights = yield* this.grid(parent);
+    const skirt = Math.max(0.05, tile.width * 0.12);
     for (let y = 0; y < side; y++) {
       for (let x = 0; x < side; x++) {
-        const i = y * side + x, at = i * 10;
-        const x0 = Math.max(0, x - 1), x1 = Math.min(GRID, x + 1), y0 = Math.max(0, y - 1), y1 = Math.min(GRID, y + 1);
-        values[at] = x * step; values[at + 1] = heights[i] - patch.heightOrigin; values[at + 2] = y * step;
-        values[at + 3] = x / GRID; values[at + 4] = y / GRID;
+        const i = y * side + x,
+          at = i * 10;
+        const x0 = Math.max(0, x - 1),
+          x1 = Math.min(GRID, x + 1),
+          y0 = Math.max(0, y - 1),
+          y1 = Math.min(GRID, y + 1);
+        values[at] = x * step;
+        values[at + 1] = heights[i] - patch.heightOrigin;
+        values[at + 2] = y * step;
+        values[at + 3] = x / GRID;
+        values[at + 4] = y / GRID;
         values[at + 5] = (heights[y * side + x1] - heights[y * side + x0]) / ((x1 - x0) * step);
         values[at + 6] = (heights[y1 * side + x] - heights[y0 * side + x]) / ((y1 - y0) * step);
         parentSample(parent.tile, parentHeights, seam, tile.x + x * step, tile.y + y * step, parentValue);
-        values[at + 7] = parentValue[0] - patch.heightOrigin; values[at + 8] = parentValue[1]; values[at + 9] = parentValue[2];
+        values[at + 7] = parentValue[0] - patch.heightOrigin;
+        values[at + 8] = parentValue[1];
+        values[at + 9] = parentValue[2];
         const out = i * 6;
-        field[out] = values[at + 1]; field[out + 1] = values[at + 5]; field[out + 2] = values[at + 6];
-        field[out + 3] = values[at + 7]; field[out + 4] = values[at + 8]; field[out + 5] = values[at + 9];
+        field[out] = values[at + 1];
+        field[out + 1] = values[at + 5];
+        field[out + 2] = values[at + 6];
+        field[out + 3] = values[at + 7];
+        field[out + 4] = values[at + 8];
+        field[out + 5] = values[at + 9];
       }
       yield;
     }
-    for (let edge = 0; edge < 4; edge++) for (let i = 0; i < side; i++) {
-      const from = gridEdgeVertex(edge, i) * 10, to = (count + edge * side + i) * 10;
-      for (let k = 0; k < 10; k++) values[to + k] = values[from + k];
-      values[to + 1] -= skirt; values[to + 7] -= skirt;
-    }
+    for (let edge = 0; edge < 4; edge++)
+      for (let i = 0; i < side; i++) {
+        const from = gridEdgeVertex(edge, i) * 10,
+          to = (count + edge * side + i) * 10;
+        for (let k = 0; k < 10; k++) values[to + k] = values[from + k];
+        values[to + 1] -= skirt;
+        values[to + 7] -= skirt;
+      }
     // Inputs can change while a row is suspended; never publish a stale mesh.
-    if (patch.heights !== heights || parent.heights !== parentHeights || parent !== patch && parent.seamSnapshot !== seam) return;
+    if (patch.heights !== heights || parent.heights !== parentHeights || (parent !== patch && parent.seamSnapshot !== seam)) return;
     if (patch.vao) this.releaseMesh(patch);
     this.uploadMesh(patch, values);
     patch.parentSeam = seam;
-    patch.field = field; patch.meshBytes = values.byteLength + field.byteLength;
+    patch.field = field;
+    patch.meshBytes = values.byteLength + field.byteLength;
   }
   private prepareMeshes(): boolean {
     if (!this.root) return false;
-    const queue: Patch[] = [], visit = (node: Node, incomingFull = true, parent?: Node): void => {
-      // Once children cover a node, its coarse mesh is no longer needed.
-      // The LRU may evict it without causing a rebuild on every later frame.
-      if (!node.visible) return;
-      const refreshSeam = parent?.blend === 0 && parent.patch.seamSnapshot && node.patch.parentSeam !== parent.patch.seamSnapshot;
-      if ((!node.patch.vao || refreshSeam) && (!incomingFull || !node.wantsSplit || node.blend < 1 || !node.children?.every(child => this.covered(child)))) queue.push(node.patch);
-      // Prepare direct children while a branch opens. Deeper ancestors only
-      // become relevant once that incoming morph has reached its exact endpoint.
-      if (incomingFull && node.wantsSplit) node.children?.forEach(child => visit(child, node.blend >= 1, node));
-    };
+    const queue: Patch[] = [],
+      visit = (node: Node, incomingFull = true, parent?: Node): void => {
+        // Once children cover a node, its coarse mesh is no longer needed.
+        // The LRU may evict it without causing a rebuild on every later frame.
+        if (!node.visible) return;
+        const refreshSeam = parent?.blend === 0 && parent.patch.seamSnapshot && node.patch.parentSeam !== parent.patch.seamSnapshot;
+        if ((!node.patch.vao || refreshSeam) && (!incomingFull || !node.wantsSplit || node.blend < 1 || !node.children?.every(child => this.covered(child)))) queue.push(node.patch);
+        // Prepare direct children while a branch opens. Deeper ancestors only
+        // become relevant once that incoming morph has reached its exact endpoint.
+        if (incomingFull && node.wantsSplit) node.children?.forEach(child => visit(child, node.blend >= 1, node));
+      };
     visit(this.root);
     queue.sort((a, b) => a.tile.level - b.tile.level || Math.hypot(a.tile.x - this.camera.x, a.tile.y - this.camera.y) - Math.hypot(b.tile.x - this.camera.x, b.tile.y - this.camera.y));
     this.geometryNeeded = queue;
@@ -1600,10 +2102,14 @@ export class Terrain3d {
       const priority = () => patch.tile.level * 1e9 + Math.hypot(patch.tile.x + patch.tile.width / 2 - this.camera.x, patch.tile.y + patch.tile.width / 2 - this.camera.y);
       const work = this.preparation.run(this.buildMesh(patch), () => epoch === this.epoch && this.active && !this.disposed && this.patches.get(patch.tile.key) === patch && this.geometryNeeded.includes(patch), priority);
       this.meshJobs.set(patch, work);
-      void work.catch(error => { if (error?.name !== 'AbortError') console.warn('Terrain mesh preparation:', error); }).finally(() => {
-        if (this.meshJobs.get(patch) === work) this.meshJobs.delete(patch);
-        this.request();
-      });
+      void work
+        .catch(error => {
+          if (error?.name !== 'AbortError') console.warn('Terrain mesh preparation:', error);
+        })
+        .finally(() => {
+          if (this.meshJobs.get(patch) === work) this.meshJobs.delete(patch);
+          this.request();
+        });
     }
     return available.length > 0;
   }
@@ -1616,109 +2122,152 @@ export class Terrain3d {
       if (this.jobs.size >= (this.options.tileJobsConcurrent ?? 2) || started >= (this.options.tileJobsPerFrame ?? 2)) break;
       if (patch.tile.level === 0) continue;
       const preview = (this.useMapShader || !!this.lookSettings.paperMap) && this.frameInteracting && !this.requireHeights;
-      const footprint = patch.tile.width * this.frameGeometry().focal / Math.max(this.camera.distance, 1);
+      const footprint = (patch.tile.width * this.frameGeometry().focal) / Math.max(this.camera.distance, 1);
       const pixels = projectedTexturePixels(TILE_PIXELS, footprint, this.dpr(), this.captureMode || this.requireHeights);
       // A moving preview never displaces a completed full tile.
-      if (patch.status === 'ready' && (patch.preview && !preview || this.captureMode && !patch.exact || !preview && (patch.texturePixels ?? 0) < pixels)) patch.status = 'idle';
+      if (patch.status === 'ready' && ((patch.preview && !preview) || (this.captureMode && !patch.exact) || (!preview && (patch.texturePixels ?? 0) < pixels))) patch.status = 'idle';
       if (patch.status !== 'idle') continue;
       // Map ground: while the view moves, a tile with a loaded ancestor keeps showing that ancestor stretched. A preview
       // only holds the 2D raster tiles cached so far and showed paper (white squares) wherever they were missing.
       if (preview && !this.groundSettings && !patch.texture && this.texturedAncestor(patch)) continue;
-      const job = {}, epoch = this.epoch, revision = patch.revision, loader = this.tileLoader, exact = this.captureMode;
+      const job = {},
+        epoch = this.epoch,
+        revision = patch.revision,
+        loader = this.tileLoader,
+        exact = this.captureMode;
       const current = (): boolean => epoch === this.epoch && revision === patch.revision && !this.disposed && this.patches.get(patch.tile.key) === patch;
-      patch.status = 'loading'; this.jobs.add(job);
+      patch.status = 'loading';
+      this.jobs.add(job);
       ++started;
       // In its own task: a synchronous tile paint must not hold back the frame that asked for it.
-      void new Promise<void>(resolve => setTimeout(resolve)).then(() => {
-        if (epoch !== this.epoch || revision !== patch.revision || this.disposed) throw new Error('Tuile abandonnée.');
-        return loader({ ...patch.tile, pixels, preview, exact,
-          prepare: work => this.preparation.run(work, current,
-            () => patch.tile.level * 1e9 + Math.hypot(patch.tile.x + patch.tile.width / 2 - this.camera.x, patch.tile.y + patch.tile.width / 2 - this.camera.y)) });
-      }).then(async result => {
-        const content = typeof result === 'object' && result !== null && 'texture' in result ? result as Terrain3dTileContent : { texture: result as TexImageSource };
-        const source = content.texture;
-        if (!current() || this.contextLost()) {
-          if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
-          return;
-        }
-        if (this.requireHeights && !content.height) throw new Error('Tuile de relief 3D sans grille d’altitude.');
-        let deferred = false;
-        if (content.height) {
-          const heights = await this.preparation.run(this.decodedGrid(patch.tile, content.height), current, patch.tile.level * 1e9);
-          const unchanged = patch.hasHeight && patch.heights?.every((value, i) => Math.abs(value - heights[i]) < .0001);
-          if (!unchanged) {
-            if (patch.heights && this.containsLivePatch(patch)) { patch.pendingHeights = heights; deferred = true; }
-            else this.installHeights(patch, heights);
+      void new Promise<void>(resolve => setTimeout(resolve))
+        .then(() => {
+          if (epoch !== this.epoch || revision !== patch.revision || this.disposed) throw new Error('Tuile abandonnée.');
+          return loader({ ...patch.tile, pixels, preview, exact, prepare: work => this.preparation.run(work, current, () => patch.tile.level * 1e9 + Math.hypot(patch.tile.x + patch.tile.width / 2 - this.camera.x, patch.tile.y + patch.tile.width / 2 - this.camera.y)) });
+        })
+        .then(async result => {
+          const content = typeof result === 'object' && result !== null && 'texture' in result ? (result as Terrain3dTileContent) : { texture: result as TexImageSource };
+          const source = content.texture;
+          if (!current() || this.contextLost()) {
+            if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
+            return;
           }
-        }
-        if (!current() || this.contextLost()) {
-          if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
-          return;
-        }
-        const gutter=Math.max(0,Math.min(8,Math.round(content.gutter??0)));
-        const texture = this.uploadTexture(source);
-        let textureBytes = materialBytes(source);
-        const raised = terrain3dRaisedTexture(source);
-        if (raised) { this.raisedMaterials.set(texture, this.uploadTexture(raised)); textureBytes += materialBytes(raised); }
-        if(content.semantic||content.ground){
-          const size=Math.max(content.semantic?materialSize(content.semantic).width:0,content.ground?materialSize(content.ground).width:0);
-          const semanticGutter=gutter*size/(materialSize(source).width);
-          let overlay=content.semantic!;
-          if(content.ground){
-            // Two independently padded squares reuse one sampler: physical albedo on the left, ink on the right.
-            const atlas=document.createElement('canvas');atlas.width=2*(size+2);atlas.height=size+2;
-            const target=atlas.getContext('2d')!;
-            for(const [source,x] of [[content.ground,0],[content.semantic,size+2]] as const){
-              if(!source)continue;
-              const square=document.createElement('canvas');square.width=square.height=size;
-              square.getContext('2d')!.drawImage(source as CanvasImageSource,0,0,size,size);
-              target.drawImage(paddedMaterial(square),x,0);
+          if (this.requireHeights && !content.height) throw new Error('Tuile de relief 3D sans grille d’altitude.');
+          let deferred = false;
+          if (content.height) {
+            const heights = await this.preparation.run(this.decodedGrid(patch.tile, content.height), current, patch.tile.level * 1e9);
+            const unchanged = patch.hasHeight && patch.heights?.every((value, i) => Math.abs(value - heights[i]) < 0.0001);
+            if (!unchanged) {
+              if (patch.heights && this.containsLivePatch(patch)) {
+                patch.pendingHeights = heights;
+                deferred = true;
+              } else this.installHeights(patch, heights);
             }
-            overlay=atlas;
           }
-          this.semanticTiles.set(texture,{texture:this.uploadTexture(overlay),pixels:size-2*semanticGutter,gutter:semanticGutter,atlas:!!content.ground,semantic:!!content.semantic});
-          textureBytes+=materialBytes(overlay);
-        }
-        if(content.water){
-          const water=content.water,mask=this.uploadWaterMask(water);
-          this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength,water});this.waterMaskChanged(water.x,water.y,water.width);
-          textureBytes+=water.alpha.byteLength;
-        }
-        if (deferred) { patch.pendingTexture = texture; patch.pendingTextureBytes = textureBytes;patch.pendingTextureGutter=gutter; patch.pendingTexturePixels=materialSize(source).width-2*gutter; }
-        else {
-          // A replacement swaps in at once: no fade through the parent tile, which read as a flicker.
-          const replaced = !!patch.texture;
-          if (patch.texture) this.releaseMaterial(patch.texture);
-          patch.texture = texture; patch.textureBytes = textureBytes; patch.textureFadeStart = 0; patch.textureProgress = replaced ? 1 : 0;
-          if (replaced) patch.materialParent = undefined;
-          patch.textureGutter=gutter; patch.texturePixels=materialSize(source).width-2*gutter;
-        }
-        patch.status = 'ready'; patch.preview = preview; patch.exact = exact;
-        if (patch.hasHeight && patch.texture) patch.coherentReady = true;
-        if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
-      }).catch(error => {
-        if (epoch !== this.epoch || revision !== patch.revision || this.disposed) return;
-        if ((error as { name?: string })?.name === 'AbortError') { patch.status = 'idle'; return; }
-        patch.status = 'failed'; console.warn(`Terrain 3D tile ${patch.tile.key}:`, error);
-      }).finally(() => {
-        this.jobs.delete(job);
-        // A new frame selects the current view before requesting more work.
-        // In particular, a cancelled generation must not spin a promise loop.
-        if (!this.disposed) this.request();
-      });
+          if (!current() || this.contextLost()) {
+            if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
+            return;
+          }
+          const gutter = Math.max(0, Math.min(8, Math.round(content.gutter ?? 0)));
+          const texture = this.uploadTexture(source);
+          let textureBytes = materialBytes(source);
+          const raised = terrain3dRaisedTexture(source);
+          if (raised) {
+            this.raisedMaterials.set(texture, this.uploadTexture(raised));
+            textureBytes += materialBytes(raised);
+          }
+          if (content.semantic || content.ground) {
+            const size = Math.max(content.semantic ? materialSize(content.semantic).width : 0, content.ground ? materialSize(content.ground).width : 0);
+            const semanticGutter = (gutter * size) / materialSize(source).width;
+            let overlay = content.semantic!;
+            if (content.ground) {
+              // Two independently padded squares reuse one sampler: physical albedo on the left, ink on the right.
+              const atlas = document.createElement('canvas');
+              atlas.width = 2 * (size + 2);
+              atlas.height = size + 2;
+              const target = atlas.getContext('2d')!;
+              for (const [source, x] of [
+                [content.ground, 0],
+                [content.semantic, size + 2],
+              ] as const) {
+                if (!source) continue;
+                const square = document.createElement('canvas');
+                square.width = square.height = size;
+                square.getContext('2d')!.drawImage(source as CanvasImageSource, 0, 0, size, size);
+                target.drawImage(paddedMaterial(square), x, 0);
+              }
+              overlay = atlas;
+            }
+            this.semanticTiles.set(texture, { texture: this.uploadTexture(overlay), pixels: size - 2 * semanticGutter, gutter: semanticGutter, atlas: !!content.ground, semantic: !!content.semantic });
+            textureBytes += materialBytes(overlay);
+          }
+          if (content.water) {
+            const water = content.water,
+              mask = this.uploadWaterMask(water);
+            this.waterMasks.set(texture, { texture: mask, rect: [water.x, water.y, water.width], bytes: water.alpha.byteLength, water });
+            this.waterMaskChanged(water.x, water.y, water.width);
+            textureBytes += water.alpha.byteLength;
+          }
+          if (deferred) {
+            patch.pendingTexture = texture;
+            patch.pendingTextureBytes = textureBytes;
+            patch.pendingTextureGutter = gutter;
+            patch.pendingTexturePixels = materialSize(source).width - 2 * gutter;
+          } else {
+            // A replacement swaps in at once: no fade through the parent tile, which read as a flicker.
+            const replaced = !!patch.texture;
+            if (patch.texture) this.releaseMaterial(patch.texture);
+            patch.texture = texture;
+            patch.textureBytes = textureBytes;
+            patch.textureFadeStart = 0;
+            patch.textureProgress = replaced ? 1 : 0;
+            if (replaced) patch.materialParent = undefined;
+            patch.textureGutter = gutter;
+            patch.texturePixels = materialSize(source).width - 2 * gutter;
+          }
+          patch.status = 'ready';
+          patch.preview = preview;
+          patch.exact = exact;
+          if (patch.hasHeight && patch.texture) patch.coherentReady = true;
+          if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
+        })
+        .catch(error => {
+          if (epoch !== this.epoch || revision !== patch.revision || this.disposed) return;
+          if ((error as { name?: string })?.name === 'AbortError') {
+            patch.status = 'idle';
+            return;
+          }
+          patch.status = 'failed';
+          console.warn(`Terrain 3D tile ${patch.tile.key}:`, error);
+        })
+        .finally(() => {
+          this.jobs.delete(job);
+          // A new frame selects the current view before requesting more work.
+          // In particular, a cancelled generation must not spin a promise loop.
+          if (!this.disposed) this.request();
+        });
     }
   }
   private closestTexture(patch: Patch): { texture: WebGLTexture; rect: [number, number, number, number]; texel: number; ready: boolean } {
-    const tile = patch.tile, layer = this.layer!;
+    const tile = patch.tile,
+      layer = this.layer!;
     let [level, ix, iy] = tile.key.split('/').map(Number);
     while (level >= 0) {
       const parent = this.patches.get(`${level}/${ix}/${iy}`);
       if (parent?.texture) {
-        parent.used = this.clock; this.protected.add(parent.tile.key);
+        parent.used = this.clock;
+        this.protected.add(parent.tile.key);
         const width = parent.tile.width;
-        return { texture: parent.texture, rect: [(tile.x - parent.tile.x) / width, (tile.y - parent.tile.y) / width, tile.width / width, tile.width / width], texel: width / (parent.texturePixels ?? TILE_PIXELS), ready: parent === patch && patch.status !== 'idle' && patch.status !== 'loading' };
+        return {
+          texture: parent.texture,
+          rect: [(tile.x - parent.tile.x) / width, (tile.y - parent.tile.y) / width, tile.width / width, tile.width / width],
+          texel: width / (parent.texturePixels ?? TILE_PIXELS),
+          ready: parent === patch && patch.status !== 'idle' && patch.status !== 'loading',
+        };
       }
-      --level; ix = Math.floor(ix / 2); iy = Math.floor(iy / 2);
+      --level;
+      ix = Math.floor(ix / 2);
+      iy = Math.floor(iy / 2);
     }
     return { texture: this.material, rect: [(tile.x - layer.x) / layer.width, (tile.y - layer.y) / layer.width, tile.width / layer.width, tile.width / layer.width], texel: layer.width / this.fallbackPixels, ready: !this.tileLoader || tile.level === 0 };
   }
@@ -1726,24 +2275,27 @@ export class Terrain3d {
   private texturedAncestor(patch: Patch): boolean {
     let [level, ix, iy] = patch.tile.key.split('/').map(Number);
     while (--level > 0) {
-      ix = Math.floor(ix / 2); iy = Math.floor(iy / 2);
+      ix = Math.floor(ix / 2);
+      iy = Math.floor(iy / 2);
       if (this.patches.get(`${level}/${ix}/${iy}`)?.texture) return true;
     }
     return false;
   }
   /** Whether the drawn subtree of `node` shows tile textures of its own, with no stretched fallback. */
   private subtreeTextured(node: Node): boolean {
-    if (!node.visible || node.patch.texture && node.patch.vao) return true;
+    if (!node.visible || (node.patch.texture && node.patch.vao)) return true;
     return !!node.children?.length && node.blend >= 1 && node.children.every(child => this.subtreeTextured(child));
   }
   private covered(node: Node): boolean {
-    return !node.visible || !!node.patch.vao && (!this.requireHeights || node.patch.tile.level === 0 || node.patch.hasHeight && node.patch.coherentReady)
-      || !!node.children?.length && node.children.every(child => this.covered(child));
+    return !node.visible || (!!node.patch.vao && (!this.requireHeights || node.patch.tile.level === 0 || (node.patch.hasHeight && node.patch.coherentReady))) || (!!node.children?.length && node.children.every(child => this.covered(child)));
   }
   private protectMaterial(ref: MaterialRef): void {
     if (!ref.tile) return;
     const owner = this.patches.get(ref.tile.key);
-    if (owner?.texture === ref.texture) { this.protected.add(ref.tile.key); owner.used = this.clock; }
+    if (owner?.texture === ref.texture) {
+      this.protected.add(ref.tile.key);
+      owner.used = this.clock;
+    }
   }
   private materialFor(patch: Patch, geometryBlend = 1, depth = 0): PatchMaterial {
     if (patch.materialParent) {
@@ -1753,87 +2305,121 @@ export class Terrain3d {
       // material. It must never bind that deleted texture when merging later.
       if (!retained) patch.materialParent = undefined;
     }
-    const own: MaterialRef | undefined = patch.texture ? { texture: patch.texture, tile: patch.tile, pixels: patch.texturePixels ?? TILE_PIXELS,gutter:patch.textureGutter } : undefined;
+    const own: MaterialRef | undefined = patch.texture ? { texture: patch.texture, tile: patch.tile, pixels: patch.texturePixels ?? TILE_PIXELS, gutter: patch.textureGutter } : undefined;
     const progress = patch.textureProgress;
     // Only an ancestor tile is a geometry-morph partner. The whole-map fallback is another medium (no land use, roads or
     // plan inked at tile scale): a node held part-way through its split would show its children as a pale, blurred rectangle.
-    const morphs = (ref: MaterialRef | undefined): number => ref && !ref.tile ? 1 : geometryBlend;
+    const morphs = (ref: MaterialRef | undefined): number => (ref && !ref.tile ? 1 : geometryBlend);
     if (own && progress >= 1 && morphs(patch.materialParent) >= 1) {
-      patch.materialParent = undefined; this.protectMaterial(own);
+      patch.materialParent = undefined;
+      this.protectMaterial(own);
       return { from: own, to: own, blend: 1, ready: true };
     }
     let fallback: PatchMaterial;
     if (patch.materialParent) {
-      const ref = patch.materialParent; this.protectMaterial(ref); fallback = { from: ref, to: ref, blend: 1, ready: true };
+      const ref = patch.materialParent;
+      this.protectMaterial(ref);
+      fallback = { from: ref, to: ref, blend: 1, ready: true };
     } else {
       const [level, x, y] = patch.tile.key.split('/').map(Number);
-      let parent: Patch | undefined, ix = x, iy = y;
+      let parent: Patch | undefined,
+        ix = x,
+        iy = y;
       for (let l = level - 1; l >= 0; l--) {
-        ix = Math.floor(ix / 2); iy = Math.floor(iy / 2);
+        ix = Math.floor(ix / 2);
+        iy = Math.floor(iy / 2);
         const candidate = this.patches.get(`${l}/${ix}/${iy}`);
-        if (candidate?.texture) { parent = candidate; break; }
+        if (candidate?.texture) {
+          parent = candidate;
+          break;
+        }
       }
       if (parent && depth < 32) fallback = this.materialFor(parent, 1, depth + 1);
       else {
-        const base = { texture: this.material, pixels: this.fallbackPixels,gutter:this.fallbackGutter };
+        const base = { texture: this.material, pixels: this.fallbackPixels, gutter: this.fallbackGutter };
         fallback = { from: base, to: base, blend: 1, ready: !this.tileLoader || level === 0 };
       }
     }
     if (!own || fallback.blend < 1) return fallback;
-    if (!patch.textureFadeStart) { patch.textureFadeStart = this.now; patch.textureUpdated = this.now; }
+    if (!patch.textureFadeStart) {
+      patch.textureFadeStart = this.now;
+      patch.textureUpdated = this.now;
+    }
     patch.materialParent ??= fallback.to;
-    const t = patch.textureProgress = Math.min(1, patch.textureProgress + Math.min(50, Math.max(0, this.now - patch.textureUpdated)) / TEXTURE_FADE_MS);
+    const t = (patch.textureProgress = Math.min(1, patch.textureProgress + Math.min(50, Math.max(0, this.now - patch.textureUpdated)) / TEXTURE_FADE_MS));
     patch.textureUpdated = this.now;
     const blend = t * t * (3 - 2 * t) * morphs(patch.materialParent);
     if (t < 1) this.animating = true;
-    this.protectMaterial(own); this.protectMaterial(patch.materialParent);
+    this.protectMaterial(own);
+    this.protectMaterial(patch.materialParent);
     return { from: patch.materialParent, to: own, blend, ready: true };
   }
   protected textureRect(ref: MaterialRef, tile: Terrain3dTile): [number, number, number, number] {
-    const source = ref.tile ?? this.layer!, pixels = ref.pixels,gutter=1+(ref.gutter??0),total=pixels+2*gutter;
-    const x = (tile.x - source.x) / source.width, y = (tile.y - source.y) / source.width, size = tile.width / source.width;
-    return [(gutter+x*pixels)/total,(gutter+y*pixels)/total,size*pixels/total,size*pixels/total];
+    const source = ref.tile ?? this.layer!,
+      pixels = ref.pixels,
+      gutter = 1 + (ref.gutter ?? 0),
+      total = pixels + 2 * gutter;
+    const x = (tile.x - source.x) / source.width,
+      y = (tile.y - source.y) / source.width,
+      size = tile.width / source.width;
+    return [(gutter + x * pixels) / total, (gutter + y * pixels) / total, (size * pixels) / total, (size * pixels) / total];
   }
-  protected overlayRect(ref: MaterialRef,tile: Terrain3dTile,ground=false): [number,number,number,number] {
-    const overlay=this.semanticTiles.get(ref.texture);
-    if(!overlay)return [0,0,0,0];
-    const r=this.textureRect({...ref,pixels:overlay.pixels,gutter:overlay.gutter},tile);
-    if(!overlay.atlas)return ground?[0,0,0,0]:r;
-    const side=overlay.pixels+2*overlay.gutter+2,w=2*side+2,h=side+2;
-    return [(1+(ground?0:side)+r[0]*side)/w,(1+r[1]*side)/h,r[2]*side/w,r[3]*side/h];
+  protected overlayRect(ref: MaterialRef, tile: Terrain3dTile, ground = false): [number, number, number, number] {
+    const overlay = this.semanticTiles.get(ref.texture);
+    if (!overlay) return [0, 0, 0, 0];
+    const r = this.textureRect({ ...ref, pixels: overlay.pixels, gutter: overlay.gutter }, tile);
+    if (!overlay.atlas) return ground ? [0, 0, 0, 0] : r;
+    const side = overlay.pixels + 2 * overlay.gutter + 2,
+      w = 2 * side + 2,
+      h = side + 2;
+    return [(1 + (ground ? 0 : side) + r[0] * side) / w, (1 + r[1] * side) / h, (r[2] * side) / w, (r[3] * side) / h];
   }
   private advanceMorphs(node: Node, incomingFull = true): void {
-    if (!node.visible) { node.blend = 0; node.children = undefined; node.updated = this.now; node.moving = false; return; }
+    if (!node.visible) {
+      node.blend = 0;
+      node.children = undefined;
+      node.updated = this.now;
+      node.moving = false;
+      return;
+    }
     const replacingHeights = node.children?.some(child => !!child.patch.pendingHeights);
-    const allowed = incomingFull && node.wantsSplit && !replacingHeights, closed = node.blend === 0;
+    const allowed = incomingFull && node.wantsSplit && !replacingHeights,
+      closed = node.blend === 0;
     for (const child of node.children ?? []) {
       if (!allowed) child.wantsSplit = false;
       this.advanceMorphs(child, allowed && node.blend >= 1 && child.birth >= 1);
     }
-    const childrenReady = !!node.children?.length && node.children.every(child => this.covered(child)
-      && (!closed || !node.patch.seamSnapshot || child.patch.parentSeam === node.patch.seamSnapshot));
+    const childrenReady = !!node.children?.length && node.children.every(child => this.covered(child) && (!closed || !node.patch.seamSnapshot || child.patch.parentSeam === node.patch.seamSnapshot));
     const raw = clamp((node.error - 2.15) / (3.6 - 2.15), 0, 1);
     let target = allowed && childrenReady && !replacingHeights ? raw * raw * (3 - 2 * raw) : 0;
     const descendantsOpen = node.children?.some(child => child.blend > 0);
     // Map ground, zooming out: the finer tiles already on the GPU stay drawn until the coarser tile has its own texture,
     // instead of merging onto a stretched far ancestor or the whole-map fallback (blank squares).
-    const awaitsOwn = target < node.blend && !this.groundSettings && !!this.tileLoader && node.patch.tile.level > 0
-      && !node.patch.texture && node.patch.status !== 'failed' && !!node.children?.length && node.children.every(child => this.subtreeTextured(child));
+    const awaitsOwn = target < node.blend && !this.groundSettings && !!this.tileLoader && node.patch.tile.level > 0 && !node.patch.texture && node.patch.status !== 'failed' && !!node.children?.length && node.children.every(child => this.subtreeTextured(child));
     if (target < node.blend && (descendantsOpen || !node.patch.vao || awaitsOwn || this.materialFor(node.patch).blend < 1)) target = node.blend;
-    if (childrenReady && !node.ready) { node.ready = true; node.updated = this.now; }
+    if (childrenReady && !node.ready) {
+      node.ready = true;
+      node.updated = this.now;
+    }
     let dt = this.now - node.updated;
     if (dt > 100 && !node.moving) dt = 0;
     node.updated = this.now;
     const delta = Math.min(50, Math.max(0, dt)) / MORPH_MS;
-    if (Math.abs(target - node.blend) <= .001) { node.blend = target; node.moving = false; }
-    else {
-      node.blend += clamp(target - node.blend, -delta, delta); node.moving = true; this.animating = true;
+    if (Math.abs(target - node.blend) <= 0.001) {
+      node.blend = target;
+      node.moving = false;
+    } else {
+      node.blend += clamp(target - node.blend, -delta, delta);
+      node.moving = true;
+      this.animating = true;
     }
     // Mesh preparation refreshes the parent endpoint before opening a branch.
     // Keep its coarse surface visible while those rows are being prepared.
     if (node.blend === 0 && replacingHeights && !descendantsOpen) {
       for (const child of node.children ?? []) if (child.patch.pendingHeights) this.installHeights(child.patch, child.patch.pendingHeights);
-      node.ready = false; node.updated = this.now; this.animating = true;
+      node.ready = false;
+      node.updated = this.now;
+      this.animating = true;
     }
     if (node.children && !node.wantsSplit && node.blend === 0 && !descendantsOpen) node.children = undefined;
     if (node.children && node.blend < 1) this.protected.add(node.patch.tile.key);
@@ -1843,7 +2429,8 @@ export class Terrain3d {
     if (node.patch.vao && incomingMorph > 0 && node.birth < 1) {
       if (!node.birthUpdated) node.birthUpdated = this.now;
       node.birth = Math.min(1, node.birth + Math.min(50, this.now - node.birthUpdated) / MORPH_MS);
-      node.birthUpdated = this.now; this.animating ||= node.birth < 1;
+      node.birthUpdated = this.now;
+      this.animating ||= node.birth < 1;
     }
     const morph = incomingMorph * node.birth;
     const fallback = node.patch.vao ? { patch: node.patch, morph } : ancestor;
@@ -1851,78 +2438,131 @@ export class Terrain3d {
       // A new visible quadrant may still be loading. Keep all ready siblings
       // and clip the nearest coarse mesh to that quadrant alone; falling back
       // the entire ancestor for one missing child is a one-frame global pop.
-      node.children.forEach(child => this.collectPieces(child, pieces, node.blend, fallback)); return;
+      node.children.forEach(child => this.collectPieces(child, pieces, node.blend, fallback));
+      return;
     }
     const selected = node.patch.vao ? { patch: node.patch, morph } : fallback;
     if (!selected?.patch.field) return;
-    const { patch, morph: amount } = selected, tile = patch.tile, field = patch.field!;
-    pieces.push({ ...tile, patch, morph: amount, field, heightOrigin: patch.heightOrigin, clip: node.patch.tile, cells: GRID,
-      key: `${tile.key}:${node.patch.tile.key}`, vertex: (x, y) => {
+    const { patch, morph: amount } = selected,
+      tile = patch.tile,
+      field = patch.field!;
+    pieces.push({
+      ...tile,
+      patch,
+      morph: amount,
+      field,
+      heightOrigin: patch.heightOrigin,
+      clip: node.patch.tile,
+      cells: GRID,
+      key: `${tile.key}:${node.patch.tile.key}`,
+      vertex: (x, y) => {
         const at = (y * (GRID + 1) + x) * 6;
-        return [patch.heightOrigin + field[at + 3] + (field[at] - field[at + 3]) * amount,
-          field[at + 4] + (field[at + 1] - field[at + 4]) * amount,
-          field[at + 5] + (field[at + 2] - field[at + 5]) * amount];
-      }, read: (x, y, out) => {
+        return [patch.heightOrigin + field[at + 3] + (field[at] - field[at + 3]) * amount, field[at + 4] + (field[at + 1] - field[at + 4]) * amount, field[at + 5] + (field[at + 2] - field[at + 5]) * amount];
+      },
+      read: (x, y, out) => {
         const at = (y * (GRID + 1) + x) * 6;
         out[0] = patch.heightOrigin + field[at + 3] + (field[at] - field[at + 3]) * amount;
         out[1] = field[at + 4] + (field[at + 1] - field[at + 4]) * amount;
         out[2] = field[at + 5] + (field[at + 2] - field[at + 5]) * amount;
-      } });
+      },
+    });
   }
   /** The backend-independent part of a patch draw: material blend, picking grid and seam corrections. */
   private patchDraw(patch: Patch, drawn: Patch[], incomingMorph: number, clip: Terrain3dTile, stitched: TerrainStitchedPiece): PatchDraw | undefined {
     if (!patch.vao) return undefined;
-    const material = this.materialFor(patch, incomingMorph), c = this.camera;
-    this.protected.add(patch.tile.key); patch.used = this.clock; drawn.push(patch);
+    const material = this.materialFor(patch, incomingMorph),
+      c = this.camera;
+    this.protected.add(patch.tile.key);
+    patch.used = this.clock;
+    drawn.push(patch);
     const tile = patch.tile;
-    this.displayedGrids.push({ ...tile, clip, cells: GRID, height: (x, y) => {
-      return stitched.vertex(x, y)[0] * c.exaggeration;
-    } });
-    return { patch, morph: incomingMorph, clip, material, textureRect: this.textureRect(material.to, tile), previousRect: this.textureRect(material.from, tile),
-      correction: skirtCorrection(stitched) };
+    this.displayedGrids.push({
+      ...tile,
+      clip,
+      cells: GRID,
+      height: (x, y) => {
+        return stitched.vertex(x, y)[0] * c.exaggeration;
+      },
+    });
+    return { patch, morph: incomingMorph, clip, material, textureRect: this.textureRect(material.to, tile), previousRect: this.textureRect(material.from, tile), correction: skirtCorrection(stitched) };
   }
   private renderPatch(draw: PatchDraw, frame: FrameGeometry): void {
-    const { patch, material, clip } = draw, gl = this.gl, c = this.camera, tile = patch.tile;
+    const { patch, material, clip } = draw,
+      gl = this.gl,
+      c = this.camera,
+      tile = patch.tile;
     gl.uniform3f(this.uniform('patchOffset'), patch.tile.x - c.x, patch.heightOrigin * c.exaggeration - frame.targetHeight, patch.tile.y - c.y);
-    gl.uniform3f(this.uniform('physicalOrigin'),patch.tile.x,patch.heightOrigin,patch.tile.y);
-    gl.uniform3f(this.uniform('patchRect'),patch.tile.x,patch.tile.y,patch.tile.width);
+    gl.uniform3f(this.uniform('physicalOrigin'), patch.tile.x, patch.heightOrigin, patch.tile.y);
+    gl.uniform3f(this.uniform('patchRect'), patch.tile.x, patch.tile.y, patch.tile.width);
     gl.uniform1f(this.uniform('morph'), draw.morph);
     gl.uniform4fv(this.uniform('textureRect'), draw.textureRect);
     gl.uniform4fv(this.uniform('previousRect'), draw.previousRect);
     gl.uniform1f(this.uniform('textureBlend'), material.blend);
-    for (const [ref, name, flag, unit] of [[material.to,'drapedMaterial','hasRaisedMaterial',14],[material.from,'previousDrapedMaterial','hasPreviousRaisedMaterial',15]] as const) {
+    for (const [ref, name, flag, unit] of [
+      [material.to, 'drapedMaterial', 'hasRaisedMaterial', 14],
+      [material.from, 'previousDrapedMaterial', 'hasPreviousRaisedMaterial', 15],
+    ] as const) {
       const raised = this.raisedMaterials.get(ref.texture);
-      gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,raised??this.empty); gl.uniform1i(this.uniform(name),unit); gl.uniform1i(this.uniform(flag),raised?1:0);
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, raised ?? this.empty);
+      gl.uniform1i(this.uniform(name), unit);
+      gl.uniform1i(this.uniform(flag), raised ? 1 : 0);
     }
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, material.to.texture);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, material.from.texture);
-    for(const [ref,name,flag,unit] of [[material.to,'semanticTile','hasSemanticTile',12],[material.from,'previousSemanticTile','hasPreviousSemanticTile',13]] as const){
-      const overlay=this.semanticTiles.get(ref.texture);
-      gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,overlay?.texture??this.empty);
-      gl.uniform1i(this.uniform(name),unit);gl.uniform1i(this.uniform(flag),overlay?.semantic?1:0);
-      gl.uniform4fv(this.uniform(name==='semanticTile'?'semanticRect':'previousSemanticRect'),this.overlayRect(ref,tile));
-      gl.uniform1i(this.uniform(name==='semanticTile'?'hasGroundTile':'hasPreviousGroundTile'),overlay?.atlas?1:0);
-      gl.uniform4fv(this.uniform(name==='semanticTile'?'groundRect':'previousGroundRect'),this.overlayRect(ref,tile,true));
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, material.to.texture);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, material.from.texture);
+    for (const [ref, name, flag, unit] of [
+      [material.to, 'semanticTile', 'hasSemanticTile', 12],
+      [material.from, 'previousSemanticTile', 'hasPreviousSemanticTile', 13],
+    ] as const) {
+      const overlay = this.semanticTiles.get(ref.texture);
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, overlay?.texture ?? this.empty);
+      gl.uniform1i(this.uniform(name), unit);
+      gl.uniform1i(this.uniform(flag), overlay?.semantic ? 1 : 0);
+      gl.uniform4fv(this.uniform(name === 'semanticTile' ? 'semanticRect' : 'previousSemanticRect'), this.overlayRect(ref, tile));
+      gl.uniform1i(this.uniform(name === 'semanticTile' ? 'hasGroundTile' : 'hasPreviousGroundTile'), overlay?.atlas ? 1 : 0);
+      gl.uniform4fv(this.uniform(name === 'semanticTile' ? 'groundRect' : 'previousGroundRect'), this.overlayRect(ref, tile, true));
     }
-    for(const [ref,prefix,unit] of [[material.to,'',6],[material.from,'previous',7]] as const){
-      const mask=this.waterMasks.get(ref.texture),name=prefix?'previousCanopyWater':'canopyWater';
-      gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,mask?.texture??this.empty);
-      gl.uniform1i(this.uniform(name),unit);
-      gl.uniform1i(this.uniform(prefix?'hasPreviousCanopyWater':'hasCanopyWater'),mask?1:0);
-      gl.uniform3f(this.uniform(`${name}Rect`),mask?.rect[0]??0,mask?.rect[1]??0,mask?.rect[2]??1);
+    for (const [ref, prefix, unit] of [
+      [material.to, '', 6],
+      [material.from, 'previous', 7],
+    ] as const) {
+      const mask = this.waterMasks.get(ref.texture),
+        name = prefix ? 'previousCanopyWater' : 'canopyWater';
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, mask?.texture ?? this.empty);
+      gl.uniform1i(this.uniform(name), unit);
+      gl.uniform1i(this.uniform(prefix ? 'hasPreviousCanopyWater' : 'hasCanopyWater'), mask ? 1 : 0);
+      gl.uniform3f(this.uniform(`${name}Rect`), mask?.rect[0] ?? 0, mask?.rect[1] ?? 0, mask?.rect[2] ?? 1);
     }
     const geometry = this.rectangleIndices(tile, clip);
-    gl.bindVertexArray(patch.vao!); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geometry.buffer); gl.bindBuffer(gl.ARRAY_BUFFER, this.seams); gl.bufferSubData(gl.ARRAY_BUFFER, 0, draw.correction);
-    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 3, gl.FLOAT, false, 12, 0);
+    gl.bindVertexArray(patch.vao!);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geometry.buffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.seams);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, draw.correction);
+    gl.enableVertexAttribArray(5);
+    gl.vertexAttribPointer(5, 3, gl.FLOAT, false, 12, 0);
     gl.drawElements(gl.TRIANGLES, geometry.count, gl.UNSIGNED_SHORT, 0);
   }
   private releaseMaterial(texture: WebGLTexture): void {
     const raised = this.raisedMaterials.get(texture);
-    if (raised) { this.deleteTexture(raised); this.raisedMaterials.delete(texture); }
-    const mask=this.waterMasks.get(texture);
-    if(mask){this.deleteTexture(mask.texture);this.waterMasks.delete(texture);this.waterMaskChanged(...mask.rect);}
-    const semantic=this.semanticTiles.get(texture);
-    if(semantic){this.deleteTexture(semantic.texture);this.semanticTiles.delete(texture);}
+    if (raised) {
+      this.deleteTexture(raised);
+      this.raisedMaterials.delete(texture);
+    }
+    const mask = this.waterMasks.get(texture);
+    if (mask) {
+      this.deleteTexture(mask.texture);
+      this.waterMasks.delete(texture);
+      this.waterMaskChanged(...mask.rect);
+    }
+    const semantic = this.semanticTiles.get(texture);
+    if (semantic) {
+      this.deleteTexture(semantic.texture);
+      this.semanticTiles.delete(texture);
+    }
     this.deleteTexture(texture);
   }
   private releasePatch(patch: Patch, preserveMesh = false): void {
@@ -1933,19 +2573,29 @@ export class Terrain3d {
   private trim(): void {
     let bytes = 0;
     for (const patch of this.patches.values()) bytes += patch.textureBytes + patch.pendingTextureBytes + patch.meshBytes;
-    const current = new Set<string>(), retain = (node: Node): void => { current.add(node.patch.tile.key); node.children?.forEach(retain); };
+    const current = new Set<string>(),
+      retain = (node: Node): void => {
+        current.add(node.patch.tile.key);
+        node.children?.forEach(retain);
+      };
     if (this.root) retain(this.root);
     const old = [...this.patches.values()].filter(patch => !this.protected.has(patch.tile.key) && patch.status !== 'loading').sort((a, b) => a.used - b.used);
     for (const patch of old) {
       if (bytes <= CACHE_BYTES && this.patches.size <= MAX_CACHE) break;
       const keepMesh = current.has(patch.tile.key);
-      bytes -= patch.textureBytes + patch.pendingTextureBytes + (keepMesh ? 0 : patch.meshBytes); this.releasePatch(patch, keepMesh);
+      bytes -= patch.textureBytes + patch.pendingTextureBytes + (keepMesh ? 0 : patch.meshBytes);
+      this.releasePatch(patch, keepMesh);
       if (current.has(patch.tile.key)) {
         // Current ancestors remain available for an aligned, immediate parent
         // fallback. Their textures can still be evicted independently.
         patch.texture = undefined;
-        patch.textureBytes = 0; patch.status = 'idle'; patch.textureFadeStart = 0; patch.textureProgress = 0; patch.materialParent = undefined;
-        patch.pendingTexture = undefined; patch.pendingTextureBytes = 0;
+        patch.textureBytes = 0;
+        patch.status = 'idle';
+        patch.textureFadeStart = 0;
+        patch.textureProgress = 0;
+        patch.materialParent = undefined;
+        patch.pendingTexture = undefined;
+        patch.pendingTextureBytes = 0;
       } else this.patches.delete(patch.tile.key);
     }
   }
@@ -1956,7 +2606,8 @@ export class Terrain3d {
     const dimensions = source as { width?: number; naturalWidth?: number; videoWidth?: number };
     this.fallbackPixels = dimensions.videoWidth || dimensions.naturalWidth || dimensions.width || 1;
     if (this.contextLost()) return;
-    this.releaseMaterial(this.material); this.material = this.uploadTexture(source);
+    this.releaseMaterial(this.material);
+    this.material = this.uploadTexture(source);
     const raised = terrain3dRaisedTexture(source);
     if (raised) this.raisedMaterials.set(this.material, this.uploadTexture(raised));
     this.request();
@@ -1965,60 +2616,98 @@ export class Terrain3d {
   setBillboards(stamps: readonly Terrain3dBillboard[] | undefined, atlas?: HTMLCanvasElement): void {
     if (this.billboardSource?.stamps === stamps && this.billboardSource?.atlas === atlas) return;
     this.billboardSource = stamps && atlas ? { stamps, atlas } : undefined;
-    this.billboardDirty = true; this.request();
+    this.billboardDirty = true;
+    this.request();
   }
   protected prepareBillboards(): void {
     const light = displayQualityFor(!this.fullQualityCapture && !this.captureMode) === 'light' && this.lookSettings.paperMap;
-    const frame = this.frameGeometry(), x = this.camera.x + frame.eye[0], y = this.camera.y + frame.eye[2];
+    const frame = this.frameGeometry(),
+      x = this.camera.x + frame.eye[0],
+      y = this.camera.y + frame.eye[2];
     const key = light ? `${Math.round(x / 80)}|${Math.round(y / 80)}|light` : 'full';
     if (!this.billboardDirty && key === this.billboardKey && (!this.fullQualityCapture || this.billboardReadyKey === key)) return;
-    this.billboardDirty = false; this.billboardKey = key;
+    this.billboardDirty = false;
+    this.billboardKey = key;
     const source = this.billboardSource;
-    const work = function* (view: Terrain3d): Generator<void, Float32Array> {
+    const work = (function* (view: Terrain3d): Generator<void, Float32Array> {
       const values: number[] = [];
-      if (source) for (let i = 0; i < source.stamps.length; i++) {
-        if (i % 64 === 0) yield;
-        const stamp = source.stamps[i];
-        if (light && Math.hypot(stamp.x - x, stamp.y - y) > BILLBOARD_LIGHT_RADIUS) continue;
-        const [u,v,w,h] = stamp.rect, aw = source.atlas.width, ah = source.atlas.height;
-        values.push(stamp.x,stamp.y,view.heightAt(stamp.x,stamp.y)??0,stamp.width,
-          (1+u*aw)/(aw+2),(1+v*ah)/(ah+2),w*aw/(aw+2),h*ah/(ah+2),stamp.height,stamp.flip?-1:1,stamp.opacity,0);
-      }
+      if (source)
+        for (let i = 0; i < source.stamps.length; i++) {
+          if (i % 64 === 0) yield;
+          const stamp = source.stamps[i];
+          if (light && Math.hypot(stamp.x - x, stamp.y - y) > BILLBOARD_LIGHT_RADIUS) continue;
+          const [u, v, w, h] = stamp.rect,
+            aw = source.atlas.width,
+            ah = source.atlas.height;
+          values.push(stamp.x, stamp.y, view.heightAt(stamp.x, stamp.y) ?? 0, stamp.width, (1 + u * aw) / (aw + 2), (1 + v * ah) / (ah + 2), (w * aw) / (aw + 2), (h * ah) / (ah + 2), stamp.height, stamp.flip ? -1 : 1, stamp.opacity, 0);
+        }
       return new Float32Array(values);
-    }(this);
+    })(this);
     const install = (values: Float32Array): void => {
-      this.billboardCount = values.length / 12; this.billboardReadyKey = key;
+      this.billboardCount = values.length / 12;
+      this.billboardReadyKey = key;
       this.uploadBillboards(values, source?.atlas);
     };
     if (this.fullQualityCapture) {
-      let step = work.next(); while (!step.done) step = work.next(); install(step.value); return;
+      let step = work.next();
+      while (!step.done) step = work.next();
+      install(step.value);
+      return;
     }
     const epoch = this.epoch;
-    void this.preparation.run(work, () => !this.captureMode && !this.disposed && epoch === this.epoch && this.billboardKey === key && this.billboardSource === source, 1e14)
-      .then(values => { install(values); this.request(); })
-      .catch(error => { if (error?.name !== 'AbortError') console.warn('Terrain billboard preparation:', error); });
+    void this.preparation
+      .run(work, () => !this.captureMode && !this.disposed && epoch === this.epoch && this.billboardKey === key && this.billboardSource === source, 1e14)
+      .then(values => {
+        install(values);
+        this.request();
+      })
+      .catch(error => {
+        if (error?.name !== 'AbortError') console.warn('Terrain billboard preparation:', error);
+      });
   }
   protected uploadBillboards(values: Float32Array, atlas?: HTMLCanvasElement): void {
     const gl = this.gl;
     if (!values.length) return;
-    this.billboardProgram ??= program(gl,BILLBOARD_3D_GLSL.vertex,BILLBOARD_3D_GLSL.fragment);
-    this.billboardVao ??= gl.createVertexArray()!; this.billboardBuffer ??= gl.createBuffer()!;
-    gl.bindVertexArray(this.billboardVao); gl.bindBuffer(gl.ARRAY_BUFFER,this.billboardBuffer); gl.bufferData(gl.ARRAY_BUFFER,values,gl.STATIC_DRAW);
-    for (let i=0;i<3;i++) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i,4,gl.FLOAT,false,48,i*16); gl.vertexAttribDivisor(i,1); }
+    this.billboardProgram ??= program(gl, BILLBOARD_3D_GLSL.vertex, BILLBOARD_3D_GLSL.fragment);
+    this.billboardVao ??= gl.createVertexArray()!;
+    this.billboardBuffer ??= gl.createBuffer()!;
+    gl.bindVertexArray(this.billboardVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.billboardBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
+    for (let i = 0; i < 3; i++) {
+      gl.enableVertexAttribArray(i);
+      gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 48, i * 16);
+      gl.vertexAttribDivisor(i, 1);
+    }
     gl.bindVertexArray(null);
     if (atlas && this.billboardAtlas?.source !== atlas) {
       if (this.billboardAtlas) gl.deleteTexture(this.billboardAtlas.texture);
-      const texture = this.uploadTexture(atlas); gl.bindTexture(gl.TEXTURE_2D,texture); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAX_LEVEL,4);
-      if (this.textureAnisotropy) gl.texParameterf(gl.TEXTURE_2D,this.textureAnisotropy.parameter,1);
-      this.billboardAtlas = { source:atlas,texture };
+      const texture = this.uploadTexture(atlas);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 4);
+      if (this.textureAnisotropy) gl.texParameterf(gl.TEXTURE_2D, this.textureAnisotropy.parameter, 1);
+      this.billboardAtlas = { source: atlas, texture };
     }
   }
   /** Inputs of the satellite near trees, or undefined when the view paints its forest only. */
   private treeInputs(): TreeInputs | undefined {
-    const g = this.groundSettings, field = this.forestField;
-    if (!g || !field || this.useMapShader || !((g.renderV2 ?? 0) > 0) || g.forestBrushes) return undefined;   // satellite-2 (paperMap) shares the satellite near trees
-    return { field, occupation: this.occupation?.data, seed: g.seed >>> 0, climate: g.climate, renderV2: g.renderV2 ?? 0,
-      zone: renderV2ZoneUniform(g.climateZone), season: g.v2Season ?? .5, crownSnow: g.v2Calendar?.crownSnow, climateZone: g.climateZone, calendar: g.v2Calendar, height: (x, y) => this.heightAt(x, y), water: (x, y) => this.waterAt(x, y) };
+    const g = this.groundSettings,
+      field = this.forestField;
+    if (!g || !field || this.useMapShader || !((g.renderV2 ?? 0) > 0) || g.forestBrushes) return undefined; // satellite-2 (paperMap) shares the satellite near trees
+    return {
+      field,
+      occupation: this.occupation?.data,
+      seed: g.seed >>> 0,
+      climate: g.climate,
+      renderV2: g.renderV2 ?? 0,
+      zone: renderV2ZoneUniform(g.climateZone),
+      season: g.v2Season ?? 0.5,
+      crownSnow: g.v2Calendar?.crownSnow,
+      climateZone: g.climateZone,
+      calendar: g.v2Calendar,
+      height: (x, y) => this.heightAt(x, y),
+      water: (x, y) => this.waterAt(x, y),
+    };
   }
   /** Displayed water cover at a point from the finest tile water mask holding it (nearest texel). */
   private waterAt(x: number, y: number): number {
@@ -2028,13 +2717,16 @@ export class Terrain3d {
       if (w && x >= w.x && y >= w.y && x < w.x + w.width && y < w.y + w.width && (!best || w.width < best.width)) best = w;
     }
     if (!best) return 0;
-    const i = Math.min(best.n - 1, Math.floor((x - best.x) / best.width * best.n)), j = Math.min(best.n - 1, Math.floor((y - best.y) / best.width * best.n));
+    const i = Math.min(best.n - 1, Math.floor(((x - best.x) / best.width) * best.n)),
+      j = Math.min(best.n - 1, Math.floor(((y - best.y) / best.width) * best.n));
     return best.alpha[j * best.n + i] / 255;
   }
   /** A tile water mask came or went: the trees are rebuilt only when it overlaps their area (waterAt reads it there). */
   private waterMaskChanged(x: number, y: number, width: number): void {
-    const a = this.treeArea; if (!a) return;
-    const dx = Math.max(x - a.x, 0, a.x - x - width), dy = Math.max(y - a.y, 0, a.y - y - width);
+    const a = this.treeArea;
+    if (!a) return;
+    const dx = Math.max(x - a.x, 0, a.x - x - width),
+      dy = Math.max(y - a.y, 0, a.y - y - width);
     if (dx * dx + dy * dy <= a.r * a.r) ++this.treeWaterRevision;
   }
   /** Rebuilds the near-tree instances once the eye has moved about 40 m or turned, or the inputs changed. The ground
@@ -2049,48 +2741,103 @@ export class Terrain3d {
   private updateTrees(frame: FrameGeometry): void {
     // Hidden trees keep their stream and key: switching them back on reuses it until the eye moves.
     if (!this.nearTrees) return;
-    const inputs = this.treeInputs(), c = this.camera;
-    if (!inputs) { this.treeCount = 0; this.treeKey = ''; this.treeComplete = false; return; }
-    const x = c.x + frame.eye[0], y = c.y + frame.eye[2], fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
+    const inputs = this.treeInputs(),
+      c = this.camera;
+    if (!inputs) {
+      this.treeCount = 0;
+      this.treeKey = '';
+      this.treeComplete = false;
+      return;
+    }
+    const x = c.x + frame.eye[0],
+      y = c.y + frame.eye[2],
+      fl = Math.hypot(frame.forward[0], frame.forward[2]) || 1;
     const lift = (frame.targetHeight + frame.eye[1]) / c.exaggeration - (this.heightAt(x, y) ?? 0);
-    const key = lift > treeLimits(this.treeDistance).far ? 'high' : [this.treeDistance, Math.round(x / 40), Math.round(y / 40), Math.round(c.yaw / .25), inputs.field.key, inputs.occupation?.key, inputs.occupation?.detail?.key, this.treeWaterRevision, inputs.season, inputs.crownSnow, inputs.seed, inputs.climateZone, JSON.stringify(inputs.calendar ?? {})].join('|');
+    const key =
+      lift > treeLimits(this.treeDistance).far
+        ? 'high'
+        : [
+            this.treeDistance,
+            Math.round(x / 40),
+            Math.round(y / 40),
+            Math.round(c.yaw / 0.25),
+            inputs.field.key,
+            inputs.occupation?.key,
+            inputs.occupation?.detail?.key,
+            this.treeWaterRevision,
+            inputs.season,
+            inputs.crownSnow,
+            inputs.seed,
+            inputs.climateZone,
+            JSON.stringify(inputs.calendar ?? {}),
+          ].join('|');
     if (key === this.treeKey && (!this.fullQualityCapture || this.treeReadyKey === key)) return;
     // One live stream at a time: a stream in flight finishes and is shown, then the latest key starts (restarting on
     // every 40 m or tile change never finished a stream while the camera moved).
     if (key !== 'high' && !this.fullQualityCapture && this.treeJobs > 0) return;
     this.treeKey = key;
-    if (key === 'high') { this.treeCount = 0; this.treeReadyKey = key; this.treeComplete = false; return; }
+    if (key === 'high') {
+      this.treeCount = 0;
+      this.treeReadyKey = key;
+      this.treeComplete = false;
+      return;
+    }
     const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl, distance: this.treeDistance };
     // Key cells are 40 m: masks within this radius of the stream's eye can reach a tree of this stream or the next.
     this.treeArea = { x, y, r: treeLimits(this.treeDistance).far + 60 };
     const install = (values: Float32Array): void => {
-      this.treeCount = values.length / TREE_STRIDE; this.treeReadyKey = key; this.treeComplete = true;
+      this.treeCount = values.length / TREE_STRIDE;
+      this.treeReadyKey = key;
+      this.treeComplete = true;
       (globalThis as { magnaNearTrees?: number }).magnaNearTrees = this.treeCount;
       if (this.treeCount) this.uploadTrees(values);
     };
     // Capture uses the exact stream immediately, independent of a live queue's progress.
-    if (this.fullQualityCapture) { install(buildNearTrees(inputs, view)); return; }
-    const epoch = this.epoch, current = (): boolean => !this.captureMode && !this.disposed && epoch === this.epoch && this.treeKey !== 'high' && this.treeKey !== '';
+    if (this.fullQualityCapture) {
+      install(buildNearTrees(inputs, view));
+      return;
+    }
+    const epoch = this.epoch,
+      current = (): boolean => !this.captureMode && !this.disposed && epoch === this.epoch && this.treeKey !== 'high' && this.treeKey !== '';
     // Nearest blocks first: while no finished stream is shown, a partial stream replaces a smaller one, so trees grow
     // outward from the eye. A finished stream stays drawn whole until its replacement is finished (no blocks dropped).
     const partial = (values: Float32Array): void => {
       if (!current() || this.treeComplete || values.length / TREE_STRIDE <= this.treeCount) return;
       this.treeCount = values.length / TREE_STRIDE;
-      if (this.treeCount) { this.uploadTrees(values); this.request(); }
+      if (this.treeCount) {
+        this.uploadTrees(values);
+        this.request();
+      }
     };
-    this.treeJobs++; this.treeStreams++;
-    void this.preparation.run(buildNearTreesSteps(inputs, view, partial), current, 1e15)
-      .then(values => { install(values); this.request(); })
-      .catch(error => { if (error?.name !== 'AbortError') console.warn('Terrain tree preparation:', error); })
-      .finally(() => { this.treeJobs--; });
+    this.treeJobs++;
+    this.treeStreams++;
+    void this.preparation
+      .run(buildNearTreesSteps(inputs, view, partial), current, 1e15)
+      .then(values => {
+        install(values);
+        this.request();
+      })
+      .catch(error => {
+        if (error?.name !== 'AbortError') console.warn('Terrain tree preparation:', error);
+      })
+      .finally(() => {
+        this.treeJobs--;
+      });
   }
 
   protected uploadTrees(values: Float32Array): void {
     const gl = this.gl;
     this.treeProgram ??= program(gl, TREE_3D_GLSL.vertex, TREE_3D_GLSL.fragment);
-    this.treeVao ??= gl.createVertexArray()!; this.treeBuffer ??= gl.createBuffer()!;
-    gl.bindVertexArray(this.treeVao); gl.bindBuffer(gl.ARRAY_BUFFER, this.treeBuffer); gl.bufferData(gl.ARRAY_BUFFER, values, gl.DYNAMIC_DRAW);
-    for (let i = 0; i < 3; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, 4, gl.FLOAT, false, TREE_STRIDE * 4, i * 16); gl.vertexAttribDivisor(i, 1); }
+    this.treeVao ??= gl.createVertexArray()!;
+    this.treeBuffer ??= gl.createBuffer()!;
+    gl.bindVertexArray(this.treeVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.treeBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, values, gl.DYNAMIC_DRAW);
+    for (let i = 0; i < 3; i++) {
+      gl.enableVertexAttribArray(i);
+      gl.vertexAttribPointer(i, 4, gl.FLOAT, false, TREE_STRIDE * 4, i * 16);
+      gl.vertexAttribDivisor(i, 1);
+    }
     gl.bindVertexArray(null);
   }
   /** uForestTrees of the ground shader: eye xy and the fade radii, w = 0 without trees. */
@@ -2099,17 +2846,21 @@ export class Terrain3d {
     return [this.camera.x + frame.eye[0], this.camera.y + frame.eye[2], limits.near, this.treesShown() ? limits.far : 0];
   }
   /** Whether near trees are drawn this frame. */
-  protected treesShown(): boolean { return this.nearTrees && this.treeCount > 0; }
+  protected treesShown(): boolean {
+    return this.nearTrees && this.treeCount > 0;
+  }
   /** The 3D view's "3D trees" switch: built lazily on first use, then only hidden or shown. */
   setNearTrees(enabled: boolean): void {
     if (this.nearTrees === enabled) return;
-    this.nearTrees = enabled; this.request();
+    this.nearTrees = enabled;
+    this.request();
   }
   /** The 3D view's "tree distance" slider (m): only the tree layer is rebuilt, around the eye, nearest trees first. */
   setTreeDistance(metres: number): void {
     const distance = clampTreeDistance(metres);
     if (this.treeDistance === distance) return;
-    this.treeDistance = distance; this.request();
+    this.treeDistance = distance;
+    this.request();
   }
   protected treeLight(): [number, number, number] {
     const lights = terrainLights((this.groundSettings ?? this.forestSettings)?.lighting ?? DEFAULT_TERRAIN_LIGHTING);
@@ -2120,71 +2871,141 @@ export class Terrain3d {
     return navigationFogDistance(this.camera.navigation, this.camera.distance, this.layer?.width ?? 0);
   }
   /** Underdark display parameters, defaulted. */
-  protected cavernSettings(): UnderdarkCavern3d { return this.groundSettings?.cavern ?? UNDERDARK_CAVERN_DEFAULTS; }
+  protected cavernSettings(): UnderdarkCavern3d {
+    return this.groundSettings?.cavern ?? UNDERDARK_CAVERN_DEFAULTS;
+  }
   /** `uCavern` of the ground shader: roof base, darkness, cave fog start and end (render/underdarkCavern.ts). */
   protected cavernParameters(): [number, number, number, number] {
     return cavernUniform(this.cavern, this.cavernSettings(), this.camera.distance, this.camera.exaggeration);
   }
   private drawTrees(frame: FrameGeometry): void {
-    const gl = this.gl, p = this.treeProgram, c = this.camera;
+    const gl = this.gl,
+      p = this.treeProgram,
+      c = this.camera;
     if (!p || !this.treesShown() || this.groundSettings?.underdark) return;
-    gl.useProgram(p); gl.bindVertexArray(this.treeVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
-    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform4fv(this.uniform('treeFade', p), this.forestTreesUniform(frame));
-    gl.uniform3fv(this.uniform('eye', p), frame.eye); gl.uniform3fv(this.uniform('treeLight', p), this.treeLight());
-    gl.uniform1f(this.uniform('fogDistance', p), this.fogDistance()); gl.uniform1i(this.uniform('uNight', p), +(this.lookSettings.ambience === 'night'));
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, TREE_VERTICES, this.treeCount); gl.bindVertexArray(null);
+    gl.useProgram(p);
+    gl.bindVertexArray(this.treeVao!);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.CULL_FACE);
+    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix);
+    gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
+    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration);
+    gl.uniform4fv(this.uniform('treeFade', p), this.forestTreesUniform(frame));
+    gl.uniform3fv(this.uniform('eye', p), frame.eye);
+    gl.uniform3fv(this.uniform('treeLight', p), this.treeLight());
+    gl.uniform1f(this.uniform('fogDistance', p), this.fogDistance());
+    gl.uniform1i(this.uniform('uNight', p), +(this.lookSettings.ambience === 'night'));
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, TREE_VERTICES, this.treeCount);
+    gl.bindVertexArray(null);
   }
   /** Underdark mushrooms around the orbit target: rebuilt when it moves a third of the near radius, the abundance or
    * the cavern changes; nearest first, bounded (terrain3dFungi.ts). Nothing without the Underdark. */
   protected prepareFungi(): void {
-    const g = this.groundSettings, cavern = this.cavern, layer = this.layer, c = this.camera;
+    const g = this.groundSettings,
+      cavern = this.cavern,
+      layer = this.layer,
+      c = this.camera;
     const abundance = g?.underdark && cavern && layer && !this.useMapShader ? this.cavernSettings().fungi : 0;
-    if (!abundance || !cavern || !layer) { this.fungusCount = 0; this.fungusKey = ''; return; }
-    const step = FUNGUS_NEAR / 3, key = [Math.round(c.x / step), Math.round(c.y / step), abundance, this.cavernRevision].join('|');
-    if (key === this.fungusKey || this.fungusJobs > 0 && !this.fullQualityCapture) return;
+    if (!abundance || !cavern || !layer) {
+      this.fungusCount = 0;
+      this.fungusKey = '';
+      return;
+    }
+    const step = FUNGUS_NEAR / 3,
+      key = [Math.round(c.x / step), Math.round(c.y / step), abundance, this.cavernRevision].join('|');
+    if (key === this.fungusKey || (this.fungusJobs > 0 && !this.fullQualityCapture)) return;
     this.fungusKey = key;
-    const inputs: FungusInputs = { seed: g!.seed >>> 0, cavern, abundance, towns: g!.townSites ?? g!.townGlow, farms: g!.farmBeds, occupation: this.occupation?.data,
-      raw: (x, y) => spline(layer.data, layer.n, (x - layer.x) / layer.width, (y - layer.y) / layer.width), height: (x, y) => this.heightAt(x, y), water: (x, y) => this.waterAt(x, y) };
+    const inputs: FungusInputs = {
+      seed: g!.seed >>> 0,
+      cavern,
+      abundance,
+      towns: g!.townSites ?? g!.townGlow,
+      farms: g!.farmBeds,
+      occupation: this.occupation?.data,
+      raw: (x, y) => spline(layer.data, layer.n, (x - layer.x) / layer.width, (y - layer.y) / layer.width),
+      height: (x, y) => this.heightAt(x, y),
+      water: (x, y) => this.waterAt(x, y),
+    };
     const view = { x: c.x, y: c.y };
-    const install = (stream: FungusStream): void => { this.fungusCount = stream.values.length / FUNGUS_STRIDE; this.fungusTiers = stream.counts; if (this.fungusCount) this.uploadFungi(stream.values); };
-    if (this.fullQualityCapture) { install(buildFungi(inputs, view)); return; }
-    const epoch = this.epoch, current = (): boolean => !this.disposed && epoch === this.epoch && this.fungusKey === key;
+    const install = (stream: FungusStream): void => {
+      this.fungusCount = stream.values.length / FUNGUS_STRIDE;
+      this.fungusTiers = stream.counts;
+      if (this.fungusCount) this.uploadFungi(stream.values);
+    };
+    if (this.fullQualityCapture) {
+      install(buildFungi(inputs, view));
+      return;
+    }
+    const epoch = this.epoch,
+      current = (): boolean => !this.disposed && epoch === this.epoch && this.fungusKey === key;
     this.fungusJobs++;
-    void this.preparation.run(buildFungiSteps(inputs, view), current, 1e15)
-      .then(stream => { install(stream); this.request(); })
+    void this.preparation
+      .run(buildFungiSteps(inputs, view), current, 1e15)
+      .then(stream => {
+        install(stream);
+        this.request();
+      })
       // A cancelled stream (patches cleared, e.g. a new height sampler) is rebuilt on the next frame, not when the focus next moves.
-      .catch(error => { if (this.fungusKey === key) { this.fungusKey = ''; this.request(); } if (error?.name !== 'AbortError') console.warn('Underdark mushrooms:', error); })
-      .finally(() => { this.fungusJobs--; });
+      .catch(error => {
+        if (this.fungusKey === key) {
+          this.fungusKey = '';
+          this.request();
+        }
+        if (error?.name !== 'AbortError') console.warn('Underdark mushrooms:', error);
+      })
+      .finally(() => {
+        this.fungusJobs--;
+      });
   }
   protected uploadFungi(values: Float32Array): void {
     const gl = this.gl;
     this.fungusProgram ??= program(gl, FUNGUS_3D_GLSL.vertex, FUNGUS_3D_GLSL.fragment);
-    this.fungusVao ??= gl.createVertexArray()!; this.fungusBuffer ??= gl.createBuffer()!;
-    gl.bindVertexArray(this.fungusVao); gl.bindBuffer(gl.ARRAY_BUFFER, this.fungusBuffer); gl.bufferData(gl.ARRAY_BUFFER, values, gl.DYNAMIC_DRAW);
-    for (let i = 0; i < 3; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, 4, gl.FLOAT, false, FUNGUS_STRIDE * 4, i * 16); gl.vertexAttribDivisor(i, 1); }
+    this.fungusVao ??= gl.createVertexArray()!;
+    this.fungusBuffer ??= gl.createBuffer()!;
+    gl.bindVertexArray(this.fungusVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fungusBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, values, gl.DYNAMIC_DRAW);
+    for (let i = 0; i < 3; i++) {
+      gl.enableVertexAttribArray(i);
+      gl.vertexAttribPointer(i, 4, gl.FLOAT, false, FUNGUS_STRIDE * 4, i * 16);
+      gl.vertexAttribDivisor(i, 1);
+    }
     gl.bindVertexArray(null);
   }
   /** uFungusArea of the ground: where the modelled mushrooms stand (the painted caps give way to them), none without. */
-  protected fungusArea(): [number, number, number, number] { return this.fungusCount ? this.fungusFade() : [0, 0, 0, 0]; }
+  protected fungusArea(): [number, number, number, number] {
+    return this.fungusCount ? this.fungusFade() : [0, 0, 0, 0];
+  }
   /** The camera of a framing view of (point, distance): in the Underdark a whole-map frame becomes the first town seen
    * from inside its chamber, the eye under the roof where the chamber allows. */
   framingView(x: number, y: number, distance: number): { x: number; y: number; distance: number; pitch: number } {
-    const town = this.groundSettings?.townSites ?? this.groundSettings?.townGlow, layer = this.layer, field = this.cavern;
+    const town = this.groundSettings?.townSites ?? this.groundSettings?.townGlow,
+      layer = this.layer,
+      field = this.cavern;
     this.townFrame = undefined;
-    if (this.groundSettings?.underdark && field && layer && distance > layer.width * .25) {
+    if (this.groundSettings?.underdark && field && layer && distance > layer.width * 0.25) {
       if (town && town.length >= 3) {
         const headroom = cavernRoofAt(field, town[0], town[1]) - (this.heightAt(town[0], town[1]) ?? 0);
-        const near = Math.min(clamp(town[2] * 1.6, 320, 700), Math.max(220, .7 * headroom / Math.sin(.16) * this.camera.exaggeration));
+        const near = Math.min(clamp(town[2] * 1.6, 320, 700), Math.max(220, ((0.7 * headroom) / Math.sin(0.16)) * this.camera.exaggeration));
         return { x: town[0], y: town[1], distance: near, pitch: this.framingPitch(town[0], town[1], near) };
       }
       // No town known yet: the most open chamber near the centre, until the towns arrive (setGroundMaterial).
-      let best = -Infinity, bx = x, by = y;
-      const n = field.n, cell = field.width / n;
+      let best = -Infinity,
+        bx = x,
+        by = y;
+      const n = field.n,
+        cell = field.width / n;
       for (let i = 0; i < n * n; i += 3) {
-        const px = field.x + (i % n + .5) * cell, py = field.y + (Math.floor(i / n) + .5) * cell;
+        const px = field.x + ((i % n) + 0.5) * cell,
+          py = field.y + (Math.floor(i / n) + 0.5) * cell;
         const score = field.texels[i * 4 + 2] - Math.hypot(px - x, py - y) / field.width;
-        if (score > best) { best = score; bx = px; by = py; }
+        if (score > best) {
+          best = score;
+          bx = px;
+          by = py;
+        }
       }
       const view = { x: bx, y: by, distance: 450, pitch: this.framingPitch(bx, by, 450) };
       this.townFrame = { ...view };
@@ -2192,7 +3013,8 @@ export class Terrain3d {
     }
     if (this.groundSettings?.underdark && field) {
       // A town frame in the cave: near enough that the eye stays under the roof of its chamber.
-      const headroom = cavernRoofAt(field, x, y) - (this.heightAt(x, y) ?? 0), near = Math.min(distance, Math.max(220, .7 * headroom / Math.sin(.16) * this.camera.exaggeration));
+      const headroom = cavernRoofAt(field, x, y) - (this.heightAt(x, y) ?? 0),
+        near = Math.min(distance, Math.max(220, ((0.7 * headroom) / Math.sin(0.16)) * this.camera.exaggeration));
       return { x, y, distance: near, pitch: this.framingPitch(x, y, near) };
     }
     return { x, y, distance, pitch: this.framingPitch(x, y, distance) };
@@ -2200,26 +3022,40 @@ export class Terrain3d {
   /** A framing view chosen before the towns were known; replaced by the first town once they arrive, if untouched. */
   private townFrame?: { x: number; y: number; distance: number; pitch: number };
   /** fungusFade of the mushroom shader: the stream's centre and its fade radii. */
-  protected fungusFade(): [number, number, number, number] { return [this.camera.x, this.camera.y, FUNGUS_FAR * .8, FUNGUS_FAR]; }
+  protected fungusFade(): [number, number, number, number] {
+    return [this.camera.x, this.camera.y, FUNGUS_FAR * 0.8, FUNGUS_FAR];
+  }
   /** uTownGlow (vec4 × 16) and its count, as the ground shader reads them. */
   protected townGlowUniform(): { values: Float32Array; count: number } {
-    const g = this.groundSettings?.townSites ?? this.groundSettings?.townGlow ?? new Float32Array(0), values = new Float32Array(64), count = Math.min(16, g.length / 3 | 0);
+    const g = this.groundSettings?.townSites ?? this.groundSettings?.townGlow ?? new Float32Array(0),
+      values = new Float32Array(64),
+      count = Math.min(16, (g.length / 3) | 0);
     for (let k = 0; k < count; k++) values.set(g.subarray(k * 3, k * 3 + 3), k * 4);
     return { values, count };
   }
   /** The roof of the cave (the lid of the section model, cut away around the focus): one mesh, drawn once a frame. */
-  protected roofCount = 0; private roofProgram?: WebGLProgram; private roofVao?: WebGLVertexArrayObject; private roofBuffers?: [WebGLBuffer, WebGLBuffer];
+  protected roofCount = 0;
+  private roofProgram?: WebGLProgram;
+  private roofVao?: WebGLVertexArrayObject;
+  private roofBuffers?: [WebGLBuffer, WebGLBuffer];
   protected uploadRoof(mesh: { vertices: Float32Array; indices: Uint32Array } | undefined): void {
     const gl = this.gl;
     this.roofCount = mesh?.indices.length ?? 0;
     if (!mesh) return;
     this.roofProgram ??= program(gl, CAVERN_ROOF_GLSL.vertex, CAVERN_ROOF_GLSL.fragment);
-    this.roofVao ??= gl.createVertexArray()!; this.roofBuffers ??= [gl.createBuffer()!, gl.createBuffer()!];
+    this.roofVao ??= gl.createVertexArray()!;
+    this.roofBuffers ??= [gl.createBuffer()!, gl.createBuffer()!];
     gl.bindVertexArray(this.roofVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.roofBuffers[0]); gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0); gl.vertexAttribDivisor(0, 0);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12); gl.vertexAttribDivisor(1, 0);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.roofBuffers[1]); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.roofBuffers[0]);
+    gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0);
+    gl.vertexAttribDivisor(0, 0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12);
+    gl.vertexAttribDivisor(1, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.roofBuffers[1]);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
   }
   /** uReveal: the cutaway around the orbit target; none while walking or flying (the vault stays overhead). */
@@ -2228,78 +3064,136 @@ export class Terrain3d {
     return c.navigation === 'walk' || c.navigation === 'fly' ? [c.x, c.y, 0, 1] : cavernReveal(c.x, c.y, c.distance, c.exaggeration);
   }
   /** Whether the cave roof is drawn this frame. */
-  protected roofShown(): boolean { return !!this.roofCount && !!this.cavern && !!this.groundSettings?.underdark && !this.groundSettings.paperMap && !this.useMapShader; }
+  protected roofShown(): boolean {
+    return !!this.roofCount && !!this.cavern && !!this.groundSettings?.underdark && !this.groundSettings.paperMap && !this.useMapShader;
+  }
   /** Pitch of a framing view of (x, y) at an orbit distance: the Underdark looks across the cave from a low angle, the
    * eye under the roof where the chamber allows (the far vault, its stalactites and the far chambers then show). */
   framingPitch(x?: number, y?: number, distance?: number): number {
-    if (!this.groundSettings?.underdark || !this.cavern) return .82;
-    if (x === undefined || y === undefined || !distance) return .36;
+    if (!this.groundSettings?.underdark || !this.cavern) return 0.82;
+    if (x === undefined || y === undefined || !distance) return 0.36;
     const headroom = cavernRoofAt(this.cavern, x, y) - (this.heightAt(x, y) ?? 0);
-    return clamp(Math.asin(clamp(.75 * headroom / (distance / Math.max(this.camera.exaggeration, .2)), 0, 1)), .16, .36);
+    return clamp(Math.asin(clamp((0.75 * headroom) / (distance / Math.max(this.camera.exaggeration, 0.2)), 0, 1)), 0.16, 0.36);
   }
   private drawRoof(frame: FrameGeometry): void {
-    const gl = this.gl, p = this.roofProgram, c = this.camera;
+    const gl = this.gl,
+      p = this.roofProgram,
+      c = this.camera;
     if (!p || !this.roofShown()) return;
-    gl.useProgram(p); gl.bindVertexArray(this.roofVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
-    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform3fv(this.uniform('eye', p), frame.eye);
-    gl.uniform4fv(this.uniform('uCavern', p), this.cavernParameters()); gl.uniform4fv(this.uniform('uReveal', p), this.roofReveal());
-    const glow = this.townGlowUniform(); gl.uniform4fv(this.uniform('uTownGlow[0]', p), glow.values); gl.uniform1i(this.uniform('uTownGlowCount', p), glow.count);
-    gl.drawElements(gl.TRIANGLES, this.roofCount, gl.UNSIGNED_INT, 0); gl.bindVertexArray(null);
+    gl.useProgram(p);
+    gl.bindVertexArray(this.roofVao!);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.CULL_FACE);
+    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix);
+    gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
+    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration);
+    gl.uniform3fv(this.uniform('eye', p), frame.eye);
+    gl.uniform4fv(this.uniform('uCavern', p), this.cavernParameters());
+    gl.uniform4fv(this.uniform('uReveal', p), this.roofReveal());
+    const glow = this.townGlowUniform();
+    gl.uniform4fv(this.uniform('uTownGlow[0]', p), glow.values);
+    gl.uniform1i(this.uniform('uTownGlowCount', p), glow.count);
+    gl.drawElements(gl.TRIANGLES, this.roofCount, gl.UNSIGNED_INT, 0);
+    gl.bindVertexArray(null);
   }
   private drawFungi(frame: FrameGeometry): void {
-    const gl = this.gl, p = this.fungusProgram, c = this.camera;
+    const gl = this.gl,
+      p = this.fungusProgram,
+      c = this.camera;
     if (!p || !this.fungusCount || !this.groundSettings?.underdark) return;
-    gl.useProgram(p); gl.bindVertexArray(this.fungusVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
-    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix); gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
-    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration); gl.uniform4fv(this.uniform('fungusFade', p), this.fungusFade()); gl.uniform4fv(this.uniform('uReveal', p), this.roofShown() ? this.roofReveal() : [0, 0, 0, 1]);
-    gl.uniform3fv(this.uniform('eye', p), frame.eye); gl.uniform4fv(this.uniform('uCavern', p), this.cavernParameters());
-    const glow = this.townGlowUniform(); gl.uniform4fv(this.uniform('uTownGlow[0]', p), glow.values); gl.uniform1i(this.uniform('uTownGlowCount', p), glow.count);
+    gl.useProgram(p);
+    gl.bindVertexArray(this.fungusVao!);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.CULL_FACE);
+    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix);
+    gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
+    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration);
+    gl.uniform4fv(this.uniform('fungusFade', p), this.fungusFade());
+    gl.uniform4fv(this.uniform('uReveal', p), this.roofShown() ? this.roofReveal() : [0, 0, 0, 1]);
+    gl.uniform3fv(this.uniform('eye', p), frame.eye);
+    gl.uniform4fv(this.uniform('uCavern', p), this.cavernParameters());
+    const glow = this.townGlowUniform();
+    gl.uniform4fv(this.uniform('uTownGlow[0]', p), glow.values);
+    gl.uniform1i(this.uniform('uTownGlowCount', p), glow.count);
     // One draw per level of detail: the attributes start at the level's first instance (no base instance in WebGL2).
     let first = 0;
     for (let lod = 0; lod < 3; lod++) {
-      const count = this.fungusTiers[lod]; if (!count) continue;
+      const count = this.fungusTiers[lod];
+      if (!count) continue;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.fungusBuffer!);
       for (let i = 0; i < 3; i++) gl.vertexAttribPointer(i, 4, gl.FLOAT, false, FUNGUS_STRIDE * 4, first * FUNGUS_STRIDE * 4 + i * 16);
       gl.uniform1i(this.uniform('fungusLod', p), lod);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, FUNGUS_LOD_VERTICES[lod], count); first += count;
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, FUNGUS_LOD_VERTICES[lod], count);
+      first += count;
     }
     gl.bindVertexArray(null);
   }
-  protected billboardsReady(): boolean { return !this.billboardCount || !!this.billboardProgram; }
-  protected raisedBlend(frame: FrameGeometry): number { return this.billboardCount && this.billboardsReady() ? terrain3dRaisedBlend(Math.max(0,-frame.forward[1])) : 0; }
+  protected billboardsReady(): boolean {
+    return !this.billboardCount || !!this.billboardProgram;
+  }
+  protected raisedBlend(frame: FrameGeometry): number {
+    return this.billboardCount && this.billboardsReady() ? terrain3dRaisedBlend(Math.max(0, -frame.forward[1])) : 0;
+  }
   private drawBillboards(frame: FrameGeometry, blend: number): void {
-    const gl=this.gl,p=this.billboardProgram,c=this.camera;
-    if (!p || !this.billboardCount || !this.billboardAtlas || blend<=0) return;
-    gl.useProgram(p); gl.bindVertexArray(this.billboardVao!); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
-    gl.uniformMatrix4fv(this.uniform('matrix',p),false,frame.matrix); gl.uniform3f(this.uniform('cameraOrigin',p),c.x,frame.targetHeight,c.y);
-    gl.uniform2f(this.uniform('cameraRight',p),Math.cos(c.yaw),-Math.sin(c.yaw)); gl.uniform1f(this.uniform('exaggeration',p),c.exaggeration);
-    gl.uniform1f(this.uniform('raisedBlend',p),blend); gl.uniform3fv(this.uniform('eye',p),frame.eye); gl.uniform1f(this.uniform('fogDistance',p),this.fogDistance()); gl.uniform1i(this.uniform('uNight',p),+(this.lookSettings.ambience==='night'));
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.billboardAtlas.texture); gl.uniform1i(this.uniform('billboardAtlas',p),0);
-    gl.drawArraysInstanced(gl.TRIANGLES,0,6,this.billboardCount); gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE); gl.bindVertexArray(null);
+    const gl = this.gl,
+      p = this.billboardProgram,
+      c = this.camera;
+    if (!p || !this.billboardCount || !this.billboardAtlas || blend <= 0) return;
+    gl.useProgram(p);
+    gl.bindVertexArray(this.billboardVao!);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    gl.uniformMatrix4fv(this.uniform('matrix', p), false, frame.matrix);
+    gl.uniform3f(this.uniform('cameraOrigin', p), c.x, frame.targetHeight, c.y);
+    gl.uniform2f(this.uniform('cameraRight', p), Math.cos(c.yaw), -Math.sin(c.yaw));
+    gl.uniform1f(this.uniform('exaggeration', p), c.exaggeration);
+    gl.uniform1f(this.uniform('raisedBlend', p), blend);
+    gl.uniform3fv(this.uniform('eye', p), frame.eye);
+    gl.uniform1f(this.uniform('fogDistance', p), this.fogDistance());
+    gl.uniform1i(this.uniform('uNight', p), +(this.lookSettings.ambience === 'night'));
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.billboardAtlas.texture);
+    gl.uniform1i(this.uniform('billboardAtlas', p), 0);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.billboardCount);
+    gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    gl.bindVertexArray(null);
   }
   setCamera(camera: Terrain3dCamera): void {
-    this.stopWalking(); this.camera = { ...camera }; this.limitCamera();
+    this.stopWalking();
+    this.camera = { ...camera };
+    this.limitCamera();
     if (this.active) this.cameraMoving();
     this.request();
   }
-  getCamera(): Terrain3dCamera { return { ...this.camera }; }
+  getCamera(): Terrain3dCamera {
+    return { ...this.camera };
+  }
   setNavigation(navigation: 'orbit' | 'walk' | 'fly'): void {
     if (!this.options.navigation || (this.camera.navigation ?? 'orbit') === navigation) return;
-    this.stopWalking(); this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag');
-    const previous=this.camera.navigation??'orbit';
-    if(previous==='orbit')this.orbitBeforeWalk={distance:this.camera.distance,pitch:this.camera.pitch};
-    if(navigation==='fly'){
+    this.stopWalking();
+    this.pointers.clear();
+    this.gesture = undefined;
+    this.element.classList.remove('drag');
+    const previous = this.camera.navigation ?? 'orbit';
+    if (previous === 'orbit') this.orbitBeforeWalk = { distance: this.camera.distance, pitch: this.camera.pitch };
+    if (navigation === 'fly') {
       if (!Number.isFinite(this.camera.flightAltitude)) {
-        this.camera={...this.camera,navigation,flightAltitude:(this.heightAt(this.camera.x,this.camera.y)??0)+WALK_EYE_HEIGHT,distance:20,pitch:.08};
+        this.camera = { ...this.camera, navigation, flightAltitude: (this.heightAt(this.camera.x, this.camera.y) ?? 0) + WALK_EYE_HEIGHT, distance: 20, pitch: 0.08 };
       } else {
-        const frame=this.frameGeometry();
-        this.camera={...this.camera,navigation,x:this.camera.x+frame.eye[0],y:this.camera.y+frame.eye[2],flightAltitude:(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,distance:20};
+        const frame = this.frameGeometry();
+        this.camera = { ...this.camera, navigation, x: this.camera.x + frame.eye[0], y: this.camera.y + frame.eye[2], flightAltitude: (frame.targetHeight + frame.eye[1]) / this.camera.exaggeration, distance: 20 };
       }
-    }else if(navigation==='walk'){
-      this.camera={...this.camera,navigation,distance:20,pitch:.08};
-    }else{
-      this.camera={...this.camera,navigation,distance:this.orbitBeforeWalk?.distance??120,pitch:this.orbitBeforeWalk?.pitch??.8};
+    } else if (navigation === 'walk') {
+      this.camera = { ...this.camera, navigation, distance: 20, pitch: 0.08 };
+    } else {
+      this.camera = { ...this.camera, navigation, distance: this.orbitBeforeWalk?.distance ?? 120, pitch: this.orbitBeforeWalk?.pitch ?? 0.8 };
     }
     this.changed();
   }
@@ -2313,33 +3207,44 @@ export class Terrain3d {
         if (!this.jobs.size && !this.preparation.pending && !this.meshJobs.size && !this.animating) return;
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       } while (true);
-    } catch (error) { this.captureMode = false; throw error; }
+    } catch (error) {
+      this.captureMode = false;
+      throw error;
+    }
   }
   /** Draw and read in the same task: no permanent drawing-buffer retention. */
   async capture(): Promise<Blob> {
     if (!this.active || !this.layer || this.contextLost()) return Promise.reject(new Error('Ouvrez la vue 3D avant de la capturer.'));
     await this.prepareCapture();
-    try { return await new Promise<Blob>((resolve, reject) => this.canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png')); }
-    finally { this.captureMode = false; this.request(); }
+    try {
+      return await new Promise<Blob>((resolve, reject) => this.canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.'))), 'image/png'));
+    } finally {
+      this.captureMode = false;
+      this.request();
+    }
   }
   async captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }> {
     if (!this.active || !this.layer || this.contextLost()) throw new Error('Ouvrez la vue 3D avant de la capturer.');
     await this.prepareCapture();
     try {
-      const camera = this.getCamera(), geometry = this.frameGeometry();
+      const camera = this.getCamera(),
+        geometry = this.frameGeometry();
       camera.heightAboveTargetMetres = geometry.eye[1];
-      camera.viewAngleDegrees = Math.atan2(-geometry.forward[1], Math.hypot(geometry.forward[0], geometry.forward[2])) * 180 / Math.PI;
+      camera.viewAngleDegrees = (Math.atan2(-geometry.forward[1], Math.hypot(geometry.forward[0], geometry.forward[2])) * 180) / Math.PI;
       // Map north is decreasing world y; yaw=0 puts the eye south of the target.
-      camera.azimuthDegrees = ((-camera.yaw * 180 / Math.PI) % 360 + 360) % 360;
-      camera.verticalFovDegrees = FOV * 180 / Math.PI;
+      camera.azimuthDegrees = ((((-camera.yaw * 180) / Math.PI) % 360) + 360) % 360;
+      camera.verticalFovDegrees = (FOV * 180) / Math.PI;
       if (camera.exaggeration === 1) camera.altitudeMetres = geometry.targetHeight + geometry.eye[1];
       const far = Math.max(camera.distance * 4, this.layer.width * 2 + this.heightRange * camera.exaggeration * 2);
-      const frame = await this.captureFrame(Math.max(.02, camera.distance * .0002), far);
+      const frame = await this.captureFrame(Math.max(0.02, camera.distance * 0.0002), far);
       this.request();
-      const encode = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));
+      const encode = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.'))), 'image/png'));
       const [image, depth] = await Promise.all([encode(frame.color), encode(frame.depth)]);
       return { image, depth, camera };
-    } finally { this.captureMode = false; this.request(); }
+    } finally {
+      this.captureMode = false;
+      this.request();
+    }
   }
   /** Colour and normalized inverse depth of the frame just drawn (illustrationDepth.ts). */
   protected captureFrame(near: number, far: number): Promise<{ color: HTMLCanvasElement; depth: HTMLCanvasElement }> {
@@ -2348,67 +3253,109 @@ export class Terrain3d {
   setActive(active: boolean): void {
     this.active = active;
     if (active) this.request();
-    else { this.stopWalking(); cancelAnimationFrame(this.frame); this.frame = 0; clearTimeout(this.settleTimer); this.cameraMovedAt = -Infinity; this.pointers.clear(); this.gesture = undefined; this.element.classList.remove('drag'); }
+    else {
+      this.stopWalking();
+      cancelAnimationFrame(this.frame);
+      this.frame = 0;
+      clearTimeout(this.settleTimer);
+      this.cameraMovedAt = -Infinity;
+      this.pointers.clear();
+      this.gesture = undefined;
+      this.element.classList.remove('drag');
+    }
   }
   resize(width: number, height: number): void {
-    this.width = Math.max(1, width); this.height = Math.max(1, height); this.limitCamera(); this.request();
+    this.width = Math.max(1, width);
+    this.height = Math.max(1, height);
+    this.limitCamera();
+    this.request();
   }
   fit(x?: number, y?: number, visibleWidth?: number): void {
     if (!this.layer) return;
     this.stopWalking();
-    const layer = this.layer, span = visibleWidth ?? layer.width, town = this.groundSettings?.townSites ?? this.groundSettings?.townGlow;
+    const layer = this.layer,
+      span = visibleWidth ?? layer.width,
+      town = this.groundSettings?.townSites ?? this.groundSettings?.townGlow;
     // Underdark: open on the first town, from inside its chamber, the eye under the roof where it allows.
     if (x === undefined && y === undefined && this.groundSettings?.underdark && this.cavern && town && town.length >= 3) {
       // Near enough that the eye stays under the roof of the chamber at the framing pitch.
       const headroom = cavernRoofAt(this.cavern, town[0], town[1]) - (this.heightAt(town[0], town[1]) ?? 0);
-      const distance = Math.min(clamp(town[2] * 1.6, 320, 700), Math.max(220, .7 * headroom / Math.sin(.16) * this.camera.exaggeration));
-      this.camera = { ...this.camera, navigation: 'orbit', x: town[0], y: town[1], distance, yaw: .5, pitch: this.framingPitch(town[0], town[1], distance) };
-      this.changed(); return;
+      const distance = Math.min(clamp(town[2] * 1.6, 320, 700), Math.max(220, ((0.7 * headroom) / Math.sin(0.16)) * this.camera.exaggeration));
+      this.camera = { ...this.camera, navigation: 'orbit', x: town[0], y: town[1], distance, yaw: 0.5, pitch: this.framingPitch(town[0], town[1], distance) };
+      this.changed();
+      return;
     }
-    this.camera = { ...this.camera, navigation: 'orbit', x: x ?? layer.x + layer.width / 2, y: y ?? layer.y + layer.width / 2,
-      distance: Math.max(span, this.heightRange * this.camera.exaggeration) / (2 * Math.tan(FOV / 2)) * Math.max(1, this.height / this.width) * 1.18, yaw: 0, pitch: this.groundSettings?.underdark && this.cavern ? .36 : .88 };
+    this.camera = {
+      ...this.camera,
+      navigation: 'orbit',
+      x: x ?? layer.x + layer.width / 2,
+      y: y ?? layer.y + layer.width / 2,
+      distance: (Math.max(span, this.heightRange * this.camera.exaggeration) / (2 * Math.tan(FOV / 2))) * Math.max(1, this.height / this.width) * 1.18,
+      yaw: 0,
+      pitch: this.groundSettings?.underdark && this.cavern ? 0.36 : 0.88,
+    };
     this.changed();
   }
   /** Zooms the orbit distance. With a cursor position (CSS pixels in the canvas) the ground point under the
    * cursor stays under it: the orbit target slides toward that point in proportion to the distance change. */
   zoom(factor: number, cursorX?: number, cursorY?: number): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
-    if (this.camera.navigation === 'walk' || this.camera.navigation==='fly') return;
-    const before = this.camera.distance, anchor = cursorX === undefined || cursorY === undefined ? null : this.cursorGround(cursorX, cursorY);
+    if (this.camera.navigation === 'walk' || this.camera.navigation === 'fly') return;
+    const before = this.camera.distance,
+      anchor = cursorX === undefined || cursorY === undefined ? null : this.cursorGround(cursorX, cursorY);
     this.camera.distance = before / factor ** this.navigationScale();
     this.limitCamera();
     if (anchor) {
-      const k = this.camera.distance / before, c = this.camera;
-      c.x = anchor[0] + (c.x - anchor[0]) * k; c.y = anchor[1] + (c.y - anchor[1]) * k;
+      const k = this.camera.distance / before,
+        c = this.camera;
+      c.x = anchor[0] + (c.x - anchor[0]) * k;
+      c.y = anchor[1] + (c.y - anchor[1]) * k;
     }
     this.changed();
   }
   /** Ground point under a canvas pixel: the terrain hit, else the horizontal plane through the orbit target. */
   private cursorGround(x: number, y: number): [number, number] | null {
-    const hit = this.screenToWorld(x, y); if (hit) return hit;
+    const hit = this.screenToWorld(x, y);
+    if (hit) return hit;
     if (!this.layer || !this.active) return null;
-    const frame = this.frameGeometry(), c = this.camera;
-    const u = (x - this.width / 2) / frame.focal, v = (this.height / 2 - y) / frame.focal;
+    const frame = this.frameGeometry(),
+      c = this.camera;
+    const u = (x - this.width / 2) / frame.focal,
+      v = (this.height / 2 - y) / frame.focal;
     const dy = frame.forward[1] + u * frame.right[1] + v * frame.up[1];
     if (dy >= -1e-4) return null;
-    const t = -frame.eye[1] / dy; if (!(t > 0)) return null;
+    const t = -frame.eye[1] / dy;
+    if (!(t > 0)) return null;
     return [c.x + frame.eye[0] + (frame.forward[0] + u * frame.right[0] + v * frame.up[0]) * t, c.y + frame.eye[2] + (frame.forward[2] + u * frame.right[2] + v * frame.up[2]) * t];
   }
-  north(): void { this.camera.yaw = 0; this.changed(); }
-  private interacting(): boolean { return !this.fullQualityCapture && !this.captureMode && performance.now() - this.cameraMovedAt < TERRAIN_3D_SETTLE_MS; }
-  private dpr(): number { return terrain3dPixelRatio(this.width, this.height, window.devicePixelRatio || 1, this.maxFramebufferDimension, this.interacting()); }
-  private maxScale(): number { return this.groundSettings ? TERRAIN_GROUND_MAX_SCALE : TERRAIN_3D_MAX_SCALE; }
+  north(): void {
+    this.camera.yaw = 0;
+    this.changed();
+  }
+  private interacting(): boolean {
+    return !this.fullQualityCapture && !this.captureMode && performance.now() - this.cameraMovedAt < TERRAIN_3D_SETTLE_MS;
+  }
+  private dpr(): number {
+    return terrain3dPixelRatio(this.width, this.height, window.devicePixelRatio || 1, this.maxFramebufferDimension, this.interacting());
+  }
+  private maxScale(): number {
+    return this.groundSettings ? TERRAIN_GROUND_MAX_SCALE : TERRAIN_3D_MAX_SCALE;
+  }
   private limitCamera(): void {
-    const width = this.layer?.width ?? 1000, c = this.camera;
+    const width = this.layer?.width ?? 1000,
+      c = this.camera;
     c.x = clamp(Number.isFinite(c.x) ? c.x : width / 2, this.layer?.x ?? 0, (this.layer?.x ?? 0) + width);
     c.y = clamp(Number.isFinite(c.y) ? c.y : width / 2, this.layer?.y ?? 0, (this.layer?.y ?? 0) + width);
     const minimumDistance = this.options.navigation ? 2.5 : this.height / (2 * Math.tan(FOV / 2) * this.maxScale());
     c.distance = clamp(Number.isFinite(c.distance) ? c.distance : width, minimumDistance, Math.max(width * 5, minimumDistance));
     if (!this.options.navigation) c.navigation = 'orbit';
-    if(c.navigation==='fly'){const ground=this.heightAt(c.x,c.y)??0;c.flightAltitude=clamp(Number.isFinite(c.flightAltitude)?c.flightAltitude!:ground+30,ground+WALK_EYE_HEIGHT,ground+width*5);}
-    c.pitch = clamp(Number.isFinite(c.pitch) ? c.pitch : .8, c.navigation === 'walk'||c.navigation==='fly' ? -1.45 : .14, c.navigation === 'walk'||c.navigation==='fly' ? 1.45 : 1.48);
-    c.yaw = Number.isFinite(c.yaw) ? ((c.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI : 0;
-    c.exaggeration = clamp(Number.isFinite(c.exaggeration) ? c.exaggeration : 1, .2, 5);
+    if (c.navigation === 'fly') {
+      const ground = this.heightAt(c.x, c.y) ?? 0;
+      c.flightAltitude = clamp(Number.isFinite(c.flightAltitude) ? c.flightAltitude! : ground + 30, ground + WALK_EYE_HEIGHT, ground + width * 5);
+    }
+    c.pitch = clamp(Number.isFinite(c.pitch) ? c.pitch : 0.8, c.navigation === 'walk' || c.navigation === 'fly' ? -1.45 : 0.14, c.navigation === 'walk' || c.navigation === 'fly' ? 1.45 : 1.48);
+    c.yaw = Number.isFinite(c.yaw) ? ((((c.yaw + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI : 0;
+    c.exaggeration = clamp(Number.isFinite(c.exaggeration) ? c.exaggeration : 1, 0.2, 5);
   }
   private cameraMoving(): void {
     this.cameraMovedAt = performance.now();
@@ -2417,7 +3364,10 @@ export class Terrain3d {
   }
   private changed(): void {
     this.cameraMoving();
-    this.limitCamera(); this.keepEyeOutOfGround(); this.request(); this.onChange();
+    this.limitCamera();
+    this.keepEyeOutOfGround();
+    this.request();
+    this.onChange();
   }
   /** Orbit: the eye never sits inside the ground (a hillside, a cave wall, the rock under the Underdark roof). An eye
    * below the surface at its own position comes back along the orbit towards the target (same target and angles, a
@@ -2425,162 +3375,252 @@ export class Terrain3d {
   private keepEyeOutOfGround(): void {
     const c = this.camera;
     if (c.navigation === 'walk' || c.navigation === 'fly' || !this.layer || !this.options.navigation) return;
-    const target = this.heightAt(c.x, c.y) ?? 0, minimum = 2.5;
+    const target = this.heightAt(c.x, c.y) ?? 0,
+      minimum = 2.5;
     const free = (d: number): boolean => {
-      const h = Math.cos(c.pitch) * d, ground = this.heightAt(c.x + Math.sin(c.yaw) * h, c.y + Math.cos(c.yaw) * h);
-      return ground === undefined || target + Math.sin(c.pitch) * d / c.exaggeration >= ground + Math.max(.5, d * .002);
+      const h = Math.cos(c.pitch) * d,
+        ground = this.heightAt(c.x + Math.sin(c.yaw) * h, c.y + Math.cos(c.yaw) * h);
+      return ground === undefined || target + (Math.sin(c.pitch) * d) / c.exaggeration >= ground + Math.max(0.5, d * 0.002);
     };
     if (free(c.distance)) return;
     let d = c.distance;
-    for (let k = 0; k < 48 && d > minimum && !free(d); k++) d *= .92;
+    for (let k = 0; k < 48 && d > minimum && !free(d); k++) d *= 0.92;
     c.distance = Math.max(minimum, d);
   }
   protected request(): void {
     if (!this.active || this.frame || this.disposed || this.contextLost()) return;
-    this.frame = requestAnimationFrame(() => { this.frame = 0; this.draw(); });
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      this.draw();
+    });
   }
   private draw(fullQuality = false): void {
     if (!this.layer || !this.active || this.contextLost()) return;
     this.fullQualityCapture = fullQuality;
-    try { this.drawFrame(); } finally { this.fullQualityCapture = false; }
+    try {
+      this.drawFrame();
+    } finally {
+      this.fullQualityCapture = false;
+    }
   }
   private drawFrame(): void {
     if (!this.layer) return;
     this.frameQuality = displayQualityUniform(!this.fullQualityCapture);
     this.frameInteracting = this.interacting();
-    const dpr = this.dpr(), w = Math.max(1, Math.floor(this.width * dpr)), h = Math.max(1, Math.floor(this.height * dpr));
-    if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
-    this.now = performance.now(); this.animating = false;
+    const dpr = this.dpr(),
+      w = Math.max(1, Math.floor(this.width * dpr)),
+      h = Math.max(1, Math.floor(this.height * dpr));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+    this.now = performance.now();
+    this.animating = false;
     this.applyStaleTiles();
-    const frame = this.frameGeometry(); this.select(frame); const preparing = this.prepareMeshes(); this.loadTiles();
+    const frame = this.frameGeometry();
+    this.select(frame);
+    const preparing = this.prepareMeshes();
+    this.loadTiles();
     if (this.root) this.advanceMorphs(this.root);
-    const drawn: Patch[] = [], draws: PatchDraw[] = [];
+    const drawn: Patch[] = [],
+      draws: PatchDraw[] = [];
     this.displayedGrids = [];
     const pieces: RenderPiece[] = [];
     if (this.root) this.collectPieces(this.root, pieces);
-    const unchanged = pieces.length === this.displayedPieces.length && pieces.every((piece, i) => {
-      const previous = this.displayedPieces[i];
-      return !previous.releasing && piece.key === previous.source.key && sameSurface(previous.source, piece);
-    });
-    if (!unchanged) { this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated, { same: sameSurface, tail: SKIRT_FLOATS }); }
+    const unchanged =
+      pieces.length === this.displayedPieces.length &&
+      pieces.every((piece, i) => {
+        const previous = this.displayedPieces[i];
+        return !previous.releasing && piece.key === previous.source.key && sameSurface(previous.source, piece);
+      });
+    if (!unchanged) {
+      this.displayedPieces = stitchTerrainPieces(pieces, this.displayedPieces, this.now - this.stitchUpdated, { same: sameSurface, tail: SKIRT_FLOATS });
+    }
     this.stitchUpdated = this.now;
     this.animating ||= this.displayedPieces.some(piece => piece.releasing);
     for (const stitched of this.displayedPieces) {
-      const source = stitched.source as RenderPiece, patch = source.patch;
+      const source = stitched.source as RenderPiece,
+        patch = source.patch;
       if (source.morph === 1 && source.clip === patch.tile) {
-        const old = patch.seamSnapshot, next = stitched.correction;
-        if (!old || patch.seamCompared !== next && seamDiffers(next, stitched.touched, old, patch.seamTouched)) { patch.seamSnapshot = next; patch.seamTouched = stitched.touched; }
+        const old = patch.seamSnapshot,
+          next = stitched.correction;
+        if (!old || (patch.seamCompared !== next && seamDiffers(next, stitched.touched, old, patch.seamTouched))) {
+          patch.seamSnapshot = next;
+          patch.seamTouched = stitched.touched;
+        }
         patch.seamCompared = next;
       }
       const draw = this.patchDraw(patch, drawn, source.morph, source.clip as Terrain3dTile, stitched);
       if (draw) draws.push(draw);
     }
-    let finest = this.layer.width, texel = this.layer.width / this.fallbackPixels, ready = 0, level = 0;
+    let finest = this.layer.width,
+      texel = this.layer.width / this.fallbackPixels,
+      ready = 0,
+      level = 0;
     const buildingPreparing = this.renderFrame(frame, w, h, draws);
     reportRenderStats({ buildings3d: this.buildings.lastDraw });
     for (const patch of drawn) {
       const material = this.closestTexture(patch);
-      finest = Math.min(finest, patch.tile.width / GRID); texel = Math.min(texel, material.texel);
-      level = Math.max(level, patch.tile.level); if (material.ready) ++ready;
+      finest = Math.min(finest, patch.tile.width / GRID);
+      texel = Math.min(texel, material.texel);
+      level = Math.max(level, patch.tile.level);
+      if (material.ready) ++ready;
     }
-    this.lod = { tiles: drawn.length, ready, pending: this.jobs.size, level, metresPerTexel: texel, metresPerVertex: finest,
-      maxScale: this.maxScale(), scale: frame.focal / this.camera.distance };
+    this.lod = { tiles: drawn.length, ready, pending: this.jobs.size, level, metresPerTexel: texel, metresPerVertex: finest, maxScale: this.maxScale(), scale: frame.focal / this.camera.distance };
     this.trim();
     this.onRender?.();
     if (preparing || buildingPreparing || this.animating) this.request();
   }
   /** Sky, terrain patches and buildings of one frame; returns whether buildings are still preparing. */
   protected renderFrame(frame: FrameGeometry, w: number, h: number, draws: PatchDraw[]): boolean {
-    const gl = this.gl, layer = this.layer!;
+    const gl = this.gl,
+      layer = this.layer!;
     const target = this.frameInteracting || this.frameQuality > 0 ? undefined : this.msaaTarget(w, h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, target?.framebuffer ?? null);
-    this.prepareBillboards(); this.prepareTrees(frame); this.prepareFungi(); const raisedBlend = this.raisedBlend(frame);
-    gl.viewport(0, 0, w, h); gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
-    gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
-    const night=this.lookSettings.ambience==='night';
-    gl.useProgram(this.skyProgram); gl.uniform1f(this.uniform('height', this.skyProgram), h); gl.uniform1i(this.uniform('uNight',this.skyProgram),this.groundSettings?.underdark?2:+night); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    this.prepareBillboards();
+    this.prepareTrees(frame);
+    this.prepareFungi();
+    const raisedBlend = this.raisedBlend(frame);
+    gl.viewport(0, 0, w, h);
+    gl.clearDepth(1);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.CULL_FACE);
+    gl.bindVertexArray(null);
+    const night = this.lookSettings.ambience === 'night';
+    gl.useProgram(this.skyProgram);
+    gl.uniform1f(this.uniform('height', this.skyProgram), h);
+    gl.uniform1i(this.uniform('uNight', this.skyProgram), this.groundSettings?.underdark ? 2 : +night);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.terrainProgram = this.useMapShader ? this.mapProgram! : this.groundShader(this.groundSettings);
-    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.useProgram(this.terrainProgram);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.useProgram(this.terrainProgram);
     gl.uniform1i(this.uniform('uQuality'), this.frameQuality);
     gl.uniformMatrix4fv(this.uniform('matrix'), false, frame.matrix);
     gl.uniform1f(this.uniform('exaggeration'), this.camera.exaggeration);
-    gl.uniform1f(this.uniform('raisedBlend'),raisedBlend);
+    gl.uniform1f(this.uniform('raisedBlend'), raisedBlend);
     gl.uniform3fv(this.uniform('eye'), frame.eye);
     gl.uniform1f(this.uniform('fogDistance'), this.fogDistance());
-    const settings=this.groundSettings;
+    const settings = this.groundSettings;
     gl.uniform2fv(this.uniform('uWaterSeason'), waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
-    const canopy=settings??this.forestSettings;
-    gl.uniform1i(this.uniform('groundEnabled'),settings?1:0);
-    gl.uniform1i(this.uniform('proceduralPreview'),settings?1:0);
-    gl.uniform1i(this.uniform('showTileBounds'),this.tileBounds?1:0);
-    gl.uniform1i(this.uniform('uNight'),+night); gl.uniform1i(this.uniform('uNaturalWater'),+(this.lookSettings.waterLook==='natural'));
-    gl.uniform1i(this.uniform('displayWaterVisible'),this.lookSettings.waterVisible===false?0:1);
-    gl.uniform1f(this.uniform('displayWaterBand'),layer.width*.016);
-    if(canopy){
-      const lights=terrainLights(canopy.lighting);
-      gl.uniform1ui(this.uniform('uMaterialSeed'),canopy.seed>>>0);
-      gl.uniform2f(this.uniform('uMaterialClimate'),canopy.climate.temperature,canopy.climate.precipitation);
-      gl.uniform3f(this.uniform('groundEye'),this.camera.x+frame.eye[0],(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,this.camera.y+frame.eye[2]);
-      gl.uniform3f(this.uniform('groundLight'),lights.primary[0],lights.primary[2],lights.primary[1]);
-      gl.uniform4f(this.uniform('uGroundCover'),lights.primary[0],lights.primary[2],lights.primary[1],groundCoverActive(settings?.renderV2??0,!!settings?.forestBrushes,!!settings&&!!this.forest,this.lookSettings.groundCover));
-      gl.uniform3f(this.uniform('groundLight2'),lights.secondary[0],lights.secondary[2],lights.secondary[1]);
-      gl.uniform1f(this.uniform('groundStrength'),canopy.lighting.enabled?canopy.lighting.strength:0);
-      gl.uniform3f(this.uniform('macroRect'),layer.x,layer.y,layer.width);gl.uniform1i(this.uniform('macroN'),layer.n);
-      gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.macroTexture);gl.uniform1i(this.uniform('macroField'),2);
+    const canopy = settings ?? this.forestSettings;
+    gl.uniform1i(this.uniform('groundEnabled'), settings ? 1 : 0);
+    gl.uniform1i(this.uniform('proceduralPreview'), settings ? 1 : 0);
+    gl.uniform1i(this.uniform('showTileBounds'), this.tileBounds ? 1 : 0);
+    gl.uniform1i(this.uniform('uNight'), +night);
+    gl.uniform1i(this.uniform('uNaturalWater'), +(this.lookSettings.waterLook === 'natural'));
+    gl.uniform1i(this.uniform('displayWaterVisible'), this.lookSettings.waterVisible === false ? 0 : 1);
+    gl.uniform1f(this.uniform('displayWaterBand'), layer.width * 0.016);
+    if (canopy) {
+      const lights = terrainLights(canopy.lighting);
+      gl.uniform1ui(this.uniform('uMaterialSeed'), canopy.seed >>> 0);
+      gl.uniform2f(this.uniform('uMaterialClimate'), canopy.climate.temperature, canopy.climate.precipitation);
+      gl.uniform3f(this.uniform('groundEye'), this.camera.x + frame.eye[0], (frame.targetHeight + frame.eye[1]) / this.camera.exaggeration, this.camera.y + frame.eye[2]);
+      gl.uniform3f(this.uniform('groundLight'), lights.primary[0], lights.primary[2], lights.primary[1]);
+      gl.uniform4f(this.uniform('uGroundCover'), lights.primary[0], lights.primary[2], lights.primary[1], groundCoverActive(settings?.renderV2 ?? 0, !!settings?.forestBrushes, !!settings && !!this.forest, this.lookSettings.groundCover));
+      gl.uniform3f(this.uniform('groundLight2'), lights.secondary[0], lights.secondary[2], lights.secondary[1]);
+      gl.uniform1f(this.uniform('groundStrength'), canopy.lighting.enabled ? canopy.lighting.strength : 0);
+      gl.uniform3f(this.uniform('macroRect'), layer.x, layer.y, layer.width);
+      gl.uniform1i(this.uniform('macroN'), layer.n);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.macroTexture);
+      gl.uniform1i(this.uniform('macroField'), 2);
     }
-    if(settings){
-      gl.uniform1i(this.uniform('uRenderV2'),settings.renderV2??0);gl.uniform1i(this.uniform('uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(this.uniform('uV2GlacierSources[0]'),renderV2GlacierSources(layer,settings.climate));gl.uniform1f(this.uniform('uV2Season'),settings.v2Season??.5);setSeasonCalendarGl(gl,name=>this.uniform(name),settings.climateZone,settings.v2Calendar);gl.uniform1i(this.uniform('uMaterialZone'),renderV2ZoneUniform(settings.climateZone));
+    if (settings) {
+      gl.uniform1i(this.uniform('uRenderV2'), settings.renderV2 ?? 0);
+      gl.uniform1i(this.uniform('uV2WaterVisible'), settings.waterVisible === false ? 0 : 1);
+      gl.uniform4fv(this.uniform('uV2GlacierSources[0]'), renderV2GlacierSources(layer, settings.climate));
+      gl.uniform1f(this.uniform('uV2Season'), settings.v2Season ?? 0.5);
+      setSeasonCalendarGl(gl, name => this.uniform(name), settings.climateZone, settings.v2Calendar);
+      gl.uniform1i(this.uniform('uMaterialZone'), renderV2ZoneUniform(settings.climateZone));
       // Shore ring and relief light (RGBA16F: shore distance, openness, sky occlusion, horizon tangent toward the
       // light); a new light azimuth re-bakes the last channel off the frame path and bumps the revision.
-      const ringPixels=(settings.renderV2??0)>0?shoreRingPixels(layer,settings.lighting.azimuth,this.ringChanged):undefined;
-      if(ringPixels&&(this.shoreRing?.layer!==layer||this.shoreRing.revision!==ringPixels.revision)){
-        if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
-        this.shoreRing={layer,revision:ringPixels.revision,texture:shoreRingTexture(gl,ringPixels)};
+      const ringPixels = (settings.renderV2 ?? 0) > 0 ? shoreRingPixels(layer, settings.lighting.azimuth, this.ringChanged) : undefined;
+      if (ringPixels && (this.shoreRing?.layer !== layer || this.shoreRing.revision !== ringPixels.revision)) {
+        if (this.shoreRing) gl.deleteTexture(this.shoreRing.texture);
+        this.shoreRing = { layer, revision: ringPixels.revision, texture: shoreRingTexture(gl, ringPixels) };
       }
-      const ring=ringPixels?.grid;
-      gl.activeTexture(gl.TEXTURE10);gl.bindTexture(gl.TEXTURE_2D,this.shoreRing?.texture??this.empty);
-      gl.uniform1i(this.uniform('uShoreRing'),10);gl.uniform3f(this.uniform('uShoreRingRect'),ring?.x??0,ring?.y??0,ring?.width??1);
-      gl.uniform1i(this.uniform('uUnderdark'),settings.underdark?1:0);
-      gl.uniform4fv(this.uniform('uCavern'),this.cavernParameters()); gl.uniform4fv(this.uniform('uFungusArea'),this.fungusArea());
-      {const lamps=this.townGlowUniform();gl.uniform4fv(this.uniform('uCaveLamps[0]'),lamps.values);gl.uniform1i(this.uniform('uCaveLampCount'),lamps.count);}
-      {const g=settings.townGlow??new Float32Array(0),a=new Float32Array(64);for(let k=0;k<Math.min(16,g.length/3|0);k++)a.set(g.subarray(k*3,k*3+3),k*4);gl.uniform4fv(this.uniform('uTownGlow[0]'),a);gl.uniform1i(this.uniform('uTownGlowCount'),Math.min(16,g.length/3|0));}
-      {const f=settings.farmBeds??new Float32Array(128);gl.uniform4fv(this.uniform('uFarmBeds[0]'),f);let n=0;for(let k=0;k<32;k++)if(f[k*4+2]>0)n=k+1;gl.uniform1i(this.uniform('uFarmBedCount'),n);}
-      const contours=settings.contours;
-      gl.uniform1i(this.uniform('groundContours'),contours?1:0);
-      gl.uniform1f(this.uniform('groundContourStep'),contours?.step??1);
-      gl.uniform1f(this.uniform('groundContourOpacity'),contours?.opacity??0);
-      gl.uniform1f(this.uniform('groundFlatSlope'),contours?.flat ? .004 : .012);
-      if(contours){const value=contours.color.replace('#','');gl.uniform3f(this.uniform('groundContourColor'),parseInt(value.slice(0,2),16)/255,parseInt(value.slice(2,4),16)/255,parseInt(value.slice(4,6),16)/255);}
+      const ring = ringPixels?.grid;
+      gl.activeTexture(gl.TEXTURE10);
+      gl.bindTexture(gl.TEXTURE_2D, this.shoreRing?.texture ?? this.empty);
+      gl.uniform1i(this.uniform('uShoreRing'), 10);
+      gl.uniform3f(this.uniform('uShoreRingRect'), ring?.x ?? 0, ring?.y ?? 0, ring?.width ?? 1);
+      gl.uniform1i(this.uniform('uUnderdark'), settings.underdark ? 1 : 0);
+      gl.uniform4fv(this.uniform('uCavern'), this.cavernParameters());
+      gl.uniform4fv(this.uniform('uFungusArea'), this.fungusArea());
+      {
+        const lamps = this.townGlowUniform();
+        gl.uniform4fv(this.uniform('uCaveLamps[0]'), lamps.values);
+        gl.uniform1i(this.uniform('uCaveLampCount'), lamps.count);
+      }
+      {
+        const g = settings.townGlow ?? new Float32Array(0),
+          a = new Float32Array(64);
+        for (let k = 0; k < Math.min(16, (g.length / 3) | 0); k++) a.set(g.subarray(k * 3, k * 3 + 3), k * 4);
+        gl.uniform4fv(this.uniform('uTownGlow[0]'), a);
+        gl.uniform1i(this.uniform('uTownGlowCount'), Math.min(16, (g.length / 3) | 0));
+      }
+      {
+        const f = settings.farmBeds ?? new Float32Array(128);
+        gl.uniform4fv(this.uniform('uFarmBeds[0]'), f);
+        let n = 0;
+        for (let k = 0; k < 32; k++) if (f[k * 4 + 2] > 0) n = k + 1;
+        gl.uniform1i(this.uniform('uFarmBedCount'), n);
+      }
+      const contours = settings.contours;
+      gl.uniform1i(this.uniform('groundContours'), contours ? 1 : 0);
+      gl.uniform1f(this.uniform('groundContourStep'), contours?.step ?? 1);
+      gl.uniform1f(this.uniform('groundContourOpacity'), contours?.opacity ?? 0);
+      gl.uniform1f(this.uniform('groundFlatSlope'), contours?.flat ? 0.004 : 0.012);
+      if (contours) {
+        const value = contours.color.replace('#', '');
+        gl.uniform3f(this.uniform('groundContourColor'), parseInt(value.slice(0, 2), 16) / 255, parseInt(value.slice(2, 4), 16) / 255, parseInt(value.slice(4, 6), 16) / 255);
+      }
     }
     // Textures 3 forest field, 4 occupation, 8 bank envelope.
     bindForest(gl, name => this.uniform(name), this.forest, this.occupation, this.empty, true, 3, 4, 8, 9);
     // Underdark: the cave mask in the forest beach slot (unit 9), forest off.
-    gl.uniform1i(this.uniform('uHasCave'),settings?.underdark&&this.caveTexture?1:0);
-    if(settings?.underdark){
-      gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,this.caveTexture??this.empty);
-      gl.uniform1i(this.uniform('uHasForestBeach'),0);gl.uniform3f(this.uniform('uForestBeachRect'),layer.x,layer.y,layer.width);
+    gl.uniform1i(this.uniform('uHasCave'), settings?.underdark && this.caveTexture ? 1 : 0);
+    if (settings?.underdark) {
+      gl.activeTexture(gl.TEXTURE9);
+      gl.bindTexture(gl.TEXTURE_2D, this.caveTexture ?? this.empty);
+      gl.uniform1i(this.uniform('uHasForestBeach'), 0);
+      gl.uniform3f(this.uniform('uForestBeachRect'), layer.x, layer.y, layer.width);
     }
     bindLandDetail(gl, name => this.uniform(name), this.landDetail, this.empty);
     gl.uniform1i(this.uniform('uPaperMap'), settings?.paperMap ? 1 : 0);
     gl.uniform4fv(this.uniform('uForestTrees'), this.forestTreesUniform(frame));
     bindForestBrushes(gl, name => this.uniform(name), !!settings?.forestBrushes, 5);
-    gl.activeTexture(gl.TEXTURE0); gl.uniform1i(this.uniform('material'), 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(this.uniform('material'), 0);
     gl.uniform1i(this.uniform('previousMaterial'), 1);
     for (const draw of draws) this.renderPatch(draw, frame);
     gl.bindVertexArray(null);
     const pending = this.buildings.draw(this.buildingFrame(frame));
-    this.drawTrees(frame); this.drawRoof(frame); this.drawFungi(frame); this.drawBillboards(frame,raisedBlend);
+    this.drawTrees(frame);
+    this.drawRoof(frame);
+    this.drawFungi(frame);
+    this.drawBillboards(frame, raisedBlend);
     if (target) {
       // The first resolve of a target is checked once: a multisampled blit needs identical read/draw formats, and some
       // back ends give the alpha:false drawing buffer another format. Then the canvas stayed black; fall back to direct drawing.
-      if (!target.checked) while (gl.getError() !== gl.NO_ERROR) { /* drain earlier errors */ }
+      if (!target.checked)
+        while (gl.getError() !== gl.NO_ERROR) {
+          /* drain earlier errors */
+        }
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, target.framebuffer);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
       gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       if (!target.checked) {
         target.checked = true;
-        if (gl.getError() === gl.INVALID_OPERATION) { this.msaaUnsupported = true; this.releaseMsaa(); this.request(); }
+        if (gl.getError() === gl.INVALID_OPERATION) {
+          this.msaaUnsupported = true;
+          this.releaseMsaa();
+          this.request();
+        }
       }
     }
     return pending;
@@ -2588,7 +3628,9 @@ export class Terrain3d {
   private releaseMsaa(): void {
     if (!this.msaa) return;
     const gl = this.gl;
-    gl.deleteFramebuffer(this.msaa.framebuffer); gl.deleteRenderbuffer(this.msaa.color); gl.deleteRenderbuffer(this.msaa.depth);
+    gl.deleteFramebuffer(this.msaa.framebuffer);
+    gl.deleteRenderbuffer(this.msaa.color);
+    gl.deleteRenderbuffer(this.msaa.depth);
     this.msaa = undefined;
   }
   private msaaTarget(width: number, height: number): NonNullable<Terrain3d['msaa']> | undefined {
@@ -2600,23 +3642,40 @@ export class Terrain3d {
     const depthSamples = gl.getInternalformatParameter(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, gl.SAMPLES) as Int32Array;
     const samples = [...colorSamples].find(n => n <= 4 && n > 1 && depthSamples.includes(n));
     if (!samples) return undefined;
-    const framebuffer = gl.createFramebuffer()!, color = gl.createRenderbuffer()!, depth = gl.createRenderbuffer()!;
+    const framebuffer = gl.createFramebuffer()!,
+      color = gl.createRenderbuffer()!,
+      depth = gl.createRenderbuffer()!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    for (const [buffer, format, attachment] of [[color, gl.RGBA8, gl.COLOR_ATTACHMENT0], [depth, gl.DEPTH_COMPONENT24, gl.DEPTH_ATTACHMENT]] as const) {
-      gl.bindRenderbuffer(gl.RENDERBUFFER, buffer); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, format, width, height);
+    for (const [buffer, format, attachment] of [
+      [color, gl.RGBA8, gl.COLOR_ATTACHMENT0],
+      [depth, gl.DEPTH_COMPONENT24, gl.DEPTH_ATTACHMENT],
+    ] as const) {
+      gl.bindRenderbuffer(gl.RENDERBUFFER, buffer);
+      gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, format, width, height);
       gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachment, gl.RENDERBUFFER, buffer);
     }
     this.msaa = { width, height, framebuffer, color, depth };
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { this.releaseMsaa(); gl.bindFramebuffer(gl.FRAMEBUFFER, null); return undefined; }
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      this.releaseMsaa();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return undefined;
+    }
     return this.msaa;
   }
   protected buildingFrame(frame: FrameGeometry): BuildingFrame {
-    const c = this.camera, cave = this.cavern && this.groundSettings?.underdark && !this.groundSettings.paperMap ? this.cavernParameters() : undefined;
-    return { matrix: frame.matrix, cameraX: c.x, cameraY: c.y, targetHeight: frame.targetHeight,
-      exaggeration: c.exaggeration, focal: frame.focal, distance: c.distance,
+    const c = this.camera,
+      cave = this.cavern && this.groundSettings?.underdark && !this.groundSettings.paperMap ? this.cavernParameters() : undefined;
+    return {
+      matrix: frame.matrix,
+      cameraX: c.x,
+      cameraY: c.y,
+      targetHeight: frame.targetHeight,
+      exaggeration: c.exaggeration,
+      focal: frame.focal,
+      distance: c.distance,
       // Underdark: lit by the town's lanterns, dissolving into the cave's darkness with the ground (fog in metres).
-      ...(cave ? { cave: { light: 1.05 - .45 * cave[1], fog: [cave[2] / c.exaggeration, cave[3] / c.exaggeration] as [number, number],
-        eye: [c.x + frame.eye[0], c.y + frame.eye[2], Math.max(0, frame.eye[1] / c.exaggeration)] as [number, number, number] } } : {}) };
+      ...(cave ? { cave: { light: 1.05 - 0.45 * cave[1], fog: [cave[2] / c.exaggeration, cave[3] / c.exaggeration] as [number, number], eye: [c.x + frame.eye[0], c.y + frame.eye[2], Math.max(0, frame.eye[1] / c.exaggeration)] as [number, number, number] } } : {}),
+    };
   }
   private navigationDistance(): number {
     const c = this.camera;
@@ -2625,51 +3684,61 @@ export class Terrain3d {
     const ground = this.heightAt(c.x + frame.eye[0], c.y + frame.eye[2])! * c.exaggeration;
     const clearance = frame.targetHeight + frame.eye[1] - ground;
     // Driven by the orbit distance with a floor: an eye grazing (or touching) the ground never stalls zoom, orbit or pan.
-    return Math.min(c.distance, Math.max(2, c.distance * .3, clearance * 2));
+    return Math.min(c.distance, Math.max(2, c.distance * 0.3, clearance * 2));
   }
   private navigationScale(): number {
     if (!this.options.navigation) return 1;
     const distance = this.navigationDistance();
     // A wheel step always zooms at a usable rate; the minimum orbit distance (limitCamera) stops it, not a slowdown.
-    return Math.max(.35, groundNavigationScale(this.camera.distance, distance / 2) * distance / this.camera.distance);
+    return Math.max(0.35, (groundNavigationScale(this.camera.distance, distance / 2) * distance) / this.camera.distance);
   }
   private orbit(dx: number, dy: number): void {
     const distance = this.navigationDistance();
     // A distant pivot must not sweep the eye across metres of ground per pixel.
-    const scale = this.options.navigation
-      ? Math.sqrt(groundNavigationScale(this.camera.distance, distance / 2)) * distance / this.camera.distance : 1;
-    this.camera.yaw -= dx * .006 * scale; this.camera.pitch += dy * .005 * scale;
+    const scale = this.options.navigation ? (Math.sqrt(groundNavigationScale(this.camera.distance, distance / 2)) * distance) / this.camera.distance : 1;
+    this.camera.yaw -= dx * 0.006 * scale;
+    this.camera.pitch += dy * 0.005 * scale;
   }
   private pan(dx: number, dy: number): void {
-    const c = this.camera, metres = 2 * this.navigationDistance() * Math.tan(FOV / 2) / this.height;
-    const vertical = dy * metres / Math.max(.25, Math.sin(c.pitch)), horizontal = dx * metres;
+    const c = this.camera,
+      metres = (2 * this.navigationDistance() * Math.tan(FOV / 2)) / this.height;
+    const vertical = (dy * metres) / Math.max(0.25, Math.sin(c.pitch)),
+      horizontal = dx * metres;
     c.x -= horizontal * Math.cos(c.yaw) + vertical * Math.sin(c.yaw);
     c.y += horizontal * Math.sin(c.yaw) - vertical * Math.cos(c.yaw);
   }
   private walk(forward: number, right: number, seconds: number, fast = false): void {
     const [dx, dy] = walkDisplacement(this.camera.yaw, forward, right, seconds, fast);
-    this.camera.x += dx; this.camera.y += dy;
+    this.camera.x += dx;
+    this.camera.y += dy;
   }
-  private fly(forward:number,right:number,up:number,seconds:number,fast=false):void{
-    const [dx,dy,dz]=flightDisplacement(this.camera.yaw,this.camera.pitch,forward,right,up,seconds,fast);
-    this.camera.x+=dx;this.camera.y+=dy;this.camera.flightAltitude=(this.camera.flightAltitude??(this.heightAt(this.camera.x,this.camera.y)??0)+30)+dz;
+  private fly(forward: number, right: number, up: number, seconds: number, fast = false): void {
+    const [dx, dy, dz] = flightDisplacement(this.camera.yaw, this.camera.pitch, forward, right, up, seconds, fast);
+    this.camera.x += dx;
+    this.camera.y += dy;
+    this.camera.flightAltitude = (this.camera.flightAltitude ?? (this.heightAt(this.camera.x, this.camera.y) ?? 0) + 30) + dz;
   }
   private stopWalking(): void {
-    this.walkKeys.clear(); cancelAnimationFrame(this.walkFrame); this.walkFrame = 0; this.walkTime = 0;
+    this.walkKeys.clear();
+    cancelAnimationFrame(this.walkFrame);
+    this.walkFrame = 0;
+    this.walkTime = 0;
   }
   private startWalking(): void {
     if (this.walkFrame) return;
     this.walkTime = performance.now();
     const step = (now: number): void => {
       this.walkFrame = 0;
-      if (!this.active || !['walk','fly'].includes(this.camera.navigation??'orbit') || !this.walkKeys.size) return;
-      const held = (...keys: string[]): number => keys.some(key => this.walkKeys.has(key)) ? 1 : 0;
+      if (!this.active || !['walk', 'fly'].includes(this.camera.navigation ?? 'orbit') || !this.walkKeys.size) return;
+      const held = (...keys: string[]): number => (keys.some(key => this.walkKeys.has(key)) ? 1 : 0);
       const forward = held('KeyW', 'KeyZ', 'ArrowUp') - held('KeyS', 'ArrowDown');
       const right = held('KeyD', 'ArrowRight') - held('KeyA', 'KeyQ', 'ArrowLeft');
       // Bound catch-up after a stalled or backgrounded frame.
-      const seconds=Math.min(.05,Math.max(0,(now-this.walkTime)/1000)),fast=!!held('ShiftLeft','ShiftRight');
-      const up=held('Space','KeyE')-held('ControlLeft','ControlRight','KeyC');
-      if(this.camera.navigation==='fly')this.fly(forward,right,up,seconds,fast);else this.walk(forward,right,seconds,fast);
+      const seconds = Math.min(0.05, Math.max(0, (now - this.walkTime) / 1000)),
+        fast = !!held('ShiftLeft', 'ShiftRight');
+      const up = held('Space', 'KeyE') - held('ControlLeft', 'ControlRight', 'KeyC');
+      if (this.camera.navigation === 'fly') this.fly(forward, right, up, seconds, fast);
+      else this.walk(forward, right, seconds, fast);
       this.walkTime = now;
       if (forward || right || up) this.changed();
       this.walkFrame = requestAnimationFrame(step);
@@ -2682,78 +3751,149 @@ export class Terrain3d {
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y) };
   }
   private interactions(): void {
-    const canvas = this.element, signal = this.events.signal;
-    canvas.addEventListener('contextmenu', event => { if (this.active) event.preventDefault(); }, { signal });
-    canvas.addEventListener('pointerdown', event => {
-      if (!this.active || (event.button !== 0 && event.button !== 2)) return;
-      event.preventDefault(); event.stopPropagation(); canvas.focus({ preventScroll: true });
-      canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, orbit: event.button === 2 || event.shiftKey });
-      this.gesture = this.touchGesture(); canvas.classList.add('drag');
-    }, { signal });
-    canvas.addEventListener('pointermove', event => {
-      if (!this.active) return;
-      const previous = this.pointers.get(event.pointerId); if (!previous) return;
-      event.preventDefault(); event.stopPropagation();
-      const dx = event.clientX - previous.x, dy = event.clientY - previous.y;
-      this.pointers.set(event.pointerId, { ...previous, x: event.clientX, y: event.clientY });
-      const gesture = this.touchGesture();
-      if (this.camera.navigation === 'walk'||this.camera.navigation==='fly') {
-        if (gesture && this.gesture) {
-          const forward = (gesture.y - this.gesture.y) * .04, right = (this.gesture.x - gesture.x) * .04;
-          if (this.camera.navigation === 'fly') this.fly(forward, right, 0, .12); else this.walk(forward, right, .12);
+    const canvas = this.element,
+      signal = this.events.signal;
+    canvas.addEventListener(
+      'contextmenu',
+      event => {
+        if (this.active) event.preventDefault();
+      },
+      { signal },
+    );
+    canvas.addEventListener(
+      'pointerdown',
+      event => {
+        if (!this.active || (event.button !== 0 && event.button !== 2)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        canvas.focus({ preventScroll: true });
+        canvas.setPointerCapture(event.pointerId);
+        this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, orbit: event.button === 2 || event.shiftKey });
+        this.gesture = this.touchGesture();
+        canvas.classList.add('drag');
+      },
+      { signal },
+    );
+    canvas.addEventListener(
+      'pointermove',
+      event => {
+        if (!this.active) return;
+        const previous = this.pointers.get(event.pointerId);
+        if (!previous) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const dx = event.clientX - previous.x,
+          dy = event.clientY - previous.y;
+        this.pointers.set(event.pointerId, { ...previous, x: event.clientX, y: event.clientY });
+        const gesture = this.touchGesture();
+        if (this.camera.navigation === 'walk' || this.camera.navigation === 'fly') {
+          if (gesture && this.gesture) {
+            const forward = (gesture.y - this.gesture.y) * 0.04,
+              right = (this.gesture.x - gesture.x) * 0.04;
+            if (this.camera.navigation === 'fly') this.fly(forward, right, 0, 0.12);
+            else this.walk(forward, right, 0.12);
+          } else if (this.pointers.size === 1) {
+            this.camera.yaw -= dx * 0.003;
+            this.camera.pitch += dy * 0.003;
+          }
+        } else if (gesture && this.gesture) {
+          this.pan(gesture.x - this.gesture.x, gesture.y - this.gesture.y);
+          if (gesture.distance > 0 && this.gesture.distance > 0) this.camera.distance *= (this.gesture.distance / gesture.distance) ** this.navigationScale();
+        } else if (this.pointers.size === 1) {
+          if (previous.orbit || event.shiftKey) this.orbit(dx, dy);
+          else this.pan(dx, dy);
         }
-        else if (this.pointers.size === 1) { this.camera.yaw -= dx * .003; this.camera.pitch += dy * .003; }
-      } else if (gesture && this.gesture) {
-        this.pan(gesture.x - this.gesture.x, gesture.y - this.gesture.y);
-        if (gesture.distance > 0 && this.gesture.distance > 0) this.camera.distance *= (this.gesture.distance / gesture.distance) ** this.navigationScale();
-      } else if (this.pointers.size === 1) {
-        if (previous.orbit || event.shiftKey) this.orbit(dx, dy);
-        else this.pan(dx, dy);
-      }
-      this.gesture = gesture; this.changed();
-    }, { signal });
+        this.gesture = gesture;
+        this.changed();
+      },
+      { signal },
+    );
     const up = (event: PointerEvent): void => {
-      this.pointers.delete(event.pointerId); this.gesture = this.touchGesture();
+      this.pointers.delete(event.pointerId);
+      this.gesture = this.touchGesture();
       if (!this.pointers.size) canvas.classList.remove('drag');
     };
-    canvas.addEventListener('pointerup', up, { signal }); canvas.addEventListener('pointercancel', up, { signal }); canvas.addEventListener('lostpointercapture', up, { signal });
-    canvas.addEventListener('wheel', event => {
-      if (!this.active) return;
-      event.preventDefault(); event.stopPropagation();
-      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.height : 1);
-      if (this.camera.navigation === 'walk'||this.camera.navigation==='fly') {if(this.camera.navigation==='fly')this.fly(-clamp(delta,-200,200)/100,0,0,.25,event.shiftKey);else this.walk(-clamp(delta,-200,200)/100,0,.25,event.shiftKey);this.changed();}
-      else { const rect = canvas.getBoundingClientRect(); this.zoom(Math.exp(-clamp(delta, -1000, 1000) * .0015), event.clientX - rect.left, event.clientY - rect.top); }
-    }, { passive: false, signal });
-    canvas.addEventListener('dblclick', event => {
-      if (!this.active) return; event.preventDefault(); event.stopPropagation(); this.zoom(event.shiftKey ? .5 : 2);
-    }, { signal });
-    canvas.addEventListener('keydown', event => {
-      if (this.active && (this.camera.navigation === 'walk'||this.camera.navigation==='fly')) {
-        if (event.code === 'Escape') { event.preventDefault(); event.stopPropagation(); this.setNavigation('orbit'); return; }
-        const horizontal = ['KeyW', 'KeyZ', 'KeyS', 'KeyA', 'KeyQ', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(event.code);
-        const vertical = this.camera.navigation === 'fly' && ['Space', 'KeyE', 'KeyC', 'ControlLeft', 'ControlRight'].includes(event.code);
-        if (!horizontal && !vertical) return;
-        event.preventDefault(); event.stopPropagation(); this.walkKeys.add(event.code); this.startWalking(); return;
-      }
-      if (!this.active || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-      event.preventDefault(); event.stopPropagation();
-      if (event.shiftKey) {
-        this.orbit(event.key === 'ArrowLeft' ? 13 : event.key === 'ArrowRight' ? -13 : 0,
-          event.key === 'ArrowUp' ? 12 : event.key === 'ArrowDown' ? -12 : 0);
-      } else {
-        this.pan(event.key === 'ArrowLeft' ? 40 : event.key === 'ArrowRight' ? -40 : 0,
-          event.key === 'ArrowUp' ? 40 : event.key === 'ArrowDown' ? -40 : 0);
-      }
-      this.changed();
-    }, { signal });
-    canvas.addEventListener('keyup', event => {
-      if (!this.walkKeys.delete(event.code)) return;
-      event.preventDefault(); event.stopPropagation();
-      if (![...this.walkKeys].some(key => !key.startsWith('Shift'))) this.stopWalking();
-    }, { signal });
+    canvas.addEventListener('pointerup', up, { signal });
+    canvas.addEventListener('pointercancel', up, { signal });
+    canvas.addEventListener('lostpointercapture', up, { signal });
+    canvas.addEventListener(
+      'wheel',
+      event => {
+        if (!this.active) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.height : 1);
+        if (this.camera.navigation === 'walk' || this.camera.navigation === 'fly') {
+          if (this.camera.navigation === 'fly') this.fly(-clamp(delta, -200, 200) / 100, 0, 0, 0.25, event.shiftKey);
+          else this.walk(-clamp(delta, -200, 200) / 100, 0, 0.25, event.shiftKey);
+          this.changed();
+        } else {
+          const rect = canvas.getBoundingClientRect();
+          this.zoom(Math.exp(-clamp(delta, -1000, 1000) * 0.0015), event.clientX - rect.left, event.clientY - rect.top);
+        }
+      },
+      { passive: false, signal },
+    );
+    canvas.addEventListener(
+      'dblclick',
+      event => {
+        if (!this.active) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.zoom(event.shiftKey ? 0.5 : 2);
+      },
+      { signal },
+    );
+    canvas.addEventListener(
+      'keydown',
+      event => {
+        if (this.active && (this.camera.navigation === 'walk' || this.camera.navigation === 'fly')) {
+          if (event.code === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            this.setNavigation('orbit');
+            return;
+          }
+          const horizontal = ['KeyW', 'KeyZ', 'KeyS', 'KeyA', 'KeyQ', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight'].includes(event.code);
+          const vertical = this.camera.navigation === 'fly' && ['Space', 'KeyE', 'KeyC', 'ControlLeft', 'ControlRight'].includes(event.code);
+          if (!horizontal && !vertical) return;
+          event.preventDefault();
+          event.stopPropagation();
+          this.walkKeys.add(event.code);
+          this.startWalking();
+          return;
+        }
+        if (!this.active || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.shiftKey) {
+          this.orbit(event.key === 'ArrowLeft' ? 13 : event.key === 'ArrowRight' ? -13 : 0, event.key === 'ArrowUp' ? 12 : event.key === 'ArrowDown' ? -12 : 0);
+        } else {
+          this.pan(event.key === 'ArrowLeft' ? 40 : event.key === 'ArrowRight' ? -40 : 0, event.key === 'ArrowUp' ? 40 : event.key === 'ArrowDown' ? -40 : 0);
+        }
+        this.changed();
+      },
+      { signal },
+    );
+    canvas.addEventListener(
+      'keyup',
+      event => {
+        if (!this.walkKeys.delete(event.code)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (![...this.walkKeys].some(key => !key.startsWith('Shift'))) this.stopWalking();
+      },
+      { signal },
+    );
     canvas.addEventListener('blur', () => this.stopWalking(), { signal });
     window.addEventListener('blur', () => this.stopWalking(), { signal });
-    document.addEventListener('visibilitychange', () => { if (document.hidden) this.stopWalking(); }, { signal });
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        if (document.hidden) this.stopWalking();
+      },
+      { signal },
+    );
   }
 
   /** Replays the retained CPU-side inputs on another view (backend switch, device recovery): relief, water,
@@ -2775,7 +3915,7 @@ export class Terrain3d {
     target.setNearTrees(this.nearTrees);
     target.setTileLoader(this.tileLoader, this.requireHeights);
     if (this.textureSource) target.setTexture(this.textureSource, this.billboardSource);
-    else target.setBillboards(this.billboardSource?.stamps,this.billboardSource?.atlas);
+    else target.setBillboards(this.billboardSource?.stamps, this.billboardSource?.atlas);
     target.resize(this.width, this.height);
     target.setCamera(this.camera);
     target.orbitBeforeWalk = this.orbitBeforeWalk && { ...this.orbitBeforeWalk };
@@ -2785,32 +3925,56 @@ export class Terrain3d {
    * variant is ready (a backend switch waits for it before showing the new view). */
   isSettled(): boolean {
     const lod = this.getLodInfo();
-    return !!this.layer && !this.staleTiles && lod.tiles > 0 && lod.pending === 0 && lod.ready === lod.tiles
-      && !this.frameInteracting
-      && !this.billboardDirty && this.billboardsReady()
-      && (this.useMapShader || this.status.groundVariant !== 'pending');
+    return !!this.layer && !this.staleTiles && lod.tiles > 0 && lod.pending === 0 && lod.ready === lod.tiles && !this.frameInteracting && !this.billboardDirty && this.billboardsReady() && (this.useMapShader || this.status.groundVariant !== 'pending');
   }
-  get isActive(): boolean { return this.active; }
+  get isActive(): boolean {
+    return this.active;
+  }
 
   dispose(): void {
     clearTimeout(this.settleTimer);
     this.unlistenQuality?.();
-    this.disposed = true; this.active = false; this.stopWalking(); cancelAnimationFrame(this.frame); this.events.abort(); this.clearPatches();
-    this.buildings.dispose(); this.buildingScene = undefined;
-    this.buildingGround = new UrbanBuildingGround(); this.mergedOccupation = this.mergedOccupationSource = undefined; this.mergedOccupationScene = undefined;
+    this.disposed = true;
+    this.active = false;
+    this.stopWalking();
+    cancelAnimationFrame(this.frame);
+    this.events.abort();
+    this.clearPatches();
+    this.buildings.dispose();
+    this.buildingScene = undefined;
+    this.buildingGround = new UrbanBuildingGround();
+    this.mergedOccupation = this.mergedOccupationSource = undefined;
+    this.mergedOccupationScene = undefined;
     this.disposeBackend();
     this.forest = this.occupation = this.forestField = this.forestOccupation = undefined;
-    this.textureSource = undefined; this.layer = undefined; this.water = undefined; this.heightSampler = undefined; this.tileLoader = undefined; this.pointers.clear();
+    this.textureSource = undefined;
+    this.layer = undefined;
+    this.water = undefined;
+    this.heightSampler = undefined;
+    this.tileLoader = undefined;
+    this.pointers.clear();
     this.billboardSource = undefined;
   }
   /** Releases the backend's own objects (patches and buildings are already released). */
   protected disposeBackend(): void {
     const gl = this.gl;
     this.releaseMsaa();
-    if (this.billboardProgram) gl.deleteProgram(this.billboardProgram); if (this.billboardVao) gl.deleteVertexArray(this.billboardVao); if (this.billboardBuffer) gl.deleteBuffer(this.billboardBuffer); if (this.billboardAtlas) gl.deleteTexture(this.billboardAtlas.texture);
-    for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture); this.raisedMaterials.clear();
-    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); if(this.caveTexture)gl.deleteTexture(this.caveTexture); gl.deleteTexture(this.empty);if(this.shoreRing)gl.deleteTexture(this.shoreRing.texture);
-    if (this.mapProgram) gl.deleteProgram(this.mapProgram); this.groundVariants.reset(true); gl.deleteProgram(this.skyProgram);
+    if (this.billboardProgram) gl.deleteProgram(this.billboardProgram);
+    if (this.billboardVao) gl.deleteVertexArray(this.billboardVao);
+    if (this.billboardBuffer) gl.deleteBuffer(this.billboardBuffer);
+    if (this.billboardAtlas) gl.deleteTexture(this.billboardAtlas.texture);
+    for (const texture of this.raisedMaterials.values()) this.deleteTexture(texture);
+    this.raisedMaterials.clear();
+    gl.deleteBuffer(this.indices);
+    gl.deleteBuffer(this.seams);
+    gl.deleteTexture(this.material);
+    gl.deleteTexture(this.macroTexture);
+    if (this.caveTexture) gl.deleteTexture(this.caveTexture);
+    gl.deleteTexture(this.empty);
+    if (this.shoreRing) gl.deleteTexture(this.shoreRing.texture);
+    if (this.mapProgram) gl.deleteProgram(this.mapProgram);
+    this.groundVariants.reset(true);
+    gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();
     deleteForestTextures(gl, this.forest);

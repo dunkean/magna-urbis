@@ -4,8 +4,10 @@ import { cityReachedPopulation, populationShortfallText, populationText } from '
 import type { UrbanProgramme } from '../../rust/bridge/urban';
 import type { PlacementBatch } from '../../rust/bridge/urbanArchitecture';
 
-const programme = { demands: [{ id: 'd', unit: 'domesticUnits', requested: 100, provenance: ['profile:5 persons/domesticUnit'] }],
-  allocations: [1, 2, 3, 4].map(i => ({ parcelId: `p${i}`, demandId: 'd', unit: 'domesticUnits', function: 'domestic', households: i === 4 ? 40 : 20, capacity: 0 })) } as unknown as UrbanProgramme;
+const programme = {
+  demands: [{ id: 'd', unit: 'domesticUnits', requested: 100, provenance: ['profile:5 persons/domesticUnit'] }],
+  allocations: [1, 2, 3, 4].map(i => ({ parcelId: `p${i}`, demandId: 'd', unit: 'domesticUnits', function: 'domestic', households: i === 4 ? 40 : 20, capacity: 0 })),
+} as unknown as UrbanProgramme;
 const scene = (ids: string[]) => ({ buildings: ids.map(id => ({ parcel_id: id, function: 'domestic' })) }) as unknown as PlacementBatch;
 
 describe('reached population', () => {

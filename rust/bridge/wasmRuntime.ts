@@ -24,12 +24,23 @@ type ThreadsWasm = CoreWasm & { initThreadPool?: (threads: number) => Promise<un
 // Live bindings: bridges import the classes from here, so they follow the
 // package `loadCoreWasm` selected (objects never mix the two instances).
 // (Read defensively: partial test mocks of the package throw on missing exports.)
-const pick = <K extends keyof CoreWasm>(key: K): CoreWasm[K] => { try { return single[key]; } catch { return undefined as never; } };
-export let SettlementTerrain = pick('SettlementTerrain'); export type SettlementTerrain = single.SettlementTerrain;
-export let TerrainEngine = pick('TerrainEngine'); export type TerrainEngine = single.TerrainEngine;
-export let TerrainPipeline = pick('TerrainPipeline'); export type TerrainPipeline = single.TerrainPipeline;
-export let GenerationNoisePlan = pick('GenerationNoisePlan'); export type GenerationNoisePlan = single.GenerationNoisePlan;
-export let HydrologyEngine = pick('HydrologyEngine'); export type HydrologyEngine = single.HydrologyEngine;
+const pick = <K extends keyof CoreWasm>(key: K): CoreWasm[K] => {
+  try {
+    return single[key];
+  } catch {
+    return undefined as never;
+  }
+};
+export let SettlementTerrain = pick('SettlementTerrain');
+export type SettlementTerrain = single.SettlementTerrain;
+export let TerrainEngine = pick('TerrainEngine');
+export type TerrainEngine = single.TerrainEngine;
+export let TerrainPipeline = pick('TerrainPipeline');
+export type TerrainPipeline = single.TerrainPipeline;
+export let GenerationNoisePlan = pick('GenerationNoisePlan');
+export type GenerationNoisePlan = single.GenerationNoisePlan;
+export let HydrologyEngine = pick('HydrologyEngine');
+export type HydrologyEngine = single.HydrologyEngine;
 export let erosion_defaults = pick('erosion_defaults');
 export let flood_hydrology = pick('flood_hydrology');
 export let erode_relief = pick('erode_relief');
@@ -74,23 +85,31 @@ export async function compileWasm(url: string): Promise<WebAssembly.Module> {
 }
 /** The compiled single-thread module (pool workers instantiate it without recompiling). */
 export function singleWasmModule(): Promise<WebAssembly.Module> {
-  return singleModule ??= compileWasm(singleWasmUrl).catch(error => { singleModule = undefined; throw error; });
+  return (singleModule ??= compileWasm(singleWasmUrl).catch(error => {
+    singleModule = undefined;
+    throw error;
+  }));
 }
 /** A rayon pool whose workers never report (blocked worker scripts in some WebViews) must not hold the engine forever. */
 export const THREAD_POOL_START_MS = 15000;
 function deadline<T>(operation: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([operation, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]).finally(() => clearTimeout(timer));
+  return Promise.race([
+    operation,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 /** The single-thread package, initialised once per realm. */
 export function loadSingleWasm(): Promise<CoreWasm> {
   if (singleRecovery) return singleRecovery.then(() => singleInstance);
   // Asynchronous compile and instantiation: browsers refuse both synchronously on the main thread for this module.
-  return singleLoading ??= singleWasmModule()
-    .then(async module => {
-      if (!synchronousSingleReady) await initWith(singleInit, module);
-      synchronousSingleReady = true; return singleInstance;
-    });
+  return (singleLoading ??= singleWasmModule().then(async module => {
+    if (!synchronousSingleReady) await initWith(singleInit, module);
+    synchronousSingleReady = true;
+    return singleInstance;
+  }));
 }
 /** Whether `loadCoreWasm` would start the threads package in this realm. */
 export const wantsWasmThreads = (): boolean => expectedWasmThreads().mode === 'threads' && inWorker();
@@ -106,7 +125,7 @@ const singleInfo = () => {
  */
 export function loadCoreWasm(): Promise<CoreWasm> {
   if (singleRecovery) return singleRecovery.then(() => singleInstance);
-  return loading ??= (async () => {
+  return (loading ??= (async () => {
     if (!threadsFailure && wantsWasmThreads() && threadsJsLoad && threadsWasmLoad) {
       const expected = expectedWasmThreads();
       try {
@@ -127,7 +146,7 @@ export function loadCoreWasm(): Promise<CoreWasm> {
     if (threadsFailure) setWasmThreadsInfo({ ...expectedWasmThreads(), mode: 'single', threads: 1, reason: threadsFailure });
     else setWasmThreadsInfo(singleInfo());
     return select(await loadSingleWasm());
-  })();
+  })());
 }
 
 // The threads package unwinds (panic=unwind): a Rust panic reaches JS as a
@@ -140,11 +159,16 @@ let threadsFailure: string | undefined;
 const terminatedModules = new WeakSet<object>();
 let singleRecovery: Promise<void> | undefined;
 let singleGeneration = 0;
-const errorText = (error: unknown): string => error instanceof Error ? `${error.name === 'Error' ? '' : error.name + ': '}${error.message}` : String(error);
+const errorText = (error: unknown): string => (error instanceof Error ? `${error.name === 'Error' ? '' : error.name + ': '}${error.message}` : String(error));
 /** Whether the threads instance of this realm is terminated (its guard refuses calls). */
 export function coreWasmTerminated(): boolean {
   if (!threadsModule) return false;
-  try { threadsModule.wasm_threads(); return false; } catch (error) { return /Module terminated/.test(String(error)); }
+  try {
+    threadsModule.wasm_threads();
+    return false;
+  } catch (error) {
+    return /Module terminated/.test(String(error));
+  }
 }
 const resetListeners = new Set<() => void>();
 /** Bridges drop their cached instances of the dead package (they cannot be freed). */
@@ -160,21 +184,41 @@ export function onCoreWasmReset(listener: () => void): () => void {
  * the caller holds, true when it is one an earlier recovery already replaced.
  */
 export async function recoverCoreWasm(error: unknown, used?: CoreWasm): Promise<boolean> {
-  if (used && terminatedModules.has(used)) { await loadCoreWasm(); return true; }
+  if (used && terminatedModules.has(used)) {
+    await loadCoreWasm();
+    return true;
+  }
   if (activeCoreWasm === singleInstance && (error instanceof WebAssembly.RuntimeError || /unreachable|Module terminated/.test(String(error)))) {
-    if (singleRecovery) { await singleRecovery; return true; }
+    if (singleRecovery) {
+      await singleRecovery;
+      return true;
+    }
     const dead = singleInstance;
-    terminatedModules.add(dead); synchronousSingleReady = false;
+    terminatedModules.add(dead);
+    synchronousSingleReady = false;
     singleRecovery = (async () => {
       // wasm-bindgen init caches its instance: fresh glue is needed after panic=abort.
-      const url = new URL(singleJsUrl, import.meta.url); url.searchParams.set('recovery', String(++singleGeneration));
-      const fresh = await import(/* @vite-ignore */ url.href) as CoreWasm;
+      const url = new URL(singleJsUrl, import.meta.url);
+      url.searchParams.set('recovery', String(++singleGeneration));
+      const fresh = (await import(/* @vite-ignore */ url.href)) as CoreWasm;
       await initWith(fresh.default, await singleWasmModule());
-      singleInstance = fresh; synchronousSingleReady = true;
-      singleLoading = Promise.resolve(fresh); loading = singleLoading; select(fresh);
-      for (const listener of resetListeners) { try { listener(); } catch (e) { console.warn(e); } }
-    })().finally(() => { singleRecovery = undefined; });
-    await singleRecovery; return true;
+      singleInstance = fresh;
+      synchronousSingleReady = true;
+      singleLoading = Promise.resolve(fresh);
+      loading = singleLoading;
+      select(fresh);
+      for (const listener of resetListeners) {
+        try {
+          listener();
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+    })().finally(() => {
+      singleRecovery = undefined;
+    });
+    await singleRecovery;
+    return true;
   }
   if (!coreWasmTerminated()) return false;
   terminatedModules.add(threadsModule!);
@@ -185,7 +229,13 @@ export async function recoverCoreWasm(error: unknown, used?: CoreWasm): Promise<
   loading = undefined;
   setWasmThreadsInfo({ ...expected, mode: 'single', threads: 1, reason: threadsFailure });
   await loadCoreWasm();
-  for (const listener of resetListeners) { try { listener(); } catch (reset) { console.warn('WASM reset listener failed:', reset); } }
+  for (const listener of resetListeners) {
+    try {
+      listener();
+    } catch (reset) {
+      console.warn('WASM reset listener failed:', reset);
+    }
+  }
   return true;
 }
 /**
@@ -196,5 +246,15 @@ export async function recoverCoreWasm(error: unknown, used?: CoreWasm): Promise<
 export function adoptSingleWasm(initialise: () => Promise<unknown>): Promise<CoreWasm> {
   if (loading) return loading;
   setWasmThreadsInfo(singleInfo());
-  return loading = singleLoading = initialise().then(() => { synchronousSingleReady = true; return singleInstance; }, error => { loading = singleLoading = undefined; throw error; });
+  return (loading = singleLoading =
+    initialise().then(
+      () => {
+        synchronousSingleReady = true;
+        return singleInstance;
+      },
+      error => {
+        loading = singleLoading = undefined;
+        throw error;
+      },
+    ));
 }

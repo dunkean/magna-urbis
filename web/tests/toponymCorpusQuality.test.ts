@@ -3,15 +3,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import roots from '../src/gen/names/data/cultural-roots.json';
 import { CULTURE_PROFILES, resolveToponymProfile } from '../src/gen/names/profiles';
-import {
-  ALGORITHM_VERSION, AUTHORED_CORPUS_SHA256, BASE_CORPUS_SHA256, CORPUS_FINGERPRINT,
-  generateToponymRecord, generateToponym, isOpaqueCorpusLabel, type ToponymKind,
-} from '../src/gen/names/toponyms';
+import { ALGORITHM_VERSION, AUTHORED_CORPUS_SHA256, BASE_CORPUS_SHA256, CORPUS_FINGERPRINT, generateToponymRecord, generateToponym, isOpaqueCorpusLabel, type ToponymKind } from '../src/gen/names/toponyms';
 
-const indigenousCultures = ['native-iroquoian', 'native-pueblo', 'native-plains', 'mississippian', 'pnw-plank-village',
-  'maori-pa', 'inuit-camp', 'siberian-camp', 'guarani-village', 'budj-bim'];
-const constructedCultures = [...indigenousCultures, 'roman-core', 'egyptian-planned', 'nubian-fortified',
-  'mesopotamian', 'dravidian-temple', 'indus-planned', 'maya', 'aztec', 'inca'];
+const indigenousCultures = ['native-iroquoian', 'native-pueblo', 'native-plains', 'mississippian', 'pnw-plank-village', 'maori-pa', 'inuit-camp', 'siberian-camp', 'guarani-village', 'budj-bim'];
+const constructedCultures = [...indigenousCultures, 'roman-core', 'egyptian-planned', 'nubian-fortified', 'mesopotamian', 'dravidian-temple', 'indus-planned', 'maya', 'aztec', 'inca'];
 const features: ToponymKind[] = ['river', 'lake', 'sea', 'forest', 'hill', 'region', 'farm'];
 
 describe('cultural corpus source quality', () => {
@@ -38,8 +33,7 @@ describe('cultural corpus source quality', () => {
   });
 
   it('has an explicitly authored, feature-tagged grammar for every profile', () => {
-    const profiles: Record<string, { authorship: string; onsets: string[]; vowels: string[]; codas: string[];
-      roots: Record<string, { suffixes: string[]; culturalTemplate?: string }> }> = roots.profiles;
+    const profiles: Record<string, { authorship: string; onsets: string[]; vowels: string[]; codas: string[]; roots: Record<string, { suffixes: string[]; culturalTemplate?: string }> }> = roots.profiles;
     for (const profile of Object.values(CULTURE_PROFILES)) {
       const grammar = profiles[profile.rootGrammar];
       expect(grammar, profile.id).toBeDefined();
@@ -63,8 +57,14 @@ describe('cultural corpus source quality', () => {
       const after = Object.fromEntries([...keys].reverse().map(key => [key, make(key)]));
       expect(after, culture).toEqual(before);
       expect(new Set(Object.values(before).map(value => value.proper)).size, culture).toBeGreaterThan(120);
-      expect(Object.values(before).every(value => value.proper === value.proper.normalize('NFC')), culture).toBe(true);
-      expect(Object.values(before).every(value => !/[0-9]|undefined|null/.test(value.proper)), culture).toBe(true);
+      expect(
+        Object.values(before).every(value => value.proper === value.proper.normalize('NFC')),
+        culture,
+      ).toBe(true);
+      expect(
+        Object.values(before).every(value => !/[0-9]|undefined|null/.test(value.proper)),
+        culture,
+      ).toBe(true);
     }
   });
 

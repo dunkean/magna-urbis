@@ -24,13 +24,15 @@ export function isBinaryProject(bytes: Uint8Array): boolean {
 /** Keep the size bound on the stream, before collecting or allocating its full output. */
 function limited(stream: ReadableStream<Uint8Array>, maximum: number, message: string): ReadableStream<Uint8Array> {
   let size = 0;
-  return stream.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      size += chunk.byteLength;
-      if (size > maximum) throw new Error(message);
-      controller.enqueue(chunk);
-    },
-  }));
+  return stream.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        size += chunk.byteLength;
+        if (size > maximum) throw new Error(message);
+        controller.enqueue(chunk);
+      },
+    }),
+  );
 }
 
 function reverseElements(bytes: Uint8Array, width: number): void {
@@ -42,19 +44,26 @@ export async function serializeProjectBinary(settings: V2Settings, world?: World
   if (world) validateWorld(world);
   if (typeof CompressionStream === 'undefined') throw new Error('Gzip compression is unavailable in this runtime.');
   const project: V2Project = { format: 'magna-urbis-v2', version: 1, engine: V2_ENGINE_VERSION, settings, ...(world ? { world } : {}), mods };
-  const indices = new Map<object, number>(), blocks: TypedArray[] = [];
+  const indices = new Map<object, number>(),
+    blocks: TypedArray[] = [];
   // Only the skeleton becomes JSON; raster elements never become decimal strings.
-  const skeleton = new TextEncoder().encode(JSON.stringify(project, (_key, value: unknown) => {
-    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-      const type = Object.prototype.toString.call(value).slice(8, -1);
-      if (!Object.hasOwn(arrayTypes, type)) throw new Error('Unsupported binary project array type.');
-      let index = indices.get(value);
-      if (index === undefined) { index = blocks.length; indices.set(value, index); blocks.push(value as TypedArray); }
-      return { $mub: index, type, length: (value as TypedArray).length };
-    }
-    if (typeof value === 'number' && !Number.isFinite(value)) return { $mu: 'number', value: String(value) };
-    return value;
-  }));
+  const skeleton = new TextEncoder().encode(
+    JSON.stringify(project, (_key, value: unknown) => {
+      if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+        const type = Object.prototype.toString.call(value).slice(8, -1);
+        if (!Object.hasOwn(arrayTypes, type)) throw new Error('Unsupported binary project array type.');
+        let index = indices.get(value);
+        if (index === undefined) {
+          index = blocks.length;
+          indices.set(value, index);
+          blocks.push(value as TypedArray);
+        }
+        return { $mub: index, type, length: (value as TypedArray).length };
+      }
+      if (typeof value === 'number' && !Number.isFinite(value)) return { $mu: 'number', value: String(value) };
+      return value;
+    }),
+  );
   let offset = 4 + skeleton.byteLength;
   if (offset > MAX_DECOMPRESSED_PROJECT_BYTES) throw new Error(DECOMPRESSED_LIMIT);
   const header = new ArrayBuffer(4);
@@ -65,7 +74,10 @@ export async function serializeProjectBinary(settings: V2Settings, world?: World
     if (start + block.byteLength > MAX_DECOMPRESSED_PROJECT_BYTES) throw new Error(DECOMPRESSED_LIMIT);
     if (start > offset) parts.push(new Uint8Array(start - offset));
     let bytes = new Uint8Array(block.buffer, block.byteOffset, block.byteLength);
-    if (!littleEndian && block.BYTES_PER_ELEMENT > 1) { bytes = bytes.slice(); reverseElements(bytes, block.BYTES_PER_ELEMENT); }
+    if (!littleEndian && block.BYTES_PER_ELEMENT > 1) {
+      bytes = bytes.slice();
+      reverseElements(bytes, block.BYTES_PER_ELEMENT);
+    }
     parts.push(bytes);
     offset = start + block.byteLength;
   }
@@ -92,24 +104,30 @@ export async function parseProjectBinary(buffer: ArrayBuffer): Promise<V2Project
   let offset = 4 + length;
   if (!length || offset > payload.byteLength) throw new Error(skeletonError);
   let skeleton: unknown;
-  try { skeleton = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(payload, 4, length))); }
-  catch { throw new Error(skeletonError); }
+  try {
+    skeleton = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(payload, 4, length)));
+  } catch {
+    throw new Error(skeletonError);
+  }
   const blocks: { type: ArrayType; length: number; array: TypedArray }[] = [];
   function restore(value: unknown, depth = 0): unknown {
     if (depth > 100) throw new Error('Project structure is too complex.');
     if (!value || typeof value !== 'object') return value;
     const record = value as Record<string, unknown>;
     if (Object.hasOwn(record, '$mub')) {
-      const index = record.$mub, type = record.type, count = record.length;
-      if (Object.keys(record).length !== 3 || !Number.isSafeInteger(index) || Number(index) < 0 || Number(index) > blocks.length ||
-        typeof type !== 'string' || !Object.hasOwn(arrayTypes, type) || !Number.isSafeInteger(count) || Number(count) < 0) throw new Error(ARRAY_ERROR);
+      const index = record.$mub,
+        type = record.type,
+        count = record.length;
+      if (Object.keys(record).length !== 3 || !Number.isSafeInteger(index) || Number(index) < 0 || Number(index) > blocks.length || typeof type !== 'string' || !Object.hasOwn(arrayTypes, type) || !Number.isSafeInteger(count) || Number(count) < 0) throw new Error(ARRAY_ERROR);
       const known = blocks[Number(index)];
       if (known) {
         if (known.type !== type || known.length !== count) throw new Error(ARRAY_ERROR);
         return known.array;
       }
-      const constructor = arrayTypes[type as ArrayType], size = Number(count) * constructor.BYTES_PER_ELEMENT;
-      const start = aligned(offset), end = start + size;
+      const constructor = arrayTypes[type as ArrayType],
+        size = Number(count) * constructor.BYTES_PER_ELEMENT;
+      const start = aligned(offset),
+        end = start + size;
       if (!Number.isSafeInteger(end) || end > payload.byteLength) throw new Error(BLOCK_ERROR);
       for (let i = offset; i < start; i++) if (new Uint8Array(payload)[i] !== 0) throw new Error(BLOCK_ERROR);
       // Copy only this view's bytes into a fresh, aligned buffer, independent of the input.

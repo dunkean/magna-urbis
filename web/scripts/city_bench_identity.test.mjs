@@ -26,8 +26,7 @@ test('automatic placement has no invented position requirement', () => {
 });
 
 test('missing, wrong or malformed applied identities remain failures', () => {
-  for (const entries of [[], [{ ...actual, key: 'other' }], [{ ...actual, population: 100000 }],
-    [{ ...actual, culture: 'javanese-courts' }], [{ ...actual, center: { x: NaN, y: 0 } }]]) {
+  for (const entries of [[], [{ ...actual, key: 'other' }], [{ ...actual, population: 100000 }], [{ ...actual, culture: 'javanese-courts' }], [{ ...actual, center: { x: NaN, y: 0 } }]]) {
     assert.equal(settlementIdentity(expected, entries).matches, false);
   }
   assert.equal(settlementIdentity({ ...expected, position: { x: Infinity, y: 0 } }, [actual]).matches, false);

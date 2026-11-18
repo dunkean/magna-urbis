@@ -4,7 +4,7 @@ import { isNeuralRefinement, refinementAmplification, TerrainRefinementSession }
 afterEach(() => vi.unstubAllGlobals());
 describe('retained Neural Earth amplification', () => {
   it('registers the selected method against the retained surface without generating a world', async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'phasor-source', version: 'test', minMpp: .46875, nativeMpp: 30, decoderUsed: false, amplification: 'phasor' })));
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'phasor-source', version: 'test', minMpp: 0.46875, nativeMpp: 30, decoderUsed: false, amplification: 'phasor' })));
     vi.stubGlobal('fetch', fetcher);
     const data = Float32Array.from({ length: 64 }, (_, i) => i / 2);
     const session = await TerrainRefinementSession.create('http://localhost:8893', { x: 0, y: 0, width: 800, n: 8, data }, { seed: '17', amplification: 'phasor', intensity: 1.5 });
@@ -23,7 +23,7 @@ describe('retained Neural Earth amplification', () => {
     expect(refinementAmplification('neural-earth-hybrid')).toBe('hybrid');
   });
   it('rejects an older service that silently ignores amplification', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'old', version: 'old', minMpp: .46875 }))));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'old', version: 'old', minMpp: 0.46875 }))));
     await expect(TerrainRefinementSession.create('http://localhost:8893', { x: 0, y: 0, width: 800, n: 8, data: new Float32Array(64) }, { seed: '17', amplification: 'hybrid' })).rejects.toThrow('méthode demandée');
   });
 });

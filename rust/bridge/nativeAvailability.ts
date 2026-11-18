@@ -10,7 +10,9 @@ const origin = (server: string) => server.replace(/\/+$/, '');
 /** A run also observes optional bridges that can already recover through WASM themselves. */
 export function onNativeConnectionFailure(listener: (server: string) => void): () => void {
   failures.add(listener);
-  return () => { failures.delete(listener); };
+  return () => {
+    failures.delete(listener);
+  };
 }
 
 /** The name survives the bridges that serialize errors as strings across workers.
@@ -20,17 +22,20 @@ export class NativeConnectionError extends Error {
     super('NativeConnectionError: Native engine is unreachable.');
     this.name = 'NativeConnectionError';
   }
-  override toString(): string { return this.message; }
+  override toString(): string {
+    return this.message;
+  }
 }
 export function isNativeConnectionFailure(error: unknown): boolean {
-  return error instanceof NativeConnectionError
-    || /(?:^|\b)NativeConnectionError: Native engine is unreachable\./.test(error instanceof Error ? error.message : String(error));
+  return error instanceof NativeConnectionError || /(?:^|\b)NativeConnectionError: Native engine is unreachable\./.test(error instanceof Error ? error.message : String(error));
 }
 /** Counts only time in which the event loop ran: a page stalled by synchronous WASM or rendering
  * must not let an overdue timer abort a reply that already arrived (a healthy engine seen offline). */
 export function responsiveTimeout(timeoutMs: number, onTimeout: () => void): () => void {
   const step = Math.min(250, Math.max(50, timeoutMs / 10));
-  let spent = 0, last = Date.now(), timer: ReturnType<typeof setTimeout>;
+  let spent = 0,
+    last = Date.now(),
+    timer: ReturnType<typeof setTimeout>;
   const tick = (): void => {
     const now = Date.now();
     spent += Math.min(now - last, step);
@@ -45,19 +50,27 @@ export function markNativeUnavailable(server: string): void {
   health.set(origin(server), { until: Date.now() + HEALTH_TTL_MS, result: Promise.resolve(false) });
 }
 
-const RESTART_WAIT_MS = 10000, RESTART_POLL_MS = 500, RESTART_PROBE_MS = 1000;
+const RESTART_WAIT_MS = 10000,
+  RESTART_POLL_MS = 500,
+  RESTART_PROBE_MS = 1000;
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 /** An engine restart takes a few seconds: poll /status until it answers again (bounded). */
 export async function waitForNativeRestart(server: string, signal?: AbortSignal | null, waitMs = RESTART_WAIT_MS): Promise<boolean> {
   for (let waited = 0; waited <= waitMs && !signal?.aborted; waited += RESTART_POLL_MS) {
-    const controller = new AbortController(), stop = responsiveTimeout(RESTART_PROBE_MS, () => controller.abort());
+    const controller = new AbortController(),
+      stop = responsiveTimeout(RESTART_PROBE_MS, () => controller.abort());
     try {
       const response = await fetch(`${origin(server)}/status`, { cache: 'no-store', signal: controller.signal });
       // A restarted engine may be another binary: its build keys the page's retained results.
-      if (response.ok) { recordNativeBuild(server, ((await response.json().catch(() => ({}))) as { build?: string }).build); return true; }
+      if (response.ok) {
+        recordNativeBuild(server, ((await response.json().catch(() => ({}))) as { build?: string }).build);
+        return true;
+      }
+    } catch {
+      /* Still restarting. */
+    } finally {
+      stop();
     }
-    catch { /* Still restarting. */ }
-    finally { stop(); }
     await delay(RESTART_POLL_MS);
   }
   return false;
@@ -74,9 +87,12 @@ const replayable = (body: RequestInit['body']) => !(typeof ReadableStream !== 'u
 export async function nativeFetch(runtime: ExecutionRuntime, path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS, retryAfterRestart = true): Promise<Response> {
   const attempts = retryAfterRestart && replayable(init.body) ? 3 : 1;
   for (let attempt = 0; attempt < attempts; attempt++) {
-    if (attempt === 2 && !await waitForNativeRestart(runtime.server, init.signal)) break;
+    if (attempt === 2 && !(await waitForNativeRestart(runtime.server, init.signal))) break;
     const result = await sendOnce(runtime, path, init, timeoutMs);
-    if (result.response) { if (attempt) health.delete(origin(runtime.server)); return result.response; }
+    if (result.response) {
+      if (attempt) health.delete(origin(runtime.server));
+      return result.response;
+    }
     if (result.error !== undefined) throw result.error;
     if (result.timedOut) break;
   }
@@ -90,25 +106,37 @@ async function sendOnce(runtime: ExecutionRuntime, path: string, init: RequestIn
   const controller = new AbortController();
   const stopTimer = responsiveTimeout(timeoutMs, () => controller.abort(new DOMException('Native request timed out.', 'TimeoutError')));
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal;
-  const cancelled = (): unknown => init.signal?.aborted && init.signal.reason?.name !== 'TimeoutError' ? init.signal.reason : undefined;
+  const cancelled = (): unknown => (init.signal?.aborted && init.signal.reason?.name !== 'TimeoutError' ? init.signal.reason : undefined);
   let response: Response;
-  try { response = await fetch(`${origin(runtime.server)}${path}`, { ...init, signal }); }
-  catch {
+  try {
+    response = await fetch(`${origin(runtime.server)}${path}`, { ...init, signal });
+  } catch {
     stopTimer();
     const reason = cancelled();
     return reason !== undefined ? { error: reason } : { timedOut: controller.signal.aborted };
   }
-  if (!response.body) { stopTimer(); return { response }; }
+  if (!response.body) {
+    stopTimer();
+    return { response };
+  }
   const reader = response.body.getReader();
   const body = new ReadableStream<Uint8Array>({
     async pull(stream) {
       try {
         const chunk = await reader.read();
-        if (chunk.done) { stopTimer(); stream.close(); }
-        else stream.enqueue(chunk.value);
-      } catch { stopTimer(); stream.error(cancelled() ?? new NativeConnectionError(runtime.server)); }
+        if (chunk.done) {
+          stopTimer();
+          stream.close();
+        } else stream.enqueue(chunk.value);
+      } catch {
+        stopTimer();
+        stream.error(cancelled() ?? new NativeConnectionError(runtime.server));
+      }
     },
-    cancel(reason) { stopTimer(); return reader.cancel(reason); },
+    cancel(reason) {
+      stopTimer();
+      return reader.cancel(reason);
+    },
   });
   return { response: new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers }) };
 }
@@ -116,18 +144,23 @@ async function sendOnce(runtime: ExecutionRuntime, path: string, init: RequestIn
 /** A short, deduplicated check of the existing endpoint; no service startup or downloads. */
 export function nativeRuntimeAvailable(runtime: ExecutionRuntime, fresh = false): Promise<boolean> {
   if (runtime.profile !== 'local') return Promise.resolve(false);
-  const server = origin(runtime.server), known = health.get(server);
+  const server = origin(runtime.server),
+    known = health.get(server);
   if (known && known.until > Date.now() && (!fresh || known.until === Infinity)) return known.result;
   const entry = { until: Infinity, result: Promise.resolve(false) };
   entry.result = (async () => {
     try {
       const response = await nativeFetch(runtime, '/status', { cache: 'no-store' }, HEALTH_TIMEOUT_MS, false);
-      const status = await response.json() as { service?: string; backend?: string; build?: string };
+      const status = (await response.json()) as { service?: string; backend?: string; build?: string };
       const ok = response.ok && status.service === 'magna-urbis-local' && status.backend === 'rust-native';
-      recordNativeBuild(server, ok ? status.build ?? 'unversioned' : undefined);
+      recordNativeBuild(server, ok ? (status.build ?? 'unversioned') : undefined);
       return ok;
-    } catch { recordNativeBuild(server, undefined); return false; }
-    finally { entry.until = Date.now() + HEALTH_TTL_MS; }
+    } catch {
+      recordNativeBuild(server, undefined);
+      return false;
+    } finally {
+      entry.until = Date.now() + HEALTH_TTL_MS;
+    }
   })();
   health.set(server, entry);
   return entry.result;

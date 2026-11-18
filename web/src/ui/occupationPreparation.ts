@@ -11,7 +11,9 @@ export class OccupationPreparation {
   register(revision: number, packed: PackedOccupationLanduse): void {
     if (!this.inputs.has(revision)) this.inputs.set(revision, { landuse: unpackOccupationLanduse(packed), occupations: new Map() });
   }
-  release(revision: number): void { this.inputs.delete(revision); }
+  release(revision: number): void {
+    this.inputs.delete(revision);
+  }
   private input(revision: number) {
     const source = this.inputs.get(revision);
     if (!source) throw new Error(`Land-use revision ${revision} is not registered.`);

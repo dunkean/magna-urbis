@@ -8,31 +8,49 @@ export function heightPyramid(data: Float32Array, n: number): Float32Array[] {
   return floatPyramid(data, n);
 }
 
-interface PreparedLayer { layer: HeightLayer; levels: Float32Array[]; cell: number; inset: number }
+interface PreparedLayer {
+  layer: HeightLayer;
+  levels: Float32Array[];
+  cell: number;
+  inset: number;
+}
 function prepare(layer: HeightLayer, base: boolean): PreparedLayer {
   const levels = base ? heightPyramid(layer.data, layer.n) : [layer.data];
-  return { layer, levels, cell: layer.width / layer.n, inset: base ? 0 : 2 * layer.width / layer.n };
+  return { layer, levels, cell: layer.width / layer.n, inset: base ? 0 : (2 * layer.width) / layer.n };
 }
 
 // Shader-equivalent gradient noise. terrainAdjust's array mutation API uses a
 // hard octave cutoff; this point sampler needs the shader's continuous fade.
-const cacheSize = 4096, hashes = new Uint32Array(cacheSize), valid = new Uint8Array(cacheSize);
-const cosines = new Float64Array(cacheSize), sines = new Float64Array(cacheSize);
+const cacheSize = 4096,
+  hashes = new Uint32Array(cacheSize),
+  valid = new Uint8Array(cacheSize);
+const cosines = new Float64Array(cacheSize),
+  sines = new Float64Array(cacheSize);
 function noiseDot(x: number, y: number, dx: number, dy: number, seed: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ seed;
-  h = Math.imul(h ^ (h >>> 13), 1274126177); h = (h ^ (h >>> 16)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = (h ^ (h >>> 16)) >>> 0;
   const slot = h & (cacheSize - 1);
   if (!valid[slot] || hashes[slot] !== h) {
-    const angle = h / 4294967296 * Math.PI * 2;
-    hashes[slot] = h; cosines[slot] = Math.cos(angle); sines[slot] = Math.sin(angle); valid[slot] = 1;
+    const angle = (h / 4294967296) * Math.PI * 2;
+    hashes[slot] = h;
+    cosines[slot] = Math.cos(angle);
+    sines[slot] = Math.sin(angle);
+    valid[slot] = 1;
   }
   return cosines[slot] * dx + sines[slot] * dy;
 }
 function gradientNoise(x: number, y: number, seed: number): number {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10), v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
-  const a = noiseDot(ix, iy, fx, fy, seed), b = noiseDot(ix + 1, iy, fx - 1, fy, seed);
-  const c = noiseDot(ix, iy + 1, fx, fy - 1, seed), d = noiseDot(ix + 1, iy + 1, fx - 1, fy - 1, seed);
+  const ix = Math.floor(x),
+    iy = Math.floor(y),
+    fx = x - ix,
+    fy = y - iy;
+  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10),
+    v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  const a = noiseDot(ix, iy, fx, fy, seed),
+    b = noiseDot(ix + 1, iy, fx - 1, fy, seed);
+  const c = noiseDot(ix, iy + 1, fx, fy - 1, seed),
+    d = noiseDot(ix + 1, iy + 1, fx - 1, fy - 1, seed);
   return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 1.4;
 }
 
@@ -40,36 +58,62 @@ function gradientNoise(x: number, y: number, seed: number): number {
  * metres per device pixel, matching TerrainGl's uPx; omitted means finest detail.
  * Inputs are retained immutable grids. No engine generation or per-query grids. */
 export function createTerrainSurfaceSampler(base: HeightLayer, look: TerrainLook, details: HeightLayer[] = [], enhanced3d = false): (x: number, y: number, metresPerPixel?: number) => number {
-  const fallback = prepare(base, true), layers = details.map(layer => prepare(layer, false)).reverse();
-  const floor = look.floor, sourceCell = look.sourceCell, detail = { ...look.detail };
+  const fallback = prepare(base, true),
+    layers = details.map(layer => prepare(layer, false)).reverse();
+  const floor = look.floor,
+    sourceCell = look.sourceCell,
+    detail = { ...look.detail };
   const refine = !enhanced3d && look.refine && sourceCell > 0 && detail.amplitude !== 0;
   const octaves: { wavelength: number; c: number; s: number; amplitude: number; seed: number }[] = [];
   const count = Math.max(0, Math.min(FRACTAL_ROTATIONS.length, Math.round(detail.octaves)));
   let wavelength = sourceCell * detail.start;
   for (let k = 0; refine && k < count && wavelength > 0; k++, wavelength /= Math.max(1.1, detail.lacunarity)) {
-    octaves.push({ wavelength, c: Math.cos(FRACTAL_ROTATIONS[k]), s: Math.sin(FRACTAL_ROTATIONS[k]),
-      amplitude: Math.pow(wavelength / sourceCell, detail.hurst), seed: (look.seed + k * 7919) >>> 0 });
+    octaves.push({ wavelength, c: Math.cos(FRACTAL_ROTATIONS[k]), s: Math.sin(FRACTAL_ROTATIONS[k]), amplitude: Math.pow(wavelength / sourceCell, detail.hurst), seed: (look.seed + k * 7919) >>> 0 });
   }
   const weights = new Float64Array(16);
-  let height = 0, gradientX = 0, gradientY = 0;
+  let height = 0,
+    gradientX = 0,
+    gradientY = 0;
   const axis = (offset: number, t: number): void => {
-    const u = 1 - t, t2 = t * t, t3 = t2 * t;
-    weights[offset] = u * u * u / 6; weights[offset + 1] = (3 * t3 - 6 * t2 + 4) / 6;
-    weights[offset + 2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6; weights[offset + 3] = t3 / 6;
-    weights[offset + 4] = -.5 * u * u; weights[offset + 5] = 1.5 * t2 - 2 * t;
-    weights[offset + 6] = -1.5 * t2 + t + .5; weights[offset + 7] = .5 * t2;
+    const u = 1 - t,
+      t2 = t * t,
+      t3 = t2 * t;
+    weights[offset] = (u * u * u) / 6;
+    weights[offset + 1] = (3 * t3 - 6 * t2 + 4) / 6;
+    weights[offset + 2] = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6;
+    weights[offset + 3] = t3 / 6;
+    weights[offset + 4] = -0.5 * u * u;
+    weights[offset + 5] = 1.5 * t2 - 2 * t;
+    weights[offset + 6] = -1.5 * t2 + t + 0.5;
+    weights[offset + 7] = 0.5 * t2;
   };
   const level = (prepared: PreparedLayer, lod: number, x: number, y: number): void => {
-    const { layer, levels } = prepared, n = Math.max(1, layer.n >> lod), cell = prepared.cell * 2 ** lod;
-    const gx = (x - layer.x) / cell - .5, gy = (y - layer.y) / cell - .5;
-    const bx = Math.floor(gx), by = Math.floor(gy), data = levels[lod];
-    axis(0, gx - bx); axis(8, gy - by);
-    const last = n - 1, c0 = Math.max(0, Math.min(last, bx - 1)), c1 = Math.max(0, Math.min(last, bx)), c2 = Math.max(0, Math.min(last, bx + 1)), c3 = Math.max(0, Math.min(last, bx + 2));
-    const w0 = weights[0], w1 = weights[1], w2 = weights[2], w3 = weights[3];
+    const { layer, levels } = prepared,
+      n = Math.max(1, layer.n >> lod),
+      cell = prepared.cell * 2 ** lod;
+    const gx = (x - layer.x) / cell - 0.5,
+      gy = (y - layer.y) / cell - 0.5;
+    const bx = Math.floor(gx),
+      by = Math.floor(gy),
+      data = levels[lod];
+    axis(0, gx - bx);
+    axis(8, gy - by);
+    const last = n - 1,
+      c0 = Math.max(0, Math.min(last, bx - 1)),
+      c1 = Math.max(0, Math.min(last, bx)),
+      c2 = Math.max(0, Math.min(last, bx + 1)),
+      c3 = Math.max(0, Math.min(last, bx + 2));
+    const w0 = weights[0],
+      w1 = weights[1],
+      w2 = weights[2],
+      w3 = weights[3];
     height = gradientX = gradientY = 0;
     for (let j = 0; j < 4; j++) {
       const row = Math.max(0, Math.min(last, by + j - 1)) * n;
-      const s0 = data[row + c0], s1 = data[row + c1], s2 = data[row + c2], s3 = data[row + c3];
+      const s0 = data[row + c0],
+        s1 = data[row + c1],
+        s2 = data[row + c2],
+        s3 = data[row + c3];
       const value = s0 * w0 + s1 * w1 + s2 * w2 + s3 * w3;
       height += value * weights[j + 8];
       // Only the refined branch reads gradients: every other sampler takes the height alone.
@@ -78,14 +122,19 @@ export function createTerrainSurfaceSampler(base: HeightLayer, look: TerrainLook
         gradientY += value * weights[j + 12];
       }
     }
-    gradientX /= cell; gradientY /= cell;
+    gradientX /= cell;
+    gradientY /= cell;
   };
   const filtered = (prepared: PreparedLayer, lower: number, t: number, x: number, y: number): void => {
     level(prepared, lower, x, y);
-    if (t > .001 && lower < prepared.levels.length - 1) {
-      const h = height, gx = gradientX, gy = gradientY;
+    if (t > 0.001 && lower < prepared.levels.length - 1) {
+      const h = height,
+        gx = gradientX,
+        gy = gradientY;
       level(prepared, lower + 1, x, y);
-      height = h + (height - h) * t; gradientX = gx + (gradientX - gx) * t; gradientY = gy + (gradientY - gy) * t;
+      height = h + (height - h) * t;
+      gradientX = gx + (gradientX - gx) * t;
+      gradientY = gy + (gradientY - gy) * t;
     }
   };
   const sampler = (x: number, y: number, metresPerPixel = 0): number => {
@@ -93,13 +142,18 @@ export function createTerrainSurfaceSampler(base: HeightLayer, look: TerrainLook
     let prepared = fallback;
     for (const candidate of layers) {
       const { layer, inset } = candidate;
-      if (x >= layer.x + inset && y >= layer.y + inset && x <= layer.x + layer.width - inset && y <= layer.y + layer.width - inset) { prepared = candidate; break; }
+      if (x >= layer.x + inset && y >= layer.y + inset && x <= layer.x + layer.width - inset && y <= layer.y + layer.width - inset) {
+        prepared = candidate;
+        break;
+      }
     }
     // Footprints up to one cell always land on level 0 (the canonical probes all use 0).
     if (px <= prepared.cell) level(prepared, 0, x, y);
     else {
       const maxLod = prepared.levels.length - 1;
-      const lod = Math.max(0, Math.min(maxLod, Math.log2(Math.max(1, px / prepared.cell)) - .5)), lower = Math.floor(lod), t = lod - lower;
+      const lod = Math.max(0, Math.min(maxLod, Math.log2(Math.max(1, px / prepared.cell)) - 0.5)),
+        lower = Math.floor(lod),
+        t = lod - lower;
       filtered(prepared, lower, t, x, y);
     }
     if (floor > 0) height = Math.max(height, floor);
@@ -107,7 +161,7 @@ export function createTerrainSurfaceSampler(base: HeightLayer, look: TerrainLook
       const scale = detail.amplitude * Math.pow(Math.max(Math.hypot(gradientX, gradientY) + detail.flat, 1e-6), detail.slope) * sourceCell;
       let sum = 0;
       for (const octave of octaves) {
-        const weight = px > 0 ? Math.max(0, Math.min(1, octave.wavelength / px * .5 - 1)) : 1;
+        const weight = px > 0 ? Math.max(0, Math.min(1, (octave.wavelength / px) * 0.5 - 1)) : 1;
         if (weight <= 0) break;
         const noise = gradientNoise((x * octave.c - y * octave.s) / octave.wavelength, (x * octave.s + y * octave.c) / octave.wavelength, octave.seed);
         sum += noise * octave.amplitude * weight;

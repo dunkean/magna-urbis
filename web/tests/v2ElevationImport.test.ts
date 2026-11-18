@@ -12,7 +12,8 @@ describe('V2 FP32 terrain handoff', () => {
   it('resamples at pixel centres and rejects invalid source rasters', () => {
     const source = Float32Array.from([0, 10, 20, 30]);
     const result = heightFromElevations(source, 2, 2, 400, 1);
-    expect(result.data[0]).toBe(15); expect(result.cell).toBe(400);
+    expect(result.data[0]).toBe(15);
+    expect(result.cell).toBe(400);
     expect(() => heightFromElevations(Float32Array.from([NaN]), 1, 1, 400, 1)).toThrow();
     expect(() => heightFromElevations(source, 2, 3, 400, 2)).toThrow();
   });

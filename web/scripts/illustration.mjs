@@ -3,12 +3,18 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-const root = fileURLToPath(new URL('../..', import.meta.url)), windows = process.platform === 'win32';
-const environment = join(root, '.venv-illustration'), interpreter = join(environment, windows ? 'Scripts/python.exe' : 'bin/python');
-const args = process.argv.slice(2), setup = args.includes('--setup');
+const root = fileURLToPath(new URL('../..', import.meta.url)),
+  windows = process.platform === 'win32';
+const environment = join(root, '.venv-illustration'),
+  interpreter = join(environment, windows ? 'Scripts/python.exe' : 'bin/python');
+const args = process.argv.slice(2),
+  setup = args.includes('--setup');
 function run(command, args) {
-  return new Promise((resolve, reject) => { const child = spawn(command, args, { cwd: root, stdio: 'inherit', windowsHide: true });
-    child.once('error', reject); child.once('exit', code => code === 0 ? resolve() : reject(Error(`Le processus s’est arrêté (${code}).`))); });
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd: root, stdio: 'inherit', windowsHide: true });
+    child.once('error', reject);
+    child.once('exit', code => (code === 0 ? resolve() : reject(Error(`Le processus s’est arrêté (${code}).`))));
+  });
 }
 try {
   if (setup) {
@@ -19,4 +25,7 @@ try {
     if (!existsSync(python)) throw Error('Exécutez npm run illustration:setup pour créer le service d’illustration.');
     await run(python, ['-u', '-m', 'illustration', ...args]);
   }
-} catch (error) { console.error(error.message); process.exitCode = 1; }
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = 1;
+}

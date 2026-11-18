@@ -7,7 +7,8 @@ import type { UrbanProgramme } from '../../rust/bridge/urban';
 const numbers = (value: string) => value.match(/[0-9]+(?:[,.][0-9]+)?/gu);
 
 it('qualifies the actual halfling100% warning as a parcel estimate while retaining original archived text and all figures', () => {
-  const archived = { warnings: [halfling.warning] }, before = JSON.stringify(archived);
+  const archived = { warnings: [halfling.warning] },
+    before = JSON.stringify(archived);
   expect(halfling.warning).toContain('100 % des ménages logés');
   const display = urbanCapacityWarningText(archived.warnings[0]);
   expect(display).toContain('Capacité parcellaire estimée après affectation (ancien rapport)');
@@ -30,8 +31,10 @@ it('leaves new native wording, free text, future or incomplete signatures unchan
   const values = [
     'Capacité parcellaire estimée après affectation : tissu — 100 % du besoin en ménages couvert selon le modèle. Capacité habitante non évaluée.',
     'Capacité parcellaire prévue (modèle) : tissu — 92 % du besoin en ménages couvert par l’estimation. Capacité habitante non évaluée.',
-    'Texte libre : les ménages logés près du marché', 'Capacité : donnée ancienne sans pourcentage',
-    'Capacité : tissu — ? % des ménages logés.', 'Future capacity report: 100% housed',
+    'Texte libre : les ménages logés près du marché',
+    'Capacité : donnée ancienne sans pourcentage',
+    'Capacité : tissu — ? % des ménages logés.',
+    'Future capacity report: 100% housed',
     'Capacité prévue : tissu — 74 % des ménages logeables.',
     'city : Capacité : tissu — 100 % des ménages logés.', // Caller supplies raw stage warning before any city prefix.
   ];
@@ -39,8 +42,7 @@ it('leaves new native wording, free text, future or incomplete signatures unchan
 });
 
 it('keeps the existing building-balance evidence unknown for parcel-only or compact-plan scenes', () => {
-  const programme = { demands: [{ id: 'housing', function: 'domestic', unit: 'domesticUnits', requested: 100,
-    parcelCapacity: 100, builtCapacity: 0, openCapacity: 0, deficit: 100 }], allocations: [], warnings: [halfling.warning] } as unknown as UrbanProgramme;
+  const programme = { demands: [{ id: 'housing', function: 'domestic', unit: 'domesticUnits', requested: 100, parcelCapacity: 100, builtCapacity: 0, openCapacity: 0, deficit: 100 }], allocations: [], warnings: [halfling.warning] } as unknown as UrbanProgramme;
   const before = JSON.stringify(programme);
   expect(programmeBalanceEvidence()(programme)).toBe('not_calculated');
   urbanCapacityWarningText(programme.warnings[0]);

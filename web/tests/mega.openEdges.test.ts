@@ -8,18 +8,23 @@ import { tryDifference, tryIntersection, mpArea } from '../src/gen/geo/bool';
 import { LAB_OPEN } from '../src/gen/urban/streets';
 
 it('keeps whole exterior houses without order dependence or cross-quarter claims', () => {
-  const world = generate(makeOptions({ seed: '42', size: 'town', population: 9000, eagerPop: 1,
-    mapSize: 4000, walls: 'none', settlements: 'none', river: 'none', coast: 'none' }));
-  const host = JSON.stringify(world.urban), M = world.urban!.macro!;
-  const a = megaQuarterDetail(world, 2)!, b = megaQuarterDetail(world, 3)!;
+  const world = generate(makeOptions({ seed: '42', size: 'town', population: 9000, eagerPop: 1, mapSize: 4000, walls: 'none', settlements: 'none', river: 'none', coast: 'none' }));
+  const host = JSON.stringify(world.urban),
+    M = world.urban!.macro!;
+  const a = megaQuarterDetail(world, 2)!,
+    b = megaQuarterDetail(world, 3)!;
   expect(a.buildings.length).toBeGreaterThan(0);
   expect(b.buildings.length).toBeGreaterThan(0);
   let extension = 0;
-  for (const [id, detail] of [[2, a], [3, b]] as const) {
+  for (const [id, detail] of [
+    [2, a],
+    [3, b],
+  ] as const) {
     const owner = M.quarters.find(q => q.id === id)!;
     const limit = quarterRoofCollar(owner.pts, 16);
     for (const roof of detail.buildings) {
-      const outside = tryDifference(roof.poly, owner.pts), escaped = tryDifference(roof.poly, limit);
+      const outside = tryDifference(roof.poly, owner.pts),
+        escaped = tryDifference(roof.poly, limit);
       expect(outside.failed || escaped.failed).toBe(false);
       extension += mpArea(outside.pieces);
       expect(mpArea(escaped.pieces)).toBeLessThan(0.01);
@@ -45,10 +50,10 @@ it('keeps whole exterior houses without order dependence or cross-quarter claims
 }, 180000);
 
 it('preserves a whole free faubourg roof when the host also has a walled core', () => {
-  const world = generate(makeOptions({ seed: '42', size: 'town', population: 9000, eagerPop: 1,
-    mapSize: 4000, walls: 'single', suburbs: 'some', settlements: 'none', river: 'none', coast: 'none' }));
+  const world = generate(makeOptions({ seed: '42', size: 'town', population: 9000, eagerPop: 1, mapSize: 4000, walls: 'single', suburbs: 'some', settlements: 'none', river: 'none', coast: 'none' }));
   expect(world.urban!.walls!.length).toBeGreaterThan(0);
-  const host = JSON.stringify(world.urban), q = world.urban!.macro!.quarters.find(q => q.id === 2)!;
+  const host = JSON.stringify(world.urban),
+    q = world.urban!.macro!.quarters.find(q => q.id === 2)!;
   expect(q.zone).toBe('faubourg');
   expect(q.lab).toContain(LAB_OPEN);
   const detail = megaQuarterDetail(world, q.id)!;

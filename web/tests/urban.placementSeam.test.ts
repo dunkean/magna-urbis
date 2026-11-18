@@ -4,7 +4,10 @@ import * as booleanOps from '../src/gen/geo/bool';
 import { footprintAccessGuard, footprintPlacementGuard } from '../src/gen/urban/edgeFinish';
 
 const rect = (x: number, y: number, w: number, h: number): Polygon => [
-  { x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h },
+  { x, y },
+  { x: x + w, y },
+  { x: x + w, y: y + h },
+  { x, y: y + h },
 ];
 
 describe('physical reserve seam preservation', () => {
@@ -33,16 +36,22 @@ describe('physical reserve seam preservation', () => {
   it('fails closed if the checked difference cannot prove no new contact', () => {
     const original = rect(0, 0, 10, 10);
     const spy = vi.spyOn(booleanOps, 'tryDifference').mockReturnValue({ pieces: [], failed: true });
-    try { expect(safe(original, original)).toBe(false); } finally { spy.mockRestore(); }
+    try {
+      expect(safe(original, original)).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
 it('updates block peers appended after the access guard was created', () => {
   const block = rect(0, 0, 12, 40);
-  const front = rect(0, 0, 5, 7), rear = rect(2, 14, 8, 6), wall = rect(0, 0, 12, 7);
+  const front = rect(0, 0, 5, 7),
+    rear = rect(2, 14, 8, 6),
+    wall = rect(0, 0, 12, 7);
   const buildings = [{ poly: front, kind: 'house', parcel: 0 }];
   const parcels = [{ poly: block, use: 'plot', block: 0 }];
-  const guard = footprintAccessGuard(buildings, parcels, [block], (p) => p.y < 0.1);
+  const guard = footprintAccessGuard(buildings, parcels, [block], p => p.y < 0.1);
   expect(guard(0, [wall])).toBe(true);
   buildings.push({ poly: rear, kind: 'rear', parcel: 1 });
   parcels.push({ poly: block, use: 'plot', block: 0 });

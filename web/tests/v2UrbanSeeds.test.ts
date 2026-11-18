@@ -14,10 +14,15 @@ describe('independent city draws', () => {
     settings.local.west = { seed: 'lower-priority-local' };
     const before = ['east', 'west'].map(key => URBAN_SEED_STAGES.map(stage => urbanSeed(settings, key, stage)));
     migrateUrbanSeeds(settings);
-    expect(settings.urban.seed).toBeUndefined(); expect(settings.urban.local!.east.seeds).toBeUndefined(); expect(settings.local.west.seed).toBeUndefined();
-    const fresh = defaultSettings(); fresh.options.seed = settings.options.seed;
+    expect(settings.urban.seed).toBeUndefined();
+    expect(settings.urban.local!.east.seeds).toBeUndefined();
+    expect(settings.local.west.seed).toBeUndefined();
+    const fresh = defaultSettings();
+    fresh.options.seed = settings.options.seed;
     expect(['east', 'west'].map(key => URBAN_SEED_STAGES.map(stage => urbanSeed(fresh, key, stage)))).toEqual(before);
-    const encoded = settings.options.seed; migrateUrbanSeeds(settings); expect(settings.options.seed).toBe(encoded);
+    const encoded = settings.options.seed;
+    migrateUrbanSeeds(settings);
+    expect(settings.options.seed).toBe(encoded);
   });
   it('inherits the historical draw until a global or local city seed is explicitly chosen', () => {
     const settings = defaultSettings();
@@ -32,17 +37,23 @@ describe('independent city draws', () => {
   });
 
   it('rerolls only the selected cities, preserves their controls and persists a reproducible combination', () => {
-    const settings = defaultSettings(), upstream = structuredClone(settings);
+    const settings = defaultSettings(),
+      upstream = structuredClone(settings);
     settings.urban = { seed: 'base', local: { east: { layout: { density: 1.4 } }, west: { seed: 'keep-west' } } };
-    const scope = JSON.stringify(['selection', ['east']]), otherScope = JSON.stringify(['selection', ['west']]);
-    const terrain = terrainStageValidityKeys(settings), sites = settlementStageValidityKeys(settings, 'terrain');
-    const city = cityStageValidityKeys(settings, undefined, scope), west = cityStageValidityKeys(settings, undefined, otherScope);
+    const scope = JSON.stringify(['selection', ['east']]),
+      otherScope = JSON.stringify(['selection', ['west']]);
+    const terrain = terrainStageValidityKeys(settings),
+      sites = settlementStageValidityKeys(settings, 'terrain');
+    const city = cityStageValidityKeys(settings, undefined, scope),
+      west = cityStageValidityKeys(settings, undefined, otherScope);
     rerollUrbanSeeds(settings, ['east', 'south', 'east'], 'streets');
     const first = urbanSeed(settings, 'east', 'streets');
-    expect(first).not.toBe('base'); expect(urbanSeed(settings, 'south', 'streets')).not.toBe(first);
+    expect(first).not.toBe('base');
+    expect(urbanSeed(settings, 'south', 'streets')).not.toBe(first);
     expect(urbanSeed(settings, 'west')).toBe('keep-west');
     expect(settings.urban.local!.east.layout).toEqual({ density: 1.4 });
-    expect({ ...settings.options, seed: seedRoot(settings.options.seed) }).toEqual(upstream.options); expect(settings.local).toEqual(upstream.local);
+    expect({ ...settings.options, seed: seedRoot(settings.options.seed) }).toEqual(upstream.options);
+    expect(settings.local).toEqual(upstream.local);
     expect(terrainStageValidityKeys(settings)).toEqual(terrain);
     expect(settlementStageValidityKeys(settings, 'terrain')).toEqual(sites);
     expect(cityStageValidityKeys(settings, undefined, scope).get('city-roads')).not.toBe(city.get('city-roads'));
@@ -53,12 +64,15 @@ describe('independent city draws', () => {
     const restored = parseProject(serializeProject(settings)).settings;
     expect(restored.urban).toEqual(settings.urban);
     expect(urbanSeed(restored, 'east', 'streets')).toBe(first);
-    rerollUrbanSeeds(settings, ['east'], 'streets'); expect(urbanSeed(settings, 'east', 'streets')).not.toBe(first);
+    rerollUrbanSeeds(settings, ['east'], 'streets');
+    expect(urbanSeed(settings, 'east', 'streets')).not.toBe(first);
   });
 
   it('does nothing for an empty selection and rejects invalid imported city seeds', () => {
-    const settings = defaultSettings(), before = structuredClone(settings);
-    rerollUrbanSeeds(settings, [], 'streets'); expect(settings).toEqual(before);
+    const settings = defaultSettings(),
+      before = structuredClone(settings);
+    rerollUrbanSeeds(settings, [], 'streets');
+    expect(settings).toEqual(before);
     for (const seed of [2, {}, 'x'.repeat(1001)]) {
       expect(() => validateSettings({ ...settings, urban: { seed } })).toThrow('Graine urbaine');
       expect(() => validateSettings({ ...settings, urban: { local: { east: { seed } } } })).toThrow('Graine urbaine');
@@ -68,7 +82,8 @@ describe('independent city draws', () => {
   });
 
   it('keeps every earlier step valid when one stage seed changes, and hides redundant local storage', () => {
-    const settings = defaultSettings(), scope = JSON.stringify(['selection', ['east']]);
+    const settings = defaultSettings(),
+      scope = JSON.stringify(['selection', ['east']]);
     const rows = ['city-composition', 'city-roads', 'city-parcels', 'city-programme', 'city-buildings', 'city-houses'];
     for (const [index, stage] of URBAN_SEED_STAGES.entries()) {
       const before = cityStageValidityKeys(settings, undefined, scope);
@@ -82,11 +97,16 @@ describe('independent city draws', () => {
   });
 
   it('rerolls interior cuts through native quarter salts without changing composition controls or explicit quarter edits', () => {
-    const config = defaultLayoutConfig(); config.overrides = { quarters: { '0': { wealth: .8, salt: 12 }, '1': { deleted: true } } };
-    const before = structuredClone(config), composition = [{ quarters: [{}, {}, {}] }] as Layout[];
-    const a = streetSeedConfig(config, composition, 'a'), b = streetSeedConfig(config, composition, 'b');
-    expect(config).toEqual(before); expect(a.footprint).toBe(config.footprint);
-    expect(a.overrides!.quarters!['0'].wealth).toBe(.8); expect(a.overrides!.quarters!['1'].deleted).toBe(true);
+    const config = defaultLayoutConfig();
+    config.overrides = { quarters: { '0': { wealth: 0.8, salt: 12 }, '1': { deleted: true } } };
+    const before = structuredClone(config),
+      composition = [{ quarters: [{}, {}, {}] }] as Layout[];
+    const a = streetSeedConfig(config, composition, 'a'),
+      b = streetSeedConfig(config, composition, 'b');
+    expect(config).toEqual(before);
+    expect(a.footprint).toBe(config.footprint);
+    expect(a.overrides!.quarters!['0'].wealth).toBe(0.8);
+    expect(a.overrides!.quarters!['1'].deleted).toBe(true);
     expect(a.overrides!.quarters!['0'].salt).not.toBe(b.overrides!.quarters!['0'].salt);
     expect(streetSeedConfig(config, composition, 'a')).toEqual(a);
   });

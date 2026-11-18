@@ -486,23 +486,55 @@ vec3 v2DiagnosticEnv(V2Env local,float fp){return v2Color(v2Appearance(local,fp)
 vec3 v2Diagnostic(vec3 s,vec2 world,float tpi,float fp){return v2DiagnosticEnv(v2Local(s,world,tpi,fp),fp);}
 `;
 
-
-interface V2SourceLayer { x:number; y:number; width:number; n:number; data:Float32Array }
-const glacierCache=new WeakMap<Float32Array,Map<string,Float32Array>>();
+interface V2SourceLayer {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  data: Float32Array;
+}
+const glacierCache = new WeakMap<Float32Array, Map<string, Float32Array>>();
 /** At most eight geographic bins of perennial-cold coastal source cells.
  * Stable source-grid proxy; no scanning or terrain sampling in fragment shaders. */
-export function renderV2GlacierSources(layer:V2SourceLayer,climate:{temperature:number;precipitation:number}):Float32Array {
-  const key=[layer.x,layer.y,layer.width,layer.n,climate.temperature,climate.precipitation].join('/');
-  let cache=glacierCache.get(layer.data);if(!cache)glacierCache.set(layer.data,cache=new Map());
-  const prior=cache.get(key);if(prior)return prior;
-  const result=new Float32Array(32),sum=new Float64Array(24),n=layer.n;
-  const amplitude=6+.5*Math.max(0,10-climate.temperature),step=Math.max(1,Math.floor(n/256));
-  if(climate.precipitation>80)for(let y=0;y<n;y+=step)for(let x=0;x<n;x+=step){
-    const h=layer.data[y*n+x];if(h<=20||climate.temperature+amplitude-.0065*h>=-1)continue;
-    let coast=false;for(const [dx,dy] of [[-4,0],[4,0],[0,-4],[0,4]]){const xx=x+dx*step,yy=y+dy*step;if(xx>=0&&yy>=0&&xx<n&&yy<n&&layer.data[yy*n+xx]<0)coast=true;}
-    if(!coast)continue;const bin=Math.min(3,Math.floor(x/n*4))+4*Math.min(1,Math.floor(y/n*2));
-    sum[bin*3]+=layer.x+(x+.5)*layer.width/n;sum[bin*3+1]+=layer.y+(y+.5)*layer.width/n;sum[bin*3+2]++;
-  }
-  for(let i=0;i<8;i++)if(sum[i*3+2]){result[i*4]=sum[i*3]/sum[i*3+2];result[i*4+1]=sum[i*3+1]/sum[i*3+2];result[i*4+2]=1;}
-  cache.set(key,result);return result;
+export function renderV2GlacierSources(layer: V2SourceLayer, climate: { temperature: number; precipitation: number }): Float32Array {
+  const key = [layer.x, layer.y, layer.width, layer.n, climate.temperature, climate.precipitation].join('/');
+  let cache = glacierCache.get(layer.data);
+  if (!cache) glacierCache.set(layer.data, (cache = new Map()));
+  const prior = cache.get(key);
+  if (prior) return prior;
+  const result = new Float32Array(32),
+    sum = new Float64Array(24),
+    n = layer.n;
+  const amplitude = 6 + 0.5 * Math.max(0, 10 - climate.temperature),
+    step = Math.max(1, Math.floor(n / 256));
+  if (climate.precipitation > 80)
+    for (let y = 0; y < n; y += step)
+      for (let x = 0; x < n; x += step) {
+        const h = layer.data[y * n + x];
+        if (h <= 20 || climate.temperature + amplitude - 0.0065 * h >= -1) continue;
+        let coast = false;
+        for (const [dx, dy] of [
+          [-4, 0],
+          [4, 0],
+          [0, -4],
+          [0, 4],
+        ]) {
+          const xx = x + dx * step,
+            yy = y + dy * step;
+          if (xx >= 0 && yy >= 0 && xx < n && yy < n && layer.data[yy * n + xx] < 0) coast = true;
+        }
+        if (!coast) continue;
+        const bin = Math.min(3, Math.floor((x / n) * 4)) + 4 * Math.min(1, Math.floor((y / n) * 2));
+        sum[bin * 3] += layer.x + ((x + 0.5) * layer.width) / n;
+        sum[bin * 3 + 1] += layer.y + ((y + 0.5) * layer.width) / n;
+        sum[bin * 3 + 2]++;
+      }
+  for (let i = 0; i < 8; i++)
+    if (sum[i * 3 + 2]) {
+      result[i * 4] = sum[i * 3] / sum[i * 3 + 2];
+      result[i * 4 + 1] = sum[i * 3 + 1] / sum[i * 3 + 2];
+      result[i * 4 + 2] = 1;
+    }
+  cache.set(key, result);
+  return result;
 }

@@ -6,7 +6,13 @@ import { makeOptions, SizeName, Options } from '../src/gen/options';
 import { mixFromString } from '../src/gen/urban/culture';
 import { checkWorld } from './urbanCheck';
 
-export interface CultureCase { label: string; culture: string; mix?: string; relief?: Options['relief']; /** Seeds of this case (default SEEDS). */ seeds?: string[] }
+export interface CultureCase {
+  label: string;
+  culture: string;
+  mix?: string;
+  relief?: Options['relief'];
+  /** Seeds of this case (default SEEDS). */ seeds?: string[];
+}
 
 /** Every preset (the fantasy ones on their preferred ground) and the two mixes required by M3b. */
 export const CULTURE_CASES: CultureCase[] = [
@@ -67,15 +73,18 @@ export function expectSignature(c: CultureCase, w: World): void {
   const arch = new Map<string, number>();
   for (const b of u.buildings) arch.set(b.arch ?? b.kind, (arch.get(b.arch ?? b.kind) ?? 0) + 1);
   const has = (a: string) => (arch.get(a) ?? 0) > 0;
-  const closes = u.streets.filter((s) => s.role === 'close').length;
-  const compounds = new Set(u.blockInfo.map((b) => b.compound).filter(Boolean));
+  const closes = u.streets.filter(s => s.role === 'close').length;
+  const compounds = new Set(u.blockInfo.map(b => b.compound).filter(Boolean));
   expect(u.culture, 'culture recorded').toBe(c.culture);
   switch (c.label) {
     case 'swahili-stone-town':
       expect(has('swahili-stone-house') || has('swahili-seafront-house'), 'Swahili: coral-stone courtyard houses').toBe(true);
       expect(has('swahili-juma-mosque'), 'Swahili: distinct flat-roofed Friday mosque').toBe(true);
-      expect(u.buildings.some((b) => b.arch === 'swahili-stone-house' && !!b.courtyards?.length), 'Swahili: open internal courts').toBe(true);
-      expect(['great-mosque', 'm4-cathedral-close', 'parish-church', 'church'].some((kind) => compounds.has(kind)) || has('parish-church'), 'Swahili: own worship catalogue').toBe(false);
+      expect(
+        u.buildings.some(b => b.arch === 'swahili-stone-house' && !!b.courtyards?.length),
+        'Swahili: open internal courts',
+      ).toBe(true);
+      expect(['great-mosque', 'm4-cathedral-close', 'parish-church', 'church'].some(kind => compounds.has(kind)) || has('parish-church'), 'Swahili: own worship catalogue').toBe(false);
       break;
     case 'medina':
       expect(closes, 'medina: a tree of dead-end derbs').toBeGreaterThan(15);
@@ -87,7 +96,10 @@ export function expectSignature(c: CultureCase, w: World): void {
       expect((u.walls ?? []).length, 'chinese: walled').toBeGreaterThan(0);
       expect(has('siheyuan-main-hall'), 'chinese: siheyuan').toBe(true);
       expect(has('drum-tower'), 'chinese: drum tower').toBe(true);
-      expect((u.lines ?? []).some((l) => l.kind === 'ward-wall'), 'chinese: ward walls').toBe(true);
+      expect(
+        (u.lines ?? []).some(l => l.kind === 'ward-wall'),
+        'chinese: ward walls',
+      ).toBe(true);
       break;
     case 'japanese-jokamachi':
       expect((u.walls ?? []).length, 'jokamachi: no town wall').toBe(0);
@@ -98,7 +110,7 @@ export function expectSignature(c: CultureCase, w: World): void {
     case 'indian-temple':
       expect(has('gopuram'), 'indian: gopuram gates').toBe(true);
       expect(has('vimana-sanctum'), 'indian: sanctum').toBe(true);
-      expect(u.streets.filter((s) => s.role === 'ring').length, 'indian: ring streets').toBeGreaterThan(2);
+      expect(u.streets.filter(s => s.role === 'ring').length, 'indian: ring streets').toBeGreaterThan(2);
       break;
     case 'elven':
       expect(has('tree-house'), 'elven: tree houses').toBe(true);
@@ -107,23 +119,32 @@ export function expectSignature(c: CultureCase, w: World): void {
       break;
     case 'dwarven':
       expect(has('stone-hall') || has('octagonal-hall'), 'dwarven: stone halls').toBe(true);
-      expect((u.lines ?? []).some((l) => l.kind === 'terrace'), 'dwarven: terraces').toBe(true);
+      expect(
+        (u.lines ?? []).some(l => l.kind === 'terrace'),
+        'dwarven: terraces',
+      ).toBe(true);
       break;
     case 'inca':
       expect(has('kancha-house'), 'inca: kancha compounds').toBe(true);
       expect(has('ushnu'), 'inca: ushnu on the great plaza').toBe(true);
       expect(compounds.has('inca-temple'), 'inca: temple').toBe(true);
-      expect((u.walls ?? []).filter((wl) => wl.role === 'town').length, 'inca: no town wall').toBe(0);
+      expect((u.walls ?? []).filter(wl => wl.role === 'town').length, 'inca: no town wall').toBe(0);
       break;
     case 'aztec':
       expect(compounds.has('aztec-precinct'), 'aztec: ceremonial precinct').toBe(true);
       expect(has('templo-mayor'), 'aztec: Templo Mayor').toBe(true);
-      expect((u.lines ?? []).some((l) => l.kind === 'canal'), 'aztec: canals').toBe(true);
+      expect(
+        (u.lines ?? []).some(l => l.kind === 'canal'),
+        'aztec: canals',
+      ).toBe(true);
       break;
     case 'russian-kremlin':
       expect(has('izba'), 'russian: log houses in yards').toBe(true);
       expect(has('orthodox-church'), 'russian: domed parish churches').toBe(true);
-      expect((u.sites ?? []).some((st) => st.kind === 'kremlin'), 'russian: kremlin').toBe(true);
+      expect(
+        (u.sites ?? []).some(st => st.kind === 'kremlin'),
+        'russian: kremlin',
+      ).toBe(true);
       break;
     case 'necropolis':
       expect(has('mausoleum') || has('tholos'), 'necropolis: tombs').toBe(true);
@@ -131,11 +152,17 @@ export function expectSignature(c: CultureCase, w: World): void {
       break;
     case 'byzantine-greek':
       expect(has('cross-in-square-church') || has('metropolis-church'), 'byzantine: domed cross-in-square churches').toBe(true);
-      expect((u.lines ?? []).some((l) => l.kind === 'dome'), 'byzantine: domes').toBe(true);
-      expect((u.sites ?? []).some((st) => st.kind === 'kastro'), 'byzantine: kastro').toBe(true);
+      expect(
+        (u.lines ?? []).some(l => l.kind === 'dome'),
+        'byzantine: domes',
+      ).toBe(true);
+      expect(
+        (u.sites ?? []).some(st => st.kind === 'kastro'),
+        'byzantine: kastro',
+      ).toBe(true);
       break;
     case 'venetian-lagoon': {
-      const lk = new Set((u.lines ?? []).map((l) => l.kind));
+      const lk = new Set((u.lines ?? []).map(l => l.kind));
       expect(lk.has('canal'), 'venetian: canals').toBe(true);
       expect(lk.has('footbridge'), 'venetian: footbridges').toBe(true);
       expect(compounds.has('campo'), 'venetian: island campi').toBe(true);
@@ -143,14 +170,17 @@ export function expectSignature(c: CultureCase, w: World): void {
       break;
     }
     case 'persian':
-      expect(u.landmarks.some((l) => l.kind === 'maidan'), 'persian: maidan').toBe(true);
+      expect(
+        u.landmarks.some(l => l.kind === 'maidan'),
+        'persian: maidan',
+      ).toBe(true);
       expect(has('maidan-arcade'), 'persian: arcades round the maidan').toBe(true);
       expect(has('qibla-iwan') && has('iwan'), 'persian: four-iwan Friday mosque').toBe(true);
       expect(has('caravanserai-cells'), 'persian: caravanserais').toBe(true);
       expect(has('persian-courtyard-house'), 'persian: courtyard houses').toBe(true);
       break;
     case 'ottoman':
-      expect((arch.get('mescit') ?? 0), 'ottoman: a mescit per mahalle').toBeGreaterThan(2);
+      expect(arch.get('mescit') ?? 0, 'ottoman: a mescit per mahalle').toBeGreaterThan(2);
       expect(has('ottoman-wooden-house'), 'ottoman: wooden houses').toBe(true);
       expect(has('ulu-cami') || has('kulliye-mosque'), 'ottoman: Ulu Cami or kulliye').toBe(true);
       expect(has('dukkan-shop'), 'ottoman: carsi shops').toBe(true);
@@ -168,26 +198,31 @@ export function expectSignature(c: CultureCase, w: World): void {
     case 'korean':
       expect(has('hanok') || has('anchae'), 'korean: hanok').toBe(true);
       expect(has('throne-hall'), 'korean: the palace and its throne hall').toBe(true);
-      expect(u.streets.filter((s) => s.role === 'radial' && s.rank === 0).length, 'korean: the cardinal main streets').toBeGreaterThan(1);
+      expect(u.streets.filter(s => s.role === 'radial' && s.rank === 0).length, 'korean: the cardinal main streets').toBeGreaterThan(1);
       break;
     case 'wizard-city':
       expect(has('great-tower'), 'wizard: the great tower').toBe(true);
-      expect(u.streets.filter((s) => s.role === 'radial' && s.rank === 0).length, 'wizard: radial ley avenues').toBeGreaterThanOrEqual(6);
-      expect((arch.get('ley-obelisk') ?? 0), 'wizard: obelisks on the ley lines').toBeGreaterThan(3);
+      expect(u.streets.filter(s => s.role === 'radial' && s.rank === 0).length, 'wizard: radial ley avenues').toBeGreaterThanOrEqual(6);
+      expect(arch.get('ley-obelisk') ?? 0, 'wizard: obelisks on the ley lines').toBeGreaterThan(3);
       break;
     case 'gnomish': {
-      const lk = new Set((u.lines ?? []).map((l) => l.kind));
+      const lk = new Set((u.lines ?? []).map(l => l.kind));
       expect(has('clock-tower'), 'gnomish: the clock-tower plaza').toBe(true);
       expect(lk.has('canal') && lk.has('lock-gate'), 'gnomish: canals and locks').toBe(true);
       expect(has('gnome-tallhouse'), 'gnomish: tall narrow houses').toBe(true);
       break;
     }
-    case 'roman-core': case 'roman-core+european-organic':
-      expect(u.landmarks.some((l) => l.kind === 'forum'), 'roman: forum').toBe(true);
+    case 'roman-core':
+    case 'roman-core+european-organic':
+      expect(
+        u.landmarks.some(l => l.kind === 'forum'),
+        'roman: forum',
+      ).toBe(true);
       break;
     case 'medina+bastide':
-      expect(new Set(u.blockInfo.map((b) => b.culture)).size, 'mix: two cultures built blocks').toBeGreaterThan(1);
+      expect(new Set(u.blockInfo.map(b => b.culture)).size, 'mix: two cultures built blocks').toBeGreaterThan(1);
       break;
-    default: break;
+    default:
+      break;
   }
 }

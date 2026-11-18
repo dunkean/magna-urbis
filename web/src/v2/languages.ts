@@ -8,5 +8,5 @@ export const LANGUAGES = [
   { code: 'ru', name: 'Русский', locale: 'ru-RU' },
   { code: 'ja', name: '日本語', locale: 'ja-JP' },
 ] as const;
-export type Language = typeof LANGUAGES[number]['code'];
+export type Language = (typeof LANGUAGES)[number]['code'];
 export const isLanguage = (value: unknown): value is Language => LANGUAGES.some(item => item.code === value);

@@ -8,7 +8,9 @@ import { isTerrainExpertControl } from '../src/v2/terrainControlAccess';
 
 describe('physical terrain definition', () => {
   it('derives the physical source from metres independently of overview pixels', () => {
-    const settings = defaultSettings(); settings.extent = 200000; settings.runtime = { ...settings.runtime!, source: 'neural-wasm' };
+    const settings = defaultSettings();
+    settings.extent = 200000;
+    settings.runtime = { ...settings.runtime!, source: 'neural-wasm' };
     settings.terrain = { sampleSpacing: 30, resolution: 64 };
     const first = sourceDefinition(effectiveTerrainSettings(settings, 200000));
     settings.terrain.resolution = 1024;
@@ -43,8 +45,7 @@ describe('physical terrain definition', () => {
   });
 
   it('keeps all erosion budgets in super advanced controls while physical definition stays ordinary', () => {
-    for (const path of ['terrain.erosion', 'terrain.erosionTuning.incision', 'terrain.procedural.regionalN', 'terrain.procedural.surfaceN', 'terrain.procedural.posterior.strength', 'terrain.hydrology.condDepth'])
-      expect(isTerrainExpertControl(path), path).toBe(true);
+    for (const path of ['terrain.erosion', 'terrain.erosionTuning.incision', 'terrain.procedural.regionalN', 'terrain.procedural.surfaceN', 'terrain.procedural.posterior.strength', 'terrain.hydrology.condDepth']) expect(isTerrainExpertControl(path), path).toBe(true);
     expect(isTerrainExpertControl('terrain.sampleSpacing')).toBe(false);
     expect(isTerrainExpertControl('terrain.motifSize')).toBe(false);
   });
@@ -73,15 +74,22 @@ describe('physical terrain definition', () => {
   });
 
   it('keeps one physical time per surface iteration, and leaves the plan grid untouched', () => {
-    const plan = () => Float32Array.from([664, 50, -600, 12, .85, .1125, .4, .025]);
+    const plan = () => Float32Array.from([664, 50, -600, 12, 0.85, 0.1125, 0.4, 0.025]);
     const settings = { width: 32000 } as Parameters<typeof finalizePhysicalSurfacePlan>[1];
-    const same = plan(); finalizePhysicalSurfacePlan(same, settings, 1024);
+    const same = plan();
+    finalizePhysicalSurfacePlan(same, settings, 1024);
     expect(Array.from(same)).toEqual(Array.from(plan()));
-    const coarse = plan(); finalizePhysicalSurfacePlan(coarse, settings, 320);
-    expect(coarse[0]).toBe(344); expect(coarse[1]).toBe(100);
-    expect(coarse[6]).toBeCloseTo(.4); expect(coarse[5]).toBeCloseTo(.1125 / 4); expect(coarse[7]).toBeCloseTo(.025 / 4);
-    const fine = plan(); finalizePhysicalSurfacePlan(fine, settings, 4096);
-    expect(fine[1]).toBeCloseTo(32000 / 2048); expect(fine[7]).toBeCloseTo(.025 * (2048 / 640) ** 2);
+    const coarse = plan();
+    finalizePhysicalSurfacePlan(coarse, settings, 320);
+    expect(coarse[0]).toBe(344);
+    expect(coarse[1]).toBe(100);
+    expect(coarse[6]).toBeCloseTo(0.4);
+    expect(coarse[5]).toBeCloseTo(0.1125 / 4);
+    expect(coarse[7]).toBeCloseTo(0.025 / 4);
+    const fine = plan();
+    finalizePhysicalSurfacePlan(fine, settings, 4096);
+    expect(fine[1]).toBeCloseTo(32000 / 2048);
+    expect(fine[7]).toBeCloseTo(0.025 * (2048 / 640) ** 2);
   });
 
   it('keeps open sea beyond what the skipped stages reach', () => {

@@ -9,14 +9,35 @@ const web = fileURLToPath(new URL('..', import.meta.url));
 const base = process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5175';
 const out = `${web}/out/v2-compose-browser`;
 const report = { time: new Date().toISOString(), checks: {}, errors: [] };
-const stable = value => JSON.stringify(value, (_key, child) => child && typeof child === 'object' && !Array.isArray(child)
-  ? Object.fromEntries(Object.keys(child).sort().map(key => [key, child[key]])) : child);
-const physicalHash = terrain => createHash('sha256').update(stable({
-  height: terrain.height, slope: terrain.slope, flow: terrain.flow, water: terrain.water,
-  receiver: terrain.receiver, filled: terrain.filled, seaLevel: terrain.seaLevel, seaFraction: terrain.seaFraction,
-  coastline: terrain.coastline, islands: terrain.islands, lakes: terrain.lakes,
-  rivers: terrain.rivers.map(({ name: _name, ...river }) => river),
-})).digest('hex');
+const stable = value =>
+  JSON.stringify(value, (_key, child) =>
+    child && typeof child === 'object' && !Array.isArray(child)
+      ? Object.fromEntries(
+          Object.keys(child)
+            .sort()
+            .map(key => [key, child[key]]),
+        )
+      : child,
+  );
+const physicalHash = terrain =>
+  createHash('sha256')
+    .update(
+      stable({
+        height: terrain.height,
+        slope: terrain.slope,
+        flow: terrain.flow,
+        water: terrain.water,
+        receiver: terrain.receiver,
+        filled: terrain.filled,
+        seaLevel: terrain.seaLevel,
+        seaFraction: terrain.seaFraction,
+        coastline: terrain.coastline,
+        islands: terrain.islands,
+        lakes: terrain.lakes,
+        rivers: terrain.rivers.map(({ name: _name, ...river }) => river),
+      }),
+    )
+    .digest('hex');
 let browser, page;
 await mkdir(out, { recursive: true });
 try {
@@ -24,7 +45,9 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, acceptDownloads: true });
   page = await context.newPage();
   page.on('pageerror', error => report.errors.push(error.message));
-  page.on('console', message => { if (message.type() === 'error') report.errors.push(message.text()); });
+  page.on('console', message => {
+    if (message.type() === 'error') report.errors.push(message.text());
+  });
   await page.goto(`${base}/v2.html?empty&lang=fr`, { waitUntil: 'networkidle' });
   await page.locator('#terrain-only').waitFor();
   const input = async (selector, value) => {
@@ -76,14 +99,22 @@ try {
   };
 
   // Two distinct actual territories make an accidental no-op or wrong-direction merge observable.
-  const reveal=async selector=>page.locator(selector).evaluate(node=>{for(let parent=node.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;});
-  await reveal('#terrain-backend');await page.locator('#terrain-backend').selectOption('typescript');
+  const reveal = async selector =>
+    page.locator(selector).evaluate(node => {
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
+    });
+  await reveal('#terrain-backend');
+  await page.locator('#terrain-backend').selectOption('typescript');
   await input('#seed', 'v2-compose-browser-source');
-  await input('#terrain-width',2.4);
-  await reveal('[data-setting-path="options.biome"]:visible');await page.locator('[data-setting-path="options.biome"]:visible').selectOption('forest');
-  await reveal('[data-setting-path="options.relief"]');await page.locator('[data-setting-path="options.relief"]').selectOption('flat');
-  await reveal('[data-setting-path="options.coast"]');await page.locator('[data-setting-path="options.coast"]').selectOption('none');
-  await reveal('[data-setting-path="options.river"]');await page.locator('[data-setting-path="options.river"]').selectOption('none');
+  await input('#terrain-width', 2.4);
+  await reveal('[data-setting-path="options.biome"]:visible');
+  await page.locator('[data-setting-path="options.biome"]:visible').selectOption('forest');
+  await reveal('[data-setting-path="options.relief"]');
+  await page.locator('[data-setting-path="options.relief"]').selectOption('flat');
+  await reveal('[data-setting-path="options.coast"]');
+  await page.locator('[data-setting-path="options.coast"]').selectOption('none');
+  await reveal('[data-setting-path="options.river"]');
+  await page.locator('[data-setting-path="options.river"]').selectOption('none');
   await page.locator('#tab-settlements').click();
   await input('[data-option="population"]', 80);
   await input('#town-count', 1);
@@ -201,8 +232,14 @@ try {
   process.exitCode = 1;
   if (page) {
     await page.screenshot({ path: `${out}/failure.png` }).catch(() => {});
-    report.log = await page.locator('#job-log').textContent().catch(() => '');
-    report.toast = await page.locator('#toast').textContent().catch(() => '');
+    report.log = await page
+      .locator('#job-log')
+      .textContent()
+      .catch(() => '');
+    report.toast = await page
+      .locator('#toast')
+      .textContent()
+      .catch(() => '');
   }
 } finally {
   await browser?.close();

@@ -8,100 +8,185 @@ class Element extends EventTarget {
   style = { opacity: '', transform: '', width: '', height: '' };
   dataset: Record<string, string> = {};
   classList = { add: vi.fn(), remove: vi.fn() };
-  width = 800; height = 600; clientWidth = 140;
+  width = 800;
+  height = 600;
+  clientWidth = 140;
   parentElement?: Element;
   children: Element[] = [];
   context = { drawImage: vi.fn(), clearRect: vi.fn(), setTransform: vi.fn(), strokeRect: vi.fn(), transferFromImageBitmap: vi.fn() };
-  getBoundingClientRect() { return { width: this.width, height: this.height, left: 0, top: 0 }; }
-  getContext() { return this.context; }
-  insertBefore(child: Element, _before: Element) { child.parentElement = this; this.children.push(child); }
-  remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this); this.parentElement = undefined; }
+  getBoundingClientRect() {
+    return { width: this.width, height: this.height, left: 0, top: 0 };
+  }
+  getContext() {
+    return this.context;
+  }
+  insertBefore(child: Element, _before: Element) {
+    child.parentElement = this;
+    this.children.push(child);
+  }
+  remove() {
+    if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+    this.parentElement = undefined;
+  }
 }
 function setup(width = 800, height = 600) {
-  const callbacks = new Map<number, FrameRequestCallback>(); let next = 0;
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { callbacks.set(++next, cb); return next; });
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let next = 0;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    callbacks.set(++next, cb);
+    return next;
+  });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id));
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal('window', Object.assign(new EventTarget(), { devicePixelRatio: 2 }));
-  const container = new Element(), canvas = new Element(), minimap = new Element();
-  container.width = width; container.height = height;
+  const container = new Element(),
+    canvas = new Element(),
+    minimap = new Element();
+  container.width = width;
+  container.height = height;
   const errors = vi.fn();
-  const viewer = createViewer({ container: container as unknown as HTMLElement, canvas: canvas as unknown as HTMLCanvasElement,
-    minimap: minimap as unknown as HTMLCanvasElement, onError: errors });
-  const tick = () => { const batch = [...callbacks.values()]; callbacks.clear(); batch.forEach(cb => cb(0)); };
+  const viewer = createViewer({ container: container as unknown as HTMLElement, canvas: canvas as unknown as HTMLCanvasElement, minimap: minimap as unknown as HTMLCanvasElement, onError: errors });
+  const tick = () => {
+    const batch = [...callbacks.values()];
+    callbacks.clear();
+    batch.forEach(cb => cb(0));
+  };
   return { viewer, container, canvas, minimap, tick, callbacks, errors };
 }
 afterEach(() => vi.unstubAllGlobals());
 
 describe('viewer presentation and scheduling', () => {
-  it.each([[1920, 1080], [3840, 2160], [390, 844]])('can zoom a %i × %i view to an eligible battlemap and retain it after drawing', (width, height) => {
+  it.each([
+    [1920, 1080],
+    [3840, 2160],
+    [390, 844],
+  ])('can zoom a %i × %i view to an eligible battlemap and retain it after drawing', (width, height) => {
     const { viewer, tick } = setup(width, height);
     const context = () => illustrationContext({ sourceStyle: 'parchment', seed: 'zoom', view: viewer.getView(), width, height });
     viewer.contentChanged(10000, false);
-    viewer.setView({ cx: 5000, cy: 5000, scale: 8 }); tick();
+    viewer.setView({ cx: 5000, cy: 5000, scale: 8 });
+    tick();
     expect(battlemapAvailability(context()).eligible).toBe(true);
     for (let i = 0; i < 20; i++) viewer.zoomBy(1.4);
     tick(); // frame() must apply the same limit as wheel/setView.
     expect(viewer.getView().scale).toBe(MAX_SCALE);
     expect(battlemapAvailability(context(), 393216).eligible).toBe(true);
-    viewer.invalidate(); tick();
+    viewer.invalidate();
+    tick();
     expect(battlemapAvailability(context()).eligible).toBe(true);
     viewer.destroy();
   });
   it('coalesces direct camera changes into one draw, retains the miniature, and stays idle after painting', () => {
     const { viewer, canvas, container, minimap, tick, callbacks } = setup();
-    const element = new Element(), mini = new Element(); let first = true;
-    const draw = vi.fn((r: FrameRequest) => { const result = { mini: first ? mini as unknown as HTMLCanvasElement : undefined, ms: 1, band: 0, scale: r.view.scale }; first = false; return result; });
+    const element = new Element(),
+      mini = new Element();
+    let first = true;
+    const draw = vi.fn((r: FrameRequest) => {
+      const result = { mini: first ? (mini as unknown as HTMLCanvasElement) : undefined, ms: 1, band: 0, scale: r.view.scale };
+      first = false;
+      return result;
+    });
     viewer.setDirectSource({ element: element as unknown as HTMLElement, draw });
     viewer.contentChanged(2400, false);
-    viewer.setView({ cx: 1000, cy: 1100, scale: 1 }); viewer.setView({ cx: 1200, cy: 1300, scale: 2 });
+    viewer.setView({ cx: 1000, cy: 1100, scale: 1 });
+    viewer.setView({ cx: 1200, cy: 1300, scale: 2 });
     tick();
-    expect(draw).toHaveBeenCalledOnce(); expect(draw.mock.calls[0][0]).toMatchObject({ view: { cx: 1200, cy: 1300, scale: 2 }, dpr: 2 });
-    expect(canvas.style.opacity).toBe('0'); expect(container.children).toContain(element);
+    expect(draw).toHaveBeenCalledOnce();
+    expect(draw.mock.calls[0][0]).toMatchObject({ view: { cx: 1200, cy: 1300, scale: 2 }, dpr: 2 });
+    expect(canvas.style.opacity).toBe('0');
+    expect(container.children).toContain(element);
     expect(canvas.context.transferFromImageBitmap).not.toHaveBeenCalled();
     expect(callbacks.size).toBe(0);
-    viewer.zoomBy(1.1); tick(); expect(draw).toHaveBeenCalledTimes(2);
+    viewer.zoomBy(1.1);
+    tick();
+    expect(draw).toHaveBeenCalledTimes(2);
     expect(minimap.context.drawImage).toHaveBeenCalledTimes(2);
-    viewer.clear(); expect(container.children).not.toContain(element); expect(canvas.style.opacity).toBe(''); expect(callbacks.size).toBe(0);
+    viewer.clear();
+    expect(container.children).not.toContain(element);
+    expect(canvas.style.opacity).toBe('');
+    expect(callbacks.size).toBe(0);
   });
   it('keeps one worker request in flight and requests only the newest camera after an answer', () => {
-    const { viewer, tick } = setup(); const requests: FrameRequest[] = [];
-    viewer.setSource({ request: r => requests.push(r) }); viewer.contentChanged(2400, false); tick();
-    viewer.zoomBy(2); viewer.zoomBy(2); tick(); expect(requests).toHaveLength(1);
+    const { viewer, tick } = setup();
+    const requests: FrameRequest[] = [];
+    viewer.setSource({ request: r => requests.push(r) });
+    viewer.contentChanged(2400, false);
+    tick();
+    viewer.zoomBy(2);
+    viewer.zoomBy(2);
+    tick();
+    expect(requests).toHaveLength(1);
     const bitmap = { close: vi.fn() } as unknown as ImageBitmap;
-    viewer.present({ ...requests[0], bitmap, mini: undefined, ms: 1, band: 0, scale: requests[0].view.scale }); tick();
-    expect(requests).toHaveLength(2); expect(requests[1].view.scale).toBe(requests[0].view.scale * 4);
-    viewer.present({ ...requests[1], mini: undefined, ms: 1, band: 0, scale: requests[1].view.scale }); tick(); expect(requests).toHaveLength(2);
+    viewer.present({ ...requests[0], bitmap, mini: undefined, ms: 1, band: 0, scale: requests[0].view.scale });
+    tick();
+    expect(requests).toHaveLength(2);
+    expect(requests[1].view.scale).toBe(requests[0].view.scale * 4);
+    viewer.present({ ...requests[1], mini: undefined, ms: 1, band: 0, scale: requests[1].view.scale });
+    tick();
+    expect(requests).toHaveLength(2);
   });
   it('closes obsolete bitmaps without releasing the replacement source request or drawing over direct layers', () => {
-    const { viewer, canvas, tick } = setup(); const old: FrameRequest[] = [], current: FrameRequest[] = [];
-    viewer.setSource({ request: r => old.push(r) }); tick();
-    viewer.setSource({ request: r => current.push(r) }); tick();
-    const bitmap = { close: vi.fn() }, mini = { close: vi.fn() };
+    const { viewer, canvas, tick } = setup();
+    const old: FrameRequest[] = [],
+      current: FrameRequest[] = [];
+    viewer.setSource({ request: r => old.push(r) });
+    tick();
+    viewer.setSource({ request: r => current.push(r) });
+    tick();
+    const bitmap = { close: vi.fn() },
+      mini = { close: vi.fn() };
     const answer = { ...old[0], bitmap: bitmap as unknown as ImageBitmap, mini: mini as unknown as ImageBitmap, ms: 1, band: 0, scale: 1 };
-    expect(viewer.present(answer)).toBe(false); expect(bitmap.close).toHaveBeenCalledOnce(); expect(mini.close).toHaveBeenCalledOnce();
-    viewer.zoomBy(2); tick(); expect(current).toHaveLength(1);
-    viewer.setDirectSource({ element: new Element() as unknown as HTMLElement, draw: () => ({ ms: 1, band: 0, scale: 1 }) }); tick();
+    expect(viewer.present(answer)).toBe(false);
+    expect(bitmap.close).toHaveBeenCalledOnce();
+    expect(mini.close).toHaveBeenCalledOnce();
+    viewer.zoomBy(2);
+    tick();
+    expect(current).toHaveLength(1);
+    viewer.setDirectSource({ element: new Element() as unknown as HTMLElement, draw: () => ({ ms: 1, band: 0, scale: 1 }) });
+    tick();
     expect(viewer.present({ ...answer, seq: current[0].seq })).toBe(false);
-    expect(canvas.context.transferFromImageBitmap).not.toHaveBeenCalled(); viewer.destroy();
+    expect(canvas.context.transferFromImageBitmap).not.toHaveBeenCalled();
+    viewer.destroy();
   });
   it('eases wheel notches to the view direct jumps give, and follows touchpad deltas directly', () => {
-    const { viewer, canvas, callbacks } = setup(); let now = 1000;
+    const { viewer, canvas, callbacks } = setup();
+    let now = 1000;
     vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const frame = (ms: number) => { now += ms; const batch = [...callbacks.values()]; callbacks.clear(); batch.forEach(cb => cb(now)); };
+    const frame = (ms: number) => {
+      now += ms;
+      const batch = [...callbacks.values()];
+      callbacks.clear();
+      batch.forEach(cb => cb(now));
+    };
     const wheel = (deltaY: number, x: number, y: number) => canvas.dispatchEvent(Object.assign(new Event('wheel'), { clientX: x, clientY: y, deltaY, deltaMode: 0, ctrlKey: false }));
-    viewer.contentChanged(4000, false); viewer.setView({ cx: 2000, cy: 2000, scale: 0.5 }); frame(16);
-    const start = viewer.getView(), step = Math.exp(100 * 0.0015);
+    viewer.contentChanged(4000, false);
+    viewer.setView({ cx: 2000, cy: 2000, scale: 0.5 });
+    frame(16);
+    const start = viewer.getView(),
+      step = Math.exp(100 * 0.0015);
     const target = clampView(zoomAt(clampView(zoomAt(start, step, 600, 200, 800, 600), 4000, 800, 600), step, 600, 200, 800, 600), 4000, 800, 600);
-    wheel(-100, 600, 200); wheel(-100, 600, 200); frame(16);
+    wheel(-100, 600, 200);
+    wheel(-100, 600, 200);
+    frame(16);
     const first = viewer.getView();
-    expect(first.scale).toBeGreaterThan(start.scale); expect(first.scale).toBeLessThan(target.scale);
+    expect(first.scale).toBeGreaterThan(start.scale);
+    expect(first.scale).toBeLessThan(target.scale);
     // The point under the cursor stays under it while the camera moves.
     expect(first.cx + (600 - 400) / first.scale).toBeCloseTo(start.cx + (600 - 400) / start.scale, 6);
     for (let i = 0; i < 40 && callbacks.size; i++) frame(16);
-    expect(viewer.getView()).toEqual(target); expect(callbacks.size).toBe(0);
-    wheel(-8, 400, 300); frame(16);
-    expect(viewer.getView().scale).toBeCloseTo(target.scale * Math.exp(8 * 0.0015), 12); expect(callbacks.size).toBe(0);
-    vi.restoreAllMocks(); viewer.destroy();
+    expect(viewer.getView()).toEqual(target);
+    expect(callbacks.size).toBe(0);
+    wheel(-8, 400, 300);
+    frame(16);
+    expect(viewer.getView().scale).toBeCloseTo(target.scale * Math.exp(8 * 0.0015), 12);
+    expect(callbacks.size).toBe(0);
+    vi.restoreAllMocks();
+    viewer.destroy();
   });
 });

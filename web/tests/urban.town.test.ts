@@ -9,30 +9,29 @@ const SIZE: string = 'town';
 // timing assertions only on a quiet machine: MAGNA_URBIS_PERF=1 npx vitest run tests/urban.town.test.ts
 const PERF = process.env.MAGNA_URBIS_PERF === '1';
 describe('urban invariants — town', () => {
-  for (const culture of cultures) for (const seed of ['1', '2', '3', '4', '5', '6']) {
-    it(`${culture} seed ${seed}`, () => {
-      const w = generate(makeOptions({ seed, size: 'town', culture }));
-      if (PERF) {
-        const ms = Number(w.stats['ms.urban']);
-        console.info('[MAGNA_URBIS_PERF] ' + JSON.stringify({ file: 'tests/urban.town.test.ts',
-          fullName: `urban invariants — ${SIZE} ${culture} seed ${seed}`, metric: 'ms.urban',
-          value: ms, operator: '<', limit: 1500 }));
-        // Record the budget independently; geometric failures must remain visible too.
-        expect.soft(ms, 'town urban stages < 1.5 s').toBeLessThan(1500);
-      }
-      const r = checkWorld(w);
-      const msg = r.details.slice(0, 8).join('\n');
-      expect(r.blocks, 'has blocks').toBeGreaterThan(0);
-      expect(r.blockAreaErr, 'blocks = plots + back land (±0.5 %)\n' + msg).toBeLessThanOrEqual(0.005);
-      expect(r.blockOutside, 'blocks inside their quarter\n' + msg).toBeLessThan(1);
-      expect(r.overlapsBlocks, 'no block overlaps').toBe(0);
-      expect(r.overlapsPlots, 'no parcel overlaps\n' + msg).toBe(0);
-      expect(r.overlapsBuildings, 'building overlaps\n' + msg).toBeLessThanOrEqual(Math.ceil(r.buildings * 0.0005));
-      expect(r.noFrontage, 'every plot has ≥ 3 m of street frontage\n' + msg).toBe(0);
-      expect(r.bldgOutside, 'buildings inside their plot\n' + msg).toBe(0);
-      // known weak spot: rare acute tips / slivers (≤ 1 % of all shapes)
-      expect(r.acute + r.thin, 'acute (<12°) or thin (<2 m) shapes\n' + msg).toBeLessThanOrEqual(Math.max(2, Math.ceil(0.01 * (r.plots + r.buildings))));
-      expect(r.orphanMain, 'main streets connect to the radials').toBe(0);
-    });
-  }
+  for (const culture of cultures)
+    for (const seed of ['1', '2', '3', '4', '5', '6']) {
+      it(`${culture} seed ${seed}`, () => {
+        const w = generate(makeOptions({ seed, size: 'town', culture }));
+        if (PERF) {
+          const ms = Number(w.stats['ms.urban']);
+          console.info('[MAGNA_URBIS_PERF] ' + JSON.stringify({ file: 'tests/urban.town.test.ts', fullName: `urban invariants — ${SIZE} ${culture} seed ${seed}`, metric: 'ms.urban', value: ms, operator: '<', limit: 1500 }));
+          // Record the budget independently; geometric failures must remain visible too.
+          expect.soft(ms, 'town urban stages < 1.5 s').toBeLessThan(1500);
+        }
+        const r = checkWorld(w);
+        const msg = r.details.slice(0, 8).join('\n');
+        expect(r.blocks, 'has blocks').toBeGreaterThan(0);
+        expect(r.blockAreaErr, 'blocks = plots + back land (±0.5 %)\n' + msg).toBeLessThanOrEqual(0.005);
+        expect(r.blockOutside, 'blocks inside their quarter\n' + msg).toBeLessThan(1);
+        expect(r.overlapsBlocks, 'no block overlaps').toBe(0);
+        expect(r.overlapsPlots, 'no parcel overlaps\n' + msg).toBe(0);
+        expect(r.overlapsBuildings, 'building overlaps\n' + msg).toBeLessThanOrEqual(Math.ceil(r.buildings * 0.0005));
+        expect(r.noFrontage, 'every plot has ≥ 3 m of street frontage\n' + msg).toBe(0);
+        expect(r.bldgOutside, 'buildings inside their plot\n' + msg).toBe(0);
+        // known weak spot: rare acute tips / slivers (≤ 1 % of all shapes)
+        expect(r.acute + r.thin, 'acute (<12°) or thin (<2 m) shapes\n' + msg).toBeLessThanOrEqual(Math.max(2, Math.ceil(0.01 * (r.plots + r.buildings))));
+        expect(r.orphanMain, 'main streets connect to the radials').toBe(0);
+      });
+    }
 });

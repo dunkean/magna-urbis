@@ -9,21 +9,29 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 if (process.argv.includes('--profile-only')) {
   // Exercise the real shell and shared picker without loading terrain engines.
-  await page.route('**/terrainbench.html?*', route => route.fulfill({ contentType: 'text/html', body: `
+  await page.route('**/terrainbench.html?*', route =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: `
     <header></header><script type="module">
       import { installExecutionProfile } from '/executionProfile.ts';
       installExecutionProfile(document.querySelector('header'));
-    </script>` }));
+    </script>`,
+    }),
+  );
 }
 const picker = '[data-execution-profile] select';
-const query = new URLSearchParams({ source: 'procedural', relief: 'flat', seed: 'execution-sync', width: '500',
-  compute: 'wasm', generation: 'cpu', hydro_enabled: '0', auto: '0', refine: '0' });
+const query = new URLSearchParams({ source: 'procedural', relief: 'flat', seed: 'execution-sync', width: '500', compute: 'wasm', generation: 'cpu', hydro_enabled: '0', auto: '0', refine: '0' });
 
 async function synchronized(profile) {
-  await page.waitForFunction(({ picker, profile }) => {
-    const child = document.querySelector('iframe[data-bench=terrain]')?.contentDocument;
-    return document.querySelector(picker)?.value === profile && child?.querySelector(picker)?.value === profile;
-  }, { picker, profile }, { timeout: 90000 });
+  await page.waitForFunction(
+    ({ picker, profile }) => {
+      const child = document.querySelector('iframe[data-bench=terrain]')?.contentDocument;
+      return document.querySelector(picker)?.value === profile && child?.querySelector(picker)?.value === profile;
+    },
+    { picker, profile },
+    { timeout: 90000 },
+  );
   const frame = page.frames().find(frame => frame.parentFrame() && frame.url().includes('terrainbench.html'));
   assert.ok(frame);
   assert.equal(await frame.evaluate(async () => (await import('/executionProfile.ts')).executionRuntime.profile), profile);
@@ -42,8 +50,7 @@ try {
     // Inspect fresh terrain defaults in Settlements mode, without generating relief.
     await page.goto(`${base}/rustbench.html#terrain?stage=settlements`);
     const fresh = await synchronized('local');
-    await fresh.waitForFunction(() => document.querySelector('#terrainSource')?.value === 'neural-python'
-      && document.querySelector('#generationCompute')?.value === 'native');
+    await fresh.waitForFunction(() => document.querySelector('#terrainSource')?.value === 'neural-python' && document.querySelector('#generationCompute')?.value === 'native');
     assert.equal(await fresh.locator('#terrainSource').inputValue(), 'neural-python');
     assert.equal(await fresh.locator('#generationCompute').inputValue(), 'native');
   }
@@ -52,7 +59,8 @@ try {
   let frame = await synchronized('web');
 
   // A retained atelier URL must not override the host's execution profile.
-  const stale = new URL(frame.url()); stale.searchParams.set('profile', 'local');
+  const stale = new URL(frame.url());
+  stale.searchParams.set('profile', 'local');
   await frame.goto(stale.href);
   frame = await synchronized('web');
 
@@ -75,7 +83,8 @@ try {
   assert.equal(route.get('profile'), 'web');
   assert.equal(route.has('localServer'), false);
   assert.notEqual(new URL(frame.url()).searchParams.get('generation'), 'native');
-  await page.reload(); await synchronized('web');
+  await page.reload();
+  await synchronized('web');
 
   // An old map's Web profile cannot replace the default native host on loopback.
   await page.goto(`${base}/rustbench.html#terrain?${query}&profile=web`);
@@ -90,7 +99,8 @@ try {
   stale.searchParams.set('profile', 'web');
   await frame.goto(stale.href);
   await synchronized('local');
-  await page.reload(); await synchronized('local');
+  await page.reload();
+  await synchronized('local');
 
   // Standalone pages continue to own their profile without a container.
   await page.goto(`${base}/terrainbench.html?${query}&standalone=1`);

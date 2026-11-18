@@ -68,8 +68,7 @@ const mapInfoButton = $<HTMLButtonElement>('mapInfoButton');
 const mapInfoDialog = $<HTMLDialogElement>('mapInfoDialog');
 let displayedMapInfo: MapInformation | null = null;
 function showMapInformation(info?: MapInformation): void {
-  if (!info || info === displayedMapInfo || (displayedMapInfo && info.cartouche === displayedMapInfo.cartouche
-    && info.legend === displayedMapInfo.legend && info.fontFamily === displayedMapInfo.fontFamily)) return;
+  if (!info || info === displayedMapInfo || (displayedMapInfo && info.cartouche === displayedMapInfo.cartouche && info.legend === displayedMapInfo.legend && info.fontFamily === displayedMapInfo.fontFamily)) return;
   displayedMapInfo = info;
   $('mapInfoContent').innerHTML = mapInformationHtml(info);
   mapInfoButton.disabled = false;
@@ -114,7 +113,7 @@ const progressEl = $('progress');
 const genTimeEl = $('gentime');
 const feedbackEl = $('settingsFeedback');
 /** Settlement markers: visible while the Settlements tab of Customize is open (or while placing one). */
-const marks = createMarks($('marks'), { select: (t) => settlUI.select(t), move: (t, p) => settlUI.move(t, p) });
+const marks = createMarks($('marks'), { select: t => settlUI.select(t), move: (t, p) => settlUI.move(t, p) });
 function refreshMarks(): void {
   const editing = configuration.isOpen && configuration.tab === 'settlementsPane';
   marks.set(debugRunStage !== undefined && debugRunStage < 4 ? null : editing || settlUI.picking !== null ? settlUI.markers(draft) : null);
@@ -122,17 +121,28 @@ function refreshMarks(): void {
 const menuBtn = $<HTMLButtonElement>('menuBtn');
 // the rail's one-click pickers: biome and relief regenerate (the terrain is reused across biomes), a style only redraws
 const dock = initDock($('dock'), {
-  biome: (biome) => { if (biomeName(opts.biome) !== biome) quickApply({ biome }); },
-  relief: (relief) => { if (opts.relief !== relief) quickApply({ relief }); },
-  coast: (coast) => { if (opts.coast !== coast) quickApply({ coast }); },
-  river: (river) => { if (opts.river !== river) quickApply({ river }); },
-  style: (style) => { styleEl.value = style; styleEl.dispatchEvent(new Event('change')); },
+  biome: biome => {
+    if (biomeName(opts.biome) !== biome) quickApply({ biome });
+  },
+  relief: relief => {
+    if (opts.relief !== relief) quickApply({ relief });
+  },
+  coast: coast => {
+    if (opts.coast !== coast) quickApply({ coast });
+  },
+  river: river => {
+    if (opts.river !== river) quickApply({ river });
+  },
+  style: style => {
+    styleEl.value = style;
+    styleEl.dispatchEvent(new Event('change'));
+  },
 });
 const syncDock = (): void => dock.sync({ biome: biomeName(opts.biome), relief: opts.relief, coast: opts.coast, river: opts.river, style: mapStyle() });
 syncDock();
 for (const hud of Array.from(document.querySelectorAll<HTMLElement>('.hud'))) {
-  hud.addEventListener('pointerdown', (e) => e.stopPropagation());
-  hud.addEventListener('pointerup', (e) => e.stopPropagation());
+  hud.addEventListener('pointerdown', e => e.stopPropagation());
+  hud.addEventListener('pointerup', e => e.stopPropagation());
 }
 
 // ---------- controls (registry: new panel sections only have to add their controls here) ----------
@@ -150,56 +160,127 @@ const paintedEl = $<HTMLInputElement>('paintedTextures');
 paintedEl.checked = paintedTextures;
 const seedEl = $<HTMLInputElement>('seed');
 
-fillSelect(sizeEl, Object.entries(SIZE_PRESETS).map(([k, v]) => [k, v.label]), opts.size);
-fillSelect(reliefEl, [['flat', 'Flat'], ['hills', 'Rolling hills'], ['valley', 'Valley'], ['mountains', 'Mountains']], opts.relief);
+fillSelect(
+  sizeEl,
+  Object.entries(SIZE_PRESETS).map(([k, v]) => [k, v.label]),
+  opts.size,
+);
+fillSelect(
+  reliefEl,
+  [
+    ['flat', 'Flat'],
+    ['hills', 'Rolling hills'],
+    ['valley', 'Valley'],
+    ['mountains', 'Mountains'],
+  ],
+  opts.relief,
+);
 fillSelect(biomeEl, BIOME_LABELS, biomeName(opts.biome));
-fillSelect(coastEl, [['none', 'None'], ['random', 'Random side'], ['N', 'North'], ['E', 'East'], ['S', 'South'], ['W', 'West']], opts.coast);
-fillSelect(riverEl, [['none', 'None'], ['stream', 'Stream'], ['river', 'River'], ['major', 'Major river']], opts.river);
-fillSelect(roadsEl, [['0', `Auto (${DEFAULT_ROADS[opts.size]})`], ...[1, 2, 3, 4, 5, 6, 7, 8].map((k) => [String(k), String(k)] as [string, string])], String(opts.roads));
-fillSelect(styleEl, STYLE_LIST.map((s) => [s.id, s.label] as [string, string]), opts.style);
+fillSelect(
+  coastEl,
+  [
+    ['none', 'None'],
+    ['random', 'Random side'],
+    ['N', 'North'],
+    ['E', 'East'],
+    ['S', 'South'],
+    ['W', 'West'],
+  ],
+  opts.coast,
+);
+fillSelect(
+  riverEl,
+  [
+    ['none', 'None'],
+    ['stream', 'Stream'],
+    ['river', 'River'],
+    ['major', 'Major river'],
+  ],
+  opts.river,
+);
+fillSelect(roadsEl, [['0', `Auto (${DEFAULT_ROADS[opts.size]})`], ...[1, 2, 3, 4, 5, 6, 7, 8].map(k => [String(k), String(k)] as [string, string])], String(opts.roads));
+fillSelect(
+  styleEl,
+  STYLE_LIST.map(s => [s.id, s.label] as [string, string]),
+  opts.style,
+);
 // Show caps only for cultures without population-driven urban growth.
-fillSelect(cultureEl, CULTURE_LIST.map((c) => [c.id, `${c.label}${c.fantasy ? ' (fantasy)' : ''}`] as [string, string]), opts.culture);
-fillSelect(languageEl, [['auto', 'Auto (from plan)'], ...NAME_FAMILIES.map((f) => [f, f[0].toUpperCase() + f.slice(1)] as [string, string])], opts.language ?? 'auto');
+fillSelect(
+  cultureEl,
+  CULTURE_LIST.map(c => [c.id, `${c.label}${c.fantasy ? ' (fantasy)' : ''}`] as [string, string]),
+  opts.culture,
+);
+fillSelect(languageEl, [['auto', 'Auto (from plan)'], ...NAME_FAMILIES.map(f => [f, f[0].toUpperCase() + f.slice(1)] as [string, string])], opts.language ?? 'auto');
 document.dispatchEvent(new Event('magna-main-options-ready'));
 
 const seedControl = {
-  el: seedEl, live: true,
+  el: seedEl,
+  live: true,
   read: (o: Options): Options => ({ ...o, seed: seedEl.value || '1' }),
-  write: (o: Options): void => { seedEl.value = o.seed; },
+  write: (o: Options): void => {
+    seedEl.value = o.seed;
+  },
 };
 registry.add(seedControl);
 // map extent (preset or custom), population slider and the settlement system (M3c)
 const configuration = initConfiguration(() => settlUI.cancelPick());
 /** Set at the end of start-up; before it the generation state (`backend`, `meta`...) is not declared yet. */
 let pageReady = false;
-const settlUI = initSettlementsUI(registry, () => draft, changeEditor, (active) => { configuration.picking(active); refreshMarks(); },
+const settlUI = initSettlementsUI(
+  registry,
+  () => draft,
+  changeEditor,
+  active => {
+    configuration.picking(active);
+    refreshMarks();
+  },
   // (the generated map is read only once the page is initialised: list links render the panel before that)
-  { all: () => (pageReady ? settlementList().map((s) => ({ key: s.key, name: s.name, population: s.population, center: s.center, cls: s.cls })) : []) },
+  { all: () => (pageReady ? settlementList().map(s => ({ key: s.key, name: s.name, population: s.population, center: s.center, cls: s.cls })) : []) },
   // 'Generate places': the automatic region is applied and generated at once
-  () => applyGeneration(false, true));
-$('panel').addEventListener('toggle', () => { $('app').classList.toggle('drawer-open', configuration.isOpen); refreshMarks(); });
-registry.add(selectControl(reliefEl, 'relief', (v) => v as Options['relief']));
-registry.add({ ...selectControl(biomeEl, 'biome', (v) => biomeName(v)), write: (o) => { biomeEl.value = biomeName(o.biome); } });
-registry.add(selectControl(coastEl, 'coast', (v) => v as Options['coast']));
-registry.add(selectControl(riverEl, 'river', (v) => v as Options['river']));
+  () => applyGeneration(false, true),
+);
+$('panel').addEventListener('toggle', () => {
+  $('app').classList.toggle('drawer-open', configuration.isOpen);
+  refreshMarks();
+});
+registry.add(selectControl(reliefEl, 'relief', v => v as Options['relief']));
+registry.add({
+  ...selectControl(biomeEl, 'biome', v => biomeName(v)),
+  write: o => {
+    biomeEl.value = biomeName(o.biome);
+  },
+});
+registry.add(selectControl(coastEl, 'coast', v => v as Options['coast']));
+registry.add(selectControl(riverEl, 'river', v => v as Options['river']));
 registry.add({ ...numberControl($<HTMLInputElement>('seaLevel'), 'seaLevel', 0), live: false });
-registry.add(selectControl(roadsEl, 'roads', (v) => Number(v)));
+registry.add(selectControl(roadsEl, 'roads', v => Number(v)));
 chipify(roadsEl);
 const siteEl = $<HTMLSelectElement>('siteType');
 fillSelect(siteEl, [['auto', 'Automatic'], ...SITE_ARCHETYPES.map((site): [string, string] => [site, site])], opts.siteType ?? 'auto');
-registry.add({ ...selectControl(siteEl, 'siteType', (v) => v as Options['siteType']), write: (o) => { siteEl.value = o.siteType ?? 'auto'; } });
+registry.add({
+  ...selectControl(siteEl, 'siteType', v => v as Options['siteType']),
+  write: o => {
+    siteEl.value = o.siteType ?? 'auto';
+  },
+});
 {
   // an automatic population (0) shows as an empty field with an 'auto' placeholder
   const pc = numberControl($<HTMLInputElement>('population'), 'population', 0);
-  registry.add({ ...pc, write: (o) => { pc.el.setAttribute('value', ''); ($<HTMLInputElement>('population')).value = o.population > 0 ? String(o.population) : ''; } });
+  registry.add({
+    ...pc,
+    write: o => {
+      pc.el.setAttribute('value', '');
+      $<HTMLInputElement>('population').value = o.population > 0 ? String(o.population) : '';
+    },
+  });
 }
 // (a culture switch drops the previous culture's plan override / mix: see withCulture)
-registry.add({ ...selectControl(cultureEl, 'culture', (v) => v as Options['culture']), read: (o) => withCulture(o, cultureEl.value as Options['culture']) });
-registry.add(selectControl(languageEl, 'language', (v) => v as Options['language']));
+registry.add({ ...selectControl(cultureEl, 'culture', v => v as Options['culture']), read: o => withCulture(o, cultureEl.value as Options['culture']) });
+registry.add(selectControl(languageEl, 'language', v => v as Options['language']));
 registry.add(numberControl($<HTMLInputElement>('hmScale'), 'heightScale', DEFAULTS.heightScale ?? 120));
 registry.add(numberControl($<HTMLInputElement>('hmSea'), 'importSea', 0));
 // display-only controls: no new generation, the renderer is rebuilt from the current world
-registry.add(selectControl(styleEl, 'style', (v) => v as Options['style'], true));
+registry.add(selectControl(styleEl, 'style', v => v as Options['style'], true));
 registry.add(checkControl($<HTMLInputElement>('contours'), 'contours', true));
 registry.add(checkControl($<HTMLInputElement>('landuse'), 'landuse', true));
 registry.add(checkControl($<HTMLInputElement>('labels'), 'labels', true));
@@ -208,43 +289,107 @@ registry.add(checkControl($<HTMLInputElement>('legend'), 'legend', true));
 {
   const slot = $('planExtra');
   slot.textContent = '';
-  const tri: [string, string][] = [['auto', 'Auto'], ['yes', 'On'], ['no', 'Off']];
+  const tri: [string, string][] = [
+    ['auto', 'Auto'],
+    ['yes', 'On'],
+    ['no', 'Off'],
+  ];
   const rows: [keyof Options, string, [string, string][]][] = [
-    ['walls', 'Town wall', [['auto', 'Auto'], ['none', 'None (open town)'], ['single', 'Single curtain'], ['double', 'Double enceinte']]],
+    [
+      'walls',
+      'Town wall',
+      [
+        ['auto', 'Auto'],
+        ['none', 'None (open town)'],
+        ['single', 'Single curtain'],
+        ['double', 'Double enceinte'],
+      ],
+    ],
     ['moat', 'Wet moat', tri],
-    ['castles', 'Castles', [['auto', 'Auto'], ['0', 'None'], ['1', '1'], ['2', '2'], ['3', '3']]],
+    [
+      'castles',
+      'Castles',
+      [
+        ['auto', 'Auto'],
+        ['0', 'None'],
+        ['1', '1'],
+        ['2', '2'],
+        ['3', '3'],
+      ],
+    ],
     ['cathedral', 'Cathedral close', tri],
     ['palace', 'Palace', tri],
     ['monasteries', 'Monasteries', tri],
     ['port', 'Port (quays, shipyard)', tri],
     ['arena', 'Arena (fossil oval)', tri],
     ['activities', 'Mills, trades, inns', tri],
-    ['suburbs', 'Suburbs', [['auto', 'Auto'], ['none', 'None'], ['some', 'Some'], ['many', 'Many']]],
-    ['shantytowns', 'Shanty towns', [['auto', 'Auto'], ['none', 'None'], ['some', 'Some'], ['many', 'Many']]],
+    [
+      'suburbs',
+      'Suburbs',
+      [
+        ['auto', 'Auto'],
+        ['none', 'None'],
+        ['some', 'Some'],
+        ['many', 'Many'],
+      ],
+    ],
+    [
+      'shantytowns',
+      'Shanty towns',
+      [
+        ['auto', 'Auto'],
+        ['none', 'None'],
+        ['some', 'Some'],
+        ['many', 'Many'],
+      ],
+    ],
   ];
   for (const [key, label, items] of rows) {
     const id = 'm4-' + String(key);
     const lab = document.createElement('label');
-    lab.htmlFor = id; lab.textContent = label;
+    lab.htmlFor = id;
+    lab.textContent = label;
     const sel = document.createElement('select');
     sel.id = id;
     fillSelect(sel, items, String(opts[key] ?? 'auto'));
-    const cell = document.createElement('div'); cell.className = 'cell full';
-    cell.append(lab, sel); slot.append(cell);
+    const cell = document.createElement('div');
+    cell.className = 'cell full';
+    cell.append(lab, sel);
+    slot.append(cell);
     chipify(sel);
-    registry.add({ ...selectControl(sel, key, (v) => v as never), write: (o) => { sel.value = String(o[key] ?? 'auto'); } });
+    registry.add({
+      ...selectControl(sel, key, v => v as never),
+      write: o => {
+        sel.value = String(o[key] ?? 'auto');
+      },
+    });
   }
   // sprawl: the same population on more or less land (0.5 compact … 2 loose), relative to the plan's baseline
   const lab = document.createElement('label');
   lab.htmlFor = 'sprawl';
   const inp = document.createElement('input');
-  inp.type = 'range'; inp.id = 'sprawl'; inp.min = '0.5'; inp.max = '2'; inp.step = '0.05';
-  const show = (): void => { lab.textContent = `Sprawl ${Number(inp.value).toFixed(2)} (0.5 dense … 2 loose)`; };
+  inp.type = 'range';
+  inp.id = 'sprawl';
+  inp.min = '0.5';
+  inp.max = '2';
+  inp.step = '0.05';
+  const show = (): void => {
+    lab.textContent = `Sprawl ${Number(inp.value).toFixed(2)} (0.5 dense … 2 loose)`;
+  };
   inp.addEventListener('input', show);
-  const sprawlCell = document.createElement('div'); sprawlCell.className = 'cell full';
-  sprawlCell.append(lab, inp); slot.append(sprawlCell);
+  const sprawlCell = document.createElement('div');
+  sprawlCell.className = 'cell full';
+  sprawlCell.append(lab, inp);
+  slot.append(sprawlCell);
   const sc = numberControl(inp, 'sprawl', 1);
-  registry.add({ ...sc, live: false, write: (o) => { sc.write(o); show(); } });
+  registry.add({
+    ...sc,
+    live: false,
+    write: o => {
+      sc.write(o);
+      show();
+    },
+  });
 }
 initPlanEditor(registry);
 const layoutFlyout = initLayoutFlyout();
@@ -256,11 +401,13 @@ registry.writeAll(settlUI.editorOptions(draft));
   note.style.cssText = 'font-size:11px;opacity:0.75;margin:-2px 0 6px';
   cultureEl.insertAdjacentElement('afterend', note);
   const update = (): void => {
-    const c = CULTURE_LIST.find((x) => x.id === cultureEl.value);
-    note.textContent = c?.urbanGrowth
-      ? `Village layout below ${c.urbanGrowth.minPop.toLocaleString('en-US')} inhabitants; larger populations form a connected town.` : '';
+    const c = CULTURE_LIST.find(x => x.id === cultureEl.value);
+    note.textContent = c?.urbanGrowth ? `Village layout below ${c.urbanGrowth.minPop.toLocaleString('en-US')} inhabitants; larger populations form a connected town.` : '';
   };
-  for (const el of [cultureEl, sizeEl, $<HTMLInputElement>('population')]) { el.addEventListener('change', update); el.addEventListener('input', update); }
+  for (const el of [cultureEl, sizeEl, $<HTMLInputElement>('population')]) {
+    el.addEventListener('change', update);
+    el.addEventListener('input', update);
+  }
   update();
 }
 
@@ -279,27 +426,35 @@ hmFile.addEventListener('change', async () => {
     missingCustom = false;
     heightDraftId++;
     draft = { ...settlUI.capture(registry.readAll(settlUI.editorOptions(draft)), draft), importedHeight: importedMem };
-    updateHeightmapUI(); markDraft();
+    updateHeightmapUI();
+    markDraft();
   } catch (e) {
     statusEl.textContent = mainMessage('imageError') + (e as Error).message;
   }
   hmFile.value = '';
 });
 hmClear.addEventListener('click', () => {
-  importedMem = null; heightDraftId++;
+  importedMem = null;
+  heightDraftId++;
   draft = { ...settlUI.capture(registry.readAll(settlUI.editorOptions(draft)), draft), importedHeight: undefined };
-  updateHeightmapUI(); markDraft();
+  updateHeightmapUI();
+  markDraft();
 });
 function updateHeightmapUI(): void {
   const custom = !!draft.importedHeight;
   hmParams.hidden = !custom;
   hmClear.hidden = !custom;
-  reliefEl.disabled = custom; coastEl.disabled = custom;
+  reliefEl.disabled = custom;
+  coastEl.disabled = custom;
   hmInfo.textContent = custom ? `${draft.importedHeight!.name ?? 'image'} (${draft.importedHeight!.w} x ${draft.importedHeight!.h} px)` : '';
-  const shareState = $('shareState'); shareState.replaceChildren();
+  const shareState = $('shareState');
+  shareState.replaceChildren();
   if (custom || missingCustom) {
-    const chip = document.createElement('span'); chip.className = custom ? 'chip' : 'chip warn'; chip.id = 'customChip';
-    chip.textContent = mainMessage(custom ? 'customHeight' : 'missingHeight'); shareState.append(chip);
+    const chip = document.createElement('span');
+    chip.className = custom ? 'chip' : 'chip warn';
+    chip.id = 'customChip';
+    chip.textContent = mainMessage(custom ? 'customHeight' : 'missingHeight');
+    shareState.append(chip);
   }
 }
 
@@ -344,12 +499,17 @@ function rerender(keepView = true): void {
   if (paintedTextures && brushStatus === 'idle') {
     brushStatus = 'loading';
     if (backend) backend.setBrushSources(BRUSH_SOURCES);
-    else void decodeBrushes(BRUSH_SOURCES).then(images => {
-      brushImages = images; brushStatus = images ? 'ready' : 'failed';
-      if (paintedTextures && currentWorld) rerender(true);
-    });
+    else
+      void decodeBrushes(BRUSH_SOURCES).then(images => {
+        brushImages = images;
+        brushStatus = images ? 'ready' : 'failed';
+        if (paintedTextures && currentWorld) rerender(true);
+      });
   }
-  if (backend) { backend.setDisplay(display()); return; }
+  if (backend) {
+    backend.setDisplay(display());
+    return;
+  }
   if (!currentWorld) return;
   const w: World = { ...currentWorld, options: { ...currentWorld.options, style: opts.style, contours: opts.contours, landuse: opts.landuse, labels: opts.labels, legend: opts.legend } };
   // a style switch only re-renders: the scene (flattened world) is reused unless the contour layer changes
@@ -359,7 +519,7 @@ function rerender(keepView = true): void {
     rec('buildScene', pnow() - t);
   }
   const t1 = pnow();
-  currentRenderer = createCanvasRenderer(canvasEl, w, mapStyle(), { scene: sceneCache.scene, brushes: paintedTextures ? brushImages ?? undefined : undefined });
+  currentRenderer = createCanvasRenderer(canvasEl, w, mapStyle(), { scene: sceneCache.scene, brushes: paintedTextures ? (brushImages ?? undefined) : undefined });
   rec('createRenderer', pnow() - t1);
   viewer.setRenderer(currentRenderer, w.mapSize, keepView);
   applyPendingView();
@@ -367,20 +527,25 @@ function rerender(keepView = true): void {
 
 /** Main-thread mode: the finished World arrived (structured clone) - draw it. */
 function show(world: World, stats: Record<string, number | string>, ms: number): void {
-  rec('genWorker', ms); rec('roundTrip', pnow() - genStart); rec('transfer', pnow() - genStart - ms);
+  rec('genWorker', ms);
+  rec('roundTrip', pnow() - genStart);
+  rec('transfer', pnow() - genStart - ms);
   const tShow = pnow();
   const previous = { world: currentWorld, scene: sceneCache };
   currentWorld = world;
   pendingMain = { id: reqId, stats, ms };
-  try { rerender(true); }
-  catch (error) {
-    currentWorld = previous.world; sceneCache = previous.scene; pendingMain = null;
+  try {
+    rerender(true);
+  } catch (error) {
+    currentWorld = previous.world;
+    sceneCache = previous.scene;
+    pendingMain = null;
     backendEvents.onRenderError?.(reqId, String((error as Error)?.message ?? error));
     return;
   }
   rec('showSync', pnow() - tShow);
   perf.extra.stats = stats;
-// CANVAS-VIEWER (end show)
+  // CANVAS-VIEWER (end show)
   setBusy(true, 'drawing');
 }
 
@@ -389,9 +554,10 @@ let lastStatsText = '';
 function renderStatsText(stats: Record<string, number | string>, ms: number): void {
   genTimeEl.textContent = `${mainMessage('generated')} ${(ms / 1000).toFixed(2)} s`;
   const seaPct = Math.round(Number(stats.seaFraction ?? 0) * 100);
-  statusEl.textContent = `${mainMessage('terrain')} ${stats['ms.terrain']} ms, ${mainMessage('urban')} ${stats['ms.urban'] ?? 0} ms - ${stats.rivers} ${mainMessage('rivers')}, ${stats.lakes} ${mainMessage('lakes')}, ${mainMessage('sea')} ${seaPct}% - ${stats.roads ?? 0} ${mainMessage('roads')}, ${stats.bridges ?? 0} ${mainMessage('bridges')} - ${stats['urban.archetype'] ?? ''} ${mainMessage('population')} ${stats['urban.pop'] ?? 0}: ${stats['urban.blocks'] ?? 0} ${mainMessage('blocks')}, ${stats['urban.buildings'] ?? 0} ${mainMessage('buildings')}`
-    + (Number(stats['settlements'] ?? 0) > 1 ? ` - ${stats['settlements']} ${mainMessage('settlements')} (${stats['ms.settlements'] ?? 0} ms)` : '')
-    + (stats['urban.mega'] ? ` - ${mainMessage('megaPlan')}: ${stats['urban.quarters']} ${mainMessage('quarters')}, ${stats['urban.rings']} ${mainMessage('rings')}, ${stats['urban.nuclei']} ${mainMessage('nuclei')} (${mainMessage('zoomDetail')})` : '');
+  statusEl.textContent =
+    `${mainMessage('terrain')} ${stats['ms.terrain']} ms, ${mainMessage('urban')} ${stats['ms.urban'] ?? 0} ms - ${stats.rivers} ${mainMessage('rivers')}, ${stats.lakes} ${mainMessage('lakes')}, ${mainMessage('sea')} ${seaPct}% - ${stats.roads ?? 0} ${mainMessage('roads')}, ${stats.bridges ?? 0} ${mainMessage('bridges')} - ${stats['urban.archetype'] ?? ''} ${mainMessage('population')} ${stats['urban.pop'] ?? 0}: ${stats['urban.blocks'] ?? 0} ${mainMessage('blocks')}, ${stats['urban.buildings'] ?? 0} ${mainMessage('buildings')}` +
+    (Number(stats['settlements'] ?? 0) > 1 ? ` - ${stats['settlements']} ${mainMessage('settlements')} (${stats['ms.settlements'] ?? 0} ms)` : '') +
+    (stats['urban.mega'] ? ` - ${mainMessage('megaPlan')}: ${stats['urban.quarters']} ${mainMessage('quarters')}, ${stats['urban.rings']} ${mainMessage('rings')}, ${stats['urban.nuclei']} ${mainMessage('nuclei')} (${mainMessage('zoomDetail')})` : '');
   if (typeof stats['developer.stage'] === 'number') genTimeEl.textContent = `${mainMessage('developer')} ${stats['developer.stage']}/4 · ${(ms / 1000).toFixed(2)} s`;
   lastStatsText = statusEl.textContent ?? '';
 }
@@ -403,11 +569,13 @@ window.addEventListener('magna-locale-change', () => {
 function showStats(stats: Record<string, number | string>, ms: number): void {
   const town = stats['names.town'];
   document.title = town ? `${town} - Magna Urbis` : 'Magna Urbis';
-  latestStats = { stats, ms }; renderStatsText(stats, ms);
+  latestStats = { stats, ms };
+  renderStatsText(stats, ms);
   ($('exportSvgFull') as HTMLButtonElement).hidden = !stats['urban.mega'];
   showSettlementWarnings(stats);
   // generated names and positions are now known: placeholders and markers follow the displayed map
-  settlUI.refresh(); refreshMarks();
+  settlUI.refresh();
+  refreshMarks();
   developer?.complete(stats, settlementList());
 }
 
@@ -415,23 +583,32 @@ function showStats(stats: Record<string, number | string>, ms: number): void {
 // The current map stays visible and interactive underneath; nothing is blanked or blocked.
 const loadEl = $('loadbar');
 const loadFill = loadEl.firstElementChild as HTMLElement;
-const STAGE_FRAC: Record<string, [number, number]> = {
-  starting: [0.01, 0.03], terrain: [0.03, 0.09], 'site & roads': [0.09, 0.2], town: [0.2, 0.6], settlements: [0.6, 0.68], villages: [0.68, 0.84],
-  'fields & woods': [0.85, 0.94], names: [0.94, 0.97], drawing: [0.97, 0.99],
-};
-let loadPos = 0, loadCeil = 0, loadTick: number | undefined, loadHide: number | undefined;
+const STAGE_FRAC: Record<string, [number, number]> = { starting: [0.01, 0.03], terrain: [0.03, 0.09], 'site & roads': [0.09, 0.2], town: [0.2, 0.6], settlements: [0.6, 0.68], villages: [0.68, 0.84], 'fields & woods': [0.85, 0.94], names: [0.94, 0.97], drawing: [0.97, 0.99] };
+let loadPos = 0,
+  loadCeil = 0,
+  loadTick: number | undefined,
+  loadHide: number | undefined;
 function setLoad(on: boolean, stage = ''): void {
   window.clearTimeout(loadHide);
   if (!on) {
-    window.clearInterval(loadTick); loadTick = undefined;
+    window.clearInterval(loadTick);
+    loadTick = undefined;
     loadFill.style.width = '100%';
-    loadHide = window.setTimeout(() => { loadEl.classList.remove('on'); loadPos = 0; loadFill.style.transition = 'none'; loadFill.style.width = '0'; void loadFill.offsetWidth; loadFill.style.transition = ''; }, 350);
+    loadHide = window.setTimeout(() => {
+      loadEl.classList.remove('on');
+      loadPos = 0;
+      loadFill.style.transition = 'none';
+      loadFill.style.width = '0';
+      void loadFill.offsetWidth;
+      loadFill.style.transition = '';
+    }, 350);
     return;
   }
   const [lo, hi] = STAGE_FRAC[stage] ?? [0.01, 0.03];
   if (stage === 'starting' || !loadEl.classList.contains('on')) loadPos = 0;
   loadEl.classList.add('on');
-  loadPos = Math.max(loadPos, lo); loadCeil = hi;
+  loadPos = Math.max(loadPos, lo);
+  loadCeil = hi;
   loadFill.style.width = (loadPos * 100).toFixed(1) + '%';
   loadTick ??= window.setInterval(() => {
     loadPos += (loadCeil - loadPos) * 0.08;
@@ -444,44 +621,73 @@ function setBusy(on: boolean, stage = ''): void {
   setLoad(on, stage);
   busyEl.classList.toggle('on', on);
   progressEl.classList.toggle('on', on || exporting);
-  if (on) { const text = stage ? `${mainMessage('generating')}: ${mainMessage(stage)}...` : `${mainMessage('generating')}...`; busyEl.textContent = text; genTimeEl.textContent = text; }
+  if (on) {
+    const text = stage ? `${mainMessage('generating')}: ${mainMessage(stage)}...` : `${mainMessage('generating')}...`;
+    busyEl.textContent = text;
+    genTimeEl.textContent = text;
+  }
 }
 
 /** The view of an opened link: set after the first content (the map size is then known); later changes are the user's. */
 function applyPendingView(): void {
   if (viewReady) return;
   viewReady = true;
-  if (pendingView) { viewer.setView(pendingView); pendingView = null; }
+  if (pendingView) {
+    viewer.setView(pendingView);
+    pendingView = null;
+  }
 }
 
 // ---- offscreen mode events
-let firstContentGen = 0, firstFrameGen = 0, awaitVer = 0;
+let firstContentGen = 0,
+  firstFrameGen = 0,
+  awaitVer = 0;
 function finishOffscreen(): void {
   if (!finalFrame.ready || !pendingDone || pendingDone.id !== reqId || renderFailedGen === reqId) return;
-  const d = pendingDone; pendingDone = null;
+  const d = pendingDone;
+  pendingDone = null;
   meta = handoff.displayedMeta ?? d.meta;
-  showStats(d.stats, d.ms); setBusy(false);
-  rec('startToFrame', pnow() - genStart); perf.extra.doneAt = pnow();
+  showStats(d.stats, d.ms);
+  setBusy(false);
+  rec('startToFrame', pnow() - genStart);
+  perf.extra.doneAt = pnow();
 }
 const backendEvents: BackendEvents = {
-  onBrushStatus(ready) { brushStatus = ready ? 'ready' : 'failed'; },
-  onStage(id, stage) { if (id === reqId && renderFailedGen !== id) setBusy(true, stage); },
+  onBrushStatus(ready) {
+    brushStatus = ready ? 'ready' : 'failed';
+  },
+  onStage(id, stage) {
+    if (id === reqId && renderFailedGen !== id) setBusy(true, stage);
+  },
   onDone(d) {
     if (d.id !== reqId) return;
-    pendingDone = d; finalFrame.generated(d.id); detailAsked.clear();
-    rec('genWorker', d.ms); perf.extra.stats = d.stats;
-    if (renderFailedGen === d.id) { setBusy(false); return; }
+    pendingDone = d;
+    finalFrame.generated(d.id);
+    detailAsked.clear();
+    rec('genWorker', d.ms);
+    perf.extra.stats = d.stats;
+    if (renderFailedGen === d.id) {
+      setBusy(false);
+      return;
+    }
     if (!finalFrame.ready) setBusy(true, 'drawing');
     finishOffscreen();
   },
   onError(id, error) {
     if (id !== reqId) return;
-    setBusy(false); developer?.failed(); genTimeEl.textContent = mainMessage('generationFailed'); statusEl.textContent = mainMessage('error') + error.split('\n')[0]; console.error(error);
+    setBusy(false);
+    developer?.failed();
+    genTimeEl.textContent = mainMessage('generationFailed');
+    statusEl.textContent = mainMessage('error') + error.split('\n')[0];
+    console.error(error);
   },
   onRenderError(id, error) {
     if (id !== reqId) return;
     renderFailedGen = id;
-    setBusy(false); developer?.failed(); genTimeEl.textContent = mainMessage('renderingFailed'); statusEl.textContent = mainMessage('error') + error.split('\n')[0];
+    setBusy(false);
+    developer?.failed();
+    genTimeEl.textContent = mainMessage('renderingFailed');
+    statusEl.textContent = mainMessage('error') + error.split('\n')[0];
   },
   onContent(c) {
     if (!handoff.acceptsContent(c.gen)) return;
@@ -492,7 +698,10 @@ const backendEvents: BackendEvents = {
     handoff.content(c.gen, c.ver, c.final, c.meta);
     if (c.gen !== reqId) return;
     awaitVer = c.ver;
-    if (firstContentGen !== c.gen) { firstContentGen = c.gen; rec('firstContent', pnow() - genStart); }
+    if (firstContentGen !== c.gen) {
+      firstContentGen = c.gen;
+      rec('firstContent', pnow() - genStart);
+    }
     rec(c.final ? 'sceneFinal' : 'scenePartial', c.sceneMs);
   },
   onDetail(d) {
@@ -502,7 +711,10 @@ const backendEvents: BackendEvents = {
     rec('settlementDetail', d.ms);
     if (d.error) console.error('settlement detail:', d.error);
     // (a big secondary settlement is planned as a megacity: its quarters can be detailed now)
-    else if (s && s.population > megaPop()) { megaRect = null; maybeQuarters(viewer.getView()); }
+    else if (s && s.population > megaPop()) {
+      megaRect = null;
+      maybeQuarters(viewer.getView());
+    }
   },
   onQuarters(d) {
     if (d.id !== reqId) return;
@@ -512,49 +724,89 @@ const backendEvents: BackendEvents = {
   onFrame(f) {
     const presented = viewer.present(f, handoff.acceptsFrame(f.gen, f.ver));
     if (!presented) return;
-    lastLabels = f.labels; perf.extra.lastFrameView = f.view;
+    lastLabels = f.labels;
+    perf.extra.lastFrameView = f.view;
     handoff.presented(f.gen, f.ver);
     meta = handoff.displayedMeta;
     showMapInformation(meta?.mapInfo);
     if (f.gen === reqId) renderFailedGen = 0;
     if (f.gen === reqId && awaitVer && f.ver >= awaitVer && f.bitmap) {
       awaitVer = 0;
-      if (firstFrameGen !== reqId) { firstFrameGen = reqId; rec('firstFrame', pnow() - genStart); }
+      if (firstFrameGen !== reqId) {
+        firstFrameGen = reqId;
+        rec('firstFrame', pnow() - genStart);
+      }
     }
     finishOffscreen();
     maybeDetail(f.view);
   },
   onFatal(msg) {
-    setBusy(false); genTimeEl.textContent = mainMessage('rendererStopped'); statusEl.textContent = `${mainMessage('workerFailed')} (${msg}). ${mainMessage('workerHelp')}`;
+    setBusy(false);
+    genTimeEl.textContent = mainMessage('rendererStopped');
+    statusEl.textContent = `${mainMessage('workerFailed')} (${msg}). ${mainMessage('workerHelp')}`;
   },
 };
 
 function spawnWorker(): void {
   workerTextMeasure = false;
-  try { worker = new GenWorker(); } catch { worker = null; legacyWorkerRefused = true; return; }
+  try {
+    worker = new GenWorker();
+  } catch {
+    worker = null;
+    legacyWorkerRefused = true;
+    return;
+  }
   worker.onmessage = (e: MessageEvent<WorkerResponse | GResponse>) => {
     const r = legacyGenerationResponse(e.data, {
       exported(m) {
-        const p = legacyExports.get(m.id); legacyExports.delete(m.id);
-        if (m.blob) p?.resolve(m.blob); else p?.reject(new Error(m.error ?? 'export failed'));
+        const p = legacyExports.get(m.id);
+        legacyExports.delete(m.id);
+        if (m.blob) p?.resolve(m.blob);
+        else p?.reject(new Error(m.error ?? 'export failed'));
       },
-      quarters(m) { if (m.id === reqId) megaProgress(m.done, m.queued, m.total, m.failed); },
-      capabilities(ok) { workerTextMeasure = ok; },
+      quarters(m) {
+        if (m.id === reqId) megaProgress(m.done, m.queued, m.total, m.failed);
+      },
+      capabilities(ok) {
+        workerTextMeasure = ok;
+      },
     });
     if (!r) return;
     if (r.id !== reqId) return;
-    if (r.stage) { setBusy(true, r.stage); return; }
-    if (r.detail) { applyDetail(r.detail.index, r.detail.urban, r.detail.bridges); return; }
-    if (r.quarters) { applyQuarters(r.quarters.layers, r.quarters.drop); megaProgress(r.quarters.done, r.quarters.queued, r.quarters.total, r.quarters.failed); return; }
+    if (r.stage) {
+      setBusy(true, r.stage);
+      return;
+    }
+    if (r.detail) {
+      applyDetail(r.detail.index, r.detail.urban, r.detail.bridges);
+      return;
+    }
+    if (r.quarters) {
+      applyQuarters(r.quarters.layers, r.quarters.drop);
+      megaProgress(r.quarters.done, r.quarters.queued, r.quarters.total, r.quarters.failed);
+      return;
+    }
     workerBusy = false;
-    if (r.error) { setBusy(false); developer?.failed(); genTimeEl.textContent = mainMessage('generationFailed'); statusEl.textContent = mainMessage('error') + r.error.split('\n')[0]; console.error(r.error); return; }
+    if (r.error) {
+      setBusy(false);
+      developer?.failed();
+      genTimeEl.textContent = mainMessage('generationFailed');
+      statusEl.textContent = mainMessage('error') + r.error.split('\n')[0];
+      console.error(r.error);
+      return;
+    }
     show(r.world!, r.stats!, r.ms!);
   };
   // e.g. blob workers are refused on file:// - fall back to generating on the main thread
   worker.onerror = () => {
     for (const p of legacyExports.values()) p.reject(new Error('generation worker unavailable'));
     legacyExports.clear();
-    console.info('Generation worker unavailable (file:// ?), generating on the main thread'); worker?.terminate(); worker = null; legacyWorkerRefused = true; workerBusy = false; run();
+    console.info('Generation worker unavailable (file:// ?), generating on the main thread');
+    worker?.terminate();
+    worker = null;
+    legacyWorkerRefused = true;
+    workerBusy = false;
+    run();
   };
 }
 
@@ -568,19 +820,32 @@ function run(debugStage?: DebugStage): void {
   developer?.started(debugStage);
   if (debugStage === undefined) mainDebug = null;
   const id = ++reqId;
-  handoff.begin(id); pendingDone = null; pendingMain = null; awaitVer = 0; renderFailedGen = 0;
+  handoff.begin(id);
+  pendingDone = null;
+  pendingMain = null;
+  awaitVer = 0;
+  renderFailedGen = 0;
   for (const p of legacyExports.values()) p.reject(new Error('superseded'));
   legacyExports.clear();
   detailAsked.clear();
-  megaLocal?.stop(); megaLocal = null; megaRect = null;
+  megaLocal?.stop();
+  megaLocal = null;
+  megaRect = null;
   lastGenKey = genKey() + (debugStage === undefined ? '' : '|developer:' + debugStage);
   genStart = performance.now();
   setBusy(true, 'starting');
-  if (backend) { backend.run(id, opts, debugStage); return; }
+  if (backend) {
+    backend.run(id, opts, debugStage);
+    return;
+  }
   if (!worker && !legacyWorkerRefused) spawnWorker();
   if (worker) {
     // a newer request supersedes a running one: restart the worker instead of queueing behind it
-    if (workerBusy) { worker.terminate(); worker = null; spawnWorker(); }
+    if (workerBusy) {
+      worker.terminate();
+      worker = null;
+      spawnWorker();
+    }
   }
   if (worker) {
     workerBusy = true;
@@ -595,7 +860,9 @@ function run(debugStage?: DebugStage): void {
         const world = debugStage === undefined ? generate(opts, undefined, { cache: mainCache }) : mainDebug!.advance(debugStage, undefined, opts);
         show(world, world.stats, Math.round(performance.now() - genStart));
       } catch (err) {
-        setBusy(false); developer?.failed(); statusEl.textContent = mainMessage('error') + String((err as Error).message);
+        setBusy(false);
+        developer?.failed();
+        statusEl.textContent = mainMessage('error') + String((err as Error).message);
       }
     }, 10);
   }
@@ -609,8 +876,10 @@ function schedule(): void {
 /** Bring everything in line with `opts`: panel, URL (push / replace / none) and the map (regenerate or just redraw). */
 function commit(mode: 'push' | 'replace' | 'none', displayOnly = false): void {
   if (!displayOnly) {
-    pendingSettings = false; menuBtn.classList.remove('dirty');
-    feedbackEl.textContent = mainMessage('changesApply'); feedbackEl.classList.remove('dirty');
+    pendingSettings = false;
+    menuBtn.classList.remove('dirty');
+    feedbackEl.textContent = mainMessage('changesApply');
+    feedbackEl.classList.remove('dirty');
     draft = structuredClone(opts);
     settlUI.load(draft);
     registry.writeAll(settlUI.editorOptions(draft));
@@ -631,8 +900,10 @@ function commit(mode: 'push' | 'replace' | 'none', displayOnly = false): void {
 
 function markDraft(): void {
   developer?.invalidate();
-  pendingSettings = true; menuBtn.classList.add('dirty');
-  feedbackEl.textContent = mainMessage('unapplied'); feedbackEl.classList.add('dirty');
+  pendingSettings = true;
+  menuBtn.classList.add('dirty');
+  feedbackEl.textContent = mainMessage('unapplied');
+  feedbackEl.classList.add('dirty');
   $('draftState').textContent = mainMessage('draft');
   refreshMarks();
 }
@@ -644,7 +915,7 @@ function changeEditor(change: (o: Options) => Options): void {
   roadsEl.options[0].textContent = `Auto (${DEFAULT_ROADS[settlUI.editorOptions(draft).size]})`;
   if (toQuery(draft) !== before) markDraft();
 }
-registry.onChange((control) => {
+registry.onChange(control => {
   draft = settlUI.capture(registry.readAll(settlUI.editorOptions(draft)), draft);
   if (control.display) {
     opts = { ...opts, style: draft.style, contours: draft.contours, landuse: draft.landuse, labels: draft.labels, legend: draft.legend };
@@ -655,19 +926,24 @@ registry.onChange((control) => {
   } else markDraft();
 });
 function applyGeneration(environment: boolean, keepOpen = false): boolean {
-  if (!registry.controls.every((control) => Array.from(control.el.matches('input') ? [control.el] : control.el.querySelectorAll('input')).every((input) => !(input instanceof HTMLInputElement) || input.checkValidity()))) {
+  if (!registry.controls.every(control => Array.from(control.el.matches('input') ? [control.el] : control.el.querySelectorAll('input')).every(input => !(input instanceof HTMLInputElement) || input.checkValidity()))) {
     $('draftState').textContent = mainMessage('invalid');
-    for (const input of Array.from(document.querySelectorAll<HTMLInputElement>('#panel input, #layoutFlyout input'))) if (!input.checkValidity()) {
-      configuration.open(input.closest('[role=tabpanel]')?.id);
-      if (input.closest('#layoutFlyout')) layoutFlyout.open();
-      input.reportValidity(); break;
-    }
+    for (const input of Array.from(document.querySelectorAll<HTMLInputElement>('#panel input, #layoutFlyout input')))
+      if (!input.checkValidity()) {
+        configuration.open(input.closest('[role=tabpanel]')?.id);
+        if (input.closest('#layoutFlyout')) layoutFlyout.open();
+        input.reportValidity();
+        break;
+      }
     return false;
   }
-  const x = $<HTMLInputElement>('centerX'), y = $<HTMLInputElement>('centerY');
+  const x = $<HTMLInputElement>('centerX'),
+    y = $<HTMLInputElement>('centerY');
   if (!!x.value !== !!y.value) {
     $('draftState').textContent = mainMessage('coordinates');
-    configuration.open('settlementsPane'); (x.value ? y : x).focus(); return false;
+    configuration.open('settlementsPane');
+    (x.value ? y : x).focus();
+    return false;
   }
   draft = settlUI.capture(registry.readAll(settlUI.editorOptions(draft)), draft);
   heightId = heightDraftId;
@@ -682,21 +958,25 @@ $('generateSettlements').addEventListener('click', () => applyGeneration(false))
 
 paintedEl.addEventListener('change', () => {
   paintedTextures = paintedEl.checked;
-  const q = '?' + curQuery(); if (q !== location.search) history.pushState(null, '', q);
+  const q = '?' + curQuery();
+  if (q !== location.search) history.pushState(null, '', q);
   rerender(true);
 });
 
 window.addEventListener('popstate', () => {
-  paintedTextures = paintedFromQuery(location.search); paintedEl.checked = paintedTextures;
+  paintedTextures = paintedFromQuery(location.search);
+  paintedEl.checked = paintedTextures;
   const parsed = parseOptions(location.search);
   missingCustom = wantsCustomHeight(location.search) && !importedMem;
-  opts = { ...parsed, importedHeight: wantsCustomHeight(location.search) ? importedMem ?? undefined : undefined };
+  opts = { ...parsed, importedHeight: wantsCustomHeight(location.search) ? (importedMem ?? undefined) : undefined };
   heightId = opts.importedHeight ? heightDraftId : 0;
   commit('none');
   rerender(true);
 });
 
-function randomSeed(): string { return Math.random().toString(36).slice(2, 8); }
+function randomSeed(): string {
+  return Math.random().toString(36).slice(2, 8);
+}
 /**
  * Apply `patch` to the applied map right away (one click on the map: new seed, biome, surprise) and regenerate.
  * Unfinished Customize edits survive: they stay a draft on top of the new map.
@@ -708,12 +988,14 @@ function quickApply(patch: Partial<Options>): void {
   commit('push');
   if (pending) {
     draft = { ...pending, ...patch };
-    settlUI.load(draft); registry.writeAll(settlUI.editorOptions(draft));
-    updateHeightmapUI(); markDraft();
+    settlUI.load(draft);
+    registry.writeAll(settlUI.editorOptions(draft));
+    updateHeightmapUI();
+    markDraft();
   }
 }
 $('newMap').addEventListener('click', () => quickApply({ seed: randomSeed() }));
-const knownCultures = new Set(CULTURE_LIST.map((c) => c.id));
+const knownCultures = new Set(CULTURE_LIST.map(c => c.id));
 $('surprise').addEventListener('click', () => {
   const patch = surprisePatch(Math.random, knownCultures);
   // a bigger settlement needs at least its preset's room; a larger extent chosen by the user is kept
@@ -722,14 +1004,18 @@ $('surprise').addEventListener('click', () => {
 function reroll(): void {
   draft = settlUI.capture(registry.readAll(settlUI.editorOptions(draft)), draft);
   draft = { ...draft, seed: randomSeed() };
-  seedEl.value = draft.seed; markDraft();
+  seedEl.value = draft.seed;
+  markDraft();
 }
 $('dice').addEventListener('click', reroll);
-window.addEventListener('keydown', (e) => {
+window.addEventListener('keydown', e => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); reroll(); }
+  if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault();
+    reroll();
+  }
 });
 
 /** The query of the current state: options + pins + view (the latter two only in the link, see share.ts). */
@@ -746,11 +1032,21 @@ function syncUrl(): void {
 }
 async function copyText(text: string): Promise<boolean> {
   let ok = false;
-  try { await navigator.clipboard.writeText(text); ok = true; } catch {
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch {
     const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
     ta.remove();
   }
   (window as unknown as Record<string, unknown>).__lastCopied = text;
@@ -761,7 +1057,9 @@ function wireCopy(btn: HTMLButtonElement, text: () => string, done: string): voi
     const label = btn.textContent;
     const ok = await copyText(text());
     btn.textContent = ok ? mainMessage(done) : mainMessage('copyFailed');
-    window.setTimeout(() => { btn.textContent = label; }, 1600);
+    window.setTimeout(() => {
+      btn.textContent = label;
+    }, 1600);
   });
 }
 wireCopy($<HTMLButtonElement>('copyLink'), () => location.origin + location.pathname + '?' + curQuery(), 'linkCopied');
@@ -779,12 +1077,15 @@ $('generationIdentity').addEventListener('click', async () => {
   window.setTimeout(showMapId, 1200);
 });
 /** Open a pasted ID (or a whole link, or a legacy query): the page reloads on it, exactly like a shared link. */
-$('openIdForm').addEventListener('submit', (e) => {
+$('openIdForm').addEventListener('submit', e => {
   e.preventDefault();
   const raw = $<HTMLInputElement>('openIdInput').value.trim();
   const query = raw.includes('?') ? raw.slice(raw.indexOf('?')) : /^[a-z]+=/.test(raw) ? '?' + raw : '?id=' + encodeURIComponent(raw);
   const options = raw ? fromQuery(query) : null;
-  if (!options || !expandMapQuery(query).get('seed')) { $('openIdState').textContent = mainMessage('invalidId'); return; }
+  if (!options || !expandMapQuery(query).get('seed')) {
+    $('openIdState').textContent = mainMessage('invalidId');
+    return;
+  }
   location.search = query;
 });
 wireCopy($<HTMLButtonElement>('copyBug'), () => bugReport(opts, pinsUI.pins, viewer.getView(), location.origin + location.pathname, map.clientWidth, paintedTextures ? appearanceQuery(fullQuery(opts, pinsUI.pins, viewer.getView()), true) : undefined), 'reportCopied');
@@ -795,27 +1096,42 @@ const map = $('map');
 const canvasEl = $<HTMLCanvasElement>('view');
 const hudEl = $('hud');
 const viewer = createViewer({
-  container: map, canvas: canvasEl, minimap: $<HTMLCanvasElement>('minimap'),
-  onView: (v, w, h) => { pinsUI.update(v, w, h); marks.update(v, w, h); developer?.update(v, w, h); ruler.update(); renderCoords(); if (viewReady) syncUrl(); },
-  onError: (error) => {
+  container: map,
+  canvas: canvasEl,
+  minimap: $<HTMLCanvasElement>('minimap'),
+  onView: (v, w, h) => {
+    pinsUI.update(v, w, h);
+    marks.update(v, w, h);
+    developer?.update(v, w, h);
+    ruler.update();
+    renderCoords();
+    if (viewReady) syncUrl();
+  },
+  onError: error => {
     if (pendingMain?.id === reqId) backendEvents.onRenderError?.(reqId, String(error.message));
     else console.error('canvas draw:', error);
   },
   onFrame: (ms, band, scale) => {
     if (!backend) showMapInformation(currentRenderer?.getMapInfo());
     if (!backend && pendingMain?.id === reqId) {
-      const d = pendingMain; pendingMain = null;
+      const d = pendingMain;
+      pendingMain = null;
       renderFailedGen = 0;
       mainPresentedGen = d.id;
-      showStats(d.stats, d.ms); setBusy(false);
-      rec('startToFrame', pnow() - genStart); perf.extra.doneAt = pnow();
+      showStats(d.stats, d.ms);
+      setBusy(false);
+      rec('startToFrame', pnow() - genStart);
+      perf.extra.doneAt = pnow();
     }
     if (!backend) presentedWorld = currentWorld;
-    maybeDetail(viewer.getView()); perf.frames.push(ms); if (perf.frames.length > 5000) perf.frames.shift(); hudEl.textContent = `${['far', 'mid', 'near'][band]} - ${scale.toFixed(3)} px/m - ${ms.toFixed(1)} ms`;
+    maybeDetail(viewer.getView());
+    perf.frames.push(ms);
+    if (perf.frames.length > 5000) perf.frames.shift();
+    hudEl.textContent = `${['far', 'mid', 'near'][band]} - ${scale.toFixed(3)} px/m - ${ms.toFixed(1)} ms`;
   },
 });
 $('fit').addEventListener('click', () => viewer.fit());
-developer = initDeveloper($('panel').querySelector<HTMLElement>('.settings-content')!, map, (stage) => {
+developer = initDeveloper($('panel').querySelector<HTMLElement>('.settings-content')!, map, stage => {
   if (stage === 0 && !applyGeneration(false, true)) return;
   window.clearTimeout(timer);
   run(stage);
@@ -836,36 +1152,47 @@ function renderCoords(): void {
   const f = (n: number): string => `${Math.round(n)} m`.padStart(8);
   coordText.textContent = p ? `x${f(p[0])}\ny${f(p[1])}` : 'x       –\ny       –';
 }
-map.addEventListener('pointermove', (e) => {
+map.addEventListener('pointermove', e => {
   if ((e.target as Element).closest('.hud, #pinpop')) return;
-  hover = mapPoint(e); renderCoords();
+  hover = mapPoint(e);
+  renderCoords();
 });
-map.addEventListener('pointerleave', () => { hover = null; renderCoords(); });
+map.addEventListener('pointerleave', () => {
+  hover = null;
+  renderCoords();
+});
 const minimapEl = $<HTMLCanvasElement>('minimap');
 const miniPoint = (e: PointerEvent): [number, number] => {
   const r = minimapEl.getBoundingClientRect();
-  const size = (backend ? meta?.mapSize : presentedWorld?.mapSize ?? currentWorld?.mapSize) ?? mapSizeOf(opts);
+  const size = (backend ? meta?.mapSize : (presentedWorld?.mapSize ?? currentWorld?.mapSize)) ?? mapSizeOf(opts);
   const clamp = (n: number): number => Math.max(0, Math.min(size, n));
-  return [clamp((e.clientX - r.left) / r.width * size), clamp((e.clientY - r.top) / r.height * size)];
+  return [clamp(((e.clientX - r.left) / r.width) * size), clamp(((e.clientY - r.top) / r.height) * size)];
 };
-minimapEl.addEventListener('pointermove', (e) => { hover = miniPoint(e); renderCoords(); });
-minimapEl.addEventListener('pointerdown', (e) => { hover = lastClick = miniPoint(e); renderCoords(); });
-minimapEl.addEventListener('pointerleave', () => { hover = null; renderCoords(); });
-$('coordCopy').addEventListener('click', async (e) => {
+minimapEl.addEventListener('pointermove', e => {
+  hover = miniPoint(e);
+  renderCoords();
+});
+minimapEl.addEventListener('pointerdown', e => {
+  hover = lastClick = miniPoint(e);
+  renderCoords();
+});
+minimapEl.addEventListener('pointerleave', () => {
+  hover = null;
+  renderCoords();
+});
+$('coordCopy').addEventListener('click', async e => {
   const p = lastClick ?? hover;
   if (!p) return;
   const b = e.currentTarget as HTMLButtonElement;
   const ok = await copyText(`${p[0].toFixed(1)},${p[1].toFixed(1)}`);
   b.textContent = ok ? mainMessage('copied') : mainMessage('failed');
-  window.setTimeout(() => { b.textContent = mainMessage('copy'); }, 1200);
+  window.setTimeout(() => {
+    b.textContent = mainMessage('copy');
+  }, 1200);
 });
-$('coords').addEventListener('pointerdown', (e) => e.stopPropagation());
-$('coords').addEventListener('pointerup', (e) => e.stopPropagation());
-const pinsUI = createPins({
-  map, layer: $('pins'), pop: $('pinpop'), list: $('pinList'),
-  onChange: () => syncUrl(),
-  onFocus: (p) => viewer.setView({ cx: p.x, cy: p.y, scale: Math.max(viewer.getView().scale, 0.3) }),
-});
+$('coords').addEventListener('pointerdown', e => e.stopPropagation());
+$('coords').addEventListener('pointerup', e => e.stopPropagation());
+const pinsUI = createPins({ map, layer: $('pins'), pop: $('pinpop'), list: $('pinList'), onChange: () => syncUrl(), onFocus: p => viewer.setView({ cx: p.x, cy: p.y, scale: Math.max(viewer.getView().scale, 0.3) }) });
 let pinMode = false;
 const ruler = createRuler({ container: map, surface: canvasEl, controlsHost: $('corner'), getView: () => viewer.getView(), onEnable: () => setPinMode(false) });
 function setPinMode(on: boolean): void {
@@ -877,8 +1204,14 @@ function setPinMode(on: boolean): void {
 }
 $('pinMode').addEventListener('click', () => setPinMode(!pinMode));
 $('pinModeBtn').addEventListener('click', () => setPinMode(!pinMode));
-$('pinsClear').addEventListener('click', () => { pinsUI.set([]); syncUrl(); });
-function setPins(p: Pin[]): void { pinsUI.set(p); if (p.length) ($('sec-pins') as HTMLDetailsElement).open = true; }
+$('pinsClear').addEventListener('click', () => {
+  pinsUI.set([]);
+  syncUrl();
+});
+function setPins(p: Pin[]): void {
+  pinsUI.set(p);
+  if (p.length) ($('sec-pins') as HTMLDetailsElement).open = true;
+}
 setPins(initUi.pins);
 
 // ---------- settlements (M3c): click to focus / to place a listed settlement, lazy detail on zoom ----------
@@ -886,7 +1219,7 @@ const detailAsked = new Set<number>();
 /** Settlements of the current map (offscreen mode: the summary sent by the generation worker). */
 function settlementList(): SettlementMeta[] {
   if (backend) return meta?.settlements ?? [];
-  return (currentWorld?.settlements ?? []).map((s) => ({ index: s.index, key: s.key, name: s.name, cls: s.cls, population: s.population, center: s.center, radius: s.radius, detail: s.detail, hasUrban: !!s.urban || !!s.main }));
+  return (currentWorld?.settlements ?? []).map(s => ({ index: s.index, key: s.key, name: s.name, cls: s.cls, population: s.population, center: s.center, radius: s.radius, detail: s.detail, hasUrban: !!s.urban || !!s.main }));
 }
 /** Main-thread mode: a settlement plan arrived; merge it and redraw. */
 function applyDetail(index: number, urban: NonNullable<World['urban']>, bridges: NonNullable<World['bridges']>): void {
@@ -895,7 +1228,11 @@ function applyDetail(index: number, urban: NonNullable<World['urban']>, bridges:
   list[index] = { ...list[index], urban };
   currentWorld = { ...currentWorld, settlements: list, bridges: [...(currentWorld.bridges ?? []), ...bridges] };
   refreshCavernMask(currentWorld);
-  if (urban.macro) { megaLocal?.setWorld(currentWorld); megaRect = null; maybeQuarters(viewer.getView()); }
+  if (urban.macro) {
+    megaLocal?.setWorld(currentWorld);
+    megaRect = null;
+    maybeQuarters(viewer.getView());
+  }
   sceneCache = null;
   rerender(true);
 }
@@ -907,7 +1244,8 @@ function maybeDetail(v: { cx: number; cy: number; scale: number }): void {
   maybeQuarters(v);
   if (v.scale < DETAIL_SCALE) return;
   const r = map.getBoundingClientRect();
-  const hw = r.width / (2 * v.scale), hh = r.height / (2 * v.scale);
+  const hw = r.width / (2 * v.scale),
+    hh = r.height / (2 * v.scale);
   for (const s of settlementList()) {
     if (s.detail !== 'lazy' || s.hasUrban || detailAsked.has(s.index)) continue;
     if (Math.abs(s.center.x - v.cx) > hw + s.radius || Math.abs(s.center.y - v.cy) > hh + s.radius) continue;
@@ -915,8 +1253,13 @@ function maybeDetail(v: { cx: number; cy: number; scale: number }): void {
     if (backend) backend.detail(reqId, s.index);
     else if (worker) worker.postMessage({ type: 'detail', id: reqId, index: s.index });
     else if (currentWorld) {
-      const w = currentWorld, id = reqId;
-      setTimeout(() => { if (id !== reqId) return; const res = generateSettlementDetail(w, s.index); if (res) applyDetail(s.index, res.urban, res.bridges); }, 0);
+      const w = currentWorld,
+        id = reqId;
+      setTimeout(() => {
+        if (id !== reqId) return;
+        const res = generateSettlementDetail(w, s.index);
+        if (res) applyDetail(s.index, res.urban, res.bridges);
+      }, 0);
     }
   }
 }
@@ -927,7 +1270,7 @@ let megaLocal: QuarterQueue | null = null;
 let megaRedraw: number | undefined;
 /** Settlements above this population are planned as megacities (macro plan + lazy quarters). */
 const megaPop = (): number => opts.eagerPop ?? EAGER_MAIN_POP;
-const isMega = (): boolean => (backend ? !!meta?.mega || settlementList().some((s) => s.index > 0 && s.population > megaPop()) : !!currentWorld?.urban?.macro || !!currentWorld?.settlements?.some((s) => s.urban?.macro));
+const isMega = (): boolean => (backend ? !!meta?.mega || settlementList().some(s => s.index > 0 && s.population > megaPop()) : !!currentWorld?.urban?.macro || !!currentWorld?.settlements?.some(s => s.urban?.macro));
 function megaProgress(done: number, queued: number, total: number, failed = 0): void {
   statusEl.textContent = queued > 0 ? `Detailing quarters: ${done} ready, ${queued} queued (of ${total})` : `${done} of ${total} quarters detailed (zoom in elsewhere for more)`;
   if (failed) statusEl.textContent += `; ${failed} unavailable`;
@@ -942,14 +1285,16 @@ function applyQuarters(layers: Record<number, NonNullable<World['urban']>>, drop
   megaRedraw = window.setTimeout(() => {
     megaRedraw = undefined;
     if (currentWorld) refreshCavernMask(currentWorld);
-    sceneCache = null; rerender(true);
+    sceneCache = null;
+    rerender(true);
   }, 400);
 }
 function maybeQuarters(v: { cx: number; cy: number; scale: number }): void {
   if (debugRunStage !== undefined && debugRunStage < 4) return;
   if (v.scale < MEGA_SCALE || !isMega()) return;
   const r = map.getBoundingClientRect();
-  const hw = r.width / (2 * v.scale), hh = r.height / (2 * v.scale);
+  const hw = r.width / (2 * v.scale),
+    hh = r.height / (2 * v.scale);
   const rect = { x0: v.cx - hw, y0: v.cy - hh, x1: v.cx + hw, y1: v.cy + hh };
   // (a new request only when the view moved or zoomed noticeably)
   if (megaRect && Math.abs(rect.x0 - megaRect.x0) + Math.abs(rect.x1 - megaRect.x1) + Math.abs(rect.y0 - megaRect.y0) + Math.abs(rect.y1 - megaRect.y1) < 0.08 * (rect.x1 - rect.x0)) return;
@@ -957,7 +1302,16 @@ function maybeQuarters(v: { cx: number; cy: number; scale: number }): void {
   if (backend) backend.quarters(reqId, rect);
   else if (worker) worker.postMessage({ type: 'quarters', id: reqId, rect });
   else if (currentWorld) {
-    megaLocal ??= new QuarterQueue(currentWorld, (layers, drop, st) => { applyQuarters(layers, drop); megaProgress(st.done, st.queued, st.total, st.failed); }, 420, 150, createQuarterExecutor(currentWorld));
+    megaLocal ??= new QuarterQueue(
+      currentWorld,
+      (layers, drop, st) => {
+        applyQuarters(layers, drop);
+        megaProgress(st.done, st.queued, st.total, st.failed);
+      },
+      420,
+      150,
+      createQuarterExecutor(currentWorld),
+    );
     megaLocal.request(rect);
   }
 }
@@ -968,24 +1322,42 @@ function focusSettlement(s: SettlementMeta): void {
 }
 {
   let down: { x: number; y: number; t: number } | null = null;
-  map.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
-  map.addEventListener('pointerup', (e) => {
-    if (!down || (e.target as HTMLElement).closest('button, #pinpop, #coords, .hud')) { down = null; return; }
-    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t;
+  map.addEventListener('pointerdown', e => {
+    down = { x: e.clientX, y: e.clientY, t: performance.now() };
+  });
+  map.addEventListener('pointerup', e => {
+    if (!down || (e.target as HTMLElement).closest('button, #pinpop, #coords, .hud')) {
+      down = null;
+      return;
+    }
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y),
+      dt = performance.now() - down.t;
     down = null;
     // placing a settlement tolerates a slightly shaky or slow click; ordinary clicks stay strict (drags pan)
     if (settlUI.picking !== null ? moved > 12 : moved > 5 || dt > 500) return;
     const r = map.getBoundingClientRect();
     const v = viewer.getView();
     const [x, y] = screenToWorld(v, r.width, r.height, e.clientX - r.left, e.clientY - r.top);
-    lastClick = [x, y]; renderCoords();
-    if (settlUI.picking !== null) { settlUI.place({ x, y }); return; }
-    if (pinMode || e.altKey) { pinsUI.add(x, y); ($('sec-pins') as HTMLDetailsElement).open = true; return; }
-    let best: SettlementMeta | null = null, bd = Infinity;
+    lastClick = [x, y];
+    renderCoords();
+    if (settlUI.picking !== null) {
+      settlUI.place({ x, y });
+      return;
+    }
+    if (pinMode || e.altKey) {
+      pinsUI.add(x, y);
+      ($('sec-pins') as HTMLDetailsElement).open = true;
+      return;
+    }
+    let best: SettlementMeta | null = null,
+      bd = Infinity;
     for (const s of settlementList()) {
       const d = Math.hypot(s.center.x - x, s.center.y - y);
       const reach = Math.max(s.radius * 1.1, 14 / v.scale);
-      if (d < reach && d < bd) { bd = d; best = s; }
+      if (d < reach && d < bd) {
+        bd = d;
+        best = s;
+      }
     }
     if (best) focusSettlement(best);
   });
@@ -1000,16 +1372,25 @@ function focusSettlement(s: SettlementMeta): void {
   options: () => opts,
   draft: () => draft,
   mode: () => (backend ? 'offscreen' : 'main'),
-  rendering: () => ({ gen: reqId, displayedGen: backend ? handoff.displayedGen : mainPresentedGen, finalVer: finalFrame.finalVer, frameVer: finalFrame.presentedVer, ready: backend ? finalFrame.ready && renderFailedGen !== reqId : mainPresentedGen === reqId && !pendingMain && !busyEl.classList.contains('on') }),
+  rendering: () => ({
+    gen: reqId,
+    displayedGen: backend ? handoff.displayedGen : mainPresentedGen,
+    finalVer: finalFrame.finalVer,
+    frameVer: finalFrame.presentedVer,
+    ready: backend ? finalFrame.ready && renderFailedGen !== reqId : mainPresentedGen === reqId && !pendingMain && !busyEl.classList.contains('on'),
+  }),
   /** Labels placed in the last frame (kind, text, size). */
-  labels: () => (backend ? lastLabels : (currentRenderer?.lastPlaced() ?? []).map((p) => ({ kind: p.label.kind, text: p.label.text, size: p.size }))),
+  labels: () => (backend ? lastLabels : (currentRenderer?.lastPlaced() ?? []).map(p => ({ kind: p.label.kind, text: p.label.text, size: p.size }))),
   /** Center of the settlement (site center / urban footprint centroid). */
   center: () => meta?.center ?? currentWorld?.site?.center ?? { x: (currentWorld?.mapSize ?? meta?.mapSize ?? 0) / 2, y: (currentWorld?.mapSize ?? meta?.mapSize ?? 0) / 2 },
   /** Settlements of the map (M3c) and a scripted focus on one of them. */
   settlements: () => settlementList(),
-  focus: (i: number) => { const s = settlementList()[i]; if (s) focusSettlement(s); },
+  focus: (i: number) => {
+    const s = settlementList()[i];
+    if (s) focusSettlement(s);
+  },
   /** Anchor of a named feature (for scripted zooms). */
-  find: (kind: string, n = 0) => meta?.anchors[kind]?.[n] ?? currentWorld?.names?.entries.filter((e) => e.kind === kind)[n]?.anchor ?? null,
+  find: (kind: string, n = 0) => meta?.anchors[kind]?.[n] ?? currentWorld?.names?.entries.filter(e => e.kind === kind)[n]?.anchor ?? null,
 };
 // CANVAS-VIEWER (end viewer)
 
@@ -1030,7 +1411,10 @@ function captureExport(): ExportSnapshot {
   if (renderFailedGen === reqId || (backend && !finalFrame.ready)) throw new Error('the requested map has not been presented');
   if (paintedTextures && brushStatus === 'loading') throw new Error('painted textures are still loading');
   const snapshot = exportSnapshot(opts, backend ? null : presentedWorld, reqId, backend ? handoff.displayedGen : mainPresentedGen, selectedExportLayers());
-  if (paintedTextures && brushStatus === 'ready') { snapshot.brushes = BRUSH_SOURCES; snapshot.display.painted = true; }
+  if (paintedTextures && brushStatus === 'ready') {
+    snapshot.brushes = BRUSH_SOURCES;
+    snapshot.display.painted = true;
+  }
   return snapshot;
 }
 /** SVG / JSON in the retained generation worker, including the main-render fallback when its worker is available. */
@@ -1042,11 +1426,14 @@ async function buildExport(snapshot: ExportSnapshot, kind: 'svg' | 'json', full 
     blob = await new Promise<Blob>((resolve, reject) => {
       const id = ++exportId;
       legacyExports.set(id, { resolve, reject });
-      try { worker!.postMessage({ type: 'export', id, gen: snapshot.gen, kind, display: snapshot.display, full, width, brushes: snapshot.brushes }); }
-      catch (error) { legacyExports.delete(id); reject(error); }
+      try {
+        worker!.postMessage({ type: 'export', id, gen: snapshot.gen, kind, display: snapshot.display, full, width, brushes: snapshot.brushes });
+      } catch (error) {
+        legacyExports.delete(id);
+        reject(error);
+      }
     });
-  }
-  else {
+  } else {
     let world = snapshot.world;
     if (!world) throw new Error('nothing to export yet');
     if (full && world.urban?.macro) {
@@ -1055,16 +1442,17 @@ async function buildExport(snapshot: ExportSnapshot, kind: 'svg' | 'json', full 
       world = { ...world, megaDetail: q.all() };
       refreshCavernMask(world);
     }
-    await new Promise((r) => setTimeout(r, 30)); // let the progress message paint before the synchronous build
+    await new Promise(r => setTimeout(r, 30)); // let the progress message paint before the synchronous build
     const d = snapshot.display;
     const measure = (text: string, size: number, style: Parameters<typeof fontString>[0]): number => {
       if (!measureCtx) return text.length * size * 0.5;
       measureCtx.font = fontString(style, size, FONT_STACKS[d.style]);
       return measureCtx.measureText(text).width;
     };
-    blob = kind === 'svg'
-      ? new Blob([renderSvg(world, { width, style: d.style, layers: d.layers, contours: d.contours, landuse: d.landuse, text: d.text, labels: d.labels !== false, legend: !!d.legend, measure, brushes: d.painted ? snapshot.brushes : undefined })], { type: 'image/svg+xml' })
-      : new Blob([worldToJson(world)], { type: 'application/json' });
+    blob =
+      kind === 'svg'
+        ? new Blob([renderSvg(world, { width, style: d.style, layers: d.layers, contours: d.contours, landuse: d.landuse, text: d.text, labels: d.labels !== false, legend: !!d.legend, measure, brushes: d.painted ? snapshot.brushes : undefined })], { type: 'image/svg+xml' })
+        : new Blob([worldToJson(world)], { type: 'application/json' });
   }
   rec(kind === 'svg' ? 'exportSvg' : 'exportJson', pnow() - t);
   perf.extra.svgBytes = blob.size;
@@ -1076,12 +1464,28 @@ async function withProgress(btn: HTMLButtonElement, label: string, job: (snapsho
   if (exporting) return;
   const text = btn.textContent;
   const buttons = [exportSvgBtn, exportPngBtn, exportJsonBtn, exportFullBtn];
-  const disabled = buttons.map((b) => b.disabled);
-  exporting = true; buttons.forEach((b) => { b.disabled = true; }); btn.textContent = label;
-  progressEl.classList.add('on'); statusEl.textContent = label.replace(/\.\.\.$/, '') + ' in the background...';
-  const progress = (message: string): void => { btn.textContent = message; if (!busyEl.classList.contains('on')) statusEl.textContent = message; };
-  try { await job(captureExport(), progress); } catch (e) { statusEl.textContent = mainMessage('exportFailed') + (e as Error).message; } finally {
-    exporting = false; buttons.forEach((b, i) => { b.disabled = disabled[i]; }); btn.textContent = text;
+  const disabled = buttons.map(b => b.disabled);
+  exporting = true;
+  buttons.forEach(b => {
+    b.disabled = true;
+  });
+  btn.textContent = label;
+  progressEl.classList.add('on');
+  statusEl.textContent = label.replace(/\.\.\.$/, '') + ' in the background...';
+  const progress = (message: string): void => {
+    btn.textContent = message;
+    if (!busyEl.classList.contains('on')) statusEl.textContent = message;
+  };
+  try {
+    await job(captureExport(), progress);
+  } catch (e) {
+    statusEl.textContent = mainMessage('exportFailed') + (e as Error).message;
+  } finally {
+    exporting = false;
+    buttons.forEach((b, i) => {
+      b.disabled = disabled[i];
+    });
+    btn.textContent = text;
     if (!busyEl.classList.contains('on')) progressEl.classList.remove('on');
   }
 }
@@ -1092,19 +1496,25 @@ const exportFullBtn = $<HTMLButtonElement>('exportSvgFull');
 exportFullBtn.addEventListener('click', () => {
   void withProgress(exportFullBtn, 'Detailing all quarters...', async (snapshot, progress) => {
     const cropped = await chooseExportCrop(await buildExport(snapshot, 'svg', true), 3000);
-    if (!cropped) { progress('Export cancelled.'); return; }
+    if (!cropped) {
+      progress('Export cancelled.');
+      return;
+    }
     await exportFile(snapshot.name + '-full.svg', cropped.blob, 'image/svg+xml');
   });
 });
 exportSvgBtn.addEventListener('click', () => {
   void withProgress(exportSvgBtn, 'Building SVG...', async (snapshot, progress) => {
     const cropped = await chooseExportCrop(await buildExport(snapshot, 'svg'), 3000);
-    if (!cropped) { progress('Export cancelled.'); return; }
+    if (!cropped) {
+      progress('Export cancelled.');
+      return;
+    }
     await exportFile(snapshot.name + '.svg', cropped.blob, 'image/svg+xml');
   });
 });
 exportJsonBtn.addEventListener('click', () => {
-  void withProgress(exportJsonBtn, 'Building JSON...', async (snapshot) => {
+  void withProgress(exportJsonBtn, 'Building JSON...', async snapshot => {
     await exportFile(snapshot.name + '.json', await buildExport(snapshot, 'json'), 'application/json');
   });
 });
@@ -1114,8 +1524,11 @@ exportPngBtn.addEventListener('click', () => {
     const svgBlob = await buildExport(snapshot, 'svg', false, 3000);
     rec('pngSvg', pnow() - tP);
     const cropped = await chooseExportCrop(svgBlob, 3000);
-    if (!cropped) { progress('Export cancelled.'); return; }
-    const png = await exportPng(cropped.blob, cropped, (phase) => progress(phase === 'decode' ? 'Decoding SVG...' : phase === 'raster' ? 'Drawing SVG...' : phase === 'snapshot' ? 'Preparing PNG pixels...' : 'Encoding PNG...'));
+    if (!cropped) {
+      progress('Export cancelled.');
+      return;
+    }
+    const png = await exportPng(cropped.blob, cropped, phase => progress(phase === 'decode' ? 'Decoding SVG...' : phase === 'raster' ? 'Drawing SVG...' : phase === 'snapshot' ? 'Preparing PNG pixels...' : 'Encoding PNG...'));
     rec('exportPng', pnow() - tP);
     progress('Saving PNG...');
     await exportFile(snapshot.name + '.png', png, 'image/png');
@@ -1128,21 +1541,37 @@ showMapId();
 updateHeightmapUI();
 // Probe the offscreen pipeline first (a few ms), then start the first run on whichever path works.
 const backendReady: Promise<OffscreenBackend | null> = forceMain ? Promise.resolve(null) : OffscreenBackend.create(backendEvents, window.devicePixelRatio || 1);
-mountIllustration({ host: document.querySelector('header') ?? $('corner'), navigation: { getView: () => viewer.getView(), setView: next => viewer.setView(next), ready: () => viewer.waitForFrame() }, capture: async () => {
-  captureExport();
-  const capturedOptions = { ...opts }, capturedView = { ...viewer.getView() };
-  const context = illustrationContext({ sourceStyle: String(capturedOptions.style), seed: capturedOptions.seed,
-    view: capturedView, width: map.clientWidth, height: map.clientHeight,
-    terrain: { relief: capturedOptions.relief, biome: capturedOptions.biome },
-    settlements: presentedWorld?.settlements,
-    generation: { culture: capturedOptions.culture, population: capturedOptions.population || undefined, size: capturedOptions.size, workflow: capturedOptions.workflow,
-      coast: capturedOptions.coast, river: capturedOptions.river, biome: capturedOptions.biome } });
+mountIllustration({
+  host: document.querySelector('header') ?? $('corner'),
+  navigation: { getView: () => viewer.getView(), setView: next => viewer.setView(next), ready: () => viewer.waitForFrame() },
+  capture: async () => {
+    captureExport();
+    const capturedOptions = { ...opts },
+      capturedView = { ...viewer.getView() };
+    const context = illustrationContext({
+      sourceStyle: String(capturedOptions.style),
+      seed: capturedOptions.seed,
+      view: capturedView,
+      width: map.clientWidth,
+      height: map.clientHeight,
+      terrain: { relief: capturedOptions.relief, biome: capturedOptions.biome },
+      settlements: presentedWorld?.settlements,
+      generation: { culture: capturedOptions.culture, population: capturedOptions.population || undefined, size: capturedOptions.size, workflow: capturedOptions.workflow, coast: capturedOptions.coast, river: capturedOptions.river, biome: capturedOptions.biome },
+    });
     const image = await captureViewport(map, { exclude: ['.hud', '#marks', '#pins', '#pinpop', '.ruler'] });
-  return { image, context };
-} });
-void backendReady.then((b) => {
+    return { image, context };
+  },
+});
+void backendReady.then(b => {
   backend = b;
-  if (b) { viewer.setSource({ request: (r) => b.request(r) }); if (paintedTextures) { brushStatus = 'loading'; b.setBrushSources(BRUSH_SOURCES); } b.setDisplay(display()); }
+  if (b) {
+    viewer.setSource({ request: r => b.request(r) });
+    if (paintedTextures) {
+      brushStatus = 'loading';
+      b.setBrushSources(BRUSH_SOURCES);
+    }
+    b.setDisplay(display());
+  }
   backendSettled = true;
   run();
 });

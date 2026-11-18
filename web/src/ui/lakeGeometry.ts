@@ -1,29 +1,42 @@
 /** Pure continuous shoreline sampling and shader helpers. Fields are retained by VectorWater. */
-export interface LakeField { values: Float32Array; distance: Float32Array; n: number }
+export interface LakeField {
+  values: Float32Array;
+  distance: Float32Array;
+  n: number;
+}
 export { computeLakeField as lakeField } from '../../../rust/bridge/waterNative';
 
 const weights = (t: number): number[] => [(1 - t) ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6, (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6];
 function hash(x: number, y: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ 1597334677;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296 * 2 - 1;
+  return (((h ^ (h >>> 16)) >>> 0) / 4294967296) * 2 - 1;
 }
 function noise(x: number, y: number): number {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
-  return (hash(ix, iy) * (1 - u) + hash(ix + 1, iy) * u) * (1 - v)
-    + (hash(ix, iy + 1) * (1 - u) + hash(ix + 1, iy + 1) * u) * v;
+  const ix = Math.floor(x),
+    iy = Math.floor(y),
+    fx = x - ix,
+    fy = y - iy;
+  const u = fx * fx * (3 - 2 * fx),
+    v = fy * fy * (3 - 2 * fy);
+  return (hash(ix, iy) * (1 - u) + hash(ix + 1, iy) * u) * (1 - v) + (hash(ix, iy + 1) * (1 - u) + hash(ix + 1, iy + 1) * u) * v;
 }
 
 /** x/y in world metres. No camera-dependent geometry or shoreline popping. */
 export function lakeSample(field: LakeField, width: number, x: number, y: number): number {
-  const gx = x * field.n / width - 0.5, gy = y * field.n / width - 0.5;
-  const ix = Math.floor(gx), iy = Math.floor(gy), wx = weights(gx - ix), wy = weights(gy - iy);
+  const gx = (x * field.n) / width - 0.5,
+    gy = (y * field.n) / width - 0.5;
+  const ix = Math.floor(gx),
+    iy = Math.floor(gy),
+    wx = weights(gx - ix),
+    wy = weights(gy - iy);
   let value = 0;
-  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
-    const xx = ix + i - 1, yy = iy + j - 1;
-    value += (xx < 0 || yy < 0 || xx >= field.n || yy >= field.n ? -4 : field.values[yy * field.n + xx]) * wx[i] * wy[j];
-  }
+  for (let j = 0; j < 4; j++)
+    for (let i = 0; i < 4; i++) {
+      const xx = ix + i - 1,
+        yy = iy + j - 1;
+      value += (xx < 0 || yy < 0 || xx >= field.n || yy >= field.n ? -4 : field.values[yy * field.n + xx]) * wx[i] * wy[j];
+    }
   const fade = Math.max(0, Math.min(1, (0.8 - Math.abs(value)) / 0.3));
   if (fade) value += fade * fade * (3 - 2 * fade) * (0.18 * noise(gx * 0.7, gy * 0.7) + 0.055 * noise(gx * 2.3, gy * 2.3) + 0.018 * noise(gx * 6.1, gy * 6.1));
   return value;

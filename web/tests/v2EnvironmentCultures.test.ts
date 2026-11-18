@@ -20,13 +20,15 @@ describe('pre-modern environmental culture selection', () => {
   });
   it('has real candidates for every selectable climate/relief, with and without a coast', () => {
     const settings = defaultSettings();
-    for (const climate of CLIMATE_ZONES) for (const relief of TERRAIN_RELIEFS) for (const coastMask of [0, 255]) {
-      settings.terrain = { climate, relief, coastMask };
-      const pool = plausibleCultures(settings);
-      expect(pool.length, `${climate}/${relief}/${coastMask}`).toBeGreaterThan(0);
-      expect(new Set(pool).size).toBe(pool.length);
-      expect(pool.every(id => !cultureEra(id) && !UNDERDARK_CULTURES.includes(id))).toBe(true);
-    }
+    for (const climate of CLIMATE_ZONES)
+      for (const relief of TERRAIN_RELIEFS)
+        for (const coastMask of [0, 255]) {
+          settings.terrain = { climate, relief, coastMask };
+          const pool = plausibleCultures(settings);
+          expect(pool.length, `${climate}/${relief}/${coastMask}`).toBeGreaterThan(0);
+          expect(new Set(pool).size).toBe(pool.length);
+          expect(pool.every(id => !cultureEra(id) && !UNDERDARK_CULTURES.includes(id))).toBe(true);
+        }
   });
   it('keeps polar, desert, tropical, mountain and maritime caricatures separate', () => {
     const settings = defaultSettings();
@@ -48,28 +50,33 @@ describe('pre-modern environmental culture selection', () => {
     expect(plausibleCultures(settings)).not.toContain('venetian-lagoon');
   });
   it('draws only Underdark peoples underground and all pre-modern cultures with follow unchecked', () => {
-    const settings = defaultSettings(); settings.options.biome = 'underdark';
+    const settings = defaultSettings();
+    settings.options.biome = 'underdark';
     expect(plausibleCultures(settings)).toEqual(UNDERDARK_CULTURES);
     for (let i = 0; i < UNDERDARK_CULTURES.length; i++) {
-      expect(randomCulture(settings, true, () => (i + .5) / UNDERDARK_CULTURES.length)).toBe(UNDERDARK_CULTURES[i]);
+      expect(randomCulture(settings, true, () => (i + 0.5) / UNDERDARK_CULTURES.length)).toBe(UNDERDARK_CULTURES[i]);
     }
     for (let i = 0; i < MEDIEVAL_CULTURES.length; i++) {
-      expect(randomCulture(settings, false, () => (i + .5) / MEDIEVAL_CULTURES.length)).toBe(MEDIEVAL_CULTURES[i]);
+      expect(randomCulture(settings, false, () => (i + 0.5) / MEDIEVAL_CULTURES.length)).toBe(MEDIEVAL_CULTURES[i]);
     }
     expect(randomCulture(settings, true, () => 0, UNDERDARK_CULTURES[0])).toBe(UNDERDARK_CULTURES[1]);
-    settings.options.biome = 'temperate'; settings.terrain = { climate: 'tropical', relief: 'volcano' };
+    settings.options.biome = 'temperate';
+    settings.terrain = { climate: 'tropical', relief: 'volcano' };
     expect(randomCulture(settings, true, () => 0, 'javanese-courts')).toBe('javanese-courts');
   });
   it('resolves the same climate as the controls, including legacy biome fallbacks', () => {
-    const settings = defaultSettings(); settings.options.biome = 'forest';
+    const settings = defaultSettings();
+    settings.options.biome = 'forest';
     expect(cultureEnvironment(settings).climate).toBe('continental');
     settings.terrain!.climate = 'oceanic';
     expect(cultureEnvironment(settings).climate).toBe('temperate');
-    settings.options.biome = 'tundra'; delete settings.terrain!.climate;
+    settings.options.biome = 'tundra';
+    delete settings.terrain!.climate;
     expect(cultureEnvironment(settings).climate).toBe('arctic');
   });
   it('feeds the selected culture through the existing automatic toponym profile', () => {
-    const settings = defaultSettings(); settings.terrain = { climate: 'desert', relief: 'canyon' };
+    const settings = defaultSettings();
+    settings.terrain = { climate: 'desert', relief: 'canyon' };
     for (const culture of [...plausibleCultures(settings), ...UNDERDARK_CULTURES]) {
       const name = generateToponymRecord({ seed: 'environment-test', culture, language: 'auto', kind: 'town', key: 'main' });
       expect(name.profile).toBe(resolveToponymProfile(culture).id);

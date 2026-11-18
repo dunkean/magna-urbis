@@ -70,7 +70,7 @@ describe('labels', () => {
   });
   it('mid zoom shows major streets only; lesser ranks need a closer view', () => {
     const base = kindStyles('parchment', PALETTES.parchment).street;
-    const ms = [0, 1, 2, 3, 4].map((r) => streetRankStyle(base, r).minScale);
+    const ms = [0, 1, 2, 3, 4].map(r => streetRankStyle(base, r).minScale);
     for (let i = 1; i < 5; i++) expect(ms[i]).toBeGreaterThan(ms[i - 1]);
     expect(ms[0]).toBeLessThan(0.15); // arterials from mid zoom
     expect(ms[1]).toBeGreaterThanOrEqual(0.25); // primary streets only toward near zoom
@@ -110,14 +110,17 @@ describe('render from one world', () => {
   it('legend and cartouche never overlap in the export layout', () => {
     for (const s of STYLES) {
       const pal: Palette = PALETTES[s];
-      const c = cartoucheModel(world, pal, 1), l = legendModel(world, pal);
+      const c = cartoucheModel(world, pal, 1),
+        l = legendModel(world, pal);
       // export layout: cartouche at the top, legend at the bottom of a 1600-unit map (panel units are 1/u of the map)
-      const cBottom = 40 + c.h, lTop = 1600 - 40 - l.h;
+      const cBottom = 40 + c.h,
+        lTop = 1600 - 40 - l.h;
       expect(lTop).toBeGreaterThan(cBottom + 100);
     }
   });
   it('lit windows are deterministic and only on some buildings', () => {
-    const a = litDots(world, 0.5), b = litDots(world, 0.5);
+    const a = litDots(world, 0.5),
+      b = litDots(world, 0.5);
     expect(Array.from(a)).toEqual(Array.from(b));
     const n = world.urban!.buildings.length;
     expect(a.length / 2).toBeGreaterThan(n * 0.2);
@@ -150,7 +153,14 @@ describe('downloads', () => {
   it('uses the host capability when present', async () => {
     const saved: unknown[] = [];
     let anchors = 0;
-    const r = await saveFile('a.svg', blob, 'image/svg+xml', { claude: mk(async (o) => { saved.push(o); }), anchor: () => { anchors++; } });
+    const r = await saveFile('a.svg', blob, 'image/svg+xml', {
+      claude: mk(async o => {
+        saved.push(o);
+      }),
+      anchor: () => {
+        anchors++;
+      },
+    });
     expect(r).toBe('saved');
     expect(saved.length).toBe(1);
     expect(anchors).toBe(0);
@@ -158,20 +168,46 @@ describe('downloads', () => {
   });
   it('declined does nothing', async () => {
     let anchors = 0;
-    const r = await saveFile('a.json', 'x', 'application/json', { claude: mk(async () => { throw { code: 'declined' }; }), anchor: () => { anchors++; } });
+    const r = await saveFile('a.json', 'x', 'application/json', {
+      claude: mk(async () => {
+        throw { code: 'declined' };
+      }),
+      anchor: () => {
+        anchors++;
+      },
+    });
     expect(r).toBe('declined');
     expect(anchors).toBe(0);
   });
   it('unavailable / not_granted / no capability fall back to the anchor', async () => {
     for (const env of [
-      { claude: mk(async () => { throw { code: 'unavailable' }; }) },
-      { claude: mk(async () => { throw { code: 'not_granted' }; }) },
+      {
+        claude: mk(async () => {
+          throw { code: 'unavailable' };
+        }),
+      },
+      {
+        claude: mk(async () => {
+          throw { code: 'not_granted' };
+        }),
+      },
       { claude: { use: async () => null } },
-      { claude: { use: async () => { throw new Error('boom'); } } },
+      {
+        claude: {
+          use: async () => {
+            throw new Error('boom');
+          },
+        },
+      },
       { claude: undefined },
     ]) {
       const got: { name: string; type: string }[] = [];
-      const r = await saveFile('b.png', 'data', 'image/png', { ...env, anchor: (b, n) => { got.push({ name: n, type: b.type }); } });
+      const r = await saveFile('b.png', 'data', 'image/png', {
+        ...env,
+        anchor: (b, n) => {
+          got.push({ name: n, type: b.type });
+        },
+      });
       expect(r).toBe('fallback');
       expect(got).toEqual([{ name: 'b.png', type: 'image/png' }]);
     }

@@ -10,11 +10,12 @@ export interface CultureHabitat {
   reliefs: readonly string[];
   coast?: boolean;
 }
-const habitat = (climates: string, reliefs: string, coast = false): CultureHabitat => ({
-  climates: climates.split(' ') as ClimateZone[], reliefs: reliefs.split(' '), ...(coast ? { coast } : {}),
-});
-const plains = 'flat valley mixed', rolling = 'hills plateau', mountains = 'mountains high-mountains';
-const lowlands = `${plains} ${rolling}`, rocky = `${rolling} ${mountains} canyon volcano caldera`;
+const habitat = (climates: string, reliefs: string, coast = false): CultureHabitat => ({ climates: climates.split(' ') as ClimateZone[], reliefs: reliefs.split(' '), ...(coast ? { coast } : {}) });
+const plains = 'flat valley mixed',
+  rolling = 'hills plateau',
+  mountains = 'mountains high-mountains';
+const lowlands = `${plains} ${rolling}`,
+  rocky = `${rolling} ${mountains} canyon volcano caldera`;
 
 /** Deliberately distinctive worldbuilding niches, not claims about historical settlement limits.
  * The full cross-products (climate × relief, plus coast where required) are documented in
@@ -106,8 +107,7 @@ export function cultureEnvironment(settings: V2Settings): { climate: ClimateZone
   const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
   const biomeClimate: Record<string, ClimateZone> = { forest: 'continental', tundra: 'arctic' };
   return {
-    climate: climateZoneOf(t?.climate) ?? climateZoneOf(t?.climateZone)
-      ?? climateZoneOf(settings.options.biome) ?? biomeClimate[String(settings.options.biome)] ?? 'temperate',
+    climate: climateZoneOf(t?.climate) ?? climateZoneOf(t?.climateZone) ?? climateZoneOf(settings.options.biome) ?? biomeClimate[String(settings.options.biome)] ?? 'temperate',
     // The symbolic engine's carrier family is not a user-selected habitat.
     relief: t?.zones ? 'flat' : effective.relief,
     underdark: settings.options.biome === 'underdark',
@@ -118,8 +118,9 @@ export function cultureEnvironment(settings: V2Settings): { climate: ClimateZone
 export function plausibleCultures(settings: V2Settings): readonly string[] {
   const env = cultureEnvironment(settings);
   if (env.underdark) return UNDERDARK_CULTURES;
-  return Object.entries(CULTURE_HABITATS).filter(([, h]) => h.climates.includes(env.climate)
-    && h.reliefs.includes(env.relief) && (!h.coast || env.coast)).map(([id]) => id);
+  return Object.entries(CULTURE_HABITATS)
+    .filter(([, h]) => h.climates.includes(env.climate) && h.reliefs.includes(env.relief) && (!h.coast || env.coast))
+    .map(([id]) => id);
 }
 
 /** Uniform draw; a dice click can omit the current choice to make every click useful. */

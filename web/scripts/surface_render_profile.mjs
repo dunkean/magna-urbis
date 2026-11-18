@@ -7,26 +7,37 @@ const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const profilePaths = { 'surface-v2': 'viewer-local/profiles/surface-v2.json' };
 const pathKeys = ['assets', 'vegetationAssets', 'treeAssets', 'heightBatch'];
 const flags = {
-  assets: '--assets', vegetationAssets: '--vegetation-assets', treeAssets: '--tree-assets', heightBatch: '--height-batch',
-  presentation: '--presentation', waterMode: '--water-mode', waterVectorTint: '--water-vector-tint',
-  waterSymbolWidthPx: '--water-symbol-width-px', nativeLogMode: '--native-log-mode',
+  assets: '--assets',
+  vegetationAssets: '--vegetation-assets',
+  treeAssets: '--tree-assets',
+  heightBatch: '--height-batch',
+  presentation: '--presentation',
+  waterMode: '--water-mode',
+  waterVectorTint: '--water-vector-tint',
+  waterSymbolWidthPx: '--water-symbol-width-px',
+  nativeLogMode: '--native-log-mode',
 };
 const sha = value => createHash('sha256').update(value).digest('hex');
 const record = value => value && typeof value === 'object' && !Array.isArray(value);
 const error = message => new Error(`Surface render profile: ${message}`);
 
 function file(filename, label) {
-  try { if (statSync(filename).isFile() && statSync(filename).size > 0) return filename; } catch {}
+  try {
+    if (statSync(filename).isFile() && statSync(filename).size > 0) return filename;
+  } catch {}
   throw error(`${label} is missing or empty: ${filename}. Prepare/copy the local artifact explicitly; no download or fallback is performed.`);
 }
 function json(filename, label) {
   file(filename, label);
   if (statSync(filename).size > 16 * 1024 * 1024) throw error(`${label} exceeds the 16 MiB manifest limit: ${filename}`);
-  try { return JSON.parse(readFileSync(filename, 'utf8').replace(/^\uFEFF/, '')); }
-  catch (cause) { throw error(`${label} is not valid JSON: ${filename} (${cause.message})`); }
+  try {
+    return JSON.parse(readFileSync(filename, 'utf8').replace(/^\uFEFF/, ''));
+  } catch (cause) {
+    throw error(`${label} is not valid JSON: ${filename} (${cause.message})`);
+  }
 }
 function reference(manifestPath, value, label) {
-  const relative = typeof value === 'string' ? value : value?.path ?? value?.localPath;
+  const relative = typeof value === 'string' ? value : (value?.path ?? value?.localPath);
   if (typeof relative !== 'string' || !relative) throw error(`${label} has no runtime file path in ${manifestPath}`);
   return file(path.resolve(path.dirname(manifestPath), relative), label);
 }
@@ -46,10 +57,15 @@ function effectiveOptions(defaults) {
 /** Resolve an explicitly selected profile; no asset-cache probing or engine call. */
 export function loadSurfaceRenderProfile(id, { root = repositoryRoot, platform = process.platform } = {}) {
   if (!Object.hasOwn(profilePaths, id)) throw error(`unknown profile ${JSON.stringify(id)}; available: surface-v2`);
-  const absoluteRoot = path.resolve(root), profilePath = path.join(absoluteRoot, profilePaths[id]);
+  const absoluteRoot = path.resolve(root),
+    profilePath = path.join(absoluteRoot, profilePaths[id]);
   const bytes = readFileSync(file(profilePath, `profile ${id}`));
   let definition;
-  try { definition = JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')); } catch { throw error(`invalid profile JSON: ${profilePath}`); }
+  try {
+    definition = JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, ''));
+  } catch {
+    throw error(`invalid profile JSON: ${profilePath}`);
+  }
   if (definition?.format !== 'magna-surface-render-profile' || definition.version !== 1 || definition.id !== id || !record(definition.defaults) || !/^[a-f0-9]{64}$/.test(definition.requirements?.treeDigest ?? '')) throw error(`invalid profile schema: ${profilePath}`);
   const defaults = { ...definition.defaults };
   if (!record(defaults.heightBatch)) throw error(`invalid platform executable map: ${profilePath}`);
@@ -65,7 +81,8 @@ export function loadSurfaceRenderProfile(id, { root = repositoryRoot, platform =
 /** Validate EFFECTIVE paths after caller overrides, before starting Godot. */
 export function validateSurfaceRenderProfile(profile, { defaults = profile.defaults, cwd = process.cwd() } = {}) {
   effectiveOptions(defaults);
-  const resolved = { ...defaults }, artifacts = {};
+  const resolved = { ...defaults },
+    artifacts = {};
   for (const key of pathKeys) {
     resolved[key] = path.resolve(cwd, defaults[key]);
     artifacts[key] = { path: file(resolved[key], flags[key]), sha256: sha(readFileSync(resolved[key])) };
@@ -75,7 +92,8 @@ export function validateSurfaceRenderProfile(profile, { defaults = profile.defau
   const runtimeFiles = new Set(pathKeys.map(key => resolved[key]));
   const declaredHashes = [];
   const required = (manifestPath, value, label) => {
-    const filename = reference(manifestPath, value, label); runtimeFiles.add(filename);
+    const filename = reference(manifestPath, value, label);
+    runtimeFiles.add(filename);
     if (record(value) && value.sha256 !== undefined) {
       if (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(value.sha256)) throw error(`${label} has an invalid declared SHA256`);
       declaredHashes.push({ filename, sha256: value.sha256.toLowerCase(), label });
@@ -95,10 +113,21 @@ export function validateSurfaceRenderProfile(profile, { defaults = profile.defau
   const trees = json(resolved.treeAssets, 'tree manifest');
   if (trees?.format !== 'magna-tree-render-assets' || trees.version !== 1 || trees.digest !== profile.metadata.requiredTreeDigest) throw error(`tree manifest must use corrected digest ${profile.metadata.requiredTreeDigest}; got ${trees?.digest ?? 'none'}`);
   const correction = trees.albedoEncodingCorrection;
-  if (correction?.source16bitRGBExact !== true || correction.alphaNormalizedValuesExact !== true || correction.allOriginalBinBytesRetained !== true || correction.geometryAccessorsMeshesUVNormalsTangentsMaterialsUnchanged !== true || correction.outputGlbSha256 !== trees.sourceGeometry?.sha256) throw error('tree manifest lacks the validated source-sRGB encoding correction');
+  if (
+    correction?.source16bitRGBExact !== true ||
+    correction.alphaNormalizedValuesExact !== true ||
+    correction.allOriginalBinBytesRetained !== true ||
+    correction.geometryAccessorsMeshesUVNormalsTangentsMaterialsUnchanged !== true ||
+    correction.outputGlbSha256 !== trees.sourceGeometry?.sha256
+  )
+    throw error('tree manifest lacks the validated source-sRGB encoding correction');
   const geometry = required(resolved.treeAssets, trees.sourceGeometry, 'corrected tree geometry');
   if (sha(readFileSync(geometry)) !== correction.outputGlbSha256) throw error('corrected tree geometry SHA256 mismatch');
-  for (const [role, value] of [['mask', trees.mask], ['lookup', trees.lookup]]) required(resolved.treeAssets, value, `tree ${role}`);
+  for (const [role, value] of [
+    ['mask', trees.mask],
+    ['lookup', trees.lookup],
+  ])
+    required(resolved.treeAssets, value, `tree ${role}`);
   if (!Array.isArray(trees.views) || trees.views.length !== 5) throw error('tree manifest must contain five prepared views');
   for (const view of trees.views) for (const role of ['color', 'normal']) required(resolved.treeAssets, view.products?.[role], `tree ${view.name ?? '?'} ${role}`);
   const runtimeArtifacts = [];
@@ -114,20 +143,26 @@ export function validateSurfaceRenderProfile(profile, { defaults = profile.defau
   const runtimeArtifactsSha256 = sha(JSON.stringify(runtimeArtifacts));
   const overrides = Object.keys(flags).filter(key => String(defaults[key]) !== String(profile.defaults[key]));
   const effectiveSha256 = sha(JSON.stringify({ id: profile.metadata.id, profileSha256: profile.metadata.profileSha256, defaults: resolved, artifacts, runtimeArtifactsSha256, treeDigest: trees.digest }));
-  return { defaults: { ...defaults }, metadata: { ...profile.metadata, effectiveSha256, effectiveDefaults: resolved, artifacts, treeDigest: trees.digest, treeEncodingCorrectionVerified: true, runtimeFileCount: runtimeFiles.size, runtimeBytes, runtimeArtifacts, runtimeArtifactsSha256, overrides } };
+  return {
+    defaults: { ...defaults },
+    metadata: { ...profile.metadata, effectiveSha256, effectiveDefaults: resolved, artifacts, treeDigest: trees.digest, treeEncodingCorrectionVerified: true, runtimeFileCount: runtimeFiles.size, runtimeBytes, runtimeArtifacts, runtimeArtifactsSha256, overrides },
+  };
 }
 
 /** Expand only --render-profile; explicit caller values (including relative paths) win. */
 export function applySurfaceRenderProfile(argv, options = {}) {
-  const args = [...argv], selections = args.flatMap((value, index) => value === '--render-profile' ? [index] : []);
+  const args = [...argv],
+    selections = args.flatMap((value, index) => (value === '--render-profile' ? [index] : []));
   if (!selections.length) return { args, profile: null };
   if (selections.length !== 1) throw error('--render-profile may be supplied only once');
-  const at = selections[0], id = args[at + 1];
+  const at = selections[0],
+    id = args[at + 1];
   if (!id || id.startsWith('--')) throw error('--render-profile requires an explicit profile id');
   args.splice(at, 2);
-  const profile = loadSurfaceRenderProfile(id, options), defaults = { ...profile.defaults };
+  const profile = loadSurfaceRenderProfile(id, options),
+    defaults = { ...profile.defaults };
   for (const [key, flag] of Object.entries(flags)) {
-    const found = args.flatMap((value, index) => value === flag ? [index] : []);
+    const found = args.flatMap((value, index) => (value === flag ? [index] : []));
     if (found.length > 1) throw error(`duplicate ${flag} is ambiguous in a render profile`);
     if (found.length) {
       const value = args[found[0] + 1];

@@ -9,11 +9,23 @@ import { MORPHOLOGIES } from '../src/gen/urban/morphology';
 import type { Plot } from '../src/gen/urban/plots';
 
 const options: BenchOptions = {
-  culture: 'european-organic', zone: 'core', placement: 'skew', rings: 2, density: 1, count: 8, radius: 160,
-  monument: 'none', recipe: 'core', relief: 'hill', reliefSlope: 18, river: 'none', riverWidth: 14,
-  mode: 'micro', microScale: 2.5, microFrontage: 'perimeter',
-  stages: { streets: { preset: 'morph/european-organic' }, plots: { preset: 'morph/european-organic' },
-    buildings: { preset: 'culture', params: { buildingOp: 'streetFrontRowExperimental' } } },
+  culture: 'european-organic',
+  zone: 'core',
+  placement: 'skew',
+  rings: 2,
+  density: 1,
+  count: 8,
+  radius: 160,
+  monument: 'none',
+  recipe: 'core',
+  relief: 'hill',
+  reliefSlope: 18,
+  river: 'none',
+  riverWidth: 14,
+  mode: 'micro',
+  microScale: 2.5,
+  microFrontage: 'perimeter',
+  stages: { streets: { preset: 'morph/european-organic' }, plots: { preset: 'morph/european-organic' }, buildings: { preset: 'culture', params: { buildingOp: 'streetFrontRowExperimental' } } },
 };
 
 describe('courts and access on scaled native house plots', () => {
@@ -24,11 +36,21 @@ describe('courts and access on scaled native house plots', () => {
     const before = JSON.stringify({ layout, partition });
     const houses = benchBuildings(layout, partition, '186rtb7');
     const roofs = houses.buildings.filter(b => b.kind !== 'garden');
-    const streetAt = makeStreetAt(layout.streets.list.filter(s => s.ribbon).map(s => ({ path: s.path, widths: s.widths, width: s.widths[0] })), []);
+    const streetAt = makeStreetAt(
+      layout.streets.list.filter(s => s.ribbon).map(s => ({ path: s.path, widths: s.widths, width: s.widths[0] })),
+      [],
+    );
     let total = 0;
     for (const [bi, block] of layout.blocks.entries()) {
       const peers = roofs.filter(b => partition.parcels[b.parcel!].block === bi);
-      expect(blockReach(block.poly, peers.map(b => b.poly), streetAt).every(Boolean), layout.shapeNames![bi]).toBe(true);
+      expect(
+        blockReach(
+          block.poly,
+          peers.map(b => b.poly),
+          streetAt,
+        ).every(Boolean),
+        layout.shapeNames![bi],
+      ).toBe(true);
       const built = peers.reduce((s, b) => s + area(b.poly), 0);
       expect(built / area(block.poly)).toBeGreaterThan(0.5);
       expect(built / area(block.poly)).toBeLessThan(0.96);
@@ -49,16 +71,42 @@ describe('courts and access on scaled native house plots', () => {
   });
 
   it('keeps a deep rear court connected past each transverse range before the access repair', () => {
-    const poly = [{ x: 0, y: 0 }, { x: 16, y: 0 }, { x: 16, y: 65 }, { x: 0, y: 65 }];
-    const plot: Plot = { poly, block: 0, zone: 'core', front: [poly[0], poly[1]], nrm: { x: 0, y: 1 }, axis: { x: 0, y: 1 },
-      sideA: { p: poly[0], d: { x: 0, y: 1 } }, sideB: { p: poly[1], d: { x: 0, y: 1 } }, boundarySides: [[poly[0], poly[1]]],
-      rank: 0, depth: 65, wide: true, sideFronts: [], run: 0, order: 1, wealth: 0.5 };
+    const poly = [
+      { x: 0, y: 0 },
+      { x: 16, y: 0 },
+      { x: 16, y: 65 },
+      { x: 0, y: 65 },
+    ];
+    const plot: Plot = {
+      poly,
+      block: 0,
+      zone: 'core',
+      front: [poly[0], poly[1]],
+      nrm: { x: 0, y: 1 },
+      axis: { x: 0, y: 1 },
+      sideA: { p: poly[0], d: { x: 0, y: 1 } },
+      sideB: { p: poly[1], d: { x: 0, y: 1 } },
+      boundarySides: [[poly[0], poly[1]]],
+      rank: 0,
+      depth: 65,
+      wide: true,
+      sideFronts: [],
+      run: 0,
+      order: 1,
+      wealth: 0.5,
+    };
     const P = { ...MORPHOLOGIES['european-organic'], bigCourtChance: 0 };
     const fronts = new Set<number>();
     for (const seed of ['deep-a', 'deep-b', 'deep-c']) {
       const roofs = burgageHouse(structuredClone(plot), 0.92, P, new Rng(seed)).filter(b => b.kind !== 'garden');
       expect(roofs.length).toBeGreaterThan(3);
-      expect(blockReach(poly, roofs.map(b => b.poly), p => p.y <= 0.1).every(Boolean)).toBe(true);
+      expect(
+        blockReach(
+          poly,
+          roofs.map(b => b.poly),
+          p => p.y <= 0.1,
+        ).every(Boolean),
+      ).toBe(true);
       expect(roofs.reduce((s, b) => s + area(b.poly), 0) / area(poly)).toBeGreaterThan(0.7);
       fronts.add(roofs.filter(b => b.kind === 'house').length);
     }

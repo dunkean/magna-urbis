@@ -8,7 +8,17 @@ function mouth(seed: string, bend = false) {
   const height = createGrid(120, 160, 2);
   height.data.fill(2);
   for (let y = 145; y < height.h; y++) for (let x = 0; x < height.w; x++) height.data[y * height.w + x] = -1;
-  const path = bend ? [{ x: 120, y: 20 }, { x: 105, y: 160 }, { x: 120, y: 294 }] : [{ x: 120, y: 20 }, { x: 120, y: 160 }, { x: 120, y: 294 }];
+  const path = bend
+    ? [
+        { x: 120, y: 20 },
+        { x: 105, y: 160 },
+        { x: 120, y: 294 },
+      ]
+    : [
+        { x: 120, y: 20 },
+        { x: 120, y: 160 },
+        { x: 120, y: 294 },
+      ];
   const shape = carveEstuary(height, path, [12, 12, 12], 220, 0, new Rng(seed));
   return { height, shape, sea: seaMaskOf(height, 0) };
 }
@@ -36,7 +46,8 @@ describe('river-mouth variety', () => {
       const m = mouth('mouth:' + i);
       if (!examples.has(m.shape)) examples.set(m.shape, m);
     }
-    const narrow = examples.get('widening')!, funnel = examples.get('funnel')!;
+    const narrow = examples.get('widening')!,
+      funnel = examples.get('funnel')!;
     expect(spanAt(narrow, 278)).toBeGreaterThan(spanAt(narrow, 190));
     expect(spanAt(narrow, 278)).toBeLessThan(36);
     expect(spanAt(funnel, 278)).toBeGreaterThan(spanAt(narrow, 278) * 1.3);
@@ -59,7 +70,17 @@ describe('river-mouth variety', () => {
     height.data.fill(25);
     for (let y = 0; y < height.h; y++) for (let x = 57; x <= 62; x++) height.data[y * height.w + x] = 0.1;
     for (let y = 145; y < height.h; y++) for (let x = 0; x < height.w; x++) height.data[y * height.w + x] = -1;
-    carveEstuary(height, [{ x: 120, y: 20 }, { x: 120, y: 294 }], [12, 12], 220, 0, new Rng('banks'));
+    carveEstuary(
+      height,
+      [
+        { x: 120, y: 20 },
+        { x: 120, y: 294 },
+      ],
+      [12, 12],
+      220,
+      0,
+      new Rng('banks'),
+    );
     const sea = seaMaskOf(height, 0);
     expect(sea[135 * height.w + 60]).toBe(1);
     expect(sea[135 * height.w + 50]).toBe(0);

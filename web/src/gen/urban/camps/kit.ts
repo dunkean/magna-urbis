@@ -17,9 +17,20 @@ import { truncateAcute } from '../blocks';
 import { dryPieces } from '../waterland';
 
 export type BlockKind = UrbanBlockInfo['kind'];
-export interface CampBlock { poly: Polygon; kind: BlockKind; compound?: string; quarter: number }
-export interface CampParcel { poly: Polygon; use: string; block: number }
-export interface CampBuilding extends Omit<UrbanBuilding, 'parcel'> { parcel: number }
+export interface CampBlock {
+  poly: Polygon;
+  kind: BlockKind;
+  compound?: string;
+  quarter: number;
+}
+export interface CampParcel {
+  poly: Polygon;
+  use: string;
+  block: number;
+}
+export interface CampBuilding extends Omit<UrbanBuilding, 'parcel'> {
+  parcel: number;
+}
 
 /** One camp, village or room-block cluster, with local indices (merged by `assemble`). */
 export interface CampOut {
@@ -45,9 +56,7 @@ export interface CampOut {
 
 export const emptyCamp = (): CampOut => ({ quarters: [], streets: [], blocks: [], parcels: [], buildings: [], lines: [], walls: [], landmarks: [], water: [], sites: [], outline: [], squares: [] });
 
-export const street = (path: Polyline, width: number, rank: number, role: StreetRole, phase = 1): UrbanStreet => ({
-  path, width, widths: path.map(() => width), kind: rank <= 1 ? 'main' : rank <= 2 ? 'street' : 'alley', rank, role, phase,
-});
+export const street = (path: Polyline, width: number, rank: number, role: StreetRole, phase = 1): UrbanStreet => ({ path, width, widths: path.map(() => width), kind: rank <= 1 ? 'main' : rank <= 2 ? 'street' : 'alley', rank, role, phase });
 
 export const dirOf = (a: number): Vec2 => ({ x: Math.cos(a), y: Math.sin(a) });
 export const at = (c: Vec2, a: number, r: number): Vec2 => ({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
@@ -60,12 +69,14 @@ export function circlePts(c: Vec2, r: number, n: number, a0 = 0): Vec2[] {
 }
 /** Ellipse ring (semi-axes a along `ang`, b across), optionally wobbled by a radial noise function. */
 export function ellipse(c: Vec2, a: number, b: number, ang: number, n = 72, wob?: (t: number) => number): Polygon {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
   const pts: Vec2[] = [];
   for (let i = 0; i < n; i++) {
     const t = (i / n) * 2 * Math.PI;
     const k = wob ? 1 + wob(t) : 1;
-    const x = Math.cos(t) * a * k, y = Math.sin(t) * b * k;
+    const x = Math.cos(t) * a * k,
+      y = Math.sin(t) * b * k;
     pts.push({ x: c.x + x * ca - y * sa, y: c.y + x * sa + y * ca });
   }
   return orientPos(pts);
@@ -85,13 +96,19 @@ export function splitHoles(ph: PolyH, depth = 0): Polygon[] {
   if (depth > 3) return [];
   const bb = bboxOf(ph.outer);
   // (a hole left after the first pass is cut a little off its centroid line)
-  const xs = [...new Set(ph.holes.map((h) => Math.round((polygonCentroid(h).x + depth * 0.37) * 1000) / 1000))].sort((a, b) => a - b);
+  const xs = [...new Set(ph.holes.map(h => Math.round((polygonCentroid(h).x + depth * 0.37) * 1000) / 1000))].sort((a, b) => a - b);
   const bounds = [bb.x0 - 10, ...xs, bb.x1 + 10];
   const out: Polygon[] = [];
   for (let i = 0; i + 1 < bounds.length; i++) {
-    const a = bounds[i], b = bounds[i + 1];
+    const a = bounds[i],
+      b = bounds[i + 1];
     if (b - a < 1e-6) continue;
-    const slab: Polygon = [{ x: a, y: bb.y0 - 10 }, { x: b, y: bb.y0 - 10 }, { x: b, y: bb.y1 + 10 }, { x: a, y: bb.y1 + 10 }];
+    const slab: Polygon = [
+      { x: a, y: bb.y0 - 10 },
+      { x: b, y: bb.y0 - 10 },
+      { x: b, y: bb.y1 + 10 },
+      { x: a, y: bb.y1 + 10 },
+    ];
     for (const piece of intersectionS([ph], slab)) {
       // (a hole whose centroid line misses it: a further split of that piece)
       if (piece.holes.length) out.push(...splitHoles({ outer: piece.outer, holes: piece.holes }, depth + 1));
@@ -105,7 +122,7 @@ export function splitHoles(ph: PolyH, depth = 0): Polygon[] {
 export function snapRing(p: Polygon): Polygon {
   // (through the boolean engine once: its ring cleanup — vertices with a turn under 0.5° dropped — is then already
   // applied, so the blocks cut from the quarter keep exactly its boundary)
-  const u = unionS([{ outer: orientPos(p.map((q) => ({ x: Math.round(q.x * 1000) / 1000, y: Math.round(q.y * 1000) / 1000 }))), holes: [] }]);
+  const u = unionS([{ outer: orientPos(p.map(q => ({ x: Math.round(q.x * 1000) / 1000, y: Math.round(q.y * 1000) / 1000 }))), holes: [] }]);
   if (!u.length) return orientPos(p);
   return u.reduce((a, b) => (area(b.outer) > area(a.outer) ? b : a)).outer;
 }
@@ -120,11 +137,12 @@ export function goodShape(p: Polygon, minW = 2.2): boolean {
 /** Cleaned simple polygons of a MultiPoly (holes cut open), dropping slivers. */
 export function pieces(m: MultiPoly, minA = 6): Polygon[] {
   const out: Polygon[] = [];
-  for (const ph of m) for (const p of splitHoles(ph)) {
-    // (edges of 2 mm and more kept: dropping centimetre edges shifts long shared boundaries off their neighbours)
-    const r = orientPos(cleanRing(p, 0.01, 0.01, Infinity, false));
-    if (r.length >= 3 && area(r) >= minA) out.push(r);
-  }
+  for (const ph of m)
+    for (const p of splitHoles(ph)) {
+      // (edges of 2 mm and more kept: dropping centimetre edges shifts long shared boundaries off their neighbours)
+      const r = orientPos(cleanRing(p, 0.01, 0.01, Infinity, false));
+      if (r.length >= 3 && area(r) >= minA) out.push(r);
+    }
   return out;
 }
 
@@ -133,23 +151,40 @@ export function carveBlocks(quarter: Polygon, cuts: MultiPoly, water: MultiPoly)
   let m: MultiPoly = [{ outer: quarter, holes: [] }];
   // (the cuts unioned first, in batches: polygon-clipping is far more robust on one clean operand than on many
   // overlapping ribbons, and a failure would fall back to a coarse 5 cm grid)
-  if (cuts.length) m = differenceS(m, cuts.length > 1 ? unionMany(cuts.map((ph) => [ph] as MultiPoly), 16, true) : cuts);
+  if (cuts.length)
+    m = differenceS(
+      m,
+      cuts.length > 1
+        ? unionMany(
+            cuts.map(ph => [ph] as MultiPoly),
+            16,
+            true,
+          )
+        : cuts,
+    );
   if (water.length) m = dryPieces(m, water);
   // (spikes left where path ribbons meet or graze the outline are cut off at 1.5 m width)
-  const out = pieces(m, 40).map((p) => (goodShape(p, 2.5) ? p : orientPos(truncateAcute(p, (14 * Math.PI) / 180, 1.5)))).filter((p) => p.length >= 3 && goodShape(p, 2.5));
+  const out = pieces(m, 40)
+    .map(p => (goodShape(p, 2.5) ? p : orientPos(truncateAcute(p, (14 * Math.PI) / 180, 1.5))))
+    .filter(p => p.length >= 3 && goodShape(p, 2.5));
   // (a boolean that fell back to its coarse grid may leave a block a few cm out of its quarter: clipped back)
-  const res = out.flatMap((p) => (p.every((q) => pointInRing(quarter, q) || distToRing(quarter, q) < 0.002) ? [p] : pieces(intersectionS(p, quarter), 40).filter((x) => goodShape(x, 2.5))));
+  const res = out.flatMap(p => (p.every(q => pointInRing(quarter, q) || distToRing(quarter, q) < 0.002) ? [p] : pieces(intersectionS(p, quarter), 40).filter(x => goodShape(x, 2.5))));
   // (the pieces of a hole split into slabs can keep a sub-millimetre sliver in common along a cut: removed from the
   // later piece)
   if (res.length < 2 || res.length > 300) return res;
   const bbs = res.map(bboxOf);
-  for (let i = 0; i < res.length; i++) for (let j = i + 1; j < res.length; j++) {
-    const a = bbs[i], b = bbs[j];
-    if (a.x0 > b.x1 || b.x0 > a.x1 || a.y0 > b.y1 || b.y0 > a.y1) continue;
-    if (mpArea(intersectionS(res[i], res[j])) < 0.005) continue;
-    const ps = pieces(differenceS([{ outer: res[j], holes: [] }], [{ outer: res[i], holes: [] }]), 40);
-    if (ps.length) { res[j] = ps.reduce((x, y) => (area(y) > area(x) ? y : x)); bbs[j] = bboxOf(res[j]); }
-  }
+  for (let i = 0; i < res.length; i++)
+    for (let j = i + 1; j < res.length; j++) {
+      const a = bbs[i],
+        b = bbs[j];
+      if (a.x0 > b.x1 || b.x0 > a.x1 || a.y0 > b.y1 || b.y0 > a.y1) continue;
+      if (mpArea(intersectionS(res[i], res[j])) < 0.005) continue;
+      const ps = pieces(differenceS([{ outer: res[j], holes: [] }], [{ outer: res[i], holes: [] }]), 40);
+      if (ps.length) {
+        res[j] = ps.reduce((x, y) => (area(y) > area(x) ? y : x));
+        bbs[j] = bboxOf(res[j]);
+      }
+    }
   return res;
 }
 
@@ -171,7 +206,10 @@ export function pathRibbons(list: UrbanStreet[]): MultiPoly {
 export function cutByCells(block: Polygon, cells: { poly: Polygon; tag: number }[], strict = false): { poly: Polygon; tag: number }[] {
   const bb = bboxOf(block);
   const blockConvex = isConvex(block, 1e-9);
-  const near = cells.filter((c) => { const cb = bboxOf(c.poly); return !(cb.x0 > bb.x1 || cb.x1 < bb.x0 || cb.y0 > bb.y1 || cb.y1 < bb.y0); });
+  const near = cells.filter(c => {
+    const cb = bboxOf(c.poly);
+    return !(cb.x0 > bb.x1 || cb.x1 < bb.x0 || cb.y0 > bb.y1 || cb.y1 < bb.y0);
+  });
   const viaBoolean = (): { poly: Polygon; tag: number }[] => {
     const o: { poly: Polygon; tag: number }[] = [];
     for (const c of near) for (const p of pieces(intersectionS(block, c.poly), 0.05)) o.push({ poly: p, tag: c.tag });
@@ -181,13 +219,28 @@ export function cutByCells(block: Polygon, cells: { poly: Polygon; tag: number }
   let bad = false;
   for (const c of near) {
     // convex cells: the block clipped by the cell's half-planes (exact and cheap); a concave cell takes a boolean
-    if (!isConvex(c.poly, 1e-9)) { for (const p of pieces(intersectionS(block, c.poly), 0.05)) out.push({ poly: p, tag: c.tag }); continue; }
+    if (!isConvex(c.poly, 1e-9)) {
+      for (const p of pieces(intersectionS(block, c.poly), 0.05)) out.push({ poly: p, tag: c.tag });
+      continue;
+    }
     const r = clipConvexCell(block, c.poly);
     if (r.length < 3) continue;
     // (a concave block clipped this way can leave zero-width spikes, or bridges across a notch of the block: an edge
     // whose middle lies outside the block. Then the whole block is cut by booleans, so that neighbouring pieces
     // keep identical shared edges)
-    if (strict && !blockConvex && (despike(r).length !== r.length || r.some((q, i) => { const n = r[(i + 1) % r.length]; const m = { x: (q.x + n.x) / 2, y: (q.y + n.y) / 2 }; return !pointInRing(block, m) && distToRing(block, m) > 0.01; }))) { bad = true; break; }
+    if (
+      strict &&
+      !blockConvex &&
+      (despike(r).length !== r.length ||
+        r.some((q, i) => {
+          const n = r[(i + 1) % r.length];
+          const m = { x: (q.x + n.x) / 2, y: (q.y + n.y) / 2 };
+          return !pointInRing(block, m) && distToRing(block, m) > 0.01;
+        }))
+    ) {
+      bad = true;
+      break;
+    }
     if (area(r) > 0.05) for (const p of pieces(resolveRing(r), 0.05)) out.push({ poly: p, tag: c.tag });
   }
   if (bad) out = viaBoolean();
@@ -198,12 +251,13 @@ export function cutByCells(block: Polygon, cells: { poly: Polygon; tag: number }
 /** cutByCells, then whatever of the block no cell covers as pieces tagged -1 (the block stays exactly covered). */
 export function cutExact(block: Polygon, cells: { poly: Polygon; tag: number }[]): { poly: Polygon; tag: number }[] {
   let parts = cutByCells(block, cells);
-  const A = area(block), S = parts.reduce((s, p) => s + area(p.poly), 0);
+  const A = area(block),
+    S = parts.reduce((s, p) => s + area(p.poly), 0);
   // (the missing area is only slivers when the cells cover the block: the boolean for them is costly with many
   // cells, and the partition tolerance is 0.5 %)
   if (S < A * 0.997) {
     const rest = pieces(parts.length ? differenceS([{ outer: block, holes: [] }], ...parts.map((p): MultiPoly => [{ outer: p.poly, holes: [] }])) : [{ outer: block, holes: [] }], 0.5);
-    parts = mergeSmall([...parts, ...rest.map((poly) => ({ poly, tag: -1 }))]);
+    parts = mergeSmall([...parts, ...rest.map(poly => ({ poly, tag: -1 }))]);
   }
   return parts;
 }
@@ -213,12 +267,13 @@ function clipConvexCell(subject: Polygon, clip: Polygon): Polygon {
   let poly = subject;
   const C = orientPos(clip);
   for (let i = 0; i < C.length && poly.length; i++) {
-    const a = C[i], b = C[(i + 1) % C.length];
+    const a = C[i],
+      b = C[(i + 1) % C.length];
     // inward normal of a CCW ring: left of a→b
     poly = clipHalfPlaneConvex(poly, a, { x: -(b.y - a.y), y: b.x - a.x });
   }
   // (on the 1 mm grid of the snapped booleans: neighbouring pieces and later unions share their vertices exactly)
-  return poly.map((q) => ({ x: Math.round(q.x * 1000) / 1000, y: Math.round(q.y * 1000) / 1000 }));
+  return poly.map(q => ({ x: Math.round(q.x * 1000) / 1000, y: Math.round(q.y * 1000) / 1000 }));
 }
 
 /** A clipped ring may hold zero-width bridges (several parts of a concave block): resolved into its parts. */
@@ -229,12 +284,24 @@ export function despike(r: Polygon): Polygon {
     const keep: Vec2[] = [];
     let removed = false;
     for (let i = 0; i < p.length; i++) {
-      const a = p[(i + p.length - 1) % p.length], b = p[i], c = p[(i + 1) % p.length];
-      const ux = a.x - b.x, uy = a.y - b.y, vx = c.x - b.x, vy = c.y - b.y;
-      const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
-      if (lu < 1e-6 || lv < 1e-6) { removed = true; continue; }
+      const a = p[(i + p.length - 1) % p.length],
+        b = p[i],
+        c = p[(i + 1) % p.length];
+      const ux = a.x - b.x,
+        uy = a.y - b.y,
+        vx = c.x - b.x,
+        vy = c.y - b.y;
+      const lu = Math.hypot(ux, uy),
+        lv = Math.hypot(vx, vy);
+      if (lu < 1e-6 || lv < 1e-6) {
+        removed = true;
+        continue;
+      }
       // (the two edges leave b in the same direction: b is the tip of a spike)
-      if ((ux * vx + uy * vy) / (lu * lv) > 0.99999 && Math.abs(ux * vy - uy * vx) / 2 < 0.5) { removed = true; continue; }
+      if ((ux * vx + uy * vy) / (lu * lv) > 0.99999 && Math.abs(ux * vy - uy * vx) / 2 < 0.5) {
+        removed = true;
+        continue;
+      }
       keep.push(b);
     }
     p = keep;
@@ -267,7 +334,8 @@ export function sharedLen(a: Polygon, b: Polygon): number {
   const bb = bboxOf(b);
   let L = 0;
   for (let i = 0; i < a.length; i++) {
-    const p = a[i], q = a[(i + 1) % a.length];
+    const p = a[i],
+      q = a[(i + 1) % a.length];
     if (Math.max(p.x, q.x) < bb.x0 - 0.05 || Math.min(p.x, q.x) > bb.x1 + 0.05 || Math.max(p.y, q.y) < bb.y0 - 0.05 || Math.min(p.y, q.y) > bb.y1 + 0.05) continue;
     const l = dist(p, q);
     const n = Math.max(1, Math.ceil(l / 0.5));
@@ -275,7 +343,11 @@ export function sharedLen(a: Polygon, b: Polygon): number {
       const t = (j + 0.5) / n;
       const m = { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
       let on = false;
-      for (const k of g.queryPt(m, 0.05)) if (distToSeg(m, b[k], b[(k + 1) % b.length]) < 0.02) { on = true; break; }
+      for (const k of g.queryPt(m, 0.05))
+        if (distToSeg(m, b[k], b[(k + 1) % b.length]) < 0.02) {
+          on = true;
+          break;
+        }
       if (on) L += l / n;
     }
   }
@@ -290,20 +362,31 @@ export function mergeSmall<T extends { poly: Polygon }>(list: T[], minA = 14): T
   const out = list.slice();
   // (badness cached per piece: the shape test runs a pole of inaccessibility)
   const badMap = new Map<T, boolean>();
-  const bad = (x: T): boolean => { let b = badMap.get(x); if (b === undefined) { b = area(x.poly) < minA || !goodShape(x.poly, 2.2); badMap.set(x, b); } return b; };
+  const bad = (x: T): boolean => {
+    let b = badMap.get(x);
+    if (b === undefined) {
+      b = area(x.poly) < minA || !goodShape(x.poly, 2.2);
+      badMap.set(x, b);
+    }
+    return b;
+  };
   const kept = new Set<T>();
   for (let guard = 0; guard < 300; guard++) {
-    const i = out.findIndex((x) => !kept.has(x) && bad(x));
+    const i = out.findIndex(x => !kept.has(x) && bad(x));
     if (i < 0) break;
     const me = out[i];
     const mb = bboxOf(me.poly);
-    let bj = -1, bl = 0.05;
+    let bj = -1,
+      bl = 0.05;
     out.forEach((o, j) => {
       if (j === i) return;
       const ob = bboxOf(o.poly);
       if (ob.x0 > mb.x1 + 0.1 || ob.x1 < mb.x0 - 0.1 || ob.y0 > mb.y1 + 0.1 || ob.y1 < mb.y0 - 0.1) return;
       const l = sharedLen(me.poly, o.poly);
-      if (l > bl) { bl = l; bj = j; }
+      if (l > bl) {
+        bl = l;
+        bj = j;
+      }
     });
     const u = bj >= 0 ? unionS(out[bj].poly, me.poly) : [];
     if (bj >= 0 && u.length === 1 && !u[0].holes.length) {
@@ -332,17 +415,26 @@ export class FrontIndex {
   }
   /** Frontage length of a polygon (sampled every 0.5 m) and the midpoint of its longest frontage run. */
   frontage(P: Polygon): { len: number; mid: Vec2 | null } {
-    let len = 0, best = 0, bestMid: Vec2 | null = null;
+    let len = 0,
+      best = 0,
+      bestMid: Vec2 | null = null;
     for (let k = 0; k < P.length; k++) {
-      const a = P[k], b = P[(k + 1) % P.length];
+      const a = P[k],
+        b = P[(k + 1) % P.length];
       const L = dist(a, b);
       const n = Math.max(1, Math.ceil(L / 0.5));
       let run = 0;
       for (let j = 0; j < n; j++) {
         const t = (j + 0.5) / n;
-        if (this.on({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })) { len += L / n; run += L / n; }
+        if (this.on({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })) {
+          len += L / n;
+          run += L / n;
+        }
       }
-      if (run > best) { best = run; bestMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+      if (run > best) {
+        best = run;
+        bestMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      }
     }
     return { len, mid: bestMid };
   }
@@ -352,8 +444,14 @@ export class FrontIndex {
 
 /** Oriented rectangle centred at c (length L along `ang`, width W). */
 export function rect(c: Vec2, ang: number, L: number, W: number): Polygon {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
-  const pts = [[-L / 2, -W / 2], [L / 2, -W / 2], [L / 2, W / 2], [-L / 2, W / 2]].map(([u, v]) => ({ x: c.x + u * ca - v * sa, y: c.y + u * sa + v * ca }));
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
+  const pts = [
+    [-L / 2, -W / 2],
+    [L / 2, -W / 2],
+    [L / 2, W / 2],
+    [-L / 2, W / 2],
+  ].map(([u, v]) => ({ x: c.x + u * ca - v * sa, y: c.y + u * sa + v * ca }));
   return orientPos(pts);
 }
 
@@ -364,18 +462,28 @@ export function hut(c: Vec2, r: number, sides = 14, a0 = 0): Polygon {
 
 /** Long house with rounded (apsidal) ends: length L along `ang`, width W. */
 export function apsidal(c: Vec2, ang: number, L: number, W: number, k = 5): Polygon {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
-  const r = W / 2, h = Math.max(0, L / 2 - r);
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
+  const r = W / 2,
+    h = Math.max(0, L / 2 - r);
   const pts: Vec2[] = [];
-  for (let i = 0; i <= k; i++) { const t = -Math.PI / 2 + (i / k) * Math.PI; pts.push({ x: h + Math.cos(t) * r, y: Math.sin(t) * r }); }
-  for (let i = 0; i <= k; i++) { const t = Math.PI / 2 + (i / k) * Math.PI; pts.push({ x: -h + Math.cos(t) * r, y: Math.sin(t) * r }); }
-  return orientPos(pts.map((q) => ({ x: c.x + q.x * ca - q.y * sa, y: c.y + q.x * sa + q.y * ca })));
+  for (let i = 0; i <= k; i++) {
+    const t = -Math.PI / 2 + (i / k) * Math.PI;
+    pts.push({ x: h + Math.cos(t) * r, y: Math.sin(t) * r });
+  }
+  for (let i = 0; i <= k; i++) {
+    const t = Math.PI / 2 + (i / k) * Math.PI;
+    pts.push({ x: -h + Math.cos(t) * r, y: Math.sin(t) * r });
+  }
+  return orientPos(pts.map(q => ({ x: c.x + q.x * ca - q.y * sa, y: c.y + q.x * sa + q.y * ca })));
 }
 
 /** Bow-sided (boat-shaped) long house, Viking type: convex long walls, straight gables. */
 export function bowSided(c: Vec2, ang: number, L: number, W: number, bow = 0.22): Polygon {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
-  const end = W * (1 - bow) / 2, mid = W / 2;
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
+  const end = (W * (1 - bow)) / 2,
+    mid = W / 2;
   const k = 6;
   const side: Vec2[] = [];
   for (let i = 0; i <= k; i++) {
@@ -383,8 +491,13 @@ export function bowSided(c: Vec2, ang: number, L: number, W: number, bow = 0.22)
     const t = u / (L / 2);
     side.push({ x: u, y: end + (mid - end) * (1 - t * t) });
   }
-  const pts = side.concat(side.slice().reverse().map((q) => ({ x: q.x, y: -q.y })));
-  return orientPos(pts.map((q) => ({ x: c.x + q.x * ca - q.y * sa, y: c.y + q.x * sa + q.y * ca })));
+  const pts = side.concat(
+    side
+      .slice()
+      .reverse()
+      .map(q => ({ x: q.x, y: -q.y })),
+  );
+  return orientPos(pts.map(q => ({ x: c.x + q.x * ca - q.y * sa, y: c.y + q.x * sa + q.y * ca })));
 }
 
 /** Inside the lot with a margin, and clear of the other footprints by `gap`. */
@@ -397,7 +510,10 @@ export function fits(lot: Polygon, fp: Polygon, others: Polygon[], margin: numbe
   const fb = bboxOf(fp);
   for (const o of others) {
     let ob = BBOX.get(o);
-    if (!ob) { ob = bboxOf(o); BBOX.set(o, ob); }
+    if (!ob) {
+      ob = bboxOf(o);
+      BBOX.set(o, ob);
+    }
     if (fb.x0 > ob.x1 + gap || fb.x1 < ob.x0 - gap || fb.y0 > ob.y1 + gap || fb.y1 < ob.y0 - gap) continue;
     for (const q of fp) if (pointInRing(o, q) || distToRing(o, q) < gap) return false;
     for (const q of o) if (pointInRing(fp, q)) return false;
@@ -413,7 +529,9 @@ export function fits(lot: Polygon, fp: Polygon, others: Polygon[], margin: numbe
  */
 const FIT_CANDS = new WeakMap<Polygon, Map<number, Vec2[]>>();
 export function fitIn(lot: Polygon, build: (c: Vec2, s: number) => Polygon, others: Polygon[], o: { margin?: number; gap?: number; minScale?: number; cands?: Vec2[]; step?: number; /** Only the n deepest default candidates. */ nc?: number } = {}): Polygon | null {
-  const margin = o.margin ?? 1, gap = o.gap ?? 1.5, minS = o.minScale ?? 0.7;
+  const margin = o.margin ?? 1,
+    gap = o.gap ?? 1.5,
+    minS = o.minScale ?? 0.7;
   let cands: Vec2[];
   let depths: number[] | null = null;
   if (o.cands) cands = o.cands.slice();
@@ -421,17 +539,21 @@ export function fitIn(lot: Polygon, build: (c: Vec2, s: number) => Polygon, othe
     // the default candidates depend on the lot and the step only (a yard is filled by many calls): kept per lot
     const st = o.step ?? 3;
     let m = FIT_CANDS.get(lot);
-    if (!m) { m = new Map(); FIT_CANDS.set(lot, m); }
+    if (!m) {
+      m = new Map();
+      FIT_CANDS.set(lot, m);
+    }
     let cc = m.get(st);
     if (!cc) {
       const ins = inscribed(lot, [], 0.5);
       cc = [ins.c];
       const bb = bboxOf(lot);
       const grid: Vec2[] = [];
-      for (let y = bb.y0 + st / 2; y < bb.y1; y += st) for (let x = bb.x0 + st / 2; x < bb.x1; x += st) {
-        const p = { x, y };
-        if (pointInRing(lot, p)) grid.push(p);
-      }
+      for (let y = bb.y0 + st / 2; y < bb.y1; y += st)
+        for (let x = bb.x0 + st / 2; x < bb.x1; x += st) {
+          const p = { x, y };
+          if (pointInRing(lot, p)) grid.push(p);
+        }
       // deepest points first (most room); the depths are computed once (same comparisons as computing them in
       // the comparator)
       const depth = new Map<Vec2, number>();
@@ -439,14 +561,17 @@ export function fitIn(lot: Polygon, build: (c: Vec2, s: number) => Polygon, othe
       grid.sort((a, b) => depth.get(b)! - depth.get(a)!);
       cc.push(...grid.slice(0, 60));
       m.set(st, cc);
-      CAND_DEPTH.set(cc, cc.map((p, i) => (i === 0 ? (pointInRing(lot, p) ? distToRing(lot, p) : -1) : depth.get(p)!)));
+      CAND_DEPTH.set(
+        cc,
+        cc.map((p, i) => (i === 0 ? (pointInRing(lot, p) ? distToRing(lot, p) : -1) : depth.get(p)!)),
+      );
     }
     cands = o.nc ? cc.slice(0, o.nc) : cc;
     depths = CAND_DEPTH.get(cc)!;
   }
   // (quick tests from the candidate's depth in the lot: a footprint whose inscribed circle round the candidate
   // reaches the lot boundary cannot fit; one lying within depth − margin of it fits the lot for sure)
-  if (!depths) depths = cands.map((c) => (pointInRing(lot, c) ? distToRing(lot, c) : -1));
+  if (!depths) depths = cands.map(c => (pointInRing(lot, c) ? distToRing(lot, c) : -1));
   for (let s = 1; s >= minS - 1e-9; s -= 0.1) {
     for (let k = 0; k < cands.length; k++) {
       const c = cands[k];
@@ -455,8 +580,12 @@ export function fitIn(lot: Polygon, build: (c: Vec2, s: number) => Polygon, othe
       const dep = depths[k];
       let inLot = false;
       if (dep >= 0) {
-        let R = 0, rin = Infinity;
-        for (let i = 0; i < fp.length; i++) { R = Math.max(R, dist(c, fp[i])); rin = Math.min(rin, distToSeg(c, fp[i], fp[(i + 1) % fp.length])); }
+        let R = 0,
+          rin = Infinity;
+        for (let i = 0; i < fp.length; i++) {
+          R = Math.max(R, dist(c, fp[i]));
+          rin = Math.min(rin, distToSeg(c, fp[i], fp[(i + 1) % fp.length]));
+        }
         if (pointInRing(fp, c) && dep < rin - 1e-6) continue;
         inLot = dep >= R + margin + 1e-6;
       }
@@ -473,11 +602,16 @@ export function ringSamples(ring: Polygon, step: number): { p: Vec2; t: Vec2 }[]
   const out: { p: Vec2; t: Vec2 }[] = [];
   let carry = 0;
   for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i], L = dist(a, b);
+    const a = pts[i - 1],
+      b = pts[i],
+      L = dist(a, b);
     if (L < 1e-9) continue;
     const t = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
     let s = carry;
-    while (s < L) { out.push({ p: { x: a.x + t.x * s, y: a.y + t.y * s }, t }); s += step; }
+    while (s < L) {
+      out.push({ p: { x: a.x + t.x * s, y: a.y + t.y * s }, t });
+      s += step;
+    }
     carry = s - L;
   }
   return out;
@@ -491,13 +625,20 @@ export function openRing(ring: Polygon, gates: { p: Vec2; width: number }[]): Po
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i - 1], pts[i]));
   const L = cum[cum.length - 1];
   const sOf = (g: Vec2): number => {
-    let bs = 0, bd = Infinity;
+    let bs = 0,
+      bd = Infinity;
     for (let i = 1; i < pts.length; i++) {
-      const a = pts[i - 1], b = pts[i];
-      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+      const a = pts[i - 1],
+        b = pts[i];
+      const dx = b.x - a.x,
+        dy = b.y - a.y,
+        l2 = dx * dx + dy * dy || 1;
       const t = Math.max(0, Math.min(1, ((g.x - a.x) * dx + (g.y - a.y) * dy) / l2));
       const d = Math.hypot(g.x - a.x - t * dx, g.y - a.y - t * dy);
-      if (d < bd) { bd = d; bs = cum[i - 1] + t * Math.sqrt(l2); }
+      if (d < bd) {
+        bd = d;
+        bs = cum[i - 1] + t * Math.sqrt(l2);
+      }
     }
     return bs;
   };
@@ -508,7 +649,7 @@ export function openRing(ring: Polygon, gates: { p: Vec2; width: number }[]): Po
     const t = (s - cum[i - 1]) / (cum[i] - cum[i - 1] || 1);
     return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
   };
-  const gs = gates.map((g) => ({ s: sOf(g.p), h: g.width / 2 })).sort((a, b) => a.s - b.s);
+  const gs = gates.map(g => ({ s: sOf(g.p), h: g.width / 2 })).sort((a, b) => a.s - b.s);
   const out: Polyline[] = [];
   for (let k = 0; k < gs.length; k++) {
     const a = gs[k].s + gs[k].h;
@@ -516,9 +657,13 @@ export function openRing(ring: Polygon, gates: { p: Vec2; width: number }[]): Po
     if (k + 1 >= gs.length) b += L;
     if (b - a < 2) continue;
     const mid: { s: number; p: Vec2 }[] = [];
-    for (let i = 0; i < pts.length - 1; i++) for (const off of [0, L]) { const s = cum[i] + off; if (s > a + 0.05 && s < b - 0.05) mid.push({ s, p: pts[i] }); }
+    for (let i = 0; i < pts.length - 1; i++)
+      for (const off of [0, L]) {
+        const s = cum[i] + off;
+        if (s > a + 0.05 && s < b - 0.05) mid.push({ s, p: pts[i] });
+      }
     mid.sort((x, y) => x.s - y.s);
-    out.push([pAt(a), ...mid.map((x) => x.p), pAt(b)]);
+    out.push([pAt(a), ...mid.map(x => x.p), pAt(b)]);
   }
   return out;
 }
@@ -540,11 +685,18 @@ export function roadCrossings(ring: Polygon, roads: Polyline[]): { p: Vec2; dir:
   roads.forEach((pl, ri) => {
     // walk from the end (inside) back until the ring is crossed
     for (let i = pl.length - 1; i > 0; i--) {
-      const a = pl[i], b = pl[i - 1];
+      const a = pl[i],
+        b = pl[i - 1];
       if (pointInRing(ring, a) && !pointInRing(ring, b)) {
         // bisection for the crossing
-        let lo = 0, hi = 1;
-        for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; const q = { x: a.x + (b.x - a.x) * m, y: a.y + (b.y - a.y) * m }; if (pointInRing(ring, q)) lo = m; else hi = m; }
+        let lo = 0,
+          hi = 1;
+        for (let k = 0; k < 30; k++) {
+          const m = (lo + hi) / 2;
+          const q = { x: a.x + (b.x - a.x) * m, y: a.y + (b.y - a.y) * m };
+          if (pointInRing(ring, q)) lo = m;
+          else hi = m;
+        }
         const p = { x: a.x + (b.x - a.x) * lo, y: a.y + (b.y - a.y) * lo };
         const L = dist(a, b) || 1;
         out.push({ p, dir: { x: (a.x - b.x) / L, y: (a.y - b.y) / L }, road: ri });
@@ -566,9 +718,13 @@ export function roadDirections(cc: { ctx: { center: Vec2 }; roads: Polyline[] },
   for (const pl of cc.roads) {
     if (dist(pl[pl.length - 1], cc.ctx.center) > 15) continue;
     let q = pl[0];
-    for (let i = pl.length - 1; i >= 0; i--) if (dist(pl[i], c) >= reach) { q = pl[i]; break; }
+    for (let i = pl.length - 1; i >= 0; i--)
+      if (dist(pl[i], c) >= reach) {
+        q = pl[i];
+        break;
+      }
     const a = Math.atan2(q.y - c.y, q.x - c.x);
-    if (out.every((b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) > 0.7)) out.push(a);
+    if (out.every(b => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) > 0.7)) out.push(a);
   }
   return out;
 }
@@ -589,30 +745,43 @@ export class Curv {
     for (let i = 1; i < pts.length; i++) this.cum.push(this.cum[i - 1] + dist(pts[i - 1], pts[i]));
     this.L = this.cum[this.cum.length - 1];
     const sn: Vec2[] = [];
-    for (let i = 1; i < pts.length; i++) { const l = dist(pts[i - 1], pts[i]); sn.push({ x: -(pts[i].y - pts[i - 1].y) / l, y: (pts[i].x - pts[i - 1].x) / l }); }
+    for (let i = 1; i < pts.length; i++) {
+      const l = dist(pts[i - 1], pts[i]);
+      sn.push({ x: -(pts[i].y - pts[i - 1].y) / l, y: (pts[i].x - pts[i - 1].x) / l });
+    }
     this.vn = pts.map((_, i) => {
-      const a = sn[Math.max(0, i - 1)], b = sn[Math.min(sn.length - 1, i)];
-      const x = a.x + b.x, y = a.y + b.y, l = Math.hypot(x, y) || 1;
+      const a = sn[Math.max(0, i - 1)],
+        b = sn[Math.min(sn.length - 1, i)];
+      const x = a.x + b.x,
+        y = a.y + b.y,
+        l = Math.hypot(x, y) || 1;
       return { x: x / l, y: y / l };
     });
   }
   private loc(s: number): { i: number; t: number } {
     if (s <= 0) return { i: 1, t: s / (this.cum[1] || 1) };
-    if (s >= this.L) { const n = this.pts.length - 1; return { i: n, t: 1 + (s - this.L) / ((this.cum[n] - this.cum[n - 1]) || 1) }; }
+    if (s >= this.L) {
+      const n = this.pts.length - 1;
+      return { i: n, t: 1 + (s - this.L) / (this.cum[n] - this.cum[n - 1] || 1) };
+    }
     let i = 1;
     while (i < this.pts.length - 1 && this.cum[i] < s) i++;
-    return { i, t: (s - this.cum[i - 1]) / ((this.cum[i] - this.cum[i - 1]) || 1) };
+    return { i, t: (s - this.cum[i - 1]) / (this.cum[i] - this.cum[i - 1] || 1) };
   }
   at(s: number): Vec2 {
     const { i, t } = this.loc(s);
-    const a = this.pts[i - 1], b = this.pts[i];
+    const a = this.pts[i - 1],
+      b = this.pts[i];
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
   }
   normal(s: number): Vec2 {
     const { i, t } = this.loc(s);
     const tt = Math.max(0, Math.min(1, t));
-    const a = this.vn[i - 1], b = this.vn[i];
-    const x = a.x + (b.x - a.x) * tt, y = a.y + (b.y - a.y) * tt, l = Math.hypot(x, y) || 1;
+    const a = this.vn[i - 1],
+      b = this.vn[i];
+    const x = a.x + (b.x - a.x) * tt,
+      y = a.y + (b.y - a.y) * tt,
+      l = Math.hypot(x, y) || 1;
     return { x: x / l, y: y / l };
   }
   /** The polyline between arclengths s0 and s1. */
@@ -632,21 +801,36 @@ export function roadPolylines(cc: { ctx: { center: Vec2 }; roads: Polyline[] }, 
   const add = (r: Polyline): void => {
     if (r.length < 2) return;
     let q = r[r.length - 1];
-    for (const p of r) if (dist(p, c) > Math.min(60, maxLen / 2)) { q = p; break; }
+    for (const p of r)
+      if (dist(p, c) > Math.min(60, maxLen / 2)) {
+        q = p;
+        break;
+      }
     if (dist(q, c) < 25) return;
     const a = Math.atan2(q.y - c.y, q.x - c.x);
-    if (dirs.some((b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 0.7)) return;
+    if (dirs.some(b => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 0.7)) return;
     dirs.push(a);
     out.push(r);
   };
   for (const pl of cc.roads) {
-    let bi = -1, bd = near;
-    pl.forEach((p, i) => { const d = dist(p, c); if (d < bd) { bd = d; bi = i; } });
+    let bi = -1,
+      bd = near;
+    pl.forEach((p, i) => {
+      const d = dist(p, c);
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    });
     if (bi < 0) continue;
     for (const step of [-1, 1]) {
       const r: Polyline = [c];
       let L = 0;
-      for (let i = bi + step; i >= 0 && i < pl.length && L < maxLen; i += step) { if (dist(pl[i], r[r.length - 1]) < 0.5) continue; L += dist(pl[i], r[r.length - 1]); r.push(pl[i]); }
+      for (let i = bi + step; i >= 0 && i < pl.length && L < maxLen; i += step) {
+        if (dist(pl[i], r[r.length - 1]) < 0.5) continue;
+        L += dist(pl[i], r[r.length - 1]);
+        r.push(pl[i]);
+      }
       add(r);
     }
   }
@@ -656,7 +840,8 @@ export function roadPolylines(cc: { ctx: { center: Vec2 }; roads: Polyline[] }, 
 /** A gently wandering polyline from p, heading a, of length L (steps of `step`, turning up to `turn` per step). */
 export function wanderLine(p: Vec2, a: number, L: number, r: { range: (a: number, b: number) => number }, step = 18, turn = 0.07): Polyline {
   const out: Polyline = [p];
-  let h = a, q = p;
+  let h = a,
+    q = p;
   for (let s = 0; s < L; s += step) {
     h += r.range(-turn, turn);
     q = { x: q.x + Math.cos(h) * Math.min(step, L - s), y: q.y + Math.sin(h) * Math.min(step, L - s) };
@@ -666,9 +851,7 @@ export function wanderLine(p: Vec2, a: number, L: number, r: { range: (a: number
 }
 
 /** Block info of a camp block. */
-export const blockInfo = (b: CampBlock, quarter: number, culture: string, morphology: string): UrbanBlockInfo => ({
-  quarter, phase: 1, zone: 'village', kind: b.kind, compound: b.compound, culture, morphology,
-});
+export const blockInfo = (b: CampBlock, quarter: number, culture: string, morphology: string): UrbanBlockInfo => ({ quarter, phase: 1, zone: 'village', kind: b.kind, compound: b.compound, culture, morphology });
 
 /** Parcel of a camp (global indices are set by the assembler). */
 export const parcelOf = (p: CampParcel, block: number): UrbanParcel => ({ poly: p.poly, use: p.use, block, zone: 'village' });

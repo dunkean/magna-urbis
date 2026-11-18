@@ -9,10 +9,18 @@ import { createServer } from 'node:http';
 import * as generated from '../src/ui/terrainWgsl.generated';
 import * as generated3d from '../src/ui/terrain3dWgsl.generated';
 
-const modules = Object.fromEntries(Object.entries({ map: generated, terrain3d: generated3d }).flatMap(([prefix, sources]) =>
-  Object.entries(sources).filter(([, value]) => typeof value === 'string').map(([key, value]) => [`${prefix}.${key}`, value]))) as Record<string, string>;
+const modules = Object.fromEntries(
+  Object.entries({ map: generated, terrain3d: generated3d }).flatMap(([prefix, sources]) =>
+    Object.entries(sources)
+      .filter(([, value]) => typeof value === 'string')
+      .map(([key, value]) => [`${prefix}.${key}`, value]),
+  ),
+) as Record<string, string>;
 // WebGPU needs a secure context: a local page, not about:blank.
-const server = createServer((_, response) => { response.setHeader('content-type', 'text/html'); response.end('<!doctype html><title>wgsl</title>'); }).listen(0, '127.0.0.1');
+const server = createServer((_, response) => {
+  response.setHeader('content-type', 'text/html');
+  response.end('<!doctype html><title>wgsl</title>');
+}).listen(0, '127.0.0.1');
 await new Promise(resolve => server.once('listening', resolve));
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu'] });
 try {
@@ -37,5 +45,6 @@ try {
   }
   process.exitCode = failed ? 1 : 0;
 } finally {
-  await browser.close(); server.close();
+  await browser.close();
+  server.close();
 }

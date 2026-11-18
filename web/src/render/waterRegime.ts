@@ -12,15 +12,17 @@ import { CLIMATE_ZONES, type ClimateZone } from '../../../rust/bridge/terrainCli
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 
 export interface WaterSeason {
-  zone?: ClimateZone; season?: number; calendar?: SeasonCalendar;
+  zone?: ClimateZone;
+  season?: number;
+  calendar?: SeasonCalendar;
   /** The ground material freezes its own water from its land snow (satellite): the regime then carries no ice. */
   landIce?: boolean;
 }
 
 /** Share of the courses that lose their flow in an average year: 1 desert (only exotic trunks keep water). */
-const ARIDITY: Partial<Record<ClimateZone, number>> = { desert: 1, savanna: .72, steppe: .5, mediterranean: .3 };
+const ARIDITY: Partial<Record<ClimateZone, number>> = { desert: 1, savanna: 0.72, steppe: 0.5, mediterranean: 0.3 };
 /** Sediment load reaching the sea in the wet season: warm weathered basins carry the most. */
-const SEDIMENT: Partial<Record<ClimateZone, number>> = { tropical: 1, savanna: 1, wetland: .7, temperate: .45, continental: .45, mediterranean: .35, steppe: .3, nordic: .2, alpine: .25, arctic: .1, desert: .1 };
+const SEDIMENT: Partial<Record<ClimateZone, number>> = { tropical: 1, savanna: 1, wetland: 0.7, temperate: 0.45, continental: 0.45, mediterranean: 0.35, steppe: 0.3, nordic: 0.2, alpine: 0.25, arctic: 0.1, desert: 0.1 };
 
 export interface WaterClimate {
   aridity: number;
@@ -35,34 +37,41 @@ export interface WaterClimate {
 }
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
-const smooth = (a: number, b: number, v: number): number => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+const smooth = (a: number, b: number, v: number): number => {
+  const t = clamp01((v - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
 /** Freeze of still fresh water from the zone's low-ground snow (a lake ices over before its banks stay white). */
-const freezeOf = (snow: number): number => smooth(.15, .7, snow);
+const freezeOf = (snow: number): number => smooth(0.15, 0.7, snow);
 /** Lake draw-down: the dry season of a dry climate exposes the shore. Shared with WATER_FRESH_ICE_GLSL. */
-const dropOf = (aridity: number, rain: number): number => aridity * clamp01(1 - .8 * rain);
+const dropOf = (aridity: number, rain: number): number => aridity * clamp01(1 - 0.8 * rain);
 
 export function waterClimate(s: WaterSeason): WaterClimate {
   if (!s.zone) return { aridity: 0, rain: 1, ice: 0, sediment: 0, drop: 0 };
-  const year = calendarSeason(s.zone, s.calendar), w = seasonWeights(s.season ?? .5);
+  const year = calendarSeason(s.zone, s.calendar),
+    w = seasonWeights(s.season ?? 0.5);
   const snow = year.snow.reduce((sum, v, i) => sum + v * w[i], 0);
-  const aridity = ARIDITY[s.zone] ?? 0, rain = Math.max(0, 1 + year.rain * (w[2] - w[0])), frozen = freezeOf(snow);
+  const aridity = ARIDITY[s.zone] ?? 0,
+    rain = Math.max(0, 1 + year.rain * (w[2] - w[0])),
+    frozen = freezeOf(snow);
   // The sediment load keeps its winter low either way; only the ice decision leaves the regime with `landIce`.
-  return { aridity, rain, ice: s.landIce ? 0 : frozen, sediment: (SEDIMENT[s.zone] ?? 0) * clamp01(rain - .9 * aridity) * (1 - frozen), drop: dropOf(aridity, rain) };
+  return { aridity, rain, ice: s.landIce ? 0 : frozen, sediment: (SEDIMENT[s.zone] ?? 0) * clamp01(rain - 0.9 * aridity) * (1 - frozen), drop: dropOf(aridity, rain) };
 }
 /** True when the regime changes anything on the map. */
-export const waterRegimeActive = (c: WaterClimate): boolean => c.aridity > 0 || c.ice > 0 || c.sediment > .05;
+export const waterRegimeActive = (c: WaterClimate): boolean => c.aridity > 0 || c.ice > 0 || c.sediment > 0.05;
 
 /** Seconds in a mean year. */
 const YEAR_S = 31_557_600;
 /** Mean annual discharge (m³/s) of a course vertex: its runoff-weighted catchment `area` (m², counted in units of the
  * sea-level runoff: the `area` the water budget carries per vertex) times the sea-level runoff `r0` (mm/yr,
  * `VectorWater.runoff.r0`). A desert trunk of 123 km² under 1.4 mm/yr carries 5.5 L/s. */
-export const meanDischarge = (area: number, r0: number): number => Math.max(0, area) * Math.max(0, r0) * 1e-3 / YEAR_S;
+export const meanDischarge = (area: number, r0: number): number => (Math.max(0, area) * Math.max(0, r0) * 1e-3) / YEAR_S;
 /** Discharge scale of the regime (m³/s, log): size 0 at 10 L/s (a brook), 1 at 10 m³/s (a river that crosses a
  * desert). The zone's aridity then sets the perennial threshold on it (`riverState`): about 8 m³/s in a desert,
  * 0.4 m³/s in a steppe, 0.13 m³/s in a mediterranean zone; humid zones (aridity 0) keep every course running. */
-const REGIME_LOW = .01, REGIME_HIGH = 10;
-export const dischargeSize = (discharge: number): number => discharge > 0 ? clamp01(Math.log(discharge / REGIME_LOW) / Math.log(REGIME_HIGH / REGIME_LOW)) : 0;
+const REGIME_LOW = 0.01,
+  REGIME_HIGH = 10;
+export const dischargeSize = (discharge: number): number => (discharge > 0 ? clamp01(Math.log(discharge / REGIME_LOW) / Math.log(REGIME_HIGH / REGIME_LOW)) : 0);
 /** Runoff (mm/yr) at which the mean flow fills the bed the floods shaped. The beds are sized from the catchment alone
  * (`channelWidth`); the water inside takes `threadShare` of that width: hydraulic geometry, width as the square root of
  * the discharge. Every humid preset runs at 210 mm/yr (continental) or more: their courses stay full, as before. */
@@ -73,41 +82,45 @@ export const threadShare = (r0: number): number => Math.min(1, Math.sqrt(Math.ma
 
 /** State of a river vertex of size `q` (0 a brook of 10 L/s or less, 1 a river of 10 m³/s: `dischargeSize`). A river
  * is calm water whatever its slope: the regime carries dryness and ice only. */
-export interface RiverState { dry: number; ice: number }
+export interface RiverState {
+  dry: number;
+  ice: number;
+}
 export function riverState(c: WaterClimate, q: number): RiverState {
   let dry = 0;
   if (c.aridity > 0) {
     // The perennial threshold rises with aridity; the season shifts it (wet season: more courses run).
-    const t = .85 * c.aridity, shifted = q + .35 * (c.rain - 1) * Math.min(1, c.aridity * 1.6);
-    dry = 1 - smooth(t - .18, t + .12, shifted);
+    const t = 0.85 * c.aridity,
+      shifted = q + 0.35 * (c.rain - 1) * Math.min(1, c.aridity * 1.6);
+    dry = 1 - smooth(t - 0.18, t + 0.12, shifted);
     // A desert never runs fully: even the courses that carry water show their bars.
-    dry = Math.max(dry, .12 * c.aridity * (1 - q));
+    dry = Math.max(dry, 0.12 * c.aridity * (1 - q));
   }
   // A river is frozen or open as a whole, by the same rule as lakes (ice >= .5): never by section size, which painted
   // white patches on some reaches of a course only.
-  return { dry, ice: c.ice >= .5 ? 1 : 0 };
+  return { dry, ice: c.ice >= 0.5 ? 1 : 0 };
 }
 
 /** Segment colour of the material styles: r running water (1 − dry), g open water (1 − ice), b 0 on a river and a
  * sediment plume above .5 (.5 + plume / 2, plume capsules only). Capsules blend with MAX, so where a dry or frozen
  * tributary overlaps a running trunk the running water wins. */
 export const regimeRgb = (s: RiverState): [number, number, number] => [1 - s.dry, 1 - s.ice, 0];
-export const plumeRgb = (plume: number): [number, number, number] => [1, 1, .5 + .5 * clamp01(plume)];
+export const plumeRgb = (plume: number): [number, number, number] => [1, 1, 0.5 + 0.5 * clamp01(plume)];
 
 /** Symbol class of the ink styles. */
 export type RiverSymbol = 'water' | 'intermittent' | 'dry' | 'ice';
 export function riverSymbol(s: RiverState): RiverSymbol {
-  if (s.ice >= .55) return 'ice';
-  if (s.dry >= .85) return 'dry';
-  if (s.dry >= .4) return 'intermittent';
+  if (s.ice >= 0.55) return 'ice';
+  if (s.dry >= 0.85) return 'dry';
+  if (s.dry >= 0.4) return 'intermittent';
   return 'water';
 }
 
 const glslFloat = (v: number): string => (Math.round(v * 1000) / 1000).toFixed(3);
 const zoneFloats = (values: Partial<Record<ClimateZone, number>>): string => `float[${CLIMATE_ZONES.length}](${CLIMATE_ZONES.map(z => glslFloat(values[z] ?? 0)).join(',')})`;
 /** Humic (tea-coloured) lake and bog water of the boreal zones; milky glacial flour of the alpine lakes. */
-const TEA: Partial<Record<ClimateZone, number>> = { nordic: .65, wetland: .55, continental: .3, arctic: .25 };
-const GLACIAL: Partial<Record<ClimateZone, number>> = { alpine: 1, arctic: .2 };
+const TEA: Partial<Record<ClimateZone, number>> = { nordic: 0.65, wetland: 0.55, continental: 0.3, arctic: 0.25 };
+const GLACIAL: Partial<Record<ClimateZone, number>> = { alpine: 1, arctic: 0.2 };
 
 /** Inland water climate of the zone and season in the Render v2 shaders (after RENDER_V2_GLSL: uMaterialZone, the
  * season functions and v2WinterFresh). Fresh ice is not here: the winter module derives it from the land's snow. */

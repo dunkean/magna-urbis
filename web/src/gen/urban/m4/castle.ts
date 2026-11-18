@@ -33,7 +33,9 @@ import { emptyOut, pieces, splitLine, largest, alongEdge, placeRect, minus, inte
 export type CastleVariant = 'castle' | 'kasbah' | 'motte' | 'inca-fortress' | 'kremlin' | 'kastro';
 /** Debug counters of the castle siting (rejections by reason). */
 export const CASTLE_DBG: Record<string, number> = {};
-const why = (k: string) => { CASTLE_DBG[k] = (CASTLE_DBG[k] ?? 0) + 1; };
+const why = (k: string) => {
+  CASTLE_DBG[k] = (CASTLE_DBG[k] ?? 0) + 1;
+};
 
 export interface CastlePlan {
   variant: CastleVariant;
@@ -52,7 +54,10 @@ export interface CastlePlan {
   enclosure: MultiPoly;
 }
 
-const unit = (a: Vec2, b: Vec2): Vec2 => { const l = dist(a, b) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
+const unit = (a: Vec2, b: Vec2): Vec2 => {
+  const l = dist(a, b) || 1;
+  return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+};
 
 /** Castle area (m²) by population and variant. */
 export function castleArea(variant: CastleVariant, pop: number, rng: Rng): number {
@@ -72,7 +77,8 @@ export function castleArea(variant: CastleVariant, pop: number, rng: Rng): numbe
  */
 function enceinte(ctx: UrbanCtx, p: Vec2, A: number, n: number, a0: number, rng: Rng, rect?: { ang: number; aspect: number }): Polygon {
   if (rect) {
-    const L = Math.sqrt(A * rect.aspect), W = A / L;
+    const L = Math.sqrt(A * rect.aspect),
+      W = A / L;
     return rectAt(p, rect.ang, -L / 2, L / 2, -W / 2, W / 2);
   }
   const R = Math.sqrt(A / Math.PI);
@@ -82,7 +88,10 @@ function enceinte(ctx: UrbanCtx, p: Vec2, A: number, n: number, a0: number, rng:
     const th = (k / 16) * TAU;
     let r = 1.0 * R;
     for (let s = 0.6 * R; s <= 1.45 * R; s += 4) {
-      if (ctx.heightAt({ x: p.x + Math.cos(th) * s, y: p.y + Math.sin(th) * s }) < hc - 2.5) { r = s; break; }
+      if (ctx.heightAt({ x: p.x + Math.cos(th) * s, y: p.y + Math.sin(th) * s }) < hc - 2.5) {
+        r = s;
+        break;
+      }
       r = 1.45 * R;
     }
     rad.push(r);
@@ -93,7 +102,8 @@ function enceinte(ctx: UrbanCtx, p: Vec2, A: number, n: number, a0: number, rng:
   for (let k = 0; k < n; k++) {
     const th = a0 + (k / n) * TAU + rng.range(-0.18, 0.18) * (TAU / n);
     const f = ((((th % TAU) + TAU) % TAU) / TAU) * 16;
-    const i0 = Math.floor(f) % 16, t = f - Math.floor(f);
+    const i0 = Math.floor(f) % 16,
+      t = f - Math.floor(f);
     const r = (sm[i0] * (1 - t) + sm[(i0 + 1) % 16] * t) * rng.range(0.93, 1.07);
     pts.push({ x: p.x + Math.cos(th) * r, y: p.y + Math.sin(th) * r });
   }
@@ -110,17 +120,25 @@ function enceinte(ctx: UrbanCtx, p: Vec2, A: number, n: number, a0: number, rng:
 export function removeStubs(ring: Polygon, min: number, keep: (p: Vec2) => boolean): Polygon {
   let r = ring.slice();
   const turnAt = (q: Polygon, i: number) => {
-    const n = q.length, p0 = q[(i - 1 + n) % n], p1 = q[i], p2 = q[(i + 1) % n];
-    const ux = p1.x - p0.x, uy = p1.y - p0.y, vx = p2.x - p1.x, vy = p2.y - p1.y;
+    const n = q.length,
+      p0 = q[(i - 1 + n) % n],
+      p1 = q[i],
+      p2 = q[(i + 1) % n];
+    const ux = p1.x - p0.x,
+      uy = p1.y - p0.y,
+      vx = p2.x - p1.x,
+      vy = p2.y - p1.y;
     return Math.abs(Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy));
   };
   for (let guard = 0; guard < 400 && r.length > 3; guard++) {
     const n = r.length;
     let drop = -1;
     for (let i = 0; i < n && drop < 0; i++) {
-      const a = i, b = (i + 1) % n;
+      const a = i,
+        b = (i + 1) % n;
       if (dist(r[a], r[b]) >= min) continue;
-      const ka = keep(r[a]), kb = keep(r[b]);
+      const ka = keep(r[a]),
+        kb = keep(r[b]);
       if (ka && kb) continue;
       drop = ka ? b : kb ? a : turnAt(r, a) < turnAt(r, b) ? a : b;
     }
@@ -154,22 +172,36 @@ export function siteCastle(ctx: UrbanCtx, inp: CastleSiteIn, rng: Rng): CastlePl
   const A = castleArea(inp.variant, inp.pop, rng);
   const R = Math.sqrt(A / Math.PI);
   const encR = Math.sqrt(mpArea(inp.enclosure) / Math.PI);
-  if (encR < 2.2 * R) { why('small'); return null; }
+  if (encR < 2.2 * R) {
+    why('small');
+    return null;
+  }
   const ditch = inp.variant === 'kasbah' || inp.variant === 'inca-fortress' || inp.variant === 'kastro' ? 0 : inp.variant === 'motte' ? 7 : inp.variant === 'kremlin' ? rng.range(12, 16) : rng.range(9, 13);
-  const espl = inp.variant === 'kasbah' ? rng.range(12, 18) : inp.variant === 'motte' ? 8 : inp.variant === 'inca-fortress' ? rng.range(10, 16) : inp.variant === 'kremlin' ? rng.range(34, 52) : inp.variant === 'kastro' ? rng.range(8, 14) : Math.min(38, rng.range(16, 24) + R * 0.12);
+  const espl =
+    inp.variant === 'kasbah' ? rng.range(12, 18) : inp.variant === 'motte' ? 8 : inp.variant === 'inca-fortress' ? rng.range(10, 16) : inp.variant === 'kremlin' ? rng.range(34, 52) : inp.variant === 'kastro' ? rng.range(8, 14) : Math.min(38, rng.range(16, 24) + R * 0.12);
   const core = inp.phases.length > 1 ? inp.phases[0].region : [];
-  const roads = new LineIndex(inp.roads.map((path) => ({ path, hw: 5 })));
+  const roads = new LineIndex(inp.roads.map(path => ({ path, hw: 5 })));
   // local relief statistics
-  const ring2 = (p: Vec2, r: number): number => { let s = 0; for (let k = 0; k < 12; k++) s += ctx.heightAt({ x: p.x + Math.cos((k / 12) * TAU) * r, y: p.y + Math.sin((k / 12) * TAU) * r }); return s / 12; };
+  const ring2 = (p: Vec2, r: number): number => {
+    let s = 0;
+    for (let k = 0; k < 12; k++) s += ctx.heightAt({ x: p.x + Math.cos((k / 12) * TAU) * r, y: p.y + Math.sin((k / 12) * TAU) * r });
+    return s / 12;
+  };
   // (a kremlin: a triangle or a quadrilateral on its spur between the rivers)
   const nSides = inp.variant === 'kasbah' ? 4 : inp.variant === 'motte' ? 8 : inp.variant === 'kremlin' ? rng.int(3, 4) : inp.variant === 'kastro' ? rng.int(6, 9) : rng.int(5, 8);
   const a0 = rng.range(0, TAU);
   const cands: Vec2[] = [];
   const L = ring.length;
   const encM = new Mask(ctx.mapSize, inp.enclosure, 5);
-  const fracIn = (P: Polygon): number => { const sm = samplePoly(P, 8); let k = 0; for (const q of sm) if (encM.has(q)) k++; return sm.length ? k / sm.length : 0; };
+  const fracIn = (P: Polygon): number => {
+    const sm = samplePoly(P, 8);
+    let k = 0;
+    for (const q of sm) if (encM.has(q)) k++;
+    return sm.length ? k / sm.length : 0;
+  };
   for (let i = 0; i < L; i++) {
-    const a = ring[i], b = ring[(i + 1) % L];
+    const a = ring[i],
+      b = ring[(i + 1) % L];
     const l = dist(a, b);
     const m = Math.max(1, Math.ceil(l / 30));
     const t = unit(a, b);
@@ -187,90 +219,142 @@ export function siteCastle(ctx: UrbanCtx, inp: CastleSiteIn, rng: Rng): CastlePl
   for (const p of cands) {
     if (ctx.isWater(p)) continue;
     const dN = dist(p, inp.nucleus);
-    if (dN < Math.max(90, 0.32 * encR)) { why('near'); continue; }
-    if (inp.avoid?.some((q) => dist(q, p) < 300)) { why('other'); continue; }
+    if (dN < Math.max(90, 0.32 * encR)) {
+      why('near');
+      continue;
+    }
+    if (inp.avoid?.some(q => dist(q, p) < 300)) {
+      why('other');
+      continue;
+    }
     // a rectangle (kasbah) is aligned with the nearest wall edge so one curtain lies on it
     let rect: { ang: number; aspect: number } | undefined;
     if (inp.variant === 'kasbah') {
-      let bi = 0, bd = Infinity;
-      for (let i = 0; i < L; i++) { const d = distSegP(p, ring[i], ring[(i + 1) % L]); if (d < bd) { bd = d; bi = i; } }
+      let bi = 0,
+        bd = Infinity;
+      for (let i = 0; i < L; i++) {
+        const d = distSegP(p, ring[i], ring[(i + 1) % L]);
+        if (d < bd) {
+          bd = d;
+          bi = i;
+        }
+      }
       const t = unit(ring[bi], ring[(bi + 1) % L]);
       rect = { ang: Math.atan2(t.y, t.x), aspect: 1.35 };
     }
     const C = enceinte(ctx, p, A, nSides, a0, sr, rect);
     if (C.length < 3) continue;
     const fin = fracIn(C);
-    if (fin < 0.42 || fin > 0.93) { why('fin'); continue; }
-    if (wetFraction(ctx, C, 6) > 0) { why('wet'); continue; }
+    if (fin < 0.42 || fin > 0.93) {
+      why('fin');
+      continue;
+    }
+    if (wetFraction(ctx, C, 6) > 0) {
+      why('wet');
+      continue;
+    }
     const outer = outsetConvex(C, ditch + espl * 0.6);
-    if (!roads.clear(outer, 2)) { why('roads'); continue; }
+    if (!roads.clear(outer, 2)) {
+      why('roads');
+      continue;
+    }
     // score: prominence, steep flanks outside, water wrap, citadel spot, away from the old core
     const hp = ctx.heightAt(p);
     const prom = Math.max(-1, Math.min(2.2, (hp - ring2(p, 2.2 * R)) / 5));
-    let flank = 0, nf = 0, wrap = 0;
+    let flank = 0,
+      nf = 0,
+      wrap = 0;
     for (let k = 0; k < 16; k++) {
       const th = (k / 16) * TAU;
       const q = { x: p.x + Math.cos(th) * R * 1.25, y: p.y + Math.sin(th) * R * 1.25 };
-      if (!inMP(inp.enclosure, q)) { flank += ctx.slopeAt(q); nf++; }
-      for (const s of [1.2, 1.8, 2.6]) { const w = { x: p.x + Math.cos(th) * (R * s + 20), y: p.y + Math.sin(th) * (R * s + 20) }; if (ctx.isWater(w)) { wrap++; break; } }
+      if (!inMP(inp.enclosure, q)) {
+        flank += ctx.slopeAt(q);
+        nf++;
+      }
+      for (const s of [1.2, 1.8, 2.6]) {
+        const w = { x: p.x + Math.cos(th) * (R * s + 20), y: p.y + Math.sin(th) * (R * s + 20) };
+        if (ctx.isWater(w)) {
+          wrap++;
+          break;
+        }
+      }
     }
     flank = nf ? flank / nf : 0;
     const wet = wetFraction(ctx, outsetConvex(C, ditch), 6);
     // (a kastro crowns the summit: prominence weighs double)
     let s = (inp.variant === 'kastro' ? 2 : 1) * prom + 4 * Math.min(0.25, flank) + 1.4 * Math.min(1, wrap / 7) - 3 * wet;
     if (inp.citadelSpot && !inp.avoid?.length) s += 1.0 * Math.exp(-dist(p, inp.citadelSpot) / 160);
-    if (inp.avoid?.length && inp.bridges?.length) s += 1.5 * Math.exp(-Math.min(...inp.bridges.map((b) => dist(b, p))) / 150);
+    if (inp.avoid?.length && inp.bridges?.length) s += 1.5 * Math.exp(-Math.min(...inp.bridges.map(b => dist(b, p))) / 150);
     if (core.length) s -= 1.5 * fracInside(core, C, 10);
     s += 0.25 * Math.min(1, dN / encR) + 0.15 * sr.float();
     if (!best || s > best.s) best = { C, s };
   }
-  if (!best) { why('nobest'); return null; }
+  if (!best) {
+    why('nobest');
+    return null;
+  }
   const C = orientPos(cleanRing(best.C, 0.5, 2));
   // extended enclosure; must stay one hole-free piece holding the nucleus
   // (the junctions of the town wall with the castle curtains leave no stub between two towers)
   // (only near the castle: the rest of the town wall is left as it is)
-  const encX = unionS(inp.enclosure, C).map((ph) => ({ outer: orientPos(removeStubs(ph.outer, 9, (q) => C.some((c) => dist(c, q) < 0.05) || distToRing(C, q) > 70)), holes: [] as Polygon[] }));
-  const mainX = encX.find((ph) => pointInRing(ph.outer, polygonCentroid(C)));
-  if (!mainX) { why('mainX'); return null; }
+  const encX = unionS(inp.enclosure, C).map(ph => ({ outer: orientPos(removeStubs(ph.outer, 9, q => C.some(c => dist(c, q) < 0.05) || distToRing(C, q) > 70)), holes: [] as Polygon[] }));
+  const mainX = encX.find(ph => pointInRing(ph.outer, polygonCentroid(C)));
+  if (!mainX) {
+    why('mainX');
+    return null;
+  }
   // the gate faces the town: the curtain whose outward normal points most to the nucleus, inside the enclosure
   const P = orientPos(C);
-  let gate: { p: Vec2; n: Vec2 } | null = null, gs = -Infinity;
+  let gate: { p: Vec2; n: Vec2 } | null = null,
+    gs = -Infinity;
   for (let i = 0; i < P.length; i++) {
-    const a = P[i], b = P[(i + 1) % P.length];
+    const a = P[i],
+      b = P[(i + 1) % P.length];
     if (dist(a, b) < 14) continue;
-    const t = unit(a, b), n = { x: t.y, y: -t.x }; // outward normal of a CCW ring
+    const t = unit(a, b),
+      n = { x: t.y, y: -t.x }; // outward normal of a CCW ring
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const probe = { x: m.x + n.x * (ditch + espl + 6), y: m.y + n.y * (ditch + espl + 6) };
     if (!inMP(inp.enclosure, probe) || ctx.isWater(probe)) continue;
     const toN = unit(m, inp.nucleus);
     const sc = n.x * toN.x + n.y * toN.y + dist(a, b) / 400;
-    if (sc > gs) { gs = sc; gate = { p: m, n }; }
+    if (sc > gs) {
+      gs = sc;
+      gate = { p: m, n };
+    }
   }
-  if (!gate) { why('gate'); return null; }
+  if (!gate) {
+    why('gate');
+    return null;
+  }
   // the lot: C plus its ditch and esplanade, within the extended enclosure, on dry land
   const L0 = outsetConvex(C, ditch + espl);
   let lotM = intersectionS(L0, [mainX]);
   if (ctx.water.length) lotM = differenceS(lotM, ctx.water);
   const cc = polygonCentroid(C);
-  const lotPh = lotM.find((ph) => pointInRing(ph.outer, cc));
-  if (!lotPh) { why('lot'); return null; }
+  const lotPh = lotM.find(ph => pointInRing(ph.outer, cc));
+  if (!lotPh) {
+    why('lot');
+    return null;
+  }
   const lot = orientPos(cleanRing(lotPh.outer, 0.3, 1));
   const lowAt = (q: Vec2) => (ctx.site.fields?.hab ? sampleHab(ctx, q) : 99);
   const moat = inp.variant !== 'kasbah' && inp.variant !== 'inca-fortress' && inp.variant !== 'kastro' && (lowAt(cc) < 7 || wetFraction(ctx, outsetConvex(C, ditch + 25), 8) > 0.04);
-  return {
-    variant: inp.variant, C, lot, ditch, espl, gate, moat,
-    outside: fracInside(inp.enclosure, C, 7) < 0.98, enclosure: [mainX, ...encX.filter((ph) => ph !== mainX)],
-  };
+  return { variant: inp.variant, C, lot, ditch, espl, gate, moat, outside: fracInside(inp.enclosure, C, 7) < 0.98, enclosure: [mainX, ...encX.filter(ph => ph !== mainX)] };
 }
 
 function distSegP(p: Vec2, a: Vec2, b: Vec2): number {
-  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    l2 = dx * dx + dy * dy || 1;
   const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 function sampleHab(ctx: UrbanCtx, q: Vec2): number {
-  const g = ctx.terrain.height, n = g.w;
-  const ix = Math.min(n - 1, Math.max(0, Math.floor(q.x / g.cell))), iy = Math.min(g.h - 1, Math.max(0, Math.floor(q.y / g.cell)));
+  const g = ctx.terrain.height,
+    n = g.w;
+  const ix = Math.min(n - 1, Math.max(0, Math.floor(q.x / g.cell))),
+    iy = Math.min(g.h - 1, Math.max(0, Math.floor(q.y / g.cell)));
   return ctx.site.fields.hab[iy * n + ix];
 }
 
@@ -280,19 +364,29 @@ function sampleHab(ctx: UrbanCtx, q: Vec2): number {
 export function buildCastle(B: Polygon, cx: CompoundCtx): Out {
   const plan = cx.data as CastlePlan | undefined;
   const out = emptyOut();
-  if (!plan) { out.parcels.push({ poly: B, use: 'compound:castle' }); return out; }
+  if (!plan) {
+    out.parcels.push({ poly: B, use: 'compound:castle' });
+    return out;
+  }
   if (plan.variant === 'kasbah') return buildKasbah(B, plan, cx);
   if (plan.variant === 'inca-fortress') return buildIncaFortress(B, plan, cx);
   const Cin = largest(inter(plan.C, B));
-  if (!Cin || area(Cin) < 300) { out.parcels.push({ poly: B, use: 'esplanade' }); return out; }
-  const g = plan.gate, n = g.n, ang = Math.atan2(n.y, n.x);
+  if (!Cin || area(Cin) < 300) {
+    out.parcels.push({ poly: B, use: 'esplanade' });
+    return out;
+  }
+  const g = plan.gate,
+    n = g.n,
+    ang = Math.atan2(n.y, n.x);
   // causeway strip from the gate across the ditch and the esplanade
   const cw = plan.variant === 'motte' ? 4 : 6.5;
   const S = rectAt(g.p, ang, 0, 400, -cw / 2, cw / 2);
   const D = outsetConvex(plan.C, plan.ditch);
   // ---- exact partition of the lot: enceinte (baileys), ditch, causeway, esplanade
   const rest = minus(B, Cin);
-  const ditchP: Polygon[] = [], causeway: Polygon[] = [], espl: Polygon[] = [];
+  const ditchP: Polygon[] = [],
+    causeway: Polygon[] = [],
+    espl: Polygon[] = [];
   for (const r of rest) {
     for (const q of minus(r, S)) {
       for (const d of inter(q, D)) ditchP.push(d);
@@ -306,16 +400,19 @@ export function buildCastle(B: Polygon, cx: CompoundCtx): Out {
   for (const q of Cin) tMax = Math.max(tMax, (q.x - g.p.x) * u.x + (q.y - g.p.y) * u.y);
   const twoBaileys = plan.variant === 'castle' && area(Cin) > 4200;
   const kremlin = plan.variant === 'kremlin';
-  let outerB: Polygon | null = null, innerB: Polygon = Cin;
+  let outerB: Polygon | null = null,
+    innerB: Polygon = Cin;
   if (twoBaileys) {
     const f = cx.rng.range(0.42, 0.55);
     const sp = { x: g.p.x + u.x * tMax * f, y: g.p.y + u.y * tMax * f };
     const [inn, outr] = splitLine(Cin, sp, u);
-    const ib = largest(inn), ob = largest(outr);
+    const ib = largest(inn),
+      ob = largest(outr);
     if (ib && ob && area(ib) > 1200 && area(ob) > 900 && inn.length === 1 && outr.length === 1) {
-      innerB = ib; outerB = ob;
+      innerB = ib;
+      outerB = ob;
       // the cross wall (chord of the enceinte)
-      const chord = ib.filter((q) => Math.abs((q.x - sp.x) * u.x + (q.y - sp.y) * u.y) < 0.05);
+      const chord = ib.filter(q => Math.abs((q.x - sp.x) * u.x + (q.y - sp.y) * u.y) < 0.05);
       if (chord.length >= 2) out.lines.push({ kind: 'citadel-wall', path: [chord[0], chord[chord.length - 1]], width: 2 });
     }
   }
@@ -323,7 +420,10 @@ export function buildCastle(B: Polygon, cx: CompoundCtx): Out {
   out.parcels.push({ poly: innerB, use: 'bailey' });
   const iOuter = outerB ? out.parcels.length : iInner;
   if (outerB) out.parcels.push({ poly: outerB, use: 'bailey' });
-  for (const d of ditchP) { out.parcels.push({ poly: d, use: plan.moat ? 'moat' : 'ditch' }); if (plan.moat) out.water.push(d); }
+  for (const d of ditchP) {
+    out.parcels.push({ poly: d, use: plan.moat ? 'moat' : 'ditch' });
+    if (plan.moat) out.water.push(d);
+  }
   for (const c of causeway) out.parcels.push({ poly: c, use: 'causeway' });
   for (const e of espl) out.parcels.push({ poly: e, use: 'esplanade' });
   const bld = (poly: Polygon | null, parcel: number, arch: string, storeys: number, roof: Out['buildings'][number]['roof'] = 'gable') => {
@@ -350,15 +450,20 @@ export function buildCastle(B: Polygon, cx: CompoundCtx): Out {
   bld(placeRect(gp, frameAt(g.p, ang, -5.5, 0), ang, 5, 7, 0.4), iOuter, 'gatehouse', 3, 'flat');
   // hall and chapel in the inner bailey, along its longest curtain away from the keep; ranges in the outer bailey
   const curtainEdge = (poly: Polygon) => {
-    let bi = -1, bl = 0;
+    let bi = -1,
+      bl = 0;
     const P = orientPos(poly);
     for (let i = 0; i < P.length; i++) {
-      const a = P[i], b = P[(i + 1) % P.length];
+      const a = P[i],
+        b = P[(i + 1) % P.length];
       const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       if (distToRing(plan.C, m) > 3.5) continue; // not a curtain (cross wall or wall band)
       if (keep && distToRing(keep, m) < 8) continue;
       const l = dist(a, b);
-      if (l > bl) { bl = l; bi = i; }
+      if (l > bl) {
+        bl = l;
+        bi = i;
+      }
     }
     return bi;
   };
@@ -394,10 +499,11 @@ function buildKasbah(B: Polygon, plan: CastlePlan, cx: CompoundCtx): Out {
   const out: Out = { parcels: [...k.parcels], buildings: [...k.buildings], lines: [...k.lines], water: [], landmarks: [...k.landmarks, { kind: 'kasbah', poly: plan.C }] };
   for (const e of minus(B, Cin)) out.parcels.push({ poly: e, use: 'esplanade' });
   // gate tower pair at the town-side gate
-  const g = plan.gate, ang = Math.atan2(g.n.y, g.n.x);
+  const g = plan.gate,
+    ang = Math.atan2(g.n.y, g.n.x);
   const gh = placeRect(Cin, frameAt(g.p, ang, -5, 0), ang, 4.5, 6.5, 0.4);
-  if (gh && !out.buildings.some((b) => intersectionS(b.poly, gh).length)) out.buildings.push({ poly: gh, kind: 'landmark', parcel: 0, arch: 'kasbah-gate', roof: 'flat', material: 'mud', storeys: 2 });
-  out.lines = out.lines.filter((l) => l.kind !== 'citadel-wall');
+  if (gh && !out.buildings.some(b => intersectionS(b.poly, gh).length)) out.buildings.push({ poly: gh, kind: 'landmark', parcel: 0, arch: 'kasbah-gate', roof: 'flat', material: 'mud', storeys: 2 });
+  out.lines = out.lines.filter(l => l.kind !== 'citadel-wall');
   out.walls = [{ ring: plan.C, gates: [{ p: g.p, dir: { x: -g.n.x, y: -g.n.y }, width: 5 }], role: 'castle' }];
   return out;
 }
@@ -413,23 +519,37 @@ function buildIncaFortress(B: Polygon, plan: CastlePlan, cx: CompoundCtx): Out {
   const out = emptyOut();
   out.parcels.push({ poly: Cin, use: 'compound:inca-fortress' });
   for (const e of minus(B, Cin)) out.parcels.push({ poly: e, use: 'esplanade' });
-  const g = plan.gate, n = g.n, u = { x: -n.y, y: n.x }, inward = { x: -n.x, y: -n.y };
-  let depth = 0, half = 0;
-  for (const q of Cin) { depth = Math.max(depth, (q.x - g.p.x) * inward.x + (q.y - g.p.y) * inward.y); half = Math.max(half, Math.abs((q.x - g.p.x) * u.x + (q.y - g.p.y) * u.y)); }
+  const g = plan.gate,
+    n = g.n,
+    u = { x: -n.y, y: n.x },
+    inward = { x: -n.x, y: -n.y };
+  let depth = 0,
+    half = 0;
+  for (const q of Cin) {
+    depth = Math.max(depth, (q.x - g.p.x) * inward.x + (q.y - g.p.y) * inward.y);
+    half = Math.max(half, Math.abs((q.x - g.p.x) * u.x + (q.y - g.p.y) * u.y));
+  }
   // three zigzag walls, 9 m apart, the salients pointing to the town
-  const per = 12, amp = 4.5;
+  const per = 12,
+    amp = 4.5;
   for (let k = 0; k < 3; k++) {
     const v0 = 6 + k * 9;
     if (v0 + amp > depth * 0.55) break;
     const pts: Vec2[] = [];
     for (let s = -half - per; s <= half + per; s += per / 2) {
-      const tooth = (Math.round(s / (per / 2)) % 2 === 0) ? 0 : amp;
+      const tooth = Math.round(s / (per / 2)) % 2 === 0 ? 0 : amp;
       pts.push({ x: g.p.x + u.x * s + inward.x * (v0 + amp - tooth), y: g.p.y + u.y * s + inward.y * (v0 + amp - tooth) });
     }
     // keep the runs inside the enceinte (2 m clear of its line)
     let run: Vec2[] = [];
-    const flush = () => { if (run.length >= 3) out.lines.push({ kind: 'zigzag-wall', path: run, width: 2.4 }); run = []; };
-    for (const q of pts) { if (pointInRing(Cin, q) && distToRing(Cin, q) > 2) run.push(q); else flush(); }
+    const flush = () => {
+      if (run.length >= 3) out.lines.push({ kind: 'zigzag-wall', path: run, width: 2.4 });
+      run = [];
+    };
+    for (const q of pts) {
+      if (pointInRing(Cin, q) && distToRing(Cin, q) > 2) run.push(q);
+      else flush();
+    }
     flush();
   }
   const ang = Math.atan2(u.y, u.x);
@@ -437,7 +557,7 @@ function buildIncaFortress(B: Polygon, plan: CastlePlan, cx: CompoundCtx): Out {
   const R0 = Math.max(6, Math.min(11, Math.sqrt(area(Cin)) * 0.07));
   const placed: Polygon[] = [];
   const add = (poly: Polygon | null, arch: string, storeys: number, roof: Out['buildings'][number]['roof']) => {
-    if (!poly || !fits(Cin, poly, 1.5) || placed.some((p) => intersectionS(p, poly).length)) return false;
+    if (!poly || !fits(Cin, poly, 1.5) || placed.some(p => intersectionS(p, poly).length)) return false;
     placed.push(poly);
     out.buildings.push({ poly, kind: 'landmark', parcel: 0, arch, roof, material: 'stone', storeys, orientation: ang });
     return true;
@@ -461,20 +581,31 @@ export { minus, pieces, mpArea };
  * corners, self-intersections resolved), with no stub curtain.
  */
 export function outerRing(ring: Polygon, d: number): Polygon | null {
-  const P = orientPos(ring), n = P.length;
+  const P = orientPos(ring),
+    n = P.length;
   const lines = P.map((a, i) => {
-    const b = P[(i + 1) % n], l = dist(a, b) || 1, dx = (b.x - a.x) / l, dy = (b.y - a.y) / l;
+    const b = P[(i + 1) % n],
+      l = dist(a, b) || 1,
+      dx = (b.x - a.x) / l,
+      dy = (b.y - a.y) / l;
     return { px: a.x + dy * d, py: a.y - dx * d, dx, dy };
   });
   const out: Vec2[] = [];
   for (let i = 0; i < n; i++) {
-    const A = lines[(i - 1 + n) % n], B = lines[i];
+    const A = lines[(i - 1 + n) % n],
+      B = lines[i];
     const den = A.dx * B.dy - A.dy * B.dx;
-    if (Math.abs(den) < 1e-6) { out.push({ x: B.px, y: B.py }); continue; }
+    if (Math.abs(den) < 1e-6) {
+      out.push({ x: B.px, y: B.py });
+      continue;
+    }
     const t = ((B.px - A.px) * B.dy - (B.py - A.py) * B.dx) / den;
     const q = { x: A.px + A.dx * t, y: A.py + A.dy * t };
     // very sharp corners: bevel instead of a long spike
-    if (dist(q, P[i]) > 3 * d) { out.push({ x: P[i].x + A.dy * d, y: P[i].y - A.dx * d }, { x: P[i].x + B.dy * d, y: P[i].y - B.dx * d }); continue; }
+    if (dist(q, P[i]) > 3 * d) {
+      out.push({ x: P[i].x + A.dy * d, y: P[i].y - A.dx * d }, { x: P[i].x + B.dy * d, y: P[i].y - B.dx * d });
+      continue;
+    }
     out.push(q);
   }
   const u = unionS(out);

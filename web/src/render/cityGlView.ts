@@ -11,21 +11,44 @@ export const CITY_GL_SOFTWARE = typeof location !== 'undefined' && new URLSearch
 
 /** One city frame as both pages describe it; mapped once to the cityGl options. */
 export interface CityGlViewFrame {
-  viewport: Box; mpp: number; lod: CityLod; view: CityView; palette: CityPalette; layers: CityLayers;
-  buildingStyle: CityGlDrawOptions['buildingStyle']; painted: boolean; buildingsVisible: boolean;
-  diagnostic: string; refusedParcels?: ReadonlySet<string>; textured?: boolean; colors?: RenderColors;
-  selectedId?: string; selectedParcel?: number;
+  viewport: Box;
+  mpp: number;
+  lod: CityLod;
+  view: CityView;
+  palette: CityPalette;
+  layers: CityLayers;
+  buildingStyle: CityGlDrawOptions['buildingStyle'];
+  painted: boolean;
+  buildingsVisible: boolean;
+  diagnostic: string;
+  refusedParcels?: ReadonlySet<string>;
+  textured?: boolean;
+  colors?: RenderColors;
+  selectedId?: string;
+  selectedParcel?: number;
   /** The drawn rivers under the plan (`riverSegments` layout), kept clear of town ground and streets. */
   water?: Float32Array;
 }
 export const cityGlDrawOptions = (f: CityGlViewFrame): CityGlDrawOptions => ({
-  viewport: f.viewport, metresPerPixel: f.mpp, lod: f.lod, view: f.view, palette: f.palette, layers: f.layers,
-  selectedId: f.selectedId, selectedParcel: f.selectedParcel, buildingStyle: f.buildingStyle, paintedBuildings: f.painted,
-  buildingsVisible: f.buildingsVisible, diagnostic: f.diagnostic, refusedParcels: f.refusedParcels, textured: f.textured, colors: f.colors, water: f.water,
+  viewport: f.viewport,
+  metresPerPixel: f.mpp,
+  lod: f.lod,
+  view: f.view,
+  palette: f.palette,
+  layers: f.layers,
+  selectedId: f.selectedId,
+  selectedParcel: f.selectedParcel,
+  buildingStyle: f.buildingStyle,
+  paintedBuildings: f.painted,
+  buildingsVisible: f.buildingsVisible,
+  diagnostic: f.diagnostic,
+  refusedParcels: f.refusedParcels,
+  textured: f.textured,
+  colors: f.colors,
+  water: f.water,
 });
 /** Layers drawCity paints in a frame: the overlay left over a GL frame, or every layer on the Canvas 2D path. */
-export const cityCanvasLayers = (layers: CityLayers, glFrame: CityGlFrame | undefined): CityLayers =>
-  glFrame ? cityGlOverlayLayers(layers) : layers;
+export const cityCanvasLayers = (layers: CityLayers, glFrame: CityGlFrame | undefined): CityLayers => (glFrame ? cityGlOverlayLayers(layers) : layers);
 
 // ---------------------------------------------------------------- merged scene (V2: several cities, one GL scene)
 const boxes = (scenes: readonly SpatialBins[]): Box[] => scenes.flatMap(bins => [...bins.boxes]);
@@ -33,7 +56,9 @@ const union = (a: Box, b: Box): Box => ({ minX: Math.min(a.minX, b.minX), minY: 
 /** Concatenated per-face values, `shift[i]` added to part i (missing parts give zeros). */
 function concat(parts: readonly (ArrayLike<number> | undefined)[], lengths: readonly number[], shift: readonly number[] = []): number[] {
   const out: number[] = [];
-  parts.forEach((part, i) => { for (let k = 0; k < lengths[i]; k++) out.push((part?.[k] ?? 0) + (shift[i] ?? 0)); });
+  parts.forEach((part, i) => {
+    for (let k = 0; k < lengths[i]; k++) out.push((part?.[k] ?? 0) + (shift[i] ?? 0));
+  });
   return out;
 }
 /** Several retained city plans (and their buildings) as one GL scene. Each plan keeps its own
@@ -43,29 +68,51 @@ export const mergeCityPlans = (parts: readonly { plan: CityScene; buildings?: Ci
 /** `mergeCityPlans` in resumable steps (live compositor: merged a few milliseconds at a time). */
 export function* mergeCityPlansSteps(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): Generator<void, { plan: CityScene; buildings: CityBuildings }> {
   const layouts: CityScene['layouts'][number][] = [];
-  const plan: CityScene = { layouts, blocks: [], parcels: [], streets: [], walls: [], districts: [], landmarks: [], footprint: [], quays: [],
-    lotEnclosures: [], enclosureProfiles: [], lotYards: [], extent: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-    ground: parts.find(p => p.plan.ground)?.plan.ground, parcelById: new Map(),
-    bins: { blocks: new SpatialBins([]), parcels: new SpatialBins([]), streets: new SpatialBins([]), landmarks: new SpatialBins([]) } };
+  const plan: CityScene = {
+    layouts,
+    blocks: [],
+    parcels: [],
+    streets: [],
+    walls: [],
+    districts: [],
+    landmarks: [],
+    footprint: [],
+    quays: [],
+    lotEnclosures: [],
+    enclosureProfiles: [],
+    lotYards: [],
+    extent: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+    ground: parts.find(p => p.plan.ground)?.plan.ground,
+    parcelById: new Map(),
+    bins: { blocks: new SpatialBins([]), parcels: new SpatialBins([]), streets: new SpatialBins([]), landmarks: new SpatialBins([]) },
+  };
   for (const { plan: p } of parts) {
-    const L = plan.layouts.length, P = plan.parcels.length;
+    const L = plan.layouts.length,
+      P = plan.parcels.length;
     layouts.push(...p.layouts);
-    plan.blocks.push(...p.blocks.map(b => ({ ...b, layout: b.layout + L }))); yield;
-    plan.parcels.push(...p.parcels.map(x => ({ ...x, layout: x.layout + L }))); yield;
+    plan.blocks.push(...p.blocks.map(b => ({ ...b, layout: b.layout + L })));
+    yield;
+    plan.parcels.push(...p.parcels.map(x => ({ ...x, layout: x.layout + L })));
+    yield;
     plan.streets.push(...p.streets.map(s => ({ ...s, layout: s.layout + L })));
     plan.districts.push(...p.districts.map(d => ({ ...d, layout: d.layout + L })));
     plan.walls.push(...p.walls);
     plan.landmarks.push(...p.landmarks.map(l => ({ ...l, parcel: l.parcel === undefined ? undefined : l.parcel + P })));
-    plan.footprint.push(...p.footprint); plan.quays!.push(...p.quays ?? []);
-    plan.lotEnclosures!.push(...p.lotEnclosures ?? []);
+    plan.footprint.push(...p.footprint);
+    plan.quays!.push(...(p.quays ?? []));
+    plan.lotEnclosures!.push(...(p.lotEnclosures ?? []));
     plan.enclosureProfiles!.push(...p.layouts.map((_, i) => p.enclosureProfiles?.[i]));
     plan.lotYards!.push(...(p.lotYards ?? []).map(y => ({ ...y, parcel: y.parcel + P })));
     if (p.layouts.length || p.footprint.length) plan.extent = union(plan.extent, p.extent);
     for (const [id, i] of p.parcelById) if (!plan.parcelById.has(id)) plan.parcelById.set(id, i + P);
     yield;
   }
-  plan.bins = { blocks: new SpatialBins(boxes(parts.map(p => p.plan.bins.blocks)), 128), parcels: new SpatialBins(boxes(parts.map(p => p.plan.bins.parcels)), 64),
-    streets: new SpatialBins(boxes(parts.map(p => p.plan.bins.streets)), 128), landmarks: new SpatialBins(boxes(parts.map(p => p.plan.bins.landmarks)), 128) };
+  plan.bins = {
+    blocks: new SpatialBins(boxes(parts.map(p => p.plan.bins.blocks)), 128),
+    parcels: new SpatialBins(boxes(parts.map(p => p.plan.bins.parcels)), 64),
+    streets: new SpatialBins(boxes(parts.map(p => p.plan.bins.streets)), 128),
+    landmarks: new SpatialBins(boxes(parts.map(p => p.plan.bins.landmarks)), 128),
+  };
   yield;
   return { plan, buildings: yield* mergeCityBuildingsSteps(parts) };
 }
@@ -76,7 +123,9 @@ const MERGE_STEP = 2048;
 export const mergeCityBuildings = (parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): CityBuildings => runSteps(mergeCityBuildingsSteps(parts));
 /** `mergeCityBuildings` in resumable steps. */
 export function* mergeCityBuildingsSteps(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): Generator<void, CityBuildings> {
-  const items: CityBuildings['items'] = [], byId = new Map<string, number>(), itemShift: number[] = [];
+  const items: CityBuildings['items'] = [],
+    byId = new Map<string, number>(),
+    itemShift: number[] = [];
   let P = 0;
   for (const { plan: p, buildings } of parts) {
     itemShift.push(items.length);
@@ -87,27 +136,61 @@ export function* mergeCityBuildingsSteps(parts: readonly { plan: CityScene; buil
     }
     P += p.parcels.length;
   }
-  const built = parts.map(p => p.buildings), counts = built.map(b => b?.items.length ?? 0);
+  const built = parts.map(p => p.buildings),
+    counts = built.map(b => b?.items.length ?? 0);
   let roofs: CityRoofs | undefined;
   if (built.some(b => b?.roofs)) {
     yield;
-    const faces = built.map(b => b?.roofs?.shapes.length ?? 0), of = (key: 'owner' | 'light' | 'tone' | 'dir' | 'flat' | 'snow') => built.map(b => b?.roofs?.[key]);
-    const owner = Uint32Array.from(concat(of('owner'), faces, itemShift)); yield;
-    const light = Float32Array.from(concat(of('light'), faces)), tone = Float32Array.from(concat(of('tone'), faces)); yield;
-    const dir = Float32Array.from(concat(of('dir'), faces)), flat = Uint8Array.from(concat(of('flat'), faces)), snow = Float32Array.from(concat(of('snow'), faces)); yield;
+    const faces = built.map(b => b?.roofs?.shapes.length ?? 0),
+      of = (key: 'owner' | 'light' | 'tone' | 'dir' | 'flat' | 'snow') => built.map(b => b?.roofs?.[key]);
+    const owner = Uint32Array.from(concat(of('owner'), faces, itemShift));
+    yield;
+    const light = Float32Array.from(concat(of('light'), faces)),
+      tone = Float32Array.from(concat(of('tone'), faces));
+    yield;
+    const dir = Float32Array.from(concat(of('dir'), faces)),
+      flat = Uint8Array.from(concat(of('flat'), faces)),
+      snow = Float32Array.from(concat(of('snow'), faces));
+    yield;
     // Snow patches, flat-roof rims, grain families and wall tints too: the live look colours pans as the Canvas town.
-    const bytesOf = (key: 'patch' | 'rim' | 'grain'): Uint8Array => Uint8Array.from(concat(built.map(b => b?.roofs?.[key]), faces)); yield;
-    const patch = bytesOf('patch'), rim = bytesOf('rim'), grain = bytesOf('grain'); yield;
-    roofs = { shapes: built.flatMap(b => b?.roofs?.shapes ?? []), owner, light, tone, dir, flat, snow, patch, rim, grain,
+    const bytesOf = (key: 'patch' | 'rim' | 'grain'): Uint8Array =>
+      Uint8Array.from(
+        concat(
+          built.map(b => b?.roofs?.[key]),
+          faces,
+        ),
+      );
+    yield;
+    const patch = bytesOf('patch'),
+      rim = bytesOf('rim'),
+      grain = bytesOf('grain');
+    yield;
+    roofs = {
+      shapes: built.flatMap(b => b?.roofs?.shapes ?? []),
+      owner,
+      light,
+      tone,
+      dir,
+      flat,
+      snow,
+      patch,
+      rim,
+      grain,
       tint: built.flatMap((b, i) => b?.roofs?.tint ?? Array<string | undefined>(faces[i]).fill(undefined)),
       cover: built.flatMap((b, i) => b?.roofs?.cover ?? Array<string>(faces[i]).fill('')),
       wall: built.flatMap((b, i) => b?.roofs?.wall ?? Array<string>(faces[i]).fill('')),
-      shadows: built.flatMap((b, i) => b?.roofs?.shadows ?? Array.from({ length: counts[i] }, (): CityRoofs['shadows'][number] => [])) };
+      shadows: built.flatMap((b, i) => b?.roofs?.shadows ?? Array.from({ length: counts[i] }, (): CityRoofs['shadows'][number] => [])),
+    };
     yield;
   }
-  return { items, byId, bins: new SpatialBins(boxes(built.flatMap(b => b ? [b.bins] : [])), 64), ...(roofs ? { roofs } : {}) };
+  return { items, byId, bins: new SpatialBins(boxes(built.flatMap(b => (b ? [b.bins] : []))), 64), ...(roofs ? { roofs } : {}) };
 }
-function runSteps<T>(steps: Generator<void, T>): T { for (;;) { const r = steps.next(); if (r.done) return r.value; } }
+function runSteps<T>(steps: Generator<void, T>): T {
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
 // ---------------------------------------------------------------- offscreen GL composited into Canvas 2D (V2, exports)
 /** A cityGl renderer on its own canvas, drawn then copied into a Canvas 2D frame in the same task
  * (the GL buffer is not preserved). Created on first use; `failed` once WebGL2 is unavailable. */
@@ -118,21 +201,41 @@ export class CityGlComposite {
   private uploaded?: CityScene;
   private upload?: Promise<void>;
   constructor(private readonly onInvalidate: () => void) {}
-  get unavailable(): boolean { return this.failed; }
+  get unavailable(): boolean {
+    return this.failed;
+  }
   /** Uploads `plan` once (async). True when it is on the GPU and the next draw can use it. */
   prepare(plan: CityScene, buildings: CityBuildings | undefined): boolean {
     if (this.failed) return false;
     if (!this.renderer) {
       const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1) : undefined;
-      if (!canvas) { this.failed = true; return false; }
-      try { this.renderer = createCityGlRenderer(canvas, { allowSoftware: CITY_GL_SOFTWARE, onInvalidate: this.onInvalidate }); }
-      catch (error) { this.failed = true; console.warn('Rendu WebGL2 de la ville indisponible, Canvas 2D utilisé', error); return false; }
+      if (!canvas) {
+        this.failed = true;
+        return false;
+      }
+      try {
+        this.renderer = createCityGlRenderer(canvas, { allowSoftware: CITY_GL_SOFTWARE, onInvalidate: this.onInvalidate });
+      } catch (error) {
+        this.failed = true;
+        console.warn('Rendu WebGL2 de la ville indisponible, Canvas 2D utilisé', error);
+        return false;
+      }
     }
     if (this.requested !== plan) {
-      this.requested = plan; this.uploaded = undefined;
+      this.requested = plan;
+      this.uploaded = undefined;
       // Repaint once `uploaded` is set: the renderer's own invalidation fires before this continuation.
-      this.upload = this.renderer.setScene(plan, buildings).then(() => { if (this.requested === plan) { this.uploaded = plan; this.onInvalidate(); } },
-        error => { console.warn('Plan WebGL indisponible', error); });
+      this.upload = this.renderer.setScene(plan, buildings).then(
+        () => {
+          if (this.requested === plan) {
+            this.uploaded = plan;
+            this.onInvalidate();
+          }
+        },
+        error => {
+          console.warn('Plan WebGL indisponible', error);
+        },
+      );
     }
     return this.uploaded === plan && this.renderer.ready;
   }
@@ -140,10 +243,17 @@ export class CityGlComposite {
   setBuildings(buildings: CityBuildings | undefined): void {
     const r = this.renderer;
     if (!r || this.failed || !this.uploaded || this.uploaded !== this.requested) return;
-    r.setBuildings(buildings).then(() => this.onInvalidate(), error => { console.warn('Bâtiments WebGL indisponibles', error); });
+    r.setBuildings(buildings).then(
+      () => this.onInvalidate(),
+      error => {
+        console.warn('Bâtiments WebGL indisponibles', error);
+      },
+    );
   }
   /** Resolves once the last requested plan is uploaded (exports wait for it before their synchronous draw). */
-  ready(): Promise<void> { return this.upload ?? Promise.resolve(); }
+  ready(): Promise<void> {
+    return this.upload ?? Promise.resolve();
+  }
   /** Draws the frame and copies it over `ctx` in device pixels; undefined when GL could not present it. */
   draw(ctx: CanvasRenderingContext2D, pixelWidth: number, pixelHeight: number, options: CityGlDrawOptions): CityGlFrame | undefined {
     const r = this.renderer;
@@ -152,13 +262,21 @@ export class CityGlComposite {
     const frame = r.draw(options);
     if (!r.ready) return undefined;
     ctx.save();
-    try { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(r.canvas, 0, 0, pixelWidth, pixelHeight); }
-    finally { ctx.restore(); }
+    try {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(r.canvas, 0, 0, pixelWidth, pixelHeight);
+    } finally {
+      ctx.restore();
+    }
     return frame;
   }
   dispose(): void {
-    const r = this.renderer; this.renderer = undefined; this.requested = this.uploaded = undefined; this.upload = undefined;
+    const r = this.renderer;
+    this.renderer = undefined;
+    this.requested = this.uploaded = undefined;
+    this.upload = undefined;
     if (!r) return;
-    r.dispose(); r.gl.getExtension('WEBGL_lose_context')?.loseContext();
+    r.dispose();
+    r.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }

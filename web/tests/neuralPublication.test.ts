@@ -13,16 +13,20 @@ afterEach(async () => {
   }
 });
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'magna-neural-publication-test-')); temporary.push(root);
-  const prepared = join(root, 'prepared'), output = join(root, 'output');
+  const root = await mkdtemp(join(tmpdir(), 'magna-neural-publication-test-'));
+  temporary.push(root);
+  const prepared = join(root, 'prepared'),
+    output = join(root, 'output');
   await mkdir(join(prepared, 'models'), { recursive: true });
-  const wasm = Buffer.from('identified wasm'), js = Buffer.from('identified JS');
+  const wasm = Buffer.from('identified wasm'),
+    js = Buffer.from('identified JS');
   const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
   await writeFile(join(prepared, 'magna_urbis_neural_wasm_bg.wasm'), wasm);
   await writeFile(join(prepared, 'magna_urbis_neural_wasm.js'), js);
   const models: Record<string, { file: string; bytes: number; sha256: string }> = {};
   for (const name of ['coarse', 'base', 'decoder']) {
-    const bytes = Buffer.alloc(name === 'base' ? 40_000_001 : 7, 42), file = `${name}.bin`;
+    const bytes = Buffer.alloc(name === 'base' ? 40_000_001 : 7, 42),
+      file = `${name}.bin`;
     models[name] = { file, bytes: bytes.length, sha256: hash(bytes) };
     await writeFile(join(prepared, 'models', file), bytes);
   }
@@ -36,9 +40,15 @@ describe('same-origin neural publication', () => {
     const manifest = await stageNeuralPublication(prepared, output);
     expect(manifest.models.base.chunks?.map(part => part.bytes)).toEqual([40_000_000, 1]);
     expect(await readdir(join(output, 'models'))).not.toContain('base.bin');
-    const assembled = Buffer.concat(await Promise.all(manifest.models.base.chunks!.map(async part => {
-      const bytes = await readFile(join(output, 'models', part.file)); expect(hash(bytes)).toBe(part.sha256); return bytes;
-    })));
+    const assembled = Buffer.concat(
+      await Promise.all(
+        manifest.models.base.chunks!.map(async part => {
+          const bytes = await readFile(join(output, 'models', part.file));
+          expect(hash(bytes)).toBe(part.sha256);
+          return bytes;
+        }),
+      ),
+    );
     expect(hash(assembled)).toBe(manifest.models.base.sha256);
     expect(await readdir(output)).toEqual(expect.arrayContaining(['LICENSE-NEURAL-MODELS.txt', 'LICENSE-TEACHER.txt']));
     expect(JSON.parse(await readFile(join(prepared, 'models/manifest.json'), 'utf8')).models.base.chunks).toBeUndefined();

@@ -7,9 +7,13 @@ export function canvasPng(canvas: HTMLCanvasElement): Promise<Blob> {
     try {
       canvas.toBlob(blob => {
         clearTimeout(timer);
-        if (blob) resolve(blob); else reject(new Error('PNG encoding failed'));
+        if (blob) resolve(blob);
+        else reject(new Error('PNG encoding failed'));
       }, 'image/png');
-    } catch (error) { clearTimeout(timer); reject(error); }
+    } catch (error) {
+      clearTimeout(timer);
+      reject(error);
+    }
   });
 }
 
@@ -17,11 +21,13 @@ export function canvasPng(canvas: HTMLCanvasElement): Promise<Blob> {
 export async function cropCanvasPng(source: HTMLCanvasElement, bounds: ExportRect, rect: ExportRect, pixels: { width: number; height: number }): Promise<Blob> {
   const canvas = document.createElement('canvas');
   try {
-    canvas.width = pixels.width; canvas.height = pixels.height;
+    canvas.width = pixels.width;
+    canvas.height = pixels.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('no PNG canvas context');
-    ctx.drawImage(source, (rect.x - bounds.x) / bounds.width * source.width, (rect.y - bounds.y) / bounds.height * source.height,
-      rect.width / bounds.width * source.width, rect.height / bounds.height * source.height, 0, 0, pixels.width, pixels.height);
+    ctx.drawImage(source, ((rect.x - bounds.x) / bounds.width) * source.width, ((rect.y - bounds.y) / bounds.height) * source.height, (rect.width / bounds.width) * source.width, (rect.height / bounds.height) * source.height, 0, 0, pixels.width, pixels.height);
     return await canvasPng(canvas);
-  } finally { canvas.width = canvas.height = 0; }
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
 }

@@ -9,7 +9,9 @@ function fakeWorkers(behaviour: (message: Extract<PoolMessage, { type: 'job' }>)
     onmessage?: (event: { data: unknown }) => void;
     onerror?: unknown;
     received: PoolMessage[] = [];
-    constructor() { seen.push(this.received); }
+    constructor() {
+      seen.push(this.received);
+    }
     postMessage(message: PoolMessage) {
       this.received.push(message);
       if (message.type !== 'job') return;
@@ -23,12 +25,21 @@ function fakeWorkers(behaviour: (message: Extract<PoolMessage, { type: 'job' }>)
 const raster = { width: 1, n: 1, height: new Float32Array(1), water: new Uint8Array(1), waterLevel: new Float32Array(1), riverWidth: new Float32Array(1), riverIds: new Int32Array(1) } as SettlementRaster;
 const slice = (a: Record<string, string | undefined>) => `[${a.start}-${a.end}]`;
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('urban worker pool', () => {
   it('splits into contiguous non-empty ranges', () => {
-    expect(ranges(10, 3)).toEqual([[0, 3], [3, 6], [6, 10]]);
-    expect(ranges(2, 8)).toEqual([[0, 1], [1, 2]]);
+    expect(ranges(10, 3)).toEqual([
+      [0, 3],
+      [3, 6],
+      [6, 10],
+    ]);
+    expect(ranges(2, 8)).toEqual([
+      [0, 1],
+      [1, 2],
+    ]);
     expect(ranges(0, 4)).toEqual([]);
   });
 
@@ -55,7 +66,10 @@ describe('urban worker pool', () => {
     pool.setRaster(raster);
     const jobs = ranges(30, 6).map(([a, b]) => ({ start: String(a), end: String(b) }));
     expect(await pool.run('sites', jobs, {}, slice)).toEqual(jobs.map(slice));
-    const failing = (a: Record<string, string | undefined>) => { if (Number(a.start) >= 10) throw `bad site ${a.start}`; return slice(a); };
+    const failing = (a: Record<string, string | undefined>) => {
+      if (Number(a.start) >= 10) throw `bad site ${a.start}`;
+      return slice(a);
+    };
     await expect(pool.run('sites', jobs, {}, failing)).rejects.toBe('bad site 10');
   });
 });

@@ -10,9 +10,18 @@ try {
   await page.waitForTimeout(2500);
   const left = await page.evaluate(() => {
     const out = new Set();
-    for (const el of document.querySelectorAll('[data-i18n]')) { const src = el.getAttribute('data-i18n').trim(); if (/[A-Za-z]{3}/.test(src) && el.textContent.trim() === src && !/^[A-Z0-9 ·/()+-]+$/.test(src)) out.add(src); }
-    for (const attr of ['title', 'aria-label', 'placeholder']) for (const el of document.querySelectorAll(`[data-i18n-${attr}]`)) { const src = el.getAttribute(`data-i18n-${attr}`).trim(); if (/[A-Za-z]{3}/.test(src) && el.getAttribute(attr) === src) out.add(src); }
+    for (const el of document.querySelectorAll('[data-i18n]')) {
+      const src = el.getAttribute('data-i18n').trim();
+      if (/[A-Za-z]{3}/.test(src) && el.textContent.trim() === src && !/^[A-Z0-9 ·/()+-]+$/.test(src)) out.add(src);
+    }
+    for (const attr of ['title', 'aria-label', 'placeholder'])
+      for (const el of document.querySelectorAll(`[data-i18n-${attr}]`)) {
+        const src = el.getAttribute(`data-i18n-${attr}`).trim();
+        if (/[A-Za-z]{3}/.test(src) && el.getAttribute(attr) === src) out.add(src);
+      }
     return [...out];
   });
   console.log(JSON.stringify(left));
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

@@ -17,13 +17,13 @@ describe('urban regions — connected, urbanized, sized', () => {
       const w = generate(makeOptions({ ...c, size: 'town' }));
       const u = w.urban!;
       const pts = u.blocks.map(interiorPoint);
-      const inside = (outer: { x: number; y: number }[], holes: { x: number; y: number }[][]) =>
-        pts.some((p) => pointInRing(outer, p) && !holes.some((h) => pointInRing(h, p)));
+      const inside = (outer: { x: number; y: number }[], holes: { x: number; y: number }[][]) => pts.some(p => pointInRing(outer, p) && !holes.some(h => pointInRing(h, p)));
       for (const wl of u.walls ?? []) expect(inside(wl.path, []), 'every walled enclosure holds blocks').toBe(true);
-      for (const ph of u.phases) for (const r of ph.region) {
-        if (area(r.outer) < 3000) continue;
-        expect(inside(r.outer, r.holes), `phase ${ph.id} region piece of ${Math.round(area(r.outer))} m² holds blocks`).toBe(true);
-      }
+      for (const ph of u.phases)
+        for (const r of ph.region) {
+          if (area(r.outer) < 3000) continue;
+          expect(inside(r.outer, r.holes), `phase ${ph.id} region piece of ${Math.round(area(r.outer))} m² holds blocks`).toBe(true);
+        }
       for (const fp of u.footprintH) if (area(fp.outer) > 3000) expect(inside(fp.outer, fp.holes), 'footprint piece holds blocks').toBe(true);
       const cap = Number(w.stats['urban.capacity']) / Number(w.stats['urban.pop']);
       // the reported bug case (a narrow coastal gorge) is outside the 1–6 grid: ~70 %

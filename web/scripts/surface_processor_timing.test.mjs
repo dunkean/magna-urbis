@@ -4,10 +4,17 @@ import vm from 'node:vm';
 import { installSurfaceProcessorTiming, captureSurfaceProcessorTiming } from './surface_processor_timing.mjs';
 
 test('compile marker preserves message identity, transfer list, ownership and return value', () => {
-  class Worker { postMessage(...args) { this.sent = args; return 17; } }
+  class Worker {
+    postMessage(...args) {
+      this.sent = args;
+      return 17;
+    }
+  }
   const window = { Worker };
   vm.runInNewContext(`(${installSurfaceProcessorTiming.toString()})();`, { window });
-  const worker = new window.Worker(), binary = new ArrayBuffer(16), transfers = [binary];
+  const worker = new window.Worker(),
+    binary = new ArrayBuffer(16),
+    transfers = [binary];
   const message = { kind: 'compile', requestId: 2, binary };
   assert.equal(worker.postMessage(message, transfers), 17);
   assert.equal(worker.sent[0], message);
@@ -18,10 +25,15 @@ test('compile marker preserves message identity, transfer list, ownership and re
 });
 
 test('noncompile messages and options are forwarded without modification', () => {
-  class Worker { postMessage(...args) { this.sent = args; } }
+  class Worker {
+    postMessage(...args) {
+      this.sent = args;
+    }
+  }
   const window = { Worker };
   vm.runInNewContext(`(${installSurfaceProcessorTiming.toString()})();`, { window });
-  const worker = new window.Worker(), options = { transfer: [] };
+  const worker = new window.Worker(),
+    options = { transfer: [] };
   for (const message of [Object.freeze({ kind: 'cancel', requestId: 2 }), Object.freeze({ kind: 'initialize' }), null, 'unchanged']) {
     worker.postMessage(message, options);
     assert.equal(worker.sent[0], message);
@@ -31,10 +43,13 @@ test('noncompile messages and options are forwarded without modification', () =>
 
 test('receipt proof reads only timing metadata before any binary summary', () => {
   const marker = { version: 'surface-worker-processor-timing-1', synchronousMs: 55 };
-  const message = { processorTiming: marker, get binary() { throw Error('binary must not be read'); } };
-  const capture = vm.runInNewContext(`(${captureSurfaceProcessorTiming.toString()})`, {
-    performance: { now: () => 12, timeOrigin: 1000 }, Date: { now: () => 1012 }, document: { visibilityState: 'visible' },
-  });
+  const message = {
+    processorTiming: marker,
+    get binary() {
+      throw Error('binary must not be read');
+    },
+  };
+  const capture = vm.runInNewContext(`(${captureSurfaceProcessorTiming.toString()})`, { performance: { now: () => 12, timeOrigin: 1000 }, Date: { now: () => 1012 }, document: { visibilityState: 'visible' } });
   const proof = capture(message);
   assert.equal(proof.processorTiming, marker);
   assert.equal(proof.pageReceiveNowMs, 12);
@@ -44,10 +59,15 @@ test('receipt proof reads only timing metadata before any binary summary', () =>
 });
 
 test('native transfer semantics still detach once and preserve binary bytes', () => {
-  class Worker { postMessage(message, transfer) { this.received = structuredClone(message, { transfer }); } }
+  class Worker {
+    postMessage(message, transfer) {
+      this.received = structuredClone(message, { transfer });
+    }
+  }
   const window = { Worker };
   vm.runInNewContext(`(${installSurfaceProcessorTiming.toString()})();`, { window });
-  const worker = new window.Worker(), binary = Uint8Array.from([0, 127, 255, 9]).buffer;
+  const worker = new window.Worker(),
+    binary = Uint8Array.from([0, 127, 255, 9]).buffer;
   worker.postMessage({ kind: 'compile', binary }, [binary]);
   assert.equal(binary.byteLength, 0);
   assert.deepEqual([...new Uint8Array(worker.received.binary)], [0, 127, 255, 9]);

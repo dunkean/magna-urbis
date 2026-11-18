@@ -7,31 +7,53 @@ const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
   const page = await browser.newPage();
   await page.context().grantPermissions(['local-network-access'], { origin: base });
-  const generationRequests = []; page.on('request', request => {
+  const generationRequests = [];
+  page.on('request', request => {
     if (request.method() === 'POST' && request.url().endsWith('/v1/illustrations/jobs')) generationRequests.push(request.url());
   });
   await page.route(base + '/prompt-fixture', route => route.fulfill({ contentType: 'text/html', body: '<html><body><header></header></body></html>' }));
   await page.goto(base + '/prompt-fixture');
-  await page.evaluate(async module => {
-    const { mountIllustration, canvasBlob } = await import(module), canvas = document.createElement('canvas'); canvas.width = canvas.height = 128;
-    mountIllustration({ host: document.querySelector('header'), capture: async () => ({ image: await canvasBlob(canvas), context: {
-      projection: 'orthographic', sourceStyle: 'parchment', environment: { relief: 'flat', climate: 'mediterranean' },
-      settlements: [{ urbanCulture: 'roman-core', name: 'Roma', population: 30000 }],
-      architecture: { roofSystems: ['tiled_hip'], materials: [{ label: 'fired clay tiles' }], storeys: [1, 2] } } }) });
-  }, '/@fs/' + resolve('../illustration/web/index.mjs').replaceAll('\\', '/'));
+  await page.evaluate(
+    async module => {
+      const { mountIllustration, canvasBlob } = await import(module),
+        canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 128;
+      mountIllustration({
+        host: document.querySelector('header'),
+        capture: async () => ({
+          image: await canvasBlob(canvas),
+          context: {
+            projection: 'orthographic',
+            sourceStyle: 'parchment',
+            environment: { relief: 'flat', climate: 'mediterranean' },
+            settlements: [{ urbanCulture: 'roman-core', name: 'Roma', population: 30000 }],
+            architecture: { roofSystems: ['tiled_hip'], materials: [{ label: 'fired clay tiles' }], storeys: [1, 2] },
+          },
+        }),
+      });
+    },
+    '/@fs/' + resolve('../illustration/web/index.mjs').replaceAll('\\', '/'),
+  );
   await page.locator('.illustration-trigger').click();
   await page.waitForFunction(() => document.querySelector('[data-scene-description]').textContent.includes('an ancient Roman city of approximately 30,000 inhabitants in a Mediterranean plain'));
   const description = await page.locator('[data-scene-description]').textContent();
-  assert.ok(description.includes('fired clay tiles')); assert.ok(!description.includes('"urbanCulture"'));
+  assert.ok(description.includes('fired clay tiles'));
+  assert.ok(!description.includes('"urbanCulture"'));
   const short = await page.locator('.illustration-prompt').textContent();
   await page.locator('[name=mode]').selectOption('cloud');
   await page.waitForFunction(() => document.querySelector('.illustration-prompt').textContent.startsWith('Edit the supplied source image itself'));
   const prompt = await page.locator('.illustration-prompt').textContent();
-  assert.ok(prompt.includes('relative positions')); assert.ok(prompt.includes('street intersections')); assert.ok(prompt.length > short.length);
+  assert.ok(prompt.includes('relative positions'));
+  assert.ok(prompt.includes('street intersections'));
+  assert.ok(prompt.length > short.length);
   await page.locator('[name=style]').selectOption('photorealistic');
   await page.waitForFunction(() => document.querySelector('.illustration-prompt').textContent.includes('photorealistic landscape'));
   const original = await page.locator('[data-source]').getAttribute('src');
-  await page.locator('details').filter({ has: page.locator('[data-prompt-edit]') }).locator('summary').click();
+  await page
+    .locator('details')
+    .filter({ has: page.locator('[data-prompt-edit]') })
+    .locator('summary')
+    .click();
   await page.locator('[data-prompt-edit]').click();
   const edited = 'Restyle this exact Roman city as a satellite image. Preserve every street and courtyard. Custom user wording.';
   await page.locator('[data-prompt-editor]').fill(edited);
@@ -49,4 +71,6 @@ try {
   assert.ok(!(await page.locator('[data-prompt-state]').textContent()).includes('personnalisé'));
   assert.deepEqual(generationRequests, []);
   console.log('Prompt preview passed: prose, cloud edit, satellite template, editable prompt, draft restore, template reset, unchanged reference; no generation.');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

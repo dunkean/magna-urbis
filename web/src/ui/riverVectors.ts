@@ -73,7 +73,8 @@ export interface RiverNetwork {
 }
 
 export interface MeanderResult {
-  xs: number[]; ys: number[];
+  xs: number[];
+  ys: number[];
   oxbows: [number[], number[]][];
   iterations: number;
   /** False when no meandered channel fitted: the axis came back unchanged, or with a long stretch of it at the end. */
@@ -94,4 +95,6 @@ export interface MeanderOptions {
 
 export { vectorRivers } from '../../../rust/bridge/waterNative';
 /** Pure hydraulic width used by renderers. */
-export function channelWidth(area: number, scale: number): number { return scale * 3 * Math.pow(area / 1e6, 0.45); }
+export function channelWidth(area: number, scale: number): number {
+  return scale * 3 * Math.pow(area / 1e6, 0.45);
+}

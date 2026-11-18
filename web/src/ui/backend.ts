@@ -35,35 +35,54 @@ export class OffscreenBackend {
   private currentRun = 0;
   private pending = new Map<number, { resolve(b: Blob): void; reject(e: Error): void }>();
 
-  private constructor(private render: Worker, private ev: BackendEvents) {
+  private constructor(
+    private render: Worker,
+    private ev: BackendEvents,
+  ) {
     render.onmessage = (e: MessageEvent<RResponse>): void => {
       const r = e.data;
       if (r.type === 'brushStatus') ev.onBrushStatus?.(r.ready);
       else if (r.type === 'content') ev.onContent(r);
       else if (r.type === 'frame') ev.onFrame(r);
-      else if (r.type === 'error') { console.error('render worker:', r.error); ev.onRenderError?.(r.gen, r.error); }
+      else if (r.type === 'error') {
+        console.error('render worker:', r.error);
+        ev.onRenderError?.(r.gen, r.error);
+      }
     };
-    render.onerror = (e): void => { ev.onFatal(e.message || 'render worker error'); };
+    render.onerror = (e): void => {
+      ev.onFatal(e.message || 'render worker error');
+    };
   }
 
   /** Start the render worker and check that it can draw; null if not. */
   static create(ev: BackendEvents, dpr: number): Promise<OffscreenBackend | null> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       let r: Worker;
-      try { r = new RenderWorker(); } catch { resolve(null); return; }
+      try {
+        r = new RenderWorker();
+      } catch {
+        resolve(null);
+        return;
+      }
       let done = false;
       const fail = (why: string): void => {
         if (done) return;
-        done = true; clearTimeout(timer);
+        done = true;
+        clearTimeout(timer);
         console.info('Offscreen rendering unavailable (' + why + '), drawing on the main thread');
-        r.terminate(); resolve(null);
+        r.terminate();
+        resolve(null);
       };
       const timer = window.setTimeout(() => fail('timeout'), 5000);
       r.onerror = (e): void => fail(e.message || 'worker error');
       r.onmessage = (e: MessageEvent<RResponse>): void => {
         if (e.data.type !== 'ready' || done) return;
-        if (!e.data.ok) { fail(e.data.reason ?? 'unsupported'); return; }
-        done = true; clearTimeout(timer);
+        if (!e.data.ok) {
+          fail(e.data.reason ?? 'unsupported');
+          return;
+        }
+        done = true;
+        clearTimeout(timer);
         resolve(new OffscreenBackend(r, ev));
       };
       r.postMessage({ type: 'init', dpr });
@@ -75,34 +94,56 @@ export class OffscreenBackend {
     g.onmessage = (e: MessageEvent<GResponse>): void => {
       const m = e.data;
       switch (m.type) {
-        case 'stage': this.ev.onStage(m.id, m.stage); break;
-        case 'done': this.busy = false; this.ev.onDone(m); break;
-        case 'detailDone': this.ev.onDetail?.(m); break;
-        case 'quartersDone': this.ev.onQuarters?.(m); break;
-        case 'error': this.busy = false; this.ev.onError(m.id, m.error); break;
+        case 'stage':
+          this.ev.onStage(m.id, m.stage);
+          break;
+        case 'done':
+          this.busy = false;
+          this.ev.onDone(m);
+          break;
+        case 'detailDone':
+          this.ev.onDetail?.(m);
+          break;
+        case 'quartersDone':
+          this.ev.onQuarters?.(m);
+          break;
+        case 'error':
+          this.busy = false;
+          this.ev.onError(m.id, m.error);
+          break;
         case 'exported': {
           const p = this.pending.get(m.id);
           this.pending.delete(m.id);
-          if (p) { if (m.blob) p.resolve(m.blob); else p.reject(new Error(m.error ?? 'export failed')); }
+          if (p) {
+            if (m.blob) p.resolve(m.blob);
+            else p.reject(new Error(m.error ?? 'export failed'));
+          }
           break;
         }
       }
     };
     g.onerror = (e): void => {
-      this.busy = false; this.gen = null;
+      this.busy = false;
+      this.gen = null;
       for (const p of this.pending.values()) p.reject(new Error('generation worker unavailable'));
-      this.pending.clear(); g.terminate();
+      this.pending.clear();
+      g.terminate();
       this.ev.onFatal(e.message || 'generation worker error');
     };
     return g;
   }
 
-  get generating(): boolean { return this.busy; }
+  get generating(): boolean {
+    return this.busy;
+  }
 
   /** Generate `options` as run `id`; a running generation is superseded (its worker is restarted, as generation cannot be interrupted). */
   run(id: number, options: Options, debugStage?: DebugStage): void {
     this.currentRun = id;
-    if (this.gen && this.busy) { this.gen.terminate(); this.gen = null; }
+    if (this.gen && this.busy) {
+      this.gen.terminate();
+      this.gen = null;
+    }
     this.gen ??= this.spawnGen();
     for (const [, p] of this.pending) p.reject(new Error('superseded'));
     this.pending.clear();
@@ -124,20 +165,33 @@ export class OffscreenBackend {
     this.gen.postMessage({ type: 'quarters', id, rect });
   }
 
-  setBrushSources(sources: BrushSources): void { this.render.postMessage({ type: 'brushes', sources }); }
+  setBrushSources(sources: BrushSources): void {
+    this.render.postMessage({ type: 'brushes', sources });
+  }
 
-  setDisplay(display: DisplayOpts): void { this.render.postMessage({ type: 'display', display }); }
+  setDisplay(display: DisplayOpts): void {
+    this.render.postMessage({ type: 'display', display });
+  }
 
-  request(r: FrameRequest): void { this.render.postMessage({ type: 'view', ...r }); }
+  request(r: FrameRequest): void {
+    this.render.postMessage({ type: 'view', ...r });
+  }
 
   /** Build the SVG / JSON of the current world in the generation worker. */
   export(gen: number, kind: 'svg' | 'json', display: DisplayOpts, full = false, width?: number, brushes?: BrushSources): Promise<Blob> {
     return new Promise((resolve, reject) => {
-      if (!this.gen || this.busy || gen !== this.currentRun) { reject(new Error('the requested map is unavailable')); return; }
+      if (!this.gen || this.busy || gen !== this.currentRun) {
+        reject(new Error('the requested map is unavailable'));
+        return;
+      }
       const id = ++this.exportId;
       this.pending.set(id, { resolve, reject });
-      try { this.gen.postMessage({ type: 'export', id, gen, kind, display, full, width, brushes }); }
-      catch (error) { this.pending.delete(id); reject(error); }
+      try {
+        this.gen.postMessage({ type: 'export', id, gen, kind, display, full, width, brushes });
+      } catch (error) {
+        this.pending.delete(id);
+        reject(error);
+      }
     });
   }
 }

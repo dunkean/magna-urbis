@@ -6,21 +6,27 @@ import { stagesForAction, stagesOf, stageForProgress } from '../src/v2/stageRegi
 import { defaultSettings } from '../src/v2/settings';
 import type { TerrainSettings } from '../../rust/bridge/terrain';
 
-const base: TerrainSettings = { source: 'procedural', seed: 'resume', width: 5000, motifSize: 3000, relief: 'mountains', erosion: 1, mountainMix: .5, resolution: 128, procedural: { biome: true, wind: { iterations: 2, transport: .2 } }, coastMask: 255 };
+const base: TerrainSettings = { source: 'procedural', seed: 'resume', width: 5000, motifSize: 3000, relief: 'mountains', erosion: 1, mountainMix: 0.5, resolution: 128, procedural: { biome: true, wind: { iterations: 2, transport: 0.2 } }, coastMask: 255 };
 describe('retained relief dependencies', () => {
   it('keeps regional erosion for changes to the surface, wind, coast finishing and output resolution', () => {
     const before = proceduralSignatures(base);
-    for (const patch of [{ procedural: { ...base.procedural, surfaceN: 128 } }, { erosionTuning: { surfaceIterations: 20 } },
-      { procedural: { ...base.procedural, wind: { iterations: 5, transport: .2 } } }, { procedural: { ...base.procedural, coastIterations: 4 } }, { resolution: 512 }]) {
+    for (const patch of [
+      { procedural: { ...base.procedural, surfaceN: 128 } },
+      { erosionTuning: { surfaceIterations: 20 } },
+      { procedural: { ...base.procedural, wind: { iterations: 5, transport: 0.2 } } },
+      { procedural: { ...base.procedural, coastIterations: 4 } },
+      { resolution: 512 },
+    ]) {
       const after = proceduralSignatures({ ...base, ...patch });
       for (const stage of ['initialize', 'regional', 'regionalFinish', 'reconstruct', 'amplitude', 'ridged'] as const) expect(after.get(stage), stage).toBe(before.get(stage));
     }
-    const wind = proceduralSignatures({ ...base, procedural: { ...base.procedural, wind: { iterations: 5, transport: .2 } } });
-    expect(wind.get('posterior')).toBe(before.get('posterior')); expect(wind.get('wind')).not.toBe(before.get('wind'));
+    const wind = proceduralSignatures({ ...base, procedural: { ...base.procedural, wind: { iterations: 5, transport: 0.2 } } });
+    expect(wind.get('posterior')).toBe(before.get('posterior'));
+    expect(wind.get('wind')).not.toBe(before.get('wind'));
     expect(proceduralSignatures({ ...base, seed: 'new' }).get('initialize')).not.toBe(before.get('initialize'));
-    const compact={...base,procedural:{...base.procedural,preset:'compact' as const}};
-    expect(proceduralSignatures({...compact,phasor:{quality:'detailed'}}).get('initialize')).not.toBe(proceduralSignatures(compact).get('initialize'));
-    expect(proceduralSignatures({...compact,phasor:{intensity:.5}}).get('initialize')).toBe(proceduralSignatures(compact).get('initialize'));
+    const compact = { ...base, procedural: { ...base.procedural, preset: 'compact' as const } };
+    expect(proceduralSignatures({ ...compact, phasor: { quality: 'detailed' } }).get('initialize')).not.toBe(proceduralSignatures(compact).get('initialize'));
+    expect(proceduralSignatures({ ...compact, phasor: { intensity: 0.5 } }).get('initialize')).toBe(proceduralSignatures(compact).get('initialize'));
   });
   it('invalidates from the moved or modified coastal cut, preserving the unchanged prefix', () => {
     expect(coreOperations(base).slice(0, 3)).toEqual(['initialize', 'coastCut', 'regional']);
@@ -42,25 +48,30 @@ describe('retained relief dependencies', () => {
     expect(coast.get('initialize')).toBe(before.get('initialize'));
     expect(coast.get('coasts')).not.toBe(before.get('coasts'));
     expect(proceduralSignatures({ ...neural, islandMode: 'traced:16:01' }).get('coasts')).not.toBe(before.get('coasts'));
-    expect(proceduralSignatures({ ...neural, fidelity: .2 }).get('coasts')).not.toBe(before.get('coasts'));
+    expect(proceduralSignatures({ ...neural, fidelity: 0.2 }).get('coasts')).not.toBe(before.get('coasts'));
     const imported = { ...base, sketch: { version: 1 as const, resolution: 64, processing: 'surface' as const, heights: [1, 2] } };
-    expect(proceduralSignatures({ ...imported, sketch: { ...imported.sketch, heights: [2, 1] } }).get('coasts'))
-      .not.toBe(proceduralSignatures(imported).get('coasts'));
+    expect(proceduralSignatures({ ...imported, sketch: { ...imported.sketch, heights: [2, 1] } }).get('coasts')).not.toBe(proceduralSignatures(imported).get('coasts'));
   });
   it('keeps checkpoint fields independent from the renderer and each new execution', () => {
-    const cache = new TerrainFieldCheckpoints(), source = Float32Array.of(1, 2, 3, 4);
-    cache.put('wind', 'a', source); source[0] = 100;
-    const first = cache.get('wind', 'a')!; expect(first[0]).toBe(1); first[1] = 200;
-    expect(cache.get('wind', 'a')![1]).toBe(2); expect(cache.get('wind', 'b')).toBeUndefined();
-    cache.put('wind', 'b', source); expect(cache.get('wind', 'a')).toBeUndefined();
+    const cache = new TerrainFieldCheckpoints(),
+      source = Float32Array.of(1, 2, 3, 4);
+    cache.put('wind', 'a', source);
+    source[0] = 100;
+    const first = cache.get('wind', 'a')!;
+    expect(first[0]).toBe(1);
+    first[1] = 200;
+    expect(cache.get('wind', 'a')![1]).toBe(2);
+    expect(cache.get('wind', 'b')).toBeUndefined();
+    cache.put('wind', 'b', source);
+    expect(cache.get('wind', 'a')).toBeUndefined();
   });
   it('tracks shared erosion controls even when an earlier consumer is disabled', () => {
-    const disabled={...base,procedural:{...base.procedural,enabled:{regional:false,surface:false}}};
-    const before=proceduralSignatures(disabled);
-    const thermal=proceduralSignatures({...disabled,procedural:{...disabled.procedural,regionalThermal:false}});
+    const disabled = { ...base, procedural: { ...base.procedural, enabled: { regional: false, surface: false } } };
+    const before = proceduralSignatures(disabled);
+    const thermal = proceduralSignatures({ ...disabled, procedural: { ...disabled.procedural, regionalThermal: false } });
     expect(thermal.get('regional')).toBe(before.get('regional'));
     expect(thermal.get('regionalFinish')).not.toBe(before.get('regionalFinish'));
-    const coast=proceduralSignatures({...disabled,erosionTuning:{surfaceIncision:2}});
+    const coast = proceduralSignatures({ ...disabled, erosionTuning: { surfaceIncision: 2 } });
     expect(coast.get('surface')).toBe(before.get('surface'));
     expect(coast.get('coasts')).not.toBe(before.get('coasts'));
   });
@@ -70,8 +81,11 @@ describe('retained relief dependencies', () => {
     expect(stageLed(true, false, 'a', 'a')).toBe('valid');
     expect(stageLed(true, false, 'a', 'b')).toBe('pending');
     expect(stageLed(true, true, 'a', 'a')).toBe('running');
-    const settings = defaultSettings(); settings.runtime = { ...settings.runtime!, source: 'procedural' }; settings.terrain = { procedural: { wind: { iterations: 2, transport: .2 } } };
-    const before = terrainStageValidityKeys(settings); settings.terrain.procedural!.wind!.iterations = 4;
+    const settings = defaultSettings();
+    settings.runtime = { ...settings.runtime!, source: 'procedural' };
+    settings.terrain = { procedural: { wind: { iterations: 2, transport: 0.2 } } };
+    const before = terrainStageValidityKeys(settings);
+    settings.terrain.procedural!.wind!.iterations = 4;
     const wind = terrainStageValidityKeys(settings);
     expect(wind.get('relief-regional')).toBe(before.get('relief-regional'));
     expect(wind.get('relief-aeolian')).not.toBe(before.get('relief-aeolian'));

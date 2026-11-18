@@ -46,16 +46,21 @@ export function encodePng(pixels: Uint8Array | Uint8ClampedArray, w: number, h: 
   const idat = zlibSync(raw, { level: compression });
   const ihdr = new Uint8Array(13);
   const dv = new DataView(ihdr.buffer);
-  dv.setUint32(0, w); dv.setUint32(4, h);
-  ihdr[8] = 8; ihdr[9] = channels === 3 ? 2 : 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  const parts = [
-    Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10),
-    chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', new Uint8Array(0)),
-  ];
+  dv.setUint32(0, w);
+  dv.setUint32(4, h);
+  ihdr[8] = 8;
+  ihdr[9] = channels === 3 ? 2 : 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  const parts = [Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10), chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', new Uint8Array(0))];
   const total = parts.reduce((s, p) => s + p.length, 0);
   const out = new Uint8Array(total);
   let o = 0;
-  for (const p of parts) { out.set(p, o); o += p.length; }
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
   return out;
 }
 
@@ -74,9 +79,14 @@ export function toBase64(b: Uint8Array): string {
   const n = b.length;
   let s = '';
   for (let i = 0; i < n; i += 3) {
-    const a = b[i], c = i + 1 < n ? b[i + 1] : 0, d = i + 2 < n ? b[i + 2] : 0;
+    const a = b[i],
+      c = i + 1 < n ? b[i + 1] : 0,
+      d = i + 2 < n ? b[i + 2] : 0;
     s += B64[a >> 2] + B64[((a & 3) << 4) | (c >> 4)] + (i + 1 < n ? B64[((c & 15) << 2) | (d >> 6)] : '=') + (i + 2 < n ? B64[d & 63] : '=');
-    if (s.length > 8192) { parts.push(s); s = ''; }
+    if (s.length > 8192) {
+      parts.push(s);
+      s = '';
+    }
   }
   parts.push(s);
   return parts.join('');
@@ -90,10 +100,20 @@ function hash2(x: number, y: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-export interface RasterResult { png: Uint8Array; w: number; h: number; /** Raw 8-bit RGB pixels (w*h*3), used by the canvas renderer. */ rgb?: Uint8Array }
-export interface TerrainPixels { w: number; h: number; rgb: Uint8Array }
+export interface RasterResult {
+  png: Uint8Array;
+  w: number;
+  h: number;
+  /** Raw 8-bit RGB pixels (w*h*3), used by the canvas renderer. */ rgb?: Uint8Array;
+}
+export interface TerrainPixels {
+  w: number;
+  h: number;
+  rgb: Uint8Array;
+}
 export interface TerrainRasterOptions {
-  smooth?: boolean; pixels?: number;
+  smooth?: boolean;
+  pixels?: number;
   /** Already sampled continuous surface and unit normals, aligned to output pixels. */
   surface?: Float32Array;
   normals?: { x: Float32Array; y: Float32Array; z: Float32Array };
@@ -111,36 +131,41 @@ export interface TerrainRasterOptions {
  * This opt-in display surface leaves the generator's height samples untouched.
  */
 export function resampleTerrainSurface(height: { w: number; data: Float32Array }, pixels: number): Float32Array {
-  const n = height.w, size = Math.max(2, Math.min(1024, Math.round(pixels)));
-  const indices = new Int32Array(size * 4), weights = new Float64Array(size * 4);
+  const n = height.w,
+    size = Math.max(2, Math.min(1024, Math.round(pixels)));
+  const indices = new Int32Array(size * 4),
+    weights = new Float64Array(size * 4);
   for (let x = 0; x < size; x++) {
-    const coordinate = (x + 0.5) * n / size - 0.5;
-    const base = Math.floor(coordinate), t = coordinate - base, u = 1 - t;
+    const coordinate = ((x + 0.5) * n) / size - 0.5;
+    const base = Math.floor(coordinate),
+      t = coordinate - base,
+      u = 1 - t;
     const offset = x * 4;
-    weights[offset] = u * u * u / 6;
+    weights[offset] = (u * u * u) / 6;
     weights[offset + 1] = (3 * t * t * t - 6 * t * t + 4) / 6;
     weights[offset + 2] = (-3 * t * t * t + 3 * t * t + 3 * t + 1) / 6;
-    weights[offset + 3] = t * t * t / 6;
+    weights[offset + 3] = (t * t * t) / 6;
     for (let k = 0; k < 4; k++) indices[offset + k] = Math.max(0, Math.min(n - 1, base + k - 1));
   }
   const rows = new Float64Array(n * size);
   for (let y = 0; y < n; y++) {
-    const source = y * n, target = y * size;
+    const source = y * n,
+      target = y * size;
     for (let x = 0; x < size; x++) {
       const i = x * 4;
-      rows[target + x] = height.data[source + indices[i]] * weights[i]
-        + height.data[source + indices[i + 1]] * weights[i + 1]
-        + height.data[source + indices[i + 2]] * weights[i + 2]
-        + height.data[source + indices[i + 3]] * weights[i + 3];
+      rows[target + x] = height.data[source + indices[i]] * weights[i] + height.data[source + indices[i + 1]] * weights[i + 1] + height.data[source + indices[i + 2]] * weights[i + 2] + height.data[source + indices[i + 3]] * weights[i + 3];
     }
   }
   const output = new Float32Array(size * size);
   for (let y = 0; y < size; y++) {
-    const i = y * 4, target = y * size;
-    const a = indices[i] * size, b = indices[i + 1] * size, c = indices[i + 2] * size, d = indices[i + 3] * size;
+    const i = y * 4,
+      target = y * size;
+    const a = indices[i] * size,
+      b = indices[i + 1] * size,
+      c = indices[i + 2] * size,
+      d = indices[i + 3] * size;
     for (let x = 0; x < size; x++) {
-      output[target + x] = rows[a + x] * weights[i] + rows[b + x] * weights[i + 1]
-        + rows[c + x] * weights[i + 2] + rows[d + x] * weights[i + 3];
+      output[target + x] = rows[a + x] * weights[i] + rows[b + x] * weights[i + 1] + rows[c + x] * weights[i + 2] + rows[d + x] * weights[i + 3];
     }
   }
   return output;
@@ -164,23 +189,32 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
     landMax = vals.length ? Math.max(1, vals[Math.floor(vals.length * 0.99)]) : 1;
   }
   const sampleUp = options.pixels === undefined ? up : W / n;
-  if (!options.smooth && !options.surface) for (let y = 0; y < H; y++) {
-    const fy = Math.min(n - 1.0001, Math.max(0, (y + 0.5) / sampleUp - 0.5));
-    const y0 = Math.floor(fy), ty = fy - y0;
-    for (let x = 0; x < W; x++) {
-      const fx = Math.min(n - 1.0001, Math.max(0, (x + 0.5) / sampleUp - 0.5));
-      const x0 = Math.floor(fx), tx = fx - x0;
-      const a = hg.data[y0 * n + x0], b = hg.data[y0 * n + x0 + 1], c = hg.data[(y0 + 1) * n + x0], d = hg.data[(y0 + 1) * n + x0 + 1];
-      hs[y * W + x] = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+  if (!options.smooth && !options.surface)
+    for (let y = 0; y < H; y++) {
+      const fy = Math.min(n - 1.0001, Math.max(0, (y + 0.5) / sampleUp - 0.5));
+      const y0 = Math.floor(fy),
+        ty = fy - y0;
+      for (let x = 0; x < W; x++) {
+        const fx = Math.min(n - 1.0001, Math.max(0, (x + 0.5) / sampleUp - 0.5));
+        const x0 = Math.floor(fx),
+          tx = fx - x0;
+        const a = hg.data[y0 * n + x0],
+          b = hg.data[y0 * n + x0 + 1],
+          c = hg.data[(y0 + 1) * n + x0],
+          d = hg.data[(y0 + 1) * n + x0 + 1];
+        hs[y * W + x] = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+      }
     }
-  }
   const pxM = world.mapSize / W;
   const slopes: number[] = [];
-  if (options.exaggeration === undefined) for (let y = 1; y < H - 1; y += 3) for (let x = 1; x < W - 1; x += 3) {
-    if (hs[y * W + x] <= 0) continue;
-    const gx = (hs[y * W + x + 1] - hs[y * W + x - 1]) / (2 * pxM), gy = (hs[(y + 1) * W + x] - hs[(y - 1) * W + x]) / (2 * pxM);
-    slopes.push(Math.hypot(gx, gy));
-  }
+  if (options.exaggeration === undefined)
+    for (let y = 1; y < H - 1; y += 3)
+      for (let x = 1; x < W - 1; x += 3) {
+        if (hs[y * W + x] <= 0) continue;
+        const gx = (hs[y * W + x + 1] - hs[y * W + x - 1]) / (2 * pxM),
+          gy = (hs[(y + 1) * W + x] - hs[(y - 1) * W + x]) / (2 * pxM);
+        slopes.push(Math.hypot(gx, gy));
+      }
   slopes.sort((a, b) => a - b);
   const p90 = slopes[Math.floor(slopes.length * 0.9)] || 0.01;
   const exag = options.lighting?.exaggeration ?? options.exaggeration ?? Math.max(1.2, Math.min(6, 0.3 / p90));
@@ -190,7 +224,8 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
     if (t <= stops[0].t) return stops[0].c;
     for (let i = 1; i < stops.length; i++) {
       if (t <= stops[i].t) {
-        const a = stops[i - 1], b = stops[i];
+        const a = stops[i - 1],
+          b = stops[i];
         const u = (t - a.t) / (b.t - a.t);
         return [a.c[0] + (b.c[0] - a.c[0]) * u, a.c[1] + (b.c[1] - a.c[1]) * u, a.c[2] + (b.c[2] - a.c[2]) * u];
       }
@@ -206,19 +241,29 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
   const [lx, ly, lz] = lights?.primary ?? [-0.5, -0.5, 0.7071];
   const [l2x, l2y, l2z] = lights?.secondary ?? [0.2, -0.75, 0.63];
   const flat = lights?.flat ?? 0.7071;
-  const shade = pal.shade * (options.lighting ? options.lighting.enabled ? options.lighting.strength : 0 : 1);
+  const shade = pal.shade * (options.lighting ? (options.lighting.enabled ? options.lighting.strength : 0) : 1);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
       const hv = hs[i];
       const o = i * 3;
-      if (hv <= 0 && !seaColors) { out[o] = paper[0]; out[o + 1] = paper[1]; out[o + 2] = paper[2]; continue; }
-      const xl = x > 0 ? x - 1 : x, xr = x < W - 1 ? x + 1 : x, yu = y > 0 ? y - 1 : y, yd = y < H - 1 ? y + 1 : y;
+      if (hv <= 0 && !seaColors) {
+        out[o] = paper[0];
+        out[o + 1] = paper[1];
+        out[o + 2] = paper[2];
+        continue;
+      }
+      const xl = x > 0 ? x - 1 : x,
+        xr = x < W - 1 ? x + 1 : x,
+        yu = y > 0 ? y - 1 : y,
+        yd = y < H - 1 ? y + 1 : y;
       const normals = options.normals;
-      const gx = normals ? -normals.x[i] / Math.max(1e-8, normals.z[i]) * exag : ((hs[y * W + xr] - hs[y * W + xl]) / ((xr - xl) * pxM)) * exag;
-      const gy = normals ? -normals.y[i] / Math.max(1e-8, normals.z[i]) * exag : ((hs[yd * W + x] - hs[yu * W + x]) / ((yd - yu) * pxM)) * exag;
+      const gx = normals ? (-normals.x[i] / Math.max(1e-8, normals.z[i])) * exag : ((hs[y * W + xr] - hs[y * W + xl]) / ((xr - xl) * pxM)) * exag;
+      const gy = normals ? (-normals.y[i] / Math.max(1e-8, normals.z[i])) * exag : ((hs[yd * W + x] - hs[yu * W + x]) / ((yd - yu) * pxM)) * exag;
       const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1);
-      const nx = -gx * inv, ny = -gy * inv, nz = inv;
+      const nx = -gx * inv,
+        ny = -gy * inv,
+        nz = inv;
       const s1 = nx * lx + ny * ly + nz * lz;
       const s2 = nx * l2x + ny * l2y + nz * l2z;
       const sh = 0.75 * s1 + 0.25 * s2;
@@ -244,15 +289,15 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
         const dn = Math.max(0, 1 - f) / 0.2;
         if (dn > 0.22) {
           const th = 0.8 + Math.min(1, dn) * 1.9;
-          if (((x + y) % HP) < th) a = Math.min(1, (dn - 0.22) * 2.2);
-          if (dn > 0.8 && ((((x - y) % HP) + HP) % HP) < th * 0.8) a = Math.max(a, Math.min(1, (dn - 0.8) * 3));
+          if ((x + y) % HP < th) a = Math.min(1, (dn - 0.22) * 2.2);
+          if (dn > 0.8 && (((x - y) % HP) + HP) % HP < th * 0.8) a = Math.max(a, Math.min(1, (dn - 0.8) * 3));
         }
         a *= pal.hatch * 0.85;
         k *= g;
       }
-      out[o] = Math.max(0, Math.min(255, (c[0] * k) * (1 - a) + inkRgb[0] * a));
-      out[o + 1] = Math.max(0, Math.min(255, (c[1] * k) * (1 - a) + inkRgb[1] * a));
-      out[o + 2] = Math.max(0, Math.min(255, (c[2] * k) * (1 - a) + inkRgb[2] * a));
+      out[o] = Math.max(0, Math.min(255, c[0] * k * (1 - a) + inkRgb[0] * a));
+      out[o + 1] = Math.max(0, Math.min(255, c[1] * k * (1 - a) + inkRgb[1] * a));
+      out[o + 2] = Math.max(0, Math.min(255, c[2] * k * (1 - a) + inkRgb[2] * a));
     }
   }
   return { w: W, h: H, rgb: out };

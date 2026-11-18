@@ -7,9 +7,26 @@
 import type { CityBuildings, CityLod, CityScene, CityView } from './cityCanvas';
 import type { CityGlMesh } from './cityGlMesh';
 
-export interface CityGlBox { minX: number; minY: number; maxX: number; maxY: number }
-export interface CityGlDrawOptions { viewport: CityGlBox; mpp: number; lod: CityLod; view: CityView; outlines?: boolean; buildings?: boolean }
-export interface CityGlFrame { drawCalls: number; instances: number; triangles: number; cpuMs: number }
+export interface CityGlBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+export interface CityGlDrawOptions {
+  viewport: CityGlBox;
+  mpp: number;
+  lod: CityLod;
+  view: CityView;
+  outlines?: boolean;
+  buildings?: boolean;
+}
+export interface CityGlFrame {
+  drawCalls: number;
+  instances: number;
+  triangles: number;
+  cpuMs: number;
+}
 
 const FILL_VS = `#version 300 es
 in vec2 aPos; in uint aFeature;
@@ -44,8 +61,13 @@ void main() { if (vColor.a <= 0.0) discard; outColor = vec4(vColor.rgb * vColor.
 
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const program = gl.createProgram()!;
-  for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
-    const shader = gl.createShader(type)!; gl.shaderSource(shader, source); gl.compileShader(shader);
+  for (const [type, source] of [
+    [gl.VERTEX_SHADER, vs],
+    [gl.FRAGMENT_SHADER, fs],
+  ] as const) {
+    const shader = gl.createShader(type)!;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'shader');
     gl.attachShader(program, shader);
   }
@@ -56,76 +78,127 @@ function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
 
 export class CityGlRenderer {
   readonly gl: WebGL2RenderingContext;
-  private fill: WebGLProgram; private street: WebGLProgram;
-  private fillVao?: WebGLVertexArrayObject; private streetVao?: WebGLVertexArrayObject; private lineBuffer?: WebGLBuffer; private triangleBuffer?: WebGLBuffer;
-  private colors: WebGLTexture; private mesh?: CityGlMesh;
+  private fill: WebGLProgram;
+  private street: WebGLProgram;
+  private fillVao?: WebGLVertexArrayObject;
+  private streetVao?: WebGLVertexArrayObject;
+  private lineBuffer?: WebGLBuffer;
+  private triangleBuffer?: WebGLBuffer;
+  private colors: WebGLTexture;
+  private mesh?: CityGlMesh;
   private buffers: WebGLBuffer[] = [];
   constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, premultipliedAlpha: true, alpha: true }) as WebGL2RenderingContext | null;
     if (!gl) throw new Error('WebGL2 indisponible');
     this.gl = gl;
-    this.fill = compile(gl, FILL_VS, FS); this.street = compile(gl, STREET_VS, FS);
+    this.fill = compile(gl, FILL_VS, FS);
+    this.street = compile(gl, STREET_VS, FS);
     this.colors = gl.createTexture()!;
   }
   /** Upload once per plan. Returns the CPU time spent in the upload calls. */
   upload(mesh: CityGlMesh): number {
-    const gl = this.gl, start = performance.now();
+    const gl = this.gl,
+      start = performance.now();
     for (const b of this.buffers) gl.deleteBuffer(b);
     this.buffers = [];
-    const buffer = (target: number, data: ArrayBufferView): WebGLBuffer => { const b = gl.createBuffer()!; gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW); this.buffers.push(b); return b; };
-    this.fillVao = gl.createVertexArray()!; gl.bindVertexArray(this.fillVao);
+    const buffer = (target: number, data: ArrayBufferView): WebGLBuffer => {
+      const b = gl.createBuffer()!;
+      gl.bindBuffer(target, b);
+      gl.bufferData(target, data, gl.STATIC_DRAW);
+      this.buffers.push(b);
+      return b;
+    };
+    this.fillVao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.fillVao);
     buffer(gl.ARRAY_BUFFER, mesh.positions);
-    let loc = gl.getAttribLocation(this.fill, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    let loc = gl.getAttribLocation(this.fill, 'aPos');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     buffer(gl.ARRAY_BUFFER, mesh.vertexFeatures);
-    loc = gl.getAttribLocation(this.fill, 'aFeature'); gl.enableVertexAttribArray(loc); gl.vertexAttribIPointer(loc, 1, gl.UNSIGNED_INT, 0, 0);
+    loc = gl.getAttribLocation(this.fill, 'aFeature');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribIPointer(loc, 1, gl.UNSIGNED_INT, 0, 0);
     this.triangleBuffer = buffer(gl.ELEMENT_ARRAY_BUFFER, mesh.triangles);
     gl.bindVertexArray(null);
     this.lineBuffer = buffer(gl.ELEMENT_ARRAY_BUFFER, mesh.lines);
-    this.streetVao = gl.createVertexArray()!; gl.bindVertexArray(this.streetVao);
+    this.streetVao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.streetVao);
     buffer(gl.ARRAY_BUFFER, mesh.segments);
-    loc = gl.getAttribLocation(this.street, 'aSeg'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(loc, 1);
-    loc = gl.getAttribLocation(this.street, 'aWidthRank'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(loc, 1);
+    loc = gl.getAttribLocation(this.street, 'aSeg');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 24, 0);
+    gl.vertexAttribDivisor(loc, 1);
+    loc = gl.getAttribLocation(this.street, 'aWidthRank');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 24, 16);
+    gl.vertexAttribDivisor(loc, 1);
     buffer(gl.ARRAY_BUFFER, mesh.segmentFeatures);
-    loc = gl.getAttribLocation(this.street, 'aFeature'); gl.enableVertexAttribArray(loc); gl.vertexAttribIPointer(loc, 1, gl.UNSIGNED_INT, 0, 0); gl.vertexAttribDivisor(loc, 1);
+    loc = gl.getAttribLocation(this.street, 'aFeature');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribIPointer(loc, 1, gl.UNSIGNED_INT, 0, 0);
+    gl.vertexAttribDivisor(loc, 1);
     gl.bindVertexArray(null);
     this.mesh = mesh;
     return performance.now() - start;
   }
   /** Per-feature RGBA (feature ids of the mesh), 4096 features per texture row. */
   setColors(rgba: Uint8Array): void {
-    const gl = this.gl, rows = Math.max(1, Math.ceil(rgba.length / 4 / 4096)), padded = new Uint8Array(rows * 4096 * 4); padded.set(rgba);
+    const gl = this.gl,
+      rows = Math.max(1, Math.ceil(rgba.length / 4 / 4096)),
+      padded = new Uint8Array(rows * 4096 * 4);
+    padded.set(rgba);
     gl.bindTexture(gl.TEXTURE_2D, this.colors);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 4096, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, padded);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   }
   draw(o: CityGlDrawOptions): CityGlFrame {
-    const gl = this.gl, mesh = this.mesh, start = performance.now(), frame: CityGlFrame = { drawCalls: 0, instances: 0, triangles: 0, cpuMs: 0 };
+    const gl = this.gl,
+      mesh = this.mesh,
+      start = performance.now(),
+      frame: CityGlFrame = { drawCalls: 0, instances: 0, triangles: 0, cpuMs: 0 };
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
     if (!mesh) return frame;
-    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    const { viewport: v } = o, sx = 2 / (v.maxX - v.minX), sy = -2 / (v.maxY - v.minY);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    const { viewport: v } = o,
+      sx = 2 / (v.maxX - v.minX),
+      sy = -2 / (v.maxY - v.minY);
     const view = [sx, sy, -1 - (v.minX - mesh.origin.x) * sx, 1 - (v.minY - mesh.origin.y) * sy];
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.colors);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.colors);
     // Fills and outlines.
     gl.useProgram(this.fill);
-    gl.uniform4fv(gl.getUniformLocation(this.fill, 'uView'), view); gl.uniform1i(gl.getUniformLocation(this.fill, 'uColors'), 0);
+    gl.uniform4fv(gl.getUniformLocation(this.fill, 'uView'), view);
+    gl.uniform1i(gl.getUniformLocation(this.fill, 'uColors'), 0);
     const tint = gl.getUniformLocation(this.fill, 'uTint');
     gl.bindVertexArray(this.fillVao!);
     const tris = (layer: keyof CityGlMesh['fillRanges']): void => {
-      const r = mesh.fillRanges[layer]; if (!r.count) return;
+      const r = mesh.fillRanges[layer];
+      if (!r.count) return;
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.triangleBuffer!);
-      gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4); frame.drawCalls++; frame.triangles += r.count / 3;
+      gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
+      frame.drawCalls++;
+      frame.triangles += r.count / 3;
     };
     const lines = (layer: keyof CityGlMesh['lineRanges'], rgba: number[]): void => {
-      const r = mesh.lineRanges[layer]; if (!r.count) return;
-      gl.uniform4fv(tint, rgba); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lineBuffer!);
-      gl.drawElements(gl.LINES, r.count, gl.UNSIGNED_INT, r.start * 4); frame.drawCalls++;
+      const r = mesh.lineRanges[layer];
+      if (!r.count) return;
+      gl.uniform4fv(tint, rgba);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lineBuffer!);
+      gl.drawElements(gl.LINES, r.count, gl.UNSIGNED_INT, r.start * 4);
+      frame.drawCalls++;
     };
     gl.uniform4fv(tint, [0, 0, 0, 0]);
-    const near = o.lod === 'near' || o.lod === 'close', parcels = o.view !== 'tissue' && (near || o.view === 'roles' || o.view === 'uses');
+    const near = o.lod === 'near' || o.lod === 'close',
+      parcels = o.view !== 'tissue' && (near || o.view === 'roles' || o.view === 'uses');
     if (o.lod === 'far') tris('footprint');
-    else { tris('blocks'); if (parcels) tris('parcels'); }
+    else {
+      tris('blocks');
+      if (parcels) tris('parcels');
+    }
     const buildings = (o.buildings ?? true) && near && (o.view === 'buildings' || o.view === 'roles');
     if (buildings) tris('buildings');
     // Outlines share the vertex buffer but need the line index buffer.
@@ -136,43 +209,63 @@ export class CityGlRenderer {
     }
     gl.bindVertexArray(null);
     // Streets: casing then fill, one instanced call each, rank threshold by LOD.
-    const maxRank = o.lod === 'far' ? 1 : o.lod === 'mid' ? 2 : 9, first = mesh.rankStart[maxRank], count = mesh.segments.length / 6 - first;
+    const maxRank = o.lod === 'far' ? 1 : o.lod === 'mid' ? 2 : 9,
+      first = mesh.rankStart[maxRank],
+      count = mesh.segments.length / 6 - first;
     if (count > 0) {
-      gl.useProgram(this.street); gl.bindVertexArray(this.streetVao!);
-      gl.uniform4fv(gl.getUniformLocation(this.street, 'uView'), view); gl.uniform1i(gl.getUniformLocation(this.street, 'uColors'), 0);
+      gl.useProgram(this.street);
+      gl.bindVertexArray(this.streetVao!);
+      gl.uniform4fv(gl.getUniformLocation(this.street, 'uView'), view);
+      gl.uniform1i(gl.getUniformLocation(this.street, 'uColors'), 0);
       gl.uniform1f(gl.getUniformLocation(this.street, 'uMpp'), o.mpp);
       gl.uniform1f(gl.getUniformLocation(this.street, 'uEdgePx'), o.lod === 'far' ? 0 : o.lod === 'mid' ? 0.7 : 0.9);
       // Instance offset: rebase the per-instance attributes (WebGL2 has no baseInstance).
       const rebase = (offset: number): void => {
         const loc = (n: string): number => gl.getAttribLocation(this.street, n);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers[this.buffers.length - 2]);
-        gl.vertexAttribPointer(loc('aSeg'), 4, gl.FLOAT, false, 24, offset * 24); gl.vertexAttribPointer(loc('aWidthRank'), 2, gl.FLOAT, false, 24, offset * 24 + 16);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers[this.buffers.length - 1]); gl.vertexAttribIPointer(loc('aFeature'), 1, gl.UNSIGNED_INT, 0, offset * 4);
+        gl.vertexAttribPointer(loc('aSeg'), 4, gl.FLOAT, false, 24, offset * 24);
+        gl.vertexAttribPointer(loc('aWidthRank'), 2, gl.FLOAT, false, 24, offset * 24 + 16);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers[this.buffers.length - 1]);
+        gl.vertexAttribIPointer(loc('aFeature'), 1, gl.UNSIGNED_INT, 0, offset * 4);
       };
       rebase(first);
       for (const casing of o.lod === 'far' ? [0] : [1, 0]) {
         gl.uniform1f(gl.getUniformLocation(this.street, 'uCasing'), casing);
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count); frame.drawCalls++; frame.instances += count;
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+        frame.drawCalls++;
+        frame.instances += count;
       }
       gl.bindVertexArray(null);
     }
     frame.cpuMs = performance.now() - start;
     return frame;
   }
-  dispose(): void { const gl = this.gl; for (const b of this.buffers) gl.deleteBuffer(b); gl.deleteTexture(this.colors); gl.deleteProgram(this.fill); gl.deleteProgram(this.street); }
+  dispose(): void {
+    const gl = this.gl;
+    for (const b of this.buffers) gl.deleteBuffer(b);
+    gl.deleteTexture(this.colors);
+    gl.deleteProgram(this.fill);
+    gl.deleteProgram(this.street);
+  }
 }
 
 // ---------------------------------------------------------------- colours
-const hex = (c: string, a = 1): [number, number, number, number] => { const v = parseInt(c.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255, Math.round(a * 255)]; };
+const hex = (c: string, a = 1): [number, number, number, number] => {
+  const v = parseInt(c.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255, Math.round(a * 255)];
+};
 const ZONES: Record<string, string> = { core: '#dfb973', middle: '#bfa4ca', edge: '#91bdc5', faubourg: '#a0bc84', village: '#dfb973' };
 const OPEN: Record<string, string> = { garden: '#a8bc89', reserve: '#cbc2a8', common: '#adc5bf', market: '#ead39a', place: '#e6d1a5' };
 /** Colour table of a view (an approximation of drawCity's palette, enough to judge cost and legibility). */
 export function cityGlColors(scene: CityScene, buildings: CityBuildings | undefined, mesh: CityGlMesh, view: CityView): Uint8Array {
-  const out = new Uint8Array(mesh.features.total * 4), put = (id: number, c: [number, number, number, number]): void => { out.set(c, id * 4); };
+  const out = new Uint8Array(mesh.features.total * 4),
+    put = (id: number, c: [number, number, number, number]): void => {
+      out.set(c, id * 4);
+    };
   scene.footprint.forEach((_, i) => put(mesh.features.footprint + i, hex('#cfb589', 0.9)));
   scene.blocks.forEach((b, i) => {
     const reserve = b.kind.startsWith('reserve');
-    put(mesh.features.blocks + i, hex(reserve ? '#cbc2a8' : b.kind === 'common' ? '#adc5bf' : b.kind === 'place' ? '#e8d6ae' : view === 'buildings' ? '#ece2cb' : ZONES[b.zone] ?? ZONES.core, b.peripheral && view !== 'buildings' ? 0.6 : 1));
+    put(mesh.features.blocks + i, hex(reserve ? '#cbc2a8' : b.kind === 'common' ? '#adc5bf' : b.kind === 'place' ? '#e8d6ae' : view === 'buildings' ? '#ece2cb' : (ZONES[b.zone] ?? ZONES.core), b.peripheral && view !== 'buildings' ? 0.6 : 1));
   });
   scene.parcels.forEach((p, i) => {
     const open = OPEN[p.use];

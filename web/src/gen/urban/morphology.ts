@@ -11,15 +11,42 @@ export type Zone = 'core' | 'middle' | 'edge' | 'faubourg' | 'village';
 export type Range = [number, number];
 
 /** Street operators (URBAN_MORPHOLOGY.md §2). Level 1 ops shape the primary network, level 2 ops split quarters. */
-export type StreetOpId =
-  | 'radials' | 'rings' | 'organicInfill' | 'grid' | 'axis' | 'gateToGate' | 'culDeSacTree' | 'closes'
-  | 'wardWalls' | 'defensiveKinks' | 'ribbon' | 'spiral' | 'switchbacks' | 'extraRadials' | 'roji';
+export type StreetOpId = 'radials' | 'rings' | 'organicInfill' | 'grid' | 'axis' | 'gateToGate' | 'culDeSacTree' | 'closes' | 'wardWalls' | 'defensiveKinks' | 'ribbon' | 'spiral' | 'switchbacks' | 'extraRadials' | 'roji';
 export type PlotOpId = 'burgage' | 'courtyard' | 'siheyuan' | 'machiya' | 'compound' | 'garden' | 'wholeBlock';
-export type BuildingOpId = 'streetFrontRow' | 'courtyardHouse' | 'shopRow' | 'pavilionCompound' | 'yashiki' | 'machiya' | 'detached' | 'treeHouse' | 'hall' | 'longhouse' | 'kancha' | 'yardHouse' | 'tomb' | 'venetian' | 'konak' | 'sahelCompound' | 'giebelhaus' | 'hanok' | 'gnome' | 'primitive' | 'fungalHouse' | 'duergarHall' | 'perimeterBlock' | 'streetFrontRowExperimental';
+export type BuildingOpId =
+  | 'streetFrontRow'
+  | 'courtyardHouse'
+  | 'shopRow'
+  | 'pavilionCompound'
+  | 'yashiki'
+  | 'machiya'
+  | 'detached'
+  | 'treeHouse'
+  | 'hall'
+  | 'longhouse'
+  | 'kancha'
+  | 'yardHouse'
+  | 'tomb'
+  | 'venetian'
+  | 'konak'
+  | 'sahelCompound'
+  | 'giebelhaus'
+  | 'hanok'
+  | 'gnome'
+  | 'primitive'
+  | 'fungalHouse'
+  | 'duergarHall'
+  | 'perimeterBlock'
+  | 'streetFrontRowExperimental';
 export type RoofKind = 'gable' | 'hip' | 'flat' | 'dome' | 'pyramidal' | 'pagoda' | 'thatch-round' | 'none' | 'tiled-hip' | 'conical' | 'barrel' | 'terraced';
 export type Material = 'timber' | 'stone' | 'coral-stone' | 'brick' | 'mud' | 'wood' | 'paper-wood' | 'living-wood' | 'rock' | 'thatch' | 'hide' | 'felt' | 'bark' | 'adobe' | 'turf' | 'earth' | 'wattle' | 'dark-stone' | 'fungal';
 /** Architecture of a building type (metadata for later rendering / 3D). */
-export interface ArchSpec { typology: string; roof: RoofKind; storeys: Range; material: Material }
+export interface ArchSpec {
+  typology: string;
+  roof: RoofKind;
+  storeys: Range;
+  material: Material;
+}
 
 export interface MorphologyParams {
   id: MorphologyId;
@@ -177,9 +204,7 @@ const EO: MorphologyParams = {
   fieldWavelength: 150,
   gridSpacing: [70, 110],
   gridSkew: 0,
-  blockSize: {
-    core: [2200, 6500], middle: [3500, 10000], edge: [5000, 15000], faubourg: [4500, 14000], village: [7000, 22000],
-  },
+  blockSize: { core: [2200, 6500], middle: [3500, 10000], edge: [5000, 15000], faubourg: [4500, 14000], village: [7000, 22000] },
   minBlock: 700,
   minWidth: 17,
   widthByRank: [8, 6.2, 4.6, 3.2, 2.5],
@@ -220,9 +245,7 @@ const BASTIDE: MorphologyParams = {
   fieldWavelength: 400,
   gridSpacing: [52, 96],
   gridSkew: 0.03,
-  blockSize: {
-    core: [2500, 5500], middle: [2500, 5500], edge: [3000, 7000], faubourg: [4500, 14000], village: [6000, 20000],
-  },
+  blockSize: { core: [2500, 5500], middle: [2500, 5500], edge: [3000, 7000], faubourg: [4500, 14000], village: [6000, 20000] },
   minBlock: 600,
   widthByRank: [8, 7, 5, 3.4, 2.5],
   deadEndRatio: 0.05,
@@ -238,9 +261,9 @@ const BASTIDE: MorphologyParams = {
 };
 
 export const MORPHOLOGIES: Record<string, MorphologyParams> = {
-  'european-organic': EO, bastide: BASTIDE,
-  'perimeter-block': { ...EO, id: 'perimeter-block', plotOp: 'burgage', buildingOp: 'perimeterBlock',
-    wideLotChance: 0.3, houseVariation: 0, blockCourtShare: [0.12, 0.45], blockSolidChance: 0.08, blockInfillChance: 0.22 },
+  'european-organic': EO,
+  bastide: BASTIDE,
+  'perimeter-block': { ...EO, id: 'perimeter-block', plotOp: 'burgage', buildingOp: 'perimeterBlock', wideLotChance: 0.3, houseVariation: 0, blockCourtShare: [0.12, 0.45], blockSolidChance: 0.08, blockInfillChance: 0.22 },
 };
 
 export { EO as EO_BASE };
@@ -270,7 +293,7 @@ export function resolveMorph(ref: MorphRef | undefined, fallback = 'european-org
 export function blendParams(a: MorphologyParams, b: MorphologyParams, t: number): MorphologyParams {
   const mix = (x: unknown, y: unknown): unknown => {
     if (typeof x === 'number' && typeof y === 'number') return x + (y - x) * t;
-    if (Array.isArray(x) && Array.isArray(y) && x.every((v) => typeof v === 'number') && x.length === y.length) return x.map((v, i) => mix(v, y[i]));
+    if (Array.isArray(x) && Array.isArray(y) && x.every(v => typeof v === 'number') && x.length === y.length) return x.map((v, i) => mix(v, y[i]));
     if (isObj(x) && isObj(y)) {
       const o: Plain = {};
       for (const k of Object.keys(x)) o[k] = k in y ? mix(x[k], y[k]) : x[k];
@@ -294,21 +317,20 @@ export function applySprawl(m: MorphologyParams, sprawl: number): MorphologyPara
   if (Math.abs(s - 1) < 1e-6) return m;
   const f = Math.log2(s);
   const zones = Object.keys(m.density) as Zone[];
-  const per = <T>(rec: Record<Zone, T>, fn: (v: T, z: Zone) => T): Record<Zone, T> => Object.fromEntries(zones.map((z) => [z, fn(rec[z], z)])) as Record<Zone, T>;
+  const per = <T>(rec: Record<Zone, T>, fn: (v: T, z: Zone) => T): Record<Zone, T> => Object.fromEntries(zones.map(z => [z, fn(rec[z], z)])) as Record<Zone, T>;
   const rng = (r: Range, k: number, lo = 0, hi = Infinity): Range => [Math.max(lo, Math.min(hi, r[0] * k)), Math.max(lo, Math.min(hi, r[1] * k))];
   const covK = 1 - 0.24 * f;
   return {
     ...m,
-    density: per(m.density, (v) => v / s),
-    coverage: per(m.coverage, (r) => rng(r, covK, 0.05, 0.97)),
-    infill: per(m.infill, (v) => Math.max(0, Math.min(1, v * (1 - 0.3 * f)))),
-    frontage: per(m.frontage, (r) => rng(r, 1 + 0.32 * f, 3.5)),
-    plotDepth: per(m.plotDepth, (r) => rng(r, 1 + 0.22 * f, 8)),
+    density: per(m.density, v => v / s),
+    coverage: per(m.coverage, r => rng(r, covK, 0.05, 0.97)),
+    infill: per(m.infill, v => Math.max(0, Math.min(1, v * (1 - 0.3 * f)))),
+    frontage: per(m.frontage, r => rng(r, 1 + 0.32 * f, 3.5)),
+    plotDepth: per(m.plotDepth, r => rng(r, 1 + 0.22 * f, 8)),
     // (a compact town keeps its blocks and courtyard lots nearly as they are: more of every lot is built)
-    blockSize: per(m.blockSize, (r) => rng(r, 1 + (f > 0 ? 0.45 : 0.1) * f, 300)),
-    sideGap: per(m.sideGap, (r) => (f > 0 ? [r[0] + 0.8 * f, r[1] + 1.8 * f] : [r[0] * (1 + f), r[1] * (1 + 0.7 * f)])),
-    setback: per(m.setback, (r) => (f > 0 ? [r[0] + 0.6 * f, r[1] + 2 * f] : [r[0] * (1 + f), r[1] * (1 + 0.7 * f)])),
-    houseArea: per(m.houseArea, (r) => rng(r, 1 + (f > 0 ? 0.25 : 0.12) * f, 30)),
+    blockSize: per(m.blockSize, r => rng(r, 1 + (f > 0 ? 0.45 : 0.1) * f, 300)),
+    sideGap: per(m.sideGap, r => (f > 0 ? [r[0] + 0.8 * f, r[1] + 1.8 * f] : [r[0] * (1 + f), r[1] * (1 + 0.7 * f)])),
+    setback: per(m.setback, r => (f > 0 ? [r[0] + 0.6 * f, r[1] + 2 * f] : [r[0] * (1 + f), r[1] * (1 + 0.7 * f)])),
+    houseArea: per(m.houseArea, r => rng(r, 1 + (f > 0 ? 0.25 : 0.12) * f, 30)),
   };
 }
-

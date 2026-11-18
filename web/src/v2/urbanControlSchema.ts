@@ -17,49 +17,410 @@ export interface UrbanCatalogue {
 export const urbanCatalogue = catalogueJson as unknown as UrbanCatalogue;
 export const URBAN_ZONES = ['core', 'middle', 'edge', 'faubourg', 'village'] as const;
 export type UrbanControlSection = 'layout' | 'footprint' | 'growth' | 'streets' | 'fortifications' | 'ports' | 'programme' | 'parcels' | 'placement' | 'house' | 'workshop' | 'quarter' | 'block' | 'parcel' | 'building' | 'advanced';
-export interface UrbanParameterField extends ParameterField { section: UrbanControlSection; nullable?: boolean }
+export interface UrbanParameterField extends ParameterField {
+  section: UrbanControlSection;
+  nullable?: boolean;
+}
 export const urbanFieldNames: Record<string, readonly [string, string]> = {
-  culture: ['Culture', 'Culture'], preset: ['Morphology preset', 'Préréglage morphologique'], recipe: ['Recipe', 'Recette'], zone: ['Growth zone', 'Zone de croissance'], density: ['Density multiplier', 'Multiplicateur de densité'],
-  axisAlignment: ['Regional axis alignment', 'Alignement des axes régionaux'], mixCulture: ['Influencing culture', 'Culture d’influence'], mixMode: ['Culture mixture distribution', 'Répartition du mélange culturel'], mixShare: ['Influence share', 'Part de l’influence'], mixAngle: ['Sector angle', 'Angle des secteurs'],
-  exitTreatment: ['Road exits', 'Sorties routières'], peripheralRoad: ['Peripheral road', 'Voie périphérique'], siteAdaptation: ['Site adaptation', 'Adaptation au site'], scope: ['Generation scope', 'Périmètre de génération'], settlementForm: ['Settlement form', 'Forme du lieu'], suburbs: ['Suburbs', 'Faubourgs'], phases: ['Growth phases (0 = cultural)', 'Phases de croissance (0 = culturel)'], count: ['District count', 'Nombre de quartiers'], rings: ['Growth rings', 'Couronnes de croissance'], radius: ['Radius (0 = automatic)', 'Rayon (0 = automatique)'], radiusScale: ['Radius multiplier', 'Multiplicateur de rayon'], placement: ['District placement', 'Disposition des quartiers'], monument: ['Monument reservation', 'Réserve monumentale'],
-  mechanism: ['Growth mechanism', 'Mécanisme de croissance'], family: ['Footprint family', 'Famille d’emprise'], budget: ['Footprint budget', 'Budget d’emprise'], grossDensity: ['People per hectare (0 = cultural)', 'Habitants par hectare (0 = culturel)'], aspect: ['Aspect ratio', 'Rapport d’aspect'], orientation: ['Orientation', 'Orientation'], nuclei: ['Growth nuclei', 'Noyaux de croissance'], irregularity: ['Boundary irregularity', 'Irrégularité du contour'], anisotropy: ['Growth anisotropy', 'Anisotropie de croissance'], separation: ['Nucleus separation', 'Séparation des noyaux'], epochs: ['Growth epochs', 'Époques de croissance'], cohesion: ['Growth cohesion', 'Cohésion de croissance'], satellites: ['Satellite share', 'Part satellite'], branchDepth: ['Branch depth', 'Profondeur des ramifications'], gapSize: ['Gap size', 'Taille des discontinuités'],
-  tissue: ['Street pattern', 'Trame des rues'], accessMode: ['Access generation', 'Génération des dessertes'], accessDepth: ['Access depth', 'Profondeur de desserte'], accessBudget: ['Access budget', 'Budget de desserte'], maxStreetGrade: ['Maximum street grade', 'Pente maximale des rues'], maxLaneGrade: ['Maximum lane grade', 'Pente maximale des ruelles'], maxStairGrade: ['Maximum stair grade', 'Pente maximale des escaliers'], allowStairs: ['Allow stairs', 'Autoriser les escaliers'], powerHighGround: ['Place power on high ground', 'Implanter le pouvoir en hauteur'], mergeParallelStreets: ['Merge parallel streets', 'Fusionner les rues parallèles'], parallelMerge: ['Parallel street merge', 'Fusion des rues parallèles'], roadWidthBySize: ['Widths by settlement size', 'Largeurs selon la taille'], townMainRoad: ['Main street through the built area', 'Grand-rue dans le bâti'], polishRoadEnds: ['Clean street ends', 'Nettoyer les bouts de rue'], lowRuralHouses: ['Low houses in the countryside', 'Maisons basses en campagne'], outbuildings: ['House outbuildings (share kept)', 'Dépendances des maisons (part conservée)'], houseComplexity: ['House plans', 'Plans des maisons'], singularDensity: ['Singular buildings (monuments, inns, stables, warehouses)', 'Bâtiments singuliers (monuments, auberges, écuries, entrepôts)'], backBuildings: ['Back buildings of town lots', 'Bâtiments de fond de parcelle'], roadMouths: ['Testing · access-way mouths on the axis', 'À tester · entrées d’impasses sur l’axe'], roadRemnants: ['Testing · remove road remnants', 'À tester · retirer les restes de routes'], roadEndJoins: ['Testing · join street ends', 'À tester · raccorder les bouts de rue'], roadNetworkPrune: ['Testing · prune useless roads', 'À tester · élaguer les routes inutiles'], villageStreets: ['Testing · village streets', 'À tester · rues de village'], smallPlaceCapacity: ['Testing · small-place capacity tolerance', 'À tester · tolérance de capacité des petits lieux'], campGrowth: ['Large camps', 'Grands camps'], zoneDensity: ['Zone density', 'Densité des zones'], countrysideEnclosures: ['Countryside enclosures', 'Clôtures à la campagne'], regularGridOutline: ['Regular grid outline', 'Contour régulier de grille'],
-  fortification: ['Enclosure', 'Enceinte'], fortificationStyle: ['Fortification construction', 'Construction des fortifications'], wallStiffness: ['Wall stiffness', 'Rigidité des murs'], wallTerrain: ['Wall terrain adaptation', 'Adaptation des murs au terrain'], wallTowerSpacing: ['Tower spacing', 'Espacement des tours'], ditchWetness: ['Ditch wetness', 'Humidité des fossés'], moat: ['Moat', 'Douve'], oldEnclosureCitadel: ['Reuse old enclosure as citadel', 'Réutiliser l’ancienne enceinte en citadelle'], medievalWalls: ['Medieval wall policy', 'Politique des murailles médiévales'], riverControl: ['Legacy river control', 'Contrôle fluvial historique'], dryDitches: ['Dry ditches', 'Fossés secs'], gateVillages: ['Legacy gate villages', 'Villages de portes historiques'], gateVillage: ['Gate-village intensity', 'Intensité des villages de portes'],
-  riverControlMode: ['River defences', 'Défenses fluviales'], portEnclosure: ['Port enclosure', 'Enceinte portuaire'], shelteredHarbour: ['Sheltered harbour', 'Port abrité'], portDetachment: ['Port detachment', 'Éloignement du port'], portShelter: ['Port shelter preference', 'Préférence d’abri du port'], portType: ['Harbour type', 'Type de port'], siteArchetype: ['Site archetype', 'Archétype du site'],
-  intent: ['Intent', 'Intention'], functions: ['Programme functions', 'Fonctions du programme'], resources: ['Known resources', 'Ressources connues'], period: ['Historical period', 'Période historique'], mode: ['Historical policy', 'Politique historique'], navigableAccess: ['Declared navigable access', 'Accès navigable déclaré'], lore: ['Site choices and lore', 'Choix du lieu et contexte'], state: ['Settlement condition', 'État du lieu'], decay: ['Decay intensity', 'Intensité du déclin'],
-  agricultural: ['Agriculture weight', 'Poids agricole'], commerce: ['Commerce weight', 'Poids commercial'], artisan: ['Craft weight', 'Poids artisanal'], riverine: ['River function weight', 'Poids de fonction fluviale'], port: ['Port function weight', 'Poids de fonction portuaire'], capital: ['Capital function weight', 'Poids de fonction de capitale'],
-  operator: ['Parcel layout', 'Découpage des parcelles'], streetAlignedHomes: ['Align homes to streets', 'Aligner les maisons aux rues'], denserSmallholdings: ['Denser smallholdings', 'Petites exploitations plus denses'], plotEnclosure: ['Town plot enclosure (empty = culture)', 'Clôture des parcelles urbaines (vide = culture)'], fieldEnclosure: ['Countryside field enclosure (empty = culture)', 'Clôture des champs (vide = culture)'], enclosureMaterial: ['Enclosure material', 'Matériau des clôtures'], parcel_fit: ['Fit source dimensions to lot', 'Adapter les dimensions au lot'], floors: ['Requested floors', 'Niveaux demandés'], typology: ['Building typology', 'Typologie des bâtiments'], pack: ['Architectural pack', 'Pack architectural'], era: ['Era', 'Époque'], allow_late: ['Allow later traditions', 'Autoriser les traditions tardives'], size: ['Source size multiplier', 'Multiplicateur de taille source'], variation: ['House variation', 'Variation des maisons'], wealth: ['Wealth', 'Richesse'], seed: ['House seed', 'Graine de maison'],
-  variant: ['Source variant', 'Variante source'], footprint: ['Footprint system', 'Système de plan'], roof: ['Roof system', 'Système de toiture'], frame: ['Structural frame material', 'Matériau de structure'], infill: ['Wall infill material', 'Matériau de remplissage'], coating: ['Wall coating', 'Revêtement mural'], cladding: ['Roof cladding', 'Couverture de toiture'], bodies: ['Body count', 'Nombre de corps'], courtyard_ratio: ['Courtyard ratio', 'Proportion de cour'], overhang_m: ['Roof overhang', 'Débord de toiture'], roof_pitch_deg: ['Roof pitch', 'Pente de toiture'], site_slope_deg: ['Source site slope', 'Pente du site source'],
-  preset_id: ['Free workshop preset', 'Préréglage d’atelier libre'], width_m: ['Exact width', 'Largeur exacte'], depth_m: ['Exact depth', 'Profondeur exacte'], roof_frame: ['Roof frame material', 'Matériau de charpente'], base: ['Base material', 'Matériau de soubassement'], kind: ['Support kind', 'Type de support'], material: ['Support material', 'Matériau du support'], height_m: ['Support height', 'Hauteur du support'],
-  streetOp: ['Street operator', 'Opérateur de rues'], closeOp: ['Local access operator', 'Opérateur de desserte locale'], plotOp: ['Cultural parcel recipe', 'Recette parcellaire culturelle'], laneSpacing: ['Lane spacing', 'Espacement des ruelles'], wardArea: ['District area', 'Surface des quartiers'], fieldTwist: ['Direction-field twist', 'Rotation du champ de directions'], curvature: ['Street curvature', 'Courbure des rues'], fieldNoise: ['Direction-field noise', 'Bruit du champ de directions'], fieldWavelength: ['Direction-field wavelength', 'Longueur d’onde du champ'], fieldRandom: ['Direction-field randomness', 'Aléa du champ de directions'], gridSpacing: ['Grid spacing', 'Espacement de grille'], gridSkew: ['Grid skew', 'Obliquité de grille'], blockSize: ['Block area', 'Surface des îlots'], minBlock: ['Minimum block area', 'Surface minimale des îlots'], minWidth: ['Minimum street width', 'Largeur minimale des rues'], widthByRank: ['Street width by rank', 'Largeur des rues par rang'], widthScale: ['Street-width multiplier', 'Multiplicateur des largeurs de rue'], widthJitter: ['Street-width variation', 'Variation des largeurs de rue'], placeThreshold: ['Plaza threshold area', 'Surface seuil des places'], deadEndRatio: ['Cul-de-sac ratio', 'Proportion d’impasses'], slitDepth: ['Passage depth', 'Profondeur des passages'], plotDepth: ['Parcel depth', 'Profondeur des parcelles'], contourFollow: ['Contour following', 'Suivi des courbes de niveau'], contourBlend: ['Terrain influence', 'Influence du relief'], longCut: ['Long cuts', 'Coupures longues'], houseArea: ['House / court area', 'Surface des maisons / cours'], coverage: ['Building coverage', 'Occupation bâtie'], frontage: ['Street frontage', 'Façade sur rue'], plotTilt: ['Parcel tilt', 'Inclinaison des parcelles'], wideLotChance: ['Wide-lot probability', 'Probabilité de grande parcelle'], lotMergeChance: ['Lot-merging probability', 'Probabilité de fusion des lots'], deepFill: ['Fill deep lots', 'Remplir les fonds de parcelle'], households: ['Requested model households', 'Ménages du modèle demandés'], function: ['Parcel function', 'Fonction de la parcelle'], deleted: ['Remove / merge', 'Supprimer / fusionner'], salt: ['Local regeneration salt', 'Sel de régénération locale'],
+  culture: ['Culture', 'Culture'],
+  preset: ['Morphology preset', 'Préréglage morphologique'],
+  recipe: ['Recipe', 'Recette'],
+  zone: ['Growth zone', 'Zone de croissance'],
+  density: ['Density multiplier', 'Multiplicateur de densité'],
+  axisAlignment: ['Regional axis alignment', 'Alignement des axes régionaux'],
+  mixCulture: ['Influencing culture', 'Culture d’influence'],
+  mixMode: ['Culture mixture distribution', 'Répartition du mélange culturel'],
+  mixShare: ['Influence share', 'Part de l’influence'],
+  mixAngle: ['Sector angle', 'Angle des secteurs'],
+  exitTreatment: ['Road exits', 'Sorties routières'],
+  peripheralRoad: ['Peripheral road', 'Voie périphérique'],
+  siteAdaptation: ['Site adaptation', 'Adaptation au site'],
+  scope: ['Generation scope', 'Périmètre de génération'],
+  settlementForm: ['Settlement form', 'Forme du lieu'],
+  suburbs: ['Suburbs', 'Faubourgs'],
+  phases: ['Growth phases (0 = cultural)', 'Phases de croissance (0 = culturel)'],
+  count: ['District count', 'Nombre de quartiers'],
+  rings: ['Growth rings', 'Couronnes de croissance'],
+  radius: ['Radius (0 = automatic)', 'Rayon (0 = automatique)'],
+  radiusScale: ['Radius multiplier', 'Multiplicateur de rayon'],
+  placement: ['District placement', 'Disposition des quartiers'],
+  monument: ['Monument reservation', 'Réserve monumentale'],
+  mechanism: ['Growth mechanism', 'Mécanisme de croissance'],
+  family: ['Footprint family', 'Famille d’emprise'],
+  budget: ['Footprint budget', 'Budget d’emprise'],
+  grossDensity: ['People per hectare (0 = cultural)', 'Habitants par hectare (0 = culturel)'],
+  aspect: ['Aspect ratio', 'Rapport d’aspect'],
+  orientation: ['Orientation', 'Orientation'],
+  nuclei: ['Growth nuclei', 'Noyaux de croissance'],
+  irregularity: ['Boundary irregularity', 'Irrégularité du contour'],
+  anisotropy: ['Growth anisotropy', 'Anisotropie de croissance'],
+  separation: ['Nucleus separation', 'Séparation des noyaux'],
+  epochs: ['Growth epochs', 'Époques de croissance'],
+  cohesion: ['Growth cohesion', 'Cohésion de croissance'],
+  satellites: ['Satellite share', 'Part satellite'],
+  branchDepth: ['Branch depth', 'Profondeur des ramifications'],
+  gapSize: ['Gap size', 'Taille des discontinuités'],
+  tissue: ['Street pattern', 'Trame des rues'],
+  accessMode: ['Access generation', 'Génération des dessertes'],
+  accessDepth: ['Access depth', 'Profondeur de desserte'],
+  accessBudget: ['Access budget', 'Budget de desserte'],
+  maxStreetGrade: ['Maximum street grade', 'Pente maximale des rues'],
+  maxLaneGrade: ['Maximum lane grade', 'Pente maximale des ruelles'],
+  maxStairGrade: ['Maximum stair grade', 'Pente maximale des escaliers'],
+  allowStairs: ['Allow stairs', 'Autoriser les escaliers'],
+  powerHighGround: ['Place power on high ground', 'Implanter le pouvoir en hauteur'],
+  mergeParallelStreets: ['Merge parallel streets', 'Fusionner les rues parallèles'],
+  parallelMerge: ['Parallel street merge', 'Fusion des rues parallèles'],
+  roadWidthBySize: ['Widths by settlement size', 'Largeurs selon la taille'],
+  townMainRoad: ['Main street through the built area', 'Grand-rue dans le bâti'],
+  polishRoadEnds: ['Clean street ends', 'Nettoyer les bouts de rue'],
+  lowRuralHouses: ['Low houses in the countryside', 'Maisons basses en campagne'],
+  outbuildings: ['House outbuildings (share kept)', 'Dépendances des maisons (part conservée)'],
+  houseComplexity: ['House plans', 'Plans des maisons'],
+  singularDensity: ['Singular buildings (monuments, inns, stables, warehouses)', 'Bâtiments singuliers (monuments, auberges, écuries, entrepôts)'],
+  backBuildings: ['Back buildings of town lots', 'Bâtiments de fond de parcelle'],
+  roadMouths: ['Testing · access-way mouths on the axis', 'À tester · entrées d’impasses sur l’axe'],
+  roadRemnants: ['Testing · remove road remnants', 'À tester · retirer les restes de routes'],
+  roadEndJoins: ['Testing · join street ends', 'À tester · raccorder les bouts de rue'],
+  roadNetworkPrune: ['Testing · prune useless roads', 'À tester · élaguer les routes inutiles'],
+  villageStreets: ['Testing · village streets', 'À tester · rues de village'],
+  smallPlaceCapacity: ['Testing · small-place capacity tolerance', 'À tester · tolérance de capacité des petits lieux'],
+  campGrowth: ['Large camps', 'Grands camps'],
+  zoneDensity: ['Zone density', 'Densité des zones'],
+  countrysideEnclosures: ['Countryside enclosures', 'Clôtures à la campagne'],
+  regularGridOutline: ['Regular grid outline', 'Contour régulier de grille'],
+  fortification: ['Enclosure', 'Enceinte'],
+  fortificationStyle: ['Fortification construction', 'Construction des fortifications'],
+  wallStiffness: ['Wall stiffness', 'Rigidité des murs'],
+  wallTerrain: ['Wall terrain adaptation', 'Adaptation des murs au terrain'],
+  wallTowerSpacing: ['Tower spacing', 'Espacement des tours'],
+  ditchWetness: ['Ditch wetness', 'Humidité des fossés'],
+  moat: ['Moat', 'Douve'],
+  oldEnclosureCitadel: ['Reuse old enclosure as citadel', 'Réutiliser l’ancienne enceinte en citadelle'],
+  medievalWalls: ['Medieval wall policy', 'Politique des murailles médiévales'],
+  riverControl: ['Legacy river control', 'Contrôle fluvial historique'],
+  dryDitches: ['Dry ditches', 'Fossés secs'],
+  gateVillages: ['Legacy gate villages', 'Villages de portes historiques'],
+  gateVillage: ['Gate-village intensity', 'Intensité des villages de portes'],
+  riverControlMode: ['River defences', 'Défenses fluviales'],
+  portEnclosure: ['Port enclosure', 'Enceinte portuaire'],
+  shelteredHarbour: ['Sheltered harbour', 'Port abrité'],
+  portDetachment: ['Port detachment', 'Éloignement du port'],
+  portShelter: ['Port shelter preference', 'Préférence d’abri du port'],
+  portType: ['Harbour type', 'Type de port'],
+  siteArchetype: ['Site archetype', 'Archétype du site'],
+  intent: ['Intent', 'Intention'],
+  functions: ['Programme functions', 'Fonctions du programme'],
+  resources: ['Known resources', 'Ressources connues'],
+  period: ['Historical period', 'Période historique'],
+  mode: ['Historical policy', 'Politique historique'],
+  navigableAccess: ['Declared navigable access', 'Accès navigable déclaré'],
+  lore: ['Site choices and lore', 'Choix du lieu et contexte'],
+  state: ['Settlement condition', 'État du lieu'],
+  decay: ['Decay intensity', 'Intensité du déclin'],
+  agricultural: ['Agriculture weight', 'Poids agricole'],
+  commerce: ['Commerce weight', 'Poids commercial'],
+  artisan: ['Craft weight', 'Poids artisanal'],
+  riverine: ['River function weight', 'Poids de fonction fluviale'],
+  port: ['Port function weight', 'Poids de fonction portuaire'],
+  capital: ['Capital function weight', 'Poids de fonction de capitale'],
+  operator: ['Parcel layout', 'Découpage des parcelles'],
+  streetAlignedHomes: ['Align homes to streets', 'Aligner les maisons aux rues'],
+  denserSmallholdings: ['Denser smallholdings', 'Petites exploitations plus denses'],
+  plotEnclosure: ['Town plot enclosure (empty = culture)', 'Clôture des parcelles urbaines (vide = culture)'],
+  fieldEnclosure: ['Countryside field enclosure (empty = culture)', 'Clôture des champs (vide = culture)'],
+  enclosureMaterial: ['Enclosure material', 'Matériau des clôtures'],
+  parcel_fit: ['Fit source dimensions to lot', 'Adapter les dimensions au lot'],
+  floors: ['Requested floors', 'Niveaux demandés'],
+  typology: ['Building typology', 'Typologie des bâtiments'],
+  pack: ['Architectural pack', 'Pack architectural'],
+  era: ['Era', 'Époque'],
+  allow_late: ['Allow later traditions', 'Autoriser les traditions tardives'],
+  size: ['Source size multiplier', 'Multiplicateur de taille source'],
+  variation: ['House variation', 'Variation des maisons'],
+  wealth: ['Wealth', 'Richesse'],
+  seed: ['House seed', 'Graine de maison'],
+  variant: ['Source variant', 'Variante source'],
+  footprint: ['Footprint system', 'Système de plan'],
+  roof: ['Roof system', 'Système de toiture'],
+  frame: ['Structural frame material', 'Matériau de structure'],
+  infill: ['Wall infill material', 'Matériau de remplissage'],
+  coating: ['Wall coating', 'Revêtement mural'],
+  cladding: ['Roof cladding', 'Couverture de toiture'],
+  bodies: ['Body count', 'Nombre de corps'],
+  courtyard_ratio: ['Courtyard ratio', 'Proportion de cour'],
+  overhang_m: ['Roof overhang', 'Débord de toiture'],
+  roof_pitch_deg: ['Roof pitch', 'Pente de toiture'],
+  site_slope_deg: ['Source site slope', 'Pente du site source'],
+  preset_id: ['Free workshop preset', 'Préréglage d’atelier libre'],
+  width_m: ['Exact width', 'Largeur exacte'],
+  depth_m: ['Exact depth', 'Profondeur exacte'],
+  roof_frame: ['Roof frame material', 'Matériau de charpente'],
+  base: ['Base material', 'Matériau de soubassement'],
+  kind: ['Support kind', 'Type de support'],
+  material: ['Support material', 'Matériau du support'],
+  height_m: ['Support height', 'Hauteur du support'],
+  streetOp: ['Street operator', 'Opérateur de rues'],
+  closeOp: ['Local access operator', 'Opérateur de desserte locale'],
+  plotOp: ['Cultural parcel recipe', 'Recette parcellaire culturelle'],
+  laneSpacing: ['Lane spacing', 'Espacement des ruelles'],
+  wardArea: ['District area', 'Surface des quartiers'],
+  fieldTwist: ['Direction-field twist', 'Rotation du champ de directions'],
+  curvature: ['Street curvature', 'Courbure des rues'],
+  fieldNoise: ['Direction-field noise', 'Bruit du champ de directions'],
+  fieldWavelength: ['Direction-field wavelength', 'Longueur d’onde du champ'],
+  fieldRandom: ['Direction-field randomness', 'Aléa du champ de directions'],
+  gridSpacing: ['Grid spacing', 'Espacement de grille'],
+  gridSkew: ['Grid skew', 'Obliquité de grille'],
+  blockSize: ['Block area', 'Surface des îlots'],
+  minBlock: ['Minimum block area', 'Surface minimale des îlots'],
+  minWidth: ['Minimum street width', 'Largeur minimale des rues'],
+  widthByRank: ['Street width by rank', 'Largeur des rues par rang'],
+  widthScale: ['Street-width multiplier', 'Multiplicateur des largeurs de rue'],
+  widthJitter: ['Street-width variation', 'Variation des largeurs de rue'],
+  placeThreshold: ['Plaza threshold area', 'Surface seuil des places'],
+  deadEndRatio: ['Cul-de-sac ratio', 'Proportion d’impasses'],
+  slitDepth: ['Passage depth', 'Profondeur des passages'],
+  plotDepth: ['Parcel depth', 'Profondeur des parcelles'],
+  contourFollow: ['Contour following', 'Suivi des courbes de niveau'],
+  contourBlend: ['Terrain influence', 'Influence du relief'],
+  longCut: ['Long cuts', 'Coupures longues'],
+  houseArea: ['House / court area', 'Surface des maisons / cours'],
+  coverage: ['Building coverage', 'Occupation bâtie'],
+  frontage: ['Street frontage', 'Façade sur rue'],
+  plotTilt: ['Parcel tilt', 'Inclinaison des parcelles'],
+  wideLotChance: ['Wide-lot probability', 'Probabilité de grande parcelle'],
+  lotMergeChance: ['Lot-merging probability', 'Probabilité de fusion des lots'],
+  deepFill: ['Fill deep lots', 'Remplir les fonds de parcelle'],
+  households: ['Requested model households', 'Ménages du modèle demandés'],
+  function: ['Parcel function', 'Fonction de la parcelle'],
+  deleted: ['Remove / merge', 'Supprimer / fusionner'],
+  salt: ['Local regeneration salt', 'Sel de régénération locale'],
   ...urbanExtraFieldNames,
 };
-const pretty = (key: string): string => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ').replace(/^./, c => c.toUpperCase());
-export function urbanName(key: string): readonly [string, string] { return urbanFieldNames[key] ?? [pretty(key), pretty(key)]; }
+const pretty = (key: string): string =>
+  key
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]/g, ' ')
+    .replace(/^./, c => c.toUpperCase());
+export function urbanName(key: string): readonly [string, string] {
+  return urbanFieldNames[key] ?? [pretty(key), pretty(key)];
+}
 export const urbanChoiceNames: Record<string, readonly [string, string]> = {
   'core-sector-0': ['Core sector 0', 'Secteur central 0'],
-  auto: ['Automatic', 'Automatique'], dry: ['Dry', 'Sec'], wet: ['Wet (water-filled)', 'En eau'], culture: ['From culture', 'Selon la culture'], site: ['From settlement culture', 'Selon la culture du lieu'], regional: ['Regional', 'Régional'], phases: ['Growth phases', 'Phases de croissance'], sectors: ['Sectors', 'Secteurs'], legacy: ['Legacy outline', 'Contour historique'], adaptive: ['Adaptive', 'Adaptatif'], closed: ['Closed', 'Fermé'], none: ['None', 'Aucun'], partial: ['Partial', 'Partiel'], full: ['Full', 'Complet'], settlement: ['Complete settlement', 'Agglomération complète'], district: ['Isolated district', 'Quartier isolé'], nucleated: ['Nucleated', 'Nucléé'], ribbon: ['Road ribbon', 'Ruban routier'], single: ['Single site', 'Lieu isolé'], ruin: ['Ruin', 'Ruine'], farmstead: ['Farmstead', 'Exploitation agricole'], camp: ['Camp', 'Camp'], hamlet: ['Hamlet', 'Hameau'], 'street-village': ['Street village', 'Village-rue'], 'nucleated-village': ['Nucleated village', 'Village nucléé'], 'market-town': ['Market town', 'Bourg marchand'], 'walled-town': ['Walled town', 'Bourg fortifié'], city: ['City', 'Ville'], metropolis: ['Metropolis', 'Métropole'], few: ['A few', 'Quelques-uns'], many: ['Many', 'Nombreux'], center: ['Centred', 'Centré'], rectangle: ['Rectangular', 'Rectangulaire'], skew: ['Skewed', 'Oblique'], notched: ['Notched', 'Échancré'], castle: ['Castle', 'Château'], cathedral: ['Cathedral', 'Cathédrale'], palace: ['Palace', 'Palais'], wall: ['Masonry wall', 'Mur maçonné'], palisade: ['Palisade', 'Palissade'], gord: ['Timber and earth rampart', 'Rempart de bois et de terre'], hedge: ['Defensive hedge', 'Haie défensive'], curtain: ['Curtain wall', 'Courtine'], flanked: ['Flanked wall', 'Muraille flanquée'], concentric: ['Concentric enclosures', 'Enceintes concentriques'], 'rammed-earth': ['Rammed earth', 'Terre compactée'], wengcheng: ['Wengcheng gate court', 'Cour de porte wengcheng'], bastioned: ['Bastioned enclosure', 'Enceinte bastionnée'], 'bank-walls': ['Riverbank walls', 'Murailles de berge'], 'bank-walls-chain': ['Riverbank walls and chain', 'Murailles de berge et chaîne'], inside: ['Inside enclosure', 'Dans l’enceinte'], separate: ['Separate enclosure', 'Enceinte distincte'], outside: ['Outside enclosure', 'Hors enceinte'], grid: ['Orthogonal grid', 'Grille orthogonale'], organic: ['Organic', 'Organique'], radial: ['Radial', 'Radial'], terraces: ['Terrain terraces', 'Terrasses topographiques'], dendritic: ['Branching', 'Ramifié'], clusters: ['Clusters around commons', 'Groupes autour de communs'], cultural: ['Cultural', 'Culturel'], accessibility: ['Accessibility growth', 'Croissance par accessibilité'], fusion: ['Nucleus fusion', 'Fusion de noyaux'], circle: ['Circular / oval', 'Circulaire / ovale'], polygon: ['Polygonal', 'Polygonal'], compact: ['Compact', 'Compact'], elongated: ['Elongated', 'Allongé'], linear: ['Linear', 'Linéaire'], fan: ['Fan', 'Éventail'], fingers: ['Radial arms', 'Bras radiaux'], lobed: ['Lobed', 'Lobé'], archipelago: ['Discontinuous archipelago', 'Archipel discontinu'], composite: ['Composite', 'Composite'], population: ['Population and density', 'Population et densité'], radius: ['Radius', 'Rayon'],
-  'isolated-farm': ['Isolated farm', 'Ferme isolée'], 'roadside-temple': ['Roadside temple', 'Temple de route'], 'isolated-shrine': ['Isolated shrine', 'Sanctuaire isolé'], 'isolated-mill': ['Isolated mill', 'Moulin isolé'], 'isolated-inn': ['Isolated inn', 'Auberge isolée'], 'isolated-tower': ['Isolated tower', 'Tour isolée'], activity: ['Activity site', 'Site d’activité'], agricultural: ['Agricultural', 'Agricole'], crossroads: ['Crossroads', 'Carrefour'], artisan: ['Craft production', 'Production artisanale'], riverine: ['River settlement', 'Lieu fluvial'], port: ['Port', 'Port'], capital: ['Capital', 'Capitale'], strict: ['Strict historical', 'Historique strict'], inspired: ['Historically inspired', 'Inspiration historique'], fantasy: ['Fantasy', 'Fantastique'], historical_strict: ['Strict historical', 'Historique strict'], historical_inspired: ['Historically inspired', 'Inspiration historique'], fantasy_mix: ['Fantasy mixture', 'Mélange fantasy'], thriving: ['Thriving', 'Prospère'], declining: ['Declining', 'En déclin'], abandoned: ['Abandoned', 'Abandonné'], ruined: ['Ruined', 'En ruines'], strips: ['Frontage strips', 'Bandes de façade'], oriented: ['Oriented subdivision', 'Subdivision orientée'], inherited: ['Inherited cadastre', 'Cadastre hérité'], courtyard: ['Courtyards and compounds', 'Cours et enclos'], frontage: ['Frontage territories', 'Territoires de façade'], compound: ['Compound domains', 'Domaines enclos'], wholeBlock: ['Whole block', 'Îlot entier'], garden: ['Garden', 'Jardin'], common: ['Common cultural family', 'Famille culturelle courante'], row: ['Attached row houses', 'Maisons mitoyennes'], detached: ['Detached houses', 'Maisons indépendantes'], simple: ['Simple plans', 'Plans simples'], complex: ['Complex plans', 'Plans complexes'], gradient: ['Gradient', 'Gradient'], 'zoneDensity.phases': ['By phase', 'Par phase'], closes: ['Closes', 'Cours de desserte'], culDeSacTree: ['Cul-de-sac tree', 'Arbre d’impasses'], hutong: ['Hutong lanes', 'Ruelles hutong'], roji: ['Roji lanes', 'Ruelles roji'], road: ['Along roads', 'Selon les routes'], cardinal: ['Cardinal', 'Cardinal'], terrain: ['Along terrain', 'Selon le relief'], water: ['Along water', 'Selon l’eau'], burgage: ['Burgage strips', 'Lanières de burgage'], siheyuan: ['Siheyuan courts', 'Cours siheyuan'], machiya: ['Machiya strips', 'Lanières machiya'], ground: ['On ground', 'Au sol'], posts: ['On posts', 'Sur poteaux'], piers: ['On piers', 'Sur piles'], raft: ['On a raft', 'Sur radeau'], rock: ['On rock', 'Sur roche'],
-  bare: ['Bare quays and piers', 'Quais et jetées nus'], ...HARBOUR_TYPE_NAMES,
-  ...urbanCultureNames, ...urbanActivityNames, ...urbanExtraChoiceNames,
+  auto: ['Automatic', 'Automatique'],
+  dry: ['Dry', 'Sec'],
+  wet: ['Wet (water-filled)', 'En eau'],
+  culture: ['From culture', 'Selon la culture'],
+  site: ['From settlement culture', 'Selon la culture du lieu'],
+  regional: ['Regional', 'Régional'],
+  phases: ['Growth phases', 'Phases de croissance'],
+  sectors: ['Sectors', 'Secteurs'],
+  legacy: ['Legacy outline', 'Contour historique'],
+  adaptive: ['Adaptive', 'Adaptatif'],
+  closed: ['Closed', 'Fermé'],
+  none: ['None', 'Aucun'],
+  partial: ['Partial', 'Partiel'],
+  full: ['Full', 'Complet'],
+  settlement: ['Complete settlement', 'Agglomération complète'],
+  district: ['Isolated district', 'Quartier isolé'],
+  nucleated: ['Nucleated', 'Nucléé'],
+  ribbon: ['Road ribbon', 'Ruban routier'],
+  single: ['Single site', 'Lieu isolé'],
+  ruin: ['Ruin', 'Ruine'],
+  farmstead: ['Farmstead', 'Exploitation agricole'],
+  camp: ['Camp', 'Camp'],
+  hamlet: ['Hamlet', 'Hameau'],
+  'street-village': ['Street village', 'Village-rue'],
+  'nucleated-village': ['Nucleated village', 'Village nucléé'],
+  'market-town': ['Market town', 'Bourg marchand'],
+  'walled-town': ['Walled town', 'Bourg fortifié'],
+  city: ['City', 'Ville'],
+  metropolis: ['Metropolis', 'Métropole'],
+  few: ['A few', 'Quelques-uns'],
+  many: ['Many', 'Nombreux'],
+  center: ['Centred', 'Centré'],
+  rectangle: ['Rectangular', 'Rectangulaire'],
+  skew: ['Skewed', 'Oblique'],
+  notched: ['Notched', 'Échancré'],
+  castle: ['Castle', 'Château'],
+  cathedral: ['Cathedral', 'Cathédrale'],
+  palace: ['Palace', 'Palais'],
+  wall: ['Masonry wall', 'Mur maçonné'],
+  palisade: ['Palisade', 'Palissade'],
+  gord: ['Timber and earth rampart', 'Rempart de bois et de terre'],
+  hedge: ['Defensive hedge', 'Haie défensive'],
+  curtain: ['Curtain wall', 'Courtine'],
+  flanked: ['Flanked wall', 'Muraille flanquée'],
+  concentric: ['Concentric enclosures', 'Enceintes concentriques'],
+  'rammed-earth': ['Rammed earth', 'Terre compactée'],
+  wengcheng: ['Wengcheng gate court', 'Cour de porte wengcheng'],
+  bastioned: ['Bastioned enclosure', 'Enceinte bastionnée'],
+  'bank-walls': ['Riverbank walls', 'Murailles de berge'],
+  'bank-walls-chain': ['Riverbank walls and chain', 'Murailles de berge et chaîne'],
+  inside: ['Inside enclosure', 'Dans l’enceinte'],
+  separate: ['Separate enclosure', 'Enceinte distincte'],
+  outside: ['Outside enclosure', 'Hors enceinte'],
+  grid: ['Orthogonal grid', 'Grille orthogonale'],
+  organic: ['Organic', 'Organique'],
+  radial: ['Radial', 'Radial'],
+  terraces: ['Terrain terraces', 'Terrasses topographiques'],
+  dendritic: ['Branching', 'Ramifié'],
+  clusters: ['Clusters around commons', 'Groupes autour de communs'],
+  cultural: ['Cultural', 'Culturel'],
+  accessibility: ['Accessibility growth', 'Croissance par accessibilité'],
+  fusion: ['Nucleus fusion', 'Fusion de noyaux'],
+  circle: ['Circular / oval', 'Circulaire / ovale'],
+  polygon: ['Polygonal', 'Polygonal'],
+  compact: ['Compact', 'Compact'],
+  elongated: ['Elongated', 'Allongé'],
+  linear: ['Linear', 'Linéaire'],
+  fan: ['Fan', 'Éventail'],
+  fingers: ['Radial arms', 'Bras radiaux'],
+  lobed: ['Lobed', 'Lobé'],
+  archipelago: ['Discontinuous archipelago', 'Archipel discontinu'],
+  composite: ['Composite', 'Composite'],
+  population: ['Population and density', 'Population et densité'],
+  radius: ['Radius', 'Rayon'],
+  'isolated-farm': ['Isolated farm', 'Ferme isolée'],
+  'roadside-temple': ['Roadside temple', 'Temple de route'],
+  'isolated-shrine': ['Isolated shrine', 'Sanctuaire isolé'],
+  'isolated-mill': ['Isolated mill', 'Moulin isolé'],
+  'isolated-inn': ['Isolated inn', 'Auberge isolée'],
+  'isolated-tower': ['Isolated tower', 'Tour isolée'],
+  activity: ['Activity site', 'Site d’activité'],
+  agricultural: ['Agricultural', 'Agricole'],
+  crossroads: ['Crossroads', 'Carrefour'],
+  artisan: ['Craft production', 'Production artisanale'],
+  riverine: ['River settlement', 'Lieu fluvial'],
+  port: ['Port', 'Port'],
+  capital: ['Capital', 'Capitale'],
+  strict: ['Strict historical', 'Historique strict'],
+  inspired: ['Historically inspired', 'Inspiration historique'],
+  fantasy: ['Fantasy', 'Fantastique'],
+  historical_strict: ['Strict historical', 'Historique strict'],
+  historical_inspired: ['Historically inspired', 'Inspiration historique'],
+  fantasy_mix: ['Fantasy mixture', 'Mélange fantasy'],
+  thriving: ['Thriving', 'Prospère'],
+  declining: ['Declining', 'En déclin'],
+  abandoned: ['Abandoned', 'Abandonné'],
+  ruined: ['Ruined', 'En ruines'],
+  strips: ['Frontage strips', 'Bandes de façade'],
+  oriented: ['Oriented subdivision', 'Subdivision orientée'],
+  inherited: ['Inherited cadastre', 'Cadastre hérité'],
+  courtyard: ['Courtyards and compounds', 'Cours et enclos'],
+  frontage: ['Frontage territories', 'Territoires de façade'],
+  compound: ['Compound domains', 'Domaines enclos'],
+  wholeBlock: ['Whole block', 'Îlot entier'],
+  garden: ['Garden', 'Jardin'],
+  common: ['Common cultural family', 'Famille culturelle courante'],
+  row: ['Attached row houses', 'Maisons mitoyennes'],
+  detached: ['Detached houses', 'Maisons indépendantes'],
+  simple: ['Simple plans', 'Plans simples'],
+  complex: ['Complex plans', 'Plans complexes'],
+  gradient: ['Gradient', 'Gradient'],
+  'zoneDensity.phases': ['By phase', 'Par phase'],
+  closes: ['Closes', 'Cours de desserte'],
+  culDeSacTree: ['Cul-de-sac tree', 'Arbre d’impasses'],
+  hutong: ['Hutong lanes', 'Ruelles hutong'],
+  roji: ['Roji lanes', 'Ruelles roji'],
+  road: ['Along roads', 'Selon les routes'],
+  cardinal: ['Cardinal', 'Cardinal'],
+  terrain: ['Along terrain', 'Selon le relief'],
+  water: ['Along water', 'Selon l’eau'],
+  burgage: ['Burgage strips', 'Lanières de burgage'],
+  siheyuan: ['Siheyuan courts', 'Cours siheyuan'],
+  machiya: ['Machiya strips', 'Lanières machiya'],
+  ground: ['On ground', 'Au sol'],
+  posts: ['On posts', 'Sur poteaux'],
+  piers: ['On piers', 'Sur piles'],
+  raft: ['On a raft', 'Sur radeau'],
+  rock: ['On rock', 'Sur roche'],
+  bare: ['Bare quays and piers', 'Quais et jetées nus'],
+  ...HARBOUR_TYPE_NAMES,
+  ...urbanCultureNames,
+  ...urbanActivityNames,
+  ...urbanExtraChoiceNames,
 };
 const choices = (values: readonly string[]) => values.map(value => ({ value, label: urbanChoiceNames[value]?.[0] ?? pretty(value) }));
 /** Cultures offered by every culture select of the urban controls (V2 and City Bench). */
 export const urbanCultureChoices = (): { value: string; label: string }[] => choices(Object.keys(urbanCatalogue.cultures));
 const enums: Record<string, readonly string[]> = {
-  axisAlignment: ['regional', 'culture'], campGrowth: ['ring', 'concentric', 'clusters'], zoneDensity: ['phases', 'gradient'], mixMode: ['phases', 'sectors'], exitTreatment: ['legacy', 'adaptive', 'closed'], peripheralRoad: ['auto', 'none', 'partial', 'full'], scope: ['settlement', 'district'], settlementForm: ['auto', 'nucleated', 'ribbon', 'single', 'ruin', 'farmstead', 'camp', 'hamlet', 'street-village', 'nucleated-village', 'market-town', 'walled-town', 'city', 'metropolis'], suburbs: ['auto', 'none', 'few', 'many'], placement: ['center', 'rectangle', 'skew', 'notched'], monument: ['none', 'castle', 'cathedral', 'palace'], fortification: ['culture', 'none', 'wall', 'palisade'], fortificationStyle: FORTIFICATION_STYLES,
-  riverControlMode: ['', 'none', 'bank-walls', 'bank-walls-chain'], moat: ['', 'none', 'dry', 'wet'], portEnclosure: ['', 'auto', 'inside', 'separate', 'outside'], portType: ['auto', 'bare', ...HARBOUR_TYPES], tissue: ['culture', 'grid', 'organic', 'radial', 'terraces', 'dendritic', 'clusters'], accessMode: ['adaptive', 'cultural', 'none'],
-  mechanism: ['auto', 'legacy', 'accessibility', 'ribbon', 'fusion'], family: ['auto', 'circle', 'rectangle', 'polygon', 'compact', 'elongated', 'linear', 'fan', 'fingers', 'dendritic', 'lobed', 'archipelago', 'composite'], budget: ['population', 'radius'],
-  intent: ['settlement', 'isolated-farm', 'roadside-temple', 'isolated-shrine', 'isolated-mill', 'isolated-inn', 'isolated-tower', 'activity'], template: ['', ...ACTIVITY_TEMPLATES], mode: ['strict', 'inspired', 'fantasy'], state: ['thriving', 'declining', 'abandoned', 'ruined'], operator: ['culture', 'strips', 'oriented', 'compact', 'inherited', 'courtyard', 'frontage', 'compound', 'wholeBlock', 'garden'], typology: ['common', 'row', 'courtyard', 'compound', 'detached'], houseComplexity: ['simple', 'complex'],
-  enclosureMaterial: ['', 'wall', 'hedge', 'fence'], streetOp: ['organic', 'grid'], closeOp: ['closes', 'culDeSacTree', 'hutong', 'roji', 'none'], orientation: ['road', 'cardinal', 'terrain', 'water'], plotOp: ['burgage', 'courtyard', 'siheyuan', 'machiya', 'compound', 'garden', 'wholeBlock'],
+  axisAlignment: ['regional', 'culture'],
+  campGrowth: ['ring', 'concentric', 'clusters'],
+  zoneDensity: ['phases', 'gradient'],
+  mixMode: ['phases', 'sectors'],
+  exitTreatment: ['legacy', 'adaptive', 'closed'],
+  peripheralRoad: ['auto', 'none', 'partial', 'full'],
+  scope: ['settlement', 'district'],
+  settlementForm: ['auto', 'nucleated', 'ribbon', 'single', 'ruin', 'farmstead', 'camp', 'hamlet', 'street-village', 'nucleated-village', 'market-town', 'walled-town', 'city', 'metropolis'],
+  suburbs: ['auto', 'none', 'few', 'many'],
+  placement: ['center', 'rectangle', 'skew', 'notched'],
+  monument: ['none', 'castle', 'cathedral', 'palace'],
+  fortification: ['culture', 'none', 'wall', 'palisade'],
+  fortificationStyle: FORTIFICATION_STYLES,
+  riverControlMode: ['', 'none', 'bank-walls', 'bank-walls-chain'],
+  moat: ['', 'none', 'dry', 'wet'],
+  portEnclosure: ['', 'auto', 'inside', 'separate', 'outside'],
+  portType: ['auto', 'bare', ...HARBOUR_TYPES],
+  tissue: ['culture', 'grid', 'organic', 'radial', 'terraces', 'dendritic', 'clusters'],
+  accessMode: ['adaptive', 'cultural', 'none'],
+  mechanism: ['auto', 'legacy', 'accessibility', 'ribbon', 'fusion'],
+  family: ['auto', 'circle', 'rectangle', 'polygon', 'compact', 'elongated', 'linear', 'fan', 'fingers', 'dendritic', 'lobed', 'archipelago', 'composite'],
+  budget: ['population', 'radius'],
+  intent: ['settlement', 'isolated-farm', 'roadside-temple', 'isolated-shrine', 'isolated-mill', 'isolated-inn', 'isolated-tower', 'activity'],
+  template: ['', ...ACTIVITY_TEMPLATES],
+  mode: ['strict', 'inspired', 'fantasy'],
+  state: ['thriving', 'declining', 'abandoned', 'ruined'],
+  operator: ['culture', 'strips', 'oriented', 'compact', 'inherited', 'courtyard', 'frontage', 'compound', 'wholeBlock', 'garden'],
+  typology: ['common', 'row', 'courtyard', 'compound', 'detached'],
+  houseComplexity: ['simple', 'complex'],
+  enclosureMaterial: ['', 'wall', 'hedge', 'fence'],
+  streetOp: ['organic', 'grid'],
+  closeOp: ['closes', 'culDeSacTree', 'hutong', 'roji', 'none'],
+  orientation: ['road', 'cardinal', 'terrain', 'water'],
+  plotOp: ['burgage', 'courtyard', 'siheyuan', 'machiya', 'compound', 'garden', 'wholeBlock'],
 };
-const boundedOne = new Set(['mixShare', 'siteAdaptation', 'irregularity', 'anisotropy', 'cohesion', 'satellites', 'branchDepth', 'gateVillage', 'ditchWetness', 'wallStiffness', 'outbuildings', 'backBuildings', 'wallTerrain', 'plotEnclosure', 'fieldEnclosure', 'portShelter', 'decay', 'wealth', 'variation', 'courtyard_ratio']);
+const boundedOne = new Set([
+  'mixShare',
+  'siteAdaptation',
+  'irregularity',
+  'anisotropy',
+  'cohesion',
+  'satellites',
+  'branchDepth',
+  'gateVillage',
+  'ditchWetness',
+  'wallStiffness',
+  'outbuildings',
+  'backBuildings',
+  'wallTerrain',
+  'plotEnclosure',
+  'fieldEnclosure',
+  'portShelter',
+  'decay',
+  'wealth',
+  'variation',
+  'courtyard_ratio',
+]);
 const integers = new Set(['count', 'rings', 'phases', 'nuclei', 'epochs', 'floors', 'bodies', 'salt']);
 export function urbanField(path: string, value: unknown, section: UrbanControlSection): UrbanParameterField {
-  const key = path.split('.').filter(part => !/^\d+$/.test(part)).at(-1)!, label = urbanName(key)[0];
+  const key = path
+      .split('.')
+      .filter(part => !/^\d+$/.test(part))
+      .at(-1)!,
+    label = urbanName(key)[0];
   const field: UrbanParameterField = { path, section, label, help: urbanHelp(path), helpDisplay: 'tooltip', type: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' || value === null ? 'number' : 'text', optional: true };
-  if (field.type === 'number') { field.step = integers.has(key) ? 1 : 'any' as unknown as number; if (!['orientation', 'mixAngle', 'fieldTwist', 'site_slope_deg'].includes(key)) field.min = 0; if (boundedOne.has(key)) field.max = 1; if (key === 'singularDensity') field.max = 3; }
-  if (key === 'density') { field.min = .1; field.max = 10; }
+  if (field.type === 'number') {
+    field.step = integers.has(key) ? 1 : ('any' as unknown as number);
+    if (!['orientation', 'mixAngle', 'fieldTwist', 'site_slope_deg'].includes(key)) field.min = 0;
+    if (boundedOne.has(key)) field.max = 1;
+    if (key === 'singularDensity') field.max = 3;
+  }
+  if (key === 'density') {
+    field.min = 0.1;
+    field.max = 10;
+  }
   if (key === 'salt') field.max = 2147483647;
   if (path.startsWith('layout.programme.functions.')) field.max = 1;
   if (value === null) field.nullable = true;
@@ -67,25 +428,53 @@ export function urbanField(path: string, value: unknown, section: UrbanControlSe
   if (path.endsWith('.mode') && path.includes('house')) values = ['historical_strict', 'historical_inspired', 'fantasy_mix'];
   if (key === 'orientation' && typeof value === 'number') values = undefined as unknown as readonly string[];
   if (values) {
-    field.type = 'select'; field.options = choices(values).map(c => c.value === '' ? { value: '__native_auto__', label: 'Native automatic choice' } : c);
-    if (values.includes('')) { field.toInput = value => value === '' ? '__native_auto__' : value; field.fromInput = value => value === '__native_auto__' ? '' : value; }
+    field.type = 'select';
+    field.options = choices(values).map(c => (c.value === '' ? { value: '__native_auto__', label: 'Native automatic choice' } : c));
+    if (values.includes('')) {
+      field.toInput = value => (value === '' ? '__native_auto__' : value);
+      field.fromInput = value => (value === '__native_auto__' ? '' : value);
+    }
     // `phases` reads "By phase" here, not the growth-phase mixture of `mixMode`.
     if (key === 'zoneDensity') field.options = field.options!.map(c => ({ ...c, label: urbanChoiceNames[`zoneDensity.${c.value}`]?.[0] ?? c.label }));
   }
-  if (key === 'culture' || key === 'mixCulture') { field.type = 'select'; field.options = [...(key === 'culture' ? choices(['site']) : []), ...urbanCultureChoices()]; }
-  if (key === 'preset') { field.type = 'select'; field.options = choices(['culture', ...Object.keys(urbanCatalogue.presets)]); }
-  if (key === 'recipe' && !path.includes('house')) { field.type = 'select'; field.options = choices(['auto', ...new Set(Object.values(urbanCatalogue.cultures).flatMap(c => c.recipes.map(r => r.id)))]); }
-  if (key === 'zone') { field.type = 'select'; field.options = choices(['auto', ...URBAN_ZONES]); }
-  if (key === 'salt') { field.label = 'Local random seed'; field.help = 'The dice chooses a new seed for this area and regenerates its descendants.'; field.placeholder = 'Original seed'; }
+  if (key === 'culture' || key === 'mixCulture') {
+    field.type = 'select';
+    field.options = [...(key === 'culture' ? choices(['site']) : []), ...urbanCultureChoices()];
+  }
+  if (key === 'preset') {
+    field.type = 'select';
+    field.options = choices(['culture', ...Object.keys(urbanCatalogue.presets)]);
+  }
+  if (key === 'recipe' && !path.includes('house')) {
+    field.type = 'select';
+    field.options = choices(['auto', ...new Set(Object.values(urbanCatalogue.cultures).flatMap(c => c.recipes.map(r => r.id)))]);
+  }
+  if (key === 'zone') {
+    field.type = 'select';
+    field.options = choices(['auto', ...URBAN_ZONES]);
+  }
+  if (key === 'salt') {
+    field.label = 'Local random seed';
+    field.help = 'The dice chooses a new seed for this area and regenerates its descendants.';
+    field.placeholder = 'Original seed';
+  }
   if (key === 'role') {
-    field.type = 'select'; field.label = section === 'quarter' ? 'Area purpose' : 'Building type';
+    field.type = 'select';
+    field.label = section === 'quarter' ? 'Area purpose' : 'Building type';
     field.help = section === 'quarter' ? 'Automatic uses population, culture and nearby activities to choose a suitable use.' : 'Every building type can be chosen. Types of this culture come first; a type larger than the lot is marked.';
     field.options = [{ value: 'auto', label: 'Automatic' }, ...urbanRoleChoices(section === 'quarter')];
   }
-  if (key === 'function') { field.type = 'select'; field.options = choices(['auto', 'domestic', 'collective', 'workshop', 'warehouse', 'market', 'common']); }
+  if (key === 'function') {
+    field.type = 'select';
+    field.options = choices(['auto', 'domestic', 'collective', 'workshop', 'warehouse', 'market', 'common']);
+  }
   if (['radius', 'gapSize', 'wallTowerSpacing', 'accessDepth', 'overhang_m', 'width_m', 'depth_m'].includes(key)) field.unit = 'm';
   if (['orientation', 'mixAngle', 'roof_pitch_deg', 'site_slope_deg'].includes(key) && field.type === 'number') field.unit = '°';
-  if (key.startsWith('max') && key.endsWith('Grade')) { field.unit = '%'; field.toInput = value => Number(value) * 100; field.fromInput = value => Number(value) / 100; }
+  if (key.startsWith('max') && key.endsWith('Grade')) {
+    field.unit = '%';
+    field.toInput = value => Number(value) * 100;
+    field.fromInput = value => Number(value) / 100;
+  }
   return field;
 }
 export function scalarLeaves(value: unknown, prefix = ''): { path: string; value: unknown }[] {
@@ -98,7 +487,12 @@ function layoutSection(key: string): UrbanControlSection {
   if (/^(fortification|wall|ditch|moat|oldEnclosure|medieval|dryDitches|gateVillage)/.test(key)) return 'fortifications';
   if (/^(port|riverControl|sheltered|siteArchetype)/.test(key)) return 'ports';
   if (/^(mix|suburbs|phases|rings|campGrowth|zoneDensity)/.test(key)) return 'growth';
-  if (/^(tissue|access|max|allowStairs|powerHighGround|mergeParallelStreets|parallelMerge|roadWidthBySize|townMainRoad|polishRoadEnds|lowRuralHouses|outbuildings|houseComplexity|singularDensity|backBuildings|roadMouths|roadRemnants|roadEndJoins|roadNetworkPrune|villageStreets|smallPlaceCapacity|regularGridOutline|axisAlignment|exitTreatment|peripheralRoad)/.test(key)) return 'streets';
+  if (
+    /^(tissue|access|max|allowStairs|powerHighGround|mergeParallelStreets|parallelMerge|roadWidthBySize|townMainRoad|polishRoadEnds|lowRuralHouses|outbuildings|houseComplexity|singularDensity|backBuildings|roadMouths|roadRemnants|roadEndJoins|roadNetworkPrune|villageStreets|smallPlaceCapacity|regularGridOutline|axisAlignment|exitTreatment|peripheralRoad)/.test(
+      key,
+    )
+  )
+    return 'streets';
   return 'layout';
 }
 const templates = new Map<string, Record<string, unknown>>();
@@ -115,53 +509,127 @@ export function morphologyTemplate(kind: 'quarters' | 'parcels'): Record<string,
 /** Every native default leaf is represented; optional contract leaves are added explicitly below. */
 export function urbanControlFields(): UrbanParameterField[] {
   const out: UrbanParameterField[] = [];
-  for (const [key, value] of Object.entries(defaultLayoutConfig())) if (key !== 'params') {
-    if (key === 'programme') continue;
-    for (const leaf of scalarLeaves(value, `layout.${key}`)) out.push(urbanField(leaf.path, leaf.value, layoutSection(key)));
-  }
-  for (const leaf of scalarLeaves({ ...defaultLayoutConfig().programme, template: '', resources: '', lore: '', state: 'thriving', decay: null, functions: Object.fromEntries(PROGRAMME_FUNCTIONS.map(key => [key, 0])) }, 'layout.programme')) out.push(urbanField(leaf.path, leaf.value, 'programme'));
+  for (const [key, value] of Object.entries(defaultLayoutConfig()))
+    if (key !== 'params') {
+      if (key === 'programme') continue;
+      for (const leaf of scalarLeaves(value, `layout.${key}`)) out.push(urbanField(leaf.path, leaf.value, layoutSection(key)));
+    }
+  for (const leaf of scalarLeaves({ ...defaultLayoutConfig().programme, template: '', resources: '', lore: '', state: 'thriving', decay: null, functions: Object.fromEntries(PROGRAMME_FUNCTIONS.map(key => [key, 0])) }, 'layout.programme'))
+    out.push(urbanField(leaf.path, leaf.value, 'programme'));
   out.push(urbanField('layout.siteArchetype', '', 'ports'));
   for (const [key, value] of Object.entries(defaultParcelConfig())) if (key !== 'params') out.push(urbanField(`parcels.${key}`, value, 'parcels'));
-  out.push(urbanField('parcels.streetAlignedHomes', false, 'parcels'), urbanField('parcels.denserSmallholdings', false, 'parcels'), urbanField('parcels.plotEnclosure', null, 'parcels'), urbanField('parcels.fieldEnclosure', null, 'parcels'), urbanField('parcels.enclosureMaterial', '', 'parcels'));
-  for (const kind of ['quarters', 'parcels'] as const) for (const [key, value] of Object.entries(morphologyTemplate(kind))) for (const leaf of scalarLeaves(value, `${kind === 'quarters' ? 'layout' : 'parcels'}.params.${key}`)) {
-    const field = urbanField(leaf.path, leaf.value, kind === 'quarters' ? 'streets' : 'parcels');
-    const suffix = leaf.path.slice(leaf.path.indexOf(`.${key}`) + key.length + 1).split('.').filter(Boolean).map(k => /^\d+$/.test(k) ? Number(k) + 1 : pretty(k)).join(' / ');
-    field.label = `${urbanName(key)[0]}${suffix ? ` / ${suffix}` : ''}`; out.push(field);
-  }
+  out.push(
+    urbanField('parcels.streetAlignedHomes', false, 'parcels'),
+    urbanField('parcels.denserSmallholdings', false, 'parcels'),
+    urbanField('parcels.plotEnclosure', null, 'parcels'),
+    urbanField('parcels.fieldEnclosure', null, 'parcels'),
+    urbanField('parcels.enclosureMaterial', '', 'parcels'),
+  );
+  for (const kind of ['quarters', 'parcels'] as const)
+    for (const [key, value] of Object.entries(morphologyTemplate(kind)))
+      for (const leaf of scalarLeaves(value, `${kind === 'quarters' ? 'layout' : 'parcels'}.params.${key}`)) {
+        const field = urbanField(leaf.path, leaf.value, kind === 'quarters' ? 'streets' : 'parcels');
+        const suffix = leaf.path
+          .slice(leaf.path.indexOf(`.${key}`) + key.length + 1)
+          .split('.')
+          .filter(Boolean)
+          .map(k => (/^\d+$/.test(k) ? Number(k) + 1 : pretty(k)))
+          .join(' / ');
+        field.label = `${urbanName(key)[0]}${suffix ? ` / ${suffix}` : ''}`;
+        out.push(field);
+      }
   out.push(urbanField('houses.culture', '', 'placement'), urbanField('houses.parcel_fit', true, 'placement'), urbanField('houses.floors', 1, 'placement'), urbanField('houses.typology', 'common', 'placement'));
   // Placement owns transform, seed and count. These are deliberately not fake batch controls.
   for (const leaf of scalarLeaves(houseControlDefaults(), 'houses.house_config')) if (!['schema_version', 'seed', 'count', 'orientation_deg'].some(k => leaf.path === `houses.house_config.${k}`)) out.push(urbanField(leaf.path, leaf.value, 'house'));
   for (const leaf of scalarLeaves({ ...workshopControlDefaults(), support: { kind: 'ground', material: null, height_m: [0, 0] } }, 'houses.house_config.workshop')) {
     const field = urbanField(leaf.path, leaf.value, 'workshop');
     if (/\.height_m\.\d+$/.test(leaf.path)) field.label += leaf.path.endsWith('.0') ? ' / Minimum' : ' / Maximum';
-    if (['preset_id', 'footprint', 'roof', 'roof_frame', 'base', 'material'].includes(leaf.path.split('.').at(-1)!)) { field.type = 'select'; field.options = []; }
-    if (leaf.path.endsWith('.kind')) { field.type = 'select'; field.options = choices(['ground', 'posts', 'piers', 'raft', 'rock']); }
+    if (['preset_id', 'footprint', 'roof', 'roof_frame', 'base', 'material'].includes(leaf.path.split('.').at(-1)!)) {
+      field.type = 'select';
+      field.options = [];
+    }
+    if (leaf.path.endsWith('.kind')) {
+      field.type = 'select';
+      field.options = choices(['ground', 'posts', 'piers', 'raft', 'rock']);
+    }
     out.push(field);
   }
-  for (const field of out) if (field.path.startsWith('houses.house_config.') && ['pack', 'recipe', 'era', 'variant', 'footprint', 'roof', 'frame', 'infill', 'coating', 'cladding'].includes(field.path.split('.').at(-1)!)) { field.type = 'select'; field.options = []; }
+  for (const field of out)
+    if (field.path.startsWith('houses.house_config.') && ['pack', 'recipe', 'era', 'variant', 'footprint', 'roof', 'frame', 'infill', 'coating', 'cladding'].includes(field.path.split('.').at(-1)!)) {
+      field.type = 'select';
+      field.options = [];
+    }
   return out;
 }
 /** Kept pure so opening a settings panel does not fetch/compile the houses WASM.
  * A parity test compares this data to the native bridge's defaultHouseConfig. */
 export function houseControlDefaults(): HouseConfig {
-  return { schema_version: HOUSE_SCHEMA, seed: '42', pack: 'EUR-MED', recipe: null, mode: 'historical_inspired', era: 'any', allow_late: false, count: 10, size: 1, variation: .65, wealth: .5, orientation_deg: 0,
-    overrides: { variant: null, footprint: null, roof: null, frame: null, infill: null, coating: null, cladding: null, floors: null, bodies: null, courtyard_ratio: null, overhang_m: null, roof_pitch_deg: null, site_slope_deg: null } };
+  return {
+    schema_version: HOUSE_SCHEMA,
+    seed: '42',
+    pack: 'EUR-MED',
+    recipe: null,
+    mode: 'historical_inspired',
+    era: 'any',
+    allow_late: false,
+    count: 10,
+    size: 1,
+    variation: 0.65,
+    wealth: 0.5,
+    orientation_deg: 0,
+    overrides: { variant: null, footprint: null, roof: null, frame: null, infill: null, coating: null, cladding: null, floors: null, bodies: null, courtyard_ratio: null, overhang_m: null, roof_pitch_deg: null, site_slope_deg: null },
+  };
 }
 export function workshopControlDefaults(): WorkshopRequest {
   return { preset_id: '', footprint: null, roof: null, width_m: null, depth_m: null, roof_frame: null, base: null, support: null };
 }
 /** Native roof systems (houses catalogue ids) shown by name in the editor, never by code. */
 export const ROOF_SYSTEM_NAMES: Record<string, readonly [string, string]> = {
-  'RF-GABLE': ['Gable roof', 'Toit à deux pans'], 'RF-HIP': ['Hip roof', 'Toit à quatre pans'], 'RF-FLAT': ['Flat roof', 'Toit plat'], 'RF-SHED': ['Lean-to roof', 'Toit en appentis'],
-  'RF-REED-HIP': ['Reed hip roof', 'Toit de roseau à quatre pans'], 'RF-CONE': ['Conical roof', 'Toit conique'], 'RF-CONICAL': ['Conical roof', 'Toit conique'], 'RF-DOME': ['Dome', 'Dôme'],
-  'RF-EAVES': ['Deep-eaved roof', 'Toit à larges avant-toits'], 'RF-VAULT': ['Vaulted roof', 'Toit voûté'], 'RF-THATCH-VAULT': ['Thatched vault', 'Voûte de chaume'], 'RF-SADDLE': ['Saddle roof', 'Toit en bâtière'],
-  'RF-SHELL': ['Shell roof', 'Toit en coque'], 'RF-TENT': ['Tent roof', 'Toit en tente'], 'RF-CURVED': ['Curved roof', 'Toit incurvé'], 'RF-TIERED': ['Tiered roof', 'Toit à étages'],
-  'RF-STEEP-STEP': ['Steep stepped roof', 'Toit raide à redents'], 'RF-SNOW': ['Steep snow roof', 'Toit raide à neige'], 'RF-MULTIPAV': ['Multi-pavilion roof', 'Toit à pavillons multiples'],
-  'RF-DOME-CONE': ['Domed cone', 'Cône bombé'], 'RF-STEP': ['Stepped roof', 'Toit à gradins'], 'RF-GAMBREL': ['Gambrel roof', 'Toit à la Mansart'], 'RF-CROSSVAULT': ['Cross vault', 'Voûte d’arêtes'],
-  'RF-PYRAMID': ['Pyramid roof', 'Toit en pyramide'], 'RF-BARREL': ['Barrel vault', 'Voûte en berceau'],
+  'RF-GABLE': ['Gable roof', 'Toit à deux pans'],
+  'RF-HIP': ['Hip roof', 'Toit à quatre pans'],
+  'RF-FLAT': ['Flat roof', 'Toit plat'],
+  'RF-SHED': ['Lean-to roof', 'Toit en appentis'],
+  'RF-REED-HIP': ['Reed hip roof', 'Toit de roseau à quatre pans'],
+  'RF-CONE': ['Conical roof', 'Toit conique'],
+  'RF-CONICAL': ['Conical roof', 'Toit conique'],
+  'RF-DOME': ['Dome', 'Dôme'],
+  'RF-EAVES': ['Deep-eaved roof', 'Toit à larges avant-toits'],
+  'RF-VAULT': ['Vaulted roof', 'Toit voûté'],
+  'RF-THATCH-VAULT': ['Thatched vault', 'Voûte de chaume'],
+  'RF-SADDLE': ['Saddle roof', 'Toit en bâtière'],
+  'RF-SHELL': ['Shell roof', 'Toit en coque'],
+  'RF-TENT': ['Tent roof', 'Toit en tente'],
+  'RF-CURVED': ['Curved roof', 'Toit incurvé'],
+  'RF-TIERED': ['Tiered roof', 'Toit à étages'],
+  'RF-STEEP-STEP': ['Steep stepped roof', 'Toit raide à redents'],
+  'RF-SNOW': ['Steep snow roof', 'Toit raide à neige'],
+  'RF-MULTIPAV': ['Multi-pavilion roof', 'Toit à pavillons multiples'],
+  'RF-DOME-CONE': ['Domed cone', 'Cône bombé'],
+  'RF-STEP': ['Stepped roof', 'Toit à gradins'],
+  'RF-GAMBREL': ['Gambrel roof', 'Toit à la Mansart'],
+  'RF-CROSSVAULT': ['Cross vault', 'Voûte d’arêtes'],
+  'RF-PYRAMID': ['Pyramid roof', 'Toit en pyramide'],
+  'RF-BARREL': ['Barrel vault', 'Voûte en berceau'],
 };
 /** A readable name for an unknown catalogue id: `RF-REED-HIP` → `Reed hip`. Never the raw code. */
-export function catalogueIdName(id: string): string { return pretty(id.replace(/^[A-Z]{2,4}-/, '').toLowerCase()); }
+export function catalogueIdName(id: string): string {
+  return pretty(id.replace(/^[A-Z]{2,4}-/, '').toLowerCase());
+}
 export const urbanSectionNames: Record<UrbanControlSection, readonly [string, string]> = {
-  layout: ['1 · Settlement layout', '1 · Plan du lieu'], footprint: ['2 · Footprint and area budget', '2 · Emprise et budget de surface'], growth: ['3 · Growth and cultural mixtures', '3 · Croissance et mélanges culturels'], streets: ['4 · Streets and access', '4 · Rues et dessertes'], fortifications: ['5 · Fortifications', '5 · Fortifications'], ports: ['6 · Waterfront and ports', '6 · Rives et ports'], programme: ['7 · Functions and historical programme', '7 · Fonctions et programme historique'], parcels: ['8 · Cadastral subdivision', '8 · Découpage cadastral'], placement: ['9 · Architectural placement', '9 · Implantation architecturale'], house: ['10 · Native house model', '10 · Modèle natif des maisons'], workshop: ['11 · Free architectural workshop', '11 · Atelier architectural libre'], quarter: ['District override', 'Modification du quartier'], block: ['Block override', 'Modification de l’îlot'], parcel: ['Parcel override', 'Modification de la parcelle'], building: ['Building override', 'Modification du bâtiment'], advanced: ['Advanced', 'Avancé'],
+  layout: ['1 · Settlement layout', '1 · Plan du lieu'],
+  footprint: ['2 · Footprint and area budget', '2 · Emprise et budget de surface'],
+  growth: ['3 · Growth and cultural mixtures', '3 · Croissance et mélanges culturels'],
+  streets: ['4 · Streets and access', '4 · Rues et dessertes'],
+  fortifications: ['5 · Fortifications', '5 · Fortifications'],
+  ports: ['6 · Waterfront and ports', '6 · Rives et ports'],
+  programme: ['7 · Functions and historical programme', '7 · Fonctions et programme historique'],
+  parcels: ['8 · Cadastral subdivision', '8 · Découpage cadastral'],
+  placement: ['9 · Architectural placement', '9 · Implantation architecturale'],
+  house: ['10 · Native house model', '10 · Modèle natif des maisons'],
+  workshop: ['11 · Free architectural workshop', '11 · Atelier architectural libre'],
+  quarter: ['District override', 'Modification du quartier'],
+  block: ['Block override', 'Modification de l’îlot'],
+  parcel: ['Parcel override', 'Modification de la parcelle'],
+  building: ['Building override', 'Modification du bâtiment'],
+  advanced: ['Advanced', 'Avancé'],
 };

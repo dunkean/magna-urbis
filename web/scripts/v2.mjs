@@ -10,12 +10,15 @@ import { buildWasmVariant } from '../../rust/scripts/wasmVariants.mjs';
 import { stageTerrainPythonScripts } from './v2_release_resources.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
-const root = resolve(web, '..'), rust = join(root, 'rust'), desktop = join(rust, 'desktop-v2');
+const root = resolve(web, '..'),
+  rust = join(root, 'rust'),
+  desktop = join(rust, 'desktop-v2');
 const windows = process.platform === 'win32';
 const cargoDir = join(homedir(), '.cargo/bin');
 const cargo = existsSync(join(cargoDir, windows ? 'cargo.exe' : 'cargo')) ? join(cargoDir, windows ? 'cargo.exe' : 'cargo') : 'cargo';
 const env = { ...process.env, PATH: cargoDir + delimiter + (process.env.PATH ?? '') };
-const flags = process.argv.slice(2), action = flags.find(arg => !arg.startsWith('--')) ?? 'dev';
+const flags = process.argv.slice(2),
+  action = flags.find(arg => !arg.startsWith('--')) ?? 'dev';
 const children = new Set();
 let stopping = false;
 
@@ -23,7 +26,9 @@ function start(command, args, cwd = web, capture = false) {
   const child = spawn(command, args, { cwd, env, windowsHide: true, detached: !windows, stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'] });
   children.add(child);
   let output = '';
-  child.stdout?.on('data', data => { output += data; });
+  child.stdout?.on('data', data => {
+    output += data;
+  });
   const done = new Promise((resolveDone, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => {
@@ -38,20 +43,25 @@ const run = (command, args, cwd = web) => start(command, args, cwd).done;
 const sleep = ms => new Promise(resolveSleep => setTimeout(resolveSleep, ms));
 
 function requireWasm() {
-  const missing = ['wasm/magna_urbis_wasm.js', 'wasm/magna_urbis_wasm_bg.wasm', 'houses/magna_urbis_houses_wasm.js', 'houses/magna_urbis_houses_wasm_bg.wasm']
-    .filter(file => !existsSync(join(rust, 'pkg', file)));
+  const missing = ['wasm/magna_urbis_wasm.js', 'wasm/magna_urbis_wasm_bg.wasm', 'houses/magna_urbis_houses_wasm.js', 'houses/magna_urbis_houses_wasm_bg.wasm'].filter(file => !existsSync(join(rust, 'pkg', file)));
   if (missing.length) throw new Error(`Packages WASM absents : ${missing.join(', ')}. Depuis web/, lancez npm run prepare:v2 (Rust et wasm-pack requis), puis relancez cette commande. Les sorties rust/pkg sont générées et ne sont pas suivies par Git.`);
 }
 
 async function prepare() {
   const wasmPack = existsSync(join(cargoDir, windows ? 'wasm-pack.exe' : 'wasm-pack')) ? join(cargoDir, windows ? 'wasm-pack.exe' : 'wasm-pack') : 'wasm-pack';
-  try { await start(wasmPack, ['--version'], rust, true).done; }
-  catch { throw new Error('wasm-pack est requis. Installez Rust/rustup puis exécutez cargo install wasm-pack --locked; la toolchain et la cible wasm32 sont définies dans rust/rust-toolchain.toml.'); }
+  try {
+    await start(wasmPack, ['--version'], rust, true).done;
+  } catch {
+    throw new Error('wasm-pack est requis. Installez Rust/rustup puis exécutez cargo install wasm-pack --locked; la toolchain et la cible wasm32 sont définies dans rust/rust-toolchain.toml.');
+  }
   // The single-thread packages (rust/target) and the threads package (its own target dir, std
   // rebuilt) share no build directory: they compile at the same time, with the same commands and
   // outputs as one after the other. Their final fat-LTO links are single-threaded each.
   const singleThread = (async () => {
-    for (const [crate, output] of [['wasm', 'wasm'], ['houses-wasm', 'houses']]) {
+    for (const [crate, output] of [
+      ['wasm', 'wasm'],
+      ['houses-wasm', 'houses'],
+    ]) {
       console.log(`Préparation V2 · Rust ${crate} → WASM release (${output})…`);
       await run(wasmPack, ['build', `crates/${crate}`, '--target', 'web', '--out-dir', `../../pkg/${output}`, '--release', '--no-opt'], rust);
     }
@@ -61,9 +71,7 @@ async function prepare() {
   // so a fresh checkout (web deploy) ships it and workers never run an older Rust schema.
   // --no-threads skips it (the desktop app generates with the native engine and is not isolated)
   // and removes any stale package so the bundle cannot pick it up.
-  const threads = flags.includes('--no-threads')
-    ? rm(join(rust, 'pkg/wasm-threads'), { recursive: true, force: true })
-    : (console.log('V2 preparation · Rust wasm → WASM threads (shared memory, rayon pool)…'), buildWasmVariant('threads'));
+  const threads = flags.includes('--no-threads') ? rm(join(rust, 'pkg/wasm-threads'), { recursive: true, force: true }) : (console.log('V2 preparation · Rust wasm → WASM threads (shared memory, rayon pool)…'), buildWasmVariant('threads'));
   // Wait for both before failing, so a failed side never leaves the other compiling unattended.
   const results = await Promise.allSettled([singleThread, threads]);
   for (const result of results) if (result.status === 'rejected') throw result.reason;
@@ -96,26 +104,51 @@ async function requireConditioning() {
 async function stop() {
   if (stopping) return;
   stopping = true;
-  await Promise.all([...children].map(child => new Promise(resolveStop => {
-    const timer = setTimeout(resolveStop, 3000); timer.unref();
-    child.once('exit', () => { clearTimeout(timer); resolveStop(); });
-    if (windows) {
-      const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-      killer.once('error', () => child.kill());
-    } else { try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill(); } }
-  })));
+  await Promise.all(
+    [...children].map(
+      child =>
+        new Promise(resolveStop => {
+          const timer = setTimeout(resolveStop, 3000);
+          timer.unref();
+          child.once('exit', () => {
+            clearTimeout(timer);
+            resolveStop();
+          });
+          if (windows) {
+            const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+            killer.once('error', () => child.kill());
+          } else {
+            try {
+              process.kill(-child.pid, 'SIGTERM');
+            } catch {
+              child.kill();
+            }
+          }
+        }),
+    ),
+  );
 }
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { void stop().then(() => process.exit(signal === 'SIGINT' ? 130 : 143)); });
+for (const signal of ['SIGINT', 'SIGTERM'])
+  process.once(signal, () => {
+    void stop().then(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  });
 
 async function status(url) {
-  try { const response = await fetch(url, { signal: AbortSignal.timeout(1500) }); return response.ok ? response : null; }
-  catch { return null; }
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    return response.ok ? response : null;
+  } catch {
+    return null;
+  }
 }
 async function ready(url, service, check = () => true) {
   for (let i = 0; i < 240; i++) {
-    if (service.child.exitCode !== null || service.child.signalCode !== null) { await service.done; throw new Error(`Service arrêté avant disponibilité : ${url}`); }
+    if (service.child.exitCode !== null || service.child.signalCode !== null) {
+      await service.done;
+      throw new Error(`Service arrêté avant disponibilité : ${url}`);
+    }
     const response = await status(url);
-    if (response && await check(response)) return;
+    if (response && (await check(response))) return;
     await sleep(250);
   }
   throw new Error(`Service indisponible : ${url}`);
@@ -133,7 +166,8 @@ async function nativeBinary() {
   return path;
 }
 async function native() {
-  const server = localAddress(), current = await status(new URL('/status', server));
+  const server = localAddress(),
+    current = await status(new URL('/status', server));
   if (current) {
     const data = await current.json();
     if (data.service !== 'magna-urbis-local' || data.backend !== 'rust-native') throw new Error(`Un autre service utilise ${server.origin}.`);
@@ -152,10 +186,18 @@ async function python() {
   }
   const earth = process.env.MAGNA_NEURAL_EARTH ?? resolve(root, '../infinite_map');
   const interpreter = process.env.MAGNA_NEURAL_PYTHON ?? join(earth, windows ? '.venv/Scripts/python.exe' : '.venv/bin/python');
-  if (!existsSync(interpreter)) { console.log('Python/CUDA optionnel absent · les moteurs procéduraux CPU et WebGPU restent disponibles.'); return null; }
+  if (!existsSync(interpreter)) {
+    console.log('Python/CUDA optionnel absent · les moteurs procéduraux CPU et WebGPU restent disponibles.');
+    return null;
+  }
   const service = start(interpreter, ['-u', join(web, 'scripts/neural_python.py')]);
-  try { await ready('http://127.0.0.1:8793/status', service, async response => (await response.json()).backend === 'python-cuda'); return service; }
-  catch (error) { console.log(`Python/CUDA optionnel indisponible : ${error.message}`); return null; }
+  try {
+    await ready('http://127.0.0.1:8793/status', service, async response => (await response.json()).backend === 'python-cuda');
+    return service;
+  } catch (error) {
+    console.log(`Python/CUDA optionnel indisponible : ${error.message}`);
+    return null;
+  }
 }
 async function vite() {
   if (await status('http://127.0.0.1:5174/v2.html')) throw new Error('Le port V2 5174 est déjà utilisé. Réutilisez son URL ou arrêtez le service existant.');
@@ -163,7 +205,10 @@ async function vite() {
   await ready('http://127.0.0.1:5174/v2.html', service);
   return service;
 }
-const buildWeb = () => { requireWasm(); return run(process.execPath, [join(web, 'node_modules/vite/bin/vite.js'), 'build', '--config', join(web, 'vite.v2.config.ts')]); };
+const buildWeb = () => {
+  requireWasm();
+  return run(process.execPath, [join(web, 'node_modules/vite/bin/vite.js'), 'build', '--config', join(web, 'vite.v2.config.ts')]);
+};
 async function tauri(args) {
   if (!process.env.npm_execpath) throw new Error('Lancez la commande desktop via npm run app:v2:dev ou npm run app:v2:build.');
   return run(process.execPath, [process.env.npm_execpath, 'exec', '--yes', '--package=@tauri-apps/cli@2.11.4', '--', 'tauri', ...args], desktop);
@@ -172,7 +217,9 @@ async function resources() {
   const dir = resolve(desktop, 'resources');
   // This is a generated staging tree. Never follow a user-created junction.
   if (dir !== resolve(root, 'rust/desktop-v2/resources')) throw Error('Unexpected resources directory');
-  const existing = await lstat(dir).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  const existing = await lstat(dir).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+  });
   if (existing?.isSymbolicLink()) throw Error('The generated resources directory must not be a symlink or junction');
   if (existing) await rm(dir, { recursive: true, force: true });
   await mkdir(join(dir, 'web/scripts'), { recursive: true });
@@ -185,13 +232,11 @@ async function resources() {
   const neural = join(dir, `magna-urbis-neural${windows ? '.exe' : ''}`);
   await copyFile(join(rust, 'target/release', `magna-urbis-neural${windows ? '.exe' : ''}`), neural);
   if (!windows) await chmod(neural, 0o755);
-  await cp(join(root, 'illustration'), join(dir, 'illustration'), { recursive: true,
-    filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests') && !source.includes('output') });
+  await cp(join(root, 'illustration'), join(dir, 'illustration'), { recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests') && !source.includes('output') });
   await stageTerrainPythonScripts(web, join(dir, 'web/scripts'));
   await cp(join(web, 'scripts/neural_earth_tile40'), join(dir, 'web/scripts/neural_earth_tile40'), { recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') });
   for (const folder of ['python_runtime', 'rust/models/neural-earth', 'docs/models-release']) {
-    await cp(join(root, folder), join(dir, folder), { recursive: true,
-      filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !/[/\\](?:test_|tests[/\\])/.test(source) && !/\.(?:pt|safetensors)$/.test(source) });
+    await cp(join(root, folder), join(dir, folder), { recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !/[/\\](?:test_|tests[/\\])/.test(source) && !/\.(?:pt|safetensors)$/.test(source) });
   }
   await mkdir(join(dir, 'scripts'), { recursive: true });
   await copyFile(join(root, 'scripts/neural_release.py'), join(dir, 'scripts/neural_release.py'));
@@ -205,17 +250,26 @@ async function resources() {
 
 try {
   if (flags.includes('--help') || action === 'help') {
-    console.log('Magna Urbis V2 : node scripts/v2.mjs prepare|dev|build|local|desktop-resources|desktop-dev|desktop-build\nprepare : compile terrain + maisons en WASM release; --neural ajoute le runtime et les modèles depuis ../infinite_map.\ndev/build : application Web autonome; local : Web + Rust natif + Python/CUDA optionnel.\ndesktop-resources : prépare le moteur Rust, uv et les scripts sans construire l’interface.\ndesktop-dev/build : application et installateur Tauri séparés de la V1.\nOptions : --no-build (binaire Rust existant), --no-neural (lanceur local sans Python), --no-threads (prepare: skip the WASM threads package).\nPrérequis et déploiement : rust/desktop-v2/README.md');
+    console.log(
+      'Magna Urbis V2 : node scripts/v2.mjs prepare|dev|build|local|desktop-resources|desktop-dev|desktop-build\nprepare : compile terrain + maisons en WASM release; --neural ajoute le runtime et les modèles depuis ../infinite_map.\ndev/build : application Web autonome; local : Web + Rust natif + Python/CUDA optionnel.\ndesktop-resources : prépare le moteur Rust, uv et les scripts sans construire l’interface.\ndesktop-dev/build : application et installateur Tauri séparés de la V1.\nOptions : --no-build (binaire Rust existant), --no-neural (lanceur local sans Python), --no-threads (prepare: skip the WASM threads package).\nPrérequis et déploiement : rust/desktop-v2/README.md',
+    );
   } else if (action === 'prepare') await prepare();
   else if (action === 'build') await buildWeb();
-  else if (action === 'desktop-resources') { await requireConditioning(); await resources(); }
-  else if (action === 'dev' || action === 'local') {
+  else if (action === 'desktop-resources') {
+    await requireConditioning();
+    await resources();
+  } else if (action === 'dev' || action === 'local') {
     requireWasm();
     const services = [];
-    if (action === 'local') { services.push(await native(), await python()); }
+    if (action === 'local') {
+      services.push(await native(), await python());
+    }
     services.push(await vite());
     const url = new URL('http://127.0.0.1:5174/v2.html');
-    if (action === 'local') { url.searchParams.set('profile', 'local'); url.searchParams.set('localServer', localAddress().origin); }
+    if (action === 'local') {
+      url.searchParams.set('profile', 'local');
+      url.searchParams.set('localServer', localAddress().origin);
+    }
     console.log(`\nMagna Urbis V2 : ${url}\nCtrl+C arrête uniquement les services démarrés ici.`);
     await Promise.race(services.filter(Boolean).map(service => service.done));
   } else if (action === 'desktop-dev' || action === 'desktop-build') {
@@ -223,8 +277,16 @@ try {
     requireWasm();
     await requireConditioning();
     await resources();
-    if (action === 'desktop-build') await buildWeb(); else { await vite(); await python(); }
+    if (action === 'desktop-build') await buildWeb();
+    else {
+      await vite();
+      await python();
+    }
     await tauri([action === 'desktop-build' ? 'build' : 'dev', ...flags.filter(arg => arg.startsWith('--') && !['--no-build', '--no-neural'].includes(arg))]);
   } else throw new Error('Usage : v2.mjs prepare|dev|build|local|desktop-dev|desktop-build [--neural] [--no-build] [--no-neural]');
-} catch (error) { console.error(error.message); process.exitCode = 1; }
-finally { await stop(); }
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = 1;
+} finally {
+  await stop();
+}

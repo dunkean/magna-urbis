@@ -9,7 +9,12 @@ import { distToRing } from '../src/gen/geo/poly';
 // M4 invariants (URBAN_LANDMARKS.md §4) on cases that exercise every landmark: a walled city on a river (castle,
 // cathedral close, palace, monasteries, mills, trades, shanty towns), a harbour town, a city with many
 // suburbs and shanty towns, a medina (kasbah, madrasas, mellah, river port), a Roman-core town with its arena, a village motte.
-interface Case { name: string; o: Partial<Options>; expect: string[]; rejectedPort?: boolean }
+interface Case {
+  name: string;
+  o: Partial<Options>;
+  expect: string[];
+  rejectedPort?: boolean;
+}
 const CASES: Case[] = [
   { name: 'city on a river', o: { seed: '2', size: 'city' }, expect: ['castle', 'cathedral-close', 'palace', 'monastery', 'watermill', 'windmill', 'tannery', 'shanty'], rejectedPort: true },
   { name: 'harbour town', o: { seed: '3', size: 'town', coast: 'S', siteType: 'harbor' }, expect: ['castle'] },
@@ -23,13 +28,18 @@ const CASES: Case[] = [
 describe('M4 landmarks, port, suburbs, shanty towns', () => {
   it('measures castle contact along complete curtains while rejecting detached enclosures', () => {
     const box = (x0: number, y0: number, x1: number, y1: number) => [
-      { x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 },
+      { x: x0, y: y0 },
+      { x: x1, y: y0 },
+      { x: x1, y: y1 },
+      { x: x0, y: y1 },
     ];
-    const castle = box(0, 0, 20, 20), contact = box(9, -2, 11, 0), crossing = box(9, -10, 11, 30);
+    const castle = box(0, 0, 20, 20),
+      contact = box(9, -2, 11, 0),
+      crossing = box(9, -10, 11, 30);
     // Neither case has a nearby castle vertex: the old one-way vertex oracle
     // missed the shared curtain in the first and proper intersections in the second.
     for (const enclosure of [contact, crossing]) {
-      expect(Math.min(...castle.map((p) => distToRing(enclosure, p)))).toBeGreaterThan(5);
+      expect(Math.min(...castle.map(p => distToRing(enclosure, p)))).toBeGreaterThan(5);
       expect(boundaryDistance(castle, [enclosure])).toBe(0);
       expect(boundaryDistance(enclosure, [castle])).toBe(0);
     }
@@ -54,17 +64,17 @@ describe('M4 landmarks, port, suburbs, shanty towns', () => {
       expect(r.acute + r.thin, 'acute or thin shapes\n' + msg).toBeLessThanOrEqual(Math.max(2, Math.ceil(0.01 * (r.plots + r.buildings))));
       expect(r.orphanMain, 'main streets connect').toBe(0);
       const m = checkM4(w);
-      const kinds = new Set(m.sites.map((s) => s.kind));
+      const kinds = new Set(m.sites.map(s => s.kind));
       for (const k of c.expect) expect(kinds.has(k), `${c.name}: has a ${k} (sites: ${[...kinds].join(', ')})`).toBe(true);
       if (c.rejectedPort) {
         // Auto ports require a valid dry quay and access. This shore is rejected
         // without committing any port geometry; the medina above exercises acceptance.
         const u = w.urban!;
         expect(w.options.port).toBe('auto');
-        expect(m.sites.filter((s) => s.role === 'port')).toEqual([]);
+        expect(m.sites.filter(s => s.role === 'port')).toEqual([]);
         expect(u.quays ?? []).toEqual([]);
-        expect(u.streets.filter((s) => s.role === 'quay')).toEqual([]);
-        expect(u.parcels.filter((p) => ['quay', 'pier', 'slipway'].includes(String(p.use)))).toEqual([]);
+        expect(u.streets.filter(s => s.role === 'quay')).toEqual([]);
+        expect(u.parcels.filter(p => ['quay', 'pier', 'slipway'].includes(String(p.use)))).toEqual([]);
       }
       // landmark lots are pieces of the partition: they never overlap
       expect(m.lotOverlap, 'landmark lots do not overlap').toBeLessThan(0.5);
@@ -106,32 +116,40 @@ describe('M4 landmarks, port, suburbs, shanty towns', () => {
   }
   it('determinism with every M4 feature', () => {
     const o = makeOptions({ seed: '6', size: 'town', coast: 'W', suburbs: 'many', shantytowns: 'some', arena: 'yes', castle: 'yes' });
-    const a = generate(o), b = generate(makeOptions({ ...o }));
+    const a = generate(o),
+      b = generate(makeOptions({ ...o }));
     expect(JSON.stringify(a.urban)).toBe(JSON.stringify(b.urban));
     expect(renderSvg(a)).toBe(renderSvg(b));
   });
   it('toggles switch the landmarks off', () => {
     const w = generate(makeOptions({ seed: '2', size: 'city', castle: 'no', cathedral: 'no', palace: 'no', monasteries: 'no', port: 'no', activities: 'no', shantytowns: 'none', suburbs: 'none' }));
-    const kinds = new Set((w.urban!.sites ?? []).map((s) => s.kind));
+    const kinds = new Set((w.urban!.sites ?? []).map(s => s.kind));
     for (const k of ['castle', 'cathedral-close', 'palace', 'monastery', 'river-port', 'harbour', 'watermill', 'shanty']) expect(kinds.has(k), k).toBe(false);
-    expect(w.urban!.phases.some((p) => p.zone === 'faubourg'), 'no suburbs').toBe(false);
+    expect(
+      w.urban!.phases.some(p => p.zone === 'faubourg'),
+      'no suburbs',
+    ).toBe(false);
   });
   it('walls: none, single, double; castle count', () => {
     for (const walls of ['none', 'single', 'double'] as const) {
       const w = generate(makeOptions({ seed: '1', size: 'town', walls, castles: walls === 'double' ? '2' : 'auto' }));
       const ws = w.urban!.walls ?? [];
-      const town = ws.filter((x) => x.role === 'town'), outer = ws.filter((x) => x.role === 'outer');
-      if (walls === 'none') { expect(town.length + outer.length, 'open town: no enceinte').toBe(0); continue; }
+      const town = ws.filter(x => x.role === 'town'),
+        outer = ws.filter(x => x.role === 'outer');
+      if (walls === 'none') {
+        expect(town.length + outer.length, 'open town: no enceinte').toBe(0);
+        continue;
+      }
       expect(town.length, walls + ': a curtain').toBeGreaterThan(0);
       expect(outer.length, walls + ': outer wall only for double').toBe(walls === 'double' ? town.length : 0);
       for (const o of outer) {
         // the lists: the outer wall runs 10–25 m outside the curtain, along straight curtains
-        const gaps = o.path.map((q) => Math.min(...town.map((t) => distToRing(t.path, q))));
+        const gaps = o.path.map(q => Math.min(...town.map(t => distToRing(t.path, q))));
         expect(Math.min(...gaps), 'lists at least ~10 m').toBeGreaterThan(8);
         expect(Math.max(...gaps), 'lists at most ~25 m (corners mitred)').toBeLessThan(60);
         for (const [a, b] of o.curtains ?? []) expect(Math.hypot(a.x - b.x, a.y - b.y), 'outer curtains ≤ 60 m').toBeLessThanOrEqual(60);
       }
-      if (walls === 'double') expect((w.urban!.sites ?? []).filter((x) => x.kind === 'castle').length, 'two castles on distinct sites').toBe(2);
+      if (walls === 'double') expect((w.urban!.sites ?? []).filter(x => x.kind === 'castle').length, 'two castles on distinct sites').toBe(2);
       const r = checkWorld(w);
       expect(r.overlapsBlocks + r.overlapsPlots, walls + ': partition').toBe(0);
     }

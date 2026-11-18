@@ -8,7 +8,9 @@ import { localArchitectureSettings } from '../../rust/bridge/urbanHouseEdits';
 import { translate } from '../src/v2/i18n';
 import type { V2Settings } from '../src/v2/contracts';
 
-function settings(): V2Settings { return { options: makeOptions({ seed: 'editor-levels', culture: 'european-organic', population: 2000 }), extent: 3000, settlementCount: 1, local: {}, generation: 'procedural', urban: { backend: 'rust' } }; }
+function settings(): V2Settings {
+  return { options: makeOptions({ seed: 'editor-levels', culture: 'european-organic', population: 2000 }), extent: 3000, settlementCount: 1, local: {}, generation: 'procedural', urban: { backend: 'rust' } };
+}
 const paths = (kind: 'quarter' | 'block' | 'parcel' | 'building') => localFields(kind === 'building' ? { kind, key: 'main', id: 'r1' } : { kind, key: 'main', id: '3' }).map(field => field.path);
 
 describe('editor levels', () => {
@@ -22,7 +24,8 @@ describe('editor levels', () => {
     expect(paths('building').filter(path => path === 'recipe')).toHaveLength(1);
   });
   it('carries a parcel content choice into the native programme request', () => {
-    const config = settings(), scope = { kind: 'parcel', key: 'main', id: 'q0/b2/p5', defaults: { role: 'storage.barn', area: 400 } } as const;
+    const config = settings(),
+      scope = { kind: 'parcel', key: 'main', id: 'q0/b2/p5', defaults: { role: 'storage.barn', area: 400 } } as const;
     writeUrbanControl(config, scope, 'role', 'commerce.tavern');
     expect(resolveRustUrbanControls(config, 'main', config.options).parcels.overrides?.parcels?.['q0/b2/p5']?.role).toBe('commerce.tavern');
     writeUrbanControl(config, scope, 'role', 'dwelling');
@@ -39,7 +42,8 @@ describe('editor levels', () => {
     expect(compatibleBuildingTypes({ culture: 'site', fallbackCulture: 'european-organic', area: 150 }).find(choice => choice.value === 'commerce.tavern')?.group).toBe('This culture');
   });
   it('sends a house roof edit to the city-volume request and resets type and roof on a culture change', () => {
-    const config = settings(), scope = { kind: 'building', key: 'main', id: 'q0/b2/p5/building', defaults: { pack: 'EUR-MED', overrides: { roof: 'RF-GABLE' } } as never } as const;
+    const config = settings(),
+      scope = { kind: 'building', key: 'main', id: 'q0/b2/p5/building', defaults: { pack: 'EUR-MED', overrides: { roof: 'RF-GABLE' } } as never } as const;
     writeUrbanControl(config, scope, 'overrides.roof', 'RF-HIP');
     writeUrbanControl(config, scope, 'recipe', 'some-recipe');
     const own = config.urban!.buildings!['main/q0/b2/p5/building'];

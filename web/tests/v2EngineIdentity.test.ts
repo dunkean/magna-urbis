@@ -9,9 +9,10 @@ import type { V2Progress } from '../src/v2/contracts';
 const SERVER = 'http://127.0.0.1:8791';
 let build = 'A';
 function serveStatus(): void {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => String(url).endsWith('/status')
-    ? new Response(JSON.stringify({ ok: true, service: 'magna-urbis-local', backend: 'rust-native', build }), { status: 200 })
-    : new Response('', { status: 404 })));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => (String(url).endsWith('/status') ? new Response(JSON.stringify({ ok: true, service: 'magna-urbis-local', backend: 'rust-native', build }), { status: 200 }) : new Response('', { status: 404 }))),
+  );
 }
 function nativeSettings() {
   const settings = defaultSettings();
@@ -19,7 +20,10 @@ function nativeSettings() {
   settings.runtime = { backend: 'native', compute: 'cpu', source: 'procedural', localServer: SERVER };
   return settings;
 }
-afterEach(() => { vi.unstubAllGlobals(); recordNativeBuild(SERVER, undefined); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  recordNativeBuild(SERVER, undefined);
+});
 
 describe('engine identity keys the retained stage results', () => {
   it('a native engine without a known build is the browser engine; a stamp wins over the registry', () => {
@@ -31,7 +35,8 @@ describe('engine identity keys the retained stage results', () => {
   });
 
   it('a rebuilt native engine makes full generation place and route again; an unchanged one is reported reused', async () => {
-    serveStatus(); build = 'A';
+    serveStatus();
+    build = 'A';
     const settings = nativeSettings();
     recordNativeBuild(SERVER, 'A');
     const world = { seed: settings.options.seed, mapSize: 1200, options: settings.options, settlements: [], stats: { 'v2.terrainKey': 'terrain' } } as unknown as World;
@@ -39,9 +44,16 @@ describe('engine identity keys the retained stage results', () => {
     recordGenerationValidity(world, settings, 'region');
     const run = () => {
       const progress: V2Progress[] = [];
-      const api = { settings: () => settings, world: () => world, targets: () => undefined, redraw: vi.fn(async () => {}),
-        progress: (p: V2Progress) => { progress.push(p); },
-        generate: vi.fn(async (_action: FullGenerationAction) => true) };
+      const api = {
+        settings: () => settings,
+        world: () => world,
+        targets: () => undefined,
+        redraw: vi.fn(async () => {}),
+        progress: (p: V2Progress) => {
+          progress.push(p);
+        },
+        generate: vi.fn(async (_action: FullGenerationAction) => true),
+      };
       return { api, progress };
     };
 

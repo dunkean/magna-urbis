@@ -3,7 +3,10 @@ import { vectorMouth } from '../src/v2/terrainProjection';
 
 describe('vector course mouth label', () => {
   // 10 x 10 cells of 10 m: sea on row 9, a lake cell at (2, 2).
-  const n = 10, width = 100, sea = new Uint8Array(n * n), lake = new Uint8Array(n * n);
+  const n = 10,
+    width = 100,
+    sea = new Uint8Array(n * n),
+    lake = new Uint8Array(n * n);
   for (let x = 0; x < n; x++) sea[9 * n + x] = 1;
   lake[2 * n + 2] = 1;
   const water = { hydro: { n, sea }, lake };

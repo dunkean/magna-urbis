@@ -5,11 +5,14 @@ import { urbanText as benchText } from './urbanPanelLocale';
 import { localizeTerrainSketch, terrainZoneName } from './terrainSketchLocale';
 
 interface MapEditing {
-  viewport: HTMLElement; surface: SVGSVGElement;
+  viewport: HTMLElement;
+  surface: SVGSVGElement;
   bounds: () => { left: number; top: number; size: number };
-  width: () => number; setWidth: (width: number) => void;
+  width: () => number;
+  setWidth: (width: number) => void;
   onHeightmapImported?: (resolution: number) => void;
-  onEnable: () => void; apply: () => void;
+  onEnable: () => void;
+  apply: () => void;
 }
 interface EditorLocale {
   text: (words: readonly [string, string, string, string, string]) => string;
@@ -17,11 +20,25 @@ interface EditorLocale {
   source?: () => string;
 }
 const names = ['Mer', 'Plaine', 'Collines', 'Montagnes', 'Hautes montagnes'];
-const colours = [[38, 123, 193], [124, 190, 111], [196, 171, 92], [161, 109, 73], [211, 211, 225]];
+const colours = [
+  [38, 123, 193],
+  [124, 190, 111],
+  [196, 171, 92],
+  [161, 109, 73],
+  [211, 211, 225],
+];
 
-export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSketch | undefined,
-  surface: () => { height: Float32Array; resolution: number; width?: number } | undefined, changed: () => void,
-  initialError?: string, onStrokeStart?: () => void, map?: MapEditing, initialZones?: TerrainZones, locale?: EditorLocale) {
+export function createTerrainSketchEditor(
+  host: HTMLElement,
+  initial: TerrainSketch | undefined,
+  surface: () => { height: Float32Array; resolution: number; width?: number } | undefined,
+  changed: () => void,
+  initialError?: string,
+  onStrokeStart?: () => void,
+  map?: MapEditing,
+  initialZones?: TerrainZones,
+  locale?: EditorLocale,
+) {
   const urbanText = locale?.text ?? benchText;
   host.innerHTML = `<details class="sketch-editor" open><summary>Zones de génération</summary>
     <div class="sketch-tools"><label>Entrée <select data-id="input"><option value="generated">Relief automatique</option><option value="zones">Zones peintes → génération</option><option value="surface">Heightmap importée → conserver</option><option value="erosion">Heightmap importée → éroder</option>${initial && !initial.processing ? '<option value="sketch">Ancienne esquisse d’altitude</option>' : ''}</select></label>
@@ -46,160 +63,540 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
     <input data-id="file" type="file" accept=".json,.png,application/json,image/png" hidden></details></div>
     <output data-id="state" role="status"></output></details>`;
   const get = <T extends HTMLElement>(id: string): T => host.querySelector(`[data-id="${id}"]`)! as T;
-  const mode = get<HTMLSelectElement>('input'), tool = get<HTMLSelectElement>('tool');
-  const radiusInput = get<HTMLInputElement>('radius'), featherInput = get<HTMLInputElement>('feather');
-  const state = get('state'), undoButton = get<HTMLButtonElement>('undo'), redoButton = get<HTMLButtonElement>('redo');
+  const mode = get<HTMLSelectElement>('input'),
+    tool = get<HTMLSelectElement>('tool');
+  const radiusInput = get<HTMLInputElement>('radius'),
+    featherInput = get<HTMLInputElement>('feather');
+  const state = get('state'),
+    undoButton = get<HTMLButtonElement>('undo'),
+    redoButton = get<HTMLButtonElement>('redo');
   let mask = initialZones ? parseTerrainZones(initialZones) : { version: 1 as const, resolution: 128, weights: new Array<number>(128 ** 2 * 5).fill(0) };
   let heightmap = initial ? parseTerrainSketch(initial) : undefined;
   let cachedZones: TerrainZones | undefined, cachedHeightmap: TerrainSketch | undefined;
-  let appliedZones = initialZones, appliedHeightmap = initial;
-  mode.value = initialZones ? 'zones' : initial ? initial.processing ?? 'sketch' : 'generated';
+  let appliedZones = initialZones,
+    appliedHeightmap = initial;
+  mode.value = initialZones ? 'zones' : initial ? (initial.processing ?? 'sketch') : 'generated';
   let manualMode = mode.value === 'generated' ? 'zones' : mode.value;
-  let previousMode = mode.value, available = true, editing = false, revision = 0;
-  const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d')!;
-  canvas.width = canvas.height = 512; canvas.tabIndex = 0; canvas.className = 'terrain-paint-overlay'; canvas.hidden = true;
+  let previousMode = mode.value,
+    available = true,
+    editing = false,
+    revision = 0;
+  const canvas = document.createElement('canvas'),
+    ctx = canvas.getContext('2d')!;
+  canvas.width = canvas.height = 512;
+  canvas.tabIndex = 0;
+  canvas.className = 'terrain-paint-overlay';
+  canvas.hidden = true;
   canvas.setAttribute('aria-label', 'Dessiner les masques de génération du relief');
-  const brushCursor = document.createElement('div'); brushCursor.className = 'terrain-brush-cursor'; brushCursor.hidden = true; brushCursor.setAttribute('aria-hidden', 'true');
+  const brushCursor = document.createElement('div');
+  brushCursor.className = 'terrain-brush-cursor';
+  brushCursor.hidden = true;
+  brushCursor.setAttribute('aria-hidden', 'true');
   map?.viewport.append(canvas, brushCursor);
-  const small = document.createElement('canvas'), smallContext = small.getContext('2d')!;
+  const small = document.createElement('canvas'),
+    smallContext = small.getContext('2d')!;
   type EditState = { mask: TerrainZones; heightmap?: TerrainSketch; mode: string; cachedZones?: TerrainZones; cachedHeightmap?: TerrainSketch };
-  const undo: EditState[] = [], redo: EditState[] = [];
+  const undo: EditState[] = [],
+    redo: EditState[] = [];
   const saveState = (): EditState => ({ mask: { ...mask, weights: [...mask.weights] }, heightmap, mode: previousMode, cachedZones, cachedHeightmap });
-  const remember = (): void => { undo.push(saveState()); if (undo.length > 30) undo.shift(); redo.length = 0; };
-  const mutated = (): void => { revision++; cachedZones = undefined; cachedHeightmap = undefined; };
+  const remember = (): void => {
+    undo.push(saveState());
+    if (undo.length > 30) undo.shift();
+    redo.length = 0;
+  };
+  const mutated = (): void => {
+    revision++;
+    cachedZones = undefined;
+    cachedHeightmap = undefined;
+  };
   const numeric = (input: HTMLInputElement, min: number, max: number): number => Math.max(min, Math.min(max, Number(input.value) || min));
   const updateView = (): void => {
     if (!map) return;
-    const b = map.bounds(); Object.assign(canvas.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.size}px`, height: `${b.size}px` });
+    const b = map.bounds();
+    Object.assign(canvas.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.size}px`, height: `${b.size}px` });
   };
   function setEditing(value: boolean): void {
-    editing = value && available; canvas.hidden = !editing;
-    get('edit').setAttribute('aria-pressed', String(editing)); get('edit').textContent = editing ? urbanText(['Quitter les zones', 'Exit zone editing', '退出区域编辑', 'Salir de la edición de zonas', 'Sair da edição de zonas']) : urbanText(['Dessiner les zones', 'Paint zones', '绘制区域', 'Pintar zonas', 'Pintar zonas']);
+    editing = value && available;
+    canvas.hidden = !editing;
+    get('edit').setAttribute('aria-pressed', String(editing));
+    get('edit').textContent = editing ? urbanText(['Quitter les zones', 'Exit zone editing', '退出区域编辑', 'Salir de la edición de zonas', 'Sair da edição de zonas']) : urbanText(['Dessiner les zones', 'Paint zones', '绘制区域', 'Pintar zonas', 'Pintar zonas']);
     document.getElementById('editTerrain')?.setAttribute('aria-pressed', String(editing));
     if (!editing) brushCursor.hidden = true;
     map?.viewport.classList.toggle('terrain-editing', editing);
-    if (editing) map?.onEnable(); updateView();
-    host.dispatchEvent(new Event('terrain-mask-state',{bubbles:true}));
+    if (editing) map?.onEnable();
+    updateView();
+    host.dispatchEvent(new Event('terrain-mask-state', { bubbles: true }));
   }
   function draw(): void {
-    const n = mask.resolution; small.width = small.height = n;
-    const image = smallContext.createImageData(n, n), coverage = new Array<number>(5).fill(0);
-    for (let p = 0; p < n*n; p++) {
-      let total = 0; const rgb = [0, 0, 0];
+    const n = mask.resolution;
+    small.width = small.height = n;
+    const image = smallContext.createImageData(n, n),
+      coverage = new Array<number>(5).fill(0);
+    for (let p = 0; p < n * n; p++) {
+      let total = 0;
+      const rgb = [0, 0, 0];
       for (let k = 0; k < 5; k++) {
-        const w = mask.weights[p*5+k]; total += w; coverage[k] += w;
+        const w = mask.weights[p * 5 + k];
+        total += w;
+        coverage[k] += w;
         for (let c = 0; c < 3; c++) rgb[c] += colours[k][c] * w;
       }
-      for (let c = 0; c < 3; c++) image.data[p*4+c] = total ? rgb[c]/total : 0;
-      image.data[p*4+3] = total * 0.67;
+      for (let c = 0; c < 3; c++) image.data[p * 4 + c] = total ? rgb[c] / total : 0;
+      image.data[p * 4 + 3] = total * 0.67;
     }
-    smallContext.putImageData(image, 0, 0); ctx.clearRect(0, 0, 512, 512); ctx.drawImage(small, 0, 0, 512, 512);
+    smallContext.putImageData(image, 0, 0);
+    ctx.clearRect(0, 0, 512, 512);
+    ctx.drawImage(small, 0, 0, 512, 512);
     const pending = mode.value === 'zones' ? !cachedZones || cachedZones !== appliedZones : mode.value !== 'generated' && (!cachedHeightmap || cachedHeightmap !== appliedHeightmap);
     state.dataset.pending = String(pending);
-    state.textContent = mode.value === 'zones'
-      ? `${coverage.map((w, i) => w > 0 ? `${terrainZoneName(i, urbanText)} ${Math.round(w/(n*n*255)*100)} %` : '').filter(Boolean).join(' · ') || urbanText(['Aucune zone : relief automatique', 'No zones: automatic terrain', '没有区域：自动地形', 'Sin zonas: relieve automático', 'Sem zonas: relevo automático'])} · ${pending ? urbanText(['à générer','needs generation','待生成','pendiente de generar','a gerar']) : urbanText(['appliquées','applied','已应用','aplicadas','aplicadas'])}`
-      : mode.value === 'generated' ? urbanText(['Relief automatique, sans masque manuel.', 'Automatic terrain, without a manual mask.', '自动地形，无手动遮罩。', 'Relieve automático, sin máscara manual.', 'Relevo automático, sem máscara manual.']) : `${heightmap?.resolution ?? '—'}² · ${pending ? urbanText(['à appliquer','needs applying','待应用','pendiente de aplicar','a aplicar']) : urbanText(['appliquée','applied','已应用','aplicada','aplicada'])}`;
+    state.textContent =
+      mode.value === 'zones'
+        ? `${
+            coverage
+              .map((w, i) => (w > 0 ? `${terrainZoneName(i, urbanText)} ${Math.round((w / (n * n * 255)) * 100)} %` : ''))
+              .filter(Boolean)
+              .join(' · ') || urbanText(['Aucune zone : relief automatique', 'No zones: automatic terrain', '没有区域：自动地形', 'Sin zonas: relieve automático', 'Sem zonas: relevo automático'])
+          } · ${pending ? urbanText(['à générer', 'needs generation', '待生成', 'pendiente de generar', 'a gerar']) : urbanText(['appliquées', 'applied', '已应用', 'aplicadas', 'aplicadas'])}`
+        : mode.value === 'generated'
+          ? urbanText(['Relief automatique, sans masque manuel.', 'Automatic terrain, without a manual mask.', '自动地形，无手动遮罩。', 'Relieve automático, sin máscara manual.', 'Relevo automático, sem máscara manual.'])
+          : `${heightmap?.resolution ?? '—'}² · ${pending ? urbanText(['à appliquer', 'needs applying', '待应用', 'pendiente de aplicar', 'a aplicar']) : urbanText(['appliquée', 'applied', '已应用', 'aplicada', 'aplicada'])}`;
     const source = locale?.source?.() ?? (document.getElementById('terrainSource') as HTMLSelectElement | null)?.value;
-    get('flow').textContent = !available ? urbanText(['Les cavernes ne sont pas un relief de surface.','Caves are not surface terrain.','洞穴不是地表地形。','Las cavernas no son relieve de superficie.','Cavernas não são relevo de superfície.']) : mode.value === 'zones'
-      ? source?.startsWith('neural') ? urbanText(['Zones → conditionnement régional + relief local → réseaux coarse / base / decoder. Dessinez de grandes régions : le réseau lit environ 5 cellules sur les 40 km.','Zones → regional conditioning + local terrain → coarse / base / decoder networks. Paint large regions: the network reads about five cells across 40 km.','区域 → 区域条件 + 局部地形 → coarse / base / decoder 网络。请绘制较大区域：网络在 40 公里范围读取约 5 个单元。','Zonas → condicionamiento regional + relieve local → redes coarse / base / decoder. Pinta regiones grandes: la red lee unas cinco celdas en 40 km.','Zonas → condicionamento regional + relevo local → redes coarse / base / decoder. Pinte regiões grandes: a rede lê cerca de cinco células em 40 km.']) : urbanText(['Zones → paramètres locaux des bruits, soulèvement et crêtes → érosion → côtes → eau. Les régions non peintes gardent le relief automatique.','Zones → local noise, uplift and ridge settings → erosion → coasts → water. Unpainted regions retain automatic terrain.','区域 → 局部噪声、隆升和山脊参数 → 侵蚀 → 海岸 → 水域。未绘制区域保留自动地形。','Zonas → parámetros locales de ruido, levantamiento y crestas → erosión → costas → agua. Las regiones sin pintar conservan el relieve automático.','Zonas → parâmetros locais de ruído, soerguimento e cristas → erosão → costas → água. As regiões não pintadas mantêm o relevo automático.'])
-      : mode.value === 'surface' ? urbanText(['Heightmap importée → conserver ses altitudes → eau. Pour créer des reliefs par zones, choisissez « Zones peintes ».','Imported heightmap → preserve elevations → water. To create terrain by zone, choose “Painted zones”.','导入高程图 → 保留高程 → 水域。要按区域创建地形，请选择“绘制区域”。','Mapa de altura importado → conservar elevaciones → agua. Para crear relieve por zonas, elige «Zonas pintadas».','Mapa de altura importado → preservar altitudes → água. Para criar relevo por zona, escolha “Zonas pintadas”.'])
-      : mode.value === 'erosion' ? urbanText(['Heightmap importée → érosion Rust → eau.','Imported heightmap → Rust erosion → water.','导入高程图 → Rust 侵蚀 → 水域。','Mapa de altura importado → erosión Rust → agua.','Mapa de altura importado → erosão Rust → água.']) : mode.value === 'sketch' ? urbanText(['Ancienne esquisse d’altitude. Pour dessiner les opérations, choisissez les zones.','Legacy elevation sketch. Choose zones to paint generation operations.','旧版高程草图。请选择区域以绘制生成操作。','Boceto de elevación antiguo. Elige zonas para dibujar operaciones.','Esboço de elevação antigo. Escolha zonas para desenhar operações.']) : urbanText(['Choisissez la source et le relief de fond, puis dessinez les zones pour placer la mer, les plaines et les massifs.','Choose the source and base terrain, then paint zones for sea, plains and mountain ranges.','选择数据源和基础地形，然后绘制海洋、平原与山地区域。','Elige la fuente y el relieve de fondo y pinta zonas de mar, llanuras y montañas.','Escolha a fonte e o relevo de base e pinte zonas de mar, planícies e montanhas.']);
-    undoButton.disabled = !available || !undo.length; redoButton.disabled = !available || !redo.length;
+    get('flow').textContent = !available
+      ? urbanText(['Les cavernes ne sont pas un relief de surface.', 'Caves are not surface terrain.', '洞穴不是地表地形。', 'Las cavernas no son relieve de superficie.', 'Cavernas não são relevo de superfície.'])
+      : mode.value === 'zones'
+        ? source?.startsWith('neural')
+          ? urbanText([
+              'Zones → conditionnement régional + relief local → réseaux coarse / base / decoder. Dessinez de grandes régions : le réseau lit environ 5 cellules sur les 40 km.',
+              'Zones → regional conditioning + local terrain → coarse / base / decoder networks. Paint large regions: the network reads about five cells across 40 km.',
+              '区域 → 区域条件 + 局部地形 → coarse / base / decoder 网络。请绘制较大区域：网络在 40 公里范围读取约 5 个单元。',
+              'Zonas → condicionamiento regional + relieve local → redes coarse / base / decoder. Pinta regiones grandes: la red lee unas cinco celdas en 40 km.',
+              'Zonas → condicionamento regional + relevo local → redes coarse / base / decoder. Pinte regiões grandes: a rede lê cerca de cinco células em 40 km.',
+            ])
+          : urbanText([
+              'Zones → paramètres locaux des bruits, soulèvement et crêtes → érosion → côtes → eau. Les régions non peintes gardent le relief automatique.',
+              'Zones → local noise, uplift and ridge settings → erosion → coasts → water. Unpainted regions retain automatic terrain.',
+              '区域 → 局部噪声、隆升和山脊参数 → 侵蚀 → 海岸 → 水域。未绘制区域保留自动地形。',
+              'Zonas → parámetros locales de ruido, levantamiento y crestas → erosión → costas → agua. Las regiones sin pintar conservan el relieve automático.',
+              'Zonas → parâmetros locais de ruído, soerguimento e cristas → erosão → costas → água. As regiões não pintadas mantêm o relevo automático.',
+            ])
+        : mode.value === 'surface'
+          ? urbanText([
+              'Heightmap importée → conserver ses altitudes → eau. Pour créer des reliefs par zones, choisissez « Zones peintes ».',
+              'Imported heightmap → preserve elevations → water. To create terrain by zone, choose “Painted zones”.',
+              '导入高程图 → 保留高程 → 水域。要按区域创建地形，请选择“绘制区域”。',
+              'Mapa de altura importado → conservar elevaciones → agua. Para crear relieve por zonas, elige «Zonas pintadas».',
+              'Mapa de altura importado → preservar altitudes → água. Para criar relevo por zona, escolha “Zonas pintadas”.',
+            ])
+          : mode.value === 'erosion'
+            ? urbanText(['Heightmap importée → érosion Rust → eau.', 'Imported heightmap → Rust erosion → water.', '导入高程图 → Rust 侵蚀 → 水域。', 'Mapa de altura importado → erosión Rust → agua.', 'Mapa de altura importado → erosão Rust → água.'])
+            : mode.value === 'sketch'
+              ? urbanText([
+                  'Ancienne esquisse d’altitude. Pour dessiner les opérations, choisissez les zones.',
+                  'Legacy elevation sketch. Choose zones to paint generation operations.',
+                  '旧版高程草图。请选择区域以绘制生成操作。',
+                  'Boceto de elevación antiguo. Elige zonas para dibujar operaciones.',
+                  'Esboço de elevação antigo. Escolha zonas para desenhar operações.',
+                ])
+              : urbanText([
+                  'Choisissez la source et le relief de fond, puis dessinez les zones pour placer la mer, les plaines et les massifs.',
+                  'Choose the source and base terrain, then paint zones for sea, plains and mountain ranges.',
+                  '选择数据源和基础地形，然后绘制海洋、平原与山地区域。',
+                  'Elige la fuente y el relieve de fondo y pinta zonas de mar, llanuras y montañas.',
+                  'Escolha a fonte e o relevo de base e pinte zonas de mar, planícies e montanhas.',
+                ]);
+    undoButton.disabled = !available || !undo.length;
+    redoButton.disabled = !available || !redo.length;
     get<HTMLButtonElement>('export').disabled = !available || (get<HTMLSelectElement>('exportSource').value === 'draft' ? !heightmap : !surface());
-    get<HTMLButtonElement>('png').disabled = get<HTMLButtonElement>('export').disabled; get<HTMLSelectElement>('exportSource').options[1].disabled = !heightmap;
+    get<HTMLButtonElement>('png').disabled = get<HTMLButtonElement>('export').disabled;
+    get<HTMLSelectElement>('exportSource').options[1].disabled = !heightmap;
     for (const option of Array.from(mode.options)) if (option.value === 'surface' || option.value === 'erosion') option.disabled = !heightmap;
   }
-  const notify = (): void => { previousMode = mode.value; draw(); changed(); };
-  const selectZones = (): void => { if (mode.value !== 'zones') { mode.value = 'zones'; mutated(); } };
-  function startEditing(): void { if (!available || editing) return; if (mode.value !== 'zones') { remember(); selectZones(); notify(); } setEditing(true); }
-  get('edit').onclick = () => { if (editing) setEditing(false); else startEditing(); };
-  get('apply').onclick = () => { setEditing(false); map?.apply(); };
-  mode.onchange = () => { const next = mode.value; mode.value = previousMode; remember(); if(previousMode!=='generated')manualMode=previousMode;mode.value = next; if(next!=='generated')manualMode=next;mutated(); if (next !== 'zones') setEditing(false); notify(); };
-  function setEnabled(enabled: boolean): void {
-    if(enabled === (mode.value !== 'generated'))return;
-    mode.value=enabled?manualMode:'generated';mode.dispatchEvent(new Event('change',{bubbles:true}));
+  const notify = (): void => {
+    previousMode = mode.value;
+    draw();
+    changed();
+  };
+  const selectZones = (): void => {
+    if (mode.value !== 'zones') {
+      mode.value = 'zones';
+      mutated();
+    }
+  };
+  function startEditing(): void {
+    if (!available || editing) return;
+    if (mode.value !== 'zones') {
+      remember();
+      selectZones();
+      notify();
+    }
+    setEditing(true);
   }
-  for (const input of [radiusInput, featherInput]) input.oninput = () => { brushCursor.hidden = true; };
+  get('edit').onclick = () => {
+    if (editing) setEditing(false);
+    else startEditing();
+  };
+  get('apply').onclick = () => {
+    setEditing(false);
+    map?.apply();
+  };
+  mode.onchange = () => {
+    const next = mode.value;
+    mode.value = previousMode;
+    remember();
+    if (previousMode !== 'generated') manualMode = previousMode;
+    mode.value = next;
+    if (next !== 'generated') manualMode = next;
+    mutated();
+    if (next !== 'zones') setEditing(false);
+    notify();
+  };
+  function setEnabled(enabled: boolean): void {
+    if (enabled === (mode.value !== 'generated')) return;
+    mode.value = enabled ? manualMode : 'generated';
+    mode.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  for (const input of [radiusInput, featherInput])
+    input.oninput = () => {
+      brushCursor.hidden = true;
+    };
   let pointer: number | undefined, previous: [number, number] | undefined;
-  let radius = .16, feather = .4, selected = 3, distanceToDab = 0;
-  const spacing = (): number => Math.max(1/(mask.resolution*2), radius/6);
+  let radius = 0.16,
+    feather = 0.4,
+    selected = 3,
+    distanceToDab = 0;
+  const spacing = (): number => Math.max(1 / (mask.resolution * 2), radius / 6);
   function dab(u: number, v: number): void {
     const n = mask.resolution;
-    const x0 = Math.max(0, Math.ceil((u-radius)*n-.5)), x1 = Math.min(n-1, Math.floor((u+radius)*n-.5));
-    const y0 = Math.max(0, Math.ceil((v-radius)*n-.5)), y1 = Math.min(n-1, Math.floor((v+radius)*n-.5));
-    for (let y=y0; y<=y1; y++) for (let x=x0; x<=x1; x++) {
-      const r = Math.hypot(((x+.5)/n-u)/radius, ((y+.5)/n-v)/radius); if (r >= 1) continue;
-      const t = Math.min(1, (1-r)/feather), alpha = t*t*(3-2*t), p = (y*n+x)*5;
-      let total = 0;
-      for (let k=0; k<5; k++) { mask.weights[p+k] = Math.floor(mask.weights[p+k]*(1-alpha)); total += mask.weights[p+k]; }
-      if (selected >= 0) mask.weights[p+selected] += Math.min(255-total, Math.round(255*alpha));
-    }
+    const x0 = Math.max(0, Math.ceil((u - radius) * n - 0.5)),
+      x1 = Math.min(n - 1, Math.floor((u + radius) * n - 0.5));
+    const y0 = Math.max(0, Math.ceil((v - radius) * n - 0.5)),
+      y1 = Math.min(n - 1, Math.floor((v + radius) * n - 0.5));
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const r = Math.hypot(((x + 0.5) / n - u) / radius, ((y + 0.5) / n - v) / radius);
+        if (r >= 1) continue;
+        const t = Math.min(1, (1 - r) / feather),
+          alpha = t * t * (3 - 2 * t),
+          p = (y * n + x) * 5;
+        let total = 0;
+        for (let k = 0; k < 5; k++) {
+          mask.weights[p + k] = Math.floor(mask.weights[p + k] * (1 - alpha));
+          total += mask.weights[p + k];
+        }
+        if (selected >= 0) mask.weights[p + selected] += Math.min(255 - total, Math.round(255 * alpha));
+      }
     mutated();
   }
-  const position = (event: PointerEvent): [number, number] => { const b = canvas.getBoundingClientRect(); return [(event.clientX-b.left)/b.width, (event.clientY-b.top)/b.height]; };
+  const position = (event: PointerEvent): [number, number] => {
+    const b = canvas.getBoundingClientRect();
+    return [(event.clientX - b.left) / b.width, (event.clientY - b.top) / b.height];
+  };
   function paint(event: PointerEvent): void {
-    const p = position(event), start = previous!, dx=p[0]-start[0], dy=p[1]-start[1], length=Math.hypot(dx,dy), step=spacing();
-    if (length > 0) { for (let d=distanceToDab; d<=length; d+=step) dab(start[0]+dx*d/length, start[1]+dy*d/length); distanceToDab = ((distanceToDab-length)%step+step)%step || step; }
-    previous = p; draw();
+    const p = position(event),
+      start = previous!,
+      dx = p[0] - start[0],
+      dy = p[1] - start[1],
+      length = Math.hypot(dx, dy),
+      step = spacing();
+    if (length > 0) {
+      for (let d = distanceToDab; d <= length; d += step) dab(start[0] + (dx * d) / length, start[1] + (dy * d) / length);
+      distanceToDab = (((distanceToDab - length) % step) + step) % step || step;
+    }
+    previous = p;
+    draw();
   }
   canvas.onpointerdown = event => {
     if (!available || event.button !== 0 || pointer !== undefined) return;
-    event.preventDefault(); onStrokeStart?.(); remember(); selectZones();
-    radius = Math.max(.75/mask.resolution, numeric(radiusInput, 1, 50)/100); feather = numeric(featherInput, 5, 100)/100;
-    selected = TERRAIN_ZONE_KINDS.indexOf(tool.value as typeof TERRAIN_ZONE_KINDS[number]); pointer = event.pointerId; previous = position(event); distanceToDab = spacing();
-    canvas.focus({preventScroll:true}); canvas.setPointerCapture(pointer); dab(...previous); draw();
+    event.preventDefault();
+    onStrokeStart?.();
+    remember();
+    selectZones();
+    radius = Math.max(0.75 / mask.resolution, numeric(radiusInput, 1, 50) / 100);
+    feather = numeric(featherInput, 5, 100) / 100;
+    selected = TERRAIN_ZONE_KINDS.indexOf(tool.value as (typeof TERRAIN_ZONE_KINDS)[number]);
+    pointer = event.pointerId;
+    previous = position(event);
+    distanceToDab = spacing();
+    canvas.focus({ preventScroll: true });
+    canvas.setPointerCapture(pointer);
+    dab(...previous);
+    draw();
   };
-  canvas.onpointermove = event => { if (map) { const b=map.viewport.getBoundingClientRect(), diameter=canvas.getBoundingClientRect().width*numeric(radiusInput,1,50)/50; Object.assign(brushCursor.style,{left:`${event.clientX-b.left}px`,top:`${event.clientY-b.top}px`,width:`${diameter}px`,height:`${diameter}px`}); brushCursor.hidden=!editing; } if (pointer === event.pointerId) paint(event); };
-  const stop = (event: PointerEvent): void => { if (pointer !== event.pointerId) return; if (event.type === 'pointerup') paint(event); pointer=undefined; previous=undefined; notify(); };
-  canvas.onpointerup=stop; canvas.onpointercancel=stop; canvas.onlostpointercapture=stop; canvas.onpointerleave=()=>{brushCursor.hidden=true;};
-  canvas.addEventListener('wheel', event => { event.preventDefault(); map?.surface.dispatchEvent(new WheelEvent('wheel',{clientX:event.clientX,clientY:event.clientY,deltaY:event.deltaY,deltaMode:event.deltaMode,bubbles:true,cancelable:true})); }, {passive:false});
-  get('fill').onclick = () => { remember(); selectZones(); const k=TERRAIN_ZONE_KINDS.indexOf(tool.value as typeof TERRAIN_ZONE_KINDS[number]); mask.weights.fill(0); if(k>=0)for(let i=k;i<mask.weights.length;i+=5)mask.weights[i]=255; mutated(); setEditing(true); notify(); };
-  get('example').onclick = () => {
-    remember(); selectZones();
-    const smooth = (t: number): number => { t=Math.max(0,Math.min(1,t));return t*t*(3-2*t); };
-    const n=mask.resolution;
-    for(let y=0;y<n;y++)for(let x=0;x<n;x++){
-      const u=(x+.5)/n,v=(y+.5)/n;
-      const sea=1-smooth((u-.12-.055*Math.sin(v*9))/.10);
-      const massA=smooth((1-Math.hypot((u-.68)/.27,(v-.35)/.36))/.35);
-      const massB=smooth((1-Math.hypot((u-.72)/.23,(v-.82)/.23))/.35);
-      const hills=smooth((1-Math.hypot((u-.62)/.40,(v-.48)/.65))/.35);
-      const mountains=Math.max(massA,massB),land=1-sea;
-      const weights=[sea,land*(1-hills),land*hills*(1-mountains),land*hills*mountains,0];
-      for(let k=0;k<5;k++)mask.weights[(y*n+x)*5+k]=Math.floor(weights[k]*255);
+  canvas.onpointermove = event => {
+    if (map) {
+      const b = map.viewport.getBoundingClientRect(),
+        diameter = (canvas.getBoundingClientRect().width * numeric(radiusInput, 1, 50)) / 50;
+      Object.assign(brushCursor.style, { left: `${event.clientX - b.left}px`, top: `${event.clientY - b.top}px`, width: `${diameter}px`, height: `${diameter}px` });
+      brushCursor.hidden = !editing;
     }
-    mutated();setEditing(true);notify();
+    if (pointer === event.pointerId) paint(event);
   };
-  get('clear').onclick = () => { remember(); selectZones(); mask.weights.fill(0); mutated(); notify(); };
-  const restore = (value: EditState): void => { mask=value.mask; heightmap=value.heightmap; mode.value=value.mode; mutated(); cachedZones=value.cachedZones; cachedHeightmap=value.cachedHeightmap; if(mode.value!=='zones')setEditing(false); notify(); };
-  undoButton.onclick=()=>{if(pointer!==undefined)return;const s=undo.pop();if(s){redo.push(saveState());restore(s);}};
-  redoButton.onclick=()=>{if(pointer!==undefined)return;const s=redo.pop();if(s){undo.push(saveState());restore(s);}};
-  const keyboard=(event:KeyboardEvent):void=>{if(event.key==='Escape'){setEditing(false);return;}if(!(event.ctrlKey||event.metaKey)||event.key.toLowerCase()!=='z'||(event.target as HTMLElement).closest('input,select,textarea'))return;event.preventDefault();(event.shiftKey?redoButton:undoButton).click();};
-  host.addEventListener('keydown',keyboard); canvas.addEventListener('keydown',keyboard);
-  const zones = (): TerrainZones | undefined => { if(mode.value!=='zones')return; if(!cachedZones){cachedZones={...mask,weights:[...mask.weights]};Object.freeze(cachedZones.weights);Object.freeze(cachedZones);}return cachedZones; };
-  const snapshot=():TerrainSketch|undefined=>{ if(!heightmap||!['surface','erosion','sketch'].includes(mode.value))return; if(!cachedHeightmap){cachedHeightmap={...heightmap,heights:heightmap.heights.map(Math.fround),processing:mode.value==='sketch'?undefined:mode.value as 'surface'|'erosion'};Object.freeze(cachedHeightmap.heights);Object.freeze(cachedHeightmap);}return cachedHeightmap; };
-  const download=(data:BlobPart,type:string,name:string):void=>{const url=URL.createObjectURL(new Blob([data],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-  get('exportZones').onclick=()=>download(JSON.stringify({...mask,kind:'terrain-zones',width:map?.width()}),'application/json','terrain-zones.json');
-  const zonesFile=get<HTMLInputElement>('zonesFile'); get('importZones').onclick=()=>zonesFile.click();
-  zonesFile.onchange=()=>{const file=zonesFile.files?.[0];zonesFile.value='';if(!file)return;const expected=revision;void(async()=>{try{if(file.size>1000000)throw Error(urbanText(['Fichier de zones trop volumineux.','Zone file is too large.','区域文件过大。','El archivo de zonas es demasiado grande.','O arquivo de zonas é muito grande.']));const data=JSON.parse(await file.text()),next=parseTerrainZones(data);if(expected!==revision)return;remember();mask=next;if(Number.isFinite(data.width)&&data.width>=500&&data.width<=100000)map?.setWidth(data.width);selectZones();mutated();notify();setEditing(true);}catch(error){state.textContent=String(error);}})();};
-  function displayed(): TerrainSketch { const s=surface();if(!s)throw Error(urbanText(['Générez un terrain d’abord.','Generate terrain first.','请先生成地形。','Genera primero un terreno.','Gere um terreno primeiro.']));return parseTerrainSketch({version:1,resolution:s.resolution,heights:Array.from(s.height),processing:'surface'}); }
-  get('surface').onclick=()=>{try{const next=displayed();remember();heightmap=next;mode.value='surface';mutated();setEditing(false);notify();}catch(error){state.textContent=String(error);}};
-  const fileInput=get<HTMLInputElement>('file');get('import').onclick=()=>fileInput.click();
-  fileInput.onchange=()=>{const file=fileInput.files?.[0];fileInput.value='';if(!file)return;const expected=revision;void(async()=>{try{const data=await readHeightmap(file,numeric(get('min'),-12000,12000),numeric(get('max'),-12000,12000));if(expected!==revision)return;remember();heightmap=data.terrain;if(data.width)map?.setWidth(data.width);mode.value='surface';map?.onHeightmapImported?.(heightmap.resolution);mutated();setEditing(false);notify();}catch(error){state.textContent=String(error);}})();};
-  const exportHeightmap=(png:boolean):void=>{try{const fromDisplay=get<HTMLSelectElement>('exportSource').value==='displayed';const s=fromDisplay?displayed():heightmap;if(!s)throw Error(urbanText(['Aucune heightmap importée.','No heightmap imported.','尚未导入高程图。','No se ha importado ningún mapa de altura.','Nenhum mapa de altura importado.']));const width=fromDisplay?surface()?.width??map?.width():map?.width();if(png)download(new Uint8Array(heightmapPng(s,width??40000)).buffer,'image/png','terrain-heightmap.png');else download(JSON.stringify({...s,width,kind:s.processing?'heightmap':'sketch',units:'m',seaLevel:0}),'application/json','terrain-heightmap.json');}catch(error){state.textContent=String(error);}};
-  get('export').onclick=()=>exportHeightmap(false);get('png').onclick=()=>exportHeightmap(true);get('exportSource').onchange=draw;
-  const setAvailable=(value:boolean):void=>{if(value===available)return;available=value;if(!value)setEditing(false);for(const c of Array.from(host.querySelectorAll<HTMLInputElement|HTMLButtonElement|HTMLSelectElement>('[data-id]')))if(c.matches('button,input,select'))c.disabled=!value;draw();};
-  const applyLocale = (): void => { localizeTerrainSketch(host, urbanText); canvas.setAttribute('aria-label', urbanText(['Dessiner les masques de génération du relief','Paint terrain generation masks','绘制地形生成遮罩','Pintar máscaras de generación del relieve','Pintar máscaras de geração do relevo'])); get('edit').textContent = editing ? urbanText(['Quitter les zones','Exit zone editing','退出区域编辑','Salir de la edición de zonas','Sair da edição de zonas']) : urbanText(['Dessiner les zones','Paint zones','绘制区域','Pintar zonas','Pintar zonas']); draw(); };
-  const onLocaleChange = (): void => { if (!host.isConnected) { window.removeEventListener('magna-locale-change', onLocaleChange); return; } applyLocale(); };
+  const stop = (event: PointerEvent): void => {
+    if (pointer !== event.pointerId) return;
+    if (event.type === 'pointerup') paint(event);
+    pointer = undefined;
+    previous = undefined;
+    notify();
+  };
+  canvas.onpointerup = stop;
+  canvas.onpointercancel = stop;
+  canvas.onlostpointercapture = stop;
+  canvas.onpointerleave = () => {
+    brushCursor.hidden = true;
+  };
+  canvas.addEventListener(
+    'wheel',
+    event => {
+      event.preventDefault();
+      map?.surface.dispatchEvent(new WheelEvent('wheel', { clientX: event.clientX, clientY: event.clientY, deltaY: event.deltaY, deltaMode: event.deltaMode, bubbles: true, cancelable: true }));
+    },
+    { passive: false },
+  );
+  get('fill').onclick = () => {
+    remember();
+    selectZones();
+    const k = TERRAIN_ZONE_KINDS.indexOf(tool.value as (typeof TERRAIN_ZONE_KINDS)[number]);
+    mask.weights.fill(0);
+    if (k >= 0) for (let i = k; i < mask.weights.length; i += 5) mask.weights[i] = 255;
+    mutated();
+    setEditing(true);
+    notify();
+  };
+  get('example').onclick = () => {
+    remember();
+    selectZones();
+    const smooth = (t: number): number => {
+      t = Math.max(0, Math.min(1, t));
+      return t * t * (3 - 2 * t);
+    };
+    const n = mask.resolution;
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++) {
+        const u = (x + 0.5) / n,
+          v = (y + 0.5) / n;
+        const sea = 1 - smooth((u - 0.12 - 0.055 * Math.sin(v * 9)) / 0.1);
+        const massA = smooth((1 - Math.hypot((u - 0.68) / 0.27, (v - 0.35) / 0.36)) / 0.35);
+        const massB = smooth((1 - Math.hypot((u - 0.72) / 0.23, (v - 0.82) / 0.23)) / 0.35);
+        const hills = smooth((1 - Math.hypot((u - 0.62) / 0.4, (v - 0.48) / 0.65)) / 0.35);
+        const mountains = Math.max(massA, massB),
+          land = 1 - sea;
+        const weights = [sea, land * (1 - hills), land * hills * (1 - mountains), land * hills * mountains, 0];
+        for (let k = 0; k < 5; k++) mask.weights[(y * n + x) * 5 + k] = Math.floor(weights[k] * 255);
+      }
+    mutated();
+    setEditing(true);
+    notify();
+  };
+  get('clear').onclick = () => {
+    remember();
+    selectZones();
+    mask.weights.fill(0);
+    mutated();
+    notify();
+  };
+  const restore = (value: EditState): void => {
+    mask = value.mask;
+    heightmap = value.heightmap;
+    mode.value = value.mode;
+    mutated();
+    cachedZones = value.cachedZones;
+    cachedHeightmap = value.cachedHeightmap;
+    if (mode.value !== 'zones') setEditing(false);
+    notify();
+  };
+  undoButton.onclick = () => {
+    if (pointer !== undefined) return;
+    const s = undo.pop();
+    if (s) {
+      redo.push(saveState());
+      restore(s);
+    }
+  };
+  redoButton.onclick = () => {
+    if (pointer !== undefined) return;
+    const s = redo.pop();
+    if (s) {
+      undo.push(saveState());
+      restore(s);
+    }
+  };
+  const keyboard = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      setEditing(false);
+      return;
+    }
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z' || (event.target as HTMLElement).closest('input,select,textarea')) return;
+    event.preventDefault();
+    (event.shiftKey ? redoButton : undoButton).click();
+  };
+  host.addEventListener('keydown', keyboard);
+  canvas.addEventListener('keydown', keyboard);
+  const zones = (): TerrainZones | undefined => {
+    if (mode.value !== 'zones') return;
+    if (!cachedZones) {
+      cachedZones = { ...mask, weights: [...mask.weights] };
+      Object.freeze(cachedZones.weights);
+      Object.freeze(cachedZones);
+    }
+    return cachedZones;
+  };
+  const snapshot = (): TerrainSketch | undefined => {
+    if (!heightmap || !['surface', 'erosion', 'sketch'].includes(mode.value)) return;
+    if (!cachedHeightmap) {
+      cachedHeightmap = { ...heightmap, heights: heightmap.heights.map(Math.fround), processing: mode.value === 'sketch' ? undefined : (mode.value as 'surface' | 'erosion') };
+      Object.freeze(cachedHeightmap.heights);
+      Object.freeze(cachedHeightmap);
+    }
+    return cachedHeightmap;
+  };
+  const download = (data: BlobPart, type: string, name: string): void => {
+    const url = URL.createObjectURL(new Blob([data], { type }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  get('exportZones').onclick = () => download(JSON.stringify({ ...mask, kind: 'terrain-zones', width: map?.width() }), 'application/json', 'terrain-zones.json');
+  const zonesFile = get<HTMLInputElement>('zonesFile');
+  get('importZones').onclick = () => zonesFile.click();
+  zonesFile.onchange = () => {
+    const file = zonesFile.files?.[0];
+    zonesFile.value = '';
+    if (!file) return;
+    const expected = revision;
+    void (async () => {
+      try {
+        if (file.size > 1000000) throw Error(urbanText(['Fichier de zones trop volumineux.', 'Zone file is too large.', '区域文件过大。', 'El archivo de zonas es demasiado grande.', 'O arquivo de zonas é muito grande.']));
+        const data = JSON.parse(await file.text()),
+          next = parseTerrainZones(data);
+        if (expected !== revision) return;
+        remember();
+        mask = next;
+        if (Number.isFinite(data.width) && data.width >= 500 && data.width <= 100000) map?.setWidth(data.width);
+        selectZones();
+        mutated();
+        notify();
+        setEditing(true);
+      } catch (error) {
+        state.textContent = String(error);
+      }
+    })();
+  };
+  function displayed(): TerrainSketch {
+    const s = surface();
+    if (!s) throw Error(urbanText(['Générez un terrain d’abord.', 'Generate terrain first.', '请先生成地形。', 'Genera primero un terreno.', 'Gere um terreno primeiro.']));
+    return parseTerrainSketch({ version: 1, resolution: s.resolution, heights: Array.from(s.height), processing: 'surface' });
+  }
+  get('surface').onclick = () => {
+    try {
+      const next = displayed();
+      remember();
+      heightmap = next;
+      mode.value = 'surface';
+      mutated();
+      setEditing(false);
+      notify();
+    } catch (error) {
+      state.textContent = String(error);
+    }
+  };
+  const fileInput = get<HTMLInputElement>('file');
+  get('import').onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = '';
+    if (!file) return;
+    const expected = revision;
+    void (async () => {
+      try {
+        const data = await readHeightmap(file, numeric(get('min'), -12000, 12000), numeric(get('max'), -12000, 12000));
+        if (expected !== revision) return;
+        remember();
+        heightmap = data.terrain;
+        if (data.width) map?.setWidth(data.width);
+        mode.value = 'surface';
+        map?.onHeightmapImported?.(heightmap.resolution);
+        mutated();
+        setEditing(false);
+        notify();
+      } catch (error) {
+        state.textContent = String(error);
+      }
+    })();
+  };
+  const exportHeightmap = (png: boolean): void => {
+    try {
+      const fromDisplay = get<HTMLSelectElement>('exportSource').value === 'displayed';
+      const s = fromDisplay ? displayed() : heightmap;
+      if (!s) throw Error(urbanText(['Aucune heightmap importée.', 'No heightmap imported.', '尚未导入高程图。', 'No se ha importado ningún mapa de altura.', 'Nenhum mapa de altura importado.']));
+      const width = fromDisplay ? (surface()?.width ?? map?.width()) : map?.width();
+      if (png) download(new Uint8Array(heightmapPng(s, width ?? 40000)).buffer, 'image/png', 'terrain-heightmap.png');
+      else download(JSON.stringify({ ...s, width, kind: s.processing ? 'heightmap' : 'sketch', units: 'm', seaLevel: 0 }), 'application/json', 'terrain-heightmap.json');
+    } catch (error) {
+      state.textContent = String(error);
+    }
+  };
+  get('export').onclick = () => exportHeightmap(false);
+  get('png').onclick = () => exportHeightmap(true);
+  get('exportSource').onchange = draw;
+  const setAvailable = (value: boolean): void => {
+    if (value === available) return;
+    available = value;
+    if (!value) setEditing(false);
+    for (const c of Array.from(host.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('[data-id]'))) if (c.matches('button,input,select')) c.disabled = !value;
+    draw();
+  };
+  const applyLocale = (): void => {
+    localizeTerrainSketch(host, urbanText);
+    canvas.setAttribute('aria-label', urbanText(['Dessiner les masques de génération du relief', 'Paint terrain generation masks', '绘制地形生成遮罩', 'Pintar máscaras de generación del relieve', 'Pintar máscaras de geração do relevo']));
+    get('edit').textContent = editing ? urbanText(['Quitter les zones', 'Exit zone editing', '退出区域编辑', 'Salir de la edición de zonas', 'Sair da edição de zonas']) : urbanText(['Dessiner les zones', 'Paint zones', '绘制区域', 'Pintar zonas', 'Pintar zonas']);
+    draw();
+  };
+  const onLocaleChange = (): void => {
+    if (!host.isConnected) {
+      window.removeEventListener('magna-locale-change', onLocaleChange);
+      return;
+    }
+    applyLocale();
+  };
   window.addEventListener('magna-locale-change', onLocaleChange);
   const unsubscribeLocale = locale?.subscribe?.(applyLocale);
-  applyLocale();if(initialError)state.textContent=initialError;
-  return {snapshot,zones,setEditing,startEditing,setEnabled,isEnabled:()=>mode.value!=='generated',isEditing:()=>editing,updateView,setAvailable,
-    dispose:()=>{setEditing(false);window.removeEventListener('magna-locale-change',onLocaleChange);unsubscribeLocale?.();host.removeEventListener('keydown',keyboard);canvas.removeEventListener('keydown',keyboard);canvas.remove();brushCursor.remove();},
-    captureContext:()=>({mask,heightmap,mode:mode.value,editing}),
-    restoreContext:(saved:{mask:TerrainZones;heightmap?:TerrainSketch;mode:string;editing:boolean})=>{
-      mask=parseTerrainZones(saved.mask);heightmap=saved.heightmap?parseTerrainSketch(saved.heightmap):undefined;
-      mode.value=saved.mode;previousMode=saved.mode;mutated();draw();setEditing(saved.editing);
+  applyLocale();
+  if (initialError) state.textContent = initialError;
+  return {
+    snapshot,
+    zones,
+    setEditing,
+    startEditing,
+    setEnabled,
+    isEnabled: () => mode.value !== 'generated',
+    isEditing: () => editing,
+    updateView,
+    setAvailable,
+    dispose: () => {
+      setEditing(false);
+      window.removeEventListener('magna-locale-change', onLocaleChange);
+      unsubscribeLocale?.();
+      host.removeEventListener('keydown', keyboard);
+      canvas.removeEventListener('keydown', keyboard);
+      canvas.remove();
+      brushCursor.remove();
     },
-    refresh:(height?:TerrainSketch,zone?:TerrainZones)=>{appliedHeightmap=height;appliedZones=zone;draw();}};
+    captureContext: () => ({ mask, heightmap, mode: mode.value, editing }),
+    restoreContext: (saved: { mask: TerrainZones; heightmap?: TerrainSketch; mode: string; editing: boolean }) => {
+      mask = parseTerrainZones(saved.mask);
+      heightmap = saved.heightmap ? parseTerrainSketch(saved.heightmap) : undefined;
+      mode.value = saved.mode;
+      previousMode = saved.mode;
+      mutated();
+      draw();
+      setEditing(saved.editing);
+    },
+    refresh: (height?: TerrainSketch, zone?: TerrainZones) => {
+      appliedHeightmap = height;
+      appliedZones = zone;
+      draw();
+    },
+  };
 }

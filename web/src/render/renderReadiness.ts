@@ -9,7 +9,9 @@ export class RenderReadiness {
   constructor(readonly target: '2d' | '3d' | 'capture') {
     performance.mark('v2:render:request', { detail: { request: this.id, target } });
   }
-  has(phase: RenderMilestone): boolean { return this.marks.has(phase); }
+  has(phase: RenderMilestone): boolean {
+    return this.marks.has(phase);
+  }
   mark(phase: RenderMilestone): void {
     if (this.marks.has(phase)) return;
     this.marks.add(phase);

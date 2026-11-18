@@ -24,15 +24,23 @@ describe('culture switch', () => {
     expect(fromQuery(toQuery(b)).plan).toBeUndefined();
   });
 
-  it('a culture gives the same plan before and after other cultures were generated (no module state leak)', () => {
-    const sig = (culture: string): string => JSON.stringify(generate(makeOptions({ seed: '7', size: 'village', culture: culture as never })).urban);
-    const base = sig('european-organic');
-    for (const c of ['medina', 'bastide', 'chinese', 'germanic-village', 'venetian-lagoon']) {
-      try { sig(c); } catch { /* an unknown id falls back to the default culture */ }
-    }
-    let o = makeOptions({ seed: '7', size: 'village', culture: 'medina', cultureMix: { id: 'bastide', t: 0.5, mode: 'phases' } });
-    generate(o);
-    o = withCulture(o, 'european-organic');
-    expect(JSON.stringify(generate(o).urban)).toBe(base);
-  }, T);
+  it(
+    'a culture gives the same plan before and after other cultures were generated (no module state leak)',
+    () => {
+      const sig = (culture: string): string => JSON.stringify(generate(makeOptions({ seed: '7', size: 'village', culture: culture as never })).urban);
+      const base = sig('european-organic');
+      for (const c of ['medina', 'bastide', 'chinese', 'germanic-village', 'venetian-lagoon']) {
+        try {
+          sig(c);
+        } catch {
+          /* an unknown id falls back to the default culture */
+        }
+      }
+      let o = makeOptions({ seed: '7', size: 'village', culture: 'medina', cultureMix: { id: 'bastide', t: 0.5, mode: 'phases' } });
+      generate(o);
+      o = withCulture(o, 'european-organic');
+      expect(JSON.stringify(generate(o).urban)).toBe(base);
+    },
+    T,
+  );
 });

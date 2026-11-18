@@ -40,80 +40,185 @@ import { STRUCTURE_ROLES } from '../../src/render/groundBlend';
 import { streetColors } from '../../src/render/cityGlStyle';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
-const settings = (seed: string): V2Settings => ({ options: { seed }, local: {}, urban: { backend: 'rust' } } as unknown as V2Settings);
+const settings = (seed: string): V2Settings => ({ options: { seed }, local: {}, urban: { backend: 'rust' } }) as unknown as V2Settings;
 
 describe('shared live tile filling', () => {
   it('bounds slices and discards the density left by navigation', () => {
-    const frames = new Map<number, FrameRequestCallback>(); let id = 0, clock = 0;
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++id, callback); return id; });
+    const frames = new Map<number, FrameRequestCallback>();
+    let id = 0,
+      clock = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++id, callback);
+      return id;
+    });
     vi.stubGlobal('cancelAnimationFrame', (frame: number) => frames.delete(frame));
-    const fill = new LiveTileFill(() => clock), built: string[] = [], invalidate = vi.fn(), failed = vi.fn();
-    const flush = (): void => { const [frame, callback] = frames.entries().next().value!; frames.delete(frame); callback(clock); };
+    const fill = new LiveTileFill(() => clock),
+      built: string[] = [],
+      invalidate = vi.fn(),
+      failed = vi.fn();
+    const flush = (): void => {
+      const [frame, callback] = frames.entries().next().value!;
+      frames.delete(frame);
+      callback(clock);
+    };
     function* work(level: string): Generator<boolean, void> {
-      for (let i = 0; i < 5; i++) { built.push(`${level}:${i}`); clock += 5; yield true; }
+      for (let i = 0; i < 5; i++) {
+        built.push(`${level}:${i}`);
+        clock += 5;
+        yield true;
+      }
     }
     try {
       fill.start('old', () => work('old'), invalidate, failed);
       expect(built).toEqual([]);
-      flush(); expect(built).toEqual(['old:0', 'old:1']);
-      fill.suspend(); expect(frames.size).toBe(0);
+      flush();
+      expect(built).toEqual(['old:0', 'old:1']);
+      fill.suspend();
+      expect(frames.size).toBe(0);
       fill.start('rest', () => work('rest'), invalidate, failed);
       while (frames.size) flush();
       expect(built).toEqual(['old:0', 'old:1', 'rest:0', 'rest:1', 'rest:2', 'rest:3', 'rest:4']);
       expect(failed).not.toHaveBeenCalled();
-    } finally { fill.suspend(); vi.unstubAllGlobals(); }
+    } finally {
+      fill.suspend();
+      vi.unstubAllGlobals();
+    }
   });
   it('releases a partially painted tile without repainting it', () => {
-    let callback: FrameRequestCallback | undefined, clock = 0, released = false;
-    vi.stubGlobal('requestAnimationFrame', (next: FrameRequestCallback) => { callback = next; return 1; });
-    vi.stubGlobal('cancelAnimationFrame', () => { callback = undefined; });
-    const fill = new LiveTileFill(() => clock), invalidate = vi.fn();
+    let callback: FrameRequestCallback | undefined,
+      clock = 0,
+      released = false;
+    vi.stubGlobal('requestAnimationFrame', (next: FrameRequestCallback) => {
+      callback = next;
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {
+      callback = undefined;
+    });
+    const fill = new LiveTileFill(() => clock),
+      invalidate = vi.fn();
     function* work(): Generator<boolean, void> {
-      try { clock += 10; yield false; throw new Error('Stale tile resumed'); }
-      finally { released = true; }
+      try {
+        clock += 10;
+        yield false;
+        throw new Error('Stale tile resumed');
+      } finally {
+        released = true;
+      }
     }
     try {
       fill.start('partial', work, invalidate, vi.fn());
-      callback!(clock); expect(invalidate).not.toHaveBeenCalled();
-      fill.suspend(); expect(released).toBe(true); expect(callback).toBeUndefined();
-    } finally { fill.suspend(); vi.unstubAllGlobals(); }
+      callback!(clock);
+      expect(invalidate).not.toHaveBeenCalled();
+      fill.suspend();
+      expect(released).toBe(true);
+      expect(callback).toBeUndefined();
+    } finally {
+      fill.suspend();
+      vi.unstubAllGlobals();
+    }
   });
   it('draws the Illustrated wash without visiting stamps or planning vegetation', () => {
-    const drawImage = vi.fn(), restore = vi.fn();
+    const drawImage = vi.fn(),
+      restore = vi.fn();
     const ctx = { save() {}, restore, beginPath() {}, rect() {}, clip() {}, drawImage } as unknown as CanvasRenderingContext2D;
-    const raster = { painting: { frame: { x: 0, y: 0, width: 100 }, get stamps() { throw new Error('Wash visited stamps'); } }, wash: {}, fields: [] } as unknown as FantasyRaster;
-    drawFantasyRaster(ctx, raster, { minX: 0, minY: 0, maxX: 100, maxY: 100 }, .1, KEEP_NONE);
-    expect(drawImage).toHaveBeenCalledOnce(); expect(restore).toHaveBeenCalledOnce();
+    const raster = {
+      painting: {
+        frame: { x: 0, y: 0, width: 100 },
+        get stamps() {
+          throw new Error('Wash visited stamps');
+        },
+      },
+      wash: {},
+      fields: [],
+    } as unknown as FantasyRaster;
+    drawFantasyRaster(ctx, raster, { minX: 0, minY: 0, maxX: 100, maxY: 100 }, 0.1, KEEP_NONE);
+    expect(drawImage).toHaveBeenCalledOnce();
+    expect(restore).toHaveBeenCalledOnce();
   });
   it('fills close Illustrated tiles centre first and cancels an unfinished stamp batch', () => {
-    const frames = new Map<number, FrameRequestCallback>(); let id = 0, clock = 0;
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++id, callback); return id; });
+    const frames = new Map<number, FrameRequestCallback>();
+    let id = 0,
+      clock = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++id, callback);
+      return id;
+    });
     vi.stubGlobal('cancelAnimationFrame', (frame: number) => frames.delete(frame));
     const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
-    const targets: TileCanvas[] = [], transforms: number[][] = [];
+    const targets: TileCanvas[] = [],
+      transforms: number[][] = [];
     class TileCanvas {
-      constructor(public width: number, public height: number) { targets.push(this); }
-      getContext() { return { imageSmoothingQuality: '', setTransform: (...args: number[]) => transforms.push(args), beginPath() {}, rect() {}, clip() {}, drawImage() { clock += 10; } }; }
+      constructor(
+        public width: number,
+        public height: number,
+      ) {
+        targets.push(this);
+      }
+      getContext() {
+        return {
+          imageSmoothingQuality: '',
+          setTransform: (...args: number[]) => transforms.push(args),
+          beginPath() {},
+          rect() {},
+          clip() {},
+          drawImage() {
+            clock += 10;
+          },
+        };
+      }
     }
-    vi.stubGlobal('OffscreenCanvas', TileCanvas); vi.stubGlobal('HTMLCanvasElement', class {});
+    vi.stubGlobal('OffscreenCanvas', TileCanvas);
+    vi.stubGlobal('HTMLCanvasElement', class {});
     const ctx = { save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, setTransform() {}, drawImage: vi.fn(), getTransform: () => ({ a: 8, b: 0, c: 0, d: 8, e: 0, f: 0 }) } as unknown as CanvasRenderingContext2D;
     const stamp = { x: 48, y: 48, width: 20, brush: 0, flip: false, opacity: 1 };
-    const raster = { painting: { frame: { x: 0, y: 0, width: 1000 }, stamps: [stamp], library: { offsets: [0], variants: 1, frames: [{ family: 'pines', rect: [0, 0, 10, 10] }] } }, images: new Map([['pines', {}]]), heights: new Float32Array([20]), up: 20, down: 1, half: 10, fields: [], tiles: new Map(), onTiles: vi.fn() } as unknown as FantasyRaster;
+    const raster = {
+      painting: { frame: { x: 0, y: 0, width: 1000 }, stamps: [stamp], library: { offsets: [0], variants: 1, frames: [{ family: 'pines', rect: [0, 0, 10, 10] }] } },
+      images: new Map([['pines', {}]]),
+      heights: new Float32Array([20]),
+      up: 20,
+      down: 1,
+      half: 10,
+      fields: [],
+      tiles: new Map(),
+      onTiles: vi.fn(),
+    } as unknown as FantasyRaster;
     try {
       drawFantasyRaster(ctx, raster, { minX: 0, minY: 0, maxX: 96, maxY: 96 }, 8, undefined, false, false, true, true);
-      expect(targets).toHaveLength(0); expect(ctx.drawImage).not.toHaveBeenCalled();
-      const [frame, callback] = frames.entries().next().value!; frames.delete(frame); callback(clock);
-      expect(targets).toHaveLength(1); expect(transforms[0]).toEqual([8, 0, 0, 8, -254, -254]);
+      expect(targets).toHaveLength(0);
+      expect(ctx.drawImage).not.toHaveBeenCalled();
+      const [frame, callback] = frames.entries().next().value!;
+      frames.delete(frame);
+      callback(clock);
+      expect(targets).toHaveLength(1);
+      expect(transforms[0]).toEqual([8, 0, 0, 8, -254, -254]);
       expect(raster.onTiles).not.toHaveBeenCalled();
-      suspendFantasyRaster(raster); expect(targets[0].width).toBe(0); expect(frames.size).toBe(0);
-    } finally { suspendFantasyRaster(raster); now.mockRestore(); vi.unstubAllGlobals(); }
+      suspendFantasyRaster(raster);
+      expect(targets[0].width).toBe(0);
+      expect(frames.size).toBe(0);
+    } finally {
+      suspendFantasyRaster(raster);
+      now.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
   it('finishes exact Illustrated captures, including missing fine vegetation, synchronously', () => {
     const fine = vi.fn(() => [{ x: 100, y: 100, width: 4, height: 4, brush: 0, flip: false, opacity: 1 }]);
-    const raster = { painting: { stamps: [], fine, treeWidth: 4, library: { offsets: [0], variants: 1, frames: [{ family: 'pines', aspect: 1, rect: [0, 0, 10, 10] }] } }, images: new Map([['pines', {}]]), heights: new Float32Array(), up: 0, down: 0, half: 0, tiles: new Map(), fields: [] } as unknown as FantasyRaster;
+    const raster = {
+      painting: { stamps: [], fine, treeWidth: 4, library: { offsets: [0], variants: 1, frames: [{ family: 'pines', aspect: 1, rect: [0, 0, 10, 10] }] } },
+      images: new Map([['pines', {}]]),
+      heights: new Float32Array(),
+      up: 0,
+      down: 0,
+      half: 0,
+      tiles: new Map(),
+      fields: [],
+    } as unknown as FantasyRaster;
     const ctx = { save() {}, restore() {}, drawImage: vi.fn() } as unknown as CanvasRenderingContext2D;
     drawFantasyRaster(ctx, raster, { minX: 99, minY: 99, maxX: 101, maxY: 101 }, 1, undefined, false, true, false);
-    expect(fine).toHaveBeenCalledOnce(); expect(ctx.drawImage).toHaveBeenCalledOnce(); expect(raster.tiles.size).toBe(1);
+    expect(fine).toHaveBeenCalledOnce();
+    expect(ctx.drawImage).toHaveBeenCalledOnce();
+    expect(raster.tiles.size).toBe(1);
   });
 });
 
@@ -131,42 +236,68 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('budgets shared 3D preparation by frame, prioritises near work and cancels stale inputs', async () => {
-    const frames = new Map<number, FrameRequestCallback>(); let serial = 0, time = 0;
-    vi.stubGlobal('requestAnimationFrame', (frame: FrameRequestCallback) => { frames.set(++serial, frame); return serial; });
+    const frames = new Map<number, FrameRequestCallback>();
+    let serial = 0,
+      time = 0;
+    vi.stubGlobal('requestAnimationFrame', (frame: FrameRequestCallback) => {
+      frames.set(++serial, frame);
+      return serial;
+    });
     vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
     vi.spyOn(performance, 'now').mockImplementation(() => time);
-    const queue = new FramePreparation(), order: string[] = [];
+    const queue = new FramePreparation(),
+      order: string[] = [];
     function* work(name: string): Generator<void, number> {
-      for (let i = 0; i < 20; i++) { order.push(name); time++; yield; }
+      for (let i = 0; i < 20; i++) {
+        order.push(name);
+        time++;
+        yield;
+      }
       return 20;
     }
     const advance = (): void => {
-      const [id, frame] = frames.entries().next().value!; frames.delete(id); frame(time);
+      const [id, frame] = frames.entries().next().value!;
+      frames.delete(id);
+      frame(time);
     };
     try {
-      const far = queue.run(work('far'), () => true, 2), near = queue.run(work('near'), () => true, 1);
+      const far = queue.run(work('far'), () => true, 2),
+        near = queue.run(work('near'), () => true, 1);
       advance();
       // No input yet: the rested (idle) budget applies.
-      expect(order.length).toBe(PREPARATION_BUDGET_MS.idle); expect(order.slice(0, 20)).toEqual(Array(20).fill('near'));
+      expect(order.length).toBe(PREPARATION_BUDGET_MS.idle);
+      expect(order.slice(0, 20)).toEqual(Array(20).fill('near'));
       while (frames.size) advance();
-      expect(await near).toBe(20); expect(await far).toBe(20);
+      expect(await near).toBe(20);
+      expect(await far).toBe(20);
       const count = order.length;
       const stale = expect(queue.run(work('stale'), () => false)).rejects.toMatchObject({ name: 'AbortError' });
-      advance(); await stale; expect(order.length).toBe(count);
+      advance();
+      await stale;
+      expect(order.length).toBe(count);
       const cancelled = expect(queue.run(work('cancelled'), () => true)).rejects.toMatchObject({ name: 'AbortError' });
-      queue.clear(); await cancelled; expect(frames.size).toBe(0);
-    } finally { queue.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); }
+      queue.clear();
+      await cancelled;
+      expect(frames.size).toBe(0);
+    } finally {
+      queue.clear();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('keeps the exact near-tree stream when placement is split across frames', () => {
     const rgba = new Uint8Array(8 * 8 * 4);
     for (let i = 0; i < 64; i++) rgba.set([220, 150, 40, 255], i * 4);
-    const inputs = { field: { n: 8, rgba, x: 0, y: 0, width: 160, key: 'parity' },
-      seed: 7, climate: { temperature: 12, precipitation: 900 }, renderV2: 1, zone: 1, season: .5,
-      water: (x: number) => x < 40 ? 1 : 0, height: () => 20 } as TreeInputs;
-    const view = { x: 80, y: 80, forwardX: 0, forwardY: 1 }, steps = buildNearTreesSteps(inputs, view);
-    let step = steps.next(), yields = 0;
-    while (!step.done) { yields++; step = steps.next(); }
+    const inputs = { field: { n: 8, rgba, x: 0, y: 0, width: 160, key: 'parity' }, seed: 7, climate: { temperature: 12, precipitation: 900 }, renderV2: 1, zone: 1, season: 0.5, water: (x: number) => (x < 40 ? 1 : 0), height: () => 20 } as TreeInputs;
+    const view = { x: 80, y: 80, forwardX: 0, forwardY: 1 },
+      steps = buildNearTreesSteps(inputs, view);
+    let step = steps.next(),
+      yields = 0;
+    while (!step.done) {
+      yields++;
+      step = steps.next();
+    }
     expect(yields).toBeGreaterThan(100);
     expect(step.value.length).toBeGreaterThan(0);
     expect(step.value).toEqual(buildNearTrees(inputs, view));
@@ -174,8 +305,13 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('reuses the live ground during a pan, refreshes borders cheaply, and restores exact density at rest', () => {
-    const canvas = { style: {} } as HTMLCanvasElement, ground = new LiveGround(), ratios: number[] = [];
-    const render = (ratio: number): boolean => { ratios.push(ratio); return true; };
+    const canvas = { style: {} } as HTMLCanvasElement,
+      ground = new LiveGround(),
+      ratios: number[] = [];
+    const render = (ratio: number): boolean => {
+      ratios.push(ratio);
+      return true;
+    };
     const view = { cx: 0, cy: 0, scale: 1 };
     ground.present(canvas, view, 1000, 800, 2, false, render);
     for (let x = 1; x <= 60; x++) ground.present(canvas, { ...view, cx: x }, 1000, 800, 2, true, render);
@@ -185,7 +321,8 @@ describe('V2 and City Bench stay in sync', () => {
     ground.present(canvas, { ...view, cx: 500 }, 1000, 800, 2, false, render);
     expect(ratios).toEqual([2, 1.1, 2]);
     ground.invalidate(canvas); // A capture or a changed terrain/look invalidates the retained frame.
-    expect(canvas.style.transform).toBe(''); expect(canvas.style.width).toBe('1000px');
+    expect(canvas.style.transform).toBe('');
+    expect(canvas.style.width).toBe('1000px');
     ground.present(canvas, { ...view, cx: 501 }, 1000, 800, 2, true, render);
     expect(ratios).toEqual([2, 1.1, 2, 1.1]);
   });
@@ -207,26 +344,37 @@ describe('V2 and City Bench stay in sync', () => {
       expect([displayQualityFor(true), displayQualityFor(false)]).toEqual(['light', 'full']);
       setDisplayQualityPreference('full');
       expect([displayQualityFor(true), displayQualityFor(false)]).toEqual(['full', 'full']);
-      expect(uniforms).toEqual([[1, 0], [0, 0]]);
-    } finally { unlisten(); setDisplayQualityPreference('auto'); }
+      expect(uniforms).toEqual([
+        [1, 0],
+        [0, 0],
+      ]);
+    } finally {
+      unlisten();
+      setDisplayQualityPreference('auto');
+    }
   });
   it('lists light presets beside their full versions and changes only their quality', () => {
     expect(PRESET_OPTIONS.map(o => o.value)).toEqual([...PRESET_IDS.filter(id => !isHiddenPreset(id)), 'custom']);
     for (const base of ['satellite', 'parchment'] as const) {
-      const full = presetComposition(base), light = presetComposition(`${base}-light`);
+      const full = presetComposition(base),
+        light = presetComposition(`${base}-light`);
       expect(() => validateComposition(light)).not.toThrow();
       expect(light).toEqual({ ...full, preset: `${base}-light`, quality: 'light' });
       expect(compositionMessages[PRESET_OPTIONS.find(o => o.value === `${base}-light`)!.label].fr).toContain('Rapide');
-      const customized = { ...full, effects: { ...full.effects, season: .8 } };
+      const customized = { ...full, effects: { ...full.effects, season: 0.8 } };
       expect(withCompositionQuality(withCompositionQuality(customized, 'light'), 'full')).toEqual(customized);
       const appearance = { style: 'parchment' as const, composition: light };
       const live = resolveAppearance(appearance, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
       expect(live.quality).toBe('light');
       expect(resolveAppearance(appearance, { mapStyle: 'parchment' }, { nativeCities: true }, 'export').quality).toBe('full');
       try {
-        setDisplayQualityPreference('full'); setDisplayAppearanceQuality(live.quality);
+        setDisplayQualityPreference('full');
+        setDisplayAppearanceQuality(live.quality);
         expect([displayQualityUniform(true), displayQualityUniform(false)]).toEqual([1, 0]);
-      } finally { setDisplayAppearanceQuality('full'); setDisplayQualityPreference('auto'); }
+      } finally {
+        setDisplayAppearanceQuality('full');
+        setDisplayQualityPreference('auto');
+      }
     }
   });
   it('maps runtime demotion to the light preset and remembers an explicit full-quality return', async () => {
@@ -238,30 +386,47 @@ describe('V2 and City Bench stay in sync', () => {
     vi.stubGlobal('document', { hidden: false });
     vi.stubGlobal('requestAnimationFrame', undefined);
     const quality = await import('../../src/render/displayQuality');
-    let recipe = presetComposition('satellite'); recipe.effects.season = .8;
+    let recipe = presetComposition('satellite');
+    recipe.effects.season = 0.8;
     const original = structuredClone(recipe);
     const unlisten = quality.onDisplayQualityChange(change => {
-      if (change.reason === 'auto') { recipe = withCompositionQuality(recipe, 'light'); quality.setDisplayAppearanceQuality(recipe.quality!); }
+      if (change.reason === 'auto') {
+        recipe = withCompositionQuality(recipe, 'light');
+        quality.setDisplayAppearanceQuality(recipe.quality!);
+      }
     });
     try {
       quality.initializeDisplayQuality();
-      for (let time = 1000; time <= 2100; time += 50) { quality.noteDisplayNavigation(time); quality.noteDisplayFrame(time); }
+      for (let time = 1000; time <= 2100; time += 50) {
+        quality.noteDisplayNavigation(time);
+        quality.noteDisplayFrame(time);
+      }
       expect(recipe).toEqual({ ...original, preset: 'satellite-light', quality: 'light' });
       expect([quality.displayQualityFor(true), quality.displayQualityFor(false)]).toEqual(['light', 'full']);
-      recipe = withCompositionQuality(recipe, 'full'); quality.setDisplayAppearanceQuality('full'); quality.setDisplayQualityPreference('full');
+      recipe = withCompositionQuality(recipe, 'full');
+      quality.setDisplayAppearanceQuality('full');
+      quality.setDisplayQualityPreference('full');
       expect(recipe).toEqual(original);
       expect(stored.get(quality.DISPLAY_QUALITY_STORAGE_KEY)).toBe('full');
-      quality.noteDisplayFrame(2200); expect(quality.getDisplayQuality()).toBe('full');
-    } finally { unlisten(); quality.setDisplayQualityPreference('full'); vi.unstubAllGlobals(); }
+      quality.noteDisplayFrame(2200);
+      expect(quality.getDisplayQuality()).toBe('full');
+    } finally {
+      unlisten();
+      quality.setDisplayQualityPreference('full');
+      vi.unstubAllGlobals();
+    }
   });
   it('keeps the URL quality override above the selected preset and captures above both', async () => {
     for (const override of ['full', 'light'] as const) {
-      vi.resetModules(); vi.stubGlobal('location', { search: `?quality=${override}` });
+      vi.resetModules();
+      vi.stubGlobal('location', { search: `?quality=${override}` });
       const quality = await import('../../src/render/displayQuality');
       try {
         quality.setDisplayAppearanceQuality(override === 'full' ? 'light' : 'full');
         expect([quality.displayQualityFor(true), quality.displayQualityFor(false)]).toEqual([override, 'full']);
-      } finally { vi.unstubAllGlobals(); }
+      } finally {
+        vi.unstubAllGlobals();
+      }
     }
   });
   for (const culture of ['west', 'medina', 'mongol']) {
@@ -281,16 +446,41 @@ describe('V2 and City Bench stay in sync', () => {
   }
 
   it('sends the same regional roads and site archetype to the town generator on both pages', () => {
-    const road = { a: 0, b: 1, class: 'highway', surface: 'paved', width: 8, length: 300,
-      path: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }, { x: 300, y: 0 }],
-      crossings: [{ kind: 'bridge', path: [{ x: 120, y: 0 }, { x: 180, y: 0 }] }] };
+    const road = {
+      a: 0,
+      b: 1,
+      class: 'highway',
+      surface: 'paved',
+      width: 8,
+      length: 300,
+      path: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 200, y: 0 },
+        { x: 300, y: 0 },
+      ],
+      crossings: [
+        {
+          kind: 'bridge',
+          path: [
+            { x: 120, y: 0 },
+            { x: 180, y: 0 },
+          ],
+        },
+      ],
+    };
     const output = { segments: [road, { ...road, class: 'main', crossings: [] }] } as unknown as RoadOutput;
     const placed = { key: 'main', siteType: 'auto', archetype: 'bridge', center: { x: 0, y: 0 }, radius: 100 };
-    const world = { roads: [{ path: road.path, width: 8, kind: 'major' }], settlements: [{ key: 'main', archetype: 'bridge' }],
-      debug: { v2RustRegion: { placement: { settlements: [placed] }, roads: output } } } as unknown as World;
-    const v2 = townRoadStreets(world), bench = regionalStreets(output);
+    const world = { roads: [{ path: road.path, width: 8, kind: 'major' }], settlements: [{ key: 'main', archetype: 'bridge' }], debug: { v2RustRegion: { placement: { settlements: [placed] }, roads: output } } } as unknown as World;
+    const v2 = townRoadStreets(world),
+      bench = regionalStreets(output);
     expect(v2).toEqual(bench);
-    expect(v2.map(s => [s.rank, s.role])).toEqual([[0, 'regional'], [0, 'bridge'], [0, 'regional'], [1, 'regional']]);
+    expect(v2.map(s => [s.rank, s.role])).toEqual([
+      [0, 'regional'],
+      [0, 'bridge'],
+      [0, 'regional'],
+      [1, 'regional'],
+    ]);
     expect(townRoadStreets(world)).toBe(v2); // stable identity: no rebuilt bridges or ground tiles on refresh
     expect(cityTownRoads).toBe(regionalStreets);
     // City Bench: the requested site type, else the placed archetype; the V2 reads the same native placement record.
@@ -311,7 +501,8 @@ describe('V2 and City Bench stay in sync', () => {
 
   it('shares the architecture default, the raster resolution and the display defaults', () => {
     expect(DEFAULT_CITY_ARCHITECTURE).toBe('silhouette');
-    const bench = read('../../src/ui/terrainUrban.ts'), v2 = read('../../src/v2/rustUrban.ts');
+    const bench = read('../../src/ui/terrainUrban.ts'),
+      v2 = read('../../src/v2/rustUrban.ts');
     expect(bench).toMatch(/let architectureMode: UrbanSceneMode = DEFAULT_CITY_ARCHITECTURE;/);
     expect(bench).toContain('CITY_DISPLAY_DEFAULTS');
     expect(bench).not.toMatch(/settlementRaster\([^)]*, 1024\)/);
@@ -322,14 +513,20 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('builds the same silhouette scene on both paths', () => {
-    const ring = (x: number, y: number, s: number) => [{ x, y }, { x: x + s, y }, { x: x + s, y: y + s }, { x, y: y + s }];
+    const ring = (x: number, y: number, s: number) => [
+      { x, y },
+      { x: x + s, y },
+      { x: x + s, y: y + s },
+      { x, y: y + s },
+    ];
     const base = { culture: { pack: 'EUR-MED', mode: 'historical_inspired' }, terrain: { ground_z_m: 3 }, accesses: [] };
     const requests = [
       { ...base, id: 'h1', parcel_id: 'p1', function: 'residential', buildable: [{ outer: ring(0, 0, 10), holes: [] }] },
       { ...base, id: 'o1', parcel_id: 'p2', function: 'open_space', buildable: [{ outer: ring(20, 0, 8), holes: [] }] },
       { ...base, id: 'm1', parcel_id: 'p3', function: 'open_space', buildable: [{ outer: ring(40, 0, 8), holes: [] }], preview: [{ outer: ring(41, 1, 5), holes: [] }], programme: { households: 2, massing: {} } },
     ] as unknown as CityPlacementRequest[];
-    const v2 = silhouetteScene(requests), bench = siteVisualScene(requests.map(projectUrbanSite));
+    const v2 = silhouetteScene(requests),
+      bench = siteVisualScene(requests.map(projectUrbanSite));
     expect(v2).toEqual(bench);
     expect(v2.buildings.map(b => b.id)).toEqual(['h1', 'm1']);
     expect(v2.open_spaces.map(o => o.id)).toEqual(['o1']);
@@ -340,7 +537,8 @@ describe('V2 and City Bench stay in sync', () => {
 
   it('resolves the road display (plan, none, rendered) once for 2D, 3D and both pages', () => {
     for (const style of PRESET_IDS) {
-      const c = presetComposition(style), satellite = style.startsWith('satellite');
+      const c = presetComposition(style),
+        satellite = style.startsWith('satellite');
       expect(c.networks.roads.surface, style).toBe(satellite ? 'rendered' : 'plan');
       for (const target of ['view2d', 'view3d'] as const) {
         const r = resolveAppearance({ style: 'parchment', composition: c }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
@@ -351,9 +549,11 @@ describe('V2 and City Bench stay in sync', () => {
       }
     }
     // A vector style keeps its plan roads when the recipe asks for the painted surface.
-    const parchment = presetComposition('parchment'); parchment.networks.roads.surface = 'rendered';
+    const parchment = presetComposition('parchment');
+    parchment.networks.roads.surface = 'rendered';
     expect(resolveAppearance({ style: 'parchment', composition: parchment }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').composition.networks.roads.look).toBe('wash');
-    const satellite = presetComposition('satellite'); satellite.networks.roads.surface = 'plan';
+    const satellite = presetComposition('satellite');
+    satellite.networks.roads.surface = 'plan';
     expect(resolveAppearance({ style: 'parchment', composition: satellite }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').composition.networks.roads.look).toBe('natural');
     expect(() => validateComposition({ ...satellite, networks: { ...satellite.networks, roads: { ...satellite.networks.roads, surface: 'paint' } } })).toThrow(/surface/);
     // Both pages set the biome soil of the rendered surface through the same ground tones.
@@ -365,10 +565,22 @@ describe('V2 and City Bench stay in sync', () => {
       const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
       const frame = { viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 }, mpp: 1, dpr: 1 };
       const v2 = cityDrawOptions({ appearance: r, city: r.city, frame, lod: 'near', layers: r.city.layers, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r), page: { buildingsVisible: true } });
-      const bench = cityDrawOptions({ appearance: r, city: { ...r.city }, view: r.city.view, frame: { ...frame }, lod: 'near', layers: { ...r.city.layers }, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r, { nightInk: undefined }), page: { buildingsVisible: true } });
-      const { beforeBuildings: benchBefore, ...benchOptions } = bench, { beforeBuildings: v2Before, ...v2Options } = v2;
+      const bench = cityDrawOptions({
+        appearance: r,
+        city: { ...r.city },
+        view: r.city.view,
+        frame: { ...frame },
+        lod: 'near',
+        layers: { ...r.city.layers },
+        labelsAllowed: true,
+        buildingAppearance: cityBuildingAppearance(r, { nightInk: undefined }),
+        page: { buildingsVisible: true },
+      });
+      const { beforeBuildings: benchBefore, ...benchOptions } = bench,
+        { beforeBuildings: v2Before, ...v2Options } = v2;
       expect(benchOptions).toEqual(v2Options);
-      expect(benchBefore).toBeTypeOf('function'); expect(v2Before).toBeTypeOf('function');
+      expect(benchBefore).toBeTypeOf('function');
+      expect(v2Before).toBeTypeOf('function');
       expect(v2.colors).toBe(v2.appearance.colors);
       expect(v2.groundBlend).toBe(r.city.groundBlend === 'blended');
       expect(v2.roadEmphasis).toBe(r.composition.networks.roads.emphasis);
@@ -376,12 +588,14 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('stands lot fences with the buildings, not with the parcel diagram, in 2D and 3D', () => {
-    for (const style of PRESET_IDS) for (const target of ['view2d', 'view3d'] as const) {
-      const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-      expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(r.composition.buildings.visible);
-      expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(r.composition.buildings.visible);
-    }
-    const hidden = presetComposition('parchment'); hidden.buildings.visible = false;
+    for (const style of PRESET_IDS)
+      for (const target of ['view2d', 'view3d'] as const) {
+        const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(r.composition.buildings.visible);
+        expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(r.composition.buildings.visible);
+      }
+    const hidden = presetComposition('parchment');
+    hidden.buildings.visible = false;
     expect(resolveAppearance({ style: 'parchment', composition: hidden }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').city.layers.lotEnclosures).toBe(false);
     // Both draw paths gate the fences on lotEnclosures alone (parcelOverlay is the parcel diagram).
     expect(read('../../src/render/cityCanvas.ts')).toContain('if (layers.lotEnclosures !== false) drawLotEnclosures(');
@@ -389,29 +603,32 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('hides only the plan drawing with Urban plan off: roads, walls, fences, water and lights keep their own switches', () => {
-    for (const style of ['parchment', 'satellite', 'satellite-2'] as const) for (const target of ['view2d', 'view3d', 'export'] as const) {
-      const composition = presetComposition(style); composition.buildings.parcels = true; composition.buildings.blocks = true;
-      const r = resolveAppearance({ style: 'parchment', composition, city: { plan: false } }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-      const on = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-      // Abstract plan graphics off: outlines (planLines), block and lot washes, quarters, domains, tints, diagrams.
-      for (const layer of URBAN_PLAN_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(false);
-      // Real objects unchanged: streets, walls, fences/hedges/gates with their yards, gardens and squares as ground, waterways.
-      for (const layer of URBAN_PHYSICAL_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(on.city.layers[layer]);
-      expect(r.city.layers, `${style} ${target}`).toMatchObject({ planLines: false, streets: true, enclosures: true, lotEnclosures: true });
-      // The map overlay's dashed site reserve outline follows the switch per frame (raster tile keys) with no overlay
-      // rebuild: a rebuild repaints the countryside field strips at a coarser look.
-      expect(cityCountrysideCanvasOptions(r, 4000).urbanPlan(), `${style} ${target}`).toBe(false);
-      expect(r.keys.cartography, `${style} ${target}`).toBe(on.keys.cartography);
-      expect(city3dPlanOptions(r).layers.streets, `${target} 3D`).toBe(true);
-      expect(cityBuildingAppearance(r), `${style} ${target}`).toEqual(cityBuildingAppearance(resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target)));
-    }
+    for (const style of ['parchment', 'satellite', 'satellite-2'] as const)
+      for (const target of ['view2d', 'view3d', 'export'] as const) {
+        const composition = presetComposition(style);
+        composition.buildings.parcels = true;
+        composition.buildings.blocks = true;
+        const r = resolveAppearance({ style: 'parchment', composition, city: { plan: false } }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        const on = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        // Abstract plan graphics off: outlines (planLines), block and lot washes, quarters, domains, tints, diagrams.
+        for (const layer of URBAN_PLAN_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(false);
+        // Real objects unchanged: streets, walls, fences/hedges/gates with their yards, gardens and squares as ground, waterways.
+        for (const layer of URBAN_PHYSICAL_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(on.city.layers[layer]);
+        expect(r.city.layers, `${style} ${target}`).toMatchObject({ planLines: false, streets: true, enclosures: true, lotEnclosures: true });
+        // The map overlay's dashed site reserve outline follows the switch per frame (raster tile keys) with no overlay
+        // rebuild: a rebuild repaints the countryside field strips at a coarser look.
+        expect(cityCountrysideCanvasOptions(r, 4000).urbanPlan(), `${style} ${target}`).toBe(false);
+        expect(r.keys.cartography, `${style} ${target}`).toBe(on.keys.cartography);
+        expect(city3dPlanOptions(r).layers.streets, `${target} 3D`).toBe(true);
+        expect(cityBuildingAppearance(r), `${style} ${target}`).toEqual(cityBuildingAppearance(resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target)));
+      }
     // No page gates its streets, regional roads or whole plan scene on the switch; all use withoutUrbanPlan.
     expect(read('../../src/v2/nativeCityMap.ts')).not.toMatch(/city\.plan \?/);
     const city3d = read('../../src/ui/city3d.ts');
     expect(city3d).not.toMatch(/planOverlay && !tile\.preview|planOverlay \? cityPlan\(\)/);
     expect(city3d).toContain('withoutUrbanPlan(requestedLayers)');
     expect(read('../../src/ui/terrainUrban.ts')).toContain('withoutUrbanPlan(cityLook().layers)');
-    expect(read('../../src/render/canvas.ts')).toContain("world.site && deps.urbanPlan?.() !== false) drawSiteMarker(");
+    expect(read('../../src/render/canvas.ts')).toContain('world.site && deps.urbanPlan?.() !== false) drawSiteMarker(');
     expect(read('../../src/v2/benchRenderer.ts')).toContain('urbanPlan: () => this.resolved?.city.plan !== false,');
     // Dashed refused-lot outlines are plan lines in both draw paths.
     expect(read('../../src/render/cityCanvas.ts')).toContain('layers.planLines !== false && o.refusedParcels?.size');
@@ -419,7 +636,8 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('builds the drawCity options of both pages with the shared function only', () => {
-    const bench = read('../../src/ui/terrainUrban.ts'), v2 = read('../../src/v2/nativeCityMap.ts');
+    const bench = read('../../src/ui/terrainUrban.ts'),
+      v2 = read('../../src/v2/nativeCityMap.ts');
     for (const page of [bench, v2]) {
       expect(page).toContain('cityDrawOptions({');
       expect(page).toContain('cityBuildingAppearance(');
@@ -470,28 +688,31 @@ describe('V2 and City Bench stay in sync', () => {
     expect(bench).not.toMatch(/settlementRaster\([^)]*CITY_RASTER_RESOLUTION/);
   });
   it('shares the reviewed full-sheet layout defaults and preserves explicit overrides', () => {
-    expect(CITY_LAYOUT_DEFAULTS).toEqual({ naturalCampApproaches: true, streetFrontage: true, alignEnclosedGrid: true,
-      hideUnusedQuarters: true, organicBranchVariation: .5, ribbonWidthVariation: .5 });
+    expect(CITY_LAYOUT_DEFAULTS).toEqual({ naturalCampApproaches: true, streetFrontage: true, alignEnclosedGrid: true, hideUnusedQuarters: true, organicBranchVariation: 0.5, ribbonWidthVariation: 0.5 });
     const current = settings('review');
     current.urban!.layout = { streetFrontage: false, organicBranchVariation: 0 };
     const layout = resolveRustUrbanControls(current, 'a', { culture: 'west' } as Options).layout;
-    expect(layout.streetFrontage).toBe(false); expect(layout.organicBranchVariation).toBe(0);
-    expect(layout.naturalCampApproaches).toBe(true); expect(layout.ribbonWidthVariation).toBe(.5);
-    for (const file of ['../../src/v2/rustUrban.ts', '../../src/v2/urbanControls.ts', '../../src/ui/terrainUrban.ts'])
-      expect(read(file)).toContain('defaultCityLayoutConfig as defaultLayoutConfig');
+    expect(layout.streetFrontage).toBe(false);
+    expect(layout.organicBranchVariation).toBe(0);
+    expect(layout.naturalCampApproaches).toBe(true);
+    expect(layout.ribbonWidthVariation).toBe(0.5);
+    for (const file of ['../../src/v2/rustUrban.ts', '../../src/v2/urbanControls.ts', '../../src/ui/terrainUrban.ts']) expect(read(file)).toContain('defaultCityLayoutConfig as defaultLayoutConfig');
   });
 
   it('shares canopy/night finishing, native house LOD and the 3D ground-plan options', () => {
-    const v2 = read('../../src/v2/nativeCityMap.ts'), bench = read('../../src/ui/terrainUrban.ts');
+    const v2 = read('../../src/v2/nativeCityMap.ts'),
+      bench = read('../../src/ui/terrainUrban.ts');
     for (const page of [v2, bench]) expect(page).toContain('finishCityFrame(ctx,');
     expect(v2).not.toContain('HOUSE_LOD');
     for (const page of [read('../../src/v2/urban3d.ts'), read('../../src/ui/citybench.ts')]) expect(page).toContain('getPlanOptions: () => city3dPlanOptions(');
-    const composition = presetComposition('parchment'); composition.effects.ambience = 'night';
+    const composition = presetComposition('parchment');
+    composition.effects.ambience = 'night';
     const r = resolveAppearance({ style: 'parchment', composition, unifiedDefaults: true }, {} as never, { nativeCities: true }, 'view3d');
     const options = city3dPlanOptions(r);
     const hiddenRoads = { ...r, composition: { ...r.composition, networks: { ...r.composition.networks, roads: { ...r.composition.networks.roads, visible: false } } } };
     expect(cityRegionalStreets(hiddenRoads, [])).toBe(cityRegionalStreets(hiddenRoads, []));
-    expect(options.night).toBe(true); expect(options.roadEmphasis).toBe(r.composition.networks.roads.emphasis);
+    expect(options.night).toBe(true);
+    expect(options.roadEmphasis).toBe(r.composition.networks.roads.emphasis);
     expect(cityBuildingAppearance(r).nightInk).toBe(true);
     expect(options.buildingsVisible).toBe(r.composition.buildings.visible && r.composition.buildings.meshes === 'none');
   });
@@ -502,31 +723,73 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('keeps the massing and its 3D facade windows on the shared silhouette path', () => {
-    const outer = [{ x: 0, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 8 }, { x: 0, y: 8 }];
-    const request = { id: 'house', parcel_id: 'lot', function: 'domestic', culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
-      terrain: { ground_z_m: 0 }, accesses: [], preview: [{ outer, holes: [] }], buildable: [{ outer, holes: [] }],
-      programme: { households: 3, massing: [{ floors: 2, eave_m: 6, rise_m: 2, roof: 'gable', ridges: [[0, 4, 12, 4]], cover: 'tile', wall: 'brick' }] } } as unknown as CityPlacementRequest;
-    const v2 = silhouetteScene([request]), bench = siteVisualScene([projectUrbanSite(request, 0)]);
+    const outer = [
+      { x: 0, y: 0 },
+      { x: 12, y: 0 },
+      { x: 12, y: 8 },
+      { x: 0, y: 8 },
+    ];
+    const request = {
+      id: 'house',
+      parcel_id: 'lot',
+      function: 'domestic',
+      culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
+      terrain: { ground_z_m: 0 },
+      accesses: [],
+      preview: [{ outer, holes: [] }],
+      buildable: [{ outer, holes: [] }],
+      programme: { households: 3, massing: [{ floors: 2, eave_m: 6, rise_m: 2, roof: 'gable', ridges: [[0, 4, 12, 4]], cover: 'tile', wall: 'brick' }] },
+    } as unknown as CityPlacementRequest;
+    const v2 = silhouetteScene([request]),
+      bench = siteVisualScene([projectUrbanSite(request, 0)]);
     expect(city3dScene(v2)).toEqual(city3dScene(bench));
-    expect(city3dScene(v2).buildings[0].volumes.flatMap(v => v.roof_mesh.faces).filter(f => f.material.includes('wall:opening')).length).toBeGreaterThan(1);
+    expect(
+      city3dScene(v2)
+        .buildings[0].volumes.flatMap(v => v.roof_mesh.faces)
+        .filter(f => f.material.includes('wall:opening')).length,
+    ).toBeGreaterThan(1);
   });
 
   it('replaces the compact roof once and tiles a concave native pan without crossing its notch', () => {
-    const outer = [[8, 0], [8, 2], [2, 2], [2, 8], [0, 8], [0, 0]].map(([x, y]) => ({ x, y }));
-    const request = { id: 'concave', parcel_id: 'lot', function: 'domestic', culture: { culture: 'european-organic' },
-      terrain: { ground_z_m: 0 }, accesses: [], preview: [{ outer, holes: [] }], buildable: [{ outer, holes: [] }],
-      programme: { massing: [{ floors: 1, eave_m: 3, rise_m: 2, roof: 'hip', ridges: [], cover: 'tile', wall: 'brick' }] } } as unknown as CityPlacementRequest;
-    const source = silhouetteScene([request]), compact = city3dScene(source).buildings[0], volume = compact.volumes[0];
-    const detail = { ...compact, recipe_id: 'native', volumes: [{ ...volume, roof_mesh: {
-      vertices: outer.map(p => ({ ...p, z: 3 + .2 * p.x })),
-      faces: [{ vertices: outer.map((_, i) => i), normal: [-.2, 0, 1] as [number, number, number], material: volume.materials.cladding, kind: 'pan' as const }],
-    } }] };
+    const outer = [
+      [8, 0],
+      [8, 2],
+      [2, 2],
+      [2, 8],
+      [0, 8],
+      [0, 0],
+    ].map(([x, y]) => ({ x, y }));
+    const request = {
+      id: 'concave',
+      parcel_id: 'lot',
+      function: 'domestic',
+      culture: { culture: 'european-organic' },
+      terrain: { ground_z_m: 0 },
+      accesses: [],
+      preview: [{ outer, holes: [] }],
+      buildable: [{ outer, holes: [] }],
+      programme: { massing: [{ floors: 1, eave_m: 3, rise_m: 2, roof: 'hip', ridges: [], cover: 'tile', wall: 'brick' }] },
+    } as unknown as CityPlacementRequest;
+    const source = silhouetteScene([request]),
+      compact = city3dScene(source).buildings[0],
+      volume = compact.volumes[0];
+    const detail = {
+      ...compact,
+      recipe_id: 'native',
+      volumes: [{ ...volume, roof_mesh: { vertices: outer.map(p => ({ ...p, z: 3 + 0.2 * p.x })), faces: [{ vertices: outer.map((_, i) => i), normal: [-0.2, 0, 1] as [number, number, number], material: volume.materials.cladding, kind: 'pan' as const }] } }],
+    };
     const scene = city3dScene(source, { details: new Map([[detail.id, detail]]) });
     expect(scene.buildings).toEqual([detail]);
     expect(scene.kinds).toEqual({ silhouette: 0, compact: 0, detailed: 1 });
     for (const overview of [false, true]) {
       const roofs: BuildingTriangle[] = [];
-      eachBuildingTriangle(detail, t => { if (t.surface === 'roof') roofs.push(t); }, overview);
+      eachBuildingTriangle(
+        detail,
+        t => {
+          if (t.surface === 'roof') roofs.push(t);
+        },
+        overview,
+      );
       const area = roofs.reduce((s, { points: [a, b, c] }) => s + Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2, 0);
       expect(area).toBeCloseTo(28, 8);
       expect(roofs.every(t => buildingRayDistance([4, 4, 100], [0, 0, -1], t.points) === null)).toBe(true);
@@ -534,38 +797,77 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('keeps a shallow oppidum roof on the wall top through its overhang', () => {
-    const ring = Array.from({ length: 16 }, (_, i) => [4 * Math.cos(i * Math.PI / 8), 4 * Math.sin(i * Math.PI / 8)]);
+    const ring = Array.from({ length: 16 }, (_, i) => [4 * Math.cos((i * Math.PI) / 8), 4 * Math.sin((i * Math.PI) / 8)]);
     const outer = ring.map(([x, y]) => ({ x, y }));
-    const request = { id: 'roundhouse', parcel_id: 'lot', function: 'domestic', culture: { culture: 'celtic-oppidum' },
-      terrain: { ground_z_m: 0 }, accesses: [], preview: [{ outer, holes: [] }], buildable: [{ outer, holes: [] }],
-      programme: { massing: [{ floors: 1, eave_m: 2.2, rise_m: .3, roof: 'cone', ridges: [], cover: 'thatch', wall: 'wattle',
-        volumes: [{ ring, eave_m: 2.2, rise_m: .3, roof: 'cone', ridges: [], overhang_m: .65 }] }] } } as unknown as CityPlacementRequest;
-    const source = silhouetteScene([request]), b = city3dScene(source).buildings[0], v = b.volumes[0];
+    const request = {
+      id: 'roundhouse',
+      parcel_id: 'lot',
+      function: 'domestic',
+      culture: { culture: 'celtic-oppidum' },
+      terrain: { ground_z_m: 0 },
+      accesses: [],
+      preview: [{ outer, holes: [] }],
+      buildable: [{ outer, holes: [] }],
+      programme: { massing: [{ floors: 1, eave_m: 2.2, rise_m: 0.3, roof: 'cone', ridges: [], cover: 'thatch', wall: 'wattle', volumes: [{ ring, eave_m: 2.2, rise_m: 0.3, roof: 'cone', ridges: [], overhang_m: 0.65 }] }] },
+    } as unknown as CityPlacementRequest;
+    const source = silhouetteScene([request]),
+      b = city3dScene(source).buildings[0],
+      v = b.volumes[0];
     expect(city3dScene(siteVisualScene([projectUrbanSite(request, 0)]))).toEqual(city3dScene(source));
     const cover = v.roof_mesh.faces.filter(f => f.material.includes('cover:'));
     expect(Math.min(...cover.flatMap(f => f.vertices.map(i => v.roof_mesh.vertices[i].z)))).toBeCloseTo(v.z_m + v.wall_height_m, 8);
-    for (const p of outer) expect(cover.some(f => f.vertices.some(i => {
-      const q = v.roof_mesh.vertices[i]; return Math.hypot(p.x - q.x, p.y - q.y) < 1e-8 && Math.abs(q.z - 2.2) < 1e-8;
-    }))).toBe(true);
+    for (const p of outer)
+      expect(
+        cover.some(f =>
+          f.vertices.some(i => {
+            const q = v.roof_mesh.vertices[i];
+            return Math.hypot(p.x - q.x, p.y - q.y) < 1e-8 && Math.abs(q.z - 2.2) < 1e-8;
+          }),
+        ),
+      ).toBe(true);
     expect(Math.max(...v.roof_mesh.vertices.map(p => Math.hypot(p.x, p.y)))).toBeGreaterThan(4.5);
   });
 
   it('raises stepped terrace rings and keeps exactly one roof above each tier', () => {
-    const square = (r: number) => [[-r, -r], [r, -r], [r, r], [-r, r]].map(([x, y]) => ({ x, y }));
+    const square = (r: number) =>
+      [
+        [-r, -r],
+        [r, -r],
+        [r, r],
+        [-r, r],
+      ].map(([x, y]) => ({ x, y }));
     const preview = [12, 9, 6].map(r => ({ outer: square(r), holes: [square(r - 3).reverse()] }));
     preview.push({ outer: square(3), holes: [] });
-    const request = { id: 'pyramid', parcel_id: 'lot', function: 'religious', culture: { culture: 'maya' },
-      terrain: { ground_z_m: 0 }, accesses: [], preview, buildable: preview,
-      programme: { landmark: true, role: 'worship.pyramid-precinct', massing: preview.map((_, i) => ({
-        floors: 1, eave_m: (i + 1) * 3, rise_m: 0, roof: 'flat', ridges: [], cover: 'stone', wall: 'stone', openings: 'none',
-      })) } } as unknown as CityPlacementRequest;
-    const source = silhouetteScene([request]), b = city3dScene(source).buildings[0];
+    const request = {
+      id: 'pyramid',
+      parcel_id: 'lot',
+      function: 'religious',
+      culture: { culture: 'maya' },
+      terrain: { ground_z_m: 0 },
+      accesses: [],
+      preview,
+      buildable: preview,
+      programme: { landmark: true, role: 'worship.pyramid-precinct', massing: preview.map((_, i) => ({ floors: 1, eave_m: (i + 1) * 3, rise_m: 0, roof: 'flat', ridges: [], cover: 'stone', wall: 'stone', openings: 'none' })) },
+    } as unknown as CityPlacementRequest;
+    const source = silhouetteScene([request]),
+      b = city3dScene(source).buildings[0];
     expect(city3dScene(siteVisualScene([projectUrbanSite(request, 0)]))).toEqual(city3dScene(source));
     for (const overview of [false, true]) {
       const roofs: BuildingTriangle[] = [];
-      eachBuildingTriangle(b, t => { if (t.surface === 'roof') roofs.push(t); }, overview);
-      for (const [x, height] of [[10.3, 3], [7.3, 6], [4.3, 9], [1.3, 12]]) {
-        const hits = roofs.map(t => buildingRayDistance([x, .7, 100], [0, 0, -1], t.points)).filter(d => d !== null);
+      eachBuildingTriangle(
+        b,
+        t => {
+          if (t.surface === 'roof') roofs.push(t);
+        },
+        overview,
+      );
+      for (const [x, height] of [
+        [10.3, 3],
+        [7.3, 6],
+        [4.3, 9],
+        [1.3, 12],
+      ]) {
+        const hits = roofs.map(t => buildingRayDistance([x, 0.7, 100], [0, 0, -1], t.points)).filter(d => d !== null);
         expect(hits).toHaveLength(1);
         expect(hits[0]).toBeCloseTo(100 - height, 8);
       }
@@ -573,32 +875,66 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('draws explicit roof pans exactly as sent, in plan and in 3D, on both pages', () => {
-    const outer = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 6 }, { x: 0, y: 6 }], shape = { outer, holes: [] }, ring = outer.map(p => [p.x, p.y]);
+    const outer = [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 6 },
+        { x: 0, y: 6 },
+      ],
+      shape = { outer, holes: [] },
+      ring = outer.map(p => [p.x, p.y]);
     // Gambrel: four pans whose eaves run 0.4 m outside the walls, one gable end on each short wall.
-    const pans = [[-.4, -.4, 3.8, 10.4, -.4, 3.8, 10.4, 1.5, 5.5, -.4, 1.5, 5.5], [-.4, 1.5, 5.5, 10.4, 1.5, 5.5, 10.4, 3, 6.2, -.4, 3, 6.2],
-      [-.4, 3, 6.2, 10.4, 3, 6.2, 10.4, 4.5, 5.5, -.4, 4.5, 5.5], [-.4, 4.5, 5.5, 10.4, 4.5, 5.5, 10.4, 6.4, 3.8, -.4, 6.4, 3.8]];
-    const gables = [[0, 0, 4, 0, 6, 4, 0, 3, 6.2], [10, 0, 4, 10, 6, 4, 10, 3, 6.2]];
-    const piece = (volume: Record<string, unknown>): MassingPiece => ({ floors: 2, eave_m: 4, rise_m: 2.2, roof: 'gable', ridges: [[0, 3, 10, 3]], cover: 'tile', wall: 'brick',
-      volumes: [{ ring, floors: 2, eave_m: 4, rise_m: 2.2, roof: 'gable', roof_form: 'gambrel', ridges: [[0, 3, 10, 3]], ...volume }] }) as unknown as MassingPiece;
+    const pans = [
+      [-0.4, -0.4, 3.8, 10.4, -0.4, 3.8, 10.4, 1.5, 5.5, -0.4, 1.5, 5.5],
+      [-0.4, 1.5, 5.5, 10.4, 1.5, 5.5, 10.4, 3, 6.2, -0.4, 3, 6.2],
+      [-0.4, 3, 6.2, 10.4, 3, 6.2, 10.4, 4.5, 5.5, -0.4, 4.5, 5.5],
+      [-0.4, 4.5, 5.5, 10.4, 4.5, 5.5, 10.4, 6.4, 3.8, -0.4, 6.4, 3.8],
+    ];
+    const gables = [
+      [0, 0, 4, 0, 6, 4, 0, 3, 6.2],
+      [10, 0, 4, 10, 6, 4, 10, 3, 6.2],
+    ];
+    const piece = (volume: Record<string, unknown>): MassingPiece =>
+      ({ floors: 2, eave_m: 4, rise_m: 2.2, roof: 'gable', ridges: [[0, 3, 10, 3]], cover: 'tile', wall: 'brick', volumes: [{ ring, floors: 2, eave_m: 4, rise_m: 2.2, roof: 'gable', roof_form: 'gambrel', ridges: [[0, 3, 10, 3]], ...volume }] }) as unknown as MassingPiece;
     const flat = (faces: { points: { x: number; y: number; z: number }[] }[]): number[][] => faces.map(f => f.points.flatMap(p => [p.x, p.y, p.z]));
-    const massing = piece({ pans, gables }), [volume] = pieceVolumes(shape, massing);
+    const massing = piece({ pans, gables }),
+      [volume] = pieceVolumes(shape, massing);
     expect(volume.roof_form).toBe('gambrel');
     expect(flat(volumeRoof(volume, 0, 0))).toEqual(pans);
     expect(flat(planRoof([shape], [massing]))).toEqual(pans);
     // Horizontal pans stay plain faces (no slab rim, no clipping); an empty list is a hidden roof; malformed pans are ignored.
-    const slab = [[0, 0, 4, 10, 0, 4, 10, 6, 4, 0, 6, 4]], level = planRoof([shape], [piece({ roof: 'flat', rise_m: 0, parapet_m: .9, pans: slab })]);
-    expect(flat(level)).toEqual(slab); expect(level.some(f => f.flat)).toBe(false);
+    const slab = [[0, 0, 4, 10, 0, 4, 10, 6, 4, 0, 6, 4]],
+      level = planRoof([shape], [piece({ roof: 'flat', rise_m: 0, parapet_m: 0.9, pans: slab })]);
+    expect(flat(level)).toEqual(slab);
+    expect(level.some(f => f.flat)).toBe(false);
     expect(planRoof([shape], [piece({ pans: [] })])).toEqual([]);
     expect(planRoof([shape], [piece({ pans: [[0, 0, 4, 10, 0]] })])).toEqual(planRoof([shape], [piece({})]));
     // The ground shadow of a convex volume with pans is the plain sweep of its ring.
-    const area = (s: { outer: { x: number; y: number }[] }): number => Math.abs(s.outer.reduce((a, p, i) => { const n = s.outer[(i + 1) % s.outer.length]; return a + p.x * n.y - n.x * p.y; }, 0)) / 2;
+    const area = (s: { outer: { x: number; y: number }[] }): number =>
+      Math.abs(
+        s.outer.reduce((a, p, i) => {
+          const n = s.outer[(i + 1) % s.outer.length];
+          return a + p.x * n.y - n.x * p.y;
+        }, 0),
+      ) / 2;
     const [shadow] = pieceShadows(shape, massing);
     expect(area(shadow)).toBeCloseTo(area(pieceShadow(shape, 6.2)!), 8);
-    const request = { id: 'gambrel', parcel_id: 'lot', function: 'domestic', culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
-      terrain: { ground_z_m: 0 }, accesses: [], preview: [shape], buildable: [shape], programme: { households: 2, massing: [massing] } } as unknown as CityPlacementRequest;
-    const v2 = city3dScene(silhouetteScene([request])), bench = city3dScene(siteVisualScene([projectUrbanSite(request, 0)]));
+    const request = {
+      id: 'gambrel',
+      parcel_id: 'lot',
+      function: 'domestic',
+      culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
+      terrain: { ground_z_m: 0 },
+      accesses: [],
+      preview: [shape],
+      buildable: [shape],
+      programme: { households: 2, massing: [massing] },
+    } as unknown as CityPlacementRequest;
+    const v2 = city3dScene(silhouetteScene([request])),
+      bench = city3dScene(siteVisualScene([projectUrbanSite(request, 0)]));
     expect(v2).toEqual(bench);
-    const mesh = v2.buildings[0].volumes[0].roof_mesh, points = (f: { vertices: number[] }): number[] => f.vertices.flatMap(i => [mesh.vertices[i].x, mesh.vertices[i].y, mesh.vertices[i].z]);
+    const mesh = v2.buildings[0].volumes[0].roof_mesh,
+      points = (f: { vertices: number[] }): number[] => f.vertices.flatMap(i => [mesh.vertices[i].x, mesh.vertices[i].y, mesh.vertices[i].z]);
     expect(mesh.faces.filter(f => f.material.includes('cover:')).map(points)).toEqual(pans);
     const ends = mesh.faces.filter(f => f.kind === 'gable' && f.material.includes('wall:brick'));
     expect(ends.map(points)).toEqual(gables);
@@ -607,22 +943,48 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('starts raised walls at their base, paints them above their support and keeps small volumes plain', () => {
-    const rect = (x0: number, y0: number, x1: number, y1: number): number[][] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-    const outer = rect(0, 0, 12, 8).map(([x, y]) => ({ x, y })), shape = { outer, holes: [] };
+    const rect = (x0: number, y0: number, x1: number, y1: number): number[][] => [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ];
+    const outer = rect(0, 0, 12, 8).map(([x, y]) => ({ x, y })),
+      shape = { outer, holes: [] };
     // A lantern standing on the flat main roof (listed first), the main body, and a porch.
-    const piece = (minor: boolean): MassingPiece => ({ floors: 2, eave_m: 6, rise_m: 0, roof: 'flat', ridges: [], cover: 'tile', wall: 'brick', volumes: [
-      { ring: rect(3, 2, 9, 6), floors: 1, base_m: 6, eave_m: 9, rise_m: 1.5, roof: 'pyramid', ridges: [] },
-      { ring: rect(0, 0, 12, 8), floors: 2, eave_m: 6, rise_m: 0, roof: 'flat', ridges: [] },
-      { ring: rect(12, 2, 16, 6), floors: 1, eave_m: 2.5, rise_m: .5, roof: 'shed', ridges: [], ...(minor ? { minor: true } : {}), pans: [[12, 2, 3, 16, 2, 2.5, 16, 6, 2.5, 12, 6, 3]] },
-    ] }) as unknown as MassingPiece;
+    const piece = (minor: boolean): MassingPiece =>
+      ({
+        floors: 2,
+        eave_m: 6,
+        rise_m: 0,
+        roof: 'flat',
+        ridges: [],
+        cover: 'tile',
+        wall: 'brick',
+        volumes: [
+          { ring: rect(3, 2, 9, 6), floors: 1, base_m: 6, eave_m: 9, rise_m: 1.5, roof: 'pyramid', ridges: [] },
+          { ring: rect(0, 0, 12, 8), floors: 2, eave_m: 6, rise_m: 0, roof: 'flat', ridges: [] },
+          { ring: rect(12, 2, 16, 6), floors: 1, eave_m: 2.5, rise_m: 0.5, roof: 'shed', ridges: [], ...(minor ? { minor: true } : {}), pans: [[12, 2, 3, 16, 2, 2.5, 16, 6, 2.5, 12, 6, 3]] },
+        ],
+      }) as unknown as MassingPiece;
     const scene = (minor: boolean) => {
-      const request = { id: 'lantern', parcel_id: 'lot', function: 'domestic', culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
-        terrain: { ground_z_m: 0 }, accesses: [], preview: [shape], buildable: [shape], programme: { households: 2, massing: [piece(minor)] } } as unknown as CityPlacementRequest;
+      const request = {
+        id: 'lantern',
+        parcel_id: 'lot',
+        function: 'domestic',
+        culture: { culture: 'west', pack: 'EUR-MED', mode: 'historical_inspired' },
+        terrain: { ground_z_m: 0 },
+        accesses: [],
+        preview: [shape],
+        buildable: [shape],
+        programme: { households: 2, massing: [piece(minor)] },
+      } as unknown as CityPlacementRequest;
       const v2 = city3dScene(silhouetteScene([request]));
       expect(v2).toEqual(city3dScene(siteVisualScene([projectUrbanSite(request, 0)])));
       return v2.buildings[0];
     };
-    const b = scene(true), [lantern, , porch] = b.volumes;
+    const b = scene(true),
+      [lantern, , porch] = b.volumes;
     const openings = (v: typeof lantern) => v.roof_mesh.faces.filter(f => f.material.includes('wall:opening'));
     expect([lantern.z_m, lantern.wall_height_m, lantern.levels[0].z_m, lantern.levels[0].height_m]).toEqual([6, 3, 6, 3]);
     expect(lantern.foundation?.footprint).toEqual([]);
@@ -632,16 +994,21 @@ describe('V2 and City Bench stay in sync', () => {
     expect(openings(scene(false).volumes[2]).length).toBeGreaterThan(0);
     // The overview drops the porch; the detailed mesh (and picking, which shares it) keeps it.
     for (const overview of [false, true]) {
-      const walls: BuildingTriangle[] = [], beside: BuildingTriangle[] = [];
-      eachBuildingTriangle(b, t => {
-        if (t.points.every(p => p[0] > 12.01)) beside.push(t);
-        if (t.surface === 'wall' && t.points.every(p => p[0] >= 3 && p[0] <= 9 && p[1] >= 2 && p[1] <= 6)) walls.push(t);
-      }, overview);
+      const walls: BuildingTriangle[] = [],
+        beside: BuildingTriangle[] = [];
+      eachBuildingTriangle(
+        b,
+        t => {
+          if (t.points.every(p => p[0] > 12.01)) beside.push(t);
+          if (t.surface === 'wall' && t.points.every(p => p[0] >= 3 && p[0] <= 9 && p[1] >= 2 && p[1] <= 6)) walls.push(t);
+        },
+        overview,
+      );
       expect(beside.length > 0).toBe(!overview);
       expect(Math.min(...walls.flatMap(t => t.points.map(p => p[2])))).toBe(6);
     }
     const faces = planRoof([shape], [piece(true)]);
-    expect(Math.max(...faces.map((f, i) => f.vol === 1 ? i : -1))).toBeLessThan(faces.findIndex(f => f.vol === 0));
+    expect(Math.max(...faces.map((f, i) => (f.vol === 1 ? i : -1)))).toBeLessThan(faces.findIndex(f => f.vol === 0));
     expect(faces.filter(f => f.minor).map(f => f.vol)).toEqual([2]);
     expect(pieceShadows(shape, piece(true))).toHaveLength(2);
   });
@@ -655,20 +1022,20 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/ui/city3d.ts')).toContain('options.getBackgroundImage?.()');
     expect(renderer).toContain('this.backgroundImage ??= this.gpu!.captureMap(1024)');
   });
-
 });
 
-
 describe('retained city environment parity', () => {
-
   it('shares Underdark lamps between 2D and 3D without changing the selected period or rebuilding the terrain', () => {
     for (const preset of ['satellite', 'parchment'] as const) {
       const resolve = (ambience: 'day' | 'night', target: 'view2d' | 'view3d') => {
-        const composition = presetComposition(preset); composition.effects.ambience = ambience;
+        const composition = presetComposition(preset);
+        composition.effects.ambience = ambience;
         return resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target, { biome: 'underdark' });
       };
-      const on = resolve('day', 'view2d'), off = resolve('night', 'view2d');
-      expect(on.composition.ambience).toBe('day'); expect(off.composition.ambience).toBe('night');
+      const on = resolve('day', 'view2d'),
+        off = resolve('night', 'view2d');
+      expect(on.composition.ambience).toBe('day');
+      expect(off.composition.ambience).toBe('night');
       expect(on.ground.style).toBe(off.ground.style);
       for (const key of ['terrainBase', 'forest', 'cartography', 'water'] as const) expect(on.keys[key]).toBe(off.keys[key]);
       for (const ambience of ['day', 'night'] as const) {
@@ -678,8 +1045,7 @@ describe('retained city environment parity', () => {
         expect(city3dPlanOptions(resolve(ambience, 'view3d')).appearance.lightsOn).toBe(building.lightsOn);
       }
     }
-    for (const file of ['../../src/v2/benchRenderer.ts', '../../src/v2/urban3d.ts', '../../src/ui/citybench.ts'])
-      expect(read(file)).toContain('...underdarkSceneLook(');
+    for (const file of ['../../src/v2/benchRenderer.ts', '../../src/v2/urban3d.ts', '../../src/ui/citybench.ts']) expect(read(file)).toContain('...underdarkSceneLook(');
   });
 
   it('keeps water independent from streets and retains the decor vectors', () => {
@@ -703,19 +1069,26 @@ describe('retained city environment parity', () => {
       expect(read(file)).toContain('forestRetainedRiverSegments(');
     }
     for (const file of ['../../src/v2/benchRenderer.ts', '../../src/ui/urbanLanduse.ts']) {
-      expect(read(file)).toContain('cityOverlayLandKinds('); expect(read(file)).toContain('cityOverlayLandKey('); expect(read(file)).toContain('cityWaterCutsLand('); expect(read(file)).toContain('cityCountrysideCanvasOptions(');
+      expect(read(file)).toContain('cityOverlayLandKinds(');
+      expect(read(file)).toContain('cityOverlayLandKey(');
+      expect(read(file)).toContain('cityWaterCutsLand(');
+      expect(read(file)).toContain('cityCountrysideCanvasOptions(');
     }
-    expect(cityCountrysideTextureVisible('forest', .607)).toBe(true);
-    expect(cityCountrysideTextureVisible('orchard', .767)).toBe(true);
-    expect(cityCountrysideTextureVisible('field', .607)).toBe(false);
+    expect(cityCountrysideTextureVisible('forest', 0.607)).toBe(true);
+    expect(cityCountrysideTextureVisible('orchard', 0.767)).toBe(true);
+    expect(cityCountrysideTextureVisible('field', 0.607)).toBe(false);
     expect(read('../../src/render/canvas.ts')).toContain('cityCountrysideTextureVisible(tl.kind, sc)');
-    const height = { x: 0, y: 0, width: 100, n: 2, data: new Float32Array(4) }, water = new Uint8Array(4);
+    const height = { x: 0, y: 0, width: 100, n: 2, data: new Float32Array(4) },
+      water = new Uint8Array(4);
     const source = cityForestInput('decor', { temperature: 12, precipitation: 800 }, height, water);
-    expect(source.height).toBe(height); expect(source.water).toBe(water); expect(source.climate).toEqual([12, 800]);
+    expect(source.height).toBe(height);
+    expect(source.water).toBe(water);
+    expect(source.climate).toEqual([12, 800]);
     for (const preset of ['parchment', 'satellite', 'satellite-2'] as const) {
       const r = resolveAppearance({ style: 'parchment', composition: presetComposition(preset) }, {} as never, { nativeCities: true }, 'view2d');
       const draw = cityCountrysideCanvasOptions(r, 4000);
-      expect(draw.raster).toBe(true); expect(draw.furrowReferenceSize).toBe(4000);
+      expect(draw.raster).toBe(true);
+      expect(draw.furrowReferenceSize).toBe(4000);
       const mask = cityOverlayLandKinds(r);
       if (r.ground.traits.family === 'material') expect(mask !== true && mask('field')).toBe(false);
     }
@@ -727,24 +1100,49 @@ describe('retained city environment parity', () => {
     for (const file of ['../../src/ui/city3d.ts', '../../src/v2/appearance.ts', '../../src/render/appearanceRecipe.ts']) expect(read(file)).toContain('cityGroundModes');
     const r = resolveAppearance({ style: 'parchment', composition: presetComposition('satellite-2') }, {} as never, { nativeCities: true }, 'view3d');
     const source = { seed: 'decor', climate: { temperature: 12, precipitation: 800 }, climateZone: 'temperate' as const, sourceCell: 4, relief: 'flat' };
-    const a = cityGroundSettings(r, 'parchment-render', source), b = cityGroundSettings(r, 'parchment-render', { ...source });
-    expect(a).toEqual(b); expect(a?.paperMap).toBe(true); expect(a?.groundCover).toBe(r.composition.vegetation.procedural);
+    const a = cityGroundSettings(r, 'parchment-render', source),
+      b = cityGroundSettings(r, 'parchment-render', { ...source });
+    expect(a).toEqual(b);
+    expect(a?.paperMap).toBe(true);
+    expect(a?.groundCover).toBe(r.composition.vegetation.procedural);
     expect(cityGroundSettings(r, 'map', source)).toBeUndefined();
   });
 
   it('clears canopy ground in the shared under-building hook before page painting', () => {
     const r = resolveAppearance({ style: 'parchment', composition: presetComposition('parchment') }, {} as never, { nativeCities: true }, 'view2d');
-    const image = {} as HTMLCanvasElement, events: string[] = [];
+    const image = {} as HTMLCanvasElement,
+      events: string[] = [];
     setCityCanopy(() => image);
-    const ctx = { save() {}, restore() {}, drawImage() { events.push('clear'); } } as unknown as CanvasRenderingContext2D;
+    const ctx = {
+      save() {},
+      restore() {},
+      drawImage() {
+        events.push('clear');
+      },
+    } as unknown as CanvasRenderingContext2D;
     try {
       for (const page of ['v2', 'bench']) {
-        const options = cityDrawOptions({ appearance: r, city: r.city, frame: { viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 }, mpp: 1, dpr: 1 },
-          lod: 'near', layers: r.city.layers, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r), page: { buildingsVisible: true, beforeBuildings() { events.push(page); } } });
+        const options = cityDrawOptions({
+          appearance: r,
+          city: r.city,
+          frame: { viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 }, mpp: 1, dpr: 1 },
+          lod: 'near',
+          layers: r.city.layers,
+          labelsAllowed: true,
+          buildingAppearance: cityBuildingAppearance(r),
+          page: {
+            buildingsVisible: true,
+            beforeBuildings() {
+              events.push(page);
+            },
+          },
+        });
         options.beforeBuildings?.(ctx);
       }
       expect(events).toEqual(r.composition.vegetation.procedural ? ['clear', 'v2', 'clear', 'bench'] : ['v2', 'bench']);
-    } finally { setCityCanopy(undefined); }
+    } finally {
+      setCityCanopy(undefined);
+    }
     expect(read('../../src/ui/terrainUrban.ts')).not.toContain('clearCityGroundUnderCanopy(');
   });
 
@@ -765,15 +1163,17 @@ describe('retained city environment parity', () => {
   it('draws the 3D sea at the 2D coast in both pages (render/seaCover.ts)', async () => {
     const { paintSeaCover } = await import('../../src/render/seaCover');
     // A straight coast: height = x - 3.5 (cells), so the spline's zero line lies at x = 3.5, halfway between points 3 and 4.
-    const n = 8, height = Array.from({ length: n * n }, (_, i) => i % n - 3.5), pixels = new Uint8ClampedArray(n * n * 4);
+    const n = 8,
+      height = Array.from({ length: n * n }, (_, i) => (i % n) - 3.5),
+      pixels = new Uint8ClampedArray(n * n * 4);
     paintSeaCover(pixels, height, [1, 2, 3, 255]);
     const alpha = Array.from({ length: n }, (_, x) => pixels[(4 * n + x) * 4 + 3]);
     // Full sea a cell inside, nothing a cell inland; the tile painter's 102/255 threshold falls on the zero line.
     expect(alpha.slice(0, 3)).toEqual([255, 255, 255]);
     expect(alpha.slice(5)).toEqual([0, 0, 0]);
     const edge = 3 + (alpha[3] - 102) / (alpha[3] - alpha[4]);
-    expect(Math.abs(edge - 3.5)).toBeLessThan(.02);
-    expect([...pixels.subarray((4 * n) * 4, (4 * n) * 4 + 3)]).toEqual([1, 2, 3]);
+    expect(Math.abs(edge - 3.5)).toBeLessThan(0.02);
+    expect([...pixels.subarray(4 * n * 4, 4 * n * 4 + 3)]).toEqual([1, 2, 3]);
     // The 2D land cover keeps the same zero line: refinement never turns spline land into sea or back.
     expect(read('../../src/ui/terrainGl.ts')).toContain('s.x = shoreH > 0.0 ? max(s.x, min(shoreH, 0.05)) : min(s.x, shoreH);');
     // V2 (native field) and City Bench (decor heights) paint the sea through the same helper.
@@ -786,8 +1186,17 @@ describe('causeways are ordinary raised roads', () => {
   it('paints a causeway with the street paint of its rank on natural grounds and joins it to the street surface', () => {
     expect(STRUCTURE_ROLES.has('causeway')).toBe(false);
     expect(STRUCTURE_ROLES.has('bridge')).toBe(true);
-    const path = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
-    const scene = { streets: [{ role: 'causeway', rank: 1, street: { path } }, { role: 'street', rank: 1, street: { path } }, { role: 'bridge', rank: 1, street: { path } }] } as any;
+    const path = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ];
+    const scene = {
+      streets: [
+        { role: 'causeway', rank: 1, street: { path } },
+        { role: 'street', rank: 1, street: { path } },
+        { role: 'bridge', rank: 1, street: { path } },
+      ],
+    } as any;
     const { inner, outer } = streetColors(scene, 'terrain', true);
     expect([...inner.slice(0, 4)]).toEqual([...inner.slice(4, 8)]);
     expect([...outer.slice(0, 4)]).toEqual([...outer.slice(4, 8)]);
@@ -799,7 +1208,6 @@ describe('causeways are ordinary raised roads', () => {
     }
   });
 });
-
 
 describe('defensive vegetation parity', () => {
   it('uses the shared fortification polygons in V2 and City Bench, including worker preparation', () => {

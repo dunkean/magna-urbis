@@ -3,7 +3,10 @@
 function hash128(str: string): [number, number, number, number] {
   // Frozen pre-rename namespace bytes keep existing maps and fixtures reproducible.
   if (str.startsWith('magna-urbis:')) str = String.fromCharCode(98, 117, 114, 103, 109, 97, 112) + str.slice(11);
-  let h1 = 1779033703, h2 = 3144134277, h3 = 1013904242, h4 = 2773480762;
+  let h1 = 1779033703,
+    h2 = 3144134277,
+    h3 = 1013904242,
+    h4 = 2773480762;
   for (let i = 0; i < str.length; i++) {
     const k = str.charCodeAt(i);
     h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
@@ -19,20 +22,29 @@ function hash128(str: string): [number, number, number, number] {
 }
 
 export class Rng {
-  private a: number; private b: number; private c: number; private d: number;
+  private a: number;
+  private b: number;
+  private c: number;
+  private d: number;
   readonly seedKey: string;
   private spare: number | null = null;
 
   constructor(seed: string | number) {
     this.seedKey = String(seed);
     const [a, b, c, d] = hash128(this.seedKey);
-    this.a = a; this.b = b; this.c = c; this.d = d;
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.d = d;
     for (let i = 0; i < 12; i++) this.next();
   }
 
   /** Raw 32-bit unsigned integer. */
   next(): number {
-    this.a >>>= 0; this.b >>>= 0; this.c >>>= 0; this.d >>>= 0;
+    this.a >>>= 0;
+    this.b >>>= 0;
+    this.c >>>= 0;
+    this.d >>>= 0;
     const t = (((this.a + this.b) | 0) + this.d) | 0;
     this.d = (this.d + 1) | 0;
     this.a = this.b ^ (this.b >>> 9);
@@ -43,17 +55,33 @@ export class Rng {
   }
 
   /** Independent child stream; does not consume from the parent. */
-  fork(label: string): Rng { return new Rng(this.seedKey + '\u0001' + label); }
+  fork(label: string): Rng {
+    return new Rng(this.seedKey + '\u0001' + label);
+  }
 
-  float(): number { return this.next() / 4294967296; }
-  range(a: number, b: number): number { return a + (b - a) * this.float(); }
+  float(): number {
+    return this.next() / 4294967296;
+  }
+  range(a: number, b: number): number {
+    return a + (b - a) * this.float();
+  }
   /** Integer in [a, b] inclusive. */
-  int(a: number, b: number): number { return a + Math.floor(this.float() * (b - a + 1)); }
-  pick<T>(arr: readonly T[]): T { return arr[Math.floor(this.float() * arr.length)]; }
-  chance(p: number): boolean { return this.float() < p; }
+  int(a: number, b: number): number {
+    return a + Math.floor(this.float() * (b - a + 1));
+  }
+  pick<T>(arr: readonly T[]): T {
+    return arr[Math.floor(this.float() * arr.length)];
+  }
+  chance(p: number): boolean {
+    return this.float() < p;
+  }
   /** Standard normal (Box-Muller). */
   gauss(): number {
-    if (this.spare !== null) { const s = this.spare; this.spare = null; return s; }
+    if (this.spare !== null) {
+      const s = this.spare;
+      this.spare = null;
+      return s;
+    }
     let u = 0;
     while (u === 0) u = this.float();
     const v = this.float();

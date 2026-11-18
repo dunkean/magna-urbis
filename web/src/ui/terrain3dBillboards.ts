@@ -1,10 +1,22 @@
 /** One immutable instance stream; atlas coordinates use the canvas's top-left origin. */
-export interface Terrain3dBillboard { x: number; y: number; width: number; height: number; rect: readonly [number, number, number, number]; flip: boolean; opacity: number }
-export interface Terrain3dBillboards { stamps: readonly Terrain3dBillboard[]; atlas: HTMLCanvasElement }
+export interface Terrain3dBillboard {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rect: readonly [number, number, number, number];
+  flip: boolean;
+  opacity: number;
+}
+export interface Terrain3dBillboards {
+  stamps: readonly Terrain3dBillboard[];
+  atlas: HTMLCanvasElement;
+}
 
 /** Shared by the ground and the relief pass: 0 is the original overhead painting, 1 is upright. */
 export function terrain3dRaisedBlend(down: number): number {
-  const t = Math.max(0, Math.min(1, (.985 - down) / .22)); return t * t * (3 - 2 * t);
+  const t = Math.max(0, Math.min(1, (0.985 - down) / 0.22));
+  return t * t * (3 - 2 * t);
 }
 
 export const RAISED_MATERIAL_GLSL = `
@@ -72,4 +84,6 @@ void main(){
 /** The flat painting that replaces a draped texture once its stamps stand as billboards. Kept here: terrain3d.ts and the WGSL generator must not load the painter. */
 const raisedTextures = new WeakMap<object, HTMLCanvasElement>();
 export const terrain3dRaisedTexture = (source: object): HTMLCanvasElement | undefined => raisedTextures.get(source);
-export function terrain3dSetRaisedTexture(source: object, draped: HTMLCanvasElement): void { raisedTextures.set(source, draped); }
+export function terrain3dSetRaisedTexture(source: object, draped: HTMLCanvasElement): void {
+  raisedTextures.set(source, draped);
+}

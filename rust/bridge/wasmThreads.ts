@@ -13,7 +13,8 @@
 export type WasmThreadsSetting = 'auto' | 'on' | 'off' | 'pool';
 export type WasmThreadsMode = 'threads' | 'single' | 'pool';
 export interface WasmThreadsInfo {
-  setting: WasmThreadsSetting; mode: WasmThreadsMode;
+  setting: WasmThreadsSetting;
+  mode: WasmThreadsMode;
   /** Rayon pool threads (threads mode) or pool workers (pool mode); 1 otherwise. */
   threads: number;
   /** Why auto/on stayed single-threaded, when it did. */
@@ -42,22 +43,27 @@ export function wasmThreadsSetting(): WasmThreadsSetting {
   try {
     const query = new URLSearchParams(scope.location?.search ?? '').get('threads');
     if (query && SETTINGS.includes(query)) return query as WasmThreadsSetting;
-  } catch { /* no location */ }
+  } catch {
+    /* no location */
+  }
   return 'auto';
 }
 // Page side: a threads start that failed or timed out (e.g. a WebView that never starts the rayon
 // workers) is remembered for a few days, so the next visits start the single-thread package at once.
-const FAILURE_KEY = 'magna-urbis-wasm-threads-failure', FAILURE_DAYS = 3;
+const FAILURE_KEY = 'magna-urbis-wasm-threads-failure',
+  FAILURE_DAYS = 3;
 function rememberedFailure(): string | undefined {
   try {
     const stored = JSON.parse(globalThis.localStorage?.getItem(FAILURE_KEY) ?? 'null') as { at: number; reason: string } | null;
     return stored && Date.now() - stored.at < FAILURE_DAYS * 864e5 ? stored.reason : undefined;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 /** Options for `new Worker(...)` / Vite `?worker` constructors: carries the setting. */
 export function wasmWorkerOptions(name = 'magna-wasm'): WorkerOptions {
   const setting = wasmThreadsSetting();
-  return { name: `${name} threads=${workerFailure || setting === 'auto' && rememberedFailure() ? 'off' : setting}` };
+  return { name: `${name} threads=${workerFailure || (setting === 'auto' && rememberedFailure()) ? 'off' : setting}` };
 }
 let workerFailure: string | undefined;
 /**
@@ -85,22 +91,29 @@ export function wasmThreadCount(): number {
 export function expectedWasmThreads(setting = wasmThreadsSetting()): WasmThreadsInfo {
   if (setting === 'off') return { setting, mode: 'single', threads: 1 };
   if (setting === 'pool') return { setting, mode: 'pool', threads: wasmThreadCount() };
-  const reason = !threadsIsolated() ? 'page not cross-origin isolated (no SharedArrayBuffer)'
-    : !threadsPackageBuilt() ? 'pkg/wasm-threads not built' : undefined;
+  const reason = !threadsIsolated() ? 'page not cross-origin isolated (no SharedArrayBuffer)' : !threadsPackageBuilt() ? 'pkg/wasm-threads not built' : undefined;
   return reason ? { setting, mode: 'single', threads: 1, reason } : { setting, mode: 'threads', threads: wasmThreadCount() };
 }
 
 let current: WasmThreadsInfo | undefined;
 /** Loader side: the mode actually loaded in this realm. */
-export function setWasmThreadsInfo(info: WasmThreadsInfo): void { current = info; }
+export function setWasmThreadsInfo(info: WasmThreadsInfo): void {
+  current = info;
+}
 /** The mode loaded in this realm, else the one a worker reported, else the expectation. */
-export function wasmThreadsInfo(): WasmThreadsInfo { return current ?? scope.magnaWasmThreads ?? expectedWasmThreads(); }
+export function wasmThreadsInfo(): WasmThreadsInfo {
+  return current ?? scope.magnaWasmThreads ?? expectedWasmThreads();
+}
 /** Page side: record the mode a worker reported (read by the benches). */
 export function publishWasmThreads(info: WasmThreadsInfo | undefined): void {
   if (!info) return;
   scope.magnaWasmThreads = info;
   if (info.reason?.startsWith('threads package failed to start') && !rememberedFailure()) {
-    try { globalThis.localStorage?.setItem(FAILURE_KEY, JSON.stringify({ at: Date.now(), reason: info.reason })); } catch { /* storage unavailable */ }
+    try {
+      globalThis.localStorage?.setItem(FAILURE_KEY, JSON.stringify({ at: Date.now(), reason: info.reason }));
+    } catch {
+      /* storage unavailable */
+    }
   }
 }
 if (!inWorker()) {

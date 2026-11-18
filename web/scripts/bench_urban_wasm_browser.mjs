@@ -15,7 +15,10 @@ import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const arg = (name, fallback) => { const i = process.argv.indexOf('--' + name); return i >= 0 ? process.argv[i + 1] : fallback; };
+const arg = (name, fallback) => {
+  const i = process.argv.indexOf('--' + name);
+  return i >= 0 ? process.argv[i + 1] : fallback;
+};
 const pkg = resolve(root, arg('pkg', 'rust/pkg/wasm-threads'));
 const threads = Number(arg('threads', '8'));
 const pool = Number(arg('pool', '0'));
@@ -26,7 +29,12 @@ const baseDir = resolve(root, arg('baseline', 'web/out/perf-baseline/hanseatic')
 let executablePath = arg('chrome', undefined);
 if (!executablePath && !existsSync(chromium.executablePath())) {
   const store = join(process.env.LOCALAPPDATA ?? join(homedir(), '.cache'), 'ms-playwright');
-  const shell = existsSync(store) && readdirSync(store).filter(d => d.startsWith('chromium_headless_shell-')).sort().pop();
+  const shell =
+    existsSync(store) &&
+    readdirSync(store)
+      .filter(d => d.startsWith('chromium_headless_shell-'))
+      .sort()
+      .pop();
   if (shell) executablePath = join(store, shell, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
 }
 
@@ -129,7 +137,11 @@ const worker = `try {
 } catch (error) { postMessage({ error: String(error?.stack ?? error) }); }`;
 
 let parcelConfig = '{}';
-try { parcelConfig = JSON.stringify(JSON.parse(readFileSync(join(baseDir, 'partitions.json'), 'utf8'))[0]?.config ?? {}); } catch { /* no baseline */ }
+try {
+  parcelConfig = JSON.stringify(JSON.parse(readFileSync(join(baseDir, 'partitions.json'), 'utf8'))[0]?.config ?? {});
+} catch {
+  /* no baseline */
+}
 const types = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json' };
 const server = createServer((req, res) => {
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
@@ -144,17 +156,21 @@ const server = createServer((req, res) => {
   if (path === '/parcel-config.json') return send(parcelConfig, 'application/json');
   if (path.startsWith('/pkg/')) {
     let file = resolve(pkg, '.' + path.slice(4));
-    if (relative(pkg, file).startsWith('..')) { res.writeHead(403); res.end(); return; }
+    if (relative(pkg, file).startsWith('..')) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
     // wasm-bindgen-rayon imports its package as a directory ('../../..'), as bundlers resolve it.
     if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'magna_urbis_wasm.js');
     if (existsSync(file) && statSync(file).isFile()) return send(readFileSync(file), types[extname(file)] ?? 'application/octet-stream');
   }
-  res.writeHead(404); res.end();
+  res.writeHead(404);
+  res.end();
 });
 await new Promise(ok => server.listen(0, '127.0.0.1', ok));
 const browserName = arg('browser', 'chromium');
-const browser = browserName === 'firefox' ? await firefox.launch({ headless: true })
-  : await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+const browser = browserName === 'firefox' ? await firefox.launch({ headless: true }) : await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
 try {
   const tab = await browser.newPage();
   tab.on('pageerror', e => console.log('[pageerror]', e.message));
@@ -168,8 +184,14 @@ try {
   console.log('equivalence vs saved run:');
   for (const name of ['layouts', 'partitions', 'requests']) {
     const file = join(baseDir, name + '.json');
-    if (!existsSync(file)) { console.log(`  ${name}: baseline missing`); continue; }
+    if (!existsSync(file)) {
+      console.log(`  ${name}: baseline missing`);
+      continue;
+    }
     const want = readFileSync(file, 'utf8');
     console.log(`  ${name}: ${result.out[name] === want ? 'IDENTICAL' : `DIFF (${result.out[name].length} vs ${want.length} chars)`}`);
   }
-} finally { await browser.close(); server.close(); }
+} finally {
+  await browser.close();
+  server.close();
+}

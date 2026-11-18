@@ -8,13 +8,17 @@ const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(va
 const median = (values: number[]) => values.slice().sort((a, b) => a - b)[Math.floor(values.length / 2)];
 for (const [name, options, seed] of TS_GENERATION_PERF_CASES) {
   if (filter && name !== filter) continue;
-  const times: number[][] = [], hashes: string[][] = [];
+  const times: number[][] = [],
+    hashes: string[][] = [];
   let counts: number[] = [];
   for (let i = 0; i < repeats; i++) {
     const start = performance.now();
-    const layout = benchLayout(options, seed), layoutEnd = performance.now();
-    const parcels = benchParcels(layout, seed), parcelsEnd = performance.now();
-    const houses = benchBuildings(layout, parcels, seed), housesEnd = performance.now();
+    const layout = benchLayout(options, seed),
+      layoutEnd = performance.now();
+    const parcels = benchParcels(layout, seed),
+      parcelsEnd = performance.now();
+    const houses = benchBuildings(layout, parcels, seed),
+      housesEnd = performance.now();
     times.push([layoutEnd - start, parcelsEnd - layoutEnd, housesEnd - parcelsEnd]);
     hashes.push([digest({ ...layout, streets: { list: layout.streets.list, connected: [...layout.streets.connected] } }), digest(parcels), digest(houses)]);
     counts = [layout.quarters.length, layout.blocks.length, parcels.parcels.length, houses.buildings.length];

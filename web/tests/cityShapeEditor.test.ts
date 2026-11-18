@@ -5,7 +5,12 @@ import { defaultLayoutConfig, defaultParcelConfig } from '../../rust/bridge/urba
 
 /** City Bench shape editor: pure vertex operations and the polygon validity gate of « Valider ». */
 describe('city shape editor', () => {
-  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+  const square = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ];
   it('inserts on the nearest edge, removes down to 3 vertices, and rejects self-intersections', () => {
     const hit = nearestEdge(square, { x: 10.4, y: 5 });
     expect(hit.edge).toBe(1);
@@ -18,23 +23,82 @@ describe('city shape editor', () => {
     expect(tri).toHaveLength(3);
     expect(removeVertex(tri, 0)).toBe(tri);
     // Dragging a vertex across the opposite edge makes a bow tie: invalid, « Valider » disabled.
-    const bow = [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 10, y: 0 }, { x: 0, y: 10 }];
+    const bow = [
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+      { x: 10, y: 0 },
+      { x: 0, y: 10 },
+    ];
     expect(selfIntersects(bow)).toBe(true);
     expect(ringProblem(bow)).toMatch(/auto-intersection/);
-    expect(ringProblem([{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }])).toBeDefined();
+    expect(
+      ringProblem([
+        { x: 0, y: 0 },
+        { x: 1, y: 1 },
+        { x: 2, y: 2 },
+      ]),
+    ).toBeDefined();
     // Commit cleaning: 0.1 m rounding, duplicate, closing copy and collinear vertices dropped.
-    expect(cleanRing([{ x: 0.04, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0.01 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 0, y: 0 }])).toEqual(square);
+    expect(
+      cleanRing([
+        { x: 0.04, y: 0 },
+        { x: 5, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 0.01 },
+        { x: 10, y: 10 },
+        { x: 0, y: 10 },
+        { x: 0, y: 0 },
+      ]),
+    ).toEqual(square);
     // Quarter rings are simplified to at most 200 vertices.
-    const circle = Array.from({ length: 1000 }, (_, i) => ({ x: 100 * Math.cos(i / 1000 * 2 * Math.PI), y: 100 * Math.sin(i / 1000 * 2 * Math.PI) }));
+    const circle = Array.from({ length: 1000 }, (_, i) => ({ x: 100 * Math.cos((i / 1000) * 2 * Math.PI), y: 100 * Math.sin((i / 1000) * 2 * Math.PI) }));
     const simple = simplifyRing(circle);
     expect(simple.length).toBeLessThanOrEqual(200);
     expect(ringProblem(simple)).toBeUndefined();
   });
   it('cleans structural edit fields and injects them through the usual overrides', () => {
-    const raw = { quarters: { 2: { role: 'market', salt: 3, shape: { outer: [{ x: 0.04, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }] } }, 3: { deleted: true }, 4: { salt: 0, deleted: 'yes', shape: { outer: [{ x: 0, y: 0 }, { x: NaN, y: 1 }, { x: 1, y: 1 }] } } },
-      parcels: { a: { deleted: 'garden', salt: 1.5 }, b: { deleted: 'merge' }, c: { deleted: 'burn' } } };
+    const raw = {
+      quarters: {
+        2: {
+          role: 'market',
+          salt: 3,
+          shape: {
+            outer: [
+              { x: 0.04, y: 0 },
+              { x: 10, y: 0 },
+              { x: 10, y: 0 },
+              { x: 0, y: 10 },
+            ],
+          },
+        },
+        3: { deleted: true },
+        4: {
+          salt: 0,
+          deleted: 'yes',
+          shape: {
+            outer: [
+              { x: 0, y: 0 },
+              { x: NaN, y: 1 },
+              { x: 1, y: 1 },
+            ],
+          },
+        },
+      },
+      parcels: { a: { deleted: 'garden', salt: 1.5 }, b: { deleted: 'merge' }, c: { deleted: 'burn' } },
+    };
     const edits = normalizeEdits(raw);
-    expect(edits.quarters['2']).toEqual({ role: 'market', salt: 3, shape: { outer: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }], holes: [] } });
+    expect(edits.quarters['2']).toEqual({
+      role: 'market',
+      salt: 3,
+      shape: {
+        outer: [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 0, y: 10 },
+        ],
+        holes: [],
+      },
+    });
     expect(edits.quarters['3']).toEqual({ deleted: true });
     expect(edits.quarters['4']).toBeUndefined();
     expect(edits.parcels).toEqual({ a: { deleted: 'garden' }, b: { deleted: 'merge' } });
@@ -49,7 +113,16 @@ describe('city shape editor', () => {
   });
   it('opens lot outlines without slivers or slits, and packs outlines compactly for links', () => {
     // A lot with a 2 cm edge and a zero-width slit: the editor gets a valid simple ring.
-    const lot = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10.02, y: 0 }, { x: 10.02, y: 6 }, { x: 14, y: 6 }, { x: 10.02, y: 6 }, { x: 10.02, y: 10 }, { x: 0, y: 10 }];
+    const lot = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10.02, y: 0 },
+      { x: 10.02, y: 6 },
+      { x: 14, y: 6 },
+      { x: 10.02, y: 6 },
+      { x: 10.02, y: 10 },
+      { x: 0, y: 10 },
+    ];
     expect(ringProblem(cleanRing(lot))).toBeDefined();
     const open = simplifyLotRing(lot);
     expect(ringProblem(cleanRing(open))).toBeUndefined();

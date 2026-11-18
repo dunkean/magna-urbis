@@ -8,8 +8,10 @@ describe('map creation actions', () => {
   it('keeps the displayed automatic type identical when its editor takes over the region', () => {
     for (const population of [180, 1000, 8000, 20000, 40000]) {
       const theme = makeOptions({ seed: 'type-boundaries', workflow: 'automatic', mapSize: 6000, population });
-      const places = [{ key: 'main', population, center: { x: 3000, y: 3000 } },
-        { key: 'village:0', population, center: { x: 1000, y: 1000 } }];
+      const places = [
+        { key: 'main', population, center: { x: 3000, y: 3000 } },
+        { key: 'village:0', population, center: { x: 1000, y: 1000 } },
+      ];
       const listed = fromQuery(toQuery(regionAsList(theme, places)));
       if (!listed.settlements || typeof listed.settlements !== 'object' || !('list' in listed.settlements)) throw new Error('missing list');
       for (let i = 0; i < places.length; i++) expect(generatedSettlementSize(theme, places[i])).toBe(optionsForSettlement(listed, listed.settlements.list[i]).size);
@@ -32,8 +34,7 @@ describe('map creation actions', () => {
   });
 
   it('rerolls applied settings without applying or aliasing an unfinished instance edit', () => {
-    const applied = makeOptions({ workflow: 'list', seed: 'original', culture: 'roman-core', mapSize: 6000,
-      settlements: { list: [{ population: 3000 }, { population: 300, culture: 'barbarian' }] } });
+    const applied = makeOptions({ workflow: 'list', seed: 'original', culture: 'roman-core', mapSize: 6000, settlements: { list: [{ population: 3000 }, { population: 300, culture: 'barbarian' }] } });
     const pending = structuredClone(applied);
     if (pending.settlements && typeof pending.settlements === 'object' && 'list' in pending.settlements) pending.settlements.list[1].population = 600;
     const previousUid = generationUid(applied);
@@ -47,9 +48,7 @@ describe('map creation actions', () => {
   });
 
   it('adds a Germanic village beside a Roman city without transferring their cultures or historical mix', () => {
-    const theme = makeOptions({ workflow: 'list', culture: 'roman-core', population: 20000, walls: 'single',
-      cultureMix: { id: 'european-organic', t: 0.4, mode: 'phases' }, plan: { nucleus: { kind: 'forum' } },
-      settlements: { list: [{ population: 20000 }] } });
+    const theme = makeOptions({ workflow: 'list', culture: 'roman-core', population: 20000, walls: 'single', cultureMix: { id: 'european-organic', t: 0.4, mode: 'phases' }, plan: { nucleus: { kind: 'forum' } }, settlements: { list: [{ population: 20000 }] } });
     const before = structuredClone(theme);
     const village = newSettlementSpec(theme, 300, 'barbarian');
     const composed = { ...theme, settlements: { list: [{ population: 20000 }, village] } };
@@ -79,8 +78,7 @@ describe('map creation actions', () => {
   });
 
   it('keeps the automatic main city and position when adding the first independent village', () => {
-    const applied = makeOptions({ workflow: 'automatic', culture: 'roman-core', population: 20000,
-      center: { x: 2400, y: 2200 }, cultureMix: { id: 'european-organic', mode: 'phases', t: 0.4 } });
+    const applied = makeOptions({ workflow: 'automatic', culture: 'roman-core', population: 20000, center: { x: 2400, y: 2200 }, cultureMix: { id: 'european-organic', mode: 'phases', t: 0.4 } });
     const uid = generationUid(applied);
     const pending = appendSettlementDraft(applied, false, 300, 'barbarian');
     expect(pending.workflow).toBe('automatic');

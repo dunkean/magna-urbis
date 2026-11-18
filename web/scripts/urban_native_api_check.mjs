@@ -12,8 +12,13 @@ await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
 const port = socket.address().port;
 await new Promise(resolve => socket.close(resolve));
 const child = spawn(executable, ['--port', String(port)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-let log = ''; child.stderr.on('data', bytes => { log += bytes; });
-child.stdout.on('data', bytes => { log += bytes; });
+let log = '';
+child.stderr.on('data', bytes => {
+  log += bytes;
+});
+child.stdout.on('data', bytes => {
+  log += bytes;
+});
 const base = `http://127.0.0.1:${port}`;
 const session = 'urban-native-review-v1';
 let id = 0;
@@ -29,30 +34,40 @@ try {
   await new Promise((resolve, reject) => {
     child.on('error', reject);
     const timer = setTimeout(() => reject(new Error(`Native startup timeout: ${log}`)), 30000);
-    child.stdout.on('data', bytes => { if (bytes.toString().includes('"ready":true')) { clearTimeout(timer); resolve(); } });
+    child.stdout.on('data', bytes => {
+      if (bytes.toString().includes('"ready":true')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
   });
   assert.equal((await fetch(`${base}/status`).then(r => r.json())).backend, 'rust-native');
-  const n = 32, width = 1000, count = n * n;
+  const n = 32,
+    width = 1000,
+    count = n * n;
   let header = Buffer.from(JSON.stringify({ session, n, width }));
-  header = Buffer.concat([header, Buffer.alloc((4 - header.length % 4) % 4, 32)]);
+  header = Buffer.concat([header, Buffer.alloc((4 - (header.length % 4)) % 4, 32)]);
   const bytes = Buffer.alloc(4 + header.length + 17 * count);
-  bytes.writeUInt32LE(header.length); header.copy(bytes, 4);
+  bytes.writeUInt32LE(header.length);
+  header.copy(bytes, 4);
   const start = 4 + header.length;
   for (let i = 0; i < count; i++) {
     bytes.writeFloatLE(30, start + i * 4);
     bytes.writeInt32LE(-1, start + count * 12 + i * 4);
   }
   const uploaded = await fetch(`${base}/raster`, { method: 'POST', body: bytes });
-  assert.ok(uploaded.ok); assert.equal((await uploaded.json()).ok, true);
+  assert.ok(uploaded.ok);
+  assert.equal((await uploaded.json()).ok, true);
   const context = { role: 'artisan', resources: ['timber', 'clay'], period: '', mode: 'inspired', navigableAccess: false, lore: ['temple'] };
   const { layouts } = await urban('quarters', {
-    sites: [{ key: 'review', name: 'Review', population: 300, culture: 'european-organic', center: { x: 500, y: 500 }, radius: 140 }], roads: [],
+    sites: [{ key: 'review', name: 'Review', population: 300, culture: 'european-organic', center: { x: 500, y: 500 }, radius: 140 }],
+    roads: [],
     layoutConfig: { scope: 'district', count: 4, radius: 140, culture: 'site', programme: context, footprint: { mechanism: 'legacy', budget: 'radius' } },
   });
   let { partitions } = await urban('parcels', { layouts, parcelConfig: {} });
   const before = partitions.map(p => p.parcels);
   const reallocated = await urban('programme', { layouts, partitions });
-  const metric = value => JSON.parse(JSON.stringify(value, (_key, v) => typeof v === 'number' ? Math.round(v * 1e8) / 1e8 : v));
+  const metric = value => JSON.parse(JSON.stringify(value, (_key, v) => (typeof v === 'number' ? Math.round(v * 1e8) / 1e8 : v)));
   assert.deepEqual(metric(reallocated.partitions.map(p => p.parcels)), metric(before), 'Parcels changed beyond JSON numeric precision (10 nm)');
   partitions = reallocated.partitions;
   const { placementRequests } = await urban('buildingSites', { layouts, partitions });
@@ -83,9 +98,13 @@ try {
   borrowed.culture.mode = borrowed.config.mode = 'fantasy_mix';
   const fantasyScene = await post('/houses/placement', { schema_version: '1', requests: [borrowed] });
   assert.equal(fantasyScene.buildings.length, 1);
-  const contextualChecks = { loreCollectiveAccepted: scene.buildings.some(b => b.function === 'collective'),
-    ancientRefusal: ancientScene.refusals[0]?.code, strictBorrowingRefusal: strictScene.refusals[0]?.code,
-    inspiredAccepted: inspiredScene.buildings.length, fantasyAccepted: fantasyScene.buildings.length };
+  const contextualChecks = {
+    loreCollectiveAccepted: scene.buildings.some(b => b.function === 'collective'),
+    ancientRefusal: ancientScene.refusals[0]?.code,
+    strictBorrowingRefusal: strictScene.refusals[0]?.code,
+    inspiredAccepted: inspiredScene.buildings.length,
+    fantasyAccepted: fantasyScene.buildings.length,
+  };
   writeFileSync('out/urban-native/context.json', JSON.stringify(contextualChecks, null, 2));
   // Real native geometry, not a mocked placer: overlapping pairs cross both
   // seven- and64-request boundaries. Earlier chunks supply exact occupied land.
@@ -96,11 +115,11 @@ try {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, shifted(child, dx)]));
   };
   const repeated = Array.from({ length: 70 }, (_, i) => ({ ...shifted(sourceRequest, Math.floor(i / 2) * 200), id: `native-batch/${i}`, parcel_id: `native-batch/${i}/parcel` }));
-  const occupied = b => [b.footprint, b.courtyards, b.circulation, ...b.structural_features.map(f => f.surface)]
-    .filter(s => s.length).map((footprint, i) => ({ id: `${b.id}/occupation/${i}`, footprint, height_m: 100 }));
+  const occupied = b => [b.footprint, b.courtyards, b.circulation, ...b.structural_features.map(f => f.surface)].filter(s => s.length).map((footprint, i) => ({ id: `${b.id}/occupation/${i}`, footprint, height_m: 100 }));
   const single = await post('/houses/placement', { schema_version: '1', requests: repeated });
   assert.ok(single.buildings.length > 0);
-  const first = single.buildings.find(b => b.id === 'native-batch/0'), second = single.buildings.find(b => b.id === 'native-batch/1');
+  const first = single.buildings.find(b => b.id === 'native-batch/0'),
+    second = single.buildings.find(b => b.id === 'native-batch/1');
   assert.ok(first);
   if (second) assert.notDeepEqual(second.transform, first.transform, 'Overlapping native houses must use different legal placements');
   else assert.ok(single.refusals.some(r => r.id === 'native-batch/1'));
@@ -111,7 +130,9 @@ try {
       const neighbors = result.buildings.flatMap(occupied);
       const requests = repeated.slice(start, start + chunkSize).map(r => ({ ...r, neighbors: [...r.neighbors, ...neighbors] }));
       const chunk = await post('/houses/placement', { schema_version: '1', requests });
-      result.buildings.push(...chunk.buildings); result.refusals.push(...chunk.refusals); result.open_spaces.push(...chunk.open_spaces);
+      result.buildings.push(...chunk.buildings);
+      result.refusals.push(...chunk.refusals);
+      result.open_spaces.push(...chunk.open_spaces);
     }
     assert.deepEqual(result.buildings, single.buildings, `Native geometry or retained plans changed at chunk size${chunkSize}`);
     assert.deepEqual(result.refusals, single.refusals, `Native refusal decisions changed at chunk size${chunkSize}`);
@@ -125,12 +146,22 @@ try {
   writeFileSync('out/urban-native/batch-invariance.json', JSON.stringify({ seed: sourceRequest.seed, requests: repeated.length, batching, actualTransport64Exact: true }, null, 2));
   const enriched = await post('/houses/enrich', domestic);
   assert.ok(enriched.units.length > 0);
-  const report = { backend: 'rust-native', port, seed: 'urban-native-review-v1',
-    layouts: layouts.length, parcels: partitions.reduce((n, p) => n + p.parcels.length, 0),
-    requests: placementRequests.length, accepted: scene.buildings.length, refused: scene.refusals.length,
+  const report = {
+    backend: 'rust-native',
+    port,
+    seed: 'urban-native-review-v1',
+    layouts: layouts.length,
+    parcels: partitions.reduce((n, p) => n + p.parcels.length, 0),
+    requests: placementRequests.length,
+    accepted: scene.buildings.length,
+    refused: scene.refusals.length,
     functions: Object.fromEntries([...new Set(placementRequests.map(r => r.function))].map(f => [f, placementRequests.filter(r => r.function === f).length])),
     demands: reconciled.partitions.flatMap(p => p.programme.demands).map(({ function: f, requested, parcelCapacity, builtCapacity, openCapacity, deficit }) => ({ function: f, requested, parcelCapacity, builtCapacity, openCapacity, deficit })),
-    enrichedUnits: enriched.units.length, contextualChecks, batching, checks: ['retained-raster', 'quarters', 'parcels', 'programme-immutable-parcels', 'buildingSites', 'placement', 'builtCapacity', 'native-batch-invariance-1-7-64', 'actual-transport-invariance', 'enrich'] };
+    enrichedUnits: enriched.units.length,
+    contextualChecks,
+    batching,
+    checks: ['retained-raster', 'quarters', 'parcels', 'programme-immutable-parcels', 'buildingSites', 'placement', 'builtCapacity', 'native-batch-invariance-1-7-64', 'actual-transport-invariance', 'enrich'],
+  };
   mkdirSync('out/urban-native', { recursive: true });
   writeFileSync('out/urban-native/report.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));

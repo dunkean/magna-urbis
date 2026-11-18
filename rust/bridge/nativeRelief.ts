@@ -15,13 +15,26 @@ export type NativeReliefBuild =
 
 /** Same fields as the WASM `TerrainOutput`; `free` is a no-op. */
 export interface NativeReliefRegion {
-  x: number; y: number; width: number; resolution: number; min_height: number; max_height: number;
-  height: Float32Array; cave_mask: Uint8Array; normal_x: Float32Array; normal_y: Float32Array; normal_z: Float32Array;
+  x: number;
+  y: number;
+  width: number;
+  resolution: number;
+  min_height: number;
+  max_height: number;
+  height: Float32Array;
+  cave_mask: Uint8Array;
+  normal_x: Float32Array;
+  normal_y: Float32Array;
+  normal_z: Float32Array;
   free(): void;
 }
 
 interface Meta {
-  sourceN: number; minHeight: number | null; maxHeight: number | null; erosionSpacing: number | null; samplingParameters: (number | null)[];
+  sourceN: number;
+  minHeight: number | null;
+  maxHeight: number | null;
+  erosionSpacing: number | null;
+  samplingParameters: (number | null)[];
   region: { x: number; y: number; width: number; resolution: number; minHeight: number | null; maxHeight: number | null } | null;
   arrays: { name: string; type: 'f32' | 'u8'; count: number }[];
 }
@@ -29,7 +42,7 @@ type Header = { op: 'build' | 'edit' | 'coast' | 'underdark' | 'read'; [key: str
 
 const MISSING = '[relief_session_missing]';
 /** NaN tuning (relief default) travels as null. */
-const finite = (values: Float64Array) => Array.from(values, v => Number.isFinite(v) ? v : null);
+const finite = (values: Float64Array) => Array.from(values, v => (Number.isFinite(v) ? v : null));
 const bytes = (array: ArrayBufferView): Uint8Array<ArrayBuffer> => new Uint8Array(array.buffer as ArrayBuffer, array.byteOffset, array.byteLength);
 
 export class NativeReliefEngine {
@@ -39,7 +52,10 @@ export class NativeReliefEngine {
   private readonly steps: { header: Header; plane?: Float32Array }[] = [];
   private released = false;
 
-  private constructor(private readonly runtime: ExecutionRuntime, readonly tuning: Float64Array) {}
+  private constructor(
+    private readonly runtime: ExecutionRuntime,
+    readonly tuning: Float64Array,
+  ) {}
 
   /** `tuning`: the erosion overrides of the WASM engine's construction, also used by later edits and default coasts. */
   static async build(runtime: ExecutionRuntime, build: NativeReliefBuild, plane: Float32Array, tuning: Float64Array): Promise<NativeReliefEngine> {
@@ -48,14 +64,26 @@ export class NativeReliefEngine {
     return engine;
   }
 
-  get min_height(): number { return this.meta.minHeight ?? NaN; }
-  get max_height(): number { return this.meta.maxHeight ?? NaN; }
-  source_resolution(): number { return this.meta.sourceN; }
-  erosion_spacing(): number | undefined { return this.meta.erosionSpacing ?? undefined; }
-  sampling_parameters(): Float64Array { return Float64Array.from(this.meta.samplingParameters, v => v ?? NaN); }
+  get min_height(): number {
+    return this.meta.minHeight ?? NaN;
+  }
+  get max_height(): number {
+    return this.meta.maxHeight ?? NaN;
+  }
+  source_resolution(): number {
+    return this.meta.sourceN;
+  }
+  erosion_spacing(): number | undefined {
+    return this.meta.erosionSpacing ?? undefined;
+  }
+  sampling_parameters(): Float64Array {
+    return Float64Array.from(this.meta.samplingParameters, v => v ?? NaN);
+  }
 
   /** `set_edited_surface`. */
-  editSurface(heights: Float32Array): Promise<void> { return this.mutate({ op: 'edit' }, heights); }
+  editSurface(heights: Float32Array): Promise<void> {
+    return this.mutate({ op: 'edit' }, heights);
+  }
   /** `set_coast`, or with a prepared surface `configure_coast` + `set_coast_surface`. */
   coast(mask: number, mode: string, coastTuning?: Float64Array, surface?: Float32Array): Promise<void> {
     return this.mutate({ op: 'coast', mask, mode, surface: !!surface, ...(coastTuning ? { tuning: finite(coastTuning) } : {}) }, surface);
@@ -63,27 +91,53 @@ export class NativeReliefEngine {
 
   /** `carve_underdark`: the retained relief becomes caves and tunnels. */
   /** `tunnels`: natural tunnels amount (0 none); an older service ignores it and uses its default. */
-  carveUnderdark(seed: string, tunnels?: number): Promise<void> { return this.mutate({ op: 'underdark', seed, ...(tunnels !== undefined ? { tunnels } : {}) }); }
+  carveUnderdark(seed: string, tunnels?: number): Promise<void> {
+    return this.mutate({ op: 'underdark', seed, ...(tunnels !== undefined ? { tunnels } : {}) });
+  }
 
   async sampleRegion(x: number, y: number, extent: number, resolution: number): Promise<NativeReliefRegion> {
     const { meta, arrays } = await this.send({ op: 'read', region: { x, y, extent, resolution } });
-    const r = meta.region, height = arrays.height as Float32Array | undefined;
+    const r = meta.region,
+      height = arrays.height as Float32Array | undefined;
     if (!r || !height || height.length !== r.resolution * r.resolution) throw new Error('Native relief sample incomplete.');
-    return { x: r.x, y: r.y, width: r.width, resolution: r.resolution, min_height: r.minHeight ?? NaN, max_height: r.maxHeight ?? NaN,
-      height, cave_mask: arrays.caveMask as Uint8Array, normal_x: arrays.normalX as Float32Array, normal_y: arrays.normalY as Float32Array,
-      normal_z: arrays.normalZ as Float32Array, free() {} };
+    return {
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      resolution: r.resolution,
+      min_height: r.minHeight ?? NaN,
+      max_height: r.maxHeight ?? NaN,
+      height,
+      cave_mask: arrays.caveMask as Uint8Array,
+      normal_x: arrays.normalX as Float32Array,
+      normal_y: arrays.normalY as Float32Array,
+      normal_z: arrays.normalZ as Float32Array,
+      free() {},
+    };
   }
-  async physicalHeightField(): Promise<Float32Array> { return (await this.send({ op: 'read', physical: true })).arrays.physical as Float32Array; }
-  async samplingBaseField(): Promise<Float32Array> { return (await this.send({ op: 'read', base: true })).arrays.base as Float32Array; }
-  async physicalCaveField(): Promise<Uint8Array> { return (await this.send({ op: 'read', cave: true })).arrays.physicalCave as Uint8Array; }
+  async physicalHeightField(): Promise<Float32Array> {
+    return (await this.send({ op: 'read', physical: true })).arrays.physical as Float32Array;
+  }
+  async samplingBaseField(): Promise<Float32Array> {
+    return (await this.send({ op: 'read', base: true })).arrays.base as Float32Array;
+  }
+  async physicalCaveField(): Promise<Uint8Array> {
+    return (await this.send({ op: 'read', cave: true })).arrays.physicalCave as Uint8Array;
+  }
   /** Natural Underdark tunnels, flattened `[kind, halfWidth, count, x0, y0, …]`; empty from an older service. */
-  async underdarkTunnels(): Promise<Float32Array> { return ((await this.send({ op: 'read', tunnels: true })).arrays.tunnels as Float32Array | undefined) ?? new Float32Array(0); }
+  async underdarkTunnels(): Promise<Float32Array> {
+    return ((await this.send({ op: 'read', tunnels: true })).arrays.tunnels as Float32Array | undefined) ?? new Float32Array(0);
+  }
 
   /** Release the native session (fire and forget: an evicted or exited session is already gone). */
   free(): void {
     if (this.released) return;
-    this.released = true; this.steps.length = 0;
-    void nativeRequest(this.runtime, '/release', JSON.stringify({ session: this.session })).then(r => r.arrayBuffer(), () => undefined);
+    this.released = true;
+    this.steps.length = 0;
+    void nativeRequest(this.runtime, '/release', JSON.stringify({ session: this.session })).then(
+      r => r.arrayBuffer(),
+      () => undefined,
+    );
   }
 
   private async mutate(header: Header, plane?: Float32Array): Promise<void> {
@@ -93,7 +147,9 @@ export class NativeReliefEngine {
 
   private async send(header: Header, plane?: Float32Array): Promise<{ meta: Meta; arrays: Record<string, Float32Array | Uint8Array> }> {
     if (this.released) throw new Error('Native relief engine released.');
-    try { return await this.call(header, plane); } catch (error) {
+    try {
+      return await this.call(header, plane);
+    } catch (error) {
       if (header.op === 'build' || !(error instanceof Error) || !error.message.includes(MISSING)) throw error;
       for (const step of this.steps) await this.call(step.header, step.plane);
       return this.call(header, plane);
@@ -102,8 +158,10 @@ export class NativeReliefEngine {
 
   private async call(header: Header, plane?: Float32Array): Promise<{ meta: Meta; arrays: Record<string, Float32Array | Uint8Array> }> {
     const encoded = new TextEncoder().encode(JSON.stringify({ session: this.session, tuning: finite(this.tuning), ...header }));
-    const padded = new Uint8Array(Math.ceil(encoded.length / 4) * 4).fill(32); padded.set(encoded);
-    const length = new Uint8Array(4); new DataView(length.buffer).setUint32(0, padded.length, true);
+    const padded = new Uint8Array(Math.ceil(encoded.length / 4) * 4).fill(32);
+    padded.set(encoded);
+    const length = new Uint8Array(4);
+    new DataView(length.buffer).setUint32(0, padded.length, true);
     const response = await nativeRequest(this.runtime, '/terrain/relief', new Blob([length, padded, ...(plane ? [bytes(plane)] : [])]));
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength < 4) throw new Error('Native relief reply incomplete.');

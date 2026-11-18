@@ -12,7 +12,11 @@ import recipeDefaults from './recipeDefaults.json';
 
 const catalogueTerrains = new Set(recipeDefaults.terrains);
 
-declare global { interface Window { magnaRecipe?: { capture(): Promise<MapRecipe>; terrain?(): Promise<Decor> } } }
+declare global {
+  interface Window {
+    magnaRecipe?: { capture(): Promise<MapRecipe>; terrain?(): Promise<Decor> };
+  }
+}
 
 async function portableQuery(query: string): Promise<URLSearchParams> {
   const params = new URLSearchParams(query);
@@ -31,7 +35,8 @@ export async function generationRecipe(stage: RecipeStage, query: string, decor?
   if (!decor) throw new Error('Attendez le chargement du terrain conservé.');
   // Catalogue terrain is already available on the receiving machine.
   if (catalogueTerrains.has(decor.meta.id)) {
-    params.set('artifact', decor.meta.id); params.delete('decor');
+    params.set('artifact', decor.meta.id);
+    params.delete('decor');
     return { stage: 'city', query: params.toString() };
   }
   const regeneration = decor.meta.regeneration;
@@ -39,17 +44,26 @@ export async function generationRecipe(stage: RecipeStage, query: string, decor?
   const source = await portableQuery(regeneration.query);
   for (const key of ['artifact', 'decor', 'stage', 'pipeline', 'settlements', 'roads', 'urban', 'profile', 'localServer']) source.delete(key);
   source.set('auto', '0');
-  params.set('artifact', 'recipe'); params.delete('decor');
+  params.set('artifact', 'recipe');
+  params.delete('decor');
   // Only reconstruction metadata. No sites, roads, cadastre, meshes or native frames.
   const meta: RecipeTerrain['meta'] = {
-    format: 'magna-decor', version: 1, id: 'recipe', label: 'Recette', tags: {},
-    seed: decor.meta.seed, width: decor.meta.width, query: source.toString(), created: '',
-    settlements: [], roads: null, roadConfig: null,
+    format: 'magna-decor',
+    version: 1,
+    id: 'recipe',
+    label: 'Recette',
+    tags: {},
+    seed: decor.meta.seed,
+    width: decor.meta.width,
+    query: source.toString(),
+    created: '',
+    settlements: [],
+    roads: null,
+    roadConfig: null,
     stats: { land: 0, minHeight: 0, maxHeight: 0, riverKm: 0, roadKm: 0 },
   };
   // Recalculate placement before the urban stages when reconstructing local terrain.
-  return { stage: stage === 'city' || stage === 'urban' ? 'settlements' : stage, query: params.toString(),
-    terrain: { query: source.toString(), crops: regeneration.crops, meta } };
+  return { stage: stage === 'city' || stage === 'urban' ? 'settlements' : stage, query: params.toString(), terrain: { query: source.toString(), crops: regeneration.crops, meta } };
 }
 
 /** Resolve browser-local inputs so a code also works in another browser or machine. */
@@ -57,14 +71,15 @@ export async function portableRecipe(stage: RecipeStage, query: string, decor?: 
   const params = await portableQuery(query);
   const retainUrban = (stage === 'urban' || stage === 'settlements') && !!decor?.meta.pipeline?.urban?.layouts?.length;
   if (decor) {
-    params.set('artifact', decor.meta.id); if (stage === 'urban') params.set('decor', decor.meta.id);
+    params.set('artifact', decor.meta.id);
+    if (stage === 'urban') params.set('decor', decor.meta.id);
     if (stage === 'urban' && decor.meta.pipeline?.urban?.layouts) params.delete('workshop');
     // Applied city plans require their exact sites, cadastre and native scene in
     // either city view. Other states retain the existing procedural replay.
-    decor = { ...decor, meta: { ...decor.meta,
-      ...(stage === 'settlements' && !retainUrban ? { settlements: [], roads: null, roadConfig: null } : {}),
-      pipeline: decor.meta.pipeline && { ...decor.meta.pipeline, ...(stage === 'urban' || retainUrban ? {} : { urban: undefined }) },
-    } };
+    decor = {
+      ...decor,
+      meta: { ...decor.meta, ...(stage === 'settlements' && !retainUrban ? { settlements: [], roads: null, roadConfig: null } : {}), pipeline: decor.meta.pipeline && { ...decor.meta.pipeline, ...(stage === 'urban' || retainUrban ? {} : { urban: undefined }) } },
+    };
   }
   if (params.has('artifact') && !decor) throw new Error('Attendez le chargement du terrain conservé.');
   // A remaining cold reference (including a draft snapshot) always needs its
@@ -78,14 +93,14 @@ export async function portableRecipe(stage: RecipeStage, query: string, decor?: 
     return { stage, query: params.toString(), terrain: { query: source.toString(), crops: regeneration.crops, meta } };
   }
   const portable = params.toString();
-  return { stage, query: portable, ...(decor ? { decor: decorColdStates(decor).length
-    ? await encodeDecorFileBytes(decor, { ...options, maxBytes: 24 * 1024 * 1024 })
-    : await encodeDecorAsync(decor) } : {}) };
+  return { stage, query: portable, ...(decor ? { decor: decorColdStates(decor).length ? await encodeDecorFileBytes(decor, { ...options, maxBytes: 24 * 1024 * 1024 }) : await encodeDecorAsync(decor) } : {}) };
 }
 
 /** Run the existing terrain bench offscreen, then repeat cell-aligned crops in order. */
 async function regenerateTerrain(source: RecipeTerrain, signal?: AbortSignal): Promise<Decor> {
-  const iframe = document.createElement('iframe'); iframe.setAttribute('aria-hidden', 'true'); iframe.tabIndex = -1;
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.tabIndex = -1;
   iframe.style.cssText = 'position:fixed;left:-20000px;top:0;width:1400px;height:900px;visibility:hidden;border:0';
   const params = new URLSearchParams(source.query);
   for (const key of ['artifact', 'stage', 'pipeline']) params.delete(key);
@@ -100,16 +115,16 @@ async function regenerateTerrain(source: RecipeTerrain, signal?: AbortSignal): P
       if (child?.magnaRecipe?.terrain && child.magnaBenchContext?.ready()) {
         let decor = await child.magnaRecipe.terrain();
         for (const crop of source.crops) decor = cropTerrain(decor, crop.x, crop.y, crop.width);
-    return { raster: decor.raster, meta: { ...decor.meta, ...source.meta,
-      ...(source.meta.id === 'recipe' ? { stats: decor.meta.stats } : {}),
-      regeneration: { query: source.query, crops: source.crops } } };
+        return { raster: decor.raster, meta: { ...decor.meta, ...source.meta, ...(source.meta.id === 'recipe' ? { stats: decor.meta.stats } : {}), regeneration: { query: source.query, crops: source.crops } } };
       }
       const error = child?.document.querySelector<HTMLElement>('#status[data-error=true]')?.textContent;
       if (error) throw new Error(error);
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     throw new Error('Délai dépassé pendant la reconstruction du terrain.');
-  } finally { iframe.remove(); }
+  } finally {
+    iframe.remove();
+  }
 }
 
 export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal, options: DecorFileOptions = {}): Promise<MapRecipe> {
@@ -118,14 +133,14 @@ export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal, opt
     const validate = (decor: Decor): void => {
       if (params.get('artifact') !== decor.meta.id || (recipe.stage === 'urban' && params.get('decor') !== decor.meta.id)) throw new Error('Le terrain intégré ne correspond pas à la recette.');
     };
-    const decor = recipe.terrain ? await regenerateTerrain(recipe.terrain, signal)
-      : await readDecorFile(new Blob([new Uint8Array(recipe.decor!)]), { ...options, signal: signal ?? options.signal, validate });
+    const decor = recipe.terrain ? await regenerateTerrain(recipe.terrain, signal) : await readDecorFile(new Blob([new Uint8Array(recipe.decor!)]), { ...options, signal: signal ?? options.signal, validate });
     signal?.throwIfAborted();
     validate(decor);
     // Imported cold references point to a newly committed local generation;
     // portable container bytes must never masquerade as local history gzip.
     const saved = await saveHistory(decor, false);
-    params.set('artifact', saved.meta.id); if (recipe.stage === 'urban') params.set('decor', saved.meta.id);
+    params.set('artifact', saved.meta.id);
+    if (recipe.stage === 'urban') params.set('decor', saved.meta.id);
     return { ...recipe, query: params.toString() };
   } else {
     const id = new URLSearchParams(recipe.query).get('artifact');
@@ -136,116 +151,166 @@ export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal, opt
 
 export function recipeUrl(recipe: MapRecipe): URL {
   const page = recipe.stage === 'city' ? 'citybench.html' : recipe.stage === 'urban' ? 'urbanbench.html' : recipe.stage === 'houses' ? 'housebench.html' : 'terrainbench.html';
-  const url = new URL(page, location.href); url.search = recipe.query;
+  const url = new URL(page, location.href);
+  url.search = recipe.query;
   if (executionRuntime.profile === 'local' && url.searchParams.get('profile') === 'local') applyExecutionProfile(url);
   if (recipe.stage === 'settlements') url.searchParams.set('stage', 'settlements');
   return placeSketchInFragment(url);
 }
 
 /** The shell and standalone benches use the same dialog and the same applied-state capture. */
-export function installRecipeSharing(options: {
-  host: Element;
-  capture(): Promise<MapRecipe>;
-  terrain?(): Promise<Decor>;
-  open?(recipe: MapRecipe): void;
-  embedded?: boolean;
-}): void {
+export function installRecipeSharing(options: { host: Element; capture(): Promise<MapRecipe>; terrain?(): Promise<Decor>; open?(recipe: MapRecipe): void; embedded?: boolean }): void {
   window.magnaRecipe = { capture: options.capture, terrain: options.terrain };
-  const controls = document.createElement('span'); controls.className = 'recipe-actions';
+  const controls = document.createElement('span');
+  controls.className = 'recipe-actions';
   controls.innerHTML = '<button type="button" data-recipe-export>Copier code</button><button type="button" data-recipe-import>Coller code</button>';
   const existing = options.host.querySelector<HTMLButtonElement>('#copy, #share');
   if (existing) {
     existing.onclick = null;
-    existing.textContent = 'Copier code'; existing.title = 'Copier le code unique de cette carte'; existing.setAttribute('aria-label', existing.title);
+    existing.textContent = 'Copier code';
+    existing.title = 'Copier le code unique de cette carte';
+    existing.setAttribute('aria-label', existing.title);
     existing.dataset.recipeExport = '';
     controls.querySelector('[data-recipe-export]')!.replaceWith(existing);
   }
   options.host.append(controls);
-  const dialog = document.createElement('dialog'); dialog.className = 'recipe-dialog';
-  dialog.innerHTML = '<form method="dialog"><strong data-title>Partager une recette</strong><button class="recipe-close" aria-label="Fermer">×</button></form><textarea aria-label="Code de la recette" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="soft"></textarea><p role="status"></p><div class="recipe-actions"><button type="button" data-copy>Copier le code</button><button type="button" data-download>Télécharger .murecipe</button><button type="button" data-load>Charger la recette</button><label class="recipe-file">Choisir un fichier<input type="file" accept=".murecipe,.txt,text/plain" data-file></label></div>';
+  const dialog = document.createElement('dialog');
+  dialog.className = 'recipe-dialog';
+  dialog.innerHTML =
+    '<form method="dialog"><strong data-title>Partager une recette</strong><button class="recipe-close" aria-label="Fermer">×</button></form><textarea aria-label="Code de la recette" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="soft"></textarea><p role="status"></p><div class="recipe-actions"><button type="button" data-copy>Copier le code</button><button type="button" data-download>Télécharger .murecipe</button><button type="button" data-load>Charger la recette</button><label class="recipe-file">Choisir un fichier<input type="file" accept=".murecipe,.txt,text/plain" data-file></label></div>';
   document.body.append(dialog);
-  const field = dialog.querySelector('textarea')!, note = dialog.querySelector('p')!;
-  const copy = dialog.querySelector<HTMLButtonElement>('[data-copy]')!, load = dialog.querySelector<HTMLButtonElement>('[data-load]')!;
-  const download = dialog.querySelector<HTMLButtonElement>('[data-download]')!, file = dialog.querySelector<HTMLInputElement>('[data-file]')!;
+  const field = dialog.querySelector('textarea')!,
+    note = dialog.querySelector('p')!;
+  const copy = dialog.querySelector<HTMLButtonElement>('[data-copy]')!,
+    load = dialog.querySelector<HTMLButtonElement>('[data-load]')!;
+  const download = dialog.querySelector<HTMLButtonElement>('[data-download]')!,
+    file = dialog.querySelector<HTMLInputElement>('[data-file]')!;
   let filename = 'carte.murecipe';
   let currentImport: AbortController | undefined;
   dialog.addEventListener('close', () => currentImport?.abort());
   let mode: 'export' | 'import' = 'import';
   const translate = (): void => {
     const exportButton = controls.querySelector<HTMLButtonElement>('[data-recipe-export]')!;
-    exportButton.textContent = t('exportButton'); exportButton.title = t('exportTitle'); exportButton.setAttribute('aria-label', exportButton.title);
+    exportButton.textContent = t('exportButton');
+    exportButton.title = t('exportTitle');
+    exportButton.setAttribute('aria-label', exportButton.title);
     controls.querySelector('[data-recipe-import]')!.textContent = t('importButton');
     dialog.querySelector('[data-title]')!.textContent = t(mode === 'export' ? 'titleExport' : 'titleImport');
     dialog.querySelector('.recipe-close')!.setAttribute('aria-label', t('close'));
     field.setAttribute('aria-label', t('code'));
-    copy.textContent = t('copy'); download.textContent = t('download'); load.textContent = t('load');
-    const fileLabel = file.parentElement!; if (fileLabel.firstChild?.nodeType === Node.TEXT_NODE) fileLabel.firstChild.textContent = t('choose');
+    copy.textContent = t('copy');
+    download.textContent = t('download');
+    load.textContent = t('load');
+    const fileLabel = file.parentElement!;
+    if (fileLabel.firstChild?.nodeType === Node.TEXT_NODE) fileLabel.firstChild.textContent = t('choose');
   };
   translate();
   window.addEventListener('magna-locale-change', translate);
-  window.addEventListener('storage', event => { if (event.key === LOCALE_KEY) translate(); });
+  window.addEventListener('storage', event => {
+    if (event.key === LOCALE_KEY) translate();
+  });
   function show(next: typeof mode): void {
-    mode = next; field.value = ''; field.readOnly = mode === 'export'; note.textContent = '';
+    mode = next;
+    field.value = '';
+    field.readOnly = mode === 'export';
+    note.textContent = '';
     dialog.querySelector('[data-title]')!.textContent = t(mode === 'export' ? 'titleExport' : 'titleImport');
-    copy.hidden = download.hidden = mode !== 'export'; load.hidden = mode !== 'import';
-    file.parentElement!.hidden = mode !== 'import'; file.value = '';
-    if (!dialog.open) dialog.showModal(); field.focus();
+    copy.hidden = download.hidden = mode !== 'export';
+    load.hidden = mode !== 'import';
+    file.parentElement!.hidden = mode !== 'import';
+    file.value = '';
+    if (!dialog.open) dialog.showModal();
+    field.focus();
   }
-  const error = (e: unknown): void => { note.textContent = translateRecipeError(e instanceof Error ? e.message : String(e)); };
+  const error = (e: unknown): void => {
+    note.textContent = translateRecipeError(e instanceof Error ? e.message : String(e));
+  };
   controls.querySelector('[data-recipe-export]')!.addEventListener('click', async () => {
-    show('export'); note.textContent = t('preparing'); copy.disabled = download.disabled = true;
+    show('export');
+    note.textContent = t('preparing');
+    copy.disabled = download.disabled = true;
     try {
       const recipe = await options.capture();
       let code: string;
-      try { code = encodeRecipe(recipe); }
-      catch (error) {
-        if (error instanceof Error && error.message.includes('volumineuse'))
-          throw new Error(t('tooLarge'));
+      try {
+        code = encodeRecipe(recipe);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('volumineuse')) throw new Error(t('tooLarge'));
         throw error;
       }
-      field.value = code; field.select(); copy.disabled = download.disabled = false;
+      field.value = code;
+      field.select();
+      copy.disabled = download.disabled = false;
       const seed = new URLSearchParams(recipe.query).get('seed') ?? 'carte';
       filename = `${recipe.stage}-${seed.replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 60)}.murecipe`;
       const description = `${code.length.toLocaleString()} ${t('characters')} · ${t('settings')}${recipe.terrain ? ` · ${t('reproducible')}` : ''}. ${t('generationHint')}`;
-      try { await navigator.clipboard.writeText(code); note.textContent = `${t('copied')} ${description}`; }
-      catch { note.textContent = `${t('copyManually')} ${description}`; }
-    } catch (e) { error(e); }
+      try {
+        await navigator.clipboard.writeText(code);
+        note.textContent = `${t('copied')} ${description}`;
+      } catch {
+        note.textContent = `${t('copyManually')} ${description}`;
+      }
+    } catch (e) {
+      error(e);
+    }
   });
   controls.querySelector('[data-recipe-import]')!.addEventListener('click', async () => {
     show('import');
     try {
       const pasted = await navigator.clipboard.readText();
       if (dialog.open && mode === 'import' && !field.value) field.value = pasted;
-    } catch { /* Ctrl+V remains available. */ }
+    } catch {
+      /* Ctrl+V remains available. */
+    }
   });
   copy.onclick = async () => {
-    try { await navigator.clipboard.writeText(field.value); note.textContent = t('copied'); }
-    catch { field.focus(); field.select(); note.textContent = t('copyManually'); }
+    try {
+      await navigator.clipboard.writeText(field.value);
+      note.textContent = t('copied');
+    } catch {
+      field.focus();
+      field.select();
+      note.textContent = t('copyManually');
+    }
   };
   download.onclick = () => {
     const url = URL.createObjectURL(new Blob([field.value + '\n'], { type: 'text/plain;charset=utf-8' }));
-    const a = document.createElement('a'); a.href = url; a.download = filename;
-    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     note.textContent = t('downloaded');
   };
   file.onchange = async () => {
-    const selected = file.files?.[0]; if (!selected) return;
+    const selected = file.files?.[0];
+    if (!selected) return;
     try {
       if (selected.size > 1.5 * 1024 * 1024) throw new Error(t('fileTooLarge'));
-      field.value = await selected.text(); load.click();
-    } catch (e) { error(e); }
+      field.value = await selected.text();
+      load.click();
+    } catch (e) {
+      error(e);
+    }
   };
   load.onclick = async () => {
     load.disabled = true;
-    currentImport = new AbortController(); const signal = currentImport.signal;
+    currentImport = new AbortController();
+    const signal = currentImport.signal;
     note.textContent = t('loading');
     try {
       const recipe = await restoreRecipe(decodeRecipe(field.value), signal);
       signal.throwIfAborted();
-      if (options.open) options.open(recipe); else location.href = recipeUrl(recipe).href;
+      if (options.open) options.open(recipe);
+      else location.href = recipeUrl(recipe).href;
       dialog.close();
-    } catch (e) { error(e); }
-    finally { load.disabled = false; }
+    } catch (e) {
+      error(e);
+    } finally {
+      load.disabled = false;
+    }
   };
 }
 import { executionRuntime, applyExecutionProfile } from './executionProfile';

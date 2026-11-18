@@ -10,14 +10,35 @@ import { validateSettings, validateWorld } from './project';
 import type { V2TerrainLayer } from './terrainProjection';
 
 /** These fields own the territory. Everything else in Options belongs to its use or inhabitants. */
-const TERRAIN_OPTIONS = [
-  'seed', 'relief', 'biome', 'coast', 'river', 'seaLevel', 'lakes',
-  'importedHeight', 'heightScale', 'importSea', 'mapSize',
-] as const;
+const TERRAIN_OPTIONS = ['seed', 'relief', 'biome', 'coast', 'river', 'seaLevel', 'lakes', 'importedHeight', 'heightScale', 'importSea', 'mapSize'] as const;
 const URBAN_OPTIONS = [
-  'workflow', 'settlementMode', 'size', 'siteType', 'sitePrefs', 'center', 'walls', 'moat', 'castles', 'castle',
-  'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities', 'suburbs', 'shantytowns', 'roads',
-  'culture', 'cultureMix', 'plan', 'population', 'sprawl', 'language', 'settlements', 'eagerPop',
+  'workflow',
+  'settlementMode',
+  'size',
+  'siteType',
+  'sitePrefs',
+  'center',
+  'walls',
+  'moat',
+  'castles',
+  'castle',
+  'cathedral',
+  'palace',
+  'monasteries',
+  'port',
+  'arena',
+  'activities',
+  'suburbs',
+  'shantytowns',
+  'roads',
+  'culture',
+  'cultureMix',
+  'plan',
+  'population',
+  'sprawl',
+  'language',
+  'settlements',
+  'eagerPop',
 ] as const;
 const PROVENANCE_FIELDS = ['backend', 'generationBackend', 'samplingBackend', 'generationReason', 'modelIdentity', 'modelProfile'] as const;
 
@@ -40,7 +61,10 @@ function effectiveUrban(settings: V2Settings): V2UrbanSettings {
   return structuredClone(settings.urban ?? { backend: settings.runtime?.backend ?? 'typescript' });
 }
 
-interface TerritoryRecipe { settings: V2Settings; snapshotInput: boolean }
+interface TerritoryRecipe {
+  settings: V2Settings;
+  snapshotInput: boolean;
+}
 
 /** A project may contain a new settings draft while its visible world still belongs to the previous run. */
 function territoryRecipe(world: World, draft: V2Settings): TerritoryRecipe {
@@ -53,14 +77,12 @@ function territoryRecipe(world: World, draft: V2Settings): TerritoryRecipe {
   if (!coherent) {
     // Do not run a changed model/seed and pretend it is the imported map. The exact retained
     // altitudes become a portable FP32 input; the imported hydrology itself is retained below.
-    replaceOptions(settings.options, world.options, TERRAIN_OPTIONS.filter(key => key !== 'importedHeight'));
-    settings.options.importedHeight = {
-      name: `Territoire conservé · ${world.seed}`,
-      w: world.terrain.height.w,
-      h: world.terrain.height.h,
-      rgba: new Uint8Array(0),
-      elevations: world.terrain.height.data.slice(),
-    };
+    replaceOptions(
+      settings.options,
+      world.options,
+      TERRAIN_OPTIONS.filter(key => key !== 'importedHeight'),
+    );
+    settings.options.importedHeight = { name: `Territoire conservé · ${world.seed}`, w: world.terrain.height.w, h: world.terrain.height.h, rgba: new Uint8Array(0), elevations: world.terrain.height.data.slice() };
     settings.options.heightScale = 1;
     settings.options.importSea = 0;
   }
@@ -73,14 +95,7 @@ function territoryRecipe(world: World, draft: V2Settings): TerritoryRecipe {
   return { settings, snapshotInput: !coherent };
 }
 
-async function terrainOnly(
-  retained: World,
-  settings: V2Settings,
-  composition: 'terrain' | 'urban-recipe',
-  notice: string,
-  snapshotInput: boolean,
-  cache: TerrainCache,
-): Promise<World> {
+async function terrainOnly(retained: World, settings: V2Settings, composition: 'terrain' | 'urban-recipe', notice: string, snapshotInput: boolean, cache: TerrainCache): Promise<World> {
   const started = performance.now();
   const terrain = structuredClone(retained.terrain);
   // This display layer depends on the old towns. It is rebuilt after those towns are removed;
@@ -100,8 +115,13 @@ async function terrainOnly(
     mapSize: retained.mapSize,
     options,
     terrain,
-    landuse: await generateNaturalCoverNative(terrain, options.biome, new Rng('magna-urbis:' + retained.seed),(terrain as V2TerrainLayer).v2NaturalForest,
-      settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined),
+    landuse: await generateNaturalCoverNative(
+      terrain,
+      options.biome,
+      new Rng('magna-urbis:' + retained.seed),
+      (terrain as V2TerrainLayer).v2NaturalForest,
+      settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined,
+    ),
     stats: {
       ...provenance,
       'v2.stage': 'terrain',
@@ -133,7 +153,8 @@ export async function composeTerrain(source: V2Project, current: V2Settings, cac
   replaceOptions(settings.options, adopted.settings.options, TERRAIN_OPTIONS, true);
   settings.extent = source.world.mapSize;
   settings.generation = adopted.settings.generation;
-  if(adopted.settings.terrain)settings.terrain=adopted.settings.terrain;else delete settings.terrain;
+  if (adopted.settings.terrain) settings.terrain = adopted.settings.terrain;
+  else delete settings.terrain;
   if (adopted.settings.runtime) settings.runtime = adopted.settings.runtime;
   else delete settings.runtime;
   settings.urban = effectiveUrban(current);
@@ -149,13 +170,7 @@ export async function composeTerrain(source: V2Project, current: V2Settings, cac
  * road or manual building edit is merged, because its physical validity is unproven.
  * The source's stable-key generation overrides remain part of the imported recipe.
  */
-export async function composeUrbanRecipe(
-  source: V2Project,
-  currentWorld: World,
-  current: V2Settings,
-  currentMods: unknown[] = [],
-  cache: TerrainCache = terrainCache,
-): Promise<V2Project> {
+export async function composeUrbanRecipe(source: V2Project, currentWorld: World, current: V2Settings, currentMods: unknown[] = [], cache: TerrainCache = terrainCache): Promise<V2Project> {
   validateSettings(source.settings);
   const adopted = territoryRecipe(currentWorld, current);
   const settings = adopted.settings;
@@ -163,7 +178,8 @@ export async function composeUrbanRecipe(
   settings.settlementCount = source.settings.settlementCount;
   settings.local = structuredClone(source.settings.local);
   settings.urban = effectiveUrban(source.settings);
-  if(source.settings.region)settings.region=structuredClone(source.settings.region);else delete settings.region;
+  if (source.settings.region) settings.region = structuredClone(source.settings.region);
+  else delete settings.region;
   validateSettings(settings);
   const discarded = currentMods.length + (source.mods?.length ?? 0);
   const notice = `Recette des peuplements importée sur le territoire actuel. Implantations, routes et villes à reconstruire ; ${discarded} modification(s) géométrique(s) non fusionnée(s).`;

@@ -7,7 +7,10 @@ import type { World } from '../src/gen/types';
 /** Every generated value except timings; typed arrays by content. */
 function worldHash(world: World): string {
   const json = JSON.stringify(world, (key, value) => {
-    if (ArrayBuffer.isView(value)) return createHash('sha1').update(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)).digest('hex');
+    if (ArrayBuffer.isView(value))
+      return createHash('sha1')
+        .update(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))
+        .digest('hex');
     if (key === 'stats') return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([k]) => !k.startsWith('ms.') && !k.includes('.ms.') && !/slowest/i.test(k)));
     return value;
   });
@@ -33,10 +36,8 @@ describe('generation cache', () => {
 
   it('reuses the main town when only a secondary settlement changes, with an identical World', () => {
     const cache = createGenerationCache();
-    const list = (second: { population: number; culture?: string; position?: { x: number; y: number } }): Options => makeOptions({
-      seed: 'cache-list', workflow: 'list', settlementMode: 'list', mapSize: 3000, culture: 'european-organic',
-      settlements: { list: [{ population: 2500 }, second] },
-    });
+    const list = (second: { population: number; culture?: string; position?: { x: number; y: number } }): Options =>
+      makeOptions({ seed: 'cache-list', workflow: 'list', settlementMode: 'list', mapSize: 3000, culture: 'european-organic', settlements: { list: [{ population: 2500 }, second] } });
     generate(list({ population: 300 }), undefined, { cache, lazy: false });
     for (const second of [{ population: 600 }, { population: 600, culture: 'barbarian' }, { population: 300, position: { x: 600, y: 700 } }]) {
       const o = list(second);

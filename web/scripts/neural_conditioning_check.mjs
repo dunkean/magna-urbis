@@ -40,5 +40,4 @@ try {
 }
 assert.ok(rejected, 'extent above 200 km must be rejected');
 
-console.log(JSON.stringify({ ok: true, regional: { origin: regional.origin, size: regional.size, nativeResolution: regional.nativeResolution },
-  sampled: { resolution: sampled.resolution }, finite: { start: finite.start, size: finite.size, resolution: finite.resolution } }));
+console.log(JSON.stringify({ ok: true, regional: { origin: regional.origin, size: regional.size, nativeResolution: regional.nativeResolution }, sampled: { resolution: sampled.resolution }, finite: { start: finite.start, size: finite.size, resolution: finite.resolution } }));

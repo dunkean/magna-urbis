@@ -61,8 +61,10 @@ export function liveCityBlock(appearance: ResolvedAppearance, visibility: Partia
 }
 
 interface Look {
-  appearance: ResolvedAppearance; visibility: Partial<ExportLayers> | undefined;
-  reason: string | null; opacity: number;
+  appearance: ResolvedAppearance;
+  visibility: Partial<ExportLayers> | undefined;
+  reason: string | null;
+  opacity: number;
   /** Satellite grounds: the Canvas town fades into its far raster from FAR_TOWN_FADE[0] m/px (cityFarRaster.ts). */
   farTown: boolean;
   /** drawFarTown's palette and building ink for this look. */
@@ -73,8 +75,7 @@ interface Look {
   base: Omit<CityGlDrawOptions, 'viewport' | 'metresPerPixel'>;
 }
 const LODS: readonly CityLod[] = ['far', 'mid', 'near', 'close'];
-const finite = (value: number | undefined, fallback: number, min: number, max: number): number =>
-  value !== undefined && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+const finite = (value: number | undefined, fallback: number, min: number, max: number): number => (value !== undefined && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback);
 
 // Far raster quad: the raster's world rectangle through the frame's world-to-clip matrix, premultiplied texels times
 // the fade (drawFarTown: drawImage with globalAlpha over the buildings).
@@ -95,7 +96,12 @@ uniform float uAlpha;
 in vec2 vUv;
 out vec4 outColor;
 void main() { outColor = texture(uTex, vUv) * uAlpha; }`;
-interface FarTexture { raster: FarRaster; texture: WebGLTexture; rect: [number, number, number, number]; bytes: number }
+interface FarTexture {
+  raster: FarRaster;
+  texture: WebGLTexture;
+  rect: [number, number, number, number];
+  bytes: number;
+}
 
 // Canopy discs: one instance (x, y, r) per crown or lobe, grown by uGrow metres (stroke rims), antialiased over uPad
 // metres (a device pixel), premultiplied colour.
@@ -134,37 +140,51 @@ const CANOPY_INKS: Record<string, { shade: string; dark: string; mid: string; li
 };
 /** Premultiplied RGBA of '#rrggbb' or 'rgba(r,g,b,a)', times `alpha`. */
 function premul(css: string, alpha = 1): [number, number, number, number] {
-  const m = /rgba?\((\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?/.exec(css), v = m ? 0 : parseInt(css.slice(1, 7), 16) || 0;
-  const rgb = m ? [+m[1], +m[2], +m[3]] : [(v >> 16) & 255, (v >> 8) & 255, v & 255], a = (m?.[4] === undefined ? 1 : +m[4]) * alpha;
-  return [rgb[0] / 255 * a, rgb[1] / 255 * a, rgb[2] / 255 * a, a];
+  const m = /rgba?\((\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?/.exec(css),
+    v = m ? 0 : parseInt(css.slice(1, 7), 16) || 0;
+  const rgb = m ? [+m[1], +m[2], +m[3]] : [(v >> 16) & 255, (v >> 8) & 255, v & 255],
+    a = (m?.[4] === undefined ? 1 : +m[4]) * alpha;
+  return [(rgb[0] / 255) * a, (rgb[1] / 255) * a, (rgb[2] / 255) * a, a];
 }
 type DiscPass = 'shade' | 'crowns' | 'rim' | 'dark' | 'mid' | 'light';
-interface CanopyMesh { passes: Record<DiscPass, { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number }>; bytes: number }
+interface CanopyMesh {
+  passes: Record<DiscPass, { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number }>;
+  bytes: number;
+}
 /** The canopy discs of drawCityCanopy: cast shade (south-east by height), whole crowns (far and flat inks), and per lobe
  * the stroked rim, the dark body, the mid tone and the lit top. */
 function canopyDiscs(canopies: readonly CityCanopy[]): Record<DiscPass, number[]> {
   const out: Record<DiscPass, number[]> = { shade: [], crowns: [], rim: [], dark: [], mid: [], light: [] };
-  for (const c of canopies) for (const t of [...c.dwellings, ...c.trees]) {
-    const k = (t.h + t.r * .6) * .35;
-    out.shade.push(t.x + .32 * k, t.y + .42 * k, t.r * .95); out.crowns.push(t.x, t.y, t.r);
-    for (const l of t.lobes) {
-      out.rim.push(l.x + l.r * .08, l.y + l.r * .1, l.r * 1.04); out.dark.push(l.x + l.r * .1, l.y + l.r * .13, l.r);
-      if (l.tone > .3) out.mid.push(l.x - l.r * .04, l.y - l.r * .05, l.r * (.72 + .16 * l.tone));
-      if (l.tone > .55) out.light.push(l.x - l.r * .2, l.y - l.r * .24, l.r * .5 * l.tone);
+  for (const c of canopies)
+    for (const t of [...c.dwellings, ...c.trees]) {
+      const k = (t.h + t.r * 0.6) * 0.35;
+      out.shade.push(t.x + 0.32 * k, t.y + 0.42 * k, t.r * 0.95);
+      out.crowns.push(t.x, t.y, t.r);
+      for (const l of t.lobes) {
+        out.rim.push(l.x + l.r * 0.08, l.y + l.r * 0.1, l.r * 1.04);
+        out.dark.push(l.x + l.r * 0.1, l.y + l.r * 0.13, l.r);
+        if (l.tone > 0.3) out.mid.push(l.x - l.r * 0.04, l.y - l.r * 0.05, l.r * (0.72 + 0.16 * l.tone));
+        if (l.tone > 0.55) out.light.push(l.x - l.r * 0.2, l.y - l.r * 0.24, l.r * 0.5 * l.tone);
+      }
     }
-  }
   return out;
 }
 
 /** Metres per pixel of each level of detail for the warm-up draw (inside each band of CITY_LOD_LIMITS). */
-const LEVEL_MPP: Record<CityLod, number> = { close: .4, near: 1.2, mid: 4, far: 16 };
+const LEVEL_MPP: Record<CityLod, number> = { close: 0.4, near: 1.2, mid: 4, far: 16 };
 
 export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv, towns: LiveCityTowns): LiveLayer {
-  let renderer: CityGlSharedRenderer | undefined, broken = false, disposed = false;
+  let renderer: CityGlSharedRenderer | undefined,
+    broken = false,
+    disposed = false;
   /** The merge in progress, the scene handed to the renderer, the buildings last handed to it, builds still running. */
   let merging: Generator<void, { plan: CityScene; buildings: CityBuildings }> | undefined;
-  let requested: CityScene | undefined, built: CityBuildings | undefined, building = 0;
-  let lod: CityLod | undefined, look: Look | undefined, generation = 0;
+  let requested: CityScene | undefined,
+    built: CityBuildings | undefined,
+    building = 0;
+  let lod: CityLod | undefined,
+    look: Look | undefined,
+    generation = 0;
   /** Levels of detail whose colour tables are on the GPU for the current look and water; the preparation running. */
   const preparedLods = new Set<CityLod>();
   let preparing: { level: CityLod; steps: Generator<void, void> } | undefined, preparedWater: Float32Array | undefined;
@@ -177,7 +197,10 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   let farP: Program | undefined, discP: Program | undefined, pendingFar: PendingProgram | undefined, pendingDisc: PendingProgram | undefined;
   /** Far rasters on the GPU, per town buildings; `farReady`: every far town has one (for the current look). */
   const farTextures = new Map<CityBuildings, FarTexture>();
-  let farVao: WebGLVertexArrayObject | undefined, farReady = false, farBytes = 0, meshBytes = 0;
+  let farVao: WebGLVertexArrayObject | undefined,
+    farReady = false,
+    farBytes = 0,
+    meshBytes = 0;
   /** Lot enclosure lists handed to the renderer; canopy discs and the canopies they were built from. */
   let yardsFor: readonly (readonly YardBoundary[] | undefined)[] | undefined;
   let canopy: CanopyMesh | undefined, canopyFor: readonly CityCanopy[] | undefined;
@@ -185,30 +208,57 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   let checked: { frame: LiveFrame; options: CityGlDrawOptions; level: CityLod } | undefined;
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, gpuBytes: 0, uploadMs: 0, buildMs: 0, packMs: 0, prepareMs: 0, warmMs: 0, farTextures: 0 };
 
-  const unprepare = (): void => { preparedLods.clear(); warmedLods.clear(); preparing?.steps.return(); preparing = undefined; };
+  const unprepare = (): void => {
+    preparedLods.clear();
+    warmedLods.clear();
+    preparing?.steps.return();
+    preparing = undefined;
+  };
   /** The look of the current appearance and visibility, rebuilt when either object changes. */
   function lookNow(): Look {
-    const appearance = env.appearance(), visibility = env.visibility();
+    const appearance = env.appearance(),
+      visibility = env.visibility();
     if (look && look.appearance === appearance && look.visibility === visibility) return look;
-    const city = appearance.city, buildingAppearance = cityBuildingAppearance(appearance), vis = visibility ?? {};
-    const roads = appearance.composition.networks.roads, buildingsVisible = vis.city !== false && city.visible;
+    const city = appearance.city,
+      buildingAppearance = cityBuildingAppearance(appearance),
+      vis = visibility ?? {};
+    const roads = appearance.composition.networks.roads,
+      buildingsVisible = vis.city !== false && city.visible;
     look = {
-      appearance, visibility, reason: liveCityBlock(appearance, visibility), opacity: finite(city.opacity, .8, 0, 1),
+      appearance,
+      visibility,
+      reason: liveCityBlock(appearance, visibility),
+      opacity: finite(city.opacity, 0.8, 0, 1),
       farTown: !!appearance.traits?.satelliteVariant && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none',
       // As cityDrawOptions hands them to drawFarTown by day: the city palette, the building ink of the appearance.
       far: { palette: city.palette, night: false, custom: buildingAppearance.colors?.building },
       canopy: buildingsVisible && city.view === 'buildings' && buildingAppearance.diagnostic === 'none',
       base: {
-        view: city.view, palette: city.palette, layers: towns.layers(appearance, vis), buildingStyle: buildingAppearance.style,
+        view: city.view,
+        palette: city.palette,
+        layers: towns.layers(appearance, vis),
+        buildingStyle: buildingAppearance.style,
         // The Canvas town ignores `painted` for city volumes, and the live look omits textures (flat colours).
-        paintedBuildings: false, textured: false, buildingsVisible, diagnostic: buildingAppearance.diagnostic,
-        refusedParcels: buildingAppearance.diagnostic === 'access' ? towns.refused() : undefined, colors: appearance.palette.colors,
-        groundBlend: city.groundBlend === 'blended', live: { roadLook: roads.look, emphasis: roads.emphasis ?? 1, waterColor: townWaterColour(appearance),
+        paintedBuildings: false,
+        textured: false,
+        buildingsVisible,
+        diagnostic: buildingAppearance.diagnostic,
+        refusedParcels: buildingAppearance.diagnostic === 'access' ? towns.refused() : undefined,
+        colors: appearance.palette.colors,
+        groundBlend: city.groundBlend === 'blended',
+        live: {
+          roadLook: roads.look,
+          emphasis: roads.emphasis ?? 1,
+          waterColor: townWaterColour(appearance),
           // Natural grounds: the Canvas town lays its procedural grain unless textured materials replace it.
-          grain: !city.textured, lineWidth: Math.max(.2, finite(city.width, .6, 0, 5)) },
+          grain: !city.textured,
+          lineWidth: Math.max(0.2, finite(city.width, 0.6, 0, 5)),
+        },
       },
     };
-    unprepare(); farReady = false; checked = undefined;
+    unprepare();
+    farReady = false;
+    checked = undefined;
     return look;
   }
   /** The frame's world box exactly as the target maps it (device pixels). */
@@ -217,7 +267,11 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     return { minX: -tx / sx, minY: -ty / sy, maxX: (frame.width - tx) / sx, maxY: (frame.height - ty) / sy };
   };
   const optionsFor = (frame: LiveFrame, l: Look, frameLod: CityLod): CityGlDrawOptions => ({
-    ...l.base, viewport: viewportOf(frame), metresPerPixel: 1 / frame.view.scale, lod: frameLod, water: env.water?.(),
+    ...l.base,
+    viewport: viewportOf(frame),
+    metresPerPixel: 1 / frame.view.scale,
+    lod: frameLod,
+    water: env.water?.(),
     target: { framebuffer: frame.target, width: frame.width, height: frame.height },
   });
   function dropExtras(deleteHandles: boolean): void {
@@ -226,51 +280,114 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       for (const p of [farP, discP]) if (p) gl.deleteProgram(p.program);
       for (const p of [pendingFar, pendingDisc]) if (p) gl.deleteProgram(p.program);
       if (farVao) gl.deleteVertexArray(farVao);
-      if (canopy) for (const p of Object.values(canopy.passes)) { gl.deleteBuffer(p.vbo); gl.deleteVertexArray(p.vao); }
-      if (warm) { gl.deleteFramebuffer(warm.framebuffer); gl.deleteRenderbuffer(warm.color); gl.deleteRenderbuffer(warm.depth); }
+      if (canopy)
+        for (const p of Object.values(canopy.passes)) {
+          gl.deleteBuffer(p.vbo);
+          gl.deleteVertexArray(p.vao);
+        }
+      if (warm) {
+        gl.deleteFramebuffer(warm.framebuffer);
+        gl.deleteRenderbuffer(warm.color);
+        gl.deleteRenderbuffer(warm.depth);
+      }
     }
-    farTextures.clear(); farP = discP = pendingFar = pendingDisc = undefined; farVao = undefined; warm = undefined;
-    farReady = false; farBytes = 0; canopy = undefined; canopyFor = undefined;
+    farTextures.clear();
+    farP = discP = pendingFar = pendingDisc = undefined;
+    farVao = undefined;
+    warm = undefined;
+    farReady = false;
+    farBytes = 0;
+    canopy = undefined;
+    canopyFor = undefined;
   }
   function drop(deleteHandles: boolean): void {
-    try { renderer?.dispose(); } catch { /* A lost context: the handles are dead anyway. */ }
-    try { dropExtras(deleteHandles); } catch { dropExtras(false); }
-    merging?.return(undefined as never); merging = undefined; checked = undefined;
-    renderer = undefined; requested = built = undefined; yardsFor = undefined; unprepare(); generation++; building = 0; meshBytes = 0;
+    try {
+      renderer?.dispose();
+    } catch {
+      /* A lost context: the handles are dead anyway. */
+    }
+    try {
+      dropExtras(deleteHandles);
+    } catch {
+      dropExtras(false);
+    }
+    merging?.return(undefined as never);
+    merging = undefined;
+    checked = undefined;
+    renderer = undefined;
+    requested = built = undefined;
+    yardsFor = undefined;
+    unprepare();
+    generation++;
+    building = 0;
+    meshBytes = 0;
   }
   const track = <T>(job: Promise<T>): void => {
-    const gen = generation; building++;
-    job.then(() => { if (gen === generation) { building--; env.invalidate(); } },
-      error => { if (gen !== generation) return; building--; broken = true; console.warn('Live town meshes unavailable', error); });
+    const gen = generation;
+    building++;
+    job.then(
+      () => {
+        if (gen === generation) {
+          building--;
+          env.invalidate();
+        }
+      },
+      error => {
+        if (gen !== generation) return;
+        building--;
+        broken = true;
+        console.warn('Live town meshes unavailable', error);
+      },
+    );
   };
   const bytes = (): number => meshBytes + farBytes + (canopy?.bytes ?? 0);
   /** Advances a generator for about `budget` ms from `start`; true once it is done. */
   const advance = <T>(steps: Generator<void, T>, start: number, budget: number, done: (value: T) => void): boolean => {
-    do { const r = steps.next(); if (r.done) { done(r.value); return true; } } while (performance.now() - start < budget);
+    do {
+      const r = steps.next();
+      if (r.done) {
+        done(r.value);
+        return true;
+      }
+    } while (performance.now() - start < budget);
     return false;
   };
   /** The layer's programs: issued together, finished when linked (one per call without parallel compile). */
   function programsStep(): boolean {
     if (farP && discP) return false;
-    if (parallelLink) { pendingFar ??= startProgram(gl, FAR_VS, FAR_FS); pendingDisc ??= startProgram(gl, DISC_VS, DISC_FS); }
-    else if (!farP) pendingFar ??= startProgram(gl, FAR_VS, FAR_FS);
+    if (parallelLink) {
+      pendingFar ??= startProgram(gl, FAR_VS, FAR_FS);
+      pendingDisc ??= startProgram(gl, DISC_VS, DISC_FS);
+    } else if (!farP) pendingFar ??= startProgram(gl, FAR_VS, FAR_FS);
     else pendingDisc ??= startProgram(gl, DISC_VS, DISC_FS);
-    if (pendingFar && programLinked(gl, pendingFar, parallelLink)) { farP = finishProgram(gl, pendingFar); pendingFar = undefined; farVao = gl.createVertexArray()!; }
-    if (pendingDisc && programLinked(gl, pendingDisc, parallelLink)) { discP = finishProgram(gl, pendingDisc); pendingDisc = undefined; }
+    if (pendingFar && programLinked(gl, pendingFar, parallelLink)) {
+      farP = finishProgram(gl, pendingFar);
+      pendingFar = undefined;
+      farVao = gl.createVertexArray()!;
+    }
+    if (pendingDisc && programLinked(gl, pendingDisc, parallelLink)) {
+      discP = finishProgram(gl, pendingDisc);
+      pendingDisc = undefined;
+    }
     return !(farP && discP);
   }
   /** Uploads a town's far raster (finest level, mipmapped by the GPU) as premultiplied RGBA. */
   function uploadFar(key: CityBuildings, raster: FarRaster): void {
-    const old = farTextures.get(key), texture = old?.texture ?? gl.createTexture()!, image = raster.levels[0];
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texture);
+    const old = farTextures.get(key),
+      texture = old?.texture ?? gl.createTexture()!,
+      image = raster.levels[0];
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, image as TexImageSource);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
     gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.bindTexture(gl.TEXTURE_2D, null);
-    const size = Math.round(raster.w * raster.h * 4 * 4 / 3);
+    const size = Math.round((raster.w * raster.h * 4 * 4) / 3);
     farBytes += size - (old?.bytes ?? 0);
     farTextures.set(key, { raster, texture, bytes: size, rect: [raster.x0, raster.y0, raster.x0 + raster.w * raster.cell, raster.y0 + raster.h * raster.cell] });
     stats.farTextures = farTextures.size;
@@ -284,8 +401,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       const held = farTextures.get(town.buildings);
       let raster = heldFarTownRaster(town.buildings);
       if (!raster && !frame?.moving) raster = farTownRaster(town.plan, town.buildings, l.far);
-      if (!raster) { missing = true; continue; }
-      if (held?.raster !== raster) { uploadFar(town.buildings, raster); return true; }
+      if (!raster) {
+        missing = true;
+        continue;
+      }
+      if (held?.raster !== raster) {
+        uploadFar(town.buildings, raster);
+        return true;
+      }
     }
     farReady = !missing;
     return false;
@@ -294,16 +417,29 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   function canopyWork(): boolean {
     const list = towns.canopies();
     if (canopyFor && canopyFor.length === list.length && canopyFor.every((c, i) => c === list[i])) return false;
-    if (canopy) for (const p of Object.values(canopy.passes)) { gl.deleteBuffer(p.vbo); gl.deleteVertexArray(p.vao); }
-    canopy = undefined; canopyFor = list;
+    if (canopy)
+      for (const p of Object.values(canopy.passes)) {
+        gl.deleteBuffer(p.vbo);
+        gl.deleteVertexArray(p.vao);
+      }
+    canopy = undefined;
+    canopyFor = list;
     if (!list.some(c => c.trees.length || c.dwellings.length)) return true;
-    const discs = canopyDiscs(list), passes = {} as CanopyMesh['passes'];
+    const discs = canopyDiscs(list),
+      passes = {} as CanopyMesh['passes'];
     let size = 0;
     for (const name of Object.keys(discs) as DiscPass[]) {
-      const data = new Float32Array(discs[name]), vbo = gl.createBuffer()!, vao = gl.createVertexArray()!;
-      gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(0, 1);
-      passes[name] = { vbo, vao, count: data.length / 3 }; size += data.byteLength;
+      const data = new Float32Array(discs[name]),
+        vbo = gl.createBuffer()!,
+        vao = gl.createVertexArray()!;
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribDivisor(0, 1);
+      passes[name] = { vbo, vao, count: data.length / 3 };
+      size += data.byteLength;
     }
     gl.bindVertexArray(null);
     canopy = { passes, bytes: size };
@@ -313,40 +449,78 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
    * passes cover each sample once (stencil), as one Canvas fill of their union. */
   function drawCanopy(frame: LiveFrame, palette: CityPalette, mpp: number): void {
     if (!canopy || !discP) return;
-    const d = discP, ink = CANOPY_INKS[palette] ?? CANOPY_INKS.terrain, devM = 1 / frame.worldToPixel[0], wide = mpp > 2.5, flat = !!ink.flat;
-    gl.useProgram(d.program); gl.uniformMatrix3fv(d.u.uM, false, frame.worldToClip); gl.uniform1f(d.u.uPad, devM);
-    gl.enable(gl.STENCIL_TEST); gl.stencilMask(0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
+    const d = discP,
+      ink = CANOPY_INKS[palette] ?? CANOPY_INKS.terrain,
+      devM = 1 / frame.worldToPixel[0],
+      wide = mpp > 2.5,
+      flat = !!ink.flat;
+    gl.useProgram(d.program);
+    gl.uniformMatrix3fv(d.u.uM, false, frame.worldToClip);
+    gl.uniform1f(d.u.uPad, devM);
+    gl.enable(gl.STENCIL_TEST);
+    gl.stencilMask(0xff);
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
     const pass = (name: DiscPass, color: string, alpha = 1, growPx = 0): void => {
-      const p = canopy!.passes[name], c = premul(color, alpha);
+      const p = canopy!.passes[name],
+        c = premul(color, alpha);
       if (!p.count || !(c[3] > 0)) return;
-      gl.clearStencil(0); gl.clear(gl.STENCIL_BUFFER_BIT); gl.stencilFunc(gl.EQUAL, 0, 0xff);
-      gl.uniform4f(d.u.uColor, c[0], c[1], c[2], c[3]); gl.uniform1f(d.u.uGrow, growPx * mpp);
-      gl.bindVertexArray(p.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, p.count); stats.drawCalls++; stats.triangles += 2 * p.count;
+      gl.clearStencil(0);
+      gl.clear(gl.STENCIL_BUFFER_BIT);
+      gl.stencilFunc(gl.EQUAL, 0, 0xff);
+      gl.uniform4f(d.u.uColor, c[0], c[1], c[2], c[3]);
+      gl.uniform1f(d.u.uGrow, growPx * mpp);
+      gl.bindVertexArray(p.vao);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, p.count);
+      stats.drawCalls++;
+      stats.triangles += 2 * p.count;
     };
     if (!flat) pass('shade', ink.shade);
-    if (flat || wide) { if (ink.stroke) pass('crowns', ink.stroke, 1, (flat ? .6 : .45) / 2); pass('crowns', ink.mid); }
-    else { if (ink.stroke) pass('rim', ink.stroke, 1, .45); pass('dark', ink.dark); pass('mid', ink.mid); pass('light', ink.light, .85); }
-    gl.disable(gl.STENCIL_TEST); gl.bindVertexArray(null);
+    if (flat || wide) {
+      if (ink.stroke) pass('crowns', ink.stroke, 1, (flat ? 0.6 : 0.45) / 2);
+      pass('crowns', ink.mid);
+    } else {
+      if (ink.stroke) pass('rim', ink.stroke, 1, 0.45);
+      pass('dark', ink.dark);
+      pass('mid', ink.mid);
+      pass('light', ink.light, 0.85);
+    }
+    gl.disable(gl.STENCIL_TEST);
+    gl.bindVertexArray(null);
   }
   /** The whole layer into `frame.target`: the town, the far rasters, the canopy. Creates nothing (`check` and the
    * warm-up saw to it). `warmup`: every draw kind of the level at least once, into the warm-up target. */
   function paint(frame: LiveFrame, l: Look, options: CityGlDrawOptions, mpp: number, warmup: boolean): void {
     const f = renderer!.draw(options);
-    stats.drawCalls = f.drawCalls; stats.triangles = f.triangles; stats.instances = f.instances;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, frame.target); gl.viewport(0, 0, frame.width, frame.height);
-    gl.disable(gl.DEPTH_TEST); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.STENCIL_TEST); gl.colorMask(true, true, true, true);
-    gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    stats.drawCalls = f.drawCalls;
+    stats.triangles = f.triangles;
+    stats.instances = f.instances;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, frame.target);
+    gl.viewport(0, 0, frame.width, frame.height);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.disable(gl.STENCIL_TEST);
+    gl.colorMask(true, true, true, true);
+    gl.enable(gl.BLEND);
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     // Satellite: the far raster over the buildings, faded in from FAR_TOWN_FADE[0] (drawCitySteps `farTown`).
-    const alpha = l.farTown && farP && farVao ? warmup ? 1 : farTownAlpha(mpp) : 0;
+    const alpha = l.farTown && farP && farVao ? (warmup ? 1 : farTownAlpha(mpp)) : 0;
     if (alpha > 0 && farP && farVao && farTextures.size) {
       const r = frame.rect;
-      gl.useProgram(farP.program); gl.bindVertexArray(farVao); gl.activeTexture(gl.TEXTURE0);
-      gl.uniformMatrix3fv(farP.u.uM, false, frame.worldToClip); gl.uniform1f(farP.u.uAlpha, Math.min(1, alpha)); gl.uniform1i(farP.u.uTex, 0);
+      gl.useProgram(farP.program);
+      gl.bindVertexArray(farVao);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniformMatrix3fv(farP.u.uM, false, frame.worldToClip);
+      gl.uniform1f(farP.u.uAlpha, Math.min(1, alpha));
+      gl.uniform1i(farP.u.uTex, 0);
       for (const t of farTextures.values()) {
         const [x0, y0, x1, y1] = t.rect;
         if (!warmup && (x0 > r.maxX || x1 < r.minX || y0 > r.maxY || y1 < r.minY)) continue;
-        gl.bindTexture(gl.TEXTURE_2D, t.texture); gl.uniform4f(farP.u.uRect, x0, y0, x1, y1);
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); stats.drawCalls++; stats.triangles += 2;
+        gl.bindTexture(gl.TEXTURE_2D, t.texture);
+        gl.uniform4f(farP.u.uRect, x0, y0, x1, y1);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        stats.drawCalls++;
+        stats.triangles += 2;
       }
       gl.bindVertexArray(null);
     }
@@ -358,9 +532,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
    * work, instead of in the first real frame of that level. */
   function warmLevel(frame: LiveFrame, l: Look, level: CityLod): void {
     if (!warm) {
-      const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) as number), framebuffer = gl.createFramebuffer()!, color = gl.createRenderbuffer()!, depth = gl.createRenderbuffer()!;
-      gl.bindRenderbuffer(gl.RENDERBUFFER, color); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, 4, 4);
-      gl.bindRenderbuffer(gl.RENDERBUFFER, depth); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH24_STENCIL8, 4, 4);
+      const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) as number),
+        framebuffer = gl.createFramebuffer()!,
+        color = gl.createRenderbuffer()!,
+        depth = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, color);
+      gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, 4, 4);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+      gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH24_STENCIL8, 4, 4);
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
       gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
       gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth);
@@ -368,12 +547,17 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       warm = { framebuffer, color, depth };
     }
     const target = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-    const e = requested?.extent, whole = e && Number.isFinite(e.minX) && e.maxX > e.minX ? e : viewportOf(frame);
+    const e = requested?.extent,
+      whole = e && Number.isFinite(e.minX) && e.maxX > e.minX ? e : viewportOf(frame);
     const shadow: LiveFrame = { ...frame, target: warm.framebuffer, width: 4, height: 4 };
-    gl.bindFramebuffer(gl.FRAMEBUFFER, warm.framebuffer); gl.viewport(0, 0, 4, 4);
-    gl.clearColor(0, 0, 0, 0); gl.clearStencil(0); gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, warm.framebuffer);
+    gl.viewport(0, 0, 4, 4);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clearStencil(0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     paint(shadow, l, { ...optionsFor(shadow, l, level), viewport: whole, metresPerPixel: LEVEL_MPP[level] }, LEVEL_MPP[level], true);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target); gl.viewport(0, 0, frame.width, frame.height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+    gl.viewport(0, 0, frame.width, frame.height);
   }
 
   /** Why `draw` cannot show the towns of this frame ('' when it can). Checks that the draw will create nothing. */
@@ -396,9 +580,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     if (!warmedLods.has(level)) return 'warming up';
     // Satellite: from the fade start the Canvas town shows its far raster.
     if (l.farTown && 1 / frame.view.scale > FAR_TOWN_FADE[0] && !farReady) return 'far-town raster';
-    const options = optionsFor(frame, l, level), missing = renderer.check(options);
+    const options = optionsFor(frame, l, level),
+      missing = renderer.check(options);
     // Something changed under a prepared level (ground tones, season, water): prepare and warm it again.
-    if (missing) { preparedLods.delete(level); warmedLods.delete(level); return missing; }
+    if (missing) {
+      preparedLods.delete(level);
+      warmedLods.delete(level);
+      return missing;
+    }
     checked = { frame, options, level };
     return '';
   };
@@ -413,7 +602,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       return !why;
     },
     draw(frame) {
-      const start = performance.now(), l = lookNow();
+      const start = performance.now(),
+        l = lookNow();
       stats.drawCalls = stats.triangles = stats.instances = 0;
       // Only after `ready` answered true for this frame: its checked options, nothing to create.
       const c = checked?.frame === frame ? checked : undefined;
@@ -430,20 +620,28 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     work(budgetMs, frame) {
       // A lost context compiles nothing: wait for the restore (contextLost dropped the renderer).
       if (disposed || broken || gl.isContextLost()) return false;
-      const start = performance.now(), moving = !!frame?.moving;
+      const start = performance.now(),
+        moving = !!frame?.moving;
       try {
         if (!renderer) renderer = createCityGlRendererOn(gl, { onInvalidate: () => env.invalidate() });
         // Programs: issued at once and polled (parallel compile), never linked by a draw.
-        const linkingRenderer = renderer.programsStep(), linkingOwn = programsStep();
+        const linkingRenderer = renderer.programsStep(),
+          linkingOwn = programsStep();
         if (linkingRenderer || linkingOwn) return true;
-      } catch (error) { broken = true; console.warn('Live town programs unavailable', error); return false; }
+      } catch (error) {
+        broken = true;
+        console.warn('Live town programs unavailable', error);
+        return false;
+      }
       if (!requested) {
         // The scene is merged and requested at rest only (slices); its polygons are then packed a slice per call.
         if (moving && !merging) return true;
         merging ??= towns.sceneSteps();
         const r = renderer;
         advance(merging, start, budgetMs, scene => {
-          merging = undefined; requested = scene.plan; built = scene.buildings;
+          merging = undefined;
+          requested = scene.plan;
+          built = scene.buildings;
           track(r.setScene(scene.plan, scene.buildings));
         });
         stats.buildMs = (stats.buildMs ?? 0) + performance.now() - start;
@@ -460,8 +658,11 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         if (moving) return true;
         const t = performance.now();
         renderer.upload();
-        stats.uploadMs = performance.now() - t; meshBytes = renderer.stats().gpuBytes; stats.gpuBytes = bytes();
-        unprepare(); yardsFor = undefined;
+        stats.uploadMs = performance.now() - t;
+        meshBytes = renderer.stats().gpuBytes;
+        stats.gpuBytes = bytes();
+        unprepare();
+        yardsFor = undefined;
         return true;
       }
       if (!renderer.ready) return building > 0;
@@ -469,14 +670,22 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       // swaps it. A moving view keeps the uploaded tier.
       if (frame && towns.buildingsFor && !moving && !building) {
         const next = towns.buildingsFor(viewportOf(frame), 1 / frame.view.scale);
-        if (next && next !== built) { built = next; track(renderer.setBuildings(next)); return true; }
+        if (next && next !== built) {
+          built = next;
+          track(renderer.setBuildings(next));
+          return true;
+        }
       }
       if (!frame) return building > 0;
-      const l = lookNow(), water = env.water?.();
+      const l = lookNow(),
+        water = env.water?.();
       if (l.reason) return building > 0;
       // The grain tile means (one cover kind per call, a few ms), shared by every town layer.
       if (l.base.palette === 'terrain' && l.base.live?.grain && grainMeansStep()) return true;
-      if (preparedWater !== water) { unprepare(); preparedWater = water; }
+      if (preparedWater !== water) {
+        unprepare();
+        preparedWater = water;
+      }
       const own = selectCityLod(1 / frame.view.scale, lod);
       // Colour tables, one level of detail at a time in slices: the view's level first, then the others, so a zoom
       // across a level finds its tables kept.
@@ -485,8 +694,12 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
           const level = preparedLods.has(own) ? LODS.find(x => !preparedLods.has(x))! : own;
           preparing = { level, steps: renderer.prepareSteps(optionsFor(frame, l, level)) };
         }
-        const job = preparing, t = performance.now();
-        advance(job.steps, start, budgetMs, () => { preparedLods.add(job.level); preparing = undefined; });
+        const job = preparing,
+          t = performance.now();
+        advance(job.steps, start, budgetMs, () => {
+          preparedLods.add(job.level);
+          preparing = undefined;
+        });
         stats.prepareMs = performance.now() - t;
         return true;
       }
@@ -494,8 +707,15 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       const cold = !warmedLods.has(own) ? own : moving ? undefined : LODS.find(x => !warmedLods.has(x));
       if (cold) {
         const t = performance.now();
-        try { warmLevel(frame, l, cold); } catch (error) { broken = true; console.warn('Live town warm-up failed', error); return false; }
-        warmedLods.add(cold); stats.warmMs = performance.now() - t;
+        try {
+          warmLevel(frame, l, cold);
+        } catch (error) {
+          broken = true;
+          console.warn('Live town warm-up failed', error);
+          return false;
+        }
+        warmedLods.add(cold);
+        stats.warmMs = performance.now() - t;
         return true;
       }
       // Retained extras, at rest: lot enclosures, canopy, far rasters (one item per call). Each change draws differently:
@@ -504,18 +724,44 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       try {
         const lists = towns.enclosures();
         if (!yardsFor || yardsFor.length !== lists.length || yardsFor.some((x, i) => x !== lists[i])) {
-          renderer.setYards(lists); yardsFor = lists; meshBytes = renderer.stats().gpuBytes; stats.gpuBytes = bytes();
+          renderer.setYards(lists);
+          yardsFor = lists;
+          meshBytes = renderer.stats().gpuBytes;
+          stats.gpuBytes = bytes();
           // New enclosure colour tables: prepared again (a few texels), then warmed.
-          unprepare(); return true;
+          unprepare();
+          return true;
         }
-        if (canopyWork()) { stats.gpuBytes = bytes(); warmedLods.clear(); return true; }
-        if (l.farTown && farWork(l, frame)) { stats.gpuBytes = bytes(); warmedLods.clear(); return true; }
-      } catch (error) { broken = true; console.warn('Live town extras unavailable', error); return false; }
+        if (canopyWork()) {
+          stats.gpuBytes = bytes();
+          warmedLods.clear();
+          return true;
+        }
+        if (l.farTown && farWork(l, frame)) {
+          stats.gpuBytes = bytes();
+          warmedLods.clear();
+          return true;
+        }
+      } catch (error) {
+        broken = true;
+        console.warn('Live town extras unavailable', error);
+        return false;
+      }
       return building > 0;
     },
-    invalidate() { look = undefined; unprepare(); farReady = false; checked = undefined; },
-    contextLost() { drop(false); },
+    invalidate() {
+      look = undefined;
+      unprepare();
+      farReady = false;
+      checked = undefined;
+    },
+    contextLost() {
+      drop(false);
+    },
     stats: () => stats,
-    dispose() { disposed = true; drop(true); },
+    dispose() {
+      disposed = true;
+      drop(true);
+    },
   };
 }

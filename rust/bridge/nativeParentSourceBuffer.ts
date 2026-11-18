@@ -5,14 +5,19 @@
 import type { ArchitectureRequestSource } from './architectureBatch';
 import type { PlacementRequest } from './urbanArchitecture';
 import { PARENT_LIMITS } from './nativeParentBudget';
-interface Measurement { fits: boolean; wire: { bytes: number }; reason?: string }
-interface IncrementalMeasurement { append(request: PlacementRequest): void; prefix(count: number): Measurement }
-export async function fillCanonicalParentPrefix(source: ArchitectureRequestSource, completed: number,
-  pending: PlacementRequest[], seen: Set<string>, measure: ((requests: PlacementRequest[]) => Measurement) | IncrementalMeasurement,
-  cancelled: () => void): Promise<void> {
+interface Measurement {
+  fits: boolean;
+  wire: { bytes: number };
+  reason?: string;
+}
+interface IncrementalMeasurement {
+  append(request: PlacementRequest): void;
+  prefix(count: number): Measurement;
+}
+export async function fillCanonicalParentPrefix(source: ArchitectureRequestSource, completed: number, pending: PlacementRequest[], seen: Set<string>, measure: ((requests: PlacementRequest[]) => Measurement) | IncrementalMeasurement, cancelled: () => void): Promise<void> {
   // Session callers seed the counter with the existing bounded lookahead.
   // The stateless adapter keeps its historical callback contract.
-  const currentMeasurement = () => typeof measure === 'function' ? measure(pending) : measure.prefix(pending.length);
+  const currentMeasurement = () => (typeof measure === 'function' ? measure(pending) : measure.prefix(pending.length));
   while (pending.length < PARENT_LIMITS.parents && completed + pending.length < source.total) {
     cancelled();
     const current = currentMeasurement();
@@ -23,17 +28,21 @@ export async function fillCanonicalParentPrefix(source: ArchitectureRequestSourc
     // adds one comma for a nonempty prefix. A two-byte conservative difference
     // is resolved by one exact lookahead, NEVER by a source-page solve boundary.
     const remaining = Math.min(PARENT_LIMITS.bytes, Math.max(2, PARENT_LIMITS.bytes - current.wire.bytes + 2 - (pending.length ? 1 : 0)));
-    let page = await source.read(completed + pending.length, limit, remaining); cancelled();
+    let page = await source.read(completed + pending.length, limit, remaining);
+    cancelled();
     let allowed = limit;
     if (Array.isArray(page) && !page.length && pending.length) {
       // Read at most ONE full-budget request to decide the exact candidate.
       // Without this, an arbitrary source page size would alter the partition.
-      page = await source.read(completed + pending.length, 1, PARENT_LIMITS.bytes); allowed = 1; cancelled();
+      page = await source.read(completed + pending.length, 1, PARENT_LIMITS.bytes);
+      allowed = 1;
+      cancelled();
     }
     if (!Array.isArray(page) || !page.length || page.length > allowed) throw new Error('Invalid native parent source page.');
     for (const request of page) {
       if (seen.has(request.id)) throw new Error('Duplicate native parent request.');
-      seen.add(request.id); pending.push(request);
+      seen.add(request.id);
+      pending.push(request);
       if (typeof measure !== 'function') measure.append(request);
       if (!currentMeasurement().fits) return; // exactly one overflow lookahead, no remaining-page accumulation.
     }

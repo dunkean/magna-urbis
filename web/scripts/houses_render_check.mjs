@@ -15,13 +15,13 @@ if (!process.argv[2]) throw new Error('Usage: node scripts/houses_render_check.m
 for (const file of process.argv.slice(2)) {
   const batch = contract.parseHouseBatch(await readFile(resolve(file), 'utf8'));
   for (const unit of batch.units) {
-    const views = [{mode: 'roof', level: 0}, ...unit.levels.map(level => ({mode: 'plan', level: level.index}))];
+    const views = [{ mode: 'roof', level: 0 }, ...unit.levels.map(level => ({ mode: 'plan', level: level.index }))];
     for (const view of views) {
       const name = `${basename(file, '.json')}-${unit.id}-${view.mode}${view.mode === 'plan' ? `-${view.level}` : ''}`;
-      const svg = renderer.renderHouseSvg(unit, catalogue, {...view, graph: false, dimensions: true}, {width: 1200, height: 1000, prefix: name});
+      const svg = renderer.renderHouseSvg(unit, catalogue, { ...view, graph: false, dimensions: true }, { width: 1200, height: 1000, prefix: name });
       await writeFile(join(out, `${name}.svg`), svg);
       await writeFile(join(out, `${name}.png`), new Resvg(svg).render().asPng());
     }
-    console.log(JSON.stringify({file, recipe: unit.recipe_id, bodies: unit.bodies.length, levels: unit.levels.length, roofGroups: unit.roofs.groups.length, featureCovers: unit.roofs.groups.filter(group => group.feature_id).length}));
+    console.log(JSON.stringify({ file, recipe: unit.recipe_id, bodies: unit.bodies.length, levels: unit.levels.length, roofGroups: unit.roofs.groups.length, featureCovers: unit.roofs.groups.filter(group => group.feature_id).length }));
   }
 }

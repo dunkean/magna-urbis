@@ -32,23 +32,37 @@ describe('exports of the current style', () => {
 describe('direct raster PNG export', () => {
   it('uses the asynchronous PNG encoder and propagates allocation/encoding failures', async () => {
     const png = new Blob(['pixels'], { type: 'image/png' });
-    const toBlob = vi.fn((done: BlobCallback, type: string) => { expect(type).toBe('image/png'); done(png); });
+    const toBlob = vi.fn((done: BlobCallback, type: string) => {
+      expect(type).toBe('image/png');
+      done(png);
+    });
     await expect(canvasPng({ toBlob } as unknown as HTMLCanvasElement)).resolves.toBe(png);
     await expect(canvasPng({ toBlob: (done: BlobCallback) => done(null) } as HTMLCanvasElement)).rejects.toThrow('PNG encoding failed');
-    await expect(canvasPng({ toBlob: () => { throw new Error('allocation'); } } as unknown as HTMLCanvasElement)).rejects.toThrow('allocation');
+    await expect(
+      canvasPng({
+        toBlob: () => {
+          throw new Error('allocation');
+        },
+      } as unknown as HTMLCanvasElement),
+    ).rejects.toThrow('allocation');
   });
   it('crops map metres into source pixels and releases its rectangular output on success or failure', async () => {
     for (const fail of [false, true]) {
-      const source = { width: 1600, height: 1600 } as HTMLCanvasElement, drawImage = vi.fn();
+      const source = { width: 1600, height: 1600 } as HTMLCanvasElement,
+        drawImage = vi.fn();
       const canvas = { width: 0, height: 0, getContext: () => ({ drawImage }), toBlob: (done: BlobCallback) => done(fail ? null : new Blob(['png'])) };
       vi.stubGlobal('document', { createElement: () => canvas });
       try {
         const result = cropCanvasPng(source, { x: 100, y: 200, width: 8000, height: 8000 }, { x: 2100, y: 1200, width: 4000, height: 2000 }, { width: 3000, height: 1500 });
-        if (fail) await expect(result).rejects.toThrow('PNG encoding failed'); else await expect(result).resolves.toBeInstanceOf(Blob);
+        if (fail) await expect(result).rejects.toThrow('PNG encoding failed');
+        else await expect(result).resolves.toBeInstanceOf(Blob);
         expect(drawImage).toHaveBeenCalledWith(source, 400, 200, 800, 400, 0, 0, 3000, 1500);
-        expect(canvas.width).toBe(0); expect(canvas.height).toBe(0);
+        expect(canvas.width).toBe(0);
+        expect(canvas.height).toBe(0);
         expect(source.width).toBe(1600);
-      } finally { vi.unstubAllGlobals(); }
+      } finally {
+        vi.unstubAllGlobals();
+      }
     }
   });
 });

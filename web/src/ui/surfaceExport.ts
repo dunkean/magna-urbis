@@ -7,7 +7,11 @@ export function exportSurfaceInWorker(decor: Decor, scene: Building3dScene | und
   if (signal.aborted) return Promise.reject(new DOMException('Surface export cancelled', 'AbortError'));
   const worker = new Worker(new URL('./surfaceExport.worker.ts', import.meta.url), { type: 'module' });
   return new Promise((resolve, reject) => {
-    const finish = (error?: Error, binary?: ArrayBuffer) => { signal.removeEventListener('abort', abort); worker.terminate(); error ? reject(error) : resolve(binary!); };
+    const finish = (error?: Error, binary?: ArrayBuffer) => {
+      signal.removeEventListener('abort', abort);
+      worker.terminate();
+      error ? reject(error) : resolve(binary!);
+    };
     const abort = () => finish(new DOMException('Surface export cancelled', 'AbortError'));
     signal.addEventListener('abort', abort, { once: true });
     worker.onmessage = ({ data }) => {
@@ -17,6 +21,10 @@ export function exportSurfaceInWorker(decor: Decor, scene: Building3dScene | und
     };
     worker.onerror = event => finish(new Error(event.message || 'Surface export worker failed'));
     worker.onmessageerror = () => finish(new Error('Surface export transfer failed'));
-    try { worker.postMessage({ decor, scene }); } catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
+    try {
+      worker.postMessage({ decor, scene });
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }

@@ -3,8 +3,12 @@
  * (where plain `<a download>` / blob links do nothing and the host offers a "downloads" capability).
  */
 
-interface DownloadsCapability { save(o: { filename: string; data: Blob | string }): Promise<unknown> }
-interface ClaudeHost { use?: (name: string) => Promise<unknown> | unknown }
+interface DownloadsCapability {
+  save(o: { filename: string; data: Blob | string }): Promise<unknown>;
+}
+interface ClaudeHost {
+  use?: (name: string) => Promise<unknown> | unknown;
+}
 
 export type SaveOutcome = 'saved' | 'declined' | 'fallback';
 
@@ -37,7 +41,9 @@ export async function saveFile(filename: string, data: Blob | string, mime: stri
   try {
     const got = await host?.use?.('downloads');
     dl = (got as DownloadsCapability | null | undefined) ?? null;
-  } catch { dl = null; }
+  } catch {
+    dl = null;
+  }
   if (dl && typeof dl.save === 'function') {
     try {
       await dl.save({ filename, data });

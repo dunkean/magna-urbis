@@ -17,16 +17,17 @@ import { checkRivers, checkRoads } from './hydroCheck';
  */
 function audit(relief: Relief, river: RiverOpt, seeds: number[], size: SizeName, coasts: CoastOpt[]): string[] {
   const out: string[] = [];
-  for (const seed of seeds) for (const coast of coasts) {
-    const o = makeOptions({ seed: String(seed), relief, coast, river, size });
-    const root = new Rng('magna-urbis:' + o.seed);
-    const S = SIZE_PRESETS[size].mapSize;
-    const { terrain } = generateTerrain(o, root);
-    const site = chooseSite(terrain, o, S, root);
-    const rr = routeRoads(terrain, site, o, S, root);
-    const vs = [...checkRivers(terrain, { mapSize: S, river, widthK: 1 }), ...checkRoads(terrain, site, rr.roads, rr.bridges, S)];
-    for (const m of vs) out.push(`[${relief} ${river} ${size} seed ${seed} coast ${coast}] ${m}`);
-  }
+  for (const seed of seeds)
+    for (const coast of coasts) {
+      const o = makeOptions({ seed: String(seed), relief, coast, river, size });
+      const root = new Rng('magna-urbis:' + o.seed);
+      const S = SIZE_PRESETS[size].mapSize;
+      const { terrain } = generateTerrain(o, root);
+      const site = chooseSite(terrain, o, S, root);
+      const rr = routeRoads(terrain, site, o, S, root);
+      const vs = [...checkRivers(terrain, { mapSize: S, river, widthK: 1 }), ...checkRoads(terrain, site, rr.roads, rr.bridges, S)];
+      for (const m of vs) out.push(`[${relief} ${river} ${size} seed ${seed} coast ${coast}] ${m}`);
+    }
   return out;
 }
 

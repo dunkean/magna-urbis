@@ -5,11 +5,11 @@ import { BackgroundJob, PASS_ORDER, PASSES, PassState, ResourceCache, passKeys, 
 
 const revisions = { terrain: 1, roads: 2, landuse: 3, settlements: 4, names: 5, cities: { main: 6 } };
 const base = { mapStyle: 'parchment' as const };
-const keysOf = (a: AppearanceInput, v = revisions, mode: 'gpu' | 'cpu' = 'gpu', layers = {}) =>
-  passKeys({ r: resolveAppearance(a, base, { nativeCities: true }, 'view2d'), revisions: v, layers, mode, effective: 'e', forestEffective: 'f', worldSig: 'w' });
+const keysOf = (a: AppearanceInput, v = revisions, mode: 'gpu' | 'cpu' = 'gpu', layers = {}) => passKeys({ r: resolveAppearance(a, base, { nativeCities: true }, 'view2d'), revisions: v, layers, mode, effective: 'e', forestEffective: 'f', worldSig: 'w' });
 /** Passes a PassState would run when moving from appearance `a` to `b`. */
 async function reruns(a: AppearanceInput, b: AppearanceInput, v2 = revisions, mode: 'gpu' | 'cpu' = 'gpu'): Promise<PassName[]> {
-  const state = new PassState(), runners = Object.fromEntries(PASS_ORDER.map(name => [name, () => undefined])) as Record<PassName, () => void>;
+  const state = new PassState(),
+    runners = Object.fromEntries(PASS_ORDER.map(name => [name, () => undefined])) as Record<PassName, () => void>;
   await state.run(() => keysOf(a), runners);
   return state.run(() => keysOf(b, v2, mode), runners);
 }
@@ -22,10 +22,28 @@ describe('render passes', () => {
   });
   // The season also sets the water regime (dry beds, ice), so the water pass follows it.
   it('a season change repaints the vector map and the water, a lighting change only the terrain look', async () => {
-    const withEffects = (change: (c: CompositionRecipe) => void): AppearanceInput => { const composition = presetComposition('parchment'); change(composition); return { ...v2, composition }; };
+    const withEffects = (change: (c: CompositionRecipe) => void): AppearanceInput => {
+      const composition = presetComposition('parchment');
+      change(composition);
+      return { ...v2, composition };
+    };
     const plain = withEffects(() => undefined);
-    expect(await reruns(plain, withEffects(c => { c.effects.season = .9; }))).toEqual(['terrainLook', 'water', 'cartography']);
-    expect(await reruns(plain, withEffects(c => { c.effects.lighting.azimuth = 200; }))).toEqual(['terrainLook']);
+    expect(
+      await reruns(
+        plain,
+        withEffects(c => {
+          c.effects.season = 0.9;
+        }),
+      ),
+    ).toEqual(['terrainLook', 'water', 'cartography']);
+    expect(
+      await reruns(
+        plain,
+        withEffects(c => {
+          c.effects.lighting.azimuth = 200;
+        }),
+      ),
+    ).toEqual(['terrainLook']);
   });
   it('water colours re-run the look (shared uniform) and the water pass, never the upload, forest or cartography', async () => {
     const map: AppearanceInput = { style: 'parchment', terrainStyle: 'engraving', renderer: 'bench' };
@@ -38,12 +56,17 @@ describe('render passes', () => {
     expect(await reruns(v2, { ...v2, legend: true })).toEqual(['overlays']);
   });
   it('text edits touch only overlays on both raster and GPU grounds', () => {
-    for (const mode of ['cpu', 'gpu'] as const) for (const preset of ['cadastre', 'satellite', 'atlas'] as const) {
-      const composition = presetComposition(preset), a: AppearanceInput = { style: 'parchment', composition };
-      const before = keysOf(a, revisions, mode), next = structuredClone(composition); next.text.size = 1.6; next.text.groups.landmarks = false;
-      const after = keysOf({ ...a, composition: next }, revisions, mode);
-      expect(PASS_ORDER.filter(pass => before[pass] !== after[pass])).toEqual(['overlays']);
-    }
+    for (const mode of ['cpu', 'gpu'] as const)
+      for (const preset of ['cadastre', 'satellite', 'atlas'] as const) {
+        const composition = presetComposition(preset),
+          a: AppearanceInput = { style: 'parchment', composition };
+        const before = keysOf(a, revisions, mode),
+          next = structuredClone(composition);
+        next.text.size = 1.6;
+        next.text.groups.landmarks = false;
+        const after = keysOf({ ...a, composition: next }, revisions, mode);
+        expect(PASS_ORDER.filter(pass => before[pass] !== after[pass])).toEqual(['overlays']);
+      }
   });
   it('land use, roads and painted rebuild the cartography only', async () => {
     expect(await reruns(v2, { ...v2, landuse: false })).toEqual(['cartography']);
@@ -62,8 +85,12 @@ describe('render passes', () => {
     expect(keysOf(v2, revisions, 'gpu').forest).not.toBe(keysOf(v2, revisions, 'cpu').forest);
   });
   it('a failed pass keeps its key so it runs again', async () => {
-    const state = new PassState(), runners = Object.fromEntries(PASS_ORDER.map(name => [name, () => undefined])) as Record<PassName, () => void>;
-    let fail = true; runners.water = () => { if (fail) throw new Error('boom'); };
+    const state = new PassState(),
+      runners = Object.fromEntries(PASS_ORDER.map(name => [name, () => undefined])) as Record<PassName, () => void>;
+    let fail = true;
+    runners.water = () => {
+      if (fail) throw new Error('boom');
+    };
     await expect(state.run(() => keysOf(v2), runners)).rejects.toThrow('boom');
     fail = false;
     expect(await state.run(() => keysOf(v2), runners)).toEqual(['water', 'frame', 'cartography', 'overlays', 'semantic', 'city']);
@@ -72,23 +99,38 @@ describe('render passes', () => {
     // Forest race (satellite views without trees): a change that moves the forest key starts the live forest update,
     // the next control (labels off) calls set() again before it lands. That set() skips the forest pass, so the
     // update must still apply; the update it superseded must not.
-    const state = new PassState(), forest = new BackgroundJob(), applied: string[] = [];
+    const state = new PassState(),
+      forest = new BackgroundJob(),
+      applied: string[] = [];
     const releases: ((value: string) => void)[] = [];
     const runners = Object.fromEntries(PASS_ORDER.map(name => [name, () => undefined])) as Record<PassName, () => void>;
-    runners.forest = () => { forest.cancel(); forest.start(new Promise<string>(resolve => releases.push(resolve)), value => applied.push(value), () => {}, () => {}); };
+    runners.forest = () => {
+      forest.cancel();
+      forest.start(
+        new Promise<string>(resolve => releases.push(resolve)),
+        value => applied.push(value),
+        () => {},
+        () => {},
+      );
+    };
     const town = { ...revisions, cities: { main: 7 } };
     await state.run(() => keysOf(v2), runners);
     expect(await state.run(() => keysOf(v2, town), runners)).toContain('forest');
     expect(await state.run(() => keysOf({ ...v2, labels: false }, town), runners)).toEqual(['overlays']);
     expect(forest.running).toBeDefined();
-    releases[0]('old-field'); releases[1]('town-field'); await forest.running;
+    releases[0]('old-field');
+    releases[1]('town-field');
+    await forest.running;
     expect(applied).toEqual(['town-field']);
     expect(forest.running).toBeUndefined();
   });
   it('the resource cache reuses by key and evicts the oldest', () => {
-    const cache = new ResourceCache(2); let made = 0;
-    expect(cache.get('a', () => ++made)).toBe(1); expect(cache.get('a', () => ++made)).toBe(1);
-    cache.get('b', () => ++made); cache.get('c', () => ++made);
+    const cache = new ResourceCache(2);
+    let made = 0;
+    expect(cache.get('a', () => ++made)).toBe(1);
+    expect(cache.get('a', () => ++made)).toBe(1);
+    cache.get('b', () => ++made);
+    cache.get('c', () => ++made);
     expect(cache.get('a', () => ++made)).toBe(4);
   });
 });

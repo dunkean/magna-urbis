@@ -22,9 +22,18 @@ import { worldForRender } from './renderWorld';
 import { refreshCavernMask } from '../gen/terrain/caverns';
 import { DebugGeneration, debugConfigurationKey, type DebugStage } from '../gen/debugPipeline';
 
-export interface WorkerRequest { id: number; options: Options; debugStage?: DebugStage }
+export interface WorkerRequest {
+  id: number;
+  options: Options;
+  debugStage?: DebugStage;
+}
 export interface WorkerResponse {
-  id: number; world?: World; stats?: Record<string, number | string>; error?: string; ms?: number; /** progress message: the stage about to run */ stage?: string;
+  id: number;
+  world?: World;
+  stats?: Record<string, number | string>;
+  error?: string;
+  ms?: number;
+  /** progress message: the stage about to run */ stage?: string;
   /** legacy mode, lazy detail (M3c): the plan of one secondary settlement */
   detail?: { index: number; urban: NonNullable<World['urban']>; bridges: NonNullable<World['bridges']> };
   /** legacy mode, megacity: detailed quarters and quarters evicted from the cache */
@@ -43,7 +52,10 @@ let quarters: QuarterQueue | null = null;
 const genCache = createGenerationCache();
 let debugSession: DebugGeneration | null = null;
 function generateRequest(options: Options, debugStage: DebugStage | undefined, onStage: (stage: string) => void): World {
-  if (debugStage === undefined) { debugSession = null; return generate(options, onStage, { cache: genCache }); }
+  if (debugStage === undefined) {
+    debugSession = null;
+    return generate(options, onStage, { cache: genCache });
+  }
   if (debugStage === 0 || !debugSession || debugConfigurationKey(debugSession.options) !== debugConfigurationKey(options)) debugSession = new DebugGeneration(options);
   return debugSession.advance(debugStage, onStage, options);
 }
@@ -53,8 +65,11 @@ async function doRun(m: GRun): Promise<void> {
   const post = (r: GResponse): void => ctx.postMessage(r);
   try {
     const t0 = performance.now();
-    quarters?.stop(); quarters = null;
-    lastWorld = null; lastId = id; lastPort = port;
+    quarters?.stop();
+    quarters = null;
+    lastWorld = null;
+    lastId = id;
+    lastPort = port;
     await loadCoreWasm();
     const world = generateRequest(options, m.debugStage, (stage: string) => {
       post({ type: 'stage', id, stage });
@@ -62,10 +77,7 @@ async function doRun(m: GRun): Promise<void> {
     });
     lastWorld = world;
     port.postMessage({ type: 'world', gen: id, world: worldForRender(world), final: true, stage: 'done' } satisfies WorldMsg);
-    post({
-      type: 'done', id, ms: Math.round(performance.now() - t0), stats: world.stats,
-      meta: worldMeta(world),
-    });
+    post({ type: 'done', id, ms: Math.round(performance.now() - t0), stats: world.stats, meta: worldMeta(world) });
     // megacity: the old core's quarters are detailed in the background right away
     if (m.debugStage === undefined && world.urban?.macro) quarterQueue(id)?.prefetch();
   } catch (err) {
@@ -82,18 +94,24 @@ function quarterQueue(id: number): QuarterQueue | null {
   if (Number(lastWorld.stats['developer.stage'] ?? 4) < 4) return null;
   if (!quarters) {
     const port = lastPort;
-    quarters = new QuarterQueue(lastWorld, (layers, drop, st) => {
-      if (lastWorld?.options.biome === 'underdark-caverns' && lastId === id && (Object.keys(layers).length || drop.length)) {
-        const det = { ...(lastWorld.megaDetail ?? {}), ...layers };
-        for (const key of drop) delete det[key];
-        lastWorld = { ...lastWorld, megaDetail: det };
-        refreshCavernMask(lastWorld);
-      }
-      if (port) {
-        if (Object.keys(layers).length || drop.length) port.postMessage({ type: 'quarters', gen: id, layers, drop } satisfies QuarterMsg);
-        ctx.postMessage({ type: 'quartersDone', id, done: st.done, queued: st.queued, total: st.total, ms: st.ms, failed: st.failed } satisfies GResponse);
-      } else ctx.postMessage({ id, quarters: { layers, drop, done: st.done, queued: st.queued, total: st.total, failed: st.failed } } satisfies WorkerResponse);
-    }, 420, 150, createQuarterExecutor(lastWorld));
+    quarters = new QuarterQueue(
+      lastWorld,
+      (layers, drop, st) => {
+        if (lastWorld?.options.biome === 'underdark-caverns' && lastId === id && (Object.keys(layers).length || drop.length)) {
+          const det = { ...(lastWorld.megaDetail ?? {}), ...layers };
+          for (const key of drop) delete det[key];
+          lastWorld = { ...lastWorld, megaDetail: det };
+          refreshCavernMask(lastWorld);
+        }
+        if (port) {
+          if (Object.keys(layers).length || drop.length) port.postMessage({ type: 'quarters', gen: id, layers, drop } satisfies QuarterMsg);
+          ctx.postMessage({ type: 'quartersDone', id, done: st.done, queued: st.queued, total: st.total, ms: st.ms, failed: st.failed } satisfies GResponse);
+        } else ctx.postMessage({ id, quarters: { layers, drop, done: st.done, queued: st.queued, total: st.total, failed: st.failed } } satisfies WorkerResponse);
+      },
+      420,
+      150,
+      createQuarterExecutor(lastWorld),
+    );
   }
   return quarters;
 }
@@ -167,10 +185,13 @@ self.onmessage = async (e: MessageEvent<GRequest | WorkerRequest>) => {
   const post = (r: WorkerResponse): void => ctx.postMessage(r);
   try {
     const t0 = performance.now();
-    quarters?.stop(); quarters = null;
+    quarters?.stop();
+    quarters = null;
     await loadCoreWasm();
-    const world = generateRequest(options, debugStage, (stage) => post({ id, stage }));
-    lastWorld = world; lastId = id; lastPort = null;
+    const world = generateRequest(options, debugStage, stage => post({ id, stage }));
+    lastWorld = world;
+    lastId = id;
+    lastPort = null;
     post({ id, world, stats: world.stats, ms: Math.round(performance.now() - t0) });
   } catch (err) {
     post({ id, error: String((err as Error)?.stack ?? err) });

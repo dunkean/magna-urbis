@@ -8,12 +8,12 @@ import { lotRoleChoices, roleLabel } from '../src/render/cityRoles';
 /** City Bench per-item edits: persisted through the share JSON, injected only when present. */
 describe('city edits', () => {
   it('retains independent descendant architecture through the shared edit contract', () => {
-    let edits=setEdit(emptyEdits(),'quarters','2',{culture:'medina',buildingCulture:'byzantine',houseConfig:{seed:'quarter',overrides:{...defaultHouseConfig().overrides,floors:3}}});
-    edits=setEdit(edits,'parcels','p/2',{culture:'myconid-colony',houseConfig:{seed:'parcel',pack:'MYC-FUN'}});
-    const restored=normalizeEdits(JSON.parse(JSON.stringify(edits)));
+    let edits = setEdit(emptyEdits(), 'quarters', '2', { culture: 'medina', buildingCulture: 'byzantine', houseConfig: { seed: 'quarter', overrides: { ...defaultHouseConfig().overrides, floors: 3 } } });
+    edits = setEdit(edits, 'parcels', 'p/2', { culture: 'myconid-colony', houseConfig: { seed: 'parcel', pack: 'MYC-FUN' } });
+    const restored = normalizeEdits(JSON.parse(JSON.stringify(edits)));
     expect(restored).toEqual(edits);
-    expect(layoutWithEdits(defaultLayoutConfig(),restored).overrides?.quarters?.['2']).toMatchObject({culture:'medina',buildingCulture:'byzantine',houseConfig:{overrides:{floors:3}}});
-    expect(parcelWithEdits(defaultParcelConfig(),restored).overrides?.parcels?.['p/2']).toMatchObject({culture:'myconid-colony',houseConfig:{pack:'MYC-FUN'}});
+    expect(layoutWithEdits(defaultLayoutConfig(), restored).overrides?.quarters?.['2']).toMatchObject({ culture: 'medina', buildingCulture: 'byzantine', houseConfig: { overrides: { floors: 3 } } });
+    expect(parcelWithEdits(defaultParcelConfig(), restored).overrides?.parcels?.['p/2']).toMatchObject({ culture: 'myconid-colony', houseConfig: { pack: 'MYC-FUN' } });
   });
   it('round-trips quarter, lot and house edits and injects them into each stage', () => {
     let edits = setEdit(emptyEdits(), 'quarters', '3', { role: 'market', wealth: 2, tissue: 'grid' });
@@ -25,13 +25,15 @@ describe('city edits', () => {
     expect(restored.quarters['3'].wealth).toBe(1);
     expect(editCount(restored)).toBe(3);
     // Unedited stages send the strict contract unchanged.
-    const layout = defaultLayoutConfig(), parcels = defaultParcelConfig();
+    const layout = defaultLayoutConfig(),
+      parcels = defaultParcelConfig();
     expect(layoutWithEdits(layout, emptyEdits())).toBe(layout);
     expect((layoutWithEdits(layout, edits) as unknown as { overrides: unknown }).overrides).toEqual({ quarters: edits.quarters });
     expect((parcelWithEdits(parcels, edits) as unknown as { overrides: unknown }).overrides).toEqual({ parcels: edits.parcels });
     // House edits pin recipe and variant on that request only, without mutating it.
     const request = (id: string) => ({ id, config: { recipe: 'EUR-MED-B01', overrides: { variant: null, floors: 2 } } }) as unknown as PlacementRequest;
-    const originals = [request('p/12/building'), request('p/13/building')], before = JSON.stringify(originals);
+    const originals = [request('p/12/building'), request('p/13/building')],
+      before = JSON.stringify(originals);
     const styled = applyHouseEdits(originals, edits.buildings);
     expect(styled[0].config).toMatchObject({ recipe: 'EUR-MED-B02', overrides: { variant: 'default', floors: 2 } });
     expect(styled[1]).toBe(originals[1]);

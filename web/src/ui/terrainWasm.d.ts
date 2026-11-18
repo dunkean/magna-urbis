@@ -2,34 +2,86 @@
 declare module '*magna_urbis_wasm.js' {
   export default function init(options: { module_or_path: ArrayBuffer }): Promise<unknown>;
   export interface HydrologyOutput {
-    readonly stage_ms: Float64Array; readonly stage_labels: string;
-    readonly width: number; readonly resolution: number;
-    readonly receivers: Uint32Array; readonly accumulation: Float32Array; readonly basins: Uint32Array;
-    readonly raw_receivers: Uint32Array; readonly raw_accumulation: Float32Array; readonly raw_basins: Uint32Array;
-    readonly flat_labels: Uint32Array; readonly flat_rank: Uint32Array; readonly external_inflow_area: number;
-    readonly raw_filled: Float32Array; readonly raw_drainage_height: Float32Array;
-    readonly breach_count: number; readonly breach_cut_volume_m3: number; readonly avoided_fill_volume_m3: number;
-    readonly filled: Float32Array; readonly lake_depth: Float32Array; readonly lake_labels: Uint32Array;
-    readonly drainage_height: Float32Array; readonly surface_height: Float32Array; readonly adjusted_height: Float32Array;
-    readonly river_points: Float32Array; readonly river_offsets: Uint32Array; readonly river_meta: Uint32Array; readonly river_flare?: Float32Array;
-    readonly node_points: Float32Array; readonly node_meta: Uint32Array;
-    readonly lake_points: Float32Array; readonly lake_offsets: Uint32Array;
-    readonly lake_ring_meta: Uint32Array; readonly lake_meta: Float32Array;
-    readonly lake_closed: Uint32Array; readonly water_field: Float32Array;
+    readonly stage_ms: Float64Array;
+    readonly stage_labels: string;
+    readonly width: number;
+    readonly resolution: number;
+    readonly receivers: Uint32Array;
+    readonly accumulation: Float32Array;
+    readonly basins: Uint32Array;
+    readonly raw_receivers: Uint32Array;
+    readonly raw_accumulation: Float32Array;
+    readonly raw_basins: Uint32Array;
+    readonly flat_labels: Uint32Array;
+    readonly flat_rank: Uint32Array;
+    readonly external_inflow_area: number;
+    readonly raw_filled: Float32Array;
+    readonly raw_drainage_height: Float32Array;
+    readonly breach_count: number;
+    readonly breach_cut_volume_m3: number;
+    readonly avoided_fill_volume_m3: number;
+    readonly filled: Float32Array;
+    readonly lake_depth: Float32Array;
+    readonly lake_labels: Uint32Array;
+    readonly drainage_height: Float32Array;
+    readonly surface_height: Float32Array;
+    readonly adjusted_height: Float32Array;
+    readonly river_points: Float32Array;
+    readonly river_offsets: Uint32Array;
+    readonly river_meta: Uint32Array;
+    readonly river_flare?: Float32Array;
+    readonly node_points: Float32Array;
+    readonly node_meta: Uint32Array;
+    readonly lake_points: Float32Array;
+    readonly lake_offsets: Uint32Array;
+    readonly lake_ring_meta: Uint32Array;
+    readonly lake_meta: Float32Array;
+    readonly lake_closed: Uint32Array;
+    readonly water_field: Float32Array;
     free(): void;
   }
   export class HydrologyEngine {
     constructor(seed: string, width: number, resolution: number, height: Float32Array, seaEnabled: boolean);
     static with_drainage(seed: string, width: number, resolution: number, height: Float32Array, seaEnabled: boolean, filled: Float32Array, receivers: Uint32Array, accumulation: Float32Array): HydrologyEngine;
-    filled(): Float32Array; receivers(): Uint32Array; accumulation(): Float32Array;
-    generate(main: string, density: number, wetness: number, lakes: string, meanders: string, meanderIntensity: number, estuary: string, widthScale: number, incision: number, minLakeArea: number, lakeAbundance?: number, lakeCoverage?: number, maxLakeArea?: number, depressionPolicy?: string, maxBreachDepth?: number, maxBreachLength?: number, minLakeDepth?: number, temperature?: number, precipitation?: number, coastalStreams?: number): HydrologyOutput;
+    filled(): Float32Array;
+    receivers(): Uint32Array;
+    accumulation(): Float32Array;
+    generate(
+      main: string,
+      density: number,
+      wetness: number,
+      lakes: string,
+      meanders: string,
+      meanderIntensity: number,
+      estuary: string,
+      widthScale: number,
+      incision: number,
+      minLakeArea: number,
+      lakeAbundance?: number,
+      lakeCoverage?: number,
+      maxLakeArea?: number,
+      depressionPolicy?: string,
+      maxBreachDepth?: number,
+      maxBreachLength?: number,
+      minLakeDepth?: number,
+      temperature?: number,
+      precipitation?: number,
+      coastalStreams?: number,
+    ): HydrologyOutput;
     free(): void;
   }
   export interface TerrainOutput {
-    readonly x: number; readonly y: number; readonly width: number; readonly resolution: number;
-    readonly min_height: number; readonly max_height: number;
-    readonly height: Float32Array; readonly cave_mask: Uint8Array;
-    readonly normal_x: Float32Array; readonly normal_y: Float32Array; readonly normal_z: Float32Array;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly resolution: number;
+    readonly min_height: number;
+    readonly max_height: number;
+    readonly height: Float32Array;
+    readonly cave_mask: Uint8Array;
+    readonly normal_x: Float32Array;
+    readonly normal_y: Float32Array;
+    readonly normal_z: Float32Array;
     free(): void;
   }
   export function generate_terrain(seed: string, width: number, relief: string, erosion: number, resolution: number): TerrainOutput;
@@ -41,8 +93,14 @@ declare module '*magna_urbis_wasm.js' {
     free(): void;
   }
   export class Flood {
-    take_filled(): Float32Array; take_receiver(): Int32Array; take_order(): Int32Array; take_accumulation(): Float32Array;
-    take_basin(): Int32Array; take_sea(): Uint8Array; readonly outlets: number; free(): void;
+    take_filled(): Float32Array;
+    take_receiver(): Int32Array;
+    take_order(): Int32Array;
+    take_accumulation(): Float32Array;
+    take_basin(): Int32Array;
+    take_sea(): Uint8Array;
+    readonly outlets: number;
+    free(): void;
   }
   export function flood_hydrology(height: Float32Array, n: number, cellArea: number, weight: Float32Array, outlet: Uint8Array, loss: Float32Array): Flood;
   export function erode_relief(height: Float32Array, n: number, cellArea: number, steps: number, deposit: number): void;
@@ -56,7 +114,8 @@ declare module '*magna_urbis_wasm.js' {
     static prepare_environment(seed: string, width: number, relief: string, erosion: number, motif: number): Float32Array;
     static prepare_environment_at_resolution(seed: string, width: number, relief: string, erosion: number, motif: number, n: number): Float32Array;
     constructor(seed: string, map_width: number, relief: string, erosion: number, motif_size: number, mountain_mix?: number, environment?: string);
-    readonly min_height: number; readonly max_height: number;
+    readonly min_height: number;
+    readonly max_height: number;
     sampling_field(): Float32Array;
     sampling_base_field(): Float32Array;
     source_resolution(): number;
@@ -81,7 +140,9 @@ declare module '*magna_urbis_wasm.js' {
     static erosion(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number): GenerationNoisePlan;
     static erosion_at_resolution(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, n: number): GenerationNoisePlan;
     constructor(seed: string, width: number, motif: number);
-    parameters(): Float32Array; permutations(): Uint32Array; gradients(): Float32Array;
+    parameters(): Float32Array;
+    permutations(): Uint32Array;
+    gradients(): Float32Array;
     free(): void;
   }
 }

@@ -4,11 +4,17 @@ import { decodeCityDisplayBuffers, decodeCitySiteVisuals, polygonRings, siteVisu
 
 // Written by the Rust test `urban::display::tests::site_display_buffers_v2_split_programmes_and_drop_housing_need`.
 const fixture = (name: string) => new URL(`./fixtures/${name}`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
-const load = (name: string): ArrayBuffer => { const b = readFileSync(fixture(name)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer; };
+const load = (name: string): ArrayBuffer => {
+  const b = readFileSync(fixture(name));
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+};
 describe('city site visuals', () => {
-  const v1 = 'site-visuals-v1.bin', v2 = 'site-visuals-v2.bin';
+  const v1 = 'site-visuals-v1.bin',
+    v2 = 'site-visuals-v2.bin';
   it.skipIf(!existsSync(fixture(v1)) || !existsSync(fixture(v2)))('decodes version 2 to version 1 without the housing need', () => {
-    const old = decodeCitySiteVisuals(load(v1)), buffer = load(v2), sites = decodeCitySiteVisuals(buffer);
+    const old = decodeCitySiteVisuals(load(v1)),
+      buffer = load(v2),
+      sites = decodeCitySiteVisuals(buffer);
     expect(siteVisualsPackOf(sites)).toBe(buffer);
     expect(sites.length).toBe(2);
     expect(old[0].programme?.housing_floor_need).toEqual({ requested_m2: 99 });
@@ -28,7 +34,8 @@ describe('city display buffers', () => {
     const bytes = readFileSync(sample);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const d = decodeCityDisplayBuffers(buffer);
-    const parcels = d.parcels.polys.length - 1, blocks = d.blocks.polys.length - 1;
+    const parcels = d.parcels.polys.length - 1,
+      blocks = d.blocks.polys.length - 1;
     expect(parcels).toBeGreaterThan(10000);
     expect(blocks).toBeGreaterThan(1000);
     expect(d.parcels.use.length).toBe(parcels);

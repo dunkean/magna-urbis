@@ -4,7 +4,7 @@ import { area, interiorAngle, isSimple, orientPos } from '../geo/poly';
 import { mpArea, tryDifference } from '../geo/bool';
 import { MAX_ASPECT, MIN_BW, shapeOf } from './buildings';
 
-const MIN_ANGLE = 12 * Math.PI / 180;
+const MIN_ANGLE = (12 * Math.PI) / 180;
 
 /** Bevel the tiny convex tips left where a Persian courtyard/passage cut meets an oblique lot wall.
  * Keep the house and all its metadata: only remove local corner triangles, never grow into a court or a lane.
@@ -19,15 +19,22 @@ export function chamferPersianHouse(poly: Polygon): Polygon {
   const result: Polygon = [];
   for (let i = 0; i < ring.length; i++) {
     const p = ring[i];
-    if (!acute[i]) { result.push(p); continue; }
-    const a = ring[(i + ring.length - 1) % ring.length], b = ring[(i + 1) % ring.length];
-    const la = dist(a, p), lb = dist(b, p), setback = Math.min(0.5, 0.25 * la, 0.25 * lb);
+    if (!acute[i]) {
+      result.push(p);
+      continue;
+    }
+    const a = ring[(i + ring.length - 1) % ring.length],
+      b = ring[(i + 1) % ring.length];
+    const la = dist(a, p),
+      lb = dist(b, p),
+      setback = Math.min(0.5, 0.25 * la, 0.25 * lb);
     if (setback < 1e-6) return poly;
-    result.push({ x: p.x + (a.x - p.x) * setback / la, y: p.y + (a.y - p.y) * setback / la });
-    result.push({ x: p.x + (b.x - p.x) * setback / lb, y: p.y + (b.y - p.y) * setback / lb });
+    result.push({ x: p.x + ((a.x - p.x) * setback) / la, y: p.y + ((a.y - p.y) * setback) / la });
+    result.push({ x: p.x + ((b.x - p.x) * setback) / lb, y: p.y + ((b.y - p.y) * setback) / lb });
   }
   if (!isSimple(result) || result.some((_, i) => interiorAngle(result, i) < MIN_ANGLE)) return poly;
-  const loss = area(poly) - area(result), shape = shapeOf(result);
+  const loss = area(poly) - area(result),
+    shape = shapeOf(result);
   // Triangle area = .5 * setback² * sin(angle), with setback <= .5 m and angle < 12°.
   if (loss < -1e-6 || loss > count * 0.125 * Math.sin(MIN_ANGLE) + 1e-6 || shape.w < MIN_BW || shape.asp > MAX_ASPECT) return poly;
   const outside = tryDifference(result, poly);

@@ -25,7 +25,11 @@ import { dryPieces } from './waterland';
 
 export const POP_RANGE: Record<SizeName, [number, number]> = {
   // Inside each demographic band (sizeForPop): a drawn population never lands in another class.
-  hamlet: [40, 140], village: [320, 900], town: [2200, 5000], city: [20000, 30000], metropolis: [100000, 150000],
+  hamlet: [40, 140],
+  village: [320, 900],
+  town: [2200, 5000],
+  city: [20000, 30000],
+  metropolis: [100000, 150000],
 };
 
 export function choosePopulation(size: SizeName, override: number, rng: Rng): number {
@@ -59,16 +63,17 @@ export interface PhasePlan {
   pop: number;
 }
 
-export const zonesFor = (n: number): UrbanZone[] =>
-  n === 1 ? ['core'] : n === 2 ? ['core', 'middle'] : ['core', 'middle', ...Array.from({ length: n - 2 }, () => 'edge' as UrbanZone)];
+export const zonesFor = (n: number): UrbanZone[] => (n === 1 ? ['core'] : n === 2 ? ['core', 'middle'] : ['core', 'middle', ...Array.from({ length: n - 2 }, () => 'edge' as UrbanZone)]);
 
 const SHARES: Record<number, number[]> = { 1: [1], 2: [0.42, 0.58], 3: [0.24, 0.36, 0.4], 4: [0.13, 0.22, 0.3, 0.35] };
 
 /** Smoothed outer regions (with holes) where `v > level`. */
 export function isoRegions(v: Float32Array, n: number, cell: number, level: number, minArea: number, win?: { x0: number; y0: number; w: number; h: number }): PolyH[] {
   // (win: v is a w × h window at cell offset (x0, y0) of the n × n grid; same points as on the whole grid)
-  const W = win ? win.w : n, Hh = win ? win.h : n;
-  const pw = W + 2, ph = Hh + 2;
+  const W = win ? win.w : n,
+    Hh = win ? win.h : n;
+  const pw = W + 2,
+    ph = Hh + 2;
   const pad = new Float32Array(pw * ph).fill(level - 1e6);
   for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) pad[(y + 1) * pw + x + 1] = v[y * W + x];
   const paths = marchingSquares(pad, pw, ph, level, cell, -0.5 * cell, -0.5 * cell, win ? win.x0 : 0, win ? win.y0 : 0);
@@ -88,11 +93,22 @@ export function isoRegions(v: Float32Array, n: number, cell: number, level: numb
   });
   const out: PolyH[] = [];
   const outerIdx: number[] = [];
-  loops.forEach((l, i) => { if (depth[i] % 2 === 0 && areas[i] >= minArea) { outerIdx.push(i); out.push({ outer: orientPos(l), holes: [] }); } });
+  loops.forEach((l, i) => {
+    if (depth[i] % 2 === 0 && areas[i] >= minArea) {
+      outerIdx.push(i);
+      out.push({ outer: orientPos(l), holes: [] });
+    }
+  });
   loops.forEach((l, i) => {
     if (depth[i] % 2 === 1 && areas[i] >= 1500) {
-      let bi = -1, ba = Infinity;
-      outerIdx.forEach((oi, k) => { if (areas[oi] > areas[i] && areas[oi] < ba && pointInRing(loops[oi], l[0])) { ba = areas[oi]; bi = k; } });
+      let bi = -1,
+        ba = Infinity;
+      outerIdx.forEach((oi, k) => {
+        if (areas[oi] > areas[i] && areas[oi] < ba && pointInRing(loops[oi], l[0])) {
+          ba = areas[oi];
+          bi = k;
+        }
+      });
       if (bi >= 0) out[bi].holes.push(orientPos(l));
     }
   });
@@ -103,13 +119,23 @@ export function isoRegions(v: Float32Array, n: number, cell: number, level: numb
 function keepMain(m: MultiPoly, center: Vec2, minFrac: number, prev: MultiPoly = []): MultiPoly {
   if (!m.length) return m;
   const tot = mpArea(m);
-  let main = m[0], bd = Infinity;
+  let main = m[0],
+    bd = Infinity;
   for (const ph of m) {
-    if (pointInRing(ph.outer, center)) { main = ph; bd = -1; break; }
-    for (const q of ph.outer) { const d = dist(q, center); if (d < bd) { bd = d; main = ph; } }
+    if (pointInRing(ph.outer, center)) {
+      main = ph;
+      bd = -1;
+      break;
+    }
+    for (const q of ph.outer) {
+      const d = dist(q, center);
+      if (d < bd) {
+        bd = d;
+        main = ph;
+      }
+    }
   }
-  return m.filter((ph) => ph === main || area(ph.outer) >= minFrac * tot
-    || (prev.length > 0 && mpArea(intersection(ph, prev)) > 0.05));
+  return m.filter(ph => ph === main || area(ph.outer) >= minFrac * tot || (prev.length > 0 && mpArea(intersection(ph, prev)) > 0.05));
 }
 
 /** Travel-cost field modulated by noise; Infinity where unbuildable. */
@@ -130,10 +156,15 @@ export function buildField(ctx: UrbanCtx, rng: Rng, steepMax = 0.2, blocked?: Ui
   // the growth rasters depend only on the context: computed once per town (the planner re-plans several times)
   let cache = GROWTH_CACHE.get(ctx);
   if (!cache) {
-    let dRoad: Float32Array | null = null, dBank: Float32Array | null = null;
+    let dRoad: Float32Array | null = null,
+      dBank: Float32Array | null = null;
     if (G.road > 0) {
       const m = new Uint8Array(N);
-      for (const rd of ctx.world.roads ?? []) if (rd.kind !== 'track') forCellsNearPolyline(rd.path, n, n, cell, cell * 0.7, (i) => { m[i] = 1; });
+      for (const rd of ctx.world.roads ?? [])
+        if (rd.kind !== 'track')
+          forCellsNearPolyline(rd.path, n, n, cell, cell * 0.7, i => {
+            m[i] = 1;
+          });
       dRoad = distanceField(m, n, n, cell).dist;
     }
     if (G.water > 0) {
@@ -150,41 +181,62 @@ export function buildField(ctx: UrbanCtx, rng: Rng, steepMax = 0.2, blocked?: Ui
   const hab = site.fields.hab;
   const wl = G.wavelength;
   const ang = mainRoadAngleCtx(ctx);
-  const ea = Math.cos(ang), eb = Math.sin(ang);
+  const ea = Math.cos(ang),
+    eb = Math.sin(ang);
   // the field before the steepness / blocked masks depends on the context and the stream only: computed once
   // (the planner asks again with other steepness limits and blocked cells)
   // (a bounded cost field: only its box can be finite)
   const cbox = FINITE_BOX.get(site.cost.data);
-  const bx0 = cbox ? cbox.x0 : 0, bx1 = cbox ? cbox.x1 : n - 1, by0 = cbox ? cbox.y0 : 0, by1 = cbox ? cbox.y1 : n - 1;
+  const bx0 = cbox ? cbox.x0 : 0,
+    bx1 = cbox ? cbox.x1 : n - 1,
+    by0 = cbox ? cbox.y0 : 0,
+    by1 = cbox ? cbox.y1 : n - 1;
   if (cbox) f.fill(Infinity);
   let bm = BASE_CACHE.get(ctx);
-  if (!bm) { bm = new Map(); BASE_CACHE.set(ctx, bm); }
+  if (!bm) {
+    bm = new Map();
+    BASE_CACHE.set(ctx, bm);
+  }
   const base = bm.get(rng.seedKey);
   const mask = (): void => {
     for (let yy = by0; yy <= by1; yy++) for (let i = yy * n + bx0, e = yy * n + bx1; i <= e; i++) if ((slopeS[i] > 0.3 && slopeL[i] > steepMax) || (blocked && blocked[i])) f[i] = Infinity;
   };
-  if (base) { f.set(base); mask(); }
-  if (!base) for (let yy = by0; yy <= by1; yy++) for (let xx = bx0; xx <= bx1; xx++) {
-    const i = yy * n + xx;
-    const x = ((i % n) + 0.5) * cell, y = (((i / n) | 0) + 0.5) * cell;
-    const c = site.cost.data[i];
-    const border = x < 0.03 * S || y < 0.03 * S || x > 0.97 * S || y > 0.97 * S;
-    const steep = slopeS[i] > 0.3;
-    if (terrain.water[i] || !isFinite(c) || border) { f[i] = Infinity; continue; }
-    let k = 1 + G.noise * noise.fbm(x / wl, y / wl, 2);
-    if (dRoad) k *= 1 - G.road * Math.exp(-dRoad[i] / 55);
-    // the waterfront attracts, but wet low ground (floodplain, marsh) repels
-    if (dBank) k *= 1 - G.water * Math.exp(-dBank[i] / 70) * (hab[i] > 2.5 ? 1 : -0.6);
-    if (G.wet > 0 && hab[i] < 2) k *= 1 + G.wet * (2 - Math.max(0, hab[i])) / 2;
-    if (G.elongation > 0) {
-      // anisotropic distance: cheaper along the main road axis
-      const dx = x - P0.x, dy = y - P0.y, r = Math.hypot(dx, dy) || 1;
-      const along = Math.abs((dx * ea + dy * eb) / r);
-      k *= 1 - G.elongation * 0.45 * along * along;
-    }
-    f[i] = c * k + 40 * Math.max(0, (steep ? slopeL[i] : slopeS[i]) - 0.1);
+  if (base) {
+    f.set(base);
+    mask();
   }
-  if (!base) { bm.set(rng.seedKey, f.slice()); mask(); }
+  if (!base)
+    for (let yy = by0; yy <= by1; yy++)
+      for (let xx = bx0; xx <= bx1; xx++) {
+        const i = yy * n + xx;
+        const x = ((i % n) + 0.5) * cell,
+          y = (((i / n) | 0) + 0.5) * cell;
+        const c = site.cost.data[i];
+        const border = x < 0.03 * S || y < 0.03 * S || x > 0.97 * S || y > 0.97 * S;
+        const steep = slopeS[i] > 0.3;
+        if (terrain.water[i] || !isFinite(c) || border) {
+          f[i] = Infinity;
+          continue;
+        }
+        let k = 1 + G.noise * noise.fbm(x / wl, y / wl, 2);
+        if (dRoad) k *= 1 - G.road * Math.exp(-dRoad[i] / 55);
+        // the waterfront attracts, but wet low ground (floodplain, marsh) repels
+        if (dBank) k *= 1 - G.water * Math.exp(-dBank[i] / 70) * (hab[i] > 2.5 ? 1 : -0.6);
+        if (G.wet > 0 && hab[i] < 2) k *= 1 + (G.wet * (2 - Math.max(0, hab[i]))) / 2;
+        if (G.elongation > 0) {
+          // anisotropic distance: cheaper along the main road axis
+          const dx = x - P0.x,
+            dy = y - P0.y,
+            r = Math.hypot(dx, dy) || 1;
+          const along = Math.abs((dx * ea + dy * eb) / r);
+          k *= 1 - G.elongation * 0.45 * along * along;
+        }
+        f[i] = c * k + 40 * Math.max(0, (steep ? slopeL[i] : slopeS[i]) - 0.1);
+      }
+  if (!base) {
+    bm.set(rng.seedKey, f.slice());
+    mask();
+  }
   // bipolar growth: a second nucleus (a burg across the river, an abbey or castle burg) whose region merges
   if (G.bipolar && rng.fork('bipolar').chance(G.bipolar)) {
     const br = rng.fork('bipolar2');
@@ -194,12 +246,14 @@ export function buildField(ctx: UrbanCtx, rng: Rng, steepMax = 0.2, blocked?: Ui
     const qi = Math.min(n - 1, Math.max(0, Math.floor(q.y / cell))) * n + Math.min(n - 1, Math.max(0, Math.floor(q.x / cell)));
     if (isFinite(f[qi])) {
       const off = R * br.range(0.35, 0.55);
-      for (let yy = by0; yy <= by1; yy++) for (let i = yy * n + bx0, e = yy * n + bx1; i <= e; i++) {
-        if (!isFinite(f[i])) continue;
-        const x = ((i % n) + 0.5) * cell, y = (((i / n) | 0) + 0.5) * cell;
-        const d2 = off + Math.hypot(x - q.x, y - q.y) * 1.1;
-        if (d2 < f[i]) f[i] = d2;
-      }
+      for (let yy = by0; yy <= by1; yy++)
+        for (let i = yy * n + bx0, e = yy * n + bx1; i <= e; i++) {
+          if (!isFinite(f[i])) continue;
+          const x = ((i % n) + 0.5) * cell,
+            y = (((i / n) | 0) + 0.5) * cell;
+          const d2 = off + Math.hypot(x - q.x, y - q.y) * 1.1;
+          if (d2 < f[i]) f[i] = d2;
+        }
     }
   }
   if (cbox) FINITE_BOX.set(f, cbox);
@@ -213,9 +267,15 @@ const BASE_CACHE = new WeakMap<UrbanCtx, Map<string, Float32Array>>();
 const TERRAIN_CACHE = new WeakMap<object, Map<string, Float32Array>>();
 function terrainRaster(terrain: UrbanCtx['terrain'], key: string, make: () => Float32Array): Float32Array {
   let m = TERRAIN_CACHE.get(terrain);
-  if (!m) { m = new Map(); TERRAIN_CACHE.set(terrain, m); }
+  if (!m) {
+    m = new Map();
+    TERRAIN_CACHE.set(terrain, m);
+  }
   let v = m.get(key);
-  if (!v) { v = make(); m.set(key, v); }
+  if (!v) {
+    v = make();
+    m.set(key, v);
+  }
   return v;
 }
 const GROWTH_CACHE = new WeakMap<UrbanCtx, { dRoad: Float32Array | null; dBank: Float32Array | null; slopeL: Float32Array }>();
@@ -223,18 +283,25 @@ const GROWTH_CACHE = new WeakMap<UrbanCtx, { dRoad: Float32Array | null; dBank: 
 /** Main road direction at the center (radians). */
 function mainRoadAngleCtx(ctx: UrbanCtx): number {
   const c = ctx.center;
-  let best = 0, bl = -1;
+  let best = 0,
+    bl = -1;
   for (const rd of ctx.world.roads ?? []) {
     if (rd.kind === 'track') continue;
     const pl = rd.path;
     if (Math.hypot(pl[pl.length - 1].x - c.x, pl[pl.length - 1].y - c.y) > 10) continue;
     const q = pl[Math.max(0, pl.length - 12)];
-    if (pl.length > bl) { bl = pl.length; best = Math.atan2(q.y - c.y, q.x - c.x); }
+    if (pl.length > bl) {
+      bl = pl.length;
+      best = Math.atan2(q.y - c.y, q.x - c.x);
+    }
   }
   return best;
 }
 /** Rough urban area of the settlement (m²) from the context window. */
-const estAreaOf = (ctx: UrbanCtx): number => { const R = (ctx.win.x1 - ctx.win.x0) / 2; return Math.PI * Math.max(100, (R - 450) / 2.6) ** 2; };
+const estAreaOf = (ctx: UrbanCtx): number => {
+  const R = (ctx.win.x1 - ctx.win.x0) / 2;
+  return Math.PI * Math.max(100, (R - 450) / 2.6) ** 2;
+};
 
 /** Threshold of f such that the region {f < thr} covers `targetArea` m² (from a sorted list). */
 function thresholdFor(sorted: Float32Array, cell: number, targetArea: number): number {
@@ -250,7 +317,11 @@ function thresholdFor(sorted: Float32Array, cell: number, targetArea: number): n
  * a phase region never claims disconnected land, and on scarce land it grows along valleys instead.
  * `sorted` holds the levels of buildable cells, so thresholds are chosen on the nucleus component only.
  */
-export interface PhaseField { f: Float32Array; lv: Float32Array; sorted: Float32Array }
+export interface PhaseField {
+  f: Float32Array;
+  lv: Float32Array;
+  sorted: Float32Array;
+}
 
 export function phaseField(ctx: UrbanCtx, f: Float32Array): PhaseField {
   const { n } = ctx;
@@ -259,21 +330,31 @@ export function phaseField(ctx: UrbanCtx, f: Float32Array): PhaseField {
   // water is crossed only at the road bridges: land beyond water without a street crossing cannot be urbanized
   const bridgeCells = new Uint8Array(N);
   const bridgeList: number[] = [];
-  for (const b of ctx.world.bridges ?? []) forCellsNearPolyline([b.a, b.b], n, n, ctx.cell, Math.max(b.width, 6) + ctx.cell, (i) => { bridgeCells[i] = 1; bridgeList.push(i); });
+  for (const b of ctx.world.bridges ?? [])
+    forCellsNearPolyline([b.a, b.b], n, n, ctx.cell, Math.max(b.width, 6) + ctx.cell, i => {
+      bridgeCells[i] = 1;
+      bridgeList.push(i);
+    });
   // (f is Infinity outside its box when it has one: the passable cells are the box's and the bridges')
   const fb = FINITE_BOX.get(f) ?? { x0: 0, y0: 0, x1: n - 1, y1: n - 1 };
   const pass = (i: number) => isFinite(f[i]) || (water[i] !== 0 && bridgeCells[i] === 1);
   const lv = new Float32Array(N).fill(Infinity);
   // start at the center cell, or the nearest buildable cell
-  const cx = Math.min(n - 1, Math.max(0, Math.floor(ctx.center.x / ctx.cell))), cy = Math.min(n - 1, Math.max(0, Math.floor(ctx.center.y / ctx.cell)));
+  const cx = Math.min(n - 1, Math.max(0, Math.floor(ctx.center.x / ctx.cell))),
+    cy = Math.min(n - 1, Math.max(0, Math.floor(ctx.center.y / ctx.cell)));
   let start = cy * n + cx;
   if (!isFinite(f[start])) {
     let bd = Infinity;
     const R = Math.ceil(150 / ctx.cell);
-    for (let y = Math.max(0, cy - R); y <= Math.min(n - 1, cy + R); y++) for (let x = Math.max(0, cx - R); x <= Math.min(n - 1, cx + R); x++) {
-      const i = y * n + x, d = (x - cx) ** 2 + (y - cy) ** 2;
-      if (isFinite(f[i]) && d < bd) { bd = d; start = i; }
-    }
+    for (let y = Math.max(0, cy - R); y <= Math.min(n - 1, cy + R); y++)
+      for (let x = Math.max(0, cx - R); x <= Math.min(n - 1, cx + R); x++) {
+        const i = y * n + x,
+          d = (x - cx) ** 2 + (y - cy) ** 2;
+        if (isFinite(f[i]) && d < bd) {
+          bd = d;
+          start = i;
+        }
+      }
   }
   if (pass(start)) {
     // (the levels are exact minimax values of f — no arithmetic — so any processing order gives the same lv)
@@ -283,20 +364,26 @@ export function phaseField(ctx: UrbanCtx, f: Float32Array): PhaseField {
     const heap = new MinHeap<number>();
     lv[start] = isFinite(f[start]) ? f[start] : 0;
     heap.push(start, lv[start]);
-    const DX = D8.map((d) => d[0]), DY = D8.map((d) => d[1]);
+    const DX = D8.map(d => d[0]),
+      DY = D8.map(d => d[1]);
     while (heap.size) {
       const key = heap.peekKey();
       const c = heap.pop()!;
       if (key > lv[c]) continue;
-      const x0 = c % n, y0 = (c / n) | 0;
+      const x0 = c % n,
+        y0 = (c / n) | 0;
       for (let k = 0; k < 8; k++) {
-        const x = x0 + DX[k], y = y0 + DY[k];
+        const x = x0 + DX[k],
+          y = y0 + DY[k];
         if (x < 0 || y < 0 || x >= n || y >= n) continue;
         const j = y * n + x;
         if (!ok[j]) continue;
         const fj = f[j];
         const l = fj > key && fj !== Infinity ? fj : key;
-        if (l < lv[j]) { lv[j] = l; heap.push(j, l); }
+        if (l < lv[j]) {
+          lv[j] = l;
+          heap.push(j, l);
+        }
       }
     }
   }
@@ -311,7 +398,8 @@ export const componentArea = (fld: PhaseField, cell: number): number => fld.sort
 export function regionForArea(ctx: UrbanCtx, fld: PhaseField, targetArea: number, closing = 0): MultiPoly {
   const { f, lv, sorted } = fld;
   const thr = thresholdFor(sorted, ctx.cell, targetArea);
-  const n = ctx.n, cell = ctx.cell;
+  const n = ctx.n,
+    cell = ctx.cell;
   const cap = thr * 1.6 + 120;
   const rad = Math.max(1, Math.round(22 / cell));
   const rad2 = Math.max(1, Math.round(12 / cell));
@@ -325,23 +413,35 @@ export function regionForArea(ctx: UrbanCtx, fld: PhaseField, targetArea: number
   // every d1 ≤ closing is found through window cells; the window border cells are `outside` sources for d2 on
   // both, which seals d2 inside the window; second blur), each window cell gets the same value as on the whole
   // grid, and cells outside the window would only hold constants (no isoline).
-  let bx0 = n, by0 = n, bx1 = -1, by1 = -1;
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const xv = fx(y * n + x);
-    if (!(xv < cap)) continue;
-    if (x < bx0) bx0 = x;
-    if (x > bx1) bx1 = x;
-    if (y < by0) by0 = y;
-    if (y > by1) by1 = y;
-  }
+  let bx0 = n,
+    by0 = n,
+    bx1 = -1,
+    by1 = -1;
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const xv = fx(y * n + x);
+      if (!(xv < cap)) continue;
+      if (x < bx0) bx0 = x;
+      if (x > bx1) bx1 = x;
+      if (y < by0) by0 = y;
+      if (y > by1) by1 = y;
+    }
   const bb = bx1 < 0 ? { x0: 0, y0: 0, x1: n - 1, y1: n - 1 } : { x0: bx0, y0: by0, x1: bx1, y1: by1 };
   const M = Math.max(4 * rad + 1, closing > 0 ? 2 * rad + Math.floor(closing / cell) + 4 * rad2 + 3 : 0) + 2;
-  const wx0 = Math.max(0, bb.x0 - M), wy0 = Math.max(0, bb.y0 - M), wx1 = Math.min(n - 1, bb.x1 + M), wy1 = Math.min(n - 1, bb.y1 + M);
-  const W = wx1 - wx0 + 1, H = wy1 - wy0 + 1, WN = W * H;
+  const wx0 = Math.max(0, bb.x0 - M),
+    wy0 = Math.max(0, bb.y0 - M),
+    wx1 = Math.min(n - 1, bb.x1 + M),
+    wy1 = Math.min(n - 1, bb.y1 + M);
+  const W = wx1 - wx0 + 1,
+    H = wy1 - wy0 + 1,
+    WN = W * H;
   const win = { x0: wx0, y0: wy0, w: W, h: H };
   const gi = (k: number) => (wy0 + ((k / W) | 0)) * n + wx0 + (k % W);
   const v = new Float32Array(WN);
-  for (let k = 0; k < WN; k++) { const x = fx(gi(k)); v[k] = -(isFinite(x) ? Math.min(x, cap) : cap); }
+  for (let k = 0; k < WN; k++) {
+    const x = fx(gi(k));
+    v[k] = -(isFinite(x) ? Math.min(x, cap) : cap);
+  }
   // smooth the field so that enclosures are smooth, compact curves (not cell-scale wiggles)
   const b = blurGrid({ w: W, h: H, cell, data: v }, rad, 2).data;
   for (let k = 0; k < WN; k++) v[k] = isFinite(fx(gi(k))) ? b[k] : Math.min(b[k], -cap);
@@ -381,18 +481,26 @@ export function regionForArea(ctx: UrbanCtx, fld: PhaseField, targetArea: number
 
 /** Drops pieces thinner than `minR` (inscribed radius) or smaller than `minA`. */
 export function dropSlivers(m: MultiPoly, minA: number, minR: number): MultiPoly {
-  return m.filter((ph) => area(ph.outer) >= minA && inscribed(ph.outer, ph.holes, 1, minR).r >= minR);
+  return m.filter(ph => area(ph.outer) >= minA && inscribed(ph.outer, ph.holes, 1, minR).r >= minR);
 }
 
 /** Rectangle aligned with `ang`, centered at c. */
 export function orientedRect(c: Vec2, ang: number, len: number, wid: number): Polygon {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
-  const pts: [number, number][] = [[-len / 2, -wid / 2], [len / 2, -wid / 2], [len / 2, wid / 2], [-len / 2, wid / 2]];
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
+  const pts: [number, number][] = [
+    [-len / 2, -wid / 2],
+    [len / 2, -wid / 2],
+    [len / 2, wid / 2],
+    [-len / 2, wid / 2],
+  ];
   return orientPos(pts.map(([u, w]) => ({ x: c.x + u * ca - w * sa, y: c.y + u * sa + w * ca })));
 }
 
 export interface EnclosurePlan {
-  phases: PhasePlan[]; enclosure: MultiPoly; walled: boolean;
+  phases: PhasePlan[];
+  enclosure: MultiPoly;
+  walled: boolean;
   /** Planned enclosed area (m²) that the nucleus component could not provide (scarce land): goes to faubourgs. */
   shortfall?: number;
   /** Gross-density multiplier applied on scarce land (1 = as planned). */
@@ -401,7 +509,9 @@ export interface EnclosurePlan {
 
 /** Nested enclosed phases for a town (european-organic or bastide). */
 export interface PhaseOverrides {
-  nPh?: number; zones?: UrbanZone[]; faubShare?: number;
+  nPh?: number;
+  zones?: UrbanZone[];
+  faubShare?: number;
   /** Cells excluded from growth (land found unreachable by streets in a previous attempt). */
   blocked?: Uint8Array;
   /** Multiplies the region areas (compensates water and smoothing losses on scarce land). */
@@ -414,20 +524,38 @@ export interface PhaseOverrides {
 
 /** Geometric enclosure of area A centred at c: rect, rounded rect (Roman playing card), square, oval, circle. */
 export function shapePolygon(shape: PhaseInput['shape'], c: Vec2, ang: number, A: number, aspect: number): Polygon {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
   const at = (u: number, w: number): Vec2 => ({ x: c.x + u * ca - w * sa, y: c.y + u * sa + w * ca });
   if (shape === 'circle' || shape === 'oval') {
     const asp = shape === 'circle' ? 1 : aspect;
-    const b = Math.sqrt(A / (Math.PI * asp)), a = b * asp;
-    return orientPos(Array.from({ length: 48 }, (_, k) => { const t = (k / 48) * 2 * Math.PI; return at(a * Math.cos(t), b * Math.sin(t)); }));
+    const b = Math.sqrt(A / (Math.PI * asp)),
+      a = b * asp;
+    return orientPos(
+      Array.from({ length: 48 }, (_, k) => {
+        const t = (k / 48) * 2 * Math.PI;
+        return at(a * Math.cos(t), b * Math.sin(t));
+      }),
+    );
   }
   const asp = shape === 'square' ? 1 : aspect;
-  const len = Math.sqrt(A * asp), wid = A / len;
+  const len = Math.sqrt(A * asp),
+    wid = A / len;
   if (shape !== 'rounded-rect') return orientedRect(c, ang, len, wid);
-  const r = 0.2 * wid, hx = len / 2, hy = wid / 2;
+  const r = 0.2 * wid,
+    hx = len / 2,
+    hy = wid / 2;
   const pts: Vec2[] = [];
-  for (const [cx, cy, a0] of [[hx - r, hy - r, 0], [-hx + r, hy - r, Math.PI / 2], [-hx + r, -hy + r, Math.PI], [hx - r, -hy + r, 1.5 * Math.PI]] as [number, number, number][]) {
-    for (let k = 0; k <= 4; k++) { const t = a0 + (k / 4) * (Math.PI / 2); pts.push(at(cx + r * Math.cos(t), cy + r * Math.sin(t))); }
+  for (const [cx, cy, a0] of [
+    [hx - r, hy - r, 0],
+    [-hx + r, hy - r, Math.PI / 2],
+    [-hx + r, -hy + r, Math.PI],
+    [hx - r, -hy + r, 1.5 * Math.PI],
+  ] as [number, number, number][]) {
+    for (let k = 0; k <= 4; k++) {
+      const t = a0 + (k / 4) * (Math.PI / 2);
+      pts.push(at(cx + r * Math.cos(t), cy + r * Math.sin(t)));
+    }
   }
   return orientPos(pts);
 }
@@ -458,18 +586,24 @@ export function planTownPhases(ctx: UrbanCtx, pop: number, walled: boolean, main
     const nPh = ov.nPh ?? (P.streetOp === 'grid' ? 1 : pop < 5000 ? 2 : pop < 20000 ? 3 : 4);
     const zones = ov.zones ?? zonesFor(nPh);
     specs = zones.map((zone, k) => ({
-      zone, share: SHARES[nPh][k], density: P.density[zone], shape: P.streetOp === 'grid' && k === 0 ? 'rect' : 'organic',
-      angle: mainAngle, aspect: 1.25 + 0.35 * rng.fork('aspect').float(), closing: P.streetOp === 'organic', fossil: k < nPh - 1,
+      zone,
+      share: SHARES[nPh][k],
+      density: P.density[zone],
+      shape: P.streetOp === 'grid' && k === 0 ? 'rect' : 'organic',
+      angle: mainAngle,
+      aspect: 1.25 + 0.35 * rng.fork('aspect').float(),
+      closing: P.streetOp === 'organic',
+      fossil: k < nPh - 1,
     }));
   }
   const nPh = specs.length;
-  const zones = specs.map((s2) => s2.zone);
+  const zones = specs.map(s2 => s2.zone);
   // ring spacing varies from town to town
   const sj = P.shareJitter ?? 0;
   const sr = rng.fork('shares');
-  const raw = specs.map((s2) => s2.share * (1 + sj * (2 * sr.float() - 1)));
+  const raw = specs.map(s2 => s2.share * (1 + sj * (2 * sr.float() - 1)));
   const rs = raw.reduce((a, b) => a + b, 0);
-  const shares = raw.map((x) => x / rs);
+  const shares = raw.map(x => x / rs);
   // enclosed area target; on scarce land (steep valleys) buildability is relaxed step by step (hillside towns)
   let total = 0;
   for (let k = 0; k < nPh; k++) total += ((encPop * shares[k]) / specs[k].density) * 1e4;
@@ -477,10 +611,16 @@ export function planTownPhases(ctx: UrbanCtx, pop: number, walled: boolean, main
   const fieldFor = (sm: number): PhaseField => {
     if (ov.blocked) return phaseField(ctx, buildField(ctx, rng, sm, ov.blocked));
     let m = FIELD_CACHE.get(ctx);
-    if (!m) { m = new Map(); FIELD_CACHE.set(ctx, m); }
+    if (!m) {
+      m = new Map();
+      FIELD_CACHE.set(ctx, m);
+    }
     const key = rng.seedKey + '|' + sm;
     let v = m.get(key);
-    if (!v) { v = phaseField(ctx, buildField(ctx, rng, sm)); m.set(key, v); }
+    if (!v) {
+      v = phaseField(ctx, buildField(ctx, rng, sm));
+      m.set(key, v);
+    }
     return v;
   };
   let fld = fieldFor(0.2);
@@ -516,7 +656,7 @@ export function planTownPhases(ctx: UrbanCtx, pop: number, walled: boolean, main
     // A small river-separated district may already be built. Dropping it here breaks nesting and lets the
     // faubourgs claim the same land as its older plots and buildings.
     if (!ov.organicOutline && ((k < nPh - 1 && sp.fossil) || (k === nPh - 1 && walled))) R = keepMain(fortifyRegion(ctx, R, prev), ctx.center, 0.1, prev);
-    R = R.map((ph) => ({ outer: ph.outer, holes: ph.holes }));
+    R = R.map(ph => ({ outer: ph.outer, holes: ph.holes }));
     let band: MultiPoly = prev.length ? difference(R, prev) : R;
     band = dropSlivers(band, 400, 5);
     phases.push({ id: k + 1, kind: zones[k] === 'village' ? 'village' : k === 0 ? 'core' : 'ring', zone: zones[k], region: R, band, age: 1 - k / Math.max(1, nPh), fossil: k < nPh - 1 && sp.fossil, walled: walled && k === nPh - 1, pop: ppop });
@@ -536,15 +676,19 @@ export function dilate(m: MultiPoly, g: number): MultiPoly {
       if (rb.length >= 3) rings.push(rb);
     }
   }
-  return union(m, ...rings.map((r) => [{ outer: r, holes: [] }] as MultiPoly));
+  return union(m, ...rings.map(r => [{ outer: r, holes: [] }] as MultiPoly));
 }
 
-export interface RoadIn { path: Polyline; major: boolean; width?: number }
+export interface RoadIn {
+  path: Polyline;
+  major: boolean;
+  width?: number;
+}
 
 /** Independent settlement/road decisions allow no fringe, a partial fringe, or growth along every suitable road. */
 export function roadFringeGrowth(roads: { major: boolean }[], rng: Rng, thick = 1): boolean[] {
   if (rng.fork('growth').chance(thick > 1.2 ? 0.08 : 0.18)) return roads.map(() => false);
-  return roads.map((road, i) => rng.fork('road:' + i).chance(road.major ? (thick > 1.2 ? 0.95 : 0.9) : (thick > 1.2 ? 0.8 : 0.65)));
+  return roads.map((road, i) => rng.fork('road:' + i).chance(road.major ? (thick > 1.2 ? 0.95 : 0.9) : thick > 1.2 ? 0.8 : 0.65));
 }
 
 /**
@@ -553,7 +697,7 @@ export function roadFringeGrowth(roads: { major: boolean }[], rng: Rng, thick = 
  */
 export function planFaubourgs(ctx: UrbanCtx, enclosure: MultiPoly, roads: RoadIn[], area: number, glacis: number, rng: Rng, zone: UrbanZone = 'faubourg', thick = 1, varyGrowth = true): { region: MultiPoly; paths: Polyline[] } {
   if (area < 1500 || !roads.length) return { region: [], paths: [] };
-  const inside = (p: Vec2) => enclosure.some((ph) => pointInRing(ph.outer, p) && !ph.holes.some((h) => pointInRing(h, p)));
+  const inside = (p: Vec2) => enclosure.some(ph => pointInRing(ph.outer, p) && !ph.holes.some(h => pointInRing(h, p)));
   const selected = varyGrowth ? roadFringeGrowth(roads, rng, thick) : roads.map(() => true);
   const cands: { pts: Polyline; w: number; width: number }[] = [];
   for (const [ri, rd] of roads.entries()) {
@@ -561,7 +705,11 @@ export function planFaubourgs(ctx: UrbanCtx, enclosure: MultiPoly, roads: RoadIn
     // paths run from the map edge towards the center: find the first vertex inside the enclosure
     const pl = rd.path;
     let entry = -1;
-    for (let i = 0; i < pl.length; i++) if (inside(pl[i])) { entry = i; break; }
+    for (let i = 0; i < pl.length; i++)
+      if (inside(pl[i])) {
+        entry = i;
+        break;
+      }
     if (entry <= 0) continue;
     const outward = pl.slice(0, entry + 1).reverse();
     cands.push({ pts: outward, w: rd.major ? 1 : 0.55, width: rd.width ?? (rd.major ? 7 : 5) });
@@ -584,16 +732,27 @@ export function planFaubourgs(ctx: UrbanCtx, enclosure: MultiPoly, roads: RoadIn
     let acc = 0;
     for (let i = 1; i < c.pts.length; i++) {
       const d = dist(c.pts[i - 1], c.pts[i]);
-      if (acc + d >= L) { const t = (L - acc) / d; out.push({ x: c.pts[i - 1].x + (c.pts[i].x - c.pts[i - 1].x) * t, y: c.pts[i - 1].y + (c.pts[i].y - c.pts[i - 1].y) * t }); break; }
-      out.push(c.pts[i]); acc += d;
+      if (acc + d >= L) {
+        const t = (L - acc) / d;
+        out.push({ x: c.pts[i - 1].x + (c.pts[i].x - c.pts[i - 1].x) * t, y: c.pts[i - 1].y + (c.pts[i].y - c.pts[i - 1].y) * t });
+        break;
+      }
+      out.push(c.pts[i]);
+      acc += d;
     }
     if (polylineLength(out) < 60) continue;
     // stay on dry, reasonably flat land
     let cut = out.length;
     for (let i = 1; i < out.length; i++) {
-      if (ctx.isWater(out[i])) { cut = i; break; }
+      if (ctx.isWater(out[i])) {
+        cut = i;
+        break;
+      }
       // ribbons climb along valley roads; they stop where the ground stays steep
-      if (ctx.slopeAt(out[i]) > 0.28 && (i + 1 >= out.length || ctx.slopeAt(out[i + 1]) > 0.36 || ctx.slopeAt(out[i]) > 0.45)) { cut = i; break; }
+      if (ctx.slopeAt(out[i]) > 0.28 && (i + 1 >= out.length || ctx.slopeAt(out[i + 1]) > 0.36 || ctx.slopeAt(out[i]) > 0.45)) {
+        cut = i;
+        break;
+      }
     }
     const pts0 = out.slice(0, cut);
     if (pts0.length < 2 || polylineLength(pts0) < 60) continue;
@@ -615,28 +774,45 @@ export function planFaubourgs(ctx: UrbanCtx, enclosure: MultiPoly, roads: RoadIn
         // the end of the ribbon closes gradually
         d *= Math.min(1, (Lr - cum[i]) / 45 + 0.25);
         // water or steep ground on this side: the ribbon keeps to the other side
-        const a2 = pts[Math.max(0, i - 1)], b2 = pts[Math.min(pts.length - 1, i + 1)];
+        const a2 = pts[Math.max(0, i - 1)],
+          b2 = pts[Math.min(pts.length - 1, i + 1)];
         const l2 = dist(a2, b2) || 1;
-        const nx = (-(b2.y - a2.y) / l2) * side, ny = ((b2.x - a2.x) / l2) * side;
+        const nx = (-(b2.y - a2.y) / l2) * side,
+          ny = ((b2.x - a2.x) / l2) * side;
         for (const k of [0.35, 0.7, 1]) {
           const q = { x: p.x + nx * d * k, y: p.y + ny * d * k };
-          if (ctx.isWater(q) || ctx.slopeAt(q) > 0.3) { d = Math.min(d, Math.max(0, d * k - 12)); break; }
+          if (ctx.isWater(q) || ctx.slopeAt(q) > 0.3) {
+            d = Math.min(d, Math.max(0, d * k - 12));
+            break;
+          }
         }
         return Math.max(0, d);
       });
       // one-sided sweep (left of the path for side 1; the reversed path for side −1)
-      const sm = depths.map((_, i) => { let s2 = 0, n2 = 0; for (let k = Math.max(0, i - 2); k <= Math.min(depths.length - 1, i + 2); k++) { s2 += depths[k]; n2++; } return s2 / n2; });
+      const sm = depths.map((_, i) => {
+        let s2 = 0,
+          n2 = 0;
+        for (let k = Math.max(0, i - 2); k <= Math.min(depths.length - 1, i + 2); k++) {
+          s2 += depths[k];
+          n2++;
+        }
+        return s2 / n2;
+      });
       // keep the stretches deeper than 14 m (the ribbon can stop and restart)
       let run: number[] = [];
       const flush = () => {
         if (run.length >= 3) {
-          const pl = run.map((i) => pts[i]), dd = run.map((i) => sm[i] + 0.3);
+          const pl = run.map(i => pts[i]),
+            dd = run.map(i => sm[i] + 0.3);
           const sw = side > 0 ? sweepLeft(pl, dd) : sweepLeft(pl.slice().reverse(), dd.slice().reverse());
           if (sw.length >= 3) pieces.push([{ outer: sw, holes: [] }]);
         }
         run = [];
       };
-      sm.forEach((d, i) => { if (d >= 14) run.push(i); else flush(); });
+      sm.forEach((d, i) => {
+        if (d >= 14) run.push(i);
+        else flush();
+      });
       flush();
     }
     paths.push(pts0);
@@ -651,7 +827,8 @@ export function planFaubourgs(ctx: UrbanCtx, enclosure: MultiPoly, roads: RoadIn
   void zone;
   region = dropSlivers(region, 1200, 8);
   for (const approach of approaches) {
-    const neck = tryIntersection(approach, blocked), contact = tryIntersection(approach, region);
+    const neck = tryIntersection(approach, blocked),
+      contact = tryIntersection(approach, region);
     if (neck.failed || contact.failed || mpArea(contact.pieces) < 1) continue;
     const outside = tryDifference(neck.pieces, enclosure, ctx.water);
     if (!outside.failed && outside.pieces.length) region = union(region, outside.pieces);
@@ -686,12 +863,19 @@ export function planServedPhases(ctx: UrbanCtx, pop: number, walled: boolean, ma
     const bad = unservedComponents(plan.enclosure, roads, ctx.center);
     if (!bad.length) break;
     const mask = ov.blocked ? ov.blocked.slice() : new Uint8Array(ctx.n * ctx.n);
-    rasterizePolys(bad.flatMap((ph) => [ph.outer]), ctx.n, ctx.n, ctx.cell, mask);
+    rasterizePolys(
+      bad.flatMap(ph => [ph.outer]),
+      ctx.n,
+      ctx.n,
+      ctx.cell,
+      mask,
+    );
     ov = { ...ov, blocked: mask };
     plan = planTownPhases(ctx, pop, walled, mainAngle, rng, ov);
   }
   // the enclosure lost much of its planned area (water, smoothing, unserved land): grow once more
-  const achieved = mpArea(plan.enclosure), planned = achieved + (plan.shortfall ?? 0);
+  const achieved = mpArea(plan.enclosure),
+    planned = achieved + (plan.shortfall ?? 0);
   if (achieved < 0.9 * planned && achieved > 0) {
     const boost = Math.min(1.6, planned / achieved);
     const again = planTownPhases(ctx, pop, walled, mainAngle, rng, { ...ov, areaBoost: boost });
@@ -703,8 +887,11 @@ export function planServedPhases(ctx: UrbanCtx, pop: number, walled: boolean, ma
   // whatever remains unserved is not enclosed
   const bad = unservedComponents(plan.enclosure, roads, ctx.center);
   if (bad.length) {
-    plan.enclosure = plan.enclosure.filter((ph) => !bad.includes(ph));
-    for (const phs of plan.phases) { phs.region = difference(phs.region, bad); phs.band = difference(phs.band, bad); }
+    plan.enclosure = plan.enclosure.filter(ph => !bad.includes(ph));
+    for (const phs of plan.phases) {
+      phs.region = difference(phs.region, bad);
+      phs.band = difference(phs.band, bad);
+    }
   }
   return plan;
 }

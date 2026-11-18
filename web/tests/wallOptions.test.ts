@@ -34,9 +34,18 @@ describe('Reddit wall options', () => {
     for (const key of ['wallStiffness', 'wallTerrain', 'wallTowerSpacing', 'ditchWetness', 'riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension'] as const) expect(actual[key]).toEqual(layoutConfig[key]);
   });
   it('paints river towers like curtain towers and keeps a chain distinct from earthworks', () => {
-    const rect = (x: number, y: number, w: number, h: number): Shape => ({ outer: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], holes: [] });
+    const rect = (x: number, y: number, w: number, h: number): Shape => ({
+      outer: [
+        { x, y },
+        { x: x + w, y },
+        { x: x + w, y: y + h },
+        { x, y: y + h },
+      ],
+      holes: [],
+    });
     const base: Enclosure = { path: [...rect(0, 0, 100, 100).outer, { x: 0, y: 0 }], kind: 'wall', style: 'flanked', material: 'stone', gates: [], curtain_width_m: 3, height_m: 8 };
-    const footprint = rect(150, 20, 8, 8), anchor = { x: 154, y: 24 };
+    const footprint = rect(150, 20, 8, 8),
+      anchor = { x: 154, y: 24 };
     const tower: Enclosure = { ...base, towers_detail: [{ anchor, center: anchor, shape: 'square', radius_m: 4, angle: 0, height_m: 12, kind: 'flank', footprint }] };
     const river: Enclosure = { ...base, outworks: [{ kind: 'facing-tower', shape: footprint, height_m: 12 }] };
     expect(cityWallSvg(river, 'parchment')).toEqual(cityWallSvg(tower, 'parchment'));

@@ -1,6 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../../src/v2/settings';
-import { backendAlternative, backendFailure, browserRuntimeSettings, nativeOrigin, normalizeRuntime, fallbackRuntime, isSelectedNativeServer, matchesRustTransport, retryNativeStage, runtimeChoiceStates, runtimeForRun, runtimeNeedsProbe, runtimeValues, RuntimeFallbackState, setRuntimeChoice, F } from '../../src/v2/runtimeChoices';
+import {
+  backendAlternative,
+  backendFailure,
+  browserRuntimeSettings,
+  nativeOrigin,
+  normalizeRuntime,
+  fallbackRuntime,
+  isSelectedNativeServer,
+  matchesRustTransport,
+  retryNativeStage,
+  runtimeChoiceStates,
+  runtimeForRun,
+  runtimeNeedsProbe,
+  runtimeValues,
+  RuntimeFallbackState,
+  setRuntimeChoice,
+  F,
+} from '../../src/v2/runtimeChoices';
 import { nativeFetch, NativeConnectionError, onNativeConnectionFailure } from '../../../rust/bridge/nativeAvailability';
 import { detectPlatform, resolveCompute, runtimeOptions, runtimeWorkerOptions } from '../../src/v2/platform';
 import { nativeRequest } from '../../../rust/bridge/nativeEngine';
@@ -10,33 +27,51 @@ const caps = (over: Partial<{ webgpu: boolean; native: boolean; python: boolean 
 
 describe('offline backends', () => {
   it('a restored native recipe switches to Rust in the browser before the run', () => {
-    const s = defaultSettings(); s.runtime!.backend = 'native'; s.urban = { ...s.urban, backend: 'native' };
+    const s = defaultSettings();
+    s.runtime!.backend = 'native';
+    s.urban = { ...s.urban, backend: 'native' };
     expect(runtimeNeedsProbe(s, { ...caps(), checked: false })).toBe(true);
     expect(fallbackRuntime(s, caps())).toEqual([F.engineToBrowser, F.urbanToEngine]);
-    expect(s.runtime!.backend).toBe('rust'); expect(s.urban!.backend).toBeUndefined();
+    expect(s.runtime!.backend).toBe('rust');
+    expect(s.urban!.backend).toBeUndefined();
   });
   it('native or Python neural falls back to browser WebGPU, else Python', () => {
-    const native = defaultSettings(); native.generation = 'neural'; native.runtime = { ...native.runtime!, backend: 'native', source: 'neural' };
-    expect(fallbackRuntime(native, caps())).toEqual([F.neuralToBrowser]); expect(native.runtime).toMatchObject({ backend: 'rust', source: 'neural-wasm' });
-    const python = defaultSettings(); python.generation = 'neural'; python.runtime = { ...python.runtime!, source: 'neural-python' };
-    expect(fallbackRuntime(python, caps())).toEqual([F.neuralToBrowser]); expect(python.runtime!.source).toBe('neural-wasm');
-    const noGpu = defaultSettings(); noGpu.generation = 'neural'; noGpu.runtime = { ...noGpu.runtime!, source: 'neural-wasm' };
-    expect(fallbackRuntime(noGpu, caps({ webgpu: false, python: true }))).toEqual([F.neuralToPython]); expect(noGpu.runtime!.source).toBe('neural-python');
+    const native = defaultSettings();
+    native.generation = 'neural';
+    native.runtime = { ...native.runtime!, backend: 'native', source: 'neural' };
+    expect(fallbackRuntime(native, caps())).toEqual([F.neuralToBrowser]);
+    expect(native.runtime).toMatchObject({ backend: 'rust', source: 'neural-wasm' });
+    const python = defaultSettings();
+    python.generation = 'neural';
+    python.runtime = { ...python.runtime!, source: 'neural-python' };
+    expect(fallbackRuntime(python, caps())).toEqual([F.neuralToBrowser]);
+    expect(python.runtime!.source).toBe('neural-wasm');
+    const noGpu = defaultSettings();
+    noGpu.generation = 'neural';
+    noGpu.runtime = { ...noGpu.runtime!, source: 'neural-wasm' };
+    expect(fallbackRuntime(noGpu, caps({ webgpu: false, python: true }))).toEqual([F.neuralToPython]);
+    expect(noGpu.runtime!.source).toBe('neural-python');
   });
   it('nothing changes when the selection is available or has no alternative', () => {
-    const s = defaultSettings(); s.runtime!.backend = 'native';
+    const s = defaultSettings();
+    s.runtime!.backend = 'native';
     expect(fallbackRuntime(s, caps({ native: true }))).toEqual([]);
-    const neural = defaultSettings(); neural.generation = 'neural'; neural.runtime = { ...neural.runtime!, source: 'neural-wasm' };
+    const neural = defaultSettings();
+    neural.generation = 'neural';
+    neural.runtime = { ...neural.runtime!, source: 'neural-wasm' };
     expect(fallbackRuntime(neural, caps({ webgpu: false }))).toEqual([]);
   });
   it('a backend error names the alternative without changing the settings', () => {
     expect(backendFailure('Moteur Rust local inaccessible (http://127.0.0.1:8791). Lancez le profil local ou l’application de bureau.')).toBe('native');
     expect(backendFailure('Neural service unreachable (http://127.0.0.1:8792): run “npm run neural:serve” from web/')).toBe('neural-service');
     expect(backendFailure('Hydrology failed: x')).toBeUndefined();
-    const s = defaultSettings(); s.generation = 'neural'; s.runtime = { ...s.runtime!, backend: 'native', source: 'neural' };
+    const s = defaultSettings();
+    s.generation = 'neural';
+    s.runtime = { ...s.runtime!, backend: 'native', source: 'neural' };
     expect(backendAlternative(s, caps({ native: true }), 'neural-service')).toBe(F.altBrowserNeural);
     expect(s.runtime).toMatchObject({ backend: 'native', source: 'neural' });
-    const p = defaultSettings(); p.runtime!.backend = 'native';
+    const p = defaultSettings();
+    p.runtime!.backend = 'native';
     expect(backendAlternative(p, caps(), 'native')).toBe(F.altBrowserGpu);
     expect(backendAlternative(p, caps({ webgpu: false }), 'native')).toBe(F.altBrowserCpu);
   });
@@ -49,18 +84,24 @@ const nativeSettings = () => {
   delete settings.runtime.autoBackend; // explicit Native override
   return settings;
 };
-const statusResponse = () => new Response(JSON.stringify({ service: 'magna-urbis-local', backend: 'rust-native', capabilities: [] }),
-  { headers: { 'Content-Type': 'application/json' } });
+const statusResponse = () => new Response(JSON.stringify({ service: 'magna-urbis-local', backend: 'rust-native', capabilities: [] }), { headers: { 'Content-Type': 'application/json' } });
 const execution = (settings: ReturnType<typeof nativeSettings>) => ({ profile: 'local' as const, server: settings.runtime!.localServer! });
 
 const local = { hostname: 'localhost', protocol: 'http:', search: '?profile=local' };
-beforeEach(() => { vi.stubGlobal('window', { location: local }); });
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+beforeEach(() => {
+  vi.stubGlobal('window', { location: local });
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe('native reachability at run start (web and desktop)', () => {
   it('chooses the browser when native is unreachable, despite an earlier online status, and preserves the recipe', async () => {
-    const settings = nativeSettings(); settings.urban = { ...settings.urban, backend: 'native' };
-    const preference = structuredClone(settings), fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const settings = nativeSettings();
+    settings.urban = { ...settings.urban, backend: 'native' };
+    const preference = structuredClone(settings),
+      fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     vi.stubGlobal('fetch', fetch);
     const selected = await runtimeForRun(settings, caps({ native: true }));
     expect(selected.settings.runtime!.backend).toBe('rust');
@@ -81,7 +122,8 @@ describe('native reachability at run start (web and desktop)', () => {
   });
   it('deduplicates checks briefly and automatically returns to native after recovery', async () => {
     vi.useFakeTimers();
-    const settings = nativeSettings(), fetch = vi.fn().mockRejectedValueOnce(new TypeError('ECONNREFUSED')).mockImplementation(statusResponse);
+    const settings = nativeSettings(),
+      fetch = vi.fn().mockRejectedValueOnce(new TypeError('ECONNREFUSED')).mockImplementation(statusResponse);
     vi.stubGlobal('fetch', fetch);
     const runs = await Promise.all([runtimeForRun(settings), runtimeForRun(settings)]);
     expect(runs.map(run => run.settings.runtime!.backend)).toEqual(['rust', 'rust']);
@@ -93,7 +135,8 @@ describe('native reachability at run start (web and desktop)', () => {
   });
   it('checks again when a previously reachable server goes away between runs', async () => {
     vi.useFakeTimers();
-    const settings = nativeSettings(), fetch = vi.fn().mockImplementationOnce(statusResponse).mockRejectedValue(new TypeError('ECONNRESET'));
+    const settings = nativeSettings(),
+      fetch = vi.fn().mockImplementationOnce(statusResponse).mockRejectedValue(new TypeError('ECONNRESET'));
     vi.stubGlobal('fetch', fetch);
     expect((await runtimeForRun(settings)).settings.runtime!.backend).toBe('native');
     await vi.advanceTimersByTimeAsync(3001);
@@ -101,21 +144,28 @@ describe('native reachability at run start (web and desktop)', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
   it('moves native neural generation to browser WASM without changing the saved source', async () => {
-    const settings = nativeSettings(); settings.generation = 'neural'; settings.runtime!.source = 'neural';
+    const settings = nativeSettings();
+    settings.generation = 'neural';
+    settings.runtime!.source = 'neural';
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     const selected = await runtimeForRun(settings, caps({ webgpu: false, python: true }));
     expect(selected.settings.runtime).toMatchObject({ backend: 'rust', source: 'neural-wasm' });
     expect(settings.runtime).toMatchObject({ backend: 'native', source: 'neural' });
   });
   it('does not contact native services for a browser-only run', async () => {
-    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
-    const settings = defaultSettings(); delete settings.runtime!.autoBackend;
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const settings = defaultSettings();
+    delete settings.runtime!.autoBackend;
     expect((await runtimeForRun(settings)).notes).toEqual([]);
     expect(fetch).not.toHaveBeenCalled();
   });
   it('does not probe a native city override when running browser terrain', async () => {
-    const settings = defaultSettings(); delete settings.runtime!.autoBackend; settings.urban = { backend: 'native' };
-    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const settings = defaultSettings();
+    delete settings.runtime!.autoBackend;
+    settings.urban = { backend: 'native' };
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
     const selected = await runtimeForRun(settings, caps(), 'terrain');
     expect(selected.notes).toEqual([]);
     expect(selected.settings.runtime!.backend).toBe('rust');
@@ -123,7 +173,8 @@ describe('native reachability at run start (web and desktop)', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
   it('rechecks a cached offline result immediately when the next run requests native', async () => {
-    const settings = nativeSettings(), fetch = vi.fn().mockRejectedValueOnce(new TypeError('ECONNREFUSED')).mockImplementation(statusResponse);
+    const settings = nativeSettings(),
+      fetch = vi.fn().mockRejectedValueOnce(new TypeError('ECONNREFUSED')).mockImplementation(statusResponse);
     vi.stubGlobal('fetch', fetch);
     expect((await runtimeForRun(settings)).notes).toEqual([]);
     const recovered = await runtimeForRun(settings, caps());
@@ -134,15 +185,22 @@ describe('native reachability at run start (web and desktop)', () => {
   it('bounds a hanging startup health check', async () => {
     vi.useFakeTimers();
     const settings = nativeSettings();
-    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-      init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
-    })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+          }),
+      ),
+    );
     const result = runtimeForRun(settings);
     await vi.advanceTimersByTimeAsync(1501);
     expect((await result).settings.runtime!.backend).toBe('rust');
   });
   it('matches retained Rust products across execution locations but still rejects recipe changes', () => {
-    const settings = nativeSettings(), browser = browserRuntimeSettings(settings);
+    const settings = nativeSettings(),
+      browser = browserRuntimeSettings(settings);
     const key = (s: typeof settings) => JSON.stringify([s.runtime!.backend, s.runtime!.source, s.options.seed]);
     expect(matchesRustTransport(browser, key, key(settings))).toBe(true);
     expect(matchesRustTransport(settings, key, key(browser))).toBe(true);
@@ -153,9 +211,11 @@ describe('native reachability at run start (web and desktop)', () => {
 
 describe('fallback notices and Settings preferences', () => {
   it('does not label unprobed optional services as offline or disable their choices', async () => {
-    const settings = defaultSettings(), capabilities = { ...caps(), servicesChecked: false };
+    const settings = defaultSettings(),
+      capabilities = { ...caps(), servicesChecked: false };
     delete settings.runtime!.autoBackend;
-    settings.generation = 'neural'; settings.runtime!.source = 'neural-python';
+    settings.generation = 'neural';
+    settings.runtime!.source = 'neural-python';
     const selected = await runtimeForRun(settings, capabilities);
     expect(selected.notes).toEqual([]);
     expect(selected.settings.runtime!.source).toBe('neural-python');
@@ -163,8 +223,13 @@ describe('fallback notices and Settings preferences', () => {
     expect(runtimeChoiceStates(settings, capabilities).neural.python.enabled).toBe(true);
   });
   it('browser selected with WebGPU and missing optional services produces no native notice', async () => {
-    const settings = defaultSettings(), state = new RuntimeFallbackState(), notice = vi.fn(), fetch = vi.fn();
-    settings.runtime!.compute = 'gpu'; delete settings.runtime!.autoBackend; vi.stubGlobal('fetch', fetch);
+    const settings = defaultSettings(),
+      state = new RuntimeFallbackState(),
+      notice = vi.fn(),
+      fetch = vi.fn();
+    settings.runtime!.compute = 'gpu';
+    delete settings.runtime!.autoBackend;
+    vi.stubGlobal('fetch', fetch);
     const selected = await runtimeForRun(settings, caps());
     if (state.update(settings, selected.settings)) notice();
     expect(selected.notes).toEqual([]);
@@ -174,7 +239,9 @@ describe('fallback notices and Settings preferences', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
   it('native selected and reachable produces no notice, including before capabilities are checked', async () => {
-    const settings = nativeSettings(), state = new RuntimeFallbackState(), notice = vi.fn();
+    const settings = nativeSettings(),
+      state = new RuntimeFallbackState(),
+      notice = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockImplementation(statusResponse));
     expect(state.status(settings)).toBeUndefined();
     const selected = await runtimeForRun(settings, { ...caps(), checked: false });
@@ -185,9 +252,13 @@ describe('fallback notices and Settings preferences', () => {
     expect(runtimeValues(settings).engine).toBe('native');
   });
   it('automatic engine: native unreachable moves every run to the browser silently, shows a Settings status, and returns to native on recovery', async () => {
-    const settings = nativeSettings(), preference = structuredClone(settings), state = new RuntimeFallbackState();
-    const fetch = vi.fn().mockRejectedValue(new TypeError('ECONNREFUSED')); vi.stubGlobal('fetch', fetch);
-    settings.urban = { ...settings.urban, backend: 'native' }; preference.urban = { ...settings.urban };
+    const settings = nativeSettings(),
+      preference = structuredClone(settings),
+      state = new RuntimeFallbackState();
+    const fetch = vi.fn().mockRejectedValue(new TypeError('ECONNREFUSED'));
+    vi.stubGlobal('fetch', fetch);
+    settings.urban = { ...settings.urban, backend: 'native' };
+    preference.urban = { ...settings.urban };
     for (const action of ['terrain', 'region', 'towns']) {
       const selected = await runtimeForRun(settings, caps(), action);
       expect(selected.notes).toEqual([]);
@@ -206,7 +277,8 @@ describe('fallback notices and Settings preferences', () => {
     expect(state.status(settings)).toBeUndefined();
   });
   it('an explicit browser choice changes the Settings selection and clears the fallback status', () => {
-    const settings = nativeSettings(), state = new RuntimeFallbackState();
+    const settings = nativeSettings(),
+      state = new RuntimeFallbackState();
     state.update(settings, browserRuntimeSettings(settings));
     setRuntimeChoice(settings, 'engine', 'rust');
     expect(runtimeValues(settings).engine).toBe('rust');
@@ -218,7 +290,11 @@ describe('fallback notices and Settings preferences', () => {
 describe('web and local execution policy', () => {
   const dev = { hostname: 'localhost', protocol: 'http:', search: '' };
   const published = { hostname: 'example.github.io', protocol: 'https:', search: '' };
-  const automatic = () => { const settings = defaultSettings(); settings.runtime!.localServer = `http://127.0.0.1:${nextPort++}`; return settings; };
+  const automatic = () => {
+    const settings = defaultSettings();
+    settings.runtime!.localServer = `http://127.0.0.1:${nextPort++}`;
+    return settings;
+  };
   it('requires the local profile or desktop, including on loopback origins', () => {
     expect(runtimeValues(defaultSettings()).engine).toBe('auto');
     expect(nativeOrigin(dev)).toBe(false);
@@ -232,7 +308,9 @@ describe('web and local execution policy', () => {
   });
   it.each([true, false])('web Automatic uses WebGPU when available, otherwise CPU (WebGPU=%s)', async webgpu => {
     vi.stubGlobal('window', { location: dev });
-    const settings = automatic(), fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const settings = automatic(),
+      fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
     const selected = await runtimeForRun(settings, caps({ webgpu }), 'all');
     expect(selected).toMatchObject({ notes: [], nativeOffline: false });
     expect(selected.settings.runtime).toMatchObject({ backend: 'rust', compute: 'auto' });
@@ -241,9 +319,14 @@ describe('web and local execution policy', () => {
   });
   it.each([dev, published])('silently normalizes restored native engines, neural sources and overrides on $hostname', async location => {
     vi.stubGlobal('window', { location });
-    const settings = nativeSettings(); settings.generation = 'neural'; settings.runtime!.source = 'neural';
-    settings.urban = { backend: 'native' }; settings.terrain!.generationCompute = 'native' as never;
-    const saved = structuredClone(settings), fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const settings = nativeSettings();
+    settings.generation = 'neural';
+    settings.runtime!.source = 'neural';
+    settings.urban = { backend: 'native' };
+    settings.terrain!.generationCompute = 'native' as never;
+    const saved = structuredClone(settings),
+      fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
     expect(runtimeNeedsProbe(settings, caps())).toBe(false);
     const selected = await runtimeForRun(settings, caps({ native: true, python: true }), 'all');
     expect(selected).toMatchObject({ notes: [], nativeOffline: false });
@@ -263,7 +346,8 @@ describe('web and local execution policy', () => {
     expect(runtimeValues(settings)).toMatchObject({ engine: 'cpu', compute: 'cpu' });
     setRuntimeChoice(settings, 'engine', 'auto');
     expect(runtimeValues(settings)).toMatchObject({ engine: 'auto', compute: 'auto' });
-    settings.generation = 'neural'; settings.runtime!.source = 'neural-wasm';
+    settings.generation = 'neural';
+    settings.runtime!.source = 'neural-wasm';
     expect(fallbackRuntime(settings, caps({ webgpu: false, python: true }))).toEqual([]);
     expect(settings.runtime!.source).toBe('neural-wasm');
     expect(runtimeChoiceStates(settings, { ...caps(), servicesChecked: false }).engine.native.enabled).toBe(false);
@@ -271,8 +355,11 @@ describe('web and local execution policy', () => {
     expect(settings.runtime!.source).toBe('neural-python');
   });
   it.each([true, false])('web engine choice offers Automatic, WebGPU and CPU; explicit CPU neural is kept and refused (WebGPU=%s)', async webgpu => {
-    vi.stubGlobal('window', { location: dev }); vi.stubGlobal('fetch', vi.fn());
-    const settings = automatic(); settings.generation = 'neural'; normalizeRuntime(settings);
+    vi.stubGlobal('window', { location: dev });
+    vi.stubGlobal('fetch', vi.fn());
+    const settings = automatic();
+    settings.generation = 'neural';
+    normalizeRuntime(settings);
     const engine = runtimeChoiceStates(settings, caps({ webgpu })).engine;
     expect(engine.auto.enabled).toBe(true);
     expect(engine.gpu).toEqual(webgpu ? { enabled: true } : { enabled: false, reason: expect.stringMatching(/WebGPU/) });
@@ -287,14 +374,16 @@ describe('web and local execution policy', () => {
   });
   it('web hardware inspection never probes native services or unconfigured Python', async () => {
     vi.stubGlobal('window', { location: dev });
-    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
     const selected = await detectPlatform();
     expect(selected.local.available).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
     expect(runtimeWorkerOptions({ name: 'engine threads=off' }).name).toBe('engine threads=off profile=web');
   });
   it('local Automatic uses reachable native, while neural remains browser WebGPU', async () => {
-    const settings = automatic(); settings.generation = 'neural';
+    const settings = automatic();
+    settings.generation = 'neural';
     vi.stubGlobal('fetch', vi.fn().mockImplementation(statusResponse));
     const selected = await runtimeForRun(settings, caps(), 'all', local);
     expect(selected).toMatchObject({ notes: [], nativeOffline: false });
@@ -304,9 +393,13 @@ describe('web and local execution policy', () => {
     expect(settings.runtime!.source).toBe('neural');
   });
   it.each([
-    [{ python: true }, 'neural-python'], [{ python: false }, 'neural-wasm'], [{ python: true, nativeNeural: true }, 'neural'],
+    [{ python: true }, 'neural-python'],
+    [{ python: false }, 'neural-wasm'],
+    [{ python: true, nativeNeural: true }, 'neural'],
   ] as const)('local native engine: neural source follows the probed services %o, the engine stays native', async (services, source) => {
-    const settings = nativeSettings(); settings.generation = 'neural'; settings.runtime!.source = 'neural';
+    const settings = nativeSettings();
+    settings.generation = 'neural';
+    settings.runtime!.source = 'neural';
     vi.stubGlobal('fetch', vi.fn().mockImplementation(statusResponse));
     const selected = await runtimeForRun(settings, { ...caps({ native: true }), ...services }, 'all', local);
     expect(selected.settings.runtime).toMatchObject({ backend: 'native', source });
@@ -316,20 +409,27 @@ describe('web and local execution policy', () => {
   });
   it.each([true, false])('local probe of the native neural service drives the Automatic neural source (answers=%s)', async answers => {
     const fetch = vi.fn(async (url: string) => {
-      if (url.startsWith('http://127.0.0.1:8792/')) { if (!answers) throw new TypeError('ECONNREFUSED'); return new Response(JSON.stringify({ service: 'magna-urbis-neural' })); }
+      if (url.startsWith('http://127.0.0.1:8792/')) {
+        if (!answers) throw new TypeError('ECONNREFUSED');
+        return new Response(JSON.stringify({ service: 'magna-urbis-neural' }));
+      }
       if (url.startsWith('http://127.0.0.1:8793/')) return new Response(JSON.stringify({ backend: 'python-cuda', loaded: false }));
       return statusResponse();
     });
     vi.stubGlobal('fetch', fetch);
     const platform = await detectPlatform({ profile: 'local', probePython: true });
     expect(platform.nativeNeural.available).toBe(answers);
-    const settings = nativeSettings(); settings.runtime!.autoBackend = true; settings.generation = 'neural'; settings.runtime!.source = 'neural-wasm';
-    const selected = await runtimeForRun(settings, { checked: true, servicesChecked: true, webgpu: true, native: platform.local.available,
-      python: platform.python.available, nativeNeural: platform.nativeNeural.available }, 'all', local);
+    const settings = nativeSettings();
+    settings.runtime!.autoBackend = true;
+    settings.generation = 'neural';
+    settings.runtime!.source = 'neural-wasm';
+    const selected = await runtimeForRun(settings, { checked: true, servicesChecked: true, webgpu: true, native: platform.local.available, python: platform.python.available, nativeNeural: platform.nativeNeural.available }, 'all', local);
     expect(selected.settings.runtime).toMatchObject({ backend: 'native', source: answers ? 'neural' : 'neural-python' });
   });
   it('Settings automatic neural never selects the unprobed native neural service', () => {
-    const settings = nativeSettings(); settings.generation = 'neural'; settings.runtime!.source = 'neural';
+    const settings = nativeSettings();
+    settings.generation = 'neural';
+    settings.runtime!.source = 'neural';
     expect(setRuntimeChoice(settings, 'neural', 'auto', caps({ native: true, python: true })).runtime).toMatchObject({ backend: 'native', source: 'neural-wasm' });
     expect(setRuntimeChoice(settings, 'neural', 'auto', { ...caps({ native: true }), nativeNeural: true }).runtime!.source).toBe('neural');
   });
@@ -340,7 +440,8 @@ describe('web and local execution policy', () => {
     expect(selected.settings.runtime!.backend).toBe('rust');
   });
   it('workers preserve the local profile without relying on their bundled script URL', () => {
-    vi.stubGlobal('window', undefined); vi.stubGlobal('name', 'engine threads=off profile=local');
+    vi.stubGlobal('window', undefined);
+    vi.stubGlobal('name', 'engine threads=off profile=local');
     expect(runtimeOptions().profile).toBe('local');
     expect(normalizeRuntime(nativeSettings()).runtime!.backend).toBe('native');
   });
@@ -348,7 +449,8 @@ describe('web and local execution policy', () => {
 
 describe('transport failures during a native stage', () => {
   it('optional service failures do not report the selected native engine as offline', async () => {
-    const settings = nativeSettings(), fallback = vi.fn();
+    const settings = nativeSettings(),
+      fallback = vi.fn();
     const optionalServer = 'http://127.0.0.1:8792';
     expect(isSelectedNativeServer(settings, optionalServer)).toBe(false);
     expect(isSelectedNativeServer(settings, settings.runtime!.localServer!)).toBe(true);
@@ -358,14 +460,16 @@ describe('transport failures during a native stage', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
   it('does not retry a browser-selected stage on a native transport marker', async () => {
-    const fallback = vi.fn(), stage = vi.fn().mockRejectedValue(new NativeConnectionError('http://127.0.0.1:8791'));
+    const fallback = vi.fn(),
+      stage = vi.fn().mockRejectedValue(new NativeConnectionError('http://127.0.0.1:8791'));
     await expect(retryNativeStage(defaultSettings(), stage, fallback)).rejects.toBeInstanceOf(NativeConnectionError);
     expect(stage).toHaveBeenCalledTimes(1);
     expect(fallback).not.toHaveBeenCalled();
   });
   it('retries a connection failure once in the browser and leaves the native preference intact', async () => {
     vi.useFakeTimers();
-    const settings = nativeSettings(), fallback = vi.fn();
+    const settings = nativeSettings(),
+      fallback = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     const stage = vi.fn(async (effective: typeof settings) => {
       if (effective.runtime!.backend === 'native') await nativeRequest(execution(effective), '/settlements', '{}');
@@ -380,9 +484,19 @@ describe('transport failures during a native stage', () => {
   });
   it('retries a reset while reading the native response body', async () => {
     const settings = nativeSettings();
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Response(new ReadableStream({
-      start(stream) { stream.error(new TypeError('Connection reset')); },
-    }))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        () =>
+          new Response(
+            new ReadableStream({
+              start(stream) {
+                stream.error(new TypeError('Connection reset'));
+              },
+            }),
+          ),
+      ),
+    );
     const stage = vi.fn(async (effective: typeof settings) => {
       if (effective.runtime!.backend === 'native') await (await nativeRequest(execution(effective), '/terrain', '{}')).arrayBuffer();
       return effective.runtime!.backend;
@@ -393,23 +507,37 @@ describe('transport failures during a native stage', () => {
   it('a page stalled past the health timeout still sees a reply that arrived (no false offline notice)', async () => {
     const settings = nativeSettings();
     // Real timers: the page blocks after sending /status, so the timeout is overdue when the reply's task runs.
-    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
-      const end = Date.now() + 300; while (Date.now() < end) { /* synchronous WASM/render work */ }
-      return new Promise((resolve, reject) => {
-        init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
-        setImmediate(() => resolve(statusResponse()));
-      });
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => {
+        const end = Date.now() + 300;
+        while (Date.now() < end) {
+          /* synchronous WASM/render work */
+        }
+        return new Promise((resolve, reject) => {
+          init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+          setImmediate(() => resolve(statusResponse()));
+        });
+      }),
+    );
     const response = await nativeFetch(execution(settings), '/status', {}, 100);
     expect((await response.json()).backend).toBe('rust-native');
   });
   it.each(['/terrain/stage', '/urban'])('absorbs an engine restart on %s: waits for /status, resends once, stays native', async path => {
     vi.useFakeTimers();
-    const settings = nativeSettings(), fallback = vi.fn(), restartedAt = Date.now() + 3000;
+    const settings = nativeSettings(),
+      fallback = vi.fn(),
+      restartedAt = Date.now() + 3000;
     let refused = true;
     const fetch = vi.fn(async (url: string) => {
-      if (url.endsWith('/status')) { if (Date.now() < restartedAt) throw new TypeError('ECONNREFUSED'); return statusResponse(); }
-      if (refused) { refused = false; throw new TypeError('ECONNRESET'); }
+      if (url.endsWith('/status')) {
+        if (Date.now() < restartedAt) throw new TypeError('ECONNREFUSED');
+        return statusResponse();
+      }
+      if (refused) {
+        refused = false;
+        throw new TypeError('ECONNRESET');
+      }
       return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
     });
     vi.stubGlobal('fetch', fetch);
@@ -425,7 +553,8 @@ describe('transport failures during a native stage', () => {
   });
   it('falls back silently to the browser when the engine does not come back within the wait', async () => {
     vi.useFakeTimers();
-    const settings = nativeSettings(), fallback = vi.fn();
+    const settings = nativeSettings(),
+      fallback = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('ECONNREFUSED')));
     const stage = vi.fn(async (effective: typeof settings) => {
       if (effective.runtime!.backend === 'native') await nativeRequest(execution(effective), '/terrain/stage', '{}');
@@ -437,16 +566,24 @@ describe('transport failures during a native stage', () => {
     expect(fallback).toHaveBeenCalledTimes(1);
   });
   it('(a) a failed status probe never marks the engine down or notifies running actions', async () => {
-    const settings = nativeSettings(), listener = vi.fn(), stop = onNativeConnectionFailure(listener);
-    const fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')); vi.stubGlobal('fetch', fetch);
+    const settings = nativeSettings(),
+      listener = vi.fn(),
+      stop = onNativeConnectionFailure(listener);
+    const fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetch);
     await expect(nativeFetch(execution(settings), '/status', {}, 1500, false)).rejects.toBeInstanceOf(NativeConnectionError);
     stop();
     expect(listener).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it('(b) a request on a stale kept-alive socket is resent at once and stays native, without notifying', async () => {
-    const settings = nativeSettings(), listener = vi.fn(), stop = onNativeConnectionFailure(listener);
-    const fetch = vi.fn().mockRejectedValueOnce(new TypeError('ERR_CONNECTION_RESET')).mockImplementation(() => new Response('{"ok":true}'));
+    const settings = nativeSettings(),
+      listener = vi.fn(),
+      stop = onNativeConnectionFailure(listener);
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('ERR_CONNECTION_RESET'))
+      .mockImplementation(() => new Response('{"ok":true}'));
     vi.stubGlobal('fetch', fetch);
     const response = await nativeFetch(execution(settings), '/urban', { method: 'POST', body: '{}' });
     stop();
@@ -455,8 +592,22 @@ describe('transport failures during a native stage', () => {
     expect(listener).not.toHaveBeenCalled();
   });
   it('(c) a broken reply body is a stage failure, not an engine-down signal', async () => {
-    const settings = nativeSettings(), listener = vi.fn(), stop = onNativeConnectionFailure(listener);
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Response(new ReadableStream({ pull(controller) { controller.error(new TypeError('network error')); } }))));
+    const settings = nativeSettings(),
+      listener = vi.fn(),
+      stop = onNativeConnectionFailure(listener);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        () =>
+          new Response(
+            new ReadableStream({
+              pull(controller) {
+                controller.error(new TypeError('network error'));
+              },
+            }),
+          ),
+      ),
+    );
     const response = await nativeFetch(execution(settings), '/urban', { method: 'POST', body: '{}' });
     await expect(response.text()).rejects.toBeInstanceOf(NativeConnectionError);
     stop();
@@ -465,9 +616,15 @@ describe('transport failures during a native stage', () => {
   it('retries a native request timeout in the browser', async () => {
     vi.useFakeTimers();
     const settings = nativeSettings();
-    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-      init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
-    })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+          }),
+      ),
+    );
     const stage = vi.fn(async (effective: typeof settings) => {
       if (effective.runtime!.backend === 'native') await nativeFetch(execution(effective), '/terrain', {}, 100);
       return effective.runtime!.backend;
@@ -478,12 +635,15 @@ describe('transport failures during a native stage', () => {
     expect(stage).toHaveBeenCalledTimes(2);
   });
   it.each([200, 500])('keeps JSON engine errors visible (HTTP %s), including transport-like error text', async status => {
-    const settings = nativeSettings(), fallback = vi.fn();
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Response(JSON.stringify({ error: 'TypeError: Failed to fetch' }),
-      { status, headers: { 'Content-Type': 'application/json' } })));
+    const settings = nativeSettings(),
+      fallback = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => new Response(JSON.stringify({ error: 'TypeError: Failed to fetch' }), { status, headers: { 'Content-Type': 'application/json' } })),
+    );
     const stage = vi.fn(async (effective: typeof settings) => {
       if (effective.runtime!.backend !== 'native') return 'browser';
-      const result = await (await nativeRequest(execution(effective), '/settlements', '{}')).json() as { error: string };
+      const result = (await (await nativeRequest(execution(effective), '/settlements', '{}')).json()) as { error: string };
       throw new Error(result.error);
     });
     await expect(retryNativeStage(settings, stage, fallback)).rejects.toThrow('TypeError: Failed to fetch');
@@ -491,15 +651,20 @@ describe('transport failures during a native stage', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
   it('keeps malformed JSON visible rather than treating it as a connection failure', async () => {
-    const settings = nativeSettings(), fallback = vi.fn();
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Response('{invalid json')));
+    const settings = nativeSettings(),
+      fallback = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => new Response('{invalid json')),
+    );
     const stage = vi.fn(async (effective: typeof settings) => (await nativeRequest(execution(effective), '/settlements', '{}')).json());
     await expect(retryNativeStage(settings, stage, fallback)).rejects.toBeInstanceOf(SyntaxError);
     expect(stage).toHaveBeenCalledTimes(1);
     expect(fallback).not.toHaveBeenCalled();
   });
   it('does not retry a failed browser retry', async () => {
-    const settings = nativeSettings(), fallback = vi.fn();
+    const settings = nativeSettings(),
+      fallback = vi.fn();
     const stage = vi.fn(async (effective: typeof settings) => {
       if (effective.runtime!.backend === 'native') throw new NativeConnectionError(settings.runtime!.localServer!);
       throw new Error('Browser stage failed');
@@ -509,10 +674,18 @@ describe('transport failures during a native stage', () => {
     expect(fallback).toHaveBeenCalledTimes(1);
   });
   it('preserves explicit cancellation instead of retrying it in the browser', async () => {
-    const settings = nativeSettings(), fallback = vi.fn(), controller = new AbortController();
-    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-      init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
-    })));
+    const settings = nativeSettings(),
+      fallback = vi.fn(),
+      controller = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+          }),
+      ),
+    );
     const stage = vi.fn(async () => nativeFetch(execution(settings), '/terrain', { signal: controller.signal }));
     const result = retryNativeStage(settings, stage, fallback);
     controller.abort(new DOMException('Cancelled', 'AbortError'));

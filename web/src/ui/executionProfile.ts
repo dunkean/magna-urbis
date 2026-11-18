@@ -1,23 +1,64 @@
 import profiles from '../../../config/execution.json';
 import { LOCALE_KEY, savedLocale, type Locale } from './shellLocale';
 
-export interface ExecutionRuntime { profile: 'web' | 'local'; server: string }
-declare global { interface Window { magnaExecutionRuntime?: ExecutionRuntime } }
+export interface ExecutionRuntime {
+  profile: 'web' | 'local';
+  server: string;
+}
+declare global {
+  interface Window {
+    magnaExecutionRuntime?: ExecutionRuntime;
+  }
+}
 export { profiles as executionProfiles };
 
 const executionText: Record<Locale, { label: string; aria: string; stale: string; staleTitle: string; connected: string; offline: string; offlineTitle: string }> = {
-  fr: { label:'Exécution', aria:'Profil d’exécution', stale:'à actualiser', staleTitle:'Moteur Rust connecté mais ancien. Reconstruisez le moteur local puis relancez les bancs.', connected:'Moteur Rust natif connecté · villes et maisons disponibles', offline:'hors ligne', offlineTitle:'Lancez npm run start:local depuis web/.' },
-  en: { label:'Execution', aria:'Execution profile', stale:'update needed', staleTitle:'The connected Rust engine is outdated. Rebuild the local engine and restart the workshops.', connected:'Native Rust engine connected · cities and houses available', offline:'offline', offlineTitle:'Run npm run start:local from web/.' },
-  zh: { label:'运行方式', aria:'运行配置', stale:'需要更新', staleTitle:'已连接的 Rust 引擎版本过旧。请重新构建本地引擎并重启工作坊。', connected:'原生 Rust 引擎已连接 · 城市和房屋可用', offline:'离线', offlineTitle:'在 web/ 目录中运行 npm run start:local。' },
-  es: { label:'Ejecución', aria:'Perfil de ejecución', stale:'actualización necesaria', staleTitle:'El motor Rust conectado es antiguo. Recompila el motor local y reinicia los talleres.', connected:'Motor Rust nativo conectado · ciudades y casas disponibles', offline:'sin conexión', offlineTitle:'Ejecuta npm run start:local desde web/.' },
-  pt: { label:'Execução', aria:'Perfil de execução', stale:'atualização necessária', staleTitle:'O motor Rust conectado está desatualizado. Recompile o motor local e reinicie os ateliês.', connected:'Motor Rust nativo conectado · cidades e casas disponíveis', offline:'desconectado', offlineTitle:'Execute npm run start:local em web/.' },
+  fr: {
+    label: 'Exécution',
+    aria: 'Profil d’exécution',
+    stale: 'à actualiser',
+    staleTitle: 'Moteur Rust connecté mais ancien. Reconstruisez le moteur local puis relancez les bancs.',
+    connected: 'Moteur Rust natif connecté · villes et maisons disponibles',
+    offline: 'hors ligne',
+    offlineTitle: 'Lancez npm run start:local depuis web/.',
+  },
+  en: {
+    label: 'Execution',
+    aria: 'Execution profile',
+    stale: 'update needed',
+    staleTitle: 'The connected Rust engine is outdated. Rebuild the local engine and restart the workshops.',
+    connected: 'Native Rust engine connected · cities and houses available',
+    offline: 'offline',
+    offlineTitle: 'Run npm run start:local from web/.',
+  },
+  zh: { label: '运行方式', aria: '运行配置', stale: '需要更新', staleTitle: '已连接的 Rust 引擎版本过旧。请重新构建本地引擎并重启工作坊。', connected: '原生 Rust 引擎已连接 · 城市和房屋可用', offline: '离线', offlineTitle: '在 web/ 目录中运行 npm run start:local。' },
+  es: {
+    label: 'Ejecución',
+    aria: 'Perfil de ejecución',
+    stale: 'actualización necesaria',
+    staleTitle: 'El motor Rust conectado es antiguo. Recompila el motor local y reinicia los talleres.',
+    connected: 'Motor Rust nativo conectado · ciudades y casas disponibles',
+    offline: 'sin conexión',
+    offlineTitle: 'Ejecuta npm run start:local desde web/.',
+  },
+  pt: {
+    label: 'Execução',
+    aria: 'Perfil de execução',
+    stale: 'atualização necessária',
+    staleTitle: 'O motor Rust conectado está desatualizado. Recompile o motor local e reinicie os ateliês.',
+    connected: 'Motor Rust nativo conectado · cidades e casas disponíveis',
+    offline: 'desconectado',
+    offlineTitle: 'Execute npm run start:local em web/.',
+  },
 };
 
 /** Embedded ateliers use the shell's profile, even when their URL is older. */
 function executionHost(): Window {
   try {
     if (window.parent !== window && window.parent.document.querySelector('.shell-header')) return window.parent;
-  } catch { /* Standalone file origins may restrict access to the parent. */ }
+  } catch {
+    /* Standalone file origins may restrict access to the parent. */
+  }
   return window;
 }
 
@@ -37,7 +78,9 @@ function readRuntime(): ExecutionRuntime {
   try {
     retainedServer = sessionStorage.getItem('magna-local-server');
     if (explicitServer) sessionStorage.setItem('magna-local-server', explicitServer);
-  } catch { /* Workers and private/file origins may not expose storage. */ }
+  } catch {
+    /* Workers and private/file origins may not expose storage. */
+  }
   return { profile, server: (explicitServer ?? retainedServer ?? profiles.local.server).replace(/\/+$/, '') };
 }
 export const executionRuntime = readRuntime();
@@ -49,7 +92,7 @@ export function applyExecutionProfile(url: URL, runtime = executionRuntime): URL
   if (runtime.profile === 'local') url.searchParams.set('localServer', runtime.server);
   else {
     url.searchParams.delete('localServer');
-    if (url.searchParams.get('generation') === 'native') url.searchParams.set('generation','cpu');
+    if (url.searchParams.get('generation') === 'native') url.searchParams.set('generation', 'cpu');
   }
   return url;
 }
@@ -85,7 +128,9 @@ export function installExecutionProfile(parent: Element): void {
   select.style.cssText = 'font:inherit;padding:4px;border:1px solid #879887;border-radius:3px;background:#f4f1e6;color:#273d33';
   select.onchange = () => changeExecutionProfile(select.value as ExecutionRuntime['profile']);
   const host = executionHost();
-  const sync = (event: Event): void => { select.value = (event as CustomEvent<ExecutionRuntime['profile']>).detail; };
+  const sync = (event: Event): void => {
+    select.value = (event as CustomEvent<ExecutionRuntime['profile']>).detail;
+  };
   host.addEventListener('magna-execution-profile-change', sync);
   window.addEventListener('pagehide', event => {
     if (!event.persisted) host.removeEventListener('magna-execution-profile-change', sync);
@@ -99,28 +144,49 @@ export function installExecutionProfile(parent: Element): void {
     labelText.textContent = `${words.label} `;
     select.setAttribute('aria-label', words.aria);
     if (!state) return;
-    if (connection === 'stale') { state.textContent = words.stale; state.title = words.staleTitle; }
-    else if (connection === 'connected') { state.textContent = '●'; state.title = words.connected; }
-    else if (connection === 'offline') { state.textContent = words.offline; state.title = words.offlineTitle; }
+    if (connection === 'stale') {
+      state.textContent = words.stale;
+      state.title = words.staleTitle;
+    } else if (connection === 'connected') {
+      state.textContent = '●';
+      state.title = words.connected;
+    } else if (connection === 'offline') {
+      state.textContent = words.offline;
+      state.title = words.offlineTitle;
+    }
   };
-  const onStorage = (event: StorageEvent): void => { if (event.key === LOCALE_KEY) translate(); };
+  const onStorage = (event: StorageEvent): void => {
+    if (event.key === LOCALE_KEY) translate();
+  };
   window.addEventListener('magna-locale-change', translate);
   window.addEventListener('storage', onStorage);
   window.addEventListener('pagehide', event => {
-    if (!event.persisted) { window.removeEventListener('magna-locale-change', translate); window.removeEventListener('storage', onStorage); }
+    if (!event.persisted) {
+      window.removeEventListener('magna-locale-change', translate);
+      window.removeEventListener('storage', onStorage);
+    }
   });
   if (executionRuntime.profile === 'local') {
-    state = document.createElement('small'); state.setAttribute('role', 'status'); label.append(state);
+    state = document.createElement('small');
+    state.setAttribute('role', 'status');
+    label.append(state);
     const check = (): void => {
-      void fetch(`${executionRuntime.server}/status`, { signal: AbortSignal.timeout(4000) }).then(async response => {
-        if (!response.ok) throw new Error();
-        const status = await response.json();
-        if (status.service !== 'magna-urbis-local') throw new Error();
-        if (!Array.isArray(status.capabilities) || !status.capabilities.includes('houses.placement')) {
-          connection = 'stale';
-        } else { connection = 'connected'; }
-        translate();
-      }).catch(() => { connection = 'offline'; translate(); });
+      void fetch(`${executionRuntime.server}/status`, { signal: AbortSignal.timeout(4000) })
+        .then(async response => {
+          if (!response.ok) throw new Error();
+          const status = await response.json();
+          if (status.service !== 'magna-urbis-local') throw new Error();
+          if (!Array.isArray(status.capabilities) || !status.capabilities.includes('houses.placement')) {
+            connection = 'stale';
+          } else {
+            connection = 'connected';
+          }
+          translate();
+        })
+        .catch(() => {
+          connection = 'offline';
+          translate();
+        });
     };
     // Synchronous workshop startup can otherwise exhaust the timeout before JSON is read.
     if (document.readyState === 'complete') check();

@@ -9,7 +9,9 @@ export function parseCaveTunnels(flat: ArrayLike<number> | undefined): CaveTunne
   const out: CaveTunnel[] = [];
   if (!flat) return out;
   for (let i = 0; i + 3 <= flat.length;) {
-    const kind = KINDS[flat[i]], halfWidth = flat[i + 1], count = flat[i + 2];
+    const kind = KINDS[flat[i]],
+      halfWidth = flat[i + 1],
+      count = flat[i + 2];
     const end = i + 3 + 2 * count;
     if (!Number.isInteger(count) || count < 0 || end > flat.length) break;
     if (kind && count >= 2 && halfWidth > 0) {

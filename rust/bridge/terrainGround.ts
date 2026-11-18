@@ -12,96 +12,173 @@ export interface GroundOptions {
   macroSampler?: GroundSampler;
 }
 const bands = [
-  { wavelength: 8, amplitude: .17, aspect: .35, filterWidth: 1, c: .8, s: .6, variance: .20 },
-  { wavelength: 2.2, amplitude: .04, aspect: .24, filterWidth: .5, c: -.6, s: .8, variance: 1.8 },
-  { wavelength: .32, amplitude: .012, aspect: .85, filterWidth: .5, c: .28, s: .96, variance: 1.3 },
-  { wavelength: .055, amplitude: .002, aspect: .72, filterWidth: 1, c: -.96, s: .28, variance: .40 },
+  { wavelength: 8, amplitude: 0.17, aspect: 0.35, filterWidth: 1, c: 0.8, s: 0.6, variance: 0.2 },
+  { wavelength: 2.2, amplitude: 0.04, aspect: 0.24, filterWidth: 0.5, c: -0.6, s: 0.8, variance: 1.8 },
+  { wavelength: 0.32, amplitude: 0.012, aspect: 0.85, filterWidth: 0.5, c: 0.28, s: 0.96, variance: 1.3 },
+  { wavelength: 0.055, amplitude: 0.002, aspect: 0.72, filterWidth: 1, c: -0.96, s: 0.28, variance: 0.4 },
 ] as const;
 const clamp = (v: number, a = 0, b = 1): number => Math.max(a, Math.min(b, v));
-function smooth(a: number, b: number, v: number): number { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); }
+function smooth(a: number, b: number, v: number): number {
+  const t = clamp((v - a) / (b - a));
+  return t * t * (3 - 2 * t);
+}
 function visibility(wavelength: number, footprint: number): number {
-  const t = clamp((footprint / wavelength - .18) / .24);
+  const t = clamp((footprint / wavelength - 0.18) / 0.24);
   return 1 - t * t * t * (t * (t * 6 - 15) + 10);
 }
 function hash(x: number, y: number, z: number, seed: number): number {
   let h = Math.imul(x, 0x9e3779b9) ^ Math.imul(y, 0x85ebca6b) ^ Math.imul(z, 0xc2b2ae35) ^ seed;
-  h = Math.imul(h ^ (h >>> 16), 0x7feb352d); h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
   return (h ^ (h >>> 16)) >>> 0;
 }
 /** Quintic gradient noise and exact first derivatives. */
 function noise(x: number, y: number, z: number, seed: number, out: Float64Array): void {
-  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz;
-  const ux = fx ** 3 * (fx * (fx * 6 - 15) + 10), uy = fy ** 3 * (fy * (fy * 6 - 15) + 10), uz = fz ** 3 * (fz * (fz * 6 - 15) + 10);
-  const dx = 30 * fx * fx * (fx * (fx - 2) + 1), dy = 30 * fy * fy * (fy * (fy - 2) + 1), dz = 30 * fz * fz * (fz * (fz - 2) + 1);
-  let value = 0, gx = 0, gy = 0, gz = 0;
+  const ix = Math.floor(x),
+    iy = Math.floor(y),
+    iz = Math.floor(z),
+    fx = x - ix,
+    fy = y - iy,
+    fz = z - iz;
+  const ux = fx ** 3 * (fx * (fx * 6 - 15) + 10),
+    uy = fy ** 3 * (fy * (fy * 6 - 15) + 10),
+    uz = fz ** 3 * (fz * (fz * 6 - 15) + 10);
+  const dx = 30 * fx * fx * (fx * (fx - 2) + 1),
+    dy = 30 * fy * fy * (fy * (fy - 2) + 1),
+    dz = 30 * fz * fz * (fz * (fz - 2) + 1);
+  let value = 0,
+    gx = 0,
+    gy = 0,
+    gz = 0;
   for (let k = 0; k < 8; k++) {
-    const a = k & 1, b = (k >>> 1) & 1, c = k >>> 2, h = hash(ix + a, iy + b, iz + c, seed);
-    const nx = (h & 1023) / 511.5 - 1, ny = ((h >>> 10) & 1023) / 511.5 - 1, nz = ((h >>> 20) & 1023) / 511.5 - 1;
-    const wx = a ? ux : 1 - ux, wy = b ? uy : 1 - uy, wz = c ? uz : 1 - uz;
-    const vx = a ? dx : -dx, vy = b ? dy : -dy, vz = c ? dz : -dz;
-    const v = nx * (fx - a) + ny * (fy - b) + nz * (fz - c), w = wx * wy * wz;
-    value += v * w; gx += nx * w + v * vx * wy * wz;
-    gy += ny * w + v * wx * vy * wz; gz += nz * w + v * wx * wy * vz;
+    const a = k & 1,
+      b = (k >>> 1) & 1,
+      c = k >>> 2,
+      h = hash(ix + a, iy + b, iz + c, seed);
+    const nx = (h & 1023) / 511.5 - 1,
+      ny = ((h >>> 10) & 1023) / 511.5 - 1,
+      nz = ((h >>> 20) & 1023) / 511.5 - 1;
+    const wx = a ? ux : 1 - ux,
+      wy = b ? uy : 1 - uy,
+      wz = c ? uz : 1 - uz;
+    const vx = a ? dx : -dx,
+      vy = b ? dy : -dy,
+      vz = c ? dz : -dz;
+    const v = nx * (fx - a) + ny * (fy - b) + nz * (fz - c),
+      w = wx * wy * wz;
+    value += v * w;
+    gx += nx * w + v * vx * wy * wz;
+    gy += ny * w + v * wx * vy * wz;
+    gz += nz * w + v * wx * wy * vz;
   }
-  out[0] = value * 1.7; out[1] = gx * 1.7; out[2] = gy * 1.7; out[3] = gz * 1.7;
+  out[0] = value * 1.7;
+  out[1] = gx * 1.7;
+  out[2] = gy * 1.7;
+  out[3] = gz * 1.7;
 }
 /** Compact C1 elliptical clasts on a jittered lattice. Cell coordinates are
  * dimensionless; occupied cells place roughly 2.5–13 cm radii at the .32 m band.
  * Saturating overlapping caps bounds the height without a hard max seam. */
 function gravel(x: number, z: number, seed: number, out: Float64Array): void {
-  const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz;
-  let sum = 0, gx = 0, gz = 0;
-  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-    const h = hash(ix + i, 0, iz + j, seed);
-    if ((h & 7) > 4) continue;
-    const dx = fx - (i + .5 + ((h & 255) / 255 - .5));
-    const dz = fz - (j + .5 + (((h >>> 8) & 255) / 255 - .5));
-    const angle = (h >>> 24) & 3;
-    const c = angle === 0 ? 1 : angle === 2 ? 0 : angle === 1 ? .7071067811865476 : -.7071067811865476;
-    const s = angle === 0 ? 0 : angle === 2 ? 1 : .7071067811865476;
-    const u = c * dx + s * dz, v = -s * dx + c * dz;
-    const ru = .10 + .30 * ((h >>> 16) & 15) / 15, rv = .10 + .30 * ((h >>> 20) & 15) / 15;
-    const iu = 1 / (ru * ru), iv = 1 / (rv * rv), q = u * u * iu + v * v * iv;
-    if (q >= 1) continue;
-    const t = 1 - q, weight = .6 + 1.8 * (h >>> 28) / 15, derivative = -4 * weight * t;
-    sum += weight * t * t;
-    gx += derivative * (c * u * iu - s * v * iv);
-    gz += derivative * (s * u * iu + c * v * iv);
-  }
+  const ix = Math.floor(x),
+    iz = Math.floor(z),
+    fx = x - ix,
+    fz = z - iz;
+  let sum = 0,
+    gx = 0,
+    gz = 0;
+  for (let j = -1; j <= 1; j++)
+    for (let i = -1; i <= 1; i++) {
+      const h = hash(ix + i, 0, iz + j, seed);
+      if ((h & 7) > 4) continue;
+      const dx = fx - (i + 0.5 + ((h & 255) / 255 - 0.5));
+      const dz = fz - (j + 0.5 + (((h >>> 8) & 255) / 255 - 0.5));
+      const angle = (h >>> 24) & 3;
+      const c = angle === 0 ? 1 : angle === 2 ? 0 : angle === 1 ? 0.7071067811865476 : -0.7071067811865476;
+      const s = angle === 0 ? 0 : angle === 2 ? 1 : 0.7071067811865476;
+      const u = c * dx + s * dz,
+        v = -s * dx + c * dz;
+      const ru = 0.1 + (0.3 * ((h >>> 16) & 15)) / 15,
+        rv = 0.1 + (0.3 * ((h >>> 20) & 15)) / 15;
+      const iu = 1 / (ru * ru),
+        iv = 1 / (rv * rv),
+        q = u * u * iu + v * v * iv;
+      if (q >= 1) continue;
+      const t = 1 - q,
+        weight = 0.6 + (1.8 * (h >>> 28)) / 15,
+        derivative = -4 * weight * t;
+      sum += weight * t * t;
+      gx += derivative * (c * u * iu - s * v * iv);
+      gz += derivative * (s * u * iu + c * v * iv);
+    }
   const attenuation = Math.exp(-sum);
-  out[0] = 1 - attenuation; out[1] = gx * attenuation; out[2] = 0; out[3] = gz * attenuation;
+  out[0] = 1 - attenuation;
+  out[1] = gx * attenuation;
+  out[2] = 0;
+  out[3] = gz * attenuation;
 }
 function field(x: number, y: number, z: number, seed: number, footprint: number, out: Float64Array, scratch: Float64Array): void {
-  out.fill(0); const turn = (seed >>> 29) & 3;
+  out.fill(0);
+  const turn = (seed >>> 29) & 3;
   for (let k = 0; k < bands.length; k++) {
     // Conservative isotropic bandwidth of the compressed direction. Narrow
     // nonlinear joint grooves receive an additional half-width allowance.
-    const band = bands[k], keep = visibility(band.wavelength * band.aspect * band.filterWidth, footprint);
+    const band = bands[k],
+      keep = visibility(band.wavelength * band.aspect * band.filterWidth, footprint);
     out[4] += (band.amplitude / band.wavelength) ** 2 * (1 + 1 / band.aspect ** 2) * band.variance * (1 - keep * keep);
     if (keep <= 0) continue;
-    let c: number = band.c, s: number = band.s;
-    if (turn === 1) { c = -band.s; s = band.c; } else if (turn === 2) { c = -band.c; s = -band.s; } else if (turn === 3) { c = band.s; s = -band.c; }
-    const rx = c * x + s * z, rz = -s * x + c * z, wavelength = band.wavelength;
+    let c: number = band.c,
+      s: number = band.s;
+    if (turn === 1) {
+      c = -band.s;
+      s = band.c;
+    } else if (turn === 2) {
+      c = -band.c;
+      s = -band.s;
+    } else if (turn === 3) {
+      c = band.s;
+      s = -band.c;
+    }
+    const rx = c * x + s * z,
+      rz = -s * x + c * z,
+      wavelength = band.wavelength;
     if (k === 2) {
       gravel(rx / wavelength, rz / (wavelength * band.aspect), (seed + Math.imul(k + 1, 0x6c8e9cf5)) >>> 0, scratch);
-      const a = band.amplitude * keep, gx = scratch[1] / wavelength, gz = scratch[3] / (wavelength * band.aspect);
-      out[0] += (scratch[0] - .1) * a;
-      out[1] += (c * gx - s * gz) * a; out[3] += (s * gx + c * gz) * a;
+      const a = band.amplitude * keep,
+        gx = scratch[1] / wavelength,
+        gz = scratch[3] / (wavelength * band.aspect);
+      out[0] += (scratch[0] - 0.1) * a;
+      out[1] += (c * gx - s * gz) * a;
+      out[3] += (s * gx + c * gz) * a;
       continue;
     }
-    noise((.36 * rx - .8 * y + .48 * rz) / wavelength + 17.137 + k * 9.173,
-      (.48 * rx + .6 * y + .64 * rz) / (wavelength * band.aspect) + 3.731 - k * 5.731,
-      (-.8 * rx + .6 * rz) / wavelength - 11.517 + k * 7.337,
-      (seed + Math.imul(k + 1, 0x6c8e9cf5)) >>> 0, scratch);
-    const raw = scratch[0], inverse = 1 / Math.sqrt(1 + raw * raw), v = .72 * raw * inverse;
-    let value = v, derivative = 1;
-    if (k === 0) { const rounded = Math.sqrt(v * v + .02); value = .3 - rounded; derivative = -v / rounded; }
-    else if (k === 1) { const groove = 2 ** (-32 * v * v); value = .4 - groove; derivative = 64 * Math.LN2 * v * groove; }
-    const a = band.amplitude * keep, d = a * derivative * .72 * inverse ** 3 / wavelength;
-    const nx = scratch[1], ny = scratch[2] / band.aspect, nz = scratch[3];
-    const gx = .36 * nx + .48 * ny - .8 * nz, gy = -.8 * nx + .6 * ny, gz = .48 * nx + .64 * ny + .6 * nz;
-    out[0] += value * a; out[1] += (c * gx - s * gz) * d;
-    out[2] += gy * d; out[3] += (s * gx + c * gz) * d;
+    noise((0.36 * rx - 0.8 * y + 0.48 * rz) / wavelength + 17.137 + k * 9.173, (0.48 * rx + 0.6 * y + 0.64 * rz) / (wavelength * band.aspect) + 3.731 - k * 5.731, (-0.8 * rx + 0.6 * rz) / wavelength - 11.517 + k * 7.337, (seed + Math.imul(k + 1, 0x6c8e9cf5)) >>> 0, scratch);
+    const raw = scratch[0],
+      inverse = 1 / Math.sqrt(1 + raw * raw),
+      v = 0.72 * raw * inverse;
+    let value = v,
+      derivative = 1;
+    if (k === 0) {
+      const rounded = Math.sqrt(v * v + 0.02);
+      value = 0.3 - rounded;
+      derivative = -v / rounded;
+    } else if (k === 1) {
+      const groove = 2 ** (-32 * v * v);
+      value = 0.4 - groove;
+      derivative = 64 * Math.LN2 * v * groove;
+    }
+    const a = band.amplitude * keep,
+      d = (a * derivative * 0.72 * inverse ** 3) / wavelength;
+    const nx = scratch[1],
+      ny = scratch[2] / band.aspect,
+      nz = scratch[3];
+    const gx = 0.36 * nx + 0.48 * ny - 0.8 * nz,
+      gy = -0.8 * nx + 0.6 * ny,
+      gz = 0.48 * nx + 0.64 * ny + 0.6 * nz;
+    out[0] += value * a;
+    out[1] += (c * gx - s * gz) * d;
+    out[2] += gy * d;
+    out[3] += (s * gx + c * gz) * d;
   }
 }
 /** [height metres, dH/dX, dH/dUp, dH/dZ, unresolved slope variance]. */
@@ -111,28 +188,39 @@ export function sampleGroundField(point: readonly [number, number, number], seed
   return out;
 }
 function displacementGain(height: number, slope: number, temperature: number, rain: number): number {
-  const localTemperature = temperature - .0065 * Math.max(height, 0), wet = smooth(250, 1400, rain);
-  const snow = (1 - smooth(-5, 1, localTemperature)) * (1 - smooth(.55, 1.3, slope));
-  const exposed = 1 - snow, rock = smooth(.25, .9, slope) * exposed;
+  const localTemperature = temperature - 0.0065 * Math.max(height, 0),
+    wet = smooth(250, 1400, rain);
+  const snow = (1 - smooth(-5, 1, localTemperature)) * (1 - smooth(0.55, 1.3, slope));
+  const exposed = 1 - snow,
+    rock = smooth(0.25, 0.9, slope) * exposed;
   const growth = smooth(-8, 4, localTemperature) * (1 - smooth(28, 42, localTemperature));
-  const grass = wet * growth * (exposed - rock), soil = exposed - rock - grass;
-  return smooth(.025, .18, slope) * smooth(0, 2, height) * (rock + .16 * soil + .045 * grass + .018 * snow);
+  const grass = wet * growth * (exposed - rock),
+    soil = exposed - rock - grass;
+  return smooth(0.025, 0.18, slope) * smooth(0, 2, height) * (rock + 0.16 * soil + 0.045 * grass + 0.018 * snow);
 }
 /** Fixed physical ground residual. Base probes always use mpp=0. A caller can
  * filter at a fixed mesh-level footprint and morph levels, without regenerating
  * the source. Flat plains/water get zero displacement; rock is bounded by
  * -10.1/+5.6 cm, with smaller soil/grass/snow fractions. */
 export function createGroundDisplacementSampler(baseSampler: GroundSampler, options: GroundOptions): GroundSampler {
-  const seed = options.seed >>> 0, climate = options.climate ?? [14, 900];
-  const macroSampler = options.macroSampler ?? baseSampler, sharedMacro = macroSampler === baseSampler;
-  const probe = Math.max(.125, Math.min(2, Math.max(0, options.sourceCell ?? 20) * .025));
-  const value = new Float64Array(5), scratch = new Float64Array(4);
-  let footprint = NaN, visible = true;
+  const seed = options.seed >>> 0,
+    climate = options.climate ?? [14, 900];
+  const macroSampler = options.macroSampler ?? baseSampler,
+    sharedMacro = macroSampler === baseSampler;
+  const probe = Math.max(0.125, Math.min(2, Math.max(0, options.sourceCell ?? 20) * 0.025));
+  const value = new Float64Array(5),
+    scratch = new Float64Array(4);
+  let footprint = NaN,
+    visible = true;
   return (x, y, metresPerPixel = 0): number => {
-    const height = baseSampler(x, y, 0); if (height <= 0) return height;
+    const height = baseSampler(x, y, 0);
+    if (height <= 0) return height;
     // Above the finest visible band the field is exactly 0: skip the macro probes.
     const px = Math.max(0, metresPerPixel);
-    if (px !== footprint) { footprint = px; visible = bands.some(band => visibility(band.wavelength * band.aspect * band.filterWidth, px) > 0); }
+    if (px !== footprint) {
+      footprint = px;
+      visible = bands.some(band => visibility(band.wavelength * band.aspect * band.filterWidth, px) > 0);
+    }
     if (!visible) return height;
     const macroHeight = sharedMacro ? height : macroSampler(x, y, 0);
     const gx = (macroSampler(x + probe, y, 0) - macroSampler(x - probe, y, 0)) / (2 * probe);
@@ -143,8 +231,8 @@ export function createGroundDisplacementSampler(baseSampler: GroundSampler, opti
     return height + value[0] * gain;
   };
 }
-const glslFloat = (v: number): string => Number.isInteger(v) ? `${v}.` : String(v);
-const glslArray = (key: keyof typeof bands[number]): string => bands.map(b => glslFloat(b[key])).join(',');
+const glslFloat = (v: number): string => (Number.isInteger(v) ? `${v}.` : String(v));
+const glslArray = (key: keyof (typeof bands)[number]): string => bands.map(b => glslFloat(b[key])).join(',');
 
 /** Shared with surfaceMicro; emitted after the material noise helpers. */
 export const GROUND_COVER_GLSL = `

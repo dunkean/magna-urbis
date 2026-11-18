@@ -4,16 +4,23 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 const a = process.argv.slice(2);
-const base = a[0], outDir = a[1];
-const opt = (k, d) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : d; };
-const query = opt('--set', 'seed=1'), tag = opt('--name', 'shot');
+const base = a[0],
+  outDir = a[1];
+const opt = (k, d) => {
+  const i = a.indexOf(k);
+  return i >= 0 ? a[i + 1] : d;
+};
+const query = opt('--set', 'seed=1'),
+  tag = opt('--name', 'shot');
 const scales = opt('--scales', 'fit,0.12,0.5').split(',');
 fs.mkdirSync(outDir, { recursive: true });
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
 const p = await ctx.newPage();
 const logs = [];
-p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`); });
+p.on('console', m => {
+  if (m.type() === 'error' || m.type() === 'warning') logs.push(`[${m.type()}] ${m.text()}`);
+});
 p.on('pageerror', e => logs.push(`[pageerror] ${e.message}`));
 const url = base + (base.includes('?') ? '&' : '?') + query;
 await p.goto(url);
@@ -21,9 +28,13 @@ await p.waitForFunction(() => /Generated in|failed/.test(document.getElementById
 await p.waitForTimeout(800);
 console.log('status:', await p.evaluate(() => document.getElementById('status').textContent));
 for (const sc of scales) {
-  await p.evaluate((sc) => {
+  await p.evaluate(sc => {
     const h = window.__magnaUrbis;
-    if (sc === 'fit') h.fit(); else { const c = h.center(); h.setView({ cx: c.x, cy: c.y, scale: Number(sc) }); }
+    if (sc === 'fit') h.fit();
+    else {
+      const c = h.center();
+      h.setView({ cx: c.x, cy: c.y, scale: Number(sc) });
+    }
   }, sc);
   await p.waitForTimeout(Number(opt('--wait', '500')));
   const f = `${outDir}/${tag}_${sc}.png`;
@@ -33,12 +44,18 @@ for (const sc of scales) {
 if (a.includes('--exports')) {
   await p.locator('#quickShare > summary').click();
   for (const id of ['exportSvg', 'exportPng']) {
-    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60000 }).catch(() => null), (async () => {
-      await p.click('#' + id);
-      await p.locator('.export-crop [data-action="export"]').click();
-    })()]);
-    if (dl) { const f = `${outDir}/${tag}_${dl.suggestedFilename()}`; await dl.saveAs(f); console.log(id, 'download', f, fs.statSync(f).size, 'bytes'); }
-    else console.log(id, 'NO DOWNLOAD');
+    const [dl] = await Promise.all([
+      p.waitForEvent('download', { timeout: 60000 }).catch(() => null),
+      (async () => {
+        await p.click('#' + id);
+        await p.locator('.export-crop [data-action="export"]').click();
+      })(),
+    ]);
+    if (dl) {
+      const f = `${outDir}/${tag}_${dl.suggestedFilename()}`;
+      await dl.saveAs(f);
+      console.log(id, 'download', f, fs.statSync(f).size, 'bytes');
+    } else console.log(id, 'NO DOWNLOAD');
   }
 }
 console.log(logs.length ? 'CONSOLE:\n' + logs.slice(0, 30).join('\n') : 'no console errors');

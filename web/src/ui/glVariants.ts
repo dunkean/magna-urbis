@@ -6,9 +6,13 @@
 /** Starts compiling and linking without reading any status, so the link can run off the main thread. */
 export function startProgram(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const program = gl.createProgram()!;
-  for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
+  for (const [type, source] of [
+    [gl.VERTEX_SHADER, vs],
+    [gl.FRAGMENT_SHADER, fs],
+  ] as const) {
     const shader = gl.createShader(type)!;
-    gl.shaderSource(shader, source); gl.compileShader(shader);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
     gl.attachShader(program, shader);
   }
   gl.linkProgram(program);
@@ -17,7 +21,10 @@ export function startProgram(gl: WebGL2RenderingContext, vs: string, fs: string)
 /** Waits for the link (blocking) and reports the shader logs on failure. */
 export function finishProgram(gl: WebGL2RenderingContext, program: WebGLProgram): WebGLProgram {
   if (gl.getProgramParameter(program, gl.LINK_STATUS)) return program;
-  const shaders = (gl.getAttachedShaders(program) ?? []).map(shader => gl.getShaderInfoLog(shader)).filter(Boolean).join('\n');
+  const shaders = (gl.getAttachedShaders(program) ?? [])
+    .map(shader => gl.getShaderInfoLog(shader))
+    .filter(Boolean)
+    .join('\n');
   throw new Error(`Programme : ${shaders || gl.getProgramInfoLog(program)}`);
 }
 
@@ -29,11 +36,12 @@ export function specializeShader(source: string, constants: Record<string, numbe
     if (fs.split(from).length !== 2) throw new Error(`Shader variant: ${from} not found once`);
     return fs.replace(from, to);
   };
-  const head = Object.entries(defines).map(([name, value]) => `#define ${name} ${value}\n`).join('');
-  let fs = swap(source, '#version 300 es\n', `#version 300 es\n${head}uniform highp int uLoopZero;\n`);   // never set: always 0
+  const head = Object.entries(defines)
+    .map(([name, value]) => `#define ${name} ${value}\n`)
+    .join('');
+  let fs = swap(source, '#version 300 es\n', `#version 300 es\n${head}uniform highp int uLoopZero;\n`); // never set: always 0
   for (const [name, value] of Object.entries(constants)) fs = swap(fs, `uniform int ${name};`, `const int ${name}=${value};`);
-  return fs.replace(/(for\s*\(\s*int\s+\w+\s*=\s*-?\d+\s*;\s*\w+\s*<=?\s*)(\d+)\s*;/g, (loop: string, start: string, bound: string, at: number, all: string) =>
-    /\]\s*=[^=]/.test(all.slice(at, all.indexOf('\n', at))) ? loop : `${start}${bound}+uLoopZero;`);
+  return fs.replace(/(for\s*\(\s*int\s+\w+\s*=\s*-?\d+\s*;\s*\w+\s*<=?\s*)(\d+)\s*;/g, (loop: string, start: string, bound: string, at: number, all: string) => (/\]\s*=[^=]/.test(all.slice(at, all.indexOf('\n', at))) ? loop : `${start}${bound}+uLoopZero;`));
 }
 
 /** Whether WebGL runs on ANGLE/D3D11, where FXC compiles the large variants in about a minute. */
@@ -50,32 +58,49 @@ export class ShaderVariants {
   private failed = new Set<string>();
   private parallel: { COMPLETION_STATUS_KHR: number } | null;
   private poll = 0;
-  constructor(private gl: WebGL2RenderingContext, private redraw: () => void) {
+  constructor(
+    private gl: WebGL2RenderingContext,
+    private redraw: () => void,
+  ) {
     this.parallel = gl.getExtension('KHR_parallel_shader_compile');
   }
   /** Starts linking a variant in the background (no redraw is polled for it). */
   start(key: string, sources: () => [string, string]): void {
     if (!this.programs.has(key) && !this.failed.has(key)) this.programs.set(key, startProgram(this.gl, ...sources()));
   }
-  hasFailed(key: string): boolean { return this.failed.has(key); }
+  hasFailed(key: string): boolean {
+    return this.failed.has(key);
+  }
   get(key: string, sources: () => [string, string], wait = false): WebGLProgram | undefined {
     if (this.failed.has(key)) return undefined;
     let program = this.programs.get(key);
-    if (!program) this.programs.set(key, program = startProgram(this.gl, ...sources()));
+    if (!program) this.programs.set(key, (program = startProgram(this.gl, ...sources())));
     if (this.linked.has(program)) return program;
     if (!wait && this.parallel && !this.gl.getProgramParameter(program, this.parallel.COMPLETION_STATUS_KHR)) {
-      if (!this.poll) this.poll = window.setTimeout(() => { this.poll = 0; this.redraw(); }, 100);
+      if (!this.poll)
+        this.poll = window.setTimeout(() => {
+          this.poll = 0;
+          this.redraw();
+        }, 100);
       return undefined;
     }
-    try { finishProgram(this.gl, program); }
-    catch (error) { this.failed.add(key); console.error(`Shader variant ${key}:`, error); return undefined; }
+    try {
+      finishProgram(this.gl, program);
+    } catch (error) {
+      this.failed.add(key);
+      console.error(`Shader variant ${key}:`, error);
+      return undefined;
+    }
     this.linked.add(program);
     return program;
   }
   /** Forgets every program (after a context loss, or on dispose with `deleted`). */
   reset(deleted = false): void {
-    clearTimeout(this.poll); this.poll = 0;
+    clearTimeout(this.poll);
+    this.poll = 0;
     if (deleted) for (const program of this.programs.values()) this.gl.deleteProgram(program);
-    this.programs.clear(); this.linked.clear(); this.failed.clear();
+    this.programs.clear();
+    this.linked.clear();
+    this.failed.clear();
   }
 }

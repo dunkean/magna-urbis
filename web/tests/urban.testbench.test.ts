@@ -64,7 +64,9 @@ describe('isolated native generation bench', () => {
   it('cuts parcels without buildings and retains the exact partition across house variants and seeds', () => {
     const layout = benchLayout(options, '42');
     const partition = benchParcels(layout, '42');
-    const before = JSON.stringify(partition), streets = JSON.stringify(layout.streets.list), blocks = JSON.stringify(layout.blocks);
+    const before = JSON.stringify(partition),
+      streets = JSON.stringify(layout.streets.list),
+      blocks = JSON.stringify(layout.blocks);
     expect(partition.plots.length).toBeGreaterThan(10);
     const rows = benchBuildings(layout, partition, '42');
     const courts = benchBuildings(layout, partition, 'other', { ...options, stages: { buildings: { preset: 'morph/medina' } } });
@@ -81,7 +83,8 @@ describe('isolated native generation bench', () => {
   });
 
   it('varies native plot methods without changing roads or blocks and includes back land', () => {
-    const layout = benchLayout(options, '42'), before = JSON.stringify(layout.streets.list);
+    const layout = benchLayout(options, '42'),
+      before = JSON.stringify(layout.streets.list);
     const strips = benchParcels(layout, '42');
     const courts = benchParcels(layout, '42', { ...options, stages: { plots: { preset: 'morph/medina' } } });
     expect(courts.parcels).not.toEqual(strips.parcels);
@@ -103,7 +106,9 @@ describe('isolated native generation bench', () => {
       expect(benchMorph({ ...options, stages: { plots: { preset } } }, 'plots').plotOp, entry.label).toBeTruthy();
     }
     const P = benchMorph({ ...options, culture: 'chinese', stages: { buildings: { preset: 'morph/medina', params: { buildingOp: 'hall', coverage: { core: [0.3, 0.4] } } } } }, 'buildings');
-    expect(P.buildingOp).toBe('hall'); expect(P.arch.material).toBe('mud'); expect(P.coverage.core).toEqual([0.3, 0.4]);
+    expect(P.buildingOp).toBe('hall');
+    expect(P.arch.material).toBe('mud');
+    expect(P.coverage.core).toEqual([0.3, 0.4]);
     expect(() => validateBenchParams('plots', { growth: {} })).toThrow('n’est pas utilisé');
     expect(() => validateBenchParams('streets', { gridSpacing: [0, 20] })).toThrow();
     expect(() => validateBenchParams('buildings', { buildingOp: 'fake' })).toThrow();
@@ -116,16 +121,21 @@ describe('isolated native generation bench', () => {
   it.each(['center', 'rectangle', 'skew', 'notched'] as const)('keeps shared partitions simple and disjoint in the %s fixture', placement => {
     const layout = benchLayout({ ...options, placement, count: 5, rings: 2 }, '42');
     expect(layout.quarters).toHaveLength(10);
-    for (const q of layout.quarters) { expect(isSimple(q.lp.pts)).toBe(true); expect(q.lp.lab).toHaveLength(q.lp.pts.length); }
-    for (let i = 0; i < layout.quarters.length; i++) for (let j = i + 1; j < layout.quarters.length; j++) {
-      expect(mpArea(intersectionS(layout.quarters[i].lp.pts, layout.quarters[j].lp.pts))).toBeLessThan(0.05);
+    for (const q of layout.quarters) {
+      expect(isSimple(q.lp.pts)).toBe(true);
+      expect(q.lp.lab).toHaveLength(q.lp.pts.length);
     }
+    for (let i = 0; i < layout.quarters.length; i++)
+      for (let j = i + 1; j < layout.quarters.length; j++) {
+        expect(mpArea(intersectionS(layout.quarters[i].lp.pts, layout.quarters[j].lp.pts))).toBeLessThan(0.05);
+      }
     expect(benchLayout({ ...options, placement, count: 5, rings: 2 }, '42').quarters).toEqual(layout.quarters);
     if (placement === 'notched') expect(layout.quarters.some(q => q.lp.pts.some((_, i) => interiorAngle(q.lp.pts, i) > Math.PI))).toBe(true);
   });
 
   it.each(['valley', 'hill'] as const)('constrains the %s footprint without regional generation', relief => {
-    const flat = benchLayout(options, '42'), constrained = benchLayout({ ...options, relief }, '42');
+    const flat = benchLayout(options, '42'),
+      constrained = benchLayout({ ...options, relief }, '42');
     expect(constrained.contours.length).toBeGreaterThan(0);
     expect(constrained.quarters.reduce((s, q) => s + area(q.lp.pts), 0)).toBeLessThan(flat.quarters.reduce((s, q) => s + area(q.lp.pts), 0));
     expect(constrained.blocks.length).toBeGreaterThan(0);
@@ -135,7 +145,8 @@ describe('isolated native generation bench', () => {
     const layout = benchLayout({ ...options, placement: 'notched', relief: 'hill', river, riverWidth: 18 }, '42');
     expect(layout.water.length).toBeGreaterThan(0);
     expect(layout.quarters.some(q => q.lp.lab.includes(LAB_WATER))).toBe(true);
-    const partition = benchParcels(layout, '42'), houses = benchBuildings(layout, partition, '42');
+    const partition = benchParcels(layout, '42'),
+      houses = benchBuildings(layout, partition, '42');
     expect(partition.plots.length).toBeGreaterThan(0);
     for (const poly of [...layout.quarters.map(q => q.lp.pts), ...partition.parcels.map(p => p.poly), ...houses.buildings.map(b => b.poly)]) {
       expect(mpArea(intersectionS(poly, layout.water))).toBeLessThan(0.01);
@@ -143,7 +154,8 @@ describe('isolated native generation bench', () => {
   });
 
   it('reserves a monument without constructing it at parcel stage', () => {
-    const layout = benchLayout({ ...options, monument: 'church' }, '42'), partition = benchParcels(layout, '42');
+    const layout = benchLayout({ ...options, monument: 'church' }, '42'),
+      partition = benchParcels(layout, '42');
     expect(partition.compounds).toHaveLength(1);
     const before = JSON.stringify(partition);
     const houses = benchBuildings(layout, partition, '42');

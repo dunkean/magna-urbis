@@ -1,11 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { obtainNeuralRuntime } from '../../rust/bridge/neuralRuntime';
-import {
-  loadNeuralManifest, listStoredNeuralModels, obtainNeuralModel, deleteStoredNeuralModel, neuralModelUrl,
-  NEURAL_MODEL_NAMES, type NeuralManifest,
-  hasStoredNeuralModels,
-} from '../../rust/bridge/neuralModels';
+import { loadNeuralManifest, listStoredNeuralModels, obtainNeuralModel, deleteStoredNeuralModel, neuralModelUrl, NEURAL_MODEL_NAMES, type NeuralManifest, hasStoredNeuralModels } from '../../rust/bridge/neuralModels';
 
 const assets = 'https://example.test/neural/';
 const payload = new Uint8Array([1, 2, 3, 4]);
@@ -13,43 +9,45 @@ let manifest: NeuralManifest;
 let files: Map<string, Response>;
 let put: ReturnType<typeof vi.fn>;
 let fetcher: ReturnType<typeof vi.fn>;
-const key = (value: string | URL | Request) => typeof value === 'string' ? value : value instanceof URL ? value.href : value.url;
+const key = (value: string | URL | Request) => (typeof value === 'string' ? value : value instanceof URL ? value.href : value.url);
 beforeEach(async () => {
   files = new Map();
   vi.stubGlobal('crypto', webcrypto);
   const hash = Buffer.from(await webcrypto.subtle.digest('SHA-256', payload)).toString('hex');
   manifest = { profile: 'coarse4-nf4-b75-t2-distilled-decoder', engineRevision: 'test', runtimeSha256: 'a'.repeat(64), models: Object.fromEntries(NEURAL_MODEL_NAMES.map(name => [name, { file: `${name}.bin`, bytes: 4, sha256: hash }])) as NeuralManifest['models'] };
-  put = vi.fn(async (url, response: Response) => { files.set(key(url), response.clone()); });
-  vi.stubGlobal('caches', { open: vi.fn(async () => ({
-    match: vi.fn(async url => files.get(key(url))?.clone()), put,
-    delete: vi.fn(async url => files.delete(key(url))),
-    keys: vi.fn(async () => [...files.keys()].map(url => new Request(url))),
-  })) });
-  fetcher = vi.fn(async () => new Response(payload)); vi.stubGlobal('fetch', fetcher);
+  put = vi.fn(async (url, response: Response) => {
+    files.set(key(url), response.clone());
+  });
+  vi.stubGlobal('caches', { open: vi.fn(async () => ({ match: vi.fn(async url => files.get(key(url))?.clone()), put, delete: vi.fn(async url => files.delete(key(url))), keys: vi.fn(async () => [...files.keys()].map(url => new Request(url))) })) });
+  fetcher = vi.fn(async () => new Response(payload));
+  vi.stubGlobal('fetch', fetcher);
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('browser neural model storage shared by settings and inference', () => {
   it('opens setup for an absent or incomplete model set without contacting the network', async () => {
     expect(await hasStoredNeuralModels(assets)).toBe(false);
-    files.set(new URL('models/manifest.json',assets).href,new Response(JSON.stringify(manifest)));
-    await obtainNeuralModel(assets,manifest,'base');fetcher.mockClear();
+    files.set(new URL('models/manifest.json', assets).href, new Response(JSON.stringify(manifest)));
+    await obtainNeuralModel(assets, manifest, 'base');
+    fetcher.mockClear();
     expect(await hasStoredNeuralModels(assets)).toBe(false);
     expect(fetcher).not.toHaveBeenCalled();
   });
   it('recognizes a complete current set and notices deletion without network access', async () => {
-    files.set(new URL('models/manifest.json',assets).href,new Response(JSON.stringify(manifest)));
-    for(const name of NEURAL_MODEL_NAMES)await obtainNeuralModel(assets,manifest,name);
+    files.set(new URL('models/manifest.json', assets).href, new Response(JSON.stringify(manifest)));
+    for (const name of NEURAL_MODEL_NAMES) await obtainNeuralModel(assets, manifest, name);
     fetcher.mockClear();
     expect(await hasStoredNeuralModels(assets)).toBe(true);
-    await deleteStoredNeuralModel(neuralModelUrl(assets,manifest.models.coarse));
+    await deleteStoredNeuralModel(neuralModelUrl(assets, manifest.models.coarse));
     expect(await hasStoredNeuralModels(assets)).toBe(false);
     expect(fetcher).not.toHaveBeenCalled();
   });
   it('reuses the same weights after an update changes the hosting path and filenames', async () => {
     for (const name of NEURAL_MODEL_NAMES) await obtainNeuralModel(assets, manifest, name);
-    const updated = structuredClone(manifest), nextAssets = 'https://example.test/v2-next/neural/';
-    updated.engineRevision = 'next-app-build'; updated.runtimeSha256 = 'b'.repeat(64);
+    const updated = structuredClone(manifest),
+      nextAssets = 'https://example.test/v2-next/neural/';
+    updated.engineRevision = 'next-app-build';
+    updated.runtimeSha256 = 'b'.repeat(64);
     for (const name of NEURAL_MODEL_NAMES) updated.models[name].file = `renamed-${name}.bin`;
     fetcher.mockReset().mockResolvedValueOnce(new Response(JSON.stringify(updated)));
     expect(await hasStoredNeuralModels(nextAssets)).toBe(true);
@@ -71,7 +69,8 @@ describe('browser neural model storage shared by settings and inference', () => 
   });
   it('verifies reused weights from another hosting path before inference', async () => {
     await obtainNeuralModel(assets, manifest, 'base');
-    const url = neuralModelUrl(assets, manifest.models.base), saved = files.get(url)!;
+    const url = neuralModelUrl(assets, manifest.models.base),
+      saved = files.get(url)!;
     files.set(url, new Response(new Uint8Array([4, 3, 2, 1]), { headers: saved.headers }));
     fetcher.mockClear();
     expect(await obtainNeuralModel('https://example.test/next/neural/', manifest, 'base')).toEqual(payload);
@@ -80,8 +79,7 @@ describe('browser neural model storage shared by settings and inference', () => 
   });
   it('assembles ordered chunks, verifies them and the whole file, then reuses the whole cache offline', async () => {
     const chunks = [payload.slice(0, 2), payload.slice(2)];
-    manifest.models.base.chunks = await Promise.all(chunks.map(async (bytes, i) => ({ file: `base.bin.part${i}`, bytes: bytes.length,
-      sha256: Buffer.from(await webcrypto.subtle.digest('SHA-256', bytes)).toString('hex') })));
+    manifest.models.base.chunks = await Promise.all(chunks.map(async (bytes, i) => ({ file: `base.bin.part${i}`, bytes: bytes.length, sha256: Buffer.from(await webcrypto.subtle.digest('SHA-256', bytes)).toString('hex') })));
     fetcher.mockImplementation(async (url: string) => new Response(chunks[url.includes('part0') ? 0 : 1]));
     expect(await obtainNeuralModel(assets, manifest, 'base', { requireStorage: true })).toEqual(payload);
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -101,7 +99,11 @@ describe('browser neural model storage shared by settings and inference', () => 
     expect(files.size).toBe(0);
   });
   it('rejects invalid chunk paths, totals and hashes in the downloaded catalogue', async () => {
-    for (const part of [{ file: '../escape', bytes: 4, sha256: 'a'.repeat(64) }, { file: 'base.part0', bytes: 3, sha256: 'a'.repeat(64) }, { file: 'base.part0', bytes: 4, sha256: 'invalid' }]) {
+    for (const part of [
+      { file: '../escape', bytes: 4, sha256: 'a'.repeat(64) },
+      { file: 'base.part0', bytes: 3, sha256: 'a'.repeat(64) },
+      { file: 'base.part0', bytes: 4, sha256: 'invalid' },
+    ]) {
       manifest.models.base.chunks = [part];
       fetcher.mockResolvedValueOnce(new Response(JSON.stringify(manifest)));
       await expect(loadNeuralManifest(assets)).rejects.toMatchObject({ code: 'manifest' });
@@ -109,7 +111,8 @@ describe('browser neural model storage shared by settings and inference', () => 
     expect(files.size).toBe(0);
   });
   it('verifies the runtime build and reuses the identified JS/WASM offline', async () => {
-    manifest.runtimeSha256 = manifest.models.base.sha256; manifest.runtimeJsSha256 = manifest.models.base.sha256;
+    manifest.runtimeSha256 = manifest.models.base.sha256;
+    manifest.runtimeJsSha256 = manifest.models.base.sha256;
     expect((await obtainNeuralRuntime(assets, manifest)).wasm).toEqual(payload);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect((await obtainNeuralRuntime('https://example.test/new/neural/', manifest)).wasm).toEqual(payload);
@@ -131,7 +134,11 @@ describe('browser neural model storage shared by settings and inference', () => 
     expect(await listStoredNeuralModels(assets, manifest)).toEqual([expect.objectContaining({ name: 'base', bytes: 4, current: true })]);
   });
   it('rejects truncated, oversized and corrupt downloads without storing them', async () => {
-    for (const bytes of [[1, 2], [1, 2, 3, 4, 5], [4, 3, 2, 1]]) {
+    for (const bytes of [
+      [1, 2],
+      [1, 2, 3, 4, 5],
+      [4, 3, 2, 1],
+    ]) {
       fetcher.mockImplementationOnce(async () => new Response(new Uint8Array(bytes)));
       await expect(obtainNeuralModel(assets, manifest, 'base', { requireStorage: true })).rejects.toMatchObject({ code: 'integrity' });
     }
@@ -158,9 +165,15 @@ describe('browser neural model storage shared by settings and inference', () => 
   it('cancels before committing partial files and keeps completed models', async () => {
     await obtainNeuralModel(assets, manifest, 'coarse', { requireStorage: true });
     const controller = new AbortController();
-    await expect(obtainNeuralModel(assets, manifest, 'base', { signal: controller.signal, requireStorage: true, onProgress: event => {
-      if (event.phase === 'download') controller.abort();
-    } })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(
+      obtainNeuralModel(assets, manifest, 'base', {
+        signal: controller.signal,
+        requireStorage: true,
+        onProgress: event => {
+          if (event.phase === 'download') controller.abort();
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
     expect(await listStoredNeuralModels(assets, manifest)).toEqual([expect.objectContaining({ name: 'coarse' })]);
   });
   it('saves the catalogue for inspection when the model server is offline', async () => {
@@ -172,7 +185,8 @@ describe('browser neural model storage shared by settings and inference', () => 
   });
   it('lists other revisions separately and deletes only the selected model', async () => {
     await obtainNeuralModel(assets, manifest, 'base', { requireStorage: true });
-    const updated = structuredClone(manifest); updated.models.base.sha256 = 'b'.repeat(64);
+    const updated = structuredClone(manifest);
+    updated.models.base.sha256 = 'b'.repeat(64);
     expect(await listStoredNeuralModels(assets, updated)).toEqual([expect.objectContaining({ name: 'base', current: false, bytes: 4 })]);
     await deleteStoredNeuralModel(neuralModelUrl(assets, manifest.models.base));
     expect(files.size).toBe(0);

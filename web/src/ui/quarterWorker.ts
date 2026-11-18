@@ -8,13 +8,20 @@ let world: World | undefined;
 let revision = 0;
 ctx.onmessage = (e: MessageEvent<QuarterRequest>): void => {
   const request = e.data;
-  if (request.type === 'world') { world = request.world; revision = request.revision; return; }
+  if (request.type === 'world') {
+    world = request.world;
+    revision = request.revision;
+    return;
+  }
   const result: QuarterResult = { type: 'quarter', job: request.job, key: request.key, revision: request.revision };
   if (!world || revision !== request.revision) {
-    ctx.postMessage({ ...result, error: 'quarter world not ready', fatal: true }); return;
+    ctx.postMessage({ ...result, error: 'quarter world not ready', fatal: true });
+    return;
   }
   try {
     result.layer = megaQuarterDetail(world, request.key);
-  } catch (error) { result.error = String((error as Error)?.message ?? error); }
+  } catch (error) {
+    result.error = String((error as Error)?.message ?? error);
+  }
   ctx.postMessage(result);
 };

@@ -17,8 +17,12 @@ export interface ContourSet {
 export function contourSet(world: World, u: number, interval = CONTOUR_INTERVAL[world.options.relief], slopeScale = 1): ContourSet {
   const t = world.terrain;
   const hg = t.height;
-  let maxH = 0, minH = Infinity;
-  for (let i = 0; i < hg.data.length; i++) { maxH = Math.max(maxH, hg.data[i]); minH = Math.min(minH, hg.data[i]); }
+  let maxH = 0,
+    minH = Infinity;
+  for (let i = 0; i < hg.data.length; i++) {
+    maxH = Math.max(maxH, hg.data[i]);
+    minH = Math.min(minH, hg.data[i]);
+  }
   const out: ContourSet = { thin: [], index: [] };
   const levels: number[] = [];
   // High plateaus need only their occupied height range, even at sub-metre intervals.

@@ -6,14 +6,17 @@ const [base, outDir] = process.argv.slice(2);
 fs.mkdirSync(outDir, { recursive: true });
 const b = await chromium.launch();
 let fail = 0;
-const ok = (c, m) => { console.log(c ? 'ok  ' : 'FAIL', m); if (!c) fail++; };
+const ok = (c, m) => {
+  console.log(c ? 'ok  ' : 'FAIL', m);
+  if (!c) fail++;
+};
 
 async function open(init) {
   const ctx = await b.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
   const p = await ctx.newPage();
   if (init) await p.addInitScript(init);
   const logs = [];
-  p.on('pageerror', (e) => logs.push(e.message));
+  p.on('pageerror', e => logs.push(e.message));
   await p.goto(base + '?seed=7&size=village&legend=1&style=illuminated');
   await p.waitForFunction(() => /Generated in|failed/.test(document.getElementById('gentime')?.textContent ?? ''), null, { timeout: 120000 });
   await p.waitForTimeout(600);
@@ -24,13 +27,24 @@ async function open(init) {
 // A: plain browser
 {
   const { ctx, p } = await open();
-  for (const [id, ext] of [['exportSvg', '.svg'], ['exportJson', '.json'], ['exportPng', '.png']]) {
-    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60000 }).catch(() => null), (async () => {
-      await p.click('#' + id);
-      if (id !== 'exportJson') await p.locator('.export-crop [data-action="export"]').click();
-    })()]);
+  for (const [id, ext] of [
+    ['exportSvg', '.svg'],
+    ['exportJson', '.json'],
+    ['exportPng', '.png'],
+  ]) {
+    const [dl] = await Promise.all([
+      p.waitForEvent('download', { timeout: 60000 }).catch(() => null),
+      (async () => {
+        await p.click('#' + id);
+        if (id !== 'exportJson') await p.locator('.export-crop [data-action="export"]').click();
+      })(),
+    ]);
     ok(!!dl && dl.suggestedFilename().endsWith(ext), `plain ${id} downloads ${dl?.suggestedFilename()}`);
-    if (dl) { const f = `${outDir}/plain_${dl.suggestedFilename()}`; await dl.saveAs(f); console.log('    ', f, fs.statSync(f).size, 'bytes'); }
+    if (dl) {
+      const f = `${outDir}/plain_${dl.suggestedFilename()}`;
+      await dl.saveAs(f);
+      console.log('    ', f, fs.statSync(f).size, 'bytes');
+    }
   }
   await ctx.close();
 }
@@ -54,7 +68,7 @@ for (const mode of ['granted', 'declined', 'unavailable', 'not_granted', 'nullca
   console.log(mode, JSON.stringify(saves), 'anchor downloads:', downloads);
   if (mode === 'nullcap') ok(saves.length === 0 && downloads === 3, 'null capability -> anchor fallback x3');
   else {
-    ok(saves.length === 3 && saves.map((s) => s.filename.split('.').pop()).join() === 'svg,json,png', `${mode}: save() called for svg,json,png`);
+    ok(saves.length === 3 && saves.map(s => s.filename.split('.').pop()).join() === 'svg,json,png', `${mode}: save() called for svg,json,png`);
     ok(expectFallback ? downloads === 3 : downloads === 0, `${mode}: ${expectFallback ? 'fell back to <a download>' : 'no fallback download'}`);
   }
   ok(logs.length === 0, `${mode}: no page errors ${logs.join('|')}`);

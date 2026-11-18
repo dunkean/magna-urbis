@@ -70,11 +70,15 @@ export function giveAccess(s: M4State, api: ReserveApi, lot: Polygon, a: Access,
   if (a.mode !== 'none') {
     const runs = edgeRuns(orientPos(lot), a.mode === 'ring' ? () => true : (p, q) => a.front!(p, q));
     // the run nearest the entrance target
-    let best: { pl: Polyline; closed: boolean } | null = null, bd = Infinity;
+    let best: { pl: Polyline; closed: boolean } | null = null,
+      bd = Infinity;
     for (const r of runs) {
       if (!r.closed && plLen(r.pl) < 12) continue;
       const d = nearestOnPl(r.pl, a.toward).d;
-      if (d < bd) { bd = d; best = r; }
+      if (d < bd) {
+        bd = d;
+        best = r;
+      }
     }
     if (best) {
       const nr = nearestOnPl(best.pl, a.toward);
@@ -88,18 +92,25 @@ export function giveAccess(s: M4State, api: ReserveApi, lot: Polygon, a: Access,
     let bd = Infinity;
     for (let i = 0; i < P.length; i++) {
       const n = nearestOnPl([P[i], P[(i + 1) % P.length]], a.toward);
-      if (n.d < bd) { bd = n.d; entrance = n.q; }
+      if (n.d < bd) {
+        bd = n.d;
+        entrance = n.q;
+      }
     }
   }
   if (!entrance) return null;
   // the connector (unless the entrance already lies on a connected street)
-  const onNet = streets.nearest(entrance, 0.6, (st) => streets.connected.has(st.id));
+  const onNet = streets.nearest(entrance, 0.6, st => streets.connected.has(st.id));
   let conn: Polyline | null = null;
   let met: number[] = [];
   if (!onNet) {
-    const r = findConnectorX(s.ctx, streets, entrance, { avoid: [lot, ...avoid], noCross: api.enclosure.map((ph) => ph.outer), gates: api.gates, maxLen: a.maxLen ?? 260, preferRank: 1, dirs: a.dirs });
-    if (!r) { M4_DBG.log?.(`no connector from ${entrance.x.toFixed(0)},${entrance.y.toFixed(0)} (mode ${a.mode}, chain ${chain?.length ?? 0})`); return null; }
-    conn = r.path; met = r.met;
+    const r = findConnectorX(s.ctx, streets, entrance, { avoid: [lot, ...avoid], noCross: api.enclosure.map(ph => ph.outer), gates: api.gates, maxLen: a.maxLen ?? 260, preferRank: 1, dirs: a.dirs });
+    if (!r) {
+      M4_DBG.log?.(`no connector from ${entrance.x.toFixed(0)},${entrance.y.toFixed(0)} (mode ${a.mode}, chain ${chain?.length ?? 0})`);
+      return null;
+    }
+    conn = r.path;
+    met = r.met;
   }
   if (chain) {
     const id = streets.add(chain, a.width, a.rank, a.mode === 'ring' ? 'ring' : 'street', 1);
@@ -119,23 +130,46 @@ export function giveAccess(s: M4State, api: ReserveApi, lot: Polygon, a: Access,
 }
 
 /** True when p is on (within d of) one of the rings. */
-export const onRings = (rings: Polygon[], p: Vec2, d: number): boolean => rings.some((r) => distToRing(r, p) < d);
+export const onRings = (rings: Polygon[], p: Vec2, d: number): boolean => rings.some(r => distToRing(r, p) < d);
 
 export function reserveCastle(s: M4State, api: ReserveApi, plan: CastlePlan, id = 'castle'): ReservedLot | null {
-  const rings = api.enclosure.map((ph) => ph.outer);
+  const rings = api.enclosure.map(ph => ph.outer);
   const g = plan.gate;
   const toward = { x: g.p.x + g.n.x * (plan.ditch + plan.espl + 2), y: g.p.y + g.n.y * (plan.ditch + plan.espl + 2) };
   const w = s.P.widthByRank[2] * s.P.widthScale;
-  const acc = giveAccess(s, api, plan.lot, {
-    mode: 'front',
-    front: (a, b) => { const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; return !onRings(rings, m, 1.2) && !s.ctx.isWater(m); },
-    toward, width: w, rank: 2, cWidth: s.P.widthByRank[1] * s.P.widthScale * 0.9, cRank: 1, maxLen: 900, dirs: [g.n],
-  }, []);
+  const acc = giveAccess(
+    s,
+    api,
+    plan.lot,
+    {
+      mode: 'front',
+      front: (a, b) => {
+        const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        return !onRings(rings, m, 1.2) && !s.ctx.isWater(m);
+      },
+      toward,
+      width: w,
+      rank: 2,
+      cWidth: s.P.widthByRank[1] * s.P.widthScale * 0.9,
+      cRank: 1,
+      maxLen: 900,
+      dirs: [g.n],
+    },
+    [],
+  );
   if (!acc) return null;
   s.lotData.set(id, plan);
   const c = polygonCentroid(plan.C);
   const ph = phaseAt(api, c);
-  s.sites.push({ id, kind: plan.variant === 'kasbah' ? 'kasbah' : plan.variant === 'motte' ? 'motte' : plan.variant === 'inca-fortress' ? 'inca-fortress' : plan.variant === 'kremlin' ? 'kremlin' : plan.variant === 'kastro' ? 'kastro' : 'castle', role: 'power', lot: plan.lot, entrance: acc.entrance, anchor: c, culture: s.culture });
+  s.sites.push({
+    id,
+    kind: plan.variant === 'kasbah' ? 'kasbah' : plan.variant === 'motte' ? 'motte' : plan.variant === 'inca-fortress' ? 'inca-fortress' : plan.variant === 'kremlin' ? 'kremlin' : plan.variant === 'kastro' ? 'kastro' : 'castle',
+    role: 'power',
+    lot: plan.lot,
+    entrance: acc.entrance,
+    anchor: c,
+    culture: s.culture,
+  });
   return { id, kind: 'm4-castle', poly: plan.lot, phase: ph.phase, zone: ph.zone, cuts: acc.cuts };
 }
 

@@ -6,7 +6,15 @@ import { resolve } from 'node:path';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const destination = resolve(process.argv[2] || resolve(root, '../infinite_map/web'));
 await mkdir(destination, { recursive: true });
-await build({ entryPoints: [resolve(root, 'rust/bridge/fantasyPainting.ts')], outfile: resolve(destination, 'fantasy_painting.js'), bundle: true, format: 'iife', globalName: 'FantasyPainting', target: 'es2022', banner: { js: '// Generated from Magna Urbis rust/bridge/fantasyPainting.ts. GPL-3.0. Rebuild: node web/scripts/build_fantasy_painter.mjs' } });
+await build({
+  entryPoints: [resolve(root, 'rust/bridge/fantasyPainting.ts')],
+  outfile: resolve(destination, 'fantasy_painting.js'),
+  bundle: true,
+  format: 'iife',
+  globalName: 'FantasyPainting',
+  target: 'es2022',
+  banner: { js: '// Generated from Magna Urbis rust/bridge/fantasyPainting.ts. GPL-3.0. Rebuild: node web/scripts/build_fantasy_painter.mjs' },
+});
 const source = resolve(root, 'web/src/render/assets/fantasy/families/runtime');
 const manifest = JSON.parse(await readFile(resolve(source, 'manifest.json'), 'utf8'));
 await mkdir(resolve(destination, 'fantasy-brushes'), { recursive: true });

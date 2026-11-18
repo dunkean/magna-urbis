@@ -8,11 +8,14 @@ async function storeCase<T>(mode: IDBTransactionMode, request: (store: IDBObject
   const db = await (database ??= new Promise((resolve, reject) => {
     const open = indexedDB.open('magna-urban-house-cases', 1);
     open.onupgradeneeded = () => open.result.createObjectStore('cases');
-    open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error);
+    open.onsuccess = () => resolve(open.result);
+    open.onerror = () => reject(open.error);
   }));
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('cases', mode), result = request(tx.objectStore('cases'));
-    tx.oncomplete = () => resolve(result.result); tx.onerror = tx.onabort = () => reject(tx.error);
+    const tx = db.transaction('cases', mode),
+      result = request(tx.objectStore('cases'));
+    tx.oncomplete = () => resolve(result.result);
+    tx.onerror = tx.onabort = () => reject(tx.error);
   });
 }
 export async function readUrbanHouseCase(id: string): Promise<PlacedBuilding> {

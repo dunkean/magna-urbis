@@ -13,7 +13,7 @@ try {
   await page.addInitScript(() => {
     window.generationRequests = [];
     const send = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function(message, ...args) {
+    Worker.prototype.postMessage = function (message, ...args) {
       if (message?.action && message.action !== 'serialize' && message?.settings) window.generationRequests.push({ action: message.action, keys: message.keys });
       return send.call(this, message, ...args);
     };
@@ -24,22 +24,25 @@ try {
   fixture.settings.options.population = 80;
   fixture.settings.options.size = 'hamlet';
   fixture.settings.urban = { backend: 'rust', architecture: 'silhouette', through: 'buildings' };
-  fixture.settings.region.placement = { mode: 'list', list: fixture.world.settlements.map((place, i) => ({
-    key: place.key, name: place.name, population: i ? 30 : 80, culture: place.culture, siteType: 'plain', position: place.center,
-  })) };
+  fixture.settings.region.placement = { mode: 'list', list: fixture.world.settlements.map((place, i) => ({ key: place.key, name: place.name, population: i ? 30 : 80, culture: place.culture, siteType: 'plain', position: place.center })) };
   const engineUrl = '/@fs/' + fileURLToPath(new URL('../src/v2/engine.ts', import.meta.url)).replaceAll('\\', '/');
-  const fixtureText = await page.evaluate(async ({ fixture, engineUrl }) => {
-    const { terrainCacheKey } = await import(engineUrl);
-    fixture.world.stats['v2.terrainKey'] = terrainCacheKey(fixture.settings);
-    return JSON.stringify(fixture);
-  }, { fixture, engineUrl });
+  const fixtureText = await page.evaluate(
+    async ({ fixture, engineUrl }) => {
+      const { terrainCacheKey } = await import(engineUrl);
+      fixture.world.stats['v2.terrainKey'] = terrainCacheKey(fixture.settings);
+      return JSON.stringify(fixture);
+    },
+    { fixture, engineUrl },
+  );
   await page.locator('#import-open').click();
   await page.locator('#project-file').setInputFiles({ name: 'continuation.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText) });
   await page.locator('#import-dialog').waitFor({ state: 'hidden' });
   await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
   const exportProject = async () => {
-    await page.locator('#export-open').click(); await page.locator('#export-format').selectOption('project');
-    const download = page.waitForEvent('download'); await page.locator('#export-go').click();
+    await page.locator('#export-open').click();
+    await page.locator('#export-format').selectOption('project');
+    const download = page.waitForEvent('download');
+    await page.locator('#export-go').click();
     return JSON.parse(await readFile(await (await download).path(), 'utf8'));
   };
   const before = await exportProject();
@@ -48,7 +51,10 @@ try {
   await page.waitForFunction(() => window.generationRequests.length >= 2);
   await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
   const settled = await exportProject();
-  assert.deepEqual((await page.evaluate(() => window.generationRequests)).map(call => call.action), ['region', 'towns']);
+  assert.deepEqual(
+    (await page.evaluate(() => window.generationRequests)).map(call => call.action),
+    ['region', 'towns'],
+  );
   // Town generation may attach its city-ground display cache; every retained physical product must stay identical.
   for (const [field, value] of Object.entries(before.world.terrain)) assert.deepEqual(settled.world.terrain[field], value, `retained terrain.${field}`);
   assert.equal(settled.world.stats['v2.terrainKey'], before.world.stats['v2.terrainKey']);
@@ -57,7 +63,7 @@ try {
   assert(settled.world.debug.v2RustCities.village.layouts.length > 0);
   await page.locator('#family-tab-cities').click();
   await page.locator('[data-city-select=village]').check();
-  await page.evaluate(() => window.generationRequests = []);
+  await page.evaluate(() => (window.generationRequests = []));
   await page.locator('#run-chain').click();
   await page.waitForFunction(() => window.generationRequests.length === 1);
   await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
@@ -72,4 +78,6 @@ try {
   assert.deepEqual(errors, []);
   await writeFile(new URL('full-generation-report.json', out), JSON.stringify({ checks: 'passed', actions: ['region', 'towns', 'towns:village'], terrainPreserved: true, errors }, null, 2));
   console.log('Full generation continuation preserves terrain, placement and untargeted cities.');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

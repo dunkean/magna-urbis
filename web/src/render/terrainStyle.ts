@@ -49,16 +49,30 @@ export interface StyleTraits {
   paintedCityByDefault: boolean;
 }
 export interface TerrainStyleDefinition {
-  id: TerrainStyle; label: string; palette: Palette; water: WaterStyle; traits: StyleTraits;
+  id: TerrainStyle;
+  label: string;
+  palette: Palette;
+  water: WaterStyle;
+  traits: StyleTraits;
 }
 const MAP_TRAITS: StyleTraits = {
-  family: 'map', ground3d: false, neuralEarth: false, satelliteVariant: 0, forestBrushes: false, waterAlwaysDrawn: false, physicalRiverWidth: false, seaInMaterial: false,
-  customWaterColors: true, elevation: false, contours: true, customGroundColors: true, cartographicVegetation: true, paintedCityByDefault: false,
+  family: 'map',
+  ground3d: false,
+  neuralEarth: false,
+  satelliteVariant: 0,
+  forestBrushes: false,
+  waterAlwaysDrawn: false,
+  physicalRiverWidth: false,
+  seaInMaterial: false,
+  customWaterColors: true,
+  elevation: false,
+  contours: true,
+  customGroundColors: true,
+  cartographicVegetation: true,
+  paintedCityByDefault: false,
 };
 const MATERIAL_TRAITS: StyleTraits = { ...MAP_TRAITS, family: 'material', customGroundColors: false, cartographicVegetation: false, paintedCityByDefault: true };
-const V2_TRAITS: StyleTraits = {
-  ...MATERIAL_TRAITS, ground3d: true, forestClearingProfile: 'progressive', waterAlwaysDrawn: true, physicalRiverWidth: true, seaInMaterial: true, customWaterColors: false,
-};
+const V2_TRAITS: StyleTraits = { ...MATERIAL_TRAITS, ground3d: true, forestClearingProfile: 'progressive', waterAlwaysDrawn: true, physicalRiverWidth: true, seaInMaterial: true, customWaterColors: false };
 const BRUSH_TRAITS: StyleTraits = { ...MAP_TRAITS, family: 'brush', customGroundColors: false, contours: false, cartographicVegetation: false };
 const DIAGNOSTIC_TRAITS: StyleTraits = { ...MAP_TRAITS, family: 'diagnostic', elevation: true, contours: false, customGroundColors: false, cartographicVegetation: false };
 const definition = (id: TerrainStyle, label: string, palette: Palette, traits: StyleTraits = MAP_TRAITS, water = palette.water): TerrainStyleDefinition => ({ id, label, palette, traits, water });
@@ -66,10 +80,76 @@ const ink = { ...PALETTES.parchment, paper: '#faf9f4', seaFill: '#e5e7e6', water
 const color = { ...PALETTES.parchment, paper: '#eee6ce', seaFill: '#b9ccd0', waterEdge: '#648f99' };
 const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
   ...STYLE_LIST.map(({ id, label }) => [id, definition(id, label, PALETTES[id])] as const),
-  ['render', definition('render', 'Render · Neural Earth', PALETTES.parchment, { ...MATERIAL_TRAITS, neuralEarth: true }, { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
-  ['render3d', definition('render3d', 'Render3D · Multiscale', PALETTES.parchment, { ...MATERIAL_TRAITS, ground3d: true }, { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
-  ['render3d-brush', definition('render3d-brush', 'Render3DBrush', PALETTES.parchment, { ...MATERIAL_TRAITS, ground3d: true, forestBrushes: true }, { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
-  ...(['render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const).map((id, i) => [id, definition(id, ['Render v2 - Satellite', 'Render v2 - Substrate', 'Render v2 - Moisture', 'Render v2 - Vegetation', 'Render v2 - Snow / ice'][i], PALETTES.parchment, { ...V2_TRAITS, satelliteVariant: i + 1, variantOf: i ? 'render-v2' : undefined, variantGroupLabel: i ? undefined : 'Render v2' }, { stops: [[0, '#1a4d5c'], [1, '#051126']], bandFraction: .016 })] as const),
+  [
+    'render',
+    definition(
+      'render',
+      'Render · Neural Earth',
+      PALETTES.parchment,
+      { ...MATERIAL_TRAITS, neuralEarth: true },
+      {
+        stops: [
+          [0, '#1a4d5c'],
+          [0.4, '#0b2945'],
+          [1, '#051126'],
+        ],
+        bandFraction: 0.016,
+      },
+    ),
+  ],
+  [
+    'render3d',
+    definition(
+      'render3d',
+      'Render3D · Multiscale',
+      PALETTES.parchment,
+      { ...MATERIAL_TRAITS, ground3d: true },
+      {
+        stops: [
+          [0, '#1a4d5c'],
+          [0.4, '#0b2945'],
+          [1, '#051126'],
+        ],
+        bandFraction: 0.016,
+      },
+    ),
+  ],
+  [
+    'render3d-brush',
+    definition(
+      'render3d-brush',
+      'Render3DBrush',
+      PALETTES.parchment,
+      { ...MATERIAL_TRAITS, ground3d: true, forestBrushes: true },
+      {
+        stops: [
+          [0, '#1a4d5c'],
+          [0.4, '#0b2945'],
+          [1, '#051126'],
+        ],
+        bandFraction: 0.016,
+      },
+    ),
+  ],
+  ...(['render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const).map(
+    (id, i) =>
+      [
+        id,
+        definition(
+          id,
+          ['Render v2 - Satellite', 'Render v2 - Substrate', 'Render v2 - Moisture', 'Render v2 - Vegetation', 'Render v2 - Snow / ice'][i],
+          PALETTES.parchment,
+          { ...V2_TRAITS, satelliteVariant: i + 1, variantOf: i ? 'render-v2' : undefined, variantGroupLabel: i ? undefined : 'Render v2' },
+          {
+            stops: [
+              [0, '#1a4d5c'],
+              [1, '#051126'],
+            ],
+            bandFraction: 0.016,
+          },
+        ),
+      ] as const,
+  ),
   ['parchment-render', definition('parchment-render', 'Painted satellite', PALETTES.parchment, { ...V2_TRAITS, family: 'material', satelliteVariant: 1, paperMap: true, seaInMaterial: false, customWaterColors: true, physicalRiverWidth: false })],
   ['fantasy-ink', definition('fantasy-ink', 'Fantasy · Encre N&B', ink, { ...BRUSH_TRAITS, fantasy: 'ink' }, waterRamp(ink.waterEdge, ink.seaFill))],
   ['fantasy-color', definition('fantasy-color', 'Fantasy · Aquarelle', color, { ...BRUSH_TRAITS, fantasy: 'color' }, waterRamp(color.waterEdge, color.seaFill))],
@@ -82,7 +162,7 @@ const waterPalettes = new Map<TerrainStyle, Palette>();
 export const terrainStyle = (id: TerrainStyle, colors?: RenderColors): TerrainStyleDefinition => {
   const base = definitions.get(id)!;
   let authored = waterPalettes.get(id);
-  if (!authored) waterPalettes.set(id, authored = base.water === base.palette.water ? base.palette : { ...base.palette, water: base.water });
+  if (!authored) waterPalettes.set(id, (authored = base.water === base.palette.water ? base.palette : { ...base.palette, water: base.water }));
   const palette = seasonalWaterPalette(colors && Object.keys(colors).length ? applyRenderColors(authored, colors) : authored);
   if (palette === base.palette) return base;
   return { ...base, palette, water: palette.water };

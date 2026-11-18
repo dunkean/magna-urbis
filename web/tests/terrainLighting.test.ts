@@ -17,7 +17,8 @@ describe('terrain lighting', () => {
   });
 
   it('reverses the illuminated slope when the sun rotates by 180 degrees', () => {
-    const west = render(), east = render({ ...DEFAULT_TERRAIN_LIGHTING, azimuth: 135 });
+    const west = render(),
+      east = render({ ...DEFAULT_TERRAIN_LIGHTING, azimuth: 135 });
     expect(west[0]).toBeGreaterThan(east[0]);
     expect(surface).toEqual(world.terrain.height.data);
   });

@@ -17,6 +17,6 @@ export function urbanStrokeSpace(urban: UrbanLayer): PolyH[] {
   // Macro quarters retain their full graph faces (not their stand-in block insets), including
   // arterial edges. Detail layers merge into this base. A standalone legacy layer may instead
   // provide only its footprint: keep its streets visible within that known urban land.
-  const space = urban.quarters.length ? urban.quarters.map(({ poly }) => poly) : urban.footprintH.length ? urban.footprintH : urban.footprint.map((outer) => ({ outer, holes: [] }));
-  return space.map((poly) => ({ outer: orientPos(poly.outer), holes: poly.holes.map((h) => orientPos(h).slice().reverse()) }));
+  const space = urban.quarters.length ? urban.quarters.map(({ poly }) => poly) : urban.footprintH.length ? urban.footprintH : urban.footprint.map(outer => ({ outer, holes: [] }));
+  return space.map(poly => ({ outer: orientPos(poly.outer), holes: poly.holes.map(h => orientPos(h).slice().reverse()) }));
 }

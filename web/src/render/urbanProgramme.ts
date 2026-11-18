@@ -4,7 +4,7 @@ import { buildingSurfacePath } from './urbanBuildings';
 import { urbanFunctionColor, URBAN_FUNCTION_LABELS } from './urbanBuildingStyle';
 
 const xml = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const functionLabel = (name: string): string => ({ market: 'Marché', common: 'Communs', ...URBAN_FUNCTION_LABELS } as Record<string, string>)[name] ?? name;
+const functionLabel = (name: string): string => (({ market: 'Marché', common: 'Communs', ...URBAN_FUNCTION_LABELS }) as Record<string, string>)[name] ?? name;
 
 /** Allocation-only presentation. A missing ID is never guessed from array order
  * or spatial proximity; holes and the retained cadastral boundary stay exact. */
@@ -34,12 +34,16 @@ export function refusalSvg(partitions: readonly Partition[] | undefined, scene: 
   }
   const grouped = new Map<string, PlacementRefusal[]>();
   for (const refusal of scene.refusals) {
-    const list = grouped.get(refusal.parcel_id) ?? []; list.push(refusal); grouped.set(refusal.parcel_id, list);
+    const list = grouped.get(refusal.parcel_id) ?? [];
+    list.push(refusal);
+    grouped.set(refusal.parcel_id, list);
   }
   let paths = '';
   for (const [id, refusals] of grouped) {
-    const known = parcels.get(id); if (!known) continue;
-    const culture = known.allocation?.culture ?? '', fn = known.allocation?.function ?? '';
+    const known = parcels.get(id);
+    if (!known) continue;
+    const culture = known.allocation?.culture ?? '',
+      fn = known.allocation?.function ?? '';
     const title = `${id}${fn ? ` · ${functionLabel(fn)}` : ''}${culture ? ` · ${culture}` : ''} · ${refusals.map(r => `${r.code} : ${r.message} (${r.attempts} essais)`).join(' · ')}`;
     paths += `<path data-urban-refusal="${xml(refusals.map(r => r.id).join(' '))}" data-parcel-id="${xml(id)}" data-refusal-code="${xml(refusals.map(r => r.code).join(' '))}" d="${buildingSurfacePath([known.parcel.shape])}" fill="none" stroke="${urbanFunctionColor('refusal')}" stroke-width="1.8" stroke-dasharray="4 2" vector-effect="non-scaling-stroke"><title>${xml(title)}</title></path>`;
   }

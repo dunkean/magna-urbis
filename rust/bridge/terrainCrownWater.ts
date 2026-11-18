@@ -7,7 +7,7 @@
  *   overhang the shore instead of being cut at the waterline.
  * The ground shaders (ui/terrainGl.ts, ui/terrain3d.ts) take the GLSL; the TS twins pin the rule in tests.
  */
-export const CROWN_ROOT_WATER = .5;
+export const CROWN_ROOT_WATER = 0.5;
 
 /** True when a crown whose foot lies in this water cover (0-1) may stand. */
 export const crownRooted = (waterAtFoot: number): boolean => waterAtFoot < CROWN_ROOT_WATER;

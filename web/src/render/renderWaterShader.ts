@@ -128,6 +128,6 @@ void main() {
 /** Ring radii in device pixels: geometric from 1 px to 1.5 depth bands (clamped): open
  * water reaches the end of the ramp before the rays run out. */
 export function renderWaterRings(metresPerPixel: number, band: number): Float32Array {
-  const max = Math.max(4, Math.min(256, 1.5 * band / Math.max(1e-6, metresPerPixel)));
+  const max = Math.max(4, Math.min(256, (1.5 * band) / Math.max(1e-6, metresPerPixel)));
   return Float32Array.from({ length: RENDER_WATER_RINGS }, (_, k) => max ** (k / (RENDER_WATER_RINGS - 1)));
 }

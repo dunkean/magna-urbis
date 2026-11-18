@@ -15,12 +15,16 @@ export type RoadStrokeLayer = 'ditch' | 'verge' | 'shadow' | 'casing' | 'fill' |
  * so overlapping strokes at junctions never darken twice (no blobs). */
 export const ROAD_STROKE_LAYERS: readonly RoadStrokeLayer[] = ['ditch', 'verge', 'shadow', 'casing', 'fill', 'detail'];
 export interface RoadStroke {
-  layer: RoadStrokeLayer; color: string;
+  layer: RoadStrokeLayer;
+  color: string;
   /** Share of the road's base width (screen px floor and metres alike). */
   scale: number;
   /** Width added on top of the base: screen floor, metres. */
-  addPx: number; addM: number;
-  opacity?: number; dash?: string; cap?: 'butt' | 'round';
+  addPx: number;
+  addM: number;
+  opacity?: number;
+  dash?: string;
+  cap?: 'butt' | 'round';
   /** Ditches: the band between this stroke and a narrower cut (same base) is kept, through a mask. */
   cut?: { addPx: number; addM: number };
 }
@@ -28,12 +32,7 @@ export interface RoadStroke {
 /** Cartographic floor of each class at region zoom, screen px. */
 export const RENDER_ROAD_PX: Record<RoadClass, number> = { highway: 4, main: 3.2, local: 2.4, track: 1.8, trail: 1.3 };
 
-const FILL: Record<RoadSurface, Partial<Record<RoadClass, string>> & { default: string }> = {
-  paved: { highway: '#e0c088', main: '#d6b47c', default: '#ccb084' },
-  flagstone: { default: '#cfc3a6' },
-  gravel: { default: '#c6b594' },
-  dirt: { trail: '#a98a62', default: '#9f7c51' },
-};
+const FILL: Record<RoadSurface, Partial<Record<RoadClass, string>> & { default: string }> = { paved: { highway: '#e0c088', main: '#d6b47c', default: '#ccb084' }, flagstone: { default: '#cfc3a6' }, gravel: { default: '#c6b594' }, dirt: { trail: '#a98a62', default: '#9f7c51' } };
 const CASING: Record<RoadSurface, string> = { paved: '#2e2216', flagstone: '#2a241c', gravel: '#392f23', dirt: '#3b2b1a' };
 
 /** Roadsides of the made-up regional roads: verge half-width and ditch outer half-width (m).
@@ -41,21 +40,25 @@ const CASING: Record<RoadSurface, string> = { paved: '#2e2216', flagstone: '#2a2
 const ROADSIDE: Partial<Record<RoadClass, [number, number]>> = { highway: [4, 5.6], main: [3.2, 4.6], local: [2.2, 3.2] };
 
 export function renderRoadStrokes(c: RoadClass, s: RoadSurface): RoadStroke[] {
-  const fill = FILL[s][c] ?? FILL[s].default, trail = c === 'trail', side = s === 'dirt' ? undefined : ROADSIDE[c];
-  const strokes: RoadStroke[] = side ? [
-    // Ditches: two dark bands beyond the verges.
-    { layer: 'ditch', color: '#141c0e', scale: 1, addPx: 0, addM: 2 * side[1], opacity: 0.42, cut: { addPx: 0, addM: 2 * side[0] } },
-    // Verges: worn, dusty shoulders lightening the ground on both sides.
-    { layer: 'verge', color: '#d9caa0', scale: 1, addPx: 0, addM: 2 * side[0], opacity: 0.16 },
-  ] : trail ? [] : [
-    // Dust kicked up along dirt tracks.
-    { layer: 'verge', color: '#c9ae80', scale: 1, addPx: 1.6, addM: 3, opacity: 0.2 },
-  ];
+  const fill = FILL[s][c] ?? FILL[s].default,
+    trail = c === 'trail',
+    side = s === 'dirt' ? undefined : ROADSIDE[c];
+  const strokes: RoadStroke[] = side
+    ? [
+        // Ditches: two dark bands beyond the verges.
+        { layer: 'ditch', color: '#141c0e', scale: 1, addPx: 0, addM: 2 * side[1], opacity: 0.42, cut: { addPx: 0, addM: 2 * side[0] } },
+        // Verges: worn, dusty shoulders lightening the ground on both sides.
+        { layer: 'verge', color: '#d9caa0', scale: 1, addPx: 0, addM: 2 * side[0], opacity: 0.16 },
+      ]
+    : trail
+      ? []
+      : [
+          // Dust kicked up along dirt tracks.
+          { layer: 'verge', color: '#c9ae80', scale: 1, addPx: 1.6, addM: 3, opacity: 0.2 },
+        ];
   strokes.push(
     { layer: 'shadow', color: '#0b1208', scale: 1, addPx: trail ? 2 : 3.5, addM: trail ? 1.5 : 3, opacity: trail ? 0.22 : 0.32 },
-    s === 'dirt'
-      ? { layer: 'casing', color: CASING.dirt, scale: 1, addPx: 1, addM: 0.6, opacity: 0.6, dash: trail ? '1.2 2.4' : undefined }
-      : { layer: 'casing', color: CASING[s], scale: 1, addPx: 1.6, addM: 1 },
+    s === 'dirt' ? { layer: 'casing', color: CASING.dirt, scale: 1, addPx: 1, addM: 0.6, opacity: 0.6, dash: trail ? '1.2 2.4' : undefined } : { layer: 'casing', color: CASING[s], scale: 1, addPx: 1.6, addM: 1 },
     { layer: 'fill', color: fill, scale: 1, addPx: 0, addM: 0, dash: trail ? '1.2 2.4' : undefined },
   );
   if (trail) return strokes;
@@ -69,20 +72,22 @@ export function renderRoadStrokes(c: RoadClass, s: RoadSurface): RoadStroke[] {
 
 export function renderCrossingStrokes(kind: 'bridge' | 'ford' | 'causeway'): RoadStroke[] {
   const butt = 'butt' as const;
-  if (kind === 'bridge') return [
-    { layer: 'shadow', color: '#04090b', scale: 1, addPx: 7, addM: 6, opacity: 0.5, cap: butt },
-    { layer: 'casing', color: '#231a12', scale: 1, addPx: 4.4, addM: 3.4, cap: butt },
-    { layer: 'casing', color: '#dacba9', scale: 1, addPx: 3, addM: 2.4, cap: butt },
-    { layer: 'casing', color: '#4a3c2d', scale: 1, addPx: 1.2, addM: 0.8, cap: butt },
-    { layer: 'fill', color: '#a8957a', scale: 1, addPx: 0, addM: 0, cap: butt },
-    { layer: 'detail', color: '#7a6850', scale: 1, addPx: 0, addM: 0, opacity: 0.55, dash: '1 3.2', cap: butt },
-  ];
-  if (kind === 'causeway') return [
-    { layer: 'shadow', color: '#04090b', scale: 1, addPx: 5, addM: 4, opacity: 0.4 },
-    { layer: 'casing', color: '#2f281e', scale: 1, addPx: 2.6, addM: 2 },
-    { layer: 'casing', color: '#a69676', scale: 1, addPx: 1, addM: 0.8 },
-    { layer: 'fill', color: '#c4b493', scale: 1, addPx: 0, addM: 0 },
-  ];
+  if (kind === 'bridge')
+    return [
+      { layer: 'shadow', color: '#04090b', scale: 1, addPx: 7, addM: 6, opacity: 0.5, cap: butt },
+      { layer: 'casing', color: '#231a12', scale: 1, addPx: 4.4, addM: 3.4, cap: butt },
+      { layer: 'casing', color: '#dacba9', scale: 1, addPx: 3, addM: 2.4, cap: butt },
+      { layer: 'casing', color: '#4a3c2d', scale: 1, addPx: 1.2, addM: 0.8, cap: butt },
+      { layer: 'fill', color: '#a8957a', scale: 1, addPx: 0, addM: 0, cap: butt },
+      { layer: 'detail', color: '#7a6850', scale: 1, addPx: 0, addM: 0, opacity: 0.55, dash: '1 3.2', cap: butt },
+    ];
+  if (kind === 'causeway')
+    return [
+      { layer: 'shadow', color: '#04090b', scale: 1, addPx: 5, addM: 4, opacity: 0.4 },
+      { layer: 'casing', color: '#2f281e', scale: 1, addPx: 2.6, addM: 2 },
+      { layer: 'casing', color: '#a69676', scale: 1, addPx: 1, addM: 0.8 },
+      { layer: 'fill', color: '#c4b493', scale: 1, addPx: 0, addM: 0 },
+    ];
   return [
     { layer: 'casing', color: '#7fb0b2', scale: 1, addPx: 0.6, addM: 0.4, opacity: 0.7, dash: '1 2' },
     { layer: 'detail', color: '#d4e6e1', scale: 0.4, addPx: 0, addM: 0, opacity: 0.8, dash: '0.6 2.4' },
@@ -98,12 +103,19 @@ export function roadStrokeWidth(stroke: Pick<RoadStroke, 'scale' | 'addPx' | 'ad
 
 /** Station of the projection of `p` on `points` (metres along the polyline). */
 function project(points: readonly { x: number; y: number }[], station: number[], p: { x: number; y: number }): number {
-  let best = Infinity, at = 0;
+  let best = Infinity,
+    at = 0;
   for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i], dx = b.x - a.x, dy = b.y - a.y;
+    const a = points[i - 1],
+      b = points[i],
+      dx = b.x - a.x,
+      dy = b.y - a.y;
     const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
     const d = Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
-    if (d < best) { best = d; at = station[i - 1] + t * (station[i] - station[i - 1]); }
+    if (d < best) {
+      best = d;
+      at = station[i - 1] + t * (station[i] - station[i - 1]);
+    }
   }
   return at;
 }
@@ -115,13 +127,20 @@ export function splitAtCrossings<P extends { x: number; y: number }, K extends s
   const station = [0];
   for (let i = 1; i < path.length; i++) station.push(station[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
   const total = station[station.length - 1];
-  const spans = crossings.filter(c => c.path.length > 1).map(c => {
-    const a = project(path, station, c.path[0]), b = project(path, station, c.path[c.path.length - 1]);
-    return [Math.min(a, b), Math.max(a, b), c.kind] as const;
-  }).sort((a, b) => a[0] - b[0]);
+  const spans = crossings
+    .filter(c => c.path.length > 1)
+    .map(c => {
+      const a = project(path, station, c.path[0]),
+        b = project(path, station, c.path[c.path.length - 1]);
+      return [Math.min(a, b), Math.max(a, b), c.kind] as const;
+    })
+    .sort((a, b) => a[0] - b[0]);
   const pointAt = (d: number): P => {
-    let i = 1; while (i < station.length - 1 && station[i] < d) i++;
-    const t = (d - station[i - 1]) / (station[i] - station[i - 1] || 1), a = path[i - 1], b = path[i];
+    let i = 1;
+    while (i < station.length - 1 && station[i] < d) i++;
+    const t = (d - station[i - 1]) / (station[i] - station[i - 1] || 1),
+      a = path[i - 1],
+      b = path[i];
     return { ...a, x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
   };
   const piece = (from: number, to: number): P[] => [pointAt(from), ...path.filter((_, j) => station[j] > from && station[j] < to), pointAt(to)];

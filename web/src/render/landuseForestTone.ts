@@ -21,7 +21,12 @@ export function setLanduseForestTone(next: LanduseForestTone): void {
   mode = next;
   for (const f of [...listeners]) f();
 }
-export function onLanduseForestTone(f: () => void): () => void { listeners.add(f); return () => { listeners.delete(f); }; }
+export function onLanduseForestTone(f: () => void): () => void {
+  listeners.add(f);
+  return () => {
+    listeners.delete(f);
+  };
+}
 /** Labels (fr, en, zh, es, pt: the urbanText order). */
 export const LANDUSE_FOREST_TONE_TITLE: readonly [string, string, string, string, string] = ['Occupation du sol · forêt', 'Land use · forest', '土地利用 · 森林', 'Uso del suelo · bosque', 'Uso do solo · floresta'];
 export const LANDUSE_FOREST_TONE_LABEL: Record<LanduseForestTone, readonly [string, string, string, string, string]> = {
@@ -29,24 +34,47 @@ export const LANDUSE_FOREST_TONE_LABEL: Record<LanduseForestTone, readonly [stri
   ground: ['Couleur du fond', 'Ground colour', '地面色', 'Color del fondo', 'Cor do fundo'],
 };
 
-const hex = (h: string): [number, number, number] | undefined => { const m = /^#([0-9a-f]{6})$/i.exec(h); if (!m) return undefined; const v = parseInt(m[1], 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
-const toHex = (c: readonly number[]): string => '#' + c.map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('');
-const mix = (a: string, b: string, t: number): string => { const A = hex(a), B = hex(b); return A && B ? toHex(A.map((x, i) => x + (B[i] - x) * t)) : a; };
+const hex = (h: string): [number, number, number] | undefined => {
+  const m = /^#([0-9a-f]{6})$/i.exec(h);
+  if (!m) return undefined;
+  const v = parseInt(m[1], 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+};
+const toHex = (c: readonly number[]): string =>
+  '#' +
+  c
+    .map(x =>
+      Math.round(Math.max(0, Math.min(255, x)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('');
+const mix = (a: string, b: string, t: number): string => {
+  const A = hex(a),
+    B = hex(b);
+  return A && B ? toHex(A.map((x, i) => x + (B[i] - x) * t)) : a;
+};
 /** Target lightness / chroma gain of the marked forest, in OKLab: the render canopy sits near L .42. */
-const MARKED_L = 0.43, MARKED_CHROMA = 1.35;
+const MARKED_L = 0.43,
+  MARKED_CHROMA = 1.35;
 export function markedForest(base: string): string {
-  const c = hex(base); if (!c) return base;
+  const c = hex(base);
+  if (!c) return base;
   const [L, a, b] = toOklab(c.map(v => v / 255));
-  const dark = Math.min(L, MARKED_L + (L - 0.69) * 0.35);   // keeps palettes that are already dark (night, blueprint) ordered
+  const dark = Math.min(L, MARKED_L + (L - 0.69) * 0.35); // keeps palettes that are already dark (night, blueprint) ordered
   return toHex(fromOklab(Math.max(0.2, dark), a * MARKED_CHROMA, b * MARKED_CHROMA).map(v => v * 255));
 }
-export interface ForestPaint { color: string; alpha: number; /** Opacity of the wood outline. */ edge: number }
+export interface ForestPaint {
+  color: string;
+  alpha: number;
+  /** Opacity of the wood outline. */ edge: number;
+}
 /** Fill of the forest land-use class for a palette-like `{ land, paper, landOpacity }`. */
 export function forestLandPaint(pal: { name?: string; land: { forest: string; meadow: string }; paper: string; landOpacity: number; forestTint?: number }, tone: LanduseForestTone = mode): ForestPaint {
   // A palette with its own woodland tint (the atlas: a light wash over the hypsometric ramp) keeps it whatever the shared tone.
   if (pal.forestTint !== undefined) return { color: pal.land.forest, alpha: pal.forestTint, edge: 0.35 };
   if (tone === 'ground') return { color: mix(pal.paper, pal.land.meadow, 0.35), alpha: Math.min(0.8, pal.landOpacity * 0.8), edge: 0.7 };
   // Keep a readable marked woodland on parchment without the very dark, saturated satellite-green wash.
-  if (pal.name === 'parchment') return { color: mix(markedForest(pal.land.forest), pal.land.forest, .35), alpha: .75, edge: .5 };
+  if (pal.name === 'parchment') return { color: mix(markedForest(pal.land.forest), pal.land.forest, 0.35), alpha: 0.75, edge: 0.5 };
   return { color: markedForest(pal.land.forest), alpha: 0.85, edge: 0.55 };
 }

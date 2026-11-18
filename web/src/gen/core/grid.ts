@@ -1,21 +1,44 @@
-export interface Grid { w: number; h: number; cell: number; data: Float32Array }
+export interface Grid {
+  w: number;
+  h: number;
+  cell: number;
+  data: Float32Array;
+}
 
 /** Visit every cell crossed by a segment, including short corner crossings missed by fixed-distance samples. */
 export function visitSegmentCells(g: Pick<Grid, 'w' | 'h' | 'cell'>, a: { x: number; y: number }, b: { x: number; y: number }, visit: (index: number) => void): void {
   if (g.w < 1 || g.h < 1 || !(g.cell > 0)) return;
   const clamp = (v: number, n: number) => Math.max(0, Math.min(n - 1e-9, v / g.cell));
-  const ax = clamp(a.x, g.w), ay = clamp(a.y, g.h), bx = clamp(b.x, g.w), by = clamp(b.y, g.h);
-  let x = Math.floor(ax), y = Math.floor(ay);
-  const ex = Math.floor(bx), ey = Math.floor(by), dx = bx - ax, dy = by - ay;
-  const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
-  const dtx = dx ? Math.abs(1 / dx) : Infinity, dty = dy ? Math.abs(1 / dy) : Infinity;
+  const ax = clamp(a.x, g.w),
+    ay = clamp(a.y, g.h),
+    bx = clamp(b.x, g.w),
+    by = clamp(b.y, g.h);
+  let x = Math.floor(ax),
+    y = Math.floor(ay);
+  const ex = Math.floor(bx),
+    ey = Math.floor(by),
+    dx = bx - ax,
+    dy = by - ay;
+  const sx = dx > 0 ? 1 : -1,
+    sy = dy > 0 ? 1 : -1;
+  const dtx = dx ? Math.abs(1 / dx) : Infinity,
+    dty = dy ? Math.abs(1 / dy) : Infinity;
   let tx = dx > 0 ? (x + 1 - ax) / dx : dx < 0 ? (x - ax) / dx : Infinity;
   let ty = dy > 0 ? (y + 1 - ay) / dy : dy < 0 ? (y - ay) / dy : Infinity;
   visit(y * g.w + x);
   for (let i = 0; (x !== ex || y !== ey) && i < g.w + g.h; i++) {
-    if (Math.abs(tx - ty) < 1e-12) { x += sx; y += sy; tx += dtx; ty += dty; }
-    else if (tx < ty) { x += sx; tx += dtx; }
-    else { y += sy; ty += dty; }
+    if (Math.abs(tx - ty) < 1e-12) {
+      x += sx;
+      y += sy;
+      tx += dtx;
+      ty += dty;
+    } else if (tx < ty) {
+      x += sx;
+      tx += dtx;
+    } else {
+      y += sy;
+      ty += dty;
+    }
     if (x < 0 || y < 0 || x >= g.w || y >= g.h) return;
     visit(y * g.w + x);
   }
@@ -33,47 +56,72 @@ export function createGrid(w: number, h: number, cell: number, fill = 0): Grid {
   return { w, h, cell, data };
 }
 export const gget = (g: Grid, x: number, y: number): number => g.data[y * g.w + x];
-export const gset = (g: Grid, x: number, y: number, v: number): void => { g.data[y * g.w + x] = v; };
+export const gset = (g: Grid, x: number, y: number, v: number): void => {
+  g.data[y * g.w + x] = v;
+};
 export const inBounds = (g: { w: number; h: number }, x: number, y: number): boolean => x >= 0 && y >= 0 && x < g.w && y < g.h;
 
 /** Cell centers sit at (i+0.5)*cell in world coordinates. */
 export function sampleGrid(g: Grid, wx: number, wy: number): number {
-  const fx = wx / g.cell - 0.5, fy = wy / g.cell - 0.5;
-  let x0 = Math.floor(fx), y0 = Math.floor(fy);
-  const tx = fx - x0, ty = fy - y0;
-  let x1 = x0 + 1, y1 = y0 + 1;
-  x0 = Math.max(0, Math.min(g.w - 1, x0)); x1 = Math.max(0, Math.min(g.w - 1, x1));
-  y0 = Math.max(0, Math.min(g.h - 1, y0)); y1 = Math.max(0, Math.min(g.h - 1, y1));
-  const d = g.data, w = g.w;
-  const a = d[y0 * w + x0], b = d[y0 * w + x1], c = d[y1 * w + x0], e = d[y1 * w + x1];
+  const fx = wx / g.cell - 0.5,
+    fy = wy / g.cell - 0.5;
+  let x0 = Math.floor(fx),
+    y0 = Math.floor(fy);
+  const tx = fx - x0,
+    ty = fy - y0;
+  let x1 = x0 + 1,
+    y1 = y0 + 1;
+  x0 = Math.max(0, Math.min(g.w - 1, x0));
+  x1 = Math.max(0, Math.min(g.w - 1, x1));
+  y0 = Math.max(0, Math.min(g.h - 1, y0));
+  y1 = Math.max(0, Math.min(g.h - 1, y1));
+  const d = g.data,
+    w = g.w;
+  const a = d[y0 * w + x0],
+    b = d[y0 * w + x1],
+    c = d[y1 * w + x0],
+    e = d[y1 * w + x1];
   return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + e * tx) * ty;
 }
 
 /** Central-difference gradient (dz/dx, dz/dy) in value per meter at cell coords. */
 export function gradientAt(g: Grid, x: number, y: number): [number, number] {
-  const xl = Math.max(0, x - 1), xr = Math.min(g.w - 1, x + 1);
-  const yu = Math.max(0, y - 1), yd = Math.min(g.h - 1, y + 1);
-  const d = g.data, w = g.w;
+  const xl = Math.max(0, x - 1),
+    xr = Math.min(g.w - 1, x + 1);
+  const yu = Math.max(0, y - 1),
+    yd = Math.min(g.h - 1, y + 1);
+  const d = g.data,
+    w = g.w;
   return [(d[y * w + xr] - d[y * w + xl]) / ((xr - xl) * g.cell), (d[yd * w + x] - d[yu * w + x]) / ((yd - yu) * g.cell)];
 }
 
 /** Slope as rise/run. */
 export function slopeGrid(height: Grid): Grid {
   const s = createGrid(height.w, height.h, height.cell);
-  for (let y = 0; y < height.h; y++) for (let x = 0; x < height.w; x++) {
-    const [gx, gy] = gradientAt(height, x, y);
-    s.data[y * height.w + x] = Math.hypot(gx, gy);
-  }
+  for (let y = 0; y < height.h; y++)
+    for (let x = 0; x < height.w; x++) {
+      const [gx, gy] = gradientAt(height, x, y);
+      s.data[y * height.w + x] = Math.hypot(gx, gy);
+    }
   return s;
 }
 
 export const D8: readonly (readonly [number, number])[] = [
-  [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+  [0, -1],
+  [1, -1],
 ];
 export const D8_DIST = [1, Math.SQRT2, 1, Math.SQRT2, 1, Math.SQRT2, 1, Math.SQRT2];
 
 export function neighbors4(g: { w: number; h: number }, i: number, out: number[]): number {
-  const x = i % g.w, y = (i / g.w) | 0; let n = 0;
+  const x = i % g.w,
+    y = (i / g.w) | 0;
+  let n = 0;
   if (x > 0) out[n++] = i - 1;
   if (x < g.w - 1) out[n++] = i + 1;
   if (y > 0) out[n++] = i - g.w;
@@ -81,9 +129,12 @@ export function neighbors4(g: { w: number; h: number }, i: number, out: number[]
   return n;
 }
 export function neighbors8(g: { w: number; h: number }, i: number, out: number[]): number {
-  const x = i % g.w, y = (i / g.w) | 0; let n = 0;
+  const x = i % g.w,
+    y = (i / g.w) | 0;
+  let n = 0;
   for (const [dx, dy] of D8) {
-    const nx = x + dx, ny = y + dy;
+    const nx = x + dx,
+      ny = y + dy;
     if (nx >= 0 && ny >= 0 && nx < g.w && ny < g.h) out[n++] = ny * g.w + nx;
   }
   return n;
@@ -95,9 +146,11 @@ export function neighbors8(g: { w: number; h: number }, i: number, out: number[]
  * sum, bounded by (2r+2)·max|v|, stays below 2^(53+E): all sums are then exact, so the sliding window gives the
  * same doubles as summing each window from scratch.
  */
-const F32 = new Float32Array(1), U32 = new Uint32Array(F32.buffer);
+const F32 = new Float32Array(1),
+  U32 = new Uint32Array(F32.buffer);
 function exactLine(a: Float32Array, off: number, stride: number, len: number, radius: number): boolean {
-  let E = 1e9, M = 0;
+  let E = 1e9,
+    M = 0;
   for (let k = 0, i = off; k < len; k++, i += stride) {
     const v = a[i];
     if (v === 0) continue;
@@ -118,7 +171,8 @@ function exactLine(a: Float32Array, off: number, stride: number, len: number, ra
 
 /** Separable box blur; returns a new grid. */
 export function blurGrid(g: Grid, radius: number, passes = 2): Grid {
-  const w = g.w, h = g.h;
+  const w = g.w,
+    h = g.h;
   let src = Float32Array.from(g.data);
   const tmp = new Float32Array(w * h);
   const acc = new Float64Array(w);
@@ -139,8 +193,15 @@ export function blurGrid(g: Grid, radius: number, passes = 2): Grid {
         continue;
       }
       for (let x = 0; x < w; x++) {
-        let s = 0, n = 0;
-        for (let k = -radius; k <= radius; k++) { const xx = x + k; if (xx >= 0 && xx < w) { s += src[y * w + xx]; n++; } }
+        let s = 0,
+          n = 0;
+        for (let k = -radius; k <= radius; k++) {
+          const xx = x + k;
+          if (xx >= 0 && xx < w) {
+            s += src[y * w + xx];
+            n++;
+          }
+        }
         tmp[y * w + x] = s / n;
       }
     }
@@ -154,7 +215,8 @@ export function blurGrid(g: Grid, radius: number, passes = 2): Grid {
     }
     for (let y = 0; y < h; y++) {
       const n = Math.min(h - 1, y + radius) - Math.max(0, y - radius) + 1;
-      const add = y + radius + 1 < h ? (y + radius + 1) * w : -1, sub = y - radius >= 0 ? (y - radius) * w : -1;
+      const add = y + radius + 1 < h ? (y + radius + 1) * w : -1,
+        sub = y - radius >= 0 ? (y - radius) * w : -1;
       for (let x = 0; x < w; x++) {
         if (colOk[x]) {
           out[y * w + x] = acc[x] / n;
@@ -162,8 +224,15 @@ export function blurGrid(g: Grid, radius: number, passes = 2): Grid {
           if (sub >= 0) acc[x] -= tmp[sub + x];
           continue;
         }
-        let s = 0, nn = 0;
-        for (let k = -radius; k <= radius; k++) { const yy = y + k; if (yy >= 0 && yy < h) { s += tmp[yy * w + x]; nn++; } }
+        let s = 0,
+          nn = 0;
+        for (let k = -radius; k <= radius; k++) {
+          const yy = y + k;
+          if (yy >= 0 && yy < h) {
+            s += tmp[yy * w + x];
+            nn++;
+          }
+        }
         out[y * w + x] = s / nn;
       }
     }
@@ -179,17 +248,27 @@ export function blurGrid(g: Grid, radius: number, passes = 2): Grid {
 export function kthSmallest(a: ArrayLike<number>, k: number): number {
   const n = a.length;
   const v = Float64Array.from(a as ArrayLike<number>);
-  let lo = 0, hi = n - 1;
+  let lo = 0,
+    hi = n - 1;
   while (hi > lo) {
     // median of three pivot, Hoare-style partition
     const mid = (lo + hi) >> 1;
-    const x = v[lo], y = v[mid], z = v[hi];
-    const p = x < y ? (y < z ? y : x < z ? z : x) : (x < z ? x : y < z ? z : y);
-    let i = lo, j = hi;
+    const x = v[lo],
+      y = v[mid],
+      z = v[hi];
+    const p = x < y ? (y < z ? y : x < z ? z : x) : x < z ? x : y < z ? z : y;
+    let i = lo,
+      j = hi;
     while (i <= j) {
       while (v[i] < p) i++;
       while (v[j] > p) j--;
-      if (i <= j) { const t = v[i]; v[i] = v[j]; v[j] = t; i++; j--; }
+      if (i <= j) {
+        const t = v[i];
+        v[i] = v[j];
+        v[j] = t;
+        i++;
+        j--;
+      }
     }
     if (k <= j) hi = j;
     else if (k >= i) lo = i;
@@ -198,7 +277,12 @@ export function kthSmallest(a: ArrayLike<number>, k: number): number {
   const r = v[k];
   if (r !== 0) return r;
   // ±0: sorted order is negatives, -0, +0, positives
-  let neg = 0, negZero = 0;
-  for (let i = 0; i < n; i++) { const x = a[i]; if (x < 0) neg++; else if (x === 0 && 1 / x < 0) negZero++; }
+  let neg = 0,
+    negZero = 0;
+  for (let i = 0; i < n; i++) {
+    const x = a[i];
+    if (x < 0) neg++;
+    else if (x === 0 && 1 / x < 0) negZero++;
+  }
   return k < neg + negZero ? -0 : 0;
 }

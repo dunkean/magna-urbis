@@ -5,21 +5,43 @@ import { buildingOccupationSurfaces } from '../../ui/urbanBuildingProjection';
 import { Occupation, type OccupationInput, type TerrainGrid } from '../model';
 import { fingerprint } from '../compiler';
 
-export interface SurfaceRoad { id?: string; sourceIndex?: number; points: readonly (readonly [number, number])[]; widthM: number; surface?: string; class?: string; profile?: string; a?: number; b?: number }
-const contains = (surface: Surface, x: number, y: number): boolean => surface.some(shape => {
-  let inside = false;
-  for (const ring of [shape.outer, ...shape.holes]) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i], b = ring[j];
-    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
-});
+export interface SurfaceRoad {
+  id?: string;
+  sourceIndex?: number;
+  points: readonly (readonly [number, number])[];
+  widthM: number;
+  surface?: string;
+  class?: string;
+  profile?: string;
+  a?: number;
+  b?: number;
+}
+const contains = (surface: Surface, x: number, y: number): boolean =>
+  surface.some(shape => {
+    let inside = false;
+    for (const ring of [shape.outer, ...shape.holes])
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i],
+          b = ring[j];
+        if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+      }
+    return inside;
+  });
 function segmentTouchesBox(ax: number, ay: number, bx: number, by: number, x0: number, y0: number, x1: number, y1: number): boolean {
-  let near = 0, far = 1;
-  for (const [a, delta, low, high] of [[ax, bx - ax, x0, x1], [ay, by - ay, y0, y1]]) {
-    if (Math.abs(delta) < 1e-12) { if (a < low || a > high) return false; continue; }
-    const t0 = (low - a) / delta, t1 = (high - a) / delta;
-    near = Math.max(near, Math.min(t0, t1)); far = Math.min(far, Math.max(t0, t1));
+  let near = 0,
+    far = 1;
+  for (const [a, delta, low, high] of [
+    [ax, bx - ax, x0, x1],
+    [ay, by - ay, y0, y1],
+  ]) {
+    if (Math.abs(delta) < 1e-12) {
+      if (a < low || a > high) return false;
+      continue;
+    }
+    const t0 = (low - a) / delta,
+      t1 = (high - a) / delta;
+    near = Math.max(near, Math.min(t0, t1));
+    far = Math.min(far, Math.max(t0, t1));
     if (near > far) return false;
   }
   return true;
@@ -28,8 +50,7 @@ function segmentTouchesBox(ax: number, ay: number, bx: number, by: number, x0: n
 /** Conservative cell coverage prevents thin walls/roads falling between DEM
  * samples. Courtyard cells wholly inside a hole remain natural. Explicit accepted
  * occupancy records override visual overlays, including an explicitly empty set. */
-export function occupationFromMagnaScene(terrain: TerrainGrid, scene?: Building3dScene,
-  roads: readonly SurfaceRoad[] = [], base?: OccupationInput): OccupationInput {
+export function occupationFromMagnaScene(terrain: TerrainGrid, scene?: Building3dScene, roads: readonly SurfaceRoad[] = [], base?: OccupationInput): OccupationInput {
   const surfaces = (scene?.occupationBuildings ?? scene?.buildings ?? []).flatMap(building => [...buildingOccupationSurfaces(building)]);
   return occupationFromMagnaSurfaces(terrain, surfaces, roads, base);
 }
@@ -44,11 +65,11 @@ export function occupationFromMagnaWorld(terrain: TerrainGrid, world: World, bas
   return occupationFromMagnaSurfaces(terrain, surfaces, roads, base);
 }
 
-export function occupationFromMagnaSurfaces(terrain: TerrainGrid, surfaces: readonly Surface[],
-  roads: readonly SurfaceRoad[] = [], base?: OccupationInput): OccupationInput {
+export function occupationFromMagnaSurfaces(terrain: TerrainGrid, surfaces: readonly Surface[], roads: readonly SurfaceRoad[] = [], base?: OccupationInput): OccupationInput {
   const n = terrain.width * terrain.height;
-  if (base && (base.classes.length !== n || base.orientationRadians && base.orientationRadians.length !== n)) throw new Error('Occupation base must match terrain grid.');
-  const classes = base?.classes.slice() ?? new Uint8Array(n), orientationRadians = base?.orientationRadians?.slice() ?? new Float32Array(n);
+  if (base && (base.classes.length !== n || (base.orientationRadians && base.orientationRadians.length !== n))) throw new Error('Occupation base must match terrain grid.');
+  const classes = base?.classes.slice() ?? new Uint8Array(n),
+    orientationRadians = base?.orientationRadians?.slice() ?? new Float32Array(n);
   const half = terrain.spacingM / 2;
   const visitBox = (x0: number, y0: number, x1: number, y1: number, visit: (index: number, x: number, y: number) => void) => {
     const a = Math.max(0, Math.ceil((x0 - half - terrain.originX) / terrain.spacingM));
@@ -61,12 +82,17 @@ export function occupationFromMagnaSurfaces(terrain: TerrainGrid, surfaces: read
     if (!(road.widthM > 0) || !Number.isFinite(road.widthM)) throw new Error('Road width must be finite and positive.');
     if (road.points.some(p => !p.every(Number.isFinite))) throw new Error('Road coordinates must be finite.');
     for (let i = 1; i < road.points.length; i++) {
-      const [ax, ay] = road.points[i - 1], [bx, by] = road.points[i], dx = bx - ax, dy = by - ay, den = dx * dx + dy * dy;
+      const [ax, ay] = road.points[i - 1],
+        [bx, by] = road.points[i],
+        dx = bx - ax,
+        dy = by - ay,
+        den = dx * dx + dy * dy;
       const radius = road.widthM / 2;
       visitBox(Math.min(ax, bx) - radius, Math.min(ay, by) - radius, Math.max(ax, bx) + radius, Math.max(ay, by) + radius, (index, x, y) => {
         const t = den ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / den)) : 0;
         if (Math.hypot(x - ax - t * dx, y - ay - t * dy) <= radius + half * Math.SQRT2) {
-          classes[index] = Occupation.Road; orientationRadians[index] = Math.atan2(dy, dx);
+          classes[index] = Occupation.Road;
+          orientationRadians[index] = Math.atan2(dy, dx);
         }
       });
     }
@@ -74,18 +100,34 @@ export function occupationFromMagnaSurfaces(terrain: TerrainGrid, surfaces: read
   for (const surface of surfaces) {
     const points = surface.flatMap(shape => shape.outer);
     if (!points.length) continue;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const p of points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const p of points) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
     visitBox(x0, y0, x1, y1, (index, x, y) => {
-      const corners = [[x - half, y - half], [x + half, y - half], [x - half, y + half], [x + half, y + half]];
+      const corners = [
+        [x - half, y - half],
+        [x + half, y - half],
+        [x - half, y + half],
+        [x + half, y + half],
+      ];
       let touched = contains(surface, x, y) || corners.some(([a, b]) => contains(surface, a, b));
-      if (!touched) for (const shape of surface) for (const ring of [shape.outer, ...shape.holes]) for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        if (segmentTouchesBox(a.x, a.y, b.x, b.y, x - half, y - half, x + half, y + half)) touched = true;
-      }
+      if (!touched)
+        for (const shape of surface)
+          for (const ring of [shape.outer, ...shape.holes])
+            for (let i = 0; i < ring.length; i++) {
+              const a = ring[i],
+                b = ring[(i + 1) % ring.length];
+              if (segmentTouchesBox(a.x, a.y, b.x, b.y, x - half, y - half, x + half, y + half)) touched = true;
+            }
       if (touched) classes[index] = Occupation.Built;
     });
   }
-  return { version: `magna-occupation:${fingerprint([terrain.originX, terrain.originZ, terrain.width, terrain.height, terrain.spacingM, classes, orientationRadians])}`,
-    classes, orientationRadians };
+  return { version: `magna-occupation:${fingerprint([terrain.originX, terrain.originZ, terrain.width, terrain.height, terrain.spacingM, classes, orientationRadians])}`, classes, orientationRadians };
 }

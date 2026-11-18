@@ -11,8 +11,16 @@ export function reportDrawnLabels(ids: Iterable<string | undefined>): void {
   drawn = next;
   // Views change every frame during gestures: listeners hear once the frame settles.
   if (timer !== undefined) clearTimeout(timer);
-  timer = setTimeout(() => { timer = undefined; listeners.forEach(listener => listener()); }, 250);
+  timer = setTimeout(() => {
+    timer = undefined;
+    listeners.forEach(listener => listener());
+  }, 250);
 }
 /** Undefined until a renderer has reported a frame. */
-export function drawnLabelIds(): ReadonlySet<string> | undefined { return drawn; }
-export function onDrawnLabelsChange(listener: () => void): () => void { listeners.add(listener); return () => listeners.delete(listener); }
+export function drawnLabelIds(): ReadonlySet<string> | undefined {
+  return drawn;
+}
+export function onDrawnLabelsChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}

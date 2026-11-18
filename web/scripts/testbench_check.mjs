@@ -6,22 +6,28 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const target = process.argv[2] ?? pathToFileURL(resolve('dist/testbench.html')).href;
-const output = resolve('out/testbench'); mkdirSync(output, { recursive: true });
+const output = resolve('out/testbench');
+mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1550, height: 1150 } });
-const errors = []; page.on('pageerror', e => errors.push(e.message));
+const errors = [];
+page.on('pageerror', e => errors.push(e.message));
 const ready = async () => {
   await page.waitForFunction(() => /quartiers|micro formes|Erreur/.test(document.getElementById('status').textContent));
   assert.doesNotMatch(await page.locator('#status').innerText(), /Erreur/);
 };
-const apply = async id => { await page.locator(`#${id}`).click(); await ready(); };
+const apply = async id => {
+  await page.locator(`#${id}`).click();
+  await ready();
+};
 const geometry = async selector => page.locator(selector).evaluateAll(nodes => nodes.map(n => n.getAttribute('d')));
 const state = async () => {
   const encoded = new URL(page.url()).searchParams.get('case');
   return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
 };
 try {
-  await page.goto(target); await ready();
+  await page.goto(target);
+  await ready();
   assert.ok(await page.locator('[data-parcel]').count());
   assert.equal(await page.locator('[data-building]').count(), 0);
   assert.deepEqual(await page.locator('#plotOp option').evaluateAll(nodes => nodes.map(n => n.value)), ['cutPlots', 'cutCourtyards', 'garden', 'cutPlots + raffinement']);
@@ -36,7 +42,8 @@ try {
   assert.notDeepEqual(await geometry('[data-parcel]'), baseline);
   assert.deepEqual((await state()).plotOptions.stages.plots.params.frontage.core, [9, 14]);
   const editedPlots = await geometry('[data-parcel]');
-  await page.reload(); await ready();
+  await page.reload();
+  await ready();
   assert.deepEqual(await geometry('[data-parcel]'), editedPlots);
   assert.equal(await page.locator('#plotsParams [data-param="frontage.0"]').inputValue(), '9');
   await page.locator('#plotsParams [data-param="frontage.0"]').fill('20');
@@ -45,20 +52,29 @@ try {
   assert.deepEqual(await geometry('[data-parcel]'), editedPlots);
   assert.match(await page.locator('#status').innerText(), /invalides/);
   await page.locator('#plotsParams button').last().click();
-  await page.locator('.culture-settings').first().evaluate(el => { el.open = true; });
+  await page
+    .locator('.culture-settings')
+    .first()
+    .evaluate(el => {
+      el.open = true;
+    });
   assert.ok(await page.locator('#plotsCultures tbody tr').count());
   await page.screenshot({ path: resolve(output, 'atomic-operators.png'), fullPage: true });
   await page.selectOption('#plotOp', 'garden');
   assert.equal(await page.locator('#plotsParams input').count(), 0);
-  await page.goto(target); await ready();
-  await page.selectOption('#placement', 'rectangle'); await apply('layout');
+  await page.goto(target);
+  await ready();
+  await page.selectOption('#placement', 'rectangle');
+  await apply('layout');
   await apply('parcels');
-  const plots = await geometry('[data-parcel]'), blocks = await geometry('[data-overlay="blocks"] path');
+  const plots = await geometry('[data-parcel]'),
+    blocks = await geometry('[data-overlay="blocks"] path');
   const seed = (await state()).plotSeed;
   await apply('houses');
   assert.ok(await page.locator('[data-building]').count());
   const originalRoofs = await geometry('[data-building]');
-  await page.selectOption('#buildingsPreset', 'morph/medina'); await apply('houses');
+  await page.selectOption('#buildingsPreset', 'morph/medina');
+  await apply('houses');
   assert.deepEqual(await geometry('[data-parcel]'), plots);
   assert.deepEqual(await geometry('[data-overlay="blocks"] path'), blocks);
   assert.notDeepEqual(await geometry('[data-building]'), originalRoofs);
@@ -69,17 +85,26 @@ try {
   await page.check('#showHouses');
   // URL replay keeps independently applied stage settings, pins, seeds and view.
   await page.evaluate(() => {
-    const url = new URL(location.href), data = JSON.parse(atob(url.searchParams.get('case').replace(/-/g, '+').replace(/_/g, '/')));
+    const url = new URL(location.href),
+      data = JSON.parse(atob(url.searchParams.get('case').replace(/-/g, '+').replace(/_/g, '/')));
     data.pins = [{ x: 600, y: 450, note: 'Découpage à examiner' }];
     const bytes = new TextEncoder().encode(JSON.stringify(data));
-    url.searchParams.set('case', btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
+    url.searchParams.set(
+      'case',
+      btoa(String.fromCharCode(...bytes))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, ''),
+    );
     location.href = url.href;
   });
   await ready();
   assert.equal(await page.locator('[data-pin]').count(), 1);
   assert.equal(await page.locator('#pins input').inputValue(), 'Découpage à examiner');
-  const roofs = await geometry('[data-building]'), shared = page.url();
-  await page.goto(shared); await ready();
+  const roofs = await geometry('[data-building]'),
+    shared = page.url();
+  await page.goto(shared);
+  await ready();
   assert.deepEqual(await geometry('[data-parcel]'), plots);
   assert.deepEqual(await geometry('[data-building]'), roofs);
   await apply('clearHouses');
@@ -98,39 +123,66 @@ try {
   assert.equal(await page.inputValue('#buildingOp'), 'pavilionCompound');
   await page.selectOption('#culture', 'european-organic');
 
-  await page.locator('#advanced').evaluate(el => { el.open = true; });
+  await page.locator('#advanced').evaluate(el => {
+    el.open = true;
+  });
   await page.selectOption('#advancedStage', 'plots');
-  await page.fill('#params', '{"plotOp":"garden"}'); await page.click('#applyParams');
+  await page.fill('#params', '{"plotOp":"garden"}');
+  await page.click('#applyParams');
   await apply('parcels');
   assert.equal(await page.locator('[data-building]').count(), 0);
   assert.equal((await state()).plotOptions.stages.plots.params.plotOp, 'garden');
-  await page.fill('#params', '{"frontage":{"core":[9,7]}}'); await page.click('#applyParams');
+  await page.fill('#params', '{"frontage":{"core":[9,7]}}');
+  await page.click('#applyParams');
   assert.match(await page.locator('#paramStatus').innerText(), /minimum supérieur/);
   await page.click('#resetParams');
-  await page.locator('#advanced').evaluate(el => { el.open = false; });
+  await page.locator('#advanced').evaluate(el => {
+    el.open = false;
+  });
 
   for (const placement of ['center', 'rectangle', 'skew', 'notched']) {
-    await page.selectOption('#placement', placement); await apply('layout'); await apply('parcels');
+    await page.selectOption('#placement', placement);
+    await apply('layout');
+    await apply('parcels');
     assert.ok(await page.locator('[data-parcel]').count());
     await page.screenshot({ path: resolve(output, `${placement}.png`), fullPage: true });
   }
   for (const relief of ['valley', 'hill']) {
-    await page.selectOption('#relief', relief); await page.selectOption('#river', 'diagonal');
-    await apply('layout'); await apply('parcels'); await apply('houses');
+    await page.selectOption('#relief', relief);
+    await page.selectOption('#river', 'diagonal');
+    await apply('layout');
+    await apply('parcels');
+    await apply('houses');
     assert.ok(await page.locator('[data-overlay="river"]').count());
     assert.ok(await page.locator('[data-overlay="relief"]').count());
     assert.ok(await page.locator('[data-building]').count());
-    const url = page.url(), geom = await geometry('[data-parcel]');
-    await page.goto(url); await ready(); assert.deepEqual(await geometry('[data-parcel]'), geom);
+    const url = page.url(),
+      geom = await geometry('[data-parcel]');
+    await page.goto(url);
+    await ready();
+    assert.deepEqual(await geometry('[data-parcel]'), geom);
     await page.screenshot({ path: resolve(output, `${relief}-river.png`), fullPage: true });
   }
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.screenshot({ path: resolve(output, 'mobile.png'), fullPage: true });
   // Readable migration of prototype links (their operators now use the separated stages).
-  const oldCase = { v: 1, options: { culture: 'european-organic', zone: 'core', density: 1, count: 4, radius: 160, placement: 'lateral', monument: 'none' }, layoutSeed: '42', houseSeed: '42', houseCulture: 'chinese', houseDensity: 1, houses: true, pins: [{ x: 600, y: 450, note: 'Ancien cas' }], view: [550, 360, 300, 300], showPlots: true };
-  const oldURL = new URL(target); oldURL.searchParams.set('case', Buffer.from(JSON.stringify(oldCase)).toString('base64url'));
-  await page.goto(oldURL.href); await ready();
+  const oldCase = {
+    v: 1,
+    options: { culture: 'european-organic', zone: 'core', density: 1, count: 4, radius: 160, placement: 'lateral', monument: 'none' },
+    layoutSeed: '42',
+    houseSeed: '42',
+    houseCulture: 'chinese',
+    houseDensity: 1,
+    houses: true,
+    pins: [{ x: 600, y: 450, note: 'Ancien cas' }],
+    view: [550, 360, 300, 300],
+    showPlots: true,
+  };
+  const oldURL = new URL(target);
+  oldURL.searchParams.set('case', Buffer.from(JSON.stringify(oldCase)).toString('base64url'));
+  await page.goto(oldURL.href);
+  await ready();
   assert.equal(await page.inputValue('#placement'), 'rectangle');
   assert.equal((await state()).v, 2);
   assert.ok(await page.locator('[data-building]').count());
@@ -140,28 +192,40 @@ try {
   assert.equal(await page.locator('[data-pin]').count(), 0);
   assert.equal((await state()).pins.length, 0);
   assert.deepEqual(await geometry('[data-parcel]'), beforeDelete);
-  await page.goto(page.url()); await ready();
+  await page.goto(page.url());
+  await ready();
   assert.equal(await page.locator('[data-pin]').count(), 0);
   await page.selectOption('#mode', 'micro');
   assert.equal(await page.locator('#randomLayout').innerText(), '↻ Random shapes');
   assert.equal(await page.locator('#shapePreset').inputValue(), 'diversity');
   assert.equal(await page.locator('#placement').isVisible(), false);
-  await apply('layout'); await apply('parcels'); await apply('houses');
+  await apply('layout');
+  await apply('parcels');
+  await apply('houses');
   assert.equal(await page.locator('[data-shape-label]').count(), 10);
   assert.equal(await page.locator('#microScale').isVisible(), true);
-  const originalMicroSize = await page.locator('[data-overlay="blocks"] path').first().evaluate(node => node.getBBox().width);
+  const originalMicroSize = await page
+    .locator('[data-overlay="blocks"] path')
+    .first()
+    .evaluate(node => node.getBBox().width);
   await page.locator('#microScale').fill('5');
   await page.locator('#microScale').dispatchEvent('input');
   await page.locator('#microScale').dispatchEvent('change');
   assert.equal(await page.locator('#microScaleValue').innerText(), '×5');
   const shapeSeed = (await state()).layoutSeed;
-  await apply('layout'); await apply('parcels'); await apply('houses');
+  await apply('layout');
+  await apply('parcels');
+  await apply('houses');
   assert.equal((await state()).layoutSeed, shapeSeed);
   assert.equal((await state()).options.microScale, 5);
-  const enlargedMicroSize = await page.locator('[data-overlay="blocks"] path').first().evaluate(node => node.getBBox().width);
+  const enlargedMicroSize = await page
+    .locator('[data-overlay="blocks"] path')
+    .first()
+    .evaluate(node => node.getBBox().width);
   assert.ok(Math.abs(enlargedMicroSize / originalMicroSize - 5) < 0.001);
   const enlargedMicroShapes = await geometry('[data-overlay="blocks"] path');
-  await page.reload(); await ready();
+  await page.reload();
+  await ready();
   assert.equal(await page.locator('#microScale').inputValue(), '5');
   assert.equal(await page.locator('#microScaleValue').innerText(), '×5');
   assert.deepEqual(await geometry('[data-overlay="blocks"] path'), enlargedMicroShapes);
@@ -169,18 +233,23 @@ try {
   await page.screenshot({ path: resolve(output, 'micro-size-5.png'), fullPage: true });
   assert.equal(await page.locator('#microFrontage').isVisible(), true);
   await page.selectOption('#microFrontage', 'perimeter');
-  await apply('layout'); await apply('parcels'); await apply('houses');
+  await apply('layout');
+  await apply('parcels');
+  await apply('houses');
   assert.deepEqual(await geometry('[data-overlay="blocks"] path'), enlargedMicroShapes);
   assert.equal((await state()).options.microFrontage, 'perimeter');
   const perimeterRoofs = await geometry('[data-building]');
-  await page.reload(); await ready();
+  await page.reload();
+  await ready();
   assert.equal(await page.inputValue('#microFrontage'), 'perimeter');
   assert.deepEqual(await geometry('[data-building]'), perimeterRoofs);
   await page.screenshot({ path: resolve(output, 'micro-perimeter-size-5.png'), fullPage: true });
   await page.selectOption('#microFrontage', 'front');
   await page.locator('#microScale').fill('1');
   await page.locator('#microScale').dispatchEvent('change');
-  await apply('layout'); await apply('parcels'); await apply('houses');
+  await apply('layout');
+  await apply('parcels');
+  await apply('houses');
   const microShapes = await geometry('[data-overlay="blocks"] path');
   const microPlots = await geometry('[data-parcel]');
   assert.ok(await page.locator('[data-building]').count());
@@ -191,8 +260,10 @@ try {
   assert.equal(await page.locator('[data-building]').count(), 0);
   assert.deepEqual(await geometry('[data-overlay="blocks"] path'), microShapes);
   await apply('houses');
-  const microURL = page.url(), microRoofs = await geometry('[data-building]');
-  await page.goto(microURL); await ready();
+  const microURL = page.url(),
+    microRoofs = await geometry('[data-building]');
+  await page.goto(microURL);
+  await ready();
   assert.equal(await page.inputValue('#mode'), 'micro');
   assert.deepEqual(await geometry('[data-building]'), microRoofs);
   assert.deepEqual(await geometry('[data-overlay="blocks"] path'), microShapes);
@@ -211,4 +282,6 @@ try {
   assert.deepEqual(errors, []);
   writeFileSync(resolve(output, 'checks.json'), JSON.stringify({ target, status: 'passed', errors, finalCase: await state() }, null, 2));
   console.log('Testbench: stage isolation, culture recipes, JSON overrides, URL replay, constraints and mobile passed.');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

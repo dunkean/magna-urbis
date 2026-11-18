@@ -41,19 +41,26 @@ export interface RenderOptions {
   colors?: RenderColors;
   roadLook?: import('./composition').RoadLook;
   roadGround?: RoadGroundTones;
-  roadEmphasis?: number; roadNight?: boolean;
+  roadEmphasis?: number;
+  roadNight?: boolean;
   buildings?: boolean;
   /** Independent export layers; omitted flags stay visible. */
   layers?: Partial<ExportLayers>;
   /** Actual export width in pixels; sets decorative hairline weight. Defaults to the 1600 px design size, matching the default bounded hairline scale. */
   width?: number;
-  style?: MapStyle; contours?: boolean; raster?: boolean; landuse?: boolean; debug?: boolean;
+  style?: MapStyle;
+  contours?: boolean;
+  raster?: boolean;
+  landuse?: boolean;
+  debug?: boolean;
   /** Land-use kinds drawn (mask: the others belong to another layer, e.g. the ground material draws the forest). */
   landuseKinds?: (kind: LandKind) => boolean;
   /** Plain field boundaries for the topographic line preset. */
   fieldOutlines?: boolean;
   /** Name labels (default: world.options.labels !== false), legend (default: world.options.legend) and cartouche (default on). */
-  labels?: boolean; legend?: boolean; cartouche?: boolean;
+  labels?: boolean;
+  legend?: boolean;
+  cartouche?: boolean;
   /** Semantic land-use entries appended to the legend (same model as the live legend). */
   semanticLegend?: readonly SemanticLegendEntry[];
   /** Text width measurer for label placement (browser: canvas based; default: estimate). */
@@ -65,12 +72,15 @@ export interface RenderOptions {
 
 function contourLayer(world: World, pal: Palette, u: number, scale: number): string {
   const cs = contourSet(world, u);
-  const dOf = (l: ContourSet['thin']): string => l.map((c) => pathD(c.pts, c.closed)).join('');
-  const thin = dOf(cs.thin), index = dOf(cs.index);
-  return `<g id="terrain-contour-ground" class="layer-contours" fill="none" stroke="${pal.contour}" stroke-linejoin="round" stroke-linecap="round">` +
+  const dOf = (l: ContourSet['thin']): string => l.map(c => pathD(c.pts, c.closed)).join('');
+  const thin = dOf(cs.thin),
+    index = dOf(cs.index);
+  return (
+    `<g id="terrain-contour-ground" class="layer-contours" fill="none" stroke="${pal.contour}" stroke-linejoin="round" stroke-linecap="round">` +
     (thin ? `<path d="${thin}" ${svgMapStroke(MAP_STROKES.contour, scale)} opacity="${pal.contourOpacity * 0.7}"/>` : '') +
     (index ? `<path d="${index}" ${svgMapStroke(MAP_STROKES.contourIndex, scale, pal.contourIndexW / 1.6)} opacity="${pal.contourOpacity}"/>` : '') +
-    '</g>';
+    '</g>'
+  );
 }
 
 function decor(world: World, pal: Palette, u: number): string {
@@ -100,7 +110,10 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   const forestMask = clearings.length ? ' mask="url(#forest-clearance)"' : '';
   const seedAttribute = world.seed.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${S} ${S}" width="${width}" height="${width}" data-seed="${seedAttribute}" data-style="${style}">`);
-  if (clearings.length) parts.push(`<defs><mask id="forest-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="${S}" height="${S}" style="mask-type:luminance"><rect width="${S}" height="${S}" fill="white"/>${clearings.map((p) => `<path d="${pathD(orientPos(p.outer), true) + p.holes.map((h) => pathD(orientPos(h).slice().reverse(), true)).join('')}" fill="black" fill-rule="nonzero"/>`).join('')}</mask></defs>`);
+  if (clearings.length)
+    parts.push(
+      `<defs><mask id="forest-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="${S}" height="${S}" style="mask-type:luminance"><rect width="${S}" height="${S}" fill="white"/>${clearings.map(p => `<path d="${pathD(orientPos(p.outer), true) + p.holes.map(h => pathD(orientPos(h).slice().reverse(), true)).join('')}" fill="black" fill-rule="nonzero"/>`).join('')}</mask></defs>`,
+    );
   parts.push(`<defs><clipPath id="mapclip"><rect x="0" y="0" width="${S}" height="${S}"/></clipPath></defs>`);
   if (painted) parts.push(painted.defs);
   if (layers.background !== false) parts.push(`<rect x="0" y="0" width="${S}" height="${S}" fill="${pal.paper}"/>`);
@@ -132,19 +145,22 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
     ribbons.push(pathD(offsetRibbon(r.path, w), true));
   }
   if (layers.water !== false && ribbons.length) {
-    parts.push(`<g class="layer-rivers">` +
-      `<g fill="${pal.riverEdge}" stroke="${pal.riverEdge}" stroke-width="${f1(1.7 * u)}" stroke-linejoin="round">${ribbons.map((d) => `<path d="${d}"/>`).join('')}</g>` +
-      `<g fill="${pal.riverFill}">${ribbons.map((d) => `<path d="${d}"/>`).join('')}</g></g>`);
+    parts.push(
+      `<g class="layer-rivers">` +
+        `<g fill="${pal.riverEdge}" stroke="${pal.riverEdge}" stroke-width="${f1(1.7 * u)}" stroke-linejoin="round">${ribbons.map(d => `<path d="${d}"/>`).join('')}</g>` +
+        `<g fill="${pal.riverFill}">${ribbons.map(d => `<path d="${d}"/>`).join('')}</g></g>`,
+    );
   }
 
   // water
   let water = '<g class="layer-water">';
   // islands are holes of the sea polygon they lie in (evenodd), so the land shows through
   const swi = seaWithIslands(t.coastline, t.islands);
-  const seaD = swi.sea.map((poly, i) => pathD(poly, true) + swi.holes[i].map((h) => pathD(h, true)).join(''));
+  const seaD = swi.sea.map((poly, i) => pathD(poly, true) + swi.holes[i].map(h => pathD(h, true)).join(''));
   const lakeDWater = t.lakes.map(poly => pathD(poly, true)).join('');
   if (layers.water !== false && (seaD.length || lakeDWater)) {
-    const material = worldWaterPixels(world, pal), url = pngDataUrl(encodePng(material.rgb, material.n, material.n));
+    const material = worldWaterPixels(world, pal),
+      url = pngDataUrl(encodePng(material.rgb, material.n, material.n));
     water += `<defs><clipPath id="styled-water-clip"><path d="${seaD.join('') + lakeDWater}" clip-rule="evenodd"/></clipPath></defs><image width="${S}" height="${S}" href="${url}" clip-path="url(#styled-water-clip)"/>`;
     for (const d of seaD) water += `<path d="${d}" fill="none" stroke="${pal.waterEdge}" stroke-width="${f1(1.5 * u)}" stroke-linejoin="round"/>`;
     for (const poly of t.lakes) water += `<path d="${pathD(poly, true)}" fill="none" stroke="${pal.waterEdge}" stroke-width="${f1(1.3 * u)}" stroke-linejoin="round"/>`;
@@ -154,18 +170,45 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   if (layers.water !== false) parts.push(water);
 
   // roads and tracks never spill over the sea or the lakes (bridges over rivers are not masked)
-  const lakeD = t.lakes.filter((p) => p.length >= 3).map((p) => pathD(p, true)).join('');
+  const lakeD = t.lakes
+    .filter(p => p.length >= 3)
+    .map(p => pathD(p, true))
+    .join('');
   const masked = seaD.length > 0 || lakeD.length > 0;
   if (masked) parts.push(`<clipPath id="landclip"><path d="M-50 -50H${S + 50}V${S + 50}H-50Z${seaD.join('')}${lakeD}" clip-rule="evenodd"/></clipPath>`);
   parts.push(`<g id="regional-road-ground"${masked ? ' clip-path="url(#landclip)"' : ''}>${roadsLayer(world, pal, u, painted?.brushes, { roads: layers.roads !== false, city: layers.city !== false }, opts.roadLook, opts.colors, opts.roadEmphasis, opts.roadNight)}</g>`);
   if (world.urban && (layers.city !== false || layers.streets !== false || layers.water !== false)) {
     const landscape = world0.landuse?.landscapeGround !== undefined;
-    parts.push(urbanLayer(world, pal, u, !!opts.debug, opts.debug || landscape ? { bands: [], ground: [], streets: [] } : countrysideFringe(world0), raster, landuse, opts.debug || landscape ? [] : (world0.landuse?.naturalGround ?? []), contours, opts.debug ? [] : currentLandscapeGround(world0, true), worldGroundAppearance(world0), opts.debug ? [] : worldCampCover(world0), painted?.brushes, forestMask, layers));
-    if (!opts.debug && layers.city !== false) { parts.push(shadowSvg(world, pal, u)); parts.push(litSvg(world, pal, u)); }
+    parts.push(
+      urbanLayer(
+        world,
+        pal,
+        u,
+        !!opts.debug,
+        opts.debug || landscape ? { bands: [], ground: [], streets: [] } : countrysideFringe(world0),
+        raster,
+        landuse,
+        opts.debug || landscape ? [] : (world0.landuse?.naturalGround ?? []),
+        contours,
+        opts.debug ? [] : currentLandscapeGround(world0, true),
+        worldGroundAppearance(world0),
+        opts.debug ? [] : worldCampCover(world0),
+        painted?.brushes,
+        forestMask,
+        layers,
+      ),
+    );
+    if (!opts.debug && layers.city !== false) {
+      parts.push(shadowSvg(world, pal, u));
+      parts.push(litSvg(world, pal, u));
+    }
   } else if (layers.city !== false) parts.push(siteLayer(world, pal, u, !!opts.debug, false));
 
   if (t.caverns && landuse) parts.push(cavernFungalRoomsSvg(world, pal));
-  if (t.caverns) { parts.push('</g>'); if (layers.terrain !== false) parts.push(cavernWallsSvg(world, pal, raster), caveTunnelsSvg(t.caverns.tunnels, t.height.cell)); }
+  if (t.caverns) {
+    parts.push('</g>');
+    if (layers.terrain !== false) parts.push(cavernWallsSvg(world, pal, raster), caveTunnelsSvg(t.caverns.tunnels, t.height.cell));
+  }
   parts.push('</g>');
   if (layers.labels !== false && (opts.labels ?? world.options.labels !== false)) parts.push(labelsSvg(world, pal, opts.measure, !!(opts.legend ?? world.options.legend), opts.text));
   if (layers.decor !== false) parts.push(decor(world, pal, u));

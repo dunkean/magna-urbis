@@ -11,15 +11,39 @@ import { TerrainGl } from './terrainGl';
 import { rendererOverride } from './rendererOverride';
 
 /** Public surface shared by both map renderers (TerrainGl's). */
-export type TerrainRenderer = Pick<TerrainGl,
-  'setBase' | 'setDetail' | 'setRenderV2Season' | 'setLook' | 'setEnhancedDetail' | 'setRetainedWater' | 'setWater' | 'setOverlay'
-  | 'setView' | 'setForest' | 'captureMap' | 'redrawForCapture' | 'captureRegion' | 'captureWaterMask' | 'createSurfaceSampler'
-  | 'heightAt' | 'variantReady' | 'redrawNow' | 'setLivePaused' | 'dispose' | 'drawMs' | 'renderWorldTile' | 'contentRevision'>;
+export type TerrainRenderer = Pick<
+  TerrainGl,
+  | 'setBase'
+  | 'setDetail'
+  | 'setRenderV2Season'
+  | 'setLook'
+  | 'setEnhancedDetail'
+  | 'setRetainedWater'
+  | 'setWater'
+  | 'setOverlay'
+  | 'setView'
+  | 'setForest'
+  | 'captureMap'
+  | 'redrawForCapture'
+  | 'captureRegion'
+  | 'captureWaterMask'
+  | 'createSurfaceSampler'
+  | 'heightAt'
+  | 'variantReady'
+  | 'redrawNow'
+  | 'setLivePaused'
+  | 'dispose'
+  | 'drawMs'
+  | 'renderWorldTile'
+  | 'contentRevision'
+>;
 
 export type TerrainBackend = 'webgl' | 'webgpu';
 
 /** The backend forced by the page URL, if any (read at page load, rendererOverride.ts). */
-export function requestedTerrainBackend(): TerrainBackend | undefined { return rendererOverride(); }
+export function requestedTerrainBackend(): TerrainBackend | undefined {
+  return rendererOverride();
+}
 
 /** A map renderer drawing into `canvas`. When `canvas` already carries a WebGL2 context (shared with
  * another user), pass a fresh `webgpuCanvas`: the WebGPU renderer then draws there (terrainRendererCanvas). */
@@ -43,16 +67,19 @@ export async function createTerrainRenderer(canvas: HTMLCanvasElement, webgpuCan
  * e.g. while the first map is generated; createTerrainRenderer then finds it ready. Only for the automatic choice (a forced backend keeps its own path). */
 export function prewarmTerrainRenderer(): void {
   if (requestedTerrainBackend() !== undefined || typeof navigator === 'undefined' || !navigator.gpu) return;
-  void import('./terrainGpu').then(module => module.prepareTerrainGpu(), () => undefined);
+  void import('./terrainGpu').then(
+    module => module.prepareTerrainGpu(),
+    () => undefined,
+  );
 }
 
 /** The canvas a renderer draws into: TerrainGl's own, or the WebGPU renderer's. */
 export function terrainRendererCanvas(renderer: TerrainRenderer, glCanvas: HTMLCanvasElement): HTMLCanvasElement {
-  return renderer instanceof TerrainGl ? glCanvas : (renderer as { canvas?: HTMLCanvasElement }).canvas ?? glCanvas;
+  return renderer instanceof TerrainGl ? glCanvas : ((renderer as { canvas?: HTMLCanvasElement }).canvas ?? glCanvas);
 }
 
 /** Which backend a renderer uses (for status lines); a WebGPU renderer reports WebGL2 after a definitive
  * device loss, when it forwards to a TerrainGl. */
 export function terrainRendererBackend(renderer: TerrainRenderer): TerrainBackend {
-  return renderer instanceof TerrainGl ? 'webgl' : (renderer as { backend?: TerrainBackend }).backend ?? 'webgpu';
+  return renderer instanceof TerrainGl ? 'webgl' : ((renderer as { backend?: TerrainBackend }).backend ?? 'webgpu');
 }

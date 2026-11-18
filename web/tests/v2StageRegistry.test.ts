@@ -36,7 +36,20 @@ describe('V2 generation stage registry', () => {
     expect(stagesForControl('options.biome')).toEqual(['relief-source']);
     expect(stagesForControl('options.layer')).toEqual([]);
     expect(STAGES.some(stage => stage.quick.includes('options.layer'))).toBe(false);
-    expect(STAGES.filter(stage => stage.family === 'map').map(stage => stage.id)).toEqual(['display-terrain', 'display-relief', 'display-vegetation', 'display-landuse', 'display-water', 'display-roads', 'display-buildings', 'display-ambience', 'display-text', 'display-labels', 'map-naming', 'map-export']);
+    expect(STAGES.filter(stage => stage.family === 'map').map(stage => stage.id)).toEqual([
+      'display-terrain',
+      'display-relief',
+      'display-vegetation',
+      'display-landuse',
+      'display-water',
+      'display-roads',
+      'display-buildings',
+      'display-ambience',
+      'display-text',
+      'display-labels',
+      'map-naming',
+      'map-export',
+    ]);
   });
   it('assigns every existing control to exactly one stage (or the Settings panel)', () => {
     for (const field of [...allTerrainFields, ...terrainProceduralStageFields]) once(field.path);
@@ -45,7 +58,8 @@ describe('V2 generation stage registry', () => {
     for (const section of urbanSections) once(`urban-section:${section}`);
     for (const extra of URBAN_EXTRAS) once(`urban-extra:${extra}`);
     for (const field of renderControlFields) {
-      const path = field.path.replace('appearance.', ''), sections = path.startsWith('composition.landuse.') ? [['landuse']] : Object.entries(RENDER_SECTION_FIELDS).filter(([key, paths]) => paths.includes(path) || RENDER_COMPOSITION_ROWS[key as keyof typeof RENDER_COMPOSITION_ROWS].includes(path));
+      const path = field.path.replace('appearance.', ''),
+        sections = path.startsWith('composition.landuse.') ? [['landuse']] : Object.entries(RENDER_SECTION_FIELDS).filter(([key, paths]) => paths.includes(path) || RENDER_COMPOSITION_ROWS[key as keyof typeof RENDER_COMPOSITION_ROWS].includes(path));
       expect(sections, path).toHaveLength(1);
       once(`render-section:${sections[0][0]}`);
     }
@@ -57,9 +71,20 @@ describe('V2 generation stage registry', () => {
       for (const id of stage.quick) {
         if (id.startsWith('appearance.')) {
           // A Map quick control is a field of one of the row's own render sections.
-          const path = id.replace('appearance.', ''), sections = path.startsWith('composition.landuse.') ? ['landuse'] : Object.entries(RENDER_SECTION_FIELDS).filter(([key, paths]) => paths.includes(path) || RENDER_COMPOSITION_ROWS[key as keyof typeof RENDER_COMPOSITION_ROWS].includes(path)).map(([key]) => key);
-          expect(renderControlFields.some(field => field.path === id), id).toBe(true);
-          expect(sections.map(section => stagesForControl(`render-section:${section}`)[0]), `${stage.id} quick ${id}`).toEqual([stage.id]);
+          const path = id.replace('appearance.', ''),
+            sections = path.startsWith('composition.landuse.')
+              ? ['landuse']
+              : Object.entries(RENDER_SECTION_FIELDS)
+                  .filter(([key, paths]) => paths.includes(path) || RENDER_COMPOSITION_ROWS[key as keyof typeof RENDER_COMPOSITION_ROWS].includes(path))
+                  .map(([key]) => key);
+          expect(
+            renderControlFields.some(field => field.path === id),
+            id,
+          ).toBe(true);
+          expect(
+            sections.map(section => stagesForControl(`render-section:${section}`)[0]),
+            `${stage.id} quick ${id}`,
+          ).toEqual([stage.id]);
         } else if (!/^(widget|toggle|seg|urban)[:.]/.test(id)) expect(stagesForControl(id), `${stage.id} quick ${id}`).toEqual([stage.id]);
       }
       expect(!!stage.toggle, stage.id).toBe(stage.optional);
@@ -68,7 +93,11 @@ describe('V2 generation stage registry', () => {
         expect(GENERATION_STAGES.find(([key]) => key === id)?.[2], id).toBe(true);
       }
     }
-    for (const row of Object.values(GENERATION_STAGE_ROWS)) expect(STAGES.some(stage => stage.id === row), row).toBe(true);
+    for (const row of Object.values(GENERATION_STAGE_ROWS))
+      expect(
+        STAGES.some(stage => stage.id === row),
+        row,
+      ).toBe(true);
   });
   it('shows method-specific relief rows under three source tabs', () => {
     expect(RELIEF_TABS).toEqual(['procedural', 'neural', 'heightmap']);
@@ -95,12 +124,13 @@ describe('V2 generation stage registry', () => {
     expect(stagesForAction('roads')).toEqual(['settle-roads']);
   });
   it('accepts every procedural stage bound in the recipe validator', () => {
-    for (const field of terrainProceduralStageFields) for (const bound of [field.min, field.max]) {
-      if (bound === undefined) continue;
-      const settings = { terrain: {} as Record<string, unknown> };
-      writeSettingPath(settings, field.path, bound);
-      expect(() => validateProceduralRecipe(settings.terrain.procedural as never), `${field.path} = ${bound}`).not.toThrow();
-    }
+    for (const field of terrainProceduralStageFields)
+      for (const bound of [field.min, field.max]) {
+        if (bound === undefined) continue;
+        const settings = { terrain: {} as Record<string, unknown> };
+        writeSettingPath(settings, field.path, bound);
+        expect(() => validateProceduralRecipe(settings.terrain.procedural as never), `${field.path} = ${bound}`).not.toThrow();
+      }
   });
   it('describes a bundled heightmap library with metre ranges and licence', () => {
     expect(HEIGHTMAP_LIBRARY.length).toBeGreaterThanOrEqual(6);
@@ -108,7 +138,11 @@ describe('V2 generation stage registry', () => {
       expect(entry.license).toBe('generated by Magna Urbis');
       expect(entry.verticalRangeM[1]).toBeGreaterThan(entry.verticalRangeM[0]);
       expect(entry.extentM).toBeGreaterThanOrEqual(500);
-      expect(readFileSync(new URL(`../src/v2/assets/heightmaps/${entry.file}`, import.meta.url)).subarray(1, 4).toString()).toBe('PNG');
+      expect(
+        readFileSync(new URL(`../src/v2/assets/heightmaps/${entry.file}`, import.meta.url))
+          .subarray(1, 4)
+          .toString(),
+      ).toBe('PNG');
     }
   });
 });

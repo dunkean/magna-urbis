@@ -7,20 +7,26 @@ export type { Vec2, Polygon, Polyline, Grid, Options, NamesLayer };
 
 export type RiverClass = 'brook' | 'stream' | 'river' | 'major';
 export interface River {
-  path: Polyline; width: number[]; name?: string; main?: boolean;
+  path: Polyline;
+  width: number[];
+  name?: string;
+  main?: boolean;
   /** Stable id (main = 0); `host` = id of the river this one flows into (mouth 'river'). */
-  id?: number; host?: number;
+  id?: number;
+  host?: number;
   /** Class from the widest point. Only brooks may have a source inside the map. */
   cls?: RiverClass;
   /** Contributing area per vertex (virtual m2, incl. the catchment outside the map) and its external part. */
-  area?: number[]; ext?: number[];
+  area?: number[];
+  ext?: number[];
   /** Fed from a map edge with an external catchment (or through a lake / tributary that is). */
   edgeFed?: boolean;
   w0?: number;
   source?: 'edge' | 'spring' | 'lake';
   mouth?: 'river' | 'sea' | 'lake' | 'edge';
   /** Lake component ids (internal): outlet source lake / lake the river ends in. */
-  lakeId?: number; endLake?: number;
+  lakeId?: number;
+  endLake?: number;
 }
 
 export interface CavernLayer {
@@ -79,7 +85,9 @@ export interface TerrainLayer {
 
 export interface SiteFields {
   /** Distance (m) to any water / sea / main river. */
-  dWater: Float32Array; dSea: Float32Array; dMain: Float32Array;
+  dWater: Float32Array;
+  dSea: Float32Array;
+  dMain: Float32Array;
   /** Height above the nearest water surface (m). */
   hab: Float32Array;
   /** Slope smoothed over ~100 m. */
@@ -96,7 +104,10 @@ import type { SiteArchetype } from './options';
 export type { SiteArchetype };
 
 export interface SiteLayer {
-  center: Vec2; crossing?: Vec2; harbor?: Vec2; citadelSpot?: Vec2;
+  center: Vec2;
+  crossing?: Vec2;
+  harbor?: Vec2;
+  citadelSpot?: Vec2;
   /** Requested centre could not be used exactly (shown with settlement warnings). */
   warning?: string;
   /** Historical site type the core was placed in, and the feature point that justifies it (bridge point, harbor, confluence...). */
@@ -115,11 +126,14 @@ export interface SiteLayer {
 
 export type LandKind = 'field' | 'meadow' | 'pasture' | 'forest' | 'orchard' | 'garden' | 'marsh' | 'commons';
 export interface LandArea {
-  kind: LandKind; poly: Polygon; holes?: Polygon[];
+  kind: LandKind;
+  poly: Polygon;
+  holes?: Polygon[];
   /** Underdark cultivation beds; absent on surface maps and uncultivated cover. */
   cultivation?: 'fungal';
   /** Furlongs (kind 'field'): strip direction in radians and the strips themselves. */
-  stripAngle?: number; strips?: Polygon[];
+  stripAngle?: number;
+  strips?: Polygon[];
   /** One compact holding; furrows and tone cover the holding, respecting holes. */
   fieldLayout?: 'parcel';
 }
@@ -127,7 +141,12 @@ export type RoofKind = 'gable' | 'hip' | 'flat' | 'dome' | 'pyramidal' | 'pagoda
 export type FarmSize = 'cottage' | 'family' | 'large' | 'manor';
 /** One farm building with its architecture metadata (`use`: house, barn, byre, stable, shed, dovecote, gatehouse, ...). */
 export interface FarmBuilding {
-  poly: Polygon; use: string; arch: string; roof: RoofKind; storeys?: number; material?: string;
+  poly: Polygon;
+  use: string;
+  arch: string;
+  roof: RoofKind;
+  storeys?: number;
+  material?: string;
   /** Gatehouse with a carriage passage (the way into the yard runs through it). */
   passage?: boolean;
   /** Massing of the building as the town buildings carry it (`programme.massing`: one `MassingPiece` of
@@ -136,16 +155,24 @@ export interface FarmBuilding {
   massing?: unknown[];
 }
 /** Piece of a farm lot: farmyard / garden / orchard / paddock partition the lot; ponds, pens, threshing floors and the raised platform lie inside it. */
-export interface FarmPlot { kind: 'farmyard' | 'garden' | 'orchard' | 'paddock' | 'pond' | 'pen' | 'threshing-floor' | 'platform'; poly: Polygon }
+export interface FarmPlot {
+  kind: 'farmyard' | 'garden' | 'orchard' | 'paddock' | 'pond' | 'pen' | 'threshing-floor' | 'platform';
+  poly: Polygon;
+}
 export interface Farmstead {
   /** Centre of the lot. */
-  pos: Vec2; angle: number;
+  pos: Vec2;
+  angle: number;
   /** Building footprints (same order as `parts`). */
-  buildings: Polygon[]; yard: Polygon; drive: Polyline;
+  buildings: Polygon[];
+  yard: Polygon;
+  drive: Polyline;
   // ---- farmstead variety (Rust landuse/farms)
   /** Farm type: an id of the `farmstead.types` catalogue (vierkanthof, longere, masseria, bustan, joglo, dhani, ...),
    * drawn among the types of `culture` (the culture of the nearest settlement) with the site rules of the land-use stage. */
-  type?: string; size?: FarmSize; culture?: string;
+  type?: string;
+  size?: FarmSize;
+  culture?: string;
   /** The farm lot: a rectangle on its track, partitioned by the farmyard / garden / orchard / paddock plots. */
   lot?: Polygon;
   parts?: FarmBuilding[];
@@ -155,7 +182,8 @@ export interface Farmstead {
   /** Orchard and shelter-belt trees. */
   trees?: Vec2[];
   /** Gate on the lot front (end of the drive) and a point inside the yard. */
-  gate?: Vec2; entry?: Vec2;
+  gate?: Vec2;
+  entry?: Vec2;
   /** Site context tags: slope, wet, exposed, bank-barn, warft. */
   tags?: string[];
   /** Underdark farm production, independent of the chosen surface language family. */
@@ -177,7 +205,10 @@ export interface LandUseLayer {
 }
 
 /** Polygon with holes (all rings positively oriented). */
-export interface PolyH { outer: Polygon; holes: Polygon[] }
+export interface PolyH {
+  outer: Polygon;
+  holes: Polygon[];
+}
 
 export type UrbanZone = 'core' | 'middle' | 'edge' | 'faubourg' | 'village';
 export type StreetRole = 'radial' | 'ring' | 'street' | 'lane' | 'close' | 'quay' | 'wall-lane' | 'track' | 'boundary';
@@ -209,7 +240,10 @@ export interface UrbanStreetTail {
   excess: number;
 }
 export interface UrbanBlockInfo {
-  quarter: number; phase: number; zone: UrbanZone; kind: 'block' | 'place' | 'market' | 'church' | 'green' | 'compound' | 'shanty';
+  quarter: number;
+  phase: number;
+  zone: UrbanZone;
+  kind: 'block' | 'place' | 'market' | 'church' | 'green' | 'compound' | 'shanty';
   /** Compound lots: the landmark kind (mosque, temple, castle, yamen, …). */
   compound?: string;
   /** Culture that built the block (mixed plans). */
@@ -218,19 +252,33 @@ export interface UrbanBlockInfo {
   morphology?: string;
 }
 /** Plan lines that are not streets: ward walls, moats, compound walls, terrace retaining walls, cliff faces, hedges. */
-export interface UrbanLine { kind: string; path: Polyline; closed?: boolean; width?: number }
+export interface UrbanLine {
+  kind: string;
+  path: Polyline;
+  closed?: boolean;
+  width?: number;
+}
 /** Tree canopies drawn over the town (elven). */
-export interface UrbanTree { x: number; y: number; r: number }
+export interface UrbanTree {
+  x: number;
+  y: number;
+  r: number;
+}
 export type ParcelUse = 'plot' | 'garden' | 'place' | 'market' | 'church' | 'green' | 'farm';
 export interface UrbanParcel {
   nativeId?: string;
-  poly: Polygon; use: ParcelUse | string; block: number;
+  poly: Polygon;
+  use: ParcelUse | string;
+  block: number;
   /** Street frontage segment (for plots). */
   front?: [Vec2, Vec2];
   zone?: UrbanZone;
 }
 export interface UrbanBuilding {
-  poly: Polygon; kind: string; height?: number; parcel?: number;
+  poly: Polygon;
+  kind: string;
+  height?: number;
+  parcel?: number;
   // ---- architecture metadata (M3b; drives later rendering / 3D)
   /** Typology id (gabled-row-house, courtyard-house, siheyuan-hall, machiya, longhouse, …). */
   arch?: string;
@@ -245,7 +293,11 @@ export interface UrbanBuilding {
   orientation?: number;
 }
 export interface UrbanWall {
-  path: Polyline; closed: boolean; towers: Vec2[]; gates: Vec2[]; thickness: number;
+  path: Polyline;
+  closed: boolean;
+  towers: Vec2[];
+  gates: Vec2[];
+  thickness: number;
   /** Gate openings: center, street direction (unit) and opening width. */
   gateInfo?: { p: Vec2; dir: Vec2; width: number }[];
   /** Wall stretches between the gate openings, and the towers flanking each gate. */
@@ -282,8 +334,25 @@ export interface UrbanSite {
   /** Free-form tags for name generators (order, dedication, trade...). */
   tags?: Record<string, string>;
 }
-export interface UrbanPhase { id: number; kind: 'core' | 'ring' | 'faubourg' | 'village'; zone: UrbanZone; region: PolyH[]; walled: boolean; fossil: boolean }
-export interface UrbanQuarter { poly: PolyH; phase: number; zone: UrbanZone; streetSpace: PolyH[]; culture?: string; nativeId?: string; nameProfile?:string; nameScope?:string; nameSource?:import('./names/types').NameSource }
+export interface UrbanPhase {
+  id: number;
+  kind: 'core' | 'ring' | 'faubourg' | 'village';
+  zone: UrbanZone;
+  region: PolyH[];
+  walled: boolean;
+  fossil: boolean;
+}
+export interface UrbanQuarter {
+  poly: PolyH;
+  phase: number;
+  zone: UrbanZone;
+  streetSpace: PolyH[];
+  culture?: string;
+  nativeId?: string;
+  nameProfile?: string;
+  nameScope?: string;
+  nameSource?: import('./names/types').NameSource;
+}
 
 export interface UrbanLayer {
   footprint: Polygon[];
@@ -317,7 +386,26 @@ export interface UrbanLayer {
   /** Culture preset id, the cultures present (mixes) and render hints. */
   culture?: string;
   cultures?: string[];
-  renderHints?: { towerShape: 'round' | 'square'; compoundWalls?: boolean; wardWalls?: boolean; canopy?: boolean; terraces?: boolean; moat?: boolean; plotLines?: boolean; storeyShade?: boolean; graves?: boolean; stairs?: boolean; lagoon?: boolean; bazaarRoof?: boolean; qanats?: boolean; locks?: boolean; stilts?: boolean; openGround?: boolean; primitive?: boolean; carvedDoors?: boolean };
+  renderHints?: {
+    towerShape: 'round' | 'square';
+    compoundWalls?: boolean;
+    wardWalls?: boolean;
+    canopy?: boolean;
+    terraces?: boolean;
+    moat?: boolean;
+    plotLines?: boolean;
+    storeyShade?: boolean;
+    graves?: boolean;
+    stairs?: boolean;
+    lagoon?: boolean;
+    bazaarRoof?: boolean;
+    qanats?: boolean;
+    locks?: boolean;
+    stilts?: boolean;
+    openGround?: boolean;
+    primitive?: boolean;
+    carvedDoors?: boolean;
+  };
   lines?: UrbanLine[];
   trees?: UrbanTree[];
   /** Water pieces of the plan (moats, tanks, ponds) — parcels of use 'moat' / 'tank' are also listed here. */
@@ -369,7 +457,8 @@ export interface Settlement {
   detail: 'main' | 'eager' | 'lazy' | 'farmstead';
   urban?: UrbanLayer;
   /** Crossing / harbor points used by its plan. */
-  crossing?: Vec2; harbor?: Vec2;
+  crossing?: Vec2;
+  harbor?: Vec2;
 }
 
 export interface World {

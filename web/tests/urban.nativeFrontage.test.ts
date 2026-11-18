@@ -18,7 +18,8 @@ describe('native longhouses on merged street frontages', () => {
     const produced: { owner: Polygon; houses: ReturnType<typeof original> }[] = [];
     let mainSettlement = true;
     const spy = vi.spyOn(bops, 'buildOn').mockImplementation((...args) => {
-      const out = original(...args), houses = out.filter(b => b.arch === 'longhouse');
+      const out = original(...args),
+        houses = out.filter(b => b.arch === 'longhouse');
       if (mainSettlement && houses.length) produced.push(structuredClone({ owner: args[0].poly, houses }));
       return out;
     });
@@ -27,14 +28,15 @@ describe('native longhouses on merged street frontages', () => {
       w = generate(makeOptions({ seed: '2', size: 'town', culture: 'native-iroquoian' }), stage => {
         if (stage === 'settlements') mainSettlement = false;
       });
-    } finally { spy.mockRestore(); }
+    } finally {
+      spy.mockRestore();
+    }
     const u = w.urban!;
     const houses = u.buildings.filter(b => b.arch === 'longhouse');
     expect(houses).toHaveLength(604);
     expect(produced.flatMap(p => p.houses)).toHaveLength(houses.length);
     const owners = new Map(u.parcels.map((p, i) => [JSON.stringify(p.poly), i]));
-    const shape = (b: typeof houses[number]) => ({ poly: b.poly, arch: b.arch, roof: b.roof,
-      material: b.material, storeys: b.storeys, orientation: b.orientation });
+    const shape = (b: (typeof houses)[number]) => ({ poly: b.poly, arch: b.arch, roof: b.roof, material: b.material, storeys: b.storeys, orientation: b.orientation });
     for (const producer of produced) {
       const parcel = owners.get(JSON.stringify(producer.owner));
       expect(parcel).toBeDefined();
@@ -48,15 +50,15 @@ describe('native longhouses on merged street frontages', () => {
     expect(unreachableBuildings(w).n).toBe(0);
     const report = checkWorld(w);
     expect(report.overlapsPlots + report.overlapsBuildings + report.bldgOutside + report.noFrontage).toBe(0);
-    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex'))
-      .toBe('32983d4c9f91fe7d156e9d5d4b45d1daac900be5d07ea3578d2694ee2da07e7d');
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('32983d4c9f91fe7d156e9d5d4b45d1daac900be5d07ea3578d2694ee2da07e7d');
   });
 
   it('keeps both rounded ends when a renewed frontage runs across several boundary edges', () => {
     // Exact plot before refresh and producer roof from commit 8d1df55, seed 2,
     // native-iroquoian town, former parcel 824. The current town has different lots.
     const plot = structuredClone(historical.plot) as unknown as Plot;
-    const before = structuredClone(plot.poly), [a, b] = plot.front;
+    const before = structuredClone(plot.poly),
+      [a, b] = plot.front;
     const start = plot.poly.findIndex(p => p.x === a.x && p.y === a.y);
     const end = plot.poly.findIndex(p => p.x === b.x && p.y === b.y);
     expect(start).toBeGreaterThanOrEqual(0);
@@ -79,15 +81,24 @@ describe('native longhouses on merged street frontages', () => {
     expect(house.poly).toEqual(historical.house.poly);
     expect(house.poly).toHaveLength(12);
     expect(area(house.poly)).toBeCloseTo(60.9220479692, 6);
-    expect(2 * obb(house.poly).hu).toBeCloseTo(12.2298069990, 6);
+    expect(2 * obb(house.poly).hu).toBeCloseTo(12.229806999, 6);
     expect(polyInside(plot.poly, house.poly)).toBe(true);
     const streetAt = makeStreetAt(historical.streets, []);
-    const reached = blockReach(historical.block, historical.peers.map(p => p.poly), streetAt);
+    const reached = blockReach(
+      historical.block,
+      historical.peers.map(p => p.poly),
+      streetAt,
+    );
     expect(reached).toHaveLength(8);
     expect(reached.every(Boolean)).toBe(true);
     const target = historical.peers.findIndex(p => p.parcel === 824 && p.arch === 'longhouse');
     expect(target).toBeGreaterThanOrEqual(0);
-    expect(blockReach(historical.block, historical.peers.map((p, i) => i === target ? house.poly : p.poly), streetAt))
-      .toEqual(reached);
+    expect(
+      blockReach(
+        historical.block,
+        historical.peers.map((p, i) => (i === target ? house.poly : p.poly)),
+        streetAt,
+      ),
+    ).toEqual(reached);
   });
 });

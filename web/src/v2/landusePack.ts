@@ -19,17 +19,45 @@ type Ring = readonly { x: number; y: number }[];
 const isPacked = (areas: unknown): areas is PackedAreas => !!areas && typeof areas === 'object' && (areas as PackedAreas).packedLanduse === 1;
 
 function pack(areas: readonly LandArea[]): PackedAreas {
-  let rings = 0, points = 0;
-  const visit = (ring: Ring) => { rings++; points += ring.length; };
-  for (const area of areas) { visit(area.poly); area.holes?.forEach(visit); area.strips?.forEach(visit); }
-  const counts = new Int32Array(areas.length * 2), lengths = new Uint32Array(rings), coords = new Float64Array(points * 2), shells: Record<string, unknown>[] = new Array(areas.length);
-  let r = 0, c = 0;
-  const write = (ring: Ring) => { lengths[r++] = ring.length; for (const p of ring) { coords[c++] = p.x; coords[c++] = p.y; } };
+  let rings = 0,
+    points = 0;
+  const visit = (ring: Ring) => {
+    rings++;
+    points += ring.length;
+  };
+  for (const area of areas) {
+    visit(area.poly);
+    area.holes?.forEach(visit);
+    area.strips?.forEach(visit);
+  }
+  const counts = new Int32Array(areas.length * 2),
+    lengths = new Uint32Array(rings),
+    coords = new Float64Array(points * 2),
+    shells: Record<string, unknown>[] = new Array(areas.length);
+  let r = 0,
+    c = 0;
+  const write = (ring: Ring) => {
+    lengths[r++] = ring.length;
+    for (const p of ring) {
+      coords[c++] = p.x;
+      coords[c++] = p.y;
+    }
+  };
   for (let i = 0; i < areas.length; i++) {
-    const area = areas[i], shell: Record<string, unknown> = { ...area };
-    shell.poly = 0; write(area.poly);
-    if ('holes' in area) { shell.holes = 0; counts[2 * i] = area.holes?.length ?? -2; area.holes?.forEach(write); } else counts[2 * i] = -1;
-    if ('strips' in area) { shell.strips = 0; counts[2 * i + 1] = area.strips?.length ?? -2; area.strips?.forEach(write); } else counts[2 * i + 1] = -1;
+    const area = areas[i],
+      shell: Record<string, unknown> = { ...area };
+    shell.poly = 0;
+    write(area.poly);
+    if ('holes' in area) {
+      shell.holes = 0;
+      counts[2 * i] = area.holes?.length ?? -2;
+      area.holes?.forEach(write);
+    } else counts[2 * i] = -1;
+    if ('strips' in area) {
+      shell.strips = 0;
+      counts[2 * i + 1] = area.strips?.length ?? -2;
+      area.strips?.forEach(write);
+    } else counts[2 * i + 1] = -1;
     shells[i] = shell;
   }
   return { packedLanduse: 1, shells, counts, lengths, coords };
@@ -37,14 +65,25 @@ function pack(areas: readonly LandArea[]): PackedAreas {
 
 function unpack(packed: PackedAreas): LandArea[] {
   const { shells, counts, lengths, coords } = packed;
-  let r = 0, c = 0;
-  const read = (): { x: number; y: number }[] => { const n = lengths[r++], ring = new Array(n); for (let k = 0; k < n; k++, c += 2) ring[k] = { x: coords[c], y: coords[c + 1] }; return ring; };
-  const many = (count: number) => { const list = new Array(count); for (let k = 0; k < count; k++) list[k] = read(); return list; };
+  let r = 0,
+    c = 0;
+  const read = (): { x: number; y: number }[] => {
+    const n = lengths[r++],
+      ring = new Array(n);
+    for (let k = 0; k < n; k++, c += 2) ring[k] = { x: coords[c], y: coords[c + 1] };
+    return ring;
+  };
+  const many = (count: number) => {
+    const list = new Array(count);
+    for (let k = 0; k < count; k++) list[k] = read();
+    return list;
+  };
   const areas = new Array<LandArea>(shells.length);
   for (let i = 0; i < shells.length; i++) {
     const area = shells[i];
     area.poly = read();
-    const holes = counts[2 * i], strips = counts[2 * i + 1];
+    const holes = counts[2 * i],
+      strips = counts[2 * i + 1];
     if (holes !== -1) area.holes = holes === -2 ? undefined : many(holes);
     if (strips !== -1) area.strips = strips === -2 ? undefined : many(strips);
     areas[i] = area as unknown as LandArea;

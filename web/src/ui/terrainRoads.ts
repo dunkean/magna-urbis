@@ -15,51 +15,82 @@ const ns = 'http://www.w3.org/2000/svg';
 /** Screen widths (px): roads keep their weight at every zoom. */
 const CLASS_PX: Record<RoadClass, number> = { highway: 3.6, main: 2.8, local: 2.1, track: 1.5, trail: 1.2 };
 const SURFACE_LABEL: Record<RoadSurface, string> = { dirt: 'Dirt', gravel: 'Gravel', paved: 'Paved', flagstone: 'Flagstone' };
-type Words = readonly [string,string,string,string,string];
-const classWords: Record<RoadClass,Words> = { highway:['Route majeure','Highway','主干公路','Carretera principal','Rodovia'], main:['Route principale','Main road','主要道路','Camino principal','Estrada principal'], local:['Route locale','Local road','地方道路','Camino local','Estrada local'], track:['Piste','Track','小路','Pista','Caminho'], trail:['Sentier','Trail','步道','Sendero','Trilha'] };
-const surfaceWords: Record<RoadSurface,Words> = { dirt:['Terre','Dirt','土路','Tierra','Terra'], gravel:['Gravier','Gravel','碎石','Grava','Cascalho'], paved:['Pavé','Paved','铺装','Pavimentado','Pavimentado'], flagstone:['Dalles','Flagstone','石板','Losas','Lajes'] };
-const levelWords: Record<string,Words> = { primitive:['Primitif · pistes et sentiers','Primitive · tracks and trails','原始 · 小路和步道','Primitivo · pistas y senderos','Primitivo · caminhos e trilhas'], rural:['Rural · sans routes majeures','Rural · no highways','乡村 · 无主干公路','Rural · sin carreteras principales','Rural · sem rodovias'], developed:['Développé · axes pavés','Developed · paved trunks','发达 · 铺装干道','Desarrollado · ejes pavimentados','Desenvolvido · eixos pavimentados'], imperial:['Impérial · réseau pavé','Imperial · paved network','帝国 · 铺装路网','Imperial · red pavimentada','Imperial · rede pavimentada'] };
-const profileWords: Record<string,Words> = { medieval:['Europe médiévale','Medieval European','中世纪欧洲','Europa medieval','Europa medieval'], roman:['Romain / byzantin','Roman / Byzantine','罗马 / 拜占庭','Romano / bizantino','Romano / bizantino'], 'east-asian':['Routes postales est-asiatiques','East Asian post roads','东亚驿道','Rutas postales de Asia oriental','Estradas postais do Leste Asiático'], caravan:['Routes caravanières','Caravan routes','商队路线','Rutas de caravanas','Rotas de caravanas'], andean:['Andin · escaliers de pierre','Andean · stone stairs','安第斯 · 石阶','Andino · escaleras de piedra','Andino · escadas de pedra'], mesoamerican:['Chaussées mésoaméricaines','Mesoamerican causeways','中美洲堤道','Calzadas mesoamericanas','Calçadas mesoamericanas'], tribal:['Chemins tribaux','Tribal paths','部族小径','Caminos tribales','Caminhos tribais'], elven:['Elfe · chemins de contour','Elven · contour paths','精灵 · 等高小径','Élfico · caminos de contorno','Élfico · caminhos de contorno'], dwarven:['Nain · pavé et raide','Dwarven · paved and steep','矮人 · 铺装陡路','Enano · pavimentado y empinado','Anão · pavimentado e íngreme'] };
-/** Fill and casing; dirt has no casing. */
-const SURFACE_COLOR: Record<RoadSurface, [string, string | null]> = {
-  dirt: ['#8b6840', null], gravel: ['#f2ead6', '#8b7c63'], paved: ['#c9b98f', '#5e4a34'], flagstone: ['#d9c8a1', '#463729'],
+type Words = readonly [string, string, string, string, string];
+const classWords: Record<RoadClass, Words> = {
+  highway: ['Route majeure', 'Highway', '主干公路', 'Carretera principal', 'Rodovia'],
+  main: ['Route principale', 'Main road', '主要道路', 'Camino principal', 'Estrada principal'],
+  local: ['Route locale', 'Local road', '地方道路', 'Camino local', 'Estrada local'],
+  track: ['Piste', 'Track', '小路', 'Pista', 'Caminho'],
+  trail: ['Sentier', 'Trail', '步道', 'Sendero', 'Trilha'],
 };
+const surfaceWords: Record<RoadSurface, Words> = {
+  dirt: ['Terre', 'Dirt', '土路', 'Tierra', 'Terra'],
+  gravel: ['Gravier', 'Gravel', '碎石', 'Grava', 'Cascalho'],
+  paved: ['Pavé', 'Paved', '铺装', 'Pavimentado', 'Pavimentado'],
+  flagstone: ['Dalles', 'Flagstone', '石板', 'Losas', 'Lajes'],
+};
+const levelWords: Record<string, Words> = {
+  primitive: ['Primitif · pistes et sentiers', 'Primitive · tracks and trails', '原始 · 小路和步道', 'Primitivo · pistas y senderos', 'Primitivo · caminhos e trilhas'],
+  rural: ['Rural · sans routes majeures', 'Rural · no highways', '乡村 · 无主干公路', 'Rural · sin carreteras principales', 'Rural · sem rodovias'],
+  developed: ['Développé · axes pavés', 'Developed · paved trunks', '发达 · 铺装干道', 'Desarrollado · ejes pavimentados', 'Desenvolvido · eixos pavimentados'],
+  imperial: ['Impérial · réseau pavé', 'Imperial · paved network', '帝国 · 铺装路网', 'Imperial · red pavimentada', 'Imperial · rede pavimentada'],
+};
+const profileWords: Record<string, Words> = {
+  medieval: ['Europe médiévale', 'Medieval European', '中世纪欧洲', 'Europa medieval', 'Europa medieval'],
+  roman: ['Romain / byzantin', 'Roman / Byzantine', '罗马 / 拜占庭', 'Romano / bizantino', 'Romano / bizantino'],
+  'east-asian': ['Routes postales est-asiatiques', 'East Asian post roads', '东亚驿道', 'Rutas postales de Asia oriental', 'Estradas postais do Leste Asiático'],
+  caravan: ['Routes caravanières', 'Caravan routes', '商队路线', 'Rutas de caravanas', 'Rotas de caravanas'],
+  andean: ['Andin · escaliers de pierre', 'Andean · stone stairs', '安第斯 · 石阶', 'Andino · escaleras de piedra', 'Andino · escadas de pedra'],
+  mesoamerican: ['Chaussées mésoaméricaines', 'Mesoamerican causeways', '中美洲堤道', 'Calzadas mesoamericanas', 'Calçadas mesoamericanas'],
+  tribal: ['Chemins tribaux', 'Tribal paths', '部族小径', 'Caminos tribales', 'Caminhos tribais'],
+  elven: ['Elfe · chemins de contour', 'Elven · contour paths', '精灵 · 等高小径', 'Élfico · caminos de contorno', 'Élfico · caminhos de contorno'],
+  dwarven: ['Nain · pavé et raide', 'Dwarven · paved and steep', '矮人 · 铺装陡路', 'Enano · pavimentado y empinado', 'Anão · pavimentado e íngreme'],
+};
+/** Fill and casing; dirt has no casing. */
+const SURFACE_COLOR: Record<RoadSurface, [string, string | null]> = { dirt: ['#8b6840', null], gravel: ['#f2ead6', '#8b7c63'], paved: ['#c9b98f', '#5e4a34'], flagstone: ['#d9c8a1', '#463729'] };
 const DASH: Partial<Record<RoadClass, string>> = { track: '5 3', trail: '1.2 3' };
 
 /** How one road is drawn: fill, optional casing (drawn 1.6 px wider underneath), width, dash. */
-interface RoadPaint { fill: string; casing: string | null; width: number; dash?: string }
+interface RoadPaint {
+  fill: string;
+  casing: string | null;
+  width: number;
+  dash?: string;
+}
 export type RoadPreset = 'surface' | 'atlas' | 'topographic' | 'ink' | 'minimal' | 'render';
 /** Display only: changing it redraws the network without routing it again. */
-export interface RoadStyle { preset: RoadPreset; width: number; opacity: number; curves: boolean; casing: boolean; crossings: boolean }
+export interface RoadStyle {
+  preset: RoadPreset;
+  width: number;
+  opacity: number;
+  curves: boolean;
+  casing: boolean;
+  crossings: boolean;
+}
 export const defaultRoadStyle = (): RoadStyle => ({ preset: 'surface', width: 1, opacity: 1, curves: true, casing: true, crossings: true });
-const byClass = (colors: Record<RoadClass, [string, string | null]>, widths: Record<RoadClass, number> = CLASS_PX, dash = DASH) =>
+const byClass =
+  (colors: Record<RoadClass, [string, string | null]>, widths: Record<RoadClass, number> = CLASS_PX, dash = DASH) =>
   (c: RoadClass): RoadPaint => ({ fill: colors[c][0], casing: colors[c][1], width: widths[c], dash: dash[c] });
 const PRESETS: Record<RoadPreset, { label: string; paint(c: RoadClass, s: RoadSurface): RoadPaint }> = {
   surface: { label: 'By surface', paint: (c, s) => ({ fill: SURFACE_COLOR[s][0], casing: SURFACE_COLOR[s][1], width: CLASS_PX[c], dash: DASH[c] }) },
-  atlas: {
-    label: 'Road atlas',
-    paint: byClass({ highway: ['#d8342c', '#7a1d18'], main: ['#f2a33a', '#7a4a12'], local: ['#fff8e6', '#6b5a45'], track: ['#8a6a45', null], trail: ['#8a6a45', null] }),
-  },
+  atlas: { label: 'Road atlas', paint: byClass({ highway: ['#d8342c', '#7a1d18'], main: ['#f2a33a', '#7a4a12'], local: ['#fff8e6', '#6b5a45'], track: ['#8a6a45', null], trail: ['#8a6a45', null] }) },
   topographic: {
     label: 'Topographic',
-    paint: byClass({ highway: ['#e8412f', '#262626'], main: ['#f7d54c', '#262626'], local: ['#ffffff', '#303030'], track: ['#303030', null], trail: ['#303030', null] },
-      { highway: 3.4, main: 2.8, local: 2.0, track: 1.1, trail: 0.9 }, { track: '6 2.5', trail: '2.5 2.5' }),
+    paint: byClass({ highway: ['#e8412f', '#262626'], main: ['#f7d54c', '#262626'], local: ['#ffffff', '#303030'], track: ['#303030', null], trail: ['#303030', null] }, { highway: 3.4, main: 2.8, local: 2.0, track: 1.1, trail: 0.9 }, { track: '6 2.5', trail: '2.5 2.5' }),
   },
   ink: {
     label: 'Ink on parchment',
-    paint: byClass({ highway: ['#3f2a1c', null], main: ['#4a3222', null], local: ['#56392a', null], track: ['#5f4334', null], trail: ['#6a4d3c', null] },
-      { highway: 2.4, main: 1.9, local: 1.4, track: 1.1, trail: 0.9 }, { track: '6 3', trail: '1 2.6' }),
+    paint: byClass({ highway: ['#3f2a1c', null], main: ['#4a3222', null], local: ['#56392a', null], track: ['#5f4334', null], trail: ['#6a4d3c', null] }, { highway: 2.4, main: 1.9, local: 1.4, track: 1.1, trail: 0.9 }, { track: '6 3', trail: '1 2.6' }),
   },
   // Painted for the Render map style: drawn by drawRender (roadPaintRender.ts); this paint is the legend's.
   render: {
     label: 'Render · painted',
-    paint: (c, s) => { const fill = renderRoadStrokes(c, s).find(k => k.layer === 'fill')!; return { fill: fill.color, casing: s === 'dirt' ? null : '#2e2216', width: RENDER_ROAD_PX[c], dash: fill.dash }; },
+    paint: (c, s) => {
+      const fill = renderRoadStrokes(c, s).find(k => k.layer === 'fill')!;
+      return { fill: fill.color, casing: s === 'dirt' ? null : '#2e2216', width: RENDER_ROAD_PX[c], dash: fill.dash };
+    },
   },
-  minimal: {
-    label: 'Minimal',
-    paint: byClass({ highway: ['#4d463e', null], main: ['#4d463e', null], local: ['#5d554b', null], track: ['#6e655a', null], trail: ['#6e655a', null] },
-      { highway: 2.0, main: 1.6, local: 1.2, track: 1.0, trail: 0.8 }, { trail: '3 3' }),
-  },
+  minimal: { label: 'Minimal', paint: byClass({ highway: ['#4d463e', null], main: ['#4d463e', null], local: ['#5d554b', null], track: ['#6e655a', null], trail: ['#6e655a', null] }, { highway: 2.0, main: 1.6, local: 1.2, track: 1.0, trail: 0.8 }, { trail: '3 3' }) },
 };
 const PRESET_IDS = Object.keys(PRESETS) as RoadPreset[];
 /** The paint of a road under a style: the preset scaled by the width setting, casing optional. */
@@ -72,18 +103,30 @@ const pathData = (points: Point[]): string => points.map((p, i) => `${i ? 'L' : 
  *  a route keeps from its grid, so the curve through the rest bends only where the road does. */
 function simplify(points: Point[], tolerance: number): Point[] {
   if (points.length < 3) return points;
-  const keep = new Uint8Array(points.length); keep[0] = keep[points.length - 1] = 1;
+  const keep = new Uint8Array(points.length);
+  keep[0] = keep[points.length - 1] = 1;
   const stack: [number, number][] = [[0, points.length - 1]];
   while (stack.length) {
-    const [a, b] = stack.pop()!, pa = points[a], pb = points[b];
-    const dx = pb.x - pa.x, dy = pb.y - pa.y, len = Math.hypot(dx, dy);
-    let far = -1, worst = tolerance;
+    const [a, b] = stack.pop()!,
+      pa = points[a],
+      pb = points[b];
+    const dx = pb.x - pa.x,
+      dy = pb.y - pa.y,
+      len = Math.hypot(dx, dy);
+    let far = -1,
+      worst = tolerance;
     for (let i = a + 1; i < b; i++) {
       const p = points[i];
       const d = len > 1e-9 ? Math.abs((p.x - pa.x) * dy - (p.y - pa.y) * dx) / len : Math.hypot(p.x - pa.x, p.y - pa.y);
-      if (d > worst) { worst = d; far = i; }
+      if (d > worst) {
+        worst = d;
+        far = i;
+      }
     }
-    if (far >= 0) { keep[far] = 1; stack.push([a, far], [far, b]); }
+    if (far >= 0) {
+      keep[far] = 1;
+      stack.push([a, far], [far, b]);
+    }
   }
   return points.filter((_, i) => keep[i]);
 }
@@ -95,16 +138,15 @@ const curveData = (path: Point[]): string => {
   const f = (v: number): string => v.toFixed(2);
   let d = `M${f(points[0].x)},${f(points[0].y)}`;
   for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(points.length - 1, i + 2)];
-    const d1 = Math.sqrt(Math.hypot(p1.x - p0.x, p1.y - p0.y)), d2 = Math.sqrt(Math.hypot(p2.x - p1.x, p2.y - p1.y)), d3 = Math.sqrt(Math.hypot(p3.x - p2.x, p3.y - p2.y));
-    const c1 = d1 < 1e-6 ? p1 : {
-      x: (d1 * d1 * p2.x - d2 * d2 * p0.x + (2 * d1 * d1 + 3 * d1 * d2 + d2 * d2) * p1.x) / (3 * d1 * (d1 + d2)),
-      y: (d1 * d1 * p2.y - d2 * d2 * p0.y + (2 * d1 * d1 + 3 * d1 * d2 + d2 * d2) * p1.y) / (3 * d1 * (d1 + d2)),
-    };
-    const c2 = d3 < 1e-6 ? p2 : {
-      x: (d3 * d3 * p1.x - d2 * d2 * p3.x + (2 * d3 * d3 + 3 * d3 * d2 + d2 * d2) * p2.x) / (3 * d3 * (d3 + d2)),
-      y: (d3 * d3 * p1.y - d2 * d2 * p3.y + (2 * d3 * d3 + 3 * d3 * d2 + d2 * d2) * p2.y) / (3 * d3 * (d3 + d2)),
-    };
+    const p0 = points[Math.max(0, i - 1)],
+      p1 = points[i],
+      p2 = points[i + 1],
+      p3 = points[Math.min(points.length - 1, i + 2)];
+    const d1 = Math.sqrt(Math.hypot(p1.x - p0.x, p1.y - p0.y)),
+      d2 = Math.sqrt(Math.hypot(p2.x - p1.x, p2.y - p1.y)),
+      d3 = Math.sqrt(Math.hypot(p3.x - p2.x, p3.y - p2.y));
+    const c1 = d1 < 1e-6 ? p1 : { x: (d1 * d1 * p2.x - d2 * d2 * p0.x + (2 * d1 * d1 + 3 * d1 * d2 + d2 * d2) * p1.x) / (3 * d1 * (d1 + d2)), y: (d1 * d1 * p2.y - d2 * d2 * p0.y + (2 * d1 * d1 + 3 * d1 * d2 + d2 * d2) * p1.y) / (3 * d1 * (d1 + d2)) };
+    const c2 = d3 < 1e-6 ? p2 : { x: (d3 * d3 * p1.x - d2 * d2 * p3.x + (2 * d3 * d3 + 3 * d3 * d2 + d2 * d2) * p2.x) / (3 * d3 * (d3 + d2)), y: (d3 * d3 * p1.y - d2 * d2 * p3.y + (2 * d3 * d3 + 3 * d3 * d2 + d2 * d2) * p2.y) / (3 * d3 * (d3 + d2)) };
     d += ` C${f(c1.x)},${f(c1.y)} ${f(c2.x)},${f(c2.y)} ${f(p2.x)},${f(p2.y)}`;
   }
   return d;
@@ -116,13 +158,25 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   let v1Style: V1LandscapeStyle | undefined;
   options.map.addEventListener('urban:v1-style', event => {
     const detail = (event as CustomEvent<{ active: boolean; style: V1LandscapeStyle }>).detail;
-    v1Style = detail.active ? detail.style : undefined; draw();
+    v1Style = detail.active ? detail.style : undefined;
+    draw();
   });
   // Once per sampled map: the roads drawn before the land use existed take its tone (deferred, never re-entrant).
   let toned = '';
-  onToneReady(() => { const key = toneKey(); if (key === toned) return; toned = key; setTimeout(() => draw(), 400); });
-  let config = defaultRoadConfig(), style = defaultRoadStyle(), enabled = true, show = true, output: RoadOutput | undefined;
-  let drawnLayer: SVGGElement | undefined, drawnState = '', drawn: RoadOutput | undefined;
+  onToneReady(() => {
+    const key = toneKey();
+    if (key === toned) return;
+    toned = key;
+    setTimeout(() => draw(), 400);
+  });
+  let config = defaultRoadConfig(),
+    style = defaultRoadStyle(),
+    enabled = true,
+    show = true,
+    output: RoadOutput | undefined;
+  let drawnLayer: SVGGElement | undefined,
+    drawnState = '',
+    drawn: RoadOutput | undefined;
   let urbanOwnership: Layout[] | undefined, drawnOwnership: Layout[] | undefined;
   let preparedOwnership: Layout[] | undefined, preparedOutput: RoadOutput | undefined;
   let clipUrban: ReturnType<typeof prepareUrbanRoadClip> | undefined;
@@ -130,23 +184,30 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   /** Painted preset: each road cut at its crossings, with stable piece identities for pathCache. */
   let splitCache = new WeakMap<RoadSegment, { path: Point[]; crossing?: RoadCrossing['kind'] }[]>();
   const saved = new URLSearchParams(location.search).get('roads');
-  if (saved) try {
-    const s = JSON.parse(saved);
-    for (const key of Object.keys(config) as (keyof RoadConfig)[]) if (s.config?.[key] !== undefined) (config as unknown as Record<string, unknown>)[key] = s.config[key];
-    for (const key of Object.keys(style) as (keyof RoadStyle)[]) if (typeof s.style?.[key] === typeof style[key]) (style as unknown as Record<string, unknown>)[key] = s.style[key];
-    if (!PRESETS[style.preset]) style.preset = 'surface';
-    enabled = s.enabled !== false; show = s.show !== false;
-  } catch { config = defaultRoadConfig(); style = defaultRoadStyle(); }
-  const panel = document.createElement('details'); panel.className = 'stage road-stage'; panel.open = true; panel.id = 'roadStage';
-  const number = (key: keyof RoadConfig, label: string, min: number, max: number, step: number, title = ''): string =>
-    `<label title="${esc(title)}">${label}<input data-road="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
+  if (saved)
+    try {
+      const s = JSON.parse(saved);
+      for (const key of Object.keys(config) as (keyof RoadConfig)[]) if (s.config?.[key] !== undefined) (config as unknown as Record<string, unknown>)[key] = s.config[key];
+      for (const key of Object.keys(style) as (keyof RoadStyle)[]) if (typeof s.style?.[key] === typeof style[key]) (style as unknown as Record<string, unknown>)[key] = s.style[key];
+      if (!PRESETS[style.preset]) style.preset = 'surface';
+      enabled = s.enabled !== false;
+      show = s.show !== false;
+    } catch {
+      config = defaultRoadConfig();
+      style = defaultRoadStyle();
+    }
+  const panel = document.createElement('details');
+  panel.className = 'stage road-stage';
+  panel.open = true;
+  panel.id = 'roadStage';
+  const number = (key: keyof RoadConfig, label: string, min: number, max: number, step: number, title = ''): string => `<label title="${esc(title)}">${label}<input data-road="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
   panel.className = 'stage road-stage map-group';
   panel.innerHTML = `<summary>Routes <span id="roadState"></span></summary><div class="stage-controls" data-map-body>
     <div class="map-line"><span class="map-icon" role="img" aria-label="Routes" title="Routes">🛣</span>
       <label class="map-field" title="Sets the road classes and their surfaces"><select id="roadLevel" aria-label="Réseau">${ROAD_LEVELS.map(l => `<option value="${l.id}">${esc(l.label)}</option>`).join('')}</select></label>
       ${gearButton()}</div>
     <div class="map-line map-sub">
-      ${(['highway','main','local','track'] as const).map(cls => `<label class="map-field">${classWords[cls][1]} · exits <input data-road-exit="${cls}" type="number" min="0" max="16" step="1"></label>`).join('')}
+      ${(['highway', 'main', 'local', 'track'] as const).map(cls => `<label class="map-field">${classWords[cls][1]} · exits <input data-road-exit="${cls}" type="number" min="0" max="16" step="1"></label>`).join('')}
       <label class="map-field map-grow" title="0: spanning tree only · 1: many loops, rural tracks and trails out of settlements and across the countryside">densité <input data-road="density" type="range" min="0" max="1" step="0.05" aria-label="Densité du réseau"><output id="roadDensityValue"></output></label>
     </div>
     <small id="roadStatus" class="map-status" role="status">Waiting for settlements…</small>
@@ -183,36 +244,66 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   const select = (id: string): HTMLSelectElement => q<HTMLSelectElement>(`#${id}`);
   const input = (id: string): HTMLInputElement => q<HTMLInputElement>(`#${id}`);
   input('roadShow').dataset.renderDefault = 'true';
-  for (const control of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]')))
-    control.dataset.renderDefault = String(defaultRoadStyle()[control.dataset.roadStyle as keyof RoadStyle]);
+  for (const control of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]'))) control.dataset.renderDefault = String(defaultRoadStyle()[control.dataset.roadStyle as keyof RoadStyle]);
   function controls(): void {
-    input('roadEnabled').checked = enabled; input('roadShow').checked = show;
-    select('roadLevel').value = config.level; select('roadSurface').value = config.surface; select('roadCulture').value = config.culture;
+    input('roadEnabled').checked = enabled;
+    input('roadShow').checked = show;
+    select('roadLevel').value = config.level;
+    select('roadSurface').value = config.surface;
+    select('roadCulture').value = config.culture;
     for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road]'))) {
-      const key = c.dataset.road as keyof RoadConfig, value = config[key] as number;
+      const key = c.dataset.road as keyof RoadConfig,
+        value = config[key] as number;
       c.value = String(key === 'maxGrade' ? Math.round(value * 100) : value);
     }
     for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-exit]'))) c.value = String(config.exits[c.dataset.roadExit as keyof ExitCounts]);
     q('#roadDensityValue').textContent = config.density.toFixed(2);
-    select('roadPreset').value = style.preset; select('roadBlend').value = getGroundBlend();
+    select('roadPreset').value = style.preset;
+    select('roadBlend').value = getGroundBlend();
     for (const c of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
       const value = style[c.dataset.roadStyle as keyof RoadStyle];
-      if (c.type === 'checkbox') c.checked = value as boolean; else c.value = String(value);
+      if (c.type === 'checkbox') c.checked = value as boolean;
+      else c.value = String(value);
     }
     q('#roadWidthValue').textContent = `${style.width.toFixed(1)}`;
     q('#roadOpacityValue').textContent = `${Math.round(style.opacity * 100)} %`;
     panel.querySelectorAll<HTMLElement>('.stage-controls input:not(#roadEnabled), .stage-controls select, .stage-controls button:not(.map-gear)').forEach(e => e.toggleAttribute('inert', !enabled));
   }
-  function changed(): void { controls(); options.onConfigChange(); }
+  function changed(): void {
+    controls();
+    options.onConfigChange();
+  }
   q<HTMLButtonElement>('#roadRecalculate').onclick = changed;
-  input('roadEnabled').onchange = () => { enabled = input('roadEnabled').checked; changed(); };
-  window.addEventListener('bench-render-colors-change', () => { legend(); draw(); });
-  input('roadShow').onchange = () => { show = input('roadShow').checked; draw(); options.onDisplayChange(); };
+  input('roadEnabled').onchange = () => {
+    enabled = input('roadEnabled').checked;
+    changed();
+  };
+  window.addEventListener('bench-render-colors-change', () => {
+    legend();
+    draw();
+  });
+  input('roadShow').onchange = () => {
+    show = input('roadShow').checked;
+    draw();
+    options.onDisplayChange();
+  };
   /** Rendering settings redraw only; the URL follows on release of a slider. */
-  function restyle(commit: boolean): void { controls(); legend(); draw(); if (commit) options.onDisplayChange(); }
+  function restyle(commit: boolean): void {
+    controls();
+    legend();
+    draw();
+    if (commit) options.onDisplayChange();
+  }
   select('roadBlend').onchange = () => setGroundBlend(select('roadBlend').value as GroundBlend);
-  onGroundBlend(() => { controls(); draw(); options.onDisplayChange(); });
-  select('roadPreset').onchange = () => { style.preset = select('roadPreset').value as RoadPreset; restyle(true); };
+  onGroundBlend(() => {
+    controls();
+    draw();
+    options.onDisplayChange();
+  });
+  select('roadPreset').onchange = () => {
+    style.preset = select('roadPreset').value as RoadPreset;
+    restyle(true);
+  };
   for (const c of Array.from(rendering.querySelectorAll<HTMLInputElement>('[data-road-style]'))) {
     const key = c.dataset.roadStyle as keyof RoadStyle;
     const apply = (commit: boolean): void => {
@@ -222,12 +313,24 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     if (c.type === 'range') c.oninput = () => apply(false);
     c.onchange = () => apply(true);
   }
-  select('roadLevel').onchange = () => { config.level = select('roadLevel').value as RoadConfig['level']; changed(); };
-  select('roadSurface').onchange = () => { config.surface = select('roadSurface').value as RoadConfig['surface']; changed(); };
-  select('roadCulture').onchange = () => { config.culture = select('roadCulture').value; changed(); };
+  select('roadLevel').onchange = () => {
+    config.level = select('roadLevel').value as RoadConfig['level'];
+    changed();
+  };
+  select('roadSurface').onchange = () => {
+    config.surface = select('roadSurface').value as RoadConfig['surface'];
+    changed();
+  };
+  select('roadCulture').onchange = () => {
+    config.culture = select('roadCulture').value;
+    changed();
+  };
   for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road]'))) {
     const key = c.dataset.road as keyof RoadConfig;
-    if (c.type === 'range') c.oninput = () => { q('#roadDensityValue').textContent = Number(c.value).toFixed(2); };
+    if (c.type === 'range')
+      c.oninput = () => {
+        q('#roadDensityValue').textContent = Number(c.value).toFixed(2);
+      };
     c.onchange = () => {
       if (!c.reportValidity()) return;
       (config as unknown as Record<string, number>)[key] = key === 'maxGrade' ? Number(c.value) / 100 : Number(c.value);
@@ -240,36 +343,46 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       if (!c.reportValidity() || c.value === '') return;
       const exits = { ...config.exits, [c.dataset.roadExit!]: Number(c.value) };
       if (Object.values(exits).reduce((n, count) => n + count, 0) > 16) {
-        c.setCustomValidity(urbanText(['Au plus 16 sorties au total.','At most 16 exits in total.','出口总数最多为 16。','Como máximo 16 salidas en total.','No máximo 16 saídas no total.']));
-        c.reportValidity(); return;
+        c.setCustomValidity(urbanText(['Au plus 16 sorties au total.', 'At most 16 exits in total.', '出口总数最多为 16。', 'Como máximo 16 salidas en total.', 'No máximo 16 saídas no total.']));
+        c.reportValidity();
+        return;
       }
-      config.exits = exits; changed();
+      config.exits = exits;
+      changed();
     };
   }
   function legend(): void {
     const used = new Set(output?.segments.map(s => `${s.class}|${s.surface}`));
-    const classes = ROAD_CLASSES.filter(c => output ? output.segments.some(s => s.class === c) : true);
-    const surfaces = ROAD_SURFACES.filter(s => output ? output.segments.some(r => r.surface === s) : true);
+    const classes = ROAD_CLASSES.filter(c => (output ? output.segments.some(s => s.class === c) : true));
+    const surfaces = ROAD_SURFACES.filter(s => (output ? output.segments.some(r => r.surface === s) : true));
     const sample = (cls: RoadClass, surface: RoadSurface): string => {
-      const { fill, casing, width, dash } = paintOf(style, cls, surface), w = Math.min(width, 7), d = dash ? ` stroke-dasharray="${dash}"` : '';
+      const { fill, casing, width, dash } = paintOf(style, cls, surface),
+        w = Math.min(width, 7),
+        d = dash ? ` stroke-dasharray="${dash}"` : '';
       return `<svg width="26" height="10" aria-hidden="true" opacity="${style.opacity}">${casing ? `<line x1="2" y1="5" x2="24" y2="5" stroke="${casing}" stroke-width="${w + 1.6}" stroke-linecap="round"${d}/>` : ''}<line x1="2" y1="5" x2="24" y2="5" stroke="${fill}" stroke-width="${w}" stroke-linecap="round"${d}/></svg>`;
     };
     const km = (v = 0): string => `${(v / 1000).toFixed(1)} km`;
-    q('#roadLegend').innerHTML = `<div>${classes.map(c => {
-      const surface = surfaces.find(s => used.has(`${c}|${s}`)) ?? (c === 'trail' || c === 'track' ? 'dirt' : 'paved');
-      return `<span>${sample(c, surface)}${urbanText(classWords[c])}${output ? ` · ${km(output.lengthByClass[c])}` : ''}</span>`;
-    }).join('')}</div><div>${surfaces.map(s => {
-      const swatch = style.preset === 'surface' ? `<i style="background:${SURFACE_COLOR[s][0]};border-color:${SURFACE_COLOR[s][1] ?? SURFACE_COLOR[s][0]}"></i>` : '';
-      return `<span>${swatch}${urbanText(surfaceWords[s])}${output ? ` · ${km(output.lengthBySurface[s])}` : ''}</span>`;
-    }).join('')}</div>`;
+    q('#roadLegend').innerHTML = `<div>${classes
+      .map(c => {
+        const surface = surfaces.find(s => used.has(`${c}|${s}`)) ?? (c === 'trail' || c === 'track' ? 'dirt' : 'paved');
+        return `<span>${sample(c, surface)}${urbanText(classWords[c])}${output ? ` · ${km(output.lengthByClass[c])}` : ''}</span>`;
+      })
+      .join('')}</div><div>${surfaces
+      .map(s => {
+        const swatch = style.preset === 'surface' ? `<i style="background:${SURFACE_COLOR[s][0]};border-color:${SURFACE_COLOR[s][1] ?? SURFACE_COLOR[s][0]}"></i>` : '';
+        return `<span>${swatch}${urbanText(surfaceWords[s])}${output ? ` · ${km(output.lengthBySurface[s])}` : ''}</span>`;
+      })
+      .join('')}</div>`;
   }
   /** Minor roads first, casings under all fills, so junctions merge cleanly. */
   function draw(): void {
     let layer = options.map.querySelector<SVGGElement>('#roadOverlay');
     if (!layer) {
-      layer = document.createElementNS(ns, 'g'); layer.id = 'roadOverlay';
+      layer = document.createElementNS(ns, 'g');
+      layer.id = 'roadOverlay';
       const markers = options.map.querySelector('#fantasyPainting, #settlementOverlay');
-      if (markers) options.map.insertBefore(layer, markers); else options.map.append(layer);
+      if (markers) options.map.insertBefore(layer, markers);
+      else options.map.append(layer);
     }
     // Screen px per metre: the painted preset's widths follow the zoom through CSS only.
     const box = options.map.viewBox.baseVal;
@@ -277,19 +390,32 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const scale = box?.width ? options.map.clientWidth / box.width : 1;
     const state = `${enabled}|${show}|${isBlended()}|${JSON.stringify(style)}|${v1Style ?? ''}|${v1Style ? scale : ''}`;
     if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) return;
-    drawnLayer = layer; drawn = output; drawnState = state; drawnOwnership = urbanOwnership; layer.replaceChildren();
+    drawnLayer = layer;
+    drawn = output;
+    drawnState = state;
+    drawnOwnership = urbanOwnership;
+    layer.replaceChildren();
     if (!output || !show || !enabled) return;
     const order = [...output.segments].sort((a, b) => ROAD_CLASSES.indexOf(b.class) - ROAD_CLASSES.indexOf(a.class));
     // A number is a screen width in px; a string is a CSS width (roadStrokeWidth: metric with a px floor, following --road-k).
     const line = (d: string, stroke: string, width: number | string, extra: Record<string, string> = {}): SVGPathElement => {
-      const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', stroke);
-      p.setAttribute('vector-effect', 'non-scaling-stroke'); p.setAttribute('stroke-linejoin', 'round'); p.setAttribute('stroke-linecap', 'round');
+      const p = document.createElementNS(ns, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', stroke);
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      p.setAttribute('stroke-linejoin', 'round');
+      p.setAttribute('stroke-linecap', 'round');
       for (const [k, v] of Object.entries(extra)) p.setAttribute(k, v);
       // After the extras: a `style` extra (metric dashes) must not drop the CSS width.
-      if (typeof width === 'number') p.setAttribute('stroke-width', String(+width.toFixed(2))); else p.style.strokeWidth = width;
+      if (typeof width === 'number') p.setAttribute('stroke-width', String(+width.toFixed(2)));
+      else p.style.strokeWidth = width;
       return p;
     };
-    const casings = document.createElementNS(ns, 'g'), fills = document.createElementNS(ns, 'g'), crossings = document.createElementNS(ns, 'g'), hits = document.createElementNS(ns, 'g');
+    const casings = document.createElementNS(ns, 'g'),
+      fills = document.createElementNS(ns, 'g'),
+      crossings = document.createElementNS(ns, 'g'),
+      hits = document.createElementNS(ns, 'g');
     casings.style.pointerEvents = fills.style.pointerEvents = crossings.style.pointerEvents = 'none';
     // One group opacity, so casings and overlapping roads do not show through each other.
     const painted = document.createElementNS(ns, 'g');
@@ -298,21 +424,24 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     // retain the same clipping and curve geometry without repeating preparation.
     if (preparedOwnership !== urbanOwnership || preparedOutput !== output) {
       clipUrban = urbanOwnership?.length ? prepareUrbanRoadClip(bridgeRoadOwnership(urbanOwnership, output)) : undefined;
-      preparedOwnership = urbanOwnership; preparedOutput = output;
+      preparedOwnership = urbanOwnership;
+      preparedOutput = output;
       pathCache = new WeakMap();
     }
     const outsidePath = (path: Point[], width: number, curves: boolean): string => {
       let widths = pathCache.get(path);
-      if (!widths) { widths = new Map(); pathCache.set(path, widths); }
+      if (!widths) {
+        widths = new Map();
+        pathCache.set(path, widths);
+      }
       let entry = widths.get(width);
       if (!entry) {
-        const paths = clipUrban
-          ? clipUrban([{ path, widths: path.map(() => width), rank: 1, role: 'regional' }]).map(street => street.path)
-          : [path];
-        entry = { paths }; widths.set(width, entry);
+        const paths = clipUrban ? clipUrban([{ path, widths: path.map(() => width), rank: 1, role: 'regional' }]).map(street => street.path) : [path];
+        entry = { paths };
+        widths.set(width, entry);
       }
-      if (curves) return entry.curved ??= entry.paths.map(curveData).join(' ');
-      return entry.straight ??= entry.paths.map(pathData).join(' ');
+      if (curves) return (entry.curved ??= entry.paths.map(curveData).join(' '));
+      return (entry.straight ??= entry.paths.map(pathData).join(' '));
     };
     if (!v1Style && isBlended()) {
       drawBlended(order, outsidePath, painted, hits);
@@ -329,31 +458,48 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       // exact attachment to the native street instead of moving it along a curve.
       const d = outsidePath(s.path, s.width, style.curves);
       const v1 = v1Style ? v1RoadPaint(s.class === 'track' || s.class === 'trail' ? 'track' : s.class === 'highway' || s.class === 'main' ? 'major' : 'minor', s.width, scale, v1Style) : undefined;
-      const paint = v1 ?? paintOf(style, s.class, s.surface), colors = getBenchRenderColors();
-      const mid = !v1 && s.path.length ? s.path[s.path.length >> 1] : undefined, ground = mid && groundAt(mid.x, mid.y, 2);
+      const paint = v1 ?? paintOf(style, s.class, s.surface),
+        colors = getBenchRenderColors();
+      const mid = !v1 && s.path.length ? s.path[s.path.length >> 1] : undefined,
+        ground = mid && groundAt(mid.x, mid.y, 2);
       const tinted = ground ? toneStreet(ground, s.class === 'track' || s.class === 'trail' ? 'track' : 'road', { highway: 0, main: 1, local: 2, track: 3, trail: 4 }[s.class]) : undefined;
-      const { width: w, dash } = paint, fill = (['track','trail'].includes(s.class) ? colors.track : colors.road) ?? tinted?.fill ?? paint.fill, casing = style.casing ? colors.roadEdge ?? tinted?.edge ?? paint.casing : null;
+      const { width: w, dash } = paint,
+        fill = (['track', 'trail'].includes(s.class) ? colors.track : colors.road) ?? tinted?.fill ?? paint.fill,
+        casing = style.casing ? (colors.roadEdge ?? tinted?.edge ?? paint.casing) : null;
       const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
       // World-size feature: the preset width is a screen floor under the road's metric width (V1 paints are metric already).
-      const body = v1 ? w : roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, w, s.width), plus = (px: number): number | string => v1 ? w + px : `calc(${body} + ${px}px)`;
+      const body = v1 ? w : roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, w, s.width),
+        plus = (px: number): number | string => (v1 ? w + px : `calc(${body} + ${px}px)`);
       if (d) {
         if (casing) casings.append(line(d, casing, v1?.casingWidth ?? plus(1.6), extra));
         // A dashed track: its metric width as a continuous earth band, the dashed symbol at its preset width on top.
         if (dash && !v1) fills.append(line(d, fill, body, { opacity: '0.35', 'stroke-linecap': 'butt' }), line(d, fill, w, extra));
-        else { const road = line(d, fill, body, extra); if (v1) road.setAttribute('opacity', String(v1.opacity)); fills.append(road); }
+        else {
+          const road = line(d, fill, body, extra);
+          if (v1) road.setAttribute('opacity', String(v1.opacity));
+          fills.append(road);
+        }
       }
       // A crossing can extend beyond the main segment's visible pieces. Clip it
       // independently once, including its casing, rather than repeating its art.
-      if (style.crossings) for (const c of s.crossings) {
-        const cd = outsidePath(c.path, s.width, false);
-        if (!cd) continue;
-        if (c.kind === 'bridge') { crossings.append(line(cd, '#4f3c2a', plus(3.4), { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', plus(1.2), { 'stroke-linecap': 'butt' })); }
-        else if (c.kind === 'causeway') { crossings.append(line(cd, tinted?.edge ?? '#5d5446', plus(2.6)), line(cd, tinted?.fill ?? '#cfc3a5', plus(0.8))); }
-        else crossings.append(line(cd, '#3f7fa6', plus(0.6), { 'stroke-dasharray': '1 2.5' }));
-      }
+      if (style.crossings)
+        for (const c of s.crossings) {
+          const cd = outsidePath(c.path, s.width, false);
+          if (!cd) continue;
+          if (c.kind === 'bridge') {
+            crossings.append(line(cd, '#4f3c2a', plus(3.4), { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', plus(1.2), { 'stroke-linecap': 'butt' }));
+          } else if (c.kind === 'causeway') {
+            crossings.append(line(cd, tinted?.edge ?? '#5d5446', plus(2.6)), line(cd, tinted?.fill ?? '#cfc3a5', plus(0.8)));
+          } else crossings.append(line(cd, '#3f7fa6', plus(0.6), { 'stroke-dasharray': '1 2.5' }));
+        }
       if (d) {
-        const hit = line(d, 'transparent', Math.max(8, w + 6)); hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
-        const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
+        const hit = line(d, 'transparent', Math.max(8, w + 6));
+        hit.style.pointerEvents = 'stroke';
+        hit.dataset.road = '';
+        const title = document.createElementNS(ns, 'title');
+        title.textContent = describe(s);
+        hit.append(title);
+        hits.append(hit);
       }
     }
     painted.append(casings, fills, crossings);
@@ -364,42 +510,74 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
    * fade with the steepest grade so the mountains stay quiet. One opacity group per (class, grade bucket, layer):
    * roads of the same class never darken where they overlap. Crossings keep their structures, without halos. */
   function drawBlended(order: RoadSegment[], outsidePath: (path: Point[], width: number, curves: boolean) => string, painted: SVGGElement, hits: SVGGElement): void {
-    const tone = style.preset === 'ink' ? 'sepia' : 'earth', color = getBenchRenderColors().road ?? BLEND_ROAD_COLOR[tone], edgeColor = getBenchRenderColors().roadEdge ?? (tone === 'earth' ? '#4e3a24' : '#6b4e2e');
-    const groups = new Map<string, SVGGElement>(), crossings = document.createElementNS(ns, 'g'); crossings.style.pointerEvents = 'none';
+    const tone = style.preset === 'ink' ? 'sepia' : 'earth',
+      color = getBenchRenderColors().road ?? BLEND_ROAD_COLOR[tone],
+      edgeColor = getBenchRenderColors().roadEdge ?? (tone === 'earth' ? '#4e3a24' : '#6b4e2e');
+    const groups = new Map<string, SVGGElement>(),
+      crossings = document.createElementNS(ns, 'g');
+    crossings.style.pointerEvents = 'none';
     const group = (key: string, opacity: number): SVGGElement => {
       let g = groups.get(key);
-      if (!g) { g = document.createElementNS(ns, 'g'); g.style.pointerEvents = 'none'; g.setAttribute('opacity', String(+opacity.toFixed(3))); groups.set(key, g); }
+      if (!g) {
+        g = document.createElementNS(ns, 'g');
+        g.style.pointerEvents = 'none';
+        g.setAttribute('opacity', String(+opacity.toFixed(3)));
+        groups.set(key, g);
+      }
       return g;
     };
     const stroke = (d: string, c: string, width: string, cap: 'round' | 'butt' = 'round'): SVGPathElement => {
-      const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', c);
-      p.setAttribute('vector-effect', 'non-scaling-stroke'); p.setAttribute('stroke-linejoin', 'round'); p.setAttribute('stroke-linecap', cap); p.style.strokeWidth = width;
+      const p = document.createElementNS(ns, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', c);
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      p.setAttribute('stroke-linejoin', 'round');
+      p.setAttribute('stroke-linecap', cap);
+      p.style.strokeWidth = width;
       return p;
     };
     // Soft edges first, then surfaces, minor roads under major ones (order is already minor first).
     const bodies: SVGGElement[] = [];
     for (const s of order) {
-      const px = BLEND_ROAD_PX[s.class] * style.width, fade = Math.round(gradeFade(s.grade) * 10) / 10, alpha = BLEND_ROAD_ALPHA[s.class] * fade;
-      const d = outsidePath(s.path, s.width, style.curves), mid = s.path.length ? s.path[s.path.length >> 1] : undefined, ground = mid && groundAt(mid.x, mid.y, 2);
-      const tint = ground ? toneStreet(ground, s.class === 'track' || s.class === 'trail' ? 'track' : 'road', { highway: 0, main: 1, local: 2, track: 3, trail: 4 }[s.class]) : undefined, tk = tint?.fill ?? '';
+      const px = BLEND_ROAD_PX[s.class] * style.width,
+        fade = Math.round(gradeFade(s.grade) * 10) / 10,
+        alpha = BLEND_ROAD_ALPHA[s.class] * fade;
+      const d = outsidePath(s.path, s.width, style.curves),
+        mid = s.path.length ? s.path[s.path.length >> 1] : undefined,
+        ground = mid && groundAt(mid.x, mid.y, 2);
+      const tint = ground ? toneStreet(ground, s.class === 'track' || s.class === 'trail' ? 'track' : 'road', { highway: 0, main: 1, local: 2, track: 3, trail: 4 }[s.class]) : undefined,
+        tk = tint?.fill ?? '';
       if (d) {
         // The land use leaves a corridor along every road (the darker decor shows there): an apron of the ground tone hides it.
         if (tint && s.class !== 'track' && s.class !== 'trail') group(`apron|${tk}`, 0.5).append(stroke(d, tint.ground, roadStrokeWidth({ scale: 1, addPx: 9, addM: 4 }, px, s.width)));
         if (s.class === 'highway' || s.class === 'main' || s.class === 'local') group(`edge|${s.class}|${fade}|${tk}`, alpha * 0.22).append(stroke(d, tint?.edge ?? edgeColor, roadStrokeWidth({ scale: 1, addPx: 1.6, addM: 1.4 }, px, s.width)));
-        const g = group(`body|${s.class}|${fade}|${tk}`, alpha); if (!bodies.includes(g)) bodies.push(g);
+        const g = group(`body|${s.class}|${fade}|${tk}`, alpha);
+        if (!bodies.includes(g)) bodies.push(g);
         g.append(stroke(d, (s.class === 'track' || s.class === 'trail' ? getBenchRenderColors().track : undefined) ?? tint?.fill ?? color, roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width)));
-        const hit = stroke(d, 'transparent', String(Math.max(8, px + 6))); hit.style.strokeWidth = ''; hit.setAttribute('stroke-width', String(Math.max(8, px + 6)));
-        hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
-        const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
+        const hit = stroke(d, 'transparent', String(Math.max(8, px + 6)));
+        hit.style.strokeWidth = '';
+        hit.setAttribute('stroke-width', String(Math.max(8, px + 6)));
+        hit.style.pointerEvents = 'stroke';
+        hit.dataset.road = '';
+        const title = document.createElementNS(ns, 'title');
+        title.textContent = describe(s);
+        hit.append(title);
+        hits.append(hit);
       }
-      if (style.crossings) for (const c of s.crossings) {
-        const cd = outsidePath(c.path, s.width, false);
-        if (!cd) continue;
-        const w = roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width);
-        if (c.kind === 'bridge') crossings.append(stroke(cd, '#4f3c2a', `calc(${w} + 3.4px)`, 'butt'), stroke(cd, '#e8d8b8', `calc(${w} + 1.2px)`, 'butt'));
-        else if (c.kind === 'causeway') crossings.append(stroke(cd, tint?.edge ?? '#5d5446', `calc(${w} + 2.6px)`), stroke(cd, tint?.fill ?? '#cfc3a5', `calc(${w} + 0.8px)`));
-        else { const f = stroke(cd, '#3f7fa6', `calc(${w} + 0.6px)`); f.setAttribute('stroke-dasharray', '1 2.5'); crossings.append(f); }
-      }
+      if (style.crossings)
+        for (const c of s.crossings) {
+          const cd = outsidePath(c.path, s.width, false);
+          if (!cd) continue;
+          const w = roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, px, s.width);
+          if (c.kind === 'bridge') crossings.append(stroke(cd, '#4f3c2a', `calc(${w} + 3.4px)`, 'butt'), stroke(cd, '#e8d8b8', `calc(${w} + 1.2px)`, 'butt'));
+          else if (c.kind === 'causeway') crossings.append(stroke(cd, tint?.edge ?? '#5d5446', `calc(${w} + 2.6px)`), stroke(cd, tint?.fill ?? '#cfc3a5', `calc(${w} + 0.8px)`));
+          else {
+            const f = stroke(cd, '#3f7fa6', `calc(${w} + 0.6px)`);
+            f.setAttribute('stroke-dasharray', '1 2.5');
+            crossings.append(f);
+          }
+        }
     }
     for (const [key, g] of groups) if (key.startsWith('apron|')) painted.append(g);
     for (const [key, g] of groups) if (key.startsWith('edge|')) painted.append(g);
@@ -415,48 +593,93 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const group = (groups: Map<string, SVGGElement>, k: RoadStroke): SVGGElement => {
       const key = `${k.color}|${k.opacity ?? 1}`;
       let g = groups.get(key);
-      if (!g) { g = document.createElementNS(ns, 'g'); g.style.pointerEvents = 'none'; if (k.opacity !== undefined) g.setAttribute('opacity', String(k.opacity)); groups.set(key, g); }
+      if (!g) {
+        g = document.createElementNS(ns, 'g');
+        g.style.pointerEvents = 'none';
+        if (k.opacity !== undefined) g.setAttribute('opacity', String(k.opacity));
+        groups.set(key, g);
+      }
       return g;
     };
     const stroke = (d: string, color: string, width: string, k: RoadStroke): SVGPathElement => {
-      const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color);
-      p.setAttribute('vector-effect', 'non-scaling-stroke'); p.setAttribute('stroke-linejoin', 'round'); p.setAttribute('stroke-linecap', k.cap ?? 'round');
+      const p = document.createElementNS(ns, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', color);
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      p.setAttribute('stroke-linejoin', 'round');
+      p.setAttribute('stroke-linecap', k.cap ?? 'round');
       p.style.strokeWidth = width;
       if (k.dash) p.setAttribute('stroke-dasharray', k.dash);
       return p;
     };
     // Ditch bands: wide stroke minus the verges, for every ditched road at once.
-    const mask = document.createElementNS(ns, 'mask'); mask.id = 'roadDitchMask'; mask.setAttribute('maskUnits', 'userSpaceOnUse');
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const mask = document.createElementNS(ns, 'mask');
+    mask.id = 'roadDitchMask';
+    mask.setAttribute('maskUnits', 'userSpaceOnUse');
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const s of order) {
-      const px = RENDER_ROAD_PX[s.class] * style.width, metres = s.width;
+      const px = RENDER_ROAD_PX[s.class] * style.width,
+        metres = s.width;
       let pieces = style.crossings ? splitCache.get(s) : [{ path: s.path }];
-      if (!pieces) { pieces = splitAtCrossings(s.path, s.crossings); splitCache.set(s, pieces); }
+      if (!pieces) {
+        pieces = splitAtCrossings(s.path, s.crossings);
+        splitCache.set(s, pieces);
+      }
       const drawn = pieces.map(p => ({ crossing: p.crossing, d: outsidePath(p.path, s.width, style.curves && !p.crossing) }));
-      const road = drawn.map(p => p.d).filter(Boolean).join(' '), land = drawn.filter(p => !p.crossing).map(p => p.d).filter(Boolean).join(' ');
+      const road = drawn
+          .map(p => p.d)
+          .filter(Boolean)
+          .join(' '),
+        land = drawn
+          .filter(p => !p.crossing)
+          .map(p => p.d)
+          .filter(Boolean)
+          .join(' ');
       for (const k of renderRoadStrokes(s.class, s.surface)) {
         const d = k.layer === 'ditch' || k.layer === 'verge' ? land : road;
         if (!d) continue;
-        group(layers.get(k.layer)!, k).append(stroke(d, (k.layer === 'fill' ? (s.class === 'track' || s.class === 'trail' ? getBenchRenderColors().track : getBenchRenderColors().road) : k.layer === 'casing' ? getBenchRenderColors().roadEdge : undefined) ?? k.color, roadStrokeWidth(k, px, metres), k));
+        group(layers.get(k.layer)!, k).append(
+          stroke(d, (k.layer === 'fill' ? (s.class === 'track' || s.class === 'trail' ? getBenchRenderColors().track : getBenchRenderColors().road) : k.layer === 'casing' ? getBenchRenderColors().roadEdge : undefined) ?? k.color, roadStrokeWidth(k, px, metres), k),
+        );
         if (k.cut) {
           mask.append(stroke(d, '#fff', roadStrokeWidth(k, px, metres), k), stroke(d, '#000', roadStrokeWidth({ scale: k.scale, ...k.cut }, px, metres), k));
-          for (const p of s.path) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+          for (const p of s.path) {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+          }
         }
       }
-      if (style.crossings) for (const piece of drawn) {
-        if (piece.crossing && piece.d) for (const c of renderCrossingStrokes(piece.crossing)) group(crossings, c).append(stroke(piece.d, c.color, roadStrokeWidth(c, px, metres), c));
-      }
+      if (style.crossings)
+        for (const piece of drawn) {
+          if (piece.crossing && piece.d) for (const c of renderCrossingStrokes(piece.crossing)) group(crossings, c).append(stroke(piece.d, c.color, roadStrokeWidth(c, px, metres), c));
+        }
       if (road) {
-        const hit = document.createElementNS(ns, 'path'); hit.setAttribute('d', road); hit.setAttribute('fill', 'none'); hit.setAttribute('stroke', 'transparent');
-        hit.setAttribute('stroke-width', String(Math.max(8, px + 6))); hit.setAttribute('vector-effect', 'non-scaling-stroke');
-        hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
-        const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
+        const hit = document.createElementNS(ns, 'path');
+        hit.setAttribute('d', road);
+        hit.setAttribute('fill', 'none');
+        hit.setAttribute('stroke', 'transparent');
+        hit.setAttribute('stroke-width', String(Math.max(8, px + 6)));
+        hit.setAttribute('vector-effect', 'non-scaling-stroke');
+        hit.style.pointerEvents = 'stroke';
+        hit.dataset.road = '';
+        const title = document.createElementNS(ns, 'title');
+        title.textContent = describe(s);
+        hit.append(title);
+        hits.append(hit);
       }
     }
     if (mask.childNodes.length) {
       const pad = 100;
       for (const [k, v] of Object.entries({ x: minX - pad, y: minY - pad, width: maxX - minX + 2 * pad, height: maxY - minY + 2 * pad })) mask.setAttribute(k, String(v));
-      const defs = document.createElementNS(ns, 'defs'); defs.append(mask); painted.append(defs);
+      const defs = document.createElementNS(ns, 'defs');
+      defs.append(mask);
+      painted.append(defs);
       for (const g of layers.get('ditch')!.values()) g.setAttribute('mask', 'url(#roadDitchMask)');
     }
     for (const l of ROAD_STROKE_LAYERS) painted.append(...layers.get(l)!.values());
@@ -465,7 +688,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   function describe(s: RoadSegment): string {
     const profile = profileWords[s.profile] ? urbanText(profileWords[s.profile]) : s.profile;
     const bridges = s.crossings.length ? ` · ${s.crossings.map(c => c.kind).join(', ')}` : '';
-    return `${urbanText(classWords[s.class])} · ${urbanText(surfaceWords[s.surface])} · ${profile}\n${(s.length / 1000).toFixed(2)} km · ${urbanText(['pente maximale','steepest','最大坡度','pendiente máxima','inclinação máxima'])} ${(s.grade * 100).toFixed(1)} % · ${urbanText(['largeur','width','宽度','ancho','largura'])} ${s.width.toFixed(1)} m${bridges}`;
+    return `${urbanText(classWords[s.class])} · ${urbanText(surfaceWords[s.surface])} · ${profile}\n${(s.length / 1000).toFixed(2)} km · ${urbanText(['pente maximale', 'steepest', '最大坡度', 'pendiente máxima', 'inclinação máxima'])} ${(s.grade * 100).toFixed(1)} % · ${urbanText(['largeur', 'width', '宽度', 'ancho', 'largura'])} ${s.width.toFixed(1)} m${bridges}`;
   }
   options.map.addEventListener('urban:road-ownership', event => {
     const next = (event as CustomEvent<Layout[] | undefined>).detail;
@@ -474,77 +697,162 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     draw();
   });
   function localizeRoads(): void {
-    const text = (selector: string, words: Words): void => { const target=panel.querySelector(selector); const node=(target instanceof HTMLInputElement || target instanceof HTMLSelectElement ? target.closest('label') : target)?.firstChild; if (node?.nodeType===Node.TEXT_NODE) node.textContent=urbanText(words)+' '; };
-    const inputLabel = (selector: string, words: Words): void => { const node=panel.querySelector(selector)?.nextSibling; if (node?.nodeType===Node.TEXT_NODE) node.textContent=urbanText(words); };
-    text('summary',['Routes','Roads','道路','Carreteras','Estradas']);
-    for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-exit]'))) {
-      const label = `${urbanText(classWords[c.dataset.roadExit as keyof ExitCounts])} · ${urbanText(['Sorties','Exits','出口','Salidas','Saídas'])}`;
-      c.closest('label')!.firstChild!.textContent = label + ' '; c.setAttribute('aria-label', label);
-    }
-    text('[data-road="density"]',['Densité','Density','密度','Densidad','Densidade']);
-    for (const option of Array.from(select('roadLevel').options)) if (levelWords[option.value]) option.textContent=urbanText(levelWords[option.value]);
-    for (const option of Array.from(select('roadCulture').options)) option.textContent=option.value==='auto' ? urbanText(['Selon les implantations','From the settlements','根据聚落','Según los asentamientos','Conforme os assentamentos']) : profileWords[option.value] ? urbanText(profileWords[option.value]) : option.textContent;
-    for (const option of Array.from(select('roadSurface').options)) option.textContent=option.value==='auto' ? urbanText(['Selon niveau et culture','By level and culture','按等级和文化','Según nivel y cultura','Conforme nível e cultura']) : `${urbanText(surfaceWords[option.value as RoadSurface])} ${urbanText(['uniquement','only','仅','solamente','somente'])}`;
-    const presets: Record<string,Words> = { surface:['Selon la surface','By surface','按路面','Según superficie','Conforme superfície'], atlas:['Atlas routier','Road atlas','道路图集','Atlas de carreteras','Atlas de estradas'], topographic:['Topographique','Topographic','地形图','Topográfico','Topográfico'], ink:['Encre sur parchemin','Ink on parchment','羊皮纸墨绘','Tinta sobre pergamino','Tinta em pergaminho'], minimal:['Minimal','Minimal','简约','Minimalista','Minimalista'], render:['Render · peint','Render · painted','Render · 绘制','Render · pintado','Render · pintado'] };
-    for (const option of Array.from(select('roadPreset').options)) if (presets[option.value]) option.textContent=urbanText(presets[option.value]);
-    const fields: Record<string,Words> = { gradeWeight:['Aversion aux pentes','Slope aversion','坡度回避','Evitar pendientes','Evitar declives'], maxGrade:['Pente maximale des routes principales (%)','Max grade of main roads (%)','主要道路最大坡度（%）','Pendiente máxima de caminos principales (%)','Inclinação máxima das estradas principais (%)'], crossingCost:['Coût de franchissement des rivières','River crossing cost','河流跨越成本','Coste de cruce de ríos','Custo de travessia de rios'], wobble:['Sinusité × culture','Winding × culture','弯曲度 × 文化','Sinuosidad × cultura','Sinuosidade × cultura'], sharing:['Partage des troncs','Trunk sharing','主干共享','Tramos compartidos','Compartilhamento de troncos'] };
-    for (const [key,words] of Object.entries(fields)) text(`[data-road="${key}"]`,words);
-    text('#roadSurface',['Surfaces','Surfaces','路面','Superficies','Superfícies']); text('#roadCulture',['Culture routière','Road culture','道路文化','Cultura viaria','Cultura viária']); text('#roadBlend',[...GROUND_BLEND_TITLE]); for (const option of Array.from(select('roadBlend').options)) option.textContent=urbanText(GROUND_BLEND_LABEL[option.value as GroundBlend]); text('#roadPreset',['Style','Style','样式','Estilo','Estilo']); text('[data-road-style="width"]',['Largeur ×','Width ×','宽度 ×','Ancho ×','Largura ×']); text('[data-road-style="opacity"]',['Opacité','Opacity','不透明度','Opacidad','Opacidade']);
-    inputLabel('#roadEnabled',['Générer les routes','Generate roads','生成道路','Generar carreteras','Gerar estradas']);
-    inputLabel('#roadShow',['Afficher les routes','Show roads','显示道路','Mostrar carreteras','Mostrar estradas']);
-    inputLabel('[data-road-style="curves"]',['Courbes lissées','Smooth curves','平滑曲线','Curvas suaves','Curvas suaves']);
-    inputLabel('[data-road-style="casing"]',['Contour','Casing','描边','Contorno','Contorno']);
-    inputLabel('[data-road-style="crossings"]',['Ponts et gués','Bridges & fords','桥梁与渡口','Puentes y vados','Pontes e vaus']);
-    const recalculate=q<HTMLButtonElement>('#roadRecalculate'); recalculate.textContent=urbanText(['Recalculer les routes','Recalculate roads','重新计算道路','Recalcular carreteras','Recalcular estradas']);
-    const routing=panel.querySelector('details.advanced:not(#roadRendering) > summary'); if(routing) routing.textContent=urbanText(['Tracé','Routing','路线规划','Trazado','Traçado']);
-    q('#roadRendering > summary').textContent=urbanText(['Rendu','Rendering','渲染','Renderizado','Renderização']);
-    const gear=panel.querySelector<HTMLButtonElement>('.map-gear'); if(gear) { const label=urbanText(['Réglages des routes','Road settings','道路设置','Ajustes de carreteras','Configurações das estradas']); gear.title=label; gear.setAttribute('aria-label',label); }
-    select('roadLevel').setAttribute('aria-label',urbanText(['Réseau','Network','路网','Red','Rede']));
-    q('[data-road="density"]').setAttribute('aria-label',urbanText(['Densité du réseau','Network density','路网密度','Densidad de la red','Densidade da rede']));
-    const titles: Record<string,Words> = {
-      '#roadLevel':['Définit les classes de routes et leurs surfaces','Sets the road classes and their surfaces','设置道路等级及其路面','Define las clases de carretera y sus superficies','Define as classes de estradas e suas superfícies'],
-      '[data-road="density"]':['0 : arbre couvrant seul · 1 : nombreuses boucles, pistes et sentiers','0: spanning tree only · 1: many loops, tracks and trails','0：仅生成树 · 1：大量环路、小路和步道','0: solo árbol de expansión · 1: muchos bucles, pistas y senderos','0: apenas árvore geradora · 1: muitos circuitos, caminhos e trilhas'],
-      '#roadSurface':['Imposer une surface à tout le réseau','Force one surface on the whole network','为整个路网指定一种路面','Imponer una superficie a toda la red','Definir uma superfície para toda a rede'],
-      '#roadCulture':['Culture routière : pentes, rectitude, ponts et chaussées','Road-building culture: grades, straightness, bridges, causeways','道路文化：坡度、直线度、桥梁和堤道','Cultura viaria: pendientes, rectitud, puentes y calzadas','Cultura viária: inclinações, retidão, pontes e calçadas'],
-      '[data-road="gradeWeight"]':['0 ignore entièrement le relief','0 ignores the relief entirely','0 完全忽略地形','0 ignora por completo el relieve','0 ignora completamente o relevo'],
-      '[data-road="maxGrade"]':['0 conserve la valeur culturelle ; routes locales ×1,2, pistes ×1,5, sentiers plus raides','0 keeps the culture value; local roads ×1.2, tracks ×1.5, trails steeper','0 保留文化值；地方道路 ×1.2，小路 ×1.5，步道更陡','0 conserva el valor cultural; caminos locales ×1,2, pistas ×1,5, senderos más pendientes','0 mantém o valor cultural; estradas locais ×1,2, caminhos ×1,5, trilhas mais íngremes'],
-      '[data-road="sharing"]':['Force du regroupement sur les routes existantes','How strongly routes merge onto existing roads','路线合并到现有道路的强度','Intensidad de unión a carreteras existentes','Intensidade da união a estradas existentes'],
-      '#roadPreset':['Couleurs, contours et tirets des classes de routes','Colours, casings and dashes of the road classes','道路等级的颜色、描边和虚线','Colores, contornos y trazos de las clases de carretera','Cores, contornos e tracejados das classes de estradas'],
-      '[data-road-style="width"]':['Multiplie la largeur des traits','Multiplies the line widths','调整线条宽度','Multiplica el ancho de línea','Multiplica a largura das linhas'],
-      '[data-road-style="curves"]':['Dessine des courbes lisses plutôt que des segments droits','Draw smooth curves rather than straight segments','绘制平滑曲线而非直线段','Dibuja curvas suaves en lugar de tramos rectos','Desenha curvas suaves em vez de trechos retos'],
-      '[data-road-style="casing"]':['Contour sombre sous les routes pavées et en gravier','Dark edge under paved and gravel roads','铺装和碎石道路下方的深色边缘','Borde oscuro bajo carreteras pavimentadas y de grava','Borda escura sob estradas pavimentadas e de cascalho'],
+    const text = (selector: string, words: Words): void => {
+      const target = panel.querySelector(selector);
+      const node = (target instanceof HTMLInputElement || target instanceof HTMLSelectElement ? target.closest('label') : target)?.firstChild;
+      if (node?.nodeType === Node.TEXT_NODE) node.textContent = urbanText(words) + ' ';
     };
-    for (const [selector,words] of Object.entries(titles)) { const label=panel.querySelector(selector)?.closest<HTMLElement>('label'); if(label) label.title=urbanText(words); }
+    const inputLabel = (selector: string, words: Words): void => {
+      const node = panel.querySelector(selector)?.nextSibling;
+      if (node?.nodeType === Node.TEXT_NODE) node.textContent = urbanText(words);
+    };
+    text('summary', ['Routes', 'Roads', '道路', 'Carreteras', 'Estradas']);
+    for (const c of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-road-exit]'))) {
+      const label = `${urbanText(classWords[c.dataset.roadExit as keyof ExitCounts])} · ${urbanText(['Sorties', 'Exits', '出口', 'Salidas', 'Saídas'])}`;
+      c.closest('label')!.firstChild!.textContent = label + ' ';
+      c.setAttribute('aria-label', label);
+    }
+    text('[data-road="density"]', ['Densité', 'Density', '密度', 'Densidad', 'Densidade']);
+    for (const option of Array.from(select('roadLevel').options)) if (levelWords[option.value]) option.textContent = urbanText(levelWords[option.value]);
+    for (const option of Array.from(select('roadCulture').options))
+      option.textContent = option.value === 'auto' ? urbanText(['Selon les implantations', 'From the settlements', '根据聚落', 'Según los asentamientos', 'Conforme os assentamentos']) : profileWords[option.value] ? urbanText(profileWords[option.value]) : option.textContent;
+    for (const option of Array.from(select('roadSurface').options))
+      option.textContent =
+        option.value === 'auto'
+          ? urbanText(['Selon niveau et culture', 'By level and culture', '按等级和文化', 'Según nivel y cultura', 'Conforme nível e cultura'])
+          : `${urbanText(surfaceWords[option.value as RoadSurface])} ${urbanText(['uniquement', 'only', '仅', 'solamente', 'somente'])}`;
+    const presets: Record<string, Words> = {
+      surface: ['Selon la surface', 'By surface', '按路面', 'Según superficie', 'Conforme superfície'],
+      atlas: ['Atlas routier', 'Road atlas', '道路图集', 'Atlas de carreteras', 'Atlas de estradas'],
+      topographic: ['Topographique', 'Topographic', '地形图', 'Topográfico', 'Topográfico'],
+      ink: ['Encre sur parchemin', 'Ink on parchment', '羊皮纸墨绘', 'Tinta sobre pergamino', 'Tinta em pergaminho'],
+      minimal: ['Minimal', 'Minimal', '简约', 'Minimalista', 'Minimalista'],
+      render: ['Render · peint', 'Render · painted', 'Render · 绘制', 'Render · pintado', 'Render · pintado'],
+    };
+    for (const option of Array.from(select('roadPreset').options)) if (presets[option.value]) option.textContent = urbanText(presets[option.value]);
+    const fields: Record<string, Words> = {
+      gradeWeight: ['Aversion aux pentes', 'Slope aversion', '坡度回避', 'Evitar pendientes', 'Evitar declives'],
+      maxGrade: ['Pente maximale des routes principales (%)', 'Max grade of main roads (%)', '主要道路最大坡度（%）', 'Pendiente máxima de caminos principales (%)', 'Inclinação máxima das estradas principais (%)'],
+      crossingCost: ['Coût de franchissement des rivières', 'River crossing cost', '河流跨越成本', 'Coste de cruce de ríos', 'Custo de travessia de rios'],
+      wobble: ['Sinusité × culture', 'Winding × culture', '弯曲度 × 文化', 'Sinuosidad × cultura', 'Sinuosidade × cultura'],
+      sharing: ['Partage des troncs', 'Trunk sharing', '主干共享', 'Tramos compartidos', 'Compartilhamento de troncos'],
+    };
+    for (const [key, words] of Object.entries(fields)) text(`[data-road="${key}"]`, words);
+    text('#roadSurface', ['Surfaces', 'Surfaces', '路面', 'Superficies', 'Superfícies']);
+    text('#roadCulture', ['Culture routière', 'Road culture', '道路文化', 'Cultura viaria', 'Cultura viária']);
+    text('#roadBlend', [...GROUND_BLEND_TITLE]);
+    for (const option of Array.from(select('roadBlend').options)) option.textContent = urbanText(GROUND_BLEND_LABEL[option.value as GroundBlend]);
+    text('#roadPreset', ['Style', 'Style', '样式', 'Estilo', 'Estilo']);
+    text('[data-road-style="width"]', ['Largeur ×', 'Width ×', '宽度 ×', 'Ancho ×', 'Largura ×']);
+    text('[data-road-style="opacity"]', ['Opacité', 'Opacity', '不透明度', 'Opacidad', 'Opacidade']);
+    inputLabel('#roadEnabled', ['Générer les routes', 'Generate roads', '生成道路', 'Generar carreteras', 'Gerar estradas']);
+    inputLabel('#roadShow', ['Afficher les routes', 'Show roads', '显示道路', 'Mostrar carreteras', 'Mostrar estradas']);
+    inputLabel('[data-road-style="curves"]', ['Courbes lissées', 'Smooth curves', '平滑曲线', 'Curvas suaves', 'Curvas suaves']);
+    inputLabel('[data-road-style="casing"]', ['Contour', 'Casing', '描边', 'Contorno', 'Contorno']);
+    inputLabel('[data-road-style="crossings"]', ['Ponts et gués', 'Bridges & fords', '桥梁与渡口', 'Puentes y vados', 'Pontes e vaus']);
+    const recalculate = q<HTMLButtonElement>('#roadRecalculate');
+    recalculate.textContent = urbanText(['Recalculer les routes', 'Recalculate roads', '重新计算道路', 'Recalcular carreteras', 'Recalcular estradas']);
+    const routing = panel.querySelector('details.advanced:not(#roadRendering) > summary');
+    if (routing) routing.textContent = urbanText(['Tracé', 'Routing', '路线规划', 'Trazado', 'Traçado']);
+    q('#roadRendering > summary').textContent = urbanText(['Rendu', 'Rendering', '渲染', 'Renderizado', 'Renderização']);
+    const gear = panel.querySelector<HTMLButtonElement>('.map-gear');
+    if (gear) {
+      const label = urbanText(['Réglages des routes', 'Road settings', '道路设置', 'Ajustes de carreteras', 'Configurações das estradas']);
+      gear.title = label;
+      gear.setAttribute('aria-label', label);
+    }
+    select('roadLevel').setAttribute('aria-label', urbanText(['Réseau', 'Network', '路网', 'Red', 'Rede']));
+    q('[data-road="density"]').setAttribute('aria-label', urbanText(['Densité du réseau', 'Network density', '路网密度', 'Densidad de la red', 'Densidade da rede']));
+    const titles: Record<string, Words> = {
+      '#roadLevel': ['Définit les classes de routes et leurs surfaces', 'Sets the road classes and their surfaces', '设置道路等级及其路面', 'Define las clases de carretera y sus superficies', 'Define as classes de estradas e suas superfícies'],
+      '[data-road="density"]': [
+        '0 : arbre couvrant seul · 1 : nombreuses boucles, pistes et sentiers',
+        '0: spanning tree only · 1: many loops, tracks and trails',
+        '0：仅生成树 · 1：大量环路、小路和步道',
+        '0: solo árbol de expansión · 1: muchos bucles, pistas y senderos',
+        '0: apenas árvore geradora · 1: muitos circuitos, caminhos e trilhas',
+      ],
+      '#roadSurface': ['Imposer une surface à tout le réseau', 'Force one surface on the whole network', '为整个路网指定一种路面', 'Imponer una superficie a toda la red', 'Definir uma superfície para toda a rede'],
+      '#roadCulture': [
+        'Culture routière : pentes, rectitude, ponts et chaussées',
+        'Road-building culture: grades, straightness, bridges, causeways',
+        '道路文化：坡度、直线度、桥梁和堤道',
+        'Cultura viaria: pendientes, rectitud, puentes y calzadas',
+        'Cultura viária: inclinações, retidão, pontes e calçadas',
+      ],
+      '[data-road="gradeWeight"]': ['0 ignore entièrement le relief', '0 ignores the relief entirely', '0 完全忽略地形', '0 ignora por completo el relieve', '0 ignora completamente o relevo'],
+      '[data-road="maxGrade"]': [
+        '0 conserve la valeur culturelle ; routes locales ×1,2, pistes ×1,5, sentiers plus raides',
+        '0 keeps the culture value; local roads ×1.2, tracks ×1.5, trails steeper',
+        '0 保留文化值；地方道路 ×1.2，小路 ×1.5，步道更陡',
+        '0 conserva el valor cultural; caminos locales ×1,2, pistas ×1,5, senderos más pendientes',
+        '0 mantém o valor cultural; estradas locais ×1,2, caminhos ×1,5, trilhas mais íngremes',
+      ],
+      '[data-road="sharing"]': ['Force du regroupement sur les routes existantes', 'How strongly routes merge onto existing roads', '路线合并到现有道路的强度', 'Intensidad de unión a carreteras existentes', 'Intensidade da união a estradas existentes'],
+      '#roadPreset': ['Couleurs, contours et tirets des classes de routes', 'Colours, casings and dashes of the road classes', '道路等级的颜色、描边和虚线', 'Colores, contornos y trazos de las clases de carretera', 'Cores, contornos e tracejados das classes de estradas'],
+      '[data-road-style="width"]': ['Multiplie la largeur des traits', 'Multiplies the line widths', '调整线条宽度', 'Multiplica el ancho de línea', 'Multiplica a largura das linhas'],
+      '[data-road-style="curves"]': ['Dessine des courbes lisses plutôt que des segments droits', 'Draw smooth curves rather than straight segments', '绘制平滑曲线而非直线段', 'Dibuja curvas suaves en lugar de tramos rectos', 'Desenha curvas suaves em vez de trechos retos'],
+      '[data-road-style="casing"]': ['Contour sombre sous les routes pavées et en gravier', 'Dark edge under paved and gravel roads', '铺装和碎石道路下方的深色边缘', 'Borde oscuro bajo carreteras pavimentadas y de grava', 'Borda escura sob estradas pavimentadas e de cascalho'],
+    };
+    for (const [selector, words] of Object.entries(titles)) {
+      const label = panel.querySelector(selector)?.closest<HTMLElement>('label');
+      if (label) label.title = urbanText(words);
+    }
     if (panel.getAttribute('aria-busy') !== 'true') updateRoadStatus();
-    legend(); draw();
+    legend();
+    draw();
   }
   function updateRoadStatus(): void {
-    const km=output ? output.segments.reduce((sum,s)=>sum+s.length,0)/1000 : 0;
-    q('#roadStatus').textContent=!enabled ? urbanText(['Génération des routes désactivée.','Road generation disabled.','道路生成已禁用。','Generación de carreteras desactivada.','Geração de estradas desativada.']) : output
-      ? `Rust · ${output.segments.length} ${urbanText(['segments','segments','段','segmentos','segmentos'])} · ${output.junctions.length} ${urbanText(['jonctions','junctions','个交叉点','cruces','entroncamentos'])} · ${km.toFixed(1)} km · ${output.routes} ${urbanText(['itinéraires','routes','条路线','rutas','rotas'])} · ${output.ms.toFixed(0)} ms`
-      : urbanText(['En attente des implantations…','Waiting for settlements…','等待聚落…','Esperando asentamientos…','Aguardando assentamentos…']);
+    const km = output ? output.segments.reduce((sum, s) => sum + s.length, 0) / 1000 : 0;
+    q('#roadStatus').textContent = !enabled
+      ? urbanText(['Génération des routes désactivée.', 'Road generation disabled.', '道路生成已禁用。', 'Generación de carreteras desactivada.', 'Geração de estradas desativada.'])
+      : output
+        ? `Rust · ${output.segments.length} ${urbanText(['segments', 'segments', '段', 'segmentos', 'segmentos'])} · ${output.junctions.length} ${urbanText(['jonctions', 'junctions', '个交叉点', 'cruces', 'entroncamentos'])} · ${km.toFixed(1)} km · ${output.routes} ${urbanText(['itinéraires', 'routes', '条路线', 'rutas', 'rotas'])} · ${output.ms.toFixed(0)} ms`
+        : urbanText(['En attente des implantations…', 'Waiting for settlements…', '等待聚落…', 'Esperando asentamientos…', 'Aguardando assentamentos…']);
   }
   window.addEventListener('magna-locale-change', localizeRoads);
-  window.addEventListener('storage', event => { if (event.key===LOCALE_KEY) localizeRoads(); });
-  controls(); localizeRoads();
+  window.addEventListener('storage', event => {
+    if (event.key === LOCALE_KEY) localizeRoads();
+  });
+  controls();
+  localizeRoads();
   return {
-    get config(): RoadConfig { return config; },
+    get config(): RoadConfig {
+      return config;
+    },
     /** Replace the routing options (a loaded decor's), without routing. */
-    setConfig(next: RoadConfig): void { config = { ...defaultRoadConfig(), ...next }; controls(); },
-    get enabled(): boolean { return enabled; },
-    pending(text = urbanText(['Tracé des routes avec Rust…','Routing in Rust…','正在使用 Rust 规划道路…','Trazando carreteras con Rust…','Traçando estradas com Rust…'])): void { q('#roadStatus').textContent = text; panel.setAttribute('aria-busy', 'true'); },
-    error(text: string): void { q('#roadStatus').textContent = `${urbanText(['Routes','Roads','道路','Carreteras','Estradas'])}: ${text}`; panel.removeAttribute('aria-busy'); },
+    setConfig(next: RoadConfig): void {
+      config = { ...defaultRoadConfig(), ...next };
+      controls();
+    },
+    get enabled(): boolean {
+      return enabled;
+    },
+    pending(text = urbanText(['Tracé des routes avec Rust…', 'Routing in Rust…', '正在使用 Rust 规划道路…', 'Trazando carreteras con Rust…', 'Traçando estradas com Rust…'])): void {
+      q('#roadStatus').textContent = text;
+      panel.setAttribute('aria-busy', 'true');
+    },
+    error(text: string): void {
+      q('#roadStatus').textContent = `${urbanText(['Routes', 'Roads', '道路', 'Carreteras', 'Estradas'])}: ${text}`;
+      panel.removeAttribute('aria-busy');
+    },
     set(next: RoadOutput | undefined): void {
-      output = next; panel.removeAttribute('aria-busy');
+      output = next;
+      panel.removeAttribute('aria-busy');
       const km = next ? next.segments.reduce((sum, s) => sum + s.length, 0) / 1000 : 0;
       q('#roadState').textContent = next ? `${km.toFixed(0)} km` : '';
       updateRoadStatus();
       q('#roadWarnings').textContent = next?.warnings.join('\n') ?? '';
       window.dispatchEvent(new CustomEvent('roads:generated', { detail: next }));
-      legend(); draw();
+      legend();
+      draw();
     },
-    get output(): RoadOutput | undefined { return output; },
+    get output(): RoadOutput | undefined {
+      return output;
+    },
     draw,
-    share(): string { return JSON.stringify({ config, style, enabled, show }); },
+    share(): string {
+      return JSON.stringify({ config, style, enabled, show });
+    },
   };
 }

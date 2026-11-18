@@ -6,7 +6,13 @@
 import type { Rect4 } from './view';
 
 /** A raster of world region `x, y, width, height` (metres) at `density` pixels per metre. */
-export interface ViewRasterRegion { x: number; y: number; width: number; height: number; density: number }
+export interface ViewRasterRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  density: number;
+}
 
 /** Coarsest accepted raster, relative to the screen density (pixels per metre). */
 export const VIEW_RASTER_COARSE = 1.25;
@@ -28,7 +34,10 @@ export function viewRasterFits(raster: ViewRasterRegion | undefined, rect: Rect4
   const wanted = viewRasterDensity(rect, density, mapSize);
   if (raster.density * VIEW_RASTER_COARSE < wanted || raster.density > wanted * fine) return false;
   // Only the part of the view on the map has to be covered.
-  const minX = Math.max(0, rect.minX), minY = Math.max(0, rect.minY), maxX = Math.min(mapSize, rect.maxX), maxY = Math.min(mapSize, rect.maxY);
+  const minX = Math.max(0, rect.minX),
+    minY = Math.max(0, rect.minY),
+    maxX = Math.min(mapSize, rect.maxX),
+    maxY = Math.min(mapSize, rect.maxY);
   if (maxX <= minX || maxY <= minY) return true;
   const eps = 1e-6 * mapSize;
   return raster.x <= minX + eps && raster.y <= minY + eps && raster.x + raster.width >= maxX - eps && raster.y + raster.height >= maxY - eps;
@@ -39,11 +48,14 @@ export function viewRasterFits(raster: ViewRasterRegion | undefined, rect: Rect4
 export function viewRasterRegion(rect: Rect4, density: number, mapSize: number, maxPx = VIEW_RASTER_MAX_PX): ViewRasterRegion {
   const clampX = (v: number): number => Math.max(0, Math.min(mapSize, v));
   const visible = { minX: clampX(rect.minX), minY: clampX(rect.minY), maxX: clampX(rect.maxX), maxY: clampX(rect.maxY) };
-  const vw = Math.max(visible.maxX - visible.minX, 1 / density), vh = Math.max(visible.maxY - visible.minY, 1 / density);
+  const vw = Math.max(visible.maxX - visible.minX, 1 / density),
+    vh = Math.max(visible.maxY - visible.minY, 1 / density);
   // Margin as large as fits: at most half a view per side.
   const room = Math.max(0, Math.min(0.5, (maxPx / density / Math.max(vw, vh) - 1) / 2));
-  const minX = clampX(visible.minX - vw * room), minY = clampX(visible.minY - vh * room);
-  const maxX = clampX(visible.minX + vw * (1 + room)), maxY = clampX(visible.minY + vh * (1 + room));
+  const minX = clampX(visible.minX - vw * room),
+    minY = clampX(visible.minY - vh * room);
+  const maxX = clampX(visible.minX + vw * (1 + room)),
+    maxY = clampX(visible.minY + vh * (1 + room));
   // A view wider than the pixel budget keeps the budget (coarser but bounded).
   const side = Math.max(maxX - minX, maxY - minY);
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY, density: Math.min(viewRasterDensity(rect, density, mapSize, maxPx), maxPx / Math.max(side, 1e-9)) };

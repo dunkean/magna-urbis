@@ -4,9 +4,20 @@ import { clearCanvas2d } from '../src/render/cityCanvas';
 // Invariant: an overlay frame empties the whole bitmap without one full-canvas clearRect
 // (Chrome's overwrite fast path kept the first full-plan frame on screen, see clearCanvas2d).
 it('clears every pixel of the overlay in strips, never with one full-canvas clearRect', () => {
-  for (const [w, h] of [[980, 745], [1, 1], [1280, 2], [3, 7]]) {
+  for (const [w, h] of [
+    [980, 745],
+    [1, 1],
+    [1280, 2],
+    [3, 7],
+  ]) {
     const rects: number[][] = [];
-    const ctx = { canvas: { width: w, height: h }, setTransform: () => {}, clearRect: (...r: number[]) => { rects.push(r); } } as unknown as CanvasRenderingContext2D;
+    const ctx = {
+      canvas: { width: w, height: h },
+      setTransform: () => {},
+      clearRect: (...r: number[]) => {
+        rects.push(r);
+      },
+    } as unknown as CanvasRenderingContext2D;
     clearCanvas2d(ctx, w, h);
     const covered = new Uint8Array(w * h);
     for (const [x, y, rw, rh] of rects) {

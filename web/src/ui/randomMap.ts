@@ -16,16 +16,32 @@ export const BIOME_CULTURES: Record<BiomeName, readonly string[]> = {
 
 /** Surface biomes come up far more often than the Underdark ones. */
 const BIOME_WEIGHTS: [BiomeName, number][] = [
-  ['temperate', 5], ['forest', 4], ['desert', 4], ['steppe', 3], ['tropical', 3], ['tundra', 3], ['underdark', 1], ['underdark-caverns', 1],
+  ['temperate', 5],
+  ['forest', 4],
+  ['desert', 4],
+  ['steppe', 3],
+  ['tropical', 3],
+  ['tundra', 3],
+  ['underdark', 1],
+  ['underdark-caverns', 1],
 ];
-const SIZE_WEIGHTS: [SizeName, number][] = [['hamlet', 1], ['village', 3], ['town', 4], ['city', 3], ['metropolis', 1]];
+const SIZE_WEIGHTS: [SizeName, number][] = [
+  ['hamlet', 1],
+  ['village', 3],
+  ['town', 4],
+  ['city', 3],
+  ['metropolis', 1],
+];
 const RELIEFS: Options['relief'][] = ['flat', 'hills', 'valley', 'mountains'];
 const COASTS: Options['coast'][] = ['none', 'none', 'random', 'N', 'E', 'S', 'W'];
 const RIVERS: Options['river'][] = ['none', 'stream', 'river', 'river', 'major'];
 
 function weighted<T>(items: readonly [T, number][], rand: () => number): T {
   let t = rand() * items.reduce((sum, [, w]) => sum + w, 0);
-  for (const [item, w] of items) { t -= w; if (t < 0) return item; }
+  for (const [item, w] of items) {
+    t -= w;
+    if (t < 0) return item;
+  }
   return items[items.length - 1][0];
 }
 const pick = <T>(items: readonly T[], rand: () => number): T => items[Math.min(items.length - 1, Math.floor(rand() * items.length))];
@@ -38,17 +54,23 @@ export type SurprisePatch = Pick<Options, 'biome' | 'relief' | 'coast' | 'river'
  */
 export function surprisePatch(rand: () => number, knownCultures: ReadonlySet<string>): SurprisePatch {
   const biome = weighted(BIOME_WEIGHTS, rand);
-  const cultures = BIOME_CULTURES[biome].filter((id) => knownCultures.has(id));
+  const cultures = BIOME_CULTURES[biome].filter(id => knownCultures.has(id));
   const [low, high] = POP_RANGE[weighted(SIZE_WEIGHTS, rand)];
   const population = Math.round(low * Math.pow(high / low, rand()));
   const underground = biome === 'underdark' || biome === 'underdark-caverns';
   return {
-    biome, population, size: sizeForPop(population),
+    biome,
+    population,
+    size: sizeForPop(population),
     relief: pick(RELIEFS, rand),
     coast: underground ? 'none' : pick(COASTS, rand),
     river: pick(RIVERS, rand),
     culture: (cultures.length ? pick(cultures, rand) : 'european-organic') as Options['culture'],
-    cultureMix: null, plan: null,
-    workflow: 'automatic', settlementMode: 'automatic', settlements: 'auto', center: undefined,
+    cultureMix: null,
+    plan: null,
+    workflow: 'automatic',
+    settlementMode: 'automatic',
+    settlements: 'auto',
+    center: undefined,
   };
 }

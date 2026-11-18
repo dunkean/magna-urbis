@@ -27,45 +27,64 @@ registerMessages({
 });
 
 export function mountV2Illustration(options: V2IllustrationOptions) {
-  const mounted = mountIllustration({ host: options.host, navigation: options.navigation,
+  const mounted = mountIllustration({
+    host: options.host,
+    navigation: options.navigation,
     prepareBattlemap: ({ pixels, cellMetres }) => {
-      const view = options.get3d(), camera = view?.getCamera(), { element } = options.getViewport();
+      const view = options.get3d(),
+        camera = view?.getCamera(),
+        { element } = options.getViewport();
       if (!view?.active || !camera) throw new Error('Ouvrez la vue 3D avant de la cadrer.');
       view.setCamera(battlemapCamera(camera, { width: element.clientWidth, height: element.clientHeight }, pixels, cellMetres));
-    }, capture: async () => {
-    const world = options.getWorld();
-    if (!world) throw new Error(translate('Créez d’abord une carte avant de capturer la vue.'));
-    const settings = options.getSettings(), { element, view } = options.getViewport(), city3d = options.get3d();
-    const captured = city3d?.active ? await city3d.captureIllustration() : undefined;
-    const scenes = nativeCitiesOf(world).map(city => city.scene).filter(scene => scene !== undefined);
-    const context = illustrationContext({
-      sourceStyle: settings.appearance?.composition?.ground.variant ?? settings.options.style,
-      seed: world.seed, view: { ...view }, camera: captured?.camera,
-      width: element.clientWidth, height: element.clientHeight,
-      terrain: { relief: settings.terrain?.relief ?? settings.options.relief, climate: settings.terrain?.climate,
-        environment: settings.terrain?.environment, biome: settings.options.biome,
-        temperature: settings.terrain?.climateValues?.temperature, precipitation: settings.terrain?.climateValues?.precipitation,
-        ambience: settings.appearance?.composition?.effects.ambience },
-      settlements: world.settlements,
-      terrainLayer: world.terrain,
-      buildings: { buildings: scenes.flatMap(scene => scene.buildings), materials: scenes.flatMap(scene => scene.materials ?? []) },
-      architecture: settings.urban?.houses,
-      generation: { culture: settings.options.culture, population: settings.options.population, size: settings.options.size,
-        workflow: settings.options.workflow, coast: settings.options.coast, river: settings.options.river, biome: settings.options.biome },
-    });
-    if (captured) return { image: captured.image, guides: { depth: captured.depth }, context };
-    // Freeze the GPU ground before captureViewport composites the visible layers.
-    options.beforeCapture2d?.();
-    return { image: await captureViewport(element), guides: {}, context };
-  } });
+    },
+    capture: async () => {
+      const world = options.getWorld();
+      if (!world) throw new Error(translate('Créez d’abord une carte avant de capturer la vue.'));
+      const settings = options.getSettings(),
+        { element, view } = options.getViewport(),
+        city3d = options.get3d();
+      const captured = city3d?.active ? await city3d.captureIllustration() : undefined;
+      const scenes = nativeCitiesOf(world)
+        .map(city => city.scene)
+        .filter(scene => scene !== undefined);
+      const context = illustrationContext({
+        sourceStyle: settings.appearance?.composition?.ground.variant ?? settings.options.style,
+        seed: world.seed,
+        view: { ...view },
+        camera: captured?.camera,
+        width: element.clientWidth,
+        height: element.clientHeight,
+        terrain: {
+          relief: settings.terrain?.relief ?? settings.options.relief,
+          climate: settings.terrain?.climate,
+          environment: settings.terrain?.environment,
+          biome: settings.options.biome,
+          temperature: settings.terrain?.climateValues?.temperature,
+          precipitation: settings.terrain?.climateValues?.precipitation,
+          ambience: settings.appearance?.composition?.effects.ambience,
+        },
+        settlements: world.settlements,
+        terrainLayer: world.terrain,
+        buildings: { buildings: scenes.flatMap(scene => scene.buildings), materials: scenes.flatMap(scene => scene.materials ?? []) },
+        architecture: settings.urban?.houses,
+        generation: { culture: settings.options.culture, population: settings.options.population, size: settings.options.size, workflow: settings.options.workflow, coast: settings.options.coast, river: settings.options.river, biome: settings.options.biome },
+      });
+      if (captured) return { image: captured.image, guides: { depth: captured.depth }, context };
+      // Freeze the GPU ground before captureViewport composites the visible layers.
+      options.beforeCapture2d?.();
+      return { image: await captureViewport(element), guides: {}, context };
+    },
+  });
   setText(mounted.button, '✦ Illustrer');
   mounted.dialog.classList.add('workbench-illustration');
   mounted.dialog.querySelector<HTMLDetailsElement>('[data-local-tuning]')!.open = false;
-  const header = mounted.dialog.querySelector('header')!, close = mounted.dialog.querySelector('[data-illustration-close]')!;
+  const header = mounted.dialog.querySelector('header')!,
+    close = mounted.dialog.querySelector('[data-illustration-close]')!;
   for (const action of ['[data-generate]', '[data-cancel]']) header.insertBefore(mounted.dialog.querySelector(action)!, close);
   mounted.button.setAttribute('data-i18n-title', 'Créer une illustration de cette vue');
   mounted.button.title = translate('Créer une illustration de cette vue');
   // The top-bar Illustrate button is withdrawn from the V2 for now (2026-11-17); the workbench stays mounted.
-  mounted.button.hidden = true; mounted.button.style.display = 'none';
+  mounted.button.hidden = true;
+  mounted.button.style.display = 'none';
   return mounted;
 }

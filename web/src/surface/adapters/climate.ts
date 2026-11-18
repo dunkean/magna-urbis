@@ -13,21 +13,29 @@ export const MAGNA_CLIMATE_PRESETS: Record<NeuralClimate, ClimateValues> = {
   tropical: { temperature: 26, temperatureStd: 150, precipitation: 2300, precipitationCv: 50 },
 };
 export function magnaClimateToSurface(values: ClimateValues, version: string): ClimateInput {
-  return { version, meanAnnualTempC: values.temperature, annualPrecipMm: values.precipitation,
+  return {
+    version,
+    meanAnnualTempC: values.temperature,
+    annualPrecipMm: values.precipitation,
     // Approximation: a sinusoidal seasonal signal with the supplied standard
     // deviation has peak amplitude sqrt(2)*sigma. No measured monthly curve is claimed.
-    seasonalAmplitudeC: Math.SQRT2 * values.temperatureStd / 100,
-    referenceElevationM: 0, lapseRateCPerKm: 6.5, elevationCorrected: false };
+    seasonalAmplitudeC: (Math.SQRT2 * values.temperatureStd) / 100,
+    referenceElevationM: 0,
+    lapseRateCPerKm: 6.5,
+    elevationCorrected: false,
+  };
 }
 export function climateFromMagnaQuery(query: string): ClimateInput {
   const params = new URLSearchParams(query.startsWith('?') ? query.slice(1) : query);
   const presetName = params.get('climate') ?? 'temperate';
   const values = { ...(MAGNA_CLIMATE_PRESETS[presetName as NeuralClimate] ?? MAGNA_CLIMATE_PRESETS.temperate) };
-  if (presetName === 'custom') for (const key of Object.keys(values) as (keyof ClimateValues)[]) {
-    if (!params.has(key)) continue;
-    const raw = params.get(key), value = Number(raw);
-    if (!raw || !raw.trim() || !Number.isFinite(value)) continue;
-    values[key] = value;
-  }
+  if (presetName === 'custom')
+    for (const key of Object.keys(values) as (keyof ClimateValues)[]) {
+      if (!params.has(key)) continue;
+      const raw = params.get(key),
+        value = Number(raw);
+      if (!raw || !raw.trim() || !Number.isFinite(value)) continue;
+      values[key] = value;
+    }
   return magnaClimateToSurface(values, `magna-query-climate:${presetName}:${JSON.stringify(values)}`);
 }

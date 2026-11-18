@@ -4,17 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { translateRuntimeMessage as message } from '../../src/v2/runtimeMessages';
 
 const root = resolve(__dirname, '../..');
-const sources = {
-  'src/v2/engine.ts': resolve(root, 'src/v2/engine.ts'),
-  'src/v2/engine.worker.ts': resolve(root, 'src/v2/engine.worker.ts'),
-  'rust/bridge/terrain.ts': resolve(root, '../rust/bridge/terrain.ts'),
-};
+const sources = { 'src/v2/engine.ts': resolve(root, 'src/v2/engine.ts'), 'src/v2/engine.worker.ts': resolve(root, 'src/v2/engine.worker.ts'), 'rust/bridge/terrain.ts': resolve(root, '../rust/bridge/terrain.ts') };
 
 describe('runtime messages are authored in English', () => {
   for (const [name, file] of Object.entries(sources)) {
     it(`${name} has no mojibake`, () => {
       const text = readFileSync(file, 'utf8');
-      const bad = text.split(/\r?\n/).map((line, index) => [index + 1, line] as const).filter(([, line]) => /Ã|â€/.test(line));
+      const bad = text
+        .split(/\r?\n/)
+        .map((line, index) => [index + 1, line] as const)
+        .filter(([, line]) => /Ã|â€/.test(line));
       expect(bad.map(([index, line]) => `${index}: ${line.trim().slice(0, 100)}`)).toEqual([]);
     });
   }
@@ -29,8 +28,7 @@ describe('runtime messages are authored in English', () => {
     expect(message('No map to process.', 'es')).toBe('No hay mapa para procesar.');
     expect(message('Native Rust · procedural pipeline…', 'es')).toBe('Rust nativo · pipeline procedural…');
     expect(message('Local Rust service · computing the 2048 × 2048 physical field', 'es')).toBe('Servicio Rust local · calculando el campo físico 2048 × 2048');
-    expect(message('Source 1024²: the fixed GPU cost exceeds the estimated CPU compute. Rust CPU generation at 3.00 m…', 'es'))
-      .toBe('Fuente 1024²: el coste fijo de la GPU supera el cálculo estimado en CPU. Generación Rust en CPU a 3.00 m…');
+    expect(message('Source 1024²: the fixed GPU cost exceeds the estimated CPU compute. Rust CPU generation at 3.00 m…', 'es')).toBe('Fuente 1024²: el coste fijo de la GPU supera el cálculo estimado en CPU. Generación Rust en CPU a 3.00 m…');
     expect(message('Failed: boom', 'es')).toBe('Error: boom');
   });
 

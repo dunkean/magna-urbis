@@ -5,7 +5,7 @@ import { getCulture } from '../gen/urban/culture';
 import type { Point, SettlementConfig, SettlementSpec } from '../../../rust/bridge/settlements';
 
 /** settlements::extent_radius: the radius of a town of `population` people, in metres. */
-export const extentRadius = (population: number): number => population < 1000 ? 20 + 9 * Math.sqrt(population) : 20 + 9 * Math.sqrt(1000) * (population / 1000) ** 0.4;
+export const extentRadius = (population: number): number => (population < 1000 ? 20 + 9 * Math.sqrt(population) : 20 + 9 * Math.sqrt(1000) * (population / 1000) ** 0.4);
 
 /** The culture's site preferences under the spec's own (City Bench `prefs`). */
 export function withCulturePrefs(spec: SettlementSpec): SettlementSpec {
@@ -24,7 +24,7 @@ export function cityPlacementRequest(config: SettlementConfig): SettlementConfig
  */
 export function framedEdgeMargin(population: number, width: number, current = 0.03): number {
   const radius = extentRadius(population);
-  return Math.min(0.3, Math.max(current, Math.ceil((0.45 * radius + 20) / width * 100) / 100));
+  return Math.min(0.3, Math.max(current, Math.ceil(((0.45 * radius + 20) / width) * 100) / 100));
 }
 
 /** The 2D view that frames a city extent in a viewport (City Bench "City" button). */

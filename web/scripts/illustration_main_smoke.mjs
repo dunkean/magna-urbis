@@ -10,21 +10,31 @@ try {
   await page.locator('.illustration-trigger').waitFor();
   await page.waitForFunction(() => !document.getElementById('busy')?.classList.contains('on'), null, { timeout: 120000 });
   await page.evaluate(() => {
-    const canvas = document.getElementById('minimap'), context = canvas.getContext('2d');
-    context.fillStyle = '#ff00ff'; context.fillRect(0, 0, canvas.width, canvas.height);
+    const canvas = document.getElementById('minimap'),
+      context = canvas.getContext('2d');
+    context.fillStyle = '#ff00ff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
   });
   const preview = page.waitForRequest(request => request.url().endsWith('/v1/illustrations/prompt') && request.method() === 'POST');
   await page.locator('.illustration-trigger').click();
   await page.waitForFunction(() => document.querySelector('.illustration-status')?.textContent === 'Capture prête.', null, { timeout: 30000 });
   const context = (await preview).postDataJSON().context;
-  assert.equal(context.application, 'magna-urbis'); assert.equal(context.generation.population, 100);
+  assert.equal(context.application, 'magna-urbis');
+  assert.equal(context.generation.population, 100);
   const magenta = await page.locator('[data-source]').evaluate(async image => {
-    await image.decode(); const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
-    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    let count = 0; for (let i = 0; i < pixels.length; i += 4) if (pixels[i] === 255 && pixels[i + 1] === 0 && pixels[i + 2] === 255) count++;
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += 4) if (pixels[i] === 255 && pixels[i + 1] === 0 && pixels[i + 2] === 255) count++;
     return count;
   });
   assert.equal(magenta, 0, 'The minimap must not be included in the illustration source.');
   console.log('TypeScript application illustration capture passed: factual context, minimap and HUD excluded.');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

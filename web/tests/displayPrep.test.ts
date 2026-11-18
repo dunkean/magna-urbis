@@ -15,29 +15,70 @@ import { cityContourPaths, cityContoursPending, cityFineContours, cityFineContou
 import './vectorWaterWasm';
 import { loadRenderGeometry } from '../../rust/bridge/renderGeometry';
 
-const surface = (n = 8, width = 128) => ({ x: 0, y: 0, width, n, data: Float32Array.from({ length: n * n }, (_, i) => i % n - n / 2) });
+const surface = (n = 8, width = 128) => ({ x: 0, y: 0, width, n, data: Float32Array.from({ length: n * n }, (_, i) => (i % n) - n / 2) });
 const sourceOccupation = (): ForestOccupation => ({ x: 0, y: 0, width: 16, n: 8, rgba: new Uint8Array(8 * 8 * 4), key: 'base' });
-const scene = (): Building3dScene => ({ buildings: [{ projection: 'native-building-visual-1', occupation_surfaces: [[{ outer: [{ x: 3, y: 3 }, { x: 9, y: 3 }, { x: 9, y: 9 }, { x: 3, y: 9 }], holes: [] }]] }] } as unknown as Building3dScene);
+const scene = (): Building3dScene =>
+  ({
+    buildings: [
+      {
+        projection: 'native-building-visual-1',
+        occupation_surfaces: [
+          [
+            {
+              outer: [
+                { x: 3, y: 3 },
+                { x: 9, y: 3 },
+                { x: 9, y: 9 },
+                { x: 3, y: 9 },
+              ],
+              holes: [],
+            },
+          ],
+        ],
+      },
+    ],
+  }) as unknown as Building3dScene;
 afterEach(() => vi.unstubAllGlobals());
 
 describe('retained display preparation revisions', () => {
   it('shares one shore ring across renderer wrappers and invalidates the frame and samples', () => {
-    const layer = surface(), grid = shoreRingFor(layer);
+    const layer = surface(),
+      grid = shoreRingFor(layer);
     expect(shoreRingFor({ ...layer })).toBe(grid);
     expect(shoreRingFor({ ...layer, x: 7 })).not.toBe(grid);
     expect(shoreRingFor({ ...layer, data: layer.data.slice() })).not.toBe(grid);
     expect(grid.data).toEqual(shoreRingGrid(layer, grid.n).data);
-    const other = surface(); retainShoreRing(other, grid);
+    const other = surface();
+    retainShoreRing(other, grid);
     expect(shoreRingFor(other)).toBe(grid);
   });
   it('hydrates cloned engine products only for their source revision', async () => {
     await loadRenderGeometry();
-    const layer = surface(), lake = Float32Array.from(layer.data, v => -v);
-    const distances = lakeDistances(lake, layer.n, layer.width), shore = shoreRingGrid(layer, 128);
+    const layer = surface(),
+      lake = Float32Array.from(layer.data, v => -v);
+    const distances = lakeDistances(lake, layer.n, layer.width),
+      shore = shoreRingGrid(layer, 128);
     const water = new Uint8Array(layer.n * layer.n);
-    const original = { mapSize: layer.width, terrain: { water, height: { w: layer.n, data: layer.data },
-      v2NativeTerrain: { height: layer.data, resolution: layer.n, x: 0, y: 0, width: layer.width, water: { lakeField: { values: lake }, hydro: { n: layer.n } } },
-      v2DisplayPreparation: { version: DISPLAY_PRODUCT_VERSION, input: { layer, planning: { water, n: layer.n, width: layer.width }, lakes: [{ field: lake, n: layer.n, width: layer.width, referenceWidth: layer.width }] }, result: { shore, lakes: [distances], planning: planningWaterDistances(water, layer.n, layer.width), heightMips: floatPyramid(layer.data, layer.n).slice(1), lakeMips: [{ field: floatPyramid(lake, layer.n).slice(1), distance: floatPyramid(distances, layer.n).slice(1) }], timings: [] } } } };
+    const original = {
+      mapSize: layer.width,
+      terrain: {
+        water,
+        height: { w: layer.n, data: layer.data },
+        v2NativeTerrain: { height: layer.data, resolution: layer.n, x: 0, y: 0, width: layer.width, water: { lakeField: { values: lake }, hydro: { n: layer.n } } },
+        v2DisplayPreparation: {
+          version: DISPLAY_PRODUCT_VERSION,
+          input: { layer, planning: { water, n: layer.n, width: layer.width }, lakes: [{ field: lake, n: layer.n, width: layer.width, referenceWidth: layer.width }] },
+          result: {
+            shore,
+            lakes: [distances],
+            planning: planningWaterDistances(water, layer.n, layer.width),
+            heightMips: floatPyramid(layer.data, layer.n).slice(1),
+            lakeMips: [{ field: floatPyramid(lake, layer.n).slice(1), distance: floatPyramid(distances, layer.n).slice(1) }],
+            timings: [],
+          },
+        },
+      },
+    };
     const world = structuredClone(original) as unknown as World;
     retainTerrainDisplayPreparation(world);
     const t = world.terrain as unknown as typeof original.terrain;
@@ -52,7 +93,8 @@ describe('retained display preparation revisions', () => {
   });
   it('retains separate sea resolutions/origins instead of replacing the last surface', async () => {
     await loadRenderGeometry();
-    const layer = surface(), terrain = { height: layer.data, resolution: layer.n, width: layer.width, x: 0, y: 0 };
+    const layer = surface(),
+      terrain = { height: layer.data, resolution: layer.n, width: layer.width, x: 0, y: 0 };
     const first = seaDistanceSurface(terrain);
     const crop = seaDistanceSurface({ ...terrain, x: 16 });
     expect(crop).not.toBe(first);
@@ -60,7 +102,9 @@ describe('retained display preparation revisions', () => {
     expect(seaDistanceSurface({ ...terrain, resolution: 4 })).not.toBe(first);
   });
   it('reuses async footprint merges from sync consumers and presentation wrappers', async () => {
-    const base = sourceOccupation(), buildings = scene(), merged = await withBuildingOccupationAsync(base, buildings);
+    const base = sourceOccupation(),
+      buildings = scene(),
+      merged = await withBuildingOccupationAsync(base, buildings);
     expect(withBuildingOccupation({ ...base }, { buildings: [...buildings.buildings] })).toBe(merged);
     expect(await withBuildingOccupationAsync(base, { ...buildings })).toBe(merged);
     expect(occupationMergeSlot(base, buildings).value).toBe(merged);
@@ -69,7 +113,8 @@ describe('retained display preparation revisions', () => {
     expect(withBuildingOccupation(base, projected)).toBe(merged);
     const detail = { x: 0, y: 0, width: 16, n: 8, rgba: new Uint8Array(256), key: 'detail' };
     const withDetail = withBuildingOccupation({ ...base, detail }, buildings)!;
-    expect(withDetail.rgba).toBe(merged!.rgba); expect(withDetail.detail).toBe(detail);
+    expect(withDetail.rgba).toBe(merged!.rgba);
+    expect(withDetail.detail).toBe(detail);
     expect(base.rgba.every(v => v === 0)).toBe(true);
   });
 });
@@ -81,22 +126,32 @@ describe('requested contour worker coverage', () => {
     let receiver: FakeWorker | undefined;
     class FakeWorker {
       onmessage?: (message: { data: ContourWorkerResponse }) => void;
-      constructor() { receiver = this; }
-      postMessage(request: ContourWorkerRequest): void { requests.push(request); }
+      constructor() {
+        receiver = this;
+      }
+      postMessage(request: ContourWorkerRequest): void {
+        requests.push(request);
+      }
       terminate(): void {}
     }
-    const n = 64, terrain = { height: Float32Array.from({ length: n * n }, (_, i) => i % n / 100), width: n * 10, resolution: n, caveMask: new Uint8Array() } as TerrainData;
+    const n = 64,
+      terrain = { height: Float32Array.from({ length: n * n }, (_, i) => (i % n) / 100), width: n * 10, resolution: n, caveMask: new Uint8Array() } as TerrainData;
     const exact = cityContourPaths(terrain, 'flat', 1);
     const workerTerrain = { ...terrain, height: terrain.height.slice() };
     const expectedBlocks = cityFineContourBlocks(workerTerrain, 'flat', 1, { minX: 0, minY: 0, maxX: 300, maxY: 300 });
-    vi.stubGlobal('document', {}); vi.stubGlobal('Worker', FakeWorker);
-    const ready = vi.fn(), cold = cityContourPaths(terrain, 'flat', .05, false, ready);
-    expect(cold.thin).toBe(''); expect(cityContoursPending(terrain)).toBe(1);
-    expect(requests).toHaveLength(1); expect(requests[0].topographic).toBe(false);
+    vi.stubGlobal('document', {});
+    vi.stubGlobal('Worker', FakeWorker);
+    const ready = vi.fn(),
+      cold = cityContourPaths(terrain, 'flat', 0.05, false, ready);
+    expect(cold.thin).toBe('');
+    expect(cityContoursPending(terrain)).toBe(1);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].topographic).toBe(false);
     const encoder = new TextEncoder();
     receiver!.onmessage!({ data: { id: requests[0].id, paths: { step: 8, thin: encoder.encode('M1.00,2.00L3.00,4.00'), index: encoder.encode('') } } });
-    expect(ready).toHaveBeenCalledOnce(); expect(cityContoursPending(terrain)).toBe(0);
-    expect(cityContourPaths(terrain, 'flat', .01, false, ready).thin).toBe('M1.00,2.00L3.00,4.00');
+    expect(ready).toHaveBeenCalledOnce();
+    expect(cityContoursPending(terrain)).toBe(0);
+    expect(cityContourPaths(terrain, 'flat', 0.01, false, ready).thin).toBe('M1.00,2.00L3.00,4.00');
     const view = { minX: 0, minY: 0, maxX: 300, maxY: 300 };
     // Waiting callers (onReady) get the worker; the live overlay without a callback stays synchronous.
     expect(cityFineContours(terrain, 'flat', 1, view, ready)).toBeUndefined();

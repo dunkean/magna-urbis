@@ -1,16 +1,25 @@
 /** Lazy browser runtime. Models remain external to the ordinary TS application. */
 import { loadNeuralManifest, obtainNeuralModel, NEURAL_MODEL_NAMES, type NeuralManifest } from './neuralModels';
 import { obtainNeuralRuntime } from './neuralRuntime';
-interface NeuralOutput { heights: Float32Array; meta: string; free(): void }
-interface NeuralEngine { generate_json(params: string, grid: string): Promise<NeuralOutput>; free(): void }
+interface NeuralOutput {
+  heights: Float32Array;
+  meta: string;
+  free(): void;
+}
+interface NeuralEngine {
+  generate_json(params: string, grid: string): Promise<NeuralOutput>;
+  free(): void;
+}
 interface NeuralModule {
   default(options: { module_or_path: URL | Uint8Array<ArrayBuffer> }): Promise<unknown>;
   NeuralRelief: { create(coarse: Uint8Array, base: Uint8Array, decoder: Uint8Array): Promise<NeuralEngine> };
   conditioning_json(params: string, grid: string): string;
   sketch_json(params: string): string;
 }
-let moduleUrl = '', moduleReady: Promise<NeuralModule> | undefined;
-let engineUrl = '', engineReady: Promise<NeuralEngine> | undefined;
+let moduleUrl = '',
+  moduleReady: Promise<NeuralModule> | undefined;
+let engineUrl = '',
+  engineReady: Promise<NeuralEngine> | undefined;
 let modelIdentity = '';
 
 export function neuralModule(assets: string, manifest?: NeuralManifest): Promise<NeuralModule> {
@@ -23,24 +32,33 @@ export function neuralModule(assets: string, manifest?: NeuralManifest): Promise
         const { javascript, wasm } = await obtainNeuralRuntime(assets, manifest);
         const blob = URL.createObjectURL(new Blob([javascript], { type: 'text/javascript' }));
         try {
-          const module = await import(/* @vite-ignore */ blob) as NeuralModule;
+          const module = (await import(/* @vite-ignore */ blob)) as NeuralModule;
           await module.default({ module_or_path: wasm });
           return module;
-        } finally { URL.revokeObjectURL(blob); }
+        } finally {
+          URL.revokeObjectURL(blob);
+        }
       }
       const url = new URL('magna_urbis_neural_wasm.js', assets).href;
-      const module = await import(/* @vite-ignore */ url) as NeuralModule;
+      const module = (await import(/* @vite-ignore */ url)) as NeuralModule;
       await module.default({ module_or_path: new URL('magna_urbis_neural_wasm_bg.wasm', assets) });
       return module;
-    })().catch(error => { moduleReady = undefined; if (import.meta.env?.DEV) console.warn('Prepare browser runtime with npm run prepare:v2 -- --neural.', error); throw new Error('Neural runtime unavailable. Check your connection and retry.'); });
+    })().catch(error => {
+      moduleReady = undefined;
+      if (import.meta.env?.DEV) console.warn('Prepare browser runtime with npm run prepare:v2 -- --neural.', error);
+      throw new Error('Neural runtime unavailable. Check your connection and retry.');
+    });
   }
   return moduleReady;
 }
 
 export async function releaseNeuralBrowser(): Promise<void> {
   if (!engineReady) return;
-  try { (await engineReady).free(); } catch { }
-  engineReady = undefined; engineUrl = '';
+  try {
+    (await engineReady).free();
+  } catch {}
+  engineReady = undefined;
+  engineUrl = '';
 }
 
 export async function browserNeural(assets: string, params: URLSearchParams, sketch: unknown, progress?: (text: string) => void) {
@@ -48,7 +66,8 @@ export async function browserNeural(assets: string, params: URLSearchParams, ske
   const { manifest } = await loadNeuralManifest(assets);
   const identity = [manifest.runtimeSha256, ...NEURAL_MODEL_NAMES.map(name => manifest.models[name].sha256)].join(':');
   if (engineUrl !== assets + identity || !engineReady) {
-    await releaseNeuralBrowser(); engineUrl = assets + identity;
+    await releaseNeuralBrowser();
+    engineUrl = assets + identity;
     engineReady = (async () => {
       const module = await neuralModule(assets, manifest);
       modelIdentity = identity;
@@ -60,7 +79,10 @@ export async function browserNeural(assets: string, params: URLSearchParams, ske
       }
       progress?.('Neuronal WASM · transfert des poids vers le GPU');
       return module.NeuralRelief.create(models[0], models[1], models[2]);
-    })().catch(error => { engineReady = undefined; throw error; });
+    })().catch(error => {
+      engineReady = undefined;
+      throw error;
+    });
   }
   const engine = await engineReady;
   progress?.('Neuronal WASM · calcul coarse → base → decoder');
@@ -71,12 +93,21 @@ export async function browserNeural(assets: string, params: URLSearchParams, ske
     const extent = Number(params.get('extent') ?? 40000);
     const expectedN = Number(params.get('resolution') ?? Math.ceil(extent / Number(params.get('sampleSpacing') ?? 30)));
     const n = meta.resolution;
-    if (meta.extent !== extent || meta.nativeCellM !== 30 || meta.nativeResolution !== Math.ceil(extent / 30)
-      || typeof n !== 'number' || !Number.isInteger(n) || n !== expectedN || heights.length !== n * n
-      || meta.outputCellM !== extent / n || heights.some(v => !Number.isFinite(v))) {
+    if (
+      meta.extent !== extent ||
+      meta.nativeCellM !== 30 ||
+      meta.nativeResolution !== Math.ceil(extent / 30) ||
+      typeof n !== 'number' ||
+      !Number.isInteger(n) ||
+      n !== expectedN ||
+      heights.length !== n * n ||
+      meta.outputCellM !== extent / n ||
+      heights.some(v => !Number.isFinite(v))
+    ) {
       throw new Error('Neural browser runtime returned an incompatible physical surface; rebuild the neural WASM assets.');
     }
     return { heights, meta: { ...meta, modelIdentity } };
+  } finally {
+    output.free();
   }
-  finally { output.free(); }
 }

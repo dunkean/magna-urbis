@@ -7,8 +7,10 @@ export function worldMeta(world: World): GDone['meta'] {
   for (const e of world.names?.entries ?? []) (anchors[e.kind] ??= []).push(e.anchor);
   const macro = world.urban?.macro;
   return {
-    center: world.site?.center ?? { x: world.mapSize / 2, y: world.mapSize / 2 }, anchors, mapSize: world.mapSize,
-    settlements: (world.settlements ?? []).map((s) => ({ index: s.index, key: s.key, name: s.name, cls: s.cls, population: s.population, center: s.center, radius: s.radius, detail: s.detail, hasUrban: !!s.urban || !!s.main })),
+    center: world.site?.center ?? { x: world.mapSize / 2, y: world.mapSize / 2 },
+    anchors,
+    mapSize: world.mapSize,
+    settlements: (world.settlements ?? []).map(s => ({ index: s.index, key: s.key, name: s.name, cls: s.cls, population: s.population, center: s.center, radius: s.radius, detail: s.detail, hasUrban: !!s.urban || !!s.main })),
     mega: macro ? { quarters: macro.quarters.length, cityR: macro.cityR } : undefined,
   };
 }

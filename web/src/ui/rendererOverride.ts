@@ -12,7 +12,9 @@ const initial = ((): RendererOverride | undefined => {
 })();
 
 /** The backend forced by the page URL at load, if any. */
-export function rendererOverride(): RendererOverride | undefined { return initial; }
+export function rendererOverride(): RendererOverride | undefined {
+  return initial;
+}
 
 /** Carries the page's renderer override into a query built from scratch. */
 export function keepRendererOverride(params: URLSearchParams): URLSearchParams {

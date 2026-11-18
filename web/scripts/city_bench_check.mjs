@@ -6,7 +6,10 @@ import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
-const option = (name, fallback) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : fallback; };
+const option = (name, fallback) => {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 ? args[i + 1] : fallback;
+};
 const server = option('server', 'http://127.0.0.1:8791');
 const maps = option('situation', '') ? ['situation'] : option('maps', 'city-01-river-plain-s,city-09-boreal-river-s,city-13-temperate-valley-s').split(',');
 const out = option('out', 'out/city-bench');
@@ -25,14 +28,18 @@ const reports = [];
 try {
   for (const id of maps) {
     const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
-    const errors = [], responses = [];
+    const errors = [],
+      responses = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('response', async response => {
       if (!response.url().endsWith('/urban') || response.request().method() !== 'POST') return;
       try {
-        const request = JSON.parse(response.request().postData() ?? '{}'), body = await response.json();
+        const request = JSON.parse(response.request().postData() ?? '{}'),
+          body = await response.json();
         responses.push({ kind: request.kind, request, ...(body.data ?? body) });
-      } catch (error) { errors.push(String(error)); }
+      } catch (error) {
+        errors.push(String(error));
+      }
     });
     const url = new URL(bench);
     for (const [k, v] of Object.entries(situation ? { standalone: '1', situation } : { standalone: '1', profile: 'local', localServer: server, artifact: id })) url.searchParams.set(k, v);
@@ -53,7 +60,7 @@ try {
       await page.locator('#setY').dispatchEvent('change');
       await page.waitForFunction(() => document.querySelector('#urbanQuarterStage [data-apply]')?.getAttribute('aria-busy') === 'true', undefined, { timeout: 60000 }).catch(() => {});
     }
-    if (!responses.some(r => r.kind === 'quarters') && await busy('urbanQuarterStage') !== 'true') await page.locator('#urbanQuarterStage [data-apply]').click();
+    if (!responses.some(r => r.kind === 'quarters') && (await busy('urbanQuarterStage')) !== 'true') await page.locator('#urbanQuarterStage [data-apply]').click();
     await page.waitForFunction(() => true);
     await waitIdle('urbanQuarterStage');
     await page.waitForTimeout(500);
@@ -68,10 +75,16 @@ try {
     if (layout) {
       const s = layout.structure ?? {};
       Object.assign(report, {
-        mechanism: s.mechanism, family: s.family, components: s.allocated?.length, centers: s.centers?.length,
-        metrics: s.metrics, blocks: layout.blocks.length, streets: layout.streets.length,
+        mechanism: s.mechanism,
+        family: s.family,
+        components: s.allocated?.length,
+        centers: s.centers?.length,
+        metrics: s.metrics,
+        blocks: layout.blocks.length,
+        streets: layout.streets.length,
         crossings: layout.streets.filter(t => ['bridge', 'ford', 'causeway'].includes(t.role)).length,
-        warnings: layout.warnings, quartersMs: quarters.ms,
+        warnings: layout.warnings,
+        quartersMs: quarters.ms,
       });
       writeFileSync(`${out}/${id}-layout.json`, JSON.stringify(layout));
       // Replayable inputs: node scripts/city_replay.mjs --decor <id> --request <file>
@@ -83,8 +96,14 @@ try {
       Object.assign(report, { parcels: partition.partitions[0]?.parcels?.length, parcelsMs: partition.ms });
       writeFileSync(`${out}/${id}-partition.json`, JSON.stringify(partition.partitions[0]));
     }
-    report.status = await page.locator('#urbanQuarterStage [data-status]').textContent().catch(() => '');
-    await page.locator('#focusCity').click().catch(() => {});
+    report.status = await page
+      .locator('#urbanQuarterStage [data-status]')
+      .textContent()
+      .catch(() => '');
+    await page
+      .locator('#focusCity')
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(600);
     await page.locator('#viewport').screenshot({ path: `${out}/${id}.png` });
     if (zoom?.length === 3) {
@@ -106,5 +125,7 @@ try {
     console.log(JSON.stringify(report));
     await page.close();
   }
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}
 writeFileSync(`${out}/result.json`, JSON.stringify(reports, null, 2));

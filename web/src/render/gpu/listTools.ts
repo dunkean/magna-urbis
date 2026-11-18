@@ -11,10 +11,15 @@ type Box = readonly [number, number, number, number];
 
 function transformedBox(b: Box, m: Mat, pad: number): Box | null {
   if (!(b[2] >= b[0] && b[3] >= b[1])) return null;
-  const x0 = m[0] * b[0], x1 = m[0] * b[2], x2 = m[2] * b[1], x3 = m[2] * b[3];
-  const y0 = m[1] * b[0], y1 = m[1] * b[2], y2 = m[3] * b[1], y3 = m[3] * b[3];
-  return [Math.min(x0, x1) + Math.min(x2, x3) + m[4] - pad, Math.min(y0, y1) + Math.min(y2, y3) + m[5] - pad,
-    Math.max(x0, x1) + Math.max(x2, x3) + m[4] + pad, Math.max(y0, y1) + Math.max(y2, y3) + m[5] + pad];
+  const x0 = m[0] * b[0],
+    x1 = m[0] * b[2],
+    x2 = m[2] * b[1],
+    x3 = m[2] * b[3];
+  const y0 = m[1] * b[0],
+    y1 = m[1] * b[2],
+    y2 = m[3] * b[1],
+    y3 = m[3] * b[3];
+  return [Math.min(x0, x1) + Math.min(x2, x3) + m[4] - pad, Math.min(y0, y1) + Math.min(y2, y3) + m[5] - pad, Math.max(x0, x1) + Math.max(x2, x3) + m[4] + pad, Math.max(y0, y1) + Math.max(y2, y3) + m[5] + pad];
 }
 const hits = (a: Box | null, b: Box): boolean => !!a && a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
 
@@ -27,10 +32,7 @@ export function markIndex(list: DisplayList, name: string): number {
 /** The ops before `at` and the ops from `at` on, as two lists of the same canvas. The ops are shared, not copied. */
 export function splitList(list: DisplayList, at: number): [DisplayList, DisplayList] {
   const n = Math.max(0, Math.min(list.ops.length, Math.floor(at)));
-  const part = (ops: readonly DrawOp[]): DisplayList => ({
-    width: list.width, height: list.height, ops, stats: { ...list.stats, ops: ops.length },
-    ...(list.unsupported !== undefined ? { unsupported: list.unsupported } : {}),
-  });
+  const part = (ops: readonly DrawOp[]): DisplayList => ({ width: list.width, height: list.height, ops, stats: { ...list.stats, ops: ops.length }, ...(list.unsupported !== undefined ? { unsupported: list.unsupported } : {}) });
   return [part(list.ops.slice(0, n)), part(list.ops.slice(n))];
 }
 
@@ -54,13 +56,16 @@ export function cullList(list: DisplayList, box: Box): DisplayList {
   const ops: DrawOp[] = [];
   for (const op of list.ops) {
     if (!clipHits(op.clip)) continue;
-    if (op.type === 'sprites' || op.type === 'clear' || op.composite === 'destination-in') { ops.push(op); continue; }
+    if (op.type === 'sprites' || op.type === 'clear' || op.composite === 'destination-in') {
+      ops.push(op);
+      continue;
+    }
     const m = op.transform;
     let pad = 1;
     if (op.type === 'stroke') {
       const s = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
       // Half the device width (never under a pixel), the miter or square-cap overshoot, one pixel of antialiasing.
-      pad = Math.max(1, op.width * s) * Math.max(1.5, op.join === 'miter' ? op.miterLimit : 1) / 2 + 2;
+      pad = (Math.max(1, op.width * s) * Math.max(1.5, op.join === 'miter' ? op.miterLimit : 1)) / 2 + 2;
     }
     let kept: RecordedPath[] | undefined;
     for (let i = 0; i < op.paths.length; i++) {
@@ -74,18 +79,17 @@ export function cullList(list: DisplayList, box: Box): DisplayList {
     else if (kept.length) ops.push({ ...op, paths: kept });
   }
   if (ops.length === list.ops.length && ops.every((op, i) => op === list.ops[i])) return list;
-  return {
-    width: list.width, height: list.height, ops, stats: { ...list.stats, ops: ops.length },
-    ...(list.unsupported !== undefined ? { unsupported: list.unsupported } : {}),
-  };
+  return { width: list.width, height: list.height, ops, stats: { ...list.stats, ops: ops.length }, ...(list.unsupported !== undefined ? { unsupported: list.unsupported } : {}) };
 }
 
 /** Flattening tolerance of a recorded transform: the rule of the rasterizer (glRaster.ts `tolerance`), so a polygon
  * clipped here has the vertices the live replay would have drawn. */
 export function flattenTolerance(m: Mat): number {
-  const a = m[0] * m[0] + m[1] * m[1], b = m[2] * m[2] + m[3] * m[3], c = m[0] * m[2] + m[1] * m[3];
+  const a = m[0] * m[0] + m[1] * m[1],
+    b = m[2] * m[2] + m[3] * m[3],
+    c = m[0] * m[2] + m[1] * m[3];
   const s = Math.sqrt((a + b + Math.hypot(a - b, 2 * c)) / 2);
-  return 2 ** Math.max(-40, Math.min(40, Math.floor(Math.log2(.25 / Math.max(s, 1e-12)))));
+  return 2 ** Math.max(-40, Math.min(40, Math.floor(Math.log2(0.25 / Math.max(s, 1e-12)))));
 }
 
 /** A path with a fixed outline (already flattened): what `clipList` puts in place of a polygon it cut. */
@@ -93,8 +97,12 @@ class FixedPath implements RecordedPath {
   readonly version = 0;
   readonly readable = true;
   constructor(private readonly outline: PathGeometry) {}
-  bounds(): Box { return this.outline.bbox; }
-  geometry(): PathGeometry { return this.outline; }
+  bounds(): Box {
+    return this.outline.bbox;
+  }
+  geometry(): PathGeometry {
+    return this.outline;
+  }
 }
 const NO_OUTLINE: PathGeometry = { points: new Float32Array(0), starts: new Uint32Array([0]), closed: new Uint8Array(0), bbox: [Infinity, Infinity, -Infinity, -Infinity] };
 
@@ -103,16 +111,29 @@ const NO_OUTLINE: PathGeometry = { points: new Float32Array(0), starts: new Uint
  * the bound are kept: they carry the winding of what was cut away, so the winding number inside is unchanged. */
 function cutRing(src: number[], n: number, out: number[], axis: 0 | 1, bound: number, greater: boolean): number {
   let count = 0;
-  let px = src[(n - 1) * 2], py = src[(n - 1) * 2 + 1];
+  let px = src[(n - 1) * 2],
+    py = src[(n - 1) * 2 + 1];
   let pin = greater ? (axis ? py : px) >= bound : (axis ? py : px) <= bound;
   for (let i = 0; i < n; i++) {
-    const x = src[i * 2], y = src[i * 2 + 1], v = axis ? y : x, inside = greater ? v >= bound : v <= bound;
+    const x = src[i * 2],
+      y = src[i * 2 + 1],
+      v = axis ? y : x,
+      inside = greater ? v >= bound : v <= bound;
     if (inside !== pin) {
-      const pv = axis ? py : px, t = (bound - pv) / (v - pv);
-      out[count * 2] = axis ? px + t * (x - px) : bound; out[count * 2 + 1] = axis ? bound : py + t * (y - py); count++;
+      const pv = axis ? py : px,
+        t = (bound - pv) / (v - pv);
+      out[count * 2] = axis ? px + t * (x - px) : bound;
+      out[count * 2 + 1] = axis ? bound : py + t * (y - py);
+      count++;
     }
-    if (inside) { out[count * 2] = x; out[count * 2 + 1] = y; count++; }
-    px = x; py = y; pin = inside;
+    if (inside) {
+      out[count * 2] = x;
+      out[count * 2 + 1] = y;
+      count++;
+    }
+    px = x;
+    py = y;
+    pin = inside;
   }
   return count;
 }
@@ -120,29 +141,59 @@ function cutRing(src: number[], n: number, out: number[], axis: 0 | 1, bound: nu
 /** The subpaths of `geometry`, each closed and cut to `window` (path coordinates). Null when nothing is left.
  * For filling and clipping only: inside the window the winding of every point is the one of the whole outline. */
 export function clipGeometry(geometry: PathGeometry, window: Box): PathGeometry | null {
-  const { points: p, starts } = geometry, pts: number[] = [], ends: number[] = [0];
-  let a: number[] = [], b: number[] = [];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const { points: p, starts } = geometry,
+    pts: number[] = [],
+    ends: number[] = [0];
+  let a: number[] = [],
+    b: number[] = [];
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (let s = 0; s + 1 < starts.length; s++) {
     let n = starts[s + 1] - starts[s];
     if (n < 3) continue;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
     for (let i = 0; i < n; i++) {
-      const x = p[(starts[s] + i) * 2], y = p[(starts[s] + i) * 2 + 1];
-      a[i * 2] = x; a[i * 2 + 1] = y;
-      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      const x = p[(starts[s] + i) * 2],
+        y = p[(starts[s] + i) * 2 + 1];
+      a[i * 2] = x;
+      a[i * 2 + 1] = y;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
     }
     if (x1 < window[0] || x0 > window[2] || y1 < window[1] || y0 > window[3]) continue;
     // Four half-planes in turn; a ring wholly inside one is not copied.
-    if (x0 < window[0]) { n = cutRing(a, n, b, 0, window[0], true); [a, b] = [b, a]; }
-    if (n >= 3 && x1 > window[2]) { n = cutRing(a, n, b, 0, window[2], false); [a, b] = [b, a]; }
-    if (n >= 3 && y0 < window[1]) { n = cutRing(a, n, b, 1, window[1], true); [a, b] = [b, a]; }
-    if (n >= 3 && y1 > window[3]) { n = cutRing(a, n, b, 1, window[3], false); [a, b] = [b, a]; }
+    if (x0 < window[0]) {
+      n = cutRing(a, n, b, 0, window[0], true);
+      [a, b] = [b, a];
+    }
+    if (n >= 3 && x1 > window[2]) {
+      n = cutRing(a, n, b, 0, window[2], false);
+      [a, b] = [b, a];
+    }
+    if (n >= 3 && y0 < window[1]) {
+      n = cutRing(a, n, b, 1, window[1], true);
+      [a, b] = [b, a];
+    }
+    if (n >= 3 && y1 > window[3]) {
+      n = cutRing(a, n, b, 1, window[3], false);
+      [a, b] = [b, a];
+    }
     if (n < 3) continue;
     for (let i = 0; i < n; i++) {
-      const x = a[i * 2], y = a[i * 2 + 1];
+      const x = a[i * 2],
+        y = a[i * 2 + 1];
       pts.push(x, y);
-      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     }
     ends.push(pts.length / 2);
   }
@@ -158,42 +209,84 @@ export function clipGeometry(geometry: PathGeometry, window: Box): PathGeometry 
  * the path are unchanged. Dashes are measured from the start of the subpath: a dashed stroke must not be cut.
  */
 export function cullSegments(geometry: PathGeometry, window: Box): PathGeometry | null {
-  const { points: p, starts, closed } = geometry, pts: number[] = [], ends: number[] = [0], flags: number[] = [];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, keep = new Uint8Array(256);
+  const { points: p, starts, closed } = geometry,
+    pts: number[] = [],
+    ends: number[] = [0],
+    flags: number[] = [];
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity,
+    keep = new Uint8Array(256);
   const push = (vertex: number): void => {
-    const x = p[vertex * 2], y = p[vertex * 2 + 1];
+    const x = p[vertex * 2],
+      y = p[vertex * 2 + 1];
     pts.push(x, y);
-    if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
   };
   for (let s = 0; s + 1 < starts.length; s++) {
-    const base = starts[s], n = starts[s + 1] - base;
+    const base = starts[s],
+      n = starts[s + 1] - base;
     if (n < 1) continue;
     if (n === 1) {
-      const x = p[base * 2], y = p[base * 2 + 1];
-      if (x >= window[0] && x <= window[2] && y >= window[1] && y <= window[3]) { push(base); ends.push(pts.length / 2); flags.push(closed[s]); }
+      const x = p[base * 2],
+        y = p[base * 2 + 1];
+      if (x >= window[0] && x <= window[2] && y >= window[1] && y <= window[3]) {
+        push(base);
+        ends.push(pts.length / 2);
+        flags.push(closed[s]);
+      }
       continue;
     }
     // A closed subpath has one more segment, from its last vertex back to its first.
-    const ring = closed[s] === 1, m = ring ? n : n - 1;
+    const ring = closed[s] === 1,
+      m = ring ? n : n - 1;
     if (keep.length < m) keep = new Uint8Array(m * 2);
-    let kept = 0, dropped = -1;
+    let kept = 0,
+      dropped = -1;
     for (let i = 0; i < m; i++) {
-      const a = base + i, b = base + (i + 1) % n, ax = p[a * 2], ay = p[a * 2 + 1], bx = p[b * 2], by = p[b * 2 + 1];
+      const a = base + i,
+        b = base + ((i + 1) % n),
+        ax = p[a * 2],
+        ay = p[a * 2 + 1],
+        bx = p[b * 2],
+        by = p[b * 2 + 1];
       const inside = Math.max(ax, bx) >= window[0] && Math.min(ax, bx) <= window[2] && Math.max(ay, by) >= window[1] && Math.min(ay, by) <= window[3];
       keep[i] = inside ? 1 : 0;
-      if (inside) kept++; else if (dropped < 0) dropped = i;
+      if (inside) kept++;
+      else if (dropped < 0) dropped = i;
     }
     if (!kept) continue;
-    if (kept === m) { for (let i = 0; i < n; i++) push(base + i); ends.push(pts.length / 2); flags.push(closed[s]); continue; }
+    if (kept === m) {
+      for (let i = 0; i < n; i++) push(base + i);
+      ends.push(pts.length / 2);
+      flags.push(closed[s]);
+      continue;
+    }
     // Runs of kept segments; a ring is walked from just after a dropped segment, so no run wraps around its start.
     const first = ring ? (dropped + 1) % m : 0;
     let open = false;
     for (let j = 0; j < m; j++) {
       const i = (first + j) % m;
-      if (keep[i]) { if (!open) { push(base + i); open = true; } push(base + (i + 1) % n); }
-      else if (open) { ends.push(pts.length / 2); flags.push(0); open = false; }
+      if (keep[i]) {
+        if (!open) {
+          push(base + i);
+          open = true;
+        }
+        push(base + ((i + 1) % n));
+      } else if (open) {
+        ends.push(pts.length / 2);
+        flags.push(0);
+        open = false;
+      }
     }
-    if (open) { ends.push(pts.length / 2); flags.push(0); }
+    if (open) {
+      ends.push(pts.length / 2);
+      flags.push(0);
+    }
   }
   if (!pts.length) return null;
   return { points: new Float32Array(pts), starts: new Uint32Array(ends), closed: new Uint8Array(flags), bbox: [minX, minY, maxX, maxY] };
@@ -220,7 +313,8 @@ export function clipList(list: DisplayList, box: Box, margin = 32): DisplayList 
     if (t[1] !== 0 || t[2] !== 0 || t[0] === 0 || t[3] === 0 || !path.readable) return path;
     const b = transformedBox(path.bounds(), t, 0);
     if (!b) return path;
-    const ix = Math.min(b[2], win[2]) - Math.max(b[0], win[0]), iy = Math.min(b[3], win[3]) - Math.max(b[1], win[1]);
+    const ix = Math.min(b[2], win[2]) - Math.max(b[0], win[0]),
+      iy = Math.min(b[3], win[3]) - Math.max(b[1], win[1]);
     if (ix <= 0 || iy <= 0) return null;
     if ((b[2] - b[0]) * (b[3] - b[1]) <= 2 * ix * iy) return path;
     const memo = done.get(path);
@@ -229,7 +323,10 @@ export function clipList(list: DisplayList, box: Box, margin = 32): DisplayList 
     let result: RecordedPath | null = path;
     if (outline.points.length >= CLIP_MIN_FLOATS) {
       // The window in path coordinates (a negative scale swaps its sides).
-      const xa = (win[0] - t[4]) / t[0], xb = (win[2] - t[4]) / t[0], ya = (win[1] - t[5]) / t[3], yb = (win[3] - t[5]) / t[3];
+      const xa = (win[0] - t[4]) / t[0],
+        xb = (win[2] - t[4]) / t[0],
+        ya = (win[1] - t[5]) / t[3],
+        yb = (win[3] - t[5]) / t[3];
       const made = clipGeometry(outline, [Math.min(xa, xb), Math.min(ya, yb), Math.max(xa, xb), Math.max(ya, yb)]);
       result = made ? new FixedPath(made) : null;
     }
@@ -243,7 +340,8 @@ export function clipList(list: DisplayList, box: Box, margin = 32): DisplayList 
     if (t[1] !== 0 || t[2] !== 0 || t[0] === 0 || t[3] === 0 || !path.readable) return path;
     const b = transformedBox(path.bounds(), t, reach);
     if (!b) return path;
-    const ix = Math.min(b[2], win[2]) - Math.max(b[0], win[0]), iy = Math.min(b[3], win[3]) - Math.max(b[1], win[1]);
+    const ix = Math.min(b[2], win[2]) - Math.max(b[0], win[0]),
+      iy = Math.min(b[3], win[3]) - Math.max(b[1], win[1]);
     if (ix <= 0 || iy <= 0) return null;
     // Lines have no area: worth it when the path extends over twice what the window holds of it.
     if (b[2] - b[0] + b[3] - b[1] <= 2 * (ix + iy)) return path;
@@ -253,7 +351,10 @@ export function clipList(list: DisplayList, box: Box, margin = 32): DisplayList 
     const outline = path.geometry(flattenTolerance(t));
     let result: RecordedPath | null = path;
     if (outline.points.length >= CLIP_MIN_FLOATS) {
-      const xa = (win[0] - reach - t[4]) / t[0], xb = (win[2] + reach - t[4]) / t[0], ya = (win[1] - reach - t[5]) / t[3], yb = (win[3] + reach - t[5]) / t[3];
+      const xa = (win[0] - reach - t[4]) / t[0],
+        xb = (win[2] + reach - t[4]) / t[0],
+        ya = (win[1] - reach - t[5]) / t[3],
+        yb = (win[3] + reach - t[5]) / t[3];
       const made = cullSegments(outline, [Math.min(xa, xb), Math.min(ya, yb), Math.max(xa, xb), Math.max(ya, yb)]);
       // Nothing dropped: the recorded path stays (its uploads are shared with the other bands and regions).
       result = !made ? null : made.points.length < outline.points.length ? new FixedPath(made) : path;
@@ -281,18 +382,25 @@ export function clipList(list: DisplayList, box: Box, margin = 32): DisplayList 
   let changed = false;
   for (const op of list.ops) {
     const clip = clipOf(op.clip);
-    if (clip === false) { changed = true; continue; }
+    if (clip === false) {
+      changed = true;
+      continue;
+    }
     // Solid strokes only (dashes are measured from the start of the path); destination-in strokes act on the whole clip.
     const cuttable = op.type === 'fill' || (op.type === 'stroke' && !op.dash.length && op.composite !== 'destination-in');
     if (!cuttable) {
-      if (clip === op.clip) ops.push(op); else { ops.push({ ...op, clip }); changed = true; }
+      if (clip === op.clip) ops.push(op);
+      else {
+        ops.push({ ...op, clip });
+        changed = true;
+      }
       continue;
     }
     let reach = 0;
     if (op.type === 'stroke') {
       const s = Math.sqrt(Math.abs(op.transform[0] * op.transform[3]));
       // As cullList: half the device width (never under a pixel), the miter or square-cap overshoot, antialiasing.
-      reach = Math.max(1, op.width * s) * Math.max(1.5, op.join === 'miter' ? op.miterLimit : 1) / 2 + 2;
+      reach = (Math.max(1, op.width * s) * Math.max(1.5, op.join === 'miter' ? op.miterLimit : 1)) / 2 + 2;
     }
     let paths: RecordedPath[] | undefined;
     for (let i = 0; i < op.paths.length; i++) {
@@ -303,14 +411,14 @@ export function clipList(list: DisplayList, box: Box, margin = 32): DisplayList 
     }
     // destination-in clears the clip outside its paths: the op stays even with nothing left to fill.
     if (op.type === 'fill' && paths && !paths.length && op.composite === 'destination-in') paths.push(new FixedPath(NO_OUTLINE));
-    if (!paths && clip === op.clip) { ops.push(op); continue; }
+    if (!paths && clip === op.clip) {
+      ops.push(op);
+      continue;
+    }
     changed = true;
     if (!paths) ops.push({ ...op, clip });
     else if (paths.length) ops.push({ ...op, clip, paths });
   }
   if (!changed) return list;
-  return {
-    width: list.width, height: list.height, ops, stats: { ...list.stats, ops: ops.length },
-    ...(list.unsupported !== undefined ? { unsupported: list.unsupported } : {}),
-  };
+  return { width: list.width, height: list.height, ops, stats: { ...list.stats, ops: ops.length }, ...(list.unsupported !== undefined ? { unsupported: list.unsupported } : {}) };
 }

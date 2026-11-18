@@ -23,11 +23,20 @@ const PARALLEL_WARM_MIN_BUILDINGS = 3000;
 const PARALLEL_SITE_BYTES = 256 * 2 ** 20;
 /** A surface equal to the building's own footprint travels as this marker (the page puts its own object back). */
 const OWN_FOOTPRINT = 1;
-export interface CityBuildingsTask { buffer: ArrayBuffer; worker: number; workers: number; cultures: string[]; roofs: boolean;
+export interface CityBuildingsTask {
+  buffer: ArrayBuffer;
+  worker: number;
+  workers: number;
+  cultures: string[];
+  roofs: boolean;
   /** Site indices of this worker's buildings, ascending: only those sites are decoded (absent: the whole town). */
-  sites?: Uint32Array }
+  sites?: Uint32Array;
+}
 type ChunkItem = Omit<CityBuilding, 'building' | 'surface' | 'footprint' | 'ruins'> & { b: number; surface: Surface | typeof OWN_FOOTPRINT; footprint?: Surface | typeof OWN_FOOTPRINT; ruins?: Surface | typeof OWN_FOOTPRINT };
-export interface CityBuildingsChunk { items: ChunkItem[]; roofs: CityRoofs }
+export interface CityBuildingsChunk {
+  items: ChunkItem[];
+  roofs: CityRoofs;
+}
 
 /** Worker side: the items and roof arrays of buildings `worker`, `worker + workers`… of the scene rebuilt from `buffer`. */
 export function cityBuildingsChunk(task: CityBuildingsTask): CityBuildingsChunk {
@@ -44,57 +53,137 @@ export function cityBuildingsShare(all: readonly PlacedBuilding[], task: Omit<Ci
   for (let g = task.worker; g < all.length; g += task.workers) mine.push(all[g]);
   const local = new Map(mine.map((building, i) => [building, i]));
   const built = buildCityBuildings({ buildings: mine }, undefined, { roofs: task.roofs, cultures: task.cultures, rawRoofs: true });
-  const own = (surface: Surface | undefined, building: PlacedBuilding): Surface | typeof OWN_FOOTPRINT | undefined => surface === building.footprint ? OWN_FOOTPRINT : surface;
-  const items = built.items.map(({ building, surface, footprint, ruins, ...rest }) => ({ ...rest, b: local.get(building)!,
+  const own = (surface: Surface | undefined, building: PlacedBuilding): Surface | typeof OWN_FOOTPRINT | undefined => (surface === building.footprint ? OWN_FOOTPRINT : surface);
+  const items = built.items.map(({ building, surface, footprint, ruins, ...rest }) => ({
+    ...rest,
+    b: local.get(building)!,
     surface: surface === building.roof_footprint || surface === building.footprint ? OWN_FOOTPRINT : surface,
-    ...(footprint ? { footprint: own(footprint, building) } : {}), ...(ruins ? { ruins: own(ruins, building) } : {}) })) as ChunkItem[];
+    ...(footprint ? { footprint: own(footprint, building) } : {}),
+    ...(ruins ? { ruins: own(ruins, building) } : {}),
+  })) as ChunkItem[];
   return { items, roofs: built.roofs! };
 }
 
 /** Page side: the chunks of `workers` workers merged in the batch's order, linked to `plan` (as `buildCityBuildings`). */
 export function mergeCityBuildingChunks(batch: Pick<PlacementBatch, 'buildings'>, plan: CityScene | undefined, chunks: CityBuildingsChunk[]): CityBuildings {
-  const buildings = batch.buildings, workers = chunks.length, next = new Array<number>(workers).fill(0);
+  const buildings = batch.buildings,
+    workers = chunks.length,
+    next = new Array<number>(workers).fill(0);
   // Pans of an item are contiguous in its chunk (owner ascending): the first pan of each item.
-  const panStart = chunks.map(c => { const start = new Uint32Array(c.items.length + 1); let k = 0; for (let j = 0; j < c.items.length; j++) { start[j] = k; while (k < c.roofs.owner.length && c.roofs.owner[k] === j) k++; } start[c.items.length] = k; return start; });
-  const items: CityBuilding[] = [], byId = new Map<string, number>();
-  const shapes: Shape[] = [], owner: number[] = [], light: number[] = [], cover: string[] = [], wall: string[] = [], tone: number[] = [], dir: number[] = [], flat: number[] = [], snow: number[] = [], patch: number[] = [], grain: number[] = [], rim: number[] = [], tint: (string | undefined)[] = [], shadows: Shape[][] = [];
+  const panStart = chunks.map(c => {
+    const start = new Uint32Array(c.items.length + 1);
+    let k = 0;
+    for (let j = 0; j < c.items.length; j++) {
+      start[j] = k;
+      while (k < c.roofs.owner.length && c.roofs.owner[k] === j) k++;
+    }
+    start[c.items.length] = k;
+    return start;
+  });
+  const items: CityBuilding[] = [],
+    byId = new Map<string, number>();
+  const shapes: Shape[] = [],
+    owner: number[] = [],
+    light: number[] = [],
+    cover: string[] = [],
+    wall: string[] = [],
+    tone: number[] = [],
+    dir: number[] = [],
+    flat: number[] = [],
+    snow: number[] = [],
+    patch: number[] = [],
+    grain: number[] = [],
+    rim: number[] = [],
+    tint: (string | undefined)[] = [],
+    shadows: Shape[][] = [];
   for (let g = 0; g < buildings.length; g++) {
-    const w = g % workers, c = chunks[w], j = next[w], item = c.items[j];
+    const w = g % workers,
+      c = chunks[w],
+      j = next[w],
+      item = c.items[j];
     if (!item || item.b !== (g - w) / workers) continue;
     next[w]++;
-    const building = buildings[g], { b: _b, surface, footprint, ruins, ...rest } = item, index = items.length, back = (s: Surface | typeof OWN_FOOTPRINT): Surface => s === OWN_FOOTPRINT ? building.footprint : s;
+    const building = buildings[g],
+      { b: _b, surface, footprint, ruins, ...rest } = item,
+      index = items.length,
+      back = (s: Surface | typeof OWN_FOOTPRINT): Surface => (s === OWN_FOOTPRINT ? building.footprint : s);
     const link = cityBuildingLink(building, plan);
-    items.push({ ...rest, surface: surface === OWN_FOOTPRINT ? (building.roof_footprint.length ? building.roof_footprint : building.footprint) : surface,
-      ...(footprint !== undefined ? { footprint: back(footprint) } : {}), ...(ruins !== undefined ? { ruins: back(ruins) } : {}),
-      role: link.role, family: link.family, landmark: link.landmark, parcel: link.parcel, building } as CityBuilding);
+    items.push({
+      ...rest,
+      surface: surface === OWN_FOOTPRINT ? (building.roof_footprint.length ? building.roof_footprint : building.footprint) : surface,
+      ...(footprint !== undefined ? { footprint: back(footprint) } : {}),
+      ...(ruins !== undefined ? { ruins: back(ruins) } : {}),
+      role: link.role,
+      family: link.family,
+      landmark: link.landmark,
+      parcel: link.parcel,
+      building,
+    } as CityBuilding);
     byId.set(building.id, index);
     const r = c.roofs;
     for (let k = panStart[w][j]; k < panStart[w][j + 1]; k++) {
-      shapes.push(r.shapes[k]); owner.push(index); light.push(r.light[k]); cover.push(r.cover[k]); wall.push(r.wall![k]); tone.push(r.tone[k]); dir.push(r.dir[k]);
-      flat.push(r.flat![k]); snow.push(r.snow![k]); patch.push(r.patch![k]); grain.push(r.grain![k]); rim.push(r.rim![k]); tint.push(r.tint![k]);
+      shapes.push(r.shapes[k]);
+      owner.push(index);
+      light.push(r.light[k]);
+      cover.push(r.cover[k]);
+      wall.push(r.wall![k]);
+      tone.push(r.tone[k]);
+      dir.push(r.dir[k]);
+      flat.push(r.flat![k]);
+      snow.push(r.snow![k]);
+      patch.push(r.patch![k]);
+      grain.push(r.grain![k]);
+      rim.push(r.rim![k]);
+      tint.push(r.tint![k]);
     }
     shadows.push(r.shadows[j]);
   }
   citySnowAltitudes(items, plan);
-  const roofs = shapes.length ? { shapes, owner: Uint32Array.from(owner), light: Float32Array.from(light), cover, wall, tone: Float32Array.from(tone), dir: Float32Array.from(dir), flat: Uint8Array.from(flat), snow: Float32Array.from(snow), patch: Uint8Array.from(patch), grain: Uint8Array.from(grain), rim: Uint8Array.from(rim), tint, shadows } : undefined;
+  const roofs = shapes.length
+    ? {
+        shapes,
+        owner: Uint32Array.from(owner),
+        light: Float32Array.from(light),
+        cover,
+        wall,
+        tone: Float32Array.from(tone),
+        dir: Float32Array.from(dir),
+        flat: Uint8Array.from(flat),
+        snow: Float32Array.from(snow),
+        patch: Uint8Array.from(patch),
+        grain: Uint8Array.from(grain),
+        rim: Uint8Array.from(rim),
+        tint,
+        shadows,
+      }
+    : undefined;
   return { items, byId, bins: cityBuildingBins(items), ...(roofs ? { roofs } : {}) };
 }
 
 const MAX_WORKERS = 8;
 /** Idle workers started ahead (`prewarmCityBuildingWorkers`), and when they are dropped unused. */
-let warm: Worker[] = [], warmTimer: ReturnType<typeof setTimeout> | undefined;
+let warm: Worker[] = [],
+  warmTimer: ReturnType<typeof setTimeout> | undefined;
 const WARM_MS = 10 * 60000;
 const spawn = (): Worker => new Worker(new URL('./cityBuildingsWorker.ts', import.meta.url), { type: 'module' });
 const workerCount = (): number => Math.min(MAX_WORKERS, (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4) - 2);
 /** Starts the build workers while the engine computes a town, so their module load is not on the drawing's path. */
 export function prewarmCityBuildingWorkers(): void {
   if (typeof Worker === 'undefined' || workerCount() < 2) return;
-  try { while (warm.length < workerCount()) warm.push(spawn()); } catch { return; }
+  try {
+    while (warm.length < workerCount()) warm.push(spawn());
+  } catch {
+    return;
+  }
   clearTimeout(warmTimer);
   warmTimer = setTimeout(releaseCityBuildingWorkers, WARM_MS);
 }
 /** Drops the warm workers left unused (a small town built on the page, a heavy result that needs the heap). */
-export function releaseCityBuildingWorkers(): void { clearTimeout(warmTimer); for (const w of warm) w.terminate(); warm = []; }
+export function releaseCityBuildingWorkers(): void {
+  clearTimeout(warmTimer);
+  for (const w of warm) w.terminate();
+  warm = [];
+}
 /** `n` workers: the warm ones first; the caller terminates them after use. */
 function takeWorkers(n: number): Worker[] {
   const pool = warm.splice(0, n);
@@ -106,7 +195,9 @@ function takeWorkers(n: number): Worker[] {
 const CLIP_AHEAD_MIN_SHAPES = 4000;
 /** A clip ahead that does not answer in time is dropped and the page clips as it always did: a few times what the
  * page itself would take (starved workers, on a saturated machine, were seen ten times slower than the page). */
-const CLIP_AHEAD_MS_PER_SHAPE = 0.1, CLIP_AHEAD_MIN_MS = 1500, CLIP_AHEAD_MAX_MS = 15000;
+const CLIP_AHEAD_MS_PER_SHAPE = 0.1,
+  CLIP_AHEAD_MIN_MS = 1500,
+  CLIP_AHEAD_MAX_MS = 15000;
 /** Clips the ground of plans about to be built (`cityGroundSubjects`) on the warm build workers, in shares: the page
  * no longer runs the water boolean of a region's towns on its own thread. Only with workers already started
  * (`prewarmCityBuildingWorkers`): they are idle until the buildings are built, right after the plans. Any failure
@@ -116,21 +207,47 @@ export async function clipCityGroundAhead(ground: CityGround, shapes: readonly S
   if (count < CLIP_AHEAD_MIN_SHAPES) return;
   const patience = Math.max(CLIP_AHEAD_MIN_MS, Math.min(CLIP_AHEAD_MAX_MS, count * CLIP_AHEAD_MS_PER_SHAPE));
   // The workers leave the warm list while they clip: a second caller cannot reuse them, a release cannot end them.
-  const pool = warm.splice(0, warm.length), start = performance.now();
+  const pool = warm.splice(0, warm.length),
+    start = performance.now();
   let lost = false;
   try {
-    await ground.clipAhead(shapes, pool.length, tasks => Promise.all(tasks.map((task, k) => new Promise<Float64Array>((resolve, reject) => {
-      const w = pool[k], timer = setTimeout(() => reject(new Error('city ground clip timed out')), patience);
-      w.onmessage = ({ data }: MessageEvent<{ clipped?: Float64Array; error?: string }>) => { clearTimeout(timer); if (data.clipped) resolve(data.clipped); else reject(new Error(data.error ?? 'city ground clip failed')); };
-      w.onerror = e => { clearTimeout(timer); reject(new Error(e.message || 'city ground clip failed')); };
-      w.postMessage({ clip: task }, [task.subjects.buffer]);
-    }))));
-  } catch (error) { lost = true; console.warn('Parallel city ground clip failed, clipping on the page:', error); }
-  if (lost) { for (const w of pool) w.terminate(); return; }
-  for (const w of pool) { w.onmessage = null; w.onerror = null; }
+    await ground.clipAhead(shapes, pool.length, tasks =>
+      Promise.all(
+        tasks.map(
+          (task, k) =>
+            new Promise<Float64Array>((resolve, reject) => {
+              const w = pool[k],
+                timer = setTimeout(() => reject(new Error('city ground clip timed out')), patience);
+              w.onmessage = ({ data }: MessageEvent<{ clipped?: Float64Array; error?: string }>) => {
+                clearTimeout(timer);
+                if (data.clipped) resolve(data.clipped);
+                else reject(new Error(data.error ?? 'city ground clip failed'));
+              };
+              w.onerror = e => {
+                clearTimeout(timer);
+                reject(new Error(e.message || 'city ground clip failed'));
+              };
+              w.postMessage({ clip: task }, [task.subjects.buffer]);
+            }),
+        ),
+      ),
+    );
+  } catch (error) {
+    lost = true;
+    console.warn('Parallel city ground clip failed, clipping on the page:', error);
+  }
+  if (lost) {
+    for (const w of pool) w.terminate();
+    return;
+  }
+  for (const w of pool) {
+    w.onmessage = null;
+    w.onerror = null;
+  }
   performance.measure('displayprep:ground-clip:workers', { start });
   warm.unshift(...pool);
-  clearTimeout(warmTimer); warmTimer = setTimeout(releaseCityBuildingWorkers, WARM_MS);
+  clearTimeout(warmTimer);
+  warmTimer = setTimeout(releaseCityBuildingWorkers, WARM_MS);
 }
 /** Per worker, the indices of the sites its buildings (`worker`, `worker + workers`…) come from: the scene keeps the
  * sites' order and skips some (open spaces, empty surfaces), so each building is the next site with its id. Undefined
@@ -165,14 +282,23 @@ export async function buildCityBuildingsParallel(scene: PlacementBatch | undefin
   let pool: Worker[] = [];
   try {
     pool = takeWorkers(workers);
-    const chunks = await Promise.all(cultures.map((list, worker) => new Promise<CityBuildingsChunk>((resolve, reject) => {
-      const w = pool[worker];
-      w.onmessage = ({ data }: MessageEvent<{ chunk?: CityBuildingsChunk; error?: string }>) => data.chunk ? resolve(data.chunk) : reject(new Error(data.error ?? 'city buildings worker failed'));
-      w.onerror = e => reject(new Error(e.message || 'city buildings worker failed'));
-      const task: CityBuildingsTask = { buffer: buffer.slice(0), worker, workers, cultures: list, roofs: options.roofs !== false, ...(shares ? { sites: shares[worker] } : {}) };
-      w.postMessage(task, [task.buffer]);
-    })));
+    const chunks = await Promise.all(
+      cultures.map(
+        (list, worker) =>
+          new Promise<CityBuildingsChunk>((resolve, reject) => {
+            const w = pool[worker];
+            w.onmessage = ({ data }: MessageEvent<{ chunk?: CityBuildingsChunk; error?: string }>) => (data.chunk ? resolve(data.chunk) : reject(new Error(data.error ?? 'city buildings worker failed')));
+            w.onerror = e => reject(new Error(e.message || 'city buildings worker failed'));
+            const task: CityBuildingsTask = { buffer: buffer.slice(0), worker, workers, cultures: list, roofs: options.roofs !== false, ...(shares ? { sites: shares[worker] } : {}) };
+            w.postMessage(task, [task.buffer]);
+          }),
+      ),
+    );
     return mergeCityBuildingChunks(scene, plan, chunks);
-  } catch (error) { console.warn('Parallel city buildings failed, building on the page:', error); return undefined; }
-  finally { for (const w of pool) w.terminate(); }
+  } catch (error) {
+    console.warn('Parallel city buildings failed, building on the page:', error);
+    return undefined;
+  } finally {
+    for (const w of pool) w.terminate();
+  }
 }

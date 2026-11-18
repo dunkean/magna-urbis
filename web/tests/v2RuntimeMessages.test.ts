@@ -32,7 +32,10 @@ describe('V2 bilingual runtime messages', () => {
       ['Implantations et routes régionales prêtes', 'Regional settlements and roads ready'],
       ['Chargement des poids…', 'Loading model weights…'],
     ] as const;
-    for (const [fr, en] of phases) { expect(message(fr, 'en')).toBe(en); expect(message(en, 'fr')).toBe(fr); }
+    for (const [fr, en] of phases) {
+      expect(message(fr, 'en')).toBe(en);
+      expect(message(en, 'fr')).toBe(fr);
+    }
     expect(message('Relief et eau terminés · rust-wasm-cpu · biomes ensuite', 'en')).toBe('Terrain and water complete · rust-wasm-cpu · biomes next');
     expect(message('Terrain and water complete · rust-wasm-cpu · biomes next', 'fr')).toBe('Relief et eau terminés · rust-wasm-cpu · biomes ensuite');
   });
@@ -52,7 +55,9 @@ describe('V2 bilingual runtime messages', () => {
     expect(message('Grille flow incompatible.', 'en')).toBe('Incompatible flow grid.');
     expect(message('étendue : nombre attendu entre 600 et 40000.', 'en')).toBe('extent: expected a number between 600 and 40000.');
     expect(message('Relief et hydrologie réutilisés · memory', 'en')).toBe('Terrain and hydrology reused · memory');
-    expect(message('Recette des peuplements importée sur le territoire actuel. Implantations, routes et villes à reconstruire ; 7 modification(s) géométrique(s) non fusionnée(s).', 'en')).toBe('Settlement recipe imported onto the current territory. Rebuild sites, roads and towns; 7 geometry edit(s) were not merged.');
+    expect(message('Recette des peuplements importée sur le territoire actuel. Implantations, routes et villes à reconstruire ; 7 modification(s) géométrique(s) non fusionnée(s).', 'en')).toBe(
+      'Settlement recipe imported onto the current territory. Rebuild sites, roads and towns; 7 geometry edit(s) were not merged.',
+    );
   });
 
   it('translates counts and inspector templates while retaining embedded names and native identifiers', () => {

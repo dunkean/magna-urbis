@@ -12,6 +12,8 @@ scope.onmessage = (event: MessageEvent<{ id: number; bitmap: ImageBitmap }>): vo
     scope.postMessage({ id, alpha }, [alpha.buffer]);
   } catch (error) {
     scope.postMessage({ id, error: String(error) });
-  } finally { bitmap.close(); }
+  } finally {
+    bitmap.close();
+  }
 };
 export {};

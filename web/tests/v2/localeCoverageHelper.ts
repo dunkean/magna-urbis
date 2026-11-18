@@ -26,9 +26,15 @@ const FEATURE_MODULES: Record<string, () => Promise<unknown>> = {
 export const UNTRANSLATED_ALLOWLIST = new Set<string>(['MU1', 'JSON', 'WebGPU', 'rust-native', 'cpu', 'gpu', 'gpu-f32', 'wasm', 'native', 'rust-wasm-cpu', 'rust-native-cpu', 'typescript-cpu', 'rust-webgpu', 'vector-cpu']);
 
 export async function loadFeatureModules(): Promise<{ loaded: string[]; skipped: Record<string, string> }> {
-  const loaded: string[] = [], skipped: Record<string, string> = {};
+  const loaded: string[] = [],
+    skipped: Record<string, string> = {};
   for (const [name, load] of Object.entries(FEATURE_MODULES)) {
-    try { await load(); loaded.push(name); } catch (error) { skipped[name] = String((error as Error)?.message ?? error).slice(0, 120); }
+    try {
+      await load();
+      loaded.push(name);
+    } catch (error) {
+      skipped[name] = String((error as Error)?.message ?? error).slice(0, 120);
+    }
   }
   return { loaded, skipped };
 }
@@ -37,12 +43,19 @@ export function collectEnglishSources(): { interface: string[]; runtime: string[
   const ui = [...new Set([...Object.keys(interfaceFrench), ...Object.values(interfaceEnglish)])];
   const runtime = [...new Set(runtimeEnglishSources())];
   // terrainControls.ts registers these inside a function that needs the DOM, so read the schema collection directly.
-  const registered = [...new Set([...registeredEnglishMessages(), ...Object.values(terrainControlMessages).filter(({ en, fr }) => en !== fr && !/ · [\d.]+ MB$/.test(en)).map(message => message.en)])];
+  const registered = [
+    ...new Set([
+      ...registeredEnglishMessages(),
+      ...Object.values(terrainControlMessages)
+        .filter(({ en, fr }) => en !== fr && !/ · [\d.]+ MB$/.test(en))
+        .map(message => message.en),
+    ]),
+  ];
   const all = [...new Set([...ui, ...runtime, ...registered].map(text => text.trim()).filter(Boolean))];
   return { interface: ui, runtime, registered, all };
 }
 
-export function missingTranslations(language: typeof TARGET_LANGUAGES[number], sources: string[]): string[] {
+export function missingTranslations(language: (typeof TARGET_LANGUAGES)[number], sources: string[]): string[] {
   const dictionary = localeMessages[language];
   return sources.filter(text => !UNTRANSLATED_ALLOWLIST.has(text) && !Object.hasOwn(dictionary, text));
 }

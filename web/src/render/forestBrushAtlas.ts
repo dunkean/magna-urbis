@@ -8,7 +8,8 @@ export function bindForestBrushes(gl: WebGL2RenderingContext, uniform: (name: st
   let cached = textures.get(gl);
   gl.activeTexture(gl.TEXTURE0 + unit);
   if (!cached) {
-    cached = { texture: gl.createTexture()!, full: false }; textures.set(gl, cached);
+    cached = { texture: gl.createTexture()!, full: false };
+    textures.set(gl, cached);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, cached.texture);
     gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RG8, 1, 1, 1, 0, gl.RG, gl.UNSIGNED_BYTE, new Uint8Array([255, 128]));
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -30,6 +31,7 @@ export function bindForestBrushes(gl: WebGL2RenderingContext, uniform: (name: st
 
 /** `release` false: only forget the texture (a restored context, whose old objects are already gone). */
 export function disposeForestBrushes(gl: WebGL2RenderingContext, release = true): void {
-  const cached = textures.get(gl); if (cached && release) gl.deleteTexture(cached.texture);
+  const cached = textures.get(gl);
+  if (cached && release) gl.deleteTexture(cached.texture);
   textures.delete(gl);
 }

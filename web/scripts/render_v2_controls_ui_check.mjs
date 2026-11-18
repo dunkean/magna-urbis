@@ -10,22 +10,23 @@ mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
-  const errors = [], generationRequests = [];
+  const errors = [],
+    generationRequests = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => {
     if (/127\.0\.0\.1:879[123]\/.*generat/.test(request.url())) generationRequests.push(request.url());
   });
   await page.goto(base + '/terrainbench.html?standalone=1&profile=local&stage=settlements&source=procedural&auto=0&render=svg&style=render-v2-snow&v2season=0.25');
   await page.waitForFunction(() => window.magnaBenchContext && document.body.dataset.terrainStartup === 'ready');
-  await page.locator('#bench-render-settings').evaluate(element => { element.open = true; element.querySelector('[data-render-section="cover"]').open = true; });
+  await page.locator('#bench-render-settings').evaluate(element => {
+    element.open = true;
+    element.querySelector('[data-render-section="cover"]').open = true;
+  });
   assert.deepEqual(await page.locator('#style option').evaluateAll(options => options.filter(option => option.value.startsWith('render-v2')).map(option => [option.value, option.textContent])), [['render-v2', 'Render v2']]);
   assert.equal(await page.locator('#style').inputValue(), 'render-v2');
   assert.equal(await page.locator('#renderV2Diagnostic').inputValue(), 'render-v2-snow');
   assert.equal(await page.locator('#renderV2Controls').isVisible(), true);
-  const snapshot = () => page.evaluate(() => ({
-    context: window.magnaBenchContext.capture(),
-    controls: Object.fromEntries(['terrainSource', 'compute', 'generationCompute', 'climate', 'width', 'seed'].map(id => [id, document.getElementById(id).value])),
-  }));
+  const snapshot = () => page.evaluate(() => ({ context: window.magnaBenchContext.capture(), controls: Object.fromEntries(['terrainSource', 'compute', 'generationCompute', 'climate', 'width', 'seed'].map(id => [id, document.getElementById(id).value])) }));
   const before = await snapshot();
   const modes = ['render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'];
   for (const mode of modes) {

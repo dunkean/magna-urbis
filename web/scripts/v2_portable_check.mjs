@@ -45,7 +45,7 @@ function run(command, args, options = {}) {
   return new Promise((done, fail) => {
     const child = spawn(command, args, { windowsHide: true, ...options });
     child.once('error', fail);
-    child.once('exit', (code, signal) => code === 0 ? done() : fail(Error(`${command} failed: ${signal ?? code}`)));
+    child.once('exit', (code, signal) => (code === 0 ? done() : fail(Error(`${command} failed: ${signal ?? code}`))));
   });
 }
 let failure;
@@ -54,20 +54,31 @@ try {
   const python = process.env.MAGNA_TEST_PYTHON || 'python';
   await new Promise((done, fail) => {
     const child = spawn(python, ['-c', extract, zip, isolated], { windowsHide: true, stdio: ['ignore', 'pipe', 'inherit'] });
-    child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk; });
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      output += chunk;
+    });
     child.once('error', fail);
-    child.once('exit', (code, signal) => code === 0 ? done() : fail(Error(`ZIP extraction failed: ${signal ?? code}`)));
+    child.once('exit', (code, signal) => (code === 0 ? done() : fail(Error(`ZIP extraction failed: ${signal ?? code}`))));
   });
   const binary = output.trim();
   if (!isAbsolute(binary)) throw Error('ZIP extraction did not return an absolute executable path.');
   await run(process.execPath, [join(root, 'web/scripts/v2_desktop_check.mjs'), `--binary=${binary}`, '--timeout=60000'], { cwd: isolated, stdio: 'inherit' });
   console.log(`Portable ZIP passed the isolated desktop smoke test: ${zip}`);
-} catch (error) { failure = error; }
-finally {
+} catch (error) {
+  failure = error;
+} finally {
   try {
-    const parent = await realpath(tempRoot), target = await realpath(isolated), within = relative(parent, target);
+    const parent = await realpath(tempRoot),
+      target = await realpath(isolated),
+      within = relative(parent, target);
     if (!within || within === '..' || within.startsWith(`..\\`) || isAbsolute(within)) throw Error(`Unsafe cleanup target: ${target}`);
     await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
-  } catch (error) { failure ??= Error(`Could not remove isolated portable files: ${error.message}`); }
+  } catch (error) {
+    failure ??= Error(`Could not remove isolated portable files: ${error.message}`);
+  }
 }
-if (failure) { console.error(failure.stack ?? String(failure)); process.exitCode = 1; }
+if (failure) {
+  console.error(failure.stack ?? String(failure));
+  process.exitCode = 1;
+}

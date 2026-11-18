@@ -10,7 +10,13 @@ import { magnaSurfacePresentation } from '../surface/presentation';
 import type { TerrainGrid } from '../surface/model';
 import { assertSurfaceLiveFrame } from '../surface/adapters/frame';
 
-export interface SurfaceDecorWorkerSource { decor: Decor; scene?: Building3dScene; providerId: string; registrationBinding?: SurfaceRegistrationBinding; parentTerrain?: TerrainGrid }
+export interface SurfaceDecorWorkerSource {
+  decor: Decor;
+  scene?: Building3dScene;
+  providerId: string;
+  registrationBinding?: SurfaceRegistrationBinding;
+  parentTerrain?: TerrainGrid;
+}
 
 /** Runs inside the compiler worker: occupation rasters and urban geometry export do not block the UI. */
 export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurfaceWorkerSource {
@@ -28,9 +34,14 @@ export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurface
   const urban = magnaUrbanPacket(decor, buildings, 0, 0, undefined, 'binary');
   const presentation = magnaSurfacePresentation(decor.meta.query);
   const prepared: PreparedSurfaceWorkerSource & { registrationBinding?: SurfaceRegistrationBinding; urbanId: string } = {
-    input, parentTerrain: payload.parentTerrain, providerId: registrationBinding?.providerId ?? payload.providerId, registrationBinding,
-    urban, urbanId: magnaUrbanIdentity(urban), presentation, sourceMetadata: magnaSurfaceSource(decor, { encoding: 'binary', sourceWaterValidation: input.sourceWaterValidation,
-      extra: { registrationBinding, presentation } }),
+    input,
+    parentTerrain: payload.parentTerrain,
+    providerId: registrationBinding?.providerId ?? payload.providerId,
+    registrationBinding,
+    urban,
+    urbanId: magnaUrbanIdentity(urban),
+    presentation,
+    sourceMetadata: magnaSurfaceSource(decor, { encoding: 'binary', sourceWaterValidation: input.sourceWaterValidation, extra: { registrationBinding, presentation } }),
   };
   return prepared;
 }

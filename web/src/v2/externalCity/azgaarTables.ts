@@ -8,69 +8,152 @@ import type { ClimateZone } from '../../../../rust/bridge/terrainClimate';
 
 /** FMG name bases in FMG index order (index = `culture.base`). */
 export const FMG_NAME_BASES = [
-  'German', 'English', 'French', 'Italian', 'Castillian', 'Ruthenian', 'Nordic', 'Greek', 'Roman', 'Finnic',
-  'Korean', 'Chinese', 'Japanese', 'Portuguese', 'Nahuatl', 'Hungarian', 'Turkish', 'Amazigh', 'Arabic', 'Inuit',
-  'Basque', 'Nigerian', 'Celtic', 'Mesopotamian', 'Iranian', 'Hawaiian', 'Karnataka', 'Quechua', 'Swahili', 'Vietnamese',
-  'Cantonese', 'Mongolian', 'Human Generic', 'Elven', 'Dark Elven', 'Dwarven', 'Goblin', 'Orc', 'Giant', 'Draconic',
-  'Arachnid', 'Serpents', 'Levantine',
+  'German',
+  'English',
+  'French',
+  'Italian',
+  'Castillian',
+  'Ruthenian',
+  'Nordic',
+  'Greek',
+  'Roman',
+  'Finnic',
+  'Korean',
+  'Chinese',
+  'Japanese',
+  'Portuguese',
+  'Nahuatl',
+  'Hungarian',
+  'Turkish',
+  'Amazigh',
+  'Arabic',
+  'Inuit',
+  'Basque',
+  'Nigerian',
+  'Celtic',
+  'Mesopotamian',
+  'Iranian',
+  'Hawaiian',
+  'Karnataka',
+  'Quechua',
+  'Swahili',
+  'Vietnamese',
+  'Cantonese',
+  'Mongolian',
+  'Human Generic',
+  'Elven',
+  'Dark Elven',
+  'Dwarven',
+  'Goblin',
+  'Orc',
+  'Giant',
+  'Draconic',
+  'Arachnid',
+  'Serpents',
+  'Levantine',
 ] as const;
-export type FmgNameBase = typeof FMG_NAME_BASES[number];
+export type FmgNameBase = (typeof FMG_NAME_BASES)[number];
 
 /** Default FMG culture names (every predefined set) → their name base. Keys are lower case. */
 export const FMG_CULTURE_BASES: Readonly<Record<string, FmgNameBase>> = {
   // European / world sets
-  shwazen: 'German', schwarzen: 'German', germanic: 'German',
-  angshire: 'English', enlandic: 'English', westen: 'English', nortumbic: 'English', mercian: 'English', kentian: 'English',
-  luari: 'French', luarian: 'French',
-  tallian: 'Italian', hetallian: 'Italian',
+  shwazen: 'German',
+  schwarzen: 'German',
+  germanic: 'German',
+  angshire: 'English',
+  enlandic: 'English',
+  westen: 'English',
+  nortumbic: 'English',
+  mercian: 'English',
+  kentian: 'English',
+  luari: 'French',
+  luarian: 'French',
+  tallian: 'Italian',
+  hetallian: 'Italian',
   astellian: 'Castillian',
   slovan: 'Ruthenian',
   norse: 'Nordic',
-  elladan: 'Greek', hellenic: 'Greek', macedonian: 'Greek',
-  romian: 'Roman', roman: 'Roman',
-  soumi: 'Finnic', estian: 'Finnic',
+  elladan: 'Greek',
+  hellenic: 'Greek',
+  macedonian: 'Greek',
+  romian: 'Roman',
+  roman: 'Roman',
+  soumi: 'Finnic',
+  estian: 'Finnic',
   koryo: 'Korean',
   hantzu: 'Chinese',
   yamoto: 'Japanese',
   portuzian: 'Portuguese',
   nawatli: 'Nahuatl',
   vengrian: 'Hungarian',
-  turchian: 'Turkish', turan: 'Turkish', rohand: 'Turkish',
+  turchian: 'Turkish',
+  turan: 'Turkish',
+  rohand: 'Turkish',
   amazi: 'Amazigh',
   eurabic: 'Arabic',
   inuk: 'Inuit',
-  euskati: 'Basque', cantabrian: 'Basque',
+  euskati: 'Basque',
+  cantabrian: 'Basque',
   yoruba: 'Nigerian',
-  keltan: 'Celtic', celtic: 'Celtic',
-  efratic: 'Mesopotamian', mesopotamian: 'Mesopotamian',
-  tehrani: 'Iranian', persian: 'Iranian', scythian: 'Iranian',
+  keltan: 'Celtic',
+  celtic: 'Celtic',
+  efratic: 'Mesopotamian',
+  mesopotamian: 'Mesopotamian',
+  tehrani: 'Iranian',
+  persian: 'Iranian',
+  scythian: 'Iranian',
   maui: 'Hawaiian',
   carnatic: 'Karnataka',
   inqan: 'Quechua',
   kiswaili: 'Swahili',
   vietic: 'Vietnamese',
   guantzu: 'Cantonese',
-  ulus: 'Mongolian', dulandir: 'Mongolian',
-  levent: 'Levantine', carthaginian: 'Levantine', hebrew: 'Levantine',
+  ulus: 'Mongolian',
+  dulandir: 'Mongolian',
+  levent: 'Levantine',
+  carthaginian: 'Levantine',
+  hebrew: 'Levantine',
   // High / dark fantasy sets
-  anor: 'Human Generic', dail: 'Human Generic',
-  quenian: 'Elven', eldar: 'Elven',
-  trow: 'Dark Elven', lothian: 'Dark Elven',
-  dunirr: 'Dwarven', khazadur: 'Dwarven', durinn: 'Dwarven',
-  kobold: 'Goblin', kobblin: 'Goblin',
-  uruk: 'Orc', ugluk: 'Orc',
+  anor: 'Human Generic',
+  dail: 'Human Generic',
+  quenian: 'Elven',
+  eldar: 'Elven',
+  trow: 'Dark Elven',
+  lothian: 'Dark Elven',
+  dunirr: 'Dwarven',
+  khazadur: 'Dwarven',
+  durinn: 'Dwarven',
+  kobold: 'Goblin',
+  kobblin: 'Goblin',
+  uruk: 'Orc',
+  ugluk: 'Orc',
   yotunn: 'Giant',
-  rake: 'Draconic', drake: 'Draconic',
-  arago: 'Arachnid', rakhnid: 'Arachnid',
+  rake: 'Draconic',
+  drake: 'Draconic',
+  arago: 'Arachnid',
+  rakhnid: 'Arachnid',
   "aj'snaga": 'Serpents',
 };
 
 /** Extra spellings users type for a name base (lower case). */
 export const FMG_BASE_ALIASES: Readonly<Record<string, FmgNameBase>> = {
-  berber: 'Amazigh', spanish: 'Castillian', castilian: 'Castillian', russian: 'Ruthenian', norse: 'Nordic',
-  persian: 'Iranian', yoruba: 'Nigerian', human: 'Human Generic', generic: 'Human Generic',
-  elf: 'Elven', 'dark elf': 'Dark Elven', drow: 'Dark Elven', dwarf: 'Dwarven', orcish: 'Orc', goblins: 'Goblin',
-  dragon: 'Draconic', serpent: 'Serpents',
+  berber: 'Amazigh',
+  spanish: 'Castillian',
+  castilian: 'Castillian',
+  russian: 'Ruthenian',
+  norse: 'Nordic',
+  persian: 'Iranian',
+  yoruba: 'Nigerian',
+  human: 'Human Generic',
+  generic: 'Human Generic',
+  elf: 'Elven',
+  'dark elf': 'Dark Elven',
+  drow: 'Dark Elven',
+  dwarf: 'Dwarven',
+  orcish: 'Orc',
+  goblins: 'Goblin',
+  dragon: 'Draconic',
+  serpent: 'Serpents',
 };
 
 /**
@@ -176,8 +259,7 @@ const TYPE_CULTURES: Readonly<Record<string, readonly string[]>> = {
   naval: ['hanseatic', 'venetian-lagoon', 'swahili-stone-town', 'norse-ringfort', 'merfolk-tidal', 'al-andalus'],
   river: ['flemish-cloth-town', 'rynek-town', 'european-organic', 'egyptian-planned', 'khmer', 'russian-kremlin'],
   lake: ['venetian-lagoon', 'stilt-town', 'aztec', 'lizardfolk-swamp'],
-  highland: ['caucasian-highland', 'tibetan-monastery', 'himalayan-terraces', 'inca', 'dwarven', 'duergar-hold', 'rajput-fort',
-    'ethiopian-highland', 'slavic-gord', 'celtic-oppidum', 'byzantine-greek'],
+  highland: ['caucasian-highland', 'tibetan-monastery', 'himalayan-terraces', 'inca', 'dwarven', 'duergar-hold', 'rajput-fort', 'ethiopian-highland', 'slavic-gord', 'celtic-oppidum', 'byzantine-greek'],
   nomadic: ['nomad-camp', 'mongol-ordu', 'native-plains', 'siberian-camp', 'oasis-caravan'],
   hunting: ['barbarian', 'native-iroquoian', 'pnw-plank-village', 'guarani-village', 'kraal'],
 };
@@ -200,7 +282,13 @@ export function pickMuCulture(base: FmgNameBase | undefined, cultureType: string
   return choices.length ? draw(choices, `culture:${seed}`) : undefined;
 }
 
-const key = (text: string): string => text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+const key = (text: string): string =>
+  text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 const BASE_BY_KEY: Readonly<Record<string, FmgNameBase>> = Object.fromEntries(FMG_NAME_BASES.map(base => [key(base), base]));
 
 /** The FMG name base behind a culture name (default culture name, else a base name typed as culture). */
@@ -223,7 +311,7 @@ export const FMG_URBANIZATION_RATE = 1;
 export function fmgBaseOf(base: string | number): FmgNameBase | undefined {
   if (typeof base === 'number') return Number.isInteger(base) ? FMG_NAME_BASES[base] : undefined;
   const k = key(base);
-  return /^\d+$/.test(k) ? FMG_NAME_BASES[Number(k)] : BASE_BY_KEY[k] ?? FMG_BASE_ALIASES[k];
+  return /^\d+$/.test(k) ? FMG_NAME_BASES[Number(k)] : (BASE_BY_KEY[k] ?? FMG_BASE_ALIASES[k]);
 }
 
 /**
@@ -247,7 +335,7 @@ export const FMG_BIOMES: readonly { name: string; biome?: BiomeName; zone?: Clim
 ];
 
 /** A default FMG biome by name (a renamed or custom biome falls back to its id when that is a default one). */
-export function fmgBiome(id: number | undefined, name: string | undefined): typeof FMG_BIOMES[number] | undefined {
+export function fmgBiome(id: number | undefined, name: string | undefined): (typeof FMG_BIOMES)[number] | undefined {
   const byName = name ? FMG_BIOMES.find(b => key(b.name) === key(name)) : undefined;
   return byName ?? (id !== undefined && Number.isInteger(id) ? FMG_BIOMES[id] : undefined);
 }

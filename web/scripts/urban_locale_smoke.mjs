@@ -22,7 +22,7 @@ try {
     const { setupUrbanRenderLocale } = await import('/urbanRenderLocale.ts');
     setupUrbanPanelLocale([document.querySelector('#urbanQuarterStage'), document.querySelector('#urbanParcelStage')], true);
     setupUrbanRenderLocale(document.querySelector('#rendering'));
-    return ['fr','en','zh','es','pt'].map(language => {
+    return ['fr', 'en', 'zh', 'es', 'pt'].map(language => {
       localStorage.setItem('magna-urbis-locale', language);
       dispatchEvent(new Event('magna-locale-change'));
       const composition = document.querySelector('[data-config=composition]');
@@ -38,15 +38,15 @@ try {
         stageState: document.querySelector('#urbanQuarterStage [data-state]').textContent,
         palette: document.querySelector('[data-render=palette]').value,
         opacity: document.querySelector('[data-render=opacity]').value,
-        errorText: urbanText(['erreur','error','错误','error español','erro']),
+        errorText: urbanText(['erreur', 'error', '错误', 'error español', 'erro']),
       };
     });
   });
-  const parcelActions = ['Régénérer les parcelles','Regenerate parcels','重新生成地块','Regenerar parcelas','Regenerar lotes'];
-  const blocksLabels = ['Îlots','Blocks','街区','Manzanas','Quadras'];
-  const compositionOptions = ['Secteur isolé · ancien banc','Single sector · legacy bench','单个分区 · 旧工作台','Sector aislado · banco antiguo','Setor isolado · bancada antiga'];
-  const dimensionsLabels = ['Dimensions et budget','Dimensions and budget','尺寸与预算','Dimensiones y presupuesto','Dimensões e orçamento'];
-  const errors = ['erreur','error','错误','error español','erro'];
+  const parcelActions = ['Régénérer les parcelles', 'Regenerate parcels', '重新生成地块', 'Regenerar parcelas', 'Regenerar lotes'];
+  const blocksLabels = ['Îlots', 'Blocks', '街区', 'Manzanas', 'Quadras'];
+  const compositionOptions = ['Secteur isolé · ancien banc', 'Single sector · legacy bench', '单个分区 · 旧工作台', 'Sector aislado · banco antiguo', 'Setor isolado · bancada antiga'];
+  const dimensionsLabels = ['Dimensions et budget', 'Dimensions and budget', '尺寸与预算', 'Dimensiones y presupuesto', 'Dimensões e orçamento'];
+  const errors = ['erreur', 'error', '错误', 'error español', 'erro'];
   for (const [i, result] of results.entries()) {
     assert.equal(result.parcelAction, parcelActions[i]);
     assert.equal(result.blocksLabel, blocksLabels[i]);

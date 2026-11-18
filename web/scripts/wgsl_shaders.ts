@@ -42,25 +42,53 @@ const SAMPLER_NAME: Record<SamplerKind, string> = { nearest: 'sNearest', linear:
 /** Texture bindings shared by every program, with the sampler each texture is filtered with
  * (the GL filter of the texture; texelFetch-only textures never use theirs). */
 const TEXTURES: Record<string, { binding: number; sampler: SamplerKind }> = {
-  uField: { binding: 3, sampler: 'nearest' }, uCave: { binding: 4, sampler: 'linear' }, uLake: { binding: 5, sampler: 'nearest' },
-  uOverlay: { binding: 6, sampler: 'nearest' }, uCoastDistance: { binding: 7, sampler: 'nearest' }, uRefined: { binding: 8, sampler: 'nearest' },
-  uPreviousRefined: { binding: 9, sampler: 'nearest' }, uForestField: { binding: 10, sampler: 'linear' }, uOccupation: { binding: 11, sampler: 'linear' },
-  uForestBrushAtlas: { binding: 12, sampler: 'linear' }, uWaterLayer: { binding: 13, sampler: 'linear' }, uLayer: { binding: 14, sampler: 'linear' },
-  uForestBank: { binding: 15, sampler: 'linear' }, uForestBeach: { binding: 16, sampler: 'linear' }, uShoreRing: { binding: 17, sampler: 'linear' },
-  uAux: { binding: 18, sampler: 'nearest' }, uLandDetail: { binding: 19, sampler: 'linear' },
+  uField: { binding: 3, sampler: 'nearest' },
+  uCave: { binding: 4, sampler: 'linear' },
+  uLake: { binding: 5, sampler: 'nearest' },
+  uOverlay: { binding: 6, sampler: 'nearest' },
+  uCoastDistance: { binding: 7, sampler: 'nearest' },
+  uRefined: { binding: 8, sampler: 'nearest' },
+  uPreviousRefined: { binding: 9, sampler: 'nearest' },
+  uForestField: { binding: 10, sampler: 'linear' },
+  uOccupation: { binding: 11, sampler: 'linear' },
+  uForestBrushAtlas: { binding: 12, sampler: 'linear' },
+  uWaterLayer: { binding: 13, sampler: 'linear' },
+  uLayer: { binding: 14, sampler: 'linear' },
+  uForestBank: { binding: 15, sampler: 'linear' },
+  uForestBeach: { binding: 16, sampler: 'linear' },
+  uShoreRing: { binding: 17, sampler: 'linear' },
+  uAux: { binding: 18, sampler: 'nearest' },
+  uLandDetail: { binding: 19, sampler: 'linear' },
 };
 const TEXTURE_TYPE: Record<string, string> = { sampler2D: 'texture2D', usampler2D: 'utexture2D', sampler2DArray: 'texture2DArray' };
 const TEXTURE_BUILTINS = 'texture|textureLod|texelFetch|textureSize|textureGrad|textureOffset|textureLodOffset|texelFetchOffset|textureQueryLevels';
 
 /** WGSL host-shareable (= std430) size and alignment of a scalar or vector type. */
 const LAYOUT: Record<string, { size: number; align: number }> = {
-  float: { size: 4, align: 4 }, int: { size: 4, align: 4 }, uint: { size: 4, align: 4 }, bool: { size: 4, align: 4 },
-  vec2: { size: 8, align: 8 }, ivec2: { size: 8, align: 8 }, uvec2: { size: 8, align: 8 },
-  vec3: { size: 12, align: 16 }, ivec3: { size: 12, align: 16 }, uvec3: { size: 12, align: 16 },
-  vec4: { size: 16, align: 16 }, ivec4: { size: 16, align: 16 }, uvec4: { size: 16, align: 16 },
+  float: { size: 4, align: 4 },
+  int: { size: 4, align: 4 },
+  uint: { size: 4, align: 4 },
+  bool: { size: 4, align: 4 },
+  vec2: { size: 8, align: 8 },
+  ivec2: { size: 8, align: 8 },
+  uvec2: { size: 8, align: 8 },
+  vec3: { size: 12, align: 16 },
+  ivec3: { size: 12, align: 16 },
+  uvec3: { size: 12, align: 16 },
+  vec4: { size: 16, align: 16 },
+  ivec4: { size: 16, align: 16 },
+  uvec4: { size: 16, align: 16 },
 };
-interface ParamField { offset: number; type: string; count: number }
-interface Uniform { type: string; name: string; count: number }
+interface ParamField {
+  offset: number;
+  type: string;
+  count: number;
+}
+interface Uniform {
+  type: string;
+  name: string;
+  count: number;
+}
 
 /** Index of the brace closing the one at `open`. */
 function closing(source: string, open: number): number {
@@ -88,7 +116,8 @@ function uniformsOf(source: string): Uniform[] {
 
 /** One storage block for the union of the stages' uniforms, with its byte layout. */
 function paramsBlock(sources: string[]): { members: Uniform[]; fields: Record<string, ParamField>; size: number } {
-  const members: Uniform[] = [], seen = new Map<string, Uniform>();
+  const members: Uniform[] = [],
+    seen = new Map<string, Uniform>();
   for (const u of sources.flatMap(uniformsOf)) {
     if ((OVERRIDES as readonly string[]).includes(u.name)) continue;
     const previous = seen.get(u.name);
@@ -96,10 +125,12 @@ function paramsBlock(sources: string[]): { members: Uniform[]; fields: Record<st
       if (previous.type !== u.type || previous.count !== u.count) throw new Error(`Uniform ${u.name} declared with two types`);
       continue;
     }
-    seen.set(u.name, u); members.push(u);
+    seen.set(u.name, u);
+    members.push(u);
   }
   const fields: Record<string, ParamField> = {};
-  let offset = 0, maxAlign = 4;
+  let offset = 0,
+    maxAlign = 4;
   for (const u of members) {
     const l = LAYOUT[u.type];
     if (!l) throw new Error(`Uniform type ${u.type} not supported`);
@@ -112,7 +143,13 @@ function paramsBlock(sources: string[]): { members: Uniform[]; fields: Record<st
   return { members, fields, size: Math.max(16, Math.ceil(offset / maxAlign) * maxAlign) };
 }
 
-interface Rewrite { stage: 'vert' | 'frag'; source: string; defines?: Record<string, number>; block?: Uniform[]; blockName: string }
+interface Rewrite {
+  stage: 'vert' | 'frag';
+  source: string;
+  defines?: Record<string, number>;
+  block?: Uniform[];
+  blockName: string;
+}
 
 /** GLSL ES 3.00 to Vulkan GLSL 450 for naga (see the header comment). */
 function rewrite({ stage, source, defines = {}, block, blockName }: Rewrite): string {
@@ -132,18 +169,22 @@ function rewrite({ stage, source, defines = {}, block, blockName }: Rewrite): st
   s = s.replace(/\buniform\s+(\w+)\s+([^;]+);/g, (_, type: string, list: string) => {
     const names = list.split(',').map(d => d.trim().replace(/\s*\[.*$/, ''));
     if (TEXTURE_TYPE[type]) {
-      return names.map(name => {
-        const t = TEXTURES[name];
-        if (!t) throw new Error(`Texture ${name} has no binding`);
-        textures.set(name, { type, sampler: t.sampler });
-        return `layout(set=0,binding=${t.binding}) uniform ${TEXTURE_TYPE[type]} ${name};`;
-      }).join('\n');
+      return names
+        .map(name => {
+          const t = TEXTURES[name];
+          if (!t) throw new Error(`Texture ${name} has no binding`);
+          textures.set(name, { type, sampler: t.sampler });
+          return `layout(set=0,binding=${t.binding}) uniform ${TEXTURE_TYPE[type]} ${name};`;
+        })
+        .join('\n');
     }
-    return names.map(name => {
-      const id = (OVERRIDES as readonly string[]).indexOf(name);
-      if (id >= 0) return `layout(constant_id=${id}) const ${type} ${name}=0;`;
-      return '';
-    }).join('');
+    return names
+      .map(name => {
+        const id = (OVERRIDES as readonly string[]).indexOf(name);
+        if (id >= 0) return `layout(constant_id=${id}) const ${type} ${name}=0;`;
+        return '';
+      })
+      .join('');
   });
   // Texture builtins take a constructed combined sampler.
   const combined: Record<string, string> = { sampler2D: 'sampler2D', usampler2D: 'usampler2D', sampler2DArray: 'sampler2DArray' };
@@ -153,14 +194,14 @@ function rewrite({ stage, source, defines = {}, block, blockName }: Rewrite): st
   });
   // Varyings and outputs without a location get one, in declaration order (both stages list them alike).
   const locations = { in: 0, out: 0 };
-  s = s.replace(/(?<=^|[;\n])(\s*)((?:flat\s+)?(in|out)\s+\w+\s+\w+\s*;)/g, (_, space: string, declaration: string, direction: 'in' | 'out') =>
-    `${space}layout(location=${locations[direction]++}) ${declaration}`);
+  s = s.replace(/(?<=^|[;\n])(\s*)((?:flat\s+)?(in|out)\s+\w+\s+\w+\s*;)/g, (_, space: string, declaration: string, direction: 'in' | 'out') => `${space}layout(location=${locations[direction]++}) ${declaration}`);
   // naga gives every declarator of `float a[12], b` the array type: split after an array declarator.
   s = s.replace(/(?<=[;{}\n]\s*)(\w+)(\s+\w+\s*\[\s*\d+\s*\])\s*,/g, '$1$2; $1 ');
   if (stage === 'vert') {
     s = s.replace(/\bgl_VertexID\b/g, 'gl_VertexIndex').replace(/\bgl_InstanceID\b/g, 'gl_InstanceIndex');
     // WebGPU framebuffers are y-down: flipping clip y stores the GL rows (see the header comment).
-    const main = s.indexOf('void main()'), end = closing(s, s.indexOf('{', main));
+    const main = s.indexOf('void main()'),
+      end = closing(s, s.indexOf('{', main));
     s = `${s.slice(0, end)}  gl_Position.y = -gl_Position.y;\n${s.slice(end)}`;
   }
   const head = ['#version 450', ...Object.entries(defines).map(([name, value]) => `#define ${name} ${value}`)];
@@ -180,7 +221,13 @@ function checkBlock(wgsl: string, blockName: string, members: Uniform[]): void {
   if (names.join() !== members.map(m => m.name).join()) throw new Error(`${blockName}: member order differs from the computed layout`);
 }
 
-interface Job { key: string; stage: 'vert' | 'frag'; source: string; defines?: Record<string, number>; program: string }
+interface Job {
+  key: string;
+  stage: 'vert' | 'frag';
+  source: string;
+  defines?: Record<string, number>;
+  program: string;
+}
 
 function main(): void {
   const programs = {
@@ -217,8 +264,11 @@ function main(): void {
     // --skip-build reuses the existing translator (web-only sessions must not build Rust).
     if (!process.argv.includes('--skip-build')) execFileSync('cargo', ['build', '--release', '--quiet', '-j', String(jobsCount)], { cwd: tool, stdio: 'inherit', env: { ...process.env, CARGO_TARGET_DIR: targetDir } });
     const exe = join(targetDir, 'release', process.platform === 'win32' ? 'glsl-wgsl.exe' : 'glsl-wgsl');
-    try { execFileSync(exe, jobs3, { stdio: 'inherit' }); }
-    catch { throw new Error(`naga failed; the rewritten GLSL is kept in ${work}`); }
+    try {
+      execFileSync(exe, jobs3, { stdio: 'inherit' });
+    } catch {
+      throw new Error(`naga failed; the rewritten GLSL is kept in ${work}`);
+    }
     const wgsl: Record<string, string> = {};
     for (const job of jobs) {
       const text = readFileSync(join(work, `${job.key}.wgsl`), 'utf8');

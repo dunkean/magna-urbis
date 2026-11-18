@@ -12,5 +12,20 @@ const code = (argument.startsWith('@') ? readFileSync(argument.slice(1), 'utf8')
 const [root, choices, extent, saved = baseline, variations = {}, mods = []] = decodeCompact(code, ['', 0, baseline.extent, baseline, {}, []], 'MU3.');
 // "Follow the environment" (region.demography.followCulture, absent = ticked): `user` when the culture was picked by hand.
 const followCulture = saved.region?.demography?.followCulture ?? baseline.region?.demography?.followCulture ?? true;
-console.log(JSON.stringify({ seed: root, biome: defaults.biomes[choices & 7], culture: defaults.cultures[(choices >>> 3) & 255],
-  cultureChosenBy: followCulture === false ? 'user' : 'environment', relief: defaults.reliefs[choices >>> 11], extent: extent === 0 ? 'auto' : extent, settings: saved, variations, mods }, null, 1));
+console.log(
+  JSON.stringify(
+    {
+      seed: root,
+      biome: defaults.biomes[choices & 7],
+      culture: defaults.cultures[(choices >>> 3) & 255],
+      cultureChosenBy: followCulture === false ? 'user' : 'environment',
+      relief: defaults.reliefs[choices >>> 11],
+      extent: extent === 0 ? 'auto' : extent,
+      settings: saved,
+      variations,
+      mods,
+    },
+    null,
+    1,
+  ),
+);

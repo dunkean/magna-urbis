@@ -9,12 +9,12 @@ describe('crowns over water', () => {
     // Foot on the bank (dry), crown reaching over open lake water: it stands and hides the water it covers.
     expect(crownRooted(0)).toBe(true);
     expect(waterUnderCrown(1, 1)).toBe(0);
-    expect(waterUnderCrown(1, .4)).toBeCloseTo(.6);
+    expect(waterUnderCrown(1, 0.4)).toBeCloseTo(0.6);
     // Open water beside the crown stays water.
     expect(waterUnderCrown(1, 0)).toBe(1);
     // Foot in the lake or the sea: no crown at all.
     expect(crownRooted(1)).toBe(false);
-    expect(crownRooted(.6)).toBe(false);
+    expect(crownRooted(0.6)).toBe(false);
   });
 
   it('is the rule the 2D ground applies to mushroom caps and tree crowns alike', () => {

@@ -8,10 +8,11 @@ import { blockEditId } from './urbanBlockEdits';
 export type HouseEditConfig = Partial<HouseConfig> & { culture?: string };
 export function mergeHouseEdits(...values: (Partial<HouseConfig> | undefined)[]): Partial<HouseConfig> {
   const result: Partial<HouseConfig> = {};
-  for (const value of values) if (value) {
-    const overrides = value.overrides ? { overrides: { ...result.overrides, ...value.overrides } } : {};
-    Object.assign(result, value, overrides);
-  }
+  for (const value of values)
+    if (value) {
+      const overrides = value.overrides ? { overrides: { ...result.overrides, ...value.overrides } } : {};
+      Object.assign(result, value, overrides);
+    }
   return result;
 }
 /** Geometry is the retained engine's authority, including IDs that contain slashes. */
@@ -35,17 +36,47 @@ export function siteBlock(layouts: readonly Layout[], site: { surface?: Placemen
 }
 /** House-only edits do not invalidate the street or cadastral stages. */
 export function geometryConfigs(layout: LayoutConfig, parcels: ParcelConfig): { layout: LayoutConfig; parcels: ParcelConfig } {
-  const result = { layout: { ...layout, ...(layout.overrides ? { overrides: { ...layout.overrides, quarters: Object.fromEntries(Object.entries(layout.overrides.quarters ?? {}).flatMap(([id, edit]) => {
-    const { buildingCulture: _culture, houseConfig: _house, ...geometry } = edit;
-    return Object.keys(geometry).length ? [[id, geometry]] : [];
-  })) } } : {}) }, parcels: { ...parcels, ...(parcels.overrides ? { overrides: { ...parcels.overrides, parcels: Object.fromEntries(Object.entries(parcels.overrides.parcels ?? {}).flatMap(([id, edit]) => {
-    const { culture: _culture, houseConfig: _house, ...geometry } = edit;
-    return Object.keys(geometry).length ? [[id, geometry]] : [];
-  })) } } : {}) } };
-  if (result.parcels.overrides && parcels.overrides?.blocks) result.parcels.overrides.blocks = Object.fromEntries(Object.entries(parcels.overrides.blocks).flatMap(([id, edit]) => {
-    const { houseConfig: _house, ...geometry } = edit;
-    return Object.keys(geometry).length ? [[id, geometry]] : [];
-  }));
+  const result = {
+    layout: {
+      ...layout,
+      ...(layout.overrides
+        ? {
+            overrides: {
+              ...layout.overrides,
+              quarters: Object.fromEntries(
+                Object.entries(layout.overrides.quarters ?? {}).flatMap(([id, edit]) => {
+                  const { buildingCulture: _culture, houseConfig: _house, ...geometry } = edit;
+                  return Object.keys(geometry).length ? [[id, geometry]] : [];
+                }),
+              ),
+            },
+          }
+        : {}),
+    },
+    parcels: {
+      ...parcels,
+      ...(parcels.overrides
+        ? {
+            overrides: {
+              ...parcels.overrides,
+              parcels: Object.fromEntries(
+                Object.entries(parcels.overrides.parcels ?? {}).flatMap(([id, edit]) => {
+                  const { culture: _culture, houseConfig: _house, ...geometry } = edit;
+                  return Object.keys(geometry).length ? [[id, geometry]] : [];
+                }),
+              ),
+            },
+          }
+        : {}),
+    },
+  };
+  if (result.parcels.overrides && parcels.overrides?.blocks)
+    result.parcels.overrides.blocks = Object.fromEntries(
+      Object.entries(parcels.overrides.blocks).flatMap(([id, edit]) => {
+        const { houseConfig: _house, ...geometry } = edit;
+        return Object.keys(geometry).length ? [[id, geometry]] : [];
+      }),
+    );
   if (result.layout.overrides && !Object.values(result.layout.overrides).some(entries => Object.keys(entries ?? {}).length)) delete result.layout.overrides;
   if (result.parcels.overrides && !Object.values(result.parcels.overrides).some(entries => Object.keys(entries ?? {}).length)) delete result.parcels.overrides;
   return result;
@@ -70,16 +101,22 @@ export function localArchitectureSettings(settings: PlacementBatchSettings, layo
 }
 /** Vertical edits of a procedural body retain its native footprint and never invoke Houses placement. */
 export function isMassingEdit(patch?: Partial<HouseConfig>): boolean {
-  return !!patch && Object.keys(patch).every(key => key === 'overrides') && !!patch.overrides && Object.entries(patch.overrides).some(([,value]) => value != null)
-    && Object.entries(patch.overrides).every(([key,value]) => value == null || ['roof','floors','roof_pitch_deg'].includes(key));
+  return (
+    !!patch &&
+    Object.keys(patch).every(key => key === 'overrides') &&
+    !!patch.overrides &&
+    Object.entries(patch.overrides).some(([, value]) => value != null) &&
+    Object.entries(patch.overrides).every(([key, value]) => value == null || ['roof', 'floors', 'roof_pitch_deg'].includes(key))
+  );
 }
 /** Roof systems the city-volume renderer (urban/massing.rs) can apply to a retained footprint. */
-export const massingRoofs: Record<string,string> = { 'RF-GABLE':'gable', 'RF-HIP':'hip', 'RF-FLAT':'flat', 'RF-DOME':'dome', 'RF-PYRAMID':'pyramid', 'RF-CONICAL':'cone', 'RF-CONE':'cone', 'RF-SHED':'shed', 'RF-BARREL':'barrel' };
+export const massingRoofs: Record<string, string> = { 'RF-GABLE': 'gable', 'RF-HIP': 'hip', 'RF-FLAT': 'flat', 'RF-DOME': 'dome', 'RF-PYRAMID': 'pyramid', 'RF-CONICAL': 'cone', 'RF-CONE': 'cone', 'RF-SHED': 'shed', 'RF-BARREL': 'barrel' };
 export function massingEditApplied(programme: PlacementRequest['programme'], patch: Partial<HouseConfig>): boolean {
-  const pieces=(programme as {massing?:any[]}|undefined)?.massing;
-  const volumes=Array.isArray(pieces)?pieces.flatMap(piece=>piece.volumes?.filter((v:any)=>!v.minor)??[piece]):[];
-  const roof=patch.overrides?.roof, floors=patch.overrides?.floors;
-  return volumes.length>0 && (!roof || !!massingRoofs[roof] && volumes.every(volume=>volume.roof===massingRoofs[roof])) && (floors==null || volumes.every(volume=>volume.floors===floors));
+  const pieces = (programme as { massing?: any[] } | undefined)?.massing;
+  const volumes = Array.isArray(pieces) ? pieces.flatMap(piece => piece.volumes?.filter((v: any) => !v.minor) ?? [piece]) : [];
+  const roof = patch.overrides?.roof,
+    floors = patch.overrides?.floors;
+  return volumes.length > 0 && (!roof || (!!massingRoofs[roof] && volumes.every(volume => volume.roof === massingRoofs[roof]))) && (floors == null || volumes.every(volume => volume.floors === floors));
 }
 export function scopedHouseEdit(layout: LayoutConfig, parcels: ParcelConfig, quarter: string | undefined, parcel: string, own?: HouseEditConfig, block?: string): Partial<HouseConfig> {
   const { culture: _culture, ...house } = own ?? {};
@@ -91,9 +128,7 @@ export function scopedHouseEdit(layout: LayoutConfig, parcels: ParcelConfig, qua
 /** A deliberate new pack chooses its own recipes, rather than retaining a recipe from the old pack. */
 export function applyHouseEdit(request: PlacementRequest, config: HouseConfig): PlacementRequest {
   const changedPack = config.pack !== request.culture.pack;
-  return { ...request, seed: config.seed, config,
-    ...(changedPack ? { culture: { ...request.culture, pack: config.pack, mode: config.mode, borrowing: null } } : {}),
-    native_minimum_candidates: undefined };
+  return { ...request, seed: config.seed, config, ...(changedPack ? { culture: { ...request.culture, pack: config.pack, mode: config.mode, borrowing: null } } : {}), native_minimum_candidates: undefined };
 }
 export function requireHouseEditSuccess(scene: PlacementBatch, requests: readonly Pick<PlacementRequest, 'id' | 'parcel_id'>[]): void {
   const success = new Set(scene.buildings.map(b => b.id));

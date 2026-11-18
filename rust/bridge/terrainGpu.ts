@@ -9,7 +9,11 @@ import type { TerrainData, TerrainRegion, TerrainSettings, TerrainCompute } from
 import { gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 import { sourceDefinition } from './terrainDefinition';
 
-export interface Context { device: GPUDevice; pipelines: Map<string, Promise<GPUComputePipeline>>; lost: boolean }
+export interface Context {
+  device: GPUDevice;
+  pipelines: Map<string, Promise<GPUComputePipeline>>;
+  lost: boolean;
+}
 let contextPromise: Promise<Context | undefined> | undefined;
 export const GPU_RELIEFS = ['flat', 'hills', 'mountains', 'mixed', 'high-mountains', 'valley', 'volcano', 'caldera', 'plateau', 'canyon'];
 
@@ -21,7 +25,10 @@ export async function gpuContext(): Promise<Context | undefined> {
     const { maxBufferSize, maxStorageBufferBindingSize } = adapter.limits;
     const device = await adapter.requestDevice({ requiredFeatures: adapter.features.has('timestamp-query') ? ['timestamp-query'] : [], requiredLimits: { maxBufferSize, maxStorageBufferBindingSize } });
     const result: Context = { device, pipelines: new Map(), lost: false };
-    void device.lost.then(() => { result.lost = true; contextPromise = undefined; });
+    void device.lost.then(() => {
+      result.lost = true;
+      contextPromise = undefined;
+    });
     return result;
   })().catch(() => undefined);
   return contextPromise;
@@ -50,15 +57,18 @@ export async function prepareGpu(mode: TerrainCompute, relief: string): Promise<
 }
 
 export const GPU_GENERATION_RELIEFS = ['hills', 'mountains', 'mixed', 'high-mountains', 'valley', 'volcano', 'caldera', 'plateau', 'canyon'];
-export async function generateGpuNoise(state: Context, settings: TerrainSettings,progress?:TerrainProgressCallback): Promise<{ coarse: Float32Array; fine: Float32Array }> {
-  const device = state.device, sourceN = sourceDefinition(settings).n;
+export async function generateGpuNoise(state: Context, settings: TerrainSettings, progress?: TerrainProgressCallback): Promise<{ coarse: Float32Array; fine: Float32Array }> {
+  const device = state.device,
+    sourceN = sourceDefinition(settings).n;
   // Both entry points share an explicit layout, so the seed buffers are uploaded once.
-  const layout = device.createBindGroupLayout({ entries: [
-    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-  ] });
+  const layout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    ],
+  });
   // Store each pipeline separately; subsequent generations reuse shader compilation.
   const stages = settings.generationCompute === 'gpu-all' ? ['coarse', 'fine'] : ['fine'];
   const compiled = stages.map(entryPoint => {
@@ -75,38 +85,57 @@ export async function generateGpuNoise(state: Context, settings: TerrainSettings
   const buffers: GPUBuffer[] = [];
   try {
     const params = plan.parameters();
-    if(settings.procedural?.regionalN){params[2]=settings.procedural.regionalN;params[4]=settings.width*1.44/params[2];}
-    params[6]*=settings.procedural?.noiseScale??1;
+    if (settings.procedural?.regionalN) {
+      params[2] = settings.procedural.regionalN;
+      params[4] = (settings.width * 1.44) / params[2];
+    }
+    params[6] *= settings.procedural?.noiseScale ?? 1;
     const upload = (data: Float32Array | Uint32Array, usage: GPUBufferUsageFlags) => {
       const buffer = device.createBuffer({ size: data.byteLength, usage: usage | GPUBufferUsage.COPY_DST });
-      buffers.push(buffer); device.queue.writeBuffer(buffer, 0, data as GPUAllowSharedBufferSource); return buffer;
+      buffers.push(buffer);
+      device.queue.writeBuffer(buffer, 0, data as GPUAllowSharedBufferSource);
+      return buffer;
     };
     const inputs = [upload(params, GPUBufferUsage.UNIFORM), upload(plan.permutations(), GPUBufferUsage.STORAGE), upload(plan.gradients(), GPUBufferUsage.STORAGE)];
-    progress?.('GPU · compilation des shaders de bruit…',{stage:'gpu-noise-compile'});
+    progress?.('GPU · compilation des shaders de bruit…', { stage: 'gpu-noise-compile' });
     const resolved = await gpuSetupDeadline(Promise.all(compiled));
-    progress?.('GPU · calcul des bruits du relief…',{stage:'gpu-noise'});
-    const sizes = stages.map(stage => stage === 'coarse' ? params[2] : params[1]);
+    progress?.('GPU · calcul des bruits du relief…', { stage: 'gpu-noise' });
+    const sizes = stages.map(stage => (stage === 'coarse' ? params[2] : params[1]));
     const readbacks = sizes.map((n, index) => {
       const bytes = n * n * 16;
       const output = device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
       const readback = device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
       buffers.push(output, readback);
       const group = device.createBindGroup({ layout: resolved[index].getBindGroupLayout(0), entries: [...inputs, output].map((buffer, binding) => ({ binding, resource: { buffer } })) });
-      const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
-      pass.setPipeline(resolved[index]); pass.setBindGroup(0, group); pass.dispatchWorkgroups(Math.ceil(n / 8), Math.ceil(n / 8)); pass.end();
-      encoder.copyBufferToBuffer(output, 0, readback, 0, bytes); device.queue.submit([encoder.finish()]);
+      const encoder = device.createCommandEncoder(),
+        pass = encoder.beginComputePass();
+      pass.setPipeline(resolved[index]);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(Math.ceil(n / 8), Math.ceil(n / 8));
+      pass.end();
+      encoder.copyBufferToBuffer(output, 0, readback, 0, bytes);
+      device.queue.submit([encoder.finish()]);
       return readback;
     });
-    const done=device.queue.onSubmittedWorkDone().then(()=>progress?.('GPU · lecture des bruits calculés…',{stage:'gpu-readback'}),()=>undefined);
-    const values = await Promise.all(readbacks.map(async buffer => {
-      await buffer.mapAsync(GPUMapMode.READ);
-      const copy = new Float32Array(buffer.getMappedRange().slice(0)); buffer.unmap(); return copy;
-    }));
+    const done = device.queue.onSubmittedWorkDone().then(
+      () => progress?.('GPU · lecture des bruits calculés…', { stage: 'gpu-readback' }),
+      () => undefined,
+    );
+    const values = await Promise.all(
+      readbacks.map(async buffer => {
+        await buffer.mapAsync(GPUMapMode.READ);
+        const copy = new Float32Array(buffer.getMappedRange().slice(0));
+        buffer.unmap();
+        return copy;
+      }),
+    );
     await done;
     return { coarse: stages.length === 2 ? values[0] : new Float32Array(), fine: values[values.length - 1] };
-  } finally { plan.free(); buffers.forEach(buffer => buffer.destroy()); }
+  } finally {
+    plan.free();
+    buffers.forEach(buffer => buffer.destroy());
+  }
 }
-
 
 export class GpuTerrainSampler {
   private buffers: GPUBuffer[] = [];
@@ -123,21 +152,26 @@ export class GpuTerrainSampler {
   private parameters: Float64Array;
   private hasField: boolean;
   private sourceN: number;
-  get lost(): boolean { return this.state.lost; }
+  get lost(): boolean {
+    return this.state.lost;
+  }
 
-  constructor(private state: Context, private pipeline: GPUComputePipeline, private mode: TerrainCompute, engine: TerrainEngine) {
+  constructor(
+    private state: Context,
+    private pipeline: GPUComputePipeline,
+    private mode: TerrainCompute,
+    engine: TerrainEngine,
+  ) {
     this.parameters = engine.sampling_parameters();
     this.sourceN = engine.source_resolution();
     let pyramidCells = 0;
     for (let level = this.sourceN; level >= 1; level = Math.floor(level / 2)) pyramidCells += level * level;
     const planes = this.parameters[5] === 3 ? 2 : 1;
-    if (pyramidCells * planes * 4 > state.device.limits.maxStorageBufferBindingSize)
-      throw new Error(`Champ physique ${this.sourceN}² trop grand pour l'échantillonnage GPU ; utilisez le calcul CPU.`);
+    if (pyramidCells * planes * 4 > state.device.limits.maxStorageBufferBindingSize) throw new Error(`Champ physique ${this.sourceN}² trop grand pour l'échantillonnage GPU ; utilisez le calcul CPU.`);
     const values = engine.sampling_field();
     this.hasField = values.length > 0;
     const data = values.length ? values : new Float32Array(1);
-    if (data.byteLength > state.device.limits.maxStorageBufferBindingSize)
-      throw new Error(`Champ physique ${this.sourceN}² trop grand pour l'échantillonnage GPU ; utilisez le calcul CPU.`);
+    if (data.byteLength > state.device.limits.maxStorageBufferBindingSize) throw new Error(`Champ physique ${this.sourceN}² trop grand pour l'échantillonnage GPU ; utilisez le calcul CPU.`);
     this.field = this.upload(data);
     this.perm = this.upload(engine.sampling_permutations());
     this.gradients = this.upload(engine.sampling_gradients());
@@ -161,36 +195,60 @@ export class GpuTerrainSampler {
 
   private dispatchField(region: TerrainRegion, settings: TerrainSettings): void {
     const { x, y, extent, resolution: n } = region;
-    if (![x, y, extent, n].every(Number.isFinite) || x < 0 || y < 0 || extent <= 0
-      || x + extent > settings.width + 0.0001 || y + extent > settings.width + 0.0001
-      || !Number.isInteger(n) || n < 16 || n > 8192) throw new Error('Région d’échantillonnage invalide.');
+    if (![x, y, extent, n].every(Number.isFinite) || x < 0 || y < 0 || extent <= 0 || x + extent > settings.width + 0.0001 || y + extent > settings.width + 0.0001 || !Number.isInteger(n) || n < 16 || n > 8192) throw new Error('Région d’échantillonnage invalide.');
     const device = this.state.device;
-    const cell = extent / n, epsilon = Math.max(settings.motifSize / 65536, cell * 0.5);
+    const cell = extent / n,
+      epsilon = Math.max(settings.motifSize / 65536, cell * 0.5);
     const a = this.parameters;
     const maxLevel = Math.floor(Math.log2(this.sourceN));
     const lod = Math.min(maxLevel, Math.log2(Math.max(1, cell * (settings.relief === 'flat' && a[5] !== 4 ? 2 / settings.motifSize : 1 / settings.width) * this.sourceN)));
-    const params = new Float32Array([a[0], a[1], a[2], a[3], a[4], a[5], this.hasField ? 1 : 0, n,
-      x, y, extent, cell, Math.floor(lod), Math.min(maxLevel, Math.floor(lod) + 1), lod - Math.floor(lod), epsilon, a[6], a[7], this.sourceN, maxLevel, ...Array.from({ length: 16 }, (_, i) => a[8 + i] ?? 0)]);
+    const params = new Float32Array([
+      a[0],
+      a[1],
+      a[2],
+      a[3],
+      a[4],
+      a[5],
+      this.hasField ? 1 : 0,
+      n,
+      x,
+      y,
+      extent,
+      cell,
+      Math.floor(lod),
+      Math.min(maxLevel, Math.floor(lod) + 1),
+      lod - Math.floor(lod),
+      epsilon,
+      a[6],
+      a[7],
+      this.sourceN,
+      maxLevel,
+      ...Array.from({ length: 16 }, (_, i) => a[8 + i] ?? 0),
+    ]);
     const bytes = n * n * 16;
     if (bytes > this.capacity) {
-      this.output?.destroy(); this.capacity = bytes;
+      this.output?.destroy();
+      this.capacity = bytes;
       this.output = device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-      this.group = device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries:
-        [this.uniform, this.field, this.perm, this.gradients, this.output, this.branches, this.coast].map((buffer, binding) => ({ binding, resource: { buffer } })) });
+      this.group = device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries: [this.uniform, this.field, this.perm, this.gradients, this.output, this.branches, this.coast].map((buffer, binding) => ({ binding, resource: { buffer } })) });
     }
     device.queue.writeBuffer(this.uniform, 0, params);
     const commands = device.createCommandEncoder();
     const pass = commands.beginComputePass();
-    pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.group!);
-    pass.dispatchWorkgroups(Math.ceil(n / 8), Math.ceil(n / 8)); pass.end();
+    pass.setPipeline(this.pipeline);
+    pass.setBindGroup(0, this.group!);
+    pass.dispatchWorkgroups(Math.ceil(n / 8), Math.ceil(n / 8));
+    pass.end();
     device.queue.submit([commands.finish()]);
   }
 
   async sample(region: TerrainRegion, settings: TerrainSettings, globalMinHeight: number, globalMaxHeight: number): Promise<TerrainData> {
-    const started = performance.now(), device = this.state.device;
+    const started = performance.now(),
+      device = this.state.device;
     const { x, y, extent, resolution: n } = region;
     this.dispatchField(region, settings);
-    const bytes = n * n * 16, commands = device.createCommandEncoder();
+    const bytes = n * n * 16,
+      commands = device.createCommandEncoder();
     // Allocated on first read: a coast field stays on the device and never needs it.
     if (!this.readback || this.readback.size < bytes) {
       this.readback?.destroy();
@@ -199,26 +257,50 @@ export class GpuTerrainSampler {
     commands.copyBufferToBuffer(this.output!, 0, this.readback!, 0, bytes);
     device.queue.submit([commands.finish()]);
     await this.readback!.mapAsync(GPUMapMode.READ, 0, bytes);
-    const copy = this.readback!.getMappedRange(0, bytes).slice(0); this.readback!.unmap();
+    const copy = this.readback!.getMappedRange(0, bytes).slice(0);
+    this.readback!.unmap();
     const packed = new Float32Array(copy);
-    const height = new Float32Array(n * n), normalX = new Float32Array(n * n), normalY = new Float32Array(n * n), normalZ = new Float32Array(n * n);
-    let minHeight = Infinity, maxHeight = -Infinity;
+    const height = new Float32Array(n * n),
+      normalX = new Float32Array(n * n),
+      normalY = new Float32Array(n * n),
+      normalZ = new Float32Array(n * n);
+    let minHeight = Infinity,
+      maxHeight = -Infinity;
     for (let i = 0; i < n * n; i++) {
       const j = i * 4;
       height[i] = packed[j];
       normalX[i] = packed[j + 1];
       normalY[i] = packed[j + 2];
       normalZ[i] = packed[j + 3];
-      minHeight = Math.min(minHeight, height[i]); maxHeight = Math.max(maxHeight, height[i]);
+      minHeight = Math.min(minHeight, height[i]);
+      maxHeight = Math.max(maxHeight, height[i]);
     }
     if (!Number.isFinite(minHeight) || !Number.isFinite(maxHeight)) throw new Error('Sortie GPU non finie.');
-    return { x, y, width: extent, resolution: n, minHeight, maxHeight, globalMinHeight, globalMaxHeight,
-      motifSize: settings.motifSize, height, normalX, normalY, normalZ, caveMask: new Uint8Array(),
-      generationMs: performance.now() - started, backend: this.mode, samplingMs: performance.now() - started };
+    return {
+      x,
+      y,
+      width: extent,
+      resolution: n,
+      minHeight,
+      maxHeight,
+      globalMinHeight,
+      globalMaxHeight,
+      motifSize: settings.motifSize,
+      height,
+      normalX,
+      normalY,
+      normalZ,
+      caveMask: new Uint8Array(),
+      generationMs: performance.now() - started,
+      backend: this.mode,
+      samplingMs: performance.now() - started,
+    };
   }
 
   dispose(): void {
-    this.buffers.forEach(buffer => buffer.destroy()); this.buffers = [];
-    this.output?.destroy(); this.readback?.destroy();
+    this.buffers.forEach(buffer => buffer.destroy());
+    this.buffers = [];
+    this.output?.destroy();
+    this.readback?.destroy();
   }
 }

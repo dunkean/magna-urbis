@@ -16,19 +16,41 @@ import { requiresProgrammeFunctions, requireLocalProgrammeFunctions, requireWasm
 export type { UrbanSourceHandle } from './urbanSource';
 export type { Point } from './settlements';
 
-export interface Shape { outer: Point[]; holes: Point[][] }
-export interface Street { path: Point[]; widths: number[]; rank: number; role: string }
-export interface Quarter { shape: Shape; phase: number; zone?: string }
-export interface Block { shape: Shape; quarter: number; kind: string; axis: Point; zone?: string; phase?: number }
+export interface Shape {
+  outer: Point[];
+  holes: Point[][];
+}
+export interface Street {
+  path: Point[];
+  widths: number[];
+  rank: number;
+  role: string;
+}
+export interface Quarter {
+  shape: Shape;
+  phase: number;
+  zone?: string;
+}
+export interface Block {
+  shape: Shape;
+  quarter: number;
+  kind: string;
+  axis: Point;
+  zone?: string;
+  phase?: number;
+}
 export interface Enclosure {
-  path: Point[]; kind: string; gates: Point[];
+  path: Point[];
+  kind: string;
+  gates: Point[];
   purpose?: 'citadel' | 'cathedral-close' | 'urban-castle' | string;
   /** Tower anchors on the curtain; towers[i] === towers_detail[i].anchor. */
   towers?: Point[];
   /** Fortification structures (Rust `urban::fortification`), all optional and snake_case. */
   style?: 'palisade' | 'gord' | 'hedge' | 'curtain' | 'flanked' | 'concentric' | 'rammed-earth' | 'wengcheng' | 'bastioned' | string;
   material?: 'timber' | 'timber-earth' | 'thorn' | 'stone' | 'brick' | 'rammed-earth' | 'earth-stone' | string;
-  curtain_width_m?: number; height_m?: number;
+  curtain_width_m?: number;
+  height_m?: number;
   towers_detail?: { anchor: Point; center: Point; shape: 'round' | 'square' | 'd' | 'rect' | string; radius_m: number; depth_m?: number; angle: number; height_m: number; kind: 'corner' | 'flank' | 'gate' | 'water' | string; footprint: Shape }[];
   gatehouses?: { gate: number; kind: 'timber' | 'tower' | 'twin-tower' | 'bab' | 'ravelin' | 'water' | 'postern' | string; shape: Shape; masses?: Shape[]; passage: [Point, Point]; passage_width_m: number; height_m: number }[];
   bastions?: { kind: string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
@@ -37,18 +59,36 @@ export interface Enclosure {
   attached?: { kind: 'lean-to' | string; side: 'out' | string; shape: Shape; height_m: number }[];
   reserve?: Shape[];
 }
-export interface GrowthPhase { culture?: string; kind: string; zone: string; recipe: string; population: number; targetArea: number; shapes: Shape[] }
+export interface GrowthPhase {
+  culture?: string;
+  kind: string;
+  zone: string;
+  recipe: string;
+  population: number;
+  targetArea: number;
+  shapes: Shape[];
+}
 /** A harbour platform (`quay`, `landing`, `pier`, `mole`) or a piece of harbour furniture (`jetty`, `slip`, `steps`, `basin`, `boat`,
  * `mast`, `crane`, `beacon`, `post`, `cargo`, `shiphouse`…; Rust `urban::harbour_furniture`). `material` is `stone` or `timber`, a boat
  * class or a cargo kind; `deck_z_m` is one metre above the item's water level. Looks: web/src/render/harbourStyle.ts. */
-export interface Quay { kind: string; shape: Shape; deck_z_m: number; material: string }
+export interface Quay {
+  kind: string;
+  shape: Shape;
+  deck_z_m: number;
+  material: string;
+}
 /** Town canal water (urban/lagoon.rs): one level per reach, bridges and lock gates over it. */
 export interface Waterway {
-  shape: Shape; levelM: number; crossings: Shape[];
+  shape: Shape;
+  levelM: number;
+  crossings: Shape[];
   /** `canal` (with quays), `rio` (a lane turned to water over its whole width), `pool`, `mouth` (onto natural water), `feeder` or `basin`. */
   kind?: 'canal' | 'rio' | 'pool' | 'mouth' | 'feeder' | 'basin';
   /** 0 main canal, 1 secondary canal, 2 rio. */
-  rank?: number; path?: Point[]; widthM?: number; locks?: Shape[];
+  rank?: number;
+  path?: Point[];
+  widthM?: number;
+  locks?: Shape[];
   /** Lowest ground along the piece: the 3D water lies just above it (the 3D ground is not dug). */
   bankM?: number;
 }
@@ -57,7 +97,11 @@ export interface UrbanStructure {
   gateVillageCenters?: Point[];
   quays?: Quay[];
   portDistricts?: { district: number; role: 'port'; quarters: number[]; shapes: Shape[] }[];
-  version: 1; mechanism: string; family: string; reserve: Shape[]; allocated: Shape[];
+  version: 1;
+  mechanism: string;
+  family: string;
+  reserve: Shape[];
+  allocated: Shape[];
   centers: { id: number; point: Point; weight: number }[];
   districts: { id: number; center: number; phase: number; tissue: string; quarters: number[]; role?: string; wealth?: number; label?: string }[];
   history: { epoch: number; kind: string; center: number; area: number }[];
@@ -65,26 +109,153 @@ export interface UrbanStructure {
 }
 /** Land and edge streets a town holds (world metres), for the towns generated after it (`urban/neighbours.rs`). */
 /** A placed neighbour generated after this town (canonical order): the engine keeps a core sized to its own population free. */
-export interface ClaimReserve { population: number; culture: string; center: Point; radius: number }
-export interface Claim { key: string; land: Shape[]; streets: Street[]; reserve?: ClaimReserve }
+export interface ClaimReserve {
+  population: number;
+  culture: string;
+  center: Point;
+  radius: number;
+}
+export interface Claim {
+  key: string;
+  land: Shape[];
+  streets: Street[];
+  reserve?: ClaimReserve;
+}
 /** A site of a `quarters` request: `neighbours` are the claims of the earlier towns it must keep off and join. */
 export type UrbanSite = RoadSite & { neighbours?: Claim[] };
-export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[]; claim?: Claim }
-export interface Parcel { pressure?: number; id?: string; parentIds?: string[]; provenance?: string[]; family?: string; reason?: string; contacts?: ParcelContact[]; envelope?: Shape; shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common' | 'residual' | 'court'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved' | 'attached'; street: number | null; frontLength: number } }
-export interface LotEnclosure { path: Point[]; material: 'wall' | 'hedge' | 'fence'; side: 'front' | 'side' | 'back' }
-export interface ResolvedEnclosure { plot: number; field: number; material: 'wall' | 'hedge' | 'fence'; fieldMaterial: 'wall' | 'hedge' | 'fence'; front: number; side: number; back: number; /** The culture draws no lot limits (catalogue `render.plotLines: false`). */ hideLotLines?: boolean; /** Share of the country lots (village, hamlet zones) that keep a yard; absent = 0.95. */ country?: number }
-export interface Partition { enclosure?: ResolvedEnclosure; config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
-export interface ParcelContact { a: Point; b: Point; street: number; rank: number; length: number; kind: string }
-export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
-export interface CultureMapping { culture: string; family: string; functionalProfile: string; architectureFamily: string; architecturePack: string; coverage: string; borrowing: string; admissibility: UrbanAdmissibility }
-export interface UrbanDemand { id: string; role?: string; function: string; unit: 'domesticUnits' | 'usefulAreaM2'; requested: number; targetArea: number; targetFrontage: number; provenance: string[]; requires: string[]; parcelCapacity: number; builtCapacity: number; openCapacity?: number; deficit: number; reasons: string[] }
-export interface UrbanAllocation { parcelId: string; demandId: string; role?: string; households?: number; residents?: number; function: string; culture: string; architecturePack: string; capacity: number; unit: 'domesticUnits' | 'usefulAreaM2'; score: number; reasons: string[]; housingFloorNeed?: HousingFloorNeed }
+export interface Layout {
+  config?: LayoutConfig;
+  programme?: UrbanProgramme;
+  key: string;
+  culture: string;
+  center: Point;
+  quarters: Quarter[];
+  streets: Street[];
+  blocks: Block[];
+  enclosures?: Enclosure[];
+  phases?: GrowthPhase[];
+  archetype?: string;
+  structure?: UrbanStructure;
+  warnings: string[];
+  claim?: Claim;
+}
+export interface Parcel {
+  pressure?: number;
+  id?: string;
+  parentIds?: string[];
+  provenance?: string[];
+  family?: string;
+  reason?: string;
+  contacts?: ParcelContact[];
+  envelope?: Shape;
+  shape: Shape;
+  block: number;
+  use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common' | 'residual' | 'court';
+  front: [Point, Point] | null;
+  axis: Point;
+  rank: number;
+  access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved' | 'attached'; street: number | null; frontLength: number };
+}
+export interface LotEnclosure {
+  path: Point[];
+  material: 'wall' | 'hedge' | 'fence';
+  side: 'front' | 'side' | 'back';
+}
+export interface ResolvedEnclosure {
+  plot: number;
+  field: number;
+  material: 'wall' | 'hedge' | 'fence';
+  fieldMaterial: 'wall' | 'hedge' | 'fence';
+  front: number;
+  side: number;
+  back: number;
+  /** The culture draws no lot limits (catalogue `render.plotLines: false`). */ hideLotLines?: boolean;
+  /** Share of the country lots (village, hamlet zones) that keep a yard; absent = 0.95. */ country?: number;
+}
+export interface Partition {
+  enclosure?: ResolvedEnclosure;
+  config?: ParcelConfig;
+  programme?: UrbanProgramme;
+  key: string;
+  parcels: Parcel[];
+  warnings: string[];
+  diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number };
+}
+export interface ParcelContact {
+  a: Point;
+  b: Point;
+  street: number;
+  rank: number;
+  length: number;
+  kind: string;
+}
+export interface UrbanAdmissibility {
+  recipeId: string;
+  nativeLayout: string;
+  floors: [number, number];
+  eras: string[];
+  minFrontage: number;
+  minAccessWidth: number;
+  minArea: number;
+  minDepth: number;
+  maxSlope: number;
+  sharedAccess: boolean;
+  partyWalls: boolean;
+}
+export interface CultureMapping {
+  culture: string;
+  family: string;
+  functionalProfile: string;
+  architectureFamily: string;
+  architecturePack: string;
+  coverage: string;
+  borrowing: string;
+  admissibility: UrbanAdmissibility;
+}
+export interface UrbanDemand {
+  id: string;
+  role?: string;
+  function: string;
+  unit: 'domesticUnits' | 'usefulAreaM2';
+  requested: number;
+  targetArea: number;
+  targetFrontage: number;
+  provenance: string[];
+  requires: string[];
+  parcelCapacity: number;
+  builtCapacity: number;
+  openCapacity?: number;
+  deficit: number;
+  reasons: string[];
+}
+export interface UrbanAllocation {
+  parcelId: string;
+  demandId: string;
+  role?: string;
+  households?: number;
+  residents?: number;
+  function: string;
+  culture: string;
+  architecturePack: string;
+  capacity: number;
+  unit: 'domesticUnits' | 'usefulAreaM2';
+  score: number;
+  reasons: string[];
+  housingFloorNeed?: HousingFloorNeed;
+}
 export interface UrbanProgramme {
   builtBalance?: import('./urbanBuiltBalance').BuiltOutcomeBalance;
-  version: 1; population: number; context: import('./urbanConfig').ProgrammeContext; cultures: CultureMapping[]; demands: UrbanDemand[];
+  version: 1;
+  population: number;
+  context: import('./urbanConfig').ProgrammeContext;
+  cultures: CultureMapping[];
+  demands: UrbanDemand[];
   reservations: { id: string; demandId: string; block: number; shape: Shape; street: number; frontage: number }[];
-  allocations: UrbanAllocation[]; adjacency: { a: string; b: string; sharedLength: number }[];
-  environment: { block: number; slope: number; wet: boolean; waterfront: boolean; pressure?: number }[]; reconciliationPasses: number; warnings: string[];
+  allocations: UrbanAllocation[];
+  adjacency: { a: string; b: string; sharedLength: number }[];
+  environment: { block: number; slope: number; wet: boolean; waterfront: boolean; pressure?: number }[];
+  reconciliationPasses: number;
+  warnings: string[];
   /** Households the domestic-admissible plots could hold (land capacity, before allocation). */
   housingCapacity?: number;
   /** Measured navigable quay frontage: the only evidence port storage is allocated against. */
@@ -92,37 +263,67 @@ export interface UrbanProgramme {
 }
 /** Include outward growth when framing a completed settlement. */
 export function layoutExtent(layouts?: Layout[]): { center: Point; radius: number } | undefined {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
   const include = (p: Point, margin = 0): void => {
-    x0 = Math.min(x0, p.x - margin); y0 = Math.min(y0, p.y - margin); x1 = Math.max(x1, p.x + margin); y1 = Math.max(y1, p.y + margin);
+    x0 = Math.min(x0, p.x - margin);
+    y0 = Math.min(y0, p.y - margin);
+    x1 = Math.max(x1, p.x + margin);
+    y1 = Math.max(y1, p.y + margin);
   };
   for (const layout of layouts ?? []) {
-    const shapes = [...(layout.structure?.allocated ?? []), ...layout.quarters.map(q => q.shape),
-      ...(layout.structure?.portDistricts ?? []).flatMap(d => d.shapes), ...(layout.structure?.quays ?? []).map(q => q.shape)];
+    const shapes = [...(layout.structure?.allocated ?? []), ...layout.quarters.map(q => q.shape), ...(layout.structure?.portDistricts ?? []).flatMap(d => d.shapes), ...(layout.structure?.quays ?? []).map(q => q.shape)];
     for (const shape of shapes) for (const p of shape.outer) include(p);
-    for (const street of layout.streets) if (['quay', 'mole', 'pier', 'landing', 'port-street', 'port-stairs', 'port-road'].includes(street.role))
-      for (const p of street.path) include(p, Math.max(...street.widths, 0) / 2);
+    for (const street of layout.streets) if (['quay', 'mole', 'pier', 'landing', 'port-street', 'port-stairs', 'port-road'].includes(street.role)) for (const p of street.path) include(p, Math.max(...street.widths, 0) / 2);
   }
   return Number.isFinite(x0) ? { center: { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, radius: Math.max(x1 - x0, y1 - y0) / 2 } : undefined;
 }
 
 /** Regional roads as urban streets (pure, `urbanRoads.ts`). */
 export { regionalStreets } from './urbanRoads';
-export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity';
+export interface UrbanRequest {
+  id: number;
+  seed: string;
+  kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity';
   /** Native parcels: `handle` returns only the retained source, the programme continues on the engine's parcels. */
-  reply?: 'handle'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: UrbanSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime;
+  reply?: 'handle';
+  architectureCulture?: string;
+  scene?: import('./urbanArchitecture').PlacementBatch;
+  raster?: SettlementRaster;
+  sites?: UrbanSite[];
+  roads?: Street[];
+  layoutConfig?: LayoutConfig;
+  parcelConfig?: ParcelConfig;
+  layouts?: Layout[];
+  partitions?: Partition[];
+  layoutsId?: number;
+  runtime?: ExecutionRuntime;
   /** Read a retained native snapshot across workers, without uploading geometry. */
-  source?: UrbanSourceHandle; keys?: string[];
+  source?: UrbanSourceHandle;
+  keys?: string[];
   /** Native programme: continue from the parcels the engine session holds (no layouts/partitions upload). */
-  retained?: boolean }
-export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; placementRequests?: import('./urbanArchitecture').PlacementRequest[]; ms?: number; error?: string;
+  retained?: boolean;
+}
+export interface UrbanResponse {
+  id: number;
+  layouts?: Layout[];
+  partitions?: Partition[];
+  placementRequests?: import('./urbanArchitecture').PlacementRequest[];
+  ms?: number;
+  error?: string;
   urbanSource?: UrbanSourceHandle;
   /** `magna-city-parcels` pack of the partitions, in place of `partitions`: the realm that
    * consumes the response materialises it (`responsePartitions`, `partitionsFromPack`). */
   partitionsPack?: ArrayBuffer;
   /** Browser WASM execution mode that produced this response (threads/single/pool). */
-  wasm?: WasmThreadsInfo }
-export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse>; /** Native only: free this engine's retained session. */ release?(runtime: ExecutionRuntime): Promise<void> }
+  wasm?: WasmThreadsInfo;
+}
+export interface UrbanEngine {
+  run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse>;
+  /** Native only: free this engine's retained session. */ release?(runtime: ExecutionRuntime): Promise<void>;
+}
 
 /** Absent native fields already mean auto/off. Omit those defaults so older
  * strict engines remain usable; explicit choices must still reach their validator.
@@ -131,14 +332,34 @@ function nativeLayoutConfig(config: LayoutConfig) {
   // Absent is off; keep the payload of old strict engines unchanged.
   const input: Partial<LayoutConfig> = { ...config };
   if (input.gateVillage === 0 && !input.gateVillages) delete input.gateVillage;
-  for (const key of ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'roadMouths', 'roadRemnants', 'roadEndJoins', 'smallPlaceCapacity', 'naturalCampApproaches', 'streetFrontage', 'alignEnclosedGrid', 'hideUnusedQuarters', 'deepBlockLanes', 'villageBridgeBudget', 'linksJoinRoads', 'roadNetworkPrune', 'villageStreets'] as const)
+  for (const key of [
+    'oldEnclosureCitadel',
+    'medievalWalls',
+    'riverControl',
+    'dryDitches',
+    'gateVillages',
+    'shelteredHarbour',
+    'powerHighGround',
+    'mergeParallelStreets',
+    'regularGridOutline',
+    'roadMouths',
+    'roadRemnants',
+    'roadEndJoins',
+    'smallPlaceCapacity',
+    'naturalCampApproaches',
+    'streetFrontage',
+    'alignEnclosedGrid',
+    'hideUnusedQuarters',
+    'deepBlockLanes',
+    'villageBridgeBudget',
+    'linksJoinRoads',
+    'roadNetworkPrune',
+    'villageStreets',
+  ] as const)
     if (input[key] === false || input[key] === undefined) delete input[key];
-  for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness', 'lagoonCanals', 'campRingWobble'] as const)
-    if (input[key] == null) delete input[key];
-  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension', 'moat'] as const)
-    if (!input[key]) delete input[key];
-  for (const key of ['roadWidthBySize', 'townMainRoad', 'polishRoadEnds', 'lowRuralHouses', 'riverSpurFilter', 'harbourBridgeClearance', 'wallGatePolicy', 'smallRoadLoops', 'isolatedAccess'] as const)
-    if (input[key] === true || input[key] === undefined) delete input[key];
+  for (const key of ['wallStiffness', 'wallTerrain', 'wallRelief', 'wallTowerSpacing', 'ditchWetness', 'lagoonCanals', 'campRingWobble'] as const) if (input[key] == null) delete input[key];
+  for (const key of ['riverControlMode', 'portEnclosure', 'plannedWall', 'heightsCastle', 'wallExtension', 'moat'] as const) if (!input[key]) delete input[key];
+  for (const key of ['roadWidthBySize', 'townMainRoad', 'polishRoadEnds', 'lowRuralHouses', 'riverSpurFilter', 'harbourBridgeClearance', 'wallGatePolicy', 'smallRoadLoops', 'isolatedAccess'] as const) if (input[key] === true || input[key] === undefined) delete input[key];
   if (input.campGrowth === 'ring' || !input.campGrowth) delete input.campGrowth;
   if (input.zoneDensity === 'phases' || !input.zoneDensity) delete input.zoneDensity;
   if (!input.parallelMerge) delete input.parallelMerge;
@@ -174,15 +395,10 @@ function nativeLayouts(layouts: Layout[]) {
   });
 }
 function nativePartitions(partitions: Partition[]) {
-  return partitions.map(partition => partition.programme?.context?.functions === null
-    ? { ...partition, programme: { ...partition.programme, context: nativeProgrammeContext(partition.programme.context) } } : partition);
+  return partitions.map(partition => (partition.programme?.context?.functions === null ? { ...partition, programme: { ...partition.programme, context: nativeProgrammeContext(partition.programme.context) } } : partition));
 }
 function nativeUrbanInput(request: UrbanRequest) {
-  return { ...request,
-    ...(request.layoutConfig ? { layoutConfig: nativeLayoutConfig(request.layoutConfig) } : {}),
-    ...(request.layouts ? { layouts: nativeLayouts(request.layouts) } : {}),
-    ...(request.partitions ? { partitions: nativePartitions(request.partitions) } : {}),
-  };
+  return { ...request, ...(request.layoutConfig ? { layoutConfig: nativeLayoutConfig(request.layoutConfig) } : {}), ...(request.layouts ? { layouts: nativeLayouts(request.layouts) } : {}), ...(request.partitions ? { partitions: nativePartitions(request.partitions) } : {}) };
 }
 
 /** Reconciliation needs capacities, identities and open surfaces, never roof
@@ -219,9 +435,13 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   // `?threads=pool`: independent single-thread workers (urbanPool.ts), worker realm only.
   let pool: UrbanPool | undefined;
   if (core && wasmThreadsInfo().mode === 'pool' && inWorker()) {
-    try { pool = createUrbanPool(wasmThreadsInfo().threads, await singleWasmModule()); } catch (error) { console.warn('Urban worker pool unavailable:', error); }
+    try {
+      pool = createUrbanPool(wasmThreadsInfo().threads, await singleWasmModule());
+    } catch (error) {
+      console.warn('Urban worker pool unavailable:', error);
+    }
   }
-  const wasmInfo = (): WasmThreadsInfo => pool ? { ...wasmThreadsInfo(), threads: pool.size } : wasmThreadsInfo();
+  const wasmInfo = (): WasmThreadsInfo => (pool ? { ...wasmThreadsInfo(), threads: pool.size } : wasmThreadsInfo());
   let terrain: SettlementTerrain | undefined;
   // Resident products: the Rust instance keeps the exact (decimal round-tripped)
   // layouts and partitions of the last stage under ids. `items` are the JS objects
@@ -233,15 +453,20 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   // materialises from it (`partitionsFromPack`) are recognised by `packOf`.
   let retainedPartitions: { items?: Partition[]; pack?: ArrayBuffer; rust: number; terrain: SettlementTerrain } | undefined;
   // Rust JSON text of every product array this engine returned (cache digests and sizes).
-  const texts = new WeakMap<object, string>(), digests = new WeakMap<object, Promise<string>>();
-  const parsed = <T extends object>(json: string): T => { const value = JSON.parse(json) as T; texts.set(value, json); return value; };
+  const texts = new WeakMap<object, string>(),
+    digests = new WeakMap<object, Promise<string>>();
+  const parsed = <T extends object>(json: string): T => {
+    const value = JSON.parse(json) as T;
+    texts.set(value, json);
+    return value;
+  };
   const textDigest = (value: object): Promise<string> | undefined => {
     let digest = digests.get(value);
     const text = texts.get(value);
-    if (!digest && text !== undefined) digests.set(value, digest = sha256([text]));
+    if (!digest && text !== undefined) digests.set(value, (digest = sha256([text])));
     // Partitions materialised from a pack: the digest of its bytes (a transferred pack is detached, length 0).
     const pack = !digest && Array.isArray(value) ? packOf(value as Partition[]) : undefined;
-    if (pack?.byteLength) digests.set(value, digest = sha256([new Uint8Array(pack)]));
+    if (pack?.byteLength) digests.set(value, (digest = sha256([new Uint8Array(pack)])));
     return digest;
   };
   // Cache hits skip the raster upload; build the terrain lazily on the first miss.
@@ -281,24 +506,34 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   const partitionsHandle = (t: SettlementTerrain, items: Partition[]): number => {
     const held = retainedPartitions?.terrain === t ? retainedPartitions.rust : undefined;
     const pack = packOf(items);
-    const same = !!retainedPartitions && ((!!retainedPartitions.items && sameItems(items, retainedPartitions.items))
-      || (!!pack && pack === retainedPartitions.pack));
+    const same = !!retainedPartitions && ((!!retainedPartitions.items && sameItems(items, retainedPartitions.items)) || (!!pack && pack === retainedPartitions.pack));
     if (held && t.resident_partitions_id() === held && same) return held;
     // Partitions materialised from a live pack go back as that pack: no JSON text.
-    const rust = pack && pack.byteLength && packs(t) ? t.retain_partitions_pack(new Uint8Array(pack))
-      : t.retain_partitions_json(JSON.stringify(nativePartitions(items)));
+    const rust = pack && pack.byteLength && packs(t) ? t.retain_partitions_pack(new Uint8Array(pack)) : t.retain_partitions_json(JSON.stringify(nativePartitions(items)));
     retainedPartitions = { items, rust, terrain: t };
     return rust;
   };
   /** Pool slices' JSON arrays joined as text: identical to concatenating the parsed arrays. */
-  const joinArrays = (parts: string[]): string => '[' + parts.map(p => p.trim().slice(1, -1)).filter(p => p.trim().length).join(',') + ']';
+  const joinArrays = (parts: string[]): string =>
+    '[' +
+    parts
+      .map(p => p.trim().slice(1, -1))
+      .filter(p => p.trim().length)
+      .join(',') +
+    ']';
   const quartersResident = async (t: SettlementTerrain, seed: string, sites: RoadSite[], config: string, roads: string): Promise<{ layouts: Layout[]; json: string }> => {
-    const serial = () => { const json = t.urban_quarters_resident(seed, JSON.stringify(sites), config, roads); return { layouts: parsed<Layout[]>(json), json }; };
+    const serial = () => {
+      const json = t.urban_quarters_resident(seed, JSON.stringify(sites), config, roads);
+      return { layouts: parsed<Layout[]>(json), json };
+    };
     if (!pool || pool.size < 2 || sites.length < 2 || new Set(sites.map(s => s.key)).size !== sites.length) return serial();
     const jobs = ranges(sites.length, pool.size).map(([a, b]): PoolArgs => ({ seed, sites: JSON.stringify(sites.slice(a, b)), config, roads }));
     let json: string;
-    try { json = joinArrays(await pool.run('quarters', jobs, undefined, a => t.urban_quarters(a.seed!, a.sites!, a.config!, a.roads!))); }
-    catch { return serial(); } // The exact serial error: validation order spans all sites.
+    try {
+      json = joinArrays(await pool.run('quarters', jobs, undefined, a => t.urban_quarters(a.seed!, a.sites!, a.config!, a.roads!)));
+    } catch {
+      return serial();
+    } // The exact serial error: validation order spans all sites.
     // Rust reparses the joined text: the same decimal round trip as the serial call.
     t.retain_layouts_json(json);
     return { layouts: parsed<Layout[]>(json), json };
@@ -314,8 +549,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     // their layout ranges; the first error in order wins, as serially.
     const image = t.export_resident(layoutsId, 0);
     const jobs = ranges(count, pool.size).map(([a, b]): PoolArgs => ({ seed, config, start: String(a), end: String(b) }));
-    const json = joinArrays(await pool.run('parcels-resident', jobs, { image },
-      a => t.urban_parcels_resident(seed, layoutsId, config, Number(a.start), Number(a.end))));
+    const json = joinArrays(await pool.run('parcels-resident', jobs, { image }, a => t.urban_parcels_resident(seed, layoutsId, config, Number(a.start), Number(a.end))));
     const rust = t.retain_partitions_json(json);
     // The pack of the retained (normalised) values, as the serial path returns.
     if (packs(t)) return { pack: packBuffer(t.urban_parcel_pack_resident(rust, '')), rust };
@@ -328,8 +562,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     if (total < 32) return serial();
     // Several slices per participant: sites differ in cost, the queue balances them.
     const jobs = ranges(total, Math.min(Math.ceil(total / 16), pool.size * 4)).map(([a, b]): PoolArgs => ({ start: String(a), end: String(b) }));
-    const parts = await pool.run('sites-resident', jobs, { seed, culture, image: t.export_resident(layoutsId, partitionsId) },
-      a => t.urban_building_sites_resident(seed, layoutsId, partitionsId, culture, Number(a.start), Number(a.end)));
+    const parts = await pool.run('sites-resident', jobs, { seed, culture, image: t.export_resident(layoutsId, partitionsId) }, a => t.urban_building_sites_resident(seed, layoutsId, partitionsId, culture, Number(a.start), Number(a.end)));
     return parsed<Requests>(joinArrays(parts));
   };
   // JSON path of packages without the resident API.
@@ -339,7 +572,9 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     const jobs = ranges(sites.length, pool.size).map(([a, b]): PoolArgs => ({ seed, sites: JSON.stringify(sites.slice(a, b)), config, roads }));
     try {
       return (await pool.run('quarters', jobs, undefined, a => t.urban_quarters(a.seed!, a.sites!, a.config!, a.roads!))).flatMap(json => JSON.parse(json) as Layout[]);
-    } catch { return serial(); }
+    } catch {
+      return serial();
+    }
   };
   /** `keepLayouts`: a lazily built terrain for a cache-hit plan keeps the layouts the caller refers to. */
   const runWasmUncached = async (request: UrbanRequest, keepLayouts = false): Promise<UrbanResponse> => {
@@ -348,10 +583,15 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       validatePhysicalTerrain(r.physical);
       // Bound helper copies of the full height plane; a later smaller raster can use the pool again.
       const helperBytes = (wasmThreadsInfo().threads - 1) * (r.physical?.height.byteLength ?? 0);
-      if (helperBytes > 128 * 1024 * 1024 && pool) { pool.dispose(); pool = undefined; }
-      else if (helperBytes <= 128 * 1024 * 1024 && !pool && core && wasmThreadsInfo().mode === 'pool' && inWorker()) {
-        try { pool = createUrbanPool(wasmThreadsInfo().threads, await singleWasmModule()); }
-        catch (error) { console.warn('Urban worker pool unavailable:', error); }
+      if (helperBytes > 128 * 1024 * 1024 && pool) {
+        pool.dispose();
+        pool = undefined;
+      } else if (helperBytes <= 128 * 1024 * 1024 && !pool && core && wasmThreadsInfo().mode === 'pool' && inWorker()) {
+        try {
+          pool = createUrbanPool(wasmThreadsInfo().threads, await singleWasmModule());
+        } catch (error) {
+          console.warn('Urban worker pool unavailable:', error);
+        }
       }
       if (!keepLayouts) retainedLayouts = undefined;
       retainedPartitions = undefined;
@@ -360,25 +600,27 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       const next = new Terrain!(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
       try {
         if (r.physical) {
-          const physical = next as SettlementTerrain & {
-            set_physical_height(n: number, height: Float32Array): void;
-            set_physical_height_spline(n: number, height: Float32Array, floor: number): void;
-          };
+          const physical = next as SettlementTerrain & { set_physical_height(n: number, height: Float32Array): void; set_physical_height_spline(n: number, height: Float32Array, floor: number): void };
           if (r.physical.interpolation === 'bspline') physical.set_physical_height_spline(r.physical.n, r.physical.height, r.physical.floor ?? 0);
           else physical.set_physical_height(r.physical.n, r.physical.height);
         }
         if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry));
+      } catch (error) {
+        next.free();
+        throw error;
       }
-      catch (error) { next.free(); throw error; }
-      terrain = next; terrainRaster = r;
+      terrain = next;
+      terrainRaster = r;
       pool?.setRaster(r);
     }
     if (!terrain) throw new Error('[raster_missing] Generate the terrain before the quarters.');
     const t = terrain;
     const start = performance.now();
     if (request.kind === 'quarters') {
-      retainedLayouts = undefined; retainedPartitions = undefined;
-      const config = JSON.stringify(nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true))), roads = JSON.stringify(request.roads ?? []);
+      retainedLayouts = undefined;
+      retainedPartitions = undefined;
+      const config = JSON.stringify(nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true))),
+        roads = JSON.stringify(request.roads ?? []);
       if (resident) {
         const { layouts, json } = await quartersResident(t, request.seed, request.sites ?? [], config, roads);
         retainedLayouts = { id: request.id, items: layouts, json, rust: t.resident_layouts_id(), terrain: t };
@@ -433,23 +675,33 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     const partitions = JSON.parse(t.urban_parcels(request.seed, layoutsJson, JSON.stringify(normalizeParcelConfig(request.parcelConfig)))) as Partition[];
     return { id: request.id, partitions, ms: performance.now() - start };
   };
-  const engineId = (): string => { try { return String((Terrain as unknown as { urban_programme_functions_version?: () => number } | undefined)?.urban_programme_functions_version?.() ?? 0); } catch { return '0'; } };
+  const engineId = (): string => {
+    try {
+      return String((Terrain as unknown as { urban_programme_functions_version?: () => number } | undefined)?.urban_programme_functions_version?.() ?? 0);
+    } catch {
+      return '0';
+    }
+  };
   const runWasm = async (request: UrbanRequest, keepLayouts = false): Promise<UrbanResponse> => {
     try {
       if (requiresProgrammeFunctions(request)) requireWasmProgrammeFunctions(Terrain, request);
-      return { ...await runWasmUncached(request, keepLayouts), wasm: wasmInfo() };
+      return { ...(await runWasmUncached(request, keepLayouts)), wasm: wasmInfo() };
     } catch (error) {
       // The failure terminated the threads instance: rebuild the terrain on the
       // single-thread package (layouts and partitions re-upload from their JS
       // objects) and retry once.
-      if (!core || !await recoverCoreWasm(error, core)) return { id: request.id, error: String(error), wasm: wasmInfo() };
-      core = await loadCoreWasm(); Terrain = core.SettlementTerrain; terrain = undefined;
+      if (!core || !(await recoverCoreWasm(error, core))) return { id: request.id, error: String(error), wasm: wasmInfo() };
+      core = await loadCoreWasm();
+      Terrain = core.SettlementTerrain;
+      terrain = undefined;
       if (retainedLayouts) retainedLayouts = { ...retainedLayouts, rust: undefined, terrain: undefined };
       retainedPartitions = undefined;
       const raster = request.raster ?? terrainRaster;
       try {
-        return { ...await runWasmUncached(raster ? { ...request, raster } : request, keepLayouts || !request.raster), wasm: wasmInfo() };
-      } catch (retry) { return { id: request.id, error: String(retry), wasm: wasmInfo() }; }
+        return { ...(await runWasmUncached(raster ? { ...request, raster } : request, keepLayouts || !request.raster)), wasm: wasmInfo() };
+      } catch (retry) {
+        return { id: request.id, error: String(retry), wasm: wasmInfo() };
+      }
     }
   };
   const runCached = async (request: UrbanRequest): Promise<UrbanResponse> => {
@@ -457,13 +709,15 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     try {
       if (request.raster) {
         pendingRaster = request.raster;
-        let digest = rasterDigests.get(request.raster); if (!digest) rasterDigests.set(request.raster, digest = digestValue(request.raster));
+        let digest = rasterDigests.get(request.raster);
+        if (!digest) rasterDigests.set(request.raster, (digest = digestValue(request.raster)));
         pendingDigest = await digest;
       }
       let layoutsDigest: string | undefined;
       if (request.kind !== 'quarters' && !request.layouts && request.layoutsId !== undefined) {
         if (retainedLayouts?.id !== request.layoutsId) return runWasm(request);
-        retainedLayouts.digest ??= await sha256([retainedLayouts.json ?? JSON.stringify(nativeLayouts(retainedLayouts.items))]); layoutsDigest = retainedLayouts.digest;
+        retainedLayouts.digest ??= await sha256([retainedLayouts.json ?? JSON.stringify(nativeLayouts(retainedLayouts.items))]);
+        layoutsDigest = retainedLayouts.digest;
       }
       // Products this engine returned are keyed by the digest of their Rust
       // text, without re-serialising megabytes of geometry in JS.
@@ -473,7 +727,9 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         if (digest) keyed[name] = { $digest: await digest };
       }
       if (pendingDigest) key = await urbanCacheKey(keyed, { engine: engineId(), terrain: pendingDigest, retainedLayouts: layoutsDigest });
-    } catch { key = undefined; }
+    } catch {
+      key = undefined;
+    }
     if (key) {
       const hit = await readUrbanCache<Pick<UrbanResponse, 'layouts' | 'partitions' | 'placementRequests' | 'partitionsPack'>>(key);
       if (hit && (hit.layouts || hit.partitions || hit.placementRequests || hit.partitionsPack)) {
@@ -490,46 +746,57 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       const known = present.every(v => texts.has(v)) ? present.reduce((n, v) => n + texts.get(v)!.length, 0) : undefined;
       // The pack is stored as bytes. Copy it now: the caller may transfer (detach) the response's buffer.
       const pack = value.partitionsPack;
-      if (pack && pack.byteLength > URBAN_CACHE_MAX_BYTES / 2) { /* too large to cache */ }
-      else if (pack) void writeUrbanCache(key, { ...value, partitionsPack: pack.slice(0) }, known === undefined ? undefined : known + pack.byteLength);
+      if (pack && pack.byteLength > URBAN_CACHE_MAX_BYTES / 2) {
+        /* too large to cache */
+      } else if (pack) void writeUrbanCache(key, { ...value, partitionsPack: pack.slice(0) }, known === undefined ? undefined : known + pack.byteLength);
       else void writeUrbanCache(key, value, present.length ? known : undefined);
     }
     return response;
   };
-  return { async release(runtime) {
-    pool?.dispose(); pool = undefined;
-    terrain?.free(); terrain = undefined;
-    retainedLayouts = undefined; retainedPartitions = undefined;
-    pendingRaster = terrainRaster = undefined;
-    await native.release(runtime);
-  }, run(request) {
-    if (request.source) {
-      try {
-        validateUrbanSource(request.source);
-        if (request.runtime?.profile !== 'local' || (request.kind !== 'buildingSites' && request.kind !== 'builtCapacity')
-          || request.raster || request.layouts || request.partitions) throw new Error('Retained urban reads require a local source without uploaded geometry.');
-        const { runtime: _runtime, ...input } = nativeUrbanInput(request);
-        // The handle belongs to the urban worker's session, not this engine's
-        // private raster client. A missing/stale source must remain an error.
-        // A built-capacity read replies a pack of the programme columns only:
-        // `responsePartitions(response, base)` completes it with the caller's parcels.
-        const read = async () => nativeUrbanReply(request, await nativeRequest(request.runtime!, '/urban', JSON.stringify({ ...input,
-          ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}), session: request.source!.session })));
-        return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(read) : read())
-          .catch(error => ({ id: request.id, error: String(error) }));
-      } catch (error) { return { id: request.id, error: String(error) }; }
-    }
-    if (request.runtime?.profile === 'local') {
-      // `parcels`, `programme` and `builtCapacity` reply a parcel pack; the others JSON.
-      const run = async () => nativeUrbanReply(request, await native.raw('/urban', { ...nativeUrbanInput(request), runtime: request.runtime!,
-        ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
-        ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) }
-          : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
-      }));
-      return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(run) : run()).catch(error => ({ id: request.id, error: String(error) }));
-    }
-    return runCached(request);
-  } };
+  return {
+    async release(runtime) {
+      pool?.dispose();
+      pool = undefined;
+      terrain?.free();
+      terrain = undefined;
+      retainedLayouts = undefined;
+      retainedPartitions = undefined;
+      pendingRaster = terrainRaster = undefined;
+      await native.release(runtime);
+    },
+    run(request) {
+      if (request.source) {
+        try {
+          validateUrbanSource(request.source);
+          if (request.runtime?.profile !== 'local' || (request.kind !== 'buildingSites' && request.kind !== 'builtCapacity') || request.raster || request.layouts || request.partitions) throw new Error('Retained urban reads require a local source without uploaded geometry.');
+          const { runtime: _runtime, ...input } = nativeUrbanInput(request);
+          // The handle belongs to the urban worker's session, not this engine's
+          // private raster client. A missing/stale source must remain an error.
+          // A built-capacity read replies a pack of the programme columns only:
+          // `responsePartitions(response, base)` completes it with the caller's parcels.
+          const read = async () => nativeUrbanReply(request, await nativeRequest(request.runtime!, '/urban', JSON.stringify({ ...input, ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}), session: request.source!.session })));
+          return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(read) : read()).catch(error => ({ id: request.id, error: String(error) }));
+        } catch (error) {
+          return { id: request.id, error: String(error) };
+        }
+      }
+      if (request.runtime?.profile === 'local') {
+        // `parcels`, `programme` and `builtCapacity` reply a parcel pack; the others JSON.
+        const run = async () =>
+          nativeUrbanReply(
+            request,
+            await native.raw('/urban', {
+              ...nativeUrbanInput(request),
+              runtime: request.runtime!,
+              ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
+              ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) } : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
+            }),
+          );
+        return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(run) : run()).catch(error => ({ id: request.id, error: String(error) }));
+      }
+      return runCached(request);
+    },
+  };
 }
 let fallback: Promise<UrbanEngine> | undefined;
 export async function runUrbanRequest(request: UrbanRequest): Promise<UrbanResponse> {

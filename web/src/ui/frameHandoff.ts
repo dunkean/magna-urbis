@@ -7,8 +7,12 @@ export class FrameHandoff {
   displayedGen = 0;
   displayedMeta: GDone['meta'] | null = null;
   private announced = new Map<number, { ver: number; meta?: GDone['meta'] }>();
-  begin(gen: number): void { this.final.begin(gen); }
-  acceptsContent(gen: number): boolean { return gen >= this.displayedGen && gen <= this.final.gen; }
+  begin(gen: number): void {
+    this.final.begin(gen);
+  }
+  acceptsContent(gen: number): boolean {
+    return gen >= this.displayedGen && gen <= this.final.gen;
+  }
   content(gen: number, ver: number, final: boolean, meta?: GDone['meta']): void {
     if (!this.acceptsContent(gen)) return;
     const previous = this.announced.get(gen);
@@ -23,7 +27,8 @@ export class FrameHandoff {
   }
   presented(gen: number, ver: number): void {
     if (!this.acceptsFrame(gen, ver)) return;
-    this.displayedGen = gen; this.displayedMeta = this.announced.get(gen)?.meta ?? null;
+    this.displayedGen = gen;
+    this.displayedMeta = this.announced.get(gen)?.meta ?? null;
     for (const id of this.announced.keys()) if (id < gen) this.announced.delete(id);
     if (gen === this.final.gen) this.final.presented(gen, ver);
   }

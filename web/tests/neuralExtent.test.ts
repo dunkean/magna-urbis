@@ -15,15 +15,9 @@ describe('physical neural extent', () => {
     const fetcher = vi.fn();
     vi.stubGlobal('fetch', fetcher);
     try {
-      await expect(TerrainRefinementSession.create('http://example.test',
-        { x: 0, y: 0, width: 200000, n: 1501, data: new Float32Array(0) }, { seed: '42' }))
-        .rejects.toThrow(/1500²/);
-      await expect(createInfiniteRefinementProvider('http://example.test',
-        { width: 200000, n: 1501, data: new Float32Array(1501 ** 2) }, { seed: '42' }, fetcher))
-        .rejects.toThrow(/1500²/);
-      await expect(createInfiniteRefinementProvider('http://example.test',
-        { width: 200000, n: 6667, data: new Float32Array(0) }, { seed: '42' }, fetcher))
-        .rejects.toThrow(/1500²/);
+      await expect(TerrainRefinementSession.create('http://example.test', { x: 0, y: 0, width: 200000, n: 1501, data: new Float32Array(0) }, { seed: '42' })).rejects.toThrow(/1500²/);
+      await expect(createInfiniteRefinementProvider('http://example.test', { width: 200000, n: 1501, data: new Float32Array(1501 ** 2) }, { seed: '42' }, fetcher)).rejects.toThrow(/1500²/);
+      await expect(createInfiniteRefinementProvider('http://example.test', { width: 200000, n: 6667, data: new Float32Array(0) }, { seed: '42' }, fetcher)).rejects.toThrow(/1500²/);
       expect(fetcher).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();

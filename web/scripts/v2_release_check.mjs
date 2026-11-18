@@ -8,11 +8,13 @@ import { checkResources } from './v2_release_resources.mjs';
 import { createPortable } from './v2_portable.mjs';
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const options = Object.fromEntries(process.argv.slice(2).map(arg => {
-  const match = /^--([\w-]+)=(.+)$/.exec(arg);
-  if (!match) throw new Error(`Expected --name=value, got ${arg}`);
-  return [match[1], match[2]];
-}));
+const options = Object.fromEntries(
+  process.argv.slice(2).map(arg => {
+    const match = /^--([\w-]+)=(.+)$/.exec(arg);
+    if (!match) throw new Error(`Expected --name=value, got ${arg}`);
+    return [match[1], match[2]];
+  }),
+);
 const platform = options.platform;
 if (!['windows-x64', 'linux-x64'].includes(platform)) throw new Error('Use --platform=windows-x64 or --platform=linux-x64');
 const target = join(root, 'rust/desktop-v2/target/release');
@@ -22,7 +24,7 @@ const output = resolve(options.output ?? join(root, 'release-v2', platform));
 await checkResources(resources, platform);
 async function files(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
-  return (await Promise.all(entries.map(entry => entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)]))).flat();
+  return (await Promise.all(entries.map(entry => (entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)])))).flat();
 }
 const all = await files(bundle);
 const version = JSON.parse(await readFile(join(root, 'rust/desktop-v2/tauri.conf.json'), 'utf8')).version;

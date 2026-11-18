@@ -29,14 +29,17 @@ import { disk, insetConvex } from '../geo/offset';
 import { buildPerimeterBlock, buildPerimeterPlot } from './perimeterBlock';
 
 export interface ArchBldg extends Bldg {
-  arch?: string; roof?: ArchSpec['roof']; storeys?: number; material?: string; courtyards?: Polygon[]; orientation?: number;
+  arch?: string;
+  roof?: ArchSpec['roof'];
+  storeys?: number;
+  material?: string;
+  courtyards?: Polygon[];
+  orientation?: number;
   /** A range of a courtyard ring (or a souk cell): judged on its room depth, not on the no-matchstick rule. */
   ring?: boolean;
 }
 
-const tag = (b: Bldg, a: ArchSpec, rng: Rng, over: Partial<ArchBldg> = {}): ArchBldg => ({
-  ...b, arch: a.typology, roof: a.roof, material: a.material, storeys: Math.round(rng.range(a.storeys[0], a.storeys[1] + 0.99) - 0.49), ...over,
-});
+const tag = (b: Bldg, a: ArchSpec, rng: Rng, over: Partial<ArchBldg> = {}): ArchBldg => ({ ...b, arch: a.typology, roof: a.roof, material: a.material, storeys: Math.round(rng.range(a.storeys[0], a.storeys[1] + 0.99) - 0.49), ...over });
 
 /** Plot frame: frontage origin, along-street t, inward n, width W, depth D. */
 function frame(pl: Plot): { fa: Vec2; t: Vec2; n: Vec2; W: number; D: number } | null {
@@ -55,23 +58,29 @@ function frame(pl: Plot): { fa: Vec2; t: Vec2; n: Vec2; W: number; D: number } |
 function rectHP(f: { fa: Vec2; t: Vec2; n: Vec2 }, u0: number, u1: number, d0: number, d1: number): HalfPlane[] {
   const at = (u: number, d: number): Vec2 => ({ x: f.fa.x + f.t.x * u + f.n.x * d, y: f.fa.y + f.t.y * u + f.n.y * d });
   return [
-    { p: at(u0, 0), n: f.t }, { p: at(u1, 0), n: { x: -f.t.x, y: -f.t.y } },
-    { p: at(0, d0), n: f.n }, { p: at(0, d1), n: { x: -f.n.x, y: -f.n.y } },
+    { p: at(u0, 0), n: f.t },
+    { p: at(u1, 0), n: { x: -f.t.x, y: -f.t.y } },
+    { p: at(0, d0), n: f.n },
+    { p: at(0, d1), n: { x: -f.n.x, y: -f.n.y } },
   ];
 }
 
 /** Lateral extent [lo, hi] of the plot in the frame (t coordinates) at depth d. */
 function lateral(poly: Polygon, f: { fa: Vec2; t: Vec2; n: Vec2 }, d: number): [number, number] | null {
-  let lo = Infinity, hi = -Infinity;
+  let lo = Infinity,
+    hi = -Infinity;
   const nc = (p: Vec2) => (p.x - f.fa.x) * f.n.x + (p.y - f.fa.y) * f.n.y;
   const tc = (p: Vec2) => (p.x - f.fa.x) * f.t.x + (p.y - f.fa.y) * f.t.y;
   for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length];
-    const da = nc(a) - d, db = nc(b) - d;
+    const a = poly[i],
+      b = poly[(i + 1) % poly.length];
+    const da = nc(a) - d,
+      db = nc(b) - d;
     if ((da <= 0 && db >= 0) || (da >= 0 && db <= 0)) {
       const k = da === db ? 0 : da / (da - db);
       const u = tc(a) + (tc(b) - tc(a)) * k;
-      lo = Math.min(lo, u); hi = Math.max(hi, u);
+      lo = Math.min(lo, u);
+      hi = Math.max(hi, u);
     }
   }
   return lo < hi ? [lo, hi] : null;
@@ -89,30 +98,41 @@ function usable(pl: Plot, f: { fa: Vec2; t: Vec2; n: Vec2; W: number; D: number 
     const hits: number[] = [];
     const nc = (p: Vec2) => (p.x - f.fa.x) * f.n.x + (p.y - f.fa.y) * f.n.y;
     for (let i = 0; i < pl.poly.length; i++) {
-      const a = pl.poly[i], b = pl.poly[(i + 1) % pl.poly.length], da = nc(a) - d, db = nc(b) - d;
+      const a = pl.poly[i],
+        b = pl.poly[(i + 1) % pl.poly.length],
+        da = nc(a) - d,
+        db = nc(b) - d;
       if ((da <= 0 && db > 0) || (db <= 0 && da > 0)) {
-        const k = da / (da - db), x = a.x + (b.x - a.x) * k, y = a.y + (b.y - a.y) * k;
+        const k = da / (da - db),
+          x = a.x + (b.x - a.x) * k,
+          y = a.y + (b.y - a.y) * k;
         hits.push((x - f.fa.x) * f.t.x + (y - f.fa.y) * f.t.y);
       }
     }
     hits.sort((a, b) => a - b);
     let best: [number, number] | null = null;
     for (let i = 0; i + 1 < hits.length; i += 2) {
-      const a = Math.max(lo, hits[i]), b = Math.min(hi, hits[i + 1]);
+      const a = Math.max(lo, hits[i]),
+        b = Math.min(hi, hits[i + 1]);
       if (b > a && (!best || b - a > best[1] - best[0])) best = [a, b];
     }
     return best;
   };
   const L0 = section(Math.min(1, f.D / 2), 0, f.W);
   if (!L0) return null;
-  let u0 = L0[0], u1 = L0[1], D = Math.min(1, f.D / 2);
+  let u0 = L0[0],
+    u1 = L0[1],
+    D = Math.min(1, f.D / 2);
   for (let d = 2; d <= f.D - 0.5; d += 1) {
     const L = section(d, u0, u1);
     if (!L) break;
-    const a = Math.max(u0, L[0]), b = Math.min(u1, L[1]);
+    const a = Math.max(u0, L[0]),
+      b = Math.min(u1, L[1]);
     const minimum = connected ? Math.min(0.8 * (L0[1] - L0[0]), Math.max(9, 0.5 * (L0[1] - L0[0]))) : 0.8 * (L0[1] - L0[0]);
     if (b - a < minimum) break;
-    u0 = a; u1 = b; D = d;
+    u0 = a;
+    u1 = b;
+    D = d;
   }
   return u1 - u0 > 2 ? { u0, u1, D: Math.min(f.D, D + 0.5) } : null;
 }
@@ -149,8 +169,10 @@ function courtyardHouse(pl: Plot, P: MorphologyParams, rng: Rng, cov = 0.93, sub
     const n = Math.max(1, Math.round(f.W / Math.max(10, Math.sqrt(amax) * 1.1)));
     const out: ArchBldg[] = [];
     for (let i = 0; i < n; i++) {
-      const s0 = (f.W * i) / n, s1 = (f.W * (i + 1)) / n;
-      const p0 = { x: f.fa.x + f.t.x * s0, y: f.fa.y + f.t.y * s0 }, p1 = { x: f.fa.x + f.t.x * s1, y: f.fa.y + f.t.y * s1 };
+      const s0 = (f.W * i) / n,
+        s1 = (f.W * (i + 1)) / n;
+      const p0 = { x: f.fa.x + f.t.x * s0, y: f.fa.y + f.t.y * s0 },
+        p1 = { x: f.fa.x + f.t.x * s1, y: f.fa.y + f.t.y * s1 };
       const hps: HalfPlane[] = [
         { p: { x: f.fa.x - f.n.x * 0.5, y: f.fa.y - f.n.y * 0.5 }, n: f.n },
         { p: { x: f.fa.x + f.n.x * dBand, y: f.fa.y + f.n.y * dBand }, n: { x: -f.n.x, y: -f.n.y } },
@@ -158,11 +180,15 @@ function courtyardHouse(pl: Plot, P: MorphologyParams, rng: Rng, cov = 0.93, sub
         ...(i < n - 1 ? [{ p: p1, n: { x: -f.t.x, y: -f.t.y } }] : []),
       ];
       let best: Polygon | null = null;
-      for (const r of clipPlot(pl.poly, hps, conv)) { const c = cleanRing(r, 0.005, 0.5, 0.002, false); if (c.length >= 3 && (!best || area(c) > area(best))) best = c; }
+      for (const r of clipPlot(pl.poly, hps, conv)) {
+        const c = cleanRing(r, 0.005, 0.5, 0.002, false);
+        if (c.length >= 3 && (!best || area(c) > area(best))) best = c;
+      }
       if (!best || area(best) < 60) continue;
-      const fa = i > 0 ? p0 : pl.front[0], fb = i < n - 1 ? p1 : pl.front[1];
+      const fa = i > 0 ? p0 : pl.front[0],
+        fb = i < n - 1 ? p1 : pl.front[1];
       const subPl: Plot = { ...pl, poly: orientPos(best), front: [fa, fb], sideA: { p: fa, d: pl.nrm }, sideB: { p: fb, d: pl.nrm } };
-      out.push(...courtyardHouse(subPl, P, rng, cov, true).filter((b) => polyInside(pl.poly, b.poly)));
+      out.push(...courtyardHouse(subPl, P, rng, cov, true).filter(b => polyInside(pl.poly, b.poly)));
     }
     // the land behind the houses: a garden (orchard, vegetable plots)
     for (const r of clipPlot(pl.poly, [{ p: { x: f.fa.x + f.n.x * (dBand + 0.01), y: f.fa.y + f.n.y * (dBand + 0.01) }, n: f.n }], isConvex(pl.poly, 1e-3))) {
@@ -172,14 +198,16 @@ function courtyardHouse(pl: Plot, P: MorphologyParams, rng: Rng, cov = 0.93, sub
     pl.gated = true;
     return out;
   }
-  const okShape = (p: Polygon) => { const s = shapeOf(p); return s.w >= MIN_BW && s.asp <= MAX_ASPECT; };
+  const okShape = (p: Polygon) => {
+    const s = shapeOf(p);
+    return s.w >= MIN_BW && s.asp <= MAX_ASPECT;
+  };
   // (a lot too small or too thin for a patio is built whole; long ones are cut into rooms later)
   const solid = (): ArchBldg[] => (shapeOf(pl.poly).w >= MIN_BW ? [tag({ poly: pl.poly, kind: 'house' }, P.arch, rng)] : []);
   if (!f || A < 42) return solid();
   // the patio takes ~14–24 % of the lot (≥ 9 m²) at the medina's dense baseline, more on looser land (coverage
   // lowered by the sprawl): the deepest room ring that still leaves it. (Large enough to read on a town plan.)
-  const courtShare = P.courtyardShare ? Math.min(0.5, rng.range(...P.courtyardShare) + 0.55 * Math.max(0, 0.85 - cov))
-    : Math.max(0.12, Math.min(0.42, 0.155 + 0.55 * (0.95 - cov) + rng.range(-0.02, 0.06)));
+  const courtShare = P.courtyardShare ? Math.min(0.5, rng.range(...P.courtyardShare) + 0.55 * Math.max(0, 0.85 - cov)) : Math.max(0.12, Math.min(0.42, 0.155 + 0.55 * (0.95 - cov) + rng.range(-0.02, 0.06)));
   const want = Math.max(10, A * courtShare);
   const courts = new Map<number, Polygon>();
   const ringFor = (axis: Vec2): ReturnType<typeof courtyardRing> => {
@@ -195,10 +223,22 @@ function courtyardHouse(pl: Plot, P: MorphologyParams, rng: Rng, cov = 0.93, sub
     const tc = (p: Vec2) => (p.x - f.fa.x) * f.t.x + (p.y - f.fa.y) * f.t.y;
     const nc = (p: Vec2) => (p.x - f.fa.x) * f.n.x + (p.y - f.fa.y) * f.n.y;
     // the patio's nearest point to the lane (its corner or edge facing the door)
-    let cd0 = Infinity, e0 = 0;
-    for (const q of court) { const d = nc(q); if (d < cd0) { cd0 = d; e0 = tc(q); } }
-    let cu0 = Infinity, cu1 = -Infinity;
-    for (const q of court) if (nc(q) < cd0 + 1.5) { cu0 = Math.min(cu0, tc(q)); cu1 = Math.max(cu1, tc(q)); }
+    let cd0 = Infinity,
+      e0 = 0;
+    for (const q of court) {
+      const d = nc(q);
+      if (d < cd0) {
+        cd0 = d;
+        e0 = tc(q);
+      }
+    }
+    let cu0 = Infinity,
+      cu1 = -Infinity;
+    for (const q of court)
+      if (nc(q) < cd0 + 1.5) {
+        cu0 = Math.min(cu0, tc(q));
+        cu1 = Math.max(cu1, tc(q));
+      }
     e0 = Math.max(cu0 + 1, Math.min(cu1 - 1, e0));
     const at = (u: number, d: number): Vec2 => ({ x: f.fa.x + f.t.x * u + f.n.x * d, y: f.fa.y + f.t.y * u + f.n.y * d });
     const rect = (u0: number, u1: number, d0: number, d1: number): Polygon => [at(u0, d0), at(u1, d0), at(u1, d1), at(u0, d1)];
@@ -221,7 +261,7 @@ function courtyardHouse(pl: Plot, P: MorphologyParams, rng: Rng, cov = 0.93, sub
   // patio); exact, simple and a proper footprint, else the next variant
   for (const bent of [true, false]) {
     const cur = difference(pl.poly, ring.court, ...entranceLegs(ring.court, bent));
-    const big = cur.filter((ph) => area(ph.outer) > 4);
+    const big = cur.filter(ph => area(ph.outer) > 4);
     if (big.length !== 1 || big[0].holes.length) continue;
     const h = cleanRing(big[0].outer, 0.005, 0.5, 0.002, false);
     if (h.length < 3 || !isSimple(h) || !polyInside(pl.poly, h) || !okShape(h)) continue;
@@ -240,7 +280,14 @@ function shopRow(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   const f = frame(pl);
   if (!f) return [];
   const d1 = Math.min(f.D, rng.range(5.5, 8));
-  const r = clipPlot(pl.poly, [{ p: { x: f.fa.x + f.n.x * 0.1, y: f.fa.y + f.n.y * 0.1 }, n: f.n }, { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } }], isConvex(pl.poly, 1e-3));
+  const r = clipPlot(
+    pl.poly,
+    [
+      { p: { x: f.fa.x + f.n.x * 0.1, y: f.fa.y + f.n.y * 0.1 }, n: f.n },
+      { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } },
+    ],
+    isConvex(pl.poly, 1e-3),
+  );
   const out: ArchBldg[] = [];
   for (const q of r) {
     const c = cleanRing(q, 0.005, 0.5, 0.002, false);
@@ -278,12 +325,17 @@ function pavilionCompound(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
       const alternative = alternativeFrame && usable(pl, alternativeFrame, true);
       if (!alternative || alternative.D < MIN_BW + 0.6 || alternative.u1 - alternative.u0 < MIN_BW + 0.1) continue;
       const capacity = alternative.D * (alternative.u1 - alternative.u0);
-      if (capacity > bestArea) { f = alternativeFrame!; us = alternative; bestArea = capacity; }
+      if (capacity > bestArea) {
+        f = alternativeFrame!;
+        us = alternative;
+        bestArea = capacity;
+      }
     }
   }
   if (!us) return [];
   const D = us.D;
-  const u0 = us.u0 + 0.05, u1 = us.u1 - 0.05;
+  const u0 = us.u0 + 0.05,
+    u1 = us.u1 - 0.05;
   const Wi = u1 - u0;
   const out: ArchBldg[] = [];
   const hall = (poly: Polygon | null, typ: string, storeys = 1) => {
@@ -291,22 +343,26 @@ function pavilionCompound(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   };
   const range = (a: number, b: number, c: number, d: number, typ: string) => {
     // Wide shallow lots and long side ranges are rows of rooms, not matchsticks to discard wholesale.
-    const W = b - a, H = d - c, horizontal = W >= H;
+    const W = b - a,
+      H = d - c,
+      horizontal = W >= H;
     if (Math.min(W, H) < MIN_BW) return;
     const count = Math.max(1, Math.ceil(Math.max(W, H) / (3.5 * Math.min(W, H))));
     for (let i = 0; i < count; i++) {
-      const step = (horizontal ? W : H) / count, gap = count > 1 ? 0.4 : 0;
-      hall(rectIn(pl, f, horizontal ? a + i * step + gap : a, horizontal ? a + (i + 1) * step - gap : b,
-        horizontal ? c : c + i * step + gap, horizontal ? d : c + (i + 1) * step - gap), typ);
+      const step = (horizontal ? W : H) / count,
+        gap = count > 1 ? 0.4 : 0;
+      hall(rectIn(pl, f, horizontal ? a + i * step + gap : a, horizontal ? a + (i + 1) * step - gap : b, horizontal ? c : c + i * step + gap, horizontal ? d : c + (i + 1) * step - gap), typ);
     }
   };
   if (Wi < 9 || D < 20) {
     range(u0, u1, 0.3, Math.min(D - 0.6, 10), 'siheyuan-hall');
     return out;
   }
-  const front0 = 0.3, back1 = D - 0.3;
+  const front0 = 0.3,
+    back1 = D - 0.3;
   // gate range along the lane, the gate (2.6–3.2 m) in one corner
-  const gs = rng.range(4.6, 5.4), gap = rng.range(2.6, 3.2);
+  const gs = rng.range(4.6, 5.4),
+    gap = rng.range(2.6, 3.2);
   const gateLeft = rng.chance(0.5);
   range(gateLeft ? u0 + gap : u0, gateLeft ? u1 : u1 - gap, front0, front0 + gs, 'siheyuan-gate-range');
   // courts in file: each ~14–20 m deep (court + its cross hall)
@@ -320,7 +376,8 @@ function pavilionCompound(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   let d = front0 + gs;
   for (let j = 0; j < n; j++) {
     const hd = Math.min(step - 5, j === n - 1 ? rng.range(7.5, 9.5) : rng.range(5.5, 7.5));
-    const c0 = d + (j === 0 ? rng.range(1.2, 2.4) : 0), c1 = d + step - hd;
+    const c0 = d + (j === 0 ? rng.range(1.2, 2.4) : 0),
+      c1 = d + step - hd;
     // side halls flank the court (rooms off the court, gaps at the corners)
     if (c1 - c0 >= 6) {
       if (both || eastSide) range(u1 - sw, u1, c0 + 0.6, c1 - 0.6, 'siheyuan-side-hall');
@@ -350,16 +407,23 @@ function yashiki(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   const f = frame(pl);
   if (!f) return [];
   // the lot's lateral extent over its middle (irregular compound lots: pieces are clipped to the lot anyway)
-  const Lm = lateral(pl.poly, f, f.D * 0.45), Lf = lateral(pl.poly, f, Math.min(6, f.D * 0.2));
+  const Lm = lateral(pl.poly, f, f.D * 0.45),
+    Lf = lateral(pl.poly, f, Math.min(6, f.D * 0.2));
   if (!Lm || !Lf) return [];
-  const u0 = Math.max(Lm[0], Lf[0]), u1 = Math.min(Lm[1], Lf[1]);
-  const D = f.D, W = u1 - u0, A = area(pl.poly);
+  const u0 = Math.max(Lm[0], Lf[0]),
+    u1 = Math.min(Lm[1], Lf[1]);
+  const D = f.D,
+    W = u1 - u0,
+    A = area(pl.poly);
   const out: ArchBldg[] = [];
   const ori = Math.atan2(f.n.y, f.n.x);
   const add = (poly: Polygon | null, arch: string, kind: Bldg['kind'] = 'house', storeys = 1) => {
     if (poly) out.push({ poly, kind, arch, roof: arch === 'kura' ? 'gable' : 'tiled-hip', material: 'wood', storeys, orientation: ori });
   };
-  if (W < 12 || D < 16) { add(rectIn(pl, f, u0 + 0.6, u1 - 0.6, 0.6, Math.min(D - 1, 10)), 'yashiki-main-house'); return out; }
+  if (W < 12 || D < 16) {
+    add(rectIn(pl, f, u0 + 0.6, u1 - 0.6, 0.6, Math.min(D - 1, 10)), 'yashiki-main-house');
+    return out;
+  }
   // (the gate in the nagaya-mon, or an open forecourt on small lots: the garden is reached from the street)
   pl.gated = true;
   // nagaya-mon along the street, the gate (3.6 m) off-centre
@@ -395,7 +459,8 @@ function yashiki(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   }
   add(main, 'yashiki-main-house');
   // storehouses in the back corner opposite the house's last block
-  const kd = rng.range(5.5, 7), kw = rng.range(4.6, 5.6);
+  const kd = rng.range(5.5, 7),
+    kw = rng.range(4.6, 5.6);
   const kx = leftToRight ? u0 + 1.5 : u1 - 1.5 - kw;
   const fits = (r: Polygon | null) => !!r && !(main && bboxHit(main, r));
   const kura = rectIn(pl, f, kx, kx + kw, D - 1.5 - kd, D - 1.5);
@@ -411,8 +476,21 @@ function yashiki(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
 
 /** Bounding boxes closer than 1 m (storehouses keep clear of the house). */
 function bboxHit(a: Polygon, b: Polygon): boolean {
-  const bb = (p: Polygon) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const q of p) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); } return { x0, y0, x1, y1 }; };
-  const A = bb(a), B = bb(b);
+  const bb = (p: Polygon) => {
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const q of p) {
+      x0 = Math.min(x0, q.x);
+      y0 = Math.min(y0, q.y);
+      x1 = Math.max(x1, q.x);
+      y1 = Math.max(y1, q.y);
+    }
+    return { x0, y0, x1, y1 };
+  };
+  const A = bb(a),
+    B = bb(b);
   return !(A.x0 > B.x1 + 1 || B.x0 > A.x1 + 1 || A.y0 > B.y1 + 1 || B.y0 > A.y1 + 1);
 }
 
@@ -441,13 +519,20 @@ function machiya(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchBldg
     return { p: s.p, n: m };
   };
   const piece = (d0: number, d1: number, side?: { k: number; w: number; off?: number }): Polygon | null => {
-    const hps: HalfPlane[] = [{ p: { x: f.fa.x + f.n.x * d0, y: f.fa.y + f.n.y * d0 }, n: f.n }, { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } }];
+    const hps: HalfPlane[] = [
+      { p: { x: f.fa.x + f.n.x * d0, y: f.fa.y + f.n.y * d0 }, n: f.n },
+      { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } },
+    ];
     if (side) {
-      const h = sideHP(side.k), o = side.off ?? 0;
+      const h = sideHP(side.k),
+        o = side.off ?? 0;
       hps.push({ p: { x: h.p.x + h.n.x * o, y: h.p.y + h.n.y * o }, n: h.n }, { p: { x: h.p.x + h.n.x * (o + side.w), y: h.p.y + h.n.y * (o + side.w) }, n: { x: -h.n.x, y: -h.n.y } });
     }
     let best: Polygon | null = null;
-    for (const r of clipPlot(pl.poly, keep(hps), conv)) { const c = cleanRing(r, 0.005, 0.5, 0.002, false); if (c.length >= 3 && (!best || area(c) > area(best))) best = c; }
+    for (const r of clipPlot(pl.poly, keep(hps), conv)) {
+      const c = cleanRing(r, 0.005, 0.5, 0.002, false);
+      if (c.length >= 3 && (!best || area(c) > area(best))) best = c;
+    }
     return best && area(best) > 6 ? best : null;
   };
   const out: ArchBldg[] = [];
@@ -519,13 +604,15 @@ function machiya(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchBldg
     if (corr && back) {
       const j1 = stitchUnion(house, corr);
       const j2 = j1 ? stitchUnion(j1, back) : null;
-      if (j2) house = j2; else putM(back, 'machiya-okuzashiki', 'rear', 2);
+      if (j2) house = j2;
+      else putM(back, 'machiya-okuzashiki', 'rear', 2);
       backEnd = hd + court + rd;
     }
   }
   putM(house, 'machiya', 'house', rng.chance(0.3) ? 1 : 2);
   // the kura across the small back garden, against one side line
-  const kd = rng.range(5.5, 7), kw = W < 6.2 ? W - 0.4 : Math.min(W - 0.6, rng.range(4.8, 5.6));
+  const kd = rng.range(5.5, 7),
+    kw = W < 6.2 ? W - 0.4 : Math.min(W - 0.6, rng.range(4.8, 5.6));
   const kEnd = Math.min(D - 0.8, backEnd + rng.range(2.5, 4.5) + kd);
   if (kEnd - kd > backEnd + 2 && kw >= MIN_BW) putM(piece(kEnd - kd, kEnd, { k: 0, w: kw, off: 0.3 }), 'kura', 'back', 2);
   // ura-nagaya: on a deep lot, a back tenement row along the other side line, reached by the lot's alley
@@ -556,13 +643,20 @@ function yardHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchBl
     return { p: s.p, n: m };
   };
   const piece = (d0: number, d1: number, side?: { k: number; w: number; off?: number }): Polygon | null => {
-    const hps: HalfPlane[] = [{ p: { x: f.fa.x + f.n.x * d0, y: f.fa.y + f.n.y * d0 }, n: f.n }, { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } }];
+    const hps: HalfPlane[] = [
+      { p: { x: f.fa.x + f.n.x * d0, y: f.fa.y + f.n.y * d0 }, n: f.n },
+      { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } },
+    ];
     if (side) {
-      const h = sideHP(side.k), o = side.off ?? 0;
+      const h = sideHP(side.k),
+        o = side.off ?? 0;
       hps.push({ p: { x: h.p.x + h.n.x * o, y: h.p.y + h.n.y * o }, n: h.n }, { p: { x: h.p.x + h.n.x * (o + side.w), y: h.p.y + h.n.y * (o + side.w) }, n: { x: -h.n.x, y: -h.n.y } });
     }
     let best: Polygon | null = null;
-    for (const r of clipPlot(pl.poly, hps, conv)) { const c = cleanRing(r, 0.005, 0.5, 0.002, false); if (c.length >= 3 && (!best || area(c) > area(best))) best = c; }
+    for (const r of clipPlot(pl.poly, hps, conv)) {
+      const c = cleanRing(r, 0.005, 0.5, 0.002, false);
+      if (c.length >= 3 && (!best || area(c) > area(best))) best = c;
+    }
     return best && area(best) > 6 ? best : null;
   };
   const ori = Math.atan2(f.n.y, f.n.x);
@@ -585,7 +679,10 @@ function yardHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchBl
   if (yEnd > dI + 8) put(piece(dI + 4, Math.min(yEnd, dI + 4 + rng.range(8, 14)), { k: 1 - k, w: Math.min(W * 0.35, rng.range(5, 6.5)), off: 0.5 }), 'barn', 'back', 1);
   if (nOut > 1 && yEnd > dI + 12) put(piece(yEnd - 4.6, yEnd, { k, w: 4.6, off: 1.2 }), 'banya', 'back', 1);
   // the kitchen garden behind the yard
-  if (D - yEnd > 6) { const g = piece(yEnd + 1, D); if (g) out.push({ poly: g, kind: 'garden' }); }
+  if (D - yEnd > 6) {
+    const g = piece(yEnd + 1, D);
+    if (g) out.push({ poly: g, kind: 'garden' });
+  }
   pl.gated = true;
   return out;
 }
@@ -606,10 +703,19 @@ function tomb(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   const s = kind === 'obelisk' ? 2.4 : Math.min(ins.r * 1.5, Math.sqrt(A) * rng.range(0.32, 0.45));
   if (s < 2.2 || ins.r < 1.6) return [{ poly: pl.poly, kind: 'garden' }];
   const c = ins.c;
-  const ca = Math.cos(ori), sa = Math.sin(ori);
-  const sq = (h: number): Polygon => orientPos([[-h, -h], [h, -h], [h, h], [-h, h]].map(([u, v]) => ({ x: c.x + u * ca - v * sa, y: c.y + u * sa + v * ca })));
+  const ca = Math.cos(ori),
+    sa = Math.sin(ori);
+  const sq = (h: number): Polygon =>
+    orientPos(
+      [
+        [-h, -h],
+        [h, -h],
+        [h, h],
+        [-h, h],
+      ].map(([u, v]) => ({ x: c.x + u * ca - v * sa, y: c.y + u * sa + v * ca })),
+    );
   const poly = kind === 'tholos' ? orientPos(disk(c, s / 2, 16)) : sq(s / 2);
-  if (!polyInside(pl.poly, poly) || pl.poly.some((q) => pointInRing(poly, q))) return [{ poly: pl.poly, kind: 'garden' }];
+  if (!polyInside(pl.poly, poly) || pl.poly.some(q => pointInRing(poly, q))) return [{ poly: pl.poly, kind: 'garden' }];
   out.push({ poly, kind: kind === 'obelisk' ? 'back' : 'house', arch: kind, roof: kind === 'tholos' ? 'dome' : kind === 'obelisk' ? 'pyramidal' : 'hip', material: 'stone', storeys: kind === 'obelisk' ? 4 : 1, orientation: ori, ring: true });
   // the graves: the whole lot is burial ground (the garden pass draws it, under the tomb)
   out.push({ poly: pl.poly, kind: 'garden' });
@@ -648,10 +754,18 @@ function venetian(pl: Plot, cov: number, P: MorphologyParams, rng: Rng, hint?: C
       }
     }
   }
-  return buildPlot(pl, cov, P, rng, hint).map((b) => (b.kind === 'garden' ? b : {
-    ...b, arch: b.kind === 'hall' ? 'courtyard-hall' : b.kind === 'house' ? P.arch.typology : P.arch.typology + '-' + b.kind,
-    roof: P.arch.roof, material: P.arch.material, storeys: b.kind === 'house' || b.kind === 'hall' ? Math.round(rng.range(P.arch.storeys[0], P.arch.storeys[1])) : Math.max(1, P.arch.storeys[0] - 1), orientation: ori,
-  }));
+  return buildPlot(pl, cov, P, rng, hint).map(b =>
+    b.kind === 'garden'
+      ? b
+      : {
+          ...b,
+          arch: b.kind === 'hall' ? 'courtyard-hall' : b.kind === 'house' ? P.arch.typology : P.arch.typology + '-' + b.kind,
+          roof: P.arch.roof,
+          material: P.arch.material,
+          storeys: b.kind === 'house' || b.kind === 'hall' ? Math.round(rng.range(P.arch.storeys[0], P.arch.storeys[1])) : Math.max(1, P.arch.storeys[0] - 1),
+          orientation: ori,
+        },
+  );
 }
 
 // ---------------------------------------------------------------- Ottoman konak
@@ -674,7 +788,8 @@ function konak(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchBldg[]
   };
   const gate = W > 9 ? rng.range(2.4, 3.4) : 0;
   const left = rng.chance(0.5);
-  const a0 = left ? u0 + 0.2 : u0 + gate, a1 = left ? u1 - gate : u1 - 0.2;
+  const a0 = left ? u0 + 0.2 : u0 + gate,
+    a1 = left ? u1 - gate : u1 - 0.2;
   const hd = Math.min(D - 1, rng.range(8, 11));
   // the jettied front: the upper storey over part of the front (one footprint with a stepped front)
   const ground = rectIn(pl, f, a0, a1, 0.6, hd, 25);
@@ -701,7 +816,8 @@ function konak(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchBldg[]
   }
   // the kitchen or a shed against the back of the garden
   if (D > hd + 16) {
-    const sw = Math.min(W * 0.5, rng.range(4.6, 6)), sd = rng.range(4.6, 5.6);
+    const sw = Math.min(W * 0.5, rng.range(4.6, 6)),
+      sd = rng.range(4.6, 5.6);
     put(rectIn(pl, f, left ? u1 - 0.3 - sw : u0 + 0.3, left ? u1 - 0.3 : u0 + 0.3 + sw, D - 0.5 - sd, D - 0.5, 15), 'mutfak-kitchen', 'back', 1);
   }
   // the garden behind the house (drawn under the wing and the kitchen)
@@ -728,7 +844,7 @@ function sahelCompound(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): Ar
   const out: ArchBldg[] = [];
   const town = pl.zone === 'core' || pl.zone === 'middle';
   const put = (poly: Polygon | null, arch: string, kind: Bldg['kind'], storeys: number, roof: ArchSpec['roof'] = 'flat') => {
-    if (poly && !out.some((b) => bboxHit(b.poly, poly) && polysOverlap(b.poly, poly))) out.push({ poly, kind, arch, roof, material: 'mud', storeys, orientation: ori });
+    if (poly && !out.some(b => bboxHit(b.poly, poly) && polysOverlap(b.poly, poly))) out.push({ poly, kind, arch, roof, material: 'mud', storeys, orientation: ori });
   };
   const fd = Math.min(D - 2, rng.range(4.6, 6.5));
   const gate = Math.min(3, W * 0.25);
@@ -747,10 +863,11 @@ function sahelCompound(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): Ar
   const nG = W > 12 && D > 16 ? rng.int(1, 3) : W > 8 && D > 12 ? 1 : 0;
   for (let k = 0; k < nG; k++) {
     for (let t = 0; t < 6; t++) {
-      const u = u0 + 2.5 + rng.float() * (W - 5), d = fd + 2.5 + rng.float() * Math.max(0.1, D - fd - backD - 5);
+      const u = u0 + 2.5 + rng.float() * (W - 5),
+        d = fd + 2.5 + rng.float() * Math.max(0.1, D - fd - backD - 5);
       const c = { x: f.fa.x + f.t.x * u + f.n.x * d, y: f.fa.y + f.t.y * u + f.n.y * d };
       const g = orientPos(disk(c, rng.range(1.2, 1.7), 10));
-      if (!polyInside(pl.poly, g) || out.some((b) => bboxHit(b.poly, g))) continue;
+      if (!polyInside(pl.poly, g) || out.some(b => bboxHit(b.poly, g))) continue;
       out.push({ poly: g, kind: 'back', arch: 'granary', roof: 'conical', material: 'mud', storeys: 1, orientation: ori, ring: true });
       break;
     }
@@ -759,7 +876,7 @@ function sahelCompound(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): Ar
   void P;
   return out;
 }
-const polysOverlap = (a: Polygon, b: Polygon): boolean => a.some((q) => pointInRing(b, q)) || b.some((q) => pointInRing(a, q));
+const polysOverlap = (a: Polygon, b: Polygon): boolean => a.some(q => pointInRing(b, q)) || b.some(q => pointInRing(a, q));
 
 // ---------------------------------------------------------------- Hanseatic gabled house (Dielenhaus) and Gang
 /**
@@ -782,13 +899,20 @@ function giebelhaus(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchB
     return { p: sd.p, n: m };
   };
   const piece = (d0: number, d1: number, side?: { k: number; w: number; off?: number }): Polygon | null => {
-    const hps: HalfPlane[] = [{ p: { x: f.fa.x + f.n.x * d0, y: f.fa.y + f.n.y * d0 }, n: f.n }, { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } }];
+    const hps: HalfPlane[] = [
+      { p: { x: f.fa.x + f.n.x * d0, y: f.fa.y + f.n.y * d0 }, n: f.n },
+      { p: { x: f.fa.x + f.n.x * d1, y: f.fa.y + f.n.y * d1 }, n: { x: -f.n.x, y: -f.n.y } },
+    ];
     if (side) {
-      const h = sideHP(side.k), o = side.off ?? 0;
+      const h = sideHP(side.k),
+        o = side.off ?? 0;
       hps.push({ p: { x: h.p.x + h.n.x * o, y: h.p.y + h.n.y * o }, n: h.n }, { p: { x: h.p.x + h.n.x * (o + side.w), y: h.p.y + h.n.y * (o + side.w) }, n: { x: -h.n.x, y: -h.n.y } });
     }
     let best: Polygon | null = null;
-    for (const r of clipPlot(pl.poly, hps, conv)) { const c = cleanRing(r, 0.005, 0.5, 0.002, false); if (c.length >= 3 && (!best || area(c) > area(best))) best = c; }
+    for (const r of clipPlot(pl.poly, hps, conv)) {
+      const c = cleanRing(r, 0.005, 0.5, 0.002, false);
+      if (c.length >= 3 && (!best || area(c) > area(best))) best = c;
+    }
     return best && area(best) > 6 ? best : null;
   };
   const out: ArchBldg[] = [];
@@ -888,15 +1012,23 @@ function gnomeHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rng): ArchB
   const hd = Math.min(D - 0.4, rng.range(8, 11));
   // (the front house takes the lot's whole street front: plot ∩ the depth band, wall to wall with its neighbours)
   let front: Polygon | null = null;
-  for (const r of clipPlot(pl.poly, [{ p: f.fa, n: f.n }, { p: { x: f.fa.x + f.n.x * hd, y: f.fa.y + f.n.y * hd }, n: { x: -f.n.x, y: -f.n.y } }], isConvex(pl.poly, 1e-3))) {
+  for (const r of clipPlot(
+    pl.poly,
+    [
+      { p: f.fa, n: f.n },
+      { p: { x: f.fa.x + f.n.x * hd, y: f.fa.y + f.n.y * hd }, n: { x: -f.n.x, y: -f.n.y } },
+    ],
+    isConvex(pl.poly, 1e-3),
+  )) {
     const c = cleanRing(r, 0.005, 0.5, 0.002, false);
     if (c.length >= 3 && (!front || area(c) > area(front))) front = c;
   }
   if (front && (shapeOf(front).w < MIN_BW || shapeOf(front).asp > MAX_ASPECT)) front = rectIn(pl, f, u0, u1, 0, hd, 15);
   if (front) out.push({ poly: front, kind: 'house', arch: 'gnome-tallhouse', roof: 'pyramidal', material: P.arch.material, storeys: rng.int(5, 7), orientation: ori });
-  const w0 = hd + rng.range(1.6, 2.6), w1 = Math.min(D - 0.4, w0 + rng.range(6, 10) * (0.6 + cov * 0.5));
+  const w0 = hd + rng.range(1.6, 2.6),
+    w1 = Math.min(D - 0.4, w0 + rng.range(6, 10) * (0.6 + cov * 0.5));
   const left = rng.chance(0.5);
-  const pass = (u1 - u0) > 6.5 ? 1.2 : 0;
+  const pass = u1 - u0 > 6.5 ? 1.2 : 0;
   if (w1 - w0 >= 4.5) {
     const ws = rectIn(pl, f, left ? u0 + pass : u0, left ? u1 : u1 - pass, w0, w1, 15);
     if (ws) out.push({ poly: ws, kind: 'rear', arch: 'gnome-workshop', roof: 'gable', material: P.arch.material, storeys: 2, orientation: ori });
@@ -922,23 +1054,26 @@ function kancha(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   const room = (a: Vec2, b: Vec2, s0: number, s1: number): Polygon | null => {
     const L = dist(a, b);
     if (s1 - s0 < 6) return null;
-    const t = { x: (b.x - a.x) / L, y: (b.y - a.y) / L }, n = { x: -t.y, y: t.x };
+    const t = { x: (b.x - a.x) / L, y: (b.y - a.y) / L },
+      n = { x: -t.y, y: t.x };
     const o = 0.7;
     const p = (s: number, d: number): Vec2 => ({ x: a.x + t.x * s + n.x * d, y: a.y + t.y * s + n.y * d });
     const r = orientPos([p(s0, o), p(s1, o), p(s1, o + dep), p(s0, o + dep)]);
     return polyInside(Q, r) ? r : null;
   };
   for (let i = 0; i < Q.length; i++) {
-    const a = Q[i], b = Q[(i + 1) % Q.length];
+    const a = Q[i],
+      b = Q[(i + 1) % Q.length];
     const L = dist(a, b);
     if (L < 10) continue;
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const isFront = dist(m, fm) < 0.5 || distToSegPt(fm, a, b) < 0.3;
     // (the corners stay open: each range stops a gap short of the next range's depth)
-    const g0 = 0.7 + dep + gap * 0.6, g1 = L - g0;
+    const g0 = 0.7 + dep + gap * 0.6,
+      g1 = L - g0;
     const polys: (Polygon | null)[] = isFront
-      // the gate in the middle of the street side, a short house either side of it
-      ? [room(a, b, g0, L / 2 - 2.2), room(a, b, L / 2 + 2.2, g1)]
+      ? // the gate in the middle of the street side, a short house either side of it
+        [room(a, b, g0, L / 2 - 2.2), room(a, b, L / 2 + 2.2, g1)]
       : [L > 34 && rng.chance(0.5) ? room(a, b, g0, L / 2 - 1.5) : room(a, b, g0, g1), L > 34 ? room(a, b, L / 2 + 1.5, g1) : null];
     for (const r of polys) if (r && shapeOf(r).w >= MIN_BW) out.push(tag({ poly: r, kind: 'house' }, P.arch, rng, { orientation: Math.atan2(b.y - a.y, b.x - a.x), ring: true }));
   }
@@ -946,7 +1081,9 @@ function kancha(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   return out;
 }
 function distToSegPt(p: Vec2, a: Vec2, b: Vec2): number {
-  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    l2 = dx * dx + dy * dy || 1;
   const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
@@ -977,7 +1114,7 @@ function treeHouse(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
       const dd = r + r2 + rng.range(0.6, 2.5);
       const q = { x: c.x + Math.cos(a) * dd, y: c.y + Math.sin(a) * dd };
       if (!pointInRing(pl.poly, q) || distToRing(pl.poly, q) < r2 + 0.6) continue;
-      if (placed.some((o) => dist(o.c, q) < o.r + r2 + 0.5)) continue;
+      if (placed.some(o => dist(o.c, q) < o.r + r2 + 0.5)) continue;
       placed.push({ c: q, r: r2 });
       out.push({ poly: orientPos(disk(q, r2, 14)), kind: 'rear', arch: 'tree-pod', roof: 'dome', material: 'living-wood', storeys: 1 });
       break;
@@ -999,7 +1136,8 @@ function hall(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   const us = usable(pl, f);
   if (!us) return [];
   const { u0, u1 } = us;
-  const D = us.D, W = u1 - u0;
+  const D = us.D,
+    W = u1 - u0;
   const ori = Math.atan2(f.n.y, f.n.x);
   const out: ArchBldg[] = [];
   const put = (poly: Polygon | null, arch: string, kind: Bldg['kind'], storeys: number) => {
@@ -1009,7 +1147,8 @@ function hall(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   // a terrace higher or lower than the street)
   const lane = 2.2;
   const left = rng.chance(0.5);
-  const a0 = left ? u0 + lane : u0, a1 = left ? u1 : u1 - lane;
+  const a0 = left ? u0 + lane : u0,
+    a1 = left ? u1 : u1 - lane;
   const great = W >= 14 && (pl.wealth ?? 0.5) > 0.45 && rng.chance(0.55);
   // the front: a great hall (chamfered corners on the large ones), or a stone house over the frontage
   const hd = great ? Math.min(D - 1, Math.max(10, D * rng.range(0.5, 0.65))) : Math.min(D - 1, rng.range(8, 10.5));
@@ -1026,7 +1165,8 @@ function hall(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
   const backAt = D - 0.3 - rd;
   if (backAt > hd + 3) put(rectIn(pl, f, u0, u1, backAt, D - 0.3, 20), 'rock-cut-dwelling', 'back', 1);
   // between them, across narrow yards: a workshop or a forge
-  const mid0 = hd + 2.5, mid1 = backAt - 2.5;
+  const mid0 = hd + 2.5,
+    mid1 = backAt - 2.5;
   if (mid1 - mid0 >= MIN_BW) put(rectIn(pl, f, a0, a1, mid0, mid1, 20), rng.chance(0.3) ? 'forge' : 'workshop', 'rear', 1);
   pl.gated = true;
   return out;
@@ -1044,12 +1184,12 @@ function duergarHall(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
       if (!isConvex(poly)) continue;
       const inset = insetConvex(orientPos(poly), 0.02);
       if (inset.length < 3 || shapeOf(inset).w < MIN_BW || shapeOf(inset).asp > MAX_ASPECT) continue;
-      const subset = tryDifference(inset, poly), inside = tryDifference(inset, pl.poly);
+      const subset = tryDifference(inset, poly),
+        inside = tryDifference(inset, pl.poly);
       if (subset.failed || inside.failed || mpArea(subset.pieces) > 1e-6 || mpArea(inside.pieces) > 1e-6) continue;
       poly = inset;
     }
-    out.push({ ...b, poly, arch: b.arch === 'forge' || b.arch === 'workshop' ? 'duergar-' + b.arch
-      : b.kind === 'house' ? 'duergar-hall' : 'duergar-rock-dwelling' });
+    out.push({ ...b, poly, arch: b.arch === 'forge' || b.arch === 'workshop' ? 'duergar-' + b.arch : b.kind === 'house' ? 'duergar-hall' : 'duergar-rock-dwelling' });
   }
   return out;
 }
@@ -1057,44 +1197,75 @@ function duergarHall(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
 /** Buildings of a plot by the morphology's building operator (gardens have kind 'garden'). */
 export function buildOn(pl: Plot, cov: number, P: MorphologyParams, rng: Rng, hint?: CourtHint): ArchBldg[] {
   const all = buildOnRaw(pl, cov, P, rng, hint);
-  const gardens = all.filter((b) => b.kind === 'garden');
-  return (dropOverlaps(all.filter((b) => b.kind !== 'garden')) as ArchBldg[]).concat(gardens);
+  const gardens = all.filter(b => b.kind === 'garden');
+  return (dropOverlaps(all.filter(b => b.kind !== 'garden')) as ArchBldg[]).concat(gardens);
 }
 
 function buildOnRaw(pl: Plot, cov: number, P: MorphologyParams, rng: Rng, hint?: CourtHint): ArchBldg[] {
   switch (P.buildingOp) {
-    case 'perimeterBlock': return (pl.wholeBlock ? buildPerimeterBlock(pl, P, rng).buildings : buildPerimeterPlot(pl, P, rng))
-      .map(b => tag(b, P.arch, rng.fork('perimeter-arch:' + b.poly[0].x + ':' + b.poly[0].y)));
-    case 'primitive': return primitiveHouse(pl, cov, P, rng);
-    case 'courtyardHouse': return courtyardHouse(pl, P, rng, cov);
-    case 'shopRow': return shopRow(pl, P, rng);
-    case 'pavilionCompound': return pavilionCompound(pl, P, rng).map((b) => ({ ...b, poly: rectify(b.poly, pl.front[0], unitT(pl), pl.nrm) ?? b.poly }));
-    case 'yashiki': return yashiki(pl, P, rng);
-    case 'machiya': return machiya(pl, cov, P, rng);
-    case 'treeHouse': return treeHouse(pl, P, rng);
+    case 'perimeterBlock':
+      return (pl.wholeBlock ? buildPerimeterBlock(pl, P, rng).buildings : buildPerimeterPlot(pl, P, rng)).map(b => tag(b, P.arch, rng.fork('perimeter-arch:' + b.poly[0].x + ':' + b.poly[0].y)));
+    case 'primitive':
+      return primitiveHouse(pl, cov, P, rng);
+    case 'courtyardHouse':
+      return courtyardHouse(pl, P, rng, cov);
+    case 'shopRow':
+      return shopRow(pl, P, rng);
+    case 'pavilionCompound':
+      return pavilionCompound(pl, P, rng).map(b => ({ ...b, poly: rectify(b.poly, pl.front[0], unitT(pl), pl.nrm) ?? b.poly }));
+    case 'yashiki':
+      return yashiki(pl, P, rng);
+    case 'machiya':
+      return machiya(pl, cov, P, rng);
+    case 'treeHouse':
+      return treeHouse(pl, P, rng);
     // Same inscribed, separated round pods; their metadata describes fungi rather than a tree canopy.
-    case 'fungalHouse': return treeHouse(pl, P, rng).map((b) => ({ ...b, arch: b.kind === 'house' ? 'fungal-dwelling' : 'fungal-pod', material: 'fungal', storeys: 1 }));
-    case 'hall': return hall(pl, P, rng);
-    case 'duergarHall': return duergarHall(pl, P, rng);
-    case 'kancha': return kancha(pl, P, rng);
-    case 'yardHouse': return yardHouse(pl, cov, P, rng);
-    case 'tomb': return tomb(pl, P, rng);
-    case 'venetian': return venetian(pl, cov, P, rng, hint);
-    case 'konak': return konak(pl, cov, P, rng);
-    case 'sahelCompound': return sahelCompound(pl, cov, P, rng);
-    case 'giebelhaus': return giebelhaus(pl, cov, P, rng);
-    case 'hanok': return hanok(pl, cov, P, rng);
-    case 'gnome': return gnomeHouse(pl, cov, P, rng);
+    case 'fungalHouse':
+      return treeHouse(pl, P, rng).map(b => ({ ...b, arch: b.kind === 'house' ? 'fungal-dwelling' : 'fungal-pod', material: 'fungal', storeys: 1 }));
+    case 'hall':
+      return hall(pl, P, rng);
+    case 'duergarHall':
+      return duergarHall(pl, P, rng);
+    case 'kancha':
+      return kancha(pl, P, rng);
+    case 'yardHouse':
+      return yardHouse(pl, cov, P, rng);
+    case 'tomb':
+      return tomb(pl, P, rng);
+    case 'venetian':
+      return venetian(pl, cov, P, rng, hint);
+    case 'konak':
+      return konak(pl, cov, P, rng);
+    case 'sahelCompound':
+      return sahelCompound(pl, cov, P, rng);
+    case 'giebelhaus':
+      return giebelhaus(pl, cov, P, rng);
+    case 'hanok':
+      return hanok(pl, cov, P, rng);
+    case 'gnome':
+      return gnomeHouse(pl, cov, P, rng);
     default: {
       const experimental = P.buildingOp === 'streetFrontRowExperimental';
       const normal = experimental && pl.zone !== 'village' ? housePlotNormal(pl) : pl.nrm;
       const ori = Math.atan2(normal.y, normal.x);
-      return (experimental ? buildPlotExperimental : buildPlot)(pl, cov, P, rng, hint).map((b) => (b.kind === 'garden' ? b : {
-        ...b, arch: b.kind === 'hall' ? 'courtyard-hall' : b.kind === 'house' ? P.arch.typology : P.arch.typology + '-' + b.kind,
-        roof: P.arch.roof, material: P.arch.material, storeys: b.kind === 'house' || b.kind === 'hall' ? Math.round(rng.range(P.arch.storeys[0], P.arch.storeys[1])) : Math.max(1, P.arch.storeys[0] - 1), orientation: ori,
-      }));
+      return (experimental ? buildPlotExperimental : buildPlot)(pl, cov, P, rng, hint).map(b =>
+        b.kind === 'garden'
+          ? b
+          : {
+              ...b,
+              arch: b.kind === 'hall' ? 'courtyard-hall' : b.kind === 'house' ? P.arch.typology : P.arch.typology + '-' + b.kind,
+              roof: P.arch.roof,
+              material: P.arch.material,
+              storeys: b.kind === 'house' || b.kind === 'hall' ? Math.round(rng.range(P.arch.storeys[0], P.arch.storeys[1])) : Math.max(1, P.arch.storeys[0] - 1),
+              orientation: ori,
+            },
+      );
     }
   }
 }
 
-const unitT = (pl: Plot): Vec2 => { const [a, b] = pl.front; const l = dist(a, b) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
+const unitT = (pl: Plot): Vec2 => {
+  const [a, b] = pl.front;
+  const l = dist(a, b) || 1;
+  return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+};

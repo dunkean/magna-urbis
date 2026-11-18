@@ -19,14 +19,19 @@ export interface SilhouettePageOptions {
 export async function streamSilhouetteScene(pages: ArchitectureRequestSource, options: SilhouettePageOptions): Promise<UrbanSceneCompletion> {
   const counts = { schema_version: '1' as const, generator_version: 'silhouette', buildings: 0, refusals: 0, open_spaces: 0 };
   // An empty town still produces one (empty) part, so the receiver holds a scene.
-  if (!pages.total) { await options.part(silhouetteScene([]), { start: 0, completed: 0, total: 0 }); return counts; }
+  if (!pages.total) {
+    await options.part(silhouetteScene([]), { start: 0, completed: 0, total: 0 });
+    return counts;
+  }
   for (let offset = 0; offset < pages.total;) {
     if (options.cancelled?.()) throw new DOMException('Calcul remplacé', 'AbortError');
     const page = await pages.read(offset, URBAN_BUILDING_PAGE_LIMIT, URBAN_BUILDING_PAGE_BYTES);
     if (options.cancelled?.()) throw new DOMException('Calcul remplacé', 'AbortError');
     if (!page.length) throw new Error('Retained building-site page made no progress.');
-    const delta = silhouetteScene(page as CityPlacementRequest[]), progress = { start: offset, completed: offset + page.length, total: pages.total };
-    counts.buildings += delta.buildings.length; counts.open_spaces += delta.open_spaces.length;
+    const delta = silhouetteScene(page as CityPlacementRequest[]),
+      progress = { start: offset, completed: offset + page.length, total: pages.total };
+    counts.buildings += delta.buildings.length;
+    counts.open_spaces += delta.open_spaces.length;
     await options.part(delta, progress);
     offset = progress.completed;
     options.progress?.(offset, pages.total);
@@ -38,19 +43,20 @@ export async function streamSilhouetteScene(pages: ArchitectureRequestSource, op
  * (worker and main-thread fallback). False: the engine has no paged site read,
  * so the caller keeps its whole-city read. Once Begin is attempted every error
  * propagates; there is never a whole-city fallback after that point. */
-export async function pagedSilhouetteScene(request: UrbanSceneRequest, cancelled: () => boolean,
-  post: (response: UrbanSceneResponse) => void | Promise<void>): Promise<boolean> {
+export async function pagedSilhouetteScene(request: UrbanSceneRequest, cancelled: () => boolean, post: (response: UrbanSceneResponse) => void | Promise<void>): Promise<boolean> {
   if (!request.source || request.runtime?.profile !== 'local' || sceneMode(request) !== 'silhouette') return false;
   const start = performance.now();
-  const pages = await beginUrbanBuildingPages({ source: request.source, keys: request.keys, seed: request.seed,
-    architectureCulture: architectureProfile(request.settings) }, request.runtime, { cancelled });
+  const pages = await beginUrbanBuildingPages({ source: request.source, keys: request.keys, seed: request.seed, architectureCulture: architectureProfile(request.settings) }, request.runtime, { cancelled });
   if (!pages) return false;
-  const complete = await streamSilhouetteScene(pages, { cancelled,
-    progress: (completed, total) => { void post({ id: request.id, progress: { completed, total } }); },
-    part: (delta, progress) => post({ id: request.id, scenePart: { delta, progress } }) });
+  const complete = await streamSilhouetteScene(pages, {
+    cancelled,
+    progress: (completed, total) => {
+      void post({ id: request.id, progress: { completed, total } });
+    },
+    part: (delta, progress) => post({ id: request.id, scenePart: { delta, progress } }),
+  });
   if (cancelled()) return true;
   const sites = pages.timing.prepareMs + pages.timing.readMs;
-  await post({ id: request.id, complete, timing: { sites, sitesPrepare: pages.timing.prepareMs, sitesRead: pages.timing.readMs,
-    paged: true, placement: Math.max(0, performance.now() - start - sites) } });
+  await post({ id: request.id, complete, timing: { sites, sitesPrepare: pages.timing.prepareMs, sitesRead: pages.timing.readMs, paged: true, placement: Math.max(0, performance.now() - start - sites) } });
   return true;
 }

@@ -32,7 +32,8 @@ describe('toponym profiles', () => {
     for (const kind of ['town', 'river', 'lake', 'forest', 'hill', 'region', 'farm'] as const) expect(make('x', kind)).toBeTruthy();
   });
   it('ships exactly the reachable countries of the full pack (npx tsx scripts/names_runtime_pack.ts)', () => {
-    const { countries, ...rest } = pack, { countries: shipped, ...shippedRest } = runtimePack;
+    const { countries, ...rest } = pack,
+      { countries: shipped, ...shippedRest } = runtimePack;
     expect(shippedRest).toEqual(rest);
     expect(Object.keys(shipped).sort()).toEqual([...PROFILE_COUNTRIES]);
     for (const id of PROFILE_COUNTRIES) expect((shipped as Record<string, unknown>)[id], id).toEqual((countries as Record<string, unknown>)[id]);

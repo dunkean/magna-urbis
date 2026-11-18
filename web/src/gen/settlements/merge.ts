@@ -12,24 +12,44 @@ export function mergeUrban(layers: UrbanLayer[]): UrbanLayer | undefined {
   if (layers.length === 1) return layers[0];
   const m: UrbanLayer = {
     ...layers[0],
-    footprint: [], streets: [], blocks: [], parcels: [], buildings: [], walls: [], landmarks: [], squares: [],
-    quarters: [], blockInfo: [], masses: [], backLand: [], footprintH: [], lines: [], trees: [], water: [], sites: [], quays: [],
-    openTails: [], openEdgeGround: [],
-    ...(layers.some((u) => u.moats?.length) ? { moats: [] } : {}),
-    ...(layers.some((u) => u.ruralReserve?.length) ? { ruralReserve: [] } : {}),
+    footprint: [],
+    streets: [],
+    blocks: [],
+    parcels: [],
+    buildings: [],
+    walls: [],
+    landmarks: [],
+    squares: [],
+    quarters: [],
+    blockInfo: [],
+    masses: [],
+    backLand: [],
+    footprintH: [],
+    lines: [],
+    trees: [],
+    water: [],
+    sites: [],
+    quays: [],
+    openTails: [],
+    openEdgeGround: [],
+    ...(layers.some(u => u.moats?.length) ? { moats: [] } : {}),
+    ...(layers.some(u => u.ruralReserve?.length) ? { ruralReserve: [] } : {}),
   };
   for (const u of layers) {
-    const b0 = m.blocks.length, p0 = m.parcels.length, q0 = m.quarters.length, s0 = m.streets.length;
+    const b0 = m.blocks.length,
+      p0 = m.parcels.length,
+      q0 = m.quarters.length,
+      s0 = m.streets.length;
     m.footprint.push(...u.footprint);
     m.footprintH.push(...u.footprintH);
     m.streets.push(...u.streets);
-    m.openTails!.push(...(u.openTails ?? []).map((tail) => ({ ...tail, street: tail.street + s0 })));
+    m.openTails!.push(...(u.openTails ?? []).map(tail => ({ ...tail, street: tail.street + s0 })));
     m.openEdgeGround!.push(...(u.openEdgeGround ?? []));
     m.blocks.push(...u.blocks);
     // Lazy quarter detail refers to its host's quarter ids and carries no local quarter table.
-    m.blockInfo.push(...u.blockInfo.map((bi) => (q0 && u.quarters.length ? { ...bi, quarter: bi.quarter + q0 } : bi)));
-    m.parcels.push(...u.parcels.map((p) => (b0 && p.block >= 0 ? { ...p, block: p.block + b0 } : p)));
-    m.buildings.push(...u.buildings.map((b) => (p0 && b.parcel !== undefined && b.parcel >= 0 ? { ...b, parcel: b.parcel + p0 } : b)));
+    m.blockInfo.push(...u.blockInfo.map(bi => (q0 && u.quarters.length ? { ...bi, quarter: bi.quarter + q0 } : bi)));
+    m.parcels.push(...u.parcels.map(p => (b0 && p.block >= 0 ? { ...p, block: p.block + b0 } : p)));
+    m.buildings.push(...u.buildings.map(b => (p0 && b.parcel !== undefined && b.parcel >= 0 ? { ...b, parcel: b.parcel + p0 } : b)));
     m.walls!.push(...(u.walls ?? []));
     m.landmarks.push(...u.landmarks);
     m.squares.push(...u.squares);
@@ -55,11 +75,15 @@ export function mergeUrban(layers: UrbanLayer[]): UrbanLayer | undefined {
 export function placeholderUrban(s: Settlement, water?: { data: Uint8Array; n: number; cell: number }): UrbanLayer {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < s.key.length; i++) h = Math.imul(h ^ s.key.charCodeAt(i), 16777619) >>> 0;
-  const rnd = (): number => { h = (Math.imul(h ^ (h >>> 15), 2246822519) + 0x6d2b79f5) >>> 0; return h / 4294967296; };
+  const rnd = (): number => {
+    h = (Math.imul(h ^ (h >>> 15), 2246822519) + 0x6d2b79f5) >>> 0;
+    return h / 4294967296;
+  };
   const dry = (x: number, y: number): boolean => {
     if (!water) return true;
     const { data, n, cell } = water;
-    const ix = Math.floor(x / cell), iy = Math.floor(y / cell);
+    const ix = Math.floor(x / cell),
+      iy = Math.floor(y / cell);
     return ix >= 0 && iy >= 0 && ix < n && iy < n && data[iy * n + ix] === 0;
   };
   const houses = Math.max(3, Math.min(48, Math.round(s.population / 7)));
@@ -69,25 +93,49 @@ export function placeholderUrban(s: Settlement, water?: { data: Uint8Array; n: n
   const buildings: UrbanLayer['buildings'] = [];
   for (let l = 0; l < lanes; l++) {
     const a = a0 + (l * 2 * Math.PI) / lanes + (rnd() - 0.5) * 0.7;
-    const ux = Math.cos(a), uy = Math.sin(a);
+    const ux = Math.cos(a),
+      uy = Math.sin(a);
     // a lane through the center (both ways for the first one), houses on both sides, gable to the lane
     for (let t = l === 0 ? -reach * 0.6 : 12; t <= reach; t += 13 + rnd() * 6) {
       for (const side of [-1, 1]) {
         if (buildings.length >= houses || rnd() < 0.2) continue;
         const off = side * (8 + rnd() * 3);
-        const cx = s.center.x + ux * t - uy * off, cy = s.center.y + uy * t + ux * off;
+        const cx = s.center.x + ux * t - uy * off,
+          cy = s.center.y + uy * t + ux * off;
         if (!dry(cx, cy)) continue;
-        const L = 8 + rnd() * 5, W = 5 + rnd() * 2, ang = a + (rnd() - 0.5) * 0.15;
-        const cu = Math.cos(ang), su = Math.sin(ang);
-        const poly = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: cx + (cu * i * L) / 2 - (su * j * W) / 2, y: cy + (su * i * L) / 2 + (cu * j * W) / 2 }));
+        const L = 8 + rnd() * 5,
+          W = 5 + rnd() * 2,
+          ang = a + (rnd() - 0.5) * 0.15;
+        const cu = Math.cos(ang),
+          su = Math.sin(ang);
+        const poly = [
+          [-1, -1],
+          [1, -1],
+          [1, 1],
+          [-1, 1],
+        ].map(([i, j]) => ({ x: cx + (cu * i * L) / 2 - (su * j * W) / 2, y: cy + (su * i * L) / 2 + (cu * j * W) / 2 }));
         buildings.push({ poly, kind: 'house', orientation: ang });
       }
     }
   }
   return {
-    footprint: [], footprintH: [], streets: [], blocks: [], parcels: [], buildings, walls: [],
-    landmarks: [], squares: [], archetype: 'town', population: s.population, morphology: 'placeholder', phases: [], quarters: [],
-    blockInfo: [], masses: buildings.map((b) => ({ outer: b.poly, holes: [] })), backLand: [],
+    footprint: [],
+    footprintH: [],
+    streets: [],
+    blocks: [],
+    parcels: [],
+    buildings,
+    walls: [],
+    landmarks: [],
+    squares: [],
+    archetype: 'town',
+    population: s.population,
+    morphology: 'placeholder',
+    phases: [],
+    quarters: [],
+    blockInfo: [],
+    masses: buildings.map(b => ({ outer: b.poly, holes: [] })),
+    backLand: [],
   };
 }
 
@@ -99,14 +147,20 @@ export function megaView(u: UrbanLayer, details?: Record<number, UrbanLayer>, bu
   const M = u.macro;
   if (!M) return u;
   budget ??= fabricBudget(M.quarters.length);
-  const blocks: Polygon[] = [], blockInfo: UrbanBlockInfo[] = [], parcels: UrbanParcel[] = [], masses: UrbanLayer['masses'] = [];
+  const blocks: Polygon[] = [],
+    blockInfo: UrbanBlockInfo[] = [],
+    parcels: UrbanParcel[] = [],
+    masses: UrbanLayer['masses'] = [];
   for (const q of M.quarters) {
     if (details?.[q.id] || q.inset.length < 3) continue;
     const green = q.kind === 'place' || q.district === 'gardens';
     if (q.kind === 'quarter') {
       // stand-in fabric: block-sized pieces with their built mass
       const si = standIn(q, M.nuclei[q.nucleus]?.p ?? M.center, budget);
-      for (const b of si.blocks) { blocks.push(b); blockInfo.push({ quarter: q.id, phase: q.phase, zone: q.zone, kind: 'block', culture: q.culture }); }
+      for (const b of si.blocks) {
+        blocks.push(b);
+        blockInfo.push({ quarter: q.id, phase: q.phase, zone: q.zone, kind: 'block', culture: q.culture });
+      }
       masses.push(...si.masses);
       continue;
     }
@@ -117,7 +171,12 @@ export function megaView(u: UrbanLayer, details?: Record<number, UrbanLayer>, bu
     else if (green) parcels.push({ poly: q.inset, use: 'green', block: bi });
   }
   const base: UrbanLayer = { ...u, macro: undefined, blocks, blockInfo, parcels, masses };
-  const ds = details ? Object.keys(details).map(Number).sort((a, b) => a - b).map((k) => details[k]) : [];
+  const ds = details
+    ? Object.keys(details)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map(k => details[k])
+    : [];
   return ds.length ? { ...mergeUrban([base, ...ds])!, macro: undefined } : base;
 }
 
@@ -131,14 +190,17 @@ export function renderView(world: World): World {
   const sub = (si: number): Record<number, UrbanLayer> | undefined => {
     if (!det) return undefined;
     const out: Record<number, UrbanLayer> = {};
-    for (const k of Object.keys(det)) { const key = Number(k); if (Math.floor(key / MEGA_KEY) === si) out[key - si * MEGA_KEY] = det[key]; }
+    for (const k of Object.keys(det)) {
+      const key = Number(k);
+      if (Math.floor(key / MEGA_KEY) === si) out[key - si * MEGA_KEY] = det[key];
+    }
     return out;
   };
-  const macroCount = (world.urban?.macro?.quarters.length ?? 0) + (world.settlements ?? []).reduce((n, s) => n + (!s.main ? s.urban?.macro?.quarters.length ?? 0 : 0), 0);
+  const macroCount = (world.urban?.macro?.quarters.length ?? 0) + (world.settlements ?? []).reduce((n, s) => n + (!s.main ? (s.urban?.macro?.quarters.length ?? 0) : 0), 0);
   const budget = fabricBudget(macroCount);
   const main = world.urban?.macro ? megaView(world.urban, sub(0), budget) : world.urban;
   const wg = { data: world.terrain.water, n: world.terrain.height.w, cell: world.terrain.height.cell };
-  const extra = (world.settlements ?? []).filter((s) => !s.main && (s.urban || s.detail === 'lazy')).map((s) => (s.urban?.macro ? megaView(s.urban, sub(s.index), budget) : s.urban ?? placeholderUrban(s, wg)));
+  const extra = (world.settlements ?? []).filter(s => !s.main && (s.urban || s.detail === 'lazy')).map(s => (s.urban?.macro ? megaView(s.urban, sub(s.index), budget) : (s.urban ?? placeholderUrban(s, wg))));
   if (!extra.length || !main) return main === world.urban ? world : { ...world, urban: main };
   return { ...world, urban: mergeUrban([main, ...extra]) };
 }

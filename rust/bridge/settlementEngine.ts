@@ -6,7 +6,10 @@ import { validatePhysicalTerrain } from './settlements';
 import { roadSitesOf } from './roadSites';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
-export interface SettlementEngine { run(request: SettlementRequest): SettlementResponse | Promise<SettlementResponse>; dispose?(): void }
+export interface SettlementEngine {
+  run(request: SettlementRequest): SettlementResponse | Promise<SettlementResponse>;
+  dispose?(): void;
+}
 
 /**
  * Runs placement and routing requests on one Rust terrain handle, kept until a new raster
@@ -19,32 +22,33 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
   let terrain: InstanceType<NonNullable<typeof SettlementTerrain>> | undefined;
   const native = nativeRasterClient();
   return {
-    dispose() { terrain?.free(); terrain = undefined; },
+    dispose() {
+      terrain?.free();
+      terrain = undefined;
+    },
     run(request) {
       if (request.runtime?.profile === 'local') {
-        return native<SettlementResponse>('/settlements', { ...request, runtime: request.runtime })
-          .catch(error => ({ id: request.id, error: String(error) }));
+        return native<SettlementResponse>('/settlements', { ...request, runtime: request.runtime }).catch(error => ({ id: request.id, error: String(error) }));
       }
       try {
         if (request.raster) {
           const r = request.raster;
           // Cleared before the build: a failed replacement must not leave a freed handle behind.
-          terrain?.free(); terrain = undefined;
+          terrain?.free();
+          terrain = undefined;
           validatePhysicalTerrain(r.physical);
           if (!SettlementTerrain) throw new Error('Core WASM is not loaded.');
           terrain = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
           if (r.physical) {
-            const physical = terrain as typeof terrain & {
-              set_physical_height(n: number, height: Float32Array): void;
-              set_physical_height_spline(n: number, height: Float32Array, floor: number): void;
-            };
+            const physical = terrain as typeof terrain & { set_physical_height(n: number, height: Float32Array): void; set_physical_height_spline(n: number, height: Float32Array, floor: number): void };
             if (r.physical.interpolation === 'bspline') physical.set_physical_height_spline(r.physical.n, r.physical.height, r.physical.floor ?? 0);
             else physical.set_physical_height(r.physical.n, r.physical.height);
           }
           if (r.region) terrain.set_region(r.region.seed, r.region.temperature, r.region.precipitation, r.region.biome, r.region.x, r.region.y);
         }
         if (!terrain) throw new Error('Generate a terrain first.');
-        let settlements: SettlementOutput | undefined, sites = request.sites ?? [];
+        let settlements: SettlementOutput | undefined,
+          sites = request.sites ?? [];
         if (request.place) {
           const start = performance.now();
           settlements = JSON.parse(terrain.place(request.seed, JSON.stringify(request.place))) as SettlementOutput;
@@ -57,9 +61,11 @@ export async function createSettlementEngine(runtime?: ExecutionRuntime): Promis
           roads = JSON.parse(terrain.roads(request.seed, JSON.stringify(sites), JSON.stringify(request.roads))) as RoadOutput;
           roads.ms = performance.now() - start;
         }
-        const resources = request.resources ? JSON.parse(terrain.resources()) as ResourcePayload : undefined;
+        const resources = request.resources ? (JSON.parse(terrain.resources()) as ResourcePayload) : undefined;
         return { id: request.id, settlements, roads, ...(resources ? { resources } : {}) };
-      } catch (error) { return { id: request.id, error: String(error) }; }
+      } catch (error) {
+        return { id: request.id, error: String(error) };
+      }
     },
   };
 }

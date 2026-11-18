@@ -13,44 +13,71 @@ const p = (x: number, y: number) => ({ x, y });
 it('reconstructs the clipped cut03 rear house as a whole pentagon on a dry open edge', () => {
   // Native roof and owner from the user-pinned x985.2,y531.5 town. The long,
   // concave return makes every rectangular envelope more than double the roof.
-  const roof: Polygon = [p(994.444, 533.994), p(986.325, 531.915), p(977.674, 529.877),
-    p(977.113, 529.724), p(980.8824983750792, 519.1014881174053),
-    p(987.4743072053566, 521.4406535567282), p(985.199, 527.854),
-    p(1008.5465572687111, 538.2602251815221), p(1007.7204102346468, 540.1137806114434),
-    p(1001.857, 536.962)];
-  const owner: Polygon = [p(1059.1009645084077, 530.1826703855693), p(1048.1579543066055, 552.7321733157737),
-    p(1047.265, 552.57), p(1039.066, 551.394), p(1031.039, 549.834), p(1023.342, 547.53),
-    p(1015.969, 544.491), p(1008.904, 540.75), p(1001.857, 536.962), p(994.444, 533.994),
-    p(986.325, 531.915), p(977.674, 529.877), p(977.113, 529.724), p(988.169, 498.568),
-    p(993.758, 501.315), p(1005.4269242637927, 506.47064484068375)];
+  const roof: Polygon = [
+    p(994.444, 533.994),
+    p(986.325, 531.915),
+    p(977.674, 529.877),
+    p(977.113, 529.724),
+    p(980.8824983750792, 519.1014881174053),
+    p(987.4743072053566, 521.4406535567282),
+    p(985.199, 527.854),
+    p(1008.5465572687111, 538.2602251815221),
+    p(1007.7204102346468, 540.1137806114434),
+    p(1001.857, 536.962),
+  ];
+  const owner: Polygon = [
+    p(1059.1009645084077, 530.1826703855693),
+    p(1048.1579543066055, 552.7321733157737),
+    p(1047.265, 552.57),
+    p(1039.066, 551.394),
+    p(1031.039, 549.834),
+    p(1023.342, 547.53),
+    p(1015.969, 544.491),
+    p(1008.904, 540.75),
+    p(1001.857, 536.962),
+    p(994.444, 533.994),
+    p(986.325, 531.915),
+    p(977.674, 529.877),
+    p(977.113, 529.724),
+    p(988.169, 498.568),
+    p(993.758, 501.315),
+    p(1005.4269242637927, 506.47064484068375),
+  ];
   const streets = new Streets();
   streets.connected.add(streets.add([p(988.169, 495.568), p(1059.101, 527.183)], 6, 1, 'radial', 1));
   const f: EdgeRoofPartition = {
-    ctx: { mapSize: 1500, win: { x0: 0, y0: 0, x1: 1500, y1: 1500 }, water: [],
-      isWater: () => false, slopeAt: () => 0.03 } as unknown as UrbanCtx,
-    quarters: [{ lp: { pts: owner, lab: owner.map(() => LAB_OPEN) }, phase: 1,
-      zone: 'edge', age: 0.1, kind: 'quarter' }],
+    ctx: { mapSize: 1500, win: { x0: 0, y0: 0, x1: 1500, y1: 1500 }, water: [], isWater: () => false, slopeAt: () => 0.03 } as unknown as UrbanCtx,
+    quarters: [{ lp: { pts: owner, lab: owner.map(() => LAB_OPEN) }, phase: 1, zone: 'edge', age: 0.1, kind: 'quarter' }],
     blocks: [{ poly: owner, quarter: 0 }],
     parcels: [{ poly: owner, block: 0, use: 'plot', front: [p(988.169, 498.568), p(1059.101, 530.183)], zone: 'edge' }],
     buildings: [{ poly: roof, parcel: 0, kind: 'rear', roof: 'gable', arch: 'gabled-row-house-rear' }],
-    streetSpace: [[]], footprint: [{ outer: owner, holes: [] }], gardens: [], streets,
-    protectedLand: [...streetStrips(streets.list[0].path, 6),
-      ...streetStrips([p(987.4406680869301, 493.87100451092056), p(974.9180042201505, 529.1573910247939)],
-        [4.479820852661169, 4.551333371126527])],
-    phases: [], allowGrowth: true, eligible: () => true,
+    streetSpace: [[]],
+    footprint: [{ outer: owner, holes: [] }],
+    gardens: [],
+    streets,
+    protectedLand: [...streetStrips(streets.list[0].path, 6), ...streetStrips([p(987.4406680869301, 493.87100451092056), p(974.9180042201505, 529.1573910247939)], [4.479820852661169, 4.551333371126527])],
+    phases: [],
+    allowGrowth: true,
+    eligible: () => true,
   };
   const candidate = convexHull(roof);
   expect(area(candidate) - area(roof)).toBeLessThan(area(roof));
-  expect(minAngle(candidate) * 180 / Math.PI).toBeGreaterThan(20);
+  expect((minAngle(candidate) * 180) / Math.PI).toBeGreaterThan(20);
   const oldStreet = tryIntersection(roof, f.protectedLand);
   expect(mpArea(oldStreet.pieces)).toBeGreaterThan(0.1);
   const newStreet = tryIntersection(tryDifference(candidate, roof).pieces, f.protectedLand);
   expect(mpArea(newStreet.pieces)).toBeGreaterThan(1e-6);
   expect(mpArea(newStreet.pieces)).toBeLessThan(1e-4);
-  const blocked: EdgeRoofPartition = { ...f,
-    quarters: structuredClone(f.quarters), blocks: structuredClone(f.blocks), parcels: structuredClone(f.parcels),
-    buildings: structuredClone(f.buildings), streetSpace: structuredClone(f.streetSpace),
-    footprint: structuredClone(f.footprint), gardens: [], phases: [],
+  const blocked: EdgeRoofPartition = {
+    ...f,
+    quarters: structuredClone(f.quarters),
+    blocks: structuredClone(f.blocks),
+    parcels: structuredClone(f.parcels),
+    buildings: structuredClone(f.buildings),
+    streetSpace: structuredClone(f.streetSpace),
+    footprint: structuredClone(f.footprint),
+    gardens: [],
+    phases: [],
     protectedLand: [...f.protectedLand, { outer: [p(993, 529), p(995, 529), p(995, 531), p(993, 531)], holes: [] }],
   };
   expect(mpArea(tryIntersection(candidate, blocked.protectedLand).pieces)).toBeGreaterThan(1);

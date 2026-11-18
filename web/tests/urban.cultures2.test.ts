@@ -17,17 +17,24 @@ const arches = (w: World): Map<string, number> => {
   for (const b of w.urban!.buildings) m.set(b.arch ?? b.kind, (m.get(b.arch ?? b.kind) ?? 0) + 1);
   return m;
 };
-const lineKinds = (w: World): Set<string> => new Set((w.urban!.lines ?? []).map((l) => l.kind));
+const lineKinds = (w: World): Set<string> => new Set((w.urban!.lines ?? []).map(l => l.kind));
 
-interface ConditionalFeatures { arena?: boolean; trees?: number; stiltHouses?: number }
+interface ConditionalFeatures {
+  arena?: boolean;
+  trees?: number;
+  stiltHouses?: number;
+}
 export const SIGNATURES: Record<string, (w: World, expected?: ConditionalFeatures) => void> = {
-  kraal: (w) => {
+  kraal: w => {
     const a = arches(w);
     expect(a.get('beehive-hut') ?? 0, 'kraal: beehive huts').toBeGreaterThan(8);
-    expect(w.urban!.blockInfo.some((b) => b.compound === 'cattle-kraal'), 'kraal: central cattle byre').toBe(true);
+    expect(
+      w.urban!.blockInfo.some(b => b.compound === 'cattle-kraal'),
+      'kraal: central cattle byre',
+    ).toBe(true);
     expect(lineKinds(w).has('thorn-fence'), 'kraal: thorn fence').toBe(true);
   },
-  'native-plains': (w) => {
+  'native-plains': w => {
     const u = w.urban!;
     const a = arches(w);
     expect(a.get('tipi') ?? 0, 'plains: tipis').toBeGreaterThan(5);
@@ -35,55 +42,65 @@ export const SIGNATURES: Record<string, (w: World, expected?: ConditionalFeature
     if (u.population < 180) return;
     expect(a.get('council-lodge') ?? 0, 'plains: council lodge').toBeGreaterThan(0);
     // the circle opens to the east: no lodge within ±12° of due east of the council lodge
-    const lodge = u.buildings.find((b) => b.arch === 'council-lodge')!;
+    const lodge = u.buildings.find(b => b.arch === 'council-lodge')!;
     const c = lodge.poly.reduce((s, q) => ({ x: s.x + q.x / lodge.poly.length, y: s.y + q.y / lodge.poly.length }), { x: 0, y: 0 });
-    const tipis = u.buildings.filter((b) => b.arch === 'tipi');
-    const dMin = Math.min(...tipis.map((b) => Math.hypot(b.poly[0].x - c.x, b.poly[0].y - c.y)));
-    const near = tipis.filter((b) => {
+    const tipis = u.buildings.filter(b => b.arch === 'tipi');
+    const dMin = Math.min(...tipis.map(b => Math.hypot(b.poly[0].x - c.x, b.poly[0].y - c.y)));
+    const near = tipis.filter(b => {
       const q = b.poly[0];
       if (Math.hypot(q.x - c.x, q.y - c.y) > dMin * 1.6) return false;
       return Math.abs(Math.atan2(q.y - c.y, q.x - c.x)) < (12 * Math.PI) / 180;
     });
     expect(near.length, 'plains: the circle is open to the east').toBe(0);
   },
-  'native-iroquoian': (w) => {
-    const lh = w.urban!.buildings.filter((b) => b.arch === 'longhouse');
+  'native-iroquoian': w => {
+    const lh = w.urban!.buildings.filter(b => b.arch === 'longhouse');
     expect(lh.length, 'iroquoian: longhouses').toBeGreaterThan(1);
-    for (const b of lh) { const L = 2 * obb(b.poly).hu; expect(L, 'iroquoian: longhouse 12–70 m').toBeGreaterThan(11.5); expect(L).toBeLessThan(70); }
+    for (const b of lh) {
+      const L = 2 * obb(b.poly).hu;
+      expect(L, 'iroquoian: longhouse 12–70 m').toBeGreaterThan(11.5);
+      expect(L).toBeLessThan(70);
+    }
     // parallel: every longhouse within 3° of the first one's axis (per village of a cluster: same axis)
     // a palisaded village (rows of posts) for a village and more; a hamlet is a fishing camp
-    if (w.urban!.population >= 150) expect((w.urban!.lines ?? []).filter((l) => l.kind === 'palisade').length, 'iroquoian: double palisade').toBeGreaterThanOrEqual(2);
+    if (w.urban!.population >= 150) expect((w.urban!.lines ?? []).filter(l => l.kind === 'palisade').length, 'iroquoian: double palisade').toBeGreaterThanOrEqual(2);
   },
-  'native-pueblo': (w) => {
+  'native-pueblo': w => {
     const a = arches(w);
     expect(a.get('pueblo-room') ?? 0, 'pueblo: agglutinated rooms').toBeGreaterThan(10);
     expect((a.get('kiva') ?? 0) + (a.get('great-kiva') ?? 0), 'pueblo: kivas').toBeGreaterThan(0);
     // terraces: several storey levels
-    expect(new Set(w.urban!.buildings.filter((b) => b.arch === 'pueblo-room').map((b) => b.storeys)).size, 'pueblo: terraced').toBeGreaterThan(1);
+    expect(new Set(w.urban!.buildings.filter(b => b.arch === 'pueblo-room').map(b => b.storeys)).size, 'pueblo: terraced').toBeGreaterThan(1);
   },
-  'norse-ringfort': (w) => {
+  'norse-ringfort': w => {
     const a = arches(w);
     expect(a.get('longhouse') ?? 0, 'ring fort: longhouses round the courtyards').toBeGreaterThan(3);
     expect(lineKinds(w).has('rampart'), 'ring fort: circular rampart').toBe(true);
-    expect(w.urban!.streets.filter((s) => s.role === 'radial').length, 'ring fort: two axial streets gate to gate').toBeGreaterThanOrEqual(2);
+    expect(w.urban!.streets.filter(s => s.role === 'radial').length, 'ring fort: two axial streets gate to gate').toBeGreaterThanOrEqual(2);
   },
-  maya: (w) => {
+  maya: w => {
     const a = arches(w);
     expect(a.get('maya-house') ?? 0, 'maya: houselots').toBeGreaterThan(3);
     expect((a.get('great-pyramid') ?? 0) + (a.get('temple-pyramid') ?? 0), 'maya: temple pyramids').toBeGreaterThan(0);
   },
-  khmer: (w) => {
+  khmer: w => {
     const u = w.urban!;
-    expect(u.blockInfo.some((b) => b.compound === 'temple-mountain' || b.compound === 'prasat'), 'khmer: temple-mountain at the centre (a prasat for a village)').toBe(true);
+    expect(
+      u.blockInfo.some(b => b.compound === 'temple-mountain' || b.compound === 'prasat'),
+      'khmer: temple-mountain at the centre (a prasat for a village)',
+    ).toBe(true);
     expect(arches(w).get('stilt-house') ?? 0, 'khmer: stilt houses').toBeGreaterThan(5);
     expect(lineKinds(w).has('moat'), 'khmer: moat').toBe(true);
-    expect(u.landmarks.filter((l) => l.kind === 'pond').length, 'khmer: ponds').toBeGreaterThan(3);
+    expect(u.landmarks.filter(l => l.kind === 'pond').length, 'khmer: ponds').toBeGreaterThan(3);
   },
   orcish: (w, expected) => {
     const a = arches(w);
     expect((a.get('orc-hut') ?? 0) + (a.get('orc-longhut') ?? 0), 'orcish: huts').toBeGreaterThan(5);
     expect(lineKinds(w).has('palisade'), 'orcish: stake palisades').toBe(true);
-    expect(w.urban!.landmarks.some((l) => l.kind === 'arena'), 'orcish: arena fits the civic lot').toBe(expected?.arena ?? true);
+    expect(
+      w.urban!.landmarks.some(l => l.kind === 'arena'),
+      'orcish: arena fits the civic lot',
+    ).toBe(expected?.arena ?? true);
   },
   'stilt-town': (w, expected) => {
     const u = w.urban!;
@@ -92,7 +109,7 @@ export const SIGNATURES: Record<string, (w: World, expected?: ConditionalFeature
     else expect(houses, 'stilt town: stilt houses').toBeGreaterThan(5);
     expect(u.renderHints?.stilts, 'stilt town: boardwalks').toBe(true);
   },
-  'celtic-oppidum': (w) => {
+  'celtic-oppidum': w => {
     expect(arches(w).get('roundhouse') ?? 0, 'oppidum: roundhouses').toBeGreaterThan(2);
     expect(lineKinds(w).has('rampart'), 'oppidum: ramparts').toBe(true);
   },
@@ -103,34 +120,43 @@ export const SIGNATURES: Record<string, (w: World, expected?: ConditionalFeature
     if (expected?.trees !== undefined) expect(trees, 'trees that fit clear garden ground').toBe(expected.trees);
     else expect(trees, 'halfling: trees').toBeGreaterThan(3);
   },
-  'nomad-camp': (w) => {
+  'nomad-camp': w => {
     const a = arches(w);
     expect(a.get('ger') ?? 0, 'nomad: gers').toBeGreaterThan(8);
     expect(a.get('chief-ger') ?? 0, "nomad: the chief's ger").toBeGreaterThan(0);
-    expect(w.urban!.streets.filter((s) => s.role === 'ring').length, 'nomad: concentric rings').toBeGreaterThan(0);
+    expect(w.urban!.streets.filter(s => s.role === 'ring').length, 'nomad: concentric rings').toBeGreaterThan(0);
   },
-  barbarian: (w) => {
+  barbarian: w => {
     const a = arches(w);
     expect((a.get('longhouse') ?? 0) + (a.get('byre-house') ?? 0), 'germanic: longhouses and byre-houses').toBeGreaterThan(2);
     expect(a.get('chieftain-hall') ?? 0, "germanic: the chieftain's hall").toBeGreaterThan(0);
     expect((a.get('sunken-hut') ?? 0) + (a.get('granary-on-posts') ?? 0), 'germanic: sunken huts and granaries').toBeGreaterThan(1);
     expect(lineKinds(w).has('yard-fence'), 'germanic: fenced yards').toBe(true);
-    const u = w.urban!, c = populationCulture('barbarian', u.population);
-    if (c.camp) expect(u.streets.every((s) => s.width <= 6), 'germanic camp: paths, no streets').toBe(true);
+    const u = w.urban!,
+      c = populationCulture('barbarian', u.population);
+    if (c.camp)
+      expect(
+        u.streets.every(s => s.width <= 6),
+        'germanic camp: paths, no streets',
+      ).toBe(true);
     else {
       // 4fb1626 gives grown towns a ranked street recipe, including its existing local width jitter.
-      const P = resolveMorph(c.core.morphology), maxWidth = Math.max(...P.widthByRank) * P.widthScale * (1 + P.widthJitter);
-      expect(u.streets.some((s) => s.role === 'radial'), 'germanic town: real serving streets').toBe(true);
+      const P = resolveMorph(c.core.morphology),
+        maxWidth = Math.max(...P.widthByRank) * P.widthScale * (1 + P.widthJitter);
+      expect(
+        u.streets.some(s => s.role === 'radial'),
+        'germanic town: real serving streets',
+      ).toBe(true);
       for (const s of u.streets) for (const width of s.widths ?? [s.width]) expect(width, 'germanic town: recipe width cap').toBeLessThanOrEqual(maxWidth + 1e-7);
       expect(unreachableBuildings(w).n, 'germanic town: every dwelling remains served').toBe(0);
     }
   },
-  'barbarian-celtic': (w) => {
+  'barbarian-celtic': w => {
     const a = arches(w);
     expect(a.get('roundhouse') ?? 0, 'celtic: roundhouses').toBeGreaterThan(2);
     expect(lineKinds(w).has('rampart'), 'celtic: rampart').toBe(true);
   },
-  'barbarian-norse': (w) => {
+  'barbarian-norse': w => {
     const a = arches(w);
     expect(a.get('longhouse') ?? 0, 'norse: longhouses').toBeGreaterThan(0);
     expect((w.urban!.walls ?? []).length, 'norse: no enclosure').toBe(0);
@@ -167,15 +193,33 @@ const CONSTRAINED: Record<string, ConditionalFeatures & { hash: string }> = {
 };
 
 it('keeps shore reeds in the partition while enforcing habitable shape limits on plots and every building', () => {
-  const box = (x0: number, x1: number) => [{ x: x0, y: 0 }, { x: x1, y: 0 }, { x: x1, y: 10 }, { x: x0, y: 10 }];
-  const block = box(0, 10), narrow = box(0, 1);
-  const fixture = (use: string, occupied = false) => ({ urban: {
-    quarters: [{ poly: { outer: block, holes: [] } }], blocks: [block], blockInfo: [{ quarter: 0 }],
-    parcels: [{ poly: narrow, block: 0, use }, { poly: box(1, 10), block: 0, use: 'garden' }],
-    buildings: occupied ? [{ poly: narrow, parcel: 0, kind: 'house' }] : [], streets: [],
-  } } as unknown as World);
-  const reed = checkWorld(fixture('reed')), plot = checkWorld(fixture('plot')), occupied = checkWorld(fixture('reed', true));
-  expect(reed.thin).toBe(0); expect(plot.thin).toBe(1);
+  const box = (x0: number, x1: number) => [
+    { x: x0, y: 0 },
+    { x: x1, y: 0 },
+    { x: x1, y: 10 },
+    { x: x0, y: 10 },
+  ];
+  const block = box(0, 10),
+    narrow = box(0, 1);
+  const fixture = (use: string, occupied = false) =>
+    ({
+      urban: {
+        quarters: [{ poly: { outer: block, holes: [] } }],
+        blocks: [block],
+        blockInfo: [{ quarter: 0 }],
+        parcels: [
+          { poly: narrow, block: 0, use },
+          { poly: box(1, 10), block: 0, use: 'garden' },
+        ],
+        buildings: occupied ? [{ poly: narrow, parcel: 0, kind: 'house' }] : [],
+        streets: [],
+      },
+    }) as unknown as World;
+  const reed = checkWorld(fixture('reed')),
+    plot = checkWorld(fixture('plot')),
+    occupied = checkWorld(fixture('reed', true));
+  expect(reed.thin).toBe(0);
+  expect(plot.thin).toBe(1);
   expect(occupied.thin, 'both the occupied parcel and its building remain checked').toBe(2);
   for (const report of [reed, plot, occupied]) {
     expect(report.blockAreaErr).toBe(0);
@@ -184,28 +228,30 @@ it('keeps shore reeds in the partition while enforcing habitable shape limits on
 });
 
 describe('village and camp cultures', () => {
-  for (const [culture, sizes] of CASES) for (const size of sizes) for (const seed of ['1', '2']) {
-    it(`${culture} ${size} seed ${seed}`, () => {
-      const w = generate(makeOptions({ seed, size, culture }));
-      expectInvariants(w);
-      expect(w.urban!.culture).toBe(culture);
-      const constrained = CONSTRAINED[`${culture}/${size}/${seed}`];
-      if (constrained) expect(createHash('sha256').update(JSON.stringify(w.urban)).digest('hex')).toBe(constrained.hash);
-      for (const b of w.urban!.buildings) {
-        if (b.parcel !== undefined) expect(w.urban!.parcels[b.parcel].use, 'reeds remain unoccupied shore residue').not.toBe('reed');
+  for (const [culture, sizes] of CASES)
+    for (const size of sizes)
+      for (const seed of ['1', '2']) {
+        it(`${culture} ${size} seed ${seed}`, () => {
+          const w = generate(makeOptions({ seed, size, culture }));
+          expectInvariants(w);
+          expect(w.urban!.culture).toBe(culture);
+          const constrained = CONSTRAINED[`${culture}/${size}/${seed}`];
+          if (constrained) expect(createHash('sha256').update(JSON.stringify(w.urban)).digest('hex')).toBe(constrained.hash);
+          for (const b of w.urban!.buildings) {
+            if (b.parcel !== undefined) expect(w.urban!.parcels[b.parcel].use, 'reeds remain unoccupied shore residue').not.toBe('reed');
+          }
+          if (size !== 'hamlet' || culture !== 'barbarian-norse') SIGNATURES[culture]?.(w, constrained);
+          // 4fb1626 introduced population-aware urban growth. Actual camp presets still form clusters;
+          // above the culture's threshold the contract is one connected, served town retaining its native features.
+          if (size === 'town' && !['barbarian-norse', 'native-pueblo', 'maya', 'khmer', 'orcish', 'celtic-oppidum', 'stilt-town'].includes(culture)) {
+            if (populationCulture(culture, w.urban!.population).camp) expect(Number(w.stats['urban.camps']), 'a cluster of villages').toBeGreaterThan(1);
+            else {
+              expect(w.stats['urban.camps']).toBeUndefined();
+              expect(w.urban!.archetype).toBe('town');
+              expect(w.urban!.streets.some(s => s.role === 'radial')).toBe(true);
+              expect(unreachableBuildings(w).n, 'every dwelling remains served').toBe(0);
+            }
+          }
+        });
       }
-      if (size !== 'hamlet' || culture !== 'barbarian-norse') SIGNATURES[culture]?.(w, constrained);
-      // 4fb1626 introduced population-aware urban growth. Actual camp presets still form clusters;
-      // above the culture's threshold the contract is one connected, served town retaining its native features.
-      if (size === 'town' && !['barbarian-norse', 'native-pueblo', 'maya', 'khmer', 'orcish', 'celtic-oppidum', 'stilt-town'].includes(culture)) {
-        if (populationCulture(culture, w.urban!.population).camp) expect(Number(w.stats['urban.camps']), 'a cluster of villages').toBeGreaterThan(1);
-        else {
-          expect(w.stats['urban.camps']).toBeUndefined();
-          expect(w.urban!.archetype).toBe('town');
-          expect(w.urban!.streets.some((s) => s.role === 'radial')).toBe(true);
-          expect(unreachableBuildings(w).n, 'every dwelling remains served').toBe(0);
-        }
-      }
-    });
-  }
 });

@@ -14,8 +14,12 @@ export function mountViewLoadingIndicator(select: HTMLElement): ViewLoadingTrack
   return new ViewLoadingTracker({
     onChange: busy => {
       element.setAttribute('aria-busy', String(busy));
-      clearTimeout(showTimer); showTimer = undefined;
-      if (busy) showTimer = setTimeout(() => { element.hidden = false; }, SHOW_DELAY_MS);
+      clearTimeout(showTimer);
+      showTimer = undefined;
+      if (busy)
+        showTimer = setTimeout(() => {
+          element.hidden = false;
+        }, SHOW_DELAY_MS);
       else element.hidden = true;
     },
   });
@@ -27,16 +31,36 @@ export function mountViewLoadingIndicator(select: HTMLElement): ViewLoadingTrack
  * timeout is not restarted until a frame reports a complete view.
  */
 export function watchDisplayPending(tracker: ViewLoadingTracker, canvas: HTMLElement, pending: () => number, intervalMs = 200): void {
-  let job: ViewJob | undefined, poll: ReturnType<typeof setInterval> | undefined, stuck = false;
-  const stop = (): void => { if (poll !== undefined) clearInterval(poll); poll = undefined; };
-  const done = (): void => { stuck = false; job?.end(); job = undefined; stop(); };
+  let job: ViewJob | undefined,
+    poll: ReturnType<typeof setInterval> | undefined,
+    stuck = false;
+  const stop = (): void => {
+    if (poll !== undefined) clearInterval(poll);
+    poll = undefined;
+  };
+  const done = (): void => {
+    stuck = false;
+    job?.end();
+    job = undefined;
+    stop();
+  };
   const check = (): void => {
-    if (job && !job.active) { stuck = true; job = undefined; stop(); return; }
+    if (job && !job.active) {
+      stuck = true;
+      job = undefined;
+      stop();
+      return;
+    }
     if (pending() === 0) done();
   };
   new MutationObserver(() => {
-    if ((Number(canvas.dataset.renderPending) || 0) === 0) { done(); return; }
+    if ((Number(canvas.dataset.renderPending) || 0) === 0) {
+      done();
+      return;
+    }
     if (stuck || job?.active) return;
-    job = tracker.begin('tiles'); stop(); poll = setInterval(check, intervalMs);
+    job = tracker.begin('tiles');
+    stop();
+    poll = setInterval(check, intervalMs);
   }).observe(canvas, { attributes: true, attributeFilter: ['data-render-pending'] });
 }

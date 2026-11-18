@@ -7,9 +7,7 @@ import { importedHeightfield } from './import';
 
 export type Side = 'N' | 'E' | 'S' | 'W';
 export const SIDES: Side[] = ['N', 'E', 'S', 'W'];
-export const SIDE_VEC: Record<Side, { x: number; y: number }> = {
-  N: { x: 0, y: -1 }, E: { x: 1, y: 0 }, S: { x: 0, y: 1 }, W: { x: -1, y: 0 },
-};
+export const SIDE_VEC: Record<Side, { x: number; y: number }> = { N: { x: 0, y: -1 }, E: { x: 1, y: 0 }, S: { x: 0, y: 1 }, W: { x: -1, y: 0 } };
 export const OPPOSITE: Record<Side, Side> = { N: 'S', S: 'N', E: 'W', W: 'E' };
 
 export interface HeightPlan {
@@ -25,36 +23,43 @@ export interface HeightPlan {
 }
 
 /** Minimum land elevation per relief; the maximum is derived from the extent (see `reliefHeight`). */
-export const RELIEF_RANGE: Record<Relief, [number, number]> = {
-  flat: [1, 20],
-  hills: [1, 80],
-  valley: [1, 110],
-  mountains: [1, 400],
-};
+export const RELIEF_RANGE: Record<Relief, [number, number]> = { flat: [1, 20], hills: [1, 80], valley: [1, 110], mountains: [1, 400] };
 
 /** Nominal relief height (m) for an extent; grows sub-linearly so a 40 km map has regional relief. */
 export function reliefHeight(relief: Relief, mapSize: number): number {
   const e = mapSize / 2400;
   switch (relief) {
-    case 'flat': return 20 * Math.pow(e, 0.6);
-    case 'hills': return 80 * Math.pow(e, 0.85);
-    case 'valley': return 110 * Math.pow(e, 0.85);
-    case 'mountains': return 400 * Math.pow(e, 0.78);
+    case 'flat':
+      return 20 * Math.pow(e, 0.6);
+    case 'hills':
+      return 80 * Math.pow(e, 0.85);
+    case 'valley':
+      return 110 * Math.pow(e, 0.85);
+    case 'mountains':
+      return 400 * Math.pow(e, 0.78);
   }
 }
 
 /** Distance inland over which land rises from the shoreline to full height. */
 const COAST_RAMP: Record<Relief, number> = { flat: 260, hills: 420, valley: 420, mountains: 380 };
 
-const smooth = (t: number): number => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+const smooth = (t: number): number => {
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return t * t * (3 - 2 * t);
+};
 const clamp = (v: number, a: number, b: number): number => (v < a ? a : v > b ? b : v);
 
 /** fBm with octave wavelengths expressed in meters: from lam0 down to lamMin. Roughly [-1, 1]. */
 function fbmL(nz: Noise2D, x: number, y: number, lam0: number, lamMin: number, gain = 0.5): number {
-  let amp = 1, f = 1 / lam0, sum = 0, norm = 0;
+  let amp = 1,
+    f = 1 / lam0,
+    sum = 0,
+    norm = 0;
   for (let o = 0; o < 9 && lam0 / (1 << o) >= lamMin; o++) {
     sum += amp * nz.noise(x * f + o * 17.3, y * f - o * 9.1);
-    norm += amp; amp *= gain; f *= 2;
+    norm += amp;
+    amp *= gain;
+    f *= 2;
   }
   return norm > 0 ? sum / norm : 0;
 }
@@ -65,28 +70,30 @@ function chamfer(target: Uint8Array, w: number, h: number): Float32Array {
   const d = new Float32Array(w * h);
   for (let i = 0; i < d.length; i++) d[i] = target[i] ? 0 : INF;
   const S = Math.SQRT2;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x;
-    let v = d[i];
-    if (x > 0) v = Math.min(v, d[i - 1] + 1);
-    if (y > 0) {
-      v = Math.min(v, d[i - w] + 1);
-      if (x > 0) v = Math.min(v, d[i - w - 1] + S);
-      if (x < w - 1) v = Math.min(v, d[i - w + 1] + S);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      let v = d[i];
+      if (x > 0) v = Math.min(v, d[i - 1] + 1);
+      if (y > 0) {
+        v = Math.min(v, d[i - w] + 1);
+        if (x > 0) v = Math.min(v, d[i - w - 1] + S);
+        if (x < w - 1) v = Math.min(v, d[i - w + 1] + S);
+      }
+      d[i] = v;
     }
-    d[i] = v;
-  }
-  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
-    const i = y * w + x;
-    let v = d[i];
-    if (x < w - 1) v = Math.min(v, d[i + 1] + 1);
-    if (y < h - 1) {
-      v = Math.min(v, d[i + w] + 1);
-      if (x < w - 1) v = Math.min(v, d[i + w + 1] + S);
-      if (x > 0) v = Math.min(v, d[i + w - 1] + S);
+  for (let y = h - 1; y >= 0; y--)
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      let v = d[i];
+      if (x < w - 1) v = Math.min(v, d[i + 1] + 1);
+      if (y < h - 1) {
+        v = Math.min(v, d[i + w] + 1);
+        if (x < w - 1) v = Math.min(v, d[i + w + 1] + S);
+        if (x > 0) v = Math.min(v, d[i + w - 1] + S);
+      }
+      d[i] = v;
     }
-    d[i] = v;
-  }
   return d;
 }
 
@@ -102,9 +109,7 @@ function removeThinLand(H: Float32Array, n: number, rho: number): void {
   for (let i = 0; i < N; i++) if (H[i] > 0 && dKeep[i] > rho) H[i] = -0.35;
 }
 
-export function generateHeightfield(
-  opts: Options, mapSize: number, n: number, rng: Rng,
-): { height: Grid; plan: HeightPlan } {
+export function generateHeightfield(opts: Options, mapSize: number, n: number, rng: Rng): { height: Grid; plan: HeightPlan } {
   // imported heightmap replaces the procedural relief (hook, see terrain/import.ts)
   if (opts.importedHeight) return importedHeightfield(opts.importedHeight, mapSize, n, opts.heightScale ?? 120, opts.importSea ?? 0);
   const noise = new Noise2D(rng.fork('noise'));
@@ -120,8 +125,7 @@ export function generateHeightfield(
   const lamMin = Math.max(cell * 5, 16);
   const hiNominal = reliefHeight(relief, mapSize);
 
-  const seaSide: Side | null =
-    opts.coast === 'none' ? null : opts.coast === 'random' ? prng.pick(SIDES) : (opts.coast as Side);
+  const seaSide: Side | null = opts.coast === 'none' ? null : opts.coast === 'random' ? prng.pick(SIDES) : (opts.coast as Side);
   const downSide: Side = seaSide ?? prng.pick(SIDES);
   const seaCover = seaSide ? Math.max(0.12, Math.min(0.38, prng.range(0.2, 0.3) + (opts.seaLevel ?? 0) * 0.1)) : 0;
 
@@ -131,7 +135,8 @@ export function generateHeightfield(
   const tdx = dv.x * Math.cos(ang) - dv.y * Math.sin(ang);
   const tdy = dv.x * Math.sin(ang) + dv.y * Math.cos(ang);
   const off = prng.range(0, 1000);
-  const cx = mapSize / 2, cy = mapSize / 2;
+  const cx = mapSize / 2,
+    cy = mapSize / 2;
 
   const height = createGrid(n, n, cell);
   const H = height.data;
@@ -144,17 +149,18 @@ export function generateHeightfield(
 
   // Relief from a small landscape-evolution run (always drained: no noise pits / plateaus)
   const simCfg = { n, cell, mapSize, noise, noise2, down: { x: tdx, y: tdy }, k };
-  const mtn = relief === 'mountains'
-    ? mountainRelief({ ...simCfg, amp: hiNominal * 1.2, nc: mapSize > 8000 ? 224 : 192, diffuse: 0.3 })
-    : relief === 'hills'
-      ? mountainRelief({ ...simCfg, amp: hiNominal * 1.05, talus: 0.2, detail: 0.025, iters: 18, nc: mapSize > 8000 ? 224 : 176, diffuse: 0.7 })
-      : relief === 'valley'
-        ? mountainRelief({ ...simCfg, amp: hiNominal * 0.65, talus: 0.2, detail: 0.02, iters: 18, nc: mapSize > 8000 ? 224 : 176, diffuse: 0.7,
-          valley: { width: valleyWidth, offset: valleyOff, noiseOffset: off } })
-        : null;
+  const mtn =
+    relief === 'mountains'
+      ? mountainRelief({ ...simCfg, amp: hiNominal * 1.2, nc: mapSize > 8000 ? 224 : 192, diffuse: 0.3 })
+      : relief === 'hills'
+        ? mountainRelief({ ...simCfg, amp: hiNominal * 1.05, talus: 0.2, detail: 0.025, iters: 18, nc: mapSize > 8000 ? 224 : 176, diffuse: 0.7 })
+        : relief === 'valley'
+          ? mountainRelief({ ...simCfg, amp: hiNominal * 0.65, talus: 0.2, detail: 0.02, iters: 18, nc: mapSize > 8000 ? 224 : 176, diffuse: 0.7, valley: { width: valleyWidth, offset: valleyOff, noiseOffset: off } })
+          : null;
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
-      const px = (x + 0.5) * cell, py = (y + 0.5) * cell;
+      const px = (x + 0.5) * cell,
+        py = (y + 0.5) * cell;
       const along = (px - cx) * tdx + (py - cy) * tdy; // meters toward down side
       const across = -(px - cx) * tdy + (py - cy) * tdx;
       const q = along / mapSize + 0.5; // 0 upstream .. 1 downstream
@@ -162,8 +168,7 @@ export function generateHeightfield(
       switch (relief) {
         case 'flat': {
           // very gentle swells: wavelengths 300 m+, detail wavelengths kept tiny in amplitude
-          h = 9 + 5.5 * (mapSize / 2400) ** 0.6 * fbmL(noise, px + off, py, Math.max(900, mapSize * 0.5), Math.max(lamMin, 220), 0.42)
-            + 6 * e ** 0.6 * (0.5 - q);
+          h = 9 + 5.5 * (mapSize / 2400) ** 0.6 * fbmL(noise, px + off, py, Math.max(900, mapSize * 0.5), Math.max(lamMin, 220), 0.42) + 6 * e ** 0.6 * (0.5 - q);
           break;
         }
         case 'hills': {
@@ -203,14 +208,19 @@ export function generateHeightfield(
     const ramp = COAST_RAMP[relief] * Math.max(1, mapSize / 2400) ** 0.7;
     const c0 = mapSize * (0.5 - seaCover);
     // shoreline displacement at three scales (bays/headlands, coves, small wiggles), all in meters
-    const L1 = Math.max(600, mapSize * 0.5), L2 = Math.max(260, mapSize * 0.12), L3 = clamp(mapSize * 0.06, 200, 2500);
-    const A1 = mapSize * prng.range(0.05, 0.1), A2 = mapSize * 0.022, A3 = mapSize * 0.007;
+    const L1 = Math.max(600, mapSize * 0.5),
+      L2 = Math.max(260, mapSize * 0.12),
+      L3 = clamp(mapSize * 0.06, 200, 2500);
+    const A1 = mapSize * prng.range(0.05, 0.1),
+      A2 = mapSize * 0.022,
+      A3 = mapSize * 0.007;
     // occasional large natural bays
     const bigBay = prng.chance(0.55) ? mapSize * prng.range(0.05, 0.12) : 0;
     const coff = prng.range(0, 1000);
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
-        const px = (x + 0.5) * cell, py = (y + 0.5) * cell;
+        const px = (x + 0.5) * cell,
+          py = (y + 0.5) * cell;
         const d = (px - cx) * sv.x + (py - cy) * sv.y;
         const [wx, wy] = noise2.warp((px + coff) / L1, (py + coff) / L1, 0.7);
         const s1 = noise2.fbm(wx, wy, 2);
@@ -239,31 +249,33 @@ export function generateHeightfield(
       for (let m = 0; m < count; m++) {
         const along = prng.range(0.15, 0.85) * mapSize;
         const out = prng.range(0.06, 0.2) * mapSize; // seaward distance from the nominal shore
-        const ex = cx + sv.x * (c0 - mapSize / 2 + 0) + 0; void ex;
+        const ex = cx + sv.x * (c0 - mapSize / 2 + 0) + 0;
+        void ex;
         // point on the nominal shoreline + seaward offset
         const bx = cx + sv.x * c0 + tv.x * (along - mapSize / 2) + sv.x * out;
         const by = cy + sv.y * c0 + tv.y * (along - mapSize / 2) + sv.y * out;
         const r = Math.max(3 * cell, prng.range(40, 140) * rs);
         const peak = prng.range(2.5, 12) * Math.sqrt(k);
         const ph = prng.range(0, 100);
-        const x0 = Math.max(0, Math.floor((bx - r * 1.6) / cell)), x1 = Math.min(n - 1, Math.floor((bx + r * 1.6) / cell));
-        const y0 = Math.max(0, Math.floor((by - r * 1.6) / cell)), y1 = Math.min(n - 1, Math.floor((by + r * 1.6) / cell));
-        for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
-          const px = (xx + 0.5) * cell, py = (yy + 0.5) * cell;
-          const dd = Math.hypot(px - bx, py - by);
-          const wob = 1 + 0.32 * noise2.fbm((px + ph) / (r * 0.9), (py + ph) / (r * 0.9), 2);
-          const u = dd / (r * wob);
-          if (u >= 1) continue;
-          const dome = peak * Math.pow(1 - u * u, 1.1);
-          const i = yy * n + xx;
-          if (H[i] < 0 && dome > 0.15 && (bx > r * 1.3 && bx < mapSize - r * 1.3 && by > r * 1.3 && by < mapSize - r * 1.3)) H[i] = Math.max(dome, 0.2);
-        }
+        const x0 = Math.max(0, Math.floor((bx - r * 1.6) / cell)),
+          x1 = Math.min(n - 1, Math.floor((bx + r * 1.6) / cell));
+        const y0 = Math.max(0, Math.floor((by - r * 1.6) / cell)),
+          y1 = Math.min(n - 1, Math.floor((by + r * 1.6) / cell));
+        for (let yy = y0; yy <= y1; yy++)
+          for (let xx = x0; xx <= x1; xx++) {
+            const px = (xx + 0.5) * cell,
+              py = (yy + 0.5) * cell;
+            const dd = Math.hypot(px - bx, py - by);
+            const wob = 1 + 0.32 * noise2.fbm((px + ph) / (r * 0.9), (py + ph) / (r * 0.9), 2);
+            const u = dd / (r * wob);
+            if (u >= 1) continue;
+            const dome = peak * Math.pow(1 - u * u, 1.1);
+            const i = yy * n + xx;
+            if (H[i] < 0 && dome > 0.15 && bx > r * 1.3 && bx < mapSize - r * 1.3 && by > r * 1.3 && by < mapSize - r * 1.3) H[i] = Math.max(dome, 0.2);
+          }
       }
     }
   }
 
-  return {
-    height,
-    plan: { downSide, seaSide, relief, amp: Math.max(hi, hiNominal * 0.35), seaCover, k },
-  };
+  return { height, plan: { downSide, seaSide, relief, amp: Math.max(hi, hiNominal * 0.35), seaCover, k } };
 }

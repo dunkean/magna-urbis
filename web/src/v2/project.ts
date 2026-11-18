@@ -16,7 +16,9 @@ import { TOPONYM_PROFILES } from '../gen/names/profiles';
 import { URBAN_SEED_STAGES } from './urbanSeeds';
 import { seedRoot } from '../../../rust/bridge/generationSeed';
 
-function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 function checkEnum(value: unknown, values: readonly unknown[], name: string): void {
   if (value !== undefined && !values.includes(value)) throw new Error(`${name} : valeur inconnue.`);
 }
@@ -26,10 +28,16 @@ function finite(value: unknown, name: string, lo: number, hi: number): void {
 function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (!isRecord(o)) throw new Error('Paramètres de génération invalides.');
   if (!partial || o.seed !== undefined) if (typeof o.seed !== 'string' || o.seed.length > 65536 || seedRoot(o.seed).length > 1000) throw new Error('Graine invalide.');
-  for (const [key, values] of Object.entries({ size: ['hamlet', 'village', 'town', 'city', 'metropolis'], relief: ['flat', 'hills', 'valley', 'mountains'],
-    coast: ['none', 'N', 'E', 'S', 'W', 'random'], river: ['none', 'stream', 'river', 'major'], style: ['parchment', 'atlas'],
-    walls: ['auto', 'yes', 'no', 'none', 'single', 'double'], castle: ['auto', 'yes', 'no'],
-    biome: ['temperate', 'forest', 'desert', 'steppe', 'tropical', 'tundra', 'underdark'] })) {
+  for (const [key, values] of Object.entries({
+    size: ['hamlet', 'village', 'town', 'city', 'metropolis'],
+    relief: ['flat', 'hills', 'valley', 'mountains'],
+    coast: ['none', 'N', 'E', 'S', 'W', 'random'],
+    river: ['none', 'stream', 'river', 'major'],
+    style: ['parchment', 'atlas'],
+    walls: ['auto', 'yes', 'no', 'none', 'single', 'double'],
+    castle: ['auto', 'yes', 'no'],
+    biome: ['temperate', 'forest', 'desert', 'steppe', 'tropical', 'tundra', 'underdark'],
+  })) {
     if (!partial && ['size', 'relief', 'coast', 'river', 'style', 'walls', 'castle'].includes(key) && o[key] === undefined) throw new Error(`Paramètre manquant : ${key}`);
     checkEnum(o[key], values, key);
   }
@@ -38,8 +46,8 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (!partial || o.culture !== undefined) if (typeof o.culture !== 'string' || o.culture.length > 200) throw new Error('Culture invalide.');
   if (o.culture !== undefined && !CULTURES.includes(o.culture as string)) throw new Error('Culture inconnue.');
   checkEnum(o.siteType, ['auto', ...SITE_ARCHETYPES], 'type de site');
-  checkEnum(o.language, ['auto', ...TOPONYM_PROFILES.map(p=>p.id)], 'langue des noms');
-  checkEnum(o.nameSource,['auto','geographic','invented','mixed'],'source des noms');
+  checkEnum(o.language, ['auto', ...TOPONYM_PROFILES.map(p => p.id)], 'langue des noms');
+  checkEnum(o.nameSource, ['auto', 'geographic', 'invented', 'mixed'], 'source des noms');
   checkEnum(o.workflow, ['environment', 'automatic', 'list'], 'parcours');
   for (const key of ['moat', 'cathedral', 'palace', 'monasteries', 'port', 'arena', 'activities']) checkEnum(o[key], ['auto', 'yes', 'no'], key);
   checkEnum(o.wallStyle, WALL_STYLES, 'style de fortification');
@@ -47,7 +55,7 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   checkEnum(o.castles, ['auto', '0', '1', '2', '3'], 'châteaux');
   checkEnum(o.lakes, ['auto', 'none', 'some'], 'lacs');
   if (o.mapSize !== undefined) finite(o.mapSize, 'taille', TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX);
-  if (o.sprawl !== undefined) finite(o.sprawl, 'étalement', .5, 2);
+  if (o.sprawl !== undefined) finite(o.sprawl, 'étalement', 0.5, 2);
   if (o.seaLevel !== undefined) finite(o.seaLevel, 'niveau marin', -10, 10);
   if (o.heightScale !== undefined) finite(o.heightScale, 'amplitude heightmap', 0, 20000);
   if (o.importSea !== undefined) finite(o.importSea, 'niveau marin heightmap', -20000, 20000);
@@ -55,12 +63,16 @@ function validateOptions(o: unknown, partial = false): asserts o is Options {
   if (o.importedHeight !== undefined) {
     const image = o.importedHeight;
     if (!isRecord(image)) throw new Error('Heightmap invalide.');
-    finite(image.w, 'largeur heightmap', 1, 32768); finite(image.h, 'hauteur heightmap', 1, 32768);
+    finite(image.w, 'largeur heightmap', 1, 32768);
+    finite(image.h, 'hauteur heightmap', 1, 32768);
     const elevations = image.elevations;
-    if (!Number.isInteger(image.w) || !Number.isInteger(image.h) || Number(image.w) * Number(image.h) > 16777216 ||
+    if (
+      !Number.isInteger(image.w) ||
+      !Number.isInteger(image.h) ||
+      Number(image.w) * Number(image.h) > 16777216 ||
       !(image.rgba instanceof Uint8Array || image.rgba instanceof Uint8ClampedArray) ||
-      (elevations !== undefined ? !(elevations instanceof Float32Array) || elevations.length !== Number(image.w) * Number(image.h) || !elevations.every(Number.isFinite)
-        : image.rgba.length !== Number(image.w) * Number(image.h) * 4))
+      (elevations !== undefined ? !(elevations instanceof Float32Array) || elevations.length !== Number(image.w) * Number(image.h) || !elevations.every(Number.isFinite) : image.rgba.length !== Number(image.w) * Number(image.h) * 4)
+    )
       throw new Error('Les dimensions de la heightmap ne correspondent pas aux pixels.');
   }
 }
@@ -70,8 +82,7 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
   if (value.extent !== 'auto') finite(value.extent, 'étendue', TERRAIN_EXTENT_MIN, TERRAIN_EXTENT_MAX);
   if (value.terrain !== undefined) validateTerrainSettings(value.terrain);
   if (value.region !== undefined) validateRegionSettings(value.region);
-  if (value.decor !== undefined && (!isRecord(value.decor) || typeof value.decor.id !== 'string' || !/^[\w.-]{1,160}$/.test(value.decor.id)
-    || !(value.decor.bytes instanceof Uint8Array) || value.decor.bytes.length < 12)) throw new Error('Invalid saved decor.');
+  if (value.decor !== undefined && (!isRecord(value.decor) || typeof value.decor.id !== 'string' || !/^[\w.-]{1,160}$/.test(value.decor.id) || !(value.decor.bytes instanceof Uint8Array) || value.decor.bytes.length < 12)) throw new Error('Invalid saved decor.');
   finite(value.settlementCount, 'nombre de lieux', 0, 100);
   if (!Number.isInteger(value.settlementCount)) throw new Error('Le nombre de lieux doit être entier.');
   checkEnum(value.generation, ['procedural', 'neural'], 'génération');
@@ -103,12 +114,28 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     checkEnum(value.naming.toponymCulture, CULTURES, 'culture des toponymes');
     checkEnum(value.naming.mode, ['cultural', 'localized'], 'mode des toponymes');
     checkEnum(value.naming.displayLanguage, ['fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'], 'langue d’affichage des toponymes');
-    checkEnum(value.naming.mapLanguage,['ui','fr','en','ja','ar','es','pt','zh','ru'],'langue de la carte');
-    checkEnum(value.naming.script,['source','latin'],'écriture des noms');
-    const policy=(v:unknown)=>{if(!isRecord(v))throw new Error('Profil de nommage invalide.');checkEnum(v.profile,['auto',...TOPONYM_PROFILES.map(p=>p.id)],'profil des noms');checkEnum(v.source,['auto','geographic','invented','mixed'],'source des noms');};
-    policy(value.naming);if(value.naming.region!==undefined)policy(value.naming.region);
-    for(const key of ['local','features'] as const)if(value.naming[key]!==undefined){const map=value.naming[key];if(!isRecord(map)||Object.keys(map).length>50000)throw new Error('Portées de nommage invalides.');for(const [id,v]of Object.entries(map)){if(!id||id.length>500)throw new Error('Identité de nommage invalide.');policy(v);}}
-    if(value.naming.variations!==undefined){if(!isRecord(value.naming.variations)||Object.keys(value.naming.variations).length>50000)throw new Error('Variations invalides.');for(const [id,v]of Object.entries(value.naming.variations))if(!id||id.length>510||typeof v!=='number'||!Number.isSafeInteger(v)||v<0)throw new Error('Variation de nom invalide.');}
+    checkEnum(value.naming.mapLanguage, ['ui', 'fr', 'en', 'ja', 'ar', 'es', 'pt', 'zh', 'ru'], 'langue de la carte');
+    checkEnum(value.naming.script, ['source', 'latin'], 'écriture des noms');
+    const policy = (v: unknown) => {
+      if (!isRecord(v)) throw new Error('Profil de nommage invalide.');
+      checkEnum(v.profile, ['auto', ...TOPONYM_PROFILES.map(p => p.id)], 'profil des noms');
+      checkEnum(v.source, ['auto', 'geographic', 'invented', 'mixed'], 'source des noms');
+    };
+    policy(value.naming);
+    if (value.naming.region !== undefined) policy(value.naming.region);
+    for (const key of ['local', 'features'] as const)
+      if (value.naming[key] !== undefined) {
+        const map = value.naming[key];
+        if (!isRecord(map) || Object.keys(map).length > 50000) throw new Error('Portées de nommage invalides.');
+        for (const [id, v] of Object.entries(map)) {
+          if (!id || id.length > 500) throw new Error('Identité de nommage invalide.');
+          policy(v);
+        }
+      }
+    if (value.naming.variations !== undefined) {
+      if (!isRecord(value.naming.variations) || Object.keys(value.naming.variations).length > 50000) throw new Error('Variations invalides.');
+      for (const [id, v] of Object.entries(value.naming.variations)) if (!id || id.length > 510 || typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0) throw new Error('Variation de nom invalide.');
+    }
     if (value.naming.title !== undefined && (typeof value.naming.title !== 'string' || value.naming.title.length > 200)) throw new Error('Titre de carte invalide.');
     if (value.naming.places !== undefined) {
       if (!isRecord(value.naming.places) || Object.keys(value.naming.places).length > 2000) throw new Error('Noms des lieux invalides.');
@@ -117,17 +144,18 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (value.naming.labels !== undefined) {
       if (!isRecord(value.naming.labels) || Object.keys(value.naming.labels).length > 50000) throw new Error('Étiquettes invalides.');
       for (const [id, edit] of Object.entries(value.naming.labels)) {
-        if (!id || id.length > 500 || !isRecord(edit) || edit.text!==undefined&&(typeof edit.text !== 'string' || edit.text.length > 200)) throw new Error('Étiquette invalide.');
-        checkEnum(edit.mode,['label','proper'],'mode de renommage');
+        if (!id || id.length > 500 || !isRecord(edit) || (edit.text !== undefined && (typeof edit.text !== 'string' || edit.text.length > 200))) throw new Error('Étiquette invalide.');
+        checkEnum(edit.mode, ['label', 'proper'], 'mode de renommage');
         checkEnum(edit.kind, ['free', 'quarter', 'parcel', 'building'], 'type d’étiquette');
         if (edit.anchor !== undefined) {
           if (!isRecord(edit.anchor)) throw new Error('Position d’étiquette invalide.');
-          finite(edit.anchor.x, 'position x', -1e9, 1e9); finite(edit.anchor.y, 'position y', -1e9, 1e9);
+          finite(edit.anchor.x, 'position x', -1e9, 1e9);
+          finite(edit.anchor.y, 'position y', -1e9, 1e9);
         }
         if (edit.style !== undefined) {
           if (!isRecord(edit.style)) throw new Error('Style d’étiquette invalide.');
           if (edit.style.color !== undefined && (typeof edit.style.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(edit.style.color))) throw new Error('Couleur d’étiquette invalide.');
-          if (edit.style.size !== undefined) finite(edit.style.size, 'taille d’étiquette', .25, 4);
+          if (edit.style.size !== undefined) finite(edit.style.size, 'taille d’étiquette', 0.25, 4);
           for (const key of ['bold', 'italic']) if (edit.style[key] !== undefined && typeof edit.style[key] !== 'boolean') throw new Error('Style d’étiquette invalide.');
         }
       }
@@ -137,7 +165,9 @@ export function validateSettings(value: unknown): asserts value is V2Settings {
     if (!isRecord(value.urban)) throw new Error('Moteur urbain invalide.');
     if (value.urban.backend !== undefined) checkEnum(value.urban.backend, ['typescript', 'rust', 'native'], 'moteur urbain');
     const stages = ['layout', 'parcels', 'programme', 'buildings'];
-    const validateUrbanSeed = (seed: unknown): void => { if (seed !== undefined && (typeof seed !== 'string' || seed.length > 1000)) throw new Error('Graine urbaine invalide.'); };
+    const validateUrbanSeed = (seed: unknown): void => {
+      if (seed !== undefined && (typeof seed !== 'string' || seed.length > 1000)) throw new Error('Graine urbaine invalide.');
+    };
     const validateStageSeeds = (seeds: unknown): void => {
       if (seeds === undefined) return;
       if (!isRecord(seeds) || Object.keys(seeds).some(key => !(URBAN_SEED_STAGES as readonly string[]).includes(key))) throw new Error('Graines des étapes urbaines invalides.');
@@ -218,26 +248,34 @@ export function validateWorld(world: unknown): asserts world is World {
   const terrain = world.terrain;
   const grid = terrain.height;
   if (!isRecord(grid)) throw new Error('Grille d’altitude absente.');
-  finite(grid.w, 'largeur de grille', 1, 4096); finite(grid.h, 'hauteur de grille', 1, 4096);
+  finite(grid.w, 'largeur de grille', 1, 4096);
+  finite(grid.h, 'hauteur de grille', 1, 4096);
   if (!Number.isInteger(grid.w) || !Number.isInteger(grid.h)) throw new Error('Dimensions de grille invalides.');
   const length = Number(grid.w) * Number(grid.h);
   for (const key of ['height', 'slope', 'flow']) {
     const field = terrain[key];
-    if (!isRecord(field) || field.w !== grid.w || field.h !== grid.h || !(field.data instanceof Float32Array) || field.data.length !== length)
-      throw new Error(`Grille ${key} incompatible.`);
-    finite(field.cell, `résolution ${key}`, .001, TERRAIN_EXTENT_MAX);
+    if (!isRecord(field) || field.w !== grid.w || field.h !== grid.h || !(field.data instanceof Float32Array) || field.data.length !== length) throw new Error(`Grille ${key} incompatible.`);
+    finite(field.cell, `résolution ${key}`, 0.001, TERRAIN_EXTENT_MAX);
     if (!field.data.every(Number.isFinite)) throw new Error(`Grille ${key} non finie.`);
   }
-  for (const [key, type] of [['water', Uint8Array], ['receiver', Int32Array], ['filled', Float32Array]] as const)
+  for (const [key, type] of [
+    ['water', Uint8Array],
+    ['receiver', Int32Array],
+    ['filled', Float32Array],
+  ] as const)
     if (!(terrain[key] instanceof type) || (terrain[key] as Uint8Array).length !== length) throw new Error(`Champ ${key} incompatible.`);
   if (!(terrain.filled as Float32Array).every(Number.isFinite) || !(terrain.receiver as Int32Array).every(n => n >= -1 && n < length)) throw new Error('Drainage de la carte invalide.');
   if (!Array.isArray(terrain.rivers) || !Array.isArray(terrain.lakes) || !Array.isArray(terrain.coastline)) throw new Error('Couches d’eau absentes.');
   if (!(terrain.water as Uint8Array).every(n => n <= 4)) throw new Error('Masque d’eau invalide.');
   function geometry(value: unknown): void {
-    if (Array.isArray(value)) { for (const child of value) if (child && typeof child === 'object') geometry(child); return; }
+    if (Array.isArray(value)) {
+      for (const child of value) if (child && typeof child === 'object') geometry(child);
+      return;
+    }
     if (!isRecord(value) || ArrayBuffer.isView(value)) return;
     if ('x' in value || 'y' in value) {
-      finite(value.x, 'coordonnée x', -1e7, 1e7); finite(value.y, 'coordonnée y', -1e7, 1e7);
+      finite(value.x, 'coordonnée x', -1e7, 1e7);
+      finite(value.y, 'coordonnée y', -1e7, 1e7);
     }
     for (const key in value) if (Object.hasOwn(value, key) && value[key] && typeof value[key] === 'object') geometry(value[key]);
   }
@@ -263,13 +301,14 @@ export function parseProjectValue(value: unknown): V2Project {
   return parsedProject(reviveProject(value));
 }
 /** Read the discriminator once, including whitespace and escaped JSON keys/values. */
-export function parseProjectInput(text:string):V2Project{
-  if(text.length>256*1024*1024)throw new Error('Projet trop volumineux (256 Mio maximum).');
-  const value:unknown=JSON.parse(text);
-  if(isRecord(value)&&value.format==='magna-urbis-v2-seed'){
-    if(value.version!==1||typeof value.seed!=='string'||value.seed.length>1000)throw new Error('Graine V2 invalide.');
-    const settings=defaultSettings();settings.options.seed=value.seed;
-    return {format:'magna-urbis-v2',version:1,engine:V2_ENGINE_VERSION,settings,mods:[]};
+export function parseProjectInput(text: string): V2Project {
+  if (text.length > 256 * 1024 * 1024) throw new Error('Projet trop volumineux (256 Mio maximum).');
+  const value: unknown = JSON.parse(text);
+  if (isRecord(value) && value.format === 'magna-urbis-v2-seed') {
+    if (value.version !== 1 || typeof value.seed !== 'string' || value.seed.length > 1000) throw new Error('Graine V2 invalide.');
+    const settings = defaultSettings();
+    settings.options.seed = value.seed;
+    return { format: 'magna-urbis-v2', version: 1, engine: V2_ENGINE_VERSION, settings, mods: [] };
   }
   return parseProjectValue(value);
 }
@@ -277,7 +316,7 @@ export function validateModifications(mods: unknown): asserts mods is unknown[] 
   if (!Array.isArray(mods) || mods.length > 100000) throw new Error('Historique de modifications invalide.');
   checkTree(mods, false);
 }
-function parsedProject(project:unknown):V2Project{
+function parsedProject(project: unknown): V2Project {
   if (!isRecord(project) || project.format !== 'magna-urbis-v2' || project.version !== 1 || typeof project.engine !== 'string') throw new Error('Format de projet V2 inconnu.');
   validateSettings(project.settings);
   migrateTerrainClimate((project.settings as { terrain?: { climate?: unknown } }).terrain);

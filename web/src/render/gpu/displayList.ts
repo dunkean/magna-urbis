@@ -123,7 +123,10 @@ export interface ClearOp {
   readonly type: 'clear';
   readonly transform: Mat;
   readonly clip: ClipNode | null;
-  readonly x: number; readonly y: number; readonly w: number; readonly h: number;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
 }
 
 export type DrawOp = FillOp | StrokeOp | SpriteOp | ClearOp;
@@ -175,7 +178,13 @@ export interface GpuRasterizer {
 }
 
 export class GpuRasterError extends Error {
-  constructor(message: string, readonly lost = false) { super(message); this.name = 'GpuRasterError'; }
+  constructor(
+    message: string,
+    readonly lost = false,
+  ) {
+    super(message);
+    this.name = 'GpuRasterError';
+  }
 }
 
 /** Vector engine policy (vectorEngine.ts). */

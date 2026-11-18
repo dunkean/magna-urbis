@@ -13,10 +13,10 @@ import type { V2Settings, V2TownStage } from '../src/v2/contracts';
 const recipe = defaultSettings();
 recipe.generation = 'procedural';
 recipe.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
-recipe.extent = 1200; recipe.settlementCount = 0;
+recipe.extent = 1200;
+recipe.settlementCount = 0;
 recipe.region = { demography: { population: 400 } };
-Object.assign(recipe.options, { seed: 'seed-a', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no',
-  importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: new Float32Array(64).fill(20) } });
+Object.assign(recipe.options, { seed: 'seed-a', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no', importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: new Float32Array(64).fill(20) } });
 let complete: World;
 beforeAll(async () => {
   complete = await generateTowns(await planRegion(await generateTerrain(recipe, undefined, new TerrainCache()), recipe), recipe);
@@ -29,7 +29,9 @@ function controls(source: World) {
   let world = structuredClone(source);
   const cancelled = new Set<FullGenerationAction>();
   return {
-    settings: () => settings, world: () => world, cancelled,
+    settings: () => settings,
+    world: () => world,
+    cancelled,
     targets: () => undefined as string[] | undefined,
     redraw: vi.fn(async () => {}),
     generate: vi.fn(async (action: FullGenerationAction, keys?: string[], through?: V2TownStage) => {
@@ -73,7 +75,8 @@ describe('a seed change resets every downstream product', () => {
   });
 
   it('a placement seed change drops the frozen list and the previous places, without cancellation', async () => {
-    const api = controls(complete), settings = api.settings();
+    const api = controls(complete),
+      settings = api.settings();
     // Moving a town freezes the whole automatic draw into a list (main.ts town mover).
     settings.region!.placement = { mode: 'list', list: complete.settlements!.map(place => ({ ...regionSpec(place.key, 31), position: { ...place.center } })) };
     changeSeed(settings, rerollSeed(settings.options.seed, ['settle-sites', 'city/*/default']));

@@ -24,12 +24,14 @@ import { Noise2D } from '../../core/noise';
 
 /** Share of water samples round p within radius R (rings at R/3, 2R/3, R). */
 export function wetness(cc: CampCtx, p: Vec2, R: number): number {
-  let w = 0, n = 0;
-  for (const f of [1 / 3, 2 / 3, 1]) for (let k = 0; k < 24; k++) {
-    const q = at(p, (k / 24) * 2 * Math.PI, R * f);
-    n++;
-    if (cc.ctx.isWater(q)) w++;
-  }
+  let w = 0,
+    n = 0;
+  for (const f of [1 / 3, 2 / 3, 1])
+    for (let k = 0; k < 24; k++) {
+      const q = at(p, (k / 24) * 2 * Math.PI, R * f);
+      n++;
+      if (cc.ctx.isWater(q)) w++;
+    }
   return w / n;
 }
 
@@ -55,57 +57,95 @@ function streetVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
   const nF = Math.max(2, Math.round(pop / 12));
   const sr = rng.fork('status');
   const st = statusLadder(nF, sr);
-  const yards = st.map((s) => {
+  const yards = st.map(s => {
     const { L } = houseSize(s, 'germanic', sr);
     return { s, L, w: (L + sr.range(9, 17) + (s === 0 ? 16 : s === 1 ? 6 : 0)) * sk, D: yardDepth(s, sr) * sk };
   });
-  const sw = 5, lw = 4;
+  const sw = 5,
+    lw = 4;
   const Rp = Math.min(28, 8 + nF * 0.4);
   const cap = nF <= 8 ? 4 : nF <= 20 ? 6 : 7;
   const ar = rng.fork('arms');
   const dryAlong = (pl: Vec2[]): number => {
-    let ok = 0, n = 0;
+    let ok = 0,
+      n = 0;
     const cv = new Curv(pl);
-    for (let s = Rp; s <= cv.L; s += 12) for (const v of [-30, 0, 30]) {
-      const p = cv.at(s), nn = cv.normal(s);
-      const q = { x: p.x + nn.x * v, y: p.y + nn.y * v };
-      n++;
-      if (!ctx.isWater(q) && ctx.slopeAt(q) < 0.2 && q.x > 20 && q.y > 20 && q.x < ctx.mapSize - 20 && q.y < ctx.mapSize - 20) ok++;
-    }
+    for (let s = Rp; s <= cv.L; s += 12)
+      for (const v of [-30, 0, 30]) {
+        const p = cv.at(s),
+          nn = cv.normal(s);
+        const q = { x: p.x + nn.x * v, y: p.y + nn.y * v };
+        n++;
+        if (!ctx.isWater(q) && ctx.slopeAt(q) < 0.2 && q.x > 20 && q.y > 20 && q.x < ctx.mapSize - 20 && q.y < ctx.mapSize - 20) ok++;
+      }
     return n ? ok / n : 0;
   };
   // ---- the ways: the roads through the place; else (and to make a through street) wandering streets
-  interface Row { side: 1 | -1; list: number[]; s: number[]; len: number }
-  interface Way { cv: Curv; s0: number; w: number; branch: boolean; rows: [Row, Row] }
+  interface Row {
+    side: 1 | -1;
+    list: number[];
+    s: number[];
+    len: number;
+  }
+  interface Way {
+    cv: Curv;
+    s0: number;
+    w: number;
+    branch: boolean;
+    rows: [Row, Row];
+  }
   const ways: Way[] = [];
   const mkWay = (pl: Vec2[], s0: number, w: number, branch: boolean): Way => {
-    const way: Way = { cv: new Curv(pl), s0, w, branch, rows: [{ side: 1, list: [], s: [], len: 0 }, { side: -1, list: [], s: [], len: 0 }] };
+    const way: Way = {
+      cv: new Curv(pl),
+      s0,
+      w,
+      branch,
+      rows: [
+        { side: 1, list: [], s: [], len: 0 },
+        { side: -1, list: [], s: [], len: 0 },
+      ],
+    };
     ways.push(way);
     return way;
   };
-  const est = (yards.reduce((a, y) => a + y.w, 0) / 4) + Rp + 40;
+  const est = yards.reduce((a, y) => a + y.w, 0) / 4 + Rp + 40;
   for (const pl of roadPolylines(cc, c, Math.min(400, est)).slice(0, 3)) mkWay(pl, Rp + 1, sw, false);
   const a0 = cc.main ? cc.roadAngle : Math.atan2(ctx.center.y - c.y, ctx.center.x - c.x);
   const angGap = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
-  const dirOfWay = (w: Way) => { const q = w.cv.at(Math.min(60, w.cv.L)); return Math.atan2(q.y - c.y, q.x - c.x); };
+  const dirOfWay = (w: Way) => {
+    const q = w.cv.at(Math.min(60, w.cv.L));
+    return Math.atan2(q.y - c.y, q.x - c.x);
+  };
   while (ways.length < 2) {
     const base = ways.length ? dirOfWay(ways[0]) + Math.PI : a0;
-    let best: Vec2[] | null = null, bs = -Infinity;
+    let best: Vec2[] | null = null,
+      bs = -Infinity;
     for (const d of [0, -0.25, 0.25, -0.5, 0.5]) {
       const a = base + d + ar.range(-0.12, 0.12);
-      if (ways.some((w) => angGap(a, dirOfWay(w)) < 1.2)) continue;
+      if (ways.some(w => angGap(a, dirOfWay(w)) < 1.2)) continue;
       const pl = wanderLine(c, a, est, ar, 18, 0.06);
       const sc = dryAlong(pl) - Math.abs(d) * 0.2;
-      if (sc > bs) { bs = sc; best = pl; }
+      if (sc > bs) {
+        bs = sc;
+        best = pl;
+      }
     }
     if (!best) break;
     mkWay(best, Rp + 1, sw, false);
   }
   // ---- the yards along the rows: the chief's by the place, the others to the shortest row; side lanes when full
-  const push = (row: Row, w: Way, yi: number) => { row.s.push(w.s0 + row.len); row.list.push(yi); row.len += yards[yi].w; };
+  const push = (row: Row, w: Way, yi: number) => {
+    row.s.push(w.s0 + row.len);
+    row.list.push(yi);
+    row.len += yards[yi].w;
+  };
   push(ways[0].rows[0], ways[0], 0);
   const order = yards.map((_, i) => i).slice(1);
-  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(ar.float() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(ar.float() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
   const usedBranch = new Set<string>();
   for (const yi of order) {
     let best: { row: Row; w: Way } | null = null;
@@ -113,15 +153,18 @@ function streetVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
     if (!best) {
       // a side lane from a full row (at a yard boundary, away from the place), else longer rows
       const cands: { w: Way; row: Row; j: number }[] = [];
-      for (const w of ways) for (const row of w.rows) for (let j = 2; j < row.list.length; j++) {
-        const key = (k: number) => ways.indexOf(w) + ':' + row.side + ':' + k;
-        if (!usedBranch.has(key(j)) && !usedBranch.has(key(j - 1)) && !usedBranch.has(key(j + 1))) cands.push({ w, row, j });
-      }
+      for (const w of ways)
+        for (const row of w.rows)
+          for (let j = 2; j < row.list.length; j++) {
+            const key = (k: number) => ways.indexOf(w) + ':' + row.side + ':' + k;
+            if (!usedBranch.has(key(j)) && !usedBranch.has(key(j - 1)) && !usedBranch.has(key(j + 1))) cands.push({ w, row, j });
+          }
       if (cands.length) {
         const pick = cands[Math.floor(ar.float() * cands.length)];
         usedBranch.add(ways.indexOf(pick.w) + ':' + pick.row.side + ':' + pick.j);
         const s = pick.row.s[pick.j];
-        const o = pick.w.cv.at(s), nn = pick.w.cv.normal(s);
+        const o = pick.w.cv.at(s),
+          nn = pick.w.cv.normal(s);
         const a = Math.atan2(nn.y * pick.row.side, nn.x * pick.row.side) + ar.range(-0.45, 0.45);
         const depth = Math.max(yards[pick.row.list[pick.j - 1]].D, yards[pick.row.list[pick.j]].D) + sw / 2 + 2;
         const bw = mkWay(wanderLine(o, a, est, ar, 16, 0.08), depth, lw, true);
@@ -134,38 +177,47 @@ function streetVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
   const sk2 = rng.fork('skew');
   const rot = (v: Vec2, a: number): Vec2 => ({ x: v.x * Math.cos(a) - v.y * Math.sin(a), y: v.x * Math.sin(a) + v.y * Math.cos(a) });
   const nz = new Noise2D(rng.fork('place'));
-  const place = orientPos(Array.from({ length: 18 }, (_, i) => { const t = (i / 18) * 2 * Math.PI; return at(c, t, (Rp + 2) * (1 + 0.12 * nz.noise(Math.cos(t) + 3, Math.sin(t) + 3))); }));
+  const place = orientPos(
+    Array.from({ length: 18 }, (_, i) => {
+      const t = (i / 18) * 2 * Math.PI;
+      return at(c, t, (Rp + 2) * (1 + 0.12 * nz.noise(Math.cos(t) + 3, Math.sin(t) + 3)));
+    }),
+  );
   const cells: { poly: Polygon; tag: number }[] = [];
   const prev: { poly: Polygon; bb: ReturnType<typeof bboxOf> }[] = [{ poly: place, bb: bboxOf(place) }];
   const wayOf = new Map<number, Way>();
-  for (const w of ways) for (const row of w.rows) {
-    let phi = 0;
-    row.list.forEach((yi, j) => {
-      const y = yards[yi];
-      const sa = row.s[j], sb = sa + y.w;
-      const phi2 = sk2.range(-0.12, 0.12);
-      const V = sw / 2 + y.D;
-      const A = w.cv.at(sa), B = w.cv.at(sb);
-      const S = row.side;
-      const na = rot(w.cv.normal(sa), phi * S), nb = rot(w.cv.normal(sb), phi2 * S);
-      let q: Polygon = [A, B, { x: B.x + nb.x * V * S, y: B.y + nb.y * V * S }, { x: A.x + na.x * V * S, y: A.y + na.y * V * S }];
-      phi = phi2;
-      if (!isSimple(q)) return;
-      q = orientPos(q.map((p) => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 })));
-      const bb = bboxOf(q);
-      const near = prev.filter((p) => !(p.bb.x0 > bb.x1 || p.bb.x1 < bb.x0 || p.bb.y0 > bb.y1 || p.bb.y1 < bb.y0));
-      let poly: Polygon | null = q;
-      if (near.length) {
-        const ps = pieces(differenceS([{ outer: q, holes: [] }], ...near.map((p): MultiPoly => [{ outer: p.poly, holes: [] }])), 20);
-        poly = ps.length ? ps.reduce((a2, b2) => (area(b2) > area(a2) ? b2 : a2)) : null;
-        if (poly && area(poly) < area(q) * 0.45) poly = null;
-      }
-      if (!poly) return;
-      cells.push({ poly, tag: yi });
-      prev.push({ poly, bb: bboxOf(poly) });
-      wayOf.set(yi, w);
-    });
-  }
+  for (const w of ways)
+    for (const row of w.rows) {
+      let phi = 0;
+      row.list.forEach((yi, j) => {
+        const y = yards[yi];
+        const sa = row.s[j],
+          sb = sa + y.w;
+        const phi2 = sk2.range(-0.12, 0.12);
+        const V = sw / 2 + y.D;
+        const A = w.cv.at(sa),
+          B = w.cv.at(sb);
+        const S = row.side;
+        const na = rot(w.cv.normal(sa), phi * S),
+          nb = rot(w.cv.normal(sb), phi2 * S);
+        let q: Polygon = [A, B, { x: B.x + nb.x * V * S, y: B.y + nb.y * V * S }, { x: A.x + na.x * V * S, y: A.y + na.y * V * S }];
+        phi = phi2;
+        if (!isSimple(q)) return;
+        q = orientPos(q.map(p => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 })));
+        const bb = bboxOf(q);
+        const near = prev.filter(p => !(p.bb.x0 > bb.x1 || p.bb.x1 < bb.x0 || p.bb.y0 > bb.y1 || p.bb.y1 < bb.y0));
+        let poly: Polygon | null = q;
+        if (near.length) {
+          const ps = pieces(differenceS([{ outer: q, holes: [] }], ...near.map((p): MultiPoly => [{ outer: p.poly, holes: [] }])), 20);
+          poly = ps.length ? ps.reduce((a2, b2) => (area(b2) > area(a2) ? b2 : a2)) : null;
+          if (poly && area(poly) < area(q) * 0.45) poly = null;
+        }
+        if (!poly) return;
+        cells.push({ poly, tag: yi });
+        prev.push({ poly, bb: bboxOf(poly) });
+        wayOf.set(yi, w);
+      });
+    }
   // ---- streets: each way from its origin to past its last yard
   const streets: UrbanStreet[] = [];
   ways.forEach((w, k) => {
@@ -183,17 +235,22 @@ function streetVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
   const seen = new Set<number>();
   for (const Q of quarters) {
     const qi = out.quarters.length;
-    out.quarters.push(Q); out.outline.push(Q);
+    out.quarters.push(Q);
+    out.outline.push(Q);
     const qbb = bboxOf(Q);
-    const qCells = cells.filter((x) => { const b = bboxOf(x.poly); return !(b.x0 > qbb.x1 || b.x1 < qbb.x0 || b.y0 > qbb.y1 || b.y1 < qbb.y0); });
+    const qCells = cells.filter(x => {
+      const b = bboxOf(x.poly);
+      return !(b.x0 > qbb.x1 || b.x1 < qbb.x0 || b.y0 > qbb.y1 || b.y1 < qbb.y0);
+    });
     for (const blk of carveBlocks(Q, rib, ctx.water)) {
       const bi = out.blocks.length;
       out.blocks.push({ poly: blk, kind: 'block', quarter: qi });
       let parts = cutByCells(blk, qCells);
-      const A = area(blk), S = parts.reduce((s2, p) => s2 + area(p.poly), 0);
+      const A = area(blk),
+        S = parts.reduce((s2, p) => s2 + area(p.poly), 0);
       if (S < A * 0.997) {
         const rest = pieces(parts.length ? differenceS([{ outer: blk, holes: [] }], ...parts.map((p): MultiPoly => [{ outer: p.poly, holes: [] }])) : [{ outer: blk, holes: [] }], 0.5);
-        parts = mergeSmall([...parts, ...rest.map((poly) => ({ poly, tag: -1 }))]);
+        parts = mergeSmall([...parts, ...rest.map(poly => ({ poly, tag: -1 }))]);
       }
       // (a yard cut by a side lane: its largest piece is the farm, the rest garden)
       parts.sort((p, q) => area(q.poly) - area(p.poly));
@@ -206,14 +263,24 @@ function streetVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
           out.parcels.push({ poly: pc.poly, use: inPlace || dist(ic, c) < Rp * 2.2 ? 'meadow' : 'garden', block: bi });
           continue;
         }
-        if (seen.has(pc.tag) || fr.len < 3.2 || area(pc.poly) < 150) { out.parcels.push({ poly: pc.poly, use: 'garden', block: bi }); continue; }
+        if (seen.has(pc.tag) || fr.len < 3.2 || area(pc.poly) < 150) {
+          out.parcels.push({ poly: pc.poly, use: 'garden', block: bi });
+          continue;
+        }
         seen.add(pc.tag);
         out.parcels.push({ poly: pc.poly, use: 'plot', block: bi });
         const y = yards[pc.tag];
         const w = wayOf.get(pc.tag)!;
         // the house parallel to its street
-        let sBest = 0, dBest = Infinity;
-        for (let s = 0; s < w.cv.L + 40; s += 4) { const d = dist(w.cv.at(s), ic); if (d < dBest) { dBest = d; sBest = s; } }
+        let sBest = 0,
+          dBest = Infinity;
+        for (let s = 0; s < w.cv.L + 40; s += 4) {
+          const d = dist(w.cv.at(s), ic);
+          if (d < dBest) {
+            dBest = d;
+            sBest = s;
+          }
+        }
         const n = w.cv.normal(sBest);
         const axis = Math.atan2(n.x, -n.y);
         fillFarm(out, pi, pc.poly, y.s, { kind: 'germanic', axis, fence: 'yard-fence', L: y.L }, fr.mid, fr0.fork('f' + pc.tag));
@@ -240,20 +307,27 @@ function wurtVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
   const sr = rng.fork('status');
   const st = statusLadder(nF, sr);
   // the Herrenhof stands apart: the ring is made of the other farms
-  const ring = st.slice(1).map((s) => ({ s, L: houseSize(s, 'germanic', sr).L }));
+  const ring = st.slice(1).map(s => ({ s, L: houseSize(s, 'germanic', sr).L }));
   const pw = 4.2;
-  const D = Math.max(...ring.map((y) => y.L)) + 12 * sk;
+  const D = Math.max(...ring.map(y => y.L)) + 12 * sk;
   // angular widths: house width + margins at mid depth
   const widthOf = (s: Status) => [26, 21, 17, 13][s] * sk * sr.range(0.9, 1.15);
-  const ws = ring.map((y) => widthOf(y.s));
+  const ws = ring.map(y => widthOf(y.s));
   const Wtot = ws.reduce((a, b) => a + b, 0) + widthOf(0) * 2.2;
   const Rmid = Math.max(D / 2 + 22, Wtot / (2 * Math.PI));
   const Rp = Rmid - D / 2 - pw;
   const R = Rmid + D / 2;
   const wr = rng.fork('warp');
-  const ph = wr.range(0, 6), ecc = wr.range(0.04, 0.1);
+  const ph = wr.range(0, 6),
+    ecc = wr.range(0.04, 0.1);
   const W = (t: number) => 1 + ecc * Math.cos(2 * (t - ph));
-  const ringPoly = (r0: number, n = 96): Polygon => orientPos(Array.from({ length: n }, (_, i) => { const t = (i / n) * 2 * Math.PI; return at(c, t, r0 * W(t)); }));
+  const ringPoly = (r0: number, n = 96): Polygon =>
+    orientPos(
+      Array.from({ length: n }, (_, i) => {
+        const t = (i / n) * 2 * Math.PI;
+        return at(c, t, r0 * W(t));
+      }),
+    );
   const quarter = snapRing(ringPoly(R));
   out.quarters.push(quarter);
   out.outline.push(ringPoly(R + 10));
@@ -265,17 +339,29 @@ function wurtVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
   const aChief = aRoad + Math.PI + wr.range(-0.5, 0.5);
   // the roads up the mound are its lanes; more lanes spread round the ring
   const roadPl = roadPolylines(cc, c, R + 30);
-  const lanes: { a: number; pl: Vec2[] }[] = roadPl.map((pl) => { const cv = new Curv(pl); const q = cv.at(R); return { a: Math.atan2(q.y - c.y, q.x - c.x), pl: cv.slice(Rp, R + 8) }; });
+  const lanes: { a: number; pl: Vec2[] }[] = roadPl.map(pl => {
+    const cv = new Curv(pl);
+    const q = cv.at(R);
+    return { a: Math.atan2(q.y - c.y, q.x - c.x), pl: cv.slice(Rp, R + 8) };
+  });
   const want = nF > 14 ? 3 : 2;
   for (const a of [aRoad, aRoad + Math.PI * wr.range(0.55, 0.8), aRoad - Math.PI * wr.range(0.55, 0.8), aRoad + Math.PI]) {
     if (lanes.length >= want) break;
-    if (lanes.some((l) => Math.abs(Math.atan2(Math.sin(a - l.a), Math.cos(a - l.a))) < 0.8)) continue;
+    if (lanes.some(l => Math.abs(Math.atan2(Math.sin(a - l.a), Math.cos(a - l.a))) < 0.8)) continue;
     lanes.push({ a, pl: [at(c, a, (Rp + pw / 2) * W(a)), at(c, a, (R + 8) * W(a))] });
   }
   lanes.forEach((l, k) => streets.push(street(l.pl, k === 0 ? 4.6 : 3.6, k === 0 ? 1 : 2, 'radial')));
   out.streets.push(...streets);
   const cuts: MultiPoly = [{ outer: ringPoly(Rp + pw), holes: [ringPoly(Rp)] }, ...pathRibbons(streets.slice(1))];
-  const blocks = carveBlocks(quarter, unionMany(cuts.map((x): MultiPoly => [x]), 16, true), ctx.water);
+  const blocks = carveBlocks(
+    quarter,
+    unionMany(
+      cuts.map((x): MultiPoly => [x]),
+      16,
+      true,
+    ),
+    ctx.water,
+  );
   // ---- wedges: the Herrenhof (a double wedge at aChief), the farms round the rest
   const chiefSpan = (widthOf(0) * 2.2) / Rmid;
   const rest = 2 * Math.PI - chiefSpan;
@@ -305,7 +391,10 @@ function wurtVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
     for (const pc of cutByCells(blk, cells)) {
       const pi = out.parcels.length;
       const fr = front.frontage(pc.poly);
-      if (fr.len < 3.2 || area(pc.poly) < 150) { out.parcels.push({ poly: pc.poly, use: 'garden', block: bi }); continue; }
+      if (fr.len < 3.2 || area(pc.poly) < 150) {
+        out.parcels.push({ poly: pc.poly, use: 'garden', block: bi });
+        continue;
+      }
       out.parcels.push({ poly: pc.poly, use: 'plot', block: bi });
       const s = pc.tag === 0 ? 0 : ring[pc.tag - 1].s;
       const ic = inscribed(pc.poly, [], 1).c;
@@ -318,7 +407,7 @@ function wurtVillage(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
   }
   out.lines.push(...fences(yardRings, 'yard-fence', 0.4));
   // the mound: its foot hachured, the slope down to the marsh
-  out.lines.push(...hachures(ringPoly(R + 1.5), 2.6, 5, -1, (p) => lanes.some((l) => dist(p, at(c, l.a, (R + 1.5) * W(l.a))) < 8)));
+  out.lines.push(...hachures(ringPoly(R + 1.5), 2.6, 5, -1, p => lanes.some(l => dist(p, at(c, l.a, (R + 1.5) * W(l.a))) < 8)));
   out.sites.push({ id: 'wurt', kind: 'wurt', role: 'civic', lot: quarter, anchor: c });
   void dist;
   return out;

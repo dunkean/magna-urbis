@@ -13,21 +13,19 @@ const desktop = join(rust, 'desktop');
 const windows = process.platform === 'win32';
 const cargoBin = join(homedir(), '.cargo', 'bin');
 const env = { ...process.env, PATH: cargoBin + delimiter + (process.env.PATH ?? '') };
-const cargo = existsSync(join(cargoBin, windows ? 'cargo.exe' : 'cargo'))
-  ? join(cargoBin, windows ? 'cargo.exe' : 'cargo') : 'cargo';
+const cargo = existsSync(join(cargoBin, windows ? 'cargo.exe' : 'cargo')) ? join(cargoBin, windows ? 'cargo.exe' : 'cargo') : 'cargo';
 const args = process.argv.slice(2);
 const action = args.find(arg => !arg.startsWith('--')) ?? 'dev';
 const children = new Set();
 let stopping = false;
 
 function start(command, commandArgs, cwd = web, extraEnv = {}, capture = false) {
-  const child = spawn(command, commandArgs, {
-    cwd, env: { ...env, ...extraEnv }, windowsHide: true, detached: !windows,
-    stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'],
-  });
+  const child = spawn(command, commandArgs, { cwd, env: { ...env, ...extraEnv }, windowsHide: true, detached: !windows, stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit'] });
   children.add(child);
   let output = '';
-  child.stdout?.on('data', data => { output += data; });
+  child.stdout?.on('data', data => {
+    output += data;
+  });
   const done = new Promise((resolveDone, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => {
@@ -47,29 +45,44 @@ const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms));
 async function stop() {
   if (stopping) return;
   stopping = true;
-  await Promise.all([...children].map(child => new Promise(resolveStop => {
-    const timer = setTimeout(resolveStop, 3000);
-    timer.unref();
-    child.once('exit', () => { clearTimeout(timer); resolveStop(); });
-    // CLI tools can have their own children (Tauri, Cargo, Vite/esbuild).
-    if (windows) {
-      const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-      killer.once('error', () => child.kill());
-    } else {
-      try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill(); }
-    }
-  })));
+  await Promise.all(
+    [...children].map(
+      child =>
+        new Promise(resolveStop => {
+          const timer = setTimeout(resolveStop, 3000);
+          timer.unref();
+          child.once('exit', () => {
+            clearTimeout(timer);
+            resolveStop();
+          });
+          // CLI tools can have their own children (Tauri, Cargo, Vite/esbuild).
+          if (windows) {
+            const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+            killer.once('error', () => child.kill());
+          } else {
+            try {
+              process.kill(-child.pid, 'SIGTERM');
+            } catch {
+              child.kill();
+            }
+          }
+        }),
+    ),
+  );
 }
 
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
-  void stop().then(() => process.exit(signal === 'SIGINT' ? 130 : 143));
-});
+for (const signal of ['SIGINT', 'SIGTERM'])
+  process.once(signal, () => {
+    void stop().then(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  });
 
 async function status(url) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1200) });
     return response.ok ? response : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function waitFor(url, service, validate = () => true) {
@@ -79,7 +92,7 @@ async function waitFor(url, service, validate = () => true) {
       throw new Error(`Service arrêté avant de répondre : ${url}`);
     }
     const response = await status(url);
-    if (response && await validate(response)) return;
+    if (response && (await validate(response))) return;
     await pause(250);
   }
   throw new Error(`Le service ne répond pas : ${url}`);
@@ -94,8 +107,7 @@ async function freePort(port) {
 }
 
 async function waitForCargo() {
-  if (windows) await run('powershell.exe', ['-NoProfile', '-Command',
-    'while (Get-Process cargo,rustc -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 2 }; exit 0'], rust);
+  if (windows) await run('powershell.exe', ['-NoProfile', '-Command', 'while (Get-Process cargo,rustc -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 2 }; exit 0'], rust);
 }
 
 async function nativeBinary() {
@@ -105,19 +117,16 @@ async function nativeBinary() {
     if (windows) await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(rust, 'scripts/cargo-sync.ps1'), 'build', '--release', ...packages], rust);
     else await run(cargo, ['build', '--release', ...packages], rust);
   }
-  const metadata = JSON.parse(await start(cargo,
-    ['metadata', '--format-version', '1', '--no-deps'], rust, {}, true).done);
-  const binary = process.env.MAGNA_LOCAL_BIN
-    ?? join(metadata.target_directory, 'release', `magna-urbis-local${windows ? '.exe' : ''}`);
+  const metadata = JSON.parse(await start(cargo, ['metadata', '--format-version', '1', '--no-deps'], rust, {}, true).done);
+  const binary = process.env.MAGNA_LOCAL_BIN ?? join(metadata.target_directory, 'release', `magna-urbis-local${windows ? '.exe' : ''}`);
   if (!existsSync(binary)) throw new Error(`Moteur absent : ${binary}. Lance npm run build:local.`);
   return binary;
 }
 
 async function neural() {
-  if (args.includes('--no-neural') || await status('http://127.0.0.1:8793/status')) return null;
+  if (args.includes('--no-neural') || (await status('http://127.0.0.1:8793/status'))) return null;
   const earth = process.env.MAGNA_NEURAL_EARTH ?? resolve(root, '../infinite_map');
-  const python = process.env.MAGNA_NEURAL_PYTHON
-    ?? join(earth, windows ? '.venv/Scripts/python.exe' : '.venv/bin/python');
+  const python = process.env.MAGNA_NEURAL_PYTHON ?? join(earth, windows ? '.venv/Scripts/python.exe' : '.venv/bin/python');
   if (!existsSync(python)) {
     console.log('Neural Python/CUDA optionnel absent ; relief procédural et navigateur disponibles.');
     return null;
@@ -137,14 +146,13 @@ async function vite() {
   const url = 'http://127.0.0.1:5173/rustbench.html';
   if (await status(url)) return null;
   await freePort(5173);
-  const service = start(process.execPath, [join(web, 'node_modules/vite/bin/vite.js'),
-    '--mode', 'rustbench', '--host', '127.0.0.1', '--port', '5173', '--strictPort']);
+  const service = start(process.execPath, [join(web, 'node_modules/vite/bin/vite.js'), '--mode', 'rustbench', '--host', '127.0.0.1', '--port', '5173', '--strictPort']);
   await waitFor(url, service);
   return service;
 }
 
 async function illustration() {
-  if (args.includes('--no-illustration') || await status('http://127.0.0.1:8794/status')) return null;
+  if (args.includes('--no-illustration') || (await status('http://127.0.0.1:8794/status'))) return null;
   const python = process.env.MAGNA_ILLUSTRATION_PYTHON ?? join(root, windows ? '.venv-illustration/Scripts/python.exe' : '.venv-illustration/bin/python');
   if (!existsSync(python)) return null;
   const service = start(python, ['-u', '-m', 'illustration'], root);
@@ -165,12 +173,14 @@ function tauri(commandArgs) {
   // npm supplies its own CLI path on every platform; no Cargo CLI installation.
   const npm = process.env.npm_execpath;
   if (!npm) throw new Error('Lance cette commande via npm run app:dev ou npm run app:build.');
-  return start(process.execPath, [npm, 'exec', '--yes', '--package=@tauri-apps/cli@^2', '--', 'tauri', ...commandArgs], desktop,
-    { CARGO_TARGET_DIR: join(rust, 'target'), CARGO_BUILD_JOBS: '21' }).done;
+  return start(process.execPath, [npm, 'exec', '--yes', '--package=@tauri-apps/cli@^2', '--', 'tauri', ...commandArgs], desktop, { CARGO_TARGET_DIR: join(rust, 'target'), CARGO_BUILD_JOBS: '21' }).done;
 }
 
 async function main() {
-  if (action === 'build') { await nativeBinary(); return; }
+  if (action === 'build') {
+    await nativeBinary();
+    return;
+  }
   if (action === 'desktop-build' || action === 'desktop-dev') {
     const binary = await nativeBinary();
     await mkdir(join(desktop, 'resources'), { recursive: true });
@@ -185,9 +195,7 @@ async function main() {
     for (const name of ['coarse', 'base', 'decoder']) {
       await copyFile(join(weights, `${name}.safetensors`), join(desktop, 'resources/neural-weights', `${name}.safetensors`));
     }
-    await cp(join(root, 'illustration'), join(desktop, 'resources/illustration'), {
-      recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests'),
-    });
+    await cp(join(root, 'illustration'), join(desktop, 'resources/illustration'), { recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests') });
     if (!windows) {
       await chmod(bundledBinary, 0o755);
       await chmod(join(desktop, 'resources', neuralName), 0o755);
@@ -209,8 +217,7 @@ async function main() {
       await illustration();
     }
     await waitForCargo();
-    await tauri([action === 'desktop-build' ? 'build' : 'dev',
-        ...args.filter(arg => !['--no-build', '--no-neural', '--no-illustration', '--no-open', action].includes(arg))]);
+    await tauri([action === 'desktop-build' ? 'build' : 'dev', ...args.filter(arg => !['--no-build', '--no-neural', '--no-illustration', '--no-open', action].includes(arg))]);
     return;
   }
   if (action !== 'dev') throw new Error('Usage : local.mjs dev|build|desktop-dev|desktop-build [--no-build] [--no-neural] [--no-open]');
@@ -247,8 +254,11 @@ async function main() {
   if (owned.length) await Promise.race(owned.map(service => service.done));
 }
 
-try { await main(); }
-catch (error) {
+try {
+  await main();
+} catch (error) {
   console.error(error.message);
   process.exitCode = 1;
-} finally { await stop(); }
+} finally {
+  await stop();
+}

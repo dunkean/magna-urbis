@@ -273,22 +273,32 @@ vec3 underdarkPaper(vec3 c){
 /** Underdark fungal farms for the ground shaders: x, y, half-size (m), row angle per lot, up to 32. The underdark
  * plans no rural holdings, so each town also gets a ring of mushroom beds around its built extent (deterministic);
  * rock and water drawn over them hide any that fall off the cave floor. */
-export function underdarkFarmBeds(farms: readonly { pos: { x: number; y: number }; angle: number; lot?: readonly { x: number; y: number }[] }[] | undefined,
-  towns: readonly { center: { x: number; y: number }; radius?: number; main?: boolean }[] = []): Float32Array {
+export function underdarkFarmBeds(farms: readonly { pos: { x: number; y: number }; angle: number; lot?: readonly { x: number; y: number }[] }[] | undefined, towns: readonly { center: { x: number; y: number }; radius?: number; main?: boolean }[] = []): Float32Array {
   const out = new Float32Array(128);
   let k = 0;
-  const push = (x: number, y: number, size: number, angle: number) => { if (k < 32) out.set([x, y, size, angle], 4 * k++); };
+  const push = (x: number, y: number, size: number, angle: number) => {
+    if (k < 32) out.set([x, y, size, angle], 4 * k++);
+  };
   for (const f of farms ?? []) {
     let size = 55;
-    if (f.lot?.length) { const xs = f.lot.map(p => p.x), ys = f.lot.map(p => p.y); size = Math.max(25, Math.min(140, Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * .7)); }
+    if (f.lot?.length) {
+      const xs = f.lot.map(p => p.x),
+        ys = f.lot.map(p => p.y);
+      size = Math.max(25, Math.min(140, Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.7));
+    }
     push(f.pos.x, f.pos.y, size, f.angle);
   }
-  const hash = (a: number, b: number) => { const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return v - Math.floor(v); };
+  const hash = (a: number, b: number) => {
+    const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+    return v - Math.floor(v);
+  };
   for (const t of towns) {
-    const r = Math.max(60, t.radius ?? 150), count = t.main ? 4 : 2;
+    const r = Math.max(60, t.radius ?? 150),
+      count = t.main ? 4 : 2;
     for (let j = 0; j < count; j++) {
-      const a = (j + hash(t.center.x, t.center.y + j)) / count * Math.PI * 2, d = r * (1.15 + .45 * hash(t.center.y, t.center.x + j));
-      push(t.center.x + Math.cos(a) * d, t.center.y + Math.sin(a) * d, 30 + 25 * hash(j, t.center.x), a + Math.PI / 2 + (hash(t.center.x + j, 3) - .5) * .6);
+      const a = ((j + hash(t.center.x, t.center.y + j)) / count) * Math.PI * 2,
+        d = r * (1.15 + 0.45 * hash(t.center.y, t.center.x + j));
+      push(t.center.x + Math.cos(a) * d, t.center.y + Math.sin(a) * d, 30 + 25 * hash(j, t.center.x), a + Math.PI / 2 + (hash(t.center.x + j, 3) - 0.5) * 0.6);
     }
   }
   return out;

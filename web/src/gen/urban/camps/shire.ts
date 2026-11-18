@@ -31,23 +31,34 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
   const ctx = cc.ctx;
   const sk = Math.sqrt(cc.sprawl);
   // ---- the hill: the highest ground near the site; its sunny (southern) flank
-  let top = c0, hTop = ctx.heightAt(c0);
-  for (let r = 30; r <= 260; r += 30) for (let k = 0; k < 16; k++) {
-    const p = at(c0, (k / 16) * 2 * Math.PI, r);
-    if (ctx.isWater(p) || p.x < 150 || p.y < 150 || p.x > ctx.mapSize - 150 || p.y > ctx.mapSize - 150) continue;
-    const h = ctx.heightAt(p);
-    if (h > hTop + 0.5 * (r / 60)) { hTop = h; top = p; }
-  }
+  let top = c0,
+    hTop = ctx.heightAt(c0);
+  for (let r = 30; r <= 260; r += 30)
+    for (let k = 0; k < 16; k++) {
+      const p = at(c0, (k / 16) * 2 * Math.PI, r);
+      if (ctx.isWater(p) || p.x < 150 || p.y < 150 || p.x > ctx.mapSize - 150 || p.y > ctx.mapSize - 150) continue;
+      const h = ctx.heightAt(p);
+      if (h > hTop + 0.5 * (r / 60)) {
+        hTop = h;
+        top = p;
+      }
+    }
   // the facing: the downhill direction nearest to south (y grows southward)
-  let face = Math.PI / 2, best = -Infinity;
+  let face = Math.PI / 2,
+    best = -Infinity;
   for (let k = 0; k < 24; k++) {
     const a = (k / 24) * 2 * Math.PI;
     const drop = hTop - ctx.heightAt(at(top, a, 70));
     const s = drop + 4 * Math.sin(a);
-    if (s > best) { best = s; face = a; }
+    if (s > best) {
+      best = s;
+      face = a;
+    }
   }
   const nS = Math.max(3, Math.round(pop / 5.5));
-  const D = 24 * sk, lw = 3.4, r0 = 22 * sk;
+  const D = 24 * sk,
+    lw = 3.4,
+    r0 = 22 * sk;
   const step = D + lw;
   // ---- the lanes follow the contours: on every direction of the sunny flank, where the ground falls to the lane's
   // level (on a gentle hill, a wavering ring at the row spacing)
@@ -73,7 +84,7 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
     for (let pass = 0; pass < 3; pass++) row = row.map((_, i) => (row[Math.max(0, i - 1)] + 2 * row[i] + row[Math.min(NA - 1, i + 1)]) / 4);
     row = row.map((r, i) => Math.max(r, prev[i] + 0.85 * step));
     R.push(row);
-    const midLen = row.reduce((s, r, i) => s + (i ? Math.abs(th(i) - th(i - 1)) * (r + prev[i]) / 2 : 0), 0);
+    const midLen = row.reduce((s, r, i) => s + (i ? (Math.abs(th(i) - th(i - 1)) * (r + prev[i])) / 2 : 0), 0);
     cap += Math.floor(midLen / (21 * sk)) * 0.75;
   }
   let K = R.length - 1;
@@ -82,20 +93,26 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
   const spans: [number, number][] = [[0, NA - 1]];
   const bandCap = (b: number, i0: number, i1: number): number => {
     let L = 0;
-    for (let i = i0 + 1; i <= i1; i++) L += Math.abs(th(i) - th(i - 1)) * (R[b][i] + R[b - 1][i]) / 2;
+    for (let i = i0 + 1; i <= i1; i++) L += (Math.abs(th(i) - th(i - 1)) * (R[b][i] + R[b - 1][i])) / 2;
     return L / (22 * sk);
   };
   let left = nS - 1;
   for (let b = 1; b <= K; b++) {
     let f = Math.min(1, 0.5 + 0.22 * b) * sp.range(0.85, 1);
     const ctr = Math.round((NA - 1) / 2 + sp.range(-0.12, 0.12) * NA);
-    const span = (ff: number): [number, number] => { const half = Math.floor(((NA - 1) / 2) * ff); return [Math.max(0, ctr - half), Math.min(NA - 1, ctr + half)]; };
+    const span = (ff: number): [number, number] => {
+      const half = Math.floor(((NA - 1) / 2) * ff);
+      return [Math.max(0, ctr - half), Math.min(NA - 1, ctr + half)];
+    };
     // (the last band only as long as the households left: no row of empty gardens)
     const c = bandCap(b, ...span(f));
     if (c > left * 1.08) f = Math.max(0.18, f * ((left * 1.08) / c));
     spans.push(span(f));
     left -= Math.floor(bandCap(b, ...span(f)));
-    if (left <= 0) { K = b; break; }
+    if (left <= 0) {
+      K = b;
+      break;
+    }
   }
   const P = (k: number, i: number) => at(top, th(i), R[k][i]);
   // ---- the quarter: the top (inside the first lane, all round) and the bands, less the water
@@ -103,8 +120,12 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
   const bands: Polygon[] = [];
   for (let b = 1; b <= K; b++) {
     const [i0, i1] = spans[b];
-    const inner: Vec2[] = [], outer: Vec2[] = [];
-    for (let i = i0; i <= i1; i++) { inner.push(P(b - 1, i)); outer.push(P(b, i)); }
+    const inner: Vec2[] = [],
+      outer: Vec2[] = [];
+    for (let i = i0; i <= i1; i++) {
+      inner.push(P(b - 1, i));
+      outer.push(P(b, i));
+    }
     bands.push(orientPos([...inner, ...outer.reverse()]));
   }
   let Qm: MultiPoly = unionMany([[{ outer: cap0, holes: [] }], ...bands.map((p): MultiPoly => [{ outer: p, holes: [] }])], 16, true);
@@ -113,8 +134,10 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
   // ---- lanes: each contour lane along the spans of the bands it serves; the lane up the hill
   const streets: UrbanStreet[] = [];
   for (let k = 0; k <= K; k++) {
-    const a = spans[Math.min(K, k + 1)], b2 = spans[k];
-    const i0 = Math.max(0, Math.min(a[0], k ? b2[0] : a[0]) - 1), i1 = Math.min(NA - 1, Math.max(a[1], k ? b2[1] : a[1]) + 1);
+    const a = spans[Math.min(K, k + 1)],
+      b2 = spans[k];
+    const i0 = Math.max(0, Math.min(a[0], k ? b2[0] : a[0]) - 1),
+      i1 = Math.min(NA - 1, Math.max(a[1], k ? b2[1] : a[1]) + 1);
     const pts: Vec2[] = [];
     for (let i = i0; i <= i1; i++) pts.push(P(k, i));
     streets.push(street(pts, k === K ? 4.2 : lw, k === K ? 2 : 3, k === K ? 'radial' : 'lane'));
@@ -129,7 +152,11 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
   const climb = street(climbPts, 4.2, 1, 'radial');
   streets.push(climb);
   out.streets.push(...streets);
-  const rib = unionMany(pathRibbons(streets).map((ph2): MultiPoly => [ph2]), 16, true);
+  const rib = unionMany(
+    pathRibbons(streets).map((ph2): MultiPoly => [ph2]),
+    16,
+    true,
+  );
   const front = new FrontIndex(out.streets);
   // garden wedges per band (rays from the top, each band its own widths)
   const wr = rng.fork('wedges');
@@ -166,7 +193,8 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
   out.trees = out.trees ?? [];
   for (const Q of quarters) {
     const qi = out.quarters.length;
-    out.quarters.push(Q); out.outline.push(Q);
+    out.quarters.push(Q);
+    out.outline.push(Q);
     for (const blk of carveBlocks(Q, rib, ctx.water)) {
       const bi = out.blocks.length;
       out.blocks.push({ poly: blk, kind: 'block', quarter: qi });
@@ -183,7 +211,10 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
       for (const pc of cutExact(blk, bandWedges[kb] ?? bandWedges[0])) {
         const pi = out.parcels.length;
         const fr = front.frontage(pc.poly);
-        if (fr.len < 3.2 || area(pc.poly) < 120 || si > nS + 2) { out.parcels.push({ poly: pc.poly, use: 'garden', block: bi }); continue; }
+        if (fr.len < 3.2 || area(pc.poly) < 120 || si > nS + 2) {
+          out.parcels.push({ poly: pc.poly, use: 'garden', block: bi });
+          continue;
+        }
         out.parcels.push({ poly: pc.poly, use: 'plot', block: bi });
         fillSmial(out, pi, pc.poly, st[Math.min(st.length - 1, si++)], top, face, fr.mid, fr0.fork('s' + pi), hedges);
       }
@@ -199,7 +230,13 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
   if (wd < 260) {
     // the mill: toward the nearest water
     let wa = face;
-    for (let k = 0; k < 24; k++) { const a = (k / 24) * 2 * Math.PI; if (ctx.isWater(at(foot, a, wd))) { wa = a; break; } }
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * 2 * Math.PI;
+      if (ctx.isWater(at(foot, a, wd))) {
+        wa = a;
+        break;
+      }
+    }
     lots.push({ kind: 'mill', p: at(foot, wa, Math.max(30, wd - 18)), r: 16 });
   }
   const used: Polygon[] = [...out.quarters];
@@ -213,12 +250,23 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
     const Q = snapRing(ps.reduce((a, b) => (area(b) > area(a) ? b : a)));
     used.push(Q);
     const qi = out.quarters.length;
-    out.quarters.push(Q); out.outline.push(Q);
+    out.quarters.push(Q);
+    out.outline.push(Q);
     // its lane stub toward the hill's lane
     const g = nearestOn(Q, foot);
     const ins = inscribed(Q, [], 1);
-    const lx = ins.c.x - g.x, ly = ins.c.y - g.y, ll = Math.hypot(lx, ly) || 1;
-    const stub = street([{ x: g.x - (lx / ll) * 4, y: g.y - (ly / ll) * 4 }, { x: g.x + (lx / ll) * Math.max(5, ll * 0.4), y: g.y + (ly / ll) * Math.max(5, ll * 0.4) }], 3.2, 3, 'lane');
+    const lx = ins.c.x - g.x,
+      ly = ins.c.y - g.y,
+      ll = Math.hypot(lx, ly) || 1;
+    const stub = street(
+      [
+        { x: g.x - (lx / ll) * 4, y: g.y - (ly / ll) * 4 },
+        { x: g.x + (lx / ll) * Math.max(5, ll * 0.4), y: g.y + (ly / ll) * Math.max(5, ll * 0.4) },
+      ],
+      3.2,
+      3,
+      'lane',
+    );
     out.streets.push(stub);
     // the way to the foot of the hill
     if (dist(g, foot) > 6) out.lines.push({ kind: 'footpath', path: [g, foot], width: 2 });
@@ -229,7 +277,10 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
       out.blocks.push({ poly: b, kind: 'block', quarter: qi });
       const pi = out.parcels.length;
       const fr = fi.frontage(b);
-      if (j > 0 || fr.len < 3.2) { out.parcels.push({ poly: b, use: 'garden', block: bi }); return; }
+      if (j > 0 || fr.len < 3.2) {
+        out.parcels.push({ poly: b, use: 'garden', block: bi });
+        return;
+      }
       if (L.kind === 'party') {
         out.parcels.push({ poly: b, use: 'meadow', block: bi });
         out.squares.push(b);
@@ -242,10 +293,17 @@ export function shireVillage(cc: CampCtx, c0: Vec2, pop: number, rng: Rng): Camp
       const ang = Math.atan2(fr.mid ? fr.mid.y - pcOf(b).y : 0, fr.mid ? fr.mid.x - pcOf(b).x : 1) + Math.PI / 2;
       if (L.kind === 'inn') {
         const h = fitIn(b, (q, s) => roundedRect(q, ang, 22 * s, 11 * s, 3, 3), [], { margin: 2, gap: 0, minScale: 0.6 });
-        if (h) { out.buildings.push({ poly: h, kind: 'landmark', parcel: pi, arch: 'inn', roof: 'gable', storeys: 2, material: 'timber' }); out.landmarks.push({ kind: 'inn', poly: h }); out.sites.push({ id: 'inn', kind: 'inn', role: 'market', lot: b, anchor: inscribed(h, [], 0.5).c }); }
+        if (h) {
+          out.buildings.push({ poly: h, kind: 'landmark', parcel: pi, arch: 'inn', roof: 'gable', storeys: 2, material: 'timber' });
+          out.landmarks.push({ kind: 'inn', poly: h });
+          out.sites.push({ id: 'inn', kind: 'inn', role: 'market', lot: b, anchor: inscribed(h, [], 0.5).c });
+        }
       } else {
         const h = fitIn(b, (q, s) => rect(q, ang, 13 * s, 8 * s), [], { margin: 1.5, gap: 0, minScale: 0.6 });
-        if (h) { out.buildings.push({ poly: h, kind: 'landmark', parcel: pi, arch: 'watermill', roof: 'gable', storeys: 2, material: 'timber' }); out.landmarks.push({ kind: 'mill', poly: h }); }
+        if (h) {
+          out.buildings.push({ poly: h, kind: 'landmark', parcel: pi, arch: 'watermill', roof: 'gable', storeys: 2, material: 'timber' });
+          out.landmarks.push({ kind: 'mill', poly: h });
+        }
       }
     });
   }
@@ -262,7 +320,8 @@ function fillSmial(out: CampOut, pi: number, lot: Polygon, s: Status, top: Vec2,
   // uphill: toward the top; the smial along the contour, at the uphill side of the garden
   const up = Math.atan2(top.y - ins.c.y, top.x - ins.c.x);
   const along = up + Math.PI / 2;
-  const L0 = s === 0 ? r.range(22, 28) : [0, r.range(15, 18), r.range(11, 15), r.range(8, 10)][s], W0 = s === 0 ? 11 : r.range(6.5, 8);
+  const L0 = s === 0 ? r.range(22, 28) : [0, r.range(15, 18), r.range(11, 15), r.range(8, 10)][s],
+    W0 = s === 0 ? 11 : r.range(6.5, 8);
   const back = at(ins.c, up, ins.r * 0.45);
   const sm = fitIn(lot, (q, k) => smial(q, along, L0 * k, W0 * Math.max(0.85, k)), [], { margin: 1.6, gap: 0, minScale: 0.6, cands: [back, ins.c] });
   if (!sm) return;
@@ -280,15 +339,26 @@ function fillSmial(out: CampOut, pi: number, lot: Polygon, s: Status, top: Vec2,
   if (gate) out.lines.push({ kind: 'footpath', path: [door, gate], width: 1.2 });
   // the vegetable garden in front, a shed, fruit trees
   const bed = fitIn(lot, (q, k) => rect(q, along, Math.min(14, ins.r * 1.1) * k, Math.min(6, ins.r * 0.45) * k), placed, { margin: 1.4, gap: 1.6, minScale: 0.55, cands: [at(ins.c, up + Math.PI, ins.r * 0.35)] });
-  if (bed) { out.landmarks.push({ kind: 'garden-bed', poly: bed }); placed.push(bed); }
-  if (r.chance(0.5)) { const sh = fitIn(lot, (q, k) => rect(q, along, 4 * k, 3 * k), placed, { margin: 1.2, gap: 2, minScale: 0.85, step: 2.5 }); if (sh) { placed.push(sh); out.buildings.push({ poly: sh, kind: 'outbuilding', parcel: pi, arch: 'garden-shed', roof: 'gable', storeys: 1, material: 'timber' }); } }
+  if (bed) {
+    out.landmarks.push({ kind: 'garden-bed', poly: bed });
+    placed.push(bed);
+  }
+  if (r.chance(0.5)) {
+    const sh = fitIn(lot, (q, k) => rect(q, along, 4 * k, 3 * k), placed, { margin: 1.2, gap: 2, minScale: 0.85, step: 2.5 });
+    if (sh) {
+      placed.push(sh);
+      out.buildings.push({ poly: sh, kind: 'outbuilding', parcel: pi, arch: 'garden-shed', roof: 'gable', storeys: 1, material: 'timber' });
+    }
+  }
   for (let k = 0; k < r.int(1, 4); k++) {
     const tq = { x: ins.c.x + r.range(-1, 1) * ins.r * 0.85, y: ins.c.y + r.range(-1, 1) * ins.r * 0.85 };
     const tr = r.range(2.2, 3.8);
-    if (pointInRing(lot, tq) && !placed.some((p) => pointInRing(p, tq) || p.some((q) => dist(q, tq) < tr + 0.5))) out.trees!.push({ x: tq.x, y: tq.y, r: tr });
+    if (pointInRing(lot, tq) && !placed.some(p => pointInRing(p, tq) || p.some(q => dist(q, tq) < tr + 0.5))) out.trees!.push({ x: tq.x, y: tq.y, r: tr });
   }
   hedges.push({ ring: lot, gates: gate ? [{ p: gate, width: 2.4 }] : [] });
-  void face; void obb; void hut;
+  void face;
+  void obb;
+  void hut;
 }
 
 /** Shire farm hamlet: a few farms on their hedged fields, cottages above ground (the outlying form). */
@@ -296,33 +366,42 @@ export function shireFarms(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut
   const sk = Math.sqrt(cc.sprawl);
   const n = Math.max(1, Math.round(pop / 7));
   const st = statusLadder(n, rng.fork('status'));
-  return dispersedFarms(cc, c, st, {
-    radius: (s: Status, r: Rng) => [r.range(30, 36), r.range(25, 30), r.range(20, 25), r.range(16, 20)][s] * sk,
-    gap: 28 * sk,
-    spread: (50 + Math.sqrt(n) * 60) * sk,
-    wobble: 0.08,
-    aspect: [1.1, 1.5],
-    fill: (o, pi, yard, home, s, gate, r) => {
-      const ins = inscribed(yard, [], 0.5);
-      const toward = gate ? Math.atan2(gate.y - ins.c.y, gate.x - ins.c.x) : 0;
-      const placed: Polygon[] = [];
-      // a smial dug into a bank if the ground slopes, else a round-ended cottage; a barn, the garden, trees
-      const h = fitIn(yard, (q, k) => roundedRect(q, toward + Math.PI / 2, (s === 0 ? 18 : 12) * k, 8 * k, 3.4, 3), placed, { margin: 2, gap: 0, minScale: 0.6 });
-      if (!h) return;
-      placed.push(h);
-      o.buildings.push({ poly: h, kind: 'house', parcel: pi, arch: 'hobbit-cottage', roof: 'thatch-round', storeys: 1, material: 'thatch' });
-      const b2 = fitIn(yard, (q, k) => rect(q, toward, 10 * k, 6 * k), placed, { margin: 1.5, gap: 3, minScale: 0.7 });
-      if (b2) { placed.push(b2); o.buildings.push({ poly: b2, kind: 'outbuilding', parcel: pi, arch: 'barn', roof: 'gable', storeys: 1, material: 'timber' }); }
-      const bed = fitIn(yard, (q, k) => rect(q, toward, 10 * k, 6 * k), placed, { margin: 1.5, gap: 2, minScale: 0.6 });
-      if (bed) o.landmarks.push({ kind: 'garden-bed', poly: bed });
-      o.trees = o.trees ?? [];
-      for (let k = 0; k < r.int(2, 5); k++) {
-        const tq = { x: ins.c.x + r.range(-1, 1) * ins.r * 0.85, y: ins.c.y + r.range(-1, 1) * ins.r * 0.85 };
-        const tr = r.range(2.4, 4);
-        if (pointInRing(yard, tq) && !placed.some((p) => pointInRing(p, tq) || p.some((q) => dist(q, tq) < tr + 0.5)) && !(bed && pointInRing(bed, tq))) o.trees.push({ x: tq.x, y: tq.y, r: tr });
-      }
-      const g = gate ? nearestOn(home, gate) : null;
-      for (const pl of openRing(home, g ? [{ p: g, width: 3 }] : [])) o.lines.push({ kind: 'hedge', path: pl, width: 1.6 });
+  return dispersedFarms(
+    cc,
+    c,
+    st,
+    {
+      radius: (s: Status, r: Rng) => [r.range(30, 36), r.range(25, 30), r.range(20, 25), r.range(16, 20)][s] * sk,
+      gap: 28 * sk,
+      spread: (50 + Math.sqrt(n) * 60) * sk,
+      wobble: 0.08,
+      aspect: [1.1, 1.5],
+      fill: (o, pi, yard, home, s, gate, r) => {
+        const ins = inscribed(yard, [], 0.5);
+        const toward = gate ? Math.atan2(gate.y - ins.c.y, gate.x - ins.c.x) : 0;
+        const placed: Polygon[] = [];
+        // a smial dug into a bank if the ground slopes, else a round-ended cottage; a barn, the garden, trees
+        const h = fitIn(yard, (q, k) => roundedRect(q, toward + Math.PI / 2, (s === 0 ? 18 : 12) * k, 8 * k, 3.4, 3), placed, { margin: 2, gap: 0, minScale: 0.6 });
+        if (!h) return;
+        placed.push(h);
+        o.buildings.push({ poly: h, kind: 'house', parcel: pi, arch: 'hobbit-cottage', roof: 'thatch-round', storeys: 1, material: 'thatch' });
+        const b2 = fitIn(yard, (q, k) => rect(q, toward, 10 * k, 6 * k), placed, { margin: 1.5, gap: 3, minScale: 0.7 });
+        if (b2) {
+          placed.push(b2);
+          o.buildings.push({ poly: b2, kind: 'outbuilding', parcel: pi, arch: 'barn', roof: 'gable', storeys: 1, material: 'timber' });
+        }
+        const bed = fitIn(yard, (q, k) => rect(q, toward, 10 * k, 6 * k), placed, { margin: 1.5, gap: 2, minScale: 0.6 });
+        if (bed) o.landmarks.push({ kind: 'garden-bed', poly: bed });
+        o.trees = o.trees ?? [];
+        for (let k = 0; k < r.int(2, 5); k++) {
+          const tq = { x: ins.c.x + r.range(-1, 1) * ins.r * 0.85, y: ins.c.y + r.range(-1, 1) * ins.r * 0.85 };
+          const tr = r.range(2.4, 4);
+          if (pointInRing(yard, tq) && !placed.some(p => pointInRing(p, tq) || p.some(q => dist(q, tq) < tr + 0.5)) && !(bed && pointInRing(bed, tq))) o.trees.push({ x: tq.x, y: tq.y, r: tr });
+        }
+        const g = gate ? nearestOn(home, gate) : null;
+        for (const pl of openRing(home, g ? [{ p: g, width: 3 }] : [])) o.lines.push({ kind: 'hedge', path: pl, width: 1.6 });
+      },
     },
-  }, rng);
+    rng,
+  );
 }

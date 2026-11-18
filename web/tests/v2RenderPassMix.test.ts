@@ -10,15 +10,19 @@ import { resolveSettingsAppearance } from '../src/v2/appearance';
 describe('mixing existing display components', () => {
   it('accepts every component and source style without altering any generation input', () => {
     const components: RenderMixComponent[] = ['ground', 'water', 'roads', 'vegetation', 'buildings', 'text', 'lighting', 'plan'];
-    for (const component of components) for (const preset of PRESET_IDS) {
-      const settings = defaultSettings(), original = structuredClone(settings), key = terrainCacheKey(settings);
-      mixRenderStyle(settings, component, preset);
-      expect(() => validateSettings(settings), `${component}: ${preset}`).not.toThrow();
-      expect(terrainCacheKey(settings)).toBe(key);
-      // New recipes carry a default appearance (settings.ts): compare the generation inputs on both sides.
-      const { appearance: _appearance, ...generation } = settings, { appearance: _original, ...originalGeneration } = original;
-      expect(generation).toEqual(originalGeneration);
-    }
+    for (const component of components)
+      for (const preset of PRESET_IDS) {
+        const settings = defaultSettings(),
+          original = structuredClone(settings),
+          key = terrainCacheKey(settings);
+        mixRenderStyle(settings, component, preset);
+        expect(() => validateSettings(settings), `${component}: ${preset}`).not.toThrow();
+        expect(terrainCacheKey(settings)).toBe(key);
+        // New recipes carry a default appearance (settings.ts): compare the generation inputs on both sides.
+        const { appearance: _appearance, ...generation } = settings,
+          { appearance: _original, ...originalGeneration } = original;
+        expect(generation).toEqual(originalGeneration);
+      }
   });
 
   it('mixes water and vegetation independently while preserving all other components and visibility', () => {

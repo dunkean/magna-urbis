@@ -21,8 +21,6 @@ export const CANVAS_MAP_STROKES = {
 
 export type MapStroke = { meters: number; minPx: number; maxPx: number };
 /** Canvas world->screen scale; independent of map extent and device pixel ratio. */
-export const mapStrokeWidth = (s: MapStroke, scale: number, weight = 1): number =>
-  Math.min(s.maxPx * weight, Math.max(s.minPx * weight, s.meters * scale * weight)) / scale;
+export const mapStrokeWidth = (s: MapStroke, scale: number, weight = 1): number => Math.min(s.maxPx * weight, Math.max(s.minPx * weight, s.meters * scale * weight)) / scale;
 /** Portable SVG world widths for the actual export scale; resvg does not implement non-scaling-stroke. */
-export const svgMapStroke = (s: MapStroke, scale: number, weight = 1): string =>
-  `stroke-width="${Math.round(mapStrokeWidth(s, scale, weight) * 10000) / 10000}"`;
+export const svgMapStroke = (s: MapStroke, scale: number, weight = 1): string => `stroke-width="${Math.round(mapStrokeWidth(s, scale, weight) * 10000) / 10000}"`;

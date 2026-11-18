@@ -5,8 +5,14 @@ import type { SettlementRaster } from '../../rust/bridge/settlements';
 const wasm = vi.hoisted(() => ({ quarters: vi.fn(), parcels: vi.fn() }));
 vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', () => ({
   default: vi.fn(),
-  TerrainEngine: vi.fn(), TerrainPipeline: vi.fn(), GenerationNoisePlan: vi.fn(), HydrologyEngine: vi.fn(),
-  erosion_defaults: vi.fn(), flood_hydrology: vi.fn(), erode_relief: vi.fn(), set_erosion_tuning: vi.fn(),
+  TerrainEngine: vi.fn(),
+  TerrainPipeline: vi.fn(),
+  GenerationNoisePlan: vi.fn(),
+  HydrologyEngine: vi.fn(),
+  erosion_defaults: vi.fn(),
+  flood_hydrology: vi.fn(),
+  erode_relief: vi.fn(),
+  set_erosion_tuning: vi.fn(),
   SettlementTerrain: class {
     urban_quarters = wasm.quarters;
     urban_parcels = wasm.parcels;
@@ -18,21 +24,24 @@ import { createUrbanEngine, defaultLayoutConfig } from '../../rust/bridge/urban'
 const runtime = { profile: 'local' as const, server: 'http://127.0.0.1:8791' };
 const redditOptions = ['oldEnclosureCitadel', 'medievalWalls', 'riverControl', 'dryDitches', 'gateVillages', 'shelteredHarbour', 'powerHighGround', 'mergeParallelStreets', 'regularGridOutline', 'naturalCampApproaches'] as const;
 const disabledOptions = Object.fromEntries(redditOptions.map(key => [key, false]));
-const layout = (): Layout => ({ key: 'town', culture: 'european-organic', center: { x: 1.2345678901234567, y: 2 },
-  config: defaultLayoutConfig(), quarters: [], streets: [], blocks: [], warnings: [] });
-const raster = (): SettlementRaster => ({ width: 100, n: 2, height: new Float32Array(4), water: new Uint8Array(4),
-  waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4) });
-afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+const layout = (): Layout => ({ key: 'town', culture: 'european-organic', center: { x: 1.2345678901234567, y: 2 }, config: defaultLayoutConfig(), quarters: [], streets: [], blocks: [], warnings: [] });
+const raster = (): SettlementRaster => ({ width: 100, n: 2, height: new Float32Array(4), water: new Uint8Array(4), waterLevel: new Float32Array(4), riverWidth: new Float32Array(4), riverIds: new Int32Array(4) });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
 
 describe('fortification style native transport compatibility', () => {
   it('omits the default in real local request JSON, while preserving explicit choices and old-engine errors', async () => {
     const sent: Record<string, any>[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
-      const input = JSON.parse(init.body); sent.push(input);
-      return Object.hasOwn(input.layoutConfig, 'fortificationStyle')
-        ? new Response(JSON.stringify({ error: 'unknown field `fortificationStyle`' }), { status: 400 })
-        : new Response(JSON.stringify({ id: input.id, layouts: [] }));
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init) => {
+        const input = JSON.parse(init.body);
+        sent.push(input);
+        return Object.hasOwn(input.layoutConfig, 'fortificationStyle') ? new Response(JSON.stringify({ error: 'unknown field `fortificationStyle`' }), { status: 400 }) : new Response(JSON.stringify({ id: input.id, layouts: [] }));
+      }),
+    );
     const engine = await createUrbanEngine(runtime);
     const config = defaultLayoutConfig();
     expect((await engine.run({ id: 1, kind: 'quarters', seed: 'old', runtime, layoutConfig: config })).error).toBeUndefined();
@@ -51,11 +60,16 @@ describe('fortification style native transport compatibility', () => {
 
   it('also omits auto from configs embedded in imported layouts and non-quarter requests without mutating them', async () => {
     const sent: Record<string, any>[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
-      const input = JSON.parse(init.body); sent.push(input);
-      return new Response(JSON.stringify({ id: input.id }));
-    }));
-    const engine = await createUrbanEngine(runtime), imported = layout();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init) => {
+        const input = JSON.parse(init.body);
+        sent.push(input);
+        return new Response(JSON.stringify({ id: input.id }));
+      }),
+    );
+    const engine = await createUrbanEngine(runtime),
+      imported = layout();
     const explicit = { ...layout(), key: 'explicit', config: { ...defaultLayoutConfig(), fortificationStyle: 'wengcheng' as const } };
     for (const [id, kind] of (['parcels', 'programme', 'buildingSites', 'builtCapacity'] as const).entries()) {
       await engine.run({ id, kind, seed: 'old-import', runtime, layoutConfig: defaultLayoutConfig(), layouts: [imported, explicit] });
@@ -64,8 +78,7 @@ describe('fortification style native transport compatibility', () => {
       expect(input.layoutConfig).not.toHaveProperty('fortificationStyle');
       expect(input.layouts[0].config).not.toHaveProperty('fortificationStyle');
       // New default-off options are omitted even alongside an explicit style.
-      for (const config of [input.layoutConfig, input.layouts[0].config, input.layouts[1].config])
-        for (const key of redditOptions) expect(config).not.toHaveProperty(key);
+      for (const config of [input.layoutConfig, input.layouts[0].config, input.layouts[1].config]) for (const key of redditOptions) expect(config).not.toHaveProperty(key);
       expect({ ...input.layouts[1], config: { ...defaultLayoutConfig(), ...input.layouts[1].config, ...disabledOptions } }).toEqual(explicit);
       expect({ ...input.layouts[0], config: imported.config }).toEqual(imported);
     }
@@ -74,12 +87,18 @@ describe('fortification style native transport compatibility', () => {
 
   it.each(redditOptions)('preserves explicit %s on direct and retained-layout requests without retry or mutation', async key => {
     const sent: Record<string, any>[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
-      const input = JSON.parse(init.body); sent.push(input);
-      return new Response(JSON.stringify({ error: `unknown field \`${key}\`` }), { status: 400 });
-    }));
-    const engine = await createUrbanEngine(runtime), config = { ...defaultLayoutConfig(), [key]: true };
-    const imported = { ...layout(), config }, before = structuredClone(imported);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init) => {
+        const input = JSON.parse(init.body);
+        sent.push(input);
+        return new Response(JSON.stringify({ error: `unknown field \`${key}\`` }), { status: 400 });
+      }),
+    );
+    const engine = await createUrbanEngine(runtime),
+      config = { ...defaultLayoutConfig(), [key]: true };
+    const imported = { ...layout(), config },
+      before = structuredClone(imported);
     for (const kind of ['quarters', 'parcels', 'programme', 'buildingSites', 'builtCapacity'] as const) {
       const result = await engine.run({ id: sent.length, kind, seed: 'opt-in', runtime, layoutConfig: config, layouts: [imported] });
       expect(result.error).toContain(`unknown field \`${key}\``);
@@ -89,13 +108,15 @@ describe('fortification style native transport compatibility', () => {
         for (const other of redditOptions) if (other !== key) expect(value).not.toHaveProperty(other);
       }
     }
-    expect(sent).toHaveLength(5); expect(imported).toEqual(before);
+    expect(sent).toHaveLength(5);
+    expect(imported).toEqual(before);
   });
 
   it('keeps the WASM config and retained-layout JSON compatible without changing returned snapshots', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ arrayBuffer: async () => new ArrayBuffer(0) }));
     const imported = layout();
-    wasm.quarters.mockReturnValue(JSON.stringify([imported])); wasm.parcels.mockReturnValue('[]');
+    wasm.quarters.mockReturnValue(JSON.stringify([imported]));
+    wasm.parcels.mockReturnValue('[]');
     const engine = await createUrbanEngine();
     const result = await engine.run({ id: 1, kind: 'quarters', seed: 'wasm', raster: raster() });
     expect(result.layouts).toEqual([imported]);

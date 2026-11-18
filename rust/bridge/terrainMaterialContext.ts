@@ -14,16 +14,22 @@ const attributes: WebGLContextAttributes = { alpha: true, premultipliedAlpha: fa
 export function createMaterialRasterContext(): MaterialRasterContext {
   if (typeof OffscreenCanvas !== 'undefined') {
     try {
-      const canvas = new OffscreenCanvas(1, 1), gl = canvas.getContext('webgl2', attributes);
+      const canvas = new OffscreenCanvas(1, 1),
+        gl = canvas.getContext('webgl2', attributes);
       if (gl && !gl.isContextLost()) return { canvas, gl };
-    } catch { /* WebGL may be available only on a page canvas. */ }
+    } catch {
+      /* WebGL may be available only on a page canvas. */
+    }
   }
   if (typeof document !== 'undefined') {
     try {
-      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
       const gl = canvas.getContext('webgl2', attributes);
       if (gl && !gl.isContextLost()) return { canvas, gl };
-    } catch { /* Report one capability error after both supported paths. */ }
+    } catch {
+      /* Report one capability error after both supported paths. */
+    }
   }
   throw new MaterialRasterUnavailableError();
 }

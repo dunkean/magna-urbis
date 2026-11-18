@@ -9,8 +9,7 @@ export interface UrbanSourceHandle {
 }
 
 export function validateUrbanSource(source: UrbanSourceHandle): void {
-  if (source.version !== 1 || [source.session, source.terrainRevision, source.layoutsRevision, source.partitionsRevision]
-    .some(value => typeof value !== 'string' || !value.length || value.length > 128)) {
+  if (source.version !== 1 || [source.session, source.terrainRevision, source.layoutsRevision, source.partitionsRevision].some(value => typeof value !== 'string' || !value.length || value.length > 128)) {
     throw new Error('Invalid retained urban source.');
   }
 }

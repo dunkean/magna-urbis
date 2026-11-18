@@ -5,6 +5,8 @@ export async function requestWebGpuAdapter(): Promise<GPUAdapter | null> {
   try {
     const preferred = await gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (preferred) return preferred;
-  } catch { /* Some browsers reject an explicit preference but provide a default adapter. */ }
+  } catch {
+    /* Some browsers reject an explicit preference but provide a default adapter. */
+  }
   return gpu.requestAdapter();
 }

@@ -3,14 +3,20 @@ import { buildForestField, type ForestField, type ForestFieldInput, type ForestS
 /** Builds the canonical Render3D forest field off the UI thread.
  * Inputs arrive as copies, so the bench keeps its retained heights, water and
  * river segments; the field and bank-envelope RGBA are transferred back. */
-export interface ForestRequest { input: ForestFieldInput; settings: ForestSettings }
+export interface ForestRequest {
+  input: ForestFieldInput;
+  settings: ForestSettings;
+}
 export type ForestReply = { field: ForestField; ms: number } | { error: string };
 
 self.onmessage = async (event: MessageEvent<ForestRequest>) => {
-  const { input, settings } = event.data, started = performance.now();
+  const { input, settings } = event.data,
+    started = performance.now();
   try {
     const field = await buildForestField(input, settings);
     const transfer = [field.rgba.buffer as ArrayBuffer, ...(field.bank ? [field.bank.buffer as ArrayBuffer] : [])];
     self.postMessage({ field, ms: performance.now() - started } satisfies ForestReply, { transfer });
-  } catch (error) { self.postMessage({ error: error instanceof Error ? error.message : String(error) } satisfies ForestReply); }
+  } catch (error) {
+    self.postMessage({ error: error instanceof Error ? error.message : String(error) } satisfies ForestReply);
+  }
 };

@@ -26,12 +26,20 @@ let preparing: Promise<void> = Promise.resolve();
 if (forced !== 'webgl' && typeof navigator !== 'undefined' && navigator.gpu) {
   state = 'pending';
   preparing = import('./terrain3dGpu')
-    .then(async module => { gpuModule = module; state = await module.prepareTerrain3dGpu(forced === 'webgpu') ? 'ready' : 'failed'; })
-    .catch(error => { state = 'failed'; console.warn('WebGPU 3D view unavailable, using WebGL2:', error); });
+    .then(async module => {
+      gpuModule = module;
+      state = (await module.prepareTerrain3dGpu(forced === 'webgpu')) ? 'ready' : 'failed';
+    })
+    .catch(error => {
+      state = 'failed';
+      console.warn('WebGPU 3D view unavailable, using WebGL2:', error);
+    });
 }
 
 /** Resolves once the WebGPU device is prepared or refused (for pages that can wait before creating a view). */
-export function terrain3dBackendReady(): Promise<void> { return preparing; }
+export function terrain3dBackendReady(): Promise<void> {
+  return preparing;
+}
 
 /** A 3D view on `canvas` (Terrain3d's constructor arguments), WebGPU when prepared, else WebGL2 (upgraded to
  * WebGPU when the device becomes ready). */
@@ -44,10 +52,35 @@ export function terrain3dBackend(view: Terrain3d): Terrain3dBackend {
   return view.getStatus('renderer') === 'webgpu' ? 'webgpu' : 'webgl';
 }
 
-const RECOVERY_ATTEMPTS = 3, RECOVERY_DELAY_MS = 500, LOSS_WINDOW_MS = 60_000, WARMUP_LIMIT_MS = 45_000;
+const RECOVERY_ATTEMPTS = 3,
+  RECOVERY_DELAY_MS = 500,
+  LOSS_WINDOW_MS = 60_000,
+  WARMUP_LIMIT_MS = 45_000;
 /** Calls that change a view's inputs or camera: also applied to a view being prepared behind it. */
-const MIRRORED = new Set<PropertyKey>(['setSurface', 'setHeightSampler', 'setGroundCuts', 'setGroundMaterial', 'setLook', 'setRenderV2Season', 'setTileBoundaries', 'setBuildings',
-  'replaceBuildings', 'setForest', 'setNearTrees', 'setTreeDistance', 'setTileLoader', 'invalidateTiles', 'setTexture', 'setCamera', 'setNavigation', 'setActive', 'resize', 'fit', 'zoom', 'north']);
+const MIRRORED = new Set<PropertyKey>([
+  'setSurface',
+  'setHeightSampler',
+  'setGroundCuts',
+  'setGroundMaterial',
+  'setLook',
+  'setRenderV2Season',
+  'setTileBoundaries',
+  'setBuildings',
+  'replaceBuildings',
+  'setForest',
+  'setNearTrees',
+  'setTreeDistance',
+  'setTileLoader',
+  'invalidateTiles',
+  'setTexture',
+  'setCamera',
+  'setNavigation',
+  'setActive',
+  'resize',
+  'fit',
+  'zoom',
+  'north',
+]);
 
 /** A drawing canvas laid exactly over the owner's element (same offset parent, box and stacking), without
  * pointer events: the element underneath keeps the input. It follows the element's box and visibility. */
@@ -57,7 +90,9 @@ class Overlay {
   private readonly attributes = new MutationObserver(() => this.sync());
   constructor(private readonly element: HTMLElement) {
     const canvas = this.canvas;
-    canvas.dataset.terrain3dSurface = ''; canvas.setAttribute('aria-hidden', 'true'); canvas.tabIndex = -1;
+    canvas.dataset.terrain3dSurface = '';
+    canvas.setAttribute('aria-hidden', 'true');
+    canvas.tabIndex = -1;
     Object.assign(canvas.style, { position: 'absolute', right: 'auto', bottom: 'auto', margin: '0', padding: '0', border: '0', pointerEvents: 'none', visibility: 'hidden' });
     element.after(canvas);
     this.sizes.observe(element);
@@ -66,14 +101,23 @@ class Overlay {
     canvas.addEventListener('webglcontextrestored', () => element.dispatchEvent(new Event('webglcontextrestored')));
     this.sync();
   }
-  show(): void { this.canvas.style.visibility = ''; }
-  sync(): void {
-    const element = this.element, style = this.canvas.style;
-    if (!element.isConnected || !element.getClientRects().length) { style.display = 'none'; return; }
-    Object.assign(style, { display: 'block', left: `${element.offsetLeft + element.clientLeft}px`, top: `${element.offsetTop + element.clientTop}px`,
-      width: `${element.clientWidth}px`, height: `${element.clientHeight}px`, zIndex: getComputedStyle(element).zIndex });
+  show(): void {
+    this.canvas.style.visibility = '';
   }
-  dispose(): void { this.sizes.disconnect(); this.attributes.disconnect(); this.canvas.remove(); }
+  sync(): void {
+    const element = this.element,
+      style = this.canvas.style;
+    if (!element.isConnected || !element.getClientRects().length) {
+      style.display = 'none';
+      return;
+    }
+    Object.assign(style, { display: 'block', left: `${element.offsetLeft + element.clientLeft}px`, top: `${element.offsetTop + element.clientTop}px`, width: `${element.clientWidth}px`, height: `${element.clientHeight}px`, zIndex: getComputedStyle(element).zIndex });
+  }
+  dispose(): void {
+    this.sizes.disconnect();
+    this.attributes.disconnect();
+    this.canvas.remove();
+  }
 }
 
 /** The displayed view behind the owner's Terrain3d, and its backend switches. */
@@ -91,20 +135,29 @@ class Terrain3dHost {
   private final = false;
   private disposed = false;
 
-  constructor(private readonly element: HTMLCanvasElement, private readonly onChange: () => void, private readonly onRender: (() => void) | undefined,
-    private readonly options: Terrain3dOptions) {
+  constructor(
+    private readonly element: HTMLCanvasElement,
+    private readonly onChange: () => void,
+    private readonly onRender: (() => void) | undefined,
+    private readonly options: Terrain3dOptions,
+  ) {
     this.current = this.initial();
     this.view = new Proxy(Object.create(Terrain3d.prototype) as Terrain3d, {
       get: (_, key) => {
         if (key === 'dispose') return () => this.dispose();
-        const view = this.current, value: unknown = Reflect.get(view, key, view);
+        const view = this.current,
+          value: unknown = Reflect.get(view, key, view);
         if (typeof value !== 'function') return value;
         const warming = this.warming?.view;
         if (!warming || !MIRRORED.has(key)) return value.bind(view);
         return (...args: unknown[]) => {
           const result: unknown = value.apply(view, args);
-          try { (Reflect.get(warming, key) as (...a: unknown[]) => unknown).apply(warming, args); }
-          catch (error) { console.warn('WebGPU 3D view (in preparation):', error); this.abandonWarmup(); }
+          try {
+            (Reflect.get(warming, key) as (...a: unknown[]) => unknown).apply(warming, args);
+          } catch (error) {
+            console.warn('WebGPU 3D view (in preparation):', error);
+            this.abandonWarmup();
+          }
           return result;
         };
       },
@@ -122,7 +175,12 @@ class Terrain3dHost {
     // Opened before the device (first preparation, or a new one after a loss elsewhere): upgrade when it is ready.
     if (forced !== 'webgl' && (state === 'pending' || state === 'ready')) {
       const device = state === 'pending' ? preparing : gpuModule!.prepareTerrain3dGpu(false).then(() => undefined);
-      void device.then(() => this.upgrade(), () => { /* stays on WebGL2 */ });
+      void device.then(
+        () => this.upgrade(),
+        () => {
+          /* stays on WebGL2 */
+        },
+      );
     }
     return view;
   }
@@ -131,21 +189,29 @@ class Terrain3dHost {
   private create(backend: Terrain3dBackend, canvas: HTMLCanvasElement, silent: boolean): Terrain3d | undefined {
     let view: Terrain3d | undefined;
     const shown = (): boolean => view === this.current && !this.disposed;
-    const onChange = (): void => { if (shown()) this.onChange(); };
-    const onRender = this.onRender && ((): void => { if (shown()) this.onRender!(); });
+    const onChange = (): void => {
+      if (shown()) this.onChange();
+    };
+    const onRender =
+      this.onRender &&
+      ((): void => {
+        if (shown()) this.onRender!();
+      });
     const options: Terrain3dOptions = { ...this.options, element: this.element, silent };
-    view = backend === 'webgpu'
-      ? gpuModule?.createTerrain3dGpu(canvas, onChange, onRender, options, () => this.lost(view!))
-      : new Terrain3d(canvas, onChange, onRender, options);
+    view = backend === 'webgpu' ? gpuModule?.createTerrain3dGpu(canvas, onChange, onRender, options, () => this.lost(view!)) : new Terrain3d(canvas, onChange, onRender, options);
     return view;
   }
 
   /** Shows `next` (on `overlay`) in place of the current view, which is released. */
   private swap(next: Terrain3d, overlay: Overlay): void {
-    const previous = this.current, previousOverlay = this.overlay;
-    this.current = next; this.overlay = overlay;
-    overlay.show(); next.showStatus();
-    previous.dispose(); previousOverlay?.dispose();
+    const previous = this.current,
+      previousOverlay = this.overlay;
+    this.current = next;
+    this.overlay = overlay;
+    overlay.show();
+    next.showStatus();
+    previous.dispose();
+    previousOverlay?.dispose();
   }
 
   /** WebGL2 → WebGPU once the device is ready: prepared silently, shown when its frame is complete. */
@@ -153,11 +219,23 @@ class Terrain3dHost {
     if (this.disposed || this.final || this.warming || terrain3dBackend(this.current) === 'webgpu') return;
     const overlay = new Overlay(this.element);
     let view: Terrain3d | undefined;
-    try { view = this.create('webgpu', overlay.canvas, true); }
-    catch (error) { console.warn('WebGPU 3D view: upgrade failed, staying on WebGL2:', error); }
-    if (!view) { overlay.dispose(); return; }
-    try { this.current.transferTo(view); }
-    catch (error) { console.warn('WebGPU 3D view: upgrade failed, staying on WebGL2:', error); view.dispose(); overlay.dispose(); return; }
+    try {
+      view = this.create('webgpu', overlay.canvas, true);
+    } catch (error) {
+      console.warn('WebGPU 3D view: upgrade failed, staying on WebGL2:', error);
+    }
+    if (!view) {
+      overlay.dispose();
+      return;
+    }
+    try {
+      this.current.transferTo(view);
+    } catch (error) {
+      console.warn('WebGPU 3D view: upgrade failed, staying on WebGL2:', error);
+      view.dispose();
+      overlay.dispose();
+      return;
+    }
     this.warming = { view, overlay, started: performance.now() };
     this.settle();
   }
@@ -186,17 +264,24 @@ class Terrain3dHost {
   private abandonWarmup(): void {
     const warming = this.warming;
     if (!warming) return;
-    this.warming = undefined; clearTimeout(warming.timer);
-    warming.view.dispose(); warming.overlay.dispose();
+    this.warming = undefined;
+    clearTimeout(warming.timer);
+    warming.view.dispose();
+    warming.overlay.dispose();
   }
 
   /** The device of `view` is lost: recover the displayed view (a view in preparation is dropped). */
   private lost(view: Terrain3d): void {
     if (this.disposed) return;
-    if (this.warming?.view === view) { this.abandonWarmup(); return; }
+    if (this.warming?.view === view) {
+      this.abandonWarmup();
+      return;
+    }
     if (view !== this.current || this.recovering) return;
     this.recovering = true;
-    void this.recover().finally(() => { this.recovering = false; });
+    void this.recover().finally(() => {
+      this.recovering = false;
+    });
   }
   /** A new device, a new WebGPU view rebuilt from the lost one's inputs; else the WebGL2 fall back. */
   private async recover(): Promise<void> {
@@ -208,7 +293,7 @@ class Terrain3dHost {
       if (this.disposed) return;
       let overlay: Overlay | undefined, view: Terrain3d | undefined;
       try {
-        if (!gpuModule || !await gpuModule.prepareTerrain3dGpu(forced === 'webgpu')) throw new Error('WebGPU : plus d’adaptateur matériel.');
+        if (!gpuModule || !(await gpuModule.prepareTerrain3dGpu(forced === 'webgpu'))) throw new Error('WebGPU : plus d’adaptateur matériel.');
         if (this.disposed) return;
         overlay = new Overlay(this.element);
         view = this.create('webgpu', overlay.canvas, true);
@@ -218,14 +303,17 @@ class Terrain3dHost {
         console.info('WebGPU 3D view: device recreated, resources re-uploaded.');
         return;
       } catch (caught) {
-        view?.dispose(); overlay?.dispose();
-        error = caught; console.warn('WebGPU 3D view: device recreation failed:', caught);
+        view?.dispose();
+        overlay?.dispose();
+        error = caught;
+        console.warn('WebGPU 3D view: device recreation failed:', caught);
       }
     }
     if (!this.disposed) this.fallBack(error);
   }
   private fallBack(error: unknown): void {
-    const reason = error instanceof Error ? error.message : String(error), overlay = new Overlay(this.element);
+    const reason = error instanceof Error ? error.message : String(error),
+      overlay = new Overlay(this.element);
     try {
       const view = this.create('webgl', overlay.canvas, true)!;
       this.current.transferTo(view);
@@ -242,6 +330,8 @@ class Terrain3dHost {
     if (this.disposed) return;
     this.disposed = true;
     this.abandonWarmup();
-    this.current.dispose(); this.overlay?.dispose(); this.overlay = undefined;
+    this.current.dispose();
+    this.overlay?.dispose();
+    this.overlay = undefined;
   }
 }

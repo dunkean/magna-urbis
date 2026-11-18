@@ -6,7 +6,7 @@ import { isFantasyStyle } from '../../rust/bridge/fantasyPainting';
 
 // Old name-based predicates, kept inline as the oracle.
 const oldRender3d = (s: string): boolean => s === 'render3d' || s === 'render3d-brush' || s.startsWith('render-v2');
-const oldV2Number = (s: string): number => ({ 'render-v2': 1, 'render-v2-substrate': 2, 'render-v2-moisture': 3, 'render-v2-vegetation': 4, 'render-v2-snow': 5 } as Record<string, number>)[s] ?? 0;
+const oldV2Number = (s: string): number => (({ 'render-v2': 1, 'render-v2-substrate': 2, 'render-v2-moisture': 3, 'render-v2-vegetation': 4, 'render-v2-snow': 5 }) as Record<string, number>)[s] ?? 0;
 const oldSupports = (key: string, s: string): boolean => {
   if (['groundLow', 'groundHigh', 'forest', 'meadow'].includes(key)) return !/^(render|fantasy|copernicus)/.test(s);
   if (['waterShore', 'waterDeep', 'river'].includes(key)) return !s.startsWith('render-v2');
@@ -19,7 +19,7 @@ describe('style traits', () => {
   it('reproduce the former name-based predicates for every style', () => {
     expect(ids.length).toBeGreaterThan(14);
     for (const id of ids) {
-      if (id === 'parchment-render') continue;   // newer than the former predicates: the satellite ground repainted as a map
+      if (id === 'parchment-render') continue; // newer than the former predicates: the satellite ground repainted as a map
       const t = styleTraits(id);
       expect(terrainStyle(id).traits, id).toBe(t);
       expect(t.ground3d, id).toBe(oldRender3d(id));
@@ -39,8 +39,7 @@ describe('style traits', () => {
       expect(t.family === 'brush', id).toBe(id.startsWith('fantasy'));
       expect(t.paintedCityByDefault, id).toBe(id.startsWith('render'));
       expect(!!t.variantOf, id).toBe(id.startsWith('render-v2-'));
-      for (const key of ['groundLow', 'groundHigh', 'forest', 'meadow', 'waterShore', 'waterDeep', 'river', 'contour', 'paper'])
-        expect(supportsRenderColor(key as RenderColorKey, id), `${id}.${key}`).toBe(oldSupports(key, id));
+      for (const key of ['groundLow', 'groundHigh', 'forest', 'meadow', 'waterShore', 'waterDeep', 'river', 'contour', 'paper']) expect(supportsRenderColor(key as RenderColorKey, id), `${id}.${key}`).toBe(oldSupports(key, id));
     }
     expect(styleTraits('city-ground-map').family).toBe('map');
     expect(styleTraits('').paintedCityByDefault).toBe(false);

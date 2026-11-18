@@ -11,7 +11,9 @@ float surfaceGroundRetainWater(vec2 world,float coverage){
 
 /** Share the forest's retained bank texel with the close ground pass. */
 export function groundCoverInputsGlsl(source: string): string {
-  return source.replaceAll('textureLod(uForestBank,uv,0.)','surfaceGroundBankTexel(world,uv)')+`
+  return (
+    source.replaceAll('textureLod(uForestBank,uv,0.)', 'surfaceGroundBankTexel(world,uv)') +
+    `
 void surfaceGroundReadInputs(vec2 world,float fp){
   if(uQuality>0)return;
   if(uGroundCover.w<.5||uForest==0||uForestBrushes!=0||uRenderV2>1||fp>=10.)return;
@@ -22,7 +24,8 @@ void surfaceGroundReadInputs(vec2 world,float fp){
   float distance=bank.y>0.?bank.y-bank.x:1e9;
   surfaceGroundInputs(world,occupation,surfaceGroundWet>=.5?-max(distance,.3):distance);
 }
-`;
+`
+  );
 }
 
 // Material compositor ported from Neural Earth web/terrain_renderer.js (GPL-3.0).

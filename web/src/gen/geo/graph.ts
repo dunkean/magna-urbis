@@ -9,13 +9,36 @@ import { GridIndex } from './spatial';
 
 export type StreetKind = 'radial' | 'ring' | 'street' | 'lane' | 'close' | 'quay' | 'wall-lane' | 'track' | 'boundary';
 
-export interface EdgeAttrs { width: number; rank: number; phase: number; kind: StreetKind; street: number }
-export interface GNode { id: number; p: Vec2; edges: number[] }
-export interface GEdge extends EdgeAttrs { id: number; a: number; b: number; pts: Vec2[]; alive: boolean }
+export interface EdgeAttrs {
+  width: number;
+  rank: number;
+  phase: number;
+  kind: StreetKind;
+  street: number;
+}
+export interface GNode {
+  id: number;
+  p: Vec2;
+  edges: number[];
+}
+export interface GEdge extends EdgeAttrs {
+  id: number;
+  a: number;
+  b: number;
+  pts: Vec2[];
+  alive: boolean;
+}
 
-interface SegRef { e: number; i: number }
+interface SegRef {
+  e: number;
+  i: number;
+}
 
-export interface InsertOpts { snapR?: number; mergeDist?: number; mergeAngleDeg?: number }
+export interface InsertOpts {
+  snapR?: number;
+  mergeDist?: number;
+  mergeAngleDeg?: number;
+}
 
 export class StreetGraph {
   nodes: GNode[] = [];
@@ -33,10 +56,14 @@ export class StreetGraph {
   }
 
   nodeNear(p: Vec2, r: number): number {
-    let best = -1, bd = r;
+    let best = -1,
+      bd = r;
     for (const id of this.nodeIdx.queryPt(p, r)) {
       const d = dist(this.nodes[id].p, p);
-      if (d <= bd) { bd = d; best = id; }
+      if (d <= bd) {
+        bd = d;
+        best = id;
+      }
     }
     return best;
   }
@@ -55,8 +82,8 @@ export class StreetGraph {
   private killEdge(id: number): void {
     const e = this.edges[id];
     e.alive = false;
-    this.nodes[e.a].edges = this.nodes[e.a].edges.filter((x) => x !== id);
-    this.nodes[e.b].edges = this.nodes[e.b].edges.filter((x) => x !== id);
+    this.nodes[e.a].edges = this.nodes[e.a].edges.filter(x => x !== id);
+    this.nodes[e.b].edges = this.nodes[e.b].edges.filter(x => x !== id);
   }
 
   /** Splits edge `id` at point p lying on its segment `seg`; returns the new node id. */
@@ -81,8 +108,11 @@ export class StreetGraph {
     for (const s of this.segIdx.queryPt(p, r)) {
       const e = this.edges[s.e];
       if (!e.alive) continue;
-      const a = e.pts[s.i], b = e.pts[s.i + 1];
-      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+      const a = e.pts[s.i],
+        b = e.pts[s.i + 1];
+      const dx = b.x - a.x,
+        dy = b.y - a.y,
+        l2 = dx * dx + dy * dy;
       const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
       const q = { x: a.x + t * dx, y: a.y + t * dy };
       const d = dist(p, q);
@@ -106,21 +136,28 @@ export class StreetGraph {
    * (not duplicated). Returns the ids of the created edges.
    */
   insertPolyline(pts0: Vec2[], at: EdgeAttrs, o: InsertOpts = {}): number[] {
-    const snapR = o.snapR ?? 3, mergeDist = o.mergeDist ?? 4, mergeSin = Math.sin(((o.mergeAngleDeg ?? 15) * Math.PI) / 180);
+    const snapR = o.snapR ?? 3,
+      mergeDist = o.mergeDist ?? 4,
+      mergeSin = Math.sin(((o.mergeAngleDeg ?? 15) * Math.PI) / 180);
     const pts = pts0.map(snapPt).filter((p, i, arr) => i === 0 || dist(p, arr[i - 1]) > 1e-6);
     if (pts.length < 2) return [];
     // 1. mark segments that duplicate existing edges
     const dup: boolean[] = [];
     for (let i = 1; i < pts.length; i++) {
-      const a = pts[i - 1], b = pts[i];
+      const a = pts[i - 1],
+        b = pts[i];
       const la = dist(a, b);
       let isDup = false;
       if (mergeDist > 0) {
-        const na = this.nearestOnEdges(a, mergeDist), nb = this.nearestOnEdges(b, mergeDist);
+        const na = this.nearestOnEdges(a, mergeDist),
+          nb = this.nearestOnEdges(b, mergeDist);
         if (na && nb && (na.e === nb.e || this.edges[na.e].street === this.edges[nb.e].street)) {
           const e = this.edges[na.e];
-          const s0 = e.pts[na.seg], s1 = e.pts[na.seg + 1];
-          const ex = s1.x - s0.x, ey = s1.y - s0.y, el = Math.hypot(ex, ey) || 1;
+          const s0 = e.pts[na.seg],
+            s1 = e.pts[na.seg + 1];
+          const ex = s1.x - s0.x,
+            ey = s1.y - s0.y,
+            el = Math.hypot(ex, ey) || 1;
           const sn = Math.abs(((b.x - a.x) * ey - (b.y - a.y) * ex) / (la * el || 1));
           if (sn < mergeSin) isDup = true;
         }
@@ -131,7 +168,10 @@ export class StreetGraph {
     const created: number[] = [];
     let i = 0;
     while (i < dup.length) {
-      if (dup[i]) { i++; continue; }
+      if (dup[i]) {
+        i++;
+        continue;
+      }
       let j = i;
       while (j + 1 < dup.length && !dup[j + 1]) j++;
       created.push(...this.insertRun(pts.slice(i, j + 2), at, snapR));
@@ -150,7 +190,8 @@ export class StreetGraph {
     type Hit = { s: number; t: number; p: Vec2; node: number };
     const hits: Hit[] = [];
     for (let s = 1; s < P.length; s++) {
-      const a = P[s - 1], b = P[s];
+      const a = P[s - 1],
+        b = P[s];
       const cands = this.segIdx.query(Math.min(a.x, b.x) - 1e-6, Math.min(a.y, b.y) - 1e-6, Math.max(a.x, b.x) + 1e-6, Math.max(a.y, b.y) + 1e-6);
       const local: { t: number; e: number; seg: number; u: number }[] = [];
       for (const ref of cands) {
@@ -178,8 +219,11 @@ export class StreetGraph {
     }
     // existing nodes lying within snapR of a new segment (T-junctions of earlier streets onto this one)
     for (let s = 1; s < P.length; s++) {
-      const a = P[s - 1], b = P[s];
-      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+      const a = P[s - 1],
+        b = P[s];
+      const dx = b.x - a.x,
+        dy = b.y - a.y,
+        l2 = dx * dx + dy * dy;
       if (l2 < 1e-12) continue;
       for (const id of this.nodeIdx.query(Math.min(a.x, b.x) - snapR, Math.min(a.y, b.y) - snapR, Math.max(a.x, b.x) + snapR, Math.max(a.y, b.y) + snapR)) {
         const nd = this.nodes[id];
@@ -187,7 +231,7 @@ export class StreetGraph {
         const t = ((nd.p.x - a.x) * dx + (nd.p.y - a.y) * dy) / l2;
         if (t <= 1e-6 || t >= 1 - 1e-6) continue;
         const d = Math.hypot(nd.p.x - a.x - t * dx, nd.p.y - a.y - t * dy);
-        if (d > snapR || hits.some((h) => h.node === id)) continue;
+        if (d > snapR || hits.some(h => h.node === id)) continue;
         hits.push({ s, t, p: nd.p, node: id });
       }
     }
@@ -198,7 +242,8 @@ export class StreetGraph {
     cuts.push({ s: P.length - 1, t: 1, node: endNode0 });
     const created: number[] = [];
     for (let k = 1; k < cuts.length; k++) {
-      const c0 = cuts[k - 1], c1 = cuts[k];
+      const c0 = cuts[k - 1],
+        c1 = cuts[k];
       const poly: Vec2[] = [this.nodes[c0.node].p];
       // P vertices strictly between the two cut points: vertex index v sits at (s = v, t = 0) ≡ (s = v−1, t = 1)
       for (let v = c0.s; v < c1.s; v++) if (v > 0 && v < P.length - 1) poly.push(P[v]);
@@ -211,16 +256,34 @@ export class StreetGraph {
     return created;
   }
 
-  aliveEdges(): GEdge[] { return this.edges.filter((e) => e.alive); }
+  aliveEdges(): GEdge[] {
+    return this.edges.filter(e => e.alive);
+  }
 
   /** Number of connected components among nodes that have at least one edge. */
   components(): { count: number; comp: Int32Array } {
     const parent = new Int32Array(this.nodes.length).map((_, i) => i);
-    const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-    for (const e of this.edges) if (e.alive) { const ra = find(e.a), rb = find(e.b); if (ra !== rb) parent[ra] = rb; }
+    const find = (x: number): number => {
+      while (parent[x] !== x) {
+        parent[x] = parent[parent[x]];
+        x = parent[x];
+      }
+      return x;
+    };
+    for (const e of this.edges)
+      if (e.alive) {
+        const ra = find(e.a),
+          rb = find(e.b);
+        if (ra !== rb) parent[ra] = rb;
+      }
     const roots = new Set<number>();
     const comp = new Int32Array(this.nodes.length).fill(-1);
-    for (const nd of this.nodes) if (nd.edges.length) { const r = find(nd.id); roots.add(r); comp[nd.id] = r; }
+    for (const nd of this.nodes)
+      if (nd.edges.length) {
+        const r = find(nd.id);
+        roots.add(r);
+        comp[nd.id] = r;
+      }
     return { count: roots.size, comp };
   }
 
@@ -243,8 +306,12 @@ export class StreetGraph {
         const h = heOf(e, fwd);
         const from = fwd ? e.a : e.b;
         let l = out.get(from);
-        if (!l) { l = []; out.set(from, l); }
-        l.push(h); all.push(h);
+        if (!l) {
+          l = [];
+          out.set(from, l);
+        }
+        l.push(h);
+        all.push(h);
       }
     }
     for (const l of out.values()) l.sort((x, y) => x.ang - y.ang);
@@ -263,7 +330,7 @@ export class StreetGraph {
         const to = h.fwd ? h.e.b : h.e.a;
         const l = out.get(to)!;
         const twinKey = h.e.id * 2 + (h.fwd ? 1 : 0);
-        const ti = l.findIndex((x) => key(x) === twinKey);
+        const ti = l.findIndex(x => key(x) === twinKey);
         h = l[(ti - 1 + l.length) % l.length];
       }
       const a = polygonArea(ring);

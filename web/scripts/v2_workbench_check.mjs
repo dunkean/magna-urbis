@@ -5,7 +5,8 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { chooseWorkshopPreference } from './workbench_test_helpers.mjs';
 const base = process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5174';
-const out = new URL('../out/workbench/', import.meta.url); await mkdir(out, { recursive: true });
+const out = new URL('../out/workbench/', import.meta.url);
+await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true });
 const errors = [];
 try {
@@ -17,15 +18,21 @@ try {
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
   const input = async (selector, value) => {
     const control = page.locator(selector);
-    if (await control.getAttribute('type') === 'range') {
-      await control.evaluate((element, next) => { element.value = next; element.dispatchEvent(new Event('input', { bubbles: true })); }, value);
+    if ((await control.getAttribute('type')) === 'range') {
+      await control.evaluate((element, next) => {
+        element.value = next;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }, value);
     } else await control.fill(value);
     await control.dispatchEvent('change');
   };
   const exported = async (format = 'recipe') => {
-    await page.locator('#export-open').click(); await page.locator('#export-format').selectOption(format);
-    const pending = page.waitForEvent('download'); await page.locator('#export-go').click();
-    const download = await pending; return JSON.parse(await readFile(await download.path(), 'utf8'));
+    await page.locator('#export-open').click();
+    await page.locator('#export-format').selectOption(format);
+    const pending = page.waitForEvent('download');
+    await page.locator('#export-go').click();
+    const download = await pending;
+    return JSON.parse(await readFile(await download.path(), 'utf8'));
   };
   const imported = async recipe => {
     await page.locator('#import-open').click();
@@ -34,24 +41,29 @@ try {
     await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
   };
   assert.equal(await page.locator('#scene-season').getAttribute('max'), '11');
-  await page.locator('#scene-season').focus(); await page.keyboard.press('Home');
+  await page.locator('#scene-season').focus();
+  await page.keyboard.press('Home');
   for (let step = 0; step < 12; step++) {
     assert.equal(await page.locator('#scene-season').inputValue(), String(step));
-    assert.match(await page.locator('#scene-season-value').innerText(), [ /Hiver/, /Printemps/, /Été/, /Automne/ ][Math.floor(step / 3)]);
+    assert.match(await page.locator('#scene-season-value').innerText(), [/Hiver/, /Printemps/, /Été/, /Automne/][Math.floor(step / 3)]);
     if (step < 11) await page.keyboard.press('ArrowRight');
   }
   await page.locator('[data-season="1"]').click();
   await page.locator('#scene-night').click();
-  await input('#scene-elevation', '30'); await input('#scene-strength', '1.5');
+  await input('#scene-elevation', '30');
+  await input('#scene-strength', '1.5');
   const compass = page.locator('.scene-compass');
   const compassBox = await compass.boundingBox();
   await page.mouse.click(compassBox.x + compassBox.width - 4, compassBox.y + compassBox.height / 2);
   assert.equal(await compass.getAttribute('aria-valuenow'), '90');
-  await compass.focus(); await page.keyboard.press('End'); await page.keyboard.press('ArrowRight');
+  await compass.focus();
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowRight');
   assert.equal(await compass.getAttribute('aria-valuenow'), '0');
   await page.keyboard.press('ArrowLeft');
   assert.equal(await compass.getAttribute('aria-valuenow'), '359');
-  await page.keyboard.press('Home'); await page.keyboard.press('PageUp');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('PageUp');
   assert.equal(await compass.getAttribute('aria-valuenow'), '15');
   assert.equal(await page.locator('#scene-night').getAttribute('aria-pressed'), 'true');
   await page.locator('#map-style').selectOption('atlas');
@@ -61,8 +73,11 @@ try {
   assert.equal(recipe.settings.appearance.composition.effects.ambience, 'night');
   assert.deepEqual(recipe.settings.appearance.composition.effects.lighting, { enabled: true, azimuth: 15, elevation: 30, strength: 1.5, exaggeration: 2 });
   recipe.settings.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
-  recipe.settings.extent = 2400; recipe.settings.settlementCount = 2; recipe.settings.options.population = 200;
-  recipe.settings.options.seed = 'workbench-ui-review'; recipe.settings.options.relief = 'flat';
+  recipe.settings.extent = 2400;
+  recipe.settings.settlementCount = 2;
+  recipe.settings.options.population = 200;
+  recipe.settings.options.seed = 'workbench-ui-review';
+  recipe.settings.options.relief = 'flat';
   await imported(recipe);
   assert.equal(await page.locator('#scene-season').inputValue(), '1');
   assert.equal(await page.locator('#scene-elevation').inputValue(), '30');
@@ -87,12 +102,15 @@ try {
   await page.screenshot({ path: fileURLToPath(new URL('02-editing.png', out)) });
   await page.locator('#editor-close').click();
   assert.equal(await page.locator('#editor-dock').isVisible(), false);
-  await page.locator('#inspect-mode').check(); await page.keyboard.press('Escape');
+  await page.locator('#inspect-mode').check();
+  await page.keyboard.press('Escape');
   assert.equal(await page.locator('#inspect-mode').isChecked(), false);
-  await page.locator('#hardware-open').click(); await page.locator('#exec-engine').selectOption('rust');
+  await page.locator('#hardware-open').click();
+  await page.locator('#exec-engine').selectOption('rust');
   await page.waitForFunction(() => document.querySelector('[data-process="Terrain generation"]').textContent.includes('Rust'));
   const relief = await page.locator('[data-process="Terrain generation"]').innerText();
-  assert.match(relief, /Rust/); assert.match(relief, /TypeScript/);
+  assert.match(relief, /Rust/);
+  assert.match(relief, /TypeScript/);
   await page.screenshot({ path: fileURLToPath(new URL('03-engines.png', out)) });
   await page.locator('#hardware-dialog [data-close]').first().click();
   await page.locator('.illustration-trigger').click();
@@ -122,10 +140,14 @@ try {
   await chooseWorkshopPreference(page, 'units', 'm');
   assert.equal(await page.locator('#scene-controls label').first().innerText(), 'Season');
   const saved = await exported('project');
-  delete saved.settings.scene; delete saved.settings.appearance.composition; await imported(saved);
+  delete saved.settings.scene;
+  delete saved.settings.appearance.composition;
+  await imported(saved);
   assert.equal(await page.locator('#scene-season').inputValue(), '7');
   assert.equal(await page.locator('#scene-elevation').inputValue(), '45');
   assert.equal(await page.locator('#scene-strength').inputValue(), '1');
   assert.deepEqual(errors, []);
   console.log('Workbench verified: 12 seasonal steps, generated icons, day/night, light direction with pointer and keyboard, height, shading, presets, project round trip, generation, exclusive tools, engine evidence, illustration theme, French/English, 1440/1024/768/390px.');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

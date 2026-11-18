@@ -3,8 +3,19 @@ import { describe, expect, it, vi } from 'vitest';
 // A style switch (satellite -> parchment) followed at once by a language redraw left the satellite look under a
 // "Parchment" selector: an older show() must never put its look back over a newer one, and bench sets never interleave.
 const bench = vi.hoisted(() => ({ releases: [] as (() => void)[], looks: [] as string[] }));
-vi.mock('../../src/v2/engine.worker?worker', () => ({ default: class { postMessage(): void {} addEventListener(): void {} terminate(): void {} } }));
-vi.mock('../../src/ui/renderWorker?worker', () => ({ default: class { postMessage(): void {} terminate(): void {} } }));
+vi.mock('../../src/v2/engine.worker?worker', () => ({
+  default: class {
+    postMessage(): void {}
+    addEventListener(): void {}
+    terminate(): void {}
+  },
+}));
+vi.mock('../../src/ui/renderWorker?worker', () => ({
+  default: class {
+    postMessage(): void {}
+    terminate(): void {}
+  },
+}));
 vi.mock('../../../rust/bridge/renderGeometry', () => ({ renderGeometryReady: () => true, loadRenderGeometry: async () => {} }));
 vi.mock('../../src/v2/benchRenderer', () => ({
   BenchRenderer: class {
@@ -12,7 +23,9 @@ vi.mock('../../src/v2/benchRenderer', () => ({
     setSuspended(): void {}
     set(_world: unknown, settings: { look: string }): Promise<void> {
       bench.looks.push(settings.look);
-      return new Promise(resolve => { bench.releases.push(resolve); });
+      return new Promise(resolve => {
+        bench.releases.push(resolve);
+      });
     }
   },
 }));
@@ -21,12 +34,24 @@ import { StudioClient } from '../../src/v2/client';
 
 type Look = { look: string };
 function makeClient(paths: Record<string, string>) {
-  bench.releases = []; bench.looks = [];
+  bench.releases = [];
+  bench.looks = [];
   const viewer = { setDirectSource: vi.fn(), setSource: vi.fn(), contentChanged: vi.fn() };
   const client = Object.assign(Object.create(StudioClient.prototype), {
-    viewer, render: { postMessage: vi.fn() }, world: null, benchActive: false, benchPreparing: 0, minimalActive: false,
-    view3dActive: false, showRequest: 0, drawingId: 0, pendingDraw: null, resolutions: [], presentations: new WeakMap(),
-    display: {}, appearanceSettings: { look: 'satellite' },
+    viewer,
+    render: { postMessage: vi.fn() },
+    world: null,
+    benchActive: false,
+    benchPreparing: 0,
+    minimalActive: false,
+    view3dActive: false,
+    showRequest: 0,
+    drawingId: 0,
+    pendingDraw: null,
+    resolutions: [],
+    presentations: new WeakMap(),
+    display: {},
+    appearanceSettings: { look: 'satellite' },
     resolve: (settings: Look) => ({ path: paths[settings.look] }),
     presentWorld: (world: unknown) => world,
   }) as StudioClient;

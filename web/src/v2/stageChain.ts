@@ -19,40 +19,75 @@ import type { V2Progress, V2Settings, V2TerrainSettings } from './contracts';
 import type { World } from '../gen/types';
 import './stageChain.css';
 
-const copy = (en: string, fr: string): string => { registerMessages({ [en]: { en, fr } }); return en; };
+const copy = (en: string, fr: string): string => {
+  registerMessages({ [en]: { en, fr } });
+  return en;
+};
 const T = {
   variation: copy('New variation', 'Nouvelle variation'),
   rerollCoast: copy('Reroll', 'Relancer'),
   rerollCoastHelp: copy('Draw another coastline for the same sea directions; the relief before the coast is kept.', 'Tirer un autre littoral pour les mêmes directions de mer ; le relief d’avant la côte est conservé.'),
-  run: copy('Show this stage’s output', 'Afficher la sortie de cette étape'), required: copy('Required stage', 'Étape obligatoire'),
-  enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'), help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
-  general: copy('General settings', 'Paramètres généraux'), method: copy('Method', 'Méthode'), size: copy('Size', 'Taille'), stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
+  run: copy('Show this stage’s output', 'Afficher la sortie de cette étape'),
+  required: copy('Required stage', 'Étape obligatoire'),
+  enable: copy('Enable or disable this stage', 'Activer ou désactiver cette étape'),
+  help: copy('Method in the scientific atlas', 'Méthode dans l’atlas scientifique'),
+  general: copy('General settings', 'Paramètres généraux'),
+  method: copy('Method', 'Méthode'),
+  size: copy('Size', 'Taille'),
+  stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
   waterLandforms: copy('Water and landforms', 'Eau et formes du relief'),
-  cached: copy('Kept from an earlier run', 'Conservé d’une exécution précédente'), running: copy('Running', 'En cours'),
-  disabled: copy('Disabled · never run', 'Désactivée · ne jamais lancer'), valid: copy('Calculated · result available', 'Calculée · résultat disponible'),
+  cached: copy('Kept from an earlier run', 'Conservé d’une exécution précédente'),
+  running: copy('Running', 'En cours'),
+  disabled: copy('Disabled · never run', 'Désactivée · ne jamais lancer'),
+  valid: copy('Calculated · result available', 'Calculée · résultat disponible'),
   pending: copy('To calculate · missing or outdated result', 'À calculer · résultat absent ou périmé'),
-  family: copy('Run the {family} stages', 'Exécuter les étapes : {family}'), place: copy('Place', 'Lieu'), noPlace: copy('Choose a place on the right', 'Choisissez un lieu à droite'),
-  needTerrain: copy('Create the relief first', 'Créez d’abord le relief'), needRegion: copy('Place the settlements first', 'Implantez d’abord les peuplements'),
-  needPlace: copy('Choose a place in the list on the right', 'Choisissez un lieu dans la liste à droite'), procedural: copy('Procedural', 'Procédural'), neural: copy('Neural', 'Neuronal'),
-  heightmap: copy('Heightmap', 'Carte de hauteurs'), source: copy('Relief source', 'Source du relief'),
-  loadHeightmap: copy('Load a heightmap', 'Charger une carte de hauteurs'), paintSymbolic: copy('Paint a symbolic map', 'Peindre une carte symbolique'),
-  view2d: copy('2D map', 'Carte 2D'), view3d: copy('3D view', 'Vue 3D'),
-  noNeural: copy('Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).', 'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).'),
+  family: copy('Run the {family} stages', 'Exécuter les étapes : {family}'),
+  place: copy('Place', 'Lieu'),
+  noPlace: copy('Choose a place on the right', 'Choisissez un lieu à droite'),
+  needTerrain: copy('Create the relief first', 'Créez d’abord le relief'),
+  needRegion: copy('Place the settlements first', 'Implantez d’abord les peuplements'),
+  needPlace: copy('Choose a place in the list on the right', 'Choisissez un lieu dans la liste à droite'),
+  procedural: copy('Procedural', 'Procédural'),
+  neural: copy('Neural', 'Neuronal'),
+  heightmap: copy('Heightmap', 'Carte de hauteurs'),
+  source: copy('Relief source', 'Source du relief'),
+  loadHeightmap: copy('Load a heightmap', 'Charger une carte de hauteurs'),
+  paintSymbolic: copy('Paint a symbolic map', 'Peindre une carte symbolique'),
+  view2d: copy('2D map', 'Carte 2D'),
+  view3d: copy('3D view', 'Vue 3D'),
+  noNeural: copy(
+    'Neural generation needs WebGPU in this browser, the Python/CUDA server or the native neural service. None is available (see Settings).',
+    'Le neuronal exige WebGPU dans ce navigateur, le serveur Python/CUDA ou le service neuronal natif. Aucun n’est disponible (voir Réglages).',
+  ),
   overrides: copy('Local settings of this place', 'Réglages locaux de ce lieu'),
-  scope: copy('Cities to generate', 'Villes à générer'), allCities: copy('All cities', 'Toutes les villes'), selection: copy('Selection on the right', 'Sélection à droite'),
+  scope: copy('Cities to generate', 'Villes à générer'),
+  allCities: copy('All cities', 'Toutes les villes'),
+  selection: copy('Selection on the right', 'Sélection à droite'),
   targets: copy('{count} / {total} cities · roads → quarters → parcels → houses', '{count} / {total} villes · routes → quartiers → parcelles → maisons'),
-  advanced: copy('Advanced', 'Avancé'), close: copy('Back to map', 'Retour à la carte'), enabled: copy('Enabled', 'Activée'),
+  advanced: copy('Advanced', 'Avancé'),
+  close: copy('Back to map', 'Retour à la carte'),
+  enabled: copy('Enabled', 'Activée'),
   reliefSettings: copy('Relief settings', 'Réglages du relief'),
-  style: copy('Style', 'Style'), classic: copy('Classic', 'Classique'), fast: copy('Fast', 'Rapide'),
+  style: copy('Style', 'Style'),
+  classic: copy('Classic', 'Classique'),
+  fast: copy('Fast', 'Rapide'),
   needGpu: copy('Needs WebGPU, which this browser does not provide (see Settings).', 'Nécessite WebGPU, absent de ce navigateur (voir Réglages).'),
   needNative: copy('Needs the native Rust service, which is offline (see Settings).', 'Nécessite le service Rust natif, hors ligne (voir Réglages).'),
   needPython: copy('Needs the Python/CUDA neural server, which is offline (see Settings).', 'Nécessite le serveur neuronal Python/CUDA, hors ligne (voir Réglages).'),
 };
 /** Relief-source fields that only apply to some sources. */
 const SOURCE_FIELDS: Record<string, readonly StageContext['relief'][]> = {
-  'terrain.phasor.quality': ['procedural'], 'terrain.procedural.regionalN': ['procedural'], 'terrain.procedural.surfaceN': ['procedural'], 'terrain.procedural.coastAfter': ['procedural'],
-  'terrain.relief': ['procedural', 'neural'], 'options.relief': ['procedural', 'neural'], 'terrain.motifSize': ['procedural', 'symbolic'], 'terrain.procedural.preset': ['procedural'],
-  'terrain.environment': ['procedural'], 'terrain.mountainMix': ['procedural', 'neural'], 'terrain.erosion': ['procedural', 'heightmap', 'symbolic'],
+  'terrain.phasor.quality': ['procedural'],
+  'terrain.procedural.regionalN': ['procedural'],
+  'terrain.procedural.surfaceN': ['procedural'],
+  'terrain.procedural.coastAfter': ['procedural'],
+  'terrain.relief': ['procedural', 'neural'],
+  'options.relief': ['procedural', 'neural'],
+  'terrain.motifSize': ['procedural', 'symbolic'],
+  'terrain.procedural.preset': ['procedural'],
+  'terrain.environment': ['procedural'],
+  'terrain.mountainMix': ['procedural', 'neural'],
+  'terrain.erosion': ['procedural', 'heightmap', 'symbolic'],
 };
 for (const family of FAMILIES) registerMessages({ [family.label.en]: family.label, [family.summary.en]: family.summary });
 for (const stage of STAGES) registerMessages({ [stage.label.en]: stage.label, [stage.summary.en]: stage.summary, ...(stage.toggle?.reason ? { [stage.toggle.reason.en]: stage.toggle.reason } : {}) });
@@ -70,13 +105,23 @@ const SHARED_RELIEF_CONTROLS = new Set(['widget:seed', 'widget:extent', 'terrain
 const COMPACT_REGION_CONTROLS = new Set(['terrain.hydrology.density', 'terrain.hydrology.minRiverLength', 'terrain.hydrology.lakeAbundance', 'terrain.motifSize']);
 
 export interface StageChainBindings {
-  root: HTMLElement; staging: HTMLElement; terrain: TerrainControls; regionRoot: HTMLElement; renderRoot: HTMLElement;
-  getSettings(): V2Settings; getWorld(): World | undefined; getPlace(): { key: string; name: string } | undefined;
+  root: HTMLElement;
+  staging: HTMLElement;
+  terrain: TerrainControls;
+  regionRoot: HTMLElement;
+  renderRoot: HTMLElement;
+  getSettings(): V2Settings;
+  getWorld(): World | undefined;
+  getPlace(): { key: string; name: string } | undefined;
   busy(): boolean;
   cityScope(): { mode: 'all' | 'selection'; count: number; total: number; key: string };
   onCityScope(mode: 'all' | 'selection'): void;
-  onChange(): void; onAppearance(): void; onRegionChange(): void;
-  run(stage: StageDef): void; runFamily(family: StageFamily): void; openPlace(): void;
+  onChange(): void;
+  onAppearance(): void;
+  onRegionChange(): void;
+  run(stage: StageDef): void;
+  runFamily(family: StageFamily): void;
+  openPlace(): void;
   /** New draw of the stage's variation; `family` runs its whole family instead of previewing the stage. */
   reroll?(stage: StageDef, family?: boolean): void;
   /** Detected backends (Settings); unavailable choices are disabled with their reason. */
@@ -91,18 +136,43 @@ export interface StageChainBindings {
 export interface StageChain {
   clearResults(): void;
   clearCityResults(): void;
-  body(id: string): HTMLElement; sync(): void; family(): StageFamily; selectFamily(family: StageFamily): void;
-  beginRun(stages: readonly string[]): void; progress(progress: V2Progress): void; endRun(ok: boolean): void; context(): StageContext;
+  body(id: string): HTMLElement;
+  sync(): void;
+  family(): StageFamily;
+  selectFamily(family: StageFamily): void;
+  beginRun(stages: readonly string[]): void;
+  progress(progress: V2Progress): void;
+  endRun(ok: boolean): void;
+  context(): StageContext;
 }
-interface Row { stage: StageDef; element: HTMLElement; node: HTMLButtonElement; time: HTMLOutputElement; run: HTMLButtonElement; body: HTMLElement; number: HTMLElement; note: HTMLElement; title: HTMLButtonElement; quick: HTMLElement; draw?: HTMLButtonElement }
+interface Row {
+  stage: StageDef;
+  element: HTMLElement;
+  node: HTMLButtonElement;
+  time: HTMLOutputElement;
+  run: HTMLButtonElement;
+  body: HTMLElement;
+  number: HTMLElement;
+  note: HTMLElement;
+  title: HTMLButtonElement;
+  quick: HTMLElement;
+  draw?: HTMLButtonElement;
+}
 
 export function mountStageChain(b: StageChainBindings): StageChain {
-  const { root } = b, get = b.getSettings;
+  const { root } = b,
+    get = b.getSettings;
   root.classList.add('stage-chain');
-  const leftovers = document.createElement('div'); leftovers.className = 'stage-leftovers'; leftovers.hidden = true;
-  leftovers.append(...Array.from(root.childNodes)); root.append(leftovers);
-  const forms: ParameterForm[] = [], syncers: (() => void)[] = [];
-  root.addEventListener('terrain-defaults-ready', () => { forms.forEach(form => form.sync()); });
+  const leftovers = document.createElement('div');
+  leftovers.className = 'stage-leftovers';
+  leftovers.hidden = true;
+  leftovers.append(...Array.from(root.childNodes));
+  root.append(leftovers);
+  const forms: ParameterForm[] = [],
+    syncers: (() => void)[] = [];
+  root.addEventListener('terrain-defaults-ready', () => {
+    forms.forEach(form => form.sync());
+  });
   const rows = new Map<string, Row>();
   const stashes: { coastMask?: number; coastTrace?: V2TerrainSettings['coastTrace'] } = {};
   const sources = createReliefSources(get, () => Number(b.terrain.access.get('terrain.coastMask')));
@@ -110,53 +180,106 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   const timings = new Map<string, { ms: number; state: 'done' | 'cached' | 'stale' | 'running' | '' }>();
   const savedKeys = new Map<string, string>();
   let runKeys = new Map<string, string>();
-  let active: { id: string; started: number } | undefined, runScope = new Set<string>();
+  let active: { id: string; started: number } | undefined,
+    runScope = new Set<string>();
 
   // ── Family navigation (the chain overview) ───────────────────────────────
-  const nav = document.createElement('nav'); nav.className = 'chain-families'; nav.setAttribute('role', 'tablist'); nav.setAttribute('aria-label', translate('Generation chain'));
+  const nav = document.createElement('nav');
+  nav.className = 'chain-families';
+  nav.setAttribute('role', 'tablist');
+  nav.setAttribute('aria-label', translate('Generation chain'));
   copy('Generation chain', 'Chaîne de génération');
-  const tabs = new Map<StageFamily, HTMLButtonElement>(), panels = new Map<StageFamily, HTMLElement>(), familyTimes = new Map<StageFamily, HTMLElement>();
+  const tabs = new Map<StageFamily, HTMLButtonElement>(),
+    panels = new Map<StageFamily, HTMLElement>(),
+    familyTimes = new Map<StageFamily, HTMLElement>();
   const generalPanels = new Map<StageFamily, HTMLElement>();
-  const sharedPanel = document.createElement('div'); sharedPanel.className = 'family-general relief-shared'; sharedPanel.id = 'relief-shared'; sharedPanel.setAttribute('role', 'group'); sharedPanel.setAttribute('aria-label', translate(T.general));
-  const methodPanel = document.createElement('section'); methodPanel.className = 'family-method';
-  const methodTitle = document.createElement('h4'); methodTitle.id = 'terrain-method-title'; setText(methodTitle, T.style);
-  methodPanel.setAttribute('aria-labelledby', methodTitle.id); methodPanel.append(methodTitle, sourceSwitch());
+  const sharedPanel = document.createElement('div');
+  sharedPanel.className = 'family-general relief-shared';
+  sharedPanel.id = 'relief-shared';
+  sharedPanel.setAttribute('role', 'group');
+  sharedPanel.setAttribute('aria-label', translate(T.general));
+  const methodPanel = document.createElement('section');
+  methodPanel.className = 'family-method';
+  const methodTitle = document.createElement('h4');
+  methodTitle.id = 'terrain-method-title';
+  setText(methodTitle, T.style);
+  methodPanel.setAttribute('aria-labelledby', methodTitle.id);
+  methodPanel.append(methodTitle, sourceSwitch());
   // Keep the live controls under the chain root; the popover displays them over the map.
-  const advanced = document.createElement('section'); advanced.id = 'relief-advanced'; advanced.className = 'relief-advanced'; advanced.popover = 'manual';
-  advanced.setAttribute('role', 'region'); advanced.setAttribute('aria-labelledby', 'relief-advanced-title');
-  const advancedHead = document.createElement('header'); advancedHead.className = 'relief-advanced-head';
-  const advancedTitle = document.createElement('h2'); advancedTitle.id = 'relief-advanced-title'; setText(advancedTitle, T.reliefSettings);
-  const advancedClose = document.createElement('button'); advancedClose.type = 'button'; setText(advancedClose, T.close);
+  const advanced = document.createElement('section');
+  advanced.id = 'relief-advanced';
+  advanced.className = 'relief-advanced';
+  advanced.popover = 'manual';
+  advanced.setAttribute('role', 'region');
+  advanced.setAttribute('aria-labelledby', 'relief-advanced-title');
+  const advancedHead = document.createElement('header');
+  advancedHead.className = 'relief-advanced-head';
+  const advancedTitle = document.createElement('h2');
+  advancedTitle.id = 'relief-advanced-title';
+  setText(advancedTitle, T.reliefSettings);
+  const advancedClose = document.createElement('button');
+  advancedClose.type = 'button';
+  setText(advancedClose, T.close);
   advancedHead.append(advancedTitle, advancedClose);
-  const advancedContent = document.createElement('div'); advancedContent.className = 'relief-advanced-content';
+  const advancedContent = document.createElement('div');
+  advancedContent.className = 'relief-advanced-content';
   // The scroller holds a column flow: a multicol box of fixed height would overflow sideways instead.
-  const advancedColumns = document.createElement('div'); advancedColumns.className = 'relief-advanced-columns'; advancedContent.append(advancedColumns);
+  const advancedColumns = document.createElement('div');
+  advancedColumns.className = 'relief-advanced-columns';
+  advancedContent.append(advancedColumns);
   // One page in generation order: every stage card is open; the index jumps to a stage.
   const advancedIndex = mountSectionIndex(advancedContent, () => [...advancedThemes.values()].map(({ section }) => ({ section, heading: section.querySelector<HTMLElement>('h3')! })));
   advancedIndex.nav.classList.add('relief-advanced-index');
-  advanced.append(advancedHead, advancedIndex.nav, advancedContent); root.append(advanced);
-  const advancedButton = document.createElement('button'); advancedButton.type = 'button'; advancedButton.id = 'relief-advanced-open'; advancedButton.className = 'relief-advanced-open';
-  setText(advancedButton, T.advanced); advancedButton.setAttribute('aria-controls', advanced.id); advancedButton.setAttribute('aria-expanded', 'false');
-  const modifyButton=document.createElement('button');modifyButton.type='button';modifyButton.id='relief-modify-open';modifyButton.className='relief-modify-open';modifyButton.setAttribute('aria-haspopup','dialog');modifyButton.setAttribute('aria-controls','relief-paint-dialog');
-  const modifyIcon=document.createElement('img');modifyIcon.src=new URL('./assets/relief-paint-v1.webp',import.meta.url).href;modifyIcon.alt='';modifyIcon.width=modifyIcon.height=28;
-  const modifyCaption=document.createElement('span');setText(modifyCaption,copy('Modify relief','Modifier le relief'));modifyButton.append(modifyIcon,modifyCaption);modifyButton.onclick=()=>b.terrain.openEditor('modify');
+  advanced.append(advancedHead, advancedIndex.nav, advancedContent);
+  root.append(advanced);
+  const advancedButton = document.createElement('button');
+  advancedButton.type = 'button';
+  advancedButton.id = 'relief-advanced-open';
+  advancedButton.className = 'relief-advanced-open';
+  setText(advancedButton, T.advanced);
+  advancedButton.setAttribute('aria-controls', advanced.id);
+  advancedButton.setAttribute('aria-expanded', 'false');
+  const modifyButton = document.createElement('button');
+  modifyButton.type = 'button';
+  modifyButton.id = 'relief-modify-open';
+  modifyButton.className = 'relief-modify-open';
+  modifyButton.setAttribute('aria-haspopup', 'dialog');
+  modifyButton.setAttribute('aria-controls', 'relief-paint-dialog');
+  const modifyIcon = document.createElement('img');
+  modifyIcon.src = new URL('./assets/relief-paint-v1.webp', import.meta.url).href;
+  modifyIcon.alt = '';
+  modifyIcon.width = modifyIcon.height = 28;
+  const modifyCaption = document.createElement('span');
+  setText(modifyCaption, copy('Modify relief', 'Modifier le relief'));
+  modifyButton.append(modifyIcon, modifyCaption);
+  modifyButton.onclick = () => b.terrain.openEditor('modify');
   let advancedReturn: HTMLElement = advancedButton;
   const advancedThemes = new Map<string, { section: HTMLElement }>();
   // Cards flow in columns (CSS), so reading and focus order follow the generation order.
   const addTheme = (id: string, label: string, ...contents: HTMLElement[]) => {
-    const section = document.createElement('section'); section.className = 'relief-theme'; section.id = `relief-theme-${id}`; section.dataset.stageControl = id;
-    const heading = document.createElement('h3'); heading.id = `${section.id}-title`; setText(heading, label); section.setAttribute('aria-labelledby', heading.id); section.append(heading, ...contents);
-    advancedColumns.append(section); advancedThemes.set(id, { section });
+    const section = document.createElement('section');
+    section.className = 'relief-theme';
+    section.id = `relief-theme-${id}`;
+    section.dataset.stageControl = id;
+    const heading = document.createElement('h3');
+    heading.id = `${section.id}-title`;
+    setText(heading, label);
+    section.setAttribute('aria-labelledby', heading.id);
+    section.append(heading, ...contents);
+    advancedColumns.append(section);
+    advancedThemes.set(id, { section });
   };
   const positionAdvanced = () => {
     if (!advanced.matches(':popover-open')) return;
-    const map = document.querySelector('.map-area')?.getBoundingClientRect(); if (!map) return;
+    const map = document.querySelector('.map-area')?.getBoundingClientRect();
+    if (!map) return;
     Object.assign(advanced.style, { left: `${map.left}px`, top: `${map.top}px`, width: `${map.width}px`, height: `${map.height}px` });
     advancedIndex.sync();
   };
   const closeAdvanced = (restoreFocus = true) => {
     if (!advanced.matches(':popover-open')) return;
-    advanced.hidePopover(); advancedButton.setAttribute('aria-expanded', 'false');
+    advanced.hidePopover();
+    advancedButton.setAttribute('aria-expanded', 'false');
     for (const row of rows.values()) if (row.stage.family === 'region') row.title.setAttribute('aria-expanded', 'false');
     if (restoreFocus) advancedReturn.focus();
   };
@@ -165,98 +288,264 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       advancedReturn = document.activeElement instanceof HTMLElement ? document.activeElement : advancedButton;
       advanced.showPopover();
     }
-    positionAdvanced(); advancedButton.setAttribute('aria-expanded', 'true');
+    positionAdvanced();
+    advancedButton.setAttribute('aria-expanded', 'true');
     for (const row of rows.values()) if (row.stage.family === 'region') row.title.setAttribute('aria-expanded', 'true');
     if (id) advancedThemes.get(id)?.section.scrollIntoView({ block: 'start' });
     else advancedContent.scrollTop = 0;
     advancedClose.focus({ preventScroll: true });
   };
-  advancedButton.onclick = () => advanced.matches(':popover-open') ? closeAdvanced() : openAdvanced();
+  advancedButton.onclick = () => (advanced.matches(':popover-open') ? closeAdvanced() : openAdvanced());
   advancedClose.onclick = () => closeAdvanced();
-  document.addEventListener('keydown', event => { if (event.key === 'Escape' && advanced.matches(':popover-open') && !document.querySelector('dialog[open]')) { event.preventDefault(); event.stopImmediatePropagation(); closeAdvanced(); } }, true);
-  const mapArea = document.querySelector('.map-area'); if (mapArea) new ResizeObserver(positionAdvanced).observe(mapArea);
+  document.addEventListener(
+    'keydown',
+    event => {
+      if (event.key === 'Escape' && advanced.matches(':popover-open') && !document.querySelector('dialog[open]')) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeAdvanced();
+      }
+    },
+    true,
+  );
+  const mapArea = document.querySelector('.map-area');
+  if (mapArea) new ResizeObserver(positionAdvanced).observe(mapArea);
   window.addEventListener('resize', positionAdvanced);
-  const scroller = document.createElement('div'); scroller.className = 'chain-scroll';
+  const scroller = document.createElement('div');
+  scroller.className = 'chain-scroll';
   for (const [index, f] of FAMILIES.entries()) {
-    const tab = document.createElement('button'); tab.type = 'button'; tab.className = 'chain-family-tab'; tab.id = `family-tab-${f.id}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `family-${f.id}`);
-    const label = document.createElement('span'); label.className = 'chain-family-label'; setText(label, text(f.label));
-    const time = document.createElement('small'); time.className = 'chain-family-time'; familyTimes.set(f.id, time);
-    tab.append(iconImg(familyIcon[f.id], 34), label, time); tab.onclick = () => selectFamily(f.id);
-    tab.addEventListener('keydown', event => { const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0; if (!step) return; event.preventDefault(); const next = FAMILIES[(index + step + FAMILIES.length) % FAMILIES.length].id; selectFamily(next); tabs.get(next)!.focus(); });
-    tabs.set(f.id, tab); nav.append(tab);
-    const panel = document.createElement('section'); panel.className = 'chain-family'; panel.id = `family-${f.id}`; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id); panel.dataset.family = f.id;
-    const head = document.createElement('header'); head.className = 'family-head';
-    const titles = document.createElement('div'); titles.className = 'family-titles';
-    const h = document.createElement('h3'); setText(h, text(f.label)); const p = document.createElement('p'); p.className = 'hint'; setText(p, text(f.summary)); titles.append(h, p);
-    const runFamily = document.createElement('button'); runFamily.type = 'button'; runFamily.className = 'family-run'; runFamily.dataset.family = f.id;
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'chain-family-tab';
+    tab.id = `family-tab-${f.id}`;
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-controls', `family-${f.id}`);
+    const label = document.createElement('span');
+    label.className = 'chain-family-label';
+    setText(label, text(f.label));
+    const time = document.createElement('small');
+    time.className = 'chain-family-time';
+    familyTimes.set(f.id, time);
+    tab.append(iconImg(familyIcon[f.id], 34), label, time);
+    tab.onclick = () => selectFamily(f.id);
+    tab.addEventListener('keydown', event => {
+      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (!step) return;
+      event.preventDefault();
+      const next = FAMILIES[(index + step + FAMILIES.length) % FAMILIES.length].id;
+      selectFamily(next);
+      tabs.get(next)!.focus();
+    });
+    tabs.set(f.id, tab);
+    nav.append(tab);
+    const panel = document.createElement('section');
+    panel.className = 'chain-family';
+    panel.id = `family-${f.id}`;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', tab.id);
+    panel.dataset.family = f.id;
+    const head = document.createElement('header');
+    head.className = 'family-head';
+    const titles = document.createElement('div');
+    titles.className = 'family-titles';
+    const h = document.createElement('h3');
+    setText(h, text(f.label));
+    const p = document.createElement('p');
+    p.className = 'hint';
+    setText(p, text(f.summary));
+    titles.append(h, p);
+    const runFamily = document.createElement('button');
+    runFamily.type = 'button';
+    runFamily.className = 'family-run';
+    runFamily.dataset.family = f.id;
     setDynamicText(runFamily, () => translate(T.family).replace('{family}', translate(text(f.label)).toLocaleLowerCase(getLanguage() === 'fr' ? 'fr' : 'en')));
     runFamily.onclick = () => b.runFamily(f.id);
-    if (f.id !== 'region') { head.append(titles, runFamily); panel.append(head); }
+    if (f.id !== 'region') {
+      head.append(titles, runFamily);
+      panel.append(head);
+    }
     if (f.id === 'cities') {
-      const scope = document.createElement('div'); scope.className = 'family-city-scope';
-      const scopeCaption = document.createElement('label'); scopeCaption.htmlFor = 'city-scope'; setText(scopeCaption, T.scope);
-      const select = document.createElement('select'); select.id = 'city-scope';
-      for (const [value, label] of [['all', T.allCities], ['selection', T.selection]]) { const option = document.createElement('option'); option.value = value; setText(option, label); select.append(option); }
+      const scope = document.createElement('div');
+      scope.className = 'family-city-scope';
+      const scopeCaption = document.createElement('label');
+      scopeCaption.htmlFor = 'city-scope';
+      setText(scopeCaption, T.scope);
+      const select = document.createElement('select');
+      select.id = 'city-scope';
+      for (const [value, label] of [
+        ['all', T.allCities],
+        ['selection', T.selection],
+      ]) {
+        const option = document.createElement('option');
+        option.value = value;
+        setText(option, label);
+        select.append(option);
+      }
       select.onchange = () => b.onCityScope(select.value as 'all' | 'selection');
-      const count = document.createElement('p'); count.className = 'hint'; count.id = 'city-scope-count'; count.setAttribute('aria-live', 'polite');
-      scope.append(scopeCaption, select, count); panel.append(scope);
-      syncers.push(() => { const current = b.cityScope(); select.value = current.mode; select.disabled = b.busy(); setDynamicText(count, () => translate(T.targets).replace('{count}', String(b.cityScope().count)).replace('{total}', String(b.cityScope().total))); });
-      const place = document.createElement('div'); place.className = 'family-place'; place.id = 'chain-place';
-      const caption = document.createElement('span'); caption.className = 'family-place-caption'; setText(caption, T.place);
-      const name = document.createElement('strong'); name.id = 'chain-place-name';
-      const open = document.createElement('button'); open.type = 'button'; open.className = 'small'; open.id = 'chain-place-open'; setText(open, T.overrides); open.onclick = b.openPlace;
-      place.append(caption, name, open); panel.append(place);
-      syncers.push(() => { place.hidden = !b.getWorld()?.settlements?.length; const current = b.getPlace(); open.disabled = !current; if (current) { name.dataset.l10nKeep = ''; name.removeAttribute('data-i18n'); name.textContent = current.name; } else setText(name, T.noPlace); });
+      const count = document.createElement('p');
+      count.className = 'hint';
+      count.id = 'city-scope-count';
+      count.setAttribute('aria-live', 'polite');
+      scope.append(scopeCaption, select, count);
+      panel.append(scope);
+      syncers.push(() => {
+        const current = b.cityScope();
+        select.value = current.mode;
+        select.disabled = b.busy();
+        setDynamicText(count, () => translate(T.targets).replace('{count}', String(b.cityScope().count)).replace('{total}', String(b.cityScope().total)));
+      });
+      const place = document.createElement('div');
+      place.className = 'family-place';
+      place.id = 'chain-place';
+      const caption = document.createElement('span');
+      caption.className = 'family-place-caption';
+      setText(caption, T.place);
+      const name = document.createElement('strong');
+      name.id = 'chain-place-name';
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'small';
+      open.id = 'chain-place-open';
+      setText(open, T.overrides);
+      open.onclick = b.openPlace;
+      place.append(caption, name, open);
+      panel.append(place);
+      syncers.push(() => {
+        place.hidden = !b.getWorld()?.settlements?.length;
+        const current = b.getPlace();
+        open.disabled = !current;
+        if (current) {
+          name.dataset.l10nKeep = '';
+          name.removeAttribute('data-i18n');
+          name.textContent = current.name;
+        } else setText(name, T.noPlace);
+      });
     }
     if (f.id === 'region') {
-      const separator = document.createElement('hr'); separator.className = 'relief-source-separator';
+      const separator = document.createElement('hr');
+      separator.className = 'relief-source-separator';
       panel.append(sharedPanel, separator, methodPanel);
     }
-    const general = document.createElement('div'); general.className = 'family-general'; general.setAttribute('role', 'group'); general.setAttribute('aria-label', translate(T.general)); generalPanels.set(f.id, general); panel.append(general);
-    const spine = document.createElement('div'); spine.className = 'chain-spine'; spine.hidden = f.id === 'region'; panel.append(spine);
+    const general = document.createElement('div');
+    general.className = 'family-general';
+    general.setAttribute('role', 'group');
+    general.setAttribute('aria-label', translate(T.general));
+    generalPanels.set(f.id, general);
+    panel.append(general);
+    const spine = document.createElement('div');
+    spine.className = 'chain-spine';
+    spine.hidden = f.id === 'region';
+    panel.append(spine);
     for (const stage of stagesOf(f.id)) spine.append(buildRow(stage).element);
-    panels.set(f.id, panel); scroller.append(panel);
+    panels.set(f.id, panel);
+    scroller.append(panel);
   }
   root.prepend(nav, scroller, advancedButton, modifyButton);
 
   function buildRow(stage: StageDef): Row {
-    const element = document.createElement('section'); element.className = 'stage-row'; element.id = `row-${stage.id}`; element.dataset.stage = stage.id;
-    const head = document.createElement('div'); head.className = 'stage-head';
-    const number = document.createElement('span'); number.className = 'stage-number'; number.dataset.l10nKeep = '';
-    const node = document.createElement('button'); node.type = 'button'; node.className = 'stage-node'; node.setAttribute('role', 'switch');
-    if (!stage.optional) { node.disabled = true; node.title = translate(T.required); node.setAttribute('aria-checked', 'true'); node.dataset.required = ''; }
-    else if (stage.toggle?.kind === 'unavailable') { node.disabled = true; node.title = translate(text(stage.toggle.reason!)); node.dataset.locked = ''; node.setAttribute('aria-checked', 'true'); }
-    else { node.title = translate(T.enable); node.onclick = () => toggle(stage); }
+    const element = document.createElement('section');
+    element.className = 'stage-row';
+    element.id = `row-${stage.id}`;
+    element.dataset.stage = stage.id;
+    const head = document.createElement('div');
+    head.className = 'stage-head';
+    const number = document.createElement('span');
+    number.className = 'stage-number';
+    number.dataset.l10nKeep = '';
+    const node = document.createElement('button');
+    node.type = 'button';
+    node.className = 'stage-node';
+    node.setAttribute('role', 'switch');
+    if (!stage.optional) {
+      node.disabled = true;
+      node.title = translate(T.required);
+      node.setAttribute('aria-checked', 'true');
+      node.dataset.required = '';
+    } else if (stage.toggle?.kind === 'unavailable') {
+      node.disabled = true;
+      node.title = translate(text(stage.toggle.reason!));
+      node.dataset.locked = '';
+      node.setAttribute('aria-checked', 'true');
+    } else {
+      node.title = translate(T.enable);
+      node.onclick = () => toggle(stage);
+    }
     node.setAttribute('aria-label', `${translate(T.enable)} · ${translate(text(stage.label))}`);
-    const title = document.createElement('button'); title.type = 'button'; title.className = 'stage-title'; title.setAttribute('aria-expanded', 'false'); title.setAttribute('aria-controls', `body-${stage.id}`);
-    const name = document.createElement('span'); name.className = 'stage-name'; setText(name, text(stage.label));
-    title.append(name); title.title = translate(text(stage.summary)); title.onclick = () => expand(stage.id, title.getAttribute('aria-expanded') !== 'true');
-    const time = document.createElement('output'); time.className = 'stage-time'; time.setAttribute('aria-live', 'off');
-    const run = document.createElement('button'); run.type = 'button'; run.className = 'stage-run'; run.title = translate(T.run); run.setAttribute('aria-label', `${translate(T.run)} · ${translate(text(stage.label))}`);
-    run.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.8v8.4L10 6z" fill="currentColor"/></svg>'; run.onclick = () => b.run(stage);
-    const help = document.createElement('a'); help.className = 'stage-help'; help.href = atlasUrl(`./scientific/index.html#${stageAnchor(stage.id)}`); help.target = '_blank'; help.rel = 'noopener';
-    setText(help, T.help); help.title = translate(T.help); help.setAttribute('aria-label', `${translate(T.help)} · ${translate(text(stage.label))}`); help.dataset.l10nKeep = '';
-    const actions = document.createElement('div'); actions.className = 'stage-actions'; actions.append(run);
+    const title = document.createElement('button');
+    title.type = 'button';
+    title.className = 'stage-title';
+    title.setAttribute('aria-expanded', 'false');
+    title.setAttribute('aria-controls', `body-${stage.id}`);
+    const name = document.createElement('span');
+    name.className = 'stage-name';
+    setText(name, text(stage.label));
+    title.append(name);
+    title.title = translate(text(stage.summary));
+    title.onclick = () => expand(stage.id, title.getAttribute('aria-expanded') !== 'true');
+    const time = document.createElement('output');
+    time.className = 'stage-time';
+    time.setAttribute('aria-live', 'off');
+    const run = document.createElement('button');
+    run.type = 'button';
+    run.className = 'stage-run';
+    run.title = translate(T.run);
+    run.setAttribute('aria-label', `${translate(T.run)} · ${translate(text(stage.label))}`);
+    run.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.8v8.4L10 6z" fill="currentColor"/></svg>';
+    run.onclick = () => b.run(stage);
+    const help = document.createElement('a');
+    help.className = 'stage-help';
+    help.href = atlasUrl(`./scientific/index.html#${stageAnchor(stage.id)}`);
+    help.target = '_blank';
+    help.rel = 'noopener';
+    setText(help, T.help);
+    help.title = translate(T.help);
+    help.setAttribute('aria-label', `${translate(T.help)} · ${translate(text(stage.label))}`);
+    help.dataset.l10nKeep = '';
+    const actions = document.createElement('div');
+    actions.className = 'stage-actions';
+    actions.append(run);
     let draw: HTMLButtonElement | undefined;
     if (stage.variation && b.reroll) {
-      draw = document.createElement('button'); draw.type = 'button'; draw.className = 'stage-reroll'; draw.dataset.stageVariation = stage.id;
-      draw.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><g fill="currentColor"><circle cx="5" cy="5" r="1"/><circle cx="11" cy="5" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="5" cy="11" r="1"/><circle cx="11" cy="11" r="1"/></g></svg>'; draw.title = translate(T.variation); draw.setAttribute('aria-label', `${translate(T.variation)} · ${translate(text(stage.label))}`);
-      draw.onclick = () => b.reroll!(stage); actions.prepend(draw);
+      draw = document.createElement('button');
+      draw.type = 'button';
+      draw.className = 'stage-reroll';
+      draw.dataset.stageVariation = stage.id;
+      draw.innerHTML =
+        '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><g fill="currentColor"><circle cx="5" cy="5" r="1"/><circle cx="11" cy="5" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="5" cy="11" r="1"/><circle cx="11" cy="11" r="1"/></g></svg>';
+      draw.title = translate(T.variation);
+      draw.setAttribute('aria-label', `${translate(T.variation)} · ${translate(text(stage.label))}`);
+      draw.onclick = () => b.reroll!(stage);
+      actions.prepend(draw);
     }
     head.append(number, title, node, actions, time);
-    const note = document.createElement('p'); note.className = 'stage-note'; note.hidden = true;
-    const body = document.createElement('div'); body.className = 'stage-body'; body.id = `body-${stage.id}`; body.hidden = true;
-    const summary = document.createElement('p'); summary.className = 'stage-summary hint'; setText(summary, text(stage.summary)); body.append(summary, help);
+    const note = document.createElement('p');
+    note.className = 'stage-note';
+    note.hidden = true;
+    const body = document.createElement('div');
+    body.className = 'stage-body';
+    body.id = `body-${stage.id}`;
+    body.hidden = true;
+    const summary = document.createElement('p');
+    summary.className = 'stage-summary hint';
+    setText(summary, text(stage.summary));
+    body.append(summary, help);
     // The row's main controls, visible while it is collapsed (filled from `stage.quick` once the sections are placed).
-    const quick = document.createElement('div'); quick.className = 'stage-quick'; quick.hidden = true;
+    const quick = document.createElement('div');
+    quick.className = 'stage-quick';
+    quick.hidden = true;
     element.append(head, quick, note, body);
     const row = { stage, element, node, time, run, body, number, note, title, quick, draw };
-    rows.set(stage.id, row); return row;
+    rows.set(stage.id, row);
+    return row;
   }
   function expand(id: string, open: boolean): void {
     const row = rows.get(id)!;
-    if (row.stage.family === 'region') { openAdvanced(id); return; }
-    row.body.hidden = !open; row.title.setAttribute('aria-expanded', String(open));
+    if (row.stage.family === 'region') {
+      openAdvanced(id);
+      return;
+    }
+    row.body.hidden = !open;
+    row.title.setAttribute('aria-expanded', String(open));
     row.element.classList.toggle('is-open', open);
   }
   function selectFamily(next: StageFamily): void {
@@ -264,33 +553,56 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     advancedButton.hidden = next !== 'region';
     modifyButton.hidden = next !== 'region';
     family = next;
-    for (const [id, tab] of tabs) { tab.setAttribute('aria-selected', String(id === next)); tab.tabIndex = id === next ? 0 : -1; panels.get(id)!.hidden = id !== next; }
-    scroller.scrollTop = 0; b.onFamily?.(next);
+    for (const [id, tab] of tabs) {
+      tab.setAttribute('aria-selected', String(id === next));
+      tab.tabIndex = id === next ? 0 : -1;
+      panels.get(id)!.hidden = id !== next;
+    }
+    scroller.scrollTop = 0;
+    b.onFamily?.(next);
   }
 
   // ── Context and toggles ──────────────────────────────────────────────────
   const reliefOf = () => sources.current();
   function context(): StageContext {
-    const settings = get(), world = b.getWorld(), relief = effectiveTerrainSettings(settings, adaptedExtent(settings)).relief;
-    return { relief: reliefOf(), classicTerrain: settings.runtime?.backend === 'typescript', finiteRelief: ['flat', 'plateau', 'volcano', 'caldera'].includes(relief),
-      urban: settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript', hasTerrain: !!world, hasRegion: !!world?.settlements?.length, place: b.getPlace()?.key };
+    const settings = get(),
+      world = b.getWorld(),
+      relief = effectiveTerrainSettings(settings, adaptedExtent(settings)).relief;
+    return {
+      relief: reliefOf(),
+      classicTerrain: settings.runtime?.backend === 'typescript',
+      finiteRelief: ['flat', 'plateau', 'volcano', 'caldera'].includes(relief),
+      urban: settings.urban?.backend ?? settings.runtime?.backend ?? 'typescript',
+      hasTerrain: !!world,
+      hasRegion: !!world?.settlements?.length,
+      place: b.getPlace()?.key,
+    };
   }
-  const compact = () => { const s = get(); return isCompactProcedural({ source: s.runtime?.source, procedural: s.terrain?.procedural }); };
+  const compact = () => {
+    const s = get();
+    return isCompactProcedural({ source: s.runtime?.source, procedural: s.terrain?.procedural });
+  };
   function toggleState(stage: StageDef): boolean {
-    const t = stage.toggle, settings = get();
+    const t = stage.toggle,
+      settings = get();
     if (!t || t.kind === 'unavailable') return true;
     if (t.kind === 'coasts') return settings.terrain?.procedural?.enabled?.coasts !== false && effectiveTerrainSettings(settings, adaptedExtent(settings)).coastMask !== 0;
     if (t.kind === 'roads') return settings.region?.roads !== null;
     const value = t.path!.startsWith('terrain.procedural.') ? readSettingPath(settings, t.path!) : b.terrain.access.get(t.path!);
     if (typeof value === 'boolean') return value;
-    const fallback = typeof t.fallback === 'function' ? t.fallback({ compact: compact(), relief: String(b.terrain.access.get('terrain.relief')) }) : t.fallback ?? true;
+    const fallback = typeof t.fallback === 'function' ? t.fallback({ compact: compact(), relief: String(b.terrain.access.get('terrain.relief')) }) : (t.fallback ?? true);
     return fallback;
   }
   function toggle(stage: StageDef): void {
-    const t = stage.toggle!, settings = get(), on = toggleState(stage);
+    const t = stage.toggle!,
+      settings = get(),
+      on = toggleState(stage);
     if (t.kind === 'coasts') {
-      settings.terrain ??= {};settings.terrain.procedural ??= {};settings.terrain.procedural.enabled ??= {};
-      settings.terrain.procedural.enabled.coasts=!on;settings.terrain.procedural.enabled.coastCut=!on;
+      settings.terrain ??= {};
+      settings.terrain.procedural ??= {};
+      settings.terrain.procedural.enabled ??= {};
+      settings.terrain.procedural.enabled.coasts = !on;
+      settings.terrain.procedural.enabled.coastCut = !on;
       if (on) {
         stashes.coastMask = settings.terrain?.coastMask ?? { none: 0, N: 1, E: 4, S: 16, W: 64, random: 255 }[settings.options.coast];
         stashes.coastTrace = settings.terrain?.coastTrace;
@@ -298,89 +610,143 @@ export function mountStageChain(b: StageChainBindings): StageChain {
         b.terrain.access.set('terrain.coastMask', 0);
       } else {
         if (stashes.coastTrace) {
-          settings.terrain ??= {}; settings.terrain.coastTrace = stashes.coastTrace;
+          settings.terrain ??= {};
+          settings.terrain.coastTrace = stashes.coastTrace;
           if (settings.terrain.procedural?.enabled?.coasts === false) settings.terrain.procedural.enabled.coasts = true;
         }
         b.terrain.access.set('terrain.coastMask', stashes.coastMask ?? (settings.terrain?.zones ? 0 : 1));
       }
     } else if (t.kind === 'roads') {
-      settings.region ??= {}; settings.region.roads = on ? null : {}; b.onRegionChange();
+      settings.region ??= {};
+      settings.region.roads = on ? null : {};
+      b.onRegionChange();
     } else if (t.path!.startsWith('terrain.procedural.')) {
-      settings.terrain ??= {}; writeSettingPath(settings, t.path!, !on); b.onChange(); b.terrain.sync();
+      settings.terrain ??= {};
+      writeSettingPath(settings, t.path!, !on);
+      b.onChange();
+      b.terrain.sync();
     } else b.terrain.access.set(t.path!, !on);
-    markStale(stage.id); sync();
+    markStale(stage.id);
+    sync();
   }
   const paint = () => b.terrain.openEditor('symbolic');
 
   // ── Relief source alternatives ───────────────────────────────────────────
   function setSource(mode: StageContext['relief']): void {
-    if (!sources.select(mode)) { if (mode === 'neural') b.onNeuralSelected?.(); return; }
+    if (!sources.select(mode)) {
+      if (mode === 'neural') b.onNeuralSelected?.();
+      return;
+    }
     b.terrain.access.set('runtime.source', get().runtime!.source);
-    b.onChange(); b.terrain.sync(); markStale('relief-source'); sync();
+    b.onChange();
+    b.terrain.sync();
+    markStale('relief-source');
+    sync();
     if (mode === 'heightmap') importHost.scrollIntoView({ block: 'nearest' });
     if (mode === 'neural') b.onNeuralSelected?.();
   }
   function sourceSwitch(): HTMLElement {
-    const group = document.createElement('div'); group.className = 'source-switch'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', translate(T.source));
+    const group = document.createElement('div');
+    group.className = 'source-switch';
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', translate(T.source));
     const buttons: [ReliefTab, HTMLButtonElement][] = [];
     for (const mode of RELIEF_TABS) {
-      const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'radio'); button.dataset.source = mode; button.id = `source-${mode}`;
-      const caption = document.createElement('span'); setText(caption, T[mode]); button.append(iconImg(`source-${mode}`, 22), caption); button.onclick = () => setSource(mode === 'heightmap' ? sources.method() : mode);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'radio');
+      button.dataset.source = mode;
+      button.id = `source-${mode}`;
+      const caption = document.createElement('span');
+      setText(caption, T[mode]);
+      button.append(iconImg(`source-${mode}`, 22), caption);
+      button.onclick = () => setSource(mode === 'heightmap' ? sources.method() : mode);
       button.onkeydown = event => {
         const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-        if (!step) return; event.preventDefault();
+        if (!step) return;
+        event.preventDefault();
         const next = buttons[(buttons.findIndex(([, item]) => item === button) + step + buttons.length) % buttons.length][1];
-        if (!next.disabled) { next.click(); next.focus(); }
+        if (!next.disabled) {
+          next.click();
+          next.focus();
+        }
       };
-      buttons.push([mode, button]); group.append(button);
+      buttons.push([mode, button]);
+      group.append(button);
     }
     syncers.push(() => {
-      const mode = reliefTab(reliefOf()), caps = b.availability(), neuralReason = caps.checked && !caps.webgpu && !caps.python && !caps.native ? T.noNeural : undefined, busy = b.busy();
+      const mode = reliefTab(reliefOf()),
+        caps = b.availability(),
+        neuralReason = caps.checked && !caps.webgpu && !caps.python && !caps.native ? T.noNeural : undefined,
+        busy = b.busy();
       for (const [value, button] of buttons) {
-        button.setAttribute('aria-checked', String(value === mode)); button.tabIndex = value === mode ? 0 : -1;
+        button.setAttribute('aria-checked', String(value === mode));
+        button.tabIndex = value === mode ? 0 : -1;
         const blocked = value === 'neural' && !!neuralReason && mode !== 'neural';
         // Neural is also the entry point to model/setup Settings when this browser cannot run it yet.
-        button.disabled = busy; button.title = blocked ? translate(neuralReason!) : '';
+        button.disabled = busy;
+        button.title = blocked ? translate(neuralReason!) : '';
       }
     });
     return group;
   }
 
   // ── Placing the existing controls ────────────────────────────────────────
-  const owner = (id: string) => { const stage = stageForControl(id); if (!stage) console.warn(`[stage-chain] no stage owns control ${id}`); return stage; };
+  const owner = (id: string) => {
+    const stage = stageForControl(id);
+    if (!stage) console.warn(`[stage-chain] no stage owns control ${id}`);
+    return stage;
+  };
   const expertHosts = new Map<string, HTMLElement>();
   const expertHost = (stageId: string): HTMLElement => {
     let host = expertHosts.get(stageId);
     if (!host) {
       // Shown in place under a sub-heading: the advanced view has no further disclosure level.
-      const block = document.createElement('div'); block.className = 'terrain-super-advanced';
-      const heading = document.createElement('h5'); heading.className = 'terrain-fine-title'; setText(heading, copy('Expert settings', 'Paramètres experts'));
-      host = document.createElement('div'); host.className = 'parameter-form relief-expert-fields';
-      block.append(heading, host); rows.get(stageId)!.body.append(block); expertHosts.set(stageId, host);
+      const block = document.createElement('div');
+      block.className = 'terrain-super-advanced';
+      const heading = document.createElement('h5');
+      heading.className = 'terrain-fine-title';
+      setText(heading, copy('Expert settings', 'Paramètres experts'));
+      host = document.createElement('div');
+      host.className = 'parameter-form relief-expert-fields';
+      block.append(heading, host);
+      rows.get(stageId)!.body.append(block);
+      expertHosts.set(stageId, host);
     }
     return host;
   };
   const place = (node: Element | null | undefined, stageId: string | undefined) => {
-    if (!node || !stageId) return; const row = rows.get(stageId); if (!row) return;
+    if (!node || !stageId) return;
+    const row = rows.get(stageId);
+    if (!row) return;
     const path = node instanceof HTMLElement ? node.dataset.fieldPath : undefined;
-    if (path && isTerrainExpertControl(path)) expertHost(stageId).append(node); else row.body.append(node);
+    if (path && isTerrainExpertControl(path)) expertHost(stageId).append(node);
+    else row.body.append(node);
   };
-  const tRoot = leftovers, sketchHost = b.terrain.sketchHost;
-  root.addEventListener('relief-source-changed',event=>{
+  const tRoot = leftovers,
+    sketchHost = b.terrain.sketchHost;
+  root.addEventListener('relief-source-changed', event => {
     sources.changed((event as CustomEvent).detail);
     sync();
   });
   // Composite widgets first, so their fields stay together.
-  const coastPanel = tRoot.querySelector<HTMLElement>('#terrain-coast-panel'); place(coastPanel, 'relief-source');
+  const coastPanel = tRoot.querySelector<HTMLElement>('#terrain-coast-panel');
+  place(coastPanel, 'relief-source');
   if (coastPanel) prepareCoastGrid(coastPanel);
   // The checkable coast layouts edit this value directly, including random islands.
   tRoot.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')?.setAttribute('data-chain-hidden', '');
   tRoot.querySelector<HTMLElement>('#terrain-coast-toggle')?.setAttribute('aria-expanded', 'true');
   place(sketchHost, 'relief-mask');
   const hydrology = tRoot.querySelector('#terrain-hydrology-panel');
-  for (const group of Array.from(hydrology?.querySelectorAll(':scope > .terrain-control-group') ?? [])) { group.classList.add('stage-subgroup'); place(group, 'water-hydrology'); }
+  for (const group of Array.from(hydrology?.querySelectorAll(':scope > .terrain-control-group') ?? [])) {
+    group.classList.add('stage-subgroup');
+    place(group, 'water-hydrology');
+  }
   const classicGroup = tRoot.querySelector('[data-field-path="options.coast"]')?.closest('.terrain-control-group');
-  if (classicGroup) { classicGroup.classList.add('stage-subgroup'); place(classicGroup, 'relief-source'); }
+  if (classicGroup) {
+    classicGroup.classList.add('stage-subgroup');
+    place(classicGroup, 'relief-source');
+  }
   place(tRoot.querySelector('.terrain-extent'), 'relief-source');
   const histogram = tRoot.querySelector('[data-field-path="terrain.neuralTuning.steps"]')?.closest('.terrain-control-group')?.querySelector(':scope > .terrain-presets');
   const neuralNote = tRoot.querySelector('.terrain-neural-note');
@@ -388,41 +754,71 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   // Every remaining schema field goes to the stage that owns its path.
   for (const field of Array.from(tRoot.querySelectorAll<HTMLElement>('[data-field-path]'))) {
     if (field.closest('.stage-row')) continue;
-    const id = field.dataset.fieldPath!, stage = owner(id);
-    if (stage === 'settings') { if (/^runtime\.(neuralAssets|localServer|neuralServer|pythonServer)$/.test(id)) b.staging.querySelector('#settings-endpoints')?.append(field); continue; }
+    const id = field.dataset.fieldPath!,
+      stage = owner(id);
+    if (stage === 'settings') {
+      if (/^runtime\.(neuralAssets|localServer|neuralServer|pythonServer)$/.test(id)) b.staging.querySelector('#settings-endpoints')?.append(field);
+      continue;
+    }
     place(field, stage);
   }
   // Execution choices are edited in Settings; the mounted fields only keep the terrain form state consistent.
   for (const id of SETTINGS_PANEL_CONTROLS) tRoot.querySelector<HTMLElement>(`[data-field-path="${id}"]`)?.setAttribute('hidden', '');
-  place(histogram, 'relief-neural-base'); place(neuralNote, 'relief-source'); place(modelNote, 'relief-neural-coarse');
-  place(tRoot.querySelector('#terrain-erosion-reset'), 'relief-regional'); place(tRoot.querySelector('#terrain-detail-reset'), 'relief-refine');
+  place(histogram, 'relief-neural-base');
+  place(neuralNote, 'relief-source');
+  place(modelNote, 'relief-neural-coarse');
+  place(tRoot.querySelector('#terrain-erosion-reset'), 'relief-regional');
+  place(tRoot.querySelector('#terrain-detail-reset'), 'relief-refine');
   place(tRoot.querySelector('#terrain-phasor-method'), 'relief-phasor');
   // Main-page controls (seed, places, city options) declare their owner with data-control.
   for (const element of Array.from(b.staging.querySelectorAll<HTMLElement>('[data-control]'))) {
-    const id = element.dataset.control!, stage = owner(id); if (!stage || stage === 'settings') continue;
+    const id = element.dataset.control!,
+      stage = owner(id);
+    if (!stage || stage === 'settings') continue;
     place(element, stage);
   }
   // Region controls: every field by its path; the manual list as a block.
   const regionList = b.regionRoot.querySelector('#region-add-place')?.closest('.parameter-group');
-  if (regionList) { regionList.classList.add('stage-subgroup'); place(regionList, 'settle-sites'); }
+  if (regionList) {
+    regionList.classList.add('stage-subgroup');
+    place(regionList, 'settle-sites');
+  }
   for (const field of Array.from(b.regionRoot.querySelectorAll<HTMLElement>('[data-field-path]'))) {
     if (field.closest('.stage-row')) continue;
     place(field, owner(`region.${field.dataset.fieldPath}`));
   }
   // Appearance panel sections → display rows (section bodies, with their colour pickers).
-  const renderOwners: Record<string, string> = { ground: 'display-terrain', relief: 'display-relief', diagnostics: 'display-relief', vegetation: 'display-vegetation', landuse: 'display-landuse', water: 'display-water', roads: 'display-roads',
-    buildings: 'display-buildings', ambience: 'display-ambience', text: 'display-text', general: 'display-labels' };
+  const renderOwners: Record<string, string> = {
+    ground: 'display-terrain',
+    relief: 'display-relief',
+    diagnostics: 'display-relief',
+    vegetation: 'display-vegetation',
+    landuse: 'display-landuse',
+    water: 'display-water',
+    roads: 'display-roads',
+    buildings: 'display-buildings',
+    ambience: 'display-ambience',
+    text: 'display-text',
+    general: 'display-labels',
+  };
   for (const [section, stageId] of Object.entries(renderOwners)) {
     const sectionBody = b.renderRoot.querySelector(`[data-render-section="${section}"] > .render-settings-fields`);
     if (!sectionBody) continue;
-    const box = document.createElement('div'); box.className = 'stage-render-section'; box.dataset.renderSection = section; box.append(sectionBody); place(box, stageId);
+    const box = document.createElement('div');
+    box.className = 'stage-render-section';
+    box.dataset.renderSection = section;
+    box.append(sectionBody);
+    place(box, stageId);
   }
   // Quick controls: the shared field is lifted out of its section body (one DOM home) onto the collapsed row, so it keeps the shared form's handlers, notes and sync.
-  for (const stage of STAGES) for (const id of stage.quick) {
-    const control = id === 'widget:view3d' ? viewQuick() : id.startsWith('appearance.') ? root.querySelector<HTMLElement>(`[data-setting-path="${id}"]`)?.closest<HTMLElement>('.parameter-field') : null;
-    if (!control) continue;
-    const row = rows.get(stage.id)!; row.quick.append(control); row.quick.hidden = false;
-  }
+  for (const stage of STAGES)
+    for (const id of stage.quick) {
+      const control = id === 'widget:view3d' ? viewQuick() : id.startsWith('appearance.') ? root.querySelector<HTMLElement>(`[data-setting-path="${id}"]`)?.closest<HTMLElement>('.parameter-field') : null;
+      if (!control) continue;
+      const row = rows.get(stage.id)!;
+      row.quick.append(control);
+      row.quick.hidden = false;
+    }
   // Procedural recipe controls are new staged forms over the same terrain value model.
   for (const stage of STAGES) {
     const fields = terrainProceduralStageFields.filter(field => stageForControl(field.path) === stage.id);
@@ -430,148 +826,292 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     for (const expert of [false, true]) {
       const selected = fields.filter(field => isTerrainExpertControl(field.path) === expert);
       if (!selected.length) continue;
-      const host = document.createElement('div'); (expert ? expertHost(stage.id) : rows.get(stage.id)!.body).append(host);
-      forms.push(mountParameterForm(host, selected.map(field => ({ ...field, id: `stage-${field.path.replace(/[^a-z0-9]/gi, '-')}` })), { getValue: b.terrain.access.get, setValue: b.terrain.access.set, disabled: b.busy }));
+      const host = document.createElement('div');
+      (expert ? expertHost(stage.id) : rows.get(stage.id)!.body).append(host);
+      forms.push(
+        mountParameterForm(
+          host,
+          selected.map(field => ({ ...field, id: `stage-${field.path.replace(/[^a-z0-9]/gi, '-')}` })),
+          { getValue: b.terrain.access.get, setValue: b.terrain.access.set, disabled: b.busy },
+        ),
+      );
     }
   }
 
   // General settings use the mounted controls so all handlers and visibility stay in sync.
-  const waterLandforms = document.createElement('section'); waterLandforms.className = 'region-water-landforms';
-  const waterLandformsTitle = document.createElement('h4'); waterLandformsTitle.id = 'region-water-landforms-title'; setText(waterLandformsTitle, T.waterLandforms);
-  waterLandforms.setAttribute('aria-labelledby', waterLandformsTitle.id); waterLandforms.append(waterLandformsTitle);
+  const waterLandforms = document.createElement('section');
+  waterLandforms.className = 'region-water-landforms';
+  const waterLandformsTitle = document.createElement('h4');
+  waterLandformsTitle.id = 'region-water-landforms-title';
+  setText(waterLandformsTitle, T.waterLandforms);
+  waterLandforms.setAttribute('aria-labelledby', waterLandformsTitle.id);
+  waterLandforms.append(waterLandformsTitle);
   generalPanels.get('region')!.classList.add('region-general');
-  for (const f of FAMILIES) for (const id of GENERAL_CONTROLS[f.id]) {
-    let control: HTMLElement | null;
-    if (id === 'widget:extent') {
-      control = root.querySelector<HTMLElement>('.terrain-extent');
-      const legend = control?.querySelector('legend'); if (legend) setText(legend, T.size);
-    } else if (id === 'widget:coasts') control = coastPanel;
-    else if (id === 'widget:seed') control = root.querySelector<HTMLElement>('[data-control="widget:seed"]');
-    else control = root.querySelector<HTMLElement>(id.startsWith('main:') ? `[data-control="${id}"]` : `[data-field-path="${id}"]`);
-    if (!control) continue;
-    if (id === 'terrain.climate' || id === 'terrain.relief') prepareLandscapeStrip(control, id === 'terrain.climate' ? 'climate' : 'relief');
-    control.dataset.stageControl = stageForControl(id) ?? (f.id === 'map' ? 'display-terrain' : 'relief-source');
-    if (f.id === 'region' && COMPACT_REGION_CONTROLS.has(id)) {
-      if (!waterLandforms.parentElement) generalPanels.get('region')!.append(waterLandforms);
-      const field = allTerrainFields.find(field => field.path === id)!;
-      const tooltip = copy(`${field.label}\n${field.help}`, `${translate(field.label, 'fr')}\n${translate(field.help!, 'fr')}`);
-      control.title = tooltip;
-      for (const input of Array.from(control.querySelectorAll('input'))) input.title = tooltip;
-      // The form's aria-describedby still points to its help, visually hidden only in this block.
-      waterLandforms.append(control); continue;
+  for (const f of FAMILIES)
+    for (const id of GENERAL_CONTROLS[f.id]) {
+      let control: HTMLElement | null;
+      if (id === 'widget:extent') {
+        control = root.querySelector<HTMLElement>('.terrain-extent');
+        const legend = control?.querySelector('legend');
+        if (legend) setText(legend, T.size);
+      } else if (id === 'widget:coasts') control = coastPanel;
+      else if (id === 'widget:seed') control = root.querySelector<HTMLElement>('[data-control="widget:seed"]');
+      else control = root.querySelector<HTMLElement>(id.startsWith('main:') ? `[data-control="${id}"]` : `[data-field-path="${id}"]`);
+      if (!control) continue;
+      if (id === 'terrain.climate' || id === 'terrain.relief') prepareLandscapeStrip(control, id === 'terrain.climate' ? 'climate' : 'relief');
+      control.dataset.stageControl = stageForControl(id) ?? (f.id === 'map' ? 'display-terrain' : 'relief-source');
+      if (f.id === 'region' && COMPACT_REGION_CONTROLS.has(id)) {
+        if (!waterLandforms.parentElement) generalPanels.get('region')!.append(waterLandforms);
+        const field = allTerrainFields.find(field => field.path === id)!;
+        const tooltip = copy(`${field.label}\n${field.help}`, `${translate(field.label, 'fr')}\n${translate(field.help!, 'fr')}`);
+        control.title = tooltip;
+        for (const input of Array.from(control.querySelectorAll('input'))) input.title = tooltip;
+        // The form's aria-describedby still points to its help, visually hidden only in this block.
+        waterLandforms.append(control);
+        continue;
+      }
+      (f.id === 'region' && SHARED_RELIEF_CONTROLS.has(id) ? sharedPanel : generalPanels.get(f.id)!).append(control);
     }
-    (f.id === 'region' && SHARED_RELIEF_CONTROLS.has(id) ? sharedPanel : generalPanels.get(f.id)!).append(control);
-  }
   // Custom climate stays available in Advanced; only the tile is replaced by Underdark.
-  const climateHost = document.createElement('div'); rows.get('relief-climate')!.body.prepend(climateHost);
-  forms.push(mountParameterForm(climateHost, [{ ...terrainBasicFields.find(field => field.path === 'terrain.climate')!, id: 'stage-terrain-climate' }], {
-    getValue: b.terrain.access.get, disabled: b.busy,
-    setValue: (path, value) => {
-      const biome = b.terrain.access.get('options.biome'); b.terrain.access.set(path, value);
-      markStale(b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); sync();
-    },
-  }));
+  const climateHost = document.createElement('div');
+  rows.get('relief-climate')!.body.prepend(climateHost);
+  forms.push(
+    mountParameterForm(climateHost, [{ ...terrainBasicFields.find(field => field.path === 'terrain.climate')!, id: 'stage-terrain-climate' }], {
+      getValue: b.terrain.access.get,
+      disabled: b.busy,
+      setValue: (path, value) => {
+        const biome = b.terrain.access.get('options.biome');
+        b.terrain.access.set(path, value);
+        markStale(b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate');
+        sync();
+      },
+    }),
+  );
   for (const path of METHOD_CONTROLS) {
     const control = root.querySelector<HTMLElement>(`[data-field-path="${path}"]`);
     if (!control) continue;
-    control.dataset.stageControl = 'relief-source'; methodPanel.append(control); preparePresetButtons(control);
+    control.dataset.stageControl = 'relief-source';
+    methodPanel.append(control);
+    preparePresetButtons(control);
   }
   function preparePresetButtons(field: HTMLElement): void {
     field.classList.add('procedural-preset-field');
-    const select = field.querySelector<HTMLSelectElement>('select')!; select.hidden = true;
-    const group = document.createElement('div'); group.className = 'preset-switch'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', translate(select.getAttribute('aria-label') ?? T.method));
+    const select = field.querySelector<HTMLSelectElement>('select')!;
+    select.hidden = true;
+    const group = document.createElement('div');
+    group.className = 'preset-switch';
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', translate(select.getAttribute('aria-label') ?? T.method));
     const buttons: HTMLButtonElement[] = [];
-    for (const [value, label, file] of [['classic', T.classic, 'preset-classic-v1.webp'], ['compact', T.fast, 'preset-fast-v1.webp']]) {
-      const button = document.createElement('button'); button.type = 'button'; button.dataset.proceduralPreset = value; button.setAttribute('role', 'radio');
-      const image = document.createElement('img'); image.src = new URL(`./assets/${file}`, import.meta.url).href; image.alt = ''; image.width = image.height = 36;
-      const caption = document.createElement('span'); setText(caption, label); button.append(image, caption);
-      button.onclick = () => { select.value = value; select.dispatchEvent(new Event('change', { bubbles: true })); };
-      button.onkeydown = event => { if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return; event.preventDefault(); const next = buttons.find(other => other !== button); if (next && !next.disabled) { next.click(); next.focus(); } };
-      buttons.push(button); group.append(button);
+    for (const [value, label, file] of [
+      ['classic', T.classic, 'preset-classic-v1.webp'],
+      ['compact', T.fast, 'preset-fast-v1.webp'],
+    ]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.proceduralPreset = value;
+      button.setAttribute('role', 'radio');
+      const image = document.createElement('img');
+      image.src = new URL(`./assets/${file}`, import.meta.url).href;
+      image.alt = '';
+      image.width = image.height = 36;
+      const caption = document.createElement('span');
+      setText(caption, label);
+      button.append(image, caption);
+      button.onclick = () => {
+        select.value = value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      button.onkeydown = event => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const next = buttons.find(other => other !== button);
+        if (next && !next.disabled) {
+          next.click();
+          next.focus();
+        }
+      };
+      buttons.push(button);
+      group.append(button);
     }
     field.append(group);
-    syncers.push(() => { for (const button of buttons) { const selected = button.dataset.proceduralPreset === select.value; button.setAttribute('aria-checked', String(selected)); button.tabIndex = selected ? 0 : -1; button.disabled = b.busy() || select.disabled; } });
+    syncers.push(() => {
+      for (const button of buttons) {
+        const selected = button.dataset.proceduralPreset === select.value;
+        button.setAttribute('aria-checked', String(selected));
+        button.tabIndex = selected ? 0 : -1;
+        button.disabled = b.busy() || select.disabled;
+      }
+    });
   }
   syncers.push(() => {
     const classic = context().classicTerrain;
-    for (const path of ['terrain.procedural.preset'])
-      methodPanel.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-general-hidden', classic);
+    for (const path of ['terrain.procedural.preset']) methodPanel.querySelector<HTMLElement>(`[data-field-path="${path}"]`)?.toggleAttribute('data-general-hidden', classic);
   });
   // Import and terrain editing stay beside the main relief choices.
-  const sidebarTools = document.createElement('section'); sidebarTools.className = 'relief-sidebar-tools'; methodPanel.after(sidebarTools);
-  const methodSwitch = document.createElement('div'); methodSwitch.className = 'source-switch heightmap-method-switch'; methodSwitch.setAttribute('role', 'radiogroup'); methodSwitch.setAttribute('aria-label', translate(T.heightmap));
+  const sidebarTools = document.createElement('section');
+  sidebarTools.className = 'relief-sidebar-tools';
+  methodPanel.after(sidebarTools);
+  const methodSwitch = document.createElement('div');
+  methodSwitch.className = 'source-switch heightmap-method-switch';
+  methodSwitch.setAttribute('role', 'radiogroup');
+  methodSwitch.setAttribute('aria-label', translate(T.heightmap));
   const methodButtons: HTMLButtonElement[] = [];
-  for (const [mode, label, id, panel] of [['heightmap', T.loadHeightmap, 'load', 'relief-import'], ['symbolic', T.paintSymbolic, 'symbolic', 'relief-symbolic']] as const) {
-    const button = document.createElement('button'); button.type = 'button'; button.id = `heightmap-method-${id}`; button.setAttribute('role', 'radio'); button.setAttribute('aria-controls', panel); setText(button, label);
+  for (const [mode, label, id, panel] of [
+    ['heightmap', T.loadHeightmap, 'load', 'relief-import'],
+    ['symbolic', T.paintSymbolic, 'symbolic', 'relief-symbolic'],
+  ] as const) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.id = `heightmap-method-${id}`;
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-controls', panel);
+    setText(button, label);
     button.onclick = () => setSource(mode);
     button.onkeydown = event => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-      event.preventDefault(); const next = methodButtons.find(other => other !== button);
-      if (next && !next.disabled) { next.click(); next.focus(); }
+      event.preventDefault();
+      const next = methodButtons.find(other => other !== button);
+      if (next && !next.disabled) {
+        next.click();
+        next.focus();
+      }
     };
-    methodButtons.push(button); methodSwitch.append(button);
-    syncers.push(() => { const selected = reliefOf() === mode; button.setAttribute('aria-checked', String(selected)); button.tabIndex = selected ? 0 : -1; button.disabled = b.busy(); });
+    methodButtons.push(button);
+    methodSwitch.append(button);
+    syncers.push(() => {
+      const selected = reliefOf() === mode;
+      button.setAttribute('aria-checked', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      button.disabled = b.busy();
+    });
   }
   sidebarTools.append(methodSwitch);
-  const importHost = document.createElement('div'); importHost.id = 'relief-import'; sidebarTools.append(importHost);
-  const importSync = b.heightmap.source(importHost); syncers.push(() => { importHost.hidden = reliefOf() !== 'heightmap'; importSync.sync(); importHost.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = b.busy(); }); });
-  const fitHost = document.createElement('div'); place(fitHost, 'relief-heightmap-fit');
-  const heightmapFit = mountHeightmapFit(fitHost, { getSettings: get, disabled: b.busy,
-    onChange: () => { b.onChange(); b.terrain.sync(); markStale('relief-heightmap-fit'); sync(); },
+  const importHost = document.createElement('div');
+  importHost.id = 'relief-import';
+  sidebarTools.append(importHost);
+  const importSync = b.heightmap.source(importHost);
+  syncers.push(() => {
+    importHost.hidden = reliefOf() !== 'heightmap';
+    importSync.sync();
+    importHost.querySelectorAll<HTMLButtonElement>('button').forEach(button => {
+      button.disabled = b.busy();
+    });
+  });
+  const fitHost = document.createElement('div');
+  place(fitHost, 'relief-heightmap-fit');
+  const heightmapFit = mountHeightmapFit(fitHost, {
+    getSettings: get,
+    disabled: b.busy,
+    onChange: () => {
+      b.onChange();
+      b.terrain.sync();
+      markStale('relief-heightmap-fit');
+      sync();
+    },
   });
   // Keep the physical interpretation visible beside import actions; adjustments live in their stage.
   importHost.prepend(heightmapFit.summary);
   syncers.push(heightmapFit.sync);
 
-  const symbolicHost = document.createElement('div'); symbolicHost.id = 'relief-symbolic'; sidebarTools.append(symbolicHost);
-  const drawButton=document.createElement('button');drawButton.type='button';drawButton.id='relief-symbolic-open';drawButton.className='relief-draw-open';drawButton.setAttribute('aria-haspopup','dialog');drawButton.setAttribute('aria-controls','relief-paint-dialog');
-  const drawIcon=modifyIcon.cloneNode(true);const drawCaption=document.createElement('span');setText(drawCaption,copy('Paint the map','Peindre la carte'));drawButton.append(drawIcon,drawCaption);drawButton.onclick=()=>b.terrain.openEditor('symbolic');
-  const drawActions=document.createElement('div');drawActions.className='heightmap-actions';drawActions.append(drawButton);
-  const symbolicHint=document.createElement('p');symbolicHint.className='hint';setText(symbolicHint,copy('Paint where the sea, plains, hills and mountains are. Unpainted areas are plains.','Peignez la mer, les plaines, les collines et les montagnes. Les zones non peintes sont des plaines.'));symbolicHost.append(drawActions,symbolicHint);
-  syncers.push(()=>{symbolicHost.hidden=reliefOf()!=='symbolic';drawButton.disabled=b.busy()||context().classicTerrain;modifyButton.disabled=b.busy()||!b.getWorld()||context().classicTerrain;});
+  const symbolicHost = document.createElement('div');
+  symbolicHost.id = 'relief-symbolic';
+  sidebarTools.append(symbolicHost);
+  const drawButton = document.createElement('button');
+  drawButton.type = 'button';
+  drawButton.id = 'relief-symbolic-open';
+  drawButton.className = 'relief-draw-open';
+  drawButton.setAttribute('aria-haspopup', 'dialog');
+  drawButton.setAttribute('aria-controls', 'relief-paint-dialog');
+  const drawIcon = modifyIcon.cloneNode(true);
+  const drawCaption = document.createElement('span');
+  setText(drawCaption, copy('Paint the map', 'Peindre la carte'));
+  drawButton.append(drawIcon, drawCaption);
+  drawButton.onclick = () => b.terrain.openEditor('symbolic');
+  const drawActions = document.createElement('div');
+  drawActions.className = 'heightmap-actions';
+  drawActions.append(drawButton);
+  const symbolicHint = document.createElement('p');
+  symbolicHint.className = 'hint';
+  setText(symbolicHint, copy('Paint where the sea, plains, hills and mountains are. Unpainted areas are plains.', 'Peignez la mer, les plaines, les collines et les montagnes. Les zones non peintes sont des plaines.'));
+  symbolicHost.append(drawActions, symbolicHint);
+  syncers.push(() => {
+    symbolicHost.hidden = reliefOf() !== 'symbolic';
+    drawButton.disabled = b.busy() || context().classicTerrain;
+    modifyButton.disabled = b.busy() || !b.getWorld() || context().classicTerrain;
+  });
   root.append(sketchHost);
   // The heightmap fit panel owns elevations for every import path.
   for (const path of ['options.heightScale', 'options.importSea']) root.querySelector(`[data-field-path="${path}"]`)?.remove();
-  syncers.push(() => { sidebarTools.hidden = reliefTab(reliefOf()) !== 'heightmap'; });
+  syncers.push(() => {
+    sidebarTools.hidden = reliefTab(reliefOf()) !== 'heightmap';
+  });
 
   for (const stage of stagesOf('region')) {
-    const row = rows.get(stage.id)!; row.body.hidden = false;
+    const row = rows.get(stage.id)!;
+    row.body.hidden = false;
     addTheme(stage.id, text(stage.label), row.body);
     const theme = advancedThemes.get(stage.id)!.section;
-    const head = document.createElement('header'); head.className = 'relief-theme-head';
+    const head = document.createElement('header');
+    head.className = 'relief-theme-head';
     head.append(theme.querySelector('h3')!);
     if (stage.optional) {
-      const toggle = document.createElement('div'); toggle.className = 'relief-theme-enabled';
-      const caption = document.createElement('span'); setText(caption, T.enabled); toggle.append(caption, row.node); head.append(toggle);
+      const toggle = document.createElement('div');
+      toggle.className = 'relief-theme-enabled';
+      const caption = document.createElement('span');
+      setText(caption, T.enabled);
+      toggle.append(caption, row.node);
+      head.append(toggle);
     }
-    const actions = row.element.querySelector('.stage-actions'); if (actions) head.append(actions);
-    head.append(row.time); theme.prepend(head);
+    const actions = row.element.querySelector('.stage-actions');
+    if (actions) head.append(actions);
+    head.append(row.time);
+    theme.prepend(head);
     for (const detail of Array.from(row.body.querySelectorAll('details'))) detail.open = true;
   }
 
   function prepareCoastGrid(panel: HTMLElement): void {
-    panel.classList.add('coast-picker'); panel.dataset.stageControl = 'relief-source';
+    panel.classList.add('coast-picker');
+    panel.dataset.stageControl = 'relief-source';
     const compass = panel.querySelector<HTMLElement>('.terrain-coast-compass')!;
     const presets = panel.querySelector<HTMLElement>('.coast-presets')!;
-    const grid = document.createElement('div'); grid.className = 'coast-grid';
-    grid.append(compass, presets); panel.insertBefore(grid, panel.querySelector('.terrain-coast-trace-actions'));
-    grid.addEventListener('click', () => { markStale('relief-coast-cut'); sync(); });
+    const grid = document.createElement('div');
+    grid.className = 'coast-grid';
+    grid.append(compass, presets);
+    panel.insertBefore(grid, panel.querySelector('.terrain-coast-trace-actions'));
+    grid.addEventListener('click', () => {
+      markStale('relief-coast-cut');
+      sync();
+    });
     // A new coast draw: only its variation changes, and the chain resumes at the coast cut.
     const coastStage = STAGES.find(stage => stage.id === 'relief-coast-cut')!;
-    const reroll = document.createElement('button'); reroll.type = 'button'; reroll.id = 'terrain-coast-reroll'; reroll.className = 'coast-reroll';
+    const reroll = document.createElement('button');
+    reroll.type = 'button';
+    reroll.id = 'terrain-coast-reroll';
+    reroll.className = 'coast-reroll';
     // The settlements' die (art-dice), as everywhere a draw is rerolled.
-    const die = document.createElement('i'); die.className = 'art art-dice'; die.setAttribute('aria-hidden', 'true'); reroll.append(die);
-    const rerollCaption = document.createElement('span'); setText(rerollCaption, T.rerollCoast); reroll.append(rerollCaption);
-    reroll.onclick = event => { event.stopPropagation(); if (!reroll.disabled) b.reroll?.(coastStage, true); sync(); };
+    const die = document.createElement('i');
+    die.className = 'art art-dice';
+    die.setAttribute('aria-hidden', 'true');
+    reroll.append(die);
+    const rerollCaption = document.createElement('span');
+    setText(rerollCaption, T.rerollCoast);
+    reroll.append(rerollCaption);
+    reroll.onclick = event => {
+      event.stopPropagation();
+      if (!reroll.disabled) b.reroll?.(coastStage, true);
+      sync();
+    };
     grid.append(reroll);
     syncers.push(() => {
       panel.toggleAttribute('data-chain-hidden', false);
       const ctx = context();
-      panel.hidden=ctx.classicTerrain&&!get().terrain?.coastTrace;panel.dataset.reliefSource=ctx.relief;
-      grid.hidden=ctx.classicTerrain;
-      presets.hidden=ctx.relief==='symbolic'||ctx.relief==='heightmap';
-      panel.querySelector<HTMLElement>('#terrain-coast-all')!.hidden=presets.hidden;
-      panel.querySelector<HTMLElement>('.terrain-coast-trace-actions')!.hidden=ctx.relief==='heightmap'||ctx.classicTerrain;
+      panel.hidden = ctx.classicTerrain && !get().terrain?.coastTrace;
+      panel.dataset.reliefSource = ctx.relief;
+      grid.hidden = ctx.classicTerrain;
+      presets.hidden = ctx.relief === 'symbolic' || ctx.relief === 'heightmap';
+      panel.querySelector<HTMLElement>('#terrain-coast-all')!.hidden = presets.hidden;
+      panel.querySelector<HTMLElement>('.terrain-coast-trace-actions')!.hidden = ctx.relief === 'heightmap' || ctx.classicTerrain;
       reroll.hidden = !b.reroll || !coastStage.when(ctx) || !!coastStage.unavailable?.(ctx);
       reroll.disabled = b.busy() || !toggleState(coastStage);
       reroll.title = translate(T.rerollCoastHelp);
@@ -579,70 +1119,128 @@ export function mountStageChain(b: StageChainBindings): StageChain {
   }
   function prepareLandscapeStrip(field: HTMLElement, kind: 'climate' | 'relief'): void {
     field.classList.add('climate-picker', `${kind}-picker`);
-    const select = field.querySelector<HTMLSelectElement>('select')!; select.hidden = true;
-    const strip = document.createElement('div'); strip.className = `region-icon-strip climate-strip ${kind}-strip`; strip.setAttribute('role', 'radiogroup');
+    const select = field.querySelector<HTMLSelectElement>('select')!;
+    select.hidden = true;
+    const strip = document.createElement('div');
+    strip.className = `region-icon-strip climate-strip ${kind}-strip`;
+    strip.setAttribute('role', 'radiogroup');
     strip.setAttribute('aria-label', translate(kind === 'climate' ? copy('Climate', 'Climat') : copy('Relief type', 'Type de relief')));
     const buttons: HTMLButtonElement[] = [];
     for (const [index, option] of Array.from(select.options).entries()) {
       if (kind === 'climate' && option.value === 'custom') continue;
-      const button = document.createElement('button'); button.type = 'button'; button.dataset[kind] = option.value; button.setAttribute('role', 'radio');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset[kind] = option.value;
+      button.setAttribute('role', 'radio');
       const cave = kind === 'climate' && option.value === 'underdark';
-      const art = document.createElement('span'); art.className = `landscape-art ${cave ? 'relief' : kind}-art`; art.setAttribute('aria-hidden', 'true');
+      const art = document.createElement('span');
+      art.className = `landscape-art ${cave ? 'relief' : kind}-art`;
+      art.setAttribute('aria-hidden', 'true');
       // Cavern is cell 10 of the existing relief atlas (four columns by three rows).
       const artIndex = cave ? 10 : index;
-      art.style.backgroundPosition = `${artIndex % 4 / 3 * 100}% ${Math.floor(artIndex / 4) / 2 * 100}%`; button.append(art);
-      const caption = document.createElement('span'); caption.className = 'region-icon-caption';
+      art.style.backgroundPosition = `${((artIndex % 4) / 3) * 100}% ${(Math.floor(artIndex / 4) / 2) * 100}%`;
+      button.append(art);
+      const caption = document.createElement('span');
+      caption.className = 'region-icon-caption';
       const label = terrainBasicFields.find(f => f.path === `terrain.${kind}`)!.options!.find(o => o.value === option.value)!.label;
-      setText(caption, label); button.append(caption);
+      setText(caption, label);
+      button.append(caption);
       const help = kind === 'climate' ? climateZoneHelp[option.value] : undefined;
-      syncers.push(() => { button.title = help ? `${translate(label)} — ${translate(help)}` : translate(label); button.setAttribute('aria-label', translate(label)); });
+      syncers.push(() => {
+        button.title = help ? `${translate(label)} — ${translate(help)}` : translate(label);
+        button.setAttribute('aria-label', translate(label));
+      });
       button.onclick = () => {
         const biome = b.terrain.access.get('options.biome');
-        select.value = option.value; select.dispatchEvent(new Event('change', { bubbles: true }));
-        markStale(kind === 'relief' || b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate'); sync();
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        markStale(kind === 'relief' || b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate');
+        sync();
       };
       button.onkeydown = event => {
         const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-        if (!step) return; event.preventDefault(); const available = buttons.filter(choice => !choice.hidden && !choice.disabled); if (!available.length) return;
-        const next = available[(available.indexOf(button) + step + available.length) % available.length]; next.click(); next.focus();
+        if (!step) return;
+        event.preventDefault();
+        const available = buttons.filter(choice => !choice.hidden && !choice.disabled);
+        if (!available.length) return;
+        const next = available[(available.indexOf(button) + step + available.length) % available.length];
+        next.click();
+        next.focus();
       };
-      buttons.push(button); strip.append(button);
+      buttons.push(button);
+      strip.append(button);
     }
     field.append(strip);
-    const selected = document.createElement('output'); selected.className = 'climate-selected';
-    const caption = field.querySelector('.parameter-caption')!, head = document.createElement('div'); head.className = 'climate-caption';
-    field.prepend(head); head.append(caption, selected);
+    const selected = document.createElement('output');
+    selected.className = 'climate-selected';
+    const caption = field.querySelector('.parameter-caption')!,
+      head = document.createElement('div');
+    head.className = 'climate-caption';
+    field.prepend(head);
+    head.append(caption, selected);
     syncers.push(() => {
       const value = b.terrain.access.get(`terrain.${kind}`);
       const label = terrainBasicFields.find(f => f.path === `terrain.${kind}`)!.options!.find(o => o.value === value)?.label;
       if (label) setText(selected, label);
-      for (const button of buttons) { button.hidden = !!select.querySelector<HTMLOptionElement>(`option[value="${button.dataset[kind]}"]`)?.disabled; const on = button.dataset[kind] === value; button.setAttribute('aria-checked', String(on)); button.tabIndex = on ? 0 : -1; button.disabled = b.busy(); }
+      for (const button of buttons) {
+        button.hidden = !!select.querySelector<HTMLOptionElement>(`option[value="${button.dataset[kind]}"]`)?.disabled;
+        const on = button.dataset[kind] === value;
+        button.setAttribute('aria-checked', String(on));
+        button.tabIndex = on ? 0 : -1;
+        button.disabled = b.busy();
+      }
     });
   }
 
   function viewQuick(): HTMLElement {
-    const group = document.createElement('div'); group.className = 'icon-segments'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', '2D / 3D');
+    const group = document.createElement('div');
+    group.className = 'icon-segments';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', '2D / 3D');
     const make = (mode: '2d' | '3d') => {
-      const button = document.createElement('button'); button.type = 'button'; button.className = 'icon-toggle'; button.dataset.view = mode;
-      button.append(iconImg(mode === '2d' ? 'display-2d' : 'display-3d', 24)); const caption = document.createElement('span'); setText(caption, mode === '2d' ? T.view2d : T.view3d); button.append(caption);
-      button.onclick = () => { const toggle3d = document.querySelector<HTMLButtonElement>('#view3d'); const is3d = toggle3d?.getAttribute('aria-pressed') === 'true'; if ((mode === '3d') !== is3d) toggle3d?.click(); setTimeout(sync, 50); };
-      group.append(button); return button;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'icon-toggle';
+      button.dataset.view = mode;
+      button.append(iconImg(mode === '2d' ? 'display-2d' : 'display-3d', 24));
+      const caption = document.createElement('span');
+      setText(caption, mode === '2d' ? T.view2d : T.view3d);
+      button.append(caption);
+      button.onclick = () => {
+        const toggle3d = document.querySelector<HTMLButtonElement>('#view3d');
+        const is3d = toggle3d?.getAttribute('aria-pressed') === 'true';
+        if ((mode === '3d') !== is3d) toggle3d?.click();
+        setTimeout(sync, 50);
+      };
+      group.append(button);
+      return button;
     };
-    const flat = make('2d'), relief = make('3d');
-    syncers.push(() => { const is3d = document.querySelector('#view3d')?.getAttribute('aria-pressed') === 'true'; flat.setAttribute('aria-pressed', String(!is3d)); relief.setAttribute('aria-pressed', String(is3d)); relief.disabled = !b.getWorld(); });
+    const flat = make('2d'),
+      relief = make('3d');
+    syncers.push(() => {
+      const is3d = document.querySelector('#view3d')?.getAttribute('aria-pressed') === 'true';
+      flat.setAttribute('aria-pressed', String(!is3d));
+      relief.setAttribute('aria-pressed', String(is3d));
+      relief.disabled = !b.getWorld();
+    });
     return group;
   }
   // Leftover legacy wrappers stay hidden but mounted (their sync keeps working).
   bindTree(root);
   // General controls keep their stage ownership for invalidating later generation stages.
-  root.addEventListener('change', event => { const control = (event.target as Element).closest<HTMLElement>('[data-stage-control],.stage-row'); if (control) markStale(control.dataset.stageControl ?? control.dataset.stage!); });
+  root.addEventListener('change', event => {
+    const control = (event.target as Element).closest<HTMLElement>('[data-stage-control],.stage-row');
+    if (control) markStale(control.dataset.stageControl ?? control.dataset.stage!);
+  });
   function markStale(id: string): void {
     const ordered = [...stagesOf('region', get().terrain?.procedural?.coastAfter), ...stagesOf('settlements'), ...stagesOf('cities'), ...stagesOf('map')];
-    const index = ordered.findIndex(stage => stage.id === id), stage = ordered[index];
+    const index = ordered.findIndex(stage => stage.id === id),
+      stage = ordered[index];
     if (!stage || stage.family === 'map') return;
     for (const later of ordered.slice(index)) {
       if (later.family === 'map') continue;
-      const timing = timings.get(later.id); if (timing && timing.state !== 'running') timing.state = 'stale';
+      const timing = timings.get(later.id);
+      if (timing && timing.state !== 'running') timing.state = 'stale';
     }
     renderTimes();
   }
@@ -651,59 +1249,80 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const physicalKey = terrain.get('water-hydrology');
     return new Map([...terrain, ...settlementStageValidityKeys(get(), physicalKey), ...cityStageValidityKeys(get(), b.getWorld(), b.cityScope().key, physicalKey)]);
   }
-  function clearCityResults(): void { for (const stage of stagesOf('cities')) { timings.delete(stage.id); savedKeys.delete(stage.id); } }
+  function clearCityResults(): void {
+    for (const stage of stagesOf('cities')) {
+      timings.delete(stage.id);
+      savedKeys.delete(stage.id);
+    }
+  }
   function renderTimes(): void {
     const keys = validityKeys();
     const terrain = effectiveTerrainSettings(get(), adaptedExtent(get()));
     for (const [id, row] of rows) {
       const timing = timings.get(id);
       row.element.dataset.run = timing?.state ?? '';
-      const phase = Object.entries(GENERATION_STAGE_ROWS).find(([phase, row]) => row === id && !['prepare','retain','sampling','render'].includes(phase))?.[0] as GenerationStage | undefined;
+      const phase = Object.entries(GENERATION_STAGE_ROWS).find(([phase, row]) => row === id && !['prepare', 'retain', 'sampling', 'render'].includes(phase))?.[0] as GenerationStage | undefined;
       const on = toggleState(row.stage) && (!phase || generationStageActive(terrain, phase)) && !row.stage.unavailable?.(context());
       const led = stageLed(on, active?.id === id, savedKeys.get(id), keys.get(id));
       row.element.dataset.led = row.stage.family !== 'map' ? led : !on ? 'disabled' : active?.id === id ? 'running' : timing?.state === 'done' || timing?.state === 'cached' ? 'valid' : 'pending';
-      const theme = advancedThemes.get(id); if (theme) theme.section.dataset.led = row.element.dataset.led;
-      if(row.stage.family!=='map')row.element.dataset.run=led==='running'?'running':led==='valid'?(timing?.state==='cached'?'cached':'done'):timing&&led==='pending'?'stale':'';
+      const theme = advancedThemes.get(id);
+      if (theme) theme.section.dataset.led = row.element.dataset.led;
+      if (row.stage.family !== 'map') row.element.dataset.run = led === 'running' ? 'running' : led === 'valid' ? (timing?.state === 'cached' ? 'cached' : 'done') : timing && led === 'pending' ? 'stale' : '';
       const status = row.element.dataset.led;
       row.node.title = translate(status === 'disabled' ? T.disabled : status === 'valid' ? T.valid : status === 'running' ? T.running : T.pending);
       // Stages without their own progress events ran inside a neighbouring row: no invented time.
-      if (!timing || timing.state !== 'running' && timing.ms === 0) { row.time.textContent = '— ms'; row.time.title = ''; continue; }
+      if (!timing || (timing.state !== 'running' && timing.ms === 0)) {
+        row.time.textContent = '— ms';
+        row.time.title = '';
+        continue;
+      }
       row.time.textContent = timing.state === 'running' ? '… ms' : `${Math.max(1, Math.round(timing.ms)).toLocaleString(numberLocale())} ms`;
       row.time.title = translate(timing.state === 'stale' ? T.stale : timing.state === 'cached' ? T.cached : timing.state === 'running' ? T.running : text(row.stage.label));
     }
     for (const f of FAMILIES) {
-      const total = stagesOf(f.id).reduce((sum, stage) => sum + (timings.get(stage.id)?.ms ?? 0), 0), label = familyTimes.get(f.id)!;
-      label.textContent = total ? total < 1000 ? `${Math.round(total)} ms` : `${(total / 1000).toLocaleString(numberLocale(), { maximumFractionDigits: 1 })} s` : '';
+      const total = stagesOf(f.id).reduce((sum, stage) => sum + (timings.get(stage.id)?.ms ?? 0), 0),
+        label = familyTimes.get(f.id)!;
+      label.textContent = total ? (total < 1000 ? `${Math.round(total)} ms` : `${(total / 1000).toLocaleString(numberLocale(), { maximumFractionDigits: 1 })} s`) : '';
       tabs.get(f.id)!.dataset.stale = String(stagesOf(f.id).some(stage => rows.get(stage.id)?.element.dataset.led === 'pending'));
     }
   }
   const close = (now = performance.now()) => {
-    if (!active) return; const timing = timings.get(active.id) ?? { ms: 0, state: 'running' as const };
-    timing.ms += now - active.started; timings.set(active.id, timing); active = undefined;
+    if (!active) return;
+    const timing = timings.get(active.id) ?? { ms: 0, state: 'running' as const };
+    timing.ms += now - active.started;
+    timings.set(active.id, timing);
+    active = undefined;
   };
   function complete(id: string, cached = false): void {
     const timing = timings.get(id) ?? { ms: 0, state: '' as const };
-    timing.state = cached ? 'cached' : 'done'; timings.set(id, timing);
-    const key = runKeys.get(id); if (key !== undefined) savedKeys.set(id, key);
-    if (id === 'relief-noise') for (const alias of ['relief-source', 'relief-climate']) {
-      const initial = runKeys.get(alias); if (initial !== undefined) savedKeys.set(alias, initial);
-    }
+    timing.state = cached ? 'cached' : 'done';
+    timings.set(id, timing);
+    const key = runKeys.get(id);
+    if (key !== undefined) savedKeys.set(id, key);
+    if (id === 'relief-noise')
+      for (const alias of ['relief-source', 'relief-climate']) {
+        const initial = runKeys.get(alias);
+        if (initial !== undefined) savedKeys.set(alias, initial);
+      }
   }
   let cityScopeKey = '';
   function sync(): void {
     const nextScope = b.cityScope().key;
-    if (cityScopeKey !== nextScope) { clearCityResults(); cityScopeKey = nextScope; }
-    const ctx = context(), busy = b.busy();
+    if (cityScopeKey !== nextScope) {
+      clearCityResults();
+      cityScopeKey = nextScope;
+    }
+    const ctx = context(),
+      busy = b.busy();
     for (const form of forms) form.sync();
     for (const syncer of syncers) syncer();
     // Source alternatives: fields that do not apply to the chosen relief source are set aside.
-    for (const [path, sources] of Object.entries(SOURCE_FIELDS)) for (const element of Array.from(root.querySelectorAll<HTMLElement>(`[data-field-path="${path}"]`)))
-      element.toggleAttribute('data-chain-hidden', !sources.includes(ctx.relief));
+    for (const [path, sources] of Object.entries(SOURCE_FIELDS)) for (const element of Array.from(root.querySelectorAll<HTMLElement>(`[data-field-path="${path}"]`))) element.toggleAttribute('data-chain-hidden', !sources.includes(ctx.relief));
     for (const [family, panel] of [...generalPanels, ['region', sharedPanel] as const]) {
       const controls = Array.from(panel.querySelectorAll<HTMLElement>(':scope > [data-stage-control], :scope > .region-water-landforms > [data-stage-control]'));
       for (const control of controls) {
         const stage = rows.get(control.dataset.stageControl!)?.stage;
-        control.toggleAttribute('data-general-hidden', !!stage && !stage.when(ctx) || family === 'region' && ctx.classicTerrain && (control.matches('.climate-picker') || control.id==='terrain-coast-panel'&&!get().terrain?.coastTrace));
+        control.toggleAttribute('data-general-hidden', (!!stage && !stage.when(ctx)) || (family === 'region' && ctx.classicTerrain && (control.matches('.climate-picker') || (control.id === 'terrain-coast-panel' && !get().terrain?.coastTrace))));
       }
       const visible = (control: HTMLElement) => !control.hidden && !control.hasAttribute('data-general-hidden') && !control.hasAttribute('data-chain-hidden');
       if (panel.contains(waterLandforms)) waterLandforms.hidden = !controls.some(control => control.parentElement === waterLandforms && visible(control));
@@ -711,22 +1330,37 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     }
     const ordered = [...stagesOf('region', get().terrain?.procedural?.coastAfter), ...stagesOf('settlements'), ...stagesOf('cities'), ...stagesOf('map')];
     const regionOrder = ordered.filter(stage => stage.family === 'region');
-    const cut = rows.get('relief-coast-cut')!.element, previous = rows.get(regionOrder[regionOrder.findIndex(stage => stage.id === 'relief-coast-cut') - 1].id)!.element;
+    const cut = rows.get('relief-coast-cut')!.element,
+      previous = rows.get(regionOrder[regionOrder.findIndex(stage => stage.id === 'relief-coast-cut') - 1].id)!.element;
     if (cut.previousElementSibling !== previous) previous.after(cut);
     const numbers = new Map<StageFamily, number>();
     for (const definition of ordered) {
       const row = rows.get(definition.id)!;
-      const { stage } = row, visible = stage.when(ctx); row.element.hidden = !visible;
-      const theme = advancedThemes.get(stage.id); if (theme) theme.section.hidden = !visible;
+      const { stage } = row,
+        visible = stage.when(ctx);
+      row.element.hidden = !visible;
+      const theme = advancedThemes.get(stage.id);
+      if (theme) theme.section.hidden = !visible;
       if (!visible) continue;
-      const index = (numbers.get(stage.family) ?? 0) + 1; numbers.set(stage.family, index); row.number.textContent = String(index).padStart(2, '0');
+      const index = (numbers.get(stage.family) ?? 0) + 1;
+      numbers.set(stage.family, index);
+      row.number.textContent = String(index).padStart(2, '0');
       const reason = stage.unavailable?.(ctx);
-      row.note.hidden = !reason; if (reason) { registerMessages({ [reason.en]: reason }); setText(row.note, text(reason)); } row.element.dataset.na = String(!!reason);
-      const on = toggleState(stage); row.element.dataset.enabled = String(on);
+      row.note.hidden = !reason;
+      if (reason) {
+        registerMessages({ [reason.en]: reason });
+        setText(row.note, text(reason));
+      }
+      row.element.dataset.na = String(!!reason);
+      const on = toggleState(stage);
+      row.element.dataset.enabled = String(on);
       if (!stage.optional || stage.toggle?.kind === 'unavailable') row.node.disabled = true;
-      if (stage.optional && stage.toggle && stage.toggle.kind !== 'unavailable') { row.node.setAttribute('aria-checked', String(on)); row.node.disabled = busy || !!reason; }
-      const prerequisite = stage.run.action === 'town' ? !ctx.hasRegion ? T.needRegion : !b.cityScope().count && T.needPlace : stage.family !== 'region' && stage.id !== 'map-export' ? !ctx.hasTerrain && T.needTerrain : false;
-      row.run.disabled = busy || !!reason || !!prerequisite || stage.optional && !on && stage.toggle?.kind !== 'unavailable' && stage.run.action !== 'mask';
+      if (stage.optional && stage.toggle && stage.toggle.kind !== 'unavailable') {
+        row.node.setAttribute('aria-checked', String(on));
+        row.node.disabled = busy || !!reason;
+      }
+      const prerequisite = stage.run.action === 'town' ? (!ctx.hasRegion ? T.needRegion : !b.cityScope().count && T.needPlace) : stage.family !== 'region' && stage.id !== 'map-export' ? !ctx.hasTerrain && T.needTerrain : false;
+      row.run.disabled = busy || !!reason || !!prerequisite || (stage.optional && !on && stage.toggle?.kind !== 'unavailable' && stage.run.action !== 'mask');
       if (row.draw) {
         row.draw.hidden = !(typeof stage.variation === 'function' ? stage.variation(ctx) : stage.variation);
         row.draw.disabled = row.run.disabled;
@@ -735,30 +1369,52 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       }
       row.run.title = translate(prerequisite || (reason ? text(reason) : T.run));
     }
-    for (const f of FAMILIES) { const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run'); if (button) button.disabled = busy || (f.id !== 'region' && !ctx.hasTerrain) || (f.id === 'cities' && (!ctx.hasRegion || !b.cityScope().count)); }
+    for (const f of FAMILIES) {
+      const button = panels.get(f.id)!.querySelector<HTMLButtonElement>('.family-run');
+      if (button) button.disabled = busy || (f.id !== 'region' && !ctx.hasTerrain) || (f.id === 'cities' && (!ctx.hasRegion || !b.cityScope().count));
+    }
     advancedIndex.sync();
     renderTimes();
   }
-  selectFamily('region'); sync();
+  selectFamily('region');
+  sync();
   return {
-    clearResults() { timings.clear(); savedKeys.clear(); active=undefined; runScope.clear(); renderTimes(); },
+    clearResults() {
+      timings.clear();
+      savedKeys.clear();
+      active = undefined;
+      runScope.clear();
+      renderTimes();
+    },
     clearCityResults,
-    body: id => rows.get(id)!.body, sync, family: () => family, selectFamily, context,
+    body: id => rows.get(id)!.body,
+    sync,
+    family: () => family,
+    selectFamily,
+    context,
     beginRun(stages) {
       runScope = new Set(stages);
       if (stages.some(id => rows.get(id)?.stage.family === 'cities')) {
         for (const stage of stagesOf('cities')) if (!runScope.has(stage.id)) savedKeys.delete(stage.id);
       }
-      runKeys = validityKeys(); active = undefined; renderTimes();
+      runKeys = validityKeys();
+      active = undefined;
+      renderTimes();
     },
     progress(progress) {
       const id = stageForProgress(progress.stage);
       if (progress.stage.startsWith('pipeline:') && /:(done|cached)$/.test(progress.stage)) {
-        close(); if (id) complete(id, progress.stage.endsWith(':cached')); renderTimes(); return;
+        close();
+        if (id) complete(id, progress.stage.endsWith(':cached'));
+        renderTimes();
+        return;
       }
       if (!id || !runScope.has(id) || id === active?.id) return;
       if (active && !progress.stage.startsWith('pipeline:')) complete(active.id);
-      close(); active = { id, started: performance.now() }; timings.set(id, { ms: 0, state: 'running' }); renderTimes();
+      close();
+      active = { id, started: performance.now() };
+      timings.set(id, { ms: 0, state: 'running' });
+      renderTimes();
     },
     endRun(ok) {
       if (ok && active) complete(active.id);
@@ -769,13 +1425,22 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       const finalKeys = validityKeys();
       const [, targets] = JSON.parse(b.cityScope().key) as [string, string[]];
       const order = ['layout', 'parcels', 'programme', 'buildings'];
-      for (const id of runScope) if (rows.get(id)?.stage.family === 'cities') {
-        const run = rows.get(id)!.stage.run;
-        const available = run.action === 'town' && targets.every(key => order.indexOf(String(b.getWorld()?.stats[`v2.urbanStage:${key}`] ?? 'buildings')) >= order.indexOf(run.townStage));
-        if (ok && available) { runKeys.set(id, finalKeys.get(id)!); complete(id); } else savedKeys.delete(id);
+      for (const id of runScope)
+        if (rows.get(id)?.stage.family === 'cities') {
+          const run = rows.get(id)!.stage.run;
+          const available = run.action === 'town' && targets.every(key => order.indexOf(String(b.getWorld()?.stats[`v2.urbanStage:${key}`] ?? 'buildings')) >= order.indexOf(run.townStage));
+          if (ok && available) {
+            runKeys.set(id, finalKeys.get(id)!);
+            complete(id);
+          } else savedKeys.delete(id);
+        }
+      for (const id of runScope) {
+        const timing = timings.get(id);
+        if (timing?.state === 'running') timing.state = 'stale';
       }
-      for (const id of runScope) { const timing = timings.get(id); if (timing?.state === 'running') timing.state = 'stale'; }
-      runScope = new Set(); renderTimes(); sync();
+      runScope = new Set();
+      renderTimes();
+      sync();
     },
   };
 }

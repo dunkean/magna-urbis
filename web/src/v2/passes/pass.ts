@@ -10,24 +10,44 @@ import { isResourceDiagnostic } from '../../render/displayDiagnostics';
 export type PassName = 'terrainData' | 'terrainLook' | 'forest' | 'water' | 'frame' | 'cartography' | 'overlays' | 'semantic' | 'city';
 /** Dependency order: each pass may read the outcome of the previous ones (the GPU/CPU mode, the uploaded terrain). */
 export const PASS_ORDER: readonly PassName[] = ['terrainData', 'terrainLook', 'forest', 'water', 'frame', 'cartography', 'overlays', 'semantic', 'city'];
-export interface PassSpec { readonly inputs: readonly string[]; readonly owns: readonly string[]; readonly invalidation: string }
+export interface PassSpec {
+  readonly inputs: readonly string[];
+  readonly owns: readonly string[];
+  readonly invalidation: string;
+}
 /** Declarative contract of every pass (documentation checked by the unit test against passKeys). */
 export const PASSES: Readonly<Record<PassName, PassSpec>> = {
   terrainData: { inputs: ['revisions.terrain', 'layers.terrain', 'mode'], owns: ['GPU height/cave/water-surface textures'], invalidation: 'new terrain product' },
-  terrainLook: { inputs: ['keys.terrainLook', 'effective terrain settings', 'layers.terrain|decor|background', 'cpu: keys.terrainBase+forest+water'], owns: ['GPU look uniforms', 'cpu: terrain raster + background SVG'], invalidation: 'season, lighting, palette, contours, layers; never a GPU upload' },
+  terrainLook: {
+    inputs: ['keys.terrainLook', 'effective terrain settings', 'layers.terrain|decor|background', 'cpu: keys.terrainBase+forest+water'],
+    owns: ['GPU look uniforms', 'cpu: terrain raster + background SVG'],
+    invalidation: 'season, lighting, palette, contours, layers; never a GPU upload',
+  },
   forest: { inputs: ['keys.forest', 'revisions.terrain|landuse|cities|settlements', 'effective forest settings'], owns: ['GPU forest field'], invalidation: 'forest settings, terrain' },
-  water: { inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode'], owns: ['GPU water/overlay textures', 'water vector SVG'], invalidation: 'water colours, lakes, oxbows, diagnostic overlay (resource diagnostics also read revisions.settlements and the lazily fetched payload)' },
+  water: {
+    inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode'],
+    owns: ['GPU water/overlay textures', 'water vector SVG'],
+    invalidation: 'water colours, lakes, oxbows, diagnostic overlay (resource diagnostics also read revisions.settlements and the lazily fetched payload)',
+  },
   frame: { inputs: ['ground style + palette', 'layers.decor'], owns: ['frame vector SVG'], invalidation: 'frame toggle, palette' },
-  cartography: { inputs: ['keys.cartography', 'revisions.roads|landuse|settlements|names|terrain', 'layers.roads|landuse|city|labels|decor'], owns: ['CanvasRenderer (Path2D caches)', 'export overlay raster'], invalidation: 'palette, roads, land use, painted, vegetation, world products' },
+  cartography: {
+    inputs: ['keys.cartography', 'revisions.roads|landuse|settlements|names|terrain', 'layers.roads|landuse|city|labels|decor'],
+    owns: ['CanvasRenderer (Path2D caches)', 'export overlay raster'],
+    invalidation: 'palette, roads, land use, painted, vegetation, world products',
+  },
   overlays: { inputs: ['keys.overlays', 'keys.roads', 'layers.labels|decor'], owns: [], invalidation: 'text settings, legend, cartouche, road emphasis: repaint without rebuilding cartography' },
   semantic: { inputs: ['keys.semantic', 'revisions.landuse|cities', 'layers.landuse'], owns: ['semantic layer state'], invalidation: 'semantic looks, classes, opacity, land-use and city products; nothing else re-runs' },
   city: { inputs: ['keys.city', 'revisions.cities|settlements|terrain'], owns: ['NativeCityMap (plans, houses LOD)'], invalidation: 'city products; appearance is read per frame' },
 };
 
 export interface PassInput {
-  r: ResolvedAppearance; revisions: SceneRevisions; layers: Partial<ExportLayers>; mode: 'gpu' | 'cpu';
+  r: ResolvedAppearance;
+  revisions: SceneRevisions;
+  layers: Partial<ExportLayers>;
+  mode: 'gpu' | 'cpu';
   /** Terrain settings read by the look and the forest (climate, relief, refine, forest...). */
-  effective: string; forestEffective: string;
+  effective: string;
+  forestEffective: string;
   /** mapSize, seed, biome: read by the overlay renderer outside the products. */
   worldSig: string;
 }
@@ -35,7 +55,8 @@ const j = (...parts: unknown[]): string => JSON.stringify(parts);
 const rel = (i: PassInput): boolean => i.layers.terrain !== false && i.r.ground.layers.relief;
 /** One cache key per pass. A pass re-runs exactly when its key changes. */
 export function passKeys(i: PassInput): Record<PassName, string> {
-  const { r, revisions: v, layers: l, mode } = i, k = r.keys;
+  const { r, revisions: v, layers: l, mode } = i,
+    k = r.keys;
   const cartLayers = j(l.roads, l.landuse, l.city, l.streets, l.labels, l.decor, l.background, l.terrain, l.water, l.decor);
   return {
     terrainData: j(v.terrain, rel(i), mode),
@@ -58,15 +79,20 @@ export class PassState {
   async run(next: () => Record<PassName, string>, runners: Record<PassName, () => Promise<void> | void>, only?: readonly PassName[]): Promise<PassName[]> {
     const ran: PassName[] = [];
     for (const name of only ?? PASS_ORDER) {
-      const key = next()[name];   // lazy: an earlier pass may have changed the GPU/CPU mode
+      const key = next()[name]; // lazy: an earlier pass may have changed the GPU/CPU mode
       if (this.keys[name] === key) continue;
       const started = performance.now();
-      await runners[name](); this.keys[name] = key; ran.push(name);
+      await runners[name]();
+      this.keys[name] = key;
+      ran.push(name);
       performance.measure(`v2pass:${name}`, { start: started });
     }
     return ran;
   }
-  reset(...names: PassName[]): void { if (!names.length) this.keys = {}; else for (const name of names) delete this.keys[name]; }
+  reset(...names: PassName[]): void {
+    if (!names.length) this.keys = {};
+    else for (const name of names) delete this.keys[name];
+  }
 }
 
 /** Product of a pass that lands after set() returned (live forest update). PassState runs a pass again only when its
@@ -76,14 +102,31 @@ export class PassState {
 export class BackgroundJob {
   private job?: Promise<void>;
   /** The wanted job while it runs (exact consumers await it). */
-  get running(): Promise<void> | undefined { return this.job; }
+  get running(): Promise<void> | undefined {
+    return this.job;
+  }
   /** `apply` / `failed` run only while this job is still the wanted one; `settled` runs once it is no longer pending. */
   start<T>(work: Promise<T>, apply: (value: T) => void, failed: (error: unknown) => void, settled: () => void): Promise<void> {
-    const job: Promise<void> = work.then(value => { if (this.job === job) apply(value); }, error => { if (this.job === job) failed(error); })
-      .finally(() => { if (this.job === job) { this.job = undefined; settled(); } });
-    return this.job = job;
+    const job: Promise<void> = work
+      .then(
+        value => {
+          if (this.job === job) apply(value);
+        },
+        error => {
+          if (this.job === job) failed(error);
+        },
+      )
+      .finally(() => {
+        if (this.job === job) {
+          this.job = undefined;
+          settled();
+        }
+      });
+    return (this.job = job);
   }
-  cancel(): void { this.job = undefined; }
+  cancel(): void {
+    this.job = undefined;
+  }
 }
 
 /** Small keyed cache of heavy derived resources, shared between the live renderer and its exports. */
@@ -92,12 +135,25 @@ export class ResourceCache {
   constructor(private limit = 6) {}
   get<T>(key: string, make: () => T, dispose?: (value: T) => void): T {
     const hit = this.entries.get(key);
-    if (hit) { this.entries.delete(key); this.entries.set(key, hit); return hit.value as T; }
+    if (hit) {
+      this.entries.delete(key);
+      this.entries.set(key, hit);
+      return hit.value as T;
+    }
     const value = make();
     this.entries.set(key, { value, dispose: dispose && (() => dispose(value)) });
-    while (this.entries.size > this.limit) { const [oldest, entry] = this.entries.entries().next().value!; this.entries.delete(oldest); entry.dispose?.(); }
+    while (this.entries.size > this.limit) {
+      const [oldest, entry] = this.entries.entries().next().value!;
+      this.entries.delete(oldest);
+      entry.dispose?.();
+    }
     return value;
   }
-  delete(key: string): void { this.entries.delete(key); }
-  clear(): void { for (const entry of this.entries.values()) entry.dispose?.(); this.entries.clear(); }
+  delete(key: string): void {
+    this.entries.delete(key);
+  }
+  clear(): void {
+    for (const entry of this.entries.values()) entry.dispose?.();
+    this.entries.clear();
+  }
 }

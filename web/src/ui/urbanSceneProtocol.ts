@@ -11,13 +11,20 @@ import type { UrbanSceneBatch, UrbanSceneCompletion } from './urbanSceneProgress
  * client so the inline worker does not import the module that bundles it. */
 /** City Bench architecture: lot silhouettes, compact native plans or detailed houses. */
 export type UrbanSceneMode = 'silhouette' | 'compact' | 'detailed';
-export interface UrbanSceneRequest { id: number;
+export interface UrbanSceneRequest {
+  id: number;
   /** Versioned applied-city generation path, never a standalone proposal. */
-  parentSession?: ParentSessionSource; layouts?: Layout[]; partitions?: Partition[];
+  parentSession?: ParentSessionSource;
+  layouts?: Layout[];
+  partitions?: Partition[];
   /** Runtime-only native snapshot, with city keys in its original layout order. */
-  source?: UrbanSourceHandle; keys?: string[];
+  source?: UrbanSourceHandle;
+  keys?: string[];
   /** Omitted when the worker already retains the same raster. */
-  raster?: SettlementRaster; seed: string; settings?: import('../../../rust/bridge/urbanArchitecture').PlacementBatchSettings; runtime?: ExecutionRuntime;
+  raster?: SettlementRaster;
+  seed: string;
+  settings?: import('../../../rust/bridge/urbanArchitecture').PlacementBatchSettings;
+  runtime?: ExecutionRuntime;
   /** Flat silhouettes from the lot requests, without the house generator (City Bench). */
   silhouettes?: boolean;
   /** Explicit architecture; overrides `silhouettes`. */
@@ -27,9 +34,17 @@ export interface UrbanSceneRequest { id: number;
   /** Internal cold receiver guard: never enter the full-site compatibility path. */
   requireProjectedSiteStream?: true;
   /** City Bench house edits by building id, applied to their placement requests before planning. */
-  buildingOverrides?: Record<string, import('./cityEdits').HouseEdit> }
-export interface UrbanSceneResponse { id: number;
-  parentAcknowledged?: UrbanParentAcknowledged; parentDrained?: UrbanParentWorkerDrained; parentBegin?: UrbanParentWorkerBegin; parentBatch?: UrbanParentWorkerBatch; parentComplete?: UrbanParentWorkerCompletion; scene?: PlacementBatch; partitions?: Partition[];
+  buildingOverrides?: Record<string, import('./cityEdits').HouseEdit>;
+}
+export interface UrbanSceneResponse {
+  id: number;
+  parentAcknowledged?: UrbanParentAcknowledged;
+  parentDrained?: UrbanParentWorkerDrained;
+  parentBegin?: UrbanParentWorkerBegin;
+  parentBatch?: UrbanParentWorkerBatch;
+  parentComplete?: UrbanParentWorkerCompletion;
+  scene?: PlacementBatch;
+  partitions?: Partition[];
   batch?: UrbanSceneBatch;
   /** Paged silhouettes: one ordered chunk of the scene, appended without ACK; ends with `complete`. */
   scenePart?: { delta: PlacementBatch; progress: import('../../../rust/bridge/architectureBatch').ArchitectureBatchProgress };
@@ -43,7 +58,9 @@ export interface UrbanSceneResponse { id: number;
   /** For paged runs, sites + placement is pipeline wall time; placement includes
    * consumer ACK waits but excludes paged site reads. */
   timing?: { sites: number; placement: number; sitesPrepare?: number; sitesRead?: number; paged?: boolean };
-  progress?: { completed: number; total: number }; error?: string }
+  progress?: { completed: number; total: number };
+  error?: string;
+}
 export type UrbanSceneWorkerMessage = UrbanSceneRequest | { parentAck: UrbanParentWorkerAck } | { cancel: number } | { ack: { id: number; completed: number } };
 /** Worker reply when it holds no raster; the client resends it. */
 export const RASTER_MISSING = 'urban-scene:raster-missing';
@@ -54,8 +71,7 @@ export const usesCompactPlans = (request: Pick<UrbanSceneRequest, 'mode'>): bool
 /** Also called inside the worker, before engine creation or any legacy read. */
 export function validateProjectedSiteStream(request: UrbanSceneRequest): void {
   if (request.requireProjectedSiteStream === undefined) return;
-  if (request.requireProjectedSiteStream !== true || !request.source || request.runtime?.profile !== 'local'
-    || !usesCompactPlans(request) || request.progressive !== true)
+  if (request.requireProjectedSiteStream !== true || !request.source || request.runtime?.profile !== 'local' || !usesCompactPlans(request) || request.progressive !== true)
     throw new Error('Projected site streams require a local retained source, explicit native plans and progressive ACK transport.');
 }
 
@@ -65,9 +81,10 @@ export const sceneRuntimeKey = (runtime?: ExecutionRuntime): string => `${runtim
  * never clone or upload those arrays into the architecture worker. */
 export function urbanSceneTransport(request: UrbanSceneRequest, omitRaster = false): UrbanSceneRequest {
   validateProjectedSiteStream(request);
-  if (request.parentSession && (!usesCompactPlans(request) || request.progressive !== true
-    || request.parentSession.coordinate_space !== 'world-metres' || !/^[a-f0-9]{64}$/.test(request.parentSession.fingerprint)
-    || typeof request.parentSession.revision !== 'string' || !request.parentSession.revision))
+  if (
+    request.parentSession &&
+    (!usesCompactPlans(request) || request.progressive !== true || request.parentSession.coordinate_space !== 'world-metres' || !/^[a-f0-9]{64}$/.test(request.parentSession.fingerprint) || typeof request.parentSession.revision !== 'string' || !request.parentSession.revision)
+  )
     throw new Error('Native parent city generation requires a frozen source identity, explicit native mode and durable ACK stream.');
   if (request.source) {
     validateUrbanSource(request.source);
@@ -87,6 +104,5 @@ export function urbanSceneTransport(request: UrbanSceneRequest, omitRaster = fal
 export function urbanBuildingSitesRequest(request: UrbanSceneRequest, raster?: SettlementRaster): UrbanRequest {
   const message = urbanSceneTransport(request);
   const common = { id: message.id, kind: 'buildingSites' as const, seed: message.seed, runtime: message.runtime, architectureCulture: architectureProfile(message.settings) };
-  return message.source ? { ...common, source: message.source, keys: message.keys }
-    : { ...common, raster, layouts: message.layouts, partitions: message.partitions };
+  return message.source ? { ...common, source: message.source, keys: message.keys } : { ...common, raster, layouts: message.layouts, partitions: message.partitions };
 }

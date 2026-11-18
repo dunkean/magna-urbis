@@ -16,15 +16,19 @@ import { forestPlanes } from './forestNative';
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { FOREST_CROWN_SETBACK_GLSL } from '../../web/src/render/forestRoom';
 
-export interface ForestSettings { enabled: boolean; density: number; clearings: number }
+export interface ForestSettings {
+  enabled: boolean;
+  density: number;
+  clearings: number;
+}
 /** density 0..2 (1 = climate potential), clearings 0..1. */
-export const DEFAULT_FOREST_SETTINGS: ForestSettings = { enabled: true, density: 1, clearings: .45 };
+export const DEFAULT_FOREST_SETTINGS: ForestSettings = { enabled: true, density: 1, clearings: 0.45 };
 /** Included in completed-field and display-cache keys, not terrain identity. */
 export const V2_FOREST_PROFILE_VERSION = 'optical-thinning4';
 /** Trees in a cultivated field (occupation class 1), shared by the shader crowns and the modelled 3D trees:
  * one lone-tree candidate per `cell` metres, accepted with probability `tree` (times the natural potential),
  * and the edge hedge only within `hedge` metres of the field limit. No strays from a nearby wood, no bank gallery. */
-export const FOREST_FIELD = { cell: 150, tree: .15, hedge: 2.5 } as const;
+export const FOREST_FIELD = { cell: 150, tree: 0.15, hedge: 2.5 } as const;
 /** Occupation RGBA8: R/G signed distance to open/forest land, encoded
  * clamp(128+16d) in native texels (positive inside); B class id (0 none,
  * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built reserve, 8 occupied construction);
@@ -32,15 +36,34 @@ export const FOREST_FIELD = { cell: 150, tree: .15, hedge: 2.5 } as const;
  * (small road or track under the canopy), 13 Underdark fungus bed (ui/forestOccupation.ts FUNGUS_BED: no surface
  * ground paint, read by the Underdark mushrooms). A holds the signed distance to strict woody clearings:
  * clamp(128 - 16d), d in texels, positive inside; 255 everywhere without clearings. */
-export interface ForestClearing { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }
-export interface ForestOccupation { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Holdings for the satellite ground, on their own finer grid. */ detail?: LandDetail;
+export interface ForestClearing {
+  outer: { x: number; y: number }[];
+  holes?: { x: number; y: number }[][];
+}
+export interface ForestOccupation {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  rgba: Uint8Array;
+  key: string;
+  /** Holdings for the satellite ground, on their own finer grid. */ detail?: LandDetail;
   /** Exact defensive clearings, retained through building merges and worker preparation. */
   clearings?: readonly ForestClearing[];
   /** Exact ways (roads, town streets; render/forestRoom.ts corridors) for the modelled trees: the raster is too coarse
    * to keep a trunk off a street a few metres wide. */
-  ways?: readonly { path: readonly { x: number; y: number }[]; half: number | readonly number[]; covered?: boolean }[] }
+  ways?: readonly { path: readonly { x: number; y: number }[]; half: number | readonly number[]; covered?: boolean }[];
+}
 /** Holdings raster (web/src/ui/landDetail.ts): R cropping system and crop (a plot identity in gardens), G and B cos 2a and sin 2a of the row direction, A edge distance over its range. */
-export interface LandDetail { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string; /** Quantized parcel frames, matching GB. */ orchards?: { poly: { x: number; y: number }[]; holes?: { x: number; y: number }[][]; along: [number, number] }[] }
+export interface LandDetail {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  rgba: Uint8Array;
+  key: string;
+  /** Quantized parcel frames, matching GB. */ orchards?: { poly: { x: number; y: number }[]; holes?: { x: number; y: number }[][]; along: [number, number] }[];
+}
 /** RGBA8 world raster on the height layer's square: R canopy cover 0..1,
  * G potential canopy height 0..50 m (also where cover is 0), B needleleaf
  * fraction, A stand tone (age/disturbance, .5 neutral). Texel centres at
@@ -54,7 +77,18 @@ export interface LandDetail { x: number; y: number; width: number; n: number; rg
  * its area channel is already scaled, and its bank geometry stays unchanged. */
 export type ForestBeachGrid = ReturnType<typeof forestBeachGrid>;
 /** `beach`: V2 crown-root beach grid (0..255) over the height layer, read by the shaders as uForestBeach. */
-export interface ForestField { x: number; y: number; width: number; n: number; rgba: Uint8Array; bank?: Uint8Array; bankDensity?: number; clearingProfile?: 'progressive'; beach?: ForestBeachGrid; key: string }
+export interface ForestField {
+  x: number;
+  y: number;
+  width: number;
+  n: number;
+  rgba: Uint8Array;
+  bank?: Uint8Array;
+  bankDensity?: number;
+  clearingProfile?: 'progressive';
+  beach?: ForestBeachGrid;
+  key: string;
+}
 export interface ForestFieldInput {
   /** Material seed, the same uint as uMaterialSeed (seedHash(settings.seed)). */
   seed: number;
@@ -78,32 +112,56 @@ export function forestFieldResolution(width: number): number {
   return Math.max(32, Math.min(1024, Math.ceil(width / 16)));
 }
 
-function clamp(v: number, a = 0, b = 1): number { return v < a ? a : v > b ? b : v; }
+function clamp(v: number, a = 0, b = 1): number {
+  return v < a ? a : v > b ? b : v;
+}
 function sstep(a: number, b: number, v: number): number {
-  let t = (v - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t;
+  let t = (v - a) / (b - a);
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
   return t * t * (3 - 2 * t);
 }
 export function forestHash(x: number, y: number, z: number, seed: number): number {
   let h = Math.imul(x, 0x9e3779b9) ^ Math.imul(y, 0x85ebca6b) ^ Math.imul(z, 0xc2b2ae35) ^ seed;
-  h = Math.imul(h ^ (h >>> 16), 0x7feb352d); h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
   return (h ^ (h >>> 16)) >>> 0;
 }
-const GX = new Float64Array(16), GY = new Float64Array(16);
-for (let i = 0; i < 16; i++) { GX[i] = Math.cos(i * Math.PI / 8 + .2); GY[i] = Math.sin(i * Math.PI / 8 + .2); }
+const GX = new Float64Array(16),
+  GY = new Float64Array(16);
+for (let i = 0; i < 16; i++) {
+  GX[i] = Math.cos((i * Math.PI) / 8 + 0.2);
+  GY[i] = Math.sin((i * Math.PI) / 8 + 0.2);
+}
 /** 2D gradient noise, unit standard deviation (measured .2156 before scaling). */
 function noise(x: number, y: number, salt: number): number {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10), v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
-  let h = forestHash(ix, iy, 0, salt) & 15; const a = GX[h] * fx + GY[h] * fy;
-  h = forestHash(ix + 1, iy, 0, salt) & 15; const b = GX[h] * (fx - 1) + GY[h] * fy;
-  h = forestHash(ix, iy + 1, 0, salt) & 15; const c = GX[h] * fx + GY[h] * (fy - 1);
-  h = forestHash(ix + 1, iy + 1, 0, salt) & 15; const d = GX[h] * (fx - 1) + GY[h] * (fy - 1);
+  const ix = Math.floor(x),
+    iy = Math.floor(y),
+    fx = x - ix,
+    fy = y - iy;
+  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10),
+    v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  let h = forestHash(ix, iy, 0, salt) & 15;
+  const a = GX[h] * fx + GY[h] * fy;
+  h = forestHash(ix + 1, iy, 0, salt) & 15;
+  const b = GX[h] * (fx - 1) + GY[h] * fy;
+  h = forestHash(ix, iy + 1, 0, salt) & 15;
+  const c = GX[h] * fx + GY[h] * (fy - 1);
+  h = forestHash(ix + 1, iy + 1, 0, salt) & 15;
+  const d = GX[h] * (fx - 1) + GY[h] * (fy - 1);
   return ((a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v) * 4.639;
 }
 /** Fixed octave set (never footprint- or resolution-dependent), unit variance. */
 function fbm(x: number, y: number, wavelength: number, octaves: number, salt: number): number {
-  let sum = 0, norm = 0, a = 1, l = wavelength;
-  for (let i = 0; i < octaves; i++) { sum += a * noise(x / l + 31.7 * i, y / l - 17.3 * i, salt + i * 0x9e37); norm += a * a; a *= .55; l *= .5; }
+  let sum = 0,
+    norm = 0,
+    a = 1,
+    l = wavelength;
+  for (let i = 0; i < octaves; i++) {
+    sum += a * noise(x / l + 31.7 * i, y / l - 17.3 * i, salt + i * 0x9e37);
+    norm += a * a;
+    a *= 0.55;
+    l *= 0.5;
+  }
   return sum / Math.sqrt(norm);
 }
 /** Unit-Gaussian upper quantile via the logistic approximation of the normal CDF. */
@@ -112,18 +170,26 @@ const upperQuantile = (fraction: number): number => Math.log((1 - fraction) / fr
 /** Separable box blur applied twice (triangle kernel), clamped edges. */
 function blur(src: Float32Array, n: number, radius: number): Float32Array {
   if (radius < 1) return src.slice();
-  const a = src.slice(), row = new Float64Array(n + 2 * radius + 1), scale = 1 / (2 * radius + 1);
+  const a = src.slice(),
+    row = new Float64Array(n + 2 * radius + 1),
+    scale = 1 / (2 * radius + 1);
   // Transposing passes: four horizontal passes = two separable 2D box blurs.
-  let from = a, to = new Float32Array(n * n);
+  let from = a,
+    to = new Float32Array(n * n);
   for (let pass = 0; pass < 4; pass++) {
     for (let line = 0; line < n; line++) {
       const base = line * n;
       for (let k = 0; k < row.length; k++) row[k] = from[base + Math.min(n - 1, Math.max(0, k - radius))];
       let sum = 0;
       for (let k = 0; k <= 2 * radius; k++) sum += row[k];
-      for (let k = 0; k < n; k++) { to[k * n + line] = sum * scale; sum += row[k + 2 * radius + 1] - row[k]; }
+      for (let k = 0; k < n; k++) {
+        to[k * n + line] = sum * scale;
+        sum += row[k + 2 * radius + 1] - row[k];
+      }
     }
-    const swap = from; from = to; to = swap;
+    const swap = from;
+    from = to;
+    to = swap;
   }
   return from;
 }
@@ -140,37 +206,57 @@ function surfaceCorner(cx: number, cy: number, cz: number, fx: number, fy: numbe
   return ((h & 1023) / 511.5 - 1) * fx + (((h >>> 10) & 1023) / 511.5 - 1) * fy + (((h >>> 20) & 1023) / 511.5 - 1) * fz;
 }
 function surfaceNoise(x: number, y: number, z: number, salt: number): number {
-  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz;
-  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10), uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10), uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
-  let a0 = surfaceCorner(ix, iy, iz, fx, fy, fz, salt), a1 = surfaceCorner(ix + 1, iy, iz, fx - 1, fy, fz, salt);
-  let a2 = surfaceCorner(ix, iy + 1, iz, fx, fy - 1, fz, salt), a3 = surfaceCorner(ix + 1, iy + 1, iz, fx - 1, fy - 1, fz, salt);
-  let x0 = a0 + (a1 - a0) * ux, x1 = a2 + (a3 - a2) * ux;
+  const ix = Math.floor(x),
+    iy = Math.floor(y),
+    iz = Math.floor(z),
+    fx = x - ix,
+    fy = y - iy,
+    fz = z - iz;
+  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10),
+    uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10),
+    uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
+  let a0 = surfaceCorner(ix, iy, iz, fx, fy, fz, salt),
+    a1 = surfaceCorner(ix + 1, iy, iz, fx - 1, fy, fz, salt);
+  let a2 = surfaceCorner(ix, iy + 1, iz, fx, fy - 1, fz, salt),
+    a3 = surfaceCorner(ix + 1, iy + 1, iz, fx - 1, fy - 1, fz, salt);
+  let x0 = a0 + (a1 - a0) * ux,
+    x1 = a2 + (a3 - a2) * ux;
   const y0 = x0 + (x1 - x0) * uy;
   // The map plane z = 0 has u.z = 0: the upper layer has no weight.
   if (uz === 0) return y0 * 5.25;
-  a0 = surfaceCorner(ix, iy, iz + 1, fx, fy, fz - 1, salt); a1 = surfaceCorner(ix + 1, iy, iz + 1, fx - 1, fy, fz - 1, salt);
-  a2 = surfaceCorner(ix, iy + 1, iz + 1, fx, fy - 1, fz - 1, salt); a3 = surfaceCorner(ix + 1, iy + 1, iz + 1, fx - 1, fy - 1, fz - 1, salt);
-  x0 = a0 + (a1 - a0) * ux; x1 = a2 + (a3 - a2) * ux;
+  a0 = surfaceCorner(ix, iy, iz + 1, fx, fy, fz - 1, salt);
+  a1 = surfaceCorner(ix + 1, iy, iz + 1, fx - 1, fy, fz - 1, salt);
+  a2 = surfaceCorner(ix, iy + 1, iz + 1, fx, fy - 1, fz - 1, salt);
+  a3 = surfaceCorner(ix + 1, iy + 1, iz + 1, fx - 1, fy - 1, fz - 1, salt);
+  x0 = a0 + (a1 - a0) * ux;
+  x1 = a2 + (a3 - a2) * ux;
   return (y0 + (x0 + (x1 - x0) * uy - y0) * uz) * 5.25;
 }
 /** [unit-variance resolved pattern, retained variance]; octaves fade by footprint as in the shader. */
 function surfaceFbm(x: number, y: number, z: number, scale: number, octaves: number, footprint: number, salt: number, out: number[]): void {
-  let value = 0, kept = 0, total = 0, s = scale, a = 1;
+  let value = 0,
+    kept = 0,
+    total = 0,
+    s = scale,
+    a = 1;
   for (let i = 0; i < octaves; i++) {
     total += a * a;
-    if (footprint < s * .25) {
-      const fade = 1 - sstep(s * .125, s * .25, footprint);
-      value += a * fade * surfaceNoise(x / s, y / s, z / s, (salt + i * 0x9e37) >>> 0); kept += a * fade * a * fade;
+    if (footprint < s * 0.25) {
+      const fade = 1 - sstep(s * 0.125, s * 0.25, footprint);
+      value += a * fade * surfaceNoise(x / s, y / s, z / s, (salt + i * 0x9e37) >>> 0);
+      kept += a * fade * a * fade;
     }
-    a *= .5; s *= .5;
+    a *= 0.5;
+    s *= 0.5;
   }
-  out[0] = kept > 0 ? value / Math.sqrt(kept) : 0; out[1] = kept / total;
+  out[0] = kept > 0 ? value / Math.sqrt(kept) : 0;
+  out[1] = kept / total;
 }
 function surfaceCover(fraction: number, pattern: number, retained: number, sharp: number): number {
   const c = clamp(fraction);
-  return c + clamp(sharp) * c * (1 - c) * pattern / Math.sqrt(1 + pattern * pattern) * Math.sqrt(retained);
+  return c + ((clamp(sharp) * c * (1 - c) * pattern) / Math.sqrt(1 + pattern * pattern)) * Math.sqrt(retained);
 }
-const ROCK_TAN = Math.tan(40 * Math.PI / 180);
+const ROCK_TAN = Math.tan((40 * Math.PI) / 180);
 
 /** Render's tree eligibility E in [0,1] per field texel: the semantic terms of
  * Neural Earth's surfaceMaterial (outcrop exposure and its crag/grove pattern,
@@ -178,71 +264,106 @@ const ROCK_TAN = Math.tan(40 * Math.PI / 180);
  * once at canonical footprints instead of the display one. Relief terms use
  * the height grid per texel; noise patterns use lattices of their own scale.
  * Material semantics only: never classified from colour. Display only. */
-function renderEligibility(layer: ForestFieldInput['height'], climate: readonly [number, number], seed: number, N: number,
-  heightAt: (wx: number, wy: number) => number): Float32Array {
-  const [T, P] = climate, cell = layer.width / N, source = layer.width / layer.n, eligible = new Float32Array(N * N), fbm2 = [0, 0];
+function renderEligibility(layer: ForestFieldInput['height'], climate: readonly [number, number], seed: number, N: number, heightAt: (wx: number, wy: number) => number): Float32Array {
+  const [T, P] = climate,
+    cell = layer.width / N,
+    source = layer.width / layer.n,
+    eligible = new Float32Array(N * N),
+    fbm2 = [0, 0];
   // Patterns on lattices, bilinear per texel. Crag (700 m, octaves to 87.5 m)
   // every second texel with the shader's octave fade at that spacing; grove
   // (4.8 km to 600 m) and the 64/48 km regional fields every ~140 m.
   const sampleLattice = (step: number, channels: number, fill: (x: number, y: number, out: Float32Array, o: number) => void) => {
-    const M = Math.ceil(N / step) + 2, values = new Float32Array(M * M * channels);
-    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) fill(layer.x + (i * step + .5) * cell, layer.y + (j * step + .5) * cell, values, (j * M + i) * channels);
+    const M = Math.ceil(N / step) + 2,
+      values = new Float32Array(M * M * channels);
+    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) fill(layer.x + (i * step + 0.5) * cell, layer.y + (j * step + 0.5) * cell, values, (j * M + i) * channels);
     return { step, M, channels, values };
   };
-  const cragStep = 2, crag = sampleLattice(cragStep, 2, (x, y, out, o) => {
-    surfaceFbm(x, y, 0, 700, 4, cragStep * cell, (seed + 4) >>> 0, fbm2); out[o] = fbm2[0]; out[o + 1] = fbm2[1];
-  });
+  const cragStep = 2,
+    crag = sampleLattice(cragStep, 2, (x, y, out, o) => {
+      surfaceFbm(x, y, 0, 700, 4, cragStep * cell, (seed + 4) >>> 0, fbm2);
+      out[o] = fbm2[0];
+      out[o + 1] = fbm2[1];
+    });
   // Render's 2D material: TPI against the mean height ±max(300 m, 2 cells) away.
   const radius = Math.max(300, 2 * source);
   const coarse = sampleLattice(Math.max(1, Math.round(140 / cell)), 4, (x, y, out, o) => {
-    surfaceFbm(x, y, 0, 4800, 4, cell, (seed + 3) >>> 0, fbm2); out[o] = fbm2[0] * Math.sqrt(fbm2[1]);
-    surfaceFbm(x, y, 0, 64000, 4, cell, (seed + 1) >>> 0, fbm2); out[o + 1] = fbm2[0] * Math.sqrt(fbm2[1]);
-    surfaceFbm(x + 5101, y - 2297, 3313, 48000, 4, cell, (seed + 2) >>> 0, fbm2); out[o + 2] = fbm2[0] * Math.sqrt(fbm2[1]);
-    const lx = x - layer.x, ly = y - layer.y;
-    out[o + 3] = (heightAt(lx + radius, ly) + heightAt(lx - radius, ly) + heightAt(lx, ly + radius) + heightAt(lx, ly - radius)) * .25;
+    surfaceFbm(x, y, 0, 4800, 4, cell, (seed + 3) >>> 0, fbm2);
+    out[o] = fbm2[0] * Math.sqrt(fbm2[1]);
+    surfaceFbm(x, y, 0, 64000, 4, cell, (seed + 1) >>> 0, fbm2);
+    out[o + 1] = fbm2[0] * Math.sqrt(fbm2[1]);
+    surfaceFbm(x + 5101, y - 2297, 3313, 48000, 4, cell, (seed + 2) >>> 0, fbm2);
+    out[o + 2] = fbm2[0] * Math.sqrt(fbm2[1]);
+    const lx = x - layer.x,
+      ly = y - layer.y;
+    out[o + 3] = (heightAt(lx + radius, ly) + heightAt(lx - radius, ly) + heightAt(lx, ly + radius) + heightAt(lx, ly - radius)) * 0.25;
   });
   const lerp = new Float64Array(4);
   const at = (l: typeof crag, i: number, j: number): void => {
-    const gi = i / l.step, gj = j / l.step, cx = Math.min(l.M - 2, Math.floor(gi)), cy = Math.min(l.M - 2, Math.floor(gj)), fx = gi - cx, fy = gj - cy;
-    const c = l.channels, c00 = (cy * l.M + cx) * c, c10 = c00 + c, c01 = c00 + l.M * c, c11 = c01 + c, v = l.values;
+    const gi = i / l.step,
+      gj = j / l.step,
+      cx = Math.min(l.M - 2, Math.floor(gi)),
+      cy = Math.min(l.M - 2, Math.floor(gj)),
+      fx = gi - cx,
+      fy = gj - cy;
+    const c = l.channels,
+      c00 = (cy * l.M + cx) * c,
+      c10 = c00 + c,
+      c01 = c00 + l.M * c,
+      c11 = c01 + c,
+      v = l.values;
     for (let k = 0; k < c; k++) lerp[k] = (v[c00 + k] * (1 - fx) + v[c10 + k] * fx) * (1 - fy) + (v[c01 + k] * (1 - fx) + v[c11 + k] * fx) * fy;
   };
   // Render's continentality-free summer proxy is T+6; the field's growing season adds .5·max(0, 10−T).
-  const boost = .5 * Math.max(0, 10 - T);
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const wx = (i + .5) * cell, wy = (j + .5) * cell, o = j * N + i;
-    const z = heightAt(wx, wy), h = Math.max(z, 0);
-    if (z <= 0) continue;
-    // Central slope on the source grid, as the 2D and raster materials.
-    const gx = (heightAt(wx + source, wy) - heightAt(wx - source, wy)) / (2 * source), gy = (heightAt(wx, wy + source) - heightAt(wx, wy - source)) / (2 * source);
-    at(coarse, i, j); const grove = lerp[0], m1 = lerp[1], m2 = lerp[2], tpi = (z - lerp[3]) / (6 * radius), grade = Math.sqrt(gx * gx + gy * gy);
-    at(crag, i, j); const cragValue = lerp[0], cragKept = lerp[1];
-    // surfaceMaterial at full locality and variation (fine footprints).
-    const ts = clamp(T + 6 - .0065 * h, -45, 45), tw = clamp(T - 6 - .0065 * h, -45, 45);
-    const tHot = Math.max(ts, tw) + .8 * m2 * (.25 + .75 * sstep(.015, .12, Math.abs(tpi)));
-    const wetShift = Math.exp(.1 * m1), valley = sstep(0, -.12, tpi), ridge = sstep(0, .12, tpi);
-    let humid = P / Math.max(20 * (ts + tw) * .5 + 280, 120) * wetShift;
-    humid *= 1 + .7 * valley * (1 - sstep(1.5, 3, humid)) - .18 * ridge;
-    const rockTanEff = ROCK_TAN * (.55 + .45 * sstep(.3, 1.3, humid)), alpine = 1 - sstep(2, 9, tHot);
-    const exposure = sstep(rockTanEff * .5, rockTanEff * 1.3, grade) + .45 * alpine * sstep(rockTanEff * .15, rockTanEff * .7, grade)
-      + .35 * ridge * sstep(.35, .9, grade / ROCK_TAN) - .3 * valley;
-    const outcrop = surfaceCover(exposure, .75 * cragValue + .25 * grove, cragKept, .35);
-    const supply = sstep(60, 400, P * wetShift * (1 + .5 * valley - .25 * ridge));
-    const perennial = sstep(2.5, -2.5, Math.max(ts, tw) + .35 * m1) * supply;
-    // Render: trees ∝ (1 − outcrop). Rock-coloured ground (outcrop ≳ .6) is
-    // sharpened to almost no trees; mild outcrops keep most of their stands.
-    const rock = sstep(.3, .85, 1 - outcrop) * (1 - sstep(ROCK_TAN * .9, ROCK_TAN * 1.6, grade));
-    eligible[o] = rock * (1 - perennial) * sstep(5.5, 13.5, tHot + boost + .8 * valley);
-  }
+  const boost = 0.5 * Math.max(0, 10 - T);
+  for (let j = 0; j < N; j++)
+    for (let i = 0; i < N; i++) {
+      const wx = (i + 0.5) * cell,
+        wy = (j + 0.5) * cell,
+        o = j * N + i;
+      const z = heightAt(wx, wy),
+        h = Math.max(z, 0);
+      if (z <= 0) continue;
+      // Central slope on the source grid, as the 2D and raster materials.
+      const gx = (heightAt(wx + source, wy) - heightAt(wx - source, wy)) / (2 * source),
+        gy = (heightAt(wx, wy + source) - heightAt(wx, wy - source)) / (2 * source);
+      at(coarse, i, j);
+      const grove = lerp[0],
+        m1 = lerp[1],
+        m2 = lerp[2],
+        tpi = (z - lerp[3]) / (6 * radius),
+        grade = Math.sqrt(gx * gx + gy * gy);
+      at(crag, i, j);
+      const cragValue = lerp[0],
+        cragKept = lerp[1];
+      // surfaceMaterial at full locality and variation (fine footprints).
+      const ts = clamp(T + 6 - 0.0065 * h, -45, 45),
+        tw = clamp(T - 6 - 0.0065 * h, -45, 45);
+      const tHot = Math.max(ts, tw) + 0.8 * m2 * (0.25 + 0.75 * sstep(0.015, 0.12, Math.abs(tpi)));
+      const wetShift = Math.exp(0.1 * m1),
+        valley = sstep(0, -0.12, tpi),
+        ridge = sstep(0, 0.12, tpi);
+      let humid = (P / Math.max(20 * (ts + tw) * 0.5 + 280, 120)) * wetShift;
+      humid *= 1 + 0.7 * valley * (1 - sstep(1.5, 3, humid)) - 0.18 * ridge;
+      const rockTanEff = ROCK_TAN * (0.55 + 0.45 * sstep(0.3, 1.3, humid)),
+        alpine = 1 - sstep(2, 9, tHot);
+      const exposure = sstep(rockTanEff * 0.5, rockTanEff * 1.3, grade) + 0.45 * alpine * sstep(rockTanEff * 0.15, rockTanEff * 0.7, grade) + 0.35 * ridge * sstep(0.35, 0.9, grade / ROCK_TAN) - 0.3 * valley;
+      const outcrop = surfaceCover(exposure, 0.75 * cragValue + 0.25 * grove, cragKept, 0.35);
+      const supply = sstep(60, 400, P * wetShift * (1 + 0.5 * valley - 0.25 * ridge));
+      const perennial = sstep(2.5, -2.5, Math.max(ts, tw) + 0.35 * m1) * supply;
+      // Render: trees ∝ (1 − outcrop). Rock-coloured ground (outcrop ≳ .6) is
+      // sharpened to almost no trees; mild outcrops keep most of their stands.
+      const rock = sstep(0.3, 0.85, 1 - outcrop) * (1 - sstep(ROCK_TAN * 0.9, ROCK_TAN * 1.6, grade));
+      eligible[o] = rock * (1 - perennial) * sstep(5.5, 13.5, tHot + boost + 0.8 * valley);
+    }
   return eligible;
 }
 
-
 /** CPU counterpart of canonical v2StandCoverage; optical gap law, not measured LAI. */
 export function v2StandCoverage(cover: number, stand: number, disturbed: number, trop: number): number {
-  const mosaic = .22 * (1 - .75 * trop);
-  const density = Math.exp(mosaic * stand + .05 * stand * (1 - cover)) * (1 - .3 * disturbed * (1 - .7 * trop));
-  return 1 - Math.pow(Math.max(1 - cover, .001), density);
+  const mosaic = 0.22 * (1 - 0.75 * trop);
+  const density = Math.exp(mosaic * stand + 0.05 * stand * (1 - cover)) * (1 - 0.3 * disturbed * (1 - 0.7 * trop));
+  return 1 - Math.pow(Math.max(1 - cover, 0.001), density);
 }
 
 let baseCache: { key: string; base: Float32Array; optical: Float32Array; eligible: Float32Array; bank?: ForestBank } | undefined;
@@ -258,36 +379,53 @@ export async function buildForestField(input: ForestFieldInput, settings: Forest
     const { expectedWasmThreads, inWorker } = await import('./wasmThreads');
     if (!(inWorker() && expectedWasmThreads().mode === 'threads')) return buildForestFieldTs(input, settings);
   }
-  const layer = input.height, [T, P] = input.climate, seed = input.seed >>> 0, n = layer.n;
-  const density = clamp(settings.density, 0, 2), clearings = clamp(settings.clearings, 0, 1);
-  const terrainKey = `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}`
-    + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
-  const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}`
-    + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
-  const planes = await forestPlanes({ seed, climate: input.climate, x: layer.x, y: layer.y, width: layer.width, n, height: layer.data,
-    water: input.water, riverSegments: input.riverSegments, enabled: settings.enabled, density, clearings, progressive: input.clearingProfile === 'progressive' }, runtime);
+  const layer = input.height,
+    [T, P] = input.climate,
+    seed = input.seed >>> 0,
+    n = layer.n;
+  const density = clamp(settings.density, 0, 2),
+    clearings = clamp(settings.clearings, 0, 1);
+  const terrainKey =
+    `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}` + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
+  const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}` + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
+  const planes = await forestPlanes(
+    { seed, climate: input.climate, x: layer.x, y: layer.y, width: layer.width, n, height: layer.data, water: input.water, riverSegments: input.riverSegments, enabled: settings.enabled, density, clearings, progressive: input.clearingProfile === 'progressive' },
+    runtime,
+  );
   return { x: layer.x, y: layer.y, width: layer.width, n: planes.n, rgba: planes.rgba, bank: planes.bank, bankDensity: density, clearingProfile: input.clearingProfile, beach: planes.beach, key };
 }
 /** The TypeScript forest field (web main thread and single-thread realms), with its terrain-keyed base and beach caches. */
 function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): ForestField {
-  const layer = input.height, [T, P] = input.climate, seed = input.seed >>> 0;
-  const N = forestFieldResolution(layer.width), cell = layer.width / N, n = layer.n, source = layer.width / n;
-  const density = clamp(settings.density, 0, 2), clearings = clamp(settings.clearings, 0, 1);
-  const terrainKey = `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}`
-    + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
-  const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}`
-    + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
-  const rgba = new Uint8Array(N * N * 4), data = layer.data;
+  const layer = input.height,
+    [T, P] = input.climate,
+    seed = input.seed >>> 0;
+  const N = forestFieldResolution(layer.width),
+    cell = layer.width / N,
+    n = layer.n,
+    source = layer.width / n;
+  const density = clamp(settings.density, 0, 2),
+    clearings = clamp(settings.clearings, 0, 1);
+  const terrainKey =
+    `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}` + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
+  const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}` + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
+  const rgba = new Uint8Array(N * N * 4),
+    data = layer.data;
   const heightAt = (wx: number, wy: number): number => {
     if (n < 2) return data[0];
-    const gx = clamp(wx / source - .5, 0, n - 1), gy = clamp(wy / source - .5, 0, n - 1);
-    const x0 = Math.min(n - 2, Math.floor(gx)), y0 = Math.min(n - 2, Math.floor(gy)), fx = gx - x0, fy = gy - y0, k = y0 * n + x0;
+    const gx = clamp(wx / source - 0.5, 0, n - 1),
+      gy = clamp(wy / source - 0.5, 0, n - 1);
+    const x0 = Math.min(n - 2, Math.floor(gx)),
+      y0 = Math.min(n - 2, Math.floor(gy)),
+      fx = gx - x0,
+      fy = gy - y0,
+      k = y0 * n + x0;
     return (data[k] * (1 - fx) + data[k + 1] * fx) * (1 - fy) + (data[k + n] * (1 - fx) + data[k + n + 1] * fx) * fy;
   };
   // Base grid: heights (bilinear, cell-centred). Reused with the eligibility
   // and bank envelope while only density/clearings change, so slider edits
   // rebuild the full-res pass only.
-  const B = Math.max(16, Math.ceil(N / 2)), bcell = layer.width / B;
+  const B = Math.max(16, Math.ceil(N / 2)),
+    bcell = layer.width / B;
   const cached = baseCache?.key === terrainKey ? baseCache : undefined;
   const base = cached?.base ?? new Float32Array(B * B * 5);
   const optical = cached?.optical ?? new Float32Array(B * B);
@@ -298,79 +436,116 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
     // geometry, routing river cells give a slightly wider fallback.
     const rivers = input.riverSegments ?? (input.water ? forestRoutingRiverSegments(input.water, { x: layer.x, y: layer.y, width: layer.width, n }) : undefined);
     const lake = forestLakeInterior(input.water, n, layer.width);
-    bank = forestBankField(rivers, { x: layer.x, y: layer.y, width: layer.width, n: N },
-      { seed, climate: input.climate, heightAt: (wx, wy) => heightAt(wx - layer.x, wy - layer.y), lakeAt: lake && ((wx, wy) => lake(wx - layer.x, wy - layer.y)) });
+    bank = forestBankField(rivers, { x: layer.x, y: layer.y, width: layer.width, n: N }, { seed, climate: input.climate, heightAt: (wx, wy) => heightAt(wx - layer.x, wy - layer.y), lakeAt: lake && ((wx, wy) => lake(wx - layer.x, wy - layer.y)) });
     // Render's eligibility stays authoritative on rock and above the treeline.
-    if (bank) for (let o = 0; o < N * N; o++) {
-      const gate = sstep(0, .4, eligible[o]);
-      bank.rgba[o * 4 + 2] = Math.round(bank.rgba[o * 4 + 2] * gate); bank.rgba[o * 4 + 3] = Math.round(bank.rgba[o * 4 + 3] * eligible[o]);
-    }
+    if (bank)
+      for (let o = 0; o < N * N; o++) {
+        const gate = sstep(0, 0.4, eligible[o]);
+        bank.rgba[o * 4 + 2] = Math.round(bank.rgba[o * 4 + 2] * gate);
+        bank.rgba[o * 4 + 3] = Math.round(bank.rgba[o * 4 + 3] * eligible[o]);
+      }
     const h = new Float32Array(B * B);
-    for (let j = 0; j < B; j++) for (let i = 0; i < B; i++) h[j * B + i] = heightAt((i + .5) * bcell, (j + .5) * bcell);
-    const near = blur(h, B, Math.round(150 / bcell)), far = blur(h, B, Math.round(600 / bcell));
+    for (let j = 0; j < B; j++) for (let i = 0; i < B; i++) h[j * B + i] = heightAt((i + 0.5) * bcell, (j + 0.5) * bcell);
+    const near = blur(h, B, Math.round(150 / bcell)),
+      far = blur(h, B, Math.round(600 / bcell));
     // Landscape-scale noises (>= 520 m) on a ~140 m lattice, bilinear upsampled.
-    const step = Math.max(1, Math.round(140 / bcell)), M = Math.ceil(B / step) + 2, coarse = new Float32Array(M * M * 6);
-    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
-      const x = layer.x + (i * step + .5) * bcell, y = layer.y + (j * step + .5) * bcell, o = (j * M + i) * 6;
-      const wx = 900 * fbm(x, y, 5200, 2, seed + 11), wy = 900 * fbm(x + 7310, y - 2210, 5200, 2, seed + 13);
-      coarse[o] = fbm(x + wx, y + wy, 2400, 3, seed + 17);         // stand mosaic 1–3 km
-      coarse[o + 1] = fbm(x - wy, y + wx, 1100, 2, seed + 19);     // disturbance patches
-      coarse[o + 2] = fbm(x, y, 1800, 2, seed + 23);               // conifer admixture
-      coarse[o + 3] = fbm(x + wy, y - wx, 1300, 2, seed + 29);     // stand tone (independent)
-      coarse[o + 4] = fbm(x, y, 9000, 2, seed + 31);               // regional productivity
-      coarse[o + 5] = fbm(x, y, 520, 2, seed + 37);                // treeline raggedness
-    }
+    const step = Math.max(1, Math.round(140 / bcell)),
+      M = Math.ceil(B / step) + 2,
+      coarse = new Float32Array(M * M * 6);
+    for (let j = 0; j < M; j++)
+      for (let i = 0; i < M; i++) {
+        const x = layer.x + (i * step + 0.5) * bcell,
+          y = layer.y + (j * step + 0.5) * bcell,
+          o = (j * M + i) * 6;
+        const wx = 900 * fbm(x, y, 5200, 2, seed + 11),
+          wy = 900 * fbm(x + 7310, y - 2210, 5200, 2, seed + 13);
+        coarse[o] = fbm(x + wx, y + wy, 2400, 3, seed + 17); // stand mosaic 1–3 km
+        coarse[o + 1] = fbm(x - wy, y + wx, 1100, 2, seed + 19); // disturbance patches
+        coarse[o + 2] = fbm(x, y, 1800, 2, seed + 23); // conifer admixture
+        coarse[o + 3] = fbm(x + wy, y - wx, 1300, 2, seed + 29); // stand tone (independent)
+        coarse[o + 4] = fbm(x, y, 9000, 2, seed + 31); // regional productivity
+        coarse[o + 5] = fbm(x, y, 520, 2, seed + 37); // treeline raggedness
+      }
     // Base channels: potential cover, clearing bias, height, needleleaf, tone.
-    const wTropRegion = sstep(13, 19, T - 6), growBoost = .5 * Math.max(0, 10 - T), noise6 = new Float64Array(6);
-    for (let j = 0; j < B; j++) for (let i = 0; i < B; i++) {
-      const o = j * B + i, z = h[o];
-      const left = h[j * B + Math.max(0, i - 1)], right = h[j * B + Math.min(B - 1, i + 1)];
-      const up = h[Math.max(0, j - 1) * B + i], down = h[Math.min(B - 1, j + 1) * B + i];
-      const slope = Math.sqrt((right - left) ** 2 + (down - up) ** 2) / (2 * bcell);
-      const tpiNear = (z - near[o]) / 150, tpiFar = (z - far[o]) / 600;
-      const valley = Math.max(sstep(0, -.06, tpiFar), .7 * sstep(0, -.05, tpiNear));
-      const ridge = Math.max(sstep(0, .06, tpiFar), .6 * sstep(0, .05, tpiNear));
-      // Climate as earthMaterial (winter T−6, 6.5 °C/km lapse, Köppen-like threshold 20T+280 mm), but the
-      // growing season warms with continentality: T+6 + .5·max(0, 10−T). Hyytiälä (T≈3.5) and BOREAS NSA
-      // (T≈−3) carry 6–13 m closed forests with July ≈ 15–16 °C; T ≥ 10 °C is unchanged.
-      const local = T - .0065 * Math.max(z, 0), grow = local + 6 + growBoost, humid0 = P / Math.max(20 * local + 280, 120);
-      const gx = i / step, gy = j / step, cx = Math.min(M - 2, Math.floor(gx)), cy = Math.min(M - 2, Math.floor(gy)), fx = gx - cx, fy = gy - cy;
-      const c00 = (cy * M + cx) * 6, c10 = c00 + 6, c01 = c00 + M * 6, c11 = c01 + 6;
-      const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
-      for (let c = 0; c < 6; c++) noise6[c] = coarse[c00 + c] * w00 + coarse[c10 + c] * w10 + coarse[c01 + c] * w01 + coarse[c11 + c] * w11;
-      const stand = noise6[0], disturbed = sstep(1.05, 1.5, noise6[1]), conifer = noise6[2], toneNoise = noise6[3];
-      // Valleys gather water, ridges drain (as earthMaterial). Rivers feed only
-      // the narrow bank envelope (terrainForestRiparian), not a broad halo.
-      const humid = humid0 * (1 + .7 * valley * (1 - sstep(1.5, 3, humid0)) - .18 * ridge) * Math.exp(.12 * noise6[4]);
-      // Ragged treeline: ~6.4 °C growing-season isotherm, higher in sheltered gullies.
-      const treeline = grow + .9 * noise6[5] + .7 * valley - .5 * ridge;
-      // Rock, slope and snow come from Render's eligibility at full resolution.
-      const thermal = sstep(5, 8.5, treeline), moisture = sstep(.38, 1.25, humid);
-      const coverMax = .6 + .38 * sstep(.8, 2.2, humid);
-      // Boreal wet flats open into bog and fen.
-      const bog = valley * (1 - sstep(.02, .08, slope)) * sstep(1.6, 3, humid) * (1 - sstep(11, 17, grow)) * (1 - wTropRegion);
-      let cover = thermal * moisture * coverMax * (1 - .6 * bog) * (1 - .2 * ridge * (1 - moisture));
-      // Retain a separate V2 channel: either style can populate the shared
-      // terrain cache first without changing historical cover or other fields.
-      optical[o] = v2StandCoverage(cover, stand, disturbed, wTropRegion);
-      // Wet tropical disturbance and stand mosaic mostly lower and lighten the
-      // canopy (height, tone) rather than opening it: the canopy stays closed.
-      const mosaic = .22 * (1 - .75 * wTropRegion);
-      cover = clamp(cover * (1 + mosaic * stand) + .05 * stand * cover * (1 - cover)) * (1 - .3 * disturbed * (1 - .7 * wTropRegion));
-      // Clearings open gentle ground and ridges first and keep steep slopes (zero-mean bias).
-      const gentle = 1 - sstep(.05, .25, slope), rugged = sstep(.35, .8, slope);
-      // Includes the 400 m clearing octave; the 200 m octave is added at full resolution.
-      const bias = .45 * (ridge - valley) + .3 * (gentle - .5) - .6 * rugged + .35 * stand + .45 * noise6[4] + noise(layer.x / 400 + (i + .5) * bcell / 400, layer.y / 400 + (j + .5) * bcell / 400, seed + 41) / 1.077;
-      // Potential height: climate productivity, valley boost, young regrowth patches.
-      const thermalHeight = .5 * sstep(5.5, 9.5, grow) + .5 * sstep(9, 22, grow);
-      let height = 3 + 31 * Math.pow(sstep(.4, 2.8, humid), .8) * thermalHeight;
-      height *= (1 + (.16 + .08 * wTropRegion) * stand) * (1 - .55 * disturbed) * (1 + .15 * valley - .12 * ridge) * (.35 + .65 * sstep(5, 9, treeline));
-      const needle = clamp(1 - sstep(10, 19, grow) + .3 * conifer + .35 * (1 - sstep(.7, 1.4, humid)) * (1 - wTropRegion) - wTropRegion);
-      // Independent of cover and height, so closed tropical canopies still vary.
-      const tone = clamp(.5 + (.16 + .1 * wTropRegion) * toneNoise + .22 * disturbed - .05 * valley);
-      const b = o * 5;
-      base[b] = cover; base[b + 1] = bias; base[b + 2] = height; base[b + 3] = needle; base[b + 4] = tone;
-    }
+    const wTropRegion = sstep(13, 19, T - 6),
+      growBoost = 0.5 * Math.max(0, 10 - T),
+      noise6 = new Float64Array(6);
+    for (let j = 0; j < B; j++)
+      for (let i = 0; i < B; i++) {
+        const o = j * B + i,
+          z = h[o];
+        const left = h[j * B + Math.max(0, i - 1)],
+          right = h[j * B + Math.min(B - 1, i + 1)];
+        const up = h[Math.max(0, j - 1) * B + i],
+          down = h[Math.min(B - 1, j + 1) * B + i];
+        const slope = Math.sqrt((right - left) ** 2 + (down - up) ** 2) / (2 * bcell);
+        const tpiNear = (z - near[o]) / 150,
+          tpiFar = (z - far[o]) / 600;
+        const valley = Math.max(sstep(0, -0.06, tpiFar), 0.7 * sstep(0, -0.05, tpiNear));
+        const ridge = Math.max(sstep(0, 0.06, tpiFar), 0.6 * sstep(0, 0.05, tpiNear));
+        // Climate as earthMaterial (winter T−6, 6.5 °C/km lapse, Köppen-like threshold 20T+280 mm), but the
+        // growing season warms with continentality: T+6 + .5·max(0, 10−T). Hyytiälä (T≈3.5) and BOREAS NSA
+        // (T≈−3) carry 6–13 m closed forests with July ≈ 15–16 °C; T ≥ 10 °C is unchanged.
+        const local = T - 0.0065 * Math.max(z, 0),
+          grow = local + 6 + growBoost,
+          humid0 = P / Math.max(20 * local + 280, 120);
+        const gx = i / step,
+          gy = j / step,
+          cx = Math.min(M - 2, Math.floor(gx)),
+          cy = Math.min(M - 2, Math.floor(gy)),
+          fx = gx - cx,
+          fy = gy - cy;
+        const c00 = (cy * M + cx) * 6,
+          c10 = c00 + 6,
+          c01 = c00 + M * 6,
+          c11 = c01 + 6;
+        const w00 = (1 - fx) * (1 - fy),
+          w10 = fx * (1 - fy),
+          w01 = (1 - fx) * fy,
+          w11 = fx * fy;
+        for (let c = 0; c < 6; c++) noise6[c] = coarse[c00 + c] * w00 + coarse[c10 + c] * w10 + coarse[c01 + c] * w01 + coarse[c11 + c] * w11;
+        const stand = noise6[0],
+          disturbed = sstep(1.05, 1.5, noise6[1]),
+          conifer = noise6[2],
+          toneNoise = noise6[3];
+        // Valleys gather water, ridges drain (as earthMaterial). Rivers feed only
+        // the narrow bank envelope (terrainForestRiparian), not a broad halo.
+        const humid = humid0 * (1 + 0.7 * valley * (1 - sstep(1.5, 3, humid0)) - 0.18 * ridge) * Math.exp(0.12 * noise6[4]);
+        // Ragged treeline: ~6.4 °C growing-season isotherm, higher in sheltered gullies.
+        const treeline = grow + 0.9 * noise6[5] + 0.7 * valley - 0.5 * ridge;
+        // Rock, slope and snow come from Render's eligibility at full resolution.
+        const thermal = sstep(5, 8.5, treeline),
+          moisture = sstep(0.38, 1.25, humid);
+        const coverMax = 0.6 + 0.38 * sstep(0.8, 2.2, humid);
+        // Boreal wet flats open into bog and fen.
+        const bog = valley * (1 - sstep(0.02, 0.08, slope)) * sstep(1.6, 3, humid) * (1 - sstep(11, 17, grow)) * (1 - wTropRegion);
+        let cover = thermal * moisture * coverMax * (1 - 0.6 * bog) * (1 - 0.2 * ridge * (1 - moisture));
+        // Retain a separate V2 channel: either style can populate the shared
+        // terrain cache first without changing historical cover or other fields.
+        optical[o] = v2StandCoverage(cover, stand, disturbed, wTropRegion);
+        // Wet tropical disturbance and stand mosaic mostly lower and lighten the
+        // canopy (height, tone) rather than opening it: the canopy stays closed.
+        const mosaic = 0.22 * (1 - 0.75 * wTropRegion);
+        cover = clamp(cover * (1 + mosaic * stand) + 0.05 * stand * cover * (1 - cover)) * (1 - 0.3 * disturbed * (1 - 0.7 * wTropRegion));
+        // Clearings open gentle ground and ridges first and keep steep slopes (zero-mean bias).
+        const gentle = 1 - sstep(0.05, 0.25, slope),
+          rugged = sstep(0.35, 0.8, slope);
+        // Includes the 400 m clearing octave; the 200 m octave is added at full resolution.
+        const bias = 0.45 * (ridge - valley) + 0.3 * (gentle - 0.5) - 0.6 * rugged + 0.35 * stand + 0.45 * noise6[4] + noise(layer.x / 400 + ((i + 0.5) * bcell) / 400, layer.y / 400 + ((j + 0.5) * bcell) / 400, seed + 41) / 1.077;
+        // Potential height: climate productivity, valley boost, young regrowth patches.
+        const thermalHeight = 0.5 * sstep(5.5, 9.5, grow) + 0.5 * sstep(9, 22, grow);
+        let height = 3 + 31 * Math.pow(sstep(0.4, 2.8, humid), 0.8) * thermalHeight;
+        height *= (1 + (0.16 + 0.08 * wTropRegion) * stand) * (1 - 0.55 * disturbed) * (1 + 0.15 * valley - 0.12 * ridge) * (0.35 + 0.65 * sstep(5, 9, treeline));
+        const needle = clamp(1 - sstep(10, 19, grow) + 0.3 * conifer + 0.35 * (1 - sstep(0.7, 1.4, humid)) * (1 - wTropRegion) - wTropRegion);
+        // Independent of cover and height, so closed tropical canopies still vary.
+        const tone = clamp(0.5 + (0.16 + 0.1 * wTropRegion) * toneNoise + 0.22 * disturbed - 0.05 * valley);
+        const b = o * 5;
+        base[b] = cover;
+        base[b + 1] = bias;
+        base[b + 2] = height;
+        base[b + 3] = needle;
+        base[b + 4] = tone;
+      }
     baseCache = { key: terrainKey, base, optical, eligible, bank };
   }
   // Full resolution: legacy clearings or bounded V2 thinning at 100–400 m,
@@ -382,28 +557,38 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
   // disturbance openings. This bounded appearance policy is not a measured
   // universal clearing rate. Rock, bog, drought and treeline gates stay intact.
   const humidAnnual = P / Math.max(20 * T + 280, 120);
-  const clearingRate = input.clearingProfile === 'progressive' ? .4 + (.08 - .4) * sstep(.8, 1.8, humidAnnual) : .4;
-  const clearedFraction = clearingRate * clearings * (1 - .85 * sstep(13, 19, T - 6)), threshold = 1.15 * upperQuantile(Math.max(clearedFraction, 1e-4));
-  const byte = (v: number): number => (v <= 0 ? 0 : v >= 1 ? 255 : v * 255 + .5) | 0;
+  const clearingRate = input.clearingProfile === 'progressive' ? 0.4 + (0.08 - 0.4) * sstep(0.8, 1.8, humidAnnual) : 0.4;
+  const clearedFraction = clearingRate * clearings * (1 - 0.85 * sstep(13, 19, T - 6)),
+    threshold = 1.15 * upperQuantile(Math.max(clearedFraction, 1e-4));
+  const byte = (v: number): number => (v <= 0 ? 0 : v >= 1 ? 255 : v * 255 + 0.5) | 0;
   for (let j = 0; j < N; j++) {
-    const wy = (j + .5) * cell, gy = clamp(wy / bcell - .5, 0, B - 1), y0 = Math.min(B - 2, Math.floor(gy)), fy = gy - y0;
+    const wy = (j + 0.5) * cell,
+      gy = clamp(wy / bcell - 0.5, 0, B - 1),
+      y0 = Math.min(B - 2, Math.floor(gy)),
+      fy = gy - y0;
     for (let i = 0; i < N; i++) {
-      const wx = (i + .5) * cell, o = j * N + i, gx = clamp(wx / bcell - .5, 0, B - 1), x0 = Math.min(B - 2, Math.floor(gx)), fx = gx - x0;
-      const b00 = (y0 * B + x0) * 5, b10 = b00 + 5, b01 = b00 + B * 5, b11 = b01 + 5;
-      const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+      const wx = (i + 0.5) * cell,
+        o = j * N + i,
+        gx = clamp(wx / bcell - 0.5, 0, B - 1),
+        x0 = Math.min(B - 2, Math.floor(gx)),
+        fx = gx - x0;
+      const b00 = (y0 * B + x0) * 5,
+        b10 = b00 + 5,
+        b01 = b00 + B * 5,
+        b11 = b01 + 5;
+      const w00 = (1 - fx) * (1 - fy),
+        w10 = fx * (1 - fy),
+        w01 = (1 - fx) * fy,
+        w11 = fx * fy;
       const at = (c: number): number => base[b00 + c] * w00 + base[b10 + c] * w10 + base[b01 + c] * w01 + base[b11 + c] * w11;
-      const score = .4 * noise((layer.x + wx) / 200 + 31.7, (layer.y + wy) / 200 - 17.3, seed + 41 + 0x9e37) / 1.077 + at(1);
+      const score = (0.4 * noise((layer.x + wx) / 200 + 31.7, (layer.y + wy) / 200 - 17.3, seed + 41 + 0x9e37)) / 1.077 + at(1);
       // The same 100--400 m score thins V2 stands instead of clearing cells.
       // Symmetric, unbiased scores retain mean loss c before the .55 cap;
       // physical openings and the historical Render3D threshold stay separate.
-      const opened = clearedFraction <= 0 ? 0 : input.clearingProfile === 'progressive'
-        ? Math.min(.55, 2 * clearedFraction / (1 + Math.exp(clamp(-score / 1.15, -20, 20))))
-        : sstep(threshold - .25, threshold + .25, score);
-      const potential = input.clearingProfile === 'progressive'
-        ? optical[y0 * B + x0] * w00 + optical[y0 * B + x0 + 1] * w10 + optical[(y0 + 1) * B + x0] * w01 + optical[(y0 + 1) * B + x0 + 1] * w11
-        : at(0);
+      const opened = clearedFraction <= 0 ? 0 : input.clearingProfile === 'progressive' ? Math.min(0.55, (2 * clearedFraction) / (1 + Math.exp(clamp(-score / 1.15, -20, 20)))) : sstep(threshold - 0.25, threshold + 0.25, score);
+      const potential = input.clearingProfile === 'progressive' ? optical[y0 * B + x0] * w00 + optical[y0 * B + x0 + 1] * w10 + optical[(y0 + 1) * B + x0] * w01 + optical[(y0 + 1) * B + x0 + 1] * w11 : at(0);
       let cover = potential * (1 - opened);
-      if (density !== 1) cover = 1 - Math.pow(1 - Math.min(cover, .999), density);
+      if (density !== 1) cover = 1 - Math.pow(1 - Math.min(cover, 0.999), density);
       // After the density control, so it cannot reforest rock or the treeline.
       // Height stays whole down to E = .4, then collapses: sparse marginal
       // stands keep real trees, ineligible ground has no height for the
@@ -418,19 +603,24 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
       // Inside the bank envelope the gallery stature replaces the potential
       // height where natural cover is sparse: low shrubs on ordinary arid
       // banks, taller broadleaf gallery trees in sheltered or wetter reaches.
-      const g = bank ? bank.weight[o] * (1 - sstep(.2, .6, cover)) : 0;
+      const g = bank ? bank.weight[o] * (1 - sstep(0.2, 0.6, cover)) : 0;
       const height = g > 0 ? at(2) + (bank!.stature[o] - at(2)) * g : at(2);
-      rgba[o * 4] = byte(cover); rgba[o * 4 + 1] = byte(height * sstep(0, .4, e) / 50); rgba[o * 4 + 2] = byte(at(3) * (1 - .7 * g)); rgba[o * 4 + 3] = byte(at(4));
+      rgba[o * 4] = byte(cover);
+      rgba[o * 4 + 1] = byte((height * sstep(0, 0.4, e)) / 50);
+      rgba[o * 4 + 2] = byte(at(3) * (1 - 0.7 * g));
+      rgba[o * 4 + 3] = byte(at(4));
     }
   }
   // Density changes canopy occupancy, never the physical bank width. Adjust
   // the area channel by the same coverage curve used for resolved candidates.
   // Copy before editing/transferring: sliders reuse the cached base envelope.
   const bankRgba = settings.enabled && density > 0 && bank ? bank.rgba.slice() : undefined;
-  if (bankRgba && density !== 1) for (let o = 0; o < N * N; o++) {
-    const k = o * 4, base = forestBankDensity(bankRgba[k + 2] * .5);
-    bankRgba[k + 3] = Math.min(255, Math.round(bankRgba[k + 3] * (1 - Math.pow(1 - base, density)) / base));
-  }
+  if (bankRgba && density !== 1)
+    for (let o = 0; o < N * N; o++) {
+      const k = o * 4,
+        base = forestBankDensity(bankRgba[k + 2] * 0.5);
+      bankRgba[k + 3] = Math.min(255, Math.round((bankRgba[k + 3] * (1 - Math.pow(1 - base, density))) / base));
+    }
   // Only V2 crowns avoid beaches; the grid is about 8 m (fp = 30 m in the beach width), once per terrain and seed.
   let beach: ForestBeachGrid | undefined;
   if (input.clearingProfile === 'progressive') {
@@ -443,14 +633,15 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
 
 /** Crown lattice: per-level coverage target d → control τ (Monte-Carlo
  * inverse of the jittered-lattice union coverage, d = k/32, ±.003). */
-export const FOREST_TAU_TABLE = [0, .0211, .0446, .066, .0881, .1113, .1338, .1573, .182, .2051, .2303, .2538, .2796, .3045, .3293, .3546,
-  .3816, .4091, .435, .4636, .4895, .5188, .5472, .5668, .586, .6063, .6289, .6524, .6805, .7112, .751, .8099, 1];
+export const FOREST_TAU_TABLE = [
+  0, 0.0211, 0.0446, 0.066, 0.0881, 0.1113, 0.1338, 0.1573, 0.182, 0.2051, 0.2303, 0.2538, 0.2796, 0.3045, 0.3293, 0.3546, 0.3816, 0.4091, 0.435, 0.4636, 0.4895, 0.5188, 0.5472, 0.5668, 0.586, 0.6063, 0.6289, 0.6524, 0.6805, 0.7112, 0.751, 0.8099, 1,
+];
 /** τ → occupancy q and crown radius / spacing ρ (sizes ×.8–1.2, centres jittered ±.35 cell). */
-export const forestCrownParams = (tau: number): { q: number; rho: number } => ({ q: Math.min(1, tau / .55), rho: .5 + .4 * Math.max(0, (tau - .55) / .45) });
+export const forestCrownParams = (tau: number): { q: number; rho: number } => ({ q: Math.min(1, tau / 0.55), rho: 0.5 + 0.4 * Math.max(0, (tau - 0.55) / 0.45) });
 /** CDFs of the patch threshold u = .6·gradient noise + .5, alone and as .8u + .2·white (Monte Carlo). */
-const PATCH_CDF = [0, 0, .0001, .001, .0085, .0401, .1202, .2729, .5009, .7274, .8801, .9598, .9914, .999, .9999, 1, 1];
-const CROWN_CDF = [0, 0, 0, .0005, .0063, .0336, .1125, .2742, .4998, .7261, .8874, .9665, .9936, .9994, 1, 1, 1];
-const list = (values: readonly number[]): string => values.map(v => Number.isInteger(v) ? `${v}.` : String(v)).join(',');
+const PATCH_CDF = [0, 0, 0.0001, 0.001, 0.0085, 0.0401, 0.1202, 0.2729, 0.5009, 0.7274, 0.8801, 0.9598, 0.9914, 0.999, 0.9999, 1, 1];
+const CROWN_CDF = [0, 0, 0, 0.0005, 0.0063, 0.0336, 0.1125, 0.2742, 0.4998, 0.7261, 0.8874, 0.9665, 0.9936, 0.9994, 1, 1, 1];
+const list = (values: readonly number[]): string => values.map(v => (Number.isInteger(v) ? `${v}.` : String(v))).join(',');
 
 /** Emitted before NEURAL_EARTH_MATERIAL_GLSL. Its colour is unchanged; it
  * additionally writes the Render guide below for applyForest. */
@@ -458,10 +649,13 @@ const list = (values: readonly number[]): string => values.map(v => Number.isInt
 export function forestBeachTexture(gl: WebGL2RenderingContext, beach: { n: number; data: Uint8Array }): WebGLTexture {
   const texture = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, beach.n, beach.n, 0, gl.RED, gl.UNSIGNED_BYTE, beach.data);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return texture;
 }
 export const FOREST_PRELUDE_GLSL = `

@@ -22,9 +22,13 @@ export interface ToponymTarget {
   kind?: string;
 }
 
-const labels = (settings: V2Settings): Record<string, LabelEdit> => { settings.naming ??= {}; return settings.naming.labels ??= {}; };
+const labels = (settings: V2Settings): Record<string, LabelEdit> => {
+  settings.naming ??= {};
+  return (settings.naming.labels ??= {});
+};
 function prune(settings: V2Settings, id: string): void {
-  const map = settings.naming?.labels; if (!map?.[id]) return;
+  const map = settings.naming?.labels;
+  if (!map?.[id]) return;
   if (!Object.values(map[id]).some(v => v !== undefined)) delete map[id];
 }
 const clean = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, TOPONYM_MAX_LENGTH);
@@ -36,8 +40,7 @@ export function toponymOverride(settings: V2Settings, target: ToponymTarget): st
 export function hasToponymOverride(settings: V2Settings, target: ToponymTarget): boolean {
   if (target.id.startsWith('free:')) return false;
   const n = settings.naming;
-  return !!(target.town && n?.places?.[target.town]) || !!n?.labels?.[target.id]?.text
-    || !!n?.features?.[target.id] || !!n?.variations?.[`feature:${target.id}`];
+  return !!(target.town && n?.places?.[target.town]) || !!n?.labels?.[target.id]?.text || !!n?.features?.[target.id] || !!n?.variations?.[`feature:${target.id}`];
 }
 
 /** Rename a toponym. Empty text is refused (returns false; the caller shows the previous name again).
@@ -45,12 +48,20 @@ export function hasToponymOverride(settings: V2Settings, target: ToponymTarget):
 export function renameToponym(settings: V2Settings, target: ToponymTarget, text: string, generated?: string): boolean {
   const value = clean(text);
   if (!value) return false;
-  if (generated !== undefined && value === generated && !target.id.startsWith('free:')) { resetToponymName(settings, target); return true; }
+  if (generated !== undefined && value === generated && !target.id.startsWith('free:')) {
+    resetToponymName(settings, target);
+    return true;
+  }
   if (target.town) {
-    settings.naming ??= {}; (settings.naming.places ??= {})[target.town] = value;
+    settings.naming ??= {};
+    (settings.naming.places ??= {})[target.town] = value;
     // One store per settlement: a stale label text would otherwise shadow the place name.
     const edit = settings.naming.labels?.[target.id];
-    if (edit) { delete edit.text; delete edit.mode; prune(settings, target.id); }
+    if (edit) {
+      delete edit.text;
+      delete edit.mode;
+      prune(settings, target.id);
+    }
     return true;
   }
   const edit: LabelEdit = { ...labels(settings)[target.id], text: value, mode: 'label' };
@@ -62,15 +73,22 @@ export function renameToponym(settings: V2Settings, target: ToponymTarget, text:
 
 /** Restore the generated name for the current culture and language; visibility, position and style stay. */
 export function resetToponymName(settings: V2Settings, target: ToponymTarget): void {
-  const n = settings.naming; if (!n) return;
+  const n = settings.naming;
+  if (!n) return;
   if (target.town && n.places) delete n.places[target.town];
   const edit = n.labels?.[target.id];
-  if (edit) { delete edit.text; delete edit.mode; prune(settings, target.id); }
+  if (edit) {
+    delete edit.text;
+    delete edit.mode;
+    prune(settings, target.id);
+  }
   if (n.features) delete n.features[target.id];
   if (n.variations) delete n.variations[`feature:${target.id}`];
 }
 
-export function toponymHidden(settings: V2Settings, id: string): boolean { return settings.naming?.labels?.[id]?.hidden === true; }
+export function toponymHidden(settings: V2Settings, id: string): boolean {
+  return settings.naming?.labels?.[id]?.hidden === true;
+}
 /** The eye: hidden ⇄ automatic. "Always shown" stays available in the selected-name card. */
 export function setToponymHidden(settings: V2Settings, target: ToponymTarget, hidden: boolean): void {
   if (hidden) {
@@ -78,8 +96,10 @@ export function setToponymHidden(settings: V2Settings, target: ToponymTarget, hi
     if (target.kind && OBJECT_KINDS.has(target.kind)) edit.kind ??= target.kind as LabelEdit['kind'];
     labels(settings)[target.id] = edit;
   } else {
-    const edit = settings.naming?.labels?.[target.id]; if (!edit) return;
-    delete edit.hidden; prune(settings, target.id);
+    const edit = settings.naming?.labels?.[target.id];
+    if (!edit) return;
+    delete edit.hidden;
+    prune(settings, target.id);
   }
 }
 

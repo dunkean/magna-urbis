@@ -111,8 +111,12 @@ export interface V2Settings {
     /** Automatic engine (default): `backend` is re-resolved for the page origin (native on loopback/desktop, else browser Rust). */
     autoBackend?: boolean;
     source: 'procedural' | 'procedural-phasor' | 'neural-wasm' | 'neural-python' | 'neural';
-    localServer?: string; pythonServer?: string; neuralServer?: string; neuralAssets?: string;
-    resolution?: number; erosion?: number;
+    localServer?: string;
+    pythonServer?: string;
+    neuralServer?: string;
+    neuralAssets?: string;
+    resolution?: number;
+    erosion?: number;
     /** Run-only stamp (never saved in a recipe): the engine builds the page resolved for this run, so the
      * worker records its results under the identities the page compares (`engineIdentity.ts`). */
     engineBuilds?: import('../../../rust/bridge/engineIdentity').EngineBuilds;
@@ -125,16 +129,34 @@ export interface V2Progress {
   completed: number;
   total: number;
   /** Actual backend/work context. Omit totals for work that has no measurable completion fraction. */
-  detail?:string;
+  detail?: string;
   cache?: 'memory' | 'disk' | 'miss';
 }
 export type ProgressCallback = (progress: V2Progress) => void;
 export type V2Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
-export interface V2WorkerRequest { id: number; action: V2Action; settings: V2Settings; world?: World; retainedWorldId?:number; key?: string; keys?: string[]; townStage?: V2TownStage; terrainStage?: string; cityOutput?: string; assetBase?: string;
+export interface V2WorkerRequest {
+  id: number;
+  action: V2Action;
+  settings: V2Settings;
+  world?: World;
+  retainedWorldId?: number;
+  key?: string;
+  keys?: string[];
+  townStage?: V2TownStage;
+  terrainStage?: string;
+  cityOutput?: string;
+  assetBase?: string;
   /** Scheduling only: one background pass reuses its bounded urban sessions across batches. */
-  keepUrbanLanes?: boolean }
+  keepUrbanLanes?: boolean;
+}
 /** Lazy fetch of the resource payload of a world's terrain; never a generation (id shares the client's counter). */
-export interface V2ResourceRequest { type: 'resources'; id: number; settings: V2Settings; world?: World; retainedWorldId?: number }
+export interface V2ResourceRequest {
+  type: 'resources';
+  id: number;
+  settings: V2Settings;
+  world?: World;
+  retainedWorldId?: number;
+}
 export type V2WorkerResponse =
   | { id: number; type: 'progress'; progress: V2Progress }
   | { id: number; type: 'resources'; payload?: import('../../../rust/bridge/resources').ResourcePayload }

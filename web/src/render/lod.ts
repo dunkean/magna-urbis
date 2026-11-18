@@ -24,16 +24,28 @@ export interface Lod {
   band: Band;
   /** Simplification tolerance in meters (vertices closer than this are dropped). */
   minEdge: number;
-  minorRoads: boolean; streets: boolean; alleys: boolean;
-  blocks: boolean; landmarks: boolean; towers: boolean; strips: boolean; farmsteads: boolean;
+  minorRoads: boolean;
+  streets: boolean;
+  alleys: boolean;
+  blocks: boolean;
+  landmarks: boolean;
+  towers: boolean;
+  strips: boolean;
+  farmsteads: boolean;
   /** parcels = plot hairlines; buildings = building masses (courtyards as holes). */
   fine: boolean;
-  parcels: boolean; buildings: boolean; individual: boolean; shadows: boolean; textures: boolean;
+  parcels: boolean;
+  buildings: boolean;
+  individual: boolean;
+  shadows: boolean;
+  textures: boolean;
   /** Density tint opacity multiplier (fades out when zoomed in). */
   densityAlpha: number;
 }
 
-export function lodBand(scale: number): Band { return scale >= NEAR_SCALE ? 2 : scale >= MID_SCALE ? 1 : 0; }
+export function lodBand(scale: number): Band {
+  return scale >= NEAR_SCALE ? 2 : scale >= MID_SCALE ? 1 : 0;
+}
 
 export function selectLod(scale: number): Lod {
   const band = lodBand(scale);
@@ -42,10 +54,19 @@ export function selectLod(scale: number): Lod {
     band,
     minEdge: BAND_MIN_EDGE[band],
     minorRoads: scale >= 0.02,
-    streets: band >= 1, alleys: band >= 2,
-    blocks: band >= 1, landmarks: band >= 1, towers: band >= 1, strips: band >= 1, farmsteads: band >= 1,
-    fine: scale >= FINE_SCALE, parcels: scale >= PARCEL_SCALE, buildings: band >= 1, individual: scale >= BUILDING_SCALE,
-    shadows: scale >= SHADOW_SCALE, textures: scale >= TEXTURE_SCALE,
+    streets: band >= 1,
+    alleys: band >= 2,
+    blocks: band >= 1,
+    landmarks: band >= 1,
+    towers: band >= 1,
+    strips: band >= 1,
+    farmsteads: band >= 1,
+    fine: scale >= FINE_SCALE,
+    parcels: scale >= PARCEL_SCALE,
+    buildings: band >= 1,
+    individual: scale >= BUILDING_SCALE,
+    shadows: scale >= SHADOW_SCALE,
+    textures: scale >= TEXTURE_SCALE,
     densityAlpha: band === 2 ? fade : 1,
   };
 }

@@ -15,8 +15,9 @@ export function pathD(pts: Vec2[], closed: boolean): string {
 function ringContains(p: Vec2[], x: number, y: number): boolean {
   let inside = false;
   for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-    const a = p[i], b = p[j];
-    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    const a = p[i],
+      b = p[j];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
   }
   return inside;
 }

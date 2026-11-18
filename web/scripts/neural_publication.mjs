@@ -24,12 +24,15 @@ export async function stageNeuralPublication(prepared, destination) {
     entry.chunks = [];
     // Decimal 40 MB stays below GitHub's 50 MB warning and 100 MB hard limit.
     for (let offset = 0, part = 0; offset < bytes.length; offset += 40_000_000, part++) {
-      const chunk = bytes.subarray(offset, offset + 40_000_000), file = `${entry.file}.part${part}`;
+      const chunk = bytes.subarray(offset, offset + 40_000_000),
+        file = `${entry.file}.part${part}`;
       entry.chunks.push({ file, bytes: chunk.length, sha256: digest(chunk) });
       await writeFile(join(destination, 'models', file), chunk);
     }
     // Also supports staging over a local Vite build, which initially contains full files.
-    await unlink(join(destination, 'models', entry.file)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    await unlink(join(destination, 'models', entry.file)).catch(error => {
+      if (error.code !== 'ENOENT') throw error;
+    });
   }
   await writeFile(join(destination, 'models/manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));

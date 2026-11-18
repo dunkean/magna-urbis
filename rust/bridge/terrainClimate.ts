@@ -1,7 +1,12 @@
 import type { NeuralClimate } from './terrain';
 
 /** Shared simulation presets, independent of the terrain engine and its WASM. */
-export interface ClimateValues { temperature: number; temperatureStd: number; precipitation: number; precipitationCv: number }
+export interface ClimateValues {
+  temperature: number;
+  temperatureStd: number;
+  precipitation: number;
+  precipitationCv: number;
+}
 export const CLIMATE_VALUES: Record<NeuralClimate, ClimateValues> = {
   temperate: { temperature: 18, temperatureStd: 600, precipitation: 1000, precipitationCv: 35 },
   oceanic: { temperature: 11, temperatureStd: 450, precipitation: 1300, precipitationCv: 25 },
@@ -14,7 +19,7 @@ export const CLIMATE_VALUES: Record<NeuralClimate, ClimateValues> = {
 /** V2 climate zones. Engines receive the zone's values (and its nearest legacy
  *  name where a name is parsed), so V1 presets and neural servers are unchanged. */
 export const CLIMATE_ZONES = ['temperate', 'mediterranean', 'continental', 'nordic', 'alpine', 'arctic', 'steppe', 'desert', 'savanna', 'tropical', 'wetland'] as const;
-export type ClimateZone = typeof CLIMATE_ZONES[number];
+export type ClimateZone = (typeof CLIMATE_ZONES)[number];
 /** Sea-level annual means (°C), seasonality (WorldClim bio4, °C × 100), rain (mm) and its CV (%). */
 export const CLIMATE_ZONE_VALUES: Record<ClimateZone, ClimateValues> = {
   temperate: { temperature: 11, temperatureStd: 520, precipitation: 800, precipitationCv: 18 },
@@ -31,10 +36,18 @@ export const CLIMATE_ZONE_VALUES: Record<ClimateZone, ClimateValues> = {
 };
 /** Nearest legacy preset, sent where an engine parses a climate name before reading the values. */
 export const CLIMATE_ZONE_BASE: Record<ClimateZone, NeuralClimate> = {
-  temperate: 'oceanic', mediterranean: 'mediterranean', continental: 'cold', nordic: 'cold', alpine: 'oceanic', arctic: 'cold',
-  steppe: 'arid', desert: 'arid', savanna: 'arid', tropical: 'tropical', wetland: 'oceanic',
+  temperate: 'oceanic',
+  mediterranean: 'mediterranean',
+  continental: 'cold',
+  nordic: 'cold',
+  alpine: 'oceanic',
+  arctic: 'cold',
+  steppe: 'arid',
+  desert: 'arid',
+  savanna: 'arid',
+  tropical: 'tropical',
+  wetland: 'oceanic',
 };
 /** Saved V2 recipes with a former preset open on the closest zone. */
 export const LEGACY_CLIMATE_ZONES: Readonly<Record<string, ClimateZone>> = { oceanic: 'temperate', arid: 'desert', cold: 'nordic' };
-export const climateZoneOf = (value: unknown): ClimateZone | undefined =>
-  (CLIMATE_ZONES as readonly unknown[]).includes(value) ? value as ClimateZone : typeof value === 'string' ? LEGACY_CLIMATE_ZONES[value] : undefined;
+export const climateZoneOf = (value: unknown): ClimateZone | undefined => ((CLIMATE_ZONES as readonly unknown[]).includes(value) ? (value as ClimateZone) : typeof value === 'string' ? LEGACY_CLIMATE_ZONES[value] : undefined);

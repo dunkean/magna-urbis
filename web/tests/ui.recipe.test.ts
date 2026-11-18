@@ -1,16 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import { decodeRecipe, encodeRecipe, RECIPE_STAGES } from '../src/ui/recipe';
 import defaults from '../src/ui/recipeDefaults.json';
-const defaultQuery = Object.fromEntries(Object.entries(defaults.query).map(([k,v]) => [k, k === 'workshop' || k === 'case' ? btoa(JSON.stringify((v as any).__base64json)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/, '') : typeof v === 'string' ? v : JSON.stringify(v)]));
-const semantic = (q: string) => Object.fromEntries([...new URLSearchParams(q)].map(([k,v]) => { try { return [k, JSON.parse(v)]; } catch { return [k,v]; } }));
+const defaultQuery = Object.fromEntries(
+  Object.entries(defaults.query).map(([k, v]) => [
+    k,
+    k === 'workshop' || k === 'case'
+      ? btoa(JSON.stringify((v as any).__base64json))
+          .replaceAll('+', '-')
+          .replaceAll('/', '_')
+          .replace(/=+$/, '')
+      : typeof v === 'string'
+        ? v
+        : JSON.stringify(v),
+  ]),
+);
+const semantic = (q: string) =>
+  Object.fromEntries(
+    [...new URLSearchParams(q)].map(([k, v]) => {
+      try {
+        return [k, JSON.parse(v)];
+      } catch {
+        return [k, v];
+      }
+    }),
+  );
 
 const state = {
-  seed: 'débug 🗺', width: '2400', relief: 'hills', compute: 'wasm', generation: 'cpu', auto: '0',
+  seed: 'débug 🗺',
+  width: '2400',
+  relief: 'hills',
+  compute: 'wasm',
+  generation: 'cpu',
+  auto: '0',
   settlements: JSON.stringify({ config: { mode: 'list', main: { population: 300, culture: 'french-organic' }, list: [{ key: 'a', position: { x: 102.123456789, y: 567 }, name: 'Saint-Pierre' }] }, enabled: true }),
   roads: JSON.stringify({ enabled: false, config: { level: 'regional' } }),
   urban: JSON.stringify({ enabled: false, parcelEnabled: false, quarterSeed: 'a', parcelSeed: 'b', layoutConfig: { customProperty: [1, 2.123456789] } }),
-  pins: '123.4,567.8,caf%C3%A9%20%26%20roof%3B%20odd', view: '800.2,900.1,0.4123', showPins: '0',
-  futureProperty: '{"unknown":true}', aString: '"123"', notCanonicalJson: ' { "x": 2 } ', empty: '',
+  pins: '123.4,567.8,caf%C3%A9%20%26%20roof%3B%20odd',
+  view: '800.2,900.1,0.4123',
+  showPins: '0',
+  futureProperty: '{"unknown":true}',
+  aString: '"123"',
+  notCanonicalJson: ' { "x": 2 } ',
+  empty: '',
 };
 const query = new URLSearchParams(state).toString();
 
@@ -27,7 +58,7 @@ describe('portable map recipes', () => {
     expect(decoded.stage).toBe(stage);
     expect(semantic(decoded.query)).toEqual(semantic(query));
     expect(decoded.decor).toBeUndefined();
-    expect(code.length).toBeLessThan(query.length * .7);
+    expect(code.length).toBeLessThan(query.length * 0.7);
   });
 
   it('is deterministic regardless of parameter order and accepts chat line wrapping', () => {
@@ -44,8 +75,14 @@ describe('portable map recipes', () => {
   });
 
   it('round-trips the upstream terrain recipe and successive crops without raster samples', () => {
-    const terrain = { query: 'seed=42&width=2400', crops: [{ x: 100, y: 200, width: 1200 }, { x: 0, y: 0, width: 500 }],
-      meta: { id: 'crop', query: 'seed=42&width=2400', label: 'Découpe' } } as any;
+    const terrain = {
+      query: 'seed=42&width=2400',
+      crops: [
+        { x: 100, y: 200, width: 1200 },
+        { x: 0, y: 0, width: 500 },
+      ],
+      meta: { id: 'crop', query: 'seed=42&width=2400', label: 'Découpe' },
+    } as any;
     const code = encodeRecipe({ stage: 'settlements', query: 'artifact=crop', terrain });
     expect(decodeRecipe(code)).toEqual({ stage: 'settlements', query: 'artifact=crop', terrain });
   });

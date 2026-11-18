@@ -27,8 +27,7 @@ const record = (v: unknown): v is RecordValue => !!v && typeof v === 'object' &&
 function equal(a: any, b: any): boolean {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => equal(v, b[i]));
-  return record(a) && record(b) && Object.keys(a).length === Object.keys(b).length
-    && Object.keys(a).every(k => Object.hasOwn(b, k) && equal(a[k], b[k]));
+  return record(a) && record(b) && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => Object.hasOwn(b, k) && equal(a[k], b[k]));
 }
 /** Remove explicit inherited defaults, keeping fields owned by the wire baseline.
  * Null, zero, false, arrays and unknown fields remain distinct from missing values. */
@@ -46,10 +45,11 @@ function sparse(value: RecordValue, inherited: RecordValue, owned: RecordValue =
 }
 function selectors(controls: V2UrbanControls, inherited: RecordValue): V2UrbanControls {
   const result: RecordValue = {};
-  for (const stage of ['layout', 'parcels'] as const) if (controls[stage]) {
-    const selected = Object.fromEntries(Object.entries(controls[stage]!).filter(([key, value]) => ['culture', 'preset', 'recipe'].includes(key) && !equal(value, inherited[stage]?.[key])));
-    if (Object.keys(selected).length) result[stage] = selected;
-  }
+  for (const stage of ['layout', 'parcels'] as const)
+    if (controls[stage]) {
+      const selected = Object.fromEntries(Object.entries(controls[stage]!).filter(([key, value]) => ['culture', 'preset', 'recipe'].includes(key) && !equal(value, inherited[stage]?.[key])));
+      if (Object.keys(selected).length) result[stage] = selected;
+    }
   return result;
 }
 function compactUrban(settings: V2Settings): void {
@@ -80,7 +80,8 @@ function portableSettings(input: V2Settings): V2Settings {
   if (settings.decor) settings.decor = { id: settings.decor.id } as V2Settings['decor'];
   migrateUrbanSeeds(settings);
   if (settings.runtime) {
-    delete settings.runtime.localServer; delete settings.runtime.pythonServer;
+    delete settings.runtime.localServer;
+    delete settings.runtime.pythonServer;
     // The engine choice (Automatic or forced) belongs to the receiver's machine, not to the city.
     delete settings.runtime.autoBackend;
     // Native and browser Rust run the same recipe; connections belong to the receiver.
@@ -94,17 +95,14 @@ function portableSettings(input: V2Settings): V2Settings {
     const owned: RecordValue = structuredClone(baseline.terrain ?? {});
     if (t.climate !== undefined && t.climate !== presetDefaults.climateZone) owned.climate = t.climate;
     if (t.procedural?.preset && t.procedural.preset !== (presetDefaults.procedural?.preset ?? 'classic')) owned.procedural = { preset: t.procedural.preset };
-    const inherited = effectiveTerrainSettings({ ...settings, terrain: { ...baseline.terrain,
-      ...(t.climate ? { climate: t.climate } : {}),
-      ...(t.procedural?.preset ? { procedural: { preset: t.procedural.preset } } : {}),
-    } }, adaptedExtent(settings));
+    const inherited = effectiveTerrainSettings({ ...settings, terrain: { ...baseline.terrain, ...(t.climate ? { climate: t.climate } : {}), ...(t.procedural?.preset ? { procedural: { preset: t.procedural.preset } } : {}) } }, adaptedExtent(settings));
     inherited.procedural = { preset: 'classic', biome: true, coastAfter: 'initialize', ...inherited.procedural };
     settings.terrain = sparse(t, inherited, owned) as typeof t;
   }
   if (settings.region) {
     const inherited = effectiveRegion({ ...settings, region: undefined });
     const manual = settings.region.placement?.mode === 'list' && !equal(settings.region.placement.list, inherited.placement.list);
-    const compact = sparse(settings.region, inherited, manual ? {placement:{mode:'list'}} : {});
+    const compact = sparse(settings.region, inherited, manual ? { placement: { mode: 'list' } } : {});
     if (Object.keys(compact).length) settings.region = compact;
     else delete settings.region;
   }
@@ -112,25 +110,30 @@ function portableSettings(input: V2Settings): V2Settings {
   for (const [key, options] of Object.entries(settings.local)) if (!Object.values(options).some(v => v !== undefined)) delete settings.local[key];
   if (settings.naming) {
     stripToponymOverrides(settings.naming);
-    for (const key of ['labels','places','features','local','variations'] as const) if (settings.naming[key] && !Object.keys(settings.naming[key]!).length) delete settings.naming[key];
+    for (const key of ['labels', 'places', 'features', 'local', 'variations'] as const) if (settings.naming[key] && !Object.keys(settings.naming[key]!).length) delete settings.naming[key];
     if (!Object.keys(settings.naming).length) delete settings.naming;
   }
   if (settings.scene && settings.appearance?.composition) {
-    const projected=structuredClone(settings);applySceneClock(projected,settings.scene);
-    const effects=settings.appearance.composition.effects,derived=projected.appearance!.composition!.effects;
-    if (equal([effects.season,effects.ambience,effects.lighting.azimuth,effects.lighting.elevation,effects.lighting.enabled],
-      [derived.season,derived.ambience,derived.lighting.azimuth,derived.lighting.elevation,derived.lighting.enabled])) {
-      for (const key of ['season','ambience'] as const) delete (effects as Partial<typeof effects>)[key];
-      for (const key of ['azimuth','elevation','enabled'] as const) delete (effects.lighting as Partial<typeof effects.lighting>)[key];
+    const projected = structuredClone(settings);
+    applySceneClock(projected, settings.scene);
+    const effects = settings.appearance.composition.effects,
+      derived = projected.appearance!.composition!.effects;
+    if (equal([effects.season, effects.ambience, effects.lighting.azimuth, effects.lighting.elevation, effects.lighting.enabled], [derived.season, derived.ambience, derived.lighting.azimuth, derived.lighting.elevation, derived.lighting.enabled])) {
+      for (const key of ['season', 'ambience'] as const) delete (effects as Partial<typeof effects>)[key];
+      for (const key of ['azimuth', 'elevation', 'enabled'] as const) delete (effects.lighting as Partial<typeof effects.lighting>)[key];
     }
   }
   return settings;
 }
 function jsonValue(value: any): any {
   if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) throw new Error('Les données calculées nécessitent un projet complet.');
-  if (Array.isArray(value)) return value.map(item => item === undefined ? null : jsonValue(item));
+  if (Array.isArray(value)) return value.map(item => (item === undefined ? null : jsonValue(item)));
   if (!record(value)) return value;
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => [key, jsonValue(item)]));
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, jsonValue(item)]),
+  );
 }
 /** A portable generation recipe, without calculated terrain or building geometry. */
 export function encodeCityCode(input: V2Settings, mods: unknown[] = []): string {
@@ -154,7 +157,11 @@ export function encodeCityCode(input: V2Settings, mods: unknown[] = []): string 
   while (values.length > 3 && equal(values.at(-1), schema[values.length - 1])) values.pop();
   return encodeCompact(values, schema, CITY_CODE_PREFIX);
 }
-export interface DecodedCityCode { settings: V2Settings; mods: unknown[]; /** Saved decor to reopen before loading. */ decor?: string }
+export interface DecodedCityCode {
+  settings: V2Settings;
+  mods: unknown[];
+  /** Saved decor to reopen before loading. */ decor?: string;
+}
 export function decodeCityCode(text: string): DecodedCityCode {
   const input = cityCodeFromInput(text);
   if (!input.startsWith(CITY_CODE_PREFIX)) {
@@ -169,11 +176,13 @@ export function decodeCityCode(text: string): DecodedCityCode {
     const [root, choices, extent, saved = baseline, variations = {}, mods = []] = values;
     if (typeof root !== 'string' && !(typeof root === 'number' && Number.isSafeInteger(root))) throw new Error();
     if (!Number.isInteger(choices) || choices < 0 || choices > 32767) throw new Error();
-    const biome = defaults.biomes[choices & 7], culture = defaults.cultures[(choices >>> 3) & 255], relief = defaults.reliefs[choices >>> 11];
+    const biome = defaults.biomes[choices & 7],
+      culture = defaults.cultures[(choices >>> 3) & 255],
+      relief = defaults.reliefs[choices >>> 11];
     if (!biome || !culture || !relief || !record(saved) || !record(saved.options) || !record(variations)) throw new Error();
     const entries = Object.entries(variations);
-    if (entries.length > 2000 || entries.some(([key, value]) => key.length > 160 || ['__proto__', 'constructor', 'prototype'].includes(key)
-      || !(typeof value === 'string' && value.length <= 4096 || Number.isInteger(value) && value >= 0 && value <= 0xffffffff))) throw new Error();
+    if (entries.length > 2000 || entries.some(([key, value]) => key.length > 160 || ['__proto__', 'constructor', 'prototype'].includes(key) || !((typeof value === 'string' && value.length <= 4096) || (Number.isInteger(value) && value >= 0 && value <= 0xffffffff))))
+      throw new Error();
     const settings = structuredClone(saved) as V2Settings;
     const decor = record(settings.decor) && typeof settings.decor.id === 'string' && /^[\w.-]{1,160}$/.test(settings.decor.id) ? settings.decor.id : undefined;
     if (settings.decor !== undefined && !decor) throw new Error();
@@ -181,15 +190,21 @@ export function decodeCityCode(text: string): DecodedCityCode {
     settings.options.seed = writeGenerationSeed({ base: String(root), variations });
     if (Object.hasOwn(settings.options, 'biome')) settings.options.biome = biome as typeof settings.options.biome;
     settings.options.culture = culture;
-    if (relief !== settings.options.relief) { settings.terrain ??= {}; settings.terrain.relief = relief as NonNullable<V2Settings['terrain']>['relief']; }
+    if (relief !== settings.options.relief) {
+      settings.terrain ??= {};
+      settings.terrain.relief = relief as NonNullable<V2Settings['terrain']>['relief'];
+    }
     settings.extent = extent === 0 ? 'auto' : extent;
     // The receiver's engine choice is not in the code: a decoded city starts on Automatic.
     if (settings.runtime) settings.runtime.autoBackend = true;
-    const effects=settings.appearance?.composition?.effects;
-    if(settings.scene&&effects&&(effects.season===undefined||effects.ambience===undefined||effects.lighting?.azimuth===undefined||effects.lighting?.elevation===undefined||effects.lighting?.enabled===undefined))applySceneClock(settings,settings.scene);
-    validateSettings(settings); validateModifications(mods);
+    const effects = settings.appearance?.composition?.effects;
+    if (settings.scene && effects && (effects.season === undefined || effects.ambience === undefined || effects.lighting?.azimuth === undefined || effects.lighting?.elevation === undefined || effects.lighting?.enabled === undefined)) applySceneClock(settings, settings.scene);
+    validateSettings(settings);
+    validateModifications(mods);
     return decor ? { settings, mods, decor } : { settings, mods };
-  } catch { throw new Error('Code incomplet, corrompu ou trop volumineux.'); }
+  } catch {
+    throw new Error('Code incomplet, corrompu ou trop volumineux.');
+  }
 }
 /** Reopens the saved decor named by a decoded code (served at /decors/<id>.decor) and attaches its bytes. */
 export async function resolveCityCodeDecor(decoded: DecodedCityCode): Promise<{ settings: V2Settings; mods: unknown[] }> {
@@ -211,7 +226,9 @@ export function cityCodeFromInput(text: string): string {
   try {
     const shared = new URLSearchParams(new URL(compact).hash.slice(1)).get('city');
     return shared === null ? compact : cityCodeFromInput(shared);
-  } catch { return compact; }
+  } catch {
+    return compact;
+  }
 }
 export function cityCodeUrl(code: string, base: string): string {
   const url = new URL(base);

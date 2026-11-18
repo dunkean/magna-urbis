@@ -23,10 +23,14 @@ function same(previous: unknown, next: unknown, budget: { left: number }, seen: 
   if (previous === next) return true;
   if (typeof previous !== typeof next || previous === null || next === null || typeof next !== 'object') return Number.isNaN(previous) && Number.isNaN(next);
   if (--budget.left < 0) return false;
-  const a = previous as object, b = next as object;
+  const a = previous as object,
+    b = next as object;
   if (seen.get(b) === a) return true;
   seen.set(b, a);
-  if (ArrayBuffer.isView(b)) { budget.left -= b.byteLength / 16; return ArrayBuffer.isView(a) && sameBytes(a as View, b as View); }
+  if (ArrayBuffer.isView(b)) {
+    budget.left -= b.byteLength / 16;
+    return ArrayBuffer.isView(a) && sameBytes(a as View, b as View);
+  }
   if (b instanceof ArrayBuffer) return a instanceof ArrayBuffer && sameBytes(new Uint8Array(a), new Uint8Array(b));
   if (Array.isArray(b)) {
     if (!Array.isArray(a) || a.length !== b.length) return false;

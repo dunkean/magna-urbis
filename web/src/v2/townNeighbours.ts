@@ -48,15 +48,25 @@ export function neighbourReach(population: number): number {
 }
 /** Bounding box of a claim's land; undefined for a claim that holds no land. */
 export function claimBounds(claim: Claim): Box | undefined {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const shape of claim.land) for (const p of shape.outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const shape of claim.land)
+    for (const p of shape.outer) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
   return x0 <= x1 && y0 <= y1 ? { x0, y0, x1, y1 } : undefined;
 }
 /** The claim's land comes within the neighbour reach of a town of this population at `center`. */
 export function claimReaches(claim: Claim, center: Vec2, population: number): boolean {
   const box = claimBounds(claim);
   if (!box) return false;
-  const dx = Math.max(box.x0 - center.x, 0, center.x - box.x1), dy = Math.max(box.y0 - center.y, 0, center.y - box.y1);
+  const dx = Math.max(box.x0 - center.x, 0, center.x - box.x1),
+    dy = Math.max(box.y0 - center.y, 0, center.y - box.y1);
   return Math.hypot(dx, dy) <= neighbourReach(population);
 }
 /** Upper bound of the distance from a town's centre to the land it can hold before it is generated (m):
@@ -74,8 +84,10 @@ export function landBound(seat: Pick<TownSeat, 'radius' | 'footprint'>, relocate
  * added that way. A built town outside the run keeps its plan: its claim is read as it is.
  */
 export function planTownRun(seats: readonly TownSeat[], selected: readonly string[]): TownRun {
-  const ordered = [...seats].sort(compareTowns), keys = new Set(ordered.map(seat => seat.key));
-  const needed = new Set(selected.filter(key => keys.has(key))), cascaded = new Set<string>();
+  const ordered = [...seats].sort(compareTowns),
+    keys = new Set(ordered.map(seat => seat.key));
+  const needed = new Set(selected.filter(key => keys.has(key))),
+    cascaded = new Set<string>();
   let waits = new Map<string, string[]>();
   // Opening a town (adding it to the run) widens the bounds after it: repeat until the run no longer grows.
   for (let size = -1; size !== needed.size;) {
@@ -84,14 +96,19 @@ export function planTownRun(seats: readonly TownSeat[], selected: readonly strin
     const bound = new Map<string, number>();
     waits = new Map();
     for (const [i, seat] of ordered.entries()) {
-      const reach = neighbourReach(seat.population), deps: string[] = [];
+      const reach = neighbourReach(seat.population),
+        deps: string[] = [];
       let relocates = false;
       for (const other of ordered.slice(0, i)) {
         if (open(other)) {
-          if (Math.hypot(other.center.x - seat.center.x, other.center.y - seat.center.y) <= bound.get(other.key)! + reach) { deps.push(other.key); relocates = true; }
+          if (Math.hypot(other.center.x - seat.center.x, other.center.y - seat.center.y) <= bound.get(other.key)! + reach) {
+            deps.push(other.key);
+            relocates = true;
+          }
         } else if (other.claim && claimReaches(other.claim, seat.center, seat.population)) relocates = true;
       }
-      bound.set(seat.key, landBound(seat, relocates)); waits.set(seat.key, deps);
+      bound.set(seat.key, landBound(seat, relocates));
+      waits.set(seat.key, deps);
     }
     // Never-built towns a selected town (or one of its dependencies) may border are built first.
     for (let i = ordered.length - 1; i >= 0; i--) {
@@ -99,12 +116,15 @@ export function planTownRun(seats: readonly TownSeat[], selected: readonly strin
       if (needed.has(key) && !cascaded.has(key)) for (const dep of waits.get(key)!) needed.add(dep);
     }
     // Built towns that may border a town of the run follow it.
-    for (const seat of ordered) if (seat.built && !needed.has(seat.key) && waits.get(seat.key)!.some(dep => needed.has(dep))) {
-      needed.add(seat.key); cascaded.add(seat.key);
-    }
+    for (const seat of ordered)
+      if (seat.built && !needed.has(seat.key) && waits.get(seat.key)!.some(dep => needed.has(dep))) {
+        needed.add(seat.key);
+        cascaded.add(seat.key);
+      }
   }
   const runWaits = (key: string): string[] => waits.get(key)!.filter(dep => needed.has(dep));
-  const order: string[] = [], seen = new Set<string>();
+  const order: string[] = [],
+    seen = new Set<string>();
   const visit = (key: string): void => {
     if (seen.has(key)) return;
     seen.add(key);
@@ -124,16 +144,23 @@ export function townSeats(world: World, settings: V2Settings): TownSeat[] {
     const layout = { ...settings.urban?.layout, ...settings.urban?.local?.[place.key]?.layout };
     const scale = layout.radiusScale ?? Math.sqrt(local?.sprawl ?? settings.options.sprawl ?? 1);
     const claim = cities?.[place.key]?.layouts?.[0]?.claim;
-    return { key: place.key, population: local?.population ?? Number(world.stats['v2.population:' + place.key] ?? place.population),
-      center: place.center, radius: place.radius, footprint: layout.radius && layout.radius > 0 ? layout.radius : place.radius * scale,
-      ...(claim ? { claim } : {}), built: !!(place.main ? world.urban ?? place.urban : place.urban) };
+    return {
+      key: place.key,
+      population: local?.population ?? Number(world.stats['v2.population:' + place.key] ?? place.population),
+      center: place.center,
+      radius: place.radius,
+      footprint: layout.radius && layout.radius > 0 ? layout.radius : place.radius * scale,
+      ...(claim ? { claim } : {}),
+      built: !!(place.main ? (world.urban ?? place.urban) : place.urban),
+    };
   });
 }
 
 /** Claims a town is generated against: the earlier towns (canonical order) whose land reaches it. `fresh` holds the
  * claims of towns generated in the current run and not yet applied to `world`. */
 export function neighbourClaimsOf(world: World, settings: V2Settings, key: string, fresh?: ReadonlyMap<string, Claim>): Claim[] {
-  const seats = townSeats(world, settings).sort(compareTowns), index = seats.findIndex(seat => seat.key === key);
+  const seats = townSeats(world, settings).sort(compareTowns),
+    index = seats.findIndex(seat => seat.key === key);
   if (index < 0) return [];
   const seat = seats[index];
   const earlier = seats.slice(0, index).flatMap(other => {
@@ -145,7 +172,8 @@ export function neighbourClaimsOf(world: World, settings: V2Settings, key: strin
 /** The places after a town (canonical order) within the land it can grow to: claims without land whose `reserve`
  * asks the engine to keep a core sized to their own population free (`urban/neighbours.rs`, `reserve_cores`). */
 function reservedNeighbours(world: World, settings: V2Settings, seats: readonly TownSeat[], index: number): Claim[] {
-  const seat = seats[index], bound = landBound(seat, false);
+  const seat = seats[index],
+    bound = landBound(seat, false);
   return seats.slice(index + 1).flatMap(other => {
     if (Math.hypot(other.center.x - seat.center.x, other.center.y - seat.center.y) > bound + other.radius) return [];
     const place = world.settlements?.find(s => s.key === other.key);
@@ -157,14 +185,26 @@ function reservedNeighbours(world: World, settings: V2Settings, seats: readonly 
 /** The urban engine names neighbours by site key in its "Neighbouring towns:" warnings; the V2 shows their names. */
 export function nameNeighbourWarning(warning: string, nameOf: (key: string) => string | undefined): string {
   const match = /^(Neighbouring towns: (?:the enclosure is not raised, its circuit would cross the land of |no free land is left beside |the land of ))(.+?)(\.|; the town is announced empty\.| limits this town; .*)$/.exec(warning);
-  return match ? match[1] + match[2].split(', ').map(key => nameOf(key) || key).join(', ') + match[3] : warning;
+  return match
+    ? match[1] +
+        match[2]
+          .split(', ')
+          .map(key => nameOf(key) || key)
+          .join(', ') +
+        match[3]
+    : warning;
 }
 
 /** Stable short fingerprint of the claims a town is generated against; empty without neighbours. */
 export function neighbourFingerprint(claims: readonly Claim[]): string {
   if (!claims.length) return '';
   const text = JSON.stringify(claims);
-  let a = 2166136261, b = 0x9e3779b9;
-  for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b ^ (c + i), 0x85ebca6b); }
+  let a = 2166136261,
+    b = 0x9e3779b9;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 16777619);
+    b = Math.imul(b ^ (c + i), 0x85ebca6b);
+  }
   return `${claims.map(claim => claim.key).join(',')}#${text.length}:${(a >>> 0).toString(36)}:${(b >>> 0).toString(36)}`;
 }

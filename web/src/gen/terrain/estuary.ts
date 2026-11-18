@@ -5,7 +5,10 @@ import { dist } from '../core/geom';
 import type { Rng } from '../core/rng';
 
 export type EstuaryShape = 'widening' | 'funnel' | 'tidal';
-const smooth = (v: number) => { const t = Math.max(0, Math.min(1, v)); return t * t * (3 - 2 * t); };
+const smooth = (v: number) => {
+  const t = Math.max(0, Math.min(1, v));
+  return t * t * (3 - 2 * t);
+};
 
 /** A separate stream keeps mouth choice independent of river routing and tributaries. */
 export function chooseEstuaryShape(rng: Rng): EstuaryShape {
@@ -33,32 +36,44 @@ export function carveEstuary(height: Grid, path: Polyline, widths: number[], rea
   const { w, h, cell } = height;
   for (let i = 0; i < path.length - 1; i++) {
     if (back[i + 1] > reach) continue;
-    const a = path[i], b = path[i + 1], dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    const a = path[i],
+      b = path[i + 1],
+      dx = b.x - a.x,
+      dy = b.y - a.y,
+      len = Math.hypot(dx, dy);
     if (len < 1e-6) continue;
     const wavinessMax = shape === 'tidal' ? 0.12 : 0;
-    const margin = 1.6 * (Math.max(widths[i], widths[i + 1]) / 2 * mouthGain * (1 + Math.abs(asymmetry) + wavinessMax) + cell * 0.25) + cell;
-    const x0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - margin) / cell)), x1 = Math.min(w - 1, Math.floor((Math.max(a.x, b.x) + margin) / cell));
-    const y0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - margin) / cell)), y1 = Math.min(h - 1, Math.floor((Math.max(a.y, b.y) + margin) / cell));
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const px = (x + 0.5) * cell - a.x, py = (y + 0.5) * cell - a.y;
-      const projection = (px * dx + py * dy) / (len * len);
-      // Interior joins remain continuous through bends; only the mouth has a butt end in the existing sea.
-      if (i === path.length - 2 && projection > 1) continue;
-      const t = Math.max(0, Math.min(1, projection));
-      const side = (dx * py - dy * px) / len, d = Math.hypot(px - t * dx, py - t * dy), idx = y * w + x;
-      if (d >= nearest[idx]) continue;
-      if (!Number.isFinite(nearest[idx])) touched.push(idx);
-      nearest[idx] = d; lateral[idx] = side;
-      station[idx] = back[i] * (1 - t) + back[i + 1] * t;
-      baseWidth[idx] = widths[i] * (1 - t) + widths[i + 1] * t;
-    }
+    const margin = 1.6 * ((Math.max(widths[i], widths[i + 1]) / 2) * mouthGain * (1 + Math.abs(asymmetry) + wavinessMax) + cell * 0.25) + cell;
+    const x0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - margin) / cell)),
+      x1 = Math.min(w - 1, Math.floor((Math.max(a.x, b.x) + margin) / cell));
+    const y0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - margin) / cell)),
+      y1 = Math.min(h - 1, Math.floor((Math.max(a.y, b.y) + margin) / cell));
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const px = (x + 0.5) * cell - a.x,
+          py = (y + 0.5) * cell - a.y;
+        const projection = (px * dx + py * dy) / (len * len);
+        // Interior joins remain continuous through bends; only the mouth has a butt end in the existing sea.
+        if (i === path.length - 2 && projection > 1) continue;
+        const t = Math.max(0, Math.min(1, projection));
+        const side = (dx * py - dy * px) / len,
+          d = Math.hypot(px - t * dx, py - t * dy),
+          idx = y * w + x;
+        if (d >= nearest[idx]) continue;
+        if (!Number.isFinite(nearest[idx])) touched.push(idx);
+        nearest[idx] = d;
+        lateral[idx] = side;
+        station[idx] = back[i] * (1 - t) + back[i + 1] * t;
+        baseWidth[idx] = widths[i] * (1 - t) + widths[i + 1] * t;
+      }
   }
   for (const idx of touched) {
     if (station[idx] > reach) continue;
-    const u = Math.max(0, 1 - station[idx] / reach), grow = Math.pow(u, exponent);
+    const u = Math.max(0, 1 - station[idx] / reach),
+      grow = Math.pow(u, exponent);
     const waviness = shape === 'tidal' ? 0.12 * Math.sin(3 * Math.PI * u + phase) * smooth(u) : 0;
     const side = lateral[idx] < 0 ? -1 : 1;
-    const radius = baseWidth[idx] / 2 * (1 + (mouthGain - 1) * grow) * (1 + side * asymmetry * grow + waviness) + cell * 0.25;
+    const radius = (baseWidth[idx] / 2) * (1 + (mouthGain - 1) * grow) * (1 + side * asymmetry * grow + waviness) + cell * 0.25;
     const d = nearest[idx];
     if (d > radius * 1.6) continue;
     const bed = seaLevel + 2.5 - 3.2 * smooth(u / 0.65);

@@ -6,7 +6,11 @@ describe('3D framebuffer memory budget', () => {
     expect(terrain3dPixelRatio(1200, 850, 1)).toBe(1);
     expect(terrain3dPixelRatio(800, 600, 2)).toBe(2);
   });
-  it.each([[3840, 2160, 2], [7680, 4320, 2], [2400, 1600, 3]])('bounds HiDPI allocations at %s×%s', (width, height, requested) => {
+  it.each([
+    [3840, 2160, 2],
+    [7680, 4320, 2],
+    [2400, 1600, 3],
+  ])('bounds HiDPI allocations at %s×%s', (width, height, requested) => {
     const dpr = terrain3dPixelRatio(width, height, requested);
     const pixels = Math.floor(width * dpr) * Math.floor(height * dpr);
     expect(pixels).toBeLessThanOrEqual(TERRAIN_3D_FRAME_PIXELS);

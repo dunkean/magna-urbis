@@ -10,13 +10,31 @@ import { DISTRICT_ROLES, districtRoleKey, SpatialBins, type CityScene, type City
 import type { SemanticLegendEntry, SemanticPatternId } from './legend';
 import { newPath } from './gpu/path';
 
-export interface SemanticBox { minX: number; minY: number; maxX: number; maxY: number }
-export interface SemanticDrawOptions {
-  look: SemanticLook; /** 0–1 */ opacity: number; /** World units per screen pixel of the context's current transform: outlines keep a constant screen width. */ mpp: number; viewport: SemanticBox;
+export interface SemanticBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
 }
-export interface RuralSemanticOptions extends SemanticDrawOptions { classes: Readonly<Record<LandKind, boolean>>; indexed?: boolean; patterns?: boolean; fieldStrips?: boolean }
+export interface SemanticDrawOptions {
+  look: SemanticLook;
+  /** 0–1 */ opacity: number;
+  /** World units per screen pixel of the context's current transform: outlines keep a constant screen width. */ mpp: number;
+  viewport: SemanticBox;
+}
+export interface RuralSemanticOptions extends SemanticDrawOptions {
+  classes: Readonly<Record<LandKind, boolean>>;
+  indexed?: boolean;
+  patterns?: boolean;
+  fieldStrips?: boolean;
+}
 
-export interface SemanticClass { color: string; label: string; pattern: SemanticPatternId; /** Border dash, screen pixels. */ dash: readonly number[] }
+export interface SemanticClass {
+  color: string;
+  label: string;
+  pattern: SemanticPatternId;
+  /** Border dash, screen pixels. */ dash: readonly number[];
+}
 /** One stable colour, pattern and border dash per rural class (greyscale-readable); independent of the ground palette. Also the legend.
  * Soft survey washes, not poster colours (user, 2026-11-13: cadastre "plus douces et moins flashy"); hue and lightness still part the classes.
  * Fields and forests carry no pattern: the ground already draws each field's furrows in its own direction (a global hatch crossed
@@ -36,18 +54,38 @@ const RURAL_ORDER: readonly LandKind[] = ['commons', 'pasture', 'meadow', 'marsh
 /** English names of the district roles for the legend (the role ids and colours come from cityCanvas). */
 const URBAN_LABELS_EN: Readonly<Record<string, string>> = {
   shanty: 'Informal quarter',
-  civic: 'Civic district', market: 'Market district', religious: 'Religious district', craft: 'Craft district', port: 'Port district', elite: 'Notables district',
-  commoner: 'Commoner district', poor: 'Poor district', garrison: 'Garrison district', gardens: 'Gardens district', foreign: 'Foreign quarter',
+  civic: 'Civic district',
+  market: 'Market district',
+  religious: 'Religious district',
+  craft: 'Craft district',
+  port: 'Port district',
+  elite: 'Notables district',
+  commoner: 'Commoner district',
+  poor: 'Poor district',
+  garrison: 'Garrison district',
+  gardens: 'Gardens district',
+  foreign: 'Foreign quarter',
 };
 /** The colour pulled `t` of the way toward a warm paper grey of its own lightness: same hue order, less saturation. */
 function mute(hex: string, t: number): string {
   // Parsed here: this runs while the module initialises, before `hexParts` below exists.
-  const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), grey = .3 * rgb[0] + .59 * rgb[1] + .11 * rgb[2], paper = [grey * 1.04 + 6, grey + 4, grey * .94];
-  return '#' + rgb.map((c, i) => Math.round(Math.max(0, Math.min(255, c + (paper[i] - c) * t))).toString(16).padStart(2, '0')).join('');
+  const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)),
+    grey = 0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2],
+    paper = [grey * 1.04 + 6, grey + 4, grey * 0.94];
+  return (
+    '#' +
+    rgb
+      .map((c, i) =>
+        Math.round(Math.max(0, Math.min(255, c + (paper[i] - c) * t)))
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+  );
 }
 /** District usage classes: the role palette (cityCanvas DISTRICT_ROLES), muted like the rural washes, plus public spaces and a fallback. */
 export const URBAN_SEMANTIC: Readonly<Record<string, SemanticClass>> = {
-  ...Object.fromEntries(Object.entries(DISTRICT_ROLES).map(([role, { color }]): [string, SemanticClass] => [role, { color: mute(color, .4), label: URBAN_LABELS_EN[role] ?? role, pattern: 'none', dash: [] }])),
+  ...Object.fromEntries(Object.entries(DISTRICT_ROLES).map(([role, { color }]): [string, SemanticClass] => [role, { color: mute(color, 0.4), label: URBAN_LABELS_EN[role] ?? role, pattern: 'none', dash: [] }])),
   public: { color: '#c9d6a0', label: 'Public space', pattern: 'none', dash: [] },
   other: { color: '#8f8a84', label: 'Other / unknown', pattern: 'none', dash: [] },
 };
@@ -57,52 +95,93 @@ const overlaps = (a: SemanticBox, b: SemanticBox): boolean => a.minX <= b.maxX &
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 const hexParts = (hex: string): number[] => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 /** The colour darkened by `t`, for outlines that must read over its own fill. */
-const shade = (hex: string, t: number): string => `rgb(${hexParts(hex).map(c => Math.round(c * (1 - t))).join(',')})`;
+const shade = (hex: string, t: number): string =>
+  `rgb(${hexParts(hex)
+    .map(c => Math.round(c * (1 - t)))
+    .join(',')})`;
 
 /** Screen-pixel line/dot patterns, anchored on world coordinates so tiles and frames agree. */
-interface Hatch { angle: number; spacing: number; dash: readonly number[]; width: number; stagger?: boolean }
+interface Hatch {
+  angle: number;
+  spacing: number;
+  dash: readonly number[];
+  width: number;
+  stagger?: boolean;
+}
 const HATCHES: Readonly<Record<Exclude<SemanticPatternId, 'none'>, readonly Hatch[]>> = {
-  furrows: [{ angle: .35, spacing: 6, dash: [], width: 1 }],
+  furrows: [{ angle: 0.35, spacing: 6, dash: [], width: 1 }],
   dots: [{ angle: 0, spacing: 8, dash: [0, 8], width: 2, stagger: true }],
   trees: [{ angle: 0, spacing: 9, dash: [0, 9], width: 3.6, stagger: true }],
   grid: [{ angle: 0, spacing: 11, dash: [0, 11], width: 3 }],
-  cross: [{ angle: Math.PI / 4, spacing: 6, dash: [], width: .8 }, { angle: -Math.PI / 4, spacing: 6, dash: [], width: .8 }],
+  cross: [
+    { angle: Math.PI / 4, spacing: 6, dash: [], width: 0.8 },
+    { angle: -Math.PI / 4, spacing: 6, dash: [], width: 0.8 },
+  ],
   reeds: [{ angle: 0, spacing: 6, dash: [5, 4], width: 1.2, stagger: true }],
   dashes: [{ angle: -Math.PI / 4, spacing: 9, dash: [8, 6], width: 1 }],
 };
 const MAX_HATCH_LINES = 500;
 
 function hatch(ctx: CanvasRenderingContext2D, box: SemanticBox, spec: Hatch, mpp: number): void {
-  const cos = Math.cos(spec.angle), sin = Math.sin(spec.angle), spacing = spec.spacing * mpp;
+  const cos = Math.cos(spec.angle),
+    sin = Math.sin(spec.angle),
+    spacing = spec.spacing * mpp;
   // The box in the rotated frame (u along the lines, v across them).
-  const us: number[] = [], vs: number[] = [];
-  for (const [x, y] of [[box.minX, box.minY], [box.maxX, box.minY], [box.maxX, box.maxY], [box.minX, box.maxY]]) { us.push(x * cos + y * sin); vs.push(-x * sin + y * cos); }
-  const u0 = Math.min(...us), u1 = Math.max(...us), v0 = Math.min(...vs), v1 = Math.max(...vs);
+  const us: number[] = [],
+    vs: number[] = [];
+  for (const [x, y] of [
+    [box.minX, box.minY],
+    [box.maxX, box.minY],
+    [box.maxX, box.maxY],
+    [box.minX, box.maxY],
+  ]) {
+    us.push(x * cos + y * sin);
+    vs.push(-x * sin + y * cos);
+  }
+  const u0 = Math.min(...us),
+    u1 = Math.max(...us),
+    v0 = Math.min(...vs),
+    v1 = Math.max(...vs);
   if ((v1 - v0) / spacing > MAX_HATCH_LINES) return;
-  const dash = spec.dash.map(d => d * mpp), period = dash.length ? dash.reduce((s, d) => s + d, 0) : 0;
+  const dash = spec.dash.map(d => d * mpp),
+    period = dash.length ? dash.reduce((s, d) => s + d, 0) : 0;
   ctx.save();
   ctx.rotate(spec.angle);
-  ctx.lineWidth = spec.width * mpp; ctx.lineCap = dash.length && dash[0] === 0 ? 'round' : 'butt'; ctx.setLineDash(dash);
+  ctx.lineWidth = spec.width * mpp;
+  ctx.lineCap = dash.length && dash[0] === 0 ? 'round' : 'butt';
+  ctx.setLineDash(dash);
   ctx.beginPath();
   for (let k = Math.ceil(v0 / spacing); k * spacing <= v1; k++) {
-    const v = k * spacing, start = period ? Math.floor(u0 / period) * period + (spec.stagger && (k & 1) ? period / 2 : 0) : u0;
-    ctx.moveTo(start, v); ctx.lineTo(u1, v);
+    const v = k * spacing,
+      start = period ? Math.floor(u0 / period) * period + (spec.stagger && k & 1 ? period / 2 : 0) : u0;
+    ctx.moveTo(start, v);
+    ctx.lineTo(u1, v);
   }
   ctx.stroke();
   ctx.restore();
 }
 
-interface LookStyle { fill: number; stroke: number; strokeWidth: number; pattern: number; strokeShade: number }
+interface LookStyle {
+  fill: number;
+  stroke: number;
+  strokeWidth: number;
+  pattern: number;
+  strokeShade: number;
+}
 /** Alpha and widths of a look: opacity scales the whole layer, Off draws nothing. */
 function lookStyle(look: SemanticLook, opacity: number): LookStyle | undefined {
   const o = clamp01(opacity);
   switch (look) {
-    case 'subtle': return { fill: o * .35, stroke: clamp01(o * 1.1), strokeWidth: 1, pattern: 0, strokeShade: 0 };
+    case 'subtle':
+      return { fill: o * 0.35, stroke: clamp01(o * 1.1), strokeWidth: 1, pattern: 0, strokeShade: 0 };
     // Soft borders: a class edge a shade darker than its wash, not an ink line around every parcel.
-    case 'categorical': return { fill: o, stroke: clamp01(.3 + o * .9), strokeWidth: 1.1, pattern: clamp01(o * 1.1 + .1), strokeShade: .28 };
+    case 'categorical':
+      return { fill: o, stroke: clamp01(0.3 + o * 0.9), strokeWidth: 1.1, pattern: clamp01(o * 1.1 + 0.1), strokeShade: 0.28 };
     // Thin outlines (user, 2026-11-12: field lines were all one saw): contours and roads must lead, the class pattern stays a light texture.
-    case 'outlines': return { fill: 0, stroke: clamp01(.25 + o * .7), strokeWidth: .6, pattern: clamp01(o * .55 + .05), strokeShade: .15 };
-    default: return undefined;
+    case 'outlines':
+      return { fill: 0, stroke: clamp01(0.25 + o * 0.7), strokeWidth: 0.6, pattern: clamp01(o * 0.55 + 0.05), strokeShade: 0.15 };
+    default:
+      return undefined;
   }
 }
 
@@ -110,23 +189,38 @@ function lookStyle(look: SemanticLook, opacity: number): LookStyle | undefined {
 function paintBatch(ctx: CanvasRenderingContext2D, path: Path2D, area: SemanticBox, cls: SemanticClass, style: LookStyle, look: SemanticLook, mpp: number, pattern: boolean): void {
   ctx.save();
   try {
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    if (style.fill > 0) { ctx.globalAlpha = style.fill; ctx.fillStyle = cls.color; ctx.fill(path, 'evenodd'); }
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    if (style.fill > 0) {
+      ctx.globalAlpha = style.fill;
+      ctx.fillStyle = cls.color;
+      ctx.fill(path, 'evenodd');
+    }
     if (pattern && look !== 'subtle' && cls.pattern !== 'none' && style.pattern > 0) {
       ctx.save();
       ctx.clip(path, 'evenodd');
-      ctx.globalAlpha = style.pattern; ctx.strokeStyle = style.strokeShade ? shade(cls.color, style.strokeShade) : cls.color;
+      ctx.globalAlpha = style.pattern;
+      ctx.strokeStyle = style.strokeShade ? shade(cls.color, style.strokeShade) : cls.color;
       for (const spec of HATCHES[cls.pattern]) hatch(ctx, area, spec, mpp);
       ctx.restore();
     }
-    ctx.globalAlpha = style.stroke; ctx.strokeStyle = style.strokeShade ? shade(cls.color, style.strokeShade) : cls.color;
-    ctx.lineWidth = style.strokeWidth * mpp; ctx.setLineDash(cls.dash.map(d => d * mpp));
+    ctx.globalAlpha = style.stroke;
+    ctx.strokeStyle = style.strokeShade ? shade(cls.color, style.strokeShade) : cls.color;
+    ctx.lineWidth = style.strokeWidth * mpp;
+    ctx.setLineDash(cls.dash.map(d => d * mpp));
     ctx.stroke(path);
-  } finally { ctx.restore(); }
+  } finally {
+    ctx.restore();
+  }
 }
 
 // ---------------------------------------------------------------- rural
-interface RuralGeometry { boxes: SemanticBox[]; paths: (Path2D | undefined)[]; stripPaths: (Path2D | undefined)[]; bins?: SpatialBins }
+interface RuralGeometry {
+  boxes: SemanticBox[];
+  paths: (Path2D | undefined)[];
+  stripPaths: (Path2D | undefined)[];
+  bins?: SpatialBins;
+}
 /** Boxes once per land-use product, Path2D lazily per area: a frame never rebuilds geometry. */
 const RURAL_GEOMETRY = new WeakMap<LandUseLayer, RuralGeometry>();
 function ruralGeometry(landuse: LandUseLayer): RuralGeometry {
@@ -134,10 +228,15 @@ function ruralGeometry(landuse: LandUseLayer): RuralGeometry {
   if (!geometry) {
     const boxes = landuse.areas.map(area => {
       const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-      for (const p of area.poly) { if (p.x < box.minX) box.minX = p.x; if (p.x > box.maxX) box.maxX = p.x; if (p.y < box.minY) box.minY = p.y; if (p.y > box.maxY) box.maxY = p.y; }
+      for (const p of area.poly) {
+        if (p.x < box.minX) box.minX = p.x;
+        if (p.x > box.maxX) box.maxX = p.x;
+        if (p.y < box.minY) box.minY = p.y;
+        if (p.y > box.maxY) box.maxY = p.y;
+      }
       return box;
     });
-    RURAL_GEOMETRY.set(landuse, geometry = { boxes, paths: new Array(landuse.areas.length), stripPaths: new Array(landuse.areas.length) });
+    RURAL_GEOMETRY.set(landuse, (geometry = { boxes, paths: new Array(landuse.areas.length), stripPaths: new Array(landuse.areas.length) }));
   }
   return geometry;
 }
@@ -155,7 +254,10 @@ function ringsPath(rings: readonly (readonly { x: number; y: number }[])[]): Pat
 export function drawRuralSemantic(ctx: CanvasRenderingContext2D, landuse: LandUseLayer | undefined, options: RuralSemanticOptions): boolean {
   const style = lookStyle(options.look, options.opacity);
   if (!landuse || !style || !(options.mpp > 0)) return false;
-  const geometry = ruralGeometry(landuse), { boxes, paths } = geometry, { viewport, mpp, classes } = options, tiny = mpp * 1.2;
+  const geometry = ruralGeometry(landuse),
+    { boxes, paths } = geometry,
+    { viewport, mpp, classes } = options,
+    tiny = mpp * 1.2;
   const visible = new Map<LandKind, number[]>();
   const candidates = options.indexed ? (geometry.bins ??= new SpatialBins(boxes, 128)).query(viewport) : landuse.areas.keys();
   for (const i of candidates) {
@@ -163,16 +265,23 @@ export function drawRuralSemantic(ctx: CanvasRenderingContext2D, landuse: LandUs
     if (classes[area.kind] === false || !RURAL_SEMANTIC[area.kind]) continue;
     const box = boxes[i];
     if (!overlaps(box, viewport) || (box.maxX - box.minX < tiny && box.maxY - box.minY < tiny)) continue;
-    const list = visible.get(area.kind); if (list) list.push(i); else visible.set(area.kind, [i]);
+    const list = visible.get(area.kind);
+    if (list) list.push(i);
+    else visible.set(area.kind, [i]);
   }
   for (const kind of RURAL_ORDER) {
-    const ids = visible.get(kind); if (!ids) continue;
-    const path = newPath(), area = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    const ids = visible.get(kind);
+    if (!ids) continue;
+    const path = newPath(),
+      area = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     for (const i of ids) {
-      path.addPath(paths[i] ??= ringsPath([landuse.areas[i].poly, ...(landuse.areas[i].holes ?? [])]));
-      if (kind === 'field' && options.fieldStrips && landuse.areas[i].strips?.length) path.addPath(geometry.stripPaths[i] ??= ringsPath(landuse.areas[i].strips!));
+      path.addPath((paths[i] ??= ringsPath([landuse.areas[i].poly, ...(landuse.areas[i].holes ?? [])])));
+      if (kind === 'field' && options.fieldStrips && landuse.areas[i].strips?.length) path.addPath((geometry.stripPaths[i] ??= ringsPath(landuse.areas[i].strips!)));
       const box = boxes[i];
-      area.minX = Math.min(area.minX, box.minX); area.minY = Math.min(area.minY, box.minY); area.maxX = Math.max(area.maxX, box.maxX); area.maxY = Math.max(area.maxY, box.maxY);
+      area.minX = Math.min(area.minX, box.minX);
+      area.minY = Math.min(area.minY, box.minY);
+      area.maxX = Math.max(area.maxX, box.maxX);
+      area.maxY = Math.max(area.maxY, box.maxY);
     }
     // Hatching is clipped to the shapes, so only the part of their box in view needs lines.
     const inView = { minX: Math.max(area.minX, viewport.minX), minY: Math.max(area.minY, viewport.minY), maxX: Math.min(area.maxX, viewport.maxX), maxY: Math.min(area.maxY, viewport.maxY) };
@@ -192,7 +301,7 @@ export function urbanClassOf(block: CityBlock): string | undefined {
 const BLOCK_PATHS = new WeakMap<CityBlock, Path2D>();
 const blockPath = (block: CityBlock): Path2D => {
   let path = BLOCK_PATHS.get(block);
-  if (!path) BLOCK_PATHS.set(block, path = ringsPath((block.ground ?? [block.shape]).flatMap(shape => [shape.outer, ...(shape.holes ?? [])])));
+  if (!path) BLOCK_PATHS.set(block, (path = ringsPath((block.ground ?? [block.shape]).flatMap(shape => [shape.outer, ...(shape.holes ?? [])]))));
   return path;
 };
 
@@ -204,15 +313,18 @@ export function drawUrbanSemantic(ctx: CanvasRenderingContext2D, scenes: readonl
   for (const scene of scenes) {
     const paths = new Map<string, Path2D>();
     for (const i of scene.bins.blocks.query(viewport)) {
-      const block = scene.blocks[i], cls = urbanClassOf(block);
+      const block = scene.blocks[i],
+        cls = urbanClassOf(block);
       if (!cls) continue;
-      let path = paths.get(cls); if (!path) paths.set(cls, path = newPath());
+      let path = paths.get(cls);
+      if (!path) paths.set(cls, (path = newPath()));
       path.addPath(blockPath(block));
     }
     for (const cls of URBAN_ORDER) {
-      const path = paths.get(cls); if (!path) continue;
+      const path = paths.get(cls);
+      if (!path) continue;
       // The unknown fallback stays discreet so it never reads as a district of its own.
-      const quiet = cls === 'other' ? { ...style, fill: style.fill * .6, stroke: style.stroke * .6 } : style;
+      const quiet = cls === 'other' ? { ...style, fill: style.fill * 0.6, stroke: style.stroke * 0.6 } : style;
       paintBatch(ctx, path, viewport, URBAN_SEMANTIC[cls], quiet, options.look, mpp, false);
       painted = true;
     }
@@ -221,13 +333,14 @@ export function drawUrbanSemantic(ctx: CanvasRenderingContext2D, scenes: readonl
 }
 
 // ---------------------------------------------------------------- legend
-const legendLook = (look: SemanticLook): SemanticLegendEntry['look'] | undefined => look === 'off' ? undefined : look;
+const legendLook = (look: SemanticLook): SemanticLegendEntry['look'] | undefined => (look === 'off' ? undefined : look);
 const RURAL_PRESENT = new WeakMap<LandUseLayer, Set<LandKind>>();
 /** Legend entries of the rural classes that are visible and exist in the products. */
 export function ruralSemanticLegend(landuse: LandUseLayer | undefined, classes: Readonly<Record<LandKind, boolean>>, look: SemanticLook): SemanticLegendEntry[] {
   const mode = legendLook(look);
   if (!landuse || !mode) return [];
-  let present = RURAL_PRESENT.get(landuse); if (!present) RURAL_PRESENT.set(landuse, present = new Set(landuse.areas.map(a => a.kind)));
+  let present = RURAL_PRESENT.get(landuse);
+  if (!present) RURAL_PRESENT.set(landuse, (present = new Set(landuse.areas.map(a => a.kind))));
   return RURAL_ORDER.filter(kind => present!.has(kind) && classes[kind] !== false).map(kind => ({ label: RURAL_SEMANTIC[kind].label, color: RURAL_SEMANTIC[kind].color, pattern: RURAL_SEMANTIC[kind].pattern, dash: RURAL_SEMANTIC[kind].dash, look: mode }));
 }
 const URBAN_PRESENT = new WeakMap<CityScene, Set<string>>();
@@ -238,9 +351,15 @@ export function urbanSemanticLegend(scenes: readonly CityScene[], look: Semantic
   const present = new Set<string>();
   for (const scene of scenes) {
     let set = URBAN_PRESENT.get(scene);
-    if (!set) { set = new Set(); for (const block of scene.blocks) { const cls = urbanClassOf(block); if (cls) set.add(cls); } URBAN_PRESENT.set(scene, set); }
+    if (!set) {
+      set = new Set();
+      for (const block of scene.blocks) {
+        const cls = urbanClassOf(block);
+        if (cls) set.add(cls);
+      }
+      URBAN_PRESENT.set(scene, set);
+    }
     for (const cls of set) present.add(cls);
   }
   return URBAN_ORDER.filter(cls => present.has(cls)).map(cls => ({ label: URBAN_SEMANTIC[cls].label, color: URBAN_SEMANTIC[cls].color, pattern: 'none' as const, dash: [], look: mode }));
 }
-

@@ -22,7 +22,8 @@ export interface SettlementAxis {
   /** Request field: a LayoutConfig path, `parcels.operator`, or `place.*` for the settlement spec. */
   field: string;
   /** Field values that defer to the named profile, and to the automatic resolution. */
-  profile?: readonly string[]; auto?: readonly string[];
+  profile?: readonly string[];
+  auto?: readonly string[];
   /** What the automatic / profile value is resolved from. */
   resolvedFrom: string;
   /** `district`: only the quarter grammar reads it. */
@@ -50,7 +51,9 @@ export const SETTLEMENT_AXES: readonly SettlementAxis[] = [
 ];
 const AXES = new Map(SETTLEMENT_AXES.map(a => [a.id, a]));
 export const settlementAxis = (id: string): SettlementAxis => {
-  const axis = AXES.get(id); if (!axis) throw new Error(`Unknown settlement axis ${id}`); return axis;
+  const axis = AXES.get(id);
+  if (!axis) throw new Error(`Unknown settlement axis ${id}`);
+  return axis;
 };
 
 /** Native grammars laid out directly, without the quarter grammar (Rust `Kind::small`). */
@@ -62,7 +65,8 @@ function read(config: LayoutConfig, parcels: Pick<ParcelConfig, 'operator'> | un
 }
 /** Which layer answers the axis for this request: explicit override, named profile or automatic resolution. */
 export function axisSource(id: string, config: LayoutConfig, parcels?: Pick<ParcelConfig, 'operator'>): AxisSource {
-  const axis = settlementAxis(id), value = read(config, parcels, axis.field);
+  const axis = settlementAxis(id),
+    value = read(config, parcels, axis.field);
   if (axis.field.startsWith('place.')) return 'override';
   // An explicit style fixes the enclosure type (Rust kinds::requested_enclosure).
   if (id === 'enclosure' && config.fortification === 'culture' && config.fortificationStyle !== 'auto') return 'override';
@@ -98,7 +102,16 @@ export function resolvedEnclosure(layout: { enclosures?: { kind: string; style?:
 
 /** Explicit components of a named profile. Generic ones come from the catalogue
  * (plan pattern, fortification); composite presets add what their id bundles. */
-export interface ProfileComponents { id: string; tradition: string; plan: string; enclosure: string; theme?: string; era?: string; functions?: string; site?: string }
+export interface ProfileComponents {
+  id: string;
+  tradition: string;
+  plan: string;
+  enclosure: string;
+  theme?: string;
+  era?: string;
+  functions?: string;
+  site?: string;
+}
 const COMPOSITES: Record<string, Partial<ProfileComponents>> = {
   bastide: { tradition: 'european-organic', plan: 'planned grid new town', era: 'M' },
   'maori-pa': { tradition: 'māori', plan: 'terraced hillfort (pā)', site: 'hilltop or spur' },
@@ -119,14 +132,11 @@ export function profileComponents(id: string): ProfileComponents | undefined {
   const entry = (catalogue.cultures as Record<string, CatalogueCulture>)[id];
   if (!entry) return undefined;
   const composite = COMPOSITES[id] ?? {};
-  return {
-    id, tradition: FANTASY.includes(id) ? '—' : id, plan: entry.plan?.pattern ?? 'organic', enclosure: entry.plan?.fortification ?? 'auto',
-    ...(FANTASY.includes(id) ? { theme: id } : {}), ...composite,
-  };
+  return { id, tradition: FANTASY.includes(id) ? '—' : id, plan: entry.plan?.pattern ?? 'organic', enclosure: entry.plan?.fortification ?? 'auto', ...(FANTASY.includes(id) ? { theme: id } : {}), ...composite };
 }
 /** One line naming the components, e.g. « tradition japanese · plan castle town · enclosure none · functions capital ». */
 export function profileSummary(id: string): string {
-  const c = profileComponents(id); if (!c) return '';
-  return [c.theme && `theme ${c.theme}`, c.tradition !== '—' && `tradition ${c.tradition}`, `plan ${c.plan}`, `enclosure ${c.enclosure}`,
-    c.era && `era ${c.era}`, c.functions && `functions ${c.functions}`, c.site && `site ${c.site}`].filter(Boolean).join(' · ');
+  const c = profileComponents(id);
+  if (!c) return '';
+  return [c.theme && `theme ${c.theme}`, c.tradition !== '—' && `tradition ${c.tradition}`, `plan ${c.plan}`, `enclosure ${c.enclosure}`, c.era && `era ${c.era}`, c.functions && `functions ${c.functions}`, c.site && `site ${c.site}`].filter(Boolean).join(' · ');
 }

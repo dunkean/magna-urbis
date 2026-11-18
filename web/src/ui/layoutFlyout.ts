@@ -8,14 +8,19 @@ export function initLayoutFlyout(): { open(): void } {
   const heading = document.getElementById('settlementEditorHeading')!;
   const compact = window.matchMedia('(max-width: 830px)');
   const flyout = document.createElement('aside');
-  flyout.id = 'layoutFlyout'; flyout.className = 'glass'; flyout.hidden = true;
+  flyout.id = 'layoutFlyout';
+  flyout.className = 'glass';
+  flyout.hidden = true;
   flyout.setAttribute('aria-labelledby', 'layoutFlyoutTitle');
-  flyout.innerHTML = '<div class="drawer-head"><div><h2 id="layoutFlyoutTitle">Style mix, layout &amp; landmarks</h2><div id="layoutFlyoutTarget" class="hint"></div></div><button id="closeLayoutFlyout" type="button" class="secondary" aria-label="Close layout settings" title="Back to Customize (Esc)">&times;</button></div><div class="settings-content"></div><div class="settings-footer"><button type="button" class="secondary" data-back>Back</button><button type="button" data-apply>Apply &amp; generate</button></div>';
+  flyout.innerHTML =
+    '<div class="drawer-head"><div><h2 id="layoutFlyoutTitle">Style mix, layout &amp; landmarks</h2><div id="layoutFlyoutTarget" class="hint"></div></div><button id="closeLayoutFlyout" type="button" class="secondary" aria-label="Close layout settings" title="Back to Customize (Esc)">&times;</button></div><div class="settings-content"></div><div class="settings-footer"><button type="button" class="secondary" data-back>Back</button><button type="button" data-apply>Apply &amp; generate</button></div>';
   flyout.querySelector('.settings-content')!.append(content);
   app.append(flyout);
   trigger.setAttribute('aria-controls', flyout.id);
   const context = flyout.querySelector<HTMLElement>('#layoutFlyoutTarget')!;
-  const updateContext = (): void => { context.textContent = heading.textContent; };
+  const updateContext = (): void => {
+    context.textContent = heading.textContent;
+  };
   new MutationObserver(updateContext).observe(heading, { childList: true, characterData: true, subtree: true });
   function sync(): void {
     const visible = details.open && panel.classList.contains('open') && !document.getElementById('settlementsPane')!.hidden;
@@ -26,7 +31,8 @@ export function initLayoutFlyout(): { open(): void } {
     if (visible) updateContext();
   }
   function close(): void {
-    details.open = false; sync();
+    details.open = false;
+    sync();
     if (panel.classList.contains('open')) trigger.focus();
   }
   details.addEventListener('toggle', () => {
@@ -42,5 +48,10 @@ export function initLayoutFlyout(): { open(): void } {
   flyout.querySelector('#closeLayoutFlyout')!.addEventListener('click', close);
   flyout.querySelector('[data-back]')!.addEventListener('click', close);
   flyout.querySelector('[data-apply]')!.addEventListener('click', () => document.getElementById('generateSettlements')!.click());
-  return { open() { details.open = true; sync(); } };
+  return {
+    open() {
+      details.open = true;
+      sync();
+    },
+  };
 }

@@ -5,10 +5,23 @@ import { nativeRequest, nativeSession } from './nativeEngine';
 import { sourceDefinition } from './terrainDefinition';
 
 interface NativeHeader {
-  session: string; x: number; y: number; width: number; resolution: number;
-  minHeight: number; maxHeight: number; globalMinHeight: number; globalMaxHeight: number;
-  motifSize: number; prepareMs: number; samplingMs: number; fieldN: number; fieldExact: boolean; fieldFloor: number;
-  erosionDefaults: number[]; arrays: { name: string; type: 'f32' | 'u8'; count: number }[];
+  session: string;
+  x: number;
+  y: number;
+  width: number;
+  resolution: number;
+  minHeight: number;
+  maxHeight: number;
+  globalMinHeight: number;
+  globalMaxHeight: number;
+  motifSize: number;
+  prepareMs: number;
+  samplingMs: number;
+  fieldN: number;
+  fieldExact: boolean;
+  fieldFloor: number;
+  erosionDefaults: number[];
+  arrays: { name: string; type: 'f32' | 'u8'; count: number }[];
 }
 let session: string | undefined;
 
@@ -18,10 +31,23 @@ async function sample(settings: TerrainSettings, runtime: ExecutionRuntime, regi
   const { seed, width, motifSize, relief, erosion, mountainMix, environment, zones, erosionTuning, sketch, source } = settings;
   const processing = sketch?.processing;
   const definition = sourceDefinition(settings);
-  const preparedSettings = { seed, width, motifSize, relief, erosion, mountainMix, environment, zones, erosionTuning,
-    sampleSpacing: definition.requestedSpacing, sourceN: definition.n,
-    coastMask: settings.coastMask ?? 0, islandMode: settings.islandMode ?? 'island', source,
-    ...(processing ? { sketch: { processing }, surface: Array.from(heightmapSurface(parseTerrainSketch(sketch), definition.n)) } : {}) };
+  const preparedSettings = {
+    seed,
+    width,
+    motifSize,
+    relief,
+    erosion,
+    mountainMix,
+    environment,
+    zones,
+    erosionTuning,
+    sampleSpacing: definition.requestedSpacing,
+    sourceN: definition.n,
+    coastMask: settings.coastMask ?? 0,
+    islandMode: settings.islandMode ?? 'island',
+    source,
+    ...(processing ? { sketch: { processing }, surface: Array.from(heightmapSurface(parseTerrainSketch(sketch), definition.n)) } : {}),
+  };
   const response = await nativeRequest(runtime, '/terrain', JSON.stringify({ session, settings: preparedSettings, region, field }));
   const buffer = await response.arrayBuffer();
   if (buffer.byteLength < 4) throw new Error('Réponse terrain locale incomplète.');
@@ -38,23 +64,45 @@ async function sample(settings: TerrainSettings, runtime: ExecutionRuntime, regi
   }
   const height = arrays.height as Float32Array;
   const square = meta.resolution * meta.resolution;
-  if (!Number.isInteger(meta.resolution) || meta.resolution < 64 || meta.resolution > 1024
-    || !height || height.length !== square || !height.every(Number.isFinite)
-    || ['normalX', 'normalY', 'normalZ'].some(key => arrays[key]?.length !== square))
+  if (!Number.isInteger(meta.resolution) || meta.resolution < 64 || meta.resolution > 1024 || !height || height.length !== square || !height.every(Number.isFinite) || ['normalX', 'normalY', 'normalZ'].some(key => arrays[key]?.length !== square))
     throw new Error('Aperçu terrain local invalide.');
-  if (field && (!Number.isFinite(meta.fieldFloor) || !Number.isInteger(meta.fieldN) || meta.fieldN !== definition.n
-    || arrays.field?.length !== meta.fieldN * meta.fieldN || !arrays.field.every(Number.isFinite)
-    || arrays.physical?.length !== meta.fieldN * meta.fieldN || !arrays.physical.every(Number.isFinite)))
+  if (
+    field &&
+    (!Number.isFinite(meta.fieldFloor) ||
+      !Number.isInteger(meta.fieldN) ||
+      meta.fieldN !== definition.n ||
+      arrays.field?.length !== meta.fieldN * meta.fieldN ||
+      !arrays.field.every(Number.isFinite) ||
+      arrays.physical?.length !== meta.fieldN * meta.fieldN ||
+      !arrays.physical.every(Number.isFinite))
+  )
     throw new Error('Surface physique locale incompatible ; reconstruisez et redémarrez le moteur local.');
-  return { session: meta.session, x: meta.x, y: meta.y, width: meta.width, resolution: meta.resolution,
-    minHeight: meta.minHeight, maxHeight: meta.maxHeight, globalMinHeight: meta.globalMinHeight, globalMaxHeight: meta.globalMaxHeight,
-    motifSize: meta.motifSize, height, normalX: arrays.normalX as Float32Array, normalY: arrays.normalY as Float32Array,
-    normalZ: arrays.normalZ as Float32Array, caveMask: arrays.caveMask as Uint8Array,
-    prepareMs: meta.prepareMs, samplingMs: meta.samplingMs, generationMs: meta.prepareMs + meta.samplingMs,
-    generationBackend: 'native', generationReason: meta.fieldExact ? 'Rust natif · surface physique conservée' : `Rust natif · surface analytique échantillonnée à ${meta.fieldN}²`,
-    backend: 'native', backendReason: 'Échantillonnage Rust natif sur le service local.', coastBackend: 'cpu', erosionDefaults: meta.erosionDefaults,
-    ...(arrays.field ? { field: { n: meta.fieldN, data: arrays.field as Float32Array, exact: meta.fieldExact, floor: meta.fieldFloor,
-      ...(arrays.physicalCave ? { cave: arrays.physicalCave as Uint8Array } : {}) } } : {}),
+  return {
+    session: meta.session,
+    x: meta.x,
+    y: meta.y,
+    width: meta.width,
+    resolution: meta.resolution,
+    minHeight: meta.minHeight,
+    maxHeight: meta.maxHeight,
+    globalMinHeight: meta.globalMinHeight,
+    globalMaxHeight: meta.globalMaxHeight,
+    motifSize: meta.motifSize,
+    height,
+    normalX: arrays.normalX as Float32Array,
+    normalY: arrays.normalY as Float32Array,
+    normalZ: arrays.normalZ as Float32Array,
+    caveMask: arrays.caveMask as Uint8Array,
+    prepareMs: meta.prepareMs,
+    samplingMs: meta.samplingMs,
+    generationMs: meta.prepareMs + meta.samplingMs,
+    generationBackend: 'native',
+    generationReason: meta.fieldExact ? 'Rust natif · surface physique conservée' : `Rust natif · surface analytique échantillonnée à ${meta.fieldN}²`,
+    backend: 'native',
+    backendReason: 'Échantillonnage Rust natif sur le service local.',
+    coastBackend: 'cpu',
+    erosionDefaults: meta.erosionDefaults,
+    ...(arrays.field ? { field: { n: meta.fieldN, data: arrays.field as Float32Array, exact: meta.fieldExact, floor: meta.fieldFloor, ...(arrays.physicalCave ? { cave: arrays.physicalCave as Uint8Array } : {}) } } : {}),
     ...(arrays.physical ? { physical: { n: meta.fieldN, height: arrays.physical as Float32Array } } : {}),
     definition,
   };
@@ -67,11 +115,8 @@ export function sampleNativeTerrain(request: TerrainRequest & { runtime?: Execut
 }
 
 /** Native generation once, then the existing GPU/water chain consumes its metre field. */
-export async function prepareNativeTerrain(settings: TerrainSettings, runtime: ExecutionRuntime): Promise<{
-  height: Float32Array; prepareMs: number; samplingMs: number; session: string; fieldExact: boolean; erosionDefaults?: number[];
-}> {
+export async function prepareNativeTerrain(settings: TerrainSettings, runtime: ExecutionRuntime): Promise<{ height: Float32Array; prepareMs: number; samplingMs: number; session: string; fieldExact: boolean; erosionDefaults?: number[] }> {
   const result = await sample(settings, runtime, { x: 0, y: 0, extent: settings.width, resolution: 64 }, true);
   if (!result.field || result.field.data.length !== sourceDefinition(settings).n ** 2) throw new Error('Surface physique native absente.');
-  return { height: result.field.data, prepareMs: result.prepareMs ?? 0, samplingMs: result.samplingMs ?? 0,
-    session: result.session, fieldExact: result.field.exact, erosionDefaults: result.erosionDefaults };
+  return { height: result.field.data, prepareMs: result.prepareMs ?? 0, samplingMs: result.samplingMs ?? 0, session: result.session, fieldExact: result.field.exact, erosionDefaults: result.erosionDefaults };
 }

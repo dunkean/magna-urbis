@@ -8,12 +8,25 @@ import type { GroundSnowSettings } from './seasonPalette';
 /** `silhouette`: flat occupied footprints with optional uniform ink; no relief or shadows. */
 export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
 export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
-export interface UrbanBuildingAppearance { ambience?: 'day' | 'night'; /** Underdark: the culture colours under the cave light (caveRoof), no night ink. */ cave?: boolean; /** Lamp visibility is independent of the cave's permanent darkness. */ lightsOn?: boolean; nightInk?: boolean; colors?: RenderColors; style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Physical satellite ground driving roof snow, including season cache invalidation. */ roofSnow?: GroundSnowSettings; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
-export const buildingColors = (colors: RenderColors | undefined, ambience?: 'day' | 'night'): RenderColors | undefined => ambience === 'night' ? { building: '#232a42', buildingEdge: '#070a14', road: '#444b62', track: '#3a4054', roadEdge: '#141927', ...colors } : colors;
-export interface BuildingPaint { wall: string; roof: string; edge: string; courtyard: string }
-export const URBAN_FUNCTION_LABELS: Record<ArchitectureFunction, string> = {
-  domestic: 'Habitat', mixed: 'Habitat et boutique', workshop: 'Atelier', warehouse: 'Entrepôt', collective: 'Établissement collectif', open_space: 'Espace ouvert',
-};
+export interface UrbanBuildingAppearance {
+  ambience?: 'day' | 'night';
+  /** Underdark: the culture colours under the cave light (caveRoof), no night ink. */ cave?: boolean;
+  /** Lamp visibility is independent of the cave's permanent darkness. */ lightsOn?: boolean;
+  nightInk?: boolean;
+  colors?: RenderColors;
+  style: UrbanBuildingStyle;
+  diagnostic: UrbanBuildingDiagnostic;
+  /** Physical satellite ground driving roof snow, including season cache invalidation. */ roofSnow?: GroundSnowSettings;
+  /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean;
+}
+export const buildingColors = (colors: RenderColors | undefined, ambience?: 'day' | 'night'): RenderColors | undefined => (ambience === 'night' ? { building: '#232a42', buildingEdge: '#070a14', road: '#444b62', track: '#3a4054', roadEdge: '#141927', ...colors } : colors);
+export interface BuildingPaint {
+  wall: string;
+  roof: string;
+  edge: string;
+  courtyard: string;
+}
+export const URBAN_FUNCTION_LABELS: Record<ArchitectureFunction, string> = { domestic: 'Habitat', mixed: 'Habitat et boutique', workshop: 'Atelier', warehouse: 'Entrepôt', collective: 'Établissement collectif', open_space: 'Espace ouvert' };
 const useColors: Record<ArchitectureFunction, string> = { domestic: '#cbaa77', mixed: '#d5ad5d', workshop: '#bb8367', warehouse: '#9899a1', collective: '#a99abc', open_space: '#a3b77e' };
 export function urbanFunctionColor(fn: string): string {
   if (fn === 'refusal') return '#bb4541';
@@ -21,7 +34,7 @@ export function urbanFunctionColor(fn: string): string {
 }
 
 /** Appearance only. Native material references and physical heights stay in the scene. */
-export function buildingPaint(materials: MaterialSlots | undefined, fn: ArchitectureFunction, height: number, appearance: UrbanBuildingAppearance, materialId?: string, catalogue: HouseMaterialCatalogue = {materials: []}): BuildingPaint {
+export function buildingPaint(materials: MaterialSlots | undefined, fn: ArchitectureFunction, height: number, appearance: UrbanBuildingAppearance, materialId?: string, catalogue: HouseMaterialCatalogue = { materials: [] }): BuildingPaint {
   let wall = houseMaterialColor(catalogue, materialId ?? (materials?.coating || materials?.infill || materials?.frame || ''));
   let roof = houseMaterialColor(catalogue, materialId ?? materials?.cladding ?? '');
   if (appearance.diagnostic === 'uses') wall = roof = useColors[fn];
@@ -30,8 +43,14 @@ export function buildingPaint(materials: MaterialSlots | undefined, fn: Architec
     wall = roof = `rgb(${Math.round(112 + 100 * t)},${Math.round(175 - 82 * t)},${Math.round(188 - 53 * t)})`;
   }
   if (appearance.diagnostic === 'none') {
-    if (appearance.style === 'geometric') { wall = '#b2aa97'; roof = '#847b69'; }
-    if (appearance.ambience === 'night') { wall = nightRoof(wall, appearance.nightInk); roof = nightRoof(roof, appearance.nightInk); }
+    if (appearance.style === 'geometric') {
+      wall = '#b2aa97';
+      roof = '#847b69';
+    }
+    if (appearance.ambience === 'night') {
+      wall = nightRoof(wall, appearance.nightInk);
+      roof = nightRoof(roof, appearance.nightInk);
+    }
     roof = appearance.colors?.building ?? roof;
   }
   return { wall, roof, edge: appearance.colors?.buildingEdge ?? '#393a31', courtyard: '#f4efdf' };

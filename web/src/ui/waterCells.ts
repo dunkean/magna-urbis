@@ -9,32 +9,46 @@ export class WaterCellPainter {
   private ensure(): Worker {
     if (this.disposed) throw new DOMException('Water painting cancelled', 'AbortError');
     if (this.worker) return this.worker;
-    const worker = this.worker = new Worker(new URL('./waterCellsWorker.ts', import.meta.url), { type: 'module' });
+    const worker = (this.worker = new Worker(new URL('./waterCellsWorker.ts', import.meta.url), { type: 'module' }));
     worker.onmessage = ({ data }: MessageEvent<{ id: number; image?: ImageBitmap; error?: string }>) => {
-      const request = this.pending.get(data.id); this.pending.delete(data.id);
-      if (data.image) { if (request) request.resolve(data.image); else data.image.close(); }
-      else request?.reject(new Error(data.error));
+      const request = this.pending.get(data.id);
+      this.pending.delete(data.id);
+      if (data.image) {
+        if (request) request.resolve(data.image);
+        else data.image.close();
+      } else request?.reject(new Error(data.error));
     };
     worker.onerror = event => {
       for (const request of this.pending.values()) request.reject(new Error(event.message));
-      this.pending.clear(); worker.terminate(); this.worker = undefined; this.sources = new WeakMap();
+      this.pending.clear();
+      worker.terminate();
+      this.worker = undefined;
+      this.sources = new WeakMap();
     };
     return worker;
   }
   async draw(target: CanvasRenderingContext2D, source: CanvasImageSource & { width: number }, sx: number, sy: number, sw: number, size: number): Promise<void> {
-    if (size / sw < 1.5) { target.drawImage(source, sx, sy, sw, sw, 0, 0, size, size); return; }
+    if (size / sw < 1.5) {
+      target.drawImage(source, sx, sy, sw, sw, 0, 0, size, size);
+      return;
+    }
     const worker = this.ensure();
     let registration = this.sources.get(source);
     if (!registration) {
       const sourceId = ++this.serial;
       registration = createImageBitmap(source).then(bitmap => {
-        if (this.disposed || this.worker !== worker) { bitmap.close(); throw new DOMException('Water painting cancelled', 'AbortError'); }
-        worker.postMessage({ sourceId, bitmap }, [bitmap]); return sourceId;
+        if (this.disposed || this.worker !== worker) {
+          bitmap.close();
+          throw new DOMException('Water painting cancelled', 'AbortError');
+        }
+        worker.postMessage({ sourceId, bitmap }, [bitmap]);
+        return sourceId;
       });
       this.sources.set(source, registration);
       void registration.catch(() => this.sources.delete(source));
     }
-    const sourceId = await registration, id = ++this.serial;
+    const sourceId = await registration,
+      id = ++this.serial;
     if (this.disposed) throw new DOMException('Water painting cancelled', 'AbortError');
     let image: ImageBitmap;
     try {
@@ -44,16 +58,26 @@ export class WaterCellPainter {
       });
     } catch (error) {
       if (error instanceof Error && error.message === 'Source evicted') {
-        this.sources.delete(source); return this.draw(target, source, sx, sy, sw, size);
+        this.sources.delete(source);
+        return this.draw(target, source, sx, sy, sw, size);
       }
       throw error;
     }
-    try { const smooth = target.imageSmoothingEnabled; target.imageSmoothingEnabled = false; target.drawImage(image, 0, 0); target.imageSmoothingEnabled = smooth; }
-    finally { image.close(); }
+    try {
+      const smooth = target.imageSmoothingEnabled;
+      target.imageSmoothingEnabled = false;
+      target.drawImage(image, 0, 0);
+      target.imageSmoothingEnabled = smooth;
+    } finally {
+      image.close();
+    }
   }
   dispose(): void {
-    this.disposed = true; this.worker?.terminate(); this.worker = undefined;
+    this.disposed = true;
+    this.worker?.terminate();
+    this.worker = undefined;
     for (const request of this.pending.values()) request.reject(new DOMException('Water painting cancelled', 'AbortError'));
-    this.pending.clear(); this.sources = new WeakMap();
+    this.pending.clear();
+    this.sources = new WeakMap();
   }
 }

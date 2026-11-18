@@ -9,16 +9,15 @@ import { stageNeuralPublication } from './neural_publication.mjs';
 const version = process.argv[2] ?? 'v2';
 if (!['v1', 'v2'].includes(version)) throw new Error('Usage: node scripts/deploy_site.mjs v1|v2');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const targets = {
-  v1: { repository: 'https://github.com/dunkean/magna-urbis-v1.git', domain: 'v1.magna-urbis.org', output: 'dist' },
-  v2: { repository: 'https://github.com/dunkean/magna-urbis.git', domain: 'magna-urbis.org', output: 'dist-v2' },
-};
+const targets = { v1: { repository: 'https://github.com/dunkean/magna-urbis-v1.git', domain: 'v1.magna-urbis.org', output: 'dist' }, v2: { repository: 'https://github.com/dunkean/magna-urbis.git', domain: 'magna-urbis.org', output: 'dist-v2' } };
 const target = targets[version];
 /** Days a hashed asset of an earlier build stays published, for pages opened before a publication. */
 const ASSET_RETENTION_DAYS = 3;
 function run(command, args, cwd = root, capture = false) {
   const result = spawnSync(command, args, {
-    cwd, windowsHide: true, encoding: 'utf8',
+    cwd,
+    windowsHide: true,
+    encoding: 'utf8',
     // npm is a .cmd shim on Windows. All npm arguments below are fixed literals.
     shell: process.platform === 'win32' && command === 'npm',
     stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
@@ -36,13 +35,17 @@ const temporary = mkdtempSync(join(temporaryRoot, 'magna-urbis-publish-'));
 // One persistent worktree per site, beside the checkout: it is reset to the published commit
 // each time, but keeps node_modules, the Rust target and the built WASM packages between runs,
 // so a publication rebuilds only what the commit changed. `--fresh` rebuilds everything.
-const source = resolve(root, '..', '_worktrees', `publish-${version}`), site = join(temporary, 'site');
+const source = resolve(root, '..', '_worktrees', `publish-${version}`),
+  site = join(temporary, 'site');
 const state = join(source, '.publish-state');
 const fresh = process.argv.includes('--fresh');
 /** Inputs of a step, as git object ids of the commit: equal ids mean byte-identical inputs. */
-const inputs = (paths) => paths.map(path => `${path} ${run('git', ['rev-parse', `${revision}:${path}`], root, true)}`).join('\n');
-const stamp = (name) => existsSync(join(state, name)) ? readFileSync(join(state, name), 'utf8') : '';
-const remember = (name, value) => { mkdirSync(state, { recursive: true }); writeFileSync(join(state, name), value); };
+const inputs = paths => paths.map(path => `${path} ${run('git', ['rev-parse', `${revision}:${path}`], root, true)}`).join('\n');
+const stamp = name => (existsSync(join(state, name)) ? readFileSync(join(state, name), 'utf8') : '');
+const remember = (name, value) => {
+  mkdirSync(state, { recursive: true });
+  writeFileSync(join(state, name), value);
+};
 try {
   if (fresh && existsSync(source)) run('git', ['worktree', 'remove', '--force', source]);
   if (!existsSync(source)) run('git', ['worktree', 'add', '--detach', source, revision]);
@@ -53,15 +56,20 @@ try {
   }
   const web = join(source, 'web');
   const lock = inputs(['web/package-lock.json']);
-  if (stamp('npm') !== lock || !existsSync(join(web, 'node_modules'))) { run('npm', ['ci'], web); remember('npm', lock); }
-  else console.log('npm ci skipped: package-lock.json unchanged since the last publication.');
+  if (stamp('npm') !== lock || !existsSync(join(web, 'node_modules'))) {
+    run('npm', ['ci'], web);
+    remember('npm', lock);
+  } else console.log('npm ci skipped: package-lock.json unchanged since the last publication.');
   // Both current interfaces import the Rust/WASM bridge. Its packages depend only on the Rust
   // sources and the preparation scripts: unchanged inputs give the same packages, kept from the
   // last publication. Otherwise cargo rebuilds incrementally in the persistent target.
   const wasm = inputs(['rust', 'web/scripts', 'web/package-lock.json']);
   const packages = ['wasm', 'wasm-threads', 'houses'].every(name => existsSync(join(source, 'rust/pkg', name)));
-  if (stamp('wasm') !== wasm || !packages) { remember('wasm', ''); run('npm', ['run', 'prepare:v2'], web); remember('wasm', wasm); }
-  else console.log('prepare:v2 skipped: Rust sources and preparation scripts unchanged since the last publication.');
+  if (stamp('wasm') !== wasm || !packages) {
+    remember('wasm', '');
+    run('npm', ['run', 'prepare:v2'], web);
+    remember('wasm', wasm);
+  } else console.log('prepare:v2 skipped: Rust sources and preparation scripts unchanged since the last publication.');
   if (version === 'v2') {
     // The detached worktree has no sibling infinite_map or generated neural package.
     // Accept only the prepared main-checkout runtime and verified profile; never rebuild it here.
@@ -82,10 +90,12 @@ try {
   // A page opened before this publication still lazily loads chunks of its own build: hashed
   // assets that leave the build stay published for ASSET_RETENTION_DAYS, counted from the first
   // publication without them (assets-retained.json on gh-pages records that date per file).
-  const retentionFile = join(site, 'assets-retained.json'), retainedDir = join(temporary, 'retained');
+  const retentionFile = join(site, 'assets-retained.json'),
+    retainedDir = join(temporary, 'retained');
   const leftSince = existsSync(retentionFile) ? JSON.parse(readFileSync(retentionFile, 'utf8')) : {};
   const builtAssets = new Set(readdirSync(join(artifact, 'assets')));
-  const now = Date.now(), retained = {};
+  const now = Date.now(),
+    retained = {};
   mkdirSync(retainedDir, { recursive: true });
   for (const name of existsSync(join(site, 'assets')) ? readdirSync(join(site, 'assets')) : []) {
     if (builtAssets.has(name)) continue;

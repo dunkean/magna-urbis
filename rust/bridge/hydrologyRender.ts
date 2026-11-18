@@ -21,21 +21,32 @@ function ring(points: Float32Array, start: number, end: number): string {
 
 export function riverBank(points: Float32Array, start: number, end: number): string {
   if (end - start < 2) return '';
-  const left: number[][] = [], right: number[][] = [];
+  const left: number[][] = [],
+    right: number[][] = [];
   for (let i = start; i < end; i++) {
-    const prev = Math.max(start, i - 1), next = Math.min(end - 1, i + 1);
-    const ax = points[i * 4] - points[prev * 4], ay = points[i * 4 + 1] - points[prev * 4 + 1];
-    const bx = points[next * 4] - points[i * 4], by = points[next * 4 + 1] - points[i * 4 + 1];
-    const al = Math.hypot(ax, ay), bl = Math.hypot(bx, by), radius = points[i * 4 + 2] / 2;
-    const x = points[i * 4], y = points[i * 4 + 1];
-    const nx = bl ? -by / bl : al ? -ay / al : 0, ny = bl ? bx / bl : al ? ax / al : 0;
-    const px = al ? -ay / al : nx, py = al ? ax / al : ny;
+    const prev = Math.max(start, i - 1),
+      next = Math.min(end - 1, i + 1);
+    const ax = points[i * 4] - points[prev * 4],
+      ay = points[i * 4 + 1] - points[prev * 4 + 1];
+    const bx = points[next * 4] - points[i * 4],
+      by = points[next * 4 + 1] - points[i * 4 + 1];
+    const al = Math.hypot(ax, ay),
+      bl = Math.hypot(bx, by),
+      radius = points[i * 4 + 2] / 2;
+    const x = points[i * 4],
+      y = points[i * 4 + 1];
+    const nx = bl ? -by / bl : al ? -ay / al : 0,
+      ny = bl ? bx / bl : al ? ax / al : 0;
+    const px = al ? -ay / al : nx,
+      py = al ? ax / al : ny;
     const denominator = 1 + px * nx + py * ny;
     // Intersect the incident offsets to keep the physical width through bends.
     // A two-radius miter limit bevels sharp reversals instead of forming spikes.
     if (denominator >= 0.5) {
-      const ox = (px + nx) * radius / denominator, oy = (py + ny) * radius / denominator;
-      left.push([x + ox, y + oy]); right.push([x - ox, y - oy]);
+      const ox = ((px + nx) * radius) / denominator,
+        oy = ((py + ny) * radius) / denominator;
+      left.push([x + ox, y + oy]);
+      right.push([x - ox, y - oy]);
     } else {
       left.push([x + px * radius, y + py * radius], [x + nx * radius, y + ny * radius]);
       right.push([x - px * radius, y - py * radius], [x - nx * radius, y - ny * radius]);
@@ -47,41 +58,59 @@ export function riverBank(points: Float32Array, start: number, end: number): str
 function diagnosticImage(data: HydrologyData, overlay: HydrologyOverlay): string {
   const cached = diagnosticImages.get(data)?.get(overlay);
   if (cached) return cached;
-  const n = data.resolution, pixels = new Uint8Array(n * n * 4);
-  const raw = overlay.startsWith('raw-'), mode = raw ? overlay.slice(4) : overlay;
-  const basins = raw ? data.rawBasins : data.basins, accumulation = raw ? data.rawAccumulation : data.accumulation;
-  const filled = raw ? data.rawFilled : data.filled, physical = raw ? data.rawDrainageHeight : data.drainageHeight;
+  const n = data.resolution,
+    pixels = new Uint8Array(n * n * 4);
+  const raw = overlay.startsWith('raw-'),
+    mode = raw ? overlay.slice(4) : overlay;
+  const basins = raw ? data.rawBasins : data.basins,
+    accumulation = raw ? data.rawAccumulation : data.accumulation;
+  const filled = raw ? data.rawFilled : data.filled,
+    physical = raw ? data.rawDrainageHeight : data.drainageHeight;
   let max = 0;
   if (mode === 'accumulation') for (const value of accumulation) max = Math.max(max, value);
   if (mode === 'flat-rank') for (let i = 0; i < n * n; i++) if (data.flatLabels[i]) max = Math.max(max, data.flatRank[i]);
-  if (mode === 'depressions' || overlay === 'lakes') for (let i = 0; i < n * n; i++) {
-    max = Math.max(max, overlay === 'lakes' ? data.lakeDepth[i] : filled[i] - physical[i]);
-  }
+  if (mode === 'depressions' || overlay === 'lakes')
+    for (let i = 0; i < n * n; i++) {
+      max = Math.max(max, overlay === 'lakes' ? data.lakeDepth[i] : filled[i] - physical[i]);
+    }
   const cellArea = (data.width / n) ** 2;
   for (let i = 0; i < n * n; i++) {
     if (!basins[i] || ((mode === 'flats' || mode === 'flat-rank') && !data.flatLabels[i])) continue;
-    let r = 0, g = 0, b = 0, alpha = 150;
+    let r = 0,
+      g = 0,
+      b = 0,
+      alpha = 150;
     if (mode === 'basins' || mode === 'flats') {
       let hash = Math.imul(mode === 'flats' ? data.flatLabels[i] : basins[i], 0x45d9f3b);
-      hash = Math.imul(hash ^ hash >>> 16, 0x45d9f3b) >>> 0;
-      r = 65 + (hash & 127); g = 65 + (hash >>> 8 & 127); b = 65 + (hash >>> 16 & 127);
+      hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b) >>> 0;
+      r = 65 + (hash & 127);
+      g = 65 + ((hash >>> 8) & 127);
+      b = 65 + ((hash >>> 16) & 127);
     } else if (mode === 'accumulation' || mode === 'flat-rank') {
       const value = mode === 'flat-rank' ? data.flatRank[i] : accumulation[i] / cellArea;
       const largest = mode === 'flat-rank' ? max : max / cellArea;
       const t = Math.min(1, Math.log1p(value) / Math.max(1e-9, Math.log1p(largest)));
       r = Math.round(255 * Math.max(0, Math.min(1, (t - 0.45) * 2.5)));
-      g = Math.round(220 * Math.sin(t * Math.PI)); b = Math.round(240 * (1 - t)); alpha = 170;
+      g = Math.round(220 * Math.sin(t * Math.PI));
+      b = Math.round(240 * (1 - t));
+      alpha = 170;
     } else {
-      const depth = overlay === 'lakes' ? data.lakeLabels[i] ? data.lakeDepth[i] : 0 : Math.max(0, filled[i] - physical[i]);
+      const depth = overlay === 'lakes' ? (data.lakeLabels[i] ? data.lakeDepth[i] : 0) : Math.max(0, filled[i] - physical[i]);
       if (depth < 0.02) continue;
       const t = Math.log1p(depth) / Math.log1p(Math.max(0.02, max));
-      r = Math.round(100 * (1 - t)); g = Math.round(190 - 130 * t); b = Math.round(235 - 80 * t); alpha = 200;
+      r = Math.round(100 * (1 - t));
+      g = Math.round(190 - 130 * t);
+      b = Math.round(235 - 80 * t);
+      alpha = 200;
     }
     pixels.set([r, g, b, alpha], i * 4);
   }
   const svg = `<image width="${data.width}" height="${data.width}" href="${pngDataUrl(encodePng(pixels, n, n, 4, 1))}" opacity="0.85"/>`;
   let images = diagnosticImages.get(data);
-  if (!images) { images = new Map(); diagnosticImages.set(data, images); }
+  if (!images) {
+    images = new Map();
+    diagnosticImages.set(data, images);
+  }
   images.set(overlay, svg);
   return svg;
 }
@@ -106,21 +135,40 @@ export function hydrologyLakeMaterial(data: HydrologyData, style: TerrainStyle =
 /** River capsules for the GPU renderer: x0, y0, x1, y1, widths (m) at both ends, r, g, b. */
 const drawnRivers = new WeakMap<HydrologyData, Float32Array[]>();
 function hydrologyRiverGeometry(data: HydrologyData): Float32Array[] {
-  const found = drawnRivers.get(data); if (found) return found;
-  const rivers: Float32Array[] = [], margin = 2 * data.width / data.resolution;
+  const found = drawnRivers.get(data);
+  if (found) return found;
+  const rivers: Float32Array[] = [],
+    margin = (2 * data.width) / data.resolution;
   for (let i = 0; i < data.riverCount; i++) {
-    const start = data.riverOffsets[i], end = data.riverOffsets[i + 1], p = data.riverPoints.subarray(start * 4, end * 4), from = data.riverMeta[i * 6 + 1];
+    const start = data.riverOffsets[i],
+      end = data.riverOffsets[i + 1],
+      p = data.riverPoints.subarray(start * 4, end * 4),
+      from = data.riverMeta[i * 6 + 1];
     const source = data.nodeMeta[from * 3 + 2] === 0 && data.nodeMeta[from * 3 + 1] === 0 && p[0] >= margin && p[1] >= margin && p[0] <= data.width - margin && p[1] <= data.width - margin;
-    if (!source || end - start < 2) { rivers.push(p); continue; }
-    const points: number[] = [], widths: number[] = [], level: number[] = [];
-    for (let k = 0; k < p.length; k += 4) { points.push(p[k], p[k + 1]); widths.push(p[k + 2]); level.push(p[k + 3]); }
-    const g = headwaterGeometry({ points, area: widths, level, kind: widths.map(() => 0) }, widths), packed = new Float32Array(g.widths.length * 4);
-    g.widths.forEach((w, k) => packed.set([g.points[2 * k], g.points[2 * k + 1], w, g.level[k]], 4 * k)); rivers.push(packed);
+    if (!source || end - start < 2) {
+      rivers.push(p);
+      continue;
+    }
+    const points: number[] = [],
+      widths: number[] = [],
+      level: number[] = [];
+    for (let k = 0; k < p.length; k += 4) {
+      points.push(p[k], p[k + 1]);
+      widths.push(p[k + 2]);
+      level.push(p[k + 3]);
+    }
+    const g = headwaterGeometry({ points, area: widths, level, kind: widths.map(() => 0) }, widths),
+      packed = new Float32Array(g.widths.length * 4);
+    g.widths.forEach((w, k) => packed.set([g.points[2 * k], g.points[2 * k + 1], w, g.level[k]], 4 * k));
+    rivers.push(packed);
   }
-  drawnRivers.set(data, rivers); return rivers;
+  drawnRivers.set(data, rivers);
+  return rivers;
 }
 export function hydrologySegments(data: HydrologyData, colour: string): Float32Array {
-  const r = parseInt(colour.slice(1, 3), 16) / 255, g = parseInt(colour.slice(3, 5), 16) / 255, b = parseInt(colour.slice(5, 7), 16) / 255;
+  const r = parseInt(colour.slice(1, 3), 16) / 255,
+    g = parseInt(colour.slice(3, 5), 16) / 255,
+    b = parseInt(colour.slice(5, 7), 16) / 255;
   const out: number[] = [];
   for (const p of hydrologyRiverGeometry(data)) {
     for (let k = 0; k + 7 < p.length; k += 4) {
@@ -143,34 +191,48 @@ export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, 
     const junctionWidths = new Float32Array(data.nodePoints.length / 2);
     for (const p of hydrologyRiverGeometry(data)) svg += `<path d="${riverBank(p, 0, p.length / 4)}" stroke="none"/>`;
     for (let i = 0; i < data.riverCount; i++) {
-      const start = data.riverOffsets[i], end = data.riverOffsets[i + 1] - 1;
+      const start = data.riverOffsets[i],
+        end = data.riverOffsets[i + 1] - 1;
       if (end <= start) continue;
-      const from = data.riverMeta[i * 6 + 1], to = data.riverMeta[i * 6 + 2];
+      const from = data.riverMeta[i * 6 + 1],
+        to = data.riverMeta[i * 6 + 2];
       junctionWidths[from] = Math.max(junctionWidths[from], data.riverPoints[start * 4 + 2]);
       junctionWidths[to] = Math.max(junctionWidths[to], data.riverPoints[end * 4 + 2]);
     }
     // Join the incident bank polygons at actual confluences. Mouths keep their
     // cross-section termination and are never expanded into terminal discs.
-    for (let i = 0; i < junctionWidths.length; i++) if (data.nodeMeta[i * 3 + 2] === 1 && junctionWidths[i]) {
-      svg += `<circle cx="${format(data.nodePoints[i * 2])}" cy="${format(data.nodePoints[i * 2 + 1])}" r="${format(junctionWidths[i] / 2)}"/>`;
-    }
+    for (let i = 0; i < junctionWidths.length; i++)
+      if (data.nodeMeta[i * 3 + 2] === 1 && junctionWidths[i]) {
+        svg += `<circle cx="${format(data.nodePoints[i * 2])}" cy="${format(data.nodePoints[i * 2 + 1])}" r="${format(junctionWidths[i] / 2)}"/>`;
+      }
     if (material && lakes) svg += hydrologyLakeMaterial(data, style, colors);
     svg += '</g>';
   }
   svg += diagnostic;
   if (overlay === 'flow' || overlay === 'raw-flow') {
-    const n = data.resolution, cell = data.width / n, step = Math.max(4, Math.round(n / 40));
+    const n = data.resolution,
+      cell = data.width / n,
+      step = Math.max(4, Math.round(n / 40));
     const receivers = overlay === 'raw-flow' ? data.rawReceivers : data.receivers;
     let arrows = '';
-    for (let y = step / 2 | 0; y < n; y += step) for (let x = step / 2 | 0; x < n; x += step) {
-      const i = y * n + x, receiver = receivers[i];
-      if (receiver >= n * n) continue;
-      const dx = receiver % n - x, dy = Math.floor(receiver / n) - y, length = Math.hypot(dx, dy);
-      if (!length) continue;
-      const ux = dx / length, uy = dy / length, size = step * cell * 0.35;
-      const ax = (x + 0.5) * cell, ay = (y + 0.5) * cell, bx = ax + ux * size, by = ay + uy * size;
-      arrows += `M${format(ax)},${format(ay)}L${format(bx)},${format(by)}m${format((-ux - uy * 0.55) * size * 0.3)},${format((-uy + ux * 0.55) * size * 0.3)}L${format(bx)},${format(by)}l${format((-ux + uy * 0.55) * size * 0.3)},${format((-uy - ux * 0.55) * size * 0.3)}`;
-    }
+    for (let y = (step / 2) | 0; y < n; y += step)
+      for (let x = (step / 2) | 0; x < n; x += step) {
+        const i = y * n + x,
+          receiver = receivers[i];
+        if (receiver >= n * n) continue;
+        const dx = (receiver % n) - x,
+          dy = Math.floor(receiver / n) - y,
+          length = Math.hypot(dx, dy);
+        if (!length) continue;
+        const ux = dx / length,
+          uy = dy / length,
+          size = step * cell * 0.35;
+        const ax = (x + 0.5) * cell,
+          ay = (y + 0.5) * cell,
+          bx = ax + ux * size,
+          by = ay + uy * size;
+        arrows += `M${format(ax)},${format(ay)}L${format(bx)},${format(by)}m${format((-ux - uy * 0.55) * size * 0.3)},${format((-uy + ux * 0.55) * size * 0.3)}L${format(bx)},${format(by)}l${format((-ux + uy * 0.55) * size * 0.3)},${format((-uy - ux * 0.55) * size * 0.3)}`;
+      }
     svg += `<path d="${arrows}" fill="none" stroke="#a03431" stroke-width="1" vector-effect="non-scaling-stroke" opacity="0.8"/>`;
   }
   if (overlay === 'channels') {
@@ -180,17 +242,27 @@ export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, 
       svg += `<path d="${d}" fill="none" stroke="${data.riverMeta[i * 6 + 4] & 1 ? '#e78424' : '#155ea6'}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
       // Direction belongs to the retained vector graph. Sampling the raster
       // arrows beside a relocated meander can misleadingly point across its bank.
-      const start = data.riverOffsets[i], end = data.riverOffsets[i + 1];
+      const start = data.riverOffsets[i],
+        end = data.riverOffsets[i + 1];
       let length = 0;
       for (let j = start + 1; j < end; j++) length += Math.hypot(data.riverPoints[j * 4] - data.riverPoints[(j - 1) * 4], data.riverPoints[j * 4 + 1] - data.riverPoints[(j - 1) * 4 + 1]);
       const spacing = Math.max(data.width / 70, length / 12);
-      let nextArrow = Math.min(length / 2, spacing / 2), along = 0, arrows = '';
+      let nextArrow = Math.min(length / 2, spacing / 2),
+        along = 0,
+        arrows = '';
       for (let j = start + 1; j < end; j++) {
-        const ax = data.riverPoints[(j - 1) * 4], ay = data.riverPoints[(j - 1) * 4 + 1];
-        const dx = data.riverPoints[j * 4] - ax, dy = data.riverPoints[j * 4 + 1] - ay, step = Math.hypot(dx, dy);
+        const ax = data.riverPoints[(j - 1) * 4],
+          ay = data.riverPoints[(j - 1) * 4 + 1];
+        const dx = data.riverPoints[j * 4] - ax,
+          dy = data.riverPoints[j * 4 + 1] - ay,
+          step = Math.hypot(dx, dy);
         while (step > 0 && nextArrow <= along + step && nextArrow < length) {
-          const t = (nextArrow - along) / step, x = ax + dx * t, y = ay + dy * t;
-          const size = Math.min(data.width / 350, length / 5), ux = dx / step, uy = dy / step;
+          const t = (nextArrow - along) / step,
+            x = ax + dx * t,
+            y = ay + dy * t;
+          const size = Math.min(data.width / 350, length / 5),
+            ux = dx / step,
+            uy = dy / step;
           arrows += `M${format(x - ux * size - uy * size * 0.5)},${format(y - uy * size + ux * size * 0.5)}L${format(x)},${format(y)}L${format(x - ux * size + uy * size * 0.5)},${format(y - uy * size - ux * size * 0.5)}`;
           nextArrow += spacing;
         }

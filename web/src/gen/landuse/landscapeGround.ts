@@ -11,7 +11,9 @@ export function currentLandscapeGround(world: World, appearance = false): PolyH[
 }
 
 let moduleVersion = 0;
-onCoreWasmReset(() => { moduleVersion++; });
+onCoreWasmReset(() => {
+  moduleVersion++;
+});
 export class LandscapeGroundCache {
   private moduleVersion = -1;
   private terrain: TerrainLayer | undefined;
@@ -28,31 +30,44 @@ export class LandscapeGroundCache {
   prepare(world: World, terrainVersion = 0, appearance = false): void {
     const inputs = appearance ? [world.options.biome, world.site?.fields?.dWater, world.site?.fields?.hab, world.landuse] : [];
     this.appearance = appearance ? world : undefined;
-    if (this.moduleVersion === moduleVersion && this.terrain === world.terrain && this.mapSize === world.mapSize && this.terrainVersion === terrainVersion
-      && inputs.length === this.appearanceInputs.length && inputs.every((v, i) => v === this.appearanceInputs[i])) return;
+    if (this.moduleVersion === moduleVersion && this.terrain === world.terrain && this.mapSize === world.mapSize && this.terrainVersion === terrainVersion && inputs.length === this.appearanceInputs.length && inputs.every((v, i) => v === this.appearanceInputs[i])) return;
     this.moduleVersion = moduleVersion;
     this.appearanceInputs = inputs;
-    this.terrain = world.terrain; this.mapSize = world.mapSize; this.terrainVersion = terrainVersion;
+    this.terrain = world.terrain;
+    this.mapSize = world.mapSize;
+    this.terrainVersion = terrainVersion;
     const t = world.terrain;
-    const rings = [...t.coastline, ...(t.islands ?? []), ...t.lakes, ...t.rivers.map((r) => r.path)];
-    this.waterSafe = rings.every((ring) => ring.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)))
-      && t.rivers.every((r) => r.width.length === r.path.length && r.width.every(Number.isFinite));
+    const rings = [...t.coastline, ...(t.islands ?? []), ...t.lakes, ...t.rivers.map(r => r.path)];
+    this.waterSafe = rings.every(ring => ring.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))) && t.rivers.every(r => r.width.length === r.path.length && r.width.every(Number.isFinite));
     this.water = [];
-    try { if (this.waterSafe) this.water = waterGround(world); } catch { this.waterSafe = false; }
+    try {
+      if (this.waterSafe) this.water = waterGround(world);
+    } catch {
+      this.waterSafe = false;
+    }
     // Terrain changes invalidate every dry-land permission, including cached macro pieces.
-    this.layers = new WeakMap(); this.quarters = new WeakMap(); this.protections = new WeakMap();
+    this.layers = new WeakMap();
+    this.quarters = new WeakMap();
+    this.protections = new WeakMap();
   }
 
   private dry(source: PolyH[], protection: PolyH[]): PolyH[] {
-    try { return this.waterSafe && source.length ? dryGround(source, protection, this.water) : []; } catch { return []; }
+    try {
+      return this.waterSafe && source.length ? dryGround(source, protection, this.water) : [];
+    } catch {
+      return [];
+    }
   }
 
   layer(u: UrbanLayer, version = 0, footprint?: Polygon, owner?: UrbanLayer): PolyH[] {
     const cached = this.layers.get(u);
-    if (cached?.version === version && cached.footprint === footprint && cached.owner === owner
-      && cached.openEdgeGround === u.openEdgeGround) return cached.ground;
+    if (cached?.version === version && cached.footprint === footprint && cached.owner === owner && cached.openEdgeGround === u.openEdgeGround) return cached.ground;
     let ground: PolyH[] = [];
-    try { ground = this.dry(layerGround(u, undefined, this.appearance, footprint, owner), []); } catch { /* Decorative permission fails closed. */ }
+    try {
+      ground = this.dry(layerGround(u, undefined, this.appearance, footprint, owner), []);
+    } catch {
+      /* Decorative permission fails closed. */
+    }
     this.layers.set(u, { version, footprint, owner, openEdgeGround: u.openEdgeGround, ground });
     return ground;
   }
@@ -63,7 +78,11 @@ export class LandscapeGroundCache {
     let protectedLand = this.protections.get(owner);
     if (protectedLand?.version !== version) {
       let pieces: PolyH[] = [];
-      try { pieces = protectedGround(owner, this.appearance); } catch { return []; }
+      try {
+        pieces = protectedGround(owner, this.appearance);
+      } catch {
+        return [];
+      }
       protectedLand = { version, pieces };
       this.protections.set(owner, protectedLand);
     }

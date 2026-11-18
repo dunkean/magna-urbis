@@ -20,15 +20,22 @@ import type { CityScene } from './cityCanvas';
 import { roadInkOf } from './roadStyle';
 import { townWaterColour } from './townWater';
 
-const finite = (value: number | undefined, fallback: number, min: number, max: number): number =>
-  typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+const finite = (value: number | undefined, fallback: number, min: number, max: number): number => (typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
 
 /** Building appearance of a frame: V2 colours (night tables included), style and diagnostic of the city component. */
 export function cityBuildingAppearance(appearance: ResolvedAppearance, over: { style?: UrbanBuildingAppearance['style']; nightInk?: boolean } = {}): UrbanBuildingAppearance {
   // Underdark: no night ink; the culture colours stay and the cave light darkens them (caveRoof; the cave lighting in 3D).
-  const ambience = appearance.underdark ? 'night' : appearance.composition.ambience, city = appearance.city;
-  return { colors: buildingColors(appearance.palette.colors, appearance.underdark ? undefined : ambience), ambience, cave: !!appearance.underdark, lightsOn: settlementLightsOn(appearance.composition.ambience, appearance.underdark), style: over.style ?? city.buildingStyle, diagnostic: city.diagnostic,
-    nightInk: over.nightInk ?? city.palette === 'parchment' };
+  const ambience = appearance.underdark ? 'night' : appearance.composition.ambience,
+    city = appearance.city;
+  return {
+    colors: buildingColors(appearance.palette.colors, appearance.underdark ? undefined : ambience),
+    ambience,
+    cave: !!appearance.underdark,
+    lightsOn: settlementLightsOn(appearance.composition.ambience, appearance.underdark),
+    style: over.style ?? city.buildingStyle,
+    diagnostic: city.diagnostic,
+    nightInk: over.nightInk ?? city.palette === 'parchment',
+  };
 }
 
 export interface CityDrawInput {
@@ -49,15 +56,32 @@ export interface CityDrawInput {
 }
 
 export function cityDrawOptions(i: CityDrawInput): CityDrawOptions {
-  const a = i.appearance, c = a.composition, colors = a.palette.colors;
+  const a = i.appearance,
+    c = a.composition,
+    colors = a.palette.colors;
   return {
-    colors: i.buildingAppearance.colors, roadEmphasis: c.networks.roads.emphasis, night: a.underdark || c.ambience === 'night',
+    colors: i.buildingAppearance.colors,
+    roadEmphasis: c.networks.roads.emphasis,
+    night: a.underdark || c.ambience === 'night',
     waterColor: townWaterColour(a),
-    viewport: i.frame.viewport, mpp: i.frame.mpp, dpr: i.frame.dpr, lod: i.lod, view: i.view ?? i.city.view, palette: i.city.palette,
-    layers: cityCanvasLayers(i.layers, i.glFrame), width: finite(i.city.width, .6, 0, 5),
-    labels: i.labelsAllowed && a.cartography.labels, text: c.text, textPalette: terrainStyle(c.variant, colors).palette,
-    appearance: i.buildingAppearance, textured: i.city.textured, roadLook: c.networks.roads.look, groundBlend: i.city.groundBlend === 'blended',
-    deferNightTown: true, farTown: !!a.traits?.satelliteVariant, ...i.page,
+    viewport: i.frame.viewport,
+    mpp: i.frame.mpp,
+    dpr: i.frame.dpr,
+    lod: i.lod,
+    view: i.view ?? i.city.view,
+    palette: i.city.palette,
+    layers: cityCanvasLayers(i.layers, i.glFrame),
+    width: finite(i.city.width, 0.6, 0, 5),
+    labels: i.labelsAllowed && a.cartography.labels,
+    text: c.text,
+    textPalette: terrainStyle(c.variant, colors).palette,
+    appearance: i.buildingAppearance,
+    textured: i.city.textured,
+    roadLook: c.networks.roads.look,
+    groundBlend: i.city.groundBlend === 'blended',
+    deferNightTown: true,
+    farTown: !!a.traits?.satelliteVariant,
+    ...i.page,
     beforeBuildings: ctx => {
       if (c.vegetation.procedural) clearCityGroundUnderCanopy(ctx, i.frame.viewport, i.frame.mpp);
       i.page.beforeBuildings?.(ctx);
@@ -66,27 +90,39 @@ export function cityDrawOptions(i: CityDrawInput): CityDrawOptions {
 }
 
 /** Crowns sit above roofs; town lighting sits above crowns in both 2D hosts. */
-export function finishCityFrame(ctx: CanvasRenderingContext2D, scene: CityScene, buildings: readonly PlacedBuilding[] | undefined,
-  o: { viewport: Box; mpp: number; view: CityView; palette: CityDrawOptions['palette']; visible: boolean; diagnostic: UrbanBuildingAppearance['diagnostic']; night: boolean; streets: boolean; compare?: boolean }): void {
-  if (o.visible && o.view === 'buildings' && o.diagnostic === 'none' && !o.compare)
-    drawCityCanopy(ctx, cityCanopy(scene.layouts, buildings), o);
+export function finishCityFrame(
+  ctx: CanvasRenderingContext2D,
+  scene: CityScene,
+  buildings: readonly PlacedBuilding[] | undefined,
+  o: { viewport: Box; mpp: number; view: CityView; palette: CityDrawOptions['palette']; visible: boolean; diagnostic: UrbanBuildingAppearance['diagnostic']; night: boolean; streets: boolean; compare?: boolean },
+): void {
+  if (o.visible && o.view === 'buildings' && o.diagnostic === 'none' && !o.compare) drawCityCanopy(ctx, cityCanopy(scene.layouts, buildings), o);
   if (o.night && o.diagnostic === 'none') drawNightTown(ctx, scene, o.viewport, o.mpp, o.palette === 'parchment', o.streets);
   // Underdark ornaments (webs, forges, spikes, guard towers) above the lights: the embers glow with the town's lamps.
-  if (o.visible && o.view === 'buildings' && o.diagnostic === 'none' && !o.compare)
-    drawUnderdarkOrnaments(ctx, underdarkOrnaments(scene.layouts, buildings), { viewport: o.viewport, mpp: o.mpp, palette: o.palette, lit: o.night });
+  if (o.visible && o.view === 'buildings' && o.diagnostic === 'none' && !o.compare) drawUnderdarkOrnaments(ctx, underdarkOrnaments(scene.layouts, buildings), { viewport: o.viewport, mpp: o.mpp, palette: o.palette, lit: o.night });
 }
 
 /** Ground-plan options consumed by the shared 3D host, including ink roads at night. */
 export function city3dPlanOptions(r: ResolvedAppearance, labelsAllowed = true) {
-  const c = r.composition, city = r.city;
+  const c = r.composition,
+    city = r.city;
   const building = cityBuildingAppearance(r);
-  return { colors: building.colors, view: city.view, palette: city.palette, width: city.width, opacity: city.opacity,
+  return {
+    colors: building.colors,
+    view: city.view,
+    palette: city.palette,
+    width: city.width,
+    opacity: city.opacity,
     labels: labelsAllowed && r.cartography.labels,
     layers: { ...city.layers, ...(c.buildings.meshes === 'none' ? { lotEnclosureMeshes: false } : {}), streets: city.layers.streets && c.networks.roads.visible, waterways: c.networks.water.visible && city.layers.waterways !== false },
-    roadLook: c.networks.roads.look, roadEmphasis: c.networks.roads.emphasis, streetPalette: city.palette === 'terrain' ? 'parchment' as const : city.palette,
+    roadLook: c.networks.roads.look,
+    roadEmphasis: c.networks.roads.emphasis,
+    streetPalette: city.palette === 'terrain' ? ('parchment' as const) : city.palette,
     waterColor: townWaterColour(r),
     roadInk: roadInkOf(terrainStyle(r.palette.mapStyle, r.palette.colors).palette, building.colors),
-    groundBlend: groundRoadLook(c.networks.roads.look), night: r.underdark || c.ambience === 'night',
+    groundBlend: groundRoadLook(c.networks.roads.look),
+    night: r.underdark || c.ambience === 'night',
     buildingsVisible: c.buildings.visible && c.buildings.meshes === 'none',
-    appearance: { ...building, colors: r.palette.colors } };
+    appearance: { ...building, colors: r.palette.colors },
+  };
 }

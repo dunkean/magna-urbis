@@ -9,12 +9,27 @@ import { reconstructSmallPlotRoom } from '../src/gen/urban/smallPlotRoom';
 describe('compact crop of real bent plots from xrv97g', () => {
   for (const record of fixture.houses) {
     it(`finds an ordinary habitable room in native plot ${record.id} without mutating geometry`, () => {
-      const poly = record.poly as Polygon, owner = record.owner as Polygon, front = record.front as [Vec2, Vec2];
+      const poly = record.poly as Polygon,
+        owner = record.owner as Polygon,
+        front = record.front as [Vec2, Vec2];
       const before = JSON.stringify(record);
-      let physicalChecks = 0, accessChecks = 0;
-      const solve = () => reconstructSmallPlotRoom(poly, owner, front, [],
-        () => { physicalChecks++; return true; },
-        () => { accessChecks++; return true; });
+      let physicalChecks = 0,
+        accessChecks = 0;
+      const solve = () =>
+        reconstructSmallPlotRoom(
+          poly,
+          owner,
+          front,
+          [],
+          () => {
+            physicalChecks++;
+            return true;
+          },
+          () => {
+            accessChecks++;
+            return true;
+          },
+        );
       const room = solve();
       expect(room).not.toBeNull();
       expect(solve()).toEqual(room);
@@ -39,11 +54,51 @@ describe('compact crop of real bent plots from xrv97g', () => {
 
   it('fails closed when physical clearance or peer access rejects every candidate', () => {
     const { poly, owner, front } = fixture.houses[0];
-    expect(reconstructSmallPlotRoom(poly, owner, front as [Vec2, Vec2], [], () => false, () => true)).toBeNull();
-    expect(reconstructSmallPlotRoom(poly, owner, front as [Vec2, Vec2], [], () => true, () => false)).toBeNull();
-    expect(reconstructSmallPlotRoom(poly, owner, front as [Vec2, Vec2], [owner], () => true, () => true)).toBeNull();
-    const far: Polygon = [{ x: -100, y: -100 }, { x: -90, y: -100 },
-      { x: -90, y: -90 }, { x: -100, y: -90 }];
-    expect(reconstructSmallPlotRoom(poly, owner, front as [Vec2, Vec2], [far, owner], () => true, () => true)).toBeNull();
+    expect(
+      reconstructSmallPlotRoom(
+        poly,
+        owner,
+        front as [Vec2, Vec2],
+        [],
+        () => false,
+        () => true,
+      ),
+    ).toBeNull();
+    expect(
+      reconstructSmallPlotRoom(
+        poly,
+        owner,
+        front as [Vec2, Vec2],
+        [],
+        () => true,
+        () => false,
+      ),
+    ).toBeNull();
+    expect(
+      reconstructSmallPlotRoom(
+        poly,
+        owner,
+        front as [Vec2, Vec2],
+        [owner],
+        () => true,
+        () => true,
+      ),
+    ).toBeNull();
+    const far: Polygon = [
+      { x: -100, y: -100 },
+      { x: -90, y: -100 },
+      { x: -90, y: -90 },
+      { x: -100, y: -90 },
+    ];
+    expect(
+      reconstructSmallPlotRoom(
+        poly,
+        owner,
+        front as [Vec2, Vec2],
+        [far, owner],
+        () => true,
+        () => true,
+      ),
+    ).toBeNull();
   }, 30_000);
 });

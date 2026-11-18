@@ -1,22 +1,18 @@
 import type { Vec2, Polyline } from '../core/geom';
 
 /** Language families the toponym grammars cover. */
-export type NameFamily =
-  | 'french' | 'english' | 'german' | 'italian' | 'arabic' | 'chinese' | 'japanese'
-  | 'sanskrit' | 'norse' | 'elven' | 'dwarven' | 'orcish' | 'halfling';
+export type NameFamily = 'french' | 'english' | 'german' | 'italian' | 'arabic' | 'chinese' | 'japanese' | 'sanskrit' | 'norse' | 'elven' | 'dwarven' | 'orcish' | 'halfling';
 
-export const NAME_FAMILIES: NameFamily[] = [
-  'french', 'english', 'german', 'italian', 'arabic', 'chinese', 'japanese',
-  'sanskrit', 'norse', 'elven', 'dwarven', 'orcish', 'halfling',
-];
+export const NAME_FAMILIES: NameFamily[] = ['french', 'english', 'german', 'italian', 'arabic', 'chinese', 'japanese', 'sanskrit', 'norse', 'elven', 'dwarven', 'orcish', 'halfling'];
 
-export type NameKind =
-  | 'town' | 'quarter' | 'street' | 'road' | 'square' | 'church' | 'castle' | 'gate'
-  | 'river' | 'lake' | 'sea' | 'forest' | 'hill' | 'village' | 'farm' | 'bridge' | 'building';
+export type NameKind = 'town' | 'quarter' | 'street' | 'road' | 'square' | 'church' | 'castle' | 'gate' | 'river' | 'lake' | 'sea' | 'forest' | 'hill' | 'village' | 'farm' | 'bridge' | 'building';
 
 export type NameDisplayLanguage = 'fr' | 'en' | 'ja' | 'ar' | 'es' | 'pt' | 'zh' | 'ru';
 export type NameSource = 'auto' | 'geographic' | 'invented' | 'mixed';
-export interface NamingPolicy { profile?: string; source?: NameSource }
+export interface NamingPolicy {
+  profile?: string;
+  source?: NameSource;
+}
 export interface NamingSettings extends NamingPolicy {
   /** Map-wide naming culture; absent means each place keeps its own naming policy. */
   toponymCulture?: string;
@@ -33,8 +29,16 @@ export interface NamingSettings extends NamingPolicy {
   variations?: Record<string, number>;
   labels?: Record<string, import('../../v2/mapLabels').LabelEdit>;
 }
-export interface NamePresentation { mode?: 'cultural' | 'localized'; language?: NameDisplayLanguage; script?: 'source' | 'latin' }
-export interface NameMeaning { concept: string; qualifier?: string; viaGate?: boolean }
+export interface NamePresentation {
+  mode?: 'cultural' | 'localized';
+  language?: NameDisplayLanguage;
+  script?: 'source' | 'latin';
+}
+export interface NameMeaning {
+  concept: string;
+  qualifier?: string;
+  viaGate?: boolean;
+}
 /** Decomposed at composition time, never by stripping words from a complete name. */
 export interface NameParts {
   proper: string;

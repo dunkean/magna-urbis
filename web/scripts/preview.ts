@@ -16,15 +16,35 @@ let focus = 0;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   const v = args[i + 1];
-  if (a === '--seed') { opts.seed = v; i++; }
-  else if (a === '--size') { opts.size = v as SizeName; i++; }
-  else if (a === '--style') { opts.style = v as StyleName; i++; }
-  else if (a === '--out') { out = v; i++; }
-  else if (a === '--width') { width = Number(v); i++; }
-  else if (a === '--crop') { const [x, y, w] = v.split(',').map(Number); crop = { x, y, w }; i++; }
-  else if (a === '--debug') { debug = true; }
-  else if (a === '--focus') { focus = Number(v); i++; }
-  else if (a === '--opt') { const eq = v.indexOf('='); applyOverride(opts, v.slice(0, eq), v.slice(eq + 1)); i++; }
+  if (a === '--seed') {
+    opts.seed = v;
+    i++;
+  } else if (a === '--size') {
+    opts.size = v as SizeName;
+    i++;
+  } else if (a === '--style') {
+    opts.style = v as StyleName;
+    i++;
+  } else if (a === '--out') {
+    out = v;
+    i++;
+  } else if (a === '--width') {
+    width = Number(v);
+    i++;
+  } else if (a === '--crop') {
+    const [x, y, w] = v.split(',').map(Number);
+    crop = { x, y, w };
+    i++;
+  } else if (a === '--debug') {
+    debug = true;
+  } else if (a === '--focus') {
+    focus = Number(v);
+    i++;
+  } else if (a === '--opt') {
+    const eq = v.indexOf('=');
+    applyOverride(opts, v.slice(0, eq), v.slice(eq + 1));
+    i++;
+  }
 }
 
 const t0 = performance.now();
@@ -35,7 +55,7 @@ if (focus > 0 && world.site) {
   crop = { x: Math.max(0, Math.min(world.mapSize - w, c.x - w / 2)), y: Math.max(0, Math.min(world.mapSize - w, c.y - w / 2)), w };
 }
 const t1 = performance.now();
-const fullWidth = crop ? Math.round(width * world.mapSize / crop.w) : width;
+const fullWidth = crop ? Math.round((width * world.mapSize) / crop.w) : width;
 const svg = renderSvg(world, { style: opts.style, debug, width: fullWidth });
 const t2 = performance.now();
 let png: Uint8Array;
@@ -44,8 +64,11 @@ if (crop) {
   const full = fullWidth;
   const img = new Resvg(svg, { fitTo: { mode: 'width', value: full }, font: { loadSystemFonts: true } }).render();
   const k = img.width / world.mapSize;
-  const x0 = Math.round(crop.x * k), y0 = Math.round(crop.y * k), cw = Math.round(crop.w * k);
-  const src = img.pixels, out8 = new Uint8Array(cw * cw * 4);
+  const x0 = Math.round(crop.x * k),
+    y0 = Math.round(crop.y * k),
+    cw = Math.round(crop.w * k);
+  const src = img.pixels,
+    out8 = new Uint8Array(cw * cw * 4);
   for (let y = 0; y < cw; y++) out8.set(src.subarray(((y0 + y) * img.width + x0) * 4, ((y0 + y) * img.width + x0 + cw) * 4), y * cw * 4);
   png = encodePng(out8, cw, cw, 4);
 } else png = new Resvg(svg, { fitTo: { mode: 'width', value: width }, font: { loadSystemFonts: true } }).render().asPng();

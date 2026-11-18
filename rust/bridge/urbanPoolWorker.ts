@@ -4,19 +4,27 @@ import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import type { PoolMessage, PoolReply, PoolShared } from './urbanPool';
 import { validatePhysicalTerrain } from './settlements';
 
-let terrain: SettlementTerrain | undefined, version = -1;
-let batch = -1, shared: PoolShared = {};
+let terrain: SettlementTerrain | undefined,
+  version = -1;
+let batch = -1,
+  shared: PoolShared = {};
 // Resident products imported from this batch's binary image (ids in this instance).
-let layoutsId = 0, partitionsId = 0;
-const text = (value: string | Uint8Array | undefined): string | undefined => typeof value === 'string' ? value : undefined;
+let layoutsId = 0,
+  partitionsId = 0;
+const text = (value: string | Uint8Array | undefined): string | undefined => (typeof value === 'string' ? value : undefined);
 let ready: Promise<unknown> | undefined;
 
 function run(message: Extract<PoolMessage, { type: 'job' }>): string {
   if (!terrain || version !== message.version) throw new Error('Urban pool worker has no terrain for this request.');
   if (message.shared) {
-    batch = -1; shared = message.shared; layoutsId = partitionsId = 0;
+    batch = -1;
+    shared = message.shared;
+    layoutsId = partitionsId = 0;
     const image = shared.image;
-    if (image instanceof Uint8Array) { layoutsId = terrain.import_resident(image); partitionsId = terrain.resident_partitions_id(); }
+    if (image instanceof Uint8Array) {
+      layoutsId = terrain.import_resident(image);
+      partitionsId = terrain.resident_partitions_id();
+    }
     batch = message.batch;
   }
   if (batch !== message.batch) throw new Error('Urban pool worker lost the request context.');
@@ -30,32 +38,47 @@ function run(message: Extract<PoolMessage, { type: 'job' }>): string {
 
 self.onmessage = async (event: MessageEvent<PoolMessage>) => {
   const message = event.data;
-  if (message.type === 'init') { ready = init({ module_or_path: message.module }); return; }
-  try { await ready; } catch (error) { if (message.type === 'job') self.postMessage({ id: message.id, error: String(error) } satisfies PoolReply); return; }
+  if (message.type === 'init') {
+    ready = init({ module_or_path: message.module });
+    return;
+  }
+  try {
+    await ready;
+  } catch (error) {
+    if (message.type === 'job') self.postMessage({ id: message.id, error: String(error) } satisfies PoolReply);
+    return;
+  }
   if (message.type === 'raster') {
-    terrain?.free(); terrain = undefined; version = -1;
+    terrain?.free();
+    terrain = undefined;
+    version = -1;
     const r = message.raster;
     try {
       validatePhysicalTerrain(r.physical);
       const next = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
       try {
         if (r.physical) {
-          const physical = next as SettlementTerrain & {
-            set_physical_height(n: number, height: Float32Array): void;
-            set_physical_height_spline(n: number, height: Float32Array, floor: number): void;
-          };
+          const physical = next as SettlementTerrain & { set_physical_height(n: number, height: Float32Array): void; set_physical_height_spline(n: number, height: Float32Array, floor: number): void };
           if (r.physical.interpolation === 'bspline') physical.set_physical_height_spline(r.physical.n, r.physical.height, r.physical.floor ?? 0);
           else physical.set_physical_height(r.physical.n, r.physical.height);
         }
         if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry));
+      } catch (error) {
+        next.free();
+        throw error;
       }
-      catch (error) { next.free(); throw error; }
-      terrain = next; version = message.version;
-    } catch { /* the next job reports the missing terrain; the coordinator then runs it locally */ }
+      terrain = next;
+      version = message.version;
+    } catch {
+      /* the next job reports the missing terrain; the coordinator then runs it locally */
+    }
     return;
   }
   let reply: PoolReply;
-  try { reply = { id: message.id, json: run(message) }; }
-  catch (error) { reply = { id: message.id, error: String(error) }; }
+  try {
+    reply = { id: message.id, json: run(message) };
+  } catch (error) {
+    reply = { id: message.id, error: String(error) };
+  }
   self.postMessage(reply);
 };

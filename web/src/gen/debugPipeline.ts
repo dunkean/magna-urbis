@@ -48,8 +48,7 @@ export class DebugGeneration {
     const worldOptions = { ...options, ...(mapSize !== mapSizeOf(options) ? { mapSize } : {}), ...(options.biome === 'underdark-caverns' ? { biome: 'underdark' as const } : {}) };
     this.prepared = prepareTerrain(worldOptions, mapSize, this.root);
     const terrain = emptyTerrain(this.prepared);
-    this.world = { seed: options.seed, options: worldOptions, uid: generationUid(options), mapSize, terrain,
-      stats: { 'ms.terrain': Math.round(this.prepared.ms), 'ms.height': Math.round(this.prepared.ms), rivers: 0, lakes: 0, seaFraction: terrain.seaFraction } };
+    this.world = { seed: options.seed, options: worldOptions, uid: generationUid(options), mapSize, terrain, stats: { 'ms.terrain': Math.round(this.prepared.ms), 'ms.height': Math.round(this.prepared.ms), rivers: 0, lakes: 0, seaFraction: terrain.seaFraction } };
     const configured = optionsForMainSettlement(worldOptions);
     const mainSpec = worldOptions.workflow === 'list' && typeof worldOptions.settlements === 'object' && 'list' in worldOptions.settlements ? worldOptions.settlements.list[0] : undefined;
     this.mainOptions = { ...configured, size: mainSpec?.options?.size ?? effectiveSize(configured) };
@@ -86,14 +85,21 @@ export class DebugGeneration {
   private rivers(): void {
     const { terrain, timings } = terrainForExtent(this.world.options, this.world.mapSize, this.root, this.prepared);
     this.world.terrain = terrain;
-    Object.assign(this.world.stats, { rivers: terrain.rivers.length, lakes: terrain.lakes.length, seaFraction: terrain.seaFraction,
-      'ms.hydrology': Math.round(timings.hydrology), 'ms.rivers': Math.round(timings.rivers), 'ms.polygons': Math.round(timings.polygons),
-      'ms.terrain': Math.round(this.prepared.ms + timings.hydrology + timings.rivers + timings.polygons) });
+    Object.assign(this.world.stats, {
+      rivers: terrain.rivers.length,
+      lakes: terrain.lakes.length,
+      seaFraction: terrain.seaFraction,
+      'ms.hydrology': Math.round(timings.hydrology),
+      'ms.rivers': Math.round(timings.rivers),
+      'ms.polygons': Math.round(timings.polygons),
+      'ms.terrain': Math.round(this.prepared.ms + timings.hydrology + timings.rivers + timings.polygons),
+    });
   }
 
   private centroids(): void {
     if (this.options.workflow === 'environment') return;
-    const w = this.world, opts = this.mainOptions;
+    const w = this.world,
+      opts = this.mainOptions;
     const prefs = getCulture(opts.culture).sitePrefs;
     let siteOptions = opts.sitePrefs || !prefs ? opts : { ...opts, sitePrefs: prefs };
     if (this.mega) {
@@ -106,18 +112,21 @@ export class DebugGeneration {
     const plan = planSettlements(w, w.options, this.root, opts, this.mainPop);
     w.settlements = plan.settlements;
     this.warnings.push(...plan.warnings);
-    Object.assign(w.stats, { settlements: plan.settlements.length, 'settlements.requested': plan.requested,
-      'settlements.pop': plan.settlements.reduce((sum, s) => sum + s.population, 0), 'site.x': Math.round(w.site.center.x), 'site.y': Math.round(w.site.center.y) });
+    Object.assign(w.stats, { settlements: plan.settlements.length, 'settlements.requested': plan.requested, 'settlements.pop': plan.settlements.reduce((sum, s) => sum + s.population, 0), 'site.x': Math.round(w.site.center.x), 'site.y': Math.round(w.site.center.y) });
   }
 
   private roads(): void {
     const w = this.world;
     if (!w.site) return;
     const regional = routeRoads(w.terrain, w.site, this.mainOptions, w.mapSize, this.root);
-    w.roads = regional.roads; w.bridges = regional.bridges; this.mainRoads = regional.roads.length; this.mainBridges = regional.bridges.length;
+    w.roads = regional.roads;
+    w.bridges = regional.bridges;
+    this.mainRoads = regional.roads.length;
+    this.mainBridges = regional.bridges.length;
     if ((w.settlements?.length ?? 0) > 1) {
       const net = routeNetwork(w, w.settlements!, this.root);
-      w.roads.push(...net.roads); w.bridges.push(...net.bridges);
+      w.roads.push(...net.roads);
+      w.bridges.push(...net.bridges);
       this.warnings.push(...net.warnings);
       w.stats['network.unreachable'] = net.unreachable.length;
     }
@@ -136,12 +145,15 @@ export class DebugGeneration {
     const view = { ...w, options: this.mainOptions, roads: w.roads?.slice(0, this.mainRoads), bridges: w.bridges?.slice(0, this.mainBridges), settlements: undefined };
     if (this.mega) {
       const result = generateMega(view, this.root, this.mainPop, this.eagerPop);
-      w.urban = result.layer; this.warnings.push(...result.warnings);
+      w.urban = result.layer;
+      this.warnings.push(...result.warnings);
       w.bridges = [...(view.bridges ?? []), ...result.bridges, ...networkBridges];
       for (const [k, v] of Object.entries(result.stats)) w.stats[k.startsWith('ms.') ? k : 'urban.' + k] = v;
     } else {
       const result = generateUrban(view, this.root);
-      w.urban = result.layer; w.debug = { urban: result.debug }; w.bridges = [...(view.bridges ?? []), ...networkBridges];
+      w.urban = result.layer;
+      w.debug = { urban: result.debug };
+      w.bridges = [...(view.bridges ?? []), ...networkBridges];
       for (const [k, v] of Object.entries(result.stats)) w.stats[k.startsWith('ms.') ? k : 'urban.' + k] = v;
     }
     const main = w.settlements?.find(s => s.main);
@@ -151,9 +163,16 @@ export class DebugGeneration {
     let built = 0;
     for (const s of w.settlements ?? []) {
       if (s.main || s.detail === 'farmstead') continue;
-      if (lazy) { s.detail = 'lazy'; continue; }
+      if (lazy) {
+        s.detail = 'lazy';
+        continue;
+      }
       const result = generateSettlementUrban(w, s);
-      if (result) { s.urban = result.urban; bridges.push(...result.bridges); built++; }
+      if (result) {
+        s.urban = result.urban;
+        bridges.push(...result.bridges);
+        built++;
+      }
     }
     w.bridges = [...(w.bridges ?? []), ...bridges];
     w.stats['settlements.built'] = built;
@@ -162,8 +181,12 @@ export class DebugGeneration {
     w.landuse = rural.layer;
     for (const [k, v] of Object.entries(rural.stats)) w.stats['landuse.' + k] = v;
     w.names = generateNames({ ...w, options: this.mainOptions }, this.root);
-    settlementNames(w, this.root); applyNameOverrides(w);
+    settlementNames(w, this.root);
+    applyNameOverrides(w);
     w.stats['names.town'] = w.names.town;
-    if (this.options.biome === 'underdark-caverns') { w.options.biome = 'underdark-caverns'; refreshCavernMask(w); }
+    if (this.options.biome === 'underdark-caverns') {
+      w.options.biome = 'underdark-caverns';
+      refreshCavernMask(w);
+    }
   }
 }

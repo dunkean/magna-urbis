@@ -4,8 +4,7 @@ import { surfaceArea } from '../../../rust/bridge/houseRender';
 import { builtOutcomeSource, hasBuiltOutcomeBalance } from '../../../rust/bridge/urbanBuiltBalance';
 
 export type ProgrammeBalanceEvidence = 'not_calculated' | 'unverified' | 'scene_consistent' | 'outcomes_reconciled';
-const same = (a: number | undefined, b: number): boolean => typeof a === 'number' && Number.isFinite(a)
-  && a >= 0 && Math.abs(a - b) <= 1e-8 * Math.max(1, Math.abs(a), Math.abs(b));
+const same = (a: number | undefined, b: number): boolean => typeof a === 'number' && Number.isFinite(a) && a >= 0 && Math.abs(a - b) <= 1e-8 * Math.max(1, Math.abs(a), Math.abs(b));
 
 /** The native programme has no reconciliation marker. A zero alone is never
  * evidence. Recognize only complete eager-scene outcomes whose reported totals
@@ -14,11 +13,10 @@ const same = (a: number | undefined, b: number): boolean => typeof a === 'number
  * are deliberately not an input: realizing an exterior cannot change a plan's
  * capacity status. */
 export function programmeBalanceEvidence(scene?: PlacementBatch): (programme: UrbanProgramme) => ProgrammeBalanceEvidence {
-  if (!scene) return programme => programme.demands.some(d => d.builtCapacity > 0 || (d.openCapacity ?? 0) > 0) ? 'unverified' : 'not_calculated';
-  if (scene.generator_version === 'silhouette' || scene.generator_version.startsWith('architectural-plans-')
-    || scene.buildings.some(b => b.simplification !== 'recipe_volumes' || b.cartographic?.validation === 'plan_only')) {
+  if (!scene) return programme => (programme.demands.some(d => d.builtCapacity > 0 || (d.openCapacity ?? 0) > 0) ? 'unverified' : 'not_calculated');
+  if (scene.generator_version === 'silhouette' || scene.generator_version.startsWith('architectural-plans-') || scene.buildings.some(b => b.simplification !== 'recipe_volumes' || b.cartographic?.validation === 'plan_only')) {
     const source = builtOutcomeSource(scene);
-    return p => hasBuiltOutcomeBalance(p,source) ? 'outcomes_reconciled' : 'not_calculated';
+    return p => (hasBuiltOutcomeBalance(p, source) ? 'outcomes_reconciled' : 'not_calculated');
   }
   if (!['houses-2', 'houses-3'].includes(scene.generator_version)) return () => 'unverified';
   const outcomes = new Map<string, { kind: 'building' | 'refusal' | 'open'; function?: string; useful?: number; units?: number; area?: number }>();
@@ -34,7 +32,8 @@ export function programmeBalanceEvidence(scene?: PlacementBatch): (programme: Ur
     if (duplicate || !programme.allocations.length) return 'unverified';
     const totals = new Map(programme.demands.map(d => [d.id, { built: 0, open: 0, unit: d.unit }]));
     for (const allocation of programme.allocations) {
-      const outcome = outcomes.get(allocation.parcelId), total = totals.get(allocation.demandId);
+      const outcome = outcomes.get(allocation.parcelId),
+        total = totals.get(allocation.demandId);
       if (!outcome || !total) return 'unverified';
       if (outcome.kind === 'building') {
         const amount = total.unit === 'domesticUnits' ? outcome.units : outcome.useful;
@@ -47,8 +46,9 @@ export function programmeBalanceEvidence(scene?: PlacementBatch): (programme: Ur
     }
     return programme.demands.every(d => {
       const total = totals.get(d.id)!;
-      return same(d.builtCapacity, total.built) && same(d.openCapacity ?? 0, total.open)
-        && same(d.deficit, Math.max(0, d.requested - total.built - total.open));
-    }) ? 'scene_consistent' : 'unverified';
+      return same(d.builtCapacity, total.built) && same(d.openCapacity ?? 0, total.open) && same(d.deficit, Math.max(0, d.requested - total.built - total.open));
+    })
+      ? 'scene_consistent'
+      : 'unverified';
   };
 }

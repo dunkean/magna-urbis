@@ -37,7 +37,10 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Union of two touching footprints when the result is still a proper footprint (≥ 4.5 m wide, aspect ≤ 3). */
 export function joinFoot(a: Polygon, b: Polygon): Polygon | null {
   let u = stitchUnion(a, b);
-  if (!u) { const r = unionS(a, b); if (r.length === 1 && !r[0].holes.length) u = r[0].outer; }
+  if (!u) {
+    const r = unionS(a, b);
+    if (r.length === 1 && !r[0].holes.length) u = r[0].outer;
+  }
   if (!u || u.length < 3) return null;
   u = cleanRing(u, 0.005, 0.5, 0.002, false);
   if (u.length < 3 || Math.abs(area(u) - area(a) - area(b)) > 0.05 * (area(a) + area(b))) return null;
@@ -85,7 +88,10 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
   const cut = (hps: HalfPlane[], min = 6): Polygon | null => {
     let best: Polygon | null = null;
     for (let r of clipPlot(poly, [...hps, ...excl], convex)) {
-      if (!rng.chance(conform)) { const rect = rectify(r, fa, t, n); if (rect && !rng.chance(cornerFill)) r = rect; }
+      if (!rng.chance(conform)) {
+        const rect = rectify(r, fa, t, n);
+        if (rect && !rng.chance(cornerFill)) r = rect;
+      }
       let c = cleanRing(r, 0.005, 0.5, 0.002, false);
       if (c.length < 3) continue;
       c = truncateAcute(c, (20 * Math.PI) / 180, 2);
@@ -97,7 +103,9 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
   const out: Bldg[] = [];
   /** Half-planes every later piece keeps to (beside the corner wings). */
   const excl: HalfPlane[] = [];
-  const push = (p: Polygon | null, kind: Bldg['kind']) => { if (p) out.push({ poly: p, kind }); };
+  const push = (p: Polygon | null, kind: Bldg['kind']) => {
+    if (p) out.push({ poly: p, kind });
+  };
   const garden = (from: number) => {
     if (D - from < 3) return;
     for (const r of clipPlot(poly, band(from, D + 1), convex)) if (area(r) > 20) out.push({ poly: r, kind: 'garden' });
@@ -107,7 +115,10 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
   const fade = pl.fade ?? 0;
   // Core/middle keep their street-front dwelling and configured programme; the edge still changes setbacks.
   // Preserve the existing draw before the zone guard so previously built plots keep their RNG sequence.
-  if (fade > 0 && rng.chance(0.5 * Math.pow(fade, 1.4)) && !dense && !pl.terminal) { garden(0); return out; }
+  if (fade > 0 && rng.chance(0.5 * Math.pow(fade, 1.4)) && !dense && !pl.terminal) {
+    garden(0);
+    return out;
+  }
   const [sb0, sb1] = P.setback[zone];
   let sb = dense && rng.chance(zone === 'core' ? 0.14 : 0.24) ? rng.range(0.4, 1.1) : rng.range(sb0, sb1);
   if (fade > 0) sb += rng.range(0, 3.5) * fade;
@@ -115,14 +126,18 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
   // ---- front house: depth by bays (gable-end on narrow plots, one or two piles deep on wide ones)
   const [bd0, bd1] = P.buildDepth[zone];
   const gable = W < 8.5;
-  let hd = gable
-    ? Math.min(2.1 * W, W * Math.exp(Math.log(1.22 + 0.42 * wl) + 0.12 * rng.gauss()))
-    : wl < 0.35 && rng.chance(0.7 - wl) ? rng.range(6.5, 8.5) : rng.range(9, 11.5) + 2.5 * wl * rng.float();
+  let hd = gable ? Math.min(2.1 * W, W * Math.exp(Math.log(1.22 + 0.42 * wl) + 0.12 * rng.gauss())) : wl < 0.35 && rng.chance(0.7 - wl) ? rng.range(6.5, 8.5) : rng.range(9, 11.5) + 2.5 * wl * rng.float();
   hd = clamp(hd, Math.max(6.5, bd0 * 0.7), bd1 * 1.3);
   hd = Math.min(hd, D - sb);
-  if (hd < 4) { garden(0); return out; }
+  if (hd < 4) {
+    garden(0);
+    return out;
+  }
   let rest = D - sb - hd;
-  if (rest < 4.5 && cov >= 0.45) { hd = D - sb; rest = 0; } // shallow plot: the house takes the whole depth
+  if (rest < 4.5 && cov >= 0.45) {
+    hd = D - sb;
+    rest = 0;
+  } // shallow plot: the house takes the whole depth
 
   // ---- large courtyard building on wide rich plots of dense zones (inn, hall, hôtel)
   if (cov >= 0.66 && W >= 11 && D >= 20 && A > 320 && rng.chance((P.bigCourtChance ?? 0.3) * (0.3 + 1.4 * wl))) {
@@ -134,14 +149,19 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
       const r2 = D - sb - Lc;
       if (r2 >= MIN_BW) {
         if (cov >= 0.84) push(cut(band(sb + Lc, D + 1)), 'back');
-        else if (r2 > 9) { const bd = Math.min(r2 - 3, rng.range(5, 7)); push(cut([...band(sb + Lc + 3, sb + Lc + 3 + bd), ...strip(0, Math.min(W, W * rng.range(0.5, 0.9)))]), 'shed'); garden(sb + Lc + 3 + bd + 1); }
+        else if (r2 > 9) {
+          const bd = Math.min(r2 - 3, rng.range(5, 7));
+          push(cut([...band(sb + Lc + 3, sb + Lc + 3 + bd), ...strip(0, Math.min(W, W * rng.range(0.5, 0.9)))]), 'shed');
+          garden(sb + Lc + 3 + bd + 1);
+        }
       }
       return out;
     }
   }
 
   // courts pair up across party walls: the wing side alternates along the run
-  const k = (pl.order + (hint && hint.f > 0.5 ? 1 : 0)) % 2, c = 1 - k;
+  const k = (pl.order + (hint && hint.f > 0.5 ? 1 : 0)) % 2,
+    c = 1 - k;
   // a carriage passage through the front range of a rich wide plot, on the court side
   const passage = dense && cov >= 0.66 && wl > 0.6 && W >= 12 && rest >= 8 && rng.chance(0.6) ? rng.range(2.8, 3.4) : 0;
   // faubourg gaps between houses (rows → gaps → scattered houses)
@@ -160,29 +180,44 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
     const Wh = W - free;
     const parts = Wh > 2.8 * hd && Wh > 18 ? Math.ceil(Wh / (2.4 * hd)) : 1;
     for (let j = 0; j < parts; j++) {
-      const u0 = (gate && c === 0 ? free : 0) + (Wh * j) / parts, u1 = u0 + Wh / parts;
+      const u0 = (gate && c === 0 ? free : 0) + (Wh * j) / parts,
+        u1 = u0 + Wh / parts;
       const lim = parts > 1 ? lat(j === 0 ? -50 : u0, j === parts - 1 ? W + 50 : u1) : [];
       const h = cut([...band(sb, sb + hd), ...hp, ...lim], 12);
       if (h) houses.push(h);
     }
   }
-  if (!houses.length) { garden(0); return out; }
+  if (!houses.length) {
+    garden(0);
+    return out;
+  }
   // corner plots: the front house wraps the corner (an L along the side street), chamfered at an acute corner
   if (pl.sideFronts.length && cov < 0.84) {
     for (const [a, b] of pl.sideFronts) {
       const l = dist(a, b);
       const u = { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
       let m = { x: -u.y, y: u.x };
-      let cx = 0, cy = 0;
-      for (const q of poly) { cx += q.x; cy += q.y; }
-      cx /= poly.length; cy /= poly.length;
+      let cx = 0,
+        cy = 0;
+      for (const q of poly) {
+        cx += q.x;
+        cy += q.y;
+      }
+      cx /= poly.length;
+      cy /= poly.length;
       if ((cx - a.x) * m.x + (cy - a.y) * m.y < 0) m = { x: -m.x, y: -m.y };
       const d2 = Math.max(MIN_BW + 1, Math.min(hd, rng.range(bd0, bd1)));
       const wing = cut([{ p: a, n: m }, { p: { x: a.x + m.x * d2, y: a.y + m.y * d2 }, n: { x: -m.x, y: -m.y } }, ...band(sb + hd, D + 1)], 12);
       if (!wing) continue;
       excl.push({ p: { x: a.x + m.x * d2, y: a.y + m.y * d2 }, n: m });
       let joined = false;
-      for (let j = 0; j < houses.length && !joined; j++) { const u2 = joinFoot(houses[j], wing); if (u2) { houses[j] = u2; joined = true; } }
+      for (let j = 0; j < houses.length && !joined; j++) {
+        const u2 = joinFoot(houses[j], wing);
+        if (u2) {
+          houses[j] = u2;
+          joined = true;
+        }
+      }
       if (!joined && shapeOf(wing).w >= MIN_BW) push(wing, 'rear');
     }
   }
@@ -196,8 +231,11 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
       if (vi < 0) continue;
       const th = interiorAngle(cur, vi);
       if (th >= (80 * Math.PI) / 180) continue;
-      const v = cur[vi], a = cur[(vi - 1 + cur.length) % cur.length], b = cur[(vi + 1) % cur.length];
-      const ua = { x: (a.x - v.x) / (dist(a, v) || 1), y: (a.y - v.y) / (dist(a, v) || 1) }, ub = { x: (b.x - v.x) / (dist(b, v) || 1), y: (b.y - v.y) / (dist(b, v) || 1) };
+      const v = cur[vi],
+        a = cur[(vi - 1 + cur.length) % cur.length],
+        b = cur[(vi + 1) % cur.length];
+      const ua = { x: (a.x - v.x) / (dist(a, v) || 1), y: (a.y - v.y) / (dist(a, v) || 1) },
+        ub = { x: (b.x - v.x) / (dist(b, v) || 1), y: (b.y - v.y) / (dist(b, v) || 1) };
       let bis = { x: ua.x + ub.x, y: ua.y + ub.y };
       const bl = Math.hypot(bis.x, bis.y) || 1;
       bis = { x: bis.x / bl, y: bis.y / bl };
@@ -212,8 +250,17 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
   /** Joins the wing to the front house (an L) when the result is a proper footprint; else keeps it apart. */
   const attach = (wing: Polygon | null, kind: Bldg['kind']): boolean => {
     if (!wing) return false;
-    for (let j = 0; j < houses.length; j++) { const u2 = joinFoot(houses[j], wing); if (u2) { houses[j] = u2; return true; } }
-    if (shapeOf(wing).w >= MIN_BW) { push(wing, kind); return true; }
+    for (let j = 0; j < houses.length; j++) {
+      const u2 = joinFoot(houses[j], wing);
+      if (u2) {
+        houses[j] = u2;
+        return true;
+      }
+    }
+    if (shapeOf(wing).w >= MIN_BW) {
+      push(wing, kind);
+      return true;
+    }
     return false;
   };
   /**
@@ -223,10 +270,20 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
   const wingAt = (a: number, b: number, side: number, ww: number, join: boolean, mid?: number): boolean => {
     const mk = (w: number) => cut([...band(a, b), ...(mid !== undefined ? lat(mid - w / 2, mid + w / 2) : strip(side, w))]);
     const w1 = mk(ww);
-    if (join && w1) for (let j = 0; j < houses.length; j++) { const u2 = joinFoot(houses[j], w1); if (u2) { houses[j] = u2; return true; } }
+    if (join && w1)
+      for (let j = 0; j < houses.length; j++) {
+        const u2 = joinFoot(houses[j], w1);
+        if (u2) {
+          houses[j] = u2;
+          return true;
+        }
+      }
     const wMin = MIN_BW + 0.1;
     const w2 = ww >= wMin ? w1 : W - wMin >= 2.4 ? mk(wMin) : null;
-    if (w2 && shapeOf(w2).w >= MIN_BW) { push(w2, 'rear'); return true; }
+    if (w2 && shapeOf(w2).w >= MIN_BW) {
+      push(w2, 'rear');
+      return true;
+    }
     return false;
   };
   /** A stair turret in the inner corner of the court (rich houses): an octagon on the house–wing corner. */
@@ -237,7 +294,8 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
     const s = shift(sides[side], ww);
     const den = s.n.x * n.y - s.n.y * n.x;
     if (Math.abs(den) < 1e-6) return;
-    const c1 = s.n.x * s.p.x + s.n.y * s.p.y, c2 = n.x * (fa.x + n.x * d0) + n.y * (fa.y + n.y * d0);
+    const c1 = s.n.x * s.p.x + s.n.y * s.p.y,
+      c2 = n.x * (fa.x + n.x * d0) + n.y * (fa.y + n.y * d0);
     const p = { x: (c1 * n.y - s.n.y * c2) / den, y: (s.n.x * c2 - c1 * n.x) / den };
     const r = Math.min(rng.range(1.5, 2), 0.35 * (W - ww));
     // The side frame can survive a later parcel merge while the actual lot tapers or has a notch.
@@ -245,16 +303,29 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
     const octagon = orientPos(disk(p, r, 8));
     const old = clipPlot(octagon, band(sb, D), true);
     if (old.length === 1 && polyInside(poly, old[0])) {
-      for (let j = 0; j < houses.length; j++) { const u2 = joinFoot(houses[j], old[0]); if (u2) { houses[j] = u2; return; } }
+      for (let j = 0; j < houses.length; j++) {
+        const u2 = joinFoot(houses[j], old[0]);
+        if (u2) {
+          houses[j] = u2;
+          return;
+        }
+      }
       return;
     }
     const hps = band(sb, D);
     for (let i = 0; i < octagon.length; i++) {
-      const a = octagon[i], b = octagon[(i + 1) % octagon.length];
+      const a = octagon[i],
+        b = octagon[(i + 1) % octagon.length];
       hps.push({ p: a, n: { x: -(b.y - a.y), y: b.x - a.x } });
     }
     for (const oct of clipPlot(poly, hps, convex)) {
-      for (let j = 0; j < houses.length; j++) { const u2 = joinFoot(houses[j], oct); if (u2) { houses[j] = u2; return; } }
+      for (let j = 0; j < houses.length; j++) {
+        const u2 = joinFoot(houses[j], oct);
+        if (u2) {
+          houses[j] = u2;
+          return;
+        }
+      }
     }
   };
 
@@ -262,19 +333,27 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
     // FULL: house, then court segments (a wing on one side, the court beside it) alternating with ranges to the back
     // (one court behind the house; a second one only on very deep plots)
     const segs: { d0: number; d1: number; court: boolean }[] = [];
-    let d = d0, courts = 0;
+    let d = d0,
+      courts = 0;
     while (D - d > 0.5) {
-      if (D - d <= 10) { segs.push({ d0: d, d1: D + 1, court: false }); break; }
+      if (D - d <= 10) {
+        segs.push({ d0: d, d1: D + 1, court: false });
+        break;
+      }
       if (courts === 0 || (courts === 1 && D - d > 24)) {
         let Lc = rng.range(3, 5.5);
         if (D - d - Lc < 5) Lc = D - d - 5;
-        if (Lc >= 3) { segs.push({ d0: d, d1: d + Lc, court: true }); d += Lc; courts++; }
+        if (Lc >= 3) {
+          segs.push({ d0: d, d1: d + Lc, court: true });
+          d += Lc;
+          courts++;
+        }
       }
       const Lr = D - d <= 15 ? D + 1 - d : rng.range(7, 11);
       segs.push({ d0: d, d1: d + Lr, court: false });
       d += Lr;
     }
-    const Lsum = segs.filter((s) => s.court).reduce((s2, x) => s2 + x.d1 - x.d0, 0);
+    const Lsum = segs.filter(s => s.court).reduce((s2, x) => s2 + x.d1 - x.d0, 0);
     // (the gateway the access stage cuts through the front range, 1.6 m, opens into the court: it counts as unbuilt)
     const U = Math.max(8, (1 - cov) * A - (passage || 1.6) * hd - sb * W);
     // (courts pair up across the party wall: each plot gives ≥ 2.4 m)
@@ -285,19 +364,25 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
     const pair = both && (W - cw) / 2 >= 3.6 - 1e-9;
     let first = true;
     for (const s of segs) {
-      if (!s.court) { push(cut(band(s.d0, s.d1)), s.d1 > D ? 'back' : 'rear'); continue; }
+      if (!s.court) {
+        push(cut(band(s.d0, s.d1)), s.d1 > D ? 'back' : 'rear');
+        continue;
+      }
       // The clamped court leaves exactly 3.6 m for its wings; floating subtraction must not turn that equality
       // into a cross-plot court with no wing or stair turret.
       if (W - cw < 3.6 - 1e-9 || cw < 2.4) {
         // narrow plot: a court across the whole width, short (one light court)
         const Lc = clamp(U / Math.max(1, W), 3, s.d1 - s.d0);
         if (s.d1 - s.d0 - Lc >= MIN_BW) push(cut(band(s.d0 + Lc, s.d1)), 'rear');
-        else if (s.d1 - s.d0 - Lc > 0.5) { /* the rest of the segment joins the court */ }
+        else if (s.d1 - s.d0 - Lc > 0.5) {
+          /* the rest of the segment joins the court */
+        }
         continue;
       }
       if (pair) {
         const w1 = (W - cw) / 2;
-        wingAt(s.d0, s.d1, k, w1, first); wingAt(s.d0, s.d1, c, w1, first);
+        wingAt(s.d0, s.d1, k, w1, first);
+        wingAt(s.d0, s.d1, c, w1, first);
       } else {
         wingAt(s.d0, s.d1, k, W - cw, first);
       }
@@ -344,10 +429,13 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
     let end = d0;
     if (cov >= 0.45 || (wl > 0.5 && need > 20)) {
       const ww = clamp(W * rng.range(0.38, 0.55), 3.6, 6);
-      const len = clamp((cov >= 0.45 ? 0.8 : 1) * need / ww, 0, cov >= 0.45 ? rest - 3 - MIN_BW : Math.min(rest - 3, rng.range(4, 9)));
+      const len = clamp(((cov >= 0.45 ? 0.8 : 1) * need) / ww, 0, cov >= 0.45 ? rest - 3 - MIN_BW : Math.min(rest - 3, rng.range(4, 9)));
       if (len >= 3 && W - ww >= 2) {
         const tee = !dense && W >= 11 && rng.chance(0.5);
-        if (wingAt(d0, d0 + len, k, ww, true, tee ? W / 2 : undefined)) { need -= Math.max(ww, MIN_BW) * len; end = d0 + len; }
+        if (wingAt(d0, d0 + len, k, ww, true, tee ? W / 2 : undefined)) {
+          need -= Math.max(ww, MIN_BW) * len;
+          end = d0 + len;
+        }
       }
     }
     // the outbuilding: shed, stable or workshop, clearly smaller than the house. Gardens (cov ≥ 0.45): a barn or
@@ -364,7 +452,10 @@ export function burgageHouse(pl: Plot, cov: number, P: MorphologyParams, rng: Rn
       if (need > 12 && D - end - y >= MIN_BW + 1.5) {
         const sd = Math.min(D - end - y - 1, rng.range(MIN_BW, 6.5));
         const sw = clamp(Math.min(need / sd, rng.range(4.5, 7)), MIN_BW, W);
-        if (sd >= MIN_BW) { push(cut([...band(end + y, end + y + sd), ...(sw < W - 1 ? strip(c, sw, W - sw > 2 ? rng.range(0, Math.min(1.5, W - sw - 1)) : 0) : [])]), 'shed'); end += y + sd; }
+        if (sd >= MIN_BW) {
+          push(cut([...band(end + y, end + y + sd), ...(sw < W - 1 ? strip(c, sw, W - sw > 2 ? rng.range(0, Math.min(1.5, W - sw - 1)) : 0) : [])]), 'shed');
+          end += y + sd;
+        }
       }
     }
     for (const h of houses) out.unshift({ poly: h, kind: 'house' });

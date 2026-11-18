@@ -10,7 +10,8 @@ const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await page.context().grantPermissions(['local-network-access'], { origin: base });
-  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
   await page.goto(base + '/?gpu=0&profile=natural&mode=relief&seed=42');
   await page.waitForFunction(() => typeof window.captureNeuralIllustration === 'function');
   await page.waitForFunction(() => !document.querySelector('#status')?.textContent.includes('Connecting'), null, { timeout: 60000 });
@@ -28,15 +29,31 @@ try {
   await page.screenshot({ path: new URL('neural-dialog.png', output).pathname.replace(/^\/(\w:)/, '$1'), fullPage: true });
   const overlays = await page.evaluate(async () => {
     const { captureViewport } = await import('/illustration/index.mjs');
-    const waterDraw = hydrology.draw, toolsDraw = mapTools.draw;
+    const waterDraw = hydrology.draw,
+      toolsDraw = mapTools.draw;
     try {
-      hydrology.draw = context => { context.fillStyle = '#fc1020'; context.fillRect(20, 20, 40, 40); };
-      mapTools.draw = context => { context.fillStyle = '#20fc10'; context.fillRect(20, 20, 40, 40); };
-      const captured = await window.captureNeuralIllustration(captureViewport), bitmap = await createImageBitmap(captured.image);
-      const probe = document.createElement('canvas'); probe.width = bitmap.width; probe.height = bitmap.height;
-      const context = probe.getContext('2d'); context.drawImage(bitmap, 0, 0); bitmap.close();
-      return { pixel: [...context.getImageData(Math.round(30 / W * probe.width), Math.round(30 / H * probe.height), 1, 1).data], active: window.neuralIllustrationCaptureActive };
-    } finally { hydrology.draw = waterDraw; mapTools.draw = toolsDraw; draw(); }
+      hydrology.draw = context => {
+        context.fillStyle = '#fc1020';
+        context.fillRect(20, 20, 40, 40);
+      };
+      mapTools.draw = context => {
+        context.fillStyle = '#20fc10';
+        context.fillRect(20, 20, 40, 40);
+      };
+      const captured = await window.captureNeuralIllustration(captureViewport),
+        bitmap = await createImageBitmap(captured.image);
+      const probe = document.createElement('canvas');
+      probe.width = bitmap.width;
+      probe.height = bitmap.height;
+      const context = probe.getContext('2d');
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return { pixel: [...context.getImageData(Math.round((30 / W) * probe.width), Math.round((30 / H) * probe.height), 1, 1).data], active: window.neuralIllustrationCaptureActive };
+    } finally {
+      hydrology.draw = waterDraw;
+      mapTools.draw = toolsDraw;
+      draw();
+    }
   });
   assert.deepEqual(overlays.pixel, [252, 16, 32, 255], 'Keep the water layer while suppressing measurement tools.');
   assert.equal(overlays.active, false);
@@ -51,4 +68,6 @@ try {
   await page.screenshot({ path: new URL('neural-globe-dialog.png', output).pathname.replace(/^\/(\w:)/, '$1'), fullPage: true });
   assert.deepEqual(errors, []);
   console.log('Neural Earth illustration capture passed: map, globe, physical water, clean editor overlays.');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

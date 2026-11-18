@@ -7,7 +7,8 @@ import { assertNeuralCompute } from './neuralExecution';
 import { CLIMATE_VALUES, CLIMATE_ZONE_VALUES } from '../../../rust/bridge/terrainClimate';
 import type { ClimateValues } from '../../../rust/bridge/terrainClimate';
 /** A zone's values, or a legacy preset's when the name is one of the V1 presets. */
-const climatePresetValues = (zone: string | undefined, name: string): ClimateValues => (zone && (CLIMATE_ZONE_VALUES as Record<string, ClimateValues>)[zone]) || (CLIMATE_VALUES as Record<string, ClimateValues>)[name] || (CLIMATE_ZONE_VALUES as Record<string, ClimateValues>)[name] || CLIMATE_ZONE_VALUES.temperate;
+const climatePresetValues = (zone: string | undefined, name: string): ClimateValues =>
+  (zone && (CLIMATE_ZONE_VALUES as Record<string, ClimateValues>)[zone]) || (CLIMATE_VALUES as Record<string, ClimateValues>)[name] || (CLIMATE_ZONE_VALUES as Record<string, ClimateValues>)[name] || CLIMATE_ZONE_VALUES.temperate;
 import { DEFAULT_FRACTAL_DETAIL } from '../../../rust/bridge/terrainAdjust';
 import type { TerrainProgressCallback } from '../../../rust/bridge/terrainProgress';
 import { isCompactProcedural, type GenerationControl } from '../../../rust/bridge/terrainGenerationRecipe';
@@ -38,8 +39,7 @@ export interface DetectPlatformOptions {
 /** Native services deliberately accept loopback only; a project cannot redirect requests. */
 export function loopbackServer(value: string): string {
   const url = new URL(value);
-  if (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-    || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+  if (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
     throw new Error('Le moteur local doit utiliser une adresse HTTP loopback (127.0.0.1 ou localhost).');
   }
   return url.origin;
@@ -49,26 +49,24 @@ export type RuntimeLocation = Pick<Location, 'hostname' | 'protocol'> & Partial<
 export function runtimeOptions(location?: Partial<RuntimeLocation>): DetectPlatformOptions {
   const current = location ?? (typeof window !== 'undefined' ? window.location : undefined);
   const params = new URLSearchParams(current?.search ?? '');
-  const desktop = current?.protocol === 'tauri:' || /(?:^|\.)tauri\.localhost$/.test(current?.hostname ?? '')
-    || !location && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const desktop = current?.protocol === 'tauri:' || /(?:^|\.)tauri\.localhost$/.test(current?.hostname ?? '') || (!location && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window);
   // Workers receive the page profile through their name, never from saved recipes.
   const workerLocal = !current && /(?:^|\s)profile=local\b/.test((globalThis as { name?: string }).name ?? '');
   // A development URL remains a full web app until local is explicitly requested.
-  return {
-    profile: desktop || workerLocal || params.get('profile') === 'local' ? 'local' : 'web',
-    localServer: params.get('localServer') ?? 'http://127.0.0.1:8791',
-    pythonServer: params.get('pythonServer') ?? 'http://127.0.0.1:8793',
-  };
+  return { profile: desktop || workerLocal || params.get('profile') === 'local' ? 'local' : 'web', localServer: params.get('localServer') ?? 'http://127.0.0.1:8791', pythonServer: params.get('pythonServer') ?? 'http://127.0.0.1:8793' };
 }
 
 async function serviceStatus(server: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   // A busy page delays the reply's task, not the service: count only responsive time.
-  const timeout = new AbortController(), stop = responsiveTimeout(2500, () => timeout.abort(new DOMException('Service status timed out.', 'TimeoutError')));
+  const timeout = new AbortController(),
+    stop = responsiveTimeout(2500, () => timeout.abort(new DOMException('Service status timed out.', 'TimeoutError')));
   try {
     const response = await fetch(`${server}/status`, { signal: signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal, cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
-  } finally { stop(); }
+  } finally {
+    stop();
+  }
 }
 
 /** Carry the page's execution policy into workers, whose URL is a bundled script. */
@@ -81,7 +79,8 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
   const pythonServer = loopbackServer(options.pythonServer ?? 'http://127.0.0.1:8793');
   const neuralServer = loopbackServer(options.neuralServer ?? 'http://127.0.0.1:8792');
   const result: PlatformCapabilities = {
-    cpu: true, webgpu: false,
+    cpu: true,
+    webgpu: false,
     desktop: typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || /(?:^|\.)tauri\.localhost$/.test(window.location.hostname) || window.location.protocol === 'tauri:'),
     local: { available: false, server: localServer, capabilities: [] },
     python: { available: false, server: pythonServer, loaded: false },
@@ -98,8 +97,11 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
         result.webgpu = true;
         result.adapterName = adapter.info?.description || adapter.info?.device || 'WebGPU';
       }
-    } catch { /* The API may exist while adapter/device creation is disabled. */ }
-    finally { device?.destroy(); }
+    } catch {
+      /* The API may exist while adapter/device creation is disabled. */
+    } finally {
+      device?.destroy();
+    }
     progress({ phase: result.webgpu ? 'ready' : 'unavailable', source: 'browser', message: result.webgpu ? 'WebGPU disponible · CPU toujours disponible' : 'Calcul CPU disponible · WebGPU indisponible' });
   };
   const rust = async () => {
@@ -121,11 +123,8 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
       const status = await serviceStatus(pythonServer, options.signal);
       // This service currently requires CUDA. Do not present it as Python/CPU.
       if (status.backend !== 'python-cuda') throw new Error('Service neuronal Python/CUDA non reconnu');
-      Object.assign(result.python, { available: true, backend: 'python-cuda', loaded: status.loaded === true,
-        state: typeof status.state === 'string' ? status.state : undefined,
-        message: typeof status.message === 'string' ? status.message : undefined });
-      progress({ phase: status.state === 'loading' ? 'loading' : 'ready', source: 'python',
-        message: typeof status.message === 'string' ? status.message : 'Python/CUDA connecté · modèles chargés à la demande' });
+      Object.assign(result.python, { available: true, backend: 'python-cuda', loaded: status.loaded === true, state: typeof status.state === 'string' ? status.state : undefined, message: typeof status.message === 'string' ? status.message : undefined });
+      progress({ phase: status.state === 'loading' ? 'loading' : 'ready', source: 'python', message: typeof status.message === 'string' ? status.message : 'Python/CUDA connecté · modèles chargés à la demande' });
     } catch (error) {
       result.python.error = String(error);
       progress({ phase: 'unavailable', source: 'python', message: 'Neuronal Python/CUDA indisponible' });
@@ -139,7 +138,7 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
     } catch (error) {
       result.nativeNeural.error = String(error);
       // The desktop app ships the native neural executable and starts it on demand (ensureDesktopNeuralServer).
-      const desktop = typeof window !== 'undefined' ? window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown }; __TAURI__?: { core?: { invoke?: unknown } } } : undefined;
+      const desktop = typeof window !== 'undefined' ? (window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown }; __TAURI__?: { core?: { invoke?: unknown } } }) : undefined;
       if (desktop?.__TAURI__?.core?.invoke ?? desktop?.__TAURI_INTERNALS__?.invoke) result.nativeNeural.available = true;
     }
   };
@@ -165,12 +164,20 @@ export function observePythonStatus(server: string, onProgress: (event: Platform
     if (stopped || signal?.aborted) return;
     try {
       const status = await serviceStatus(origin, signal);
-      if (!stopped && status.backend === 'python-cuda') onProgress({ source: 'python', phase: status.state === 'loading' ? 'loading' : 'ready',
-        message: typeof status.message === 'string' ? status.message : 'Calcul neuronal Python/CUDA…' });
-    } catch { /* A long inference can momentarily delay status; the request owns the error. */ }
-    if (!stopped && !signal?.aborted) timer = setTimeout(() => { void poll(); }, 750);
+      if (!stopped && status.backend === 'python-cuda') onProgress({ source: 'python', phase: status.state === 'loading' ? 'loading' : 'ready', message: typeof status.message === 'string' ? status.message : 'Calcul neuronal Python/CUDA…' });
+    } catch {
+      /* A long inference can momentarily delay status; the request owns the error. */
+    }
+    if (!stopped && !signal?.aborted)
+      timer = setTimeout(() => {
+        void poll();
+      }, 750);
   };
-  const stop = () => { stopped = true; clearTimeout(timer); signal?.removeEventListener('abort', stop); };
+  const stop = () => {
+    stopped = true;
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', stop);
+  };
   signal?.addEventListener('abort', stop, { once: true });
   void poll();
   return stop;
@@ -178,37 +185,60 @@ export function observePythonStatus(server: string, onProgress: (event: Platform
 
 /** Native neural weights and GPU-kernel warmup run on a separate service thread. */
 export function observeNativeNeuralStatus(server: string, onProgress: (event: PlatformProgress) => void, signal?: AbortSignal): () => void {
-  const origin = loopbackServer(server); let stopped = false, timer: ReturnType<typeof setTimeout> | undefined;
+  const origin = loopbackServer(server);
+  let stopped = false,
+    timer: ReturnType<typeof setTimeout> | undefined;
   const poll = async () => {
     if (stopped || signal?.aborted) return;
     try {
       const status = await serviceStatus(origin, signal);
-      if (!stopped && typeof status.state === 'string' && typeof status.message === 'string') onProgress({ source: 'rust',
-        phase: status.state === 'loading' || status.state === 'warming' ? 'loading' : status.state === 'error' ? 'unavailable' : 'ready', message: status.message });
-    } catch { /* The generation request owns endpoint errors; status is informational. */ }
-    if (!stopped && !signal?.aborted) timer = setTimeout(() => { void poll(); }, 750);
+      if (!stopped && typeof status.state === 'string' && typeof status.message === 'string') onProgress({ source: 'rust', phase: status.state === 'loading' || status.state === 'warming' ? 'loading' : status.state === 'error' ? 'unavailable' : 'ready', message: status.message });
+    } catch {
+      /* The generation request owns endpoint errors; status is informational. */
+    }
+    if (!stopped && !signal?.aborted)
+      timer = setTimeout(() => {
+        void poll();
+      }, 750);
   };
-  const stop = () => { stopped = true; clearTimeout(timer); signal?.removeEventListener('abort', stop); };
-  signal?.addEventListener('abort', stop, { once: true }); void poll(); return stop;
+  const stop = () => {
+    stopped = true;
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', stop);
+  };
+  signal?.addEventListener('abort', stop, { once: true });
+  void poll();
+  return stop;
 }
 
 export interface EngineHeightRequest {
   /** Transient inspection request, never stored as part of the terrain recipe. */
   terrainStage?: string;
-  seed: string; width: number; relief: TerrainRelief;
+  seed: string;
+  width: number;
+  relief: TerrainRelief;
   coast?: 'none' | 'N' | 'E' | 'S' | 'W' | 'random';
-  climate?: NeuralClimate; compute: 'cpu' | 'gpu';
+  climate?: NeuralClimate;
+  compute: 'cpu' | 'gpu';
   /** False when GPU was detected automatically: CPU sampling remains a valid capability fallback. */
   strictCompute?: boolean;
   source: 'procedural' | 'procedural-phasor' | 'neural-wasm' | 'neural-python' | 'neural';
-  native?: boolean; localServer?: string; pythonServer?: string; neuralServer?: string; neuralAssets?: string;
-  resolution?: number; erosion?: number;
+  native?: boolean;
+  localServer?: string;
+  pythonServer?: string;
+  neuralServer?: string;
+  neuralAssets?: string;
+  resolution?: number;
+  erosion?: number;
   /** Flat bench parameters, fully merged by the orchestrator; optional for older callers. */
   terrain?: V2TerrainSettings;
 }
 export interface EngineHeightResult {
-  importedHeight: ImportedHeight; heightScale: number; importSeaLevel: number;
-  backend: string; generationBackend: string;
+  importedHeight: ImportedHeight;
+  heightScale: number;
+  importSeaLevel: number;
+  backend: string;
+  generationBackend: string;
   stats: Record<string, string | number>;
   /** Exact overview, water network and physical field retained for rendering/export and project round trips. */
   terrain: TerrainData;
@@ -238,29 +268,42 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     onProgress?.('Vérification du runtime neuronal et des modèles disponibles…');
     const files = ['magna_urbis_neural_wasm.js', 'magna_urbis_neural_wasm_bg.wasm'];
     try {
-      await Promise.all(files.map(async file => {
-        const response = await fetch(new URL(file, neuralAssets), { method: 'HEAD', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
-        if (!response.ok) throw new Error(`${file} : HTTP ${response.status}`);
-      }));
+      await Promise.all(
+        files.map(async file => {
+          const response = await fetch(new URL(file, neuralAssets), { method: 'HEAD', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
+          if (!response.ok) throw new Error(`${file} : HTTP ${response.status}`);
+        }),
+      );
     } catch (error) {
       signal?.throwIfAborted();
       if (import.meta.env?.DEV) console.warn('Run npm run prepare:v2 -- --neural in web/ (complete ../infinite_map required).', error);
       throw new Error('Neural runtime unavailable. Check your connection and retry.');
     }
   }
-  onProgress?.('Chargement du module de génération du terrain…',{stage:'terrain-module'});
+  onProgress?.('Chargement du module de génération du terrain…', { stage: 'terrain-module' });
   const { sampleRustTerrain } = await import('../../../rust/bridge/terrain');
   signal?.throwIfAborted();
   const coasts = { none: 0, N: 1, E: 4, S: 16, W: 64, random: 255 };
-  const custom = request.terrain ?? {}, defaults = defaultTerrainSettings();
-  if (usesNeural && request.source !== 'neural-python' && [custom.coarseModel, custom.baseModel, custom.decoderModel].some(Boolean)) throw new Error('Checkpoint selection is available with Python/CUDA. Browser and native Rust neural generation use their installed model profile.');
+  const custom = request.terrain ?? {},
+    defaults = defaultTerrainSettings();
+  if (usesNeural && request.source !== 'neural-python' && [custom.coarseModel, custom.baseModel, custom.decoderModel].some(Boolean))
+    throw new Error('Checkpoint selection is available with Python/CUDA. Browser and native Rust neural generation use their installed model profile.');
   const settings: TerrainSettings = {
-    ...defaults, ...custom,
-    seed: request.seed, width: request.width, motifSize: custom.motifSize ?? 10000, relief: custom.zones ? 'hills' : custom.relief ?? request.relief, // same carrier family as effectiveTerrainSettings
-    coastMask: custom.coastMask ?? coasts[request.coast ?? 'none'], erosion: custom.erosion ?? request.erosion ?? 1, mountainMix: custom.mountainMix ?? .5, resolution: n,
+    ...defaults,
+    ...custom,
+    seed: request.seed,
+    width: request.width,
+    motifSize: custom.motifSize ?? 10000,
+    relief: custom.zones ? 'hills' : (custom.relief ?? request.relief), // same carrier family as effectiveTerrainSettings
+    coastMask: custom.coastMask ?? coasts[request.coast ?? 'none'],
+    erosion: custom.erosion ?? request.erosion ?? 1,
+    mountainMix: custom.mountainMix ?? 0.5,
+    resolution: n,
     compute: custom.compute ?? (request.compute === 'cpu' ? 'wasm' : 'gpu-f32'),
     generationCompute: custom.generationCompute ?? (request.native && !usesNeural ? 'native' : request.compute === 'cpu' ? 'cpu' : undefined),
-    source: request.source, climate: custom.climate ?? request.climate ?? 'temperate', neuralAssets,
+    source: request.source,
+    climate: custom.climate ?? request.climate ?? 'temperate',
+    neuralAssets,
     neuralServer: request.source === 'neural-python' ? pythonServer : request.source === 'neural' ? neuralServer : undefined,
     hydrology: { ...DEFAULT_HYDROLOGY, ...custom.hydrology },
     neuralTuning: { ...DEFAULT_NEURAL_TUNING, ...custom.neuralTuning },
@@ -272,10 +315,10 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
   if (settings.generationCompute === 'native' && !request.native) throw new Error('Native generation requires the local Rust backend.');
   if (request.compute === 'cpu' && (settings.compute === 'gpu-f32' || ['gpu', 'gpu-all', 'gpu-erosion'].includes(settings.generationCompute ?? ''))) throw new Error('CPU execution conflicts with explicit GPU terrain controls. Choose automatic/GPU or reset those controls.');
   if (request.compute === 'gpu' && settings.compute === 'wasm' && !['neural-python', 'neural'].includes(request.source)) throw new Error('GPU execution conflicts with explicit WASM CPU sampling. Choose automatic/CPU or reset the sampling control.');
-  if (!['procedural', 'procedural-phasor'].includes(request.source) && !custom.sketch?.processing && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(settings.relief)) throw new Error('This relief family is unavailable with neural generation.');
-  const stopObserving = usesNeural && request.source === 'neural-python'
-    ? observePythonStatus(pythonServer, event => onProgress?.(event.message), signal)
-    : usesNeural && request.source === 'neural' ? observeNativeNeuralStatus(neuralServer, event => onProgress?.(event.message), signal) : () => {};
+  if (!['procedural', 'procedural-phasor'].includes(request.source) && !custom.sketch?.processing && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(settings.relief))
+    throw new Error('This relief family is unavailable with neural generation.');
+  const stopObserving =
+    usesNeural && request.source === 'neural-python' ? observePythonStatus(pythonServer, event => onProgress?.(event.message), signal) : usesNeural && request.source === 'neural' ? observeNativeNeuralStatus(neuralServer, event => onProgress?.(event.message), signal) : () => {};
   try {
     const until = request.terrainStage ? TERRAIN_STAGE_OUTPUTS[request.terrainStage] : undefined;
     const intermediate = until && settings.procedural && ['hills', 'valley', 'mountains', 'mixed', 'high-mountains', 'canyon'].includes(settings.relief) && !usesNeural && !custom.sketch && !custom.zones;
@@ -283,46 +326,65 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     let executedBackend: 'cpu' | 'gpu' | 'native' = 'cpu';
     // Stage timings for the V2 chain: the decomposed recipe already selects the staged CPU pipeline,
     // so a preview-free control only reports stage boundaries (no readbacks, no extra copies).
-    const lab: GenerationControl | undefined = settings.procedural && !usesNeural && !custom.sketch && !custom.zones ? {
-      previews: !!intermediate,
-      backend: backend => { executedBackend = backend; },
-      ...(intermediate ? { until } : {}),
-      before: async stage => { onProgress?.(`Procedural stage · ${stage}`, { stage: `pipeline:${stage}` }); },
-      cached: async (stage, height) => {
-        if (height) lastHeight = height;
-        onProgress?.(`Procedural stage · ${stage} · cached`, { stage: `pipeline:${stage}:cached` });
-        if (intermediate && stage === until) throw new TerrainStageOutput(height ?? lastHeight ?? new Float32Array(n * n), stage);
-      },
-      after: async (stage, height) => {
-        if (height) lastHeight = height;
-        onProgress?.(`Procedural stage · ${stage} · done`, { stage: `pipeline:${stage}:done` });
-        if (intermediate && stage === until) throw new TerrainStageOutput(height ?? lastHeight ?? new Float32Array(n * n), stage);
-      },
-    } : undefined;
+    const lab: GenerationControl | undefined =
+      settings.procedural && !usesNeural && !custom.sketch && !custom.zones
+        ? {
+            previews: !!intermediate,
+            backend: backend => {
+              executedBackend = backend;
+            },
+            ...(intermediate ? { until } : {}),
+            before: async stage => {
+              onProgress?.(`Procedural stage · ${stage}`, { stage: `pipeline:${stage}` });
+            },
+            cached: async (stage, height) => {
+              if (height) lastHeight = height;
+              onProgress?.(`Procedural stage · ${stage} · cached`, { stage: `pipeline:${stage}:cached` });
+              if (intermediate && stage === until) throw new TerrainStageOutput(height ?? lastHeight ?? new Float32Array(n * n), stage);
+            },
+            after: async (stage, height) => {
+              if (height) lastHeight = height;
+              onProgress?.(`Procedural stage · ${stage} · done`, { stage: `pipeline:${stage}:done` });
+              if (intermediate && stage === until) throw new TerrainStageOutput(height ?? lastHeight ?? new Float32Array(n * n), stage);
+            },
+          }
+        : undefined;
     const started = performance.now();
     let snapshot = false;
-    const result = await sampleRustTerrain({
-      id: 1, generation: 1, kind: 'overview',
-      ...(request.native ? { runtime: { profile: 'local' as const, server: localServer } } : {}),
-      settings,
-      region: { x: 0, y: 0, extent: request.width, resolution: n },
-      // SVG mode applies conditioning, hydrology carving and fractal detail to the retained height samples.
-      display: 'svg',
-      retainField: true,
-    }, undefined, onProgress, lab).catch(error => {
+    const result = await sampleRustTerrain(
+      {
+        id: 1,
+        generation: 1,
+        kind: 'overview',
+        ...(request.native ? { runtime: { profile: 'local' as const, server: localServer } } : {}),
+        settings,
+        region: { x: 0, y: 0, extent: request.width, resolution: n },
+        // SVG mode applies conditioning, hydrology carving and fractal detail to the retained height samples.
+        display: 'svg',
+        retainField: true,
+      },
+      undefined,
+      onProgress,
+      lab,
+    ).catch(error => {
       if (!(error instanceof TerrainStageOutput)) throw error;
       snapshot = true;
       const data = previewTerrainData(error.height, settings, n, performance.now() - started);
-      if (executedBackend === 'native') { data.backend = 'native'; data.generationBackend = 'native'; }
-      else if (executedBackend === 'gpu') { data.backend = 'gpu-f32'; data.generationBackend = isCompactProcedural(settings) ? 'compact-gpu-f32' : 'gpu-erosion-f32'; }
+      if (executedBackend === 'native') {
+        data.backend = 'native';
+        data.generationBackend = 'native';
+      } else if (executedBackend === 'gpu') {
+        data.backend = 'gpu-f32';
+        data.generationBackend = isCompactProcedural(settings) ? 'compact-gpu-f32' : 'gpu-erosion-f32';
+      }
       return data;
     });
     signal?.throwIfAborted();
     if (request.compute === 'gpu' && request.strictCompute !== false && request.source !== 'neural-python' && request.source !== 'neural' && result.backend !== 'gpu-f32' && result.backend !== 'native') {
       throw new Error(`Le calcul GPU demandé a échoué : ${result.backendReason ?? result.generationReason ?? 'GPU indisponible'}. Choisissez CPU ou Automatique.`);
     }
-    if(!usesNeural&&!settings.sketch&&!settings.zones&&['gpu','gpu-all','gpu-erosion'].includes(custom.generationCompute??'')&&(result.generationBackend??'cpu')==='cpu'&&result.generationReason?.startsWith('GPU generation unavailable: ')){
-      throw new Error(`La génération GPU demandée a échoué : ${result.generationReason??'GPU indisponible'}. Choisissez CPU ou Automatique.`);
+    if (!usesNeural && !settings.sketch && !settings.zones && ['gpu', 'gpu-all', 'gpu-erosion'].includes(custom.generationCompute ?? '') && (result.generationBackend ?? 'cpu') === 'cpu' && result.generationReason?.startsWith('GPU generation unavailable: ')) {
+      throw new Error(`La génération GPU demandée a échoué : ${result.generationReason ?? 'GPU indisponible'}. Choisissez CPU ou Automatique.`);
     }
     if (!snapshot && isCompactProcedural(settings) && request.compute === 'gpu' && request.strictCompute !== false && result.generationBackend !== 'compact-gpu-f32') throw new Error('Compact procedural GPU generation was requested but not used.');
     if (result.height.length !== n * n || result.height.some(v => !Number.isFinite(v))) throw new Error('Sortie moteur incomplète ou invalide.');
@@ -331,21 +393,39 @@ export async function generateEngineHeight(request: EngineHeightRequest, onProgr
     if (result.hydrologyError) throw new Error(`Hydrology failed: ${result.hydrologyError}. Change the water settings or disable hydrology explicitly.`);
     if (settings.hydrology?.compute === 'gpu' && result.hydrology && result.hydrology.backend !== 'gpu-f32') throw new Error(`Hydrology GPU request could not be fulfilled: ${result.hydrology.backendReason ?? 'CPU result'}.`);
     if (snapshot) onProgress?.(`Sortie intermédiaire · ${request.terrainStage} · ${backend}`);
-    else onProgress?.(`Relief et eau terminés · ${backend}${result.definition ? ` · source ${result.definition.n}² / ${result.definition.spacing.toFixed(2)} m${result.definition.erosionSpacing ? ` · érosion ${result.definition.erosionSpacing.toFixed(2)} m` : ''}` : ''} · biomes ensuite`);
+    else
+      onProgress?.(
+        `Relief et eau terminés · ${backend}${result.definition ? ` · source ${result.definition.n}² / ${result.definition.spacing.toFixed(2)} m${result.definition.erosionSpacing ? ` · érosion ${result.definition.erosionSpacing.toFixed(2)} m` : ''}` : ''} · biomes ensuite`,
+      );
     return {
       importedHeight: { w: n, h: n, rgba: new Uint8Array(0), elevations: result.height.slice(), name: `${backend}-${request.seed}` },
-      heightScale: Math.max(1, result.maxHeight), importSeaLevel: 0, backend, generationBackend, terrain: result,
-      stats: { backend, generationBackend, 'ms.reliefEngine': Math.round(result.generationMs),
-        ...(result.definition ? { sourceResolution: result.definition.n, sourceSpacing: result.definition.spacing,
-          requestedSpacing: result.definition.requestedSpacing,
-          ...(result.definition.nativeSpacing ? { nativeSpacing: result.definition.nativeSpacing } : {}),
-          ...(result.definition.erosionSpacing ? { erosionSpacing: result.definition.erosionSpacing } : {}) } : {}),
+      heightScale: Math.max(1, result.maxHeight),
+      importSeaLevel: 0,
+      backend,
+      generationBackend,
+      terrain: result,
+      stats: {
+        backend,
+        generationBackend,
+        'ms.reliefEngine': Math.round(result.generationMs),
+        ...(result.definition
+          ? {
+              sourceResolution: result.definition.n,
+              sourceSpacing: result.definition.spacing,
+              requestedSpacing: result.definition.requestedSpacing,
+              ...(result.definition.nativeSpacing ? { nativeSpacing: result.definition.nativeSpacing } : {}),
+              ...(result.definition.erosionSpacing ? { erosionSpacing: result.definition.erosionSpacing } : {}),
+            }
+          : {}),
         ...(result.definition?.regionalErosionSpacing ? { regionalErosionSpacing: result.definition.regionalErosionSpacing } : {}),
         samplingBackend: result.backend ?? 'wasm',
         hydrologyBackend: result.hydrology?.backend ?? (result.water ? 'vector-cpu' : 'disabled'),
         ...(result.generationReason ? { generationReason: result.generationReason } : {}),
         ...(result.neural?.modelIdentity ? { modelIdentity: result.neural.modelIdentity } : {}),
-        ...(result.neural?.profile ? { modelProfile: result.neural.profile } : {}) },
+        ...(result.neural?.profile ? { modelProfile: result.neural.profile } : {}),
+      },
     };
-  } finally { stopObserving(); }
+  } finally {
+    stopObserving();
+  }
 }

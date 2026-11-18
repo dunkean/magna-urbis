@@ -21,13 +21,27 @@ let loading: Promise<void> | undefined;
 const generationRealm = inWorker() && /(?:^|\s)threads=/.test((globalThis as { name?: string }).name ?? '');
 /** Loads the single-thread package of this realm (once); a generation worker's core package. */
 export function loadRenderGeometry(): Promise<void> {
-  return loading ??= (generationRealm ? loadCoreWasm() : loadSingleWasm()).then(module => { wasm = module as unknown as RenderGeometryWasm; }, error => { loading = undefined; throw error; });
+  return (loading ??= (generationRealm ? loadCoreWasm() : loadSingleWasm()).then(
+    module => {
+      wasm = module as unknown as RenderGeometryWasm;
+    },
+    error => {
+      loading = undefined;
+      throw error;
+    },
+  ));
 }
 /** Whether the synchronous calls work in this realm. */
-onCoreWasmReset(() => { wasm = undefined; loading = undefined; void loadRenderGeometry(); });
+onCoreWasmReset(() => {
+  wasm = undefined;
+  loading = undefined;
+  void loadRenderGeometry();
+});
 export const renderGeometryReady = (): boolean => wasm !== undefined;
 // Started on import: a realm that draws long after loading never waits.
-loadRenderGeometry().catch(() => { /* reported by the first synchronous call */ });
+loadRenderGeometry().catch(() => {
+  /* reported by the first synchronous call */
+});
 function core(): RenderGeometryWasm {
   if (!wasm) throw new Error('Render geometry WASM is not loaded yet: await loadRenderGeometry() before drawing.');
   return wasm;
@@ -37,23 +51,35 @@ type Ring = readonly Point[];
 /** Flat shape list: [shapes, (rings, (points, x, y, ...)*)*]. */
 function writeShapes(shapes: readonly (readonly Ring[])[]): Float64Array {
   let size = 1;
-  for (const rings of shapes) { size++; for (const r of rings) size += 1 + 2 * r.length; }
+  for (const rings of shapes) {
+    size++;
+    for (const r of rings) size += 1 + 2 * r.length;
+  }
   const out = new Float64Array(size);
   let at = 0;
   out[at++] = shapes.length;
   for (const rings of shapes) {
     out[at++] = rings.length;
-    for (const r of rings) { out[at++] = r.length; for (const p of r) { out[at++] = p.x; out[at++] = p.y; } }
+    for (const r of rings) {
+      out[at++] = r.length;
+      for (const p of r) {
+        out[at++] = p.x;
+        out[at++] = p.y;
+      }
+    }
   }
   return out;
 }
 function readShapes(data: Float64Array, start: number): { shapes: Shape[]; end: number } {
   let at = start;
-  const count = data[at++], shapes: Shape[] = [];
+  const count = data[at++],
+    shapes: Shape[] = [];
   for (let s = 0; s < count; s++) {
-    const rings = data[at++], list: Point[][] = [];
+    const rings = data[at++],
+      list: Point[][] = [];
     for (let k = 0; k < rings; k++) {
-      const points = data[at++], ring: Point[] = new Array(points);
+      const points = data[at++],
+        ring: Point[] = new Array(points);
       for (let i = 0; i < points; i++, at += 2) ring[i] = { x: data[at], y: data[at + 1] };
       list.push(ring);
     }
@@ -68,7 +94,11 @@ export function cityCanals(groups: readonly (readonly Ring[])[]): Shape[] {
 }
 const shapeRings = (s: Shape): Ring[] => [s.outer, ...s.holes];
 /** Physical water raster of a city (wet = 1..3). */
-export interface GroundRaster { n: number; width: number; water: Uint8Array }
+export interface GroundRaster {
+  n: number;
+  width: number;
+  water: Uint8Array;
+}
 /** Each subject minus the wet cells and the canals; the subject object itself when no water touches it. */
 export function clipCityGround(raster: GroundRaster, canals: readonly Shape[], subjects: readonly Shape[]): Shape[][] {
   if (!subjects.length) return [];
@@ -85,9 +115,14 @@ export function unpackClippedGround(data: Float64Array, subjects: readonly Shape
   const out: Shape[][] = [];
   let at = 0;
   for (const subject of subjects) {
-    if (data[at] === -1) { out.push([subject]); at++; continue; }
+    if (data[at] === -1) {
+      out.push([subject]);
+      at++;
+      continue;
+    }
     const { shapes, end } = readShapes(data, at);
-    out.push(shapes); at = end;
+    out.push(shapes);
+    at = end;
   }
   return out;
 }
@@ -98,17 +133,24 @@ export function coastDistances(height: Float32Array, n: number, cell: number, ba
   return core().render_coast_distances(height, n, cell, bandWidth);
 }
 
-export interface ContourLine { pts: Point[]; closed: boolean }
+export interface ContourLine {
+  pts: Point[];
+  closed: boolean;
+}
 /** Marching-squares contour lines of several levels of one field (values > level are inside);
  * `origin` = world position of sample (0, 0). Closed lines do not repeat their first point. */
 export function contourLevels(field: Float32Array, w: number, h: number, levels: readonly number[], cell: number, ox = 0, oy = 0): ContourLine[][] {
   if (!levels.length) return [];
-  const data = core().render_contour_levels(field, w, h, Float64Array.from(levels), cell, ox, oy), out: ContourLine[][] = [];
+  const data = core().render_contour_levels(field, w, h, Float64Array.from(levels), cell, ox, oy),
+    out: ContourLine[][] = [];
   let at = 0;
   for (let l = 0; l < levels.length; l++) {
-    const count = data[at++], paths: ContourLine[] = [];
+    const count = data[at++],
+      paths: ContourLine[] = [];
     for (let p = 0; p < count; p++) {
-      const closed = data[at++] === 1, points = data[at++], pts: Point[] = new Array(points);
+      const closed = data[at++] === 1,
+        points = data[at++],
+        pts: Point[] = new Array(points);
       for (let i = 0; i < points; i++, at += 2) pts[i] = { x: data[at], y: data[at + 1] };
       paths.push({ pts, closed });
     }

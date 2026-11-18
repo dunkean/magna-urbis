@@ -20,11 +20,15 @@ import { checkWorld } from './urbanCheck';
 import { bugReport } from '../src/ui/share';
 import { Q13, Q13_NUCLEUS, Q13_QUARTER_COUNT } from './fixtures/mega-q13';
 
-const rect = (x: number, y: number, w: number, h: number): Polygon => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+const rect = (x: number, y: number, w: number, h: number): Polygon => [
+  { x, y },
+  { x: x + w, y },
+  { x: x + w, y: y + h },
+  { x, y: y + h },
+];
 function quarter(p: Polygon, overrides: Partial<MacroQuarter> = {}): MacroQuarter {
   const b = bboxOf(p);
-  return { id: 42, pts: p, inset: p, lab: p.map(() => 0), phase: 1, zone: 'core', age: 0.9, kind: 'quarter', morph: 0,
-    culture: 'european', density: 350, pop: 2000, district: 'old-town', nucleus: 0, wants: [], area: area(p), bb: [b.x0, b.y0, b.x1, b.y1], ...overrides };
+  return { id: 42, pts: p, inset: p, lab: p.map(() => 0), phase: 1, zone: 'core', age: 0.9, kind: 'quarter', morph: 0, culture: 'european', density: 350, pop: 2000, district: 'old-town', nucleus: 0, wants: [], area: area(p), bb: [b.x0, b.y0, b.x1, b.y1], ...overrides };
 }
 function checkFabric(q: MacroQuarter, grain: 'frontages' | 'courtyard' = 'frontages', nucleus: Vec2 = { x: -200, y: 50 }, budget?: FabricBudget): ReturnType<typeof standIn> {
   const f = standIn(q, nucleus, budget);
@@ -40,15 +44,17 @@ function checkFabric(q: MacroQuarter, grain: 'frontages' | 'courtyard' = 'fronta
   for (const m of f.masses) {
     expect(isSimple(m.outer)).toBe(true);
     expect(mpArea(difference(m, q.inset))).toBeLessThan(1e-5);
-    expect(f.blocks.some((b) => mpArea(difference(m, b)) < 1e-5)).toBe(true);
+    expect(f.blocks.some(b => mpArea(difference(m, b)) < 1e-5)).toBe(true);
   }
   let overlap = 0;
-  const boxes = f.masses.map((m) => bboxOf(m.outer));
-  for (let i = 0; i < f.masses.length; i++) for (let j = i + 1; j < f.masses.length; j++) {
-    const a = boxes[i], b = boxes[j];
-    if (a.x0 >= b.x1 - 1e-7 || b.x0 >= a.x1 - 1e-7 || a.y0 >= b.y1 - 1e-7 || b.y0 >= a.y1 - 1e-7) continue;
-    overlap += mpArea(intersection(f.masses[i], f.masses[j]));
-  }
+  const boxes = f.masses.map(m => bboxOf(m.outer));
+  for (let i = 0; i < f.masses.length; i++)
+    for (let j = i + 1; j < f.masses.length; j++) {
+      const a = boxes[i],
+        b = boxes[j];
+      if (a.x0 >= b.x1 - 1e-7 || b.x0 >= a.x1 - 1e-7 || a.y0 >= b.y1 - 1e-7 || b.y0 >= a.y1 - 1e-7) continue;
+      overlap += mpArea(intersection(f.masses[i], f.masses[j]));
+    }
   expect(overlap).toBeLessThan(1e-5);
   return f;
 }
@@ -92,25 +98,29 @@ describe('provisional megacity fabric', () => {
   it('preserves both approved convex fabrics byte for byte', () => {
     const dense = quarter(rect(0, 0, 300, 180));
     const young = quarter(rect(0, 0, 400, 220), { phase: 6, zone: 'faubourg', district: 'suburb', density: 60 });
-    const hashes = [dense, young].map((q) => createHash('sha256').update(JSON.stringify(standIn(q, { x: -200, y: 50 }))).digest('hex'));
-    expect(hashes).toEqual([
-      'fbcbb4fdb0f60e794ad79356489a15af239ac871470974ebd2a7986cc6c06e0b',
-      'd551befe6d0eb6542545acb6e31716186935eb40e38119e0b38424b5074f883e',
-    ]);
+    const hashes = [dense, young].map(q =>
+      createHash('sha256')
+        .update(JSON.stringify(standIn(q, { x: -200, y: 50 })))
+        .digest('hex'),
+    );
+    expect(hashes).toEqual(['fbcbb4fdb0f60e794ad79356489a15af239ac871470974ebd2a7986cc6c06e0b', 'd551befe6d0eb6542545acb6e31716186935eb40e38119e0b38424b5074f883e']);
   });
   it('keeps real clipped ensembles in the formerly blank 54 ha q13 within its shared world budget', () => {
-    const original = JSON.stringify(Q13), budget = fabricBudget(Q13_QUARTER_COUNT);
+    const original = JSON.stringify(Q13),
+      budget = fabricBudget(Q13_QUARTER_COUNT);
     const f = checkFabric(Q13, 'courtyard', Q13_NUCLEUS, budget);
     expect(f.blocks.length).toBeGreaterThanOrEqual(12);
     expect(f.masses.length).toBeGreaterThan(f.blocks.length);
-    const blockArea = f.blocks.reduce((s, b) => s + area(b), 0), builtArea = mpArea(f.masses);
+    const blockArea = f.blocks.reduce((s, b) => s + area(b), 0),
+      builtArea = mpArea(f.masses);
     // Most of this inhabited suburb must remain represented, with lanes, courts and young open gardens.
     expect(blockArea / area(Q13.inset)).toBeGreaterThan(0.75);
     expect(builtArea / blockArea).toBeGreaterThan(0.1);
     expect(builtArea / blockArea).toBeLessThan(0.4);
-    for (let i = 0; i < f.blocks.length; i++) for (let j = i + 1; j < f.blocks.length; j++) {
-      expect(mpArea(intersection(f.blocks[i], f.blocks[j]))).toBeLessThan(1e-5);
-    }
+    for (let i = 0; i < f.blocks.length; i++)
+      for (let j = i + 1; j < f.blocks.length; j++) {
+        expect(mpArea(intersection(f.blocks[i], f.blocks[j]))).toBeLessThan(1e-5);
+      }
     expect(JSON.stringify(Q13)).toBe(original);
     expect(JSON.stringify(standIn(structuredClone(Q13), Q13_NUCLEUS, budget))).toBe(JSON.stringify(f));
     expect(Q13_QUARTER_COUNT * f.blocks.length).toBeLessThanOrEqual(STAND_IN_BUDGET.blocks);
@@ -120,9 +130,21 @@ describe('provisional megacity fabric', () => {
     expect(mpArea(coarse.masses)).toBeLessThan(coarse.blocks.reduce((s, b) => s + area(b), 0));
   });
   it('keeps the entire edges of masses inside a deeply concave quarter', () => {
-    const f = checkFabric(quarter([{ x: 0, y: 0 }, { x: 220, y: 0 }, { x: 220, y: 180 }, { x: 150, y: 180 },
-      { x: 150, y: 70 }, { x: 70, y: 70 }, { x: 70, y: 180 }, { x: 0, y: 180 }]), 'courtyard');
-    const blockArea = f.blocks.reduce((s, b) => s + area(b), 0), builtArea = mpArea(f.masses);
+    const f = checkFabric(
+      quarter([
+        { x: 0, y: 0 },
+        { x: 220, y: 0 },
+        { x: 220, y: 180 },
+        { x: 150, y: 180 },
+        { x: 150, y: 70 },
+        { x: 70, y: 70 },
+        { x: 70, y: 180 },
+        { x: 0, y: 180 },
+      ]),
+      'courtyard',
+    );
+    const blockArea = f.blocks.reduce((s, b) => s + area(b), 0),
+      builtArea = mpArea(f.masses);
     expect(builtArea / blockArea).toBeGreaterThan(0.75);
     expect(blockArea - builtArea).toBeGreaterThan(1); // The fallback must still retain a real open court.
   });
@@ -134,11 +156,15 @@ describe('provisional megacity fabric', () => {
 
 describe('absorbed village places in cities', () => {
   it('retains a clipped place on a rotated, translated core without centimetre snapping it outside', () => {
-    const angle = 0.37, c = { x: 1234.567, y: 987.654 };
+    const angle = 0.37,
+      c = { x: 1234.567, y: 987.654 };
     const rotate = ({ x, y }: { x: number; y: number }) => ({ x: c.x + Math.cos(angle) * x - Math.sin(angle) * y, y: c.y + Math.sin(angle) * x + Math.cos(angle) * y });
     // Clipping at both end boundaries is essential: a wholly internal candidate cannot catch this regression.
     const core = rect(-32, -70, 64, 100).map(rotate);
-    const road = [{ x: -150, y: 0 }, { x: 150, y: 0 }].map(rotate);
+    const road = [
+      { x: -150, y: 0 },
+      { x: 150, y: 0 },
+    ].map(rotate);
     const green = villageGreen(core, road, c, 30, 1);
     expect(green).not.toBeNull();
     expect(Math.abs(area(green!) - 1920)).toBeLessThan(0.3); // 188 m perimeter times the 1 mm boolean grid.
@@ -146,7 +172,10 @@ describe('absorbed village places in cities', () => {
   });
   it('uses a real length of road independently of its vertex sampling', () => {
     const core = rect(-70, -70, 140, 140);
-    const sparse = [{ x: -150, y: 0 }, { x: 150, y: 0 }];
+    const sparse = [
+      { x: -150, y: 0 },
+      { x: 150, y: 0 },
+    ];
     const dense = Array.from({ length: 61 }, (_, i) => ({ x: -150 + i * 5, y: 0 }));
     const a = villageGreen(core, sparse, { x: 0, y: 0 }, 30, 1)!;
     const b = villageGreen(core, dense, { x: 0, y: 0 }, 30, 1)!;
@@ -158,26 +187,57 @@ describe('absorbed village places in cities', () => {
     expect(mpArea(difference(a, core))).toBeLessThan(1e-5);
   });
   it('rejects a clipped triangular tip while preserving its village core for the partition', () => {
-    const core = [{ x: -35, y: 0 }, { x: 35, y: 0 }, { x: 0, y: 15 }];
+    const core = [
+      { x: -35, y: 0 },
+      { x: 35, y: 0 },
+      { x: 0, y: 15 },
+    ];
     const saved = JSON.stringify(core);
-    expect(villageGreen(core, [{ x: -150, y: 0 }, { x: 150, y: 0 }], { x: 0, y: 0 }, 30, 1)).toBeNull();
+    expect(
+      villageGreen(
+        core,
+        [
+          { x: -150, y: 0 },
+          { x: 150, y: 0 },
+        ],
+        { x: 0, y: 0 },
+        30,
+        1,
+      ),
+    ).toBeNull();
     expect(JSON.stringify(core)).toBe(saved);
   });
   it('reserves the usable opposite roadside instead of a shore-clipped triangle', () => {
     // Approved baseline reserveVillages accepted the +y sweep based on its centroid; its downstream dry cut
     // produced only (-32,0),(32,0),(0,30), 960 m². The -y side has a complete 64 × 30 m place.
-    const core = [{ x: -70, y: -70 }, { x: 70, y: -70 }, { x: 70, y: 0 }, { x: 32, y: 0 },
-      { x: 0, y: 30 }, { x: -32, y: 0 }, { x: -70, y: 0 }];
-    const road = [{ x: -32, y: 0 }, { x: 0, y: 0 }, { x: 32, y: 0 }];
+    const core = [
+      { x: -70, y: -70 },
+      { x: 70, y: -70 },
+      { x: 70, y: 0 },
+      { x: 32, y: 0 },
+      { x: 0, y: 30 },
+      { x: -32, y: 0 },
+      { x: -70, y: 0 },
+    ];
+    const road = [
+      { x: -32, y: 0 },
+      { x: 0, y: 0 },
+      { x: 32, y: 0 },
+    ];
     const streets = new Streets();
-    streets.add(road, 8, 1, 'radial', 1); streets.connected.add(0);
+    streets.add(road, 8, 1, 'radial', 1);
+    streets.connected.add(0);
     const rng = new Rng('shore-regression');
-    rng.fork = () => { const r = new Rng('depth'); r.range = () => 30; return r; };
+    rng.fork = () => {
+      const r = new Rng('depth');
+      r.range = () => 30;
+      return r;
+    };
     const water = difference(rect(-100, -100, 200, 200), core);
     const state = { rng, sites: [], culture: 'european', ctx: { water } } as unknown as Parameters<typeof reserveVillages>[0];
     const api = { streets, phases: [{ id: 1, zone: 'faubourg', region: [{ outer: core, holes: [] }] }] } as unknown as Parameters<typeof reserveVillages>[1];
     const lots = reserveVillages(state, api, [{ c: { x: 0, y: 0 }, core, road }], [], true);
-    const green = lots.find((l) => l.kind === 'm4-green')!;
+    const green = lots.find(l => l.kind === 'm4-green')!;
     expect(green).toBeDefined();
     expect(green.poly.length).toBe(4);
     expect(area(green.poly)).toBeCloseTo(1920, 5);
@@ -202,7 +262,7 @@ describe('absorbed village places in cities', () => {
 });
 
 describe('population-aware megacity extent', () => {
-  it.each([0.006, -0.02])('keeps an admissible graph byte-identical (signed exterior shift %s m)', (shift) => {
+  it.each([0.006, -0.02])('keeps an admissible graph byte-identical (signed exterior shift %s m)', shift => {
     const outer = rect(0, 0, 100, 100);
     const path = [outer[0], outer[1], { x: 100, y: 50 }, outer[2], outer[3], outer[0]];
     const streets: MacroStreet[] = [{ path, widths: path.map(() => 0), rank: 0, role: 'boundary', phase: 1 }];
@@ -214,17 +274,21 @@ describe('population-aware megacity extent', () => {
       if (p.x !== 100) return p;
       const key = `${p.x},${p.y}`;
       let q = shifted.get(key);
-      if (!q) { q = { x: p.x + shift, y: p.y }; shifted.set(key, q); }
+      if (!q) {
+        q = { x: p.x + shift, y: p.y };
+        shifted.set(key, q);
+      }
       return q;
     };
     for (const e of g.edges) e.pts = e.pts.map(move);
     for (const n of g.nodes) n.p = move(n.p);
-    const middle = g.edges.flatMap((e) => e.pts).find((p) => p.y === 50)!;
+    const middle = g.edges.flatMap(e => e.pts).find(p => p.y === 50)!;
     expect(middle).toBeDefined();
     expect(pointInRing(outer, middle)).toBe(shift < 0);
     expect(distToRing(outer, middle)).toBeCloseTo(Math.abs(shift), 9);
     const before = JSON.stringify({ nodes: g.nodes, edges: g.edges, streets });
-    const paths = g.edges.map((e) => e.pts), points = g.nodes.map((n) => n.p);
+    const paths = g.edges.map(e => e.pts),
+      points = g.nodes.map(n => n.p);
     restoreMacroBoundary(g, outer, streets, true);
     expect(JSON.stringify({ nodes: g.nodes, edges: g.edges, streets })).toBe(before);
     g.edges.forEach((e, i) => expect(e.pts).toBe(paths[i]));
@@ -232,8 +296,7 @@ describe('population-aware megacity extent', () => {
   });
 
   it('preserves the current seeded q13 plan and complete detail', () => {
-    const w = generate(makeOptions({ seed: '1', size: 'city', population: 60000, mapSize: 7000, eagerPop: 1000,
-      river: 'none', relief: 'flat', coast: 'none', settlements: 'none', suburbs: 'many', culture: 'european-organic', style: 'atlas' }));
+    const w = generate(makeOptions({ seed: '1', size: 'city', population: 60000, mapSize: 7000, eagerPop: 1000, river: 'none', relief: 'flat', coast: 'none', settlements: 'none', suburbs: 'many', culture: 'european-organic', style: 'atlas' }));
     const m = w.urban!.macro!;
     // The historical concave Q13 fixture above remains an independent boundary case.
     // These integration goldens match the complete pre-optimization generated output.
@@ -243,38 +306,50 @@ describe('population-aware megacity extent', () => {
     expect(hash(m.quarters[13])).toBe('12cc69dfd178bb0b81337ad447d4fd0e9050c25cd2effb2b0276426e50f1404d');
     const u = megaQuarterDetail(w, 13)!;
     expect(u).not.toBeNull();
-    expect({ blocks: u.blocks.length, buildings: u.buildings.length, parcels: u.parcels.length })
-      .toEqual({ blocks: 16, buildings: 305, parcels: 136 });
+    expect({ blocks: u.blocks.length, buildings: u.buildings.length, parcels: u.parcels.length }).toEqual({ blocks: 16, buildings: 305, parcels: 136 });
     expect(hash(u)).toBe('f4761a7810c341031cc35e82c124a24e467db88182f3dddea170f7685ecb175c');
   }, 900000);
 
-  it.each([[0, 'boundary', false], [0.37, 'boundary', false], [0.37, 'wall-lane', false], [0, 'boundary', true]] as const)('restores recursively rounded outer supports before shared face extraction (rotation %s, owner %s, preserveValid %s)', (angle, role, preserveValid) => {
+  it.each([
+    [0, 'boundary', false],
+    [0.37, 'boundary', false],
+    [0.37, 'wall-lane', false],
+    [0, 'boundary', true],
+  ] as const)('restores recursively rounded outer supports before shared face extraction (rotation %s, owner %s, preserveValid %s)', (angle, role, preserveValid) => {
     // Actual ancestry of the 5M / 20km q1777 failure: each new horizontal crossing splits an already rounded edge.
-    const transform = (p: Vec2): Vec2 => angle === 0 ? { ...p } : ({
-      x: 1200 + p.x * Math.cos(angle) - p.y * Math.sin(angle),
-      y: -2300 + p.x * Math.sin(angle) + p.y * Math.cos(angle),
-    });
-    const a = { x: 19841.406972042154, y: 749.9482289795124 }, b = { x: 19850, y: 18631.244105671583 };
+    const transform = (p: Vec2): Vec2 => (angle === 0 ? { ...p } : { x: 1200 + p.x * Math.cos(angle) - p.y * Math.sin(angle), y: -2300 + p.x * Math.sin(angle) + p.y * Math.cos(angle) });
+    const a = { x: 19841.406972042154, y: 749.9482289795124 },
+      b = { x: 19850, y: 18631.244105671583 };
     const outer = [a, b, { x: b.x - 1000, y: b.y }, { x: a.x - 1000, y: a.y }].map(transform);
     const streets: MacroStreet[] = [{ path: [...outer, outer[0]], widths: outer.map(() => 0).concat(0), rank: 0, role, phase: 1 }];
     const g = new StreetGraph({ thinSegs: true });
     g.insertPolyline(streets[0].path, { width: 0, rank: 0, phase: 1, kind: role, street: 0 }, { snapR: 1.5, mergeDist: 0 });
-    for (const [x, y] of [[19846.88, 12129.16], [19843.75, 5613.6], [19842.42, 2840.97], [19843.32, 4712.89]]) {
-      const path = [{ x: x - 1000, y }, { x, y }].map(transform), id = streets.length;
+    for (const [x, y] of [
+      [19846.88, 12129.16],
+      [19843.75, 5613.6],
+      [19842.42, 2840.97],
+      [19843.32, 4712.89],
+    ]) {
+      const path = [
+          { x: x - 1000, y },
+          { x, y },
+        ].map(transform),
+        id = streets.length;
       streets.push({ path, widths: [7, 7], rank: 2, role: 'street', phase: 1 });
       g.insertPolyline(path, { width: 7, rank: 2, phase: 1, kind: 'street', street: id }, { snapR: 1.5, mergeDist: 0 });
     }
-    const topology = () => g.edges.map((e) => [e.id, e.a, e.b, e.street, e.alive]);
-    const oldTopology = topology(), oldStreets = JSON.stringify(streets);
+    const topology = () => g.edges.map(e => [e.id, e.a, e.b, e.street, e.alive]);
+    const oldTopology = topology(),
+      oldStreets = JSON.stringify(streets);
     if (angle === 0) {
-      const failing = g.nodes.find((n) => n.p.x === 19842.42 && n.p.y === 2840.97)!;
+      const failing = g.nodes.find(n => n.p.x === 19842.42 && n.p.y === 2840.97)!;
       expect(failing).toBeDefined();
       expect(distToRing(outer, failing.p)).toBeGreaterThan(Math.SQRT2 * (0.5 / SNAP + 0.5 / BOOL_GRID) + 1e-8);
     }
     restoreMacroBoundary(g, outer, streets, preserveValid);
     expect(topology()).toEqual(oldTopology);
     expect(JSON.stringify(streets)).toBe(oldStreets);
-    for (const edge of g.edges.filter((e) => e.alive)) {
+    for (const edge of g.edges.filter(e => e.alive)) {
       expect(edge.pts[0]).toBe(g.nodes[edge.a].p);
       expect(edge.pts.at(-1)).toBe(g.nodes[edge.b].p);
     }
@@ -288,16 +363,18 @@ describe('population-aware megacity extent', () => {
       for (const p of faces[i].ring) if (!pointInRing(outer, p)) expect(distToRing(outer, p)).toBeLessThan(1e-7);
       for (let j = 0; j < i; j++) {
         expect(mpArea(intersection(faces[i].ring, faces[j].ring))).toBeLessThan(1e-5);
-        if (faces[i].ring.filter((p) => faces[j].ring.includes(p)).length >= 2) sharedPairs++;
+        if (faces[i].ring.filter(p => faces[j].ring.includes(p)).length >= 2) sharedPairs++;
       }
     }
     expect(sharedPairs).toBe(4);
   });
   it('preserves automatic-population links in every size and culture, and the scale of imported heightmaps', () => {
-    for (const size of ['hamlet', 'village', 'town', 'city', 'metropolis'] as const) for (const culture of CULTURES) for (const seed of ['1', '4', '7']) {
-      const o = makeOptions({ seed, size, culture, population: 0 });
-      expect(generationMapSize(o), `${size}/${culture}/${seed}`).toBe(mapSizeOf(o));
-    }
+    for (const size of ['hamlet', 'village', 'town', 'city', 'metropolis'] as const)
+      for (const culture of CULTURES)
+        for (const seed of ['1', '4', '7']) {
+          const o = makeOptions({ seed, size, culture, population: 0 });
+          expect(generationMapSize(o), `${size}/${culture}/${seed}`).toBe(mapSizeOf(o));
+        }
     const imported = makeOptions({ population: 5000000, importedHeight: { w: 2, h: 2, rgba: new Uint8Array(16) } });
     expect(generationMapSize(imported)).toBe(mapSizeOf(imported));
   });
@@ -312,7 +389,7 @@ describe('population-aware megacity extent', () => {
     const w = generate(makeOptions({ seed: '5', size: 'town', population: 80000, settlements: 'none' }));
     expect(w.options.mapSize).toBe(w.mapSize);
     const again = generate(w.options);
-    const withoutStats = (world: unknown) => JSON.stringify(world, (key, value) => key === 'stats' ? undefined : value);
+    const withoutStats = (world: unknown) => JSON.stringify(world, (key, value) => (key === 'stats' ? undefined : value));
     expect(withoutStats(again)).toBe(withoutStats(w));
   }, 900000);
   it('keeps small implicit presets and every explicit extent authoritative', () => {
@@ -325,13 +402,24 @@ describe('population-aware megacity extent', () => {
     expect(generationMapSize(makeOptions({ population: 5000000, sprawl: 2 }))).toBe(40000);
   });
   it('bounds every ring with one common transform, preserving shared chains and nested geometry', () => {
-    const a = rect(100, 100, 400, 400), b = [{ x: 100, y: 100 }, { x: 500, y: 100 }, { x: 1200, y: 700 }, { x: 100, y: 900 }];
+    const a = rect(100, 100, 400, 400),
+      b = [
+        { x: 100, y: 100 },
+        { x: 500, y: 100 },
+        { x: 1200, y: 700 },
+        { x: 100, y: 900 },
+      ];
     const result = containMegaRings([a, b], { x: 300, y: 300 }, 1000);
     expect(result.scale).toBeLessThan(1);
     expect(result.rings[0][0]).toEqual(result.rings[1][0]);
     expect(result.rings[0][1]).toEqual(result.rings[1][1]);
     expect(area(result.rings[0]) / area(a)).toBeCloseTo(result.scale ** 2, 12);
-    for (const p of result.rings.flat()) { expect(p.x).toBeGreaterThanOrEqual(50 - 1e-8); expect(p.y).toBeGreaterThanOrEqual(50 - 1e-8); expect(p.x).toBeLessThanOrEqual(950 + 1e-8); expect(p.y).toBeLessThanOrEqual(950 + 1e-8); }
+    for (const p of result.rings.flat()) {
+      expect(p.x).toBeGreaterThanOrEqual(50 - 1e-8);
+      expect(p.y).toBeGreaterThanOrEqual(50 - 1e-8);
+      expect(p.x).toBeLessThanOrEqual(950 + 1e-8);
+      expect(p.y).toBeLessThanOrEqual(950 + 1e-8);
+    }
   });
   it('reports the real five-million / 20 km sprawl shortfall without drawing rings outside the map', () => {
     const w = generate(makeOptions({ seed: '1', population: 5000000, mapSize: 20000, sprawl: 2, settlements: 'none' }));
@@ -342,7 +430,12 @@ describe('population-aware megacity extent', () => {
     expect(m.extent!.plannedPopulation).toBeGreaterThan(2000000);
     expect(m.extent!.plannedPopulation).toBeLessThan(5000000);
     expect(String(w.stats['settlements.warning'])).toContain('bounded plan estimates');
-    for (const p of m.rings.flat()) { expect(p.x).toBeGreaterThanOrEqual(150 - 1e-7); expect(p.y).toBeGreaterThanOrEqual(150 - 1e-7); expect(p.x).toBeLessThanOrEqual(19850 + 1e-7); expect(p.y).toBeLessThanOrEqual(19850 + 1e-7); }
+    for (const p of m.rings.flat()) {
+      expect(p.x).toBeGreaterThanOrEqual(150 - 1e-7);
+      expect(p.y).toBeGreaterThanOrEqual(150 - 1e-7);
+      expect(p.x).toBeLessThanOrEqual(19850 + 1e-7);
+      expect(p.y).toBeLessThanOrEqual(19850 + 1e-7);
+    }
     const land = mpArea(w.urban!.footprintH);
     expect(Math.abs(m.quarters.reduce((s, q) => s + q.area, 0) - land) / land).toBeLessThan(0.005);
     // The graph snaps to centimetres; boolean intersections can add a half-millimetre per axis.
@@ -370,6 +463,11 @@ describe('population-aware megacity extent', () => {
     const view = renderView(w).urban!;
     expect(view.masses.length).toBeGreaterThan(0);
     expect(view.masses.length).toBeLessThanOrEqual(STAND_IN_BUDGET.masses);
-    for (const p of m.rings.flat()) { expect(p.x).toBeGreaterThanOrEqual(150 - 1e-7); expect(p.y).toBeGreaterThanOrEqual(150 - 1e-7); expect(p.x).toBeLessThanOrEqual(w.mapSize - 150 + 1e-7); expect(p.y).toBeLessThanOrEqual(w.mapSize - 150 + 1e-7); }
+    for (const p of m.rings.flat()) {
+      expect(p.x).toBeGreaterThanOrEqual(150 - 1e-7);
+      expect(p.y).toBeGreaterThanOrEqual(150 - 1e-7);
+      expect(p.x).toBeLessThanOrEqual(w.mapSize - 150 + 1e-7);
+      expect(p.y).toBeLessThanOrEqual(w.mapSize - 150 + 1e-7);
+    }
   }, 900000);
 });

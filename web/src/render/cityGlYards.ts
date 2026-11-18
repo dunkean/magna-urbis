@@ -9,20 +9,36 @@ import type { YardBoundary } from './cityLotEnclosures';
 import { yardRuns, yardStyle, type YardGate, type YardRun } from './yardStyle';
 import { putPolyline, STROKE_STRIDE, strokeWriter, type CityGlStrokes } from './cityGlBuild';
 
-export interface CityGlYards { runs: CityGlStrokes; jambs: CityGlStrokes; looks: YardBoundary[] }
+export interface CityGlYards {
+  runs: CityGlStrokes;
+  jambs: CityGlStrokes;
+  looks: YardBoundary[];
+}
 const MATERIALS: YardBoundary['material'][] = ['hedge', 'fence', 'wall'];
 /** Half length of a jamb tick and the gap from which a gate is a cart gate (m), as drawLotEnclosures. */
-const JAMB = .6, CART = 2.4;
+const JAMB = 0.6,
+  CART = 2.4;
 
 /** The enclosures of several towns (each list as `scene.lotEnclosures`), relative to `origin`. */
 export function buildYardStrokes(lists: readonly (readonly YardBoundary[] | undefined)[], origin: Point): CityGlYards | undefined {
-  const runs: YardRun[] = [], gates: YardGate[] = [];
-  for (const list of lists) if (list?.length) { const r = yardRuns(list); runs.push(...r.runs); gates.push(...r.gates); }
+  const runs: YardRun[] = [],
+    gates: YardGate[] = [];
+  for (const list of lists)
+    if (list?.length) {
+      const r = yardRuns(list);
+      runs.push(...r.runs);
+      gates.push(...r.gates);
+    }
   if (!runs.length && !gates.length) return undefined;
-  const looks: YardBoundary[] = [], index = new Map<string, number>();
+  const looks: YardBoundary[] = [],
+    index = new Map<string, number>();
   const lookOf = (e: YardBoundary): number => {
     const key = `${e.material}/${e.culture ?? ''}/${e.fenceStyle ?? ''}`;
-    let i = index.get(key); if (i === undefined) { index.set(key, i = looks.length); looks.push(e); }
+    let i = index.get(key);
+    if (i === undefined) {
+      index.set(key, (i = looks.length));
+      looks.push(e);
+    }
     return i;
   };
   // Hedges under fences under walls, as the Canvas strokes are ordered.
@@ -35,21 +51,46 @@ export function buildYardStrokes(lists: readonly (readonly YardBoundary[] | unde
   }
   const jw = strokeWriter(gates.length * 2);
   for (const g of gates) {
-    const l = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y); if (!(l > 0)) continue;
-    const style = yardStyle(g.source.material, g.source.culture, 'terrain', g.source.fenceStyle), look = lookOf(g.source);
-    const n = { x: -(g.b.y - g.a.y) / l * JAMB, y: (g.b.x - g.a.x) / l * JAMB }, rank = l >= CART ? 0 : 1;
-    for (const p of [g.a, g.b]) putPolyline(jw, [{ x: p.x - n.x, y: p.y - n.y }, { x: p.x + n.x, y: p.y + n.y }], origin, style.width * .7, 1.3, look, rank, true);
+    const l = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y);
+    if (!(l > 0)) continue;
+    const style = yardStyle(g.source.material, g.source.culture, 'terrain', g.source.fenceStyle),
+      look = lookOf(g.source);
+    const n = { x: (-(g.b.y - g.a.y) / l) * JAMB, y: ((g.b.x - g.a.x) / l) * JAMB },
+      rank = l >= CART ? 0 : 1;
+    for (const p of [g.a, g.b])
+      putPolyline(
+        jw,
+        [
+          { x: p.x - n.x, y: p.y - n.y },
+          { x: p.x + n.x, y: p.y + n.y },
+        ],
+        origin,
+        style.width * 0.7,
+        1.3,
+        look,
+        rank,
+        true,
+      );
   }
   const done = (w: ReturnType<typeof strokeWriter>): CityGlStrokes => ({ data: w.buffer.slice(0, w.n * STROKE_STRIDE * 4), count: w.n, firstWithRank: new Array(16).fill(0) });
   return { runs: done(rw), jambs: done(jw), looks };
 }
 /** Colour tables of the looks for a palette: the stroke (colour, opacity) and the jambs (opaque). */
 export function yardColors(looks: readonly YardBoundary[], palette: CityPalette): { line: Uint8Array; jamb: Uint8Array } {
-  const n = Math.max(1, looks.length), line = new Uint8Array(n * 4), jamb = new Uint8Array(n * 4);
+  const n = Math.max(1, looks.length),
+    line = new Uint8Array(n * 4),
+    jamb = new Uint8Array(n * 4);
   const put = (out: Uint8Array, i: number, hex: string, alpha: number): void => {
     const v = parseInt(hex.slice(1, 7), 16) || 0;
-    out[i * 4] = (v >> 16) & 255; out[i * 4 + 1] = (v >> 8) & 255; out[i * 4 + 2] = v & 255; out[i * 4 + 3] = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+    out[i * 4] = (v >> 16) & 255;
+    out[i * 4 + 1] = (v >> 8) & 255;
+    out[i * 4 + 2] = v & 255;
+    out[i * 4 + 3] = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
   };
-  looks.forEach((e, i) => { const s = yardStyle(e.material, e.culture, palette, e.fenceStyle); put(line, i, s.color, s.alpha); put(jamb, i, s.jamb, 1); });
+  looks.forEach((e, i) => {
+    const s = yardStyle(e.material, e.culture, palette, e.fenceStyle);
+    put(line, i, s.color, s.alpha);
+    put(jamb, i, s.jamb, 1);
+  });
   return { line, jamb };
 }

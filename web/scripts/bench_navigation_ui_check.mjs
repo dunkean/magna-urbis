@@ -8,9 +8,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 const terrain = page.frameLocator('iframe[data-bench=terrain]');
-const params = new URLSearchParams({ source: 'procedural', seed: 'navigation', width: '3000', relief: 'flat',
-  generation: 'cpu', compute: 'wasm', hydro_enabled: '0', auto: '0', refine: '0',
-  projection: '3d', camera3d: '1200,1600,4500,0.2,0.8,1.5' });
+const params = new URLSearchParams({ source: 'procedural', seed: 'navigation', width: '3000', relief: 'flat', generation: 'cpu', compute: 'wasm', hydro_enabled: '0', auto: '0', refine: '0', projection: '3d', camera3d: '1200,1600,4500,0.2,0.8,1.5' });
 async function ready() {
   await page.waitForFunction(() => document.querySelector('iframe[data-bench=terrain]')?.contentWindow?.magnaBenchContext?.ready(), null, { timeout: 120000 });
   await terrain.locator('#terrain3d').waitFor({ state: 'visible' });
@@ -23,7 +21,9 @@ try {
   await page.waitForURL('**/rustbench.html#terrain?**', { waitUntil: 'domcontentloaded', timeout: 90000 });
   await ready();
   await terrain.locator('#seed').fill('pending-draft');
-  await page.evaluate(() => { document.querySelector('iframe[data-bench=terrain]').contentWindow.__navigationMarker = 'retained'; });
+  await page.evaluate(() => {
+    document.querySelector('iframe[data-bench=terrain]').contentWindow.__navigationMarker = 'retained';
+  });
   const before = await capture();
   assert.equal(before.perspective, true);
   for (const stage of ['settlements', 'urban', 'houses']) {
@@ -46,4 +46,6 @@ try {
   assert.deepEqual((await capture()).camera3d, before.camera3d);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ ok: true, directEntry: true, tabs: 4, live3dCamera: true, drafts: true, reload: true, errors }, null, 2));
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

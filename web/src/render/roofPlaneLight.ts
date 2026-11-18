@@ -2,12 +2,17 @@
  * southwards. An asymmetric NW sun separates all four sides of a hip roof;
  * no broad clipping bands collapse neighbouring pans to the same two tones. */
 export function roofPlaneLight([nx, ny, nz]: readonly number[]): number {
-  const length = Math.hypot(nx, ny, nz) || 1, x = nx / length, y = ny / length, z = nz / length;
+  const length = Math.hypot(nx, ny, nz) || 1,
+    x = nx / length,
+    y = ny / length,
+    z = nz / length;
   // NW sun + a weak south-east fill, so pans facing away from the sun keep distinct tones.
-  const sun = Math.max(0, -.70 * x - .36 * y + .62 * z), fill = Math.max(0, (.35 * x + .55 * y + .76 * z) / 1.0026);
+  const sun = Math.max(0, -0.7 * x - 0.36 * y + 0.62 * z),
+    fill = Math.max(0, (0.35 * x + 0.55 * y + 0.76 * z) / 1.0026);
   // A shallow pan still needs a readable tone from above: a facing term by azimuth, faded on steep pans.
-  const h = Math.hypot(x, y), facing = h > .001 ? -(.8 * x + .5 * y) / h * .2 * Math.min(1, z / .6) : 0;
-  return (.3 + 1.1 * sun + .3 * fill) / (.3 + 1.1 * .62 + .3 * .76 / 1.0026) + facing;
+  const h = Math.hypot(x, y),
+    facing = h > 0.001 ? (-(0.8 * x + 0.5 * y) / h) * 0.2 * Math.min(1, z / 0.6) : 0;
+  return (0.3 + 1.1 * sun + 0.3 * fill) / (0.3 + 1.1 * 0.62 + (0.3 * 0.76) / 1.0026) + facing;
 }
 
 /** Light of a pitched pan as a natural ground shows it (`light`: the plan light of the pan, around 0, as cityMassing's
@@ -17,7 +22,8 @@ export function roofPlaneLight([nx, ny, nz]: readonly number[]): number {
  * a little more (+14 %, -20 %); metal, lead, zinc and glass keep the full range. */
 export function planPanLight(light: number, cover: string): number {
   if (cover === 'metal' || cover === 'lead' || cover === 'zinc' || cover === 'glass') return light;
-  const hard = cover === 'tile' || cover === 'slate' || cover === 'stone', cap = light > 0 ? hard ? .14 : .09 : hard ? .2 : .14;
+  const hard = cover === 'tile' || cover === 'slate' || cover === 'stone',
+    cap = light > 0 ? (hard ? 0.14 : 0.09) : hard ? 0.2 : 0.14;
   return Math.sign(light) * cap * (1 - Math.exp(-Math.abs(light) / cap));
 }
 

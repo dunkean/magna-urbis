@@ -12,10 +12,24 @@ describe('Underdark tunnels', () => {
     expect(parseCaveTunnels(undefined)).toEqual([]);
   });
   it('never draws a tunnel narrower than the carved floor', () => {
-    const tube = { kind: 'lava-tube' as const, halfWidth: 4, path: [{ x: 0, y: 0 }, { x: 300, y: 0 }] };
+    const tube = {
+      kind: 'lava-tube' as const,
+      halfWidth: 4,
+      path: [
+        { x: 0, y: 0 },
+        { x: 300, y: 0 },
+      ],
+    };
     expect(tunnelDisplayHalfWidth(tube, 20)).toBe(18);
     expect(tunnelStrokes(tube, 20)[0].width).toBe(36);
-    const dug = { kind: 'dug' as const, halfWidth: 3, path: [{ x: 0, y: 0 }, { x: 0, y: 200 }] };
+    const dug = {
+      kind: 'dug' as const,
+      halfWidth: 3,
+      path: [
+        { x: 0, y: 0 },
+        { x: 0, y: 200 },
+      ],
+    };
     expect(tunnelStrokes(dug, 2).filter(s => s.d.length === 2 && s.d[0].y === s.d[1].y)).toHaveLength(2);
     expect(caveTunnelsSvg([tube], 20)).toContain('layer-cave-tunnels');
   });
@@ -36,9 +50,25 @@ describe('Underdark tunnel names', () => {
     const world = generate({ ...DEFAULTS, seed: 'tunnel-names', size: 'hamlet', population: 120, settlements: 'none', coast: 'none', river: 'none', biome: 'underdark' });
     const { w, h, cell } = world.terrain.height;
     const mask = new Uint8Array(w * h);
-    const y = Math.floor(h / 2), path = [{ x: 0.2 * w * cell, y: (y + .5) * cell }, { x: 0.8 * w * cell, y: (y + .5) * cell }];
-    world.terrain = { ...world.terrain, caverns: { floor: [], solid: [], mask, clearance: new Float32Array(w * h), chambers: [],
-      tunnels: [{ kind: 'lava-tube', path, halfWidth: 5 }, { kind: 'dug', path: path.map(p => ({ x: p.x, y: p.y + 4 * cell })), halfWidth: 3 }] } };
+    const y = Math.floor(h / 2),
+      path = [
+        { x: 0.2 * w * cell, y: (y + 0.5) * cell },
+        { x: 0.8 * w * cell, y: (y + 0.5) * cell },
+      ];
+    world.terrain = {
+      ...world.terrain,
+      caverns: {
+        floor: [],
+        solid: [],
+        mask,
+        clearance: new Float32Array(w * h),
+        chambers: [],
+        tunnels: [
+          { kind: 'lava-tube', path, halfWidth: 5 },
+          { kind: 'dug', path: path.map(p => ({ x: p.x, y: p.y + 4 * cell })), halfWidth: 3 },
+        ],
+      },
+    };
     const names = generateNames(world, new Rng('magna-urbis:tunnel-names'));
     const tunnels = names.entries.filter(e => String(e.parts?.role ?? '').startsWith('terrain.tunnel.'));
     expect(tunnels.map(e => e.parts?.role).sort()).toEqual(['terrain.tunnel.dug', 'terrain.tunnel.lava-tube']);
@@ -49,10 +79,38 @@ describe('Underdark tunnel names', () => {
 describe('Underdark tunnel portals', () => {
   it('paints one framed opening at each mouth of a dug tunnel only', async () => {
     const { drawTunnelPortals } = await import('../src/render/caveTunnels');
-    let fills = 0, strokes = 0;
-    const ctx = new Proxy({}, { get: (_, k) => k === 'fill' ? () => { fills++; } : k === 'stroke' ? () => { strokes++; } : () => undefined, set: () => true }) as unknown as CanvasRenderingContext2D;
-    const path = [{ x: 0, y: 0 }, { x: 400, y: 0 }];
-    drawTunnelPortals(ctx, [{ kind: 'dug', path, halfWidth: 3 }, { kind: 'lava-tube', path, halfWidth: 5 }], 20, 1);
-    expect(fills).toBe(2); expect(strokes).toBe(2);
+    let fills = 0,
+      strokes = 0;
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_, k) =>
+          k === 'fill'
+            ? () => {
+                fills++;
+              }
+            : k === 'stroke'
+              ? () => {
+                  strokes++;
+                }
+              : () => undefined,
+        set: () => true,
+      },
+    ) as unknown as CanvasRenderingContext2D;
+    const path = [
+      { x: 0, y: 0 },
+      { x: 400, y: 0 },
+    ];
+    drawTunnelPortals(
+      ctx,
+      [
+        { kind: 'dug', path, halfWidth: 3 },
+        { kind: 'lava-tube', path, halfWidth: 5 },
+      ],
+      20,
+      1,
+    );
+    expect(fills).toBe(2);
+    expect(strokes).toBe(2);
   });
 });

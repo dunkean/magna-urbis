@@ -19,7 +19,7 @@ import { servedStreetPath } from '../gen/urban/openTails';
 import type { UrbanStreet } from '../gen/types';
 import type { ExportLayers } from './exportLayers';
 
-const phD = (p: PolyH): string => pathD(p.outer, true) + p.holes.map((h) => pathD(h, true)).join('');
+const phD = (p: PolyH): string => pathD(p.outer, true) + p.holes.map(h => pathD(h, true)).join('');
 
 const DEBUG_PHASE = ['#e8a0a0', '#e8d08a', '#a8d8a0', '#9cc4e8', '#c8a8e0', '#e0b890'];
 
@@ -38,16 +38,21 @@ export function urbanDebugLayer(world: World, u: number): string {
       const fill = pc.use === 'garden' ? '#9fc98a' : pc.use === 'plot' ? hash(i * 7 + 3) : '#fff';
       s += `<path d="${pathD(pc.poly, true)}" fill="${fill}" stroke="#333" stroke-width="${f1(0.18 * u)}"/>`;
     });
-    ub.blocks.forEach((b) => { s += `<path d="${pathD(b, true)}" fill="none" stroke="#000" stroke-width="${f1(0.45 * u)}"/>`; });
+    ub.blocks.forEach(b => {
+      s += `<path d="${pathD(b, true)}" fill="none" stroke="#000" stroke-width="${f1(0.45 * u)}"/>`;
+    });
     if (ub.masses.length) s += `<path d="${ub.masses.map(phD).join('')}" fill="#000" fill-opacity="0.45" fill-rule="evenodd"/>`;
   } else if (ub.blocks.length) {
-    ub.blocks.forEach((b, i) => { s += `<path d="${pathD(b, true)}" fill="${hash(i)}" stroke="#333" stroke-width="${f1(0.3 * u)}"/>`; });
+    ub.blocks.forEach((b, i) => {
+      s += `<path d="${pathD(b, true)}" fill="${hash(i)}" stroke="#333" stroke-width="${f1(0.3 * u)}"/>`;
+    });
   } else if (dbg) {
     for (const q of dbg.quarters) s += `<path d="${pathD(q.poly, true)}" fill="${DEBUG_PHASE[(q.phase - 1) % DEBUG_PHASE.length]}" fill-opacity="0.8" stroke="none"/>`;
     for (const q of dbg.quarters) {
       const n = q.poly.length;
       for (let i = 0; i < n; i++) {
-        const a = q.poly[i], b = q.poly[(i + 1) % n];
+        const a = q.poly[i],
+          b = q.poly[(i + 1) % n];
         const l = q.lab[i];
         const col = l >= 0 ? '#222' : l === -2 ? '#c00' : l === -3 ? '#06c' : '#999';
         s += `<path d="M${f1(a.x)} ${f1(a.y)}L${f1(b.x)} ${f1(b.y)}" stroke="${col}" stroke-width="${f1((l >= 0 ? 0.9 : 1.6) * u)}"/>`;
@@ -66,21 +71,31 @@ export function urbanDebugLayer(world: World, u: number): string {
 function patterns(pal: Palette, biome?: string): string {
   const U = pal.urban;
   const W = 6;
-  return `<defs><pattern id="p-ugarden" patternUnits="userSpaceOnUse" width="${W}" height="${W}"${isUnderdarkBiome(biome) ? '' : ' patternTransform="rotate(28)"'}>` +
-    (isUnderdarkBiome(biome) ? underdarkMarkSvg('garden', 2, 2, 1.1, pal) + underdarkMarkSvg('garden', 4.5, 4.5, 1.1, pal) : `<path d="M0.6 1.5H3.4M3.2 4.5H5.6" stroke="${U.gardenInk}" stroke-width="0.35" stroke-linecap="round" opacity="0.7"/>`) + '</pattern>' +
+  return (
+    `<defs><pattern id="p-ugarden" patternUnits="userSpaceOnUse" width="${W}" height="${W}"${isUnderdarkBiome(biome) ? '' : ' patternTransform="rotate(28)"'}>` +
+    (isUnderdarkBiome(biome) ? underdarkMarkSvg('garden', 2, 2, 1.1, pal) + underdarkMarkSvg('garden', 4.5, 4.5, 1.1, pal) : `<path d="M0.6 1.5H3.4M3.2 4.5H5.6" stroke="${U.gardenInk}" stroke-width="0.35" stroke-linecap="round" opacity="0.7"/>`) +
+    '</pattern>' +
     `<pattern id="p-ugrave" patternUnits="userSpaceOnUse" width="5" height="4"><path d="M1.2 1.2V2.8M0.6 1.8H1.8M3.7 3.1V3.9M3.3 3.4H4.1" stroke="${U.gardenInk}" stroke-width="0.25" opacity="0.8"/></pattern>` +
-    `<pattern id="p-upave" patternUnits="userSpaceOnUse" width="3" height="3"><circle cx="1.5" cy="1.5" r="0.28" fill="${U.placeInk}" opacity="0.55"/></pattern></defs>`;
+    `<pattern id="p-upave" patternUnits="userSpaceOnUse" width="3" height="3"><circle cx="1.5" cy="1.5" r="0.28" fill="${U.placeInk}" opacity="0.55"/></pattern></defs>`
+  );
 }
 
 /** Direction of the nearest edge of a ring at p (for square towers). */
 function edgeDir(ring: Polygon, p: { x: number; y: number }): number {
-  let best = 0, bd = Infinity;
+  let best = 0,
+    bd = Infinity;
   for (let i = 0; i < ring.length; i++) {
-    const a = ring[i], b = ring[(i + 1) % ring.length];
-    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+    const a = ring[i],
+      b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x,
+      dy = b.y - a.y,
+      l2 = dx * dx + dy * dy || 1;
     const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
     const d = Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
-    if (d < bd) { bd = d; best = Math.atan2(dy, dx); }
+    if (d < bd) {
+      bd = d;
+      best = Math.atan2(dy, dx);
+    }
   }
   return best;
 }
@@ -88,26 +103,53 @@ function edgeDir(ring: Polygon, p: { x: number; y: number }): number {
 /** Straight curtain bands with mitred joins, towers at the vertices (round or square), flanking gate towers. */
 export function wallSvg(w: UrbanWall, ink: string, fill: string, wallScale = 1, towerScale = 1): string {
   const th = w.thickness * wallScale;
-  const d = (w.pieces ?? [w.path]).map((p) => pathD(p, false)).join('');
-  let s = `<g class="u-walls"><path d="${d}" fill="none" stroke="${ink}" stroke-width="${f1(th + 1.4)}" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="6"/>` +
+  const d = (w.pieces ?? [w.path]).map(p => pathD(p, false)).join('');
+  let s =
+    `<g class="u-walls"><path d="${d}" fill="none" stroke="${ink}" stroke-width="${f1(th + 1.4)}" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="6"/>` +
     `<path d="${d}" fill="none" stroke="${fill}" stroke-width="${f1(Math.max(0.6, th - 1))}" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="6"/>`;
   const tower = (t: { x: number; y: number }, r: number): string => {
     if (w.towerShape !== 'square') return `<circle cx="${f1(t.x)}" cy="${f1(t.y)}" r="${f1(r)}"/>`;
-    const a = edgeDir(w.path, t), c = Math.cos(a), sn = Math.sin(a), h = r * 0.95;
-    const pts = [[-h, -h], [h, -h], [h, h], [-h, h]].map(([x, y]) => `${f1(t.x + x * c - y * sn)} ${f1(t.y + x * sn + y * c)}`);
+    const a = edgeDir(w.path, t),
+      c = Math.cos(a),
+      sn = Math.sin(a),
+      h = r * 0.95;
+    const pts = [
+      [-h, -h],
+      [h, -h],
+      [h, h],
+      [-h, h],
+    ].map(([x, y]) => `${f1(t.x + x * c - y * sn)} ${f1(t.y + x * sn + y * c)}`);
     return `<path d="M${pts.join('L')}Z"/>`;
   };
   const tr = w.thickness * 1.6 * towerScale;
   const tw = w.towers.map((t, i) => tower(t, tr * (w.towerScale?.[i] ?? 1))).join('');
-  const gt = (w.gateTowers ?? []).map((t) => tower(t, tr * 0.93)).join('');
+  const gt = (w.gateTowers ?? []).map(t => tower(t, tr * 0.93)).join('');
   s += `<g fill="${fill}" stroke="${ink}" stroke-width="0.9">${tw}${gt}</g></g>`;
   return s;
 }
 
-const hex2 = (h: string): [number, number, number] => { const v = parseInt(h.slice(1, 7), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
-const rgb2 = (c: number[]): string => '#' + c.map((x) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
-const mixHex = (a: string, b: string, t: number): string => { const A = hex2(a), B = hex2(b); return rgb2(A.map((x, i) => x + (B[i] - x) * t)); };
-const lumHex = (h: string): number => { const [r, g, b] = hex2(h); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
+const hex2 = (h: string): [number, number, number] => {
+  const v = parseInt(h.slice(1, 7), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+};
+const rgb2 = (c: number[]): string =>
+  '#' +
+  c
+    .map(x =>
+      Math.max(0, Math.min(255, Math.round(x)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('');
+const mixHex = (a: string, b: string, t: number): string => {
+  const A = hex2(a),
+    B = hex2(b);
+  return rgb2(A.map((x, i) => x + (B[i] - x) * t));
+};
+const lumHex = (h: string): number => {
+  const [r, g, b] = hex2(h);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+};
 
 /** Landmark building kinds (drawn distinctly, not as ordinary roofs). */
 export const LANDMARK_KINDS = new Set(['church', 'cathedral', 'landmark']);
@@ -122,7 +164,7 @@ function buildingsSvg(ub: NonNullable<World['urban']>, U: Palette['urban'], lw: 
   const lm = lumHex(U.mass);
   const base = lm < 0.3 ? mixHex(U.mass, U.yard, 0.42) : U.mass;
   const edge = lm < 0.3 ? mixHex(U.mass, '#000000', 0.25) : lumHex(U.massEdge) < lm ? U.massEdge : mixHex(U.mass, '#000000', 0.6);
-  const tones = (ub.renderHints?.storeyShade ? [-0.32, -0.22, -0.12, -0.03, 0.08] : [-0.09, -0.045, 0, 0.045, 0.09]).map((k) => (k < 0 ? mixHex(base, '#000000', -k) : mixHex(base, '#ffffff', k)));
+  const tones = (ub.renderHints?.storeyShade ? [-0.32, -0.22, -0.12, -0.03, 0.08] : [-0.09, -0.045, 0, 0.045, 0.09]).map(k => (k < 0 ? mixHex(base, '#000000', -k) : mixHex(base, '#ffffff', k)));
   const buckets: string[][] = tones.map(() => []);
   ub.buildings.forEach((b, i) => {
     if (LANDMARK_KINDS.has(b.kind)) return;
@@ -132,21 +174,32 @@ function buildingsSvg(ub: NonNullable<World['urban']>, U: Palette['urban'], lw: 
   });
   const ew = lw(Math.max(0.28, U.massEdgeW * 0.9), 0.22);
   let s = `<g class="u-buildings" stroke="${edge}" stroke-width="${ew}" stroke-linejoin="miter">`;
-  buckets.forEach((list, k) => { if (list.length) s += `<path d="${list.join('')}" fill="${tones[k]}"/>`; });
+  buckets.forEach((list, k) => {
+    if (list.length) s += `<path d="${list.join('')}" fill="${tones[k]}"/>`;
+  });
   s += '</g>';
   // landmarks: church / cathedral as a darker, hatched mass with a cross
-  const ch = ub.buildings.filter((b) => LANDMARK_KINDS.has(b.kind));
+  const ch = ub.buildings.filter(b => LANDMARK_KINDS.has(b.kind));
   if (ch.length) {
-    const d = ch.map((b) => pathD(b.poly, true)).join('');
+    const d = ch.map(b => pathD(b.poly, true)).join('');
     s += `<defs><pattern id="p-lmhatch" patternUnits="userSpaceOnUse" width="1.6" height="1.6" patternTransform="rotate(45)"><path d="M0 0.8H1.6" stroke="${U.landmarkEdge}" stroke-width="0.35" stroke-opacity="0.55"/></pattern></defs>`;
     s += `<g class="u-landmarks"><path d="${d}" fill="${U.landmark}" stroke="${U.landmarkEdge}" stroke-width="${lw(0.8, 0.4)}"/><path d="${d}" fill="url(#p-lmhatch)"/>`;
     // a cross on each church (Christian landmarks only), on its nave
     for (const b of ch) {
       if (b.kind !== 'church' && b.kind !== 'cathedral') continue;
       if (area(b.poly) < 60) continue;
-      let cx = 0, cy = 0, x0 = Infinity, x1 = -Infinity;
-      for (const q of b.poly) { cx += q.x; cy += q.y; x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); }
-      cx /= b.poly.length; cy /= b.poly.length;
+      let cx = 0,
+        cy = 0,
+        x0 = Infinity,
+        x1 = -Infinity;
+      for (const q of b.poly) {
+        cx += q.x;
+        cy += q.y;
+        x0 = Math.min(x0, q.x);
+        x1 = Math.max(x1, q.x);
+      }
+      cx /= b.poly.length;
+      cy /= b.poly.length;
       const r = Math.max(2.5, (x1 - x0) * 0.08);
       s += `<path d="M${f1(cx - r)} ${f1(cy)}H${f1(cx + r)}M${f1(cx)} ${f1(cy - r * 1.4)}V${f1(cy + r)}" stroke="${U.landmarkEdge}" stroke-width="${lw(0.9, 0.5)}"/>`;
     }
@@ -167,49 +220,83 @@ function fenceSvg(k: string, d: string, pal: Palette, lw: (m: number, px: number
   const [rail, pw, pl, gap] = FENCE_STYLE[k] ?? FENCE_STYLE['yard-fence'];
   return `<path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.8" stroke-width="${lw(rail, 0.18)}"/><path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.9" stroke-width="${f1(pw)}" stroke-dasharray="${pl} ${gap}" stroke-linecap="butt"/>`;
 }
-const WALL_LINES: Record<string, number> = { 'arcane-circle': 0.5, 'lock-gate': 0.8, bank: 0.8, stands: 2.4, dome: 0.6, gallery: 2.2, 'zigzag-wall': 2.4, 'canal-wall': 1, 'pyramid-step': 0.5, 'stall-row': 2.2,  'compound-wall': 1, 'citadel-wall': 2.4, 'stone-wall': 1.8, prakara: 1.6, 'ward-wall': 1.8, platform: 0.4, stela: 1.1, 'sacbe-edge': 0.5, balustrade: 1, 'round-door': 0.35, 'carved-door': 0.25, 'veranda-edge': 0.35, colonnade: 0.25, 'drying-rack': 0.6 };
+const WALL_LINES: Record<string, number> = {
+  'arcane-circle': 0.5,
+  'lock-gate': 0.8,
+  bank: 0.8,
+  stands: 2.4,
+  dome: 0.6,
+  gallery: 2.2,
+  'zigzag-wall': 2.4,
+  'canal-wall': 1,
+  'pyramid-step': 0.5,
+  'stall-row': 2.2,
+  'compound-wall': 1,
+  'citadel-wall': 2.4,
+  'stone-wall': 1.8,
+  prakara: 1.6,
+  'ward-wall': 1.8,
+  platform: 0.4,
+  stela: 1.1,
+  'sacbe-edge': 0.5,
+  balustrade: 1,
+  'round-door': 0.35,
+  'carved-door': 0.25,
+  'veranda-edge': 0.35,
+  colonnade: 0.25,
+  'drying-rack': 0.6,
+};
 
 /** Compound grounds, water pieces (moats, tanks) and the moat outside the town wall (drawn under the buildings). */
 function cultureUnderlay(ub: NonNullable<World['urban']>, pal: Palette, lw: (m: number, px: number) => string): string {
   const U = pal.urban;
   let s = '';
-  const moats = (ub.lines ?? []).filter((l) => l.kind === 'moat');
+  const moats = (ub.lines ?? []).filter(l => l.kind === 'moat');
   // (one path per width: a city moat and the moats of its temples differ)
   const moatW = new Map<number, string>();
-  for (const l of moats) { const w = l.width ?? 8; moatW.set(w, (moatW.get(w) ?? '') + pathD(l.path, !!l.closed)); }
+  for (const l of moats) {
+    const w = l.width ?? 8;
+    moatW.set(w, (moatW.get(w) ?? '') + pathD(l.path, !!l.closed));
+  }
   for (const [w, d] of moatW) s += `<path class="u-moat" d="${d}" fill="none" stroke="${pal.riverFill}" stroke-width="${f1(w)}" stroke-linejoin="miter"/>`;
-  const grounds = ub.parcels.filter((p) => (typeof p.use === 'string' && p.use.startsWith('compound:')) || GROUND_USES.has(p.use));
-  if (grounds.length) s += `<path class="u-compounds" d="${grounds.map((p) => pathD(p.poly, true)).join('')}" fill="${U.place}"/>`;
-  const sahn = ub.landmarks.filter((l) => l.kind === 'sahn');
-  if (sahn.length) s += `<path d="${sahn.map((l) => pathD(l.poly, true)).join('')}" fill="${U.place}" stroke="${U.plotLine}" stroke-width="${lw(0.2, 0.1)}"/><path d="${sahn.map((l) => pathD(l.poly, true)).join('')}" fill="url(#p-upave)"/>`;
-  const garth = ub.landmarks.filter((l) => l.kind === 'garth');
-  if (garth.length) s += `<path d="${garth.map((l) => pathD(l.poly, true)).join('')}" fill="${U.garden}" stroke="${U.plotLine}" stroke-width="${lw(0.25, 0.1)}"/>`;
-  const ditch = ub.parcels.filter((p) => p.use === 'ditch');
-  if (ditch.length) s += `<path class="u-ditch" d="${ditch.map((p) => pathD(p.poly, true)).join('')}" fill="${U.garden}" stroke="${U.plotLine}" stroke-width="${lw(0.3, 0.12)}"/><path d="${ditch.map((p) => pathD(p.poly, true)).join('')}" fill="url(#p-ugarden)"/>`;
+  const grounds = ub.parcels.filter(p => (typeof p.use === 'string' && p.use.startsWith('compound:')) || GROUND_USES.has(p.use));
+  if (grounds.length) s += `<path class="u-compounds" d="${grounds.map(p => pathD(p.poly, true)).join('')}" fill="${U.place}"/>`;
+  const sahn = ub.landmarks.filter(l => l.kind === 'sahn');
+  if (sahn.length) s += `<path d="${sahn.map(l => pathD(l.poly, true)).join('')}" fill="${U.place}" stroke="${U.plotLine}" stroke-width="${lw(0.2, 0.1)}"/><path d="${sahn.map(l => pathD(l.poly, true)).join('')}" fill="url(#p-upave)"/>`;
+  const garth = ub.landmarks.filter(l => l.kind === 'garth');
+  if (garth.length) s += `<path d="${garth.map(l => pathD(l.poly, true)).join('')}" fill="${U.garden}" stroke="${U.plotLine}" stroke-width="${lw(0.25, 0.1)}"/>`;
+  const ditch = ub.parcels.filter(p => p.use === 'ditch');
+  if (ditch.length) s += `<path class="u-ditch" d="${ditch.map(p => pathD(p.poly, true)).join('')}" fill="${U.garden}" stroke="${U.plotLine}" stroke-width="${lw(0.3, 0.12)}"/><path d="${ditch.map(p => pathD(p.poly, true)).join('')}" fill="url(#p-ugarden)"/>`;
   // chinampas: the canals between the strips, the strips themselves (and canals down the lanes)
-  const chW = ub.landmarks.filter((l) => l.kind === 'chinampa-canal' || l.kind === 'baray' || l.kind === 'pond');
-  if (chW.length) s += `<path class="u-chinampa-canals" d="${chW.map((l) => pathD(l.poly, true)).join('')}" fill="${pal.riverFill}"/>`;
-  const chF = ub.landmarks.filter((l) => l.kind === 'chinampa');
-  if (chF.length) { const d = chF.map((l) => pathD(l.poly, true)).join(''); s += `<g class="u-chinampas"><path d="${d}" fill="${U.garden}" stroke="${pal.waterEdge}" stroke-width="${lw(0.3, 0.15)}"/><path d="${d}" fill="url(#p-ugarden)"/></g>`; }
-  const canalsL = (ub.lines ?? []).filter((l) => l.kind === 'canal');
+  const chW = ub.landmarks.filter(l => l.kind === 'chinampa-canal' || l.kind === 'baray' || l.kind === 'pond');
+  if (chW.length) s += `<path class="u-chinampa-canals" d="${chW.map(l => pathD(l.poly, true)).join('')}" fill="${pal.riverFill}"/>`;
+  const chF = ub.landmarks.filter(l => l.kind === 'chinampa');
+  if (chF.length) {
+    const d = chF.map(l => pathD(l.poly, true)).join('');
+    s += `<g class="u-chinampas"><path d="${d}" fill="${U.garden}" stroke="${pal.waterEdge}" stroke-width="${lw(0.3, 0.15)}"/><path d="${d}" fill="url(#p-ugarden)"/></g>`;
+  }
+  const canalsL = (ub.lines ?? []).filter(l => l.kind === 'canal');
   for (const l of canalsL) s += `<path d="${pathD(l.path, false)}" fill="none" stroke="${pal.riverFill}" stroke-width="${f1(l.width ?? 2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
   // cornfields round a native village: corn hills in rows
   // agricultural terraces (andenes): the flights cleared and cultivated (their walls are drawn over the buildings)
-  const terr = ub.landmarks.filter((l) => l.kind === 'terrace-field').map((l) => pathD(l.poly, true)).join('');
+  const terr = ub.landmarks
+    .filter(l => l.kind === 'terrace-field')
+    .map(l => pathD(l.poly, true))
+    .join('');
   if (terr) s += `<path class="u-terraces" d="${terr}" fill="${terraceTone(pal)}" stroke="${terraceTone(pal)}" stroke-width="${lw(1.5, 0.3)}"/>`;
-  const corn = ub.landmarks.filter((l) => l.kind === 'cornfield' || l.kind === 'garden-bed');
+  const corn = ub.landmarks.filter(l => l.kind === 'cornfield' || l.kind === 'garden-bed');
   if (corn.length) {
-    const d = corn.map((l) => pathD(l.poly, true)).join('');
+    const d = corn.map(l => pathD(l.poly, true)).join('');
     // (the corn hills in rows: a dense dot texture that reads as a tilled field from afar)
     s += `<defs><pattern id="p-ucorn" patternUnits="userSpaceOnUse" width="2.6" height="2.6" patternTransform="rotate(12)"><circle cx="1.3" cy="1.3" r="0.6" fill="${U.gardenInk}" opacity="0.75"/></pattern></defs>`;
     s += `<g class="u-cornfields"><path d="${d}" fill="${mixHex(pal.land.field, U.gardenInk, 0.14)}" stroke="${U.gardenInk}" stroke-opacity="0.55" stroke-width="${lw(0.45, 0.25)}" stroke-dasharray="2 1"/><path d="${d}" fill="url(#p-ucorn)"/></g>`;
   }
-  const cem = ub.landmarks.filter((l) => l.kind === 'cemetery');
-  if (cem.length) s += `<path d="${cem.map((l) => pathD(l.poly, true)).join('')}" fill="${U.garden}"/><path d="${cem.map((l) => pathD(l.poly, true)).join('')}" fill="url(#p-ugrave)"/>`;
+  const cem = ub.landmarks.filter(l => l.kind === 'cemetery');
+  if (cem.length) s += `<path d="${cem.map(l => pathD(l.poly, true)).join('')}" fill="${U.garden}"/><path d="${cem.map(l => pathD(l.poly, true)).join('')}" fill="url(#p-ugrave)"/>`;
   // Separate pieces paint their union: a shared evenodd path would punch a hole at every overlap.
   for (const water of ub.water ?? []) s += `<path class="u-water" d="${phD(water)}" fill-rule="evenodd" fill="${pal.riverFill}" stroke="${pal.waterEdge}" stroke-width="${lw(0.5, 0.3)}"/>`;
-  const bases = ub.landmarks.filter((l) => l.kind === 'tenshu-base' || l.kind === 'mebon');
-  if (bases.length) s += `<path d="${bases.map((l) => pathD(l.poly, true)).join('')}" fill="${U.wallFill}" stroke="${U.wall}" stroke-width="${lw(0.4, 0.2)}"/>`;
+  const bases = ub.landmarks.filter(l => l.kind === 'tenshu-base' || l.kind === 'mebon');
+  if (bases.length) s += `<path d="${bases.map(l => pathD(l.poly, true)).join('')}" fill="${U.wallFill}" stroke="${U.wall}" stroke-width="${lw(0.4, 0.2)}"/>`;
   return s;
 }
 
@@ -233,26 +320,30 @@ function cultureOverlay(ub: NonNullable<World['urban']>, pal: Palette, lw: (m: n
     else if (k === 'track') {
       const rural = !open && !ub.renderHints?.stilts;
       s += `<path d="${d}" fill="none" stroke="${rural ? ruralInk(pal) : open ? pathEarth(pal) : U.street}" stroke-opacity="${rural ? pal.rural.track : open ? 0.75 : 1}" stroke-width="${lw(rural ? 1.6 : open ? 2.6 : 3, rural ? 0.9 : 0.6)}" stroke-linecap="${rural ? 'butt' : 'round'}"${rural ? ' stroke-dasharray="6 3.5"' : ''}/>`;
-    }
-    else if (k === 'weir') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(1.4, 0.5)}" stroke-dasharray="1.2 0.6"/>`;
+    } else if (k === 'weir') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(1.4, 0.5)}" stroke-dasharray="1.2 0.6"/>`;
     else if (k === 'parterre' || k === 'footpath') s += `<path d="${d}" fill="none" stroke="${k === 'footpath' ? (open ? pathEarth(pal) : U.street) : U.plotLine}" stroke-width="${lw(k === 'footpath' ? 1.4 : 0.5, 0.15)}" stroke-linecap="round"/>`;
     else if (k === 'ghat-steps') s += `<path d="${d}" fill="none" stroke="${U.plotLine}" stroke-width="${lw(0.3, 0.12)}"/>`;
     else if (k === 'terrace') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(TS.wall.width, TS.wall.minPx)}" stroke-opacity="${TS.wall.alpha}"/>`;
     else if (k === 'andene') {
-      const risers = (ub.lines ?? []).filter((l) => l.kind === 'andene-riser');
+      const risers = (ub.lines ?? []).filter(l => l.kind === 'andene-riser');
       const ris = (byKind.get('andene-riser') ?? []).join('');
-      const ticks = risers.flatMap((l) => terraceMarks(l.closed ? [...l.path, l.path[0]] : l.path, 6, 1.2)).map((p) => pathD(p, false)).join('');
+      const ticks = risers
+        .flatMap(l => terraceMarks(l.closed ? [...l.path, l.path[0]] : l.path, 6, 1.2))
+        .map(p => pathD(p, false))
+        .join('');
       if (ris) s += `<path d="${ris}" fill="none" stroke="${U.wallFill}" stroke-opacity="${TS.face.alpha}" stroke-width="${TS.face.width}" stroke-linecap="butt"/>`;
       if (ticks) s += `<path class="u-terrace-hachures" d="${ticks}" fill="none" stroke="${U.wall}" stroke-opacity="${TS.hatch.alpha}" stroke-width="${TS.hatch.width}" stroke-linecap="butt"/>`;
       s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(TS.andene.width, TS.andene.minPx)}" stroke-opacity="${TS.andene.alpha}"/>`;
-    }
-    else if (k === 'andene-riser') continue;
+    } else if (k === 'andene-riser') continue;
     else if (k === 'terrace-stair') {
-      const ticks = (ub.lines ?? []).filter((l) => l.kind === k).flatMap((l) => terraceMarks(l.closed ? [...l.path, l.path[0]] : l.path, 2.2, 1.5)).map((p) => pathD(p, false)).join('');
+      const ticks = (ub.lines ?? [])
+        .filter(l => l.kind === k)
+        .flatMap(l => terraceMarks(l.closed ? [...l.path, l.path[0]] : l.path, 2.2, 1.5))
+        .map(p => pathD(p, false))
+        .join('');
       s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(TS.stair.width, TS.stair.minPx)}" stroke-opacity="${TS.stair.alpha}"/>`;
       if (ticks) s += `<path class="u-terrace-treads" d="${ticks}" fill="none" stroke="${U.wall}" stroke-width="${TS.hatch.width}" stroke-opacity="${TS.hatch.alpha}" stroke-linecap="butt"/>`;
-    }
-    else if (k === 'thorn-fence') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(2.2, 0.8)}" stroke-opacity="0.85" stroke-dasharray="1.3 0.9" stroke-linecap="round"/>`;
+    } else if (k === 'thorn-fence') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(2.2, 0.8)}" stroke-opacity="0.85" stroke-dasharray="1.3 0.9" stroke-linecap="round"/>`;
     else if (CAMP_FENCES[k]) s += fenceSvg(k, d, pal, lw);
     else if (k === 'garden-hedge') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(1.2, 0.4)}" stroke-opacity="0.7" stroke-dasharray="1.6 0.7"/>`;
     else if (k === 'bund') s += `<path d="${d}" fill="none" stroke="${U.plotLine}" stroke-opacity="0.35" stroke-width="${lw(0.4, 0.1)}" stroke-linecap="butt"/>`;
@@ -261,27 +352,28 @@ function cultureOverlay(ub: NonNullable<World['urban']>, pal: Palette, lw: (m: n
     else if (k === 'ditch') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(4, 0.9)}" stroke-opacity="0.35"/>`;
     else if (k === 'footbridge') {
       // canal footbridges: the deck between its parapets (drawn per bridge: widths differ)
-      for (const l of (ub.lines ?? []).filter((x) => x.kind === 'footbridge')) {
-        const w = l.width ?? 2.5, dd = pathD(l.path, false);
+      for (const l of (ub.lines ?? []).filter(x => x.kind === 'footbridge')) {
+        const w = l.width ?? 2.5,
+          dd = pathD(l.path, false);
         s += `<path d="${dd}" fill="none" stroke="${pal.bridgeInk}" stroke-width="${f1(w + 0.9)}" stroke-linecap="butt"/><path d="${dd}" fill="none" stroke="${pal.bridgeDeck}" stroke-width="${f1(w)}" stroke-linecap="butt"/>`;
       }
-    }
-    else if (k === 'bazaar-roof') {
+    } else if (k === 'bazaar-roof') {
       // the vaulted bazaar street: a roof over the street's own width
-      for (const l of (ub.lines ?? []).filter((x) => x.kind === 'bazaar-roof')) {
-        const w = Math.max(2, (l.width ?? 5) - 0.6), dd = pathD(l.path, false);
+      for (const l of (ub.lines ?? []).filter(x => x.kind === 'bazaar-roof')) {
+        const w = Math.max(2, (l.width ?? 5) - 0.6),
+          dd = pathD(l.path, false);
         s += `<path d="${dd}" fill="none" stroke="${U.landmarkEdge}" stroke-width="${f1(w + 0.8)}" stroke-linecap="butt" stroke-linejoin="round"/><path d="${dd}" fill="none" stroke="${U.landmark}" stroke-width="${f1(w)}" stroke-linecap="butt" stroke-linejoin="round"/>`;
       }
-    }
-    else if (k === 'qanat') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(1, 0.5)}" stroke-dasharray="4 3" stroke-opacity="0.7"/>`;
+    } else if (k === 'qanat') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(1, 0.5)}" stroke-dasharray="4 3" stroke-opacity="0.7"/>`;
     else if (k === 'qanat-shaft') s += `<path d="${d}" fill="${U.garden}" stroke="${U.wall}" stroke-width="${lw(0.7, 0.3)}"/>`;
     else if (k === 'hachure') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${TS.hatch.width}" stroke-opacity="${TS.hatch.alpha}" stroke-linecap="butt"/>`;
     else s += `<path class="u-line-${k}" d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(WALL_LINES[k] ?? 1, 0.4)}" stroke-linejoin="miter" stroke-linecap="square"/>`;
   }
   const trees = ub.trees ?? [];
   if (trees.length) {
-    const fill = pal.treeFill ?? '#7f9a5a', ink = pal.treeInk ?? '#4a6a3a';
-    s += `<g class="u-canopy" fill="${fill}" fill-opacity="0.78" stroke="${ink}" stroke-width="${lw(0.35, 0.15)}">` + trees.map((t) => brushes ? brushes.tree(t.x, t.y, t.r) : `<circle cx="${f1(t.x)}" cy="${f1(t.y)}" r="${f1(t.r)}"/>`).join('') + '</g>';
+    const fill = pal.treeFill ?? '#7f9a5a',
+      ink = pal.treeInk ?? '#4a6a3a';
+    s += `<g class="u-canopy" fill="${fill}" fill-opacity="0.78" stroke="${ink}" stroke-width="${lw(0.35, 0.15)}">` + trees.map(t => (brushes ? brushes.tree(t.x, t.y, t.r) : `<circle cx="${f1(t.x)}" cy="${f1(t.y)}" r="${f1(t.r)}"/>`)).join('') + '</g>';
   }
   return s;
 }
@@ -305,37 +397,68 @@ export const terraceTone = (pal: Palette): string => mixHex(pal.land.meadow, pal
 function openGroundSvg(ub: NonNullable<World['urban']>, pal: Palette, lw: (m: number, px: number) => string, biome?: string, streets = true): string {
   const U = pal.urban;
   const mul = pal.landBlend === 'multiply' ? ' style="mix-blend-mode:multiply"' : '';
-  let s = `<defs><pattern id="p-utuft" patternUnits="userSpaceOnUse" width="11" height="9">` + (isUnderdarkBiome(biome) ? underdarkMarkSvg('meadow', 2.5, 3.5, 1.4, pal) + underdarkMarkSvg('meadow', 8, 7, 1.4, pal) : `<path d="M2.5 4.5l-0.8-1.9M2.5 4.5v-2.1M2.5 4.5l0.8-1.9M8 8.4l-0.8-1.9M8 8.4l0.8-1.9" stroke="${pal.grass}" stroke-width="0.35" fill="none" stroke-linecap="round" opacity="0.75"/>`) + '</pattern></defs>';
-  const of = (uses: string[]) => ub.parcels.filter((p) => uses.includes(p.use)).map((p) => pathD(p.poly, true)).join('');
+  let s =
+    `<defs><pattern id="p-utuft" patternUnits="userSpaceOnUse" width="11" height="9">` +
+    (isUnderdarkBiome(biome)
+      ? underdarkMarkSvg('meadow', 2.5, 3.5, 1.4, pal) + underdarkMarkSvg('meadow', 8, 7, 1.4, pal)
+      : `<path d="M2.5 4.5l-0.8-1.9M2.5 4.5v-2.1M2.5 4.5l0.8-1.9M8 8.4l-0.8-1.9M8 8.4l0.8-1.9" stroke="${pal.grass}" stroke-width="0.35" fill="none" stroke-linecap="round" opacity="0.75"/>`) +
+    '</pattern></defs>';
+  const of = (uses: string[]) =>
+    ub.parcels
+      .filter(p => uses.includes(p.use))
+      .map(p => pathD(p.poly, true))
+      .join('');
   // the settlement's ground (the footprint and the land use's margin round it, off the water): grass, opaque where
   // it must hide the roads under it
-  const ground = ub.landmarks.filter((l) => l.kind === 'camp-ground').map((l) => pathD(l.poly, true)).join('');
-  const solid = solidGround(ub).map((q) => pathD(q, true)).join('');
+  const ground = ub.landmarks
+    .filter(l => l.kind === 'camp-ground')
+    .map(l => pathD(l.poly, true))
+    .join('');
+  const solid = solidGround(ub)
+    .map(q => pathD(q, true))
+    .join('');
   if (solid) s += `<path class="u-ground-base" d="${solid}" fill="${openGroundBase(pal)}"/>`;
   if (ground) s += `<g class="u-ground"><path d="${ground}" fill="${pal.land.meadow}" fill-opacity="${f1(pal.landOpacity * 0.8)}"${mul}/><path d="${ground}" fill="url(#p-utuft)"/></g>`;
   const grass = of(OPEN_GRASS_USES);
   if (grass) s += `<g class="u-yards-grass"><path d="${grass}" fill="${pal.land.pasture}" fill-opacity="${f1(pal.landOpacity * 0.85)}"${mul}/><path d="${grass}" fill="url(#p-utuft)"/></g>`;
   const green = of(OPEN_GREEN_USES);
   if (green) s += `<g class="u-greens"><path d="${green}" fill="${pal.land.meadow}" fill-opacity="${f1(pal.landOpacity)}"${mul}/><path d="${green}" fill="url(#p-utuft)"/></g>`;
-  const gard = of(['garden']) + ub.backLand.filter(() => false).map(phD).join('');
+  const gard =
+    of(['garden']) +
+    ub.backLand
+      .filter(() => false)
+      .map(phD)
+      .join('');
   if (gard) s += `<g class="u-gardens"><path d="${gard}" fill="${pal.land.garden}" fill-opacity="${f1(pal.landOpacity)}"${mul}/><path d="${gard}" fill="url(#p-ugarden)" opacity="0.7"/></g>`;
   const fields = of(['field']);
-  if (fields) s += isUnderdarkBiome(biome) ? `<g class="u-fields"><path d="${fields}" fill="${pal.land.field}" fill-opacity="${f1(pal.landOpacity)}"${mul}/><path d="${fields}" fill="url(#p-ugarden)"/></g>` : `<defs><pattern id="p-ufurrow" patternUnits="userSpaceOnUse" width="40" height="3" patternTransform="rotate(24)"><path d="M0 1.5H40" stroke="${pal.furrow}" stroke-width="0.35" opacity="${pal.furrowAlpha}"/></pattern></defs><g class="u-fields"><path d="${fields}" fill="${pal.land.field}" fill-opacity="${f1(pal.landOpacity)}"${mul}/><path d="${fields}" fill="url(#p-ufurrow)" stroke="${pal.furrow}" stroke-opacity="0.4" stroke-width="${lw(0.4, 0.15)}"/></g>`;
+  if (fields)
+    s += isUnderdarkBiome(biome)
+      ? `<g class="u-fields"><path d="${fields}" fill="${pal.land.field}" fill-opacity="${f1(pal.landOpacity)}"${mul}/><path d="${fields}" fill="url(#p-ugarden)"/></g>`
+      : `<defs><pattern id="p-ufurrow" patternUnits="userSpaceOnUse" width="40" height="3" patternTransform="rotate(24)"><path d="M0 1.5H40" stroke="${pal.furrow}" stroke-width="0.35" opacity="${pal.furrowAlpha}"/></pattern></defs><g class="u-fields"><path d="${fields}" fill="${pal.land.field}" fill-opacity="${f1(pal.landOpacity)}"${mul}/><path d="${fields}" fill="url(#p-ufurrow)" stroke="${pal.furrow}" stroke-opacity="0.4" stroke-width="${lw(0.4, 0.15)}"/></g>`;
   const commons = of(['commons']);
   if (commons) s += `<path class="u-commons" d="${commons}" fill="${pal.land.pasture}" fill-opacity="${f1(pal.landOpacity * 0.8)}"${mul}/>`;
   const paved = of(['place', 'plaza', 'market']);
   if (paved) s += `<g class="u-places"><path d="${paved}" fill="${U.place}"/><path d="${paved}" fill="url(#p-upave)"/></g>`;
   // churned mud (a war camp): the mud tone, specks and ruts, puddles
-  const mud = ub.landmarks.filter((l) => l.kind === 'mud').map((l) => pathD(l.poly, true)).join('');
+  const mud = ub.landmarks
+    .filter(l => l.kind === 'mud')
+    .map(l => pathD(l.poly, true))
+    .join('');
   if (mud) {
     const dk = mixHex(pal.trackFill, '#000000', 0.25);
     s += `<defs><pattern id="p-umud" patternUnits="userSpaceOnUse" width="9" height="7" patternTransform="rotate(17)"><path d="M1 1.5l1.6 0.4M5.5 4.8l1.2-0.5M2.4 5.6l0.9 0.6M7.2 1.2l0.5 1" stroke="${dk}" stroke-width="0.35" stroke-linecap="round" opacity="0.55"/><circle cx="4.2" cy="2.4" r="0.32" fill="${dk}" opacity="0.5"/><circle cx="7.8" cy="5.9" r="0.25" fill="${dk}" opacity="0.45"/></pattern></defs>`;
     s += `<g class="u-mud"><path d="${mud}" fill="${mixHex(pal.trackFill, pal.farmYard, 0.62)}" fill-opacity="0.75"/><path d="${mud}" fill="url(#p-umud)"/></g>`;
   }
-  const pud = ub.landmarks.filter((l) => l.kind === 'puddle').map((l) => pathD(l.poly, true)).join('');
+  const pud = ub.landmarks
+    .filter(l => l.kind === 'puddle')
+    .map(l => pathD(l.poly, true))
+    .join('');
   if (pud) s += `<path class="u-puddles" d="${pud}" fill="${pal.riverFill}" fill-opacity="0.7" stroke="${mixHex(pal.trackFill, '#000000', 0.2)}" stroke-opacity="0.6" stroke-width="${lw(0.3, 0.1)}"/>`;
   // the trampled ground round the buildings
-  const earth = ub.landmarks.filter((l) => l.kind === 'yard-earth' || l.kind === 'midden').map((l) => pathD(l.poly, true)).join('');
+  const earth = ub.landmarks
+    .filter(l => l.kind === 'yard-earth' || l.kind === 'midden')
+    .map(l => pathD(l.poly, true))
+    .join('');
   if (earth) s += `<path class="u-yard-earth" d="${earth}" fill="${yardEarthTone(pal)}" fill-opacity="0.85"/>`;
   return s + (streets ? openGroundPathsSvg(ub, pal) : '');
 }
@@ -350,7 +473,7 @@ function openGroundPathsSvg(ub: NonNullable<World['urban']>, pal: Palette, sand 
     const i = indices.get(st);
     const path = i === undefined ? st.path : servedStreetPath(ub, i);
     if (path.length < 2) continue;
-    const k = (!sand && st.width >= 6.5 && st.rank <= 1 ? 'c' : 'e') + (Math.round(st.width * 2) / 2);
+    const k = (!sand && st.width >= 6.5 && st.rank <= 1 ? 'c' : 'e') + Math.round(st.width * 2) / 2;
     if (!byW.has(k)) byW.set(k, []);
     byW.get(k)!.push(pathD(path, false));
   }
@@ -370,19 +493,37 @@ function boardwalksSvg(ub: NonNullable<World['urban']>, pal: Palette): string {
   return s + '</g>';
 }
 
-export function urbanLayer(world: World, pal: Palette, u: number, debug: boolean, fringe: CountryFringe = { bands: [], ground: [], streets: [] }, raster = true, landuse = world.options.landuse, naturalGround: PolyH[] = [], contours = world.options.contours, landscapeGround: PolyH[] = [], appearance?: GroundAppearance, cover: LandArea[] = [], brushes?: SvgBrushes, forestMask = '', layers: Partial<ExportLayers> = {}): string {
+export function urbanLayer(
+  world: World,
+  pal: Palette,
+  u: number,
+  debug: boolean,
+  fringe: CountryFringe = { bands: [], ground: [], streets: [] },
+  raster = true,
+  landuse = world.options.landuse,
+  naturalGround: PolyH[] = [],
+  contours = world.options.contours,
+  landscapeGround: PolyH[] = [],
+  appearance?: GroundAppearance,
+  cover: LandArea[] = [],
+  brushes?: SvgBrushes,
+  forestMask = '',
+  layers: Partial<ExportLayers> = {},
+): string {
   if (debug) return layers.city !== false ? urbanDebugLayer(world, u) : '';
   const ub = world.urban;
   if (!ub) return '';
   const U = pal.urban;
   const material = appearance ?? groundAppearance(ub, world);
-  const city = layers.city !== false, streets = layers.streets !== false;
+  const city = layers.city !== false,
+    streets = layers.streets !== false;
   const waterKinds = new Set(['chinampa-canal', 'baray', 'pond']);
   const waterLines = new Set(['moat', 'canal']);
-  const underlay = { ...ub,
+  const underlay = {
+    ...ub,
     parcels: city ? ub.parcels : [],
-    landmarks: ub.landmarks.filter((l) => waterKinds.has(l.kind) ? layers.water !== false : city),
-    lines: (ub.lines ?? []).filter((l) => waterLines.has(l.kind) ? layers.water !== false : city),
+    landmarks: ub.landmarks.filter(l => (waterKinds.has(l.kind) ? layers.water !== false : city)),
+    lines: (ub.lines ?? []).filter(l => (waterLines.has(l.kind) ? layers.water !== false : city)),
     water: layers.water !== false ? ub.water : [],
   };
   const lw = (m: number, px: number) => f1(Math.max(m, px * u)); // meters, with a floor in pixels of a 1600 px render
@@ -392,12 +533,12 @@ export function urbanLayer(world: World, pal: Palette, u: number, debug: boolean
   if (!city) {
     if (streets) {
       if (!open && !stilts) {
-        const space = ub.quarters.flatMap((q) => q.streetSpace);
+        const space = ub.quarters.flatMap(q => q.streetSpace);
         if (space.length) s += `<path class="u-streets" d="${space.map(phD).join('')}" fill-rule="evenodd" fill="${U.street}"/>`;
       }
       s += stilts ? boardwalksSvg(ub, pal) : openGroundPathsSvg(ub, pal, material.earthStreets);
       s += townBridgesSvg(world.bridges ?? [], pal);
-      s += cultureOverlay({ ...ub, lines: (ub.lines ?? []).filter((l) => STREET_LINES.has(l.kind)), trees: [] }, pal, lw, brushes);
+      s += cultureOverlay({ ...ub, lines: (ub.lines ?? []).filter(l => STREET_LINES.has(l.kind)), trees: [] }, pal, lw, brushes);
     }
     s += cultureUnderlay(underlay, pal, lw);
     return s + '</g>';
@@ -407,45 +548,56 @@ export function urbanLayer(world: World, pal: Palette, u: number, debug: boolean
   // a stilt town has no ground: its boardwalks are drawn as planks over the water and the marsh
   if (open) s += openGroundSvg(ub, pal, lw, world.options.biome, streets);
   else if (stilts && streets) s += boardwalksSvg(ub, pal);
-  else if (streets) s += `<path class="u-streets" d="${ub.quarters.map((q) => pathD(orientPos(q.poly.outer), true) + q.poly.holes.map((h) => pathD(orientPos(h).slice().reverse(), true)).join('')).join('')}" fill-rule="nonzero" fill="${U.street}"/>`;
+  else if (streets) s += `<path class="u-streets" d="${ub.quarters.map(q => pathD(orientPos(q.poly.outer), true) + q.poly.holes.map(h => pathD(orientPos(h).slice().reverse(), true)).join('')).join('')}" fill-rule="nonzero" fill="${U.street}"/>`;
   if (!open) {
-  const places = ub.parcels.filter((p) => p.use === 'place' || p.use === 'market' || p.use === 'quay' || p.use === 'pier' || p.use === 'slipway' || p.use === 'timber-yard' || p.use === 'mill-yard' || p.use === 'mill' || p.use === 'tannery-yard' || p.use === 'bridge');
-  if (places.length) {
-    const d = places.map((p) => pathD(p.poly, true)).join('');
-    s += `<g class="u-places"><path d="${d}" fill="${U.place}"/><path d="${d}" fill="url(#p-upave)"/></g>`;
-  }
-  const greens = ub.parcels.filter((p) => p.use === 'green' || p.use === 'mill-island' || p.use === 'windmill-mound' || p.use === 'gallows-hill' || p.use === 'ropewalk-yard');
-  if (greens.length) {
-    const d = greens.map((p) => pathD(p.poly, true)).join('');
-    s += `<g class="u-greens"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#p-ugarden)" opacity="0.6"/></g>`;
-  }
-  const yards = ub.parcels.filter((p) => p.use === 'church');
-  if (yards.length) {
-    const d = yards.map((p) => pathD(p.poly, true)).join('');
-    s += `<g class="u-churchyard"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#p-ugrave)"/></g>`;
-  }
-  const blockD = ub.blocks.filter((_, i) => ub.blockInfo[i]?.kind === 'block').map((b) => pathD(b, true)).concat(ub.parcels.filter((p) => p.use === 'arena-plot' || p.use === 'inn').map((p) => pathD(p.poly, true))).join('');
-  if (!stilts) s += `<path class="u-blocks" d="${blockD}" fill="${U.yard}"/>`;
-  // meadows inside a block (village greens, thing places, open camp ground): over the yard colour
-  const plazas = ub.parcels.filter((p) => p.use === 'plaza');
-  if (plazas.length) { const d = plazas.map((p) => pathD(p.poly, true)).join(''); s += `<g class="u-plazas"><path d="${d}" fill="${U.place}"/><path d="${d}" fill="url(#p-upave)"/></g>`; }
-  const meadows = ub.parcels.filter((p) => p.use === 'meadow');
-  if (meadows.length) { const d = meadows.map((p) => pathD(p.poly, true)).join(''); s += `<g class="u-meadows"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#p-ugarden)" opacity="0.45"/></g>`; }
-  if (material.gardens.length) {
-    const d = material.gardens.map(phD).join('');
-    s += `<g class="u-gardens"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#${ub.renderHints?.graves ? 'p-ugrave' : 'p-ugarden'})"/></g>`;
-  }
+    const places = ub.parcels.filter(p => p.use === 'place' || p.use === 'market' || p.use === 'quay' || p.use === 'pier' || p.use === 'slipway' || p.use === 'timber-yard' || p.use === 'mill-yard' || p.use === 'mill' || p.use === 'tannery-yard' || p.use === 'bridge');
+    if (places.length) {
+      const d = places.map(p => pathD(p.poly, true)).join('');
+      s += `<g class="u-places"><path d="${d}" fill="${U.place}"/><path d="${d}" fill="url(#p-upave)"/></g>`;
+    }
+    const greens = ub.parcels.filter(p => p.use === 'green' || p.use === 'mill-island' || p.use === 'windmill-mound' || p.use === 'gallows-hill' || p.use === 'ropewalk-yard');
+    if (greens.length) {
+      const d = greens.map(p => pathD(p.poly, true)).join('');
+      s += `<g class="u-greens"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#p-ugarden)" opacity="0.6"/></g>`;
+    }
+    const yards = ub.parcels.filter(p => p.use === 'church');
+    if (yards.length) {
+      const d = yards.map(p => pathD(p.poly, true)).join('');
+      s += `<g class="u-churchyard"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#p-ugrave)"/></g>`;
+    }
+    const blockD = ub.blocks
+      .filter((_, i) => ub.blockInfo[i]?.kind === 'block')
+      .map(b => pathD(b, true))
+      .concat(ub.parcels.filter(p => p.use === 'arena-plot' || p.use === 'inn').map(p => pathD(p.poly, true)))
+      .join('');
+    if (!stilts) s += `<path class="u-blocks" d="${blockD}" fill="${U.yard}"/>`;
+    // meadows inside a block (village greens, thing places, open camp ground): over the yard colour
+    const plazas = ub.parcels.filter(p => p.use === 'plaza');
+    if (plazas.length) {
+      const d = plazas.map(p => pathD(p.poly, true)).join('');
+      s += `<g class="u-plazas"><path d="${d}" fill="${U.place}"/><path d="${d}" fill="url(#p-upave)"/></g>`;
+    }
+    const meadows = ub.parcels.filter(p => p.use === 'meadow');
+    if (meadows.length) {
+      const d = meadows.map(p => pathD(p.poly, true)).join('');
+      s += `<g class="u-meadows"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#p-ugarden)" opacity="0.45"/></g>`;
+    }
+    if (material.gardens.length) {
+      const d = material.gardens.map(phD).join('');
+      s += `<g class="u-gardens"><path d="${d}" fill="${U.garden}"/><path d="${d}" fill="url(#${ub.renderHints?.graves ? 'p-ugrave' : 'p-ugarden'})"/></g>`;
+    }
   }
   // Restore countryside over the two urban ground fills, before parcel hairlines, water and roofs; dedicated grounds are excluded.
-  if ((layers.terrain !== false || landuse) && fringe.bands.some((b) => b.length)) {
+  if ((layers.terrain !== false || landuse) && fringe.bands.some(b => b.length)) {
     const kind = countryKind(world.options.biome);
     s += `<defs>${countryPatternSvg(pal, world.options.biome)}<g id="country-fringe-streets" fill="none" stroke-linecap="round" stroke-linejoin="round">`;
     for (const st of fringe.streets) s += `<path d="${pathD(st.path, false)}" stroke="${U.street}" stroke-width="${f1(fringeStreetWidth(st.width))}"/>`;
     s += '</g></defs><g class="u-country-fringe">';
-    FRINGE_ORDER.forEach((i) => {
+    FRINGE_ORDER.forEach(i => {
       const pieces = fringe.bands[i] ?? [];
       if (!pieces.length) return;
-      const d = fringePath(pieces), id = `country-fringe-${i}`;
+      const d = fringePath(pieces),
+        id = `country-fringe-${i}`;
       s += `<defs><clipPath id="${id}"><path d="${d}" clip-rule="evenodd"/></clipPath></defs><g clip-path="url(#${id})">`;
       const alpha = FRINGE_PAINT[i];
       s += raster ? `<use href="#terrain-ground" xlink:href="#terrain-ground" opacity="${alpha}"/>` : layers.background !== false ? `<path d="${d}" fill="${pal.paper}" opacity="${alpha}" fill-rule="evenodd"/>` : '';
@@ -460,10 +612,10 @@ export function urbanLayer(world: World, pal: Palette, u: number, debug: boolean
   }
   // An opaque replay of the actual landscape replaces uniform residential/shanty ground. Street space and
   // dedicated paving/gardens are outside this mask; a real wall is drawn afterwards over the same land material.
-  const restoredGround = (landscapeGround.length ? landscapeGround : naturalGround).concat(cover.map((a) => ({ outer: a.poly, holes: a.holes ?? [] })));
+  const restoredGround = (landscapeGround.length ? landscapeGround : naturalGround).concat(cover.map(a => ({ outer: a.poly, holes: a.holes ?? [] })));
   if ((layers.terrain !== false || landuse || contours) && restoredGround.length) {
     const name = landscapeGround.length ? 'landscape-ground' : 'natural-ground';
-    const d = restoredGround.map((p) => pathD(orientPos(p.outer), true) + p.holes.map((h) => pathD(orientPos(h).slice().reverse(), true)).join('')).join('');
+    const d = restoredGround.map(p => pathD(orientPos(p.outer), true) + p.holes.map(h => pathD(orientPos(h).slice().reverse(), true)).join('')).join('');
     s += `<defs><clipPath id="urban-${name}"><path d="${d}" clip-rule="nonzero"/></clipPath></defs><g class="u-${name}" clip-path="url(#urban-${name})">`;
     s += raster ? '<use href="#terrain-ground" xlink:href="#terrain-ground"/>' : layers.background !== false ? `<path d="${d}" fill="${pal.paper}" fill-rule="nonzero"/>` : '';
     if (contours) s += '<use href="#terrain-contour-ground" xlink:href="#terrain-contour-ground"/>';
@@ -477,16 +629,18 @@ export function urbanLayer(world: World, pal: Palette, u: number, debug: boolean
     s += '</g>';
   }
   if (!open) {
-  // plot hairlines first: the buildings cover them, so they read on yards and gardens only (cadastre style)
-  const plotD = plotLines(ub).map((line) => pathD(line, false)).join('');
-  if (plotD) s += `<path class="u-plots" d="${plotD}" fill="none" stroke="${U.plotLine}" stroke-opacity="${f1(U.plotAlpha * 0.75)}" stroke-width="${lw(U.plotW, 0.05)}"/>`;
+    // plot hairlines first: the buildings cover them, so they read on yards and gardens only (cadastre style)
+    const plotD = plotLines(ub)
+      .map(line => pathD(line, false))
+      .join('');
+    if (plotD) s += `<path class="u-plots" d="${plotD}" fill="none" stroke="${U.plotLine}" stroke-opacity="${f1(U.plotAlpha * 0.75)}" stroke-width="${lw(U.plotW, 0.05)}"/>`;
   }
   s += cultureUnderlay(underlay, pal, lw);
   s += buildingsSvg(ub, U, lw);
   // courtyard houses: the patio drawn as a paved court with a crisp inner edge, so the courts read at town scale
-  const courts = ub.buildings.flatMap((b) => (b.kind === 'house' && !earthCourt(b, world) && b.courtyards?.length ? b.courtyards : []));
+  const courts = ub.buildings.flatMap(b => (b.kind === 'house' && !earthCourt(b, world) && b.courtyards?.length ? b.courtyards : []));
   if (courts.length) {
-    const d = courts.map((c) => pathD(c, true)).join('');
+    const d = courts.map(c => pathD(c, true)).join('');
     s += `<g class="u-patios"><path d="${d}" fill="${U.place}" stroke="${U.massEdge}" stroke-width="${lw(0.45, 0.35)}"/><path d="${d}" fill="url(#p-upave)"/></g>`;
   }
   s += cultureOverlay(ub, pal, lw, brushes, streets);
@@ -494,14 +648,14 @@ export function urbanLayer(world: World, pal: Palette, u: number, debug: boolean
   // (not the village and hamlet streets: widened to the town's minimum they become long white strokes on the map)
   const secondary = new Set<unknown>();
   for (const st of world.settlements ?? []) if (!st.main) for (const x of st.urban?.streets ?? []) secondary.add(x);
-  const mains = ub.streets.filter((st) => st.rank <= 1 && st.role !== 'close' && !secondary.has(st));
+  const mains = ub.streets.filter(st => st.rank <= 1 && st.role !== 'close' && !secondary.has(st));
   const minW = 2.4 * u;
   const earthSources = new Set(material.streetSources);
-  const wide = mains.filter((st) => st.width < minW && !earthSources.has(st));
+  const wide = mains.filter(st => st.width < minW && !earthSources.has(st));
   if (streets && wide.length && !open) {
     if (!stilts) s += `<defs><clipPath id="urban-stroke-clip"><path d="${urbanStrokeSpace(ub).map(phD).join('')}" clip-rule="nonzero"/></clipPath></defs><g clip-path="url(#urban-stroke-clip)">`;
     const indices = new Map(ub.streets.map((st, i) => [st, i]));
-    s += `<path class="u-main-streets"${stilts || !(world.terrain.coastline.length || world.terrain.lakes.some((l) => l.length >= 3)) ? '' : ' clip-path="url(#landclip)"'} d="${wide.map((st) => pathD(servedStreetPath(ub, indices.get(st)!), false)).join('')}" fill="none" stroke="${U.street}" stroke-width="${f1(minW)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    s += `<path class="u-main-streets"${stilts || !(world.terrain.coastline.length || world.terrain.lakes.some(l => l.length >= 3)) ? '' : ' clip-path="url(#landclip)"'} d="${wide.map(st => pathD(servedStreetPath(ub, indices.get(st)!), false)).join('')}" fill="none" stroke="${U.street}" stroke-width="${f1(minW)}" stroke-linecap="round" stroke-linejoin="round"/>`;
     if (!stilts) s += '</g>';
   }
   // small bridges over the streams (true size, by kind: footbridges, arches, fords), over the street space

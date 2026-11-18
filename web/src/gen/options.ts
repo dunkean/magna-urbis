@@ -3,7 +3,7 @@ import type { NameFamily } from './names/types';
 import { expandMapQuery, encodeMapId } from './mapId';
 import { NAME_FAMILIES } from './names/types';
 import { TOPONYM_PROFILES } from './names/profiles';
-const NAME_PROFILE_IDS=TOPONYM_PROFILES.map(p=>p.id);
+const NAME_PROFILE_IDS = TOPONYM_PROFILES.map(p => p.id);
 import { BIOME_NAMES, biomeName, type BiomeName } from './biomes';
 import type { ImportedHeight } from './terrain/import';
 import { CULTURE_IDS, CULTURES as CULTURE_REGISTRY, mixToString, mixFromString, planToString, planFromString } from './urban/culture';
@@ -23,11 +23,12 @@ export type Tri = 'auto' | 'yes' | 'no';
 export type WallsOpt = Tri | 'none' | 'single' | 'double';
 /** Fortification styles of the native engine (`urban/fortifications.json`), `auto` = by culture. */
 export const WALL_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curtain', 'flanked', 'concentric', 'rammed-earth', 'wengcheng', 'bastioned'] as const;
-export type WallStyleOpt = typeof WALL_STYLES[number];
+export type WallStyleOpt = (typeof WALL_STYLES)[number];
 /** Native layout fortification of the town options: enclosure type, style override (its family sets the type when the
  * enclosure follows the culture or is forced) and moat refusal. Shared by every native settings path. */
 export function layoutFortification(o: Partial<Pick<Options, 'walls' | 'wallStyle' | 'moat'>>): { fortification: 'culture' | 'none' | 'wall'; fortificationStyle?: Exclude<WallStyleOpt, 'auto'>; moat?: 'none' } {
-  const none = o.walls === 'none' || o.walls === 'no', style = o.wallStyle && o.wallStyle !== 'auto' ? o.wallStyle : undefined;
+  const none = o.walls === 'none' || o.walls === 'no',
+    style = o.wallStyle && o.wallStyle !== 'auto' ? o.wallStyle : undefined;
   return { fortification: none ? 'none' : o.walls === 'auto' || style ? 'culture' : 'wall', ...(style && !none ? { fortificationStyle: style } : {}), ...(o.moat === 'no' ? { moat: 'none' as const } : {}) };
 }
 /** Number of castles: auto (size and culture) or 0–3 on distinct defensible sites. */
@@ -102,7 +103,7 @@ const RUST_CULTURE_LABELS: Record<string, string> = {
   'goblin-warren': 'Goblins · hillside warren',
   'american-grid': 'Modern · American grid city (Chicago, Manhattan)',
   'industrial-victorian': 'Modern · Industrial Victorian city (Manchester, Liverpool)',
-  'haussmannian': 'Modern · Haussmannian boulevard city (Paris)',
+  haussmannian: 'Modern · Haussmannian boulevard city (Paris)',
   'belle-epoque': 'Modern · Belle Époque capital (Vienna, Budapest)',
   'mediterranean-modern': 'Modern · Mediterranean modern city (Barcelona, Naples)',
   'garden-city': 'Modern · Garden city (Letchworth, Welwyn)',
@@ -127,9 +128,9 @@ const RUST_CULTURE_LABELS: Record<string, string> = {
   'middle-eastern-contemporary': 'Modern · Middle Eastern contemporary city (Amman, Beirut)',
   'australian-suburban': 'Modern · Australian suburban city (Perth, Brisbane)',
   'post-socialist-european': 'Modern · Post-socialist European city (Warsaw, Bucharest)',
-  'cyberpunk': 'Futuristic · Cyberpunk megacity',
-  'solarpunk': 'Futuristic · Solarpunk garden city',
-  'dieselpunk': 'Futuristic · Dieselpunk industrial metropolis',
+  cyberpunk: 'Futuristic · Cyberpunk megacity',
+  solarpunk: 'Futuristic · Solarpunk garden city',
+  dieselpunk: 'Futuristic · Dieselpunk industrial metropolis',
   'dystopian-brutalism': 'Futuristic · Dystopian brutalist city',
   'atompunk-retrofuturist': 'Futuristic · Atompunk retrofuturist city',
   'post-apocalyptic-ruins': 'Futuristic · Post-apocalyptic ruins',
@@ -139,15 +140,13 @@ const RUST_CULTURE_LABELS: Record<string, string> = {
 };
 /** Every culture the engine supports: the legacy TS registry plus the Rust-only cultures above
  *  (rust/crates/core/src/urban/catalogue.json is 2.7 MB, too heavy to bundle for its ids). */
-export const CULTURES: Culture[] = [...CULTURE_IDS, ...Object.keys(RUST_CULTURE_LABELS).filter((id) => !CULTURE_IDS.includes(id))];
+export const CULTURES: Culture[] = [...CULTURE_IDS, ...Object.keys(RUST_CULTURE_LABELS).filter(id => !CULTURE_IDS.includes(id))];
 /** [id, label] pairs for selectors. */
-export const CULTURE_LABELS: [string, string][] = CULTURES.map((id) => [id, CULTURE_REGISTRY[id]?.label ?? RUST_CULTURE_LABELS[id] ?? id]);
+export const CULTURE_LABELS: [string, string][] = CULTURES.map(id => [id, CULTURE_REGISTRY[id]?.label ?? RUST_CULTURE_LABELS[id] ?? id]);
 export type { CultureMix, PlanOverride };
 /** Era of a modern style (`traits.era` of rust/crates/core/src/urban/forms/styles_modern.json); historical and fantasy cultures have none. */
 export type CultureEra = 'modern' | 'futuristic' | 'alien';
-const CULTURE_ERAS: Readonly<Record<string, CultureEra>> = Object.fromEntries(
-  Object.entries((modernStyles as unknown as { cultures: Record<string, { traits?: { era?: CultureEra } }> }).cultures)
-    .flatMap(([id, c]) => (c.traits?.era ? [[id, c.traits.era]] : [])));
+const CULTURE_ERAS: Readonly<Record<string, CultureEra>> = Object.fromEntries(Object.entries((modernStyles as unknown as { cultures: Record<string, { traits?: { era?: CultureEra } }> }).cultures).flatMap(([id, c]) => (c.traits?.era ? [[id, c.traits.era]] : [])));
 /** Era of a culture id (undefined: a historical or fantasy culture). */
 export function cultureEra(culture: string | null | undefined): CultureEra | undefined {
   return culture ? CULTURE_ERAS[culture] : undefined;
@@ -265,15 +264,15 @@ export function cleanSettlementName(value: unknown): string | undefined {
   const name = value.replace(/\s+/g, ' ').trim().slice(0, SETTLEMENT_NAME_MAX);
   return name || undefined;
 }
-export type SettlementOverrides = Partial<Pick<Options,
-  'size' | 'sitePrefs' | 'walls' | 'wallStyle' | 'moat' | 'castles' | 'castle' | 'cathedral' | 'palace' |
-  'monasteries' | 'port' | 'arena' | 'activities' | 'suburbs' | 'shantytowns' |
-  'roads' | 'cultureMix' | 'plan' | 'sprawl' | 'language' | 'nameSource'
->>;
+export type SettlementOverrides = Partial<
+  Pick<Options, 'size' | 'sitePrefs' | 'walls' | 'wallStyle' | 'moat' | 'castles' | 'castle' | 'cathedral' | 'palace' | 'monasteries' | 'port' | 'arena' | 'activities' | 'suburbs' | 'shantytowns' | 'roads' | 'cultureMix' | 'plan' | 'sprawl' | 'language' | 'nameSource'>
+>;
 export type SettlementsOpt = 'auto' | 'none' | { counts: SettlementCounts } | { list: SettlementSpec[] };
 
-export const MAP_SIZE_MIN = 600, MAP_SIZE_MAX = 40000;
-export const POP_MIN = 10, POP_MAX = 5000000;
+export const MAP_SIZE_MIN = 600,
+  MAP_SIZE_MAX = 40000;
+export const POP_MIN = 10,
+  POP_MAX = 5000000;
 
 /** Population thresholds of the classes (lower bounds). */
 export const CLASS_FLOOR: [SettlementClass, number][] = DEMOGRAPHIC_CLASS_FLOORS;
@@ -284,8 +283,7 @@ export function sizeForPop(pop: number): SizeName {
   return c === 'farmstead' ? 'hamlet' : c === 'megacity' ? 'metropolis' : c;
 }
 /** Population filled in when a size is picked: the class shortcut (an example, never a threshold). */
-export const SIZE_SHORTCUT = Object.fromEntries((['hamlet', 'village', 'town', 'city', 'metropolis'] as SizeName[])
-  .map(size => [size, DEMOGRAPHIC_CLASSES.find(c => c.id === size)!.shortcut])) as Record<SizeName, number>;
+export const SIZE_SHORTCUT = Object.fromEntries((['hamlet', 'village', 'town', 'city', 'metropolis'] as SizeName[]).map(size => [size, DEMOGRAPHIC_CLASSES.find(c => c.id === size)!.shortcut])) as Record<SizeName, number>;
 /** Map extent (m): the custom `mapSize` when set, else the preset's. */
 export function mapSizeOf(o: Pick<Options, 'size' | 'mapSize'>): number {
   return o.mapSize !== undefined && Number.isFinite(o.mapSize) ? Math.max(MAP_SIZE_MIN, Math.min(MAP_SIZE_MAX, Math.round(o.mapSize))) : SIZE_PRESETS[o.size].mapSize;
@@ -303,12 +301,17 @@ const CLS_KEYS: Record<CountClass, string> = { city: 'c', town: 't', village: 'v
 export function settlementsToString(s: SettlementsOpt | undefined): string {
   if (!s || s === 'auto') return 'auto';
   if (s === 'none') return 'none';
-  if ('counts' in s) return COUNT_CLASSES.map((c) => CLS_KEYS[c] + Math.max(0, Math.round(s.counts[c] ?? 0))).join('.');
-  return 'L' + s.list.map((it) => {
-    const f = [String(Math.round(it.population)), it.culture ?? '', it.siteType ?? '', it.position ? String(Math.round(it.position.x)) : '', it.position ? String(Math.round(it.position.y)) : ''];
-    while (f.length > 1 && f[f.length - 1] === '') f.pop();
-    return f.join('~');
-  }).join('_');
+  if ('counts' in s) return COUNT_CLASSES.map(c => CLS_KEYS[c] + Math.max(0, Math.round(s.counts[c] ?? 0))).join('.');
+  return (
+    'L' +
+    s.list
+      .map(it => {
+        const f = [String(Math.round(it.population)), it.culture ?? '', it.siteType ?? '', it.position ? String(Math.round(it.position.x)) : '', it.position ? String(Math.round(it.position.y)) : ''];
+        while (f.length > 1 && f[f.length - 1] === '') f.pop();
+        return f.join('~');
+      })
+      .join('_')
+  );
 }
 export function settlementsFromString(v: string | null): SettlementsOpt {
   if (!v || v === 'auto') return 'auto';
@@ -331,40 +334,62 @@ export function settlementsFromString(v: string | null): SettlementsOpt {
   const counts: SettlementCounts = { city: 0, town: 0, village: 0, hamlet: 0, farmstead: 0 };
   let any = false;
   for (const part of v.split('.')) {
-    const cls = COUNT_CLASSES.find((c) => CLS_KEYS[c] === part[0]);
+    const cls = COUNT_CLASSES.find(c => CLS_KEYS[c] === part[0]);
     const n = Number(part.slice(1));
-    if (cls && Number.isFinite(n)) { counts[cls] = Math.max(0, Math.min(2000, Math.round(n))); any = true; }
+    if (cls && Number.isFinite(n)) {
+      counts[cls] = Math.max(0, Math.min(2000, Math.round(n)));
+      any = true;
+    }
   }
   return any ? { counts } : 'auto';
 }
 
 /** Ordered keys keep a many-settlement URL shorter than repeated property names. This format is opt-in. */
 export const SETTLEMENT_OVERRIDE_KEYS = [
-  'size', 'sitePrefs', 'walls', 'moat', 'castles', 'castle', 'cathedral', 'palace',
-  'monasteries', 'port', 'arena', 'activities', 'suburbs', 'shantytowns',
-  'roads', 'cultureMix', 'plan', 'sprawl', 'language', 'nameSource', 'wallStyle',
+  'size',
+  'sitePrefs',
+  'walls',
+  'moat',
+  'castles',
+  'castle',
+  'cathedral',
+  'palace',
+  'monasteries',
+  'port',
+  'arena',
+  'activities',
+  'suburbs',
+  'shantytowns',
+  'roads',
+  'cultureMix',
+  'plan',
+  'sprawl',
+  'language',
+  'nameSource',
+  'wallStyle',
 ] as const;
 
 /** The first entry is the main settlement in workflow=list. Legacy settl=L... remains secondary-only. */
 export function settlementListToString(list: SettlementSpec[]): string {
-  return JSON.stringify(list.map((spec) => {
-    const values: unknown[] = SETTLEMENT_OVERRIDE_KEYS.map((key) => {
-      const value = spec.options?.[key];
-      if (key === 'sitePrefs') return validSitePrefs(value);
-      if (key === 'cultureMix') return value === null ? '!' : value ? mixToString(value as CultureMix) : undefined;
-      if (key === 'plan') return value === null ? '!' : value ? planToString(value as PlanOverride) : undefined;
-      return value;
-    });
-    while (values.length && values[values.length - 1] == null) values.pop();
-    const row: unknown[] = [spec.population, spec.culture ?? null, spec.siteType ?? null,
-      spec.position?.x ?? null, spec.position?.y ?? null, values];
-    // appended only when set, so unnamed lists keep their former links and identities
-    const name = cleanSettlementName(spec.name);
-    const key = spec.key && SETTLEMENT_KEY.test(spec.key) ? spec.key : undefined;
-    if (name || key) row.push(name ?? null);
-    if (key) row.push(key);
-    return row;
-  }));
+  return JSON.stringify(
+    list.map(spec => {
+      const values: unknown[] = SETTLEMENT_OVERRIDE_KEYS.map(key => {
+        const value = spec.options?.[key];
+        if (key === 'sitePrefs') return validSitePrefs(value);
+        if (key === 'cultureMix') return value === null ? '!' : value ? mixToString(value as CultureMix) : undefined;
+        if (key === 'plan') return value === null ? '!' : value ? planToString(value as PlanOverride) : undefined;
+        return value;
+      });
+      while (values.length && values[values.length - 1] == null) values.pop();
+      const row: unknown[] = [spec.population, spec.culture ?? null, spec.siteType ?? null, spec.position?.x ?? null, spec.position?.y ?? null, values];
+      // appended only when set, so unnamed lists keep their former links and identities
+      const name = cleanSettlementName(spec.name);
+      const key = spec.key && SETTLEMENT_KEY.test(spec.key) ? spec.key : undefined;
+      if (name || key) row.push(name ?? null);
+      if (key) row.push(key);
+      return row;
+    }),
+  );
 }
 
 function validSitePrefs(raw: unknown): SitePrefs | undefined {
@@ -393,7 +418,7 @@ function validSitePrefs(raw: unknown): SitePrefs | undefined {
 function validOverrides(raw: unknown): SettlementOverrides | undefined {
   if (!Array.isArray(raw)) return undefined;
   const out: SettlementOverrides = {};
-  const value = (key: typeof SETTLEMENT_OVERRIDE_KEYS[number]): unknown => raw[SETTLEMENT_OVERRIDE_KEYS.indexOf(key)];
+  const value = (key: (typeof SETTLEMENT_OVERRIDE_KEYS)[number]): unknown => raw[SETTLEMENT_OVERRIDE_KEYS.indexOf(key)];
   const size = value('size');
   if (typeof size === 'string' && SIZES.includes(size as SizeName)) out.size = size as SizeName;
   out.sitePrefs = validSitePrefs(value('sitePrefs'));
@@ -425,15 +450,20 @@ function validOverrides(raw: unknown): SettlementOverrides | undefined {
   if (typeof sprawl === 'number' && Number.isFinite(sprawl)) out.sprawl = Math.max(0.5, Math.min(2, sprawl));
   const language = value('language');
   if (language === 'auto' || (typeof language === 'string' && NAME_PROFILE_IDS.includes(language))) out.language = language;
-  const source=value('nameSource');if(typeof source==='string'&&['auto','geographic','invented','mixed'].includes(source))out.nameSource=source as Options['nameSource'];
-  return Object.values(out).some((v) => v !== undefined) ? out : undefined;
+  const source = value('nameSource');
+  if (typeof source === 'string' && ['auto', 'geographic', 'invented', 'mixed'].includes(source)) out.nameSource = source as Options['nameSource'];
+  return Object.values(out).some(v => v !== undefined) ? out : undefined;
 }
 
 /** Bounded parser for the opt-in, main-inclusive list. */
 export function settlementListFromString(value: string | null): SettlementSpec[] {
   if (!value || value.length > 100000) return [];
   let parsed: unknown;
-  try { parsed = JSON.parse(value); } catch { return []; }
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
   if (!Array.isArray(parsed)) return [];
   const list: SettlementSpec[] = [];
   for (const row of parsed.slice(0, 2000)) {
@@ -467,12 +497,7 @@ export function optionsForMainSettlement(o: Options): Options {
 /** Effective controls for one explicit instance. A new culture drops the previous culture's mix and plan. */
 export function optionsForSettlement(base: Options, spec: SettlementSpec): Options {
   const cultureBase = spec.culture ? withCulture(base, spec.culture) : base;
-  return {
-    ...cultureBase, ...spec.options, population: spec.population,
-    size: spec.options?.size ?? sizeForPop(spec.population),
-    siteType: spec.siteType ?? cultureBase.siteType,
-    center: spec.position,
-  };
+  return { ...cultureBase, ...spec.options, population: spec.population, size: spec.options?.size ?? sizeForPop(spec.population), siteType: spec.siteType ?? cultureBase.siteType, center: spec.position };
 }
 
 /** Stable generation identity. Presentation controls and UI view/pins are deliberately excluded. */
@@ -485,7 +510,9 @@ export function generationUid(o: Options): string {
   if (o.workflow === 'environment') {
     const env = new Set(['seed', 'size', 'map', 'relief', 'biome', 'coast', 'river', 'seaLevel', 'mode']);
     const inactive: string[] = [];
-    p.forEach((_, key) => { if (!env.has(key)) inactive.push(key); });
+    p.forEach((_, key) => {
+      if (!env.has(key)) inactive.push(key);
+    });
     for (const key of inactive) p.delete(key);
     if (p.has('map')) p.delete('size');
     if (normalized.coast === 'none') p.delete('seaLevel');
@@ -499,7 +526,9 @@ export function generationUid(o: Options): string {
   let hash = 0x6c62272e07bb014262b821756295c58dn;
   const prime = 0x0000000001000000000000000000013bn;
   const mask = (1n << 128n) - 1n;
-  const mixByte = (b: number): void => { hash = ((hash ^ BigInt(b)) * prime) & mask; };
+  const mixByte = (b: number): void => {
+    hash = ((hash ^ BigInt(b)) * prime) & mask;
+  };
   for (let i = 0; i < data.length; i++) {
     mixByte(data.charCodeAt(i) & 255);
     mixByte(data.charCodeAt(i) >>> 8);
@@ -521,7 +550,11 @@ export function generationUid(o: Options): string {
   return hash.toString(36).padStart(25, '0');
 }
 
-export interface SizePreset { mapSize: number; grid: number; label: string }
+export interface SizePreset {
+  mapSize: number;
+  grid: number;
+  label: string;
+}
 
 export const SIZE_PRESETS: Record<SizeName, SizePreset> = {
   hamlet: { mapSize: 1200, grid: 300, label: 'Hamlet' },
@@ -577,7 +610,12 @@ const CASTLES: CastlesOpt[] = ['auto', '0', '1', '2', '3'];
 const SHANTIES: ShantyOpt[] = ['auto', 'none', 'some', 'many'];
 /** M4 landmark toggles: option key → URL key. */
 export const LANDMARK_TOGGLES: [keyof Options & ('cathedral' | 'palace' | 'monasteries' | 'port' | 'arena' | 'activities'), string][] = [
-  ['cathedral', 'cathedral'], ['palace', 'palace'], ['monasteries', 'monasteries'], ['port', 'port'], ['arena', 'arena'], ['activities', 'activities'],
+  ['cathedral', 'cathedral'],
+  ['palace', 'palace'],
+  ['monasteries', 'monasteries'],
+  ['port', 'port'],
+  ['arena', 'arena'],
+  ['activities', 'activities'],
 ];
 const SITE_TYPES: SiteType[] = ['auto', ...SITE_ARCHETYPES];
 const SIZES = Object.keys(SIZE_PRESETS) as SizeName[];
@@ -615,7 +653,7 @@ function queryForOptions(o: Options, includeUid: boolean): string {
   if (o.contours !== DEFAULTS.contours) p.set('contours', o.contours ? '1' : '0');
   if (o.landuse !== DEFAULTS.landuse) p.set('landuse', o.landuse ? '1' : '0');
   if (o.language && o.language !== 'auto') p.set('lang', o.language);
-  if(o.nameSource&&o.nameSource!=='auto')p.set('nameSource',o.nameSource);
+  if (o.nameSource && o.nameSource !== 'auto') p.set('nameSource', o.nameSource);
   if (o.labels === false) p.set('labels', '0');
   if (o.legend) p.set('legend', '1');
   if (o.sprawl !== undefined && o.sprawl !== 1) p.set('sprawl', String(o.sprawl));
@@ -646,10 +684,14 @@ function queryForOptions(o: Options, includeUid: boolean): string {
   return p.toString();
 }
 
-export function toQuery(o: Options): string { return queryForOptions(o, true); }
+export function toQuery(o: Options): string {
+  return queryForOptions(o, true);
+}
 
 /** Reversible configuration + seed for compact share links; the old hash stays an internal identity. */
-export function mapId(o: Options): string { return encodeMapId(queryForOptions(o, false)); }
+export function mapId(o: Options): string {
+  return encodeMapId(queryForOptions(o, false));
+}
 
 function oneOf<T extends string>(v: string | null, list: readonly T[], def: T): T {
   return v !== null && (list as readonly string[]).includes(v) ? (v as T) : def;
@@ -705,7 +747,8 @@ export function fromQuery(q: string | URLSearchParams): Options {
   o.landuse = lu === null ? DEFAULTS.landuse : lu === '1' || lu === 'true';
   const lang = p.get('lang');
   o.language = lang !== null && NAME_PROFILE_IDS.includes(lang) ? lang : 'auto';
-  const ns=p.get('nameSource');if(ns&&['auto','geographic','invented','mixed'].includes(ns))o.nameSource=ns as Options['nameSource'];
+  const ns = p.get('nameSource');
+  if (ns && ['auto', 'geographic', 'invented', 'mixed'].includes(ns)) o.nameSource = ns as Options['nameSource'];
   o.labels = p.get('labels') !== '0' && p.get('labels') !== 'false';
   o.legend = p.get('legend') === '1' || p.get('legend') === 'true';
   const sp = Number(p.get('sprawl'));
@@ -714,17 +757,21 @@ export function fromQuery(q: string | URLSearchParams): Options {
   o.plan = planFromString(p.get('plan')) ?? undefined;
   const prefs = p.get('prefs');
   if (o.workflow && prefs && prefs.length <= 5000) {
-    try { o.sitePrefs = validSitePrefs(JSON.parse(prefs)); } catch { /* malformed preference data is ignored */ }
+    try {
+      o.sitePrefs = validSitePrefs(JSON.parse(prefs));
+    } catch {
+      /* malformed preference data is ignored */
+    }
   }
-  const hs = Number(p.get('hscale')), hz = Number(p.get('hsea'));
+  const hs = Number(p.get('hscale')),
+    hz = Number(p.get('hsea'));
   if (Number.isFinite(hs) && p.get('hscale') !== null) o.heightScale = Math.max(1, Math.min(9000, hs));
   if (Number.isFinite(hz) && p.get('hsea') !== null) o.importSea = Math.max(-1000, Math.min(9000, hz));
   return o;
 }
 
 /** True when the URL asks for a custom heightmap that the page cannot rebuild from the link alone. */
-export const wantsCustomHeight = (q: string | URLSearchParams): boolean =>
-  expandMapQuery(q).get('hm') === 'custom';
+export const wantsCustomHeight = (q: string | URLSearchParams): boolean => expandMapQuery(q).get('hm') === 'custom';
 
 /** Parse "k=v" overrides (used by the preview script). */
 export function applyOverride(o: Options, k: string, v: string): void {
@@ -736,20 +783,28 @@ export function applyOverride(o: Options, k: string, v: string): void {
   else if (k === 'wallStyle') o.wallStyle = oneOf(v, [...WALL_STYLES], 'auto');
   else if (k === 'settlements' || k === 'settl') o.settlements = settlementsFromString(v);
   else if (k === 'set2') o.settlements = { list: settlementListFromString(v) };
-  else if (k === 'workflow' || k === 'mode') o.workflow = v === 'e' ? 'environment' : v === 'a' ? 'automatic' : v === 'l' ? 'list' : v as Options['workflow'];
+  else if (k === 'workflow' || k === 'mode') o.workflow = v === 'e' ? 'environment' : v === 'a' ? 'automatic' : v === 'l' ? 'list' : (v as Options['workflow']);
   else if (k === 'settlementMode' || k === 'compose') {
     if (v === 'a' || v === 'automatic') o.settlementMode = 'automatic';
     else if (v === 'l' || v === 'list') o.settlementMode = 'list';
-  }
-  else if (k === 'contours' || k === 'landuse' || k === 'labels' || k === 'legend') rec[k] = v === '1' || v === 'true';
+  } else if (k === 'contours' || k === 'landuse' || k === 'labels' || k === 'legend') rec[k] = v === '1' || v === 'true';
   else if (k === 'mix' || k === 'cultureMix') o.cultureMix = mixFromString(v);
-  else if (k === 'plan') o.plan = planFromString(v) ?? (() => { try { return JSON.parse(v); } catch { return null; } })();
+  else if (k === 'plan')
+    o.plan =
+      planFromString(v) ??
+      (() => {
+        try {
+          return JSON.parse(v);
+        } catch {
+          return null;
+        }
+      })();
   else rec[k] = v;
 }
 
 function positionFromString(value: string | null): Options['center'] {
   const parts = value?.split(',');
-  if (!parts || parts.length !== 2 || parts.some((v) => !v.trim())) return undefined;
+  if (!parts || parts.length !== 2 || parts.some(v => !v.trim())) return undefined;
   const [x, y] = parts.map(Number);
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined;
 }

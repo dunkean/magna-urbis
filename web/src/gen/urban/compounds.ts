@@ -32,29 +32,35 @@ export interface CompoundOut {
   trees?: { x: number; y: number; r: number }[];
 }
 export interface CompoundCtx {
-  angle: number; pop: number; rng: Rng; center: Vec2;
+  angle: number;
+  pop: number;
+  rng: Rng;
+  center: Vec2;
   /** Plan data of a level-1 landmark lot (M4: castle enceinte, close layout, quay...). */
   data?: unknown;
 }
 
 const rectAt = (c: Vec2, ang: number, u0: number, u1: number, v0: number, v1: number): Polygon => {
-  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
   const at = (u: number, v: number): Vec2 => ({ x: c.x + u * ca - v * sa, y: c.y + u * sa + v * ca });
   return orientPos([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)]);
 };
-const inside = (lot: Polygon, pts: Polygon, margin: number) => pts.every((p) => pointInRing(lot, p) && distToRing(lot, p) >= margin);
+const inside = (lot: Polygon, pts: Polygon, margin: number) => pts.every(p => pointInRing(lot, p) && distToRing(lot, p) >= margin);
 
 /**
  * Largest scale factor s ≤ 1 (bisection) such that the layout built at scale s fits inside the lot with a margin.
  * The layout is a function of the scale returning all its polygons.
  */
 function fitScale(lot: Polygon, build: (s: number) => Polygon[], margin: number): number {
-  if (build(1).every((p) => inside(lot, p, margin))) return 1;
-  let lo = 0.001, hi = 1;
-  if (!build(lo).every((p) => inside(lot, p, margin))) return 0;
+  if (build(1).every(p => inside(lot, p, margin))) return 1;
+  let lo = 0.001,
+    hi = 1;
+  if (!build(lo).every(p => inside(lot, p, margin))) return 0;
   for (let k = 0; k < 20; k++) {
     const m = (lo + hi) / 2;
-    if (build(m).every((p) => inside(lot, p, margin))) lo = m; else hi = m;
+    if (build(m).every(p => inside(lot, p, margin))) lo = m;
+    else hi = m;
   }
   return lo;
 }
@@ -67,15 +73,21 @@ function lotFrame(lot: Polygon, ang: number): { c: Vec2; hu: number; hv: number 
   const ins = inscribed(lot, [], 1);
   const c = ins.c;
   const ob = obb(lot);
-  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const ca = Math.cos(ang),
+    sa = Math.sin(ang);
   const projU = Math.abs(ob.u.x * ca + ob.u.y * sa);
   const r0 = projU > 0.7 ? ob.hu / Math.max(1, ob.hv) : ob.hv / Math.max(1, ob.hu);
-  let best = { c, hu: 0, hv: 0 }, bs = -1;
+  let best = { c, hu: 0, hv: 0 },
+    bs = -1;
   for (const ratio of [r0, Math.sqrt(r0), 1]) {
-    const s = fitScale(lot, (k) => [rectAt(c, ang, -k * 400 * ratio, k * 400 * ratio, -k * 400, k * 400)], 0.5);
-    const hu = s * 400 * ratio, hv = s * 400;
+    const s = fitScale(lot, k => [rectAt(c, ang, -k * 400 * ratio, k * 400 * ratio, -k * 400, k * 400)], 0.5);
+    const hu = s * 400 * ratio,
+      hv = s * 400;
     const sc = hu * hv * Math.sqrt(Math.min(hu, hv) / Math.max(1e-6, Math.max(hu, hv)));
-    if (sc > bs) { bs = sc; best = { c, hu, hv }; }
+    if (sc > bs) {
+      bs = sc;
+      best = { c, hu, hv };
+    }
   }
   return best;
 }
@@ -86,16 +98,14 @@ const emptyOut = (lot: Polygon, use: string): CompoundOut => ({ parcels: [{ poly
 function greatMosque(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:great-mosque');
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 1, hv = f.hv - 1;
+  const hu = f.hu - 1,
+    hv = f.hv - 1;
   if (hu < 7 || hv < 7) return out;
   // u points to the qibla: the prayer hall is on the qibla side (55 %), the court (sahn) behind it with arcades
   const hallU0 = hu - 2 * hu * 0.55;
   const hall = rectAt(f.c, cx.angle, hallU0, hu, -hv, hv);
   const riw = Math.max(2.4, Math.min(5, hv * 0.18));
-  const riwaqs = [
-    rectAt(f.c, cx.angle, -hu, hallU0 - 1.2, -hv, -hv + riw),
-    rectAt(f.c, cx.angle, -hu, hallU0 - 1.2, hv - riw, hv),
-  ];
+  const riwaqs = [rectAt(f.c, cx.angle, -hu, hallU0 - 1.2, -hv, -hv + riw), rectAt(f.c, cx.angle, -hu, hallU0 - 1.2, hv - riw, hv)];
   const mS = Math.min(8, Math.max(4.5, hv * 0.22));
   const minaret = rectAt(f.c, cx.angle, -hu, -hu + mS, -mS / 2, mS / 2);
   const back = [rectAt(f.c, cx.angle, -hu, -hu + riw, -hv + riw + 1.2, -mS / 2 - 1.2), rectAt(f.c, cx.angle, -hu, -hu + riw, mS / 2 + 1.2, hv - riw - 1.2)];
@@ -112,7 +122,8 @@ export function kasbah(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:kasbah');
   out.lines.push({ kind: 'citadel-wall', path: lot, closed: true, width: 2.5 });
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 2, hv = f.hv - 2;
+  const hu = f.hu - 2,
+    hv = f.hv - 2;
   if (hu < 11 || hv < 11) return out;
   // palace: a courtyard building in the middle, a small mosque, barracks ranges along the walls
   const pw = Math.min(hu, hv) * 0.55;
@@ -150,7 +161,8 @@ function axialCompound(lot: Polygon, cx: CompoundCtx, typ: 'yamen' | 'chinese-te
   // the axis is N–S: u = north (−y)
   const ang = -Math.PI / 2;
   const f = lotFrame(lot, ang);
-  const hu = f.hu - 1, hv = f.hv - 1;
+  const hu = f.hu - 1,
+    hv = f.hv - 1;
   if (hu < 14 || hv < 10) return out;
   const hw = Math.min(hv * 0.62, 22);
   // gate hall (south), then 2–3 halls northward
@@ -163,10 +175,12 @@ function axialCompound(lot: Polygon, cx: CompoundCtx, typ: 'yamen' | 'chinese-te
     out.buildings.push({ poly: rectAt(f.c, ang, c0 - d / 2, c0 + d / 2, -hw, hw), kind: 'landmark', parcel: 0, arch: k === nH - 1 ? typ + '-rear-hall' : typ + '-main-hall', roof: 'tiled-hip', material: 'wood', storeys: 1, orientation: Math.PI / 2 });
   }
   // side ranges (east and west)
-  if (hv - hw > 7) for (const sgn of [-1, 1]) {
-    const v0 = sgn < 0 ? -hv : hv - 5, v1 = sgn < 0 ? -hv + 5 : hv;
-    out.buildings.push({ poly: rectAt(f.c, ang, -hu + 9, hu - 4, v0, v1), kind: 'landmark', parcel: 0, arch: typ + '-side-range', roof: 'tiled-hip', material: 'wood', storeys: 1 });
-  }
+  if (hv - hw > 7)
+    for (const sgn of [-1, 1]) {
+      const v0 = sgn < 0 ? -hv : hv - 5,
+        v1 = sgn < 0 ? -hv + 5 : hv;
+      out.buildings.push({ poly: rectAt(f.c, ang, -hu + 9, hu - 4, v0, v1), kind: 'landmark', parcel: 0, arch: typ + '-side-range', roof: 'tiled-hip', material: 'wood', storeys: 1 });
+    }
   // pagoda in the side corridor just inside the gate, clear of the halls and the side range
   const ps = 4.5;
   if (typ === 'chinese-temple' && hv - hw > 2 * ps + 7) {
@@ -180,11 +194,16 @@ function axialCompound(lot: Polygon, cx: CompoundCtx, typ: 'yamen' | 'chinese-te
 function walledMarket(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:walled-market');
   const f = lotFrame(lot, 0);
-  const hu = f.hu - 2, hv = f.hv - 2;
+  const hu = f.hu - 2,
+    hv = f.hv - 2;
   if (hu < 7 || hv < 7) return out;
-  const pitch = 13, rowD = 5;
+  const pitch = 13,
+    rowD = 5;
   for (let v = -hv; v + rowD <= hv; v += pitch) {
-    for (const [a, b] of [[-hu, -2], [2, hu]] as [number, number][]) {
+    for (const [a, b] of [
+      [-hu, -2],
+      [2, hu],
+    ] as [number, number][]) {
       if (b - a < 8) continue;
       out.buildings.push({ poly: rectAt(f.c, 0, a, b, v, v + rowD), kind: 'landmark', parcel: 0, arch: 'market-stall-row', roof: 'gable', material: 'wood', storeys: 1 });
       if (v + rowD + 2 + rowD <= hv) out.buildings.push({ poly: rectAt(f.c, 0, a, b, v + rowD + 0.01, v + 2 * rowD), kind: 'landmark', parcel: 0, arch: 'market-stall-row', roof: 'gable', material: 'wood', storeys: 1 });
@@ -206,10 +225,13 @@ function bands(lot: Polygon, widths: { w: number; use: string }[], axis: Vec2, c
   const ob = obb(lot);
   const L = 2 * (ob.hu + ob.hv) + 50;
   // the causeway strip along `axis` through c (both sides)
-  const nx = -axis.y, ny = axis.x;
+  const nx = -axis.y,
+    ny = axis.x;
   const strip: Polygon = orientPos([
-    { x: c.x - axis.x * L + nx * causeway / 2, y: c.y - axis.y * L + ny * causeway / 2 }, { x: c.x + axis.x * L + nx * causeway / 2, y: c.y + axis.y * L + ny * causeway / 2 },
-    { x: c.x + axis.x * L - nx * causeway / 2, y: c.y + axis.y * L - ny * causeway / 2 }, { x: c.x - axis.x * L - nx * causeway / 2, y: c.y - axis.y * L - ny * causeway / 2 },
+    { x: c.x - axis.x * L + (nx * causeway) / 2, y: c.y - axis.y * L + (ny * causeway) / 2 },
+    { x: c.x + axis.x * L + (nx * causeway) / 2, y: c.y + axis.y * L + (ny * causeway) / 2 },
+    { x: c.x + axis.x * L - (nx * causeway) / 2, y: c.y + axis.y * L - (ny * causeway) / 2 },
+    { x: c.x - axis.x * L - (nx * causeway) / 2, y: c.y - axis.y * L - (ny * causeway) / 2 },
   ]);
   for (const { w, use } of widths) {
     const outer = cur.reduce((b, ph) => (area(ph.outer) > area(b.outer) ? ph : b)).outer;
@@ -234,10 +256,21 @@ function shrink(p: Polygon, d: number): Polygon | null {
   // boundary band as a union of edge rectangles (exact enough for straight-sided lots)
   const parts: Polygon[] = [];
   for (let i = 1; i < n; i++) {
-    const a = closed[i - 1], b = closed[i], l = dist(a, b) || 1;
-    const nx = -(b.y - a.y) / l * d, ny = (b.x - a.x) / l * d;
-    const ux = (b.x - a.x) / l * d, uy = (b.y - a.y) / l * d;
-    parts.push(orientPos([{ x: a.x - nx - ux, y: a.y - ny - uy }, { x: b.x - nx + ux, y: b.y - ny + uy }, { x: b.x + nx + ux, y: b.y + ny + uy }, { x: a.x + nx - ux, y: a.y + ny - uy }]));
+    const a = closed[i - 1],
+      b = closed[i],
+      l = dist(a, b) || 1;
+    const nx = (-(b.y - a.y) / l) * d,
+      ny = ((b.x - a.x) / l) * d;
+    const ux = ((b.x - a.x) / l) * d,
+      uy = ((b.y - a.y) / l) * d;
+    parts.push(
+      orientPos([
+        { x: a.x - nx - ux, y: a.y - ny - uy },
+        { x: b.x - nx + ux, y: b.y - ny + uy },
+        { x: b.x + nx + ux, y: b.y + ny + uy },
+        { x: a.x + nx - ux, y: a.y + ny - uy },
+      ]),
+    );
   }
   const band = unionS(parts[0], ...parts.slice(1).map((q): MultiPoly => [{ outer: q, holes: [] }]));
   const r = differenceS(p, band);
@@ -256,10 +289,16 @@ function jpCastle(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out: CompoundOut = { parcels: [], buildings: [], lines: [], water: [], landmarks: [] };
   const ang = cx.angle;
   const f = lotFrame(lot, ang);
-  const H = Math.min(f.hu, f.hv) - 1, aspect = f.hu / Math.max(1, f.hv);
+  const H = Math.min(f.hu, f.hv) - 1,
+    aspect = f.hu / Math.max(1, f.hv);
   if (H < 30) return emptyOut(lot, 'compound:castle');
   const rect = (k: number) => rectAt(f.c, ang, -(H * aspect) * k, H * aspect * k, -H * k, H * k);
-  const widths = [{ k: 1, use: 'moat' }, { k: 0.8, use: 'bailey' }, { k: 0.52, use: 'moat' }, { k: 0.42, use: 'compound:castle-honmaru' }];
+  const widths = [
+    { k: 1, use: 'moat' },
+    { k: 0.8, use: 'bailey' },
+    { k: 0.52, use: 'moat' },
+    { k: 0.42, use: 'compound:castle-honmaru' },
+  ];
   const cw = 7; // causeway width
   const causeway = rectAt(f.c, ang, -3 * H * aspect, 0, -cw / 2, cw / 2);
   // outer ground: lot minus the outer rectangle (may be several pieces)
@@ -273,7 +312,11 @@ function jpCastle(lot: Polygon, cx: CompoundCtx): CompoundOut {
     const use = widths[i].use;
     if (use === 'moat') {
       // the band is cut by the causeway: two C-shaped halves become one U after removing the strip
-      for (const ph of differenceS(band, causeway)) if (!ph.holes.length && area(ph.outer) > 4) { out.parcels.push({ poly: ph.outer, use: 'moat' }); out.water.push(ph.outer); }
+      for (const ph of differenceS(band, causeway))
+        if (!ph.holes.length && area(ph.outer) > 4) {
+          out.parcels.push({ poly: ph.outer, use: 'moat' });
+          out.water.push(ph.outer);
+        }
       for (const ph of intersectionS(band, causeway)) if (!ph.holes.length && area(ph.outer) > 1) out.parcels.push({ poly: ph.outer, use: 'causeway' });
     } else if (inner) {
       // a ring band (bailey): split it on the causeway line and the opposite side so each piece is simple
@@ -282,7 +325,7 @@ function jpCastle(lot: Polygon, cx: CompoundCtx): CompoundOut {
     } else out.parcels.push({ poly: outer, use });
     out.lines.push({ kind: 'stone-wall', path: widths[i].use === 'moat' ? outer : outer, closed: true, width: 1.6 });
   }
-  const hon = out.parcels.findIndex((p) => p.use === 'compound:castle-honmaru');
+  const hon = out.parcels.findIndex(p => p.use === 'compound:castle-honmaru');
   if (hon < 0) return out;
   const hr = H * 0.42;
   const ks = Math.min(12, hr * 0.32);
@@ -290,10 +333,7 @@ function jpCastle(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const keep = rectAt(f.c, ang, hr * aspect - 2 * ks - 2.5, hr * aspect - 2.5, hr - 2 * ks - 2.5, hr - 2.5);
   out.landmarks.push({ kind: 'tenshu-base', poly: rectAt(f.c, ang, hr * aspect - 2 * ks - 4, hr * aspect - 1, hr - 2 * ks - 4, hr - 1) });
   out.buildings.push({ poly: keep, kind: 'landmark', parcel: hon, arch: 'tenshu', roof: 'pagoda', material: 'wood', storeys: 5 });
-  const goten = [
-    rectAt(f.c, ang, -hr * aspect * 0.75, hr * aspect * 0.15, -hr * 0.7, -hr * 0.1),
-    rectAt(f.c, ang, -hr * aspect * 0.2, hr * aspect * 0.15, -hr * 0.1, hr * 0.45),
-  ];
+  const goten = [rectAt(f.c, ang, -hr * aspect * 0.75, hr * aspect * 0.15, -hr * 0.7, -hr * 0.1), rectAt(f.c, ang, -hr * aspect * 0.2, hr * aspect * 0.15, -hr * 0.1, hr * 0.45)];
   for (const g of goten) if (inside(out.parcels[hon].poly, g, 1)) out.buildings.push({ poly: g, kind: 'landmark', parcel: hon, arch: 'goten-palace', roof: 'tiled-hip', material: 'wood', storeys: 1 });
   // corner turrets (yagura) on the bailey
   out.parcels.forEach((p, i) => {
@@ -309,7 +349,8 @@ function jpCastle(lot: Polygon, cx: CompoundCtx): CompoundOut {
 function jpTemple(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:jp-temple');
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 1.5, hv = f.hv - 1.5;
+  const hu = f.hu - 1.5,
+    hv = f.hv - 1.5;
   if (hu < 10 || hv < 10) return out;
   const hs = Math.min(13, hu * 0.45, hv * 0.55);
   out.buildings.push({ poly: rectAt(f.c, cx.angle, hu * 0.1, hu * 0.1 + 2 * hs * 0.85, -hs, hs), kind: 'landmark', parcel: 0, arch: 'hondo-main-hall', roof: 'tiled-hip', material: 'wood', storeys: 1 });
@@ -332,7 +373,11 @@ function hinduTemple(lot: Polygon, cx: CompoundCtx): CompoundOut {
   if (H < 20) return out;
   // nested enclosures (prakaras) at 100 %, 64 %, 36 % of the half size
   const levels = [1, 0.64, 0.36];
-  const go = [[Math.max(9, H * 0.2), Math.max(6, H * 0.12)], [Math.max(7, H * 0.14), Math.max(5, H * 0.09)], [Math.max(5, H * 0.1), Math.max(4, H * 0.07)]];
+  const go = [
+    [Math.max(9, H * 0.2), Math.max(6, H * 0.12)],
+    [Math.max(7, H * 0.14), Math.max(5, H * 0.09)],
+    [Math.max(5, H * 0.1), Math.max(4, H * 0.07)],
+  ];
   levels.forEach((k, li) => {
     const h = H * k;
     out.lines.push({ kind: 'prakara', path: rectAt(f.c, ang, -h, h, -h, h), closed: true, width: li === 0 ? 2.2 : 1.6 });
@@ -350,7 +395,8 @@ function hinduTemple(lot: Polygon, cx: CompoundCtx): CompoundOut {
   out.buildings.push({ poly: rectAt(f.c, ang, -vs, vs, -vs, vs), kind: 'landmark', parcel: 0, arch: 'vimana-sanctum', roof: 'pyramidal', material: 'stone', storeys: 4 });
   out.buildings.push({ poly: rectAt(f.c, ang, vs + 1.5, H * 0.36 - go[2][1] - 2, -vs * 0.8, vs * 0.8), kind: 'landmark', parcel: 0, arch: 'mandapa', roof: 'flat', material: 'stone', storeys: 1 });
   // pillared hall and a tank in the outer court
-  const hi = H * 0.64 + 3, ho = H - go[0][1] - 3;
+  const hi = H * 0.64 + 3,
+    ho = H - go[0][1] - 3;
   if (ho - hi > 10) {
     out.buildings.push({ poly: rectAt(f.c, ang, hi, ho, -H * 0.55, -H * 0.2), kind: 'landmark', parcel: 0, arch: 'thousand-pillar-hall', roof: 'flat', material: 'stone', storeys: 1 });
     const tk = rectAt(f.c, ang, -ho, -hi, H * 0.2, Math.min(H * 0.55, H * 0.2 + (ho - hi)));
@@ -364,7 +410,8 @@ function hinduTemple(lot: Polygon, cx: CompoundCtx): CompoundOut {
 function tank(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out: CompoundOut = { parcels: [], buildings: [], lines: [], water: [], landmarks: [] };
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 5, hvv = f.hv - 5;
+  const hu = f.hu - 5,
+    hvv = f.hv - 5;
   const h = Math.min(hu, hvv);
   if (h < 6) return emptyOut(lot, 'place');
   const water = rectAt(f.c, cx.angle, -hu, hu, -hvv, hvv);
@@ -386,14 +433,19 @@ function tank(lot: Polygon, cx: CompoundCtx): CompoundOut {
 function basilica(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:basilica');
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 2, hv = Math.min(f.hv - 2, hu * 0.42);
+  const hu = f.hu - 2,
+    hv = Math.min(f.hv - 2, hu * 0.42);
   if (hu < 12 || hv < 6) return out;
   const nave = rectAt(f.c, cx.angle, -hu + hv * 0.8, hu - hv * 0.8, -hv, hv);
-  const ap = (sgn: number) => orientPos(Array.from({ length: 9 }, (_, k) => {
-    const a = -Math.PI / 2 + (k / 8) * Math.PI;
-    const u = sgn * (hu - hv * 0.8) + sgn * Math.cos(a) * hv * 0.75, v = Math.sin(a) * hv * 0.75;
-    return { x: f.c.x + u * Math.cos(cx.angle) - v * Math.sin(cx.angle), y: f.c.y + u * Math.sin(cx.angle) + v * Math.cos(cx.angle) };
-  }));
+  const ap = (sgn: number) =>
+    orientPos(
+      Array.from({ length: 9 }, (_, k) => {
+        const a = -Math.PI / 2 + (k / 8) * Math.PI;
+        const u = sgn * (hu - hv * 0.8) + sgn * Math.cos(a) * hv * 0.75,
+          v = Math.sin(a) * hv * 0.75;
+        return { x: f.c.x + u * Math.cos(cx.angle) - v * Math.sin(cx.angle), y: f.c.y + u * Math.sin(cx.angle) + v * Math.cos(cx.angle) };
+      }),
+    );
   const u = unionS(nave, ap(1), ap(-1));
   for (const ph of u) out.buildings.push({ poly: ph.outer, kind: 'landmark', parcel: 0, arch: 'basilica', roof: 'gable', material: 'brick', storeys: 2 });
   return out;
@@ -401,7 +453,8 @@ function basilica(lot: Polygon, cx: CompoundCtx): CompoundOut {
 function romanTemple(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:roman-temple');
   const f = lotFrame(lot, cx.angle);
-  const hu = Math.min(f.hu - 2, 18), hv = Math.min(f.hv - 2, hu * 0.55);
+  const hu = Math.min(f.hu - 2, 18),
+    hv = Math.min(f.hv - 2, hu * 0.55);
   if (hu < 8) return out;
   out.buildings.push({ poly: rectAt(f.c, cx.angle, -hu, hu, -hv, hv), kind: 'landmark', parcel: 0, arch: 'podium-temple', roof: 'gable', material: 'stone', storeys: 1 });
   return out;
@@ -429,7 +482,8 @@ function grove(lot: Polygon, cx: CompoundCtx): CompoundOut {
 function dwarfGate(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:dwarf-gate');
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 1, hv = f.hv - 1;
+  const hu = f.hu - 1,
+    hv = f.hv - 1;
   if (hu < 8 || hv < 10) return out;
   // two octagonal towers flanking the gate hall that leads into the mountain (u points up the slope)
   const tw = Math.min(8, hv * 0.3);
@@ -444,7 +498,8 @@ function dwarfGate(lot: Polygon, cx: CompoundCtx): CompoundOut {
 function forge(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:forge');
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 1.5, hv = f.hv - 1.5;
+  const hu = f.hu - 1.5,
+    hv = f.hv - 1.5;
   if (hu < 6 || hv < 5) return out;
   out.buildings.push({ poly: rectAt(f.c, cx.angle, -hu, hu, -hv, hv * 0.3), kind: 'landmark', parcel: 0, arch: 'forge-hall', roof: 'flat', material: 'rock', storeys: 1 });
   const cs = Math.min(3, hv * 0.3);
@@ -467,7 +522,8 @@ function church(lot: Polygon, cx: CompoundCtx, main = true): CompoundOut {
 function palace(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:palace');
   const f = lotFrame(lot, cx.angle);
-  const hu = f.hu - 2, hv = f.hv - 2;
+  const hu = f.hu - 2,
+    hv = f.hv - 2;
   if (hu < 14 || hv < 14) return out;
   const d = Math.min(9, Math.min(hu, hv) * 0.22);
   for (const r of [rectAt(f.c, cx.angle, -hu, hu, -hv, -hv + d), rectAt(f.c, cx.angle, -hu, hu, hv - d, hv), rectAt(f.c, cx.angle, -hu, -hu + d, -hv + d + 0.01, hv - d - 0.01), rectAt(f.c, cx.angle, hu - d, hu, -hv + d + 0.01, hv - d - 0.01)]) {
@@ -485,10 +541,12 @@ function mine(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const s = Math.min(9, f.hu - 1.5, f.hv - 1.5);
   if (s < 4) return out;
   const n = 10;
-  const adit = orientPos([...Array.from({ length: n + 1 }, (_, k) => {
-    const a = (k / n) * Math.PI;
-    return { x: f.c.x + Math.cos(cx.angle + a) * s * 0.6, y: f.c.y + Math.sin(cx.angle + a) * s * 0.6 };
-  })]);
+  const adit = orientPos([
+    ...Array.from({ length: n + 1 }, (_, k) => {
+      const a = (k / n) * Math.PI;
+      return { x: f.c.x + Math.cos(cx.angle + a) * s * 0.6, y: f.c.y + Math.sin(cx.angle + a) * s * 0.6 };
+    }),
+  ]);
   out.buildings.push({ poly: adit, kind: 'landmark', parcel: 0, arch: 'mine-mouth', roof: 'none', material: 'rock', storeys: 1 });
   const sh = rectAt(f.c, cx.angle, -s, -s * 0.3, -s * 0.9, -s * 0.2);
   out.buildings.push({ poly: sh, kind: 'landmark', parcel: 0, arch: 'headframe-shed', roof: 'gable', material: 'timber', storeys: 1 });
@@ -499,7 +557,8 @@ function mine(lot: Polygon, cx: CompoundCtx): CompoundOut {
 /** A compact sanctum inside the inscribed disc: no implied cavern boundary or surface religious symbol. */
 function drowSanctum(lot: Polygon, cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:drow-sanctum');
-  const ins = inscribed(lot, [], 0.5), r = ins.r - 2;
+  const ins = inscribed(lot, [], 0.5),
+    r = ins.r - 2;
   if (r < 5) return out;
   const hall = rectAt(ins.c, cx.angle, -0.65 * r, 0.65 * r, -0.48 * r, 0.48 * r);
   if (polyInside(lot, hall)) out.buildings.push({ poly: hall, kind: 'landmark', parcel: 0, arch: 'drow-sanctum', roof: 'flat', material: 'dark-stone', storeys: 3 });
@@ -509,7 +568,8 @@ function drowSanctum(lot: Polygon, cx: CompoundCtx): CompoundOut {
 /** Open gathering circle and central fruiting hall, wholly inside its owned lot. */
 function myconidCircle(lot: Polygon, _cx: CompoundCtx): CompoundOut {
   const out = emptyOut(lot, 'compound:myconid-circle');
-  const ins = inscribed(lot, [], 0.5), r = ins.r - 2;
+  const ins = inscribed(lot, [], 0.5),
+    r = ins.r - 2;
   if (r < 5) return out;
   const hall = orientPos(disk(ins.c, Math.min(8, Math.max(3.2, r * 0.3)), 18));
   if (polyInside(lot, hall)) out.buildings.push({ poly: hall, kind: 'landmark', parcel: 0, arch: 'myconid-fruiting-hall', roof: 'dome', material: 'fungal', storeys: 1 });
@@ -526,14 +586,34 @@ function duergarSmeltery(lot: Polygon, cx: CompoundCtx): CompoundOut {
 }
 
 /** Registers more builders (M4 landmark plans). */
-export function registerBuilders(map: Record<string, (lot: Polygon, cx: CompoundCtx) => CompoundOut>): void { Object.assign(COMPOUND_BUILDERS, map); }
+export function registerBuilders(map: Record<string, (lot: Polygon, cx: CompoundCtx) => CompoundOut>): void {
+  Object.assign(COMPOUND_BUILDERS, map);
+}
 
 export const COMPOUND_BUILDERS: Record<string, (lot: Polygon, cx: CompoundCtx) => CompoundOut> = {
-  church, 'parish-church': (l, c) => church(l, c, false), 'great-mosque': greatMosque, kasbah, hammam, 'drum-tower': drumTower,
-  yamen: (l, c) => axialCompound(l, c, 'yamen'), 'chinese-temple': (l, c) => axialCompound(l, c, 'chinese-temple'),
-  'walled-market': walledMarket, castle: jpCastle, 'jp-temple': jpTemple, 'hindu-temple': hinduTemple, tank,
-  basilica, 'roman-temple': romanTemple, grove, 'dwarf-gate': dwarfGate, forge, palace, mine,
-  'drow-sanctum': drowSanctum, 'duergar-smeltery': duergarSmeltery, 'myconid-circle': myconidCircle,
+  church,
+  'parish-church': (l, c) => church(l, c, false),
+  'great-mosque': greatMosque,
+  kasbah,
+  hammam,
+  'drum-tower': drumTower,
+  yamen: (l, c) => axialCompound(l, c, 'yamen'),
+  'chinese-temple': (l, c) => axialCompound(l, c, 'chinese-temple'),
+  'walled-market': walledMarket,
+  castle: jpCastle,
+  'jp-temple': jpTemple,
+  'hindu-temple': hinduTemple,
+  tank,
+  basilica,
+  'roman-temple': romanTemple,
+  grove,
+  'dwarf-gate': dwarfGate,
+  forge,
+  palace,
+  mine,
+  'drow-sanctum': drowSanctum,
+  'duergar-smeltery': duergarSmeltery,
+  'myconid-circle': myconidCircle,
 };
 
 /** Builds a compound; unknown kinds leave the lot as one parcel of that use. */
@@ -544,7 +624,7 @@ export function buildCompound(kind: string, lot: Polygon, cx: CompoundCtx): Comp
   if (!b) return emptyOut(lot, 'compound:' + kind);
   const out = b(orientPos(lot), cx);
   // safety: keep only footprints inside their parcel
-  out.buildings = out.buildings.filter((bd) => {
+  out.buildings = out.buildings.filter(bd => {
     const par = out.parcels[bd.parcel]?.poly;
     return par && polyInside(par, bd.poly) && area(bd.poly) > 2;
   });
@@ -554,7 +634,14 @@ export function buildCompound(kind: string, lot: Polygon, cx: CompoundCtx): Comp
 }
 
 // ---------------------------------------------------------------- claiming
-export interface ClaimBlock { poly: Polygon; kind: string; phase: number; zone: string; quarter: number; height?: number }
+export interface ClaimBlock {
+  poly: Polygon;
+  kind: string;
+  phase: number;
+  zone: string;
+  quarter: number;
+  height?: number;
+}
 
 /**
  * Picks a block for a landmark: area within range (scored by fit), then by the placement rule (next to the
@@ -562,17 +649,25 @@ export interface ClaimBlock { poly: Polygon; kind: string; phase: number; zone: 
  */
 const R_INS = new WeakMap<ClaimBlock, { poly: Polygon; r: number }>();
 export function pickBlock(
-  blocks: ClaimBlock[], place: string, [amin, amax]: [number, number], nucleus: Vec2, R: number,
+  blocks: ClaimBlock[],
+  place: string,
+  [amin, amax]: [number, number],
+  nucleus: Vec2,
+  R: number,
   ctx: { frontsNucleus: (i: number) => number; edgeDist: (p: Vec2) => number; gates: Vec2[]; rng: Rng; taken: Set<number>; others?: Vec2[]; sep?: number; targets?: Vec2[] },
 ): number {
-  let best = -1, bs = -Infinity;
+  let best = -1,
+    bs = -Infinity;
   blocks.forEach((b, i) => {
     if (b.kind !== 'block' || ctx.taken.has(i)) return;
     const a = area(b.poly);
     if (a < amin * 0.7 || a > amax * 1.8) return;
     // landmark lots are compact (the radius is kept per block: every landmark scans all blocks)
     let ri = R_INS.get(b);
-    if (!ri || ri.poly !== b.poly) { ri = { poly: b.poly, r: inscribed(b.poly, [], 2).r }; R_INS.set(b, ri); }
+    if (!ri || ri.poly !== b.poly) {
+      ri = { poly: b.poly, r: inscribed(b.poly, [], 2).r };
+      R_INS.set(b, ri);
+    }
     const rIns = ri.r;
     if (rIns < 0.3 * Math.sqrt(amin)) return;
     const c = polygonCentroid(b.poly);
@@ -580,32 +675,66 @@ export function pickBlock(
     let s = a >= amin && a <= amax ? 1 : 0.3;
     s += Math.min(1, (rIns / Math.sqrt(amin)) * 0.8) + ctx.rng.float() * 0.3;
     switch (place) {
-      case 'adjacent-nucleus': { const fr = ctx.frontsNucleus(i); if (fr <= 8 && d > 0.45 * R) return; s += (fr > 8 ? 2 : 0) - d / Math.max(120, R * 0.4); break; }
-      case 'near-nucleus': s -= d / Math.max(80, R * 0.3); break;
-      case 'edge': { const e = ctx.edgeDist(c); if (e > Math.max(90, R * 0.25)) return; s += 1.5 - e / 60 + 0.4 * b.phase; break; }
-      case 'axis-north': { if (c.y > nucleus.y - 20) return; s += 2 - Math.abs(c.x - nucleus.x) / 40 - d / Math.max(150, R * 0.5); break; }
-      case 'east': case 'west': { const sg = place === 'east' ? 1 : -1; if ((c.x - nucleus.x) * sg < R * 0.15) return; s += 1.5 - Math.abs(c.y - nucleus.y) / 80 - Math.abs(d - R * 0.45) / 150; break; }
-      case 'high': { s += (b.height ?? 0) / 4; break; }
+      case 'adjacent-nucleus': {
+        const fr = ctx.frontsNucleus(i);
+        if (fr <= 8 && d > 0.45 * R) return;
+        s += (fr > 8 ? 2 : 0) - d / Math.max(120, R * 0.4);
+        break;
+      }
+      case 'near-nucleus':
+        s -= d / Math.max(80, R * 0.3);
+        break;
+      case 'edge': {
+        const e = ctx.edgeDist(c);
+        if (e > Math.max(90, R * 0.25)) return;
+        s += 1.5 - e / 60 + 0.4 * b.phase;
+        break;
+      }
+      case 'axis-north': {
+        if (c.y > nucleus.y - 20) return;
+        s += 2 - Math.abs(c.x - nucleus.x) / 40 - d / Math.max(150, R * 0.5);
+        break;
+      }
+      case 'east':
+      case 'west': {
+        const sg = place === 'east' ? 1 : -1;
+        if ((c.x - nucleus.x) * sg < R * 0.15) return;
+        s += 1.5 - Math.abs(c.y - nucleus.y) / 80 - Math.abs(d - R * 0.45) / 150;
+        break;
+      }
+      case 'high': {
+        s += (b.height ?? 0) / 4;
+        break;
+      }
       case 'spread': {
         // parishes spread across the quarters: at least `sep` from the other landmarks of the kind
-        const dOther = Math.min(...(ctx.others ?? []).map((q) => dist(q, c)), 1e9);
+        const dOther = Math.min(...(ctx.others ?? []).map(q => dist(q, c)), 1e9);
         if (dOther < (ctx.sep ?? 150)) return;
         s += Math.min(2, dOther / (ctx.sep ?? 150)) - d / Math.max(300, R * 1.2) + (b.phase <= 2 ? 0.5 : 0);
         break;
       }
-      case 'gate': { const g = Math.min(...ctx.gates.map((q) => dist(q, c)), 1e9); if (g > 200) return; s += 1.5 - g / 80; break; }
+      case 'gate': {
+        const g = Math.min(...ctx.gates.map(q => dist(q, c)), 1e9);
+        if (g > 200) return;
+        s += 1.5 - g / 80;
+        break;
+      }
       case 'suburb': {
         // a suburb (faubourg or absorbed village) block, near its village green, apart from the other churches
         if (b.zone !== 'faubourg' && b.zone !== 'village') return;
-        const dOther = Math.min(...(ctx.others ?? []).map((q) => dist(q, c)), 1e9);
+        const dOther = Math.min(...(ctx.others ?? []).map(q => dist(q, c)), 1e9);
         if (dOther < (ctx.sep ?? 200)) return;
-        const dt = Math.min(...(ctx.targets ?? []).map((q) => dist(q, c)), 1e9);
+        const dt = Math.min(...(ctx.targets ?? []).map(q => dist(q, c)), 1e9);
         s += (ctx.targets?.length ? 1.5 - Math.min(dt, 600) / 120 : 0) + Math.min(1.5, dOther / 400);
         break;
       }
-      default: break;
+      default:
+        break;
     }
-    if (s > bs) { bs = s; best = i; }
+    if (s > bs) {
+      bs = s;
+      best = i;
+    }
   });
   return best;
 }

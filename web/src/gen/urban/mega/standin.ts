@@ -21,8 +21,12 @@ import type { UrbanZone, PolyH } from '../../types';
 const BLOCK: Record<UrbanZone, number> = { core: 2600, middle: 4600, edge: 6500, faubourg: 9500, village: 5500 };
 type Fabric = { blocks: Polygon[]; masses: PolyH[] };
 const CACHE = new WeakMap<MacroQuarter, { nucleus: string; fabric: Fabric }>();
-const MAX_BLOCKS = 64, MAX_MASSES = 512;
-export interface FabricBudget { blocks: number; masses: number }
+const MAX_BLOCKS = 64,
+  MAX_MASSES = 512;
+export interface FabricBudget {
+  blocks: number;
+  masses: number;
+}
 /** Shared by all macro hosts in a World; exact generated quarters are accounted for by the queue cap. */
 export const STAND_IN_BUDGET: Readonly<FabricBudget> = { blocks: 12000, masses: 32000 };
 export function fabricBudget(quarters: number): FabricBudget {
@@ -30,7 +34,7 @@ export function fabricBudget(quarters: number): FabricBudget {
   return { blocks: Math.min(MAX_BLOCKS, Math.floor(STAND_IN_BUDGET.blocks / quarters)), masses: Math.min(MAX_MASSES, Math.floor(STAND_IN_BUDGET.masses / quarters)) };
 }
 
-const shrink = (p: Polygon, c: Vec2, k: number): Polygon => p.map((v) => ({ x: c.x + (v.x - c.x) * k, y: c.y + (v.y - c.y) * k }));
+const shrink = (p: Polygon, c: Vec2, k: number): Polygon => p.map(v => ({ x: c.x + (v.x - c.x) * k, y: c.y + (v.y - c.y) * k }));
 
 export function standIn(q: MacroQuarter, nucleus?: Vec2, budget: FabricBudget = { blocks: MAX_BLOCKS, masses: MAX_MASSES }): Fabric {
   const maxMasses = Math.max(0, Math.min(MAX_MASSES, Math.floor(budget.masses)));
@@ -41,28 +45,39 @@ export function standIn(q: MacroQuarter, nucleus?: Vec2, budget: FabricBudget = 
   const r: Fabric = { blocks: [], masses: [] };
   CACHE.set(q, { nucleus: key, fabric: r });
   if (q.inset.length < 3 || !maxBlocks || !maxMasses) return r;
-  if (q.kind !== 'quarter') { r.blocks.push(q.inset); return r; }
+  if (q.kind !== 'quarter') {
+    r.blocks.push(q.inset);
+    return r;
+  }
   let h = (q.id * 2654435761) >>> 0;
-  const rnd = (): number => { h = (Math.imul(h ^ (h >>> 15), 2246822519) + 0x6d2b79f5) >>> 0; return h / 4294967296; };
+  const rnd = (): number => {
+    h = (Math.imul(h ^ (h >>> 15), 2246822519) + 0x6d2b79f5) >>> 0;
+    return h / 4294967296;
+  };
   const old = q.phase <= 1 || q.district === 'satellite' || q.district === 'village';
   const young = q.zone === 'faubourg' || q.zone === 'edge';
   // grain: block area by zone, smaller where denser; irregularity by age
   const target = (BLOCK[q.zone] ?? 6000) * Math.max(0.7, Math.min(1.5, Math.sqrt(320 / Math.max(40, q.density || 40))));
-  const jitA = old ? 0.55 : young ? 0.12 : 0.28, jitT = old ? 0.4 : young ? 0.15 : 0.28;
+  const jitA = old ? 0.55 : young ? 0.12 : 0.28,
+    jitT = old ? 0.4 : young ? 0.15 : 0.28;
   const nu = nucleus ?? polygonCentroid(q.inset);
   const queue: { lp: LPoly; d: number }[] = [{ lp: { pts: q.inset, lab: q.inset.map(() => 0) }, d: 0 }];
   const pieces: Polygon[] = [];
   while (queue.length) {
     const { lp, d } = queue.pop()!;
     const A = area(lp.pts);
-    if (A < 1.7 * target || d > 10 || pieces.length + queue.length + 1 >= maxBlocks) { pieces.push(lp.pts); continue; }
+    if (A < 1.7 * target || d > 10 || pieces.length + queue.length + 1 >= maxBlocks) {
+      pieces.push(lp.pts);
+      continue;
+    }
     const ob = obb(lp.pts);
     // the cut runs radial or tangential to the nucleus, whichever is closest to across the long axis
     const rad = Math.atan2(ob.c.y - nu.y, ob.c.x - nu.x);
     const across = Math.atan2(ob.v.y, ob.v.x);
     let base = rad;
     for (const f of [rad, rad + Math.PI / 2]) {
-      const dv = Math.abs(Math.sin(f - across)), db = Math.abs(Math.sin(base - across));
+      const dv = Math.abs(Math.sin(f - across)),
+        db = Math.abs(Math.sin(base - across));
       if (dv < db) base = f;
     }
     let done = false;
@@ -72,7 +87,8 @@ export function standIn(q: MacroQuarter, nucleus?: Vec2, budget: FabricBudget = 
       if (!pointInRing(lp.pts, seed)) continue;
       const a = base + (rnd() - 0.5) * jitA;
       const dir = { x: Math.cos(a), y: Math.sin(a) };
-      const h1 = rayHit(lp.pts, seed, dir, 1e5, 0.01), h2 = rayHit(lp.pts, seed, { x: -dir.x, y: -dir.y }, 1e5, 0.01);
+      const h1 = rayHit(lp.pts, seed, dir, 1e5, 0.01),
+        h2 = rayHit(lp.pts, seed, { x: -dir.x, y: -dir.y }, 1e5, 0.01);
       if (!h1 || !h2) continue;
       // crooked lanes in the old fabric: a kink in the middle of the cut
       const kink = old ? (rnd() - 0.5) * 0.14 * Math.hypot(h1.p.x - h2.p.x, h1.p.y - h2.p.y) : 0;
@@ -117,15 +133,16 @@ export function standIn(q: MacroQuarter, nucleus?: Vec2, budget: FabricBudget = 
   // The frontage grain adapts to a bounded quarter budget, rather than invoking the full detail generator.
   const frontage = Math.max(old ? 9 : young ? 16 : 12, perimeter / Math.max(1, maxMasses - edgeCount));
   r.blocks.forEach((b, bi) => {
-    const c = polygonCentroid(b), k = Math.sqrt(1 - shares[bi]);
+    const c = polygonCentroid(b),
+      k = Math.sqrt(1 - shares[bi]);
     const hole = shrink(b, c, k);
     const bands = b.map((a, i) => orientPos([a, b[(i + 1) % b.length], hole[(i + 1) % b.length], hole[i]]));
-    if (!contained(b, hole) || !bands.every((p) => contained(b, p)) || Math.abs(bands.reduce((s, p) => s + area(p), 0) - area(b) * shares[bi]) > 1e-5) {
+    if (!contained(b, hole) || !bands.every(p => contained(b, p)) || Math.abs(bands.reduce((s, p) => s + area(p), 0) - area(b) * shares[bi]) > 1e-5) {
       // A non-star-shaped block has no radial perimeter partition. Its clipped courtyard still leaves exact masses.
       const court = tryIntersection(b, hole);
       const built = court.failed ? { failed: true, pieces: [] } : tryDifference(b, court.pieces);
       const available = maxMasses - r.masses.length - (r.blocks.length - bi - 1);
-      if (!built.failed && built.pieces.every((p) => contained(b, p.outer)) && built.pieces.length <= available) r.masses.push(...built.pieces);
+      if (!built.failed && built.pieces.every(p => contained(b, p.outer)) && built.pieces.length <= available) r.masses.push(...built.pieces);
       return;
     }
     const counts = b.map((a, i) => Math.max(1, Math.ceil(dist(a, b[(i + 1) % b.length]) / frontage)));
@@ -136,13 +153,17 @@ export function standIn(q: MacroQuarter, nucleus?: Vec2, budget: FabricBudget = 
       return;
     }
     bands.forEach((band, i) => {
-      const a = b[i], z = b[(i + 1) % b.length], ha = hole[i], hz = hole[(i + 1) % b.length];
+      const a = b[i],
+        z = b[(i + 1) % b.length],
+        ha = hole[i],
+        hz = hole[(i + 1) % b.length];
       const n = counts[i];
       const at = (p: Vec2, z: Vec2, t: number): Vec2 => ({ x: p.x + (z.x - p.x) * t, y: p.y + (z.y - p.y) * t });
       for (let j = 0; j < n; j++) {
         // Attached old frontages share party walls. Younger rings keep small gaps between their houses.
         const gap = young ? Math.min(0.08 / n, 0.7 / Math.max(1, dist(a, z))) : 0;
-        const lo = j / n + gap, hi = (j + 1) / n - gap;
+        const lo = j / n + gap,
+          hi = (j + 1) / n - gap;
         r.masses.push({ outer: orientPos([at(a, z, lo), at(a, z, hi), at(ha, hz, hi), at(ha, hz, lo)]), holes: [] });
       }
     });
@@ -153,41 +174,52 @@ export function standIn(q: MacroQuarter, nucleus?: Vec2, budget: FabricBudget = 
 /** At most maxBlocks cell intersections per quarter; no point sampling or recursive search. */
 function clippedBlocks(p: Polygon, lane: number, target: number, limit: number): { blocks: Polygon[]; cuts: number } {
   if (limit <= 0) return { blocks: [], cuts: 0 };
-  const ob = obb(p), u = ob.u, v = { x: -u.y, y: u.x }, width = 2 * ob.hu, height = 2 * ob.hv;
+  const ob = obb(p),
+    u = ob.u,
+    v = { x: -u.y, y: u.x },
+    width = 2 * ob.hu,
+    height = 2 * ob.hv;
   if (width <= lane || height <= lane) return { blocks: [], cuts: 0 };
-  const count = Math.min(limit, Math.max(1, Math.ceil(width * height / target)));
-  const cols = Math.max(1, Math.min(count, Math.round(Math.sqrt(count * width / height))));
+  const count = Math.min(limit, Math.max(1, Math.ceil((width * height) / target)));
+  const cols = Math.max(1, Math.min(count, Math.round(Math.sqrt((count * width) / height))));
   const rows = Math.max(1, Math.floor(count / cols));
-  const dx = width / cols, dy = height / rows;
+  const dx = width / cols,
+    dy = height / rows;
   if (dx <= lane || dy <= lane) return { blocks: [], cuts: 0 };
   const at = (x: number, y: number): Vec2 => ({ x: ob.c.x + u.x * x + v.x * y, y: ob.c.y + u.y * x + v.y * y });
   const blocks: Polygon[] = [];
   let cuts = 0;
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    const x0 = -ob.hu + x * dx + lane / 2, x1 = -ob.hu + (x + 1) * dx - lane / 2;
-    const y0 = -ob.hv + y * dy + lane / 2, y1 = -ob.hv + (y + 1) * dy - lane / 2;
-    const cell = [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)];
-    const clipped = tryIntersection(cell, p);
-    cuts++;
-    if (clipped.failed) continue;
-    for (const piece of clipped.pieces) {
-      // Blocks are simple rings. Never fill a hole or accept a failed containment proof to spend the budget.
-      if (piece.holes.length || !contained(p, piece.outer)) continue;
-      blocks.push(piece.outer);
-      blocks.sort((a, b) => area(b) - area(a));
-      if (blocks.length > limit) blocks.pop();
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      const x0 = -ob.hu + x * dx + lane / 2,
+        x1 = -ob.hu + (x + 1) * dx - lane / 2;
+      const y0 = -ob.hv + y * dy + lane / 2,
+        y1 = -ob.hv + (y + 1) * dy - lane / 2;
+      const cell = [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)];
+      const clipped = tryIntersection(cell, p);
+      cuts++;
+      if (clipped.failed) continue;
+      for (const piece of clipped.pieces) {
+        // Blocks are simple rings. Never fill a hole or accept a failed containment proof to spend the budget.
+        if (piece.holes.length || !contained(p, piece.outer)) continue;
+        blocks.push(piece.outer);
+        blocks.sort((a, b) => area(b) - area(a));
+        if (blocks.length > limit) blocks.pop();
+      }
     }
-  }
   return { blocks, cuts };
 }
 
 /** Fast for convex subjects; concave candidates require a boolean area proof as well as simple rings. */
 function contained(p: Polygon, q: Polygon): boolean {
   if (q.length < 3 || area(q) < 1e-6 || !isSimple(q) || !polyInside(p, q)) return false;
-  if (isConvex(p, 1e-10)) return q.every((v) => p.every((a, i) => {
-    const b = p[(i + 1) % p.length];
-    return ((b.x - a.x) * (v.y - a.y) - (b.y - a.y) * (v.x - a.x)) / Math.max(1e-9, dist(a, b)) >= -1e-8;
-  }));
+  if (isConvex(p, 1e-10))
+    return q.every(v =>
+      p.every((a, i) => {
+        const b = p[(i + 1) % p.length];
+        return ((b.x - a.x) * (v.y - a.y) - (b.y - a.y) * (v.x - a.x)) / Math.max(1e-9, dist(a, b)) >= -1e-8;
+      }),
+    );
   const outside = tryDifference(q, p);
   return !outside.failed && mpArea(outside.pieces) < 1e-6;
 }

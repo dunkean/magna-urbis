@@ -15,7 +15,7 @@ try {
   await page.addInitScript(() => {
     window.generationRequests = [];
     const send = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function(message, ...args) {
+    Worker.prototype.postMessage = function (message, ...args) {
       if (message?.action && message.action !== 'serialize' && message?.settings) window.generationRequests.push({ action: message.action, keys: message.keys });
       return send.call(this, message, ...args);
     };
@@ -24,18 +24,23 @@ try {
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
   const fixture = JSON.parse(await readFile(new URL('fixture.json', out), 'utf8'));
   const engineUrl = '/@fs/' + fileURLToPath(new URL('../src/v2/engine.ts', import.meta.url)).replaceAll('\\', '/');
-  const fixtureText = await page.evaluate(async ({ fixture, engineUrl }) => {
-    const { terrainCacheKey } = await import(engineUrl);
-    fixture.world.stats['v2.terrainKey'] = terrainCacheKey(fixture.settings);
-    return JSON.stringify(fixture);
-  }, { fixture, engineUrl });
+  const fixtureText = await page.evaluate(
+    async ({ fixture, engineUrl }) => {
+      const { terrainCacheKey } = await import(engineUrl);
+      fixture.world.stats['v2.terrainKey'] = terrainCacheKey(fixture.settings);
+      return JSON.stringify(fixture);
+    },
+    { fixture, engineUrl },
+  );
   await page.locator('#import-open').click();
   await page.locator('#project-file').setInputFiles({ name: 'render-controls.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText) });
   await page.locator('#import-dialog').waitFor({ state: 'hidden' });
   await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'false');
   const exportProject = async () => {
-    await page.locator('#export-open').click(); await page.locator('#export-format').selectOption('project');
-    const download = page.waitForEvent('download'); await page.locator('#export-go').click();
+    await page.locator('#export-open').click();
+    await page.locator('#export-format').selectOption('project');
+    const download = page.waitForEvent('download');
+    await page.locator('#export-go').click();
     return JSON.parse(await readFile(await (await download).path(), 'utf8'));
   };
   const original = await exportProject();
@@ -60,7 +65,8 @@ try {
   for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
   assert(await page.evaluate(paths => paths.every((path, i) => window.sharedFlags[i] === document.querySelector(`[data-setting-path="${path}"]`)), flags));
   await page.locator('#view3d').click();
-  const nav = page.locator('.toolbar-row [data-navigation]'); await nav.waitFor();
+  const nav = page.locator('.toolbar-row [data-navigation]');
+  await nav.waitFor();
   await page.locator('#map-style').selectOption('satellite');
   for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
   assert.equal(await page.locator('.toolbar-row [data-ground]').count(), 0);
@@ -78,7 +84,8 @@ try {
   await advanced.locator('[data-render-pass=water] .render-pass-source select').selectOption('cadastre');
   await advanced.locator('[data-render-pass=vegetation] .render-pass-source select').selectOption('parchment');
   const vegetation = advanced.locator('[data-pass-switch="appearance.composition.vegetation.look"]');
-  await vegetation.uncheck(); await vegetation.check();
+  await vegetation.uncheck();
+  await vegetation.check();
   await page.screenshot({ path: fileURLToPath(new URL('render-advanced-3d.png', out)) });
   await page.keyboard.press('Escape');
   const mixed = await exportProject();
@@ -88,21 +95,30 @@ try {
   assert.equal(mixed.settings.appearance.city?.ground, undefined);
   assert.deepEqual(mixed.world, original.world, 'style composition leaves every generated product untouched');
   await nav.selectOption('fly');
-  const canvas = page.locator('.map-area > .city3d canvas').first(); await canvas.focus();
+  const canvas = page.locator('.map-area > .city3d canvas').first();
+  await canvas.focus();
   const initial = await page.evaluate(() => window.__v2Test.camera3d());
   assert.equal(initial.navigation, 'fly');
   await page.keyboard.down('Space');
   await page.waitForFunction(z => window.__v2Test.camera3d().flightAltitude > z + 3, initial.flightAltitude);
   await page.keyboard.up('Space');
   const raised = await page.evaluate(() => window.__v2Test.camera3d());
-  await page.evaluate(() => { const camera = window.__v2Test.camera3d(); window.__v2Test.setCamera3d({ ...camera, pitch: 0 }); });
+  await page.evaluate(() => {
+    const camera = window.__v2Test.camera3d();
+    window.__v2Test.setCamera3d({ ...camera, pitch: 0 });
+  });
   await page.keyboard.down('KeyW');
-  await page.waitForFunction(({ x, y }) => { const camera = window.__v2Test.camera3d(); return Math.hypot(camera.x - x, camera.y - y) > 3; }, raised);
+  await page.waitForFunction(({ x, y }) => {
+    const camera = window.__v2Test.camera3d();
+    return Math.hypot(camera.x - x, camera.y - y) > 3;
+  }, raised);
   await page.keyboard.up('KeyW');
   const flown = await page.evaluate(() => window.__v2Test.camera3d());
   assert.equal(flown.flightAltitude, raised.flightAltitude, 'horizontal flight keeps absolute altitude');
-  await page.keyboard.press('Escape'); assert.equal(await nav.inputValue(), 'orbit');
-  await nav.selectOption('walk'); await canvas.focus();
+  await page.keyboard.press('Escape');
+  assert.equal(await nav.inputValue(), 'orbit');
+  await nav.selectOption('walk');
+  await canvas.focus();
   assert.equal((await page.evaluate(() => window.__v2Test.camera3d())).navigation, 'walk');
   await nav.selectOption('orbit');
   await page.screenshot({ path: fileURLToPath(new URL('shared-toolbar-3d.png', out)) });
@@ -114,4 +130,6 @@ try {
   console.error('Display diagnostics:', errors, await page?.locator('#toast').textContent());
   await page?.screenshot({ path: fileURLToPath(new URL('render-failure.png', out)) });
   throw error;
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

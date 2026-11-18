@@ -17,7 +17,9 @@ import { styleTraits, terrainStyle, type TerrainStyle } from '../../web/src/rend
 import { seaDistanceSurface, seaMaterialSvg } from '../../web/src/render/terrainWater';
 export type { TerrainStyle } from '../../web/src/render/terrainStyle';
 export interface TerrainScene {
-  svg: string; imageUrl: string; contourStep: number;
+  svg: string;
+  imageUrl: string;
+  contourStep: number;
   /** Local tile coordinates. Apply only to the river/lake group, before contours. */
   waterMask?: { id: string; svg: string };
   profile?: { pixelsMs: number; imageMs: number; contoursMs: number };
@@ -28,62 +30,80 @@ const contourPaths = new WeakMap<TerrainData, { relief: string; mapWidth: number
 /** Close land outside the tile, including mainland edges and holes, then smooth
  * the sub-cell contour. SVG antialiases this boundary at the actual screen zoom. */
 export function terrainLandClip(terrain: TerrainData): string {
-  const n = terrain.resolution, cell = terrain.width / n, size = n + 4;
+  const n = terrain.resolution,
+    cell = terrain.width / n,
+    size = n + 4;
   const field = new Float32Array(size * size);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const sx = Math.max(0, Math.min(n - 1, x - 2)), sy = Math.max(0, Math.min(n - 1, y - 2));
-    const h = terrain.height[sy * n + sx];
-    field[y * size + x] = x === 0 || y === 0 || x === size - 1 || y === size - 1 ? -Math.max(1, Math.abs(h)) : h;
-  }
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const sx = Math.max(0, Math.min(n - 1, x - 2)),
+        sy = Math.max(0, Math.min(n - 1, y - 2));
+      const h = terrain.height[sy * n + sx];
+      field[y * size + x] = x === 0 || y === 0 || x === size - 1 || y === size - 1 ? -Math.max(1, Math.abs(h)) : h;
+    }
   const paths = marchingSquares(field, size, size, 0, cell, -1.5 * cell, -1.5 * cell);
-  return paths.map(path => {
-    const points = path.pts;
-    if (!path.closed || points.length < 3) return '';
-    const middle = (i: number, j: number): string => `${((points[i].x + points[j].x) / 2).toFixed(3)},${((points[i].y + points[j].y) / 2).toFixed(3)}`;
-    return `M${middle(points.length - 1, 0)}` + points.map((point, i) => `Q${point.x.toFixed(3)},${point.y.toFixed(3)} ${middle(i, (i + 1) % points.length)}`).join('') + 'Z';
-  }).join('');
+  return paths
+    .map(path => {
+      const points = path.pts;
+      if (!path.closed || points.length < 3) return '';
+      const middle = (i: number, j: number): string => `${((points[i].x + points[j].x) / 2).toFixed(3)},${((points[i].y + points[j].y) / 2).toFixed(3)}`;
+      return `M${middle(points.length - 1, 0)}` + points.map((point, i) => `Q${point.x.toFixed(3)},${point.y.toFixed(3)} ${middle(i, (i + 1) % points.length)}`).join('') + 'Z';
+    })
+    .join('');
 }
 
 function coastImage(terrain: TerrainData, imageUrl: string, sea: string, clipNamespace: string): string {
-  const width = terrain.width, id = `terrain-land-${clipNamespace}-${++coastClipId}`;
+  const width = terrain.width,
+    id = `terrain-land-${clipNamespace}-${++coastClipId}`;
   return `<defs><clipPath id="${id}"><path d="${terrainLandClip(terrain)}" clip-rule="evenodd"/></clipPath></defs>${sea}<image width="${width}" height="${width}" href="${imageUrl}" clip-path="url(#${id})"/>`;
 }
 
 // Extend land color slightly past its geometric edge so clipped raster filtering
 // cannot paint a paper/sea fringe over the antialiased vector shoreline.
 function extendLandColors(rgb: Uint8Array, terrain: TerrainData): void {
-  const n = terrain.resolution, original = rgb.slice();
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const i = y * n + x;
-    if (terrain.height[i] > 0) continue;
-    let nearest = -1, distance = Infinity;
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-      const xx = x + dx, yy = y + dy, d = dx * dx + dy * dy;
-      if (xx < 0 || yy < 0 || xx >= n || yy >= n || d >= distance) continue;
-      const index = yy * n + xx;
-      if (terrain.height[index] > 0) { nearest = index; distance = d; }
+  const n = terrain.resolution,
+    original = rgb.slice();
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const i = y * n + x;
+      if (terrain.height[i] > 0) continue;
+      let nearest = -1,
+        distance = Infinity;
+      for (let dy = -2; dy <= 2; dy++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const xx = x + dx,
+            yy = y + dy,
+            d = dx * dx + dy * dy;
+          if (xx < 0 || yy < 0 || xx >= n || yy >= n || d >= distance) continue;
+          const index = yy * n + xx;
+          if (terrain.height[index] > 0) {
+            nearest = index;
+            distance = d;
+          }
+        }
+      if (nearest >= 0) for (let c = 0; c < 3; c++) rgb[i * 3 + c] = original[nearest * 3 + c];
     }
-    if (nearest >= 0) for (let c = 0; c < 3; c++) rgb[i * 3 + c] = original[nearest * 3 + c];
-  }
 }
 
 /** Match the working application's Canvas stroke weights at the current zoom. */
 export function terrainContourWidths(style: TerrainStyle, scale: number): { thin: number; index: number } {
   const pal = terrainStyle(style).palette;
-  return {
-    thin: mapStrokeWidth(CANVAS_MAP_STROKES.contour, scale) * scale,
-    index: mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, scale, pal.contourIndexW / 1.6) * scale,
-  };
+  return { thin: mapStrokeWidth(CANVAS_MAP_STROKES.contour, scale) * scale, index: mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, scale, pal.contourIndexW / 1.6) * scale };
 }
 
 // Low to high elevation; interpolate RGB directly, without lighting or contours.
 const elevationColors = [
-  [0, 32, 96], [0, 160, 70], [255, 230, 0], [235, 35, 20],
-  [128, 128, 128], [255, 255, 255],
+  [0, 32, 96],
+  [0, 160, 70],
+  [255, 230, 0],
+  [235, 35, 20],
+  [128, 128, 128],
+  [255, 255, 255],
 ] as const;
 
 function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: string, waterStyle: TerrainStyle, showWater = true, referenceWidth = terrain.width, showTerrain = true, colors?: RenderColors): TerrainScene {
-  const n = terrain.resolution, width = terrain.width;
+  const n = terrain.resolution,
+    width = terrain.width;
   const rgb = new Uint8Array(n * n * 3);
   const coastal = terrain.globalMinHeight < 0;
   const landMin = coastal ? 0 : terrain.globalMinHeight;
@@ -92,13 +112,17 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
     // Use the engine's global range so camera regions retain the same colors.
     if (coastal && terrain.height[i] <= 0) {
       const depth = Math.max(0, Math.min(1, terrain.height[i] / terrain.globalMinHeight));
-      rgb[i * 3] = Math.round(35 - 27 * depth); rgb[i * 3 + 1] = Math.round(125 - 85 * depth); rgb[i * 3 + 2] = Math.round(175 - 79 * depth);
+      rgb[i * 3] = Math.round(35 - 27 * depth);
+      rgb[i * 3 + 1] = Math.round(125 - 85 * depth);
+      rgb[i * 3 + 2] = Math.round(175 - 79 * depth);
       continue;
     }
     const t = Math.max(0, Math.min(1, (terrain.height[i] - landMin) / range));
     const position = (coastal ? 1 : 0) + t * (elevationColors.length - (coastal ? 2 : 1));
     const index = Math.min(elevationColors.length - 2, Math.floor(position));
-    const a = elevationColors[index], b = elevationColors[index + 1], u = position - index;
+    const a = elevationColors[index],
+      b = elevationColors[index + 1],
+      u = position - index;
     for (let channel = 0; channel < 3; channel++) rgb[i * 3 + channel] = Math.round(a[channel] + (b[channel] - a[channel]) * u);
   }
   let sea = '';
@@ -114,20 +138,61 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
 }
 
 /** The crowns alone, transparent elsewhere, as the map pass of renderRustTerrain shades them: the canopy of a flat ground with no terrain raster (relief hidden). */
-export function renderTerrainCanopy(terrain: TerrainData, style: TerrainStyle, settings: Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest: Omit<ForestRaster, 'light'>; v2Season?: number; v2Calendar?: SeasonCalendar }, lighting: TerrainLighting, materialContext?: MaterialRasterContext): string {
-  const n = terrain.resolution, traits = styleTraits(style), lights = terrainLights(lighting);
-  const canopy = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone }, true,
-    { ...settings.forest, renderV2: traits.satelliteVariant, v2Season: settings.v2Season, v2Calendar: settings.v2Calendar, brushes: traits.forestBrushes, light: lights.primary, light2: lights.secondary, lightingStrength: lighting.enabled ? lighting.strength : 0, mapCanopy: true }, materialContext);
+export function renderTerrainCanopy(
+  terrain: TerrainData,
+  style: TerrainStyle,
+  settings: Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest: Omit<ForestRaster, 'light'>; v2Season?: number; v2Calendar?: SeasonCalendar },
+  lighting: TerrainLighting,
+  materialContext?: MaterialRasterContext,
+): string {
+  const n = terrain.resolution,
+    traits = styleTraits(style),
+    lights = terrainLights(lighting);
+  const canopy = renderMaterialRaster(
+    terrain,
+    { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone },
+    true,
+    {
+      ...settings.forest,
+      renderV2: traits.satelliteVariant,
+      v2Season: settings.v2Season,
+      v2Calendar: settings.v2Calendar,
+      brushes: traits.forestBrushes,
+      light: lights.primary,
+      light2: lights.secondary,
+      lightingStrength: lighting.enabled ? lighting.strength : 0,
+      mapCanopy: true,
+    },
+    materialContext,
+  );
   const rgba = new Uint8Array(n * n * 4);
-  for (let i = 0; i < n * n; i++) if (canopy.canopyAlpha[i] && terrain.height[i] >= 0 && !terrain.caveMask[i]) {
-    rgba[i * 4] = canopy.rgb[i * 3]; rgba[i * 4 + 1] = canopy.rgb[i * 3 + 1]; rgba[i * 4 + 2] = canopy.rgb[i * 3 + 2]; rgba[i * 4 + 3] = canopy.canopyAlpha[i];
-  }
+  for (let i = 0; i < n * n; i++)
+    if (canopy.canopyAlpha[i] && terrain.height[i] >= 0 && !terrain.caveMask[i]) {
+      rgba[i * 4] = canopy.rgb[i * 3];
+      rgba[i * 4 + 1] = canopy.rgb[i * 3 + 1];
+      rgba[i * 4 + 2] = canopy.rgb[i * 3 + 2];
+      rgba[i * 4 + 3] = canopy.canopyAlpha[i];
+    }
   return `<image width="${terrain.width}" height="${terrain.width}" href="${pngDataUrl(encodePng(rgba, n, n, 4, 1))}"/>`;
 }
 
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
 /** settings.forest: display-only Render3D forest raster input (field, occupation); absent keeps the legacy canopy. */
-export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number; v2Calendar?: SeasonCalendar } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style, colors?: RenderColors, materialContext?: MaterialRasterContext): TerrainScene {
+export function renderRustTerrain(
+  terrain: TerrainData,
+  style: TerrainStyle,
+  frame = true,
+  settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues' | 'climateZone'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number; v2Calendar?: SeasonCalendar } = { relief: 'mountains', width: terrain.width },
+  showContours = true,
+  clipNamespace = 'main',
+  lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING,
+  layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS,
+  fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS,
+  paintBrushes = true,
+  waterStyle: TerrainStyle = style,
+  colors?: RenderColors,
+  materialContext?: MaterialRasterContext,
+): TerrainScene {
   frame &&= layers.frame;
   const traits = styleTraits(style);
   if (traits.elevation) {
@@ -135,64 +200,110 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
     return scene;
   }
   const started = performance.now();
-  const n = terrain.resolution, width = terrain.width, cell = width / n;
+  const n = terrain.resolution,
+    width = terrain.width,
+    cell = width / n;
   const cavern = terrain.caveMask.length > 0;
   const coastal = terrain.globalMinHeight < 0 && !cavern;
   // Stable continuous shading, without engraved bands or high-frequency paper grain.
   const pal = { ...terrainStyle(style, colors).palette, hatch: 0, grain: 0 };
-  if (isFantasyStyle(style)) { pal.paper = colors?.paper ?? (traits.fantasy === 'ink' ? '#faf9f4' : '#eee6ce'); pal.hypso = [[0, pal.paper], [1, pal.paper]]; lighting = { ...lighting, strength: .12 }; pal.seaFill = traits.fantasy === 'ink' ? '#e5e7e6' : '#b9ccd0'; }
-  if (!layers.hypsometry) pal.hypso = [[0, pal.paper], [1, pal.paper]];
+  if (isFantasyStyle(style)) {
+    pal.paper = colors?.paper ?? (traits.fantasy === 'ink' ? '#faf9f4' : '#eee6ce');
+    pal.hypso = [
+      [0, pal.paper],
+      [1, pal.paper],
+    ];
+    lighting = { ...lighting, strength: 0.12 };
+    pal.seaFill = traits.fantasy === 'ink' ? '#e5e7e6' : '#b9ccd0';
+  }
+  if (!layers.hypsometry)
+    pal.hypso = [
+      [0, pal.paper],
+      [1, pal.paper],
+    ];
   // The shared rasterizer only reads mapSize, terrain.height and terrain.water.
-  const legacyRasterInput = {
-    mapSize: width,
-    terrain: { height: { w: n, h: n, cell, data: terrain.height }, water: new Uint8Array(n * n) },
-  } as unknown as World;
+  const legacyRasterInput = { mapSize: width, terrain: { height: { w: n, h: n, cell, data: terrain.height }, water: new Uint8Array(n * n) } } as unknown as World;
   const pixels = renderTerrainPixels(legacyRasterInput, pal, {
-    pixels: n, surface: terrain.height,
+    pixels: n,
+    surface: terrain.height,
     normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ },
     lighting,
-    heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2,
+    heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight },
+    exaggeration: 2,
     grainCoordinates: { x: terrain.x, y: terrain.y, cell: terrain.motifSize / 512 },
   });
   let canopyAlpha: Uint8Array | undefined;
   const materialSettings = { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues, climateZone: settings.climateZone };
-  const materialForest = { ...settings.forest, renderV2:traits.satelliteVariant, v2Season:settings.v2Season, v2Calendar:settings.v2Calendar, brushes: traits.forestBrushes, light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 };
-  if (clipNamespace === 'city-ground') setCityCanopy(layers.relief && settings.forest?.field ? (region, size) => {
-    // Evaluate at the overlay's pixel footprint: enlarging the overview mask
-    // would turn small crowns into broad transparent holes at city zoom.
-    const height = new Float32Array(size * size), cell = terrain.width / n;
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      const gx = Math.max(0, Math.min(n - 1, (region.x + (x + .5) * region.width / size - terrain.x) / cell - .5));
-      const gy = Math.max(0, Math.min(n - 1, (region.y + (y + .5) * region.width / size - terrain.y) / cell - .5));
-      const ix = Math.floor(gx), iy = Math.floor(gy), jx = Math.min(n - 1, ix + 1), jy = Math.min(n - 1, iy + 1), fx = gx - ix, fy = gy - iy;
-      height[y * size + x] = (terrain.height[iy * n + ix] * (1 - fx) + terrain.height[iy * n + jx] * fx) * (1 - fy)
-        + (terrain.height[jy * n + ix] * (1 - fx) + terrain.height[jy * n + jx] * fx) * fy;
-    }
-    const raster = renderMaterialRaster({ ...terrain, ...region, resolution: size, height }, materialSettings, true, materialForest, materialContext);
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
-    const ctx = canvas.getContext('2d')!, image = ctx.createImageData(size, size);
-    for (let i = 0; i < height.length; i++) image.data[i * 4 + 3] = raster.canopyAlpha[i];
-    ctx.putImageData(image, 0, 0); return canvas;
-  } : undefined);
+  const materialForest = {
+    ...settings.forest,
+    renderV2: traits.satelliteVariant,
+    v2Season: settings.v2Season,
+    v2Calendar: settings.v2Calendar,
+    brushes: traits.forestBrushes,
+    light: terrainLights(lighting).primary,
+    light2: terrainLights(lighting).secondary,
+    lightingStrength: lighting.enabled ? lighting.strength : 0,
+  };
+  if (clipNamespace === 'city-ground')
+    setCityCanopy(
+      layers.relief && settings.forest?.field
+        ? (region, size) => {
+            // Evaluate at the overlay's pixel footprint: enlarging the overview mask
+            // would turn small crowns into broad transparent holes at city zoom.
+            const height = new Float32Array(size * size),
+              cell = terrain.width / n;
+            for (let y = 0; y < size; y++)
+              for (let x = 0; x < size; x++) {
+                const gx = Math.max(0, Math.min(n - 1, (region.x + ((x + 0.5) * region.width) / size - terrain.x) / cell - 0.5));
+                const gy = Math.max(0, Math.min(n - 1, (region.y + ((y + 0.5) * region.width) / size - terrain.y) / cell - 0.5));
+                const ix = Math.floor(gx),
+                  iy = Math.floor(gy),
+                  jx = Math.min(n - 1, ix + 1),
+                  jy = Math.min(n - 1, iy + 1),
+                  fx = gx - ix,
+                  fy = gy - iy;
+                height[y * size + x] = (terrain.height[iy * n + ix] * (1 - fx) + terrain.height[iy * n + jx] * fx) * (1 - fy) + (terrain.height[jy * n + ix] * (1 - fx) + terrain.height[jy * n + jx] * fx) * fy;
+              }
+            const raster = renderMaterialRaster({ ...terrain, ...region, resolution: size, height }, materialSettings, true, materialForest, materialContext);
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = size;
+            const ctx = canvas.getContext('2d')!,
+              image = ctx.createImageData(size, size);
+            for (let i = 0; i < height.length; i++) image.data[i * 4 + 3] = raster.canopyAlpha[i];
+            ctx.putImageData(image, 0, 0);
+            return canvas;
+          }
+        : undefined,
+    );
   if ((traits.neuralEarth || traits.ground3d) && layers.hypsometry) {
     const material = renderMaterialRaster(terrain, materialSettings, traits.ground3d, materialForest, materialContext);
     if (traits.ground3d && settings.forest?.field) canopyAlpha = material.canopyAlpha;
-    const neutral = renderTerrainPixels(legacyRasterInput, { ...pal, hypso: [[0, '#ffffff'], [1, '#ffffff']] }, {
-      pixels: n, surface: terrain.height, normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ }, lighting,
-      heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2,
-    });
-    for (let i = 0; i < n * n; i++) for (let c = 0; c < 3; c++) {
-      pixels.rgb[i * 3 + c] = Math.round(material.rgb[i * 3 + c] * (terrain.height[i] >= 0 ? neutral.rgb[i * 3 + c] / 255 : 1));
-    }
+    const neutral = renderTerrainPixels(
+      legacyRasterInput,
+      {
+        ...pal,
+        hypso: [
+          [0, '#ffffff'],
+          [1, '#ffffff'],
+        ],
+      },
+      { pixels: n, surface: terrain.height, normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ }, lighting, heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2 },
+    );
+    for (let i = 0; i < n * n; i++)
+      for (let c = 0; c < 3; c++) {
+        pixels.rgb[i * 3 + c] = Math.round(material.rgb[i * 3 + c] * (terrain.height[i] >= 0 ? neutral.rgb[i * 3 + c] / 255 : 1));
+      }
   }
   // Same composition as the live map pass (terrainGl): the ground keeps its palette, crowns mix over the land by resolved cover.
   if (!traits.ground3d && layers.relief && settings.forest?.field) {
     const canopy = renderMaterialRaster(terrain, materialSettings, true, { ...materialForest, mapCanopy: true }, materialContext);
     canopyAlpha = canopy.canopyAlpha;
-    for (let i = 0; i < n * n; i++) if (canopyAlpha[i] && terrain.height[i] >= 0) for (let c = 0; c < 3; c++) {
-      const under = pixels.rgb[i * 3 + c];
-      pixels.rgb[i * 3 + c] = Math.round(under + (canopy.rgb[i * 3 + c] - under) * canopyAlpha[i] / 255);
-    }
+    for (let i = 0; i < n * n; i++)
+      if (canopyAlpha[i] && terrain.height[i] >= 0)
+        for (let c = 0; c < 3; c++) {
+          const under = pixels.rgb[i * 3 + c];
+          pixels.rgb[i * 3 + c] = Math.round(under + ((canopy.rgb[i * 3 + c] - under) * canopyAlpha[i]) / 255);
+        }
   }
   let sea = '';
   if (coastal) {
@@ -201,19 +312,26 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   if (coastal && !traits.seaInMaterial) extendLandColors(pixels.rgb, terrain);
   if (cavern) {
     const light = terrainLights(lighting).primary;
-    for (let i = 0; i < n * n; i++) if (terrain.caveMask[i]) {
-      // Black rock with continuous inward-facing wall light; no stripes or grain.
-      const gx = terrain.normalX[i] / Math.max(1e-8, terrain.normalZ[i]) * lighting.exaggeration * 0.5;
-      const gy = terrain.normalY[i] / Math.max(1e-8, terrain.normalZ[i]) * lighting.exaggeration * 0.5;
-      const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1), nx = gx * inv, ny = gy * inv, nz = inv;
-      const slope = Math.hypot(nx, ny);
-      const shade = Math.max(0, Math.min(72, (lighting.enabled ? lighting.strength : 0) * (slope * (36 + 84 * (nx * light[0] + ny * light[1])) + (1 - nz) * 12)));
-      pixels.rgb[i * 3] = shade; pixels.rgb[i * 3 + 1] = shade; pixels.rgb[i * 3 + 2] = shade;
-    }
+    for (let i = 0; i < n * n; i++)
+      if (terrain.caveMask[i]) {
+        // Black rock with continuous inward-facing wall light; no stripes or grain.
+        const gx = (terrain.normalX[i] / Math.max(1e-8, terrain.normalZ[i])) * lighting.exaggeration * 0.5;
+        const gy = (terrain.normalY[i] / Math.max(1e-8, terrain.normalZ[i])) * lighting.exaggeration * 0.5;
+        const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1),
+          nx = gx * inv,
+          ny = gy * inv,
+          nz = inv;
+        const slope = Math.hypot(nx, ny);
+        const shade = Math.max(0, Math.min(72, (lighting.enabled ? lighting.strength : 0) * (slope * (36 + 84 * (nx * light[0] + ny * light[1])) + (1 - nz) * 12)));
+        pixels.rgb[i * 3] = shade;
+        pixels.rgb[i * 3 + 1] = shade;
+        pixels.rgb[i * 3 + 2] = shade;
+      }
   }
   // Camera PNGs are transient: fast, lossless compression keeps their pixels
   // identical while avoiding export-grade compression on the UI thread.
-  const pixelsMs = performance.now() - started, imageStarted = performance.now();
+  const pixelsMs = performance.now() - started,
+    imageStarted = performance.now();
   const background = pngDataUrl(encodePng(pixels.rgb, pixels.w, pixels.h, 3, 1));
   let waterMask: TerrainScene['waterMask'];
   if (layers.relief && canopyAlpha?.some(value => value !== 0)) {
@@ -223,7 +341,8 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
     const image = pngDataUrl(encodePng(inverse, n, n, 4, 1));
     waterMask = { id, svg: `<defs><mask id="${id}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${width}" style="mask-type:alpha"><image width="${width}" height="${width}" href="${image}"/></mask></defs>` };
   }
-  const imageMs = performance.now() - imageStarted, contourStarted = performance.now();
+  const imageMs = performance.now() - imageStarted,
+    contourStarted = performance.now();
   // The engine samples a continuous physical surface for each camera region.
   // Contours use those same samples; their levels remain fixed across cameras.
   // Wider mountain spacing avoids tinting steep slopes with dense ink.
@@ -244,7 +363,8 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   if (!layers.relief && coastal && layers.water !== false) svg += sea + `<path d="${terrainLandClip(terrain)}" fill="${pal.paper}" fill-rule="evenodd"/>`;
   if (layers.relief) svg += coastal && !traits.seaInMaterial ? coastImage(terrain, background, sea, clipNamespace) : `<image width="${width}" height="${width}" href="${background}"/>`;
   if (paintBrushes && clipNamespace !== 'detail' && isFantasyStyle(style) && layers.relief) svg += renderFantasyTerrain(terrain, style, { ...settings, seed: settings.seed ?? '42' }, fantasyOptions);
-  if (!cavern && showContours && !isFantasyStyle(style)) svg += `<g class="layer-contours" fill="none" stroke="${pal.contour}" stroke-linejoin="round" stroke-linecap="round"><path d="${paths!.thin}" style="stroke-width:var(--terrain-contour-width,${weights.thin}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.5}"/><path d="${paths!.index}" style="stroke-width:var(--terrain-contour-index-width,${weights.index}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.75}"/></g>`;
+  if (!cavern && showContours && !isFantasyStyle(style))
+    svg += `<g class="layer-contours" fill="none" stroke="${pal.contour}" stroke-linejoin="round" stroke-linecap="round"><path d="${paths!.thin}" style="stroke-width:var(--terrain-contour-width,${weights.thin}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.5}"/><path d="${paths!.index}" style="stroke-width:var(--terrain-contour-index-width,${weights.index}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.75}"/></g>`;
   if (frame) svg += `<rect x="0" y="0" width="${width}" height="${width}" fill="none" stroke="${pal.frame}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;
   return { svg, imageUrl: background, contourStep: cavern || isFantasyStyle(style) ? 0 : step, waterMask, profile: { pixelsMs, imageMs, contoursMs: performance.now() - contourStarted } };
 }

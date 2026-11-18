@@ -28,7 +28,9 @@ let rendererBrushes: BrushImages | null = null;
 let rendererVegetation: DisplayOpts['vegetation'];
 let brushLoad = 0;
 let brushVersion = '';
-const closeBrushes = (images: BrushImages | null): void => { for (const key of ['vegetation', 'terrain'] as const) if (images && 'close' in images[key]) (images[key] as ImageBitmap).close(); };
+const closeBrushes = (images: BrushImages | null): void => {
+  for (const key of ['vegetation', 'terrain'] as const) if (images && 'close' in images[key]) (images[key] as ImageBitmap).close();
+};
 let disposed = false;
 let canvas: OffscreenCanvas | null = null;
 let miniCanvas: OffscreenCanvas | null = null;
@@ -58,7 +60,9 @@ function probe(): { ok: boolean; reason?: string } {
     if (!c.getContext('2d')) return { ok: false, reason: 'no 2d context' };
     if (typeof c.transferToImageBitmap !== 'function') return { ok: false, reason: 'no transferToImageBitmap' };
     return { ok: true };
-  } catch (e) { return { ok: false, reason: String((e as Error).message) }; }
+  } catch (e) {
+    return { ok: false, reason: String((e as Error).message) };
+  }
 }
 
 /** (Re)build scene + renderer from the current snapshot and display options. */
@@ -74,12 +78,25 @@ function rebuild(): number {
   // `dpr` stays a live getter: the page's devicePixelRatio can change between frames
   const activeBrushes = display.painted ? brushImages : null;
   const colorKey = JSON.stringify(display.colors ?? {});
-  if (rendererColors !== colorKey || rendererBrushes !== activeBrushes || rendererVegetation!==display.vegetation || !renderer?.update?.(w, sceneCache.scene, display.style)) {
-    const next = createCanvasRenderer(canvas as unknown as CanvasLike, w, display.style, { colors: display.colors, scene: sceneCache.scene, brushes: activeBrushes ?? undefined,vegetation:display.vegetation, get dpr(): number { return curDpr; } });
-    renderer?.dispose(); renderer = next; rendererBrushes = activeBrushes;rendererVegetation=display.vegetation; rendererColors=colorKey;
+  if (rendererColors !== colorKey || rendererBrushes !== activeBrushes || rendererVegetation !== display.vegetation || !renderer?.update?.(w, sceneCache.scene, display.style)) {
+    const next = createCanvasRenderer(canvas as unknown as CanvasLike, w, display.style, {
+      colors: display.colors,
+      scene: sceneCache.scene,
+      brushes: activeBrushes ?? undefined,
+      vegetation: display.vegetation,
+      get dpr(): number {
+        return curDpr;
+      },
+    });
+    renderer?.dispose();
+    renderer = next;
+    rendererBrushes = activeBrushes;
+    rendererVegetation = display.vegetation;
+    rendererColors = colorKey;
   }
-  renderer.setOverlays({ text: display.text, cartouche: display.cartouche ?? final,labels:display.labels??world.options.labels??true,legend:display.legend??world.options.legend??false });
-  miniDirty = true; ver++;
+  renderer.setOverlays({ text: display.text, cartouche: display.cartouche ?? final, labels: display.labels ?? world.options.labels ?? true, legend: display.legend ?? world.options.legend ?? false });
+  miniDirty = true;
+  ver++;
   return performance.now() - t0;
 }
 
@@ -93,12 +110,18 @@ function announce(sceneMs: number): void {
 function onWorld(m: WorldMsg): void {
   if (m.gen !== gen || !m.final) return;
   const previous = { world, worldGen, final, sceneCache, sceneBuilder };
-  world = unpackWorldLanduse(m.world); worldGen = m.gen; final = true;
+  world = unpackWorldLanduse(m.world);
+  worldGen = m.gen;
+  final = true;
   sceneCache = null;
   sceneBuilder = new SceneBuilder();
   let sceneMs: number;
-  try { sceneMs = rebuild(); }
-  catch (error) { ({ world, worldGen, final, sceneCache, sceneBuilder } = previous); throw error; }
+  try {
+    sceneMs = rebuild();
+  } catch (error) {
+    ({ world, worldGen, final, sceneCache, sceneBuilder } = previous);
+    throw error;
+  }
   announce(sceneMs);
 }
 
@@ -128,7 +151,8 @@ function onQuarters(m: QuarterMsg): void {
   if (megaTimer) return;
   const wait = Math.max(0, 400 - (performance.now() - megaLast));
   megaTimer = setTimeout(() => {
-    megaTimer = null; megaLast = performance.now();
+    megaTimer = null;
+    megaLast = performance.now();
     if (world) refreshCavernMask(world);
     sceneCache = null;
     announce(rebuild());
@@ -138,29 +162,60 @@ function onQuarters(m: QuarterMsg): void {
 function onAttach(m: RAttach): void {
   if (m.display) display = m.display;
   port?.close();
-  if (megaTimer) { clearTimeout(megaTimer); megaTimer = null; }
-  gen = m.gen; port = m.port;
+  if (megaTimer) {
+    clearTimeout(megaTimer);
+    megaTimer = null;
+  }
+  gen = m.gen;
+  port = m.port;
   port.onmessage = (e: MessageEvent<PortMsg>): void => {
-    try { if (e.data.type === 'settlement') onSettlement(e.data); else if (e.data.type === 'quarters') onQuarters(e.data); else onWorld(e.data as WorldMsg); } catch (err) { post({ type: 'error', gen: e.data.gen, error: String((err as Error)?.stack ?? err) }); }
+    try {
+      if (e.data.type === 'settlement') onSettlement(e.data);
+      else if (e.data.type === 'quarters') onQuarters(e.data);
+      else onWorld(e.data as WorldMsg);
+    } catch (err) {
+      post({ type: 'error', gen: e.data.gen, error: String((err as Error)?.stack ?? err) });
+    }
   };
   // Stage snapshots do not replace the preceding map. Only the final scene can produce its replacement bitmap.
 }
 
 /** Release an inactive scene while keeping the worker, canvas and decoded assets warm. */
 function releaseScene(): void {
-  if (megaTimer) { clearTimeout(megaTimer); megaTimer = null; }
-  port?.close(); port = null; gen = -1; worldGen = -1;
-  renderer?.dispose(); renderer = null; rendererBrushes = null;
-  world = null; metaCache = null; sceneBuilder = null; sceneCache = null; lastView = null;
-  miniDirty = true; miniSize = 0; miniCanvas = null;
+  if (megaTimer) {
+    clearTimeout(megaTimer);
+    megaTimer = null;
+  }
+  port?.close();
+  port = null;
+  gen = -1;
+  worldGen = -1;
+  renderer?.dispose();
+  renderer = null;
+  rendererBrushes = null;
+  world = null;
+  metaCache = null;
+  sceneBuilder = null;
+  sceneCache = null;
+  lastView = null;
+  miniDirty = true;
+  miniSize = 0;
+  miniCanvas = null;
 }
 
 function onView(v: RView): void {
   lastView = v;
   curDpr = v.dpr;
-  if (!renderer || !canvas) { post({ type: 'frame', gen: worldGen, seq: v.seq, ver, view: v.view, w: v.w, h: v.h, dpr: v.dpr, ms: 0, band: 0, scale: v.view.scale, labels: [] }); return; }
-  const pw = Math.max(1, Math.round(v.w * v.dpr)), ph = Math.max(1, Math.round(v.h * v.dpr));
-  if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
+  if (!renderer || !canvas) {
+    post({ type: 'frame', gen: worldGen, seq: v.seq, ver, view: v.view, w: v.w, h: v.h, dpr: v.dpr, ms: 0, band: 0, scale: v.view.scale, labels: [] });
+    return;
+  }
+  const pw = Math.max(1, Math.round(v.w * v.dpr)),
+    ph = Math.max(1, Math.round(v.h * v.dpr));
+  if (canvas.width !== pw || canvas.height !== ph) {
+    canvas.width = pw;
+    canvas.height = ph;
+  }
   const frameStart = performance.now();
   const st = renderer.draw(v.view);
   const bitmap = canvas.transferToImageBitmap();
@@ -171,11 +226,11 @@ function onView(v: RView): void {
     renderer.drawMinimap(miniCanvas as unknown as CanvasLike, v.view, v.w, v.h, false);
     mini = miniCanvas.transferToImageBitmap();
     out.push(mini);
-    miniDirty = false; miniSize = v.mini;
+    miniDirty = false;
+    miniSize = v.mini;
   }
-  const labels = renderer.lastPlaced().map((p) => ({ id: p.label.id, kind: p.label.kind, text: p.label.text, size: p.size }));
-  post({ type: 'frame', gen: worldGen, seq: v.seq, ver, view: v.view, w: v.w, h: v.h, dpr: v.dpr, bitmap, mini,
-    ms: performance.now() - frameStart, band: st.band, scale: st.scale, labels, stats: st }, out);
+  const labels = renderer.lastPlaced().map(p => ({ id: p.label.id, kind: p.label.kind, text: p.label.text, size: p.size }));
+  post({ type: 'frame', gen: worldGen, seq: v.seq, ver, view: v.view, w: v.w, h: v.h, dpr: v.dpr, bitmap, mini, ms: performance.now() - frameStart, band: st.band, scale: st.scale, labels, stats: st }, out);
 }
 
 ctx.onmessage = (e: MessageEvent<RRequest>): void => {
@@ -187,7 +242,10 @@ ctx.onmessage = (e: MessageEvent<RRequest>): void => {
         const p = probe();
         if (p.ok) canvas = new OffscreenCanvas(1, 1);
         // The canvas renderer calls the Rust render geometry synchronously.
-        void loadRenderGeometry().then(() => post({ type: 'ready', ok: p.ok, reason: p.reason }), error => post({ type: 'ready', ok: false, reason: String(error) }));
+        void loadRenderGeometry().then(
+          () => post({ type: 'ready', ok: p.ok, reason: p.reason }),
+          error => post({ type: 'ready', ok: false, reason: String(error) }),
+        );
         break;
       }
       case 'brushes': {
@@ -199,9 +257,14 @@ ctx.onmessage = (e: MessageEvent<RRequest>): void => {
             closeBrushes(images);
             return;
           }
-          const oldImages = brushImages; brushImages = images;
+          const oldImages = brushImages;
+          brushImages = images;
           if (world && display.painted) {
-            try { announce(rebuild()); } catch (error) { post({ type: 'error', gen: worldGen, error: String(error) }); }
+            try {
+              announce(rebuild());
+            } catch (error) {
+              post({ type: 'error', gen: worldGen, error: String(error) });
+            }
           }
           // A disabled display already disposed its painted renderer. A successful rebuild replaced the active one.
           if (rendererBrushes !== oldImages) closeBrushes(oldImages);
@@ -209,15 +272,27 @@ ctx.onmessage = (e: MessageEvent<RRequest>): void => {
         });
         break;
       }
-      case 'attach': onAttach(m); break;
+      case 'attach':
+        onAttach(m);
+        break;
       case 'display': {
         display = m.display;
         if (world) announce(rebuild());
         break;
       }
-      case 'view': onView(m); break;
-      case 'release': releaseScene(); break;
-      case 'dispose': disposed = true; ++brushLoad; releaseScene(); closeBrushes(brushImages); brushImages = null; break;
+      case 'view':
+        onView(m);
+        break;
+      case 'release':
+        releaseScene();
+        break;
+      case 'dispose':
+        disposed = true;
+        ++brushLoad;
+        releaseScene();
+        closeBrushes(brushImages);
+        brushImages = null;
+        break;
     }
   } catch (err) {
     post({ type: 'error', gen: worldGen, error: String((err as Error)?.stack ?? err) });

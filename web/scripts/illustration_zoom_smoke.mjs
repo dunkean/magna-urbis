@@ -8,7 +8,10 @@ const moduleUrl = path => '/@fs/' + fileURLToPath(new URL(path, import.meta.url)
 const modules = { viewer: moduleUrl('../src/ui/viewer.ts'), context: moduleUrl('../src/ui/illustrationContext.ts'), panel: moduleUrl('../../illustration/web/index.mjs') };
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {
-  for (const [width, height] of [[1920, 1080], [3840, 2160]]) {
+  for (const [width, height] of [
+    [1920, 1080],
+    [3840, 2160],
+  ]) {
     const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
     page.setDefaultTimeout(15000);
     let submissions = 0;
@@ -23,16 +26,26 @@ try {
     await page.goto(base + '/zoom-fixture');
     await page.evaluate(async modules => {
       const [{ createViewer }, { illustrationContext }, { mountIllustration, captureViewport }] = await Promise.all([import(modules.viewer), import(modules.context), import(modules.panel)]);
-      const viewport = document.querySelector('#view'), canvas = viewport.querySelector('canvas');
-      const viewer = window.zoomViewer = createViewer({ container: viewport, canvas });
-      viewer.setRenderer({
-        draw(view) { const ctx = canvas.getContext('2d'); ctx.fillStyle = '#738765'; ctx.fillRect(0, 0, canvas.width, canvas.height); return { ms: 0, band: 2, scale: view.scale }; },
-        dispose() {},
-      }, 10000);
+      const viewport = document.querySelector('#view'),
+        canvas = viewport.querySelector('canvas');
+      const viewer = (window.zoomViewer = createViewer({ container: viewport, canvas }));
+      viewer.setRenderer(
+        {
+          draw(view) {
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#738765';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            return { ms: 0, band: 2, scale: view.scale };
+          },
+          dispose() {},
+        },
+        10000,
+      );
       viewer.setView({ cx: 5000, cy: 5000, scale: 8 });
-      mountIllustration({ host: document.querySelector('header'), capture: async () => ({
-        image: await captureViewport(viewport), context: illustrationContext({ sourceStyle: 'parchment', seed: 'wheel', view: { ...viewer.getView() }, width: viewport.clientWidth, height: viewport.clientHeight }),
-      }) });
+      mountIllustration({
+        host: document.querySelector('header'),
+        capture: async () => ({ image: await captureViewport(viewport), context: illustrationContext({ sourceStyle: 'parchment', seed: 'wheel', view: { ...viewer.getView() }, width: viewport.clientWidth, height: viewport.clientHeight }) }),
+      });
     }, modules);
     await page.locator('.illustration-trigger').click();
     await page.waitForFunction(() => document.querySelector('.illustration-status').textContent === 'Capture prête.');
@@ -53,4 +66,6 @@ try {
     console.log(`${width} × ${height}: wheel zoom reaches ${context.extentMetres.width} × ${context.extentMetres.height} m; battlemap selectable.`);
     await page.close();
   }
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+}

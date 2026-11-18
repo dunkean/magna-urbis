@@ -9,11 +9,16 @@ const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 let release;
-const gate = new Promise(resolve => { release = resolve; });
+const gate = new Promise(resolve => {
+  release = resolve;
+});
 let service = { state: 'ready', loaded: false, message: 'Service prêt' };
 try {
   // Hold the expensive module: the visible defaults and feedback must work first.
-  await page.route('**/terrainbench.ts*', async route => { await gate; await route.continue(); });
+  await page.route('**/terrainbench.ts*', async route => {
+    await gate;
+    await route.continue();
+  });
   await page.route('http://127.0.0.1:8793/status', route => route.fulfill({ json: service, headers: { 'Access-Control-Allow-Origin': '*' } }));
   await page.goto(`${base}/terrainbench.html?standalone=1&profile=local&stage=settlements&auto=0`, { waitUntil: 'commit' });
   await page.waitForFunction(() => document.querySelector('#terrainMethod')?.value === 'neural');
@@ -37,9 +42,19 @@ try {
   await page.addInitScript(() => {
     if (window.parent === window) {
       sessionStorage.setItem('magna-bench-context-v1-local', JSON.stringify({ terrain: 'source=procedural&seed=stale-procedural' }));
-      sessionStorage.setItem('magna-bench-context-v1-local-ui', JSON.stringify({ terrain: { fields: [
-        { selector: '#terrainSource', value: 'procedural' }, { selector: '#terrainMethod', value: 'procedural' },
-      ], panels: [], scroll: [] } }));
+      sessionStorage.setItem(
+        'magna-bench-context-v1-local-ui',
+        JSON.stringify({
+          terrain: {
+            fields: [
+              { selector: '#terrainSource', value: 'procedural' },
+              { selector: '#terrainMethod', value: 'procedural' },
+            ],
+            panels: [],
+            scroll: [],
+          },
+        }),
+      );
     }
     window.__startupBackends = [];
     window.__startupPhases = [];
@@ -72,4 +87,7 @@ try {
   console.error({ errors, path: new URL(page.url()).pathname });
   await page.screenshot({ path: 'out/startup/failure.png' });
   throw error;
-} finally { release(); await browser.close(); }
+} finally {
+  release();
+  await browser.close();
+}

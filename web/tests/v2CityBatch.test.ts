@@ -7,17 +7,19 @@ import type { World } from '../src/gen/types';
 import { regionSpec } from '../src/v2/regionSettings';
 
 const native = vi.hoisted(() => ({ build: vi.fn(), release: vi.fn() }));
-vi.mock('../src/v2/rustUrban', () => ({ generateRustTown: native.build, retainCityGround:()=>undefined, releaseUrbanLanes:native.release }));
-beforeEach(() => { native.build.mockReset(); });
+vi.mock('../src/v2/rustUrban', () => ({ generateRustTown: native.build, retainCityGround: () => undefined, releaseUrbanLanes: native.release }));
+beforeEach(() => {
+  native.build.mockReset();
+});
 
 async function fixture() {
   const settings = defaultSettings();
   settings.generation = 'procedural';
   settings.runtime = { backend: 'typescript', compute: 'cpu', source: 'procedural' };
-  settings.extent = 2400; settings.settlementCount = 1;
-  settings.region = { placement: { mode: 'list', list: [regionSpec('main',80)] } };
-  Object.assign(settings.options, { population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no',
-    importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: new Float32Array(64).fill(20) } });
+  settings.extent = 2400;
+  settings.settlementCount = 1;
+  settings.region = { placement: { mode: 'list', list: [regionSpec('main', 80)] } };
+  Object.assign(settings.options, { population: 80, size: 'hamlet', coast: 'none', river: 'none', relief: 'flat', walls: 'none', castle: 'no', importedHeight: { w: 8, h: 8, rgba: new Uint8Array(0), elevations: new Float32Array(64).fill(20) } });
   const terrain = await generateTerrain(settings, undefined, new TerrainCache());
   const region = await planRegion(terrain, settings);
   const world = await generateTown(region, settings, 'main');
@@ -25,19 +27,31 @@ async function fixture() {
   settings.urban = { backend: 'rust' };
   native.build.mockImplementation(async (source: World, _settings, key, _progress, stage) => ({
     urban: { ...structuredClone(source.urban!), buildings: stage === 'layout' ? [] : structuredClone(source.urban!.buildings) },
-    snapshot: { stage, marker: key }, stats: { [`v2.urbanStage:${key}`]: stage ?? 'buildings' },
+    snapshot: { stage, marker: key },
+    stats: { [`v2.urbanStage:${key}`]: stage ?? 'buildings' },
   }));
   return { settings, world };
 }
 
 describe('Cities batch scope', () => {
   it('uses one WASM engine lane rather than duplicating synchronous terrain and pools', async () => {
-    const {settings,world}=await fixture(),build=native.build.getMockImplementation()!;
-    let active=0,peak=0;
-    native.build.mockImplementation(async(...args)=>{active++;peak=Math.max(peak,active);await new Promise(resolve=>setTimeout(resolve,0));try{return await build(...args);}finally{active--;}});
-    await generateTowns(world,settings,undefined,undefined,'layout',true);
+    const { settings, world } = await fixture(),
+      build = native.build.getMockImplementation()!;
+    let active = 0,
+      peak = 0;
+    native.build.mockImplementation(async (...args) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      try {
+        return await build(...args);
+      } finally {
+        active--;
+      }
+    });
+    await generateTowns(world, settings, undefined, undefined, 'layout', true);
     expect(peak).toBe(1);
-    expect(native.build.mock.calls.every(call=>call[5]===undefined)).toBe(true);
+    expect(native.build.mock.calls.every(call => call[5] === undefined)).toBe(true);
   });
   it('runs an explicit stage for a deduplicated subset and preserves all other cities and regional geometry', async () => {
     const { settings, world } = await fixture();
@@ -49,13 +63,18 @@ describe('Cities batch scope', () => {
     expect(next.settlements!.find(place => place.key === 'east')!.urban!.buildings).toHaveLength(0);
     expect(next.urban).toEqual(world.urban);
     expect(next.settlements!.find(place => place.key === 'west')!.urban).toEqual(world.settlements!.find(place => place.key === 'west')!.urban);
-    expect(next.roads).toEqual(world.roads); expect(next.terrain.height.data).toBe(world.terrain.height.data);
+    expect(next.roads).toEqual(world.roads);
+    expect(next.terrain.height.data).toBe(world.terrain.height.data);
     expect(world).toEqual(original);
   });
   it('applies the chosen stage to every city when no subset is provided', async () => {
     const { settings, world } = await fixture();
     const next = await generateTowns(world, settings, undefined, undefined, 'parcels');
-    expect(native.build.mock.calls.map(call => [call[2], call[4]])).toEqual([['main', 'parcels'], ['east', 'parcels'], ['west', 'parcels']]);
+    expect(native.build.mock.calls.map(call => [call[2], call[4]])).toEqual([
+      ['main', 'parcels'],
+      ['east', 'parcels'],
+      ['west', 'parcels'],
+    ]);
     expect(next.stats['v2.urbanStage:west']).toBe('parcels');
   });
   it('rejects an empty or obsolete subset before any city is modified', async () => {
@@ -65,22 +84,24 @@ describe('Cities batch scope', () => {
     expect(native.build).not.toHaveBeenCalled();
   });
   it('invalidates only downstream products for a house or cadastral recipe change and tracks the target set', async () => {
-    const { settings, world } = await fixture(), scope = JSON.stringify(['selection', ['east']]);
+    const { settings, world } = await fixture(),
+      scope = JSON.stringify(['selection', ['east']]);
     const before = cityStageValidityKeys(settings, world, scope);
     settings.urban!.houses = { floors: 3 };
     const houses = cityStageValidityKeys(settings, world, scope);
     expect(houses.get('city-quarters')).toBe(before.get('city-quarters'));
     expect(houses.get('city-parcels')).toBe(before.get('city-parcels'));
     expect(houses.get('city-houses')).not.toBe(before.get('city-houses'));
-    settings.urban!.parcels = { density: .7 };
+    settings.urban!.parcels = { density: 0.7 };
     const parcels = cityStageValidityKeys(settings, world, scope);
     expect(parcels.get('city-roads')).toBe(houses.get('city-roads'));
     expect(parcels.get('city-parcels')).not.toBe(houses.get('city-parcels'));
     expect(cityStageValidityKeys(settings, world, JSON.stringify(['all', ['main', 'east', 'west']])).get('city-roads')).not.toBe(parcels.get('city-roads'));
   });
   it('keeps placement valid when only regional roads change', () => {
-    const settings = defaultSettings(), before = settlementStageValidityKeys(settings, 'terrain');
-    settings.region = { roads: { maxGrade: .15 } };
+    const settings = defaultSettings(),
+      before = settlementStageValidityKeys(settings, 'terrain');
+    settings.region = { roads: { maxGrade: 0.15 } };
     const changed = settlementStageValidityKeys(settings, 'terrain');
     expect(changed.get('settle-sites')).toBe(before.get('settle-sites'));
     expect(changed.get('settle-roads')).not.toBe(before.get('settle-roads'));

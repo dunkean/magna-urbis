@@ -7,7 +7,9 @@ it('reads binary display data from the owning source without geometry upload or 
   const source = { version: 1 as const, session: 'urban-owner', terrainRevision: 'terrain-1', layoutsRevision: 'layouts-2', partitionsRevision: 'parcels-3' };
   const runtime = { profile: 'local' as const, server: 'http://127.0.0.1:8811/' };
   const bytes = new Uint8Array([4, 0, 0, 0, 123, 125, 32, 32]);
-  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(new Response(bytes, { headers: { 'content-type': 'application/octet-stream' } }))
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(new Response(bytes, { headers: { 'content-type': 'application/octet-stream' } }))
     .mockResolvedValueOnce(new Response(JSON.stringify({ error: '[urban_source_stale]' }), { status: 400 }));
   vi.stubGlobal('fetch', fetch);
   expect(new Uint8Array(await readUrbanDisplayBuffers({ source, keys: ['city'], ids: true }, runtime))).toEqual(bytes);

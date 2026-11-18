@@ -34,14 +34,19 @@ describe('V2 illustration capture', () => {
   });
 
   it('uses the real 3D capture camera and paired depth guide', async () => {
-    const image = new Blob(['colour']), depth = new Blob(['depth']);
+    const image = new Blob(['colour']),
+      depth = new Blob(['depth']);
     const camera = { x: 0, y: 0, yaw: 0, pitch: 1, distance: 100 };
     const captureIllustration = vi.fn(async () => ({ image, depth, camera }));
     const view3d = { active: true, captureIllustration } as unknown as V2Urban3d;
     mocked.viewport.mockClear();
-    mountV2Illustration({ host: {} as Element, getWorld: () => ({ seed: 'seed', stats: {}, settlements: [] } as unknown as World),
-      getSettings: defaultSettings, get3d: () => view3d,
-      getViewport: () => ({ element: { clientWidth: 800, clientHeight: 600 } as HTMLElement, view: { cx: 0, cy: 0, scale: 1 } }) });
+    mountV2Illustration({
+      host: {} as Element,
+      getWorld: () => ({ seed: 'seed', stats: {}, settlements: [] }) as unknown as World,
+      getSettings: defaultSettings,
+      get3d: () => view3d,
+      getViewport: () => ({ element: { clientWidth: 800, clientHeight: 600 } as HTMLElement, view: { cx: 0, cy: 0, scale: 1 } }),
+    });
     const result = await mocked.capture!();
     expect(captureIllustration).toHaveBeenCalledOnce();
     expect(result.image).toBe(image);

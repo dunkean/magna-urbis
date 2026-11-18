@@ -21,23 +21,30 @@ export function paintSeaCover(pixels: Uint8ClampedArray, height: ArrayLike<numbe
   }
   const at = (x: number, y: number): number => height[Math.max(0, Math.min(n - 1, y)) * n + Math.max(0, Math.min(n - 1, x))];
   const alpha = rgba[3] ?? 255;
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    // Cubic B-spline at a control point: weights 1/6, 4/6, 1/6 per axis; its derivative: -1/2, 0, 1/2 (per cell).
-    const row = (j: number): [number, number, number] => [at(x - 1, j), at(x, j), at(x + 1, j)];
-    const a = row(y - 1), b = row(y), c = row(y + 1);
-    const smooth = (r: [number, number, number]): number => (r[0] + 4 * r[1] + r[2]) / 6;
-    const value = (smooth(a) + 4 * smooth(b) + smooth(c)) / 6;
-    const gx = ((a[2] - a[0]) + 4 * (b[2] - b[0]) + (c[2] - c[0])) / 12;
-    const gy = ((smooth(c) - smooth(a))) / 2;
-    const slope = Math.hypot(gx, gy);
-    // Signed distance to the zero line in cells (positive on land); a flat point keeps its sign.
-    const d = slope > 1e-6 ? value / slope : value > 0 ? Infinity : -Infinity;
-    // A ramp of slope EDGE per cell: both grid points straddling the line stay unclamped, so the bilinear tile upsampling
-    // crosses EDGE exactly on the line; full sea from 1.5 cells out, nothing from a cell inland.
-    const cover = Math.max(0, Math.min(1, EDGE * (1 - d)));
-    if (cover <= 0) continue;
-    const o = y * n + x, a8 = Math.round(cover * alpha);
-    if (a8 <= pixels[o * 4 + 3]) continue;
-    pixels[o * 4] = rgba[0]; pixels[o * 4 + 1] = rgba[1]; pixels[o * 4 + 2] = rgba[2]; pixels[o * 4 + 3] = a8;
-  }
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      // Cubic B-spline at a control point: weights 1/6, 4/6, 1/6 per axis; its derivative: -1/2, 0, 1/2 (per cell).
+      const row = (j: number): [number, number, number] => [at(x - 1, j), at(x, j), at(x + 1, j)];
+      const a = row(y - 1),
+        b = row(y),
+        c = row(y + 1);
+      const smooth = (r: [number, number, number]): number => (r[0] + 4 * r[1] + r[2]) / 6;
+      const value = (smooth(a) + 4 * smooth(b) + smooth(c)) / 6;
+      const gx = (a[2] - a[0] + 4 * (b[2] - b[0]) + (c[2] - c[0])) / 12;
+      const gy = (smooth(c) - smooth(a)) / 2;
+      const slope = Math.hypot(gx, gy);
+      // Signed distance to the zero line in cells (positive on land); a flat point keeps its sign.
+      const d = slope > 1e-6 ? value / slope : value > 0 ? Infinity : -Infinity;
+      // A ramp of slope EDGE per cell: both grid points straddling the line stay unclamped, so the bilinear tile upsampling
+      // crosses EDGE exactly on the line; full sea from 1.5 cells out, nothing from a cell inland.
+      const cover = Math.max(0, Math.min(1, EDGE * (1 - d)));
+      if (cover <= 0) continue;
+      const o = y * n + x,
+        a8 = Math.round(cover * alpha);
+      if (a8 <= pixels[o * 4 + 3]) continue;
+      pixels[o * 4] = rgba[0];
+      pixels[o * 4 + 1] = rgba[1];
+      pixels[o * 4 + 2] = rgba[2];
+      pixels[o * 4 + 3] = a8;
+    }
 }

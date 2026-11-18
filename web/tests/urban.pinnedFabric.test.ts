@@ -23,19 +23,20 @@ describe('the two pinned curved town regressions', () => {
   it('keeps served, disjoint whole roofs on the native town', () => {
     let producedHousingArea = 0;
     const original = footprintFinal.finalizeFootprints;
-    const spy = vi.spyOn(footprintFinal, 'finalizeFootprints').mockImplementation((input) => {
-      producedHousingArea = input.buildings.filter(b => ['house', 'rear', 'back'].includes(b.kind))
-        .reduce((sum, b) => sum + area(b.poly), 0);
+    const spy = vi.spyOn(footprintFinal, 'finalizeFootprints').mockImplementation(input => {
+      producedHousingArea = input.buildings.filter(b => ['house', 'rear', 'back'].includes(b.kind)).reduce((sum, b) => sum + area(b.poly), 0);
       return original(input);
     });
     let world: ReturnType<typeof generate>;
-    try { world = generate(fromQuery(query)); }
-    finally { spy.mockRestore(); }
+    try {
+      world = generate(fromQuery(query));
+    } finally {
+      spy.mockRestore();
+    }
     const urban = world.urban!;
     expect(urban.buildings).toHaveLength(832);
     expect(urban.parcels).toHaveLength(424);
-    expect(createHash('sha256').update(JSON.stringify(urban)).digest('hex'))
-      .toBe('1aa4858c2a2470a5a529662c88decce6ed4e5ab30cdb053315a42227791f88ee');
+    expect(createHash('sha256').update(JSON.stringify(urban)).digest('hex')).toBe('1aa4858c2a2470a5a529662c88decce6ed4e5ab30cdb053315a42227791f88ee');
     const audit = auditUrban(world);
     expect(audit.malformed).toEqual([]);
     expect(audit.failed).toBe(0);
@@ -46,8 +47,7 @@ describe('the two pinned curved town regressions', () => {
     expect(partitions.bldgOutside).toBe(0);
     expect(partitions.noFrontage).toBe(0);
     expect(partitions.orphanMain).toBe(0);
-    const housingArea = urban.buildings.filter(b => ['house', 'rear', 'back'].includes(b.kind))
-      .reduce((sum, b) => sum + area(b.poly), 0);
+    const housingArea = urban.buildings.filter(b => ['house', 'rear', 'back'].includes(b.kind)).reduce((sum, b) => sum + area(b.poly), 0);
     // Sparse faubourgs now retain their yard budget. The cleanup must preserve
     // the actual corrected producer's dwellings rather than its former overfill.
     expect(producedHousingArea).toBeGreaterThan(70000);
@@ -59,37 +59,47 @@ describe('the two pinned curved town regressions', () => {
     const pins = native.cases.filter(f => [104, 180, 576, 845, 860].includes(f.i));
     expect(pins).toHaveLength(5);
     for (const pin of pins) {
-      const roofs = urban.buildings.filter(b => ['house', 'rear', 'back'].includes(b.kind)
-        && pointInRing(pin.owner, polygonCentroid(b.poly)));
+      const roofs = urban.buildings.filter(b => ['house', 'rear', 'back'].includes(b.kind) && pointInRing(pin.owner, polygonCentroid(b.poly)));
       expect(roofs.length, `historical site ${pin.i} still contains dwellings`).toBeGreaterThan(0);
-      expect(roofs.every(b => (minNeck(b.poly)?.w ?? Infinity) >= 2), `historical site ${pin.i}`).toBe(true);
+      expect(
+        roofs.every(b => (minNeck(b.poly)?.w ?? Infinity) >= 2),
+        `historical site ${pin.i}`,
+      ).toBe(true);
     }
   });
 
   it('replans the historical river-side arm as a whole served room in its western pocket', () => {
     const f = structuredClone(native.cases.find(c => c.i === 845)!);
     const streetAt = makeStreetAt(native.streets, native.places);
-    const reserve = [...native.water,
+    const reserve = [
+      ...native.water,
       ...native.streets.flatMap(s => streetStrips(s.path, s.widths ?? s.width)),
       ...native.walls.flatMap(w => streetStrips([...w.path, w.path[0]], 5.6)),
-      ...(native.lines as { path: Vec2[]; width?: number; closed?: boolean }[])
-        .flatMap(l => streetStrips(l.closed ? [...l.path, l.path[0]] : l.path, l.width ?? 1))];
-    const before = blockReach(f.block, f.peers.map(p => p.poly), streetAt);
+      ...(native.lines as { path: Vec2[]; width?: number; closed?: boolean }[]).flatMap(l => streetStrips(l.closed ? [...l.path, l.path[0]] : l.path, l.width ?? 1)),
+    ];
+    const before = blockReach(
+      f.block,
+      f.peers.map(p => p.poly),
+      streetAt,
+    );
     expect(before).toHaveLength(36);
     expect(before.every(Boolean)).toBe(true);
     expect(Math.max(...f.roof.map(p => p.x))).toBeGreaterThan(900);
-    const buildings = [{ poly: f.roof, kind: 'back', parcel: 0 },
-      ...f.occupied.map(poly => ({ poly, kind: 'landmark', parcel: 0 }))];
+    const buildings = [{ poly: f.roof, kind: 'back', parcel: 0 }, ...f.occupied.map(poly => ({ poly, kind: 'landmark', parcel: 0 }))];
     const privatePassages: { path: Vec2[]; width: number; parcel: number }[] = [];
-    const result = finalizeFootprints({ buildings,
+    const result = finalizeFootprints({
+      buildings,
       parcels: [{ poly: f.owner, front: f.front as [Vec2, Vec2], use: 'plot', block: 0 }],
-      backLand: [], gardens: [f.owner], privatePassages,
+      backLand: [],
+      gardens: [f.owner],
+      privatePassages,
       placementClear: footprintPlacementGuard(reserve, () => false),
       validateParts: (_, parts) => {
-        const proposed = f.peers.flatMap(peer => peer.i === f.i ? parts : [peer.poly]);
-        const required = f.peers.flatMap((peer, i) => peer.i === f.i ? parts.map(() => true) : [before[i]]);
+        const proposed = f.peers.flatMap(peer => (peer.i === f.i ? parts : [peer.poly]));
+        const required = f.peers.flatMap((peer, i) => (peer.i === f.i ? parts.map(() => true) : [before[i]]));
         return blockReach(f.block, proposed, streetAt).every((served, i) => served || !required[i]);
-      } });
+      },
+    });
     expect(result.invalid).not.toContain(0);
     expect(result.removed).toEqual([]);
     expect(privatePassages).toEqual([]);
@@ -99,10 +109,19 @@ describe('the two pinned curved town regressions', () => {
     expect(replanned).toHaveLength(4);
     expect(minNeck(replanned)?.w ?? Infinity).toBeGreaterThanOrEqual(2);
     const outside = tryDifference(replanned, f.owner);
-    const occupied = tryIntersection(replanned, f.occupied.map(outer => ({ outer, holes: [] })));
+    const occupied = tryIntersection(
+      replanned,
+      f.occupied.map(outer => ({ outer, holes: [] })),
+    );
     const physical = tryIntersection(replanned, reserve);
     expect(outside.failed || occupied.failed || physical.failed).toBe(false);
     expect(mpArea(outside.pieces) + mpArea(occupied.pieces) + mpArea(physical.pieces)).toBeLessThanOrEqual(1e-6);
-    expect(blockReach(f.block, f.peers.map(peer => peer.i === f.i ? replanned : peer.poly), streetAt)).toEqual(before);
+    expect(
+      blockReach(
+        f.block,
+        f.peers.map(peer => (peer.i === f.i ? replanned : peer.poly)),
+        streetAt,
+      ),
+    ).toEqual(before);
   });
 });

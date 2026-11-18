@@ -32,11 +32,15 @@ let D64: Float64Array | null = null;
 
 /** Travel cost from `start`, explored only up to `limit` (m-equivalents); Infinity beyond. */
 export function boundedCost(world: World, start: Vec2, limit: number): SiteLayer['cost'] {
-  const t = world.terrain, f = world.site!.fields;
+  const t = world.terrain,
+    f = world.site!.fields;
   const { w: n, cell } = t.height;
   const H = t.height.data;
   let pc = PASS_CACHE.get(f);
-  if (!pc || pc.water !== t.water) { pc = { water: t.water, pass: passability(t, f) }; PASS_CACHE.set(f, pc); }
+  if (!pc || pc.water !== t.water) {
+    pc = { water: t.water, pass: passability(t, f) };
+    PASS_CACHE.set(f, pc);
+  }
   const pass = pc.pass;
   const g = createGrid(n, n, cell, Infinity);
   // The search runs in float64 and only the result is stored in the float32 grid. Comparing float64 offers with
@@ -49,15 +53,19 @@ export function boundedCost(world: World, start: Vec2, limit: number): SiteLayer
   const touched: number[] = [];
   const s0 = Math.min(n - 1, Math.max(0, Math.floor(start.y / cell))) * n + Math.min(n - 1, Math.max(0, Math.floor(start.x / cell)));
   const heap = new MinHeap<number>();
-  d[s0] = 0; heap.push(s0, 0); touched.push(s0);
+  d[s0] = 0;
+  heap.push(s0, 0);
+  touched.push(s0);
   while (heap.size) {
     const key = heap.peekKey();
     const c = heap.pop()!;
     if (key > d[c]) continue;
     if (key > limit) break;
-    const cx = c % n, cy = (c / n) | 0;
+    const cx = c % n,
+      cy = (c / n) | 0;
     for (let k = 0; k < 8; k++) {
-      const nx = cx + D8[k][0], ny = cy + D8[k][1];
+      const nx = cx + D8[k][0],
+        ny = cy + D8[k][1];
       if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
       const m = ny * n + nx;
       const pt = pass[m];
@@ -67,18 +75,23 @@ export function boundedCost(world: World, start: Vec2, limit: number): SiteLayer
       const nd = key + dd * cell * (1 + 100 * gr * gr) * (pt === 1 ? 1 : pt === 2 ? 4 : 3);
       if (nd < d[m]) {
         if (d[m] === Infinity) touched.push(m);
-        d[m] = nd; heap.push(m, nd);
+        d[m] = nd;
+        heap.push(m, nd);
       }
     }
   }
-  let x0 = n, y0 = n, x1 = -1, y1 = -1;
+  let x0 = n,
+    y0 = n,
+    x1 = -1,
+    y1 = -1;
   const out = g.data;
   for (const i of touched) {
     const v = d[i];
     d[i] = Infinity; // reset the shared scratch for the next search
     if (v > limit) continue;
     out[i] = v;
-    const x = i % n, y = (i / n) | 0;
+    const x = i % n,
+      y = (i / n) | 0;
     if (x < x0) x0 = x;
     if (x > x1) x1 = x;
     if (y < y0) y0 = y;
@@ -111,17 +124,25 @@ export function roadsFor(world: World, s: Settlement): Road[] {
   for (const rd of world.roads ?? []) {
     const pl = rd.path;
     if (pl.length < 2) continue;
-    const d0 = dist(pl[0], c), d1 = dist(pl[pl.length - 1], c);
+    const d0 = dist(pl[0], c),
+      d1 = dist(pl[pl.length - 1], c);
     // tracks reaching the settlement are its roads (the engine ignores tracks)
     const asRoad = rd.kind === 'track' ? { ...rd, kind: 'minor' as const } : rd;
-    if (d1 < 12) { out.push({ ...asRoad, path: clipEnd(pl) }); continue; }
-    if (d0 < 12) { out.push({ ...asRoad, path: clipEnd(pl.slice().reverse()) }); continue; }
+    if (d1 < 12) {
+      out.push({ ...asRoad, path: clipEnd(pl) });
+      continue;
+    }
+    if (d0 < 12) {
+      out.push({ ...asRoad, path: clipEnd(pl.slice().reverse()) });
+      continue;
+    }
     const nn = nearestOn(pl, c);
     if (nn.d < 12) {
-      const cp = pl.map((q) => ({ x: q.x, y: q.y }));
+      const cp = pl.map(q => ({ x: q.x, y: q.y }));
       const vi = insertVertex(cp, nn.i, nn.t, 0.5);
       cp[vi] = { x: c.x, y: c.y };
-      const a = cp.slice(0, vi + 1), b = cp.slice(vi).reverse();
+      const a = cp.slice(0, vi + 1),
+        b = cp.slice(vi).reverse();
       if (a.length >= 2) out.push({ ...asRoad, path: clipEnd(a) });
       if (b.length >= 2) out.push({ ...asRoad, path: clipEnd(b) });
       continue;
@@ -132,7 +153,10 @@ export function roadsFor(world: World, s: Settlement): Road[] {
     for (let i = 0; i < pl.length; i++) {
       const inside = dist(pl[i], c) <= W;
       if (inside || (i > 0 && dist(pl[i - 1], c) <= W) || (i + 1 < pl.length && dist(pl[i + 1], c) <= W)) cur.push({ x: pl[i].x, y: pl[i].y });
-      else if (cur.length) { if (cur.length >= 2) out.push({ ...rd, path: cur }); cur = []; }
+      else if (cur.length) {
+        if (cur.length >= 2) out.push({ ...rd, path: cur });
+        cur = [];
+      }
     }
     if (cur.length >= 2) out.push({ ...rd, path: cur });
   }
@@ -142,10 +166,7 @@ export function roadsFor(world: World, s: Settlement): Road[] {
 /** The settlement's site layer (fields shared with the main site, own cost field). */
 export function settlementSite(world: World, s: Settlement): SiteLayer {
   const main = world.site!;
-  return {
-    center: s.center, crossing: s.crossing, harbor: s.harbor, archetype: s.archetype, feature: s.center, offers: {},
-    cost: boundedCost(world, s.center, 2.5 * windowOf(s) + 600), reserveRadius: s.radius, fields: main.fields,
-  };
+  return { center: s.center, crossing: s.crossing, harbor: s.harbor, archetype: s.archetype, feature: s.center, offers: {}, cost: boundedCost(world, s.center, 2.5 * windowOf(s) + 600), reserveRadius: s.radius, fields: main.fields };
 }
 
 /** Elements whose representative point lies in the region are kept; indices are remapped. */
@@ -155,22 +176,26 @@ export function clipUrban(u: UrbanLayer, region: Polygon, stats?: Record<string,
   const blockKeep = u.blocks.map(inR);
   const bMap: number[] = [];
   let nb = 0;
-  blockKeep.forEach((k, i) => { bMap[i] = k ? nb++ : -1; });
-  const pKeep = u.parcels.map((p) => inR(p.poly) && (p.block < 0 || blockKeep[p.block] !== false));
+  blockKeep.forEach((k, i) => {
+    bMap[i] = k ? nb++ : -1;
+  });
+  const pKeep = u.parcels.map(p => inR(p.poly) && (p.block < 0 || blockKeep[p.block] !== false));
   const pMap: number[] = [];
   let np = 0;
-  pKeep.forEach((k, i) => { pMap[i] = k ? np++ : -1; });
+  pKeep.forEach((k, i) => {
+    pMap[i] = k ? np++ : -1;
+  });
   const keptBlocks = u.blocks.filter((_, i) => blockKeep[i]);
-  const buildings = u.buildings.filter((b) => inR(b.poly)).map((b) => (b.parcel !== undefined && b.parcel >= 0 ? { ...b, parcel: pMap[b.parcel] >= 0 ? pMap[b.parcel] : undefined } : b));
+  const buildings = u.buildings.filter(b => inR(b.poly)).map(b => (b.parcel !== undefined && b.parcel >= 0 ? { ...b, parcel: pMap[b.parcel] >= 0 ? pMap[b.parcel] : undefined } : b));
   // Clip administrative ground, preserving whole retained blocks and houses across its edge. A failed boolean
   // protects the retained buildings but grants no permission to paint the discarded administrative frame.
   const constrain = (source: PolyH[], retained: Polygon[] = []): PolyH[] => {
     const result = tryIntersection(source, region);
     if (result.failed) {
       if (stats) stats['clipUrban.failed'] = Number(stats['clipUrban.failed'] ?? 0) + 1;
-      return retained.map((outer) => ({ outer, holes: [] }));
+      return retained.map(outer => ({ outer, holes: [] }));
     }
-    return retained.length ? unionMany([...result.pieces, ...retained.map((outer) => ({ outer, holes: [] }))], 24, true) : result.pieces;
+    return retained.length ? unionMany([...result.pieces, ...retained.map(outer => ({ outer, holes: [] }))], 24, true) : result.pieces;
   };
   const quarters: UrbanLayer['quarters'] = [];
   const quarterMap = new Map<number, number[]>();
@@ -187,33 +212,51 @@ export function clipUrban(u: UrbanLayer, region: Polygon, stats?: Record<string,
     }
     quarterMap.set(qi, ids);
   });
-  const footprintH = constrain(u.footprintH, [...keptBlocks, ...buildings.map((b) => b.poly)]);
+  const footprintH = constrain(u.footprintH, [...keptBlocks, ...buildings.map(b => b.poly)]);
   const layer: UrbanLayer = {
     ...u,
-    footprintH, footprint: footprintH.map((p) => p.outer), quarters,
-    phases: u.phases.map((phase) => ({ ...phase, region: constrain(phase.region,
-      u.blocks.filter((_, bi) => blockKeep[bi] && u.blockInfo[bi]?.phase === phase.id)) })),
-    openTails: undefined, openEdgeGround: undefined,
+    footprintH,
+    footprint: footprintH.map(p => p.outer),
+    quarters,
+    phases: u.phases.map(phase => ({
+      ...phase,
+      region: constrain(
+        phase.region,
+        u.blocks.filter((_, bi) => blockKeep[bi] && u.blockInfo[bi]?.phase === phase.id),
+      ),
+    })),
+    openTails: undefined,
+    openEdgeGround: undefined,
     blocks: keptBlocks,
-    blockInfo: u.blockInfo.filter((_, i) => blockKeep[i]).map((info, bi) => {
-      const candidates = quarterMap.get(info.quarter) ?? [];
-      const center = polygonCentroid(keptBlocks[bi]);
-      const quarter = candidates.find((qi) => pointInRing(quarters[qi].poly.outer, center)) ?? candidates[0] ?? info.quarter;
-      return { ...info, quarter };
-    }),
-    parcels: u.parcels.filter((_, i) => pKeep[i]).map((p) => ({ ...p, block: p.block >= 0 ? bMap[p.block] ?? -1 : p.block })),
+    blockInfo: u.blockInfo
+      .filter((_, i) => blockKeep[i])
+      .map((info, bi) => {
+        const candidates = quarterMap.get(info.quarter) ?? [];
+        const center = polygonCentroid(keptBlocks[bi]);
+        const quarter = candidates.find(qi => pointInRing(quarters[qi].poly.outer, center)) ?? candidates[0] ?? info.quarter;
+        return { ...info, quarter };
+      }),
+    parcels: u.parcels.filter((_, i) => pKeep[i]).map(p => ({ ...p, block: p.block >= 0 ? (bMap[p.block] ?? -1) : p.block })),
     buildings,
-    masses: unionMany(buildings.map((b) => b.poly), 24, true),
+    masses: unionMany(
+      buildings.map(b => b.poly),
+      24,
+      true,
+    ),
     backLand: u.backLand.filter(inH),
-    streets: u.streets.filter((st) => st.path.length > 0 && pointInRing(region, st.path[Math.floor(st.path.length / 2)])),
-    landmarks: u.landmarks.filter((l) => inR(l.poly)),
+    streets: u.streets.filter(st => st.path.length > 0 && pointInRing(region, st.path[Math.floor(st.path.length / 2)])),
+    landmarks: u.landmarks.filter(l => inR(l.poly)),
     squares: u.squares.filter(inR),
-    trees: u.trees?.filter((t) => pointInRing(region, t)),
+    trees: u.trees?.filter(t => pointInRing(region, t)),
   };
   return layer;
 }
 
-export interface SettlementUrban { urban: UrbanLayer; bridges: Bridge[]; stats: Record<string, number | string> }
+export interface SettlementUrban {
+  urban: UrbanLayer;
+  bridges: Bridge[];
+  stats: Record<string, number | string>;
+}
 
 /**
  * Generate the plan of settlement `s` (not the main one, not a farmstead). Never mutates `world` (roads and bridges
@@ -224,20 +267,32 @@ export function generateSettlementUrban(world: World, s: Settlement): Settlement
   const rng = new Rng('magna-urbis:' + world.seed).fork('settlement:' + s.key);
   const o = world.options;
   const legacyOptions = {
-    ...o, culture: s.culture, population: s.population, size: sizeForPop(s.population), siteType: 'auto' as const, sitePrefs: undefined, center: undefined,
-    walls: 'auto' as const, castle: 'auto' as const, castles: 'auto' as const, cathedral: 'auto' as const, palace: 'auto' as const,
-    monasteries: 'auto' as const, port: 'auto' as const, arena: 'auto' as const, activities: 'auto' as const, suburbs: 'auto' as const,
-    shantytowns: 'auto' as const, cultureMix: null, plan: null, settlements: 'none' as const,
+    ...o,
+    culture: s.culture,
+    population: s.population,
+    size: sizeForPop(s.population),
+    siteType: 'auto' as const,
+    sitePrefs: undefined,
+    center: undefined,
+    walls: 'auto' as const,
+    castle: 'auto' as const,
+    castles: 'auto' as const,
+    cathedral: 'auto' as const,
+    palace: 'auto' as const,
+    monasteries: 'auto' as const,
+    port: 'auto' as const,
+    arena: 'auto' as const,
+    activities: 'auto' as const,
+    suburbs: 'auto' as const,
+    shantytowns: 'auto' as const,
+    cultureMix: null,
+    plan: null,
+    settlements: 'none' as const,
   };
-  const options = o.workflow === 'list'
-    ? { ...optionsForSettlement(o, { population: s.population, culture: s.culture, siteType: s.archetype, position: s.center, options: s.options }), settlements: 'none' as const }
-    : legacyOptions;
+  const options = o.workflow === 'list' ? { ...optionsForSettlement(o, { population: s.population, culture: s.culture, siteType: s.archetype, position: s.center, options: s.options }), settlements: 'none' as const } : legacyOptions;
   const W = windowOf(s);
-  const bridges0 = (world.bridges ?? []).filter((b) => dist(b.a, s.center) < W + 200).map((b) => ({ ...b }));
-  const sub: World = {
-    seed: world.seed, options, mapSize: world.mapSize, terrain: world.terrain, stats: {},
-    site: settlementSite(world, s), roads: roadsFor(world, s), bridges: bridges0,
-  };
+  const bridges0 = (world.bridges ?? []).filter(b => dist(b.a, s.center) < W + 200).map(b => ({ ...b }));
+  const sub: World = { seed: world.seed, options, mapSize: world.mapSize, terrain: world.terrain, stats: {}, site: settlementSite(world, s), roads: roadsFor(world, s), bridges: bridges0 };
   const n0 = bridges0.length;
   // a big settlement (above the eager threshold) is planned like the main megacity: the macro plan now, its quarters
   // detailed lazily (keys si·MEGA_KEY + q); the plan is not clipped (its quarters tile its own built-up land)
@@ -252,7 +307,7 @@ export function generateSettlementUrban(world: World, s: Settlement): Settlement
   for (const k of [2, 4]) {
     if (res.layer.buildings.length || s.population * k > 400) break;
     sub.roads = roadsFor(world, s);
-    sub.bridges = bridges0.map((b) => ({ ...b }));
+    sub.bridges = bridges0.map(b => ({ ...b }));
     sub.options = { ...options, population: s.population * k };
     res = generateUrban(sub, rng);
   }

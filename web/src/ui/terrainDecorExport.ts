@@ -21,8 +21,15 @@ export function createTerrainDecorExports(captureData: (extra?: DecorCaptureExtr
     return { bytes: await encodeDecorFileBytes(snapshot, options), meta: snapshot.meta };
   };
   return {
-    capture, captureAsync,
-    export(file: string, extra?: DecorCaptureExtra) { const { bytes, meta } = capture(extra); return encoded(bytes, meta, file); },
-    async exportAsync(file: string, extra?: DecorCaptureExtra) { const { bytes, meta } = await captureAsync(extra); return encoded(bytes, meta, file); },
+    capture,
+    captureAsync,
+    export(file: string, extra?: DecorCaptureExtra) {
+      const { bytes, meta } = capture(extra);
+      return encoded(bytes, meta, file);
+    },
+    async exportAsync(file: string, extra?: DecorCaptureExtra) {
+      const { bytes, meta } = await captureAsync(extra);
+      return encoded(bytes, meta, file);
+    },
   };
 }

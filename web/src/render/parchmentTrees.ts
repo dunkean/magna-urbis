@@ -22,12 +22,19 @@ export function treeMask(cell: number, channel: 'ink' | 'fill', color: string, m
   let found = sprites.get(key);
   if (found !== undefined) return found;
   found = null;
-  const n = sheet.size, canvas = makeCanvas(n, n), cx = canvas?.getContext('2d'), m = /^#([\da-f]{6})/i.exec(color);
+  const n = sheet.size,
+    canvas = makeCanvas(n, n),
+    cx = canvas?.getContext('2d'),
+    m = /^#([\da-f]{6})/i.exec(color);
   if (canvas && cx && m) {
     masks ??= unzlibSync(Uint8Array.from(atob(sheet.zlib), c => c.charCodeAt(0)));
-    const v = parseInt(m[1], 16), image = cx.createImageData(n, n), base = cell * n * n * 2 + (channel === 'ink' ? 0 : 1);
+    const v = parseInt(m[1], 16),
+      image = cx.createImageData(n, n),
+      base = cell * n * n * 2 + (channel === 'ink' ? 0 : 1);
     for (let i = 0; i < n * n; i++) {
-      image.data[i * 4] = (v >> 16) & 255; image.data[i * 4 + 1] = (v >> 8) & 255; image.data[i * 4 + 2] = v & 255;
+      image.data[i * 4] = (v >> 16) & 255;
+      image.data[i * 4 + 1] = (v >> 8) & 255;
+      image.data[i * 4 + 2] = v & 255;
       image.data[i * 4 + 3] = masks[base + i * 2];
     }
     cx.putImageData(image, 0, 0);

@@ -20,15 +20,35 @@ import { ribbon, disk } from '../geo/offset';
 
 export const SPLIT_DBG: { on: boolean; why: Record<string, number> } = { on: false, why: {} };
 export type PieceKind = 'block' | 'place' | 'market' | 'church' | 'compound' | 'green' | 'shanty';
-export interface Piece { lp: LPoly; phase: number; zone: Zone; age: number; quarter: number; kind: PieceKind; level: number; morph?: MorphologyParams; compound?: string; lot?: string }
+export interface Piece {
+  lp: LPoly;
+  phase: number;
+  zone: Zone;
+  age: number;
+  quarter: number;
+  kind: PieceKind;
+  level: number;
+  morph?: MorphologyParams;
+  compound?: string;
+  lot?: string;
+}
 
 const TMP_LABEL = -100;
 
-interface Cand { A: LPoly; B: LPoly; chord: Polyline; cost: number; placeA: boolean; placeB: boolean; rank: number }
+interface Cand {
+  A: LPoly;
+  B: LPoly;
+  chord: Polyline;
+  cost: number;
+  placeA: boolean;
+  placeB: boolean;
+  rank: number;
+}
 
 function isJunction(lp: LPoly, i: number): boolean {
   const n = lp.pts.length;
-  const lPrev = lp.lab[(i - 1 + n) % n], lNext = lp.lab[i];
+  const lPrev = lp.lab[(i - 1 + n) % n],
+    lNext = lp.lab[i];
   if (lPrev !== lNext && (lPrev >= 0 || lNext >= 0)) return true;
   return interiorAngle(lp.pts, i) < (150 * Math.PI) / 180;
 }
@@ -38,10 +58,14 @@ function snapEnds(lp: LPoly, chord: Polyline, r: number): Polyline {
   const out = chord.slice();
   for (const end of [0, out.length - 1]) {
     const p = out[end];
-    let bi = -1, bd = r;
+    let bi = -1,
+      bd = r;
     for (let i = 0; i < lp.pts.length; i++) {
       const d = dist(lp.pts[i], p);
-      if (d < bd && isJunction(lp, i)) { bd = d; bi = i; }
+      if (d < bd && isJunction(lp, i)) {
+        bd = d;
+        bi = i;
+      }
     }
     if (bi >= 0) out[end] = lp.pts[bi];
   }
@@ -49,15 +73,21 @@ function snapEnds(lp: LPoly, chord: Polyline, r: number): Polyline {
 }
 
 function endLabel(lp: LPoly, p: Vec2): number {
-  let best = -1, bd = Infinity;
+  let best = -1,
+    bd = Infinity;
   const n = lp.pts.length;
   for (let i = 0; i < n; i++) {
-    const a = lp.pts[i], b = lp.pts[(i + 1) % n];
-    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    const a = lp.pts[i],
+      b = lp.pts[(i + 1) % n];
+    const dx = b.x - a.x,
+      dy = b.y - a.y,
+      l2 = dx * dx + dy * dy;
     const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
     const d = Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
-    if (d < bd - 1e-9) { bd = d; best = lp.lab[i]; }
-    else if (Math.abs(d - bd) < 1e-6 && lp.lab[i] >= 0) best = lp.lab[i];
+    if (d < bd - 1e-9) {
+      bd = d;
+      best = lp.lab[i];
+    } else if (Math.abs(d - bd) < 1e-6 && lp.lab[i] >= 0) best = lp.lab[i];
   }
   return best;
 }
@@ -73,7 +103,10 @@ function endAngles(X: LPoly, a: Vec2, b: Vec2): number[] {
 }
 
 export interface SplitOpts {
-  nucleus: Vec2; gridAngle: number; terrainAngle?: number; waterAngle?: number;
+  nucleus: Vec2;
+  gridAngle: number;
+  terrainAngle?: number;
+  waterAngle?: number;
   /**
    * Megacity quarters: points on the bounding arterials where the main streets of the quarters on both sides start
    * (organic splits of the first levels begin there or snap their ends to them), so streets continue across.
@@ -95,7 +128,10 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
   let guard = 0;
   while (queue.length && guard++ < 4000) {
     const pc = queue.pop()!;
-    if (pc.kind !== 'block') { out.push(pc); continue; }
+    if (pc.kind !== 'block') {
+      out.push(pc);
+      continue;
+    }
     const pts = pc.lp.pts;
     const A0 = area(pts);
     const ob = obb(pts);
@@ -107,11 +143,14 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
     // faubourg ribbons are long by nature: only occasional lanes cross them
     // (a deep suburb piece is a district, not a ribbon: lanes branch away from the road)
     const maxAspect = pc.zone === 'faubourg' ? (ob.hv > 45 ? 3 : 7) : 2.6;
-    if ((A0 < target && aspect < maxAspect) || A0 < 2 * P.minBlock) { out.push(pc); continue; }
+    if ((A0 < target && aspect < maxAspect) || A0 < 2 * P.minBlock) {
+      out.push(pc);
+      continue;
+    }
     const cands: Cand[] = [];
     const th = field.angle(ob.c);
     const fams = [th, th + Math.PI / 2];
-    const perp = fams.map((f) => Math.abs(Math.cos(f) * ob.u.x + Math.sin(f) * ob.u.y));
+    const perp = fams.map(f => Math.abs(Math.cos(f) * ob.u.x + Math.sin(f) * ob.u.y));
     const order = perp[0] <= perp[1] ? [0, 1] : [1, 0];
     let rank = Math.min(3, pc.level + 1);
     const seeds: Vec2[][] = [[], []];
@@ -121,11 +160,17 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
         const res: Vec2[][] = [[], []];
         for (const fi of [0, 1]) {
           const f = fams[fi];
-          const d = { x: Math.cos(f), y: Math.sin(f) }, nrm = { x: -d.y, y: d.x };
+          const d = { x: Math.cos(f), y: Math.sin(f) },
+            nrm = { x: -d.y, y: d.x };
           const sp = spacing[Math.abs(Math.cos(f - gridAngle)) > 0.7 ? 0 : 1];
           if (!(sp > 0)) continue;
-          let m0 = Infinity, m1 = -Infinity;
-          for (const q2 of pts) { const m = (q2.x - o.nucleus.x) * nrm.x + (q2.y - o.nucleus.y) * nrm.y; m0 = Math.min(m0, m); m1 = Math.max(m1, m); }
+          let m0 = Infinity,
+            m1 = -Infinity;
+          for (const q2 of pts) {
+            const m = (q2.x - o.nucleus.x) * nrm.x + (q2.y - o.nucleus.y) * nrm.y;
+            m0 = Math.min(m0, m);
+            m1 = Math.max(m1, m);
+          }
           const cm = (ob.c.x - o.nucleus.x) * nrm.x + (ob.c.y - o.nucleus.y) * nrm.y;
           const lines: number[] = [];
           for (let k = Math.ceil((m0 + P.minWidth - sp / 2) / sp); k * sp + sp / 2 < m1 - P.minWidth; k++) lines.push(k * sp + sp / 2);
@@ -133,9 +178,14 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
           // a seed in each inside interval of the lattice line (non-convex pieces)
           for (const L of lines.slice(0, 3)) {
             const o = { x: ob.c.x + nrm.x * (L - cm), y: ob.c.y + nrm.y * (L - cm) };
-            const far = 1e4, a = { x: o.x - d.x * far, y: o.y - d.y * far }, b = { x: o.x + d.x * far, y: o.y + d.y * far };
+            const far = 1e4,
+              a = { x: o.x - d.x * far, y: o.y - d.y * far },
+              b = { x: o.x + d.x * far, y: o.y + d.y * far };
             const ts: number[] = [];
-            for (let i = 0; i < pts.length; i++) { const r = segSegT(a, b, pts[i], pts[(i + 1) % pts.length]); if (r) ts.push(r.t); }
+            for (let i = 0; i < pts.length; i++) {
+              const r = segSegT(a, b, pts[i], pts[(i + 1) % pts.length]);
+              if (r) ts.push(r.t);
+            }
             ts.sort((x, y) => x - y);
             for (let i = 0; i + 1 < ts.length && i < 4; i += 2) {
               const tm = (ts[i] + ts[i + 1]) / 2;
@@ -148,15 +198,20 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
       };
       let sd = A0 >= P.wardArea || !lanes ? latt(P.gridSpacing) : [[], []];
       if (lanes) {
-        if (sd[0].length + sd[1].length === 0) { sd = latt(P.laneSpacing); rank = 3; } else rank = 2;
+        if (sd[0].length + sd[1].length === 0) {
+          sd = latt(P.laneSpacing);
+          rank = 3;
+        } else rank = 2;
       }
-      seeds[0] = sd[0]; seeds[1] = sd[1];
+      seeds[0] = sd[0];
+      seeds[1] = sd[1];
     } else {
-      for (const fi of [0, 1]) for (const t of [0.5, 0.4, 0.6, 0.33, 0.67]) {
-        const tt = t + rng.range(-0.04, 0.04);
-        const off = rng.range(-0.15, 0.15) * ob.hv;
-        seeds[fi].push({ x: ob.c.x + ob.u.x * (tt - 0.5) * 2 * ob.hu * 0.92 + ob.v.x * off, y: ob.c.y + ob.u.y * (tt - 0.5) * 2 * ob.hu * 0.92 + ob.v.y * off });
-      }
+      for (const fi of [0, 1])
+        for (const t of [0.5, 0.4, 0.6, 0.33, 0.67]) {
+          const tt = t + rng.range(-0.04, 0.04);
+          const off = rng.range(-0.15, 0.15) * ob.hv;
+          seeds[fi].push({ x: ob.c.x + ob.u.x * (tt - 0.5) * 2 * ob.hu * 0.92 + ob.v.x * off, y: ob.c.y + ob.u.y * (tt - 0.5) * 2 * ob.hu * 0.92 + ob.v.y * off });
+        }
     }
     // access seeds: streamlines entering from the middle of street edges (needed when a piece touches
     // streets only along a short part of its boundary)
@@ -169,17 +224,27 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
       const n = pts.length;
       for (let i = 0; i < n; i++) {
         if (pc.lp.lab[i] < 0 || !streets.connected.has(pc.lp.lab[i])) continue;
-        const a = pts[i], b = pts[(i + 1) % n];
+        const a = pts[i],
+          b = pts[(i + 1) % n];
         const l = dist(a, b);
         if (l < (gridAccess ? 3 : 12)) continue;
-        const nx = -(b.y - a.y) / l, ny = (b.x - a.x) / l;
+        const nx = -(b.y - a.y) / l,
+          ny = (b.x - a.x) / l;
         const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const p0 = { x: m.x + nx * 0.05, y: m.y + ny * 0.05 };
         let h = Math.atan2(ny, nx);
         if (gridAccess) {
           // the lattice direction closest to the inward normal
-          let bh = h, bd = Infinity;
-          for (const f0 of fams) for (const f of [f0, f0 + Math.PI]) { const d = Math.abs(Math.atan2(Math.sin(f - h), Math.cos(f - h))); if (d < bd) { bd = d; bh = f; } }
+          let bh = h,
+            bd = Infinity;
+          for (const f0 of fams)
+            for (const f of [f0, f0 + Math.PI]) {
+              const d = Math.abs(Math.atan2(Math.sin(f - h), Math.cos(f - h)));
+              if (d < bd) {
+                bd = d;
+                bh = f;
+              }
+            }
           h = bh;
         } else h = field.follow(p0, h);
         access.push({ p: m, h });
@@ -196,7 +261,8 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
         if (an.x < ob.c.x - ob.hu - ob.hv || an.x > ob.c.x + ob.hu + ob.hv || an.y < ob.c.y - ob.hu - ob.hv || an.y > ob.c.y + ob.hu + ob.hv) continue;
         const loc = locate(pts, an);
         if (loc.d > 0.3 || pc.lp.lab[loc.edge] < 0 || !streets.connected.has(pc.lp.lab[loc.edge])) continue;
-        const a = pts[loc.edge], b = pts[(loc.edge + 1) % pts.length];
+        const a = pts[loc.edge],
+          b = pts[(loc.edge + 1) % pts.length];
         const l = dist(a, b);
         if (l < 1e-6 || dist(an, a) < 12 || dist(an, b) < 12) continue;
         anchorsHere.push(an);
@@ -208,11 +274,13 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
       for (const st of streets.query(pts, 12)) {
         if (st.rank < 2 || st.role === 'close' || st.path.length < 2) continue;
         for (const end of [0, st.path.length - 1]) {
-          const e = st.path[end], e2 = st.path[end === 0 ? 1 : st.path.length - 2];
+          const e = st.path[end],
+            e2 = st.path[end === 0 ? 1 : st.path.length - 2];
           if (pointInRing(pts, e)) continue;
           const loc = locate(pts, e);
           if (loc.d > 7 || loc.d < 0.5 || pc.lp.lab[loc.edge] < 0) continue;
-          const a = pts[loc.edge], b = pts[(loc.edge + 1) % pts.length];
+          const a = pts[loc.edge],
+            b = pts[(loc.edge + 1) % pts.length];
           const q = { x: a.x + (b.x - a.x) * loc.t, y: a.y + (b.y - a.y) * loc.t };
           if (dist(q, a) < 3 || dist(q, b) < 3) continue;
           const h = Math.atan2(e.y - e2.y, e.x - e2.x);
@@ -232,11 +300,17 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
         if (!fwd) continue;
         chord = [seed, ...fwd.slice(1)];
       } else {
-        if (!pointInRing(pts, seed)) { if (SPLIT_DBG.on) SPLIT_DBG.why['seedOut'] = (SPLIT_DBG.why['seedOut'] ?? 0) + 1; continue; }
+        if (!pointInRing(pts, seed)) {
+          if (SPLIT_DBG.on) SPLIT_DBG.why['seedOut'] = (SPLIT_DBG.why['seedOut'] ?? 0) + 1;
+          continue;
+        }
         const f = fams[fi];
         const fwd = field.trace(pts, seed, f, maxTurn);
         const back = field.trace(pts, seed, f + Math.PI, maxTurn);
-        if (!fwd || !back) { if (SPLIT_DBG.on) SPLIT_DBG.why['traceFail'] = (SPLIT_DBG.why['traceFail'] ?? 0) + 1; continue; }
+        if (!fwd || !back) {
+          if (SPLIT_DBG.on) SPLIT_DBG.why['traceFail'] = (SPLIT_DBG.why['traceFail'] ?? 0) + 1;
+          continue;
+        }
         chord = back.slice().reverse().concat(fwd.slice(1));
       }
       chord = simplify(chord, 0.25);
@@ -246,38 +320,69 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
         snapped = snapped.slice();
         for (const end of [0, snapped.length - 1]) {
           const p = snapped[end];
-          let ba: Vec2 | null = null, bd = 48;
-          for (const an of anchorsHere) { const d = dist(an, p); if (d > 0.01 && d < bd) { bd = d; ba = an; } }
+          let ba: Vec2 | null = null,
+            bd = 48;
+          for (const an of anchorsHere) {
+            const d = dist(an, p);
+            if (d > 0.01 && d < bd) {
+              bd = d;
+              ba = an;
+            }
+          }
           if (ba) snapped[end] = ba;
         }
       }
       let res = splitByChord(pc.lp, snapped, TMP_LABEL);
       let used = snapped;
-      if (!res) { res = splitByChord(pc.lp, chord, TMP_LABEL); used = chord; }
-      if (!res) { if (SPLIT_DBG.on) SPLIT_DBG.why['splitFail'] = (SPLIT_DBG.why['splitFail'] ?? 0) + 1; continue; }
-      const la = endLabel(pc.lp, used[0]), lb = endLabel(pc.lp, used[used.length - 1]);
+      if (!res) {
+        res = splitByChord(pc.lp, chord, TMP_LABEL);
+        used = chord;
+      }
+      if (!res) {
+        if (SPLIT_DBG.on) SPLIT_DBG.why['splitFail'] = (SPLIT_DBG.why['splitFail'] ?? 0) + 1;
+        continue;
+      }
+      const la = endLabel(pc.lp, used[0]),
+        lb = endLabel(pc.lp, used[used.length - 1]);
       // must hang off the connected network
-      const ca = la >= 0 && streets.connected.has(la), cb = lb >= 0 && streets.connected.has(lb);
-      if (!ca && !cb) { if (SPLIT_DBG.on) SPLIT_DBG.why['notConnected'] = (SPLIT_DBG.why['notConnected'] ?? 0) + 1; continue; }
+      const ca = la >= 0 && streets.connected.has(la),
+        cb = lb >= 0 && streets.connected.has(lb);
+      if (!ca && !cb) {
+        if (SPLIT_DBG.on) SPLIT_DBG.why['notConnected'] = (SPLIT_DBG.why['notConnected'] ?? 0) + 1;
+        continue;
+      }
       if ((la === LAB_WALL && lb < 0) || (lb === LAB_WALL && la < 0)) continue;
       const [A, B] = res;
-      const aA = area(A.pts), aB = area(B.pts);
-      let placeA = false, placeB = false;
+      const aA = area(A.pts),
+        aB = area(B.pts);
+      let placeA = false,
+        placeB = false;
       let cost = Math.abs(aA - aB) / (aA + aB) + famPenalty + tr.bonus;
       let ok = true;
-      for (const [X, aX, isA] of [[A, aA, true], [B, aB, false]] as [LPoly, number, boolean][]) {
+      for (const [X, aX, isA] of [
+        [A, aA, true],
+        [B, aB, false],
+      ] as [LPoly, number, boolean][]) {
         const angs = endAngles(X, used[0], used[used.length - 1]);
         const acute = Math.min(...angs) < (25 * Math.PI) / 180;
         if (aX < P.minBlock || acute) {
           const canPlace = P.streetOp === 'organic' && aX >= 120 && aX <= P.placeThreshold && places < 6 && aX <= Math.min(aA, aB);
-          if (canPlace) { if (isA) placeA = true; else placeB = true; }
-          else { ok = false; break; }
+          if (canPlace) {
+            if (isA) placeA = true;
+            else placeB = true;
+          } else {
+            ok = false;
+            break;
+          }
         }
         for (const a of angs) cost += Math.max(0, Math.abs(a - Math.PI / 2) - Math.PI / 6) * 0.6;
         const obx = obb(X.pts);
         cost += 0.25 * Math.max(0, obx.hu / Math.max(1, obx.hv) - 2.5);
       }
-      if (!ok) { if (SPLIT_DBG.on) SPLIT_DBG.why['areaAngle'] = (SPLIT_DBG.why['areaAngle'] ?? 0) + 1; continue; }
+      if (!ok) {
+        if (SPLIT_DBG.on) SPLIT_DBG.why['areaAngle'] = (SPLIT_DBG.why['areaAngle'] ?? 0) + 1;
+        continue;
+      }
       cost += rng.float() * 0.08;
       cands.push({ A, B, chord: used, cost, placeA, placeB, rank });
     }
@@ -287,30 +392,60 @@ export function splitQuarter(ctx: UrbanCtx, q: Quarter, qi: number, streets: Str
     if (anchorsHere.length && cands.length) {
       const isA = (c: Cand) => anchorsHere.includes(c.chord[0]) || anchorsHere.includes(c.chord[c.chord.length - 1]);
       const lim = cands[0].cost + 0.6;
-      const first = cands.filter((c) => isA(c) && c.cost < lim);
-      if (first.length) { const rest = cands.filter((c) => !first.includes(c)); cands.length = 0; cands.push(...first, ...rest); }
+      const first = cands.filter(c => isA(c) && c.cost < lim);
+      if (first.length) {
+        const rest = cands.filter(c => !first.includes(c));
+        cands.length = 0;
+        cands.push(...first, ...rest);
+      }
     }
     // expensive width test only on the best-ranked candidates
     let best: Cand | null = null;
     for (const c of cands.slice(0, 6)) {
       let ok = true;
-      for (const [X, isPlace] of [[c.A, c.placeA], [c.B, c.placeB]] as [LPoly, boolean][]) {
+      for (const [X, isPlace] of [
+        [c.A, c.placeA],
+        [c.B, c.placeB],
+      ] as [LPoly, boolean][]) {
         const need = isPlace ? 6 : P.minWidth;
         const w = isConvex(X.pts, 1e-3) ? convexWidth(X.pts) : inscribed(X.pts, [], 1, need / 2).r * 2;
-        if (w < need) { ok = false; break; }
+        if (w < need) {
+          ok = false;
+          break;
+        }
       }
-      if (ok) { best = c; break; }
+      if (ok) {
+        best = c;
+        break;
+      }
     }
-    if (!best) { if (SPLIT_DBG.on) SPLIT_DBG.why[cands.length ? 'width' : 'noCand'] = (SPLIT_DBG.why[cands.length ? 'width' : 'noCand'] ?? 0) + 1; out.push(pc); continue; }
+    if (!best) {
+      if (SPLIT_DBG.on) SPLIT_DBG.why[cands.length ? 'width' : 'noCand'] = (SPLIT_DBG.why[cands.length ? 'width' : 'noCand'] ?? 0) + 1;
+      out.push(pc);
+      continue;
+    }
     // (lagoon towns: every long cut is a rank-2 cut, dug as a canal)
-    if (P.longCut && best.rank > 2) { let L = 0; for (let i = 1; i < best.chord.length; i++) L += dist(best.chord[i - 1], best.chord[i]); if (L >= P.longCut) best.rank = 2; }
+    if (P.longCut && best.rank > 2) {
+      let L = 0;
+      for (let i = 1; i < best.chord.length; i++) L += dist(best.chord[i - 1], best.chord[i]);
+      if (L >= P.longCut) best.rank = 2;
+    }
     const role = best.rank <= 2 ? 'street' : 'lane';
     const w = P.widthByRank[best.rank] * P.widthScale;
-    const id = streets.add(best.chord, jitterWidths(best.chord, w, P.widthJitter, () => rng.float()), best.rank, role, pc.phase);
+    const id = streets.add(
+      best.chord,
+      jitterWidths(best.chord, w, P.widthJitter, () => rng.float()),
+      best.rank,
+      role,
+      pc.phase,
+    );
     streets.connected.add(id);
     // the far end joins its street to the network too
-    for (const e of [best.chord[0], best.chord[best.chord.length - 1]]) { const l = endLabel(pc.lp, e); if (l >= 0) streets.connected.add(l); }
-    for (const X of [best.A, best.B]) X.lab = X.lab.map((l) => (l === TMP_LABEL ? id : l));
+    for (const e of [best.chord[0], best.chord[best.chord.length - 1]]) {
+      const l = endLabel(pc.lp, e);
+      if (l >= 0) streets.connected.add(l);
+    }
+    for (const X of [best.A, best.B]) X.lab = X.lab.map(l => (l === TMP_LABEL ? id : l));
     if (best.placeA || best.placeB) places++;
     queue.push({ ...pc, lp: best.A, level: pc.level + 1, kind: best.placeA ? 'place' : 'block' });
     queue.push({ ...pc, lp: best.B, level: pc.level + 1, kind: best.placeB ? 'place' : 'block' });
@@ -331,18 +466,24 @@ export function addCloses(ctx: UrbanCtx, pieces: Piece[], streets: Streets, rng:
     const ins = inscribed(pc.lp.pts, [], 1.5);
     if (ins.r < maxDepth * 0.95) continue;
     // longest street edge
-    let bi = -1, bl = 0;
+    let bi = -1,
+      bl = 0;
     const pts = pc.lp.pts;
     for (let i = 0; i < pts.length; i++) {
       if (pc.lp.lab[i] < 0 || !streets.connected.has(pc.lp.lab[i])) continue;
       const l = dist(pts[i], pts[(i + 1) % pts.length]);
-      if (l > bl) { bl = l; bi = i; }
+      if (l > bl) {
+        bl = l;
+        bi = i;
+      }
     }
     if (bi < 0 || bl < 25) continue;
-    const a = pts[bi], b = pts[(bi + 1) % pts.length];
+    const a = pts[bi],
+      b = pts[(bi + 1) % pts.length];
     const t = rng.range(0.35, 0.65);
     const s = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    const dx = (b.x - a.x) / bl, dy = (b.y - a.y) / bl;
+    const dx = (b.x - a.x) / bl,
+      dy = (b.y - a.y) / bl;
     const nrm = { x: -dy, y: dx };
     const hit = rayHit(pts, s, nrm);
     if (!hit) continue;
@@ -359,7 +500,16 @@ export function addCloses(ctx: UrbanCtx, pieces: Piece[], streets: Streets, rng:
   return n;
 }
 
-export interface CarvedBlock { poly: Polygon; kind: PieceKind; phase: number; zone: Zone; age: number; quarter: number; compound?: string; lot?: string }
+export interface CarvedBlock {
+  poly: Polygon;
+  kind: PieceKind;
+  phase: number;
+  zone: Zone;
+  age: number;
+  quarter: number;
+  compound?: string;
+  lot?: string;
+}
 
 /**
  * Blocks = pieces minus street ribbons (§2.5), computed per piece against the ribbons of the streets around it.
@@ -373,14 +523,22 @@ export function truncateAcute(poly: Polygon, minAng: number, width: number): Pol
   let cur = poly;
   for (let guard = 0; guard < 6; guard++) {
     let hit = -1;
-    for (let i = 0; i < cur.length; i++) if (interiorAngle(cur, i) < minAng) { hit = i; break; }
+    for (let i = 0; i < cur.length; i++)
+      if (interiorAngle(cur, i) < minAng) {
+        hit = i;
+        break;
+      }
     if (hit < 0) return cur;
     const n = cur.length;
-    const v = cur[hit], a = cur[(hit - 1 + n) % n], b = cur[(hit + 1) % n];
+    const v = cur[hit],
+      a = cur[(hit - 1 + n) % n],
+      b = cur[(hit + 1) % n];
     const th = interiorAngle(cur, hit);
-    const la = dist(v, a), lb = dist(v, b);
+    const la = dist(v, a),
+      lb = dist(v, b);
     const l = Math.min(width / 2 / Math.max(0.05, Math.sin(th / 2)), 0.95 * Math.min(la, lb));
-    const ua = { x: (a.x - v.x) / la, y: (a.y - v.y) / la }, ubv = { x: (b.x - v.x) / lb, y: (b.y - v.y) / lb };
+    const ua = { x: (a.x - v.x) / la, y: (a.y - v.y) / la },
+      ubv = { x: (b.x - v.x) / lb, y: (b.y - v.y) / lb };
     // slightly larger triangle beyond the tip so the difference is clean
     const tri = [
       { x: v.x - (ua.x + ubv.x) * 0.5, y: v.y - (ua.y + ubv.y) * 0.5 },
@@ -403,11 +561,15 @@ export function truncateAcute(poly: Polygon, minAng: number, width: number): Pol
  * not a valid simple polygon with the same edge directions (the caller then uses the ribbon boolean).
  */
 export function insetPiece(lp: LPoly, streets: Streets, wallHalf: number): Polygon | null {
-  const P = lp.pts, n = P.length;
+  const P = lp.pts,
+    n = P.length;
   if (n < 3) return null;
-  const d: number[] = [], u: Vec2[] = [], nn: Vec2[] = [];
+  const d: number[] = [],
+    u: Vec2[] = [],
+    nn: Vec2[] = [];
   for (let i = 0; i < n; i++) {
-    const a = P[i], b = P[(i + 1) % n];
+    const a = P[i],
+      b = P[(i + 1) % n];
     const l = dist(a, b);
     if (l < 1e-9) return null;
     u.push({ x: (b.x - a.x) / l, y: (b.y - a.y) / l });
@@ -415,7 +577,7 @@ export function insetPiece(lp: LPoly, streets: Streets, wallHalf: number): Polyg
     const lab = lp.lab[i];
     if (lab >= 0) {
       const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const ns = streets.nearest(m, 20, (st) => st.id === lab);
+      const ns = streets.nearest(m, 20, st => st.id === lab);
       const st = streets.list[lab];
       d.push(ns ? ns.hw : (st?.widths[0] ?? 4) / 2);
     } else d.push(lab === LAB_WALL ? wallHalf : 0.03);
@@ -429,7 +591,9 @@ export function insetPiece(lp: LPoly, streets: Streets, wallHalf: number): Polyg
     if (Math.abs(cr) < 0.03) {
       // (nearly) collinear edges: a step if the offsets differ, else one point
       if (Math.abs(d[i] - d[j]) < 0.05) out.push({ x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 });
-      else { out.push(pa, pb); }
+      else {
+        out.push(pa, pb);
+      }
       continue;
     }
     const t = ((pb.x - pa.x) * u[i].y - (pb.y - pa.y) * u[i].x) / cr;
@@ -445,7 +609,8 @@ export function insetPiece(lp: LPoly, streets: Streets, wallHalf: number): Polyg
   const m = out.length;
   if (m === n) {
     for (let i = 0; i < n; i++) {
-      const a = out[i], b = out[(i + 1) % n];
+      const a = out[i],
+        b = out[(i + 1) % n];
       if ((b.x - a.x) * u[i].x + (b.y - a.y) * u[i].y <= 0.02) return null;
     }
   }
@@ -456,7 +621,9 @@ export function insetPiece(lp: LPoly, streets: Streets, wallHalf: number): Polyg
 export type RibbonIndex = GridIndex<{ poly: Polygon; bb: { x0: number; y0: number; x1: number; y1: number } }>;
 export function buildRibbonIndex(streets: Streets, extraLines: { path: Polygon; width: number }[] = []): RibbonIndex {
   const idx = new GridIndex<{ poly: Polygon; bb: { x0: number; y0: number; x1: number; y1: number } }>(40);
-  const add = (poly: Polygon) => { if (poly.length >= 3) idx.insertPts(poly, { poly, bb: bboxOf(poly) }); };
+  const add = (poly: Polygon) => {
+    if (poly.length >= 3) idx.insertPts(poly, { poly, bb: bboxOf(poly) });
+  };
   for (const st of streets.list) {
     if (!st.ribbon) continue;
     const n = st.path.length;
@@ -481,17 +648,22 @@ export function buildRibbonIndex(streets: Streets, extraLines: { path: Polygon; 
 }
 
 export function carveBlocks(q: Quarter, pieces: Piece[], ribbonIndex: RibbonIndex, streets: Streets, wallHalf: number): { blocks: CarvedBlock[]; streetSpace: MultiPoly } {
-  const closes = streets.list.filter((s) => s.role === 'close' && s.ribbon).map((s) => { const b = bboxOf(s.path); return { x0: b.x0 - 3, y0: b.y0 - 3, x1: b.x1 + 3, y1: b.y1 + 3, ribbon: ribbon(s.path, s.widths) }; });
+  const closes = streets.list
+    .filter(s => s.role === 'close' && s.ribbon)
+    .map(s => {
+      const b = bboxOf(s.path);
+      return { x0: b.x0 - 3, y0: b.y0 - 3, x1: b.x1 + 3, y1: b.y1 + 3, ribbon: ribbon(s.path, s.widths) };
+    });
   const blocks: CarvedBlock[] = [];
   for (const pc of pieces) {
     const bb = bboxOf(pc.lp.pts);
     // fast exact path: inset every edge by the half-width of the street it borders
-    const near = closes.filter((c) => !(c.x0 > bb.x1 || c.x1 < bb.x0 || c.y0 > bb.y1 || c.y1 < bb.y0));
+    const near = closes.filter(c => !(c.x0 > bb.x1 || c.x1 < bb.x0 || c.y0 > bb.y1 || c.y1 < bb.y0));
     const ins = insetPiece(pc.lp, streets, wallHalf);
     if (ins) {
       // closes (slits) notch the inset block
       let polys: Polygon[] = [ins];
-      if (near.length) polys = differenceS(ins, ...near.map((c) => [{ outer: c.ribbon, holes: [] }] as MultiPoly)).map((ph) => ph.outer);
+      if (near.length) polys = differenceS(ins, ...near.map(c => [{ outer: c.ribbon, holes: [] }] as MultiPoly)).map(ph => ph.outer);
       for (const p0 of polys) {
         let poly = truncateAcute(p0, (22 * Math.PI) / 180, 5);
         if (poly.length < 3 || area(poly) < 40 || (isConvex(poly, 1e-3) ? convexWidth(poly) / 2 : inscribed(poly, [], 0.5, 2.2).r) < 2.2) continue;
@@ -510,10 +682,11 @@ export function carveBlocks(q: Quarter, pieces: Piece[], ribbonIndex: RibbonInde
     // computed by another boolean and may sit a centimetre off, so blocks on both sides must not touch
     for (let i = 0; i < pc.lp.pts.length; i++) {
       if (pc.lp.lab[i] !== LAB_OPEN_B) continue;
-      const a = pc.lp.pts[i], b = pc.lp.pts[(i + 1) % pc.lp.pts.length];
+      const a = pc.lp.pts[i],
+        b = pc.lp.pts[(i + 1) % pc.lp.pts.length];
       if (dist(a, b) > 0.05) cutters.push(ribbon([a, b], 0.06));
     }
-    const res = cutters.length ? differenceS(pc.lp.pts, ...cutters.map((c) => [{ outer: c, holes: [] }] as MultiPoly)) : [{ outer: pc.lp.pts, holes: [] }];
+    const res = cutters.length ? differenceS(pc.lp.pts, ...cutters.map(c => [{ outer: c, holes: [] }] as MultiPoly)) : [{ outer: pc.lp.pts, holes: [] }];
     for (const ph of res) {
       let poly = cleanRing(ph.outer, 0.05, 0.5, 0.002, false);
       if (poly.length < 3) continue;
@@ -542,7 +715,9 @@ export function carveBlocks(q: Quarter, pieces: Piece[], ribbonIndex: RibbonInde
     }
   }
   // street space = quarter minus its blocks (blocks lie inside the quarter): quarter with blocks as holes
-  const streetSpace: MultiPoly = [{ outer: q.lp.pts, holes: blocks.map((b) => b.poly) }];
-  void union; void mpArea; void polygonCentroid;
+  const streetSpace: MultiPoly = [{ outer: q.lp.pts, holes: blocks.map(b => b.poly) }];
+  void union;
+  void mpArea;
+  void polygonCentroid;
   return { blocks, streetSpace };
 }

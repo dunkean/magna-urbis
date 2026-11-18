@@ -36,22 +36,20 @@ export function presentName(parts: NameParts, presentation: NamePresentation = {
   // standalone prefix in display mode (including retained name-bank entries).
   if (presentation.mode === 'localized' && presentation.language !== 'fr' && parts.kind === 'river' && parts.opaque && parts.sourceMode === 'country') {
     const match = /^(Ruisseau|Rivière|Fleuve)\s+(?:de\s+|d['’])(.+)$/iu.exec(parts.cultural);
-    if (match) return presentName({ ...parts, opaque: false, proper: match[2],
-      role: parts.role ?? (match[1].toLowerCase() === 'ruisseau' ? 'water.stream' : 'water.river') }, presentation);
+    if (match) return presentName({ ...parts, opaque: false, proper: match[2], role: parts.role ?? (match[1].toLowerCase() === 'ruisseau' ? 'water.stream' : 'water.river') }, presentation);
   }
-  if (presentation.mode !== 'localized' || parts.opaque || parts.kind === 'town' || parts.kind === 'village') return presentation.script==='latin' ? latinReading(parts.cultural) ?? parts.cultural : parts.cultural;
+  if (presentation.mode !== 'localized' || parts.opaque || parts.kind === 'town' || parts.kind === 'village') return presentation.script === 'latin' ? (latinReading(parts.cultural) ?? parts.cultural) : parts.cultural;
   const language = presentation.language ?? 'en';
   const description = descriptiveText(parts.meaning, language);
   if (description) return description;
   if (parts.meaning?.viaGate) {
     if (language === 'fr') return `Rue de la Porte ${frenchDe(parts.proper)}`;
     if (language === 'en') return `${parts.proper} Gate Street`;
-    const gate = presentName({ ...parts, kind:'gate', meaning:undefined }, presentation);
-    return presentName({ ...parts, proper:gate, kind:'street', meaning:undefined }, presentation);
+    const gate = presentName({ ...parts, kind: 'gate', meaning: undefined }, presentation);
+    return presentName({ ...parts, proper: gate, kind: 'street', meaning: undefined }, presentation);
   }
   const term = (parts.role ? roleText(parts.role, language) : undefined) ?? (parts.generic === 'tower' ? TOWER[language] : parts.generic ? WORSHIP[language][parts.generic] : parts.kind === 'building' ? roleText('building', language)! : TERMS[language][parts.kind]);
-  const proper = parts.meaning && ['craft', 'direction'].includes(parts.meaning.concept)
-    ? conceptText(parts.meaning.qualifier!, language) : presentation.script === 'latin' ? parts.latin ?? latinReading(parts.proper) ?? parts.proper : parts.proper;
+  const proper = parts.meaning && ['craft', 'direction'].includes(parts.meaning.concept) ? conceptText(parts.meaning.qualifier!, language) : presentation.script === 'latin' ? (parts.latin ?? latinReading(parts.proper) ?? parts.proper) : parts.proper;
   if (!proper) return term;
   if (language === 'ja' || language === 'zh') return proper + term;
   if (language === 'ar') return `${term} \u2068${proper}\u2069`;

@@ -19,14 +19,19 @@ import { shapeOf } from './buildings';
 import { detectPlotFrame, plotBounds, varyPlotAxis } from './plotAxes';
 import { houseBoundarySides } from './houseFrames';
 
-interface FEdge { a: Vec2; b: Vec2; rank: number }
+interface FEdge {
+  a: Vec2;
+  b: Vec2;
+  rank: number;
+}
 
 /** Block edges that front a street (or a dead end), with the street rank. */
 export function frontageEdges(B: Polygon, streets: Streets): FEdge[] {
   const out: FEdge[] = [];
   const n = B.length;
   for (let i = 0; i < n; i++) {
-    const a = B[i], b = B[(i + 1) % n];
+    const a = B[i],
+      b = B[(i + 1) % n];
     const l = dist(a, b);
     if (l < 0.5) continue;
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -45,16 +50,24 @@ export function frontageEdges(B: Polygon, streets: Streets): FEdge[] {
 
 /** Length of the boundary of X lying on the frontage edges. */
 function frontLen(X: Polygon, F: FEdge[]): { len: number; best: [Vec2, Vec2] | null; rank: number } {
-  let len = 0, bl = 0, best: [Vec2, Vec2] | null = null, rank = 9;
+  let len = 0,
+    bl = 0,
+    best: [Vec2, Vec2] | null = null,
+    rank = 9;
   for (let i = 0; i < X.length; i++) {
-    const a = X[i], b = X[(i + 1) % X.length];
+    const a = X[i],
+      b = X[(i + 1) % X.length];
     const l = dist(a, b);
     if (l < 0.3) continue;
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     for (const f of F) {
       if (distToSeg(m, f.a, f.b) < 0.05 && distToSeg(a, f.a, f.b) < 0.05 && distToSeg(b, f.a, f.b) < 0.05) {
         len += l;
-        if (l > bl) { bl = l; best = [a, b]; rank = f.rank; }
+        if (l > bl) {
+          bl = l;
+          best = [a, b];
+          rank = f.rank;
+        }
         break;
       }
     }
@@ -65,7 +78,8 @@ function frontLen(X: Polygon, F: FEdge[]): { len: number; best: [Vec2, Vec2] | n
 /** Interior chords along a cut line, including when its OBB centre lies in a notch. */
 function chordsThrough(Q: Polygon, p: Vec2, d: Vec2): [Vec2, Vec2][] {
   const far = 1e4;
-  const a = { x: p.x - d.x * far, y: p.y - d.y * far }, b = { x: p.x + d.x * far, y: p.y + d.y * far };
+  const a = { x: p.x - d.x * far, y: p.y - d.y * far },
+    b = { x: p.x + d.x * far, y: p.y + d.y * far };
   const ts: number[] = [];
   for (let i = 0; i < Q.length; i++) {
     const r = segSegT(a, b, Q[i], Q[(i + 1) % Q.length]);
@@ -82,7 +96,11 @@ function chordsThrough(Q: Polygon, p: Vec2, d: Vec2): [Vec2, Vec2][] {
   return chords;
 }
 
-const minAng = (p: Polygon) => { let m = Infinity; for (let i = 0; i < p.length; i++) m = Math.min(m, interiorAngle(p, i)); return m; };
+const minAng = (p: Polygon) => {
+  let m = Infinity;
+  for (let i = 0; i < p.length; i++) m = Math.min(m, interiorAngle(p, i));
+  return m;
+};
 
 export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: MorphologyParams, streets: Streets, rng: Rng, axis = detectPlotFrame(block).u): PlotResult {
   axis = varyPlotAxis(axis, P.streetOp === 'grid' ? 0 : P.plotTilt, rng);
@@ -91,9 +109,8 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
   const [amin, amax] = P.houseArea[zone];
   const minW = Math.max(6, Math.sqrt(amin) * 0.55);
   // Existing Chinese plots may have valid 12–20° perimeter corners; retaining one must not veto every cut.
-  const angleFloor = P.plotOp === 'siheyuan' ? 12 * Math.PI / 180 : 0.35;
-  const usableFront = (f: ReturnType<typeof frontLen>): boolean => f.len >= 3.5 &&
-    (P.plotOp !== 'siheyuan' || !!f.best && dist(f.best[0], f.best[1]) >= 12);
+  const angleFloor = P.plotOp === 'siheyuan' ? (12 * Math.PI) / 180 : 0.35;
+  const usableFront = (f: ReturnType<typeof frontLen>): boolean => f.len >= 3.5 && (P.plotOp !== 'siheyuan' || (!!f.best && dist(f.best[0], f.best[1]) >= 12));
   const done: Polygon[] = [];
   const queue: Polygon[] = [B];
   let guard = 0;
@@ -101,27 +118,40 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
     const Q = queue.pop()!;
     const A = area(Q);
     const target = amin * Math.pow(amax / amin, rng.float());
-    if (A <= target * 1.3) { done.push(Q); continue; }
+    if (A <= target * 1.3) {
+      done.push(Q);
+      continue;
+    }
     const ob = plotBounds(Q, axis);
     const fraction = rng.fork('split-position:' + guard).range(0.42, 0.58);
-    let best: [Polygon, Polygon] | null = null, bs = Infinity;
-    const directions: [Vec2, number, number][] = [[ob.u, ob.hu, 0], [ob.v, ob.hv, 0.35]];
-    if (P.plotOp === 'machiya' && A > 15000) for (const f of F) {
-      const length = dist(f.a, f.b);
-      if (length < 7) continue;
-      const axis = { x: (f.b.x - f.a.x) / length, y: (f.b.y - f.a.y) / length };
-      if (directions.some(([u]) => Math.abs(u.x * axis.y - u.y * axis.x) < 1e-5)) continue;
-      const half = Math.max(...Q.map((p) => Math.abs((p.x - ob.c.x) * axis.x + (p.y - ob.c.y) * axis.y)));
-      directions.push([axis, half, 0.5]);
-    }
+    let best: [Polygon, Polygon] | null = null,
+      bs = Infinity;
+    const directions: [Vec2, number, number][] = [
+      [ob.u, ob.hu, 0],
+      [ob.v, ob.hv, 0.35],
+    ];
+    if (P.plotOp === 'machiya' && A > 15000)
+      for (const f of F) {
+        const length = dist(f.a, f.b);
+        if (length < 7) continue;
+        const axis = { x: (f.b.x - f.a.x) / length, y: (f.b.y - f.a.y) / length };
+        if (directions.some(([u]) => Math.abs(u.x * axis.y - u.y * axis.x) < 1e-5)) continue;
+        const half = Math.max(...Q.map(p => Math.abs((p.x - ob.c.x) * axis.x + (p.y - ob.c.y) * axis.y)));
+        directions.push([axis, half, 0.5]);
+      }
     for (const [axis, half, pen] of directions) {
       // An oversized merchant parcel may have its public access clustered at
       // one end of the bounding box. Split through real facade positions too;
       // centre-only cuts strand one half even when ample frontage is available.
-      const frontagePositions = P.plotOp === 'machiya' && A > 15000 ? F.flatMap((f) => [0.25, 0.5, 0.75].map((t) => {
-        const p = { x: f.a.x + (f.b.x - f.a.x) * t, y: f.a.y + (f.b.y - f.a.y) * t };
-        return 0.5 + ((p.x - ob.c.x) * axis.x + (p.y - ob.c.y) * axis.y) / (2 * half);
-      })).filter((t) => t > 0.001 && t < 0.999) : [];
+      const frontagePositions =
+        P.plotOp === 'machiya' && A > 15000
+          ? F.flatMap(f =>
+              [0.25, 0.5, 0.75].map(t => {
+                const p = { x: f.a.x + (f.b.x - f.a.x) * t, y: f.a.y + (f.b.y - f.a.y) * t };
+                return 0.5 + ((p.x - ob.c.x) * axis.x + (p.y - ob.c.y) * axis.y) / (2 * half);
+              }),
+            ).filter(t => t > 0.001 && t < 0.999)
+          : [];
       for (const t of [fraction, 0.5, 0.43, 0.57, 0.36, 0.64, ...frontagePositions]) {
         const c = { x: ob.c.x + axis.x * (t - 0.5) * 2 * half, y: ob.c.y + axis.y * (t - 0.5) * 2 * half };
         // Both candidate directions belong to the same retained cadastral frame.
@@ -130,23 +160,31 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
           const res = splitByChord(lpoly(Q, 0), ch, 0);
           if (!res) continue;
           const [X, Y] = [res[0].pts, res[1].pts];
-          const aX = area(X), aY = area(Y);
+          const aX = area(X),
+            aY = area(Y);
           if (Math.min(aX, aY) < amin * 0.55) continue;
           if (!usableFront(frontLen(X, F)) || !usableFront(frontLen(Y, F))) continue;
           if (shapeOf(X).w < minW || shapeOf(Y).w < minW) continue;
           if (minAng(X) < angleFloor || minAng(Y) < angleFloor) continue;
           // courtyard lots are compact (inward-facing houses), not deep strips
-          const sX = shapeOf(X), sY = shapeOf(Y);
+          const sX = shapeOf(X),
+            sY = shapeOf(Y);
           // Machiya frontage parcels remain deep strips. Their cadastral
           // refinement must not inherit the compact courtyard-house rule.
           if (P.plotOp !== 'machiya' && Math.max(sX.asp, sY.asp) > 4.5) continue;
-          const sc = 0.3 * Math.abs(aX - aY) / A + pen + Math.abs(t - fraction) + 0.3 * (Math.max(0, sX.asp - 2) + Math.max(0, sY.asp - 2));
-          if (sc < bs) { bs = sc; best = [X, Y]; }
+          const sc = (0.3 * Math.abs(aX - aY)) / A + pen + Math.abs(t - fraction) + 0.3 * (Math.max(0, sX.asp - 2) + Math.max(0, sY.asp - 2));
+          if (sc < bs) {
+            bs = sc;
+            best = [X, Y];
+          }
         }
       }
       if (best) break;
     }
-    if (!best) { done.push(Q); continue; }
+    if (!best) {
+      done.push(Q);
+      continue;
+    }
     queue.push(best[0], best[1]);
   }
   const plots: Plot[] = [];
@@ -154,7 +192,10 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
   let order = 0;
   for (const Q of done) {
     const fl = frontLen(Q, F);
-    if (!fl.best || fl.len < 3 || P.plotOp === 'machiya' && dist(fl.best[0], fl.best[1]) < 3) { back.push(Q); continue; }
+    if (!fl.best || fl.len < 3 || (P.plotOp === 'machiya' && dist(fl.best[0], fl.best[1]) < 3)) {
+      back.push(Q);
+      continue;
+    }
     const [fa, fb] = fl.best;
     const W = dist(fa, fb);
     const t = { x: (fb.x - fa.x) / W, y: (fb.y - fa.y) / W };
@@ -164,10 +205,7 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
     if (!pointInRing(Q, probe)) nrm = { x: -nrm.x, y: -nrm.y };
     let D = 0;
     for (const q of Q) D = Math.max(D, (q.x - fa.x) * nrm.x + (q.y - fa.y) * nrm.y);
-    plots.push({
-      poly: Q, block: bi, zone, front: [fa, fb], nrm, sideA: { p: fa, d: nrm }, sideB: { p: fb, d: nrm },
-      rank: fl.rank, depth: D, wide: false, sideFronts: [], run: 0, order: order++,
-    });
+    plots.push({ poly: Q, block: bi, zone, front: [fa, fb], nrm, sideA: { p: fa, d: nrm }, sideB: { p: fb, d: nrm }, rank: fl.rank, depth: D, wide: false, sideFronts: [], run: 0, order: order++ });
   }
   // final guarantee (URBAN_GEOMETRY §6.3), as the checker measures it: ≥ 3 m of boundary on a street ribbon edge;
   // other lots join the neighbouring lot sharing the longest edge, or become back land
@@ -178,30 +216,44 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
   const ribbonLen = (X: Polygon): number => {
     let L = 0;
     for (let k = 0; k < X.length && L < 3.3; k++) {
-      const a = X[k], b = X[(k + 1) % X.length];
-      const le = dist(a, b), m = Math.max(1, Math.ceil(le / 0.5));
-      for (let j = 0; j < m; j++) { const t = (j + 0.5) / m; if (onStreet({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })) L += le / m; }
+      const a = X[k],
+        b = X[(k + 1) % X.length];
+      const le = dist(a, b),
+        m = Math.max(1, Math.ceil(le / 0.5));
+      for (let j = 0; j < m; j++) {
+        const t = (j + 0.5) / m;
+        if (onStreet({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })) L += le / m;
+      }
     }
     return L;
   };
   const sharedLen = (X: Polygon, Y: Polygon): number => {
     let s2 = 0;
     for (let k = 0; k < X.length; k++) {
-      const a = X[k], b = X[(k + 1) % X.length];
+      const a = X[k],
+        b = X[(k + 1) % X.length];
       const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      for (let j = 0; j < Y.length; j++) if (distToSeg(m, Y[j], Y[(j + 1) % Y.length]) < 0.05) { s2 += dist(a, b); break; }
+      for (let j = 0; j < Y.length; j++)
+        if (distToSeg(m, Y[j], Y[(j + 1) % Y.length]) < 0.05) {
+          s2 += dist(a, b);
+          break;
+        }
     }
     return s2;
   };
   // (a lot narrower than 2.2 m, a sliver along a block edge, joins its neighbour too)
-  const okF = plots.map((p) => ribbonLen(p.poly) >= 3.3 && inscribed(p.poly, [], 0.1, 1.1).r * 2 >= 2.2);
+  const okF = plots.map(p => ribbonLen(p.poly) >= 3.3 && inscribed(p.poly, [], 0.1, 1.1).r * 2 >= 2.2);
   for (let i = 0; i < plots.length; i++) {
     if (okF[i] || !plots[i]) continue;
-    let best = -1, bl = 0;
+    let best = -1,
+      bl = 0;
     for (let j = 0; j < plots.length; j++) {
       if (j === i || !plots[j] || !okF[j]) continue;
       const sh = sharedLen(plots[i].poly, plots[j].poly);
-      if (sh > bl) { bl = sh; best = j; }
+      if (sh > bl) {
+        bl = sh;
+        best = j;
+      }
     }
     const merged = best >= 0 ? stitchUnion(plots[best].poly, plots[i].poly) : null;
     if (merged && isSimple(merged)) plots[best].poly = merged;
@@ -212,7 +264,7 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
   for (const plot of final) {
     plot.axis = axis;
     plot.boundarySides = houseBoundarySides(B, plot.poly, plot.front);
-    plot.streetSides = frontageEdges(orientPos(plot.poly), streets).map((e) => [e.a, e.b]);
+    plot.streetSides = frontageEdges(orientPos(plot.poly), streets).map(e => [e.a, e.b]);
   }
   return { plots: final, back };
 }

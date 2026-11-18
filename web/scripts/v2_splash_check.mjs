@@ -9,18 +9,36 @@ import { fileURLToPath } from 'node:url';
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(web, 'dist-v2');
 const screenshot = resolve(web, 'out/v2-splash.png');
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.json': 'application/json', '.woff2': 'font/woff2' };
+const mime = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.wasm': 'application/wasm',
+  '.json': 'application/json',
+  '.woff2': 'font/woff2',
+};
 const server = createServer(async (req, res) => {
   try {
     const name = decodeURIComponent(new URL(req.url, 'http://localhost').pathname).replace(/^\/+/, '');
     const path = resolve(dist, name || 'v2.html');
-    if (!path.startsWith(dist + sep)) { res.writeHead(403).end(); return; }
+    if (!path.startsWith(dist + sep)) {
+      res.writeHead(403).end();
+      return;
+    }
     const body = await readFile(path);
     res.writeHead(200, { 'Content-Type': mime[extname(path)] ?? 'application/octet-stream', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' });
     res.end(body);
-  } catch { res.writeHead(404).end('Not found'); }
+  } catch {
+    res.writeHead(404).end('Not found');
+  }
 });
-await new Promise((resolveListen, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolveListen); });
+await new Promise((resolveListen, reject) => {
+  server.once('error', reject);
+  server.listen(0, '127.0.0.1', resolveListen);
+});
 let browser, release;
 try {
   browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -28,13 +46,30 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   let entryRequested;
-  const requested = new Promise(resolveRequest => { entryRequested = resolveRequest; });
-  const gate = new Promise(resolveGate => { release = resolveGate; });
-  await page.route(/\/assets\/v2-[^/]+\.js(?:\?.*)?$/, async route => { entryRequested(); await gate; await route.continue(); });
+  const requested = new Promise(resolveRequest => {
+    entryRequested = resolveRequest;
+  });
+  const gate = new Promise(resolveGate => {
+    release = resolveGate;
+  });
+  await page.route(/\/assets\/v2-[^/]+\.js(?:\?.*)?$/, async route => {
+    entryRequested();
+    await gate;
+    await route.continue();
+  });
   await page.goto(`http://127.0.0.1:${server.address().port}/v2.html`, { waitUntil: 'commit' });
-  await Promise.race([requested, new Promise((_, reject) => { const timer = setTimeout(() => reject(Error('V2 entry module was not requested')), 15000); timer.unref(); })]);
+  await Promise.race([
+    requested,
+    new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(Error('V2 entry module was not requested')), 15000);
+      timer.unref();
+    }),
+  ]);
   await page.locator('#boot-splash').waitFor({ state: 'visible', timeout: 10000 });
-  await page.waitForFunction(() => { const image = document.querySelector('#boot-splash img'); return image && image.complete && image.naturalWidth > 0; });
+  await page.waitForFunction(() => {
+    const image = document.querySelector('#boot-splash img');
+    return image && image.complete && image.naturalWidth > 0;
+  });
   const imageBytes = await page.locator('#boot-splash img').evaluate(async img => {
     const response = await fetch(img.src);
     if (!response.ok) throw Error(`Splash image HTTP ${response.status}`);

@@ -9,32 +9,58 @@ import type { TerrainLook } from './terrainGl';
  */
 type Sampler = (x: number, y: number, metresPerPixel?: number) => number;
 const clamp = (v: number, low: number, high: number): number => Math.max(low, Math.min(high, v));
-const smooth = (low: number, high: number, v: number): number => { const t = clamp((v - low) / (high - low), 0, 1); return t * t * (3 - 2 * t); };
-const hashes = new Uint32Array(4096), valid = new Uint8Array(4096), gradientX = new Float64Array(4096), gradientY = new Float64Array(4096);
+const smooth = (low: number, high: number, v: number): number => {
+  const t = clamp((v - low) / (high - low), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+const hashes = new Uint32Array(4096),
+  valid = new Uint8Array(4096),
+  gradientX = new Float64Array(4096),
+  gradientY = new Float64Array(4096);
 
 function gradient(x: number, y: number, seed: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ seed;
-  h = Math.imul(h ^ (h >>> 13), 1274126177); h = (h ^ (h >>> 16)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = (h ^ (h >>> 16)) >>> 0;
   const slot = h & 4095;
   if (!valid[slot] || hashes[slot] !== h) {
-    const angle = h / 4294967296 * Math.PI * 2;
-    hashes[slot] = h; gradientX[slot] = Math.cos(angle); gradientY[slot] = Math.sin(angle); valid[slot] = 1;
+    const angle = (h / 4294967296) * Math.PI * 2;
+    hashes[slot] = h;
+    gradientX[slot] = Math.cos(angle);
+    gradientY[slot] = Math.sin(angle);
+    valid[slot] = 1;
   }
   return slot;
 }
 /** Value and analytic derivatives, written into reusable storage. */
 function noise(x: number, y: number, seed: number, out: Float64Array): void {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const aa = gradient(ix, iy, seed), ax = gradientX[aa], ay = gradientY[aa];
-  const ab = gradient(ix + 1, iy, seed), bx = gradientX[ab], by = gradientY[ab];
-  const ac = gradient(ix, iy + 1, seed), cx = gradientX[ac], cy = gradientY[ac];
-  const ad = gradient(ix + 1, iy + 1, seed), dx = gradientX[ad], dy = gradientY[ad];
-  const a = ax * fx + ay * fy, b = bx * (fx - 1) + by * fy, c = cx * fx + cy * (fy - 1), d = dx * (fx - 1) + dy * (fy - 1);
-  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10), v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
-  const du = 30 * fx * fx * (fx * (fx - 2) + 1), dv = 30 * fy * fy * (fy * (fy - 2) + 1);
+  const ix = Math.floor(x),
+    iy = Math.floor(y),
+    fx = x - ix,
+    fy = y - iy;
+  const aa = gradient(ix, iy, seed),
+    ax = gradientX[aa],
+    ay = gradientY[aa];
+  const ab = gradient(ix + 1, iy, seed),
+    bx = gradientX[ab],
+    by = gradientY[ab];
+  const ac = gradient(ix, iy + 1, seed),
+    cx = gradientX[ac],
+    cy = gradientY[ac];
+  const ad = gradient(ix + 1, iy + 1, seed),
+    dx = gradientX[ad],
+    dy = gradientY[ad];
+  const a = ax * fx + ay * fy,
+    b = bx * (fx - 1) + by * fy,
+    c = cx * fx + cy * (fy - 1),
+    d = dx * (fx - 1) + dy * (fy - 1);
+  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10),
+    v = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  const du = 30 * fx * fx * (fx * (fx - 2) + 1),
+    dv = 30 * fy * fy * (fy * (fy - 2) + 1);
   out[0] = (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 1.4;
-  out[1] = (ax + (bx - ax) * u + (cx - ax) * v + (ax - bx - cx + dx) * u * v + du * ((b - a) + (a - b - c + d) * v)) * 1.4;
-  out[2] = (ay + (by - ay) * u + (cy - ay) * v + (ay - by - cy + dy) * u * v + dv * ((c - a) + (a - b - c + d) * u)) * 1.4;
+  out[1] = (ax + (bx - ax) * u + (cx - ax) * v + (ax - bx - cx + dx) * u * v + du * (b - a + (a - b - c + d) * v)) * 1.4;
+  out[2] = (ay + (by - ay) * u + (cy - ay) * v + (ay - by - cy + dy) * u * v + dv * (c - a + (a - b - c + d) * u)) * 1.4;
 }
 
 /** A canonical height function: x/y are metres; mpp is deliberately ignored.
@@ -43,41 +69,71 @@ function noise(x: number, y: number, seed: number, out: Float64Array): void {
  * this is a display residual, not a hydraulic erosion simulation.
  */
 export function createTerrain3dNoiseSampler(baseSampler: Sampler, look: TerrainLook): Sampler {
-  const cell = Math.max(.25, look.sourceCell), detail = { ...look.detail }, seed = look.seed >>> 0;
+  const cell = Math.max(0.25, look.sourceCell),
+    detail = { ...look.detail },
+    seed = look.seed >>> 0;
   const base = (x: number, y: number): number => baseSampler(x, y, 0);
   if (!look.refine || detail.amplitude === 0) return base;
-  const octaves = Math.min(12, Math.max(1, Math.round(detail.octaves) + 4)), lacunarity = clamp(detail.lacunarity + .5, 1.5, 2.5);
-  const samples = new Float64Array(3), probes = Math.max(.125, cell * .25), radius = cell * 4;
+  const octaves = Math.min(12, Math.max(1, Math.round(detail.octaves) + 4)),
+    lacunarity = clamp(detail.lacunarity + 0.5, 1.5, 2.5);
+  const samples = new Float64Array(3),
+    probes = Math.max(0.125, cell * 0.25),
+    radius = cell * 4;
   // Everything an octave derives from its wavelength alone: the trigonometry and powers stay out of the vertex loop.
   const bands: { wavelength: number; c: number; s: number; seed: number; broad: number; fine: number; middle: number; wide: boolean; carried: number; hurst: number }[] = [];
-  for (let k = 0, wavelength = cell * 8 * detail.start; k < octaves && wavelength >= .125; k++, wavelength /= lacunarity) {
-    const angle = .37 + k * 2.399963229728653, ratio = wavelength / cell, broad = smooth(1.4, 3.5, ratio), fine = 1 - smooth(.045, .12, ratio);
-    bands.push({ wavelength, c: Math.cos(angle), s: Math.sin(angle), seed: (seed + k * 7919) >>> 0, broad, fine, middle: 1 - Math.max(broad, fine), wide: broad > .5, carried: broad + fine * .15,
-      hurst: Math.pow(Math.max(ratio, 1), clamp(detail.hurst, .7, 1.3) - 1) * Math.pow(Math.min(ratio, 1), Math.max(0, detail.hurst - 1)) });
+  for (let k = 0, wavelength = cell * 8 * detail.start; k < octaves && wavelength >= 0.125; k++, wavelength /= lacunarity) {
+    const angle = 0.37 + k * 2.399963229728653,
+      ratio = wavelength / cell,
+      broad = smooth(1.4, 3.5, ratio),
+      fine = 1 - smooth(0.045, 0.12, ratio);
+    bands.push({
+      wavelength,
+      c: Math.cos(angle),
+      s: Math.sin(angle),
+      seed: (seed + k * 7919) >>> 0,
+      broad,
+      fine,
+      middle: 1 - Math.max(broad, fine),
+      wide: broad > 0.5,
+      carried: broad + fine * 0.15,
+      hurst: Math.pow(Math.max(ratio, 1), clamp(detail.hurst, 0.7, 1.3) - 1) * Math.pow(Math.min(ratio, 1), Math.max(0, detail.hurst - 1)),
+    });
   }
   return (x, y): number => {
-    const h = base(x, y); if (h <= 0) return h;
-    const gx = (base(x + probes, y) - base(x - probes, y)) / (2 * probes), gy = (base(x, y + probes) - base(x, y - probes)) / (2 * probes);
-    const slope = Math.hypot(gx, gy), north = base(x, y - radius), south = base(x, y + radius), east = base(x + radius, y), west = base(x - radius, y);
+    const h = base(x, y);
+    if (h <= 0) return h;
+    const gx = (base(x + probes, y) - base(x - probes, y)) / (2 * probes),
+      gy = (base(x, y + probes) - base(x, y - probes)) / (2 * probes);
+    const slope = Math.hypot(gx, gy),
+      north = base(x, y - radius),
+      south = base(x, y + radius),
+      east = base(x + radius, y),
+      west = base(x - radius, y);
     const relief = Math.max(Math.abs(h - north), Math.abs(h - south), Math.abs(h - east), Math.abs(h - west)) / radius;
-    const crest = smooth(.002, .025, (h - (north + south + east + west) * .25) / radius) * smooth(.04, .2, Math.max(slope, relief));
-    const mountain = smooth(.04, .2, slope);
+    const crest = smooth(0.002, 0.025, (h - (north + south + east + west) * 0.25) / radius) * smooth(0.04, 0.2, Math.max(slope, relief));
+    const mountain = smooth(0.04, 0.2, slope);
     if (crest === 0 && mountain === 0) return h;
-    const downhillX = gx / Math.max(slope, 1e-6), downhillY = gy / Math.max(slope, 1e-6);
+    const downhillX = gx / Math.max(slope, 1e-6),
+      downhillY = gy / Math.max(slope, 1e-6);
     const narrowWeight = Math.pow(Math.max(slope + detail.flat, 1e-6), detail.slope);
     const wideWeight = Math.pow(Math.max(Math.max(slope, relief) + detail.flat, 1e-6), detail.slope);
-    let residual = 0, accumulatedX = 0, accumulatedY = 0;
+    let residual = 0,
+      accumulatedX = 0,
+      accumulatedY = 0;
     for (const { wavelength, c, s, seed, broad, fine, middle, wide, carried, hurst } of bands) {
       // Broad shrinks with the wavelength: on a crest off the slopes, every later envelope is exactly zero.
       if (mountain === 0 && broad === 0) break;
       noise((x * c - y * s) / wavelength, (x * s + y * c) / wavelength, seed, samples);
-      const rounded = Math.sqrt(samples[0] * samples[0] + .0025), signal = samples[0] * .45 + (.24 - rounded) * .55;
-      const derivative = .45 - .55 * samples[0] / rounded;
-      const dx = (samples[1] * c + samples[2] * s) * derivative, dy = (-samples[1] * s + samples[2] * c) * derivative;
-      const envelope = broad * crest + fine * mountain * 3 + middle * mountain * .015;
+      const rounded = Math.sqrt(samples[0] * samples[0] + 0.0025),
+        signal = samples[0] * 0.45 + (0.24 - rounded) * 0.55;
+      const derivative = 0.45 - (0.55 * samples[0]) / rounded;
+      const dx = (samples[1] * c + samples[2] * s) * derivative,
+        dy = (-samples[1] * s + samples[2] * c) * derivative;
+      const envelope = broad * crest + fine * mountain * 3 + middle * mountain * 0.015;
       const slopeWeight = wide ? wideWeight : narrowWeight;
-      accumulatedX += dx * carried; accumulatedY += dy * carried;
-      const erosionWeight = 1 / (1 + .65 * (accumulatedX * accumulatedX + accumulatedY * accumulatedY));
+      accumulatedX += dx * carried;
+      accumulatedY += dy * carried;
+      const erosionWeight = 1 / (1 + 0.65 * (accumulatedX * accumulatedX + accumulatedY * accumulatedY));
       const directionWeight = 1 / (1 + 1.5 * Math.abs(dx * downhillX + dy * downhillY));
       residual += signal * wavelength * detail.amplitude * hurst * envelope * slopeWeight * erosionWeight * directionWeight;
     }
