@@ -19,7 +19,7 @@
  * far squares by their ancestors (`stats.full`).
  *
  * Baking: `work` bakes what the squares of the last tilted frame asked for (tilePyramid.ts: tier 0 first, then the
- * nearest square first), and only while the view rests: a tile costs a recording of the cartography and a draw of
+ * square nearest the centre of the view first), and only while the view rests: a tile costs a recording of the cartography and a draw of
  * the town, which no frame of a moving view can afford. A tile is baked by each source in turn painting its picture
  * of the tile's square with its own GPU renderer in this context, into a layer no tile is shown from; a source whose
  * picture is long to make paints it in steps, and the bake then spans several slices (`baking`). Tiles are stale when

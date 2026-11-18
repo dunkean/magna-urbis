@@ -18,7 +18,8 @@
  * Loading never moves the camera nor changes the view in charge. The fallback view takes over for its own cases only
  * (no hardware WebGL2, an illustrated ground, a lost context, `?display=fallback`); a wait that ends by itself
  * (the ground of a new terrain baking its first tiles) leaves the composed view in charge with its last picture on
- * screen, whole, until it can compose again: the new terrain is never drawn with what the previous one left.
+ * screen, whole, until it can compose again: the new terrain is never drawn with what the previous one left. Before the
+ * first composed picture the fallback shows that wait with its ground alone: the map only ever adds to what it shows.
  */
 import { noteFallbackFrame } from '../../render/live/liveStats';
 import { fallbackForced } from '../../render/live/policy';
@@ -49,6 +50,8 @@ export class MapView implements AppearanceListener, ViewStatus {
   private readonly composed: ComposedView;
   private readonly fallback: FallbackView;
   private presenter: Presenter = 'none';
+  /** The composed view has presented a picture: the start-up is over. */
+  private started = false;
   /** The picture kept on screen while the appearance passes run, and the view it shows. */
   private frozen?: { element: HTMLDivElement; view: View; w: number; h: number };
   /** An exact frame covers the view (prepareCapture), through late invalidations, until the camera moves. */
@@ -98,6 +101,7 @@ export class MapView implements AppearanceListener, ViewStatus {
     const blocked = fallbackForced() ? 'forced fallback' : this.composed.blocked(view, w, h, dpr);
     map.stats.live = blocked ?? 'compositor';
     if (!blocked) {
+      this.started = true;
       if (this.presenter === 'fallback') this.fallback.leave();
       this.present('composed');
       this.composed.draw(view, w, h, dpr, moved, now);
@@ -115,7 +119,10 @@ export class MapView implements AppearanceListener, ViewStatus {
     this.present('fallback');
     this.composed.standBy(blocked === GROUND_WARMING);
     noteFallbackFrame(blocked);
-    this.fallback.draw(view, w, h, dpr, moved, now);
+    // Before the first composed picture (the first map of the page, a reload) a warming ground is shown by the
+    // fallback's ground alone: its picture of the overlay, the town and the names would leave the screen when the
+    // compositor takes over, and the map must only ever add to what it shows (paper, ground, water, overlay, town, names).
+    this.fallback.draw(view, w, h, dpr, moved, now, blocked === GROUND_WARMING && !this.started);
   }
   /** Notes the view in charge, and tells the viewer through the element whether it draws a tilted camera. */
   private present(presenter: Presenter): void {

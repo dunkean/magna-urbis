@@ -156,7 +156,7 @@ export class DrapedGround {
         key = tileKey(tier, ix, iy);
       const shown = drapeTier(camera.focal, list.depth[i], mapSize, tiles.tilePixels, tier, finest, previous.get(key) ?? (tier > 0 ? (previous.get(tileKey(tier - 1, ix >> 1, iy >> 1)) ?? -1) : -1));
       current.set(key, shown);
-      if (!tiles.resolve(tier, ix, iy, shown, list.depth[i], tile) || tile.page >= MAX_PAGES) continue;
+      if (!tiles.resolve(tier, ix, iy, shown, list.centreOffset[i], tile) || tile.page >= MAX_PAGES) continue;
       // The part of the wanted tile under the square: another span means another tier stands in.
       const span = 2 ** (shown - tier),
         o = count * SQUARE_FLOATS;
@@ -168,7 +168,7 @@ export class DrapedGround {
       found[o + 4] = tile.u0;
       found[o + 5] = tile.v0;
       found[o + 6] = tile.span;
-      if (drape?.resolve(tier, ix, iy, shown, list.depth[i], drapeTile)) {
+      if (drape?.resolve(tier, ix, iy, shown, list.centreOffset[i], drapeTile)) {
         found[o + 7] = drapeTile.u0;
         found[o + 8] = drapeTile.v0;
         found[o + 9] = drapeTile.span;

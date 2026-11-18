@@ -136,7 +136,7 @@ export class TilePyramid {
   }
 
   /** The next tile to bake, into `tier`, `ix`, `iy`: tier 0 (one tile: no hole after it), what the last frame wanted,
-   * lowest priority value first (the nearest square), then the other coarse tiers up to `finest`. False: nothing. */
+   * lowest priority value first (the square nearest the centre of the view), then the other coarse tiers up to `finest`. False: nothing. */
   next(finest: number): boolean {
     if (this.needs(0, 0, 0)) return this.found(0, 0, 0);
     let nearest = -1;

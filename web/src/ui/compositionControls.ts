@@ -314,7 +314,8 @@ export function writeCompositionField(recipe: CompositionRecipe, key: string, va
   if (key === 'ground.variant') return withGroundVariant(recipe, value as TerrainStyle);
   const next = structuredClone(recipe);
   writeSettingPath(next, key, value);
-  next.preset = 'custom';
+  // The effects (season, ambience, lighting) are the scene, kept across a preset switch: changing them leaves the preset.
+  if (!key.startsWith('effects.')) next.preset = 'custom';
   return next;
 }
 export const LIMITATION_ROW: Record<Limitation['pass'], string> = {

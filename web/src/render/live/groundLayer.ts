@@ -311,7 +311,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   const drawFloor = (): number => (shownFrom = lookBaked() ? lookGeneration : -1);
   const drawable = (tile: Tile): boolean => tile.generation >= shownFrom;
 
-  /** First tile needing a bake in the square rings around (cx, cy), within the world rectangle grown by `pad` tiles. */
+  /** The tile needing a bake nearest to (cx, cy) (distance from its centre: the picture refines from the centre of the
+   * view outwards, in rings, never in rows or columns), within the world rectangle grown by `pad` tiles. */
   function scan(tier: number, minX: number, minY: number, maxX: number, maxY: number, cx: number, cy: number, pad: number): boolean {
     const n = 2 ** tier,
       ts = gridSize / n;
@@ -320,29 +321,29 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       x1 = Math.min(n - 1, Math.ceil(maxX / ts) - 1 + pad);
     const y0 = Math.max(0, Math.floor(minY / ts) - pad),
       y1 = Math.min(n - 1, Math.ceil(maxY / ts) - 1 + pad);
-    const cix = Math.max(x0, Math.min(x1, Math.floor(cx / ts))),
-      ciy = Math.max(y0, Math.min(y1, Math.floor(cy / ts)));
-    const reach = Math.max(cix - x0, x1 - cix, ciy - y0, y1 - ciy);
-    // Fresh tiles met before the next one to bake belong to the current plan: touched, they cannot be evicted for a
-    // tile of lower priority (else a plan larger than the budget would bake and evict in a loop at rest).
-    const found = (ix: number, iy: number): boolean => {
-      if (ix < x0 || ix > x1 || iy < y0 || iy > y1) return false;
-      const tile = tiles.get(tileKey(tier, ix, iy));
-      if (tile && tile.generation === generation) {
-        tile.used = stamp;
-        return false;
+    // In tile units from the point to each tile's centre.
+    const px = cx / ts - 0.5,
+      py = cy / ts - 0.5;
+    let best = Infinity;
+    for (let iy = y0; iy <= y1; iy++)
+      for (let ix = x0; ix <= x1; ix++) {
+        const d = (ix - px) ** 2 + (iy - py) ** 2;
+        if (d < best && needs(tier, ix, iy)) {
+          best = d;
+          foundX = ix;
+          foundY = iy;
+        }
       }
-      foundTier = tier;
-      foundX = ix;
-      foundY = iy;
-      return true;
-    };
-    if (found(cix, ciy)) return true;
-    for (let d = 1; d <= reach; d++) {
-      for (let ix = cix - d; ix <= cix + d; ix++) if (found(ix, ciy - d) || found(ix, ciy + d)) return true;
-      for (let iy = ciy - d + 1; iy <= ciy + d - 1; iy++) if (found(cix - d, iy) || found(cix + d, iy)) return true;
-    }
-    return false;
+    // Fresh tiles nearer than the next one to bake belong to the current plan: touched, they cannot be evicted for a
+    // tile of lower priority (else a plan larger than the budget would bake and evict in a loop at rest).
+    for (let iy = y0; iy <= y1; iy++)
+      for (let ix = x0; ix <= x1; ix++) {
+        const tile = tiles.get(tileKey(tier, ix, iy));
+        if (tile && tile.generation === generation && (ix - px) ** 2 + (iy - py) ** 2 < best) tile.used = stamp;
+      }
+    if (best === Infinity) return false;
+    foundTier = tier;
+    return true;
   }
 
   /** The view's centre in the last top-view frame, its time, and the velocity of a moving view (metres per second). */
@@ -383,7 +384,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       k = 0;
     const tilted = !!frame?.camera.tilted;
     if (tilted) {
-      // What the squares of the tilted frame asked for, nearest first.
+      // What the squares of the tilted frame asked for, from the centre of the view outwards (PatchList.centreOffset).
       let nearest = -1;
       for (let i = 0; i < wantedCount; i++) if ((nearest < 0 || wantedDepth[i] < wantedDepth[nearest]) && needs(wantedTier[i], wantedX[i], wantedY[i])) nearest = i;
       if (nearest >= 0) {

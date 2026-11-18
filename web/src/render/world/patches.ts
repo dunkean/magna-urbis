@@ -70,6 +70,9 @@ export class PatchList {
   readonly iy = new Uint16Array(MAX_PATCHES);
   /** Depth along the view axis of the nearest corner of the square (metres): what its footprint on screen follows. */
   readonly depth = new Float32Array(MAX_PATCHES);
+  /** Distance on screen from the centre of the view to the square's centre (1: the edges of the view): the order
+   * in which its tiles are baked, so that the picture refines from the centre outwards, not in rows from the front. */
+  readonly centreOffset = new Float32Array(MAX_PATCHES);
 }
 
 // The walk's state, set by selectPatches: one walk at a time, nothing allocated.
@@ -115,7 +118,7 @@ function emit(level: number, ix: number, iy: number): void {
     list.overflow = true;
     return;
   }
-  const { eye, forward, target } = pose,
+  const { eye, forward, right, up, target } = pose,
     i = list.count++;
   // The ground of the square taken at the height of the target: its nearest corner along the view axis.
   const along = (px: number, py: number): number => (px - eye[0]) * forward[0] + (py - eye[1]) * forward[1] + (target[2] - eye[2]) * forward[2];
@@ -123,6 +126,10 @@ function emit(level: number, ix: number, iy: number): void {
   list.ix[i] = ix;
   list.iy[i] = iy;
   list.depth[i] = Math.max(nearDepth, Math.min(along(x, y), along(x + size, y), along(x, y + size), along(x + size, y + size)));
+  const dx = x + size / 2 - eye[0],
+    dy = y + size / 2 - eye[1],
+    dz = target[2] - eye[2];
+  list.centreOffset[i] = Math.hypot((dx * right[0] + dy * right[1] + dz * right[2]) / query.tanX, (dx * up[0] + dy * up[1] + dz * up[2]) / query.tanY) / Math.max(nearDepth, dx * forward[0] + dy * forward[1] + dz * forward[2]);
 }
 
 /** Draws the node (level, ix, iy) or refines it. False: it is out of the range of its level, its parent draws it. */
