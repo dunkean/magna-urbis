@@ -1,5 +1,5 @@
 import { CULTURE_LABELS, cultureEra } from '../gen/options';
-import { registerMessages, translate } from './i18n';
+import { registerMessages, setText, translate } from './i18n';
 import './cultureBrowser.css';
 
 const groups = ['Medieval cultures', 'Ancient cultures', 'Fantasy cultures', 'Modern cultures', 'Futuristic cultures'] as const;
@@ -7,6 +7,7 @@ registerMessages({
   'Choose a culture': { en: 'Choose a culture', fr: 'Choisir une culture' },
   'Search cultures': { en: 'Search cultures', fr: 'Rechercher une culture' },
   'No culture matches.': { en: 'No culture matches.', fr: 'Aucune culture ne correspond.' },
+  'Follow the environment': { en: 'Follow the environment', fr: 'Suivre le milieu naturel' },
   ...Object.fromEntries(groups.map((en, i) => [en, { en, fr: ['Cultures médiévales', 'Cultures antiques', 'Cultures fantastiques', 'Cultures modernes', 'Cultures futuristes'][i] }])),
 });
 const cultures = new Set(CULTURE_LABELS.map(([id]) => id));
@@ -17,7 +18,7 @@ export function cultureGroup(id: string): string {
 
 /** Read the live options, including inheritance and environment restrictions. The original
  * select owns values, disabled state and change handlers in every form, including new inspectors. */
-export function installCultureBrowser(root: HTMLElement): void {
+export function installCultureBrowser(root: HTMLElement, followEnvironment?: { source: HTMLSelectElement; get(): boolean; set(enabled: boolean): void }): void {
   const dialog = document.createElement('dialog');
   dialog.className = 'culture-browser';
   const header = document.createElement('header'),
@@ -28,16 +29,27 @@ export function installCultureBrowser(root: HTMLElement): void {
   close.type = 'button';
   close.onclick = () => dialog.close();
   header.append(title, close);
+  const automatic = document.createElement('label');
+  automatic.className = 'culture-browser-environment checkline';
+  automatic.hidden = true;
+  const auto = document.createElement('input');
+  auto.type = 'checkbox';
+  auto.id = 'culture-browser-environment';
+  const autoText = document.createElement('span');
+  setText(autoText, 'Follow the environment');
+  automatic.append(auto, autoText);
   const search = document.createElement('input');
   search.type = 'search';
   const grid = document.createElement('div');
   grid.className = 'culture-browser-grid';
-  dialog.append(header, search, grid);
+  dialog.append(header, automatic, search, grid);
   document.body.append(dialog);
   let source: HTMLSelectElement | undefined;
   function render(): void {
     grid.replaceChildren();
     if (!source) return;
+    automatic.hidden = source !== followEnvironment?.source;
+    if (!automatic.hidden) auto.checked = followEnvironment!.get();
     const term = search.value.trim().toLocaleLowerCase();
     const options = Array.from(source.options).filter(o => !o.disabled && !o.hidden && !o.closest('optgroup')?.disabled && (!term || o.text.toLocaleLowerCase().includes(term)));
     for (const group of ['Automatic', ...groups]) {
@@ -69,6 +81,11 @@ export function installCultureBrowser(root: HTMLElement): void {
     }
     if (!options.length) grid.textContent = translate('No culture matches.');
   }
+  auto.onchange = () => {
+    if (!source || source !== followEnvironment?.source || !source.isConnected || source.disabled || source.closest('[inert]')) return;
+    followEnvironment.set(auto.checked);
+    render();
+  };
   function open(select: HTMLSelectElement): void {
     source = select;
     title.textContent = translate('Choose a culture');

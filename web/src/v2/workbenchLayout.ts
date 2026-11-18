@@ -70,7 +70,6 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   const settlements = $('#family-settlements'),
     cities = $('#family-cities'),
     editor = $('#family-map');
-  installCultureBrowser(document.body);
   const general = settlements.querySelector<HTMLElement>('.family-general')!;
   settlements.querySelectorAll<HTMLElement>('[data-field-path^="placement.counts."],[data-control="main:population"]').forEach(node => node.remove());
   const culture = $<HTMLSelectElement>('[data-option="culture"]');
@@ -114,16 +113,18 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     sync();
     api.changed();
   });
-  auto.onchange = () => {
+  const followEnvironment = (enabled: boolean) => {
     const s = api.getSettings();
     s.region ??= {};
     s.region.demography ??= {};
-    s.region.demography.followCulture = auto.checked;
-    state.get(s)!.autoCulture = auto.checked;
+    s.region.demography.followCulture = enabled;
+    state.get(s)!.autoCulture = enabled;
     sync(true);
     api.changed();
     api.syncForms();
   };
+  auto.onchange = () => followEnvironment(auto.checked);
+  installCultureBrowser(document.body, { source: culture, get: () => auto.checked, set: followEnvironment });
   function rollCulture(avoidCurrent = false): void {
     const s = api.getSettings(),
       previous = state.get(s)!;
