@@ -1,6 +1,6 @@
 # Urban redesign — current workflow as of October 13, 2026
 
-This is an English translation of section 1 of [the French urban redesign study](REFONTE_GENERATION_URBAINE_2026-10-13_FR.md). The [literature review](URBAN_REDESIGN_LITERATURE_2026-10-13.md) translates section 2. This is a dated description of the code examined for the study; see the [implementation report](REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) for later work.
+This is part 1 of [the October 13, 2026 urban redesign study](REFONTE_GENERATION_URBAINE_2026-10-13.md). The [literature review](URBAN_REDESIGN_LITERATURE_2026-10-13.md) is part 2. The complete study is maintained in English. This is a dated description of the code examined for the study; see the [implementation report](REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) for later work.
 
 ## 1. Detailed current operation
 
