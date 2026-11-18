@@ -1,0 +1,15 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./terrainGpu-B3jLGTkF.js","./terrainClimate-klihTHUU.js","./vectorWaterRender-Btgrkf7k.js","./urbanNetwork-BxTSAjnr.js","./platform-BpDNk_yS.js","./neuralModels-BWWJIlet.js","./rendererOverride-D1bzJgGj.js","./v2-CEuXsoxS.js","./__vite-browser-external-CoRH2uTw.js","./v2-BsmblFem.css","./terrainGround-BDHVSzvF.js"])))=>i.map(i=>d[i]);
+import{_ as o}from"./terrainClimate-klihTHUU.js";import{T as i,r as d}from"./rendererOverride-D1bzJgGj.js";import"./vectorWaterRender-Btgrkf7k.js";import"./v2-CEuXsoxS.js";import"./platform-BpDNk_yS.js";import"./urbanNetwork-BxTSAjnr.js";import"./neuralModels-BWWJIlet.js";import"./__vite-browser-external-CoRH2uTw.js";import"./terrainGround-BDHVSzvF.js";/*! polygon-clipping 0.15.7
+The MIT License (MIT)
+
+Copyright (c) 2018 Mike Fogel <mike@fogel.ca> - covers everything not specially attributed to others below.
+
+Copyright (c) 2016 Alexander Milevski <info@w8r.name> - covers all portions originally part of github:w8r/martinez, from which this project was forked on Febuary 2, 2018.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+*/function u(){return d()}async function l(r,e=r){const n=u();if(n!=="webgl"&&typeof navigator<"u"&&navigator.gpu)try{const{createTerrainGpu:t}=await o(async()=>{const{createTerrainGpu:p}=await import("./terrainGpu-B3jLGTkF.js");return{createTerrainGpu:p}},__vite__mapDeps([0,1,2,3,4,5,6,7,8,9,10]),import.meta.url),a=await t(e,n==="webgpu",r);if(a)return a}catch(t){if(n==="webgpu")throw t;console.warn("WebGPU map renderer unavailable, using WebGL2:",t)}if(n==="webgpu")throw new Error("WebGPU indisponible pour la carte (?renderer=webgpu).");return new i(r)}function T(){u()!==void 0||typeof navigator>"u"||!navigator.gpu||o(()=>import("./terrainGpu-B3jLGTkF.js"),__vite__mapDeps([0,1,2,3,4,5,6,7,8,9,10]),import.meta.url).then(r=>r.prepareTerrainGpu(),()=>{})}function G(r,e){return r instanceof i?e:r.canvas??e}function R(r){return r instanceof i?"webgl":r.backend??"webgpu"}export{l as createTerrainRenderer,T as prewarmTerrainRenderer,u as requestedTerrainBackend,R as terrainRendererBackend,G as terrainRendererCanvas};
