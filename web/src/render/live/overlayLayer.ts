@@ -1,591 +1,47 @@
 /**
- * Live cartography overlay (contract: ./contract.ts; notes: web/out/live-compositor-2026-11-18/C-overlay.md).
- *
- * The vector map of a region around the view is recorded once per half-octave of scale, in horizontal bands
- * (render/cartography/liveHost.ts regionPlan / recordBand), and replayed in the
- * compositor's context at every frame with the view matrix. Each band list is split at the `crisp` mark:
- *  - the area prefix (land-use tints, forest washes and their clips, furrows, strips) is rasterized once per region
- *    into a texture and drawn as one quad per band: its cost no longer follows the map content. A region is shown
- *    only once every band that has a prefix has it baked: a frame never replays a prefix op by op;
- *  - the suffix (lines, water cut, roads, urban layers, symbols) is culled to its band once, its map-sized polygons
- *    cut to the band, and it is replayed op by op on top, in the same isolated group, so order and blending are
- *    those of the whole list.
- * A region shown far from its recorded scale (a zoom that outruns the next recording) is not what its lists were
- * batched for: sub-pixel lines stop being hairlines and draw one by one, and every cover quad grows to the screen.
- * Its lists are not replayed there: as soon as the view drifts from the recorded scale each band is rasterized once,
- * whole, into a small snapshot texture, and past the limit frames draw that quad until the new region is ready.
- * Whatever is baked while the view moves is bounded (pixels, two samples); a region made then is a draft, made again
- * at full quality once the view rests.
- * Recording, upload and bake happen in `work`, one step per call (more when the budget allows); `draw` only submits.
- * A region replaced on screen goes to a small cache (./regionCache.ts) rather than away: a view that comes back to a
- * region of the same key (scale bucket, pixel ratio, quality, map content) within its rectangle shows it again at
- * once, nothing recorded. Only a content change ends a cached region: `invalidate`, a key that no longer matches, or for
- * a region drawn before a product made per view arrived (contour paths, the water raster: `arrivals`), that arrival.
- *
- * A tilted frame (render/world/contract.ts) shows the overlay on the terrain: the layer is not drawn; it gives the map
- * drape a `DrapeSource` that paints the overlay of a tile's square. The region of the frame's top view is still made
- * (its centre and scale are the tilted camera's), and where it holds a tile at about the tile's scale, the nearest
- * tiles of a tilted view, its lists are replayed into the tile: nothing is recorded for them. The other tiles (far
- * ones at coarser scales, the closest at finer ones) are recorded for their own square and scale, as a band is, and
- * rasterized, in horizontal bands, one per call: the cost of a recording follows the content under it, so each band
- * is as high as the cost per row of the band before allows within DRAPE_BAND_MS. All of it only while the view rests
- * (the drape's rule).
+ * Live overlay entry, called by render/cartography/liveHost.ts and driven by the compositor's LiveLayer contract.
+ * Coordinates recording, retained regions and tilted drape adaptation; owns top-view projection and coverage decisions.
+ * Drawable means an intersecting region at this pixel ratio. Rest-exact additionally requires full, current coverage
+ * at this scale bucket. work also reports program/host warming, separately from those two presentation predicates.
  */
-import { resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerStats } from './contract';
-import type { Rect4, View } from '../view';
-import type { DrapeCanvas, DrapeSource } from '../world/contract';
-import { CRISP_MARK, type DisplayList } from '../gpu/contract';
+import { resetLiveState, type LiveFrame, type LiveLayer } from './contract';
+import type { DisplayList, LivePart } from '../gpu/contract';
 import { createLiveRasterizer } from '../gpu/liveRasterizer';
-import type { BakedPrefix, LivePart } from '../gpu/contract';
-import { clipList, cullList, markIndex, splitList } from '../gpu/listTools';
-import { createRegionCache } from './regionCache';
+import { createOverlayDiagnostics } from './overlayDiagnostics';
+import { createOverlayDrape } from './overlayDrape';
+import { createOverlayRecording } from './overlayRecording';
+import { createOverlayRegions } from './overlayRegions';
+import { beyond, covers, meets, type Band, type MutablePart, type OverlayHost, type Region } from './overlayTypes';
 
-export interface OverlayPlan {
-  key: string;
-  rect: Rect4;
-  scale: number;
-  dpr: number;
-  bands: Rect4[];
-}
-/** One recorded band: `w` x `h` device pixels at the plan's scale and pixel ratio, centred on (`cx`, `cy`). */
-export interface OverlayBand {
-  list: DisplayList;
-  rect: Rect4;
-  cx: number;
-  cy: number;
-  w: number;
-  h: number;
-  /** Drawn without a product still being made for the view (contour paths, the water raster): see `arrivals`. */
-  provisional: boolean;
-}
+export type { OverlayBand, OverlayPlan } from './overlayTypes';
 
-/** What the renderer that owns the map gives the layer (render/cartography/liveHost.ts). */
-interface OverlayHost {
-  /** True while the GPU vector engine draws the live map; otherwise the layer is never ready (its stand-in shows). */
-  active(): boolean;
-  /** Everything a retained region depends on besides its rectangle and `arrivals`; undefined when it cannot be recorded. */
-  key(scale: number, dpr: number, light: boolean): string | undefined;
-  /** Changes when a product made per view arrives (contour paths, the water raster of the view): a region with a
-   * provisional band, recorded before, is made again; the others stay valid. */
-  arrivals(): number;
-  plan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan;
-  /** Records one band with the `crisp` mark; undefined when the recorder cannot represent the map. */
-  record(plan: OverlayPlan, band: Rect4, light: boolean): OverlayBand | undefined;
-  /** Asks for a new frame (a region became ready). */
-  invalidate(): void;
-  /** Makes, until `deadline`, what a recording would otherwise make in one block (the tree marks of the woods); true
-   * when nothing is left. Called while the view rests and no region is wanted. */
-  warm(deadline: number): boolean;
-  now(): number;
-  /** A new region waits until the view has rested this long, or the need is older than `maxWaitMs`. */
-  readonly settleMs: number;
-  readonly maxWaitMs: number;
-}
-
-/** Recorded pixels kept around a band when its lists are culled: the bake gutter and the antialiasing reach. */
-const CULL_PAD = 16;
-/** Pixels of one baked band (four per region). */
-const BAKE_PIXELS = 4e6,
-  BAKE_PIXELS_LIGHT = 1.5e6;
-/** Bake attempts of a prefix, the density halved after each failure; then the layer gives way to its stand-in. */
-const BAKE_TRIES = 3;
-/** Pixels and samples of what is baked while the view moves (a draft region's prefixes, every snapshot). */
-const MOVING_PIXELS = 1e6,
-  MOVING_SAMPLES = 2;
 /** View scale over recorded scale (or its inverse) from which a region is shown by its snapshots. Inside it the
  * lists are replayed: that is the stretch between two recordings of a view at rest, and a little more. */
 const SNAPSHOT_RATIO = 1.5;
-/** The same ratio from which the snapshots are made, ahead of their use (a view at rest stays within 2^(1/4)). */
-const SNAPSHOT_AHEAD = 1.25;
-/** A region under way survives the scale steps of a zoom while it stays this close (octaves) to the view's scale. */
-const KEEP_OCTAVES = 1.25;
-/** Regions kept off screen: the baked textures they own (prefixes and snapshots, mipmaps included, BakedPrefix.bytes),
- * and their count. A region owns at most 4 x BAKE_PIXELS texels of prefixes and 4 x MOVING_PIXELS of snapshots
- * (5.3 bytes per texel with mipmaps): about 100 MiB at most, 20 to 40 MiB measured for a 1600 x 1000 view at pixel ratio 1. Their list geometry is not counted here: it lives in the
- * rasterizer's own arena (render/gpu/resources.ts, 256 MiB, least recently used), and a region taken back from the
- * cache prepares its lists again, which uploads only what that arena has dropped. The count bounds the recorded
- * lists in the JS heap. */
-const CACHE_BYTES = 128 * 2 ** 20,
-  CACHE_REGIONS = 8;
-
-/** Scale of a drape tile over the scale of the region shown, between which the region's lists paint the tile. The
- * tiles of the view's own tier are within 0.75 to 1.5 of the view's scale, and the region within a quarter octave. */
-const REUSE_MIN = 0.6,
-  REUSE_MAX = 1.7;
-/** Main-thread time a band of a drape tile aims at (recording, rasterization, laying), and the bounds of its height
- * in recorded rows: the first band of the first tile (no cost known yet), and the least worth a recording. */
-/** Main-thread time of one idle warming slice (OverlayHost.warm). */
+/** Main-thread time of one idle host warming slice. */
 const WARM_SLICE_MS = 8;
-const DRAPE_BAND_MS = 6,
-  DRAPE_FIRST_ROWS = 48,
-  DRAPE_MIN_ROWS = 8;
-
 const NOTHING: DisplayList = { width: 0, height: 0, ops: [], stats: { calls: 0, ops: 0, paths: 0, sprites: 0, recordMs: 0 } };
 
-type MutablePart = { list: DisplayList; post: [number, number, number, number, number, number]; scissor: [number, number, number, number]; baked?: BakedPrefix };
-interface Band {
-  rect: Rect4;
-  cx: number;
-  cy: number;
-  w: number;
-  h: number;
-  /** The area ops, until they are baked. Absent: the band has none (outside the map, or a look without tints). */
-  prefix?: DisplayList;
-  suffix: DisplayList;
-  /** Texels per recorded pixel of the bakes of this band. */
-  density: number;
-  /** Next step: 0 cut the suffix polygons to the band, 1 upload the prefix, 2 upload the suffix, 3 bake the prefix, 4 done. */
-  stage: 0 | 1 | 2 | 3 | 4;
-  baked?: BakedPrefix;
-  /** The whole band (prefix then suffix) at its recorded scale: shown in place of the replay far from that scale. */
-  snapshot?: BakedPrefix;
-  snapshotFailed?: boolean;
-  part: MutablePart;
-}
-interface Region extends OverlayPlan {
-  light: boolean;
-  stale: boolean;
-  parts: Band[];
-  live: MutablePart[];
-  building?: Band;
-  /** Made while the view moved, with bounded bakes: shown, and made again at full quality once the view rests. */
-  draft: boolean;
-  /** A band was drawn without a product still being made; `arrivals` was this when the region began. */
-  provisional: boolean;
-  arrivals: number;
-}
-
-const covers = (outer: Rect4, inner: Rect4): boolean => outer.minX <= inner.minX && outer.minY <= inner.minY && outer.maxX >= inner.maxX && outer.maxY >= inner.maxY;
-const meets = (a: Rect4, b: Rect4): boolean => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
-const beyond = (k: number, ratio: number): boolean => k >= ratio || k <= 1 / ratio;
-
 export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost): LiveLayer | undefined {
-  const made = createLiveRasterizer(gl);
-  if (!made) return undefined;
-  const raster = made;
-  let shown: Region | undefined, pending: Region | undefined;
-  /** Latched: a GL error after a replay, a failed program or bake. The layer stays on its stand-in until the context changes. */
+  const raster = createLiveRasterizer(gl);
+  if (!raster) return undefined;
+  /** Latched until context loss: a replay, program or bake failure leaves the layer on its stand-in. */
   let failed = '';
-  /** A key the recorder could not represent: not tried again until the key changes. */
-  let failedKey: string | undefined;
-  let lastCx = NaN,
-    lastCy = NaN,
-    lastScale = NaN,
-    movedAt = -Infinity,
-    needSince = -1;
-  /** The view moves (the frame says so, or it changed less than the settle delay ago): set at each `work`. */
-  let moving = false;
-  const stats: LiveLayerStats = {
-    drawCalls: 0,
-    triangles: 0,
-    ms: 0,
-    clips: 0,
-    ops: 0,
-    // Bands of the region shown: all, with a baked prefix, without any prefix (baked + empty = bands), with a snapshot.
-    bands: 0,
-    baked: 0,
-    empty: 0,
-    snapshots: 0,
-    // The last frame drew snapshots; bands whose lists it replayed although the view was past the snapshot ratio
-    // (expected 0, 1 frame at most per region); the region is a draft; view scale over recorded scale of that frame.
-    snapshot: 0,
-    replayedFar: 0,
-    draft: 0,
-    ratio: 1,
-    // Triangles of the last frame by what drew them (the rest of `triangles` is cover and baked quads).
-    fanTriangles: 0,
-    strokeTriangles: 0,
-    spriteTriangles: 0,
-    // Programs, textures, geometry or buffers the last frame had to create or upload itself, and since the start
-    // (expected 0: `warm` and `prepare` make them in `work`).
-    late: 0,
-    lateTotal: 0,
-    pending: 0,
-    bytes: 0,
-    failed: 0,
-    bakeMs: 0,
-    recordMs: 0,
-    // Since the start: regions begun, bands recorded, regions shown again from the cache; the last of those took
-    // restoreMs to prepare its lists again; the cache emptied by `invalidate`, cached regions dropped for a key that no
-    // longer matches (map content) or overtaken by an arrival (provisional); and the cache now.
-    regions: 0,
-    recorded: 0,
-    cacheHits: 0,
-    restoreMs: 0,
-    cacheCleared: 0,
-    cacheExpired: 0,
-    cacheOvertaken: 0,
-    cached: 0,
-    cacheBytes: 0,
-  };
-  const refresh = (): void => {
-    const r = shown;
-    let baked = 0,
-      empty = 0,
-      snapshots = 0;
-    if (r)
-      for (const b of r.parts) {
-        if (b.baked) baked++;
-        else empty++;
-        if (b.snapshot) snapshots++;
-      }
-    stats.bands = r ? r.parts.length : 0;
-    stats.baked = baked;
-    stats.empty = empty;
-    stats.snapshots = snapshots;
-    stats.draft = r?.draft ? 1 : 0;
-    stats.pending = pending ? 1 : 0;
-    stats.bytes = raster.bytes();
-    stats.cached = cache.size;
-    stats.cacheBytes = cache.bytes;
-  };
-
-  const releaseBand = (b: Band | undefined): void => {
-    if (!b) return;
-    if (b.baked) raster.releaseBaked(b.baked);
-    if (b.snapshot) raster.releaseBaked(b.snapshot);
-    b.baked = b.snapshot = undefined;
-    b.part.baked = undefined;
-  };
-  const release = (region: Region | undefined): void => {
-    if (!region) return;
-    for (const b of region.parts) releaseBand(b);
-    releaseBand(region.building);
-    region.parts.length = 0;
-    region.live.length = 0;
-    region.building = undefined;
-  };
-  const regionBytes = (r: Region): number => r.parts.reduce((sum, b) => sum + (b.baked?.bytes ?? 0) + (b.snapshot?.bytes ?? 0), 0);
-  const cache = createRegionCache<Region>(CACHE_BYTES, CACHE_REGIONS, regionBytes, release);
-  /** `a` makes `b` useless: the same key over at least its rectangle, and no worse (a draft never replaces a full region). */
-  const supersedes = (a: Region, b: Region): boolean => a.key === b.key && covers(a.rect, b.rect) && (b.draft || !a.draft);
-  /** The products made per view that `r` drew without have not arrived since it began (or it lacked none). */
-  const current = (r: Region): boolean => !r.provisional || r.arrivals === host.arrivals();
-  /** Shows `next` (complete) in place of the region shown, which goes to the cache unless stale or held by `next`. */
-  const show = (next: Region): void => {
-    const old = shown;
-    shown = next;
-    needSince = -1;
-    cache.drop(r => supersedes(next, r));
-    if (old && old !== next) {
-      if (old.stale || supersedes(next, old)) release(old);
-      else cache.put(old);
-    }
-    host.invalidate();
-  };
-  const dropPending = (): void => {
-    if (pending) {
-      release(pending);
-      pending = undefined;
-      raster.releaseBakeScratch();
-    }
-  };
+  const diagnostics = createOverlayDiagnostics();
+  const retained = createOverlayRegions(raster, host, diagnostics);
+  const recording = createOverlayRecording(raster, host, retained, diagnostics);
+  const drape = createOverlayDrape(raster, host, retained, () => !!failed);
+  const refresh = (): void => diagnostics.refresh(retained.shown, recording.pending, raster, retained.size, retained.bytes);
   const fail = (error: unknown): void => {
     const lost = raster.lost;
-    release(shown);
-    shown = undefined;
-    dropPending();
-    cache.clear(true);
+    retained.releaseShown();
+    recording.dropPending();
+    retained.clear(true);
     // A lost context is the compositor's to report (`contextLost`), not a fault of this layer.
     if (lost) return;
     failed = error instanceof Error ? error.message : String(error);
-    stats.failed = 1;
+    diagnostics.failed(true);
     console.warn(`Live overlay: the cartography falls back to its stand-in (${failed}).`);
-  };
-
-  /** Density of a bake of `w` x `h` recorded pixels (texels per pixel): 1 unless the texture limit or `pixels` says less. */
-  const densityFor = (w: number, h: number, pixels: number): number => {
-    const side = raster.maxBakeSize - 8;
-    return Math.min(1, side / w, side / h, Math.sqrt(pixels / (w * h)));
-  };
-  const boxOf = (b: { w: number; h: number }): readonly [number, number, number, number] => [-CULL_PAD, -CULL_PAD, b.w + CULL_PAD, b.h + CULL_PAD];
-
-  /** The map drape's tiles hold the overlay of this revision: bumped by `invalidate`, and when what the host records
-   * changes besides its scale (its key). */
-  let drapeRevision = 0,
-    drapeKey: string | undefined;
-  /** The drape tile recorded in bands: the recorded row its next band starts at, and what the last band cost per row. */
-  let drapeRow = 0,
-    drapeMsPerRow = 0;
-  /** The region the last `work` wanted for its frame, while it is not shown yet: the square of the frame's top view,
-   * the scale and the pixel ratio it is made for. */
-  const due = { wanted: false, minX: 0, minY: 0, maxX: 0, maxY: 0, scale: 1, dpr: 1 };
-  const reusable = (ratio: number): boolean => ratio >= REUSE_MIN && ratio <= REUSE_MAX;
-  /** The region shown, when its lists are the overlay of the tile: current, complete, holding the tile's square, and
-   * recorded at about the tile's scale. */
-  const regionFor = (tile: DrapeCanvas): Region | undefined => {
-    const r = shown;
-    return r && !r.stale && !r.draft && current(r) && r.dpr === tile.dpr && r.light === tile.light && covers(r.rect, tile.rect) && reusable(tile.scale / r.scale) && r.key === host.key(r.scale, r.dpr, r.light) ? r : undefined;
-  };
-  /** Replays the lists of `r` into the tile, as `draw` replays them into a frame; false when the tile has no group. */
-  const replayInto = (tile: DrapeCanvas, r: Region): boolean => {
-    const target = tile.group();
-    if (!target) return false;
-    // Map metres -> pixels of the tile, and recorded pixels of the region -> pixels of the tile.
-    const s = tile.pixels / (tile.rect.maxX - tile.rect.minX),
-      tx = -tile.rect.minX * s,
-      ty = -tile.rect.minY * s,
-      k = s / (r.scale * r.dpr);
-    for (const b of r.parts) {
-      const part = b.part,
-        post = part.post,
-        scissor = part.scissor;
-      post[0] = post[3] = k;
-      post[4] = b.cx * s + tx - (k * b.w) / 2;
-      post[5] = b.cy * s + ty - (k * b.h) / 2;
-      scissor[0] = b.rect.minX * s + tx;
-      scissor[1] = b.rect.minY * s + ty;
-      scissor[2] = b.rect.maxX * s + tx;
-      scissor[3] = b.rect.maxY * s + ty;
-      part.baked = b.baked;
-      part.list = b.suffix;
-    }
-    raster.replayLive(r.live as readonly LivePart[], target, tile.pixels, tile.pixels);
-    tile.putGroup(1);
-    return true;
-  };
-  const drape: DrapeSource = {
-    revision(): number {
-      // Content only: a product made per scale (contour paths) repaints the tiles painted without it (`arrivals`).
-      const key = failed || raster.lost || !host.active() ? undefined : host.key(1, 1, false);
-      if (key !== drapeKey) {
-        drapeKey = key;
-        drapeRevision++;
-      }
-      return drapeRevision;
-    },
-    arrivals: () => host.arrivals(),
-    // Nothing to paint (the vector engine is off, the layer failed) is ready; else the programs must be linked.
-    ready(tile: DrapeCanvas): boolean {
-      if (failed || raster.lost || !host.active()) return true;
-      try {
-        if (!raster.warm()) return false;
-      } catch {
-        // A program that cannot be linked is the layer's to report (its `work` meets the same error): the drape goes on.
-        return true;
-      }
-      // The region of the view is wanted or under way and will hold this tile: the tile waits for its lists rather
-      // than being recorded as well.
-      return !(due.wanted && due.dpr === tile.dpr && covers(due, tile.rect) && reusable(tile.scale / due.scale)) || !!regionFor(tile);
-    },
-    /** An error here is the drape's to report: it costs this tile its overlay, not the top view its live layer. */
-    paint(tile: DrapeCanvas): boolean {
-      if (failed || raster.lost || !host.active()) return false;
-      if (tile.step === 0) {
-        const r = regionFor(tile);
-        if (r && replayInto(tile, r)) {
-          if (r.provisional) tile.provisional();
-          return false;
-        }
-      }
-      const side = tile.rect.maxX - tile.rect.minX,
-        // Recorded pixels of the tile's side: a whole number, so the edges of the tile are texel edges of the bake.
-        // The recorder rounds its size up: a scale a hair under keeps that number.
-        recorded = Math.max(1, Math.round(side * tile.scale * tile.dpr)),
-        scale = (recorded - 1e-6) / (side * tile.dpr),
-        key = host.key(scale, tile.dpr, tile.light);
-      if (key === undefined) return false;
-      // Horizontal bands of whole recorded rows, one per call, from the north. A band's height is what the last one
-      // cost per row allows within DRAPE_BAND_MS: the cost follows the content under the band, which the recorder
-      // cannot tell beforehand (a town's farm roofs cost tens of milliseconds over a tile of open country).
-      const started = performance.now();
-      if (tile.step === 0) drapeRow = 0;
-      const top = drapeRow,
-        left = recorded - top,
-        want = Math.max(DRAPE_MIN_ROWS, drapeMsPerRow > 0 ? Math.floor(DRAPE_BAND_MS / drapeMsPerRow) : DRAPE_FIRST_ROWS),
-        // A remainder too thin for a recording of its own goes with this band.
-        rows = left - want < DRAPE_MIN_ROWS ? left : want,
-        metres = side / recorded,
-        band: Rect4 = { minX: tile.rect.minX, maxX: tile.rect.maxX, minY: tile.rect.minY + top * metres, maxY: tile.rect.minY + (top + rows) * metres },
-        made = host.record({ key, rect: tile.rect, scale, dpr: tile.dpr, bands: [band] }, band, tile.light);
-      if (!made) return false;
-      if (made.provisional) tile.provisional();
-      const list = cullList(made.list, boxOf(made));
-      raster.prepare(list);
-      const baked = raster.bake(list, tile.pixels / made.w, { samples: 4 });
-      if (baked) {
-        // The bake holds the recorded band and a gutter, drawn with y up: its north is at the top of the texture.
-        // The tile's north edge is `top` rows above the band's, its south edge the rows after it below; only the band
-        // itself is laid, not its gutter, which the next band paints.
-        const w = baked.box[2] - baked.box[0],
-          h = baked.box[3] - baked.box[1],
-          u0 = -baked.box[0] / w,
-          u1 = (made.w - baked.box[0]) / w,
-          v0 = 1 - (made.h - baked.box[1]) / h,
-          v1 = 1 + baked.box[1] / h;
-        tile.put(baked.texture, u0, 1 - (-top - baked.box[1]) / h, u1, 1 - (recorded - top - baked.box[1]) / h, 1, u0, v0, u1, v1);
-        raster.releaseBaked(baked);
-      }
-      drapeMsPerRow = (performance.now() - started) / rows;
-      drapeRow = top + rows;
-      return drapeRow < recorded;
-    },
-  };
-  const bandOf = (made: OverlayBand, light: boolean): Band => {
-    const box = boxOf(made),
-      at = markIndex(made.list, CRISP_MARK);
-    let prefix: DisplayList | undefined, suffix: DisplayList;
-    if (at > 0) {
-      const [area, crisp] = splitList(made.list, at);
-      prefix = cullList(area, box);
-      suffix = cullList(crisp, box);
-      // A band outside the map: the map clip misses it, nothing is left to bake.
-      if (!prefix.ops.length) prefix = undefined;
-    } else suffix = cullList(made.list, box);
-    return { rect: made.rect, cx: made.cx, cy: made.cy, w: made.w, h: made.h, prefix, suffix, stage: 0, density: densityFor(made.w, made.h, light ? BAKE_PIXELS_LIGHT : BAKE_PIXELS), part: { list: suffix, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] } };
-  };
-
-  /** Set by `advance` when it can do nothing more in this call (the programs are still compiling). */
-  let blocked = false;
-  /** A complete region replaces the one shown, once every program a frame can use exists: `draw` creates nothing. */
-  const complete = (p: Region): boolean => {
-    if (!raster.warm()) {
-      blocked = true;
-      return false;
-    }
-    // Every prefix baked, every list uploaded: the region shown makes way.
-    pending = undefined;
-    raster.releaseBakeScratch();
-    show(p);
-    return true;
-  };
-  /** One step of the region being made. True when it ended (complete and shown, or dropped). */
-  const advance = (p: Region): boolean => {
-    if (p.parts.length >= p.bands.length) return complete(p);
-    const b = p.building;
-    if (!b) {
-      const t = host.now(),
-        made = host.record(p, p.bands[p.parts.length], p.light);
-      stats.recordMs = Math.max(stats.recordMs, host.now() - t);
-      stats.recorded++;
-      if (!made) {
-        failedKey = p.key;
-        dropPending();
-        return true;
-      }
-      p.building = bandOf(made, p.light);
-      if (made.provisional) p.provisional = true;
-      return false;
-    }
-    if (b.stage === 0) {
-      // The sea, the land clip, a lake: fanned for what this band can show, not for the whole map at every frame.
-      b.suffix = clipList(b.suffix, boxOf(b));
-      b.part.list = b.suffix;
-      b.stage = b.prefix ? 1 : 2;
-    } else if (b.stage === 1) {
-      if (b.prefix) raster.prepare(b.prefix);
-      b.stage = 2;
-    } else if (b.stage === 2) {
-      raster.prepare(b.suffix);
-      b.stage = b.prefix ? 3 : 4;
-    } else if (b.stage === 3 && b.prefix) {
-      // A bake draws: not before the programs are ready (they compile while the bands are recorded and uploaded).
-      if (!raster.warm()) {
-        blocked = true;
-        return false;
-      }
-      // A bake while the view moves is bounded (pixels, samples); the region is then a draft.
-      if (moving) p.draft = true;
-      const t = host.now(),
-        samples = moving ? MOVING_SAMPLES : 4;
-      let density = moving ? Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)) : b.density;
-      let baked = raster.bake(b.prefix, density, { samples });
-      for (let i = 1; !baked && i < BAKE_TRIES; i++) {
-        density /= 2;
-        baked = raster.bake(b.prefix, density, { samples });
-      }
-      stats.bakeMs = Math.max(stats.bakeMs, host.now() - t);
-      // No region is ever shown with a prefix left to replay live: without its bake the layer gives way (stand-in).
-      if (!baked) throw new Error('the area prefix of a band could not be baked');
-      b.baked = baked;
-      b.part.baked = baked;
-      b.density = density;
-      b.prefix = undefined;
-      b.stage = 4;
-    } else if (b.stage === 3) b.stage = 4;
-    if (b.stage !== 4) return false;
-    p.parts.push(b);
-    p.live.push(b.part);
-    p.building = undefined;
-    if (p.parts.length < p.bands.length) return false;
-    return complete(p);
-  };
-
-  /** The region logic of `work`: decides whether a new region is needed, starts it when the timing rule allows and
-   * advances it within the budget. True while a region is wanted or under way. */
-  const regions = (frame: LiveFrame, start: number, budgetMs: number): boolean => {
-    const view = frame.view,
-      light = frame.quality === 'light';
-    const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2),
-      key = host.key(scale, frame.dpr, light);
-    if (key === undefined || key === failedKey) {
-      dropPending();
-      return false;
-    }
-    const cur = shown;
-    // A draft serves while the view moves; at rest it is made again at full quality.
-    const fits = (r: Region): boolean => !r.stale && (!r.draft || moving) && current(r) && r.key === key && r.dpr === frame.dpr && covers(r.rect, frame.rect);
-    if (cur && fits(cur)) {
-      dropPending();
-      needSince = -1;
-      return false;
-    }
-    // A region kept from a moment ago is shown again (a full one before a draft). Its lists are prepared again here:
-    // what the rasterizer's arena dropped meanwhile is uploaded now, not by a frame. A region whose key no longer
-    // matches the host's at its own scale was made for another map content, a provisional one has been overtaken by
-    // an arrival: it goes.
-    cache.drop(r => {
-      if (r.key !== host.key(r.scale, r.dpr, r.light)) stats.cacheExpired++;
-      else if (!current(r)) stats.cacheOvertaken++;
-      else return false;
-      return true;
-    });
-    const kept = cache.take(r => fits(r) && !r.draft) ?? cache.take(fits);
-    if (kept) {
-      const t = host.now();
-      for (const b of kept.parts) raster.prepare(b.suffix);
-      stats.restoreMs = host.now() - t;
-      stats.cacheHits++;
-      dropPending();
-      show(kept);
-      return false;
-    }
-    if (needSince < 0) needSince = start;
-    // A region under way is abandoned when the view left it, the pixel ratio or the map content changed. A scale
-    // step alone does not abandon it: a zoom changes the key at every half-octave, and a region that never
-    // completes leaves the far one on screen for the whole gesture. It completes, shows, and the next one follows.
-    const p0 = pending;
-    if (p0 && (p0.dpr !== frame.dpr || !covers(p0.rect, frame.rect) || (p0.key !== key && (p0.light !== light || host.key(p0.scale, p0.dpr, p0.light) !== p0.key || Math.abs(Math.log2(p0.scale / view.scale)) > KEEP_OCTAVES)))) dropPending();
-    if (!pending) {
-      // Nothing starts while the view moves, unless nothing can be shown or the gesture lasts: each band is a long task.
-      const nothing = !cur || cur.dpr !== frame.dpr;
-      if (!nothing && start - movedAt < host.settleMs && start - needSince < host.maxWaitMs) return true;
-      pending = { ...host.plan(view, frame.cssW, frame.cssH, frame.dpr, key), light, stale: false, parts: [], live: [], draft: false, provisional: false, arrivals: host.arrivals() };
-      stats.regions++;
-    }
-    blocked = false;
-    for (let p = pending; p && pending === p;) {
-      if (advance(p) || blocked || host.now() - start >= budgetMs) break;
-    }
-    return !!pending;
-  };
-
-  /** Bakes the snapshots `r` lacks, all in this call: four small targets at most, each one replay of a band's
-   * suffix over its baked prefix. The frames that follow then never replay a list far from its scale. True when
-   * one was attempted. */
-  const snap = (r: Region): boolean => {
-    let did = false;
-    for (const b of r.parts) {
-      if (b.snapshot || b.snapshotFailed || !b.suffix.ops.length) continue;
-      const t = host.now();
-      const baked = raster.bake(b.suffix, Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)), { under: b.baked, samples: MOVING_SAMPLES });
-      stats.bakeMs = Math.max(stats.bakeMs, host.now() - t);
-      // No target for it: the band goes on replaying its suffix (correct, at its cost).
-      if (baked) b.snapshot = baked;
-      else b.snapshotFailed = true;
-      did = true;
-    }
-    return did;
   };
 
   /** Why the region shown is not the overlay at rest of `frame`; '' when it is. */
@@ -595,11 +51,11 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     if (raster.lost) return 'context lost';
     // Recorded for this frame's half-octave scale bucket (its key holds it): the lists are replayed, never a snapshot.
     const key = host.key(2 ** (Math.round(2 * Math.log2(frame.view.scale)) / 2), frame.dpr, frame.quality === 'light'),
-      r = shown;
-    if (key === undefined || key === failedKey) return 'not recordable';
+      r = retained.shown;
+    if (key === undefined || key === recording.failedKey) return 'not recordable';
     if (!r) return 'no region';
     if (r.stale || r.draft) return r.stale ? 'stale' : 'draft';
-    if (!current(r)) return 'provisional';
+    if (!retained.current(r)) return 'provisional';
     if (r.dpr !== frame.dpr || !covers(r.rect, frame.rect)) return 'not covered';
     if (r.key !== key) return 'other scale';
     return beyond(frame.worldToPixel[0] / (r.scale * r.dpr), SNAPSHOT_RATIO) ? 'far' : '';
@@ -650,21 +106,20 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
   return {
     name: 'overlay',
     isolated: true,
-    drape,
+    drape: drape.source,
     ready(frame: LiveFrame): boolean {
-      const r = shown;
+      const r = retained.shown;
       // A region keeps showing at any scale while its replacement is made, as long as it was recorded for this pixel
       // ratio; one that no longer meets the view has nothing to show.
       return !!r && !failed && r.dpr === frame.dpr && meets(r.rect, frame.rect) && host.active() && !raster.lost;
     },
     restExact(frame: LiveFrame): boolean {
       const why = restGap(frame);
-      // Read by the probes: why the overlay at rest is not the live layer's ('' when it is).
-      (globalThis as { __muLiveOverlayWhy?: string }).__muLiveOverlayWhy = why;
+      diagnostics.restGap(why);
       return !why;
     },
     draw(frame: LiveFrame): void {
-      const r = shown;
+      const r = retained.shown;
       if (!r) return;
       const sx = frame.worldToPixel[0],
         sy = frame.worldToPixel[1],
@@ -674,8 +129,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       const kx = sx / (r.scale * r.dpr),
         ky = sy / (r.scale * r.dpr),
         far = beyond(kx, SNAPSHOT_RATIO);
-      let snapshots = 0,
-        replayedFar = 0;
+      diagnostics.beginDraw();
       for (let i = 0; i < r.parts.length; i++) {
         const b = r.parts[i],
           part = b.part,
@@ -689,39 +143,23 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         scissor[1] = b.rect.minY * sy + ty;
         scissor[2] = b.rect.maxX * sx + tx;
         scissor[3] = b.rect.maxY * sy + ty;
-        // Far from the recorded scale a band is its snapshot, one quad. `work` makes the snapshots before the view
-        // gets there; a jump past both ratios within one frame replays the lists for that frame only.
+        // Snapshots bound far-scale draw cost. A jump before work, or a failed snapshot bake, still replays the suffix.
         const snapshot = far ? b.snapshot : undefined;
         if (snapshot) {
           part.baked = snapshot;
           part.list = NOTHING;
-          snapshots++;
         } else {
           part.baked = b.baked;
           part.list = b.suffix;
-          if (far && b.suffix.ops.length && meets(b.rect, frame.rect)) replayedFar++;
         }
+        diagnostics.bandDrawn(b, snapshot, far, frame);
       }
       // A region that only meets the view (a pan past its margin, a zoom out past its side): a kept region fills the
       // rest of the view under it, rather than the bare ground, until the region of this view is made.
-      const under = covers(r.rect, frame.rect) ? undefined : cache.find(c => !c.stale && c.dpr === frame.dpr && current(c) && meets(c.rect, frame.rect));
+      const under = covers(r.rect, frame.rect) ? undefined : retained.find(c => !c.stale && c.dpr === frame.dpr && retained.current(c) && meets(c.rect, frame.rect));
       try {
         raster.replayLive(under ? beneath(under, r, frame) : (r.live as readonly LivePart[]), frame.target, frame.width, frame.height);
-        const s = raster.lastStats(),
-          tally = raster.liveTally();
-        stats.drawCalls = s.drawCalls;
-        stats.triangles = s.triangles;
-        stats.ms = s.ms;
-        stats.clips = s.clips;
-        stats.ops = s.ops;
-        stats.fanTriangles = tally.fan;
-        stats.strokeTriangles = tally.stroke;
-        stats.spriteTriangles = tally.sprite;
-        stats.late = tally.late;
-        stats.lateTotal += tally.late;
-        stats.snapshot = snapshots ? 1 : 0;
-        stats.replayedFar = replayedFar;
-        stats.ratio = kx;
+        diagnostics.drawn(raster, kx);
       } catch (error) {
         fail(error);
       } finally {
@@ -730,36 +168,18 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     },
     work(budgetMs: number, frame: LiveFrame | undefined): boolean {
       if (!frame || failed || raster.lost || !host.active()) return false;
-      const start = host.now(),
-        view = frame.view;
-      if (view.cx !== lastCx || view.cy !== lastCy || view.scale !== lastScale) {
-        // The first view seen is not a movement (the first region would be made as a draft, then again).
-        if (!Number.isNaN(lastScale)) movedAt = start;
-        lastCx = view.cx;
-        lastCy = view.cy;
-        lastScale = view.scale;
-      }
-      moving = frame.moving || start - movedAt < host.settleMs;
+      const start = host.now();
+      recording.track(frame, start);
       let more = false;
       try {
         // The programs start compiling at the first call and are polled at each one; nothing is shown before.
         const warm = raster.warm(),
-          wanted = regions(frame, start, budgetMs);
-        // For the map drape of a tilted frame: the region this frame waits for.
-        due.wanted = wanted;
-        due.minX = frame.rect.minX;
-        due.minY = frame.rect.minY;
-        due.maxX = frame.rect.maxX;
-        due.maxY = frame.rect.maxY;
-        due.scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2);
-        due.dpr = frame.dpr;
+          wanted = recording.work(frame, start, budgetMs);
+        drape.wanted(frame, wanted);
         more = wanted || !warm;
         // Idle and at rest: a slice of what the next recordings would make in one block, at most WARM_SLICE_MS.
-        if (!more && !moving) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
-        // Then, for the region shown now (the one this call may just have completed): its snapshots, as soon as the
-        // view drifts from its scale and before it is far, so that no frame replays its lists there.
-        const r = shown;
-        if (r && r.dpr === frame.dpr && beyond(view.scale / r.scale, SNAPSHOT_AHEAD) && snap(r) && !pending) raster.releaseBakeScratch();
+        if (!more && !recording.moving) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
+        recording.snapshots(frame);
       } catch (error) {
         fail(error);
         more = false;
@@ -770,50 +190,38 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       return more;
     },
     invalidate(): void {
-      if (shown) shown.stale = true;
-      dropPending();
-      if (cache.size) stats.cacheCleared++;
-      cache.clear(true);
-      failedKey = undefined;
-      drapeRevision++;
+      retained.markStale();
+      recording.dropPending();
+      retained.clear(true, true);
+      recording.clearFailedKey();
+      drape.invalidate();
     },
     lookChanged(): void {
-      // The region shown is the old look's map: it goes now, and the new look's region is recorded at once (nothing
-      // is shown: no settle wait). The programs stay.
-      release(shown);
-      shown = undefined;
-      dropPending();
-      cache.clear(true);
-      failedKey = undefined;
-      needSince = -1;
-      drapeRevision++;
+      // A different look cannot show the previous look's region; absence also bypasses the settle wait.
+      retained.releaseShown();
+      recording.dropPending();
+      retained.clear(true);
+      recording.clearFailedKey();
+      recording.resetNeed();
+      drape.invalidate();
       refresh();
     },
     contextLost(): void {
-      // Every handle is dead: forget them without deleting anything; the next `work` records and uploads again.
+      // Dead handles must be forgotten without deleting resources from the lost context.
       raster.dropContext();
-      if (shown) {
-        shown.parts.length = 0;
-        shown.live.length = 0;
-      }
-      if (pending) {
-        pending.parts.length = 0;
-        pending.live.length = 0;
-        pending.building = undefined;
-      }
-      shown = pending = undefined;
-      cache.clear(false);
+      retained.forgetShown();
+      recording.forgetPending();
+      retained.clear(false);
       failed = '';
-      stats.failed = 0;
-      needSince = -1;
+      diagnostics.failed(false);
+      recording.resetNeed();
       refresh();
     },
-    stats: (): LiveLayerStats => stats,
+    stats: diagnostics.stats,
     dispose(): void {
-      release(shown);
-      release(pending);
-      cache.clear(true);
-      shown = pending = undefined;
+      retained.releaseShown();
+      recording.dispose();
+      retained.clear(true);
       raster.dispose();
     },
   };

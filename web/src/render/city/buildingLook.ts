@@ -21,6 +21,7 @@ import { CITY_LOD_OFF, atLeast } from './levels';
 import { FAMILY_COLORS, mix } from './planLook';
 import { farTownBuildingsShown } from './farTown';
 import { paintedBuildings, type PlanPath } from './planPath';
+import { TURF_LOOK, turfCover } from './turfLook';
 
 // ---------------------------------------------------------------- when buildings show
 export interface BuildingsShownInput {
@@ -70,6 +71,9 @@ export function buildingBody(f: BuildingFrame, b: CityBuilding, roofed: boolean)
   const painted = !f.footprint && paintedBuildings(f.planPath, f.palette, f.view, f.diagnostic),
     strokeAlpha = painted && !b.landmark ? 0.8 : 1;
   if (!f.footprint && b.stilts) return { fill, stroke: '#514431', strokeAlpha, widthPx: 0.6 };
+  // An earth-sheltered mound on a natural ground stands in its cut bank (turfLook.ts).
+  if (!f.footprint && !painted && f.palette === 'terrain' && f.view === 'buildings' && f.diagnostic === 'none' && !f.colors?.building && !f.colors?.buildingEdge && turfCover(b.material?.cover, b.material?.wall))
+    return { fill, stroke: TURF_LOOK.ring.ink, strokeAlpha: TURF_LOOK.ring.alpha, widthPx: TURF_LOOK.ring.widthPx };
   return { fill, stroke: painted && !f.colors?.buildingEdge ? (b.landmark ? '#e2d3a6' : '#1f1811') : buildingEdgeInk(f.colors, f.footprint, parchment), strokeAlpha, widthPx: buildingEdgePx(f.footprint, parchment) };
 }
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createViewer, type FrameRequest } from '../src/ui/viewer';
+import type { CanvasRenderer } from '../src/render/canvas';
 import { MAX_PITCH } from '../src/render/world/camera';
 
 class Element extends EventTarget {
@@ -23,7 +24,7 @@ function pointer(type: string, id: number, x: number, y: number, more: { button?
   return Object.assign(new Event(type), { pointerId: id, clientX: x, clientY: y, button: more.button ?? 0, ctrlKey: more.ctrlKey ?? false });
 }
 /** A viewer over a direct source; `tilts` says whether the source presents a map that tilts. */
-function setup(tilts: boolean) {
+function setup(tilts: boolean, onView?: (view: FrameRequest['view']) => void) {
   const callbacks: FrameRequestCallback[] = [];
   let now = 0;
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => callbacks.push(cb));
@@ -42,7 +43,7 @@ function setup(tilts: boolean) {
     canvas = new Element(),
     element = new Element();
   if (tilts) element.dataset.camera = 'tilt';
-  const viewer = createViewer({ container: container as unknown as HTMLElement, canvas: canvas as unknown as HTMLCanvasElement });
+  const viewer = createViewer({ container: container as unknown as HTMLElement, canvas: canvas as unknown as HTMLCanvasElement, onView });
   const frames: FrameRequest[] = [];
   viewer.setDirectSource({
     element: element as unknown as HTMLElement,
@@ -58,7 +59,7 @@ function setup(tilts: boolean) {
     for (const cb of callbacks.splice(0)) cb(now);
   };
   tick();
-  return { viewer, canvas, page, frames, tick };
+  return { viewer, canvas, element, page, frames, tick };
 }
 
 describe('viewer camera tilt', () => {
@@ -156,5 +157,78 @@ describe('viewer camera tilt', () => {
     expect(refit.pitch).toBe(0.9);
     expect(refit.yaw).toBe(0.5);
     expect(frames.at(-1)!.view.pitch).toBe(0.9);
+  });
+  it('draws the synchronous renderer with a view changed by onView and restores direct canvas styles', () => {
+    let next: FrameRequest['view'] | undefined;
+    const { viewer, canvas, tick } = setup(false, () => {
+      if (next) viewer.setView(next);
+    });
+    const renderer = { draw: vi.fn(() => ({ ms: 1, band: 0 })), dispose: vi.fn() };
+    viewer.setRenderer(renderer as unknown as CanvasRenderer, 4000, true);
+    next = { cx: 1100, cy: 1200, scale: 0.8 };
+    tick();
+    expect(renderer.draw).toHaveBeenLastCalledWith(next);
+    expect(canvas.style.opacity).toBe('');
+    expect(canvas.dataset.presentation).toBeUndefined();
+    next = undefined;
+    viewer.setPaused(true);
+    viewer.setView({ cx: 1500, cy: 1500, scale: 1 });
+    const draws = renderer.draw.mock.calls.length;
+    tick();
+    expect(renderer.draw).toHaveBeenCalledTimes(draws);
+    viewer.setPaused(false);
+    tick();
+    expect(renderer.draw).toHaveBeenCalledTimes(draws + 1);
+  });
+
+  it('rechecks source camera capability after a direct draw', () => {
+    const { viewer, element, tick } = setup(true);
+    viewer.setView({ cx: 1500, cy: 1500, scale: 1, pitch: 0.7, yaw: 0.4 });
+    tick();
+    const heard = vi.fn();
+    viewer.onCamera(heard);
+    const draws: FrameRequest[] = [];
+    viewer.setDirectSource({
+      element: element as unknown as HTMLElement,
+      draw: r => {
+        draws.push(r);
+        delete element.dataset.camera;
+        return { ms: 0, band: 0, scale: r.view.scale };
+      },
+    });
+    tick();
+    expect(draws[0].view.pitch).toBe(0.7);
+    expect(heard.mock.calls[0][0]).not.toHaveProperty('pitch');
+    tick();
+    expect(draws[1].view).not.toHaveProperty('pitch');
+  });
+
+  it('steps held walk/fly keys with the frame cap, releases them, and levels a locked camera', () => {
+    const { viewer, page, tick } = setup(true);
+    viewer.setView({ cx: 1500, cy: 1500, scale: 1, pitch: 1, yaw: 0 });
+    viewer.setNavigation('walk');
+    const walking = viewer.getView();
+    page.dispatchEvent(Object.assign(new Event('keydown'), { key: 'w', code: 'KeyW' }));
+    tick(500);
+    expect(viewer.getView().cy).toBeCloseTo(walking.cy - 12 * 0.05, 9);
+    page.dispatchEvent(Object.assign(new Event('keyup'), { key: 'w', code: 'KeyW' }));
+    const stopped = viewer.getView();
+    tick();
+    expect(viewer.getView()).toEqual(stopped);
+    viewer.setNavigation('fly');
+    const altitude = viewer.getView().eye!;
+    page.dispatchEvent(Object.assign(new Event('keydown'), { key: ' ', code: 'Space' }));
+    tick(50);
+    expect(viewer.getView().eye).toBeGreaterThan(altitude);
+    page.dispatchEvent(new Event('blur'));
+    const hovering = viewer.getView();
+    tick();
+    expect(viewer.getView()).toEqual(hovering);
+    viewer.setTiltLocked(true);
+    viewer.tiltTo(1);
+    tick();
+    expect(viewer.navigation()).toBe('orbit');
+    expect(viewer.getView()).not.toHaveProperty('pitch');
+    expect(viewer.getView()).not.toHaveProperty('eye');
   });
 });

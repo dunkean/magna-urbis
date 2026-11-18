@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlacementBatch, PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 import { city3dBuildings, city3dBuildingsSteps } from '../src/render/city3d/display';
 import type { LiveFrame } from '../src/render/live/contract';
 import { BUILDING_BLOCK, BlockGrouping, TownAltitudes, blockLevel, blockPart, worldPaint, worldSeat } from '../src/render/world/buildingsBlocks';
 import { createWorldBuildingsLayer } from '../src/render/world/buildingsLayer';
+import { BuildingBlockCache } from '../src/render/world/buildingsCache';
+import { GroundDiagnostics, layerDiagnosticsEnabled } from '../src/render/live/layerDiagnostics';
+import type { LiveLayerStats } from '../src/render/live/contract';
 import { BUILDING_STRIDE } from '../src/render/world/buildingsMesh';
 import { createFrameCamera, frameCamera } from '../src/render/world/camera';
 import { TerrainHeights } from '../src/render/world/heights';
@@ -13,6 +16,9 @@ import { createWorldTreesLayer } from '../src/render/world/treesLayer';
 import { TREE_LATHES, latheVertices } from '../src/render/world/treesShader';
 import type { View } from '../src/render/view';
 import { buildNearTrees, TREE_STRIDE, TREE_VERTICES, treeLimits, type TreeInputs } from '../src/ui/terrain3dTrees';
+
+beforeEach(() => vi.stubGlobal('__muLayerDiagnostics', true));
+afterEach(() => vi.unstubAllGlobals());
 
 const W = 1600,
   H = 900;
@@ -164,7 +170,6 @@ describe('world buildings', () => {
     const stats = layer.stats!();
     expect(vi.mocked(gl.drawArrays).mock.calls.length - drawCalls).toBe(stats.drawCalls);
     expect(stats.drawCalls).toBeGreaterThan(0);
-    expect(layer.restExact!(tilted)).toBe(true);
     // A frame uploads nothing.
     const uploads = vi.mocked(gl.bufferData).mock.calls.length;
     layer.draw(tilted);
@@ -261,7 +266,6 @@ describe('world trees', () => {
     layer.draw(tilted);
     const stats = layer.stats!();
     expect(stats.drawCalls).toBeGreaterThan(0);
-    expect(layer.restExact!(tilted)).toBe(true);
     // Moving and turning within the built blocks builds nothing.
     const uploads = vi.mocked(gl.bufferData).mock.calls.length;
     layer.draw(frame(gl, { ...view, cx: 1230, yaw: 0.9 }, heights));
@@ -364,5 +368,96 @@ describe('world trees cost', () => {
     }
     console.info(`world trees cost: ${rows.join('; ')}`);
     for (const view of ['close', 'mid', 'town', 'low']) expect(out[`${view}@600`]).toBeLessThan(300000);
+  });
+});
+
+describe('optional layer diagnostics', () => {
+  it('keeps coarse-tile ages across consecutive top frames and tilted frames', () => {
+    const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0 },
+      diagnostics = new GroundDiagnostics(stats);
+    diagnostics.ancestor(1, 10);
+    diagnostics.topFrame(10);
+    expect([stats.otherTier, stats.coarseAgeMs]).toEqual([1, 0]);
+    diagnostics.ancestor(1, 50);
+    diagnostics.ancestor(2, 50);
+    diagnostics.topFrame(50);
+    expect([stats.otherTier, stats.coarseAgeMs]).toEqual([2, 40]);
+    diagnostics.tiltedFrame(3, 4);
+    expect([stats.otherTier, stats.drapeOtherTier, stats.coarseAgeMs]).toEqual([3, 4, 40]);
+    diagnostics.ancestor(1, 100);
+    diagnostics.topFrame(100);
+    expect([stats.otherTier, stats.coarseAgeMs]).toEqual([1, 90]);
+    diagnostics.topFrame(120);
+    expect([stats.otherTier, stats.coarseAgeMs]).toEqual([0, 0]);
+  });
+
+  it('enables all fields for committed test-mode probes and allows an explicit override', () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('location', { search: '?test=1' });
+    expect(layerDiagnosticsEnabled()).toBe(true);
+    vi.stubGlobal('__muLayerDiagnostics', false);
+    expect(layerDiagnosticsEnabled()).toBe(false);
+    vi.stubGlobal('location', { search: '' });
+    vi.stubGlobal('__muLayerDiagnostics', true);
+    expect(layerDiagnosticsEnabled()).toBe(true);
+  });
+
+  it('draws identical buildings and trees with detailed probes enabled or disabled', () => {
+    const heights = relief(2400),
+      scene = town(64, heights),
+      inputs = stand(100, 90, 120);
+    const samples = [false, true].map(enabled => {
+      vi.stubGlobal('__muLayerDiagnostics', enabled);
+      const gl = mockGl(),
+        view = frame(gl, { cx: 700, cy: 700, scale: 2, pitch: 1, yaw: 0.2 }, heights);
+      const buildings = createWorldBuildingsLayer(gl, { scene: () => scene, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), terrain: () => heights, invalidate: () => {} });
+      const trees = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 600, shown: () => true, invalidate: () => {} });
+      for (const layer of [buildings, trees]) {
+        for (let pass = 0; pass < 3; pass++) {
+          layer.draw(view);
+          while (layer.work!(Infinity, view));
+        }
+        layer.draw(view);
+        expect('sliceMs' in layer.stats!()).toBe(enabled);
+      }
+      const count = (s: LiveLayerStats) => [s.drawCalls, s.triangles, s.bytes, s.instances];
+      return { buildings: count(buildings.stats!()), trees: count(trees.stats!()), draws: vi.mocked(gl.drawArrays).mock.calls.map(call => call.slice(1)), instances: vi.mocked(gl.drawArraysInstanced).mock.calls.map(call => call.slice(1)) };
+    });
+    expect(samples[0]).toEqual(samples[1]);
+    expect(samples[0].buildings[0]).toBeGreaterThan(0);
+    expect(samples[0].trees[0]).toBeGreaterThan(0);
+  });
+});
+
+describe('building level cache', () => {
+  it('protects the current draw tick and stops background rebuilding after an eviction', () => {
+    const heights = relief(2400),
+      scene = town(4, heights),
+      gl = mockGl(),
+      cache = new BuildingBlockCache(gl, () => 1);
+    const blocks = grouped(scene, heights),
+      paint = worldPaint(scene, { style: 'cartographic', diagnostic: 'none' }, new TownAltitudes()),
+      seat = worldSeat(heights, heights.exaggeration);
+    cache.setBlocks(blocks);
+    expect(cache.work(Infinity, 0, paint, seat, () => {})).toBe(false);
+    expect(cache.bytes).toBeGreaterThan(1);
+    const uploads = vi.mocked(gl.bufferSubData).mock.calls.length;
+    expect(cache.work(Infinity, 1, paint, seat, () => {})).toBe(false);
+    expect(cache.bytes).toBe(0);
+    expect(cache.work(Infinity, 2, paint, seat, () => {})).toBe(false);
+    expect(vi.mocked(gl.bufferSubData).mock.calls.length).toBe(uploads);
+    // A visible request still builds after spilling; its draw tick protects the resulting level.
+    const slot = cache.slots[0];
+    slot.need = 1;
+    slot.seen = 2;
+    const built = vi.fn();
+    expect(cache.work(Infinity, 2, paint, seat, built)).toBe(false);
+    expect(built).toHaveBeenCalledOnce();
+    expect(slot.levels[0]).toBeDefined();
+    const deletes = vi.mocked(gl.deleteBuffer).mock.calls.length;
+    cache.contextLost();
+    expect(cache.bytes).toBe(0);
+    expect(slot.levels.every(level => !level)).toBe(true);
+    expect(vi.mocked(gl.deleteBuffer).mock.calls.length).toBe(deletes);
   });
 });

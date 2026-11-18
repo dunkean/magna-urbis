@@ -37,6 +37,7 @@ import { MAX_SCALE, type Rect4 } from '../view';
 import type { DrapeTile, DrapeTiles } from '../world/contract';
 import { DrapedGround } from '../world/drapedGround';
 import { findTile, tileKey } from '../world/tilePyramid';
+import { GroundDiagnostics, layerDiagnosticsEnabled } from './layerDiagnostics';
 
 /** Device pixels of a baked tile. */
 const TILE = 512;
@@ -184,13 +185,9 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   /** Per draw: page, first instance, count. */
   const ranges = new Int32Array(2 * MAX_PAGES * 3);
   /** `patches`: squares of the terrain mesh in the last tilted frame; `patchUploads`: lists of squares sent to the GPU;
-   * `otherTier`, `drapeOtherTier`: squares of the last tilted frame shown by another tier than wanted (DrapedGroundStats);
-   * in the top view `otherTier` counts the visible tiles shown by an ancestor (below). */
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, tiles: 0, bytes: 0, pending: 0, bakeMs: 0, baked: 0, tier: 0, patches: 0, patchUploads: 0, otherTier: 0, drapeOtherTier: 0, coarseAgeMs: 0 };
-  /** Visible tiles of the last top-view frame shown by an ancestor, by key, with the time each began to be (stats
-   * `otherTier`, and `coarseAgeMs` the wait of the oldest: how far the wanted tier lags behind the view). */
-  let coarseSince = new Map<number, number>(),
-    coarseNext = new Map<number, number>();
+   * optional coarse-tile probes are owned by layerDiagnostics.ts. */
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, tiles: 0, bytes: 0, pending: 0, bakeMs: 0, baked: 0, tier: 0, patches: 0, patchUploads: 0 };
+  const diagnostics = layerDiagnosticsEnabled() ? new GroundDiagnostics(stats) : undefined;
   /** The tiles the last tilted frame wanted and did not find fresh, with the depth of the square that wants each. */
   const wantedTier = new Uint8Array(MAX_WANTED),
     wantedX = new Int32Array(MAX_WANTED),
@@ -598,8 +595,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         stats.triangles = draped.stats.triangles;
         stats.patches = draped.stats.patches;
         stats.patchUploads = draped.stats.uploads;
-        stats.otherTier = draped.stats.otherTier;
-        stats.drapeOtherTier = draped.stats.drapeOtherTier;
+        diagnostics?.tiltedFrame(draped.stats.otherTier, draped.stats.drapeOtherTier);
         stats.ms = performance.now() - started;
         return;
       }
@@ -638,7 +634,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
             const key = tileKey(k, ix, iy),
               tile = tiles.get(key);
             if (!tile || !drawable(tile)) {
-              coarseNext.set(key, coarseSince.get(key) ?? frame.now);
+              diagnostics?.ancestor(key, frame.now);
               pushAncestor(k, ix, iy, px0, py0, px1, py1);
               continue;
             }
@@ -698,12 +694,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         gl.bindVertexArray(null);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
       }
-      let oldest = frame.now;
-      for (const since of coarseNext.values()) oldest = Math.min(oldest, since);
-      stats.otherTier = coarseNext.size;
-      stats.coarseAgeMs = frame.now - oldest;
-      [coarseSince, coarseNext] = [coarseNext, coarseSince];
-      coarseNext.clear();
+      diagnostics?.topFrame(frame.now);
       stats.drawCalls = draws;
       stats.triangles = used * 2;
       stats.tier = k;

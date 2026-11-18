@@ -1,3 +1,4 @@
+/** Region retention contract: byte/count eviction, non-consuming lookup and resource release order. */
 import { describe, expect, it } from 'vitest';
 import { createRegionCache } from '../src/render/live/regionCache';
 
@@ -40,6 +41,21 @@ describe('live region cache', () => {
     expect(cache.size).toBe(2);
     expect(cache.bytes).toBe(20);
     expect(released).toEqual([]);
+  });
+
+  it('finds the most recent match without taking it or promoting older entries', () => {
+    const { cache, released } = make(1000, 3);
+    for (const id of ['a', 'b', 'c']) cache.put({ id, bytes: 5 });
+    expect(cache.find(e => e.id === 'a')?.id).toBe('a');
+    expect(cache.find(() => true)?.id).toBe('c');
+    expect(cache.find(e => e.id === 'missing')).toBeUndefined();
+    expect(cache.size).toBe(3);
+    expect(cache.bytes).toBe(15);
+    cache.put({ id: 'd', bytes: 5 });
+    expect(released).toEqual(['a']);
+    cache.clear(true);
+    expect(released).toEqual(['a', 'd', 'c', 'b']);
+    expect(cache.bytes).toBe(0);
   });
 
   it('drops and clears, releasing only when asked', () => {
