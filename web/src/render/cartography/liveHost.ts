@@ -32,8 +32,8 @@ export function createLiveHost(c: CartographyContext) {
   let regionFailed = '';
   /** Layers made by createLiveLayer and not yet disposed: a scene update makes their regions stale too. */
   const liveLayers = new Set<LiveLayer>();
-  /** Everything a recorded region depends on besides its rectangle. */
-  const regionKey = (scale: number, dpr: number, light: boolean): string => `${scale}|${dpr}|${light}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+  /** Everything a recorded region depends on besides its rectangle and the products made per view (`arrivals`). */
+  const regionKey = (scale: number, dpr: number, light: boolean): string => `${scale}|${dpr}|${light}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
   /** The region recorded for a view: a margin around it, edges on a lattice, the half-octave scale, horizontal bands. */
   function regionPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan {
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2),
@@ -54,6 +54,7 @@ export function createLiveHost(c: CartographyContext) {
     const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
       h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
     const rec = new RecordingCanvas(w, h);
+    const provisional = deps.semantic?.provisional() ?? 0;
     let list: DisplayList | undefined;
     c.markCrisp = true;
     try {
@@ -70,7 +71,7 @@ export function createLiveHost(c: CartographyContext) {
       regionFailed = plan.key;
       return undefined;
     }
-    return { list, rect: band, cx, cy, w, h };
+    return { list, rect: band, cx, cy, w, h, provisional: (deps.semantic?.provisional() ?? 0) !== provisional };
   }
   /** The overlay layer of the live compositor: regions of the map recorded here (regionPlan, recordBand) and replayed
    * in the compositor's context. */
@@ -83,6 +84,7 @@ export function createLiveHost(c: CartographyContext) {
         return key === regionFailed ? undefined : key;
       },
       plan: regionPlan,
+      arrivals: () => deps.semantic?.arrivals() ?? 0,
       record(plan, band, light) {
         // One band is one step: recorded at the region's quality and at the compositor's pixel ratio.
         const stepwise = c.stepwise,

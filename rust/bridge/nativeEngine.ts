@@ -106,7 +106,8 @@ export function forgetNativeRasters(server: string): void {
   for (const key of [...rasterUploads.keys()]) if (key.startsWith(`${server}|`)) rasterUploads.delete(key);
 }
 
-type NativeCall = { runtime: ExecutionRuntime; raster?: SettlementRaster; [key: string]: unknown };
+/** `onRasterSent`: called once `raster` is on the server, before the request itself (never sent). */
+type NativeCall = { runtime: ExecutionRuntime; raster?: SettlementRaster; onRasterSent?: () => void; [key: string]: unknown };
 /**
  * Serialize mutations of a single retained raster, while other benches run independently.
  * Callers send `raster` only when it changes; when the engine answers `[raster_missing]` (it lost the
@@ -118,11 +119,12 @@ export function nativeRasterClient() {
   const send = <T>(path: string, request: NativeCall, read: (response: Response) => Promise<T>): Promise<T> => {
     const result = queue.then(async () => {
       session ??= nativeSession();
-      const { runtime, raster, ...input } = request;
+      const { runtime, raster, onRasterSent, ...input } = request;
       if (raster) {
         held = undefined;
         await uploadNativeRaster(runtime, session, raster);
         held = raster;
+        onRasterSent?.();
       }
       const body = JSON.stringify({ ...input, session });
       let response: Response;

@@ -151,6 +151,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       buildings: buildingsShown(shown) && (footprint || roofPansShown(shown) || o.view === 'roles'),
       farRaster,
       canopyClearing: !!a.composition.vegetation.procedural,
+      urbanLanduse: a.composition.landuse.urban !== 'off',
       diagnostics: !!(layers.fronts || layers.axes || layers.access || layers.reserve || layers.allocated || layers.quarters || layers.centers || o.refusedParcels?.size),
       // The canals of the Canvas town are painted again at full strength over the composited town; this layer has no
       // pass over its group (contract.ts).

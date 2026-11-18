@@ -1,9 +1,10 @@
 /**
- * The "3D trees" switch and the tree distance of the single camera: in the workbench bar beside the "3D" button,
- * shown while the map is tilted (the modelled trees stand only in a tilted view) and only for the looks that model
- * their near trees (worldTreesAvailable). They write the appearance's `city.trees3d` and `city.treeDistance`, as the
- * separate 3D view's toolbar did; the trees layer reads them (v2/display/worldVolumes.ts). Mounted by view3d.ts for
- * the single camera; with `?camera=dual` the separate 3D view keeps its own controls.
+ * The "3D trees" switch and the tree distance of the single camera: the separate 3D view's controls in its bar
+ * (worldNavigation.ts, mounted before this), shown while the map is tilted (the modelled trees stand only in a tilted
+ * view) and only for the looks that model their near trees (worldTreesAvailable: not the fast satellite, whose switch
+ * is hidden with its setting kept). They write the appearance's `city.trees3d` and `city.treeDistance`, as the separate
+ * 3D view's toolbar did; the trees layer reads them (v2/display/worldVolumes.ts). Mounted by view3d.ts for the single
+ * camera; with `?camera=dual` the separate 3D view keeps its own controls.
  */
 import { applyAppearancePatch, type AppearancePatch } from '../../render/appearanceRecipe';
 import { isTilted } from '../../render/world/camera';
@@ -16,22 +17,23 @@ import { $ } from './dom';
 
 registerMessages({
   '3D trees': { en: '3D trees', fr: 'Arbres 3D' },
-  'Tree distance': { en: 'Tree distance', fr: 'Distance des arbres' },
   'Modelled trees near the camera (satellite looks)': { en: 'Modelled trees near the camera (satellite looks)', fr: 'Arbres modélisés près de la caméra (sols satellite)' },
   'Display distance of the modelled trees (m)': { en: 'Display distance of the modelled trees (m)', fr: 'Distance d’affichage des arbres modélisés (m)' },
 });
 
 export function mountWorldTreeControls(state: PageState, actions: PageActions): void {
+  const bar = $('#world-bar');
   insertHTML(
-    $('#view3d'),
-    'afterend',
-    '<label id="world-trees" hidden title="Modelled trees near the camera (satellite looks)"><input type="checkbox" id="world-trees-on"> 3D trees</label>' +
-      '<label id="world-tree-distance" hidden title="Display distance of the modelled trees (m)">Tree distance <input type="range" id="world-tree-distance-range" min="200" max="1500" step="100"></label>',
+    bar,
+    'beforeend',
+    '<label title="Modelled trees near the camera (satellite looks)" hidden><input type="checkbox" data-trees>3D trees</label>' +
+      // The range follows the switch without its own words, so the tilted row keeps to 1600 px with the PNG button.
+      '<label title="Display distance of the modelled trees (m)" data-tree-distance-label hidden><input type="range" data-tree-distance min="200" max="1500" step="100" value="600" aria-label="Display distance of the modelled trees (m)"></label>',
   );
-  const switchLabel = $('#world-trees'),
-    distanceLabel = $('#world-tree-distance'),
-    on = $<HTMLInputElement>('#world-trees-on'),
-    distance = $<HTMLInputElement>('#world-tree-distance-range');
+  const on = bar.querySelector<HTMLInputElement>('[data-trees]')!,
+    distance = bar.querySelector<HTMLInputElement>('[data-tree-distance]')!,
+    switchLabel = on.closest('label')!,
+    distanceLabel = bar.querySelector<HTMLElement>('[data-tree-distance-label]')!;
   let tilted = false;
   /** The controls follow the settings: a project load or a style change while tilted is shown at the next sync. */
   const sync = (): void => {
@@ -56,6 +58,9 @@ export function mountWorldTreeControls(state: PageState, actions: PageActions): 
     tilted = !tilted;
     sync();
   });
+  // A look without modelled trees (the fast satellite) hides the switch at once. The select's own handler, which writes
+  // the look, is set later (toolbar.ts) and so runs after this listener: the sync waits for it.
+  $('#map-style').addEventListener('change', () => setTimeout(sync));
   on.onchange = () => {
     distanceLabel.hidden = !on.checked;
     write({ city: { trees3d: on.checked } });

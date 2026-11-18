@@ -874,11 +874,14 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     let leader = 0;
     const last: (Parameters<ProgressCallback>[0] | undefined)[] = [];
     const towns = places.map((place, i) => forSettlement(onProgress, i, n, place));
+    // The leader's rows also count the towns the other lanes have finished meanwhile.
+    let ready = 0;
+    const counted = (p: Parameters<ProgressCallback>[0]): Parameters<ProgressCallback>[0] => ({ ...p, detail: `Settlements ready: ${ready}/${n}` });
     const forward =
       (i: number) =>
       (p: Parameters<ProgressCallback>[0]): void => {
         last[i] = p;
-        if (i === leader) towns[i]?.(p);
+        if (i === leader) towns[i]?.(counted(p));
       };
     const { generateRustTown, releaseUrbanLanes } = await import('./rustUrban');
     let completed = false;
@@ -902,6 +905,8 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
         } catch (error) {
           waiters[i]({ ok: false, error });
         } finally {
+          ready++;
+          if (i !== leader && last[leader]) towns[leader]?.(counted(last[leader]!));
           work.complete(i);
         }
       }
@@ -912,7 +917,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
       for (let i = 0; i < n; i++) {
         leader = i;
         report(towns[i], 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, n);
-        if (last[i]) towns[i]?.(last[i]!);
+        if (last[i]) towns[i]?.(counted(last[i]!));
         const outcome = await outcomes[i];
         if (!outcome.ok) throw outcome.error;
         await buildTown(world, settings, places[i].key, undefined, stages.get(places[i].key), Promise.resolve(outcome.value));

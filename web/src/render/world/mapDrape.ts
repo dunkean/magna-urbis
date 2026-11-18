@@ -175,7 +175,7 @@ export class MapDrape {
       finestTier: dpr => this.finestTier(dpr),
       revision: () => pyramid.revision,
       begin: () => pyramid.begin(),
-      resolve: (tier: number, ix: number, iy: number, priority: number, out: DrapeTile) => pyramid.resolve(tier, ix, iy, priority, out),
+      resolve: (squareTier: number, sx: number, sy: number, tier: number, priority: number, out: DrapeTile) => pyramid.resolve(squareTier, sx, sy, tier, priority, out),
       pageCount: () => (this.state ? 1 : 0),
       page: () => this.state!.array,
     };

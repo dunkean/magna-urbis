@@ -400,11 +400,48 @@ export class GroundProducts implements Ground {
     }
     return this.miniGroundCopy.copy;
   }
-  /** The terrain renderer as the ground layer bakes from it; undefined while it cannot draw the map. */
+  /** The terrain renderer as the ground layer bakes from it, or the CPU raster of a look without relief (topographic,
+   * minimal: paper, sea and crowns), so that such a map is composed, and tilts, like the others; undefined while
+   * neither can draw the map (passes running, an illustrated ground). */
   groundTiles(): GroundTileRenderer | undefined {
     const ground = this.gpu as Partial<GroundTileRenderer> | undefined;
-    return this.gpuActive && ground?.renderWorldTile && ground.contentRevision ? (ground as GroundTileRenderer) : undefined;
+    if (this.gpuActive) return ground?.renderWorldTile && ground.contentRevision ? (ground as GroundTileRenderer) : undefined;
+    const r = this.map.resolved;
+    return r && this.map.world && this.map.native && this.mode() === 'cpu' && !isFantasyStyle(r.ground.style) ? this.rasterTiles : undefined;
   }
+  /** The tiles of the CPU raster: paper, then `base` over the map's square, as the exact frame paints them. */
+  private readonly rasterTiles: GroundTileRenderer = (() => {
+    const canvas = document.createElement('canvas');
+    let base: HTMLCanvasElement | undefined,
+      paper = '',
+      revision = 0;
+    return {
+      renderWorldTile: (box, px) => {
+        const size = this.map.world?.mapSize;
+        if (!size) return undefined;
+        if (canvas.width !== px) canvas.width = px;
+        if (canvas.height !== px) canvas.height = px;
+        const ctx = canvas.getContext('2d')!,
+          scale = px / (box.maxX - box.minX);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = this.map.paper;
+        ctx.fillRect(0, 0, px, px);
+        if (this.base) {
+          ctx.setTransform(scale, 0, 0, scale, -box.minX * scale, -box.minY * scale);
+          ctx.drawImage(this.base, 0, 0, size, size);
+        }
+        return canvas;
+      },
+      contentRevision: () => {
+        if (this.base !== base || this.map.paper !== paper) {
+          base = this.base;
+          paper = this.map.paper;
+          revision++;
+        }
+        return revision;
+      },
+    };
+  })();
   /** Terrain-pass bitmap for 3D; invalidated with the ground, shared without PNG encoding and image decoding. */
   groundBackground(): HTMLCanvasElement | undefined {
     if (this.programWork || this.forestJob || this.programError) return undefined;

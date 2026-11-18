@@ -23,6 +23,21 @@ export const TREE_LATHES: readonly TreeLathe[] = [
 ];
 export const latheVertices = (lathe: TreeLathe): number => lathe.segments * (lathe.stem + lathe.crown.length - 1) * 6;
 
+type Rgb = readonly [number, number, number];
+/** The colours of the trees in a look, uniforms of the vertex shader: the instances carry the satellite's crown colours
+ * (season, autumn hues, leaf fall), and a look that repaints its painted crowns repaints the trees the same way. */
+export interface TreePalette {
+  readonly trunk: Rgb;
+  /** Crowns and trunk repainted by luminance (display RGB, weights .30 .59 .11) on a ramp from `low` to `high` between
+   * luminances `from` and `to`; absent, the colours stay as they are. */
+  readonly repaint?: { readonly low: Rgb; readonly high: Rgb; readonly from: number; readonly to: number };
+}
+/** Satellite: the crown colours of the instances and the 3D view's bark. */
+export const SATELLITE_TREES: TreePalette = { trunk: [0.24, 0.19, 0.14] };
+/** Painted satellite: the woods of its ink and wash ground (applyPaperMap, rust/bridge/terrainMaterialOccupation.ts),
+ * olive by luminance; the trunk a darker bark, so it reads under the crown. */
+export const PAINTED_TREES: TreePalette = { trunk: [0.12, 0.1, 0.07], repaint: { low: [0.16, 0.18, 0.05], high: [0.31, 0.33, 0.12], from: 0.06, to: 0.3 } };
+
 export const WORLD_TREE_VS = `#version 300 es
 precision highp float;
 // x, y relative to the block origin, ground height (m, as the terrain before exaggeration), crown radius; height,
@@ -40,6 +55,12 @@ uniform vec4 uFade;
 // Segments around, stem rings; the profile index of each crown ring.
 uniform ivec2 uLathe;
 uniform int uCrown[6];
+// The look's colours (TreePalette): the trunk; the repaint ramp, low and high colour with their luminance in w, and
+// whether it applies.
+uniform vec3 uTrunk;
+uniform vec4 uRepaintLow;
+uniform vec4 uRepaintHigh;
+uniform int uRepaint;
 out vec3 world;
 out vec3 treeNormal;
 out vec3 tint;
@@ -88,7 +109,8 @@ void main(){
   else {float mid=bottom+(parasol?.72:.4)*(h-bottom),hd=max(.55*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
   vec3 position=vec3(place+local.xz,treeBase.z*uRelief.x+local.y+uBlock.z);
   world=position.xzy;
-  tint=trunk?vec3(.24,.19,.14):treeColor.rgb;
+  tint=trunk?uTrunk:treeColor.rgb;
+  if(uRepaint==1)tint=mix(uRepaintLow.rgb,uRepaintHigh.rgb,smoothstep(uRepaintLow.w,uRepaintHigh.w,dot(tint,vec3(.30,.59,.11))));
   treeLevel=trunk?0.:clamp((y-bottom)/max(h-bottom,.1),0.,1.);
   crownChart=vec4(dir*arc,fract(treeShape.w*.15915494),r);
   crownInfo=vec4(needle?1.:0.,trunk||treeColor.w>.5?1.:0.,trunk?0.:min(load*cap,.95),min(arc/max(r,.1),1.));

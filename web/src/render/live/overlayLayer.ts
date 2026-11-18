@@ -17,6 +17,10 @@
  * Whatever is baked while the view moves is bounded (pixels, two samples); a region made then is a draft, made again
  * at full quality once the view rests.
  * Recording, upload and bake happen in `work`, one step per call (more when the budget allows); `draw` only submits.
+ * A region replaced on screen goes to a small cache (./regionCache.ts) rather than away: a view that comes back to a
+ * region of the same key (scale bucket, pixel ratio, quality, map content) within its rectangle shows it again at
+ * once, nothing recorded. Only a content change ends a cached region: `invalidate`, a key that no longer matches, or for
+ * a region drawn before a product made per view arrived (contour paths, the water raster: `arrivals`), that arrival.
  *
  * A tilted frame (render/world/contract.ts) shows the overlay on the terrain: the layer is not drawn; it gives the map
  * drape a `DrapeSource` that paints the overlay of a tile's square. The region of the frame's top view is still made
@@ -34,6 +38,7 @@ import { CRISP_MARK, type DisplayList } from '../gpu/contract';
 import { createLiveRasterizer } from '../gpu/liveRasterizer';
 import type { BakedPrefix, LivePart } from '../gpu/contract';
 import { clipList, cullList, markIndex, splitList } from '../gpu/listTools';
+import { createRegionCache } from './regionCache';
 
 export interface OverlayPlan {
   key: string;
@@ -50,14 +55,19 @@ export interface OverlayBand {
   cy: number;
   w: number;
   h: number;
+  /** Drawn without a product still being made for the view (contour paths, the water raster): see `arrivals`. */
+  provisional: boolean;
 }
 
 /** What the renderer that owns the map gives the layer (render/cartography/liveHost.ts). */
 interface OverlayHost {
   /** True while the GPU vector engine draws the live map; otherwise the layer is never ready (its stand-in shows). */
   active(): boolean;
-  /** Everything a retained region depends on besides its rectangle; undefined when it cannot be recorded. */
+  /** Everything a retained region depends on besides its rectangle and `arrivals`; undefined when it cannot be recorded. */
   key(scale: number, dpr: number, light: boolean): string | undefined;
+  /** Changes when a product made per view arrives (contour paths, the water raster of the view): a region with a
+   * provisional band, recorded before, is made again; the others stay valid. */
+  arrivals(): number;
   plan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan;
   /** Records one band with the `crisp` mark; undefined when the recorder cannot represent the map. */
   record(plan: OverlayPlan, band: Rect4, light: boolean): OverlayBand | undefined;
@@ -86,6 +96,14 @@ const SNAPSHOT_RATIO = 1.5;
 const SNAPSHOT_AHEAD = 1.25;
 /** A region under way survives the scale steps of a zoom while it stays this close (octaves) to the view's scale. */
 const KEEP_OCTAVES = 1.25;
+/** Regions kept off screen: the baked textures they own (prefixes and snapshots, mipmaps included, BakedPrefix.bytes),
+ * and their count. A region owns at most 4 x BAKE_PIXELS texels of prefixes and 4 x MOVING_PIXELS of snapshots
+ * (5.3 bytes per texel with mipmaps): about 100 MiB at most, 20 to 40 MiB measured for a 1600 x 1000 view at pixel ratio 1. Their list geometry is not counted here: it lives in the
+ * rasterizer's own arena (render/gpu/resources.ts, 256 MiB, least recently used), and a region taken back from the
+ * cache prepares its lists again, which uploads only what that arena has dropped. The count bounds the recorded
+ * lists in the JS heap. */
+const CACHE_BYTES = 128 * 2 ** 20,
+  CACHE_REGIONS = 8;
 
 /** Scale of a drape tile over the scale of the region shown, between which the region's lists paint the tile. The
  * tiles of the view's own tier are within 0.75 to 1.5 of the view's scale, and the region within a quarter octave. */
@@ -127,6 +145,9 @@ interface Region extends OverlayPlan {
   building?: Band;
   /** Made while the view moved, with bounded bakes: shown, and made again at full quality once the view rests. */
   draft: boolean;
+  /** A band was drawn without a product still being made; `arrivals` was this when the region began. */
+  provisional: boolean;
+  arrivals: number;
 }
 
 const covers = (outer: Rect4, inner: Rect4): boolean => outer.minX <= inner.minX && outer.minY <= inner.minY && outer.maxX >= inner.maxX && outer.maxY >= inner.maxY;
@@ -179,6 +200,18 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     failed: 0,
     bakeMs: 0,
     recordMs: 0,
+    // Since the start: regions begun, bands recorded, regions shown again from the cache; the last of those took
+    // restoreMs to prepare its lists again; the cache emptied by `invalidate`, cached regions dropped for a key that no
+    // longer matches (map content) or overtaken by an arrival (provisional); and the cache now.
+    regions: 0,
+    recorded: 0,
+    cacheHits: 0,
+    restoreMs: 0,
+    cacheCleared: 0,
+    cacheExpired: 0,
+    cacheOvertaken: 0,
+    cached: 0,
+    cacheBytes: 0,
   };
   const refresh = (): void => {
     const r = shown;
@@ -198,6 +231,8 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     stats.draft = r?.draft ? 1 : 0;
     stats.pending = pending ? 1 : 0;
     stats.bytes = raster.bytes();
+    stats.cached = cache.size;
+    stats.cacheBytes = cache.bytes;
   };
 
   const releaseBand = (b: Band | undefined): void => {
@@ -215,6 +250,24 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     region.live.length = 0;
     region.building = undefined;
   };
+  const regionBytes = (r: Region): number => r.parts.reduce((sum, b) => sum + (b.baked?.bytes ?? 0) + (b.snapshot?.bytes ?? 0), 0);
+  const cache = createRegionCache<Region>(CACHE_BYTES, CACHE_REGIONS, regionBytes, release);
+  /** `a` makes `b` useless: the same key over at least its rectangle, and no worse (a draft never replaces a full region). */
+  const supersedes = (a: Region, b: Region): boolean => a.key === b.key && covers(a.rect, b.rect) && (b.draft || !a.draft);
+  /** The products made per view that `r` drew without have not arrived since it began (or it lacked none). */
+  const current = (r: Region): boolean => !r.provisional || r.arrivals === host.arrivals();
+  /** Shows `next` (complete) in place of the region shown, which goes to the cache unless stale or held by `next`. */
+  const show = (next: Region): void => {
+    const old = shown;
+    shown = next;
+    needSince = -1;
+    cache.drop(r => supersedes(next, r));
+    if (old && old !== next) {
+      if (old.stale || supersedes(next, old)) release(old);
+      else cache.put(old);
+    }
+    host.invalidate();
+  };
   const dropPending = (): void => {
     if (pending) {
       release(pending);
@@ -227,6 +280,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     release(shown);
     shown = undefined;
     dropPending();
+    cache.clear(true);
     // A lost context is the compositor's to report (`contextLost`), not a fault of this layer.
     if (lost) return;
     failed = error instanceof Error ? error.message : String(error);
@@ -256,7 +310,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
    * recorded at about the tile's scale. */
   const regionFor = (tile: DrapeCanvas): Region | undefined => {
     const r = shown;
-    return r && !r.stale && !r.draft && r.dpr === tile.dpr && r.light === tile.light && covers(r.rect, tile.rect) && reusable(tile.scale / r.scale) && r.key === host.key(r.scale, r.dpr, r.light) ? r : undefined;
+    return r && !r.stale && !r.draft && current(r) && r.dpr === tile.dpr && r.light === tile.light && covers(r.rect, tile.rect) && reusable(tile.scale / r.scale) && r.key === host.key(r.scale, r.dpr, r.light) ? r : undefined;
   };
   /** Replays the lists of `r` into the tile, as `draw` replays them into a frame; false when the tile has no group. */
   const replayInto = (tile: DrapeCanvas, r: Region): boolean => {
@@ -287,7 +341,8 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
   };
   const drape: DrapeSource = {
     revision(): number {
-      const key = failed || raster.lost || !host.active() ? undefined : host.key(1, 1, false);
+      // The tiles hold what the products made per view gave when they were painted: an arrival repaints them.
+      const key = failed || raster.lost || !host.active() ? undefined : `${host.key(1, 1, false)}|${host.arrivals()}`;
       if (key !== drapeKey) {
         drapeKey = key;
         drapeRevision++;
@@ -378,13 +433,10 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       blocked = true;
       return false;
     }
-    // Every prefix baked, every list uploaded: the textures of the region shown go.
-    release(shown);
-    shown = p;
+    // Every prefix baked, every list uploaded: the region shown makes way.
     pending = undefined;
-    needSince = -1;
     raster.releaseBakeScratch();
-    host.invalidate();
+    show(p);
     return true;
   };
   /** One step of the region being made. True when it ended (complete and shown, or dropped). */
@@ -395,12 +447,14 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       const t = host.now(),
         made = host.record(p, p.bands[p.parts.length], p.light);
       stats.recordMs = Math.max(stats.recordMs, host.now() - t);
+      stats.recorded++;
       if (!made) {
         failedKey = p.key;
         dropPending();
         return true;
       }
       p.building = bandOf(made, p.light);
+      if (made.provisional) p.provisional = true;
       return false;
     }
     if (b.stage === 0) {
@@ -460,9 +514,30 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     }
     const cur = shown;
     // A draft serves while the view moves; at rest it is made again at full quality.
-    if (cur && !cur.stale && (!cur.draft || moving) && cur.key === key && cur.dpr === frame.dpr && covers(cur.rect, frame.rect)) {
+    const fits = (r: Region): boolean => !r.stale && (!r.draft || moving) && current(r) && r.key === key && r.dpr === frame.dpr && covers(r.rect, frame.rect);
+    if (cur && fits(cur)) {
       dropPending();
       needSince = -1;
+      return false;
+    }
+    // A region kept from a moment ago is shown again (a full one before a draft). Its lists are prepared again here:
+    // what the rasterizer's arena dropped meanwhile is uploaded now, not by a frame. A region whose key no longer
+    // matches the host's at its own scale was made for another map content, a provisional one has been overtaken by
+    // an arrival: it goes.
+    cache.drop(r => {
+      if (r.key !== host.key(r.scale, r.dpr, r.light)) stats.cacheExpired++;
+      else if (!current(r)) stats.cacheOvertaken++;
+      else return false;
+      return true;
+    });
+    const kept = cache.take(r => fits(r) && !r.draft) ?? cache.take(fits);
+    if (kept) {
+      const t = host.now();
+      for (const b of kept.parts) raster.prepare(b.suffix);
+      stats.restoreMs = host.now() - t;
+      stats.cacheHits++;
+      dropPending();
+      show(kept);
       return false;
     }
     if (needSince < 0) needSince = start;
@@ -475,7 +550,8 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       // Nothing starts while the view moves, unless nothing can be shown or the gesture lasts: each band is a long task.
       const nothing = !cur || cur.dpr !== frame.dpr;
       if (!nothing && start - movedAt < host.settleMs && start - needSince < host.maxWaitMs) return true;
-      pending = { ...host.plan(view, frame.cssW, frame.cssH, frame.dpr, key), light, stale: false, parts: [], live: [], draft: false };
+      pending = { ...host.plan(view, frame.cssW, frame.cssH, frame.dpr, key), light, stale: false, parts: [], live: [], draft: false, provisional: false, arrivals: host.arrivals() };
+      stats.regions++;
     }
     blocked = false;
     for (let p = pending; p && pending === p;) {
@@ -513,6 +589,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     if (key === undefined || key === failedKey) return 'not recordable';
     if (!r) return 'no region';
     if (r.stale || r.draft) return r.stale ? 'stale' : 'draft';
+    if (!current(r)) return 'provisional';
     if (r.dpr !== frame.dpr || !covers(r.rect, frame.rect)) return 'not covered';
     if (r.key !== key) return 'other scale';
     return beyond(frame.worldToPixel[0] / (r.scale * r.dpr), SNAPSHOT_RATIO) ? 'far' : '';
@@ -638,6 +715,8 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     invalidate(): void {
       if (shown) shown.stale = true;
       dropPending();
+      if (cache.size) stats.cacheCleared++;
+      cache.clear(true);
       failedKey = undefined;
       drapeRevision++;
     },
@@ -654,6 +733,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         pending.building = undefined;
       }
       shown = pending = undefined;
+      cache.clear(false);
       failed = '';
       stats.failed = 0;
       needSince = -1;
@@ -663,6 +743,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     dispose(): void {
       release(shown);
       release(pending);
+      cache.clear(true);
       shown = pending = undefined;
       raster.dispose();
     },

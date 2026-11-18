@@ -13,7 +13,7 @@ import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
 import { TREES_BLOCK, treeBlockSteps, treeDrawCount, treeInputsKey, treeLathe } from './treesBlocks';
-import { TREE_LATHES, WORLD_TREE_FS, WORLD_TREE_VS, latheVertices } from './treesShader';
+import { SATELLITE_TREES, TREE_LATHES, WORLD_TREE_FS, WORLD_TREE_VS, latheVertices, type TreePalette } from './treesShader';
 import { VOLUME_LIGHT, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 
 export interface WorldTreesOptions {
@@ -28,6 +28,8 @@ export interface WorldTreesOptions {
   shown(): boolean;
   /** Night ambience: the trees take the night tint. */
   night?(): boolean;
+  /** The colours of the look (SATELLITE_TREES when absent): uniforms, so a change of look rebuilds no block. */
+  palette?(): TreePalette;
   /** GPU memory the blocks may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a frame (a wanted block was built). */
@@ -37,7 +39,7 @@ export interface WorldTreesOptions {
 const BUDGET_BYTES = 32 * 1024 * 1024;
 /** Blocks a frame may want or draw: (2 x 1500 m / 96 m + 2)^2. */
 const MAX_BLOCKS = 1100;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uLathe', 'uCrown', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uLathe', 'uCrown', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 const CROWNS = TREE_LATHES.map(lathe => Int32Array.from({ length: 6 }, (_, i) => lathe.crown[i] ?? 5));
 const VERTICES = TREE_LATHES.map(latheVertices);
@@ -62,9 +64,9 @@ interface Building {
 }
 
 export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: WorldTreesOptions): VolumeLayer {
-  /** `instances` drawn, `blocks` drawn, `bytes` on the GPU, `blockMs` build time of the last block, `sliceMs` the
-   * longest work slice so far. */
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, blocks: 0, bytes: 0, blockMs: 0, sliceMs: 0 };
+  /** `instances` drawn, `blocks` drawn, `bytes` on the GPU, `built` blocks built so far, `blockMs` build time of the
+   * last block, `sliceMs` the longest work slice so far. */
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, blocks: 0, bytes: 0, built: 0, blockMs: 0, sliceMs: 0 };
   const volume = new ViewVolume();
   const slots = new Map<number, Slot>();
   const wantKey = new Float64Array(MAX_BLOCKS),
@@ -206,6 +208,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         if (step.done) {
           upload(building.key, step.value);
           stats.blockMs = building.ms;
+          stats.built++;
           building = undefined;
           if (frame?.camera.tilted) options.invalidate();
         }
@@ -289,6 +292,14 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           gl.uniform3f(u.treeLight, LIGHT[0], LIGHT[1], LIGHT[2]);
           gl.uniform1f(u.fogDistance, hazeDistance(camera));
           gl.uniform1i(u.uNight, options.night?.() ? 1 : 0);
+          const palette = options.palette?.() ?? SATELLITE_TREES,
+            repaint = palette.repaint;
+          gl.uniform3f(u.uTrunk, palette.trunk[0], palette.trunk[1], palette.trunk[2]);
+          gl.uniform1i(u.uRepaint, repaint ? 1 : 0);
+          if (repaint) {
+            gl.uniform4f(u.uRepaintLow, repaint.low[0], repaint.low[1], repaint.low[2], repaint.from);
+            gl.uniform4f(u.uRepaintHigh, repaint.high[0], repaint.high[1], repaint.high[2], repaint.to);
+          }
           for (let lathe = 0; lathe < TREE_LATHES.length; lathe++) {
             let set = false;
             for (let i = 0; i < drawnCountTotal; i++) {

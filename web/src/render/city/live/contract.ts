@@ -37,7 +37,8 @@ export function liveCityBlock(appearance: ResolvedAppearance, visibility: Partia
   const c = appearance.composition;
   // Partial exports keep Canvas 2D, which honours each layer switch.
   if (visibility?.city === false || visibility?.roads === false || visibility?.streets === false) return 'export-layers';
-  if (c.landuse.urban !== 'off') return 'urban-landuse';
+  // An urban land use is drawn without its tint (restCoverage: the town at rest is the Canvas town's): blocked, a look
+  // such as the cadastre would show no town while the view moves nor in a tilted view.
   if (appearance.underdark || c.ambience === 'night') return 'night';
   return null;
 }

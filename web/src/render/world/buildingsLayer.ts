@@ -32,6 +32,8 @@ export interface WorldBuildingsOptions {
   appearance(): UrbanBuildingAppearance;
   /** The relief of the map, the draped ground's; undefined: nothing to stand on yet. */
   terrain(): TerrainHeights | undefined;
+  /** A fast look: the buildings are drawn as boxes however near (blockLevel). */
+  boxed?(): boolean;
   /** GPU memory the block levels may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a frame (a wanted level was built). */
@@ -266,7 +268,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           ty = camera.target[1],
           tz = camera.target[2],
           rise = camera.rise,
-          focal = camera.focal / frame.dpr;
+          focal = camera.focal / frame.dpr,
+          boxed = options.boxed?.() ?? false;
         for (let s = 0; s < slots.length; s++) {
           const slot = slots[s],
             b = slot.block,
@@ -280,7 +283,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           const depth = volume.depth(x, y, z);
           // Under about a third of a pixel: nothing to see (the 3D view's rule).
           if (depth > radius && (radius * focal) / depth < 0.35) continue;
-          const want = blockLevel(b, (b.width * focal) / Math.max(1, depth - radius), slot.shown >= 0 ? slot.shown : slot.want);
+          const want = blockLevel(b, (b.width * focal) / Math.max(1, depth - radius), slot.shown >= 0 ? slot.shown : slot.want, boxed);
           slot.want = want;
           // Under a pixel: the drape shows the town plan.
           if (want === blockHidden(b)) {

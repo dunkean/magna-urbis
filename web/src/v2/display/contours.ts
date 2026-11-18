@@ -14,7 +14,7 @@ import { effectiveTerrainSettings } from '../terrainSettings';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
 import { contourDrawOf } from '../../render/composition';
 import type { Rect } from '../../render/tileindex';
-import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsReady } from '../../render/cityContours';
+import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsPending, cityContourPathsReady } from '../../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../render/strokes';
 import type { Contours } from './contract';
 import type { MapState } from './mapState';
@@ -125,6 +125,16 @@ export class ContourInk implements Contours {
     if (!topographic && mode.detail === 'zoom') cityFineContours(terrain, look.landform, scale, box);
     await cityContourPathsReady(terrain, look.landform, scale, topographic, mode.detail, mode.sparse);
     while (cityContoursPending(terrain)) await new Promise(resolve => setTimeout(resolve, 16));
+  }
+  pendingAt(mpp: number): boolean {
+    const look = this.contourLook();
+    if (!look) return false;
+    const topographic = this.map.resolved!.composition.recipe.ground.variant === 'topographic',
+      mode = contourDrawOf(this.map.resolved!.composition.recipe);
+    // Other sets (fine blocks, ordinary zoom levels) are traced synchronously when painted: never missing.
+    if (!topographic && mode.detail !== 'fixed') return false;
+    // The fixed set has no scale (its key ignores it); scale 0 also keeps out the fine blocks warming for the view.
+    return cityContourPathsPending(this.map.native!, look.landform, mode.detail === 'fixed' ? 0 : 1 / mpp, topographic, mode.detail, mode.sparse);
   }
   /** Contours are drawn on the vector overlay, above the land-use tints and the parchment backdrop that would hide a ground-shader line. */
   contourLook(): { landform: string } | undefined {

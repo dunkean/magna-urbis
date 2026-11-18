@@ -255,6 +255,7 @@ describe('town look: one description for both renderers', () => {
       buildings: false,
       farRaster: false,
       canopyClearing: false,
+      urbanLanduse: false,
       diagnostics: false,
       overPass: false,
       content,
@@ -263,6 +264,7 @@ describe('town look: one description for both renderers', () => {
     // Strict: anything the Canvas town paints differently keeps its repaint.
     expect(townRestGaps({ ...rest, content: { ...content, waterways: true } })).toContain('canals at full strength over the town');
     expect(townRestGaps({ ...rest, dpr: 2 })).toContain('outlines wider than a device pixel');
+    expect(townRestGaps({ ...rest, urbanLanduse: true })).toContain('urban land-use tint');
     expect(townRestGaps({ ...rest, palette: 'terrain', streets: 'natural', lod: 'near', mpp: 1.2, buildings: true }).length).toBeGreaterThan(2);
   });
 });

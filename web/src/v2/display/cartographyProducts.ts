@@ -62,6 +62,12 @@ export class CartographyProducts implements Cartography {
   /** Dormant renderers of other looks. */
   private retained = new RetainedBudget();
   private landRaster?: { terrain: TerrainData; raster: SettlementRaster };
+  /** For the renderer's semantic hook (render/cartography/contract.ts `arrivals`, `provisional`): the water rasters
+   * (view, whole map) last seen and how many have arrived, the draws made without a product still being made. */
+  private semanticWaterView?: object;
+  private semanticWaterBase?: object;
+  private semanticWaterViews = 0;
+  private provisionalDraws = 0;
 
   constructor(
     private readonly map: MapState,
@@ -198,6 +204,8 @@ export class CartographyProducts implements Cartography {
     this.map.stats.cartographyUpdate = 'rebuilt';
     const map = this.map;
     const palette = { ...biomePalette(r.palette.mapStyle, world.options.biome), frameKind: 'none' as const, ...(layers.decor === false ? { grid: null } : {}) };
+    const semanticLook = (): string =>
+      `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}`;
     this.renderer = createCanvasRenderer(this.overlay, shown, palette, {
       colors: r.palette.colors,
       separateText: true,
@@ -217,11 +225,28 @@ export class CartographyProducts implements Cartography {
       },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: {
-        key: () =>
-          `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}:${this.parts.contours.revision}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey(), this.parts.water.vectorView?.region]) : ''}`,
+        key: () => `${semanticLook()}|${this.parts.contours.revision}|${this.parts.water.waterAboveLand() ? JSON.stringify(this.parts.water.vectorView?.region) : ''}`,
+        look: semanticLook,
+        arrivals: () => {
+          const water = this.parts.water;
+          if (water.waterAboveLand() && (water.vectorView !== this.semanticWaterView || water.vectorBase !== this.semanticWaterBase)) {
+            this.semanticWaterView = water.vectorView;
+            this.semanticWaterBase = water.vectorBase;
+            this.semanticWaterViews++;
+          }
+          return this.parts.contours.revision + this.semanticWaterViews;
+        },
+        provisional: () => this.provisionalDraws,
         draw: (ctx, rect, mpp, quality) => {
           this.paintRural(ctx, rect, mpp, quality === 'light');
           this.parts.water.cutWater(ctx, rect);
+          // Contour paths still in the worker, or a finer water mask on its way (cutWater used the whole-map raster, or
+          // nothing, while the raster of the view is made): this draw is redone when they arrive. A mask that is final
+          // for the view (the view's raster, or the whole-map one with no request in flight) does not move.
+          const water = this.parts.water,
+            view = water.vectorView?.region,
+            covered = !!view && view.x <= rect.minX && view.y <= rect.minY && view.x + view.width >= rect.maxX && view.y + view.height >= rect.maxY;
+          if (this.parts.contours.pendingAt(mpp) || (water.waterAboveLand() && !!water.vectors && !covered && (!water.vectorBase || water.vectorPending))) this.provisionalDraws++;
         },
         legend: () => this.semanticLegend(),
       },

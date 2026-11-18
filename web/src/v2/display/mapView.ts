@@ -16,7 +16,7 @@
  * (`data-camera="tilt"`), which then lets the camera tilt; under the fallback view the camera stays the top view.
  *
  * Loading never moves the camera nor changes the view in charge. The fallback view takes over for its own cases only
- * (no hardware WebGL2, a CPU or illustrated ground, a lost context, `?display=fallback`); a wait that ends by itself
+ * (no hardware WebGL2, an illustrated ground, a lost context, `?display=fallback`); a wait that ends by itself
  * (the ground of a new terrain baking its first tiles) leaves the composed view in charge with its last picture on
  * screen, whole, until it can compose again: the new terrain is never drawn with what the previous one left.
  */

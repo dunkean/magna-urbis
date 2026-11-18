@@ -209,11 +209,11 @@ const YARD_HIDDEN = 0.25,
   YARD_SHOWN = 0.35;
 
 /** Level a block wants for `pixels`, the screen size of its mean building (CSS px; per metre for yards), given the level
- * it shows now. */
-export function blockLevel(block: BuildingBlock, pixels: number, current: number): number {
+ * it shows now. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. */
+export function blockLevel(block: BuildingBlock, pixels: number, current: number, boxed = false): number {
   const hidden = blockHidden(block);
   if (block.yard) return pixels < (current === hidden ? YARD_SHOWN : YARD_HIDDEN) ? hidden : yardLod(pixels, Math.min(current, hidden - 1));
-  let level = 0;
-  for (let i = 0; i < COARSER.length; i++) if (pixels < (current > i ? FINER[i] : COARSER[i])) level = i + 1;
+  let level = boxed ? BOX_LEVEL : 0;
+  for (let i = level; i < COARSER.length; i++) if (pixels < (current > i ? FINER[i] : COARSER[i])) level = i + 1;
   return level;
 }

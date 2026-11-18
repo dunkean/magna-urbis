@@ -104,7 +104,7 @@ export class ComposedView {
   /** No WebGL2, a software renderer or a layer factory that threw: `blocked` for good. */
   private refused = false;
   /** The objects the live layers were made from: a new terrain renderer, cartography or city map gets new layers. */
-  private owners: { gpu?: TerrainRenderer; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; volumes?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
+  private owners: { gpu?: TerrainRenderer; terrain?: TerrainData; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; volumes?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
   /** The compositor's canvas and the exact canvases are in the page. */
   private onPage = false;
   /** Off the page, waiting for the first tile of the ground layer: its baking goes on. */
@@ -202,8 +202,9 @@ export class ComposedView {
     const r = map.resolved;
     if (!r || !map.world) return 'no map';
     if (r.target !== 'view2d') return 'not the 2D view';
-    if (!ground.gpuActive || !ground.gpu) return 'CPU ground';
     if (ground.fantasy || isFantasyStyle(r.ground.style)) return 'illustrated ground';
+    // The GPU terrain renderer, or the CPU raster of a look without relief (GroundProducts.groundTiles).
+    if (!ground.groundTiles()) return 'CPU ground';
     const live = (this.live ??= createLiveCompositor({ invalidate: map.compose, quality: getDisplayQuality, relief: () => this.relief(), mapSize: () => map.world?.mapSize ?? 0 }));
     if (!live) {
       this.refused = true;
@@ -231,10 +232,13 @@ export class ComposedView {
       owners = this.owners,
       map = this.map,
       { ground, cartography, town } = this.parts;
-    if (owners.gpu !== ground.gpu) {
+    // One ground layer per terrain and renderer: the baked tiles of another terrain must never show under this one (a
+    // stale tile is only a fair stand-in for the same terrain in another look).
+    if (owners.gpu !== ground.gpu || owners.terrain !== map.native) {
       owners.gpu = ground.gpu;
+      owners.terrain = map.native;
       owners.ground = false;
-      live.setLayer('ground', ground.gpu ? createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), invalidate: map.compose }) : undefined);
+      live.setLayer('ground', createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), invalidate: map.compose }));
     }
     // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also
     // restarts the compositor's work loop.
@@ -271,9 +275,6 @@ export class ComposedView {
     if (!live) return;
     // Another ground style or terrain: the rasters of the previous map must not stand in for this one.
     if (before.resolved?.ground.style !== r.ground.style || before.native !== this.map.native) live.clearStandIns();
-    // Another terrain: the baked tiles of the previous map must never show under this one (a stale tile is only a
-    // fair stand-in for the same terrain in another look). The next frame makes a new ground layer.
-    if (before.native !== this.map.native) this.owners.gpu = undefined;
     // The terrain pass takes the renderer away while it runs (gpuActive), and the ground layer's work stops without
     // one: its tiles are marked stale (they keep showing until re-baked) and the work loop starts again.
     if (ran.includes('terrainData')) live.invalidateLayer('ground');

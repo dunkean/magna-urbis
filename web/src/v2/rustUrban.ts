@@ -12,7 +12,7 @@ import type { RustRegionSnapshot } from './region';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
 import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
-import type { V2Settings, V2TownStage, ProgressCallback, V2UrbanControls, V2UrbanSettings } from './contracts';
+import type { V2Settings, V2TownStage, ProgressCallback, V2Progress, V2UrbanControls, V2UrbanSettings } from './contracts';
 import { forCellsNearPolyline } from '../gen/core/field';
 import { layoutFortification } from '../gen/options';
 import { differenceS } from '../gen/geo/bool';
@@ -397,7 +397,12 @@ export async function generateRustTown(
   const stageIndex = ['layout', 'parcels', 'programme', 'buildings'].indexOf(target);
   if (stageIndex < 0) throw new Error('Étape urbaine inconnue.');
   const runtime = backend === 'native' ? { profile: 'local' as const, server: settings.runtime?.localServer ?? 'http://127.0.0.1:8791' } : undefined;
-  const report = (stage: string, label: string, completed: number, total = 5): void => onProgress?.({ stage, label, completed, total });
+  // The last stage label: a request that shows the engine loading or the terrain upload restores it afterwards.
+  let shown: V2Progress | undefined;
+  const report = (stage: string, label: string, completed: number, total = 5): void => {
+    shown = { stage, label, completed, total };
+    onProgress?.(shown);
+  };
   const previous = (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[key];
   const roads = townRoadStreets(world);
   const seed = urbanSeed(settings, key, 'composition'),
@@ -420,8 +425,10 @@ export async function generateRustTown(
     let raster: SettlementRaster | undefined;
     const engineKey = `${backend}|${runtime?.server ?? ''}${lane === undefined ? '' : `|lane${lane}`}`;
     let retained = engines.get(engineKey);
+    let resume: V2Progress | undefined;
     if (!retained) {
-      report('urban-engine', `Chargement du moteur urbain ${backend === 'native' ? 'Rust natif' : 'Rust/WASM'}…`, 0);
+      resume = shown;
+      report('urban-engine', backend === 'native' ? 'Loading the native Rust urban engine…' : 'Loading the Rust/WASM urban engine…', 0);
       const module = await import('../../../rust/bridge/urban');
       retained = { engine: module.createUrbanEngine(runtime) };
       engines.set(engineKey, retained);
@@ -446,6 +453,15 @@ export async function generateRustTown(
       });
       break;
     }
+    if (raster) {
+      resume ??= shown;
+      report('urban-terrain', 'Sending the terrain to the urban engine…', 0);
+    }
+    const resumed = (): void => {
+      if (resume) report(resume.stage, resume.label, resume.completed, resume.total);
+      resume = undefined;
+    };
+    if (!raster) resumed();
     // Native session chain: send handles for the products the engine already holds (never with a terrain upload).
     const held = backend === 'native' && !raster ? retained : undefined;
     let input = extras;
@@ -485,7 +501,7 @@ export async function generateRustTown(
     const { visuals: _visuals, ...plain } = extras;
     extras = plain;
     try {
-      const pending = engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...input } as Parameters<UrbanEngine['run']>[0]);
+      const pending = engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...input } as Parameters<UrbanEngine['run']>[0], { terrainSent: resumed });
       if (kind === 'quarters' && backend === 'native') {
         // The engine composes the town on its own thread: meanwhile this worker computes the raster-only fields of the
         // land-use stage that follows (finishTowns), once the request has left (one macrotask).
@@ -497,6 +513,7 @@ export async function generateRustTown(
         }
       }
       let result = await pending;
+      resumed();
       // An engine without the retained chain (or a session evicted meanwhile): upload the geometry as before.
       if (result.error && input !== extras && !heldPartitions.has(extras.partitions as Partition[])) result = await engine.run({ id: 1, kind, seed, runtime, ...extras });
       // Parcels, programme and built capacity reply with a binary pack: the snapshot and the projection read objects
@@ -528,7 +545,7 @@ export async function generateRustTown(
     const site = cityNamedSite({ key, name: place.name, population: options.population, culture: options.culture, center: place.center, radius: place.radius }, world.seed, options.language);
     const inputs = { sites: [neighbours.length ? { ...site, neighbours } : site], roads };
     if (!snapshot.compositionLayouts) {
-      report('urban-layout', 'Rust · urban composition…', 0);
+      report('urban-layout', `Rust · urban composition… (${place.name ?? key})`, 0);
       snapshot.compositionLayouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: config.layout }), 'layouts');
     }
     snapshot.compositionKey = compositionKey;

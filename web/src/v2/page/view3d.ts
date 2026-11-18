@@ -3,8 +3,8 @@
  * line it shares.
  *
  * The map has one camera: the "3D" button eases it to a tilt and back to the top view, and its label and pressed
- * state follow the camera however it was tilted (`mountTiltButton`). While tilted, the controls beside it: the modelled
- * trees (worldTrees.ts), the navigation and the PNG of the view (worldNavigation.ts).
+ * state follow the camera however it was tilted (`mountTiltButton`). While tilted, the separate 3D view's bar at the end
+ * of the toolbar, with the navigation (worldNavigation.ts) and the modelled trees (worldTrees.ts), and the PNG of the view.
  *
  * With `?camera=dual` (render/live/policy.ts, temporary) the button opens the separate 3D view instead, as it did:
  * loaded on first use, cancellable by a click on "2D" while it loads, with its PNG capture. That part goes with the
@@ -70,8 +70,9 @@ export function mountView3d(state: PageState, actions: PageActions): void {
 
   if (!dualCameras()) {
     mountTiltButton(state, actions);
-    mountWorldTreeControls(state, actions);
+    // The navigation makes the bar the trees' controls join.
     mountWorldNavigation(state, actions);
+    mountWorldTreeControls(state, actions);
     return;
   }
 

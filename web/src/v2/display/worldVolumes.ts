@@ -35,6 +35,7 @@ import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { WorldBuildingsOptions } from '../../render/world/buildingsLayer';
 import type { TerrainHeights } from '../../render/world/heights';
 import type { WorldTreesOptions } from '../../render/world/treesLayer';
+import { PAINTED_TREES, SATELLITE_TREES, type TreePalette } from '../../render/world/treesShader';
 import type { City3dGround } from '../../ui/city3d';
 import { clampTreeDistance, TREE_DISTANCE_DEFAULT, type TreeInputs } from '../../ui/terrain3dTrees';
 import { renderV2ZoneUniform } from '../../../../rust/bridge/terrainRenderV2Zones';
@@ -49,8 +50,9 @@ import type { MapState } from './mapState';
 
 type TreeSource = Omit<TreeInputs, 'height'>;
 type Ground = ReturnType<typeof v2Terrain3dGround>;
-/** The satellite looks model their near trees; the others paint or draw their forest. */
-const treesInLook = (ground: Ground, resolved: ResolvedAppearance): ground is NonNullable<Ground> => !!ground && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy;
+/** The satellite looks model their near trees; the others paint or draw their forest, and the fast satellite keeps to
+ * its painted crowns. */
+const treesInLook = (ground: Ground, resolved: ResolvedAppearance): ground is NonNullable<Ground> => !!ground && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy && resolved.quality !== 'light';
 /** Whether the look of the map has modelled trees: the page offers the "3D trees" switch only then. */
 export function worldTreesAvailable(world: World | undefined, settings: V2Settings | undefined): boolean {
   if (!world || !settings) return false;
@@ -72,6 +74,8 @@ export class WorldVolumes {
   private distance = TREE_DISTANCE_DEFAULT;
   private treesOn = false;
   private night = false;
+  /** The trees' colours in the look on screen, as its painted crowns take theirs. */
+  private palette: TreePalette = SATELLITE_TREES;
   /** What the products were made for: the map (`content`: MapState.townContent, bumped by every set()), the relief. */
   private madeFor: { world?: World; content: number; resolved?: ResolvedAppearance; heights?: TerrainHeights } = { content: -1 };
   /** What the town was composed from, besides the world and the relief. */
@@ -95,6 +99,8 @@ export class WorldVolumes {
       },
       appearance: () => this.appearance,
       terrain: relief,
+      // The fast looks draw the town as boxes.
+      boxed: () => map.resolved?.quality === 'light',
       invalidate: map.compose,
     };
     this.trees = {
@@ -106,6 +112,7 @@ export class WorldVolumes {
       distance: () => this.distance,
       shown: () => this.treesOn,
       night: () => this.night,
+      palette: () => this.palette,
       invalidate: map.compose,
     };
   }
@@ -130,6 +137,7 @@ export class WorldVolumes {
     const r = v2Resolved3d(settings, world),
       ground = v2Terrain3dGround(world, settings, resolved.traits.ground3d ? (resolved.styleId as City3dGround) : 'map');
     this.night = r.composition.ambience === 'night';
+    this.palette = ground?.paperMap ? PAINTED_TREES : SATELLITE_TREES;
     this.job = this.compose(world, r, resolved, heights, ground);
     this.schedule();
   }

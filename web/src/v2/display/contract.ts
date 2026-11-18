@@ -109,6 +109,8 @@ export interface Contours {
   readonly revision: number;
   /** Paths still being computed. */
   pending(): number;
+  /** The set `paintContours` draws at `mpp` is still in the worker (it draws the last set, or none, meanwhile). */
+  pendingAt(mpp: number): boolean;
   /** The landform the contours are drawn for; undefined when the look has none. */
   contourLook(): { landform: string } | undefined;
   /** Resolves once the paths of this scale and box are computed. */

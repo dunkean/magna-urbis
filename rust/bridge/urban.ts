@@ -320,8 +320,12 @@ export interface UrbanResponse {
   /** Browser WASM execution mode that produced this response (threads/single/pool). */
   wasm?: WasmThreadsInfo;
 }
+/** `terrainSent`: called once a native request's terrain upload is done, before the engine computes. */
+export interface UrbanRunHooks {
+  terrainSent?: () => void;
+}
 export interface UrbanEngine {
-  run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse>;
+  run(request: UrbanRequest, hooks?: UrbanRunHooks): UrbanResponse | Promise<UrbanResponse>;
   /** Native only: free this engine's retained session. */ release?(runtime: ExecutionRuntime): Promise<void>;
 }
 
@@ -764,7 +768,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       pendingRaster = terrainRaster = undefined;
       await native.release(runtime);
     },
-    run(request) {
+    run(request, hooks) {
       if (request.source) {
         try {
           validateUrbanSource(request.source);
@@ -788,6 +792,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
             await native.raw('/urban', {
               ...nativeUrbanInput(request),
               runtime: request.runtime!,
+              ...(hooks?.terrainSent ? { onRasterSent: hooks.terrainSent } : {}),
               ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
               ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) } : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
             }),

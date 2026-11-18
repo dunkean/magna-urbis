@@ -66,7 +66,17 @@ export interface CanvasRendererDeps {
   /** Natural layers owned by another pass (no fabricated world): they are neither built nor drawn. Absent = all. */
   mask?: SceneMask;
   /** Semantic land use of another pass, painted after the land-use layers and before water, roads and labels. `key` joins the raster tile keys, so a new look repaints the tiles; `draw` gets the world-coordinate context, the culling rect and the world units per screen pixel. */
-  semantic?: { key(): string; draw(ctx: CanvasRenderingContext2D, rect: Rect4, mpp: number, quality?: ResolvedDisplayQuality): void; legend?(): readonly SemanticLegendEntry[] };
+  semantic?: {
+    key(): string;
+    /** `key` without the products made per view (contour paths from the worker, the water raster of the view): a rectangle drawn with all of them in hand stays valid while only those move. The live overlay keys its regions on it (cartography/liveHost.ts). */
+    look(): string;
+    /** Changes when a product made per view arrives. */
+    arrivals(): number;
+    /** Draws so far that lacked a product still being made (contour paths in the worker, a water mask coarser than the view's): what such a draw recorded is redone when `arrivals` changes. */
+    provisional(): number;
+    draw(ctx: CanvasRenderingContext2D, rect: Rect4, mpp: number, quality?: ResolvedDisplayQuality): void;
+    legend?(): readonly SemanticLegendEntry[];
+  };
 }
 
 export interface FrameStats {

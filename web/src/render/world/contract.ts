@@ -100,10 +100,11 @@ export interface DrapeTiles {
   revision(): number;
   /** A tilted frame is about to name the tiles it shows: the list of the previous one is dropped. */
   begin(): void;
-  /** The baked tile that shows the square (tier, ix, iy): that tile, or the matching part of its nearest baked
-   * ancestor (never a hole once tier 0 is baked). False when nothing is baked. Marks what it returns as shown and
-   * asks for the tile itself when it is missing or stale, `priority` lowest first. */
-  resolve(tier: number, ix: number, iy: number, priority: number, out: DrapeTile): boolean;
+  /** The baked tile that shows the square (squareTier, sx, sy) of the frame, wanted at `tier` (<= squareTier): that
+   * tile, else the nearest baked tile holding the square (tilePyramid.ts findTile; never a hole once tier 0 is
+   * baked), `out` being the part of it under the square. False when nothing is baked. Marks what it returns as shown
+   * and asks for the wanted tile when it is missing or stale, `priority` lowest first. */
+  resolve(squareTier: number, sx: number, sy: number, tier: number, priority: number, out: DrapeTile): boolean;
   pageCount(): number;
   page(index: number): WebGLTexture;
 }
@@ -157,6 +158,10 @@ export interface DrapedGroundStats {
   triangles: number;
   /** Squares of the map drawn (instances of the grid mesh). */
   patches: number;
+  /** Of those, the squares shown by a ground tile of another tier than the one wanted, and the squares whose map
+   * drape is another tier's tile or none (the wanted tile is not baked yet). */
+  otherTier: number;
+  drapeOtherTier: number;
   /** Instance lists sent to the GPU since the context was created: one per frame whose camera or tiles changed. */
   uploads: number;
 }

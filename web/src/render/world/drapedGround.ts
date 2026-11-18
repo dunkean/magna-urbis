@@ -15,6 +15,7 @@ import { drapeTier } from './footprint';
 import { createHeightTexture, type TerrainHeights } from './heights';
 import { LATTICE, MAX_PATCHES, PatchList, lodEyeHeight, morphStart, patchLevels, patchRatio, selectPatches, type PatchQuery } from './patches';
 import { SQUARE_FLOATS, SQUARE_TRIANGLES, TerrainMesh } from './terrainMesh';
+import { tileKey } from './tilePyramid';
 
 /** Control heights assumed for a map whose relief is not known: the ground is then draped flat. */
 const FLAT_GRID = 1024;
@@ -28,7 +29,7 @@ const HAZE: readonly [number, number, number] = [0.77, 0.85, 0.88];
 const MAX_PAGES = 64;
 
 export class DrapedGround {
-  readonly stats: DrapedGroundStats = { drawCalls: 0, triangles: 0, patches: 0, uploads: 0 };
+  readonly stats: DrapedGroundStats = { drawCalls: 0, triangles: 0, patches: 0, uploads: 0, otherTier: 0, drapeOtherTier: 0 };
   private mesh?: TerrainMesh;
   /** The height texture and the grid it holds; `flat` stands in for a map without relief. */
   private heightTexture?: WebGLTexture;
@@ -54,6 +55,10 @@ export class DrapedGround {
   /** What the squares in the buffer were selected for: a frame with the same values draws them again as they are. */
   private readonly selectedFor = new Float64Array(16 + 3 + 7).fill(NaN);
   private selectedHeights?: TerrainHeights;
+  /** Tier of the tiles each square of the last selection showed, by square key (footprint.ts drapeTier `previous`);
+   * the two maps swap at each selection. */
+  private tierOf = new Map<number, number>();
+  private tierBefore = new Map<number, number>();
 
   constructor(
     private readonly gl: WebGL2RenderingContext,
@@ -133,34 +138,50 @@ export class DrapedGround {
     // The map drape, when it holds tiles of this map in the ground's tiling: a square then names the same tile in both.
     const drape = frame.drape && frame.drape.pageCount() > 0 && frame.drape.mapSize() === mapSize && frame.drape.tilePixels === tiles.tilePixels ? frame.drape : undefined;
     this.draped = !!drape;
-    let count = 0;
+    let count = 0,
+      otherTier = 0,
+      drapeOtherTier = 0;
     tiles.begin();
     drape?.begin();
+    // The tier of each square in the last selection (or of its parent, for a square that has just split).
+    const previous = this.tierOf,
+      current = (this.tierOf = this.tierBefore);
+    this.tierBefore = previous;
+    current.clear();
     for (let i = 0; i < list.count; i++) {
       const tier = list.tier[i],
         ix = list.ix[i],
         iy = list.iy[i],
-        finer = 2 ** (tier - 1);
-      const shown = drapeTier(camera.focal, list.depth[i], mapSize, tiles.tilePixels, tier, finest),
-        shift = tier - shown;
-      if (!tiles.resolve(shown, ix >> shift, iy >> shift, list.depth[i], tile) || tile.page >= MAX_PAGES) continue;
-      const part = 1 / 2 ** shift,
+        finer = 2 ** (tier - 1),
+        key = tileKey(tier, ix, iy);
+      const shown = drapeTier(camera.focal, list.depth[i], mapSize, tiles.tilePixels, tier, finest, previous.get(key) ?? (tier > 0 ? (previous.get(tileKey(tier - 1, ix >> 1, iy >> 1)) ?? -1) : -1));
+      current.set(key, shown);
+      if (!tiles.resolve(tier, ix, iy, shown, list.depth[i], tile) || tile.page >= MAX_PAGES) continue;
+      // The part of the wanted tile under the square: another span means another tier stands in.
+      const span = 2 ** (shown - tier),
         o = count * SQUARE_FLOATS;
+      if (tile.span !== span) otherTier++;
       found[o] = ix * LATTICE - anchorX * finer;
       found[o + 1] = iy * LATTICE - anchorY * finer;
       found[o + 2] = coarsest / finer;
       found[o + 3] = tile.layer;
-      found[o + 4] = tile.u0 + (ix - ((ix >> shift) << shift)) * part * tile.span;
-      found[o + 5] = tile.v0 + (iy - ((iy >> shift) << shift)) * part * tile.span;
-      found[o + 6] = tile.span * part;
-      if (drape?.resolve(shown, ix >> shift, iy >> shift, list.depth[i], drapeTile)) {
-        found[o + 7] = drapeTile.u0 + (ix - ((ix >> shift) << shift)) * part * drapeTile.span;
-        found[o + 8] = drapeTile.v0 + (iy - ((iy >> shift) << shift)) * part * drapeTile.span;
-        found[o + 9] = drapeTile.span * part;
+      found[o + 4] = tile.u0;
+      found[o + 5] = tile.v0;
+      found[o + 6] = tile.span;
+      if (drape?.resolve(tier, ix, iy, shown, list.depth[i], drapeTile)) {
+        found[o + 7] = drapeTile.u0;
+        found[o + 8] = drapeTile.v0;
+        found[o + 9] = drapeTile.span;
         found[o + 10] = drapeTile.layer;
-      } else found[o + 10] = -1;
+        if (drapeTile.span !== span) drapeOtherTier++;
+      } else {
+        found[o + 10] = -1;
+        drapeOtherTier++;
+      }
       pageOf[count++] = tile.page;
     }
+    this.stats.otherTier = otherTier;
+    this.stats.drapeOtherTier = drapeOtherTier;
     const squares = this.squares,
       ranges = this.ranges,
       pages = Math.min(MAX_PAGES, tiles.pageCount());
