@@ -10,7 +10,8 @@ import type { ExportLayers } from '../render/exportLayers';
 import { viewRect } from '../render/view';
 import { buildCityBuildings, buildCityScene, cityGroundSubjects, drawCity, drawCitySteps, selectCityLod, type Box, type CityBuildings, type CityFrameStats, type CityLayers, type CityLod, type CityScene } from '../render/cityCanvas';
 import { DEFAULT_LAYERS } from '../render/cityGlStyle';
-import { CityGlComposite, cityGlDrawOptions, mergeCityBuildings, mergeCityPlans } from '../render/cityGlView';
+import { CityGlComposite, cityGlDrawOptions, mergeCityBuildings, mergeCityBuildingsSteps, mergeCityPlans, mergeCityPlansSteps } from '../render/cityGlView';
+import { cityCanopy } from '../render/cityGrove';
 import type { CityGlFrame } from '../render/cityGl';
 import { cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
 import { getRenderMode, onRenderMode, reportRenderStats } from '../render/renderMode';
@@ -26,6 +27,8 @@ import { cityGroundOf } from './rustUrban';
 import { buildCityBuildingsParallel, clipCityGroundAhead, releaseCityBuildingWorkers } from '../render/cityBuildingsParallel';
 import { cityGroundFor } from '../render/cityGround';
 import { activityScene, activitySitesOf, drawInstallations } from './activitySites';
+import type { LiveCityEnv, LiveLayer } from '../render/live/contract';
+import { createLiveCityLayer } from '../render/live/cityLayer';
 
 export interface NativeCityMapStats {
   native: boolean;
@@ -73,6 +76,9 @@ export interface NativeCityMap {
   scenes(): readonly CityScene[];
   /** Uploads the WebGL2 plan a frame with this appearance would use, if any (exports draw synchronously). */
   prepare(appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>): Promise<void>;
+  /** The towns as a layer of the live compositor (render/live/cityLayer.ts), bound to its shared WebGL2 context: retained
+   * meshes drawn while the view moves. Undefined without towns. Disposed with this map at the latest. */
+  createLiveLayer(gl: WebGL2RenderingContext, env: LiveCityEnv): LiveLayer | undefined;
   dispose(): void;
 }
 interface Entry {
@@ -441,6 +447,40 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     liveJob = job; scheduleLive();
     return { layer: standIn, exact: false };
   }
+  // Live compositor layers (render/live/cityLayer.ts). They share the merged plan of the GL path and keep their own
+  // tier of the very large towns: the merged buildings of the tiers last handed out, reused while no tier changes.
+  const liveLayers = new Set<LiveLayer>();
+  let liveTier: { parts: (CityBuildings | undefined)[]; merged: CityBuildings } | undefined, liveRefused: ReadonlySet<string> | undefined;
+  // The live scene also holds the towns and activity sites drawn by the native house renderer (entry.houses), as their
+  // city volumes (entry.buildings: massing silhouettes with roof pans and cast shadows, built with the entry): the
+  // classic GL scene leaves them to the house renderer, which only Canvas 2D runs.
+  const liveParts = (parts: readonly (CityBuildings | undefined)[]) => entries.map((entry, i) => ({ plan: entry.plan, buildings: parts[i] }));
+  const sameParts = (parts: readonly (CityBuildings | undefined)[]): boolean => !!liveTier && liveTier.parts.length === parts.length && liveTier.parts.every((part, i) => part === parts[i]);
+  function liveMerged(parts: (CityBuildings | undefined)[]): CityBuildings {
+    if (!sameParts(parts)) liveTier = { parts, merged: mergeCityBuildings(liveParts(parts)) };
+    return liveTier!.merged;
+  }
+  /** The live scene in resumable steps (a few milliseconds each): the GL path's merged plan when it has none yet, then
+   * every entry's buildings. The classic draw may build its plan meanwhile; the first one made is kept. */
+  function* liveSceneSteps(): Generator<void, { plan: CityScene; buildings: CityBuildings }> {
+    if (!glScene) {
+      const merged = yield* mergeCityPlansSteps(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings })));
+      glScene ??= merged;
+    }
+    const plan = glScene.plan, parts = entries.map(entry => entry.buildings);
+    if (!sameParts(parts)) { const merged = yield* mergeCityBuildingsSteps(liveParts(parts)); liveTier = { parts, merged }; }
+    return { plan, buildings: liveTier!.merged };
+  }
+  /** Towns with a far raster on satellite grounds (drawCitySteps `farTown`: not the house-renderer ones), with the whole
+   * town's buildings as the classic draw hands them to drawFarTown. */
+  let liveFarTowns: { plan: CityScene; buildings: CityBuildings }[] | undefined;
+  const farTowns = () => liveFarTowns ??= entries.filter(entry => !entry.houses).map(entry => ({ plan: entry.plan, buildings: entry.large?.base ?? entry.buildings }));
+  /** The buildings of a resting view for the live layer: each large town's tier for that view (largeTownBuildings), the
+   * others as they are. Builds a detail tier on this thread when the view needs one, as the classic draw does. */
+  function liveBuildings(viewport: Box, mpp: number): CityBuildings | undefined {
+    if (disposed) return undefined;
+    return liveMerged(entries.map(entry => entry.large ? largeTownBuildings(entry, viewport, mpp) : entry.buildings));
+  }
   return {
     scenes: () => textScenes,
     suspendLive: stopLive,
@@ -522,8 +562,26 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       if (disposed || !entries.length || glBlockReason(appearance, visibility)) return;
       if (!prepareGl()) await gl?.ready();
     },
+    createLiveLayer(context, env) {
+      if (disposed || !entries.length) return undefined;
+      const made = createLiveCityLayer(context, env, {
+        sceneSteps: liveSceneSteps,
+        enclosures: () => entries.map(entry => entry.plan.lotEnclosures),
+        canopies: () => entries.map(entry => cityCanopy(entry.plan.layouts, entry.canopyBuildings)),
+        buildingsFor: entries.some(entry => entry.large) ? liveBuildings : undefined,
+        layers: townLayers,
+        farTowns,
+        refused: () => liveRefused ??= new Set(entries.flatMap(entry => [...entry.refused])),
+      });
+      const dispose = made.dispose.bind(made);
+      const owned: LiveLayer = Object.assign(made, { dispose: () => { liveLayers.delete(owned); dispose(); } });
+      liveLayers.add(owned);
+      return owned;
+    },
     dispose() {
       if (disposed) return;
+      for (const live of [...liveLayers]) live.dispose();
+      liveTier = undefined; liveRefused = undefined; liveFarTowns = undefined;
       disposed = true; offRenderMode(); gl?.dispose(); gl = undefined; glScene = undefined;
       stopLive(); freeLayer(shownLayer); freeLayer(spareLayer); shownLayer = spareLayer = undefined;
       for (const entry of entries) entry.houses?.replaceScene({ buildings: [] });

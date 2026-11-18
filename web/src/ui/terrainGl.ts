@@ -45,7 +45,7 @@ import { waterClimate, type WaterSeason } from '../render/waterRegime';
 import { RENDER_WATER_FS, renderWaterRings } from '../render/renderWaterShader';
 import { WATER_FRESH_ICE_GLSL, WATER_REGIME_GLSL } from '../render/waterRegime';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
-import type { View } from '../render/view';
+import type { Rect4, View } from '../render/view';
 import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
 import { createTerrainSurfaceSampler, heightPyramid } from './terrainSurface';
 import { TERRAIN_3D_NOISE_GLSL } from './terrain3dNoise';
@@ -878,6 +878,16 @@ export const lightVariant = (v: TerrainVariant): TerrainVariant => mapGpuLight()
 export const lookMode = (look: TerrainLook): number => styleTraits(look.style).elevation ? 1 : look.layers.hypsometry && styleTraits(look.style).ground3d ? 3 : styleTraits(look.style).neuralEarth && look.layers.hypsometry ? 2 : 0;
 
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
+type GlTarget = { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
+/** Per-view intermediate targets and caches of a draw. World tiles (renderWorldTile) keep their own set, swapped in
+ * around the tile draw: the live view's auxiliary pass and retained-water raster stay cached, and tiles of one size
+ * never reallocate a target. */
+interface GlViewTargets { aux?: GlTarget; auxKey: string; river?: GlTarget; water?: GlTarget; retainedTexture?: WebGLTexture; retainedViewKey: string; retainedCanvas?: HTMLCanvasElement; retainedCoded: number }
+
+/** Style pixel ratio of the live 2D map (CSS-pixel strokes, river widths, banks): the classic redraw's default.
+ * World tiles key the material's detail on their own density and only take this ratio for those screen-sized strokes,
+ * so a tile shown at its own tier matches the classic view of the same device density. */
+export const liveStyleRatio = (): number => Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
 
 export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
@@ -939,7 +949,7 @@ export class TerrainGl {
   private coastDistance?: WebGLTexture;
   private shoreRing?: { layer: object; revision: number; texture: WebGLTexture; x: number; y: number; width: number };
   /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
-  private readonly ringChanged = (): void => this.request();
+  private readonly ringChanged = (): void => { this.revision++; this.request(); };
   /** Canonical Render3D forest field and applied occupation, sampled by world coordinates. */
   private forest?: ForestTextures;
   private occupation?: { data: ForestOccupation; texture: WebGLTexture };
@@ -957,6 +967,11 @@ export class TerrainGl {
   drawMs = 0;
   private liveGround = new LiveGround();
   private livePaused = false;
+  /** contentRevision(): bumped by every input that changes the pixels, and when a program finishes linking. */
+  private revision = 0; private revisionRatio = 0; private lookWasLinked = false;
+  /** A world tile is being drawn (full quality, never a blocking link). */
+  private tileRendering = false;
+  private tileTargets: GlViewTargets = { auxKey: '', retainedViewKey: '', retainedCoded: 0 };
   /** Preparation can upload and compile while its previous frame stays displayed. */
   setLivePaused(paused: boolean): void {
     this.livePaused = paused;
@@ -980,7 +995,13 @@ export class TerrainGl {
   /** The context's fixed objects: preview variant, river and composite programs, river buffers, empty texture. */
   private createResources(): void {
     const gl = this.gl;
-    this.variants = new ShaderVariants(gl, () => this.request());
+    // The poll fires while a variant links and once more when it is linked: world tiles re-bake when the look's own
+    // programs became complete.
+    this.variants = new ShaderVariants(gl, () => {
+      const linked = !!this.look && !this.gl.isContextLost() && this.lookLinked(this.look);
+      if (linked !== this.lookWasLinked) { this.lookWasLinked = linked; this.revision++; }
+      this.request();
+    });
     this.terrainVariant(PREVIEW_VARIANT, false);   // starts linking the preview
     this.river = compile(gl, RIVER_VS, RIVER_FS);
     this.composite = compile(gl, COMPOSITE_VS, COMPOSITE_FS);
@@ -1002,6 +1023,8 @@ export class TerrainGl {
     this.lastTerrain = undefined; this.renderWater = undefined; this.prewarmStarted = false;
     this.auxTarget = this.riverTarget = this.waterTarget = this.captureTarget = undefined; this.auxKey = ''; this.emptyAux = undefined;
     this.retainedWaterTexture = undefined; this.retainedWaterViewKey = '';
+    this.tileTargets = { auxKey: '', retainedViewKey: '', retainedCoded: 0, retainedCanvas: this.tileTargets.retainedCanvas };
+    this.revision++;
     this.shoreRing = undefined; this.coastDistance = undefined; this.lake = undefined; this.lakeInput = undefined; this.overlay = undefined;
     this.forest = undefined; this.occupation = undefined; this.landDetail = undefined;
     disposeForestBrushes(gl, false); disposeCrownClumps(gl, false);
@@ -1196,11 +1219,12 @@ export class TerrainGl {
       // quantization and no dependency on optional float linear filtering.
       this.coastDistance = this.texture(surface.n, surface.n, this.gl.R32F, this.gl.RED, this.gl.FLOAT, surface.distance, this.gl.NEAREST);
     }
-    this.request();
+    this.revision++; this.request();
   }
 
   /** A finer square region drawn over the base, cross-faded in; keeps at most two. */
   setDetail(layer: HeightLayer | undefined): void {
+    this.revision++;
     if (!layer) { this.details.forEach(d => this.release(d)); this.details = []; this.request(); return; }
     const next = this.upload(layer, false);
     next.alpha = 0; next.fadeStart = performance.now();
@@ -1209,13 +1233,14 @@ export class TerrainGl {
     this.request();
   }
 
-  setRenderV2Season(season:number):void {if(this.look){this.look={...this.look,v2Season:season};this.request();}}
-  setLook(look: TerrainLook): void { this.look = look; this.request(); }
+  setRenderV2Season(season:number):void {if(this.look){this.look={...this.look,v2Season:season};this.revision++;this.request();}}
+  setLook(look: TerrainLook): void { this.look = look; this.revision++; this.request(); }
 
   /** Explicit Render3D refinement only; ordinary 2D layers never consume it. */
   setEnhancedDetail(layer: HeightLayer | undefined): void {
-    if (!layer) { this.enhanced.forEach(d => this.release(d)); this.enhanced = []; this.request(); return; }
+    if (!layer) { if (this.enhanced.length) this.revision++; this.enhanced.forEach(d => this.release(d)); this.enhanced = []; this.request(); return; }
     if (this.enhanced.at(-1)?.layer === layer) return;
+    this.revision++;
     const next = this.upload(layer, false); next.fadeStart = performance.now();
     this.enhanced.push(next);
     while (this.enhanced.length > 2) this.release(this.enhanced.shift());
@@ -1228,7 +1253,7 @@ export class TerrainGl {
     const key = svg ? `${width}:${JSON.stringify(options ?? {})}:${svg}` : '';
     if (key === this.retainedWaterKey) return;
     this.retainedWaterKey = key;
-    this.retainedWaterViewKey = '';
+    this.retainedWaterViewKey = ''; this.tileTargets.retainedViewKey = ''; this.revision++;
     this.retainedWaterPaths = svg ? retainedWaterPaths(svg, width) : [];
     this.retainedRegime = retainedRegime(this.retainedWaterPaths, width, options?.season);
     this.retainedCity = svg && options?.city ? [1, .5 * waterClimate(options.season ?? {}).sediment] : [0, 0];
@@ -1254,7 +1279,7 @@ export class TerrainGl {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.riverBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, rivers.byteLength ? rivers : new Float32Array(9), gl.STATIC_DRAW);
     this.riverCount = rivers.length / 9; this.riverRegime = !!water?.regime;
-    this.request();
+    this.revision++; this.request();
   }
 
   setOverlay(overlay: OverlayLayer | undefined): void {
@@ -1262,7 +1287,7 @@ export class TerrainGl {
     this.overlayInput = overlay;
     if (this.overlay) gl.deleteTexture(this.overlay);
     this.overlay = overlay ? this.texture(overlay.n, overlay.n, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, overlay.rgba, gl.NEAREST) : undefined;
-    this.request();
+    this.revision++; this.request();
   }
 
   setView(view: View, width: number, height: number): void { this.view = { view, width, height }; this.request(); }
@@ -1287,7 +1312,7 @@ export class TerrainGl {
       if (this.landDetail) gl.deleteTexture(this.landDetail.texture);
       this.landDetail = detail && { data: detail, texture: forestTexture(gl, detail, true) };
     }
-    this.forestVersion++;
+    this.forestVersion++; this.revision++;
     this.request();
   }
 
@@ -1312,6 +1337,59 @@ export class TerrainGl {
       this.view = { ...state, width: renderWidth, height: renderHeight };
       try { return this.draw(ratio, pixelRatio); } finally { this.view = state; }
     });
+  }
+
+  /** Live ground tile (contract GroundTileRenderer, render/live/groundLayer.ts): every pass of the live redraw (water
+   * layer, rivers, painted water, auxiliary pass, map) for the world square `box` at `px`² device pixels, full quality,
+   * into this renderer's canvas, to be uploaded in the same task. The material's detail follows the tile density
+   * (uPx = metres per tile pixel); details and refinements are drawn at their final opacity. Undefined while a program
+   * of the look is still linking: a tile never shows a stand-in variant and never waits for a link. The canvas then
+   * holds the tile: LiveGround is invalidated (draw), and every classic path redraws before it reads the canvas. */
+  renderWorldTile(box: Rect4, px: number): TexImageSource | undefined {
+    const look = this.look, size = box.maxX - box.minX;
+    if (this.disposed || !look || !this.base || this.gl.isContextLost() || !(size > 0) || px < 1 || !this.lookLinked(look)) return undefined;
+    const ratio = liveStyleRatio(), previous = this.view, details = this.details, enhanced = this.enhanced;
+    // CSS view of the classic redraw at that device density: px = 1 / (scale * ratio) = size / px metres per pixel,
+    // origin = box corner, width = round(px / ratio * ratio) = px device pixels.
+    this.view = { view: { cx: box.minX + size / 2, cy: box.minY + size / 2, scale: px / size / ratio }, width: px / ratio, height: px / ratio };
+    this.details = details.length ? [{ ...details[details.length - 1], fadeStart: -Infinity }] : [];
+    this.enhanced = enhanced.map(layer => ({ ...layer, fadeStart: -Infinity }));
+    this.swapTileTargets();
+    // A tile is drawn again only when its content changed: never reuse the previous tile's auxiliary pass or water raster.
+    this.auxKey = ''; this.retainedWaterViewKey = '';
+    this.tileRendering = true;
+    let drawn = false;
+    try { drawn = this.draw(ratio, ratio); }
+    finally {
+      this.tileRendering = false; this.swapTileTargets();
+      this.view = previous; this.details = details; this.enhanced = enhanced;
+    }
+    return drawn ? this.canvas : undefined;
+  }
+  /** Changes whenever renderWorldTile would draw other pixels (inputs, a linked program, the style pixel ratio). */
+  contentRevision(): number {
+    const ratio = liveStyleRatio();
+    if (ratio !== this.revisionRatio) { this.revisionRatio = ratio; this.revision++; }
+    return this.revision;
+  }
+  /** Every program the look's live redraw uses is linked (no stand-in): the map variant, its auxiliary pass, the painted water. */
+  private lookLinked(look: TerrainLook): boolean {
+    const v = this.lookVariant(look);
+    if (!this.terrainVariant(v, false)) return false;
+    if (mapPasses(v).includes('aux') && !this.variants.get(auxKey(v), () => [TERRAIN_VS, auxFragment(v)], false)) return false;
+    const painted = (look.waterLook === 'natural' || styleTraits(look.style).neuralEarth) && (this.riverCount > 0 || this.retainedWaterPaths.length > 0);
+    return !painted || !!this.waterProgram(false);
+  }
+  private swapTileTargets(): void {
+    const t = this.tileTargets;
+    [t.aux, this.auxTarget] = [this.auxTarget, t.aux];
+    [t.auxKey, this.auxKey] = [this.auxKey, t.auxKey];
+    [t.river, this.riverTarget] = [this.riverTarget, t.river];
+    [t.water, this.waterTarget] = [this.waterTarget, t.water];
+    [t.retainedTexture, this.retainedWaterTexture] = [this.retainedWaterTexture, t.retainedTexture];
+    [t.retainedViewKey, this.retainedWaterViewKey] = [this.retainedWaterViewKey, t.retainedViewKey];
+    [t.retainedCanvas, this.retainedWaterCanvas] = [this.retainedWaterCanvas, t.retainedCanvas];
+    [t.retainedCoded, this.retainedCoded] = [this.retainedCoded, t.retainedCoded];
   }
 
   /** Render a world-space LOD tile with the same material and detail as the map. */
@@ -1412,7 +1490,8 @@ export class TerrainGl {
     this.liveGround.invalidate(this.canvas);
     const gl = this.gl, look = this.look, state = this.view;
     if (this.disposed || !look || !state || !this.base || gl.isContextLost()) return false;
-    const quality = displayQualityUniform(!(this.capturing || framebuffer !== null || look.mesh3d === true));
+    // World tiles are full quality but never wait for a link (renderWorldTile checks the programs first).
+    const quality = displayQualityUniform(!(this.capturing || this.tileRendering || framebuffer !== null || look.mesh3d === true));
     const program = this.terrainProgram(look, this.capturing || framebuffer !== null || look.mesh3d === true);
     if (!program) return false;
     this.terrain = program;
@@ -1708,6 +1787,8 @@ export class TerrainGl {
     if (this.riverTarget) { gl.deleteFramebuffer(this.riverTarget.framebuffer); gl.deleteTexture(this.riverTarget.texture); }
     if (this.waterTarget) { gl.deleteFramebuffer(this.waterTarget.framebuffer); gl.deleteTexture(this.waterTarget.texture); }
     if (this.retainedWaterTexture) gl.deleteTexture(this.retainedWaterTexture);
+    for (const target of [this.tileTargets.aux, this.tileTargets.river, this.tileTargets.water]) if (target) { gl.deleteFramebuffer(target.framebuffer); gl.deleteTexture(target.texture); }
+    if (this.tileTargets.retainedTexture) gl.deleteTexture(this.tileTargets.retainedTexture);
     if (this.captureTarget) { gl.deleteFramebuffer(this.captureTarget.framebuffer); gl.deleteTexture(this.captureTarget.texture); }
     gl.deleteProgram(this.river); gl.deleteProgram(this.composite);
     this.renderWater = undefined; // Owned and deleted by ShaderVariants.

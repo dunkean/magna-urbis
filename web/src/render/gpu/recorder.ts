@@ -260,6 +260,10 @@ export class RecordingContext {
   private nCalls = 0; private nPaths = 0; private nSprites = 0;
   private t0 = now();
   private clipSeq = 0;
+  /** The last clip made under each parent, with the version its path had: the same clip set again (save, clip,
+   * restore in a loop) returns the same node, which the rasterizer recognises by identity instead of rebuilding. */
+  private clipMemo = new Map<ClipNode | null, { node: ClipNode; version: number }>();
+  private marks: { name: string; at: number }[] = [];
   /** Bumped on every transform change; the default path re-checks its frame against it. */
   private ctmVer = 0;
   // Default path: points are kept in `pathFrame` coordinates (the CTM when it started), so the common case
@@ -288,8 +292,9 @@ export class RecordingContext {
       width: this.owner.width, height: this.owner.height, ops,
       stats: { calls: this.nCalls, ops: ops.length, paths: this.nPaths, sprites: this.nSprites, recordMs: now() - this.t0 },
       ...(this.reason !== undefined ? { unsupported: this.reason } : {}),
+      ...(this.marks.length ? { marks: this.marks } : {}),
     };
-    this.ops = []; this.last = null;
+    this.ops = []; this.last = null; this.marks = []; this.clipMemo.clear();
     this.nCalls = this.nPaths = this.nSprites = 0; this.t0 = now();
     return list;
   }
@@ -308,8 +313,11 @@ export class RecordingContext {
   }
   reset(): void {
     this.s = new State(); this.depth = 0; this.ops = []; this.last = null; this.drawn = false; this.ctmVer++;
+    this.marks = []; this.clipMemo.clear();
     this.beginPath();
   }
+  /** Section boundary (not a Canvas call): the next op starts a new one, so the list can be split here. */
+  mark(name: string): void { this.marks.push({ name, at: this.ops.length }); this.last = null; }
 
   get globalAlpha(): number { return this.s.alpha; }
   set globalAlpha(v: number) { if (v >= 0 && v <= 1) this.s.alpha = v; }
@@ -561,7 +569,13 @@ export class RecordingContext {
     let path: AnyPath, t: Mat, rule: FillRule;
     if (a === undefined || typeof a === 'string') { path = this.path; t = this.pathFrame; rule = ruleOf(a); this.pathShared = true; }
     else { const p = this.userPath(a); if (!p) return; path = p; t = this.matNow(); rule = ruleOf(b); }
-    this.s.clip = { parent: this.s.clip, path, rule, transform: t, id: ++this.clipSeq };
+    const parent = this.s.clip, memo = this.clipMemo.get(parent);
+    // A held default path is copied before its next change and a user path bumps its version: same object and
+    // version is the same outline.
+    if (memo && memo.node.path === path && memo.version === path.version && memo.node.rule === rule && matEq(memo.node.transform, t)) { this.s.clip = memo.node; return; }
+    const node: ClipNode = { parent, path, rule, transform: t, id: ++this.clipSeq };
+    this.clipMemo.set(parent, { node, version: path.version });
+    this.s.clip = node;
   }
 
   fillRect(x: number, y: number, w: number, h: number): void {

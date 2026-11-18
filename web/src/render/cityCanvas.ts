@@ -606,7 +606,7 @@ const roofPaint = new WeakMap<CityRoofs, { key: string; colors: (string | undefi
 const MOSSY = /^(tile|slate|stone|thatch|reed|palm|shingle|bark|turf)$/;
 /** Age is a tone of the whole roof (a new cover a touch lighter, an old one darker), and the shaded pans of an old
  * roof are a little greener than its sunny ones. */
-function weatheredRoof(color: string, light: number, age: number, cover: string): string {
+export function weatheredRoof(color: string, light: number, age: number, cover: string): string {
   const shade = Math.max(0, Math.min(1, -light * 2.4)), toned = planShade(color, (.5 - age) * .07);
   return shade > 0 && MOSSY.test(cover) ? mix(toned, '#4b4f38', shade * (.04 + .1 * age)) : toned;
 }
@@ -621,7 +621,7 @@ const MASONRY = /^(brick|stone|coral|concrete|ashlar)$/;
 /** Wall colour on a natural ground: pulled three quarters of the way to the muted tone of the tint the building asks
  * for (its beige, its grey, the darker or warmer glass of a tower: buildingPalette.ts tintedWallColor, shared with
  * the 3D meshes); the drawn plans keep their own conventions. `material`: the wall material. */
-function tintedWall(wall: string, tint: string | undefined, palette: CityPalette, material = ''): string {
+export function tintedWall(wall: string, tint: string | undefined, palette: CityPalette, material = ''): string {
   if (!tint || palette !== 'terrain') return wall;
   const v = parseInt(wall.slice(1), 16), c = tintedWallColor([((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255], tint, material);
   return '#' + c.map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
@@ -744,7 +744,7 @@ function drawMillMarks(ctx: CanvasRenderingContext2D, b: CityBuildings, item: Ci
 /** Fill of the height shadows cast on the ground. Neutral attenuation cannot brighten any channel of the receiving
  * ground. On a natural ground the cast is a near-black cool shade, and on snow the blue of skylit shade (snow is
  * lighter than that tint in every channel). */
-function castShadowFill(palette: CityPalette, night: boolean, snowAltitude?: number): string {
+export function castShadowFill(palette: CityPalette, night: boolean, snowAltitude?: number): string {
   if (palette === 'parchment') return 'rgba(0,0,0,0.2)';
   const snow = palette === 'terrain' && !night ? mapGroundSnow(snowAltitude) : -1;
   return snow < 0 ? 'rgba(0,0,0,0.3)' : snow > .3 ? 'rgba(22,38,70,0.3)' : 'rgba(10,14,24,0.34)';

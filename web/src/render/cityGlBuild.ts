@@ -155,17 +155,24 @@ const shapesBox = (shapes: readonly Shape[]): CityGlBox4 => {
   for (const s of shapes) for (const p of s?.outer ?? []) { if (p.x < b[0]) b[0] = p.x; if (p.y < b[1]) b[1] = p.y; if (p.x > b[2]) b[2] = p.x; if (p.y > b[3]) b[3] = p.y; }
   return b;
 };
-const grow4 = (c: CityGlBox4, b: CityGlBox4): void => { if (b[0] < c[0]) c[0] = b[0]; if (b[1] < c[1]) c[1] = b[1]; if (b[2] > c[2]) c[2] = b[2]; if (b[3] > c[3]) c[3] = b[3]; };
-const cellKey = (b: CityGlBox4): number => Number.isFinite(b[0])
+export const grow4 = (c: CityGlBox4, b: CityGlBox4): void => { if (b[0] < c[0]) c[0] = b[0]; if (b[1] < c[1]) c[1] = b[1]; if (b[2] > c[2]) c[2] = b[2]; if (b[3] > c[3]) c[3] = b[3]; };
+export const cellKey = (b: CityGlBox4): number => Number.isFinite(b[0])
   ? (Math.floor((b[1] + b[3]) / 2 / CITY_GL_CELL) + 32768) * 65536 + Math.floor((b[0] + b[2]) / 2 / CITY_GL_CELL) + 32768 : -1;
+/** Items packed between two pauses of the resumable packers (about a millisecond of work). */
+const PACK_STEP = 256;
+/** Runs a resumable packer to its end (the synchronous packers are their steps run at once: same output). */
+export function runSteps<T>(steps: Generator<void, T>): T { for (;;) { const r = steps.next(); if (r.done) return r.value; } }
 /** Pack items (each a list of shapes sharing one feature id = firstFeature + item index)
- * grouped by grid cell, row-major; one chunk per occupied cell. */
-function packLayer(packer: CityGlPacker, items: ReadonlyArray<readonly Shape[]>, firstFeature: number): CityGlSourceLayer {
-  const boxes = items.map(shapesBox), keys = boxes.map(cellKey);
+ * grouped by grid cell, row-major; one chunk per occupied cell. Pauses every PACK_STEP items. */
+function* packLayerSteps(packer: CityGlPacker, items: ReadonlyArray<readonly Shape[]>, firstFeature: number): Generator<void, CityGlSourceLayer> {
+  const boxes: CityGlBox4[] = new Array(items.length), keys: number[] = new Array(items.length);
+  for (let i = 0; i < items.length; i++) { boxes[i] = shapesBox(items[i]); keys[i] = cellKey(boxes[i]); if ((i + 1) % (4 * PACK_STEP) === 0) yield; }
   const order = items.map((_, i) => i).sort((a, b) => keys[a] - keys[b] || a - b);
+  yield;
   const p0 = packer.polygonCount, chunks: CityGlSourceLayer['chunks'] = [];
-  let current: CityGlSourceLayer['chunks'][number] | undefined, key = NaN;
+  let current: CityGlSourceLayer['chunks'][number] | undefined, key = NaN, n = 0;
   for (const i of order) {
+    if (++n % PACK_STEP === 0) yield;
     if (!current || keys[i] !== key) {
       if (current) current.polygons[1] = packer.polygonCount;
       current = { box: [Infinity, Infinity, -Infinity, -Infinity], polygons: [packer.polygonCount, packer.polygonCount] }; chunks.push(current); key = keys[i];
@@ -181,29 +188,37 @@ export function cityOrigin(scene: Pick<CityScene, 'extent'>): Point {
   const e = scene.extent;
   return Number.isFinite(e.minX) ? { x: Math.round((e.minX + e.maxX) / 2), y: Math.round((e.minY + e.maxY) / 2) } : { x: 0, y: 0 };
 }
-/** Plan polygons: footprint, blocks, parcels (feature ids in that order). */
-export function packPlan(scene: CityScene, origin = cityOrigin(scene)): CityGlFillSource {
+/** Plan polygons: footprint, blocks, parcels, quays (feature ids in that order). */
+export const packPlan = (scene: CityScene, origin = cityOrigin(scene)): CityGlFillSource => runSteps(packPlanSteps(scene, origin));
+/** `packPlan` in resumable steps (live compositor: packed a few milliseconds at a time between frames). */
+export function* packPlanSteps(scene: CityScene, origin = cityOrigin(scene)): Generator<void, CityGlFillSource> {
   const packer = new CityGlPacker(origin), layers: CityGlFillSource['layers'] = {};
   let feature = 0;
-  const layer = (name: string, items: readonly Shape[]): void => { layers[name] = packLayer(packer, items.map(s => [s]), feature); feature += items.length; };
-  layer('footprint', scene.footprint);
-  layers.blocks = packLayer(packer, scene.blocks.map(b => b.ground ?? [b.shape]), feature); feature += scene.blocks.length;
-  layers.parcels = packLayer(packer, scene.parcels.map(p => p.ground ?? [p.shape]), feature); feature += scene.parcels.length;
-  layer('quays', (scene.quays ?? []).map(q => q.shape));
+  layers.footprint = yield* packLayerSteps(packer, scene.footprint.map(s => [s]), feature); feature += scene.footprint.length;
+  layers.blocks = yield* packLayerSteps(packer, scene.blocks.map(b => b.ground ?? [b.shape]), feature); feature += scene.blocks.length;
+  layers.parcels = yield* packLayerSteps(packer, scene.parcels.map(p => p.ground ?? [p.shape]), feature); feature += scene.parcels.length;
+  const quays = scene.quays ?? [];
+  layers.quays = yield* packLayerSteps(packer, quays.map(q => [q.shape]), feature); feature += quays.length;
+  // Canal ribbons and their bridges and lock gates (drawCityWaterways); coloured by the live look only.
+  const canals = scene.layouts.flatMap(layout => layout.structure?.waterways ?? []);
+  const ribbons = canals.map(w => [w.shape]), crossings = canals.flatMap(w => [...w.crossings, ...(w.locks ?? [])]).map(s => [s]);
+  layers.waterways = yield* packLayerSteps(packer, ribbons, feature); feature += ribbons.length;
+  layers.waterwayBridges = yield* packLayerSteps(packer, crossings, feature); feature += crossings.length;
   return { polygons: packer.done(), layers, featureCount: feature, origin };
 }
 /** Building polygons: every shape of a building's surface shares its feature id (= item index). */
-export function packBuildings(buildings: CityBuildings | undefined, origin: Point): CityGlFillSource {
+export const packBuildings = (buildings: CityBuildings | undefined, origin: Point): CityGlFillSource => runSteps(packBuildingsSteps(buildings, origin));
+/** `packBuildings` in resumable steps. */
+export function* packBuildingsSteps(buildings: CityBuildings | undefined, origin: Point): Generator<void, CityGlFillSource> {
   const packer = new CityGlPacker(origin), items = buildings?.items ?? [], roofs = buildings?.roofs;
-  const layers: Record<string, CityGlSourceLayer> = {
-    buildings: packLayer(packer, items.map(b => b.surface), 0),
-    buildingFootprints: packLayer(packer, items.map(b => b.footprint ?? b.building.footprint), 0),
-    ruins: packLayer(packer, items.map(b => b.ruins ?? []), 0),
-  };
+  const layers: Record<string, CityGlSourceLayer> = {};
+  layers.buildings = yield* packLayerSteps(packer, items.map(b => b.surface), 0);
+  layers.buildingFootprints = yield* packLayerSteps(packer, items.map(b => b.footprint ?? b.building.footprint), 0);
+  layers.ruins = yield* packLayerSteps(packer, items.map(b => b.ruins ?? []), 0);
   if (!roofs) return { polygons: packer.done(), layers, featureCount: items.length, origin };
   // Features: buildings [0, n), roof pans [n, n + r), shadows [n + r, 2n + r).
-  layers.roofs = packLayer(packer, roofs.shapes.map(s => [s]), items.length);
-  layers.shadows = packLayer(packer, roofs.shadows, items.length + roofs.shapes.length);
+  layers.roofs = yield* packLayerSteps(packer, roofs.shapes.map(s => [s]), items.length);
+  layers.shadows = yield* packLayerSteps(packer, roofs.shadows, items.length + roofs.shapes.length);
   return { polygons: packer.done(), layers, featureCount: 2 * items.length + roofs.shapes.length, origin };
 }
 /** Assemble a fill mesh from a packing and its triangulation. */
@@ -250,7 +265,7 @@ export interface CityGlStrokes {
 }
 const STREET_MIN_PX = [3, 2.4, 1.6, 1.1, 0.8];
 const CROSSINGS = new Set(['bridge', 'ford', 'pier', 'boardwalk', 'walkway']);
-function strokeWriter(segments: number): { f: Float32Array; u: Uint32Array; buffer: ArrayBuffer; n: number; put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void } {
+export function strokeWriter(segments: number): { f: Float32Array; u: Uint32Array; buffer: ArrayBuffer; n: number; put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void } {
   const buffer = new ArrayBuffer(Math.max(1, segments) * STROKE_STRIDE * 4), f = new Float32Array(buffer), u = new Uint32Array(buffer);
   const w = { f, u, buffer, n: 0, put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void {
     const i = w.n++ * STROKE_STRIDE;
@@ -261,7 +276,7 @@ function strokeWriter(segments: number): { f: Float32Array; u: Uint32Array; buff
 /** Polyline → segment instances; butt flags on the two ends only (joins stay round). */
 /** `width`: one width, or the per-vertex widths (each segment takes the mean of its two, so tapers show).
  * `butt`: both ends square, or [start, end]. */
-function putPolyline(w: ReturnType<typeof strokeWriter>, path: readonly Point[], o: Point, width: number | readonly number[], minPx: number, feature: number, meta: number, butt: boolean | readonly [boolean, boolean]): void {
+export function putPolyline(w: ReturnType<typeof strokeWriter>, path: readonly Point[], o: Point, width: number | readonly number[], minPx: number, feature: number, meta: number, butt: boolean | readonly [boolean, boolean]): void {
   let along = 0, first = -1, last = -1;
   const at = (k: number): number => typeof width === 'number' ? width : width[k] ?? width[width.length - 1] ?? 4;
   for (let k = 1; k < path.length; k++) {

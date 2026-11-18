@@ -377,8 +377,8 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     getBuildingAppearance: () => city3dPlanOptions(v2Resolved3d(options.getSettings(), options.getWorld())).appearance,
     getTextured: options.getTextured, setTextured: options.setTextured, onCamera: options.onCamera, details: service });
   return { get active() { return view.active; }, get detailStats() { return details?.stats; },
-    prepare: async () => { update(); const world = options.getWorld(), settings = options.getSettings(); if (world) await v2DisplayForestAsync(world, settings, v2Resolved3d(settings, world)); await view.prepare(); },
-    show: () => { update(); view.show(); refreshFurniture3d(options.host); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); refreshFurniture3d(options.host); },
+    prepare: async () => { performance.mark('mu:3d-prepare'); update(); const world = options.getWorld(), settings = options.getSettings(); if (world) await v2DisplayForestAsync(world, settings, v2Resolved3d(settings, world)); await view.prepare(); },
+    show: () => { performance.mark('mu:3d-open'); update(); view.show(); refreshFurniture3d(options.host); }, hide: () => view.hide(), refresh: () => { update(); view.refresh(); refreshFurniture3d(options.host); },
     syncControls: () => view.syncControls(),
     focus: (point, radius) => view.focus(point, radius), getCamera: () => view.getCamera(), setCamera: camera => view.setCamera(camera),
     toMapView: () => view.toMapView(), fromMapView: mapView => view.fromMapView(mapView),

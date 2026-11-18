@@ -3,8 +3,8 @@
  * the choices of drawCity (cityCanvas.ts) so both renderers show the same plan.
  * Not ported (kept on the Canvas 2D overlay or dropped): parchment hatching, dashed
  * reserve outlines, the thicker landmark outline of the roles view (1 px here). */
-import type { CityBuildings, CityLayers, CityLod, CityPalette, CityScene, CityView, CityDistrict } from './cityCanvas';
-import { BUILDING_FAMILIES, DISTRICT_ROLES, districtRoleKey, roleFamily } from './cityCanvas';
+import type { CityBuilding, CityBuildings, CityLayers, CityLod, CityPalette, CityScene, CityView, CityDistrict } from './cityCanvas';
+import { BUILDING_FAMILIES, DISTRICT_ROLES, castShadowFill, districtRoleKey, roleFamily, tintedWall, weatheredRoof } from './cityCanvas';
 import { isBoardwalk } from './cityGround';
 import { STRUCTURE_ROLES, blendLine, blendTone, blendsGround, softStreet, type WashKind } from './groundBlend';
 import { streetToneAt, washAt } from './groundTone';
@@ -14,7 +14,10 @@ import type { RenderColors } from './customColors';
 import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
 import { planBuildingColors, planRoofColor, planShade, roofRelief } from './cityBuildingPalette';
 import { mapGroundSnow } from './seasonPalette';
-import { quayFill } from './roadStyle';
+import { naturalMarks, pavedRank, pavedTone, quayFill, roadToneAt, streetRank, type RoadStyle } from './roadStyle';
+import { groundRoadLook, type RoadLook } from './composition';
+import { layoutStreetPavements } from './roadPavement';
+import { planPanLight } from './roofPlaneLight';
 import { harbourPaint, harbourShown } from './harbourStyle';
 import { funeraryLandFill } from './cityRoles';
 
@@ -29,7 +32,11 @@ export interface CityGlStyleState {
   blended?: boolean;
   /** Custom display colours (road, roadEdge, track, building, buildingEdge), as in drawCity. */
   colors?: RenderColors;
+  /** Live look (live compositor, cityGl `live`): colours of the Canvas 2D path where they differ from the GL plan. */
+  live?: CityGlLiveLook;
 }
+/** What the live look needs from the appearance besides the plan state: the road look and its emphasis. */
+export interface CityGlLiveLook { roadLook: RoadLook; emphasis: number; /** Canal water (townWaterColour). */ waterColor?: string }
 export const DEFAULT_LAYERS: CityLayers = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
 
 /** Which draws a state issues. */
@@ -39,6 +46,8 @@ export interface CityGlDraws {
   buildings: boolean; buildingLines: boolean;
   /** Paved squares (render background): the sett pass over blocks and parcels. */
   paved?: boolean;
+  /** Live look: the parchment hatching pass (blocks, far footprint) and the canals. */
+  hatch?: boolean; waterways?: boolean;
 }
 
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
@@ -104,17 +113,28 @@ export function streetPaint(role: string, rank: number, palette: CityPalette): {
 }
 
 // ---------------------------------------------------------------- plan
-export interface CityGlPlanColors { fill: Uint8Array; line: Uint8Array; draws: CityGlDraws }
+/** Hatching of the parchment plan (drawCitySteps hatchPattern): ink lines along x + y = const every 7 CSS px, 0.8 px
+ * wide, at 0.42; blocks at half strength in the buildings view, the far footprint in full. */
+export const PARCHMENT_HATCH = { color: '#6b5236', alpha: .42, periodPx: 7, widthPx: .8 } as const;
+export interface CityGlPlanColors { fill: Uint8Array; line: Uint8Array; draws: CityGlDraws; /** Live look: hatch alpha per feature (A byte), or none. */ hatch?: Uint8Array }
 const BUILT = new Set(['plot', 'compound', 'residual', 'court']), OPEN = new Set(['place', 'market', 'common']);
+/** Features coloured between two pauses of the resumable colour tables. */
+const COLOR_STEP = 512;
+/** Runs resumable colour steps to their end. */
+function finish<T>(steps: Generator<void, T>): T { for (;;) { const r = steps.next(); if (r.done) return r.value; } }
 
-/** Colours of the plan mesh (footprint, blocks, parcels) and the draw list. */
-export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>, s: CityGlStyleState): CityGlPlanColors {
+/** Colours of the plan mesh (footprint, blocks, parcels, quays, canals) and the draw list. */
+export const planColors = (scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>, s: CityGlStyleState): CityGlPlanColors => finish(planColorsSteps(scene, mesh, s));
+/** `planColors` in resumable steps (live compositor: a few milliseconds per call between frames). */
+export function* planColorsSteps(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>, s: CityGlStyleState): Generator<void, CityGlPlanColors> {
   const { view, lod, palette, layers } = s, parchment = palette === 'parchment';
   // Render background: district-tinted yards under the roofs, paved squares (see PAVED_ALPHA).
   const footprint = s.buildingStyle === 'silhouette';
   const painted = !footprint && !!s.painted && !parchment && palette !== 'ink' && palette !== 'terrain';
   const blend = !!s.blended && blendsGround(view, palette), tone = blendTone(palette), softLine = blendLine(tone);
   const fill = new Uint8Array(mesh.featureCount * 4), line = new Uint8Array(mesh.featureCount * 4);
+  // Live look: the parchment hatching (drawCitySteps: parchment, by day, not blended).
+  const hatch = s.live && parchment && !blend ? new Uint8Array(mesh.featureCount * 4) : undefined;
   const outline = palette === 'ink' ? '#3c3024' : parchment ? PARCH.inkSoft : '#655847';
   const growth = (zone: string): string => ZONE_COLORS[zone] ?? ZONE_COLORS.core;
   const draws: CityGlDraws = { footprint: false, footprintLines: false, blocks: false, blockLines: false, parcels: false, parcelLines: false,
@@ -127,24 +147,35 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     const paint = harbourPaint(q.kind, q.material, parchment, parchment ? PARCH.ink : '#57534b');
     put(fill, f, paint.fill, paint.fillAlpha); put(line, f, paint.line, paint.lineAlpha);
   });
+  // Live look: the canals over the town ground (drawCityWaterways), with their bridges and lock gates.
+  if (s.live && layers.waterways !== false && (layers.streets || layers.waterways) && mesh.layers.waterways) {
+    const w = mesh.layers.waterways, b = mesh.layers.waterwayBridges;
+    for (let f = w.features[0]; f < w.features[1]; f++) put(fill, f, s.live.waterColor ?? '#8aaeb8');
+    if (b) for (let f = b.features[0]; f < b.features[1]; f++) { put(fill, f, '#e6d9bb'); put(line, f, '#6d6554'); }
+    draws.waterways = w.features[1] > w.features[0] || !!b && b.features[1] > b.features[0];
+  }
   if (lod === 'far') {
     if (layers.blocks && blend) {
       const f0 = mesh.layers.footprint.features[0];
-      for (let i = 0; i < scene.footprint.length; i++) { const w = washAt('footprint', tone, scene.footprint[i]); put(fill, f0 + i, w.color, w.alpha); }
+      for (let i = 0; i < scene.footprint.length; i++) { const w = washAt('footprint', tone, scene.footprint[i]); put(fill, f0 + i, w.color, w.alpha); if ((i + 1) % COLOR_STEP === 0) yield; }
       draws.footprint = true;
     } else if (layers.blocks) {
       const f0 = mesh.layers.footprint.features[0];
-      for (let i = 0; i < scene.footprint.length; i++) { put(fill, f0 + i, palette === 'terrain' ? undefined : parchment ? PARCH.footprint : '#cfb589', 0.9); put(line, f0 + i, parchment ? PARCH.ink : '#7b6446', 0.9); }
-      draws.footprint = palette !== 'terrain'; draws.footprintLines = true;
+      for (let i = 0; i < scene.footprint.length; i++) {
+        put(fill, f0 + i, palette === 'terrain' ? undefined : parchment ? PARCH.footprint : '#cfb589', 0.9); put(line, f0 + i, parchment ? PARCH.ink : '#7b6446', 0.9);
+        if (hatch) put(hatch, f0 + i, PARCHMENT_HATCH.color);
+      }
+      draws.footprint = palette !== 'terrain'; draws.footprintLines = true; draws.hatch = !!hatch && scene.footprint.length > 0;
     }
-    return { fill, line, draws };
+    return { fill, line, draws, hatch };
   }
   // Blocks.
   const b0 = mesh.layers.blocks.features[0];
   const blockStroke = !(view === 'buildings' && lod !== 'close');
-  scene.blocks.forEach((b, i) => {
-    const reserve = b.kind.startsWith('reserve');
-    if (reserve ? !layers.domains : !layers.blocks) return;
+  for (let i = 0; i < scene.blocks.length; i++) {
+    if ((i + 1) % COLOR_STEP === 0) yield;
+    const b = scene.blocks[i], reserve = b.kind.startsWith('reserve');
+    if (reserve ? !layers.domains : !layers.blocks) continue;
     // A culture without lot limits (`hideLotLines`: catalogue `render.plotLines: false`, e.g. a myconid colony) outlines no block either; squares keep their edge.
     const blockLine = layers.planLines !== false && (b.kind === 'place' || b.kind === 'common' || !scene.enclosureProfiles?.[b.layout]?.hideLotLines);
     let color: string | undefined;
@@ -162,7 +193,7 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
       put(fill, b0 + i, w.color, w.alpha * (b.peripheral && view !== 'buildings' ? 0.7 : 1));
       if (lod === 'close' && blockLine) { put(line, b0 + i, softLine.color, softLine.alpha); draws.blockLines = true; }
       draws.blocks = true;
-      return;
+      continue;
     }
     const paved = painted && b.kind === 'place' && lod === 'close';
     const alpha = paved ? PAVED_ALPHA : b.peripheral && view !== 'buildings' ? 0.6 : 1;
@@ -171,14 +202,17 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
     const square = blockLine && parchment && b.kind === 'place' && !blockStroke;   // V1 squares keep a thin edge at every zoom
     if (blockStroke && blockLine) put(line, b0 + i, outline, alpha); else if (square) put(line, b0 + i, PARCH.inkSoft, 0.7);
     draws.blocks ||= !!color; draws.blockLines ||= blockStroke && blockLine || square;
-  });
+    // Built blocks hatched in ink, as on the engraved plans (drawCitySteps: half strength in the buildings view).
+    if (hatch && !reserve && b.kind !== 'common' && b.kind !== 'place' && view !== 'roles') { put(hatch, b0 + i, PARCHMENT_HATCH.color, view === 'buildings' ? .5 : 1); draws.hatch = true; }
+  }
   // Parcels.
   const p0 = mesh.layers.parcels.features[0], parcelLevel: CityLod = view === 'uses' || view === 'roles' ? 'mid' : 'near';
-  if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') scene.parcels.forEach((p, i) => {
-    const use = p.use, built = BUILT.has(use), open = OPEN.has(use), f = p0 + i;
+  if (layers.parcelOverlay !== false && atLeast(lod, parcelLevel) && view !== 'tissue') for (let i = 0; i < scene.parcels.length; i++) {
+    if ((i + 1) % COLOR_STEP === 0) yield;
+    const p = scene.parcels[i], use = p.use, built = BUILT.has(use), open = OPEN.has(use), f = p0 + i;
     // A culture without lot limits (`hideLotLines`) leaves its lots unoutlined; squares keep their edge.
     const lotLine = layers.planLines !== false && (open || !scene.enclosureProfiles?.[p.layout]?.hideLotLines);
-    if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) return;
+    if (!(built && layers.parcels || use === 'garden' && layers.gardens || open && layers.places || use === 'reserve' && layers.domains)) continue;
     const burialFill = funeraryLandFill(p.allocation?.role);
     const openFill = burialFill ?? (parchment ? (use === 'garden' ? PARCH.garden : use === 'reserve' ? PARCH.reserve : use === 'common' ? PARCH.common : use === 'market' ? PARCH.market : use === 'place' ? PARCH.place : undefined)
       : use === 'garden' ? '#a8bc89' : use === 'reserve' ? '#cbc2a8' : use === 'common' ? '#adc5bf' : use === 'market' ? '#ead39a' : use === 'place' ? '#e6d1a5' : undefined);
@@ -206,32 +240,38 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
       else if (lotLine && parchment && openFill && (use === 'place' || use === 'market')) { put(line, f, PARCH.inkSoft, 0.7); draws.parcelLines = true; }
     }
     draws.parcels = true;
-  });
+  }
   if (layers.parcelOverlay !== false && layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size) scene.parcels.forEach((p, i) => { if (p.id && s.refusedParcels!.has(p.id)) { put(line, p0 + i, urbanFunctionColor('refusal')); draws.parcelLines = true; } });
   draws.buildings = s.buildingsVisible && (s.buildingStyle === 'silhouette' || atLeast(lod, 'near')) && (view === 'buildings' || view === 'roles');
   draws.buildingLines = draws.buildings && (s.buildingStyle === 'silhouette' || atLeast(lod, 'near'));
-  return { fill, line, draws };
+  return { fill, line, draws, hatch };
 }
 
 /** Colours of the building mesh (feature = item index). */
-export function buildingColors(buildings: CityBuildings | undefined, s: CityGlStyleState, _scene?: CityScene): { fill: Uint8Array; line: Uint8Array } {
+export const buildingColors = (buildings: CityBuildings | undefined, s: CityGlStyleState, scene?: CityScene): { fill: Uint8Array; line: Uint8Array } => finish(buildingColorsSteps(buildings, s, scene));
+/** `buildingColors` in resumable steps. */
+export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: CityGlStyleState, _scene?: CityScene): Generator<void, { fill: Uint8Array; line: Uint8Array }> {
   const items = buildings?.items ?? [], roofs = buildings?.roofs, count = items.length + (roofs ? roofs.shapes.length + items.length : 0);
   const fill = new Uint8Array(Math.max(1, count) * 4), line = new Uint8Array(Math.max(1, count) * 4), colors: string[] = [];
   const parchment = s.palette === 'parchment', edge = s.buildingStyle === 'silhouette' && parchment ? '#f1e5c6' : '#2e261d';
   const diagnostic = s.view === 'roles' || s.diagnostic === 'uses';
   const footprint = s.buildingStyle === 'silhouette';
   const painted = !footprint && !!s.painted && !parchment && s.palette !== 'ink' && !diagnostic;
-  items.forEach((b, i) => {
-    const tint = planBuildingColors(b, footprint ? 'terrain' : s.palette);
+  for (let i = 0; i < items.length; i++) {
+    if ((i + 1) % COLOR_STEP === 0) yield;
+    const b = items[i], tint = planBuildingColors(b, footprint ? 'terrain' : s.palette);
     const color = s.view === 'roles' ? BUILDING_FAMILIES[b.family]?.color ?? '#5a4b3c' : s.diagnostic === 'uses' ? urbanFunctionColor(b.fn)
-      : s.colors?.building ?? (footprint ? tint.roof : roofs ? tint.wall : tint.roof);
+      : s.colors?.building ?? (footprint ? tint.roof : roofs ? s.live ? tintedWall(tint.wall, b.material?.tint, s.palette, b.material?.wall) : tint.wall : tint.roof);
     // Party walls: every roof keeps a dark edge, so adjoining houses of a row stay distinct.
     put(fill, i, color); put(line, i, !footprint && b.stilts ? '#514431' : s.colors?.buildingEdge ? s.colors.buildingEdge : painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
     colors.push(color);
-  });
+  }
+  // Live look: the pans as drawPlanRoofsSteps (cityCanvas.ts) colours them.
+  if (roofs && s.live && !diagnostic) yield* liveRoofColors(items, roofs, s, fill, line);
   // Roof pans use the exact shared culture/material/tone, softened for ink maps.
-  if (roofs) {
+  else if (roofs) {
     for (let k = 0; k < roofs.shapes.length; k++) {
+      if ((k + 1) % COLOR_STEP === 0) yield;
       const cover = roofs.cover[k], f = items.length + k;
       const color = diagnostic ? planShade(colors[roofs.owner[k]], roofs.light[k] * 0.5) : s.colors?.building
         ? planRoofColor(items[roofs.owner[k]], roofs, k, s.palette, s.colors.building)
@@ -242,6 +282,58 @@ export function buildingColors(buildings: CityBuildings | undefined, s: CityGlSt
     for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000', 1);
   }
   return { fill, line };
+}
+
+// ---------------------------------------------------------------- live look (Canvas 2D colours on the GPU)
+// The colour rules of the Canvas town (cityCanvas.ts weatheredRoof, tintedWall, castShadowFill), shared so that the live
+// layer matches it while the view moves (the exact Canvas frame replaces it at rest).
+/** Roof pans as drawPlanRoofsSteps colours them by day: on a natural ground (terrain palette) the capped pan light, the
+ * cover and its weathering; elsewhere the shared plan colour. Snow patches show only with snow on the ground. Pan edges
+ * take the Canvas ink at about the coverage of its sub-pixel stroke. No grain, no rims, no uneven snow. */
+function* liveRoofColors(items: readonly CityBuilding[], roofs: NonNullable<CityBuildings['roofs']>, s: CityGlStyleState, fill: Uint8Array, line: Uint8Array): Generator<void, void> {
+  const custom = s.diagnostic === 'none' ? s.colors?.building : undefined, parchment = s.palette === 'parchment';
+  const natural = s.palette === 'terrain' && !custom && s.diagnostic === 'none';
+  const edge = parchment ? '#2c2117' : '#1f1811', edgeAlpha = (parchment ? .65 : natural ? .45 : .65) * .6;
+  for (let k = 0; k < roofs.shapes.length; k++) {
+    if ((k + 1) % COLOR_STEP === 0) yield;
+    const item = items[roofs.owner[k]], f = items.length + k;
+    if (!item) { put(fill, f, undefined); put(line, f, undefined); continue; }
+    const ground = mapGroundSnow(item.snowAltitude ?? item.building.ground_z_m);
+    if (roofs.patch?.[k] && !ground) { put(fill, f, undefined); put(line, f, undefined); continue; }
+    const snowed = !!(roofs.snow?.[k] && ground), cover = roofs.cover[k], light = roofs.light[k];
+    const base = natural && !roofs.flat?.[k] && !snowed
+      ? planShade(planBuildingColors(item, s.palette, cover, roofs.wall?.[k], roofs.tone[k]).roof, planPanLight(light, cover))
+      : planRoofColor(item, roofs, k, s.palette, custom);
+    put(fill, f, natural && !roofs.snow?.[k] ? weatheredRoof(base, light, item.age ?? .5, cover) : base);
+    put(line, f, edge, roofs.snow?.[k] ? 0 : edgeAlpha);
+  }
+  for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000', 1);
+}
+const shadowTints = new Map<string, [number, number, number, number]>();
+/** cityCanvas castShadowFill by day as a straight RGBA tint (snow of the first building's ground, as the Canvas town
+ * shadow pass reads it). */
+export function liveShadowTint(palette: CityPalette, first: CityBuilding | undefined): [number, number, number, number] {
+  const css = castShadowFill(palette, false, first?.snowAltitude);
+  let tint = shadowTints.get(css);
+  if (!tint) {
+    const m = /rgba?\((\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?/.exec(css);
+    tint = m ? [+m[1] / 255, +m[2] / 255, +m[3] / 255, m[4] === undefined ? 1 : +m[4]] : [0, 0, 0, .3];
+    shadowTints.set(css, tint);
+  }
+  return tint;
+}
+/** Base colour of a street on a natural ground (live look): the road tone of the ground at the street's middle, the
+ * paved tone for asphalt town streets, the shoulder of naturalMarks as casing; at 1 px per metre, without marks. */
+function liveNaturalStreet(scene: CityScene, s: CityScene['streets'][number], live: CityGlLiveLook, custom: RenderColors | undefined): { fill: string; alpha: number; edge?: string; edgeAlpha: number } {
+  const rank = streetRank(s.role, s.rank), path = s.street.path, mid = path[path.length >> 1] ?? { x: 0, y: 0 };
+  const style: RoadStyle = { look: live.roadLook === 'rendered' ? 'rendered' : 'natural', emphasis: live.emphasis, night: false, colors: custom };
+  const tone = roadToneAt(mid.x, mid.y, rank, style);
+  if (pavedRank(rank, layoutStreetPavements(scene.layouts[s.layout])?.[s.index])) {
+    const v = rgb(tone), paved = pavedTone([(v >> 16) & 255, (v >> 8) & 255, v & 255], rank, live.emphasis, false);
+    return { fill: custom?.road ?? `rgb(${Math.round(paved[0])},${Math.round(paved[1])},${Math.round(paved[2])})`, alpha: Math.max(.5, Math.min(1, .96 * (.5 + .5 * live.emphasis))), edgeAlpha: 0 };
+  }
+  const marks = naturalMarks(rank, s.width, 1, style), shoulder = marks.shadow;
+  return { fill: tone, alpha: marks.bed.alpha, edge: shoulder?.color, edgeAlpha: shoulder ? shoulder.alpha * .8 : 0 };
 }
 /** Painted roof of a building: the role family decides the material (tile, slate, lead,
  * stone), the district or lot wealth its warmth; monuments are a shade darker. Same
@@ -280,16 +372,26 @@ export const PAINTED_SHADOW: [number, number, number, number] = [0, 0, 0, 0.3];
 /** Parchment ground shadow of flat-roofed buildings: a light sepia wash (straight RGBA). */
 export const PARCHMENT_SHADOW: [number, number, number, number] = [0, 0, 0, 0.2];
 /** Street colours: outer = casing, inner = fill (feature = street index). */
-export function streetColors(scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors): { outer: Uint8Array; inner: Uint8Array } {
+export const streetColors = (scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors, live?: CityGlLiveLook): { outer: Uint8Array; inner: Uint8Array } =>
+  finish(streetColorsSteps(scene, palette, blended, custom, live));
+/** `streetColors` in resumable steps. */
+export function* streetColorsSteps(scene: CityScene, palette: CityPalette, blended = false, custom?: RenderColors, live?: CityGlLiveLook): Generator<void, { outer: Uint8Array; inner: Uint8Array }> {
   const n = Math.max(1, scene.streets.length), outer = new Uint8Array(n * 4), inner = new Uint8Array(n * 4), tone = blendTone(palette);
-  scene.streets.forEach((s, i) => {
+  const natural = !!live && groundRoadLook(live.roadLook);
+  for (let i = 0; i < scene.streets.length; i++) {
+    if ((i + 1) % COLOR_STEP === 0) yield;
+    streetColor(scene.streets[i], i);
+  }
+  return { outer, inner };
+  function streetColor(s: CityScene['streets'][number], i: number): void {
     const fillOf = (base: string): string => (s.role === 'track' ? custom?.track : custom?.road) ?? base, edgeOf = (base: string): string => custom?.roadEdge ?? base;
+    // Live look on a natural ground: the flat base of the Canvas road paint (drawCitySteps `natural`), structures excepted.
+    if (natural && !STRUCTURE_ROLES.has(s.role)) { const p = liveNaturalStreet(scene, s, live!, custom); put(outer, i, p.edge, p.edgeAlpha); put(inner, i, p.fill, p.alpha); return; }
     const tinted = streetToneAt(s.street.path, s.role, s.rank);
     if (tinted) { const p = tinted; put(outer, i, edgeOf(p.edge), p.edgeAlpha); put(inner, i, fillOf(p.fill), p.alpha); return; }
     if (blended && !STRUCTURE_ROLES.has(s.role)) { const p = softStreet(s.role, s.rank, tone); put(outer, i, edgeOf(p.edge), p.edgeAlpha); put(inner, i, fillOf(p.fill), p.alpha); return; }
     const p = streetPaint(s.role, s.rank, palette); put(outer, i, edgeOf(p.casing)); put(inner, i, fillOf(p.fill));
-  });
-  return { outer, inner };
+  }
 }
 /** Wall colours: outer stroke and the light inner line of stone walls (feature = wall index). */
 export function wallColors(scene: CityScene, palette: CityPalette): { outer: Uint8Array; inner: Uint8Array; tower: [string, string] } {

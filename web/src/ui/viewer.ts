@@ -85,10 +85,12 @@ export function createViewer(o: ViewerOptions): Viewer {
   let req: { view: View; w: number; h: number; dpr: number } | null = null;
   let seq = 0, inflight = 0, requestSeq = 0, force = false;
   let miniBase: ImageBitmap | HTMLCanvasElement | null = null, marker = '#a33';
-  const closeMini = (): void => { if (miniBase && 'close' in miniBase) miniBase.close(); miniBase = null; };
+  const closeMini = (): void => { if (miniBase && 'close' in miniBase) miniBase.close(); miniBase = null; miniShown = undefined; };
+  /** Size last written to the canvas style by the direct mode. */
+  let directW = 0, directH = 0;
   const detachDirect = (): void => {
     if (!direct) return;
-    direct?.element.remove(); direct = null; canvas.style.opacity = originalOpacity;
+    direct?.element.remove(); direct = null; canvas.style.opacity = originalOpacity; directW = directH = 0;
     delete canvas.dataset.presentation;
   };
   const resetRequests = (): void => { inflight = 0; requestSeq = 0; req = null; shown = null; canvas.style.transform = ''; force = true; };
@@ -123,14 +125,22 @@ export function createViewer(o: ViewerOptions): Viewer {
     const ty = (shown.view.cy - view.cy) * view.scale + (h - shown.h) / 2;
     canvas.style.transform = `translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) scale(${k})`;
   }
+  /** What the miniature last showed: its base, its size, the marker colour and the view rectangle in quarter pixels. */
+  let miniShown: { base: ImageBitmap | HTMLCanvasElement | null; size: number; marker: string; x: number; y: number; rw: number; rh: number } | undefined;
   function drawMiniOverlay(): void {
     if (!minimap || !miniBase) return;
+    const k = minimap.width / mapSize, r = viewRect(view, w, h, 0);
+    // A frame of a gesture usually moves the rectangle by a fraction of a miniature pixel: a redraw would change
+    // nothing on screen, yet every changed canvas costs the page a raster and a compositor update.
+    const x = Math.round(r.minX * k * 4), y = Math.round(r.minY * k * 4), rw = Math.round((r.maxX - r.minX) * k * 4), rh = Math.round((r.maxY - r.minY) * k * 4);
+    const shown = miniShown;
+    if (shown && shown.base === miniBase && shown.size === minimap.width && shown.marker === marker && shown.x === x && shown.y === y && shown.rw === rw && shown.rh === rh) return;
     const ctx = minimap.getContext('2d');
     if (!ctx) return;
+    miniShown = { base: miniBase, size: minimap.width, marker, x, y, rw, rh };
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, minimap.width, minimap.height);
     ctx.drawImage(miniBase, 0, 0, minimap.width, minimap.height);
-    const k = minimap.width / mapSize, r = viewRect(view, w, h, 0);
     ctx.strokeStyle = marker; ctx.lineWidth = 1.5;
     ctx.strokeRect(r.minX * k, r.minY * k, (r.maxX - r.minX) * k, (r.maxY - r.minY) * k);
   }
@@ -171,9 +181,11 @@ export function createViewer(o: ViewerOptions): Viewer {
     o.onView?.(view, w, h);
     if (direct) {
       try {
-        canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+        // Only when the size changed: a style write per frame makes the page recompute styles per frame.
+        if (directW !== w || directH !== h) { directW = w; directH = h; canvas.style.width = w + 'px'; canvas.style.height = h + 'px'; }
         const st = direct.draw({ seq: ++seq, view: { ...view }, w, h, dpr, mini: minimap ? minimap.width : 0 });
-        if (st.mini && miniBase !== st.mini) { closeMini(); miniBase = st.mini; }
+        // A miniature returned by the draw is new content, even in the same canvas object.
+        if (st.mini) { if (miniBase !== st.mini) { closeMini(); miniBase = st.mini; } miniShown = undefined; }
         drawMiniOverlay();
         o.onFrame?.(st.ms, st.band, st.scale);
       } catch (error) { o.onError?.(error instanceof Error ? error : new Error(String(error))); }

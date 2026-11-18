@@ -39,7 +39,9 @@ function concat(parts: readonly (ArrayLike<number> | undefined)[], lengths: read
 /** Several retained city plans (and their buildings) as one GL scene. Each plan keeps its own
  * building→parcel links (ids may repeat across cities); indices are only shifted. Plans and
  * buildings are read, never mutated. */
-export function mergeCityPlans(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): { plan: CityScene; buildings: CityBuildings } {
+export const mergeCityPlans = (parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): { plan: CityScene; buildings: CityBuildings } => runSteps(mergeCityPlansSteps(parts));
+/** `mergeCityPlans` in resumable steps (live compositor: merged a few milliseconds at a time). */
+export function* mergeCityPlansSteps(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): Generator<void, { plan: CityScene; buildings: CityBuildings }> {
   const layouts: CityScene['layouts'][number][] = [];
   const plan: CityScene = { layouts, blocks: [], parcels: [], streets: [], walls: [], districts: [], landmarks: [], footprint: [], quays: [],
     lotEnclosures: [], enclosureProfiles: [], lotYards: [], extent: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
@@ -48,8 +50,8 @@ export function mergeCityPlans(parts: readonly { plan: CityScene; buildings?: Ci
   for (const { plan: p } of parts) {
     const L = plan.layouts.length, P = plan.parcels.length;
     layouts.push(...p.layouts);
-    plan.blocks.push(...p.blocks.map(b => ({ ...b, layout: b.layout + L })));
-    plan.parcels.push(...p.parcels.map(x => ({ ...x, layout: x.layout + L })));
+    plan.blocks.push(...p.blocks.map(b => ({ ...b, layout: b.layout + L }))); yield;
+    plan.parcels.push(...p.parcels.map(x => ({ ...x, layout: x.layout + L }))); yield;
     plan.streets.push(...p.streets.map(s => ({ ...s, layout: s.layout + L })));
     plan.districts.push(...p.districts.map(d => ({ ...d, layout: d.layout + L })));
     plan.walls.push(...p.walls);
@@ -60,14 +62,20 @@ export function mergeCityPlans(parts: readonly { plan: CityScene; buildings?: Ci
     plan.lotYards!.push(...(p.lotYards ?? []).map(y => ({ ...y, parcel: y.parcel + P })));
     if (p.layouts.length || p.footprint.length) plan.extent = union(plan.extent, p.extent);
     for (const [id, i] of p.parcelById) if (!plan.parcelById.has(id)) plan.parcelById.set(id, i + P);
+    yield;
   }
   plan.bins = { blocks: new SpatialBins(boxes(parts.map(p => p.plan.bins.blocks)), 128), parcels: new SpatialBins(boxes(parts.map(p => p.plan.bins.parcels)), 64),
     streets: new SpatialBins(boxes(parts.map(p => p.plan.bins.streets)), 128), landmarks: new SpatialBins(boxes(parts.map(p => p.plan.bins.landmarks)), 128) };
-  return { plan, buildings: mergeCityBuildings(parts) };
+  yield;
+  return { plan, buildings: yield* mergeCityBuildingsSteps(parts) };
 }
+/** Items merged between two pauses of mergeCityBuildingsSteps. */
+const MERGE_STEP = 2048;
 /** The buildings part of mergeCityPlans: items with their parcel indices shifted by the parcels of the earlier plans.
  * Also used alone to swap one city's buildings (very large towns: detail of the visible area, v2/nativeCityMap.ts). */
-export function mergeCityBuildings(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): CityBuildings {
+export const mergeCityBuildings = (parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): CityBuildings => runSteps(mergeCityBuildingsSteps(parts));
+/** `mergeCityBuildings` in resumable steps. */
+export function* mergeCityBuildingsSteps(parts: readonly { plan: CityScene; buildings?: CityBuildings }[]): Generator<void, CityBuildings> {
   const items: CityBuildings['items'] = [], byId = new Map<string, number>(), itemShift: number[] = [];
   let P = 0;
   for (const { plan: p, buildings } of parts) {
@@ -75,24 +83,27 @@ export function mergeCityBuildings(parts: readonly { plan: CityScene; buildings?
     for (const b of buildings?.items ?? []) {
       if (!byId.has(b.id)) byId.set(b.id, items.length);
       items.push({ ...b, parcel: b.parcel === undefined ? undefined : b.parcel + P });
+      if (items.length % MERGE_STEP === 0) yield;
     }
     P += p.parcels.length;
   }
   const built = parts.map(p => p.buildings), counts = built.map(b => b?.items.length ?? 0);
   let roofs: CityRoofs | undefined;
   if (built.some(b => b?.roofs)) {
+    yield;
     const faces = built.map(b => b?.roofs?.shapes.length ?? 0), of = (key: 'owner' | 'light' | 'tone' | 'dir' | 'flat' | 'snow') => built.map(b => b?.roofs?.[key]);
-    roofs = { shapes: built.flatMap(b => b?.roofs?.shapes ?? []),
-      owner: Uint32Array.from(concat(of('owner'), faces, itemShift)), light: Float32Array.from(concat(of('light'), faces)),
-      tone: Float32Array.from(concat(of('tone'), faces)), dir: Float32Array.from(concat(of('dir'), faces)),
-      flat: Uint8Array.from(concat(of('flat'), faces)), snow: Float32Array.from(concat(of('snow'), faces)),
+    const owner = Uint32Array.from(concat(of('owner'), faces, itemShift)); yield;
+    const light = Float32Array.from(concat(of('light'), faces)), tone = Float32Array.from(concat(of('tone'), faces)); yield;
+    const dir = Float32Array.from(concat(of('dir'), faces)), flat = Uint8Array.from(concat(of('flat'), faces)), snow = Float32Array.from(concat(of('snow'), faces)); yield;
+    roofs = { shapes: built.flatMap(b => b?.roofs?.shapes ?? []), owner, light, tone, dir, flat, snow,
       cover: built.flatMap((b, i) => b?.roofs?.cover ?? Array<string>(faces[i]).fill('')),
       wall: built.flatMap((b, i) => b?.roofs?.wall ?? Array<string>(faces[i]).fill('')),
       shadows: built.flatMap((b, i) => b?.roofs?.shadows ?? Array.from({ length: counts[i] }, (): CityRoofs['shadows'][number] => [])) };
+    yield;
   }
   return { items, byId, bins: new SpatialBins(boxes(built.flatMap(b => b ? [b.bins] : [])), 64), ...(roofs ? { roofs } : {}) };
 }
-
+function runSteps<T>(steps: Generator<void, T>): T { for (;;) { const r = steps.next(); if (r.done) return r.value; } }
 // ---------------------------------------------------------------- offscreen GL composited into Canvas 2D (V2, exports)
 /** A cityGl renderer on its own canvas, drawn then copied into a Canvas 2D frame in the same task
  * (the GL buffer is not preserved). Created on first use; `failed` once WebGL2 is unavailable. */

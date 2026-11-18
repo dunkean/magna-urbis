@@ -65,7 +65,9 @@ import { litDots } from './extras';
 import { displayQualityFor, type ResolvedDisplayQuality } from './displayQuality';
 import { RecOnlyPath2D, RecPath2D } from './gpu/path';
 import { RecordingCanvas, RecordingContext } from './gpu/recorder';
-import type { DisplayList, Mat } from './gpu/displayList';
+import { CRISP_MARK, type DisplayList, type Mat } from './gpu/displayList';
+import type { LiveLayer } from './live/contract';
+import { createOverlayLayer } from './live/overlayLayer';
 import { noteLivePart, noteLiveCount, existingGpuRasterizer, getVectorEngine, noteCpuTile, noteGpuFailure, noteGpuFallback, noteGpuTile, vectorRasterizer } from './vectorEngine';
 
 export interface CanvasLike { width: number; height: number; getContext(id: '2d', options?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D | null }
@@ -148,11 +150,20 @@ export interface CanvasRenderer {
   setOverlays(o: Partial<Overlays>): void;
   /** Labels placed in the last frame (debug / tests). */
   lastPlaced(): PlacedMapLabel[];
+  /** The last exact placement of the names (a rest frame), for the live text layer; undefined when names are off. */
+  liveText(): import('./live/contract').LiveTextPlacement | undefined;
   /** `withRect = false` draws the static base only (the page overlays the view rectangle itself). */
   drawMinimap(target: CanvasLike, view: View, viewW: number, viewH: number, withRect?: boolean): void;
   lastStats(): FrameStats;
   /** True while live frames replay a retained GPU list (pan and zoom cost one GPU replay, no CPU repaint). */
   liveRetained(): boolean;
+  /** The cartography overlay as a layer of the live compositor (render/live/contract.ts): the retained lists are
+   * replayed in `gl`, the compositor's context, with their area prefix baked once per region. Undefined when this
+   * renderer cannot record (no raster path, no invalidation hook, no WebGL2 state). The caller disposes the layer. */
+  createLiveLayer(gl: WebGL2RenderingContext): LiveLayer | undefined;
+  /** Frame, cartouche, legend and scale bar alone (screen space) on `target`, cleared first: a canvas of `cssW` x
+   * `cssH` CSS pixels at any pixel ratio. What a live frame draws over the retained map. */
+  drawFurniture(target: CanvasRenderingContext2D, view: View, cssW: number, cssH: number): void;
   /** Conservative owned storage for retaining an inactive style (native Path2D memory is estimated). */
   retainedBytes(): number;
   /** Title and legend of the actual renderer, without a view-specific scale in the external drawer. */
@@ -676,6 +687,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   };
   let placementLast: { labels: MapLabel[]; cx: number; cy: number; scale: number; w: number; h: number; maxLabels: number; pad: number; reserved: boolean; placed: PlacedMapLabel[] } | undefined;
   let textSourcesOf: readonly CityScene[] | undefined, textLabelsOf: MapLabel[] | undefined, combinedLabels: MapLabel[] = mapLabels;
+  /** The last exact placement, for the live text layer (render/live/contract.ts); a new object per placement. */
+  let liveTextLast: import('./live/contract').LiveTextPlacement | undefined, liveTextRevision = 0;
   /** The last placement moved with the map to `view`: point and area labels by their anchor (a name stays by its
    * symbol), path labels glyph by glyph along their line. Nothing is placed again, so nothing jumps during a gesture. */
   function movedPlacement(last: NonNullable<typeof placementLast>, view: View, cssW: number, cssH: number): PlacedMapLabel[] {
@@ -713,6 +726,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
         const previous = last?.labels === combinedLabels ? new Set(last.placed.map(pl => pl.label)) : undefined;
         placedLast = placeMapLabels(combinedLabels, view, cssW, cssH, measureLabel, { ...placement, reserved, previous });
         placementLast = { labels: combinedLabels, cx: view.cx, cy: view.cy, scale: view.scale, w: cssW, h: cssH, maxLabels: placement.maxLabels, pad: placement.pad, reserved: !!reserved, placed: placedLast };
+        liveTextLast = { placed: placedLast, view: { cx: view.cx, cy: view.cy, scale: view.scale }, w: cssW, h: cssH, palette: pal, family, revision: ++liveTextRevision };
       }
       drawMapLabels(ctx, placedLast, pal, family);
     }
@@ -754,6 +768,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // The retained GPU list keeps showing until its replacement is recorded (no blank frame after a town build).
     if (retained) retained.stale = true;
     retainedPending = undefined;
+    for (const layer of liveLayers) layer.invalidate?.();
     return true;
   }
 
@@ -894,6 +909,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   /** A region being recorded band by band, one band per idle step; it replaces `retained` once complete. */
   let retainedPending: (RetainedPlan & { parts: RetainedPart[]; light: boolean; ms: number }) | undefined;
   let retainedFailed = '', disposed = false, retainedSince = 0;
+  /** Set while a band is recorded for the live compositor layer: drawVector then marks where its soft area prefix
+   * ends (CRISP_MARK). Every other recording (tiles, captures, drape, classic retained bands) is left as it was. */
+  let markCrisp = false;
+  /** Layers made by createLiveLayer and not yet disposed: a scene update makes their regions stale too. */
+  const liveLayers = new Set<LiveLayer>();
+  /** Everything a retained region depends on besides its rectangle. */
+  const retainedKey = (scale: number, dpr: number, light: boolean): string =>
+    `${scale}|${dpr}|${light}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
   function retainedPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): RetainedPlan {
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2), hw = cssW / view.scale * (.5 + RETAIN_MARGIN), hh = cssH / view.scale * (.5 + RETAIN_MARGIN);
     // Region edges on a lattice (a power of two near half the view): panning back and forth meets the same regions,
@@ -904,15 +927,17 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     for (let i = 0; i < RETAIN_BANDS; i++) bands.push({ minX: rect.minX, maxX: rect.maxX, minY: rect.minY + (rect.maxY - rect.minY) * i / RETAIN_BANDS, maxY: rect.minY + (rect.maxY - rect.minY) * (i + 1) / RETAIN_BANDS });
     return { key, rect, scale, dpr, bands };
   }
-  /** Records one band; undefined (and the key marked failed) when the recorder cannot represent it. */
-  function recordBand(plan: RetainedPlan, band: Rect4): RetainedPart | undefined {
+  /** Records one band; undefined (and the key marked failed) when the recorder cannot represent it.
+   * `split`: the list carries the mark between its area prefix and its crisp layers (live compositor layer). */
+  function recordBand(plan: RetainedPlan, band: Rect4, split = false): RetainedPart | undefined {
     const cx = (band.minX + band.maxX) / 2, cy = (band.minY + band.maxY) / 2;
     const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)), h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
     const rec = new RecordingCanvas(w, h);
     let list: DisplayList | undefined;
+    markCrisp = split;
     try { drawVector({ cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band); list = rec.finish(); }
     catch (error) { noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`); }
-    finally { releaseDrapeTemps(); }
+    finally { markCrisp = false; releaseDrapeTemps(); }
     if (!list || list.unsupported) { if (list?.unsupported) noteGpuFallback(list.unsupported); retainedFailed = plan.key; return undefined; }
     return { list, rect: band, cx, cy, w, h };
   }
@@ -950,7 +975,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const start = now(), dpr = deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     const cssW = canvas.width / dpr, cssH = canvas.height / dpr, rect = viewRect(view, cssW, cssH);
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2);
-    const key = `${scale}|${dpr}|${activeLight}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const key = retainedKey(scale, dpr, activeLight);
     if (retainedFailed === key) return undefined;
     const r0 = retained;
     if (!r0 || r0.stale || r0.key !== key || !covers(r0.rect, rect)) {
@@ -1659,6 +1684,12 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       return fs;
     }
 
+    // Live compositor layer: everything above is the prefix of the list, baked once per region: the physical land
+    // use as `ground` mode draws it (tints, washes and their clips, furrows, strips, then the field network and the
+    // wood and land symbols), with the graticule and the contour lines painted under the tints. Its cost per frame
+    // followed the content most (whole-map washes, thousands of hedges and trees) and nothing below can go under it.
+    // From here on the layers are replayed at every frame, in the same order over the baked prefix.
+    if (markCrisp && ctx instanceof RecordingContext) ctx.mark(CRISP_MARK);
     // Semantic land use: above every physical land-use layer, below water, roads and labels.
     timedRec('semantic', () => deps.semantic?.draw(ctx, rect, 1 / sc, activeLight ? 'light' : 'full'));
 
@@ -2757,12 +2788,53 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
+  /** The overlay layer of the live compositor: its own retained region, recorded by the functions of the classic
+   * retained replay (same lattice, bands, key and timing) and replayed in the compositor's context. */
+  function createLiveLayer(gl: WebGL2RenderingContext): LiveLayer | undefined {
+    if (deps.raster === false || !deps.invalidate) return undefined;
+    const layer = createOverlayLayer(gl, {
+      active: () => !disposed && !rasterFailed && getVectorEngine() === 'gpu',
+      key: (scale, dpr, light) => { const key = retainedKey(scale, dpr, light); return key === retainedFailed ? undefined : key; },
+      plan: retainedPlan,
+      record(plan, band, light) {
+        // As recordStep: a live recording at the region's quality, here also at the compositor's pixel ratio.
+        const live = activeLive, wasLight = activeLight, dprBefore = activeDpr, t = now();
+        activeLive = true; activeLight = light; activeDpr = plan.dpr;
+        try { return recordBand(plan, band, true); }
+        finally { activeLive = live; activeLight = wasLight; activeDpr = dprBefore; noteLivePart('record-step', t); }
+      },
+      invalidate: () => { if (!disposed) deps.invalidate?.(); },
+      now,
+      settleMs: RETAIN_SETTLE_MS, maxWaitMs: RETAIN_MAX_WAIT_MS,
+    });
+    if (!layer) return undefined;
+    liveLayers.add(layer);
+    const end = layer.dispose;
+    layer.dispose = (): void => { liveLayers.delete(layer); end(); };
+    return layer;
+  }
+
+  /** The screen-space furniture alone, as the last step of a retained live frame draws it over the map. */
+  function drawFurniture(target: CanvasRenderingContext2D, view: View, cssW: number, cssH: number): void {
+    const surface = target.canvas as unknown as CanvasLike;
+    if (!(cssW > 0 && cssH > 0) || !(surface.width > 0 && surface.height > 0)) return;
+    const kept = stats, dprBefore = activeDpr;
+    // drawVector derives the CSS size from the canvas and the pixel ratio: give it the ratio of this canvas.
+    activeDpr = surface.width / cssW;
+    try {
+      target.setTransform(1, 0, 0, 1, 0, 0); target.globalAlpha = 1; target.globalCompositeOperation = 'source-over';
+      target.clearRect(0, 0, surface.width, surface.height);
+      drawVector(view, surface, 'overlays');
+    } finally { activeDpr = dprBefore; stats = kept; }
+  }
+
   return {
     get scene() { return scene; }, palette: pal,
-    draw, drawText, drawGround, drawCachedMap, update, suspendLive,
+    draw, drawText, drawGround, drawCachedMap, update, suspendLive, createLiveLayer, drawFurniture,
     setLabels(l: Label[]) { labels = l; },
     setOverlays(o: Partial<Overlays>) { if (o.text && JSON.stringify(o.text) !== JSON.stringify(text)) { text = o.text; mapLabels = buildMapLabels(world, pal.name, pal, text); widthCache.clear(); } Object.assign(overlays, o); },
     lastPlaced: () => placedLast,
+    liveText: () => overlays.labels && combinedLabels.length ? liveTextLast : undefined,
     drawMinimap,
     lastStats: () => stats,
     liveRetained: () => !!retained && getVectorEngine() === 'gpu',

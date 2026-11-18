@@ -197,6 +197,34 @@ describe('RecordingContext', () => {
     expect(ops[1].clip).toBeNull();
   });
 
+  it('returns the same clip node when the same clip is set again under the same parent', () => {
+    const { canvas, ctx } = record();
+    const area = newPath(), shape = newPath();
+    area.rect(0, 0, 100, 100); shape.rect(0, 0, 5, 5);
+    const colours = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff'];
+    const draw = (i: number, set: () => void): void => { ctx.save(); set(); ctx.fillStyle = colours[i]; ctx.fill(shape); ctx.restore(); };
+    draw(0, () => ctx.clip(area));
+    draw(1, () => ctx.clip(area));                                // same path, rule, transform and parent
+    draw(2, () => ctx.clip(area, 'evenodd'));                     // another rule
+    draw(3, () => { ctx.translate(1, 0); ctx.clip(area, 'evenodd'); }); // another transform
+    draw(4, () => ctx.clip(area, 'evenodd'));
+    area.rect(200, 0, 1, 1);                                      // the path changed: another outline
+    draw(5, () => ctx.clip(area, 'evenodd'));
+    const clips = (canvas.finish().ops as FillOp[]).map((o) => o.clip!);
+    expect(clips.length).toBe(6);
+    expect(clips[1]).toBe(clips[0]);
+    expect(clips[2]).not.toBe(clips[1]);
+    expect(clips[3]).not.toBe(clips[2]);
+    expect(clips[4]).not.toBe(clips[3]);
+    expect(clips[5]).not.toBe(clips[4]);
+    expect(new Set(clips.map((c) => c.id)).size).toBe(5);
+    // A nested clip is a child of the node in force, never the node itself.
+    ctx.save(); ctx.clip(area); ctx.clip(area); ctx.fill(shape); ctx.restore();
+    const [nested] = canvas.finish().ops as FillOp[];
+    expect(nested.clip!.parent!.path).toBe(area);
+    expect(nested.clip).not.toBe(nested.clip!.parent);
+  });
+
   it('parses colours', () => {
     expect(parseColor('#abc')).toEqual([0xaa / 255, 0xbb / 255, 0xcc / 255, 1]);
     expect(parseColor('#11223344')).toEqual([0x11 / 255, 0x22 / 255, 0x33 / 255, 0x44 / 255]);

@@ -407,7 +407,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     try { terrain = createTerrain3d(canvas, () => {
       updateInfo(); textOverlay.invalidate(); options.onCamera?.(terrain!.getCamera());
       if (options.details && !detailFrame) detailFrame = requestAnimationFrame(() => { detailFrame = 0; driveDetails(); });
-    }, () => { placeMarker(); }, { fastMapShader: options.fastTerrain, navigation: options.navigation, tileJobsPerFrame: 1, tileJobsConcurrent: 4, mergeOccupation: options.mergeOccupation });
+    }, () => { placeMarker(); if (waterShownDue && active) { waterShownDue = false; performance.mark('mu:water-3d-shown'); } }, { fastMapShader: options.fastTerrain, navigation: options.navigation, tileJobsPerFrame: 1, tileJobsConcurrent: 4, mergeOccupation: options.mergeOccupation });
       if (options.softwareMaterialFallback) {
         const gl = canvas.getContext('webgl2'), debug = gl?.getExtension('WEBGL_debug_renderer_info');
         const renderer = gl && String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
@@ -516,10 +516,14 @@ export function mountCity3d(options: City3dOptions): City3d {
       else { const maskKey = `${waterVisible}:${vectorRivers()}`; if (!waterMask || waterMaskVisible !== maskKey) { waterMask = water(d, waterVisible); waterMaskVisible = maskKey; } waterPaths ??= waterPath(d); }
       const climate = decorClimate(d.meta);
       t.setGroundMaterial(configured ?? { seed: seedHash(d.meta.seed), climate, sourceCell: d.meta.terrainDisplay?.sourceCell ?? d.raster.width / 1024, lighting: DEFAULT_TERRAIN_LIGHTING, displacement: false });
-      t.setTexture(waterMask);
+      const cover = materialCover(d, waterMask!, waterVisible);
+      t.setTexture(cover);
+      noteWaterMaterial(cover);
     } else {
       t.setGroundMaterial(undefined);
       t.setTexture(image ?? (mapFallback ??= hillshade(d)), imageBillboards);
+      // The draped map (the 2D ground capture) holds the rivers; the hillshade stand-in only the water cells.
+      noteWaterMaterial(image);
     }
     // Only a software material raster already holds its canopy; a material ground draped for want of relief does not.
     const forest = procedural || ground === 'map' || !softwareMaterial ? groundForest() : undefined;
@@ -528,6 +532,36 @@ export function mountCity3d(options: City3dOptions): City3d {
     textOverlay.invalidate();
     groundKey = groundResourceKey(configured);
     t.setTileLoader(loadTile); t.invalidateTiles();
+  }
+  /** Whole-map material of a material ground: shown at level 0 and under every patch until its own tile lands. The
+   * cell raster (`mask`, also every tile's source) leaves the vector courses out, so the rivers appeared only tile by
+   * tile, seconds after the relief. They are drawn here as `loadTile` draws a tile's cover (closed water paths, courses,
+   * the regime's dry and frozen beds erased, retained banks), the courses with the two-texel minimum width `waterTile`
+   * gives them, so a coarse stand-in shows them; the tiles that replace it keep their own drawing. */
+  let coverOf: { mask: HTMLCanvasElement; paths?: Path2D; display?: City3dWaterDisplay; retained?: City3dRetainedWater; visible: boolean; canvas: HTMLCanvasElement } | undefined;
+  function materialCover(d: Decor, mask: HTMLCanvasElement, waterVisible: boolean): HTMLCanvasElement {
+    const display = waterDisplay, retained = retainedWater, paths = waterPaths;
+    if (coverOf && coverOf.mask === mask && coverOf.paths === paths && coverOf.display === display && coverOf.retained === retained && coverOf.visible === waterVisible) return coverOf.canvas;
+    let canvas = mask;
+    if (waterVisible && (paths || display?.riverPaths || retained?.paths.length)) {
+      canvas = document.createElement('canvas'); canvas.width = mask.width; canvas.height = mask.height;
+      const ctx = canvas.getContext('2d')!, k = mask.width / d.raster.width, mpp = 1 / k, whole: Terrain3dTile = { key: 'cover', x: 0, y: 0, width: d.raster.width, level: 0, pixels: mask.width };
+      ctx.drawImage(mask, 0, 0);
+      ctx.save(); ctx.setTransform(k, 0, 0, k, 0, 0); ctx.fillStyle = ctx.strokeStyle = `rgb(${WATER})`;
+      if (paths) ctx.fill(paths, 'evenodd');
+      if (display?.riverPaths) { ctx.lineJoin = 'round'; ctx.lineWidth = 1.5 * mpp; ctx.fill(display.riverPaths); ctx.stroke(display.riverPaths); }
+      if (display?.regime) display.regime(ctx, 'erase', mpp);
+      ctx.restore();
+      fillRetainedWater(ctx, whole, k, `rgb(${WATER})`);
+    }
+    coverOf = { mask, paths, display, retained, visible: waterVisible, canvas };
+    return canvas;
+  }
+  /** `mu:water-3d-shown`: the first rendered frame after a material holding this ground's water was installed. */
+  let waterMaterialOf: unknown, waterShownDue = false;
+  function noteWaterMaterial(material: HTMLCanvasElement | HTMLImageElement | undefined): void {
+    if (material === waterMaterialOf) return;
+    waterMaterialOf = material; waterShownDue = !!material;
   }
   function groundResourceKey(configured: Terrain3dGroundSettings | undefined): string {
     const {ambience:_ambience,waterLook:_waterLook,townGlow:_townGlow,...resources}=configured??{};

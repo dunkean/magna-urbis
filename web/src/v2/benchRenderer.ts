@@ -69,6 +69,8 @@ import type { Rect } from '../render/tileindex';
 import { seedSubset } from '../../../rust/bridge/generationSeed';
 /** Overlay repaints slower than this follow pan/zoom as a transformed bitmap, repainted LIVE_SETTLE_MS after the view rests. */
 const LIVE_DEFER_MS = 40, LIVE_SETTLE_MS = 160;
+/** Why the composed view waits (liveBlock): the ground layer has no tile yet. Its baking goes on under the classic path. */
+const GROUND_WARMING = 'ground warming';
 import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsReady } from '../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import { viewRasterFits, viewRasterRegion, type ViewRasterRegion } from '../render/viewRaster';
@@ -76,6 +78,15 @@ import { isResourceDiagnostic } from '../render/displayDiagnostics';
 import { resourceOverlayBody, type ResourceSource } from './resourceLayer';
 import { reportDrawnLabels } from './drawnLabels';
 import { getDisplayQuality, initializeDisplayQuality, noteDisplayNavigation, reportDisplayRenderer, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
+import { createLiveCompositor, liveStats, noteClassicFrame, noteLiveUnit, type LiveCompositor } from '../render/live/compositor';
+import { getLiveMode, onLiveModeChange } from '../render/live/policy';
+import { createLiveGroundLayer } from '../render/live/groundLayer';
+import { createLiveTextLayer } from '../render/live/textLayer';
+import type { GroundTileRenderer, LiveCityEnv } from '../render/live/contract';
+/** Exact layer canvases stacked above the compositor's: hidden until their exact paint is complete. */
+const EXACT_LAYER_CSS = 'position:absolute;left:0;top:0;visibility:hidden';
+/** The furniture canvas of a moving view (frame, cartouche, legend, scale bar) is redrawn at most this often. */
+const FURNITURE_MS = 100;
 
 let brushes: Promise<BrushImages | null> | undefined;
 export async function paintedBrushes(): Promise<BrushImages | null> {
@@ -92,6 +103,8 @@ const svgPartsOf = (body: Uint8Array, region: ViewRasterRegion): BlobPart[] => {
 /** Pixel width of the whole-map renderSvg overlay of exports. */
 const EXPORT_OVERLAY_PX = 4096;
 const wholeMap = (width: number): ViewRasterRegion => ({ x: 0, y: 0, width, height: width, density: 2048 / width });
+/** Placeholder view of a stand-in that is being cleared. */
+const WHOLE_VIEW: View = { cx: 0, cy: 0, scale: 1 };
 /** The overlay decorations (tree marks, brushes) follow the map, not a town's own variations: rerolling a town must not reshuffle every wood. */
 const displaySeed = (seed: string): string => seedSubset(seed, key => !key.startsWith('city/'));
 /** Building footprints and activity yards: the woods clear around them (the cartography buildingClearings hook). */
@@ -160,7 +173,7 @@ export class BenchRenderer {
   derivedPending(): number { return cityContoursPending(this.native) + this.contourWaiters.size + Number(!!this.forestJob) + Number(!!this.programWork); }
   setSuspended(value: boolean): void {
     if (this.suspended === value) return;
-    this.suspended = value; this.gpu?.setLivePaused(value || this.preparing);
+    this.suspended = value; this.gpu?.setLivePaused(value || this.preparing); this.live?.setPaused(value || !this.composed);
     if (value) { this.suspendLiveTiles(); clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.livePending = this.groundPending = undefined; }
     else this.invalidate();
   }
@@ -194,6 +207,7 @@ export class BenchRenderer {
   private settings?: V2Settings;
   private resolved?: ResolvedAppearance;
   private paper = '#ffffff';
+  private groundPaper = '#ffffff';
   private native?: TerrainData;
   private city?: NativeCityMap;
   private exportCity?: NativeCityMap;
@@ -203,6 +217,8 @@ export class BenchRenderer {
   private contoursReady = (): void => {
     if (this.disposed) return;
     this.contourRevision++;
+    // The contours are inked through the overlay's semantic hook: its live lists are stale.
+    this.live?.invalidateLayer('overlay');
     this.invalidate();
   };
   private contourWaiters = new Map<TerrainData, Set<() => void>>();
@@ -263,14 +279,27 @@ export class BenchRenderer {
     this.element.className = 'viewer-direct';
     this.element.setAttribute('aria-hidden', 'true');
     this.element.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden';
+    // Every request for a frame of new content also makes the exact layers of the composed view due. The live
+    // compositor asks for its own frames (a tile arrived) through requestCompose, and a request raised from inside a
+    // compositor frame or work slice is a live layer's (the overlay layer reports through the cartography's
+    // `invalidate`): both are frames of the same content, which leave the exact layers and the miniature as they are.
+    const notify = invalidate;
+    this.invalidate = () => {
+      if (!this.live?.busy()) { this.exactDirty = true; notify(); return; }
+      const only = this.redrawOnly; this.redrawOnly = true;
+      try { notify(); } finally { this.redrawOnly = only; }
+    };
     const repaint = (): void => {
       this.liveCapture = false; this.cityContent++;
       this.suspendLiveTiles(); clearTimeout(this.liveTimer); this.livePending = undefined; this.liveShown = undefined;
+      this.exactPainted = false;
+      for (const name of ['overlay', 'city', 'text'] as const) this.live?.invalidateLayer(name);
       if (!this.disposed && this.world) this.invalidate();
     };
     // The vector engine is part of the frame key and of the overlay tile keys: a switch repaints like a quality change.
-    const offQuality = onDisplayQualityChange(repaint), offEngine = onVectorEngineChange(repaint);
-    this.unlistenQuality = () => { offQuality(); offEngine(); };
+    // So does the live display mode: the next frame takes the other path.
+    const offQuality = onDisplayQualityChange(repaint), offEngine = onVectorEngineChange(repaint), offLive = onLiveModeChange(repaint);
+    this.unlistenQuality = () => { offQuality(); offEngine(); offLive(); };
   }
   private ownsMaterialContext: boolean;
   /** Resources an export renderer may reuse (read-only for it). */
@@ -290,12 +319,14 @@ export class BenchRenderer {
     this.liveCapture = false;
     this.suspendLiveTiles();
     this.retainLiveFrame();
-    this.preparing = true; this.gpu?.setLivePaused(true);
-    const previous = { world: this.world, scene: this.scene, settings: this.settings, resolved: this.resolved, exportLayers: this.exportLayers, gpuActive: this.gpuActive, native: this.native };
+    // No tile is baked while the passes change the terrain renderer's state.
+    this.preparing = true; this.gpu?.setLivePaused(true); this.live?.setPaused(true);
+    const previous ={ world: this.world, scene: this.scene, settings: this.settings, resolved: this.resolved, exportLayers: this.exportLayers, gpuActive: this.gpuActive, native: this.native };
     try {
     this.settings = settings; this.resolved = r; layers = { ...(r.cartography.roads ? {} : { roads: false }), ...layers }; this.exportLayers = layers;
     const scene = renderScene(world, settings);
     this.world = world; this.scene = scene; this.native = scene.terrain;
+    if (previous.native !== this.native) performance.mark('mu:terrain-data');
     const effective = effectiveTerrainSettings(settings, world.mapSize);
     setMapSeason(r.ground.season, effective.climateZone, r.ground.calendar);
     setMapClimateZone(effective.climateZone, effective.climateValues);
@@ -305,16 +336,25 @@ export class BenchRenderer {
     const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome, getLanguage(), getDistanceUnit(), settings.naming?.mode,settings.naming?.mapLanguage,settings.naming?.script]);
     this.input = () => ({ r, revisions: scene.revisions, layers, mode: this.mode(), effective: effectiveKey, forestEffective: forestKey, worldSig });
     this.paper = terrainStyle(r.styleId, r.palette.colors).palette.paper;
+    // What the ground shader itself lays under and around the map (setLook `background`): the live ground tiles' paper.
+    this.groundPaper = terrainStyle(r.ground.style, r.palette.colors).palette.paper;
+      // The vector water raster (the whole river network decoded as one SVG) depends on the water and frame passes only:
+      // it starts before the first later pass, so its decode overlaps them instead of following the town and the
+      // cartography, and is awaited below as before.
+      let vectors: Promise<void> | undefined;
+      const startVectors = (): void => { if (this.vectorsDirty) { vectors = this.refreshVectors(); void vectors.catch(() => {}); } };
+      const after = (run: () => void | Promise<void>) => (): Promise<void> => { startVectors(); return this.prepareStep(run); };
       const ran = await this.passes.run(() => passKeys(this.input()), {
         terrainData: () => this.prepareStep(() => this.terrainDataPass()), terrainLook: () => this.prepareStep(() => this.terrainLookPass()), forest: () => this.prepareStep(() => this.forestPass()), water: () => this.prepareStep(() => this.waterPass()),
-        frame: () => this.prepareStep(() => this.framePass()), cartography: () => this.prepareStep(() => this.cartographyPass()), overlays: () => this.prepareStep(() => this.overlaysPass()), semantic: () => this.prepareStep(() => this.semanticPass()), city: () => this.prepareStep(() => this.cityPass()) });
+        frame: () => this.prepareStep(() => this.framePass()), cartography: after(() => this.cartographyPass()), overlays: after(() => this.overlaysPass()), semantic: after(() => this.semanticPass()), city: after(() => this.cityPass()) });
       this.request.mark('fields-ready');
       const programs = this.preparePrograms();
       // Live ground already has a last/preview variant. Exact consumers explicitly await it.
       if (r.target !== 'view2d') await programs;
-      if (this.vectorsDirty) await this.refreshVectors();
+      startVectors(); await vectors;
       this.presentationKey = JSON.stringify([scene.revisions, world.stats['v2.waterEditRevision'], world.stats['v2.editRevision'], r, effectiveKey, forestKey, layers, getLanguage(), getDistanceUnit(), getDisplayQuality()]);
       this.stats.passes = ran;
+      this.noteLiveContent(ran, previous);
     } catch (error) {
       // Restore the previous renderer state; every pass re-runs next time (a partial update must not look current).
       Object.assign(this, { ...previous, gpuActive: previous.gpuActive && !!this.gpu });
@@ -325,6 +365,11 @@ export class BenchRenderer {
       this.previousFrame?.element.remove(); this.previousFrame = undefined;
       this.surface.style.visibility = ''; if (this.liveGround) this.liveGround.style.visibility = '';
       this.liveShown = undefined; this.groundShown = undefined;
+      // Composed view: the canvases the frozen frame hid come back as they were (the previous map, as the surface
+      // above) until the next frame repaints the exact layers.
+      if (this.composed && this.live) { this.live.canvas.style.visibility = 'visible'; this.applyExactVisibility(); }
+      this.live?.setPaused(this.suspended || !this.composed);
+      this.exactPainted = false;
     }
     this.stats.style = r.ground.style; this.stats.renderer = this.gpuActive ? 'TerrainGl + CityBench' : 'RustBench raster + CityBench';
     this.stats.terrainBackend = this.gpuActive ? terrainRendererBackend(this.gpu!) : 'cpu';
@@ -381,6 +426,7 @@ export class BenchRenderer {
   private retainLiveFrame(): void {
     if (this.suspended) return;
     clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.livePending = this.groundPending = undefined;
+    if (this.composed) { this.retainComposedFrame(); return; }
     const shown = this.groundShown ?? this.liveShown;
     if (!shown || this.surface.parentElement !== this.element) return;
     const frozen = document.createElement('div');
@@ -400,7 +446,11 @@ export class BenchRenderer {
       riverArea: t.water?.riverArea ?? .02, riverMode: effective.hydrology?.riverMode ?? 'vector', overlay: r.diagnostic.startsWith('v-') ? r.diagnostic as VectorOverlay : 'none',
       season: { zone: effective.climateZone, season: r.ground.season, calendar: r.ground.calendar } };
   }
-  private dropBackground(): void { this.backgroundHref = undefined; this.backgroundImage = undefined; }
+  private dropBackground(): void {
+    this.backgroundHref = undefined; this.backgroundImage = undefined;
+    // The whole-map capture may stand in for the live ground tiles (composeFrame): it showed the previous ground.
+    this.live?.setStandIn('ground', undefined, WHOLE_VIEW, 1, 1);
+  }
   /** GPU: context, height/cave/water-surface textures (once per terrain product). CPU: nothing. */
   private async terrainDataPass(): Promise<void> {
     this.gpuActive = false; this.dropBackground();
@@ -545,9 +595,12 @@ export class BenchRenderer {
   }
   /** GPU water/overlay textures, plus the vector water and hydrology diagnostics (rasterized per view). */
   private async waterPass(): Promise<void> {
+    performance.mark('mu:water-2d-requested');
     this.dropBackground(); this.cityWater = undefined;
     const t = this.native!, r = this.resolved!, style = r.ground.style, colors = r.palette.colors, layers = this.layers(), water = this.waterDisplay();
     const ink = r.composition.networks.water.look === 'ink', visible = layers.water && r.composition.networks.water.visible;
+    // The next frame that draws this water marks `mu:water-2d-shown` (drawInto, composeFrame).
+    this.waterShownDue = visible && !!(t.water || t.hydrology || retainedDecorOf(this.world!.terrain));
     const vectorDisplay = { ...water, style: ink ? r.palette.mapStyle : 'render3d' as const };
     if (this.gpuActive) {
       if (t.water) {
@@ -583,6 +636,9 @@ export class BenchRenderer {
     }
     this.waterSvg = svg; this.vectorsDirty = true;
   }
+  /** The water pass of the current map produced water that no frame has drawn yet. */
+  private waterShownDue = false;
+  private noteWaterShown(): void { this.waterShownDue = false; performance.mark('mu:water-2d-shown'); }
   /** The map frame when the relief (which draws its own) is hidden. */
   private framePass(): void {
     const r = this.resolved!, t = this.native!, layers = this.layers();
@@ -596,8 +652,12 @@ export class BenchRenderer {
     if (svg === this.vectors) return;
     const whole = wholeMap(this.native!.width);
     this.vectors = svg; this.vectorView = undefined; this.vectorRequest = undefined;
-    this.vectorBase = svg ? { image: await imageOf(svgOf(svg, whole)), region: whole } : undefined;
+    const image = svg ? await imageOf(svgOf(svg, whole)) : undefined;
+    // A newer body was set while this one decoded (set() may start the raster before its last passes).
+    if (this.vectors !== svg) return;
+    this.vectorBase = image && { image, region: whole };
     this.waterMaskVersion++;
+    if (image) performance.mark('mu:water-2d-raster');
   }
   private shownWorld(): World {
     const world = this.world!, layers = this.exportLayers, r = this.resolved!;
@@ -841,7 +901,19 @@ export class BenchRenderer {
     ctx.clip(this.crossingHoles(), 'evenodd');
     ctx.save();
     if (this.groundRedraw) { ctx.globalAlpha = 1; this.groundRedraw(ctx); }
-    else { ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(path); }
+    else {
+      ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; ctx.fill(path);
+      // Composed rest frame: a town painted straight into its own canvas (opacity 1) no longer shares it with the
+      // cartography, which the same cut cleared when both lay in the surface.
+      const under = ctx.canvas === this.cityCanvas && this.cartography ? this.overlay.getContext('2d') : null;
+      if (under) {
+        under.save(); under.setTransform(ctx.getTransform());
+        under.beginPath(); under.rect(box.minX, box.minY, box.maxX - box.minX, box.maxY - box.minY); under.clip();
+        under.clip(path); under.clip(this.crossingHoles(), 'evenodd');
+        under.globalCompositeOperation = 'destination-out'; under.globalAlpha = 1; under.fill(path);
+        under.restore();
+      }
+    }
     ctx.restore();
     // What stands above the water (the quays) is drawn again inside it, nowhere else.
     over?.();
@@ -902,6 +974,8 @@ export class BenchRenderer {
     return canvas;
   }
   /** No GPU readback, intermediate bitmap or full-frame copy in the live display path. */
+  /** The whole task of a live frame, for the journal of slow units (LiveStats.slow). */
+  noteFrame(since: number): void { noteLiveUnit('frame', since); }
   drawLive(view: View, w: number, h: number, dpr: number): void {
     if (this.suspended) return;
     // A failed program is reported by settled()/exactReady() (the appearance status); the live view keeps its stand-in.
@@ -917,6 +991,16 @@ export class BenchRenderer {
       }
       return;
     }
+    // Live compositor (render/live): one WebGL2 canvas composes the moving view and the ground at rest. Whatever
+    // blocks it (policy, no hardware WebGL2, CPU or illustrated ground, a lost context) leaves the classic path below.
+    const blocked = this.liveBlock(view, w, h, dpr);
+    this.stats.live = blocked ?? 'compositor';
+    if (!blocked) { this.drawComposed(this.live!, view, w, h, dpr); return; }
+    // The ground layer bakes its tiles in the terrain renderer's own canvas, which the classic path shows: no
+    // background baking while that canvas is on screen.
+    // Except while the ground layer waits for its first tile (the look's pipelines are still compiling): the classic
+    // path shows the map meanwhile, as it always did, and the first baked tile asks for the frame that composes.
+    this.leaveComposed(); this.live?.setPaused(blocked !== GROUND_WARMING); noteClassicFrame(blocked);
     const previousView = this.liveRequested;
     const frameKey = this.frameKey(view, w, h, dpr);
     if (this.restoredFrameKey === frameKey) { this.notePresented(); return; }
@@ -996,6 +1080,310 @@ export class BenchRenderer {
       return;
     }
     this.paintLive(view, w, h, dpr);
+  }
+  // --- Composed view (render/live/compositor.ts) ----------------------------------------------------------------------
+  // The compositor canvas lies at the bottom of `element`: it draws the ground (baked tiles) and the water raster in
+  // every frame, and the overlay, the town and the names while the view moves. LIVE_SETTLE_MS after the last move the
+  // exact renderers paint those three as in the classic path, each into its own transparent canvas above the
+  // compositor's. An exact canvas is shown once its paint is complete, and its live layer stops being drawn in the
+  // same task; it then becomes that layer's stand-in for the next gesture. The terrain renderer's own canvas is not in
+  // the page (captures and exports still draw through it), and the stored-frame cache is not used: at rest only the
+  // exact layers are repainted, from warm caches, and a compositor-only frame (a tile arrived) repaints none of them.
+  private live?: LiveCompositor;
+  /** No WebGL2, a software renderer or a layer factory that threw: the classic path for good. */
+  private liveRefused = false;
+  /** The objects the live layers were made from: a new terrain renderer, cartography or city map gets new layers. */
+  private liveOwners: { gpu?: TerrainRenderer; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
+  private composed = false;
+  /** The overlay canvas in the page (the cartography pass may swap `overlay`). */
+  private composedOverlay?: HTMLCanvasElement;
+  private cityCanvas = document.createElement('canvas');
+  private textCanvas = document.createElement('canvas');
+  private furnitureCanvas = document.createElement('canvas');
+  private furnitureDrawn = 0;
+  private furnitureAt: View = { cx: NaN, cy: NaN, scale: NaN };
+  /** Exact canvases shown (their live layers are then not drawn). Top down: a canvas lies above the compositor's, so
+   * a layer is only shown exact once the layers above it are. */
+  private exactOverlay = false;
+  private exactCity = false;
+  private exactText = false;
+  /** The exact canvases hold a paint of the view in `liveShown`; `exactDirty`: content changed since (see the constructor). */
+  private exactPainted = false;
+  private exactDirty = true;
+  /** The overlay of the last rest frame was the live layer: the cartography renderer drew nothing for it. */
+  private overlayLive = false;
+  /** A frame of the same content for the compositor alone: the exact layers are not due. */
+  private requestCompose = (): void => {
+    if (this.disposed || this.suspended) return;
+    const dirty = this.exactDirty;
+    this.redraw(); this.exactDirty = dirty;
+  };
+  private cityVisibility?: { layers: Partial<ExportLayers>; shown: Partial<ExportLayers> };
+  /** The layers a live town frame is drawn with (drawInto builds the same object per frame). */
+  private cityLayers(): Partial<ExportLayers> {
+    if (this.cityVisibility?.layers !== this.exportLayers) this.cityVisibility = { layers: this.exportLayers, shown: { ...this.exportLayers, labels: false } };
+    return this.cityVisibility.shown;
+  }
+  private liveCityEnv: LiveCityEnv = { appearance: () => this.resolved!, visibility: () => this.cityLayers(), water: () => this.cityWater, invalidate: this.requestCompose };
+  /** The terrain renderer as the ground layer bakes from it; undefined while it cannot draw the map. */
+  private groundTiles(): GroundTileRenderer | undefined {
+    const ground = this.gpu as Partial<GroundTileRenderer> | undefined;
+    return this.gpuActive && ground?.renderWorldTile && ground.contentRevision ? ground as GroundTileRenderer : undefined;
+  }
+  /** Why this frame cannot be composed (undefined: it can). Creates the compositor and its layers on the way. */
+  private liveBlock(view?: View, w = 0, h = 0, dpr = 1): string | undefined {
+    if (getLiveMode() !== 'compositor') return 'policy';
+    if (this.liveRefused) return 'no hardware WebGL2';
+    const r = this.resolved;
+    if (!r || !this.world) return 'no map';
+    if (r.target !== 'view2d') return 'not the 2D view';
+    if (!this.gpuActive || !this.gpu) return 'CPU ground';
+    if (this.fantasy || isFantasyStyle(r.ground.style)) return 'illustrated ground';
+    const live = this.live ??= createLiveCompositor({ invalidate: this.requestCompose, quality: getDisplayQuality });
+    if (!live) { this.liveRefused = true; return 'no hardware WebGL2'; }
+    if (!live.active()) return 'context lost';
+    try { this.syncLiveLayers(live); }
+    catch (error) {
+      // A layer factory of another module threw: the map stays on the classic path rather than failing every frame.
+      console.warn('Live compositor: layer setup failed, classic display.', error);
+      this.liveRefused = true; this.stats.liveError = String(error); return 'layer setup failed';
+    }
+    if (!live.hasLayer('ground')) return 'no ground layer';
+    // No baked tile covers the view yet and nothing stands in for the ground: a composed frame would show bare paper.
+    if (view && !live.layerReady('ground', view, w, h, Math.min(2, dpr)) && !this.miniGround()) return GROUND_WARMING;
+    return undefined;
+  }
+  private syncLiveLayers(live: LiveCompositor): void {
+    const gl = live.gl, owners = this.liveOwners;
+    if (owners.gpu !== this.gpu) {
+      owners.gpu = this.gpu; owners.ground = false;
+      live.setLayer('ground', this.gpu ? createLiveGroundLayer(gl, { renderer: () => this.groundTiles(), mapSize: () => this.world?.mapSize ?? 1, paper: () => this.groundPaper, invalidate: this.requestCompose }) : undefined);
+    }
+    // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also
+    // restarts the compositor's work loop.
+    const ground = !!this.groundTiles();
+    if (ground && !owners.ground) live.invalidateLayer('ground');
+    owners.ground = ground;
+    // One text layer for the page: it reads the placement of whichever cartography is current.
+    if (!owners.text) { owners.text = true; live.setLayer('text', createLiveTextLayer(gl, { placement: () => this.cartography?.liveText(), invalidate: this.requestCompose })); }
+    if (owners.cartography !== this.cartography) {
+      owners.cartography = this.cartography;
+      live.setLayer('overlay', this.cartography?.createLiveLayer(gl));
+      live.invalidateLayer('text');
+    }
+    if (owners.city !== this.city) {
+      owners.city = this.city;
+      live.setLayer('city', this.city?.createLiveLayer(gl, this.liveCityEnv));
+    }
+  }
+  /** After the passes of set(): what the live layers cannot see by themselves. The ground layer follows the
+   * renderer's contentRevision, the text layer the placement revision. */
+  private noteLiveContent(ran: readonly string[], before: { resolved?: ResolvedAppearance; native?: TerrainData }): void {
+    const live = this.live, r = this.resolved!;
+    if (!live) return;
+    // Another ground style or terrain: the rasters of the previous map must not stand in for this one.
+    if (before.resolved?.ground.style !== r.ground.style || before.native !== this.native) live.clearStandIns();
+    // Another terrain: the baked tiles of the previous map must never show under this one (a stale tile is only a
+    // fair stand-in for the same terrain in another look). The next frame makes a new ground layer.
+    if (before.native !== this.native) this.liveOwners.gpu = undefined;
+    // The terrain pass takes the renderer away while it runs (gpuActive), and the ground layer's work stops without
+    // one: its tiles are marked stale (they keep showing until re-baked) and the work loop starts again.
+    if (ran.includes('terrainData')) live.invalidateLayer('ground');
+    // The semantic hook of the overlay (contours, rural semantics, water cut) and the town hooks (urban semantics,
+    // rivers) are this renderer's state.
+    if (ran.some(name => name === 'cartography' || name === 'overlays' || name === 'semantic' || name === 'water' || name === 'frame')) live.invalidateLayer('overlay');
+    if (ran.some(name => name === 'city' || name === 'semantic' || name === 'water') || before.resolved?.keys.city !== r.keys.city) live.invalidateLayer('city');
+  }
+  private enterComposed(live: LiveCompositor, w: number, h: number): void {
+    if (!this.composed) {
+      this.composed = true;
+      // The terrain renderer's canvas and the flattened surface leave the page.
+      this.liveGround?.remove(); this.liveGround = undefined; this.groundShown = undefined;
+      clearTimeout(this.groundTimer); clearTimeout(this.liveTimer); this.groundPending = this.livePending = undefined;
+      this.surface.remove(); this.surface.style.transform = '';
+      this.liveShown = undefined; this.liveCapture = false; this.restoredFrameKey = '';
+      this.liveWidth = this.liveHeight = 0; this.composedOverlay = undefined;
+      this.exactOverlay = this.exactCity = this.exactText = false; this.exactPainted = false;
+      for (const canvas of [this.cityCanvas, this.textCanvas, this.furnitureCanvas]) canvas.style.cssText = EXACT_LAYER_CSS;
+      live.canvas.style.visibility = 'visible'; live.setPaused(false);
+      this.element.prepend(live.canvas); this.element.append(this.cityCanvas, this.textCanvas, this.furnitureCanvas);
+    }
+    if (this.composedOverlay !== this.overlay) {
+      this.composedOverlay?.remove(); this.composedOverlay = this.overlay; this.exactOverlay = false; this.exactPainted = false;
+      this.overlay.style.cssText = EXACT_LAYER_CSS; this.overlay.style.width = w + 'px'; this.overlay.style.height = h + 'px';
+      live.canvas.after(this.overlay);
+    }
+    if (w !== this.liveWidth || h !== this.liveHeight) {
+      this.liveWidth = w; this.liveHeight = h;
+      for (const canvas of [this.overlay, this.cityCanvas, this.textCanvas, this.furnitureCanvas]) { canvas.style.width = w + 'px'; canvas.style.height = h + 'px'; }
+    }
+  }
+  /** Back to the classic stack: its first frame attaches the terrain canvas and the surface again. */
+  private leaveComposed(): void {
+    if (!this.composed) return;
+    this.composed = false;
+    clearTimeout(this.liveTimer); this.livePending = undefined;
+    this.live?.canvas.remove(); this.composedOverlay?.remove(); this.composedOverlay = undefined; this.overlay.style.cssText = '';
+    for (const canvas of [this.cityCanvas, this.textCanvas, this.furnitureCanvas]) { canvas.remove(); canvas.width = canvas.height = 0; }
+    this.surface.remove(); this.surface.style.cssText = '';
+    this.exactOverlay = this.exactCity = this.exactText = false; this.exactPainted = false;
+    this.liveShown = undefined; this.liveCapture = false; this.liveWidth = this.liveHeight = 0;
+  }
+  private applyExactVisibility(): void {
+    if (this.composedOverlay) this.composedOverlay.style.visibility = this.exactOverlay ? 'visible' : 'hidden';
+    this.cityCanvas.style.visibility = this.exactCity ? 'visible' : 'hidden';
+    this.textCanvas.style.visibility = this.exactText ? 'visible' : 'hidden';
+  }
+  /** The frozen stand-in of a style switch (retainLiveFrame) for the composed view. */
+  private retainComposedFrame(): void {
+    const shown = this.liveShown, live = this.live;
+    if (!shown || !live?.active()) return;
+    // The compositor's buffer is not preserved: it can only be copied in the task that drew it.
+    if (!live.draw(shown.view, shown.w, shown.h, Math.min(2, shown.dpr), false)) return;
+    const frozen = document.createElement('div');
+    frozen.style.cssText = `position:absolute;inset:0;z-index:1;background:${this.paper};pointer-events:none`;
+    const sources = [live.canvas];
+    if (this.exactOverlay && this.composedOverlay) sources.push(this.composedOverlay);
+    if (this.exactCity) sources.push(this.cityCanvas);
+    if (this.exactText) sources.push(this.textCanvas);
+    if (this.furnitureCanvas.style.visibility !== 'hidden') sources.push(this.furnitureCanvas);
+    for (const source of sources) {
+      if (!source.width || !source.height) continue;
+      const copy = document.createElement('canvas'); copy.width = source.width; copy.height = source.height;
+      copy.style.cssText = source.style.cssText; copy.style.visibility = 'visible';
+      copy.getContext('2d')!.drawImage(source, 0, 0); frozen.append(copy); source.style.visibility = 'hidden';
+    }
+    this.element.append(frozen); this.previousFrame = { element: frozen, view: { ...shown.view }, w: shown.w, h: shown.h };
+  }
+  private drawComposed(live: LiveCompositor, view: View, w: number, h: number, dpr: number): void {
+    const previous = this.liveRequested, shown = this.liveShown;
+    const same = !!shown && shown.w === w && shown.h === h && shown.dpr === dpr && shown.view.cx === view.cx && shown.view.cy === view.cy && shown.view.scale === view.scale;
+    // An exact screenshot frame (prepareCapture) covers the view until it changes.
+    if (this.liveCapture) { if (same) return; this.liveCapture = false; }
+    if (this.surface.parentElement === this.element) this.surface.remove();
+    const now = performance.now();
+    // A new size counts as a move: the exact canvases no longer fit the view.
+    const navigating = !!previous && (previous.cx !== view.cx || previous.cy !== view.cy || previous.scale !== view.scale)
+      || !!shown && (shown.w !== w || shown.h !== h || shown.dpr !== dpr);
+    if (navigating) { noteDisplayNavigation(); this.suspendLiveTiles(); this.movingUntil = now + LIVE_SETTLE_MS; }
+    if (previous) { previous.cx = view.cx; previous.cy = view.cy; previous.scale = view.scale; } else this.liveRequested = { ...view };
+    this.enterComposed(live, w, h);
+    let at = this.liveShown;
+    if (at) { at.view.cx = view.cx; at.view.cy = view.cy; at.view.scale = view.scale; at.w = w; at.h = h; at.dpr = dpr; }
+    else at = this.liveShown = { view: { ...view }, w, h, dpr };
+    this.dpr = dpr;
+    if (now < this.movingUntil) {
+      // A frame of a gesture: the compositor alone. No exact renderer runs; their canvases are hidden.
+      if (this.exactOverlay || this.exactCity || this.exactText) { this.exactOverlay = this.exactCity = this.exactText = false; this.applyExactVisibility(); }
+      this.exactPainted = false;
+      this.composeFrame(live, view, w, h, dpr, true, now);
+      // Invalidations during a gesture must not restart the rest timer.
+      const restart = navigating || !this.livePending;
+      this.livePending = at;
+      if (restart) {
+        clearTimeout(this.liveTimer);
+        this.liveTimer = setTimeout(() => { if (!this.disposed && this.world && this.livePending) this.redraw(); }, Math.max(1, this.movingUntil - now + 1));
+      }
+      return;
+    }
+    // At rest: the exact layers when they are due (a view that came to rest, new content), else the compositor alone
+    // (a ground tile arrived, the page asked for a frame of the same content).
+    if (same && this.exactPainted && !this.exactDirty) { this.composeFrame(live, view, w, h, dpr, false, now); return; }
+    this.paintExact(live, view, w, h, dpr, now);
+  }
+  /** One compositor frame: ground, water, and the live layers whose exact canvas is not shown. */
+  private composeFrame(live: LiveCompositor, view: View, w: number, h: number, dpr: number, moving: boolean, now: number, repaint = false): void {
+    const t = performance.now(), ratio = Math.min(2, dpr);
+    // The water raster of this frame; a moving view keeps the one it has (a finer one is rasterized at rest).
+    let vectors: { image: HTMLCanvasElement; region: ViewRasterRegion } | undefined;
+    this.liveMoving = moving;
+    try { vectors = this.vectorRaster(view, w, h, dpr); } finally { this.liveMoving = false; }
+    live.setWater(vectors?.image, vectors?.region);
+    live.setPaper(this.groundPaper);
+    live.setLayerShown('overlay', !this.exactOverlay); live.setLayerShown('text', !this.exactText);
+    live.setLayerShown('city', !this.exactCity && (this.exportLayers.city !== false || this.exportLayers.streets !== false));
+    live.draw(view, w, h, ratio, moving);
+    // Ground tiles not baked yet (the first frames of a map or of a look) and nothing to stand in for them: the
+    // whole-map capture of the miniature does, uploaded once, and the frame is composed again in this task.
+    const ground = liveStats().layers.ground;
+    if (ground && !ground.ready && !ground.standIn) {
+      const coarse = this.miniGround(), size = this.world!.mapSize;
+      if (coarse) { live.setStandIn('ground', coarse, { cx: size / 2, cy: size / 2, scale: 1 }, size, size); live.draw(view, w, h, ratio, moving); }
+    }
+    // The rivers are in this frame: the vector water raster, or the GPU ground's own once the tiles of the view are baked
+    // (a coarse tier, a stand-in or a tile of the previous map may not show them).
+    if (this.waterShownDue) { const stats = liveStats(), baked = stats.layers.ground; if (vectors || baked?.ready && !baked.standIn && !stats.pending.ground) this.noteWaterShown(); }
+    if (moving) noteLivePart('frame', t);
+    this.paintFurniture(view, w, h, dpr, now, moving, repaint);
+  }
+  /** Frame, cartouche, legend and scale bar over the live overlay layer, which does not draw them: at most every
+   * FURNITURE_MS while the view moves, once per view at rest, and again when the content may have changed (`repaint`). */
+  private paintFurniture(view: View, w: number, h: number, dpr: number, now: number, moving: boolean, repaint: boolean): void {
+    const canvas = this.furnitureCanvas, cartography = this.cartography, hidden = canvas.style.visibility === 'hidden';
+    // The exact overlay canvas holds the furniture, and so does its raster when it stands in for the live layer.
+    if (!cartography || this.exactOverlay || liveStats().layers.overlay?.standIn) { if (!hidden) canvas.style.visibility = 'hidden'; return; }
+    const pixelW = Math.round(w * dpr), pixelH = Math.round(h * dpr), at = this.furnitureAt;
+    const same = at.cx === view.cx && at.cy === view.cy && at.scale === view.scale && canvas.width === pixelW && canvas.height === pixelH;
+    if (hidden) canvas.style.visibility = 'visible';
+    else if (!repaint && (same || moving && now - this.furnitureDrawn < FURNITURE_MS)) return;
+    this.furnitureDrawn = now; at.cx = view.cx; at.cy = view.cy; at.scale = view.scale;
+    if (canvas.width !== pixelW) canvas.width = pixelW;
+    if (canvas.height !== pixelH) canvas.height = pixelH;
+    const ctx = canvas.getContext('2d')!;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pixelW, pixelH); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cartography.drawFurniture(ctx, view, w, h);
+  }
+  /** Rest frame of the composed view: the exact overlay, town and names, as drawInto paints them, each in its canvas. */
+  private paintExact(live: LiveCompositor, view: View, w: number, h: number, dpr: number, now: number): void {
+    clearTimeout(this.liveTimer); this.livePending = undefined; this.exactDirty = false;
+    const r = this.resolved!, pixelW = Math.round(w * dpr), pixelH = Math.round(h * dpr), started = performance.now();
+    const cityOn = this.exportLayers.city !== false || this.exportLayers.streets !== false;
+    // The ground is the compositor's canvas below: the town clears its own pixels over the rivers (waterAbove).
+    this.groundRedraw = undefined;
+    const cleared = (canvas: HTMLCanvasElement): CanvasRenderingContext2D => {
+      if (canvas.width !== pixelW) canvas.width = pixelW;
+      if (canvas.height !== pixelH) canvas.height = pixelH;
+      const ctx = canvas.getContext('2d')!;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pixelW, pixelH); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return ctx;
+    };
+    // The overlay at rest is the live layer itself when it can draw this view: it replays the lists the classic live
+    // frame replays (same recording, same rasterizer), so `cartography.draw` would only record the region a second
+    // time (drawRetained keeps its own) and copy it into a canvas. The exact overlay canvas is painted when the layer
+    // cannot: processor vector engine, a region not recorded yet, a failed layer.
+    this.overlayLive = live.hasLayer('overlay') && live.layerReady('overlay', view, w, h, Math.min(2, dpr));
+    LiveTileFill.track(this, () => {
+      let t = performance.now();
+      if (this.cartography && !this.overlayLive) {
+        if (this.overlay.width !== pixelW) this.overlay.width = pixelW;
+        if (this.overlay.height !== pixelH) this.overlay.height = pixelH;
+        this.cartography.draw(view, { live: true });
+      }
+      noteLiveUnit('exact:overlay', t); t = noteLivePart('cartography', t);
+      const town = cleared(this.cityCanvas);
+      if (cityOn) this.stats.city = this.city?.draw(town, view, w, h, dpr, r, this.cityLayers(), this.cityHooks, { key: this.cityContent, moving: false });
+      noteLiveUnit('exact:city', t); t = noteLivePart('city', t);
+      const names = cleared(this.textCanvas);
+      if (this.cartography) { this.cartography.drawText(names, view, w, h, false); reportDrawnLabels(this.cartography.lastPlaced().map(p => p.label.id)); }
+      noteLiveUnit('exact:text', t); noteLivePart('text', t);
+    });
+    const cityPending = cityOn && !!(this.stats.city as { pending?: boolean } | undefined)?.pending;
+    const overlayPending = !this.overlayLive && (LiveTileFill.pending(this) > 0 || (this.cartography?.lastStats().rasterPending ?? 0) > 0);
+    // An overlay the live layer cannot draw shows its exact canvas as it fills, as the classic path does; the town's
+    // canvas lies above it, so it is then shown too (it holds the previous town layer until its repaint ends, as in
+    // the classic path). Otherwise the town canvas waits for its complete paint while the live town layer shows.
+    this.exactText = true;
+    this.exactOverlay = !!this.cartography && !this.overlayLive;
+    this.exactCity = this.exactOverlay || !cityPending || !live.hasLayer('city');
+    this.applyExactVisibility();
+    this.composeFrame(live, view, w, h, dpr, false, now, true);
+    // The complete exact rasters stand in for their layers at the next gesture.
+    if (this.exactOverlay && !overlayPending) live.setStandIn('overlay', this.overlay, view, w, h);
+    if (this.exactCity && !cityPending) live.setStandIn('city', cityOn && this.city ? this.cityCanvas : undefined, view, w, h);
+    live.setStandIn('text', this.cartography ? this.textCanvas : undefined, view, w, h);
+    this.exactPainted = true;
+    noteLivePart('frame', started);
+    this.notePresented();
   }
   /** Shows the stored frame of this view, if there is one: nothing is painted. */
   private restoreFrame(frameKey: string, view: View, w: number, h: number, dpr: number): boolean {
@@ -1099,7 +1487,8 @@ export class BenchRenderer {
     return Number(this.preparing) + Number(!!this.forestJob) + Number(!!this.programWork) + Number(!!this.programError)
       + Number(!!this.vectorRequest) + Number(!!this.livePending) + Number(!!this.groundPending)
       + Number(!!(this.stats.city as { pending?: boolean } | undefined)?.pending)
-      + LiveTileFill.pending(this) + (this.cartography?.lastStats().rasterPending ?? 0) + cityContoursPending(this.native) + this.contourWaiters.size;
+      // Composed view whose overlay is the live layer: the cartography's last stats are those of an older frame.
+      + LiveTileFill.pending(this) + (this.composed && this.overlayLive ? 0 : this.cartography?.lastStats().rasterPending ?? 0) + cityContoursPending(this.native) + this.contourWaiters.size;
   }
   /** Explicit readback for screenshots/illustration; ordinary navigation never calls it. */
   prepareCapture(): void {
@@ -1111,6 +1500,9 @@ export class BenchRenderer {
     if (frame && this.world) {
       this.drawInto(this.surface, frame.view, frame.w, frame.h, frame.dpr, false);
       this.surface.style.transform = ''; this.liveShown = frame; this.liveCapture = true;
+      // Composed view: the capture frame holds the ground too and covers the compositor and the exact canvases until
+      // the view changes (drawComposed).
+      if (this.composed) { this.surface.style.cssText = `position:absolute;left:0;top:0;width:${frame.w}px;height:${frame.h}px`; this.element.append(this.surface); }
     } else if (this.gpuActive) this.gpu!.redrawForCapture();
     capture.mark('capture-complete');
   }
@@ -1139,6 +1531,8 @@ export class BenchRenderer {
     const vectors = this.vectorRaster(view, w, h, dpr);
     if (live) t0 = noteLivePart('water', t0);
     if (vectors) ctx.drawImage(vectors.image, vectors.region.x, vectors.region.y, vectors.region.width, vectors.region.height);
+    // Live frame: the ground (and its rivers) was redrawn just before, the vector water above.
+    if (live && this.waterShownDue) this.noteWaterShown();
     // The export overlay is one whole-map raster: only where it is at least as fine as the frame.
     const overlay = this.exportOverlay && view.scale * dpr * size <= this.exportOverlay.width * 1.01 ? this.exportOverlay : undefined;
     // Export order: physical land use, rural semantics, then roads/labels/furniture (as on screen).
@@ -1187,7 +1581,7 @@ export class BenchRenderer {
     if (this.vectorBytes?.text !== vectors) this.vectorBytes = { text: vectors, bytes: new TextEncoder().encode(vectors) };
     const request: Promise<void> = imageOf(svgPartsOf(this.vectorBytes.bytes, region)).then(image => {
       if (this.disposed || this.vectors !== vectors) return;
-      this.vectorView = { image, region }; this.waterMaskVersion++; this.invalidate();
+      this.vectorView = { image, region }; this.waterMaskVersion++; performance.mark('mu:water-2d-view-raster'); this.invalidate();
     }, () => undefined).finally(() => { if (this.vectorRequest === request) this.vectorRequest = undefined; });
     return this.vectorRequest = request;
   }
@@ -1233,5 +1627,5 @@ export class BenchRenderer {
     await this.city?.prepare(this.resolved!, { ...this.exportLayers, labels: false });
     const image = this.draw(view, size, size, 1); capture.mark('capture-complete'); return image;
   }
-  dispose(): void { this.disposed = true; this.suspendLiveTiles(); this.unlistenQuality(); this.retained.clear(); clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.previousFrame?.element.remove(); this.gpu?.dispose(); this.cartography?.dispose(); this.exportCity?.dispose(); if(this.ownsShared){this.shared.city?.map.dispose();this.shared.cache.clear();} if(this.ownsMaterialContext)this.materialContext?.gl.getExtension('WEBGL_lose_context')?.loseContext();this.materialContext=undefined;this.world = undefined; }
+  dispose(): void { this.disposed = true; this.suspendLiveTiles(); this.unlistenQuality(); this.live?.dispose(); this.live = undefined; this.retained.clear(); clearTimeout(this.liveTimer); clearTimeout(this.groundTimer); this.previousFrame?.element.remove(); this.gpu?.dispose(); this.cartography?.dispose(); this.exportCity?.dispose(); if(this.ownsShared){this.shared.city?.map.dispose();this.shared.cache.clear();} if(this.ownsMaterialContext)this.materialContext?.gl.getExtension('WEBGL_lose_context')?.loseContext();this.materialContext=undefined;this.world = undefined; }
 }

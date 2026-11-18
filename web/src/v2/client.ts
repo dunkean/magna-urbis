@@ -34,6 +34,8 @@ import { reportDrawnLabels } from './drawnLabels';
 
 /** Delay of the miniature after a new live frame (its first frame must not wait for it). */
 const MINI_DELAY_MS = 350;
+/** Interval of the renderer diagnostics written on the canvas while frames follow each other (noteBenchStats). */
+const BENCH_STATS_MS = 250;
 
 export type Action = 'terrain' | 'region' | 'roads' | 'towns' | 'town' | 'settlements' | 'all';
 
@@ -399,14 +401,31 @@ export class StudioClient {
     }
     // Restore the live camera after a miniature capture, in this same animation frame.
     renderer.drawLive(frame.view,frame.w,frame.h,frame.dpr);
-    this.canvas.dataset.renderer=String(renderer.stats.renderer);this.canvas.dataset.renderStyle=String(renderer.stats.style);
-    this.canvas.dataset.terrainBackend=String(renderer.stats.terrainBackend);
-    this.canvas.dataset.renderRequest=String(renderer.requestId??'');
-    this.canvas.dataset.renderCache=String(renderer.stats.frameCache??'miss');
-    this.canvas.dataset.renderFrameBytes=String(renderer.retainedStorage().frames);
-    this.canvas.dataset.renderRetainedBytes=String(renderer.retainedStorage().bytes);
-    this.canvas.dataset.cityRender=JSON.stringify(renderer.stats.city??{});this.canvas.dataset.renderPending=String(renderer.pendingWork());this.canvas.dataset.renderPasses=JSON.stringify(renderer.stats.passes??[]);
+    this.noteBenchStats(renderer);renderer.noteFrame(started);
     return{mini,ms:performance.now()-started,band:0,scale:frame.view.scale};
+  }
+  private benchStatsAt=0;
+  private benchStatsTimer?:ReturnType<typeof setTimeout>;
+  /** Diagnostics of the map renderer on the canvas (`data-*`, read by the loading spinner, the test scripts and the
+   * probes). The pending count is exact after every frame, written only when it changes. The others are serialized at
+   * most every BENCH_STATS_MS, and once more after the last frame: written in every frame of a gesture, a dozen
+   * attribute mutations (two of them JSON of the town and pass statistics) made the page recompute styles per frame. */
+  private noteBenchStats(renderer:BenchRenderer):void{
+    const data=this.canvas.dataset,pending=String(renderer.pendingWork());
+    if(data.renderPending!==pending)data.renderPending=pending;
+    if(performance.now()-this.benchStatsAt>=BENCH_STATS_MS){this.writeBenchStats(renderer);return;}
+    this.benchStatsTimer??=setTimeout(()=>{this.benchStatsTimer=undefined;if(this.benchActive&&this.bench)this.writeBenchStats(this.bench);},BENCH_STATS_MS);
+  }
+  private writeBenchStats(renderer:BenchRenderer):void{
+    this.benchStatsAt=performance.now();
+    const data=this.canvas.dataset,set=(key:string,value:string):void=>{if(data[key]!==value)data[key]=value;};
+    set('renderer',String(renderer.stats.renderer));set('renderStyle',String(renderer.stats.style));
+    set('terrainBackend',String(renderer.stats.terrainBackend));
+    set('renderRequest',String(renderer.requestId??''));
+    set('renderCache',String(renderer.stats.frameCache??'miss'));
+    const storage=renderer.retainedStorage();
+    set('renderFrameBytes',String(storage.frames));set('renderRetainedBytes',String(storage.bytes));
+    set('cityRender',JSON.stringify(renderer.stats.city??{}));set('renderPending',String(renderer.pendingWork()));set('renderPasses',JSON.stringify(renderer.stats.passes??[]));
   }
   /** Progressive display finished (captures and test scripts wait for it). */
   displaySettled():Promise<void>{if(this.minimalActive)return this.minimal!.settled();return this.benchActive&&this.bench?this.bench.settled():Promise.resolve();}
@@ -488,5 +507,5 @@ export class StudioClient {
     else if (this.world) this.show({ ...this.world, options: { ...this.world.options, contours: this.display.contours ?? true, landuse: this.display.landuse ?? true, labels: this.display.labels } }, true);
   }
   /** Page unload: the job is dropped, not rejected, so its continuation cannot touch a UI that is being torn down. */
-  destroy(): void { this.neuralDownload?.abort();this.pending=null;this.retained=undefined;this.minimal?.dispose();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }
+  destroy(): void { clearTimeout(this.benchStatsTimer);this.neuralDownload?.abort();this.pending=null;this.retained=undefined;this.minimal?.dispose();this.bench?.dispose(); if(this.pendingDraw){clearTimeout(this.pendingDraw.timer);this.pendingDraw.resolve();this.pendingDraw=null;}this.engine.terminate(); this.render?.terminate(); this.syncRenderer?.dispose(); this.viewer.destroy(); }
 }

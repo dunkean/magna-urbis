@@ -136,7 +136,14 @@ export interface DisplayList {
   /** Set when a call could not be recorded faithfully (text, gradients, getImageData, native Path2D...): use the CPU engine. */
   readonly unsupported?: string;
   readonly stats: { calls: number; ops: number; paths: number; sprites: number; recordMs: number };
+  /** Section boundaries the producer asked for (`RecordingContext.mark`): `at` is the index of the first op after the
+   * mark. No op spans a mark (merging stops there). Absent when none was set. */
+  readonly marks?: readonly { readonly name: string; readonly at: number }[];
 }
+
+/** Mark between the soft area prefix of a retained map list (land-use tints, washes, furrows: baked once per region
+ * by the live overlay) and the layers that stay crisp (lines, water cut, roads, symbols), replayed at every frame. */
+export const CRISP_MARK = 'crisp';
 
 /** Rasterizer entry point implemented by glRaster.ts. */
 export interface GpuRasterizer {

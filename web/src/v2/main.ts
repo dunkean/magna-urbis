@@ -337,9 +337,19 @@ setHTML($('#app'), `
 <div class="toast" id="toast" role="status" hidden></div>`);
 
 const canvas = $<HTMLCanvasElement>('#map-canvas');
+// The scale label follows the view at most every SCALE_LABEL_MS, and only when its text changes: written in every
+// frame of a gesture, its attribute and text mutations made the page recompute styles and lay the label out per frame.
+const SCALE_LABEL_MS = 120;
+let scaleLabelText = '', scaleLabelAt = 0, scaleLabelTimer: ReturnType<typeof setTimeout> | undefined;
+const writeScaleLabel = (): void => {
+  scaleLabelTimer = undefined; scaleLabelAt = performance.now();
+  const text = `≈ ${Math.round(80 / client.viewer.getView().scale).toLocaleString(numberLocale())} m`;
+  if (text !== scaleLabelText) { scaleLabelText = text; setText($('#scale-label'), text); }
+};
 const client = new StudioClient(canvas, $('#map'), $<HTMLCanvasElement>('#minimap'), updateProgress, e => void reportGenerationFailure(e.message), () => {
-  const view = client.viewer.getView();
-  setText($('#scale-label'), `≈ ${Math.round(80 / view.scale).toLocaleString(numberLocale())} m`);
+  if (scaleLabelTimer !== undefined) return;
+  const wait = SCALE_LABEL_MS - (performance.now() - scaleLabelAt);
+  if (wait <= 0) writeScaleLabel(); else scaleLabelTimer = setTimeout(writeScaleLabel, wait);
 });
 mountMeasureTool({ map: $('#map'), canvas, slot: $('.view-strip'), readout: $('#cursor-readout'), getView: () => client.viewer.getView(), getHeight: () => world?.terrain.height, getMapSize: () => world?.mapSize });
 const selectionOutline = createSelectionOverlay($('#map'), () => client.viewer.getView());

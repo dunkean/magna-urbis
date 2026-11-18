@@ -43,11 +43,11 @@ import { paintRetainedWaterView, retainedRegime, type RetainedRegime } from './r
 import { waterClimate } from '../render/waterRegime';
 import { renderWaterRings } from '../render/renderWaterShader';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
-import type { View } from '../render/view';
+import type { Rect4, View } from '../render/view';
 import { createTerrainSurfaceSampler, heightPyramid } from './terrainSurface';
 import { isNeuralRefinement } from './terrainRefinement';
 import { enterMapGpuLight, isMapContextLost, mapGpuLight, mapGpuLowEnd, mapTextureCap } from './glContextRecovery';
-import { PREVIEW_VARIANT, TerrainGl, cappedForest, hex, lightVariant, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type RetainedWaterOptions, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
+import { PREVIEW_VARIANT, TerrainGl, cappedForest, hex, lightVariant, liveStyleRatio, lookMode, mapPasses, type HeightLayer, type OverlayLayer, type RetainedWaterOptions, type TerrainLook, type TerrainVariant, type WaterLayer } from './terrainGl';
 import type { TerrainRenderer } from './terrainRenderer';
 import { rendererOverride } from './rendererOverride';
 /** Runs `task` when the page is idle (at the latest after a few seconds). */
@@ -263,6 +263,8 @@ interface GpuImage { texture: GPUTexture; view: GPUTextureView }
 interface ForestImages { field: ForestField; texture: GpuImage; bank?: GpuImage; beach?: GpuImage }
 /** Where a frame ends: the display canvas, or the capture canvas (opaque or premultiplied). */
 interface Surface { canvas: HTMLCanvasElement; context: GPUCanvasContext; opaque: boolean }
+/** Per-view intermediate targets and caches of a draw; world tiles keep their own set (TerrainGl's GlViewTargets). */
+interface ViewTargets { map?: Target; river?: Target; water?: Target; aux?: Target; auxKey: string; retainedWater?: GpuImage & { width: number; height: number }; retainedViewKey: string; retainedCanvas?: HTMLCanvasElement; retainedCoded: number }
 
 /** CPU inputs retained to rebuild the GPU state after a device loss (or to hand it to a TerrainGl). */
 interface RendererInputs {
@@ -282,6 +284,13 @@ export class TerrainGpu implements TerrainRenderer {
   private capturing = false;
   private liveGround = new LiveGround();
   private livePaused = false;
+  /** contentRevision(): bumped by every input that changes the pixels, and when a pipeline is created. */
+  private revision = 0; private revisionRatio = 0;
+  /** A world tile is being drawn: on its own surface, the display canvas and its LiveGround are untouched. */
+  private tileRendering = false;
+  private tileTargets: ViewTargets = { auxKey: '', retainedViewKey: '', retainedCoded: 0 };
+  /** Opaque WebGPU canvas of the world tiles, kept at the tile size between bakes (no reconfiguration, no resize). */
+  private tileCanvas?: { canvas: HTMLCanvasElement; context: GPUCanvasContext; device?: GPUDevice };
   setLivePaused(paused: boolean): void {
     this.livePaused = paused;
     if (this.fallback) this.fallback.setLivePaused(paused);
@@ -304,7 +313,7 @@ export class TerrainGpu implements TerrainRenderer {
   private coastDistance?: GpuImage;
   private shoreRing?: { layer: object; revision: number; image: GpuImage; x: number; y: number; width: number };
   /** A cast-shadow bake for a new light azimuth has landed in the shore ring: draw again to upload it. */
-  private readonly ringChanged = (): void => this.request();
+  private readonly ringChanged = (): void => { this.revision++; this.request(); };
   private forest?: ForestImages;
   /** The forest field as given (the uploaded one may be capped, or absent in the light profile). */
   private forestSource?: ForestField;
@@ -327,7 +336,14 @@ export class TerrainGpu implements TerrainRenderer {
   private readonly waterParams = new Params(WGSL.WGSL_PARAMS.water);
   /** Per-frame storage slots of the draws' parameters (written once before the frame's submit). */
   private slots!: { buffer: GPUBuffer; staging: Uint8Array<ArrayBuffer>; used: number; align: number; slotSize: number };
-  private readonly redraw = (): void => this.request();
+  /** A pipeline was created: the live view redraws; world tiles re-bake when the look's own pipelines became complete
+   * (not for a speculative one, prewarmLikely). */
+  private readonly redraw = (): void => {
+    const created = !!this.look && !this.fallback && !this.gpu.lost && this.lookCreated(this.look);
+    if (created !== this.lookWasCreated) { this.lookWasCreated = created; this.revision++; }
+    this.request();
+  };
+  private lookWasCreated = false;
   /** Inputs kept only to rebuild the GPU state (setWater, setOverlay, setRetainedWater). */
   private waterInput?: WaterLayer; private overlayInput?: OverlayLayer; private retainedWaterInput?: { svg: string; width: number; options?: RetainedWaterOptions };
   /** Device recovery in progress, recent losses (a device lost again and again falls back to WebGL2). */
@@ -421,6 +437,9 @@ export class TerrainGpu implements TerrainRenderer {
     this.lastVariant = PREVIEW_VARIANT;
     this.auxTarget = this.mapTarget = this.riverTarget = this.waterTarget = undefined; this.auxKey = '';
     this.retainedWater = undefined; this.retainedWaterViewKey = ''; this.retainedWaterKey = '';
+    // The tile surface is reconfigured on the new device at its next use (tileSurface).
+    this.tileTargets = { auxKey: '', retainedViewKey: '', retainedCoded: 0, retainedCanvas: this.tileTargets.retainedCanvas };
+    this.revision++;
     this.base = undefined; this.details = []; this.enhanced = [];
     this.lake = undefined; this.lakeInput = undefined; this.overlay = undefined; this.coastDistance = undefined; this.shoreRing = undefined;
     this.forest = undefined; this.forestSource = undefined; this.occupation = undefined; this.landDetail = undefined;
@@ -451,7 +470,7 @@ export class TerrainGpu implements TerrainRenderer {
       }
       gl.setLivePaused(this.livePaused);
       TerrainGpu.restore(gl, inputs);
-      this.fallback = gl; this.canvas = canvas;
+      this.fallback = gl; this.canvas = canvas; this.revision++;
       console.warn(`WebGPU map: device lost for good (${reason}); continuing with WebGL2.`);
     } catch (glError) {
       this.failure = new Error(`WebGPU indisponible pour la carte : appareil perdu (${reason}) et WebGL2 impossible (${glError instanceof Error ? glError.message : glError}).`);
@@ -521,12 +540,13 @@ export class TerrainGpu implements TerrainRenderer {
       const surface = this.seaSurface;
       this.coastDistance = this.image(surface.n, surface.n, 'r32float', surface.distance, 4);
     }
-    this.request();
+    this.revision++; this.request();
   }
 
   /** A finer square region drawn over the base, cross-faded in; keeps at most two. */
   setDetail(layer: HeightLayer | undefined): void {
     if (this.fallback) return this.fallback.setDetail(layer);
+    this.revision++;
     if (!layer) { this.details.forEach(d => this.release(d)); this.details = []; this.request(); return; }
     const next = this.upload(layer, false);
     next.alpha = 0; next.fadeStart = performance.now();
@@ -535,14 +555,15 @@ export class TerrainGpu implements TerrainRenderer {
     this.request();
   }
 
-  setRenderV2Season(season: number): void { if (this.fallback) return this.fallback.setRenderV2Season(season); if (this.look) { this.look = { ...this.look, v2Season: season }; this.request(); } }
-  setLook(look: TerrainLook): void { if (this.fallback) return this.fallback.setLook(look); this.look = look; this.request(); }
+  setRenderV2Season(season: number): void { if (this.fallback) return this.fallback.setRenderV2Season(season); if (this.look) { this.look = { ...this.look, v2Season: season }; this.revision++; this.request(); } }
+  setLook(look: TerrainLook): void { if (this.fallback) return this.fallback.setLook(look); this.look = look; this.revision++; this.request(); }
 
   /** Explicit Render3D refinement only; ordinary 2D layers never consume it. */
   setEnhancedDetail(layer: HeightLayer | undefined): void {
     if (this.fallback) return this.fallback.setEnhancedDetail(layer);
-    if (!layer) { this.enhanced.forEach(d => this.release(d)); this.enhanced = []; this.request(); return; }
+    if (!layer) { if (this.enhanced.length) this.revision++; this.enhanced.forEach(d => this.release(d)); this.enhanced = []; this.request(); return; }
     if (this.enhanced.at(-1)?.layer === layer) return;
+    this.revision++;
     const next = this.upload(layer, false); next.fadeStart = performance.now();
     this.enhanced.push(next);
     while (this.enhanced.length > 2) this.release(this.enhanced.shift());
@@ -555,7 +576,7 @@ export class TerrainGpu implements TerrainRenderer {
     const key = svg ? `${width}:${JSON.stringify(options ?? {})}:${svg}` : '';
     if (key === this.retainedWaterKey) return;
     this.retainedWaterKey = key;
-    this.retainedWaterViewKey = '';
+    this.retainedWaterViewKey = ''; this.tileTargets.retainedViewKey = ''; this.revision++;
     this.retainedWaterPaths = svg ? retainedWaterPaths(svg, width) : [];
     this.retainedRegime = retainedRegime(this.retainedWaterPaths, width, options?.season);
     this.retainedCity = svg && options?.city ? [1, .5 * waterClimate(options.season ?? {}).sediment] : [0, 0];
@@ -586,7 +607,7 @@ export class TerrainGpu implements TerrainRenderer {
       }
       this.device.queue.writeBuffer(this.riverBuffer, 0, rivers as Float32Array<ArrayBuffer>);
     }
-    this.request();
+    this.revision++; this.request();
   }
 
   setOverlay(overlay: OverlayLayer | undefined): void {
@@ -594,7 +615,7 @@ export class TerrainGpu implements TerrainRenderer {
     this.overlayInput = overlay;
     this.releaseImage(this.overlay);
     this.overlay = overlay ? this.image(overlay.n, overlay.n, 'rgba8unorm', overlay.rgba, 4) : undefined;
-    this.request();
+    this.revision++; this.request();
   }
 
   setView(view: View, width: number, height: number): void { if (this.fallback) return this.fallback.setView(view, width, height); this.view = { view, width, height }; this.request(); }
@@ -619,7 +640,7 @@ export class TerrainGpu implements TerrainRenderer {
       this.releaseImage(this.landDetail?.image);
       this.landDetail = detail && { data: detail, image: this.rgbaImage(detail, true) };
     }
-    this.forestVersion++;
+    this.forestVersion++; this.revision++;
     this.request();
   }
   private releaseForest(): void {
@@ -657,6 +678,72 @@ export class TerrainGpu implements TerrainRenderer {
         try { return this.draw(ratio, pixelRatio); } finally { this.view = state; }
       });
     }
+  }
+
+  /** Live ground tile (TerrainGl.renderWorldTile): the live redraw's passes for the world square `box` at `px`² device
+   * pixels, full quality, on the tile canvas (its own WebGPU context, kept at the tile size), with the tile's own
+   * intermediate targets. The display canvas, its LiveGround and the live view's caches are untouched. The canvas
+   * must be copied in this task (the current texture of a WebGPU canvas expires with it). Undefined while a pipeline
+   * of the look is being created: never a stand-in, never a synchronous pipeline. */
+  renderWorldTile(box: Rect4, px: number): TexImageSource | undefined {
+    if (this.fallback) return this.fallback.renderWorldTile(box, px);
+    const look = this.look, size = box.maxX - box.minX;
+    if (this.disposed || this.recovering || this.gpu.lost || !look || !this.base || !(size > 0) || px < 1 || !this.lookCreated(look)) return undefined;
+    const surface = this.tileSurface();
+    const ratio = liveStyleRatio(), previous = this.view, details = this.details, enhanced = this.enhanced;
+    // CSS view of the classic redraw at that device density (TerrainGl.renderWorldTile).
+    this.view = { view: { cx: box.minX + size / 2, cy: box.minY + size / 2, scale: px / size / ratio }, width: px / ratio, height: px / ratio };
+    this.details = details.length ? [{ ...details[details.length - 1], fadeStart: -Infinity }] : [];
+    this.enhanced = enhanced.map(layer => ({ ...layer, fadeStart: -Infinity }));
+    this.swapTileTargets();
+    this.auxKey = ''; this.retainedWaterViewKey = '';
+    this.tileRendering = true;
+    let drawn = false;
+    try { drawn = this.draw(ratio, ratio, surface); }
+    finally {
+      this.tileRendering = false; this.swapTileTargets();
+      this.view = previous; this.details = details; this.enhanced = enhanced;
+    }
+    return drawn ? surface.canvas : undefined;
+  }
+  /** Changes whenever renderWorldTile would draw other pixels (inputs, created pipelines, style pixel ratio, fall back). */
+  contentRevision(): number {
+    const ratio = liveStyleRatio();
+    if (ratio !== this.revisionRatio) { this.revisionRatio = ratio; this.revision++; }
+    return this.revision + (this.fallback?.contentRevision() ?? 0);
+  }
+  /** Every pipeline the look's live redraw uses exists (map, auxiliary pass, blended detail); the river, composite,
+   * water and present pipelines are created with the device (prepare). Starts the missing ones asynchronously. */
+  private lookCreated(look: TerrainLook): boolean {
+    const v = this.lookVariant(look);
+    let created = true;
+    for (const pass of mapPasses(v)) created = !!this.terrainPipeline(v, pass, 'none', false) && created;
+    if (this.details.length) created = !!this.terrainPipeline(v, 'map', 'alpha', false) && created;
+    return created;
+  }
+  private tileSurface(): Surface {
+    if (!this.tileCanvas) {
+      const canvas = document.createElement('canvas'), context = canvas.getContext('webgpu');
+      if (!context) throw new Error('WebGPU map: no context for the world tiles.');
+      this.tileCanvas = { canvas, context };
+    }
+    if (this.tileCanvas.device !== this.device) {
+      this.tileCanvas.context.configure({ device: this.device, format: this.gpu.canvasFormat, alphaMode: 'opaque' });
+      this.tileCanvas.device = this.device;
+    }
+    return { canvas: this.tileCanvas.canvas, context: this.tileCanvas.context, opaque: true };
+  }
+  private swapTileTargets(): void {
+    const t = this.tileTargets;
+    [t.map, this.mapTarget] = [this.mapTarget, t.map];
+    [t.river, this.riverTarget] = [this.riverTarget, t.river];
+    [t.water, this.waterTarget] = [this.waterTarget, t.water];
+    [t.aux, this.auxTarget] = [this.auxTarget, t.aux];
+    [t.auxKey, this.auxKey] = [this.auxKey, t.auxKey];
+    [t.retainedWater, this.retainedWater] = [this.retainedWater, t.retainedWater];
+    [t.retainedViewKey, this.retainedWaterViewKey] = [this.retainedWaterViewKey, t.retainedViewKey];
+    [t.retainedCanvas, this.retainedWaterCanvas] = [this.retainedWaterCanvas, t.retainedCanvas];
+    [t.retainedCoded, this.retainedCoded] = [this.retainedCoded, t.retainedCoded];
   }
 
   /** The capture canvas (its own WebGPU context), configured for opaque or premultiplied output. */
@@ -830,7 +917,8 @@ export class TerrainGpu implements TerrainRenderer {
   }
 
   private draw(pixelRatio = Math.min(2, window.devicePixelRatio || 1), stylePixelRatio = pixelRatio, capture?: Surface, waitCapture = false): boolean {
-    this.liveGround.invalidate(this.canvas);
+    // A world tile leaves the display canvas as it is: its CSS-transformed preview stays valid.
+    if (!this.tileRendering) this.liveGround.invalidate(this.canvas);
     const look = this.look, state = this.view, device = this.device;
     if (this.disposed || !look || !state || !this.base || this.gpu.lost) return false;
     const quality = displayQualityUniform(!(this.capturing || capture !== undefined || waitCapture || look.mesh3d === true));
@@ -1136,7 +1224,8 @@ export class TerrainGpu implements TerrainRenderer {
     this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0;
     this.gpu.listeners.delete(this.redraw); this.gpu.lostListeners.delete(this.onLost);
     if (this.fallback) { this.fallback.dispose(); return; }
-    for (const target of [this.auxTarget, this.mapTarget, this.riverTarget, this.waterTarget]) target?.texture.destroy();
+    for (const target of [this.auxTarget, this.mapTarget, this.riverTarget, this.waterTarget, this.tileTargets.aux, this.tileTargets.map, this.tileTargets.river, this.tileTargets.water]) target?.texture.destroy();
+    this.releaseImage(this.tileTargets.retainedWater); this.tileCanvas?.context.unconfigure();
     this.release(this.base); this.details.forEach(d => this.release(d)); this.enhanced.forEach(d => this.release(d));
     for (const image of [this.lake, this.overlay, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.landDetail?.image, this.retainedWater, this.brushes.image, this.crownClumps, this.empty, this.emptyUint]) this.releaseImage(image);
     this.releaseForest();

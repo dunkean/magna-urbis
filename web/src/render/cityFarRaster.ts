@@ -32,7 +32,7 @@ const SHADOW_EAST = 4.4, SHADOW_SOUTH = 3.5;
 const BLOCK_MOTTLE = .02, NOISE_MOTTLE = .045;
 
 type Source = HTMLCanvasElement | OffscreenCanvas;
-interface FarRaster { key: string; x0: number; y0: number; cell: number; w: number; h: number; levels: Source[]; ms: number }
+export interface FarRaster { key: string; x0: number; y0: number; cell: number; w: number; h: number; levels: Source[]; ms: number }
 const rasters = new WeakMap<CityBuildings, FarRaster>();
 const pending = new WeakSet<CityBuildings>();
 /** Last build time of a town raster (ms), for the shot harness and the report. */
@@ -131,6 +131,20 @@ function buildRaster(scene: CityScene, b: CityBuildings, palette: CityPalette, n
   const ms = performance.now() - started; farTownStats.buildMs = ms; farTownStats.builds++;
   return { key, x0, y0, cell, w, h, levels, ms };
 }
+
+/** The far raster of a town as drawFarTown holds it (live compositor: uploaded as a texture), building it when the town
+ * has none yet, exactly as the first drawFarTown frame does. A stale key is left to drawFarTown's own rebuild. */
+export function farTownRaster(scene: CityScene, buildings: CityBuildings, o: { palette: CityPalette; night: boolean; custom?: string }): FarRaster | undefined {
+  if (!buildings.items.length) return undefined;
+  let raster = rasters.get(buildings);
+  if (!raster) {
+    raster = buildRaster(scene, buildings, o.palette, o.night, o.custom, `${toneStamp()}|${roofSeasonKey()}|${o.palette}|${o.night ? 1 : 0}|${o.custom ?? ''}`);
+    if (raster) rasters.set(buildings, raster);
+  }
+  return raster;
+}
+/** The far raster drawFarTown holds for a town, without building one. */
+export const heldFarTownRaster = (buildings: CityBuildings): FarRaster | undefined => rasters.get(buildings);
 
 /** Draws the far raster of a town (`buildings`: the whole town, not a visible subset) in a context set to world
  * coordinates, with `alpha` of opacity. The first frame builds it; a later change of the ground tones or the season

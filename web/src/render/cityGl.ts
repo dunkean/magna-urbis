@@ -17,10 +17,12 @@ import type { Box, CityBuildings, CityLayers, CityLod, CityPalette, CityPick, Ci
 import { pickCity, selectCityLod } from './cityCanvas';
 import {
   buildFillMeshSync, buildStreetStrokes, buildTowers, buildWallStrokes, cityOrigin, fillMesh, mergeTriangulations, packBuildings, packPlan,
-  META, slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleRanges,
+  META, packBuildingsSteps, packPlanSteps, runSteps, slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleRanges,
   type CityGlFillMesh, type CityGlFillSource, type CityGlStrokes, type CityGlTriangulation,
 } from './cityGlBuild';
-import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, PARCHMENT_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
+import { buildingColors, buildingColorsSteps, DEFAULT_LAYERS, liveShadowTint, PAINTED_SHADOW, PARCHMENT_HATCH, PARCHMENT_SHADOW, planColors, planColorsSteps, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetColorsSteps, streetMaterialTable, wallColors, type CityGlDraws, type CityGlLiveLook, type CityGlStyleState } from './cityGlStyle';
+import { buildYardStrokes, yardColors } from './cityGlYards';
+import type { YardBoundary } from './cityLotEnclosures';
 import { isBlended } from './groundBlend';
 import { roofSeasonKey } from './seasonPalette';
 import { toneKey } from './groundTone';
@@ -54,6 +56,12 @@ export interface CityGlDrawOptions {
    * its streets are not drawn: the river shows above them. Bridges and fords (crossing strokes), quays and
    * landings, walls and buildings are drawn as before, above the water. */
   water?: Float32Array;
+  /** Shared context (live compositor): the framebuffer and its size in device pixels. The draw binds it, sets every
+   * state it relies on and clears nothing; without it the draw clears and fills the renderer's own canvas. */
+  target?: { framebuffer: WebGLFramebuffer | null; width: number; height: number };
+  /** Live look (render/live/cityLayer.ts): the GL stand-in of the looks only Canvas 2D paints exactly (natural roads and
+   * roof pans, hidden snow patches, the cast shadow tint of the Canvas path); no render background. */
+  live?: CityGlLiveLook;
 }
 export interface CityGlFrame { lod: CityLod; drawCalls: number; instances: number; triangles: number; cpuMs: number }
 export interface CityGlBuildStats { packMs: number; triangulateMs: number; assembleMs: number; uploadMs: number; workers: number; totalMs: number }
@@ -78,6 +86,35 @@ export interface CityGlRenderer {
   resize(width?: number, height?: number): void;
   stats(): CityGlStats;
   dispose(): void;
+}
+/** A cityGl renderer bound to a context it does not own (createCityGlRendererOn): no canvas, no resize, no context
+ * events (the owner disposes it when the context is lost). Meshes are built by setScene / setBuildings and uploaded by
+ * `upload`, which the owner calls between frames; colour tables are built by `prepare`, so a draw only binds them. */
+export interface CityGlSharedRenderer extends Omit<CityGlRenderer, 'canvas' | 'resize'> {
+  /** Uploads the meshes built since the last call (scene first, then buildings); true when it uploaded something. */
+  upload(): boolean;
+  /** Built meshes wait for `upload`. */
+  readonly pendingUpload: boolean;
+  /** Links the programs without blocking (KHR_parallel_shader_compile, polled; else one program per call); true while
+   * some remain. Nothing draws, uploads or reports `ready` before they are all linked. */
+  programsStep(): boolean;
+  readonly programsLinked: boolean;
+  /** What a draw with these options would have to create on the GPU first ('' when nothing: the draw only binds and
+   * draws). The owner shows a stand-in and prepares the state in its work instead. */
+  check(options: CityGlDrawOptions): string;
+  /** `prepare` in resumable steps: the colour tables not kept yet are computed a slice at a time (a pass over every
+   * block, parcel, building, pan and street), then the state is completed at once. Run it to its end before drawing
+   * that state, or the draw computes what is missing. */
+  prepareSteps(options: CityGlDrawOptions): Generator<void, void>;
+  /** Lot enclosures of the live look (each list a town's `scene.lotEnclosures`), relative to the uploaded scene; set
+   * again after each new scene. Drawn when `layers.lotEnclosures` is not false, from the mid level, as drawLotEnclosures. */
+  setYards(lists: readonly (readonly YardBoundary[] | undefined)[]): void;
+  /** setScene / setBuildings pack their polygons in slices (never in one long task): `step` advances them for about
+   * `budgetMs` and returns true while packing remains. Triangulation then runs on the workers as before. */
+  step(budgetMs: number): boolean;
+  readonly packing: boolean;
+  /** Builds and uploads what a draw with these options needs (colour tables, street strokes, water), without drawing. */
+  prepare(options: CityGlDrawOptions): void;
 }
 
 /** Layers left for the Canvas 2D overlay (drawCity) once the GPU draws the plan:
@@ -109,8 +146,19 @@ precision highp float;
 in vec4 vColor;
 in vec2 vPos;
 uniform float uRuinSpacing;
+// Parchment hatching (live look): lines along x + y = const every uHatch.x metres, uHatch.y metres wide, uHatch.z
+// metres per device pixel for the edge; the table alpha (hatch strength per feature) times uHatch.w.
+uniform vec4 uHatch;
+uniform vec3 uHatchColor;
 out vec4 outColor;
 void main() {
+  if (uHatch.x > 0.0) {
+    float d = abs(fract((vPos.x + vPos.y) / uHatch.x + 0.5) - 0.5) * uHatch.x * 0.70710678;
+    float a = vColor.a * uHatch.w * clamp((0.5 * uHatch.y - d) / uHatch.z + 0.5, 0.0, 1.0);
+    if (a <= 0.0) discard;
+    outColor = vec4(uHatchColor * a, a);
+    return;
+  }
   vec3 color = vColor.rgb;
   if (uRuinSpacing > 0.0) {
     float stripe = abs(fract((vPos.x - vPos.y) / uRuinSpacing + 0.5) - 0.5);
@@ -216,7 +264,7 @@ in vec2 vWorld; flat in vec2 vMat;
 uniform highp sampler2DArray uAlbedo;
 uniform float uExt[32];
 #endif
-uniform float uMpp, uDevPx;
+uniform float uMpp, uDevPx, uFade;
 uniform int uPass, uDashKind, uBridgeDeck, uSingle;
 out vec4 outColor;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -309,7 +357,7 @@ void main() {
   // whole, so overlapping segments of one class never blend twice; MSAA smooths the edge.
   if (uSingle == 1) a = a < 0.5 ? 0.0 : 1.0;
   if (a <= 0.0) discard;
-  outColor = vec4(color, 1.0) * (vColor.a * a * cover);
+  outColor = vec4(color, 1.0) * (vColor.a * a * cover * uFade);
 }`;
 /** Textured fills (roof pans, plazas): the albedo array sampled in world metres, rotated by the feature's
  * angle (roofs: u along the ridge, v down the slope), times its brightness. uOnly = 1 keeps only the features
@@ -414,7 +462,31 @@ function crossingStart(strokes: CityGlStrokes | undefined): number {
 const strokeVariant = (source: string, variant: 0 | 1 | 2 | 3): string => source.replace(/^#version 300 es\n/, `#version 300 es\n#define VARIANT ${variant}\n`);
 // ---------------------------------------------------------------- GL helpers
 type Uniforms = Record<string, WebGLUniformLocation | null>;
-interface Program { program: WebGLProgram; u: Uniforms }
+export interface Program { program: WebGLProgram; u: Uniforms }
+/** Non-blocking program creation (shared context): `startProgram` issues the compiles and the link and reads nothing
+ * back; `programLinked` polls KHR_parallel_shader_compile (`parallel` false: true at once, the caller then links one
+ * program per call); `finishProgram` reads the link status and the uniform locations, once linked. */
+export interface PendingProgram { program: WebGLProgram; shaders: WebGLShader[] }
+export function startProgram(gl: WebGL2RenderingContext, vs: string, fs: string): PendingProgram {
+  const program = gl.createProgram()!, shaders: WebGLShader[] = [];
+  for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
+    const shader = gl.createShader(type)!;
+    gl.shaderSource(shader, source); gl.compileShader(shader); gl.attachShader(program, shader); shaders.push(shader);
+  }
+  gl.linkProgram(program);
+  return { program, shaders };
+}
+const COMPLETION_STATUS_KHR = 0x91b1;
+export const programLinked = (gl: WebGL2RenderingContext, p: PendingProgram, parallel: boolean): boolean =>
+  !parallel || !!gl.getProgramParameter(p.program, COMPLETION_STATUS_KHR);
+export function finishProgram(gl: WebGL2RenderingContext, p: PendingProgram): Program {
+  if (!gl.getProgramParameter(p.program, gl.LINK_STATUS))
+    throw new Error(`cityGl link: ${gl.getProgramInfoLog(p.program)} ${p.shaders.map(s => gl.getShaderInfoLog(s) ?? '').join(' ')}`);
+  for (const s of p.shaders) { gl.detachShader(p.program, s); gl.deleteShader(s); }
+  const u: Uniforms = {}, n = gl.getProgramParameter(p.program, gl.ACTIVE_UNIFORMS) as number;
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p.program, i)!; u[info.name] = gl.getUniformLocation(p.program, info.name); }
+  return { program: p.program, u };
+}
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): Program {
   const program = gl.createProgram()!;
   for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
@@ -438,9 +510,16 @@ function uploadTable(gl: WebGL2RenderingContext, texture: WebGLTexture, rgba: Ui
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 }
 
-/** A fill mesh on the GPU: shared vertices, one VAO for triangles, one for lines, two colour tables. */
+/** Colour tables kept per fill mesh: the four levels of detail of a look and a previous look or two. */
+const TABLES_KEPT = 6;
+/** A fill mesh on the GPU: shared vertices, one VAO for triangles, one for lines, two colour tables per kept state
+ * (a zoom across levels of detail, or back to a recent look, binds kept tables instead of rebuilding them). */
 class FillPack {
-  vbo: WebGLBuffer[] = []; tri: WebGLVertexArrayObject; line: WebGLVertexArrayObject; fill: WebGLTexture; edge: WebGLTexture; mats?: WebGLTexture; bytes: number;
+  vbo: WebGLBuffer[] = []; tri: WebGLVertexArrayObject; line: WebGLVertexArrayObject; fill: WebGLTexture | null = null; edge: WebGLTexture | null = null; mats?: WebGLTexture;
+  private geometryBytes: number;
+  /** Hatch strength per feature of the current state (live parchment look), or null. */
+  hatch: WebGLTexture | null = null;
+  private tables = new Map<string, { fill: WebGLTexture; edge: WebGLTexture; hatch?: WebGLTexture; draws?: CityGlDraws }>();
   constructor(private gl: WebGL2RenderingContext, readonly mesh: CityGlFillMesh) {
     const buffer = (target: number, data: ArrayBufferView): WebGLBuffer => { const b = gl.createBuffer()!; gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW); this.vbo.push(b); return b; };
     const pos = buffer(gl.ARRAY_BUFFER, mesh.positions), feat = buffer(gl.ARRAY_BUFFER, mesh.vertexFeatures);
@@ -452,12 +531,36 @@ class FillPack {
       gl.bindVertexArray(null); return v;
     };
     this.tri = vao(mesh.triangles); this.line = vao(mesh.lines);
-    this.fill = gl.createTexture()!; this.edge = gl.createTexture()!;
-    this.bytes = mesh.positions.byteLength + mesh.vertexFeatures.byteLength + mesh.triangles.byteLength + mesh.lines.byteLength + Math.ceil(mesh.featureCount / TEX_W) * TEX_W * 8;
+    this.geometryBytes = mesh.positions.byteLength + mesh.vertexFeatures.byteLength + mesh.triangles.byteLength + mesh.lines.byteLength;
   }
-  colors(fill: Uint8Array, edge: Uint8Array): void { uploadTable(this.gl, this.fill, fill); uploadTable(this.gl, this.edge, edge); }
+  get bytes(): number { return this.geometryBytes + Math.max(1, this.tables.size) * Math.ceil(this.mesh.featureCount / TEX_W) * TEX_W * 8; }
+  /** Uploads the tables of state `key` and makes them current. */
+  colors(fill: Uint8Array, edge: Uint8Array, key: string, draws?: CityGlDraws, hatch?: Uint8Array): void {
+    const gl = this.gl;
+    let t = this.tables.get(key);
+    if (!t) {
+      if (this.tables.size >= TABLES_KEPT) {
+        const [oldest, old] = this.tables.entries().next().value!; this.tables.delete(oldest);
+        gl.deleteTexture(old.fill); gl.deleteTexture(old.edge); if (old.hatch) gl.deleteTexture(old.hatch);
+      }
+      t = { fill: gl.createTexture()!, edge: gl.createTexture()! }; this.tables.set(key, t);
+    }
+    t.draws = draws;
+    uploadTable(gl, t.fill, fill); uploadTable(gl, t.edge, edge);
+    if (hatch) uploadTable(gl, t.hatch ??= gl.createTexture()!, hatch);
+    else if (t.hatch) { gl.deleteTexture(t.hatch); t.hatch = undefined; }
+    this.fill = t.fill; this.edge = t.edge; this.hatch = t.hatch ?? null;
+  }
+  /** Makes the kept tables of state `key` current; undefined when they are not kept. */
+  table(key: string): { draws?: CityGlDraws } | undefined { const t = this.tables.get(key); if (t) { this.fill = t.fill; this.edge = t.edge; this.hatch = t.hatch ?? null; } return t; }
+  /** The tables of state `key` are kept (nothing made current). */
+  has(key: string): boolean { return this.tables.has(key); }
   materials(table: Uint8Array): void { uploadTable(this.gl, this.mats ??= this.gl.createTexture()!, table); }
-  dispose(): void { const gl = this.gl; if (this.mats) gl.deleteTexture(this.mats); this.vbo.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.tri); gl.deleteVertexArray(this.line); gl.deleteTexture(this.fill); gl.deleteTexture(this.edge); }
+  dispose(): void {
+    const gl = this.gl; if (this.mats) gl.deleteTexture(this.mats); this.vbo.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.tri); gl.deleteVertexArray(this.line);
+    for (const t of this.tables.values()) { gl.deleteTexture(t.fill); gl.deleteTexture(t.edge); if (t.hatch) gl.deleteTexture(t.hatch); }
+    this.tables.clear(); this.fill = this.edge = this.hatch = null;
+  }
 }
 /** Segment instances on the GPU (36-byte stride), with outer/inner colour tables. */
 class StrokePack {
@@ -542,6 +645,25 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     const info = gl.getExtension('WEBGL_debug_renderer_info'), name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
     if (SOFTWARE_GL.test(name)) { gl.getExtension('WEBGL_lose_context')?.loseContext(); throw new Error(`WebGL2 logiciel (${name})`); }
   }
+  const core = cityGlCore(gl, canvas, create, false);
+  return Object.assign(core, {
+    canvas,
+    resize(width?: number, height?: number): void {
+      const el = canvas as HTMLCanvasElement, dpr = globalThis.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(width ?? (el.clientWidth || canvas.width / dpr) * dpr)), h = Math.max(1, Math.round(height ?? (el.clientHeight || canvas.height / dpr) * dpr));
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+    },
+  });
+}
+/** A cityGl renderer on a context owned by someone else (the live compositor's shared WebGL2 context). Throws when a
+ * program does not compile. Every draw takes its target from `options.target`. */
+export function createCityGlRendererOn(gl: WebGL2RenderingContext, create: Pick<CityGlCreateOptions, 'onInvalidate'> = {}): CityGlSharedRenderer {
+  return cityGlCore(gl, undefined, create, true);
+}
+/** The renderer on `gl`. `canvas`: the renderer's own canvas (context events handled here); `deferUpload`: built meshes
+ * wait for `upload()` instead of being uploaded when their build completes. */
+function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | OffscreenCanvas | undefined, create: CityGlCreateOptions, deferUpload: boolean): CityGlSharedRenderer {
   let fillP: Program, strokeP: Program, casingP: Program, surfaceP: Program, discP: Program, pavedP: Program, tfillP: Program, texturedP: Program, waterP: Program;
   let water: { source: Float32Array; vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number } | undefined, streetCrossings = 0;
   // Textured materials: the albedo array (loaded lazily on the first textured draw) and the key of each uploaded material table.
@@ -554,6 +676,20 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
   let styleKey = '', streetKey = '', builtKey = '', draws: CityGlDraws | undefined, towerColors: [string, string] = ['#5a5248', '#2f2a24'];
   let selectionKey = '', lastLod: CityLod | undefined, generation = 0, buildingGeneration = 0, lost = false, disposed = false, lastFrame: CityGlFrame | undefined;
   let buildStats: CityGlBuildStats | undefined, buildingStats: CityGlBuildStats | undefined;
+  // Deferred uploads (shared context): the commits of the last completed builds, run by `upload()`.
+  let commitPlan: (() => number) | undefined, commitBuildings: (() => number) | undefined;
+  // Lot enclosures of the live look (setYards): instances, the looks of their features, the palette of their colours.
+  let yards: { runs: StrokePack; jambs: StrokePack; looks: YardBoundary[]; palette: string } | undefined;
+  // Sliced packing (shared context): resumable packers advanced by `step()`, oldest first; `done(false)` drops one.
+  interface PackJob { kind: 'scene' | 'buildings'; steps: Generator<void, void>; done(finished: boolean): void; fail(error: unknown): void }
+  const packJobs: PackJob[] = [];
+  const packed = (kind: PackJob['kind'], steps: Generator<void, void>): Promise<boolean> =>
+    new Promise((done, fail) => { packJobs.push({ kind, steps, done, fail }); invalidate(); });
+  /** Drops the packings in progress (all, or the building sets only): their setScene / setBuildings return unfinished. */
+  const abortPacking = (all: boolean): void => {
+    for (let i = packJobs.length - 1; i >= 0; i--) if (all || packJobs[i].kind === 'buildings') { const [job] = packJobs.splice(i, 1); job.done(false); }
+  };
+  const abortedStats = (start: number): CityGlBuildStats => ({ packMs: 0, triangulateMs: 0, assembleMs: 0, uploadMs: 0, workers: 0, totalMs: performance.now() - start });
   const triangulator = new Triangulator();
 
   let wallGl: CityGlWalls; // walls hook: detailed fortifications (cityWalls.ts)
@@ -563,10 +699,24 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     tfillP = compile(gl, TFILL_VS, TFILL_FS); texturedP = compile(gl, strokeVariant(STROKE_VS, 3), strokeVariant(STROKE_FS, 3)); waterP = compile(gl, WATER_VS, WATER_FS);
     wallGl = createCityGlWalls(gl); // walls hook
   }
-  init();
+  // Shared context: the same programs linked without blocking (`programsStep`, from the owner's work), never on first
+  // use; the private canvas compiles them at once as before.
+  const parallelLink = deferUpload && !!gl.getExtension('KHR_parallel_shader_compile');
+  const programDefs: Array<[string, string, (p: Program) => void]> = [
+    [FILL_VS, FILL_FS, p => { fillP = p; }], [strokeVariant(STROKE_VS, 0), strokeVariant(STROKE_FS, 0), p => { strokeP = p; }],
+    [strokeVariant(STROKE_VS, 1), strokeVariant(STROKE_FS, 1), p => { casingP = p; }], [strokeVariant(STROKE_VS, 2), strokeVariant(STROKE_FS, 2), p => { surfaceP = p; }],
+    [DISC_VS, DISC_FS, p => { discP = p; }], [PAVED_VS, PAVED_FS, p => { pavedP = p; }], [TFILL_VS, TFILL_FS, p => { tfillP = p; }],
+    [strokeVariant(STROKE_VS, 3), strokeVariant(STROKE_FS, 3), p => { texturedP = p; }], [WATER_VS, WATER_FS, p => { waterP = p; }],
+  ];
+  const linking: { pending: PendingProgram; set: (p: Program) => void; done: boolean }[] = [];
+  let programsReady = !deferUpload, wallsMade = !deferUpload;
+  const madePrograms = (): Program[] => [fillP, strokeP, casingP, surfaceP, discP, pavedP, tfillP, texturedP, waterP].filter(p => !!p);
+  if (!deferUpload) init();
   function uploadPlan(): number {
     const t = performance.now();
     plan?.dispose(); streets?.dispose(); walls?.dispose();
+    // Lot enclosures are relative to the scene origin: the owner sets them again for a new scene.
+    if (yards) { yards.runs.dispose(); yards.jambs.dispose(); yards = undefined; }
     if (towers) { gl.deleteBuffer(towers.vbo); gl.deleteVertexArray(towers.vao); towers = undefined; }
     plan = planMesh && new FillPack(gl, planMesh);
     wallGl.upload(scene, origin); // walls hook
@@ -595,8 +745,8 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     catch (error) { console.warn('Restauration WebGL de la ville indisponible, Canvas 2D utilisé', error); }
     finally { invalidate(); }
   };
-  canvas.addEventListener('webglcontextlost', onLost as EventListener);
-  canvas.addEventListener('webglcontextrestored', onRestored as EventListener);
+  canvas?.addEventListener('webglcontextlost', onLost as EventListener);
+  canvas?.addEventListener('webglcontextrestored', onRestored as EventListener);
 
   async function buildFill(source: CityGlFillSource, workers: number): Promise<{ mesh: CityGlFillMesh; triangulateMs: number; assembleMs: number; workers: number }> {
     let t = performance.now();
@@ -605,33 +755,226 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     return { mesh: fillMesh(source, result), triangulateMs, assembleMs: performance.now() - t, workers: used };
   }
 
-  const renderer: CityGlRenderer = {
-    canvas, gl,
-    get ready() { return !disposed && !lost && !gl.isContextLost() && !!scene && !!plan; },
+  /** Keys and style state of a draw: the plan tables depend on the level of detail, streets and buildings do not. */
+  function stateOf(o: CityGlDrawOptions, lod: CityLod) {
+    const palette = o.palette ?? 'growth', layers = { ...DEFAULT_LAYERS, ...o.layers };
+    const footprint = o.buildingStyle === 'silhouette';
+    // The live look stands in for the Canvas 2D frame of the V2, which has no render background.
+    const renderBackground = !o.live && globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = !footprint && (o.paintedBuildings ?? renderBackground);
+    const style: CityGlStyleState = { buildingStyle: o.buildingStyle, view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors, live: o.live };
+    const colorKey = o.colors ? JSON.stringify(o.colors) : '', liveKey = o.live ? `live:${o.live.roadLook}:${o.live.emphasis}:${o.live.waterColor ?? ''}` : '';
+    const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]) + liveKey;
+    const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}|${liveKey}`;
+    const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}|${liveKey}`;
+    return { palette, layers, footprint, renderBackground, painted, style, key, softStreets, sKey, bKey };
+  }
+  /** What a draw state needs on the GPU besides the meshes: street strokes of the road-surface switch, colour and
+   * material tables, the drawn water. Each is rebuilt only when its state key changes (plan tables are kept per key),
+   * so a frame of a known state only reads them; `prepareSteps` builds the heavy tables ahead in slices. Requires a
+   * scene and a plan. */
+  function styleFrame(o: CityGlDrawOptions, lod: CityLod) {
+    const s = scene!, pl = plan!;
+    const { palette, layers, footprint, renderBackground, painted, style, key, softStreets, sKey, bKey } = stateOf(o, lod);
+    // Road surface layer toggled: rebuild the street strokes (round caps, one width when off).
+    const surface = layers.roadSurface !== false;
+    if (surface !== streetSurface) {
+      streetSurface = surface;
+      if (scene && origin && !lost && !gl.isContextLost()) { streetData = buildStreetStrokes(scene, origin, surface); streets?.dispose(); streets = new StrokePack(gl, streetData); streetCrossings = crossingStart(streetData); streetKey = ''; }
+    }
+    // Colour tables: rebuilt only when the state changes (plan tables of recent states are kept).
+    if (key !== styleKey) {
+      const kept = pl.table(key);
+      if (kept?.draws) draws = kept.draws;
+      else { const pc = planColors(s, pl.mesh, style); pl.colors(pc.fill, pc.line, key, pc.draws, pc.hatch); draws = pc.draws; }
+      styleKey = key;
+    }
+    if (sKey !== streetKey) {
+      const sc = streetColors(s, palette, softStreets, o.colors, o.live), wc = cityWallColors(s, palette); // walls hook
+      streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = sKey;
+    }
+    if (built && bKey !== builtKey) { if (!built.table(bKey)) { const bc = buildingColors(buildings, style, s); built.colors(bc.fill, bc.line, bKey); } builtKey = bKey; }
+    // Lot enclosures (live look): a few texels per look, by palette.
+    if (yards && yards.palette !== palette) { const c = yardColors(yards.looks, palette); yards.runs.colors(c.line, c.line); yards.jambs.colors(c.jamb, c.jamb); yards.palette = palette; }
+    // Textured materials: albedo array loaded once (the plan is drawn flat until it arrives, then repainted).
+    const textured = !!o.textured && !!albedoTex;
+    if (o.textured && !albedoTex && !albedoLoading) {
+      albedoLoading = true;
+      loadMaterialImages().then(images => { if (disposed || lost || gl.isContextLost()) return; albedoTex = uploadMaterialArrays(gl, images, false).albedo; invalidate(); }).catch(e => { console.warn('Matières texturées indisponibles', e); }).finally(() => { albedoLoading = false; });
+    }
+    if (textured) {
+      const pk = `${styleKey}|${o.textured}`;
+      if (planMatKey !== pk) { pl.materials(planMaterialTable(s, pl.mesh)); planMatKey = pk; }
+      if (streets && streetMatKey !== 'on') { streets.materials(streetMaterialTable(s)); streetMatKey = 'on'; }
+      if (built && builtMatKey !== bKey) { built.materials(roofMaterialTable(buildings, style)); builtMatKey = bKey; }
+    }
+    if (o.water !== water?.source) {
+      if (water) { gl.deleteBuffer(water.vbo); gl.deleteVertexArray(water.vao); water = undefined; }
+      if (o.water && o.water.length >= 9) {
+        const vbo = gl.createBuffer()!, vao = gl.createVertexArray()!;
+        gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, o.water, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 36, 0); gl.vertexAttribDivisor(0, 1);
+        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 36, 16); gl.vertexAttribDivisor(1, 1);
+        gl.bindVertexArray(null);
+        water = { source: o.water, vbo, vao, count: Math.floor(o.water.length / 9) };
+      }
+    }
+    return { palette, layers, footprint, renderBackground, painted, softStreets, textured, d: draws! };
+  }
+  const renderer: CityGlSharedRenderer = {
+    gl,
+    get ready() { return programsReady && !disposed && !lost && !gl.isContextLost() && !!scene && !!plan; },
+    get programsLinked() { return programsReady; },
+    programsStep() {
+      if (programsReady || disposed || gl.isContextLost()) return false;
+      if (parallelLink) {
+        // All compiles and links issued at once; finished as the driver completes them, polled on later calls.
+        if (!linking.length) for (const [vs, fs, set] of programDefs) linking.push({ pending: startProgram(gl, vs, fs), set, done: false });
+        for (const l of linking) if (!l.done && programLinked(gl, l.pending, true)) { l.set(finishProgram(gl, l.pending)); l.done = true; }
+        if (linking.some(l => !l.done)) return true;
+      } else if (linking.length < programDefs.length) {
+        // No parallel compile: one program per call.
+        const [vs, fs, set] = programDefs[linking.length], pending = startProgram(gl, vs, fs);
+        linking.push({ pending, set, done: true }); set(finishProgram(gl, pending));
+        return true;
+      }
+      // The detailed walls' program (cityWalls.ts links it at once): alone in its call.
+      if (!wallsMade) { wallGl = createCityGlWalls(gl); wallsMade = true; return true; } // walls hook
+      programsReady = true;
+      invalidate();
+      return false;
+    },
+    check(o) {
+      if (!renderer.ready) return 'scene not uploaded';
+      if (o.textured) return 'textured materials'; // the albedo array loads on first use
+      const lod = o.lod ?? selectCityLod(o.metresPerPixel, lastLod), st = stateOf(o, lod);
+      if ((st.layers.roadSurface !== false) !== streetSurface) return 'street surface';
+      if (st.key !== styleKey && !plan!.has(st.key)) return 'plan tables';
+      if (st.sKey !== streetKey) return 'street tables';
+      if (built && st.bKey !== builtKey && !built.has(st.bKey)) return 'building tables';
+      if (o.water !== water?.source) return 'water';
+      if (yards && yards.palette !== st.palette) return 'enclosure colours';
+      return '';
+    },
+    get pendingUpload() { return !!commitPlan || !!commitBuildings; },
+    upload() {
+      if (!programsReady || disposed || lost || gl.isContextLost()) return false;
+      // One commit per call: the plan (with its strokes), then the buildings, each a few buffers.
+      const p = commitPlan, b = p ? undefined : commitBuildings;
+      if (p) commitPlan = undefined; else commitBuildings = undefined;
+      const ms = p?.() ?? b?.() ?? 0;
+      gl.bindVertexArray(null); // StrokePack leaves its VAO bound: nothing of ours stays bound in the shared context
+      if (p && buildStats) buildStats.uploadMs = ms;
+      else if (b && buildingStats) buildingStats.uploadMs = ms;
+      return !!p || !!b;
+    },
+    prepare(o) {
+      if (!renderer.ready) return;
+      styleFrame(o, o.lod ?? selectCityLod(o.metresPerPixel, lastLod));
+      gl.bindVertexArray(null);
+    },
+    *prepareSteps(o) {
+      if (!renderer.ready || commitPlan || commitBuildings) return;
+      const lod = o.lod ?? selectCityLod(o.metresPerPixel, lastLod), st = stateOf(o, lod), pl = plan!, s = scene!;
+      // The heavy tables (a pass over every block and parcel, every building and pan, every street) in slices, kept
+      // per key; then the rest of the state at once, which finds them kept.
+      if (!pl.has(st.key)) {
+        const pc = yield* planColorsSteps(s, pl.mesh, st.style);
+        if (plan !== pl) return;
+        const current = styleKey;
+        pl.colors(pc.fill, pc.line, st.key, pc.draws, pc.hatch);
+        if (current) pl.table(current); // `colors` made the new tables current: the draw state stays the drawn one
+      }
+      if (st.sKey !== streetKey) {
+        const sc = yield* streetColorsSteps(s, st.palette, st.softStreets, o.colors, o.live);
+        if (scene !== s) return;
+        const wc = cityWallColors(s, st.palette); // walls hook
+        streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = st.sKey;
+      }
+      const bb = built;
+      if (bb && !bb.has(st.bKey)) {
+        const bc = yield* buildingColorsSteps(buildings, st.style, s);
+        if (built !== bb) return;
+        const current = builtKey;
+        bb.colors(bc.fill, bc.line, st.bKey);
+        if (current) bb.table(current);
+      }
+      styleFrame(o, lod);
+      gl.bindVertexArray(null);
+    },
+    setYards(lists) {
+      if (yards) { yards.runs.dispose(); yards.jambs.dispose(); yards = undefined; }
+      if (!scene || lost || gl.isContextLost()) return;
+      const y = buildYardStrokes(lists, origin);
+      if (y) yards = { runs: new StrokePack(gl, y.runs), jambs: new StrokePack(gl, y.jambs), looks: y.looks, palette: '' };
+      gl.bindVertexArray(null);
+    },
+    get packing() { return packJobs.length > 0; },
+    step(budgetMs) {
+      const t = performance.now();
+      while (packJobs.length) {
+        const job = packJobs[0];
+        try {
+          for (;;) {
+            if (job.steps.next().done) { packJobs.shift(); job.done(true); break; }
+            if (performance.now() - t >= budgetMs) return true;
+          }
+        } catch (error) { packJobs.shift(); job.fail(error); }
+      }
+      return false;
+    },
     async setScene(next, nextBuildings, options = {}) {
       const gen = ++generation, start = performance.now(), workers = options.workers ?? defaultWorkers();
-      let t = performance.now();
-      const o = cityOrigin(next), planSource = packPlan(next, o), sd = buildStreetStrokes(next, o, streetSurface), wd = cityWallStrokes(next, o), td = buildTowers(cityLegacyWalls(next), o); // walls hook
-      const builtSource = nextBuildings ? packBuildings(nextBuildings, o) : undefined;
+      const t = performance.now(), o = cityOrigin(next);
+      const out: { plan?: CityGlFillSource; streets?: CityGlStrokes; walls?: CityGlStrokes; towers?: Float32Array; built?: CityGlFillSource } = {};
+      const pack = function* (): Generator<void, void> {
+        out.plan = yield* packPlanSteps(next, o); yield;
+        out.streets = buildStreetStrokes(next, o, streetSurface); yield;
+        out.walls = cityWallStrokes(next, o); out.towers = buildTowers(cityLegacyWalls(next), o); yield; // walls hook
+        if (nextBuildings) out.built = yield* packBuildingsSteps(nextBuildings, o);
+      };
+      // Shared context: packed in slices by `step()`; a newer scene drops every packing in progress.
+      if (deferUpload) { abortPacking(true); if (!await packed('scene', pack())) return abortedStats(start); }
+      else runSteps(pack());
       const packMs = performance.now() - t;
-      const [p, b] = await Promise.all([buildFill(planSource, workers), builtSource && buildFill(builtSource, workers)]);
+      if (gen !== generation) return abortedStats(start);
+      const sd = out.streets!, wd = out.walls!, td = out.towers!, builtSource = out.built;
+      const [p, b] = await Promise.all([buildFill(out.plan!, workers), builtSource && buildFill(builtSource, workers)]);
       if (gen !== generation) return { packMs, triangulateMs: p.triangulateMs, assembleMs: p.assembleMs, uploadMs: 0, workers: p.workers, totalMs: performance.now() - start };
-      scene = next; origin = o; planMesh = p.mesh; streetData = sd; wallData = wd; towerData = td;
-      buildings = nextBuildings; builtMesh = b?.mesh; buildingGeneration++;
-      const uploadMs = lost || gl.isContextLost() ? 0 : uploadPlan() + uploadBuildings();
+      const commit = (): number => {
+        scene = next; origin = o; planMesh = p.mesh; streetData = sd; wallData = wd; towerData = td;
+        buildings = nextBuildings; builtMesh = b?.mesh;
+        return lost || gl.isContextLost() ? 0 : uploadPlan() + uploadBuildings();
+      };
+      buildingGeneration++;
+      // Deferred: the scene (with its building set, not drawable until both are up) at one `upload()`, the building
+      // buffers at the next; an earlier building set is dropped.
+      let uploadMs = 0;
+      if (deferUpload) {
+        commitPlan = () => {
+          scene = next; origin = o; planMesh = p.mesh; streetData = sd; wallData = wd; towerData = td;
+          buildings = nextBuildings; builtMesh = b?.mesh;
+          return lost || gl.isContextLost() ? 0 : uploadPlan();
+        };
+        commitBuildings = () => lost || gl.isContextLost() ? 0 : uploadBuildings();
+      } else uploadMs = commit();
       buildStats = { packMs, triangulateMs: p.triangulateMs + (b?.triangulateMs ?? 0), assembleMs: p.assembleMs + (b?.assembleMs ?? 0), uploadMs, workers: p.workers, totalMs: performance.now() - start };
       invalidate();
       return buildStats;
     },
     async setBuildings(next, options = {}) {
-      const gen = ++buildingGeneration, start = performance.now(), workers = options.workers ?? defaultWorkers();
-      let t = performance.now();
-      const source = next && packBuildings(next, origin), packMs = performance.now() - t;
-      t = performance.now();
-      const b = source && await buildFill(source, workers);
+      const gen = ++buildingGeneration, start = performance.now(), workers = options.workers ?? defaultWorkers(), o = origin;
+      const t = performance.now();
+      const out: { built?: CityGlFillSource } = {};
+      const pack = function* (): Generator<void, void> { if (next) out.built = yield* packBuildingsSteps(next, o); };
+      if (deferUpload) { abortPacking(false); if (!await packed('buildings', pack())) return abortedStats(start); }
+      else runSteps(pack());
+      const packMs = performance.now() - t;
+      if (gen !== buildingGeneration) return abortedStats(start);
+      const source = out.built, b = source && await buildFill(source, workers);
       if (gen !== buildingGeneration) return { packMs, triangulateMs: b?.triangulateMs ?? 0, assembleMs: b?.assembleMs ?? 0, uploadMs: 0, workers: b?.workers ?? 0, totalMs: performance.now() - start };
-      buildings = next; builtMesh = b?.mesh;
-      const uploadMs = lost || gl.isContextLost() ? 0 : uploadBuildings();
+      const commit = (): number => { buildings = next; builtMesh = b?.mesh; return lost || gl.isContextLost() ? 0 : uploadBuildings(); };
+      let uploadMs = 0;
+      if (deferUpload) commitBuildings = commit; else uploadMs = commit();
       buildingStats = { packMs, triangulateMs: b?.triangulateMs ?? 0, assembleMs: b?.assembleMs ?? 0, uploadMs, workers: b?.workers ?? 0, totalMs: performance.now() - start };
       invalidate();
       return buildingStats;
@@ -641,62 +984,25 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       const lod = o.lod ?? selectCityLod(mpp, lastLod); lastLod = lod;
       const frame: CityGlFrame = { lod, drawCalls: 0, instances: 0, triangles: 0, cpuMs: 0 };
       if (!renderer.ready) { frame.cpuMs = performance.now() - start; lastFrame = frame; return frame; }
-      const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
-      gl.viewport(0, 0, W, H);
-      const c = o.clear ?? [0, 0, 0, 0];
-      gl.clearColor(c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]); gl.clear(gl.COLOR_BUFFER_BIT);
+      const target = o.target, W = target ? target.width : gl.drawingBufferWidth, H = target ? target.height : gl.drawingBufferHeight;
+      if (target) {
+        // Shared context: the frame's target and every state this draw relies on; nothing cleared (the owner's target).
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+        gl.disable(gl.SCISSOR_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.colorMask(true, true, true, true); gl.stencilMask(0xff); gl.blendEquation(gl.FUNC_ADD);
+        gl.viewport(0, 0, W, H);
+      } else {
+        gl.viewport(0, 0, W, H);
+        const c = o.clear ?? [0, 0, 0, 0];
+        gl.clearColor(c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]); gl.clear(gl.COLOR_BUFFER_BIT);
+      }
       if (!scene || !plan) return frame;
-      const palette = o.palette ?? 'growth', layers = { ...DEFAULT_LAYERS, ...o.layers };
-      // Road surface layer toggled: rebuild the street strokes (round caps, one width when off).
-      const surface = layers.roadSurface !== false;
-      if (surface !== streetSurface) {
-        streetSurface = surface;
-        if (scene && origin && !lost && !gl.isContextLost()) { streetData = buildStreetStrokes(scene, origin, surface); streets?.dispose(); streets = new StrokePack(gl, streetData); streetCrossings = crossingStart(streetData); streetKey = ''; }
-      }
-      const footprint = o.buildingStyle === 'silhouette';
-      const renderBackground = globalThis.document?.documentElement.dataset.cityBackground === 'render', painted = !footprint && (o.paintedBuildings ?? renderBackground);
-      const style: CityGlStyleState = { buildingStyle: o.buildingStyle, view: o.view, lod, palette, layers, buildingsVisible: o.buildingsVisible ?? true, diagnostic: o.diagnostic ?? 'none', refusedParcels: o.refusedParcels, painted, blended: o.groundBlend ?? isBlended(), colors: o.colors };
-      const colorKey = o.colors ? JSON.stringify(o.colors) : '';
-      // Colour tables: rebuilt only when the state changes.
-      const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]);
-      if (key !== styleKey) { const pc = planColors(scene, plan.mesh, style); plan.colors(pc.fill, pc.line); draws = pc.draws; styleKey = key; }
-      const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'), sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}`;
-      if (sKey !== streetKey) {
-        const sc = streetColors(scene, palette, softStreets, o.colors), wc = cityWallColors(scene, palette); // walls hook
-        streets?.colors(sc.outer, sc.inner); walls?.colors(wc.outer, wc.inner); towerColors = wc.tower; streetKey = sKey;
-      }
-      const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}`;
-      if (built && bKey !== builtKey) { const bc = buildingColors(buildings, style, scene); built.colors(bc.fill, bc.line); builtKey = bKey; }
-      // Textured materials: albedo array loaded once (the plan is drawn flat until it arrives, then repainted).
-      const textured = !!o.textured && !!albedoTex;
-      if (o.textured && !albedoTex && !albedoLoading) {
-        albedoLoading = true;
-        loadMaterialImages().then(images => { if (disposed || lost || gl.isContextLost()) return; albedoTex = uploadMaterialArrays(gl, images, false).albedo; invalidate(); }).catch(e => { console.warn('Matières texturées indisponibles', e); }).finally(() => { albedoLoading = false; });
-      }
-      if (textured) {
-        const pk = `${styleKey}|${o.textured}`;
-        if (plan && planMatKey !== pk) { plan.materials(planMaterialTable(scene, plan.mesh)); planMatKey = pk; }
-        if (streets && streetMatKey !== 'on') { streets.materials(streetMaterialTable(scene)); streetMatKey = 'on'; }
-        if (built && builtMatKey !== bKey) { built.materials(roofMaterialTable(buildings, style)); builtMatKey = bKey; }
-      }
-      const d = draws!;
+      const { palette, layers, footprint, renderBackground, painted, softStreets, textured, d } = styleFrame(o, lod);
       const v = o.viewport, sx = 2 / (v.maxX - v.minX), sy = -2 / (v.maxY - v.minY);
       const view = [sx, sy, -1 - (v.minX - origin.x) * sx, 1 - (v.minY - origin.y) * sy];
       const devPx = (v.maxX - v.minX) / Math.max(1, W);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.DEPTH_TEST);
       // The drawn rivers above the town ground and streets: their capsules mark the stencil (WATER_BIT); blocks,
       // parcels and non-crossing streets are drawn only off it, so the river shows through, bridges and fords over it.
-      if (o.water !== water?.source) {
-        if (water) { gl.deleteBuffer(water.vbo); gl.deleteVertexArray(water.vao); water = undefined; }
-        if (o.water && o.water.length >= 9) {
-          const vbo = gl.createBuffer()!, vao = gl.createVertexArray()!;
-          gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, o.water, gl.STATIC_DRAW);
-          gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 36, 0); gl.vertexAttribDivisor(0, 1);
-          gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 36, 16); gl.vertexAttribDivisor(1, 1);
-          gl.bindVertexArray(null);
-          water = { source: o.water, vbo, vao, count: Math.floor(o.water.length / 9) };
-        }
-      }
       const wet = !!water && water.count > 0;
       if (wet) {
         gl.enable(gl.STENCIL_TEST); gl.stencilMask(0xff); gl.clearStencil(0); gl.clear(gl.STENCIL_BUFFER_BIT);
@@ -728,7 +1034,17 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
 
       // Fills and outlines.
       gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
-      gl.uniform1f(fillP.u.uRuinSpacing, 0);
+      gl.uniform1f(fillP.u.uRuinSpacing, 0); gl.uniform4f(fillP.u.uHatch, 0, 0, 0, 0);
+      /** Live parchment hatching over a plan layer (drawCitySteps hatchPattern, world-anchored 7 px lines). */
+      const hatch = (layer: string): void => {
+        if (!d.hatch || !plan?.hatch) return;
+        const [r, g, b] = rgba01(PARCHMENT_HATCH.color);
+        gl.uniform4f(fillP.u.uHatch, PARCHMENT_HATCH.periodPx * mpp, PARCHMENT_HATCH.widthPx * mpp, devPx, PARCHMENT_HATCH.alpha); gl.uniform3f(fillP.u.uHatchColor, r, g, b);
+        gl.bindTexture(gl.TEXTURE_2D, plan.hatch); gl.bindVertexArray(plan.tri);
+        const l = plan.mesh.layers[layer];
+        if (l) for (const [first, count] of visibleRanges(l.chunks, v, c => c.triangles)) { gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, first * 4); frame.drawCalls++; frame.triangles += count / 3; }
+        gl.uniform4f(fillP.u.uHatch, 0, 0, 0, 0);
+      };
       const fills = (pack: FillPack | undefined, layer: string, lines: boolean): void => {
         const l = pack?.mesh.layers[layer];
         if (!pack || !l || !(lines ? l.lines : l.triangles).count) return;
@@ -740,9 +1056,10 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         }
       };
       dry(true);
-      if (lod === 'far') { if (d.footprint) fills(plan, 'footprint', false); if (d.footprintLines) fills(plan, 'footprint', true); }
+      if (lod === 'far') { if (d.footprint) fills(plan, 'footprint', false); if (d.footprintLines) fills(plan, 'footprint', true); hatch('footprint'); }
       else {
         if (d.blocks) fills(plan, 'blocks', false); if (d.blockLines) fills(plan, 'blocks', true);
+        hatch('blocks');
         if (d.parcels) fills(plan, 'parcels', false); if (d.parcelLines) fills(plan, 'parcels', true);
         if (d.paved && mpp < 0.3) { // setts appear below 0.3 m/px (PAVED_FS `shown`)
           gl.useProgram(pavedP.program); gl.uniform4fv(pavedP.u.uView, view); gl.uniform1i(pavedP.u.uColors, 0); gl.uniform1f(pavedP.u.uMpp, mpp);
@@ -764,6 +1081,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       const useStroke = (prog: Program): void => {
         gl.useProgram(prog.program); u = prog.u;
         gl.uniform4fv(u.uView, view); gl.uniform1i(u.uColors, 0); gl.uniform1f(u.uMpp, mpp); gl.uniform1f(u.uDevPx, devPx); gl.uniform4f(u.uOverride, 0, 0, 0, 0);
+        gl.uniform1f(u.uFade, 1);
       };
       useStroke(strokeP);
       const strokes = (pack: StrokePack | undefined, first: number, pass: 0 | 1, p: { edgePx: number; inner: number; minPx: number; maxRank: number; crossings: boolean; dash: number }, single = false): void => {
@@ -816,6 +1134,16 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         strokes(streets, first, 1, s, softStreets && streetSurface);
         gl.uniform1i(u.uBridgeDeck, 0);
       }
+      // Lot enclosures (live look; drawLotEnclosures): from the mid level, thinner and fading out across mid; gate jambs
+      // near (cart gates) and close (doors). After the streets and quays, before the town walls.
+      if (yards && layers.lotEnclosures !== false && !layers.lotEnclosureMeshes && lod !== 'far') {
+        useStroke(strokeP);
+        const mid = lod === 'mid', fade = mid ? 1 - .65 * Math.max(0, Math.min(1, Math.log(mpp / 2.2) / Math.log(9 / 2.2))) : 1;
+        gl.uniform1f(u.uFade, fade);
+        strokes(yards.runs, 0, 1, { edgePx: 0, inner: 1, minPx: mid ? .7 : 1, maxRank: 15, crossings: false, dash: 0 });
+        gl.uniform1f(u.uFade, 1);
+        if (!mid) strokes(yards.jambs, 0, 1, { edgePx: 0, inner: 1, minPx: 1, maxRank: lod === 'close' ? 1 : 0, crossings: false, dash: 0 });
+      }
       frame.drawCalls += wallGl.draw('shadow', wallDraw); useStroke(strokeP); // walls hook: painted wall shadows
       if (d.walls && walls) {
         const s = { edgePx: 0, inner: 0.45, minPx: lod === 'far' ? 1.6 / 2.4 : 1, maxRank: 15, crossings: false, dash: 2 };
@@ -829,6 +1157,12 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         gl.bindVertexArray(towers.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, towers.count); frame.drawCalls++; frame.instances += towers.count;
       }
       frame.drawCalls += wallGl.draw('works', wallDraw); // walls hook: outworks, towers, gatehouses, lean-tos
+      // Canals (live look; drawCityWaterways): water ribbons, then bridges and lock gates with their edge, above the
+      // walls and below the buildings.
+      if (d.waterways) {
+        gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0);
+        fills(plan, 'waterways', false); fills(plan, 'waterwayBridges', false); fills(plan, 'waterwayBridges', true);
+      }
       // Buildings above the streets (as in drawCity).
       if (d.buildings && built) {
         gl.useProgram(fillP.program);
@@ -836,7 +1170,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         const buildingLayer = footprint ? 'buildingFootprints' : 'buildings';
         if (pans) {
           // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
-          gl.uniform4fv(fillP.u.uTint, palette === 'parchment' ? PARCHMENT_SHADOW : PAINTED_SHADOW);
+          gl.uniform4fv(fillP.u.uTint, palette === 'parchment' ? PARCHMENT_SHADOW : o.live ? liveShadowTint(palette, buildings?.items[0]) : PAINTED_SHADOW);
           fills(built, 'shadows', false);
           gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
         } else if (painted && palette !== 'parchment') {
@@ -881,18 +1215,12 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       const showBuildings = (o?.buildingsVisible ?? true) && (lod === 'near' || lod === 'close') && (!o?.view || o.view === 'buildings' || o.view === 'roles');
       return cityGlPick(scene, showBuildings ? buildings : undefined, point);
     },
-    resize(width, height) {
-      const el = canvas as HTMLCanvasElement, dpr = globalThis.devicePixelRatio || 1;
-      const w = Math.max(1, Math.round(width ?? (el.clientWidth || canvas.width / dpr) * dpr)), h = Math.max(1, Math.round(height ?? (el.clientHeight || canvas.height / dpr) * dpr));
-      if (canvas.width !== w) canvas.width = w;
-      if (canvas.height !== h) canvas.height = h;
-    },
     stats() {
       const fs = (m?: CityGlFillMesh) => m && { vertices: m.positions.length / 2, triangles: m.triangles.length / 3, edges: m.lines.length / 2, features: m.featureCount };
       const info = gl.getExtension('WEBGL_debug_renderer_info');
       return {
         plan: fs(planMesh), buildings: fs(builtMesh), streets: streetData?.count ?? 0, walls: wallData?.count ?? 0, towers: (towerData?.length ?? 0) / 2,
-        gpuBytes: (plan?.bytes ?? 0) + (built?.bytes ?? 0) + (streets?.bytes ?? 0) + (walls?.bytes ?? 0) + (towerData?.byteLength ?? 0),
+        gpuBytes: (plan?.bytes ?? 0) + (built?.bytes ?? 0) + (streets?.bytes ?? 0) + (walls?.bytes ?? 0) + (towerData?.byteLength ?? 0) + (wallGl?.bytes ?? 0) + (water?.source.byteLength ?? 0),
         build: buildStats, buildingsBuild: buildingStats, frame: lastFrame,
         renderer: String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER)),
       };
@@ -903,9 +1231,13 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       triangulator.dispose();
       plan?.dispose(); built?.dispose(); streets?.dispose(); walls?.dispose(); selection?.dispose();
       if (towers) { gl.deleteBuffer(towers.vbo); gl.deleteVertexArray(towers.vao); }
-      gl.deleteProgram(fillP.program); gl.deleteProgram(strokeP.program); gl.deleteProgram(casingP.program); gl.deleteProgram(surfaceP.program); gl.deleteProgram(discP.program); gl.deleteProgram(pavedP.program); gl.deleteProgram(tfillP.program); gl.deleteProgram(texturedP.program); gl.deleteProgram(waterP.program); if (water) { gl.deleteBuffer(water.vbo); gl.deleteVertexArray(water.vao); water = undefined; } if (albedoTex) gl.deleteTexture(albedoTex);
-      wallGl.dispose(); // walls hook
-      canvas.removeEventListener('webglcontextlost', onLost as EventListener); canvas.removeEventListener('webglcontextrestored', onRestored as EventListener);
+      for (const p of madePrograms()) gl.deleteProgram(p.program);
+      for (const l of linking) if (!l.done) { gl.deleteProgram(l.pending.program); l.pending.shaders.forEach(s => gl.deleteShader(s)); }
+      if (water) { gl.deleteBuffer(water.vbo); gl.deleteVertexArray(water.vao); water = undefined; } if (albedoTex) gl.deleteTexture(albedoTex);
+      if (wallsMade) wallGl.dispose(); // walls hook
+      canvas?.removeEventListener('webglcontextlost', onLost as EventListener); canvas?.removeEventListener('webglcontextrestored', onRestored as EventListener);
+      commitPlan = commitBuildings = undefined; abortPacking(true);
+      if (yards) { yards.runs.dispose(); yards.jambs.dispose(); yards = undefined; }
       plan = built = streets = walls = selection = undefined; towers = undefined; scene = undefined; buildings = undefined; planMesh = builtMesh = undefined;
     },
   };
