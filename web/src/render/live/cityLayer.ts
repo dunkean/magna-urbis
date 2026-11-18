@@ -14,20 +14,25 @@
  * satellite grounds each town's far raster (cityFarRaster.ts) is a texture drawn over the buildings with the Canvas
  * fade; the town canopy (cityGrove.ts) is instanced discs above everything, as finishCityFrame draws it last.
  *
- * The exact Canvas 2D town (cityCanvas drawCitySteps) still paints the view at rest, captures and exports; this layer
- * only approximates it while the view moves. See D-city.md for what differs.
+ * Every colour, width and threshold is the town's look (render/city/look.ts), the rules the Canvas town paints with.
+ * `restExact` says whether a frame of this layer is the picture of the town at rest: only where the look's
+ * townRestGaps finds nothing the Canvas town would paint differently (render/city/restCoverage.ts lists what is left).
+ * Otherwise the exact Canvas 2D town (cityCanvas drawCitySteps) repaints the view at rest, as it does captures and exports.
  */
 import type { LiveCityEnv, LiveFrame, LiveLayer, LiveLayerStats } from './contract';
 import type { ResolvedAppearance } from '../appearanceRecipe';
 import type { ExportLayers } from '../exportLayers';
-import { selectCityLod, type Box, type CityBuildings, type CityLayers, type CityLod, type CityPalette, type CityScene } from '../cityCanvas';
+import type { Box, CityBuildings, CityLayers, CityLod, CityPalette, CityScene } from '../cityCanvas';
+import { FAR_TOWN_FADE, buildingsShown, farTownAlpha, planFrame, planLineWidthPx, roofPansShown, selectCityLod, townOpacity, townRestGaps, type RestState, type TownContent } from '../city/look';
+import { groundRoadLook } from '../composition';
+import { mapGroundSnow } from '../seasonPalette';
 import { createCityGlRendererOn, finishProgram, programLinked, startProgram, type CityGlDrawOptions, type CityGlSharedRenderer, type PendingProgram, type Program } from '../cityGl';
 import { cityBuildingAppearance } from '../cityDrawOptions';
-import { FAR_TOWN_FADE, farTownAlpha, farTownRaster, heldFarTownRaster, type FarRaster } from '../cityFarRaster';
+import { farTownRaster, heldFarTownRaster, type FarRaster } from '../cityFarRaster';
 import { townWaterColour } from '../townWater';
 import { grainMeansReady, grainMeansStep } from '../cityGlGrain';
 import type { YardBoundary } from '../cityLotEnclosures';
-import type { CityCanopy } from '../cityGrove';
+import { INKS as CANOPY_INKS, SHADE as CANOPY_SHADE, type CityCanopy } from '../cityGrove';
 
 /** What the owner of the towns (v2/nativeCityMap.ts) gives the layer. */
 export interface LiveCityTowns {
@@ -47,6 +52,9 @@ export interface LiveCityTowns {
   canopies(): readonly CityCanopy[];
   /** Refused parcels of every town (access diagnostic). */
   refused(): ReadonlySet<string>;
+  /** Some activity site has drawn ground (drawInstallations); some town is drawn by the native house renderer. */
+  sites(): boolean;
+  housePlans(): boolean;
 }
 
 /** Why the live layer cannot stand for the classic town of this appearance (null: it can). Per-frame conditions are
@@ -130,14 +138,6 @@ void main() {
   if (a <= 0.0) discard;
   outColor = uColor * a;
 }`;
-/** Canopy inks of drawCityCanopy (cityGrove.ts INKS, private there): keep in step with that table. */
-const CANOPY_INKS: Record<string, { shade: string; dark: string; mid: string; light: string; stroke?: string; flat?: boolean }> = {
-  parchment: { shade: 'rgba(46,38,24,0.26)', dark: '#4f6139', mid: '#71844c', light: '#9fac6c', stroke: '#3a432a' },
-  terrain: { shade: 'rgba(0,0,0,0.32)', dark: '#2a4421', mid: '#3f632f', light: '#6c8f45' },
-  atlas: { shade: 'rgba(30,30,20,0.24)', dark: '#58764a', mid: '#7c9c62', light: '#a9c48a', stroke: '#465a3a' },
-  ink: { shade: 'rgba(0,0,0,0)', dark: '#c9d3b0', mid: '#c9d3b0', light: '#c9d3b0', stroke: '#56654a', flat: true },
-  growth: { shade: 'rgba(0,0,0,0)', dark: '#cbd6b4', mid: '#cbd6b4', light: '#cbd6b4', stroke: '#5c6b4a', flat: true },
-};
 /** Premultiplied RGBA of '#rrggbb' or 'rgba(r,g,b,a)', times `alpha`. */
 function premul(css: string, alpha = 1): [number, number, number, number] {
   const m = /rgba?\((\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?/.exec(css),
@@ -158,7 +158,7 @@ function canopyDiscs(canopies: readonly CityCanopy[]): Record<DiscPass, number[]
   for (const c of canopies)
     for (const t of [...c.dwellings, ...c.trees]) {
       const k = (t.h + t.r * 0.6) * 0.35;
-      out.shade.push(t.x + 0.32 * k, t.y + 0.42 * k, t.r * 0.95);
+      out.shade.push(t.x + CANOPY_SHADE.x * k, t.y + CANOPY_SHADE.y * k, t.r * 0.95);
       out.crowns.push(t.x, t.y, t.r);
       for (const l of t.lobes) {
         out.rim.push(l.x + l.r * 0.08, l.y + l.r * 0.1, l.r * 1.04);
@@ -204,10 +204,68 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   /** Lot enclosure lists handed to the renderer; canopy discs and the canopies they were built from. */
   let yardsFor: readonly (readonly YardBoundary[] | undefined)[] | undefined;
   let canopy: CanopyMesh | undefined, canopyFor: readonly CityCanopy[] | undefined;
+  /** What the towns hold that decides whether a frame is the picture at rest (counted once per scene and extras, in
+   * `work`), and the last answer of `restExact` with the state it was given for. */
+  let content: TownContent | undefined;
+  let rest: { look: Look; level: CityLod; dpr: number; farRaster: boolean; snow: number; content: TownContent; gaps: readonly string[] } | undefined;
   /** The options `ready` checked for a frame, reused by its `draw`. */
   let checked: { frame: LiveFrame; options: CityGlDrawOptions; level: CityLod } | undefined;
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, gpuBytes: 0, uploadMs: 0, buildMs: 0, packMs: 0, prepareMs: 0, warmMs: 0, farTextures: 0 };
 
+  /** One pass over the scene, at rest: what the look's townRestGaps needs to know of the towns. */
+  function townContent(plan: CityScene, buildings: CityBuildings | undefined): TownContent {
+    const streetRoles = new Set<string>();
+    for (const s of plan.streets) streetRoles.add(s.role);
+    return {
+      waterways: plan.layouts.some(layout => !!layout.structure?.waterways?.length),
+      streetRoles,
+      enclosures: towns.enclosures().some(list => !!list?.length),
+      canopy: towns.canopies().some(c => c.trees.length > 0 || c.dwellings.length > 0 || c.walkways.length > 0),
+      sites: towns.sites(),
+      housePlans: towns.housePlans(),
+      millMarks: !!buildings?.items.some(b => !!b.marks?.length),
+      reserves: plan.blocks.some(b => b.kind.startsWith('reserve')) || plan.parcels.some(p => p.use === 'reserve'),
+    };
+  }
+  /** What the Canvas town would paint differently from this layer for a frame (the look's townRestGaps); kept while
+   * the look, the level of detail and the towns' content do not change. */
+  function restGaps(frame: LiveFrame, l: Look, level: CityLod, held: TownContent): readonly string[] {
+    const mpp = 1 / frame.view.scale,
+      farRaster = l.farTown && mpp > FAR_TOWN_FADE[0],
+      snow = mapGroundSnow();
+    if (rest && rest.look === l && rest.level === level && rest.dpr === frame.dpr && rest.farRaster === farRaster && rest.snow === snow && rest.content === held) return rest.gaps;
+    const o = l.base,
+      a = l.appearance,
+      layers = o.layers as CityLayers,
+      live = o.live!;
+    const footprint = o.buildingStyle === 'silhouette',
+      shown = { view: o.view, lod: level, mpp, footprint, diagnostic: o.diagnostic ?? 'none', buildingsVisible: !!o.buildingsVisible, farTown: l.farTown };
+    const state: RestState = {
+      palette: o.palette ?? 'parchment',
+      view: o.view,
+      lod: level,
+      mpp,
+      dpr: frame.dpr,
+      // A street takes the tone of the ground wherever the map gives one, unless the roads are ink.
+      streets: groundRoadLook(live.roadLook) ? 'natural' : live.roadLook === 'ink' ? 'ink' : 'soft',
+      streetsShown: layers.streets,
+      blend: planFrame({ view: o.view, lod: level, palette: o.palette ?? 'parchment', layers, width: live.lineWidth ?? 0.6, groundBlend: o.groundBlend, roadLook: live.roadLook }).blend,
+      textured: !!a.city.textured,
+      emphasis: live.emphasis,
+      snow,
+      lineWidthPx: planLineWidthPx(live.lineWidth ?? 0.6),
+      buildings: buildingsShown(shown) && (footprint || roofPansShown(shown) || o.view === 'roles'),
+      farRaster,
+      canopyClearing: !!a.composition.vegetation.procedural,
+      diagnostics: !!(layers.fronts || layers.axes || layers.access || layers.reserve || layers.allocated || layers.quarters || layers.centers || o.refusedParcels?.size),
+      // The canals of the Canvas town are painted again at full strength over the composited town; this layer has no
+      // pass over its group (contract.ts).
+      overPass: false,
+      content: held,
+    };
+    rest = { look: l, level, dpr: frame.dpr, farRaster, snow, content: held, gaps: townRestGaps(state) };
+    return rest.gaps;
+  }
   const unprepare = (): void => {
     preparedLods.clear();
     warmedLods.clear();
@@ -224,12 +282,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       vis = visibility ?? {};
     const roads = appearance.composition.networks.roads,
       buildingsVisible = vis.city !== false && city.visible;
+    // As drawCitySteps decides it (the look's farTownShown), for the towns of city volumes.
+    const farTown = !!appearance.traits?.satelliteVariant && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
     look = {
       appearance,
       visibility,
       reason: liveCityBlock(appearance, visibility),
-      opacity: finite(city.opacity, 0.8, 0, 1),
-      farTown: !!appearance.traits?.satelliteVariant && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none',
+      opacity: townOpacity(city.opacity),
+      farTown,
       // As cityDrawOptions hands them to drawFarTown by day: the city palette, the building ink of the appearance.
       far: { palette: city.palette, night: false, custom: buildingAppearance.colors?.building },
       canopy: buildingsVisible && city.view === 'buildings' && buildingAppearance.diagnostic === 'none',
@@ -252,7 +312,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
           waterColor: townWaterColour(appearance),
           // Natural grounds: the Canvas town lays its procedural grain unless textured materials replace it.
           grain: !city.textured,
-          lineWidth: Math.max(0.2, finite(city.width, 0.6, 0, 5)),
+          lineWidth: finite(city.width, 0.6, 0, 5),
+          farTown,
         },
       },
     };
@@ -314,6 +375,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     merging?.return(undefined as never);
     merging = undefined;
     checked = undefined;
+    content = undefined;
+    rest = undefined;
     renderer = undefined;
     requested = built = undefined;
     yardsFor = undefined;
@@ -601,6 +664,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       (globalThis as { __muLiveCityWhy?: string }).__muLiveCityWhy = why;
       return !why;
     },
+    restExact(frame) {
+      // Strict: any element the Canvas town would paint differently keeps its repaint at rest. Read by the probes:
+      // what is still missing for this frame.
+      const held = content,
+        gaps = held && !notReady(frame) ? restGaps(frame, lookNow(), selectCityLod(1 / frame.view.scale, lod), held) : undefined;
+      (globalThis as { __muLiveCityGaps?: readonly string[] }).__muLiveCityGaps = gaps;
+      return !!gaps && gaps.length === 0;
+    },
     draw(frame) {
       const start = performance.now(),
         l = lookNow();
@@ -663,6 +734,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         stats.gpuBytes = bytes();
         unprepare();
         yardsFor = undefined;
+        content = undefined;
         return true;
       }
       if (!renderer.ready) return building > 0;
@@ -726,6 +798,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         if (!yardsFor || yardsFor.length !== lists.length || yardsFor.some((x, i) => x !== lists[i])) {
           renderer.setYards(lists);
           yardsFor = lists;
+          content = undefined;
           meshBytes = renderer.stats().gpuBytes;
           stats.gpuBytes = bytes();
           // New enclosure colour tables: prepared again (a few texels), then warmed.
@@ -735,11 +808,18 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         if (canopyWork()) {
           stats.gpuBytes = bytes();
           warmedLods.clear();
+          content = undefined;
           return true;
         }
         if (l.farTown && farWork(l, frame)) {
           stats.gpuBytes = bytes();
           warmedLods.clear();
+          return true;
+        }
+        // Last: what the towns hold, for `restExact` (one pass over the scene).
+        if (!content && requested && !building) {
+          content = townContent(requested, built);
+          env.invalidate();
           return true;
         }
       } catch (error) {
@@ -751,6 +831,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     },
     invalidate() {
       look = undefined;
+      rest = undefined;
       unprepare();
       farReady = false;
       checked = undefined;

@@ -341,7 +341,7 @@ export interface CanopyDrawOptions {
   palette: string;
   night?: boolean;
 }
-interface CanopyInk {
+export interface CanopyInk {
   shade: string;
   dark: string;
   mid: string;
@@ -351,7 +351,7 @@ interface CanopyInk {
   rail: string;
   flat?: boolean;
 }
-const INKS: Record<string, CanopyInk> = {
+export const INKS: Record<string, CanopyInk> = {
   parchment: { shade: 'rgba(46,38,24,0.26)', dark: '#4f6139', mid: '#71844c', light: '#9fac6c', stroke: '#3a432a', wood: '#b08c5c', rail: '#5b4330' },
   terrain: { shade: 'rgba(0,0,0,0.32)', dark: '#2a4421', mid: '#3f632f', light: '#6c8f45', wood: '#a7845a', rail: '#4d3826' },
   atlas: { shade: 'rgba(30,30,20,0.24)', dark: '#58764a', mid: '#7c9c62', light: '#a9c48a', stroke: '#465a3a', wood: '#b9976a', rail: '#5d4632' },
@@ -369,7 +369,7 @@ const darken = (hex: string, k: number): string => {
  * 3D crowns and the 2D crowns on natural grounds. Close tones: a lit top lobe stays foliage, never a pale cap. */
 const CROWN_GREENS = ['5a7b41', '5d7f44', '618347', '65874a'];
 /** Shade direction of the plan (south-east, as the building shadows), per metre of height. */
-const SHADE = { x: 0.32, y: 0.42 };
+export const SHADE = { x: 0.32, y: 0.42 };
 
 /** The grove, the tree-dwelling crowns and the walkways over the plan, after the buildings. */
 export function drawCityCanopy(ctx: CanvasRenderingContext2D, canopy: CityCanopy, o: CanopyDrawOptions): void {

@@ -2,7 +2,7 @@
  * Live cartography overlay (contract: ./contract.ts; notes: web/out/live-compositor-2026-11-18/C-overlay.md).
  *
  * The vector map of a region around the view is recorded once per half-octave of scale, in horizontal bands
- * (render/canvas.ts retainedPlan / recordBand: the rule of the classic retained replay), and replayed in the
+ * (render/cartography/liveHost.ts regionPlan / recordBand), and replayed in the
  * compositor's context at every frame with the view matrix. Each band list is split at the `crisp` mark:
  *  - the area prefix (land-use tints, forest washes and their clips, furrows, strips) is rasterized once per region
  *    into a texture and drawn as one quad per band: its cost no longer follows the map content. A region is shown
@@ -41,7 +41,7 @@ export interface OverlayBand {
   h: number;
 }
 
-/** What the renderer that owns the map gives the layer (render/canvas.ts). */
+/** What the renderer that owns the map gives the layer (render/cartography/liveHost.ts). */
 export interface OverlayHost {
   /** True while the GPU vector engine draws the live map; otherwise the layer is never ready (its stand-in shows). */
   active(): boolean;
@@ -370,9 +370,16 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     isolated: true,
     ready(frame: LiveFrame): boolean {
       const r = shown;
-      // The rule of the classic replay: a region keeps showing at any scale while its replacement is made, as long
-      // as it was recorded for this pixel ratio; one that no longer meets the view has nothing to show.
+      // A region keeps showing at any scale while its replacement is made, as long as it was recorded for this pixel
+      // ratio; one that no longer meets the view has nothing to show.
       return !!r && !failed && r.dpr === frame.dpr && meets(r.rect, frame.rect) && host.active() && !raster.lost;
+    },
+    restExact(frame: LiveFrame): boolean {
+      const r = shown;
+      if (!r || failed || r.stale || r.draft || r.dpr !== frame.dpr || !covers(r.rect, frame.rect) || !host.active() || raster.lost) return false;
+      // Recorded for this frame's half-octave scale bucket (its key holds it): the lists are replayed, never a snapshot.
+      const scale = 2 ** (Math.round(2 * Math.log2(frame.view.scale)) / 2);
+      return r.key === host.key(scale, frame.dpr, frame.quality === 'light') && !beyond(frame.worldToPixel[0] / (r.scale * r.dpr), SNAPSHOT_RATIO);
     },
     draw(frame: LiveFrame): void {
       const r = shown;

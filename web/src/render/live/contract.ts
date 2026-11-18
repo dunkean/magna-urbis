@@ -1,7 +1,7 @@
 /**
- * Live compositor contract (2026-11-18).
+ * Live compositor contract.
  *
- * While the 2D view of the V2 moves, the map is composed in ONE WebGL2 context on ONE visible canvas, from retained
+ * The 2D view of the V2, moving and at rest, is composed in ONE WebGL2 context on ONE visible canvas, from retained
  * GPU resources. The cost of a frame must not depend on the amount of map content: no Canvas 2D drawing, no
  * canvas-to-canvas copy, no per-frame upload proportional to the data, no per-frame allocation proportional to it.
  *
@@ -13,9 +13,10 @@
  * The compositor (render/live/compositor.ts) owns the canvas, the context, the frame, the isolated group target and
  * the stand-ins. Each layer is written by one owner against this file only; the compositor never reaches into a layer.
  *
- * The exact renderers (tiles, Canvas 2D town, placed text) are unchanged: they still paint the view at rest, the
- * captures, the exports and the sheets. A layer that is not `ready` is shown by its stand-in: the last exact raster
- * of that layer, uploaded once and moved with the view.
+ * The exact renderers (tiles, Canvas 2D town, placed text) paint what must be exact by definition (captures, exports,
+ * sheets, the miniature, the 3D drape) and, in the view at rest, a layer whose live layer does not answer `restExact`.
+ * A layer that is not `ready` is shown by its stand-in: the last exact raster of that layer, uploaded once and moved
+ * with the view.
  *
  * GL rules for every layer:
  *  - The context is shared. On entry of `draw` and `work` the state is the one `resetLiveState` sets; a layer sets
@@ -81,6 +82,10 @@ export interface LiveLayer {
   ready(frame: LiveFrame): boolean;
   /** Draws the layer. Only called when `ready(frame)` returned true for the same frame. */
   draw(frame: LiveFrame): void;
+  /** True when what `draw` shows for this frame is the picture of that layer at rest: nothing finer or more exact will
+   * replace it, so the page paints no exact canvas for it. Only asked when `ready(frame)` is true, for a frame at rest.
+   * A layer without this method is never the picture at rest. Must be cheap (no allocation). */
+  restExact?(frame: LiveFrame): boolean;
   /** Preparation between frames: bake a tile, upload a mesh, record a list. Does at most about `budgetMs` of work for
    * the view of `frame` (the last frame; undefined before the first) and returns true while more is pending. Called
    * after each frame and from idle callbacks; never from `draw`. */
@@ -186,17 +191,14 @@ export interface LiveTextOptions {
 // ---------------------------------------------------------------------------------------------------------------------
 
 export interface LiveCityEnv {
-  /** The appearance a classic frame would be drawn with now. */
+  /** The appearance an exact frame would be drawn with now. */
   appearance(): import('../appearanceRecipe').ResolvedAppearance;
-  /** Layers switched off by the page (same object the classic draw receives). */
+  /** Layers switched off by the page (same object the exact town renderer receives). */
   visibility(): Partial<import('../exportLayers').ExportLayers> | undefined;
   /** The rivers the map draws under the towns (`riverSegments` layout), as NativeCityHooks.water. */
   water?(): Float32Array | undefined;
   invalidate(): void;
 }
-
-/** Live display policy: `?live=compositor|classic` then localStorage `magna-urbis-live`; default compositor. */
-export type LiveMode = 'compositor' | 'classic';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Measurement (owner: the compositor; read by scripts/nav_fps_probe.mjs)
@@ -214,8 +216,7 @@ export interface LiveLayerState {
 }
 /** `globalThis.__muLive`, always defined by the V2 page once a renderer exists. */
 export interface LiveStats {
-  mode: LiveMode;
-  /** The compositor presented the last frame of the 2D view (false: the classic path did, with `reason`). */
+  /** The compositor presented the last frame of the 2D view (false: the fallback view did, with `reason`). */
   active: boolean;
   reason?: string;
   /** Compositor frames since `reset()`. */

@@ -1,7 +1,15 @@
-import type { View } from '../render/view';
+/**
+ * Presentation of the ground renderer's own canvas, for the fallback display only (TerrainGl/TerrainGpu.redrawNow,
+ * called by the V2 map when the live compositor does not serve the view). The compositor draws baked world tiles
+ * (renderWorldTile) and never shows this canvas.
+ *
+ * While the view moves, the last frame is moved by a CSS transform as long as its 8 % overscan covers the view; past
+ * that, the ground is redrawn at a reduced pixel ratio (0.55) with the overscan. At rest it is redrawn at full ratio.
+ * Captures bypass it and invalidate it when they draw.
+ */
+import type { View } from '../../render/view';
 
-/** Live ground only. Captures bypass this cache and invalidate it when they draw. */
-export class LiveGround {
+export class FallbackGround {
   private shown?: { view: View; width: number; height: number; ratio: number };
   private layout?: { width: number; height: number };
   invalidate(canvas: HTMLCanvasElement): void {

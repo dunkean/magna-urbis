@@ -1,0 +1,246 @@
+/** Places presentation and selection. main.ts mounts the list controls; generation and inspectors call the shared callbacks to keep selection and facts synchronized. */
+import type { PageState } from './state';
+import type { PageActions } from './actions';
+import {
+  setHTML,
+  insertHTML,
+  setText,
+  setDynamicText,
+  translate,
+  nameHTML,
+  numberHTML,
+  settlementDisplayName,
+  localFactsHtml,
+  type LocalFactsInput,
+  activitySitesOf,
+  demographicClass,
+  nativeCityRecords,
+  populationText,
+  populationShortfallText,
+  nameNeighbourWarning,
+  townUrban,
+  stageById,
+  type StageFamily,
+} from './dependencies';
+import { $, esc } from './dom';
+
+export function createPlacesActions(state: PageState, actions: PageActions, populationEstimator: typeof import('./dependencies').cityReachedPopulation) {
+  function cityTargets(): string[] | undefined {
+    return state.cityScope === 'all' ? undefined : [...state.selectedCities];
+  }
+
+  function syncCitySelection(): void {
+    const valid = new Set(state.world?.settlements?.map(place => place.key) ?? []);
+    for (const key of state.selectedCities) if (!valid.has(key)) state.selectedCities.delete(key);
+    if (state.cityScope === 'selection' && !state.selectedCities.size) state.cityScope = 'all';
+    document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(input => {
+      input.checked = state.cityScope === 'selection' && state.selectedCities.has(input.dataset.citySelect!);
+      input.disabled = state.busy;
+    });
+    $<HTMLButtonElement>('#towns-only').disabled = state.busy || !valid.size || (state.cityScope === 'selection' && !state.selectedCities.size);
+    $('#cities-select-all').setAttribute('aria-pressed', String(state.cityScope === 'all'));
+    setDynamicText($('#cities-selected-count'), () => translate('{count} selected').replace('{count}', String(state.cityScope === 'all' ? valid.size : state.selectedCities.size)));
+    state.urbanControls.sync();
+    state.chain.sync();
+  }
+
+  /** Population reached by a built town (undefined before its houses exist: the target stays displayed). */
+  function reachedPopulation(key: string, target: number) {
+    const native = nativeCityRecords(state.world ?? undefined)?.[key];
+    return native?.stage === 'buildings'
+      ? populationEstimator(
+          target,
+          (native.programmePartitions ?? []).map(p => p.programme),
+          native.scene,
+        )
+      : undefined;
+  }
+
+  /** The urban engine's "Neighbouring towns:" warnings of a planned place (site keys, as the engine writes them). */
+  function neighbourWarnings(key: string): string[] {
+    const native = nativeCityRecords(state.world ?? undefined)?.[key];
+    // The layout keeps the engine's text (site keys); the snapshot's copy may already carry other names.
+    const raw = (native?.layouts ?? []).flatMap(layout => layout.warnings ?? []);
+    return [...new Set(raw.length ? raw : (native?.warnings ?? []))].filter(w => w.startsWith('Neighbouring towns:'));
+  }
+
+  /** Neighbours whose land left no room for this place ("announced empty"): it is listed as absorbed by them. */
+  function absorbedBy(key: string): string | undefined {
+    const empty = actions
+      .neighbourWarnings(key)
+      .map(w => /^Neighbouring towns: no free land is left beside (.+?); the town is announced empty\.$/.exec(w))
+      .find(Boolean);
+    return empty ? empty[1].split(', ').map(state.placeName).join(', ') : undefined;
+  }
+
+  /** The Places list ⚠: the capacity shortfall, else the neighbours' warnings (a place they leave short or empty). */
+  function placeWarningText(key: string, target: number): string {
+    const reached = actions.reachedPopulation(key, target);
+    if (reached?.shortfallHouseholds) return populationShortfallText(reached, state.popFormat());
+    return actions
+      .neighbourWarnings(key)
+      .map(w => translate(nameNeighbourWarning(w, state.placeName)))
+      .join(' ');
+  }
+
+  function populationMarkup(key: string, target: number): string {
+    const absorbed = actions.absorbedBy(key);
+    if (absorbed) return esc(translate('Absorbed by {name}').replace('{name}', absorbed));
+    const reached = actions.reachedPopulation(key, target);
+    return reached ? esc(populationText(target, reached, state.popFormat())) : `${numberHTML(target)} hab.`;
+  }
+
+  function cityStageLabel(key: string): string {
+    if (!state.world || !townUrban(state.world, key)) return 'Placed · no urban plan';
+    const stage = state.world.stats[`v2.urbanStage:${key}`];
+    return stage === 'layout' ? 'Stage: roads & quarters' : stage === 'parcels' ? 'Stage: parcels' : stage === 'programme' ? 'Stage: programme' : 'Stage: houses';
+  }
+
+  function syncPlacesPanel(family: StageFamily = state.chain.family()): void {
+    document.body.dataset.workbenchFamily = family;
+    $('#places-panel').hidden = !['settlements', 'cities'].includes(family);
+  }
+
+  function disposeInspectorForms(): void {
+    state.inspectorForms.forEach(form => form.dispose());
+    state.inspectorForms = [];
+  }
+
+  /** `keepInspector`: a background place arrived; the user's open inspector stays as it is. */
+  function updateWorld(keepInspector = false): void {
+    if (!state.world) return;
+    state.labelEditor.sync();
+    state.riverEditor.sync();
+    state.roadEditor.sync();
+    state.townMover.sync();
+    state.editingTools.sync();
+    state.mapControls.sync();
+    if (!keepInspector) actions.disposeInspectorForms();
+    state.regionControls.sync();
+    state.terrainControls.sync();
+    state.city3d?.refresh();
+    const towns = (state.world.settlements ?? []).map(place => ({ ...place, name: settlementDisplayName(state.world!, place.key, state.settings) }));
+    setText($('#map-metrics'), `${state.world.terrain.rivers.length} watercourses\n${towns.length} settlements`);
+    const preview = stageById.get(String(state.world.stats['v2.previewStage'] ?? ''));
+    $('#preview-close').hidden = !preview || !state.previewBase?.world;
+    setText($('#towns-count'), String(towns.length));
+    setHTML(
+      $('#settlement-list'),
+      towns.length
+        ? [...towns]
+            .sort((a, b) => b.population - a.population)
+            .map(
+              (s, index, list) =>
+                `${index === 0 || demographicClass(list[index - 1].population) !== demographicClass(s.population) ? `<h3 class="settlement-group">${esc(translate(demographicClass(s.population)))}</h3>` : ''}<div class="settlement-choice"><input type="radio" name="city-target" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}', s.name ?? s.key))}" ${state.selectedCities.has(s.key) ? 'checked' : ''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${state.selectedTown === s.key}"><span class="settlement-dot ${(s.main ? state.world?.urban : s.urban) ? 'ready' : ''}"></span><span class="grow"><span class="settlement-name"><strong>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</strong>${((warning: string) => (warning ? `<span class="settlement-warning" role="img" title="${esc(warning)}" aria-label="${esc(warning)}">⚠</span>` : ''))(actions.placeWarningText(s.key, s.population))}</span><small>${actions.populationMarkup(s.key, s.population)} · <span>${esc(s.archetype)}</span></small><small class="settlement-stage">${actions.cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? state.world?.urban : s.urban) ? '↗' : '＋'}</span></button></div>`,
+            )
+            .join('')
+        : '<p class="hint">Create settlement sites to select a place.</p>',
+    );
+    const activities = activitySitesOf(state.world);
+    if (activities.length)
+      insertHTML(
+        $('#settlement-list'),
+        'beforeend',
+        `<h3 class="settlement-group">Isolated buildings · ${activities.length}</h3>${[...activities]
+          .sort((a, b) => b.buildings.length - a.buildings.length)
+          .map(site => `<button class="activity-place" data-activity="${esc(site.id)}"><strong>${esc(site.template)}</strong><small>${esc(site.kind)} · ${site.buildings.length}</small></button>`)
+          .join('')}`,
+      );
+    document.querySelectorAll<HTMLButtonElement>('[data-activity]').forEach(
+      button =>
+        (button.onclick = () => {
+          const site = activities.find(site => site.id === button.dataset.activity);
+          if (!site) return;
+          state.client.viewer.setView({ cx: site.x, cy: site.y, scale: 2 });
+          actions.showInspector(site.parent);
+          setHTML($('#building-inspector'), `<div class="edit-building"><h3>${esc(site.template)}</h3><p>${esc(site.kind)} · ${site.buildings.length} buildings · ${site.residents} inhabitants</p><p class="hint">${esc(site.resource)} · ${esc(site.culture)}</p></div>`);
+        }),
+    );
+    document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(
+      b =>
+        (b.onclick = () => {
+          state.selectedCities.clear();
+          state.selectedCities.add(b.dataset.town!);
+          state.cityScope = 'selection';
+          actions.syncCitySelection();
+          actions.showInspector(b.dataset.town!, true);
+        }),
+    );
+    document.querySelectorAll<HTMLInputElement>('[data-city-select]').forEach(
+      input =>
+        (input.onchange = () => {
+          const key = input.dataset.citySelect!;
+          if (!input.checked) return;
+          state.selectedCities.clear();
+          state.selectedCities.add(key);
+          state.cityScope = 'selection';
+          state.smallPlaces?.prioritize(key);
+          actions.syncCitySelection();
+          actions.showInspector(key);
+        }),
+    );
+    actions.syncCitySelection();
+    if (!keepInspector) {
+      $('#inspector').hidden = true;
+      state.selectedBuilding = null;
+      state.selectedSubdivision = undefined;
+      state.selectionOutline.set();
+    }
+    actions.syncPlacesPanel();
+    state.chain.sync();
+    actions.syncLocalFacts();
+  }
+
+  function syncLocalFacts(): void {
+    if (!state.world) return;
+    document.querySelectorAll<HTMLElement>('[data-local-facts]').forEach(card => {
+      const key = card.dataset.localFacts!,
+        settlement = state.world!.settlements?.find(place => place.key === key);
+      if (!settlement) return;
+      const kind = card.dataset.factsKind as NonNullable<LocalFactsInput['selection']>['kind'] | undefined;
+      setHTML(card, localFactsHtml({ settlement, urban: townUrban(state.world!, key), native: nativeCityRecords(state.world!)?.[key], selection: kind ? { kind, index: Number(card.dataset.factsIndex) } : undefined }));
+    });
+  }
+
+  function appendLocalFacts(host: HTMLElement, key: string, selection?: LocalFactsInput['selection']): void {
+    const card = document.createElement('section');
+    card.className = 'local-facts';
+    card.dataset.localFacts = key;
+    if (selection) {
+      card.dataset.factsKind = selection.kind;
+      card.dataset.factsIndex = String(selection.index);
+    }
+    host.append(card);
+    actions.syncLocalFacts();
+  }
+  return { cityTargets, syncCitySelection, reachedPopulation, neighbourWarnings, absorbedBy, placeWarningText, populationMarkup, cityStageLabel, syncPlacesPanel, disposeInspectorForms, updateWorld, syncLocalFacts, appendLocalFacts };
+}
+
+/** Places selection and collapse listeners. Called by main.ts in startup order. */
+export function mountPlaces(state: PageState, actions: PageActions): void {
+  $('#cities-select-all').onclick = () => {
+    state.selectedCities.clear();
+    state.cityScope = 'all';
+    state.selectedTown = '';
+    state.selectedBuilding = null;
+    state.selectedSubdivision = undefined;
+    state.selectionOutline.set();
+    $('#inspector').hidden = true;
+    document.querySelectorAll('[data-town]').forEach(button => button.setAttribute('aria-pressed', 'false'));
+    actions.syncCitySelection();
+  };
+
+  $('#cities-select-none').onclick = () => {
+    state.selectedCities.clear();
+    state.cityScope = 'selection';
+    actions.syncCitySelection();
+  };
+
+  $('#places-collapse').onclick = () => {
+    const panel = $('#places-panel'),
+      collapsed = panel.dataset.collapsed !== 'true';
+    panel.dataset.collapsed = String(collapsed);
+    $('#places-collapse').setAttribute('aria-expanded', String(!collapsed));
+    setText($('#places-collapse'), collapsed ? '+' : '–');
+  };
+}

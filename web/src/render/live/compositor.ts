@@ -1,23 +1,32 @@
 /**
- * Live compositor (contract.ts): one visible canvas, one WebGL2 context, the moving 2D view of the V2.
+ * Live compositor (contract.ts): one visible canvas, one WebGL2 context, the 2D view of the V2, moving and at rest.
  *
  * A frame draws the layers of LIVE_LAYER_ORDER from what is already on the GPU: a layer that is `ready` draws itself
  * (isolated layers through one shared multisampled group, resolved and composited with their opacity), a layer that
  * is not shows its stand-in, the last exact raster of that layer as a quad that follows the view. Nothing here
  * depends on the amount of map content: one reused frame object, no canvas copy, no upload in a frame except a
- * stand-in or water raster whose source changed (once per source).
+ * stand-in or water raster whose source changed (once per source). A frame at rest is the same frame: the page
+ * (v2/display/composedView.ts) asks each layer whether what it draws is the picture at rest (`restExact`) and hides
+ * only the layers it shows by an exact canvas instead.
  *
  * Preparation (`work` of the layers, stand-in uploads) runs after each frame and in idle time, in slices: about
  * WORK_MOVING_MS per frame while the view moves, WORK_REST_MS per slice at rest, ground first.
  *
  * The `water` layer is the compositor's own: the vector water raster of the page (a world-region image).
- * Stats: `globalThis.__muLive` (LiveStats), defined when this module loads.
+ *
+ * This file is one unit: the frame, the layer table with its stand-ins, the work loop with its pacing and the context
+ * loss all share the state of one compositor. What stands alone is beside it: rasterQuad.ts (textured quads and
+ * raster uploads), isolatedGroup.ts (the multisampled group), gpuTimer.ts (GPU time of a frame), liveStats.ts
+ * (`globalThis.__muLive`).
  */
-import { LIVE_CONTEXT_ATTRIBUTES, LIVE_LAYER_ORDER, resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerName, type LiveLayerState, type LiveLayerStats, type LiveStats } from './contract';
-import { getLiveMode } from './policy';
+import { LIVE_CONTEXT_ATTRIBUTES, LIVE_LAYER_ORDER, resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerName, type LiveLayerState, type LiveLayerStats } from './contract';
+import { createGpuTimer } from './gpuTimer';
+import { createIsolatedGroup } from './isolatedGroup';
+import { liveStats, noteLiveUnit, pushSample } from './liveStats';
+import { createRasterQuad, dropRaster, uploadRaster, type Raster, type RasterQuad } from './rasterQuad';
 import type { View } from '../view';
 
-/** Same test as render/cityGl.ts: a software rasterizer composes slower than the classic path it would replace. */
+/** Same test as render/cityGl.ts: a software rasterizer composes slower than the fallback view it would replace. */
 const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|basic render|microsoft warp|software/i;
 const WORK_MOVING_MS = 3,
   WORK_REST_MS = 8;
@@ -25,56 +34,12 @@ const WORK_MOVING_MS = 3,
 const GROUND_SHARE = 0.6;
 /** A moving frame newer than this means the per-frame slices own the work: idle callbacks stay out of the gesture. */
 const GESTURE_MS = 120;
-const SERIES = 4000;
-const TIMER_QUERIES = 4;
 
 const WORK_UNIT: Record<LiveLayerName, string> = { ground: 'work:ground', water: 'work:water', overlay: 'work:overlay', city: 'work:city', text: 'work:text' };
 const DRAW_UNIT: Record<LiveLayerName, string> = { ground: 'draw:ground', water: 'draw:water', overlay: 'draw:overlay', city: 'draw:city', text: 'draw:text' };
-const push = (list: number[], value: number): void => {
-  list.push(value);
-  if (list.length > SERIES) list.shift();
-};
+export { liveStats, noteLiveUnit, noteFallbackFrame } from './liveStats';
 
-const stats: LiveStats = {
-  mode: getLiveMode(),
-  active: false,
-  reason: 'no frame yet',
-  frames: 0,
-  frameMs: [],
-  gpuMs: [],
-  layers: {},
-  pending: {},
-  layerMs: {},
-  slow: [],
-  reset() {
-    stats.frames = 0;
-    stats.frameMs.length = 0;
-    stats.gpuMs.length = 0;
-    stats.slow!.length = 0;
-    for (const name of LIVE_LAYER_ORDER) {
-      const series = stats.layerMs![name];
-      if (series) series.length = 0;
-    }
-  },
-};
-if (typeof document !== 'undefined') (globalThis as unknown as Record<string, unknown>).__muLive = stats;
-export const liveStats = (): LiveStats => stats;
-/** A unit of work that held the main thread for SLOW_MS or more since `since` goes to the journal (LiveStats.slow). */
-const SLOW_MS = 20;
-export function noteLiveUnit(what: string, since: number): void {
-  const now = performance.now(),
-    ms = now - since;
-  if (ms < SLOW_MS) return;
-  const slow = stats.slow!;
-  slow.push([what, Math.round(ms * 10) / 10, Math.round(since)]);
-  if (slow.length > 64) slow.shift();
-}
-/** The classic path presented the frame of the 2D view. */
-export function noteClassicFrame(reason: string): void {
-  stats.mode = getLiveMode();
-  stats.active = false;
-  stats.reason = reason;
-}
+const stats = liveStats();
 
 export interface LiveCompositorOptions {
   /** Asks the page for a new animation frame (the viewer's invalidate): the compositor never draws by itself. */
@@ -91,7 +56,7 @@ export interface LiveRasterRegion {
 export interface LiveCompositor {
   readonly canvas: HTMLCanvasElement;
   readonly gl: WebGL2RenderingContext;
-  /** False while the context is lost (or after dispose): the caller presents the classic path. */
+  /** False while the context is lost (or after dispose): the caller presents the fallback view. */
   active(): boolean;
   /** Installs, replaces or removes a layer; the layer it replaces is disposed. */
   setLayer(name: LiveLayerName, layer: LiveLayer | undefined): void;
@@ -112,6 +77,12 @@ export interface LiveCompositor {
   busy(): boolean;
   /** Whether the layer could draw a rest frame of this view now, from what it has on the GPU (nothing is drawn). */
   layerReady(name: LiveLayerName, view: View, cssW: number, cssH: number, dpr: number): boolean;
+  /** Whether what the layer would draw for a rest frame of this view is its picture at rest (LiveLayer.restExact). */
+  restExact(name: LiveLayerName, view: View, cssW: number, cssH: number, dpr: number): boolean;
+  /** One slice of a layer's preparation for the last frame, outside the work loop (which goes on with the rest).
+   * True while more is pending. */
+  advanceLayer(name: LiveLayerName, budgetMs: number): boolean;
+  hasStandIn(name: LiveLayerName): boolean;
   /** Draws one frame. False: nothing was presented (context lost). */
   draw(view: View, cssW: number, cssH: number, dpr: number, moving: boolean): boolean;
   requestFrame(): void;
@@ -122,59 +93,7 @@ export interface LiveCompositor {
 
 /** The one frame object, refilled in place every frame (layers receive it as a LiveFrame). */
 type Frame = { -readonly [K in keyof Omit<LiveFrame, 'worldToPixel'>]: LiveFrame[K] } & { worldToPixel: [number, number, number, number] };
-interface Raster {
-  texture?: WebGLTexture;
-  source?: TexImageSource;
-  pending: boolean;
-  mipmaps: boolean;
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-}
-interface Quad {
-  program: WebGLProgram;
-  vao: WebGLVertexArrayObject;
-  rect: WebGLUniformLocation | null;
-  opacity: WebGLUniformLocation | null;
-}
-interface Group {
-  fbo: WebGLFramebuffer;
-  color: WebGLRenderbuffer;
-  depth: WebGLRenderbuffer;
-  resolve: WebGLFramebuffer;
-  texture: WebGLTexture;
-  width: number;
-  height: number;
-  samples: number;
-}
-interface TimerExtension {
-  TIME_ELAPSED_EXT: number;
-  GPU_DISJOINT_EXT: number;
-}
-
-const QUAD_VS = `#version 300 es
-uniform vec4 uRect;
-out vec2 vUv;
-void main() {
-  vec2 c = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));
-  vUv = c;
-  gl_Position = vec4(mix(uRect.xy, uRect.zw, c), 0.0, 1.0);
-}`;
-const QUAD_FS = `#version 300 es
-precision mediump float;
-uniform sampler2D uTex;
-uniform float uOpacity;
-in vec2 vUv;
-out vec4 color;
-void main() { color = texture(uTex, vUv) * uOpacity; }`;
-
-function sourceSize(source: TexImageSource): { width: number; height: number } {
-  const s = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number; videoWidth?: number; videoHeight?: number; displayWidth?: number; displayHeight?: number };
-  return { width: s.naturalWidth || s.videoWidth || s.displayWidth || s.width || 0, height: s.naturalHeight || s.videoHeight || s.displayHeight || s.height || 0 };
-}
-
-/** Undefined without WebGL2 or on a software renderer: the caller keeps the classic path. */
+/** Undefined without WebGL2 or on a software renderer: the caller keeps the fallback view. */
 export function createLiveCompositor(options: LiveCompositorOptions): LiveCompositor | undefined {
   if (typeof document === 'undefined') return undefined;
   const canvas = document.createElement('canvas');
@@ -238,8 +157,6 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   let paceGap = 0,
     paceBest = Infinity,
     paceOk = true;
-  /** Sample counts whose isolated group was found complete (ensureGroup). */
-  const groupChecked = new Set<number>();
   /** Refills the one frame object for a view. `frame.rect` is `viewRect(view, cssW, cssH)` (render/view.ts). */
   const fillFrame = (view: View, cssW: number, cssH: number, dpr: number, moving: boolean, now: number): void => {
     const width = Math.max(1, Math.round(cssW * dpr)),
@@ -284,174 +201,33 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   };
 
   // --- own GL resources (rebuilt after a context loss) ---------------------------------------------------------------
-  let quad: Quad | undefined,
-    group: Group | undefined,
-    groupFailed = false;
+  let quad: RasterQuad | undefined;
+  const group = createIsolatedGroup(gl);
+  const timer = createGpuTimer(gl, ms => pushSample(stats.gpuMs, ms));
   let maxTexture = 4096,
     maxSamples = 0;
-  let timer: TimerExtension | null = null;
-  const queries: (WebGLQuery | null)[] = [],
-    queryBusy: boolean[] = [];
-  for (let i = 0; i < TIMER_QUERIES; i++) {
-    queries.push(null);
-    queryBusy.push(false);
-  }
-  let openQuery = -1;
-
-  const shader = (type: number, source: string): WebGLShader | null => {
-    const s = gl.createShader(type);
-    if (!s) return null;
-    gl.shaderSource(s, source);
-    gl.compileShader(s);
-    return s;
-  };
   /** Program, limits and extensions; false when the context cannot build them (it is then treated as lost). */
   const init = (): boolean => {
     if (quad) return true;
-    const vs = shader(gl.VERTEX_SHADER, QUAD_VS),
-      fs = shader(gl.FRAGMENT_SHADER, QUAD_FS),
-      program = gl.createProgram(),
-      vao = gl.createVertexArray();
-    if (!vs || !fs || !program || !vao) return false;
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    // Once per context, never in a frame: a broken link would otherwise draw nothing without a word.
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      console.warn('Live compositor: quad program', gl.getProgramInfoLog(program));
-      gl.deleteProgram(program);
-      gl.deleteVertexArray(vao);
-      return false;
-    }
-    gl.useProgram(program);
-    gl.uniform1i(gl.getUniformLocation(program, 'uTex'), 0);
-    gl.useProgram(null);
-    quad = { program, vao, rect: gl.getUniformLocation(program, 'uRect'), opacity: gl.getUniformLocation(program, 'uOpacity') };
+    quad = createRasterQuad(gl);
+    if (!quad) return false;
     maxTexture = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 4096;
     maxSamples = Number(gl.getParameter(gl.MAX_SAMPLES)) || 0;
-    timer = gl.getExtension('EXT_disjoint_timer_query_webgl2') as TimerExtension | null;
-    // The completeness of the isolated group is a synchronous query: asked here, on a 4 x 4 group, for the two
-    // sample counts a frame can ask for, while the graphics queue is still short. A frame never asks again.
-    for (const samples of [Math.min(4, maxSamples), 0]) if (!groupFailed && !groupChecked.has(samples)) ensureGroup(4, 4, samples);
-    dropGroup();
+    timer.init();
+    // The two sample counts a frame can ask for.
+    group.probe([Math.min(4, maxSamples), 0]);
     return true;
-  };
-  const dropGroup = (): void => {
-    if (!group) return;
-    gl.deleteFramebuffer(group.fbo);
-    gl.deleteFramebuffer(group.resolve);
-    gl.deleteRenderbuffer(group.color);
-    gl.deleteRenderbuffer(group.depth);
-    gl.deleteTexture(group.texture);
-    group = undefined;
-  };
-  /** The shared isolated group at the size of the frame: multisampled colour + depth/stencil, and its resolve texture. */
-  const ensureGroup = (width: number, height: number, samples: number): boolean => {
-    if (group && group.width === width && group.height === height && group.samples === samples) return true;
-    if (groupFailed) return false;
-    dropGroup();
-    const fbo = gl.createFramebuffer(),
-      resolve = gl.createFramebuffer(),
-      color = gl.createRenderbuffer(),
-      depth = gl.createRenderbuffer(),
-      texture = gl.createTexture();
-    if (!fbo || !resolve || !color || !depth || !texture) return false;
-    gl.bindRenderbuffer(gl.RENDERBUFFER, color);
-    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, width, height);
-    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
-    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH24_STENCIL8, width, height);
-    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth);
-    // A synchronous query (the page waits for the graphics process to drain its queue): asked once per sample count,
-    // since completeness depends on the formats and the samples, not on the size (a resize rebuilds the group).
-    const checked = groupChecked.has(samples);
-    let complete = checked || gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, resolve);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-    complete &&= checked || gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
-    if (complete) groupChecked.add(samples);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    group = { fbo, color, depth, resolve, texture, width, height, samples };
-    if (!complete && !gl.isContextLost()) {
-      // Isolated layers then show their stand-in: drawn straight on the canvas their blending would be wrong.
-      console.warn('Live compositor: the isolated group is incomplete; isolated layers fall back to their stand-in.');
-      dropGroup();
-      groupFailed = true;
-      return false;
-    }
-    return true;
-  };
-
-  /** Premultiplied source-over quad; corners in clip space, (x0, y0) is the texel (0, 0). */
-  const drawQuad = (texture: WebGLTexture, x0: number, y0: number, x1: number, y1: number, opacity: number): void => {
-    const q = quad!;
-    gl.useProgram(q.program);
-    gl.bindVertexArray(q.vao);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.uniform4f(q.rect, x0, y0, x1, y1);
-    gl.uniform1f(q.opacity, opacity);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    gl.bindVertexArray(null);
-    gl.useProgram(null);
   };
   /** A raster whose first row is its north edge, placed on its world square. */
   const drawRaster = (raster: Raster): void => {
     const m = frame.worldToPixel,
       kx = 2 / frame.width,
       ky = 2 / frame.height;
-    drawQuad(raster.texture!, (raster.minX * m[0] + m[2]) * kx - 1, 1 - (raster.minY * m[1] + m[3]) * ky, (raster.maxX * m[0] + m[2]) * kx - 1, 1 - (raster.maxY * m[1] + m[3]) * ky, 1);
+    quad!.draw(raster.texture!, (raster.minX * m[0] + m[2]) * kx - 1, 1 - (raster.minY * m[1] + m[3]) * ky, (raster.maxX * m[0] + m[2]) * kx - 1, 1 - (raster.maxY * m[1] + m[3]) * ky, 1);
   };
-  const dropRaster = (raster: Raster): void => {
-    if (raster.texture) gl.deleteTexture(raster.texture);
-    raster.texture = undefined;
-    raster.pending = false;
-  };
-  /** One upload per source: a 2D canvas goes up premultiplied, as the blending of every layer expects. */
   const upload = (raster: Raster): void => {
-    raster.pending = false;
-    const source = raster.source;
-    if (!source || lost) return;
-    const size = sourceSize(source);
-    if (!(size.width > 0) || !(size.height > 0) || size.width > maxTexture || size.height > maxTexture) {
-      dropRaster(raster);
-      return;
-    }
-    raster.texture ??= gl.createTexture() ?? undefined;
-    if (!raster.texture) return;
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, raster.texture);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
-    let failed = false;
-    try {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    } catch {
-      failed = true;
-    }
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
-    if (!failed) {
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, raster.mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      if (raster.mipmaps) gl.generateMipmap(gl.TEXTURE_2D);
-    }
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    if (failed) dropRaster(raster);
+    if (lost) raster.pending = false;
+    else uploadRaster(gl, raster, maxTexture);
   };
 
   // --- the water layer: the page's vector water raster ---------------------------------------------------------------
@@ -475,7 +251,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     },
     stats: () => waterStats,
     dispose: () => {
-      dropRaster(water);
+      dropRaster(gl, water);
       water.source = undefined;
     },
   };
@@ -493,37 +269,6 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     } catch {
       /* It already failed. */
     }
-  };
-
-  // --- GPU time of a frame --------------------------------------------------------------------------------------------
-  /** Results of earlier frames that have arrived; a query is never waited for. */
-  const pollQueries = (): void => {
-    if (!timer) return;
-    for (let i = 0; i < TIMER_QUERIES; i++) {
-      const query = queries[i];
-      if (!queryBusy[i] || !query || !gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) continue;
-      queryBusy[i] = false;
-      if (!gl.getParameter(timer.GPU_DISJOINT_EXT)) push(stats.gpuMs, Number(gl.getQueryParameter(query, gl.QUERY_RESULT)) / 1e6);
-    }
-  };
-  const beginQuery = (): void => {
-    openQuery = -1;
-    if (!timer) return;
-    for (let i = 0; i < TIMER_QUERIES; i++) {
-      if (queryBusy[i]) continue;
-      const query = (queries[i] ??= gl.createQuery());
-      if (query) {
-        gl.beginQuery(timer.TIME_ELAPSED_EXT, query);
-        openQuery = i;
-      }
-      return;
-    }
-  };
-  const endQuery = (): void => {
-    if (openQuery < 0 || !timer) return;
-    gl.endQuery(timer.TIME_ELAPSED_EXT);
-    queryBusy[openQuery] = true;
-    openQuery = -1;
   };
 
   // --- work ----------------------------------------------------------------------------------------------------------
@@ -575,9 +320,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     if (lost || disposed || !init()) return false;
     const started = performance.now(),
       last = frameValid ? frame : undefined;
-    // The group of the next moving frame, allocated here rather than in the first frame of a gesture (at rest the
-    // exact canvases cover the isolated layers, so no frame has needed it yet).
-    if (last && !groupFailed && !group) ensureGroup(last.width, last.height, last.quality === 'light' ? 0 : Math.min(4, maxSamples));
+    // The group of the next frame with an isolated layer, allocated here rather than in that frame.
+    if (last && !group.failed && !group.target) group.ensure(last.width, last.height, last.quality === 'light' ? 0 : Math.min(4, maxSamples));
     let pending = false,
       othersPending = false;
     for (let i = 1; i < LIVE_LAYER_ORDER.length; i++) othersPending ||= !!stats.pending[LIVE_LAYER_ORDER[i]];
@@ -610,6 +354,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
           states[name].ready = true;
           options.invalidate();
         }
+        // Its preparation ended: what it draws may now be its picture at rest, which the page asks at a frame.
+        else if (last && stats.pending[name] && !more) options.invalidate();
       } catch (error) {
         fail(name, error);
         more = false;
@@ -658,28 +404,22 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     cancelIdle();
     fence = null;
     quad = undefined;
-    group = undefined;
-    groupFailed = false;
-    timer = null;
-    openQuery = -1;
-    for (let i = 0; i < TIMER_QUERIES; i++) {
-      queries[i] = null;
-      queryBusy[i] = false;
-    }
+    group.contextLost();
+    timer.contextLost();
     for (const name of LIVE_LAYER_ORDER) {
       try {
         layers[name]?.contextLost?.();
       } catch (error) {
         fail(name, error);
       }
-      // Their sources are the page's exact canvases, repainted since: the next rest frame gives new ones.
+      // Their sources are the page's exact canvases, repainted since: their next complete paint gives new ones.
       delete standIns[name];
       states[name].ready = false;
       states[name].standIn = false;
     }
     stats.active = false;
     stats.reason = 'context lost';
-    if (!disposed) options.invalidate(); // the page presents the classic path meanwhile
+    if (!disposed) options.invalidate(); // the page presents the fallback view meanwhile
   };
   const onRestored = (): void => {
     lost = gl.isContextLost();
@@ -690,7 +430,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   if (!lost) init();
 
   const drawIsolated = (layer: LiveLayer, width: number, height: number): void => {
-    const g = group!;
+    const g = group.target!;
     frame.target = g.fbo;
     resetLiveState(gl, g.fbo, width, height);
     gl.clearColor(0, 0, 0, 0);
@@ -710,7 +450,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     resetLiveState(gl, null, width, height);
     const opacity = layer.opacity ? layer.opacity() : 1;
-    drawQuad(g.texture, -1, -1, 1, 1, opacity >= 1 ? 1 : opacity > 0 ? opacity : 0);
+    quad!.draw(g.texture, -1, -1, 1, 1, opacity >= 1 ? 1 : opacity > 0 ? opacity : 0);
   };
 
   return {
@@ -750,7 +490,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       let raster = standIns[name];
       if (!source) {
         if (raster) {
-          dropRaster(raster);
+          dropRaster(gl, raster);
           delete standIns[name];
         }
         return;
@@ -760,7 +500,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         hh = cssH / (2 * view.scale);
       // Same square (a repaint of the same view): the previous texture shows until the new pixels are uploaded.
       // Another square: the old pixels would be laid on the new square, so they go now.
-      if (raster.texture && (raster.minX !== view.cx - hw || raster.minY !== view.cy - hh || raster.maxX !== view.cx + hw || raster.maxY !== view.cy + hh)) dropRaster(raster);
+      if (raster.texture && (raster.minX !== view.cx - hw || raster.minY !== view.cy - hh || raster.maxX !== view.cx + hw || raster.maxY !== view.cy + hh)) dropRaster(gl, raster);
       raster.minX = view.cx - hw;
       raster.minY = view.cy - hh;
       raster.maxX = view.cx + hw;
@@ -773,7 +513,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       for (const name of LIVE_LAYER_ORDER) {
         const raster = standIns[name];
         if (raster) {
-          dropRaster(raster);
+          dropRaster(gl, raster);
           delete standIns[name];
         }
       }
@@ -788,7 +528,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       if (image === water.source && !water.pending) return;
       water.source = image;
       if (!image) {
-        dropRaster(water);
+        dropRaster(gl, water);
         return;
       }
       if (lost || !init()) {
@@ -811,7 +551,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       busy++;
       try {
         resetLiveState(gl, null, frame.width, frame.height);
-        return layer.ready(frame) && !(layer.isolated && groupFailed);
+        return layer.ready(frame) && !(layer.isolated && group.failed);
       } catch (error) {
         fail(name, error);
         return false;
@@ -819,6 +559,42 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         busy--;
       }
     },
+    restExact(name, view, cssW, cssH, dpr) {
+      const layer = layers[name];
+      if (!layer?.restExact || lost || disposed || !init()) return false;
+      fillFrame(view, cssW, cssH, dpr, false, performance.now());
+      busy++;
+      try {
+        resetLiveState(gl, null, frame.width, frame.height);
+        return layer.ready(frame) && !(layer.isolated && group.failed) && layer.restExact(frame);
+      } catch (error) {
+        fail(name, error);
+        return false;
+      } finally {
+        busy--;
+      }
+    },
+    advanceLayer(name, budgetMs) {
+      const layer = layers[name];
+      if (!layer?.work || lost || disposed || !init()) return false;
+      busy++;
+      let more = false;
+      try {
+        resetLiveState(gl, null, frame.width, frame.height);
+        const unit = performance.now();
+        more = layer.work(budgetMs, frameValid ? frame : undefined);
+        noteLiveUnit(WORK_UNIT[name], unit);
+        resetLiveState(gl, null, frame.width, frame.height);
+      } catch (error) {
+        fail(name, error);
+      } finally {
+        busy--;
+      }
+      stats.pending[name] = more;
+      if (more) schedule();
+      return more;
+    },
+    hasStandIn: name => !!standIns[name]?.texture || !!standIns[name]?.pending,
     draw(view, cssW, cssH, dpr, moving) {
       if (lost || disposed || !init()) return false;
       busy++;
@@ -850,17 +626,14 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         }
         layers[name] = undefined;
         const raster = standIns[name];
-        if (raster && !lost) dropRaster(raster);
+        if (raster && !lost) dropRaster(gl, raster);
         delete standIns[name];
         stats.pending[name] = false;
       }
       if (!lost) {
-        dropGroup();
-        if (quad) {
-          gl.deleteProgram(quad.program);
-          gl.deleteVertexArray(quad.vao);
-        }
-        for (const query of queries) if (query) gl.deleteQuery(query);
+        group.drop();
+        quad?.dispose();
+        timer.dispose();
       }
       quad = undefined;
       canvas.remove();
@@ -884,12 +657,12 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       canvas.style.width = cssW + 'px';
       canvas.style.height = cssH + 'px';
     }
-    // Light quality drops the multisampling of a moving view only: a live layer may also be the picture at rest
-    // (the overlay, when it is ready), where the edges are looked at and the fill cost is paid once.
+    // Light quality drops the multisampling of a moving view only: a live layer is also the picture at rest, where
+    // the edges are looked at and the fill cost is paid once.
     const samples = frame.quality === 'light' && moving ? 0 : Math.min(4, maxSamples);
 
-    pollQueries();
-    beginQuery();
+    timer.poll();
+    timer.begin();
     // A gesture begins: the exact canvases behind the pending stand-ins are repainted when it ends, so they go up now
     // (idle time has normally done it already).
     if (moving && !wasMoving)
@@ -928,7 +701,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
           ready = layer.ready(frame);
           if (ready) {
             if (!layer.isolated) layer.draw(frame);
-            else if (ensureGroup(width, height, samples)) {
+            else if (group.ensure(width, height, samples)) {
               noteLiveUnit('group', t);
               drawIsolated(layer, width, height);
             } else ready = false;
@@ -965,16 +738,15 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       state.ready = ready;
       state.standIn = standIn;
       state.ms = performance.now() - t;
-      push(stats.layerMs![name]!, state.ms);
+      pushSample(stats.layerMs![name]!, state.ms);
       noteLiveUnit(DRAW_UNIT[name], t);
     }
     resetLiveState(gl, null, width, height);
-    endQuery();
-    stats.mode = getLiveMode();
+    timer.end();
     stats.active = true;
     delete stats.reason;
     stats.frames++;
-    push(stats.frameMs, performance.now() - started);
+    pushSample(stats.frameMs, performance.now() - started);
     if (moving && wasMoving) {
       const gap = started - lastFrameAt;
       // A gap longer than a gesture's pause is not a frame interval (the view rested in between).

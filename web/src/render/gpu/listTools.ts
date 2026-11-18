@@ -6,6 +6,7 @@
  * geometry its scissor would drop whole.
  */
 import type { ClipNode, DisplayList, DrawOp, Mat, PathGeometry, RecordedPath } from './displayList';
+import { tolerance } from './transforms';
 
 type Box = readonly [number, number, number, number];
 
@@ -82,14 +83,10 @@ export function cullList(list: DisplayList, box: Box): DisplayList {
   return { width: list.width, height: list.height, ops, stats: { ...list.stats, ops: ops.length }, ...(list.unsupported !== undefined ? { unsupported: list.unsupported } : {}) };
 }
 
-/** Flattening tolerance of a recorded transform: the rule of the rasterizer (glRaster.ts `tolerance`), so a polygon
- * clipped here has the vertices the live replay would have drawn. */
+/** Flattening tolerance of a recorded transform: the rule of the live rasterizer (transforms.ts `tolerance` of the
+ * recorded transform), so a polygon clipped here has the vertices the live replay would have drawn. */
 export function flattenTolerance(m: Mat): number {
-  const a = m[0] * m[0] + m[1] * m[1],
-    b = m[2] * m[2] + m[3] * m[3],
-    c = m[0] * m[2] + m[1] * m[3];
-  const s = Math.sqrt((a + b + Math.hypot(a - b, 2 * c)) / 2);
-  return 2 ** Math.max(-40, Math.min(40, Math.floor(Math.log2(0.25 / Math.max(s, 1e-12)))));
+  return tolerance(m);
 }
 
 /** A path with a fixed outline (already flattened): what `clipList` puts in place of a polygon it cut. */

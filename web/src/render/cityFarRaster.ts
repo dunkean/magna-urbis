@@ -11,15 +11,8 @@ import { planBuildingColors } from './cityBuildingPalette';
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { toneStamp } from './groundTone';
 
-/** Metres per CSS pixel where the raster starts to fade in over the detailed buildings, and where it replaces them. */
-export const FAR_TOWN_FADE: readonly [number, number] = [1.6, 2.2];
-/** Share of the raster drawn over the detailed buildings at `mpp` (0: buildings only, 1: raster only). */
-export function farTownAlpha(mpp: number): number {
-  const t = Math.max(0, Math.min(1, (mpp - FAR_TOWN_FADE[0]) / (FAR_TOWN_FADE[1] - FAR_TOWN_FADE[0])));
-  return t * t * (3 - 2 * t);
-}
-/** True when the detailed buildings are drawn under the raster (or alone). */
-export const farTownBuildingsShown = (mpp: number): boolean => mpp < FAR_TOWN_FADE[1];
+// The fade band is the look's (city/farTown.ts); re-exported for the hosts and tests that read it from here.
+export { FAR_TOWN_FADE, farTownAlpha, farTownBuildingsShown } from './city/look';
 
 /** Longest side of the raster in cells; the finest cell is 2 m. */
 const MAX_CELLS = 2048,

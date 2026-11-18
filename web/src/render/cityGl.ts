@@ -45,7 +45,6 @@ import {
   DEFAULT_LAYERS,
   liveShadowTint,
   PAINTED_SHADOW,
-  PARCHMENT_HATCH,
   PARCHMENT_SHADOW,
   planColors,
   planColorsSteps,
@@ -60,6 +59,8 @@ import {
   type CityGlLiveLook,
   type CityGlStyleState,
 } from './cityGlStyle';
+import { PAN_EDGE, PARCHMENT_HATCH, RIM_DEVICE_MPP, SELECTION, WALL_CORE, buildingEdgePx, canalBridgeEdgePx, farTownBuildingsShown, planLineWidthPx, streetEdgePx, streetMaxRank, wallLook, wallMinPx, type StreetMode } from './city/look';
+import { groundRoadLook } from './composition';
 import { buildYardStrokes, yardColors } from './cityGlYards';
 import { grainLevelMeans } from './cityGlGrain';
 import { coverGrainFrame } from './buildingMaterials';
@@ -1172,7 +1173,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       live: o.live,
     };
     const colorKey = o.colors ? JSON.stringify(o.colors) : '',
-      liveKey = o.live ? `live:${o.live.roadLook}:${o.live.emphasis}:${o.live.waterColor ?? ''}:${o.live.grain ? 1 : 0}` : '';
+      liveKey = o.live ? `live:${o.live.roadLook}:${o.live.emphasis}:${o.live.waterColor ?? ''}:${o.live.grain ? 1 : 0}:${o.live.farTown ? 1 : 0}` : '';
     const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]) + liveKey;
     const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'),
       sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}|${liveKey}`;
@@ -1631,27 +1632,22 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       gl.uniform4f(fillP.u.uHatch, 0, 0, 0, 0);
       gl.uniform1f(fillP.u.uLineAlpha, 0);
       gl.uniform1i(fillP.u.uRoofGrain, 0);
-      // Live look: a GL line is one device pixel; the Canvas strokes are thinner (CSS px below), drawn with coverage.
+      // The live town: a GL line is one device pixel; the look's strokes are thinner (CSS px), drawn with coverage.
       // Building edges under roof pans show their outer half only. Factor = stroke width in device pixels.
       const dpr = mpp / Math.max(devPx, 1e-9),
         hasPans = !footprint && !!built?.mesh.layers.roofs?.triangles.count;
+      const parchment = palette === 'parchment';
       const strokePx = (layer: string): number =>
         layer === 'blocks' || layer === 'parcels'
-          ? (o.live?.lineWidth ?? 0.6)
+          ? planLineWidthPx(o.live?.lineWidth ?? 0.6)
           : layer === 'roofs'
-            ? palette === 'parchment'
-              ? 0.3
-              : 0.5
+            ? (parchment ? PAN_EDGE.parchment : PAN_EDGE.plan).widthPx
             : layer === 'buildings'
-              ? hasPans
-                ? 0.275
-                : 0.55
+              ? buildingEdgePx(false, parchment) * (hasPans ? 0.5 : 1)
               : layer === 'buildingFootprints'
-                ? palette === 'parchment'
-                  ? 0.3
-                  : 0.55
+                ? buildingEdgePx(true, parchment)
                 : layer === 'waterwayBridges'
-                  ? 0.6
+                  ? canalBridgeEdgePx(mpp)
                   : 1;
       /** Live parchment hatching over a plan layer (drawCitySteps hatchPattern, world-anchored 7 px lines). */
       const hatch = (layer: string): void => {
@@ -1807,10 +1803,12 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         gl.uniform1i(u.uSingle, 0);
       };
       if (d.streets && streets) {
-        const maxRank = lod === 'far' ? 1 : lod === 'mid' ? 2 : 15,
+        const maxRank = streetMaxRank(lod),
           crossings = true;
         const first = Math.min(streets.strokes.firstWithRank[maxRank], crossings ? streets.strokes.firstWithRank[0] : Infinity);
-        const s = { edgePx: lod === 'far' ? 0 : lod === 'mid' ? 0.7 : 0.9, inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
+        // Casing, soft edge or shoulder width of the frame's street paint (the look's streetEdgePx; none far).
+        const mode: StreetMode = o.live && groundRoadLook(o.live.roadLook) ? 'natural' : softStreets ? 'soft' : 'ink';
+        const s = { edgePx: lod === 'far' ? 0 : streetEdgePx(mode, lod) * (mode === 'ink' ? Math.max(1, o.live?.emphasis ?? 1) : 1), inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
         const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink' && !softStreets;
         if (paintRoads) useStroke(casingP);
         if (d.streetCasing) strokes(streets, first, 0, s, softStreets && streetSurface);
@@ -1819,7 +1817,8 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
           useTextured(texturedP, streets.mats, false);
           u = texturedP.u;
         } else if (paintRoads) useStroke(surfaceP);
-        gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? true) ? 1 : 0);
+        // The stone deck is render-background art: the look's bridges are their flat fill.
+        gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? !o.live) ? 1 : 0);
         strokes(streets, first, 1, s, softStreets && streetSurface);
         gl.uniform1i(u.uBridgeDeck, 0);
       }
@@ -1837,18 +1836,18 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       frame.drawCalls += wallGl.draw('shadow', wallDraw);
       useStroke(strokeP); // walls hook: painted wall shadows
       if (d.walls && walls) {
-        const s = { edgePx: 0, inner: 0.45, minPx: lod === 'far' ? 1.6 / 2.4 : 1, maxRank: 15, crossings: false, dash: 2 };
+        // Wall instances carry the near minimum width; far walls are thinner (the look's wallMinPx).
+        const s = { edgePx: 0, inner: WALL_CORE, minPx: wallMinPx(lod) / wallMinPx('near'), maxRank: 15, crossings: false, dash: 2 };
         strokes(walls, 0, 0, s);
         if (d.wallInner) strokes(walls, 0, 1, s);
       }
       if (d.towers && towers?.count) {
         gl.useProgram(discP.program);
-        const thick = Math.max(3.5, 2.4 * mpp),
-          radius = Math.max(thick * 0.95, 2.2 * mpp);
+        const tower = wallLook('stone', palette, lod, mpp).tower;
         gl.uniform4fv(discP.u.uView, view);
-        gl.uniform1f(discP.u.uRadius, radius);
+        gl.uniform1f(discP.u.uRadius, tower?.radius ?? 0);
         gl.uniform1f(discP.u.uDevPx, devPx);
-        gl.uniform1f(discP.u.uStroke, 0.6 * mpp);
+        gl.uniform1f(discP.u.uStroke, (tower?.strokePx ?? 0) * mpp);
         gl.uniform4fv(discP.u.uFill, rgba01(towerColors[0]));
         gl.uniform4fv(discP.u.uEdge, rgba01(towerColors[1]));
         gl.bindVertexArray(towers.vao);
@@ -1867,8 +1866,9 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         fills(plan, 'waterwayBridges', false);
         fills(plan, 'waterwayBridges', true);
       }
-      // Buildings above the streets (as in drawCity).
-      if (d.buildings && built) {
+      // Buildings above the streets (as in drawCity). On satellite grounds the far raster stands for them above its
+      // fade band, whatever the level of detail.
+      if (d.buildings && built && (!o.live?.farTown || farTownBuildingsShown(mpp))) {
         gl.useProgram(fillP.program);
         const pans = !footprint && !!built.mesh.layers.roofs?.triangles.count;
         const buildingLayer = footprint ? 'buildingFootprints' : 'buildings';
@@ -1913,7 +1913,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
               const gf = coverGrainFrame(devPx),
                 means = grainLevelMeans(gf?.level ?? 0);
               gl.uniform1i(fillP.u.uRoofGrain, 1);
-              gl.uniform1i(fillP.u.uRims, devPx <= 0.55 ? 1 : 0);
+              gl.uniform1i(fillP.u.uRims, devPx <= RIM_DEVICE_MPP ? 1 : 0);
               gl.uniform1f(fillP.u.uGrainStrength, gf?.alpha[0] ?? 0);
               gl.uniform2fv(fillP.u['uGrain[0]'], means.grain);
               gl.uniform4fv(fillP.u['uSnowMean[0]'], means.snow);
@@ -1951,7 +1951,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       }
       if (selection) {
         useStroke(strokeP);
-        gl.uniform4fv(u.uOverride, rgba01('#197ea4'));
+        gl.uniform4fv(u.uOverride, rgba01(SELECTION.stroke!));
         strokes(selection, 0, 1, { edgePx: 0, inner: 1, minPx: 1, maxRank: 15, crossings: true, dash: 0 });
         gl.uniform4f(u.uOverride, 0, 0, 0, 0);
       }
@@ -2048,7 +2048,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         f[j + 2] = c.x - origin.x;
         f[j + 3] = c.y - origin.y;
         f[j + 4] = 0;
-        f[j + 5] = 2;
+        f[j + 5] = SELECTION.widthPx!;
         f[j + 6] = 0;
         u32[j + 7] = 0;
         u32[j + 8] = 0;

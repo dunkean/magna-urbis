@@ -236,10 +236,6 @@ export function noteLivePart(part: string, since: number): number {
   }
   return t;
 }
-/** Largest count seen since the last reset (profiling: draw calls, clip rebuilds per replay). */
-export function noteLiveCount(part: string, n: number): void {
-  liveParts[part] = Math.max(liveParts[part] ?? 0, n);
-}
 /** Every live frame's work and ground submit time since the last reset (profiling). */
 let liveSeries: Record<string, number[]> = {};
 export function vectorEngineStats(): VectorEngineStats {

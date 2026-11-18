@@ -7,7 +7,8 @@ import { polygonContains } from '../src/gen/core/geom';
 import { buildCityScene, buildCityBuildings, cityGroundSubjects } from '../src/render/cityCanvas';
 import { cityGlPlanMesh } from '../src/render/cityGl';
 import { meshFeatureAt, buildStreetStrokes, STROKE_STRIDE } from '../src/render/cityGlBuild';
-import { streetPaint, buildingColors, DEFAULT_LAYERS } from '../src/render/cityGlStyle';
+import { buildingColors, DEFAULT_LAYERS } from '../src/render/cityGlStyle';
+import { streetInk } from '../src/render/city/look';
 import { city3dBoardwalks } from '../src/render/city3dBoardwalks';
 import { silhouetteBuilding } from '../src/render/city3dMeshes';
 import type { PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
@@ -84,8 +85,8 @@ describe('physical city ground', () => {
     expect(lake[0].holes).toHaveLength(1);
   });
   it('uses timber for piers even in parchment and keeps bridge paving distinct', () => {
-    for (const palette of ['parchment', 'growth', 'atlas', 'terrain'] as const) expect(streetPaint('pier', 2, palette).fill).toBe('#b49a6d');
-    expect(streetPaint('pier', 2, 'parchment').fill).not.toBe(streetPaint('bridge', 2, 'parchment').fill);
+    for (const palette of ['parchment', 'growth', 'atlas', 'terrain'] as const) expect(streetInk('pier', 2, palette).fill).toBe('#b49a6d');
+    expect(streetInk('pier', 2, 'parchment').fill).not.toBe(streetInk('bridge', 2, 'parchment').fill);
   });
   it('keeps a thin vector canal visible even when the entire coarse raster is dry', () => {
     const ground = new CityGround({ n: 2, width: 40, water: new Uint8Array(4), geometry: { water: [[rect(19, 0, 2, 40).outer]] } });

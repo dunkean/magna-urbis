@@ -1,3 +1,4 @@
+/** Render-target resolution policy used by Terrain3d. Reads requested dimensions/quality; writes no shared state. Keeps moving and rest allocations within their existing budgets. */
 /** Four-sample RGBA8 + depth32 attachments cost 32 bytes per pixel. Keep each
  * view at most 128 MiB before terrain tiles, buildings and a backend warmup. */
 export const TERRAIN_3D_FRAME_PIXELS = 4 * 1024 * 1024;

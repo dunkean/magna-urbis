@@ -1,5 +1,5 @@
 /**
- * Live ground (contract.ts, stream B): the terrain material baked into world-space tiles and drawn as textured quads,
+ * Live ground (contract.ts): the terrain material baked into world-space tiles and drawn as textured quads,
  * instead of the procedural material re-evaluated per pixel on every redraw.
  *
  * Pyramid in map metres: square tiles of TILE device pixels; tier k has 2^k x 2^k tiles over the map, density
@@ -446,6 +446,9 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       // Tier 0 covers the whole map (any generation: stale tiles stay on screen); the paper covers the rest.
       return !!state && gridSize > 0 && options.mapSize() === gridSize && tiles.has(0) && frame.width > 0;
     },
+
+    /** The tiles are the ground: a finer tile that arrives refines this picture, no other renderer replaces it. */
+    restExact: () => true,
 
     draw(frame: LiveFrame): void {
       const s = state;

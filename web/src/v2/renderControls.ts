@@ -34,8 +34,6 @@ import { applySceneClock } from './sceneClock';
 import { setDisplayQualityPreference, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
 import { getVectorEnginePreference, onVectorEngineChange, setVectorEnginePreference } from '../render/vectorEngine';
 import type { VectorEngineChoice } from '../render/gpu/displayList';
-import { getLiveMode, onLiveModeChange, setLiveMode } from '../render/live/policy';
-import type { LiveMode } from '../render/live/contract';
 
 export interface RenderControlBindings {
   getSettings(): V2Settings;
@@ -72,13 +70,6 @@ const ui = {
   vectorGpu: copy('GPU', 'GPU'),
   // Not plain "CPU": that key is already registered (compute choice) with a different French label.
   vectorCpu: copy('CPU (processor)', 'Processeur'),
-  liveDisplay: copy('Live display', 'Affichage en mouvement'),
-  liveDisplayHelp: copy(
-    'How the 2D map is drawn while it moves: composed on the graphics card from prepared layers, or redrawn by the classic renderers.',
-    'Façon de dessiner la carte 2D pendant qu’elle bouge : composée sur la carte graphique à partir de couches préparées, ou redessinée par les moteurs classiques.',
-  ),
-  liveCompositor: copy('GPU compositor', 'Compositeur GPU'),
-  liveClassic: copy('Classic renderers', 'Moteurs classiques'),
 };
 /** Browser preference, not a render setting: it never enters the saved recipe. */
 const vectorEngineField: ParameterField = {
@@ -90,17 +81,6 @@ const vectorEngineField: ParameterField = {
     { value: 'auto', label: ui.vectorAuto },
     { value: 'gpu', label: ui.vectorGpu },
     { value: 'cpu', label: ui.vectorCpu },
-  ],
-};
-/** Browser preference as well (render/live/policy.ts). */
-const liveDisplayField: ParameterField = {
-  path: 'liveDisplay',
-  label: ui.liveDisplay,
-  help: ui.liveDisplayHelp,
-  type: 'select',
-  options: [
-    { value: 'compositor', label: ui.liveCompositor },
-    { value: 'classic', label: ui.liveClassic },
   ],
 };
 // These labels also localize the shared terrain-style selector mounted by the main UI.
@@ -248,15 +228,7 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     forms.push(engineForm);
     // The engine can also change by itself (a demotion) or from another control: keep the select true.
     const offEngine = onVectorEngineChange(() => engineForm.sync());
-    const liveBody = document.createElement('div');
-    levels.general.advanced.append(liveBody);
-    const liveForm = mountParameterForm(liveBody, [liveDisplayField], { getValue: () => getLiveMode(), setValue: (_path, value) => setLiveMode(value as LiveMode) });
-    forms.push(liveForm);
-    const offLive = onLiveModeChange(() => liveForm.sync());
-    unlistenEngine = () => {
-      offEngine();
-      offLive();
-    };
+    unlistenEngine = offEngine;
   }
   let qualityToast: HTMLElement | undefined;
   const unlistenQuality = onDisplayQualityChange(change => {

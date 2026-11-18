@@ -11,38 +11,36 @@ afterEach(() => {
 });
 
 describe('retained display ownership', () => {
-  it('evicts across styles and frames with a separate 32 MiB frame ceiling', () => {
+  it('evicts the style stored longest ago and hands a taken one over unreleased', () => {
     const releaseA = vi.fn(),
       releaseB = vi.fn(),
-      releaseFrame = vi.fn();
-    const cache = new RetainedBudget(100, 32);
+      releaseC = vi.fn();
+    const cache = new RetainedBudget(100);
     cache.put('parchment', 'a', 50, releaseA);
     cache.put('atlas', 'b', 30, releaseB);
-    expect(cache.get('parchment')).toBe('a');
-    cache.put('frame', 'f', 24, releaseFrame, true);
-    expect(releaseB).toHaveBeenCalledOnce();
-    expect(cache.bytes).toBe(74);
-    expect(cache.frameBytes).toBe(24);
-    cache.put('frame2', 'g', 24, vi.fn(), true);
-    expect(releaseFrame).toHaveBeenCalledOnce();
-    expect(cache.frameBytes).toBe(24);
-    expect(cache.take('parchment')).toBe('a');
-    expect(releaseA).not.toHaveBeenCalled();
+    expect(cache.take('missing')).toBeUndefined();
+    cache.put('satellite', 'c', 40, releaseC);
+    expect(releaseA).toHaveBeenCalledOnce();
+    expect(releaseB).not.toHaveBeenCalled();
+    expect(cache.bytes).toBe(70);
+    expect(cache.take('atlas')).toBe('b');
+    expect(releaseB).not.toHaveBeenCalled();
+    expect(cache.bytes).toBe(40);
     cache.clear();
+    expect(releaseC).toHaveBeenCalledOnce();
     expect(cache.bytes).toBe(0);
-    expect(cache.frameBytes).toBe(0);
   });
   it('releases oversized entries and replacements exactly once', () => {
     const release = vi.fn(),
       tooLarge = vi.fn(),
       last = vi.fn();
-    const cache = new RetainedBudget(100, 32);
-    cache.put('f', {}, 20, release, true);
-    cache.put('f', {}, 16, last, true);
-    cache.put('oversized', {}, 33, tooLarge, true);
+    const cache = new RetainedBudget(100);
+    cache.put('f', {}, 20, release);
+    cache.put('f', {}, 16, last);
+    cache.put('oversized', {}, 101, tooLarge);
     expect(release).toHaveBeenCalledOnce();
     expect(tooLarge).toHaveBeenCalledOnce();
-    expect(cache.frameBytes).toBe(16);
+    expect(cache.bytes).toBe(16);
     cache.clear();
     expect(last).toHaveBeenCalledOnce();
   });

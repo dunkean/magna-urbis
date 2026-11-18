@@ -12,6 +12,7 @@
 import type { Point, Shape } from '../../../rust/bridge/urban';
 import type { CityBuildings, CityScene } from './cityCanvas';
 import { isBoardwalk } from './cityGround';
+import { CROSSINGS, streetMinPx } from './city/look';
 import { earcut } from './cityGlEarcut';
 import { coveredEnds } from './roadSurface';
 
@@ -421,8 +422,6 @@ export interface CityGlStrokes {
   /** firstWithRank[k]: first instance whose sort key ≤ k (instances are sorted minor → major, crossings last). */
   firstWithRank: number[];
 }
-const STREET_MIN_PX = [3, 2.4, 1.6, 1.1, 0.8];
-const CROSSINGS = new Set(['bridge', 'ford', 'pier', 'boardwalk', 'walkway']);
 export function strokeWriter(segments: number): { f: Float32Array; u: Uint32Array; buffer: ArrayBuffer; n: number; put(a: Point, b: Point, o: Point, width: number, minPx: number, along: number, feature: number, meta: number): void } {
   const buffer = new ArrayBuffer(Math.max(1, segments) * STROKE_STRIDE * 4),
     f = new Float32Array(buffer),
@@ -498,16 +497,7 @@ export function buildStreetStrokes(scene: CityScene, origin: Point, surface = tr
     const ck = `${k}|${cells[i]}`,
       before = w.n;
     const deck = s.role === 'bridge' || s.role === 'mole';
-    putPolyline(
-      w,
-      s.street.path,
-      origin,
-      !surface || isBoardwalk(s.role) || !s.street.widths.length ? s.width : s.street.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)),
-      isBoardwalk(s.role) ? 0.8 : s.role === 'mole' ? 3.4 : STREET_MIN_PX[Math.min(4, rank)],
-      i,
-      meta,
-      deck || covered[i],
-    );
+    putPolyline(w, s.street.path, origin, !surface || isBoardwalk(s.role) || !s.street.widths.length ? s.width : s.street.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)), streetMinPx(s.role, s.rank), i, meta, deck || covered[i]);
     if (w.n === before) continue;
     let chunk = chunks[chunks.length - 1];
     if (!chunk || ck !== chunkKey) {

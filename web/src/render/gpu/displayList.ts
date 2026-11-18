@@ -148,7 +148,7 @@ export interface DisplayList {
  * by the live overlay) and the layers that stay crisp (lines, water cut, roads, symbols), replayed at every frame. */
 export const CRISP_MARK = 'crisp';
 
-/** Rasterizer entry point implemented by glRaster.ts. */
+/** The tile rasterizer of the exact outputs (gpu/tileRasterizer.ts, reached through vectorEngine.ts). */
 export interface GpuRasterizer {
   readonly renderer: string;
   /** True on SwiftShader / llvmpipe / WARP: the engine policy keeps the CPU engine. */
@@ -158,15 +158,8 @@ export interface GpuRasterizer {
    * Replays `list` on a transparent target of list.width x list.height and returns the picture as an ImageBitmap
    * (premultiplied, GPU-backed: drawImage it onto a 2D canvas). `post` premultiplies every op transform (replay at
    * another view), default identity. Throws GpuRasterError on context loss or an internal failure.
-   * `size` (rasterizeInto): target pixel size when it differs from the recorded list (a retained list replayed on a view).
    */
   rasterize(list: DisplayList, options?: { post?: Mat }): ImageBitmap;
-  /** Same, drawn onto `target` (a 2D canvas) at device pixel (x, y): avoids an ImageBitmap when the caller composites at once. */
-  rasterizeInto(list: DisplayList, target: CanvasRenderingContext2D, x: number, y: number, options?: { post?: Mat; size?: readonly [number, number] }): void;
-  /** Several lists on one target, each limited to its `scissor` (target device px, y down): a retained region recorded in bands. */
-  rasterizeParts(parts: readonly { list: DisplayList; post: Mat; scissor?: readonly [number, number, number, number] }[], target: CanvasRenderingContext2D, x: number, y: number, size: readonly [number, number]): void;
-  /** Upload what `list` needs without drawing (a recording spread over idle steps leaves no upload to its first replay). */
-  prepare(list: DisplayList, post?: Mat): void;
   /** A source canvas changed after it was first drawn: drop its texture. */
   invalidateImage(source: ImageSource): void;
   /** GPU bytes owned (geometry, textures). */

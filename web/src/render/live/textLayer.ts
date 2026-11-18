@@ -1,4 +1,12 @@
-/** Retained text in the compositor context. Work owns rasterization/uploads; draw only submits atlas batches. */
+/**
+ * Live names (contract.ts): the placed names and symbols of the cartography as instanced quads from a glyph atlas.
+ *
+ * `work` rasterizes the glyphs of the last placement (CanvasRenderer.liveText) into the atlas and uploads their
+ * instances, in slices; `draw` only submits the batches. The instances keep their anchors in map metres, so the names
+ * of a placement follow the map while the view moves. They are the picture at rest (`restExact`) once they come from
+ * a placement made for the frame's own view; while the instances of a new placement are prepared, those of the
+ * previous one stay on screen.
+ */
 import { fontString } from '../labelStyles';
 import type { GlyphPos, PlacedMapLabel } from '../mapLabels';
 import type { LiveLayer, LiveLayerStats, LiveTextOptions, LiveTextPlacement } from './contract';
@@ -208,10 +216,14 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     list.length = 0;
   }
 
-  function dropInstances(deleteHandles = true): void {
-    dropBatches(batches, deleteHandles);
+  function dropPending(deleteHandles = true): void {
     if (pending) dropBatches(pending.batches, deleteHandles);
     pending = undefined;
+  }
+
+  function dropInstances(deleteHandles = true): void {
+    dropBatches(batches, deleteHandles);
+    dropPending(deleteHandles);
     complete = false;
     counters.glyphs = 0;
     counters.symbols = 0;
@@ -285,8 +297,14 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     name: 'text',
     isolated: false,
     ready(frame): boolean {
+      return !options.placement() || (!disposed && complete && frame.dpr === density);
+    },
+    restExact(frame): boolean {
       const source = options.placement();
-      return !source || (!disposed && complete && source.revision === revision && frame.dpr === density);
+      if (!source) return true;
+      const at = source.view,
+        view = frame.view;
+      return !disposed && complete && source.revision === revision && frame.dpr === density && source.w === frame.cssW && source.h === frame.cssH && at.cx === view.cx && at.cy === view.cy && at.scale === view.scale;
     },
     work(budgetMs, frame): boolean {
       if (disposed) return false;
@@ -305,9 +323,13 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
         deadline = started + budgetMs;
       try {
         if (!pending || pending.source.revision !== source.revision || pending.dpr !== frame.dpr) {
-          dropInstances();
           const nextPaletteKey = JSON.stringify(source.palette);
-          if (nextPaletteKey !== paletteKey || source.family !== family || frame.dpr !== density) atlas.reset();
+          // Another style or pixel ratio: the sprites of the shown instances go with the atlas. Otherwise the shown
+          // instances stay until those of this placement replace them.
+          if (nextPaletteKey !== paletteKey || source.family !== family || frame.dpr !== density) {
+            dropInstances();
+            atlas.reset();
+          } else dropPending();
           paletteKey = nextPaletteKey;
           family = source.family;
           density = frame.dpr;
@@ -332,6 +354,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
             state.batches.push(uploadBatch(gl, state.queue[state.upload++]));
             counters.instanceUploads++;
           } else {
+            dropBatches(batches, true);
             batches = state.batches;
             revision = state.source.revision;
             density = state.dpr;

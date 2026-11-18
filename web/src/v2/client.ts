@@ -657,10 +657,7 @@ export class StudioClient {
     set('renderStyle', String(renderer.stats.style));
     set('terrainBackend', String(renderer.stats.terrainBackend));
     set('renderRequest', String(renderer.requestId ?? ''));
-    set('renderCache', String(renderer.stats.frameCache ?? 'miss'));
-    const storage = renderer.retainedStorage();
-    set('renderFrameBytes', String(storage.frames));
-    set('renderRetainedBytes', String(storage.bytes));
+    set('renderRetainedBytes', String(renderer.retainedBytes()));
     set('cityRender', JSON.stringify(renderer.stats.city ?? {}));
     set('renderPending', String(renderer.pendingWork()));
     set('renderPasses', JSON.stringify(renderer.stats.passes ?? []));

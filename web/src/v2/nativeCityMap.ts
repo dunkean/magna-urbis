@@ -770,6 +770,8 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
         layers: townLayers,
         farTowns,
         refused: () => (liveRefused ??= new Set(entries.flatMap(entry => [...entry.refused]))),
+        sites: () => sites.length > 0,
+        housePlans: () => entries.some(entry => !!entry.houses),
       });
       const dispose = made.dispose.bind(made);
       const owned: LiveLayer = Object.assign(made, {
