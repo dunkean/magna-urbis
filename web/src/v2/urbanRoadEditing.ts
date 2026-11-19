@@ -120,7 +120,10 @@ function sameGeometry(a: readonly UrbanRoadPart[], b: readonly UrbanRoadPart[]):
 }
 
 /** Replay manual road decisions after generation; native request payloads still contain plain Street objects. */
-export function replayUrbanRoadEdits(layouts: readonly Layout[], edits: readonly UrbanStreetEdit[]): Layout[] {
+export function replayUrbanRoadEdits(layouts: Layout[], edits: readonly UrbanStreetEdit[]): Layout[] {
+  // Native sessions reuse layouts by identity through parcels, programme and binary
+  // site visuals. An empty replay must not turn that retained chain into uploads.
+  if (!edits.length) return layouts;
   return layouts.map(layout => {
     const relevant = edits.filter(e => e.layout === layout.key);
     if (!relevant.length) return layout;

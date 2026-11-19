@@ -342,7 +342,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   const editable = (w: World) => identifyRoads(editableUrbanRoads(editableRuralRoads(w)));
   const world = (): World | undefined => {
     const w = host.getWorld();
-    return w && host.tools?.includes('roads') ? editable(w) : w;
+    // Building the editable road graph is only needed while a tool or a pending session uses it.
+    return w && host.tools?.includes('roads') && (current !== 'off' || sessionBefore) ? editable(w) : w;
   };
   const scale = (): number => host.getView().scale;
   function toWorld(clientX: number, clientY: number): Vec2 {
@@ -791,7 +792,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   // ---- tools
   function start(tool: Exclude<NetworkTool, 'off'>): void {
     if (host.busy?.() || host.topView?.() === false) return;
-    if (!world()) {
+    if (!host.getWorld()) {
       host.toast?.(translate(T.noWorld), true);
       return;
     }
@@ -799,6 +800,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     clearHold();
     cancelPreview();
     current = tool;
+    knownWorld = world();
     draft = [];
     drawVariant = 0;
     addingPoint = false;

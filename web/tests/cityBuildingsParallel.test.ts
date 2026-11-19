@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
 import { buildCityBuildings } from '../src/render/cityCanvas';
-import { cityBuildingsShare, mergeCityBuildingChunks } from '../src/render/cityBuildingsParallel';
+import { buildCityBuildingsParallel, cityBuildingsChunk, cityBuildingsShare, mergeCityBuildingChunks, prewarmCityBuildingWorkers, releaseCityBuildingWorkers, type CityBuildingsTask } from '../src/render/cityBuildingsParallel';
+import { decodeCitySiteVisuals } from '../src/render/cityDisplayBuffers';
+import { siteVisualScene } from '../src/ui/urbanSilhouettes';
+import type { UrbanSiteVisual } from '../src/ui/urbanSiteStore';
 import type { PlacementBatch } from '../../rust/bridge/urbanArchitecture';
 
 const box = (x: number, y: number, w: number, d: number) => ({
@@ -52,6 +56,45 @@ function batch(): PlacementBatch {
 }
 
 describe('parallel city buildings', () => {
+  it('reuses warm workers for a map of small towns and retains the edited-scene fallback', async () => {
+    const bytes = readFileSync(new URL('./fixtures/site-visuals-v2.bin', import.meta.url));
+    const sites = decodeCitySiteVisuals(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer) as unknown as UrbanSiteVisual[];
+    const scene = siteVisualScene(sites);
+    const workers: FakeWorker[] = [];
+    class FakeWorker {
+      onmessage: ((e: { data: unknown }) => void) | null = null;
+      onerror: unknown;
+      terminated = false;
+      constructor() {
+        workers.push(this);
+      }
+      postMessage(task: CityBuildingsTask) {
+        queueMicrotask(() => this.onmessage?.({ data: { chunk: structuredClone(cityBuildingsChunk(task)) } }));
+      }
+      terminate() {
+        this.terminated = true;
+      }
+    }
+    vi.stubGlobal('Worker', FakeWorker);
+    vi.stubGlobal('navigator', { hardwareConcurrency: 8 });
+    try {
+      prewarmCityBuildingWorkers();
+      expect(await buildCityBuildingsParallel(scene, undefined, sites)).toBeUndefined();
+      for (let i = 0; i < 3; i++) {
+        const result = await buildCityBuildingsParallel(scene, undefined, sites, { batchBuildings: 4000 });
+        expect(result?.items).toEqual(buildCityBuildings(scene).items);
+        expect(workers).toHaveLength(6);
+        expect(workers.some(w => w.terminated)).toBe(false);
+      }
+      // An edited scene must never be reconstructed from its former site buffer.
+      expect(await buildCityBuildingsParallel({ ...scene }, undefined, sites, { batchBuildings: 4000 })).toBeUndefined();
+    } finally {
+      releaseCityBuildingWorkers();
+      vi.unstubAllGlobals();
+    }
+    expect(workers.every(w => w.terminated)).toBe(true);
+  });
+
   it('merges the worker shares into exactly the one-thread build', () => {
     const scene = batch(),
       one = buildCityBuildings(scene),

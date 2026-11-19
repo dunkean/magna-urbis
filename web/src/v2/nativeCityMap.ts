@@ -212,8 +212,15 @@ export async function createNativeCityMapAsync(world: World, onInvalidate: (kind
       cities.flatMap(city => cityGroundSubjects(city.layouts, city.partitions ?? [])),
     );
   const plans = cityPlans(world);
-  const buildings = await Promise.all(cities.map((city, i) => (usesNativeHouseRenderer(city.scene) ? undefined : buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: !largeTown(city) }))));
-  releaseCityBuildingWorkers();
+  // Several small towns can together take seconds. Reuse the warm pool in order so
+  // the first town does not leave every later town building on the page.
+  const batchBuildings = cities.reduce((sum, city) => sum + (usesNativeHouseRenderer(city.scene) ? 0 : (city.scene?.buildings.length ?? 0)), 0);
+  const buildings: (CityBuildings | undefined)[] = [];
+  try {
+    for (const [i, city] of cities.entries()) buildings.push(usesNativeHouseRenderer(city.scene) ? undefined : await buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: !largeTown(city), batchBuildings }));
+  } finally {
+    releaseCityBuildingWorkers();
+  }
   return createNativeCityMap(world, onInvalidate, { plans, buildings });
 }
 const objectIds = new WeakMap<object, number>();

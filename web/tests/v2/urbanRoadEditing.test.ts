@@ -60,6 +60,10 @@ function fixture(overlap = false): World {
 }
 
 describe('editable urban streets', () => {
+  it('keeps native retained-layout identity when there are no street edits to replay', () => {
+    const layouts = city(fixture()).layouts;
+    expect(replayUrbanRoadEdits(layouts, [])).toBe(layouts);
+  });
   it('picks narrow streets and their T junctions, without recording untouched streets as edits', () => {
     const source = fixture(),
       w = editableUrbanRoads(source),
