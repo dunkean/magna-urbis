@@ -15,6 +15,8 @@ import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { TreeDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
+import type { Building3dScene } from '../urbanBuildingGeometry';
+import { treeBuildings, type TreeBuildings } from './treesBuildings';
 import { TREES_BLOCK, TREE_CELLS, TREE_SIZE_M, treeBlockSteps, treeDrawCount, treeInputsKey, treeLevel, type TreeBlock } from './treesBlocks';
 import { SATELLITE_TREES, TREE_LATHES, WORLD_TREE_FS, WORLD_TREE_VS, latheVertices, type TreePalette } from './treesShader';
 import { TREE_MAX_BLOCKS, TREE_MAX_DRAWS, treeMemoryBudget, treeTriangleBudget } from './treesRange';
@@ -27,6 +29,8 @@ export interface WorldTreesOptions {
    * new object is compared by content (treeInputsKey) and by its water cover function. */
   inputs(): Omit<TreeInputs, 'height'> | undefined;
   terrain(): TerrainHeights | undefined;
+  /** Published town footprints; indexed once per scene, queried only while building a tree block. */
+  buildings?(): Building3dScene | undefined;
   /** Tree distance (m), the 3D view's slider (clampTreeDistance): a horizontal radius around the target. */
   distance(): number;
   /** The "3D trees" switch: off, nothing is drawn or built, and the blocks already built are kept for the next time. */
@@ -108,6 +112,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     heights: TerrainHeights | undefined,
     inputs: TreeInputs | undefined;
   let building: Building | undefined;
+  let scene: Building3dScene | undefined, buildings: TreeBuildings | undefined;
   let distance = NaN,
     limits: TreeLimits = treeLimits(600);
 
@@ -126,13 +131,16 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   /** The inputs of the page: other trees or another terrain start the blocks again. */
   const sync = (): void => {
     const next = options.inputs(),
-      nextHeights = options.terrain();
+      nextHeights = options.terrain(),
+      nextScene = options.buildings?.();
     const key = next ? treeInputsKey(next) : '';
-    if (key === sourceKey && next?.water === source?.water && nextHeights === heights) return;
+    if (key === sourceKey && next?.water === source?.water && nextHeights === heights && nextScene === scene) return;
     dropAll();
     source = next;
     sourceKey = key;
     heights = nextHeights;
+    scene = nextScene;
+    buildings = treeBuildings(scene);
     options.invalidate();
     if (!next || !nextHeights) {
       inputs = undefined;
@@ -291,7 +299,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             break;
           }
           const key = wantKey[best];
-          building = { key, steps: treeBlockSteps(inputs, key % 65536, Math.floor(key / 65536)) };
+          building = { key, steps: treeBlockSteps(inputs, key % 65536, Math.floor(key / 65536), buildings) };
           diagnostics?.startBlock();
           wantKey[best] = wantKey[wanted - 1];
           wantPriority[best] = wantPriority[wanted - 1];
