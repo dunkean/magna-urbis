@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Harmonize building daylight in 2D and 3D: domes, pitched roofs, flat roofs and walls share softer, consistent shading across architectural styles.
 - Fix startup and reloads getting stuck when the browser GPU driver does not answer. Native procedural generation no longer waits for an unused browser GPU.
 - Keep generation settings and imported heightmaps when reloading during an interrupted or unfinished restoration.
 

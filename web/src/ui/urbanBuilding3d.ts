@@ -5,7 +5,7 @@ import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLo
 import { roofSeasonKey } from '../render/seasonPalette';
 import { townRoofAltitudes } from '../render/roofSnow';
 import { buildingBatches, buildingBounds, type BuildingBounds, type Vec3 } from '../render/world/buildingsMesh';
-import { BUILDING_COVER_LIGHT_GLSL, BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL } from '../render/world/buildingsShader';
+import { BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL } from '../render/world/buildingsShader';
 
 type Bounds = BuildingBounds;
 export interface BuildingFrame {
@@ -74,11 +74,10 @@ in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in 
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
-${BUILDING_COVER_LIGHT_GLSL}
 void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
-  float light=coverLight(buildingLight(N,N),cls,N);color=vec4(buildingCave(buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit),facadePosition,lit,N),1.);}`;
+  float light=buildingLight(N);color=vec4(buildingCave(buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit),facadePosition,lit,N),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
@@ -132,7 +131,7 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=buildingLight(N,normalize(n));color=vec4(buildingCave(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5),facadePosition,litWindow>.5,N),1.);
+  float light=buildingLight(N);color=vec4(buildingCave(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5),facadePosition,litWindow>.5,N),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
 export const SOFT_LAYER_FROM = Math.min(

@@ -1,6 +1,12 @@
-/** Ambient + Lambert light, normalised to a horizontal roof. World y grows
- * southwards. An asymmetric NW sun separates all four sides of a hip roof;
- * no broad clipping bands collapse neighbouring pans to the same two tones. */
+// One diffuse daylight for walls and roofs, independent of culture, cover and
+// pitch. Strong sky light keeps a dome's shaded skirt close to the walls below.
+const AMBIENT = 0.78,
+  SUN = 0.22,
+  FILL = 0.1;
+const FLAT_LIGHT = AMBIENT + SUN * 0.62 + (FILL * 0.76) / 1.0026;
+/** Shared building daylight, normalised to a horizontal surface. World y grows
+ * southwards, z upwards. The NW sun and weak SE fill retain distinct hip pans
+ * without an azimuth boost or a discontinuity at vertical/near-flat faces. */
 export function roofPlaneLight([nx, ny, nz]: readonly number[]): number {
   const length = Math.hypot(nx, ny, nz) || 1,
     x = nx / length,
@@ -9,10 +15,7 @@ export function roofPlaneLight([nx, ny, nz]: readonly number[]): number {
   // NW sun + a weak south-east fill, so pans facing away from the sun keep distinct tones.
   const sun = Math.max(0, -0.7 * x - 0.36 * y + 0.62 * z),
     fill = Math.max(0, (0.35 * x + 0.55 * y + 0.76 * z) / 1.0026);
-  // A shallow pan still needs a readable tone from above: a facing term by azimuth, faded on steep pans.
-  const h = Math.hypot(x, y),
-    facing = h > 0.001 ? (-(0.8 * x + 0.5 * y) / h) * 0.2 * Math.min(1, z / 0.6) : 0;
-  return (0.3 + 1.1 * sun + 0.3 * fill) / (0.3 + 1.1 * 0.62 + (0.3 * 0.76) / 1.0026) + facing;
+  return (AMBIENT + SUN * sun + FILL * fill) / FLAT_LIGHT;
 }
 
 /** Light of a pitched pan as a natural ground shows it (`light`: the plan light of the pan, around 0, as cityMassing's
@@ -27,19 +30,13 @@ export function planPanLight(light: number, cover: string): number {
   return Math.sign(light) * cap * (1 - Math.exp(-Math.abs(light) / cap));
 }
 
-/** Same light in 3D's x/up/z frame. Keep the existing wall light and the normal
- * map's fine relief; the geometric roof plane determines the broad tone. */
+/** Same daylight in 3D's x/up/z frame, including normal-map relief. Both 3D
+ * programs use it directly: no separate wall sun, absolute dot or roof-only gain. */
 export const ROOF_PLANE_LIGHT_GLSL = `
-float buildingLight(vec3 normal,vec3 plane){
-  vec3 oldSun=normalize(vec3(-.4,.85,.3));
-  float detail=.55+.45*abs(dot(normal,oldSun));
-  if(plane.y<.05)return detail;
-  vec3 p=normalize(plane);
+float buildingLight(vec3 normal){
+  vec3 p=normalize(normal);
   float sun=max(0.,dot(p,vec3(-.70,.62,-.36)));
   float fill=max(0.,dot(p,vec3(.35,.76,.55))/1.0026);
-  float h=length(p.xz);
-  float facing=h>.001?-(.8*p.x+.5*p.z)/h*.2*min(1.,p.y/.6):0.;
-  float roof=(.3+1.1*sun+.3*fill)/(.3+1.1*.62+.3*.76/1.0026)+facing;
-  return roof*detail/(.55+.45*abs(dot(plane,oldSun)));
+  return (${AMBIENT}+${SUN}*sun+${FILL}*fill)/${FLAT_LIGHT};
 }
 `;

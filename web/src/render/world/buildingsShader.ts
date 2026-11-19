@@ -1,6 +1,6 @@
 /**
  * GLSL of town buildings, for the two views that draw them: the shading shared by both (base occlusion, night,
- * underdark, the procedural grain of covers and walls, the light a cover can reflect), and the program of the tilted
+ * underdark, the procedural grain of covers and walls, and daylight), and the program of the tilted
  * world view (buildingsLayer.ts). The separate 3D view (ui/urbanBuilding3d.ts) builds its programs from the same
  * snippets; web/scripts/wgsl_shaders_3d.ts translates those to WGSL, so the text of the snippets is theirs too.
  *
@@ -131,21 +131,6 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   return color*(1.+g);
 }
 `;
-/** Light of a roof face capped by what its cover can reflect, as the 2D plan does (planPanLight in
- * roofPlaneLight.ts): around the level of a flat roof (1), with the same smooth knee. Matte covers (thatch, reed,
- * palm, turf, shingle, bark, bamboo, earth, lime, felt, hide: classes 7 to 15, 17, 18) lighten by 9 % at most and
- * darken by 14 %; tiles, slates and stone (1 to 6) by 14 % and 20 %; metal (16), snow, walls and faces without a
- * class keep the full light. */
-export const BUILDING_COVER_LIGHT_GLSL = `
-float coverLight(float light,float cls,vec3 N){
-  if(N.y<.05||cls<.5||cls>18.5||abs(cls-16.)<.5)return light;
-  float up=.09,down=.14;
-  if(cls<6.5){up=.14;down=.2;}
-  float d=light-1.;
-  if(d>0.)return 1.+up*(1.-exp(-d/up));
-  return 1.-down*(1.-exp(d/down));
-}
-`;
 export const WORLD_BUILDING_VS = `#version 300 es
 precision highp float;
 // Block-local x, height above the seat (m), block-local y; the normal in the 3D view's frame (x, up, y south) with the
@@ -182,7 +167,6 @@ uniform vec3 uHaze;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
-${BUILDING_COVER_LIGHT_GLSL}
 ${COVER_GRAIN_GLSL}
 void main(){
   vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
@@ -194,7 +178,7 @@ void main(){
     // (volumeRoofPaint); the grain marks of its cover family are the top view's, the snow class keeps its own.
     rgb=cls>.5&&cls<18.5?coverGrainMarks(base,cls,N,grainPosition,townGain):materialGrain(base,cls,N,grainPosition,fp);
   }else{
-    float light=coverLight(buildingLight(N,N),cls,N);
+    float light=buildingLight(N);
     rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
   }
   float haze=min(.62,1.-exp(-pow(vDistance/uAir.x,2.)*.11))*uAir.y;
