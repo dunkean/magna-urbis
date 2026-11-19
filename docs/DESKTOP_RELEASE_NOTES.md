@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Keep 3D harbour structures, boats and equipment on the displayed terrain and water instead of outdated planning heights, including exposed dry riverbeds; anchor pier piles in the bed.
 - Choose beaches, cliffs or a mixed coast with low coves between rocky stretches. Adjust cliff coverage, coastal smoothing and transition width independently of coves, headlands and relief influence, including on painted and hand-drawn coastlines.
 - Preserve dwellings when a major landmark is requested in a camp or another settlement with a single residential block.
 - Embed a compact city preview in an iframe using Azgaar burg data or city URL parameters, with automatic generation and a link to the full editor.
