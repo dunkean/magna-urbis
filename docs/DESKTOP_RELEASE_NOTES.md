@@ -1,3 +1,10 @@
+## Alpha 0.3.11
+
+- Fix startup and reloads getting stuck when the browser GPU driver does not answer. Native procedural generation no longer waits for an unused browser GPU.
+- Keep generation settings and imported heightmaps when reloading during an interrupted or unfinished restoration.
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.10
 
 Replaces 0.3.9, whose build stopped on an outdated test before publication (no 0.3.9 packages exist).

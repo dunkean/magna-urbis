@@ -246,6 +246,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         // Local CUDA services select their own device; an unrelated browser driver
         // must not hold up their model loading.
         if (remoteNeural) compute = 'gpu';
+        else if (runtime!.backend === 'native' && runtime!.source === 'procedural') compute = 'cpu';
         else {
           report(onProgress, 'compute', 'Detecting CPU and WebGPU capabilities…', 0, 0);
           try {

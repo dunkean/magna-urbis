@@ -5,7 +5,7 @@
 import type { PageActions, PageState } from './contract';
 import { setText } from '../i18n';
 import { mountV2TestHook } from '../testHook';
-import { armAutosave, takeAutosave, mountNewButton } from '../autosave';
+import { armAutosave, takeAutosave, mountNewButton, saveAutosaveNow } from '../autosave';
 import { $ } from './dom';
 
 export async function mountPageBoot(state: PageState, actions: PageActions): Promise<void> {
@@ -44,7 +44,9 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
   // for the entry module, which waited for the run.
   void (async () => {
     const explicit = new URLSearchParams(location.hash.slice(1)).has('city') || new URLSearchParams(location.search).get('test') === '1';
-    const saved = explicit ? undefined : await takeAutosave(); // the entry is removed here and written back only after a successful restore
+    const saved = explicit ? undefined : await takeAutosave();
+    const startAutosave = () =>
+      armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab, mode3d: !!state.city3d?.active, camera: state.city3d?.active ? state.city3d.getCamera() : undefined } }));
     if (saved) {
       actions.setBusy(true);
       try {
@@ -54,6 +56,7 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
         console.info('Autosave restore failed, starting fresh:', e);
       }
       actions.setBusy(false);
+      startAutosave(); // Save edits and pagehide even while the restored generation is still running.
       await actions.generate('all');
       try {
         if (saved.view) state.client.viewer.setView(saved.view as never);
@@ -70,7 +73,8 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
         /* View state is optional. */
       }
     }
-    armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab, mode3d: !!state.city3d?.active, camera: state.city3d?.active ? state.city3d.getCamera() : undefined } }));
+    if (!saved) startAutosave();
+    else saveAutosaveNow();
   })();
   mountNewButton($('#import-open'));
   $('#export-open').before($('#city-code-open'));
