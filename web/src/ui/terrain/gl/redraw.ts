@@ -8,6 +8,7 @@ import { displayQualityUniform } from '../../../render/displayQuality';
 import { setSeasonCalendarGl } from '../../../../../rust/bridge/terrainRenderV2Zones';
 import { bindForestBrushes } from '../../../render/forestBrushAtlas';
 import { bindCrownClumps, crownClumpMode } from '../../../render/crownClumpAtlas';
+import { bindTreeSymbols } from '../../../render/treeSymbols';
 import { dropHiddenDetails } from '../layers';
 import { hasAuxPass, lookVariant, variantKey, type TerrainVariant } from '../variant';
 import { detailQuad, fadeProgress, lookPalettes, paintedWaterLook, redrawFrame, separateWaterLayer, waterBand, type RedrawFrame, type ViewState } from '../redraw';
@@ -141,7 +142,21 @@ export class GlRedraw {
         gl.uniform1i(u('uShoreRing'), 14);
         gl.uniform3f(u('uShoreRingRect'), ring?.x ?? 0, ring?.y ?? 0, ring?.width ?? 1);
       },
-      brushes: (enabled, crownDetail) => {
+      landBackdrop: on => {
+        const backdrop = on ? inputs.landBackdrop : undefined;
+        gl.uniform1i(u('uHasLandBackdrop'), backdrop ? 1 : 0);
+        if (!backdrop) return;
+        gl.activeTexture(gl.TEXTURE14);
+        gl.bindTexture(gl.TEXTURE_2D, backdrop);
+        gl.uniform1i(u('uShoreRing'), 14);
+      },
+      brushes: (enabled, crownDetail, treeSymbols) => {
+        // The paper map's tree symbols (mode 0) take the unit of the brushes and clumps (mode 3).
+        if (treeSymbols) {
+          gl.uniform1i(u('uCrownClumps'), 0);
+          bindTreeSymbols(gl, u, treeSymbols, 9);
+          return;
+        }
         bindForestBrushes(gl, u, enabled, 9);
         // Optional crown clumps on the same unit: painted brushes and clumps never show together.
         bindCrownClumps(gl, u, crownClumpMode(crownDetail, enabled), 9);

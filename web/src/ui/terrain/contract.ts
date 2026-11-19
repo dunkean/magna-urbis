@@ -36,6 +36,9 @@ export interface TerrainLook {
    * `vegetation.crownDetail`, render/crownClumpAtlas.ts). Absent: DEFAULT_CROWN_DETAIL. */
   crownDetail?: CrownDetail;
   groundCover?: boolean;
+  /** Paper map woods drawn by the ground (render/treeSymbols.ts): the wash and the engraved tree symbols of the forest
+   * land, with this share of conifers. Only the shaded paper ground (mode 0) draws them. */
+  treeSymbols?: { conifer: number };
   colors?: RenderColors;
   /** V2 composes the retained canopy over every ground; standalone benches keep their material-only canopy. */
   independentCanopy?: boolean;

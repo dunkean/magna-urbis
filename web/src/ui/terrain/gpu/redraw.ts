@@ -173,8 +173,13 @@ export class GpuRedraw {
         this.textures.uShoreRing = ring?.image.view ?? inputs.empty.view;
         p.vec3('uShoreRingRect', ring?.x ?? 0, ring?.y ?? 0, ring?.width ?? 1);
       },
-      brushes: (enabled, crownDetail) => {
-        this.textures.uForestBrushAtlas = this.brushAtlas.bind(enabled, crownDetail);
+      landBackdrop: on => {
+        const backdrop = on ? inputs.landBackdrop : undefined;
+        p.int('uHasLandBackdrop', backdrop ? 1 : 0);
+        if (backdrop) this.textures.uShoreRing = backdrop.view;
+      },
+      brushes: (enabled, crownDetail, treeSymbols) => {
+        this.textures.uForestBrushAtlas = this.brushAtlas.bind(enabled, crownDetail, treeSymbols);
         p.int('uCrownClumps', this.brushAtlas.crownClumps);
       },
       seasonCalendar: (zone, calendar) => setSeasonCalendarGpu(p, zone, calendar),

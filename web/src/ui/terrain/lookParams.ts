@@ -21,6 +21,9 @@ import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../render/strokes';
 import type { CrownDetail } from '../../render/crownClumpAtlas';
 import type { WaterSurface } from '../../render/terrainWater';
 import { isNeuralRefinement } from '../terrainRefinement';
+import { treeSymbolWash } from '../../render/treeSymbols';
+import type { Palette } from '../../render/styles';
+import { treeSymbolsOn } from './variant';
 import { fadeProgress, waterBand, type LookPalettes, type RedrawFrame } from './redraw';
 import type { HeightLayer, TerrainLook } from './contract';
 import type { StackedLayer } from './layers';
@@ -48,8 +51,11 @@ export interface LookBindings extends ParamWriter {
   landDetail(): void;
   /** Baked shore ring and relief light (GL unit 14), uploaded first when `mode` >= 2 and it changed. */
   shoreRing(mode: number): void;
-  /** Painted forest brushes, or the optional crown clumps on the same binding (GL unit 9). */
-  brushes(enabled: boolean, crownDetail: CrownDetail | undefined): void;
+  /** With `on`, the paper map's lit land (render/treeSymbols.ts) on the shore ring's binding, and uHasLandBackdrop. */
+  landBackdrop(on: boolean): void;
+  /** Painted forest brushes, or the optional crown clumps, or given `treeSymbols` (its palette) the paper map's tree
+   * symbols, on the same binding (GL unit 9). */
+  brushes(enabled: boolean, crownDetail: CrownDetail | undefined, treeSymbols: Palette | undefined): void;
   seasonCalendar(zone: ClimateZone | undefined, calendar: SeasonCalendar | undefined): void;
 }
 
@@ -153,8 +159,15 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   // RGBA16F: shore distance, openness, sky occlusion, horizon tangent toward the light (re-baked off the frame path
   // when the light azimuth changes; the previous texture stays until the new texels are ready).
   b.shoreRing(light ? 0 : mode);
-  const brushes = !light && styleTraits(look.style).forestBrushes && mode === 3;
-  b.brushes(brushes, light ? 'plain' : look.crownDetail);
+  const brushes = !light && styleTraits(look.style).forestBrushes && mode === 3,
+    symbols = treeSymbolsOn(look, mode);
+  b.brushes(brushes, light ? 'plain' : look.crownDetail, symbols ? pal : undefined);
+  // The paper map's lit land takes the shore ring's binding (natural looks only, mode >= 2): uHasLandBackdrop.
+  b.landBackdrop(symbols);
+  if (symbols) {
+    b.floats('uTreeWash', 4, treeSymbolWash(pal));
+    b.float('uTreeConifer', look.treeSymbols!.conifer);
+  }
   b.int('uPaperMap', styleTraits(look.style).paperMap ? 1 : 0);
   b.int('uRenderV2', light ? 0 : styleTraits(look.style).satelliteVariant);
   b.int('uV2WaterVisible', look.layers.water === false ? 0 : 1);

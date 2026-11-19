@@ -39,6 +39,17 @@ afterEach(() => {
   setDisplayQualityPreference('auto');
 });
 
+describe('paper map tree symbols on the ground', () => {
+  it('draw in the shaded paper ground at both qualities, on the brush atlas variant, never on other modes', () => {
+    const paper = { ...lookOf('parchment'), groundCover: false, treeSymbols: { conifer: 0.14 } };
+    setDisplayQualityPreference('full');
+    expect(lookVariant(paper, false)).toEqual({ mode: 0, v2: 0, forest: false, brushes: true });
+    setDisplayAppearanceQuality('light');
+    expect(lookVariant(paper, false)).toEqual({ mode: 0, v2: 0, forest: false, brushes: true });
+    expect(lookVariant({ ...paper, style: 'copernicus' }, false).brushes).toBe(false);
+  });
+});
+
 describe('flat light look policy', () => {
   it.each(['render-v2', 'parchment'] as const)('removes optional ground passes for %s and preserves full capture variants', style => {
     setDisplayQualityPreference('full');

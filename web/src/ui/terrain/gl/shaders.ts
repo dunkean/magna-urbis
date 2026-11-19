@@ -8,6 +8,7 @@
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../../../rust/bridge/terrainMaterial3d';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL } from '../../../../../rust/bridge/terrainForest';
+import { TREE_SYMBOLS_GLSL } from '../../../render/treeSymbolsGlsl';
 import { RENDER_V2_GLSL } from '../../../../../rust/bridge/terrainRenderV2';
 import { RENDER_V2_COAST_GLSL } from '../../../../../rust/bridge/terrainRenderV2Coast';
 import { UNDERDARK_GLSL } from '../../../../../rust/bridge/terrainRenderUnderdark';
@@ -209,6 +210,7 @@ ${NEURAL_EARTH_MATERIAL_GLSL}
 ${TERRAIN_3D_NOISE_GLSL}
 ${groundCoverInputsGlsl(RENDER_3D_MATERIAL_GLSL)}
 ${RENDER_3D_FOREST_GLSL}
+${TREE_SYMBOLS_GLSL}
 ${RENDER_V2_GLSL}
 ${WATER_FRESH_ICE_GLSL}
 ${WATER_REGIME_GLSL}
@@ -444,6 +446,18 @@ void main() {
       vec3 crowns=shadeTerrainGround(canopy,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
       if(uNight==1 && uMode<2)crowns=moonlight(crowns);
       color=mix(color,crowns,forestMapCover*landCover);
+    }
+    // Paper map woods (render/treeSymbolsGlsl.ts): their wash on the ground, then the engraved tree symbols over it.
+    if(uForestBrushes==1 && uMode==0)if(uGroundCapture==0){
+      // The overlay's lit land (cartographyProducts landBackdrop) on the shore ring's binding, box mipmaps of a
+      // transparent-on-water image: rgb / a is the land colour.
+      if(uHasLandBackdrop==1){
+        vec4 land=textureLod(uShoreRing,world/uMapW,max(0.,log2(uPx*float(textureSize(uShoreRing,0).x)/uMapW)));
+        color=mix(color,land.rgb/max(land.a,1e-3),land.a*landCover);
+      }
+      color=mix(color,treeWash(color,world),landCover);
+      vec4 trees=treeSymbols(world)*landCover;
+      color=trees.rgb+color*(1.-trees.a);
     }
 #endif
     // One V2 water evaluation per fragment (the three cases below only choose its inputs).

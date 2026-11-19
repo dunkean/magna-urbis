@@ -13,6 +13,7 @@ import { heightAt, pushLayer, SurfaceSamplerCache } from '../layers';
 import type { InputChange } from '../revision';
 import { glTexture, releaseHeightLayer, uploadHeightLayer, type GlHeightLayer } from './resources';
 import { cappedForest, deleteForestTextures, forestTexture, forestTextures, glLandDetailUnit, type ForestTextures } from './forest';
+import { landBackdropTexture } from '../../../render/treeSymbols';
 import type { HeightLayer, OverlayLayer, RetainedWaterOptions, SurfaceSample, TerrainLook, WaterLayer } from '../contract';
 
 export class GlInputs {
@@ -42,6 +43,9 @@ export class GlInputs {
   private readonly surface = new SurfaceSamplerCache();
   private waterInput?: WaterLayer;
   private overlayInput?: OverlayLayer;
+  /** The paper map's lit land and its upload (setLandBackdrop). */
+  landBackdrop?: WebGLTexture;
+  private landBackdropInput?: TexImageSource;
   private forestSource?: ForestField;
   private occupationSource?: ForestOccupation;
   private lakeInput?: Float32Array;
@@ -73,6 +77,7 @@ export class GlInputs {
     for (const d of lost.enhanced) this.setEnhancedDetail(d.layer);
     this.setWater(lost.waterInput, mapWidth);
     this.setOverlay(lost.overlayInput);
+    this.setLandBackdrop(lost.landBackdropInput);
     this.setForest(lost.forestSource, lost.occupationSource);
     this.retainedWater = lost.retainedWater;
   }
@@ -166,6 +171,15 @@ export class GlInputs {
     this.overlay = overlay ? glTexture(gl, overlay.n, overlay.n, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, overlay.rgba, gl.NEAREST) : undefined;
     return 'content';
   }
+  /** The paper map's lit land (render/treeSymbols.ts), a whole-map image with mipmaps; undefined drops it. */
+  setLandBackdrop(image: TexImageSource | undefined): InputChange {
+    const gl = this.gl;
+    if (image === this.landBackdropInput) return 'none';
+    this.landBackdropInput = image;
+    if (this.landBackdrop) gl.deleteTexture(this.landBackdrop);
+    this.landBackdrop = image ? landBackdropTexture(gl, image) : undefined;
+    return 'content';
+  }
   /** Render3D forest: texture uploads only. `undefined` restores the macro canopy of the material exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): InputChange {
     const gl = this.gl,
@@ -217,6 +231,7 @@ export class GlInputs {
     this.enhanced.forEach(this.release);
     if (this.lake) gl.deleteTexture(this.lake);
     if (this.overlay) gl.deleteTexture(this.overlay);
+    if (this.landBackdrop) gl.deleteTexture(this.landBackdrop);
     deleteForestTextures(gl, this.forest);
     if (this.occupation) gl.deleteTexture(this.occupation.texture);
     if (this.landDetail) gl.deleteTexture(this.landDetail.texture);

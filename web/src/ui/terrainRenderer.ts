@@ -21,6 +21,7 @@ export type TerrainRenderer = Pick<
   | 'setRetainedWater'
   | 'setWater'
   | 'setOverlay'
+  | 'setLandBackdrop'
   | 'setView'
   | 'setForest'
   | 'captureMap'

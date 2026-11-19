@@ -27,6 +27,7 @@ export interface RendererInputs {
   retainedWater?: { svg: string; width: number; options?: RetainedWaterOptions };
   water?: WaterLayer;
   overlay?: OverlayLayer;
+  landBackdrop?: HTMLCanvasElement;
   forest?: ForestField;
   occupation?: ForestOccupation;
 }
@@ -39,6 +40,7 @@ export function replayInputs(target: TerrainRenderer, inputs: RendererInputs): v
   target.setRetainedWater(inputs.retainedWater?.svg, inputs.retainedWater?.width, inputs.retainedWater?.options);
   target.setWater(inputs.water);
   target.setOverlay(inputs.overlay);
+  target.setLandBackdrop(inputs.landBackdrop);
   target.setForest(inputs.forest, inputs.occupation);
   if (inputs.view) target.setView(inputs.view.view, inputs.view.width, inputs.view.height);
 }
@@ -67,6 +69,9 @@ export class GpuInputs {
   private readonly surface = new SurfaceSamplerCache();
   private waterInput?: WaterLayer;
   private overlayInput?: OverlayLayer;
+  /** The paper map's lit land (setLandBackdrop) and its upload. */
+  landBackdrop?: GpuImage;
+  private landBackdropInput?: HTMLCanvasElement;
   /** The forest field as given (the uploaded one may be capped, or absent in the light profile). */
   private forestSource?: ForestField;
   private lakeInput?: Float32Array;
@@ -86,6 +91,7 @@ export class GpuInputs {
       retainedWater: this.retainedWater.input,
       water: this.waterInput,
       overlay: this.overlayInput,
+      landBackdrop: this.landBackdropInput,
       forest: this.forestSource,
       occupation: this.occupation?.data,
     };
@@ -180,6 +186,15 @@ export class GpuInputs {
     this.overlay = overlay ? gpuImage(this.device, overlay.n, overlay.n, 'rgba8unorm', overlay.rgba, 4) : undefined;
     return 'content';
   }
+  /** The paper map's lit land (render/treeSymbols.ts), a whole-map square image with mipmaps; undefined drops it. */
+  setLandBackdrop(image: HTMLCanvasElement | undefined): InputChange {
+    if (image === this.landBackdropInput) return 'none';
+    this.landBackdropInput = image;
+    releaseImage(this.landBackdrop);
+    const pixels = image?.getContext('2d')?.getImageData(0, 0, image.width, image.height).data;
+    this.landBackdrop = image && pixels ? rgbaImage(this.device, { n: image.width, rgba: new Uint8Array(pixels.buffer) }, true) : undefined;
+    return 'content';
+  }
   /** Render3D forest: texture uploads only. `undefined` restores the macro canopy of the material exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): InputChange {
     const device = this.device,
@@ -239,7 +254,7 @@ export class GpuInputs {
     releaseGpuLayer(this.base);
     this.details.forEach(releaseGpuLayer);
     this.enhanced.forEach(releaseGpuLayer);
-    for (const image of [this.lake, this.overlay, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.landDetail?.image, this.empty]) releaseImage(image);
+    for (const image of [this.lake, this.overlay, this.landBackdrop, this.coastDistance, this.shoreRing?.image, this.occupation?.image, this.landDetail?.image, this.empty]) releaseImage(image);
     this.releaseForest();
     this.riverBuffer?.destroy();
   }
