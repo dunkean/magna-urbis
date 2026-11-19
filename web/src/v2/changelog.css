@@ -1,0 +1,65 @@
+#changelog-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+#changelog-open svg {
+  display: block;
+  flex-shrink: 0;
+}
+#changelog-dialog {
+  width: min(760px, 94vw);
+  max-height: 85dvh;
+  overflow: hidden;
+}
+#changelog-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+#changelog-dialog > .dialog-head,
+#changelog-dialog > .hint,
+#changelog-dialog > .dialog-actions {
+  flex-shrink: 0;
+}
+#changelog-dialog .changelog-versions {
+  overflow: auto;
+  min-height: 0;
+  margin-top: 18px;
+  padding-inline-end: 12px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+#changelog-dialog section + section {
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+  padding-top: 22px;
+}
+#changelog-dialog h3 {
+  color: var(--gold);
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+#changelog-dialog ul {
+  margin: 0;
+  padding-inline-start: 20px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+#changelog-dialog li + li {
+  margin-top: 10px;
+}
+#changelog-dialog code {
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+#changelog-dialog .dialog-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+#changelog-dialog .dialog-actions a {
+  color: var(--gold);
+  font-size: 12px;
+  margin-inline-end: auto;
+}
