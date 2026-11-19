@@ -26,6 +26,7 @@ import {
   coastDirections,
   toggleCoastDirection,
   climateZoneBiome,
+  terrainCoastFields,
 } from './terrainControlSchema';
 import './terrainControls.css';
 import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
@@ -59,6 +60,9 @@ const ui = {
   extentHelp: copy('Square map. Choose its physical width and generation spacing. Changing spacing can change drainage for the same seed.', 'Carte carrée. Choisissez sa largeur physique et son pas de génération. Changer le pas peut modifier le drainage pour une même graine.'),
   unit: copy('Map distance unit', 'Unité de distance de la carte'),
   coasts: copy('Sea directions', 'Directions de la mer'),
+  coastBeaches: copy('Beaches', 'Plages'),
+  coastMixed: copy('Mixed coast', 'Mixte'),
+  coastCliffs: copy('Cliffs', 'Falaises'),
   coastHelp: copy('Combine directions freely. All eight surround the map with sea.', 'Combinez les directions. Les huit entourent la carte de mer.'),
   traceCoast: copy('Trace coastline…', 'Tracer le littoral…'),
   editTrace: copy('Edit traced coastline', 'Modifier le littoral tracé'),
@@ -526,6 +530,27 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   traceHint.className = 'hint terrain-coast-trace-hint';
   setText(traceHint, ui.traceHint);
   coasts.append(traceActions, traceHint);
+  const profilePresets = document.createElement('div');
+  profilePresets.className = 'terrain-presets coast-profile-presets';
+  coasts.append(profilePresets);
+  const profileButtons = new Map<number, HTMLButtonElement>();
+  for (const [share, label] of [
+    [0, ui.coastBeaches],
+    [0.35, ui.coastMixed],
+    [1, ui.coastCliffs],
+  ] as const) {
+    const preset = button(profilePresets, label, () => {
+      const s = bindings.getSettings();
+      writeSettingPath(s, 'terrain.coastProfile.smoothing', 1);
+      writeSettingPath(s, 'terrain.coastProfile.cliffs', share);
+      change();
+    });
+    preset.dataset.coastProfile = String(share);
+    profileButtons.set(share, preset);
+  }
+  const coastProfileForm = document.createElement('div');
+  coasts.append(coastProfileForm);
+  form(coastProfileForm, terrainCoastFields);
   const quickOptions = document.createElement('div');
   quickOptions.className = 'terrain-quick-options';
   root.append(quickOptions);
@@ -661,6 +686,12 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const metres = adaptedExtent(settings),
       factor = unitFactor(unit.value as PhysicalUnit);
     const isClassicEngine = settings.runtime?.backend === 'typescript';
+    coastProfileForm.hidden = isClassicEngine;
+    profilePresets.hidden = isClassicEngine;
+    for (const [share, preset] of profileButtons) {
+      preset.disabled = bindings.disabled?.() ?? false;
+      preset.setAttribute('aria-pressed', String(Number(get('terrain.coastProfile.smoothing')) === 1 && Number(get('terrain.coastProfile.cliffs')) === share));
+    }
     const effective = effectiveTerrainSettings(settings, metres);
     const capability = terrainCapability({ ...effective, backend: settings.runtime?.backend });
     const min = capability.minWidth,

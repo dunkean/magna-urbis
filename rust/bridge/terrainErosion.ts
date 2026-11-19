@@ -1,3 +1,5 @@
+import { coastProfile } from './terrainCoastProfile';
+import { cutCoastField } from './terrainCoastWasm';
 import phasorShader from './terrainPhasor.wgsl?raw';
 import { configureCompactPlan, phasorUniforms } from './terrainPhasor';
 import { seedRoot, seedSubset, stepSeed } from './generationSeed';
@@ -693,7 +695,8 @@ async function generateOnce(state: Context, settings: TerrainSettings, sourceN: 
         await mapHeader(count * 4);
         const source = new Float32Array(mappedHeader(count * 4), 0, count).slice();
         readback.unmap();
-        const cut = TerrainPipeline.cut_field(
+        const cut = cutCoastField(
+          TerrainPipeline,
           stepSeed(settings.generalSeed ?? settings.seed, 'relief-coast-cut'),
           settings.width,
           parameters[3] * 2400,
@@ -704,6 +707,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, sourceN: 
           kind === 0 ? base[5] : 0,
           kind === 0 ? base[4] : base[11],
           source,
+          coastProfile(settings),
         );
         device.queue.writeBuffer(output, 0, cut as GPUAllowSharedBufferSource);
         encoder = device.createCommandEncoder();

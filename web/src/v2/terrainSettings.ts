@@ -12,6 +12,7 @@ import type { ClimateValues } from '../../../rust/bridge/terrainClimate';
 import { parseTerrainSketch } from '../../../rust/bridge/terrainSketch';
 import { parseTerrainZones } from '../../../rust/bridge/terrainZones';
 import { validateTerrainModification } from '../../../rust/bridge/terrainModification';
+import { DEFAULT_COAST_PROFILE, coastProfile } from '../../../rust/bridge/terrainCoastProfile';
 import type { V2Settings } from './contracts';
 import { defaultSourceSpacing } from '../../../rust/bridge/terrainDefinition';
 import { seaCoastInputs, parseCoastTrace, type CoastTrace } from './coastTrace';
@@ -99,6 +100,7 @@ export function defaultTerrainSettings(): V2TerrainSettings {
   return {
     motifSize: 10000,
     environment: 'mixed',
+    coastProfile: { ...DEFAULT_COAST_PROFILE },
     islandMode: 'island',
     mountainMix: 0.5,
     erosion: 1,
@@ -167,6 +169,7 @@ export function effectiveTerrainSettings(settings: V2Settings, width: number): E
     zones: t.zones ? filledSymbolicZones(t.zones) : undefined,
     erosion: t.erosion ?? runtime?.erosion ?? 1,
     ...coast,
+    coastProfile: coastProfile(t),
     resolution: t.resolution ?? runtime?.resolution ?? 512,
     climateZone: zone,
     climate: CLIMATE_ZONE_BASE[zone],
@@ -212,6 +215,7 @@ export function validateTerrainSettings(value: unknown, allowTracedCoast = false
   if (value.coastTrace !== undefined) parseCoastTrace(value.coastTrace);
   const allowed = [
     'heightmap',
+    'coastProfile',
     'coastTrace',
     'modification',
     'zones',
@@ -307,6 +311,7 @@ export function validateTerrainSettings(value: unknown, allowTracedCoast = false
     climateValues: { temperature: [-30, 40], temperatureStd: [0, 3000], precipitation: [0, 6000], precipitationCv: [0, 200] },
     detailNoise: { amplitude: [0, 2], hurst: [0, 1.5], lacunarity: [1.2, 4], octaves: [1, 12], start: [0.25, 8], slope: [0, 2], flat: [0, 0.5], shore: [0, 50] },
     neuralTuning: { landScale: [0, 5], steps: [1, 32], noiseTemperature: [0.001, 10], noiseTemperatureStd: [0.001, 10], noisePrecipitation: [0.001, 10], noisePrecipitationCv: [0.001, 10], reliefScale: [0, 5], reliefFixed: [0, 5000], detail: [0, 5] },
+    coastProfile: { smoothing: [0, 1], cliffs: [0, 1], width: [50, 10000], relief: [0, 1], detail: [0, 2] },
     forest: { density: [0, 2], clearings: [0, 1] },
   };
   for (const [group, fields] of Object.entries(ranges))

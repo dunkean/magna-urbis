@@ -1,13 +1,13 @@
 /** Retained harbour platforms and furniture as prisms: quay walls down into the water, decks on piles, boats, masts, cranes
  * and sheds. Materials and water-relative furniture heights come from harbourStyle.ts,
  * shared with the 2D plan; bank decks meet the displayed 3D terrain. */
+import { CANAL } from './city/planLook';
 import type { Layout, Point, Quay, Shape } from '../../../rust/bridge/urban';
 import type { ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import { CityGlPacker, triangulatePolygons } from './cityGlBuild';
 import type { City3dHeight } from './city3dMeshes';
 import { harbourPlatform, harbourPrism } from './harbourStyle';
-import { CANAL } from './city/planLook';
 
 /** Weathered timber of piles and posts (final sRGB): a lit deck never reads white from above. */
 const PILE_TINT = '6b5640';
@@ -208,22 +208,50 @@ export function city3dQuays(layouts: readonly Layout[], heightAt?: City3dHeight,
   return layouts.flatMap((layout, li) => {
     const out: PlacedBuilding[] = [],
       furniture: { shape: Shape; volumes: ArchitectureVolume[]; ground: number }[] = [];
+    let boat: { material: string; engineDeck: number; deck: number } | undefined;
+    let crane: { material: string; engineDeck: number; deck: number } | undefined;
     (layout.structure?.quays ?? []).forEach((q: Quay, qi) => {
-      const prism = harbourPrism(q.kind, q.material, q.deck_z_m);
-      if (!prism || q.shape.outer.length < 3) return;
+      if (q.shape.outer.length < 3 || q.kind === 'basin') return;
+      const ring = q.shape.outer;
+      const centre = ring.reduce((p, v) => ({ x: p.x + v.x / ring.length, y: p.y + v.y / ring.length }), { x: 0, y: 0 });
+      const sample = (at?: City3dHeight): number => {
+        if (!at) return NaN;
+        const z = at(centre.x, centre.y);
+        if (Number.isFinite(z)) return z;
+        const levels = ring.map(p => at(p.x, p.y)).filter(Number.isFinite);
+        return levels.length ? levels.reduce((sum, v) => sum + v, 0) / levels.length : NaN;
+      };
+      // Planning water can stand metres above the displayed bed. Rebase every
+      // harbour item, including furniture, on the same surface as its quay.
+      // On an exposed bed the ground supplies the reference instead of the
+      // obsolete planning level. Keep each boat and crane assembly together.
+      const ground = sample(heightAt),
+        water = sample(waterAt);
+      const surface = Number.isFinite(water) ? water : ground;
+      let deckZ = Number.isFinite(surface) ? surface + 1 : q.deck_z_m;
+      if (Number.isFinite(ground) && ['kerb', 'crane', 'crane-jib', 'cargo', 'beacon'].includes(q.kind)) deckZ = ground + 0.02;
+      if (Number.isFinite(ground) && q.kind === 'boat-ashore') deckZ = ground + 0.8;
+      if (['cabin', 'mast', 'yard'].includes(q.kind) && boat?.material === q.material && boat.engineDeck === q.deck_z_m) deckZ = boat.deck;
+      if (q.kind === 'crane-jib' && crane?.material === q.material && crane.engineDeck === q.deck_z_m) deckZ = crane.deck;
+      if (q.kind === 'boat') boat = { material: q.material, engineDeck: q.deck_z_m, deck: deckZ };
+      if (q.kind === 'crane') crane = { material: q.material, engineDeck: q.deck_z_m, deck: deckZ };
+      const prism = harbourPrism(q.kind, q.material, deckZ);
+      if (!prism) return;
       // Timber piers/pontoons stay close to the displayed water, independently of bank decks.
-      if (waterAt && prism.timber && ['pier', 'landing', 'pontoon', 'raft'].includes(q.kind)) {
-        const levels = q.shape.outer.map(p => waterAt(p.x, p.y)).filter(Number.isFinite);
-        if (levels.length) {
-          const water = levels.reduce((sum, z) => sum + z, 0) / levels.length;
-          prism.top = water + 0.4;
-          prism.bottom = prism.top - 0.2;
+      if (Number.isFinite(surface) && prism.timber && ['pier', 'landing', 'jetty', 'pontoon', 'raft'].includes(q.kind)) {
+        prism.top = surface + 0.4;
+        prism.bottom = prism.top - 0.2;
+      }
+      if (heightAt && !prism.timber && ['quay', 'pier', 'landing', 'jetty', 'mole', 'breakwater', 'kerb'].includes(q.kind)) {
+        for (const p of [centre, ...ring]) {
+          const z = heightAt(p.x, p.y);
+          if (Number.isFinite(z)) prism.bottom = Math.min(prism.bottom, z - 0.1);
         }
       }
       const id = `city3d-quay:${li}:${qi}`,
         deck = slab(`${id}:deck`, q.shape, prism.bottom, prism.top, prism.timber, prism.tint, prism.side ?? prism.tint),
         volumes = [deck];
-      if (q.kind === 'quay' && heightAt) bankDeck(deck, q.shape, q.deck_z_m, heightAt, waterAt);
+      if (q.kind === 'quay' && heightAt) bankDeck(deck, q.shape, deckZ, heightAt, waterAt ?? heightAt);
       if (prism.ridge && q.shape.outer.length === 4 && !q.shape.holes.length) gable(deck, q.shape, prism.top, prism.ridge);
       if (prism.piles) {
         const ring = q.shape.outer,
@@ -237,6 +265,8 @@ export function city3dQuays(layouts: readonly Layout[], heightAt?: City3dHeight,
             const x = a.x + ((b.x - a.x) * d) / length,
               y = a.y + ((b.y - a.y) * d) / length,
               r = 0.22;
+            const bed = heightAt?.(x, y),
+              bottom = Number.isFinite(bed) ? Math.min(bed! - 0.1, prism.bottom - 0.3) : prism.top - 3.5;
             volumes.push(
               slab(
                 `${id}:post:${i}:${d}`,
@@ -249,7 +279,7 @@ export function city3dQuays(layouts: readonly Layout[], heightAt?: City3dHeight,
                   ],
                   holes: [],
                 },
-                prism.top - 3.5,
+                bottom,
                 prism.bottom - 0.2,
                 true,
                 PILE_TINT,
@@ -261,9 +291,9 @@ export function city3dQuays(layouts: readonly Layout[], heightAt?: City3dHeight,
       if (harbourPlatform(q.kind)) out.push(structure(id, q.kind, layout.culture, [q.shape], volumes, prism.bottom));
       else furniture.push({ shape: q.shape, volumes, ground: prism.bottom });
       // A stone quay wall stands in the 3D water: its paving is carried over the beach band in front of it.
-      const apron = q.kind === 'kerb' && !prism.timber ? kerbApron(q.shape, q.deck_z_m - 1, heightAt) : null;
+      const apron = q.kind === 'kerb' && !prism.timber ? kerbApron(q.shape, Number.isFinite(water) ? water : deckZ - 1, heightAt) : null;
       if (apron) {
-        const paving = harbourPrism('quay', 'stone', q.deck_z_m)!;
+        const paving = harbourPrism('quay', 'stone', deckZ)!;
         furniture.push({ shape: apron, volumes: [slab(`${id}:apron`, apron, paving.bottom, paving.top, false, paving.tint, paving.side ?? paving.tint)], ground: paving.bottom });
       }
     });

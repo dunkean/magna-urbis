@@ -54,6 +54,8 @@ struct Build {
 struct Coast {
     mask: u32,
     mode: String,
+    #[serde(default, rename = "coastProfile")]
+    profile: magna_urbis_core::CoastProfile,
     #[serde(default)]
     surface: bool,
 }
@@ -135,6 +137,7 @@ fn apply(op: &str, raw: &[u8], plane: Vec<f32>, state: &mut Session) -> ApiResul
                 return Err("Invalid coast mask (integer 0 to 255).".into());
             }
             let terrain = state.terrain.as_mut().ok_or(MISSING)?;
+            terrain.set_coast_profile(coast.profile)?;
             if coast.surface {
                 terrain.configure_coast(coast.mask, &coast.mode)?;
                 terrain.set_coast_surface(&plane)?;

@@ -285,11 +285,14 @@ export function paintMinimalMap(
   }
   if (recipe.buildings.visible && layers.city !== false) {
     BUILDING_SIZES.forEach((size, i) => {
-      const alpha = fade((size * scale - 1) / 0.8);
-      fill(`building${i}`, palette.urban.mass, alpha);
-      stroke(`building${i}`, palette.urban.massEdge, 0.55, 0.08, 0.4, fade((size * scale - 5) / 2));
+      const alpha = fade((size * scale - 0.45) / 0.65);
+      fill(`building${i}`, size >= 32 ? palette.urban.landmark : palette.urban.mass, alpha);
+      // Keep individual footprints legible in small previews: the former 0.4 m cap reduced
+      // edges to an invisible fraction of a pixel at town scale. Paths remain batched.
+      stroke(`building${i}`, palette.urban.massEdge, 0.65, 0.08, 8, fade((size * scale - 0.6) / 0.6));
     });
     fill('landmark', palette.urban.landmark);
+    stroke('landmark', palette.urban.landmarkEdge, 0.8, 0.1, 10);
     stroke('wall', palette.urban.wall, 1.5, 1, 7);
   }
   if (recipe.networks.roads.visible && layers.streets !== false) {

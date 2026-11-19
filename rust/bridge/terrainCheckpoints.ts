@@ -1,5 +1,6 @@
 import { generationStageActive, isCompactProcedural, posteriorSettings, windSettings, type GenerationStage } from './terrainGenerationRecipe';
 import type { TerrainSettings } from './terrain';
+import { coastProfile } from './terrainCoastProfile';
 import { stepSeed } from './generationSeed';
 
 export const CORE_STAGES = ['initialize', 'regional', 'regionalFinish', 'reconstruct', 'amplitude', 'ridged', 'surface', 'normalize'] as const;
@@ -61,8 +62,8 @@ export function proceduralSignatures(s: TerrainSettings): Map<GenerationStage, s
     phasor: [s.phasor, climate],
     posterior: posteriorSettings(s),
     wind: windSettings(s),
-    coastCut: [s.coastMask ?? 0, s.islandMode ?? 'island', r.coastAfter ?? 'initialize'],
-    coasts: [s.coastMask ?? 0, s.islandMode ?? 'island', r.surfaceN, r.coastIterations, r.coastIncision, r.coastThermal, r.coastDiffusion, pick('surfaceIncision', 'surfaceThermal', 'surfaceDiffusion', 'surfaceCarve', 'talus')],
+    coastCut: [s.coastMask ?? 0, s.islandMode ?? 'island', coastProfile(s), r.coastAfter ?? 'initialize'],
+    coasts: [s.coastMask ?? 0, s.islandMode ?? 'island', coastProfile(s), r.surfaceN, r.coastIterations, r.coastIncision, r.coastThermal, r.coastDiffusion, pick('surfaceIncision', 'surfaceThermal', 'surfaceDiffusion', 'surfaceCarve', 'talus')],
     sampling: [s.resolution, s.refine, s.detailNoise],
     hydrology: [s.hydrology, climate],
   };

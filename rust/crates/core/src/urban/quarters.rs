@@ -4332,6 +4332,9 @@ fn generate_once(
     }
     lap("squares");
     if cfg.monument != "none"
+        // A monument precinct must not consume the settlement's only residential
+        // block. Camps keep their whole ring/row plan in that one block.
+        && blocks.iter().filter(|b| b.kind == "block").count() > 1
         && let Some(b) = blocks
             .iter_mut()
             .filter(|b| b.kind == "block")

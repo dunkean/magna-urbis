@@ -123,6 +123,7 @@ export const STAGES: readonly StageDef[] = [
       'terrain.underdarkTunnels',
       'widget:coasts',
       'terrain.islandMode',
+      'terrain.coastProfile.*',
     ],
     quick: ['widget:source-mode', 'widget:extent-km', 'options.biome', 'terrain.relief'],
     progress: [
