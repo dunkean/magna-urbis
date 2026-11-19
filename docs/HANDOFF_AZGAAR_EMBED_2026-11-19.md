@@ -1,4 +1,8 @@
-# Azgaar city iframe — handoff, 2026-11-19
+# Azgaar city iframe — session handoff, 2026-11-19
+
+This is an archived session handoff, not a current validation report. Measurements and completed
+checks describe the original checkout before the display port. Use [AZGAAR_EMBED.md](AZGAAR_EMBED.md)
+for the durable integration contract; rerun the checks after rebuilding the ported engines.
 
 ## State at stop
 

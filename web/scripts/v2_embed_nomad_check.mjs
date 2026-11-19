@@ -1,4 +1,4 @@
-/** Regression: a temple flag must not turn Karak Ordu's only residential block into open land. */
+/** Manual embed regression CLI: requesting a temple must leave dwellings in Karak Ordu’s only residential block. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';

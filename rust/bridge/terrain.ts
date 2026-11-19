@@ -1,6 +1,7 @@
 import { validateProceduralRecipe, erosionBiome, posteriorSettings, windSettings, stageEnabled, PROCEDURAL_RECIPE_VERSION, isCompactProcedural, type ProceduralRecipe, type GenerationControl } from './terrainGenerationRecipe';
 import { generateCpuTerrain, releaseCpuCheckpoints } from './terrainCpuPipeline';
 import { coastProfile } from './terrainCoastProfile';
+import { configureEngineCoast, setEngineCoast } from './terrainCoastWasm';
 import { seedRoot, seedSubset, stepSeed } from './generationSeed';
 import { coreOperations, proceduralSignatures, TerrainFieldCheckpoints } from './terrainCheckpoints';
 import { fingerprintBytes, fingerprintNumbers } from '../../web/src/v2/terrainFingerprint';
@@ -517,8 +518,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   const surfaceInput = settings.sketch?.processing;
   const coastMask = !stageEnabled(settings, 'coasts') ? 0 : settings.relief === 'cavern' || settings.underdark ? 0 : (settings.coastMask ?? 0);
   const islandMode = settings.islandMode ?? 'island';
-  const profile = coastProfile(settings),
-    profileJson = JSON.stringify(profile);
+  const profile = coastProfile(settings);
   const supported = GPU_RELIEFS.includes(settings.relief);
   const gpu = mode !== 'wasm' && supported ? prepareGpu(mode, settings.relief).catch(() => undefined) : undefined;
   // Vite embeds this asset in the standalone HTML (and in the inline worker).
@@ -820,7 +820,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       wind = windSettings(settings);
     const hasCpuPost = (stageEnabled(settings, 'posterior') && posterior.mode !== 'none') || (stageEnabled(settings, 'wind') && wind.iterations > 0 && wind.transport > 0);
     if (!cpuPipeline && settings.procedural && (hasCpuPost || (!compact && stageEnabled(settings, 'phasor', false))) && !['gpu-erosion-f32', 'compact-gpu-f32'].includes(generationBackend) && !neural && !surfaceInput && !nativeGeneration && !settings.zones) {
-      engine!.set_coast(coastMask, islandMode, profileJson);
+      setEngineCoast(engine!, coastMask, islandMode, profile);
       const sampled = engine!.physical_height_field();
       const height = await finishSource(sampled, !compact);
       engine!.free();
@@ -918,7 +918,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       await nativeRelief.coast(coastMask, islandMode, savedCoast ? undefined : coastTuning, savedCoast, profile);
       if (coastMask) coastBackend = 'native';
     } else if (savedCoast) {
-      engine!.configure_coast(coastMask, islandMode, profileJson);
+      configureEngineCoast(engine!, coastMask, islandMode, profile);
       engine!.set_coast_surface(savedCoast);
       coastBackend = 'cpu';
     }
@@ -927,7 +927,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       try {
         const compiled = await pipelineReady;
         if (!compiled || readyGpu.context.lost) throw new Error('WebGPU unavailable');
-        engine!.configure_coast(coastMask, islandMode, profileJson);
+        configureEngineCoast(engine!, coastMask, islandMode, profile);
         coastSampler = new GpuTerrainSampler(readyGpu.context, compiled.pipeline, mode, engine!);
         const source = coastSampler.prepareCoastField(settings);
         const height = await erodeGpuCoast(readyGpu.context, settings, source, engine!.coast_erosion_parameters(), progress);
@@ -942,7 +942,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     if (!nativeRelief && !coastBackend) {
       if (coastTuning) set_erosion_tuning(coastTuning);
       try {
-        engine!.set_coast(coastMask, islandMode, profileJson);
+        setEngineCoast(engine!, coastMask, islandMode, profile);
       } finally {
         if (coastTuning) set_erosion_tuning(Float64Array.from(EROSION_SETTINGS, name => tuning[name] ?? NaN));
       }

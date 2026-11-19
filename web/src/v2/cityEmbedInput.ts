@@ -1,3 +1,4 @@
+/** Public iframe input adapter, used by cityEmbed and contract tests to reuse the studio's city import and recipe validation. */
 import { parseAzgaarBurg } from './externalCity/azgaar';
 import { applyExternalCity } from './externalCity/apply';
 import { defaultSettings } from './settings';
@@ -13,8 +14,13 @@ export function cityEmbedSource(url: URL): string {
   const burg = fragment.get('burg');
   if (burg !== null) {
     if (burg.length > 65536) throw new Error('City payload is too large.');
-    const data = JSON.parse(burg);
-    if (!data || data.format !== 'fmg-burg-v1') throw new Error('Expected an fmg-burg-v1 city payload.');
+    let data: unknown;
+    try {
+      data = JSON.parse(burg);
+    } catch {
+      throw new Error('Invalid city payload.');
+    }
+    if (!data || typeof data !== 'object' || !('format' in data) || data.format !== 'fmg-burg-v1') throw new Error('Expected an fmg-burg-v1 city payload.');
     return burg;
   } else {
     const p = url.searchParams;
@@ -60,6 +66,8 @@ export function cityEmbedSettings(url: URL): V2Settings {
 
 export function cityEmbedEditorUrl(source: URL): string {
   const editor = new URL('./v2.html', source);
+  const language = source.searchParams.get('lang');
+  if (language) editor.searchParams.set('lang', language);
   editor.hash = new URLSearchParams({ city: cityEmbedSource(source) }).toString();
   return editor.href;
 }

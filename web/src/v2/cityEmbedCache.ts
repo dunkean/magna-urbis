@@ -1,4 +1,4 @@
-/** Small preview thumbnails only; independent of projects, browser models and engine caches. */
+/** cityEmbed's bounded, build-specific preview thumbnails. Avoid regenerating repeat inputs without retaining worlds or engine workers. */
 const KEY = 'magna-urbis-city-previews-v1',
   LIMIT = 6,
   MAX_IMAGE = 256000;

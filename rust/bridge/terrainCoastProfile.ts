@@ -1,4 +1,4 @@
-/** Independent controls for shoreline geometry and the dry coastal apron. */
+/** Shared coast defaults, normalized by terrainSettings and the CPU/GPU/native bridges before passing profiles to Rust. */
 export interface CoastProfile {
   smoothing: number;
   width: number;

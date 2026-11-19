@@ -1,4 +1,4 @@
-/** Sample the existing WASM's Rust symbols through Chromium's CPU profiler. No Rust rebuild. */
+/** Manual CPU profiling CLI for an already served embed. Samples the generation worker to attribute layout time without rebuilding Rust. */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

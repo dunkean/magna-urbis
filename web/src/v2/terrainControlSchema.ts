@@ -1,3 +1,4 @@
+/** Public terrain control catalogue, read by terrainControls, terrainbench and the stage registry. This cohesive schema table keeps engine units and bilingual labels together. */
 import type { ParameterField, ParameterChoice } from './parameterForm';
 import neuralModels from '../../../rust/models/neural-earth/catalog.json';
 

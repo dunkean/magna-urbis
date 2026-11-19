@@ -1,3 +1,4 @@
+/** Terrain/decor adapter shared by renderScene and urban3d so Minimal/embed views need no 3D viewer dependency. */
 import type { World } from '../gen/types';
 import type { Decor } from '../ui/decor';
 import type { V2Settings } from './contracts';
@@ -8,7 +9,6 @@ import { effectiveTerrainSettings } from './terrainSettings';
 
 const rasterMetrics = new WeakMap<ReturnType<typeof rustSettlementRaster>, { minHeight: number; maxHeight: number; land: number }>();
 
-/** Shared terrain adapter, independent of the 3D viewer and its display modules. */
 export function v2WorldDecor(world: World, settings: V2Settings): Decor {
   const retained = retainedDecorOf(world.terrain);
   if (retained) return retained;
@@ -30,6 +30,7 @@ export function v2WorldDecor(world: World, settings: V2Settings): Decor {
   const { minHeight, maxHeight, land } = metrics,
     native = nativeTerrainOf(world),
     configuration = effectiveTerrainSettings(settings, world.mapSize);
+  // The zone names the decor; its effective values travel with it.
   const climate = configuration.climateZone ?? configuration.climate ?? 'temperate';
   const query = new URLSearchParams({ climate });
   for (const [key, value] of Object.entries(configuration.climateValues ?? {})) query.set(key, String(value));

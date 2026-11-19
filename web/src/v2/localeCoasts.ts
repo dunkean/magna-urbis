@@ -1,3 +1,4 @@
+/** Coast profile copy consumed by localeMessages; terrainControlSchema registers the English/French source pairs. */
 const sources = [
   'Coastal smoothing',
   '0 keeps cliffs; 1 creates low coastal ground for beaches and harbours, without smoothing the shoreline.',

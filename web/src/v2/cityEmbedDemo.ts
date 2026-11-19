@@ -1,4 +1,4 @@
-/** Varied but coherent cities for exploring the embed; every result remains a shareable FMG-style URL. */
+/** cityEmbed's demonstration profiles: randomize coherent city inputs while keeping every result shareable as an FMG-style URL. */
 const profiles = [
   { base: 'English', type: 'Generic', name: 'Brackenford', biome: 'Temperate deciduous forest', temperature: 12, rain: 900, elevation: 120, min: 500, max: 12000 },
   { base: 'Nordic', type: 'Naval', name: 'Kaldvik', biome: 'Taiga', temperature: 3, rain: 800, elevation: 40, min: 150, max: 5000 },
@@ -45,5 +45,7 @@ export function randomCityEmbedUrl(current: URL, random: () => number = Math.ran
     hub: flag(0.6),
     farms: flag(0.7),
   }).toString();
+  const language = current.searchParams.get('lang');
+  if (language) url.searchParams.set('lang', language);
   return url;
 }

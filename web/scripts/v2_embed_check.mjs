@@ -1,4 +1,4 @@
-/** Qualify the production preview inside an ordinary cross-origin, sandboxed FMG-sized iframe. */
+/** Manual production-embed qualification CLI. Serves the existing Vite artifact in a sandboxed iframe; never builds the engine. */
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -168,7 +168,7 @@ try {
   await page.waitForURL(url => url.searchParams.get('cultureBase') === 'Chinese');
   await page.locator('html[data-state="ready"],html[data-state="error"]').waitFor({ timeout: 180000 });
   assert.equal(await page.locator('html').getAttribute('data-state'), 'ready', await page.locator('#status').textContent());
-  assert.match(await page.locator('#demo-params').textContent(), /Chinese.*hab\./);
+  assert.match(await page.locator('#demo-params').textContent(), /Chinese.*people/);
   await page.screenshot({ path: resolve(artifacts, 'randomized.png') });
   result.randomized = page.url();
   await page.goto(`${host}?${new URLSearchParams({ src: `${base}embed.html?preview=1#burg=bad` })}`);

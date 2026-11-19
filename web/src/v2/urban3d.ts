@@ -2,7 +2,6 @@ import { underdarkSceneLook } from '../render/underdarkLighting';
 import { cityGroundSettings, cityGroundLook } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
 import { v2WorldDecor } from './worldDecor';
-export { v2WorldDecor } from './worldDecor';
 import { decorWater3d } from '../ui/decorWater3d';
 import { paintSeaCover } from '../render/seaCover';
 import { cityRegionalStreets, usesNativeHouseRenderer } from '../render/cityContract';

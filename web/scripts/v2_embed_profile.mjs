@@ -1,4 +1,4 @@
-/** Profile the shipped embed without rebuilding it; instrumentation lives only in a fresh browser context. */
+/** Manual profiling CLI for the served embed. Records generation timings in disposable contexts without instrumenting production sources. */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

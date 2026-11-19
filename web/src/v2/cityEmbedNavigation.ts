@@ -1,6 +1,6 @@
+/** cityEmbed's pointer and keyboard navigation; the shared view math drives both retained maps and cached thumbnails. */
 import { panBy, zoomAt, type View } from '../render/view';
 
-/** The same screen-space camera drives retained vector maps and cached thumbnails. */
 export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, enabled: () => boolean) {
   let camera: View = { cx: 0, cy: 0, scale: 1 };
   const controller = new AbortController(),

@@ -3,8 +3,20 @@ import { cityEmbedSettings, cityEmbedEditorUrl, cityEmbedView } from '../../src/
 import { decodeCityCode } from '../../src/v2/cityCode';
 import type { World } from '../../src/gen/types';
 import { randomCityEmbedUrl } from '../../src/v2/cityEmbedDemo';
+import { cityEmbedMessages, cityEmbedSummary } from '../../src/v2/cityEmbedMessages';
+import { registerMessages, translate } from '../../src/v2/i18n';
 
 describe('city iframe contract', () => {
+  it('registers French UI copy and preserves the requested language in navigation', () => {
+    registerMessages(cityEmbedMessages);
+    expect(translate('Generating city…', 'fr')).toBe('Génération de la ville…');
+    expect(translate('🎲 Randomize city', 'fr')).toBe('🎲 Tout changer');
+    expect(translate('City payload is too large.', 'fr')).toBe('Les données de la ville sont trop volumineuses.');
+    const url = new URL('https://example.org/sub/embed.html?preview=1&name=Harbour&population=2500&lang=fr');
+    expect(new URL(cityEmbedEditorUrl(url)).searchParams.get('lang')).toBe('fr');
+    expect(randomCityEmbedUrl(url, () => 0.3).searchParams.get('lang')).toBe('fr');
+    expect(cityEmbedSummary(cityEmbedSettings(url).options, 'Imported culture')).toContain('Imported culture');
+  });
   it('randomizes the actual city inputs and replaces a rich payload instead of leaving it in precedence', () => {
     const old = new URL('https://example.org/sub/embed.html?preview=1&cultureBase=English&population=2500&seed=old#burg=old-payload');
     const next = randomCityEmbedUrl(old, () => 0.3);
@@ -43,6 +55,7 @@ describe('city iframe contract', () => {
   });
 
   it('shows invalid payload errors rather than generating an unrelated default city', () => {
+    expect(() => cityEmbedSettings(new URL('https://example.org/embed.html#burg=bad'))).toThrow('Invalid city payload.');
     expect(() => cityEmbedSettings(new URL('https://example.org/embed.html?preview=1'))).toThrow('No city data');
     expect(() => cityEmbedSettings(new URL('https://example.org/embed.html#burg=%7B%22format%22:%22unknown%22%7D'))).toThrow('fmg-burg-v1');
     expect(() => cityEmbedSettings(new URL('https://example.org/embed.html#burg=' + 'x'.repeat(65537)))).toThrow('too large');

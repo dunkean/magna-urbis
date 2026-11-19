@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2WorldDecor, v2Terrain3dSurface, v2Terrain3dGround, v2Terrain3dView, v2CityViewPatch, createV2Terrain3dSampler } from '../src/v2/urban3d';
+import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2Terrain3dSurface, v2Terrain3dGround, v2Terrain3dView, v2CityViewPatch, createV2Terrain3dSampler } from '../src/v2/urban3d';
+import { v2WorldDecor } from '../src/v2/worldDecor';
 import { makeOptions } from '../src/gen/options';
 import type { World } from '../src/gen/types';
 import type { RustTownSnapshot } from '../src/v2/rustUrban';

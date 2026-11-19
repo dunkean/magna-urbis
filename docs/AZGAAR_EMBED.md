@@ -11,11 +11,12 @@ retains the full vector renderer. A new application build invalidates these thum
 After web publication, the endpoint is `https://magna-urbis.org/embed.html`.
 For development, use `http://127.0.0.1:5174/embed.html` with `npm run dev:v2`.
 
-Opened directly, the preview includes **Tout changer**, which randomizes culture, population,
+Opened directly, the preview includes **Randomize city** (French: **Tout changer**), which randomizes culture, population,
 geography and settlement features, with a short parameter summary. An ordinary embedded iframe
 keeps these demonstration controls hidden; add `demo=1` to show them inside an iframe too.
 The map supports drag-to-pan, wheel zoom towards the cursor, touch pinch, double-click zoom,
-and + / − / recenter buttons. With the map focused, +, −, 0 and arrow keys also work. Cached
+and + / − / recenter buttons. The `lang` query parameter and the saved interface preference
+select the same language as the studio; English is the default. With the map focused, +, −, 0 and arrow keys also work. Cached
 thumbnails can be panned and zoomed as images; freshly generated maps retain vector detail.
 
 ## Simple link

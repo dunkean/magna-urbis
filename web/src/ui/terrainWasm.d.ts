@@ -122,9 +122,9 @@ declare module '*magna_urbis_wasm.js' {
     erosion_spacing(): number | undefined;
     physical_height_field(): Float32Array;
     physical_cave_field(): Uint8Array;
-    set_coast(mask: number, mode: string): void;
+    set_coast(mask: number, mode: string, profile?: string): void;
     coast_parameters(): Float32Array;
-    configure_coast(mask: number, mode: string): void;
+    configure_coast(mask: number, mode: string, profile?: string): void;
     coast_erosion_parameters(): Float32Array;
     set_coast_surface(heights: Float32Array): void;
     sampling_parameters(): Float64Array;
