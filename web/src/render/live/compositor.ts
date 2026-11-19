@@ -334,6 +334,13 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     fence = null;
     return false;
   };
+  /** Both the work loop and the rest planner submit preparation to the same GPU queue. */
+  const fenceWork = (started: number): void => {
+    if (performance.now() - started > 0.3 && !lost) {
+      fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      gl.flush();
+    }
+  };
   // --- the map drape of the tilted frames ----------------------------------------------------------------------------
   const drape = new MapDrape(gl, { mapSize: options.mapSize, invalidate: options.invalidate });
   stats.drape = drape.stats;
@@ -380,10 +387,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       const started = performance.now(),
         pending = workSlice(budgetMs, refine);
       // A slice that did something (the layers' own measure is their time): fenced, and flushed so the fence leaves now.
-      if (performance.now() - started > 0.3 && !lost) {
-        fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-        gl.flush();
-      }
+      fenceWork(started);
       return pending;
     } finally {
       busy--;
@@ -682,6 +686,11 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     advanceLayer(name, budgetMs) {
       const layer = layers[name];
       if (!layer?.work || lost || disposed || !init()) return false;
+      if (gpuBehind()) {
+        stats.pending[name] = true;
+        schedule();
+        return true;
+      }
       busy++;
       let more = false;
       try {
@@ -690,6 +699,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         more = layer.work(budgetMs, frameValid ? frame : undefined);
         noteLiveUnit(WORK_UNIT[name], unit);
         resetLiveState(gl, null, frame.width, frame.height);
+        fenceWork(unit);
       } catch (error) {
         fail(name, error);
       } finally {
