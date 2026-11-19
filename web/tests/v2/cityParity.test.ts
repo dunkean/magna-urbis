@@ -646,7 +646,7 @@ describe('V2 and City Bench stay in sync', () => {
     expect(city3d).toContain('withoutUrbanPlan(requestedLayers)');
     expect(read('../../src/ui/terrainUrban.ts')).toContain('withoutUrbanPlan(cityLook().layers)');
     expect(read('../../src/render/cartography/structures.ts')).toContain('c.world.site && deps.urbanPlan?.() !== false) drawSiteMarker(');
-    expect(read('../../src/v2/display/cartographyProducts.ts')).toContain('urbanPlan: () => this.map.resolved?.city.plan !== false,');
+    expect(read('../../src/v2/display/cartographyProducts.ts')).toContain('urbanPlan: () => !!this.map.resolved && cityOverlayPlanMarks(this.map.resolved),');
     // Dashed refused-lot outlines are plan lines in both draw paths.
     expect(read('../../src/render/city/canvas/town.ts')).toContain('layers.planLines !== false && o.refusedParcels?.size');
     expect(read('../../src/render/city/gl/styleTables.ts')).toContain("layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size");

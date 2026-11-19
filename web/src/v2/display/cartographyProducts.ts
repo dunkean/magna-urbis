@@ -11,7 +11,7 @@ import { rasterizeSvg as imageOf } from '../../render/svgRaster';
 import { RetainedBudget } from '../../render/retainedBudget';
 import { getLanguage } from '../i18n';
 import { getDistanceUnit } from '../units';
-import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions } from '../../render/cityEnvironment';
+import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions, cityOverlayPlanMarks } from '../../render/cityEnvironment';
 import { displayQualityFor } from '../../render/displayQuality';
 import type { World, LandKind } from '../../gen/types';
 import type { City3dPhysicalGround as PhysicalGround } from '../../ui/city3d';
@@ -234,7 +234,7 @@ export class CartographyProducts implements Cartography {
       terrain: () => this.landBackdrop(),
       scene: built,
       mask,
-      urbanPlan: () => this.map.resolved?.city.plan !== false,
+      urbanPlan: () => !!this.map.resolved && cityOverlayPlanMarks(this.map.resolved),
       roadLook: r.composition.networks.roads.look,
       roadStyle: () => {
         const c = this.map.resolved!.composition;

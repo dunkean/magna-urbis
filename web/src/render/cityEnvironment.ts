@@ -69,13 +69,15 @@ export function cityForestSettings(query: URLSearchParams) {
 
 /** The vector water remains visible through opaque rural ground washes. */
 export const cityWaterCutsLand = (r: ResolvedAppearance): boolean => r.composition.networks.water.visible && r.composition.networks.water.look === 'ink';
+/** The dashed site reserve is a planning annotation, never part of a satellite ground. */
+export const cityOverlayPlanMarks = (r: ResolvedAppearance): boolean => r.city.plan && !r.ground.traits.satelliteVariant;
 /** A cached vector scene must be rebuilt when its layer ownership changes. */
 export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.stringify([r.ground.traits.family, r.ground.traits.fantasy, r.composition.vegetation.cartographic, atlasPlate(r), r.quality === 'light']);
 
 /** Both 2D hosts use the raster tile renderer and the retained map extent for decorative field scale. */
 export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number) {
   const fullLanduse = cityOverlayLandKinds({ ...r, quality: 'full' });
-  return { transparentBackground: true, raster: true, vegetation: r.vegetation.symbols, furrowReferenceSize: mapSize, mask: { landuse: cityOverlayLandKinds(r) }, ...(r.quality === 'light' && fullLanduse !== true ? { fullLanduse } : {}), urbanPlan: () => r.city.plan };
+  return { transparentBackground: true, raster: true, vegetation: r.vegetation.symbols, furrowReferenceSize: mapSize, mask: { landuse: cityOverlayLandKinds(r) }, ...(r.quality === 'light' && fullLanduse !== true ? { fullLanduse } : {}), urbanPlan: () => cityOverlayPlanMarks(r) };
 }
 
 /** Whole crowns remain readable at near town scale, including the narrower bench viewport. */

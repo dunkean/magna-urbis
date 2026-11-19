@@ -13,6 +13,9 @@ export interface TownRasterTile {
 }
 export function townRasterLayout(bounds: readonly Rect4[]): { rect: Rect4; scale: number; width: number; height: number; town: number }[] {
   return bounds.flatMap((b, town) => {
+    // A placed town without an urban plan has the empty extent (+Infinity, -Infinity).
+    // It has no pixels to bake; passing that rectangle to the spatial bins cannot terminate.
+    if (![b.minX, b.minY, b.maxX, b.maxY].every(Number.isFinite) || b.maxX < b.minX || b.maxY < b.minY) return [];
     const width = Math.max(1, b.maxX - b.minX + 16),
       height = Math.max(1, b.maxY - b.minY + 16);
     // Full close-detail geometry, up to four pixels/metre and four megapixels per town.

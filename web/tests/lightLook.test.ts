@@ -9,7 +9,7 @@ import type { TerrainLook } from '../src/ui/terrain/contract';
 import { landPainters, paintLandUseSteps } from '../src/render/cartography/landuse';
 import { paintTextureLayerSteps } from '../src/render/cartography/symbols';
 import { paintFieldTexture } from '../src/render/cartography/fields';
-import { cityOverlayLandKinds } from '../src/render/cityEnvironment';
+import { cityOverlayLandKinds, cityCountrysideCanvasOptions } from '../src/render/cityEnvironment';
 import { presetComposition } from '../src/render/composition';
 import { resolveAppearance } from '../src/render/appearanceRecipe';
 
@@ -51,6 +51,13 @@ describe('paper map tree symbols on the ground', () => {
 });
 
 describe('flat light look policy', () => {
+  it.each(['satellite', 'satellite-light'] as const)('omits dashed town reserve outlines from %s, including exports', style => {
+    for (const target of ['view2d', 'view3d', 'export'] as const) {
+      const appearance = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+      expect(appearance.city.plan).toBe(true);
+      expect(cityCountrysideCanvasOptions(appearance, 4000).urbanPlan()).toBe(false);
+    }
+  });
   it('keeps the satellite terrain and vegetation passes in the fast preset', () => {
     const look = lookOf('render-v2');
     setDisplayQualityPreference('full');

@@ -117,6 +117,43 @@ function fixture() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('live overlay layer', () => {
+  it('uses the fixed cadastral sheet for drape tiles at any scale, DPR and quality without recording or replay', () => {
+    const f = fixture();
+    f.host.fixedRaster = () => true;
+    f.host.key = () => 'fixed-cadastre';
+    for (let i = 0; i < 4; i++) f.layer.work!(10000, f.frame());
+    const recordings = vi.mocked(f.host.record).mock.calls.length;
+    const bakes = vi.mocked(f.raster.bake).mock.calls.length;
+    vi.mocked(f.raster.replayLive).mockClear();
+    const tile = { ...f.tile(), scale: 64, dpr: 3, light: true, rect: { minX: -125, maxX: 125, minY: -125, maxY: 125 } };
+    expect(f.layer.drape!.ready(tile)).toBe(true);
+    expect(f.layer.drape!.paint(tile)).toBe(false);
+    expect(tile.put).toHaveBeenCalledTimes(2);
+    expect(tile.group).not.toHaveBeenCalled();
+    expect(f.raster.replayLive).not.toHaveBeenCalled();
+    expect(f.host.record).toHaveBeenCalledTimes(recordings);
+    expect(f.raster.bake).toHaveBeenCalledTimes(bakes);
+    // The sheet's first band is [-100,100]x[-100,0], its north is at v=1.
+    expect(tile.put.mock.calls[0].slice(1)).toEqual([-0.125, 1.25, 1.125, -1.25, 1, 0, 0, 1, 1]);
+  });
+
+  it('prepares a single fixed sheet when opening directly in 3D and waits for its snapshots', () => {
+    const f = fixture();
+    f.host.fixedRaster = () => true;
+    f.host.key = () => 'fixed-cadastre';
+    const frame = { ...f.frame(), camera: { ...f.frame().camera, tilted: true } };
+    const tile = { ...f.tile(), scale: 16, dpr: 2, light: true };
+    expect(f.layer.drape!.ready(tile)).toBe(false);
+    for (let i = 0; i < 4; i++) f.layer.work!(10000, frame);
+    expect(f.layer.drape!.ready(tile)).toBe(true);
+    expect(f.host.record).toHaveBeenCalledTimes(2);
+    const recordings = vi.mocked(f.host.record).mock.calls.length;
+    f.layer.drape!.paint(tile);
+    f.layer.work!(10000, { ...frame, view: { ...frame.view, scale: 64 }, dpr: 3 });
+    expect(f.host.record).toHaveBeenCalledTimes(recordings);
+    expect(f.raster.bakeSteps).not.toHaveBeenCalled();
+  });
+
   it('keeps fixed cadastral snapshots through zoom and pixel-ratio changes without vector replay', () => {
     const f = fixture();
     f.host.fixedRaster = () => true;

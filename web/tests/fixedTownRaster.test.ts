@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { FixedTownRaster, townRasterLayout } from '../src/render/city/canvas/fixedTownRaster';
 
 describe('fixed cadastral town sheets', () => {
+  it('skips unbuilt towns and keeps the original indices of the populated towns', () => {
+    const tiles = townRasterLayout([
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+      { minX: 100, minY: 200, maxX: 120, maxY: 240 },
+    ]);
+    expect(tiles).toHaveLength(1);
+    expect(tiles[0].town).toBe(1);
+    expect(Object.values(tiles[0].rect).every(Number.isFinite)).toBe(true);
+  });
   it('bounds each town and each canvas independently of viewing scale', () => {
     const bounds = [{ minX: 100, minY: 200, maxX: 10100, maxY: 8200 }];
     const tiles = townRasterLayout(bounds);

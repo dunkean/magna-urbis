@@ -9,7 +9,7 @@ import type { DrapeCanvas, DrapeSource } from '../world/contract';
 import type { BakedPrefix, DisplayList, LivePart, LiveRasterizer } from '../gpu/contract';
 import { boundedList, clipList, cullList } from '../gpu/listTools';
 import type { OverlayRegions } from './overlayRegions';
-import { boxOf, covers, type OverlayBand, type OverlayHost, type Region } from './overlayTypes';
+import { boxOf, covers, meets, type OverlayBand, type OverlayHost, type Region } from './overlayTypes';
 
 /** Scale of a drape tile over the scale of the region shown, between which the region's lists paint the tile. The
  * tiles of the view's own tier are within 0.75 to 1.5 of the view's scale, and the region within a quarter octave. */
@@ -44,7 +44,24 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
    * recorded at about the tile's scale. */
   const regionFor = (tile: DrapeCanvas): Region | undefined => {
     const r = retained.shown;
-    return r && !r.stale && !r.draft && retained.current(r) && r.dpr === tile.dpr && r.light === tile.light && covers(r.rect, tile.rect) && reusable(tile.scale / r.scale) && r.key === host.key(r.scale, r.dpr, r.light) ? r : undefined;
+    if (!r || r.stale || r.draft || !retained.current(r) || r.key !== host.key(r.scale, r.dpr, r.light)) return undefined;
+    if (host.fixedRaster?.()) return r.parts.every(b => !!b.snapshot) ? r : undefined;
+    return r.dpr === tile.dpr && r.light === tile.light && covers(r.rect, tile.rect) && reusable(tile.scale / r.scale) ? r : undefined;
+  };
+  /** A fixed sheet is already a complete premultiplied picture. Sample its world-space bands directly; drape tiles
+   * may cross the sheet boundary, but the UV limits restrict every texture to its own band (excluding bake gutters). */
+  const putFixed = (tile: DrapeCanvas, r: Region): void => {
+    const scale = r.scale * r.dpr;
+    for (const b of r.parts) {
+      if (!meets(b.rect, tile.rect)) continue;
+      const image = b.snapshot!,
+        width = image.box[2] - image.box[0],
+        height = image.box[3] - image.box[1],
+        x = (world: number): number => ((world - b.cx) * scale + b.w / 2 - image.box[0]) / width,
+        y = (world: number): number => 1 - ((world - b.cy) * scale + b.h / 2 - image.box[1]) / height;
+      tile.put(image.texture, x(tile.rect.minX), y(tile.rect.minY), x(tile.rect.maxX), y(tile.rect.maxY), 1, x(b.rect.minX), y(b.rect.maxY), x(b.rect.maxX), y(b.rect.minY));
+    }
+    if (r.provisional) tile.provisional();
   };
   /** Replays the lists of `r` into the tile, as `draw` replays them into a frame; false when the tile has no group. */
   const replayInto = (tile: DrapeCanvas, r: Region): boolean => {
@@ -93,6 +110,7 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
         // A program that cannot be linked is the layer's to report (its `work` meets the same error): the drape goes on.
         return true;
       }
+      if (host.fixedRaster?.()) return !!regionFor(tile);
       // The region of the view is wanted or under way and will hold this tile: the tile waits for its lists rather
       // than being recorded as well.
       return !(due.wanted && due.dpr === tile.dpr && covers(due, tile.rect) && reusable(tile.scale / due.scale)) || !!regionFor(tile);
@@ -100,6 +118,13 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
     /** An error here is the drape's to report: it costs this tile its overlay, not the top view its live layer. */
     paint(tile: DrapeCanvas): boolean {
       if (isFailed() || raster.lost || !host.active()) return false;
+      if (host.fixedRaster?.()) {
+        cancel();
+        const r = regionFor(tile);
+        if (!r) return true;
+        putFixed(tile, r);
+        return false;
+      }
       if (tile.step === 0) {
         cancel();
         drapeRow = 0;
