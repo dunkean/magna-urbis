@@ -1,6 +1,6 @@
 /** World-space extraction checks, independent of browser paths or view scale. */
 import { describe, it, expect } from 'vitest';
-import { minimalContours, minimalContourInterval } from '../src/render/minimalContours';
+import { minimalContours, minimalContourInterval, minimalContourSegments } from '../src/render/minimalContours';
 describe('minimal terrain contours', () => {
   it('scales a dense round interval with height range and regional extent', () => {
     expect(minimalContourInterval(400, 6000)).toBe(5);
@@ -37,4 +37,34 @@ describe('minimal terrain contours', () => {
     }
     expect([...degree.values()].every(n => n === 2)).toBe(true);
   });
+});
+
+it('retains simplified world segments with contour weights and closed rings', () => {
+  const trace = (features: Parameters<typeof minimalContourSegments>[0], scale: number) => {
+    const steps = minimalContourSegments(features, scale);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  };
+  const points = Array.from({ length: 80 }, (_, x) => ({ x, y: Math.sin(x / 10) * 0.1 }));
+  const coarse = trace([{ layer: 'contourIndex', points }], 0.1);
+  expect(coarse.length).toBe(5);
+  expect(coarse[4]).toBe(1);
+  expect(trace([{ layer: 'contour', points }], 100).length).toBeGreaterThan(coarse.length);
+  const ring = trace(
+    [
+      {
+        layer: 'contour',
+        points: [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 10 },
+        ],
+        closed: true,
+      },
+    ],
+    10,
+  );
+  expect([...ring.slice(-5, -1)]).toEqual([10, 10, 0, 0]);
+  expect(points).toHaveLength(80);
 });

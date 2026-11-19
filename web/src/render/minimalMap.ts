@@ -198,6 +198,8 @@ export function paintMinimalMap(
     layers?: Partial<ExportLayers>;
     /** Retained contour lines (`minimalContours`), drawn when the recipe asks for them. */
     contours?: MinimalGeometry;
+    /** Optional retained GPU contour pass for motion; resting views keep the exact paths. */
+    contourRaster?: HTMLCanvasElement;
   },
 ): number {
   const started = performance.now(),
@@ -243,16 +245,23 @@ export function paintMinimalMap(
     }
   // Under the water and everything built; a constant hairline on screen, the index lines a little heavier.
   if (options.contours && recipe.ground.contours && layers.terrain !== false) {
-    ctx.strokeStyle = palette.inkSoft;
-    for (const [layer, px, alpha] of [
-      ['contour', 0.45, 0.26],
-      ['contourIndex', 0.65, 0.4],
-    ] as const) {
-      ctx.lineWidth = px / scale;
-      ctx.globalAlpha = alpha;
-      batches(layer, path => ctx.stroke(path), options.contours);
+    if (options.contourRaster) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(options.contourRaster, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = palette.inkSoft;
+      for (const [layer, px, alpha] of [
+        ['contour', 0.45, 0.26],
+        ['contourIndex', 0.65, 0.4],
+      ] as const) {
+        ctx.lineWidth = px / scale;
+        ctx.globalAlpha = alpha;
+        batches(layer, path => ctx.stroke(path), options.contours);
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
   }
   if (recipe.networks.water.visible && layers.water !== false) {
     fill('water', palette.seaFill);

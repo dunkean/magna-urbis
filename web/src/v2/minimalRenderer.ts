@@ -1,4 +1,4 @@
-/** Dedicated minimal view: retained spatial batches and terrain products, with bounded Canvas paints. */
+/** Minimal map: retained Canvas batches at rest and an optional single-pass GPU contour layer during motion. */
 import type { World, UrbanLayer } from '../gen/types';
 import type { Shape } from '../../../rust/bridge/urban';
 import { buildMinimalGeometry, emptyMinimalGeometry, bakeMinimalRelief, paintMinimalMap, minimalWaterPolygons, type MinimalFeature, type MinimalGeometry, type MinimalPlace, type MinimalTextLayout } from '../render/minimalMap';
@@ -8,14 +8,16 @@ import type { V2Settings } from './contracts';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
 import { retainedMinimalContours } from './minimalContourCache';
+import type { MinimalContourSet } from '../render/minimalContours';
+import { createMinimalContourPainter, type MinimalContourPainter } from '../render/minimalContourPainter';
 import type { RenderReadiness } from '../render/renderReadiness';
 
 const LIVE_DEFER_MS = 40,
   LIVE_SETTLE_MS = 160,
   SLICE_MS = 8;
 /** A paint whose next animation frame comes later than this was too heavy for the graphics process to show in time,
- * however short its Canvas calls were; after `SLOW_PAINTS` of them in a row a moving view follows as a bitmap. */
-const SLOW_PAINT_MS = 45,
+ * however short its Canvas calls were. The 20 ms bound allows one 60 Hz frame plus submission slack; after `SLOW_PAINTS` of them in a row a moving view follows as a bitmap. */
+const SLOW_PAINT_MS = 20,
   SLOW_PAINTS = 2;
 const polygon = (layer: string, shape: Shape): MinimalFeature => ({ layer, points: shape.outer, holes: shape.holes, closed: true });
 
@@ -91,7 +93,8 @@ export class MinimalRenderer {
   private terrainKey = -1;
   private relief?: HTMLCanvasElement;
   /** Contour lines of the current terrain: traced once, when first asked for. */
-  private contours?: MinimalGeometry;
+  private contours?: MinimalContourSet;
+  private contourPainter?: MinimalContourPainter | null;
   private resolved?: ResolvedAppearance;
   private places: MinimalPlace[] = [];
   private textLayout: MinimalTextLayout = { labels: [] };
@@ -147,9 +150,11 @@ export class MinimalRenderer {
       }
       if (resolved.composition.recipe.ground.contours && !this.contours) {
         const terrain = scene.terrain;
-        const contours = await retainedMinimalContours({ data: terrain.height, n: terrain.resolution, width: world.mapSize, maxHeight: terrain.maxHeight });
+        if (this.contourPainter === undefined) this.contourPainter = createMinimalContourPainter() ?? null;
+        const contours = await retainedMinimalContours({ data: terrain.height, n: terrain.resolution, width: world.mapSize, maxHeight: terrain.maxHeight }, !!this.contourPainter);
         if (serial !== this.serial || this.disposed) return;
         this.contours = contours;
+        this.contourPainter?.set(contours);
       }
       if (resolved.composition.recipe.effects.relief && !this.relief) {
         const terrain = scene.terrain,
@@ -242,7 +247,8 @@ export class MinimalRenderer {
       textLayout: this.textLayout,
       layoutText,
       relief: this.relief,
-      contours: this.contours,
+      contours: this.contours?.exact,
+      contourRaster: !layoutText && this.resolved.composition.recipe.ground.contours && this.layers.terrain !== false ? this.contourPainter?.draw(view, w, h, dpr) : undefined,
       layers: this.layers,
     });
     this.painted = frame;
@@ -279,7 +285,7 @@ export class MinimalRenderer {
         places: this.places,
         textLayout: { labels: [] },
         relief: this.relief,
-        contours: this.contours,
+        contours: this.contours?.exact,
         layers,
       });
     return canvas;
@@ -311,6 +317,7 @@ export class MinimalRenderer {
     this.geometry = undefined;
     this.relief = undefined;
     this.contours = undefined;
+    this.contourPainter?.dispose();
     this.canvas.width = this.canvas.height = 0;
     this.element.remove();
   }

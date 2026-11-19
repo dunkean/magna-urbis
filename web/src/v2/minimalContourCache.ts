@@ -1,14 +1,15 @@
 /** Terrain-owned contour geometry, shared by minimal views and captures across renderer lifetimes.
- * Extraction always runs off-thread; only bounded Path2D construction runs on the UI thread.
+ * Extraction and motion detail run off-thread; only bounded exact Path2D construction runs on the UI thread.
  * Weak keys release both pending work and retained paths when the terrain leaves the project cache.
  */
-import { buildMinimalGeometry, emptyMinimalGeometry, type MinimalFeature, type MinimalGeometry, type MinimalHeight } from '../render/minimalMap';
-const cache = new WeakMap<object, Promise<MinimalGeometry>>();
-export function retainedMinimalContours(height: MinimalHeight): Promise<MinimalGeometry> {
+import { buildMinimalGeometry, emptyMinimalGeometry, type MinimalHeight } from '../render/minimalMap';
+import type { MinimalContourSet, MinimalContourProducts } from '../render/minimalContours';
+const cache = new WeakMap<object, Promise<MinimalContourSet>>();
+export function retainedMinimalContours(height: MinimalHeight, motion = false): Promise<MinimalContourSet> {
   const key = height.data as object;
   let pending = cache.get(key);
   if (pending) return pending;
-  pending = new Promise<MinimalFeature[]>((resolve, reject) => {
+  pending = new Promise<MinimalContourProducts>((resolve, reject) => {
     const worker = new Worker(new URL('./minimalContourWorker.ts', import.meta.url), { type: 'module' });
     const timer = setTimeout(() => {
       worker.terminate();
@@ -25,11 +26,11 @@ export function retainedMinimalContours(height: MinimalHeight): Promise<MinimalG
       reject(new Error(event.message));
     };
     // Structured clone: the retained terrain is never transferred/detached.
-    worker.postMessage(height);
+    worker.postMessage({ height, motion });
   })
-    .then(async features => {
-      const geometry = emptyMinimalGeometry(height.width),
-        steps = buildMinimalGeometry(height.width, features, geometry);
+    .then(async ({ features, levels }) => {
+      const exact = emptyMinimalGeometry(height.width),
+        steps = buildMinimalGeometry(height.width, features, exact);
       let done = false;
       while (!done) {
         const start = performance.now();
@@ -38,7 +39,7 @@ export function retainedMinimalContours(height: MinimalHeight): Promise<MinimalG
         } while (!done && performance.now() - start < 6);
         if (!done) await new Promise<void>(resolve => setTimeout(resolve, 0));
       }
-      return geometry;
+      return { exact, levels };
     })
     .catch(error => {
       cache.delete(key);

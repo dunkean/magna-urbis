@@ -4,7 +4,8 @@
  * Thus hills on 6 km maps use 5–10 m, while regional maps scale the spacing without changing it on zoom.
  */
 import { marchingSquares } from '../gen/terrain/contour';
-import type { MinimalFeature, MinimalHeight } from './minimalMap';
+import { simplify } from '../gen/core/geom';
+import type { MinimalGeometry, MinimalFeature, MinimalHeight } from './minimalMap';
 
 export function minimalContourInterval(range: number, width: number): number {
   const raw = Math.max(1, range / 96, 5 * Math.sqrt(width / 6000));
@@ -47,4 +48,38 @@ export function* minimalContours(height: MinimalHeight): Generator<MinimalFeatur
       }
     }
   }
+}
+
+/** Exact Canvas paths plus retained instanced segments for moving views. */
+export interface MinimalContourProducts {
+  features: MinimalFeature[];
+  levels: MinimalContourSet['levels'];
+}
+export interface MinimalContourSet {
+  exact: MinimalGeometry;
+  levels: { scale: number; segments: Float32Array }[];
+}
+/** Simplification is bounded by half a device pixel at this level's largest scale. Each segment is two world-space
+ * endpoints and its contour weight; the GPU clips it to the view and draws all visible weights in one pass. */
+export function* minimalContourSegments(features: readonly MinimalFeature[], scale: number): Generator<void, Float32Array> {
+  const capacity = features.reduce((sum, feature) => sum + feature.points.length, 0),
+    data = new Float32Array(capacity * 5);
+  let used = 0;
+  for (const feature of features) {
+    if (feature.points.length < 2) continue;
+    const ring = feature.closed ? [...feature.points, feature.points[0]] : [...feature.points],
+      points = simplify(ring, 0.5 / scale),
+      weight = feature.layer === 'contourIndex' ? 1 : 0;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1],
+        b = points[i];
+      data[used++] = a.x;
+      data[used++] = a.y;
+      data[used++] = b.x;
+      data[used++] = b.y;
+      data[used++] = weight;
+    }
+    yield;
+  }
+  return data.slice(0, used);
 }
