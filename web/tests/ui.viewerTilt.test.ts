@@ -231,4 +231,35 @@ describe('viewer camera tilt', () => {
     expect(viewer.getView()).not.toHaveProperty('pitch');
     expect(viewer.getView()).not.toHaveProperty('eye');
   });
+
+  it('blocks every tilt input while locked and allows it again after unlocking', () => {
+    const { viewer, canvas, page, tick } = setup(true);
+    viewer.tiltTo(1);
+    tick();
+    viewer.setTiltLocked(true); // Also cancels the ease already in flight.
+    viewer.setView({ cx: 1500, cy: 1500, scale: 1, pitch: 1, yaw: 0.5 });
+    viewer.setNavigation('fly');
+    viewer.tiltTo(1);
+    for (const more of [{ button: 2 }, { ctrlKey: true }]) {
+      canvas.dispatchEvent(pointer('pointerdown', 1, 400, 300, more));
+      canvas.dispatchEvent(pointer('pointermove', 1, 450, 200, more));
+      canvas.dispatchEvent(pointer('pointerup', 1, 450, 200, more));
+    }
+    canvas.dispatchEvent(pointer('pointerdown', 1, 300, 300));
+    canvas.dispatchEvent(pointer('pointerdown', 2, 500, 300));
+    canvas.dispatchEvent(pointer('pointermove', 1, 300, 250));
+    canvas.dispatchEvent(pointer('pointermove', 2, 500, 250));
+    canvas.dispatchEvent(pointer('pointerup', 1, 300, 250));
+    canvas.dispatchEvent(pointer('pointerup', 2, 500, 250));
+    canvas.dispatchEvent(Object.assign(new Event('wheel', { cancelable: true }), { deltaY: -100, deltaMode: 0, shiftKey: true, clientX: 400, clientY: 300 }));
+    page.dispatchEvent(Object.assign(new Event('keydown'), { key: 'ArrowUp', shiftKey: true }));
+    for (let i = 0; i < 80; i++) tick();
+    expect(viewer.navigation()).toBe('orbit');
+    expect(viewer.getView()).not.toHaveProperty('pitch');
+    expect(viewer.getView()).not.toHaveProperty('yaw');
+    viewer.setTiltLocked(false);
+    viewer.tiltTo(1);
+    for (let i = 0; i < 80; i++) tick();
+    expect(viewer.getView().pitch).toBe(1);
+  });
 });

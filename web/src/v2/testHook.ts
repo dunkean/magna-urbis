@@ -1,4 +1,5 @@
 import { machineDecision } from './machineTier';
+import { machineViewDefaults } from './machineView';
 import { cityForestSettings } from '../render/cityEnvironment';
 import { defaultCityLayoutConfig } from '../render/cityGeneration';
 // Test hook of the V2 page: the v7 review sheet (web/out/planches-styles-v7/run.mjs, v2drive.mjs) drives v2.html through it.
@@ -153,7 +154,10 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
   const api = {
     ready: true,
     /** Resolved hardware tier (including ?machine= overrides); independent of explicit style protection. */
-    machine: machineDecision,
+    machine: () => {
+      const decision = machineDecision();
+      return { ...decision, available3d: machineViewDefaults(decision.tier).available };
+    },
     async prepare(req: V2TestRequest): Promise<{ mapSize: number; options: string[]; edgeMargin: number; position?: { x: number; y: number } }> {
       const [{ decodeDecor }, { decorBiome, decorClimate, decorClimateZone }, { cityPlacementRequest, framedEdgeMargin }, { defaultSettlementConfig }, { defaultLayoutConfig, defaultParcelConfig }] = await Promise.all([
         import('../ui/decor'),

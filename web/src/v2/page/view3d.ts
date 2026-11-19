@@ -4,7 +4,7 @@
  *
  * The map has one camera: the "3D" button eases it to a tilt and back to the top view, and its label and pressed
  * state follow the camera however it was tilted (`mountTiltButton`); the padlock before it holds the map in the top
- * view (`mountLock2d`, a preference kept in this browser). While tilted, the separate 3D view's bar at the end
+ * view (`mountViewLock`, a browser preference, also enforced when 3D is unavailable). While tilted, the separate 3D view's bar at the end
  * of the toolbar, with the navigation (worldNavigation.ts) and the modelled trees (worldTrees.ts), and the PNG of the view.
  *
  * With `?camera=dual` (render/live/policy.ts, temporary) the button opens the separate 3D view instead, as it did:
@@ -12,7 +12,7 @@
  * 3D view.
  */
 import type { PageActions, PageState } from './contract';
-import { insertHTML, registerMessages, setText, setDynamicText, translate } from '../i18n';
+import { insertHTML, setText, setDynamicText } from '../i18n';
 import { applyAppearancePatch } from '../../render/appearanceRecipe';
 import type { UrbanBuilding } from '../../gen/types';
 import { townUrban } from '../edits';
@@ -22,70 +22,17 @@ import { $ } from './dom';
 import { mountWorldTreeControls } from './worldTrees';
 import { mountWorldNavigation } from './worldNavigation';
 import { mountWorldDepthControl } from './worldDepth';
+import { mountViewLock } from './viewLock';
+import { onMachineDecision } from '../machineTier';
+import { machineViewDefaults } from '../machineView';
 
 /** Pitch the "3D" button eases the camera to: 57 degrees from the vertical. */
 const BUTTON_PITCH = 1;
-/** The 2D lock, a page preference (as the units and the display quality): kept in this browser. */
-const LOCK_2D_STORAGE_KEY = 'magna-urbis-v2-lock-2d';
-
-registerMessages({
-  'Lock the map in 2D': { en: 'Lock the map in 2D', fr: 'Verrouiller la carte en 2D' },
-  'Unlock the 3D view': { en: 'Unlock the 3D view', fr: 'Déverrouiller la vue 3D' },
-  'The map is locked in 2D: unlock it with the padlock to tilt it.': { en: 'The map is locked in 2D: unlock it with the padlock to tilt it.', fr: 'La carte est verrouillée en 2D : déverrouillez-la avec le cadenas pour l’incliner.' },
-});
-
-const PADLOCK_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.5" fill="currentColor"/><path data-shackle d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
-
-/** The padlock beside the "3D" button: while pressed, the viewer keeps the map in the top view (Viewer.setTiltLocked)
- * and the "3D" button is disabled with the reason as its tooltip. */
-function mountLock2d(state: PageState): void {
-  insertHTML($('#view3d'), 'beforebegin', `<button id="view-lock2d" type="button" aria-pressed="false">${PADLOCK_ICON}</button>`);
-  const lock = $<HTMLButtonElement>('#view-lock2d'),
-    button = $<HTMLButtonElement>('#view3d'),
-    shackle = lock.querySelector('[data-shackle]')!;
-  const label = (element: Element, attribute: 'title' | 'aria-label', source: string | undefined): void => {
-    if (source === undefined) {
-      element.removeAttribute(`data-i18n-${attribute}`);
-      element.removeAttribute(attribute);
-      return;
-    }
-    element.setAttribute(`data-i18n-${attribute}`, source);
-    element.setAttribute(attribute, translate(source));
-  };
-  const apply = (locked: boolean): void => {
-    state.client.viewer.setTiltLocked(locked);
-    lock.setAttribute('aria-pressed', String(locked));
-    // Open shackle while unlocked: the right arm lifted off the body.
-    shackle.setAttribute('d', locked ? 'M5 7V5a3 3 0 0 1 6 0v2' : 'M5 7V5a3 3 0 0 1 6 0v-1');
-    const action = locked ? 'Unlock the 3D view' : 'Lock the map in 2D';
-    label(lock, 'title', action);
-    label(lock, 'aria-label', action);
-    button.disabled = locked;
-    label(button, 'title', locked ? 'The map is locked in 2D: unlock it with the padlock to tilt it.' : undefined);
-  };
-  let locked = false;
-  try {
-    locked = globalThis.localStorage?.getItem(LOCK_2D_STORAGE_KEY) === '1';
-  } catch {
-    /* Optional storage. */
-  }
-  apply(locked);
-  lock.onclick = () => {
-    locked = !locked;
-    try {
-      globalThis.localStorage?.setItem(LOCK_2D_STORAGE_KEY, locked ? '1' : '0');
-    } catch {
-      /* Optional storage. */
-    }
-    apply(locked);
-  };
-}
 
 /** The "3D" button of the single camera: tilts the map in place, and comes back to the top view. */
 function mountTiltButton(state: PageState, actions: PageActions): void {
-  const button = $('#view3d'),
+  const button = $<HTMLButtonElement>('#view3d'),
     viewer = state.client.viewer;
-  mountLock2d(state);
   let tilted = false;
   // Pressed for any view that is not the plain map, a turned top view included: "2D" then brings the map back.
   viewer.onCamera(view => {
@@ -100,6 +47,7 @@ function mountTiltButton(state: PageState, actions: PageActions): void {
     state.contourEditor.sync();
   });
   button.onclick = () => {
+    if (button.disabled) return;
     if (!state.world) {
       actions.toast('Create the terrain first.');
       return;
@@ -116,6 +64,7 @@ export function mountView3d(state: PageState, actions: PageActions): void {
   insertHTML($('#header-menu'), 'beforeend', '<button id="preview-close" type="button" class="quiet small" hidden></button>');
 
   setDynamicText($('#preview-close'), () => 'Close preview');
+  mountViewLock(state.client.viewer);
 
   $('#preview-close').onclick = async () => {
     if (!state.previewBase?.world || state.busy) return;
@@ -136,9 +85,22 @@ export function mountView3d(state: PageState, actions: PageActions): void {
     return;
   }
 
+  onMachineDecision(choice => {
+    if (machineViewDefaults(choice.tier).available) return;
+    state.open3dToken = 0;
+    state.viewLoading.end('3d-open');
+    state.city3d?.hide();
+    state.client.set3dActive(false);
+    setText($('#view3d'), '3D');
+    $('#view3d').setAttribute('aria-pressed', 'false');
+    $('#capture3d').hidden = true;
+    state.editingTools.sync();
+  });
+
   // state.open3dToken names the opening in flight (0 = none): the button stays enabled while the 3D view loads, and a
   // click on "2D" abandons the opening.
   $('#view3d').onclick = async () => {
+    if ($<HTMLButtonElement>('#view3d').disabled) return;
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: '3d' }));
     if (!state.world) {
       actions.toast('Create the terrain first.');

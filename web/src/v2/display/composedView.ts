@@ -60,6 +60,7 @@ import type { MapState } from './mapState';
 import type { DisplayReadiness } from './readiness';
 import { SETTLE_MS, type ViewMotion } from './viewMotion';
 import { WorldVolumes } from './worldVolumes';
+import { reportMachineCompositor } from '../machineTier';
 
 /** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on while it waits. */
 export const GROUND_WARMING = 'ground warming';
@@ -214,18 +215,24 @@ export class ComposedView {
     }));
     if (!live) {
       this.refused = true;
+      reportMachineCompositor(false);
       return 'no hardware WebGL2';
     }
-    if (!live.active()) return 'context lost';
+    if (!live.active()) {
+      reportMachineCompositor(false);
+      return 'context lost';
+    }
     try {
       this.syncLayers(live);
     } catch (error) {
       // A layer factory of another module threw: the map is not composed, rather than failing every frame.
       console.warn('Live compositor: layer setup failed, the map is not composed.', error);
       this.refused = true;
+      reportMachineCompositor(false);
       map.stats.liveError = String(error);
       return 'layer setup failed';
     }
+    reportMachineCompositor(true);
     if (!live.hasLayer('ground')) return 'no ground layer';
     // No baked tile covers the view yet and nothing stands in for the ground: a composed frame would show bare paper.
     // The miniature's capture stands in for the top view only; a tilted frame draws no stand-in.

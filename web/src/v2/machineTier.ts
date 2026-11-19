@@ -5,13 +5,14 @@
 import type { PresetId } from '../render/composition';
 import { SOFTWARE_GL } from '../render/softwareGl';
 export type MachineTier = 'capable' | 'slow' | 'veryslow';
-export type MachineReason = 'normal' | 'forced' | 'software' | 'webgl' | 'resources' | 'frames';
+export type MachineReason = 'normal' | 'forced' | 'software' | 'webgl' | 'compositor' | 'resources' | 'frames';
 export interface MachineDecision {
   tier: MachineTier;
   reason: MachineReason;
 }
 export interface MachineSignals {
   webgl2: boolean;
+  compositor?: boolean;
   renderer?: string;
   cores?: number;
   memory?: number;
@@ -47,6 +48,7 @@ export function decideMachineTier(s: MachineSignals, force?: MachineTier): Machi
   const renderer = `${s.renderer ?? ''} ${s.adapter?.name ?? ''}`;
   if (SOFTWARE_GL.test(renderer) || /\bwarp\b/i.test(renderer)) return { tier: 'veryslow', reason: 'software' };
   if (!s.webgl2) return { tier: 'veryslow', reason: 'webgl' };
+  if (s.compositor === false) return { tier: 'veryslow', reason: 'compositor' };
   if (s.frameMs && s.frameMs >= VERY_SLOW_FRAME_MS) return { tier: 'veryslow', reason: 'frames' };
   if (s.cores && s.cores <= VERY_LOW_CPU_THREADS && s.memory && s.memory <= VERY_LOW_MEMORY_GB) return { tier: 'veryslow', reason: 'resources' };
   const lowCpu = !!s.cores && s.cores <= LOW_CPU_THREADS,
@@ -64,6 +66,7 @@ let signals: MachineSignals | undefined,
   force: MachineTier | undefined,
   samples: number[] = [];
 let sampleUntil = 0;
+let compositor: boolean | undefined;
 const listeners = new Set<(decision: MachineDecision) => void>();
 export const machineDecision = (): MachineDecision => ({ ...decision });
 export const machineStyleProtected = (): boolean => protectedStyle;
@@ -78,6 +81,14 @@ function publish(next: MachineDecision): void {
   decision = next;
   for (const listener of listeners) listener(next);
 }
+/** Compositor failures are capabilities, independent of an explicit style. Defer changes until its draw returns. */
+export function reportMachineCompositor(available: boolean): void {
+  if (compositor === available) return;
+  compositor = available;
+  queueMicrotask(() => {
+    if (signals) publish(decideMachineTier({ ...signals, compositor }, force));
+  });
+}
 /** Called by consecutive moving live-compositor frames; only their first ten seconds are sampled. */
 export function reportMachineFrame(ms: number): void {
   if (!signals || force || protectedStyle || samples.length >= FRAME_SAMPLE_COUNT) return;
@@ -85,9 +96,9 @@ export function reportMachineFrame(ms: number): void {
   if (performance.now() > sampleUntil) return;
   samples.push(ms);
   if (samples.length === FRAME_SAMPLE_COUNT) {
-    const next = decideMachineTier({ ...signals, frameMs: samples.reduce((a, b) => a + b, 0) / samples.length });
+    signals.frameMs = samples.reduce((a, b) => a + b, 0) / samples.length;
     // Style changes may dispose this compositor: publish only after its frame has returned.
-    queueMicrotask(() => publish(next));
+    queueMicrotask(() => publish(decideMachineTier({ ...signals!, compositor }, force)));
   }
 }
 /** Deferred by the boot module until after client initialization. A tiny temporary GL context is released immediately.
@@ -120,6 +131,6 @@ export async function inspectMachine(): Promise<MachineDecision> {
   } finally {
     window.clearTimeout(timer);
   }
-  publish(decideMachineTier(signals, force));
+  publish(decideMachineTier({ ...signals, compositor }, force));
   return machineDecision();
 }

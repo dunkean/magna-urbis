@@ -5,6 +5,7 @@ const reasons = {
   forced: ['the machine tier was forced by the URL', 'le niveau de la machine a été forcé dans l’URL'],
   software: ['graphics are rendered in software', 'le rendu graphique est logiciel'],
   webgl: ['WebGL2 is unavailable', 'WebGL2 est indisponible'],
+  compositor: ['the graphics compositor is unavailable', 'le compositeur graphique est indisponible'],
   resources: ['available CPU, memory and GPU resources are limited', 'les ressources CPU, mémoire et GPU disponibles sont limitées'],
   frames: ['map navigation frames were slow', 'les images de navigation étaient lentes'],
   normal: ['hardware resources are available', 'les ressources matérielles sont disponibles'],

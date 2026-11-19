@@ -53,6 +53,9 @@ export interface V2CityAppearance {
   colors?: 'materials' | 'uses';
   exaggeration?: number;
   refinement?: 'source' | 'noise';
+  /** Modelled near trees and their display distance, saved independently of machine defaults. */
+  trees3d?: boolean;
+  treeDistance?: number;
 }
 export interface V2Appearance {
   /** Pass-by-pass recipe (render/composition.ts): the source of truth of every field it covers. */
