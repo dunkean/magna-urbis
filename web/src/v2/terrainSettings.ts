@@ -311,7 +311,7 @@ export function validateTerrainSettings(value: unknown, allowTracedCoast = false
     climateValues: { temperature: [-30, 40], temperatureStd: [0, 3000], precipitation: [0, 6000], precipitationCv: [0, 200] },
     detailNoise: { amplitude: [0, 2], hurst: [0, 1.5], lacunarity: [1.2, 4], octaves: [1, 12], start: [0.25, 8], slope: [0, 2], flat: [0, 0.5], shore: [0, 50] },
     neuralTuning: { landScale: [0, 5], steps: [1, 32], noiseTemperature: [0.001, 10], noiseTemperatureStd: [0.001, 10], noisePrecipitation: [0.001, 10], noisePrecipitationCv: [0.001, 10], reliefScale: [0, 5], reliefFixed: [0, 5000], detail: [0, 5] },
-    coastProfile: { smoothing: [0, 1], cliffs: [0, 1], width: [50, 10000], relief: [0, 1], detail: [0, 2] },
+    coastProfile: { width: [0, 10000], variability: [0, 1] },
     forest: { density: [0, 2], clearings: [0, 1] },
   };
   for (const [group, fields] of Object.entries(ranges))

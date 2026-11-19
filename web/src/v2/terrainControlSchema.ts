@@ -26,25 +26,13 @@ const select = (path: string, en: string, fr: string, options: ParameterChoice[]
 const simple = (entries: [string, string, string][]) => entries.map(([value, en, fr]) => choice(value, en, fr));
 export const coastDirections = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 export const terrainCoastFields: ParameterField[] = [
-  number('coastProfile.cliffs', 'Cliff coverage', 'Présence de falaises', 0, 1, 0.05, [
-    'With smoothing enabled: 0 beaches, 1 cliffs, intermediate values alternate low coves and rocky stretches.',
-    'Avec l’adoucissement actif : 0 plages, 1 falaises ; entre les deux, alternance de criques basses et de portions rocheuses.',
+  number('coastProfile.width', 'Median smoothing width (m)', 'Largeur médiane du lissage (m)', 0, 10000, 25, [
+    'Wider bands create gentler slopes toward the sea; narrower bands preserve relief closer to the shore. 0 cuts directly at the shoreline.',
+    'Une bande large crée une pente douce vers la mer ; une bande étroite conserve le relief près du rivage. 0 découpe directement au rivage.',
   ]),
-  number('coastProfile.smoothing', 'Coastal smoothing', 'Adoucissement des côtes', 0, 1, 0.05, [
-    '0 keeps cliffs; 1 creates low coastal ground for beaches and harbours, without smoothing the shoreline.',
-    '0 conserve les falaises ; 1 abaisse les abords pour les plages et les ports, sans lisser le trait de côte.',
-  ]),
-  number('coastProfile.width', 'Coastal transition width (m)', 'Largeur de transition côtière (m)', 50, 10000, 50, [
-    'Inland distance to recover the original relief. The first quarter stays low; wider bands make room below mountains.',
-    'Distance vers l’intérieur pour retrouver le relief initial. Le premier quart reste bas ; une bande large dégage de la place au pied des montagnes.',
-  ]),
-  number('coastProfile.detail', 'Coves and headlands', 'Criques et caps', 0, 2, 0.05, [
-    'Shoreline detail independent of elevation: 0 follows the broad shape or hand drawing; higher values add indentations and rocky points.',
-    'Découpe indépendante de l’altitude : 0 suit la forme générale ou le dessin manuel ; les valeurs élevées accentuent les criques et les pointes.',
-  ]),
-  number('coastProfile.relief', 'Relief influence on coastline', 'Influence du relief sur le tracé', 0, 1, 0.05, [
-    'Let the sea follow valleys and leave ridges as headlands. Set to 0 to follow a hand-drawn coast more closely.',
-    'La mer suit les vallées et laisse les crêtes en promontoires. Réglez à 0 pour suivre plus fidèlement une côte dessinée.',
+  number('coastProfile.variability', 'Smoothing variability', 'Variabilité du lissage', 0, 1, 0.05, [
+    '0 keeps a constant width; higher values make it oscillate slowly along the coast, with smooth seeded stretches of irregular length.',
+    '0 garde une largeur constante ; les valeurs élevées la font osciller lentement le long des côtes, par tronçons irréguliers et continus liés à la graine.',
   ]),
 ];
 export function toggleCoastDirection(mask: number, direction: (typeof coastDirections)[number]): number {

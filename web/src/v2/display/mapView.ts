@@ -209,6 +209,9 @@ export class MapView implements AppearanceListener, ViewStatus {
     this.frozen = undefined;
     this.fallback.thaw();
     this.composed.thaw();
+    // Products can finish while preparing hides the frame. Publish the completed state even when no worker or
+    // program has another callback left to wake the view (notably a regenerated town on an unchanged terrain).
+    if (!map.disposed && !map.suspended && map.world) map.repaint();
   }
   contentChanged(ran: readonly string[], before: { resolved?: ResolvedAppearance; native?: TerrainData }): void {
     this.composed.contentChanged(ran, before);

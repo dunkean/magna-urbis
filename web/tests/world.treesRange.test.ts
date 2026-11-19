@@ -3,7 +3,7 @@ import type { LiveFrame } from '../src/render/live/contract';
 import { createFrameCamera, frameCamera } from '../src/render/world/camera';
 import { TerrainHeights } from '../src/render/world/heights';
 import { createWorldTreesLayer } from '../src/render/world/treesLayer';
-import { TREE_MAX_BLOCKS, TREE_MAX_DRAWS, treeMemoryBudget, treeTriangleBudget } from '../src/render/world/treesRange';
+import { TREE_MAX_BLOCKS, treeMemoryBudget, treeTriangleBudget } from '../src/render/world/treesRange';
 import { TREE_DISTANCE_DEFAULT, TREE_DISTANCE_MAX, clampTreeDistance, type TreeInputs } from '../src/ui/terrain3dTrees';
 
 function glMock(): WebGL2RenderingContext {
@@ -16,18 +16,17 @@ function glMock(): WebGL2RenderingContext {
 }
 
 describe('world tree range', () => {
-  it('preserves the default and scales triangles, blocks, draws and GPU memory for the extended range', () => {
+  it('preserves the default and scales triangles, blocks and GPU memory for the extended range', () => {
     expect(TREE_DISTANCE_DEFAULT).toBe(600);
     expect(TREE_DISTANCE_MAX).toBeGreaterThan(1500);
     expect(clampTreeDistance(Infinity)).toBe(600);
     expect(clampTreeDistance(100000)).toBe(TREE_DISTANCE_MAX);
     expect(treeTriangleBudget(600)).toBe(250000);
-    expect(treeTriangleBudget(TREE_DISTANCE_MAX)).toBeLessThanOrEqual(10000000);
+    expect(treeTriangleBudget(TREE_DISTANCE_MAX)).toBeLessThanOrEqual(2100000);
     expect(treeTriangleBudget(TREE_DISTANCE_MAX)).toBeGreaterThan(2000000);
-    expect(treeMemoryBudget(600)).toBe(32 * 1024 ** 2);
+    expect(treeMemoryBudget(600)).toBe(16 * 1024 ** 2);
     expect(treeMemoryBudget(TREE_DISTANCE_MAX)).toBeGreaterThan(treeMemoryBudget(1500));
     expect(TREE_MAX_BLOCKS).toBeGreaterThan((2 * Math.PI * TREE_DISTANCE_MAX ** 2) / 96 ** 2);
-    expect(TREE_MAX_DRAWS).toBeGreaterThan(TREE_MAX_BLOCKS);
   });
 
   it('does no hidden work, suspends pending blocks before a hidden draw and reuses the cache on return', () => {
@@ -53,6 +52,7 @@ describe('world tree range', () => {
     }
     layer.draw(frame);
     expect(layer.stats!().drawCalls).toBeGreaterThan(0);
+    expect(layer.stats!().triangles).toBeLessThanOrEqual(treeTriangleBudget(600));
     const bytes = layer.stats!().bytes,
       uploads = vi.mocked(gl.bufferData).mock.calls.length;
     // Request uncached blocks, then zoom out before work gets to process that request.

@@ -29,14 +29,23 @@ export function createLiveHost(c: CartographyContext) {
     REGION_MAX_WAIT_MS = 1500;
   /** Live overlay layer: a region is recorded in this many horizontal bands, one per idle step. */
   const REGION_BANDS = 4;
+  const fixedRaster = (): boolean => c.pal.name === 'cadastre';
   /** A recording of the map for the live overlay layer has failed under this key: not tried again until it changes. */
   let regionFailed = '';
   /** Layers made by createLiveLayer and not yet disposed: a scene update makes their regions stale too. */
   const liveLayers = new Set<LiveLayer>();
   /** Everything a recorded region depends on besides its rectangle and the products made per view (`arrivals`). */
-  const regionKey = (scale: number, dpr: number, light: boolean): string => `${scale}|${dpr}|${light}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+  const regionKey = (scale: number, dpr: number, light: boolean): string =>
+    `${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
   /** The region recorded for a view: a margin around it, edges on a lattice, the half-octave scale, horizontal bands. */
   function regionPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan {
+    if (fixedRaster()) {
+      // One 8192px sheet, split into 2048px squares so no giant render target is allocated.
+      const rect = { minX: 0, minY: 0, maxX: c.S, maxY: c.S },
+        bands: Rect4[] = [];
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) bands.push({ minX: (x * c.S) / 4, minY: (y * c.S) / 4, maxX: ((x + 1) * c.S) / 4, maxY: ((y + 1) * c.S) / 4 });
+      return { key, rect, scale: 8192 / c.S, dpr: 1, bands };
+    }
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2),
       hw = (cssW / view.scale) * (0.5 + REGION_MARGIN),
       hh = (cssH / view.scale) * (0.5 + REGION_MARGIN);
@@ -129,6 +138,7 @@ export function createLiveHost(c: CartographyContext) {
     const ink = deps.semantic?.createInk?.(gl);
     const layer = createOverlayLayer(gl, {
       ink,
+      fixedRaster,
       active: () => !c.disposed && !c.rasterFailed && liveVectorEngine() === 'gpu',
       key: (scale, dpr, light) => {
         const key = regionKey(scale, dpr, light);

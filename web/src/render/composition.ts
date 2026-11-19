@@ -60,10 +60,11 @@ export const AMBIENCES: readonly Ambience[] = ['day', 'night'];
 export const CONTOUR_DETAILS: readonly ContourDetail[] = ['fixed', 'zoom'];
 /** Contour behaviour of a recipe: the V1 fixed set unless the recipe asks for the per-zoom one. */
 export const contourDetailOf = (c: Pick<CompositionRecipe, 'ground'> | undefined): ContourDetail => c?.ground.contourDetail ?? 'fixed';
-/** Contours as every page draws them: the recipe's detail; a cadastre carries half the lines, fainter (a hint of relief, not a survey sheet). */
+/** Topographic and parchment contours retain a fixed physical interval; a cadastre carries half the lines, fainter (a hint of relief, not a survey sheet). */
 export function contourDrawOf(c: Pick<CompositionRecipe, 'ground'> | undefined): { detail: ContourDetail; sparse: boolean; opacity: number } {
-  const cadastre = c?.ground.look === 'cadastre';
-  return { detail: contourDetailOf(c), sparse: cadastre, opacity: cadastre ? 0.55 : 1 };
+  const look = c?.ground.look,
+    cadastre = look === 'cadastre';
+  return { detail: look === 'topographic' || look === 'parchment' ? 'fixed' : contourDetailOf(c), sparse: cadastre, opacity: cadastre ? 0.55 : 1 };
 }
 export const LAND_KINDS: readonly LandKind[] = ['field', 'meadow', 'pasture', 'forest', 'orchard', 'garden', 'marsh', 'commons'];
 /** The historical styles live on as variants of a base look; the first one is the look's default. */
@@ -129,7 +130,7 @@ const only = (...shown: TextGroup[]) => Object.fromEntries(TEXT_GROUPS.map(g => 
 const PRESETS: Readonly<Record<StyleId, PresetValues>> = {
   minimal: { ground: 'minimal', contours: true, vegetation: 'none', rural: 'off', urban: 'off', depth: 'surface', network: 'ink', building: 'footprints', parcels: false, text: defaultText({ look: 'sans', groups: only('places') }) },
   // A physical-geography plate: hypsometric tints, relief, water and names; no land-use zones (woods are a faint wash, cityOverlayLandKinds).
-  atlas: { ground: 'atlas', contours: true, vegetation: 'none', rural: 'off', urban: 'off', depth: 'surface', network: 'inherit', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans' }) },
+  atlas: { blocks: false, ground: 'atlas', contours: false, vegetation: 'none', rural: 'off', urban: 'off', depth: 'surface', network: 'inherit', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans' }) },
   'satellite-2': { blocks: false, ground: 'satellite-2', contours: true, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   parchment: { ground: 'parchment', contours: true, vegetation: 'symbols', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },
   // Rural land use lives in the brushes (crops, orchards, heath, woods) over a painted wash, not in vector polygons.
@@ -252,7 +253,7 @@ export function applyComposition(a: AppearanceInput, c: CompositionRecipe, under
     style: isMapStyle(variant) ? variant : !underdark && c.effects.ambience === 'night' ? 'night' : traits.paperMap ? 'parchment' : a.style,
     terrainStyle: variant,
     renderer: 'bench',
-    contours: c.ground.contours,
+    contours: c.ground.look !== 'atlas' && c.ground.contours,
     terrainLayers: { ...DEFAULT_TERRAIN_LAYERS, ...a.terrainLayers, relief: c.effects.relief, water: c.networks.water.visible },
     // The land-use painter is the physical look of the fields on a map ground: the semantic layer never switches it off.
     landuse: variant !== 'topographic',
@@ -315,7 +316,7 @@ export function resolveComposition(recipe: CompositionRecipe | undefined, traits
     vegetation: recipe
       ? { look, forestTone: c.vegetation.forestTone, procedural: look === 'procedural-canopy', cartographic: vectorVegetation(look, traits), painted: overlayPainted(look, traits), groundForests: look === 'painted', crownDetail: crownDetailOf(c) }
       : { look, forestTone: c.vegetation.forestTone, procedural: traits.ground3d, cartographic: traits.cartographicVegetation, painted: false, groundForests: true, crownDetail: crownDetailOf(c) },
-    landuse: { rural: recipe ? c.landuse.rural : 'off', urban: recipe ? c.landuse.urban : 'off', opacity: c.landuse.opacity, depth: c.landuse.depth, classes },
+    landuse: { rural: recipe ? c.landuse.rural : 'off', urban: recipe && c.ground.look !== 'atlas' ? c.landuse.urban : 'off', opacity: c.landuse.opacity, depth: c.landuse.depth, classes },
     networks: {
       roads: { visible: c.networks.roads.visible, look: roadLookOf(c.networks.roads, traits), emphasis: c.networks.roads.emphasis },
       water: { visible: c.networks.water.visible, look: waterLook(c.networks.water.look, traits), waves: c.networks.water.waves ?? COAST_WAVES_DEFAULT },

@@ -62,9 +62,8 @@ const WATER_SEA = 1,
   WATER_LAKE = 2,
   WATER_RIVER = 3;
 type Ground = ReturnType<typeof v2Terrain3dGround>;
-/** The satellite looks model their near trees; the others paint or draw their forest, and the fast satellite keeps to
- * its painted crowns. */
-const treesInLook = (ground: Ground, resolved: ResolvedAppearance): ground is NonNullable<Ground> => !!ground && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy && resolved.quality !== 'light';
+/** Satellite looks share their forest, including the fast preset, whose simplification concerns the buildings. */
+const treesInLook = (ground: Ground, resolved: ResolvedAppearance): ground is NonNullable<Ground> => !!ground && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy;
 /** Whether the look of the map has modelled trees: the page offers the "3D trees" switch only then. */
 export function worldTreesAvailable(world: World | undefined, settings: V2Settings | undefined): boolean {
   if (!world || !settings) return false;
@@ -131,10 +130,14 @@ export class WorldVolumes {
         return this.treeSource;
       },
       terrain: relief,
+      terrainSource: () => map.world?.terrain,
       // The town's footprints: no modelled tree stands on a building.
       buildings: () => this.display,
       distance: () => this.distance,
-      shown: () => this.treesOn,
+      shown: () => {
+        this.refresh();
+        return this.treesOn;
+      },
       night: () => this.night,
       palette: () => this.palette,
       invalidate: map.compose,
@@ -152,6 +155,7 @@ export class WorldVolumes {
       made = this.madeFor;
     if (world === made.world && map.townContent === made.content && resolved === made.resolved && heights === made.heights) return;
     this.madeFor = { world, content: map.townContent, resolved, heights };
+    if (world?.terrain !== made.world?.terrain) this.treeSource = undefined;
     if (!world || !settings || !resolved || !heights) {
       this.display = this.treeSource = undefined;
       this.walkCollisions = undefined;
@@ -161,10 +165,15 @@ export class WorldVolumes {
     // The appearance of the volumes is the separate 3D view's; the ground they stand on is the look on screen.
     const r = v2Resolved3d(settings, world),
       ground = v2Terrain3dGround(world, settings, resolved.traits.ground3d ? (resolved.styleId as City3dGround) : 'map');
+    this.treesOn = r.city.trees3d;
     this.night = r.composition.ambience === 'night';
     this.palette = ground?.paperMap ? PAINTED_TREES : SATELLITE_TREES;
     this.job = this.compose(world, r, resolved, heights, ground);
     this.schedule();
+  }
+
+  pending(): boolean {
+    return !!this.job;
   }
 
   /** Runs the composition in idle slices; a newer one replaces it. The layers are told when it is done. */
@@ -220,8 +229,8 @@ export class WorldVolumes {
   }
 
   private *compose(world: World, r: ResolvedAppearance, resolved: ResolvedAppearance, heights: TerrainHeights, ground: ReturnType<typeof v2Terrain3dGround>): Generator<void, void> {
-    yield* this.composeTown(world, r, heights, ground);
     this.refreshTrees(world, r, resolved, ground);
+    yield* this.composeTown(world, r, heights, ground);
   }
 
   private *composeTown(world: World, r: ResolvedAppearance, heights: TerrainHeights, ground: ReturnType<typeof v2Terrain3dGround>): Generator<void, void> {
@@ -278,21 +287,22 @@ export class WorldVolumes {
       countWork('volumes.compose');
       meshes = this.townMeshes = { cities, world, heights, display: yield* city3dBuildingsSteps(source, { heightAt }), scenes: new Map() };
     }
-    const display = meshes!.display;
+    const display = meshes!.display,
+      buildingsOnly = ['atlas', 'cadastre', 'topographic'].includes(r.composition.recipe.ground.look);
     yield;
-    const structures = city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt }, plan.waterColor, false);
+    const structures = buildingsOnly ? undefined : city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt }, plan.waterColor, false);
     yield;
-    const enclosures = city3dLotEnclosures(lots, heightAt, plan.palette);
+    const enclosures = buildingsOnly ? [] : city3dLotEnclosures(lots, heightAt, plan.palette);
     yield;
-    const groves = city3dCanopy(cityCanopy(layouts, source?.buildings), heightAt);
+    const groves = buildingsOnly ? [] : city3dCanopy(cityCanopy(layouts, source?.buildings), heightAt);
     yield;
-    const ornaments = city3dUnderdarkOrnaments(underdarkOrnaments(layouts, source?.buildings), heightAt, display?.buildings);
+    const ornaments = buildingsOnly ? [] : city3dUnderdarkOrnaments(underdarkOrnaments(layouts, source?.buildings), heightAt, display?.buildings);
     yield;
     const farms = city3dFarmBuildings(world.landuse?.farmsteads, placeholderPlacedBuildings(world), heightAt);
     // Published whole, once made: the buildings layer starts its blocks again for a new scene object.
     this.townOf = { cities, world, heights, key };
     this.appearance = appearance;
-    this.display = city3dWithExtras(display, [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks, ...enclosures, ...groves, ...ornaments, ...farms]);
+    this.display = city3dWithExtras(display, [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...enclosures, ...groves, ...ornaments, ...farms]);
     this.walkCollisions = this.display ? new Terrain3dCollisions(this.display, heights, heights.exaggeration) : undefined;
     meshes!.scenes.set(key, { display: this.display, collisions: this.walkCollisions });
     if (meshes!.scenes.size > LOOK_SCENES) meshes!.scenes.delete(meshes!.scenes.keys().next().value!);

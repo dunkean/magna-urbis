@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { TerrainData } from '../../rust/bridge/terrain';
 import { cityContourInterval, cityContourPaths } from '../src/render/cityContours';
 import './vectorWaterWasm';
+import { contourDrawOf, presetComposition } from '../src/render/composition';
 import { loadRenderGeometry } from '../../rust/bridge/renderGeometry';
 
 beforeAll(async () => {
@@ -53,5 +54,20 @@ describe('City Bench contours', () => {
     expect(fixed.thin.length).toBeGreaterThan(0);
     expect(cityContourPaths(terrain, 'flat', 0.05, false, undefined, 'fixed')).toBe(fixed);
     expect(cityContourPaths(terrain, 'flat', 1, false, undefined, 'fixed', true).step).toBe(4);
+  });
+  it('traces metre contours once with every fifth metre indexed, independently of saved zoom detail', () => {
+    const terrain = ramp(),
+      paths = cityContourPaths(terrain, 'flat', 1, true, undefined, 'zoom');
+    expect(paths.step).toBe(1);
+    expect(paths.thin).toContain('M45.00,');
+    expect(paths.thin).not.toContain('M55.00,');
+    expect(paths.index).toContain('M55.00,');
+    expect(cityContourPaths(terrain, 'flat', 0.001, true, undefined, 'fixed')).toBe(paths);
+    expect(cityContourPaths(terrain, 'flat', 100, true, undefined, 'zoom')).toBe(paths);
+    for (const name of ['topographic', 'parchment'] as const) {
+      const recipe = presetComposition(name);
+      recipe.ground.contourDetail = 'zoom';
+      expect(contourDrawOf(recipe).detail).toBe('fixed');
+    }
   });
 });

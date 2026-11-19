@@ -416,7 +416,7 @@ export class ComposedView {
     // At rest: the picture at rest when it is due (the view came to rest, the content changed, a stepwise paint
     // progressed, the names were being prepared), else the compositor alone (a ground tile arrived, the page asked
     // for a frame of the same content).
-    if (this.rest === 'due' || this.awaited || this.paintedRevision !== map.paintRevision) this.restFrame(live, view, w, h, dpr, now);
+    if (this.rest === 'due' || this.rest === 'painting' || this.awaited || this.paintedRevision !== map.paintRevision) this.restFrame(live, view, w, h, dpr, now);
     else this.composeFrame(live, view, w, h, dpr, false, now);
   }
   private viewRested = (): void => {
@@ -666,7 +666,8 @@ export class ComposedView {
 
   /** Pending work that only concerns the view on screen: the picture at rest, a live layer preparing it, the town paint. */
   pendingViewOnly(): number {
-    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending);
+    const volumes = this.tilted ? Number(this.volumes.pending()) + Number(this.live?.layerPending('buildings')) : 0;
+    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending) + volumes;
   }
   /** Overlay rasters the exact overlay paint still waits for (none when the overlay at rest is the live layer). */
   pendingOverlay(): number {

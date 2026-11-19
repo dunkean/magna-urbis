@@ -38,7 +38,8 @@ export const lookMode = (look: TerrainLook): number => (styleTraits(look.style).
  * later from a worker), not the field's arrival: deciding on the field compiled a forest-off pair first, then
  * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand.
  * `forestUploaded`: a forest field is on the GPU. */
-export const lightTerrainLook = (look: TerrainLook): boolean => look.displayLight ?? (!look.mesh3d && getDisplayQuality() === 'light');
+export const lightTerrainAllowed = (look: TerrainLook): boolean => styleTraits(look.style).satelliteVariant === 0 || mapGpuLight();
+export const lightTerrainLook = (look: TerrainLook): boolean => (look.displayLight ?? (!look.mesh3d && getDisplayQuality() === 'light')) && lightTerrainAllowed(look);
 export function lookVariant(look: TerrainLook, forestUploaded: boolean): TerrainVariant {
   // Mode zero eliminates the entire natural-material shader and the auxiliary crown/water pass at compile time.
   // Captures pin displayLight=false; live world tiles use the same policy as the view, not capture quality.

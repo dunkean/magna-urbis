@@ -57,8 +57,9 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     if (!r) return 'no region';
     if (r.stale || r.draft) return r.stale ? 'stale' : 'draft';
     if (!retained.current(r)) return 'provisional';
-    if (r.dpr !== frame.dpr || !covers(r.rect, frame.rect)) return 'not covered';
+    if (!host.fixedRaster?.() && (r.dpr !== frame.dpr || !covers(r.rect, frame.rect))) return 'not covered';
     if (r.key !== key) return 'other scale';
+    if (host.fixedRaster?.()) return r.parts.every(b => !!b.snapshot) ? '' : 'snapshot pending';
     return beyond(frame.worldToPixel[0] / (r.scale * r.dpr), SNAPSHOT_RATIO) ? 'far' : '';
   };
 
@@ -78,7 +79,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     const piece = (b: Band, minX: number, minY: number, maxX: number, maxY: number): void => {
       if (!(maxX > minX && maxY > minY) || !(minX < frame.rect.maxX && maxX > frame.rect.minX && minY < frame.rect.maxY && maxY > frame.rect.minY)) return;
       const p = (underPool[underLive.length] ??= { list: NOTHING, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] }),
-        snapshot = far || frame.moving ? b.snapshot : undefined;
+        snapshot = host.fixedRaster?.() || far || frame.moving ? b.snapshot : undefined;
       p.prefix = b.baked;
       p.suffix = b.suffix;
       p.baked = snapshot ?? (host.ink ? undefined : b.baked);
@@ -118,7 +119,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       const r = retained.shown;
       // A region keeps showing at any scale while its replacement is made, as long as it was recorded for this pixel
       // ratio; one that no longer meets the view has nothing to show.
-      return !!r && !failed && r.dpr === frame.dpr && meets(r.rect, frame.rect) && host.active() && !raster.lost && (!host.ink || host.ink.ready());
+      return !!r && !failed && (host.fixedRaster?.() || r.dpr === frame.dpr) && meets(r.rect, frame.rect) && host.active() && !raster.lost && (!host.ink || host.ink.ready()) && (!host.fixedRaster?.() || r.parts.every(b => !!b.snapshot));
     },
     restExact(frame: LiveFrame): boolean {
       const why = restGap(frame);
@@ -151,7 +152,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         scissor[2] = b.rect.maxX * sx + tx;
         scissor[3] = b.rect.maxY * sy + ty;
         // Reuse prepared snapshots during motion too; missing or failed bakes still replay the exact suffix.
-        const snapshot = far || frame.moving ? b.snapshot : undefined;
+        const snapshot = host.fixedRaster?.() || far || frame.moving ? b.snapshot : undefined;
         part.prefix = b.baked;
         part.suffix = b.suffix;
         if (snapshot) {
@@ -243,6 +244,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         // Idle and at rest: a slice of what the next recordings would make in one block, at most WARM_SLICE_MS.
         if (!more && !recording.moving) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
         recording.snapshots(frame);
+        if (host.fixedRaster?.() && retained.shown?.parts.some(b => !b.snapshot && !b.snapshotFailed)) more = true;
       } catch (error) {
         fail(error);
         more = false;

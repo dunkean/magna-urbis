@@ -5,6 +5,9 @@
 export const TREE_SYMBOL_SIZE = 128,
   TREE_SYMBOL_KINDS = 16,
   TREE_SYMBOL_LAYERS = 2 * TREE_SYMBOL_KINDS;
+/** Keep the engraved crowns legible as individual marks instead of a nearly solid canopy. */
+export const TREE_SYMBOL_DENSITY = 0.5,
+  TREE_SYMBOL_LIGHT_DENSITY = 0.3;
 /**
  * Map program, mode 0 with the paper tree variant (uForestBrushes 1): `treeWash` multiplies the wash of the woods into
  * the ground colour (the shade they cast on the open land around is the overlay's), `treeSymbols` returns the premultiplied symbols of the
@@ -55,8 +58,8 @@ vec4 treeSymbols(vec2 world){
     vec2 d=world-c;
     if(abs(d.x)>=ext||abs(d.y)>=ext)continue;
     uint h2=groundHash(ivec3(k,1202),seed);
-    // Light quality keeps a nested half of the symbols: drop the others before any texture read.
-    if(forestU8(h2,0u)>(light?.5:.95))continue;
+    // Both tiers keep the same nested seeded stand; rejected marks cost no texture read.
+    if(forestU8(h2,0u)>(light?${TREE_SYMBOL_LIGHT_DENSITY}:${TREE_SYMBOL_DENSITY}))continue;
     vec3 o=groundOccupation(c);
     if(o.y<=0.||treeSymbolBarred(int(o.z))||forestClearingAt(c)>=0.)continue;
     // Stands thin toward the edge and open in the glades of the satellite stand mosaic.

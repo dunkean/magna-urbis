@@ -98,6 +98,18 @@ describe('near trees: biomes and giants', () => {
     expect(column(med, 6).filter(f => f === 3).length).toBeGreaterThan(0);
   });
 
+  it('keeps the lowest boughs of tall forest spires within six metres of the ground', () => {
+    const inputs = stand(245, fieldByte(40), 255, 'alpine');
+    inputs.climate = { temperature: 10, precipitation: 2400 };
+    const trees = buildNearTrees(inputs, view);
+    const bareStems: number[] = [];
+    for (let i = 0; i < trees.length; i += TREE_STRIDE) {
+      if (trees[i + 6] === 1 && trees[i + 4] > 30) bareStems.push(trees[i + 4] - trees[i + 5]);
+    }
+    expect(bareStems.length).toBeGreaterThan(0);
+    expect(Math.max(...bareStems)).toBeLessThanOrEqual(6.001);
+  });
+
   it('places rare giants in groves, far above and wider than their stand', () => {
     const trees = built.get('temperate')!,
       heights = column(trees, 4),

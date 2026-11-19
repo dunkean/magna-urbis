@@ -248,6 +248,8 @@ export const URBAN_PLAN_LAYERS = ['reserve', 'allocated', 'centers', 'domains', 
  * bridges and lights are not city layers at all. */
 export const URBAN_PHYSICAL_LAYERS = ['streets', 'enclosures', 'lotEnclosures', 'parcelOverlay', 'gardens', 'places', 'waterways'] as const satisfies readonly (keyof CityLayers)[];
 export const withoutUrbanPlan = <L extends CityLayers>(layers: L): L => ({ ...layers, ...Object.fromEntries(URBAN_PLAN_LAYERS.map(key => [key, false])) });
+/** Atlas towns sit directly on the terrain: roofs and roads only, with no plan fills, yard ground or fortifications. */
+export const buildingsAndRoadsOnly = <L extends CityLayers>(layers: L): L => ({ ...withoutUrbanPlan(layers), gardens: false, places: false, enclosures: false, lotEnclosures: false, parcelOverlay: false, waterways: false });
 const LEGACY_3D_LAYERS: Readonly<CityLayers> = Object.freeze({ ...DEFAULT_CITY_LAYERS, domains: false });
 const TERRAIN_COLOR_KEYS = ['paper', 'groundLow', 'groundHigh', 'contour', 'waterShore', 'waterDeep', 'river'] as const;
 const WATER_COLOR_KEYS = new Set<string>(['waterShore', 'waterDeep', 'river']);
@@ -277,6 +279,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   const mapStyle = a?.style ?? base.mapStyle,
     styleId = a?.terrainStyle ?? mapStyle,
     traits = styleTraits(styleId);
+  const atlas = styleId === 'atlas' || appearance?.composition?.ground.look === 'atlas';
   const diagnostic: DiagnosticId | 'none' = preview ? 'elevation' : (a?.diagnostic ?? 'none');
   const groundStyle: TerrainStyle = diagnostic === 'elevation' ? 'copernicus' : styleId,
     groundTraits = styleTraits(groundStyle);
@@ -303,7 +306,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     season: effects?.season ?? 0.5,
     calendar: { ...effects?.calendar },
     layers: { ...DEFAULT_TERRAIN_LAYERS, ...a?.terrainLayers, water: a?.terrainLayers?.water ?? true },
-    contours: a?.contours ?? base.contours ?? true,
+    contours: !atlas && (a?.contours ?? base.contours ?? true),
     lakes: a?.lakes ?? true,
     oxbows: a?.oxbows ?? true,
   };
@@ -358,6 +361,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
 
   // The shared Urban plan switch hides the same plan drawing in 2D, 3D and export (withoutUrbanPlan).
   if (!city.plan) city.layers = withoutUrbanPlan(city.layers);
+  if (atlas) city.layers = buildingsAndRoadsOnly(city.layers);
 
   if (target !== 'view3d') {
     city.buildingStyle = flatBuildings ? 'silhouette' : 'cartographic';

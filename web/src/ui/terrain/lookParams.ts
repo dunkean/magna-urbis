@@ -5,8 +5,8 @@
  * gpu/params.ts), where names absent from the layout (the variant constants uMode, uRenderV2, uForest, the GL
  * sampler units) are ignored the same way. Textures go through `texture` (GL: active unit and binding; WebGPU: the
  * view bound under that name) and `sampler` (GL sampler unit; nothing on WebGPU).
- * Light draws use palette/hillshade only: no material/crown passes, fractal octaves, relief refinement, shore-light
- * bake or crown atlas. Satellite keeps an earth-green ramp; parchment keeps its paper ramp. Full draws are unchanged.
+ * Light cartographic grounds use palette/hillshade only. Satellite fast keeps the full material, vegetation and
+ * refinement parameters; its performance tier simplifies the buildings.
  */
 import { waterSeasonUniforms } from '../../render/seasonPalette';
 import { renderV2GlacierSources } from '../../../../rust/bridge/terrainRenderV2';
@@ -23,7 +23,7 @@ import type { WaterSurface } from '../../render/terrainWater';
 import { isNeuralRefinement } from '../terrainRefinement';
 import { treeSymbolWash } from '../../render/treeSymbols';
 import type { Palette } from '../../render/styles';
-import { treeSymbolsOn } from './variant';
+import { lightTerrainAllowed, treeSymbolsOn } from './variant';
 import { fadeProgress, waterBand, type LookPalettes, type RedrawFrame } from './redraw';
 import type { HeightLayer, TerrainLook } from './contract';
 import type { StackedLayer } from './layers';
@@ -122,8 +122,8 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
     { definition, pal, water } = s.palettes;
   // Light ground has no procedural detail or auxiliary pass, even in close world tiles. The palette and
   // source-height hillshade carry the style; no crown atlas, shore-light bake, material or fractal octaves.
-  const light = s.quality > 0;
-  b.int('uQuality', s.quality);
+  const light = s.quality > 0 && lightTerrainAllowed(look);
+  b.int('uQuality', light ? s.quality : 0);
   b.vec2('uCanvas', frame.width, frame.height);
   b.vec2('uOrigin', frame.origin[0], frame.origin[1]);
   b.float('uPx', frame.px);

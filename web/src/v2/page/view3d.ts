@@ -22,6 +22,7 @@ import { $ } from './dom';
 import { mountWorldTreeControls } from './worldTrees';
 import { mountWorldNavigation } from './worldNavigation';
 import { mountWorldDepthControl } from './worldDepth';
+import { mountWorldReliefControl } from './worldRelief';
 import { mountViewLock } from './viewLock';
 import { onMachineDecision } from '../machineTier';
 import { machineViewDefaults } from '../machineView';
@@ -80,6 +81,7 @@ export function mountView3d(state: PageState, actions: PageActions): void {
     mountTiltButton(state, actions);
     // The navigation makes the bar the trees' controls join.
     mountWorldNavigation(state, actions);
+    mountWorldReliefControl(state, actions);
     mountWorldTreeControls(state, actions);
     mountWorldDepthControl(state);
     return;

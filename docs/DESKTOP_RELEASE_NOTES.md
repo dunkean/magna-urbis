@@ -1,5 +1,14 @@
 ## Alpha 0.3.11
 
+- Keep nearby 3D trees visible when orbiting close to the ground or looking toward the horizon, and restore the terrain exaggeration slider with its current multiplier in the tilted-view toolbar.
+- Discard the previous map's 3D trees when regenerating with trees switched off, so re-enabling them cannot restore trees over the new sea or terrain.
+- Keep Satellite fast's terrain and vegetation identical to Satellite, while retaining simplified textured buildings.
+- Publish regenerated towns in 2D without requiring a 3D switch, continue unfinished Canvas paints, and show a spinner beside each town name until its first display is complete.
+- Keep Atlas free of contour lines and urban ground fills, showing houses and roads only. Atlas, Cadastre and Topography keep only building volumes above their map in the tilted view.
+- Reuse fixed-definition town and land-use rasters in Cadastre, and retained contour rasters in Topography and Parchment instead of redrawing contour triangles at each frame. Topography uses 1 m contours with 5 m index lines.
+- Reduce the density of Parchment's drawn trees.
+- Stabilize 3D tree populations and detail changes, fade in new tree blocks, reduce tree mesh and instance-buffer costs, thin dense tropical stands and shorten bare conifer trunks.
+- Keep coastal smoothing to a configurable median width and slow, seeded width variation along the shore, without cliff profiles or inland relief reshaping. The compact controls sit below the coast choices, with help in tooltips.
 - Tilt, fly and walk through the map with one continuous camera; lock the view to 2D and adjust the viewing depth.
 - Keep loaded towns and contour lines cached across map styles and camera changes, with sharper navigation and faster map preparation.
 - Draw parchment woods on the GPU and simplify light map styles; choose an initial style suited to the device's graphics capabilities.
@@ -9,7 +18,6 @@
 - Confirm resets and town moves inside the app, and keep generation progress visible independently of settlement generation.
 - Open the four latest versions' release notes from the top bar.
 - Keep 3D harbour structures, boats and equipment on the displayed terrain and water instead of outdated planning heights, including exposed dry riverbeds; anchor pier piles in the bed.
-- Choose beaches, cliffs or a mixed coast with low coves between rocky stretches. Adjust cliff coverage, coastal smoothing and transition width independently of coves, headlands and relief influence, including on painted and hand-drawn coastlines.
 - Preserve dwellings when a major landmark is requested in a camp or another settlement with a single residential block.
 - Embed a compact city preview in an iframe using Azgaar burg data or city URL parameters, with automatic generation and a link to the full editor.
 - Explore varied city previews with a randomize button, and distinguish individual buildings with clearer outlines and contrasting landmark colors in the Minimal map style.

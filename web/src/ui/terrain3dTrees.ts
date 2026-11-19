@@ -218,9 +218,7 @@ interface Climate {
 /** Live crown ratio (crown length over tree height) of a 3D tree by social class (ForestSocial.rank: young,
  * suppressed, intermediate, co-dominant, dominant, open-grown), broadleaf then tall conifer. A forest-grown broadleaf
  * carries its crown on the upper half to two thirds of the stem, a dominant's reaching lowest; young trees are crown
- * almost to the ground, open-grown trees nearly as deep as they are tall (live crown ratio classes of forest inventories:
- * 0.3-0.4 suppressed and crowded, 0.5-0.7 vigorous stand trees, over 0.8 open-grown). Tall forest conifers self-prune a
- * long bare stem (0.5-0.6); shorter ones keep their boughs lower (see treeForm). */
+ * almost to the ground, open-grown trees nearly as deep as they are tall. The spire profile additionally limits the clear stem in metres (treeForm). */
 const CROWN_RATIO: readonly (readonly [number, number])[] = [
   [0.85, 0.9],
   [0.6, 0.55],
@@ -244,30 +242,34 @@ interface TreeForm {
   tone: number;
 }
 /** Giants keep a full crown on a stout stem: temperate veterans about 0.7 of their height, tropical emergents a clear bole
- * of about half their height, landmark trees in open land 0.85; coastal rainforest conifer giants a long bare trunk.
+ * of about half their height, landmark trees in open land 0.85. Conifer spires retain low boughs.
  * Parasols (flat-topped crown in the upper third, on a bare bole): savanna acacias, the savanna share of broadleaves, and
  * Mediterranean umbrella pines, half of the conifers of a Mediterranean climate; `pick` (0..1) draws them. */
 function treeForm(form: TreeForm, social: ForestSocial, biome: ForestBiome, giant: boolean, needle: boolean, margin: number, krumm: number, kind: readonly number[], wetConifer: number, top: number, v: number, w: number, pick: number): void {
   let crown: number;
   if (giant) {
     form.height = (needle ? mix(biome.giantHeight, 2.4, wetConifer) : biome.giantHeight) * (0.9 + 0.2 * v);
-    crown = social.rank === 5 ? 0.85 : needle ? mix(0.55, 0.4, wetConifer) : mix(0.7, 0.5, kind[1]);
+    crown = social.rank === 5 ? 0.85 : needle ? 0.82 : mix(0.7, 0.5, kind[1]);
     form.tone = 1;
   } else {
     form.height = social.share;
     crown = CROWN_RATIO[social.rank][needle ? 1 : 0] + biome.crown;
-    // Conifers under ~15 m keep their boughs low; only tall forest conifers carry a long bare stem.
+    // Short conifers retain more of their lower boughs.
     if (needle && social.rank < 5) crown = mix(0.8, crown, sstep(15, 30, top * social.share));
     // Crowns at a margin get side light and keep their lower branches.
     if (social.rank < 5) crown += margin * (needle ? 0.2 : 0.1);
     form.tone = CLASS_TONE[social.rank];
   }
-  const parasol = krumm < 0.5 && pick < (needle ? 0.5 * kind[0] : kind[2]);
-  if (parasol) crown = 0.35;
+  const desert = biome === FOREST_BIOMES[7];
+  const parasol = krumm < 0.5 && pick < (needle ? 0.5 * kind[0] : desert ? 0.75 : kind[2]);
+  if (parasol) crown = desert ? 0.45 + 0.12 * v : 0.38;
   form.shape = (needle ? FORM_SPIRE : FORM_BROAD) + (parasol ? FORM_PARASOL : 0);
   // Krummholz is branched to the ground.
   crown = mix(crown, 0.95, krumm);
-  form.crown = clamp(crown + (w - 0.5) * 0.12, 0.25, 0.97);
+  crown += (w - 0.5) * 0.12;
+  // On a tall fir a fractional bole can be several storeys high. Anchor the first live boughs in metres.
+  if (needle && !parasol) crown = Math.max(crown, 0.76, 1 - (3 + 3 * w) / Math.max(1.5, top * form.height));
+  form.crown = clamp(crown, 0.25, 0.97);
 }
 
 /** Builds the instance stream of the crowns within the render distance of the eye, in front of it. */
@@ -320,7 +322,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   const px = new Float64Array(4),
     crownSeed = (seed ^ 0x2c1b3c6d) >>> 0;
   // Biome stature (terrainForestStature.ts): crown size and spacing, class shares, giants; the same row as forestBiome().
-  const biome = FOREST_BIOMES[forestBiomeRow(inputs.renderV2, inputs.zone)],
+  const biomeRow = forestBiomeRow(inputs.renderV2, inputs.zone),
+    biome = FOREST_BIOMES[biomeRow],
+    tropicalCanopy = biomeRow === 9 ? 1 : kind[1],
     wetConifer = forestWetConifer(trop, humid, T);
   const fieldAt = (x: number, y: number): Stand | undefined => {
     if (!bilinear(field.rgba, field.n, field.x, field.y, field.width, x, y, px)) return undefined;
@@ -673,9 +677,15 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
             closure = sstep(0.55, 0.9, dens) * sstep(8, 18, height) * (1 - margin),
             lone = beyond > 0,
             hedgeRow = town || open < (field ? FOREST_FIELD.hedge : 5);
-          forestSocial(social, forestBiomeRow(inputs.renderV2, inputs.zone), u8(h2, 16), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(h, 24), margin, closure, krumm, kind[1], lone);
+          forestSocial(social, biomeRow, u8(h2, 16), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(h, 24), margin, closure, krumm, kind[1], lone);
           const giantGate = (1 - krumm) * sstep(4, 10, height);
           const giant = lone ? !field && !hedgeRow && u8(h2, 24) < Math.min(FOREST_LANDMARK * biome.giant, FOREST_LANDMARK_MAX) * giantGate : forestGiant(cx, cy, u8(h2, 24), biome.giant * giantGate, crownSeed, forestHash);
+          // The ground carries the closed tropical understory. Model a stable sample of canopy stems;
+          // bank galleries, forest margins, lone trees and emergents keep their original locations.
+          if (tropicalCanopy > 0 && !giant && !lone && !riparian) {
+            const omit = tropicalCanopy * closure * (social.rank < 3 ? 0.88 : 0.56);
+            if (u8(forestHash(i, j, level * 2 + 89, crownSeed), 8) < omit) continue;
+          }
           const r = Math.min(rho * s * (0.8 + 0.4 * u8(h, 24)) * (giant ? biome.giantWiden : social.width) * (lone ? (hedgeRow ? FOREST_HEDGE_WIDEN : FOREST_LONE_WIDEN) : 1 + 0.2 * margin) * (1 + 0.3 * krumm), 1.14 * s);
           if (clearingRoom && !clearingRoom.keeps(cx, cy, r)) continue;
           // The painted crown's height (forestCrown) decides, as there, whether a tree stands here; its 3D form is below.

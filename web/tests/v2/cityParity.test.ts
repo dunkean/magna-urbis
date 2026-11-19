@@ -607,8 +607,9 @@ describe('V2 and City Bench stay in sync', () => {
     for (const style of PRESET_IDS)
       for (const target of ['view2d', 'view3d'] as const) {
         const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-        expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(r.composition.buildings.visible);
-        expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(r.composition.buildings.visible);
+        const fences = r.composition.recipe.ground.look !== 'atlas' && r.composition.buildings.visible;
+        expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(fences);
+        expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(fences);
       }
     const hidden = presetComposition('parchment');
     hidden.buildings.visible = false;
@@ -1208,6 +1209,7 @@ describe('causeways are ordinary raised roads', () => {
       { x: 10, y: 0 },
     ];
     const scene = {
+      layouts: [],
       streets: [
         { role: 'causeway', rank: 1, street: { path } },
         { role: 'street', rank: 1, street: { path } },

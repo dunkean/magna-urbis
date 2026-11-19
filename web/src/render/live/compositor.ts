@@ -76,6 +76,8 @@ export interface LiveCompositor {
   /** Installs, replaces or removes a layer; the layer it replaces is disposed. */
   setLayer(name: LiveLayerName, layer: LiveLayer | undefined): void;
   hasLayer(name: LiveLayerName): boolean;
+  /** Preparation still owed by this layer for the current frame, excluding other layers' background work. */
+  layerPending(name: LiveLayerName): boolean;
   /** A layer that is not shown is neither drawn nor replaced by its stand-in (an exact canvas covers it); its `work` still runs. */
   setLayerShown(name: LiveLayerName, shown: boolean): void;
   invalidateLayer(name: LiveLayerName): void;
@@ -566,6 +568,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       if (layer?.work) schedule();
     },
     hasLayer: name => !!layers[name],
+    layerPending: name => !!stats.pending[name],
     setLayerShown(name, value) {
       shown[name] = value;
     },

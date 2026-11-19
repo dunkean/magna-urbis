@@ -13,6 +13,15 @@ function frame(scale: number, pitch = (55 * Math.PI) / 180, yaw = 0, dpr = 1, te
 }
 
 describe('tree ground coverage', () => {
+  it('keeps nearby trees when lowering an orbit toward the horizon', () => {
+    const coverage = new TreeCoverage();
+    for (const degrees of [80, 85, 89]) expect(coverage.opacity(frame(2, (degrees * Math.PI) / 180), relief, 600)).toBe(1);
+    const camera = createFrameCamera(),
+      view = { cx: 20000, cy: 20000, scale: 2, pitch: Math.PI / 2, yaw: 0, eye: 102 };
+    frameCamera(camera, view, 1600, 900, 1600, 900, 1, relief);
+    expect(coverage.opacity({ camera, view, cssW: 1600, cssH: 900, dpr: 1 } as unknown as LiveFrame, relief, 600)).toBe(1);
+  });
+
   it('hands the zoomed-out forest to the painted crowns and fades over a short zoom interval', () => {
     const coverage = new TreeCoverage();
     expect(coverage.opacity(frame(8), relief, 600)).toBe(1);

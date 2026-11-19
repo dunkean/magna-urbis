@@ -27,6 +27,8 @@ export interface OverlayBand {
 
 /** What the renderer that owns the map gives the layer (render/cartography/liveHost.ts). */
 export interface OverlayHost {
+  /** A single world-space resolution, retained across pan/zoom and pixel ratios. */
+  fixedRaster?(): boolean;
   /** Retained world ink between the baked areas and the suffix. Its owner keeps it across look changes. */
   readonly ink?: OverlayInk;
   /** True while the GPU vector engine draws the live map; otherwise the layer is never ready (its stand-in shows). */

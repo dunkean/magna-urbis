@@ -51,7 +51,35 @@ describe('paper map tree symbols on the ground', () => {
 });
 
 describe('flat light look policy', () => {
-  it.each(['render-v2', 'parchment'] as const)('removes optional ground passes for %s and preserves full capture variants', style => {
+  it('keeps the satellite terrain and vegetation passes in the fast preset', () => {
+    const look = lookOf('render-v2');
+    setDisplayQualityPreference('full');
+    const full = lookVariant(look, true);
+    setDisplayAppearanceQuality('light');
+    expect(lookVariant(look, true)).toEqual(full);
+    expect(mapPasses(lookVariant(look, true))).toEqual(['aux', 'map']);
+  });
+  it('keeps satellite ground uniforms identical across full and fast quality', () => {
+    const values = new Map<string, unknown>(),
+      bindings = new Proxy(
+        {},
+        {
+          get:
+            (_, name) =>
+            (...args: unknown[]) =>
+              values.set(String(name) + ':' + String(args[0]), args.slice(1)),
+        },
+      ) as LookBindings,
+      look = lookOf('render-v2'),
+      state: LookParamsState = { look, quality: 0, frame: { width: 512, height: 512, origin: [0, 0], px: 0.02 }, stylePixelRatio: 1, dpr: 1, scale: 50, palettes: lookPalettes(look), mode: 3, forest: true, coastal: false, lake: 0, lakeN: 1, overlay: false, city: [0, 0] };
+    writeLookParams(bindings, state);
+    const full = new Map(values);
+    values.clear();
+    writeLookParams(bindings, { ...state, quality: 1 });
+    expect(values).toEqual(full);
+    expect(values.has('forest:true')).toBe(true);
+  });
+  it.each(['parchment'] as const)('removes optional ground passes for %s and preserves full capture variants', style => {
     setDisplayQualityPreference('full');
     const look = lookOf(style),
       full = lookVariant(look, true);
@@ -62,7 +90,7 @@ describe('flat light look policy', () => {
     expect(speculativePrewarmAllowed()).toBe(false);
     expect(lookVariant(captureLook(look, false), true)).toEqual(full);
   });
-  it.each(['render-v2', 'parchment'] as const)('writes no light noise or crown inputs even at close zoom (%s)', style => {
+  it.each(['parchment'] as const)('writes no light noise or crown inputs even at close zoom (%s)', style => {
     const values = new Map<string, unknown>();
     const bindings = new Proxy(
       {},
@@ -88,7 +116,7 @@ describe('flat light look policy', () => {
   it.each(['satellite', 'parchment'] as const)('keeps flat rural classes on %s light and preserves the full export policy', base => {
     const composition = presetComposition(`${base}-light`);
     const live = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
-    expect(cityOverlayLandKinds(live)).toBe(true);
+    if (base === 'parchment') expect(cityOverlayLandKinds(live)).toBe(true);
     const exported = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, 'export');
     const original = resolveAppearance({ style: 'parchment', composition: presetComposition(base) }, { mapStyle: 'parchment' }, { nativeCities: true }, 'export');
     expect(exported.quality).toBe('full');
@@ -98,6 +126,7 @@ describe('flat light look policy', () => {
         return owns === true || owns(kind);
       };
       expect(accepts(exported)).toBe(accepts(original));
+      if (base === 'satellite') expect(accepts(live)).toBe(accepts(original));
     }
     expect(composition.text).toEqual(presetComposition(base).text);
   });

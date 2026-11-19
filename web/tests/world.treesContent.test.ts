@@ -24,6 +24,46 @@ function build(inputs: TreeInputs, bx = 12, by = 12) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('tree block content', () => {
+  it('retires the previous forest before drawing a map regenerated while trees were hidden', () => {
+    let inputs = stand(),
+      terrainSource = {},
+      shown = true;
+    let heights = new TerrainHeights(new Float32Array(16).fill(20), 4, 2400, 0, 1);
+    const gl = new Proxy({} as WebGL2RenderingContext, {
+      get: (t, n) => {
+        const target = t as unknown as Record<string | symbol, unknown>;
+        return (target[n] ??= String(n).startsWith('get') ? vi.fn(() => true) : String(n).startsWith('create') ? vi.fn(() => ({})) : vi.fn());
+      },
+    });
+    const layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, terrainSource: () => terrainSource, distance: () => 600, shown: () => shown, invalidate: () => {} });
+    const view = { cx: 1200, cy: 1200, scale: 4, pitch: 0.3, yaw: 0 },
+      camera = createFrameCamera();
+    const frame = { gl, view, cssW: 1600, cssH: 900, dpr: 1, width: 1600, height: 900, camera } as unknown as LiveFrame;
+    const settle = () => {
+      frameCamera(camera, view, 1600, 900, 1600, 900, 1, heights);
+      for (let i = 0; i < 4; i++) {
+        layer.draw(frame);
+        while (layer.work!(8, frame));
+      }
+      layer.draw(frame);
+    };
+    settle();
+    expect(layer.stats!().drawCalls).toBeGreaterThan(0);
+    shown = false;
+    layer.draw(frame);
+    terrainSource = {};
+    heights = new TerrainHeights(new Float32Array(16).fill(-10), 4, 2400, 0, 1);
+    inputs = { ...inputs, water: () => 1 };
+    expect(layer.work!(8, frame)).toBe(false);
+    shown = true;
+    layer.draw(frame);
+    expect(layer.stats!().drawCalls).toBe(0);
+    expect(vi.mocked(gl.deleteBuffer)).toHaveBeenCalled();
+    settle();
+    expect(layer.stats!().drawCalls).toBe(0);
+    layer.dispose();
+  });
+
   it('ignores global keys and callback identities but catches local field, bank, beach and season edits', () => {
     const inputs = stand(),
       original = new TreeContent(inputs).key(12, 12);

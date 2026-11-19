@@ -37,6 +37,7 @@ import type { LiveCityEnv, LiveLayer } from '../render/live/contract';
 import { createLiveCityLayer } from '../render/live/cityLayer';
 import { createStepwiseTown, type NativeCityStepwise } from '../render/city/canvas/stepwiseTown';
 import { countWork } from '../render/workCount';
+import { FixedTownRaster, fixedTownRasterLayer, type TownRasterTile } from '../render/city/canvas/fixedTownRaster';
 
 export interface NativeCityMapStats {
   native: boolean;
@@ -341,7 +342,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     }
     return painted;
   }
-  type TownFrame = { view: View; w: number; h: number; dpr: number; appearance: ResolvedAppearance; visibility: Partial<ExportLayers>; hooks?: NativeCityHooks; lod: CityLod };
+  type TownFrame = { view: View; w: number; h: number; dpr: number; appearance: ResolvedAppearance; visibility: Partial<ExportLayers>; hooks?: NativeCityHooks; lod: CityLod; rasterTown?: number };
   const townLayers = (appearance: ResolvedAppearance, visibility: Partial<ExportLayers>): CityLayers => {
     // Urban plan off is already folded into city.layers (withoutUrbanPlan): streets, walls and lamps stay.
     const requestedLayers = appearance.city.layers;
@@ -363,13 +364,13 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       textured = city.textured;
     const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
     const buildingsVisible = visibility.city !== false && city.visible;
-    let reason = glBlockReason(appearance, visibility);
+    let reason = f.rasterTown !== undefined ? 'retained-cadastre' : glBlockReason(appearance, visibility);
     let glFrame: CityGlFrame | undefined;
     ctx.save();
     try {
       ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
       // Activity / node installations: flat ground under every building.
-      if (buildingsVisible) drawInstallations(ctx, sites, viewport, mpp, palette !== 'parchment' && palette !== 'ink');
+      if (buildingsVisible && appearance.composition.recipe.ground.look !== 'atlas') drawInstallations(ctx, sites, viewport, mpp, palette !== 'parchment' && palette !== 'ink');
       if (!reason) {
         if (!prepareGl()) reason = gl?.unavailable !== false ? 'gl-unavailable' : 'gl-not-ready';
         else {
@@ -401,6 +402,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       stats.reason = reason;
       stats.drawCalls = glFrame?.drawCalls ?? 0;
       for (const entry of entries) {
+        if (f.rasterTown !== undefined && entries[f.rasterTown] !== entry) continue;
         const options = cityDrawOptions({
           appearance,
           city,
@@ -441,6 +443,24 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     } finally {
       ctx.restore();
     }
+  }
+
+  const cadastreRaster = new FixedTownRaster(canvas);
+  const isCadastre = (appearance: ResolvedAppearance): boolean => appearance.composition.recipe.ground.look === 'cadastre';
+  let rasterHooks: NativeCityHooks | undefined;
+  function ensureCadastre(appearance: ResolvedAppearance, visibility: Partial<ExportLayers>, water?: Float32Array): void {
+    cadastreRaster.ensure(
+      `${contentRevision}|${JSON.stringify(appearance.city)}|${JSON.stringify(appearance.palette.colors)}|${JSON.stringify(appearance.composition.networks)}|${JSON.stringify(visibility)}|${idOf(water)}`,
+      entries.map(e => e.plan.extent),
+    );
+  }
+  function paintCadastre(appearance: ResolvedAppearance, visibility: Partial<ExportLayers>, hooks?: NativeCityHooks, budget = Infinity): boolean {
+    ensureCadastre(appearance, visibility, hooks?.water?.());
+    return cadastreRaster.work(
+      (ctx, t: TownRasterTile) =>
+        paintSteps(ctx, { view: { cx: (t.rect.minX + t.rect.maxX) / 2, cy: (t.rect.minY + t.rect.maxY) / 2, scale: t.scale }, w: t.canvas.width, h: t.canvas.height, dpr: 1, appearance, visibility, hooks, lod: 'close', rasterTown: t.town }, newStats(), true),
+      budget,
+    );
   }
 
   // The stepwise mode of the exact town (render/city/canvas/stepwiseTown.ts): its kept layers and its scheduler.
@@ -512,6 +532,17 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       const city = appearance.city,
         opacity = finite(city.opacity, 0.8, 0, 1);
       if (!opacity) return stats;
+      if (isCadastre(appearance)) {
+        rasterHooks = hooks;
+        stats.pending = paintCadastre(appearance, visibility, hooks, stepwise ? 8 : Infinity);
+        cadastreRaster.draw(target, view, w, h, dpr, opacity);
+        stats.lod = 'close';
+        stats.reason = 'retained-cadastre';
+        stats.visibleBuildings = buildings;
+        stats.ms = performance.now() - started;
+        if (stats.pending) onInvalidate('progress');
+        return stats;
+      }
       const pixelsW = Math.max(1, Math.ceil(w * dpr)),
         pixelsH = Math.max(1, Math.ceil(h * dpr));
       const viewport = viewRect(view, w, h),
@@ -610,7 +641,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     },
     createLiveLayer(context, env) {
       if (disposed || !entries.length) return undefined;
-      const made = createLiveCityLayer(context, env, {
+      const regular = createLiveCityLayer(context, env, {
         sceneSteps: liveSceneSteps,
         enclosures: () => entries.map(entry => entry.plan.lotEnclosures),
         canopies: () => entries.map(entry => cityCanopy(entry.plan.layouts, entry.canopyBuildings)),
@@ -621,6 +652,39 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
         sites: () => sites.length > 0,
         housePlans: () => entries.some(entry => !!entry.houses),
       });
+      const fixed = fixedTownRasterLayer(
+        context,
+        cadastreRaster,
+        budget => paintCadastre(env.appearance(), env.visibility() ?? {}, rasterHooks ?? { water: env.water }, budget),
+        () => env.appearance().city.opacity,
+      );
+      const active = (): LiveLayer => {
+        const appearance = env.appearance();
+        if (!isCadastre(appearance)) return regular;
+        ensureCadastre(appearance, env.visibility() ?? {}, env.water?.());
+        return fixed;
+      };
+      const made: LiveLayer = {
+        name: 'city',
+        isolated: true,
+        opacity: () => active().opacity?.() ?? 1,
+        ready: frame => active().ready(frame),
+        restExact: frame => active().restExact?.(frame) ?? false,
+        draw: frame => active().draw(frame),
+        work: (budget, frame) => active().work?.(budget, frame) ?? false,
+        invalidate: () => regular.invalidate?.(),
+        lookChanged: () => regular.lookChanged?.(),
+        contextLost: () => {
+          regular.contextLost?.();
+          fixed.contextLost?.();
+        },
+        drape: { revision: () => active().drape?.revision() ?? 0, ready: c => active().drape?.ready(c) ?? true, paint: c => active().drape?.paint(c) },
+        stats: () => active().stats?.() ?? { drawCalls: 0, triangles: 0, ms: 0 },
+        dispose: () => {
+          regular.dispose();
+          fixed.dispose();
+        },
+      };
       const dispose = made.dispose.bind(made);
       const owned: LiveLayer = Object.assign(made, {
         dispose: () => {
@@ -643,6 +707,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       gl = undefined;
       glScene = undefined;
       stepwiseTown.release();
+      cadastreRaster.clear();
       for (const entry of entries) entry.houses?.replaceScene({ buildings: [] });
       entries.length = 0;
       textures.clear();

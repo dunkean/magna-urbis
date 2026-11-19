@@ -569,6 +569,11 @@
 #app #places-panel .settlement-name strong {
   min-width: 0;
 }
+#app #places-panel .town-render-loading {
+  width: 12px;
+  height: 12px;
+  margin-inline: 1px 0;
+}
 #app #places-panel .settlement-warning {
   flex: none;
   color: #e4b08b;

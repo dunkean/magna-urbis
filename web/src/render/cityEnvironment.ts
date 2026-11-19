@@ -51,7 +51,7 @@ const atlasPlate = (r: ResolvedAppearance): boolean => r.composition.recipe.grou
 /** V2's vector overlay ownership: full material/Illustrated grounds paint their farmland; light grounds need
  * flat polygons here because their shader has neither occupation nor procedural crowns. Exports resolve full. */
 export function cityOverlayLandKinds(r: ResolvedAppearance): true | ((kind: LandKind) => boolean) {
-  if (r.quality === 'light' && !r.ground.traits.fantasy) return true;
+  if (r.quality === 'light' && !r.ground.traits.fantasy && !r.ground.traits.satelliteVariant) return true;
   const symbols = r.composition.vegetation.cartographic;
   // An atlas plate is physical geography: the hypsometric tints and relief are the map. Woods stay as a faint wash
   // (palette forestTint); fields, pastures and the other land-use polygons are not drawn.

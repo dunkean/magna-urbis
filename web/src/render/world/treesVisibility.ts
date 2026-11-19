@@ -30,6 +30,8 @@ export class TreeCoverage {
     pose.plane = camera.target[2];
     pose.free = Number.isFinite(frame.view.eye);
     pose.clearance = camera.eye[2] - relief.heightAt(camera.eye[0], camera.eye[1]) * camera.rise;
+    // This term already guarantees full coverage. Avoid eight terrain marches in a low orbit or on foot.
+    if (pose.clearance <= 0.35 * radius) return 1;
     let extent = 0;
     for (let y = -1; y <= 1; y++)
       for (let x = -1; x <= 1; x++) {
@@ -41,7 +43,10 @@ export class TreeCoverage {
           hy = Math.max(0, Math.min(relief.width, this.hit[1]));
         extent = Math.max(extent, Math.hypot(hx - camera.target[0], hy - camera.target[1]));
       }
-    // A short zoom interval, continuously evaluated in the shader; zero stops selection and background builds.
-    return 1 - smooth((extent / radius - 0.85) / 0.3);
+    // Grazing rays can reach the horizon while the eye is among nearby trees. Keep that local forest visible;
+    // the layer's per-tree distance fade still limits its range. A distant ray must never hide the whole layer.
+    const targetCoverage = 1 - smooth((extent / radius - 0.85) / 0.3),
+      eyeCoverage = 1 - smooth((pose.clearance / radius - 0.35) / 0.3);
+    return Math.max(targetCoverage, eyeCoverage);
   }
 }

@@ -2,23 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { createContourInk, type ContourInkSource } from '../src/render/live/contourInk';
 import { createLiveRasterizer } from '../src/render/gpu/liveRasterizer';
 import { RecordingCanvas } from '../src/render/gpu/recorder';
-import { RecOnlyPath2D } from '../src/render/gpu/path';
 import type { LiveRasterizer } from '../src/render/gpu/contract';
 import type { LiveFrame } from '../src/render/live/contract';
 
 vi.mock('../src/render/gpu/liveRasterizer', () => ({ createLiveRasterizer: vi.fn() }));
 
 function fixture() {
-  const path = new RecOnlyPath2D();
-  path.moveTo(0, 0);
-  path.lineTo(20, 30);
-  const canvas = new RecordingCanvas(1, 1),
+  const canvas = new RecordingCanvas(4000, 4000),
     ctx = canvas.getContext('2d')!;
-  ctx.lineWidth = 1;
-  ctx.stroke(path);
-  ctx.lineWidth = 2;
-  ctx.stroke(path);
-  const initial: ContourInkSource = { terrain: {}, list: canvas.finish(), color: [0.3, 0.2, 0.1, 1], opacity: 0.4, thinWeight: 1, indexWeight: 1 };
+  ctx.drawImage({ width: 8192, height: 8192 } as HTMLCanvasElement, 0, 0, 4000, 4000);
+  const initial: ContourInkSource = { terrain: {}, list: canvas.finish() };
   let source: ContourInkSource | null | undefined = initial;
   const raster = {
     prepareSteps: vi.fn(function* () {
@@ -27,8 +20,8 @@ function fixture() {
     }),
     warm: vi.fn(() => true),
     replayLive: vi.fn(),
-    lastStats: () => ({ drawCalls: 2, triangles: 4, ms: 0.1, clips: 0, ops: 2 }),
-    liveTally: () => ({ late: 0, fan: 0, stroke: 4, sprite: 0 }),
+    lastStats: () => ({ drawCalls: 1, triangles: 2, ms: 0.1, clips: 0, ops: 1 }),
+    liveTally: () => ({ late: 0, fan: 0, stroke: 0, sprite: 2 }),
     bytes: () => 4096,
     dispose: vi.fn(),
     dropContext: vi.fn(),
@@ -60,27 +53,26 @@ describe('retained overlay contours', () => {
       f.ink.draw(frame);
       const shown = vi.mocked(f.raster.replayLive).mock.lastCall![0];
       expect(shown[0].list.ops[0]).toBe(ops[0]);
-      expect(shown[0].list.ops[1]).toBe(ops[1]);
+      expect(shown[0].list.ops).toHaveLength(1);
+      expect(shown[0].list.ops[0].type).toBe('sprites');
       expect(shown[0].post).toEqual([scale * 2, 0, 0, scale * 2, -700 * scale, 0]);
     }
     expect(f.raster.prepareSteps).toHaveBeenCalledTimes(1);
-    expect(f.ink.stats()).toMatchObject({ drawCalls: 2, late: 0, bytes: 4096, strokeTriangles: 4, ops: 2 });
+    expect(f.ink.stats()).toMatchObject({ drawCalls: 1, late: 0, bytes: 4096, strokeTriangles: 0, spriteTriangles: 2, ops: 1 });
   });
 
-  it('changes the look and toggles visibility without preparing geometry again', () => {
+  it('toggles visibility without uploading the retained image again', () => {
     const f = fixture();
     f.ink.work(1000, f.frame());
     f.source(undefined);
     f.ink.work(1000, f.frame());
     f.ink.draw(f.frame());
     expect(f.raster.replayLive).not.toHaveBeenCalled();
-    f.source({ ...f.initial, color: [1, 0, 0, 1], opacity: 0.2 });
+    f.source(f.initial);
     f.ink.work(1000, f.frame());
     f.ink.draw(f.frame());
     expect(f.raster.prepareSteps).toHaveBeenCalledTimes(1);
-    const op = vi.mocked(f.raster.replayLive).mock.lastCall![0][0].list.ops[1];
-    expect(op.type === 'stroke' && op.paint).toEqual({ kind: 'color', rgba: [1, 0, 0, 1] });
-    expect(op.type === 'stroke' && op.alpha).toBe(0.2);
+    expect(vi.mocked(f.raster.replayLive).mock.lastCall![0][0].list).toBe(f.initial.list);
   });
 
   it('waits for worker paths and programs, and prepares again only after context loss or terrain replacement', () => {

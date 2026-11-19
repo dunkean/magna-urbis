@@ -6,6 +6,19 @@ import { effectiveTerrainSettings } from '../src/v2/terrainSettings';
 import type { MapState } from '../src/v2/display/mapState';
 
 vi.mock('../src/render/live/contourInk', () => ({ createContourInk: vi.fn() }));
+vi.mock('../src/render/contourRaster', () => {
+  const plates = new WeakMap<object, object>();
+  return {
+    contourRaster: (paths: object, worldSize: number) => {
+      let plate = plates.get(paths);
+      if (!plate) {
+        plate = { canvas: { width: 8192, height: 8192 }, worldSize, metresPerTexel: worldSize / 8192 };
+        plates.set(paths, plate);
+      }
+      return plate;
+    },
+  };
+});
 vi.mock('../src/render/composition', () => ({ contourDrawOf: () => ({ detail: 'fixed', sparse: false, opacity: 1 }) }));
 vi.mock('../../rust/bridge/fantasyTerrain', () => ({ isFantasyStyle: () => false }));
 vi.mock('../src/v2/terrainSettings', () => ({ effectiveTerrainSettings: vi.fn(() => ({ relief: 'hills' })) }));
@@ -38,7 +51,8 @@ it('does not record the nonzero-interval placeholder while the fixed terrain set
   vi.mocked(cityContourPathsPending).mockReturnValue(false);
   vi.mocked(cityContourPaths).mockReturnValue({ step: 5, thin: 'M0.00,0.00L10.00,20.00', index: 'M20.00,30.00L40.00,50.00' });
   const retained = source()!;
-  expect(retained.list.ops).toHaveLength(2);
+  expect(retained.list.ops).toHaveLength(1);
+  expect(retained.list.ops[0].type).toBe('sprites');
   expect(source()!.list).toBe(retained.list);
   expect(source()).toBe(retained);
   for (let i = 0; i < 20; i++) contours.contourLook();

@@ -11,13 +11,13 @@ import type { LiveLayerStats } from '../src/render/live/contract';
 import { BUILDING_STRIDE } from '../src/render/world/buildingsMesh';
 import { createFrameCamera, frameCamera } from '../src/render/world/camera';
 import { TerrainHeights } from '../src/render/world/heights';
-import { TREES_BLOCK, treeBlockSteps, treeDrawCount, treeLathe } from '../src/render/world/treesBlocks';
+import { TREES_BLOCK, treeBlockSteps, treeCloseShare, treeDrawCount, treeSolidShare } from '../src/render/world/treesBlocks';
 import { createWorldTreesLayer } from '../src/render/world/treesLayer';
-import { TREE_LATHES, latheVertices } from '../src/render/world/treesShader';
+import { TREE_MESHES } from '../src/render/world/treesShader';
 import { buildingTriangleBudget, clampViewDepth, setViewDepth, VIEW_DEPTH_DEFAULT, VIEW_DEPTH_MAX } from '../src/render/world/viewDepth';
 import { hazeDistance } from '../src/render/world/volumes';
 import type { View } from '../src/render/view';
-import { buildNearTrees, TREE_STRIDE, TREE_VERTICES, treeLimits, type TreeInputs } from '../src/ui/terrain3dTrees';
+import { buildNearTrees, TREE_STRIDE, type TreeInputs } from '../src/ui/terrain3dTrees';
 
 beforeEach(() => vi.stubGlobal('__muLayerDiagnostics', true));
 afterEach(() => {
@@ -223,9 +223,10 @@ describe('world trees', () => {
   });
 
   it('draws coarser lathes and fewer trees as they get smaller on screen', () => {
-    expect(latheVertices(TREE_LATHES[0])).toBe(TREE_VERTICES);
-    expect(TREE_LATHES.map(latheVertices)).toEqual([480, 96, 24]);
-    expect([80, 60, 30, 20, 3, 2, 1.5].map(treeLathe)).toEqual([0, 0, 1, 1, 2, 2, -1]);
+    expect(TREE_MESHES.map(mesh => mesh.indices.length / 3)).toEqual([78, 28, 6]);
+    // A small zoom change swaps a few individuals between levels, using the same prefix of the block.
+    expect([18, 28, 38].map(treeSolidShare)).toEqual([0, 0.5, 1]);
+    expect([64, 88, 112].map(treeCloseShare)).toEqual([0, 0.5, 1]);
     expect(treeDrawCount(500, 8)).toBe(500);
     expect(treeDrawCount(500, 2.5)).toBe(125);
   });

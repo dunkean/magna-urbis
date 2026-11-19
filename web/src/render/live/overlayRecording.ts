@@ -118,10 +118,10 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
         return false;
       }
       // A bake while the view moves is bounded (pixels, samples); the region is then a draft.
-      if (moving) p.draft = true;
+      if (moving && !host.fixedRaster?.()) p.draft = true;
       const t = host.now(),
-        samples = moving ? MOVING_SAMPLES : 4;
-      let density = moving ? Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)) : b.density;
+        samples = moving && !host.fixedRaster?.() ? MOVING_SAMPLES : 4;
+      let density = moving && !host.fixedRaster?.() ? Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)) : b.density;
       let baked = raster.bake(b.prefix, density, { samples });
       for (let i = 1; !baked && i < BAKE_TRIES; i++) {
         density /= 2;
@@ -148,7 +148,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
    * advances it within the budget. True while a region is wanted or under way. */
   const regions = (frame: LiveFrame, start: number, budgetMs: number): boolean => {
     const view = frame.view,
-      light = frame.quality === 'light';
+      light = !host.fixedRaster?.() && frame.quality === 'light';
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2),
       key = host.key(scale, frame.dpr, light);
     if (key === undefined || key === failedKey) {
@@ -157,7 +157,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     }
     const cur = retained.shown;
     // A draft serves while the view moves; at rest it is made again at full quality.
-    const fits = (r: Region): boolean => !r.stale && (!r.draft || moving) && retained.current(r) && r.key === key && r.dpr === frame.dpr && covers(r.rect, frame.rect);
+    const fits = (r: Region): boolean => !r.stale && (!r.draft || moving) && retained.current(r) && r.key === key && (!!host.fixedRaster?.() || (r.dpr === frame.dpr && covers(r.rect, frame.rect)));
     if (cur && fits(cur)) {
       dropPending();
       needSince = -1;
@@ -179,7 +179,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     // step alone does not abandon it: a zoom changes the key at every half-octave, and a region that never
     // completes leaves the far one on screen for the whole gesture. It completes, shows, and the next one follows.
     const p0 = pending;
-    if (p0 && (p0.dpr !== frame.dpr || !covers(p0.rect, frame.rect) || (p0.key !== key && (p0.light !== light || host.key(p0.scale, p0.dpr, p0.light) !== p0.key || Math.abs(Math.log2(p0.scale / view.scale)) > KEEP_OCTAVES)))) dropPending();
+    if (p0 && (host.fixedRaster?.() ? p0.key !== key : p0.dpr !== frame.dpr || !covers(p0.rect, frame.rect) || (p0.key !== key && (p0.light !== light || host.key(p0.scale, p0.dpr, p0.light) !== p0.key || Math.abs(Math.log2(p0.scale / view.scale)) > KEEP_OCTAVES)))) dropPending();
     if (!pending) {
       // Nothing starts while the view moves, unless nothing can be shown or the gesture lasts: each band is a long task.
       const nothing = !cur || cur.dpr !== frame.dpr;
@@ -200,9 +200,9 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     if (host.ink && !host.ink.ready()) return false;
     let did = false;
     for (const b of r.parts) {
-      if (b.snapshot || b.snapshotFailed || (!b.suffix.ops.length && !host.ink)) continue;
+      if (b.snapshot || b.snapshotFailed || (!b.suffix.ops.length && !host.ink && !host.fixedRaster?.())) continue;
       const t = host.now();
-      const baked = raster.bake(b.suffix, Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)), {
+      const baked = raster.bake(b.suffix, host.fixedRaster?.() ? densityFor(b.w, b.h, BAKE_PIXELS * 1.1) : Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)), {
         under: b.baked,
         samples: MOVING_SAMPLES,
         between: host.ink
@@ -214,9 +214,16 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       });
       diagnostics?.baked(host.now() - t);
       // No target for it: the band goes on replaying its suffix (correct, at its cost).
-      if (baked) b.snapshot = baked;
-      else b.snapshotFailed = true;
+      if (baked) {
+        b.snapshot = baked;
+        if (host.fixedRaster?.() && b.baked) {
+          raster.releaseBaked(b.baked);
+          b.baked = undefined;
+          b.part.baked = undefined;
+        }
+      } else b.snapshotFailed = true;
       did = true;
+      if (host.fixedRaster?.()) break;
     }
     return did;
   };
@@ -245,7 +252,7 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     work: regions,
     snapshots(frame: LiveFrame): void {
       const r = retained.shown;
-      if (r && r.dpr === frame.dpr && beyond(frame.view.scale / r.scale, SNAPSHOT_AHEAD) && snap(r) && !pending) raster.releaseBakeScratch();
+      if (r && (host.fixedRaster?.() || (r.dpr === frame.dpr && beyond(frame.view.scale / r.scale, SNAPSHOT_AHEAD))) && snap(r) && !pending) raster.releaseBakeScratch();
     },
     dropPending,
     clearFailedKey(): void {

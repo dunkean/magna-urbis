@@ -117,6 +117,27 @@ function fixture() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('live overlay layer', () => {
+  it('keeps fixed cadastral snapshots through zoom and pixel-ratio changes without vector replay', () => {
+    const f = fixture();
+    f.host.fixedRaster = () => true;
+    f.host.key = () => 'fixed-cadastre';
+    for (let i = 0; i < 4; i++) f.layer.work!(10000, f.frame());
+    const recordings = vi.mocked(f.host.record).mock.calls.length;
+    const bakes = vi.mocked(f.raster.bake).mock.calls.length;
+    expect(f.layer.ready(f.frame())).toBe(true);
+    vi.mocked(f.raster.replayLive).mockClear();
+    const zoomed = { ...f.frame(0, 8), dpr: 2 };
+    f.layer.work!(10000, zoomed);
+    f.layer.draw(zoomed);
+    expect(f.host.record).toHaveBeenCalledTimes(recordings);
+    expect(f.raster.bake).toHaveBeenCalledTimes(bakes);
+    expect(f.layer.restExact!(zoomed)).toBe(true);
+    expect(f.raster.replayLive).toHaveBeenCalledOnce();
+    const [parts] = vi.mocked(f.raster.replayLive).mock.calls[0];
+    expect(parts.length).toBeGreaterThan(0);
+    expect(parts.every(part => part.list.ops.length === 0 && !!part.baked)).toBe(true);
+  });
+
   it('draws retained world ink between area prefixes and suffixes, including motion snapshots', () => {
     const f = fixture(),
       order: string[] = [];

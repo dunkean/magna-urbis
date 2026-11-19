@@ -27,7 +27,7 @@ describe('world tree building clearance', () => {
     expect(index.keeps(200, 200, 2)).toBe(true);
   });
 
-  it('filters both shuffled instance copies without moving the surviving painted-crown centres', () => {
+  it('filters the shared shuffled instances without moving the surviving painted-crown centres', () => {
     const rgba = new Uint8Array(32 * 32 * 4);
     for (let i = 0; i < rgba.length; i += 4) rgba.set([235, 110, 80, 255], i);
     const inputs: TreeInputs = { field: { x: 0, y: 0, width: 400, n: 32, rgba, key: 'stand' }, seed: 5, climate: { temperature: 10, precipitation: 900 }, renderV2: 1, zone: 0, season: 0.5, water: () => 0, height: () => 20 };
@@ -48,7 +48,6 @@ describe('world tree building clearance', () => {
       expect(index.keeps(filtered.data[i] + TREES_BLOCK, filtered.data[i + 1] + TREES_BLOCK, filtered.data[i + 3])).toBe(true);
       expect(survivors.has(Array.from(filtered.data.subarray(i, i + TREE_STRIDE)).join(','))).toBe(true);
     }
-    expect(filtered.cells.at(-1)).toBe(filtered.count);
-    expect(filtered.data.length).toBe(2 * filtered.count * TREE_STRIDE);
+    expect(filtered.data.length).toBe(filtered.count * TREE_STRIDE);
   });
 });

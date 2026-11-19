@@ -13,6 +13,7 @@ import { nativeCityRecords } from '../nativeProducts';
 import { cityReachedPopulation, populationText, populationShortfallText } from '../../render/cityPopulation';
 import { nameNeighbourWarning } from '../townNeighbours';
 import { townUrban } from '../edits';
+import { TownFirstDisplay } from '../townFirstDisplay';
 import { stageById, type StageFamily } from '../stageRegistry';
 import { $, esc } from './dom';
 
@@ -21,6 +22,34 @@ export const populationFormat = () => ({ t: translate, locale: numberLocale() })
 
 export function createPlacesActions(state: PageState, actions: PageActions) {
   const placeName = (key: string): string => (state.world && settlementDisplayName(state.world, key, state.settings)) || key;
+  const firstDisplay = new TownFirstDisplay();
+  let waitingForDisplay = false;
+  const syncFirstDisplay = (): void => {
+    document.querySelectorAll<HTMLElement>('[data-town-render-loading]').forEach(spinner => {
+      const pending = firstDisplay.pending(state.world, spinner.dataset.townRenderLoading!);
+      spinner.hidden = !pending;
+      spinner.setAttribute('aria-busy', String(pending));
+    });
+  };
+  /** Generation can finish before the first exact town paint. Await the displayed request, including its Canvas,
+   * while keeping the rest of the app usable. A newer world replaces the wait without clearing its own spinner. */
+  const waitForFirstDisplay = async (): Promise<void> => {
+    if (waitingForDisplay) return;
+    waitingForDisplay = true;
+    try {
+      while (state.world && state.world.settlements?.some(town => firstDisplay.pending(state.world, town.key))) {
+        const world = state.world;
+        await state.client.displaySettled();
+        if (world !== state.world) continue;
+        firstDisplay.notePresented(world);
+        syncFirstDisplay();
+      }
+    } catch (error) {
+      actions.reportAppearanceError(error);
+    } finally {
+      waitingForDisplay = false;
+    }
+  };
 
   function cityTargets(): string[] | undefined {
     return state.cityScope === 'all' ? undefined : [...state.selectedCities];
@@ -129,7 +158,7 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
             .sort((a, b) => b.population - a.population)
             .map(
               (s, index, list) =>
-                `${index === 0 || demographicClass(list[index - 1].population) !== demographicClass(s.population) ? `<h3 class="settlement-group">${esc(translate(demographicClass(s.population)))}</h3>` : ''}<div class="settlement-choice"><input type="radio" name="city-target" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}', s.name ?? s.key))}" ${state.selectedCities.has(s.key) ? 'checked' : ''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${state.selectedTown === s.key}"><span class="settlement-dot ${(s.main ? state.world?.urban : s.urban) ? 'ready' : ''}"></span><span class="grow"><span class="settlement-name"><strong>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</strong>${((warning: string) => (warning ? `<span class="settlement-warning" role="img" title="${esc(warning)}" aria-label="${esc(warning)}">⚠</span>` : ''))(actions.placeWarningText(s.key, s.population))}</span><small>${actions.populationMarkup(s.key, s.population)} · <span>${esc(s.archetype)}</span></small><small class="settlement-stage">${actions.cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? state.world?.urban : s.urban) ? '↗' : '＋'}</span></button></div>`,
+                `${index === 0 || demographicClass(list[index - 1].population) !== demographicClass(s.population) ? `<h3 class="settlement-group">${esc(translate(demographicClass(s.population)))}</h3>` : ''}<div class="settlement-choice"><input type="radio" name="city-target" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}', s.name ?? s.key))}" ${state.selectedCities.has(s.key) ? 'checked' : ''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${state.selectedTown === s.key}"><span class="settlement-dot ${(s.main ? state.world?.urban : s.urban) ? 'ready' : ''}"></span><span class="grow"><span class="settlement-name"><strong>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</strong><span class="view-loading town-render-loading" data-town-render-loading="${esc(s.key)}" role="status" aria-busy="${firstDisplay.pending(state.world, s.key)}" aria-label="Loading textures and view…" title="Loading textures and view…"${firstDisplay.pending(state.world, s.key) ? '' : ' hidden'}></span>${((warning: string) => (warning ? `<span class="settlement-warning" role="img" title="${esc(warning)}" aria-label="${esc(warning)}">⚠</span>` : ''))(actions.placeWarningText(s.key, s.population))}</span><small>${actions.populationMarkup(s.key, s.population)} · <span>${esc(s.archetype)}</span></small><small class="settlement-stage">${actions.cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? state.world?.urban : s.urban) ? '↗' : '＋'}</span></button></div>`,
             )
             .join('')
         : '<p class="hint">Create settlement sites to select a place.</p>',
@@ -209,6 +238,8 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
     actions.syncPlacesPanel();
     state.chain.sync();
     actions.syncLocalFacts();
+    syncFirstDisplay();
+    void waitForFirstDisplay();
   }
 
   function syncLocalFacts(): void {

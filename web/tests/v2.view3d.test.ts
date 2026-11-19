@@ -102,4 +102,27 @@ describe('3D machine capability in the page', () => {
     mountV2TestHook({} as never);
     expect((window as unknown as { __v2Test: { machine(): unknown } }).__v2Test.machine()).toEqual({ tier: 'veryslow', reason: 'forced', available3d: false });
   });
+
+  it('shows the saved relief multiplier and persists toolbar changes in the shared appearance', async () => {
+    await setup('capable');
+    const { defaultSettings } = await import('../src/v2/settings');
+    const settings = defaultSettings();
+    settings.appearance!.city = { exaggeration: 2.4 };
+    const slider = { value: '', oninput: undefined as (() => void) | undefined },
+      output = { textContent: '' },
+      bar = { querySelector: (selector: string) => (selector === '[data-world-relief]' ? slider : output) };
+    vi.stubGlobal('document', { querySelector: (selector: string) => (selector === '#world-bar' ? bar : { addEventListener: vi.fn() }) });
+    const scheduleAppearance = vi.fn(),
+      state = { settings, projectRevision: 0, client: { viewer: { onCamera: vi.fn() } } };
+    const { mountWorldReliefControl } = await import('../src/v2/page/worldRelief');
+    mountWorldReliefControl(state as never, { scheduleAppearance } as never);
+    expect(slider.value).toBe('2.4');
+    expect(output.textContent).toBe('×2.4');
+    slider.value = '1';
+    slider.oninput!();
+    expect(settings.appearance!.city!.exaggeration).toBe(1);
+    expect(output.textContent).toBe('×1');
+    expect(state.projectRevision).toBe(1);
+    expect(scheduleAppearance).toHaveBeenCalledOnce();
+  });
 });
