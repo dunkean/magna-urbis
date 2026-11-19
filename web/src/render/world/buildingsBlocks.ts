@@ -195,8 +195,14 @@ export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppe
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town
  * is built in parts over several work slices, then copied part by part into one buffer (one draw). */
 export function blockPart(block: BuildingBlock, level: number, paint: BuildingPaint, seat: BuildingSeat, from: number, to: number): Float32Array {
-  const buildings = block.buildings.slice(from, to),
-    batches = block.yard ? buildingBatches(buildings, block.origin, paint, level > 0, undefined, level, seat) : buildingBatches(level === BOX_LEVEL ? buildings.map(buildingBox) : buildings, block.origin, paint, level > 0, undefined, undefined, seat);
+  const buildings = block.buildings.slice(from, to);
+  if (block.yard) return joinParts(buildingBatches(buildings, block.origin, paint, level > 0, undefined, level, seat).map(batch => batch.data));
+  if (level !== BOX_LEVEL) return joinParts(buildingBatches(buildings, block.origin, paint, level > 0, undefined, undefined, seat).map(batch => batch.data));
+  // An open volume (a tree dwelling's trunk and crown, a hall on posts) has no body a box could stand for: its box was a
+  // solid column and its overview a floating cap, so it keeps its own mesh (the light tree mesh in large elven towns).
+  const open = buildings.filter(hasOpenVolume),
+    boxes = open.length ? buildings.filter(b => !hasOpenVolume(b)) : buildings;
+  const batches = [...buildingBatches(boxes.map(buildingBox), block.origin, paint, true, undefined, undefined, seat), ...(open.length ? buildingBatches(open, block.origin, paint, false, undefined, undefined, seat) : [])];
   return joinParts(batches.map(batch => batch.data));
 }
 function joinParts(parts: readonly Float32Array[]): Float32Array {
@@ -216,6 +222,8 @@ function joinParts(parts: readonly Float32Array[]): Float32Array {
 const BOX_LEVEL = 2;
 /** The level that draws nothing: `block.levels`. */
 export const blockHidden = (block: BuildingBlock): number => block.levels;
+
+const hasOpenVolume = (building: Building3dVisual): boolean => !isBuildingProjection(building) && building.volumes.some(volume => volume.envelope === 'open');
 
 /** A building as a box: its footprint extruded from its ground to its height, with a flat roof of its roof cover (a
  * cartographic projection, which eachBuildingTriangle draws so, with the same id, culture and use, so the same paint).
