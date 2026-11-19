@@ -85,8 +85,8 @@ export class NativeReliefEngine {
     return this.mutate({ op: 'edit' }, heights);
   }
   /** `set_coast`, or with a prepared surface `configure_coast` + `set_coast_surface`. */
-  coast(mask: number, mode: string, coastTuning?: Float64Array, surface?: Float32Array): Promise<void> {
-    return this.mutate({ op: 'coast', mask, mode, surface: !!surface, ...(coastTuning ? { tuning: finite(coastTuning) } : {}) }, surface);
+  coast(mask: number, mode: string, coastTuning?: Float64Array, surface?: Float32Array, coastProfile?: import('./terrainCoastProfile').CoastProfile): Promise<void> {
+    return this.mutate({ op: 'coast', mask, mode, coastProfile, surface: !!surface, ...(coastTuning ? { tuning: finite(coastTuning) } : {}) }, surface);
   }
 
   /** `carve_underdark`: the retained relief becomes caves and tunnels. */

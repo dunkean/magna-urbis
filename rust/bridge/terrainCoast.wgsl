@@ -52,9 +52,9 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
     let ends=coast[land+i*3u];let shape=coast[land+1u+i*3u];let geology=coast[land+2u+i*3u];let delta=ends.zw-ends.xy;
     let t=clamp(dot(uv-ends.xy,delta)/max(dot(delta,delta),1e-12),0.0,1.0);
     let base=mix(shape.x,shape.y,t)-length(uv-ends.xy-t*delta);let s=shape.z;
-    if(base+s*0.165<=distance){continue;}
+    if(base+coast[7].w*s*0.165<=distance){continue;}
     if(shape.w!=cachedPhase){
-      detail=s*(0.14*fbm(uv/(s*1.1)+vec2<f32>(shape.w,-shape.w),2u,7u,0.56,footprint/(s*1.1))
+      detail=coast[7].w*s*(0.14*fbm(uv/(s*1.1)+vec2<f32>(shape.w,-shape.w),2u,7u,0.56,footprint/(s*1.1))
         +0.025*fbm(uv/(s*0.13)+vec2<f32>(-shape.w,shape.w),2u,4u,0.55,footprint/(s*0.13)));
       cachedPhase=shape.w;
     }
@@ -74,16 +74,33 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   if(isletHeight==0.0){
     for(var k=0u;k<min(u32(coast[7].z),6u);k++){
       let bump=coast[8u+k];let d2=dot(uv-bump.xy,uv-bump.xy)/(bump.z*bump.z);
-      if(d2<1.0){distance+=bump.w*(1.0-d2)*(1.0-d2);}
+      if(d2<1.0){distance+=coast[7].w*bump.w*(1.0-d2)*(1.0-d2);}
     }
     // Fitted shift and relief drowning, as Rust `Coast::distance`.
     let fit=coast[14];distance+=fit.x;
     if(fit.z!=0.0){distance+=fit.w*tanh(clamp((height-fit.y)*fit.z,-9.0,9.0))*smooth01(1.0-abs(distance)/coast[15].x);}
   }
   if(isletHeight>0.0){height=isletHeight;}
-  let cliff=smooth01((fbm(uv/0.12,2u,3u,0.5,0.0)-0.20)/0.25);
+  let shoreNoise=fbm(uv/0.12,2u,3u,0.5,0.0);
+  let cliff=smooth01((shoreNoise-0.20)/0.25);
   let widthVariation=0.65+1.1*smooth01(fbm(uv/0.21+vec2<f32>(11.7,-4.2),2u,3u,0.5,0.0)+0.5);
   let ramp=min(max(config.z,height/(p.values[0].x*0.45)),scale*0.18)*widthVariation*apron*(1.0-0.90*cliff);
   if(distance<=0.0){return -config.w*smooth01(-distance/(ramp*4.0*coast[15].y));}
-  return height*smooth01(distance/ramp);
+  let original=height*smooth01(distance/ramp);
+  let inland=distance*p.values[0].x;
+  var band=coast[1].y;
+  if(isletHeight>0.0){band=min(band,scale*p.values[0].x*0.15);}
+  let t=clamp((inland-band*0.25)/(band*0.75),0.0,1.0);
+  let join=t*t*t*(10.0+t*(-15.0+6.0*t));
+  let low=min(height,inland*0.015);
+  let gentle=min(original,low+(height-low)*join);
+  let share=coast[2].x;
+  var rock=0.0;
+  if(share>=1.0){rock=1.0;}
+  else if(share>0.0){
+    let fit=coast[14];
+    let z=tanh(clamp((height-fit.y)*fit.z,-9.0,9.0));
+    rock=smooth01((shoreNoise+0.15*z-(0.65-1.3*share))/0.15+0.5);
+  }
+  return original+coast[1].x*(1.0-rock)*(gentle-original);
 }

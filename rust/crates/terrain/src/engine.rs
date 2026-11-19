@@ -763,6 +763,10 @@ impl TerrainGenerator {
         self.channels.sampling_branches()
     }
     /// Optional surface sea. Caverns intentionally retain their underground floor.
+    pub fn set_coast_profile(&mut self, profile: crate::CoastProfile) -> Result<(), String> {
+        self.coast.set_profile(profile)
+    }
+
     pub fn set_coast(&mut self, mask: u32, mode: &str) -> Result<(), String> {
         self.configure_coast(mask, mode)?;
         if !self.coast.active() {

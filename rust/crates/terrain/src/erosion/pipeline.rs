@@ -4,12 +4,13 @@ use crate::{Noise, Rng};
 
 #[allow(clippy::too_many_arguments)]
 pub fn cut_coast_field(seed: &str, width: f64, motif: f64, amplitude: f64, mask: u32, mode: &str,
-    n: usize, origin: f64, cell: f64, field: &mut [f32]) -> Result<(), String> {
+    n: usize, origin: f64, cell: f64, field: &mut [f32], profile: crate::CoastProfile) -> Result<(), String> {
     if n < 2 || field.len()!=n*n || !width.is_finite() || width<=0. || !motif.is_finite() || motif<=0.
         || !amplitude.is_finite() || amplitude<0. || !origin.is_finite() || !cell.is_finite() || cell<=0.
         || field.iter().any(|v|!v.is_finite()) { return Err("Invalid coast field".into()); }
     let root=Rng::new(&format!("magna-urbis:{seed}")).fork("terrain");
     let mut coast=crate::coast::Coast::new(root.fork("coast"),width,motif,amplitude,0.);
+    coast.set_profile(profile)?;
     coast.configure(mask,mode)?;
     // Fit the coast to this relief over the map (the field may extend beyond it).
     const FIT: usize = 64;
@@ -164,13 +165,13 @@ impl TerrainPipeline {
     }
     /// An early coast is allowed to evolve in subsequent erosion/normalization.
     /// The geographic cut is applied again at finishing to keep a marine coast.
-    pub fn cut_coast(&mut self, mask: u32, mode: &str) -> Result<(), String> {
+    pub fn cut_coast(&mut self, mask: u32, mode: &str, profile: crate::CoastProfile) -> Result<(), String> {
         if mask == 0 { return Ok(()); }
         let p=&self.p;
         let (n, origin, cell, field) = if self.next <= 3 {
             (self.grid.n, p[5], p[4], &mut self.h)
         } else { (p[1] as usize, 0., p[11], &mut self.output) };
-        cut_coast_field(self.step_seeds.get("coastCut").unwrap_or(&self.seed),p[0],p[3]*2400.,p[12],mask,mode,n,origin,cell,field)?;
+        cut_coast_field(self.step_seeds.get("coastCut").unwrap_or(&self.seed),p[0],p[3]*2400.,p[12],mask,mode,n,origin,cell,field,profile)?;
         if (4..=5).contains(&self.next) {
             self.raw=self.output.iter().map(|&h|(h as f64/self.scale.max(1e-12)) as f32).collect();
         }
@@ -568,9 +569,9 @@ mod checkpoint_tests {
     fn coast_deforms_the_initial_field_and_can_be_replayed_from_its_input() {
         let(p,s,f)=configuration();let mut retained=pipeline(&p,&s,&f);
         retained.advance(0).unwrap();retained.checkpoint(0).unwrap();
-        let initial=retained.height();retained.cut_coast(255,"island").unwrap();retained.checkpoint(1).unwrap();
+        let initial=retained.height();retained.cut_coast(255,"island",crate::CoastProfile::default()).unwrap();retained.checkpoint(1).unwrap();
         let cut=retained.height();assert!(cut.iter().any(|&h|h<0.));assert_ne!(initial,cut);
-        retained.restore(0,&p,&s,&f).unwrap();retained.cut_coast(255,"island").unwrap();assert_eq!(retained.height(),cut);
+        retained.restore(0,&p,&s,&f).unwrap();retained.cut_coast(255,"island",crate::CoastProfile::default()).unwrap();assert_eq!(retained.height(),cut);
         assert_eq!(retained.checkpoint_height(0).unwrap(),initial);
         let mut changed=p.clone();changed[2]=128.;assert!(retained.restore(0,&changed,&s,&f).is_err());
     }

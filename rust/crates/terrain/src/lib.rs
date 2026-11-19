@@ -23,6 +23,7 @@ use rng::Rng;
 use std::f64::consts::{PI, TAU};
 
 pub use engine::TerrainGenerator;
+pub use coast::CoastProfile;
 pub use erosion::{EROSION_TUNING, set_erosion_tuning, TerrainPipeline};
 pub use erosion::cut_coast_field;
 pub use generation_noise::{GenerationNoise, GenerationNoisePlan};

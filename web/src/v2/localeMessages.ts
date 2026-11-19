@@ -1,4 +1,5 @@
 import { localeExtraLatin } from './localeExtraLatin';
+import { localeCoasts } from './localeCoasts';
 import { localeExtraAsia } from './localeExtraAsia';
 import { localeExtraArRu } from './localeExtraArRu';
 import { localeNaming } from './localeNaming';
@@ -8382,6 +8383,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
 for (const [language, messages] of Object.entries({ ...localeExtraLatin, ...localeExtraAsia, ...localeExtraArRu })) {
   Object.assign(localeMessages[language as keyof typeof localeMessages], messages);
 }
+for(const [language,messages] of Object.entries(localeCoasts))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeUnderdark))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeNaming))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeEditor))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);

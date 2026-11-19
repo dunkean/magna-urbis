@@ -1,3 +1,4 @@
+import { coastProfile } from './terrainCoastProfile';
 import phasorShader from './terrainPhasor.wgsl?raw';
 import { configureCompactPlan, phasorUniforms } from './terrainPhasor';
 import { seedRoot, seedSubset, stepSeed } from './generationSeed';
@@ -704,6 +705,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, sourceN: 
           kind === 0 ? base[5] : 0,
           kind === 0 ? base[4] : base[11],
           source,
+          JSON.stringify(coastProfile(settings)),
         );
         device.queue.writeBuffer(output, 0, cut as GPUAllowSharedBufferSource);
         encoder = device.createCommandEncoder();

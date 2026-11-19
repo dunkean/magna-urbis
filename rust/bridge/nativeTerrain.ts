@@ -1,3 +1,4 @@
+import { coastProfile } from './terrainCoastProfile';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import type { TerrainData, TerrainRequest, TerrainSettings } from './terrain';
 import { heightmapSurface, parseTerrainSketch } from './terrainSketch';
@@ -43,6 +44,7 @@ async function sample(settings: TerrainSettings, runtime: ExecutionRuntime, regi
     erosionTuning,
     sampleSpacing: definition.requestedSpacing,
     sourceN: definition.n,
+    coastProfile: coastProfile(settings),
     coastMask: settings.coastMask ?? 0,
     islandMode: settings.islandMode ?? 'island',
     source,

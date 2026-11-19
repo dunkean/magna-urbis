@@ -48,7 +48,7 @@ fn main() {
             let t = Instant::now();
             pipeline.advance(k as u32).unwrap();
             if k == 0 && coast != 0 {
-                pipeline.cut_coast(coast, "island").unwrap();
+                pipeline.cut_coast(coast, "island", Default::default()).unwrap();
             }
             line += &format!("{name} {:.0} · ", ms(t));
             if rep == 0 {

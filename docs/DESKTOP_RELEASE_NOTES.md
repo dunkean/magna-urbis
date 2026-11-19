@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Choose beaches, cliffs or a mixed coast with low coves between rocky stretches. Adjust cliff coverage, coastal smoothing and transition width independently of coves, headlands and relief influence, including on painted and hand-drawn coastlines.
 - Preserve dwellings when a major landmark is requested in a camp or another settlement with a single residential block.
 - Embed a compact city preview in an iframe using Azgaar burg data or city URL parameters, with automatic generation and a link to the full editor.
 - Explore varied city previews with a randomize button, and distinguish individual buildings with clearer outlines and contrasting landmark colors in the Minimal map style.
