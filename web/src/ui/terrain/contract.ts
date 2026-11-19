@@ -26,6 +26,8 @@ export interface HeightLayer {
 }
 
 export interface TerrainLook {
+  /** Internal draw policy; captures pin false, live readiness follows displayQuality when absent. */
+  displayLight?: boolean;
   ambience?: 'day' | 'night';
   waterLook?: 'ink' | 'natural';
   /** Satellite looks: swell crests and surf along exposed sea coasts (terrainRenderV2Coast). */

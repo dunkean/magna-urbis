@@ -9,7 +9,7 @@
 import { displayQualityUniform } from '../../../render/displayQuality';
 import { setSeasonCalendarGpu } from '../../../../../rust/bridge/terrainRenderV2Zones';
 import { dropHiddenDetails } from '../layers';
-import { hasAuxPass, lookMode } from '../variant';
+import { hasAuxPass } from '../variant';
 import { detailQuad, fadeProgress, lookPalettes, paintedWaterLook, redrawFrame, separateWaterLayer, waterBand, type RedrawFrame, type ViewState } from '../redraw';
 import { writeFieldParams, writeLookParams, writeMapParamsAfterWaterLayer, writeWaterLayerParams, type LookBindings, type LookParamsState, type LookTexture } from '../lookParams';
 import { MAP_FORMAT, TERRAIN_TEXTURES, type GpuShared } from './device';
@@ -33,7 +33,7 @@ export interface GpuDrawRequest {
   stylePixelRatio: number;
   /** Where the frame ends: the display canvas, the world-tile canvas or the capture canvas. */
   surface: Surface;
-  /** Not the display canvas (a world tile or a capture): full quality. */
+  /** Not the display canvas: captures force full quality, live world tiles retain display quality. */
   offscreen: boolean;
   targets: GpuViewTargets;
   /** The look's own pipelines, created synchronously when missing (redrawForCapture, captures). */
@@ -222,11 +222,12 @@ export class GpuRedraw {
 
   /** Draws `req`; false when nothing could be drawn (no base, lost device, no pipeline yet). */
   draw(req: GpuDrawRequest): boolean {
+    if (req.capturing) req = { ...req, look: { ...req.look, displayLight: false } };
     // A world tile leaves the display canvas as it is: its CSS-transformed picture stays valid.
     if (!req.tile) this.hooks.displayDrawn();
     if (!this.hooks.alive() || !this.inputs.base || this.gpu.lost) return false;
     const look = req.look;
-    const quality = displayQualityUniform(!(req.capturing || req.offscreen || req.wait || look.mesh3d === true));
+    const quality = displayQualityUniform(!(req.capturing || (req.offscreen && !req.tile) || req.wait || look.mesh3d === true));
     const chosen = this.pipelines.map(look, req.wait, req.capturing);
     if (!chosen) return false;
     this.request = req;
@@ -263,7 +264,7 @@ export class GpuRedraw {
       dpr,
       scale: req.view.view.scale,
       palettes,
-      mode: lookMode(look),
+      mode: v.mode,
       forest: v.forest,
       base: base.layer,
       refined: req.enhanced.at(-1),
@@ -287,7 +288,7 @@ export class GpuRedraw {
       frame,
       stylePixelRatio: req.stylePixelRatio,
       water: palettes.water,
-      painted: paintedWaterLook(look) && !look.groundCapture,
+      painted: quality === 0 && paintedWaterLook(look) && !look.groundCapture,
       band: waterBand(look, inputs.seaSurface, palettes.water),
       wait,
       empty: inputs.empty.view,
@@ -299,7 +300,7 @@ export class GpuRedraw {
       waterParams: this.waterParams,
     };
     const rivers = { buffer: inputs.riverBuffer, count: inputs.riverCount, regime: inputs.riverRegime };
-    const separateWater = separateWaterLayer(look, v.forest);
+    const separateWater = quality === 0 && separateWaterLayer(look, v.forest);
     p.int('uUseWaterLayer', 0);
     if (separateWater) {
       const waterTarget = (targets.water = gpuTarget(device, width, height, MAP_FORMAT, targets.water));

@@ -7,6 +7,7 @@ import { renderWaterRings } from '../../../render/renderWaterShader';
 import { waterUniforms } from '../../../render/waterStyle';
 import { styleTraits } from '../../../render/terrainStyle';
 import { rgbaTarget, type GlViewTargets } from './resources';
+import { lightTerrainLook } from '../variant';
 import { waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import type { GlPrograms } from './programs';
 import type { RetainedWaterSource } from '../retainedWater';
@@ -91,6 +92,9 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.bindTexture(gl.TEXTURE_2D, c.lake ?? c.empty);
   gl.uniform1i(r('uLake'), 2);
   gl.uniform1f(r('uMapW'), look.mapWidth);
+  const flat = rivers.regime && !c.overlay && lightTerrainLook(look),
+    color = waterUniforms(c.water).colors;
+  gl.uniform4f(r('uFlatWater'), color[0], color[1], color[2], flat ? 1 : 0);
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, c.overlay ?? c.empty);
   gl.uniform1i(r('uOverlay'), 3);

@@ -1,6 +1,6 @@
 /**
  * Land use as areas (drawVector, in this order): the contour lines under the tints, the land-use tints multiplied
- * over the hillshade (forest washes and their clips, the light parchment hatch, brush fills, orchard and garden
+ * over the hillshade (forest washes and their clips, brush fills, orchard and garden
  * hedges; the field class hands over to fields.ts), and the mask that keeps the tints off the water on a transparent
  * sheet. The tint painters (landPainters: fillLand, multiply, brush fills and trees) are part of the frame because
  * the farmsteads, the field network and the urban natural ground use them too.
@@ -33,9 +33,10 @@ export function* paintLandUseSteps(c: CartographyContext, f: VectorFrame): Gener
   const { ctx, sc, lod, rect, lw, strokePolys, brushFill, luOn, fillLandSteps, multiply } = f;
   for (const kind of LAND_ORDER) {
     if (!luOn) break;
+    if (!c.activeLight && c.deps.fullLanduse && !c.deps.fullLanduse(kind)) continue;
     const name = 'lu-' + kind;
     if (!polyL(name)) continue;
-    if (kind === 'forest') {
+    if (kind === 'forest' && !c.activeLight) {
       ctx.save();
       const clip = timedRec('forestClip', () => forestClip(c, rect));
       if (clip) ctx.clip(clip, 'nonzero');
@@ -44,9 +45,9 @@ export function* paintLandUseSteps(c: CartographyContext, f: VectorFrame): Gener
     yield* fillLandSteps(name, kind);
     multiply(false);
     if (kind === 'field') paintFieldTexture(c, f, kind);
-    if (brushes && lod.textures && (kind === 'field' || (kind === 'garden' && brushTextureOn(kind, pal, c.world.options.biome)))) brushFill(name, kind, sc);
+    if (!c.activeLight && brushes && lod.textures && (kind === 'field' || (kind === 'garden' && brushTextureOn(kind, pal, c.world.options.biome)))) brushFill(name, kind, sc);
     if ((kind === 'orchard' || kind === 'garden') && lod.strips) strokePolys(name, pal.hedge, lw(0.8, 0.8), 0.7);
-    if (kind === 'forest') ctx.restore();
+    if (kind === 'forest' && !c.activeLight) ctx.restore();
     yield;
   }
 }
@@ -63,10 +64,11 @@ export function paintLandMask(c: CartographyContext, f: VectorFrame): void {
 }
 
 export function landPainters(c: CartographyContext, f: FrameBase): LandPainters {
-  const { pal, deps, brushes, polyL, getPattern, visibleClip } = c;
+  const { pal, deps, brushes, polyL, visibleClip } = c;
   const { ctx, sc, rect, dpr, polyPaths, fillPolys } = f;
   const world = c.world;
   const brushFill = (name: string, kind: BrushKind, scale: number): void => {
+    if (c.activeLight) return;
     const l = polyL(name);
     if (!l?.polys.length) return;
     const pattern = brushes?.pattern(ctx, kind, scale, dpr);
@@ -75,6 +77,7 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
     for (const p of polyPaths(l)) ctx.fill(p, 'evenodd');
   };
   const brushTrees = (name: string, orchard = false): void => {
+    if (c.activeLight) return;
     const l = polyL(name);
     if (!l || !brushes) return;
     for (const i of l.index.query(rect)) {
@@ -93,25 +96,8 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
   const landFill = (kind: keyof Palette['land']): string => (kind === 'forest' ? forestLandPaint(pal).color : pal.land[kind]);
   const landAlpha = (kind: keyof Palette['land']): number => (kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha);
   const fillLandSteps = function* (name: string, kind: keyof Palette['land']): Generator<void> {
-    if (c.activeLight && pal.name === 'parchment' && sc < 1) {
+    if (c.activeLight) {
       fillPolys(name, landFill(kind), landAlpha(kind));
-      if (kind === 'forest') {
-        const gap = Math.max(6, 4 / sc);
-        const hatch = getPattern(ctx, `light-forest:${gap}`, gap, gap, 35, (cx, k) => {
-          cx.strokeStyle = pal.treeInk;
-          cx.globalAlpha = 0.3;
-          cx.lineWidth = (0.65 / sc) * k;
-          cx.beginPath();
-          cx.moveTo(0, (gap * k) / 2);
-          cx.lineTo(gap * k, (gap * k) / 2);
-          cx.stroke();
-        });
-        const layer = polyL(name);
-        if (hatch && layer) {
-          ctx.fillStyle = hatch;
-          for (const p of polyPaths(layer)) ctx.fill(p, 'evenodd');
-        }
-      }
       return;
     }
     if (kind === 'forest' && !isUnderdarkBiome(world.options.biome)) {

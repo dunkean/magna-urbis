@@ -9,7 +9,7 @@ import { setSeasonCalendarGl } from '../../../../../rust/bridge/terrainRenderV2Z
 import { bindForestBrushes } from '../../../render/forestBrushAtlas';
 import { bindCrownClumps, crownClumpMode } from '../../../render/crownClumpAtlas';
 import { dropHiddenDetails } from '../layers';
-import { hasAuxPass, lookMode, lookVariant, variantKey, type TerrainVariant } from '../variant';
+import { hasAuxPass, lookVariant, variantKey, type TerrainVariant } from '../variant';
 import { detailQuad, fadeProgress, lookPalettes, paintedWaterLook, redrawFrame, separateWaterLayer, waterBand, type RedrawFrame, type ViewState } from '../redraw';
 import { writeFieldParams, writeLookParams, writeMapParamsAfterWaterLayer, writeWaterLayerParams, type LookBindings, type LookParamsState, type LookTexture } from '../lookParams';
 import { GlViewTargets, emptyUintTexture, rgbaTarget, uintTarget, type GlHeightLayer } from './resources';
@@ -33,7 +33,7 @@ export interface GlDrawRequest {
   targets: GlViewTargets;
   /** redrawForCapture: the look's own programs, linked now. */
   capturing: boolean;
-  /** A world tile: full quality, never a blocking link. */
+  /** A live world tile: display quality, never a blocking link. */
   tile: boolean;
 }
 
@@ -229,15 +229,16 @@ export class GlRedraw {
 
   /** Draws `req`; false when nothing could be drawn (no base, lost context, no program linked yet). */
   draw(req: GlDrawRequest): boolean {
+    if (req.capturing) req = { ...req, look: { ...req.look, displayLight: false } };
     this.hooks.canvasDrawn();
     const gl = this.gl,
       inputs = this.inputs,
       { look, framebuffer } = req,
       base = inputs.base;
     if (!this.hooks.alive() || !base || gl.isContextLost()) return false;
-    const exact = req.capturing || req.tile || framebuffer !== null || look.mesh3d === true,
+    const exact = req.capturing || framebuffer !== null || look.mesh3d === true,
       wait = req.capturing || framebuffer !== null || look.mesh3d === true;
-    // World tiles are full quality but never wait for a link (GlWorldTiles checks the programs first).
+    // Live world tiles follow display quality; only captures force full. Tiles never wait for a link.
     const quality = displayQualityUniform(!exact);
     const program = this.terrainProgram(look, wait, req.capturing);
     if (!program) return false;
@@ -273,7 +274,7 @@ export class GlRedraw {
       dpr,
       scale: req.view.view.scale,
       palettes,
-      mode: lookMode(look),
+      mode: v.mode,
       forest: v.forest,
       base: base.layer,
       refined: req.enhanced.at(-1),
@@ -296,7 +297,7 @@ export class GlRedraw {
       frame,
       stylePixelRatio: req.stylePixelRatio,
       water: palettes.water,
-      painted: paintedWaterLook(look) && !look.groundCapture,
+      painted: quality === 0 && paintedWaterLook(look) && !look.groundCapture,
       band: waterBand(look, inputs.seaSurface, palettes.water),
       waitPainted: req.capturing || look.mesh3d === true,
       empty: inputs.empty,
@@ -306,7 +307,7 @@ export class GlRedraw {
       overlay: inputs.overlay,
     };
     const rivers = { vao: inputs.riverVao, count: inputs.riverCount, regime: inputs.riverRegime };
-    const separateWater = separateWaterLayer(look, v.forest);
+    const separateWater = quality === 0 && separateWaterLayer(look, v.forest);
     p.int('uWaterLayer', 10);
     p.int('uUseWaterLayer', 0);
     gl.activeTexture(gl.TEXTURE10);

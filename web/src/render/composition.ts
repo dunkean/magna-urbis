@@ -2,6 +2,11 @@
  * Render composition: what the user picks, pass by pass. A preset only fills this recipe; changing one
  * pass leaves the others alone. No field here is decided by the ground: `styleTraits` may declare what a
  * backend can do (see `limitations`), it never hides semantic data.
+ * Light presets keep the saved recipe and text, but displayQuality applies a deliberately flat live rendering:
+ * one palette/hillshade ground pass, no crowns, material noise or relief refinement; flat land-use fills and
+ * essential roads, rivers, contours and field edges, without brushes, symbols, furrows, hatches or washes.
+ * Town display uses roof-coloured footprints and tilted boxes, without textures or 3D trees. Coarser ground
+ * tiers and unmultisampled targets bound pixel work on integrated/software GPUs. Captures remain full quality.
  * Pure module: no DOM, no engine, no I/O.
  */
 import { SEASON_CALENDAR_FIELDS, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';

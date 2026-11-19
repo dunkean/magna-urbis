@@ -29,6 +29,8 @@
  * squares want; those are then what the layer bakes first. The same terrain shows the map drape of the frame over
  * them (`LiveFrame.drape`: water, cartography, town plan), whose tiles the compositor bakes.
  *
+ * Light quality requests half the linear pixel density (one tier coarser), warms only tiers 0..1 and never
+ * prefetches a finer tier: roughly a quarter of visible tile bakes/instances, five warm tiles instead of 21.
  * One unit although long: the pyramid, its baking order, its eviction and both ways of showing it share the one
  * table of tiles.
  */
@@ -173,6 +175,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   let blockedUntil = 0;
   const pagesFor = (quality: 'full' | 'light'): number => Math.max(2, Math.min(MAX_PAGES, Math.floor((options.budgetBytes ?? (quality === 'light' ? 96 : 192) * 1048576) / PAGE_BYTES)));
   let maxPages = pagesFor('full');
+  let light = false;
   /** Draw counter: tiles drawn by the last frame (`used === stamp`) are never evicted. */
   let stamp = 0;
   let paperCss = '',
@@ -204,7 +207,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   const density0 = (): number => TILE / gridSize;
   const finestTier = (dpr: number): number => Math.max(0, Math.min(MAX_TIER, Math.ceil(Math.log2((MAX_SCALE * dpr) / density0()) - 1e-9)));
   /** Coarsest tier whose density is at least the frame's (device pixels per metre). */
-  const viewTier = (frame: LiveFrame): number => Math.max(0, Math.min(finestTier(frame.dpr), Math.ceil(Math.log2((frame.view.scale * frame.dpr) / density0()) - 1e-9)));
+  const viewTier = (frame: LiveFrame): number => Math.max(0, Math.min(finestTier(frame.dpr), Math.ceil(Math.log2((frame.view.scale * frame.dpr * (frame.quality === 'light' ? 0.5 : 1)) / density0()) - 1e-9)));
 
   function ensure(): GlState | undefined {
     if (state) return state;
@@ -405,7 +408,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         ay = frame.moving ? velY * LEAD_S : 0;
       if (scan(k, Math.min(minX, minX + ax), Math.min(minY, minY + ay), Math.max(maxX, maxX + ax), Math.max(maxY, maxY + ay), cx + ax, cy + ay, 0)) return true;
     }
-    const coarse = Math.min(COARSE_TIERS - 1, frame ? finestTier(frame.dpr) : COARSE_TIERS - 1);
+    const coarse = Math.min(frame?.quality === 'light' ? 1 : COARSE_TIERS - 1, frame ? finestTier(frame.dpr) : COARSE_TIERS - 1);
     for (let tier = 1; tier <= coarse; tier++) {
       const n = 2 ** tier;
       for (let iy = 0; iy < n; iy++)
@@ -418,13 +421,13 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
           }
     }
     if (!frame || tilted) return false;
-    return scan(k, minX, minY, maxX, maxY, cx, cy, 1) || (k + 1 <= finestTier(frame.dpr) && scan(k + 1, minX, minY, maxX, maxY, cx, cy, 0)) || (k > 0 && scan(k - 1, minX, minY, maxX, maxY, cx, cy, 0));
+    return scan(k, minX, minY, maxX, maxY, cx, cy, 1) || (frame.quality !== 'light' && k + 1 <= finestTier(frame.dpr) && scan(k + 1, minX, minY, maxX, maxY, cx, cy, 0)) || (k > 0 && scan(k - 1, minX, minY, maxX, maxY, cx, cy, 0));
   }
 
   /** Visible tiles of the wanted tier and coarse tiles still to bake (stats only). */
   function countPending(frame: LiveFrame | undefined): number {
     let count = 0;
-    for (let tier = 0; tier < COARSE_TIERS; tier++) {
+    for (let tier = 0; tier < (frame?.quality === 'light' ? 2 : COARSE_TIERS); tier++) {
       const n = 2 ** tier;
       for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) if (needs(tier, ix, iy)) count++;
     }
@@ -540,6 +543,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       drawFloor();
     },
     resolve(squareTier: number, sx: number, sy: number, tier: number, priority: number, out: DrapeTile): boolean {
+      if (light) tier = Math.max(0, tier - 1);
       const shift = squareTier - tier,
         ix = sx >> shift,
         iy = sy >> shift;
@@ -588,6 +592,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       const s = state;
       if (!s) return;
       const started = performance.now();
+      light = frame.quality === 'light';
       if (frame.camera.tilted) {
         draped ??= new DrapedGround(gl, drapeTiles);
         draped.draw(frame, options.terrain(), paperRgb());
@@ -718,6 +723,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       const renderer = options.renderer();
       if (!renderer) return false;
       const revision = renderer.contentRevision();
+      light = frame?.quality === 'light';
       if (renderer !== seenRenderer || revision !== seenRevision) {
         seenRenderer = renderer;
         seenRevision = revision;

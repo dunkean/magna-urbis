@@ -1,4 +1,11 @@
-/** Live recipe quality, browser fallback and URL override. Captures always stay full. */
+/**
+ * Live recipe quality, browser fallback and URL override. Captures always stay full.
+ * Light is a flat cartographic display, at every zoom: palette + hillshade instead of procedural ground/crowns,
+ * flat fills and essential network/contour/field lines instead of washes, hatches, furrows or individual plants.
+ * Roof-coloured town footprints (tilted boxes), no texture/grain or modelled trees; text keeps its full settings.
+ * Half-density ground tiers, no finer-tier prefetch and no MSAA keep fill rate and retained work bounded.
+ * Recipes retain their full choices so switching quality and exporting never destroys style customizations.
+ */
 export const DISPLAY_QUALITIES = ['auto', 'full', 'light'] as const;
 export type DisplayQuality = (typeof DISPLAY_QUALITIES)[number];
 export type ResolvedDisplayQuality = Exclude<DisplayQuality, 'auto'>;

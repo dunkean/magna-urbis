@@ -5,6 +5,8 @@
  * gpu/params.ts), where names absent from the layout (the variant constants uMode, uRenderV2, uForest, the GL
  * sampler units) are ignored the same way. Textures go through `texture` (GL: active unit and binding; WebGPU: the
  * view bound under that name) and `sampler` (GL sampler unit; nothing on WebGPU).
+ * Light draws use palette/hillshade only: no material/crown passes, fractal octaves, relief refinement, shore-light
+ * bake or crown atlas. Satellite keeps an earth-green ramp; parchment keeps its paper ramp. Full draws are unchanged.
  */
 import { waterSeasonUniforms } from '../../render/seasonPalette';
 import { renderV2GlacierSources } from '../../../../rust/bridge/terrainRenderV2';
@@ -96,6 +98,11 @@ const rgb = (value: string): [number, number, number] => {
   if (!c) hexCache.set(value, (c = hex(value)));
   return c;
 };
+const LIGHT_SATELLITE_STOPS: [number, string][] = [
+  [0, '#7c8960'],
+  [0.55, '#8e936f'],
+  [1, '#b6af91'],
+];
 const townGlow = new Float32Array(64),
   NO_TOWN_GLOW = new Float32Array(0),
   NO_FARM_BEDS = new Float32Array(128),
@@ -107,6 +114,9 @@ const townGlow = new Float32Array(64),
 export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   const { look, frame, mode } = s,
     { definition, pal, water } = s.palettes;
+  // Light ground has no procedural detail or auxiliary pass, even in close world tiles. The palette and
+  // source-height hillshade carry the style; no crown atlas, shore-light bake, material or fractal octaves.
+  const light = s.quality > 0;
   b.int('uQuality', s.quality);
   b.vec2('uCanvas', frame.width, frame.height);
   b.vec2('uOrigin', frame.origin[0], frame.origin[1]);
@@ -114,7 +124,7 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.float('uDpr', s.stylePixelRatio);
   b.floats('uWaterSeason', 2, waterSeasonUniforms(look.v2Season, look.climateZone, look.v2Calendar));
   b.int('uGroundCapture', look.groundCapture ? 1 : 0);
-  b.int('uNaturalWater', look.waterLook === 'natural' ? 1 : 0);
+  b.int('uNaturalWater', !light && look.waterLook === 'natural' ? 1 : 0);
   b.int('uNight', look.ambience === 'night' ? 1 : 0);
   b.int('uUnderdark', look.underdark ? 1 : 0);
   {
@@ -138,22 +148,22 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.uint('uMaterialSeed', look.seed >>> 0);
   b.vec2('uMaterialClimate', look.climate?.temperature ?? 18, look.climate?.precipitation ?? 1000);
   b.int('uMode', mode);
-  b.forest(s.forest);
+  b.forest(!light && s.forest);
   b.landDetail();
   // RGBA16F: shore distance, openness, sky occlusion, horizon tangent toward the light (re-baked off the frame path
   // when the light azimuth changes; the previous texture stays until the new texels are ready).
-  b.shoreRing(mode);
-  const brushes = styleTraits(look.style).forestBrushes && mode === 3;
-  b.brushes(brushes, look.crownDetail);
+  b.shoreRing(light ? 0 : mode);
+  const brushes = !light && styleTraits(look.style).forestBrushes && mode === 3;
+  b.brushes(brushes, light ? 'plain' : look.crownDetail);
   b.int('uPaperMap', styleTraits(look.style).paperMap ? 1 : 0);
-  b.int('uRenderV2', styleTraits(look.style).satelliteVariant);
+  b.int('uRenderV2', light ? 0 : styleTraits(look.style).satelliteVariant);
   b.int('uV2WaterVisible', look.layers.water === false ? 0 : 1);
-  if (s.base && look.climate) b.floats('uV2GlacierSources[0]', 4, renderV2GlacierSources(s.base, look.climate));
+  if (!light && s.base && look.climate) b.floats('uV2GlacierSources[0]', 4, renderV2GlacierSources(s.base, look.climate));
   b.float('uV2Season', look.v2Season ?? 0.5);
   b.seasonCalendar(look.climateZone, look.v2Calendar);
   b.int('uMaterialZone', renderV2ZoneUniform(look.climateZone));
   b.vec2('uCityWater', s.city[0], s.city[1]);
-  b.int('uEnhanced3d', look.mesh3d || styleTraits(look.style).ground3d ? 1 : 0);
+  b.int('uEnhanced3d', !light && (look.mesh3d || styleTraits(look.style).ground3d) ? 1 : 0);
   b.int('uRefinementMode', look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
   const refined = s.refined,
     previous = s.previousRefined;
@@ -171,7 +181,7 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.floats('uSea', 3, rgb(pal.seaFill));
   b.floats('uShore', 3, rgb(water.stops[0][1]));
   b.int('uCoastalSea', s.coastal ? 1 : 0);
-  b.float('uCoastWaves', look.coastWaves ? 1 : 0);
+  b.float('uCoastWaves', !light && look.coastWaves ? 1 : 0);
   const waterPalette = waterUniforms(water);
   b.floats('uWaterStops', 3, waterPalette.colors);
   b.floats('uWaterStopT', 1, waterPalette.positions);
@@ -184,7 +194,7 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.floats('uFrameColor', 3, rgb(styleTraits(look.style).elevation ? '#333333' : pal.frame));
   b.floats('uContourColor', 3, rgb(pal.contour));
   const hypsometry = look.layers.hypsometry || styleTraits(look.style).elevation,
-    stops = hypsometry ? pal.hypso : undefined,
+    stops = hypsometry ? (light && definition.traits.satelliteVariant > 0 && !definition.traits.paperMap ? LIGHT_SATELLITE_STOPS : pal.hypso) : undefined,
     stopCount = stops ? Math.min(8, stops.length) : 2;
   for (let i = 0; i < 8; i++) {
     const stop = stops?.[Math.min(i, stopCount - 1)];
@@ -219,13 +229,13 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.float('uThinA', pal.contourOpacity * 0.5);
   b.float('uIndexA', pal.contourOpacity * 0.75);
   b.float('uFlatSlope', look.flatRelief ? 0.004 : 0.012);
-  b.int('uRefine', look.refine ? 1 : 0);
+  b.int('uRefine', !light && look.refine ? 1 : 0);
   b.float('uSourceCell', look.sourceCell);
   b.uint('uSeed', look.seed >>> 0);
   const d = look.detail;
   b.vec4('uDetailA', d.amplitude, d.hurst, Math.max(1.1, d.lacunarity), d.start);
   b.vec3('uDetailB', d.slope, d.flat, d.shore);
-  b.int('uOctaves', Math.min(s.quality ? 2 : FRACTAL_ROTATIONS.length, Math.round(d.octaves)));
+  b.int('uOctaves', light ? 0 : Math.min(FRACTAL_ROTATIONS.length, Math.round(d.octaves)));
   // Textures: 0 field, 1 cave, 2 lake, 3 overlay, 4 coast distance.
   b.sampler('uField', 0);
   b.sampler('uCave', 1);
@@ -234,7 +244,7 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.sampler('uCoastDistance', 4);
   b.texture('uCoastDistance', 4, 'coast');
   b.texture('uLake', 2, 'lake');
-  b.int('uHasLake', s.lake);
+  b.int('uHasLake', light && s.lake > 0 ? 2 : s.lake);
   b.float('uLakeN', s.lakeN);
   b.texture('uOverlay', 3, 'overlay');
   b.int('uHasOverlay', s.overlay ? 1 : 0);

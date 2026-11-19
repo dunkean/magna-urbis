@@ -6,7 +6,7 @@ import type { CityScene } from '../cityCanvas';
 import type { TextSettings } from '../textLayer';
 import type { VegetationStyle } from '../canopy';
 import type { BrushImages } from '../brushes';
-import type { World, Polygon } from '../../gen/types';
+import type { World, Polygon, LandKind } from '../../gen/types';
 import type { Palette, MapStyle } from '../styles';
 import type { RenderColors } from '../customColors';
 import type { RoadLook } from '../composition';
@@ -28,6 +28,8 @@ export interface CanvasLike {
 export interface CanvasRendererDeps {
   /** Footprints of isolated houses and farms (native scenes): woods are cleared around them like around a farmstead. */
   buildingClearings?(): readonly Polygon[];
+  /** Full-quality ownership when a light scene also retains flat polygons for the live shader. */
+  fullLanduse?: (kind: LandKind) => boolean;
   separateText?: boolean;
   textSources?(): readonly CityScene[] | undefined;
   colors?: RenderColors;

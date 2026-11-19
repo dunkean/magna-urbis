@@ -138,9 +138,7 @@ export function drawTexture(c: CartographyContext, ctx: CanvasRenderingContext2D
 }
 function* drawTextureSteps(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4 = rect): Generator<void, number> {
   const { pal, deps, canopy, brushes } = c;
-  // The polygon wash above carries light parchment woods; keep individual trees only at close zoom.
-  const scale = ctx.getTransform().a / (c.activeDpr ?? deps.dpr ?? 1);
-  if (c.activeLight && pal.name === 'parchment' && scale < 1 && ['forest', 'commons', 'pasture', 'meadow', 'marsh'].includes(tl.kind)) return 0;
+  if (c.activeLight || (c.deps.fullLanduse && !c.deps.fullLanduse(tl.kind))) return 0;
   if ((canopy || brushes) && (tl.kind === 'forest' || tl.kind === 'orchard')) {
     // Select centres inside the cover, then draw whole trees, including overhanging crowns.
     const expanded = growRect(rect, CANOPY_MARGIN),
@@ -422,14 +420,17 @@ export function paintTextureLayers(c: CartographyContext, f: VectorFrame): void 
   }
 }
 export function* paintTextureLayerSteps(c: CartographyContext, f: VectorFrame): Generator<void> {
+  // Flat land-use polygons carry every light zoom; no tree symbols, brush sprites or open-land marks.
+  if (c.activeLight) return;
   const { pal, canopy, brushes } = c;
   const { ctx, mode, dpr, sc, band, rect, budgetRect, fs, lw, luOn } = f;
   // textures (procedural marks, visible tiles only, cached per tile)
-  if (mode === 'ground' && canopy && pal.name === 'parchment' && !(c.activeLight && sc < 1)) {
+  if (mode === 'ground' && canopy && pal.name === 'parchment') {
     // 3D drape tiles come at many scales side by side: a scale-dependent choice of marks shows each tile as a rectangle.
     // Woods are drawn from world-space tree positions at every scale.
     if (luOn)
       for (const tl of c.scene.textures) {
+        if (c.deps.fullLanduse && !c.deps.fullLanduse(tl.kind)) continue;
         if (tl.kind === 'forest') fs.textureTiles += drawDrapeCanopy(c, ctx, tl, rect, sc * dpr);
         // Orchards and open-land symbols follow the 2D map's own scale rule: the moving 3D preview reuses the 2D raster
         // tiles, so a refined drape tile must keep every symbol its preview showed (never a uniform fill over them).

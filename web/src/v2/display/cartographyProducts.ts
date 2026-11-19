@@ -375,7 +375,7 @@ export class CartographyProducts implements Cartography {
     this.parts.contours.paintContours(ctx, viewport, mpp, 1, light);
     const s = this.semantic;
     const lineView = this.map.resolved?.composition.variant === 'topographic';
-    if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.map.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes, patterns: !lineView, fieldStrips: lineView });
+    if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.map.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes, patterns: !light && !lineView, fieldStrips: lineView });
   }
   private semanticLegend(): SemanticLegendEntry[] {
     const s = this.semantic;

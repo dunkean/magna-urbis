@@ -1,6 +1,6 @@
 /**
  * World tiles of the live compositor (contract GroundTileRenderer, render/live/groundLayer.ts) on WebGL2: every pass
- * of the live redraw for a world square at `px`² device pixels, full quality, into the renderer's canvas, uploaded by
+ * of the live redraw for a world square at `px`² device pixels, live display quality, into the renderer's canvas, uploaded by
  * the ground layer in the same task. The material's detail follows the tile density (uPx = metres per tile pixel);
  * details and refinements are drawn at their final opacity. Owns the tiles' intermediate targets, so the live view's
  * auxiliary pass and retained-water raster stay cached, and tiles of one size never reallocate a target.
