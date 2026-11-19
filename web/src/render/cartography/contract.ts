@@ -18,6 +18,7 @@ import type { PlacedMapLabel } from '../mapLabels';
 import type { MapInformation, SemanticLegendEntry } from '../legend';
 import type { ResolvedDisplayQuality } from '../displayQuality';
 import type { LiveLayer, LiveTextPlacement } from '../live/contract';
+import type { OverlayInk } from '../live/contourInk';
 
 export interface CanvasLike {
   width: number;
@@ -63,12 +64,17 @@ export interface CanvasRendererDeps {
   brushes?: BrushImages;
   /** Irregular, shaded foliage in place of round forest/orchard symbols. */
   vegetation?: VegetationStyle;
+  /** True while the ground under the overlay paints the woods (their wash, the shade around them and the tree symbols:
+   * render/treeSymbols.ts): the overlay leaves the forest class out. Read per paint. */
+  groundTrees?: () => boolean;
   /** Decorative field scale, independent of the retained terrain extent. */
   furrowReferenceSize?: number;
   /** Natural layers owned by another pass (no fabricated world): they are neither built nor drawn. Absent = all. */
   mask?: SceneMask;
   /** Semantic land use of another pass, painted after the land-use layers and before water, roads and labels. `key` joins the raster tile keys, so a new look repaints the tiles; `draw` gets the world-coordinate context, the culling rect and the world units per screen pixel. */
   semantic?: {
+    /** World ink drawn between the retained area prefix and semantic suffix, independently of band recordings. */
+    createInk?(gl: WebGL2RenderingContext): OverlayInk | undefined;
     key(): string;
     /** `key` without the products made per view (contour paths from the worker, the water raster of the view): a rectangle drawn with all of them in hand stays valid while only those move. The live overlay keys its regions on it (cartography/liveHost.ts). */
     look(): string;

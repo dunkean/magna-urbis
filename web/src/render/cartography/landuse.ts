@@ -36,6 +36,8 @@ export function* paintLandUseSteps(c: CartographyContext, f: VectorFrame): Gener
     if (!c.activeLight && c.deps.fullLanduse && !c.deps.fullLanduse(kind)) continue;
     const name = 'lu-' + kind;
     if (!polyL(name)) continue;
+    // The ground paints the woods (render/treeSymbols.ts).
+    if (kind === 'forest' && c.deps.groundTrees?.()) continue;
     if (kind === 'forest' && !c.activeLight) {
       ctx.save();
       const clip = timedRec('forestClip', () => forestClip(c, rect));

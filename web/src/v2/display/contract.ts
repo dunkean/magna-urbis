@@ -21,6 +21,7 @@ import type { CanvasRenderer } from '../../render/canvas';
 import type { SemanticLook } from '../../render/composition';
 import type { ExportLayers } from '../../render/exportLayers';
 import type { GroundTileRenderer } from '../../render/live/contract';
+import type { OverlayInk } from '../../render/live/contourInk';
 import type { Rect } from '../../render/tileindex';
 import type { View } from '../../render/view';
 import type { ViewRasterRegion } from '../../render/viewRaster';
@@ -78,6 +79,8 @@ export interface Ground {
   miniGround(): HTMLCanvasElement | undefined;
   /** The terrain renderer as the live ground layer bakes from it; undefined while it cannot draw the map. */
   groundTiles(): GroundTileRenderer | undefined;
+  /** The paper map woods of the look (render/treeSymbols.ts): the GPU ground draws them when it is active. */
+  treeSymbols(): { conifer: number } | undefined;
 }
 
 export interface Water {
@@ -108,6 +111,8 @@ export interface Water {
 }
 
 export interface Contours {
+  createLiveInk(gl: WebGL2RenderingContext): OverlayInk | undefined;
+  dispose(): void;
   /** Changes with every new set of paths. */
   readonly revision: number;
   /** Paths still being computed. */

@@ -424,6 +424,8 @@ export function* paintTextureLayerSteps(c: CartographyContext, f: VectorFrame): 
   if (c.activeLight) return;
   const { pal, canopy, brushes } = c;
   const { ctx, mode, dpr, sc, band, rect, budgetRect, fs, lw, luOn } = f;
+  // The ground paints the woods (render/treeSymbols.ts).
+  const groundTrees = !!c.deps.groundTrees?.();
   // textures (procedural marks, visible tiles only, cached per tile)
   if (mode === 'ground' && canopy && pal.name === 'parchment') {
     // 3D drape tiles come at many scales side by side: a scale-dependent choice of marks shows each tile as a rectangle.
@@ -431,6 +433,7 @@ export function* paintTextureLayerSteps(c: CartographyContext, f: VectorFrame): 
     if (luOn)
       for (const tl of c.scene.textures) {
         if (c.deps.fullLanduse && !c.deps.fullLanduse(tl.kind)) continue;
+        if (tl.kind === 'forest' && groundTrees) continue;
         if (tl.kind === 'forest') fs.textureTiles += drawDrapeCanopy(c, ctx, tl, rect, sc * dpr);
         // Orchards and open-land symbols follow the 2D map's own scale rule: the moving 3D preview reuses the 2D raster
         // tiles, so a refined drape tile must keep every symbol its preview showed (never a uniform fill over them).
@@ -438,6 +441,7 @@ export function* paintTextureLayerSteps(c: CartographyContext, f: VectorFrame): 
       }
   } else if (luOn) {
     for (const tl of c.scene.textures) {
+      if (tl.kind === 'forest' && groundTrees) continue;
       if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, c.world.options.biome)))) fs.textureTiles += yield* drawTextureSteps(c, ctx, tl, rect, band, lw, budgetRect);
       yield;
     }

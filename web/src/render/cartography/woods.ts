@@ -76,6 +76,8 @@ export function warmTreeMarks(c: CartographyContext, deadline: number): boolean 
   const size = c.world.mapSize;
   for (const tl of c.scene.textures) {
     if (tl.kind !== 'forest' && tl.kind !== 'orchard') continue;
+    // The ground paints the woods (render/treeSymbols.ts): no forest marks to make.
+    if (tl.kind === 'forest' && c.deps.groundTrees?.()) continue;
     let state = WARMING.get(tl);
     if (!state) {
       const tiles = tl.index.tilesInRect({ minX: 0, minY: 0, maxX: size, maxY: size });

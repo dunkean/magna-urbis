@@ -27,6 +27,7 @@ import { renderSvg } from '../../render/svg';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { settlementRaster, type SettlementRaster } from '../../../../rust/bridge/settlements';
 import { v1LandCanvas } from '../../render/v1Landscape';
+import { punchWoods } from '../../render/treeSymbols';
 import { riverSegments } from '../../ui/vectorWaterRender';
 import { hydrologySegments, hydrologyWaterColour } from '../../../../rust/bridge/hydrologyRender';
 import { passKeys } from '../passes/pass';
@@ -95,9 +96,21 @@ export class CartographyProducts implements Cartography {
     // Every course cuts the backdrop, dry beds included: their symbols are drawn in the vector water below.
     const water = { ...this.parts.water.waterDisplay(), season: undefined },
       rivers = !r.composition.networks.water.visible ? undefined : t.water ? riverSegments(t.water, water) : t.hydrology ? hydrologySegments(t.hydrology, hydrologyWaterColour(r.ground.style, r.palette.colors)) : undefined;
-    return v1LandCanvas(this.landRaster.raster, 'parchment', this.map.world!.options.biome, rivers);
+    const land = v1LandCanvas(this.landRaster.raster, 'parchment', this.map.world!.options.biome, rivers);
+    // Woods painted by the ground (render/treeSymbols.ts): the ground draws this land under them, the overlay keeps it
+    // only around them, so they show through.
+    const ground = this.parts.ground;
+    if (!this.woodsOnGround) {
+      ground.gpu?.setLandBackdrop(undefined);
+      return land;
+    }
+    ground.gpu!.setLandBackdrop(land);
+    return punchWoods(land, this.map.world!.landuse?.areas ?? [], this.map.world!.mapSize);
   }
   private shownWorld(): World {
+  /** The GPU ground paints the woods of a parchment look (render/treeSymbols.ts): the overlay leaves them out. Set when
+   * the overlay renderer is made, after the ground passes. */
+  private woodsOnGround = false;
     const world = this.map.world!,
       layers = this.map.exportLayers,
       r = this.map.resolved!;
@@ -207,6 +220,7 @@ export class CartographyProducts implements Cartography {
     const semanticLook = (): string =>
       `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}`;
     this.renderer = createCanvasRenderer(this.overlay, shown, palette, {
+    this.woodsOnGround = this.parts.ground.gpuActive && !!this.parts.ground.treeSymbols();
       colors: r.palette.colors,
       separateText: true,
       textSources: () => this.parts.town.city?.scenes(),
@@ -257,6 +271,7 @@ export class CartographyProducts implements Cartography {
       vegetation: r.vegetation.symbols,
       get dpr() {
         return map.dpr;
+      groundTrees: () => this.woodsOnGround,
       },
     });
     const renderer = this.renderer;
