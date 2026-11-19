@@ -37,6 +37,7 @@ import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/under
 import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { WorldBuildingsOptions } from '../../render/world/buildingsLayer';
 import type { TerrainHeights } from '../../render/world/heights';
+import { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { WorldTreesOptions } from '../../render/world/treesLayer';
 import { riverCover } from '../../render/world/treesWater';
 import { PAINTED_TREES, SATELLITE_TREES, type TreePalette } from '../../render/world/treesShader';
@@ -77,6 +78,8 @@ export class WorldVolumes {
   readonly trees: WorldTreesOptions;
 
   private display?: City3dDisplayScene;
+  /** Made once when a new town scene is published; appearance/tree-only refreshes retain it. */
+  walkCollisions?: Terrain3dCollisions;
   private appearance: UrbanBuildingAppearance = { style: 'cartographic', diagnostic: 'none' };
   private treeSource?: TreeSource;
   private distance = TREE_DISTANCE_DEFAULT;
@@ -142,6 +145,7 @@ export class WorldVolumes {
     this.madeFor = { world, content: map.townContent, resolved, heights };
     if (!world || !settings || !resolved || !heights) {
       this.display = this.treeSource = undefined;
+      this.walkCollisions = undefined;
       this.townOf = { cities: [], key: '' };
       return;
     }
@@ -241,6 +245,7 @@ export class WorldVolumes {
       this.townOf = { cities, world, heights, key };
       this.appearance = appearance;
       this.display = undefined;
+      this.walkCollisions = undefined;
       return;
     }
     // The scene holds real heights; the layer seats it on the relief as drawn.
@@ -263,6 +268,7 @@ export class WorldVolumes {
     this.townOf = { cities, world, heights, key };
     this.appearance = appearance;
     this.display = city3dWithExtras(display, [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks, ...enclosures, ...groves, ...ornaments, ...farms]);
+    this.walkCollisions = this.display ? new Terrain3dCollisions(this.display, heights, heights.exaggeration) : undefined;
   }
 
   private refreshTrees(world: World, r: ResolvedAppearance, resolved: ResolvedAppearance, ground: ReturnType<typeof v2Terrain3dGround>): void {

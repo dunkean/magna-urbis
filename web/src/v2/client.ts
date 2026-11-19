@@ -522,6 +522,7 @@ export class StudioClient {
       });
       this.bench.setSuspended(this.view3dActive);
       this.viewer.setRelief(() => this.bench?.relief());
+      this.viewer.setWalkCollisions(() => this.bench?.walkCollisions());
       this.bench.resourceSource = w => this.resources(w);
       // One bench set() at a time: two interleaved sets (style switch + language redraw) share the renderer's passes and
       // could leave the older look on screen. A newer show() waits for the one in flight; a superseded one gives up.

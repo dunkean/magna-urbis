@@ -37,8 +37,14 @@ export interface BuildingTriangle {
   material?: string;
   ground?: [number, number, number];
 }
+/** Display works can retain separate solid prisms, so gate lintels do not fill their passages. */
+export interface BuildingWalkSolid {
+  footprint: Surface;
+  z_min_m: number;
+  z_max_m: number;
+}
 /** A cartographic projection is never a PlacedBuilding or a realization input. */
-export type Building3dVisual = PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual;
+export type Building3dVisual = (PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual) & { walkSolids?: readonly BuildingWalkSolid[] };
 export interface Building3dScene {
   buildings: readonly Building3dVisual[];
   materials?: HouseMaterial[];

@@ -30,6 +30,7 @@ import { screenToWorld, type View } from '../../render/view';
 import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { isTilted } from '../../render/world/camera';
 import type { WorldRelief } from '../../render/world/contract';
+import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import { suspendFantasyRaster } from '../../ui/fantasyRaster';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { ComposedView, GROUND_WARMING } from './composedView';
@@ -134,6 +135,9 @@ export class MapView implements AppearanceListener, ViewStatus {
   /** The relief of the map on screen, for the viewer's zoom on the terrain (Viewer.setRelief). */
   relief(): WorldRelief | undefined {
     return this.composed.relief();
+  }
+  walkCollisions(): Terrain3dCollisions | undefined {
+    return this.presenter === 'composed' ? this.composed.walkCollisions() : undefined;
   }
   private current(): ComposedView | FallbackView | undefined {
     return this.presenter === 'composed' ? this.composed : this.presenter === 'fallback' ? this.fallback : undefined;

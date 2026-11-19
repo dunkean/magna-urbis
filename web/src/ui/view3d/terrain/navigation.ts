@@ -9,6 +9,7 @@ import type { TerrainViewContext } from './context';
 import type { Terrain3dCamera } from './contract';
 import type { TerrainCameraRig } from './camera';
 import type { TerrainSurface } from './surface';
+import type { TerrainBuildings } from './buildings';
 
 export class TerrainNavigation {
   /** Orbit distance and pitch before walking or flying, restored on the way back to orbit. */
@@ -18,11 +19,14 @@ export class TerrainNavigation {
   private walkKeys = new Set<string>();
   private walkFrame = 0;
   private walkTime = 0;
+  private readonly walkPoint: [number, number] = [0, 0];
+  private readonly groundHeight = (x: number, y: number): number => this.surface.heightAt(x, y) ?? 0;
 
   constructor(
     private readonly context: TerrainViewContext,
     private readonly rig: TerrainCameraRig,
     private readonly surface: TerrainSurface,
+    private readonly buildings: TerrainBuildings,
   ) {}
 
   setNavigation(navigation: 'orbit' | 'walk' | 'fly'): void {
@@ -41,6 +45,7 @@ export class TerrainNavigation {
       }
     } else if (navigation === 'walk') {
       rig.camera = { ...rig.camera, navigation, distance: 20, pitch: 0.08 };
+      this.walk(0, 0, 0);
     } else {
       rig.camera = { ...rig.camera, navigation, distance: this.orbitBeforeWalk?.distance ?? 120, pitch: this.orbitBeforeWalk?.pitch ?? 0.8 };
     }
@@ -50,8 +55,7 @@ export class TerrainNavigation {
   private walk(forward: number, right: number, seconds: number, fast = false): void {
     const c = this.rig.camera,
       [dx, dy] = walkDisplacement(c.yaw, forward, right, seconds, fast);
-    c.x += dx;
-    c.y += dy;
+    [c.x, c.y] = this.buildings.walkCollisions.move(c.x, c.y, dx, dy, this.groundHeight, c.exaggeration, this.walkPoint);
   }
 
   private fly(forward: number, right: number, up: number, seconds: number, fast = false): void {

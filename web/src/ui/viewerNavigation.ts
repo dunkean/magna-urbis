@@ -3,6 +3,7 @@ import { dualCameras } from '../render/live/policy';
 import { View, fitView, clampView, zoomAt, panBy } from '../render/view';
 import { clampLook, clampPitch, panOnGround, screenProjection, wrapYaw, zoomAtGround, type ScreenProjection } from '../render/world/camera';
 import type { WorldRelief } from '../render/world/contract';
+import type { Terrain3dCollisions } from '../render/world/terrain3dCollisions';
 import { enterFreeEye, leaveFreeEye, lookFreeEye, moveFreeEye, switchFreeEye, walkingEye, type Navigation } from '../render/world/navigation';
 
 const sameView = (a: View, b: View): boolean => a.cx === b.cx && a.cy === b.cy && a.scale === b.scale;
@@ -30,6 +31,7 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
     tiltTarget: { pitch: number; yaw: number } | null = null,
     tiltStamp = 0;
   let relief: (() => WorldRelief | undefined) | undefined;
+  let walkCollisions: (() => Terrain3dCollisions | undefined) | undefined;
   const cameraListeners = new Set<(view: View) => void>();
   /** Pitch, yaw and navigation last told to the listeners. */
   let toldPitch = 0,
@@ -131,11 +133,11 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
       right = key('KeyD', 'ArrowRight') - key('KeyA', 'KeyQ', 'ArrowLeft'),
       up = navigation === 'fly' ? key('Space', 'KeyE') - key('KeyC') : 0;
     // Shift alone moves nothing: no frame until a moving key comes.
-    if (forward || right || up) takeEye(moveFreeEye(withTilt(view), navigation as 'walk' | 'fly', forward, right, up, seconds, !!key('ShiftLeft', 'ShiftRight'), relief?.()));
+    if (forward || right || up) takeEye(moveFreeEye(withTilt(view), navigation as 'walk' | 'fly', forward, right, up, seconds, !!key('ShiftLeft', 'ShiftRight'), relief?.(), navigation === 'walk' ? walkCollisions?.() : undefined));
   }
   /** A step of a free eye forward (negative: back) for `seconds`: the wheel, the zoom buttons and keys, two fingers. */
   const stride = (forward: number, right: number, seconds: number, fast = false): void => {
-    if (forward || right) takeEye(moveFreeEye(withTilt(view), navigation as 'walk' | 'fly', forward, right, 0, seconds, fast, relief?.()));
+    if (forward || right) takeEye(moveFreeEye(withTilt(view), navigation as 'walk' | 'fly', forward, right, 0, seconds, fast, relief?.(), navigation === 'walk' ? walkCollisions?.() : undefined));
   };
   /** Walk, fly or orbit (Viewer.setNavigation). */
   function setNavigation(mode: Navigation): void {
@@ -156,7 +158,7 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
     if (navigation === 'orbit') orbitPitch = pitch || 1;
     const next = navigation === 'orbit' ? enterFreeEye(camera, mode, h, relief?.()) : switchFreeEye(camera, mode, relief?.());
     navigation = mode;
-    takeEye(next);
+    takeEye(mode === 'walk' ? moveFreeEye(next, mode, 0, 0, 0, 0, false, relief?.(), walkCollisions?.()) : next);
   }
   /** Tells the listeners the pitch, the yaw and the navigation of the view on screen when they changed. */
   function tellCamera(): void {
@@ -334,6 +336,9 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
     },
     setRelief(value: (() => WorldRelief | undefined) | undefined) {
       relief = value;
+    },
+    setWalkCollisions(value: (() => Terrain3dCollisions | undefined) | undefined) {
+      walkCollisions = value;
     },
   };
 }

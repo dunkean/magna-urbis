@@ -45,6 +45,7 @@ import type { View } from '../../render/view';
 import { dualCameras } from '../../render/live/policy';
 import { createCameraPose, groundHit, isTilted, pixelRay, poseCamera } from '../../render/world/camera';
 import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../render/world/buildingsLayer';
+import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
 import { createWorldTreesLayer } from '../../render/world/treesLayer';
@@ -189,6 +190,10 @@ export class ComposedView {
       this.heights = { terrain, relief: new TerrainHeights(grid.data, grid.n, terrain.width, floor, exaggeration) };
     }
     return this.heights.relief;
+  }
+  /** Collision geometry is published with the town scene, independently of visible mesh LOD. */
+  walkCollisions(): Terrain3dCollisions | undefined {
+    return this.map.exportLayers.city !== false ? this.volumes.walkCollisions : undefined;
   }
   /** The last frame was drawn with a tilted camera. */
   get tilted(): boolean {

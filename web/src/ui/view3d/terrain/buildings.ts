@@ -7,6 +7,7 @@ import type { UrbanBuildingAppearance } from '../../../render/urbanBuildingStyle
 import type { Building3dScene } from '../../../render/urbanBuildingGeometry';
 import type { UrbanBuildingPass } from '../../urbanBuilding3d';
 import { UrbanBuildingGround } from '../../urbanBuildingGround';
+import { Terrain3dCollisions } from '../../../render/world/terrain3dCollisions';
 import type { TerrainSurface } from './surface';
 
 export class TerrainBuildings {
@@ -14,6 +15,7 @@ export class TerrainBuildings {
   scene?: Building3dScene;
   appearance: UrbanBuildingAppearance = { style: 'geometric', diagnostic: 'none' };
   visible = true;
+  walkCollisions = new Terrain3dCollisions();
 
   constructor(private readonly surface: TerrainSurface) {}
 
@@ -30,7 +32,10 @@ export class TerrainBuildings {
     this.scene = scene;
     this.appearance = appearance;
     this.visible = visible;
-    if (changed) this.surface.buildingGround = new UrbanBuildingGround(visible ? scene : undefined);
+    if (changed) {
+      this.surface.buildingGround = new UrbanBuildingGround(visible ? scene : undefined);
+      this.walkCollisions = new Terrain3dCollisions(visible ? scene : undefined);
+    }
     return changed;
   }
 }

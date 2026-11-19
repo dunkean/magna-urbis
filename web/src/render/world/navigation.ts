@@ -10,6 +10,7 @@
 import type { View } from '../view';
 import { WALK_EYE_HEIGHT, clampLook, clampPitch, createCameraPose, groundHit, isFreeEye, poseCamera, wrapYaw } from './camera';
 import type { WorldRelief } from './contract';
+import type { Terrain3dCollisions } from './terrain3dCollisions';
 
 export type Navigation = 'orbit' | 'walk' | 'fly';
 
@@ -32,6 +33,7 @@ export const walkingEye = (relief: WorldRelief | undefined, x: number, y: number
 
 const pose = createCameraPose(),
   point: [number, number] = [0, 0];
+const walkPoint: [number, number] = [0, 0];
 
 /** The free eye that takes over from an orbit view: a walker stands at its centre and looks at the horizon the way the
  * view faced; a flyer is the orbit's eye itself, looking where it looked. */
@@ -61,14 +63,17 @@ export function leaveFreeEye(view: View, pitch: number, cssW: number, cssH: numb
 /** A free eye moved for `seconds` by held keys: `forward` and `right` in -1..1 (and `up` when flying), `fast` with
  * Shift. Walking goes along the ground the eye faces and stays at a person's height over it; flying goes along the look
  * at its altitude, never closer to the ground than a walking eye. */
-export function moveFreeEye(view: View, mode: 'walk' | 'fly', forward: number, right: number, up: number, seconds: number, fast: boolean, relief?: WorldRelief): View {
+export function moveFreeEye(view: View, mode: 'walk' | 'fly', forward: number, right: number, up: number, seconds: number, fast: boolean, relief?: WorldRelief, collisions?: Terrain3dCollisions): View {
   const yaw = wrapYaw(view.yaw),
     sinYaw = Math.sin(yaw),
     cosYaw = Math.cos(yaw);
   if (mode === 'walk') {
     const step = (WALK_SPEED * (fast ? WALK_FAST : 1) * seconds) / Math.max(1, Math.hypot(forward, right)),
-      cx = view.cx + (forward * sinYaw + right * cosYaw) * step,
-      cy = view.cy + (-forward * cosYaw + right * sinYaw) * step;
+      dx = (forward * sinYaw + right * cosYaw) * step,
+      dy = (-forward * cosYaw + right * sinYaw) * step;
+    let cx = view.cx + dx,
+      cy = view.cy + dy;
+    if (collisions) [cx, cy] = collisions.move(view.cx, view.cy, dx, dy, undefined, 1, walkPoint);
     return { ...view, cx, cy, eye: walkingEye(relief, cx, cy) };
   }
   const pitch = clampLook(view.pitch),

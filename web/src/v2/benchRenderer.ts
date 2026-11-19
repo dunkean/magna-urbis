@@ -28,6 +28,7 @@ import type { City3dPhysicalGround as PhysicalGround } from '../ui/city3d';
 import type { View } from '../render/view';
 import type { Building3dVisual } from '../render/urbanBuildingGeometry';
 import type { WorldRelief } from '../render/world/contract';
+import type { Terrain3dCollisions } from '../render/world/terrain3dCollisions';
 import type { ExportLayers } from '../render/exportLayers';
 import { ResourceCache } from './passes/pass';
 import type { ResourceSource } from './resourceLayer';
@@ -106,6 +107,9 @@ export class BenchRenderer {
   /** The relief of the map on screen: the viewer zooms towards the terrain point under the cursor when tilted. */
   relief(): WorldRelief | undefined {
     return this.view.relief();
+  }
+  walkCollisions(): Terrain3dCollisions | undefined {
+    return this.view.walkCollisions();
   }
   retainedBytes(): number {
     return this.products.cartography.retainedBytes();

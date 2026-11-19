@@ -3,6 +3,7 @@ import type { CanvasRenderer } from '../render/canvas';
 import type { View } from '../render/view';
 import type { ScreenProjection } from '../render/world/camera';
 import type { WorldRelief } from '../render/world/contract';
+import type { Terrain3dCollisions } from '../render/world/terrain3dCollisions';
 import type { Navigation } from '../render/world/navigation';
 import { createViewerNavigation } from './viewerNavigation';
 import { createViewerPresentation } from './viewerPresentation';
@@ -83,6 +84,8 @@ export interface Viewer {
   /** The relief of the map on screen: a zoom of a tilted view then aims at the terrain under the cursor rather than
    * at the plane through the centre of the view. */
   setRelief(relief: (() => WorldRelief | undefined) | undefined): void;
+  /** The displayed town's retained collision index, read only while walking. */
+  setWalkCollisions(collisions: (() => Terrain3dCollisions | undefined) | undefined): void;
   /** Wait until the displayed pixels represent the current camera, including worker replies. */
   waitForFrame(): Promise<void>;
   clear(): void;
@@ -129,6 +132,7 @@ export function createViewer(o: ViewerOptions): Viewer {
     setTiltLocked: nav.setTiltLocked,
     onCamera: nav.onCamera,
     setRelief: nav.setRelief,
+    setWalkCollisions: nav.setWalkCollisions,
     zoomBy: f => nav.zoomBy(f),
     invalidate,
     setPaused(value: boolean) {

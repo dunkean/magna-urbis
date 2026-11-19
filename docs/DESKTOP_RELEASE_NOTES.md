@@ -1,6 +1,8 @@
 ## Alpha 0.3.11
 
 - Harmonize building daylight in 2D and 3D: domes, pitched roofs, flat roofs and walls share softer, consistent shading across architectural styles.
+- Walk mode collides with house exteriors and fortifications, slides along walls and keeps gate passages open.
+- The single camera's walk mode also collides with house exteriors and fortifications, sliding along walls and passing through gates.
 - Fix startup and reloads getting stuck when the browser GPU driver does not answer. Native procedural generation no longer waits for an unused browser GPU.
 - Keep generation settings and imported heightmaps when reloading during an interrupted or unfinished restoration.
 
