@@ -3,6 +3,7 @@
  * scenes or without workers. Owned by renderer.ts.
  */
 import { mergeTriangulations, slicePolygons, splitPolygons, triangulatePolygons, type CityGlFillSource, type CityGlTriangulation } from '../../cityGlBuild';
+import { countWork } from '../../workCount';
 // walls hook (cityWalls.ts)
 
 export class Triangulator {
@@ -33,6 +34,7 @@ export class Triangulator {
   }
   /** Parallel when the packing is large and workers are available; otherwise on this thread. */
   async run(source: CityGlFillSource, workers: number): Promise<{ result: CityGlTriangulation; workers: number }> {
+    countWork('town.triangulate');
     const p = source.polygons,
       polys = p.polys.length - 1;
     const pool = polys > 3000 ? this.pool(workers) : [];

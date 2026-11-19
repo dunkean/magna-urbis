@@ -36,6 +36,7 @@ import { activityScene, activitySitesOf, drawInstallations } from './activitySit
 import type { LiveCityEnv, LiveLayer } from '../render/live/contract';
 import { createLiveCityLayer } from '../render/live/cityLayer';
 import { createStepwiseTown, type NativeCityStepwise } from '../render/city/canvas/stepwiseTown';
+import { countWork } from '../render/workCount';
 
 export interface NativeCityMapStats {
   native: boolean;
@@ -232,6 +233,7 @@ const idOf = (value: object | undefined): number => {
   return id;
 };
 export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCityInvalidation) => void, prepared?: PreparedCities): NativeCityMap {
+  countWork('town.map');
   let disposed = false,
     queued = false,
     layer: LayerCanvas | undefined,
@@ -295,6 +297,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   /** Creates the GL layer and starts the merged upload; true once it can draw. */
   function prepareGl(): boolean {
     gl ??= new CityGlComposite(invalidate);
+    if (!glScene) countWork('town.canvasPlanMerge');
     glScene ??= mergeCityPlans(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings })));
     return gl.prepare(glScene.plan, glScene.buildings);
   }

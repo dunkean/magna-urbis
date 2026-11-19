@@ -52,6 +52,7 @@ import type { YardBoundary } from '../../cityLotEnclosures';
 import { CanopyDiscs } from './canopyDiscs';
 import { FarRasters } from './farRasters';
 import { liveCityBlock, type LiveCityTowns } from './contract';
+import { countWork } from '../../workCount';
 
 interface Look {
   appearance: ResolvedAppearance;
@@ -74,6 +75,7 @@ const finite = (value: number | undefined, fallback: number, min: number, max: n
 const LEVEL_MPP: Record<CityLod, number> = { close: 0.4, near: 1.2, mid: 4, far: 16 };
 
 export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv, towns: LiveCityTowns): LiveLayer {
+  countWork('town.liveLayer');
   let renderer: CityGlSharedRenderer | undefined,
     broken = false,
     disposed = false;
@@ -510,6 +512,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         merging ??= towns.sceneSteps();
         const r = renderer;
         advance(merging, start, budgetMs, scene => {
+          countWork('town.sceneMerge');
           merging = undefined;
           requested = scene.plan;
           built = scene.buildings;

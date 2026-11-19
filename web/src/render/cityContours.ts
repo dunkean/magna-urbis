@@ -5,6 +5,7 @@ import { sampleGrid, slopeGrid, gradientAt, type Grid } from '../gen/core/grid';
 import { contourSet, CONTOUR_INTERVAL } from './contours';
 import { contourLevels } from '../../../rust/bridge/renderGeometry';
 import { chaikin, simplify, polylineLength } from '../gen/core/geom';
+import { countWork } from './workCount';
 
 export interface CityContourPaths {
   step: number;
@@ -224,6 +225,7 @@ function queueContours(entry: Entry, scale: number, key: string, topographic: bo
       workerEntry = new WeakRef(entry);
     }
     if (!background) entry.pending.add(key);
+    countWork(background ? 'contour.prewarm' : 'contour.extract');
     warming.set(id, { entry, key, ready: new Set(ready ? [ready] : []), background, scale, topographic, fine: !!fine, detail });
     warmer!.postMessage(request);
   } catch {
@@ -326,6 +328,7 @@ export function cityContourPaths(terrain: TerrainData, landform: string, scale: 
   }
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, metresPerPixel) } } } as World;
+  countWork('contour.extract');
   const contours = contourSet(world, Math.min(terrain.width / 1600, metresPerPixel * 1.5), step, topographic ? Math.min(1, step / CONTOUR_INTERVAL[relief]) : 1);
   const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
   entry.paths.set(key, paths);
@@ -343,6 +346,7 @@ function fixedContourPaths(entry: Entry, terrain: TerrainData, topographic: bool
   }
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, height.cell / 5) } } } as World;
+  countWork('contour.extract');
   const contours = contourSet(world, terrain.width / 1600, step, topographic ? Math.min(1, step / CONTOUR_INTERVAL[entry.relief]) : 1);
   const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
   entry.paths.set(key, paths);
@@ -407,6 +411,7 @@ export function cityFineContours(terrain: TerrainData, landform: string, scale: 
       const key = `${step}:${metresPerPixel}:${bx}:${by}`;
       let block = entry.blocks.get(key);
       if (!block) {
+        countWork('contour.fineBlock');
         block = fineBlock(entry, data, bx, by, step, indexInterval(step), u);
         if (entry.blocks.size >= FINE_BLOCK_LIMIT) entry.blocks.delete(entry.blocks.keys().next().value!);
         entry.blocks.set(key, block);

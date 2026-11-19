@@ -31,6 +31,7 @@ import { drawTownFrame } from './frame';
 import { Triangulator } from './triangulator';
 import { cityGlPick } from './hostTools';
 import { SOFTWARE_GL } from '../../softwareGl';
+import { countWork } from '../../workCount';
 
 const defaultWorkers = (): number => Math.max(0, Math.min(4, ((globalThis.navigator?.hardwareConcurrency ?? 2) >> 1) - 1));
 export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas, create: CityGlCreateOptions = {}): CityGlRenderer {
@@ -493,6 +494,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       if (p) commitPlan = undefined;
       else commitBuildings = undefined;
       const ms = p?.() ?? b?.() ?? 0;
+      if (p || b) countWork('town.upload');
       gl.bindVertexArray(null); // StrokePack leaves its VAO bound: nothing of ours stays bound in the shared context
       if (p && buildStats) buildStats.uploadMs = ms;
       else if (b && buildingStats) buildingStats.uploadMs = ms;
@@ -573,6 +575,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       return false;
     },
     async setScene(next, nextBuildings, options = {}) {
+      countWork('town.packScene');
       const gen = ++generation,
         start = performance.now(),
         workers = options.workers ?? defaultWorkers();
@@ -636,6 +639,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       return buildStats;
     },
     async setBuildings(next, options = {}) {
+      countWork('town.packBuildings');
       const gen = ++buildingGeneration,
         start = performance.now(),
         workers = options.workers ?? defaultWorkers(),

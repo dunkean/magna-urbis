@@ -1,6 +1,7 @@
 /** Building block/level cache owned by buildingsLayer. Builds bounded mesh parts, uploads them over work slices and evicts GPU levels without touching the last draw's resources. */
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import { BLOCK_CELLS, blockPart, type BuildingBlock } from './buildingsBlocks';
+import { countWork } from '../workCount';
 /** Buildings meshed between clock checks. */
 const BUILD_CHUNK = 8;
 /** GPU bytes retained by building levels; levels used by the last draw cannot be evicted. */
@@ -165,8 +166,10 @@ export class BuildingBlockCache {
               break;
             }
         }
-        if (next) this.pending = this.startJob(next, level);
-        else if (!this.spilled) {
+        if (next) {
+          this.pending = this.startJob(next, level);
+          countWork('volumes.blockLevel');
+        } else if (!this.spilled) {
           // Not once the budget has spilled: an overview built then evicts another, which is bare again, without end.
           const bare = this.slots.find(slot => !slot.levels.some(Boolean));
           if (bare) this.pending = this.startJob(bare, bare.block.levels - 1);
