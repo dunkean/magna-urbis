@@ -667,7 +667,9 @@ export class ComposedView {
   /** Pending work that only concerns the view on screen: the picture at rest, a live layer preparing it, the town paint. */
   pendingViewOnly(): number {
     const volumes = this.tilted ? Number(this.volumes.pending()) + Number(this.live?.layerPending('buildings')) : 0;
-    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending) + volumes;
+    // A completed paint job still owes its final presentation frame. Tilted and fallback frames do not use `rest`.
+    const picture = !this.tilted && this.live?.active() && (this.rest === 'due' || this.rest === 'painting');
+    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending) + Number(!!picture) + volumes;
   }
   /** Overlay rasters the exact overlay paint still waits for (none when the overlay at rest is the live layer). */
   pendingOverlay(): number {
