@@ -89,6 +89,17 @@ const push = (list: number[], value: number): void => {
   list.push(value);
   if (list.length > HISTORY) list.shift();
 };
+/** Tile measurements can change policy inside a running paint generator. Notify after the tile returns: listeners
+ * invalidate retained pictures and cancel that generator, which cannot be closed from inside its own next(). */
+let notificationPending = false;
+const notifyAfterTile = (): void => {
+  if (notificationPending) return;
+  notificationPending = true;
+  queueMicrotask(() => {
+    notificationPending = false;
+    emit();
+  });
+};
 const emit = (): void => {
   const engine = getVectorEngine();
   for (const listener of listeners) listener(engine);
@@ -166,7 +177,7 @@ function demote(reason: string): void {
   demoted = reason || 'unknown';
   trial = undefined;
   console.warn(`Vector engine: GPU disabled for this page, the processor draws the map (${demoted}).`);
-  emit();
+  notifyAfterTile();
 }
 const medianOf = (values: readonly number[]): number => {
   const sorted = values.slice(-SLOW_WINDOW).sort((a, b) => a - b);
@@ -178,7 +189,7 @@ function promote(why: string): void {
   syncedRaster = [];
   syncedTile = [];
   console.info(`Vector engine: the GPU draws the map again (${why}).`);
-  emit();
+  notifyAfterTile();
 }
 
 /** `synced`: the replay waited for the graphics process (GpuRasterizer.lastStats), so `raster` includes the GPU's time.
@@ -198,7 +209,7 @@ export function noteGpuTile(record: number, raster: number, synced = true, pixel
   demoted = `slow GPU tiles (median ${median.toFixed(0)} ms)`;
   trial = { gpuMs: tile, cpu: [] };
   console.warn(`Vector engine: the processor draws the map for now (${demoted}); the faster engine stays.`);
-  emit();
+  notifyAfterTile();
 }
 export function noteCpuTile(ms: number, pixels = TILE_PIXELS): void {
   cpuTiles++;

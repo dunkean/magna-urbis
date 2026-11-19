@@ -21,6 +21,37 @@ const cpuTiles = (n: number, ms: number): void => {
 const demoted = (): string | undefined => engine.vectorEngineStats().demoted;
 
 describe('vector engine policy', () => {
+  it('notifies tile policy changes after the running paint can be cancelled', async () => {
+    let notified = 0;
+    const paint = (function* () {
+      gpuTiles(8, 10, 60);
+      yield;
+    })();
+    const off = engine.onVectorEngineChange(() => {
+      notified++;
+      paint.return();
+    });
+    expect(() => paint.next()).not.toThrow();
+    expect(notified).toBe(0);
+    expect(demoted()).toMatch(/slow GPU tiles/);
+    await Promise.resolve();
+    expect(notified).toBe(1);
+    expect(paint.next().done).toBe(true);
+    off();
+  });
+  it('coalesces tile failure and promotion notifications without delaying the engine decision', async () => {
+    const listener = vi.fn();
+    const off = engine.onVectorEngineChange(listener);
+    gpuTiles(8, 10, 60);
+    cpuTiles(8, 100);
+    expect(demoted()).toBeUndefined();
+    engine.noteGpuFailure(new Error('context lost'));
+    expect(demoted()).toBe('context lost');
+    expect(listener).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+    off();
+  });
   it('counts only the replays that waited for the graphics process', () => {
     gpuTiles(40, 10, 500, false);
     expect(demoted()).toBeUndefined();
