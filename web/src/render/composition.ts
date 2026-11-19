@@ -122,7 +122,7 @@ interface PresetValues {
 /** Hides every text group but the listed ones. */
 const only = (...shown: TextGroup[]) => Object.fromEntries(TEXT_GROUPS.map(g => [g, shown.includes(g)])) as Record<TextGroup, boolean>;
 const PRESETS: Readonly<Record<StyleId, PresetValues>> = {
-  minimal: { ground: 'minimal', contours: false, vegetation: 'none', rural: 'off', urban: 'off', depth: 'surface', network: 'ink', building: 'footprints', parcels: false, text: defaultText({ look: 'sans', groups: only('places') }) },
+  minimal: { ground: 'minimal', contours: true, vegetation: 'none', rural: 'off', urban: 'off', depth: 'surface', network: 'ink', building: 'footprints', parcels: false, text: defaultText({ look: 'sans', groups: only('places') }) },
   // A physical-geography plate: hypsometric tints, relief, water and names; no land-use zones (woods are a faint wash, cityOverlayLandKinds).
   atlas: { ground: 'atlas', contours: true, vegetation: 'none', rural: 'off', urban: 'off', depth: 'surface', network: 'inherit', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'sans' }) },
   'satellite-2': { blocks: false, ground: 'satellite-2', contours: true, vegetation: 'procedural-canopy', rural: 'off', urban: 'off', depth: 'surface', network: 'wash', building: 'detailed-volumes', parcels: false, text: defaultText({ look: 'inherit' }) },

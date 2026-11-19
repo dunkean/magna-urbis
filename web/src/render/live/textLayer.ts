@@ -383,6 +383,9 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     counters.pendingLabels = pending ? pending.source.placed.length - pending.label : 0;
   }
 
+  /** A distant placement magnifies flat atlas glyphs while its replacement is prepared. */
+  const tiltedFits = (frame: LiveFrame): boolean => !!tilted && Math.abs(Math.log2(frame.view.scale / placedScale)) <= 0.5;
+
   /** The program of a tilted frame and its camera: the batches are then drawn as in the top view. */
   function useTilted(frame: LiveFrame, p: TiltedProgram): void {
     const camera = frame.camera,
@@ -400,7 +403,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     isolated: false,
     tilts: true,
     ready(frame): boolean {
-      if (frame.camera.tilted && !tilted) return false;
+      if (frame.camera.tilted && !tiltedFits(frame)) return false;
       return !options.placement() || (!disposed && complete && frame.dpr === density);
     },
     restExact(frame): boolean {
@@ -501,7 +504,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
       const started = performance.now();
       counters.drawCalls = 0;
       counters.triangles = 0;
-      if (disposed || !options.placement() || !complete || !program || batches.length === 0 || (frame.camera.tilted && !tilted)) {
+      if (disposed || !options.placement() || !complete || !program || batches.length === 0 || (frame.camera.tilted && !tiltedFits(frame))) {
         counters.ms = performance.now() - started;
         return;
       }

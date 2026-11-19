@@ -19,6 +19,7 @@ import { CoverGrainTexture } from './buildingsGrain';
 import { BuildingBlockCache, type BuildingLevel as Level, type BuildingSlot as Slot } from './buildingsCache';
 import type { VolumeTownLook } from '../city/buildingLook';
 import { BuildingDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
+import { buildingTriangleBudget, getViewDepth, VIEW_DEPTH_MAX } from './viewDepth';
 
 export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
@@ -46,10 +47,7 @@ export interface WorldBuildingsLayer extends VolumeLayer {
   pick(origin: ArrayLike<number>, direction: ArrayLike<number>, rise: number, limit: number, accept: (building: Building3dVisual) => boolean): BuildingPick | undefined;
 }
 
-/** Triangles a frame of buildings may take: past it, the farthest blocks and cells go coarser, round after round. */
-const BUDGET_TRIANGLES = 300000;
-/** Buildings spanning this many pixels keep their full volumes whatever the budget (the near field; blockLevel's
- * detailed threshold). */
+/** Buildings spanning this many pixels keep their full volumes whatever the budget (the protected near field). */
 const DETAILED_PIXELS = 18;
 /** Units (blocks, cells of near blocks) a frame may weigh. */
 const MAX_UNITS = 32768;
@@ -64,7 +62,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, bytes: 0 };
   const diagnostics = layerDiagnosticsEnabled() ? new BuildingDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
-  const cache = new BuildingBlockCache(gl, () => options.budgetBytes);
+  const cache = new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
   // The blocks in view of a frame: slot, height centre and half range, radius.
   const visible: Slot[] = [],
     visibleZ = new Float64Array(16384),
@@ -184,10 +182,13 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     unitCost[unitCount++] = costOf(slot, level, cell);
   };
   /** The draws of the visible blocks: each block, or each cell of a near block, at the level its size asks for; past
-   * BUDGET_TRIANGLES, the farthest units go one level coarser, round after round, until the frame fits. A unit whose
+   * the depth's triangle budget, the farthest units go one level coarser, round after round, until the frame fits. A unit whose
    * buildings span DETAILED_PIXELS keeps its full volumes whatever the budget: the near field never coarsens. The frame's
    * triangles. */
   const select = (tx: number, ty: number, focal: number, boxed: boolean): number => {
+    const depthSetting = getViewDepth(),
+      budget = buildingTriangleBudget(depthSetting),
+      wholeTown = depthSetting >= VIEW_DEPTH_MAX;
     unitCount = 0;
     drawTotal = 0;
     diagnostics?.selection();
@@ -199,12 +200,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         depth = slot.depth,
         radius = visibleRadius[v],
         nearPixels = size / Math.max(1, depth - radius),
-        near = blockLevel(b, nearPixels, boxed);
+        near = blockLevel(b, nearPixels, boxed, depthSetting);
       slot.need = 0;
       if (near === hidden) continue;
       diagnostics?.block();
       // One level over the block (all yards): one unit. Otherwise each cell at its own.
-      if (b.yard || near === blockLevel(b, size / Math.max(1, depth + radius), boxed)) {
+      if (b.yard || near === blockLevel(b, size / Math.max(1, depth + radius), boxed, depthSetting)) {
         addUnit(slot, -1, nearPixels, near);
         continue;
       }
@@ -216,21 +217,22 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           cy = b.origin[1] + (Math.floor(c / BLOCK_CELLS) + 0.5) * BLOCK_CELL - ty;
         if (!volume.sees(cx, cy, z, cellRadius)) continue;
         const pixels = size / Math.max(1, volume.depth(cx, cy, z) - cellRadius),
-          level = blockLevel(b, pixels, boxed);
+          level = blockLevel(b, pixels, boxed, depthSetting);
         if (level !== hidden) addUnit(slot, c, pixels, level);
       }
     }
     let triangles = 0;
     for (let i = 0; i < unitCount; i++) triangles += unitCost[i];
-    if (triangles > BUDGET_TRIANGLES) {
+    if (triangles > budget) {
       // Farthest (smallest on screen) first.
       for (let i = 0; i < unitCount; i++) order[i] = i;
       order.subarray(0, unitCount).sort((p, q) => unitPixels[p] - unitPixels[q]);
-      for (let round = 0; round < 4 && triangles > BUDGET_TRIANGLES; round++)
-        for (let k = 0; k < unitCount && triangles > BUDGET_TRIANGLES; k++) {
+      for (let round = 0; round < 4 && triangles > budget; round++)
+        for (let k = 0; k < unitCount && triangles > budget; k++) {
           const i = order[k],
             slot = unitSlot[i];
-          if (unitPixels[i] >= DETAILED_PIXELS || unitLevel[i] >= blockHidden(slot.block)) continue;
+          const coarsest = blockHidden(slot.block) - (wholeTown && !slot.block.yard ? 1 : 0);
+          if (unitPixels[i] >= DETAILED_PIXELS || unitLevel[i] >= coarsest) continue;
           const level = unitLevel[i] + 1,
             cost = costOf(slot, level, unitCell[i]);
           triangles += cost - unitCost[i];
@@ -342,7 +344,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           tz = camera.target[2],
           rise = camera.rise,
           focal = camera.focal / frame.dpr,
-          boxed = options.boxed?.() ?? false;
+          boxed = options.boxed?.() ?? false,
+          depthSetting = getViewDepth();
         for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
           const slot = cache.slots[s],
             b = slot.block,
@@ -354,8 +357,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2;
           if (!volume.sees(x, y, z, radius)) continue;
           const depth = volume.depth(x, y, z);
-          // Under about a third of a pixel: nothing to see (the 3D view's rule).
-          if (depth > radius && (radius * focal) / depth < 0.35) continue;
+          // The depth preference extends the subpixel cutoff; maximum depth retains every visible building block.
+          if (depthSetting < VIEW_DEPTH_MAX && depth > radius && (radius * focal * depthSetting) / depth < 0.35) continue;
           slot.depth = depth;
           slot.seen = tick;
           visibleZ[visibleCount] = z;

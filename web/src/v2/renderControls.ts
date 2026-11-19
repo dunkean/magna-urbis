@@ -1,4 +1,5 @@
 /** Display controls for retained terrain and native cities; none invokes a generation stage. */
+import { protectMachineStyle } from './machineTier';
 import type { World } from '../gen/types';
 import type { V2Appearance, V2Settings } from './contracts';
 import { RESOURCE_LEGENDS, diagnosticAvailable, isResourceDiagnostic } from '../render/displayDiagnostics';
@@ -10,7 +11,7 @@ import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterFi
 import { mountRenderSettingsPanel, mountRenderColorControls, splitSectionLevels, type RenderSection, type SectionLevels } from '../ui/renderSettingsPanel';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import { paletteColors, type RenderColorKey } from '../render/customColors';
-import { GROUND_VARIANTS, withCompositionQuality, type CompositionRecipe } from '../render/composition';
+import { GROUND_VARIANTS, type CompositionRecipe } from '../render/composition';
 import {
   compositionMessages,
   advancedFields,
@@ -31,7 +32,7 @@ export { PRESET_OPTIONS, RENDER_COMPOSITION_ROWS, renderControlFields, RENDER_SE
 import { worldCapabilities } from './nativeProducts';
 import { markStyleCustomized } from '../ui/renderStyleCustomization';
 import { applySceneClock } from './sceneClock';
-import { setDisplayQualityPreference, onDisplayQualityChange, setDisplayAppearanceQuality } from '../render/displayQuality';
+import { setDisplayQualityPreference } from '../render/displayQuality';
 import { getVectorEnginePreference, onVectorEngineChange, setVectorEnginePreference } from '../render/vectorEngine';
 import type { VectorEngineChoice } from '../render/vectorEngine';
 
@@ -61,8 +62,6 @@ const ui = {
   cityLayers: copy('Detailed city layers', 'Couches détaillées des villes'),
   fantasy: copy('Fantasy brushes', 'Pinceaux fantasy'),
   diagnostics: copy('Terrain and water diagnostics', 'Diagnostics du relief et de l’eau'),
-  fullQuality: copy('Full quality', 'Qualité complète'),
-  qualityNotice: copy('Light quality enabled to keep navigation fluid.', 'Qualité allégée activée pour garder une navigation fluide.'),
   unavailable: copy('This diagnostic needs retained data from the selected water engine.', 'Ce diagnostic nécessite les données conservées du moteur hydrologique correspondant.'),
   vectorEngine: copy('Vector engine', 'Moteur vectoriel'),
   vectorEngineHelp: copy('Draws the vector map on the graphics card; Auto falls back to the processor on slow or software graphics.', 'Dessine la carte vectorielle sur la carte graphique ; Auto revient au processeur sur un GPU lent ou logiciel.'),
@@ -127,6 +126,7 @@ function writeComposition(settings: V2Settings, key: string, value: unknown): vo
 }
 /** Materialize only the nested structure being edited, keeping unrelated inherited values absent. */
 export function writeAppearanceControl(settings: V2Settings, path: string, value: unknown): void {
+  if (path === 'appearance.composition.preset') protectMachineStyle();
   if (/^appearance\.composition\.effects\.(season|ambience|lighting\.(enabled|azimuth|elevation))$/.test(path)) delete settings.scene;
   settings.appearance ??= { style: settings.options.style };
   if (path.startsWith('appearance.composition.')) return writeComposition(settings, path.slice('appearance.composition.'.length), value);
@@ -230,47 +230,6 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     const offEngine = onVectorEngineChange(() => engineForm.sync());
     unlistenEngine = offEngine;
   }
-  let qualityToast: HTMLElement | undefined;
-  const unlistenQuality = onDisplayQualityChange(change => {
-    if (change.reason === 'preference') {
-      qualityToast?.remove();
-      qualityToast = undefined;
-    }
-    if (change.reason !== 'auto') return;
-    const settings = bindings.getSettings(),
-      recipe = currentComposition(settings, bindings.getWorld?.());
-    if (recipe.preset === 'satellite' || recipe.preset === 'parchment') {
-      settings.appearance ??= { style: settings.options.style };
-      settings.appearance.composition = withCompositionQuality(recipe, 'light');
-      setDisplayAppearanceQuality('light');
-      for (const select of bindings.getStyleSelectors?.() ?? []) select.value = settings.appearance.composition.preset;
-      bindings.onChange();
-      sync();
-    }
-    qualityToast?.remove();
-    const toast = (qualityToast = document.createElement('div'));
-    toast.className = 'toast';
-    toast.setAttribute('role', 'status');
-    const message = document.createElement('span'),
-      action = document.createElement('button');
-    setText(message, ui.qualityNotice);
-    setText(action, ui.fullQuality);
-    action.style.marginLeft = '12px';
-    action.onclick = () => {
-      const settings = bindings.getSettings();
-      settings.appearance ??= { style: settings.options.style };
-      settings.appearance.composition = withCompositionQuality(currentComposition(settings, bindings.getWorld?.()), 'full');
-      setDisplayQualityPreference('full');
-      setDisplayAppearanceQuality('full');
-      for (const select of bindings.getStyleSelectors?.() ?? []) select.value = settings.appearance.composition.preset;
-      qualityToast?.remove();
-      qualityToast = undefined;
-      bindings.onChange();
-      sync();
-    };
-    toast.append(message, action);
-    document.body.append(toast);
-  });
   const forestLabel = copy('Satellite trees', 'Arbres satellite');
   registerMessages(renderControlMessages);
   const forest = conditional(forestLabel, forestFields);
@@ -351,9 +310,7 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
   return {
     sync,
     dispose: () => {
-      unlistenQuality();
       unlistenEngine();
-      qualityToast?.remove();
       forms.forEach(form => form.dispose());
       panel.dispose();
     },

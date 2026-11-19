@@ -19,7 +19,15 @@ function fixture() {
     lost: false,
     maxBakeSize: 8192,
     prepare: vi.fn(),
+    prepareSteps: vi.fn(function* (list) {
+      raster.prepare(list);
+      yield;
+    }),
     bake: vi.fn((list: DisplayList): BakedPrefix => ({ texture: {}, width: list.width, height: list.height, box: [0, 0, list.width, list.height], bytes: 100 })),
+    bakeSteps: vi.fn(function* (list, density, options) {
+      yield;
+      return raster.bake(list, density, options);
+    }),
     releaseBaked: vi.fn(),
     releaseBakeScratch: vi.fn(),
     replayLive: vi.fn(),
@@ -276,6 +284,43 @@ describe('live overlay layer', () => {
     expect(retained.shown?.draft).toBe(false);
     expect(retained.shown?.parts.length).toBe(2);
     expect(f.host.record).toHaveBeenCalledTimes(4);
+  });
+
+  it('does no top-view recording, snapshots or host warming in a tilted frame, including motion', () => {
+    const f = fixture();
+    f.layer.work!(10000, f.frame());
+    vi.mocked(f.host.record).mockClear();
+    vi.mocked(f.raster.bake).mockClear();
+    vi.mocked(f.host.warm).mockClear();
+    for (const moving of [true, false]) {
+      const frame = { ...f.frame(10000, 8, moving), camera: { tilted: true } as LiveFrame['camera'] };
+      expect(f.layer.work!(10000, frame)).toBe(false);
+    }
+    expect(f.host.record).not.toHaveBeenCalled();
+    expect(f.raster.bake).not.toHaveBeenCalled();
+    expect(f.host.warm).not.toHaveBeenCalled();
+  });
+
+  it('cancels an unfinished recording on a new tile without painting its partial list', () => {
+    const f = fixture(),
+      tile = f.tile(),
+      cancelled = vi.fn();
+    tile.rect = { minX: 500, maxX: 600, minY: 500, maxY: 600 };
+    f.host.recordSteps = function* () {
+      try {
+        for (;;) yield;
+      } finally {
+        cancelled();
+      }
+    };
+    expect(f.layer.drape!.paint(tile)).toBe(true);
+    tile.rect = { minX: 600, maxX: 700, minY: 500, maxY: 600 };
+    expect(f.layer.drape!.paint(tile)).toBe(true);
+    expect(cancelled).toHaveBeenCalledTimes(1);
+    expect(tile.put).not.toHaveBeenCalled();
+    expect(f.raster.bake).not.toHaveBeenCalled();
+    f.layer.dispose();
+    expect(cancelled).toHaveBeenCalledTimes(2);
   });
 
   it('forgets resources on context loss without deleting their dead handles', () => {

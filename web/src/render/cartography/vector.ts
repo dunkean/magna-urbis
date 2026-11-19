@@ -19,9 +19,9 @@ import type { CartographyContext, DrawMode } from './context';
 import type { CanvasLike, FrameStats } from './contract';
 import type { FrameBase, VectorFrame } from './frame';
 import { layerTilesFitView } from './woods';
-import { landPainters, paintContours, paintLandMask, paintLandUse } from './landuse';
+import { landPainters, paintContours, paintLandMask, paintLandUseSteps } from './landuse';
 import { paintFieldNetwork } from './fields';
-import { paintTextureLayers } from './symbols';
+import { paintTextureLayerSteps } from './symbols';
 import { paintWater } from './water';
 import { paintFarmsteads } from './farmsteads';
 import { paintRegionalRoads, roadPainters } from './roads';
@@ -30,6 +30,14 @@ import { paintStructures } from './structures';
 import { paintFurniture, paintGraticule } from './furniture';
 
 export function drawVector(c: CartographyContext, view: View, target: CanvasLike = c.canvas, mode: DrawMode = 'all', fullRect?: Rect4): FrameStats {
+  const steps = drawVectorSteps(c, view, target, mode, fullRect);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+/** Same calls and draw order as a synchronous vector draw, with boundaries for the drape's idle slices. */
+export function* drawVectorSteps(c: CartographyContext, view: View, target: CanvasLike = c.canvas, mode: DrawMode = 'all', fullRect?: Rect4): Generator<void, FrameStats> {
   const { deps, pal, S, now, cache, furrowCache, brushes } = c;
   const t0 = now();
   const ctx = target.getContext('2d');
@@ -110,12 +118,18 @@ export function drawVector(c: CartographyContext, view: View, target: CanvasLike
 
     // 2. land use (tints multiply over the hillshade so relief reads through them); graticule and contours under it
     paintGraticule(c, f);
+    yield;
     paintContours(c, f);
-    paintLandUse(c, f);
+    yield;
+    yield* paintLandUseSteps(c, f);
+    yield;
     paintLandMask(c, f);
     paintFieldNetwork(c, f);
+    yield;
     // textures (procedural marks, visible tiles only, cached per tile)
-    paintTextureLayers(c, f);
+    // Sprites need only their own overhang and the bake gutter, not the widest road's screen-space paint margin.
+    yield* paintTextureLayerSteps(c, recordingTextureFrame(c, f, fullRect));
+    yield;
     if (mode === 'ground') {
       if (cavernFloor) ctx.restore();
       ctx.restore();
@@ -133,13 +147,18 @@ export function drawVector(c: CartographyContext, view: View, target: CanvasLike
     if (c.markCrisp && ctx instanceof RecordingContext) ctx.mark(CRISP_MARK);
     // Semantic land use: above every physical land-use layer, below water, roads and labels.
     c.timedRec('semantic', () => deps.semantic?.draw(ctx, rect, 1 / sc, c.activeLight ? 'light' : 'full'));
+    yield;
     // 3. rivers + water
     paintWater(c, f);
+    yield;
     // 4. farmsteads, then regional roads
     paintFarmsteads(c, f);
+    yield;
     paintRegionalRoads(c, f);
+    yield;
     // 5. urban
     paintUrban(c, f);
+    yield;
     // 6. walls, bridges, site marker, caverns
     paintStructures(c, f);
 
@@ -160,6 +179,10 @@ export function drawVector(c: CartographyContext, view: View, target: CanvasLike
   return fs;
 }
 
+function recordingTextureFrame(c: CartographyContext, f: VectorFrame, band: Rect4 | undefined): VectorFrame {
+  return c.recordingClip && band ? { ...f, rect: growRect(band, 2 / (f.sc * f.dpr)) } : f;
+}
+
 /** The view-dependent part of a frame: culling rectangles, widths, and the paths of a layer for this view. */
 function frameBase(c: CartographyContext, ctx: CanvasRenderingContext2D, view: View, mode: DrawMode, dpr: number, cssW: number, cssH: number, lod: Lod, rect: Rect4, budgetRect: Rect4, fs: FrameStats): FrameBase {
   const { cached, polyL } = c;
@@ -171,19 +194,20 @@ function frameBase(c: CartographyContext, ctx: CanvasRenderingContext2D, view: V
   // Include the stamp/shadow reach and put artificial clipping edges safely
   // outside the canvas, so stroked polygons retain their original borders.
   const pathRect = growRect(rect, Math.max(16, c.paintMargin(sc)));
-  // GPU recording: no clipping to the frame (the GPU discards what falls outside), so the paths of an index tile are
-  // built once per band and reused by every recorded region and tile; the Canvas engine keeps its clipped paths.
   const recording = (c.recordingNow = ctx instanceof RecordingContext);
-  const clipTo = recording ? undefined : pathRect;
-  const rectKey = recording ? 'gpu' : `${pathRect.minX},${pathRect.minY},${pathRect.maxX},${pathRect.maxY}`;
+  // A drape recording clips before constructing paths: a single forest may span the entire 40 km map.
+  const clipTo = recording ? c.recordingClip : pathRect;
   const PP = recording ? c.recordedP : c.P;
   const framePaths = new Map<PolyLayer, Path2D[]>();
   const polyPaths = (l: PolyLayer): Path2D[] => {
     const known = framePaths.get(l);
     if (known) return known;
     const out: Path2D[] = [];
+    const wood = l.name === 'lu-forest' || l.name.includes('-edge-') || l.name.includes('-fringe-');
+    const pathClip = clipTo && recording && !wood ? growRect(clipTo, c.paintMargin(sc)) : clipTo;
+    const rectKey = pathClip ? `${recording ? 'gpu|' : ''}${pathClip.minX},${pathClip.minY},${pathClip.maxX},${pathClip.maxY}` : 'gpu';
     for (const t of l.index.tilesInRect(pathRect)) {
-      const p = cached(`${l.name}|${band}|${rectKey}|t${t}|${l.tileKeys?.[t] ?? ''}`, () => polyPath(PP, l, l.index.itemsOf(t), minEdge, clipTo));
+      const p = cached(`${l.name}|${band}|${rectKey}|t${t}|${l.tileKeys?.[t] ?? ''}`, () => polyPath(PP, l, l.index.itemsOf(t), minEdge, pathClip, recording));
       if (p) {
         out.push(p);
         fs.tilesDrawn++;
@@ -194,14 +218,14 @@ function frameBase(c: CartographyContext, ctx: CanvasRenderingContext2D, view: V
     // than enqueueing thousands of identical multiply operations per stamp.
     if (l.name.includes('-edge-') || l.name.includes('-fringe-')) {
       const stamp = l.bigKeys?.join(';') ?? '';
-      const p = cached(`${l.name}|${band}|${rectKey}|big|${recording ? big.join(',') + '|' : ''}${stamp}`, () => polyPath(PP, l, big, minEdge, clipTo));
+      const p = cached(`${l.name}|${band}|${rectKey}|big|${recording ? big.join(',') + '|' : ''}${stamp}`, () => polyPath(PP, l, big, minEdge, pathClip, recording));
       if (p) {
         out.push(p);
         fs.bigDrawn += big.length;
       }
     } else
       for (const i of big) {
-        const p = cached(`${l.name}|${band}|${rectKey}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`, () => polyPath(PP, l, [i], minEdge, clipTo));
+        const p = cached(`${l.name}|${band}|${rectKey}|b${i}|${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`, () => polyPath(PP, l, [i], minEdge, pathClip, recording));
         if (p) {
           out.push(p);
           fs.bigDrawn++;

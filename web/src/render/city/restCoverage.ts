@@ -75,7 +75,8 @@ export function townRestGaps(s: RestState): string[] {
   if (c.sites) gaps.push('activity-site ground');
   if (c.housePlans && s.buildings) gaps.push('house plans');
   if (c.millMarks && s.buildings && s.palette === 'terrain') gaps.push('mill sails and wheels');
-  if (s.buildings && s.palette === 'terrain') gaps.push('roof grain marks, uneven snow marks');
+  // The grain marks are drawn (gl/shaders.ts FILL_VS uGrainMarks); the snow mantle is its mean tone only.
+  if (s.buildings && s.palette === 'terrain' && s.snow > 0) gaps.push('uneven snow marks');
   if (s.farRaster) gaps.push('far raster filtering');
   if (s.canopyClearing) gaps.push('town ground cleared under the forest canopy');
   if (s.urbanLanduse) gaps.push('urban land-use tint');

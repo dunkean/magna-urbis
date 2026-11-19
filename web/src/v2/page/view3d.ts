@@ -21,6 +21,7 @@ import { isTilted } from '../../render/world/camera';
 import { $ } from './dom';
 import { mountWorldTreeControls } from './worldTrees';
 import { mountWorldNavigation } from './worldNavigation';
+import { mountWorldDepthControl } from './worldDepth';
 
 /** Pitch the "3D" button eases the camera to: 57 degrees from the vertical. */
 const BUTTON_PITCH = 1;
@@ -131,6 +132,7 @@ export function mountView3d(state: PageState, actions: PageActions): void {
     // The navigation makes the bar the trees' controls join.
     mountWorldNavigation(state, actions);
     mountWorldTreeControls(state, actions);
+    mountWorldDepthControl(state);
     return;
   }
 

@@ -36,6 +36,8 @@ export interface OverlayHost {
   plan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan;
   /** Records one band with the `crisp` mark; undefined when the recorder cannot represent the map. */
   record(plan: OverlayPlan, band: Rect4, light: boolean): OverlayBand | undefined;
+  /** Resumable equivalent for drape recording; each yield leaves the recording context private to the job. */
+  recordSteps?(plan: OverlayPlan, band: Rect4, light: boolean): Generator<void, OverlayBand | undefined>;
   /** Asks for a new frame (a region became ready). */
   invalidate(): void;
   /** Makes, until `deadline`, what a recording would otherwise make in one block (the tree marks of the woods); true

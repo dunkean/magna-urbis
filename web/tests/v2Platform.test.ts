@@ -20,17 +20,26 @@ describe('V2 execution capability boundaries', () => {
     await vi.advanceTimersByTimeAsync(2500);
     expect(await adapter).toBeNull();
     let finish!: (device: GPUDevice) => void;
-    const creating = requestWebGpuDevice({ requestDevice: () => new Promise<GPUDevice>(resolve => { finish = resolve; }) } as GPUAdapter);
+    const creating = requestWebGpuDevice({
+      requestDevice: () =>
+        new Promise<GPUDevice>(resolve => {
+          finish = resolve;
+        }),
+    } as GPUAdapter);
     await vi.advanceTimersByTimeAsync(2500);
     expect(await creating).toBeNull();
-    const destroy = vi.fn(); finish({ destroy } as unknown as GPUDevice);
+    const destroy = vi.fn();
+    finish({ destroy } as unknown as GPUDevice);
     await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce());
   });
   it('finishes local detection when the GPU adapter never answers', async () => {
     vi.useFakeTimers();
     const requestAdapter = vi.fn(() => new Promise<never>(() => {}));
     vi.stubGlobal('navigator', { gpu: { requestAdapter } });
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ service: 'magna-urbis-local', backend: 'rust-native', capabilities: ['terrain'] }) })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ service: 'magna-urbis-local', backend: 'rust-native', capabilities: ['terrain'] }) })),
+    );
     const detecting = detectPlatform({ profile: 'local' });
     await vi.waitFor(() => expect(requestAdapter).toHaveBeenCalled());
     await vi.advanceTimersByTimeAsync(2500);
@@ -41,14 +50,20 @@ describe('V2 execution capability boundaries', () => {
   it('cleans up a late GPU device without changing the completed detection', async () => {
     vi.useFakeTimers();
     let finish!: (device: { destroy: () => void }) => void;
-    const requestDevice = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    const requestDevice = vi.fn(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        }),
+    );
     vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({ requestDevice }) } });
     const detecting = detectPlatform({ profile: 'web' });
     await vi.waitFor(() => expect(requestDevice).toHaveBeenCalled());
     await vi.advanceTimersByTimeAsync(2500);
     const caps = await detecting;
     expect(caps.webgpu).toBe(false);
-    const destroy = vi.fn(); finish({ destroy });
+    const destroy = vi.fn();
+    finish({ destroy });
     await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce());
     expect(caps.webgpu).toBe(false);
     expect(caps.adapterName).toBeUndefined();

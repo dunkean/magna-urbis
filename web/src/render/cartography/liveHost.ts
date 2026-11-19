@@ -8,7 +8,6 @@
 import { roadCanopyRevision } from '../roadStyle';
 import { whiteWaterRevision } from '../whiteWater';
 import { View, Rect4 } from '../view';
-import { RecordingCanvas } from '../gpu/recorder';
 import type { DisplayList } from '../gpu/contract';
 import type { LiveLayer } from '../live/contract';
 import { createOverlayLayer, type OverlayBand, type OverlayPlan } from '../live/overlayLayer';
@@ -16,8 +15,10 @@ import { liveVectorEngine, noteGpuFallback } from '../vectorEngine';
 import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
-import { drawVector } from './vector';
+import { drawVector, drawVectorSteps } from './vector';
+import { growRect } from './geometry';
 import { releaseDrapeTemps, warmTreeMarks } from './woods';
+import { createMapRecording } from './mapRecording';
 
 export function createLiveHost(c: CartographyContext) {
   const { deps, now } = c;
@@ -53,7 +54,7 @@ export function createLiveHost(c: CartographyContext) {
       cy = (band.minY + band.maxY) / 2;
     const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
       h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
-    const rec = new RecordingCanvas(w, h);
+    const rec = createMapRecording(w, h);
     const provisional = deps.semantic?.provisional() ?? 0;
     let list: DisplayList | undefined;
     c.markCrisp = true;
@@ -72,6 +73,54 @@ export function createLiveHost(c: CartographyContext) {
       return undefined;
     }
     return { list, rect: band, cx, cy, w, h, provisional: (deps.semantic?.provisional() ?? 0) !== provisional };
+  }
+  /** Keep the recorder private across yields; renderer flags are borrowed only during a single step. */
+  function* recordDrapeSteps(plan: OverlayPlan, band: Rect4, light: boolean): Generator<void, OverlayBand | undefined> {
+    const cx = (band.minX + band.maxX) / 2,
+      cy = (band.minY + band.maxY) / 2;
+    const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
+      h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
+    const rec = createMapRecording(w, h),
+      provisional = deps.semantic?.provisional() ?? 0;
+    // Nearby tiles share their clipped paths across bands. Coarse map-wide tiles must cut to the band itself.
+    const clip = growRect(plan.rect.maxX - plan.rect.minX <= 4 * c.scene.tileSize ? plan.rect : band, Math.max(16, 4 / (plan.scale * plan.dpr)));
+    const steps = drawVectorSteps(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band);
+    try {
+      for (;;) {
+        const before = { stepwise: c.stepwise, light: c.activeLight, dpr: c.activeDpr, clip: c.recordingClip, crisp: c.markCrisp, recording: c.recordingNow },
+          t = now();
+        let done: boolean | undefined;
+        c.stepwise = true;
+        c.activeLight = light;
+        c.activeDpr = plan.dpr;
+        c.recordingClip = clip;
+        c.markCrisp = true;
+        c.recordingNow = true;
+        try {
+          done = steps.next().done;
+        } finally {
+          c.stepwise = before.stepwise;
+          c.activeLight = before.light;
+          c.activeDpr = before.dpr;
+          c.recordingClip = before.clip;
+          c.markCrisp = before.crisp;
+          c.recordingNow = before.recording;
+          noteLiveUnit('record:drape', t);
+        }
+        if (done) break;
+        yield;
+      }
+      const list = rec.finish();
+      if (list.unsupported) throw new Error(list.unsupported);
+      return { list, rect: band, cx, cy, w, h, provisional: (deps.semantic?.provisional() ?? 0) !== provisional };
+    } catch (error) {
+      noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`);
+      regionFailed = plan.key;
+      return undefined;
+    } finally {
+      steps.return(c.stats);
+      releaseDrapeTemps(c);
+    }
   }
   /** The overlay layer of the live compositor: regions of the map recorded here (regionPlan, recordBand) and replayed
    * in the compositor's context. */
@@ -104,6 +153,7 @@ export function createLiveHost(c: CartographyContext) {
           noteLiveUnit('record:band', t);
         }
       },
+      recordSteps: recordDrapeSteps,
       invalidate: () => {
         if (!c.disposed) deps.invalidate?.();
       },

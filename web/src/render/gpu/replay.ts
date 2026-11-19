@@ -554,11 +554,13 @@ export abstract class ListReplayer {
     this.resetForeignState();
   }
   /** The ops of one list under `post`, inside the scissor in force. */
-  protected replayList(list: DisplayList, post: Mat): void {
+  protected replayList(list: DisplayList, post: Mat, continuing = false): void {
     // Each part starts from the full clip (the stencil clear of the first clip change respects the scissor).
     this.post = post;
-    this.currentClip = undefined;
-    this.clipBox = this.viewport;
+    if (!continuing) {
+      this.currentClip = undefined;
+      this.clipBox = this.viewport;
+    }
     this.stats.ops += list.ops.length;
     for (const op of list.ops) {
       this.clip(op.clip);

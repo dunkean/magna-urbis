@@ -3,6 +3,8 @@
  * tilted frame shows over the ground tiles (terrainShader.ts). Owned by the live compositor (render/live/compositor.ts),
  * which gives it the `DrapeSource` of each flat layer in their order (the vector water, the cartography overlay, the
  * town plan), runs `work` in its slices and hands `tiles` to the frame (`LiveFrame.drape`).
+ * Sources contain no names: overlay recordings discard Canvas text before making their lists, the GPU town plan
+ * and water draw geometry only. Names, including flat river and street names, belong to the live text layer alone.
  *
  * One tile per key holds every source, rather than one pyramid per layer: the terrain then reads one more texture
  * whatever the number of layers, the order and the blending of the layers are settled once at the bake (each isolated

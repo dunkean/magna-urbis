@@ -129,12 +129,14 @@ describe('Minimal retained painter', () => {
       data = Float32Array.from({ length: n * n }, (_, i) => 100 - Math.hypot((i % n) - 31.5, Math.floor(i / n) - 31.5) * 4);
     const lines = [...minimalContours({ data, n, width: 1000, maxHeight: 100 })];
     expect(lines.length).toBeGreaterThan(5);
-    expect(lines.every(line => line.closed)).toBe(true);
+    expect(lines.some(line => line.closed)).toBe(true);
+    expect(lines.every(line => line.points.length <= 64)).toBe(true);
     expect(lines.some(line => line.layer === 'contourIndex')).toBe(true);
     const contours = build(lines),
       off = context(),
       on = context(),
       o = options();
+    o.recipe.ground.contours = false;
     paintMinimalMap(off.ctx, build([]), { ...o, contours });
     expect(off.calls).toHaveLength(0);
     o.recipe.ground.contours = true;

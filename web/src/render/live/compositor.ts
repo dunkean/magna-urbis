@@ -25,6 +25,7 @@
  * raster uploads), isolatedGroup.ts (the multisampled group), gpuTimer.ts (GPU time of a frame), liveStats.ts
  * (`globalThis.__muLive`).
  */
+import { reportMachineFrame } from '../../v2/machineTier';
 import { LIVE_CONTEXT_ATTRIBUTES, LIVE_LAYER_ORDER, resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerName, type LiveLayerState, type LiveLayerStats } from './contract';
 import { createGpuTimer } from './gpuTimer';
 import { createIsolatedGroup } from './isolatedGroup';
@@ -943,6 +944,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       // A gap longer than a gesture's pause is not a frame interval (the view rested in between), nor one shorter than
       // any display's (policy.ts).
       if (gap < GESTURE_MS && gap >= PACE_MIN_GAP_MS) {
+        reportMachineFrame(gap);
         paceGap = paceGap ? paceGap * 0.8 + gap * 0.2 : gap;
         // The best interval creeps up so a display that slows down (another refresh rate, throttling) is followed.
         paceBest = Math.min(paceBest * 1.002, gap);

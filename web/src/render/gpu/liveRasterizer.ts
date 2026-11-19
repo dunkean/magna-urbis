@@ -95,6 +95,11 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
   /** Uploads what `list` needs (geometry, stroke instances, sprite instances, textures) without drawing, so the first
    * replay of a freshly recorded list, a frame, uploads nothing. `post` sets the flattening tolerance as the replay will. */
   prepare(list: DisplayList, post: Mat = IDENTITY): void {
+    for (const _ of this.prepareSteps(list, post)) {
+      /* Synchronous callers. */
+    }
+  }
+  *prepareSteps(list: DisplayList, post: Mat = IDENTITY): Generator<void> {
     if (this.lost || list.unsupported) return;
     const resources = this.resources,
       clips = new Set<ClipNode>();
@@ -103,19 +108,27 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
         clips.add(n);
         const m = compose(post, n.transform);
         resources.fanOf(resources.geometry(n.path, m, n.transform));
+        yield;
       }
       if (op.type === 'sprites') {
         resources.texture(op.source, op.smoothing);
         resources.uploadSprites(op);
+        yield;
         continue;
       }
       if (op.type === 'clear') continue;
       const m = compose(post, op.transform);
       if (op.type === 'fill') {
-        for (const path of op.paths) resources.fanOf(resources.geometry(path, m, op.transform));
+        for (const path of op.paths) {
+          resources.fanOf(resources.geometry(path, m, op.transform));
+          yield;
+        }
         if (op.paint.kind === 'pattern') resources.texture(op.paint.source, op.paint.smoothing);
       } else {
-        for (const path of op.paths) resources.strokeSlices(resources.geometry(path, m, op.transform), op);
+        for (const path of op.paths) {
+          resources.strokeSlices(resources.geometry(path, m, op.transform), op);
+          yield;
+        }
         if (op.paint.kind === 'pattern') resources.texture(op.paint.source, op.paint.smoothing);
       }
     }
@@ -178,6 +191,12 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
     return true;
   }
   bake(list: DisplayList, density: number, options?: { under?: BakedPrefix; samples?: number }): BakedPrefix | null {
+    const steps = this.bakeSteps(list, density, options, false);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+  *bakeSteps(list: DisplayList, density: number, options?: { under?: BakedPrefix; samples?: number }, sliced = true): Generator<void, BakedPrefix | null> {
     if (this.lost || list.unsupported || !(density > 0)) return null;
     const gl = this.gl,
       g = BAKE_GUTTER,
@@ -200,7 +219,22 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
       const post: Mat = [density, 0, 0, density, g, g];
       // An earlier bake of the same band under the ops (texel on texel when the densities are equal).
       if (under) this.drawBaked(under, post);
-      this.replayList(list, post);
+      // Colour samples stay in the same target between slices. Resolving intermediate textures would change
+      // antialiasing where translucent operations overlap. Restore GL state after every yield (shared context).
+      if (!sliced) this.replayList(list, post);
+      else {
+        let continuing = false;
+        for (const op of list.ops) {
+          this.width = w;
+          this.height = h;
+          this.setup(this.bakeFbo);
+          gl.enable(gl.SCISSOR_TEST);
+          gl.scissor(0, 0, w, h);
+          this.replayList({ ...list, ops: [op] }, post, continuing);
+          continuing = true;
+          yield;
+        }
+      }
       texture = gl.createTexture();
       if (!texture) throw new GpuRasterError('Cannot allocate the baked vector texture');
       gl.activeTexture(gl.TEXTURE0);

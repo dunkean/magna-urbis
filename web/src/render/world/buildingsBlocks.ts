@@ -22,6 +22,7 @@ import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import { buildingBatches, buildingBounds, buildingGround, type BuildingBounds, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import type { WorldRelief } from './contract';
 import type { VolumeTownLook } from '../city/buildingLook';
+import { VIEW_DEPTH_MAX } from './viewDepth';
 
 export const BUILDING_BLOCK = 256;
 /** Cells of a block per side (64 m): the parts of a near block that take their own level. */
@@ -232,10 +233,11 @@ const YARD_HIDDEN = 0.25;
 
 /** Level of buildings of a block whose mean building spans `pixels` CSS px (per metre for yards), `blockHidden` for
  * nothing. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. No hysteresis: the
- * frame's budget (buildingsLayer.ts) demotes units independently, and a level only ever changes over a whole cell. */
-export function blockLevel(block: BuildingBlock, pixels: number, boxed = false): number {
+ * frame's budget (buildingsLayer.ts) demotes units independently, and a level only ever changes over a whole cell.
+ * Depth extends the projected-size thresholds; at maximum every building remains at least a box. */
+export function blockLevel(block: BuildingBlock, pixels: number, boxed = false, depth = 1): number {
   const hidden = blockHidden(block);
   if (block.yard) return pixels < YARD_HIDDEN ? hidden : yardLod(pixels, 0);
-  for (let i = boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels >= LEVEL_PIXELS[i]) return i;
-  return hidden;
+  for (let i = boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels * depth >= LEVEL_PIXELS[i]) return i;
+  return depth >= VIEW_DEPTH_MAX ? BOX_LEVEL : hidden;
 }

@@ -273,7 +273,10 @@ describe('town look: one description for both renderers', () => {
     expect(townRestGaps({ ...rest, content: { ...content, waterways: true } })).toContain('canals at full strength over the town');
     expect(townRestGaps({ ...rest, dpr: 2 })).toContain('outlines wider than a device pixel');
     expect(townRestGaps({ ...rest, urbanLanduse: true })).toContain('urban land-use tint');
-    expect(townRestGaps({ ...rest, palette: 'terrain', streets: 'natural', lod: 'near', mpp: 1.2, buildings: true }).length).toBeGreaterThan(2);
+    // Natural ground: the roof grain marks are drawn; the road paint and the snow mantle's marks are not.
+    const natural = { ...rest, palette: 'terrain' as const, streets: 'natural' as const, lod: 'near' as const, mpp: 1.2, buildings: true };
+    expect(townRestGaps(natural)).toEqual(['ground-textured road paint, wear, grain, cobbles, kerbs and sidewalks', 'street surface junctions and ends']);
+    expect(townRestGaps({ ...natural, snow: 0.5 })).toContain('uneven snow marks');
   });
 });
 

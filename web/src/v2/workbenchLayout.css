@@ -766,6 +766,30 @@
 #app .toolbar-row:has(> #world-bar:not([hidden])) :is(#map-advanced-open, #settings-reset, #measure-tool) {
   display: none;
 }
+/* Keep both distance ranges and PNG in the 1600 px tilted row. The select retains its accessible navigation label. */
+#app .view-strip > .toolbar-row:has(> #world-bar:not([hidden])) {
+  gap: 2px;
+}
+#app .toolbar-row:has(> #world-bar:not([hidden])) #scene-controls {
+  gap: 4px;
+  padding-inline-start: 4px;
+}
+#app .toolbar-row:has(> #world-bar:not([hidden])) #map-style {
+  width: 120px;
+  max-width: 120px;
+}
+#app .toolbar-row:has(> #world-bar:not([hidden])) #scene-controls :is(.scene-height, .scene-shadows) {
+  width: 46px;
+}
+#app .toolbar-row > #world-bar:not([hidden]) {
+  gap: 4px;
+}
+#app .toolbar-row > #world-bar input[type='range'] {
+  width: 50px;
+}
+#app #world-bar [data-navigation-caption] {
+  display: none;
+}
 #app .toolbar-row > .city3d-bar label {
   display: inline-flex;
   align-items: center;

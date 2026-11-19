@@ -33,7 +33,7 @@ export function mountWorldNavigation(state: PageState, actions: PageActions): vo
   insertHTML(
     $('#view3d'),
     'afterend',
-    '<div id="world-bar" class="city3d-bar" role="group" aria-label="3D view" hidden><label data-navigation-label title="Walk and fly: W A S D or arrows, Shift faster, drag to look; flying: Space or E up, C down. Escape: orbit, Home: map.">Navigation <select data-navigation><option value="orbit">Orbit</option><option value="walk">Walk</option><option value="fly">Free flight</option></select></label></div>',
+    '<div id="world-bar" class="city3d-bar" role="group" aria-label="3D view" hidden><label data-navigation-label title="Walk and fly: W A S D or arrows, Shift faster, drag to look; flying: Space or E up, C down. Escape: orbit, Home: map."><span data-navigation-caption>Navigation</span><select data-navigation aria-label="Navigation"><option value="orbit">Orbit</option><option value="walk">Walk</option><option value="fly">Free flight</option></select></label></div>',
   );
   const bar = $('#world-bar'),
     select = bar.querySelector<HTMLSelectElement>('[data-navigation]')!,

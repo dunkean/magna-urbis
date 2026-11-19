@@ -16,7 +16,7 @@ import { FOREST_CLUMP_GLSL, FOREST_FIELD, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, 
 /** Render distance of the near trees (m), adjustable: full trees within `near` (2/3 of it), none beyond `far`. Beyond,
  * the painted crowns are the forest's far level of detail. */
 export const TREE_DISTANCE_MIN = 200,
-  TREE_DISTANCE_MAX = 1500,
+  TREE_DISTANCE_MAX = 5000,
   TREE_DISTANCE_DEFAULT = 600;
 /** Reference of the budget: 16000 trees within 360 m. The cap grows with the area (distance squared) up to TREE_CEILING
  * (a frame costs TREE_VERTICES vertices per tree); past it, trees farther than `full` are thinned, not dropped. */

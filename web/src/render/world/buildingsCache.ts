@@ -47,6 +47,7 @@ export class BuildingBlockCache {
   constructor(
     private readonly gl: WebGL2RenderingContext,
     private readonly budgetBytes: () => number | undefined,
+    private readonly depth: () => number = () => 1,
   ) {}
   setBlocks(blocks: BuildingBlock[]): void {
     this.blocks = blocks;
@@ -125,7 +126,8 @@ export class BuildingBlockCache {
 
   /** Over budget: the levels drawn least recently go, never one of the last frame. */
   private readonly evict = (tick: number): void => {
-    const budget = this.budgetBytes() ?? BUDGET_BYTES;
+    // Extended depth retains more detail between views; an explicit memory limit still takes precedence.
+    const budget = this.budgetBytes() ?? BUDGET_BYTES * Math.min(4, this.depth());
     while (this.bytes > budget) {
       let oldest: BuildingSlot | undefined,
         oldestIndex = -1,

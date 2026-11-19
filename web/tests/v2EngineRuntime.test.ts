@@ -57,11 +57,14 @@ describe('V2 engine hardware orchestration (mocked hardware, retained native wat
   it('does not probe the browser GPU for automatic native procedural generation', async () => {
     const requestAdapter = vi.fn(() => new Promise(() => {}));
     vi.stubGlobal('navigator', { gpu: { requestAdapter } });
-    const { settings, cache } = setup(); settings.runtime!.compute = 'auto'; settings.runtime!.backend = 'native';
+    const { settings, cache } = setup();
+    settings.runtime!.compute = 'auto';
+    settings.runtime!.backend = 'native';
     await generateTerrain(settings, undefined, cache);
     expect(requestAdapter).not.toHaveBeenCalled();
     expect(platform.generateEngineHeight.mock.calls[0][0]).toMatchObject({ compute: 'cpu', native: true });
-    settings.options.seed = 'explicit-gpu-sampling'; settings.terrain = { ...settings.terrain, compute: 'gpu-f32' };
+    settings.options.seed = 'explicit-gpu-sampling';
+    settings.terrain = { ...settings.terrain, compute: 'gpu-f32' };
     await generateTerrain(settings, undefined, cache);
     expect(platform.generateEngineHeight.mock.calls[1][0].compute).toBe('gpu');
   });

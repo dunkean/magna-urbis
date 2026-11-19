@@ -8,7 +8,7 @@
  */
 import { applyAppearancePatch, type AppearancePatch } from '../../render/appearanceRecipe';
 import { isTilted } from '../../render/world/camera';
-import { clampTreeDistance } from '../../ui/terrain3dTrees';
+import { TREE_DISTANCE_MAX, clampTreeDistance } from '../../ui/terrain3dTrees';
 import { resolveSettingsAppearance } from '../appearance';
 import { worldTreesAvailable } from '../display/worldVolumes';
 import { insertHTML, registerMessages } from '../i18n';
@@ -28,7 +28,7 @@ export function mountWorldTreeControls(state: PageState, actions: PageActions): 
     'beforeend',
     '<label title="Modelled trees near the camera (satellite looks)" hidden><input type="checkbox" data-trees>3D trees</label>' +
       // The range follows the switch without its own words, so the tilted row keeps to 1600 px with the PNG button.
-      '<label title="Display distance of the modelled trees (m)" data-tree-distance-label hidden><input type="range" data-tree-distance min="200" max="1500" step="100" value="600" aria-label="Display distance of the modelled trees (m)"></label>',
+      `<label title="Display distance of the modelled trees (m)" data-tree-distance-label hidden><input type="range" data-tree-distance min="200" max="${TREE_DISTANCE_MAX}" step="100" value="600" aria-label="Display distance of the modelled trees (m)"></label>`,
   );
   const on = bar.querySelector<HTMLInputElement>('[data-trees]')!,
     distance = bar.querySelector<HTMLInputElement>('[data-tree-distance]')!,

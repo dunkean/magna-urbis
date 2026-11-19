@@ -121,8 +121,13 @@ export async function takeAutosave(): Promise<SavedRecipe | undefined> {
     return { settings: value.settings, mods: value.mods, view: value.view, ui: value.ui };
   } catch (e) {
     try {
-      if (localStorage.getItem(KEY) === raw) { localStorage.removeItem(KEY); void idbDelete(); }
-    } catch { /* Optional. */ }
+      if (localStorage.getItem(KEY) === raw) {
+        localStorage.removeItem(KEY);
+        void idbDelete();
+      }
+    } catch {
+      /* Optional. */
+    }
     console.info('Autosave discarded:', e instanceof Error ? e.message : e);
     return undefined;
   }

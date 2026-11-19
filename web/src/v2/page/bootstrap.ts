@@ -7,6 +7,8 @@ import { setText } from '../i18n';
 import { mountV2TestHook } from '../testHook';
 import { armAutosave, takeAutosave, mountNewButton, saveAutosaveNow } from '../autosave';
 import { $ } from './dom';
+import { inspectMachine } from '../machineTier';
+import { mountMachineDefault } from './machineDefault';
 
 export async function mountPageBoot(state: PageState, actions: PageActions): Promise<void> {
   setText($('#build-info'), `${import.meta.env.VITE_BUILD_DATE ?? 'dev'} · ${import.meta.env.VITE_BUILD_COMMIT ?? 'local'}`);
@@ -18,6 +20,8 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
   } finally {
     document.getElementById('boot-splash')?.remove();
   }
+
+  const machineProbe = inspectMachine();
 
   mountV2TestHook({
     getSettings: () => state.settings,
@@ -47,6 +51,8 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     const saved = explicit ? undefined : await takeAutosave();
     const startAutosave = () =>
       armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab, mode3d: !!state.city3d?.active, camera: state.city3d?.active ? state.city3d.getCamera() : undefined } }));
+    const machine = await machineProbe;
+    if (!saved && !new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
     if (saved) {
       actions.setBusy(true);
       try {

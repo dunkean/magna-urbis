@@ -14,11 +14,16 @@ import { TerrainHeights } from '../src/render/world/heights';
 import { TREES_BLOCK, treeBlockSteps, treeDrawCount, treeLathe } from '../src/render/world/treesBlocks';
 import { createWorldTreesLayer } from '../src/render/world/treesLayer';
 import { TREE_LATHES, latheVertices } from '../src/render/world/treesShader';
+import { buildingTriangleBudget, clampViewDepth, setViewDepth, VIEW_DEPTH_DEFAULT, VIEW_DEPTH_MAX } from '../src/render/world/viewDepth';
+import { hazeDistance } from '../src/render/world/volumes';
 import type { View } from '../src/render/view';
 import { buildNearTrees, TREE_STRIDE, TREE_VERTICES, treeLimits, type TreeInputs } from '../src/ui/terrain3dTrees';
 
 beforeEach(() => vi.stubGlobal('__muLayerDiagnostics', true));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  setViewDepth(VIEW_DEPTH_DEFAULT);
+  vi.unstubAllGlobals();
+});
 
 const W = 1600,
   H = 900;
@@ -255,7 +260,7 @@ describe('world trees', () => {
       inputs = stand(220, 100, 120),
       gl = mockGl(),
       layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 600, shown: () => true, invalidate: () => {} });
-    const view = { cx: 1200, cy: 1400, scale: 2, pitch: 1.1, yaw: 0.3 },
+    const view = { cx: 1200, cy: 1400, scale: 8, pitch: 1.1, yaw: 0.3 },
       tilted = frame(gl, view, heights);
     const started = performance.now();
     for (let pass = 0; pass < 8; pass++) {
@@ -287,6 +292,34 @@ describe('world buildings by distance', () => {
     layer.draw(view);
     return { ...layer.stats!() };
   }
+
+  it('keeps the default thresholds and haze, extends them together, and retains every far house at maximum depth', () => {
+    const heights = relief(40000, 128),
+      scene = city3dBuildings(batch(sources(10000, 22, 18900)), { heightAt: rawOf(heights) })!,
+      gl = mockGl(),
+      layer = createWorldBuildingsLayer(gl, { scene: () => scene, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), terrain: () => heights, invalidate: () => {} }),
+      view = frame(gl, { cx: 20000, cy: 20000, scale: 0.04, pitch: (55 * Math.PI) / 180 }, heights),
+      block = grouped(scene, heights)[0];
+    expect(buildingTriangleBudget(VIEW_DEPTH_DEFAULT)).toBe(300000);
+    expect(buildingTriangleBudget(VIEW_DEPTH_MAX)).toBe(3000000);
+    expect(clampViewDepth(NaN)).toBe(VIEW_DEPTH_DEFAULT);
+    expect(clampViewDepth(100)).toBe(VIEW_DEPTH_MAX);
+    expect(blockLevel(block, 2)).toBe(block.levels);
+    expect(blockLevel(block, 2, false, 2)).toBe(2);
+    expect(blockLevel(block, 0.001, false, VIEW_DEPTH_MAX)).toBe(2);
+    const haze = Math.max(2 * view.camera.distance, 100);
+    expect(hazeDistance(view.camera)).toBe(haze);
+    const original = settle(layer, view);
+    expect(original.triangles).toBe(0);
+    setViewDepth(VIEW_DEPTH_MAX);
+    expect(hazeDistance(view.camera)).toBe(haze * VIEW_DEPTH_MAX);
+    const extended = settle(layer, view);
+    // All 10k houses fit the frustum, below the default size cutoff. Each box has at least ten triangles.
+    expect(extended.triangles).toBeGreaterThanOrEqual(10000 * 10);
+    expect(extended.triangles).toBeLessThanOrEqual(buildingTriangleBudget(VIEW_DEPTH_MAX));
+    setViewDepth(VIEW_DEPTH_DEFAULT);
+    expect(settle(layer, view).triangles).toBe(original.triangles);
+  });
 
   it('draws a large town as boxes far away, nothing under a pixel, roofs in a turned top view', () => {
     const heights = relief(40000, 128),
@@ -349,7 +382,7 @@ describe('world trees cost', () => {
       const gl = mockGl(),
         layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => distance, shown: () => true, invalidate: () => {} });
       const views = {
-        close: { cx: 1200, cy: 1200, scale: 4, pitch: (70 * Math.PI) / 180, yaw: 0.3 },
+        close: { cx: 1200, cy: 1200, scale: 12, pitch: (70 * Math.PI) / 180, yaw: 0.3 },
         mid: { cx: 1200, cy: 1200, scale: 1, pitch: (55 * Math.PI) / 180, yaw: 0.3 },
         town: { cx: 1200, cy: 1200, scale: 0.3, pitch: Math.PI / 4, yaw: 0.3 },
         low: { cx: 1200, cy: 1200, scale: 2, pitch: 1.2, yaw: 0.3 },
@@ -409,7 +442,7 @@ describe('optional layer diagnostics', () => {
     const samples = [false, true].map(enabled => {
       vi.stubGlobal('__muLayerDiagnostics', enabled);
       const gl = mockGl(),
-        view = frame(gl, { cx: 700, cy: 700, scale: 2, pitch: 1, yaw: 0.2 }, heights);
+        view = frame(gl, { cx: 700, cy: 700, scale: 8, pitch: 1, yaw: 0.2 }, heights);
       const buildings = createWorldBuildingsLayer(gl, { scene: () => scene, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), terrain: () => heights, invalidate: () => {} });
       const trees = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 600, shown: () => true, invalidate: () => {} });
       for (const layer of [buildings, trees]) {

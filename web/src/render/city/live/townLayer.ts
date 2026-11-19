@@ -47,6 +47,7 @@ import { createCityGlRendererOn } from '../gl/renderer';
 import { cityBuildingAppearance } from '../../cityDrawOptions';
 import { townWaterColour } from '../../townWater';
 import { grainMeansReady, grainMeansStep } from '../../cityGlGrain';
+import { CoverGrainTexture } from '../../world/buildingsGrain';
 import type { YardBoundary } from '../../cityLotEnclosures';
 import { CanopyDiscs } from './canopyDiscs';
 import { FarRasters } from './farRasters';
@@ -95,6 +96,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   const parallelLink = !!gl.getExtension('KHR_parallel_shader_compile'),
     far = new FarRasters(gl),
     canopy = new CanopyDiscs(gl);
+  /** Natural roofs: the Canvas grain tiles on the GPU (one family per `work` call) for the pans' grain marks, and the
+   * mean tone of the snow mantle (cityGlGrain.ts); a frame waits for both, as for its colour tables. */
+  const grainTiles = new CoverGrainTexture(gl);
+  let grainTilesDone = false;
+  const naturalGrain = (l: Look): boolean => l.base.palette === 'terrain' && !!l.base.live?.grain;
+  const grainReady = (l: Look): boolean => !naturalGrain(l) || (grainMeansReady() && grainTilesDone);
+  /** The live look of a frame: the grain tiles handed over. */
+  const liveOf = (l: Look): CityGlDrawOptions['live'] => (grainTilesDone && naturalGrain(l) ? { ...l.base.live!, grainMarks: grainTiles.texture } : l.base.live);
   let meshBytes = 0;
   /** Lot enclosure lists handed to the renderer. */
   let yardsFor: readonly (readonly YardBoundary[] | undefined)[] | undefined;
@@ -235,12 +244,16 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     viewport: viewportOf(frame),
     metresPerPixel: 1 / frame.view.scale,
     lod: frameLod,
+    live: liveOf(l),
     water: env.water?.(),
     target: { framebuffer: frame.target, width: frame.width, height: frame.height },
   });
   function dropExtras(deleteHandles: boolean): void {
     far.drop(deleteHandles);
     canopy.drop(deleteHandles);
+    if (deleteHandles) grainTiles.dispose();
+    else grainTiles.lost();
+    grainTilesDone = false;
     if (deleteHandles && warm) {
       gl.deleteFramebuffer(warm.framebuffer);
       gl.deleteRenderbuffer(warm.color);
@@ -368,7 +381,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   /** How the drape draws the town of a tile: the look's options for the tile's square. */
   const drapeOptions = (l: Look, tile: DrapeCanvas, target?: WebGLFramebuffer): CityGlDrawOptions => {
     const mpp = 1 / tile.scale;
-    return { ...l.base, viewport: tile.rect, metresPerPixel: mpp, lod: selectCityLod(mpp), water: env.water?.(), target: target && { framebuffer: target, width: tile.pixels, height: tile.pixels } };
+    return { ...l.base, live: liveOf(l), viewport: tile.rect, metresPerPixel: mpp, lod: selectCityLod(mpp), water: env.water?.(), target: target && { framebuffer: target, width: tile.pixels, height: tile.pixels } };
   };
   /** The town of a tilted frame, for the map drape: the plan and the buildings as the top view draws them. */
   const drape: DrapeSource = {
@@ -384,7 +397,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       if (l.reason || l.opacity <= 0) return true;
       // The plan is all the drape draws: a building tier being packed or uploaded does not hold it back.
       if (!renderer || !renderer.programsLinked || !requested || !renderer.ready) return false;
-      if (l.base.palette === 'terrain' && l.base.live?.grain && !grainMeansReady()) return false;
+      if (!grainReady(l)) return false;
       const options = drapeOptions(l, tile);
       if (!renderer.check(options)) return true;
       // Its tables at this level are not kept: `work` computes them in slices, one state of the renderer at a time.
@@ -420,8 +433,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     if (renderer.pendingUpload) return 'upload pending';
     const l = lookNow();
     if (l.reason) return l.reason;
-    // Natural roofs take the mean tone of the Canvas grain: its tile means are measured in work first.
-    if (l.base.palette === 'terrain' && l.base.live?.grain && !grainMeansReady()) return 'grain means';
+    // Natural roofs take the grain marks and the snow's mean tone: the tiles are uploaded and measured in work first.
+    if (!grainReady(l)) return 'roof grain';
     const level = selectCityLod(1 / frame.view.scale, lod);
     // The colour tables of the frame's level of detail are prepared in `work`; a draw never computes them.
     if (!preparedLods.has(level)) return 'tables not prepared';
@@ -454,7 +467,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       // Strict: any element the Canvas town would paint differently keeps its repaint at rest. Read by the probes:
       // what is still missing for this frame.
       const held = content,
-        gaps = held && !notReady(frame) ? restGaps(frame, lookNow(), selectCityLod(1 / frame.view.scale, lod), held) : undefined;
+        l = lookNow(),
+        gaps = held && !notReady(frame) ? restGaps(frame, l, selectCityLod(1 / frame.view.scale, lod), held) : undefined;
       (globalThis as { __muLiveCityGaps?: readonly string[] }).__muLiveCityGaps = gaps;
       return !!gaps && gaps.length === 0;
     },
@@ -542,8 +556,13 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       const l = lookNow(),
         water = env.water?.();
       if (l.reason) return building > 0;
-      // The grain tile means (one cover kind per call, a few ms), shared by every town layer.
-      if (l.base.palette === 'terrain' && l.base.live?.grain && grainMeansStep()) return true;
+      // The snow tile means (one kind per call, a few ms), shared by every town layer; then the grain tiles, one family per call.
+      if (naturalGrain(l) && grainMeansStep()) return true;
+      if (naturalGrain(l) && !grainTilesDone) {
+        grainTilesDone = grainTiles.step();
+        if (grainTilesDone) env.invalidate();
+        return true;
+      }
       if (preparedWater !== water) {
         unprepare();
         drapeRevision++;

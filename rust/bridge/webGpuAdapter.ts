@@ -9,22 +9,40 @@ export async function requestWebGpuAdapter(): Promise<GPUAdapter | null> {
     try {
       const preferred = await gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (preferred) return preferred;
-    } catch { /* Some browsers reject an explicit preference but provide a default adapter. */ }
+    } catch {
+      /* Some browsers reject an explicit preference but provide a default adapter. */
+    }
     return gpu.requestAdapter();
   };
   try {
-    return await Promise.race([request(), new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 2500); })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      request(),
+      new Promise<null>(resolve => {
+        timer = setTimeout(() => resolve(null), 2500);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Device creation can stall independently of adapter discovery. Release a late device after the caller moved on. */
 export async function requestWebGpuDevice(adapter: GPUAdapter, descriptor?: GPUDeviceDescriptor): Promise<GPUDevice | null> {
-  let pending = true, timer: ReturnType<typeof setTimeout> | undefined;
+  let pending = true,
+    timer: ReturnType<typeof setTimeout> | undefined;
   const creating = adapter.requestDevice(descriptor).then(device => {
     if (!pending) device.destroy();
     return device;
   });
   try {
-    return await Promise.race([creating, new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 2500); })]);
-  } finally { pending = false; clearTimeout(timer); }
+    return await Promise.race([
+      creating,
+      new Promise<null>(resolve => {
+        timer = setTimeout(() => resolve(null), 2500);
+      }),
+    ]);
+  } finally {
+    pending = false;
+    clearTimeout(timer);
+  }
 }

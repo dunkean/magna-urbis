@@ -1,6 +1,6 @@
 /**
  * GLSL of the GPU town: fills and outlines of the plan and building meshes (per-feature colour tables, parchment
- * hatching, roof grain mean, ruins), paved squares, stroke instances (streets, walls, enclosures) in four variants,
+ * hatching, roof grain marks, ruins), paved squares, stroke instances (streets, walls, enclosures) in four variants,
  * textured fills, tower discs, and the drawn water into the stencil. One cohesive unit: the sources and nothing else.
  * Compiled by renderer.ts.
  */
@@ -12,17 +12,26 @@ layout(location = 1) in uint aFeature;
 uniform vec4 uView;
 uniform highp sampler2D uColors;
 uniform vec4 uTint;
-// Live roof pans (cityGlGrain.ts): the mean tone of the Canvas grain, uneven snow mantle and wall rims of each pan
-// (uGrainTab: family, gain, snow strength, flags; uRimTab: rim colour), with the frame's grain strength and level means.
-uniform int uRoofGrain, uRims;
+// Live roof pans: the Canvas grain marks, the mean tone of the uneven snow mantle (cityGlGrain.ts) and the wall rims of
+// each pan (uGrainTab: family, gain, snow strength, flags; uRimTab: rim colour), at the frame's grain strength.
+// Marks (uGrainMarks = 1, the tiles bound): the pan's grain tile laid as coverGrainPattern lays it, from uGrainLay
+// (downslope direction, building age): tile coordinates of the world point turned to the slope and shifted by
+// age · uGrainShift metres, in tiles of uGrainTile metres; the fragment stage samples the tile (vMark: those, strength).
+uniform int uRoofGrain, uRims, uGrainMarks;
 uniform highp sampler2D uGrainTab, uRimTab;
 uniform float uGrainStrength;
-uniform vec2 uGrain[18];
 uniform vec4 uSnowMean[2];
+uniform highp sampler2D uGrainLay;
+uniform vec2 uOrigin, uGrainShift;
+uniform float uGrainTile;
 out vec4 vColor;
 out vec2 vPos;
+out vec3 vMark;
+flat out float vFamily;
 void main() {
   vPos = aPos;
+  vMark = vec3(0.0);
+  vFamily = 0.0;
   int f = int(aFeature);
   ivec2 q = ivec2(f & 4095, f >> 12);
   vColor = texelFetch(uColors, q, 0);
@@ -39,9 +48,15 @@ void main() {
         float k = u * g.b / 255.0, a = k * m.a, fillA = u < 0.97 ? 1.0 - u : 0.0, outA = 1.0 - (1.0 - fillA) * (1.0 - a);
         vColor = vec4((vColor.rgb * fillA * (1.0 - a) + k * m.rgb) / max(outA, 1e-4), outA);
       }
-    } else if (g.r > 0.0) {
+    } else if (g.r > 0.0 && uGrainMarks == 1) {
       float s = uGrainStrength * g.g / 255.0;
-      if (s > 0.03) { vec2 m = uGrain[int(g.r) - 1]; vColor.rgb = vColor.rgb * (1.0 - s * m.x) + s * m.y; }
+      if (s > 0.03) {
+        vec4 l = floor(texelFetch(uGrainLay, q, 0) * 255.0 + 0.5);
+        float dir = (l.r * 256.0 + l.g) / 65535.0 * 6.2831853, age = (l.b * 256.0 + l.a) / 65535.0;
+        vec2 d = aPos + uOrigin - age * uGrainShift, k = vec2(sin(dir), cos(dir));
+        vMark = vec3(vec2(k.x * d.x - k.y * d.y, k.y * d.x + k.x * d.y) / uGrainTile, s);
+        vFamily = g.r;
+      }
     }
   }
   // A tint (painted building shadows) replaces the colour of every feature drawn.
@@ -52,6 +67,12 @@ export const FILL_FS = `#version 300 es
 precision highp float;
 in vec4 vColor;
 in vec2 vPos;
+in vec3 vMark;
+flat in float vFamily;
+// The grain tiles (buildingMaterials coverGrainTiles: a layer per COVER_GRAINS family, its halved copies as mips,
+// premultiplied), sampled at the Canvas town's level: the marks over the pan colour as its pattern fill at the strength.
+uniform highp sampler2DArray uCoverGrain;
+uniform float uGrainLevel;
 uniform float uRuinSpacing;
 // Parchment hatching (live look): lines along x + y = const every uHatch.x metres, uHatch.y metres wide, uHatch.z
 // metres per device pixel for the edge; the table alpha (hatch strength per feature) times uHatch.w.
@@ -70,6 +91,10 @@ void main() {
   // uLineAlpha (live look, outline passes): the coverage of the Canvas sub-pixel stroke over a 1-pixel GL line.
   float lineAlpha = uLineAlpha > 0.0 ? uLineAlpha : 1.0;
   vec3 color = vColor.rgb;
+  if (vFamily > 0.0) {
+    vec4 t = textureLod(uCoverGrain, vec3(vMark.xy, vFamily - 1.0), uGrainLevel);
+    color = color * (1.0 - vMark.z * t.a) + vMark.z * t.rgb;
+  }
   if (uRuinSpacing > 0.0) {
     float stripe = abs(fract((vPos.x - vPos.y) / uRuinSpacing + 0.5) - 0.5);
     float hatch = 1.0 - smoothstep(0.04, 0.13, stripe);

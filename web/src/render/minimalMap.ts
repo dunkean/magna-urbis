@@ -4,7 +4,7 @@ import { viewRect, type View, type Rect4 } from './view';
 import type { CompositionRecipe } from './composition';
 import type { ExportLayers } from './exportLayers';
 import type { LandKind } from '../gen/types';
-import { marchingSquares } from '../gen/terrain/contour';
+export { minimalContours } from './minimalContours';
 
 export interface MinimalPoint {
   x: number;
@@ -152,34 +152,6 @@ export function emptyMinimalGeometry(size: number): MinimalGeometry {
   return { size, cells: Array.from({ length: MINIMAL_GRID ** 2 }, () => new Map()), buildMs: 0, features: 0 };
 }
 
-/** Contour lines of the land, traced once on a bounded grid (at most 512 x 512, as the relief bitmap): one fixed set
- * for every zoom, no level of detail. About fourteen levels at a round interval; every fifth is an index line
- * (`contourIndex`). `height.width` is the side of the map the grid covers. Yields the lines of one level at a time. */
-export function* minimalContours(height: MinimalHeight): Generator<MinimalFeature> {
-  const n = height.n,
-    m = Math.max(2, Math.min(512, n)),
-    cell = height.width / m,
-    field = new Float32Array(m * m);
-  // Mean of four taps per cell: a large raster is not read through single pixels.
-  const tap = (k: number, q: number): number => Math.min(n - 1, Math.floor(((k + q) * n) / m));
-  let top = 0;
-  for (let y = 0; y < m; y++)
-    for (let x = 0; x < m; x++) {
-      const x0 = tap(x, 0.25),
-        x1 = tap(x, 0.75),
-        y0 = tap(y, 0.25) * n,
-        y1 = tap(y, 0.75) * n;
-      const h = (height.data[y0 + x0] + height.data[y0 + x1] + height.data[y1 + x0] + height.data[y1 + x1]) / 4;
-      field[y * m + x] = h;
-      if (h > top) top = h;
-    }
-  if (!(top > 0)) return;
-  const raw = top / 14,
-    unit = 10 ** Math.floor(Math.log10(raw)),
-    interval = Math.max(1, [1, 2, 5, 10].find(step => step * unit >= raw)! * unit);
-  for (let k = 1; k * interval < top; k++) for (const line of marchingSquares(field, m, m, k * interval, cell, cell / 2, cell / 2)) if (line.pts.length >= 4) yield { layer: k % 5 ? 'contour' : 'contourIndex', points: line.pts, closed: line.closed };
-}
-
 /** CPU-only relief. One bounded bitmap, generated row by row and composited with ordinary source-over. */
 export function* bakeMinimalRelief(height: MinimalHeight, canvas: HTMLCanvasElement): Generator<void> {
   const n = Math.max(2, Math.min(512, height.n));
@@ -273,8 +245,8 @@ export function paintMinimalMap(
   if (options.contours && recipe.ground.contours && layers.terrain !== false) {
     ctx.strokeStyle = palette.inkSoft;
     for (const [layer, px, alpha] of [
-      ['contour', 0.7, 0.5],
-      ['contourIndex', 1.1, 0.7],
+      ['contour', 0.45, 0.26],
+      ['contourIndex', 0.65, 0.4],
     ] as const) {
       ctx.lineWidth = px / scale;
       ctx.globalAlpha = alpha;

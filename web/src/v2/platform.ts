@@ -93,13 +93,16 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
     try {
       // Bound adapter + device creation together. Late devices are destroyed without
       // mutating capabilities after detection has already finished.
-      const detected = await gpuSetupDeadline((async () => {
-        const adapter = await (await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter();
-        if (!adapter) return undefined;
-        const device = await adapter.requestDevice();
-        device.destroy();
-        return adapter.info?.description || adapter.info?.device || 'WebGPU';
-      })(), 2500);
+      const detected = await gpuSetupDeadline(
+        (async () => {
+          const adapter = await (await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter();
+          if (!adapter) return undefined;
+          const device = await adapter.requestDevice();
+          device.destroy();
+          return adapter.info?.description || adapter.info?.device || 'WebGPU';
+        })(),
+        2500,
+      );
       if (detected) {
         result.webgpu = true;
         result.adapterName = detected;

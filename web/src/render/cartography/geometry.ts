@@ -150,7 +150,7 @@ export function clipRingRect(ring: readonly Vec2[], rect: Rect4): Vec2[] {
   while (out.length > 1 && out[0].x === out[out.length - 1].x && out[0].y === out[out.length - 1].y) out.pop();
   return out;
 }
-export function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<number>, minEdge: number, rect?: Rect4): Path2D | null {
+export function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<number>, minEdge: number, rect?: Rect4, simplifyBeforeClip = false): Path2D | null {
   const path = new P();
   const e2 = minEdge * minEdge;
   let any = false;
@@ -163,7 +163,9 @@ export function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<numbe
     for (const ring of rings) {
       // Clip before submitting to Canvas: the GPU otherwise replays map-sized
       // forest/wash paths for every tile and every multiply stamp.
-      const pts = rect ? clipRingRect(ring, rect) : ring;
+      // Simplify before clipping, as an unclipped GPU path does. Cutting must not change which original vertices
+      // survive LOD decimation inside the band (nor create an artificial stroked edge inside its paint reach).
+      const pts = rect ? clipRingRect(simplifyBeforeClip ? simplifiedRing(ring, minEdge) : ring, rect) : ring;
       if (pts.length < 3) continue;
       let lx = pts[0].x,
         ly = pts[0].y,
@@ -173,7 +175,7 @@ export function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<numbe
         const p = pts[k];
         const dx = p.x - lx,
           dy = p.y - ly;
-        if (e2 > 0 && dx * dx + dy * dy < e2 && k < pts.length - 1) continue;
+        if ((!rect || !simplifyBeforeClip) && e2 > 0 && dx * dx + dy * dy < e2 && k < pts.length - 1) continue;
         path.lineTo(p.x, p.y);
         lx = p.x;
         ly = p.y;
@@ -184,6 +186,29 @@ export function polyPath(P: new () => Path2D, l: PolyLayer, ids: ArrayLike<numbe
     }
   }
   return any ? path : null;
+}
+
+const simplified = new WeakMap<readonly Vec2[], Map<number, readonly Vec2[]>>();
+function simplifiedRing(ring: readonly Vec2[], minEdge: number): readonly Vec2[] {
+  if (!(minEdge > 0) || ring.length < 3) return ring;
+  let levels = simplified.get(ring);
+  if (!levels) simplified.set(ring, (levels = new Map()));
+  let points = levels.get(minEdge);
+  if (!points) {
+    const out = [ring[0]],
+      e2 = minEdge * minEdge;
+    let last = ring[0];
+    for (let i = 1; i < ring.length; i++) {
+      const p = ring[i],
+        dx = p.x - last.x,
+        dy = p.y - last.y;
+      if (dx * dx + dy * dy < e2 && i < ring.length - 1) continue;
+      out.push(p);
+      last = p;
+    }
+    levels.set(minEdge, (points = out));
+  }
+  return points;
 }
 
 export function linePath(P: new () => Path2D, l: LineLayer, ids: ArrayLike<number>, minEdge: number): Path2D | null {

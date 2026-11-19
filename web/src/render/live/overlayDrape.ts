@@ -6,17 +6,18 @@
 import type { Rect4 } from '../view';
 import type { LiveFrame } from './contract';
 import type { DrapeCanvas, DrapeSource } from '../world/contract';
-import type { LivePart, LiveRasterizer } from '../gpu/contract';
-import { cullList } from '../gpu/listTools';
+import type { BakedPrefix, DisplayList, LivePart, LiveRasterizer } from '../gpu/contract';
+import { boundedList, clipList, cullList } from '../gpu/listTools';
 import type { OverlayRegions } from './overlayRegions';
-import { boxOf, covers, type OverlayHost, type Region } from './overlayTypes';
+import { boxOf, covers, type OverlayBand, type OverlayHost, type Region } from './overlayTypes';
 
 /** Scale of a drape tile over the scale of the region shown, between which the region's lists paint the tile. The
  * tiles of the view's own tier are within 0.75 to 1.5 of the view's scale, and the region within a quarter octave. */
 const REUSE_MIN = 0.6,
   REUSE_MAX = 1.7;
-/** Main-thread target per drape band, and its first/minimum whole-row heights. */
-const DRAPE_BAND_MS = 6,
+/** Active time per complete band, time per slice, and first/minimum whole-row heights. */
+const DRAPE_BAND_MS = 12,
+  DRAPE_SLICE_MS = 3,
   DRAPE_FIRST_ROWS = 48,
   DRAPE_MIN_ROWS = 8;
 
@@ -28,6 +29,13 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
   /** The drape tile recorded in bands: the recorded row its next band starts at, and what the last band cost per row. */
   let drapeRow = 0,
     drapeMsPerRow = 0;
+  let job: { top: number; rows: number; recorded: number; ms: number; record?: Generator<void, OverlayBand | undefined>; made?: OverlayBand; list?: DisplayList; prepare?: Generator<void>; bake?: Generator<void, BakedPrefix | null> } | undefined;
+  const cancel = (): void => {
+    job?.record?.return(undefined);
+    job?.prepare?.return(undefined);
+    job?.bake?.return(null);
+    job = undefined;
+  };
   /** The region the last `work` wanted for its frame, while it is not shown yet: the square of the frame's top view,
    * the scale and the pixel ratio it is made for. */
   const due = { wanted: false, minX: 0, minY: 0, maxX: 0, maxY: 0, scale: 1, dpr: 1 };
@@ -93,6 +101,8 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
     paint(tile: DrapeCanvas): boolean {
       if (isFailed() || raster.lost || !host.active()) return false;
       if (tile.step === 0) {
+        cancel();
+        drapeRow = 0;
         const r = regionFor(tile);
         if (r && replayInto(tile, r)) {
           if (r.provisional) tile.provisional();
@@ -106,47 +116,100 @@ export function createOverlayDrape(raster: LiveRasterizer, host: OverlayHost, re
         scale = (recorded - 1e-6) / (side * tile.dpr),
         key = host.key(scale, tile.dpr, tile.light);
       if (key === undefined) return false;
-      // Horizontal bands of whole recorded rows, one per call, from the north. A band's height is what the last one
-      // cost per row allows within DRAPE_BAND_MS: the cost follows the content under the band, which the recorder
-      // cannot tell beforehand (a town's farm roofs cost tens of milliseconds over a tile of open country).
+      // Horizontal bands of whole recorded rows, from the north. Recording, clipping, uploading and painting each
+      // span slices; measured active time per row sizes the next band, independently of time spent yielding.
       const started = performance.now();
-      if (tile.step === 0) drapeRow = 0;
-      const top = drapeRow,
-        left = recorded - top,
-        want = Math.max(DRAPE_MIN_ROWS, drapeMsPerRow > 0 ? Math.floor(DRAPE_BAND_MS / drapeMsPerRow) : DRAPE_FIRST_ROWS),
-        // A remainder too thin for a recording of its own goes with this band.
-        rows = left - want < DRAPE_MIN_ROWS ? left : want,
-        metres = side / recorded,
-        band: Rect4 = { minX: tile.rect.minX, maxX: tile.rect.maxX, minY: tile.rect.minY + top * metres, maxY: tile.rect.minY + (top + rows) * metres },
-        made = host.record({ key, rect: tile.rect, scale, dpr: tile.dpr, bands: [band] }, band, tile.light);
-      if (!made) return false;
-      if (made.provisional) tile.provisional();
-      const list = cullList(made.list, boxOf(made));
-      raster.prepare(list);
-      const baked = raster.bake(list, tile.pixels / made.w, { samples: 4 });
-      if (baked) {
-        // The bake holds the recorded band and a gutter, drawn with y up: its north is at the top of the texture.
-        // The tile's north edge is `top` rows above the band's, its south edge the rows after it below; only the band
-        // itself is laid, not its gutter, which the next band paints.
-        const w = baked.box[2] - baked.box[0],
-          h = baked.box[3] - baked.box[1],
-          u0 = -baked.box[0] / w,
-          u1 = (made.w - baked.box[0]) / w,
-          v0 = 1 - (made.h - baked.box[1]) / h,
-          v1 = 1 + baked.box[1] / h;
-        tile.put(baked.texture, u0, 1 - (-top - baked.box[1]) / h, u1, 1 - (recorded - top - baked.box[1]) / h, 1, u0, v0, u1, v1);
-        raster.releaseBaked(baked);
+      if (!job) {
+        const top = drapeRow,
+          left = recorded - top,
+          want = Math.max(DRAPE_MIN_ROWS, Math.min(64, drapeMsPerRow > 0 ? Math.floor(DRAPE_BAND_MS / drapeMsPerRow) : DRAPE_FIRST_ROWS)),
+          // A remainder too thin for a recording of its own goes with this band.
+          rows = left - want < DRAPE_MIN_ROWS ? left : want,
+          metres = side / recorded,
+          band: Rect4 = { minX: tile.rect.minX, maxX: tile.rect.maxX, minY: tile.rect.minY + top * metres, maxY: tile.rect.minY + (top + rows) * metres };
+        const plan = { key, rect: { ...tile.rect }, scale, dpr: tile.dpr, bands: [band] };
+        job = {
+          top,
+          rows,
+          recorded,
+          ms: 0,
+          record: host.recordSteps
+            ? host.recordSteps(plan, band, tile.light)
+            : (function* () {
+                return host.record(plan, band, tile.light);
+              })(),
+        };
       }
-      drapeMsPerRow = (performance.now() - started) / rows;
-      drapeRow = top + rows;
-      return drapeRow < recorded;
+      const j = job;
+      try {
+        if (j.record) {
+          let next;
+          do {
+            next = j.record.next();
+          } while (!next.done && performance.now() - started < DRAPE_SLICE_MS);
+          if (!next.done) return true;
+          j.record = undefined;
+          if (!next.value) {
+            cancel();
+            return false;
+          }
+          j.made = next.value;
+          if (j.made.provisional) tile.provisional();
+          return true;
+        }
+        const made = j.made!;
+        if (!j.list) {
+          j.list = boundedList(clipList(cullList(made.list, boxOf(made)), boxOf(made)));
+          j.prepare = raster.prepareSteps(j.list);
+          return true;
+        }
+        if (j.prepare) {
+          let next;
+          do {
+            next = j.prepare.next();
+          } while (!next.done && performance.now() - started < DRAPE_SLICE_MS);
+          if (!next.done) return true;
+          j.prepare = undefined;
+          j.bake = raster.bakeSteps(j.list, tile.pixels / made.w, { samples: 4 });
+          return true;
+        }
+        let next;
+        do {
+          next = j.bake!.next();
+        } while (!next.done && performance.now() - started < DRAPE_SLICE_MS);
+        if (!next.done) return true;
+        j.bake = undefined;
+        const baked = next.value,
+          top = j.top;
+        if (baked) {
+          // The bake holds the recorded band and a gutter, drawn with y up: its north is at the top of the texture.
+          // The tile's north edge is `top` rows above the band's, its south edge the rows after it below; only the band
+          // itself is laid, not its gutter, which the next band paints.
+          const w = baked.box[2] - baked.box[0],
+            h = baked.box[3] - baked.box[1],
+            u0 = -baked.box[0] / w,
+            u1 = (made.w - baked.box[0]) / w,
+            v0 = 1 - (made.h - baked.box[1]) / h,
+            v1 = 1 + baked.box[1] / h;
+          tile.put(baked.texture, u0, 1 - (-top - baked.box[1]) / h, u1, 1 - (recorded - top - baked.box[1]) / h, 1, u0, v0, u1, v1);
+          raster.releaseBaked(baked);
+        }
+        drapeRow = top + j.rows;
+        job = undefined;
+        return drapeRow < j.recorded;
+      } finally {
+        j.ms += performance.now() - started;
+        if (!job) drapeMsPerRow = j.ms / j.rows;
+      }
     },
   };
   return {
     source: drape,
     invalidate(): void {
+      cancel();
       drapeRevision++;
     },
+    cancel,
     wanted(frame: LiveFrame, wanted: boolean): void {
       due.wanted = wanted;
       due.minX = frame.rect.minX;

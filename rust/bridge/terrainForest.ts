@@ -16,6 +16,7 @@ import { forestPlanes } from './forestNative';
 import { executionRuntime, type ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { FOREST_CROWN_SETBACK_GLSL } from '../../web/src/render/forestRoom';
 import { FOREST_STATURE_GLSL } from './terrainForestStature';
+import { FOREST_AUTUMN_GLSL } from './terrainForestSeason';
 
 export interface ForestSettings {
   enabled: boolean;
@@ -1107,8 +1108,8 @@ vec3 forestPalette(ForestStand st,float needle){
   broad=mix(broad,vec3(.31,.32,.19),st.dry*(1.-.5*st.trop));
   return mix(broad,mix(vec3(.15,.25,.16),vec3(.20,.24,.15),st.dry),needle);
 }
-// Season as the V2 material reads it (0 winter, .5 summer): x leaf fall, y spring flush, z summer share. Summer outside V2.
-vec3 forestSeason(){float t=6.2831853*(uRenderV2>0?uV2Season:.5),s=sin(t);return vec3(max(-s,0.),max(s,0.),.5-.5*cos(t));}
+// Shared look season (0 winter, .5 summer): x leaf fall, y spring flush, z summer share, including cartographic grounds.
+vec3 forestSeason(){float t=6.2831853*uV2Season,s=sin(t);return vec3(max(-s,0.),max(s,0.),.5-.5*cos(t));}
 // Colour grade of a forest type. Render's guide already carries the climate and leaf state, and
 // forestCrownColor divides the stand palette out, so without this every type keeps the same mean.
 vec3 forestGrade(ForestStand st,float needle){
@@ -1178,17 +1179,33 @@ vec3 forestCanopy(ForestStand st,float needle,vec2 jitter,float special){
   float amp=mix(mix(.09,.14,temperate),.2,st.trop)*(1.-.45*needle);
   c*=1.+amp*jitter.x;
   c=mix(c,c*vec3(1.12,1.06,.72),max(jitter.y,0.)*amp*2.2);c=mix(c,c*vec3(.84,.97,1.12),max(-jitter.y,0.)*amp*1.6);
-  // Deciduous crowns turn one by one, gold or red. Zero jitter is the stand mean, left to forestGrade.
+  // Deciduous crowns turn one by one, gold or red. Zero jitter leaves their population hue to forestCrownColor.
   c*=mix(vec3(1.),jitter.y>0.?vec3(1.3,1.04,.62):vec3(1.3,.72,.66),abs(jitter.y)*forestSeason().x*temperate*(1.-needle)*(.6+.4*jitter.x));
   // Tropical canopies: a few flushing, flowering or senescent crowns.
   vec3 accent=special<.45?vec3(.40,.42,.19):special<.8?vec3(.40,.30,.22):vec3(.36,.38,.32);
   return mix(c,accent,st.trop*groundSmooth(.965,.99,fract(special*7.31))*.6);
 }
-// Crown colour as a residual of Render's own canopy colour (guide): the
-// stand's mean palette maps onto it, crown type/tone/jitter modulate it.
+${FOREST_AUTUMN_GLSL}
+vec3 forestCrownBaseColor(ForestStand st,vec3 guide,float needle,vec2 jitter,float special){
+  return guide*forestGrade(st,needle)*forestCanopy(st,needle,jitter,special)/max(forestPalette(st,st.needle),vec3(.02));
+}
+// Crown colour as a residual of Render's own canopy colour (guide). Zero jitter requests the population mean:
+// the macro V2 canopy, light tier, unresolved stand and bank galleries all use this contract.
 vec3 forestCrownColor(ForestStand st,vec3 guide,float needle,vec2 jitter,float special){
   if(st.orchard)return mix(vec3(.25,.34,.15),vec3(.22,.37,.16),forestSeason().z)*(.86+.28*(jitter.x*.5+.5));
-  return guide*forestGrade(st,needle)*forestCanopy(st,needle,jitter,special)/max(forestPalette(st,st.needle),vec3(.02));
+  vec3 crown=forestCrownBaseColor(st,guide,needle,jitter,special);
+  if(all(equal(jitter,vec2(0.)))){
+    vec3 kind=forestKind(st.trop,st.dry);float fall=forestSeason().x;
+    if(fall>0.){
+      // Integrate the broadleaf and evergreen populations separately: only temperate broadleaves turn,
+      // and only the calendar's larch fraction of conifers turns gold. Stand tone and exposure remain local.
+      vec3 broad=forestCrownBaseColor(st,guide,0.,vec2(0.),0.);
+      vec3 conifer=forestCrownBaseColor(st,guide,1.,vec2(0.),0.);
+      crown+=(forestAutumnMean(broad,fall*(1.-kind.x-kind.y-kind.z))-broad)*(1.-needle);
+      crown+=(vec3(.70,.52,.17)-conifer)*(.85*fall*v2SeasonClimate().z*needle);
+    }
+  }
+  return crown;
 }
 vec3 forestFloor(vec3 ground,ForestStand st,float cold){
   vec3 litter=mix(vec3(.26,.21,.15),vec3(.24,.21,.15),st.needle);
@@ -1495,6 +1512,14 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   }
   // The macro woods take their forest type too, so it reads at every zoom.
   refAlbedo*=mix(vec3(1.),groundToLinear(forestGrade(st,st.needle)),refWoods);
+  // Beyond forestReveal's range this reference is the entire forest. Give its canopy the same seasonal
+  // population residual before the early return, without recolouring the exposed ground or deposited snow.
+  if(forestSeason().x>0.){
+    vec3 base=forestCrownBaseColor(st,forestGuide(),st.needle,vec2(0.),0.);
+    vec3 mean=forestCrownColor(st,forestGuide(),st.needle,vec2(0.),0.);
+    float exposed=uRenderV2>0?1.-v2GroundSnow*forestSnowLoad(st.needle):1.;
+    refAlbedo*=mix(vec3(1.),groundToLinear(mean/max(base,vec3(.02))),refWoods*exposed);
+  }
   // Riparian gallery over the reference: an area-filtered hint of the narrow
   // bank envelope, colour only (no stand paint, normal or shadow).
   // No bank gallery inside a field (forestCrown roots none there).
@@ -1503,6 +1528,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   vec3 galleryMean=vec3(0.);
   if(galleryArea>0.)galleryMean=groundToLinear(forestCrownColor(st,forestGuide(),0.,vec2(0.),0.)*forestRiparianTint(st));
   refAlbedo=mix(refAlbedo,galleryMean,mix(.5,1.,reveal)*galleryArea);
+  // Painted looks need the unresolved coverage too; no resolved crown below ever sets it at map scale.
+  forestMapCover=refWoods+galleryArea*(1.-refWoods);
   // The whole material leaves the Render reference only as crowns or the stand
   // line become legible: a small (6 %) residual of the canonical stands before that.
   float krumm=forestKrummholz(st.height,st.needle);
@@ -1582,7 +1609,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     float tint=hit.tint;
     vec2 jitter=vec2(tint,fract(tint*7.31))*2.-1.;float special=fract(tint*13.17);
     // Leaf fall thins a broadleaf crown down to its limbs. Conifers keep theirs, larches excepted.
-    bool larch=uRenderV2>0&&hit.needle&&special<v2SeasonClimate().z;
+    bool larch=hit.needle&&special<v2SeasonClimate().z;
     float leaf=uRenderV2>0&&(!hit.needle||larch)?v2SeasonLeaf():1.;
     if(leaf<1.){
       // Open limbs: the ground shows through and the cast shadow is the light one of bare branches.
@@ -1625,19 +1652,13 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     if(hit.riparian)crown*=forestRiparianTint(st);
     // Near the camera a modelled tree stands on each crown: the painted crown under it becomes its ground shade.
     if(uForestTrees.w>0.)crown*=mix(1.,.6,1.-groundSmooth(uForestTrees.z,uForestTrees.w,distance(world,uForestTrees.xy)));
+    // Autumn turns each temperate broadleaf crown on its own: orange, rust or gold, a few still green.
+    // Cartographic grounds share the hue transform; only physical leaf fall and snow belong to the V2 material.
+    vec3 fallKind=forestKind(st.trop,st.dry);
+    float fall=hit.needle?0.:forestSeason().x*(1.-fallKind.x-fallKind.y-fallKind.z);
+    if(fall>0.)crown=forestAutumnCrown(crown,tint,fall);
+    if(larch)crown=mix(crown,vec3(.70,.52,.17)*(.9+.2*tint),.85*forestSeason().x);
     if(uRenderV2>0){
-      // Autumn turns each temperate broadleaf crown on its own: orange, rust or gold, a few still green.
-      // The hue is absolute, its lightness follows the crown so the stand keeps its exposure.
-      vec3 fallKind=forestKind(st.trop,st.dry);
-      float fall=hit.needle?0.:forestSeason().x*(1.-fallKind.x-fallKind.y-fallKind.z);
-      if(fall>0.){
-        float pick=fract(tint*5.31),late=fract(tint*3.77);
-        vec3 hue=pick<.38?vec3(.86,.46,.07):pick<.56?vec3(.64,.18,.07):pick<.86?vec3(.86,.66,.10):vec3(.30,.40,.12);
-        float lift=pick<.38?1.35:pick<.56?1.08:pick<.86?1.4:1.;
-        float lum=dot(crown,vec3(.2126,.7152,.0722)),hueLum=dot(hue,vec3(.2126,.7152,.0722));
-        crown=mix(crown,hue*lum*lift/hueLum,fall*(pick<.86?.92:.4)*(.75+.25*late));
-      }
-      if(larch)crown=mix(crown,vec3(.70,.52,.17)*(.9+.2*tint),.85*forestSeason().x);
       crown=mix(crown,forestBareColor(tint,bare.y),1.-leaf);
       // Snow caps the top and lit flank of each crown and lies on its boughs or leaf clumps; the gaps stay dark.
       // Bare limbs hold little and stay dark against the white floor, the twig haze takes the rest of the mean load.

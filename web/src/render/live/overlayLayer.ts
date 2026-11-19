@@ -170,6 +170,14 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       if (!frame || failed || raster.lost || !host.active()) return false;
       const start = host.now();
       recording.track(frame, start);
+      // The tilted picture uses only world-space drape tiles. A top-view recording or snapshot here can take an
+      // entire map-sized band while orbiting, and can also overwrite the rasterizer's suspended drape bake.
+      if (frame.camera.tilted) {
+        recording.dropPending();
+        drape.wanted(frame, false);
+        return !raster.warm();
+      }
+      drape.cancel();
       let more = false;
       try {
         // The programs start compiling at the first call and are polled at each one; nothing is shown before.
@@ -207,6 +215,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       refresh();
     },
     contextLost(): void {
+      drape.cancel();
       // Dead handles must be forgotten without deleting resources from the lost context.
       raster.dropContext();
       retained.forgetShown();
@@ -219,6 +228,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     },
     stats: diagnostics.stats,
     dispose(): void {
+      drape.cancel();
       retained.releaseShown();
       recording.dispose();
       retained.clear(true);

@@ -90,6 +90,12 @@ export function warmTreeMarks(c: CartographyContext, deadline: number): boolean 
 }
 /** False when the canopy draws vector glyphs at this scale (no atlas): the caller paints the trees itself. */
 export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, tl: TextureLayer, area: Rect4, pxPerMetre: number): boolean {
+  const steps = recordTreeSpriteSteps(c, ctx, tl, area, pxPerMetre);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+export function* recordTreeSpriteSteps(c: CartographyContext, ctx: RecordingContext, tl: TextureLayer, area: Rect4, pxPerMetre: number): Generator<void, boolean> {
   const { canopy, brushes, treeSprites } = c;
   if (!canopy || brushes) return false;
   const kind = tl.kind === 'orchard' ? 'orchard' : 'forest',
@@ -112,6 +118,7 @@ export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, 
     }
     if (entry === null) return false;
     if (entry.marks.length) parts.push(entry);
+    yield;
   }
   if (!parts.length) return true;
   const image = parts[0].image;
@@ -123,7 +130,7 @@ export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, 
     xs = new Float64Array(n),
     ys = new Float64Array(n);
   let count = 0;
-  for (const p of parts)
+  for (const p of parts) {
     for (let i = 0; i < p.marks.length; i++) {
       const m = p.marks[i];
       if (m.x < area.minX || m.x > area.maxX || m.y < area.minY || m.y > area.maxY) continue;
@@ -132,6 +139,8 @@ export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, 
       ys[count] = m.y;
       count++;
     }
+    yield;
+  }
   if (count > GPU_SPRITE_BATCH_MAX) return false;
   const order = new Uint32Array(count);
   for (let i = 0; i < count; i++) order[i] = i;

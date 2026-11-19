@@ -1,11 +1,13 @@
+/** Dedicated minimal view: retained spatial batches and terrain products, with bounded Canvas paints. */
 import type { World, UrbanLayer } from '../gen/types';
 import type { Shape } from '../../../rust/bridge/urban';
-import { buildMinimalGeometry, emptyMinimalGeometry, bakeMinimalRelief, paintMinimalMap, minimalWaterPolygons, minimalContours, type MinimalFeature, type MinimalGeometry, type MinimalPlace, type MinimalTextLayout } from '../render/minimalMap';
+import { buildMinimalGeometry, emptyMinimalGeometry, bakeMinimalRelief, paintMinimalMap, minimalWaterPolygons, type MinimalFeature, type MinimalGeometry, type MinimalPlace, type MinimalTextLayout } from '../render/minimalMap';
 import { renderScene, revisionOf, type RenderScene } from './renderScene';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import type { V2Settings } from './contracts';
 import type { View } from '../render/view';
 import type { ExportLayers } from '../render/exportLayers';
+import { retainedMinimalContours } from './minimalContourCache';
 import type { RenderReadiness } from '../render/renderReadiness';
 
 const LIVE_DEFER_MS = 40,
@@ -144,9 +146,8 @@ export class MinimalRenderer {
         this.terrainKey = scene.revisions.terrain;
       }
       if (resolved.composition.recipe.ground.contours && !this.contours) {
-        const terrain = scene.terrain,
-          contours = emptyMinimalGeometry(world.mapSize);
-        await this.slices(buildMinimalGeometry(world.mapSize, minimalContours({ data: terrain.height, n: terrain.resolution, width: world.mapSize, maxHeight: terrain.maxHeight }), contours), serial);
+        const terrain = scene.terrain;
+        const contours = await retainedMinimalContours({ data: terrain.height, n: terrain.resolution, width: world.mapSize, maxHeight: terrain.maxHeight });
         if (serial !== this.serial || this.disposed) return;
         this.contours = contours;
       }

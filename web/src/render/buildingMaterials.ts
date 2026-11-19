@@ -486,7 +486,8 @@ function grainLevels(kind: RoofPattern): GrainCanvas[] | null {
  * them as the mip levels of one texture (render/world/buildingsLayer.ts). Null where the host has no canvas. */
 export const coverGrainTiles = (kind: CoverGrain): readonly (OffscreenCanvas | HTMLCanvasElement)[] | null => grainLevels(kind);
 export const COVER_GRAIN_TILE = GRAIN_TILE,
-  COVER_GRAIN_LEVELS = GRAIN_LEVELS;
+  COVER_GRAIN_LEVELS = GRAIN_LEVELS,
+  /** Metres per pixel of the finest grain tile. */ COVER_GRAIN_PX_M = GRAIN_PX_M;
 /** The grain marks of the top view (coverGrainPattern at coverGrainFrame's level and strength) on a roof face in
  * volume. `uCoverGrain`: the tiles of COVER_GRAINS as layers, their levels as mips (premultiplied); `family` 1 + index
  * in COVER_GRAINS; `N` the face normal (x, up, y south), `p` a point of the face in metres; `gain` the share the pan

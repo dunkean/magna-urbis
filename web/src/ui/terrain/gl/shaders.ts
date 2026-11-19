@@ -263,7 +263,14 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
     }
     applyGroundOccupation(m,world,uPx);
     if(uForest==1)applyForest(m,world,uPx,uLight.xzy);
+    vec3 canopyHue=groundToDisplay(m.albedo);
     applyPaperMap(m,world,uPx);
+    if(uPaperMap==1){
+      // The ink-and-wash ramp sets value, but its olive forest must retain the seasonal crown hue, including
+      // green evergreens among turned broadleaves. The unresolved V2 mean carries that same hue already.
+      vec3 paper=groundToDisplay(m.albedo);vec3 luma=vec3(.2126,.7152,.0722);
+      m.albedo=groundToLinear(mix(paper,canopyHue*dot(paper,luma)/max(dot(canopyHue,luma),.02),forestSeason().x*forestMapCover));
+    }
     vec3 rgb=uRenderV2>0?v2ShadeGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength):shadeTerrainGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
     return uRenderV2>0?v2DisplayShoulder(rgb):rgb;
   }

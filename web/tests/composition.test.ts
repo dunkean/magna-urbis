@@ -26,7 +26,7 @@ describe('render composition', () => {
   it('validates Minimal and resolves its independent path, palette and optional layers', () => {
     const c = presetComposition('minimal');
     expect(() => validateComposition(c)).not.toThrow();
-    expect(c.ground).toEqual({ look: 'minimal', variant: 'minimal', contours: false });
+    expect(c.ground).toEqual({ look: 'minimal', variant: 'minimal', contours: true });
     expect(c.effects.relief).toBe(false);
     expect(c.vegetation.look).toBe('none');
     expect(c.landuse).toMatchObject({ rural: 'off', urban: 'off' });

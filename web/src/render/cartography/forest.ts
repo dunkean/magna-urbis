@@ -29,6 +29,7 @@ export type ForestWash = { levels: PolyLayer[]; fringe: PolyLayer[]; depth: Floa
 const sharedForestWashes = new Map<string, ForestWash>();
 /** Quarter masks preserve explicit park/garden holes; their union remains exact across retained parts. */
 export function forestClip(c: CartographyContext, rect: Rect4): Path2D | null {
+  rect = c.recordingClip ?? rect;
   const { S, P, polyL, cached } = c;
   const l = polyL('u-forest-clearings');
   const orchard = c.scene.textures.find(t => t.kind === 'orchard');

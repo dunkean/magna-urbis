@@ -3,7 +3,7 @@
  * TREE_3D_GLSL: the same instance of 12 floats, crown profiles, stem girth, snow, clumps and light), with the number of
  * segments around and of rings along the tree set per draw, so far blocks draw coarser trees; standing on TerrainHeights.
  *
- * The fragment shader is the 3D view's, unchanged. It works in the 3D view's frame (x east, up, y south): the vertex shader hands it positions and normals
+ * The fragment shader adds screen-door coverage to the 3D view's lighting. It works in the 3D view's frame (x east, up, y south): the vertex shader hands it positions and normals
  * in that frame, relative to the target, with the eye and the light in the same frame.
  */
 import { TREE_3D_GLSL, TREE_PROFILE_GLSL } from '../../ui/terrain3dTrees';
@@ -54,8 +54,9 @@ uniform vec3 uBlock;
 // Metres drawn per metre of ground height (exaggeration x rise); share of the trees' height shown (rise).
 uniform vec2 uRelief;
 // The eye's ground point relative to the target (x, y), and the distances, from the nearer of it and the target, where
-// trees start and end growing out of the ground.
+// trees start and end fading into the painted crowns.
 uniform vec4 uFade;
+uniform float uVisibility;
 // Segments around, stem rings, impostor (1: one flat band facing the camera); the profile index of each crown ring.
 uniform ivec3 uLathe;
 uniform int uCrown[6];
@@ -73,6 +74,7 @@ out vec3 tint;
 out float treeLevel;
 out vec4 crownChart;
 out vec4 crownInfo;
+flat out float modelOpacity;
 ${TREE_PROFILE_GLSL}float profileU(bool parasol,bool spire,int k){return parasol?PARASOL_U[k]:spire?NEEDLE_U[k]:BROAD_U[k];}
 float profileR(bool parasol,bool spire,int k){return parasol?PARASOL_R[k]:spire?NEEDLE_R[k]:BROAD_R[k];}
 void main(){
@@ -82,8 +84,8 @@ void main(){
   int dseg=corner==1||corner==2||corner==4?1:0,dring=corner==2||corner==4||corner==5?1:0;
   int ring=band+dring;
   vec2 place=uBlock.xy+treeBase.xy;
-  float fade=(1.-smoothstep(uFade.z,uFade.w,min(distance(place,uFade.xy),length(place))))*uRelief.y;
-  if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
+  modelOpacity=(1.-smoothstep(uFade.z,uFade.w,min(distance(place,uFade.xy),length(place))))*uVisibility;
+  if(modelOpacity<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
   // Form (instance z): 0 broadleaf, 1 conifer spire, 2 broadleaf parasol, 3 conifer parasol (umbrella pine).
   int form=int(treeShape.z+.5);bool needle=form==1||form==3,parasol=form>=2,spire=form==1;
   float r=treeBase.w,h=treeShape.x,bottom=clamp(h-treeShape.y,.02*h,.75*h);
@@ -110,7 +112,7 @@ void main(){
     if(spire&&!impostor)radius*=((seg+dseg)%2==0?1.:.68)*(1.+.045*sin(3.*angle+treeShape.w));
     else radius*=(1.+.13*sin(3.*angle+2.*treeShape.w)*(1.-abs(u-.5)*1.4))*(!needle&&treeColor.w>.5?.8:1.);
   }
-  vec3 local=vec3(dir.x*radius,y*fade,dir.y*radius);
+  vec3 local=vec3(dir.x*radius,y*uRelief.y,dir.y*radius);
   if(trunk)treeNormal=vec3(dir.x,0.,dir.y);
   else if(spire)treeNormal=normalize(vec3(dir*(h-bottom),r).xzy);
   else {float mid=bottom+(parasol?.72:.4)*(h-bottom),hd=max(.55*(h-bottom),.1);treeNormal=normalize(vec3(local.x/(r*r),(y-mid)/(hd*hd),local.z/(r*r)));}
@@ -126,5 +128,11 @@ void main(){
   gl_Position=uProjection*vec4(position,1.);
 }`;
 
-/** The 3D view's tree fragment shader, as it is. */
-export const WORLD_TREE_FS = TREE_3D_GLSL.fragment;
+/** Screen-door coverage keeps depth writes correct while letting the painted crowns show through. The threshold is
+ * stable in screen space, shared by all surfaces of a tree: overlapping back faces cannot restore its opacity.
+ * Derivatives are evaluated before discarding, so the crown's clump footprint remains defined. */
+export const WORLD_TREE_FS = TREE_3D_GLSL.fragment.replace('out vec4 color;', 'flat in float modelOpacity;\nout vec4 color;').replace(
+  '  vec3 albedo=tint;',
+  `  if(modelOpacity<1.&&fract(52.9829189*fract(dot(floor(gl_FragCoord.xy),vec2(.06711056,.00583715))))>=modelOpacity)discard;
+  vec3 albedo=tint;`,
+);
