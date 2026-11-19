@@ -211,6 +211,25 @@ describe('live overlay layer', () => {
     expect(parts.every(part => part.list.ops.length === 0 && !!part.baked)).toBe(true);
   });
 
+  it('reuses existing snapshots near their recorded scale only during motion, without baking in draw', () => {
+    const f = fixture();
+    f.layer.work!(10000, f.frame());
+    f.time(10);
+    f.layer.work!(10000, f.frame(0, 2, true));
+    vi.mocked(f.raster.bake).mockClear();
+    vi.mocked(f.raster.prepare).mockClear();
+    f.layer.draw(f.frame(0, 1, true));
+    let parts = vi.mocked(f.raster.replayLive).mock.calls.at(-1)![0];
+    expect(parts.every(part => part.list.ops.length === 0 && !!part.baked)).toBe(true);
+    expect(f.raster.bake).not.toHaveBeenCalled();
+    expect(f.raster.prepare).not.toHaveBeenCalled();
+    expect(f.layer.restExact!(f.frame())).toBe(true);
+    f.layer.draw(f.frame());
+    parts = vi.mocked(f.raster.replayLive).mock.calls.at(-1)![0];
+    expect(parts.every(part => part.list.ops.length > 0)).toBe(true);
+    expect(f.layer.stats!().snapshot).toBe(0);
+  });
+
   it('latches an unrecordable key until invalidation', () => {
     const f = fixture();
     vi.mocked(f.host.record).mockReturnValue(undefined);

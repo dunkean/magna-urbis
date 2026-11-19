@@ -16,7 +16,7 @@ import { beyond, covers, meets, type Band, type MutablePart, type OverlayHost, t
 export type { OverlayBand, OverlayPlan } from './overlayTypes';
 
 /** View scale over recorded scale (or its inverse) from which a region is shown by its snapshots. Inside it the
- * lists are replayed: that is the stretch between two recordings of a view at rest, and a little more. */
+ * lists are replayed at rest. During motion, an already prepared snapshot also bounds near-scale replay cost. */
 const SNAPSHOT_RATIO = 1.5;
 /** Main-thread time of one idle host warming slice. */
 const WARM_SLICE_MS = 8;
@@ -77,7 +77,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
     const piece = (b: Band, minX: number, minY: number, maxX: number, maxY: number): void => {
       if (!(maxX > minX && maxY > minY) || !(minX < frame.rect.maxX && maxX > frame.rect.minX && minY < frame.rect.maxY && maxY > frame.rect.minY)) return;
       const p = (underPool[underLive.length] ??= { list: NOTHING, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] }),
-        snapshot = far ? b.snapshot : undefined;
+        snapshot = far || frame.moving ? b.snapshot : undefined;
       p.baked = snapshot ?? b.baked;
       p.list = snapshot ? NOTHING : b.suffix;
       p.post[0] = kx;
@@ -143,8 +143,8 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         scissor[1] = b.rect.minY * sy + ty;
         scissor[2] = b.rect.maxX * sx + tx;
         scissor[3] = b.rect.maxY * sy + ty;
-        // Snapshots bound far-scale draw cost. A jump before work, or a failed snapshot bake, still replays the suffix.
-        const snapshot = far ? b.snapshot : undefined;
+        // Reuse prepared snapshots during motion too; missing or failed bakes still replay the exact suffix.
+        const snapshot = far || frame.moving ? b.snapshot : undefined;
         if (snapshot) {
           part.baked = snapshot;
           part.list = NOTHING;

@@ -64,7 +64,7 @@ export interface Band {
   /** Next step: 0 cut the suffix polygons to the band, 1 upload the prefix, 2 upload the suffix, 3 bake the prefix, 4 done. */
   stage: 0 | 1 | 2 | 3 | 4;
   baked?: BakedPrefix;
-  /** The whole band (prefix then suffix) at its recorded scale: shown in place of the replay far from that scale. */
+  /** The whole band (prefix then suffix): reused during motion and shown in place of replay far from its recorded scale. */
   snapshot?: BakedPrefix;
   snapshotFailed?: boolean;
   part: MutablePart;
