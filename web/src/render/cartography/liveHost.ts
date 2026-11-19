@@ -49,12 +49,12 @@ export function createLiveHost(c: CartographyContext) {
     return { key, rect, scale, dpr, bands };
   }
   /** Records one band with the crisp mark; undefined (and the key marked failed) when the recorder cannot represent it. */
-  function recordBand(plan: OverlayPlan, band: Rect4): OverlayBand | undefined {
+  function recordBand(plan: OverlayPlan, band: Rect4, retainedInk: boolean): OverlayBand | undefined {
     const cx = (band.minX + band.maxX) / 2,
       cy = (band.minY + band.maxY) / 2;
     const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
       h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
-    const rec = createMapRecording(w, h);
+    const rec = createMapRecording(w, h, retainedInk);
     const provisional = deps.semantic?.provisional() ?? 0;
     let list: DisplayList | undefined;
     c.markCrisp = true;
@@ -126,7 +126,9 @@ export function createLiveHost(c: CartographyContext) {
    * in the compositor's context. */
   function createLiveLayer(gl: WebGL2RenderingContext): LiveLayer | undefined {
     if (deps.raster === false || !deps.invalidate) return undefined;
+    const ink = deps.semantic?.createInk?.(gl);
     const layer = createOverlayLayer(gl, {
+      ink,
       active: () => !c.disposed && !c.rasterFailed && liveVectorEngine() === 'gpu',
       key: (scale, dpr, light) => {
         const key = regionKey(scale, dpr, light);
@@ -145,7 +147,7 @@ export function createLiveHost(c: CartographyContext) {
         c.activeLight = light;
         c.activeDpr = plan.dpr;
         try {
-          return recordBand(plan, band);
+          return recordBand(plan, band, !!ink);
         } finally {
           c.stepwise = stepwise;
           c.activeLight = wasLight;

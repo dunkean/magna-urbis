@@ -23,7 +23,10 @@ function fixture() {
       raster.prepare(list);
       yield;
     }),
-    bake: vi.fn((list: DisplayList): BakedPrefix => ({ texture: {}, width: list.width, height: list.height, box: [0, 0, list.width, list.height], bytes: 100 })),
+    bake: vi.fn((list: DisplayList, density, options): BakedPrefix => {
+      options?.between?.({} as WebGLFramebuffer, list.width, list.height, [density, 0, 0, density, 2, 2]);
+      return { texture: {}, width: list.width, height: list.height, box: [0, 0, list.width, list.height], bytes: 100 };
+    }),
     bakeSteps: vi.fn(function* (list, density, options) {
       yield;
       return raster.bake(list, density, options);
@@ -114,6 +117,52 @@ function fixture() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('live overlay layer', () => {
+  it('draws retained world ink between area prefixes and suffixes, including motion snapshots', () => {
+    const f = fixture(),
+      order: string[] = [];
+    Object.assign(f.host, { ink: { ready: () => true, work: vi.fn(() => false), draw: () => order.push('ink'), stats: () => ({ drawCalls: 2, triangles: 8, ms: 1, late: 0 }), contextLost: vi.fn(), dispose: vi.fn() } });
+    f.layer.work!(10000, f.frame());
+    vi.mocked(f.raster.replayLive).mockImplementation(parts => {
+      if (parts.every(part => part.list.ops.length === 0)) {
+        order.push('prefix');
+        expect(parts.every(part => !!part.baked)).toBe(true);
+      } else {
+        order.push('suffix');
+        expect(parts.every(part => part.baked === undefined)).toBe(true);
+      }
+    });
+    f.layer.draw(f.frame());
+    expect(order).toEqual(['prefix', 'ink', 'suffix']);
+    expect(f.layer.stats!()).toMatchObject({ drawCalls: 6, triangles: 16 });
+    // A full snapshot keeps the prefix, world ink, and suffix in order, so moving frames replay one image.
+    f.layer.work!(10000, f.frame(0, 1.3));
+    expect(vi.mocked(f.raster.bake).mock.calls.some(([, , options]) => !!options?.under && !!options.between)).toBe(true);
+    vi.mocked(f.raster.replayLive).mockImplementation(parts => {
+      order.push('snapshot');
+      expect(parts.every(part => part.list.ops.length === 0 && !!part.baked)).toBe(true);
+    });
+    order.length = 0;
+    f.layer.draw(f.frame(0, 1, true));
+    expect(order).toEqual(['snapshot']);
+  });
+
+  it('replays retained geometry once when only some bands have full motion snapshots', () => {
+    const f = fixture(),
+      draw = vi.fn();
+    Object.assign(f.host, { ink: { ready: () => true, work: () => false, draw, stats: () => ({ drawCalls: 2, triangles: 8, ms: 1, late: 0 }), contextLost: vi.fn(), dispose: vi.fn() } });
+    f.layer.work!(10000, f.frame());
+    vi.mocked(f.raster.bake).mockReturnValueOnce(null);
+    f.layer.work!(10000, f.frame(0, 1.3));
+    draw.mockClear();
+    vi.mocked(f.raster.replayLive).mockClear();
+    f.layer.draw(f.frame(0, 1, true));
+    expect(draw).toHaveBeenCalledOnce();
+    expect(f.raster.replayLive).toHaveBeenCalledTimes(2);
+    const suffix = vi.mocked(f.raster.replayLive).mock.lastCall![0];
+    expect(suffix.every(part => part.baked === undefined && part.list.ops.length > 0)).toBe(true);
+    expect(f.layer.stats!().snapshot).toBe(0);
+  });
+
   it('records full bands before presenting, reports the same fields and draws prepared parts', () => {
     const f = fixture(),
       frame = f.frame();

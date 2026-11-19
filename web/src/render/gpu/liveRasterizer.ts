@@ -8,7 +8,7 @@
  * `liveTally().late`) and never reads the context (errors: IdleErrorRead). `bake` rasterizes the area prefix of a band
  * once into a mipmapped texture, drawn by later frames as one quad.
  */
-import { GpuRasterError, IDENTITY, type BakedPrefix, type ClipNode, type DisplayList, type LivePart, type LiveRasterizer, type Mat } from './contract';
+import { GpuRasterError, IDENTITY, type BakedPrefix, type ClipNode, type DisplayList, type LiveBakeOptions, type LivePart, type LiveRasterizer, type Mat } from './contract';
 import { IdleErrorRead } from './glErrors';
 import { Program } from './program';
 import { ListReplayer } from './replay';
@@ -190,13 +190,13 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
     this.bakeH = h;
     return true;
   }
-  bake(list: DisplayList, density: number, options?: { under?: BakedPrefix; samples?: number }): BakedPrefix | null {
+  bake(list: DisplayList, density: number, options?: LiveBakeOptions): BakedPrefix | null {
     const steps = this.bakeSteps(list, density, options, false);
     let step = steps.next();
     while (!step.done) step = steps.next();
     return step.value;
   }
-  *bakeSteps(list: DisplayList, density: number, options?: { under?: BakedPrefix; samples?: number }, sliced = true): Generator<void, BakedPrefix | null> {
+  *bakeSteps(list: DisplayList, density: number, options?: LiveBakeOptions, sliced = true): Generator<void, BakedPrefix | null> {
     if (this.lost || list.unsupported || !(density > 0)) return null;
     const gl = this.gl,
       g = BAKE_GUTTER,
@@ -219,6 +219,13 @@ class LiveListRasterizer extends ListReplayer implements LiveRasterizer {
       const post: Mat = [density, 0, 0, density, g, g];
       // An earlier bake of the same band under the ops (texel on texel when the densities are equal).
       if (under) this.drawBaked(under, post);
+      if (options?.between) {
+        options.between(this.bakeFbo!, w, h, post);
+        // The ink uses its own retained rasterizer in this context. Restore ours without clearing the colour.
+        this.setup(this.bakeFbo);
+        gl.enable(gl.SCISSOR_TEST);
+        gl.scissor(0, 0, w, h);
+      }
       // Colour samples stay in the same target between slices. Resolving intermediate textures would change
       // antialiasing where translucent operations overlap. Restore GL state after every yield (shared context).
       if (!sliced) this.replayList(list, post);

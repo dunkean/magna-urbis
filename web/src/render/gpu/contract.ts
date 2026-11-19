@@ -203,6 +203,13 @@ export interface LivePart {
   baked?: BakedPrefix;
 }
 
+export interface LiveBakeOptions {
+  under?: BakedPrefix;
+  samples?: number;
+  /** Retained world ink between the prefix and the list; `post` maps recorded pixels into this bake's target. */
+  between?(target: WebGLFramebuffer, width: number, height: number, post: Mat): void;
+}
+
 export interface LiveRasterizer {
   readonly lost: boolean;
   /** Largest side of a baked texture in this context. */
@@ -214,9 +221,9 @@ export interface LiveRasterizer {
   /** Replays `list` once into a transparent multisampled target of `list.width x list.height` recorded pixels times
    * `density` (plus a gutter) and returns it resolved, with mipmaps. Null when the target cannot be made.
    * `under`: an earlier bake of the same band drawn first, under the ops. `samples`: multisample count (default 4). */
-  bake(list: DisplayList, density: number, options?: { under?: BakedPrefix; samples?: number }): BakedPrefix | null;
+  bake(list: DisplayList, density: number, options?: LiveBakeOptions): BakedPrefix | null;
   /** The same multisampled bake across slices; its scratch target stays private until completion or cancellation. */
-  bakeSteps(list: DisplayList, density: number, options?: { under?: BakedPrefix; samples?: number }): Generator<void, BakedPrefix | null>;
+  bakeSteps(list: DisplayList, density: number, options?: LiveBakeOptions): Generator<void, BakedPrefix | null>;
   releaseBaked(baked: BakedPrefix): void;
   /** Frees the multisampled scratch target of the bakes (a region is complete). */
   releaseBakeScratch(): void;

@@ -5,9 +5,13 @@
  */
 import { RecordingCanvas } from '../gpu/recorder';
 
-export function createMapRecording(width: number, height: number): RecordingCanvas {
+const retainedInk = new WeakSet<object>();
+export const hasRetainedInk = (context: object): boolean => retainedInk.has(context);
+
+export function createMapRecording(width: number, height: number, ink = false): RecordingCanvas {
   const canvas = new RecordingCanvas(width, height);
   const context = canvas.getContext('2d')!;
+  if (ink) retainedInk.add(context);
   context.fillText = context.strokeText = () => {};
   return canvas;
 }

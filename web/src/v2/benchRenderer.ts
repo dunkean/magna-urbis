@@ -198,10 +198,11 @@ export class BenchRenderer {
 
   dispose(): void {
     const map = this.map,
-      { ground, cartography, town } = this.products;
+      { ground, cartography, town, contours } = this.products;
     map.disposed = true;
     this.view.dispose();
     cartography.dispose();
+    contours.dispose();
     town.dispose();
     ground.dispose();
     if (map.ownsShared) map.shared.cache.clear();

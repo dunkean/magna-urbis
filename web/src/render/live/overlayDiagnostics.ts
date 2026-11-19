@@ -52,7 +52,7 @@ export function createOverlayDiagnostics() {
     cached: 0,
     cacheBytes: 0,
   };
-  const refresh = (r: Region | undefined, pending: Region | undefined, raster: LiveRasterizer, cached: number, cacheBytes: number): void => {
+  const refresh = (r: Region | undefined, pending: Region | undefined, raster: LiveRasterizer, cached: number, cacheBytes: number, inkBytes = 0): void => {
     let baked = 0,
       empty = 0,
       snapshots = 0;
@@ -68,7 +68,7 @@ export function createOverlayDiagnostics() {
     stats.snapshots = snapshots;
     stats.draft = r?.draft ? 1 : 0;
     stats.pending = pending ? 1 : 0;
-    stats.bytes = raster.bytes();
+    stats.bytes = raster.bytes() + inkBytes;
     stats.cached = cached;
     stats.cacheBytes = cacheBytes;
   };
@@ -114,19 +114,19 @@ export function createOverlayDiagnostics() {
       if (snapshot) snapshots++;
       else if (far && b.suffix.ops.length && meets(b.rect, frame.rect)) replayedFar++;
     },
-    drawn(raster: LiveRasterizer, kx: number): void {
+    drawn(raster: LiveRasterizer, kx: number, extra: Partial<LiveLayerStats> = {}): void {
       const s = raster.lastStats(),
         tally = raster.liveTally();
-      stats.drawCalls = s.drawCalls;
-      stats.triangles = s.triangles;
-      stats.ms = s.ms;
-      stats.clips = s.clips;
-      stats.ops = s.ops;
-      stats.fanTriangles = tally.fan;
-      stats.strokeTriangles = tally.stroke;
-      stats.spriteTriangles = tally.sprite;
-      stats.late = tally.late;
-      stats.lateTotal += tally.late;
+      stats.drawCalls = s.drawCalls + (extra.drawCalls ?? 0);
+      stats.triangles = s.triangles + (extra.triangles ?? 0);
+      stats.ms = s.ms + (extra.ms ?? 0);
+      stats.clips = s.clips + (extra.clips ?? 0);
+      stats.ops = s.ops + (extra.ops ?? 0);
+      stats.fanTriangles = tally.fan + (extra.fanTriangles ?? 0);
+      stats.strokeTriangles = tally.stroke + (extra.strokeTriangles ?? 0);
+      stats.spriteTriangles = tally.sprite + (extra.spriteTriangles ?? 0);
+      stats.late = tally.late + (extra.late ?? 0);
+      stats.lateTotal += stats.late;
       stats.snapshot = snapshots ? 1 : 0;
       stats.replayedFar = replayedFar;
       stats.ratio = kx;

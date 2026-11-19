@@ -6,8 +6,10 @@
  * strokes and the wait for paths still in the worker. Called by the cartography's semantic hook (2D), by the physical
  * ground of the 3D drape and by the captures, which await the paths of their scale first.
  */
-import { newPath } from '../../render/gpu/path';
-import { RecordingContext } from '../../render/gpu/recorder';
+import { RecOnlyPath2D } from '../../render/gpu/path';
+import { RecordingCanvas, RecordingContext, parseColor } from '../../render/gpu/recorder';
+import type { DisplayList } from '../../render/gpu/contract';
+import { createContourInk, type ContourInkSource, type OverlayInk } from '../../render/live/contourInk';
 import { terrainStyle } from '../../render/terrainStyle';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { effectiveTerrainSettings } from '../terrainSettings';
@@ -81,7 +83,7 @@ function scanContourPath(d: string, point: (move: boolean, x: number, y: number,
 }
 /** The GPU engine cannot record a native Path2D(string), so it gets the same lines as a RecPath2D. */
 function recordedContourPath(d: string): Path2D {
-  const path = newPath();
+  const path = new RecOnlyPath2D();
   scanContourPath(
     d,
     (move, x, y) => (move ? path.moveTo(x, y) : path.lineTo(x, y)),
@@ -137,9 +139,78 @@ const chunkPath = (chunk: ContourChunk, recording: boolean): Path2D => {
   return (chunk.path ??= new Path2D(chunk.d));
 };
 
+const WORLD_LISTS = new WeakMap<ContourSet, DisplayList>();
+/** One recording per terrain set. These paths never pass through the band's segment clipper. */
+function worldContourList(set: ContourSet, size: number): DisplayList {
+  let list = WORLD_LISTS.get(set);
+  if (list) return list;
+  const canvas = new RecordingCanvas(size, size),
+    ctx = canvas.getContext('2d')!;
+  ctx.lineCap = ctx.lineJoin = 'round';
+  ctx.lineWidth = 1;
+  if (set.thin) ctx.stroke(recordedContourPath(set.thin));
+  ctx.lineWidth = 2;
+  if (set.index) ctx.stroke(recordedContourPath(set.index));
+  list = canvas.finish();
+  WORLD_LISTS.set(set, list);
+  countWork('contour.retain');
+  return list;
+}
+
 export class ContourInk implements Contours {
   revision = 0;
   private contourWaiters = new Map<TerrainData, Set<() => void>>();
+  private liveInks = new Map<WebGL2RenderingContext, OverlayInk>();
+  private landform?: { revision: number; settings: MapState['settings']; size: number; look: { landform: string } | undefined };
+  private liveAppearance?: Pick<MapState, 'townContent' | 'native' | 'settings' | 'resolved' | 'exportLayers' | 'world'> & { contours: number; source?: ContourInkSource };
+
+  createLiveInk(gl: WebGL2RenderingContext): OverlayInk | undefined {
+    if (contourDrawOf(this.map.resolved?.composition.recipe).detail !== 'fixed') return undefined;
+    let ink = this.liveInks.get(gl);
+    if (!ink) {
+      ink = createContourInk(gl, () => this.liveSource());
+      if (ink) this.liveInks.set(gl, ink);
+    }
+    return ink;
+  }
+  private liveSource(): ContourInkSource | null | undefined {
+    const previous = this.liveAppearance;
+    if (
+      previous &&
+      previous.townContent === this.map.townContent &&
+      previous.contours === this.revision &&
+      previous.native === this.map.native &&
+      previous.resolved === this.map.resolved &&
+      previous.settings === this.map.settings &&
+      previous.exportLayers === this.map.exportLayers &&
+      previous.world === this.map.world
+    )
+      return previous.source;
+    const appearance = { townContent: this.map.townContent, contours: this.revision, native: this.map.native, resolved: this.map.resolved, settings: this.map.settings, exportLayers: this.map.exportLayers, world: this.map.world };
+    const look = this.contourLook();
+    if (!look) {
+      this.liveAppearance = appearance;
+      return undefined;
+    }
+    const r = this.map.resolved!,
+      terrain = this.map.native!,
+      mode = contourDrawOf(r.composition.recipe);
+    const paths = cityContourPaths(terrain, look.landform, 0, r.composition.recipe.ground.variant === 'topographic', undefined, 'fixed', mode.sparse);
+    if (cityContourPathsPending(terrain, look.landform, 0, r.composition.recipe.ground.variant === 'topographic', 'fixed', mode.sparse)) {
+      this.afterContours(this.contoursReady);
+      return null;
+    }
+    const pal = terrainStyle(r.ground.style, r.palette.colors).palette;
+    const color = parseColor(pal.contour);
+    if (!color) throw new Error('Contour ink cannot represent the palette colour');
+    const source: ContourInkSource = { terrain, list: worldContourList(paths, terrain.width), color, opacity: pal.contourOpacity * mode.opacity, thinWeight: pal.contourThinW ?? 1, indexWeight: pal.contourIndexW / 1.6 };
+    this.liveAppearance = { ...appearance, source };
+    return source;
+  }
+  dispose(): void {
+    for (const ink of this.liveInks.values()) ink.dispose();
+    this.liveInks.clear();
+  }
 
   constructor(
     private readonly map: MapState,
@@ -205,8 +276,13 @@ export class ContourInk implements Contours {
       t = this.map.native,
       world = this.map.world;
     if (!r || !t || !world || !r.ground.contours || this.map.exportLayers.terrain === false || (!this.map.layers().relief && r.composition.variant !== 'topographic') || t.caveMask.length || isFantasyStyle(r.ground.style)) return undefined;
-    const landform = effectiveTerrainSettings(this.map.settings!, world.mapSize).relief;
-    return landform === 'cavern' ? undefined : { landform };
+    // The appearance revision also changes when settings are edited in place. Deriving the entire terrain recipe
+    // just to read its relief in every region-key/readiness query otherwise allocates on every navigation frame.
+    if (!this.landform || this.landform.revision !== this.map.townContent || this.landform.settings !== this.map.settings || this.landform.size !== world.mapSize) {
+      const landform = effectiveTerrainSettings(this.map.settings!, world.mapSize).relief;
+      this.landform = { revision: this.map.townContent, settings: this.map.settings, size: world.mapSize, look: landform === 'cavern' ? undefined : { landform } };
+    }
+    return this.landform.look;
   }
   /** Same screen weight at every zoom; close views split the interval (cityFineContours) instead of losing the lines on flat ground. */
   /** Contours on one 3D drape tile (world square `box` on `target`); heavier than on the flat map, as the tile is seen minified and at a slant. */

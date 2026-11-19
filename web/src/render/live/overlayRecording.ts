@@ -197,11 +197,21 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
   /** Far from the recorded scale, strokes lose their hairline batching and cover quads fill the target. Baking at
    * most four small snapshots caps that frame cost. True when a bake was attempted, including failed targets. */
   const snap = (r: Region): boolean => {
+    if (host.ink && !host.ink.ready()) return false;
     let did = false;
     for (const b of r.parts) {
-      if (b.snapshot || b.snapshotFailed || !b.suffix.ops.length) continue;
+      if (b.snapshot || b.snapshotFailed || (!b.suffix.ops.length && !host.ink)) continue;
       const t = host.now();
-      const baked = raster.bake(b.suffix, Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)), { under: b.baked, samples: MOVING_SAMPLES });
+      const baked = raster.bake(b.suffix, Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)), {
+        under: b.baked,
+        samples: MOVING_SAMPLES,
+        between: host.ink
+          ? (target, width, height, post) => {
+              const scale = r.scale * r.dpr * post[0];
+              host.ink!.draw({ target, width, height, view: { cx: b.cx, cy: b.cy, scale: r.scale }, quality: r.light ? 'light' : 'full', worldToPixel: [scale, scale, (b.w * post[0]) / 2 - b.cx * scale + post[4], (b.h * post[3]) / 2 - b.cy * scale + post[5]] });
+            }
+          : undefined,
+      });
       diagnostics?.baked(host.now() - t);
       // No target for it: the band goes on replaying its suffix (correct, at its cost).
       if (baked) b.snapshot = baked;

@@ -34,6 +34,7 @@ import { passKeys } from '../passes/pass';
 import { buildScene, type SceneMask, type Scene } from '../../render/scene';
 import { drawRuralSemantic, ruralSemanticLegend, urbanSemanticLegend } from '../../render/semanticLayer';
 import { contourDrawOf } from '../../render/composition';
+import { hasRetainedInk } from '../../render/cartography/mapRecording';
 import type { SemanticLegendEntry } from '../../render/legend';
 import { sceneDirty, worldDirty, changedShapes, shapeKey, mergeRects } from '../../render/sceneDiff';
 import type { Rect } from '../../render/tileindex';
@@ -241,6 +242,7 @@ export class CartographyProducts implements Cartography {
       },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: {
+        createInk: gl => this.parts.contours.createLiveInk(gl),
         key: () => `${semanticLook()}|${this.parts.contours.revision}|${this.parts.water.waterAboveLand() ? JSON.stringify(this.parts.water.vectorView?.region) : ''}`,
         look: semanticLook,
         arrivals: () => {
@@ -264,7 +266,7 @@ export class CartographyProducts implements Cartography {
             view = water.vectorView?.region,
             covered = !!view && view.x <= rect.minX && view.y <= rect.minY && view.x + view.width >= rect.maxX && view.y + view.height >= rect.maxY;
           const coarser = water.tilted ? !water.vectorBase : !covered && (!water.vectorBase || water.vectorPending);
-          if (this.parts.contours.pendingAt(mpp) || (water.waterAboveLand() && !!water.vectors && coarser)) this.provisionalDraws++;
+          if ((!hasRetainedInk(ctx) && this.parts.contours.pendingAt(mpp)) || (water.waterAboveLand() && !!water.vectors && coarser)) this.provisionalDraws++;
         },
         legend: () => this.semanticLegend(),
       },
@@ -390,7 +392,7 @@ export class CartographyProducts implements Cartography {
     if (!inline && before && before.key !== this.semantic.key && this.renderer) return this.overlaysPass();
   }
   paintRural(ctx: CanvasRenderingContext2D, viewport: WorldBox, mpp: number, light = false): void {
-    this.parts.contours.paintContours(ctx, viewport, mpp, 1, light);
+    if (!hasRetainedInk(ctx)) this.parts.contours.paintContours(ctx, viewport, mpp, 1, light);
     const s = this.semantic;
     const lineView = this.map.resolved?.composition.variant === 'topographic';
     if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.map.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes, patterns: !light && !lineView, fieldStrips: lineView });

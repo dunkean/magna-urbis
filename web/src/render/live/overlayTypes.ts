@@ -4,6 +4,7 @@
  */
 import type { Rect4, View } from '../view';
 import type { BakedPrefix, DisplayList } from '../gpu/contract';
+import type { OverlayInk } from './contourInk';
 
 export interface OverlayPlan {
   key: string;
@@ -26,6 +27,8 @@ export interface OverlayBand {
 
 /** What the renderer that owns the map gives the layer (render/cartography/liveHost.ts). */
 export interface OverlayHost {
+  /** Retained world ink between the baked areas and the suffix. Its owner keeps it across look changes. */
+  readonly ink?: OverlayInk;
   /** True while the GPU vector engine draws the live map; otherwise the layer is never ready (its stand-in shows). */
   active(): boolean;
   /** Everything a retained region depends on besides its rectangle and `arrivals`; undefined when it cannot be recorded. */
@@ -49,7 +52,7 @@ export interface OverlayHost {
   readonly maxWaitMs: number;
 }
 
-export type MutablePart = { list: DisplayList; post: [number, number, number, number, number, number]; scissor: [number, number, number, number]; baked?: BakedPrefix };
+export type MutablePart = { list: DisplayList; post: [number, number, number, number, number, number]; scissor: [number, number, number, number]; baked?: BakedPrefix; prefix?: BakedPrefix; suffix?: DisplayList };
 export interface Band {
   rect: Rect4;
   cx: number;

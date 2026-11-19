@@ -31,7 +31,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
   const retained = createOverlayRegions(raster, host, diagnostics);
   const recording = createOverlayRecording(raster, host, retained, diagnostics);
   const drape = createOverlayDrape(raster, host, retained, () => !!failed);
-  const refresh = (): void => diagnostics.refresh(retained.shown, recording.pending, raster, retained.size, retained.bytes);
+  const refresh = (): void => diagnostics.refresh(retained.shown, recording.pending, raster, retained.size, retained.bytes, host.ink?.stats().bytes ?? 0);
   const fail = (error: unknown): void => {
     const lost = raster.lost;
     retained.releaseShown();
@@ -46,6 +46,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
 
   /** Why the region shown is not the overlay at rest of `frame`; '' when it is. */
   const restGap = (frame: LiveFrame): string => {
+    if (host.ink && !host.ink.ready()) return 'ink pending';
     if (failed) return `failed: ${failed}`;
     if (!host.active()) return 'inactive (vector engine or raster failed)';
     if (raster.lost) return 'context lost';
@@ -67,7 +68,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
    * were prepared when it was shown; what the arena dropped since is uploaded in this frame. */
   const underPool: MutablePart[] = [];
   const underLive: MutablePart[] = [];
-  const beneath = (u: Region, r: Region, frame: LiveFrame): readonly LivePart[] => {
+  const beneath = (u: Region, r: Region, frame: LiveFrame): readonly MutablePart[] => {
     const [sx, sy, tx, ty] = frame.worldToPixel,
       kx = sx / (u.scale * u.dpr),
       ky = sy / (u.scale * u.dpr),
@@ -78,7 +79,9 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       if (!(maxX > minX && maxY > minY) || !(minX < frame.rect.maxX && maxX > frame.rect.minX && minY < frame.rect.maxY && maxY > frame.rect.minY)) return;
       const p = (underPool[underLive.length] ??= { list: NOTHING, post: [1, 0, 0, 1, 0, 0], scissor: [0, 0, 0, 0] }),
         snapshot = far || frame.moving ? b.snapshot : undefined;
-      p.baked = snapshot ?? b.baked;
+      p.prefix = b.baked;
+      p.suffix = b.suffix;
+      p.baked = snapshot ?? (host.ink ? undefined : b.baked);
       p.list = snapshot ? NOTHING : b.suffix;
       p.post[0] = kx;
       p.post[3] = ky;
@@ -100,8 +103,12 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       piece(b, Math.max(a.minX, hole.maxX), y0, a.maxX, y1);
     }
     for (const p of r.live) underLive.push(p as MutablePart);
-    return underLive as readonly LivePart[];
+    return underLive;
   };
+
+  const prefixPool: MutablePart[] = [],
+    prefixLive: MutablePart[] = [];
+  const extra = { drawCalls: 0, triangles: 0, ms: 0, late: 0, clips: 0, ops: 0, fanTriangles: 0, strokeTriangles: 0, spriteTriangles: 0 };
 
   return {
     name: 'overlay',
@@ -111,7 +118,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       const r = retained.shown;
       // A region keeps showing at any scale while its replacement is made, as long as it was recorded for this pixel
       // ratio; one that no longer meets the view has nothing to show.
-      return !!r && !failed && r.dpr === frame.dpr && meets(r.rect, frame.rect) && host.active() && !raster.lost;
+      return !!r && !failed && r.dpr === frame.dpr && meets(r.rect, frame.rect) && host.active() && !raster.lost && (!host.ink || host.ink.ready());
     },
     restExact(frame: LiveFrame): boolean {
       const why = restGap(frame);
@@ -145,11 +152,13 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         scissor[3] = b.rect.maxY * sy + ty;
         // Reuse prepared snapshots during motion too; missing or failed bakes still replay the exact suffix.
         const snapshot = far || frame.moving ? b.snapshot : undefined;
+        part.prefix = b.baked;
+        part.suffix = b.suffix;
         if (snapshot) {
           part.baked = snapshot;
           part.list = NOTHING;
         } else {
-          part.baked = b.baked;
+          part.baked = host.ink ? undefined : b.baked;
           part.list = b.suffix;
         }
         diagnostics.bandDrawn(b, snapshot, far, frame);
@@ -158,8 +167,53 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       // rest of the view under it, rather than the bare ground, until the region of this view is made.
       const under = covers(r.rect, frame.rect) ? undefined : retained.find(c => !c.stale && c.dpr === frame.dpr && retained.current(c) && meets(c.rect, frame.rect));
       try {
-        raster.replayLive(under ? beneath(under, r, frame) : (r.live as readonly LivePart[]), frame.target, frame.width, frame.height);
-        diagnostics.drawn(raster, kx);
+        const parts = under ? beneath(under, r, frame) : r.live;
+        const snapshots = !!host.ink && parts.every(part => part.list === NOTHING && !!part.baked);
+        extra.drawCalls = extra.triangles = extra.ms = extra.late = 0;
+        extra.clips = extra.ops = extra.fanTriangles = extra.strokeTriangles = extra.spriteTriangles = 0;
+        if (host.ink && !snapshots) {
+          // A full snapshot already contains the ink. If any part lacks one, replay all suffixes around one world
+          // ink pass, so a partial snapshot cannot cover the ink or blend it twice at a retained-region seam.
+          for (const part of parts) {
+            part.baked = undefined;
+            part.list = part.suffix!;
+          }
+          diagnostics.beginDraw();
+          for (const b of r.parts) diagnostics.bandDrawn(b, undefined, far, frame);
+          prefixLive.length = 0;
+          for (const part of parts) {
+            if (!part.prefix) continue;
+            const prefix = (prefixPool[prefixLive.length] ??= { list: NOTHING, post: part.post, scissor: part.scissor });
+            prefix.baked = part.prefix;
+            prefix.post = part.post;
+            prefix.scissor = part.scissor;
+            prefixLive.push(prefix);
+          }
+          raster.replayLive(prefixLive, frame.target, frame.width, frame.height);
+          const prefixStats = raster.lastStats();
+          extra.drawCalls = prefixStats.drawCalls;
+          extra.triangles = prefixStats.triangles;
+          extra.ms = prefixStats.ms;
+          extra.late = raster.liveTally().late;
+          extra.clips = prefixStats.clips;
+          extra.ops = prefixStats.ops;
+          extra.fanTriangles = raster.liveTally().fan;
+          extra.strokeTriangles = raster.liveTally().stroke;
+          extra.spriteTriangles = raster.liveTally().sprite;
+          host.ink.draw(frame);
+          const inkStats = host.ink.stats();
+          extra.drawCalls += inkStats.drawCalls;
+          extra.triangles += inkStats.triangles;
+          extra.ms += inkStats.ms;
+          extra.late += inkStats.late ?? 0;
+          extra.clips += inkStats.clips ?? 0;
+          extra.ops += inkStats.ops ?? 0;
+          extra.fanTriangles += inkStats.fanTriangles ?? 0;
+          extra.strokeTriangles += inkStats.strokeTriangles ?? 0;
+          extra.spriteTriangles += inkStats.spriteTriangles ?? 0;
+        }
+        raster.replayLive(parts, frame.target, frame.width, frame.height);
+        diagnostics.drawn(raster, kx, extra);
       } catch (error) {
         fail(error);
       } finally {
@@ -180,11 +234,12 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       drape.cancel();
       let more = false;
       try {
+        const inkWork = host.ink?.work(budgetMs, frame) ?? false;
         // The programs start compiling at the first call and are polled at each one; nothing is shown before.
         const warm = raster.warm(),
           wanted = recording.work(frame, start, budgetMs);
         drape.wanted(frame, wanted);
-        more = wanted || !warm;
+        more = wanted || !warm || inkWork;
         // Idle and at rest: a slice of what the next recordings would make in one block, at most WARM_SLICE_MS.
         if (!more && !recording.moving) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
         recording.snapshots(frame);
@@ -218,6 +273,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
       drape.cancel();
       // Dead handles must be forgotten without deleting resources from the lost context.
       raster.dropContext();
+      host.ink?.contextLost();
       retained.forgetShown();
       recording.forgetPending();
       retained.clear(false);
