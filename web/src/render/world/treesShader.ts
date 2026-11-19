@@ -131,8 +131,15 @@ void main(){
 /** Screen-door coverage keeps depth writes correct while letting the painted crowns show through. The threshold is
  * stable in screen space, shared by all surfaces of a tree: overlapping back faces cannot restore its opacity.
  * Derivatives are evaluated before discarding, so the crown's clump footprint remains defined. */
-export const WORLD_TREE_FS = TREE_3D_GLSL.fragment.replace('out vec4 color;', 'flat in float modelOpacity;\nout vec4 color;').replace(
-  '  vec3 albedo=tint;',
-  `  if(modelOpacity<1.&&fract(52.9829189*fract(dot(floor(gl_FragCoord.xy),vec2(.06711056,.00583715))))>=modelOpacity)discard;
+// The painted crowns already carry canopy shade. Strong directional light and a second deep occlusion term darkened
+// the same stand on tilt. More ambient light lifts the shadow side; weaker base occlusion keeps its mean colour,
+// while directional light and the unchanged crown clumps still describe volume. Constants only: identical shader cost.
+export const WORLD_TREE_FS = TREE_3D_GLSL.fragment
+  .replaceAll('.5+.62*', '.90+.40*')
+  .replace('mix(.58,1.,treeLevel)', 'mix(.84,1.,treeLevel)')
+  .replace('out vec4 color;', 'flat in float modelOpacity;\nout vec4 color;')
+  .replace(
+    '  vec3 albedo=tint;',
+    `  if(modelOpacity<1.&&fract(52.9829189*fract(dot(floor(gl_FragCoord.xy),vec2(.06711056,.00583715))))>=modelOpacity)discard;
   vec3 albedo=tint;`,
-);
+  );
