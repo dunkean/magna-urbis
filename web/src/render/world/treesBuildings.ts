@@ -18,6 +18,7 @@ function segmentDistanceSquared(x: number, y: number, a: Point, b: Point): numbe
 
 export class TreeBuildings {
   private readonly cells = new Map<string, Polygon[]>();
+  private readonly signatures = new WeakMap<Polygon, string>();
   constructor(scene: Building3dScene) {
     for (const building of scene.buildings) {
       if (isYardMesh(building)) continue;
@@ -34,6 +35,7 @@ export class TreeBuildings {
           maxY = Math.max(maxY, p.y);
         }
         if (![minX, minY, maxX, maxY].every(Number.isFinite)) continue;
+        this.signatures.set(shape, JSON.stringify(shape));
         for (const ring of [shape.outer, ...shape.holes]) ringContains(ring, minX, minY);
         for (let y = Math.floor(minY / CELL); y <= Math.floor(maxY / CELL); y++)
           for (let x = Math.floor(minX / CELL); x <= Math.floor(maxX / CELL); x++) {
@@ -44,6 +46,16 @@ export class TreeBuildings {
           }
       }
     }
+  }
+
+  /** Only footprints within the maximum wall margin can affect this block. */
+  key(x: number, y: number, size: number): string {
+    const shapes = new Set<Polygon>();
+    for (let cy = Math.floor((y - 3) / CELL); cy <= Math.floor((y + size + 3) / CELL); cy++) for (let cx = Math.floor((x - 3) / CELL); cx <= Math.floor((x + size + 3) / CELL); cx++) for (const shape of this.cells.get(`${cx},${cy}`) ?? []) shapes.add(shape);
+    return [...shapes]
+      .map(shape => this.signatures.get(shape)!)
+      .sort()
+      .join('|');
   }
 
   keeps(x: number, y: number, radius: number): boolean {

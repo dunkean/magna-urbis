@@ -13,6 +13,7 @@
 import { buildNearTreesSteps, TREE_BLOCK, TREE_STRIDE, type TreeInputs } from '../../ui/terrain3dTrees';
 import { TREE_LATHES } from './treesShader';
 import type { TreeBuildings } from './treesBuildings';
+import type { TreeSamples } from './treesContent';
 
 /** Side of a block of trees (m): a multiple of the builder's own block. About 600 trees in a dense stand. */
 export const TREES_BLOCK = 4 * TREE_BLOCK;
@@ -35,13 +36,29 @@ export interface TreeBlock {
   data: Float32Array;
   count: number;
   cells: Int32Array;
+  samples: TreeSamples;
 }
 
 /** The instances of the block (bx, by). One step per 24 m of the block. */
 export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buildings?: TreeBuildings): Generator<void, TreeBlock> {
   const minX = bx * TREES_BLOCK,
     minY = by * TREES_BLOCK;
-  const trees = yield* buildNearTreesSteps(inputs, { x: minX, y: minY, forwardX: 0, forwardY: 1, area: { minX, minY, maxX: minX + TREES_BLOCK, maxY: minY + TREES_BLOCK } });
+  const water: number[] = [],
+    height: number[] = [];
+  const observed: TreeInputs = {
+    ...inputs,
+    water: (x, y) => {
+      const value = inputs.water(x, y);
+      water.push(x, y, value);
+      return value;
+    },
+    height: (x, y) => {
+      const value = inputs.height(x, y);
+      height.push(x, y, value ?? NaN);
+      return value;
+    },
+  };
+  const trees = yield* buildNearTreesSteps(observed, { x: minX, y: minY, forwardX: 0, forwardY: 1, area: { minX, minY, maxX: minX + TREES_BLOCK, maxY: minY + TREES_BLOCK } });
   let length = 0;
   for (let i = 0; i < trees.length; i += TREE_STRIDE) {
     if (buildings && !buildings.keeps(trees[i], trees[i + 1], trees[i + 3])) continue;
@@ -99,7 +116,7 @@ export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buil
   }
   const half = count * TREE_STRIDE;
   for (let i = 0; i < count; i++) out.copyWithin(half + i * TREE_STRIDE, whole[i] * TREE_STRIDE, whole[i] * TREE_STRIDE + TREE_STRIDE);
-  return { data: out, count, cells };
+  return { data: out, count, cells, samples: { water: Float64Array.from(water), height: Float64Array.from(height) } };
 }
 
 /** Level (TREE_LATHES) of trees whose nearest spans `pixels` CSS pixels (TREE_SIZE_M); -1: too small to draw. */
@@ -119,7 +136,7 @@ export function treeDrawCount(count: number, pixels: number): number {
   return pixels >= THIN_PIXELS ? count : Math.ceil((count * pixels * pixels) / (THIN_PIXELS * THIN_PIXELS));
 }
 
-/** What changes the trees of a block: the inputs' content (the water cover function is the inputs' identity). */
+/** Cheap publication stamp. TreeContent and the block's callback samples decide whether its contents changed. */
 export function treeInputsKey(inputs: Omit<TreeInputs, 'height'>): string {
   return [
     inputs.field.key,

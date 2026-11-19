@@ -17,6 +17,7 @@ import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../..
 import type { TerrainHeights } from './heights';
 import type { Building3dScene } from '../urbanBuildingGeometry';
 import { treeBuildings, type TreeBuildings } from './treesBuildings';
+import { TreeContent, treeSamplesMatch, type TreeSamples } from './treesContent';
 import { TREES_BLOCK, TREE_CELLS, TREE_SIZE_M, treeBlockSteps, treeDrawCount, treeInputsKey, treeLevel, type TreeBlock } from './treesBlocks';
 import { SATELLITE_TREES, TREE_LATHES, WORLD_TREE_FS, WORLD_TREE_VS, latheVertices, type TreePalette } from './treesShader';
 import { TREE_MAX_BLOCKS, TREE_MAX_DRAWS, treeMemoryBudget, treeTriangleBudget } from './treesRange';
@@ -26,7 +27,7 @@ import { VOLUME_LIGHT, ViewVolume, hazeDistance, startVolumeProgram, volumeProgr
 export interface WorldTreesOptions {
   /** The inputs of the near trees of the satellite looks, as the 3D view makes them (ui/view3d/terrain/trees.ts),
    * without `height` (the trees stand on `terrain`); undefined: no modelled trees (another look, or switched off). A
-   * new object is compared by content (treeInputsKey) and by its water cover function. */
+   * publication triggers local content checks in work slices (TreeContent), without dropping installed blocks. */
   inputs(): Omit<TreeInputs, 'height'> | undefined;
   terrain(): TerrainHeights | undefined;
   /** Published town footprints; indexed once per scene, queried only while building a tree block. */
@@ -60,6 +61,9 @@ const LIGHT = [VOLUME_LIGHT[0], VOLUME_LIGHT[2], VOLUME_LIGHT[1]] as const;
 const gapTo = (minX: number, minY: number, x: number, y: number): number => Math.hypot(Math.max(minX - x, 0, x - minX - TREES_BLOCK), Math.max(minY - y, 0, y - minY - TREES_BLOCK));
 
 interface Slot {
+  content: string;
+  checked: number;
+  samples: TreeSamples;
   vao?: WebGLVertexArrayObject;
   buffer?: WebGLBuffer;
   count: number;
@@ -74,6 +78,7 @@ interface Slot {
 }
 interface Building {
   key: number;
+  content: string;
   steps: Generator<void, TreeBlock>;
 }
 
@@ -113,6 +118,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     inputs: TreeInputs | undefined;
   let building: Building | undefined;
   let scene: Building3dScene | undefined, buildings: TreeBuildings | undefined;
+  let revision = 0,
+    content: TreeContent | undefined;
   let distance = NaN,
     limits: TreeLimits = treeLimits(600);
 
@@ -128,14 +135,15 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     wanted = drawnCountTotal = 0;
   };
 
-  /** The inputs of the page: other trees or another terrain start the blocks again. */
+  /** A new publication checks local content in work slices. Installed blocks remain visible until replaced. */
   const sync = (): void => {
     const next = options.inputs(),
       nextHeights = options.terrain(),
       nextScene = options.buildings?.();
     const key = next ? treeInputsKey(next) : '';
-    if (key === sourceKey && next?.water === source?.water && nextHeights === heights && nextScene === scene) return;
-    dropAll();
+    if (next === source && key === sourceKey && nextHeights === heights && nextScene === scene) return;
+    building = undefined;
+    revision++;
     source = next;
     sourceKey = key;
     heights = nextHeights;
@@ -150,12 +158,13 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       unit = relief.exaggeration > 0 ? 1 / relief.exaggeration : 1;
     // The builder wants the ground in metres (0 and below: the sea, no tree); TerrainHeights gives it as drawn.
     inputs = { ...next, height: (x, y) => relief.heightAt(x, y) * unit };
+    content = new TreeContent(inputs, buildings);
   };
 
-  const upload = (key: number, block: TreeBlock): void => {
+  const upload = (key: number, block: TreeBlock, signature: string): void => {
     const data = block.data,
       count = block.count,
-      slot: Slot = { count, bytes: data.byteLength, used: tick, low: Infinity, high: -Infinity, top: 0, cells: block.cells };
+      slot: Slot = { content: signature, checked: revision, samples: block.samples, count, bytes: data.byteLength, used: tick, low: Infinity, high: -Infinity, top: 0, cells: block.cells };
     for (let i = 0; i < count * TREE_STRIDE; i += TREE_STRIDE) {
       slot.low = Math.min(slot.low, data[i + 2]);
       slot.high = Math.max(slot.high, data[i + 2]);
@@ -176,6 +185,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
       bytes += data.byteLength;
     } else slot.bytes = 0;
+    const previous = slots.get(key);
+    if (previous) drop(previous);
     slots.set(key, slot);
   };
 
@@ -290,25 +301,35 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       if (!inputs) return !linked;
       if (!linked) return slice(started, true);
       for (;;) {
+        if (performance.now() - started > budgetMs) return slice(started, true);
         if (!building) {
           // The nearest block the last frame wanted that is not built yet.
           let best = -1;
-          for (let i = 0; i < wanted; i++) if (!slots.has(wantKey[i]) && (best < 0 || wantPriority[i] < wantPriority[best])) best = i;
+          for (let i = 0; i < wanted; i++) if (slots.get(wantKey[i])?.checked !== revision && (best < 0 || wantPriority[i] < wantPriority[best])) best = i;
           if (best < 0) {
             wanted = 0;
             break;
           }
           const key = wantKey[best];
-          building = { key, steps: treeBlockSteps(inputs, key % 65536, Math.floor(key / 65536), buildings) };
-          diagnostics?.startBlock();
           wantKey[best] = wantKey[wanted - 1];
           wantPriority[best] = wantPriority[wanted - 1];
           wanted--;
+          const bx = key % 65536,
+            by = Math.floor(key / 65536),
+            signature = content!.key(bx, by),
+            slot = slots.get(key);
+          if (slot && slot.content === signature && treeSamplesMatch(slot.samples, inputs)) {
+            slot.checked = revision;
+            stats.reused = (stats.reused ?? 0) + 1;
+            continue;
+          }
+          building = { key, content: signature, steps: treeBlockSteps(inputs, bx, by, buildings) };
+          diagnostics?.startBlock();
         }
         if (performance.now() - started > budgetMs) return slice(started, true);
         const step = diagnostics ? diagnostics.step(building.steps) : building.steps.next();
         if (step.done) {
-          upload(building.key, step.value);
+          upload(building.key, step.value, building.content);
           diagnostics?.built();
           building = undefined;
           if (frame?.camera.tilted) options.invalidate();
@@ -362,7 +383,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
               slot = slots.get(key),
               x = minX + TREES_BLOCK / 2 - tx,
               y = minY + TREES_BLOCK / 2 - ty;
-            if (!slot) {
+            if (!slot || slot.checked !== revision) {
               // Not built: wanted only in view (the ground under its centre and the tallest trees stand for its
               // trees), nearest to the eye first; what lies behind or under the eye is neither built nor kept.
               const z = relief.heightAt(x + tx, y + ty) * rise - tz;
@@ -370,7 +391,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
                 wantKey[wanted] = key;
                 wantPriority[wanted++] = volume.depth(x, y, z);
               }
-              continue;
+              if (!slot) continue;
             }
             if (!slot.count || visibleCount >= TREE_MAX_BLOCKS) continue;
             const low = slot.low * drawnPerMetre,
