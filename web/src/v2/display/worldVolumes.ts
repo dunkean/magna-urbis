@@ -131,6 +131,8 @@ export class WorldVolumes {
         return this.treeSource;
       },
       terrain: relief,
+      // The town's footprints: no modelled tree stands on a building.
+      buildings: () => this.display,
       distance: () => this.distance,
       shown: () => this.treesOn,
       night: () => this.night,
