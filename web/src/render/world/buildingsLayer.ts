@@ -20,6 +20,7 @@ import { BuildingBlockCache, type BuildingLevel as Level, type BuildingSlot as S
 import type { VolumeTownLook } from '../city/buildingLook';
 import { BuildingDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 import { buildingTriangleBudget, getViewDepth, VIEW_DEPTH_MAX } from './viewDepth';
+import { countWork } from '../workCount';
 
 export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
@@ -54,6 +55,8 @@ const MAX_UNITS = 32768;
 /** Draws a frame may issue: a block whole, or the runs of its cells that share a level. */
 const MAX_DRAWS = 8192;
 const CELLS = BLOCK_CELLS * BLOCK_CELLS;
+/** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
+const DORMANT_LOOKS = 2;
 const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
@@ -62,7 +65,19 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, bytes: 0 };
   const diagnostics = layerDiagnosticsEnabled() ? new BuildingDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
-  const cache = new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
+  const newCache = (): BuildingBlockCache => new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
+  let cache = newCache();
+  /** The block caches of other looks of the town on this relief, by appearance key, most recent last: a switch back to
+   * a look finds its meshes. The blocks (grouped) depend on the scene only, which a look may keep. */
+  const dormant = new Map<string, { scene: Building3dScene; heights: TerrainHeights; grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'>; cache: BuildingBlockCache }>();
+  let grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'> | undefined;
+  const dropDormant = (lost = false): void => {
+    for (const held of dormant.values()) {
+      if (lost) held.cache.contextLost();
+      else held.cache.clear();
+    }
+    dormant.clear();
+  };
   // The blocks in view of a frame: slot, height centre and half range, radius.
   const visible: Slot[] = [],
     visibleZ = new Float64Array(16384),
@@ -102,17 +117,58 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     const isNight = nextAppearance.ambience === 'night';
     night = isNight ? ((nextAppearance.lightsOn ?? isNight) ? 1 : 2) : 0;
     if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey && nextLook === look) return;
+    // Another look of the same town: its meshes (vertex colours) are made again on the same blocks, and the current
+    // cache waits for a switch back.
+    const sameTown = !dirty && nextScene === scene && nextHeights === heights && !!grouped && !!scene && !!heights;
+    if (sameTown && paint && key === appearanceKey) {
+      // A new look object with the same frame: the same meshes.
+      appearance = nextAppearance;
+      look = nextLook;
+      paint = worldPaint(scene!, appearance, grouped!.altitudes, look);
+      return;
+    }
+    if (!dirty && scene && heights && grouped && paint) {
+      dormant.delete(appearanceKey);
+      dormant.set(appearanceKey, { scene, heights, grouped, cache });
+      if (dormant.size > DORMANT_LOOKS) {
+        const [oldest, held] = dormant.entries().next().value!;
+        held.cache.clear();
+        dormant.delete(oldest);
+      }
+    } else cache.clear();
+    if (dirty) dropDormant();
     dirty = false;
-    cache.clear();
     visibleCount = 0;
-    paint = undefined;
     scene = nextScene;
     heights = nextHeights;
     appearanceKey = key;
     appearance = nextAppearance;
     look = nextLook;
-    grouping = scene && heights ? new BlockGrouping(scene, heights, heights.exaggeration) : undefined;
     seat = heights && worldSeat(heights, heights.exaggeration);
+    // Entries of another relief are stale.
+    for (const [k, held] of dormant)
+      if (held.heights !== heights) {
+        held.cache.clear();
+        dormant.delete(k);
+      }
+    const back = dormant.get(key);
+    dormant.delete(key);
+    if (back && back.scene !== scene) back.cache.clear();
+    const kept = back?.scene === scene ? back : undefined,
+      blocks = kept?.grouped ?? (sameTown ? grouped : [...dormant.values()].find(held => held.scene === scene)?.grouped);
+    cache = kept?.cache ?? newCache();
+    if (scene && heights && blocks) {
+      // The same key is the same look (its frame's key); the look object of the new appearance paints the levels still to build.
+      grouped = blocks;
+      paint = worldPaint(scene, appearance, blocks.altitudes, look);
+      if (!kept) cache.setBlocks(blocks.blocks);
+      grouping = undefined;
+      return;
+    }
+    grouped = undefined;
+    paint = undefined;
+    if (scene && heights) countWork('volumes.group');
+    grouping = scene && heights ? new BlockGrouping(scene, heights, heights.exaggeration) : undefined;
   };
 
   /** Work pending is returned independently of the optional slice measurement. */
@@ -315,6 +371,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         if (!grouping.step(deadline)) return slice(started, true);
         paint = worldPaint(scene!, appearance!, grouping.altitudes, look);
         cache.setBlocks(grouping.blocks);
+        grouped = grouping;
         grouping = undefined;
         return slice(started, true);
       }
@@ -410,6 +467,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     contextLost() {
       // Every handle is dead: forget them without deleting.
       cache.contextLost();
+      dropDormant(true);
       program = linking = undefined;
       visibleCount = drawTotal = 0;
       warmed = false;
@@ -419,6 +477,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     stats: () => stats,
     dispose() {
       cache.clear();
+      dropDormant();
       visibleCount = 0;
       if (program) gl.deleteProgram(program.program);
       if (linking) gl.deleteProgram(linking);

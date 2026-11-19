@@ -52,8 +52,11 @@ import { rustSettlementRaster, townRoadStreets, type RustTownSnapshot } from '..
 import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2Resolved3d, v2Terrain3dGround, withV2ActivityScene } from '../urban3d';
 import type { DisplayParts } from './contract';
 import type { MapState } from './mapState';
+import { countWork } from '../../render/workCount';
 
 type TreeSource = Omit<TreeInputs, 'height'>;
+/** Composed town scenes kept per look (WorldVolumes.townMeshes). */
+const LOOK_SCENES = 3;
 /** Water codes of the planning raster (gen/types.ts). */
 const WATER_SEA = 1,
   WATER_LAKE = 2,
@@ -91,6 +94,10 @@ export class WorldVolumes {
   private madeFor: { world?: World; content: number; resolved?: ResolvedAppearance; heights?: TerrainHeights } = { content: -1 };
   /** What the town was composed from, besides the world and the relief. */
   private townOf: { cities: readonly RustTownSnapshot[]; world?: World; heights?: TerrainHeights; key: string } = { cities: [], key: '' };
+  /** The towns' meshes (city3dBuildingsSteps), which no look changes, and the scenes composed from them per look (a few,
+   * most recent last): a switch between looks of the same town publishes the scene it made before, whose blocks the
+   * buildings layer keeps. Dropped with the town or the relief. */
+  private townMeshes?: { cities: readonly RustTownSnapshot[]; world: World; heights: TerrainHeights; display: City3dDisplayScene | undefined; scenes: Map<string, { display?: City3dDisplayScene; collisions?: Terrain3dCollisions }> };
   /** Displayed water cover of the map the trees keep off, one function per world (the trees compare it by identity). */
   private waterOf?: { world: World; rivers?: Float32Array; at: (x: number, y: number) => number };
   /** The top view's town look the volumes take, and what it was made for (the town map, the look on screen, the
@@ -248,12 +255,28 @@ export class WorldVolumes {
       this.walkCollisions = undefined;
       return;
     }
+    let meshes = this.townMeshes;
+    const sameTown = !!meshes && meshes.world === world && meshes.heights === heights && sameV2NativeInputs(meshes.cities, cities, 'scene') && sameV2NativeInputs(meshes.cities, cities, 'layouts');
+    const kept = sameTown ? meshes!.scenes.get(key) : undefined;
+    if (kept) {
+      meshes!.scenes.delete(key);
+      meshes!.scenes.set(key, kept);
+      this.townOf = { cities, world, heights, key };
+      this.appearance = appearance;
+      this.display = kept.display;
+      this.walkCollisions = kept.collisions;
+      return;
+    }
     // The scene holds real heights; the layer seats it on the relief as drawn.
     const unit = heights.exaggeration > 0 ? 1 / heights.exaggeration : 1,
       heightAt: City3dHeight = (x, y) => heights.heightAt(x, y) * unit;
     const layouts = cities.flatMap(city => city.layouts),
-      source = withV2ActivityScene(combineV2NativeScenes(cities), activityScene(world)),
-      display = yield* city3dBuildingsSteps(source, { heightAt });
+      source = withV2ActivityScene(combineV2NativeScenes(cities), activityScene(world));
+    if (!sameTown) {
+      countWork('volumes.compose');
+      meshes = this.townMeshes = { cities, world, heights, display: yield* city3dBuildingsSteps(source, { heightAt }), scenes: new Map() };
+    }
+    const display = meshes!.display;
     yield;
     const structures = city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt }, plan.waterColor, false);
     yield;
@@ -269,6 +292,8 @@ export class WorldVolumes {
     this.appearance = appearance;
     this.display = city3dWithExtras(display, [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks, ...enclosures, ...groves, ...ornaments, ...farms]);
     this.walkCollisions = this.display ? new Terrain3dCollisions(this.display, heights, heights.exaggeration) : undefined;
+    meshes!.scenes.set(key, { display: this.display, collisions: this.walkCollisions });
+    if (meshes!.scenes.size > LOOK_SCENES) meshes!.scenes.delete(meshes!.scenes.keys().next().value!);
   }
 
   private refreshTrees(world: World, r: ResolvedAppearance, resolved: ResolvedAppearance, ground: ReturnType<typeof v2Terrain3dGround>): void {
