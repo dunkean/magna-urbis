@@ -6,6 +6,7 @@ import type { LiveFrame } from '../src/render/live/contract';
 import { BUILDING_BLOCK, BlockGrouping, TownAltitudes, blockLevel, blockPart, worldPaint, worldSeat } from '../src/render/world/buildingsBlocks';
 import { createWorldBuildingsLayer } from '../src/render/world/buildingsLayer';
 import { BuildingBlockCache } from '../src/render/world/buildingsCache';
+import { expandBuildingPart, indexBuildingPart } from '../src/render/world/buildingsIndex';
 import { GroundDiagnostics, layerDiagnosticsEnabled } from '../src/render/live/layerDiagnostics';
 import type { LiveLayerStats } from '../src/render/live/contract';
 import { BUILDING_STRIDE } from '../src/render/world/buildingsMesh';
@@ -100,6 +101,27 @@ function frame(gl: WebGL2RenderingContext, view: View, heights: TerrainHeights):
 }
 
 describe('world buildings', () => {
+  it('uses the same resident roof triangles overhead and at the start of a tilt, even below the plan scale', () => {
+    const heights = relief(4000),
+      scene = town(16, heights),
+      gl = mockGl();
+    const layer = createWorldBuildingsLayer(gl, { scene: () => scene, terrain: () => heights, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), topView: () => true, invalidate: () => {} });
+    const view = { cx: 350, cy: 350, scale: 0.08 };
+    const flat = frame(gl, view, heights);
+    layer.draw(flat);
+    expect(layer.presented()).toBe(false);
+    while (layer.work!(Infinity, flat));
+    layer.draw(flat);
+    expect(layer.presented()).toBe(true);
+    const drawn = layer.stats!().triangles;
+    expect(drawn).toBeGreaterThan(0);
+    const uploaded = vi.mocked(gl.bufferData).mock.calls.length;
+    layer.draw(frame(gl, { ...view, pitch: 0.0001 }, heights));
+    expect(layer.stats!().triangles).toBe(drawn);
+    expect(vi.mocked(gl.bufferData).mock.calls.length).toBe(uploaded);
+    layer.dispose();
+  });
+
   it('stands silhouette houses on the drawn terrain under them, with their real height, in the blocks they cover', () => {
     const heights = relief(4000),
       scene = town(40, heights),
@@ -170,10 +192,12 @@ describe('world buildings', () => {
       while (layer.work!(8, tilted)) slices++;
     }
     const buildMs = performance.now() - started;
-    const drawCalls = vi.mocked(gl.drawArrays).mock.calls.length;
+    const draws = () => vi.mocked(gl.drawArrays).mock.calls.length + vi.mocked(gl.drawElements).mock.calls.length;
+    const drawCalls = draws();
     layer.draw(tilted);
     const stats = layer.stats!();
-    expect(vi.mocked(gl.drawArrays).mock.calls.length - drawCalls).toBe(stats.drawCalls);
+    expect(draws() - drawCalls).toBe(stats.drawCalls);
+    expect(gl.drawElements).toHaveBeenCalled();
     expect(stats.drawCalls).toBeGreaterThan(0);
     // A frame uploads nothing.
     const uploads = vi.mocked(gl.bufferData).mock.calls.length;
@@ -455,7 +479,13 @@ describe('optional layer diagnostics', () => {
         expect('sliceMs' in layer.stats!()).toBe(enabled);
       }
       const count = (s: LiveLayerStats) => [s.drawCalls, s.triangles, s.bytes, s.instances];
-      return { buildings: count(buildings.stats!()), trees: count(trees.stats!()), draws: vi.mocked(gl.drawArrays).mock.calls.map(call => call.slice(1)), instances: vi.mocked(gl.drawArraysInstanced).mock.calls.map(call => call.slice(1)) };
+      return {
+        buildings: count(buildings.stats!()),
+        trees: count(trees.stats!()),
+        draws: vi.mocked(gl.drawArrays).mock.calls.map(call => call.slice(1)),
+        indexed: vi.mocked(gl.drawElements).mock.calls.map(([, n, type, offset]) => [n, type === gl.UNSIGNED_SHORT, offset]),
+        instances: vi.mocked(gl.drawElementsInstanced).mock.calls.map(([, n, , offset, instances]) => [n, offset, instances]),
+      };
     });
     expect(samples[0]).toEqual(samples[1]);
     expect(samples[0].buildings[0]).toBeGreaterThan(0);
@@ -464,6 +494,72 @@ describe('optional layer diagnostics', () => {
 });
 
 describe('building level cache', () => {
+  it('uploads the same cell draws and vertex attributes across multiple mesh parts', () => {
+    const heights = relief(2400),
+      scene = town(80, heights, 12);
+    const block = grouped(scene, heights)[0],
+      gl = mockGl();
+    const cache = new BuildingBlockCache(gl, () => undefined);
+    const paint = worldPaint(scene, { style: 'cartographic', diagnostic: 'none' }, new TownAltitudes());
+    const seat = worldSeat(heights, heights.exaggeration);
+    cache.setBlocks([block]);
+    cache.work(Infinity, 0, paint, seat, () => {});
+    const levelIndex = block.levels - 1;
+    const level = cache.slots[0].levels[levelIndex]!;
+    expect(level.indexBytes).toBe(2);
+    const attributes = new Float32Array(level.vertices * BUILDING_STRIDE),
+      indices = new Uint16Array(level.vertices);
+    const uploads = vi.mocked(gl.bufferSubData).mock.calls as unknown as [number, number, Float32Array | Uint16Array, number?, number?][];
+    for (const [target, offset, source, start = 0, length = source.length] of uploads) {
+      if (target === gl.ARRAY_BUFFER) attributes.set(source.subarray(start, start + length), offset / 4);
+      else if (target === gl.ELEMENT_ARRAY_BUFFER) indices.set(source.subarray(start, start + length), offset / 2);
+    }
+    const reconstructed = new Float32Array(attributes.length);
+    for (let i = 0; i < level.vertices; i++) {
+      const at = indices[i] * BUILDING_STRIDE;
+      reconstructed.set(attributes.subarray(at, at + BUILDING_STRIDE), i * BUILDING_STRIDE);
+    }
+    const original = new Float32Array(attributes.length);
+    let written = 0;
+    for (let cell = 0; cell < block.cells.length - 1; cell++) {
+      expect(level.cellFirst[cell]).toBe(written / BUILDING_STRIDE);
+      for (let from = block.cells[cell]; from < block.cells[cell + 1]; from += 8) {
+        const data = blockPart(block, levelIndex, paint, seat, from, Math.min(from + 8, block.cells[cell + 1]));
+        original.set(data, written);
+        written += data.length;
+      }
+    }
+    expect(written).toBe(original.length);
+    expect(level.bytes).toBeLessThan(original.byteLength);
+    expect(new Uint32Array(reconstructed.buffer)).toEqual(new Uint32Array(original.buffer));
+  });
+
+  it('preserves every vertex bit and triangle in meshes with signed zeros, different face paints and multiple slices', () => {
+    const a = [1, 2, 3, 1, 0, 0, 0.25, 0.5, 0.75, 20];
+    const b = [...a],
+      c = [...a],
+      hard = [...a],
+      seam = [...a],
+      raised = [...a];
+    b[0] = 2;
+    c[2] = 0;
+    hard[4] = -0;
+    seam[6] = 0.5;
+    raised[9] = 21;
+    const source = new Float32Array([...a, ...b, ...c, ...c, ...b, ...a, ...hard, ...seam, ...raised]);
+    const words = new Uint32Array(source.buffer);
+    for (const base of [0, 65534, 70000]) {
+      const part = indexBuildingPart(source.slice(), base);
+      const compact = new Uint32Array(part.data.buffer);
+      expect(part.unique).toBeLessThan(part.indices.length);
+      for (let i = 0; i < part.indices.length; i++) {
+        const from = (part.indices[i] - base) * BUILDING_STRIDE;
+        expect(compact.slice(from, from + BUILDING_STRIDE)).toEqual(words.slice(i * BUILDING_STRIDE, (i + 1) * BUILDING_STRIDE));
+      }
+      expect(new Uint32Array(expandBuildingPart(part).buffer)).toEqual(words);
+    }
+  });
+
   it('protects the current draw tick and stops background rebuilding after an eviction', () => {
     const heights = relief(2400),
       scene = town(4, heights),

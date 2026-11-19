@@ -590,7 +590,10 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         out.walls = cityWallStrokes(next, o);
         out.towers = buildTowers(cityStrokedWalls(next), o);
         yield; // walls hook
-        if (nextBuildings) out.built = yield* packBuildingsSteps(nextBuildings, o);
+        if (nextBuildings) {
+          countWork('town.planHouseMesh');
+          out.built = yield* packBuildingsSteps(nextBuildings, o);
+        }
       };
       // Shared context: packed in slices by `step()`; a newer scene drops every packing in progress.
       if (deferUpload) {

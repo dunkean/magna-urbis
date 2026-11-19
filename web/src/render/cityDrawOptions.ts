@@ -22,6 +22,15 @@ import { townWaterColour } from './townWater';
 
 const finite = (value: number | undefined, fallback: number, min: number, max: number): number => (typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
 
+/** Volume looks use unoutlined roofs, from the plan camera through a tilted view. Survey plans keep their own ink. */
+export function smoothTownBuildings(a: ResolvedAppearance | undefined): boolean {
+  if (!a || !a.composition?.buildings?.visible || a.composition.buildings.meshes === 'none' || a.city.diagnostic !== 'none') return false;
+  // In the separate 3D camera, city.view selects the ground diagram underneath the standing houses.
+  if (a.target !== 'view3d' && a.city.view !== 'buildings') return false;
+  const ground = a.composition.recipe.ground.look;
+  return ground !== 'cadastre' && ground !== 'topographic' && ground !== 'minimal';
+}
+
 /** Building appearance of a frame: V2 colours (night tables included), style and diagnostic of the city component. */
 export function cityBuildingAppearance(appearance: ResolvedAppearance, over: { style?: UrbanBuildingAppearance['style']; nightInk?: boolean } = {}): UrbanBuildingAppearance {
   // Underdark: no night ink; the culture colours stay and the cave light darkens them (caveRoof; the cave lighting in 3D).
@@ -33,6 +42,7 @@ export function cityBuildingAppearance(appearance: ResolvedAppearance, over: { s
     cave: !!appearance.underdark,
     lightsOn: settlementLightsOn(appearance.composition.ambience, appearance.underdark),
     style: over.style ?? city.buildingStyle,
+    smoothRoofs: smoothTownBuildings(appearance),
     diagnostic: city.diagnostic,
     nightInk: over.nightInk ?? city.palette === 'parchment',
   };

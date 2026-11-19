@@ -22,8 +22,11 @@ const MOVING_PIXELS = 1e6,
   MOVING_SAMPLES = 2;
 /** View/recorded-scale ratio for making snapshots ahead of their use (a resting view stays within 2^(1/4)). */
 const SNAPSHOT_AHEAD = 1.25;
+/** Below this many retained operations/paths, simple regions can just replay until a zoom actually needs a snapshot. */
+const MOTION_SNAPSHOT_OPS = 16;
 /** A region under way survives the scale steps of a zoom while it stays this close (octaves) to the view's scale. */
 const KEEP_OCTAVES = 1.25;
+const EMPTY_LIST: DisplayList = { width: 0, height: 0, ops: [], stats: { calls: 0, ops: 0, paths: 0, sprites: 0, recordMs: 0 } };
 
 enum BandStage {
   ClipSuffix = 0,
@@ -80,6 +83,15 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
     pending = undefined;
     raster.releaseBakeScratch();
     needSince = -1;
+    if (!host.fixedRaster?.()) {
+      let cost = 0;
+      p.motionSnapshot = p.parts.some(b =>
+        b.suffix.ops.some(op => {
+          cost += op.type === 'stroke' || op.type === 'fill' ? op.paths.length : 1;
+          return cost >= MOTION_SNAPSHOT_OPS;
+        }),
+      );
+    }
     retained.show(p);
     return true;
   };
@@ -196,11 +208,12 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
 
   /** Far from the recorded scale, strokes lose their hairline batching and cover quads fill the target. Baking at
    * most four small snapshots caps that frame cost. True when a bake was attempted, including failed targets. */
-  const snap = (r: Region): boolean => {
+  const needsSnapshot = (b: Band, fixed: boolean): boolean => !b.snapshot && !b.snapshotFailed && (!!b.suffix.ops.length || !!host.ink || fixed);
+  const snap = (r: Region, oneBand: boolean, fixed: boolean): boolean => {
     if (host.ink && !host.ink.ready()) return false;
     let did = false;
     for (const b of r.parts) {
-      if (b.snapshot || b.snapshotFailed || (!b.suffix.ops.length && !host.ink && !host.fixedRaster?.())) continue;
+      if (!needsSnapshot(b, fixed)) continue;
       const t = host.now();
       const baked = raster.bake(b.suffix, host.fixedRaster?.() ? densityFor(b.w, b.h, BAKE_PIXELS * 1.1) : Math.min(b.density, densityFor(b.w, b.h, MOVING_PIXELS)), {
         under: b.baked,
@@ -216,14 +229,18 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       // No target for it: the band goes on replaying its suffix (correct, at its cost).
       if (baked) {
         b.snapshot = baked;
-        if (host.fixedRaster?.() && b.baked) {
-          raster.releaseBaked(b.baked);
+        if (host.fixedRaster?.()) {
+          // Fixed sheets use this texture in the top view and on tilted terrain, at every scale.
+          b.suffix = b.part.list = EMPTY_LIST;
+          b.part.suffix = undefined;
+          b.part.prefix = undefined;
+          if (b.baked) raster.releaseBaked(b.baked);
           b.baked = undefined;
           b.part.baked = undefined;
         }
       } else b.snapshotFailed = true;
       did = true;
-      if (host.fixedRaster?.()) break;
+      if (oneBand) break;
     }
     return did;
   };
@@ -250,9 +267,24 @@ export function createOverlayRecording(raster: LiveRasterizer, host: OverlayHost
       moving = frame.moving || start - movedAt < host.settleMs;
     },
     work: regions,
-    snapshots(frame: LiveFrame): void {
+    snapshots(frame: LiveFrame, deadline: number): boolean {
       const r = retained.shown;
-      if (r && (host.fixedRaster?.() || (r.dpr === frame.dpr && beyond(frame.view.scale / r.scale, SNAPSHOT_AHEAD))) && snap(r) && !pending) raster.releaseBakeScratch();
+      if (!r) return false;
+      const fixed = !!host.fixedRaster?.();
+      if (fixed && pending) return false;
+      const ahead = r.dpr === frame.dpr && beyond(frame.view.scale / r.scale, SNAPSHOT_AHEAD);
+      // A stroke-heavy region can be expensive even at its original scale. Warm it before the first gesture,
+      // using only spare slice time; the exact resting view keeps drawing the original lists.
+      const idle = !moving && !pending && !r.stale && !r.draft && !!r.motionSnapshot;
+      if (!(fixed || ahead || idle) || !r.parts.some(b => needsSnapshot(b, fixed))) return false;
+      if (host.now() >= deadline) return true;
+      const did = snap(r, fixed || idle, fixed);
+      const more = r.parts.some(b => needsSnapshot(b, fixed));
+      if (did && !pending && !more) {
+        raster.releaseBakeScratch();
+        if (fixed && r.parts.every(b => !!b.snapshot)) raster.releasePreparedLists();
+      }
+      return more;
     },
     dropPending,
     clearFailedKey(): void {

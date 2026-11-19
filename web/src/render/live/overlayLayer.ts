@@ -243,8 +243,7 @@ export function createOverlayLayer(gl: WebGL2RenderingContext, host: OverlayHost
         more = wanted || !warm || inkWork;
         // Idle and at rest: a slice of what the next recordings would make in one block, at most WARM_SLICE_MS.
         if (!more && !recording.moving) more = !host.warm(Math.min(start + budgetMs, host.now() + WARM_SLICE_MS));
-        recording.snapshots(frame);
-        if (host.fixedRaster?.() && retained.shown?.parts.some(b => !b.snapshot && !b.snapshotFailed)) more = true;
+        if (recording.snapshots(frame, start + budgetMs)) more = true;
       } catch (error) {
         fail(error);
         more = false;

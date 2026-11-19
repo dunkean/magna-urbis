@@ -154,6 +154,8 @@ export interface Cartography {
 
 /** How one paint of the town is made (Town.draw). */
 export interface TownPaint {
+  /** The world building meshes draw all houses above this ground and street pass. */
+  planOnly?: boolean;
   /** The exact town renderer keeps a town layer and repaints it in steps; absent: one complete paint. */
   stepwise?: NativeCityStepwise;
   /** The ground was laid in this same canvas (captures, exports): the rivers are put back over the town by drawing it

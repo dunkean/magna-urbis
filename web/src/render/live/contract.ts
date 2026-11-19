@@ -220,6 +220,8 @@ export interface LiveTextOptions {
 // ---------------------------------------------------------------------------------------------------------------------
 
 export interface LiveCityEnv {
+  /** The compositor's building volumes own every house, including the plan camera and the far town. */
+  volumeBuildings?(): boolean;
   /** The appearance an exact frame would be drawn with now. */
   appearance(): import('../appearanceRecipe').ResolvedAppearance;
   /** Layers switched off by the page (same object the exact town renderer receives). */

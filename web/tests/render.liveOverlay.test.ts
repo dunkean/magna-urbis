@@ -32,6 +32,7 @@ function fixture() {
       return raster.bake(list, density, options);
     }),
     releaseBaked: vi.fn(),
+    releasePreparedLists: vi.fn(),
     releaseBakeScratch: vi.fn(),
     replayLive: vi.fn(),
     dropContext: vi.fn(),
@@ -168,6 +169,7 @@ describe('live overlay layer', () => {
     f.layer.draw(zoomed);
     expect(f.host.record).toHaveBeenCalledTimes(recordings);
     expect(f.raster.bake).toHaveBeenCalledTimes(bakes);
+    expect(f.raster.releasePreparedLists).toHaveBeenCalledTimes(1);
     expect(f.layer.restExact!(zoomed)).toBe(true);
     expect(f.raster.replayLive).toHaveBeenCalledOnce();
     const [parts] = vi.mocked(f.raster.replayLive).mock.calls[0];
@@ -335,6 +337,27 @@ describe('live overlay layer', () => {
     parts = vi.mocked(f.raster.replayLive).mock.calls.at(-1)![0];
     expect(parts.every(part => part.list.ops.length > 0)).toBe(true);
     expect(f.layer.stats!().snapshot).toBe(0);
+  });
+
+  it('prepares a busy region for its first motion frame one band per idle slice and keeps exact resting vectors', () => {
+    const f = fixture(),
+      record = f.host.record;
+    f.host.record = (plan, rect, light) => {
+      const band = record(plan, rect, light)!;
+      band.list = { ...band.list, ops: Array(17).fill(band.list.ops[0]) };
+      return band;
+    };
+    expect(f.layer.work!(10000, f.frame())).toBe(true);
+    expect(f.layer.stats!().snapshots).toBe(1);
+    expect(f.layer.work!(10000, f.frame())).toBe(false);
+    expect(f.layer.stats!().snapshots).toBe(2);
+    f.layer.draw(f.frame(0, 1, true));
+    const moving = vi.mocked(f.raster.replayLive).mock.calls.at(-1)![0];
+    expect(moving.every(part => !!part.baked && !part.list.ops.length)).toBe(true);
+    f.layer.draw(f.frame());
+    const resting = vi.mocked(f.raster.replayLive).mock.calls.at(-1)![0];
+    expect(resting.every(part => part.list.ops.length > 0)).toBe(true);
+    expect(f.raster.releasePreparedLists).not.toHaveBeenCalled();
   });
 
   it('latches an unrecordable key until invalidation', () => {

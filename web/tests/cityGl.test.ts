@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildCityBuildings, buildCityScene } from '../src/render/cityCanvas';
 import { cityGlPick, cityGlPlanMesh } from '../src/render/cityGl';
-import { buildFillMeshSync, buildStreetStrokes, CityGlPacker, mergeTriangulations, meshFeatureAt, META, packBuildings, slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleRanges } from '../src/render/cityGlBuild';
+import { buildFillMeshSync, buildStreetStrokes, CityGlPacker, mergeTriangulations, meshFeatureAt, META, packBuildings, slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleFillRanges, visibleRanges } from '../src/render/cityGlBuild';
 import { DEFAULT_LAYERS, buildingColors, planColors, streetColors } from '../src/render/cityGlStyle';
 import { withoutUrbanPlan } from '../src/render/appearanceRecipe';
 import type { Layout, Partition, Shape } from '../../rust/bridge/urban';
@@ -170,6 +170,21 @@ describe('cityGl scene, picking and styles', () => {
     expect(near).toEqual([[home.triangles.start, home.triangles.count]]);
     expect(home.triangles.count).toBe((8 + 2) * 3); // court lot (hole) + garden
     expect(visibleRanges(l.chunks, { minX: -900, minY: -900, maxX: -800, maxY: -800 }, c => c.triangles)).toEqual([]);
+    const v = { minX: 0, minY: 0, maxX: 5000, maxY: 2000 };
+    const cached = visibleFillRanges(l.chunks, v);
+    for (const [left, right] of [
+      [0, 5000],
+      [0, 1100],
+      [2000, 3000],
+      [4000, 4000],
+      [0, 5000],
+    ]) {
+      v.minX = left;
+      v.maxX = right;
+      expect(visibleFillRanges(l.chunks, v)).toBe(cached);
+      expect(cached.triangles).toEqual(visibleRanges(l.chunks, v, c => c.triangles).flat());
+      expect(cached.lines).toEqual(visibleRanges(l.chunks, v, c => c.lines).flat());
+    }
     // Street suffix (level of detail) clips the ranges.
     const st = buildStreetStrokes(scene, { x: 1000, y: 1000 });
     const ranges = visibleRanges(st.chunks!, { minX: 0, minY: 0, maxX: 2000, maxY: 2000 }, c => ({ start: c.first, count: c.count }), 0, st.firstWithRank[1]);

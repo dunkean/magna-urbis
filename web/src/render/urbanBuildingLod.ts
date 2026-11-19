@@ -853,7 +853,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       }
       // Painted: one dark edge for every footprint (and its courtyards), weighted by zoom;
       // landmarks get a heavier, warmer one.
-      if (painted && mpp < 2.5) {
+      if (painted && !options.appearance.smoothRoofs && mpp < 2.5) {
         const all: GeometryPath[] = [];
         for (const paths of fills.values()) all.push(...paths);
         ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? (night ? (ink ? '#94a9bb' : '#101a29') : PAINTED_EDGE);
@@ -876,7 +876,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
           for (const face of relief) {
             ctx.fillStyle = snowHex(planShade(paint.roof, face.light), face.snow * mapGroundSnow(building.ground_z_m), face.light, night, ink);
             paintGeometry(ctx, face.geometry, metrics);
-            if (!face.snow) {
+            if (!face.snow && !options.appearance.smoothRoofs) {
               ctx.strokeStyle = 'rgba(35,28,21,.55)';
               ctx.lineWidth = 0.45 * mpp;
               paintGeometry(ctx, face.geometry, metrics, true);
@@ -899,6 +899,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
           }
         }
         if (painted && !night) paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics);
+        if (options.appearance.smoothRoofs) continue;
         for (const line of this.ridges(building, geometry, metrics)) {
           if (Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) / mpp < 1.5) continue;
           const color = options.appearance.colors?.buildingEdge ?? (night ? (ink ? '#9eafc1' : '#3b4a60') : line.kind === 'valley' ? '#736e53' : '#393a31');
@@ -1011,7 +1012,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       rasterDrawCalls: 0,
     };
     const colorKey = this.colorKeyOf(appearance.colors),
-      paint = paintedBuildings(options) ? 'painted' : '';
+      paint = (paintedBuildings(options) ? 'painted' : '') + (appearance.smoothRoofs ? '|smooth' : '');
     const tiles: { key: string; x: number; y: number; tile?: RasterTile }[] = [];
     const protectedKeys = new Set<string>();
     for (let y = y0; y <= y1; y++)

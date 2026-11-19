@@ -143,6 +143,7 @@ uniform mat4 uProjection;
 // Block origin relative to the target (x, y) and minus the target's height.
 uniform vec3 uBlock;
 uniform float uRise;
+uniform bool uTop;
 // Eye relative to the target.
 uniform vec3 uEye;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
@@ -156,6 +157,8 @@ void main(){
   vec3 world=vec3(uBlock.xy+position.xz,(seat+position.y)*uRise+uBlock.z);
   vDistance=length(world-uEye);
   gl_Position=uProjection*vec4(world,1.);
+  // Orthographic plan pixels ignore height; the depth buffer still chooses the uppermost roof.
+  if(uTop) gl_Position.z=clamp(-(seat+position.y)*.00001,-.95,.95);
 }`;
 
 export const WORLD_BUILDING_FS = `#version 300 es

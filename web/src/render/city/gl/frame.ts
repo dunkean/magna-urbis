@@ -9,7 +9,7 @@
 import type { CityLayers, CityPalette } from '../model/contract';
 import type { Point } from '../../../../../rust/bridge/urban';
 import type { CityBuildings, CityLod } from '../model/contract';
-import { visibleRanges } from '../../cityGlBuild';
+import { visibleFillRanges, visibleRanges } from '../../cityGlBuild';
 import { rgba01, type CityGlDraws } from './styleTables';
 import { ENCLOSURE_MID_WIDTH, enclosureFade, enclosureJambRank } from '../planLook';
 import { castShadowTint } from '../buildingLook';
@@ -26,6 +26,13 @@ import { CityGlDrawOptions, CityGlFrame } from './contract';
 import { WATER_BIT } from './shaders';
 import { Program } from './programs';
 import { FillPack, StrokePack } from './packs';
+
+const materialExtents = new Float32Array(32).fill(2);
+const materialMeans = new Float32Array(32).fill(0.5);
+MATERIALS.layers.forEach((layer, i) => {
+  materialExtents[i] = layer.extent_m;
+  materialMeans[i] = (layer.mean_rgb[0] * 0.3 + layer.mean_rgb[1] * 0.59 + layer.mean_rgb[2] * 0.11) / 255;
+});
 
 /** The retained GPU state a frame draws from (renderer.ts owns and replaces it). */
 export interface GpuTown {
@@ -136,23 +143,15 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
   };
   gl.activeTexture(gl.TEXTURE0);
   // Binds a material table (unit 1) and the albedo array (unit 2) to a textured program.
-  const extents = new Float32Array(32).fill(2);
-  MATERIALS.layers.forEach((l, i) => {
-    extents[i] = l.extent_m;
-  });
-  const means = new Float32Array(32).fill(0.5);
-  MATERIALS.layers.forEach((l, i) => {
-    means[i] = (l.mean_rgb[0] * 0.3 + l.mean_rgb[1] * 0.59 + l.mean_rgb[2] * 0.11) / 255;
-  });
   const useTextured = (prog: Program, mats: WebGLTexture | undefined, only: boolean): void => {
     gl.useProgram(prog.program);
     gl.uniform4fv(prog.u.uView, view);
     gl.uniform1i(prog.u.uColors, 0);
     gl.uniform1i(prog.u.uMats, 1);
     gl.uniform1i(prog.u.uAlbedo, 2);
-    gl.uniform1fv(prog.u['uExt[0]'], extents);
+    gl.uniform1fv(prog.u['uExt[0]'], materialExtents);
     gl.uniform1i(prog.u.uOnly, only ? 1 : 0);
-    if (prog === tfillP) gl.uniform1fv(prog.u['uMean[0]'], means);
+    if (prog === tfillP) gl.uniform1fv(prog.u['uMean[0]'], materialMeans);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, mats ?? null);
     gl.activeTexture(gl.TEXTURE2);
@@ -199,12 +198,15 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     gl.bindTexture(gl.TEXTURE_2D, plan.hatch);
     gl.bindVertexArray(plan.tri);
     const l = plan.mesh.layers[layer];
-    if (l)
-      for (const [first, count] of visibleRanges(l.chunks, v, c => c.triangles)) {
-        gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, first * 4);
+    if (l) {
+      const ranges = visibleFillRanges(l.chunks, v).triangles;
+      for (let i = 0; i < ranges.length; i += 2) {
+        const count = ranges[i + 1];
+        gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, ranges[i] * 4);
         frame.drawCalls++;
         frame.triangles += count / 3;
       }
+    }
     gl.uniform4f(fillP.u.uHatch, 0, 0, 0, 0);
   };
   const fills = (pack: FillPack | undefined, layer: string, lines: boolean): void => {
@@ -214,8 +216,10 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     gl.bindVertexArray(lines ? pack.line : pack.tri);
     if (lines) gl.uniform1f(fillP.u.uLineAlpha, lineCoverage(strokePx(layer), dpr, planPath));
     // Only the grid chunks in view (consecutive ones merged into one call).
-    for (const [first, count] of visibleRanges(l.chunks, v, c => (lines ? c.lines : c.triangles))) {
-      gl.drawElements(lines ? gl.LINES : gl.TRIANGLES, count, gl.UNSIGNED_INT, first * 4);
+    const ranges = visibleFillRanges(l.chunks, v)[lines ? 'lines' : 'triangles'];
+    for (let i = 0; i < ranges.length; i += 2) {
+      const count = ranges[i + 1];
+      gl.drawElements(lines ? gl.LINES : gl.TRIANGLES, count, gl.UNSIGNED_INT, ranges[i] * 4);
       frame.drawCalls++;
       if (!lines) frame.triangles += count / 3;
     }
@@ -451,7 +455,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
         if (grain) {
           const gf = coverGrainFrame(devPx);
           gl.uniform1i(fillP.u.uRoofGrain, 1);
-          gl.uniform1i(fillP.u.uRims, devPx <= RIM_DEVICE_MPP ? 1 : 0);
+          gl.uniform1i(fillP.u.uRims, !o.smoothRoofs && devPx <= RIM_DEVICE_MPP ? 1 : 0);
           gl.uniform1f(fillP.u.uGrainStrength, gf?.alpha[0] ?? 0);
           gl.uniform4fv(fillP.u['uSnowMean[0]'], snowMeans(gf?.level ?? 0));
           gl.activeTexture(gl.TEXTURE3);
@@ -482,9 +486,9 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
           gl.uniform1i(fillP.u.uGrainMarks, 0);
         }
       }
-      fills(built, 'roofs', true);
+      if (!o.smoothRoofs) fills(built, 'roofs', true);
     }
-    if (d.buildingLines) fills(built, buildingLayer, true);
+    if (d.buildingLines && (!o.smoothRoofs || footprint)) fills(built, buildingLayer, true);
     if (footprint && built.mesh.layers.ruins?.triangles.count) {
       // Only native ruin pieces: roofed parts of a decaying lot stay intact.
       gl.uniform4fv(fillP.u.uTint, rgba01(RUIN_PAPER));

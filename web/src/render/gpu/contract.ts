@@ -225,6 +225,8 @@ export interface LiveRasterizer {
   /** The same multisampled bake across slices; its scratch target stays private until completion or cancellation. */
   bakeSteps(list: DisplayList, density: number, options?: LiveBakeOptions): Generator<void, BakedPrefix | null>;
   releaseBaked(baked: BakedPrefix): void;
+  /** A completed fixed sheet needs only its baked textures. Drop paths, source images and instance buffers. */
+  releasePreparedLists(): void;
   /** Frees the multisampled scratch target of the bakes (a region is complete). */
   releaseBakeScratch(): void;
   /** Draws the parts into `target` (`width` x `height` device pixels) over what is there: no colour clear. The stencil

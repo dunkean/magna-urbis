@@ -79,7 +79,7 @@ export interface LiveCompositor {
   /** Preparation still owed by this layer for the current frame, excluding other layers' background work. */
   layerPending(name: LiveLayerName): boolean;
   /** A layer that is not shown is neither drawn nor replaced by its stand-in (an exact canvas covers it); its `work` still runs. */
-  setLayerShown(name: LiveLayerName, shown: boolean): void;
+  setLayerShown(name: LiveLayerName, shown: boolean, preferRaster?: boolean): void;
   invalidateLayer(name: LiveLayerName): void;
   /** The exact raster of a layer, painted for `view` at `cssW` x `cssH`: uploaded once (in idle time, or in the first
    * frame that needs it) and shown, moved with the view, whenever the layer is not ready. Undefined clears it. */
@@ -146,6 +146,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   const layers: Partial<Record<LiveLayerName, LiveLayer>> = {};
   const shown: Record<LiveLayerName, boolean> = { ground: true, water: true, overlay: true, city: true, buildings: true, trees: true, text: true };
   const standIns: Partial<Record<LiveLayerName, Raster>> = {};
+  const preferRaster: Partial<Record<LiveLayerName, boolean>> = {};
   const states = {} as Record<LiveLayerName, LiveLayerState>;
   for (const name of LIVE_LAYER_ORDER) {
     states[name] = stats.layers[name] = { drawCalls: 0, triangles: 0, ms: 0, ready: false, standIn: false };
@@ -439,7 +440,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         more = layer.work(left, last);
         noteLiveUnit(WORK_UNIT[name], unit);
         // A layer that was not ready for the last frame and now is: the frame is due (its `invalidate` may say so too).
-        if (last && shown[name] && !states[name].ready && (!last.camera.tilted || layer.tilts) && layer.ready(last)) {
+        if (last && shown[name] && !preferRaster[name] && !states[name].ready && (!last.camera.tilted || layer.tilts) && layer.ready(last)) {
           states[name].ready = true;
           options.invalidate();
         }
@@ -569,8 +570,9 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     },
     hasLayer: name => !!layers[name],
     layerPending: name => !!stats.pending[name],
-    setLayerShown(name, value) {
+    setLayerShown(name, value, raster) {
       shown[name] = value;
+      preferRaster[name] = raster;
     },
     invalidateLayer(name) {
       const layer = layers[name];
@@ -890,7 +892,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         standIn = false;
       frame.target = target;
       resetLiveState(gl, target, width, height);
-      if (layer) {
+      if (layer && (tilted || !preferRaster[name] || !standIns[name])) {
         try {
           ready = layer.ready(frame);
           if (ready) {

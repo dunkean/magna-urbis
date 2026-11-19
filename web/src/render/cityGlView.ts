@@ -11,6 +11,7 @@ export const CITY_GL_SOFTWARE = typeof location !== 'undefined' && new URLSearch
 
 /** One city frame as both pages describe it; mapped once to the cityGl options. */
 export interface CityGlViewFrame {
+  smoothRoofs?: boolean;
   viewport: Box;
   mpp: number;
   lod: CityLod;
@@ -40,6 +41,7 @@ export const cityGlDrawOptions = (f: CityGlViewFrame): CityGlDrawOptions => ({
   selectedParcel: f.selectedParcel,
   buildingStyle: f.buildingStyle,
   paintedBuildings: f.painted,
+  smoothRoofs: f.smoothRoofs,
   buildingsVisible: f.buildingsVisible,
   diagnostic: f.diagnostic,
   refusedParcels: f.refusedParcels,

@@ -12,7 +12,7 @@ import type { CityCanopy } from '../../cityGrove';
 export interface LiveCityTowns {
   /** Every town's plan and buildings merged as one GL scene (the GL path's plan; buildings of every town, those of the
    * native house renderer as their city volumes), in resumable steps. Run at rest, once per town content. */
-  sceneSteps(): Generator<void, { plan: CityScene; buildings: CityBuildings }>;
+  sceneSteps(planOnly?: boolean): Generator<void, { plan: CityScene; buildings?: CityBuildings }>;
   /** Merged buildings for a view when a town is prepared in tiers (more than LARGE_TOWN_BUILDINGS): the same object
    * while the tiers of that view do not change. Undefined: no tiered town. */
   buildingsFor?(viewport: Box, mpp: number): CityBuildings | undefined;

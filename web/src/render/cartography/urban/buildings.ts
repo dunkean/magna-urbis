@@ -98,7 +98,9 @@ export function paintBuildings(c: CartographyContext, f: VectorFrame, u: UrbanFr
   // the roof painter of the towns, along earth lanes (farmRoofs.ts), over the plain stand-in marks; other
   // grounds keep those marks.
   if (restored && px(1) <= CITY_LOD_LIMITS[1])
-    timedRec('place-roofs', () => drawPlaceholderRoofs(ctx, c.world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P, lane: path => strokeNaturalRoad(ctx, path, 'lane', roadWidth('lane', 3, sc), sc, roadStyle) }));
+    timedRec('place-roofs', () =>
+      drawPlaceholderRoofs(ctx, c.world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P, lanesOnly: c.deps.volumeBuildings?.(), lane: path => strokeNaturalRoad(ctx, path, 'lane', roadWidth('lane', 3, sc), sc, roadStyle) }),
+    );
   // landmark buildings: the landmark tone, outlined
   if (polyL('u-lmb')) {
     fillPolys('u-lmb', U.landmark);

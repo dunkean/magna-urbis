@@ -27,6 +27,8 @@ export interface CanvasLike {
 }
 
 export interface CanvasRendererDeps {
+  /** Farm and placeholder house meshes are already drawn by the composed view. */
+  volumeBuildings?(): boolean;
   /** Footprints of isolated houses and farms (native scenes): woods are cleared around them like around a farmstead. */
   buildingClearings?(): readonly Polygon[];
   /** Full-quality ownership when a light scene also retains flat polygons for the live shader. */

@@ -93,6 +93,8 @@ export interface Waterway {
   bankM?: number;
 }
 export interface UrbanStructure {
+  /** Engine-owned source data used to retain lots outside a redrawn quarter. */
+  quarterBaseline?: unknown;
   waterways?: Waterway[];
   gateVillageCenters?: Point[];
   quays?: Quay[];

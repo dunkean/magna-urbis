@@ -9,6 +9,8 @@ import type { GroundSnowSettings } from './seasonPalette';
 export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
 export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
 export interface UrbanBuildingAppearance {
+  /** Volume looks have continuous roof and wall paint without cartographic outlines. */
+  smoothRoofs?: boolean;
   ambience?: 'day' | 'night';
   /** Underdark: the culture colours under the cave light (caveRoof), no night ink. */ cave?: boolean;
   /** Lamp visibility is independent of the cave's permanent darkness. */ lightsOn?: boolean;

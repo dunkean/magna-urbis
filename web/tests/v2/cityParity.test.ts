@@ -603,6 +603,16 @@ describe('V2 and City Bench stay in sync', () => {
     }
   });
 
+  it('uses the same unoutlined roof appearance for volume recipes in plan, tilt and export', () => {
+    for (const style of ['satellite', 'satellite-light', 'satellite-2', 'parchment', 'atlas', 'cadastre', 'topographic', 'minimal'] as const) {
+      const smooth = !['cadastre', 'topographic', 'minimal'].includes(style);
+      for (const target of ['view2d', 'view3d', 'export'] as const) {
+        const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        expect(cityBuildingAppearance(r).smoothRoofs, `${style} ${target}`).toBe(smooth);
+      }
+    }
+  });
+
   it('stands lot fences with the buildings, not with the parcel diagram, in 2D and 3D', () => {
     for (const style of PRESET_IDS)
       for (const target of ['view2d', 'view3d'] as const) {

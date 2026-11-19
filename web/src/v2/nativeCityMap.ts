@@ -37,6 +37,7 @@ import type { LiveCityEnv, LiveLayer } from '../render/live/contract';
 import { createLiveCityLayer } from '../render/live/cityLayer';
 import { createStepwiseTown, type NativeCityStepwise } from '../render/city/canvas/stepwiseTown';
 import { countWork } from '../render/workCount';
+import { updateYardEnclosures } from '../render/cityLotEnclosures';
 import { FixedTownRaster, fixedTownRasterLayer, type TownRasterTile } from '../render/city/canvas/fixedTownRaster';
 
 export interface NativeCityMapStats {
@@ -71,7 +72,7 @@ export type { NativeCityStepwise } from '../render/city/canvas/stepwiseTown';
  * current view is complete, the same frame can now be composed exactly. */
 export type NativeCityInvalidation = 'content' | 'progress';
 export interface NativeCityMap {
-  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks, stepwise?: NativeCityStepwise): NativeCityMapStats;
+  draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, appearance: ResolvedAppearance, visibility?: Partial<ExportLayers>, hooks?: NativeCityHooks, stepwise?: NativeCityStepwise, planOnly?: boolean): NativeCityMapStats;
   /** Stops the stepwise repaint in progress, if any (the view moves again, or the renderer is busy elsewhere). */
   suspendStepwise(): void;
   /** The city plans (activity sites included), for the semantic district layer. */
@@ -89,7 +90,7 @@ interface Entry {
   plan: CityScene;
   buildings: CityBuildings;
   /** Native house plans (houses crate); city volumes have none and draw as plan silhouettes, like City Bench. */
-  houses?: UrbanBuildingLodRenderer;
+  houses?: () => UrbanBuildingLodRenderer;
   materials: ReadonlyMap<string, HouseMaterial>;
   refused: ReadonlySet<string>;
   canopyBuildings?: readonly PlacedBuilding[];
@@ -195,6 +196,7 @@ function materialFaces(building: PlacedBuilding, materials: ReadonlyMap<string, 
 interface PreparedCities {
   plans: CityScene[];
   buildings: (CityBuildings | undefined)[];
+  deferRoofs?: boolean;
 }
 const largeTown = (city: ReturnType<typeof nativeCitiesOf>[number]): boolean => !usesNativeHouseRenderer(city.scene) && (city.scene?.buildings.length ?? 0) > LARGE_TOWN_BUILDINGS;
 function cityPlans(world: World): CityScene[] {
@@ -205,7 +207,7 @@ function cityPlans(world: World): CityScene[] {
   return cities.map(city => buildCityScene(city.layouts, city.partitions ?? [], raster));
 }
 /** `createNativeCityMap` with the city volumes of the unedited native towns built over workers (same result). */
-export async function createNativeCityMapAsync(world: World, onInvalidate: (kind: NativeCityInvalidation) => void): Promise<NativeCityMap> {
+export async function createNativeCityMapAsync(world: World, onInvalidate: (kind: NativeCityInvalidation) => void, deferRoofs = false): Promise<NativeCityMap> {
   const cities = nativeCitiesOf(world);
   // The water clip of every town's lots and blocks runs on the warm build workers first; the plans then read it.
   if (cities.length)
@@ -219,11 +221,11 @@ export async function createNativeCityMapAsync(world: World, onInvalidate: (kind
   const batchBuildings = cities.reduce((sum, city) => sum + (usesNativeHouseRenderer(city.scene) ? 0 : (city.scene?.buildings.length ?? 0)), 0);
   const buildings: (CityBuildings | undefined)[] = [];
   try {
-    for (const [i, city] of cities.entries()) buildings.push(usesNativeHouseRenderer(city.scene) ? undefined : await buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: !largeTown(city), batchBuildings }));
+    for (const [i, city] of cities.entries()) buildings.push(usesNativeHouseRenderer(city.scene) ? undefined : await buildCityBuildingsParallel(city.scene, plans[i], city.sites, { roofs: !deferRoofs && !largeTown(city), batchBuildings }));
   } finally {
     releaseCityBuildingWorkers();
   }
-  return createNativeCityMap(world, onInvalidate, { plans, buildings });
+  return createNativeCityMap(world, onInvalidate, { plans, buildings, deferRoofs });
 }
 const objectIds = new WeakMap<object, number>();
 let objectSeq = 0;
@@ -242,16 +244,29 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   let lod: CityLod | undefined;
   const cities = nativeCitiesOf(world),
     plans = prepared?.plans ?? cityPlans(world);
+  const houseRenderers = new Set<UrbanBuildingLodRenderer>();
+  function canvasHouses(source: (typeof cities)[number]['scene']): Entry['houses'] {
+    if (!source || !usesNativeHouseRenderer(source)) return undefined;
+    let renderer: UrbanBuildingLodRenderer | undefined;
+    return () => {
+      if (!renderer) {
+        countWork('town.canvasHouseRenderer');
+        renderer = new UrbanBuildingLodRenderer(source);
+        houseRenderers.add(renderer);
+      }
+      return renderer;
+    };
+  }
   const entries: Entry[] = cities.map((city, i) => {
     const plan = plans[i],
       ready = prepared?.buildings[i];
-    const large = largeTown(city) ? { base: ready ?? buildCityBuildings(city.scene, plan, { roofs: false }), detail: new Map<string, CityBuildings>() } : undefined;
+    const large = prepared?.deferRoofs || largeTown(city) ? { base: ready ?? buildCityBuildings(city.scene, plan, { roofs: false }), detail: new Map<string, CityBuildings>() } : undefined;
     return {
       plan,
       canopyBuildings: city.scene?.buildings,
       buildings: large?.base ?? ready ?? buildCityBuildings(city.scene, plan),
       ...(large ? { large } : {}),
-      houses: usesNativeHouseRenderer(city.scene) ? new UrbanBuildingLodRenderer(city.scene!) : undefined,
+      houses: canvasHouses(city.scene),
       materials: new Map((city.scene?.materials ?? []).map(material => [material.id, material])),
       refused: new Set(city.scene?.refusals.map(refusal => refusal.parcel_id)),
     };
@@ -261,11 +276,13 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     sites = activitySitesOf(world);
   if (activities) {
     const plan = buildCityScene([], []);
+    const base = buildCityBuildings(activities, plan, { roofs: !prepared?.deferRoofs });
     entries.push({
       plan,
       canopyBuildings: activities.buildings,
-      buildings: buildCityBuildings(activities, plan),
-      houses: usesNativeHouseRenderer(activities) ? new UrbanBuildingLodRenderer(activities) : undefined,
+      buildings: base,
+      large: prepared?.deferRoofs ? { base, detail: new Map() } : undefined,
+      houses: canvasHouses(activities),
       materials: new Map((activities.materials ?? []).map(material => [material.id, material])),
       refused: new Set(),
     });
@@ -315,7 +332,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       // Normal-mapped wall lighting remains the perspective renderer's job.
       ctx.globalCompositeOperation = 'soft-light';
       ctx.globalAlpha = 0.28;
-      for (const visible of entry.houses?.query(viewport, mpp, appearance).visible ?? []) {
+      for (const visible of entry.houses?.().query(viewport, mpp, appearance).visible ?? []) {
         if (visible.lod === 'silhouette' || candidates++ >= 128) continue;
         const building = visible.building;
         let geometry = textures.get(building);
@@ -342,7 +359,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     }
     return painted;
   }
-  type TownFrame = { view: View; w: number; h: number; dpr: number; appearance: ResolvedAppearance; visibility: Partial<ExportLayers>; hooks?: NativeCityHooks; lod: CityLod; rasterTown?: number };
+  type TownFrame = { view: View; w: number; h: number; dpr: number; appearance: ResolvedAppearance; visibility: Partial<ExportLayers>; hooks?: NativeCityHooks; lod: CityLod; rasterTown?: number; planOnly?: boolean };
   const townLayers = (appearance: ResolvedAppearance, visibility: Partial<ExportLayers>): CityLayers => {
     // Urban plan off is already folded into city.layers (withoutUrbanPlan): streets, walls and lamps stay.
     const requestedLayers = appearance.city.layers;
@@ -353,6 +370,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
    * the same order whether they run at once (captures, exports, opaque towns: `drawCity`) or, `resumable`, over
    * several tasks (the stepwise mode: `drawCitySteps`, the same function with pauses). */
   function* paintSteps(ctx: CanvasRenderingContext2D, f: TownFrame, stats: NativeCityMapStats, resumable = false): Generator<void, void> {
+    countWork('town.canvasPlanPaint');
     const { view, w, h, dpr, appearance, visibility, hooks, lod } = f,
       city = appearance.city;
     const viewport = viewRect(view, w, h),
@@ -364,7 +382,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       textured = city.textured;
     const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
     const buildingsVisible = visibility.city !== false && city.visible;
-    let reason = f.rasterTown !== undefined ? 'retained-cadastre' : glBlockReason(appearance, visibility);
+    let reason = f.planOnly ? 'volume-ground-plan' : f.rasterTown !== undefined ? 'retained-cadastre' : glBlockReason(appearance, visibility);
     let glFrame: CityGlFrame | undefined;
     ctx.save();
     try {
@@ -386,6 +404,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
               palette,
               layers,
               buildingStyle: buildingAppearance.style,
+              smoothRoofs: buildingAppearance.smoothRoofs,
               painted,
               buildingsVisible,
               diagnostic: buildingAppearance.diagnostic,
@@ -413,22 +432,25 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
           labelsAllowed: visibility.labels !== false,
           buildingAppearance,
           page: {
-            buildings: entry.buildings,
-            farBuildings: entry.large?.base,
-            buildingsVisible: buildingsVisible && (!glFrame || !!entry.houses),
+            buildings: f.planOnly ? undefined : entry.buildings,
+            farBuildings: f.planOnly ? undefined : entry.large?.base,
+            buildingsVisible: !f.planOnly && buildingsVisible && (!glFrame || !!entry.houses),
             onTexturesReady: invalidate,
             refusedParcels: buildingAppearance.diagnostic === 'access' ? entry.refused : undefined,
             beforeBuildings: visibility.city !== false && hooks?.beforeBuildings ? hookCtx => hooks.beforeBuildings!(hookCtx, entry.plan, { viewport, mpp }) : undefined,
             waterAbove: hooks?.waterAbove ? (hookCtx, box, over) => hooks.waterAbove!(hookCtx, box, over) : undefined,
-            renderer: entry.houses && {
-              draw(houseCtx, options) {
-                const metrics = entry.houses!.draw(houseCtx, { ...options, painted });
-                stats.houses.push(metrics);
-                stats.visibleBuildings += metrics.visibleBuildings;
-                if (images) stats.materialFaces += textureRoofs(houseCtx, entry, viewport, mpp, buildingAppearance, images);
-                return metrics;
-              },
-            },
+            renderer:
+              !f.planOnly && entry.houses
+                ? {
+                    draw(houseCtx, options) {
+                      const metrics = entry.houses!().draw(houseCtx, { ...options, painted });
+                      stats.houses.push(metrics);
+                      stats.visibleBuildings += metrics.visibleBuildings;
+                      if (images) stats.materialFaces += textureRoofs(houseCtx, entry, viewport, mpp, buildingAppearance, images);
+                      return metrics;
+                    },
+                  }
+                : undefined,
           },
         });
         const frame = resumable ? yield* drawCitySteps(ctx, entry.plan, options) : drawCity(ctx, entry.plan, options);
@@ -470,7 +492,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     newStats,
     canvas,
     revision: () => `${contentRevision}|${tierRevision}`,
-    lookKey: f => `${idOf(f.appearance)}|${idOf(f.hooks?.water?.())}|${JSON.stringify(f.visibility)}|${getRenderMode()}`,
+    lookKey: f => `${idOf(f.appearance)}|${idOf(f.hooks?.water?.())}|${JSON.stringify(f.visibility)}|${getRenderMode()}|${!!f.planOnly}`,
     contentPending: invalidate,
     progressed: () => {
       if (!disposed) onInvalidate('progress');
@@ -491,7 +513,17 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   }
   /** The live scene in resumable steps (a few milliseconds each): the GL path's merged plan when it has none yet, then
    * every entry's buildings. The exact draw may build its plan meanwhile; the first one made is kept. */
-  function* liveSceneSteps(): Generator<void, { plan: CityScene; buildings: CityBuildings }> {
+  let volumePlan: CityScene | undefined;
+  function* liveSceneSteps(planOnly = false): Generator<void, { plan: CityScene; buildings?: CityBuildings }> {
+    if (planOnly) {
+      for (const entry of entries) {
+        const base = entry.large?.base ?? entry.buildings;
+        updateYardEnclosures(entry.plan, base.items, () => base.items.map(b => b.building));
+        yield;
+      }
+      volumePlan ??= glScene?.plan ?? (yield* mergeCityPlansSteps(entries.map(entry => ({ plan: entry.plan })))).plan;
+      return { plan: volumePlan };
+    }
     if (!glScene) {
       const merged = yield* mergeCityPlansSteps(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings })));
       glScene ??= merged;
@@ -525,7 +557,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       return undefined;
     },
     suspendStepwise: () => stepwiseTown.stop(),
-    draw(target, view, w, h, dpr, appearance, visibility = {}, hooks, stepwise) {
+    draw(target, view, w, h, dpr, appearance, visibility = {}, hooks, stepwise, planOnly = false) {
       const started = performance.now();
       const stats = newStats();
       if (disposed || !entries.length || !(view.scale > 0) || !(w > 0) || !(h > 0) || !(dpr > 0)) return stats;
@@ -552,7 +584,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       // Very large towns: the buildings of this view (base or visible detail); the GL scene follows once uploaded.
       let swapped = false;
       for (const entry of entries)
-        if (entry.large) {
+        if (entry.large && !planOnly) {
           const shown = largeTownBuildings(entry, viewport, mpp);
           if (shown !== entry.buildings) {
             entry.buildings = shown;
@@ -561,7 +593,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
         }
       if (swapped) tierRevision++;
       if (swapped && glScene) gl?.setBuildings(mergeCityBuildings(entries.map(entry => ({ plan: entry.plan, buildings: entry.houses ? undefined : entry.buildings }))));
-      const frame: TownFrame = { view, w, h, dpr, appearance, visibility, hooks, lod };
+      const frame: TownFrame = { view, w, h, dpr, appearance, visibility, hooks, lod, planOnly };
       // Stepwise mode with a translucent town: the kept layer (stepwiseTown.layerFor).
       const kept = opacity < 1 && stepwise ? stepwiseTown.layerFor(frame, stepwise, pixelsW, pixelsH) : undefined;
       let isolated = !!kept;
@@ -708,7 +740,8 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
       glScene = undefined;
       stepwiseTown.release();
       cadastreRaster.clear();
-      for (const entry of entries) entry.houses?.replaceScene({ buildings: [] });
+      for (const renderer of houseRenderers) renderer.replaceScene({ buildings: [] });
+      houseRenderers.clear();
       entries.length = 0;
       textures.clear();
       if (layer) layer.width = layer.height = 1;

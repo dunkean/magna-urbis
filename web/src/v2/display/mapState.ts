@@ -57,6 +57,8 @@ export class MapState {
   resourceSource?: ResourceSource;
   /** Bumped by every set() and quality or engine change: a town layer kept by the exact town renderer is then repainted. */
   townContent = 0;
+  /** The hardware compositor draws town, farm and placeholder houses with its world mesh layer. */
+  volumeBuildings = false;
   /** True while the page is asked for a frame of the same content (its miniature stays valid). */
   redrawOnly = false;
   /** Bumped whenever the picture at rest is due again; a view compares it with the revision it painted. */

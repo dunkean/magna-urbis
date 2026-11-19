@@ -1,5 +1,11 @@
 ## Alpha 0.3.11
 
+- Start with a fresh biome, relief and coherent coastline recipe; enable “Reload previous map at startup” in Settings to restore the last saved map instead. Explicitly opened maps keep their own recipe.
+- Fix town composition rerolls crashing when final street and block processing changes their indices.
+- Preserve the parcels of untouched quarters when regenerating a quarter, and trim village lanes to their last served plot.
+- Release cadastral source geometry after baking, prepare complex overlay snapshots before navigation and reduce allocations while drawing strokes.
+- Reduce building buffer duplication, reuse visible chunk selections and streamline building cache uploads and eviction without changing their appearance.
+- Keep the same smooth GPU houses in flat and tilted views, without preparing a second Canvas house rendering on capable devices; retain Canvas for machines that need it.
 - Keep nearby 3D trees visible when orbiting close to the ground or looking toward the horizon, and restore the terrain exaggeration slider with its current multiplier in the tilted-view toolbar.
 - Discard the previous map's 3D trees when regenerating with trees switched off, so re-enabling them cannot restore trees over the new sea or terrain.
 - Keep Satellite fast's terrain and vegetation identical to Satellite, while retaining simplified textured buildings.

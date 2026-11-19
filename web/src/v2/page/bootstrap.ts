@@ -9,6 +9,7 @@ import { armAutosave, takeAutosave, mountNewButton, saveAutosaveNow } from '../a
 import { $ } from './dom';
 import { inspectMachine } from '../machineTier';
 import { mountMachineDefault } from './machineDefault';
+import { reloadPreviousMapAtStartup, startupPlan } from '../startup';
 
 export async function mountPageBoot(state: PageState, actions: PageActions): Promise<void> {
   setText($('#build-info'), `${import.meta.env.VITE_BUILD_DATE ?? 'dev'} · ${import.meta.env.VITE_BUILD_COMMIT ?? 'local'}`);
@@ -42,17 +43,25 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
 
   await state.cityCodeSharing.restoreFromLocation();
 
-  // Reload recovery: an explicit #city= or ?test=1 wins; otherwise restore the autosaved recipe through the project import path.
+  // Explicit links/tests win. Previous-map restoration is opt-in; ordinary openings propose a new landscape.
   // Never awaited here: the entry module (main.ts awaits this function) must finish evaluating before the restored run
   // draws its map. In the build, the lazy renderer chunk imports the entry chunk, so `import('./benchRenderer')` waited
   // for the entry module, which waited for the run.
   void (async () => {
     const explicit = new URLSearchParams(location.hash.slice(1)).has('city') || new URLSearchParams(location.search).get('test') === '1';
-    const saved = explicit ? undefined : await takeAutosave();
+    const previous = explicit ? undefined : await takeAutosave();
+    const plan = startupPlan(state.settings, previous, { explicit, restore: reloadPreviousMapAtStartup() });
+    const saved = plan.mode === 'restore' ? plan.saved : undefined;
+    if (plan.mode === 'fresh') {
+      state.settings = plan.settings;
+      state.mods = [];
+      state.projectRevision++;
+      actions.syncControls();
+    }
     const startAutosave = () =>
       armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab, mode3d: !!state.city3d?.active, camera: state.city3d?.active ? state.city3d.getCamera() : undefined } }));
     const machine = await machineProbe;
-    if (!saved && !new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
+    if (!previous && !new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
     if (saved) {
       actions.setBusy(true);
       try {

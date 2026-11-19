@@ -80,7 +80,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     broken = false,
     disposed = false;
   /** The merge in progress, the scene handed to the renderer, the buildings last handed to it, builds still running. */
-  let merging: Generator<void, { plan: CityScene; buildings: CityBuildings }> | undefined;
+  const planOnly = !!env.volumeBuildings?.();
+  let merging: Generator<void, { plan: CityScene; buildings?: CityBuildings }> | undefined;
   let requested: CityScene | undefined,
     built: CityBuildings | undefined,
     building = 0;
@@ -196,7 +197,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     const roads = appearance.composition.networks.roads,
       buildingsVisible = vis.city !== false && city.visible;
     // As drawCitySteps decides it (the look's farTownShown), for the towns of city volumes.
-    const farTown = !!appearance.traits?.satelliteVariant && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
+    const farTown = !planOnly && !!appearance.traits?.satelliteVariant && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
     look = {
       appearance,
       visibility,
@@ -211,10 +212,11 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         palette: city.palette,
         layers: towns.layers(appearance, vis),
         buildingStyle: buildingAppearance.style,
+        smoothRoofs: buildingAppearance.smoothRoofs,
         // The Canvas town ignores `painted` for city volumes, and the live look omits textures (flat colours).
         paintedBuildings: false,
         textured: false,
-        buildingsVisible,
+        buildingsVisible: buildingsVisible && !planOnly,
         diagnostic: buildingAppearance.diagnostic,
         refusedParcels: buildingAppearance.diagnostic === 'access' ? towns.refused() : undefined,
         colors: appearance.palette.colors,
@@ -224,7 +226,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
           emphasis: roads.emphasis ?? 1,
           waterColor: townWaterColour(appearance),
           // Natural grounds: the Canvas town lays its procedural grain unless textured materials replace it.
-          grain: !city.textured,
+          grain: !planOnly && !city.textured,
           lineWidth: finite(city.width, 0.6, 0, 5),
           farTown,
         },
@@ -466,6 +468,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       return !why;
     },
     restExact(frame) {
+      // The volume scene uses this GPU street and parcel plan in both cameras. Its drawn plan is authoritative.
+      if (planOnly) return !!content && !notReady(frame);
       // Strict: any element the Canvas town would paint differently keeps its repaint at rest. Read by the probes:
       // what is still missing for this frame.
       const held = content,
@@ -509,7 +513,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       if (!requested) {
         // The scene is merged and requested at rest only (slices); its polygons are then packed a slice per call.
         if (moving && !merging) return true;
-        merging ??= towns.sceneSteps();
+        merging ??= towns.sceneSteps(planOnly);
         const r = renderer;
         advance(merging, start, budgetMs, scene => {
           countWork('town.sceneMerge');
@@ -547,7 +551,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       const tilted = !!frame?.camera.tilted;
       // Large towns: the tier of a resting view (base items, or the detail of the visible tiles), as the exact town
       // swaps it. A moving view keeps the uploaded tier.
-      if (frame && towns.buildingsFor && !moving && !building && !tilted) {
+      if (frame && !planOnly && towns.buildingsFor && !moving && !building && !tilted) {
         const next = towns.buildingsFor(viewportOf(frame), 1 / frame.view.scale);
         if (next && next !== built) {
           built = next;

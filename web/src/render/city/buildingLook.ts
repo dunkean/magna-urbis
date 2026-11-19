@@ -138,6 +138,7 @@ export const SNOW_SHIFT: readonly [number, number] = [53.1, 71.9],
 export const PAN_EDGE = { parchment: { color: '#2c2117', alpha: 0.65, widthPx: 0.3 }, natural: { color: '#1f1811', alpha: 0.45, widthPx: 0.5 }, plan: { color: '#1f1811', alpha: 0.65, widthPx: 0.5 } } as const;
 
 interface RoofFrameInput {
+  smoothRoofs?: boolean;
   palette: CityPalette;
   /** Metres per CSS pixel and device pixel ratio. */ mpp: number;
   dpr: number;
@@ -165,7 +166,7 @@ export function roofFrame(o: RoofFrameInput): RoofFrame {
   const natural = o.palette === 'terrain' && !o.night && !custom && o.diagnostic === 'none';
   // A rim is about half a metre wide: under a device pixel it stays part of the roof.
   const device = o.mpp / (o.dpr || 1),
-    rims = natural && device <= RIM_DEVICE_MPP;
+    rims = natural && !o.smoothRoofs && device <= RIM_DEVICE_MPP;
   const grain = natural && !o.textured ? coverGrainFrame(device) : undefined;
   return {
     palette: o.palette,

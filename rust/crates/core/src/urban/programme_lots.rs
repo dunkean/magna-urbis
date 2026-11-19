@@ -3,6 +3,10 @@ use super::*;
 use super::super::geometry as g;
 
 pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
+    consolidate_cadastre(layout, part, &BTreeSet::new());
+}
+
+pub(super) fn consolidate_cadastre(layout: Option<&Layout>, part: &mut Partition, kept: &BTreeSet<String>) {
     let Some(mut pr) = part.programme.take() else { return };
     if roles::is_isolated(&pr.context.intent) {
         part.programme = Some(pr);
@@ -17,6 +21,11 @@ pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
     let mut neighbours = vec![vec![]; part.parcels.len()];
     for edge in &pr.adjacency {
         if let (Some(&a), Some(&b)) = (ids.get(edge.a.as_str()), ids.get(edge.b.as_str())) {
+            // A wall remnant may cross a block boundary. It can only change
+            // its owner within the same side of a structural redraw.
+            if part.parcels[a].block != part.parcels[b].block && kept.contains(&edge.a) != kept.contains(&edge.b) {
+                continue;
+            }
             neighbours[a].push(b);
             neighbours[b].push(a);
         }

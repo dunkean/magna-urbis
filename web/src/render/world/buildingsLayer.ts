@@ -35,6 +35,8 @@ export interface WorldBuildingsOptions {
   terrain(): TerrainHeights | undefined;
   /** A fast look: the buildings are drawn as boxes however near (blockLevel). */
   boxed?(): boolean;
+  /** The same meshes draw the top view, including far buildings that have no draped plan copy. */
+  topView?(): boolean;
   /** GPU memory the block levels may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a frame (a wanted level was built). */
@@ -43,6 +45,7 @@ export interface WorldBuildingsOptions {
 
 /** The buildings layer, and the building under a pixel of a tilted view (buildingsPick.ts), for the page's picking. */
 export interface WorldBuildingsLayer extends VolumeLayer {
+  presented(): boolean;
   /** The building first met by the ray from `origin` along `direction` (map metres, z as drawn) before `limit`, among
    * those `accept` takes; undefined before the town is grouped into blocks. CPU only, for a click. */
   pick(origin: ArrayLike<number>, direction: ArrayLike<number>, rise: number, limit: number, accept: (building: Building3dVisual) => boolean): BuildingPick | undefined;
@@ -57,12 +60,15 @@ const MAX_DRAWS = 8192;
 const CELLS = BLOCK_CELLS * BLOCK_CELLS;
 /** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
 const DORMANT_LOOKS = 2;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
 export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: WorldBuildingsOptions): WorldBuildingsLayer {
   const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, bytes: 0 };
+  let presentedScene: Building3dScene | undefined,
+    missingDraw = false,
+    presented = false;
   const diagnostics = layerDiagnosticsEnabled() ? new BuildingDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
   const newCache = (): BuildingBlockCache => new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
@@ -138,7 +144,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     } else cache.clear();
     if (dirty) dropDormant();
     dirty = false;
-    visibleCount = 0;
+    clearSelection();
     scene = nextScene;
     heights = nextHeights;
     appearanceKey = key;
@@ -195,7 +201,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     let built = slot.levels[level];
     if (!built) {
       for (let step = 1; step < slot.block.levels && !built; step++) built = slot.levels[level + step] ?? slot.levels[level - step];
-      if (!built) return 0;
+      if (!built) {
+        missingDraw = true;
+        return 0;
+      }
     }
     built.used = tick;
     const first = cell < 0 ? 0 : built.cellFirst[cell],
@@ -221,6 +230,13 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     unitCost = new Float64Array(MAX_UNITS),
     order = new Int32Array(MAX_UNITS);
   let unitCount = 0;
+  // Scratch arrays hold source blocks (and their buildings) by reference. Release the previous town's selection
+  // when replacing a cache, even when a smaller town would never overwrite all its entries.
+  const clearSelection = (): void => {
+    presented = false;
+    visible.length = drawSlot.length = drawLevel.length = unitSlot.length = 0;
+    visibleCount = drawTotal = unitCount = 0;
+  };
   /** Triangles a unit draws at a level: the level built, or the nearest built one shown meanwhile; 0 hidden. */
   const costOf = (slot: Slot, level: number, cell: number): number => {
     if (level >= slot.block.levels) return 0;
@@ -241,10 +257,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
    * the depth's triangle budget, the farthest units go one level coarser, round after round, until the frame fits. A unit whose
    * buildings span DETAILED_PIXELS keeps its full volumes whatever the budget: the near field never coarsens. The frame's
    * triangles. */
-  const select = (tx: number, ty: number, focal: number, boxed: boolean): number => {
+  const select = (tx: number, ty: number, focal: number, boxed: boolean, keepFar: boolean, flat: boolean): number => {
     const depthSetting = getViewDepth(),
       budget = buildingTriangleBudget(depthSetting),
-      wholeTown = depthSetting >= VIEW_DEPTH_MAX;
+      wholeTown = keepFar || depthSetting >= VIEW_DEPTH_MAX;
     unitCount = 0;
     drawTotal = 0;
     diagnostics?.selection();
@@ -256,12 +272,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         depth = slot.depth,
         radius = visibleRadius[v],
         nearPixels = size / Math.max(1, depth - radius),
-        near = blockLevel(b, nearPixels, boxed, depthSetting);
+        near = blockLevel(b, nearPixels, boxed, depthSetting, keepFar);
       slot.need = 0;
       if (near === hidden) continue;
       diagnostics?.block();
       // One level over the block (all yards): one unit. Otherwise each cell at its own.
-      if (b.yard || near === blockLevel(b, size / Math.max(1, depth + radius), boxed, depthSetting)) {
+      if (flat || b.yard || near === blockLevel(b, size / Math.max(1, depth + radius), boxed, depthSetting, keepFar)) {
         addUnit(slot, -1, nearPixels, near);
         continue;
       }
@@ -273,7 +289,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           cy = b.origin[1] + (Math.floor(c / BLOCK_CELLS) + 0.5) * BLOCK_CELL - ty;
         if (!volume.sees(cx, cy, z, cellRadius)) continue;
         const pixels = size / Math.max(1, volume.depth(cx, cy, z) - cellRadius),
-          level = blockLevel(b, pixels, boxed, depthSetting);
+          level = blockLevel(b, pixels, boxed, depthSetting, keepFar);
         if (level !== hidden) addUnit(slot, c, pixels, level);
       }
     }
@@ -353,7 +369,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   return {
     name: 'buildings',
     tilts: true,
-    tiltOnly: true,
+    get tiltOnly() {
+      return !options.topView?.();
+    },
+    presented: () => presented && presentedScene === options.scene(),
     ready: () => true,
     work(budgetMs, frame) {
       // Each step below is bounded: the grouping and the meshes go a chunk at a time, the link is polled.
@@ -365,7 +384,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       // The top view's grain tiles, one family per slice, while the town takes its look.
       if (look && !grainFilled) {
         grainFilled = grain.step();
-        if (grainFilled && frame?.camera.tilted) options.invalidate();
+        if (grainFilled && (frame?.camera.tilted || options.topView?.())) options.invalidate();
       }
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
@@ -382,14 +401,18 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         return slice(started, true);
       }
       const more = cache.work(deadline, tick, paint, seat!, () => {
-        if (frame?.camera.tilted) options.invalidate();
+        if (frame?.camera.tilted || options.topView?.()) options.invalidate();
       });
       return slice(started, more);
     },
     draw(frame: LiveFrame) {
       const started = performance.now(),
         camera = frame.camera,
-        drawn = volumesDrawn(camera);
+        keepFar = !!options.topView?.(),
+        flat = !camera.tilted,
+        drawn = keepFar || volumesDrawn(camera);
+      if (keepFar && (dirty || scene !== options.scene() || heights !== options.terrain() || look !== options.look?.())) sync();
+      missingDraw = false;
       tick++;
       stats.drawCalls = stats.triangles = 0;
       diagnostics?.frame();
@@ -400,7 +423,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           ty = camera.target[1],
           tz = camera.target[2],
           rise = camera.rise,
-          focal = camera.focal / frame.dpr,
+          focal = flat ? frame.view.scale : camera.focal / frame.dpr,
           boxed = options.boxed?.() ?? false,
           depthSetting = getViewDepth();
         for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
@@ -413,24 +436,25 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             z = (low + high) / 2 - tz,
             radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2;
           if (!volume.sees(x, y, z, radius)) continue;
-          const depth = volume.depth(x, y, z);
+          const depth = flat ? 1 : volume.depth(x, y, z);
           // The depth preference extends the subpixel cutoff; maximum depth retains every visible building block.
-          if (depthSetting < VIEW_DEPTH_MAX && depth > radius && (radius * focal * depthSetting) / depth < 0.35) continue;
+          if (!keepFar && depthSetting < VIEW_DEPTH_MAX && depth > radius && (radius * focal * depthSetting) / depth < 0.35) continue;
           slot.depth = depth;
           slot.seen = tick;
           visibleZ[visibleCount] = z;
           visibleHalf[visibleCount] = (high - low) / 2;
-          visibleRadius[visibleCount] = radius;
+          visibleRadius[visibleCount] = flat ? 0 : radius;
           visible[visibleCount++] = slot;
         }
         // The levels by screen size, the far end coarser while the frame passes its triangle budget.
-        select(tx, ty, focal, boxed);
+        select(tx, ty, focal, boxed, keepFar, flat);
         if (drawTotal) {
           const u = program.u;
           gl.useProgram(program.program);
           volumeDepth(gl);
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform1f(u.uRise, rise);
+          gl.uniform1i(u.uTop, flat ? 1 : 0);
           gl.uniform3f(u.uEye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
           gl.uniform2f(u.uAir, hazeDistance(camera), rise);
           gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);
@@ -445,8 +469,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
               block = slot;
               gl.uniform3f(u.uBlock, slot.block.origin[0] - tx, slot.block.origin[1] - ty, -tz);
             }
-            gl.bindVertexArray(drawLevel[i].vao);
-            gl.drawArrays(gl.TRIANGLES, drawFirst[i], drawCount[i]);
+            const level = drawLevel[i];
+            gl.bindVertexArray(level.vao);
+            if (level.indexBytes) gl.drawElements(gl.TRIANGLES, drawCount[i], level.indexBytes === 2 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT, drawFirst[i] * level.indexBytes);
+            else gl.drawArrays(gl.TRIANGLES, drawFirst[i], drawCount[i]);
             stats.drawCalls++;
             stats.triangles += drawCount[i] / 3;
           }
@@ -455,6 +481,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           volumeDepthEnd(gl);
         }
       }
+      presented = drawn && !grouping && !missingDraw && (!scene || !!program);
+      presentedScene = scene;
       stats.bytes = cache.bytes;
       stats.ms = performance.now() - started;
     },
@@ -469,7 +497,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       cache.contextLost();
       dropDormant(true);
       program = linking = undefined;
-      visibleCount = drawTotal = 0;
+      clearSelection();
       warmed = false;
       grain.lost();
       grainFilled = false;
@@ -478,11 +506,13 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     dispose() {
       cache.clear();
       dropDormant();
-      visibleCount = 0;
+      clearSelection();
       if (program) gl.deleteProgram(program.program);
       if (linking) gl.deleteProgram(linking);
       program = linking = undefined;
       scene = heights = undefined;
+      grouping = grouped = undefined;
+      paint = seat = look = undefined;
       grain.dispose();
       grainFilled = false;
     },

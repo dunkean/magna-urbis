@@ -66,7 +66,7 @@ export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildi
     roofIndex.set(roofs, (index = { byOwner, paths: [] }));
   }
   // What a pan is painted with is the look's (city/buildingLook.ts): its colour and grain gain are kept per pan.
-  const f = roofFrame({ palette: o.palette, mpp: o.mpp, dpr: o.dpr, night: o.night, cave: o.appearance.cave, diagnostic: o.appearance.diagnostic, colors: o.colors, textured: !!images });
+  const f = roofFrame({ palette: o.palette, mpp: o.mpp, dpr: o.dpr, night: o.night, cave: o.appearance.cave, diagnostic: o.appearance.diagnostic, colors: o.colors, textured: !!images, smoothRoofs: o.appearance.smoothRoofs });
   let paint = roofPaint.get(roofs);
   if (!paint || paint.key !== f.key) roofPaint.set(roofs, (paint = { key: f.key, colors: [], gains: [] }));
   const edge = parseInt(f.edge.color.slice(1), 16);
@@ -133,7 +133,7 @@ export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildi
           }
         }
       }
-      if (!roofs.snow?.[k]) ctx.stroke(path);
+      if (!o.appearance.smoothRoofs && !roofs.snow?.[k]) ctx.stroke(path);
     }
     if (f.natural && item.marks) drawMillMarks(ctx, b, item, o);
   }
@@ -241,7 +241,7 @@ export function drawRoofedBuildings(ctx: CanvasRenderingContext2D, buildings: Ci
       path = (item.path ??= group(item.surface));
     ctx.fillStyle = buildingBody(body, item, true).fill;
     ctx.fill(path, 'nonzero');
-    ctx.stroke(path);
+    if (!o.appearance.smoothRoofs) ctx.stroke(path);
   }
   drawPlanRoofs(ctx, buildings, o as CityDrawOptions);
   ctx.restore();

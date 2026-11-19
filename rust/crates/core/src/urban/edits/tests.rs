@@ -223,6 +223,21 @@ fn quarter_salt_redraws_only_that_quarter() {
         lot_keys(&base, &p0, |q| q == k),
         lot_keys(&one, &p1, |q| q == k)
     );
+    // A replayed allocation counts toward the same population budget.
+    let programme = p1.programme.as_ref().unwrap();
+    let wanted: f64 = programme.demands.iter().filter(|d| d.unit == "domesticUnits").map(|d| d.requested).sum();
+    let housed: f64 = programme.allocations.iter().map(|a| a.households).sum();
+    assert!(housed <= (1.3 * wanted).floor(), "{housed} households for {wanted}");
+
+    // The wasm/HTTP round trip keeps the source geometry without embedding
+    // another entire layout on every quarter redraw.
+    let base_saved: Layout = serde_json::from_str(&json(&base)).unwrap();
+    let edited_saved: Layout = serde_json::from_str(&json(&one)).unwrap();
+    let (source, _) = super::quarter_baseline::restore(&edited_saved, &pcfg).unwrap();
+    assert_eq!(json(&source.blocks), json(&base_saved.blocks));
+    assert_eq!(json(&source.streets), json(&base_saved.streets));
+    assert!(source.structure.unwrap().quarter_baseline.is_none());
+
     // I1 / I2 within the redrawn quarter: inside its outline, off the streets.
     for b in one.blocks.iter().filter(|b| b.quarter == k) {
         let outside: f64 = g::difference(&b.shape, &one.quarters[k].shape)
@@ -984,4 +999,41 @@ fn quarter_edits_do_not_depend_on_the_thread_count() {
     let serial = super::super::par::with_threads(1, || json(&town(&cfg)));
     let parallel = super::super::par::with_threads(4, || json(&town(&cfg)));
     assert_eq!(serial, parallel);
+}
+
+/// Finishing can add source-site pieces, remove blocks and prune streets on either plan. Numeric positions of the
+/// unfinished splice must not freeze the programme of an unrelated final block or point outside the final arrays.
+#[test]
+fn programme_freeze_remaps_finished_blocks_and_streets() {
+    let block = |x: f64, kind: &str| super::Block {
+        shape: g::rectangle(x, 0.0, x + 10.0, 10.0), quarter: 0, kind: kind.into(),
+        axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), phase: Some(0),
+    };
+    let road = |x: f64| Street {
+        path: vec![Point { x, y: 0.0 }, Point { x, y: 10.0 }], widths: vec![4.0; 2], rank: 1, role: "street".into(),
+    };
+    let mut base: Layout = serde_json::from_value(serde_json::json!({
+        "key":"finish-remap", "culture":"european-organic", "center":{"x":0.0,"y":0.0},
+        "quarters":[], "blocks":[], "streets":[], "warnings":[]
+    })).unwrap();
+    base.blocks = vec![block(0.0, "block"), block(20.0, "reserve")];
+    base.streets = vec![road(0.0), road(20.0)];
+    let mut spliced = base.clone();
+    let metadata = super::FreezeInputs::new(&spliced, &base, &[Some(0), None]);
+
+    // The original first block now occupies index1; its programme changed its kind. The other old block vanished.
+    base.blocks = vec![block(40.0, "reserve:programme"), block(0.0, "reserve:programme")];
+    base.streets.reverse();
+    spliced.blocks = vec![block(60.0, "common:verge"), block(0.0, "reserve:programme")];
+    spliced.streets.truncate(1);
+    let (origin, streets, kinds) = metadata.remap(&spliced, &base);
+    assert_eq!(origin, vec![None, Some(1)]);
+    assert_eq!(streets, vec![None, Some(0)]);
+    assert_eq!(kinds, vec!["common:verge", "block"]);
+
+    // A third final block has no entry at all in the original two-element metadata: it remains a new block.
+    spliced.blocks.push(block(80.0, "reserve:programme"));
+    let (origin, _, kinds) = metadata.remap(&spliced, &base);
+    assert_eq!(origin, vec![None, Some(1), None]);
+    assert_eq!(kinds[2], "reserve:programme");
 }

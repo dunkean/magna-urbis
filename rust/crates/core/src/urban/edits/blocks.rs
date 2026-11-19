@@ -119,7 +119,7 @@ fn signature(blocks: &[Block]) -> String {
     format!("{}:{:016x}", blocks.len(), fnv(&text))
 }
 /// The input layout of a prepared one (`None`: not prepared).
-fn restore(layout: &Layout) -> Option<Layout> {
+pub(super) fn restore(layout: &Layout) -> Option<Layout> {
     let marker = layout.config.as_ref()?.block_edits.as_ref()?;
     let mut l = layout.clone();
     if let Some(c) = l.config.as_mut() {

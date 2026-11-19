@@ -189,7 +189,7 @@ export class TownAltitudes {
 /** What paints a scene's buildings in the world view: the flat-colour program (the textured one is the 3D view's), and
  * the top view's town look where the page gives it. */
 export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes, look?: VolumeTownLook): BuildingPaint {
-  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], snowAltitudes: altitudes, look };
+  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], collectPalette: false, snowAltitudes: altitudes, look };
 }
 
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town
@@ -243,9 +243,9 @@ const YARD_HIDDEN = 0.25;
  * nothing. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. No hysteresis: the
  * frame's budget (buildingsLayer.ts) demotes units independently, and a level only ever changes over a whole cell.
  * Depth extends the projected-size thresholds; at maximum every building remains at least a box. */
-export function blockLevel(block: BuildingBlock, pixels: number, boxed = false, depth = 1): number {
+export function blockLevel(block: BuildingBlock, pixels: number, boxed = false, depth = 1, keepFar = false): number {
   const hidden = blockHidden(block);
   if (block.yard) return pixels < YARD_HIDDEN ? hidden : yardLod(pixels, 0);
   for (let i = boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels * depth >= LEVEL_PIXELS[i]) return i;
-  return depth >= VIEW_DEPTH_MAX ? BOX_LEVEL : hidden;
+  return keepFar || depth >= VIEW_DEPTH_MAX ? BOX_LEVEL : hidden;
 }

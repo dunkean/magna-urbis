@@ -64,6 +64,7 @@ import { shapeBox, overlaps, centroid } from '../model/geometry';
 import { CityDrawOptions, CityFrameStats } from './contract';
 import { hatchPattern, shapePath, linePath, Style, Batches } from './batches';
 import { roofShadowPaths, SHADOW_STEP, drawPlanRoofsSteps } from './roofs';
+import { countWork } from '../../workCount';
 
 /** Street surface rings per scene, by streets, widths and edges drawn (a few camera steps). */
 const SURFACE_CACHE = new WeakMap<object, Map<string, { casing: { street: number; path: Path2D }[]; fill: { street: number; path: Path2D }[]; inner: { street: number; path: Path2D }[] }>>();
@@ -358,6 +359,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
     shown: BuildingsShownInput = { view, lod, mpp, footprint, diagnostic: o.appearance.diagnostic, buildingsVisible: o.buildingsVisible && !!o.buildings, farTown: o.farTown, houseRenderer: !!o.renderer };
   const farTown = farTownShown(shown);
   if (o.buildings && buildingsShown(shown)) {
+    countWork('town.canvasHousePaint');
     const colors = buildingColors(o.appearance.colors, o.appearance.ambience);
     if (o.renderer && view === 'buildings' && !footprint) {
       stats.pending = o.renderer.draw(ctx, { viewport, metresPerPixel: mpp, appearance: o.appearance, selectedId: o.selectedBuilding }).rasterTilesPending > 0;
@@ -385,7 +387,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
         const b = o.buildings.items[i];
         stats.buildings++;
         const made = buildingBody(body, b, !!roofs),
-          style: Style = { fill: made.fill, stroke: made.stroke, width: px(made.widthPx) };
+          style: Style = { fill: made.fill, stroke: o.appearance.smoothRoofs && !footprint ? undefined : made.stroke, width: px(made.widthPx) };
         if (footprint) {
           if (!b.footprintPath) {
             b.footprintPath = new Path2D();
@@ -419,7 +421,10 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       }
     }
   }
-  if (farTown) drawFarTown(ctx, scene, o.farBuildings ?? o.buildings!, { viewport, mpp, dpr: o.dpr, palette, night, custom: o.colors?.building, alpha: farTownAlpha(mpp), onReady: o.onTexturesReady });
+  if (farTown) {
+    if (farTownAlpha(mpp) > 0) countWork('town.canvasFarHouses');
+    drawFarTown(ctx, scene, o.farBuildings ?? o.buildings!, { viewport, mpp, dpr: o.dpr, palette, night, custom: o.colors?.building, alpha: farTownAlpha(mpp), onReady: o.onTexturesReady });
+  }
 
   if ((o.appearance.lightsOn ?? night) && o.appearance.diagnostic === 'none') {
     if (!o.deferNightTown) drawNightTown(ctx, scene, viewport, mpp, parchment, layers.streets);

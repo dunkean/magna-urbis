@@ -77,6 +77,8 @@ export interface Band {
 export interface Region extends OverlayPlan {
   light: boolean;
   stale: boolean;
+  /** A region with repeated vector work prepares a motion snapshot during idle slices. */
+  motionSnapshot?: boolean;
   parts: Band[];
   live: MutablePart[];
   building?: Band;

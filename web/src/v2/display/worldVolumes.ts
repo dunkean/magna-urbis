@@ -111,6 +111,7 @@ export class WorldVolumes {
     private readonly map: MapState,
     private readonly parts: Pick<DisplayParts, 'town' | 'water'>,
     private readonly relief: () => TerrainHeights | undefined,
+    topView: () => boolean = () => false,
   ) {
     this.buildings = {
       scene: () => {
@@ -120,6 +121,7 @@ export class WorldVolumes {
       appearance: () => this.appearance,
       look: () => this.townLook(),
       terrain: relief,
+      topView,
       // The fast looks draw the town as boxes.
       boxed: () => map.resolved?.quality === 'light',
       invalidate: map.compose,
@@ -155,6 +157,10 @@ export class WorldVolumes {
       made = this.madeFor;
     if (world === made.world && map.townContent === made.content && resolved === made.resolved && heights === made.heights) return;
     this.madeFor = { world, content: map.townContent, resolved, heights };
+    if (world !== made.world || heights !== made.heights || (world && map.townContent !== made.content && !sameV2NativeInputs(this.townOf.cities, v2NativeCities(world), 'scene'))) {
+      this.display = undefined;
+      this.walkCollisions = undefined;
+    }
     if (world?.terrain !== made.world?.terrain) this.treeSource = undefined;
     if (!world || !settings || !resolved || !heights) {
       this.display = this.treeSource = undefined;

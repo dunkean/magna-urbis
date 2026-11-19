@@ -72,6 +72,8 @@ export const viewSeat: BuildingSeat = (_building, ground, _x, _y, z, faceGround,
 export interface BuildingPaint {
   appearance: UrbanBuildingAppearance;
   materials: readonly HouseMaterial[];
+  /** Keep the separate 3D viewer's inspectable list of distinct face colours. */
+  collectPalette?: boolean;
   /** Mean ground of the town of a building (by id), which sets its snow (roofSnow.ts townRoofAltitudes). */
   snowAltitudes: { get(id: string): number | undefined };
   /** The tilted world view: the top view's town look. A massing roof face of a building the town draws takes the
@@ -191,7 +193,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
   // against the palette (a building's faces share a few of them), so the palette is scanned once per colour, not once
   // per triangle.
   const appearance = paint.appearance,
-    groups = new Map<string, { batch: BuildingBatchData; length: number; seen: Set<Vec3> }>(),
+    groups = new Map<string, { batch: BuildingBatchData; length: number; seen?: Set<Vec3> }>(),
     textured = !!appearance.textured;
   const catalogue = { materials: paint.materials as HouseMaterial[] };
   for (const building of buildings) {
@@ -269,13 +271,13 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         const mean = MATERIALS.layers[layer]?.mean_rgb,
           shade = c;
         const tint = mean && recolored ? (shade.map((v, i) => v / Math.max(0.04, mean[i] / 255)) as Vec3) : tm?.[1].length === 3 ? ([...tm[1]].map(v => parseInt(v, 16) / 8) as Vec3) : ([1, 1, 1] as Vec3);
-        group = { batch: { color: textured ? c : [1, 1, 1], tint, recolored, vcolor: !textured, palette: [], stride: BUILDING_STRIDE, data: new Float32Array(4096) }, length: 0, seen: new Set() };
+        group = { batch: { color: textured ? c : [1, 1, 1], tint, recolored, vcolor: !textured, palette: [], stride: BUILDING_STRIDE, data: new Float32Array(4096) }, length: 0, seen: paint.collectPalette === false ? undefined : new Set() };
         groups.set(key, group);
       }
       const batch = group.batch,
         points = face.points;
       // A snowed face has a colour of its own (never seen before): it is compared by value, as every colour was.
-      if (snow || !group.seen.has(c)) {
+      if (group.seen && (snow || !group.seen.has(c))) {
         if (!snow) group.seen.add(c);
         if (!batch.palette.some(q => q[0] === c[0] && q[1] === c[1] && q[2] === c[2])) batch.palette.push(c);
       }

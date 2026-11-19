@@ -1,6 +1,7 @@
 /** Building block/level cache owned by buildingsLayer. Builds bounded mesh parts, uploads them over work slices and evicts GPU levels without touching the last draw's resources. */
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import { BLOCK_CELLS, blockPart, type BuildingBlock } from './buildingsBlocks';
+import { expandBuildingPart, indexBuildingPart, type BuildingPart } from './buildingsIndex';
 import { countWork } from '../workCount';
 /** Buildings meshed between clock checks. */
 const BUILD_CHUNK = 8;
@@ -10,8 +11,11 @@ const CELLS = BLOCK_CELLS * BLOCK_CELLS;
 export interface BuildingLevel {
   vao: WebGLVertexArrayObject;
   buffer: WebGLBuffer;
+  indexBuffer?: WebGLBuffer;
+  indexBytes: 0 | 2 | 4;
+  /** Vertex references in the original triangle order, including repetitions. */
   vertices: number;
-  /** First vertex of each cell, and the end. */
+  /** First vertex reference of each cell, and the end. */
   cellFirst: Int32Array;
   bytes: number;
   /** Draw tick it was last shown in. */
@@ -31,18 +35,24 @@ interface BuildingJob {
   slot: BuildingSlot;
   level: number;
   next: number;
-  parts: Float32Array[];
+  parts: (BuildingPart | undefined)[];
   vertices: number;
+  unique: number;
   cell: number;
   cellFirst: Int32Array;
   uploaded: number;
+  vertexOffset: number;
+  indexOffset: number;
+  indexBytes: 0 | 2 | 4;
   buffer?: WebGLBuffer;
+  indexBuffer?: WebGLBuffer;
 }
 export class BuildingBlockCache {
   slots: BuildingSlot[] = [];
   blocks: BuildingBlock[] = [];
   bytes = 0;
   private spilled = false;
+  private overviewCursor = 0;
   /** Parts never straddle a cell. A finished mesh is uploaded part by part to bound dense levels' work slices. */
   private pending: BuildingJob | undefined;
   constructor(
@@ -51,6 +61,7 @@ export class BuildingBlockCache {
     private readonly depth: () => number = () => 1,
   ) {}
   setBlocks(blocks: BuildingBlock[]): void {
+    this.overviewCursor = 0;
     this.blocks = blocks;
     this.slots = blocks.map(block => ({ block, levels: new Array<BuildingLevel | undefined>(block.levels).fill(undefined), need: 0, depth: Infinity, seen: -1 }));
   }
@@ -59,21 +70,25 @@ export class BuildingBlockCache {
     this.slots = [];
     this.blocks = [];
     this.spilled = false;
+    this.overviewCursor = 0;
     if (this.pending?.buffer) this.gl.deleteBuffer(this.pending.buffer);
+    if (this.pending?.indexBuffer) this.gl.deleteBuffer(this.pending.indexBuffer);
     this.pending = undefined;
   }
   contextLost(): void {
     for (const slot of this.slots) slot.levels.fill(undefined);
     this.bytes = 0;
+    this.overviewCursor = 0;
     this.pending = undefined;
   }
-  private readonly startJob = (slot: BuildingSlot, level: number): BuildingJob => ({ slot, level, next: 0, parts: [], vertices: 0, cell: 0, cellFirst: new Int32Array(CELLS + 1), uploaded: 0 });
+  private readonly startJob = (slot: BuildingSlot, level: number): BuildingJob => ({ slot, level, next: 0, parts: [], vertices: 0, unique: 0, cell: 0, cellFirst: new Int32Array(CELLS + 1), uploaded: 0, vertexOffset: 0, indexOffset: 0, indexBytes: 0 });
 
   private readonly dropLevel = (slot: BuildingSlot, index: number): void => {
     const gl = this.gl;
     const level = slot.levels[index];
     if (!level) return;
     gl.deleteBuffer(level.buffer);
+    if (level.indexBuffer) gl.deleteBuffer(level.indexBuffer);
     gl.deleteVertexArray(level.vao);
     this.bytes -= level.bytes;
     slot.levels[index] = undefined;
@@ -83,24 +98,48 @@ export class BuildingBlockCache {
   private readonly uploadStep = (job: BuildingJob, deadline: number, tick: number): boolean => {
     const gl = this.gl;
     const stride = BUILDING_STRIDE * 4;
-    gl.bindBuffer(gl.ARRAY_BUFFER, job.buffer ?? null);
+    gl.bindVertexArray(null);
     if (!job.buffer) {
+      // WebGL2 reserves the all-ones index for primitive restart.
+      const width = job.unique <= 65535 ? 2 : 4;
+      if (job.unique * stride + job.vertices * width < job.vertices * stride) {
+        job.indexBytes = width;
+        job.indexBuffer = gl.createBuffer()!;
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, job.indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, job.vertices * width, gl.STATIC_DRAW);
+      }
       job.buffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, job.buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, Math.max(4, job.vertices * stride), gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, Math.max(4, (job.indexBytes ? job.unique : job.vertices) * stride), gl.STATIC_DRAW);
+    } else {
+      gl.bindBuffer(gl.ARRAY_BUFFER, job.buffer);
+      if (job.indexBuffer) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, job.indexBuffer);
     }
-    let offset = 0;
-    for (let i = 0; i < job.uploaded; i++) offset += job.parts[i].byteLength;
     while (job.uploaded < job.parts.length) {
-      const part = job.parts[job.uploaded++];
-      if (part.length) gl.bufferSubData(gl.ARRAY_BUFFER, offset, part);
-      offset += part.byteLength;
+      const part = job.parts[job.uploaded]!;
+      job.parts[job.uploaded++] = undefined;
+      if (part.indices.length) {
+        if (job.indexBytes) {
+          // Dense levels can cross the 16-bit boundary in a later slice.
+          let indices = part.indices;
+          if (indices.BYTES_PER_ELEMENT !== job.indexBytes) indices = job.indexBytes === 2 ? new Uint16Array(indices) : new Uint32Array(indices);
+          gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, job.indexOffset, indices);
+          gl.bufferSubData(gl.ARRAY_BUFFER, job.vertexOffset, part.data, 0, part.unique * BUILDING_STRIDE);
+          job.indexOffset += indices.byteLength;
+          job.vertexOffset += part.unique * stride;
+        } else {
+          gl.bufferSubData(gl.ARRAY_BUFFER, job.vertexOffset, expandBuildingPart(part));
+          job.vertexOffset += part.data.byteLength;
+        }
+      }
       if (performance.now() >= deadline) break;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    if (job.indexBuffer) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     if (job.uploaded < job.parts.length) return false;
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
+    if (job.indexBuffer) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, job.indexBuffer);
     gl.bindBuffer(gl.ARRAY_BUFFER, job.buffer);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
@@ -112,66 +151,81 @@ export class BuildingBlockCache {
     gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 36);
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    job.slot.levels[job.level] = { vao, buffer: job.buffer, vertices: job.vertices, cellFirst: job.cellFirst, bytes: job.vertices * stride, used: tick };
-    this.bytes += job.vertices * stride;
+    const bytes = job.vertexOffset + job.indexOffset;
+    job.slot.levels[job.level] = { vao, buffer: job.buffer, indexBuffer: job.indexBuffer, indexBytes: job.indexBytes, vertices: job.vertices, cellFirst: job.cellFirst, bytes, used: tick };
+    this.bytes += bytes;
     return true;
-  };
-  /** The exact height range of what a part draws, for the view volume test. */
-  private readonly reach = (block: BuildingBlock, part: Float32Array): void => {
-    for (let i = 0; i < part.length; i += BUILDING_STRIDE) {
-      const z = part[i + 9] + part[i + 1];
-      if (z < block.low) block.low = z;
-      if (z > block.high) block.high = z;
-    }
   };
 
   /** Over budget: the levels drawn least recently go, never one of the last frame. */
   private readonly evict = (tick: number): void => {
     // Extended depth retains more detail between views; an explicit memory limit still takes precedence.
     const budget = this.budgetBytes() ?? BUDGET_BYTES * Math.min(4, this.depth());
-    while (this.bytes > budget) {
-      let oldest: BuildingSlot | undefined,
-        oldestIndex = -1,
-        used = tick;
-      for (const slot of this.slots)
-        for (let i = 0; i < slot.levels.length; i++) {
-          const level = slot.levels[i];
-          if (level && level.used < used) {
-            used = level.used;
-            oldest = slot;
-            oldestIndex = i;
-          }
+    if (this.bytes <= budget) return;
+    // Most overflows need at most one eviction, or every candidate is still in use. Keep those cases allocation-free.
+    let oldest: BuildingSlot | undefined,
+      oldestIndex = -1,
+      oldestTick = tick;
+    for (const slot of this.slots) {
+      for (let index = 0; index < slot.levels.length; index++) {
+        const level = slot.levels[index];
+        if (level && level.used < oldestTick) {
+          oldest = slot;
+          oldestIndex = index;
+          oldestTick = level.used;
         }
-      if (!oldest) return;
-      this.dropLevel(oldest, oldestIndex);
-      this.spilled = true;
+      }
+    }
+    if (!oldest) return;
+    this.dropLevel(oldest, oldestIndex);
+    this.spilled = true;
+    if (this.bytes <= budget) return;
+    const candidates: { slot: BuildingSlot; index: number; used: number }[] = [];
+    for (const slot of this.slots) {
+      for (let index = 0; index < slot.levels.length; index++) {
+        const level = slot.levels[index];
+        if (level && level.used < tick) candidates.push({ slot, index, used: level.used });
+      }
+    }
+    // Stable sort preserves slot and level order for ties.
+    candidates.sort((a, b) => a.used - b.used);
+    for (const { slot, index } of candidates) {
+      if (this.bytes <= budget) break;
+      this.dropLevel(slot, index);
     }
   };
 
   work(deadline: number, tick: number, paint: BuildingPaint, seat: BuildingSeat, onBuilt: () => void): boolean {
     let built = false;
+    // Visibility and demand are fixed for this work slice. Once all requested levels are ready, the remaining jobs
+    // are background overviews in slot order.
+    let requestsComplete = false;
     for (;;) {
       if (!this.pending) {
         // The level the last frame wanted for the nearest block that lacks it; else the overview of a block that
         // has nothing yet (built in the background, before the first tilt and while the view rests).
         let next: BuildingSlot | undefined,
           level = 0;
-        for (const slot of this.slots) {
-          if (slot.seen !== tick || (next && slot.depth >= next.depth)) continue;
-          // The finest level it lacks among those the frame wanted.
-          for (let l = 0; l < slot.block.levels; l++)
-            if (slot.need & (1 << l) && !slot.levels[l]) {
-              next = slot;
-              level = l;
-              break;
-            }
+        if (!requestsComplete) {
+          for (const slot of this.slots) {
+            if (slot.seen !== tick || (next && slot.depth >= next.depth)) continue;
+            // The finest level it lacks among those the frame wanted.
+            for (let l = 0; l < slot.block.levels; l++)
+              if (slot.need & (1 << l) && !slot.levels[l]) {
+                next = slot;
+                level = l;
+                break;
+              }
+          }
+          requestsComplete = !next;
         }
         if (next) {
           this.pending = this.startJob(next, level);
           countWork('volumes.blockLevel');
         } else if (!this.spilled) {
           // Not once the budget has spilled: an overview built then evicts another, which is bare again, without end.
-          const bare = this.slots.find(slot => !slot.levels.some(Boolean));
+          while (this.overviewCursor < this.slots.length && this.slots[this.overviewCursor].levels.some(Boolean)) this.overviewCursor++;
+          const bare = this.slots[this.overviewCursor];
           if (bare) this.pending = this.startJob(bare, bare.block.levels - 1);
         }
         if (!this.pending) break;
@@ -183,9 +237,12 @@ export class BuildingBlockCache {
         while (job.cell < CELLS && job.next >= cells[job.cell + 1]) job.cellFirst[++job.cell] = job.vertices;
         const to = Math.min(count, job.next + BUILD_CHUNK, job.cell < CELLS ? cells[job.cell + 1] : count),
           part = blockPart(job.slot.block, job.level, paint, seat!, job.next, to);
-        this.reach(job.slot.block, part);
-        job.parts.push(part);
-        job.vertices += part.length / BUILDING_STRIDE;
+        const indexed = indexBuildingPart(part, job.unique);
+        if (indexed.low < job.slot.block.low) job.slot.block.low = indexed.low;
+        if (indexed.high > job.slot.block.high) job.slot.block.high = indexed.high;
+        job.parts.push(indexed);
+        job.unique += indexed.unique;
+        job.vertices += indexed.indices.length;
         job.next = to;
         if (performance.now() >= deadline) break;
       }

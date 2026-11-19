@@ -1,0 +1,62 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { defaultSettings } from '../../src/v2/settings';
+import { STARTUP_RESTORE_KEY } from '../../src/v2/startup';
+import type { SavedRecipe } from '../../src/v2/autosave';
+
+const hooks = vi.hoisted(() => ({ takeAutosave: vi.fn(), armAutosave: vi.fn(), saveAutosaveNow: vi.fn(), load: vi.fn() }));
+vi.mock('../../src/v2/autosave', () => ({ takeAutosave: hooks.takeAutosave, armAutosave: hooks.armAutosave, saveAutosaveNow: hooks.saveAutosaveNow, mountNewButton: vi.fn() }));
+vi.mock('../../src/v2/i18n', () => ({ setText: vi.fn() }));
+vi.mock('../../src/v2/testHook', () => ({ mountV2TestHook: vi.fn() }));
+vi.mock('../../src/v2/machineTier', () => ({ inspectMachine: () => Promise.resolve({ tier: 'fast' }) }));
+vi.mock('../../src/v2/page/machineDefault', () => ({ mountMachineDefault: vi.fn() }));
+import { mountPageBoot } from '../../src/v2/page/bootstrap';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
+
+async function boot(restore: boolean, saved: SavedRecipe, search = '') {
+  hooks.takeAutosave.mockResolvedValue(saved);
+  vi.stubGlobal('localStorage', { getItem: (key: string) => (key === STARTUP_RESTORE_KEY && restore ? 'true' : null) });
+  vi.stubGlobal('location', { hash: '', search });
+  vi.stubGlobal('document', { getElementById: () => undefined, querySelector: () => ({ before: vi.fn() }) });
+  const viewer = { setView: vi.fn() };
+  const state = { settings: defaultSettings(), mods: [], projectRevision: 0, client: { init: async () => {}, viewer }, cityCodeSharing: { restoreFromLocation: async () => {} } };
+  const actions = { syncControls: vi.fn(), inspectHardware: async () => {}, loadProject: hooks.load, setBusy: vi.fn(), log: vi.fn(), generate: vi.fn(async () => true), selectTab: vi.fn() };
+  await mountPageBoot(state as never, actions as never);
+  await vi.waitFor(() => expect(hooks.armAutosave).toHaveBeenCalledOnce());
+  return { state, actions, viewer };
+}
+
+it('boots to a fresh randomized proposal by default without regenerating the saved map', async () => {
+  vi.spyOn(Math, 'random').mockReturnValue(0.8);
+  const saved = { settings: defaultSettings(), mods: [{ keep: 'only on restore' }] };
+  saved.settings.options.seed = 'old map';
+  const { state, actions } = await boot(false, saved);
+  expect(state.settings.options.seed).not.toBe('old map');
+  expect(state.settings.options.biome).not.toBe(saved.settings.options.biome);
+  expect(state.mods).toEqual([]);
+  expect(hooks.load).not.toHaveBeenCalled();
+  expect(actions.generate).not.toHaveBeenCalled();
+});
+
+it('keeps the existing restoration path and restores the saved viewport when opted in', async () => {
+  const saved = { settings: defaultSettings(), mods: [], view: { cx: 200, cy: 300, scale: 2 }, ui: { tab: 'cities' } };
+  const random = vi.spyOn(Math, 'random');
+  const { actions, viewer } = await boot(true, saved);
+  await vi.waitFor(() => expect(viewer.setView).toHaveBeenCalledWith(saved.view));
+  expect(hooks.load).toHaveBeenCalledWith({ settings: saved.settings, mods: saved.mods });
+  expect(actions.generate).toHaveBeenCalledWith('all');
+  expect(actions.selectTab).toHaveBeenCalledWith('cities');
+  expect(random).not.toHaveBeenCalled();
+});
+
+it('keeps benchmark and explicit test loads stable without reading autosave or drawing random choices', async () => {
+  const random = vi.spyOn(Math, 'random');
+  const { state } = await boot(true, { settings: defaultSettings(), mods: [] }, '?test=1');
+  expect(state.settings.options.seed).toBe('magna-urbis');
+  expect(hooks.takeAutosave).not.toHaveBeenCalled();
+  expect(random).not.toHaveBeenCalled();
+});

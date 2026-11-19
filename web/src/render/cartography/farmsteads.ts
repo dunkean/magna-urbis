@@ -84,11 +84,12 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
         strokePolys('farm-trees', pal.treeInk, lw(0.3, 0.3), 0.8);
       }
     }
-    if (natural && px(1) <= CITY_LOD_LIMITS[1]) {
+    const roofs = !c.deps.volumeBuildings?.();
+    if (roofs && natural && px(1) <= CITY_LOD_LIMITS[1]) {
       // The roof and wall painter of the towns, at the scales where a town shows its buildings (cast shadow, pan
       // light, grain by cover and culture, weathering, snow); paths of the class this renderer records.
       timedRec('farm-roofs', () => drawFarmRoofs(ctx, c.world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P }));
-    } else {
+    } else if (roofs) {
       fillPolys('farm-buildings', pal.farmRoof);
       // Further out a natural ground keeps the plain roof tint without ink, like the few pixels of a town roof.
       if (!natural && !c.activeLight) {

@@ -79,7 +79,15 @@ export class ExactFrame {
     }
     ctx.restore();
     if (!exportOverlay) {
-      const overlay = cartography.paintOverlay(view, canvas.width, canvas.height, stepwise);
+      // Exports and fallback frames own their farm and placeholder roofs even if the on-screen compositor uses meshes.
+      const volumes = map.volumeBuildings;
+      map.volumeBuildings = false;
+      let overlay: HTMLCanvasElement | undefined;
+      try {
+        overlay = cartography.paintOverlay(view, canvas.width, canvas.height, stepwise);
+      } finally {
+        map.volumeBuildings = volumes;
+      }
       if (overlay) ctx.drawImage(overlay, 0, 0, w, h);
     }
     // Illustrated: stamps above roads, rivers and field edges (anchors stay clear of them, crowns may overhang); towns and labels stay on top.

@@ -10,6 +10,7 @@ import type { YardBoundary } from '../../cityLotEnclosures';
 // walls hook (cityWalls.ts)
 
 export interface CityGlDrawOptions {
+  smoothRoofs?: boolean;
   viewport: Box;
   metresPerPixel: number;
   view: CityView;

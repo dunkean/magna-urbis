@@ -362,10 +362,10 @@ export function placeholderPlacedBuildings(world: World | undefined): PlacedBuil
   if (!held || held.key !== key) standInLists.set(settlements, (held = { key, list: lazy.flatMap(s => standIn(world, s).buildings) }));
   return held.list;
 }
-const standInPlans = new WeakMap<Settlement, { Path: unknown; buildings: CityBuildings; lanes: Path2D }>();
+const standInPlans = new WeakMap<Settlement, { Path: unknown; buildings?: CityBuildings; lanes: Path2D }>();
 /** Paints, on a natural ground, the places still waiting for their plan: earth lanes (`lane` strokes one with the
  * natural road look) and their houses through the roof painter of the towns. `ctx` is in world coordinates. */
-export function drawPlaceholderRoofs(ctx: CanvasRenderingContext2D, world: World, o: { viewport: Box; mpp: number; dpr: number; palette: CityPalette; night?: boolean; Path?: new () => Path2D; lane(path: Path2D): void }): number {
+export function drawPlaceholderRoofs(ctx: CanvasRenderingContext2D, world: World, o: { viewport: Box; mpp: number; dpr: number; palette: CityPalette; night?: boolean; Path?: new () => Path2D; lanesOnly?: boolean; lane(path: Path2D): void }): number {
   const Path = o.Path ?? Path2D,
     v = o.viewport;
   let drawn = 0;
@@ -376,17 +376,20 @@ export function drawPlaceholderRoofs(ctx: CanvasRenderingContext2D, world: World
     let plan = standInPlans.get(s);
     if (!plan || plan.Path !== Path) {
       const source = standIn(world, s),
-        buildings = buildCityBuildings({ buildings: source.buildings }),
         lanes = new Path();
-      for (const item of buildings.items) item.snowAltitude = item.building.ground_z_m;
-      buildings.pathClass = o.Path;
       for (const lane of source.lanes) {
         lanes.moveTo(lane[0].x, lane[0].y);
         lanes.lineTo(lane[1].x, lane[1].y);
       }
-      standInPlans.set(s, (plan = { Path, buildings, lanes }));
+      standInPlans.set(s, (plan = { Path, lanes }));
     }
     o.lane(plan.lanes);
+    if (o.lanesOnly) continue;
+    if (!plan.buildings) {
+      plan.buildings = buildCityBuildings({ buildings: standIn(world, s).buildings });
+      for (const item of plan.buildings.items) item.snowAltitude = item.building.ground_z_m;
+      plan.buildings.pathClass = o.Path;
+    }
     drawn += drawRoofedBuildings(ctx, plan.buildings, { viewport: v, mpp: o.mpp, dpr: o.dpr, palette: o.palette, night: o.night, appearance: { style: 'cartographic', diagnostic: 'none', ambience: o.night ? 'night' : 'day' } });
   }
   return drawn;
