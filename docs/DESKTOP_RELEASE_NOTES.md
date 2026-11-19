@@ -1,5 +1,13 @@
 ## Alpha 0.3.11
 
+- Tilt, fly and walk through the map with one continuous camera; lock the view to 2D and adjust the viewing depth.
+- Keep loaded towns and contour lines cached across map styles and camera changes, with sharper navigation and faster map preparation.
+- Draw parchment woods on the GPU and simplify light map styles; choose an initial style suited to the device's graphics capabilities.
+- Extend the tree viewing range to 5 km, fade distant trees and keep trunks off building footprints.
+- Edit roads and contour lines directly on the map, with persistent road controls and coordinated updates to affected town blocks and farmland.
+- Limit automatic settlements to 20,000 inhabitants, improve mountain villages and preserve manually placed foundations.
+- Confirm resets and town moves inside the app, and keep generation progress visible independently of settlement generation.
+- Open the four latest versions' release notes from the top bar.
 - Keep 3D harbour structures, boats and equipment on the displayed terrain and water instead of outdated planning heights, including exposed dry riverbeds; anchor pier piles in the bed.
 - Choose beaches, cliffs or a mixed coast with low coves between rocky stretches. Adjust cliff coverage, coastal smoothing and transition width independently of coves, headlands and relief influence, including on painted and hand-drawn coastlines.
 - Preserve dwellings when a major landmark is requested in a camp or another settlement with a single residential block.
@@ -8,7 +16,6 @@
 - Pan and zoom inside city previews with mouse, touch and keyboard controls, including cached thumbnails, and reset the view to frame the city.
 - Harmonize building daylight in 2D and 3D: domes, pitched roofs, flat roofs and walls share softer, consistent shading across architectural styles.
 - Walk mode collides with house exteriors and fortifications, slides along walls and keeps gate passages open.
-- The single camera's walk mode also collides with house exteriors and fortifications, sliding along walls and passing through gates.
 - Fix startup and reloads getting stuck when the browser GPU driver does not answer. Native procedural generation no longer waits for an unused browser GPU.
 - Keep generation settings and imported heightmaps when reloading during an interrupted or unfinished restoration.
 
