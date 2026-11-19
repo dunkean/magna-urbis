@@ -16,19 +16,32 @@ import { contourDrawOf } from '../../render/composition';
 import type { Rect } from '../../render/tileindex';
 import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsPending, cityContourPathsReady } from '../../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../render/strokes';
+import { countWork } from '../../render/workCount';
 import type { Contours } from './contract';
 import type { MapState } from './mapState';
 
 /** Contour width factor on the 3D drape tiles. */
 const DRAPE_CONTOUR_WEIGHT = 1.8;
-/** Parsed contour paths, kept as long as their cached strings. */
-const CONTOUR_PATHS = new WeakMap<object, Partial<Record<'thin' | 'index' | 'recThin' | 'recIndex', Path2D>>>();
-/** Contour data is absolute M/L/Z only. The GPU engine cannot record a native Path2D(string), so it gets the same lines as a RecPath2D. */
-function recordedContourPath(d: string): Path2D {
-  // A character scan (the producer writes `M x,y L x,y ... Z` with fixed decimals): map-wide sets hold megabytes, which a
-  // regular expression and split parse an order of magnitude slower.
-  const path = newPath(),
-    n = d.length;
+/** Squares per side of the map a contour set is cut into: a paint strokes the chunks under its rectangle, not the
+ * whole map's lines (a stroke of a map-wide path costs the whole path on every tile and in every band). */
+const CHUNKS_PER_SIDE = 16;
+interface ContourChunk {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  d: string;
+  path?: Path2D;
+  recorded?: Path2D;
+}
+type ContourSet = { thin: string; index: string };
+/** The chunks of each set, kept as long as its cached strings. */
+const CONTOUR_CHUNKS = new WeakMap<ContourSet, Partial<Record<'thin' | 'index', ContourChunk[]>>>();
+/** Contour data is absolute M/L/Z only, written with fixed decimals. A character scan: map-wide sets hold megabytes,
+ * which a regular expression and split parse an order of magnitude slower. `point` gets each vertex and the offset of
+ * its command, `close` each Z. */
+function scanContourPath(d: string, point: (move: boolean, x: number, y: number, at: number) => void, close?: () => void): void {
+  const n = d.length;
   let i = 0;
   const num = (): number => {
     let sign = 1,
@@ -55,23 +68,73 @@ function recordedContourPath(d: string): Path2D {
     return sign * (whole + frac / div);
   };
   while (i < n) {
-    const c = d.charCodeAt(i++);
-    if (c === 90) path.closePath();
+    const at = i,
+      c = d.charCodeAt(i++);
+    if (c === 90) close?.();
     else if (c === 77 || c === 76) {
       const x = num();
       i++;
       const y = num();
-      if (c === 77) path.moveTo(x, y);
-      else path.lineTo(x, y);
+      point(c === 77, x, y, at);
     }
   }
+}
+/** The GPU engine cannot record a native Path2D(string), so it gets the same lines as a RecPath2D. */
+function recordedContourPath(d: string): Path2D {
+  const path = newPath();
+  scanContourPath(
+    d,
+    (move, x, y) => (move ? path.moveTo(x, y) : path.lineTo(x, y)),
+    () => path.closePath(),
+  );
   return path;
 }
-const contourPath = (set: { thin: string; index: string }, kind: 'thin' | 'index', recording = false): Path2D => {
-  let parsed = CONTOUR_PATHS.get(set);
-  if (!parsed) CONTOUR_PATHS.set(set, (parsed = {}));
-  if (recording) return (parsed[kind === 'thin' ? 'recThin' : 'recIndex'] ??= recordedContourPath(set[kind]));
-  return (parsed[kind] ??= new Path2D(set[kind]));
+/** The lines of a set cut by square, once per set: each line goes whole to the square of its centre and a chunk's box
+ * is its lines' union, so the chunks that meet a rectangle hold every line that reaches it, each stroked as before. */
+function contourChunks(set: ContourSet, kind: 'thin' | 'index', size: number): ContourChunk[] {
+  let held = CONTOUR_CHUNKS.get(set);
+  if (!held) CONTOUR_CHUNKS.set(set, (held = {}));
+  const known = held[kind];
+  if (known) return known;
+  countWork('contour.chunkSplit');
+  const d = set[kind],
+    cell = size / CHUNKS_PER_SIDE,
+    squares = new Map<number, { minX: number; minY: number; maxX: number; maxY: number; parts: string[] }>();
+  let start = -1,
+    minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  const square = (v: number): number => Math.max(0, Math.min(CHUNKS_PER_SIDE - 1, Math.floor(v / cell)));
+  const flush = (end: number): void => {
+    if (start < 0 || !(maxX >= minX)) return;
+    const key = square((minY + maxY) / 2) * CHUNKS_PER_SIDE + square((minX + maxX) / 2);
+    let sq = squares.get(key);
+    if (!sq) squares.set(key, (sq = { minX, minY, maxX, maxY, parts: [] }));
+    sq.minX = Math.min(sq.minX, minX);
+    sq.minY = Math.min(sq.minY, minY);
+    sq.maxX = Math.max(sq.maxX, maxX);
+    sq.maxY = Math.max(sq.maxY, maxY);
+    sq.parts.push(d.slice(start, end));
+  };
+  scanContourPath(d, (move, x, y, at) => {
+    if (move) {
+      flush(at);
+      start = at;
+      minX = minY = Infinity;
+      maxX = maxY = -Infinity;
+    }
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  });
+  flush(d.length);
+  return (held[kind] = [...squares.values()].map(({ parts, ...box }) => ({ ...box, d: parts.join('') })));
+}
+const chunkPath = (chunk: ContourChunk, recording: boolean): Path2D => {
+  if (recording) return (chunk.recorded ??= recordedContourPath(chunk.d));
+  return (chunk.path ??= new Path2D(chunk.d));
 };
 
 export class ContourInk implements Contours {
@@ -182,11 +245,26 @@ export class ContourInk implements Contours {
     ctx.lineCap = 'round';
     ctx.globalAlpha = pal.contourOpacity * 0.7 * mode.opacity;
     ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, (pal.contourThinW ?? 1) * weight);
-    const recording = ctx instanceof RecordingContext;
-    if (!farLight) for (const set of sets) if (set.thin) ctx.stroke(contourPath(set, 'thin', recording));
+    const recording = ctx instanceof RecordingContext,
+      size = this.map.native!.width,
+      indexWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, (pal.contourIndexW / 1.6) * weight),
+      reach = Math.max(ctx.lineWidth, indexWidth);
+    countWork(recording ? 'contour.record' : 'contour.canvas');
+    let strokes = 0;
+    const stroke = (kind: 'thin' | 'index'): void => {
+      for (const set of sets)
+        if (set[kind])
+          for (const chunk of contourChunks(set, kind, size))
+            if (chunk.maxX + reach >= viewport.minX && chunk.minX - reach <= viewport.maxX && chunk.maxY + reach >= viewport.minY && chunk.minY - reach <= viewport.maxY) {
+              ctx.stroke(chunkPath(chunk, recording));
+              strokes++;
+            }
+    };
+    if (!farLight) stroke('thin');
     ctx.globalAlpha = pal.contourOpacity * mode.opacity;
-    ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, (pal.contourIndexW / 1.6) * weight);
-    for (const set of sets) if (set.index) ctx.stroke(contourPath(set, 'index', recording));
+    ctx.lineWidth = indexWidth;
+    stroke('index');
+    countWork('contour.chunksStroked', strokes);
     ctx.restore();
     return true;
   }
