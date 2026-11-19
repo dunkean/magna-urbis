@@ -45,6 +45,9 @@ export interface CanvasRendererDeps {
   createCanvas?: (w: number, h: number) => CanvasLike | null;
   /** Terrain bitmap provider (default: hillshade raster). Return null to skip terrain. */
   terrain?: (world: World, pal: Palette) => CanvasImageSource | null;
+  /** The land a transparent sheet keeps its tints on, when `terrain` leaves out what the ground paints (the woods of
+   * `groundTrees`); default: the terrain bitmap. */
+  land?: () => CanvasImageSource | undefined;
   /** Keep the map background transparent when composing a separate overlay. */
   transparentBackground?: boolean;
   /** The ground under the overlay draws the cave rock itself (Underdark on material grounds, terrainGl.ts): the overlay

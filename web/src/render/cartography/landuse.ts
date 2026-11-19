@@ -58,9 +58,11 @@ export function paintLandMask(c: CartographyContext, f: VectorFrame): void {
   const { deps, S } = c;
   const { ctx, luOn } = f;
   // On a transparent sheet the backdrop's alpha is the land: the tints stay off the water below.
-  if (luOn && deps.transparentBackground && c.terrainImg) {
+  // The land with the woods the ground paints (terrain() leaves them out: render/treeSymbols.ts punchWoods).
+  const land = deps.land?.() ?? c.terrainImg;
+  if (luOn && deps.transparentBackground && land) {
     ctx.globalCompositeOperation = 'destination-in';
-    ctx.drawImage(c.terrainImg as CanvasImageSource, 0, 0, S, S);
+    ctx.drawImage(land as CanvasImageSource, 0, 0, S, S);
     ctx.globalCompositeOperation = 'source-over';
   }
 }
