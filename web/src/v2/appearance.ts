@@ -5,6 +5,7 @@ import { isMapStyle } from '../render/styles';
 import { isTerrainStyle } from '../render/terrainStyle';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
+import { TREE_DISTANCE_MAX, TREE_DISTANCE_MIN } from '../ui/terrain3dTrees';
 import { setLanduseForestTone } from '../render/landuseForestTone';
 import { validateRenderColors } from '../render/customColors';
 import type { CityLayers } from '../render/cityCanvas';
@@ -85,7 +86,7 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     number(value.city.width, 'appearance.city.width', 0, 5);
     // New controls use .2–3; keep the former upper bound valid for retained projects.
     number(value.city.exaggeration, 'appearance.city.exaggeration', 0.2, 5);
-    number(value.city.treeDistance, 'appearance.city.treeDistance', 200, 1500);
+    number(value.city.treeDistance, 'appearance.city.treeDistance', TREE_DISTANCE_MIN, TREE_DISTANCE_MAX);
     if (value.city.layers !== undefined) {
       object(value.city.layers, 'appearance.city.layers');
       for (const [key, entry] of Object.entries(value.city.layers)) {
