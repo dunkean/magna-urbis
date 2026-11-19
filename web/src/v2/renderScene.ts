@@ -9,7 +9,7 @@ import { terrainFromDecor } from '../ui/benchTerrainTransfer';
 import type { V2Settings } from './contracts';
 import type { RustTownSnapshot } from './rustUrban';
 import { nativeCityRecords, nativeCitiesOf, nativeTerrainOf, worldCapabilities } from './nativeProducts';
-import { v2WorldDecor } from './urban3d';
+import { v2WorldDecor } from './worldDecor';
 
 export interface SceneRevisions {
   readonly terrain: number;

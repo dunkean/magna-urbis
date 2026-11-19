@@ -480,6 +480,31 @@ fn camps_leave_their_commons_free_of_generic_access_lanes() {
 }
 
 #[test]
+fn requested_monument_keeps_dwellings_in_a_single_block_camp() {
+    let n = 64;
+    let height = vec![10.0_f32; n * n];
+    let water = vec![0_u8; n * n];
+    let levels = vec![0.0_f32; n * n];
+    let surface = Surface { geometry: None, width: 4000.0, n, height: &height,
+        water: &water, interpolation: Default::default() };
+    let site = Site { key: "main".into(), name: "Karak Ordu".into(), population: 1250,
+        culture: "mongol-ordu".into(), center: Point { x: 2000.0, y: 2000.0 },
+        radius: 200.0, neighbours: Vec::new() };
+    let mut config: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
+    config.monument = "cathedral".into();
+    config.fortification = "none".into();
+    let layouts = generate_quarters("mfcg-3521165402", &[site], &config, surface, &[]).unwrap();
+    assert_eq!(layouts[0].blocks.iter().filter(|block| block.kind == "block").count(), 1);
+    let parts = generate_parcels("mfcg-3521165402", &layouts, &ParcelConfig::default()).unwrap();
+    let housed: f64 = parts[0].programme.as_ref().unwrap().allocations.iter().map(|allocation| allocation.households).sum();
+    assert!(housed > 0.0, "the monument reservation must leave housing capacity");
+    let requests = building_sites::requests("mfcg-3521165402", &layouts, &parts, surface, &levels, None).unwrap();
+    assert!(requests.iter().any(|request| request["function"] != "open_space"
+        && request["preview"].as_array().is_some_and(|shapes| !shapes.is_empty())),
+        "the camp must produce drawable buildings");
+}
+
+#[test]
 fn communal_longhouses_keep_their_family_capacity_and_served_rows() {
     let layout = village_layout("native-iroquoian",500);
     let parts = generate_parcels("small-settlement", &[layout], &ParcelConfig::default()).unwrap();

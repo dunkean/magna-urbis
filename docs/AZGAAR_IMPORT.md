@@ -4,13 +4,15 @@ Magna Urbis can build a town from a burg of [Azgaar's Fantasy Map Generator](htt
 In the V2 page, open **Open a code or link**, paste one of the inputs below and click **Load recipe**.
 The imported town starts a fresh recipe: one town, on a map sized for its population.
 
+For automatic generation inside an iframe, see [City iframe preview](AZGAAR_EMBED.md).
+
 ## Accepted inputs
 
-| Input | How to get it in FMG | What it carries |
-|---|---|---|
-| **Export script result** (recommended) | In Magna Urbis, click **Copy the Azgaar export script**. In FMG, press F12, paste the script into the console and press Enter, then type the burg name or id (the burg open in the Burg editor is proposed). The result is copied to the clipboard; paste it into Magna Urbis. | Everything below, including biome, precipitation, river, coast side and the culture's name base and type. |
-| **Burgs overview CSV row** | Burgs overview → **Download** (CSV). Copy the header line and the burg's line, or the burg's line alone. | Name, population, culture name, type, elevation, temperature, capital, port, citadel, walls, plaza, temple, shanty town, preview link. |
-| **Watabou link** | Burg editor → open the city preview, copy the watabou city or village generator URL. | Name, population, seed, river, coast side, walls, citadel, plaza, temple, shanty town, farms, road hub. |
+| Input                                  | How to get it in FMG                                                                                                                                                                                                                                                           | What it carries                                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Export script result** (recommended) | In Magna Urbis, click **Copy the Azgaar export script**. In FMG, press F12, paste the script into the console and press Enter, then type the burg name or id (the burg open in the Burg editor is proposed). The result is copied to the clipboard; paste it into Magna Urbis. | Everything below, including biome, precipitation, river, coast side and the culture's name base and type.                              |
+| **Burgs overview CSV row**             | Burgs overview → **Download** (CSV). Copy the header line and the burg's line, or the burg's line alone.                                                                                                                                                                       | Name, population, culture name, type, elevation, temperature, capital, port, citadel, walls, plaza, temple, shanty town, preview link. |
+| **Watabou link**                       | Burg editor → open the city preview, copy the watabou city or village generator URL.                                                                                                                                                                                           | Name, population, seed, river, coast side, walls, citadel, plaza, temple, shanty town, farms, road hub.                                |
 
 A line without its header is read with FMG's column order; current FMG and the classic site (azgaar.github.io) are recognised by their number of columns.
 The export script only reads the page (`pack`, `grid`, and `options` or the classic globals when present). It sends nothing over the network.
