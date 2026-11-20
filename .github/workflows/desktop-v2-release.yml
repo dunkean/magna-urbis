@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Desktop candidate to build and test
+        description: Desktop platforms to build and test
         type: choice
         default: desktop
         options:
@@ -27,7 +27,7 @@ jobs:
       matrix: ${{ fromJSON(
         inputs.target == 'macos-arm64-hardware' && '{"include":[{"os":["self-hosted","macOS","ARM64","magna-desktop"],"platform":"macos-arm64","bundles":"dmg"}]}' ||
         inputs.target == 'macos-arm64' && '{"include":[{"os":"macos-15","platform":"macos-arm64","bundles":"dmg"}]}' ||
-        '{"include":[{"os":"windows-2022","platform":"windows-x64","bundles":"nsis"},{"os":"ubuntu-22.04","platform":"linux-x64","bundles":"deb,appimage"}]}'
+        '{"include":[{"os":"windows-2022","platform":"windows-x64","bundles":"nsis"},{"os":"ubuntu-22.04","platform":"linux-x64","bundles":"deb,appimage"},{"os":"macos-15","platform":"macos-arm64","bundles":"dmg"}]}'
         ) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
@@ -193,6 +193,7 @@ jobs:
         run: |
           sha256sum -c SHA256SUMS-windows-x64.txt
           sha256sum -c SHA256SUMS-linux-x64.txt
+          sha256sum -c SHA256SUMS-macos-arm64.txt
           sha256sum -c SHA256SUMS-neural-models.txt
       - name: Stage draft then publish alpha with verified artifacts
         env:

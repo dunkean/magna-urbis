@@ -1,8 +1,6 @@
 # Desktop alpha releases
 
-The supported release targets are Windows x64 (NSIS installer and portable ZIP) and Linux x64 (DEB and AppImage). The app includes both native Rust executables. Users install neither Rust nor Python for procedural or native neural terrain generation.
-
-macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+The desktop release targets are Windows x64 (NSIS installer and portable ZIP), Linux x64 (DEB and AppImage), and Apple Silicon (experimental macOS DMG). The app includes both native Rust executables. Users install neither Rust nor Python for procedural or native neural terrain generation.
 
 ## Release each version with GitHub Actions
 
@@ -19,11 +17,11 @@ git tag desktop-v0.3.1
 git push origin desktop-v0.3.1
 ```
 
-The `Desktop V2 release` workflow validates that the tag matches Tauri, Cargo and Cargo.lock, builds on each target OS, tests the native commands and web integrations, recreates the model files from immutable upstream inputs, and checks the packaged resources. It publishes a GitHub prerelease only after both platforms succeed and all artifact checksums pass. A draft is used while uploading, so incomplete uploads are not advertised. The app's existing update checker includes these prereleases.
+The `Desktop V2 release` workflow validates that the tag matches Tauri, Cargo and Cargo.lock, builds on each target OS, tests the native commands and web integrations, recreates the model files from immutable upstream inputs, and checks the packaged resources. It publishes a GitHub prerelease only after all three platform jobs succeed and all artifact checksums pass. A draft is used while uploading, so incomplete uploads are not advertised. The app's existing update checker includes these prereleases.
 
-To build a candidate without publishing, select **Actions → Desktop V2 release → Run workflow**, select the candidate branch, and run it. Download its three artifacts: Windows, Linux and neural models. Manual runs do not publish a release or tag. The committed workflow must be on the default branch before it appears in the Actions menu.
+To build a candidate without publishing, select **Actions → Desktop V2 release → Run workflow**, select the candidate branch, and run it with the default `desktop` target. Download the four artifacts for Windows, Linux, macOS and the shared neural models. Manual runs do not publish a release or tag. The committed workflow must be on the default branch before it appears in the Actions menu.
 
-For an Apple Silicon test DMG, select the `macos-arm64` target. The job checks the DMG checksum and app signature, copies the app from the mounted image, and exercises its WKWebView with a fresh profile. It checks native procedural generation, WebGL map rendering and tilt, project export/import, native neural inference with verified weights, and service shutdown. GPU checks that cannot run on the hosted VM appear as skipped in the job summary. Use `macos-arm64-hardware` for qualification on an Apple Silicon Mac with an interactive login and a self-hosted Actions runner labelled `magna-desktop`. Both GPU checks must pass on that target. These DMGs are ad-hoc signed for testing. A public macOS release requires Developer ID signing and notarization.
+For a macOS-only candidate, select the `macos-arm64` target. The job checks the DMG checksum and app signature, copies the app from the mounted image, and exercises its WKWebView with a fresh profile. It checks native procedural generation, WebGL map rendering and tilt, project export/import, native neural inference with verified weights, and service shutdown. GPU checks that cannot run on the hosted VM appear as skipped in the job summary. Use `macos-arm64-hardware` for qualification on an Apple Silicon Mac with an interactive login and a self-hosted Actions runner labelled `magna-desktop`. Both GPU checks must pass on that target. The public DMG is signed ad hoc and distributed without Apple notarization.
 
 Keep release tags immutable. If a build fails before publication, fix the branch, bump the version and push a new tag. Re-running a failed job is appropriate for a transient infrastructure error. If draft publication was interrupted after creating the draft, delete only that incomplete draft before rerunning the release job; do not overwrite a published release.
 

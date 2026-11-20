@@ -78,7 +78,7 @@ fn ready_child(command: &mut Command) -> Result<(Child, u16), String> {
     }
 }
 
-// Only the manually dispatched, ad-hoc signed candidate includes this hook.
+// The packaged macOS app enables this hook only when launched in smoke mode.
 #[cfg(all(target_os = "macos", feature = "desktop-smoke"))]
 fn smoke_mode() -> bool {
     std::env::args().any(|arg| arg == "--desktop-smoke") && std::env::var_os("MAGNA_RUNTIME_DATA").is_some()
