@@ -1,6 +1,7 @@
 import type { Surface, RoofEdge, RoofGroup } from '../../../rust/bridge/housesContract';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { houseMaterialPatterns, renderHouseExteriorSvg, type HouseExterior, PAPER, xml, surfacePath } from '../../../rust/bridge/houseRender';
+import { polygonArea } from '../gen/core/geom';
 import { buildingPaint, URBAN_FUNCTION_LABELS, type UrbanBuildingAppearance } from './urbanBuildingStyle';
 import { UrbanBuildingLodRenderer, buildingRoofRidges, type BuildingLod, type BuildingViewport } from './urbanBuildingLod';
 
@@ -159,15 +160,7 @@ function silhouettesSvg(buildings: PlacedBuilding[], scene: PlacementBatch, appe
 }
 
 function nonzeroSurfacePath(surface: Surface): string {
-  const orient = (ring: Surface[number]['outer'], hole: boolean): Surface[number]['outer'] => {
-    let area = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i],
-        b = ring[(i + 1) % ring.length];
-      area += a.x * b.y - a.y * b.x;
-    }
-    return area < 0 !== hole ? [...ring].reverse() : ring;
-  };
+  const orient = (ring: Surface[number]['outer'], hole: boolean): Surface[number]['outer'] => (polygonArea(ring) < 0 !== hole ? [...ring].reverse() : ring);
   return surfacePath(surface.map(p => ({ outer: orient(p.outer, false), holes: p.holes.map(h => orient(h, true)) })));
 }
 function selectionSvg(building: PlacedBuilding): string {

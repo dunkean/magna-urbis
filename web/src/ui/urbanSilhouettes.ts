@@ -1,5 +1,6 @@
 import type { ArchitectureProgramme, PlacementBatch, PlacedBuilding, PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
 import type { Surface } from '../../../rust/bridge/housesContract';
+import { polygonArea } from '../gen/core/geom';
 import { projectUrbanSite, type UrbanSiteVisual } from './urbanSiteStore';
 
 /** City-side programme of one lot (stream B contract, optional). */
@@ -11,14 +12,7 @@ export type CityPlacementRequest = PlacementRequest & { preview?: Surface | null
 /** A silhouette keeps the lot programme so the map can colour it by role. */
 export type CityBuilding = PlacedBuilding & { programme?: CityProgramme };
 
-const ringArea = (ring: { x: number; y: number }[]): number =>
-  Math.abs(
-    ring.reduce((sum, p, i) => {
-      const n = ring[(i + 1) % ring.length];
-      return sum + p.x * n.y - p.y * n.x;
-    }, 0),
-  ) / 2;
-const surfaceArea = (surface: Surface): number => surface.reduce((sum, shape) => sum + ringArea(shape.outer) - shape.holes.reduce((h, ring) => h + ringArea(ring), 0), 0);
+const surfaceArea = (surface: Surface): number => surface.reduce((sum, shape) => sum + Math.abs(polygonArea(shape.outer)) - shape.holes.reduce((h, ring) => h + Math.abs(polygonArea(ring)), 0), 0);
 
 /** Building silhouettes from the native lot requests, without the house generator:
  * the city preview footprint when Rust provides one, else the oriented admission

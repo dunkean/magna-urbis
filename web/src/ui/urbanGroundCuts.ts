@@ -1,4 +1,5 @@
 import type { Point } from '../../../rust/bridge/housesContract';
+import { polygonArea } from '../gen/core/geom';
 import { moatDepth, moatSpans, type MoatSpan } from '../render/city3dMoat';
 
 /** Ground cuts of the 3D terrain: the moats of the town circuits, dug by their depth with sloped scarp and
@@ -75,14 +76,7 @@ export class UrbanGroundCuts {
             const k = [key(a), key(b)].sort().join('|');
             shared.set(k, (shared.get(k) ?? 0) + 1);
           }
-        const ringArea = (r: Point[]): number =>
-          Math.abs(
-            r.reduce((s, a, i) => {
-              const b = r[(i + 1) % r.length];
-              return s + a.x * b.y - b.x * a.y;
-            }, 0),
-          ) / 2;
-        const area = ringArea(outer) - all.slice(1).reduce((s, h) => s + ringArea(h), 0);
+        const area = Math.abs(polygonArea(outer)) - all.slice(1).reduce((s, h) => s + Math.abs(polygonArea(h)), 0);
         // Mean band width: area over half the perimeter.
         const depth = moatDepth(d),
           width = (2 * area) / Math.max(1, perimeter);
