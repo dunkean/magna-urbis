@@ -32,6 +32,12 @@ import { WALL_LINE_W } from '../src/render/scene';
 import { expectInvariants } from './cultureCases';
 import { IROQUOIAN_SHORT_LOTS } from './fixtures/iroquoian-short-lots';
 
+/** Naming attaches stable label keys to retained features without changing their geometry. */
+const geometryDigest = (geometry: unknown): string =>
+  createHash('sha256')
+    .update(JSON.stringify(geometry, (key, value) => (key === 'nameKey' ? undefined : value)))
+    .digest('hex');
+
 const rect = (w: number, h: number): Polygon => [
   { x: 0, y: 0 },
   { x: w, y: 0 },
@@ -343,7 +349,7 @@ describe('native programmes survive urban growth', () => {
         // Pin the complete current road foundation and every dwelling, verified equal
         // before/after optimization; historical per-house hashes used another partition.
         expect(new Set(homes.map(b => b.parcel)).size).toBe(homesCount);
-        expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe(hash);
+        expect(geometryDigest(u)).toBe(hash);
         for (const b of homes) {
           expect(2 * obb(b.poly).hu).toBeGreaterThan(11.5);
           expect(2 * obb(b.poly).hv).toBeGreaterThanOrEqual(4.45);
@@ -458,19 +464,32 @@ describe('native programmes survive urban growth', () => {
     for (const q of out.quarters) if (!pointInRing(q, shrine.anchor)) expect(mpArea(intersectionS(reserve, q))).toBeLessThanOrEqual(0.01);
   });
 
-  for (const culture of ['native-pueblo', 'kraal', 'barbarian'])
+  for (const [culture, compound, archetype, role] of [
+    ['native-pueblo', 'kiva-plaza', 'great-kiva', 'worship'],
+    ['kraal', 'cattle-kraal', 'grain-pit', 'civic'],
+    ['barbarian', 'chieftain-hall', 'chieftain-hall', 'power'],
+  ] as const)
     it(
-      'diagnoses an unavailable native core and keeps lazy ' + culture + ' quarters independent',
+      'builds a served native core and keeps lazy ' + culture + ' quarters independent',
       () => {
         const w = generate(makeOptions({ seed: '2', population: 60000, mapSize: 7000, eagerPop: 1000, culture, river: 'none', relief: 'flat', settlements: 'none' }));
         const untouched = structuredClone(w),
           M = w.urban!.macro!;
-        // No served reserved face survives these exact current road foundations.
-        // Compound construction and retained native faces have positive fixtures above.
-        expect(M.nucleusCompound).toBeUndefined();
-        expect(M.quarters.filter(q => q.kind === 'market')).toHaveLength(0);
-        expect(w.stats['settlements.warning']).toContain('no served dry face can hold the requested nucleus programme');
-        const quarters = M.quarters.filter(q => q.kind === 'quarter' && q.lab.some(lab => lab >= 0 && M.streets[lab].widths[0] > 0));
+        // The shared demographic classes treat 60,000 as a city. Its road fan leaves a served central face.
+        expect(M.nucleusCompound).toBe(compound);
+        expect(String(w.stats['settlements.warning'] ?? '')).not.toContain('no served dry face can hold the requested nucleus programme');
+        const markets = M.quarters.filter(q => q.kind === 'market');
+        expect(markets).toHaveLength(1);
+        const market = markets[0];
+        expect(market.nucleus).toBe(0);
+        expect(pointInRing(market.pts, M.center)).toBe(true);
+        const served = (q: typeof market) => q.lab.some(lab => lab >= 0 && M.streets[lab].widths[0] > 0);
+        expect(served(market)).toBe(true);
+        const detail = megaQuarterDetail(w, market.id)!;
+        expect(detail.buildings.some(b => b.arch === archetype)).toBe(true);
+        expect(detail.sites!.some(s => s.kind === compound && s.role === role)).toBe(true);
+        expectFabric(detail, w.urban!.streets);
+        const quarters = M.quarters.filter(q => q.kind === 'quarter' && served(q));
         expect(quarters.length).toBeGreaterThan(1);
         const first = megaQuarterDetail(w, quarters[0].id)!;
         expectFabric(first, w.urban!.streets);
@@ -747,7 +766,7 @@ for (const [culture, hash] of Object.entries(APPROVED_GEOMETRY))
     () => {
       const u = generate(makeOptions({ seed: '1', size: 'town', population: 2400, culture, settlements: 'none', coast: culture === 'hanseatic' ? 'S' : 'none', relief: culture === 'korean' || culture === 'celtic-oppidum' ? 'hills' : 'flat' })).urban!;
       const geometry = { culture: u.culture, streets: u.streets, blocks: u.blocks, parcels: u.parcels, buildings: u.buildings, walls: u.walls, lines: u.lines };
-      expect(createHash('sha256').update(JSON.stringify(geometry)).digest('hex')).toBe(hash);
+      expect(geometryDigest(geometry)).toBe(hash);
     },
     600000,
   );

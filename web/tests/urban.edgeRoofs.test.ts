@@ -695,9 +695,9 @@ describe('settlement edge roofs', () => {
       expect(snapshot!.afterOwners).toBe(snapshot!.owners);
       expect(snapshot!.constrained).toBe(0);
       expect(snapshot!.after).toEqual(snapshot!.before);
-      // Subsequent footprint finalization can normalize roof geometry.
-      // Pin that final output separately from the finisher's immediate transaction.
-      expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('5d4904e2ff2b04f768ab9a91a4d8a1036f20c30c1954bcee5b0d2c30ff6f0039');
+      // Pin the output after footprint finalization, including the stable street and quarter name keys
+      // and the population of 70 drawn from the current hamlet range (40–140).
+      expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('866b6b35b2f9629dce9b531f0be18db9ca2ecf38d79c85f76fd049abcc9ce1b9');
       u.buildings.forEach(b => {
         expect(outside(b.poly, u.parcels[b.parcel!].poly)).toBeLessThanOrEqual(1e-6);
       });
