@@ -3,7 +3,7 @@ import admissionJson from '../../../rust/crates/houses/data/urban-admission.json
 import { urbanRoleChoices } from './urbanRoleNames';
 import { translate } from './i18n';
 import type { ParameterChoice } from '../ui/parameterForm';
-import { polygonArea as signedRingArea, type Vec2 } from '../gen/core/geom';
+import { netPolygonArea, type Vec2 } from '../gen/core/geom';
 
 type Service = { role: string; function: string; area: number[]; requires?: string };
 const services = servicesJson as unknown as { cultures: Record<string, string>; families: Record<string, Service[]>; cultureServices: Record<string, Service[]>; rural: Service[]; harbour: Service[] };
@@ -104,5 +104,5 @@ export function forcedUseRefusal(cause: string | undefined, role: string): strin
 }
 
 export function polygonArea(shape: { outer: readonly Vec2[]; holes?: readonly (readonly Vec2[])[] }): number {
-  return Math.max(0, Math.abs(signedRingArea(shape.outer)) - (shape.holes ?? []).reduce((sum, hole) => sum + Math.abs(signedRingArea(hole)), 0));
+  return Math.max(0, netPolygonArea(shape.outer, shape.holes));
 }

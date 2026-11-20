@@ -1,6 +1,6 @@
 import { cityNamedSite } from '../render/cityGeneration';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
-import { polygonArea } from '../gen/core/geom';
+import { netPolygonArea } from '../gen/core/geom';
 import { benchOverlayChange } from './benchComposition';
 import { terrainStyle } from '../render/terrainStyle';
 import { recordStageMs } from './benchTimings';
@@ -174,7 +174,7 @@ const labels: Record<string, string> = {
 };
 const path = (pts: Point[], close = false): string => pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ') + (close ? 'Z' : '');
 const shapePath = (s: Shape): string => [s.outer, ...(s.holes ?? [])].map(p => path(p, true)).join(' ');
-const shapeArea = (s: Shape): number => Math.abs(polygonArea(s.outer)) - (s.holes ?? []).reduce((sum, h) => sum + Math.abs(polygonArea(h)), 0);
+const shapeArea = (s: Shape): number => netPolygonArea(s.outer, s.holes);
 /** Identical native warnings are listed once, with their count. */
 const warningText = (lines: string[]): string => {
   const counts = new Map<string, number>();

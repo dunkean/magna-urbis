@@ -29,6 +29,11 @@ export function polygonArea(p: readonly Vec2[]): number {
   return s / 2;
 }
 
+/** Area of the outer ring minus the area of its holes, regardless of winding. */
+export function netPolygonArea(outer: readonly Vec2[], holes?: readonly (readonly Vec2[])[]): number {
+  return Math.abs(polygonArea(outer)) - (holes ?? []).reduce((sum, hole) => sum + Math.abs(polygonArea(hole)), 0);
+}
+
 export function polygonCentroid(p: Polygon): Vec2 {
   let cx = 0,
     cy = 0,

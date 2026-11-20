@@ -4,7 +4,7 @@ import { union, difference, intersection, mpArea } from '../src/gen/geo/bool';
 import { splitByChord, lpoly, rayHit, insidePieces } from '../src/gen/geo/split';
 import { ribbon, insetConvex, sweepLeft } from '../src/gen/geo/offset';
 import { StreetGraph } from '../src/gen/geo/graph';
-import { polygonArea } from '../src/gen/core/geom';
+import { netPolygonArea, polygonArea } from '../src/gen/core/geom';
 
 const sq = (x: number, y: number, s: number) => [
   { x, y },
@@ -31,6 +31,26 @@ describe('polygonArea', () => {
     expect(polygonArea(points.slice(0, 1))).toBe(0);
     expect(polygonArea(points.slice(0, 2))).toBe(0);
     expect(polygonArea(points)).toBe(0);
+  });
+});
+
+describe('netPolygonArea', () => {
+  it('returns the outer area when holes are omitted or empty', () => {
+    const outer = Object.freeze(sq(0, 0, 10));
+    expect(netPolygonArea(outer)).toBe(100);
+    expect(netPolygonArea(outer, [])).toBe(100);
+  });
+
+  it('subtracts each hole regardless of its winding or the outer winding', () => {
+    const outer = sq(0, 0, 10);
+    const first = sq(1, 1, 2);
+    const second = sq(5, 5, 3);
+    expect(netPolygonArea(outer, Object.freeze([Object.freeze(first), Object.freeze(second)]))).toBe(87);
+    expect(netPolygonArea([...outer].reverse(), [[...first].reverse(), second])).toBe(87);
+  });
+
+  it('returns the arithmetic difference when holes exceed the outer area', () => {
+    expect(netPolygonArea(sq(0, 0, 2), [sq(0, 0, 3)])).toBe(-5);
   });
 });
 

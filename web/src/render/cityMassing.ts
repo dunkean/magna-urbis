@@ -4,7 +4,7 @@
  * roof pans, height shadows) and the 3D view. The building shown is the planned
  * silhouette raised in volume; no other house generator is involved. */
 import type { Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
-import { polygonArea } from '../gen/core/geom';
+import { netPolygonArea, polygonArea } from '../gen/core/geom';
 import { treeDwelling, treeCrownFaces, type TreeDwelling } from './cityTrees';
 import { roofPlaneLight } from './roofPlaneLight';
 import { intersectionS, unionS } from '../gen/geo/bool';
@@ -574,7 +574,7 @@ function ring(f: Faces, shape: Shape, eave: number, rise: number): void {
       }, 0),
     0,
   );
-  const area = Math.abs(polygonArea(shape.outer)) - shape.holes.reduce((s, r) => s + Math.abs(polygonArea(r)), 0);
+  const area = netPolygonArea(shape.outer, shape.holes);
   if (perimeter <= 0 || area <= 0) return;
   const d = Math.min(6, area / perimeter),
     top = eave + rise;
@@ -708,7 +708,7 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
     holes = roofHoles.filter(h => h.length >= 3);
   const rings: [Point[], boolean][] = [[ring, true], ...holes.map(h => [h, false] as [Point[], boolean])];
   const perimeter = rings.reduce((s, [r]) => s + r.reduce((t, p, k) => t + Math.hypot(r[(k + 1) % r.length].x - p.x, r[(k + 1) % r.length].y - p.y), 0), 0);
-  const area = Math.abs(polygonArea(ring)) - holes.reduce((s, h) => s + Math.abs(polygonArea(h)), 0);
+  const area = netPolygonArea(ring, holes);
   // Rim: a parapet reads a little wider; never more than a fraction of the inradius, so the field stays.
   // At the 1.4 px/m core view, a terrace bevel is ~1.5–1.7 px plus its dark seam.
   const w = terrace ? Math.min(1.45, perimeter > 0 ? (0.9 * area) / perimeter : 0) : Math.min((v.detail?.parapet_m ?? 0) > 0.05 ? 0.8 : 0.6, Math.max(0.3, 0.07 * Math.sqrt(Math.max(0, area))), perimeter > 0 ? (0.3 * area) / perimeter : 0);
