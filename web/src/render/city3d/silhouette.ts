@@ -3,15 +3,15 @@
  * Reads/writes: Reads source building, massing and height/water samplers; constructs local roof/volume records without changing the source.
  */
 import { mushroomDwellingCap } from '../city3dMushroom';
-import type { PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
-import { surfaceTriangles, MINOR_VOLUME_ROLE, type OverviewVolume } from '../urbanBuildingGeometry';
-import { pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof } from '../cityMassing';
+import type { ArchitectureVolume, PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
+import { surfaceTriangles, MINOR_VOLUME_ROLE, type OverviewVolume, type SeatedVolume } from '../urbanBuildingGeometry';
+import { pieceTerrace, pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof } from '../cityMassing';
 import { lightCrowns } from '../cityTrees';
 import { City3dHeight } from './types';
 import { surfaceArea, ringCentre, RoofBuilder, flatRoof, orientedBox, ringArea, ridgeRoof, insetRoof } from './roofGeometry';
 import { massingSlots, WALLS, COVERS, paletteSlots, TREE_CROWNS, slots, WALL_ID, COVER_ID } from './materials';
 import { silhouetteMassing, Programme, hash, CITY3D_LEVEL_M } from './massing';
-import { footprintTerrain, terrainSeat } from './terrainSeat';
+import { CITY3D_FOOTING_DEPTH_M, CITY3D_POST_SINK_M, bodySeat, footprintTerrain, pieceBodies, terraceFooting, terrainSeat } from './terrainSeat';
 import { treeDetails, stiltPosts } from './treeDwelling';
 import { baseVolume } from './volume';
 import { featureBox, overhang, standingFeatures } from './features';
@@ -29,27 +29,34 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
   const culture = building.culture.culture,
     programme = (building as PlacedBuilding & { programme?: Programme }).programme;
   const role = `${programme?.role ?? ''} ${m.family}${programme?.landmark ? ' monument' : ''}`;
-  const terrain = heightAt ? footprintTerrain(footprint, heightAt) : undefined,
-    low = terrain?.low ?? NaN;
-  // Silhouette plans may carry a zero/centre reference, not a terrain footing.
-  // A level floor clears the high side of a hillside (clamping that reference to the
-  // low side buries terraces and pyramids); against a cliff it stands on a retaining plinth.
-  let ground = terrain ? terrainSeat(terrain) : Number.isFinite(building.ground_z_m) ? building.ground_z_m : 0;
+  // Silhouette plans may carry a zero/centre reference, not a terrain footing: without a sampler they keep it.
+  const fallback = Number.isFinite(building.ground_z_m) ? building.ground_z_m : 0;
   const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, footprint, building.id);
-  const raised = massing?.some((m, i) => pieceVolumes(footprint[i], m).some(v => (v.detail?.stilts_m ?? 0) > 0));
-  if (raised && waterAt)
-    for (const shape of footprint)
-      for (const p of [...shape.outer, ringCentre(shape.outer)]) {
-        const water = waterAt(p.x, p.y);
-        if (Number.isFinite(water)) ground = Math.max(ground, water);
-      }
   if (massing) {
-    // City massing (cityMassing.ts): one volume per preview piece, its own height and roof.
-    const foundation = { footprint, z_min_m: Math.min(ground, Number.isFinite(low) ? low : ground) - 0.3, z_max_m: ground };
+    // City massing (cityMassing.ts): one volume per preview piece, its own height and roof. Each body is seated on the
+    // ground under it (a barn downhill of its house stands on its own ground, not lifted to the house floor); on a stilt
+    // site every piece stays above the water under it.
+    const pieces = footprint.map((shape, i) => pieceVolumes(shape, massing[i]));
+    const raised = !!waterAt && pieces.some(volumes => volumes.some(v => (v.detail?.stilts_m ?? 0) > 0));
+    const bodies = pieceBodies(footprint),
+      single = bodies.every(b => b === 0),
+      seats: { seat: number; low: number }[] = [];
+    for (let i = 0; i < bodies.length; i++) {
+      seats.push(bodies[i] < i ? seats[bodies[i]] : bodySeat(single ? footprint : footprint.filter((_, k) => bodies[k] === i), fallback, heightAt, raised ? waterAt : undefined));
+    }
+    // The building's ground is its highest seat: the terrain cut under the footprint (urbanBuildingGround.ts) never digs
+    // below a floor, and a piece seated lower names its own ground (SeatedVolume).
+    let site = -Infinity;
+    for (const { seat } of seats) site = Math.max(site, seat);
+    const terraces: ArchitectureVolume['foundation'][] = [];
     const volumes = footprint.flatMap((shape, i) => {
-      const piece = massing[i];
-      if (!piece) return [];
-      return pieceVolumes(shape, piece).map((v, j) => {
+      const piece = massing[i],
+        { seat: ground, low } = seats[i],
+        terrace = pieceTerrace(piece);
+      const foundation = { footprint, z_min_m: low - CITY3D_FOOTING_DEPTH_M, z_max_m: ground };
+      // A terraced piece stands on its terrace (drawn as a structural foundation): no footing of its own.
+      if (terrace) terraces.push(terraceFooting(terrace, ground, heightAt));
+      return pieces[i].map((v, j) => {
         const plain = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof),
           roof = new RoofBuilder();
         const materials = paletteSlots(plain, culture, v.wall, v.cover, v.tone, role + (v.wall === 'stone' ? ' monument' : ''), v.tint),
@@ -68,6 +75,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, v.rise_m, materials, roof.mesh(), 'RF-DOME', { ...foundation, footprint: [bodyShape] }, [
             { index: 0, footprint: [{ outer: scaledRing(v.shape.outer, v.tree.trunkRadius / v.tree.radius), holes: [] }], z_m: ground, height_m: v.eave_m },
           ]);
+          if (ground < site) (volume as SeatedVolume).ground_m = ground;
           volume.envelope = 'open';
           return volume;
         }
@@ -76,8 +84,16 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           lift = v.detail?.stilts_m ?? 0;
         const body = wallId;
         if (lift > 0) {
-          stiltPosts(roof, stiltDeck(v.shape.outer), ground, lift, wallId, materials.roof_frame);
-          for (const p of stiltSupports(v.shape.outer)) featureBox(roof, p.x, p.y, 0.32, 0.32, lift + 0.45, 0, ground, materials.roof_frame);
+          // A post stands on its own ground (the downhill posts of a hillside house are the longer ones), never on the floor's seat.
+          const footAt = (x: number, y: number): number => {
+            const h = heightAt?.(x, y);
+            return Number.isFinite(h) ? Math.min(ground, h!) - CITY3D_POST_SINK_M : ground;
+          };
+          stiltPosts(roof, stiltDeck(v.shape.outer), ground, lift, wallId, materials.roof_frame, footAt);
+          for (const p of stiltSupports(v.shape.outer)) {
+            const foot = footAt(p.x, p.y);
+            featureBox(roof, p.x, p.y, 0.32, 0.32, ground + lift + 0.45 - foot, 0, foot, materials.roof_frame);
+          }
         }
         // `base` is the level the heights of the volume are measured from; its walls start `raisedBy` above it.
         const base = ground + lift,
@@ -147,11 +163,12 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           materials,
           roof.mesh(),
           system,
-          { ...foundation, footprint: ruin || raisedBy ? [] : [bodyShape], z_max_m: lift > 0 ? foundation.z_min_m : ground },
+          { ...foundation, footprint: ruin || raisedBy || terrace ? [] : [bodyShape], z_max_m: lift > 0 ? foundation.z_min_m : ground },
           [{ index: 0, footprint: [bodyShape], z_m: z0, height_m: v.eave_m + base - z0 }],
         );
         // The display skirts extend past the silhouette's source footprint.
         volume.overhang_m = over;
+        if (ground < site) (volume as SeatedVolume).ground_m = ground;
         if (form === 'battered') volume.envelope = 'open';
         // Keep the main pans and gables without the small details added to the roof and facade.
         if (!organic && form !== 'battered' && v.rise_m > 0.05 && PLANAR_ROOFS.has(v.roof) && roofEnd > roofStart) volume.overview_roof_faces = [roofStart, roofEnd];
@@ -163,8 +180,19 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
       });
     });
     const treeCrowns = massing.some(p => p.volumes?.some(v => v.form === 'tree'));
-    return { ...building, ground_z_m: ground, roof_footprint: treeCrowns ? volumes.flatMap(v => v.footprint) : building.roof_footprint.length ? building.roof_footprint : footprint, volumes };
+    return {
+      ...building,
+      ground_z_m: site,
+      roof_footprint: treeCrowns ? volumes.flatMap(v => v.footprint) : building.roof_footprint.length ? building.roof_footprint : footprint,
+      volumes,
+      ...(terraces.length ? { structural_foundations: [...(building.structural_foundations ?? []), ...terraces] } : {}),
+    };
   }
+  // A level floor clears the high side of a hillside (clamping a reference to the low side buries terraces and
+  // pyramids); against a cliff it stands on a retaining plinth.
+  const terrain = heightAt ? footprintTerrain(footprint, heightAt) : undefined,
+    low = terrain?.low ?? NaN;
+  const ground = terrain ? terrainSeat(terrain) : fallback;
   const plain = slots(m.wall, m.roof),
     materials = paletteSlots(plain, culture, WALL_ID[m.wall].split(':')[1], COVER_ID[m.roof].split(':')[1], hash(building.id) / 0xffffffff, role);
   const wall = m.floors * CITY3D_LEVEL_M,
@@ -201,7 +229,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
       );
     } else insetRoof(roof, [shape], eave, Math.min(shapeRise, 4), materials.cladding);
   }
-  const foundation = { footprint, z_min_m: Math.min(ground, Number.isFinite(low) ? low : ground) - 0.3, z_max_m: ground };
+  const foundation = { footprint, z_min_m: Math.min(ground, Number.isFinite(low) ? low : ground) - CITY3D_FOOTING_DEPTH_M, z_max_m: ground };
   return {
     ...building,
     ground_z_m: ground,

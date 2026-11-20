@@ -134,8 +134,9 @@ export function treeDetails(roof: RoofBuilder, tree: TreeDwelling, base: number,
   return rings[0].map(({ x, y }) => ({ x, y }));
 }
 
-/** Posts and a floor under a body raised on stilts: thin prisms on a 2.2 m grid inside the ring, a plank floor above them. */
-export function stiltPosts(roof: RoofBuilder, ring: readonly Point[], ground: number, h: number, floor: string, post: string): void {
+/** Posts and a floor under a body raised on stilts: thin prisms on a 2.2 m grid inside the ring, a plank floor `h` above
+ * `ground`. Each post runs down to `footAt` (its own ground: longer downhill on a slope). */
+export function stiltPosts(roof: RoofBuilder, ring: readonly Point[], ground: number, h: number, floor: string, post: string, footAt: (x: number, y: number) => number): void {
   const xs = ring.map(p => p.x),
     ys = ring.map(p => p.y),
     inside = (x: number, y: number): boolean => {
@@ -153,7 +154,10 @@ export function stiltPosts(roof: RoofBuilder, ring: readonly Point[], ground: nu
     for (let j = 0; j <= ny; j++) {
       const x = x0 + ((x1 - x0) * i) / nx,
         y = y0 + ((y1 - y0) * j) / ny;
-      if (inside(x, y) && (inside(x + 0.3, y) || inside(x - 0.3, y) || inside(x, y + 0.3))) featureBox(roof, x, y, 0.22, 0.22, h, 0, ground, post);
+      if (inside(x, y) && (inside(x + 0.3, y) || inside(x - 0.3, y) || inside(x, y + 0.3))) {
+        const foot = footAt(x, y);
+        featureBox(roof, x, y, 0.22, 0.22, ground + h - foot, 0, foot, post);
+      }
     }
   const top = ring.map(p => ({ x: p.x, y: p.y, z: ground + h }));
   roof.face(top, floor);

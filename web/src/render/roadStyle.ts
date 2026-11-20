@@ -291,6 +291,8 @@ export function setRoadGround(landuse: LandUseLayer | undefined, size: number, t
   ground = { key: `${key}|${++groundId}`, size, data, base, night, soil: tones.soil };
   cache.set(key, ground);
 }
+/** Identity of the current road ground (tones and land use): meshes coloured from it rebuild when it changes. */
+export const roadGroundKey = (): string => ground?.key ?? '';
 const groundAt = (x: number, y: number): Rgb | undefined => {
   if (!ground) return undefined;
   if (!ground.data.length) return ground.base;

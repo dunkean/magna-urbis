@@ -8,12 +8,14 @@
  * a pattern with its context, the GPU town (cityGlStyle.ts) with its flat equivalent until it samples the pattern.
  */
 import type { CityLayers, CityLod, CityPalette, CityStreet } from './model/contract';
+import type { Point } from '../../../../rust/bridge/urban';
 import type { RenderColors } from '../customColors';
 import { groundRoadLook, type RoadLook } from '../composition';
 import { isBoardwalk } from '../cityGround';
 import { STRUCTURE_ROLES, blendTone, isBlended, softStreet, type BlendTone } from '../groundBlend';
+import type { SurfaceEnd } from '../roadSurface';
 import { streetToneAt } from '../groundTone';
-import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quayFill, sidewalkTone, streetRank, type RoadRank, type RoadStyle } from '../roadStyle';
+import { STREET_MIN_PX, cobbleTone, emphasisAlpha, naturalMarks, pavedMarks, pavedRank, quayFill, roadToneAt, sidewalkTone, streetRank, type RoadRank, type RoadStyle } from '../roadStyle';
 import type { RoadPavement } from '../roadPavement';
 import { streetLayer } from '../buildingMaterials';
 import { mapGroundSnow } from '../seasonPalette';
@@ -103,7 +105,7 @@ export interface StreetSurface {
   fill: StreetFill;
   inset?: number;
   inner?: StreetFill;
-  end?: 'square' | 'taper' | 'butt';
+  end?: SurfaceEnd;
 }
 interface StreetLook {
   mode: StreetMode;
@@ -120,6 +122,7 @@ interface StreetFrameInput {
   /** Metres per CSS pixel. */ mpp: number;
   layers: Pick<CityLayers, 'roadSurface'>;
   night?: boolean;
+  /** Stepped streets are 3D flights drawn by the host: their ground strip is painted as an ordinary street. */ stairMeshes?: boolean;
   roadLook?: RoadLook;
   /** Contrast of the roads against their ground, 0.5–1.5. */ roadEmphasis?: number;
   groundBlend?: boolean;
@@ -174,7 +177,8 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
   ink.casing = f.colors?.roadEdge ?? ink.casing;
   let w = Math.max(s.width, px(streetMinPx(s.role, s.rank))),
     w2 = quarter(w);
-  if (f.natural && !STRUCTURE_ROLES.has(s.role)) {
+  const structure = STRUCTURE_ROLES.has(s.role) && !(f.stairMeshes && s.role === 'stairs');
+  if (f.natural && !structure) {
     // Natural grounds: a street narrower than the pixel is not inflated to a plan stroke. It thins to about one
     // pixel and fades with its true share of that pixel, so a town seen from afar is its ground and its roofs,
     // not a street diagram laid over the land.
@@ -198,15 +202,15 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
       if (snow && road / mpp >= 4) {
         // Same winter as the earth streets: slush over a busy carriageway, a beaten line on a quiet one.
         const busy = s.rank <= 1 ? 1 : s.rank === 2 ? 0.62 : 0.24;
-        add('marks2', busy > 0.5 ? SLUSH : LANE_SNOW, road * (0.5 + 0.32 * busy), (0.2 + 0.32 * busy) * snow, 'round');
-        add('marks2', paintRoad, road * (0.16 + 0.18 * busy), paved.bed * (0.55 + 0.45 * busy), 'round');
+        add('marks2', busy > 0.5 ? SLUSH : LANE_SNOW, road * (0.5 + 0.32 * busy), (0.2 + 0.32 * busy) * snow, 'butt');
+        add('marks2', paintRoad, road * (0.16 + 0.18 * busy), paved.bed * (0.55 + 0.45 * busy), 'butt');
       }
       for (const k of paved.strokes) add('marks2', k.paint ?? paintRoad, k.width, k.alpha, k.cap as 'round' | 'butt', k.dash);
-      if (paved.grain) add('marks2', { grain: true }, road, paved.grain, 'round');
+      if (paved.grain) add('marks2', { grain: true }, road, paved.grain, 'butt');
       const sidewalk = walk ? sidewalkTone(f.pavedStyle) : undefined;
       if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge: 0, fill: sidewalk ? { paint: sidewalk, alpha: paved.bed } : bed, inset: walk, inner: sidewalk ? bed : undefined, end: 'square' } };
-      if (sidewalk) add('casing', sidewalk, w2, paved.bed, 'round');
-      add(body, paintRoad, sidewalk ? road : w2, paved.bed, 'round');
+      if (sidewalk) add('casing', sidewalk, w2, paved.bed, 'butt');
+      add(body, paintRoad, sidewalk ? road : w2, paved.bed, 'butt');
       return { mode: 'natural', strokes };
     }
     // Same paint as the regional roads: a tone of the local ground, a soft shoulder instead of a casing, wear up close.
@@ -217,40 +221,40 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
     const paintRoad: StreetPaint = { road: rank, style: f.roadStyle };
     const snow = f.roadStyle.night ? 0 : mapGroundSnow();
     // Rendered surface: the main streets of a town centre are cobbled (weathered setts), lanes stay packed earth.
-    if (f.roadStyle.look === 'rendered' && s.role !== 'track' && s.rank <= 1 && (town.population ?? 0) >= 2000) add('marks2', cobbleTone(f.roadStyle), w2 * 0.92, bedAlpha * 0.78, 'round');
+    if (f.roadStyle.look === 'rendered' && s.role !== 'track' && s.rank <= 1 && (town.population ?? 0) >= 2000) add('marks2', cobbleTone(f.roadStyle), w2 * 0.92, bedAlpha * 0.78, 'butt');
     if (snow && rank !== 'path' && w2 / mpp >= 4) {
       // Main streets are trodden to a grey-brown slush over most of their width; back lanes and tracks keep
       // their snow, with a cool shade and one narrow beaten line.
       const busy = s.role === 'track' ? 0.3 : s.rank <= 1 ? 1 : s.rank === 2 ? 0.62 : 0.24;
-      add('marks2', busy > 0.5 ? SLUSH : LANE_SNOW, w2 * (0.5 + 0.32 * busy), (0.2 + 0.32 * busy) * snow, 'round');
-      add('marks2', paintRoad, w2 * (0.16 + 0.18 * busy), bedAlpha * (0.55 + 0.45 * busy), 'round');
+      add('marks2', busy > 0.5 ? SLUSH : LANE_SNOW, w2 * (0.5 + 0.32 * busy), (0.2 + 0.32 * busy) * snow, 'butt');
+      add('marks2', paintRoad, w2 * (0.16 + 0.18 * busy), bedAlpha * (0.55 + 0.45 * busy), 'butt');
     }
-    if (marks.wear) add('marks2', marks.wear.color, w2 * marks.wear.share, marks.wear.alpha, 'round', marks.wear.dash);
-    if (marks.grain) add('marks2', { grain: true }, w2, marks.grain, 'round');
+    if (marks.wear) add('marks2', marks.wear.color, w2 * marks.wear.share, marks.wear.alpha, 'butt', marks.wear.dash);
+    if (marks.grain) add('marks2', { grain: true }, w2, marks.grain, 'butt');
     // A loose earth end narrows into the ground; a lane stops flat.
     if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge, casing: shoulder && lod !== 'far' ? { paint: shoulder.color, alpha: shoulder.alpha } : undefined, fill: { paint: paintRoad, alpha: bedAlpha }, end: s.role === 'lane' ? 'butt' : 'taper' } };
-    if (shoulder && lod !== 'far') add('casing', shoulder.color, w2 + 2 * edge, shoulder.alpha, 'round');
-    add(body, paintRoad, w2, bedAlpha, 'round');
+    if (shoulder && lod !== 'far') add('casing', shoulder.color, w2 + 2 * edge, shoulder.alpha, 'butt');
+    add(body, paintRoad, w2, bedAlpha, 'butt');
     return { mode: 'natural', strokes };
   }
   const toned = f.roadLook === 'ink' || night ? undefined : streetToneAt(s.street.path, s.role, s.rank); // map-tinted street (groundTone.ts)
-  if (toned || (!night && f.soft && !STRUCTURE_ROLES.has(s.role))) {
+  if (toned || (!night && f.soft && !structure)) {
     // Blended: earth wash at rank-decaying opacity and a faint soft edge instead of the dark casing.
     const soft = toned ?? softStreet(s.role, s.rank, f.tone);
     soft.fill = custom ?? soft.fill;
     soft.edge = f.colors?.roadEdge ?? soft.edge;
     const edge = px(streetEdgePx('soft', lod));
-    if (toned && s.role !== 'track') add('casing', toned.ground, w + 7 * edge, 0.45, 'round');
+    if (toned && s.role !== 'track') add('casing', toned.ground, w + 7 * edge, 0.45, 'butt');
     if (surfaceOk()) return { mode: 'soft', strokes, surface: { w, edge, casing: lod !== 'far' ? { paint: soft.edge, alpha: soft.edgeAlpha } : undefined, fill: { paint: soft.fill, alpha: soft.alpha } } };
     // The land use leaves a corridor along every street (the darker decor shows there): an apron of the ground tone hides it.
-    if (toned && s.role !== 'track') add('casing', toned.ground, w2 + 7 * edge, 0.45, 'round');
-    if (lod !== 'far') add('casing', soft.edge, w2 + 2 * edge, soft.edgeAlpha, 'round');
-    add(body, soft.fill, w2, soft.alpha, 'round');
+    if (toned && s.role !== 'track') add('casing', toned.ground, w2 + 7 * edge, 0.45, 'butt');
+    if (lod !== 'far') add('casing', soft.edge, w2 + 2 * edge, soft.edgeAlpha, 'butt');
+    add(body, soft.fill, w2, soft.alpha, 'butt');
     return { mode: 'soft', strokes };
   }
   const deck = s.role === 'bridge' || s.role === 'mole',
     edge = deck ? deckEdge(mpp) : px(streetEdgePx('ink', lod)),
-    cap = deck ? 'butt' : 'round';
+    cap = 'butt' as const;
   const bodyPaint: StreetPaint = !custom && f.roadLook !== 'ink' && f.textured ? { material: streetLayer(s.role, s.rank), fallback: ink.fill } : ink.fill;
   const inkEdge = edge * Math.max(1, f.emphasis),
     inkAlpha = Math.min(1, emphasisAlpha(f.emphasis));
@@ -259,7 +263,7 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
   add(body, bodyPaint, w2, inkAlpha, cap);
   const look: StreetLook = { mode: 'ink', strokes };
   if (s.role === 'bridge' && w2 > px(3.5)) look.rails = { paint: ink.casing, width: Math.max(0.25, px(0.55)), offset: w2 / 2 - Math.max(0.4, px(0.8)) };
-  if ((s.role === 'stairs' || s.role === 'port-stairs') && lod === 'close') look.stairs = { paint: '#705d45', width: px(0.6) };
+  if (((s.role === 'stairs' && !f.stairMeshes) || s.role === 'port-stairs') && lod === 'close') look.stairs = { paint: '#705d45', width: px(0.6) };
   return look;
 }
 /** The stroke of a street's body (its bed or ink fill) and of its casing (shoulder, soft edge or ink casing; not the
@@ -272,4 +276,33 @@ export function streetBase(look: StreetLook): { fill?: StreetFill; casing?: Stre
     else if (k.layer === 'casing') casing = k;
   }
   return { fill, casing };
+}
+/** The material (satellite) ground shows its unlit albedo tile about 1.45 times brighter than the building pass shows the
+ * same colour on a level face: a street of albedo rgb(149,142,107) reads rgb(218,205,146) next to a tread of rgb(149,142,107)
+ * (town-italian, 2026-11-20, web/out/stairs-3d-2026-11-20). A mesh that must read as that street takes the shown colour. */
+const MATERIAL_GROUND_SHOWN = 1.45;
+const materialGroundShown = (css: string): string => {
+  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(css);
+  return m ? `rgb(${[m[1], m[2], m[3]].map(v => Math.min(255, Math.round(Number(v) * MATERIAL_GROUND_SHOWN))).join(',')})` : css;
+};
+/** Options of a ground pass that decide the colour of a stepped street (see `stairStreetColor`). */
+export type StairPaintOptions = Pick<StreetFrameInput, 'palette' | 'roadLook' | 'roadEmphasis' | 'streetPalette' | 'colors' | 'groundBlend' | 'materialGround' | 'night'> & { appearance?: { colors?: RenderColors; ambience?: string } };
+/** Bed colour of a stepped street in a ground drawn with `stairMeshes`, read once per flight for the treads and ramps of
+ * its 3D steps (city3dStairs.ts): the branches and sources of `streetLook` for that street (natural road tone at
+ * the flight's middle, map-tinted street, blended wash, or the plan's street paint), each pattern given as its base colour. */
+export function stairStreetColor(street: { path: readonly Point[]; role: string; rank: number }, o: StairPaintOptions): string {
+  const palette = o.palette,
+    night = !!o.night,
+    custom = o.colors?.road;
+  if (custom) return custom;
+  if (groundRoadLook(o.roadLook)) {
+    const mid = street.path[street.path.length >> 1];
+    const style: RoadStyle = { look: o.roadLook === 'rendered' ? 'rendered' : 'natural', emphasis: o.roadEmphasis ?? 1, night: o.appearance?.ambience === 'night', colors: o.appearance?.colors };
+    const tone = roadToneAt(mid.x, mid.y, streetRank(street.role, street.rank), style);
+    return o.materialGround ? materialGroundShown(tone) : tone;
+  }
+  const toned = o.roadLook === 'ink' || night ? undefined : streetToneAt(street.path, street.role, street.rank);
+  if (toned) return toned.fill;
+  if (!night && o.roadLook !== 'ink' && (o.groundBlend ?? isBlended())) return softStreet(street.role, street.rank, o.materialGround ? 'earth' : blendTone(palette)).fill;
+  return night ? (palette === 'parchment' ? '#647b95' : '#242e3b') : streetInk(street.role, street.rank, o.streetPalette ?? palette).fill;
 }

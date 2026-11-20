@@ -80,6 +80,36 @@ export interface MassingPiece {
   wall: string;
   tone?: number;
   volumes?: MassingVolume[];
+  /** How the piece takes a ground drop of 1 m or more (urban/massing.rs `footing`). Heights in it are the generator's
+   * surface: renderers read `drop_m` and `wall_m` against their own ground, never `base_z_m` as an absolute level. */
+  footing?: MassingFooting;
+}
+/** `terrace`: the level terrace the piece stands on (its box across the slope, run past it downhill, inside the lot) and
+ * the height of its retaining wall on the downhill edge. */
+export interface MassingFooting {
+  /** `plinth` | `stilts` | `terrace`. */ way: string;
+  base_z_m: number;
+  low_z_m: number;
+  drop_m: number;
+  terrace?: { ring: [number, number][]; wall_m: number };
+}
+/** The terrace under a piece, when its footing sends a valid one: its outline and retaining wall height (m). */
+export function pieceTerrace(m: MassingPiece | undefined): { ring: Point[]; wall_m: number } | undefined {
+  const t = m?.footing?.terrace;
+  if (!t || !finite(t.wall_m) || !Array.isArray(t.ring) || t.ring.length < 3 || !t.ring.every(q => Array.isArray(q) && finite(q[0]) && finite(q[1]))) return undefined;
+  return { ring: t.ring.map(([x, y]) => ({ x, y })), wall_m: Math.max(0, t.wall_m) };
+}
+/** Plan colours of a terrace in the 2D styles that draw building detail: dry-stone paving and its retaining wall line. */
+export const TERRACE_PAVING = '#bdb09a',
+  TERRACE_WALL = '#5a4a38';
+/** Terrace outlines of a building's pieces, or undefined when none stands on one. */
+export function massingTerraces(massing?: readonly MassingPiece[]): Surface | undefined {
+  let out: Surface | undefined;
+  for (const m of massing ?? []) {
+    const t = pieceTerrace(m);
+    if (t) (out ??= []).push({ outer: t.ring, holes: [] });
+  }
+  return out;
 }
 interface RoofPan {
   points: Vertex3[];

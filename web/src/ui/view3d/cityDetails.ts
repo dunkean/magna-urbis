@@ -3,7 +3,7 @@
  * Reads/writes: Reads source identity and shared detail service; writes detail caches, pending swaps, timers and display sectors on the supplied context.
  */
 import { TERRAIN_3D_FOV } from '../terrain3d';
-import { city3dDisplayKind, compactBuilding, projectionDetailMatches } from '../../render/city3dMeshes';
+import { city3dDisplayKind, compactBuilding, projectionDetailMatches, seatPlan } from '../../render/city3dMeshes';
 import { isBuildingProjection, type Building3dVisual } from '../../render/urbanBuildingGeometry';
 import type { PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
 import { executionRuntime } from '../executionProfile';
@@ -74,9 +74,11 @@ export function swapDetail(cityContext: City3dContext, id: string, detail: Place
     cityContext.display.kinds.compact--;
     cityContext.display.kinds.detailed++;
   }
-  cityContext.realized.add(detail);
-  cityContext.display.buildings[i] = detail;
-  cityContext.queueSwap(id, detail);
+  // Seated on the displayed terrain like its compact plan (city3dScene); projections keep their recorded heights.
+  const seated = cityContext.sceneOf && 'projection' in cityContext.sceneOf ? detail : seatPlan(detail, cityContext.heightAt);
+  cityContext.realized.add(seated);
+  cityContext.display.buildings[i] = seated;
+  cityContext.queueSwap(id, seated);
 }
 
 /** An exterior the shared cache evicted goes back to its compact plan. */
@@ -84,7 +86,7 @@ export function restoreCompact(cityContext: City3dContext, id: string): void {
   const i = cityContext.slotOf(id),
     base = cityContext.byId.get(id);
   if (!cityContext.display || i < 0 || !base || !cityContext.realized.has(cityContext.display.buildings[i])) return;
-  const compact = isBuildingProjection(base) ? base : compactBuilding(base);
+  const compact = isBuildingProjection(base) ? base : compactBuilding(seatPlan(base, cityContext.heightAt));
   cityContext.display.kinds.detailed--;
   cityContext.display.kinds[city3dDisplayKind(base)]++;
   cityContext.display.buildings[i] = compact;

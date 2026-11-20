@@ -152,6 +152,9 @@ export function mountCity3d(options: City3dOptions): City3d {
   cityContext.bridgeStats = { count: 0 };
 
   cityContext.quayCount = 0;
+  cityContext.stairStats = { count: 0, triangles: 0, ms: 0 };
+  cityContext.stairInputs = [];
+  cityContext.stairBuildings = [];
 
   cityContext.wallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
 

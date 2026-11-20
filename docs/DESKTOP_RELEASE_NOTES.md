@@ -55,6 +55,16 @@
 - Underdark: fungal farms stay by the cave towns. The countryside no longer fills with hundreds of farmsteads: no roadside farms or farm hamlets, and at most one isolated farm per 500 inhabitants (40 per map).
 - Underdark: fungal farm beds are dark compost of the cave floor's tones with small, faintly glowing mushroom caps in every map style, instead of a pale field with a purple symbol.
 - Underdark lava tubes and river passages are narrow guts a few metres wide on every map size, instead of passages at least two terrain cells wide; roads and rivers still pass through them.
+- Generate towns on steep sites about twice as fast: the slope relaxation is chosen before the first layout instead of after a failed one.
+- Generate towns slightly faster: street pruning settles in one pass and trim checks skip work they do not read.
+- A town no longer depends on the towns generated before it in the same session: the capacity calibration is keyed on everything it reads, and retouching one quarter no longer recalibrates the town.
+- Web version: generate independent towns at the same time and build town volumes from compact display rows: two towns of 50,000 take about 21 s instead of 56 s, close to the desktop engine.
+- Speed up town generation in the browser when the result cache is large: cache writes no longer read back every stored town.
+- Houses on mountain slopes no longer float in 3D: footings reach below the coarser distant terrain, and stilt posts run down to the ground on the downhill side.
+- Hillside farmsteads seat each detached building on its own ground; terracing cultures stand houses on level terraces with a retaining wall, shown in 3D and in detailed 2D plans; compact and detailed architectures sit on the displayed terrain.
+- Stepped streets stand as real flights of steps in 3D: level treads in the colour of the street they continue, lighter risers sized to the slope, landings at turns and on long climbs, stone cheeks down to the ground, over a plain paved strip instead of a hatched band; in 2D their tread hatching spans the whole width.
+- Streets meet as one surface: a street joining another stops flush at its far edge instead of a rounded end sticking out by a metre or two, bends between streets close with a proper join, and dead ends are cut square, in every map style, 2D and on the 3D ground.
+- Town walls open the number of gates their size allows (about five at 10,000 inhabitants, eight for a large city) instead of one wherever a street or a bridge ramp reached them. At a gate the curtain turns square to its street, with its gatehouse; the other streets end at the wall, and a main road left without a gate goes round the moat to the nearest one.
 
 The Apple Silicon DMG is signed ad hoc and distributed without Apple notarization. GitHub Actions tests the packaged app. Native neural GPU inference on a physical Mac remains unverified.
 

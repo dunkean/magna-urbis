@@ -41,6 +41,9 @@ export interface CityDrawOptions {
   groundBlend?: boolean;
   /** Unlit physical albedo tile; lighting and night tint belong to the terrain shader. */
   materialGround?: boolean;
+  /** The host draws stepped streets as 3D flights (city3dStairs.ts): the ground keeps a plain strip under them, painted as
+   * an ordinary street, without the plan's tread hatching. */
+  stairMeshes?: boolean;
   roadLook?: import('../../composition').RoadLook;
   /** Contrast of the roads against their ground, 0.5–1.5 (roadStyle.ts). */
   roadEmphasis?: number;

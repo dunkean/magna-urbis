@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { pieceRoof, roofLight, type MassingPiece } from '../src/render/cityMassing';
 import { roofPlaneLight } from '../src/render/roofPlaneLight';
 import { treeDwelling } from '../src/render/cityTrees';
-import { city3dLotEnclosures, silhouetteBuilding } from '../src/render/city3dMeshes';
+import { CITY3D_FOOTING_DEPTH_M, city3dLotEnclosures, silhouetteBuilding } from '../src/render/city3dMeshes';
 import { eachBuildingTriangle } from '../src/render/urbanBuildingGeometry';
 import { UrbanBuildingPass, type Batch } from '../src/ui/urbanBuilding3d';
 import { yardMeshTint, yardStyle } from '../src/render/yardStyle';
@@ -96,7 +96,7 @@ describe('building look regression', () => {
     const slope = silhouetteBuilding({ ...source, ground_z_m: 0 }, x => 20 + x / 2);
     expect(slope.ground_z_m).toBe(26);
     expect(slope.volumes.map(v => v.z_m + v.wall_height_m)).toEqual([29, 32, 35]);
-    expect(slope.volumes[0].foundation.z_min_m).toBeCloseTo(13.7);
+    expect(slope.volumes[0].foundation.z_min_m).toBeCloseTo(14 - CITY3D_FOOTING_DEPTH_M);
   });
 
   it('keeps yard copings matte through near and ribbon LODs, with no winter roof overlay', () => {

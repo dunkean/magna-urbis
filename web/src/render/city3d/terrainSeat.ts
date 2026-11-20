@@ -2,9 +2,10 @@
  * Ground sampling and terrain seating for display volumes. Called by the City 3D scene adapter and sibling mesh builders.
  * Reads/writes: Reads supplied terrain samplers and footprints; returns sampled bounds/seats/height functions without shared state.
  */
-import type { Surface } from '../../../../rust/bridge/housesContract';
+import type { Point, Surface } from '../../../../rust/bridge/housesContract';
+import type { ArchitectureVolume, PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
 import { City3dHeight } from './types';
-import { inRing } from './roofGeometry';
+import { inRing, ringCentre } from './roofGeometry';
 
 /** Steepest footprint ground (rise over run) still read as a hillside: a level floor stands
  * on its high side over a footing. Steeper is a cliff (Rust `activities::ground_fits`). */
@@ -12,6 +13,12 @@ export const CITY3D_CLIFF_SLOPE = 1;
 
 /** Retaining plinth under a floor built against a cliff face, m. */
 export const CITY3D_RETAINING_PLINTH_M = 3;
+/** Depth of a footing below the lowest ground sample under its footprint, m. The terrain mesh is linear between its
+ * vertices (several metres apart beyond the near tiles) and dips below the sampled relief on convex mountain ground:
+ * a shallow footing left a gap under the downhill wall there. Underground, the extra depth is never seen. */
+export const CITY3D_FOOTING_DEPTH_M = 1.5;
+/** Stilts and posts are driven this far below their own ground sample, for the same mesh tolerance, m. */
+export const CITY3D_POST_SINK_M = 0.5;
 
 /** Terrain under a footprint: lowest and highest sample and steepest sample-to-sample slope.
  * Corners first; a large or uneven footprint adds an interior grid (inside its rings, at most
@@ -70,6 +77,86 @@ export function footprintTerrain(footprint: Surface, heightAt: City3dHeight): { 
  * fills down to the low side, terraces keep their heights), a retaining plinth above the low
  * side against a cliff (the uphill part stands into the face, never hung from the top). */
 export const terrainSeat = (t: { low: number; high: number; slope: number }): number => (t.slope > CITY3D_CLIFF_SLOPE ? Math.min(t.high, t.low + CITY3D_RETAINING_PLINTH_M) : t.high);
+/** Pieces closer than this (m) belong to one body. */
+const BODY_GAP_M = 0.5;
+/** Body index of each piece: pieces standing apart (a barn across the yard from its house) are bodies of their own;
+ * pieces whose boxes touch or overlap (wings, nested tiers whose heights share one ground) form one body. */
+export function pieceBodies(footprint: Surface): number[] {
+  const body = footprint.map((_, i) => i);
+  if (footprint.length < 2) return body;
+  const boxes = footprint.map(shape => {
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const p of shape.outer) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
+    return [x0 - BODY_GAP_M, y0 - BODY_GAP_M, x1 + BODY_GAP_M, y1 + BODY_GAP_M];
+  });
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i],
+        b = boxes[j];
+      if (body[i] === body[j] || a[0] > b[2] || b[0] > a[2] || a[1] > b[3] || b[1] > a[3]) continue;
+      const from = Math.max(body[i], body[j]),
+        to = Math.min(body[i], body[j]);
+      for (let k = 0; k < body.length; k++) if (body[k] === from) body[k] = to;
+    }
+  // Each body is named by its first piece.
+  return body;
+}
+/** Floor level of a body on the ground under it (`fallback` without a sampler), raised above the water under it
+ * (`waterAt`, stilt sites), and the lowest ground its footing must reach. */
+export function bodySeat(shapes: Surface, fallback: number, heightAt?: City3dHeight, waterAt?: City3dHeight): { seat: number; low: number } {
+  const terrain = heightAt ? footprintTerrain(shapes, heightAt) : undefined;
+  let seat = terrain ? terrainSeat(terrain) : fallback;
+  if (waterAt)
+    for (const shape of shapes)
+      for (const p of [...shape.outer, ringCentre(shape.outer)]) {
+        const water = waterAt(p.x, p.y);
+        if (Number.isFinite(water)) seat = Math.max(seat, water);
+      }
+  return { seat, low: Math.min(seat, terrain?.low ?? seat) };
+}
+/** Level terrace under a piece (massing `footing.terrace`): a slab at the floor over its outline, its retaining wall
+ * `wall_m` below the floor on the downhill edge, or down to the displayed ground wherever that lies lower (the shown
+ * relief may differ from the generator's), sunk like a footing. */
+export function terraceFooting(terrace: { ring: Point[]; wall_m: number }, seat: number, heightAt?: City3dHeight): ArchitectureVolume['foundation'] {
+  const footprint = [{ outer: terrace.ring, holes: [] }],
+    ground = heightAt ? footprintTerrain(footprint, heightAt)?.low : undefined;
+  return { footprint, z_min_m: Math.min(seat - terrace.wall_m, ground ?? Infinity) - CITY3D_FOOTING_DEPTH_M, z_max_m: seat };
+}
+/** A native plan (compact or detailed, houses crate) seated on the displayed terrain like the city volumes: the whole
+ * plan moves to `terrainSeat` of its footprint, and each footing standing on the ground reaches below the lowest ground
+ * sample. The plan itself is returned when nothing moves. */
+export function seatPlan(building: PlacedBuilding, heightAt?: City3dHeight): PlacedBuilding {
+  const terrain = heightAt && Number.isFinite(building.ground_z_m) ? footprintTerrain(building.footprint, heightAt) : undefined;
+  if (!terrain) return building;
+  const dz = terrainSeat(terrain) - building.ground_z_m,
+    bottom = terrain.low - CITY3D_FOOTING_DEPTH_M;
+  // A footing standing on the ground (its bottom at or below the plan's ground) left above the displayed ground.
+  const short = (f: { z_min_m: number } | undefined): boolean => !!f && f.z_min_m <= building.ground_z_m + 1e-6 && f.z_min_m + dz > terrain.low;
+  if (Math.abs(dz) < 1e-6 && !building.volumes.some(v => short(v.foundation)) && !building.structural_foundations?.some(short)) return building;
+  const footing = <T extends { z_min_m: number; z_max_m: number }>(f: T): T => ({ ...f, z_min_m: short(f) ? Math.min(f.z_min_m + dz, bottom) : f.z_min_m + dz, z_max_m: f.z_max_m + dz });
+  const volumes = building.volumes.map(v => ({
+    ...v,
+    z_m: v.z_m + dz,
+    levels: v.levels.map(l => ({ ...l, z_m: l.z_m + dz })),
+    roof_mesh: v.roof_mesh && { ...v.roof_mesh, vertices: v.roof_mesh.vertices.map(p => ({ ...p, z: p.z + dz })) },
+    foundation: v.foundation && footing(v.foundation),
+  }));
+  return {
+    ...building,
+    ground_z_m: building.ground_z_m + dz,
+    volumes,
+    ...(building.structural_foundations ? { structural_foundations: building.structural_foundations.map(footing) } : {}),
+    structural_features: building.structural_features?.map(f => ({ ...f, z_m: f.z_m + dz, vertices3d: f.vertices3d.map(p => ({ ...p, z: p.z + dz })) })),
+  };
+}
 
 /** Cubic B-spline of cell-centred samples, as Terrain3d samples its surface; water clamps to 0. */
 export function rasterHeight(data: Float32Array, n: number, width: number): City3dHeight {

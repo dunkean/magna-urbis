@@ -58,7 +58,7 @@ export function buildingBounds(building: Building3dVisual): BuildingBounds {
 
 /** Terrain structures (city walls, bridges, quays, harbours) follow the relief whole: they have no ground level of
  * their own (Infinity). A building keeps its real height above its ground. */
-export const buildingGround = (building: Building3dVisual): number => (/^city3d-(wall|bridge|quay|harbour)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m);
+export const buildingGround = (building: Building3dVisual): number => (/^city3d-(wall|bridge|quay|harbour|stairs)/.test(building.id) || !Number.isFinite(building.ground_z_m) ? Infinity : building.ground_z_m);
 
 /** Where a vertex stands: fills `out[0]` (the vertex's second float) and `out[1]` (its last float). `ground` is
  * buildingGround(building); `faceGround` the ground under this point when the face follows the terrain (yards). */

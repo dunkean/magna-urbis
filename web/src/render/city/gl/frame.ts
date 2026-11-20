@@ -26,6 +26,7 @@ import { CityGlDrawOptions, CityGlFrame } from './contract';
 import { WATER_BIT } from './shaders';
 import { Program } from './programs';
 import { FillPack, StrokePack } from './packs';
+import { TERRACE_PAVING, TERRACE_WALL } from '../../cityMassing';
 
 const materialExtents = new Float32Array(32).fill(2);
 const materialMeans = new Float32Array(32).fill(0.5);
@@ -418,6 +419,14 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
       grainAllowed = o.roof !== 'flat' && !minimal,
       pans = !minimal && !footprint && !!built.mesh.layers.roofs?.triangles.count;
     const buildingLayer = footprint || minimal ? 'buildingFootprints' : 'buildings';
+    if (!footprint && built.mesh.layers.terraces?.triangles.count) {
+      // Terraces under hillside buildings (drawCity): paving and its retaining wall line, below the building.
+      gl.uniform4fv(fillP.u.uTint, rgba01(TERRACE_PAVING));
+      fills(built, 'terraces', false);
+      gl.uniform4fv(fillP.u.uTint, rgba01(TERRACE_WALL));
+      fills(built, 'terraces', true);
+      gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
+    }
     if (pans) {
       // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
       gl.uniform4fv(fillP.u.uTint, castShadowTint(palette, planPath, buildings?.items[0]?.snowAltitude));

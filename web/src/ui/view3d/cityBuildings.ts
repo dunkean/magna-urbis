@@ -6,12 +6,23 @@ import { updateYardEnclosures } from '../../render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../../render/city3dMeshes';
 import { city3dBuildings, city3dFarmBuildings, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
 import { UrbanGroundCuts } from '../urbanGroundCuts';
+import { city3dStairs } from '../../render/city3dStairs';
+import { stairStreetColor, type StairPaintOptions } from '../../render/cityCanvas';
+import { roadGroundKey } from '../../render/roadStyle';
 import { city3dCanopy, cityCanopy } from '../../render/cityGrove';
 import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/underdarkOrnaments';
 
 import { type Building3dVisual } from '../../render/urbanBuildingGeometry';
 import type { Point } from '../../../../rust/bridge/housesContract';
 import type { City3dContext } from './cityContext';
+/** The options of the ground pass that paints the town's streets in this 3D ground (satellite or plan ink, as tiles draw them). */
+function stairPaintOptions(cityContext: City3dContext): StairPaintOptions {
+  const plan = cityContext.options.getPlanOptions?.(),
+    satellite = cityContext.proceduralGround && cityContext.options.getGroundSettings?.(cityContext.ground)?.renderV2 === 1;
+  return satellite && plan?.roadLook !== 'ink'
+    ? { palette: 'terrain', roadLook: 'natural', groundBlend: true, materialGround: true, roadEmphasis: plan?.roadEmphasis }
+    : { palette: plan?.palette ?? 'terrain', roadLook: plan?.roadLook, roadEmphasis: plan?.roadEmphasis, streetPalette: plan?.streetPalette, colors: plan?.colors, groundBlend: plan?.groundBlend ?? false, night: plan?.night, appearance: plan?.appearance };
+}
 // ------------------------------------------------------------ buildings
 export function syncBuildings(cityContext: City3dContext, force = false): void {
   const t = cityContext.terrain;
@@ -74,6 +85,9 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     cityContext.bridgeStats = { count: 0 };
     cityContext.wallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
     cityContext.quayCount = 0;
+    cityContext.stairStats = { count: 0, triangles: 0, ms: 0 };
+    cityContext.stairInputs = [];
+    cityContext.stairBuildings = [];
     cityContext.structureInputs = [];
     cityContext.canopyInputs = [];
     cityContext.ornamentInputs = [];
@@ -104,6 +118,20 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
       cityContext.quayCount = quays.length + boardwalks.length;
       cityContext.structureBuildings = [...bridges, ...walls, ...quays, ...boardwalks];
     }
+    // Stepped streets as flights of steps on the displayed relief (city3dStairs.ts), coloured like their street in the
+    // current 3D ground (`stairStreetColor`); rebuilt alone when the network, relief or that paint changes.
+    const stairPaint = stairPaintOptions(cityContext),
+      nextStairInputs = [layouts, cityContext.heightAt, JSON.stringify(stairPaint), roadGroundKey()];
+    if (nextStairInputs.some((input, i) => input !== cityContext.stairInputs[i])) {
+      cityContext.stairInputs = nextStairInputs;
+      const stairStarted = performance.now();
+      cityContext.stairBuildings = city3dStairs(layouts ?? [], cityContext.heightAt, street => stairStreetColor(street, stairPaint));
+      cityContext.stairStats = {
+        count: cityContext.stairBuildings.length,
+        ms: Math.round(performance.now() - stairStarted),
+        triangles: cityContext.stairBuildings.reduce((n, s) => n + s.volumes.reduce((m, v) => m + v.roof_mesh.faces.reduce((k, f) => k + f.vertices.length - 2, 0), 0), 0),
+      };
+    }
     const yardPlan = yardsShown ? cityContext.cityPlan() : undefined;
     const sharedYards = cityContext.options.getLotEnclosures?.();
     if (yardPlan && sharedYards) yardPlan.lotEnclosures = sharedYards as import('../../../../rust/bridge/urban').LotEnclosure[];
@@ -126,7 +154,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     // other building: the massing-to-mesh code, materials, classes, tint and snow of the towns, each on the terrain
     // under its own footprint.
     cityContext.farmBuildings ??= city3dFarmBuildings(farmsteads, placeholders, cityContext.heightAt);
-    cityContext.display = city3dWithExtras(cityContext.display, [...cityContext.structureBuildings, ...yardMeshes, ...cityContext.canopyBuildings, ...cityContext.ornamentBuildings, ...cityContext.farmBuildings]);
+    cityContext.display = city3dWithExtras(cityContext.display, [...cityContext.structureBuildings, ...cityContext.stairBuildings, ...yardMeshes, ...cityContext.canopyBuildings, ...cityContext.ornamentBuildings, ...cityContext.farmBuildings]);
     cityContext.displayMs = performance.now() - started;
   }
   const appearance = cityContext.options.getBuildingAppearance?.(),

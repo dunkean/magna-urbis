@@ -36,7 +36,8 @@ function faceTriangles(mesh: RoofMesh, face: RoofMesh['faces'][number]): number[
 
 function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle: BuildingTriangle) => void, start = 0, end = mesh.faces.length): void {
   for (let f = start; f < end && f < mesh.faces.length; f++) {
-    const face = mesh.faces[f], { hiddenEdge } = face;
+    const face = mesh.faces[f],
+      { hiddenEdge } = face;
     const triangles = faceTriangles(mesh, face);
     for (let i = 0; i + 2 < triangles.length; i += 3) {
       const points = triangles.slice(i, i + 3).map(index => mesh.vertices[index]);
@@ -154,6 +155,9 @@ function yardRibbon(line: YardLine, lod: number, materials: MaterialSlots, emit:
       quad(a, b, [b[0], b[1], p.g + line.height], [a[0], a[1], p.g + line.height], p.g, p.g, [sign * p.my, -sign * p.mx, 0], line.side);
     }
 }
+/** A display volume seated below its building's ground (a barn downhill of its house, city3dMeshes.ts) names its own
+ * ground: under the relief exaggeration its walls keep their height above that ground, not above the building's. */
+export type SeatedVolume = PlacedBuilding['volumes'][number] & { ground_m?: number };
 /** `role` of a small decorative display volume (city3dMeshes.ts): drawn in the detailed mesh, left out of the overview. */
 export const MINOR_VOLUME_ROLE = 'minor';
 const PROXY_MATERIALS: MaterialSlots = { frame: '', infill: '', coating: '', cladding: '', base: '', roof_frame: '' };
@@ -210,6 +214,8 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
       }
     return;
   }
+  // `out` is `emit`, or for a seated volume `emit` with the volume's own ground under each point.
+  let out = emit;
   const extrude = (surface: Surface, z: number, height: number, materials: MaterialSlots, cap: boolean, material?: string): void => {
     if (height <= 1e-8) return;
     for (const shape of surface)
@@ -229,7 +235,7 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
             length = Math.hypot(dx, dy);
           if (length < 1e-8) continue;
           const normal: BuildingVector = [(sign * dy) / length, (-sign * dx) / length, 0];
-          emit({
+          out({
             points: [
               [a.x, a.y, z],
               [b.x, b.y, z],
@@ -240,7 +246,7 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
             material,
             surface: 'wall',
           });
-          emit({
+          out({
             points: [
               [a.x, a.y, z],
               [b.x, b.y, z + height],
@@ -253,7 +259,7 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
           });
         }
       }
-    if (cap) for (const triangle of surfaceTriangles(surface)) emit({ points: triangle.map(p => [p.x, p.y, z + height]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material, surface: 'wall' });
+    if (cap) for (const triangle of surfaceTriangles(surface)) out({ points: triangle.map(p => [p.x, p.y, z + height]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material, surface: 'wall' });
   };
   if (isBuildingProjection(building)) {
     // Display-only height extrusion and horizontal roof-outline cap. These are
@@ -267,26 +273,35 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
   for (const volume of building.volumes as OverviewVolume[]) {
     // Chimneys, dormers and porches are far below a pixel where the overview is shown.
     if (overview && volume.role === MINOR_VOLUME_ROLE) continue;
+    const seat = (volume as SeatedVolume).ground_m;
+    out =
+      seat === undefined
+        ? emit
+        : t => {
+            t.ground = [Math.min(t.points[0][2], seat), Math.min(t.points[1][2], seat), Math.min(t.points[2][2], seat)];
+            emit(t);
+          };
     const foundation = volume.foundation;
     if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, true);
     if (volume.envelope !== 'open') for (const level of volume.levels) extrude(level.footprint, level.z_m, level.height_m, level.materials ?? volume.materials, false);
     const mesh = volume.roof_mesh;
     if (!overview) {
-      if (mesh) emitRoofFaces(mesh, volume.materials, emit);
+      if (mesh) emitRoofFaces(mesh, volume.materials, out);
       continue;
     }
     if (mesh && volume.overview_roof_faces) {
-      emitRoofFaces(mesh, volume.materials, emit, ...volume.overview_roof_faces);
+      emitRoofFaces(mesh, volume.materials, out, ...volume.overview_roof_faces);
     } else {
       // Complex subpixel facets become a capped native body outline with the same holes and height.
       const eaves = volume.z_m + volume.wall_height_m,
         top = eaves + volume.roof_height_m;
       if (volume.envelope !== 'open') extrude(volume.footprint, eaves, volume.roof_height_m, volume.materials, false, volume.materials.cladding);
-      for (const triangle of surfaceTriangles(volume.footprint)) emit({ points: triangle.map(p => [p.x, p.y, top]) as BuildingTriangle['points'], normal: [0, 0, 1], materials: volume.materials, material: volume.materials.cladding, surface: 'roof' });
+      for (const triangle of surfaceTriangles(volume.footprint)) out({ points: triangle.map(p => [p.x, p.y, top]) as BuildingTriangle['points'], normal: [0, 0, 1], materials: volume.materials, material: volume.materials.cladding, surface: 'roof' });
     }
     // Keep the sails of a windmill and other standing works at the overview scale.
-    if (mesh && volume.overview_faces) emitRoofFaces(mesh, volume.materials, emit, ...volume.overview_faces);
+    if (mesh && volume.overview_faces) emitRoofFaces(mesh, volume.materials, out, ...volume.overview_faces);
   }
+  out = emit;
   const materials = building.volumes[0]?.materials;
   if (materials) for (const foundation of building.structural_foundations ?? []) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, materials, true, materials.base);
   if (materials)

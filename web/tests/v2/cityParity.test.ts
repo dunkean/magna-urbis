@@ -775,6 +775,12 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/ui/view3d/cityBuildings.ts')).toContain('city3dUnderdarkOrnaments(underdarkOrnaments(layouts, scene?.buildings)');
   });
 
+  it('draws stepped streets as 3D flights over a plain ground strip on both pages', () => {
+    for (const page of [read('../../src/v2/urban3d.ts'), read('../../src/ui/citybench.ts')]) expect(page).toContain('mountCity3d(');
+    expect(read('../../src/ui/view3d/cityBuildings.ts')).toContain('city3dStairs(layouts ?? [], cityContext.heightAt, street => stairStreetColor(street, stairPaint))');
+    expect(read('../../src/ui/view3d/cityDrape.ts').match(/stairMeshes: ?true/g)).toHaveLength(2);
+  });
+
   it('keeps the massing and its 3D facade windows on the shared silhouette path', () => {
     const outer = [
       { x: 0, y: 0 },
@@ -801,6 +807,44 @@ describe('V2 and City Bench stay in sync', () => {
         .buildings[0].volumes.flatMap(v => v.roof_mesh.faces)
         .filter(f => f.material.includes('wall:opening')).length,
     ).toBeGreaterThan(1);
+  });
+
+  it('seats hillside pieces on their own ground and draws their terrace alike on both pages', () => {
+    const rect = (x0: number, y0: number, x1: number, y1: number) => [
+      { x: x0, y: y0 },
+      { x: x1, y: y0 },
+      { x: x1, y: y1 },
+      { x: x0, y: y1 },
+    ];
+    const home = rect(20, 0, 30, 10),
+      barn = rect(0, 0, 8, 8),
+      heightAt = (x: number): number => 50 + 0.3 * x;
+    const piece = (footing?: object) => ({ floors: 1, eave_m: 3, rise_m: 2, roof: 'hip', ridges: [], cover: 'slate', wall: 'stone', ...(footing ? { footing } : {}) });
+    const terrace = {
+      way: 'terrace',
+      base_z_m: 59,
+      low_z_m: 56,
+      drop_m: 3,
+      terrace: {
+        ring: [
+          [18.5, 0],
+          [30, 0],
+          [30, 10],
+          [18.5, 10],
+        ],
+        wall_m: 3.45,
+      },
+    };
+    const preview = [
+      { outer: home, holes: [] },
+      { outer: barn, holes: [] },
+    ];
+    const request = { id: 'farm', parcel_id: 'lot', function: 'domestic', culture: { culture: 'inca' }, terrain: { ground_z_m: 0 }, accesses: [], preview, buildable: preview, programme: { massing: [piece(terrace), piece()] } } as unknown as CityPlacementRequest;
+    const v2 = city3dScene(silhouetteScene([request]), { heightAt });
+    expect(v2).toEqual(city3dScene(siteVisualScene([projectUrbanSite(request, 0)]), { heightAt }));
+    const b = v2.buildings[0];
+    expect(b.volumes.map(v => v.z_m)).toEqual([heightAt(30), heightAt(8)]);
+    expect(b.structural_foundations?.map(f => f.z_max_m)).toEqual([heightAt(30)]);
   });
 
   it('replaces the compact roof once and tiles a concave native pan without crossing its notch', () => {
@@ -1233,6 +1277,20 @@ describe('retained city environment parity', () => {
     // V2 (native field) and City Bench (decor heights) paint the sea through the same helper.
     expect(read('../../src/v2/urban3d.ts')).toContain('paintSeaCover(');
     expect(read('../../src/ui/view3d/cityWater.ts')).toContain('paintSeaCover(');
+  });
+});
+
+describe('street ends', () => {
+  it('draws street ends from the joined streets of the shared scene on both 2D engines, square everywhere', () => {
+    const canvas = read('../../src/render/city/canvas/town.ts'),
+      gl = read('../../src/render/cityGlBuild.ts');
+    expect(read('../../src/render/city/model/scene.ts')).toContain('joined: joined[si]');
+    expect(canvas).toContain('linePath(s.joined.stroke)');
+    expect(canvas).toContain('path: x.s.joined.path, widths: x.s.joined.pathWidths');
+    expect(gl).toContain('putPolyline(w, s.joined.stroke');
+    // The strokes of a street are decided by its look: none of them asks for a round cap.
+    const look = read('../../src/render/city/streetLook.ts');
+    expect(look.slice(look.indexOf('export function streetLook('))).not.toMatch(/add\(.*, 'round'[,)]/);
   });
 });
 

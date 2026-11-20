@@ -9,7 +9,7 @@ import { buildingHeat, roofSnowPatches, roofSnowRidgeMelt, roofSnowShare } from 
 import { COVER_GRAINS, roofGrain as roofGrainFamily } from '../../buildingMaterials';
 // enclosures hook (cityLotEnclosures.ts)
 // walls hook (cityWalls.ts)
-import { massingFootprint, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3, type ResolvedVolume } from '../../cityMassing';
+import { massingFootprint, massingTerraces, planRoof, pieceShadows, pieceVolumes, readMassing, stiltDeck, stiltSupports, roofLight as roofLight3, type ResolvedVolume } from '../../cityMassing';
 import { differenceS, unionS } from '../../../gen/geo/bool';
 import { ruinFootprint } from '../../cityRuins';
 import { roleFamily } from '../look';
@@ -140,6 +140,8 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       marks: millMarks(volumes),
       material: { culture, wall: first?.wall ?? '', cover: first?.cover ?? '', tone: first?.tone ?? 0.5, tint: first?.tint },
     });
+    const terraces = massingTerraces(massing);
+    if (terraces) items[items.length - 1].terraces = terraces;
     if (!massing || !withRoofs) {
       shadows.push([]);
       continue;

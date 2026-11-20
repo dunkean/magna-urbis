@@ -16,7 +16,7 @@ export const CITY3D_MATERIALS: HouseMaterial[] = PATTERNS.map(pattern => ({ id: 
 // Layered ids `city3d:cover:<massing cover>`, `city3d:wall:<massing wall>`, `city3d:road:<surface>` keep the original massing
 // material for the textured view (urbanBuilding3d.ts); their display pattern is the pattern the flat render always used.
 // `quay`: harbour decks are plain paving (a stone pattern stretched over a whole deck read as 30 m slabs).
-const MESH_ROAD_PATTERNS: Record<string, MaterialPattern> = { bridge: 'stone', timber: 'wood', quay: 'plain' };
+const MESH_ROAD_PATTERNS: Record<string, MaterialPattern> = { bridge: 'stone', timber: 'wood', quay: 'plain', stairs: 'stone' };
 
 export const WALL_ID: Record<MaterialPattern, string> = { tile: 'wall:brick', thatch: 'cover:thatch', wood: 'wall:timber', stone: 'wall:stone', earth: 'wall:earth', fabric: 'wall:hide', snow: 'cover:snow', plain: 'wall:plaster' };
 

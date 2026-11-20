@@ -21,7 +21,8 @@ import { roadGrain, roadPaint } from '../../roadStyle';
 import { layoutStreetPavements } from '../../roadPavement';
 import { drawGardenDetails } from '../../readableGardens';
 import { polygonCentroid as shapeRingCenter } from '../../../gen/core/geom';
-import { roadSurface } from '../../roadSurface';
+import { roadSurface, type SurfaceEnd } from '../../roadSurface';
+import { TERRACE_PAVING, TERRACE_WALL } from '../../cityMassing';
 import { drawNightBuildings, drawNightTown } from '../../cityNight';
 import { drawRuinPlan } from '../../cityRuins';
 import { drawFarTown } from '../../cityFarRaster';
@@ -214,6 +215,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       mpp,
       layers,
       night,
+      stairMeshes: o.stairMeshes,
       roadLook: o.roadLook,
       roadEmphasis: o.roadEmphasis,
       groundBlend: o.groundBlend,
@@ -233,7 +235,8 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       stats.streets++;
       const layout = scene.layouts[s.layout],
         look = streetLook(frame, s, { pavement: layoutStreetPavements(layout)?.[s.index], population: layout?.programme?.population });
-      const path = (s.path ??= linePath(s.street.path));
+      // Square ends everywhere: the joined stroke stops on the axis of a street it ends on and runs into a bend's other record.
+      const path = (s.path ??= linePath(s.joined.stroke));
       for (const k of look.strokes) {
         const stroke = paintOf(k.paint);
         if (stroke) stroked[k.layer].add({ stroke, width: k.width, alpha: k.alpha, dash: k.dash as number[] | undefined, cap: k.cap }, path);
@@ -259,7 +262,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       if (look.stairs) stroked.marks.add({ stroke: look.stairs.paint, width: look.stairs.width }, stairMarks(s.street.path, s.width));
     }
     if (surfaced.length) {
-      const streets = surfaced.map(x => x.s.street),
+      const streets = surfaced.map(x => ({ ...x.s.street, path: x.s.joined.path, widths: x.s.joined.pathWidths })),
         ring = (r: readonly Point[]): Path2D => {
           const p = new Path2D();
           p.moveTo(r[0].x, r[0].y);
@@ -269,7 +272,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
         };
       const tolerance = Math.max(0.05, 0.35 * px(1)),
         minWidth = (i: number): number => surfaced[i].x.w;
-      const ends = surfaced.some(x => x.x.end) ? (i: number): 'round' | 'square' | 'taper' | 'butt' => surfaced[i].x.end ?? 'round' : undefined;
+      const ends = surfaced.some(x => x.x.end) ? (i: number): SurfaceEnd => surfaced[i].x.end ?? 'butt' : undefined;
       // Same streets, widths and edges (a camera move within one zoom step): same rings.
       const key = `${tolerance.toFixed(3)}|${surfaced.map(x => `${x.s.layout}.${x.s.index}:${x.x.w.toFixed(2)}:${x.casing ? x.x.edge.toFixed(2) : '-'}${x.x.inset ? `:${x.x.inset.toFixed(2)}` : ''}${x.x.end ? `:${x.x.end}` : ''}`).join(',')}`;
       let rings = SURFACE_CACHE.get(scene)?.get(key);
@@ -368,6 +371,22 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       const body: BuildingFrame = { view, palette, footprint, diagnostic: o.appearance.diagnostic, colors },
         roofs = o.buildings.roofs,
         pans = !minimalRoof && !!roofs && roofPansShown(shown);
+      // Terraces under hillside buildings: their paving and retaining wall line, on the ground below the building.
+      if (!footprint) {
+        ctx.fillStyle = TERRACE_PAVING;
+        ctx.strokeStyle = TERRACE_WALL;
+        ctx.lineWidth = px(0.8);
+        for (const i of o.buildings.bins.query(viewport)) {
+          const b = o.buildings.items[i];
+          if (!b.terraces) continue;
+          if (!b.terracePath) {
+            b.terracePath = new Path2D();
+            for (const s of b.terraces) b.terracePath.addPath(shapePath(s));
+          }
+          ctx.fill(b.terracePath);
+          ctx.stroke(b.terracePath);
+        }
+      }
       if (roofs && pans) {
         let paths = roofShadowPaths.get(roofs);
         if (!paths) roofShadowPaths.set(roofs, (paths = []));
@@ -511,9 +530,10 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
   return stats;
 }
 function stairMarks(points: readonly Point[], width: number): Path2D {
+  // Treads across the whole width of the way.
   const path = new Path2D();
   let next = 1.25;
-  const half = Math.min(2, width) * 0.48;
+  const half = width * 0.48;
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1],
       b = points[i],

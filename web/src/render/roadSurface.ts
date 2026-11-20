@@ -2,8 +2,9 @@
  * the Canvas (cityCanvas.ts) and WebGL (cityGl.ts) city renderers.
  *
  * A street is a ribbon following its per-vertex widths (tapers included), with round
- * joins at its bends. Its ends are either loose (round cap, butt for decks and quays)
- * or at a junction, where they stop square at the node and the junction polygon takes
+ * joins at its bends. Its ends are either loose (cut square at the last vertex unless the
+ * ground calls for another finish, `ends`) or at a junction, where they stop square at
+ * the node and the junction polygon takes
  * over: the corners between consecutive arms, rounded by a curb return (fillet), so
  * a lane meets a main street as it would on the ground instead of as two strokes laid
  * across each other. A street end lying on another street's segment (a T without a
@@ -23,6 +24,7 @@ export interface SurfaceStreet {
   role: string;
   rank: number;
 }
+export type SurfaceEnd = 'square' | 'taper' | 'butt';
 export interface SurfaceOptions {
   /** Metres added to every half width (casing). */
   extra?: number | ((street: number) => number);
@@ -32,11 +34,11 @@ export interface SurfaceOptions {
   tolerance?: number;
   /** Curb return radius as a share of the narrower width of two arms (0: sharp corners). */
   fillet?: number;
-  /** Natural grounds: how a loose end stops ('round' cap by default; 'square' a paved end with a short bevel, 'taper'
-   * an earth way narrowing into the ground, 'butt' cut square at its last vertex, nothing past it: a lane that ends at
-   * its last plot). With any of them, a straight continuation into a narrower way (a paved street running on as a
-   * country track) narrows over a taper of 15 to 40 m instead of stepping at the node. */
-  ends?: (street: number) => 'round' | 'square' | 'taper' | 'butt';
+  /** How a loose end stops: 'butt' (default) cut square at its last vertex, nothing past it; natural grounds also use
+   * 'square', a paved end with a short bevel, and 'taper', an earth way narrowing into the ground. Given, a straight
+   * continuation into a narrower way (a paved street running on as a country track) also narrows over a taper of 15
+   * to 40 m instead of stepping at the node. */
+  ends?: (street: number) => SurfaceEnd;
 }
 /** One ring; `street` owns its style (a junction belongs to its major arm). */
 export interface SurfacePiece {
@@ -238,7 +240,7 @@ export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceO
     const n = nodes.get(keyOf(p));
     return !!n && n.arms.length >= 2 && new Set(n.arms.map(a => a.street)).size + (n.arms.length > 2 ? 1 : 0) >= 2;
   };
-  // Ribbons: quads, round joins, loose-end caps.
+  // Ribbons: quads, round joins, loose-end finishes.
   paths.forEach(({ pts, ws }, si) => {
     if (pts.length < 2) return;
     const e = extraOf(si),
@@ -265,7 +267,7 @@ export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceO
       while (sweep < -Math.PI) sweep += 2 * Math.PI;
       out.push({ street: si, ring: ccw([pts[i], ...arc(pts[i], h[i], a0, sweep, tolerance)]) });
     }
-    const end = options.ends?.(si) ?? 'round';
+    const end = options.ends?.(si) ?? 'butt';
     for (const [i, j] of [
       [0, 1],
       [pts.length - 1, pts.length - 2],
@@ -277,12 +279,9 @@ export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceO
         r = h[i];
       // A paved end stops square, its corners worn back a little; an earth way narrows to a point within a few metres.
       if (end === 'square') out.push({ street: si, ring: ccw([add(p, n, r), add(p, n, -r), add(add(p, d, 0.3 * r), n, -0.8 * r), add(add(p, d, 0.3 * r), n, 0.8 * r)]) });
-      else if (end === 'taper') {
+      else {
         const reach = Math.min(2.2 * r, 6);
         out.push({ street: si, ring: ccw([add(p, n, r), add(p, n, -r), add(add(p, d, reach), n, -0.15 * r), add(add(p, d, reach), n, 0.15 * r)]) });
-      } else {
-        const a0 = Math.atan2(-d.x, d.y);
-        out.push({ street: si, ring: ccw([p, ...arc(p, r, a0, Math.PI, tolerance)]) });
       }
     }
   });
@@ -340,50 +339,212 @@ export function roadSurface(streets: readonly SurfaceStreet[], options: SurfaceO
   return out;
 }
 
-/** Street ends a stroke renderer stops square: an end at a vertex or on a segment of
- * another street at least as wide there (a lane's round cap never shows past the road it
- * joins), and both ends of a straight continuation (a wider piece's cap never bulges past
- * its narrower continuation). [start, end] per street. */
-export function coveredEnds(streets: readonly SurfaceStreet[]): [boolean, boolean][] {
+/** A street as both renderers draw it, built once per street set (`joinStreets`).
+ * `path`: the centreline, with a stem end the generator left inside another street's ribbon (short of its axis or
+ * past it) moved onto that axis, so the surface makes a junction of it and nothing shows past the road joined.
+ * `stroke`, `widths`: the line a stroke follows with square (butt) ends everywhere. A stroke stops on the axis of a
+ * through street it ends on (that street's own ribbon covers the rest) and at the last vertex of a dead end; where it
+ * meets only other street ends (a bend or continuation between two records) it runs on half its width along the
+ * widest of them, when that one is at least as wide, so the stroke's own round join closes the bend. At the end of a
+ * deck (bridge, pier) or a ford both lines run on half their width under it: a short crossing over a stream too
+ * narrow to draw leaves no hole in the street. Two loose ends facing each other in line across a gap narrower than
+ * the way (the generator cut it where a regional road passes) meet at their midpoint. `pathWidths` follows `path`. */
+export interface JoinedStreet {
+  path: readonly Point[];
+  pathWidths: readonly number[];
+  stroke: readonly Point[];
+  widths: readonly number[];
+}
+
+/** Join decisions of a street set: a grid over segments, no pair test; the same result whatever the street order. */
+export function joinStreets(streets: readonly SurfaceStreet[]): JoinedStreet[] {
   const CELL = 16,
-    grid = new Map<string, [number, number][]>();
-  const widthAt = (s: SurfaceStreet, i: number): number => s.widths[i] ?? s.widths[s.widths.length - 1] ?? 3;
-  streets.forEach((s, si) => {
-    for (let i = 1; i < s.path.length; i++) {
-      const a = s.path[i - 1],
-        b = s.path[i];
-      for (let gx = Math.floor(Math.min(a.x, b.x) / CELL); gx <= Math.floor(Math.max(a.x, b.x) / CELL); gx++)
-        for (let gy = Math.floor(Math.min(a.y, b.y) / CELL); gy <= Math.floor(Math.max(a.y, b.y) / CELL); gy++) {
-          const k = `${gx},${gy}`;
-          const list = grid.get(k);
-          if (list) list.push([si, i]);
-          else grid.set(k, [[si, i]]);
+    grid = new Map<number, [number, number][]>(),
+    ends = new Map<string, [number, number][]>();
+  const widthAt = (s: SurfaceStreet, i: number): number => {
+    const w = s.widths[i] ?? s.widths[s.widths.length - 1];
+    return Number.isFinite(w) && w > 0 ? w : 3;
+  };
+  const cell = (gx: number, gy: number): number => gx * 1048576 + gy;
+  const cellOf = (p: Point): number => cell(Math.floor(p.x / CELL), Math.floor(p.y / CELL));
+  /** Segments near a point (a segment spanning several cells comes once per cell: harmless for a nearest search). */
+  const near = (p: Point): [number, number][] => {
+    const gx = Math.floor(p.x / CELL),
+      gy = Math.floor(p.y / CELL),
+      out: [number, number][] = [];
+    for (let x = gx - 1; x <= gx + 1; x++)
+      for (let y = gy - 1; y <= gy + 1; y++) {
+        const list = grid.get(cell(x, y));
+        if (list) for (const e of list) out.push(e);
+      }
+    return out;
+  };
+  const push = <K>(map: Map<K, [number, number][]>, k: K, v: [number, number]): void => {
+    const list = map.get(k);
+    if (list) list.push(v);
+    else map.set(k, [v]);
+  };
+  // Copied only where an end moves.
+  const paths: (readonly Point[])[] = streets.map(s => s.path);
+  const isEnd = (si: number, i: number): boolean => i === 0 || i === paths[si].length - 1;
+  // Segments by the cells their box covers; an end looks in its cell and the eight around it (a ribbon is narrower than a cell).
+  paths.forEach((pts, si) => {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1],
+        b = pts[i];
+      for (let gx = Math.floor(Math.min(a.x, b.x) / CELL); gx <= Math.floor(Math.max(a.x, b.x) / CELL); gx++) for (let gy = Math.floor(Math.min(a.y, b.y) / CELL); gy <= Math.floor(Math.max(a.y, b.y) / CELL); gy++) push(grid, cell(gx, gy), [si, i]);
+    }
+    if (pts.length >= 2) {
+      push(ends, keyOf(pts[0]), [si, 0]);
+      push(ends, keyOf(pts[pts.length - 1]), [si, pts.length - 1]);
+    }
+  });
+  /** Other street ends at this end. */
+  const others = (si: number, i: number): [number, number][] => (ends.get(keyOf(paths[si][i])) ?? []).filter(([sj, k]) => sj !== si || k !== i);
+  /** Another street passes through this end: on the inside of one of its segments, or on one of its inner vertices. */
+  const through = (si: number, i: number): boolean => {
+    const p = paths[si][i];
+    return (grid.get(cellOf(p)) ?? []).some(([sj, k]) => {
+      if (sj === si) return false;
+      const a = paths[sj][k - 1],
+        d = sub(paths[sj][k], a),
+        l2 = d.x * d.x + d.y * d.y;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * d.x + (p.y - a.y) * d.y) / (l2 || 1)));
+      return len(sub(p, add(a, d, t))) <= SNAP * 2 && ((t > 1e-6 && t < 1 - 1e-6) || (t <= 1e-6 && !isEnd(sj, k - 1)) || (t >= 1 - 1e-6 && !isEnd(sj, k)));
+    });
+  };
+  // Stems: a loose end inside another street's ribbon moves onto its axis (the nearest one when ribbons overlap).
+  // Gaps: two loose ends facing each other in line, closer than the narrower width (a street the generator cut where a
+  // regional road or a crossing passes), meet at their midpoint and become one continuous way.
+  const moves: [number, number, Point][] = [],
+    facing = new Map<number, { sj: number; k: number; d: number }>();
+  const id = (si: number, i: number): number => si * 2 + (i === 0 ? 0 : 1);
+  paths.forEach((pts, si) => {
+    if (pts.length < 2) return;
+    for (const [i, j] of [
+      [0, 1],
+      [pts.length - 1, pts.length - 2],
+    ]) {
+      if (others(si, i).length || through(si, i)) continue;
+      const p = pts[i],
+        back = sub(pts[j], p);
+      let best: { at: Point; d: number } | undefined;
+      for (const [sj, k] of near(p)) {
+        if (sj === si) continue;
+        const o = paths[sj],
+          a = o[k - 1],
+          b = o[k],
+          d = sub(b, a),
+          l2 = d.x * d.x + d.y * d.y;
+        if (l2 < 1e-12) continue;
+        const t = Math.max(0, Math.min(1, ((p.x - a.x) * d.x + (p.y - a.y) * d.y) / l2));
+        // Never onto another street's own loose end: two ends close together are not a junction.
+        if ((t === 0 && isEnd(sj, k - 1)) || (t === 1 && isEnd(sj, k))) continue;
+        const at = t === 0 ? a : t === 1 ? b : add(a, d, t),
+          gap = len(sub(p, at));
+        const half = (widthAt(streets[sj], k - 1) * (1 - t) + widthAt(streets[sj], k) * t) / 2;
+        // A stem meets the axis at an angle (a street running alongside is left alone) and keeps its last segment's direction.
+        const moved = sub(pts[j], at);
+        if (gap > half || Math.abs(cross(unit(back), unit(d))) < 0.35 || moved.x * back.x + moved.y * back.y <= 0 || len(moved) < 0.5) continue;
+        if (!best || gap < best.d) best = { at, d: gap };
+      }
+      if (best) {
+        moves.push([si, i, { x: best.at.x, y: best.at.y }]);
+        continue;
+      }
+      const out = unit(sub(p, pts[j]));
+      for (const [sj, k] of near(p))
+        for (const e of [k - 1, k]) {
+          const o = paths[sj];
+          if (sj === si || !isEnd(sj, e) || BUTT.has(streets[sj].role) || BUTT.has(streets[si].role)) continue;
+          const q = o[e],
+            v = sub(q, p),
+            d = len(v),
+            w = unit(sub(q, o[e === 0 ? 1 : e - 1]));
+          if (d < SNAP * 2 || d > Math.min(widthAt(streets[si], i), widthAt(streets[sj], e))) continue;
+          if ((v.x * out.x + v.y * out.y) / d < 0.95 || -(v.x * w.x + v.y * w.y) / d < 0.95 || others(sj, e).length || through(sj, e)) continue;
+          const prior = facing.get(id(si, i));
+          if (!prior || d < prior.d) facing.set(id(si, i), { sj, k: e, d });
         }
     }
   });
-  // `out`: the end's direction away from its street.
-  const covered = (si: number, p: Point, own: number, out: Point): boolean => {
-    for (const [sj, i] of grid.get(`${Math.floor(p.x / CELL)},${Math.floor(p.y / CELL)}`) ?? []) {
-      if (sj === si) continue;
-      const s = streets[sj],
-        a = s.path[i - 1],
-        b = s.path[i],
-        d = sub(b, a),
-        l2 = d.x * d.x + d.y * d.y;
-      const t = Math.max(0, Math.min(1, ((p.x - a.x) * d.x + (p.y - a.y) * d.y) / (l2 || 1)));
-      if (len(sub(p, add(a, d, t))) > SNAP * 2) continue;
-      if (widthAt(s, i - 1) + (widthAt(s, i) - widthAt(s, i - 1)) * t >= own - 0.05) return true;
-      // Straight continuation: the other street leaves this end ahead.
-      const ahead = t < 0.5 ? d : { x: -d.x, y: -d.y },
-        u = unit(ahead),
-        o = unit(out);
-      if ((t < 1e-6 || t > 1 - 1e-6) && u.x * o.x + u.y * o.y > 0.95) return true;
+  const closed: [number, number, Point][] = [];
+  for (const [key, { sj, k }] of facing) {
+    const si = key >> 1,
+      i = key & 1 ? paths[si].length - 1 : 0,
+      back = facing.get(id(sj, k));
+    // Mutual nearest only, each pair once.
+    if (!back || back.sj !== si || back.k !== i || id(si, i) > id(sj, k)) continue;
+    const p = paths[si][i],
+      q = paths[sj][k],
+      m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    closed.push([si, i, m], [sj, k, { ...m }]);
+  }
+  for (const [si, i, at] of closed) {
+    const list = ends.get(keyOf(paths[si][i]))!;
+    list.splice(
+      list.findIndex(([sj, k]) => sj === si && k === i),
+      1,
+    );
+    push(ends, keyOf(at), [si, i]);
+  }
+  moves.push(...closed);
+  // A stem lands on an axis, never on another end; the ends of a closed gap are indexed at their meeting point above.
+  for (const [si, i, at] of moves) {
+    const pts = paths[si] === streets[si].path ? (paths[si] = paths[si].slice()) : paths[si];
+    (pts as Point[])[i] = at;
+  }
+  return paths.map((pts, si) => {
+    const s = streets[si],
+      n = pts.length;
+    let path = pts,
+      pathWidths = s.widths,
+      stroke = pts,
+      widths = s.widths;
+    if (n < 2 || BUTT.has(s.role)) return { path, pathWidths, stroke, widths };
+    const base = (): number[] => pts.map((_, j) => widthAt(s, j));
+    for (const i of [n - 1, 0]) {
+      const at = others(si, i);
+      // A dead end, or a stem on a through street: square at its vertex.
+      if (!at.length || through(si, i)) continue;
+      // The widest other end, of a rank shown whenever this street is (lower rank: more major); ties by street index.
+      let target: [number, number] | undefined,
+        best = -1,
+        deck: [number, number] | undefined;
+      for (const [sj, k] of at) {
+        const o = streets[sj],
+          w = widthAt(o, k);
+        if (paths[sj].length < 2) continue;
+        // Decks and fords: the way runs on under the deck or into the shallow water the ford mark is drawn over.
+        if (BUTT.has(o.role) || o.role === 'ford') {
+          deck ??= [sj, k];
+          continue;
+        }
+        if (o.rank > s.rank) continue;
+        if (w > best || (w === best && target && sj < target[0])) {
+          best = w;
+          target = [sj, k];
+        }
+      }
+      const own = widthAt(s, i),
+        along = target && own <= best + 0.05 ? target : deck;
+      if (!along) continue;
+      const [sj, k] = along,
+        o = paths[sj],
+        step = k === 0 ? 1 : -1;
+      let q = k + step;
+      while (q >= 0 && q < o.length && len(sub(o[q], o[k])) < 1e-6) q += step;
+      if (q < 0 || q >= o.length) continue;
+      const d = sub(o[q], o[k]),
+        on = add(o[k], unit(d), Math.min(len(d), own / 2));
+      const grow = <T>(line: readonly T[], v: T): T[] => (i === 0 ? [v, ...line] : [...line, v]);
+      stroke = grow(stroke, on);
+      widths = grow(widths === s.widths ? base() : widths, own);
+      if (along === deck) {
+        path = grow(path, on);
+        pathWidths = grow(pathWidths === s.widths ? base() : pathWidths, own);
+      }
     }
-    return false;
-  };
-  return streets.map((s, si) => {
-    const n = s.path.length;
-    if (n < 2) return [false, false];
-    return [covered(si, s.path[0], widthAt(s, 0), sub(s.path[0], s.path[1])), covered(si, s.path[n - 1], widthAt(s, n - 1), sub(s.path[n - 1], s.path[n - 2]))];
+    return { path, pathWidths, stroke, widths };
   });
 }

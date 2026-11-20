@@ -15,7 +15,6 @@ import type { CityRoofShape } from './city/model/contract';
 import { isBoardwalk } from './cityGround';
 import { CROSSINGS, streetMinPx } from './city/look';
 import { earcut } from './cityGlEarcut';
-import { coveredEnds } from './roadSurface';
 
 export interface CityGlRange {
   start: number;
@@ -372,6 +371,11 @@ export function* packBuildingsSteps(buildings: CityBuildings | undefined, origin
     items.map(b => b.ruins ?? []),
     0,
   );
+  layers.terraces = yield* packLayerSteps(
+    packer,
+    items.map(b => b.terraces ?? []),
+    0,
+  );
   if (!roofs) return { polygons: packer.done(), layers, featureCount: items.length, origin };
   // Features: buildings [0, n), roof pans [n, n + r), shadows [n + r, 2n + r).
   layers.roofs = yield* packLayerSteps(
@@ -482,7 +486,8 @@ export function putPolyline(w: ReturnType<typeof strokeWriter>, path: readonly P
   if (end && last >= 0) w.u[last * STROKE_STRIDE + 8] |= META.buttEnd;
 }
 /** Streets: feature = street index in the scene. Minor ranks first, crossings last. */
-/** `surface` (layer `roadSurface`): per-vertex widths and square covered ends; off, one width and round caps. */
+/** Each street follows its joined stroke (roadSurface.ts joinStreets) with square ends. `surface` (layer `roadSurface`):
+ * per-vertex widths; off, one width. */
 export function buildStreetStrokes(scene: CityScene, origin: Point, surface = true, planPath = false): CityGlStrokes {
   const key = (i: number): number => {
     const s = scene.streets[i];
@@ -499,8 +504,6 @@ export function buildStreetStrokes(scene: CityScene, origin: Point, surface = tr
   let chunkKey = '';
   const w = strokeWriter(scene.streets.reduce((s, x) => s + Math.max(0, x.street.path.length - 1), 0));
   const firstWithRank = new Array(16).fill(-1);
-  // Ends a street at least as wide covers stop square: no round cap past the road joined.
-  const covered = surface ? coveredEnds(scene.streets.map(s => s.street)) : scene.streets.map(() => false);
   for (const i of order) {
     const s = scene.streets[i],
       k = key(i),
@@ -509,8 +512,7 @@ export function buildStreetStrokes(scene: CityScene, origin: Point, surface = tr
     const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'ford' ? META.dash : 0) | (s.role === 'bridge' || s.role === 'mole' ? META.solidEdge : 0);
     const ck = `${k}|${cells[i]}`,
       before = w.n;
-    const deck = s.role === 'bridge' || s.role === 'mole';
-    putPolyline(w, s.street.path, origin, !surface || isBoardwalk(s.role) || !s.street.widths.length ? s.width : s.street.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)), streetMinPx(s.role, s.rank, planPath), i, meta, deck || covered[i]);
+    putPolyline(w, s.joined.stroke, origin, !surface || isBoardwalk(s.role) || !s.joined.widths.length ? s.width : s.joined.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)), streetMinPx(s.role, s.rank, planPath), i, meta, true);
     if (w.n === before) continue;
     let chunk = chunks[chunks.length - 1];
     if (!chunk || ck !== chunkKey) {

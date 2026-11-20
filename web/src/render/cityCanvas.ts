@@ -11,6 +11,7 @@ export { pickCity } from './city/model/pick';
 export { CITY_LOD_LIMITS, CITY_LOD_OFF, districtRoleKey, roleFamily, selectCityLod } from './city/look';
 export type { CityBuildingRenderer, CityDrawOptions, CityFrameStats } from './city/canvas/contract';
 export { drawCity, drawCitySteps } from './city/canvas/town';
+export { stairStreetColor, type StairPaintOptions } from './city/streetLook';
 export { drawRoofedBuildings } from './city/canvas/roofs';
 export { landmarkGlyph } from './city/canvas/glyphs';
 export { CityCanvasLayer, clearCanvas2d, type CityCanvasFrame } from './city/canvas/host';

@@ -8,6 +8,7 @@
  */
 import type { Layout, Parcel, Point, Quay, Shape, Street } from '../../../../../rust/bridge/urban';
 import type { Surface } from '../../../../../rust/bridge/housesContract';
+import type { JoinedStreet } from '../../roadSurface';
 import type { PlacedBuilding } from '../../../../../rust/bridge/urbanArchitecture';
 // enclosures hook (cityLotEnclosures.ts)
 // walls hook (cityWalls.ts)
@@ -97,6 +98,7 @@ export interface CityParcel {
   source: Parcel;
   path?: Path2D;
 }
+/** `joined`: its ends as both renderers draw them (roadSurface.ts joinStreets), decided once per layout. */
 export interface CityStreet {
   layout: number;
   index: number;
@@ -104,6 +106,7 @@ export interface CityStreet {
   width: number;
   rank: number;
   role: string;
+  joined: JoinedStreet;
   path?: Path2D;
 }
 export interface CityWall {
@@ -141,6 +144,8 @@ export interface CityScene {
 }
 export interface CityBuilding {
   ruins?: Surface;
+  /** Level terraces under hillside pieces (massing `footing.terrace`), drawn below the building in the detail styles. */ terraces?: Surface;
+  terracePath?: Path2D;
   stilts?: boolean;
   /** Some volume has a flat roof (bevelled rim in plan; parchment draws its ground shadow). */ flat?: boolean;
   snowAltitude?: number;

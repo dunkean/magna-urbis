@@ -284,6 +284,6 @@ describe('raised timber display', () => {
       raised = flooded.volumes[0];
     expect(raised.z_m).toBeCloseTo(9.7);
     expect(raised.foundation.z_min_m).toBe(raised.foundation.z_max_m);
-    expect(raised.roof_mesh.vertices.some(p => p.z >= 7 && p.z < raised.z_m)).toBe(true);
+    expect(raised.roof_mesh.vertices.some(p => p.z < 2)).toBe(true);
   });
 });

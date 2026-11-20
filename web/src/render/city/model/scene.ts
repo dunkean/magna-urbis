@@ -12,6 +12,7 @@ import { roleFamily } from '../look';
 import { CityDistrict, CityAllocation, CityBlock, CityParcel, CityStreet, CityWall, CityLandmark, CityScene } from './contract';
 import { EMPTY, grow, shapeBox, centroid, SpatialBins } from './geometry';
 import { landmarkName } from './roles';
+import { joinStreets } from '../../roadSurface';
 
 /** Optional contract fields read defensively: older plans render without them. */
 type DistrictContract = { role?: string; label?: string; wealth?: number };
@@ -123,9 +124,10 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
     });
     for (const [district, shapes] of districtShapes) district.anchor = centroid(shapes);
     footprintSources.push(...(layout.structure?.allocated?.length ? layout.structure.allocated : layout.quarters.map(q => q.shape)));
+    const joined = joinStreets(layout.streets);
     layout.streets.forEach((street, si) => {
       const width = street.widths.length ? street.widths.reduce((s, w) => s + w, 0) / street.widths.length : 4;
-      streets.push({ layout: li, index: si, street, width: isBoardwalk(street.role) ? boardwalkWidth(width) : Number.isFinite(width) && width > 0 ? width : 4, rank: street.rank, role: street.role });
+      streets.push({ layout: li, index: si, street, width: isBoardwalk(street.role) ? boardwalkWidth(width) : Number.isFinite(width) && width > 0 ? width : 4, rank: street.rank, role: street.role, joined: joined[si] });
     });
     for (const enclosure of layout.enclosures ?? []) {
       const { pieces, gateTowers } = wallPieces(enclosure.path, enclosure.gates);

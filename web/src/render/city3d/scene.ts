@@ -11,6 +11,7 @@ import { City3dHeight } from './types';
 import { silhouetteBuilding } from './silhouette';
 import { compactBuilding } from './compact';
 import { CITY3D_MATERIALS } from './materials';
+import { seatPlan } from './terrainSeat';
 
 export type City3dKind = 'silhouette' | 'compact' | 'detailed';
 
@@ -75,13 +76,14 @@ export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dH
     const detail = options.details?.get(source.id);
     if (detail) {
       kinds.detailed++;
-      return detail;
+      return seatPlan(detail, options.heightAt);
     }
     // Activity sites (mills, farms, chapels: activitySites.ts) carry the city massing at their site's
-    // centre height; they stand on their own footprint terrain like the town volumes.
+    // centre height; they stand on their own footprint terrain like the town volumes. Native plans are seated on the
+    // displayed terrain the same way (seatPlan).
     const kind = activityMassing(source) ? 'silhouette' : city3dKind(source);
     kinds[kind]++;
-    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt, lightTrees) : kind === 'compact' ? compactBuilding(source) : source;
+    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt, lightTrees) : kind === 'compact' ? compactBuilding(seatPlan(source, options.heightAt)) : seatPlan(source, options.heightAt);
   });
   return { ...scene, materials: [...(scene.materials ?? []), ...CITY3D_MATERIALS], buildings, kinds };
 }

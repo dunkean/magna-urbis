@@ -100,6 +100,9 @@ export interface City3dContext {
   bridgesOf: [readonly Layout[] | undefined, readonly Street[] | undefined];
   bridgeStats: { count: number; first?: Point };
   quayCount: number;
+  stairStats: { count: number; triangles: number; ms: number };
+  stairInputs: unknown[];
+  stairBuildings: PlacedBuilding[];
   wallStats: City3dWallStats;
   structureInputs: unknown[];
   structureBuildings: Building3dVisual[];

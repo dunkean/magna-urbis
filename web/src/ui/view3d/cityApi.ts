@@ -104,7 +104,7 @@ export function createCityApi(cityContext: City3dContext): City3d {
     },
     stats: () => ({
       programsReady: cityContext.programsReady(),
-      buildings: (cityContext.display?.buildings.length ?? 0) - cityContext.bridgeStats.count - cityContext.wallStats.pieces - cityContext.quayCount,
+      buildings: (cityContext.display?.buildings.length ?? 0) - cityContext.bridgeStats.count - cityContext.wallStats.pieces - cityContext.quayCount - cityContext.stairStats.count,
       ...(cityContext.display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }),
       displayMs: cityContext.displayMs,
       timings: { ...cityContext.timings },
@@ -112,6 +112,7 @@ export function createCityApi(cityContext: City3dContext): City3d {
       realizeError: cityContext.info.dataset.detailError || undefined,
       bridges: cityContext.bridgeStats,
       walls: cityContext.wallStats,
+      stairs: cityContext.stairStats,
       lod: cityContext.terrain?.getLodInfo(),
       parentWindow:
         cityContext.sceneOf && 'projection' in cityContext.sceneOf && cityContext.sceneOf.projection === 'native-parent-window-3d-1'
