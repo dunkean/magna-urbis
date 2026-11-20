@@ -78,9 +78,28 @@ fn ready_child(command: &mut Command) -> Result<(Child, u16), String> {
     }
 }
 
+// Only the manually dispatched, ad-hoc signed candidate includes this hook.
+#[cfg(all(target_os = "macos", feature = "desktop-smoke"))]
+fn smoke_mode() -> bool {
+    std::env::args().any(|arg| arg == "--desktop-smoke") && std::env::var_os("MAGNA_RUNTIME_DATA").is_some()
+}
+
+#[cfg(all(target_os = "macos", feature = "desktop-smoke"))]
+#[tauri::command]
+fn desktop_smoke_result(app: tauri::AppHandle, report: serde_json::Value) -> Result<(), String> {
+    if !smoke_mode() { return Err("Desktop smoke mode is disabled".into()); }
+    println!("MAGNA_DESKTOP_SMOKE {report}");
+    app.exit(if report["ok"] == true { 0 } else { 1 });
+    Ok(())
+}
+
 fn main() {
-    tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![modules::desktop_status, modules::desktop_configure, modules::desktop_action, updates::desktop_release_info, updates::desktop_open_download, neural::desktop_neural_status, neural::desktop_neural_download, neural::ensure_neural])
+    let builder = tauri::Builder::default();
+    #[cfg(all(target_os = "macos", feature = "desktop-smoke"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![modules::desktop_status, modules::desktop_configure, modules::desktop_action, updates::desktop_release_info, updates::desktop_open_download, neural::desktop_neural_status, neural::desktop_neural_download, neural::ensure_neural, desktop_smoke_result]);
+    #[cfg(not(all(target_os = "macos", feature = "desktop-smoke")))]
+    let builder = builder.invoke_handler(tauri::generate_handler![modules::desktop_status, modules::desktop_configure, modules::desktop_action, updates::desktop_release_info, updates::desktop_open_download, neural::desktop_neural_status, neural::desktop_neural_download, neural::ensure_neural]);
+    builder
     .on_window_event(|window, event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
             if let Some(services) = window.try_state::<Services>() { services.stop(); }
@@ -99,7 +118,12 @@ fn main() {
         let handle = app.handle().clone();
         std::thread::spawn(move || handle.state::<modules::Modules>().start_existing(&handle));
         let url = format!("v2.html?profile=local&localServer=http%3A%2F%2F127.0.0.1%3A{port}");
-        WebviewWindowBuilder::new(app, "main", WebviewUrl::App(url.into()))
+        #[cfg(all(target_os = "macos", feature = "desktop-smoke"))]
+        let url = if smoke_mode() { format!("{url}&test=1&renderer=webgl&quality=full&lang=en") } else { url };
+        let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(url.into()));
+        #[cfg(all(target_os = "macos", feature = "desktop-smoke"))]
+        let window = if smoke_mode() { window.incognito(true).initialization_script(include_str!("smoke_macos.js")) } else { window };
+        window
             .title("Magna Urbis V2").inner_size(1440.0, 960.0).min_inner_size(800.0, 600.0).build()?;
         Ok(())
     }).build(tauri::generate_context!()).expect("Magna Urbis V2 n’a pas pu démarrer")

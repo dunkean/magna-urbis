@@ -9,19 +9,20 @@ import { unzipSync } from 'fflate';
 
 export const UV_VERSION = '0.13.6';
 const profiles = {
-  win32: { archive: 'uv-x86_64-pc-windows-msvc.zip', sha256: 'a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f', binary: 'uv.exe' },
-  linux: { archive: 'uv-x86_64-unknown-linux-gnu.tar.gz', sha256: 'f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645', binary: 'uv' },
+  'win32-x64': { archive: 'uv-x86_64-pc-windows-msvc.zip', sha256: 'a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f', binary: 'uv.exe' },
+  'linux-x64': { archive: 'uv-x86_64-unknown-linux-gnu.tar.gz', sha256: 'f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645', binary: 'uv' },
+  'darwin-arm64': { archive: 'uv-aarch64-apple-darwin.tar.gz', sha256: '60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472', binary: 'uv' },
 };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 export async function stageUv(destination) {
-  const profile = profiles[process.platform];
-  if (!profile || process.arch !== 'x64') throw Error('Desktop release supports Windows/Linux x64. Use an existing Python environment on other platforms.');
+  const profile = profiles[`${process.platform}-${process.arch}`];
+  if (!profile) throw Error(`No bundled uv for ${process.platform}-${process.arch}.`);
   await mkdir(destination, { recursive: true });
   const target = join(destination, profile.binary),
     metadata = join(destination, 'uv-version.json');
   try {
     const saved = JSON.parse(await readFile(metadata, 'utf8'));
-    if (saved.version === UV_VERSION && saved.sha256 === hash(await readFile(target)) && (await readFile(join(destination, 'LICENSE-UV-MIT'), 'utf8')).includes('MIT')) return target;
+    if (saved.version === UV_VERSION && saved.archiveSha256 === profile.sha256 && saved.sha256 === hash(await readFile(target)) && (await readFile(join(destination, 'LICENSE-UV-MIT'), 'utf8')).includes('MIT')) return target;
   } catch {
     /* First build or altered staging file: fetch the verified archive again. */
   }
