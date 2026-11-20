@@ -78,14 +78,19 @@ it('keeps the submitted trees and their detail as neighbours stream in, then dra
   const frame = { gl, view, cssW: 1600, cssH: 900, width: 1600, height: 900, dpr: 1, camera } as unknown as LiveFrame;
   try {
     let previous = new Map<number, number[]>(),
-      grew = 0;
+      grew = 0,
+      pending = false,
+      hadSolidCrowns = false;
     // The clock advances past the slice deadline on each upload, exposing every intermediate draw.
     for (let i = 0; i < 180; i++) {
       ranges.clear();
       layer.draw(frame);
+      pending ||= layer.pendingPresentation();
+      hadSolidCrowns ||= [...ranges.values()].some(prefix => prefix[1] > 0);
       for (const [key, prefix] of previous) {
         const next = ranges.get(key);
-        if (!next || next.some((end, level) => end < prefix[level])) throw new Error('An already drawn tree or detail level disappeared while idle');
+        if (!next || next[0] !== prefix[0] || next[1] !== prefix[1] || next[2] !== prefix[2]) throw new Error('An already presented VAO changed its instance range or detail while idle');
+        if (next[3] < prefix[3]) throw new Error('A streaming VAO faded out while idle');
       }
       if (ranges.size > previous.size) grew++;
       expect(layer.stats!().triangles).toBeLessThanOrEqual(treeTriangleBudget(600));
@@ -94,12 +99,16 @@ it('keeps the submitted trees and their detail as neighbours stream in, then dra
       clock += 16;
     }
     expect(grew).toBeGreaterThan(4);
+    expect(pending).toBe(true);
+    expect(layer.pendingPresentation()).toBe(false);
+    expect(hadSolidCrowns).toBe(true); // Triangle pressure cannot force every close tree to a card.
     const stable = JSON.stringify([...ranges]);
     for (let i = 0; i < 1200; i++) {
       ranges.clear();
       layer.draw(frame);
       if (JSON.stringify([...ranges]) !== stable) throw new Error('Idle GPU instance ranges changed');
       if (layer.work!(1, frame)) throw new Error('Warm idle forest scheduled work');
+      if (layer.pendingPresentation()) throw new Error('Warm idle forest still marked pending');
       clock += 32;
     }
   } finally {

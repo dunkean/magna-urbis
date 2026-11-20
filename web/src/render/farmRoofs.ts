@@ -15,6 +15,7 @@ import { readMassing, type MassingPiece, type MassingRoof } from './cityMassing'
 import { farmBuildingRidge } from './farms';
 import { groundAt } from './groundTone';
 import { mapGroundSnow } from './seasonPalette';
+import type { UrbanBuildingAppearance } from './urbanBuildingStyle';
 
 const DWELLING = /house|dwell|cottage|hall|lodge|manor/;
 /** Cover and wall a catalogue material asks for (undefined: keep the roof kind's cover, a plastered wall). */
@@ -235,9 +236,19 @@ export function farmCityBuildings(world: World, Path?: new () => Path2D): CityBu
 }
 
 /** Paints the farm buildings in view as town buildings are painted; `ctx` is in world coordinates. Returns how many. */
-export function drawFarmRoofs(ctx: CanvasRenderingContext2D, world: World, o: { viewport: Box; mpp: number; dpr: number; palette: CityPalette; night?: boolean; Path?: new () => Path2D }): number {
+interface CountrysideRoofFrame {
+  viewport: Box;
+  mpp: number;
+  dpr: number;
+  palette: CityPalette;
+  night?: boolean;
+  Path?: new () => Path2D;
+  roofAppearance?: Pick<UrbanBuildingAppearance, 'roof' | 'smoothRoofs'>;
+}
+
+export function drawFarmRoofs(ctx: CanvasRenderingContext2D, world: World, o: CountrysideRoofFrame): number {
   const buildings = farmCityBuildings(world, o.Path);
-  return buildings ? drawRoofedBuildings(ctx, buildings, { viewport: o.viewport, mpp: o.mpp, dpr: o.dpr, palette: o.palette, night: o.night, appearance: { style: 'cartographic', diagnostic: 'none', ambience: o.night ? 'night' : 'day' } }) : 0;
+  return buildings ? drawRoofedBuildings(ctx, buildings, { viewport: o.viewport, mpp: o.mpp, dpr: o.dpr, palette: o.palette, night: o.night, appearance: { style: 'cartographic', diagnostic: 'none', ambience: o.night ? 'night' : 'day', ...o.roofAppearance } }) : 0;
 }
 
 // ---------------------------------------------------------------- places whose plan is not generated yet
@@ -365,7 +376,7 @@ export function placeholderPlacedBuildings(world: World | undefined): PlacedBuil
 const standInPlans = new WeakMap<Settlement, { Path: unknown; buildings?: CityBuildings; lanes: Path2D }>();
 /** Paints, on a natural ground, the places still waiting for their plan: earth lanes (`lane` strokes one with the
  * natural road look) and their houses through the roof painter of the towns. `ctx` is in world coordinates. */
-export function drawPlaceholderRoofs(ctx: CanvasRenderingContext2D, world: World, o: { viewport: Box; mpp: number; dpr: number; palette: CityPalette; night?: boolean; Path?: new () => Path2D; lanesOnly?: boolean; lane(path: Path2D): void }): number {
+export function drawPlaceholderRoofs(ctx: CanvasRenderingContext2D, world: World, o: CountrysideRoofFrame & { lanesOnly?: boolean; lane(path: Path2D): void }): number {
   const Path = o.Path ?? Path2D,
     v = o.viewport;
   let drawn = 0;
@@ -390,7 +401,7 @@ export function drawPlaceholderRoofs(ctx: CanvasRenderingContext2D, world: World
       for (const item of plan.buildings.items) item.snowAltitude = item.building.ground_z_m;
       plan.buildings.pathClass = o.Path;
     }
-    drawn += drawRoofedBuildings(ctx, plan.buildings, { viewport: v, mpp: o.mpp, dpr: o.dpr, palette: o.palette, night: o.night, appearance: { style: 'cartographic', diagnostic: 'none', ambience: o.night ? 'night' : 'day' } });
+    drawn += drawRoofedBuildings(ctx, plan.buildings, { viewport: v, mpp: o.mpp, dpr: o.dpr, palette: o.palette, night: o.night, appearance: { style: 'cartographic', diagnostic: 'none', ambience: o.night ? 'night' : 'day', ...o.roofAppearance } });
   }
   return drawn;
 }

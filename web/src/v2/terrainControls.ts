@@ -3,7 +3,7 @@ import { openMethodNote } from '../ui/methodNotes';
 import type { V2Settings } from './contracts';
 import { adaptedExtent } from './settings';
 import { heightmapPixels, setHeightmapDefinition } from './heightmapModel';
-import { canUseTracedCoast, effectiveTerrainSettings } from './terrainSettings';
+import { canUseTracedCoast, effectiveTerrainSettings, terrainReliefAvailable } from './terrainSettings';
 import { coastTraceMode } from './coastTrace';
 import { bindTree, onLanguageChange, registerMessages, setText, setDynamicText, translate, numberLocale } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
@@ -803,8 +803,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     root.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')!.hidden = importedSurface || symbolic || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.climate"]')!.hidden = isClassic;
     root.querySelector<HTMLElement>('[data-field-path="options.biome"]')!.hidden = !isClassic;
-    for (const option of Array.from(reliefSelect.options))
-      option.disabled = (isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value)) || (compact && !['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'high-mountains'].includes(option.value));
+    const method = isNeural ? 'neural' : compact ? 'compact' : 'procedural';
+    for (const option of Array.from(reliefSelect.options)) option.disabled = !terrainReliefAvailable(option.value, method);
   }
   void loadTerrainControlDefaults()
     .then(reader => {

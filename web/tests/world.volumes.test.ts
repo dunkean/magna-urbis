@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlacementBatch, PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
-import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
+import type { Building3dScene, BuildingTriangle } from '../src/render/urbanBuildingGeometry';
+import { roofEdgeMasks } from '../src/render/roofEdges';
+import type { RoofMode } from '../src/render/roofMode';
 import { city3dBuildings, city3dBuildingsSteps } from '../src/render/city3d/display';
 import type { LiveFrame } from '../src/render/live/contract';
 import { BUILDING_BLOCK, BlockGrouping, TownAltitudes, blockLevel, blockPart, worldPaint, worldSeat } from '../src/render/world/buildingsBlocks';
@@ -9,7 +11,7 @@ import { BuildingBlockCache } from '../src/render/world/buildingsCache';
 import { expandBuildingPart, indexBuildingPart } from '../src/render/world/buildingsIndex';
 import { GroundDiagnostics, layerDiagnosticsEnabled } from '../src/render/live/layerDiagnostics';
 import type { LiveLayerStats } from '../src/render/live/contract';
-import { BUILDING_STRIDE } from '../src/render/world/buildingsMesh';
+import { BUILDING_STRIDE, buildingBatches } from '../src/render/world/buildingsMesh';
 import { createFrameCamera, frameCamera } from '../src/render/world/camera';
 import { TerrainHeights } from '../src/render/world/heights';
 import { TREES_BLOCK, treeBlockSteps, treeCloseShare, treeDrawCount, treeSolidShare } from '../src/render/world/treesBlocks';
@@ -101,6 +103,88 @@ function frame(gl: WebGL2RenderingContext, view: View, heights: TerrainHeights):
 }
 
 describe('world buildings', () => {
+  it('marks V1 eaves and changes of roof plane without marking coplanar triangle seams', () => {
+    const materials = { cladding: 'city3d:cover:tile' } as BuildingTriangle['materials'];
+    const roof = (points: BuildingTriangle['points'], normal: BuildingTriangle['normal']): BuildingTriangle => ({ points, normal, materials, surface: 'roof' });
+    const a = [0, 0, 4] as const,
+      b = [4, 0, 4] as const,
+      c = [4, 2, 6] as const,
+      d = [0, 2, 6] as const,
+      e = [4, 4, 4] as const;
+    const point = (p: readonly [number, number, number]): BuildingTriangle['points'][number] => [...p];
+    const pan = [0, -1, 1] as const;
+    expect([...roofEdgeMasks([roof([point(a), point(b), point(c)], [...pan]), roof([point(a), point(c), point(d)], [...pan]), roof([point(d), point(c), point(e)], [0, 1, 1])])]).toEqual([0b101, 0b011, 0b111]);
+  });
+
+  it('writes four distinct roof treatments in the same vertex format', () => {
+    const heights = relief(4000),
+      scene = town(1, heights),
+      block = grouped(scene, heights)[0],
+      seat = worldSeat(heights, heights.exaggeration),
+      appearance = { style: 'cartographic', diagnostic: 'none', colors: { building: '#002040' } } as const;
+    const data = (roof: RoofMode) => blockPart(block, blockLevel(block, 30, roof === 'minimal'), worldPaint(scene, { ...appearance, roof }, new TownAltitudes()), seat, 0, 1);
+    const v1 = data('v1'),
+      v2 = data('v2'),
+      flat = data('flat'),
+      minimal = data('minimal');
+    const color = (i: number) => i % BUILDING_STRIDE >= 6 && i % BUILDING_STRIDE <= 8;
+    expect(v1.map((v, i) => (color(i) ? Math.abs(v) : v))).toEqual(v2);
+    expect(v1.some((v, i) => color(i) && Object.is(v, -0))).toBe(true);
+    expect(v2.some((v, i) => color(i) && (v < 0 || Object.is(v, -0)))).toBe(false);
+    const indexed = indexBuildingPart(v1.slice(), 0);
+    expect(new Uint32Array(expandBuildingPart(indexed).buffer)).toEqual(new Uint32Array(v1.buffer));
+    const sloped = (mesh: Float32Array) => {
+      const out: number[] = [];
+      for (let i = 0; i < mesh.length; i += BUILDING_STRIDE) {
+        const length = Math.hypot(mesh[i + 3], mesh[i + 4], mesh[i + 5]),
+          up = mesh[i + 4] / length;
+        if (up > 0.1 && up < 0.99) out.push(i);
+      }
+      return out;
+    };
+    const slopes = sloped(v2);
+    expect(slopes.length).toBeGreaterThan(0);
+    expect(sloped(flat)).toEqual(slopes);
+    for (const i of slopes) {
+      expect(flat.slice(i, i + 3)).toEqual(v2.slice(i, i + 3));
+      expect(flat.slice(i + 6, i + 9)).toEqual(v2.slice(i + 6, i + 9));
+      expect(Math.hypot(flat[i + 3], flat[i + 4], flat[i + 5])).toBeCloseTo(1, 6);
+    }
+    expect(sloped(minimal)).toEqual([]);
+    expect(minimal.length).toBeLessThan(v2.length);
+    expect(blockLevel(block, 30, 'overview')).toBe(1);
+    const textured = (roof: RoofMode) => buildingBatches(scene.buildings, block.origin, { appearance: { ...appearance, roof, textured: true }, roofInk: roof === 'v1', materials: [], snowAltitudes: new TownAltitudes() }, false);
+    const pbr = textured('v1'),
+      plain = textured('v2');
+    expect(pbr.some(batch => batch.data.some((v, i) => i % BUILDING_STRIDE === 8 && !Number.isInteger(v)))).toBe(true);
+    expect(pbr.map(batch => batch.data.map((v, i) => (i % BUILDING_STRIDE === 8 ? Math.floor(v) : v)))).toEqual(plain.map(batch => batch.data));
+  });
+
+  it('reuses the original GPU blocks when switching back from a minimal roof', () => {
+    const heights = relief(4000),
+      scene = town(4, heights),
+      gl = mockGl();
+    let roof: RoofMode = 'v2';
+    const layer = createWorldBuildingsLayer(gl, { scene: () => scene, terrain: () => heights, appearance: () => ({ style: 'cartographic', diagnostic: 'none', roof }), topView: () => true, invalidate: () => {} });
+    const view = frame(gl, { cx: 325, cy: 325, scale: 4 }, heights);
+    const draw = () => {
+      while (layer.work!(Infinity, view));
+      layer.draw(view);
+      while (layer.work!(Infinity, view));
+      layer.draw(view);
+      expect(layer.presented()).toBe(true);
+      return layer.stats!().triangles;
+    };
+    const detailed = draw();
+    roof = 'minimal';
+    expect(draw()).toBeLessThan(detailed);
+    const uploads = vi.mocked(gl.bufferData).mock.calls.length;
+    roof = 'v2';
+    expect(draw()).toBe(detailed);
+    expect(vi.mocked(gl.bufferData).mock.calls).toHaveLength(uploads);
+    layer.dispose();
+  });
+
   it('uses the same resident roof triangles overhead and at the start of a tilt, even below the plan scale', () => {
     const heights = relief(4000),
       scene = town(16, heights),

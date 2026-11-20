@@ -68,8 +68,9 @@ const transition = (pixels: number, start: number, end: number): number => {
 export const treeSolidShare = (pixels: number): number => transition(pixels, 18, 38);
 export const treeCloseShare = (pixels: number): number => transition(pixels, 64, 112);
 /** Even very distant trees leave individually as their painted crowns take over. */
+export const treeDrawShare = (pixels: number): number => Math.min(1, (pixels / 5) ** 2) * transition(pixels, 1, 2);
 export function treeDrawCount(count: number, pixels: number): number {
-  return Math.round(count * Math.min(1, (pixels / 5) ** 2) * transition(pixels, 1, 2));
+  return Math.round(count * treeDrawShare(pixels));
 }
 
 /** Cheap publication stamp. TreeContent and the block's callback samples decide whether its contents changed. */

@@ -11,6 +11,7 @@ import type { Palette, MapStyle } from '../styles';
 import type { RenderColors } from '../customColors';
 import type { RoadLook } from '../composition';
 import type { RoadStyle } from '../roadStyle';
+import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { Scene, SceneMask } from '../scene';
 import type { View, Rect4 } from '../view';
 import type { Label } from '../labels';
@@ -29,6 +30,8 @@ export interface CanvasLike {
 export interface CanvasRendererDeps {
   /** Farm and placeholder house meshes are already drawn by the composed view. */
   volumeBuildings?(): boolean;
+  /** The roof look for farm and placeholder houses painted on the map. */
+  buildingRoofs?(): Pick<UrbanBuildingAppearance, 'roof' | 'smoothRoofs'>;
   /** Footprints of isolated houses and farms (native scenes): woods are cleared around them like around a farmstead. */
   buildingClearings?(): readonly Polygon[];
   /** Full-quality ownership when a light scene also retains flat polygons for the live shader. */

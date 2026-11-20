@@ -3,7 +3,7 @@ import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGe
 import { springPoints } from '../../../rust/bridge/urbanGeography';
 import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Options } from '../gen/types';
 import type { Claim, Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
-import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint } from './townNeighbours';
+import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint, townPopulationAndRadius } from './townNeighbours';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { CAVE_ROCK_DEPTH, settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
@@ -394,7 +394,8 @@ export async function generateRustTown(
   if (!place) throw new Error(`Lieu inconnu : ${key}`);
   const backend = urbanBackend(settings);
   if (backend === 'typescript') throw new Error('Sélectionnez le moteur urbain Rust pour ses étapes indépendantes.');
-  const options = { ...settings.options, ...settings.local[key], culture: settings.local[key]?.culture ?? String(world.stats['v2.culture:' + key] ?? place.culture), population: settings.local[key]?.population ?? Number(world.stats['v2.population:' + key] ?? place.population) };
+  const { population, radius } = townPopulationAndRadius(world, settings, place);
+  const options = { ...settings.options, ...settings.local[key], culture: settings.local[key]?.culture ?? String(world.stats['v2.culture:' + key] ?? place.culture), population };
   const resolved = resolveRustUrbanControls(settings, key, options),
     local = settings.urban?.local?.[key];
   // Same site archetype as City Bench's quarters request (kinds.rs reads it for the village form and the defences).
@@ -418,7 +419,7 @@ export async function generateRustTown(
   const neighbours = [...(neighbourClaims ?? neighbourClaimsOf(world, settings, key))];
   // The engine build is part of the key: a rebuilt engine recomposes the town instead of reusing the old binary's plan.
   const compositionKey = townCompositionFingerprint(
-    ['household-mix-1', world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, engineIdentityOf(settings, backend), seed, place.center, options.population, options.culture, config.layout],
+    ['household-mix-1', world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, engineIdentityOf(settings, backend), seed, place.center, radius, options.population, options.culture, config.layout],
     roads,
     neighbours.length ? [neighbourFingerprint(neighbours)] : [],
   );
@@ -551,7 +552,7 @@ export async function generateRustTown(
     }
   };
   if (!snapshot.layouts.length) {
-    const site = cityNamedSite({ key, name: place.name, population: options.population, culture: options.culture, center: place.center, radius: place.radius }, world.seed, options.language);
+    const site = cityNamedSite({ key, name: place.name, population, culture: options.culture, center: place.center, radius }, world.seed, options.language);
     const inputs = { sites: [neighbours.length ? { ...site, neighbours } : site], roads };
     if (!snapshot.compositionLayouts) {
       report('urban-layout', `Rust · urban composition… (${place.name ?? key})`, 0);

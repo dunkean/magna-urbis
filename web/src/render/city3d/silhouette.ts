@@ -4,7 +4,7 @@
  */
 import { mushroomDwellingCap } from '../city3dMushroom';
 import type { PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
-import { surfaceTriangles, MINOR_VOLUME_ROLE } from '../urbanBuildingGeometry';
+import { surfaceTriangles, MINOR_VOLUME_ROLE, type OverviewVolume } from '../urbanBuildingGeometry';
 import { pieceVolumes, readMassing, scaledRing, stiltDeck, stiltSupports, volumeRoof } from '../cityMassing';
 import { lightCrowns } from '../cityTrees';
 import { City3dHeight } from './types';
@@ -16,6 +16,8 @@ import { treeDetails, stiltPosts } from './treeDwelling';
 import { baseVolume } from './volume';
 import { featureBox, overhang, standingFeatures } from './features';
 import { volumeDetails } from './volumeDetails';
+
+const PLANAR_ROOFS = new Set(['gable', 'hip', 'pyramid', 'shed', 'ring']);
 
 /** Extruded silhouette: walls of `floors × 3 m`, a gable or hip roof on
  * rectangular shapes, a pitched border elsewhere, a foundation down to the lowest
@@ -84,7 +86,8 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           organic = form === 'tree' || form === 'mushroom';
         // Crowns and trunks get forest-green display materials (urbanBuilding3d.ts paints them).
         const greens = form === 'tree',
-          crown = greens ? 'city3d:tree:crown@5f8247' : materials.cladding;
+          crown = greens ? 'city3d:tree:crown@5f8247' : materials.cladding,
+          roofStart = roof.faces.length;
         // Myconid dwellings: a cap of the Underdark mushroom family instead of the dome (city3dMushroom.ts).
         if (form === 'mushroom') mushroomDwellingCap(roof, v.shape.outer, base, v.eave_m, Math.max(0, v.rise_m), `${building.id}:${i}:${j}`, materials.cladding, !!programme?.landmark);
         else
@@ -106,6 +109,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
             wallId,
             centre,
           );
+        const roofEnd = roof.faces.length;
         const bodyShape = organic ? { outer: scaledRing(v.shape.outer, form === 'tree' ? 0.22 : 0.3), holes: [] } : v.shape;
         if (organic) {
           if (form !== 'mushroom') flatRoof(roof, [v.shape], base + v.eave_m, crown);
@@ -134,7 +138,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         // A volume standing on another one has neither footing nor plinth: its walls run from its base to its eave.
         const ruin = v.cover === 'ruin' && lift <= 0 && !raisedBy,
           z0 = ruin ? foundation.z_min_m : base + raisedBy;
-        const volume = baseVolume(
+        const volume: OverviewVolume = baseVolume(
           `${building.id}:city3d:${i}:${j}`,
           [v.shape],
           base + raisedBy,
@@ -146,9 +150,13 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           { ...foundation, footprint: ruin || raisedBy ? [] : [bodyShape], z_max_m: lift > 0 ? foundation.z_min_m : ground },
           [{ index: 0, footprint: [bodyShape], z_m: z0, height_m: v.eave_m + base - z0 }],
         );
+        // The display skirts extend past the silhouette's source footprint.
+        volume.overhang_m = over;
         if (form === 'battered') volume.envelope = 'open';
+        // Keep the main pans and gables without the small details added to the roof and facade.
+        if (!organic && form !== 'battered' && v.rise_m > 0.05 && PLANAR_ROOFS.has(v.roof) && roofEnd > roofStart) volume.overview_roof_faces = [roofStart, roofEnd];
         // Sails and wheels stay on the overview body of the volume (urbanBuildingGeometry.ts).
-        if (roof.faces.length > standing) (volume as typeof volume & { overview_faces?: [number, number] }).overview_faces = [standing, roof.faces.length];
+        if (roof.faces.length > standing) volume.overview_faces = [standing, roof.faces.length];
         // The overview LOD drops small decorative volumes (urbanBuildingGeometry.ts).
         if (v.minor) volume.role = MINOR_VOLUME_ROLE;
         return volume;

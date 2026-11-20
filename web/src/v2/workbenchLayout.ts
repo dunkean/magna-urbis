@@ -235,10 +235,11 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   sharedPlan.className = 'stage-quick';
   sharedPlan.append(plan);
   $('.view-strip').insertBefore(sharedPlan, mapAdvanced.button);
-  const buildings = $<HTMLElement>('[data-setting-path="appearance.composition.buildings.visible"]').closest<HTMLElement>('.parameter-field')!;
+  const buildings = $<HTMLElement>('[data-setting-path="appearance.composition.buildings.visible"]').closest<HTMLElement>('.parameter-field')!,
+    roofs = $<HTMLSelectElement>('#roof-display').closest<HTMLElement>('.parameter-field')!;
   const sharedBuildings = document.createElement('div');
   sharedBuildings.className = 'stage-quick';
-  sharedBuildings.append(buildings);
+  sharedBuildings.append(buildings, roofs);
   $('.view-strip').insertBefore(sharedBuildings, mapAdvanced.button);
   const texture = $<HTMLElement>('[data-setting-path="appearance.textured"]').closest<HTMLElement>('.parameter-field')!;
   mapAdvanced.grid.prepend(texture);

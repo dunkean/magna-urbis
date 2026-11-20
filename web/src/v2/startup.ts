@@ -6,7 +6,8 @@ import { climateZoneBiome } from '../gen/biomes';
 import type { Relief } from '../gen/options';
 import { UNDERDARK_CULTURES } from './underdarkCultures';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
-import type { V2TerrainSettings } from './terrainSettings';
+import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
+import { terrainReliefAvailable, type V2TerrainSettings } from './terrainSettings';
 
 export const STARTUP_RESTORE_KEY = 'magna-urbis-v2-reload-previous-map';
 export function reloadPreviousMapAtStartup(): boolean {
@@ -56,8 +57,13 @@ export function randomInitialSettings(previous: V2Settings, random: () => number
   const settings = structuredClone(previous),
     terrain = (settings.terrain ??= {});
   const landscape = pick(LANDSCAPES, random);
-  const relief = pick(settings.runtime?.backend === 'typescript' ? landscape.reliefs.filter(r => CLASSIC_RELIEFS.includes(r as Relief)) : landscape.reliefs, random);
   const classic = settings.runtime?.backend === 'typescript';
+  const source = settings.runtime?.source ?? (settings.generation === 'neural' ? 'neural-wasm' : 'procedural');
+  const method = source !== 'procedural' && source !== 'procedural-phasor' ? 'neural' : isCompactProcedural({ source, procedural: terrain.procedural }) ? 'compact' : 'procedural';
+  const relief = pick(
+    landscape.reliefs.filter(r => (classic ? CLASSIC_RELIEFS.includes(r as Relief) : terrainReliefAvailable(r, method))),
+    random,
+  );
   const coastal = random() >= 0.5,
     coast = coastal ? (classic ? { mask: 1, mode: 'island' as const } : pick(COASTS, random)) : { mask: 0, mode: 'island' as const };
   const rotation = Math.floor(random() * (classic ? 4 : 8)) * (classic ? 2 : 1);

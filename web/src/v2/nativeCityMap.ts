@@ -405,6 +405,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
               layers,
               buildingStyle: buildingAppearance.style,
               smoothRoofs: buildingAppearance.smoothRoofs,
+              roof: buildingAppearance.roof,
               painted,
               buildingsVisible,
               diagnostic: buildingAppearance.diagnostic,

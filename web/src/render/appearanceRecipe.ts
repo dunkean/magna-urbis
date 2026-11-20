@@ -437,7 +437,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     overlays: key(composition.text, cartography.labels, cartography.legend, cartography.cartouche),
     roads: key(composition.networks.roads.emphasis),
     semantic: key(composition.landuse),
-    city: key(underdark, city, houseColors, composition.ambience),
+    city: key(underdark, city, houseColors, composition.ambience, composition.buildings.roof),
   };
   const result: ResolvedAppearance = {
     target,

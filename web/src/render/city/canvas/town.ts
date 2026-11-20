@@ -356,6 +356,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
   // Buildings: native renderer (compact / detailed) or batched silhouettes. On satellite grounds the far raster stands
   // for them above the fade band, whatever the level's hysteresis, so zooming either way crosses the same blend.
   const footprint = o.appearance.style === 'silhouette',
+    minimalRoof = o.appearance.roof === 'minimal',
     shown: BuildingsShownInput = { view, lod, mpp, footprint, diagnostic: o.appearance.diagnostic, buildingsVisible: o.buildingsVisible && !!o.buildings, farTown: o.farTown, houseRenderer: !!o.renderer };
   const farTown = farTownShown(shown);
   if (o.buildings && buildingsShown(shown)) {
@@ -366,7 +367,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
     } else {
       const body: BuildingFrame = { view, palette, footprint, diagnostic: o.appearance.diagnostic, colors },
         roofs = o.buildings.roofs,
-        pans = !!roofs && roofPansShown(shown);
+        pans = !minimalRoof && !!roofs && roofPansShown(shown);
       if (roofs && pans) {
         let paths = roofShadowPaths.get(roofs);
         if (!paths) roofShadowPaths.set(roofs, (paths = []));
@@ -386,9 +387,9 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i];
         stats.buildings++;
-        const made = buildingBody(body, b, !!roofs),
+        const made = buildingBody(body, b, !!roofs && !minimalRoof),
           style: Style = { fill: made.fill, stroke: o.appearance.smoothRoofs && !footprint ? undefined : made.stroke, width: px(made.widthPx) };
-        if (footprint) {
+        if (footprint || minimalRoof) {
           if (!b.footprintPath) {
             b.footprintPath = new Path2D();
             for (const s of b.footprint ?? b.building.footprint) b.footprintPath.addPath(shapePath(s));
@@ -413,7 +414,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       }
       if (footprint) for (const i of o.buildings.bins.query(viewport)) drawRuinPlan(ctx, o.buildings.items[i].ruins ?? [], mpp);
       const selected = o.selectedBuilding === undefined ? undefined : o.buildings.byId.get(o.selectedBuilding);
-      const selectedPath = selected === undefined ? undefined : footprint ? o.buildings.items[selected].footprintPath : o.buildings.items[selected].path;
+      const selectedPath = selected === undefined ? undefined : footprint || minimalRoof ? o.buildings.items[selected].footprintPath : o.buildings.items[selected].path;
       if (selectedPath) {
         ctx.strokeStyle = SELECTION.stroke!;
         ctx.lineWidth = px(SELECTION.widthPx!);

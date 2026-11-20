@@ -6,11 +6,13 @@
 import type { Point } from '../../../../../rust/bridge/urban';
 import type { Box, CityBuildings, CityLayers, CityLod, CityPalette, CityPick, CityScene, CityView } from '../model/contract';
 import { type CityGlLiveLook } from './styleTables';
+import type { RoofMode } from '../../roofMode';
 import type { YardBoundary } from '../../cityLotEnclosures';
 // walls hook (cityWalls.ts)
 
 export interface CityGlDrawOptions {
   smoothRoofs?: boolean;
+  roof?: RoofMode;
   viewport: Box;
   metresPerPixel: number;
   view: CityView;

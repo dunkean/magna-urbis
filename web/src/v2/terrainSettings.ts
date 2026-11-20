@@ -34,6 +34,10 @@ export type V2TerrainSettings = Partial<Omit<TerrainSettings, 'drawing' | 'seed'
   heightmap?: { name: string; width?: number; elevationRange?: [number, number] };
 };
 export const TERRAIN_RELIEFS = ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'plateau', 'high-mountains', 'volcano', 'caldera'] as const;
+const RESTRICTED_RELIEFS: Record<'neural' | 'compact', readonly string[]> = { neural: ['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'], compact: ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'high-mountains'] };
+export function terrainReliefAvailable(relief: string, method: 'procedural' | 'neural' | 'compact'): boolean {
+  return method === 'procedural' || RESTRICTED_RELIEFS[method].includes(relief);
+}
 export const TERRAIN_ENVIRONMENTS = ['flat', 'hills', 'mixed', 'mountains', 'high-mountains'] as const;
 export const TERRAIN_COAST_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 export const TERRAIN_CLIMATES = CLIMATE_ZONES;

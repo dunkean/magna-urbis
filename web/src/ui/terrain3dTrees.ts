@@ -11,7 +11,7 @@ import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/f
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { FOREST_BIOMES, FOREST_GIANT_PAINTED, FOREST_HEDGE_WIDEN, FOREST_LANDMARK, FOREST_LANDMARK_MAX, FOREST_LONE_WIDEN, forestBiomeRow, forestGiant, forestSocial, forestWetConifer, type ForestBiome, type ForestSocial } from '../../../rust/bridge/terrainForestStature';
-import { FOREST_CLUMP_GLSL, FOREST_FIELD, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { FOREST_CLUMP_GLSL, FOREST_CROWN_PIGMENTS, FOREST_FIELD, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
 /** Render distance of the near trees (m), adjustable: full trees within `near` (2/3 of it), none beyond `far`. Beyond,
  * the painted crowns are the forest's far level of detail. */
@@ -206,6 +206,7 @@ interface Stand {
   cover: number;
   height: number;
   needle: number;
+  tone: number;
 }
 interface Climate {
   trop: number;
@@ -334,7 +335,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
       cover = clamp(cover * zone[0]);
       needle = mix(needle, zone[1], zone[2]);
     }
-    return { cover, height: (px[1] / 255) * 50 * (zone && inputs.zone === 6 ? 0.35 : 1), needle };
+    return { cover, height: (px[1] / 255) * 50 * (zone && inputs.zone === 6 ? 0.35 : 1), needle, tone: px[3] / 255 };
   };
   const clearingRoom = occ?.clearings?.length ? clearingRoomOf(occ.clearings) : undefined;
   const occCell = occ ? occ.width / occ.n : 1;
@@ -432,6 +433,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   // Mean crown load of forestSnowLoad; the tree shader spreads it over the crown (instance colour w, fraction).
   const snowLoad = (needle: boolean): number => 0.45 * snow * (needle ? mix(0.24, 0.62, crownSnow) : mix(0.2, 0.8, crownSnow));
   const temperate = 1 - kind[0] - kind[1] - kind[2];
+  const pigments = FOREST_CROWN_PIGMENTS;
+  const conifer = pigments.conifer.map((c, i) => mix(c, pigments.dryConifer[i], dry));
+  const broadleaf = pigments.broad.map((c, i) => mix(mix(c, pigments.tropical[i], trop), pigments.dry[i], dry * (1 - 0.5 * trop)));
   // Instance stream in a typed array grown by doubling: partial installs hand out a view of it (the uploads copy it),
   // the finished stream a copy cut to length.
   let out = new Float32Array(1024 * TREE_STRIDE),
@@ -694,11 +698,11 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           if (z === undefined || z <= 0) continue;
           const hf = forestHash(i, j, level * 2 + 83, crownSeed);
           treeForm(form, social, biome, giant, isNeedle, margin, krumm, kind, wetConifer, softCap(height * biome.stature, biome.cap), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(hf, 16), u8(hf, 0));
-          // Approximate crown colour (display RGB): stand palette, per-tree tone, autumn hue, leaf fall, snow.
+          // Use the paint's species pigments and local field tone, preserving the seasonal tint of each crown.
           const tint = u8(Math.imul(h2, 0x9e3779b9) >>> 0, 0),
-            tone = (0.86 + 0.28 * tint) * form.tone;
-          let c: [number, number, number] = isNeedle ? [0.15, 0.23, 0.16] : [mix(0.24, 0.27, dry), mix(0.33, 0.31, dry), mix(0.15, 0.19, dry)];
-          if (riparian) c = [c[0] * 1.06, c[1] * 1.08, c[2] * 0.96];
+            tone = (0.86 + 0.28 * tint) * form.tone * (1 + 0.34 * (centre.tone - 0.5));
+          const pigment = isNeedle ? conifer : broadleaf;
+          let c: [number, number, number] = riparian ? [pigment[0] * 1.06, pigment[1] * 1.08, pigment[2] * 0.96] : [pigment[0], pigment[1], pigment[2]];
           c = [c[0] * tone, c[1] * tone, c[2] * tone];
           if (larch && inputs.renderV2 > 0) {
             // Larches: gold in autumn, bare in winter, as their painted crowns.
@@ -725,8 +729,17 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           // Same centre and radius as the painted crown it stands on. Height at the biome's real size next to the buildings
           // (3 m storeys): the stand top height saturates smoothly below the biome cap, then each tree takes its class
           // share of it, so the stand structure survives the cap; a giant's height comes from its class, not the field.
-          const tree = Math.max(1.5, softCap(height * biome.stature, biome.cap) * form.height),
-            width = r;
+          let width = r;
+          let tree = softCap(height * biome.stature, biome.cap) * form.height;
+          // Broaden slender crowns within their existing planting cell before reducing height.
+          // Clearings still win: a constrained crown keeps its painted radius and a shorter stem.
+          if (form.shape === FORM_SPIRE) {
+            const broader = Math.min(Math.max(width, tree / 10.4), 1.14 * s);
+            if (broader === width || !clearingRoom || clearingRoom.keeps(cx, cy, broader)) width = broader;
+            tree = Math.min(tree, 10.4 * width);
+          }
+          tree = Math.max(1.5, tree);
+          const crown = form.shape === FORM_SPIRE ? Math.max(form.crown * tree, tree - Math.min(3.5, 1.6 * width)) : form.crown * tree;
           // Keep the whole modelled forest crown off planted parcels, including sub-texel boundary slivers.
           if (orchardRoom && open > -1.5 * radius) {
             let overlaps = false;
@@ -739,7 +752,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
             }
             if (overlaps) continue;
           }
-          emit(cx, cy, z, width, tree, form.crown * tree, form.shape, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
+          emit(cx, cy, z, width, tree, crown, form.shape, u8(h, 24) * 6.2831853 + tint, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
           if (count >= cap) return out.slice(0, count);
         }
     }

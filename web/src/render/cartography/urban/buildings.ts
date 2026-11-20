@@ -97,10 +97,22 @@ export function paintBuildings(c: CartographyContext, f: VectorFrame, u: UrbanFr
   // A place whose plan is still to come: on a natural ground its stand-in houses are houses of its culture under
   // the roof painter of the towns, along earth lanes (farmRoofs.ts), over the plain stand-in marks; other
   // grounds keep those marks.
-  if (restored && px(1) <= CITY_LOD_LIMITS[1])
+  if (restored && px(1) <= CITY_LOD_LIMITS[1]) {
+    const lanesOnly = c.deps.volumeBuildings?.();
     timedRec('place-roofs', () =>
-      drawPlaceholderRoofs(ctx, c.world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P, lanesOnly: c.deps.volumeBuildings?.(), lane: path => strokeNaturalRoad(ctx, path, 'lane', roadWidth('lane', 3, sc), sc, roadStyle) }),
+      drawPlaceholderRoofs(ctx, c.world, {
+        viewport: pathRect,
+        mpp: px(1),
+        dpr,
+        palette: 'terrain',
+        night: roadStyle.night,
+        Path: P,
+        lanesOnly,
+        roofAppearance: lanesOnly ? undefined : c.deps.buildingRoofs?.(),
+        lane: path => strokeNaturalRoad(ctx, path, 'lane', roadWidth('lane', 3, sc), sc, roadStyle),
+      }),
     );
+  }
   // landmark buildings: the landmark tone, outlined
   if (polyL('u-lmb')) {
     fillPolys('u-lmb', U.landmark);

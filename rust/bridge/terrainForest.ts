@@ -31,6 +31,11 @@ export const V2_FOREST_PROFILE_VERSION = 'optical-thinning4';
  * one lone-tree candidate per `cell` metres, accepted with probability `tree` (times the natural potential),
  * and the edge hedge only within `hedge` metres of the field limit. No strays from a nearby wood, no bank gallery. */
 export const FOREST_FIELD = { cell: 150, tree: 0.15, hedge: 2.5 } as const;
+
+/** Crown pigments shared by the painted forest and modelled trees. */
+export const FOREST_CROWN_PIGMENTS = { broad: [0.21, 0.31, 0.13], tropical: [0.16, 0.3, 0.11], dry: [0.31, 0.32, 0.19], conifer: [0.15, 0.25, 0.16], dryConifer: [0.2, 0.24, 0.15] } as const;
+// Keep the emitted shader unchanged while exposing the same pigments to the instanced trees.
+const crownPigment = (rgb: readonly number[]): string => `vec3(${rgb.map(c => c.toFixed(2).slice(1)).join(',')})`;
 /** Occupation RGBA8: R/G signed distance to open/forest land, encoded
  * clamp(128+16d) in native texels (positive inside); B class id (0 none,
  * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built reserve, 8 occupied construction);
@@ -1104,9 +1109,9 @@ float forestShadow(ForestHit hit,int level,float s,ForestStand st,float aa,float
 }
 // Absolute climate palette of one crown type; only its ratios reach the display.
 vec3 forestPalette(ForestStand st,float needle){
-  vec3 broad=mix(vec3(.21,.31,.13),vec3(.16,.30,.11),st.trop);
-  broad=mix(broad,vec3(.31,.32,.19),st.dry*(1.-.5*st.trop));
-  return mix(broad,mix(vec3(.15,.25,.16),vec3(.20,.24,.15),st.dry),needle);
+  vec3 broad=mix(${crownPigment(FOREST_CROWN_PIGMENTS.broad)},${crownPigment(FOREST_CROWN_PIGMENTS.tropical)},st.trop);
+  broad=mix(broad,${crownPigment(FOREST_CROWN_PIGMENTS.dry)},st.dry*(1.-.5*st.trop));
+  return mix(broad,mix(${crownPigment(FOREST_CROWN_PIGMENTS.conifer)},${crownPigment(FOREST_CROWN_PIGMENTS.dryConifer)},st.dry),needle);
 }
 // Shared look season (0 winter, .5 summer): x leaf fall, y spring flush, z summer share, including cartographic grounds.
 vec3 forestSeason(){float t=6.2831853*uV2Season,s=sin(t);return vec3(max(-s,0.),max(s,0.),.5-.5*cos(t));}

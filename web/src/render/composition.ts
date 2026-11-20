@@ -22,6 +22,7 @@ import type { ResolvedDisplayQuality } from './displayQuality';
 import { UNDERDARK_CAVERN_LIMITS, type UnderdarkCavern3d } from './underdarkCavern';
 import type { ContourDetail } from './cityContours';
 import { CROWN_DETAILS, DEFAULT_CROWN_DETAIL, type CrownDetail } from './crownClumpAtlas';
+import { DEFAULT_ROOF_MODE, ROOF_MODES, type RoofMode } from './roofMode';
 
 /** Base looks of the ground; light presets reuse these renderers. */
 export type StyleId = 'minimal' | 'atlas' | 'cadastre' | 'topographic' | 'satellite' | 'satellite-2' | 'parchment' | 'illustration';
@@ -106,7 +107,7 @@ export interface CompositionRecipe {
     roads: { visible: boolean; look: NetworkLook; /** 0.5–1.5: contrast of the roads against their ground. */ emphasis: number; /** Plan look (absent) or painted surface; the painted surface applies on material grounds only. */ surface?: RoadSurfaceMode };
     water: { visible: boolean; look: NetworkLook; /** Swell crests and surf along exposed sea coasts on the satellite grounds; absent = COAST_WAVES_DEFAULT. */ waves?: boolean };
   };
-  buildings: { visible: boolean; look: BuildingLook; parcels: boolean; blocks: boolean; districts: boolean };
+  buildings: { visible: boolean; look: BuildingLook; roof?: RoofMode; parcels: boolean; blocks: boolean; districts: boolean };
   text: TextSettings;
   annotations: { legend: boolean; cartouche: boolean };
   effects: RenderEffects;
@@ -171,7 +172,7 @@ export function presetComposition(id: PresetId): CompositionRecipe {
     vegetation: { look: p.vegetation, forestTone: 'marked' },
     landuse: { rural: p.rural, urban: p.urban, opacity: 0.4, depth: p.depth, ...(id === 'topographic' ? { classes: Object.fromEntries(LAND_KINDS.map(kind => [kind, kind === 'field'])) } : {}) },
     networks: { roads: { visible: true, look: p.network, emphasis: 1, surface: base === 'satellite' || base === 'satellite-2' ? 'rendered' : 'plan' }, water: { visible: true, look: base === 'satellite-2' ? 'natural' : p.network === 'wash' ? 'ink' : p.network } },
-    buildings: { visible: true, look: p.building, parcels: p.parcels, blocks: p.blocks ?? true, districts: false },
+    buildings: { visible: true, look: p.building, roof: DEFAULT_ROOF_MODE, parcels: p.parcels, blocks: p.blocks ?? true, districts: false },
     text: structuredClone(p.text),
     annotations: { legend: false, cartouche: false },
     effects: { ambience: 'day', season: 0.5, relief: id !== 'topographic' && id !== 'minimal', lighting: { ...DEFAULT_TERRAIN_LIGHTING } },
@@ -208,7 +209,16 @@ export interface ResolvedComposition {
   };
   readonly landuse: { readonly rural: SemanticLook; readonly urban: SemanticLook; readonly opacity: number; readonly depth: SemanticDepth; readonly classes: Readonly<Record<LandKind, boolean>> };
   readonly networks: { readonly roads: { readonly visible: boolean; readonly look: RoadLook; readonly emphasis: number }; readonly water: { readonly visible: boolean; readonly look: 'ink' | 'natural'; readonly waves: boolean } };
-  readonly buildings: { readonly visible: boolean; readonly look: BuildingLook; /** What the 3D view raises from the ground. */ readonly meshes: 'none' | 'simple' | 'detailed'; readonly parcels: boolean; readonly blocks: boolean; readonly districts: boolean };
+  readonly buildings: {
+    readonly visible: boolean;
+    readonly look: BuildingLook;
+    readonly roof: RoofMode;
+    /** What the 3D view raises from the ground. */
+    readonly meshes: 'none' | 'simple' | 'detailed';
+    readonly parcels: boolean;
+    readonly blocks: boolean;
+    readonly districts: boolean;
+  };
   readonly text: Readonly<TextSettings>;
   readonly ambience: Ambience;
   readonly limitations: readonly Limitation[];
@@ -321,7 +331,7 @@ export function resolveComposition(recipe: CompositionRecipe | undefined, traits
       roads: { visible: c.networks.roads.visible, look: roadLookOf(c.networks.roads, traits), emphasis: c.networks.roads.emphasis },
       water: { visible: c.networks.water.visible, look: waterLook(c.networks.water.look, traits), waves: c.networks.water.waves ?? COAST_WAVES_DEFAULT },
     },
-    buildings: { visible: c.buildings.visible, look: buildingLook, meshes: recipe ? BUILDING_2D[buildingLook].meshes : 'detailed', parcels: c.buildings.parcels, blocks: c.buildings.blocks, districts: c.buildings.districts },
+    buildings: { visible: c.buildings.visible, look: buildingLook, roof: c.buildings.roof ?? DEFAULT_ROOF_MODE, meshes: recipe ? BUILDING_2D[buildingLook].meshes : 'detailed', parcels: c.buildings.parcels, blocks: c.buildings.blocks, districts: c.buildings.districts },
     text: c.text,
     ambience: !underdark && c.ground.look === 'minimal' ? 'day' : c.effects.ambience,
     limitations: Object.freeze(recipe ? limitationsOf(c, traits, target, capabilities) : []),
@@ -409,6 +419,7 @@ export function validateComposition(value: unknown): asserts value is Compositio
   if (typeof emphasis !== 'number' || !(emphasis >= 0.5 && emphasis <= 1.5)) throw new Error('appearance.composition.networks.roads.emphasis: expected a number in 0.5–1.5.');
   flags(buildings, ['visible', 'parcels', 'blocks', 'districts'], 'buildings');
   oneOf(buildings.look, BUILDING_LOOKS, 'buildings.look');
+  if (buildings.roof !== undefined) oneOf(buildings.roof, ROOF_MODES, 'buildings.roof');
   flags(annotations, ['legend', 'cartouche'], 'annotations');
   flags(text, ['visible'], 'text');
   flags(text.groups, TEXT_GROUPS, 'text.groups');

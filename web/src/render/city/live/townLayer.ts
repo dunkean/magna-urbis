@@ -213,6 +213,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         layers: towns.layers(appearance, vis),
         buildingStyle: buildingAppearance.style,
         smoothRoofs: buildingAppearance.smoothRoofs,
+        roof: buildingAppearance.roof,
         // The Canvas town ignores `painted` for city volumes, and the live look omits textures (flat colours).
         paintedBuildings: false,
         textured: false,

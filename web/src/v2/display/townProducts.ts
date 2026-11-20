@@ -12,7 +12,7 @@ import { createNativeCityMapAsync, type NativeCityHooks, type NativeCityMap, typ
 import { drawUrbanSemantic } from '../../render/semanticLayer';
 import type { CityScene } from '../../render/cityCanvas';
 import type { View } from '../../render/view';
-import { smoothTownBuildings } from '../../render/cityDrawOptions';
+import { volumeTownBuildings } from '../../render/cityDrawOptions';
 import type { DisplayParts, SemanticState, Town, TownPaint, WorldBox } from './contract';
 import type { MapState } from './mapState';
 
@@ -148,7 +148,7 @@ export class TownProducts implements Town {
         if (kind === 'content') this.map.invalidate();
         else this.map.repaint();
       },
-      smoothTownBuildings(this.map.resolved) && this.map.resolved?.target === 'view2d',
+      volumeTownBuildings(this.map.resolved) && this.map.resolved?.target === 'view2d',
     );
     // Another pass prepared the same cities while the volumes were built: keep one map.
     if (this.map.ownsShared && shared.city?.key === key) {

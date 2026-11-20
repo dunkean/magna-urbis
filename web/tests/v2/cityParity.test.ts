@@ -19,7 +19,8 @@ import { projectUrbanSite } from '../../src/ui/urbanSiteStore';
 import { applySettlementStyle } from '../../src/ui/urbanSettlementStyles';
 import { CITY_DISPLAY_DEFAULTS, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
 import { CITY_DEFAULT_PARCEL_FIT, CITY_RASTER_RESOLUTION, cityRasterSide, parcelFitOf, defaultCityLayoutConfig, CITY_LAYOUT_DEFAULTS } from '../../src/render/cityGeneration';
-import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions } from '../../src/render/cityDrawOptions';
+import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions, volumeTownBuildings } from '../../src/render/cityDrawOptions';
+import { ROOF_MODES } from '../../src/render/roofMode';
 import { URBAN_PHYSICAL_LAYERS, URBAN_PLAN_LAYERS, resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
 import type { V2Settings } from '../../src/v2/contracts';
 import type { Options } from '../../src/gen/types';
@@ -610,6 +611,37 @@ describe('V2 and City Bench stay in sync', () => {
         const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
         expect(cityBuildingAppearance(r).smoothRoofs, `${style} ${target}`).toBe(smooth);
       }
+    }
+  });
+
+  it('shares the roof choice across map and 3D hosts and invalidates the city appearance', () => {
+    for (const target of ['view2d', 'view3d', 'export'] as const) {
+      const keys = new Set<string>();
+      for (const roof of ROOF_MODES) {
+        const composition = presetComposition('satellite');
+        composition.buildings.roof = roof;
+        const r = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        expect(cityBuildingAppearance(r).roof).toBe(roof);
+        expect(volumeTownBuildings(r), `${roof} keeps GPU volume ownership`).toBe(true);
+        expect(cityBuildingAppearance(r).smoothRoofs).toBe(roof !== 'v1');
+        expect(city3dPlanOptions(r).appearance.roof).toBe(roof);
+        keys.add(r.keys.city);
+      }
+      expect(keys.size).toBe(ROOF_MODES.length);
+    }
+  });
+
+  it('keeps fallback farm and placeholder roofs synchronized with the live roof choice', () => {
+    const appearance = (roof: (typeof ROOF_MODES)[number]) => {
+      const composition = presetComposition('satellite');
+      composition.buildings.roof = roof;
+      return resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
+    };
+    let current = appearance('v2');
+    const countryside = cityCountrysideCanvasOptions(current, 4000, () => current);
+    for (const roof of ROOF_MODES) {
+      current = appearance(roof);
+      expect(countryside.buildingRoofs()).toEqual({ roof, smoothRoofs: roof !== 'v1' });
     }
   });
 

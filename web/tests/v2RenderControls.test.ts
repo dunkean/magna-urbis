@@ -6,6 +6,7 @@ import { readSettingPath } from '../src/v2/parameterForm';
 import { CITY_LAYER_NAMES } from '../src/v2/appearance';
 import { DIAGNOSTICS } from '../src/render/displayDiagnostics';
 import { terrainCacheKey } from '../src/v2/engine';
+import { ROOF_MODES } from '../src/render/roofMode';
 
 describe('V2 retained-map render controls', () => {
   it('exposes every native city layer and the exact existing terrain diagnostics without duplicate controls', () => {
@@ -16,6 +17,18 @@ describe('V2 retained-map render controls', () => {
     expect(renderControlFields.find(field => field.path === 'appearance.diagnostic')?.options?.map(choice => choice.value)).toEqual(DIAGNOSTICS.map(diagnostic => diagnostic.id));
     expect(renderControlFields.find(field => field.path === 'appearance.city.view')?.options).toHaveLength(5);
     expect(renderControlFields.find(field => field.path === 'appearance.city.palette')?.options).toHaveLength(5);
+    const roof = renderControlFields.find(field => field.path === 'appearance.composition.buildings.roof');
+    expect(roof?.options?.map(choice => choice.value)).toEqual(ROOF_MODES);
+    expect(roof?.defaultValue).toBe('v2');
+  });
+  it('marks roof edits as custom, preserves them across ground edits, and applies the next preset default', () => {
+    const settings = defaultSettings();
+    writeAppearanceControl(settings, 'appearance.composition.buildings.roof', 'flat');
+    expect(settings.appearance?.composition).toMatchObject({ preset: 'custom', buildings: { roof: 'flat' } });
+    writeAppearanceControl(settings, 'appearance.composition.ground.variant', 'parchment');
+    expect(settings.appearance?.composition?.buildings.roof).toBe('flat');
+    writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
+    expect(settings.appearance?.composition).toMatchObject({ preset: 'satellite', buildings: { roof: 'v2' } });
   });
   it('accepts every displayed numeric bound and choice without changing generation inputs', () => {
     for (const field of renderControlFields) {

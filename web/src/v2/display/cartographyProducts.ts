@@ -221,13 +221,13 @@ export class CartographyProducts implements Cartography {
     const map = this.map;
     const palette = { ...biomePalette(r.palette.mapStyle, world.options.biome), frameKind: 'none' as const, ...(layers.decor === false ? { grid: null } : {}) };
     const semanticLook = (): string =>
-      `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}|v${this.map.volumeBuildings ? 1 : 0}`;
+      `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}|v${this.map.volumeBuildings ? 1 : 0}${this.map.volumeBuildings ? '' : `|roof:${this.map.resolved?.composition.buildings.roof ?? r.composition.buildings.roof}`}`;
     this.woodsOnGround = this.parts.ground.gpuActive && !!this.parts.ground.treeSymbols();
     this.renderer = createCanvasRenderer(this.overlay, shown, palette, {
       colors: r.palette.colors,
       separateText: true,
       textSources: () => this.parts.town.city?.scenes(),
-      ...cityCountrysideCanvasOptions(r, world.mapSize),
+      ...cityCountrysideCanvasOptions(r, world.mapSize, () => this.map.resolved ?? r),
       buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.map.world!) } as never)?.map(shape => shape.outer) ?? [],
       volumeBuildings: () => this.map.volumeBuildings,
       transparentBackground: true,

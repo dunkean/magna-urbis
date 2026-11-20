@@ -45,6 +45,12 @@ try {
   };
   const original = await exportProject();
   assert.equal(!!original.settings.appearance.textured, false);
+  const roof = page.locator('.toolbar-row #roof-display');
+  assert.equal(await page.locator('#roof-display').count(), 1);
+  assert(await roof.isVisible());
+  assert.equal(await roof.inputValue(), 'v2');
+  assert.deepEqual(await roof.locator('option').evaluateAll(options => options.map(option => option.value)), ['v1', 'v2', 'flat', 'minimal']);
+  assert.equal(await roof.locator('option[value=v1]').textContent(), 'V1 · Arêtes');
   const advanced = page.locator('.view-strip > .workbench-advanced');
   const flags = ['appearance.composition.ground.contours', 'appearance.composition.networks.water.visible', 'appearance.composition.text.visible', 'appearance.city.plan', 'appearance.composition.buildings.visible'];
   await page.evaluate(paths => {
@@ -64,10 +70,15 @@ try {
   assert.deepEqual((await exportProject()).settings, original.settings, 'opening Advanced is read-only');
   for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
   assert(await page.evaluate(paths => paths.every((path, i) => window.sharedFlags[i] === document.querySelector(`[data-setting-path="${path}"]`)), flags));
+  await roof.selectOption('v1');
+  const edged = await exportProject();
+  assert.equal(edged.settings.appearance.composition.preset, 'custom');
+  assert.equal(edged.settings.appearance.composition.buildings.roof, 'v1');
   await page.locator('#view3d').click();
   const nav = page.locator('.toolbar-row [data-navigation]');
   await nav.waitFor();
   await page.locator('#map-style').selectOption('satellite');
+  await page.waitForFunction(() => document.querySelector('#roof-display').value === 'v2');
   for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
   assert.equal(await page.locator('.toolbar-row [data-ground]').count(), 0);
   assert.equal(await page.locator('.toolbar-row [data-textured]:visible,.toolbar-row [data-plan]:visible').count(), 0);
@@ -88,10 +99,12 @@ try {
   await vegetation.check();
   await page.screenshot({ path: fileURLToPath(new URL('render-advanced-3d.png', out)) });
   await page.keyboard.press('Escape');
+  await roof.selectOption('minimal');
   const mixed = await exportProject();
   assert.equal(mixed.settings.appearance.composition.ground.look, 'satellite');
   assert.equal(mixed.settings.appearance.composition.networks.water.look, 'ink');
   assert.equal(mixed.settings.appearance.composition.vegetation.look, 'symbols');
+  assert.equal(mixed.settings.appearance.composition.buildings.roof, 'minimal');
   assert.equal(mixed.settings.appearance.city?.ground, undefined);
   assert.deepEqual(mixed.world, original.world, 'style composition leaves every generated product untouched');
   await nav.selectOption('fly');

@@ -29,8 +29,8 @@
  * standing on it. No picture at rest is made for it and no exact canvas is shown (they are pictures of the top view);
  * the furniture is hidden (a scale bar measures nothing in perspective). This view gives the compositor, the ground
  * layer and the names the relief of the map (`relief`), and places the names of a tilted view at rest. The town's
- * buildings and the modelled trees stand on the terrain as volumes (render/world/volumes.ts): two more layers, fed by
- * worldVolumes.ts, which draw nothing in the top view. A click on a tilted view picks with the camera's ray (`pick`:
+ * buildings and modelled trees stand on the terrain as volumes (render/world/volumes.ts), fed by worldVolumes.ts.
+ * Volume-style houses also use that layer overhead; modelled trees belong to the tilted view. A click on a tilted view picks with the camera's ray (`pick`:
  * the building volume in front of the ground, else the ground point), and its picture is the compositor's frame read
  * back (`capture`).
  */
@@ -48,7 +48,7 @@ import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../rende
 import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
-import { createWorldTreesLayer } from '../../render/world/treesLayer';
+import { createWorldTreesLayer, type WorldTreesLayer } from '../../render/world/treesLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
 import { StepwisePaint } from '../../render/stepwisePaint';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
@@ -62,7 +62,7 @@ import type { DisplayReadiness } from './readiness';
 import { SETTLE_MS, type ViewMotion } from './viewMotion';
 import { WorldVolumes } from './worldVolumes';
 import { machineDecision, reportMachineCompositor } from '../machineTier';
-import { smoothTownBuildings } from '../../render/cityDrawOptions';
+import { volumeTownBuildings } from '../../render/cityDrawOptions';
 
 /** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on while it waits. */
 export const GROUND_WARMING = 'ground warming';
@@ -152,6 +152,7 @@ export class ComposedView {
   private readonly volumes: WorldVolumes;
   /** The buildings layer on the compositor, for picking. */
   private buildings?: WorldBuildingsLayer;
+  private trees?: WorldTreesLayer;
   private volumeBuildings = false;
   private exactPlan = false;
 
@@ -281,14 +282,14 @@ export class ComposedView {
     if (!owners.volumes) {
       owners.volumes = true;
       live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
-      live.setLayer('trees', createWorldTreesLayer(gl, this.volumes.trees));
+      live.setLayer('trees', (this.trees = createWorldTreesLayer(gl, this.volumes.trees)));
     }
     if (owners.cartography !== cartography.renderer) {
       owners.cartography = cartography.renderer;
       live.setLayer('overlay', cartography.renderer?.createLiveLayer(gl));
       live.invalidateLayer('text');
     }
-    const volumeBuildings = !!map.native && !dualCameras() && machineDecision().tier === 'capable' && smoothTownBuildings(map.resolved);
+    const volumeBuildings = !!map.native && !dualCameras() && machineDecision().tier === 'capable' && volumeTownBuildings(map.resolved);
     map.volumeBuildings = volumeBuildings;
     if (owners.city !== town.city || this.volumeBuildings !== volumeBuildings) {
       this.volumeBuildings = volumeBuildings;
@@ -695,9 +696,10 @@ export class ComposedView {
   pendingViewOnly(): number {
     const visibleVolumes = !!this.volumeBuildings && this.map.exportLayers.city !== false;
     const volumes = this.tilted || visibleVolumes ? Number(this.volumes.pending()) + Number(!!this.live?.layerPending('buildings')) + Number(visibleVolumes && !this.buildings?.presented()) : 0;
+    const forest = !!(this.tilted && this.live?.active() && this.trees?.pendingPresentation());
     // A completed paint job still owes its final presentation frame. Tilted and fallback frames do not use `rest`.
     const picture = !this.tilted && this.live?.active() && (this.rest === 'due' || this.rest === 'painting');
-    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending) + Number(!!picture) + volumes;
+    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending) + Number(!!picture) + volumes + Number(forest);
   }
   /** Overlay rasters the exact overlay paint still waits for (none when the overlay at rest is the live layer). */
   pendingOverlay(): number {
@@ -735,5 +737,6 @@ export class ComposedView {
     this.live?.dispose();
     this.live = undefined;
     this.buildings = undefined;
+    this.trees = undefined;
   }
 }

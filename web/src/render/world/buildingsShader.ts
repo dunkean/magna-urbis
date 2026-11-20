@@ -131,8 +131,21 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   return color*(1.+g);
 }
 `;
+/** V1 roof edges, antialiased in pixels. The caller selects V1 with a uniform branch. */
+export const ROOF_INK_GLSL = `
+float roofInk(vec3 edge, vec3 gx, vec3 gy, float dpr){
+  vec3 ex=dFdx(edge),ey=dFdy(edge);
+  vec3 edgePixel=sqrt(ex*ex+ey*ey);
+  float reach=.5*dpr;
+  if(all(greaterThanEqual(edge,edgePixel*(reach+.5))))return 0.;
+  vec3 d=edge/max(edgePixel,vec3(1.e-6));
+  float mpp=sqrt(max(dot(gx.xz,gx.xz),dot(gy.xz,gy.xz)))*dpr;
+  return (1.-smoothstep(max(0.,reach-.5),reach+.5,min(d.x,min(d.y,d.z))))*.65*(1.-smoothstep(1.5,4.,mpp));
+}
+`;
 export const WORLD_BUILDING_VS = `#version 300 es
 precision highp float;
+precision highp int;
 // Block-local x, height above the seat (m), block-local y; the normal in the 3D view's frame (x, up, y south) with the
 // material class on its length; the colour; the terrain height under the building, metres as drawn at full relief.
 layout(location=0) in vec3 position;
@@ -144,11 +157,15 @@ uniform mat4 uProjection;
 uniform vec3 uBlock;
 uniform float uRise;
 uniform bool uTop;
+uniform float uRoofInkDpr;
 // Eye relative to the target.
 uniform vec3 uEye;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
+out vec3 roofEdge;
 void main(){
-  n=normalize(normal);base=albedo;
+  n=normalize(normal);base=uRoofInkDpr>0.?abs(albedo):albedo;
+  // Inspect the bits directly so black channels can carry a negative zero.
+  roofEdge=uRoofInkDpr>0.?vec3(greaterThanEqual(floatBitsToInt(albedo),ivec3(0))):vec3(1.);
   // The normal's length carries 1 + code / 32 (buildingsMesh.ts faceCode): the material class, plus 64 x the grain gain
   // in sixteenths of a face the town look painted (0: not painted). Block-local metres keep the grain's hashes exact.
   float code=floor((length(normal)-1.)*32.+.5),painted=floor(code/64.);
@@ -164,6 +181,7 @@ void main(){
 export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
+in vec3 roofEdge; uniform float uRoofInkDpr;
 // Haze distance (m) and share; haze colour.
 uniform vec2 uAir;
 uniform vec3 uHaze;
@@ -171,8 +189,11 @@ out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
 ${COVER_GRAIN_GLSL}
+${ROOF_INK_GLSL}
 void main(){
-  vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
+  vec3 N=normalize(n);
+  vec3 gx=dFdx(grainPosition),gy=dFdy(grainPosition);
+  float fp=length(abs(gx)+abs(gy));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
   vec3 rgb;
@@ -184,6 +205,7 @@ void main(){
     float light=buildingLight(N);
     rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
   }
+  if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
   float haze=min(.62,1.-exp(-pow(vDistance/uAir.x,2.)*.11))*uAir.y;
   color=vec4(mix(rgb,uHaze,haze),1.);
 }`;

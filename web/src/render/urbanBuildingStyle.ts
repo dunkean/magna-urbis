@@ -4,6 +4,7 @@ import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import type { ArchitectureFunction } from '../../../rust/bridge/urbanArchitecture';
 import { nightRoof } from './cityNight';
 import type { GroundSnowSettings } from './seasonPalette';
+import type { RoofMode } from './roofMode';
 
 /** `silhouette`: flat occupied footprints with optional uniform ink; no relief or shadows. */
 export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
@@ -11,6 +12,7 @@ export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
 export interface UrbanBuildingAppearance {
   /** Volume looks have continuous roof and wall paint without cartographic outlines. */
   smoothRoofs?: boolean;
+  roof?: RoofMode;
   ambience?: 'day' | 'night';
   /** Underdark: the culture colours under the cave light (caveRoof), no night ink. */ cave?: boolean;
   /** Lamp visibility is independent of the cave's permanent darkness. */ lightsOn?: boolean;

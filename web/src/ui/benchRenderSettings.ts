@@ -34,7 +34,7 @@ export function installBenchRenderSettings(): void {
     forms.push(
       mountParameterForm(
         body,
-        fields.map(field => (field.options ? { ...field, options: field.options.filter(option => styleAvailableOnPage(String(option.value), 'bench')) } : field)),
+        fields.map(field => (field.options && (field.path === 'appearance.composition.preset' || field.path.startsWith('appearance.composition.ground.')) ? { ...field, options: field.options.filter(option => styleAvailableOnPage(option.value, 'bench')) } : field)),
         {
           getValue: path => readSettingPath({ appearance: resolvedValues(resolveBenchAppearance({}, 'view2d')) }, path),
           setValue: (path, value) => {

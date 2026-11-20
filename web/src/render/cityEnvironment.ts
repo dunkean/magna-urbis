@@ -11,6 +11,7 @@ import { terrainStyle } from './terrainStyle';
 import { CONTOUR_INTERVAL } from './contours';
 import { underdarkCavernOf } from './underdarkCavern';
 import { underdarkLightingLook } from './underdarkLighting';
+import { cityBuildingAppearance } from './cityDrawOptions';
 
 export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composition.ambience, underdark: r.underdark, waterLook: r.composition.networks.water.look, waterVisible: r.ground.layers.water, groundCover: r.composition.vegetation.procedural });
 
@@ -75,9 +76,21 @@ export const cityOverlayPlanMarks = (r: ResolvedAppearance): boolean => r.city.p
 export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.stringify([r.ground.traits.family, r.ground.traits.fantasy, r.composition.vegetation.cartographic, atlasPlate(r), r.quality === 'light']);
 
 /** Both 2D hosts use the raster tile renderer and the retained map extent for decorative field scale. */
-export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number) {
+export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number, current: () => ResolvedAppearance = () => r) {
   const fullLanduse = cityOverlayLandKinds({ ...r, quality: 'full' });
-  return { transparentBackground: true, raster: true, vegetation: r.vegetation.symbols, furrowReferenceSize: mapSize, mask: { landuse: cityOverlayLandKinds(r) }, ...(r.quality === 'light' && fullLanduse !== true ? { fullLanduse } : {}), urbanPlan: () => cityOverlayPlanMarks(r) };
+  return {
+    transparentBackground: true,
+    raster: true,
+    vegetation: r.vegetation.symbols,
+    furrowReferenceSize: mapSize,
+    mask: { landuse: cityOverlayLandKinds(r) },
+    ...(r.quality === 'light' && fullLanduse !== true ? { fullLanduse } : {}),
+    urbanPlan: () => cityOverlayPlanMarks(r),
+    buildingRoofs: () => {
+      const { roof, smoothRoofs } = cityBuildingAppearance(current());
+      return { roof, smoothRoofs };
+    },
+  };
 }
 
 /** Whole crowns remain readable at near town scale, including the narrower bench viewport. */

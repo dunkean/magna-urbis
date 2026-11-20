@@ -2,6 +2,7 @@ import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zone
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
 import { COAST_WAVES_DEFAULT, DEFAULT_CROWN_DETAIL, STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, isHiddenPreset, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
+import { DEFAULT_ROOF_MODE, ROOF_MODES, type RoofMode } from '../render/roofMode';
 import { UNDERDARK_CAVERN_DEFAULTS } from '../render/underdarkCavern';
 import { TEXT_GROUPS, NAME_LEVELS, nameLevelValue, DEFAULT_TEXT, type TextGroup, type NameLevel } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
@@ -106,6 +107,7 @@ const networkEntries = [
   ['ink', 'Ink', 'Encre'],
   ['natural', 'Natural', 'Naturel'],
 ] as const;
+const ROOF_LABELS: Record<RoofMode, readonly [string, string]> = { v1: ['V1 · Edges', 'V1 · Arêtes'], v2: ['V2 · 3D', 'V2 · 3D'], flat: ['Flat', 'Sans texture'], minimal: ['Minimal', 'Minimal'] };
 const styleFrench: Record<string, string> = {
   'parchment-render': 'Satellite peint',
   parchment: 'Parchemin',
@@ -225,6 +227,21 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
     choice('composition.networks.water.look', 'Water look', 'Aspect de l’eau', networkEntries),
     { ...flag('composition.networks.water.waves', 'Coastal swell and surf (satellite)', 'Houle et écume côtières (satellite)'), defaultValue: COAST_WAVES_DEFAULT },
     flag('composition.buildings.visible', 'Show buildings', 'Afficher les bâtiments'),
+    {
+      ...choice(
+        'composition.buildings.roof',
+        'Roof',
+        'Toits',
+        ROOF_MODES.map(mode => [mode, ...ROOF_LABELS[mode]] as const),
+      ),
+      id: 'roof-display',
+      defaultValue: DEFAULT_ROOF_MODE,
+      help: copy(
+        'V1 traces roof edges. V2 uses 3D shading. Flat keeps the slopes and shading with plain surfaces. Minimal uses flat-topped blocks.',
+        'V1 trace les arêtes. V2 utilise l’ombrage 3D. Sans texture conserve les pentes et l’ombrage sur des surfaces unies. Minimal utilise des volumes à toit plat.',
+      ),
+      helpDisplay: 'tooltip' as const,
+    },
     choice('composition.buildings.look', 'Building look', 'Aspect des bâtiments', [
       ['footprints', 'Footprints', 'Emprises'],
       ['cartographic-roofs', 'Cartographic roofs', 'Toits cartographiques'],
@@ -289,7 +306,7 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
   ],
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
   water: ['composition.networks.water.visible', 'composition.networks.water.look', 'composition.networks.water.waves'],
-  buildings: ['composition.buildings.visible', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
+  buildings: ['composition.buildings.visible', 'composition.buildings.roof', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
   text: [
     'composition.text.visible',
     'composition.text.amount',

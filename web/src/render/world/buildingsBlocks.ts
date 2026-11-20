@@ -189,7 +189,7 @@ export class TownAltitudes {
 /** What paints a scene's buildings in the world view: the flat-colour program (the textured one is the 3D view's), and
  * the top view's town look where the page gives it. */
 export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes, look?: VolumeTownLook): BuildingPaint {
-  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], collectPalette: false, snowAltitudes: altitudes, look };
+  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], collectPalette: false, roofInk: appearance.roof === 'v1', snowAltitudes: altitudes, look };
 }
 
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town
@@ -200,9 +200,22 @@ export function blockPart(block: BuildingBlock, level: number, paint: BuildingPa
   if (level !== BOX_LEVEL) return joinParts(buildingBatches(buildings, block.origin, paint, level > 0, undefined, undefined, seat).map(batch => batch.data));
   // An open volume (a tree dwelling's trunk and crown, a hall on posts) has no body a box could stand for: its box was a
   // solid column and its overview a floating cap, so it keeps its own mesh (the light tree mesh in large elven towns).
-  const open = buildings.filter(hasOpenVolume),
-    boxes = open.length ? buildings.filter(b => !hasOpenVolume(b)) : buildings;
-  const batches = [...buildingBatches(boxes.map(buildingBox), block.origin, paint, true, undefined, undefined, seat), ...(open.length ? buildingBatches(open, block.origin, paint, false, undefined, undefined, seat) : [])];
+  const minimal = paint.appearance.roof === 'minimal';
+  const keepOpen = (b: Building3dVisual): boolean => hasOpenVolume(b) && (!minimal || b.id.startsWith('city3d-'));
+  const open = buildings.filter(keepOpen),
+    boxes = open.length ? buildings.filter(b => !keepOpen(b)) : buildings;
+  const batches = [
+    ...buildingBatches(
+      boxes.map(b => buildingBox(b, minimal)),
+      block.origin,
+      paint,
+      true,
+      undefined,
+      undefined,
+      seat,
+    ),
+    ...(open.length ? buildingBatches(open, block.origin, paint, false, undefined, undefined, seat) : []),
+  ];
   return joinParts(batches.map(batch => batch.data));
 }
 function joinParts(parts: readonly Float32Array[]): Float32Array {
@@ -228,9 +241,12 @@ const hasOpenVolume = (building: Building3dVisual): boolean => !isBuildingProjec
 /** A building as a box: its footprint extruded from its ground to its height, with a flat roof of its roof cover (a
  * cartographic projection, which eachBuildingTriangle draws so, with the same id, culture and use, so the same paint).
  * Terrain structures (walls, bridges, quays) and projections stay as they are at their overview. */
-function buildingBox(building: Building3dVisual): Building3dVisual {
-  if (isBuildingProjection(building) || !Number.isFinite(buildingGround(building)) || !building.volumes.length) return building;
-  return { ...building, projection: 'native-building-visual-1', height_m: building3dHeight(building), materials: building.volumes[0].materials, volumes: undefined, structural_features: undefined, structural_foundations: undefined } as unknown as Building3dVisual;
+export function buildingBox(building: Building3dVisual, minimal = false): Building3dVisual {
+  if (!Number.isFinite(buildingGround(building)) || (minimal && building.id.startsWith('city3d-'))) return building;
+  const roof_footprint = minimal || !building.roof_footprint.length ? building.footprint : building.roof_footprint;
+  if (isBuildingProjection(building)) return roof_footprint === building.roof_footprint ? building : { ...building, roof_footprint };
+  if (!building.volumes.length) return building;
+  return { ...building, roof_footprint, projection: 'native-building-visual-1', height_m: building3dHeight(building), materials: building.volumes[0].materials, volumes: undefined, structural_features: undefined, structural_foundations: undefined } as unknown as Building3dVisual;
 }
 
 /** Pixels a building spans (its smaller side, the block's mean) from which it is drawn detailed, as an overview (capped
@@ -243,9 +259,9 @@ const YARD_HIDDEN = 0.25;
  * nothing. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. No hysteresis: the
  * frame's budget (buildingsLayer.ts) demotes units independently, and a level only ever changes over a whole cell.
  * Depth extends the projected-size thresholds; at maximum every building remains at least a box. */
-export function blockLevel(block: BuildingBlock, pixels: number, boxed = false, depth = 1, keepFar = false): number {
+export function blockLevel(block: BuildingBlock, pixels: number, boxed: boolean | 'overview' = false, depth = 1, keepFar = false): number {
   const hidden = blockHidden(block);
   if (block.yard) return pixels < YARD_HIDDEN ? hidden : yardLod(pixels, 0);
-  for (let i = boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels * depth >= LEVEL_PIXELS[i]) return i;
+  for (let i = boxed === 'overview' ? 1 : boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels * depth >= LEVEL_PIXELS[i]) return i;
   return keepFar || depth >= VIEW_DEPTH_MAX ? BOX_LEVEL : hidden;
 }

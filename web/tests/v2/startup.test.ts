@@ -74,6 +74,22 @@ describe('initial landscape', () => {
     expect(next.options.relief).toBe(next.terrain!.relief);
   });
 
+  it('keeps the fresh landscape selectable when a saved recipe uses neural terrain', () => {
+    const previous = defaultSettings();
+    previous.generation = 'neural';
+    previous.runtime!.source = 'neural-wasm';
+    const next = randomInitialSettings(previous, draws(0.85, 0.99));
+    expect(next.runtime!.source).toBe('neural-wasm');
+    expect(next.terrain).toMatchObject({ climate: 'tropical', relief: 'mountains' });
+  });
+
+  it('keeps the fresh landscape selectable when a saved recipe uses compact Phasor', () => {
+    const previous = defaultSettings();
+    previous.terrain!.procedural = { preset: 'compact' };
+    const next = randomInitialSettings(previous, draws(0.1, 0.7));
+    expect(next.terrain).toMatchObject({ procedural: { preset: 'compact' }, climate: 'mediterranean', relief: 'mixed' });
+  });
+
   it('restores opted-in unfinished/imported recipes exactly, and leaves explicit projects and test pages alone', () => {
     const current = defaultSettings(),
       saved = { settings: defaultSettings(), mods: [{ action: 'kept' }], view: { cx: 1, cy: 2, scale: 3 }, ui: { tab: 'terrain' } };

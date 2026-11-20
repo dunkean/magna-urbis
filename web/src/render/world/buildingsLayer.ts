@@ -60,7 +60,7 @@ const MAX_DRAWS = 8192;
 const CELLS = BLOCK_CELLS * BLOCK_CELLS;
 /** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
 const DORMANT_LOOKS = 2;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
@@ -257,7 +257,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
    * the depth's triangle budget, the farthest units go one level coarser, round after round, until the frame fits. A unit whose
    * buildings span DETAILED_PIXELS keeps its full volumes whatever the budget: the near field never coarsens. The frame's
    * triangles. */
-  const select = (tx: number, ty: number, focal: number, boxed: boolean, keepFar: boolean, flat: boolean): number => {
+  const select = (tx: number, ty: number, focal: number, boxed: boolean | 'overview', keepFar: boolean, flat: boolean): number => {
     const depthSetting = getViewDepth(),
       budget = buildingTriangleBudget(depthSetting),
       wholeTown = keepFar || depthSetting >= VIEW_DEPTH_MAX;
@@ -424,7 +424,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           tz = camera.target[2],
           rise = camera.rise,
           focal = flat ? frame.view.scale : camera.focal / frame.dpr,
-          boxed = options.boxed?.() ?? false,
+          roof = appearance?.roof,
+          boxed = roof === 'minimal' || (options.boxed?.() ? (roof === 'flat' || roof === 'v1' ? 'overview' : true) : false),
           depthSetting = getViewDepth();
         for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
           const slot = cache.slots[s],
@@ -455,6 +456,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform1f(u.uRise, rise);
           gl.uniform1i(u.uTop, flat ? 1 : 0);
+          gl.uniform1f(u.uRoofInkDpr, roof === 'v1' ? frame.dpr : 0);
           gl.uniform3f(u.uEye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
           gl.uniform2f(u.uAir, hazeDistance(camera), rise);
           gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);

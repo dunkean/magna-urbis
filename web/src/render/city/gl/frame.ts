@@ -414,8 +414,10 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
   // fade band, whatever the level of detail.
   if (d.buildings && built && (!o.live?.farTown || farTownBuildingsShown(mpp))) {
     gl.useProgram(fillP.program);
-    const pans = !footprint && !!built.mesh.layers.roofs?.triangles.count;
-    const buildingLayer = footprint ? 'buildingFootprints' : 'buildings';
+    const minimal = o.roof === 'minimal',
+      grainAllowed = o.roof !== 'flat' && !minimal,
+      pans = !minimal && !footprint && !!built.mesh.layers.roofs?.triangles.count;
+    const buildingLayer = footprint || minimal ? 'buildingFootprints' : 'buildings';
     if (pans) {
       // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
       gl.uniform4fv(fillP.u.uTint, castShadowTint(palette, planPath, buildings?.items[0]?.snowAltitude));
@@ -442,7 +444,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     }
     fills(built, buildingLayer, false);
     if (pans) {
-      if (textured && built.mats && palette !== 'parchment' && palette !== 'ink') {
+      if (grainAllowed && textured && built.mats && palette !== 'parchment' && palette !== 'ink') {
         useTextured(tfillP, built.mats, false);
         fills(built, 'roofs', false);
         gl.useProgram(fillP.program);
@@ -451,7 +453,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
       } else {
         // Live look on natural grounds: the Canvas grain marks, the uneven snow's mean tone (cityGlGrain.ts) and wall rims
         // at this frame's grain level and strength (coverGrainFrame of the device metres per pixel, as drawPlanRoofsSteps).
-        const grain = !!o.live?.grain && !!built.grain && !!built.rim;
+        const grain = grainAllowed && !!o.live?.grain && !!built.grain && !!built.rim;
         if (grain) {
           const gf = coverGrainFrame(devPx);
           gl.uniform1i(fillP.u.uRoofGrain, 1);

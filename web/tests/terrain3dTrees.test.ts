@@ -58,6 +58,20 @@ describe('near trees: stand structure', () => {
     expect(partials.length).toBeGreaterThan(0);
     for (const p of partials) expect(p).toEqual(whole.subarray(0, p.length));
   });
+
+  it('follows the stand’s painted field tone without moving or resizing its crowns', () => {
+    const inputs = stand(235, 110, 20);
+    for (let i = 3; i < inputs.field.rgba.length; i += 4) inputs.field.rgba[i] = 0;
+    const oldStand = buildNearTrees(inputs, view);
+    for (let i = 3; i < inputs.field.rgba.length; i += 4) inputs.field.rgba[i] = 255;
+    const youngStand = buildNearTrees(inputs, view);
+    expect(oldStand.length).toBeGreaterThan(500 * TREE_STRIDE);
+    expect(youngStand.length).toBe(oldStand.length);
+    for (let i = 0; i < oldStand.length; i += TREE_STRIDE) {
+      for (let k = 0; k < 8; k++) if (oldStand[i + k] !== youngStand[i + k]) throw new Error('Field tone changed crown geometry');
+      for (let k = 8; k < 11; k++) if (youngStand[i + k] <= oldStand[i + k]) throw new Error('Field tone did not brighten the crown');
+    }
+  });
 });
 
 describe('near trees: biomes and giants', () => {
@@ -108,6 +122,20 @@ describe('near trees: biomes and giants', () => {
     }
     expect(bareStems.length).toBeGreaterThan(0);
     expect(Math.max(...bareStems)).toBeLessThanOrEqual(6.001);
+  });
+
+  it('keeps slender spires proportionate to their painted crown with lower live boughs', () => {
+    const trees = built.get('nordic')!;
+    let spires = 0;
+    for (let i = 0; i < trees.length; i += TREE_STRIDE) {
+      if (trees[i + 6] !== 1) continue;
+      spires++;
+      const r = trees[i + 3],
+        h = trees[i + 4],
+        crown = trees[i + 5];
+      if (h > 10.401 * r || h - crown > Math.min(3.5, 1.6 * r) + 0.001) throw new Error('Spire became too thin or raised its lowest boughs');
+    }
+    expect(spires).toBeGreaterThan(100);
   });
 
   it('places rare giants in groves, far above and wider than their stand', () => {

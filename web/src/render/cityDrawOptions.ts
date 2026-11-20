@@ -22,13 +22,18 @@ import { townWaterColour } from './townWater';
 
 const finite = (value: number | undefined, fallback: number, min: number, max: number): number => (typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
 
-/** Volume looks use unoutlined roofs, from the plan camera through a tilted view. Survey plans keep their own ink. */
-export function smoothTownBuildings(a: ResolvedAppearance | undefined): boolean {
+/** Volume ownership is independent of roof ink: every roof mode keeps the same GPU house path. */
+export function volumeTownBuildings(a: ResolvedAppearance | undefined): boolean {
   if (!a || !a.composition?.buildings?.visible || a.composition.buildings.meshes === 'none' || a.city.diagnostic !== 'none') return false;
   // In the separate 3D camera, city.view selects the ground diagram underneath the standing houses.
   if (a.target !== 'view3d' && a.city.view !== 'buildings') return false;
   const ground = a.composition.recipe.ground.look;
   return ground !== 'cadastre' && ground !== 'topographic' && ground !== 'minimal';
+}
+
+/** Survey plans retain their ink; V1 alone outlines the pans of a volume roof. */
+export function smoothTownBuildings(a: ResolvedAppearance | undefined): boolean {
+  return volumeTownBuildings(a) && a!.composition.buildings.roof !== 'v1';
 }
 
 /** Building appearance of a frame: V2 colours (night tables included), style and diagnostic of the city component. */
@@ -43,6 +48,7 @@ export function cityBuildingAppearance(appearance: ResolvedAppearance, over: { s
     lightsOn: settlementLightsOn(appearance.composition.ambience, appearance.underdark),
     style: over.style ?? city.buildingStyle,
     smoothRoofs: smoothTownBuildings(appearance),
+    roof: appearance.composition.buildings.roof,
     diagnostic: city.diagnostic,
     nightInk: over.nightInk ?? city.palette === 'parchment',
   };

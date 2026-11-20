@@ -22,6 +22,7 @@ import { FAMILY_COLORS, mix } from './planLook';
 import { farTownBuildingsShown } from './farTown';
 import { paintedBuildings, type PlanPath } from './planPath';
 import { TURF_LOOK, turfCover } from './turfLook';
+import type { RoofMode } from '../roofMode';
 
 // ---------------------------------------------------------------- when buildings show
 export interface BuildingsShownInput {
@@ -139,6 +140,7 @@ export const PAN_EDGE = { parchment: { color: '#2c2117', alpha: 0.65, widthPx: 0
 
 interface RoofFrameInput {
   smoothRoofs?: boolean;
+  roof?: RoofMode;
   palette: CityPalette;
   /** Metres per CSS pixel and device pixel ratio. */ mpp: number;
   dpr: number;
@@ -167,7 +169,7 @@ export function roofFrame(o: RoofFrameInput): RoofFrame {
   // A rim is about half a metre wide: under a device pixel it stays part of the roof.
   const device = o.mpp / (o.dpr || 1),
     rims = natural && !o.smoothRoofs && device <= RIM_DEVICE_MPP;
-  const grain = natural && !o.textured ? coverGrainFrame(device) : undefined;
+  const grain = natural && !o.textured && o.roof !== 'flat' && o.roof !== 'minimal' ? coverGrainFrame(device) : undefined;
   return {
     palette: o.palette,
     night: !!o.night,
@@ -178,7 +180,7 @@ export function roofFrame(o: RoofFrameInput): RoofFrame {
     grain,
     unevenSnow: grain ? grain.alpha[0] : 0,
     edge: parchment ? PAN_EDGE.parchment : natural ? PAN_EDGE.natural : PAN_EDGE.plan,
-    key: toneStamp() + '|' + o.palette + '|' + roofSeasonKey() + '|' + (custom ?? '') + '|' + (o.cave ? 2 : o.night ? 1 : 0) + '|' + (rims ? 1 : 0),
+    key: toneStamp() + '|' + o.palette + '|' + roofSeasonKey() + '|' + (custom ?? '') + '|' + (o.cave ? 2 : o.night ? 1 : 0) + '|' + (rims ? 1 : 0) + '|' + (o.roof ?? ''),
   };
 }
 /** Snow on the ground of a building (0: none): a snow patch shows only with it. */

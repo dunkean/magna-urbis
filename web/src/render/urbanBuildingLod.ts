@@ -755,6 +755,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     const start = performance.now(),
       frame = this.query(options.viewport, options.metresPerPixel, options.appearance);
     const painted = paintedBuildings(options),
+      minimal = options.appearance.roof === 'minimal',
       shadows: GeometryPath[][] = [[], [], []],
       landmarks: GeometryPath[] = [];
     const metrics: BuildingRenderMetrics = {
@@ -786,13 +787,15 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     let selected: CachedGeometry | undefined,
       facetsRemaining = this.options.maxFacetBuildings;
     for (const entry of frame.visible) {
-      let lod = entry.lod;
+      let lod = minimal ? 'silhouette' : entry.lod;
       if (lod === 'facets' && facetsRemaining-- <= 0) lod = 'ridges';
       const building = options.useDetails !== false && lod === 'facets' && options.metresPerPixel < this.options.rasterThresholdMpp ? (this.details.get(entry.building.id) ?? entry.building) : entry.building;
       let geometry = this.geometry(building, metrics);
-      if (options.appearance.style === 'silhouette') {
-        geometry.ruins ??= ruinFootprint(building.footprint, (building as CompactBuildingVisual & { programme?: unknown }).programme);
-        if (geometry.ruins.length) ruinPlans.push(geometry.ruins);
+      if (options.appearance.style === 'silhouette' || minimal) {
+        if (!minimal || options.appearance.style === 'silhouette') {
+          geometry.ruins ??= ruinFootprint(building.footprint, (building as CompactBuildingVisual & { programme?: unknown }).programme);
+          if (geometry.ruins.length) ruinPlans.push(geometry.ruins);
+        }
         if (!geometry.footprint) {
           geometry.footprint = geometryPath(massingFootprint(building.footprint, readMassing((building as CompactBuildingVisual & { programme?: unknown }).programme, building.footprint, building.id)), metrics);
           this.growGeometry(building, geometry, geometry.footprint.vertices);
@@ -811,7 +814,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
         shadows[landmark || height >= 12 ? 2 : height >= 6 ? 1 : 0].push(geometry.outline);
         if (landmark) landmarks.push(geometry.outline);
       }
-      if (options.appearance.style !== 'silhouette' && (lod !== 'silhouette' || (building as CompactBuildingVisual & { programme?: { massing?: unknown } }).programme?.massing)) detailed.push({ building, geometry, lod });
+      if (!minimal && options.appearance.style !== 'silhouette' && (lod !== 'silhouette' || (building as CompactBuildingVisual & { programme?: { massing?: unknown } }).programme?.massing)) detailed.push({ building, geometry, lod });
       if (building.id === options.selectedId) selected = geometry;
     }
     ctx.save();
@@ -898,7 +901,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
             ctx.restore();
           }
         }
-        if (painted && !night) paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics);
+        if (painted && !night) paintRoofSlopes(ctx, building, geometry, this.ridges(building, geometry, metrics), mpp, metrics, options.appearance.roof !== 'flat');
         if (options.appearance.smoothRoofs) continue;
         for (const line of this.ridges(building, geometry, metrics)) {
           if (Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) / mpp < 1.5) continue;
@@ -923,7 +926,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       }
       // Footprint plans retain a hairline around each individual house,
       // including shared party walls, after every fill and roof detail.
-      if (options.appearance.style === 'silhouette' && !painted) {
+      if (options.appearance.style === 'silhouette' && !painted && (options.appearance.roof === 'v1' || options.appearance.colors?.buildingEdge)) {
         const all: GeometryPath[] = [];
         for (const paths of fills.values()) all.push(...paths);
         ctx.strokeStyle = options.appearance.colors?.buildingEdge ?? '#2e261d';
@@ -1017,7 +1020,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     const protectedKeys = new Set<string>();
     for (let y = y0; y <= y1; y++)
       for (let x = x0; x <= x1; x++) {
-        const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${appearance.ambience}:${appearance.nightInk}:${colorKey}:${paint}:${roofSeasonKey()}`;
+        const key = `${level}:${x}:${y}:${appearance.style}:${appearance.diagnostic}:${appearance.roof ?? ''}:${appearance.ambience}:${appearance.nightInk}:${colorKey}:${paint}:${roofSeasonKey()}`;
         const tile = this.rasterCache.get(key);
         protectedKeys.add(key);
         tiles.push({ key, x, y, tile });
@@ -1088,7 +1091,7 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
       if (selected && overlaps(selected.bounds, viewport)) {
         const geometry = this.geometry(selected.building, metrics);
         const outline =
-          appearance.style === 'silhouette'
+          appearance.style === 'silhouette' || appearance.roof === 'minimal'
             ? (geometry.footprint ??= geometryPath(massingFootprint(selected.building.footprint, readMassing((selected.building as CompactBuildingVisual & { programme?: unknown }).programme, selected.building.footprint, selected.building.id)), metrics))
             : geometry.outline;
         ctx.strokeStyle = '#197ea4';
@@ -1125,7 +1128,7 @@ const ROOF_LIT = 'rgba(255,238,205,.28)',
   ROOF_SHADE = 'rgba(28,18,10,.44)',
   ROOF_COURSES = 'rgba(24,16,10,.13)';
 /** Compact plans keep their ridges, not their roof mesh: each ridge splits the roof into a lit and a shaded slope, with tile courses up close. */
-function paintRoofSlopes(ctx: CanvasRenderingContext2D, building: CompactBuildingVisual, geometry: CachedGeometry, ridges: readonly Line[], mpp: number, metrics: BuildingRenderMetrics): void {
+function paintRoofSlopes(ctx: CanvasRenderingContext2D, building: CompactBuildingVisual, geometry: CachedGeometry, ridges: readonly Line[], mpp: number, metrics: BuildingRenderMetrics, courses: boolean): void {
   ctx.save();
   clipGeometry(ctx, geometry.outline);
   // No two roofs weathered alike.
@@ -1156,7 +1159,7 @@ function paintRoofSlopes(ctx: CanvasRenderingContext2D, building: CompactBuildin
       ctx.fillStyle = side === lit ? ROOF_LIT : ROOF_SHADE;
       ctx.fill();
     }
-    if (mpp < 0.45) {
+    if (courses && mpp < 0.45) {
       ctx.beginPath();
       ctx.strokeStyle = ROOF_COURSES;
       ctx.lineWidth = Math.max(0.08, 0.6 * mpp);

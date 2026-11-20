@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeOptions } from '../src/gen/options';
 import { generateRustTown, rustSettlementRaster } from '../src/v2/rustUrban';
+import { townSeats } from '../src/v2/townNeighbours';
 import type { World } from '../src/gen/types';
 import type { V2Settings } from '../src/v2/contracts';
 import type { PlacementBatch, PlacementBatchRequest, PlacedBuilding, PlacementRequest } from '../../rust/bridge/urbanArchitecture';
@@ -278,6 +279,28 @@ describe('immutable retained native stages', () => {
     const again = await generateRustTown(world, settings, 'main');
     expect(again.snapshot.layouts).toBe(next.snapshot.layouts);
     expect(native.run).toHaveBeenCalledTimes(calls);
+  });
+  it('uses the new urban radius for a farmstead promoted locally to a town', async () => {
+    const { world, settings } = fixture();
+    const place = { ...world.settlements![0], key: 'farmstead-0', cls: 'farmstead' as const, detail: 'farmstead' as const, radius: 45, population: 10, culture: 'newar', fixed: true };
+    world.settlements!.push(place);
+    world.stats['v2.population:farmstead-0'] = 10;
+    settings.local['farmstead-0'] = { population: 1500, culture: 'rynek-town' };
+
+    await generateRustTown(world, settings, place.key, undefined, 'layout');
+
+    const request = native.run.mock.calls[0][0];
+    expect(request.kind).toBe('quarters');
+    expect(request.sites).toMatchObject([{ key: place.key, population: 1500, culture: 'rynek-town', center: place.center }]);
+    expect(request.layoutConfig.fixedSites).toEqual([place.key]);
+    const radius = request.sites[0].radius;
+    expect(radius).toBeCloseTo(354.718, 2);
+    expect(townSeats(world, settings)[1]).toMatchObject({ population: 1500, radius, footprint: radius });
+    expect(place.radius).toBe(45);
+
+    // The published town population can change while its regional radius and population stay retained.
+    place.population = 1500;
+    expect(townSeats(world, settings)[1].radius).toBe(radius);
   });
   it('retains heavy scene/geometry/archives by identity on a cache hit without mutating the previous snapshot', async () => {
     const { world, settings } = fixture(),

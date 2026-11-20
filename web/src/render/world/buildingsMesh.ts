@@ -12,6 +12,7 @@
  * then either the colour (flat program) or uv + material layer (textured program), then the seat's second value.
  */
 import type { HouseMaterial } from '../../../../rust/bridge/housesContract';
+import { roofEdgeMasks } from '../roofEdges';
 import { roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
 import { buildingTint } from '../buildingPalette';
 import { buildingHeat, roofSnowShare, snowRoofTint } from '../roofSnow';
@@ -74,6 +75,8 @@ export interface BuildingPaint {
   materials: readonly HouseMaterial[];
   /** Keep the separate 3D viewer's inspectable list of distinct face colours. */
   collectPalette?: boolean;
+  /** The world shader reads V1 roof edge coordinates from the sign bits of vertex colours. */
+  roofInk?: boolean;
   /** Mean ground of the town of a building (by id), which sets its snow (roofSnow.ts townRoofAltitudes). */
   snowAltitudes: { get(id: string): number | undefined };
   /** The tilted world view: the top view's town look. A massing roof face of a building the town draws takes the
@@ -205,11 +208,13 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
     const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
     const ground = buildingGround(building);
+    const house = Number.isFinite(ground) && !building.id.startsWith('city3d-');
+    const canInk = paint.roofInk && house && appearance.diagnostic === 'none';
     // The town item of the building, when the faces take the top view's look; the last roof face painted (the
     // triangles of one face come in a row, with the same normal and slots).
     const item = paint.look && !textured && appearance.diagnostic === 'none' ? paint.look.item(building.id) : undefined;
     let lastNormal: BuildingTriangle['normal'] | undefined, lastSlots: BuildingTriangle['materials'] | undefined, lastRoof: { color: Vec3; gain: number; family: number } | undefined;
-    const paintFace = (face: BuildingTriangle, snow = 0): void => {
+    const paintFace = (face: BuildingTriangle, edges = 0, snow = 0): void => {
       const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating),
         tm = materialTint(raw);
       const id = tm ? raw.slice(0, tm.index) : raw;
@@ -229,7 +234,8 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       // Thin enclosures already carry their final yard colours. A roof/wall
       // atlas and its normal-map highlights turn subpixel copings into white
       // parcel outlines; retain the same matte material at every yard LOD.
-      const layer = textured && !snow && face.surface !== 'yard' ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
+      const solid = house && (appearance.roof === 'minimal' || (appearance.roof === 'flat' && face.surface === 'roof'));
+      const layer = textured && !solid && !snow && face.surface !== 'yard' ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
       let surfaceColors = colors.get(face.surface);
       if (!surfaceColors) colors.set(face.surface, (surfaceColors = new Map()));
       let c = townRoof?.color ?? surfaceColors.get(String(raw));
@@ -263,7 +269,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       // Flat-colour program only: the material class rides on the normal's length (see materialGrain); a snowed face
       // takes the snow class in place of its cover's.
       // A face painted by the town look takes the grain family of its pan (the top view's grain marks, COVER_GRAIN_GLSL).
-      const cls = !textured && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
+      const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
       const unit = (1 + faceCode(id === 'city3d:wall:lit' ? LIT_CLASS : cls, townRoof?.gain) / 32) / (Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
       const key = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
       let group = groups.get(key);
@@ -297,15 +303,19 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         data[at++] = face.normal[0] * unit;
         data[at++] = face.normal[2] * unit;
         data[at++] = face.normal[1] * unit;
+        const on = edges & ~(1 << i);
         if (textured) {
           const [u, v] = faceUv(p, face.normal, layer);
           data[at++] = u;
           data[at++] = v;
-          data[at++] = layer;
+          // The material layer is integral; carry V1's mask in its fractional part.
+          data[at++] = layer + on / 8;
         } else {
-          data[at++] = c[0];
-          data[at++] = c[1];
-          data[at++] = c[2];
+          // A negative channel is zero on that roof edge, positive is one. Interpolation in the
+          // shader supplies distance to the side. All wall and interior triangle coordinates stay one.
+          data[at++] = on & 1 ? -c[0] : c[0];
+          data[at++] = on & 2 ? -c[1] : c[1];
+          data[at++] = on & 4 ? -c[2] : c[2];
         }
         data[at++] = seatOut[1];
       }
@@ -313,23 +323,19 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     };
     const snow = appearance.style !== 'silhouette' && appearance.diagnostic === 'none' ? mapGroundSnow(paint.snowAltitudes.get(building.id) ?? building.ground_z_m, appearance.roofSnow) : 0;
     const heat = snow ? buildingHeat(building.function) : 0;
-    eachBuildingTriangle(
-      building,
-      face => {
-        // Snow whitens the roof triangle itself: no inset overlay per triangle, so neither triangulation seams nor
-        // a border draw stripes, and nothing needs a depth bias. Walls, steep faces and cover-only geometry
-        // (chimneys, parapets, walls, trees, civil works) keep their material. Each face keeps its own share of the
-        // mantle (pitch, cover, exposure, the heat of the building's use: roofSnowShare, one rule for every roof), in
-        // eighths so the batches stay few.
-        const material = face.material ?? face.materials.cladding;
-        const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
-        const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * 0.4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
-        paintFace(face, (snow * Math.round(share * 8)) / 8);
-      },
-      overview,
-      featureLod,
-      yardLevel,
-    );
+    const paintTriangle = (face: BuildingTriangle, edges = 0): void => {
+      // Tint each pan directly so the snow does not add seams or depth bias.
+      const material = face.material ?? face.materials.cladding;
+      const covered = snow && face.surface === 'roof' && !/^city3d:(wall|tree|road|water)/.test(material) && !building.id.startsWith('city3d-');
+      const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * 0.4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
+      paintFace(face, edges, (snow * Math.round(share * 8)) / 8);
+    };
+    if (canInk) {
+      const triangles: BuildingTriangle[] = [];
+      eachBuildingTriangle(building, face => triangles.push(face), overview, featureLod, yardLevel);
+      const masks = roofEdgeMasks(triangles);
+      triangles.forEach((face, i) => paintTriangle(face, masks[i]));
+    } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel);
   }
   const batches: BuildingBatchData[] = [];
   for (const { batch, length } of groups.values()) {

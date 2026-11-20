@@ -24,9 +24,11 @@ import { CANAL, PARCHMENT_HATCH, REFUSED_PARCEL, blockOps, flatFill, footprintOp
 import { RIM_DEVICE_MPP, SNOW_SHADE_LIGHT, buildingBody, buildingGroundSnow, roofFrame, roofPanBare, roofPanPaint, roofPansShown, snowMantle } from '../buildingLook';
 import { streetBase, streetFrame, streetLook, type StreetPaint } from '../streetLook';
 import { PAVED_ALPHA, planPathPan, type PlanPath } from '../planPath';
+import type { RoofMode } from '../../roofMode';
 
 export interface CityGlStyleState {
   view: CityView;
+  roof?: RoofMode;
   lod: CityLod;
   palette: CityPalette;
   layers: CityLayers;
@@ -251,13 +253,13 @@ export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: Ci
     bodies: string[] = [];
   for (let i = 0; i < items.length; i++) {
     if ((i + 1) % COLOR_STEP === 0) yield;
-    const paint = buildingBody(body, items[i], !!roofs);
+    const paint = buildingBody(body, items[i], !!roofs && s.roof !== 'minimal');
     put(fill, i, paint.fill);
     put(line, i, paint.stroke, paint.strokeAlpha);
     bodies.push(paint.fill);
   }
   // Pans and shadows show in the buildings view only (the look's roofPansShown); their features stay hidden otherwise.
-  if (!roofs || !roofPansShown({ view: s.view, footprint, diagnostic: s.diagnostic, planPath })) return { fill, line };
+  if (s.roof === 'minimal' || !roofs || !roofPansShown({ view: s.view, footprint, diagnostic: s.diagnostic, planPath })) return { fill, line };
   if (planPath) {
     // The plan path's own pan rule (the look's planPathPan).
     for (let k = 0; k < roofs.shapes.length; k++) {
@@ -273,7 +275,7 @@ export function* buildingColorsSteps(buildings: CityBuildings | undefined, s: Ci
   const state = { palette: s.palette, diagnostic: s.diagnostic, colors: s.colors, dpr: 1 },
     f = roofFrame({ ...state, mpp: 2 * RIM_DEVICE_MPP }),
     rimmed = roofFrame({ ...state, mpp: RIM_DEVICE_MPP });
-  const out = f.natural && s.live?.grain ? { grain: new Uint8Array(count * 4), rim: new Uint8Array(count * 4), lay: new Uint8Array(count * 4) } : undefined;
+  const out = f.natural && s.roof !== 'flat' && s.live?.grain ? { grain: new Uint8Array(count * 4), rim: new Uint8Array(count * 4), lay: new Uint8Array(count * 4) } : undefined;
   for (let k = 0; k < roofs.shapes.length; k++) {
     if ((k + 1) % COLOR_STEP === 0) yield;
     const item = items[roofs.owner[k]],

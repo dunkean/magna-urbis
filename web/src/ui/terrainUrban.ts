@@ -2963,6 +2963,7 @@ export function createTerrainUrban(options: {
         selectedParcel,
         buildingStyle: appearance.style,
         smoothRoofs: appearance.smoothRoofs,
+        roof: appearance.roof,
         painted: r.city.painted,
         buildingsVisible: visible && !native && !parentOwned,
         diagnostic: appearance.diagnostic,

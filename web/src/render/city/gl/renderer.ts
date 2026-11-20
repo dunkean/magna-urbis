@@ -304,6 +304,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       painted = !footprint && (o.paintedBuildings ?? renderBackground);
     const style: CityGlStyleState = {
       buildingStyle: o.buildingStyle,
+      roof: o.roof,
       view: o.view,
       lod,
       palette,
@@ -321,7 +322,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]) + liveKey;
     const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'),
       sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}|${liveKey}`;
-    const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}|${liveKey}`;
+    const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${o.roof ?? ''}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}|${liveKey}`;
     return { palette, layers, footprint, renderBackground, painted, style, key, softStreets, sKey, bKey };
   }
   /** What a draw state needs on the GPU besides the meshes: street strokes of the road-surface switch, colour and

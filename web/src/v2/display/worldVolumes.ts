@@ -247,6 +247,7 @@ export class WorldVolumes {
       yards = plan.layers?.lotEnclosures !== false;
     // Published with the scene it paints, so the buildings layer does not start again for the old one.
     const appearance: UrbanBuildingAppearance = {
+      roof: look?.roof,
       ambience: look?.ambience,
       lightsOn: look?.lightsOn,
       colors: look?.colors,

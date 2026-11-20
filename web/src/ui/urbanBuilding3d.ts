@@ -5,7 +5,8 @@ import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLo
 import { roofSeasonKey } from '../render/seasonPalette';
 import { townRoofAltitudes } from '../render/roofSnow';
 import { buildingBatches, buildingBounds, type BuildingBounds, type Vec3 } from '../render/world/buildingsMesh';
-import { BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL } from '../render/world/buildingsShader';
+import { BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL, ROOF_INK_GLSL } from '../render/world/buildingsShader';
+import { buildingBox } from '../render/world/buildingsBlocks';
 
 type Bounds = BuildingBounds;
 export interface BuildingFrame {
@@ -16,6 +17,7 @@ export interface BuildingFrame {
   exaggeration: number;
   focal: number;
   distance: number;
+  dpr?: number;
   /** Underdark 3D (render/underdarkCavern.ts): the town lantern light level, the cave fog start and end (m), and the eye (x, y, height above the ground). */
   cave?: { light: number; fog: [number, number]; eye: [number, number, number] };
 }
@@ -55,6 +57,7 @@ const SECTOR = 256,
   MAX_CACHE_BYTES = 96 * 1024 * 1024;
 const vertexColor = `#version 300 es
 precision highp float;
+precision highp int;
 layout(location=0) in vec3 position;
 layout(location=1) in vec3 normal;
 layout(location=2) in vec3 albedo;
@@ -62,27 +65,36 @@ uniform mat4 matrix;
 uniform vec3 offset;
 uniform float exaggeration;
 uniform vec2 sectorOrigin;
+uniform float uRoofInkDpr;
 layout(location=4) in float groundIn;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass;
-void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=albedo;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);
+out vec3 roofEdge;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=uRoofInkDpr>0.?abs(albedo):albedo;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);
+  roofEdge=uRoofInkDpr>0.?vec3(greaterThanEqual(floatBitsToInt(albedo),ivec3(0))):vec3(1.);
   // The normal's length carries the material class (1 + class / 32); sector-local metres keep the grain's hashes exact.
   materialClass=floor((length(normal)-1.)*32.+.5);grainPosition=vec3(position.x,groundIn<1e10?position.y-groundIn:position.y,position.z);
   gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
 const fragmentColor = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass;
+in vec3 roofEdge;
+uniform float uRoofInkDpr;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
-void main(){vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
+${ROOF_INK_GLSL}
+void main(){vec3 N=normalize(n);vec3 gx=dFdx(grainPosition),gy=dFdy(grainPosition);float fp=length(abs(gx)+abs(gy));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
-  float light=buildingLight(N);color=vec4(buildingCave(buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit),facadePosition,lit,N),1.);}`;
+  float light=buildingLight(N);vec3 rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+  if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
+  color=vec4(buildingCave(rgb,facadePosition,lit,N),1.);}`;
 
 /** Textured variant: per-vertex uv (metres on the face: walls along the face and down, roofs along the ridge and down
  * the slope) and material layer; albedo + normal map arrays; same lighting model. Layer < 0 keeps the flat colour. */
 const texVertex = `#version 300 es
 precision highp float;
+precision highp int;
 layout(location=0) in vec3 position;
 layout(location=1) in vec3 normal;
 layout(location=2) in vec2 uvIn;
@@ -91,12 +103,23 @@ uniform mat4 matrix;
 uniform vec3 offset;
 uniform float exaggeration;
 uniform vec2 sectorOrigin;
+uniform float uRoofInkDpr;
 layout(location=4) in float groundIn;
 out vec3 n; out vec3 wp; out vec2 uv; flat out float layer; out vec3 facadePosition; flat out float litWindow;
-void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));litWindow=length(normal)>1.5?1.:0.;vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(p,1.);}`;
+out vec3 roofEdge;
+void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));litWindow=length(normal)>1.5?1.:0.;vec3 p=vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset;wp=p;uv=uvIn;layer=layerIn;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);gl_Position=matrix*vec4(p,1.);
+  roofEdge=vec3(1.);
+  if(uRoofInkDpr>0.){
+    layer=floor(layerIn);
+    int mask=int((layerIn-layer)*8.);
+    roofEdge=vec3(equal(ivec3(mask)&ivec3(1,2,4),ivec3(0)));
+  }
+}`;
 const texFragment = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 wp; in vec2 uv; flat in float layer; in vec3 facadePosition; flat in float litWindow;
+in vec3 roofEdge;
+uniform float uRoofInkDpr;
 uniform vec3 material;
 uniform vec3 tint;
 uniform int recolored;
@@ -106,6 +129,7 @@ uniform highp sampler2DArray albedoTex;
 uniform highp sampler2DArray normalTex;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
+${ROOF_INK_GLSL}
 void main(){
   vec3 N=normalize(n), dp1=dFdx(wp), dp2=dFdy(wp);
   if(dot(N,normalize(cross(dp1,dp2)))<0.) N=-N;
@@ -131,7 +155,9 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=buildingLight(N);color=vec4(buildingCave(buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5),facadePosition,litWindow>.5,N),1.);
+  float light=buildingLight(N);vec3 rgb=buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5);
+  if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,dp1,dp2,uRoofInkDpr);
+  color=vec4(buildingCave(rgb,facadePosition,litWindow>.5,N),1.);
 }`;
 /** First material layer that keeps half its contrast in the natural texture mode (roads, places; not the stone wall layer). */
 export const SOFT_LAYER_FROM = Math.min(
@@ -290,10 +316,10 @@ export class UrbanBuildingPass {
   }
   private prepare(sector: Sector, overview: boolean, featureLod?: BuildingFeatureLod, yardLevel?: number): void {
     this.release(sector);
-    const paint = { appearance: this.appearance, materials: this.source?.materials ?? [], snowAltitudes: this.snowAltitudes };
+    const paint = { appearance: this.appearance, roofInk: this.appearance.roof === 'v1', materials: this.source?.materials ?? [], snowAltitudes: this.snowAltitudes };
     const batches: Batch[] = [];
     for (const built of buildingBatches(
-      sector.entries.map(e => e.building),
+      sector.entries.map(e => this.drawBuilding(e.building)),
       sector.origin,
       paint,
       overview,
@@ -412,6 +438,12 @@ export class UrbanBuildingPass {
     return pending;
   }
   /** Draws the batches of the shown sectors (flat or textured program). */
+  protected roofInkDpr(frame: BuildingFrame): number {
+    return this.appearance.roof === 'v1' ? (frame.dpr ?? 1) : 0;
+  }
+  private drawBuilding(building: Building3dVisual): Building3dVisual {
+    return this.appearance.roof === 'minimal' ? buildingBox(building, true) : building;
+  }
   protected render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
     const gl = this.gl!;
     const texProgram = textured ? (this.texProgram ??= program(gl, texVertex, texFragment)) : undefined;
@@ -434,6 +466,7 @@ export class UrbanBuildingPass {
     }
     gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix);
     gl.uniform1f(gl.getUniformLocation(p, 'exaggeration'), frame.exaggeration);
+    gl.uniform1f(gl.getUniformLocation(p, 'uRoofInkDpr'), this.roofInkDpr(frame));
     gl.uniform1i(gl.getUniformLocation(p, 'uNight'), frame.cave || !this.night ? 0 : this.lightsOn ? 1 : 2);
     gl.uniform4fv(gl.getUniformLocation(p, 'uCave'), caveUniform(frame, this.lightsOn));
     gl.uniform3fv(gl.getUniformLocation(p, 'uCaveEye'), frame.cave?.eye ?? [0, 0, 0]);
@@ -467,7 +500,7 @@ export class UrbanBuildingPass {
         for (const entry of sector.entries) {
           if (!rayBox(origin, direction, entry.bounds, distance)) continue;
           eachBuildingTriangle(
-            entry.building,
+            this.drawBuilding(entry.building),
             face => {
               const hit = buildingRayDistance(origin, direction, face.points);
               if (hit !== null && hit < distance) {

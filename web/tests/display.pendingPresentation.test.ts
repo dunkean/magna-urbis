@@ -29,3 +29,23 @@ it('does not wait for an unused top-view paint in tilted or fallback rendering',
   view.live.active = () => false;
   expect(view.pendingViewOnly()).toBe(0);
 });
+
+it('keeps visible forest preparation pending only in the active tilted view', () => {
+  const view = Object.assign(Object.create(ComposedView.prototype), {
+    pitch: 1,
+    yaw: 0,
+    live: { active: () => true, layerPending: () => false },
+    rest: 'live',
+    motion: { restOwed: false },
+    awaited: undefined,
+    townPending: false,
+    volumes: { pending: () => false },
+    trees: { pendingPresentation: () => true },
+  });
+  expect(view.pendingViewOnly()).toBe(1);
+  view.live.active = () => false;
+  expect(view.pendingViewOnly()).toBe(0);
+  view.pitch = 0;
+  view.live.active = () => true;
+  expect(view.pendingViewOnly()).toBe(0);
+});

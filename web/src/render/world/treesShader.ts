@@ -64,7 +64,7 @@ uniform vec4 uBlock; // origin relative to target, terrain height offset, stream
 uniform vec2 uRelief;
 uniform vec4 uFade; // local eye, start and end of the horizontal fade
 uniform float uVisibility;
-uniform int uSegments;
+uniform highp int uSegments;
 uniform vec3 uFacing; // screen-right direction on the ground (xy), vertical component toward the eye (z)
 uniform vec3 uTrunk;
 uniform vec4 uRepaintLow;
@@ -75,8 +75,10 @@ uniform vec3 treeLight;
 uniform float fogDistance;
 uniform int uNight;
 out vec3 colour;
+out vec3 grain;
 flat out float modelOpacity;
 ${TREE_PROFILE_GLSL}
+const float WORLD_NEEDLE_R[6]=float[6](1.,.69,.86,.51,.61,0.);
 void main(){
   vec2 place=uBlock.xy+treeBase.xy;
   modelOpacity=(1.-smoothstep(uFade.z,uFade.w,min(distance(place,uFade.xy),length(place))))*uVisibility*uBlock.w;
@@ -98,7 +100,7 @@ void main(){
       // retains a crown footprint even when the terrain flattens in an overhead orbit.
       bool tip=id==9,base=id==4,lower=id==5||id==6;
       u=base?0.:tip?1.:lower?(spire?.10:parasol?.60:.34):(spire?.55:parasol?.86:.73);
-      width=(base||tip)?0.:r*(lower?1.:spire?.48:parasol?.86:.78);
+      width=(base||tip)?0.:r*(lower?1.:spire?.58:parasol?.86:.78);
       y=mix(bottom,h,u);
       offset=vec2(uFacing.y,-uFacing.x)*r*uFacing.z*(2.*u-1.);
     }
@@ -111,7 +113,7 @@ void main(){
       int k=id;
       if(uSegments==4&&parasol&&k==2)k=3;
       u=parasol?PARASOL_U[k]:spire?NEEDLE_U[k]:BROAD_U[k];
-      width=r*(parasol?PARASOL_R[k]:spire?NEEDLE_R[k]:BROAD_R[k]);
+      width=r*(parasol?PARASOL_R[k]:spire?WORLD_NEEDLE_R[k]:BROAD_R[k]);
       if(k==0)width=max(width,stem*.78);
       // Shallow scallops keep the fir's six-sided crown full. Dry parasols lean off-centre on their stem.
       width*=spire?mix(1.,.88,meshVertex.y):1.+.09*dot(dir,vec2(.8,-.6));
@@ -123,8 +125,12 @@ void main(){
     if(!needle && treeColor.w>.5)width*=.8;
     if(parasol)offset+=phase*(.14*r*u);
   }
-  vec3 pos=vec3(place+offset+dir*width,treeBase.z*uRelief.x+y*uRelief.y+uBlock.z);
+  vec2 local=offset+dir*width;
+  vec3 pos=vec3(place+local,treeBase.z*uRelief.x+y*uRelief.y+uBlock.z);
   gl_Position=uProjection*vec4(pos,1.);
+  // Anisotropic bark grain, larger crown clumps. Coordinates stay in local
+  // metres so the texture remains attached while the camera moves.
+  grain=uSegments>0?vec3(vec2(local.x+.71*local.y,y+.29*local.y)*(trunk?vec2(3.6,.72):vec2(spire?2.1:1.42,1.56))+phase*47.,trunk?.34:spire?.26:.35):vec3(0.);
   vec3 tint=trunk?uTrunk:treeColor.rgb;
   if(uRepaint==1)tint=mix(uRepaintLow.rgb,uRepaintHigh.rgb,smoothstep(uRepaintLow.w,uRepaintHigh.w,dot(tint,vec3(.30,.59,.11))));
   float snow=trunk?0.:min(fract(treeColor.w)/.45*mix(.45,1.35,u),.95);
@@ -140,9 +146,29 @@ void main(){
 export const WORLD_TREE_FS = `#version 300 es
 precision highp float;
 in vec3 colour;
+in vec3 grain;
 flat in float modelOpacity;
+uniform highp int uSegments;
 out vec4 color;
+float grainHash(vec2 p){
+  vec3 q=fract(vec3(p.xyx)*.1031);
+  q+=dot(q,q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float grainNoise(vec2 p){
+  vec2 i=floor(p),f=fract(p);
+  f=f*f*(3.-2.*f);
+  return mix(mix(grainHash(i),grainHash(i+vec2(1.,0.)),f.x),mix(grainHash(i+vec2(0.,1.)),grainHash(i+1.),f.x),f.y)-.5;
+}
 void main(){
+  vec3 base=colour;
+  // Billboards are too small for any grain. A derivative gate removes the
+  // pattern before its clumps or strands are subpixel, including on a tilt.
+  if(uSegments>0){
+    vec2 fp=fwidth(grain.xy);
+    float seen=1.-smoothstep(.30,.88,max(fp.x,fp.y));
+    if(seen>0.)base*=1.+grain.z*seen*grainNoise(grain.xy);
+  }
   if(modelOpacity<1.&&fract(52.9829189*fract(dot(floor(gl_FragCoord.xy),vec2(.06711056,.00583715))))>=modelOpacity)discard;
-  color=vec4(colour,1.);
+  color=vec4(base,1.);
 }`;
