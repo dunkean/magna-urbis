@@ -75,7 +75,7 @@ it('keeps the submitted trees and their detail as neighbours stream in, then dra
     camera = createFrameCamera(),
     view = { cx: 1200, cy: 1200, scale: 4, pitch: 0.3, yaw: 0 };
   frameCamera(camera, view, 1600, 900, 1600, 900, 1, heights);
-  const frame = { gl, view, cssW: 1600, cssH: 900, width: 1600, height: 900, dpr: 1, camera } as LiveFrame;
+  const frame = { gl, view, cssW: 1600, cssH: 900, width: 1600, height: 900, dpr: 1, camera } as unknown as LiveFrame;
   try {
     let previous = new Map<number, number[]>(),
       grew = 0;
