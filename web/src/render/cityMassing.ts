@@ -81,11 +81,15 @@ export interface MassingPiece {
   tone?: number;
   volumes?: MassingVolume[];
 }
+interface RoofPan {
+  points: Vertex3[];
+  /** Side from this vertex to the next, introduced when splitting a warped pan. */
+  hiddenEdge?: number;
+}
 /** One roof face: 3D polygon (z above the building ground) and its upward unit normal.
  * `vol` is the volume index inside the piece (0 when the piece has none), `cover`/`wall`/`tone`
  * the materials and 0..1 shade of that volume. */
-export interface RoofFace {
-  points: Vertex3[];
+export interface RoofFace extends RoofPan {
   holes?: Point[][];
   normal: [number, number, number];
   piece: number;
@@ -255,7 +259,7 @@ class Faces {
     private tone = 0.5,
     private tint?: string,
   ) {}
-  add(points: Vertex3[]): void {
+  add(points: Vertex3[], hiddenEdge?: number): void {
     let nx = 0,
       ny = 0,
       nz = 0;
@@ -269,7 +273,7 @@ class Faces {
     const l = Math.hypot(nx, ny, nz);
     if (l < 1e-9) return;
     const s = nz < 0 ? -1 : 1;
-    this.list.push({ points, normal: [(s * nx) / l, (s * ny) / l, (s * nz) / l], piece: this.piece, vol: this.vol, cover: this.cover, wall: this.wall, tone: this.tone, ...(this.tint ? { tint: this.tint } : {}) });
+    this.list.push({ points, hiddenEdge, normal: [(s * nx) / l, (s * ny) / l, (s * nz) / l], piece: this.piece, vol: this.vol, cover: this.cover, wall: this.wall, tone: this.tone, ...(this.tint ? { tint: this.tint } : {}) });
   }
 }
 const at = (p: Point, z: number): Vertex3 => ({ x: p.x, y: p.y, z });
@@ -318,14 +322,14 @@ function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
 }
 /** Plan check of a roof: every face simple and wound like the ring, faces tile the ring
  * (areas add up), and for convex rings no vertex leaves it: no fold, no crossing. */
-function validRoof(ring: readonly Point[], faces: readonly Vertex3[][]): boolean {
+function validRoof(ring: readonly Point[], faces: readonly RoofPan[]): boolean {
   const total = polygonArea(ring),
     s = Math.sign(total);
   if (!s) return false;
   const A = Math.abs(total),
     convex = isConvex(ring);
   let sum = 0;
-  for (const f of faces) {
+  for (const { points: f } of faces) {
     const a = polygonArea(f) * s;
     if (a < -0.002 * A - 1e-6) return false;
     sum += a;
@@ -348,7 +352,7 @@ function validRoof(ring: readonly Point[], faces: readonly Vertex3[][]): boolean
 }
 const same3 = (a: Vertex3, b: Vertex3): boolean => Math.abs(a.x - b.x) < 1e-4 && Math.abs(a.y - b.y) < 1e-4 && Math.abs(a.z - b.z) < 1e-4;
 /** A polygon of a roof, deduplicated; a non-planar quad becomes two triangles. */
-function pushFace(out: Vertex3[][], pts: Vertex3[]): void {
+function pushFace(out: RoofPan[], pts: Vertex3[]): void {
   const p = pts.filter((q, i) => !same3(q, pts[(i + pts.length - 1) % pts.length]));
   if (p.length < 3) return;
   if (p.length === 4) {
@@ -367,12 +371,12 @@ function pushFace(out: Vertex3[][], pts: Vertex3[]): void {
       ny /= l;
       nz /= l;
       if (Math.abs((p[3].x - p[0].x) * nx + (p[3].y - p[0].y) * ny + (p[3].z - p[0].z) * nz) > 0.03) {
-        out.push([p[0], p[1], p[2]], [p[0], p[2], p[3]]);
+        out.push({ points: [p[0], p[1], p[2]], hiddenEdge: 2 }, { points: [p[0], p[2], p[3]], hiddenEdge: 0 });
         return;
       }
     }
   }
-  out.push(p);
+  out.push({ points: p });
 }
 type Seg = [Point, Point];
 /** Point of the ridge closest to `p`: with a straight ridge, the point at the same axis coordinate clamped to the ridge's extent. */
@@ -396,7 +400,7 @@ const sideOf = ([a, b]: Seg, p: Point): number => {
  * cross); an eave edge crossing the ridge axis is split there; a point ridge is a pyramid.
  * With several ridges a vertex takes its nearest one. Second try: plain nearest points
  * (fits some concave L/T outlines). Both are checked in plan before being accepted. */
-export function loftRidges(ring: readonly Point[], ridges: readonly [Point, Point][], eave: number, top: number): Vertex3[][] | undefined {
+export function loftRidges(ring: readonly Point[], ridges: readonly [Point, Point][], eave: number, top: number): RoofPan[] | undefined {
   if (ring.length < 3 || !ridges.length) return undefined;
   const n = ring.length;
   const proj = (p: Point): { id: number; q: Point } => {
@@ -413,8 +417,8 @@ export function loftRidges(ring: readonly Point[], ridges: readonly [Point, Poin
     });
     return { id, q };
   };
-  const build = (split: boolean): Vertex3[][] => {
-    const out: Vertex3[][] = [];
+  const build = (split: boolean): RoofPan[] => {
+    const out: RoofPan[] = [];
     for (let i = 0; i < n; i++) {
       const a = ring[i],
         b = ring[(i + 1) % n];
@@ -448,9 +452,9 @@ export function loftRidges(ring: readonly Point[], ridges: readonly [Point, Poin
   return undefined;
 }
 /** Pyramid to the centroid (the defensive fallback), or undefined when the centroid is outside. */
-function pyramidFaces(ring: readonly Point[], eave: number, top: number): Vertex3[][] | undefined {
+function pyramidFaces(ring: readonly Point[], eave: number, top: number): RoofPan[] | undefined {
   const c = centroid(ring),
-    out: Vertex3[][] = [];
+    out: RoofPan[] = [];
   if (!pointInRing(c, ring)) return undefined;
   for (let i = 0; i < ring.length; i++) pushFace(out, [at(ring[i], eave), at(ring[(i + 1) % ring.length], eave), at(c, top)]);
   return out.length && validRoof(ring, out) ? out : undefined;
@@ -458,7 +462,7 @@ function pyramidFaces(ring: readonly Point[], eave: number, top: number): Vertex
 /** Every eave edge lofted to the ridges (gable, hip, pyramid, cone); pyramid then flat if the ridges are unusable. */
 function lofted(f: Faces, ring: readonly Point[], ridges: readonly [Point, Point][], eave: number, top: number): void {
   const faces = loftRidges(ring, ridges, eave, top) ?? pyramidFaces(ring, eave, top);
-  if (faces) for (const p of faces) f.add(p);
+  if (faces) for (const { points, hiddenEdge } of faces) f.add(points, hiddenEdge);
   else flat(f, ring, eave);
 }
 /** Tent: low cone whose faces sag (concave profile) up to a small crown ring with a flat smoke cap. */
@@ -475,7 +479,7 @@ function tent(f: Faces, ring: readonly Point[], eave: number, rise: number): voi
       const k = 1 - s * (1 - crown);
       return at({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k }, eave + rise * Math.pow(s, 1.7));
     });
-  const out: Vertex3[][] = [];
+  const out: RoofPan[] = [];
   for (let s = 0; s + 1 < courses.length; s++) {
     const lo = course(courses[s]),
       hi = course(courses[s + 1]);
@@ -484,7 +488,7 @@ function tent(f: Faces, ring: readonly Point[], eave: number, rise: number): voi
       pushFace(out, [lo[i], lo[j], hi[j], hi[i]]);
     }
   }
-  for (const p of out) f.add(p);
+  for (const { points, hiddenEdge } of out) f.add(points, hiddenEdge);
   f.add(course(1));
 }
 /** Shed roof: the plane rising from the low eave to the ridge line (the high wall). */

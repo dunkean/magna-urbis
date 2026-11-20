@@ -8,11 +8,12 @@ interface Job {
   coords: Float32Array;
   rings: Uint32Array;
   polys: Uint32Array;
+  hiddenEdges?: Uint8Array;
 }
 const scope = self as unknown as { onmessage: ((e: MessageEvent<Job>) => void) | null; postMessage(message: unknown, transfer: Transferable[]): void };
 scope.onmessage = e => {
-  const { id, coords, rings, polys } = e.data;
+  const { id, coords, rings, polys, hiddenEdges } = e.data;
   const start = performance.now(),
-    r = triangulatePolygons({ coords, rings, polys });
+    r = triangulatePolygons({ coords, rings, polys, hiddenEdges });
   scope.postMessage({ id, ms: performance.now() - start, ...r }, [r.triangles.buffer, r.lines.buffer, r.polyTriangles.buffer, r.polyLines.buffer]);
 };

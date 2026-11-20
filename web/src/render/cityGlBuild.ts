@@ -11,6 +11,7 @@
  * The triangulation can be split over workers by polygon ranges (cityGlWorker.ts). */
 import type { Point, Shape } from '../../../rust/bridge/urban';
 import type { CityBuildings, CityScene } from './cityCanvas';
+import type { CityRoofShape } from './city/model/contract';
 import { isBoardwalk } from './cityGround';
 import { CROSSINGS, streetMinPx } from './city/look';
 import { earcut } from './cityGlEarcut';
@@ -29,6 +30,8 @@ export interface CityGlPolygons {
   rings: Uint32Array;
   polys: Uint32Array;
   features: Uint32Array;
+  /** Optional outer-ring side to omit from the outline, stored as index + 1 (0 draws all sides). */
+  hiddenEdges?: Uint8Array;
 }
 
 class Grow<T extends Float32Array | Uint32Array> {
@@ -54,6 +57,7 @@ export class CityGlPacker {
   private rings = new Grow(new Uint32Array(1 << 12));
   private polys = new Grow(new Uint32Array(1 << 11));
   private features = new Grow(new Uint32Array(1 << 11));
+  private hiddenEdges?: Map<number, number>;
   constructor(readonly origin: Point) {
     this.rings.push(0);
     this.polys.push(0);
@@ -66,7 +70,7 @@ export class CityGlPacker {
   }
   /** One polygon (outer ring + holes) for `feature`. Degenerate rings are skipped;
    * a repeated closing point is dropped (earcut and the outlines close rings). */
-  add(shape: Shape, feature: number): void {
+  add(shape: CityRoofShape, feature: number): void {
     if (!shape?.outer || shape.outer.length < 3) return;
     let added = 0;
     for (const ring of [shape.outer, ...(shape.holes ?? [])]) {
@@ -85,11 +89,16 @@ export class CityGlPacker {
       added++;
     }
     if (!added) return;
+    if (shape.hiddenEdge !== undefined) (this.hiddenEdges ??= new Map()).set(this.polygonCount, shape.hiddenEdge + 1);
     this.polys.push(this.rings.length - 1);
     this.features.push(feature);
   }
   done(): CityGlPolygons {
-    return { coords: this.coords.done(), rings: this.rings.done(), polys: this.polys.done(), features: this.features.done() };
+    const packed = { coords: this.coords.done(), rings: this.rings.done(), polys: this.polys.done(), features: this.features.done() };
+    if (!this.hiddenEdges) return packed;
+    const hiddenEdges = new Uint8Array(this.polygonCount);
+    for (const [polygon, edge] of this.hiddenEdges) hiddenEdges[polygon] = edge;
+    return { ...packed, hiddenEdges };
   }
 }
 
@@ -104,7 +113,8 @@ export interface CityGlTriangulation {
   polyLines: Uint32Array;
 }
 /** Triangulate polygons [from, to) of a packing. Vertex indices are global. */
-export function triangulatePolygons(p: Pick<CityGlPolygons, 'coords' | 'rings' | 'polys'>, from = 0, to = p.polys.length - 1): CityGlTriangulation {
+type PolygonSlice = Pick<CityGlPolygons, 'coords' | 'rings' | 'polys' | 'hiddenEdges'>;
+export function triangulatePolygons(p: PolygonSlice, from = 0, to = p.polys.length - 1): CityGlTriangulation {
   const tri = new Grow(new Uint32Array(1 << 14)),
     lin = new Grow(new Uint32Array(1 << 14));
   const polyTriangles = new Uint32Array(Math.max(0, to - from)),
@@ -123,16 +133,19 @@ export function triangulatePolygons(p: Pick<CityGlPolygons, 'coords' | 'rings' |
     tri.reserve(local.length);
     for (let i = 0; i < local.length; i++) tri.data[tri.length++] = v0 + local[i];
     polyTriangles[q - from] = local.length;
+    const hidden = v0 + (p.hiddenEdges?.[q] ?? 0) - 1,
+      lineStart = lin.length;
     lin.reserve((v1 - v0) * 2);
     for (let r = r0; r < r1; r++) {
       const a = p.rings[r],
         b = p.rings[r + 1];
       for (let i = a; i < b; i++) {
+        if (i === hidden) continue;
         lin.data[lin.length++] = i;
         lin.data[lin.length++] = i + 1 < b ? i + 1 : a;
       }
     }
-    polyLines[q - from] = (v1 - v0) * 2;
+    polyLines[q - from] = lin.length - lineStart;
   }
   return { triangles: tri.done(), lines: lin.done(), polyTriangles, polyLines };
 }
@@ -159,7 +172,7 @@ export function splitPolygons(p: Pick<CityGlPolygons, 'rings' | 'polys'>, parts:
   return out;
 }
 /** Self-contained slice of polygons [from, to): vertex indices rebased to 0 (worker input). */
-export function slicePolygons(p: CityGlPolygons, from: number, to: number): { coords: Float32Array; rings: Uint32Array; polys: Uint32Array; vertexOffset: number } {
+export function slicePolygons(p: CityGlPolygons, from: number, to: number): PolygonSlice & { vertexOffset: number } {
   const r0 = p.polys[from],
     r1 = p.polys[to],
     v0 = p.rings[r0],
@@ -168,7 +181,7 @@ export function slicePolygons(p: CityGlPolygons, from: number, to: number): { co
     polys = new Uint32Array(to - from + 1);
   for (let r = r0; r <= r1; r++) rings[r - r0] = p.rings[r] - v0;
   for (let q = from; q <= to; q++) polys[q - from] = p.polys[q] - r0;
-  return { coords: p.coords.slice(v0 * 2, v1 * 2), rings, polys, vertexOffset: v0 };
+  return { coords: p.coords.slice(v0 * 2, v1 * 2), rings, polys, hiddenEdges: p.hiddenEdges?.slice(from, to), vertexOffset: v0 };
 }
 /** Concatenate slice results (in order), shifting each by its vertex offset. */
 export function mergeTriangulations(parts: Array<{ result: CityGlTriangulation; vertexOffset: number }>): CityGlTriangulation {

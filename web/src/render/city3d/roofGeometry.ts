@@ -119,7 +119,7 @@ export function insetRing(ring: readonly Point[], distance: number, outer: boole
 export class RoofBuilder {
   readonly vertices: Vertex3[] = [];
   readonly faces: RoofMeshFace[] = [];
-  face(points: Vertex3[], material: string): void {
+  face(points: Vertex3[], material: string, hiddenEdge?: number): void {
     let nx = 0,
       ny = 0,
       nz = 0;
@@ -136,7 +136,9 @@ export class RoofBuilder {
       normal: [number, number, number] = [(sign * nx) / length, (sign * ny) / length, (sign * nz) / length];
     const start = this.vertices.length;
     this.vertices.push(...points);
-    this.faces.push({ vertices: points.map((_, i) => start + i), normal, material, kind: Math.abs(normal[2]) < 0.05 ? 'gable' : Math.abs(normal[2]) > 0.999 ? 'slab' : 'pan' });
+    const face: RoofMeshFace = { vertices: points.map((_, i) => start + i), normal, material, kind: Math.abs(normal[2]) < 0.05 ? 'gable' : Math.abs(normal[2]) > 0.999 ? 'slab' : 'pan' };
+    if (hiddenEdge !== undefined) face.hiddenEdge = hiddenEdge;
+    this.faces.push(face);
   }
   /** Vertical wall face above the wall top (gable end), its normal turned away from `centre`. */
   gable(points: Vertex3[], material: string, centre: Point): void {
@@ -172,7 +174,7 @@ export function ridgeRoof(roof: RoofBuilder, ring: readonly Point[], ridges: rea
   // Same ridge-axis construction as the 2D pans (cityMassing.loftRidges), checked in plan.
   const faces = ridges.length ? loftRidges(ring, ridges, eave, top) : undefined;
   if (faces) {
-    for (const f of faces) roof.face(f, material);
+    for (const { points, hiddenEdge } of faces) roof.face(points, material, hiddenEdge);
     return;
   }
   for (let i = 0; i < ring.length; i++) {

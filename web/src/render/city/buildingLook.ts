@@ -136,7 +136,7 @@ const GRAIN_MIN = 0.03;
 export const SNOW_SHIFT: readonly [number, number] = [53.1, 71.9],
   GRAIN_SHIFT: readonly [number, number] = [37.7, 91.3];
 /** Pan edges (eaves, ridges, hips): ink on the drawn plans, a soft joint on a natural ground; width in CSS px. */
-export const PAN_EDGE = { parchment: { color: '#2c2117', alpha: 0.65, widthPx: 0.3 }, natural: { color: '#1f1811', alpha: 0.45, widthPx: 0.5 }, plan: { color: '#1f1811', alpha: 0.65, widthPx: 0.5 } } as const;
+export const PAN_EDGE = { parchment: { color: '#2c2117', alpha: 0.4, widthPx: 0.25 }, natural: { color: '#1f1811', alpha: 0.3, widthPx: 0.35 }, plan: { color: '#1f1811', alpha: 0.4, widthPx: 0.35 } } as const;
 
 interface RoofFrameInput {
   smoothRoofs?: boolean;

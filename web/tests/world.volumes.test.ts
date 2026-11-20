@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlacementBatch, PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
-import type { Building3dScene, BuildingTriangle } from '../src/render/urbanBuildingGeometry';
+import { eachBuildingTriangle, type Building3dScene, type BuildingTriangle } from '../src/render/urbanBuildingGeometry';
 import { roofEdgeMasks } from '../src/render/roofEdges';
 import type { RoofMode } from '../src/render/roofMode';
+import { buildCityBuildings } from '../src/render/cityCanvas';
+import { packBuildings, slicePolygons, triangulatePolygons } from '../src/render/cityGlBuild';
 import { city3dBuildings, city3dBuildingsSteps } from '../src/render/city3d/display';
 import { city3dLotEnclosures } from '../src/render/city3d/yards';
 import type { LiveFrame } from '../src/render/live/contract';
@@ -115,6 +117,45 @@ describe('world buildings', () => {
     const point = (p: readonly [number, number, number]): BuildingTriangle['points'][number] => [...p];
     const pan = [0, -1, 1] as const;
     expect([...roofEdgeMasks([roof([point(a), point(b), point(c)], [...pan]), roof([point(a), point(c), point(d)], [...pan]), roof([point(d), point(c), point(e)], [0, 1, 1])])]).toEqual([0b101, 0b011, 0b111]);
+  });
+
+  it('keeps the eave and ridge of a warped roof pan while suppressing its diagonal in 2D and 3D', () => {
+    const base = sources(1)[0];
+    const footprint = [{
+      outer: [
+        { x: 0, y: 0 },
+        { x: 8, y: 1 },
+        { x: 8, y: 7 },
+        { x: 0, y: 7 },
+      ],
+      holes: [],
+    }];
+    const source = {
+      ...base,
+      footprint,
+      roof_footprint: footprint,
+      programme: { role: 'house', massing: [{ floors: 2, eave_m: 6, rise_m: 4, roof: 'gable', ridges: [[0, 3, 8, 3]], cover: 'tile', wall: 'plaster' }] },
+    } as PlacedBuilding;
+    const model = city3dBuildings(batch([source]), { heightAt: () => 0 })!;
+    const triangles: BuildingTriangle[] = [];
+    eachBuildingTriangle(model.buildings[0], triangle => triangles.push(triangle));
+    const split = triangles.flatMap((triangle, i) => triangle.hiddenEdge === undefined ? [] : [i]);
+    expect(split).toHaveLength(2);
+    expect(triangles[split[0]].normal).not.toEqual(triangles[split[1]].normal);
+    const masks = roofEdgeMasks(triangles);
+    expect(split.map(i => masks[i])).toEqual([0b101, 0b011]);
+
+    const plan = buildCityBuildings(batch([source]));
+    expect(plan.roofs?.shapes.flatMap(shape => shape.hiddenEdge === undefined ? [] : [shape.hiddenEdge])).toEqual([2, 0]);
+    const packed = packBuildings(plan, { x: 0, y: 0 }).polygons;
+    const { hiddenEdges } = packed;
+    expect(hiddenEdges?.filter(edge => edge > 0)).toHaveLength(2);
+    hiddenEdges!.forEach((edge, i) => {
+      if (!edge) return;
+      const outline = triangulatePolygons(slicePolygons(packed, i, i + 1));
+      expect(outline.triangles).toHaveLength(3);
+      expect(outline.lines).toEqual(edge === 3 ? Uint32Array.of(0, 1, 1, 2) : Uint32Array.of(1, 2, 2, 0));
+    });
   });
 
   it('writes four distinct roof treatments in the same vertex format', () => {

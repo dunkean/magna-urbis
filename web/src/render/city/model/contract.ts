@@ -172,7 +172,7 @@ export interface CityBuilding {
  * building and its light; height shadows per building (sun from the north-west). */
 /** `dir`: downslope direction of each pan in plan (radians, atan2 of the face normal's horizontal part; 0 when flat). */
 export interface CityRoofs {
-  shapes: Shape[];
+  shapes: CityRoofShape[];
   owner: Uint32Array;
   light: Float32Array;
   cover: string[];
@@ -186,6 +186,10 @@ export interface CityRoofs {
   /** Wall colour asked for the pan's volume ("#rrggbb"). */ tint?: (string | undefined)[];
   /** Grain family of the pan: 1 + its index in COVER_GRAINS (buildingMaterials.ts), 0 for none. */ grain?: Uint8Array;
   shadows: Shape[][];
+}
+export interface CityRoofShape extends Shape {
+  /** Side from this outer-ring vertex to the next, internal to a roof pan. */
+  hiddenEdge?: number;
 }
 export interface CityBuildings {
   items: CityBuilding[];

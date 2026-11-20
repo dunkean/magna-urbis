@@ -99,7 +99,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
                   triangle.map(p => ({ ...p, z: points[0].z })),
                   crown,
                 );
-            else roof.face(points, crown);
+            else roof.face(points, crown, face.hiddenEdge);
             // Explicit pans already carry their eaves: no skirt is added to them.
             if (over > 0 && !v.pans) overhang(roof, points, base + v.eave_m, centre, over, crown);
           }

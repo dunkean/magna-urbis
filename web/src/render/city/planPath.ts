@@ -46,14 +46,14 @@ export const paintedPlan = (path: PlanPath | undefined, palette: CityPalette): b
 /** The render background paints the building edges (not on parchment or ink, not in a diagnostic colouring). */
 export const paintedBuildings = (path: PlanPath | undefined, palette: CityPalette, view: CityView, diagnostic: string): boolean => !!path?.painted && palette !== 'parchment' && palette !== 'ink' && view !== 'roles' && diagnostic !== 'uses';
 /** Opacity of a pan's edge line on the plan path: crisp courses (tile, shingle, slate, bamboo) read as stripes, soft
- * ones (thatch, turf) as fuzz; never under 0.6. */
+ * ones (thatch, turf) as fuzz. Lines are drawn at one device pixel, so keep their opacity low. */
 const COVER_EDGE: Record<string, number> = { tile: 0.72, shingle: 0.72, slate: 0.68, bamboo: 0.72, metal: 0.65, thatch: 0.35, reed: 0.35, palm: 0.4, turf: 0.3, bark: 0.45, hide: 0.4, felt: 0.4, snow: 0.3 };
 const PAN_EDGE_INK = '#30271f';
 /** Colour and edge of pan `k` on the plan path: the shared plan colour (the user's building ink when given), or the
  * body colour shaded by the pan light where the bodies are coloured by role or use; no edge on a snowed pan. */
 export function planPathPan(f: { view: CityView; palette: CityPalette; diagnostic: string; colors?: RenderColors }, item: CityBuilding, roofs: CityRoofs, k: number, bodyFill: string): { color: string; edge: string; edgeAlpha: number } {
   const shaded = f.view === 'roles' || f.diagnostic === 'uses';
-  return { color: shaded ? planShade(bodyFill, roofs.light[k] * 0.5) : planRoofColor(item, roofs, k, f.palette, f.colors?.building), edge: PAN_EDGE_INK, edgeAlpha: roofs.snow?.[k] ? 0 : Math.max(0.6, COVER_EDGE[roofs.cover[k]] ?? 0.55) };
+  return { color: shaded ? planShade(bodyFill, roofs.light[k] * 0.5) : planRoofColor(item, roofs, k, f.palette, f.colors?.building), edge: PAN_EDGE_INK, edgeAlpha: roofs.snow?.[k] ? 0 : 0.55 * Math.max(0.6, COVER_EDGE[roofs.cover[k]] ?? 0.55) };
 }
 /** Ground shadow of painted bodies without roof pans: the body shifted south-east by this offset (metres; a floor on screen). */
 export function paintedGroundShadow(mpp: number): { dx: number; dy: number } {

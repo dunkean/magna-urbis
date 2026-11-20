@@ -13,8 +13,21 @@ import { CityBuilding, CityRoofs, CityBuildings } from '../model/contract';
 import { CityDrawOptions } from './contract';
 import { shapePath } from './batches';
 
-const roofIndex = new WeakMap<CityRoofs, { byOwner: number[][]; paths: (Path2D | undefined)[] }>();
+const roofIndex = new WeakMap<CityRoofs, { byOwner: number[][]; paths: (Path2D | undefined)[]; outlines: (Path2D | undefined)[] }>();
 export const roofShadowPaths = new WeakMap<CityRoofs, (Path2D | undefined)[]>();
+/** Start after the hidden side so the two remaining sides can be stroked as one open path. */
+function splitPanOutline(outer: readonly Point[], hiddenEdge: number, Path: new () => Path2D = Path2D): Path2D {
+  const path = new Path(),
+    n = outer.length,
+    start = hiddenEdge + 1;
+  const first = outer[start % n];
+  path.moveTo(first.x, first.y);
+  for (let i = 1; i < n; i++) {
+    const p = outer[(start + i) % n];
+    path.lineTo(p.x, p.y);
+  }
+  return path;
+}
 const roofGrain = new WeakMap<ImageBitmap, Map<number, CanvasPattern>>();
 /** Mean-centred grain, shared per material; soft light keeps the final palette colour. */
 function roofGrainPattern(ctx: CanvasRenderingContext2D, images: MaterialImages, layer: number, angle: number): CanvasPattern | undefined {
@@ -65,7 +78,7 @@ export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildi
   if (!index) {
     const byOwner: number[][] = b.items.map(() => []);
     roofs.owner.forEach((ow, k) => byOwner[ow]?.push(k));
-    roofIndex.set(roofs, (index = { byOwner, paths: [] }));
+    roofIndex.set(roofs, (index = { byOwner, paths: [], outlines: [] }));
   }
   // What a pan is painted with is the look's (city/buildingLook.ts): its colour and grain gain are kept per pan.
   const f = roofFrame({ palette: o.palette, mpp: o.mpp, dpr: o.dpr, night: o.night, cave: o.appearance.cave, diagnostic: o.appearance.diagnostic, colors: o.colors, textured: !!images, smoothRoofs: o.appearance.smoothRoofs, roof: o.appearance.roof });
@@ -85,7 +98,8 @@ export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildi
     for (const k of pans) {
       // Without snow on the ground a snow patch repeats the pan under it.
       if (roofs.patch?.[k] && !ground) continue;
-      const path = (index.paths[k] ??= shapePath(roofs.shapes[k], b.pathClass));
+      const shape = roofs.shapes[k],
+        path = (index.paths[k] ??= shapePath(shape, b.pathClass));
       let color = paint.colors[k];
       if (color === undefined) {
         const made = roofPanPaint(f, item, roofs, k, ground);
@@ -135,7 +149,9 @@ export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildi
           }
         }
       }
-      if (!o.appearance.smoothRoofs && !roofs.snow?.[k]) ctx.stroke(path);
+      if (!o.appearance.smoothRoofs && !roofs.snow?.[k]) {
+        ctx.stroke(shape.hiddenEdge === undefined ? path : (index.outlines[k] ??= splitPanOutline(shape.outer, shape.hiddenEdge, b.pathClass)));
+      }
     }
     if (f.natural && item.marks) drawMillMarks(ctx, b, item, o);
   }

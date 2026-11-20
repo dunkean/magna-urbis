@@ -136,11 +136,11 @@ export const ROOF_INK_GLSL = `
 float roofInk(vec3 edge, vec3 gx, vec3 gy, float dpr){
   vec3 ex=dFdx(edge),ey=dFdy(edge);
   vec3 edgePixel=sqrt(ex*ex+ey*ey);
-  float reach=.5*dpr;
+  float reach=.32*dpr;
   if(all(greaterThanEqual(edge,edgePixel*(reach+.5))))return 0.;
   vec3 d=edge/max(edgePixel,vec3(1.e-6));
   float mpp=sqrt(max(dot(gx.xz,gx.xz),dot(gy.xz,gy.xz)))*dpr;
-  return (1.-smoothstep(max(0.,reach-.5),reach+.5,min(d.x,min(d.y,d.z))))*.65*(1.-smoothstep(1.5,4.,mpp));
+  return (1.-smoothstep(max(0.,reach-.5),reach+.5,min(d.x,min(d.y,d.z))))*.38*(1.-smoothstep(1.5,4.,mpp));
 }
 `;
 export const WORLD_BUILDING_VS = `#version 300 es

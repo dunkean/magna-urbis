@@ -54,7 +54,10 @@ export class Triangulator {
               clearTimeout(timer);
               resolve({ result: r, vertexOffset: slice.vertexOffset });
             });
-            pool[k].postMessage({ id, coords: slice.coords, rings: slice.rings, polys: slice.polys }, [slice.coords.buffer, slice.rings.buffer, slice.polys.buffer]);
+            const { coords, rings, polys, hiddenEdges } = slice;
+            const transfer: Transferable[] = [coords.buffer, rings.buffer, polys.buffer];
+            if (hiddenEdges) transfer.push(hiddenEdges.buffer);
+            pool[k].postMessage({ id, coords, rings, polys, hiddenEdges }, transfer);
           });
         }),
       );

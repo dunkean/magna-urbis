@@ -13,7 +13,7 @@ import { massingFootprint, planRoof, pieceShadows, pieceVolumes, readMassing, st
 import { differenceS, unionS } from '../../../gen/geo/bool';
 import { ruinFootprint } from '../../cityRuins';
 import { roleFamily } from '../look';
-import { CityAllocation, CityScene, CityBuilding, CityBuildings } from './contract';
+import { CityAllocation, CityScene, CityBuilding, CityBuildings, CityRoofShape } from './contract';
 import { surfaceBox, SpatialBins } from './geometry';
 import { AllocationContract } from './scene';
 
@@ -77,7 +77,7 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
   const withRoofs = options.roofs !== false;
   const items: CityBuilding[] = [],
     byId = new Map<string, number>();
-  const roofShapes: Shape[] = [],
+  const roofShapes: CityRoofShape[] = [],
     roofOwner: number[] = [],
     roofLight: number[] = [],
     roofCover: string[] = [],
@@ -183,7 +183,8 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       roofPatch.push('patch' in face ? face.patch : 0);
       roofRim.push(face.rim ? 1 : 0);
       roofTint.push(face.tint);
-      roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: face.holes ?? [] });
+      const hiddenEdge = 'patch' in face ? undefined : face.hiddenEdge;
+      roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: face.holes ?? [], ...(hiddenEdge === undefined ? {} : { hiddenEdge }) });
       roofOwner.push(owner);
       roofLight.push(face.light ?? roofLight3(face.normal));
       roofCover.push(face.cover);

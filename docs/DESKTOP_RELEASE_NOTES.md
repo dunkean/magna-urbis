@@ -11,6 +11,7 @@
 - Keep the same smooth GPU houses in flat and tilted views, without preparing a second Canvas house rendering on capable devices; retain Canvas for machines that need it.
 - Fix flickering house and parcel fences when panning or tilting the map.
 - Choose roof rendering independently: V1 with roof edges, V2 without traced edges, Flat without roof textures, or Minimal blocks without pitched roofs.
+- V1 roof edges are finer and softer, and diagonals inside warped roof surfaces are hidden.
 - Preserve the shading of pitched roofs, including Newar houses, at medium zoom.
 - Keep loaded 3D trees stable while nearby forest blocks finish loading, including when the camera stays still.
 - Keep nearby trees detailed, restore foliage grain and canopy tones matching the satellite ground, and broaden conifer crowns.

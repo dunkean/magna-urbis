@@ -5,9 +5,9 @@ import type { NativeBuildingProjection } from '../ui/urbanBuildingProjection';
 import type { ParentMember3dVisual } from '../ui/urbanParent3d';
 import { retainBuildingFeature, type BuildingFeatureLod } from './urbanBuildingFeatureLod';
 import { earcut } from './cityGlEarcut';
+import type { RoofMesh } from './city3d/types';
 
 export type BuildingVector = [number, number, number];
-type RoofMesh = PlacedBuilding['volumes'][number]['roof_mesh'];
 export interface OverviewVolume extends ArchitectureVolume {
   /** Main roof pans and gables to draw in place of the overview cap. */
   overview_roof_faces?: [number, number];
@@ -36,12 +36,14 @@ function faceTriangles(mesh: RoofMesh, face: RoofMesh['faces'][number]): number[
 
 function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle: BuildingTriangle) => void, start = 0, end = mesh.faces.length): void {
   for (let f = start; f < end && f < mesh.faces.length; f++) {
-    const face = mesh.faces[f];
+    const face = mesh.faces[f], { hiddenEdge } = face;
     const triangles = faceTriangles(mesh, face);
     for (let i = 0; i + 2 < triangles.length; i += 3) {
       const points = triangles.slice(i, i + 3).map(index => mesh.vertices[index]);
       if (points.some(p => !p)) continue;
-      emit({ points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: 'roof' });
+      const triangle: BuildingTriangle = { points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: 'roof' };
+      if (hiddenEdge !== undefined) triangle.hiddenEdge = hiddenEdge;
+      emit(triangle);
     }
   }
 }
@@ -53,6 +55,8 @@ export interface BuildingTriangle {
   surface: 'wall' | 'roof' | 'yard';
   materials: MaterialSlots;
   material?: string;
+  /** Side from this vertex to the next, internal to a roof pan. */
+  hiddenEdge?: number;
   ground?: [number, number, number];
 }
 /** Display works can retain separate solid prisms, so gate lintels do not fill their passages. */
