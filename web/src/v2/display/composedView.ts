@@ -48,7 +48,7 @@ import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../rende
 import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
-import { cavernField, cavernSectionHeights, underdarkCavernOf } from '../../render/underdarkCavern';
+import { cavernField, cavernSectionHeights, cavernTexelAt, underdarkCavernOf } from '../../render/underdarkCavern';
 import { createWorldTreesLayer, type WorldTreesLayer } from '../../render/world/treesLayer';
 import { createWorldCaveLayer } from '../../render/world/caveLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
@@ -206,7 +206,10 @@ export class ComposedView {
         section = kept ? kept.section : field && { field, raw: new TerrainHeights(grid.data, grid.n, terrain.width, -Infinity, 1) },
         data = kept?.data ?? (field ? cavernSectionHeights(grid.data, field) : grid.data);
       // The sea covers what lies below its level; the Underdark is drawn down to its floors.
-      this.heights = { terrain, roof, data, section, relief: new TerrainHeights(data, grid.n, terrain.width, underdark ? -Infinity : 0, exaggeration) };
+      const relief = new TerrainHeights(data, grid.n, terrain.width, underdark ? -Infinity : 0, exaggeration);
+      // The cave's rock is solid for a flyer: only it stops him (render/world/navigation.ts).
+      if (section) relief.solidAt = (x, y) => cavernTexelAt(section.field, x, y, 0) > 0.5;
+      this.heights = { terrain, roof, data, section, relief };
     }
     return this.heights.relief;
   }

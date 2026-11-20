@@ -12,7 +12,7 @@
  * The page gives one `WorldCave` per map and appearance (v2/display/worldVolumes.ts), compared by identity; undefined
  * outside the Underdark and on paper looks, which keep the section relief alone.
  */
-import { cavernFog, cavernReveal, type CavernField, type UnderdarkCavern3d } from '../underdarkCavern';
+import { cavernFog, cavernReveal, cavernRoofAt, type CavernField, type UnderdarkCavern3d } from '../underdarkCavern';
 import type { ForestOccupation } from '../../../../rust/bridge/terrainForest';
 import type { FrameCamera } from './contract';
 
@@ -93,9 +93,20 @@ export function caveGroundLamps(cave: WorldCave, camera: FrameCamera, out: Float
 }
 
 /** The cutaway of the roof (focus x, y, radius, width of the section band, in map metres): around the target of the
- * orbit camera, none for a walking or flying eye (the vault stays overhead). The roof lies on the flat map of the top
+ * orbit camera and under a flyer who is above the roof, none for an eye inside the cave (the vault stays overhead). The roof lies on the flat map of the top
  * view, so the cutaway opens to the whole map as the relief comes down. */
-export function caveReveal(camera: FrameCamera, exaggeration: number, out: [number, number, number, number]): [number, number, number, number] {
+export function caveReveal(cave: WorldCave, camera: FrameCamera, exaggeration: number, out: [number, number, number, number]): [number, number, number, number] {
+  // A flyer above the roof looks down into the cave as the orbit does: the cutaway opens under him, as wide as he is
+  // high above the roof. Below it the vault is whole overhead.
+  const above = camera.free ? camera.eye[2] - cavernRoofAt(cave.field, camera.target[0], camera.target[1]) * exaggeration * camera.rise : 0;
+  if (camera.free && above > 0) {
+    const reveal = cavernReveal(camera.target[0], camera.target[1], 2 * above, exaggeration);
+    out[0] = reveal[0];
+    out[1] = reveal[1];
+    out[2] = reveal[2];
+    out[3] = reveal[3];
+    return out;
+  }
   if (camera.free) {
     out[0] = camera.target[0];
     out[1] = camera.target[1];

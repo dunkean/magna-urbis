@@ -62,7 +62,7 @@ export function leaveFreeEye(view: View, pitch: number, cssW: number, cssH: numb
 
 /** A free eye moved for `seconds` by held keys: `forward` and `right` in -1..1 (and `up` when flying), `fast` with
  * Shift. Walking goes along the ground the eye faces and stays at a person's height over it; flying goes along the look
- * at its altitude, never closer to the ground than a walking eye. */
+ * at its altitude, never closer to the ground than a walking eye, and stopped by solid rock (WorldRelief.solidAt). */
 export function moveFreeEye(view: View, mode: 'walk' | 'fly', forward: number, right: number, up: number, seconds: number, fast: boolean, relief?: WorldRelief, collisions?: Terrain3dCollisions): View {
   const yaw = wrapYaw(view.yaw),
     sinYaw = Math.sin(yaw),
@@ -82,10 +82,24 @@ export function moveFreeEye(view: View, mode: 'walk' | 'fly', forward: number, r
     dy = right * sinYaw - forward * cosYaw * along,
     dz = up - forward * Math.cos(pitch);
   const step = (FLIGHT_SPEED * (fast ? FLIGHT_FAST : 1) * seconds) / Math.max(1, Math.hypot(dx, dy, dz)),
-    cx = view.cx + dx * step,
-    cy = view.cy + dy * step,
-    altitude = Math.max(view.eye ?? 0, walkingEye(relief, view.cx, view.cy));
-  return { ...view, cx, cy, eye: Math.max(altitude + dz * step, walkingEye(relief, cx, cy)) };
+    eye = Math.max(view.eye ?? 0, walkingEye(relief, view.cx, view.cy)) + dz * step;
+  let cx = view.cx + dx * step,
+    cy = view.cy + dy * step;
+  // Solid rock (the walls of a cave) stops a flyer below its top: he slides along it instead of being lifted over it,
+  // out through the roof. Nothing else stops him; above the rock he flies over it.
+  const solid = relief?.solidAt;
+  if (solid) {
+    const stopped = (x: number, y: number): boolean => solid.call(relief, x, y) && eye < walkingEye(relief, x, y);
+    if (stopped(cx, cy)) {
+      if (!stopped(cx, view.cy)) cy = view.cy;
+      else if (!stopped(view.cx, cy)) cx = view.cx;
+      else {
+        cx = view.cx;
+        cy = view.cy;
+      }
+    }
+  }
+  return { ...view, cx, cy, eye: Math.max(eye, walkingEye(relief, cx, cy)) };
 }
 
 /** A free eye turned by a look drag of (dx, dy) CSS pixels: right turns right, down looks down. */

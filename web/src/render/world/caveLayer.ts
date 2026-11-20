@@ -197,7 +197,7 @@ export function createWorldCaveLayer(gl: WebGL2RenderingContext, options: WorldC
         matrix[12 + i] = m[12 + i];
       }
       caveFogRange(cave, camera, heights.exaggeration, fog);
-      caveReveal(camera, heights.exaggeration, reveal);
+      caveReveal(cave, camera, heights.exaggeration, reveal);
       const lit = caveLamps(cave, 0, 0, lamps),
         drawn = heights.exaggeration * camera.rise;
       const common = (u: Record<(typeof ROOF_UNIFORMS)[number], WebGLUniformLocation | null>): void => {

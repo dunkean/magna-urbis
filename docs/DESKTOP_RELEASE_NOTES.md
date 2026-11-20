@@ -49,6 +49,7 @@
 - Underdark: an irregular vault, close over the floor in places and lost in the dark in great chambers; stalactites from needles to stout stumps, alone, in clusters or giant; stalagmites on the floor.
 - Underdark, tilted map: a brighter cave, with lantern light around isolated farms and more glowing mushrooms.
 - Underdark lava tubes are no longer drawn as a dark band with a dashed centre line.
+- Underdark, free flight: only the cave's rock stops the flyer, who slides along the walls instead of being lifted out through the roof; the roof and the stalactites never block, and the roof opens under a flyer who is above it.
 - Underdark road tunnels are drawn as bare ground at the road's own width instead of a wide grey slab with kerbs.
 - Underdark: fungal farms stay by the cave towns. The countryside no longer fills with hundreds of farmsteads: no roadside farms or farm hamlets, and at most one isolated farm per 500 inhabitants (40 per map).
 - Underdark: fungal farm beds are dark compost of the cave floor's tones with small, faintly glowing mushroom caps in every map style, instead of a pale field with a purple symbol.

@@ -80,6 +80,23 @@ describe('walking and flying', () => {
     expect(switchFreeEye(level, 'fly', hills).eye).toBe(level.eye);
   });
 
+  it('is stopped by solid rock below its top and flies over it above', () => {
+    // A cave floor at 10 m with a rock mass east of x = 1000 that rises to 60 m.
+    const cave: WorldRelief = { width: 4000, low: 10, high: 60, heightAt: x => (x > 1000 ? 60 : 10), solidAt: x => x > 1000 };
+    const east = Math.PI / 2;
+    const low: View = { cx: 990, cy: 500, scale: 1, pitch: Math.PI / 2, yaw: east, eye: 30 };
+    const stopped = moveFreeEye(low, 'fly', 1, 0, 0, 1, false, cave);
+    expect(stopped.cx).toBe(990);
+    expect(stopped.eye).toBeCloseTo(30, 6);
+    // Along the wall the flyer slides.
+    const slid = moveFreeEye({ ...low, yaw: east / 2 }, 'fly', 1, 0, 0, 1, false, cave);
+    expect(slid.cx).toBe(990);
+    expect(slid.cy).toBeLessThan(500);
+    // Above the rock he goes over it, and the roof never stops him on the way up.
+    const over = moveFreeEye({ ...low, eye: 80 }, 'fly', 1, 0, 0, 1, false, cave);
+    expect(over.cx).toBeGreaterThan(1000);
+    expect(moveFreeEye(low, 'fly', 0, 0, 1, 1, false, cave).eye).toBeGreaterThan(60);
+  });
   it('looks around with a drag and returns to the orbit on the ground it looks at', () => {
     const walker = enterFreeEye(orbit, 'walk', H, hills);
     const turned = lookFreeEye(walker, 100, 50);

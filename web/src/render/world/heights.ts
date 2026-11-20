@@ -24,6 +24,8 @@ function splineWeights(t: number, out: Float64Array): void {
 export class TerrainHeights implements WorldRelief {
   readonly low: number;
   readonly high: number;
+  /** WorldRelief.solidAt: set by the owner of an Underdark relief (v2/display/composedView.ts). */
+  solidAt?: (x: number, y: number) => boolean;
 
   constructor(
     /** Control heights in metres, row by row from the north-west corner. */

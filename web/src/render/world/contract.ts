@@ -41,6 +41,9 @@ export interface WorldRelief {
   readonly high: number;
   /** Height of the ground at a map point, in metres as drawn at full relief; clamped at the map edge. */
   heightAt(x: number, y: number): number;
+  /** Rock that stands as a wall at a map point (the Underdark's cave rock): a flying eye below its top is stopped by
+   * it instead of being lifted over it. Absent: every rise of the ground lifts the eye. */
+  solidAt?(x: number, y: number): boolean;
 }
 
 /** The camera of a frame (LiveFrame.camera). Vectors and matrices are reused from frame to frame: read, never kept. */
