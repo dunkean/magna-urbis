@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 
 #[path = "funerary.rs"]
 mod funerary;
+#[path = "hillside.rs"]
+mod hillside;
 
 fn access_segments(
     layout: &Layout,
@@ -1325,6 +1327,30 @@ impl BuildingSiteIndex {
         {
             parts.push((house, "building"));
         }
+        let accesses = access_segments(layout, parcel, &layout_index.frontages);
+        let point = |v: &Value| {
+            Some(super::Point {
+                x: v["x"].as_f64()?,
+                y: v["y"].as_f64()?,
+            })
+        };
+        // A home whose ground drops more than its culture's way of building
+        // takes is turned along the contour or made shallower (hillside.rs),
+        // before its farmstead is laid around it.
+        let hill = super::massing::hillside(building_culture, arch);
+        if domestic && !parts.is_empty() && !programme["landmark"].as_bool().unwrap_or(false) {
+            let ways: Vec<[super::Point; 2]> = accesses
+                .iter()
+                .filter_map(|a| Some([point(&a["segment"][0])?, point(&a["segment"][1])?]))
+                .collect();
+            let scale = super::forms::kit::traits(building_culture).body_scale;
+            let min_depth = (4.0 * if scale > 0.0 { scale } else { 1.0 }).max(3.0);
+            if let Some(settled) = hillside::settle(&mut parts, super::forms::plan::is_house_part, super::forms::plan::min_side,
+                &lot, &ways, surface, hill.max_drop_m, min_depth)
+            {
+                programme["hillside"] = settled.json();
+            }
+        }
         let ancillary = crate::rng::Rng::new(&site_seed).fork("outbuildings").chance(layout.config.as_ref().map_or(0.5, |c| c.outbuildings));
         let farmhouse = role.starts_with("dwelling.farm");
         let lone = farmhouse && super::roles::is_isolated(&pr.context.intent);
@@ -1375,22 +1401,12 @@ impl BuildingSiteIndex {
             json!({"coverage":average("coverage").clamp(0.05, 1.0),
                 "depth_m":average("buildDepth"),"frontage_m":average("frontage")})
         });
-        // Urban deficit: a lot no admissible native house can occupy is not
-        // sent to houses to be drawn and refused, and no smaller house stands
-        // for its programme: it stays open land and its households are stated.
-        let accesses = access_segments(layout, parcel, &layout_index.frontages);
         // Houses poses its sources along a declared access or the hint edge.
         let direction = |a: super::Point, b: super::Point| {
             let l = (b.x - a.x).hypot(b.y - a.y);
             (l > 0.1).then(|| super::Point {
                 x: (b.x - a.x) / l,
                 y: (b.y - a.y) / l,
-            })
-        };
-        let point = |v: &Value| {
-            Some(super::Point {
-                x: v["x"].as_f64()?,
-                y: v["y"].as_f64()?,
             })
         };
         let dirs: Vec<super::Point> = accesses
@@ -1604,6 +1620,19 @@ impl BuildingSiteIndex {
             programme["massing"] = Value::Array(m);
         } else if !massing.is_null() {
             programme["massing"] = massing;
+            // Each piece on sloping ground says how its drop is taken (massing::footing).
+            if let Some(entries) = programme["massing"].as_array_mut() {
+                for (entry, (shape, _)) in entries.iter_mut().zip(&parts) {
+                    let (low, high) = hillside::ground_span(surface, &shape.outer);
+                    if !entry.is_object() || high - low < super::massing::FOOTING_MIN_DROP_M {
+                        continue;
+                    }
+                    let up = hillside::uphill(surface, super::geometry::centroid(shape), delta);
+                    if let Some(footing) = super::massing::footing(hill.way, &shape.outer, up, &lot, &|p| surface.height_at(p), low, high) {
+                        entry["footing"] = footing;
+                    }
+                }
+            }
         }
         let mut request = json!({"id":format!("{}/building",parcel.id),"parcel_id":parcel.id,
             "placement_hint":hint.as_ref().map(|shape|vec![shape]),

@@ -91,6 +91,18 @@ pub(in crate::urban) struct TraditionTraits {
     pub form: String,
 }
 
+/// How a culture's homes take a sloping lot (`traits.hillside`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub(in crate::urban) struct HillsideTraits {
+    /// `plinth` (stepped plinth under the downhill side) | `terrace` (a level
+    /// terrace held by a retaining wall downhill) | `stilts` (posts to the ground).
+    pub way: String,
+    /// Largest ground drop (m) across a home this way takes before the home is
+    /// turned along the contour or made shallower (0: the way's default).
+    pub max_drop_m: f64,
+}
+
 /// Building traits of a culture that its tissue does not carry
 /// (`styles*.json`, `cultures.<id>.traits`). Every field has a neutral
 /// default, so a culture only states what sets it apart.
@@ -116,6 +128,8 @@ pub(in crate::urban) struct CultureTraits {
     pub massive_storey: bool,
     /// Homes stand on posts whatever their form (light bodies over water or marsh).
     pub piles: bool,
+    /// How homes take a sloping lot; None: by their build (`massing::hillside`).
+    pub hillside: Option<HillsideTraits>,
     /// Facade openness 0..1 of every wall (0: by climate and wall).
     pub openness: f64,
     /// Facade openness 0..1 of the non-masonry walls of a Mediterranean or

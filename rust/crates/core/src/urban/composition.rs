@@ -1222,8 +1222,10 @@ fn across_water(pieces: Vec<Shape>, surface: Surface<'_>) -> Vec<Shape> {
         .into_iter()
         .filter(|gap| {
             let area = g::area(gap);
-            let dry: f64 = g::dry_clip(&surface, gap).iter().map(g::area).sum();
-            area > 50.0 && area - dry >= 0.25 * area
+            area > 50.0 && {
+                let dry: f64 = g::dry_clip(&surface, gap).iter().map(g::area).sum();
+                area - dry >= 0.25 * area
+            }
         })
         .collect();
     if wet_gaps.is_empty() {
@@ -2452,33 +2454,37 @@ fn fortify(
     // grid keeps the exact compass.
     let grid = grid_frame(&plan.quarters)
         .map(|a| if cardinal && a.abs() < 3f64.to_radians() { 0.0 } else { a });
+    let mut outlines = std::collections::BTreeMap::new();
     // `trace`: "" (straight runs between corners), "hill" (contour trace) or
     // "bastioned" (long fronts between salients; `None` where it cannot fit).
-    let enclosed = |count: usize, trace: &str| {
-        across_water(
-            union(
-                &phases[..count]
-                    .iter()
-                    .flat_map(|p| p.shapes.clone())
-                    .collect::<Vec<_>>(),
-            ),
-            surface,
-        )
-        .iter()
+    let mut enclosed = |count: usize, trace: &str| {
+        let outline = outlines.entry(count).or_insert_with(|| {
+            across_water(
+                union(
+                    &phases[..count]
+                        .iter()
+                        .flat_map(|p| p.shapes.clone())
+                        .collect::<Vec<_>>(),
+                ),
+                surface,
+            )
+        });
         // A hamlet-sized outlier gets no circuit of its own.
-        .filter(|s| g::area(s) > 15_000.0)
-        .map(|s| match trace {
-            "hill" => Some(if small { fortification::village_trace(s, cell, true) }
-                else { fortification::hill_trace(s, cell) }),
-            "bastioned" => fortification::bastioned_trace(&curtain(s, cell, small), surface),
-            // A planned city's square circuit, where its land allows one.
-            "square" => {
-                let base = curtain(s, cell, small);
-                Some(fortification::square_trace(&base, surface, cardinal, force_rect, grid).unwrap_or(base))
-            }
-            _ => Some(curtain(s, cell, small)),
-        })
-        .collect::<Option<Vec<_>>>()
+        outline
+            .iter()
+            .filter(|s| g::area(s) > 15_000.0)
+            .map(|s| match trace {
+                "hill" => Some(if small { fortification::village_trace(s, cell, true) }
+                    else { fortification::hill_trace(s, cell) }),
+                "bastioned" => fortification::bastioned_trace(&curtain(s, cell, small), surface),
+                // A planned city's square circuit, where its land allows one.
+                "square" => {
+                    let base = curtain(s, cell, small);
+                    Some(fortification::square_trace(&base, surface, cardinal, force_rect, grid).unwrap_or(base))
+                }
+                _ => Some(curtain(s, cell, small)),
+            })
+            .collect::<Option<Vec<_>>>()
     };
     let Some(walls) = enclosed(walled, "") else {
         return (vec![], vec![]);
@@ -2591,6 +2597,25 @@ fn fortify(
     let (walls, cave) = fortification::cave_circuits(walls, surface);
     style.options(cfg);
     style.cave = cave;
+    // The land gates of the town circuits are decided here, on the armature, while nothing stands
+    // on the trace: the budget keeps the passages, the curtain turns square to their streets, the
+    // other crossings close. The quarters are then cut along curtains whose gates are final. A
+    // planned rectangle, a bastioned front, a cave barrier and a stretch shared by two circuits
+    // keep their line.
+    let moat = style.ditch_width[1];
+    let gated = |purpose: &'static str, curtain_width: f64, squared: bool| fortification::Circuit {
+        pop: site.population, purpose, kind, curtain_width, moat, grade: cfg.max_street_grade, squared, key: &site.key,
+        improvisation: cfg.street_improvisation,
+    };
+    let squared = !(square || attached || cave || style.id == "bastioned");
+    let mut passages = vec![];
+    let mut decided = Vec::with_capacity(walls.len());
+    for wall in &walls {
+        let (wall, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated("", style.curtain_width, squared), surface);
+        passages.push((kept, shut));
+        decided.push(wall);
+    }
+    let walls = decided;
     let mut inner_style = style.inner(culture, site.population);
     inner_style.options(cfg);
     let data = culture_data(culture, site.population);
@@ -2701,6 +2726,13 @@ fn fortify(
     };
     let castle_at = walls.len() + inner_walls.len();
     for (i, wall) in walls.iter().chain(&inner_walls).chain(castle.iter()).enumerate() {
+        // An older circuit and the castle open their gates by the same budget, on their trace as it is.
+        let purpose = if i >= castle_at { "castle" } else if citadel && i >= outer { "citadel" } else { "" };
+        let (kept, shut) = if i < outer { std::mem::take(&mut passages[i]) } else {
+            let width = if i >= castle_at { style.curtain_width } else { inner_style.curtain_width };
+            let (_, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated(purpose, width, false), surface);
+            (kept, shut)
+        };
         let path = closed(&wall.outer);
         let mut gates = gates(&path, &plan.streets);
         let land = gates.len();
@@ -2714,7 +2746,7 @@ fn fortify(
         let mut enclosure = Enclosure {
             path,
             kind: kind.into(),
-            purpose: if i >= castle_at { "castle".into() } else if citadel && i >= outer { "citadel".into() } else { String::new() },
+            purpose: purpose.into(),
             gates,
             ..Default::default()
         };
@@ -2733,6 +2765,8 @@ fn fortify(
             &base.fork(&format!("enc:{i}")),
         );
         plan.streets.extend(lanes);
+        // A main road the budget shut out goes round outside the moat to a kept gate.
+        fortification::divert(&enclosure, &kept, &shut, &mut plan.streets, surface, cfg.max_street_grade);
         plan.enclosures.push(enclosure);
     }
     // The two attached circuits keep no ditch or outwork inside each other.

@@ -126,7 +126,7 @@ fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &Layout
         .iter()
         .enumerate()
         .map(|(i, b)| b.kind == "block" && (!built[i] || sparse(i)) && !reserved.contains(&i))
-        .collect();
+        .collect();
     // Consolidated yards can reach a different street from their house. Only
     // retained contacts justify fringe frontage; urban properties keep their yards.
     // Pure per lot: in parallel, flattened in lot order.
@@ -200,6 +200,37 @@ struct Seg {
 
 /// Remove the street segments that serve nothing. `open` flags the blocks that are open land.
 fn prune(layout: &mut Layout, open: &[bool], lots: &[Shape]) { prune_with(layout, open, lots, None, None) }
+
+/// `prune` again on its own result, with the same lots, until the streets stop
+/// changing: streets only, no cadastre. One prune is not its own fixed point.
+/// A street end is joined to a street whose side it rests on within that
+/// street's half width (+1.5 m), and the prune narrows the streets it turns
+/// into field paths to 2 m (`network::downgrade_path`): an end resting on
+/// such a path is a dead end for the next prune. Its cut streets also have
+/// new ends, joined afresh to the nearest live segment.
+fn prune_settled(layout: &mut Layout, open: &[bool], lots: &[Shape]) {
+    // Every round only removes, splits or narrows streets, so it settles in a
+    // few rounds; the bound guards the loop.
+    for _ in 0..32 {
+        let before = layout.streets.clone();
+        prune(layout, open, lots);
+        if same_streets(&before, &layout.streets) {
+            break;
+        }
+    }
+}
+
+/// The prune removes segments, splits streets and downgrades them; it moves no
+/// vertex beyond rounding (its 10 m cut recomputes them), hence the tolerance.
+fn same_streets(a: &[Street], b: &[Street]) -> bool {
+    let near = |x: f64, y: f64| (x - y).abs() <= 1e-6;
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(s, t)| {
+            s.rank == t.rank && s.role == t.role && s.path.len() == t.path.len() && s.widths.len() == t.widths.len()
+                && s.widths.iter().zip(&t.widths).all(|(&u, &v)| near(u, v))
+                && s.path.iter().zip(&t.path).all(|(p, q)| near(p.x, q.x) && near(p.y, q.y))
+        })
+}
 
 /// `doors[street]`, `sides[street]`: the door fronts and all the fronts of the
 /// occupied lots on that street (indices of `layout.streets`). When given, a dead
@@ -607,16 +638,6 @@ fn served(layout: &Layout, lots: Vec<Shape>) -> Vec<Shape> {
     lots.into_iter().zip(kept).filter(|(_, k)| *k).map(|(lot, _)| lot).collect()
 }
 
-/// What a trim pass reads of the plan: the blocks (count, ordinary count, area)
-/// and the streets (count, length, widths). Equal signatures: nothing to trim again.
-pub(super) fn signature(layout: &Layout) -> (usize, usize, usize, u64, u64, u64) {
-    let area: f64 = layout.blocks.iter().map(|b| g::area(&b.shape)).sum();
-    let length: f64 = layout.streets.iter().flat_map(|s| s.path.windows(2)).map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y)).sum();
-    let widths: f64 = layout.streets.iter().flat_map(|s| &s.widths).sum();
-    (layout.blocks.len(), layout.blocks.iter().filter(|b| b.kind == "block").count(), layout.streets.len(),
-        area.to_bits(), length.to_bits(), widths.to_bits())
-}
-
 /// The unbuilt blocks become open land and the streets that served only them go. Returns the
 /// number of blocks released and the built lots of the last allocation probe
 /// (`composition::fit_enclosures` fits the town circuits to them).
@@ -649,7 +670,7 @@ pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, origin
         verges(layout);
         laps.lap("verges");
         let open: Vec<bool> = layout.blocks.iter().enumerate().map(|(i, b)| (b.kind == "reserve" && !reserved.contains(&i)) || commons.contains(&i)).collect();
-        prune(layout, &open, &occupied);
+        prune_settled(layout, &open, &occupied);
         laps.lap("prune");
         released += count;
         let after: f64 = layout.streets.iter().filter(|s| frontage_road(&s.role)).flat_map(|s| s.path.windows(2)).map(|w| (w[1].x-w[0].x).hypot(w[1].y-w[0].y)).sum();
@@ -1301,6 +1322,22 @@ mod tests {
         assert!(l.streets.iter().any(|s| s.path.iter().any(|p|p.x==160.)));
         assert!(l.streets.iter().any(|s| s.role == "track"));
         assert!(l.streets.iter().filter(|s|s.role == "track").all(|s|s.rank == 4 && s.widths.iter().all(|&w|w <= 2.)));
+    }
+
+    /// The empty connection becomes a 2 m path; a street end resting 3 m off
+    /// its side is then no longer joined to it, and the settled prune follows
+    /// that empty stub back to the occupied frontage in the same call.
+    #[test]
+    fn a_stub_left_on_a_narrowed_path_is_pruned_in_the_same_call() {
+        let mut l = layout(json!([
+            {"path":[{"x":0.,"y":0.},{"x":0.,"y":30.}],"widths":[4.],"rank":2,"role":"street"},
+            {"path":[{"x":0.,"y":30.},{"x":0.,"y":150.},{"x":130.,"y":150.}],"widths":[4.],"rank":2,"role":"street"},
+            {"path":[{"x":130.,"y":150.},{"x":160.,"y":150.}],"widths":[4.],"rank":2,"role":"street"},
+            {"path":[{"x":3.,"y":90.},{"x":25.,"y":90.},{"x":25.,"y":130.}],"widths":[4.],"rank":2,"role":"street"}
+        ]));
+        prune_settled(&mut l, &[], &[g::rectangle(3., 0., 20., 20.), g::rectangle(140., 153., 160., 170.), g::rectangle(27., 95., 40., 125.)]);
+        assert!(l.streets.iter().any(|s| s.role == "street" && s.path.iter().any(|p| p.x == 25. && p.y == 130.)), "occupied frontage lost: {:?}", l.streets);
+        assert!(!l.streets.iter().any(|s| s.role == "street" && s.path.iter().any(|p| p.y == 90. && p.x < 24.)), "empty stub remains: {:?}", l.streets);
     }
 
     #[test]

@@ -566,6 +566,96 @@ impl Read {
         }
     }
 }
+#[derive(Debug, PartialEq, Eq)]
+enum FieldOrientation {
+    Cardinal,
+    Terrain,
+    Water,
+    Road,
+}
+
+struct FieldParams {
+    orientation: FieldOrientation,
+    grid: bool,
+    wavelength: f64,
+    noise: f64,
+    grid_skew: f64,
+    contour_follow: f64,
+    twist: f64,
+    random: f64,
+    contour_blend: f64,
+    curvature: f64,
+}
+
+impl FieldParams {
+    fn new(m: &Morph) -> Self {
+        Self {
+            orientation: match m.text("orientation") {
+                "cardinal" => FieldOrientation::Cardinal,
+                "terrain" => FieldOrientation::Terrain,
+                "water" => FieldOrientation::Water,
+                _ => FieldOrientation::Road,
+            },
+            grid: m.text("streetOp") == "grid",
+            wavelength: m.number("fieldWavelength"),
+            noise: m.number("fieldNoise"),
+            grid_skew: m.number("gridSkew"),
+            contour_follow: m.number_or("contourFollow", 0.0),
+            twist: m.number("fieldTwist"),
+            random: m.number("fieldRandom"),
+            contour_blend: m.number_or("contourBlend", 0.0),
+            curvature: m.number("curvature"),
+        }
+    }
+}
+
+#[test]
+fn field_params_match_morphology_defaults_and_overrides() {
+    use serde_json::json;
+
+    for (overrides, orientation) in [
+        (json!({}), FieldOrientation::Cardinal),
+        (
+            json!({
+                "streetOp": "organic",
+                "orientation": "water",
+                "fieldWavelength": 190.25,
+                "fieldNoise": 3.5,
+                "gridSkew": 0.025,
+                "contourFollow": 0.25,
+                "fieldTwist": -0.125,
+                "fieldRandom": 0.625,
+                "contourBlend": 0.75,
+                "curvature": 0.375,
+            }),
+            FieldOrientation::Water,
+        ),
+    ] {
+        let m = super::resolve("chinese", "culture", "core", "core", 1.0, &overrides, "quarters")
+            .unwrap();
+        let params = FieldParams::new(&m);
+        assert_eq!(params.orientation, orientation);
+        assert_eq!(params.grid, m.text("streetOp") == "grid");
+        for (value, expected) in [
+            (params.wavelength, m.number("fieldWavelength")),
+            (params.noise, m.number("fieldNoise")),
+            (params.grid_skew, m.number("gridSkew")),
+            (params.contour_follow, m.number_or("contourFollow", 0.0)),
+            (params.twist, m.number("fieldTwist")),
+            (params.random, m.number("fieldRandom")),
+            (params.contour_blend, m.number_or("contourBlend", 0.0)),
+            (params.curvature, m.number("curvature")),
+        ] {
+            assert_eq!(value.to_bits(), expected.to_bits());
+        }
+    }
+}
+
+struct TraceParams {
+    default: FieldParams,
+    phases: Vec<FieldParams>,
+}
+
 struct Field<'a> {
     regional: &'a RegionalIndex<'a>,
     align_regional: bool,
@@ -754,19 +844,19 @@ impl Field<'_> {
         cy.atan2(cx) / 4.0
     }
     /// Noise and cultural/regional base orientation of the field at `p`.
-    fn base(&self, p: Point, m: &Morph) -> (f64, f64) {
-        let wl = m.number("fieldWavelength").max(1.0);
-        let nz = m.number("fieldNoise").to_radians() * self.noise.fbm(p.x / wl, p.y / wl, 2);
-        let cultural_base = match m.text("orientation") {
-            "cardinal" => 0.0,
-            "terrain" => self.terrain,
-            "water" => self.water,
-            _ => self.angle,
+    fn base(&self, p: Point, params: &FieldParams) -> (f64, f64) {
+        let wl = params.wavelength.max(1.0);
+        let nz = params.noise.to_radians() * self.noise.fbm(p.x / wl, p.y / wl, 2);
+        let cultural_base = match params.orientation {
+            FieldOrientation::Cardinal => 0.0,
+            FieldOrientation::Terrain => self.terrain,
+            FieldOrientation::Water => self.water,
+            FieldOrientation::Road => self.angle,
         };
         // A planned cardinal grid (Chinese, Hindu temple town) is laid out to
         // the compass like its walls and gates: regional roads join its gates,
         // they do not turn its lattice.
-        let compass = m.text("orientation") == "cardinal" && m.text("streetOp") == "grid";
+        let compass = params.orientation == FieldOrientation::Cardinal && params.grid;
         let base = if self.align_regional && !compass {
             self.regional.axis(p).unwrap_or(cultural_base)
         } else {
@@ -774,36 +864,39 @@ impl Field<'_> {
         };
         (nz, base)
     }
-    fn grid_angle(&self, p: Point, m: &Morph) -> f64 {
-        let (nz, base) = self.base(p, m);
+    fn grid_angle(&self, p: Point, params: &FieldParams) -> f64 {
+        let (nz, base) = self.base(p, params);
         self.adapt_angle(
             p,
             base + nz
-                + m.number("gridSkew") * self.noise.fbm(p.x / 600.0 + 9.0, p.y / 600.0 - 3.0, 2),
+                + params.grid_skew * self.noise.fbm(p.x / 600.0 + 9.0, p.y / 600.0 - 3.0, 2),
         )
     }
     /// Grid orientation at a quarter centre, whatever the tissue found there.
     fn grid_frame(&self, p: Point) -> f64 {
-        self.grid_angle(p, self.morph_at(p))
+        self.grid_angle(p, &FieldParams::new(self.morph_at(p)))
     }
-    fn angle(&self, p: Point) -> f64 {
-        let m = self.morph_at(p);
-        let (nz, base) = self.base(p, m);
+    fn angle(&self, p: Point, trace: &TraceParams) -> f64 {
+        let params = self
+            .phase_at(p)
+            .and_then(|i| trace.phases.get(i))
+            .unwrap_or(&trace.default);
+        let (nz, base) = self.base(p, params);
         let (gx, gy) = self.gradient(p, 70.0);
         let slope = gx.hypot(gy);
-        if m.text("streetOp") == "grid" {
+        if params.grid {
             if let Some(frame) = self.frame.filter(|_| slope < 0.08) {
                 return frame;
             }
-            return self.grid_angle(p, m);
+            return self.grid_angle(p, params);
         }
         let contour = gy.atan2(gx) + FRAC_PI_2;
-        let cf = m.number_or("contourFollow", 0.0);
+        let cf = params.contour_follow;
         let th = if self.radial {
             (p.y - self.center.y).atan2(p.x - self.center.x)
         } else {
             base
-        } + m.number("fieldTwist");
+        } + params.twist;
         let mut cx = (4.0 * th).cos();
         let mut cy = (4.0 * th).sin();
         if cf > 0.0 {
@@ -812,7 +905,7 @@ impl Field<'_> {
             cy = (1.0 - w) * (4.0 * self.terrain).sin() + w * (4.0 * contour).sin();
             return self.adapt_angle(p, cy.atan2(cx) / 4.0);
         }
-        let wr = m.number("fieldRandom");
+        let wr = params.random;
         let psi = PI * self.noise.fbm(p.x / 260.0 + 31.7, p.y / 260.0 - 12.3, 2);
         cx = (1.0 - wr) * cx + wr * (4.0 * psi).cos();
         cy = (1.0 - wr) * cy + wr * (4.0 * psi).sin();
@@ -823,7 +916,7 @@ impl Field<'_> {
             cx = (1.0 - w) * cx + w * (4.0 * a).cos();
             cy = (1.0 - w) * cy + w * (4.0 * a).sin()
         }
-        let cb = m.number_or("contourBlend", 0.0);
+        let cb = params.contour_blend;
         let w = (0.75 * smooth(slope, 0.06, 0.14)).max(cb * smooth(slope, 0.025, 0.08));
         cx = (1.0 - w) * cx + w * (4.0 * contour).cos();
         cy = (1.0 - w) * cy + w * (4.0 * contour).sin();
@@ -840,6 +933,7 @@ impl Field<'_> {
         &self,
         s: &Shape,
         index: &TraceIndex,
+        params: &TraceParams,
         seed: Point,
         heading: f64,
         max_grade: f64,
@@ -847,11 +941,11 @@ impl Field<'_> {
         let mut out = vec![seed];
         let mut cur = seed;
         let mut head = heading;
-        let turn = (self.p.number("curvature") + self.adaptation * 1.5) * 5.0 * PI / 180.0;
+        let turn = (params.default.curvature + self.adaptation * 1.5) * 5.0 * PI / 180.0;
         let mut own = PathGrid::new();
         let mut scratch = vec![];
         for _ in 0..800 {
-            let a = self.angle(cur);
+            let a = self.angle(cur, params);
             let dh = (0..4)
                 .map(|k| delta(a + k as f64 * FRAC_PI_2, head))
                 .min_by(|a, b| a.abs().total_cmp(&b.abs()))?;
@@ -897,7 +991,7 @@ impl Field<'_> {
         None
     }
 }
-/// Outer-ring edges of a piece in a uniform grid, built once per cut candidate:
+/// Outer-ring edges of a piece in a uniform grid, shared by its cut candidates:
 /// the first-hit and containment tests of a trace step only visit nearby edges.
 struct TraceIndex {
     edges: Vec<(Point, Point)>,
@@ -1101,8 +1195,8 @@ fn place_spacing(spacing: f64, radius: f64) -> f64 {
 
 /// Whether a line of the planned grid lattice (wards first, then lanes)
 /// crosses `shape` with at least `minWidth` of land on each side.
-fn lattice_lines(shape: &Shape, field: &Field<'_>, m: &Morph) -> bool {
-    let angle = field.angle(g::interior_point(shape));
+fn lattice_lines(shape: &Shape, field: &Field<'_>, m: &Morph, params: &TraceParams) -> bool {
+    let angle = field.angle(g::interior_point(shape), params);
     let lanes = m.pair("laneSpacing");
     let coarse = m.pair("gridSpacing");
     let ward = g::area(shape) >= m.number("wardArea") || (lanes[0] <= 0.0 && lanes[1] <= 0.0);
@@ -1144,7 +1238,9 @@ fn lattice_lines(shape: &Shape, field: &Field<'_>, m: &Morph) -> bool {
 #[allow(clippy::too_many_arguments)]
 fn cut_candidate(
     pc: &Piece,
+    index: &std::cell::OnceCell<TraceIndex>,
     field: &Field<'_>,
+    params: &TraceParams,
     cfg: &LayoutConfig,
     streets: &[Street],
     m: &Morph,
@@ -1163,11 +1259,11 @@ fn cut_candidate(
     } else {
         cfg.max_lane_grade
     };
-    let index = TraceIndex::new(&pc.shape);
+    let index = index.get_or_init(|| TraceIndex::new(&pc.shape));
     let trace = |limit| {
         Some((
-            field.trace(&pc.shape, &index, seed, heading + PI, limit)?,
-            field.trace(&pc.shape, &index, seed, heading, limit)?,
+            field.trace(&pc.shape, index, params, seed, heading + PI, limit)?,
+            field.trace(&pc.shape, index, params, seed, heading, limit)?,
         ))
     };
     let Some((mut back, front)) =
@@ -1477,6 +1573,10 @@ fn split_quarter(
     streets: &mut Vec<Street>,
     rng: &mut Rng,
 ) -> Vec<Piece> {
+    let params = TraceParams {
+        default: FieldParams::new(field.p),
+        phases: field.phase_morphs.iter().map(FieldParams::new).collect(),
+    };
     let mut queue = vec![Piece {
         shape: q.shape.clone(),
         level: 1,
@@ -1527,7 +1627,8 @@ fn split_quarter(
         // A planned grid subdivides by its lattice, not by a random block
         // target: a piece is cut while a lattice line still crosses it, so
         // neighbouring pieces receive the same lines and junctions stay 4-way.
-        let lattice = (m.text("streetOp") == "grid").then(|| lattice_lines(&pc.shape, field, m));
+        let lattice = (m.text("streetOp") == "grid")
+            .then(|| lattice_lines(&pc.shape, field, m, &params));
         let small = match lattice {
             Some(lines) => !lines,
             None => {
@@ -1541,7 +1642,8 @@ fn split_quarter(
             out.push(pc);
             continue;
         }
-        let angle = field.angle(f.c);
+        let angle = field.angle(f.c, &params);
+        let index = std::cell::OnceCell::new();
         let mut best: Option<Candidate> = None;
         for fi in 0..2 {
             let heading = angle + fi as f64 * FRAC_PI_2;
@@ -1652,7 +1754,7 @@ fn split_quarter(
             }
             for seed in seeds {
                 if let Some(c) = cut_candidate(
-                    &pc, field, cfg, streets, m, seed, heading, rank, places, a0, rng,
+                    &pc, &index, field, &params, cfg, streets, m, seed, heading, rank, places, a0, rng,
                 ) && best.as_ref().is_none_or(|b| c.0 < b.0)
                 {
                     best = Some(c);
@@ -1671,7 +1773,7 @@ fn split_quarter(
             };
             for (seed, heading) in street_anchors(&pc.shape, field, streets, f.hv) {
                 if let Some(c) = cut_candidate(
-                    &pc, field, cfg, streets, m, seed, heading, rank, places, a0, rng,
+                    &pc, &index, field, &params, cfg, streets, m, seed, heading, rank, places, a0, rng,
                 ) && best.as_ref().is_none_or(|b| c.0 < b.0)
                 {
                     best = Some(c);

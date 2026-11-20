@@ -105,8 +105,34 @@ fn bounds(shape: &Shape, axis: Point) -> (f64, f64) {
         })
 }
 
-/// An exact boolean half-plane, bounded beyond the complete parent shape.
+/// `URBAN_PROFILE`: calls of `half` and the time spent in them since the last
+/// `parcels.cut.half` line, summed over threads.
+static HALF_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static HALF_NANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(not(target_arch = "wasm32"))]
+fn profiling() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("URBAN_PROFILE").is_ok())
+}
+
+/// The pieces of `shape` on the `dot(axis, p) <= at` side (`below`) or the
+/// other one: an exact boolean half-plane, bounded beyond the complete parent
+/// shape. The planner and the lot edits are tuned on the overlay's rings (its
+/// grid, ring start and vertices) to the last lot: a direct cut that agrees
+/// with it within 1e-5 m still moves small settlements.
 fn half(shape: &Shape, axis: Point, at: f64, below: bool) -> Vec<Shape> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let start = profiling().then(std::time::Instant::now);
+    let pieces = half_plane(shape, axis, at, below);
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(start) = start {
+        HALF_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        HALF_NANOS.fetch_add(start.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+    }
+    pieces
+}
+/// `half` as a polygon intersection with a rectangle whose side lies on the line.
+fn half_plane(shape: &Shape, axis: Point, at: f64, below: bool) -> Vec<Shape> {
     let v = normal(axis);
     let (a, b) = bounds(shape, axis);
     let (c, d) = bounds(shape, v);
@@ -3837,6 +3863,55 @@ struct BlockCut {
     parcels: Vec<Parcel>,
     warnings: Vec<String>,
     diagnostics: super::PartitionDiagnostics,
+    /// Set when the coverage accounts of the lots are still to be added
+    /// (`Coverage`): the index their warning takes among `warnings`.
+    uncovered: Option<usize>,
+}
+
+/// The coverage accounts of a cut block: the union of its lots against the
+/// block (covered, residual and overlap areas) and whether they earn the
+/// residual warning. A pure function of the lot shapes, in order, and of the
+/// block outline. The trim's probe cadastre reads none of it and skips it;
+/// the published cadastre adds it (`apply`), memoised with the cut.
+#[derive(Clone, Copy)]
+struct Coverage {
+    covered: f64,
+    residual: f64,
+    overlap: f64,
+    warn: bool,
+}
+impl Coverage {
+    fn of(parcels: &[Parcel], block: &Shape) -> Self {
+        // Boolean pieces retain exclusions as holes; an unresolved hole is
+        // never replaced by a filled exterior ring.
+        let actual: f64 = parcels.iter().map(|p| area(&p.shape)).sum();
+        let expected = area(block);
+        let merged = super::geometry::union(
+            &parcels
+                .iter()
+                .map(|p| p.shape.clone())
+                .collect::<Vec<_>>(),
+        );
+        let covered = merged.iter().flat_map(|s| super::geometry::intersection(block, s)).map(|s| area(&s)).sum::<f64>();
+        let union_area = merged.iter().map(area).sum::<f64>();
+        let residual = (expected - covered).max(0.0) + (union_area - covered).max(0.0);
+        let overlap = (actual - union_area).max(0.0);
+        Self { covered, residual, overlap, warn: residual + overlap > expected.max(1.0) * 1e-5 }
+    }
+    /// Adds these accounts and their warning to a cut still without them.
+    fn apply(&self, cut: &mut BlockCut, bi: usize) {
+        let Some(at) = cut.uncovered.take() else { return };
+        cut.diagnostics.covered_area += self.covered;
+        cut.diagnostics.residual_area += self.residual;
+        cut.diagnostics.overlap_area += self.overlap;
+        if self.warn {
+            let (residual, overlap) = (self.residual, self.overlap);
+            cut.warnings.insert(
+                at,
+                format!("Îlot {bi} : couverture résiduelle {residual:.3} m², chevauchement {overlap:.3} m²"),
+            );
+        }
+    }
 }
 
 /// Memoised cuts of ordinary blocks across the probes of one quarters run.
@@ -3943,10 +4018,13 @@ impl ProbeInputs<'_> {
 }
 
 /// A memoised cut with the block and street numbering it was computed under.
+/// The cut is kept without its coverage accounts, which the first published
+/// cut of the block computes once.
 struct StoredCut {
     bi: usize,
     streets: Vec<usize>,
     cut: BlockCut,
+    coverage: std::sync::OnceLock<Coverage>,
 }
 /// The two warnings a cut may name its block in (see `generate`).
 fn block_warning_tail<'a>(w: &'a str, bi: usize) -> Option<(&'static str, &'a str)> {
@@ -3962,7 +4040,7 @@ impl StoredCut {
                 .chain(p.access.as_mut().and_then(|a| a.street.as_mut()))
         })
     }
-    fn store(key: super::probe_cache::Key, streets: Vec<usize>, cut: &BlockCut, bi: usize) {
+    fn store(key: super::probe_cache::Key, streets: Vec<usize>, cut: &BlockCut, bi: usize, coverage: Option<Coverage>) {
         // The block number is not part of the key: it must be recoverable from
         // the cut (every lot's `block`, the warnings' prefix) to be renumbered.
         if cut.parcels.iter().any(|p| p.block != bi)
@@ -3975,7 +4053,11 @@ impl StoredCut {
         if !Self::indices(&mut cut).all(|s| *s == 0 || streets.binary_search(s).is_ok()) {
             return;
         }
-        BLOCK_CUTS.put(key, std::sync::Arc::new(StoredCut { bi, streets, cut }));
+        let stored = StoredCut { bi, streets, cut, coverage: std::sync::OnceLock::new() };
+        if let Some(c) = coverage {
+            let _ = stored.coverage.set(c);
+        }
+        BLOCK_CUTS.put(key, std::sync::Arc::new(stored));
     }
     /// The cut renumbered onto the current block and streets (same key, so same
     /// street count).
@@ -4071,6 +4153,27 @@ pub(super) fn generate(
     cfg: &ParcelConfig,
     morph: &Morph,
 ) -> Result<Partition, String> {
+    generate_cut(seed, layout, cfg, morph, true)
+}
+/// `generate` without the coverage accounts of the cut blocks (`Coverage`):
+/// the same lots and the same warnings but the residual-coverage one, and
+/// diagnostics without covered, residual and overlap areas. For probes that
+/// read only the lots and their allocation.
+pub(super) fn generate_probe(
+    seed: &str,
+    layout: &Layout,
+    cfg: &ParcelConfig,
+    morph: &Morph,
+) -> Result<Partition, String> {
+    generate_cut(seed, layout, cfg, morph, false)
+}
+fn generate_cut(
+    seed: &str,
+    layout: &Layout,
+    cfg: &ParcelConfig,
+    morph: &Morph,
+    covered: bool,
+) -> Result<Partition, String> {
     let mut result = Partition {
         config: Some(cfg.clone()),
         programme: None,
@@ -4086,9 +4189,17 @@ pub(super) fn generate(
     let mut laps = super::network::Lap::new("parcels.cut");
     let index = FrontageIndex::new(layout);
     laps.lap("frontage-index");
+    // The first environment entry of each block, found in one pass.
+    let mut first_environment: Vec<Option<&super::programme::BlockEnvironment>> = vec![None; layout.blocks.len()];
+    for e in layout.programme.iter().flat_map(|pr| &pr.environment) {
+        if let Some(slot) = first_environment.get_mut(e.block)
+            && slot.is_none()
+        {
+            *slot = Some(e);
+        }
+    }
     let road_pressures = super::composition::gate_pressures(layout, occupation_pressures(layout).into_iter()
-        .enumerate().map(|(bi,p)|layout.programme.as_ref()
-            .and_then(|pr|pr.environment.iter().find(|e|e.block==bi)).map_or(p,|e|e.pressure)).collect());
+        .enumerate().map(|(bi,p)|first_environment.get(bi).copied().flatten().map_or(p,|e|e.pressure)).collect());
     // Quarters and blocks have their own character around the access
     // gradient (« des quartiers variables »): a denser, taller quarter here,
     // a looser one there, never a uniform ring. One draw per quarter and per
@@ -4472,15 +4583,22 @@ pub(super) fn generate(
             });
         let mut replayed = None;
         if let Some((key, streets)) = &probe {
-            if let Some(hit) = BLOCK_CUTS.get(key) && let Some(cut) = hit.replay(streets, bi) {
+            if let Some(hit) = BLOCK_CUTS.get(key) && let Some(mut cut) = hit.replay(streets, bi) {
                 MEMO_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if !verify_memo() { return cut; }
+                if !verify_memo() {
+                    if covered {
+                        // The replayed lots have the stored shapes, in order.
+                        let coverage = *hit.coverage.get_or_init(|| Coverage::of(&cut.parcels, &block.shape));
+                        coverage.apply(&mut cut, bi);
+                    }
+                    return cut;
+                }
                 replayed = Some(cut);
             } else {
                 MEMO_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        let cut = (|| -> BlockCut {
+        let mut cut = (|| -> BlockCut {
         let mut out = BlockCut::default();
         let mut rng = root.fork(&fork_label);
         let mut axis = unit(block.axis);
@@ -4951,33 +5069,16 @@ pub(super) fn generate(
                 p.reason = "cadastral-operator-failed".into();
             }
         }
-        // Boolean pieces retain exclusions as holes; an unresolved hole is
-        // never replaced by a filled exterior ring.
+        // The coverage accounts (`Coverage`) are added after the cut, by the
+        // published cadastre only; their warning goes here.
         let actual: f64 = parcels.iter().map(|p| area(&p.shape)).sum();
         let expected = area(&block.shape);
-        let merged = super::geometry::union(
-            &parcels
-                .iter()
-                .map(|p| p.shape.clone())
-                .collect::<Vec<_>>(),
-        );
-        let coverage = merged.iter().flat_map(|s| super::geometry::intersection(&block.shape, s)).map(|s| area(&s)).sum::<f64>();
-        let union_area = merged.iter().map(area).sum::<f64>();
-        let residual = (expected - coverage).max(0.0) + (union_area - coverage).max(0.0);
-        let overlap = (actual - union_area).max(0.0);
-        out.diagnostics.covered_area += coverage;
-        out.diagnostics.residual_area += residual;
-        out.diagnostics.overlap_area += overlap;
         out.diagnostics.unserved_area += parcels
             .iter()
             .filter(|p| p.access.as_ref().is_some_and(|a| a.kind == "unserved"))
             .map(|p| area(&p.shape))
             .sum::<f64>();
-        if residual + overlap > expected.max(1.0) * 1e-5 {
-            out.warnings.push(format!(
-                "Îlot {bi} : couverture résiduelle {residual:.3} m², chevauchement {overlap:.3} m²"
-            ));
-        }
+        out.uncovered = Some(out.warnings.len());
         if (actual - expected).abs() > expected.max(1.0) * 1e-5 {
             out.warnings.push(format!(
                 "Block {bi}: cadastral area residual {:.3} m²",
@@ -5018,14 +5119,25 @@ pub(super) fn generate(
             let text = |c: &BlockCut| serde_json::to_string(&(&c.parcels, &c.warnings, &c.diagnostics)).unwrap();
             if text(&r) != text(&cut) { eprintln!("MEMO MISMATCH block {bi}"); }
         }
+        let coverage = (covered && cut.uncovered.is_some()).then(|| Coverage::of(&cut.parcels, &block.shape));
         if let Some((key, streets)) = probe {
-            StoredCut::store(key, streets, &cut, bi);
+            StoredCut::store(key, streets, &cut, bi, coverage);
+        }
+        if let Some(c) = coverage {
+            c.apply(&mut cut, bi);
         }
         cut
     });
     laps.lap("blocks");
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!("  parcels.cut.memo: hits={} misses={}", MEMO_HITS.swap(0, std::sync::atomic::Ordering::Relaxed), MEMO_MISSES.swap(0, std::sync::atomic::Ordering::Relaxed));
+        // Summed over the threads that cut blocks in parallel: time spent in
+        // `half`, not wall time.
+        eprintln!(
+            "  parcels.cut.half: calls={} ms={:.0}",
+            HALF_CALLS.swap(0, std::sync::atomic::Ordering::Relaxed),
+            HALF_NANOS.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1e6,
+        );
     }
     for cut in blocks {
         result.parcels.extend(cut.parcels);
@@ -5320,6 +5432,21 @@ mod tests {
                 serde_json::to_value(&result).unwrap(),
                 serde_json::to_value(&replay).unwrap()
             );
+            // A probe cut has the same lots and warnings, without the coverage
+            // accounts; a published cut served from its memo entry is the
+            // published cut computed afresh.
+            let probe = generate_probe("urban-parcel-regression", &layout, &cfg, &morph).unwrap();
+            assert_eq!(serde_json::to_value(&probe.parcels).unwrap(), serde_json::to_value(&result.parcels).unwrap(), "{op}");
+            assert_eq!(probe.warnings, result.warnings, "{op}");
+            let (p, r) = (probe.diagnostics.unwrap(), result.diagnostics.clone().unwrap());
+            assert_eq!((p.covered_area, p.residual_area, p.overlap_area), (0.0, 0.0, 0.0), "{op}");
+            assert_eq!(p.unserved_area.to_bits(), r.unserved_area.to_bits(), "{op}");
+            {
+                let _scope = super::super::probe_cache::Scope::open();
+                generate_probe("urban-parcel-regression", &layout, &cfg, &morph).unwrap();
+                let served = generate("urban-parcel-regression", &layout, &cfg, &morph).unwrap();
+                assert_eq!(serde_json::to_value(&served).unwrap(), serde_json::to_value(&result).unwrap(), "{op}");
+            }
             assert!(result.warnings.is_empty(), "{op}: {:?}", result.warnings);
             assert!(
                 (result.parcels.iter().map(|p| area(&p.shape)).sum::<f64>() - area(&shape)).abs()

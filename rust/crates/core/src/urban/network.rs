@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod site_options;
 #[path = "network_policy.rs"]
 mod policy;
-pub(super) use policy::{bank_dead_ends, junction_triangles, wall_approaches};
+pub(super) use policy::{bank_dead_ends, junction_triangles};
 pub(super) use site_options::{clean_options, narrow_options};
 
 type Key = (i64, i64);

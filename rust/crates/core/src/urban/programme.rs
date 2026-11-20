@@ -1937,6 +1937,23 @@ const LONGHOUSE_PERSONS: f64 = 20.0;
 /// longhouse, a maloca) holds what that floor gives at the culture's floor per household;
 /// any other longhouse holds `LONGHOUSE_PERSONS` at the culture's household size (Norse:
 /// two households of eight). A declared `campHouseholds` replaces both (`allocate`).
+/// Whether applying the parcel configuration to the layout (`allocate`) leaves
+/// it as it is: same morphology inputs, culture and zones. Values compare by
+/// their exact bits or JSON text, so `-0.0` against `0.0` counts as a change.
+fn applies_unchanged(layout: &Layout, cfg: &super::ParcelConfig) -> bool {
+    let Some(config) = &layout.config else {
+        return false;
+    };
+    let json = |v: &serde_json::Value| serde_json::to_vec(v).expect("serialisable parameters");
+    config.preset == cfg.preset
+        && config.recipe == cfg.recipe
+        && config.zone == cfg.zone
+        && config.density.to_bits() == cfg.density.to_bits()
+        && json(&config.params) == json(&cfg.params)
+        && (cfg.culture == "site"
+            || (layout.culture == cfg.culture && layout.phases.iter().all(|phase| phase.culture == cfg.culture)))
+        && (cfg.zone == "auto" || layout.blocks.iter().all(|block| block.zone == cfg.zone))
+}
 fn roof_households(house: f64, occupancy: &roles::Occupancy) -> f64 {
     if house > 0.0 {
         (house / occupancy.floor_per_household.max(1.0)).floor().max(1.0)
@@ -1981,8 +1998,10 @@ pub(super) fn allocate_from_reference(
     };
     // The parcel stage can deliberately override cultural/default morphology.
     // Resolve allocation against those applied inputs without editing its parent.
+    // The layout is cloned only when the parcel configuration changes one of
+    // these fields; otherwise the applied layout is the layout itself.
     let mut applied = std::borrow::Cow::Borrowed(layout);
-    if let Some(cfg) = &partition.config {
+    if let Some(cfg) = partition.config.as_ref().filter(|cfg| !applies_unchanged(layout, cfg)) {
         let local = applied.to_mut();
         let config = local
             .config

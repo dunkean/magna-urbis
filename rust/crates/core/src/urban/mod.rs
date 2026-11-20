@@ -161,6 +161,9 @@ fn is_phase_density(v: &str) -> bool {
 fn is_one(v: &f64) -> bool {
     *v == 1.0
 }
+fn is_quarter(v: &f64) -> bool {
+    *v == 0.25
+}
 fn is_half(v: &f64) -> bool {
     *v == 0.5
 }
@@ -713,7 +716,9 @@ pub struct LayoutConfig {
     pub river_spur_filter: bool,
     /// Keep bridge decks outside the navigable water in front of a port.
     pub harbour_bridge_clearance: bool,
-    /// Collapse grazing wall approaches onto a single, spaced gate passage.
+    /// Not read any more: town gates are decided with their circuit and the
+    /// curtain turns square to their streets (`fortification`'s gate
+    /// passages). Kept while the bridge configuration still sends the key.
     pub wall_gate_policy: bool,
     /// Remove short redundant triangular links before cutting the blocks.
     pub small_road_loops: bool,
@@ -757,6 +762,17 @@ pub struct LayoutConfig {
     pub road_remnants: bool,
     /// A loose street end whose ribbon reaches another street joins it, before the blocks are cut.
     pub road_end_joins: bool,
+    /// Share (0 to 1) of the street tidying decisions left as first drawn, so
+    /// that a town keeps some of the mess of a place patched over time: a
+    /// road that was there, works done in a hurry, tidied later. 0 tidies
+    /// every one, 1 none. Each decision draws once from its own seeded stream,
+    /// keyed on the thing decided (never on thread or hash order). Real faults
+    /// (a street through a wall without a gate, a gate without a street, a
+    /// loose diversion) are always fixed. First rule to use it: a town gate
+    /// whose street is not square to the curtain keeps its skew instead of a
+    /// squared gate front (`fortification`'s gate passages).
+    #[serde(skip_serializing_if = "is_quarter")]
+    pub street_improvisation: f64,
     /// Small places (under ~650 inhabitants) redraw for capacity only past 8 missing households.
     pub small_place_capacity: bool,
     /// V7: prune unused local paths as well as streets; retain necessary through routes.
@@ -1017,6 +1033,7 @@ impl Default for LayoutConfig {
             road_mouths: false,
             road_remnants: false,
             road_end_joins: false,
+            street_improvisation: 0.25,
             small_place_capacity: false,
             street_frontage: false,
             natural_camp_approaches: false,
@@ -1971,6 +1988,17 @@ pub fn generate_quarters(
             laps.lap("trim.prepare");
             access::refine(&mut layout, config, &morph, surface);
             laps.lap("access.refine");
+            // The gates were decided with the circuits: a street the quarters drew across a
+            // curtain elsewhere ends at the wall, before the allocation reads the plan.
+            fortification::enforce(&mut layout, surface);
+            // The loose nubs left past a junction (a gate street that stops a few metres
+            // beyond the wall, a street cut at a curtain) go now, as the finish would take
+            // them: the trim must not count a lot as served by a stub that a later pass removes.
+            if config.polish_road_ends && !layout.enclosures.is_empty() {
+                let gates: Vec<Point> = layout.enclosures.iter().flat_map(|e| e.gates.iter().copied()).collect();
+                network::polish_ends(&mut layout.streets, &gates, config.road_remnants);
+            }
+            laps.lap("fortification.enforce");
             // Blocks nobody builds on go back to the fields, with their streets.
             let trimmed = layout.structure.as_ref().is_some_and(|s| s.mechanism != "legacy");
             // The lots the trim's allocation built: town circuits are fitted to them.
@@ -1979,8 +2007,6 @@ pub fn generate_quarters(
                 built_lots = Some(trim::run(seed, &mut layout, config, original, site.population, surface).1);
                 laps.lap("trim.run.1");
             }
-            // The plan as the trim left it.
-            let trimmed_plan = trim::signature(&layout);
             // Fortifications follow the final streets and blocks.
             macroplan::harbour::open_gates(&mut layout);
             laps.lap("open_gates");
@@ -1988,12 +2014,14 @@ pub fn generate_quarters(
             laps.lap("fit_enclosures.1");
             composition::join_side_by_side(&mut layout, surface);
             laps.lap("join_side_by_side");
+            // A circuit without works is a curtain the fit drew back or joined (or a forced
+            // footprint): `settle` decides its gates and closes the streets it now crosses.
+            let rebuilt = layout.enclosures.iter().any(|e| e.style.is_empty() && e.path.len() >= 4);
             fortification::settle(&mut layout, surface);
             laps.lap("fortification.settle.1");
-            // Wall clipping can expose new terminal chains or change lot access:
-            // the trim runs again only when the gates and walls changed the
-            // blocks or the streets it read.
-            if !layout.enclosures.is_empty() && trimmed && trim::signature(&layout) != trimmed_plan {
+            // The first trim read the plan with its gates decided: it runs again only when a
+            // circuit was rebuilt after it, which cuts streets and can leave lots without access.
+            if rebuilt && trimmed {
                 let (released, built_lots) = trim::run(seed, &mut layout, config, original, site.population, surface);
                 laps.lap("trim.run.2");
                 // The trim gave land back with its streets: a circuit that still
@@ -2134,8 +2162,9 @@ pub fn generate_quarters(
         // A town whose strict house gates refuse most of its land (a user-placed
         // town on a mountain flank) relaxes its slope gates. The level is read
         // from the terrain before the first pass (`footprint::slope_relax_ahead`):
-        // the lowest at which its houses may use half of the land it would take.
-        // Ordinary ground reads 0 and keeps the strict pass, unchanged.
+        // the lowest at which its houses may use half of the land it would take
+        // and that land houses its households. Ordinary ground reads 0 and
+        // keeps the strict pass, unchanged.
         // A lone farm (or other isolated structure) relaxes the same gates: on a
         // hill flank its single block would otherwise be refused and the place
         // stand empty (`housable_share` reads its reservation).
@@ -2190,9 +2219,13 @@ pub fn generate_quarters(
         }
         // Safety net: when the first layout still leaves its houses less than
         // half of its land, the whole town is laid out again with the gates
-        // relaxed further, step by step, until they suffice or are open.
+        // relaxed further, step by step, until they suffice or are open. The
+        // layout kept houses the most households (the capacity plan's
+        // shortfall on its final blocks), then leaves its houses the most land.
         if !sloped && relaxable {
+            let shortfall = |l: &Layout| footprint::capacity::of(l).map_or(0.0, |p| p.shortfall);
             let mut share = housable_share(&layout);
+            let mut missing = shortfall(&layout);
             let mut chosen = ahead;
             for relax in profiles::SLOPE_RELAX_STEPS.into_iter().filter(|&relax| relax > ahead) {
                 if share >= profiles::SLOPE_RELAX_GOAL {
@@ -2200,14 +2233,14 @@ pub fn generate_quarters(
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 if std::env::var("URBAN_PROFILE").is_ok() {
-                    eprintln!("  slope_relax.fallback: {relax} (housable share {share:.2})");
+                    eprintln!("  slope_relax.fallback: {relax} (housable share {share:.2}, households missing {missing:.0})");
                 }
                 let mut relaxed = config.clone();
                 relaxed.programme.slope_relax = relax;
                 let Ok(next) = lay(&relaxed) else { continue };
-                let next_share = housable_share(&next);
-                if next_share > share {
-                    (layout, share, chosen) = (next, next_share, relax);
+                let (next_share, next_missing) = (housable_share(&next), shortfall(&next));
+                if next_missing < missing || (next_missing == missing && next_share > share) {
+                    (layout, share, missing, chosen) = (next, next_share, next_missing, relax);
                 }
             }
             if chosen > 0.0 {
@@ -2344,6 +2377,7 @@ fn housable_share(layout: &Layout) -> f64 {
 /// the lots, one allocation and the yard consolidation. The parcel edits, the
 /// second allocation and the final lot reconciliation of `generate_parcels`
 /// change neither which blocks hold a building nor the yards they keep.
+
 pub(super) fn probe_parcels(seed: &str, layout: &Layout) -> Result<Partition, String> {
     let config = ParcelConfig::default();
     let formal = shanty::formal_layout(layout);
@@ -2360,7 +2394,7 @@ pub(super) fn probe_parcels(seed: &str, layout: &Layout) -> Result<Partition, St
     )?;
     let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
     let mut laps = network::Lap::new("parcels.probe");
-    let mut partition = parcels::generate(&key_seed, layout, &config, &morph)?;
+    let mut partition = parcels::generate_probe(&key_seed, layout, &config, &morph)?;
     laps.lap("generate");
     programme::allocate(layout, &mut partition);
     laps.lap("allocate");

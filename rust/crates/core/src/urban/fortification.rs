@@ -503,7 +503,7 @@ mod cave;
 pub(super) use cave::cave_circuits;
 #[path = "fortification_gates.rs"]
 mod gate_budget;
-pub(super) use gate_budget::drop_dead_gates;
+pub(super) use gate_budget::{decide as decide_gates, divert, drop_dead_gates, Circuit};
 pub(super) use extension::{attach, lopsided, trim_shared, dedupe_shared, inner_gates, shared_length};
 
 // ---------------------------------------------------------------- vectors
@@ -3375,20 +3375,23 @@ fn continuous_moat(ditch: Vec<Work>, path: &[Point], surface: Surface<'_>) -> Ve
     if covered < MIN_MOAT_SHARE * dry { vec![] } else { kept }
 }
 
-/// A crossing within this distance (m) of a gate is that gate's street.
+/// A crossing within this distance (m) of a gate or of a water passage is that gate's street.
 const GATE_REACH: f64 = 8.0;
-/// Invariant (every crossing of a curtain is a gate): a street that is neither
-/// a main street (rank 0–1) nor a regional road, and crosses a curtain away
-/// from its gates and its water passages, opens no bare gap in the wall: it is
-/// split there, each side ending clear of the curtain body (`stop_at_curtains`
-/// then pulls the ends out of the berm and the moat). The quarter on each side
-/// keeps its own streets; the town is entered through the gates.
-fn close_minor_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure]) {
-    close_crossings(streets, enclosures, false);
-}
-/// `close_minor_crossings`; with `main_too`, main roads as well (all but the water crossings: bridges,
-/// quays…): after `limit_gates` a road crossing where no gate is kept ends at the wall too.
-fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too: bool) {
+/// Invariant (every crossing of a curtain is a gate): a street that crosses a
+/// curtain away from its gates and its water passages opens no bare gap in the
+/// wall: it is split there, each side ending clear of the curtain body
+/// (`stop_at_curtains` then pulls the ends out of the berm and the moat). The
+/// quarter on each side keeps its own streets; the town is entered through the
+/// gates. Decks and waterside ways pass (`gate_budget::water_way`). With
+/// `main_too` every other street is held to it; without, only the lesser ones
+/// (`gate_budget::priority` under 2) and every bridge ramp: a main road laid
+/// after the gates were decided keeps its crossing, and `reconcile_gates` opens
+/// its gate.
+///
+/// The ramp of a lesser street that the wall cuts before the trims (`main_too`)
+/// leads to its bridge on one side only: its pieces are ordinary streets from
+/// then on, which the trims keep or prune by the doors on them like any other.
+fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too: bool, surface: Surface<'_>) {
     let walls: Vec<(Near, f64, &Enclosure)> = enclosures
         .iter()
         .filter(|e| !e.style.is_empty() && e.path.len() >= 4)
@@ -3405,12 +3408,9 @@ fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too
         .collect();
     let mut out: Vec<Street> = Vec::with_capacity(streets.len());
     for mut s in std::mem::take(streets) {
-        let water = matches!(
-            s.role.as_str(),
-            "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "boardwalk" | "landing" | "mole"
-        );
-        let minor = !water && (main_too || s.rank >= 2 && !matches!(s.role.as_str(), "regional" | "approach" | "outbound"));
-        if !minor || s.path.len() < 2 {
+        let lesser = gate_budget::priority(&s) < 2;
+        let held = !gate_budget::water_way(&s, false) && (main_too || s.role == "approach" || lesser && s.role != "outbound");
+        if !held || s.path.len() < 2 {
             out.push(s);
             continue;
         }
@@ -3438,7 +3438,8 @@ fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too
                         continue;
                     }
                     if e.gates.iter().any(|&q| dist(q, x) < GATE_REACH)
-                        || passages.iter().any(|&(p, q)| g::distance(x, p, q).0 < 25.0)
+                        || passages.iter().any(|&(p, q)| g::distance(x, p, q).0 < GATE_REACH)
+                        || gate_budget::water_way(&s, surface.wet(x))
                     {
                         continue;
                     }
@@ -3487,7 +3488,8 @@ fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too
             }
             path.push(p1);
             widths.push(w1);
-            out.push(Street { path, widths, rank: s.rank, role: s.role.clone() });
+            let role = if main_too && lesser && s.role == "approach" { if s.rank <= 2 { "street" } else { "lane" } } else { s.role.as_str() };
+            out.push(Street { path, widths, rank: s.rank, role: role.into() });
         }
     }
     *streets = out;
@@ -3645,10 +3647,8 @@ fn reconcile_gates(e: &mut Enclosure, streets: &[Street], _surface: Surface<'_>)
 pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
     let mut laps = super::network::Lap::new("sync_gates");
     let old_masses = gate_masses(layout);
-    super::network::wall_approaches(layout, surface);
-    laps.lap("wall_approaches");
     // Late streets (bridgeheads, bank links) obey the same crossing rule.
-    close_minor_crossings(&mut layout.streets, &layout.enclosures);
+    close_crossings(&mut layout.streets, &layout.enclosures, false, surface);
     stop_at_curtains(&mut layout.streets, &mut layout.enclosures);
     laps.lap("close_minor_crossings");
     let streets = std::mem::take(&mut layout.streets);
@@ -3710,6 +3710,19 @@ fn release_gate_reserve(layout: &mut super::Layout, old_masses: Vec<Shape>) -> V
     freed
 }
 
+/// Invariant (a curtain is crossed only at its gates) on the plan the quarters
+/// drew: the gates were decided on the armature (`gate_budget::decide`); a
+/// street drawn since that crosses a curtain elsewhere ends at the wall on both
+/// sides. Called before the first trim, so the allocation reads the streets the
+/// walls leave.
+pub(super) fn enforce(layout: &mut super::Layout, surface: Surface<'_>) {
+    if layout.enclosures.iter().all(|e| e.style.is_empty() || e.path.len() < 4) {
+        return;
+    }
+    close_crossings(&mut layout.streets, &layout.enclosures, true, surface);
+    stop_at_curtains(&mut layout.streets, &mut layout.enclosures);
+}
+
 /// Final pass, once streets, blocks and access lanes are final
 /// (`generate_quarters`): `build`'s rules against the final town, so they
 /// hold on the layout that is drawn, whatever later stages added or pruned.
@@ -3724,7 +3737,8 @@ fn release_gate_reserve(layout: &mut super::Layout, old_masses: Vec<Shape>) -> V
 ///   (pieces under `MIN_BLOCK_PIECE` m² return to open land).
 pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
     let old_masses = gate_masses(layout);
-    super::network::wall_approaches(layout, surface);
+    // Ribbons of the diversions laid here, which the blocks give up like the reserve.
+    let mut extra_mural: Vec<Shape> = vec![];
     // Forced footprint circuits enter from the macroplan without detailed
     // works. They obey the same water, reserve and gate rules as historical ones.
     if layout.enclosures.iter().any(|e| e.style.is_empty() && e.path.len()>=4) {
@@ -3739,6 +3753,16 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
             let mut style = resolve(&e.kind,&Inputs {culture:&layout.culture,pop,period:&cfg.programme.period,
                 state:"",archetype:&layout.archetype,forced:&cfg.fortification_style,relief},&rng,&mut layout.warnings);
             style.options(&cfg);
+            // Its land gates are decided like those of a traced circuit, on the streets as they
+            // stand: a curtain the fit drew back turns square to the streets it now crosses. A gate
+            // point it came with that is no street crossing (a regional road ending on it) stays.
+            let crossed = super::composition::gates(&e.path,&layout.streets);
+            let squared = !matches!(style.id.as_str(),"bastioned"|"wengcheng") && e.path.len()>6;
+            let (wall,kept,dropped) = gate_budget::decide(&Shape {outer:e.path[..e.path.len()-1].to_vec(),holes:vec![]},&mut layout.streets,
+                &Circuit {pop,purpose:&e.purpose,kind:&e.kind,curtain_width:style.curtain_width,moat:style.ditch_width[1],
+                    grade:cfg.max_street_grade,squared,key:&layout.key,improvisation:cfg.street_improvisation},surface);
+            e.path = closed(&wall.outer);
+            e.gates.retain(|&q|crossed.iter().all(|&c|dist(c,q)>=8.0));
             for p in super::composition::gates(&e.path,&layout.streets) {
                 if e.gates.iter().all(|&g|dist(g,p)>=8.0) {e.gates.push(p);}
             }
@@ -3748,14 +3772,18 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
             // Access lanes added this late would change the road network.
             style.attached = 0.0;
             build(e,land,&banks,&layout.streets,surface,&style,pop,&predicted,&rng);
+            let laid = layout.streets.len();
+            gate_budget::divert(e,&kept,&dropped,&mut layout.streets,surface,cfg.max_street_grade);
+            // The blocks give up each diversion and the strip between it and the moat (4 m + margin):
+            // no unbuildable sliver is left against the reserve; the land beyond fronts the new road.
+            extra_mural.extend(layout.streets[laid..].iter().flat_map(|s|g::ribbon(&s.path,&vec![s.widths[0]+10.0;s.path.len()])));
         }
     }
     if layout.enclosures.iter().all(|e| e.style.is_empty()) {
         return;
     }
-    // Gate budget (population): the other crossings close; their main roads go round outside.
-    let extra_mural = gate_budget::limit_gates(layout);
-    close_crossings(&mut layout.streets, &layout.enclosures, true);
+    // The gates are decided: a street that crosses a curtain elsewhere ends at the wall.
+    close_crossings(&mut layout.streets, &layout.enclosures, true, surface);
     stop_at_curtains(&mut layout.streets, &mut layout.enclosures);
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
@@ -3931,7 +3959,7 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
     let freed = release_gate_reserve(layout, old_masses);
     let reserve_all: Vec<_> = Cut::new(freed).from(reserve_all.into_iter().map(|(s, _)| s).collect()).into_iter()
         .map(|s| { let bb = g::bbox(&s); (s, bb) }).collect();
-    // Blocks give up the extra-mural roads too (their houses would stand on them).
+    // Blocks give up the diversions too (their houses would stand on them).
     let mut reserve_all = reserve_all;
     reserve_all.extend(extra_mural.into_iter().map(|s| { let bb = g::bbox(&s); (s, bb) }));
     if reserve_all.is_empty() {
@@ -4097,7 +4125,8 @@ mod tests {
         let path = octagon();
         let e = Enclosure { path: path.clone(), kind: "wall".into(), style: "curtain".into(), curtain_width_m: 3.0, ..Default::default() };
         let mut streets = vec![street(&[(1000.0, 1000.0), (1500.0, 1020.0)], 2, 4.0), street(&[(1000.0, 1000.0), (1000.0, 1500.0)], 1, 8.0)];
-        close_minor_crossings(&mut streets, std::slice::from_ref(&e));
+        let (h, w) = (vec![0.0; N * N], vec![0; N * N]);
+        close_crossings(&mut streets, std::slice::from_ref(&e), false, surface(&h, &w));
         let crosses = |s: &Street| s.path.windows(2).any(|w| path.windows(2).any(|c| g::segment_hit(w[0], w[1], c[0], c[1]).is_some()));
         let minor: Vec<_> = streets.iter().filter(|s| s.rank == 2).collect();
         assert_eq!(minor.len(), 2, "the minor street is split in two");
@@ -4109,7 +4138,7 @@ mod tests {
         let mut through = vec![street(&[(1000.0, 1000.0), (1500.0, 1000.0)], 2, 4.0)];
         let hit = through[0].path.windows(2).flat_map(|w| path.windows(2).filter_map(|c| g::segment_hit(w[0], w[1], c[0], c[1]).map(|h| h.1))).next().unwrap();
         let gated = Enclosure { gates: vec![hit], ..e.clone() };
-        close_minor_crossings(&mut through, std::slice::from_ref(&gated));
+        close_crossings(&mut through, std::slice::from_ref(&gated), false, surface(&h, &w));
         assert_eq!(through.len(), 1);
     }
 

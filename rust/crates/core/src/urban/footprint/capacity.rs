@@ -25,7 +25,7 @@ use super::super::{
     Site, UrbanMetrics, UrbanStructure, catalogue, composition, roles,
 };
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Lots the trades and shops take on ordinary plots, per housing lot (the
 /// former fixed 12 % margin less its 5 % housing part). The housing margin
@@ -351,7 +351,7 @@ fn run(
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let mut partition =
-        super::super::parcels::generate(seed, &layout, &parcel_cfg, &fallback).ok()?;
+        super::super::parcels::generate_probe(seed, &layout, &parcel_cfg, &fallback).ok()?;
     #[cfg(not(target_arch = "wasm32"))]
     let cut = tick.elapsed().as_secs_f64() * 1000.0;
     super::super::programme::allocate(&layout, &mut partition);
@@ -400,8 +400,88 @@ pub(in crate::urban) struct Yield {
     /// Mean area of the probe's blocks (m²).
     pub block: f64,
 }
-fn cache() -> &'static Mutex<HashMap<String, Yield>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Yield>>> = OnceLock::new();
+const PROBE_SEED: &str = "capacity-probe";
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct ProbeKey {
+    culture: String,
+    donor: String,
+    recipe: String,
+    zone: String,
+    population: u32,
+    densify: u64,
+    pressure: u64,
+    offset: u64,
+    density: u64,
+    access: bool,
+    road_mouths: bool,
+    grades: [u64; 3],
+    allow_stairs: bool,
+    period: String,
+    intent: String,
+    mode: String,
+    plot_style: Option<String>,
+    old_enclosure_citadel: bool,
+    preset: String,
+    layout_recipe: String,
+    camp_growth: String,
+    camp_ring_wobble: Option<u64>,
+    tidy_off: bool,
+}
+
+impl ProbeKey {
+    fn new(
+        culture: &str,
+        donor: &str,
+        epoch: &Epoch,
+        t: f64,
+        cfg: &LayoutConfig,
+        population: u32,
+    ) -> Self {
+        // sheet::plots draws once from the synthetic layout's only phase.
+        let plots = &cfg.style_sheet.plots;
+        let plot_style = (!plots.is_empty())
+            .then(|| plots.pick(PROBE_SEED, PROBE_SEED, "phase0", 0, 0, &epoch.zone))
+            .flatten()
+            .filter(|&c| c != culture && catalogue()["cultures"][c].is_object())
+            .map(str::to_owned);
+        Self {
+            culture: culture.into(),
+            donor: donor.into(),
+            recipe: epoch.recipe.clone(),
+            zone: epoch.zone.clone(),
+            population,
+            densify: t.to_bits(),
+            pressure: ((epoch.pressure * 20.0).round() / 20.0).to_bits(),
+            offset: ((epoch.offset / 50.0).round() * 50.0).to_bits(),
+            density: cfg.density.to_bits(),
+            access: cfg.access_mode != "none",
+            road_mouths: cfg.road_mouths,
+            grades: [
+                cfg.max_street_grade.to_bits(),
+                cfg.max_lane_grade.to_bits(),
+                cfg.max_stair_grade.to_bits(),
+            ],
+            allow_stairs: cfg.allow_stairs,
+            period: cfg.programme.period.clone(),
+            intent: cfg.programme.intent.clone(),
+            mode: cfg.programme.mode.clone(),
+            plot_style,
+            old_enclosure_citadel: cfg.old_enclosure_citadel,
+            // The parcel stage also checks the original preset for organic camps.
+            preset: cfg.preset.clone(),
+            layout_recipe: cfg.recipe.clone(),
+            camp_growth: cfg.camp_growth.clone(),
+            camp_ring_wobble: cfg.camp_ring_wobble.map(f64::to_bits),
+            tidy_off: std::env::var("URBAN_TIDY").is_ok_and(|v| v == "off"),
+        }
+    }
+}
+
+type ProbeCache = Mutex<HashMap<ProbeKey, Arc<OnceLock<Yield>>>>;
+
+fn cache() -> &'static ProbeCache {
+    static CACHE: OnceLock<ProbeCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 fn flat(block: usize, pressure: f64) -> BlockEnvironment {
@@ -429,38 +509,40 @@ pub(in crate::urban) fn probe(
     cfg: &LayoutConfig,
     population: u32,
 ) -> Yield {
-    let pressure = (epoch.pressure * 20.0).round() / 20.0;
-    let offset = (epoch.offset / 50.0).round() * 50.0;
-    let key = format!(
-        "{culture}\u{1}{donor}\u{1}{}\u{1}{}\u{1}{t:.3}\u{1}{pressure}\u{1}{offset}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
-        epoch.recipe,
-        epoch.zone,
-        cfg.density,
-        cfg.programme.period,
-        population < 500,
-        crate::settlements::demographics::below(population, "town"),
-        // Households per town house and per dense-core lot follow the
-        // population (`programme::household_capacity`): a few cached steps of
-        // each blend instead of one yield for every town.
-        (roles::town_house_share(population) * 4.0).round() as u8,
-        (roles::dense_core_share(population) * 8.0).round() as u8,
-        cfg.access_mode,
-    );
-    if let Some(y) = cache().lock().ok().and_then(|c| c.get(&key).copied()) {
-        return y;
-    }
-    let y = probe_uncached(culture, donor, epoch, t, pressure, offset, cfg, population)
-        .unwrap_or_default();
-    if std::env::var("URBAN_CAPACITY_DEBUG").is_ok() {
-        eprintln!(
-            "probe {culture} donor={donor} {} {} t={t:.2} p={pressure} r={offset}: {y:?}",
-            epoch.recipe, epoch.zone
-        );
-    }
-    if let Ok(mut c) = cache().lock() {
-        c.insert(key, y);
-    }
-    y
+    // The probe quarter is a reference tissue: the retouches of the town's own
+    // quarters do not apply to it, or retouching quarter 0 would recalibrate
+    // the whole town.
+    let reference;
+    let cfg = if cfg.overrides.quarters.is_empty() {
+        cfg
+    } else {
+        let mut plain = cfg.clone();
+        plain.overrides.quarters.clear();
+        reference = plain;
+        &reference
+    };
+    let key = ProbeKey::new(culture, donor, epoch, t, cfg, population);
+    let pressure = f64::from_bits(key.pressure);
+    let offset = f64::from_bits(key.offset);
+    let cell = cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(key)
+        .or_default()
+        .clone();
+    // Parallel probes can share a key. Keep the nested maps serial while
+    // filling its cell so a worker cannot steal a job waiting on itself.
+    *cell.get_or_init(|| super::super::par::holding_cell(|| {
+        let y = probe_uncached(culture, donor, epoch, t, pressure, offset, cfg, population)
+            .unwrap_or_default();
+        if std::env::var("URBAN_CAPACITY_DEBUG").is_ok() {
+            eprintln!(
+                "probe {culture} donor={donor} {} {} t={t:.2} p={pressure} r={offset}: {y:?}",
+                epoch.recipe, epoch.zone
+            );
+        }
+        y
+    }))
 }
 #[allow(clippy::too_many_arguments)]
 fn probe_uncached(
@@ -508,7 +590,7 @@ fn probe_uncached(
         zone,
         population,
         offset,
-        "capacity-probe",
+        PROBE_SEED,
     );
     let blocks: Vec<Block> = blocks.into_iter().filter(|b| b.kind == "block").collect();
     if blocks.is_empty() {
@@ -531,7 +613,7 @@ fn probe_uncached(
             ..cfg.clone()
         }),
         programme: None,
-        key: "capacity-probe".into(),
+        key: PROBE_SEED.into(),
         culture: culture.into(),
         center,
         quarters: vec![Quarter {
@@ -564,7 +646,7 @@ fn probe_uncached(
         claim: Default::default(),
     };
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run(layout, environment, "capacity-probe", cfg, population)
+        run(layout, environment, PROBE_SEED, cfg, population)
     }))
     .ok()
     .flatten()?;
@@ -747,6 +829,30 @@ pub(in crate::urban) fn households(culture: &str, population: u32) -> f64 {
 mod camp_capacity_tests {
     use super::*;
     #[test]
+    fn probe_ignores_the_retouches_of_the_town_quarters() {
+        let epoch = Epoch {
+            zone: "core".into(),
+            recipe: "core".into(),
+            share: 1.0,
+            pressure: 0.7,
+            offset: 100.0,
+            steep: 0.0,
+            fields: 0.0,
+        };
+        let plain = LayoutConfig::default();
+        let mut edited = plain.clone();
+        edited.overrides.quarters.entry("0".into()).or_default().density = Some(2.0);
+        let culture = "european-organic";
+        let population = 3_217;
+        // The edited town is probed first: its yield must be the unedited one.
+        let yields = [&edited, &plain].map(|cfg| probe(culture, "", &epoch, 0.0, cfg, population));
+        assert_eq!(yields[0].households.to_bits(), yields[1].households.to_bits());
+        let mut denser = plain.clone();
+        denser.density = 2.0;
+        assert_ne!(ProbeKey::new(culture, "", &epoch, 0.0, &plain, population), ProbeKey::new(culture, "", &epoch, 0.0, &denser, population));
+    }
+
+    #[test]
     fn camp_probe_uses_its_own_demographic_footprint_and_never_an_urban_donor() {
         let cfg=LayoutConfig::default();
         for culture in ["kraal","mongol-ordu","guarani-village","pnw-plank-village"] {
@@ -925,7 +1031,8 @@ fn plan_steps(
     if floor <= 0.0 && own(0.0) >= need {
         return Some(plan);
     }
-    prefetch(culture, &[""], epochs, &[floor, SOFT, 1.0], cfg, population);
+    // The floor bounds the solve. The yield only reads interpolation anchors.
+    prefetch(culture, &[""], epochs, &[SOFT, 1.0], cfg, population);
     // (1) A little denser on the nominal land: up to `SOFT` of the ranges.
     if let Some(t) = solve(floor, soft, need, own) {
         densified(&mut plan, t);

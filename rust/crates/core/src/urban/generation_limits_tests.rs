@@ -109,7 +109,7 @@ fn celtic_mu3_choices_keep_real_deficit_requests_compatible_with_allocations() {
             })).collect();
         (parts, requests, opens)
     };
-    let (parts, requests, opens) = [0.04, 0.07, 0.1, 0.14].into_iter().map(pick)
+    let (parts, requests, opens) = [0.04, 0.07, 0.1, 0.14, 0.25].into_iter().map(pick)
         .find(|(_, _, opens)| !opens.is_empty()).unwrap_or_else(|| pick(0.04));
     assert!(!opens.is_empty(), "Replay must exercise native architectural deficits");
     assert!(requests.iter().any(|r| r["function"] != "open_space"), "Replay keeps buildable town lots too");

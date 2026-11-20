@@ -338,17 +338,24 @@ fn terrain_survey(
     let centres: Vec<Point> = cells.iter().map(|c| c.2).collect();
     terrain::survey(surface, &centres, step * 0.5, gate)
 }
-/// Coarse strict housable share above which a site is ordinary ground and its
-/// footprint is not drawn ahead (`slope_relax_ahead`).
+/// Strict housable share above which a site is ordinary ground: on the coarse
+/// survey its footprint is not drawn ahead, on the drawn land it keeps the
+/// strict gates (`slope_relax_ahead`).
 const AHEAD_SURVEY: f64 = 0.95;
+/// Shortfall, as a share of the households required, within which a capacity
+/// plan houses the town (the closed loop's and the capacity warning's bound,
+/// `quarters::generate`).
+const HOUSED_SHORTFALL: f64 = 0.05;
 /// Relaxation of the house slope gates a town needs, read from the terrain
-/// before the first pass (`terrain::Survey::relaxation`). A coarse survey of
-/// its nominal land first: where the strict gates admit nearly all of it (all
-/// ordinary ground) the answer is 0 at once. Otherwise the strict footprint is
-/// drawn, as the first pass will draw it (the land a flank town reaches is
-/// set by street access, not by distance), and its land is measured: 0 when
-/// the strict gates admit most of it, else the lowest level at which its
-/// houses may use `profiles::SLOPE_RELAX_GOAL` of it.
+/// before the first pass. A coarse survey of its nominal land first: where
+/// the strict gates admit nearly all of it (all ordinary ground) the answer is
+/// 0 at once. Otherwise the strict footprint is drawn, as the first pass will
+/// draw it (the land a flank town reaches is set by street access, not by
+/// distance), and its land is measured. Ground the strict gates admit nearly
+/// whole keeps them; elsewhere the level is the higher of the lowest at which
+/// its houses may use `profiles::SLOPE_RELAX_GOAL` of the land
+/// (`terrain::Survey::relaxation`) and the lowest at which that land houses
+/// the town (`housing_relaxation`).
 pub(super) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &[Street]) -> f64 {
     let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
     let small = crate::settlements::demographics::below(site.population, "town");
@@ -386,7 +393,40 @@ pub(super) fn slope_relax_ahead(seed: &str, site: &Site, cfg: &LayoutConfig, sur
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!("  terrain.ahead: coarse {:?} land {:?}", coarse.levels, footprint.land.map(|l| l.levels));
     }
-    footprint.land.map_or(0.0, |l| l.relaxation())
+    let Some(land) = footprint.land else { return 0.0 };
+    if land.levels[0] >= AHEAD_SURVEY {
+        return 0.0;
+    }
+    let allocated = footprint.structure.metrics.allocated_area;
+    let mut epochs = capacity_epochs_surveyed(site, &first, &morph, nominal, surface).0;
+    let shortfall = |share: f64| {
+        for e in &mut epochs {
+            e.steep = 1.0 - share;
+        }
+        capacity::plan(site, &first, &epochs, nominal, Some(allocated))
+            .map(|p| (p.shortfall - HOUSED_SHORTFALL * p.required).max(0.0))
+    };
+    land.relaxation().max(housing_relaxation(&land.levels, shortfall))
+}
+/// Lowest of `terrain::LEVELS` at which the land of a town houses it:
+/// `shortfall` gives the households a capacity plan of that land still misses
+/// with the given housable share, densified to the culture's bounds (0 once it
+/// houses them). 0 when the strict gates house the town or no plan exists;
+/// when no level houses it, the first level that misses the fewest.
+fn housing_relaxation(levels: &[f64; 4], mut shortfall: impl FnMut(f64) -> Option<f64>) -> f64 {
+    let Some(strict) = shortfall(levels[0]) else { return 0.0 };
+    let mut best = (terrain::LEVELS[0], strict);
+    for (&level, &share) in terrain::LEVELS.iter().zip(levels).skip(1) {
+        if best.1 <= 0.0 {
+            break;
+        }
+        if let Some(missing) = shortfall(share)
+            && missing < best.1
+        {
+            best = (level, missing);
+        }
+    }
+    best.0
 }
 /// Zone, recipe and land share of each growth epoch, for the capacity plan.
 #[cfg(test)]
@@ -3952,6 +3992,20 @@ mod tests {
         let retained = smooth_growth(&sliver, grid.step, surface, &[]);
         assert_eq!(retained.len(), 1);
         assert!((area(&retained) - area(&sliver)).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn housing_relaxation_relaxes_only_land_the_strict_gates_cannot_house() {
+        // Households missed by a plan whose capacity is proportional to the housable share.
+        let plan = |capacity: f64| move |share: f64| Some((1000.0 - capacity * share).max(0.0));
+        // Half of the land refused, ample capacity: the strict gates house the town.
+        assert_eq!(housing_relaxation(&[0.5, 0.88, 1.0, 1.0], plan(2500.0)), 0.0);
+        // A flank just above half: strict short, the first relaxation houses it.
+        assert_eq!(housing_relaxation(&[0.51, 0.88, 1.0, 1.0], plan(1500.0)), terrain::LEVELS[1]);
+        // No level houses it: the first level that misses the fewest.
+        assert_eq!(housing_relaxation(&[0.3, 0.6, 0.9, 0.9], plan(500.0)), terrain::LEVELS[2]);
+        // Without a capacity plan the strict gates stay.
+        assert_eq!(housing_relaxation(&[0.3, 0.6, 1.0, 1.0], |_| None), 0.0);
     }
 }
 
