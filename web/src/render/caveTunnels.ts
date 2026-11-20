@@ -1,6 +1,6 @@
 /** Underdark tunnels in the 2D map styles (canvas and SVG share these strokes). The terrain carve already opened
  *  each tunnel as floor between the rock; this layer only types it, discreetly:
- *  - lava tube: a smooth dark basalt lining with a faint ropy centre;
+ *  - lava tube: nothing, the bare floor of the carve;
  *  - river passage: a narrow pale ledge path beside the water of the slot;
  *  - dug tunnel (roads): bare floor at the road's width and a portal at both mouths; the road draws itself over it. */
 import type { CaveTunnel, Vec2 } from '../gen/types';
@@ -31,12 +31,9 @@ function offset(path: Vec2[], by: number): Vec2[] {
 /** Strokes of one tunnel in world metres, bottom first. */
 export function tunnelStrokes(t: CaveTunnel, cell: number): TunnelStroke[] {
   const hw = tunnelDisplayHalfWidth(t, cell);
-  if (t.kind === 'lava-tube')
-    return [
-      { d: t.path, color: '#1d1a22', width: 2 * hw, alpha: 0.5, cap: 'round' },
-      { d: t.path, color: '#3a3441', width: 1.2 * hw, alpha: 0.45, cap: 'round' },
-      { d: t.path, color: '#5b5262', width: Math.max(0.6, 0.18 * hw), alpha: 0.35, dash: [0.9 * hw, 0.6 * hw] },
-    ];
+  // A lava tube is the bare floor the carve opened: no lining, no centre line (a dark band with a dashed axis read as
+  // a motorway).
+  if (t.kind === 'lava-tube') return [];
   if (t.kind === 'river-passage') return [{ d: offset(t.path, 0.72 * hw), color: '#7d7488', width: Math.max(0.8, 0.22 * hw), alpha: 0.5, cap: 'round' }];
   // Dug: the road's own bore, which the terrain carve never opened, so it keeps the road's width whatever the cell.
   // Bare trodden floor under the road (no slab, no kerb lines) and a portal bar at each mouth.

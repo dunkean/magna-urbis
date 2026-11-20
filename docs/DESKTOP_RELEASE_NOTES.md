@@ -45,6 +45,9 @@
 - Keep generation settings and imported heightmaps when reloading during an interrupted or unfinished restoration.
 - Underdark, tilted map: the caves are back in relief, with rock walls rising to the roof of each chamber and tunnel (the appearance's roof height), a black sky, the cave's darkness and lantern light on the ground and the town, modelled mushrooms, and no surface trees.
 - Underdark: the cave roof is back, cut away around the view in orbit and whole overhead when walking or flying.
+- Underdark: an irregular vault, close over the floor in places and lost in the dark in great chambers; stalactites from needles to stout stumps, alone, in clusters or giant; stalagmites on the floor.
+- Underdark, tilted map: a brighter cave, with lantern light around isolated farms and more glowing mushrooms.
+- Underdark lava tubes are no longer drawn as a dark band with a dashed centre line.
 - Underdark road tunnels are drawn as bare ground at the road's own width instead of a wide grey slab with kerbs.
 
 macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.

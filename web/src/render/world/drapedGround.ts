@@ -17,7 +17,7 @@ import { LATTICE, MAX_PATCHES, PatchList, lodEyeHeight, morphStart, patchLevels,
 import { SQUARE_FLOATS, SQUARE_TRIANGLES, TerrainMesh } from './terrainMesh';
 import { tileKey } from './tilePyramid';
 import { hazeDistance } from './volumes';
-import { CAVE_DUSK, caveFogRange, caveLamps, type WorldCave } from './cave';
+import { CAVE_DUSK, GROUND_LAMPS, caveFogRange, caveGroundLamps, type WorldCave } from './cave';
 
 /** Control heights assumed for a map whose relief is not known: the ground is then draped flat. */
 const FLAT_GRID = 1024;
@@ -63,7 +63,7 @@ export class DrapedGround {
   private tierBefore = new Map<number, number>();
   /** Underdark: the fog range and the lanterns of the frame, refilled in place. */
   private readonly fog: [number, number] = [0, 1];
-  private readonly lamps = new Float32Array(64);
+  private readonly lamps = new Float32Array(GROUND_LAMPS * 4);
 
   constructor(
     private readonly gl: WebGL2RenderingContext,
@@ -253,7 +253,7 @@ export class DrapedGround {
     if (cave && heights) {
       const fog = caveFogRange(cave, camera, heights.exaggeration, this.fog);
       gl.uniform4f(u.uCave, rise, fog[0], fog[1], cave.settings.darkness);
-      gl.uniform1i(u.uCaveLampCount, caveLamps(cave, 0, 0, this.lamps));
+      gl.uniform1i(u.uCaveLampCount, caveGroundLamps(cave, camera, this.lamps));
       gl.uniform4fv(u.uCaveLamps, this.lamps);
     } else {
       gl.uniform4f(u.uCave, 0, 0, 1, 0);

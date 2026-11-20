@@ -23,6 +23,8 @@ export interface WorldCave {
   readonly settings: UnderdarkCavern3d;
   /** Town lanterns (x, y, radius in metres), at most 16 are lit. */
   readonly lamps: Float32Array;
+  /** Lights of the isolated buildings (farmsteads): x, y, radius in metres. The ground shows the nearest ones. */
+  readonly sparks: Float32Array;
   /** False: the lanterns are out (the appearance's "lights off"). */
   readonly lightsOn: boolean;
   /** Fungal farm lots (x, y, half-size, angle), where no wild mushroom grows. */
@@ -38,14 +40,17 @@ export interface WorldCave {
 /** The darkness the far cave dissolves into (the 3D ground's cavernFog). */
 export const CAVE_DUSK: readonly [number, number, number] = [0.005, 0.005, 0.007];
 const LAMPS = 16;
+/** Lights the ground of a frame takes: every town, then the isolated buildings nearest to the target. */
+export const GROUND_LAMPS = 32;
 
 /** Where the cave dissolves into darkness, in metres as drawn from the eye: start and end. A walking or flying eye
  * looks as far as an orbit that would frame what lies under it. */
 export function caveFogRange(cave: WorldCave, camera: FrameCamera, exaggeration: number, out: [number, number]): [number, number] {
   const reach = camera.free ? 2 * Math.max(0, camera.eye[2] - camera.target[2]) : camera.distance,
     [start, end] = cavernFog(reach, exaggeration, cave.settings.darkness);
-  out[0] = start;
-  out[1] = end;
+  // A cave is dim, not blind: the darkness starts well behind what the view frames.
+  out[0] = start * 1.5;
+  out[1] = end * 2;
   return out;
 }
 
@@ -57,6 +62,32 @@ export function caveLamps(cave: WorldCave, ox: number, oy: number, out: Float32A
     out[k * 4 + 1] = cave.lamps[k * 3 + 1] - oy;
     out[k * 4 + 2] = cave.lamps[k * 3 + 2];
     out[k * 4 + 3] = 0;
+  }
+  return count;
+}
+
+/** The lights of the ground as `uniform vec4 [GROUND_LAMPS]` (map x, y, radius, 0): the towns, then the isolated
+ * buildings nearest to the camera's target. Returns how many are lit. */
+export function caveGroundLamps(cave: WorldCave, camera: FrameCamera, out: Float32Array): number {
+  let count = caveLamps(cave, 0, 0, out);
+  if (!cave.lightsOn) return count;
+  const sparks = cave.sparks,
+    tx = camera.target[0],
+    ty = camera.target[1],
+    first = count;
+  // Insertion among the nearest so far: a few hundred farms at most, a handful of slots.
+  for (let k = 0; k + 2 < sparks.length; k += 3) {
+    const d = (sparks[k] - tx) ** 2 + (sparks[k + 1] - ty) ** 2;
+    let at = count;
+    while (at > first && out[(at - 1) * 4 + 3] > d) at--;
+    if (at >= GROUND_LAMPS) continue;
+    const last = Math.min(count, GROUND_LAMPS - 1);
+    for (let m = last; m > at; m--) for (let c = 0; c < 4; c++) out[m * 4 + c] = out[(m - 1) * 4 + c];
+    out[at * 4] = sparks[k];
+    out[at * 4 + 1] = sparks[k + 1];
+    out[at * 4 + 2] = sparks[k + 2];
+    out[at * 4 + 3] = d;
+    if (count < GROUND_LAMPS) count++;
   }
   return count;
 }
