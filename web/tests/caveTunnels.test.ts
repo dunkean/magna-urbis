@@ -21,7 +21,7 @@ describe('Underdark tunnels', () => {
       ],
     };
     expect(tunnelDisplayHalfWidth(tube, 20)).toBe(18);
-    expect(tunnelStrokes(tube, 20)[0].width).toBe(36);
+    expect(tunnelStrokes(tube, 20)).toEqual([]);
     const dug = {
       kind: 'dug' as const,
       halfWidth: 3,

@@ -74,6 +74,24 @@ const BACKWARD: readonly [number, number, number][] = [
   [-1, 1, D2],
 ];
 
+/** Lowest clearance (m) the irregular vault comes down to over open floor: above the houses of a cave town. */
+const VAULT_LOW = 18;
+/** Value noise 0..1 of the vault's waves (deterministic: the same cave has the same vault). */
+function vaultNoise(x: number, y: number): number {
+  const ix = Math.floor(x),
+    iy = Math.floor(y),
+    fx = x - ix,
+    fy = y - iy,
+    ux = fx * fx * (3 - 2 * fx),
+    uy = fy * fy * (3 - 2 * fy);
+  const at = (a: number, b: number): number => {
+    let h = (Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ 0x51ed270b) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+  return (at(ix, iy) + (at(ix + 1, iy) - at(ix, iy)) * ux) * (1 - uy) + (at(ix, iy + 1) + (at(ix + 1, iy + 1) - at(ix, iy + 1)) * ux) * uy;
+}
+
 /** Chamfer distance (cells) to the nearest seed, with the seed's index. */
 function chamfer(n: number, seed: (i: number) => boolean): { dist: Float32Array; near: Int32Array } {
   const dist = new Float32Array(n * n),
@@ -172,6 +190,22 @@ export function cavernField(layer: CaveLayer, clearance: number): CavernField | 
         next[i] = Math.max(sum / count, floor[i] + 0.9 * local[i]);
       }
     roof = next;
+  }
+  // The vault is irregular: in the open, away from the walls, it swells out of sight in places (the more so in a
+  // great chamber) and comes down close over the floor in others, never under VAULT_LOW. Rock keeps its roof, so the
+  // walls and the lid meet as before. The waves are wide enough for the roof mesh (cavernRoofMesh) to follow them.
+  const wave = Math.max(320, (8 * layer.width) / 256);
+  for (let i = 0; i < n * n; i++) {
+    if (!open(i)) continue;
+    const away = smooth(15, 90, toRock[i] * cell);
+    if (away <= 0) continue;
+    const x = ((i % n) + 0.5) * cell,
+      y = (Math.floor(i / n) + 0.5) * cell,
+      v = 1.3 * (vaultNoise(x / wave, y / wave) - 0.5) + 0.7 * (vaultNoise((2 * x) / wave + 37.2, (2 * y) / wave + 11.8) - 0.5),
+      great = smooth(0, 1, (toRock[i] * cell) / 250),
+      factor = v > 0 ? 1 + (2 + 8 * great) * smooth(0.05, 0.6, v) : 1 - 0.55 * smooth(0.05, 0.55, -v);
+    local[i] = Math.max(local[i] * (1 + away * (factor - 1)), Math.min(local[i], VAULT_LOW));
+    roof[i] = floor[i] + local[i];
   }
   const texels = new Float32Array(n * n * 4);
   for (let i = 0; i < n * n; i++) {

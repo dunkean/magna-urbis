@@ -64,6 +64,8 @@ export interface CaveSection {
   raw: TerrainHeights;
 }
 const NO_LAMPS = new Float32Array(0);
+/** Radius (m) of the pool of light around an isolated farm of the Underdark. */
+const FARM_LIGHT = 55;
 /** Composed town scenes kept per look (WorldVolumes.townMeshes). */
 const LOOK_SCENES = 3;
 /** Water codes of the planning raster (gen/types.ts). */
@@ -211,6 +213,7 @@ export class WorldVolumes {
       field: section.field,
       settings: ground!.cavern ?? UNDERDARK_CAVERN_DEFAULTS,
       lamps: ground!.townSites ?? ground!.townGlow ?? NO_LAMPS,
+      sparks: Float32Array.from((world.landuse?.farmsteads ?? []).flatMap(farm => [farm.pos.x, farm.pos.y, FARM_LIGHT])),
       lightsOn: !!ground!.townGlow,
       farms: ground!.farmBeds,
       // Read when a mushroom stream starts, in a tilted view only: the ways and lots no wild mushroom grows on.

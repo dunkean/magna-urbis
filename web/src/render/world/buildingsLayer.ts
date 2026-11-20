@@ -471,7 +471,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           if (cave) {
             const fog = caveFogRange(cave, camera, heights?.exaggeration ?? 1, caveFog);
             gl.uniform3f(u.uHaze, CAVE_DUSK[0], CAVE_DUSK[1], CAVE_DUSK[2]);
-            gl.uniform4f(u.uCave, cave.lightsOn ? 1 : 2, cave.lightsOn ? 1.05 - 0.45 * cave.settings.darkness : 0.08, fog[0], fog[1]);
+            gl.uniform4f(u.uCave, cave.lightsOn ? 1 : 2, cave.lightsOn ? 1.25 - 0.35 * cave.settings.darkness : 0.08, fog[0], fog[1]);
           } else {
             gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);
             gl.uniform4f(u.uCave, 0, 1, 1e9, 2e9);

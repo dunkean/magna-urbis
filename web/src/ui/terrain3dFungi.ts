@@ -7,7 +7,8 @@
  *
  * Ecology: giant parasols, domes and bells in the groves of humid floors (taller in great chambers, never above the
  * roof); luminous clusters of thin stems on the cluster field; puffball and club carpets on moss beds near the eye;
- * sparse pale cones and morels in narrow dry galleries; shelves on steep walls near water; stalactites along the rim of
+ * sparse pale cones and morels in narrow dry galleries; shelves on steep walls near water; stalagmites on the open
+ * floor and under some stalactites (the stalactite's lathe with a negative height); stalactites along the rim of
  * the cut, denser near water. Towns, fungal farms, ways and water are cleared. Display only; built around the eye
  * when it settles, nearest first, bounded; nothing on ordinary maps (the program exists only in the Underdark).
  */
@@ -256,7 +257,7 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
         h * 60,
         (udHash(i, j + 1321) < 0.3 ? SPOTS : 0) | RIBS,
         c.map(v => v * tone),
-        udHash(i + 1323, j) > 0.78 ? 0.45 : 0,
+        udHash(i + 1323, j) > 0.5 ? 0.7 : 0,
         udHash(i + 1325, j) > 0.5 ? CYAN : VIOLET,
       );
     }
@@ -299,7 +300,7 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
           const jitter = 0.75 + 0.5 * udHash(Math.floor(u * 11), r + bx),
             height = size * jitter,
             form = sh < 0.45 ? F.dome : sh < 0.75 ? F.bell : F.parasol;
-          const glow = udHash(bx + seg, by + r * 7) < 0.06 ? 0.55 : 0,
+          const glow = udHash(bx + seg, by + r * 7) < 0.3 ? 0.8 : 0,
             tone = 0.85 + 0.3 * udHash(seg + bx, r);
           push(
             x,
@@ -357,7 +358,7 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
           u * 6.283,
           form === F.dome && u > 0.85 ? SPOTS : 0,
           (u < 0.3 ? [0.56, 0.52, 0.44] : u < 0.55 ? [0.44, 0.3, 0.34] : u < 0.8 ? [0.52, 0.38, 0.24] : [0.34, 0.38, 0.32]).map(c => c * tone),
-          udHash(i + 3721, j + k) < 0.05 ? 0.5 : 0,
+          udHash(i + 3721, j + k) < 0.3 ? 0.75 : 0,
           AMBER,
         );
       }
@@ -395,7 +396,7 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
         // Short against the vault: a fringe never bridges a passage.
         const length = Math.min((3 + 9 * udHash(i + 1611, j + 1)) * (0.8 + 0.5 * wet), 0.3 * clearance);
         const z = Math.min(roof, cavernRoofAt(cavern, sx, sy));
-        push(sx, sy, z, length * (0.11 + 0.06 * udHash(i + 2, j + 1613)), length, 0, F.stalactite, udHash(i + 9, j + 9) * 6.283, 0, [0.2, 0.19, 0.21], wet > 0.2 && udHash(i + 4, j + 1615) < 0.15 ? 0.25 : 0, CYAN);
+        push(sx, sy, z, length * (0.05 + 0.22 * udHash(i + 2, j + 1613) ** 2), length, 0, F.stalactite, udHash(i + 9, j + 9) * 6.283, 0, [0.2, 0.19, 0.21], wet > 0.2 && udHash(i + 4, j + 1615) < 0.15 ? 0.25 : 0, CYAN);
         continue;
       }
       if (wet < 0.05 || udHash(i + 1701, j + 11) > 0.5 * Math.min(keepScale, 1.5)) continue;
@@ -422,9 +423,64 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
       if (d2(x, y) > far2 || rockAt(x, y) > 0.2) continue;
       const wet = inputs.water(x, y);
       if (h > (0.12 + 0.25 * wet) * Math.min(1, 0.5 + 0.5 * keepScale)) continue;
+      // Needles, ordinary cones and stout stumps (width over length), and a rare giant that hangs a third of the way
+      // down or more; each its own tone of stone.
       const clearance = cavernTexelAt(cavern, x, y, 3),
-        length = Math.min((3 + 10 * udHash(i + 7, j + 2107)) * (0.8 + 0.5 * wet), 0.22 * clearance);
-      push(x, y, cavernRoofAt(cavern, x, y) + 0.6, length * (0.1 + 0.05 * udHash(i, j + 2109)), length, 0, F.stalactite, h * 20, CEILING, [0.22, 0.21, 0.23], 0, CYAN);
+        roofZ = cavernRoofAt(cavern, x, y) + 0.6,
+        kind = udHash(i + 2111, j + 23),
+        giant = kind > 0.94,
+        vary = udHash(i, j + 2109),
+        ratio = giant ? 0.12 : kind < 0.4 ? 0.04 + 0.04 * vary : kind < 0.8 ? 0.1 + 0.06 * vary : 0.2 + 0.2 * vary,
+        span = udHash(i + 7, j + 2107),
+        length = giant ? (0.3 + 0.3 * span) * clearance : Math.min((kind < 0.8 ? 3 + 11 * span : 1.5 + 4 * span) * (0.8 + 0.5 * wet), 0.25 * clearance),
+        tone = 0.8 + 0.5 * udHash(i + 2113, j + 29),
+        stone = [0.22 * tone, 0.21 * tone, 0.23 * tone];
+      push(x, y, roofZ, length * ratio, length, 0, F.stalactite, h * 20, CEILING, stone, 0, CYAN);
+      // A cluster: a few shorter ones around it.
+      const around = udHash(i + 2115, j + 31) < 0.4 ? 1 + Math.floor(3 * udHash(i + 2117, j + 37)) : 0;
+      for (let k = 0; k < around; k++) {
+        const a = udHash(i + k * 11, j + 2119) * 6.283,
+          r = Math.max(1.2, 2 * length * ratio) * (1 + 1.5 * udHash(i + 2121, j + k)),
+          px = x + Math.cos(a) * r,
+          py = y + Math.sin(a) * r,
+          part = length * (0.3 + 0.45 * udHash(i + k, j + 2123));
+        if (rockAt(px, py) > 0.2) continue;
+        push(px, py, cavernRoofAt(cavern, px, py) + 0.6, part * ratio * (0.8 + 0.5 * udHash(i + 2125, j + k)), part, 0, F.stalactite, a, CEILING, stone, 0, CYAN);
+      }
+      // The stalagmite it built on the floor, where the floor is free: the same stone, stouter and shorter (the
+      // stalactite's lathe standing on its base: a negative height).
+      if (udHash(i + 2127, j + 41) < 0.3 && wet < 0.05 && !bedAt(x, y) && !cleared(x, y, 3)) {
+        const z = inputs.height(x, y);
+        if (z !== undefined) {
+          const rise = Math.min(length * (0.35 + 0.5 * udHash(i + 2129, j + 43)), 0.5 * (roofZ - z - length));
+          if (rise > 0.6) push(x, y, z - 0.2, rise * (0.22 + 0.16 * udHash(i + 2131, j + 47)), -rise, 0, F.stalactite, h * 13, 0, [stone[0] * 1.15, stone[1] * 1.15, stone[2] * 1.15], 0, CYAN);
+        }
+      }
+    }
+  }
+  // 8. Stalagmites on the open floor (33 m lattice, few): lone cones and small groups of two or three, from knee-high
+  // to several metres, away from towns, ways, farms and water.
+  for (let j = Math.floor(by0 / 33); j <= Math.ceil(by1 / 33); j++) {
+    yield;
+    for (let i = Math.floor(bx0 / 33); i <= Math.ceil(bx1 / 33); i++) {
+      if (udHash(i + 3301, j + 53) > 0.07 * Math.min(1, 0.5 + 0.5 * keepScale)) continue;
+      const x = (i + 0.1 + 0.8 * udHash(i + 3, j + 3303)) * 33,
+        y = (j + 0.1 + 0.8 * udHash(i + 3305, j + 5)) * 33;
+      if (d2(x, y) > far2 || rockAt(x, y) > 0.2 || inputs.water(x, y) >= 0.05 || bedAt(x, y) || cleared(x, y, 3)) continue;
+      const count = 1 + Math.floor(3 * udHash(i + 3307, j + 59) ** 2),
+        big = udHash(i + 3309, j + 61),
+        tone = 0.85 + 0.4 * udHash(i + 3311, j + 67);
+      for (let k = 0; k < count; k++) {
+        const a = udHash(i + k * 13, j + 3313) * 6.283,
+          r = k ? 1.5 + 4 * udHash(i + 3315, j + k) : 0,
+          px = x + Math.cos(a) * r,
+          py = y + Math.sin(a) * r,
+          z = inputs.height(px, py);
+        if (z === undefined) continue;
+        const rise = Math.min((1.2 + 8 * big ** 2) * (k ? 0.4 + 0.4 * udHash(i + 3317, j + k) : 1), 0.45 * headroom(px, py, z));
+        if (rise < 0.5) continue;
+        push(px, py, z - 0.2, rise * (0.18 + 0.2 * udHash(i + 3319, j + k)), -rise, 0, F.stalactite, a, 0, [0.25 * tone, 0.24 * tone, 0.25 * tone], 0, CYAN);
+      }
     }
   }
   out.sort((a, b) => a[0] - b[0]);
@@ -434,11 +490,11 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
   // the nearest), six sides elsewhere for forms over 1.5 m, a one-band cap for the small ones.
   const tiers = kept.map(e => {
     const d = Math.sqrt(e[0]),
-      h = e[5];
+      h = Math.abs(e[5]);
     return d < 25 || (h >= 4 && d < 150) ? 0 : h >= 1.5 ? 1 : 2;
   });
   let full = 0;
-  for (let k = 0; k < kept.length; k++) if (tiers[k] === 0 && ++full > FUNGUS_FULL_MAX) tiers[k] = kept[k][5] >= 1.5 ? 1 : 2;
+  for (let k = 0; k < kept.length; k++) if (tiers[k] === 0 && ++full > FUNGUS_FULL_MAX) tiers[k] = Math.abs(kept[k][5]) >= 1.5 ? 1 : 2;
   const order = kept.map((_, k) => k).sort((a, b) => tiers[a] - tiers[b] || kept[a][0] - kept[b][0]);
   for (const t of tiers) counts[t]++;
   const values = new Float32Array(kept.length * FUNGUS_STRIDE);
