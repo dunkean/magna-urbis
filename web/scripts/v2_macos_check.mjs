@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { appendFile, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -11,7 +11,9 @@ assert.equal(process.platform, 'darwin');
 assert.equal(process.arch, 'arm64');
 const [dmg, weights] = process.argv.slice(2);
 assert.ok(dmg?.endsWith('.dmg') && weights, 'Usage: v2_macos_check.mjs FILE.dmg WEIGHTS_DIR');
-const directory = await mkdtemp(join(tmpdir(), 'magna-desktop-smoke-'));
+// macOS can expose TMPDIR under /var, a symlink to /private/var.
+// Tauri rejects executable paths with symlinked ancestors on this platform.
+const directory = await mkdtemp(join(await realpath(tmpdir()), 'magna-desktop-smoke-'));
 const mount = join(directory, 'volume');
 const command = (binary, args) => execFileSync(binary, args, { encoding: 'utf8', timeout: 90_000 }).trim();
 
