@@ -123,14 +123,6 @@ jobs:
         run: |
           python -m unittest discover -s python_runtime -p "test_*.py"
           python -m unittest discover -s docs/models-release -p "test_*.py"
-      - name: Typecheck and test V2 integrations
-        working-directory: web
-        shell: bash
-        run: |
-          node --test scripts/neural_manifest.test.mjs
-          node scripts/v2_release_check_test.mjs
-          npm run typecheck
-          npx vitest run tests/v2Illustration.test.ts tests/v2Platform.test.ts tests/v2PythonRuntimeSelection.test.ts tests/v2DesktopUpdates.test.ts tests/v2/desktopNeural.test.ts tests/neuralModels.test.ts
       - name: Test native service inputs and verified download handling
         if: matrix.platform != 'macos-arm64'
         working-directory: rust
@@ -167,6 +159,16 @@ jobs:
           cd release-v2/macos-arm64
           shasum -a 256 -c SHA256SUMS-macos-arm64.txt
           node ../../web/scripts/v2_macos_check.mjs ./*.dmg "${RUNNER_TEMP}/magna-macos-weights"
+      - name: Typecheck and test V2 integrations
+        env:
+          NODE_OPTIONS: ${{ matrix.platform == 'macos-arm64' && '--max-old-space-size=4096' || '' }}
+        working-directory: web
+        shell: bash
+        run: |
+          node --test scripts/neural_manifest.test.mjs
+          node scripts/v2_release_check_test.mjs
+          npm run typecheck
+          npx vitest run tests/v2Illustration.test.ts tests/v2Platform.test.ts tests/v2PythonRuntimeSelection.test.ts tests/v2DesktopUpdates.test.ts tests/v2/desktopNeural.test.ts tests/neuralModels.test.ts
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
