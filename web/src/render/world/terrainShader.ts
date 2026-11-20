@@ -11,6 +11,9 @@
  * water, cartography, town plan; premultiplied, transparent where the ground shows). The tiles carry the map's own
  * relief shading, lit from above; a tilted view adds a slope light that is zero on flat ground and scaled by the rise
  * of the relief, and haze with the distance, so the top view is the tiles unchanged.
+ *
+ * In the Underdark (cave.ts, uCave) there is no sky: steep rock is a wall of dark columnar stone, the ground takes a
+ * dim ambient and the warm light of the town lanterns, and the far cave dissolves into darkness instead of the haze.
  */
 import { LATTICE } from './patches';
 
@@ -35,7 +38,7 @@ uniform vec3 uLevel;
 // Height grid: cells per metre, cells per side, lowest height drawn (m), metres drawn per metre of height.
 uniform vec4 uGrid;
 uniform sampler2D uHeights;
-out vec3 vUv; out vec3 vDrapeUv; out vec2 vSlope; out float vDistance;
+out vec3 vUv; out vec3 vDrapeUv; out vec2 vSlope; out float vDistance; out vec3 vWorld;
 const float CELLS = ${LATTICE}.0;
 vec4 weights(float t) { float t2 = t * t, t3 = t2 * t, s = 1.0 - t; return vec4(s * s * s, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0; }
 vec4 slopes(float t) { float t2 = t * t, s = 1.0 - t; return vec4(-s * s, 3.0 * t2 - 4.0 * t, -3.0 * t2 + 2.0 * t + 1.0, t2) * 0.5; }
@@ -66,6 +69,7 @@ void main() {
   vDrapeUv = vec3(aDrape.xy + lattice / CELLS * aDrape.z, aDrape.w);
   vSlope = slope * uGrid.w;
   vDistance = length(position - uEye);
+  vWorld = vec3(uTarget.xy + place, height * uGrid.w);
 }`;
 
 export const TERRAIN_FS = `#version 300 es
@@ -77,8 +81,40 @@ uniform vec3 uLight;
 // Strength of the slope light, distance of the haze (m), share of the haze.
 uniform vec3 uAir;
 uniform vec3 uHaze;
-in vec3 vUv; in vec3 vDrapeUv; in vec2 vSlope; in float vDistance;
+// Underdark: share of the cave's light (0: none, the rise of the relief otherwise), fog start and end (m), darkness.
+uniform vec4 uCave;
+// Town lanterns: map x, y and radius (m).
+uniform vec4 uCaveLamps[16]; uniform int uCaveLampCount;
+in vec3 vUv; in vec3 vDrapeUv; in vec2 vSlope; in float vDistance; in vec3 vWorld;
 out vec4 outColor;
+float caveHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float caveNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(caveHash(i), caveHash(i + vec2(1.0, 0.0)), f.x), mix(caveHash(i + vec2(0.0, 1.0)), caveHash(i + vec2(1.0, 1.0)), f.x), f.y); }
+// The ground in the cave's own light (the 3D ground's cavernSection, without its texels): columnar stone on the
+// walls, read along the wall and its height; a dim ambient; the lanterns as point lights above their town.
+vec3 caveGround(vec3 rgb, vec3 normal) {
+  float dark = uCave.w, steep = smoothstep(0.35, 0.75, 1.0 - normal.z);
+  if (steep > 0.0) {
+    float px = max(length(dFdx(vWorld)), length(dFdy(vWorld)));
+    vec2 across = length(normal.xy) > 1e-3 ? normalize(vec2(-normal.y, normal.x)) : vec2(1.0, 0.0);
+    float t = dot(vWorld.xy, across), y = vWorld.z;
+    float u = t / 2.1 + 0.45 * caveNoise(vec2(t * 0.07, y * 0.03)), column = floor(u), fu = fract(u);
+    float joint = 1.0 - smoothstep(0.0, 0.09 + 0.5 * px / 2.1, min(fu, 1.0 - fu));
+    float resolved = clamp(2.1 / px * 0.6 - 0.4, 0.0, 1.0);
+    vec3 stone = vec3(0.085, 0.09, 0.105) * (0.8 + 0.4 * caveHash(vec2(column, 31.0))) * (0.75 + 0.5 * caveNoise(vec2(t, y * 1.4) * 0.35)) * (1.0 - 0.3 * resolved * joint);
+    rgb = mix(rgb, stone, steep);
+  }
+  // Walls keep an ambient floor: a rock mass is never a flat black silhouette.
+  float ambient = max(mix(1.0, 0.45, dark), 0.42 * steep + 0.2);
+  vec3 lamps = vec3(0.0);
+  for (int k = 0; k < 16; k++) {
+    if (k >= uCaveLampCount) break;
+    vec4 g = uCaveLamps[k]; vec2 d = g.xy - vWorld.xy; float r = max(g.z, 1.0), fall = exp(-dot(d, d) / (r * r) * 0.45);
+    if (fall < 0.003) continue;
+    float facing = max(dot(normal, normalize(vec3(d, 25.0 + 0.15 * r))), 0.0);
+    lamps += vec3(1.0, 0.8, 0.6) * fall * (0.3 + 0.8 * facing + 0.6 * steep * pow(facing, 12.0));
+  }
+  return rgb * (vec3(0.92, 0.97, 1.05) * ambient + lamps * mix(0.22, 0.75, dark));
+}
 void main() {
   // Ground seen at a low angle is squeezed along the screen's vertical, and a tile minified there shimmers: four
   // samples along that axis, spread by what the squeeze exceeds the other axis by. Unsqueezed, they are one sample.
@@ -95,6 +131,11 @@ void main() {
     rgb = drape.rgb + rgb * (1.0 - drape.a);
   }
   vec3 normal = normalize(vec3(-vSlope, 1.0));
+  if (uCave.x > 0.0) {
+    rgb = mix(rgb, caveGround(rgb, normal), uCave.x);
+    outColor = vec4(mix(rgb, uHaze, smoothstep(uCave.y, uCave.z, vDistance) * uCave.x), 1.0);
+    return;
+  }
   rgb *= clamp(1.0 + uAir.x * (dot(normal, uLight) - uLight.z), 0.72, 1.18);
   float haze = min(0.62, 1.0 - exp(-pow(vDistance / uAir.y, 2.0) * 0.11)) * uAir.z;
   outColor = vec4(mix(rgb, uHaze, haze), 1.0);

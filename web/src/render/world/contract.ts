@@ -52,6 +52,8 @@ export interface FrameCamera {
   /** False: the top view. The projection is orthographic and `LiveFrame.worldToClip` / `worldToPixel` say all of it.
    * True: a perspective; a layer that only knows the top view does not draw. */
   readonly tilted: boolean;
+  /** A walking or flying eye (camera.ts), whose target is the ground under it; false: the orbit camera. */
+  readonly free: boolean;
   /** Share of the relief the frame shows: 0 in the top view (a flat map), 1 once the camera is tilted enough. */
   readonly rise: number;
   /** (x, y, z) -> clip space, column-major for `uniformMatrix4fv`. In the top view it is `worldToClip` (z ignored). */

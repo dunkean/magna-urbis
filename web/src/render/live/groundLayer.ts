@@ -595,7 +595,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       light = frame.quality === 'light';
       if (frame.camera.tilted) {
         draped ??= new DrapedGround(gl, drapeTiles);
-        draped.draw(frame, options.terrain(), paperRgb());
+        draped.draw(frame, options.terrain(), paperRgb(), options.cave?.());
         stats.drawCalls = draped.stats.drawCalls;
         stats.triangles = draped.stats.triangles;
         stats.patches = draped.stats.patches;

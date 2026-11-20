@@ -39,6 +39,8 @@ import type { WorldBuildingsOptions } from '../../render/world/buildingsLayer';
 import type { TerrainHeights } from '../../render/world/heights';
 import { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { WorldTreesOptions } from '../../render/world/treesLayer';
+import type { WorldCave } from '../../render/world/cave';
+import { UNDERDARK_CAVERN_DEFAULTS, type CavernField } from '../../render/underdarkCavern';
 import { riverCover } from '../../render/world/treesWater';
 import { PAINTED_TREES, SATELLITE_TREES, type TreePalette } from '../../render/world/treesShader';
 import type { City3dGround } from '../../ui/city3d';
@@ -56,6 +58,12 @@ import { countWork } from '../../render/workCount';
 import type { NativeCityMap } from '../nativeCityMap';
 
 type TreeSource = Omit<TreeInputs, 'height'>;
+/** The section cut of an Underdark map (render/underdarkCavern.ts) and its heights before the cut, in metres. */
+export interface CaveSection {
+  field: CavernField;
+  raw: TerrainHeights;
+}
+const NO_LAMPS = new Float32Array(0);
 /** Composed town scenes kept per look (WorldVolumes.townMeshes). */
 const LOOK_SCENES = 3;
 /** Water codes of the planning raster (gen/types.ts). */
@@ -63,8 +71,9 @@ const WATER_SEA = 1,
   WATER_LAKE = 2,
   WATER_RIVER = 3;
 type Ground = ReturnType<typeof v2Terrain3dGround>;
-/** Satellite looks share their forest, including the fast preset, whose simplification concerns the buildings. */
-const treesInLook = (ground: Ground, resolved: ResolvedAppearance): ground is NonNullable<Ground> => !!ground && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy;
+/** Satellite looks share their forest, including the fast preset, whose simplification concerns the buildings. No tree
+ * grows in the Underdark. */
+const treesInLook = (ground: Ground, resolved: ResolvedAppearance): ground is NonNullable<Ground> => !!ground && !ground.underdark && (ground.renderV2 ?? 0) > 0 && !ground.forestBrushes && !resolved.traits.fantasy;
 /** Whether the look of the map has modelled trees: the page offers the "3D trees" switch only then. */
 export function worldTreesAvailable(world: World | undefined, settings: V2Settings | undefined): boolean {
   if (!world || !settings) return false;
@@ -79,6 +88,14 @@ export class WorldVolumes {
   /** What the buildings layer and the trees layer read: the products of the last `refresh`. */
   readonly buildings: WorldBuildingsOptions;
   readonly trees: WorldTreesOptions;
+  /** The Underdark of the map on display (render/world/cave.ts), for the ground, the town and the cave layer: the
+   * same object while the map, the appearance and the relief do not change; undefined outside the Underdark and on
+   * paper looks. */
+  readonly cave = (): WorldCave | undefined => {
+    this.refresh();
+    return this.caveOf;
+  };
+  private caveOf?: WorldCave;
 
   private display?: City3dDisplayScene;
   /** Made once when a new town scene is published; appearance/tree-only refreshes retain it. */
@@ -114,6 +131,7 @@ export class WorldVolumes {
     private readonly parts: Pick<DisplayParts, 'town' | 'water'>,
     private readonly relief: () => TerrainHeights | undefined,
     topView: () => boolean = () => false,
+    private readonly section: () => CaveSection | undefined = () => undefined,
   ) {
     this.buildings = {
       scene: () => {
@@ -123,6 +141,7 @@ export class WorldVolumes {
       appearance: () => this.appearance,
       look: () => this.townLook(),
       terrain: relief,
+      cave: this.cave,
       topView,
       // The fast looks draw the town as boxes.
       boxed: () => map.resolved?.quality === 'light',
@@ -172,6 +191,7 @@ export class WorldVolumes {
     if (world?.terrain !== made.world?.terrain) this.treeSource = undefined;
     if (!world || !settings || !resolved || !heights) {
       this.display = this.treeSource = undefined;
+      this.caveOf = undefined;
       this.walkCollisions = undefined;
       this.townOf = { cities: [], key: '' };
       this.yardMeshes = false;
@@ -186,6 +206,21 @@ export class WorldVolumes {
     this.treesOn = r.city.trees3d;
     this.night = r.composition.ambience === 'night';
     this.palette = ground?.paperMap ? PAINTED_TREES : SATELLITE_TREES;
+    const section = ground?.underdark && !ground.paperMap ? this.section() : undefined;
+    this.caveOf = section && {
+      field: section.field,
+      settings: ground!.cavern ?? UNDERDARK_CAVERN_DEFAULTS,
+      lamps: ground!.townSites ?? ground!.townGlow ?? NO_LAMPS,
+      lightsOn: !!ground!.townGlow,
+      farms: ground!.farmBeds,
+      // Read when a mushroom stream starts, in a tilted view only: the ways and lots no wild mushroom grows on.
+      get occupation() {
+        return v2ForestOccupation(world);
+      },
+      seed: ground!.seed >>> 0,
+      raw: (x, y) => section.raw.heightAt(x, y),
+      water: this.waterAt(world),
+    };
     this.job = this.compose(world, r, resolved, heights, ground, shown, buildingsOnly);
     this.schedule();
   }

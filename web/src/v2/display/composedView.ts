@@ -48,7 +48,9 @@ import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../rende
 import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
+import { cavernField, cavernSectionHeights, underdarkCavernOf } from '../../render/underdarkCavern';
 import { createWorldTreesLayer, type WorldTreesLayer } from '../../render/world/treesLayer';
+import { createWorldCaveLayer } from '../../render/world/caveLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
 import { StepwisePaint } from '../../render/stepwisePaint';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
@@ -60,7 +62,7 @@ import type { DisplayParts } from './contract';
 import type { MapState } from './mapState';
 import type { DisplayReadiness } from './readiness';
 import { SETTLE_MS, type ViewMotion } from './viewMotion';
-import { WorldVolumes } from './worldVolumes';
+import { type CaveSection, WorldVolumes } from './worldVolumes';
 import { machineDecision, reportMachineCompositor } from '../machineTier';
 import { volumeTownBuildings } from '../../render/cityDrawOptions';
 
@@ -136,7 +138,7 @@ export class ComposedView {
 
   /** The relief of the terrain on display, for the camera and the draped ground; made again for another terrain or
    * vertical exaggeration. */
-  private heights?: { terrain: TerrainData; relief: TerrainHeights };
+  private heights?: { terrain: TerrainData; roof: number | undefined; data: Float32Array; section?: CaveSection; relief: TerrainHeights };
   /** Pitch and yaw of the last frame (0, 0: the top view). */
   private pitch = 0;
   private yaw = 0;
@@ -170,6 +172,7 @@ export class ComposedView {
       parts,
       () => this.relief(),
       () => this.volumeBuildings,
+      () => this.caveSection(),
     );
   }
 
@@ -192,13 +195,24 @@ export class ComposedView {
     const terrain = this.map.native;
     if (!terrain || dualCameras()) return undefined;
     const exaggeration = this.map.resolved?.city.exaggeration ?? 1;
-    if (this.heights?.terrain !== terrain || this.heights.relief.exaggeration !== exaggeration) {
-      const grid = terrain.field ?? { n: terrain.resolution, data: terrain.height };
+    const underdark = this.map.world?.options.biome === 'underdark',
+      grid = terrain.field ?? { n: terrain.resolution, data: terrain.height, cave: terrain.caveMask };
+    // Underdark: the relief is the cave's section model, rock cut at the roof of its chamber (the appearance's roof).
+    const roof = underdark && grid.cave ? underdarkCavernOf(this.map.resolved?.composition.recipe).roof : undefined;
+    if (this.heights?.terrain !== terrain || this.heights.roof !== roof || this.heights.relief.exaggeration !== exaggeration) {
+      // Another exaggeration keeps the section: only the roof clearance or the terrain cuts it again.
+      const kept = this.heights?.terrain === terrain && this.heights.roof === roof ? this.heights : undefined,
+        field = kept || roof === undefined ? undefined : cavernField({ x: 0, y: 0, width: terrain.width, n: grid.n, data: grid.data, cave: grid.cave }, roof),
+        section = kept ? kept.section : field && { field, raw: new TerrainHeights(grid.data, grid.n, terrain.width, -Infinity, 1) },
+        data = kept?.data ?? (field ? cavernSectionHeights(grid.data, field) : grid.data);
       // The sea covers what lies below its level; the Underdark is drawn down to its floors.
-      const floor = this.map.world?.options.biome === 'underdark' ? -Infinity : 0;
-      this.heights = { terrain, relief: new TerrainHeights(grid.data, grid.n, terrain.width, floor, exaggeration) };
+      this.heights = { terrain, roof, data, section, relief: new TerrainHeights(data, grid.n, terrain.width, underdark ? -Infinity : 0, exaggeration) };
     }
     return this.heights.relief;
+  }
+  /** The section cut the relief of an Underdark map was made from, and its heights before the cut. */
+  private caveSection(): CaveSection | undefined {
+    return this.relief() ? this.heights?.section : undefined;
   }
   /** Collision geometry is published with the town scene, independently of visible mesh LOD. */
   walkCollisions(): Terrain3dCollisions | undefined {
@@ -266,7 +280,7 @@ export class ComposedView {
       owners.gpu = ground.gpu;
       owners.terrain = map.native;
       owners.ground = false;
-      live.setLayer('ground', createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), invalidate: map.compose }));
+      live.setLayer('ground', createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), cave: this.volumes.cave, invalidate: map.compose }));
     }
     // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also
     // restarts the compositor's work loop.
@@ -283,6 +297,7 @@ export class ComposedView {
       owners.volumes = true;
       live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
       live.setLayer('trees', (this.trees = createWorldTreesLayer(gl, this.volumes.trees)));
+      live.setLayer('cave', createWorldCaveLayer(gl, { cave: this.volumes.cave, terrain: () => this.relief(), invalidate: map.compose }));
     }
     if (owners.cartography !== cartography.renderer) {
       owners.cartography = cartography.renderer;
