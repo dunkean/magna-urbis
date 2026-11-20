@@ -46,6 +46,7 @@
 - Underdark, tilted map: the caves are back in relief, with rock walls rising to the roof of each chamber and tunnel (the appearance's roof height), a black sky, the cave's darkness and lantern light on the ground and the town, modelled mushrooms, and no surface trees.
 - Underdark: the cave roof is back, cut away around the view in orbit and whole overhead when walking or flying.
 - Underdark road tunnels are drawn as bare ground at the road's own width instead of a wide grey slab with kerbs.
+- Underdark lava tubes and river passages are narrow guts a few metres wide on every map size, instead of passages at least two terrain cells wide; roads and rivers still pass through them.
 
 macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
 

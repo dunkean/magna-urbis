@@ -14,9 +14,6 @@ export interface TunnelStroke {
   cap?: CanvasLineCap;
 }
 
-/** Display half width: the carved floor is never narrower than about 0.9 terrain cell on each side. */
-export const tunnelDisplayHalfWidth = (t: CaveTunnel, cell: number): number => Math.max(t.halfWidth, 0.9 * cell);
-
 function offset(path: Vec2[], by: number): Vec2[] {
   return path.map((p, i) => {
     const a = path[Math.max(0, i - 1)],
@@ -28,9 +25,10 @@ function offset(path: Vec2[], by: number): Vec2[] {
   });
 }
 
-/** Strokes of one tunnel in world metres, bottom first. */
-export function tunnelStrokes(t: CaveTunnel, cell: number): TunnelStroke[] {
-  const hw = tunnelDisplayHalfWidth(t, cell);
+/** Strokes of one tunnel in world metres, bottom first. A natural tunnel is drawn at its own half width: the engine's
+ *  soft rock field puts the gut's walls there whatever the terrain cell. */
+export function tunnelStrokes(t: CaveTunnel): TunnelStroke[] {
+  const hw = t.halfWidth;
   if (t.kind === 'lava-tube')
     return [
       { d: t.path, color: '#1d1a22', width: 2 * hw, alpha: 0.5, cap: 'round' },
@@ -38,9 +36,9 @@ export function tunnelStrokes(t: CaveTunnel, cell: number): TunnelStroke[] {
       { d: t.path, color: '#5b5262', width: Math.max(0.6, 0.18 * hw), alpha: 0.35, dash: [0.9 * hw, 0.6 * hw] },
     ];
   if (t.kind === 'river-passage') return [{ d: offset(t.path, 0.72 * hw), color: '#7d7488', width: Math.max(0.8, 0.22 * hw), alpha: 0.5, cap: 'round' }];
-  // Dug: the road's own bore, which the terrain carve never opened, so it keeps the road's width whatever the cell.
-  // Bare trodden floor under the road (no slab, no kerb lines) and a portal bar at each mouth.
-  return dugStrokes(t, t.halfWidth);
+  // Dug: the road's own bore, which the terrain carve never opened. Bare trodden floor under the road (no slab, no
+  // kerb lines) and a portal bar at each mouth.
+  return dugStrokes(t, hw);
 }
 
 function dugStrokes(t: CaveTunnel, hw: number): TunnelStroke[] {
@@ -58,12 +56,12 @@ function dugStrokes(t: CaveTunnel, hw: number): TunnelStroke[] {
   return [{ d: t.path, color: '#706a72', width: 2 * hw, alpha: 0.35, cap: 'round' }, ...portals.map(d => ({ d, color: '#8a8094', width: Math.max(1, 0.5 * hw), alpha: 0.7, cap: 'butt' as const }))];
 }
 
-export function drawCaveTunnels(ctx: CanvasRenderingContext2D, tunnels: readonly CaveTunnel[] | undefined, cell: number): void {
+export function drawCaveTunnels(ctx: CanvasRenderingContext2D, tunnels: readonly CaveTunnel[] | undefined): void {
   if (!tunnels?.length) return;
   ctx.save();
   ctx.lineJoin = 'round';
   for (const t of tunnels)
-    for (const s of tunnelStrokes(t, cell)) {
+    for (const s of tunnelStrokes(t)) {
       if (s.d.length < 2) continue;
       ctx.beginPath();
       ctx.moveTo(s.d[0].x, s.d[0].y);
@@ -78,10 +76,10 @@ export function drawCaveTunnels(ctx: CanvasRenderingContext2D, tunnels: readonly
   ctx.restore();
 }
 
-export function caveTunnelsSvg(tunnels: readonly CaveTunnel[] | undefined, cell: number): string {
+export function caveTunnelsSvg(tunnels: readonly CaveTunnel[] | undefined): string {
   if (!tunnels?.length) return '';
   const paths = tunnels
-    .flatMap(t => tunnelStrokes(t, cell))
+    .flatMap(t => tunnelStrokes(t))
     .filter(s => s.d.length >= 2)
     .map(
       s =>
