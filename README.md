@@ -13,23 +13,25 @@
   <a href="https://magna-urbis.org/"><b>Open the V2 alpha</b></a> ·
   <a href="https://magna-urbis.org/scientific/index.html">How it works?</a> ·
   <a href="https://github.com/dunkean/magna-urbis/releases">Desktop downloads</a> ·
+  <a href="https://github.com/dunkean/magna-urbis/releases/download/desktop-v0.3.10/Magna.Urbis.V2_0.3.10_aarch64.dmg">macOS (Apple Silicon)</a> ·
   <a href="https://magna-urbis.org/gallery/v2/">Gallery</a> ·
   <a href="https://github.com/dunkean/magna-urbis/discussions">Discussions</a> ·
   <a href="README_FR.md">Français</a>
 </p>
 
 <p align="center">
-  <img src="docs/images/readme/hero-italian-comune-3d.webp" alt="3D view of a walled Italian comune of 10,000 inhabitants, with red tile roofs, towers and a river crossing the town" width="100%">
+  <img src="docs/images/readme/italian-comune-satellite.webp" alt="Satellite view of an Italian comune, surrounded by woodland and fields in a river valley" width="100%">
 </p>
 
 ---
 
 ## Magna Urbis V2 is in alpha
 
-**Magna Urbis V2 is now available as an alpha**, in the browser and as a desktop application for Windows and Linux. Create a region, place its settlements, grow their towns, then explore and edit the result as a map or in 3D.
+**Magna Urbis V2 is now available as an alpha**, in the browser and as a desktop application for Windows, Linux and macOS on Apple Silicon. Create a region, place its settlements, grow their towns, then explore and edit the result as a map or in 3D.
 
 - **Web:** [magna-urbis.org](https://magna-urbis.org/). No account and no install. Generation runs in your browser (Rust compiled to WebAssembly, with WebGPU when available).
-- **Desktop:** [GitHub releases](https://github.com/dunkean/magna-urbis/releases) for Windows x64 (installer or portable ZIP) and Linux x64 (AppImage or DEB). It includes the native Rust engine and native neural relief; you do not need Rust, Node.js or Python. macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+- **Desktop.** Download Windows x64 (installer or portable ZIP) and Linux x64 (AppImage or DEB) from [GitHub Releases](https://github.com/dunkean/magna-urbis/releases). The app bundles the native Rust engine and native neural relief. It runs without a separate installation of Rust, Node.js or Python.
+- **macOS on Apple Silicon.** The experimental preview is available as a DMG starting with alpha 0.3.10. The DMG is ad hoc signed and distributed without Apple notarization. GPU inference on a physical Mac remains unverified. [Download the DMG](https://github.com/dunkean/magna-urbis/releases/download/desktop-v0.3.10/Magna.Urbis.V2_0.3.10_aarch64.dmg)
 - **V1:** the first version stays online at [v1.magna-urbis.org](https://v1.magna-urbis.org/).
 
 This is an alpha. Results, settings and saved projects may still change between versions. If something breaks, a report with the share code helps a lot.
@@ -63,6 +65,17 @@ One chain, from the ground up. Every stage can be rerun, tuned or edited on its 
 ## Gallery
 
 All images below are unretouched V2 screenshots.
+
+### Satellite views
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/readme/desert-medina-satellite.webp" alt="Desert medina between rocky ridges and a river bend, with irrigated fields"><br><sub>Desert medina and its river valley</sub></td>
+    <td width="50%"><img src="docs/images/readme/riverside-quarter-satellite.webp" alt="Overhead view of a riverside quarter with terracotta roofs, streets and a bridge"><br><sub>Riverside quarter, close up</sub></td>
+  </tr>
+</table>
+
+### Cities
 
 <table>
   <tr>
