@@ -66,20 +66,53 @@ jobs:
           git -C ../infinite_map sparse-checkout set native/neural-earth tools/wasm
           git -C ../infinite_map fetch --depth 1 --filter=blob:none origin "$revision"
           git -C ../infinite_map checkout --detach FETCH_HEAD
+      - name: Restore macOS engines for this source
+        if: matrix.platform == 'macos-arm64'
+        id: mac-engines
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            rust/pkg/wasm
+            rust/pkg/houses
+            rust/pkg/neural-web
+            rust/target/release/magna-urbis-local
+            rust/target/release/magna-urbis-neural
+          key: macos-arm64-engines-v1-${{ hashFiles('rust/crates/**', 'rust/Cargo.*', 'rust/rust-toolchain.toml', 'rust/.cargo/**', 'rust/scripts/**', 'rust/models/neural-earth/**', 'web/scripts/v2.mjs', 'web/scripts/neural_wasm.mjs', 'web/package-lock.json') }}
       # The desktop app generates with the native Rust engine and its WebView is not cross-origin
       # isolated, so the WASM threads package (web deploy only) would never load there.
       - name: Prepare WASM
+        if: matrix.platform != 'macos-arm64' || steps.mac-engines.outputs.cache-hit != 'true'
+        timeout-minutes: 30
         working-directory: web
         run: npm run prepare:v2 -- --no-threads
       - name: Build desktop installers and both native engines
         if: matrix.platform != 'macos-arm64'
         working-directory: web
         run: npm run app:v2:build -- --bundles=${{ matrix.bundles }}
-      - name: Build Apple Silicon DMG and both native engines
-        if: matrix.platform == 'macos-arm64'
+      - name: Build both Apple Silicon native engines and resources
+        if: matrix.platform == 'macos-arm64' && steps.mac-engines.outputs.cache-hit != 'true'
         timeout-minutes: 30
         working-directory: web
-        run: npm run app:v2:build -- --bundles=dmg --features=desktop-smoke --config='{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+        run: npm run prepare:v2:desktop
+      - name: Save the verified source's macOS engine outputs
+        if: matrix.platform == 'macos-arm64' && steps.mac-engines.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            rust/pkg/wasm
+            rust/pkg/houses
+            rust/pkg/neural-web
+            rust/target/release/magna-urbis-local
+            rust/target/release/magna-urbis-neural
+          key: ${{ steps.mac-engines.outputs.cache-primary-key }}
+      - name: Build Apple Silicon DMG
+        if: matrix.platform == 'macos-arm64'
+        timeout-minutes: 30
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          MAGNA_LOCAL_BIN: ${{ github.workspace }}/rust/target/release/magna-urbis-local
+        working-directory: web
+        run: npm run app:v2:build -- --no-build --bundles=dmg --features=desktop-smoke --config='{"bundle":{"macOS":{"signingIdentity":"-"}}}'
       - uses: actions/setup-python@v5
         if: matrix.platform != 'macos-arm64'
         with:
@@ -117,6 +150,11 @@ jobs:
         run: node web/scripts/v2_neural_release.mjs
       - name: Check resources and stage release assets
         run: node web/scripts/v2_release_check.mjs --platform=${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-v2-${{ matrix.platform }}
+          path: release-v2/${{ matrix.platform }}/
+          if-no-files-found: error
       - name: Prepare verified neural weights for the macOS smoke test
         if: matrix.platform == 'macos-arm64'
         run: node web/scripts/v2_neural_release.mjs --output="${RUNNER_TEMP}/magna-macos-weights"
@@ -129,11 +167,6 @@ jobs:
           cd release-v2/macos-arm64
           shasum -a 256 -c SHA256SUMS-macos-arm64.txt
           node ../../web/scripts/v2_macos_check.mjs ./*.dmg "${RUNNER_TEMP}/magna-macos-weights"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-v2-${{ matrix.platform }}
-          path: release-v2/${{ matrix.platform }}/
-          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
