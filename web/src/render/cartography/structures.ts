@@ -89,7 +89,7 @@ export function paintStructures(c: CartographyContext, f: VectorFrame): void {
       ctx.globalAlpha = 1;
     }
     // Typed tunnels (lava tubes, river passages) over the floor they opened.
-    drawCaveTunnels(ctx, c.world.terrain.caverns?.tunnels, c.world.terrain.height.cell);
+    drawCaveTunnels(ctx, c.world.terrain.caverns?.tunnels);
   }
 }
 

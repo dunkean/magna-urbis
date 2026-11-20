@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseCaveTunnels } from '../src/gen/terrain/caveTunnels';
-import { tunnelStrokes, caveTunnelsSvg, tunnelDisplayHalfWidth } from '../src/render/caveTunnels';
+import { tunnelStrokes, caveTunnelsSvg } from '../src/render/caveTunnels';
 import { roleNoun, roleText } from '../src/gen/names/meanings';
 
 describe('Underdark tunnels', () => {
@@ -11,7 +11,7 @@ describe('Underdark tunnels', () => {
     expect(tunnels[1].path).toHaveLength(3);
     expect(parseCaveTunnels(undefined)).toEqual([]);
   });
-  it('never draws a tunnel narrower than the carved floor', () => {
+  it('draws every tunnel at its own width', () => {
     const tube = {
       kind: 'lava-tube' as const,
       halfWidth: 4,
@@ -20,8 +20,10 @@ describe('Underdark tunnels', () => {
         { x: 300, y: 0 },
       ],
     };
-    expect(tunnelDisplayHalfWidth(tube, 20)).toBe(18);
-    expect(tunnelStrokes(tube, 20)).toEqual([]);
+    // A lava tube is the bare floor of its gut: nothing is drawn over it.
+    expect(tunnelStrokes(tube)).toEqual([]);
+    // A river passage keeps its ledge path, sized by the gut's half width whatever the terrain cell.
+    expect(tunnelStrokes({ ...tube, kind: 'river-passage' as const })[0].width).toBeCloseTo(0.88, 5);
     const dug = {
       kind: 'dug' as const,
       halfWidth: 3,
@@ -30,10 +32,10 @@ describe('Underdark tunnels', () => {
         { x: 0, y: 200 },
       ],
     };
-    expect(tunnelStrokes(dug, 2).filter(s => s.d.length === 2 && s.d[0].y === s.d[1].y)).toHaveLength(2);
-    // A dug tunnel is the road's bore, not a carved floor: it keeps the road's width on a coarse terrain grid.
-    expect(tunnelStrokes(dug, 40)[0].width).toBe(6);
-    expect(caveTunnelsSvg([tube], 20)).toContain('layer-cave-tunnels');
+    expect(tunnelStrokes(dug).filter(s => s.d.length === 2 && s.d[0].y === s.d[1].y)).toHaveLength(2);
+    // A dug tunnel is the road's bore, not a carved floor: it keeps the road's width.
+    expect(tunnelStrokes(dug)[0].width).toBe(6);
+    expect(caveTunnelsSvg([tube])).toContain('layer-cave-tunnels');
   });
   it('names each kind with its own generic word', () => {
     expect(roleNoun('terrain.tunnel.lava-tube')).toBe('lavaTube');
