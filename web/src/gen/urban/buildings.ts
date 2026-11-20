@@ -513,8 +513,6 @@ function buildPlotRaw(pl: Plot, cov: number, P: MorphologyParams, rng: Rng, hint
     if (D - from < 3) return;
     for (const r of clipPlot(poly, band(from, D + 1), convex)) if (area(r) > 20) out.push({ poly: r, kind: 'garden' });
   };
-  const [sb0, sb1] = P.setback[zone];
-  const [bd0, bd1] = P.buildDepth[zone];
   farmstead(pl, poly, convex, fa, t, n, W, D, band, add, addGarden, rng);
   return out;
 }
@@ -560,7 +558,6 @@ function buildPlotRawExperimental(pl: Plot, cov: number, P: MorphologyParams, rn
     { p: { x: fa.x + n.x * d0, y: fa.y + n.y * d0 }, n },
     { p: { x: fa.x + n.x * d1, y: fa.y + n.y * d1 }, n: { x: -n.x, y: -n.y } },
   ];
-  const zone = pl.zone;
   const out: Bldg[] = [];
   // Farm buildings also prefer the street frame over the parcel subdivision axes.
   const add = (hps: HalfPlane[], kind: Bldg['kind'], min = 10) => {
@@ -578,8 +575,6 @@ function buildPlotRawExperimental(pl: Plot, cov: number, P: MorphologyParams, rn
     if (D - from < 3) return;
     for (const r of clipPlot(poly, band(from, D + 1), convex)) if (area(r) > 20) out.push({ poly: r, kind: 'garden' });
   };
-  const [sb0, sb1] = P.setback[zone];
-  const [bd0, bd1] = P.buildDepth[zone];
   farmstead(pl, poly, convex, fa, t, n, W, D, band, add, addGarden, rng);
   return out;
 }

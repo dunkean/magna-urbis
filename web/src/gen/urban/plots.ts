@@ -11,13 +11,13 @@
  * 4. Each territory is cut along one shared orthogonal frame, with a seeded tilt in organic fabrics.
  * 5. Back land = block minus territories; slivers are merged into the adjacent plot.
  */
-import type { Vec2, Polygon, Polyline } from '../core/geom';
-import { dist, polygonArea } from '../core/geom';
+import type { Vec2, Polygon } from '../core/geom';
+import { dist } from '../core/geom';
 import type { Rng } from '../core/rng';
 import type { MorphologyParams, Zone } from './morphology';
 import type { Streets } from './streets';
 import { MultiPoly, PolyH, intersectionS, differenceS, difference, unionS, tryIntersection, mpArea } from '../geo/bool';
-import { area, interiorAngle, pointInRing, distToSeg, distToRing, inscribed, cleanRing, orientPos, bboxOf, snapPt, isSimple, convexWidth, convexHull } from '../geo/poly';
+import { area, interiorAngle, pointInRing, distToSeg, distToRing, inscribed, cleanRing, orientPos, bboxOf, isSimple, convexWidth, convexHull } from '../geo/poly';
 import { clipPlot } from './buildings';
 import { truncateAcute } from './blocks';
 import { stitchUnion } from '../geo/stitch';
