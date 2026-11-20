@@ -15,6 +15,7 @@ import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
 
 export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: keyof Palette['land']): void {
+  if (c.activeLight) return;
   const { pal, furrowSize, furrowPaths } = c;
   const { ctx, sc, lod, rect, budgetRect, fs, fillPolys, strokePolys, multiply } = f;
   // Actual parallel plough lines, anchored like the SVG pattern. Suppress subpixel moire at far zoom.
@@ -59,6 +60,7 @@ export function paintFieldTexture(c: CartographyContext, f: VectorFrame, kind: k
   if (kind === 'field' && !isUnderdarkBiome(c.world.options.biome) && lod.strips) strokePolys('furlong-edges', pal.furrow, mapStrokeWidth(MAP_STROKES.furlong, sc), pal.furlongAlpha ?? 0.55);
 }
 export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
+  if (!c.activeLight && c.deps.fullLanduse && !c.deps.fullLanduse('field')) return;
   const { pal, u, brushes, polyL, linesOf } = c;
   const { sc, lod, px, lw, fillPolys, strokePolys, strokeLines, natural, inkAlpha, strokeEarthRoads, brushTrees, luOn } = f;
   const fu = Math.max(1, u);
@@ -102,7 +104,7 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
           'butt',
         );
       }
-      if (lod.band >= 2 && polyL('hedge-trees')) {
+      if (!c.activeLight && lod.band >= 2 && polyL('hedge-trees')) {
         if (brushes) brushTrees('hedge-trees');
         else {
           fillPolys('hedge-trees', pal.treeFill, 0.75);

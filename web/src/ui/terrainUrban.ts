@@ -79,6 +79,7 @@ import { CityGlCanvasLayer, type CityGlHostFrame } from '../render/cityGlHost';
 import { cityGlDrawOptions } from '../render/cityGlView';
 import { withoutUrbanPlan, type CityComponent } from '../render/appearanceRecipe';
 import { getBenchComposition, resolveBenchAppearance, setBenchAppearanceField, setBenchComposition } from './benchComposition';
+import { groundRoadLook } from '../render/composition';
 import { drawUrbanSemantic } from '../render/semanticLayer';
 import { getRenderMode, onRenderMode, reportRenderStats, setRenderMode, type RenderMode } from '../render/renderMode';
 import { V1LandscapeLayer, type V1LandscapeStyle } from '../render/v1Landscape';
@@ -98,7 +99,7 @@ import { updateUrbanBuildingSelection } from './urbanBuildingSelection';
 import { buildingSettings, workshopSettings, appliedWorkshopSnapshot, mergeCityWorkshop, mergeWorkshopCities } from './urbanSnapshot';
 import { programmeSvg, refusalSvg } from '../render/urbanProgramme';
 import { DEFAULT_CITY_ARCHITECTURE, CITY_DISPLAY_DEFAULTS, cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
-import { citySettlementRaster, citySiteArchetypes, cityTownRoads } from '../render/cityGeneration';
+import { citySettlementRaster, citySiteArchetypes, cityFixedSites, cityTownRoads } from '../render/cityGeneration';
 import { openMethodNote } from './methodNotes';
 import { applySettlementStyle, installSettlementStyles } from './urbanSettlementStyles';
 import { createUrbanMainPanel } from './urbanMainPanel';
@@ -967,22 +968,12 @@ export function createTerrainUrban(options: {
   rendering.className = 'advanced';
   rendering.dataset.renderSettingsCategory = 'buildings';
   rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({
-    reserve: 'Réserve de croissance',
-    allocated: 'Terre urbaine attribuée',
-    centers: 'Noyaux et identités de quartier',
-    domains: 'Domaines réservés',
-    quarters: 'Secteurs de calcul',
-    blocks: 'Îlots',
     streets: 'Rues urbaines',
     roadSurface: 'Surface des routes (carrefours, congés)',
     enclosures: 'Enceintes et portes',
     lotEnclosures: 'Clôtures des parcelles',
-    parcels: 'Parcelles',
     gardens: 'Jardins',
     places: 'Places et communs',
-    fronts: 'Façades accessibles',
-    axes: 'Axes des parcelles',
-    access: 'Statut de desserte des parcelles',
     textured: 'Matières texturées',
   })
     .map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`)
@@ -2123,6 +2114,7 @@ export function createTerrainUrban(options: {
       message.layoutConfig = layoutWithEdits(clone(appliedLayout), edits);
       message.sites = selected.map(s => cityNamedSite({ key: s.key, name: s.name, population: s.population, culture: s.culture, center: s.center, radius: s.radius }, options.getSeed()));
       message.layoutConfig.siteArchetypes = citySiteArchetypes(selected);
+      message.layoutConfig.fixedSites = cityFixedSites(selected);
       message.roads = cityTownRoads(roads);
     } else {
       // The engine retains the exact serialized layouts of its last quarter response:
@@ -2961,6 +2953,8 @@ export function createTerrainUrban(options: {
         selectedId: selected,
         selectedParcel,
         buildingStyle: appearance.style,
+        smoothRoofs: appearance.smoothRoofs,
+        roof: appearance.roof,
         painted: r.city.painted,
         buildingsVisible: visible && !native && !parentOwned,
         diagnostic: appearance.diagnostic,
@@ -4130,14 +4124,7 @@ export function createTerrainUrban(options: {
   populate('quarters');
   populate('parcels');
   editsReport();
-  // Plan layers hidden together (map toggle "Plan de ville"): buildings,
-  // streets and walls stay. The previous choices come back when shown again.
-  const PLAN_LAYERS = ['blocks', 'parcels', 'gardens', 'places', 'domains', 'allocated', 'reserve'] as const;
-  let planSaved: Partial<Record<(typeof PLAN_LAYERS)[number], boolean>> | undefined;
   return {
-    get planVisible(): boolean {
-      return !planSaved;
-    },
     /** « Matières texturées » of the Rendu panel (read by the City Bench 3D view). */
     get textured(): boolean {
       return !!render.textured;
@@ -4148,19 +4135,6 @@ export function createTerrainUrban(options: {
       render.textured = on;
       const box = rendering.querySelector<HTMLInputElement>('input[data-render="textured"]');
       if (box) box.checked = on;
-      draw();
-      options.onChange();
-    },
-    setPlanVisible(visible: boolean): void {
-      if (visible === !planSaved) return;
-      if (!visible) {
-        planSaved = Object.fromEntries(PLAN_LAYERS.map(k => [k, render[k]]));
-        for (const k of PLAN_LAYERS) render[k] = false;
-      } else {
-        for (const k of PLAN_LAYERS) render[k] = planSaved?.[k] ?? render[k];
-        planSaved = undefined;
-      }
-      for (const e of [...renderInputs.filter((e): e is HTMLInputElement => e instanceof HTMLInputElement), ...Array.from(ruralReddit.querySelectorAll<HTMLInputElement>('[data-render]'))]) if (e.type === 'checkbox') e.checked = Boolean(render[e.dataset.render as keyof Render]);
       draw();
       options.onChange();
     },
@@ -4323,7 +4297,7 @@ export function createTerrainUrban(options: {
         appearance: { colors: r.palette.colors, style: r.city.buildingStyle, diagnostic: r.city.diagnostic, ambience: composition.ambience },
         colors: r.palette.colors,
         roadLook: composition.networks.roads.look,
-        groundBlend: composition.networks.roads.look === 'natural',
+        groundBlend: groundRoadLook(composition.networks.roads.look),
         beforeBuildings: semantic
           ? target => drawUrbanSemantic(target, [cityPlan!], { look: composition.landuse.urban, opacity: composition.landuse.opacity, mpp, viewport: { minX: region.x, minY: region.y, maxX: region.x + region.width, maxY: region.y + region.width } })
           : undefined,

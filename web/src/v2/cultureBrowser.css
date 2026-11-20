@@ -30,6 +30,19 @@ dialog.culture-browser {
   box-sizing: border-box;
   margin: 16px 0;
 }
+.culture-browser-environment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.culture-browser-environment[hidden] {
+  display: none;
+}
+.culture-browser-environment input {
+  width: auto;
+  margin: 0;
+}
 .culture-browser-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));

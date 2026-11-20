@@ -91,8 +91,9 @@ export function createStatusActions(state: PageState, actions: PageActions) {
     $<HTMLDialogElement>(id).showModal();
   }
 
-  function setBusy(value: boolean): void {
-    if (value) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'busy' }));
+  /** `keepEditor`: the work belongs to the open road or outline editor (its Finish, an outline edit), which stays on. */
+  function setBusy(value: boolean, keepEditor = false): void {
+    if (value && !keepEditor) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'busy' }));
     labelEditorHostInert(value);
     state.busy = value;
     $('#progress-card').hidden = !value;
@@ -144,6 +145,7 @@ export function createStatusActions(state: PageState, actions: PageActions) {
     actions.syncNameOrigins();
     state.riverEditor.sync();
     state.roadEditor.sync();
+    state.contourEditor.sync();
     state.townMover.sync();
     state.editingTools.sync();
     state.workbenchLayout?.sync();

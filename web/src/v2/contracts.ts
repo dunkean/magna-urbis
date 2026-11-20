@@ -53,6 +53,9 @@ export interface V2CityAppearance {
   colors?: 'materials' | 'uses';
   exaggeration?: number;
   refinement?: 'source' | 'noise';
+  /** Modelled near trees and their display distance, saved independently of machine defaults. */
+  trees3d?: boolean;
+  treeDistance?: number;
 }
 export interface V2Appearance {
   /** Pass-by-pass recipe (render/composition.ts): the source of truth of every field it covers. */
@@ -150,6 +153,9 @@ export interface V2WorkerRequest {
   assetBase?: string;
   /** Scheduling only: one background pass reuses its bounded urban sessions across batches. */
   keepUrbanLanes?: boolean;
+  /** Direct road edits retain placement and update only the selected built towns. */
+  roadEdit?: 'access' | 'rebuild';
+  contourEdit?: boolean;
 }
 /** Lazy fetch of the resource payload of a world's terrain; never a generation (id shares the client's counter). */
 export interface V2ResourceRequest {

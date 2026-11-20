@@ -5,10 +5,26 @@
  * suffix replayed at every frame; the suffix is culled to its band once, when recorded, so a frame never submits
  * geometry its scissor would drop whole.
  */
-import type { ClipNode, DisplayList, DrawOp, Mat, PathGeometry, RecordedPath } from './contract';
+import { SPRITE_STRIDE, type ClipNode, type DisplayList, type DrawOp, type Mat, type PathGeometry, type RecordedPath } from './contract';
 import { tolerance } from './transforms';
 
 type Box = readonly [number, number, number, number];
+
+/** Preserve call order and per-path compositing while bounding each upload/replay batch of a drape bake. */
+export function boundedList(list: DisplayList): DisplayList {
+  const ops: DrawOp[] = [];
+  for (const op of list.ops) {
+    if (op.type === 'sprites') {
+      for (let i = 0; i < op.count; i += 1024) {
+        const count = Math.min(1024, op.count - i);
+        ops.push({ ...op, count, instances: op.instances.subarray(i * SPRITE_STRIDE, (i + count) * SPRITE_STRIDE) });
+      }
+    } else if (op.type !== 'clear' && op.paths.length > 32) {
+      for (let i = 0; i < op.paths.length; i += 32) ops.push({ ...op, paths: op.paths.slice(i, i + 32) });
+    } else ops.push(op);
+  }
+  return { ...list, ops };
+}
 
 function transformedBox(b: Box, m: Mat, pad: number): Box | null {
   if (!(b[2] >= b[0] && b[3] >= b[1])) return null;

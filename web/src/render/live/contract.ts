@@ -121,6 +121,13 @@ export interface LiveLayer {
   work?(budgetMs: number, frame: LiveFrame | undefined): boolean;
   /** What the layer shows changed (new world, appearance, revision): retained GPU data is stale. */
   invalidate?(): void;
+  /** Another look (the map style was switched): what the layer shows is a picture of the previous look and must not
+   * be shown with any part of the new one. The layer shows the new look as soon as it has some of it (coarse first),
+   * and nothing of the old one from then on. */
+  lookChanged?(): void;
+  /** The layer draws nothing in the top view (the volumes): its work there only prepares a later tilt, so in a
+   * top-view frame it runs only once the other layers and the page's picture at rest have nothing left to do. */
+  readonly tiltOnly?: boolean;
   /** The context was lost: every GL handle is dead. */
   contextLost?(): void;
   stats?(): LiveLayerStats;
@@ -213,6 +220,10 @@ export interface LiveTextOptions {
 // ---------------------------------------------------------------------------------------------------------------------
 
 export interface LiveCityEnv {
+  /** The compositor's building volumes own every house, including the plan camera and the far town. */
+  volumeBuildings?(): boolean;
+  /** In the tilted view, the volume layer draws the lot boundaries instead of the terrain drape. */
+  volumeYards?(): boolean;
   /** The appearance an exact frame would be drawn with now. */
   appearance(): import('../appearanceRecipe').ResolvedAppearance;
   /** Layers switched off by the page (same object the exact town renderer receives). */
@@ -256,6 +267,11 @@ export interface LiveStats {
   layerMs?: Partial<Record<LiveLayerName, number[]>>;
   /** A layer whose `ready`, `draw` or `work` threw: the compositor dropped it (its stand-in shows instead). */
   errors?: Partial<Record<LiveLayerName, string>>;
+  /** The picture of the 2D view at rest (v2/display/composedView.ts): `picture` its state (due, live, awaiting,
+   * painting, exact); `exactFrom` the lowest layer painted by its exact renderer because its live layer cannot show it
+   * (globalThis.__muLiveOverlayWhy, __muLiveCityGaps and __muVectorEngine.stats() say why); `awaited` the lowest
+   * live layer still preparing it, which keeps the composed picture meanwhile. */
+  rest?: { picture: string; exactFrom?: LiveLayerName; awaited?: LiveLayerName };
   /** Units of work that held the main thread longer than a frame can afford, oldest first (at most 64): what ran
    * (`work:ground`, `draw:city`, `exact:city`...), for how long (ms), and when (`performance.now()`). */
   slow?: [what: string, ms: number, at: number][];

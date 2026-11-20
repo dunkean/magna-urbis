@@ -149,6 +149,7 @@ fn main() {
             river_area, lake_depth: 1.0, lake_area: 10.0, river_mode: "vector".into(),
             flat_slope: 1.0, sinuosity: 1.8, width_scale: 3.0, balance: true, braiding: 1.0, anabranching: true,
             terrain_influence: true, avulsions: true, confluence: "climate".into(), deltas: true, headwaters,
+            min_river_length: 0.0, density: 0.0, oxbows: 0.0,
         };
         let water = compute_water(&again.height, n, width, &settings, Climate { temperature: 9.0, precipitation: 1500.0 }, seed, again.hydrology);
         let cell_km2 = cell * cell / 1e6;

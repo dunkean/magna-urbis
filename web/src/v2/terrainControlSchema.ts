@@ -1,3 +1,4 @@
+/** Public terrain control catalogue, read by terrainControls, terrainbench and the stage registry. This cohesive schema table keeps engine units and bilingual labels together. */
 import type { ParameterField, ParameterChoice } from './parameterForm';
 import neuralModels from '../../../rust/models/neural-earth/catalog.json';
 
@@ -24,6 +25,16 @@ const choice = (value: string, en: string, fr: string): ParameterChoice => ({ va
 const select = (path: string, en: string, fr: string, options: ParameterChoice[], help?: [string, string]): ParameterField => ({ path: `terrain.${path}`, type: 'select', label: copy(en, fr), options, ...(help ? { help: copy(...help) } : {}) });
 const simple = (entries: [string, string, string][]) => entries.map(([value, en, fr]) => choice(value, en, fr));
 export const coastDirections = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
+export const terrainCoastFields: ParameterField[] = [
+  number('coastProfile.width', 'Median smoothing width (m)', 'Largeur médiane du lissage (m)', 0, 10000, 25, [
+    'Wider bands create gentler slopes toward the sea; narrower bands preserve relief closer to the shore. 0 cuts directly at the shoreline.',
+    'Une bande large crée une pente douce vers la mer ; une bande étroite conserve le relief près du rivage. 0 découpe directement au rivage.',
+  ]),
+  number('coastProfile.variability', 'Smoothing variability', 'Variabilité du lissage', 0, 1, 0.05, [
+    '0 keeps a constant width; higher values make it oscillate slowly along the coast, with smooth seeded stretches of irregular length.',
+    '0 garde une largeur constante ; les valeurs élevées la font osciller lentement le long des côtes, par tronçons irréguliers et continus liés à la graine.',
+  ]),
+];
 export function toggleCoastDirection(mask: number, direction: (typeof coastDirections)[number]): number {
   return (mask ^ (1 << coastDirections.indexOf(direction))) & 255;
 }
@@ -565,6 +576,7 @@ export const allTerrainFields = [
   ...terrainSourceFields,
   ...terrainBasicFields,
   ...terrainProceduralFields,
+  ...terrainCoastFields,
   ...terrainClimateFields,
   ...terrainNeuralFields,
   ...terrainModelFields,

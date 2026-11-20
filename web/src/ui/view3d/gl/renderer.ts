@@ -528,6 +528,7 @@ export function buildingFrame(parts: Pick<TerrainParts, 'rig' | 'cavern'>, groun
     targetHeight: frame.targetHeight,
     exaggeration: c.exaggeration,
     focal: frame.focal,
+    dpr: parts.rig.dpr(),
     distance: c.distance,
     // Underdark: lit by the town's lanterns, dissolving into the cave's darkness with the ground (fog in metres).
     ...(cave ? { cave: { light: 1.05 - 0.45 * cave[1], fog: [cave[2] / c.exaggeration, cave[3] / c.exaggeration] as [number, number], eye: [c.x + frame.eye[0], c.y + frame.eye[2], Math.max(0, frame.eye[1] / c.exaggeration)] as [number, number, number] } } : {}),

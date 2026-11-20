@@ -7,6 +7,9 @@ export interface View {
   pitch?: number;
   /** Compass direction at the top of the screen, in radians clockwise from north; 0 or absent: north. */
   yaw?: number;
+  /** A free eye (walking, flying): its altitude in metres as drawn, standing over (cx, cy), which is then the eye's
+   * place rather than the ground point looked at; `pitch` may then look past the horizon. Absent: the orbit camera. */
+  eye?: number;
 }
 export interface Rect4 {
   minX: number;

@@ -114,12 +114,17 @@
   color: var(--gold);
 }
 /* View spinner left of the view selector: the track follows the text colour (dark or light), the arc is the accent. */
+.view-loading-slot {
+  flex: 0 0 16px;
+  height: 16px;
+  margin-inline-end: -2px;
+}
 .view-loading {
+  display: block;
   flex: none;
   box-sizing: border-box;
   width: 16px;
   height: 16px;
-  margin-inline-end: -2px;
   border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
   border-top-color: var(--gold, currentColor);
   border-radius: 50%;
@@ -131,11 +136,6 @@
 @keyframes view-loading-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .view-loading {
-    animation-duration: 2.4s;
   }
 }
 .view-strip #render-status {

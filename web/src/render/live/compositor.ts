@@ -25,10 +25,12 @@
  * raster uploads), isolatedGroup.ts (the multisampled group), gpuTimer.ts (GPU time of a frame), liveStats.ts
  * (`globalThis.__muLive`).
  */
+import { reportMachineFrame } from '../../v2/machineTier';
 import { LIVE_CONTEXT_ATTRIBUTES, LIVE_LAYER_ORDER, resetLiveState, type LiveFrame, type LiveLayer, type LiveLayerName, type LiveLayerState, type LiveLayerStats } from './contract';
 import { createGpuTimer } from './gpuTimer';
 import { createIsolatedGroup } from './isolatedGroup';
 import { liveStats, noteLiveUnit, pushSample } from './liveStats';
+import { groundBudgetBehindPace, PACE_MIN_GAP_MS, paceHolds } from './policy';
 import { createRasterQuad, dropRaster, uploadRaster, type Raster, type RasterQuad } from './rasterQuad';
 import { SOFTWARE_GL } from '../softwareGl';
 import type { View } from '../view';
@@ -55,6 +57,9 @@ interface LiveCompositorOptions {
   relief(): WorldRelief | undefined;
   /** Side of the map in metres (0: no map), for the tiles of the map drape. */
   mapSize(): number;
+  /** The page is still making the picture at rest of the view (an exact paint in steps, a layer it waits for): the
+   * work of the layers that only prepare a tilt (LiveLayer.tiltOnly) waits for it in a top-view frame. */
+  restPending(): boolean;
 }
 /** World square of a raster, in map metres. */
 interface LiveRasterRegion {
@@ -71,13 +76,18 @@ export interface LiveCompositor {
   /** Installs, replaces or removes a layer; the layer it replaces is disposed. */
   setLayer(name: LiveLayerName, layer: LiveLayer | undefined): void;
   hasLayer(name: LiveLayerName): boolean;
+  /** Preparation still owed by this layer for the current frame, excluding other layers' background work. */
+  layerPending(name: LiveLayerName): boolean;
   /** A layer that is not shown is neither drawn nor replaced by its stand-in (an exact canvas covers it); its `work` still runs. */
-  setLayerShown(name: LiveLayerName, shown: boolean): void;
+  setLayerShown(name: LiveLayerName, shown: boolean, preferRaster?: boolean): void;
   invalidateLayer(name: LiveLayerName): void;
   /** The exact raster of a layer, painted for `view` at `cssW` x `cssH`: uploaded once (in idle time, or in the first
    * frame that needs it) and shown, moved with the view, whenever the layer is not ready. Undefined clears it. */
   setStandIn(name: LiveLayerName, source: TexImageSource | undefined, view: View, cssW: number, cssH: number): void;
   clearStandIns(): void;
+  /** The map style was switched: no picture of the previous look shows any more (stand-ins, the map drape's tiles,
+   * what each layer holds: LiveLayer.lookChanged); the new look shows from its coarsest tiles up. */
+  lookChanged(): void;
   /** The vector water raster of the frame (the `water` layer); uploaded when the image object changes. */
   setWater(image: TexImageSource | undefined, region?: LiveRasterRegion): void;
   /** Paper colour behind the layers (CSS colour). */
@@ -95,6 +105,11 @@ export interface LiveCompositor {
   hasStandIn(name: LiveLayerName): boolean;
   /** Draws one frame. False: nothing was presented (context lost). */
   draw(view: View, cssW: number, cssH: number, dpr: number, moving: boolean): boolean;
+  /** A tilted view as a picture: the frame of `view` drawn by the same layers into an offscreen multisampled target of
+   * `cssW * dpr` x `cssH * dpr` device pixels (cut to the context's limit), read back over the paper into `out`. A
+   * synchronous readback, for a capture only. False in the top view (its exact renderers capture it), with the
+   * context lost, or when the target cannot be made. */
+  capture(view: View, cssW: number, cssH: number, dpr: number, out: HTMLCanvasElement): boolean;
   requestFrame(): void;
   /** Stops the background work (the page is hidden behind another view). */
   setPaused(paused: boolean): void;
@@ -131,6 +146,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   const layers: Partial<Record<LiveLayerName, LiveLayer>> = {};
   const shown: Record<LiveLayerName, boolean> = { ground: true, water: true, overlay: true, city: true, buildings: true, trees: true, text: true };
   const standIns: Partial<Record<LiveLayerName, Raster>> = {};
+  const preferRaster: Partial<Record<LiveLayerName, boolean>> = {};
   const states = {} as Record<LiveLayerName, LiveLayerState>;
   for (const name of LIVE_LAYER_ORDER) {
     states[name] = stats.layers[name] = { drawCalls: 0, triangles: 0, ms: 0, ready: false, standIn: false };
@@ -158,6 +174,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     moving: false,
     quality: 'full',
   };
+  /** The whole view of the last frame drawn (`frame.view` holds its centre and scale only). */
+  const screenView: View = { cx: 0, cy: 0, scale: 1 };
   /** A frame was drawn since the context was (re)created: `frame` describes it. */
   let frameValid = false,
     lastFrameAt = 0,
@@ -201,6 +219,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   // --- own GL resources (rebuilt after a context loss) ---------------------------------------------------------------
   let quad: RasterQuad | undefined;
   const group = createIsolatedGroup(gl);
+  /** The offscreen target of a capture: made for it, dropped after it. */
+  const captureGroup = createIsolatedGroup(gl);
   const timer = createGpuTimer(gl, ms => pushSample(stats.gpuMs, ms));
   let maxTexture = 4096,
     maxSamples = 0;
@@ -317,15 +337,24 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     fence = null;
     return false;
   };
+  /** Both the work loop and the rest planner submit preparation to the same GPU queue. */
+  const fenceWork = (started: number): void => {
+    if (performance.now() - started > 0.3 && !lost) {
+      fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      gl.flush();
+    }
+  };
   // --- the map drape of the tilted frames ----------------------------------------------------------------------------
   const drape = new MapDrape(gl, { mapSize: options.mapSize, invalidate: options.invalidate });
   stats.drape = drape.stats;
   /** The sources of the flat layers shown, bottom first: refilled at each slice. */
   const drapeSources: DrapeSource[] = [];
-  /** Tiles of the drape are still to bake; the drape got no time in the last slice (the ground took it). */
+  /** Tiles of the drape are still to bake; the drape got no time in the last slice (the layers took it all). */
   let drapePending = false,
     drapeWaited = false;
-  /** One slice of the drape's baking for the last frame, with what is `left` of the slice. True while tiles are pending. */
+  /** One slice of the drape's baking for the last frame, with what is `left` of the slice. True while tiles are
+   * pending. The drape comes after the layers in a slice; when they left it nothing it comes first in the next one:
+   * layers with long preparation (a large town, the volumes) would otherwise keep it waiting for as long as it lasts. */
   const drapeWork = (left: number, last: LiveFrame | undefined, refine: boolean): boolean => {
     const tilted = !!last?.camera.tilted;
     drapeSources.length = 0;
@@ -334,7 +363,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         const source = layers[name]?.drape;
         if (source && shown[name]) drapeSources.push(source);
       }
-    // Behind the display's pace, as the ground: the tiles wait. Out of time: the drape goes before the ground next time.
+    // Behind the display's pace, as the ground: the tiles wait. Out of time: the drape goes first next time.
     if (tilted && (!refine || left <= 0.2)) {
       drapeWaited = refine;
       return (drapePending = true);
@@ -361,10 +390,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       const started = performance.now(),
         pending = workSlice(budgetMs, refine);
       // A slice that did something (the layers' own measure is their time): fenced, and flushed so the fence leaves now.
-      if (performance.now() - started > 0.3 && !lost) {
-        fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-        gl.flush();
-      }
+      fenceWork(started);
       return pending;
     } finally {
       busy--;
@@ -372,7 +398,8 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   };
   /** One slice of preparation, ground first. True while more is pending. */
   /** `refine` false (a moving view behind the display's pace): the ground, whose work only sharpens what is already
-   * shown, waits; the other layers' work is what keeps their frames cheap (a snapshot, a baked prefix) and goes on. */
+   * shown, gets the budget of policy.ts (one tile, or none on light quality); the other layers' work is what keeps
+   * their frames cheap (a snapshot, a baked prefix) and goes on. */
   const workSlice = (budgetMs: number, refine: boolean): boolean => {
     if (lost || disposed || !init()) return false;
     const started = performance.now(),
@@ -381,7 +408,12 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     if (last && !group.failed && !group.target) group.ensure(last.width, last.height, last.quality === 'light' ? 0 : Math.min(4, maxSamples));
     let pending = false,
       othersPending = false;
+    const drapeFirst = drapeWaited;
+    if (drapeFirst && drapeWork(budgetMs, last, refine)) pending = true;
     for (let i = 1; i < LIVE_LAYER_ORDER.length; i++) othersPending ||= !!stats.pending[LIVE_LAYER_ORDER[i]];
+    // In the top view the volumes only prepare a later tilt: they take what the picture on screen leaves.
+    let shownPending = !!last && !last.camera.tilted && options.restPending();
+    if (last && !last.camera.tilted) for (const name of LIVE_LAYER_ORDER) shownPending ||= !layers[name]?.tiltOnly && !!stats.pending[name];
     for (let i = 0; i < LIVE_LAYER_ORDER.length; i++) {
       const name = LIVE_LAYER_ORDER[i],
         layer = layers[name];
@@ -389,12 +421,12 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         stats.pending[name] = false;
         continue;
       }
-      // The ground's tiles and the drape's refine the same picture: the one that waited through the last slice goes first.
-      if ((!refine || drapeWaited) && name === 'ground') {
+      const behind = !refine && name === 'ground' ? groundBudgetBehindPace(last?.quality ?? 'light') : -1;
+      if (behind === 0 || (shownPending && layer.tiltOnly)) {
         pending ||= !!stats.pending[name];
         continue;
       }
-      const left = (i === 0 && (othersPending || drapePending) ? budgetMs * GROUND_SHARE : budgetMs) - (performance.now() - started);
+      const left = (behind > 0 ? behind : i === 0 && (othersPending || drapePending) ? budgetMs * GROUND_SHARE : budgetMs) - (performance.now() - started);
       // Out of time: its answer is unknown, so the loop comes back for it.
       if (left <= 0.2) {
         stats.pending[name] = true;
@@ -408,7 +440,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         more = layer.work(left, last);
         noteLiveUnit(WORK_UNIT[name], unit);
         // A layer that was not ready for the last frame and now is: the frame is due (its `invalidate` may say so too).
-        if (last && shown[name] && !states[name].ready && (!last.camera.tilted || layer.tilts) && layer.ready(last)) {
+        if (last && shown[name] && !preferRaster[name] && !states[name].ready && (!last.camera.tilted || layer.tilts) && layer.ready(last)) {
           states[name].ready = true;
           options.invalidate();
         }
@@ -421,7 +453,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       stats.pending[name] = more;
       pending ||= more;
     }
-    if (drapeWork(budgetMs - (performance.now() - started), last, refine)) pending = true;
+    if (!drapeFirst && drapeWork(budgetMs - (performance.now() - started), last, refine)) pending = true;
     // Stand-ins go up between frames, one per slice, so the first frame of a gesture finds them on the GPU.
     let uploaded = false;
     for (const name of LIVE_LAYER_ORDER) {
@@ -464,6 +496,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     fence = null;
     quad = undefined;
     group.contextLost();
+    captureGroup.contextLost();
     timer.contextLost();
     drape.contextLost();
     drapePending = drapeWaited = false;
@@ -523,6 +556,9 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       if (previous === layer) return;
       layers[name] = layer;
       states[name].ready = false;
+      // A new ground layer is the ground of another terrain (composedView.ts contentChanged): the map drape's tiles
+      // were baked over the previous one.
+      if (name === 'ground') drape.forget();
       stats.pending[name] = !!layer?.work;
       if (stats.errors) delete stats.errors[name];
       try {
@@ -533,8 +569,10 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       if (layer?.work) schedule();
     },
     hasLayer: name => !!layers[name],
-    setLayerShown(name, value) {
+    layerPending: name => !!stats.pending[name],
+    setLayerShown(name, value, raster) {
       shown[name] = value;
+      preferRaster[name] = raster;
     },
     invalidateLayer(name) {
       const layer = layers[name];
@@ -578,6 +616,21 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
           delete standIns[name];
         }
       }
+    },
+    lookChanged() {
+      this.clearStandIns();
+      drape.forget();
+      for (const name of LIVE_LAYER_ORDER) {
+        const layer = layers[name];
+        if (!layer?.lookChanged) continue;
+        try {
+          layer.lookChanged();
+        } catch (error) {
+          fail(name, error);
+        }
+        stats.pending[name] = !!layer.work;
+      }
+      schedule();
     },
     setWater(image, region) {
       if (region) {
@@ -638,6 +691,11 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     advanceLayer(name, budgetMs) {
       const layer = layers[name];
       if (!layer?.work || lost || disposed || !init()) return false;
+      if (gpuBehind()) {
+        stats.pending[name] = true;
+        schedule();
+        return true;
+      }
       busy++;
       let more = false;
       try {
@@ -646,6 +704,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         more = layer.work(budgetMs, frameValid ? frame : undefined);
         noteLiveUnit(WORK_UNIT[name], unit);
         resetLiveState(gl, null, frame.width, frame.height);
+        fenceWork(unit);
       } catch (error) {
         fail(name, error);
       } finally {
@@ -661,6 +720,15 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       busy++;
       try {
         return drawFrame(view, cssW, cssH, dpr, moving);
+      } finally {
+        busy--;
+      }
+    },
+    capture(view, cssW, cssH, dpr, out) {
+      if (lost || disposed || !init() || !isTilted(view)) return false;
+      busy++;
+      try {
+        return captureFrame(view, cssW, cssH, dpr, out);
       } finally {
         busy--;
       }
@@ -694,6 +762,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       if (!lost) {
         drape.dispose();
         group.drop();
+        captureGroup.drop();
         quad?.dispose();
         timer.dispose();
       }
@@ -706,9 +775,63 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     },
   };
 
+  /** LiveCompositor.capture: the layers that take the camera draw the tilted frame into the capture target, as
+   * drawFrame draws it on screen (no stand-in, no statistics); the frame object is then refilled for the view on
+   * screen, which the work slices go on preparing. */
+  function captureFrame(view: View, cssW: number, cssH: number, dpr: number, out: HTMLCanvasElement): boolean {
+    const onScreen = frameValid ? { view: { ...screenView }, cssW: frame.cssW, cssH: frame.cssH, dpr: frame.dpr, moving: frame.moving } : undefined;
+    const limit = Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)) || 4096;
+    fillFrame(view, cssW, cssH, Math.min(dpr, limit / Math.max(cssW, cssH)), false, performance.now());
+    const width = frame.width,
+      height = frame.height,
+      samples = frame.quality === 'light' ? 0 : Math.min(4, maxSamples);
+    let pixels: Uint8Array | undefined;
+    if (captureGroup.ensure(width, height, samples) || (samples > 0 && captureGroup.ensure(width, height, 0))) {
+      const scene = captureGroup.target!;
+      resetLiveState(gl, scene.fbo, width, height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clearDepth(1);
+      gl.clearStencil(0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+      for (const name of LIVE_LAYER_ORDER) {
+        const layer = layers[name];
+        if (!shown[name] || !layer?.tilts) continue;
+        frame.target = scene.fbo;
+        resetLiveState(gl, scene.fbo, width, height);
+        try {
+          if (layer.ready(frame)) layer.draw(frame);
+        } catch (error) {
+          fail(name, error);
+        }
+      }
+      frame.target = null;
+      gl.disable(gl.SCISSOR_TEST);
+      gl.colorMask(true, true, true, true);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, scene.fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, scene.resolve);
+      gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, scene.resolve);
+      pixels = new Uint8Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    }
+    captureGroup.drop();
+    resetLiveState(gl, null, width, height);
+    if (onScreen) fillFrame(onScreen.view, onScreen.cssW, onScreen.cssH, onScreen.dpr, onScreen.moving, performance.now());
+    else frameValid = false;
+    if (!pixels) return false;
+    composeOverPaper(pixels, width, height, paper, out);
+    return true;
+  }
+
   function drawFrame(view: View, cssW: number, cssH: number, dpr: number, moving: boolean): boolean {
     const started = performance.now();
     fillFrame(view, cssW, cssH, dpr, moving, started);
+    screenView.cx = view.cx;
+    screenView.cy = view.cy;
+    screenView.scale = view.scale;
+    screenView.pitch = view.pitch;
+    screenView.yaw = view.yaw;
+    screenView.eye = view.eye;
     const width = frame.width,
       height = frame.height;
     if (canvas.width !== width) canvas.width = width;
@@ -769,7 +892,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         standIn = false;
       frame.target = target;
       resetLiveState(gl, target, width, height);
-      if (layer) {
+      if (layer && (tilted || !preferRaster[name] || !standIns[name])) {
         try {
           ready = layer.ready(frame);
           if (ready) {
@@ -833,12 +956,14 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     pushSample(stats.frameMs, performance.now() - started);
     if (moving && wasMoving) {
       const gap = started - lastFrameAt;
-      // A gap longer than a gesture's pause is not a frame interval (the view rested in between).
-      if (gap < GESTURE_MS) {
+      // A gap longer than a gesture's pause is not a frame interval (the view rested in between), nor one shorter than
+      // any display's (policy.ts).
+      if (gap < GESTURE_MS && gap >= PACE_MIN_GAP_MS) {
+        reportMachineFrame(gap);
         paceGap = paceGap ? paceGap * 0.8 + gap * 0.2 : gap;
         // The best interval creeps up so a display that slows down (another refresh rate, throttling) is followed.
         paceBest = Math.min(paceBest * 1.002, gap);
-        paceOk = paceGap <= Math.max(paceBest, 4) * 1.4 + 1;
+        paceOk = paceHolds(paceGap, paceBest);
       }
     } else if (!moving) {
       paceGap = 0;
@@ -852,4 +977,29 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     if (runWork(moving ? WORK_MOVING_MS : WORK_REST_MS, !moving || paceOk)) schedule();
     return !lost;
   }
+}
+
+/** Premultiplied pixels read back from GL (first row at the bottom) laid over the paper colour, into `out`: an opaque
+ * picture, north at the top. */
+function composeOverPaper(pixels: Uint8Array, width: number, height: number, paper: string, out: HTMLCanvasElement): void {
+  out.width = width;
+  out.height = height;
+  const ctx = out.getContext('2d')!;
+  ctx.fillStyle = paper || '#fff';
+  ctx.fillRect(0, 0, 1, 1);
+  const [pr, pg, pb] = ctx.getImageData(0, 0, 1, 1).data,
+    image = ctx.createImageData(width, height),
+    data = image.data;
+  for (let y = 0; y < height; y++) {
+    let from = (height - 1 - y) * width * 4,
+      to = y * width * 4;
+    for (let x = 0; x < width; x++, from += 4, to += 4) {
+      const keep = (255 - pixels[from + 3]) / 255;
+      data[to] = pixels[from] + pr * keep;
+      data[to + 1] = pixels[from + 1] + pg * keep;
+      data[to + 2] = pixels[from + 2] + pb * keep;
+      data[to + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
 }

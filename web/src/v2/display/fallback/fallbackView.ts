@@ -6,7 +6,8 @@
  *  - a CPU ground (the terrain renderer is unavailable or its context was lost for good) or an illustrated ground
  *    (painted on Canvas 2D): the compositor's ground layer bakes tiles from the GPU terrain renderer only;
  *  - the compositor's context is lost, until it is restored;
- *  - the first frames of a map, while the ground layer has no baked tile and nothing to stand in for it;
+ *  - the first frames of a map, while the ground layer has no baked tile and nothing to stand in for it: then the
+ *    ground alone (`groundOnly`), as the compositor's first frame will add the other layers over its own ground;
  *  - `?display=fallback`, to test it on a machine the compositor serves.
  *
  * Why it exists: on those machines and looks the map must still show and move. It does the simplest correct thing,
@@ -47,13 +48,22 @@ export class FallbackView {
     private readonly readiness: DisplayReadiness,
   ) {}
 
-  /** One frame of the view. `moved`: the view differs from the previous frame's. */
-  draw(view: View, w: number, h: number, dpr: number, moved: boolean, now: number): void {
+  /** One frame of the view. `moved`: the view differs from the previous frame's. `groundOnly`: the terrain renderer's
+   * ground alone, without the picture of the exact renderers (the start-up of the map, mapView.ts). */
+  draw(view: View, w: number, h: number, dpr: number, moved: boolean, now: number, groundOnly = false): void {
     const moving = this.motion.phase(now) === 'moving';
     this.attach(w, h);
     // In every frame: the terrain renderer moves its picture or, when something else drew in its canvas since (a
     // tile bake, a whole-map capture), paints it again.
     if (this.groundCanvas) this.parts.ground.gpu!.redrawNow(view, w, h, moving, Math.min(2, dpr));
+    // A CPU or illustrated ground has no canvas of its own: it is in the picture, which is then painted.
+    this.surface.style.visibility = groundOnly && this.groundCanvas ? 'hidden' : '';
+    if (groundOnly && this.groundCanvas) {
+      this.painted = undefined;
+      if (moving) this.motion.awaitRest(now, moved, this.viewRested);
+      else this.motion.restDone();
+      return;
+    }
     const painted = this.painted;
     if (moving && painted && painted.w === w && painted.h === h && painted.dpr === dpr) {
       const k = view.scale / painted.view.scale,

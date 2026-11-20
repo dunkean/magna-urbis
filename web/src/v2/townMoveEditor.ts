@@ -1,4 +1,5 @@
 import type { World, Settlement } from '../gen/types';
+import { confirmAction } from './actionDialog';
 import type { View } from '../render/view';
 import { screenToWorld, worldToScreen } from '../render/view';
 import { PALETTES } from '../render/styles';
@@ -185,9 +186,17 @@ export function mountTownMoveEditor(api: {
     button.setAttribute('aria-pressed', 'false');
     api.map.classList.remove('v2-moving-towns');
   }
-  function start() {
-    if (api.busy() || !api.getWorld()?.settlements?.length) return;
-    if (api.deferred && api.getWorld()!.settlements!.some(s => (s.main ? api.getWorld()!.urban : s.urban)) && !window.confirm(translate('Moving positions resets generated cities when you apply. Continue?'))) return;
+  let starting = false;
+  async function start() {
+    const source = api.getWorld();
+    if (starting || api.busy() || !source?.settlements?.length) return;
+    starting = true;
+    try {
+      if (api.deferred && source.settlements.some(s => (s.main ? source.urban : s.urban)) && !(await confirmAction('Moving positions resets generated cities when you apply. Continue?', { id: 'move-towns-dialog', title: 'Move settlements', confirmLabel: 'Continue' }))) return;
+    } finally {
+      starting = false;
+    }
+    if (api.busy() || api.getWorld() !== source) return;
     validate.hidden = cancel.hidden = !api.deferred;
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'town-move' }));
     enabled = true;
@@ -198,7 +207,10 @@ export function mountTownMoveEditor(api: {
     api.map.classList.add('v2-moving-towns');
     follow();
   }
-  button.onclick = () => (enabled ? stop() : start());
+  button.onclick = () => {
+    if (enabled) stop();
+    else void start().catch(api.error);
+  };
   api.map.addEventListener(
     'pointerdown',
     event => {
@@ -291,7 +303,7 @@ export function mountTownMoveEditor(api: {
     if ((event as CustomEvent).detail !== 'town-move') stop();
   });
   window.addEventListener('keydown', event => {
-    if (event.key === 'Escape') stop();
+    if (event.key === 'Escape' && !document.querySelector('dialog[open]')) stop();
   });
   return {
     sync() {

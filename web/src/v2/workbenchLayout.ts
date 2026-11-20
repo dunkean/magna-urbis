@@ -70,7 +70,6 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   const settlements = $('#family-settlements'),
     cities = $('#family-cities'),
     editor = $('#family-map');
-  installCultureBrowser(document.body);
   const general = settlements.querySelector<HTMLElement>('.family-general')!;
   settlements.querySelectorAll<HTMLElement>('[data-field-path^="placement.counts."],[data-control="main:population"]').forEach(node => node.remove());
   const culture = $<HTMLSelectElement>('[data-option="culture"]');
@@ -114,16 +113,18 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     sync();
     api.changed();
   });
-  auto.onchange = () => {
+  const followEnvironment = (enabled: boolean) => {
     const s = api.getSettings();
     s.region ??= {};
     s.region.demography ??= {};
-    s.region.demography.followCulture = auto.checked;
-    state.get(s)!.autoCulture = auto.checked;
+    s.region.demography.followCulture = enabled;
+    state.get(s)!.autoCulture = enabled;
     sync(true);
     api.changed();
     api.syncForms();
   };
+  auto.onchange = () => followEnvironment(auto.checked);
+  installCultureBrowser(document.body, { source: culture, get: () => auto.checked, set: followEnvironment });
   function rollCulture(avoidCurrent = false): void {
     const s = api.getSettings(),
       previous = state.get(s)!;
@@ -221,7 +222,7 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     if (quick) {
       for (const field of Array.from(quick.querySelectorAll<HTMLElement>('.parameter-field'))) {
         const path = field.querySelector<HTMLElement>('[data-setting-path]')?.dataset.settingPath;
-        if (!['appearance.composition.ground.contours', 'appearance.composition.networks.water.visible', 'appearance.composition.networks.roads.visible', 'appearance.composition.text.visible'].includes(path ?? '')) row.querySelector('.stage-body')!.prepend(field);
+        if (!['appearance.composition.ground.contours', 'appearance.composition.networks.roads.visible', 'appearance.composition.text.visible'].includes(path ?? '')) row.querySelector('.stage-body')!.prepend(field);
       }
       const views = quick.querySelector<HTMLElement>('.icon-segments');
       if (views) views.remove();
@@ -229,15 +230,11 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     }
     mapAdvanced.grid.append(row);
   }
-  const plan = $<HTMLElement>('[data-setting-path="appearance.city.plan"]').closest<HTMLElement>('.parameter-field')!;
-  const sharedPlan = document.createElement('div');
-  sharedPlan.className = 'stage-quick';
-  sharedPlan.append(plan);
-  $('.view-strip').insertBefore(sharedPlan, mapAdvanced.button);
-  const buildings = $<HTMLElement>('[data-setting-path="appearance.composition.buildings.visible"]').closest<HTMLElement>('.parameter-field')!;
+  const buildings = $<HTMLElement>('[data-setting-path="appearance.composition.buildings.visible"]').closest<HTMLElement>('.parameter-field')!,
+    roofs = $<HTMLSelectElement>('#roof-display').closest<HTMLElement>('.parameter-field')!;
   const sharedBuildings = document.createElement('div');
   sharedBuildings.className = 'stage-quick';
-  sharedBuildings.append(buildings);
+  sharedBuildings.append(buildings, roofs);
   $('.view-strip').insertBefore(sharedBuildings, mapAdvanced.button);
   const texture = $<HTMLElement>('[data-setting-path="appearance.textured"]').closest<HTMLElement>('.parameter-field')!;
   mapAdvanced.grid.prepend(texture);

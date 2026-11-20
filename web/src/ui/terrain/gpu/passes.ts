@@ -106,6 +106,9 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   r.float('uDpr', c.stylePixelRatio);
   r.int('uPhysicalWidth', styleTraits(look.style).physicalRiverWidth ? 1 : 0);
   r.float('uMapW', look.mapWidth);
+  const flat = rivers.regime && !c.overlay && !c.painted,
+    color = waterUniforms(c.water).colors;
+  r.vec4('uFlatWater', color[0], color[1], color[2], flat ? 1 : 0);
   r.int('uHasOverlay', c.overlay ? 1 : 0);
   r.int('uHasLake', c.lake ? c.lakeMode : 0);
   r.float('uLakeN', c.lakeN);

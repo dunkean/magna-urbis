@@ -54,7 +54,7 @@ export interface City3dOptions {
   getRetainedWater?(): City3dRetainedWater | undefined;
   getHeightSampler?(): ((x: number, y: number, metresPerPixel: number) => number) | undefined;
   getViewSettings?(): Partial<City3dViewSettings>;
-  onViewSettingsChange?(settings: City3dViewSettings): void;
+  onViewSettingsChange?(settings: Omit<City3dViewSettings, 'plan'>): void;
   getPlanOptions?(): Partial<Pick<CityDrawOptions, 'colors' | 'view' | 'palette' | 'width' | 'layers' | 'groundBlend' | 'roadLook' | 'roadEmphasis' | 'waterColor' | 'streetPalette' | 'night' | 'labels' | 'buildingsVisible' | 'appearance'>> & {
     opacity?: number;
     roadInk?: RoadInk;

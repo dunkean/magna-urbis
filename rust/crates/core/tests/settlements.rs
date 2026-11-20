@@ -216,14 +216,21 @@ fn legacy_spacing_and_population_streams_are_preserved() {
     let a = generate("42", map.raster(), &cfg).unwrap();
     let b = generate("42", map.raster(), &cfg).unwrap();
     assert_eq!(a.settlements.len(), 7);
-    // Drawn directly with the legacy TypeScript planner's CLASS_POP and fork('pop').
+    // Keep each key's legacy CLASS_POP draw while larger secondary places are placed first.
     assert_eq!(
         a.settlements
             .iter()
             .skip(1)
-            .map(|s| s.spec.population)
+            .map(|s| (s.spec.key.as_str(), s.spec.population))
             .collect::<Vec<_>>(),
-        vec![563, 248, 65, 24, 8, 9]
+        vec![
+            ("village:0", 563),
+            ("village:1", 248),
+            ("hamlet:0", 65),
+            ("hamlet:1", 24),
+            ("farmstead:1", 9),
+            ("farmstead:0", 8),
+        ]
     );
     assert_eq!(
         a.settlements.iter().map(|s| s.center).collect::<Vec<_>>(),
@@ -231,6 +238,18 @@ fn legacy_spacing_and_population_streams_are_preserved() {
     );
     for (i, s) in a.settlements.iter().enumerate() {
         let c = &s.scores;
+        // On this flat, dry grid the walk from an entry is straight from the nearest edge cell.
+        let index = map.index(s.center);
+        let (x, y) = (index % map.n, index / map.n);
+        let edge_cells = x.min(y).min(map.n - 1 - x).min(map.n - 1 - y);
+        let access_distance = edge_cells as f64 * WIDTH / map.n as f64;
+        let t = ((access_distance - 2000.0) / 18000.0).clamp(0.0, 1.0);
+        let max_access_penalty = match s.spec.population {
+            0..=149 => 0.0,
+            150..=999 => 0.5,
+            _ => 1.2,
+        };
+        let access = -max_access_penalty * (t * t * (3.0 - 2.0 * t));
         let sum = c.flatness
             + c.buildable
             + c.fresh_water
@@ -242,7 +261,8 @@ fn legacy_spacing_and_population_streams_are_preserved() {
             + c.defense
             + c.elevation
             + c.cluster
-            + c.variation;
+            + c.variation
+            + access;
         assert!(c.total.is_finite());
         assert!((sum - c.total).abs() < 1e-9);
         for o in &a.settlements[..i] {
@@ -274,17 +294,20 @@ fn valleys_keep_towns_but_scatter_small_holdings_on_unoccupied_hillsides() {
     cfg.counts.insert("village".into(), 4);
     cfg.counts.insert("hamlet".into(), 8);
     cfg.counts.insert("farmstead".into(), 12);
-    let (mut small, mut hillside, mut isolated) = (0, 0, 0);
+    let (mut small, mut hillside, mut isolated, mut terraced_villages) = (0, 0, 0, 0);
     for seed in 0..8 {
         let output = terrain
             .place(&format!("valley-colonisation:{seed}"), &cfg)
             .unwrap();
         assert_eq!(output.settlements.len(), output.requested);
+        assert_eq!(output.settlements[0].spec.population, cfg.main.population);
         for s in &output.settlements {
             assert_eq!(map.water[map.index(s.center)], 0);
             let from_valley = (s.center.x - WIDTH / 2.0).abs();
-            if s.spec.population >= 150 {
-                assert!(from_valley < 2700.0, "large places need valley land: {s:?}");
+            if s.spec.population >= 1000 {
+                assert!(from_valley < 2700.0, "towns need valley land: {s:?}");
+            } else if s.spec.population >= 150 {
+                terraced_villages += usize::from(from_valley > 3000.0 && s.scores.slope > 0.2);
             } else {
                 small += 1;
                 hillside += usize::from(from_valley > 3000.0);
@@ -332,6 +355,7 @@ fn valleys_keep_towns_but_scatter_small_holdings_on_unoccupied_hillsides() {
             }
         }
     }
+    assert!(terraced_villages > 0, "villages can use terraced hillsides");
     assert!(
         hillside > small / 5,
         "hillsides should be colonised: {hillside}/{small}"
@@ -1010,13 +1034,19 @@ fn fixed_wet_points_are_not_silently_relocated_and_invalid_configs_fail() {
     map.strip(2);
     let cfg = list(vec![fixed("wet", 300, 8000.0, 8000.0)]);
     let out = generate("wet", map.raster(), &cfg).unwrap();
-    // The wet point is refused with a warning; a list still places every
-    // requested settlement, so the place is forced onto a dry site and says so.
-    assert!(out.warnings.iter().any(|w| w.contains("manual position")));
-    assert!(out.warnings.iter().any(|w| w.contains("implantation forcée")));
-    assert_eq!(out.settlements.len(), 1);
-    let placed = out.settlements[0].center;
-    assert!((placed.x - 8000.0).hypot(placed.y - 8000.0) > 1.0);
+    // A rejected manual position is left unplaced even when dry land is available.
+    assert_eq!(out.requested, 1);
+    assert!(out.settlements.is_empty());
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w == "wet: manual position is wet or solid rock")
+    );
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w == "wet (300 inhabitants): no suitable position available")
+    );
     let cfg = list(vec![
         fixed("dup", 300, 3000.0, 8000.0),
         fixed("dup", 300, 13000.0, 8000.0),
@@ -1119,10 +1149,17 @@ fn a_harbor_town_fronts_its_sea_instead_of_standing_inland() {
         ..Default::default()
     }]);
     let out = map.terrain().place("harbor-front", &cfg).unwrap();
+    assert_eq!(out.settlements.len(), 1);
     let s = &out.settlements[0];
+    assert_eq!(s.spec.population, 10000);
+    assert_eq!(s.archetype, "harbor");
+    assert_eq!(map.water[map.index(s.center)], 0);
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    // The seeded draw may use any admissible shore cell within the radius-dependent frontage band.
+    let frontage_reach = 90.0 + 0.2 * s.radius;
     assert!(
-        s.scores.water_distance <= 150.0,
-        "core {} m from the sea",
-        s.scores.water_distance
+        s.scores.water_distance < frontage_reach,
+        "core {} m from the sea, beyond its {frontage_reach:.1} m frontage band",
+        s.scores.water_distance,
     );
 }

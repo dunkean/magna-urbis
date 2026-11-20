@@ -93,6 +93,8 @@ export interface Waterway {
   bankM?: number;
 }
 export interface UrbanStructure {
+  /** Engine-owned source data used to retain lots outside a redrawn quarter. */
+  quarterBaseline?: unknown;
   waterways?: Waterway[];
   gateVillageCenters?: Point[];
   quays?: Quay[];
@@ -180,6 +182,43 @@ export interface Partition {
   parcels: Parcel[];
   warnings: string[];
   diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number };
+  /** Present when structural block edits changed the input blocks: `parcels[].block` indexes `prepared.blocks`.
+   * Every later stage reads the layout with `blocks = prepared.blocks` and `config.blockEdits = prepared.edits`. */
+  prepared?: PreparedBlocks;
+}
+/** Prepared block `block` is part `part` of input block `source`; its edit key is `"<source>"` (part 0) or `"<source>/<part>"`. */
+export interface BlockOrigin {
+  block: number;
+  source: number;
+  part: number;
+  deleted: boolean;
+}
+/** What a prepared layout replaced (Rust `BlockEdits`): the parcel stage restores it before applying the edits again. */
+export interface BlockEdits {
+  count: number;
+  signature: string;
+  originals: { index: number; block: Block }[];
+  origins: BlockOrigin[];
+}
+export interface PreparedBlocks {
+  blocks: Block[];
+  edits?: BlockEdits;
+}
+/** Output quarter `quarter` is part `part` of source quarter `source`; its edit key is `"<source>"` (part 0) or `"<source>/<part>"`. */
+export interface QuarterPart {
+  quarter: number;
+  source: number;
+  part: number;
+  deleted: boolean;
+}
+/** Quarter splits applied by the quarter stage (Rust `QuarterEdits`, `layout.config.quarterEdits`).
+ * `count`: quarters of the plan before the splits (parts k ≥ 1 follow); `blockCount`: blocks before the splits (extra pieces follow).
+ * `parts`: every output quarter of a split, part 0 included; a quarter absent here was not split. */
+export interface QuarterEdits {
+  count: number;
+  blockCount: number;
+  parts: QuarterPart[];
+  originals: { index: number; shape: Shape }[];
 }
 export interface ParcelContact {
   a: Point;
@@ -320,8 +359,12 @@ export interface UrbanResponse {
   /** Browser WASM execution mode that produced this response (threads/single/pool). */
   wasm?: WasmThreadsInfo;
 }
+/** `terrainSent`: called once a native request's terrain upload is done, before the engine computes. */
+export interface UrbanRunHooks {
+  terrainSent?: () => void;
+}
 export interface UrbanEngine {
-  run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse>;
+  run(request: UrbanRequest, hooks?: UrbanRunHooks): UrbanResponse | Promise<UrbanResponse>;
   /** Native only: free this engine's retained session. */ release?(runtime: ExecutionRuntime): Promise<void>;
 }
 
@@ -764,7 +807,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       pendingRaster = terrainRaster = undefined;
       await native.release(runtime);
     },
-    run(request) {
+    run(request, hooks) {
       if (request.source) {
         try {
           validateUrbanSource(request.source);
@@ -788,6 +831,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
             await native.raw('/urban', {
               ...nativeUrbanInput(request),
               runtime: request.runtime!,
+              ...(hooks?.terrainSent ? { onRasterSent: hooks.terrainSent } : {}),
               ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
               ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) } : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
             }),

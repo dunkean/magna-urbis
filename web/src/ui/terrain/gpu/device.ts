@@ -175,9 +175,11 @@ export function prepareTerrainGpu(): Promise<unknown> {
 export function sharedGpu(forced: boolean): Promise<GpuShared | undefined> {
   return (shared ??= (async () => {
     if (!navigator.gpu) return undefined;
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    const { requestWebGpuAdapter, requestWebGpuDevice } = await import('../../../../../rust/bridge/webGpuAdapter');
+    const adapter = await requestWebGpuAdapter();
     if (!adapter || (adapter.info?.isFallbackAdapter && !forced)) return undefined;
-    const device = await adapter.requestDevice({ label: 'terrain map', requiredLimits: { maxTextureDimension2D: adapter.limits.maxTextureDimension2D } });
+    const device = await requestWebGpuDevice(adapter, { label: 'terrain map', requiredLimits: { maxTextureDimension2D: adapter.limits.maxTextureDimension2D } });
+    if (!device) return undefined;
     let gpu: GpuShared;
     try {
       gpu = await prepare(device);

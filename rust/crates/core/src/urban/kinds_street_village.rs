@@ -248,19 +248,23 @@ pub(super) fn served_reach(path: &[Point], near: f64, blocks: &[(Shape, &'static
 /// `path` ending at the far edge of its last plot, or `None` when no plot
 /// touches it. A plot's back edge, oblique to the lane, has corners beside
 /// the lane's tail that lie a metre or two past the plot's corner on the lane:
-/// once cut there they leave its reach, so the cut repeats (a few times at
-/// most) until the lane ends where the plots beside it end.
+/// once cut there they leave its reach, so the cut repeats until the end
+/// remains beside a plot corner. A trim that moves more than 0.25 m either
+/// puts a corner at the end or removes that corner from consideration.
 pub(super) fn to_last_plot(path: &[Point], near: f64, blocks: &[(Shape, &'static str)]) -> Option<Vec<Point>> {
     let mut path = path.to_vec();
-    for _ in 0..4 {
+    loop {
         let reach = served_reach(&path, near, blocks)?;
         let length = arc(&path).last().copied().unwrap_or(0.0);
-        if reach <= 1.0 || reach >= length - 0.25 {
-            break;
+        if reach <= 1.0 {
+            // A corner beside the junction alone does not serve a side lane.
+            return None;
+        }
+        if reach >= length - 0.25 {
+            return Some(path);
         }
         path = cut_at(&path, reach);
     }
-    Some(path)
 }
 
 /// `path` cut at arc length `t` (from its start).
@@ -979,8 +983,14 @@ pub(super) fn plan(
     // A lane that no plot touches leads nowhere: drop it. A row lane serves
     // doors only, so it ends at the far side of its last plot, never beyond.
     for (_, _, path, role) in lanes {
-        let Some(cut) = to_last_plot(&path, lane * 0.5 + 3.0, &blocks) else { continue };
-        let path = if rows.iter().any(|(row, _)| *row == path) { cut } else { path };
+        let near = lane * 0.5 + 3.0;
+        let path = if rows.iter().any(|(row, _)| *row == path) {
+            let Some(cut) = to_last_plot(&path, near, &blocks) else { continue };
+            cut
+        } else {
+            if served_reach(&path, near, &blocks).is_none() { continue; }
+            path
+        };
         streets.push(street(path, lane, 3, role));
     }
     // Never an empty village: without a single plot the caller falls back.
@@ -1370,6 +1380,14 @@ mod tests {
                 assert!(cv[1] > 0.12, "{name}/{culture}: plot widths still even (CV {:.2})", cv[1]);
             }
         }
+    }
+
+    #[test]
+    fn a_plot_at_the_junction_does_not_keep_an_unserved_side_lane() {
+        let path = [Point { x: 0.0, y: 0.0 }, Point { x: 65.1, y: 0.0 }];
+        let blocks = [(g::rectangle(-5.0, 2.0, 0.5, 8.0), "block")];
+        assert_eq!(served_reach(&path, 4.75, &blocks), Some(0.5));
+        assert!(to_last_plot(&path, 4.75, &blocks).is_none());
     }
 
     /// A perpendicular lane stops at the far side of its last plot: no blind

@@ -588,10 +588,15 @@ fn buildable_grade(site: &Site, cfg: &LayoutConfig) -> f64 {
         &cfg.culture
     };
     let profile = profiles::settlement_profile(culture, site.population, cfg.footprint.epochs);
-    if profile.stairs || profile.pattern == "terraces" {
+    let strict = if profile.stairs || profile.pattern == "terraces" {
         0.5
     } else {
         0.34
+    };
+    if (15..1000).contains(&site.population) {
+        profiles::relaxed(strict, cfg.programme.slope_relax).min(1.5)
+    } else {
+        strict
     }
 }
 /// A footprint-scale survey catches a hilltop/col whose center gradient is zero.
@@ -885,7 +890,8 @@ fn centers(
                 y: site.center.y + d * bearing.sin(),
             }
         };
-        if let Some(p) = dry_center(p, radius, surface)
+        let point = if i == 0 && cfg.fixed_sites.contains(&site.key) { Some(p) } else { dry_center(p, radius, surface) };
+        if let Some(p) = point
             && result.iter().all(|c| distance(p, c.point) > radius * 0.12)
         {
             result.push(UrbanCenter {
@@ -1746,6 +1752,7 @@ fn accessible(
     gate: Option<terrain::Gate>,
     flood: Option<terrain::Flood>,
     neighbours: Option<&super::neighbours::Mask>,
+    fixed_center: bool,
 ) -> Growth {
     // A small settlement is a compact cluster: its growth window and its far-field cost shrink
     // with its population, so a thin buildable strip (a road bench, a contour) is not stretched
@@ -2006,22 +2013,32 @@ fn accessible(
     let mut active_centers = vec![];
     for c in centers.iter_mut() {
         let nominal = grid.nearest(c.point);
+        if fixed_center && c.id == 0 && !surface.wet(c.point) && neighbours.is_none_or(|m| !m.blocked(c.point)) {
+            let (gx, gy) = slope(surface, c.point);
+            if gx.hypot(gy) <= grade_limit {
+                dry_mask[nominal] = true;
+                heights[nominal] = surface.height_at(c.point);
+            }
+        }
         let candidates = || (0..n).filter(|&i| dry_mask[i]);
-        let needed = if capacity_seed {
+        let needed = if capacity_seed && !fixed_center {
             let available = candidates()
                 .filter(|&i| distance(grid.point(i), c.point) < radius * 0.7)
                 .map(|i| component_sizes[components[i]]).max().unwrap_or(0);
             available.min((target * 0.25 / step.powi(2)).ceil() as usize)
         } else { 0 };
         let seed = candidates()
-            .filter(|&i| !capacity_seed || component_sizes[components[i]] >= needed)
+            .filter(|&i| (!fixed_center || c.id != 0 || i == nominal)
+                && (!capacity_seed || fixed_center || component_sizes[components[i]] >= needed))
             .min_by(|&a, &b| {
                 distance(grid.point(a), c.point).total_cmp(&distance(grid.point(b), c.point))
             });
         if let Some(i) =
             seed.filter(|&i| distance(grid.point(i), grid.point(nominal)) < radius * 0.7)
         {
-            c.point = grid.point(i);
+            if c.id != 0 || !fixed_center {
+                c.point = grid.point(i);
+            }
             active_centers.push(c.id);
             occupied[i] = true;
             if arrivals[i] > 0.0 {
@@ -2515,12 +2532,13 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         orientation(site, cfg, surface, roads)
     };
     let mut centers = centers(site, cfg, family, mechanism, radius, angle, surface, &rng);
-    let summit_access = summit_access(site, cfg, surface, roads, radius).and_then(|(summit, access)| {
+    let fixed = cfg.fixed_sites.contains(&site.key);
+    let summit_access = (!fixed).then(|| summit_access(site, cfg, surface, roads, radius)).flatten().and_then(|(summit, access)| {
         if let Some(c) = centers.first_mut() { c.point = summit; }
         access
     });
     let mut fitted_aspect = None;
-    let angle = if mechanism == "planned" && family == "rectangle" && centers.len() == 1 && summit_access.is_none() {
+    let angle = if !fixed && mechanism == "planned" && family == "rectangle" && centers.len() == 1 && summit_access.is_none() {
         let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
         let p = profiles::settlement_profile(culture, site.population, cfg.footprint.epochs);
         let aspect = if cfg.footprint.family == "auto" && p.enclosure == "square" { 1.0 } else { cfg.footprint.aspect };
@@ -2685,7 +2703,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             Service { grade: service.grade.max(grade), ..service }
         } else { service };
         let grow = |centers: &mut Vec<UrbanCenter>, grade: f64, service: Service, capacity_seed: bool, target: f64, flood: Option<terrain::Flood>| {
-            accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service, capacity_seed, gate, flood, neighbour_land.as_ref())
+            accessible(site.population, target, family, cfg, centers, radius, angle, &fractions, surface, &growth_roads, &rng, grade, water_affinity, service, capacity_seed, gate, flood, neighbour_land.as_ref(), fixed)
         };
         let before = centers.clone();
         // Component seeding belongs to slope-adapted growth only: an ordinary
@@ -2883,6 +2901,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let reserve_area = area(&dry(surface, &reserve));
     let components = allocated.len();
     let structure = UrbanStructure {
+        quarter_baseline: None,
         shanty: None,
         spring_sites: vec![],
         gate_village_centers: vec![],

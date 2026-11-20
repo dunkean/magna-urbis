@@ -963,7 +963,7 @@ const minimal = derive('minimal', 'Minimal', {
   roadFill: '#ffffff',
   roadEdge: '#cfc8bb',
   trackFill: '#c9c1b3',
-  urban: { street: '#ffffff', streetEdge: '#cfc8bb', yard: '#ebe5da', mass: '#cbbba8', massEdge: '#a8957f', landmark: '#9c8a76', landmarkEdge: '#a8957f', wall: '#6f655b', wallFill: '#6f655b', shadow: null, lit: null },
+  urban: { street: '#ffffff', streetEdge: '#cfc8bb', yard: '#eee6d8', mass: '#cdb99b', massEdge: '#725c47', landmark: '#b28755', landmarkEdge: '#624b35', wall: '#6f655b', wallFill: '#6f655b', shadow: null, lit: null },
   lab: { town: '#4a443d', halo: '#f4f1ea', water: '#4a443d', wood: '#4a443d' },
 });
 

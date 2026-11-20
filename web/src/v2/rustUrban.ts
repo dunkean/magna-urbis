@@ -3,16 +3,16 @@ import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGe
 import { springPoints } from '../../../rust/bridge/urbanGeography';
 import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Options } from '../gen/types';
 import type { Claim, Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
-import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint } from './townNeighbours';
+import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint, townPopulationAndRadius } from './townNeighbours';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { CAVE_ROCK_DEPTH, settlementRaster, type SettlementRaster } from '../../../rust/bridge/settlements';
-import { cityRasterSide, citySiteArchetypes, cityTownRoads } from '../render/cityGeneration';
+import { cityRasterSide, citySiteArchetypes, cityFixedSites, cityTownRoads } from '../render/cityGeneration';
 import type { RustRegionSnapshot } from './region';
 import type { PlacementBatch, PlacementRequest, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseConfig } from '../../../rust/bridge/housesContract';
 import { carryUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
-import type { V2Settings, V2TownStage, ProgressCallback, V2UrbanControls, V2UrbanSettings } from './contracts';
+import type { V2Settings, V2TownStage, ProgressCallback, V2Progress, V2UrbanControls, V2UrbanSettings } from './contracts';
 import { forCellsNearPolyline } from '../gen/core/field';
 import { layoutFortification } from '../gen/options';
 import { differenceS } from '../gen/geo/bool';
@@ -28,7 +28,9 @@ import type { UrbanBuildingSiteQuery } from '../../../rust/bridge/urbanBuildingS
 import { partitionsFromPack } from '../../../rust/bridge/urbanParcelPack';
 import { geometryConfigs, localArchitectureSettings, scopedHouseEdit, siteQuarter, siteBlock, applyHouseEdit, requireHouseEditSuccess, isMassingEdit, massingEditApplied } from '../../../rust/bridge/urbanHouseEdits';
 import { urbanParentControls } from './generationEdits';
-import { runtimeBlockEdits } from '../../../rust/bridge/urbanBlockEdits';
+import { runtimeBlockEdits, partitionLayout } from '../../../rust/bridge/urbanBlockEdits';
+import { replayUrbanRoadEdits, type UrbanStreetEdit, type UrbanRoadSources, type RoadChanges } from './urbanRoadEditing';
+import { roadBlockScope } from './urbanRoadBlocks';
 
 export interface RustTownSnapshot {
   backend: 'rust-wasm-cpu' | 'rust-native-cpu';
@@ -44,6 +46,10 @@ export interface RustTownSnapshot {
   /** Reconciled native programme evidence for this exact retained house scene. */
   capacityKey?: string;
   layouts: Layout[];
+  /** Persistent manual streets, replayed before cadastral/building generation. */
+  streetEdits?: UrbanStreetEdit[];
+  roadSources?: UrbanRoadSources[];
+  pendingRoadChanges?: RoadChanges;
   partitions?: Partition[];
   cadastralPartitions?: Partition[];
   programmePartitions?: Partition[];
@@ -260,10 +266,10 @@ export function townRoadStreets(world: World): Street[] {
   const native = (world.debug?.v2RustRegion as RustRegionSnapshot | undefined)?.roads;
   if (native) {
     let streets = townRoads.get(native);
-    if (!streets) townRoads.set(native, (streets = cityTownRoads(native)));
+    if (!streets) townRoads.set(native, (streets = cityTownRoads({ ...native, segments: native.segments.filter((_, i) => !world.roads?.[i]?.urban) })));
     return streets;
   }
-  return (world.roads ?? []).map(road => ({ path: road.path, widths: road.path.map(() => road.width), rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
+  return (world.roads ?? []).filter(r => !r.urban).map(road => ({ path: road.path, widths: road.path.map(() => road.width), rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
 }
 /** Site archetype of a V2 town (layout `siteArchetypes`), from its native placement record as City Bench reads it. */
 export function townSiteArchetypes(world: World, key: string, explicit?: Record<string, string>): Record<string, string> {
@@ -343,7 +349,7 @@ export function withRetainedNeighbors(requests: PlacementRequest[], kept: Placem
     };
   });
 }
-function mergeHouseDelta(previous: PlacementBatch, delta: PlacementBatch, changedParcels: Set<string>): PlacementBatch {
+export function mergeHouseDelta(previous: PlacementBatch, delta: PlacementBatch, changedParcels: Set<string>): PlacementBatch {
   if (previous.generator_version !== delta.generator_version) throw new Error('Le moteur maisons a changé de version. Régénérez les maisons du lieu avant une modification individuelle.');
   const materials = new Map([...(previous.materials ?? []), ...(delta.materials ?? [])].map(material => [material.id, material]));
   return {
@@ -382,22 +388,29 @@ export async function generateRustTown(
   lane?: number,
   /** Claims of the earlier neighbouring towns; read from the world's retained towns when absent (`townNeighbours`). */
   neighbourClaims?: readonly Claim[],
+  retainedLayouts?: Layout[],
 ): Promise<RustTownResult> {
   const place = world.settlements?.find(s => s.key === key);
   if (!place) throw new Error(`Lieu inconnu : ${key}`);
   const backend = urbanBackend(settings);
   if (backend === 'typescript') throw new Error('Sélectionnez le moteur urbain Rust pour ses étapes indépendantes.');
-  const options = { ...settings.options, ...settings.local[key], culture: settings.local[key]?.culture ?? String(world.stats['v2.culture:' + key] ?? place.culture), population: settings.local[key]?.population ?? Number(world.stats['v2.population:' + key] ?? place.population) };
+  const { population, radius } = townPopulationAndRadius(world, settings, place);
+  const options = { ...settings.options, ...settings.local[key], culture: settings.local[key]?.culture ?? String(world.stats['v2.culture:' + key] ?? place.culture), population };
   const resolved = resolveRustUrbanControls(settings, key, options),
     local = settings.urban?.local?.[key];
   // Same site archetype as City Bench's quarters request (kinds.rs reads it for the village form and the defences).
   const geometry = geometryConfigs(resolved.layout, resolved.parcels);
-  const config = { ...resolved, ...geometry, layout: { ...geometry.layout, siteArchetypes: townSiteArchetypes(world, key, resolved.layout.siteArchetypes) } };
+  const config = { ...resolved, ...geometry, layout: { ...geometry.layout, siteArchetypes: townSiteArchetypes(world, key, resolved.layout.siteArchetypes), fixedSites: cityFixedSites([place]) } };
   const target = through ?? local?.through ?? settings.urban?.through ?? 'buildings';
   const stageIndex = ['layout', 'parcels', 'programme', 'buildings'].indexOf(target);
   if (stageIndex < 0) throw new Error('Étape urbaine inconnue.');
   const runtime = backend === 'native' ? { profile: 'local' as const, server: settings.runtime?.localServer ?? 'http://127.0.0.1:8791' } : undefined;
-  const report = (stage: string, label: string, completed: number, total = 5): void => onProgress?.({ stage, label, completed, total });
+  // The last stage label: a request that shows the engine loading or the terrain upload restores it afterwards.
+  let shown: V2Progress | undefined;
+  const report = (stage: string, label: string, completed: number, total = 5): void => {
+    shown = { stage, label, completed, total };
+    onProgress?.(shown);
+  };
   const previous = (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[key];
   const roads = townRoadStreets(world);
   const seed = urbanSeed(settings, key, 'composition'),
@@ -406,22 +419,26 @@ export async function generateRustTown(
   const neighbours = [...(neighbourClaims ?? neighbourClaimsOf(world, settings, key))];
   // The engine build is part of the key: a rebuilt engine recomposes the town instead of reusing the old binary's plan.
   const compositionKey = townCompositionFingerprint(
-    ['household-mix-1', world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, engineIdentityOf(settings, backend), seed, place.center, options.population, options.culture, config.layout],
+    ['household-mix-1', world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, engineIdentityOf(settings, backend), seed, place.center, radius, options.population, options.culture, config.layout],
     roads,
     neighbours.length ? [neighbourFingerprint(neighbours)] : [],
   );
   const layoutKey = streetSeed === seed ? compositionKey : fingerprint([compositionKey, streetSeed]);
   const previousComposition = previous?.compositionKey === compositionKey ? previous.compositionLayouts : !previous?.compositionKey && previous?.layoutKey === compositionKey ? previous.layouts : undefined;
   let snapshot: RustTownSnapshot =
-    previous?.layoutKey === layoutKey ? cloneRustTownSnapshot(previous) : { backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: [], buildingIds: [], warnings: [] };
+    !retainedLayouts && previous?.layoutKey === layoutKey
+      ? cloneRustTownSnapshot(previous)
+      : { backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: retainedLayouts ?? [], streetEdits: previous?.streetEdits, buildingIds: [], warnings: [] };
   // Reuse one terrain handle for this ordered request chain, not one copy for each urban step.
   let engine: UrbanEngine | undefined;
   const request = async (kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity', extras: Record<string, unknown>): Promise<SiteResponse> => {
     let raster: SettlementRaster | undefined;
     const engineKey = `${backend}|${runtime?.server ?? ''}${lane === undefined ? '' : `|lane${lane}`}`;
     let retained = engines.get(engineKey);
+    let resume: V2Progress | undefined;
     if (!retained) {
-      report('urban-engine', `Chargement du moteur urbain ${backend === 'native' ? 'Rust natif' : 'Rust/WASM'}…`, 0);
+      resume = shown;
+      report('urban-engine', backend === 'native' ? 'Loading the native Rust urban engine…' : 'Loading the Rust/WASM urban engine…', 0);
       const module = await import('../../../rust/bridge/urban');
       retained = { engine: module.createUrbanEngine(runtime) };
       engines.set(engineKey, retained);
@@ -446,6 +463,15 @@ export async function generateRustTown(
       });
       break;
     }
+    if (raster) {
+      resume ??= shown;
+      report('urban-terrain', 'Sending the terrain to the urban engine…', 0);
+    }
+    const resumed = (): void => {
+      if (resume) report(resume.stage, resume.label, resume.completed, resume.total);
+      resume = undefined;
+    };
+    if (!raster) resumed();
     // Native session chain: send handles for the products the engine already holds (never with a terrain upload).
     const held = backend === 'native' && !raster ? retained : undefined;
     let input = extras;
@@ -485,7 +511,7 @@ export async function generateRustTown(
     const { visuals: _visuals, ...plain } = extras;
     extras = plain;
     try {
-      const pending = engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...input } as Parameters<UrbanEngine['run']>[0]);
+      const pending = engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...input } as Parameters<UrbanEngine['run']>[0], { terrainSent: resumed });
       if (kind === 'quarters' && backend === 'native') {
         // The engine composes the town on its own thread: meanwhile this worker computes the raster-only fields of the
         // land-use stage that follows (finishTowns), once the request has left (one macrotask).
@@ -497,6 +523,7 @@ export async function generateRustTown(
         }
       }
       let result = await pending;
+      resumed();
       // An engine without the retained chain (or a session evicted meanwhile): upload the geometry as before.
       if (result.error && input !== extras && !heldPartitions.has(extras.partitions as Partition[])) result = await engine.run({ id: 1, kind, seed, runtime, ...extras });
       // Parcels, programme and built capacity reply with a binary pack: the snapshot and the projection read objects
@@ -525,10 +552,10 @@ export async function generateRustTown(
     }
   };
   if (!snapshot.layouts.length) {
-    const site = cityNamedSite({ key, name: place.name, population: options.population, culture: options.culture, center: place.center, radius: place.radius }, world.seed, options.language);
+    const site = cityNamedSite({ key, name: place.name, population, culture: options.culture, center: place.center, radius }, world.seed, options.language);
     const inputs = { sites: [neighbours.length ? { ...site, neighbours } : site], roads };
     if (!snapshot.compositionLayouts) {
-      report('urban-layout', 'Rust · urban composition…', 0);
+      report('urban-layout', `Rust · urban composition… (${place.name ?? key})`, 0);
       snapshot.compositionLayouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: config.layout }), 'layouts');
     }
     snapshot.compositionKey = compositionKey;
@@ -536,6 +563,12 @@ export async function generateRustTown(
     else {
       report('urban-layout', 'Rust · nouveau tracé des rues internes, composition conservée…', 0);
       snapshot.layouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: streetSeedConfig(config.layout, snapshot.compositionLayouts, streetSeed) }), 'layouts');
+    }
+    snapshot.roadSources = snapshot.layouts.map(l => ({ layout: l.key, streets: l.streets }));
+    snapshot.layouts = replayUrbanRoadEdits(snapshot.layouts, snapshot.streetEdits ?? []);
+    if (snapshot.streetEdits?.length) {
+      const changes = { old: snapshot.streetEdits.flatMap(e => (e.original ? [e.original.path] : [])), next: snapshot.streetEdits.flatMap(e => e.parts.map(p => p.street.path)) };
+      snapshot.layouts = snapshot.layouts.map(l => roadBlockScope(l, changes).layout);
     }
     snapshot.warnings.push(...snapshot.layouts.flatMap(layout => layout.warnings));
   } else report('urban-layout', 'Rust · plan urbain réutilisé', 1);
@@ -546,15 +579,21 @@ export async function generateRustTown(
     programmeSeed = urbanSeed(settings, key, 'programme');
   const buildingSeed = urbanSeed(settings, key, 'buildings'),
     houseSeed = urbanSeed(settings, key, 'houses');
-  const parcelKey = fingerprint(parcelSeed === seed ? [layoutKey, config.parcels] : [layoutKey, config.parcels, parcelSeed]);
+  const parcelKey = fingerprint([...(parcelSeed === seed ? [layoutKey, config.parcels] : [layoutKey, config.parcels, parcelSeed]), ...(snapshot.streetEdits?.length ? [snapshot.streetEdits] : [])]);
   const programmeKey = programmeSeed === seed ? parcelKey : fingerprint([parcelKey, programmeSeed]);
   // Native chain through the programme: the cadastre stays in the engine (handle only, no download). A
   // programme rerun needs the cadastre again (the engine then holds the programme), so it recuts the parcels.
-  const heldCadastre = backend === 'native' && stageIndex >= 2;
+  const structuralBlocks = Object.values(config.parcels.overrides?.blocks ?? {}).some(e => e.shape || e.parts || e.deleted === true);
+  const heldCadastre = backend === 'native' && stageIndex >= 2 && !structuralBlocks;
   const cadastre = async (handle: boolean): Promise<void> => {
     report('urban-parcels', 'Rust · découpage des parcelles et accès cadastraux…', 1);
     const response = await request('parcels', { seed: parcelSeed, layouts: snapshot.layouts, parcelConfig: config.parcels, ...(handle ? { reply: 'handle' } : {}) });
     snapshot.partitions = required<Partition[]>(response, 'partitions');
+    if (snapshot.partitions.some(p => p.prepared))
+      snapshot.layouts = snapshot.layouts.map(l => {
+        const p = snapshot.partitions!.find(p => p.key === l.key);
+        return p ? partitionLayout(l, p) : l;
+      });
     snapshot.cadastralPartitions = snapshot.partitions;
     snapshot.programmePartitions = undefined;
     snapshot.parcelKey = parcelKey;

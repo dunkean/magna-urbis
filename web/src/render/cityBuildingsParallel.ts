@@ -184,7 +184,7 @@ export function releaseCityBuildingWorkers(): void {
   for (const w of warm) w.terminate();
   warm = [];
 }
-/** `n` workers: the warm ones first; the caller terminates them after use. */
+/** `n` workers: the warm ones first; successful jobs return them to the pool. */
 function takeWorkers(n: number): Worker[] {
   const pool = warm.splice(0, n);
   if (!warm.length) clearTimeout(warmTimer);
@@ -269,17 +269,19 @@ function sceneBuffer(scene: PlacementBatch | undefined, sites: unknown): ArrayBu
 }
 /** `buildCityBuildings(scene, plan, options)` over workers, or undefined when it cannot run there (no workers, a small
  * or edited scene, a scene not built from binary site visuals): the caller then builds on its own thread. */
-export async function buildCityBuildingsParallel(scene: PlacementBatch | undefined, plan: CityScene | undefined, sites: unknown, options: { roofs?: boolean } = {}): Promise<CityBuildings | undefined> {
+export async function buildCityBuildingsParallel(scene: PlacementBatch | undefined, plan: CityScene | undefined, sites: unknown, options: { roofs?: boolean; batchBuildings?: number } = {}): Promise<CityBuildings | undefined> {
   const buffer = sceneBuffer(scene, sites);
-  if (!buffer || !scene || scene.buildings.length < (warm.length >= 2 ? PARALLEL_WARM_MIN_BUILDINGS : PARALLEL_MIN_BUILDINGS) || typeof Worker === 'undefined') return undefined;
+  if (!buffer || !scene || (options.batchBuildings ?? scene.buildings.length) < (warm.length >= 2 ? PARALLEL_WARM_MIN_BUILDINGS : PARALLEL_MIN_BUILDINGS) || typeof Worker === 'undefined') return undefined;
   // Each worker holds a decoded copy of the sites, in the renderer's shared JS heap: the copies stay within a budget
   // (a town of 1,000,000 inhabitants, 325 MB of sites, keeps its one-thread build of the roofless base).
-  const workers = Math.min(workerCount(), Math.floor(PARALLEL_SITE_BYTES / buffer.byteLength));
+  const workers = Math.min(workerCount(), Math.max(2, Math.ceil(scene.buildings.length / 500)), Math.floor(PARALLEL_SITE_BYTES / buffer.byteLength));
   if (workers < 2) return undefined;
   const cultures = Array.from({ length: workers }, () => [] as string[]);
   scene.buildings.forEach((building, g) => cultures[g % workers].push(cityBuildingCulture(building, plan)));
   const shares = siteShares(scene.buildings, sites as readonly { id: string }[], workers);
-  let pool: Worker[] = [];
+  let pool: Worker[] = [],
+    reusable = false;
+  const start = performance.now();
   try {
     pool = takeWorkers(workers);
     const chunks = await Promise.all(
@@ -294,11 +296,22 @@ export async function buildCityBuildingsParallel(scene: PlacementBatch | undefin
           }),
       ),
     );
-    return mergeCityBuildingChunks(scene, plan, chunks);
+    const result = mergeCityBuildingChunks(scene, plan, chunks);
+    reusable = true;
+    performance.measure('displayprep:city-buildings:workers', { start });
+    return result;
   } catch (error) {
     console.warn('Parallel city buildings failed, building on the page:', error);
     return undefined;
   } finally {
-    for (const w of pool) w.terminate();
+    if (reusable) {
+      for (const w of pool) {
+        w.onmessage = null;
+        w.onerror = null;
+      }
+      warm.unshift(...pool);
+      clearTimeout(warmTimer);
+      warmTimer = setTimeout(releaseCityBuildingWorkers, WARM_MS);
+    } else for (const w of pool) w.terminate();
   }
 }

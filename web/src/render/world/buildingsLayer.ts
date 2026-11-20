@@ -1,26 +1,26 @@
 /**
- * The town's buildings as volumes in the tilted world view (volumes.ts): the same meshes, colours, material grain and
- * levels of detail as the separate 3D view (buildingsMesh.ts), standing on the relief the draped ground shows
- * (TerrainHeights), drawn after it with depth.
- *
- * Built once per scene, appearance and terrain, block by block in work slices (buildingsBlocks.ts): the blocks a frame
- * saw at the level it wanted first, nearest first, then the overview of every other block so a turn finds them. Each
- * block level is one vertex buffer and one draw. A frame tests the blocks against the view volume, picks each block's
- * level (an unbuilt level shows the nearest built one meanwhile) and draws: no upload, no allocation, no geometry.
- * Levels not drawn for a while go when the cache passes its byte budget.
- *
- * Made by the page with the scene the separate 3D view composes for the same town (City3dDisplayScene: towns, farms,
- * stand-in houses, walls, bridges, quays, lot boundaries, groves), its building appearance and the terrain heights.
+ * Building volumes created by worldVolumes and drawn by the live compositor after the draped town, against its terrain depth.
+ * Selects block/cell levels by screen size, protecting buildings over DETAILED_PIXELS from budget demotion. Unbuilt levels
+ * use their nearest built substitute; hidden volumes leave the town plan on the drape. buildingsCache owns mesh jobs,
+ * staged uploads and level eviction; buildingsGrain owns roof marks. Draws build and upload no geometry.
  */
 import { roofSeasonKey } from '../seasonPalette';
 import type { Building3dScene } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
-import { BlockGrouping, blockLevel, blockPart, joinParts, worldPaint, worldSeat, type BuildingBlock } from './buildingsBlocks';
-import { WORLD_BUILDING_VS, worldBuildingFs } from './buildingsShader';
+import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, blockHidden, blockLevel, worldPaint, worldSeat, yardBlockLevel } from './buildingsBlocks';
+import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
-import { VOLUME_HAZE, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumesShown, type VolumeLayer } from './volumes';
+import { VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
+import { pickBuilding, type BuildingPick } from './buildingsPick';
+import type { Building3dVisual } from '../urbanBuildingGeometry';
+import { CoverGrainTexture } from './buildingsGrain';
+import { BuildingBlockCache, type BuildingLevel as Level, type BuildingSlot as Slot } from './buildingsCache';
+import type { VolumeTownLook } from '../city/buildingLook';
+import { BuildingDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
+import { buildingTriangleBudget, getViewDepth, VIEW_DEPTH_MAX } from './viewDepth';
+import { countWork } from '../workCount';
 
 export interface WorldBuildingsOptions {
   /** The display scene of the town (what the separate 3D view draws); undefined: no town. Compared by identity: a new
@@ -28,322 +28,498 @@ export interface WorldBuildingsOptions {
   scene(): Building3dScene | undefined;
   /** The building appearance of the page (style, colours, snow, night). */
   appearance(): UrbanBuildingAppearance;
+  /** The look of the top view's town, which the roofs and walls of its buildings take (buildingsMesh.ts); undefined:
+   * the volumes' own paint. Compared by identity, with its frame's key. */
+  look?(): VolumeTownLook | undefined;
   /** The relief of the map, the draped ground's; undefined: nothing to stand on yet. */
   terrain(): TerrainHeights | undefined;
+  /** A fast look: the buildings are drawn as boxes however near (blockLevel). */
+  boxed?(): boolean;
+  /** The same meshes draw the top view, including far buildings that have no draped plan copy. */
+  topView?(): boolean;
   /** GPU memory the block levels may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a frame (a wanted level was built). */
   invalidate(): void;
 }
 
-/** Buildings meshed between two looks at the clock. */
-const BUILD_CHUNK = 8;
-/** The separate 3D view's cache budget. */
-const BUDGET_BYTES = 96 * 1024 * 1024;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uEye', 'uShown', 'uAir', 'uHaze', 'uNight'] as const;
+/** The buildings layer, and the building under a pixel of a tilted view (buildingsPick.ts), for the page's picking. */
+export interface WorldBuildingsLayer extends VolumeLayer {
+  presented(): boolean;
+  /** The building first met by the ray from `origin` along `direction` (map metres, z as drawn) before `limit`, among
+   * those `accept` takes; undefined before the town is grouped into blocks. CPU only, for a click. */
+  pick(origin: ArrayLike<number>, direction: ArrayLike<number>, rise: number, limit: number, accept: (building: Building3dVisual) => boolean): BuildingPick | undefined;
+}
+
+/** Buildings spanning this many pixels keep their full volumes whatever the budget (the protected near field). */
+const DETAILED_PIXELS = 18;
+/** Units (blocks, cells of near blocks) a frame may weigh. */
+const MAX_UNITS = 32768;
+/** Draws a frame may issue: a block whole, or the runs of its cells that share a level. */
+const MAX_DRAWS = 8192;
+const CELLS = BLOCK_CELLS * BLOCK_CELLS;
+/** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
+const DORMANT_LOOKS = 2;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
+
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
-interface Level {
-  vao: WebGLVertexArrayObject;
-  buffer: WebGLBuffer;
-  vertices: number;
-  bytes: number;
-  /** Draw tick it was last shown in. */
-  used: number;
-}
-interface Slot {
-  block: BuildingBlock;
-  levels: (Level | undefined)[];
-  /** Level wanted and level shown at the last draw that saw the block (-1: none yet). */
-  want: number;
-  shown: number;
-  /** Depth along the view axis at that draw, and its tick. */
-  depth: number;
-  seen: number;
-}
-
-export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: WorldBuildingsOptions): VolumeLayer {
-  /** `blocks` drawn, `bytes` on the GPU, `sliceMs` the longest work slice so far. */
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, blocks: 0, bytes: 0, sliceMs: 0 };
+export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: WorldBuildingsOptions): WorldBuildingsLayer {
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, bytes: 0 };
+  let presentedScene: Building3dScene | undefined,
+    missingDraw = false,
+    presented = false;
+  const diagnostics = layerDiagnosticsEnabled() ? new BuildingDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
-  let slots: Slot[] = [];
-  const visible: Slot[] = [];
+  const newCache = (): BuildingBlockCache => new BuildingBlockCache(gl, () => options.budgetBytes, getViewDepth);
+  let cache = newCache();
+  /** The block caches of other looks of the town on this relief, by appearance key, most recent last: a switch back to
+   * a look finds its meshes. The blocks (grouped) depend on the scene only, which a look may keep. */
+  const dormant = new Map<string, { scene: Building3dScene; heights: TerrainHeights; grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'>; cache: BuildingBlockCache }>();
+  let grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'> | undefined;
+  const dropDormant = (lost = false): void => {
+    for (const held of dormant.values()) {
+      if (lost) held.cache.contextLost();
+      else held.cache.clear();
+    }
+    dormant.clear();
+  };
+  // The blocks in view of a frame: slot, height centre and half range, radius.
+  const visible: Slot[] = [],
+    visibleZ = new Float64Array(16384),
+    visibleHalf = new Float64Array(16384),
+    visibleRadius = new Float64Array(16384);
+  // The draws of a frame: slot, level, first vertex, vertices.
+  const drawSlot: Slot[] = [],
+    drawLevel: Level[] = [],
+    drawFirst = new Int32Array(MAX_DRAWS),
+    drawCount = new Int32Array(MAX_DRAWS);
+  let drawTotal = 0;
+  /** A 1 x 1 target the program is drawn into once, with nothing visible, so the driver's first draw of it (ANGLE builds
+   * its executable there) happens in a work slice, not in a frame. */
+  let warmed = false;
   let visibleCount = 0,
     tick = 0,
-    bytes = 0,
-    missing = false,
     dirty = true;
-  let plain: Program | undefined, fading: Program | undefined;
+  let program: Program | undefined;
+  /** The program the driver is linking (startVolumeProgram), from the first work slice on. */
+  let linking: WebGLProgram | undefined;
   let scene: Building3dScene | undefined,
     heights: TerrainHeights | undefined,
     appearanceKey = '',
     night = 0;
-  let paint: BuildingPaint | undefined, seat: BuildingSeat | undefined, appearance: UrbanBuildingAppearance | undefined;
+  let paint: BuildingPaint | undefined, seat: BuildingSeat | undefined, appearance: UrbanBuildingAppearance | undefined, look: VolumeTownLook | undefined;
+  const grain = new CoverGrainTexture(gl);
+  let grainFilled = false;
   /** The grouping of a new scene into blocks, while it runs. */
   let grouping: BlockGrouping | undefined;
-  /** The block level being built, part by part. */
-  let pending: { slot: Slot; level: number; next: number; parts: Float32Array[] } | undefined;
-
-  const dropLevel = (slot: Slot, index: number): void => {
-    const level = slot.levels[index];
-    if (!level) return;
-    gl.deleteBuffer(level.buffer);
-    gl.deleteVertexArray(level.vao);
-    bytes -= level.bytes;
-    slot.levels[index] = undefined;
-  };
-  const dropAll = (): void => {
-    for (const slot of slots) for (let i = 0; i < slot.levels.length; i++) dropLevel(slot, i);
-    slots = [];
-    visibleCount = 0;
-  };
-
   /** The inputs of the page: a new scene, appearance or terrain starts the blocks again (grouped in later slices). */
   const sync = (): void => {
     const nextScene = options.scene(),
       nextHeights = options.terrain(),
-      look = options.appearance(),
-      key = JSON.stringify({ ...look, ambience: undefined, lightsOn: undefined }) + roofSeasonKey();
-    const isNight = look.ambience === 'night';
-    night = isNight ? ((look.lightsOn ?? isNight) ? 1 : 2) : 0;
-    if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey) return;
+      nextAppearance = options.appearance(),
+      nextLook = options.look?.(),
+      key = JSON.stringify({ ...nextAppearance, ambience: undefined, lightsOn: undefined }) + roofSeasonKey() + (nextLook ? '|' + nextLook.frame.key : '');
+    const isNight = nextAppearance.ambience === 'night';
+    night = isNight ? ((nextAppearance.lightsOn ?? isNight) ? 1 : 2) : 0;
+    if (!dirty && nextScene === scene && nextHeights === heights && key === appearanceKey && nextLook === look) return;
+    // Another look of the same town: its meshes (vertex colours) are made again on the same blocks, and the current
+    // cache waits for a switch back.
+    const sameTown = !dirty && nextScene === scene && nextHeights === heights && !!grouped && !!scene && !!heights;
+    if (sameTown && paint && key === appearanceKey) {
+      // A new look object with the same frame: the same meshes.
+      appearance = nextAppearance;
+      look = nextLook;
+      paint = worldPaint(scene!, appearance, grouped!.altitudes, look);
+      return;
+    }
+    if (!dirty && scene && heights && grouped && paint) {
+      dormant.delete(appearanceKey);
+      dormant.set(appearanceKey, { scene, heights, grouped, cache });
+      if (dormant.size > DORMANT_LOOKS) {
+        const [oldest, held] = dormant.entries().next().value!;
+        held.cache.clear();
+        dormant.delete(oldest);
+      }
+    } else cache.clear();
+    if (dirty) dropDormant();
     dirty = false;
-    dropAll();
-    pending = undefined;
-    paint = undefined;
+    clearSelection();
     scene = nextScene;
     heights = nextHeights;
     appearanceKey = key;
-    appearance = look;
-    grouping = scene && heights ? new BlockGrouping(scene, heights, heights.exaggeration) : undefined;
+    appearance = nextAppearance;
+    look = nextLook;
     seat = heights && worldSeat(heights, heights.exaggeration);
-  };
-
-  /** Uploads a block level built from its parts. */
-  const upload = (slot: Slot, index: number, data: Float32Array): void => {
-    const vertices = data.length / BUILDING_STRIDE,
-      block = slot.block;
-    // The exact height range of what the block draws, for the view volume test.
-    for (let i = 0; i < data.length; i += BUILDING_STRIDE) {
-      const z = data[i + 9] + data[i + 1];
-      if (z < block.low) block.low = z;
-      if (z > block.high) block.high = z;
+    // Entries of another relief are stale.
+    for (const [k, held] of dormant)
+      if (held.heights !== heights) {
+        held.cache.clear();
+        dormant.delete(k);
+      }
+    const back = dormant.get(key);
+    dormant.delete(key);
+    if (back && back.scene !== scene) back.cache.clear();
+    const kept = back?.scene === scene ? back : undefined,
+      blocks = kept?.grouped ?? (sameTown ? grouped : [...dormant.values()].find(held => held.scene === scene)?.grouped);
+    cache = kept?.cache ?? newCache();
+    if (scene && heights && blocks) {
+      // The same key is the same look (its frame's key); the look object of the new appearance paints the levels still to build.
+      grouped = blocks;
+      paint = worldPaint(scene, appearance, blocks.altitudes, look);
+      if (!kept) cache.setBlocks(blocks.blocks);
+      grouping = undefined;
+      return;
     }
-    const vao = gl.createVertexArray()!,
-      buffer = gl.createBuffer()!,
-      stride = BUILDING_STRIDE * 4;
-    gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 12);
-    gl.enableVertexAttribArray(2);
-    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 24);
-    gl.enableVertexAttribArray(4);
-    gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 36);
-    gl.bindVertexArray(null);
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    slot.levels[index] = { vao, buffer, vertices, bytes: data.byteLength, used: tick };
-    bytes += data.byteLength;
+    grouped = undefined;
+    paint = undefined;
+    if (scene && heights) countWork('volumes.group');
+    grouping = scene && heights ? new BlockGrouping(scene, heights, heights.exaggeration) : undefined;
   };
 
-  /** Over budget: the levels drawn least recently go, never one of the last frame. */
-  const evict = (): void => {
-    const budget = options.budgetBytes ?? BUDGET_BYTES;
-    while (bytes > budget) {
-      let oldest: Slot | undefined,
-        oldestIndex = -1,
-        used = tick;
-      for (const slot of slots)
-        for (let i = 0; i < slot.levels.length; i++) {
-          const level = slot.levels[i];
-          if (level && level.used < used) {
-            used = level.used;
-            oldest = slot;
-            oldestIndex = i;
-          }
-        }
-      if (!oldest) return;
-      dropLevel(oldest, oldestIndex);
-    }
-  };
-
-  /** Ends a work slice: notes its length. */
+  /** Work pending is returned independently of the optional slice measurement. */
   const slice = (started: number, pending: boolean): boolean => {
-    const ms = performance.now() - started;
-    if (ms > stats.sliceMs) stats.sliceMs = ms;
+    diagnostics?.slice(started);
     return pending;
   };
 
-  const link = (fade: boolean): Program => {
-    const program = linkVolumeProgram(gl, WORLD_BUILDING_VS, worldBuildingFs(fade), 'World buildings');
-    return { program, u: uniformsOf(gl, program, UNIFORMS) };
+  /** The program once the driver has linked it: started in the first work slice, whatever the view (the map shows,
+   * nothing tilts yet), polled in the next ones; false while it links. */
+  const link = (): boolean => {
+    if (program) return true;
+    linking ??= startVolumeProgram(gl, WORLD_BUILDING_VS, WORLD_BUILDING_FS);
+    if (!volumeProgramLinked(gl, linking, 'World buildings')) return false;
+    program = { program: linking, u: uniformsOf(gl, linking, UNIFORMS) };
+    linking = undefined;
+    return true;
+  };
+
+  /** Adds a draw of the cell `cell` (-1: the whole block) of a slot at a level, or of the nearest level built meanwhile;
+   * extends the previous draw when contiguous. The triangles it adds. */
+  const addDraw = (slot: Slot, level: number, cell: number): number => {
+    slot.need |= 1 << level;
+    let built = slot.levels[level];
+    if (!built) {
+      for (let step = 1; step < slot.block.levels && !built; step++) built = slot.levels[level + step] ?? slot.levels[level - step];
+      if (!built) {
+        missingDraw = true;
+        return 0;
+      }
+    }
+    built.used = tick;
+    const first = cell < 0 ? 0 : built.cellFirst[cell],
+      count = cell < 0 ? built.vertices : built.cellFirst[cell + 1] - first;
+    if (!count) return 0;
+    const last = drawTotal - 1;
+    if (last >= 0 && drawSlot[last] === slot && drawLevel[last] === built && drawFirst[last] + drawCount[last] === first) drawCount[last] += count;
+    else {
+      if (drawTotal >= MAX_DRAWS) return 0;
+      drawSlot[drawTotal] = slot;
+      drawLevel[drawTotal] = built;
+      drawFirst[drawTotal] = first;
+      drawCount[drawTotal++] = count;
+    }
+    return count / 3;
+  };
+  /** The units of a frame (a whole block, or a cell of a near block): slot, cell (-1: whole), pixels its mean building
+   * spans, the level it gets, and the triangles of that level. */
+  const unitSlot: Slot[] = [],
+    unitCell = new Int8Array(MAX_UNITS),
+    unitPixels = new Float64Array(MAX_UNITS),
+    unitLevel = new Int8Array(MAX_UNITS),
+    unitCost = new Float64Array(MAX_UNITS),
+    order = new Int32Array(MAX_UNITS);
+  let unitCount = 0;
+  // Scratch arrays hold source blocks (and their buildings) by reference. Release the previous town's selection
+  // when replacing a cache, even when a smaller town would never overwrite all its entries.
+  const clearSelection = (): void => {
+    presented = false;
+    visible.length = drawSlot.length = drawLevel.length = unitSlot.length = 0;
+    visibleCount = drawTotal = unitCount = 0;
+  };
+  /** Triangles a unit draws at a level: the level built, or the nearest built one shown meanwhile; 0 hidden. */
+  const costOf = (slot: Slot, level: number, cell: number): number => {
+    if (level >= slot.block.levels) return 0;
+    let built = slot.levels[level];
+    for (let step = 1; step < slot.block.levels && !built; step++) built = slot.levels[level + step] ?? slot.levels[level - step];
+    if (!built) return 0;
+    return (cell < 0 ? built.vertices : built.cellFirst[cell + 1] - built.cellFirst[cell]) / 3;
+  };
+  const addUnit = (slot: Slot, cell: number, pixels: number, level: number): void => {
+    if (unitCount >= MAX_UNITS) return;
+    unitSlot[unitCount] = slot;
+    unitCell[unitCount] = cell;
+    unitPixels[unitCount] = pixels;
+    unitLevel[unitCount] = level;
+    unitCost[unitCount++] = costOf(slot, level, cell);
+  };
+  /** The draws of the visible blocks: each block, or each cell of a near block, at the level its size asks for; past
+   * the depth's triangle budget, the farthest units go one level coarser, round after round, until the frame fits. A unit whose
+   * buildings span DETAILED_PIXELS keeps its full volumes whatever the budget: the near field never coarsens. The frame's
+   * triangles. */
+  const select = (tx: number, ty: number, focal: number, boxed: boolean | 'overview', keepFar: boolean, flat: boolean, yardRise: number): number => {
+    const depthSetting = getViewDepth(),
+      budget = buildingTriangleBudget(depthSetting),
+      wholeTown = keepFar || depthSetting >= VIEW_DEPTH_MAX;
+    unitCount = 0;
+    drawTotal = 0;
+    diagnostics?.selection();
+    for (let v = 0; v < visibleCount; v++) {
+      const slot = visible[v],
+        b = slot.block,
+        hidden = blockHidden(b),
+        size = b.width * focal,
+        depth = slot.depth,
+        radius = visibleRadius[v],
+        nearPixels = size / Math.max(1, depth - radius);
+      slot.need = 0;
+      // Near the zenith the face of a wooden panel projects to less than one pixel even in a close view.
+      const near = b.yard ? (slot.yardLevel = yardBlockLevel(b, nearPixels, slot.yardLevel, nearPixels * yardRise)) : blockLevel(b, nearPixels, boxed, depthSetting, keepFar);
+      if (near === hidden) continue;
+      diagnostics?.block();
+      // One level over the block (all yards): one unit. Otherwise each cell at its own.
+      if (flat || b.yard || near === blockLevel(b, size / Math.max(1, depth + radius), boxed, depthSetting, keepFar)) {
+        addUnit(slot, -1, nearPixels, near);
+        continue;
+      }
+      const z = visibleZ[v],
+        cellRadius = Math.hypot(BLOCK_CELL * 0.71, visibleHalf[v]);
+      for (let c = 0; c < CELLS; c++) {
+        if (b.cells[c + 1] === b.cells[c]) continue;
+        const cx = b.origin[0] + ((c % BLOCK_CELLS) + 0.5) * BLOCK_CELL - tx,
+          cy = b.origin[1] + (Math.floor(c / BLOCK_CELLS) + 0.5) * BLOCK_CELL - ty;
+        if (!volume.sees(cx, cy, z, cellRadius)) continue;
+        const pixels = size / Math.max(1, volume.depth(cx, cy, z) - cellRadius),
+          level = blockLevel(b, pixels, boxed, depthSetting, keepFar);
+        if (level !== hidden) addUnit(slot, c, pixels, level);
+      }
+    }
+    let triangles = 0;
+    for (let i = 0; i < unitCount; i++) triangles += unitCost[i];
+    if (triangles > budget) {
+      // Farthest (smallest on screen) first.
+      for (let i = 0; i < unitCount; i++) order[i] = i;
+      order.subarray(0, unitCount).sort((p, q) => unitPixels[p] - unitPixels[q]);
+      for (let round = 0; round < 4 && triangles > budget; round++)
+        for (let k = 0; k < unitCount && triangles > budget; k++) {
+          const i = order[k],
+            slot = unitSlot[i];
+          const coarsest = blockHidden(slot.block) - (wholeTown && !slot.block.yard ? 1 : 0);
+          if (unitPixels[i] >= DETAILED_PIXELS || unitLevel[i] >= coarsest) continue;
+          const level = unitLevel[i] + 1,
+            cost = costOf(slot, level, unitCell[i]);
+          triangles += cost - unitCost[i];
+          unitCost[i] = cost;
+          unitLevel[i] = level;
+          diagnostics?.demoted();
+        }
+    }
+    // In block and cell order, so the runs of one level of a block merge into one draw.
+    let drawn = 0;
+    for (let i = 0; i < unitCount; i++) if (unitLevel[i] < blockHidden(unitSlot[i].block)) drawn += addDraw(unitSlot[i], unitLevel[i], unitCell[i]);
+    return drawn;
+  };
+  /** Draws the program once into a 1 x 1 target, with nothing on it (three equal vertices). */
+  const warm = (): void => {
+    warmed = true;
+    const target = gl.createFramebuffer(),
+      color = gl.createRenderbuffer(),
+      depth = gl.createRenderbuffer(),
+      vao = gl.createVertexArray(),
+      buffer = gl.createBuffer();
+    if (!target || !color || !depth || !vao || !buffer || !program) return;
+    gl.bindRenderbuffer(gl.RENDERBUFFER, color);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, 1, 1);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, 1, 1);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth);
+    gl.viewport(0, 0, 1, 1);
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(3 * BUILDING_STRIDE), gl.STATIC_DRAW);
+    const stride = BUILDING_STRIDE * 4;
+    for (const [location, size, offset] of [
+      [0, 3, 0],
+      [1, 3, 12],
+      [2, 3, 24],
+      [4, 1, 36],
+    ]) {
+      gl.enableVertexAttribArray(location);
+      gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset);
+    }
+    gl.useProgram(program.program);
+    volumeDepth(gl);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, grain.texture ?? null);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    volumeDepthEnd(gl);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(target);
+    gl.deleteRenderbuffer(color);
+    gl.deleteRenderbuffer(depth);
+    gl.deleteVertexArray(vao);
+    gl.deleteBuffer(buffer);
   };
 
   return {
     name: 'buildings',
     tilts: true,
+    get tiltOnly() {
+      return !options.topView?.();
+    },
+    presented: () => presented && presentedScene === options.scene(),
     ready: () => true,
-    restExact: frame => !volumesShown(frame.camera) || !missing,
     work(budgetMs, frame) {
-      // Each step below is bounded: the grouping and the meshes go a chunk at a time, a program link is one step.
+      // Each step below is bounded: the grouping and the meshes go a chunk at a time, the link is polled.
       const started = performance.now(),
         deadline = started + budgetMs;
       sync();
+      // The link runs in the driver's threads while the town is grouped and meshed; polled once per slice.
+      const linked = link();
+      // The top view's grain tiles, one family per slice, while the town takes its look.
+      if (look && !grainFilled) {
+        grainFilled = grain.step();
+        if (grainFilled && (frame?.camera.tilted || options.topView?.())) options.invalidate();
+      }
       if (grouping) {
         if (!grouping.step(deadline)) return slice(started, true);
-        slots = grouping.blocks.map(block => ({ block, levels: new Array<Level | undefined>(block.levels).fill(undefined), want: block.levels - 1, shown: -1, depth: Infinity, seen: -1 }));
+        paint = worldPaint(scene!, appearance!, grouping.altitudes, look);
+        cache.setBlocks(grouping.blocks);
+        grouped = grouping;
         grouping = undefined;
         return slice(started, true);
       }
-      if (!slots.length || !scene || !appearance) return slice(started, false);
-      if (!paint) {
-        paint = worldPaint(scene, appearance);
+      if (!cache.slots.length || !paint) return slice(started, false);
+      if (!linked) return slice(started, true);
+      if (!warmed) {
+        warm();
         return slice(started, true);
       }
-      if (!plain) {
-        plain = link(false);
-        return slice(started, true);
-      }
-      if (!fading) {
-        fading = link(true);
-        return slice(started, true);
-      }
-      let built = false;
-      for (;;) {
-        if (!pending) {
-          // The level the last frame wanted for the nearest block that lacks it; else the overview of a block that
-          // has nothing yet (built in the background, before the first tilt and while the view rests).
-          let next: Slot | undefined;
-          for (const slot of slots) if (slot.seen === tick && !slot.levels[slot.want] && (!next || slot.depth < next.depth)) next = slot;
-          if (next) pending = { slot: next, level: next.want, next: 0, parts: [] };
-          else {
-            const bare = slots.find(slot => !slot.levels.some(Boolean));
-            if (bare) pending = { slot: bare, level: bare.block.levels - 1, next: 0, parts: [] };
-          }
-          if (!pending) break;
-        }
-        const job = pending,
-          count = job.slot.block.buildings.length;
-        do {
-          const to = Math.min(count, job.next + BUILD_CHUNK);
-          job.parts.push(blockPart(job.slot.block, job.level, paint, seat!, job.next, to));
-          job.next = to;
-        } while (job.next < count && performance.now() < deadline);
-        if (job.next >= count) {
-          upload(job.slot, job.level, joinParts(job.parts));
-          pending = undefined;
-          built = true;
-        }
-        if (performance.now() >= deadline) {
-          if (built && frame?.camera.tilted) options.invalidate();
-          return slice(started, true);
-        }
-      }
-      if (built && frame?.camera.tilted) options.invalidate();
-      evict();
-      return slice(started, false);
+      const more = cache.work(deadline, tick, paint, seat!, () => {
+        if (frame?.camera.tilted || options.topView?.()) options.invalidate();
+      });
+      return slice(started, more);
     },
     draw(frame: LiveFrame) {
       const started = performance.now(),
         camera = frame.camera,
-        shown = volumesShown(camera);
+        keepFar = !!options.topView?.(),
+        flat = !camera.tilted,
+        drawn = keepFar || volumesDrawn(camera);
+      if (keepFar && (dirty || scene !== options.scene() || heights !== options.terrain() || look !== options.look?.())) sync();
+      missingDraw = false;
       tick++;
-      stats.drawCalls = stats.triangles = stats.blocks = 0;
+      stats.drawCalls = stats.triangles = 0;
+      diagnostics?.frame();
       visibleCount = 0;
-      missing = false;
-      if (shown > 0 && plain && fading) {
+      if (drawn && program) {
         volume.set(camera);
         const tx = camera.target[0],
           ty = camera.target[1],
           tz = camera.target[2],
           rise = camera.rise,
-          focal = camera.focal / frame.dpr;
-        for (let s = 0; s < slots.length; s++) {
-          const slot = slots[s],
-            b = slot.block,
-            low = b.low * rise,
+          focal = flat ? frame.view.scale : camera.focal / frame.dpr,
+          roof = appearance?.roof,
+          boxed = roof === 'minimal' || (options.boxed?.() ? (roof === 'flat' || roof === 'v1' ? 'overview' : true) : false),
+          depthSetting = getViewDepth();
+        for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
+          const slot = cache.slots[s],
+            b = slot.block;
+          // The flat town already draws antialiased fence strokes, including the gate jambs.
+          if (flat && b.yard) continue;
+          const low = b.low * rise,
             high = b.high * rise;
           const x = (b.minX + b.maxX) / 2 - tx,
             y = (b.minY + b.maxY) / 2 - ty,
             z = (low + high) / 2 - tz,
             radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2;
           if (!volume.sees(x, y, z, radius)) continue;
-          const depth = volume.depth(x, y, z);
-          // Under about a third of a pixel: nothing to see (the 3D view's rule).
-          if (depth > radius && (radius * focal) / depth < 0.35) continue;
-          const want = blockLevel(b, (b.width * focal) / Math.max(1, depth - radius), slot.shown >= 0 ? slot.shown : slot.want);
-          slot.want = want;
+          const depth = flat ? 1 : volume.depth(x, y, z);
+          // The depth preference extends the subpixel cutoff; maximum depth retains every visible building block.
+          if (!keepFar && depthSetting < VIEW_DEPTH_MAX && depth > radius && (radius * focal * depthSetting) / depth < 0.35) continue;
           slot.depth = depth;
           slot.seen = tick;
-          let index = want;
-          if (!slot.levels[want]) {
-            missing = true;
-            // Meanwhile the nearest level built, coarser first.
-            index = -1;
-            for (let step = 1; step < b.levels && index < 0; step++) {
-              if (slot.levels[want + step]) index = want + step;
-              else if (slot.levels[want - step]) index = want - step;
-            }
-            if (index < 0) continue;
-          }
-          slot.shown = index;
-          slot.levels[index]!.used = tick;
+          visibleZ[visibleCount] = z;
+          visibleHalf[visibleCount] = (high - low) / 2;
+          visibleRadius[visibleCount] = flat ? 0 : radius;
           visible[visibleCount++] = slot;
         }
-        if (visibleCount) {
-          const { program, u } = shown < 1 ? fading : plain;
-          gl.useProgram(program);
-          gl.disable(gl.BLEND);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LESS);
-          gl.depthMask(true);
-          gl.disable(gl.CULL_FACE);
+        // The levels by screen size, the far end coarser while the frame passes its triangle budget.
+        select(tx, ty, focal, boxed, keepFar, flat, rise * Math.abs(camera.up[2]));
+        if (drawTotal) {
+          const u = program.u;
+          gl.useProgram(program.program);
+          volumeDepth(gl);
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform1f(u.uRise, rise);
+          gl.uniform1i(u.uTop, flat ? 1 : 0);
+          gl.uniform1f(u.uRoofInkDpr, roof === 'v1' ? frame.dpr : 0);
           gl.uniform3f(u.uEye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
-          gl.uniform1f(u.uShown, shown);
           gl.uniform2f(u.uAir, hazeDistance(camera), rise);
           gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);
           gl.uniform1i(u.uNight, night);
-          for (let i = 0; i < visibleCount; i++) {
-            const slot = visible[i],
-              level = slot.levels[slot.shown]!;
-            gl.uniform3f(u.uBlock, slot.block.origin[0] - tx, slot.block.origin[1] - ty, -tz);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D_ARRAY, grain.texture ?? null);
+          gl.uniform1i(u.uCoverGrain, 0);
+          let block: Slot | undefined;
+          for (let i = 0; i < drawTotal; i++) {
+            const slot = drawSlot[i];
+            if (slot !== block) {
+              block = slot;
+              gl.uniform3f(u.uBlock, slot.block.origin[0] - tx, slot.block.origin[1] - ty, -tz);
+            }
+            const level = drawLevel[i];
             gl.bindVertexArray(level.vao);
-            gl.drawArrays(gl.TRIANGLES, 0, level.vertices);
+            if (level.indexBytes) gl.drawElements(gl.TRIANGLES, drawCount[i], level.indexBytes === 2 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT, drawFirst[i] * level.indexBytes);
+            else gl.drawArrays(gl.TRIANGLES, drawFirst[i], drawCount[i]);
             stats.drawCalls++;
-            stats.triangles += level.vertices / 3;
+            stats.triangles += drawCount[i] / 3;
           }
-          stats.blocks = visibleCount;
           gl.bindVertexArray(null);
-          gl.disable(gl.DEPTH_TEST);
-          gl.enable(gl.BLEND);
+          gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+          volumeDepthEnd(gl);
         }
       }
-      stats.bytes = bytes;
+      presented = drawn && !grouping && !missingDraw && (!scene || !!program);
+      presentedScene = scene;
+      stats.bytes = cache.bytes;
       stats.ms = performance.now() - started;
     },
     invalidate() {
       dirty = true;
     },
+    pick(origin, direction, rise, limit, accept) {
+      return heights && cache.slots.length ? pickBuilding(cache.blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept) : undefined;
+    },
     contextLost() {
       // Every handle is dead: forget them without deleting.
-      for (const slot of slots) slot.levels.fill(undefined);
-      bytes = 0;
-      plain = fading = undefined;
-      pending = undefined;
-      visibleCount = 0;
+      cache.contextLost();
+      dropDormant(true);
+      program = linking = undefined;
+      clearSelection();
+      warmed = false;
+      grain.lost();
+      grainFilled = false;
     },
     stats: () => stats,
     dispose() {
-      dropAll();
-      if (plain) gl.deleteProgram(plain.program);
-      if (fading) gl.deleteProgram(fading.program);
-      plain = fading = undefined;
+      cache.clear();
+      dropDormant();
+      clearSelection();
+      if (program) gl.deleteProgram(program.program);
+      if (linking) gl.deleteProgram(linking);
+      program = linking = undefined;
       scene = heights = undefined;
+      grouping = grouped = undefined;
+      paint = seat = look = undefined;
+      grain.dispose();
+      grainFilled = false;
     },
   };
 }

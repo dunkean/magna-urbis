@@ -1,18 +1,20 @@
 /**
  * GLSL of town buildings, for the two views that draw them: the shading shared by both (base occlusion, night,
- * underdark, the procedural grain of covers and walls, the light a cover can reflect), and the program of the tilted
+ * underdark, the procedural grain of covers and walls, and daylight), and the program of the tilted
  * world view (buildingsLayer.ts). The separate 3D view (ui/urbanBuilding3d.ts) builds its programs from the same
  * snippets; web/scripts/wgsl_shaders_3d.ts translates those to WGSL, so the text of the snippets is theirs too.
  *
  * World program: a vertex is (block-local x, height above its seat, block-local y) with the seat, the terrain height
  * under the building as TerrainHeights gives it at full relief (buildingsMesh.ts, worldSeat in buildingsLayer.ts).
  * Seat and height rise with the relief (`uRise`), so the volumes stand on the drawn terrain at every pitch and lie
- * flat in the top view; the screen-door fade of volumes.ts hides them while they rise. Light: the roof light of the 2D
- * plan (buildingLight, roofPlaneLight.ts), so a roof keeps the tone the map gives it; haze as the draped ground.
+ * flat at a pitch of 0 (roofs seen from above, never hidden: volumes.ts). A roof face of a town the top view draws
+ * comes painted with its pan's colour there, light and ambience included, and takes the top view's grain marks
+ * (COVER_GRAIN_GLSL), so tilting keeps the town's look; other faces take the roof light of the 2D plan (buildingLight,
+ * roofPlaneLight.ts) and the procedural grain. Haze as the draped ground.
  */
 import { MOONLIGHT_GLSL } from '../materialLook';
 import { ROOF_PLANE_LIGHT_GLSL } from '../roofPlaneLight';
-import { VOLUME_FADE_GLSL } from './volumes';
+import { COVER_GRAIN_GLSL } from '../buildingMaterials';
 
 // Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
 // works (city walls, bridges: facadePosition.y = -10000) are left as they are.
@@ -129,23 +131,21 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   return color*(1.+g);
 }
 `;
-/** Light of a roof face capped by what its cover can reflect, as the 2D plan does (planPanLight in
- * roofPlaneLight.ts): around the level of a flat roof (1), with the same smooth knee. Matte covers (thatch, reed,
- * palm, turf, shingle, bark, bamboo, earth, lime, felt, hide: classes 7 to 15, 17, 18) lighten by 9 % at most and
- * darken by 14 %; tiles, slates and stone (1 to 6) by 14 % and 20 %; metal (16), snow, walls and faces without a
- * class keep the full light. */
-export const BUILDING_COVER_LIGHT_GLSL = `
-float coverLight(float light,float cls,vec3 N){
-  if(N.y<.05||cls<.5||cls>18.5||abs(cls-16.)<.5)return light;
-  float up=.09,down=.14;
-  if(cls<6.5){up=.14;down=.2;}
-  float d=light-1.;
-  if(d>0.)return 1.+up*(1.-exp(-d/up));
-  return 1.-down*(1.-exp(d/down));
+/** V1 roof edges, antialiased in pixels. The caller selects V1 with a uniform branch. */
+export const ROOF_INK_GLSL = `
+float roofInk(vec3 edge, vec3 gx, vec3 gy, float dpr){
+  vec3 ex=dFdx(edge),ey=dFdy(edge);
+  vec3 edgePixel=sqrt(ex*ex+ey*ey);
+  float reach=.5*dpr;
+  if(all(greaterThanEqual(edge,edgePixel*(reach+.5))))return 0.;
+  vec3 d=edge/max(edgePixel,vec3(1.e-6));
+  float mpp=sqrt(max(dot(gx.xz,gx.xz),dot(gy.xz,gy.xz)))*dpr;
+  return (1.-smoothstep(max(0.,reach-.5),reach+.5,min(d.x,min(d.y,d.z))))*.65*(1.-smoothstep(1.5,4.,mpp));
 }
 `;
 export const WORLD_BUILDING_VS = `#version 300 es
 precision highp float;
+precision highp int;
 // Block-local x, height above the seat (m), block-local y; the normal in the 3D view's frame (x, up, y south) with the
 // material class on its length; the colour; the terrain height under the building, metres as drawn at full relief.
 layout(location=0) in vec3 position;
@@ -156,38 +156,56 @@ uniform mat4 uProjection;
 // Block origin relative to the target (x, y) and minus the target's height.
 uniform vec3 uBlock;
 uniform float uRise;
+uniform bool uTop;
+uniform float uRoofInkDpr;
 // Eye relative to the target.
 uniform vec3 uEye;
-out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; out float vDistance;
+out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
+out vec3 roofEdge;
 void main(){
-  n=normalize(normal);base=albedo;
-  // The normal's length carries the material class (1 + class / 32); block-local metres keep the grain's hashes exact.
-  materialClass=floor((length(normal)-1.)*32.+.5);
+  n=normalize(normal);base=uRoofInkDpr>0.?abs(albedo):albedo;
+  // Inspect the bits directly so black channels can carry a negative zero.
+  roofEdge=uRoofInkDpr>0.?vec3(greaterThanEqual(floatBitsToInt(albedo),ivec3(0))):vec3(1.);
+  // The normal's length carries 1 + code / 32 (buildingsMesh.ts faceCode): the material class, plus 64 x the grain gain
+  // in sixteenths of a face the town look painted (0: not painted). Block-local metres keep the grain's hashes exact.
+  float code=floor((length(normal)-1.)*32.+.5),painted=floor(code/64.);
+  materialClass=code-64.*painted;townGain=painted/15.;
   grainPosition=position;facadePosition=position;
   vec3 world=vec3(uBlock.xy+position.xz,(seat+position.y)*uRise+uBlock.z);
   vDistance=length(world-uEye);
   gl_Position=uProjection*vec4(world,1.);
+  // Orthographic plan pixels ignore height; the depth buffer still chooses the uppermost roof.
+  if(uTop) gl_Position.z=clamp(-(seat+position.y)*.00001,-.95,.95);
 }`;
 
-/** `fading`: the volumes are rising (screen-door fade); otherwise no discard, so early depth stays on. */
-export const worldBuildingFs = (fading: boolean): string => `#version 300 es
+export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
-in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; in float vDistance;
-// Share of the volumes shown while they rise; haze distance (m) and share; haze colour.
-uniform float uShown;
+in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
+in vec3 roofEdge; uniform float uRoofInkDpr;
+// Haze distance (m) and share; haze colour.
 uniform vec2 uAir;
 uniform vec3 uHaze;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
-${BUILDING_COVER_LIGHT_GLSL}
-${VOLUME_FADE_GLSL}
+${COVER_GRAIN_GLSL}
+${ROOF_INK_GLSL}
 void main(){
-  vec3 N=normalize(n);float fp=length(fwidth(grainPosition));
+  vec3 N=normalize(n);
+  vec3 gx=dFdx(grainPosition),gy=dFdy(grainPosition);
+  float fp=length(abs(gx)+abs(gy));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
-  float light=coverLight(buildingLight(N,N),cls,N);
-  vec3 rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+  vec3 rgb;
+  if(townGain>0.){
+    // A roof face painted by the top view's town look: its colour holds the light of its slope and the ambience
+    // (volumeRoofPaint); the grain marks of its cover family are the top view's, the snow class keeps its own.
+    rgb=cls>.5&&cls<18.5?coverGrainMarks(base,cls,N,grainPosition,townGain):materialGrain(base,cls,N,grainPosition,fp);
+  }else{
+    float light=buildingLight(N);
+    rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+  }
+  if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
   float haze=min(.62,1.-exp(-pow(vDistance/uAir.x,2.)*.11))*uAir.y;
-  color=vec4(mix(rgb,uHaze,haze),1.);${fading ? '\n  if(volumeHidden(uShown))discard;' : ''}
+  color=vec4(mix(rgb,uHaze,haze),1.);
 }`;

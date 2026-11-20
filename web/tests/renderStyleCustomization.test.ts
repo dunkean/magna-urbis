@@ -28,10 +28,12 @@ describe('customized render style indicator', () => {
       expect(appearanceCustomized(settings), path).toBe(false);
     }
   });
-  it('turns the preset to custom when a global effect changes', () => {
+  it('keeps the preset when a global effect (the scene) changes, and turns it to custom for a pass', () => {
     const settings = defaultSettings();
     writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
     writeAppearanceControl(settings, 'appearance.composition.effects.lighting.azimuth', 90);
+    expect(settings.appearance!.composition!.preset).toBe('satellite');
+    writeAppearanceControl(settings, 'appearance.composition.buildings.look', 'footprints');
     expect(settings.appearance!.composition!.preset).toBe('custom');
   });
   it('retains the indicator after project reload and style changes, and removes it for reset or identical colours', () => {

@@ -64,8 +64,40 @@ function tileTreeMarks(c: CartographyContext, tl: TextureLayer, tile: number): M
     return points;
   }
 }
+/** Warming of the tree marks (`warmTreeMarks`): per wood or orchard layer, its index tiles and the next one to compute. */
+const WARMING = new WeakMap<TextureLayer, { tiles: number[]; next: number }>();
+/** Index tiles a layer may warm: the mark cache keeps 8192 per layer, a larger layer would evict what it warms. */
+const WARM_TILES = 8192;
+/** Computes the tree marks of the woods and orchards, index tile by index tile, until `deadline`: the clearings and
+ * room tests of a tile cost milliseconds, and a band or a drape tile meeting tens of cold tiles at once was one
+ * block of 220 ms (parchment, 40 km). The marks are zoom-independent and cached for the whole map, so they are made
+ * once per content in the idle slices of the live overlay. True when every tile is warm. */
+export function warmTreeMarks(c: CartographyContext, deadline: number): boolean {
+  const size = c.world.mapSize;
+  for (const tl of c.scene.textures) {
+    if (tl.kind !== 'forest' && tl.kind !== 'orchard') continue;
+    // The ground paints the woods (render/treeSymbols.ts): no forest marks to make.
+    if (tl.kind === 'forest' && c.deps.groundTrees?.()) continue;
+    let state = WARMING.get(tl);
+    if (!state) {
+      const tiles = tl.index.tilesInRect({ minX: 0, minY: 0, maxX: size, maxY: size });
+      WARMING.set(tl, (state = { tiles: tiles.length <= WARM_TILES ? tiles : [], next: 0 }));
+    }
+    while (state.next < state.tiles.length) {
+      if (performance.now() >= deadline) return false;
+      tileTreeMarks(c, tl, state.tiles[state.next++]);
+    }
+  }
+  return true;
+}
 /** False when the canopy draws vector glyphs at this scale (no atlas): the caller paints the trees itself. */
 export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, tl: TextureLayer, area: Rect4, pxPerMetre: number): boolean {
+  const steps = recordTreeSpriteSteps(c, ctx, tl, area, pxPerMetre);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+export function* recordTreeSpriteSteps(c: CartographyContext, ctx: RecordingContext, tl: TextureLayer, area: Rect4, pxPerMetre: number): Generator<void, boolean> {
   const { canopy, brushes, treeSprites } = c;
   if (!canopy || brushes) return false;
   const kind = tl.kind === 'orchard' ? 'orchard' : 'forest',
@@ -88,6 +120,7 @@ export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, 
     }
     if (entry === null) return false;
     if (entry.marks.length) parts.push(entry);
+    yield;
   }
   if (!parts.length) return true;
   const image = parts[0].image;
@@ -99,7 +132,7 @@ export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, 
     xs = new Float64Array(n),
     ys = new Float64Array(n);
   let count = 0;
-  for (const p of parts)
+  for (const p of parts) {
     for (let i = 0; i < p.marks.length; i++) {
       const m = p.marks[i];
       if (m.x < area.minX || m.x > area.maxX || m.y < area.minY || m.y > area.maxY) continue;
@@ -108,6 +141,8 @@ export function recordTreeSprites(c: CartographyContext, ctx: RecordingContext, 
       ys[count] = m.y;
       count++;
     }
+    yield;
+  }
   if (count > GPU_SPRITE_BATCH_MAX) return false;
   const order = new Uint32Array(count);
   for (let i = 0; i < count; i++) order[i] = i;

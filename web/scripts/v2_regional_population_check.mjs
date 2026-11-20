@@ -119,7 +119,8 @@ try {
   }
   assert(scenarios[0].population > 50000);
   assert(scenarios[0].isolated > 0);
-  assert(scenarios[1].largest > 500000);
+  assert(scenarios[0].largest <= 20000);
+  assert(scenarios[1].largest <= 20000);
   assert(scenarios[2].population < scenarios[0].population / 50, 'harsh map keeps the floor, far below temperate');
   // Import a retained small scene to check the local reroll entry point.
   execFileSync(process.execPath, ['--import', './scripts/shaderModuleStubs.mjs', '--import', 'tsx', 'scripts/v2_workbench_layout_fixture.ts'], { windowsHide: true });

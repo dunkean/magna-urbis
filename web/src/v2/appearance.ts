@@ -5,6 +5,7 @@ import { isMapStyle } from '../render/styles';
 import { isTerrainStyle } from '../render/terrainStyle';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
+import { TREE_DISTANCE_MAX, TREE_DISTANCE_MIN } from '../ui/terrain3dTrees';
 import { setLanduseForestTone } from '../render/landuseForestTone';
 import { validateRenderColors } from '../render/customColors';
 import type { CityLayers } from '../render/cityCanvas';
@@ -18,6 +19,8 @@ import type { World } from '../gen/types';
 import { resolveAppearance, type RenderTarget, type ResolveFlags, type ResolvedAppearance } from '../render/appearanceRecipe';
 import { worldCapabilities } from './nativeProducts';
 import { presetComposition, validateComposition, withoutHiddenStyle } from '../render/composition';
+import { machineDecision } from './machineTier';
+import { machineViewDefaults } from './machineView';
 
 export const CITY_LAYER_NAMES = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'streets', 'enclosures', 'lotEnclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes', 'access'] as const satisfies readonly (keyof CityLayers)[];
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -83,7 +86,7 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     number(value.city.width, 'appearance.city.width', 0, 5);
     // New controls use .2–3; keep the former upper bound valid for retained projects.
     number(value.city.exaggeration, 'appearance.city.exaggeration', 0.2, 5);
-    number(value.city.treeDistance, 'appearance.city.treeDistance', 200, 1500);
+    number(value.city.treeDistance, 'appearance.city.treeDistance', TREE_DISTANCE_MIN, TREE_DISTANCE_MAX);
     if (value.city.layers !== undefined) {
       object(value.city.layers, 'appearance.city.layers');
       for (const [key, entry] of Object.entries(value.city.layers)) {
@@ -105,6 +108,10 @@ export function resolveSettingsAppearance(settings: V2Settings, world: World | u
   const o = settings.options;
   // V2 always renders a composition; a project without one starts from the preset of its map style.
   const appearance = { style: o.style, ...settings.appearance, composition: withoutHiddenStyle(settings.appearance?.composition) ?? presetComposition(o.style === 'atlas' ? 'atlas' : 'parchment') };
+  if (target !== 'export') {
+    const { trees3d, treeDistance } = machineViewDefaults(machineDecision().tier);
+    appearance.city = { trees3d, treeDistance, ...appearance.city };
+  }
   // The land-use painters (2D canvas, SVG export, legend) read the shared value; the recipe is its source of truth.
   setLanduseForestTone(appearance.composition.vegetation.forestTone);
   return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest }, worldCapabilities(world), target, { ...flags, biome: world?.options.biome ?? o.biome });

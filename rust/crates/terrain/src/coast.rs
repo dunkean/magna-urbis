@@ -28,7 +28,28 @@ const TRACED: f32 = 256.0;
 /// at most 75 * max((0.5 - r²)⁴ r) = 75 * 0.0092 each.
 const NOISE_BOUND: f64 = 2.1;
 
+/// Width of the shoreline transition; never reshapes the inland relief or the coastline.
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CoastProfile {
+    pub width: f64,
+    pub variability: f64,
+}
+impl Default for CoastProfile {
+    fn default() -> Self { Self { width: 250.0, variability: 0.5 } }
+}
+impl CoastProfile {
+    pub fn validate(self) -> Result<Self, String> {
+        if !self.width.is_finite() || !(0.0..=10000.0).contains(&self.width)
+            || !self.variability.is_finite() || !(0.0..=1.0).contains(&self.variability) {
+            return Err("Invalid coastal smoothing".into());
+        }
+        Ok(self)
+    }
+}
+
 pub(crate) struct Coast {
+    profile: CoastProfile,
     rng: Rng,
     pub noise: Noise,
     pub parameters: Vec<f32>,
@@ -40,6 +61,7 @@ pub(crate) struct Coast {
 impl Coast {
     pub fn new(rng: Rng, width: f64, motif: f64, amp: f64, marine_datum: f64) -> Self {
         Self {
+            profile: CoastProfile::default(),
             noise: Noise::new(rng.fork("shore-noise")),
             rng,
             parameters: vec![
@@ -69,11 +91,9 @@ impl Coast {
         self.parameters.resize(HEADER, 0.0);
         self.parameters[0] = mask as f32;
         self.parameters[1] = 0.0;
-        let mut profile = self.rng.fork("mainland-profile");
-        let turn = profile.range(-0.15, 0.15);
-        self.parameters[4] = profile.range(2.5, 4.5) as f32;
-        self.parameters[5] = turn.cos() as f32;
-        self.parameters[6] = turn.sin() as f32;
+        // GPU vec4 1.xy, mirrored by terrainCoast.wgsl.
+        self.parameters[4] = self.profile.width as f32;
+        self.parameters[5] = self.profile.variability as f32;
         // Seeded coast character: uneven sea reach per direction, a broad warp
         // and noise amplitudes from smooth sandy bights to ragged rocky shores.
         let mut character = self.rng.fork("coast-character");
@@ -697,6 +717,10 @@ impl Coast {
     pub fn active(&self) -> bool {
         self.parameters[0] != 0.0
     }
+    pub fn set_profile(&mut self, profile: CoastProfile) -> Result<(), String> {
+        self.profile = profile.validate()?;
+        Ok(())
+    }
     pub fn depth(&self) -> f64 {
         self.parameters[3] as f64
     }
@@ -941,6 +965,25 @@ impl Coast {
         }
     }
 
+    /// A low-frequency width field sampled along the shore: coherent stretches of irregular
+    /// length, smoothly joined. Variation changes its amplitude, never the coastline.
+    fn smoothing_width(&self, x: f64, y: f64) -> f64 {
+        if self.profile.variability == 0.0 { return self.profile.width; }
+        // Cubic B-spline interpolation gives C2 joins between seeded control values.
+        let weights = |t: f64| [(1.0-t).powi(3)/6.0, (3.0*t*t*t-6.0*t*t+4.0)/6.0,
+            (-3.0*t*t*t+3.0*t*t+3.0*t+1.0)/6.0, t*t*t/6.0];
+        let (x, y) = (x / 1200.0, y / 1200.0);
+        let (ix, iy) = (x.floor() as i32, y.floor() as i32);
+        let (wx, wy) = (weights(x-x.floor()), weights(y-y.floor()));
+        let mut wave = 0.0;
+        for j in 0..4 { for i in 0..4 {
+            let (cx, cy) = (((ix+i as i32-1)&255) as usize, ((iy+j as i32-1)&255) as usize);
+            let value = self.noise.perm[cx+self.noise.perm[cy] as usize] as f64 / 127.5 - 1.0;
+            wave += wx[i]*wy[j]*value;
+        }}
+        self.profile.width * (1.0 + self.profile.variability * (2.0*wave).tanh())
+    }
+
     fn shore(&self, x: f64, y: f64, width: f64, height: f64, footprint: f64) -> f64 {
         // Coastal plains should not stand on their inland formula's constant
         // pedestal. Express elevations above the marine datum, with a smooth
@@ -953,9 +996,7 @@ impl Coast {
         } else {
             height
         };
-        // Alternate gentler shores and rocky cliffs, without tapering entire islands.
-        let cliff =
-            smooth((self.noise.fbm(x / (width * 0.12), y / (width * 0.12), 3) - 0.20) / 0.25);
+        // Keep the previous coastal cut without cliff sectors or inland lowland reshaping.
         let width_variation = 0.65
             + 1.1
                 * smooth(
@@ -967,12 +1008,12 @@ impl Coast {
             .max(height / (width * 0.45))
             .min(scale * 0.18)
             * width_variation
-            * apron
-            * (1.0 - 0.90 * cliff);
+            * apron;
         if distance <= 0.0 {
             -self.depth() * smooth(-distance / (ramp * 4.0 * self.shelf()))
         } else {
-            height * smooth(distance / ramp)
+            let band = self.smoothing_width(x, y);
+            if band > 0.0 { height * smooth(distance * width / band) } else { height }
         }
     }
 }
@@ -1079,6 +1120,45 @@ fn perimeter(p: f64) -> (f64, f64) {
 #[cfg(test)]
 mod open_sea_tests {
     use super::*;
+
+    #[test]
+    fn smoothing_width_is_constant_or_slowly_variable_without_changing_geography() {
+        let make = |width, variability| {
+            let mut coast = Coast::new(Rng::new("coast-width"), 4000.0, 10000.0, 300.0, 0.0);
+            coast.set_profile(CoastProfile { width, variability }).unwrap();
+            coast.configure(255, "island").unwrap();
+            coast.fit(&vec![300.0; 64 * 64], 64).unwrap();
+            coast
+        };
+        let (cut, constant, varied, wide) = (make(0.0, 0.0), make(250.0, 0.0), make(250.0, 0.8), make(1000.0, 0.0));
+        let mut widths = Vec::new();
+        let mut softened = 0;
+        for y in 0..64 { for x in 0..64 {
+            let (x, y) = ((x as f64 + 0.5) * 62.5, (y as f64 + 0.5) * 62.5);
+            assert_eq!(constant.smoothing_width(x, y), 250.0);
+            let local = varied.smoothing_width(x, y);
+            assert!((50.0..=450.0).contains(&local));
+            assert!((local - varied.smoothing_width(x + 1.0, y)).abs() < 2.0);
+            widths.push(local);
+            let original = cut.distance(x / 4000.0, y / 4000.0, 0.0, 300.0);
+            assert_eq!(original, varied.distance(x / 4000.0, y / 4000.0, 0.0, 300.0));
+            let (a, b) = (cut.apply(x, y, 4000.0, 300.0, 0.0), wide.apply(x, y, 4000.0, 300.0, 0.0));
+            assert_eq!(a > 0.0, b > 0.0);
+            if a <= 0.0 { assert_eq!(a, b); }
+            if original.0 * 4000.0 >= 1000.0 { assert_eq!(a, b); }
+            if a - b > 10.0 { softened += 1; }
+        }}
+        let span = widths.iter().copied().fold(f64::NEG_INFINITY, f64::max) - widths.iter().copied().fold(f64::INFINITY, f64::min);
+        assert!(span > 50.0 && softened > 10);
+    }
+
+    #[test]
+    fn smoothing_rejects_removed_cliff_profiles_and_invalid_widths() {
+        for profile in [CoastProfile { width: -1.0, variability: 0.0 }, CoastProfile { width: f64::NAN, variability: 0.0 }, CoastProfile { width: 250.0, variability: 1.1 }] {
+            assert!(profile.validate().is_err());
+        }
+        assert!(serde_json::from_str::<CoastProfile>(r#"{"cliffs":1}"#).is_err());
+    }
 
     /// Pack cell-centred sea samples in the web contract's least-significant-bit order.
     fn traced_mode(n: usize, sea: impl Fn(f64, f64) -> bool) -> String {

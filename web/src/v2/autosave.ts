@@ -100,12 +100,11 @@ export function clearAutosave(): void {
   }
   void idbDelete();
 }
-/** Read the entry and remove it at once: a broken state cannot lock the next reload. Incompatible entries are wiped. */
+/** Keep a valid recipe throughout restoration: reloads during a slow/failed run must not erase settings. */
 export async function takeAutosave(): Promise<SavedRecipe | undefined> {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(KEY);
-    localStorage.removeItem(KEY);
   } catch {
     return undefined;
   }
@@ -114,7 +113,6 @@ export async function takeAutosave(): Promise<SavedRecipe | undefined> {
     let value = JSON.parse(raw);
     if (value?.idb && value.tag === TAG) {
       value = await idbGet();
-      await idbDelete();
       if (!value) return undefined;
     } // no IndexedDB: start empty
     if (!value || value.tag !== TAG) throw new Error(`tag ${String(value?.tag)} differs from ${TAG}`);
@@ -122,6 +120,14 @@ export async function takeAutosave(): Promise<SavedRecipe | undefined> {
     validateModifications(value.mods);
     return { settings: value.settings, mods: value.mods, view: value.view, ui: value.ui };
   } catch (e) {
+    try {
+      if (localStorage.getItem(KEY) === raw) {
+        localStorage.removeItem(KEY);
+        void idbDelete();
+      }
+    } catch {
+      /* Optional. */
+    }
     console.info('Autosave discarded:', e instanceof Error ? e.message : e);
     return undefined;
   }

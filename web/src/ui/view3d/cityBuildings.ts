@@ -137,7 +137,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
   // Suppress the entire volume batch, including walls, quays and canopy platforms.
   t.setBuildings(
     cityContext.display,
-    { ambience: appearance?.ambience, lightsOn: appearance?.lightsOn, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, roofSnow, textured: cityContext.textured() && diagnostic !== 'uses' && diagnostic !== 'height' },
+    { ambience: appearance?.ambience, lightsOn: appearance?.lightsOn, colors: appearance?.colors, style: appearance?.style ?? 'cartographic', diagnostic, roof: appearance?.roof, roofSnow, textured: cityContext.textured() && diagnostic !== 'uses' && diagnostic !== 'height' },
     !flat && (cityContext.options.getBuildingsVisible?.() ?? true),
   );
   (cityContext.$('[data-detail]') as HTMLButtonElement).disabled = !cityContext.display?.kinds.compact || (!!scene && 'projection' in scene && (!cityContext.options.details || scene.projection === 'native-parent-window-3d-1'));

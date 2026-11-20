@@ -1,46 +1,59 @@
 /**
  * Volumes of the world view: what stands on the terrain of a tilted frame, the town's buildings (buildingsLayer.ts) and
- * the modelled trees (treesLayer.ts). This file holds what both share: the layer they are, how they fade in with the
- * relief, which world blocks a frame sees, and the program link.
+ * the modelled trees (treesLayer.ts). This file holds what both share: the layer they are, how they rise with the
+ * relief, which world blocks a frame sees, and the program link (started early, polled, never waited for).
  *
- * How a volume layer meets the compositor (render/live/contract.ts, owned by the world stream). It is a LiveLayer that
+ * How a volume layer meets the compositor (render/live/contract.ts). It is a LiveLayer that
  * takes the camera (`tilts`), drawn after the ground and the draped layers and before the names, NOT isolated: it draws
  * straight into `frame.target` (the canvas), with depth test and depth writes against the depth the draped ground left
  * there in the same frame. In the top view it draws nothing and is ready, so the 2D map is unchanged.
  *
  * Cost by construction: everything a frame draws is in GPU buffers built in work slices (one per world block and level
- * of detail); a frame walks the blocks (a sphere test each), sets a few uniforms and issues one draw per visible block.
- * No upload, no allocation, no geometry in a frame.
+ * of detail); a frame walks the blocks (a sphere test each), sets a few uniforms and issues draws for visible blocks or contiguous cells at one level.
+ * No upload or geometry building in a frame.
  */
 import type { LiveLayer } from '../live/contract';
 import type { FrameCamera } from './contract';
+import { getViewDepth } from './viewDepth';
 
 /** The names the compositor gives the volume layers: in LIVE_LAYER_ORDER after 'city', before 'text'. */
 export type VolumeLayerName = 'buildings' | 'trees';
-/** A LiveLayer whose name is a volume layer's; assignable to LiveLayer once LiveLayerName includes these names. */
+/** The compositor layer contract restricted to world volumes. */
 export interface VolumeLayer extends Omit<LiveLayer, 'name' | 'isolated' | 'tilts'> {
   readonly name: VolumeLayerName;
   readonly tilts: true;
 }
 
-/** Share of the volumes shown at a rise of the relief (FrameCamera.rise): they rise with it, from nothing in the top
- * view, so the top view and a hair of tilt look the same. Below the first step of the dither nothing is drawn. */
-export const volumesShown = (camera: FrameCamera): number => (camera.tilted && camera.rise >= 1 / 32 ? camera.rise : 0);
+/** Volumes are drawn in every tilted frame and in no top view (the 2D town and the painted crowns show them there).
+ * They are never faded: their heights rise with the relief (FrameCamera.rise), so at a pitch near 0, or in a turned
+ * top view, they lie flat on the flat terrain as roofs and crowns seen from above, and grow as the camera tilts. */
+export const volumesDrawn = (camera: FrameCamera): boolean => camera.tilted;
 
-/** Screen-door fade: a 4x4 ordered dither hides the pixels whose threshold is not under the share shown. Opaque
- * volumes need no sorting and keep writing depth; only the programs of a rising frame carry the discard. */
-export const VOLUME_FADE_GLSL = `
-bool volumeHidden(float shown){
-  const float B[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
-  ivec2 p=ivec2(gl_FragCoord.xy)&3;
-  return (B[p.x+p.y*4]+.5)/16.>shown;
-}`;
+/** Depth state of a volume layer. LEQUAL and a pull towards the eye: at a rise near 0 a roof lies on the terrain and
+ * on its own footing; equal depths go to what is drawn last (the roof after the walls and footings of its building,
+ * the volumes after the terrain). */
+export function volumeDepth(gl: WebGL2RenderingContext): void {
+  gl.disable(gl.BLEND);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.depthMask(true);
+  gl.disable(gl.CULL_FACE);
+  gl.enable(gl.POLYGON_OFFSET_FILL);
+  gl.polygonOffset(-1, -2);
+}
+/** Back to the shared state (render/live/contract.ts resetLiveState) for what volumeDepth changed. */
+export function volumeDepthEnd(gl: WebGL2RenderingContext): void {
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.depthFunc(gl.LESS);
+  gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+}
 
 /** Light of the draped ground's slopes (drapedGround.ts): from the north-west, x east, y south, z up. */
 export const VOLUME_LIGHT: readonly [number, number, number] = [-0.485, -0.485, 0.728];
 /** Haze of the draped ground (drapedGround.ts): its colour, and its distance for a camera, as that file sets them. */
 export const VOLUME_HAZE: readonly [number, number, number] = [0.77, 0.85, 0.88];
-export const hazeDistance = (camera: FrameCamera): number => Math.max(2 * Math.hypot(camera.eye[0] - camera.target[0], camera.eye[1] - camera.target[1], camera.eye[2] - camera.target[2]), 100);
+export const hazeDistance = (camera: FrameCamera): number => Math.max(2 * camera.distance, 100) * getViewDepth();
 
 /** The six planes of a frame's view volume, for positions relative to the target (FrameCamera.targetViewProjection).
  * Refilled in place per frame. */
@@ -84,7 +97,14 @@ export class ViewVolume {
   }
 }
 
-export function linkVolumeProgram(gl: WebGL2RenderingContext, vertex: string, fragment: string, label: string): WebGLProgram {
+/** KHR_parallel_shader_compile's COMPLETION_STATUS_KHR. */
+const COMPLETION_STATUS = 0x91b1;
+
+/** Starts the compile and link of a volume program and returns at once: with KHR_parallel_shader_compile the driver
+ * links it in its own threads while the layer polls `volumeProgramLinked` in its work slices (reading LINK_STATUS
+ * before completion would wait for the whole link on the main thread: 250 ms measured for the buildings). */
+export function startVolumeProgram(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram {
+  gl.getExtension('KHR_parallel_shader_compile');
   const program = gl.createProgram()!;
   for (const [type, source] of [
     [gl.VERTEX_SHADER, vertex],
@@ -97,8 +117,14 @@ export function linkVolumeProgram(gl: WebGL2RenderingContext, vertex: string, fr
     gl.deleteShader(shader);
   }
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(`${label} program: ${gl.getProgramInfoLog(program)}`);
   return program;
+}
+/** The program started by `startVolumeProgram` is linked (false while the driver still links it: ask again in a later
+ * slice). Without the extension the status read waits for the link, once. Throws when the link failed. */
+export function volumeProgramLinked(gl: WebGL2RenderingContext, program: WebGLProgram, label: string): boolean {
+  if (gl.getExtension('KHR_parallel_shader_compile') && !gl.getProgramParameter(program, COMPLETION_STATUS)) return false;
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(`${label} program: ${gl.getProgramInfoLog(program)}`);
+  return true;
 }
 
 /** Uniform locations of a program by name. */

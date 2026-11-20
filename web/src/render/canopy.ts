@@ -353,6 +353,12 @@ export class CanvasCanopy {
     cx.restore();
   }
 
+  /** One engraved symbol (broadleaf or conifer) around the origin in glyph units (a 20-unit cell): the ground's tree
+   * symbol atlas (treeSymbols.ts) is painted with it. */
+  paintSymbol(cx: CanvasRenderingContext2D, conifer: boolean, variant: number, tone: number): void {
+    this.paintEngraved(cx, conifer ? 'conifer' : 'forest', variant, tone);
+  }
+
   private glyph(kind: CanopyKind, variant: number, tone: number): LeafShape[] {
     const key = `${kind}:${variant}:${tone}`;
     let shape = this.glyphs.get(key);

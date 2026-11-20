@@ -117,7 +117,8 @@ fn network_nodes_leave_roads_alone_and_installations_follow_the_ground() {
     let m = map();
     let t = terrain(&m);
     let cell = WIDTH / N as f64;
-    let water = |p: Point| m.water[((p.y / cell) as usize).min(N - 1) * N + ((p.x / cell) as usize).min(N - 1)];
+    let index = |p: Point| ((p.y / cell) as usize).min(N - 1) * N + ((p.x / cell) as usize).min(N - 1);
+    let water = |p: Point| m.water[index(p)];
     let cfg = places_two_banks("european-organic");
     let out = t.place("p4", &cfg).unwrap();
     let sites: Vec<_> = out.road_sites().into_iter().filter(|s| s.access.is_none()).collect();
@@ -146,11 +147,20 @@ fn network_nodes_leave_roads_alone_and_installations_follow_the_ground() {
             assert!(water(*p) == 0 && off_road(*p), "{} building on water or road at {p:?}", n.id);
         }
     }
-    // A mill's weir crosses its river.
-    let mill = out.activities.iter().flat_map(|a| &a.installations).find(|i| i.archetype == "mill_weir").expect("no mill weir");
-    assert_eq!(mill.kind, "water_structure");
-    let (a, b) = (mill.points[0], mill.points[1]);
-    assert!((0..=20).any(|k| water(Point { x: a.x + (b.x - a.x) * k as f64 / 20.0, y: a.y + (b.y - a.y) * k as f64 / 20.0 }) == 3), "weir off the river");
+    // The raised dam replaces the weir's flat installation. Its bodies still cross the channel.
+    let mill = out.activities.iter().find(|a| a.buildings.iter().any(|b| b.archetype == "mill_weir")).expect("no mill weir");
+    assert!(mill.installations.iter().any(|i| i.archetype == "mill_leat" && i.kind == "water_structure"));
+    let dam: Vec<_> = mill.buildings.iter().filter(|b| b.archetype == "mill_weir").collect();
+    assert!(dam.iter().all(|b| b.look == "mill-dam" && b.ring.len() == 4 && b.massing.as_array().is_some_and(|v| !v.is_empty())));
+    let channel = dam.iter().map(|b| {
+        let (x, y) = b.ring.iter().fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+        Point { x: x / 4.0, y: y / 4.0 }
+    }).find(|p| water(*p) == 3).expect("weir off the river");
+    let river = index(channel);
+    let centre_x = (river % N) as f64 * cell + cell / 2.0;
+    let half_width = f64::from(m.widths[river]) / 2.0;
+    let (left, right) = dam.iter().flat_map(|b| &b.ring).fold((f64::INFINITY, f64::NEG_INFINITY), |(left, right), p| (left.min(p.x), right.max(p.x)));
+    assert!(left <= centre_x - half_width && right >= centre_x + half_width, "weir does not span the channel");
     // Culture gates: no cart inn for the Inca, no caravanserai in Europe.
     assert!(with.nodes.iter().all(|n| n.buildings.iter().all(|b| b.archetype != "caravanserai")));
     let inca = t.place("p4", &places_two_banks("inca")).unwrap();

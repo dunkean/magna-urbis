@@ -9,6 +9,7 @@ import { iconImg, type IconId } from './stageIcons';
 import type { V2Settings } from './contracts';
 import { runtimeChoiceStates, runtimeValues, setRuntimeChoice, type RuntimeKey } from './runtimeChoices';
 import { getDistanceUnit, setDistanceUnit, onUnitsChange, type DistanceUnit } from './units';
+import { reloadPreviousMapAtStartup, setReloadPreviousMapAtStartup } from './startup';
 
 export type ThreadsMode = 'auto' | 'on' | 'off' | 'pool';
 export interface BackendStatus {
@@ -34,6 +35,11 @@ const copy = (en: string, fr: string) => {
 };
 const T = {
   preferences: copy('Preferences', 'Préférences'),
+  reloadMap: copy('Reload previous map at startup', 'Recharger la dernière carte au démarrage'),
+  startupHelp: copy(
+    'When off, startup proposes a new biome, relief and coastline. Opened projects and shared links keep their own landscape.',
+    'Désactivé, le démarrage propose un nouveau biome, relief et littoral. Les projets ouverts et les liens partagés gardent leur paysage.',
+  ),
   units: copy('Units', 'Unités'),
   metric: copy('Metric (m / km)', 'Métrique (m / km)'),
   imperial: copy('Imperial (ft / mi)', 'Impérial (ft / mi)'),
@@ -285,6 +291,21 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
       ),
     );
     host.append(units);
+    const startup = document.createElement('label'),
+      reloadMap = document.createElement('input'),
+      startupLabel = document.createElement('span');
+    startup.className = 'checkline';
+    reloadMap.type = 'checkbox';
+    reloadMap.id = 'startup-reload-map';
+    reloadMap.checked = reloadPreviousMapAtStartup();
+    reloadMap.onchange = () => setReloadPreviousMapAtStartup(reloadMap.checked);
+    setText(startupLabel, T.reloadMap);
+    startup.append(reloadMap, startupLabel);
+    host.append(startup);
+    const startupHelp = document.createElement('p');
+    startupHelp.className = 'hint';
+    setText(startupHelp, T.startupHelp);
+    host.append(startupHelp);
     section(T.execution);
     if (bindings.getSettings) {
       const settings = bindings.getSettings(),

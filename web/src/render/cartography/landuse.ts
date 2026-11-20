@@ -1,6 +1,6 @@
 /**
  * Land use as areas (drawVector, in this order): the contour lines under the tints, the land-use tints multiplied
- * over the hillshade (forest washes and their clips, the light parchment hatch, brush fills, orchard and garden
+ * over the hillshade (forest washes and their clips, brush fills, orchard and garden
  * hedges; the field class hands over to fields.ts), and the mask that keeps the tints off the water on a transparent
  * sheet. The tint painters (landPainters: fillLand, multiply, brush fills and trees) are part of the frame because
  * the farmsteads, the field network and the urban natural ground use them too.
@@ -28,25 +28,29 @@ export function paintContours(c: CartographyContext, f: VectorFrame): void {
   }
 }
 
-export function paintLandUse(c: CartographyContext, f: VectorFrame): void {
+export function* paintLandUseSteps(c: CartographyContext, f: VectorFrame): Generator<void> {
   const { pal, brushes, polyL, timedRec } = c;
-  const { ctx, sc, lod, rect, lw, strokePolys, brushFill, luOn, fillLand, multiply } = f;
+  const { ctx, sc, lod, rect, lw, strokePolys, brushFill, luOn, fillLandSteps, multiply } = f;
   for (const kind of LAND_ORDER) {
     if (!luOn) break;
+    if (!c.activeLight && c.deps.fullLanduse && !c.deps.fullLanduse(kind)) continue;
     const name = 'lu-' + kind;
     if (!polyL(name)) continue;
-    if (kind === 'forest') {
+    // The ground paints the woods (render/treeSymbols.ts).
+    if (kind === 'forest' && c.deps.groundTrees?.()) continue;
+    if (kind === 'forest' && !c.activeLight) {
       ctx.save();
       const clip = timedRec('forestClip', () => forestClip(c, rect));
       if (clip) ctx.clip(clip, 'nonzero');
     }
     multiply(true);
-    timedRec('land-' + kind, () => fillLand(name, kind));
+    yield* fillLandSteps(name, kind);
     multiply(false);
     if (kind === 'field') paintFieldTexture(c, f, kind);
-    if (brushes && lod.textures && (kind === 'field' || (kind === 'garden' && brushTextureOn(kind, pal, c.world.options.biome)))) brushFill(name, kind, sc);
+    if (!c.activeLight && brushes && lod.textures && (kind === 'field' || (kind === 'garden' && brushTextureOn(kind, pal, c.world.options.biome)))) brushFill(name, kind, sc);
     if ((kind === 'orchard' || kind === 'garden') && lod.strips) strokePolys(name, pal.hedge, lw(0.8, 0.8), 0.7);
-    if (kind === 'forest') ctx.restore();
+    if (kind === 'forest' && !c.activeLight) ctx.restore();
+    yield;
   }
 }
 
@@ -54,18 +58,21 @@ export function paintLandMask(c: CartographyContext, f: VectorFrame): void {
   const { deps, S } = c;
   const { ctx, luOn } = f;
   // On a transparent sheet the backdrop's alpha is the land: the tints stay off the water below.
-  if (luOn && deps.transparentBackground && c.terrainImg) {
+  // The land with the woods the ground paints (terrain() leaves them out: render/treeSymbols.ts punchWoods).
+  const land = deps.land?.() ?? c.terrainImg;
+  if (luOn && deps.transparentBackground && land) {
     ctx.globalCompositeOperation = 'destination-in';
-    ctx.drawImage(c.terrainImg as CanvasImageSource, 0, 0, S, S);
+    ctx.drawImage(land as CanvasImageSource, 0, 0, S, S);
     ctx.globalCompositeOperation = 'source-over';
   }
 }
 
 export function landPainters(c: CartographyContext, f: FrameBase): LandPainters {
-  const { pal, deps, brushes, polyL, getPattern, visibleClip } = c;
+  const { pal, deps, brushes, polyL, visibleClip } = c;
   const { ctx, sc, rect, dpr, polyPaths, fillPolys } = f;
   const world = c.world;
   const brushFill = (name: string, kind: BrushKind, scale: number): void => {
+    if (c.activeLight) return;
     const l = polyL(name);
     if (!l?.polys.length) return;
     const pattern = brushes?.pattern(ctx, kind, scale, dpr);
@@ -74,6 +81,7 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
     for (const p of polyPaths(l)) ctx.fill(p, 'evenodd');
   };
   const brushTrees = (name: string, orchard = false): void => {
+    if (c.activeLight) return;
     const l = polyL(name);
     if (!l || !brushes) return;
     for (const i of l.index.query(rect)) {
@@ -91,26 +99,9 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
   // Forest class: tone chosen by the shared « forest land use » setting (landuseForestTone.ts).
   const landFill = (kind: keyof Palette['land']): string => (kind === 'forest' ? forestLandPaint(pal).color : pal.land[kind]);
   const landAlpha = (kind: keyof Palette['land']): number => (kind === 'forest' ? forestLandPaint(pal).alpha : luAlpha);
-  const fillLand = (name: string, kind: keyof Palette['land']): void => {
-    if (c.activeLight && pal.name === 'parchment' && sc < 1) {
+  const fillLandSteps = function* (name: string, kind: keyof Palette['land']): Generator<void> {
+    if (c.activeLight) {
       fillPolys(name, landFill(kind), landAlpha(kind));
-      if (kind === 'forest') {
-        const gap = Math.max(6, 4 / sc);
-        const hatch = getPattern(ctx, `light-forest:${gap}`, gap, gap, 35, (cx, k) => {
-          cx.strokeStyle = pal.treeInk;
-          cx.globalAlpha = 0.3;
-          cx.lineWidth = (0.65 / sc) * k;
-          cx.beginPath();
-          cx.moveTo(0, (gap * k) / 2);
-          cx.lineTo(gap * k, (gap * k) / 2);
-          cx.stroke();
-        });
-        const layer = polyL(name);
-        if (hatch && layer) {
-          ctx.fillStyle = hatch;
-          for (const p of polyPaths(layer)) ctx.fill(p, 'evenodd');
-        }
-      }
       return;
     }
     if (kind === 'forest' && !isUnderdarkBiome(world.options.biome)) {
@@ -120,18 +111,22 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
         if (!clip) return;
         ctx.save();
         ctx.clip(clip, 'nonzero');
+        yield;
         fillPolys(name, landFill(kind), landAlpha(kind) * 0.18);
+        yield;
         const gains = [0.2, 0.24, 0.32, 0.46];
         for (let i = 0; i < wash.levels.length; i++) {
           ctx.globalAlpha = landAlpha(kind) * gains[i];
           ctx.fillStyle = landFill(kind);
           for (const path of polyPaths(wash.levels[i])) ctx.fill(path, 'evenodd');
+          yield;
         }
         ctx.restore();
         ctx.globalAlpha = 1;
       }
     } else {
       fillPolys(name, landFill(kind), landAlpha(kind));
+      yield;
       const engraved = pal.name === 'parchment' && (kind === 'meadow' || kind === 'pasture' || kind === 'marsh');
       const layer = polyL(name),
         wash = layer && (kind === 'commons' || engraved) && !isUnderdarkBiome(world.options.biome) ? forestWash(c, 'lu-forest') : undefined;
@@ -168,8 +163,13 @@ export function landPainters(c: CartographyContext, f: FrameBase): LandPainters 
       }
     }
   };
+  const fillLand = (name: string, kind: keyof Palette['land']): void => {
+    for (const _ of fillLandSteps(name, kind)) {
+      /* Synchronous painter. */
+    }
+  };
   const multiply = (on: boolean): void => {
     ctx.globalCompositeOperation = on && pal.landBlend === 'multiply' ? 'multiply' : 'source-over';
   };
-  return { brushFill, brushTrees, luOn, landFill, landAlpha, fillLand, multiply };
+  return { brushFill, brushTrees, luOn, landFill, landAlpha, fillLand, fillLandSteps, multiply };
 }

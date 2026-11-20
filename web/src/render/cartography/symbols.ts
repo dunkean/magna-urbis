@@ -19,7 +19,7 @@ import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
 import { mixHex, growRect, TAU, frac, clumpNoise, smooth01, addRing } from './geometry';
 import { forestClip, forestWeight, forestStray, roomOf } from './forest';
-import { LAYER_TILE_REACH, GPU_SPRITE_BUDGET, treeMarksIn, recordTreeSprites, paintTrees, drawLayerTiles, drawDrapeCanopy } from './woods';
+import { LAYER_TILE_REACH, GPU_SPRITE_BUDGET, treeMarksIn, recordTreeSpriteSteps, paintTrees, drawLayerTiles, drawDrapeCanopy } from './woods';
 
 export interface PenMark {
   x: number;
@@ -131,10 +131,14 @@ const TEX: Record<string, TexSpec> = {
 };
 const TEX_SALT: Record<string, number> = { forest: 11, orchard: 23, meadow: 37, pasture: 41, marsh: 53, commons: 67 };
 export function drawTexture(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4 = rect): number {
+  const steps = drawTextureSteps(c, ctx, tl, rect, band, lw, budgetRect);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+function* drawTextureSteps(c: CartographyContext, ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4 = rect): Generator<void, number> {
   const { pal, deps, canopy, brushes } = c;
-  // The polygon wash above carries light parchment woods; keep individual trees only at close zoom.
-  const scale = ctx.getTransform().a / (c.activeDpr ?? deps.dpr ?? 1);
-  if (c.activeLight && pal.name === 'parchment' && scale < 1 && ['forest', 'commons', 'pasture', 'meadow', 'marsh'].includes(tl.kind)) return 0;
+  if (c.activeLight || (c.deps.fullLanduse && !c.deps.fullLanduse(tl.kind))) return 0;
   if ((canopy || brushes) && (tl.kind === 'forest' || tl.kind === 'orchard')) {
     // Select centres inside the cover, then draw whole trees, including overhanging crowns.
     const expanded = growRect(rect, CANOPY_MARGIN),
@@ -146,7 +150,7 @@ export function drawTexture(c: CartographyContext, ctx: CanvasRenderingContext2D
     }
     // GPU engine: the woods become one instanced sprite batch from cached per-tile data; failing that, few enough
     // marks are stamped directly, and more go through the layer tiles below.
-    const batched = ctx instanceof RecordingContext && recordTreeSprites(c, ctx, tl, expanded, ctx.getTransform().a);
+    const batched = ctx instanceof RecordingContext && (yield* recordTreeSpriteSteps(c, ctx, tl, expanded, ctx.getTransform().a));
     const direct = !batched && ctx instanceof RecordingContext ? treeMarksIn(c, tl, expanded) : undefined;
     if (batched) {
       /* recorded as one sprite batch */
@@ -411,21 +415,35 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
   return tiles.length;
 }
 export function paintTextureLayers(c: CartographyContext, f: VectorFrame): void {
-  const { pal, canopy, brushes, timedRec } = c;
+  for (const _ of paintTextureLayerSteps(c, f)) {
+    /* Synchronous callers. */
+  }
+}
+export function* paintTextureLayerSteps(c: CartographyContext, f: VectorFrame): Generator<void> {
+  // Flat land-use polygons carry every light zoom; no tree symbols, brush sprites or open-land marks.
+  if (c.activeLight) return;
+  const { pal, canopy, brushes } = c;
   const { ctx, mode, dpr, sc, band, rect, budgetRect, fs, lw, luOn } = f;
+  // The ground paints the woods (render/treeSymbols.ts).
+  const groundTrees = !!c.deps.groundTrees?.();
   // textures (procedural marks, visible tiles only, cached per tile)
-  if (mode === 'ground' && canopy && pal.name === 'parchment' && !(c.activeLight && sc < 1)) {
+  if (mode === 'ground' && canopy && pal.name === 'parchment') {
     // 3D drape tiles come at many scales side by side: a scale-dependent choice of marks shows each tile as a rectangle.
     // Woods are drawn from world-space tree positions at every scale.
     if (luOn)
       for (const tl of c.scene.textures) {
+        if (c.deps.fullLanduse && !c.deps.fullLanduse(tl.kind)) continue;
+        if (tl.kind === 'forest' && groundTrees) continue;
         if (tl.kind === 'forest') fs.textureTiles += drawDrapeCanopy(c, ctx, tl, rect, sc * dpr);
         // Orchards and open-land symbols follow the 2D map's own scale rule: the moving 3D preview reuses the 2D raster
         // tiles, so a refined drape tile must keep every symbol its preview showed (never a uniform fill over them).
         else if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, c.world.options.biome)))) fs.textureTiles += drawTexture(c, ctx, tl, rect, band, lw, budgetRect);
       }
   } else if (luOn) {
-    for (const tl of c.scene.textures)
-      if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, c.world.options.biome)))) fs.textureTiles += timedRec('tex-' + tl.kind, () => drawTexture(c, ctx, tl, rect, band, lw, budgetRect));
+    for (const tl of c.scene.textures) {
+      if (tl.kind === 'forest' && groundTrees) continue;
+      if (cityCountrysideTextureVisible(tl.kind, sc) && (pal.tex[tl.kind] || (brushes && isBrushKind(tl.kind) && brushTextureOn(tl.kind, pal, c.world.options.biome)))) fs.textureTiles += yield* drawTextureSteps(c, ctx, tl, rect, band, lw, budgetRect);
+      yield;
+    }
   }
 }

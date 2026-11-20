@@ -15,6 +15,7 @@ import { isCompactProcedural, type GenerationControl } from '../../../rust/bridg
 import { sourceDefinition } from '../../../rust/bridge/terrainDefinition';
 import { TERRAIN_STAGE_OUTPUTS, TerrainStageOutput, previewTerrainData } from './terrainStagePreview';
 import { responsiveTimeout } from '../../../rust/bridge/nativeAvailability';
+import { gpuSetupDeadline } from '../../../rust/bridge/terrainProgress';
 export type PlatformProgress = { phase: 'detecting' | 'loading' | 'ready' | 'unavailable'; message: string; source: 'browser' | 'rust' | 'python' };
 export interface PlatformCapabilities {
   cpu: true;
@@ -89,18 +90,25 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
   const progress = options.onProgress ?? (() => {});
   const gpu = async () => {
     progress({ phase: 'detecting', source: 'browser', message: 'Vérification du périphérique WebGPU…' });
-    let device: GPUDevice | undefined;
     try {
-      const adapter = await (await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter();
-      if (adapter) {
-        device = await adapter.requestDevice();
+      // Bound adapter + device creation together. Late devices are destroyed without
+      // mutating capabilities after detection has already finished.
+      const detected = await gpuSetupDeadline(
+        (async () => {
+          const adapter = await (await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter();
+          if (!adapter) return undefined;
+          const device = await adapter.requestDevice();
+          device.destroy();
+          return adapter.info?.description || adapter.info?.device || 'WebGPU';
+        })(),
+        2500,
+      );
+      if (detected) {
         result.webgpu = true;
-        result.adapterName = adapter.info?.description || adapter.info?.device || 'WebGPU';
+        result.adapterName = detected;
       }
     } catch {
       /* The API may exist while adapter/device creation is disabled. */
-    } finally {
-      device?.destroy();
     }
     progress({ phase: result.webgpu ? 'ready' : 'unavailable', source: 'browser', message: result.webgpu ? 'WebGPU disponible · CPU toujours disponible' : 'Calcul CPU disponible · WebGPU indisponible' });
   };

@@ -5,6 +5,7 @@ import { sampleGrid, slopeGrid, gradientAt, type Grid } from '../gen/core/grid';
 import { contourSet, CONTOUR_INTERVAL } from './contours';
 import { contourLevels } from '../../../rust/bridge/renderGeometry';
 import { chaikin, simplify, polylineLength } from '../gen/core/geom';
+import { countWork } from './workCount';
 
 export interface CityContourPaths {
   step: number;
@@ -158,21 +159,13 @@ const reliefOf = (landform: string): Relief => (landform === 'flat' || landform 
  * never the lines, so it repaints nothing. `zoom` re-selects interval and smoothing per zoom band (cityContourInterval).
  */
 export type ContourDetail = 'fixed' | 'zoom';
-/** V1 interval (CONTOUR_INTERVAL); a topographic sheet keeps at least a dozen levels over low relief. `sparse` (cadastre): half as many lines. */
-export function fixedContourInterval(relief: Relief, topographic = false, range = Infinity, sparse = false): number {
-  const base = CONTOUR_INTERVAL[relief] * (sparse ? 2 : 1);
-  if (!topographic || !(range > 0) || !Number.isFinite(range)) return base;
-  const wanted = range / 12,
-    decade = 10 ** Math.floor(Math.log10(wanted));
-  const nice =
-    [...NICE_STEPS]
-      .reverse()
-      .map(n => n * decade)
-      .find(step => step <= wanted * 1.001) ?? decade;
-  return Math.max(0.5, Math.min(base, nice));
+/** Topography is a metre survey, with every fifth level indexed by contourSet. Other fixed maps retain their
+ * physical V1 interval; `sparse` (cadastre) halves the line count. Neither decision depends on camera scale. */
+export function fixedContourInterval(relief: Relief, topographic = false, _range = Infinity, sparse = false): number {
+  return topographic ? 1 : CONTOUR_INTERVAL[relief] * (sparse ? 2 : 1);
 }
 function contourKey(entry: Entry, scale: number, topographic = false, detail: ContourDetail = 'zoom', sparse = false): { key: string; step: number; metresPerPixel: number } {
-  if (detail === 'fixed') return { key: `fixed:${topographic}:${sparse}`, step: fixedContourInterval(entry.relief, topographic, entry.range, sparse), metresPerPixel: 0 };
+  if (detail === 'fixed' || topographic) return { key: `fixed:${topographic}:${sparse}`, step: fixedContourInterval(entry.relief, topographic, entry.range, sparse), metresPerPixel: 0 };
   const metresPerPixel = 2 ** Math.round(Math.log2(1 / Math.max(1e-6, scale)));
   const step = topographic ? topographicContourInterval(entry.relief, 1 / metresPerPixel, entry.slope, entry.range) : cityContourInterval(entry.relief, scale, entry.slope);
   return { key: `${topographic}:${step}:${metresPerPixel}`, step, metresPerPixel };
@@ -224,6 +217,7 @@ function queueContours(entry: Entry, scale: number, key: string, topographic: bo
       workerEntry = new WeakRef(entry);
     }
     if (!background) entry.pending.add(key);
+    countWork(background ? 'contour.prewarm' : 'contour.extract');
     warming.set(id, { entry, key, ready: new Set(ready ? [ready] : []), background, scale, topographic, fine: !!fine, detail });
     warmer!.postMessage(request);
   } catch {
@@ -307,7 +301,7 @@ export function cityContourPaths(terrain: TerrainData, landform: string, scale: 
   if (terrain.caveMask.length || landform === 'cavern') return { step: 0, thin: '', index: '' };
   const relief = reliefOf(landform);
   const entry = entryOf(terrain, relief);
-  if (detail === 'fixed') return fixedContourPaths(entry, terrain, topographic, sparse, onReady);
+  if (detail === 'fixed' || topographic) return fixedContourPaths(entry, terrain, topographic, sparse, onReady);
   // One detail level per doubling of the zoom, so the cache stays small and a zoom step does not redraw every line.
   const { metresPerPixel, step, key } = contourKey(entry, scale, topographic),
     retained = entry.paths.get(key);
@@ -326,6 +320,7 @@ export function cityContourPaths(terrain: TerrainData, landform: string, scale: 
   }
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, metresPerPixel) } } } as World;
+  countWork('contour.extract');
   const contours = contourSet(world, Math.min(terrain.width / 1600, metresPerPixel * 1.5), step, topographic ? Math.min(1, step / CONTOUR_INTERVAL[relief]) : 1);
   const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
   entry.paths.set(key, paths);
@@ -343,6 +338,7 @@ function fixedContourPaths(entry: Entry, terrain: TerrainData, topographic: bool
   }
   const height = entry.world.terrain.height;
   const world = { ...entry.world, terrain: { ...entry.world.terrain, height: { ...height, data: smoothedFor(entry, height.cell / 5) } } } as World;
+  countWork('contour.extract');
   const contours = contourSet(world, terrain.width / 1600, step, topographic ? Math.min(1, step / CONTOUR_INTERVAL[entry.relief]) : 1);
   const paths = { step, thin: pathData(contours.thin), index: pathData(contours.index) };
   entry.paths.set(key, paths);
@@ -407,6 +403,7 @@ export function cityFineContours(terrain: TerrainData, landform: string, scale: 
       const key = `${step}:${metresPerPixel}:${bx}:${by}`;
       let block = entry.blocks.get(key);
       if (!block) {
+        countWork('contour.fineBlock');
         block = fineBlock(entry, data, bx, by, step, indexInterval(step), u);
         if (entry.blocks.size >= FINE_BLOCK_LIMIT) entry.blocks.delete(entry.blocks.keys().next().value!);
         entry.blocks.set(key, block);

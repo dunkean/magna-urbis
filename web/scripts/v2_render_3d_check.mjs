@@ -206,7 +206,7 @@ try {
   }
   await page.locator('.city3d [data-ground]').selectOption('render-v2');
   await idle('render-v2');
-  await page.locator('.city3d [data-plan]').uncheck();
+  assert.equal(await page.locator('.city3d [data-plan]').count(), 0);
   await page.locator('.city3d [data-colors]').selectOption('uses');
   await page.locator('.city3d [data-refinement]').selectOption('source');
   await page.locator('.city3d [data-relief]').fill('2');
@@ -221,7 +221,6 @@ try {
   await page.locator('#view3d').click();
   await page.locator('#view3d').click();
   await idle();
-  assert.equal(await page.locator('.city3d [data-plan]').isChecked(), false);
   assert.equal(await page.locator('.city3d [data-colors]').inputValue(), 'uses');
   assert.equal(await page.locator('.city3d [data-refinement]').inputValue(), 'source');
   assert.equal(await page.locator('.city3d [data-relief]').inputValue(), '2');
@@ -251,7 +250,6 @@ try {
   assert.equal(fx.lighting.elevation, 28);
   assert.equal(fx.lighting.strength, 1.4);
   assert.equal(a.city.ground, 'render-v2');
-  assert.equal(a.city.plan, false);
   assert.equal(a.city.colors, 'uses');
   assert.equal(a.city.exaggeration, 2);
   assert.equal(a.city.refinement, 'source');

@@ -12,6 +12,7 @@ import { mountNeuralModelManager } from '../neuralModelManager';
 import { mountDesktopNeural } from '../desktopNeural';
 import { mountDesktopModules } from '../desktopModules';
 import { mountDesktopReleaseLink, mountDesktopUpdates } from '../desktopUpdates';
+import { mountChangelog } from '../changelog';
 import { mountV2Illustration } from '../illustration';
 import { $, esc } from './dom';
 
@@ -113,6 +114,8 @@ export function mountRuntimeSettings(state: PageState, actions: PageActions): vo
   $('#hardware-details').after(desktopModulesHost);
 
   mountDesktopModules(desktopModulesHost, () => void actions.inspectHardware());
+
+  mountChangelog($('.header-tools'));
 
   mountDesktopUpdates($('.header-tools'), desktopModulesHost);
 

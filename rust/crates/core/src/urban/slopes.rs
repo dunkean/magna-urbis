@@ -56,8 +56,8 @@ pub(super) const EXHAUSTED: &str = "Slope town housing shortfall: usable terrace
 
 /// A town of the quarter grammar whose reach holds steep dry ground.
 pub(super) fn eligible(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, kind: Kind) -> bool {
-    if cfg.programme.intent != "settlement" || kind.small()
-        || crate::settlements::demographics::below(site.population, "town")
+    if cfg.programme.intent != "settlement" || site.population < super::HOUSED_FROM
+        || matches!(kind, Kind::Camp | Kind::Ruin)
         || cfg.placement != "center" || cfg.footprint.mechanism == "legacy"
         || cfg.tissue != "culture" || cfg.site_adaptation == 0.0 {
         return false;
@@ -154,6 +154,11 @@ pub(super) fn complete(
     if housed < goal {
         let mut trial = base.clone();
         trial.tissue = "terraces".into();
+        // Roadside hamlets need the shared contour grammar on a mountain;
+        // retrying their flat ribbon grammar can never create terrace wards.
+        if kind_for_terraces(&base) {
+            trial.settlement_form = Kind::NucleatedVillage.id().into();
+        }
         trial.axis_alignment = "culture".into();
         trial.programme.slope_relax = trial.programme.slope_relax.max(TERRACE_RELAX);
         if let Ok(terraces) = lay(&trial) {
@@ -198,6 +203,10 @@ pub(super) fn complete(
     if fronted { best.warnings.push(FRONTAGE.into()); }
     if housed < goal { best.warnings.push(EXHAUSTED.into()); }
     Ok(best)
+}
+
+fn kind_for_terraces(cfg: &LayoutConfig) -> bool {
+    matches!(Kind::from_id(&cfg.settlement_form), Some(Kind::Hamlet | Kind::StreetVillage))
 }
 
 fn overlaps(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {

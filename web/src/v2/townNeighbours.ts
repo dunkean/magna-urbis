@@ -9,7 +9,7 @@
  * become a neighbour: a conservative bound of the land it can hold decides whether the later town must wait for it.
  * Towns that cannot reach each other keep running in parallel lanes.
  */
-import type { Vec2, World } from '../gen/types';
+import type { Settlement, Vec2, World } from '../gen/types';
 import type { Claim } from '../../../rust/bridge/urban';
 import type { V2Settings } from './contracts';
 import type { RustTownSnapshot } from './rustUrban';
@@ -136,6 +136,13 @@ export function planTownRun(seats: readonly TownSeat[], selected: readonly strin
   return { order, waits: new Map(order.map(key => [key, runWaits(key)])), cascaded };
 }
 
+/** A local population edit resizes the urban site while reusing its regional placement. */
+export function townPopulationAndRadius(world: World, settings: V2Settings, place: Settlement): { population: number; radius: number } {
+  const placedPopulation = Number(world.stats[`v2.population:${place.key}`] ?? place.population);
+  const population = settings.local[place.key]?.population ?? placedPopulation;
+  return { population, radius: population === placedPopulation ? place.radius : extentRadius(population) };
+}
+
 /** The seats of the V2 towns: effective population (local override first), site and footprint radii, current claim. */
 export function townSeats(world: World, settings: V2Settings): TownSeat[] {
   const cities = world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined;
@@ -144,15 +151,8 @@ export function townSeats(world: World, settings: V2Settings): TownSeat[] {
     const layout = { ...settings.urban?.layout, ...settings.urban?.local?.[place.key]?.layout };
     const scale = layout.radiusScale ?? Math.sqrt(local?.sprawl ?? settings.options.sprawl ?? 1);
     const claim = cities?.[place.key]?.layouts?.[0]?.claim;
-    return {
-      key: place.key,
-      population: local?.population ?? Number(world.stats['v2.population:' + place.key] ?? place.population),
-      center: place.center,
-      radius: place.radius,
-      footprint: layout.radius && layout.radius > 0 ? layout.radius : place.radius * scale,
-      ...(claim ? { claim } : {}),
-      built: !!(place.main ? (world.urban ?? place.urban) : place.urban),
-    };
+    const { population, radius } = townPopulationAndRadius(world, settings, place);
+    return { key: place.key, population, center: place.center, radius, footprint: layout.radius && layout.radius > 0 ? layout.radius : radius * scale, ...(claim ? { claim } : {}), built: !!(place.main ? (world.urban ?? place.urban) : place.urban) };
   });
 }
 

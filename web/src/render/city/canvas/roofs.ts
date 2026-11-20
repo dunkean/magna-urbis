@@ -58,6 +58,8 @@ export const SHADOW_STEP = 128;
 /** `drawPlanRoofs` in resumable steps: the same calls in the same order, with a pause every `ROOF_STEP` buildings. The
  * context must not be drawn on by anyone else between two steps. */
 export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildings, o: CityDrawOptions, images?: MaterialImages): Generator<void, void> {
+  if (o.appearance.roof === 'minimal') return;
+  if (o.appearance.roof === 'flat') images = undefined;
   const roofs = b.roofs!;
   let index = roofIndex.get(roofs);
   if (!index) {
@@ -66,7 +68,7 @@ export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildi
     roofIndex.set(roofs, (index = { byOwner, paths: [] }));
   }
   // What a pan is painted with is the look's (city/buildingLook.ts): its colour and grain gain are kept per pan.
-  const f = roofFrame({ palette: o.palette, mpp: o.mpp, dpr: o.dpr, night: o.night, cave: o.appearance.cave, diagnostic: o.appearance.diagnostic, colors: o.colors, textured: !!images });
+  const f = roofFrame({ palette: o.palette, mpp: o.mpp, dpr: o.dpr, night: o.night, cave: o.appearance.cave, diagnostic: o.appearance.diagnostic, colors: o.colors, textured: !!images, smoothRoofs: o.appearance.smoothRoofs, roof: o.appearance.roof });
   let paint = roofPaint.get(roofs);
   if (!paint || paint.key !== f.key) roofPaint.set(roofs, (paint = { key: f.key, colors: [], gains: [] }));
   const edge = parseInt(f.edge.color.slice(1), 16);
@@ -133,7 +135,7 @@ export function* drawPlanRoofsSteps(ctx: CanvasRenderingContext2D, b: CityBuildi
           }
         }
       }
-      if (!roofs.snow?.[k]) ctx.stroke(path);
+      if (!o.appearance.smoothRoofs && !roofs.snow?.[k]) ctx.stroke(path);
     }
     if (f.natural && item.marks) drawMillMarks(ctx, b, item, o);
   }
@@ -211,8 +213,9 @@ function drawMillMarks(ctx: CanvasRenderingContext2D, b: CityBuildings, item: Ci
  * number of buildings drawn. */
 export function drawRoofedBuildings(ctx: CanvasRenderingContext2D, buildings: CityBuildings, o: Pick<CityDrawOptions, 'viewport' | 'mpp' | 'dpr' | 'palette' | 'appearance' | 'colors' | 'night'>): number {
   const roofs = buildings.roofs,
-    visible = buildings.bins.query(o.viewport);
-  if (!roofs || !visible.length) return 0;
+    visible = buildings.bins.query(o.viewport),
+    minimal = o.appearance.roof === 'minimal';
+  if ((!roofs && !minimal) || !visible.length) return 0;
   const night = !!o.night,
     Path = buildings.pathClass ?? Path2D,
     group = (shapes: readonly Shape[]): Path2D => {
@@ -220,17 +223,19 @@ export function drawRoofedBuildings(ctx: CanvasRenderingContext2D, buildings: Ci
       for (const s of shapes) p.addPath(shapePath(s, Path));
       return p;
     };
-  let shadows = roofShadowPaths.get(roofs);
-  if (!shadows) roofShadowPaths.set(roofs, (shadows = []));
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.setLineDash([]);
   ctx.globalAlpha = 1;
-  for (const i of visible) {
-    // Each isolated building stands at its own altitude: its own shadow tone (snow or bare ground).
-    ctx.fillStyle = castShadowFill(o.palette, night, buildings.items[i].snowAltitude);
-    ctx.fill((shadows[i] ??= group(roofs.shadows[i] ?? [])));
+  if (roofs && !minimal) {
+    let shadows = roofShadowPaths.get(roofs);
+    if (!shadows) roofShadowPaths.set(roofs, (shadows = []));
+    for (const i of visible) {
+      // Each isolated building stands at its own altitude: its own shadow tone (snow or bare ground).
+      ctx.fillStyle = castShadowFill(o.palette, night, buildings.items[i].snowAltitude);
+      ctx.fill((shadows[i] ??= group(roofs.shadows[i] ?? [])));
+    }
   }
   const colors = buildingColors(o.appearance.colors, o.appearance.ambience),
     body: BuildingFrame = { view: 'buildings', palette: o.palette, footprint: false, diagnostic: 'none', colors };
@@ -238,10 +243,10 @@ export function drawRoofedBuildings(ctx: CanvasRenderingContext2D, buildings: Ci
   ctx.lineWidth = buildingEdgePx(false, false) * o.mpp;
   for (const i of visible) {
     const item = buildings.items[i],
-      path = (item.path ??= group(item.surface));
-    ctx.fillStyle = buildingBody(body, item, true).fill;
+      path = minimal ? (item.footprintPath ??= group(item.footprint ?? item.building.footprint)) : (item.path ??= group(item.surface));
+    ctx.fillStyle = buildingBody(body, item, !minimal).fill;
     ctx.fill(path, 'nonzero');
-    ctx.stroke(path);
+    if (!o.appearance.smoothRoofs) ctx.stroke(path);
   }
   drawPlanRoofs(ctx, buildings, o as CityDrawOptions);
   ctx.restore();

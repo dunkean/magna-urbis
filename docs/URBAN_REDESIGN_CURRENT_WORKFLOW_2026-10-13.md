@@ -1,6 +1,6 @@
 # Urban redesign — current workflow as of October 13, 2026
 
-This is an English translation of section 1 of [the French urban redesign study](REFONTE_GENERATION_URBAINE_2026-10-13_FR.md). The [literature review](URBAN_REDESIGN_LITERATURE_2026-10-13.md) translates section 2. This is a dated description of the code examined for the study; see the [implementation report](REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) for later work.
+This is part 1 of [the October 13, 2026 urban redesign study](REFONTE_GENERATION_URBAINE_2026-10-13.md). The [literature review](URBAN_REDESIGN_LITERATURE_2026-10-13.md) is part 2. The complete study is maintained in English. This is a dated description of the code examined for the study; see the [implementation report](REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) for later work.
 
 ## 1. Detailed current operation
 
@@ -199,7 +199,7 @@ The main materials consulted are:
 - [TypeScript orchestration](../web/src/gen/urban/index.ts), [phase planning](../web/src/gen/urban/phases.ts), [axes and neighborhoods](../web/src/gen/urban/primary.ts).
 - [Orientation fields](../web/src/gen/urban/field.ts), [subdivision and blocks](../web/src/gen/urban/blocks.ts), [parcels](../web/src/gen/urban/plots.ts), [served footprint](../web/src/gen/urban/footprint.ts).
 - [Rust guide](../rust/crates/core/src/urban/README.md), [composition](../rust/crates/core/src/urban/composition.rs), [macroplan](../rust/crates/core/src/urban/macroplan.rs), [neighborhoods](../rust/crates/core/src/urban/quarters.rs), [parcels](../rust/crates/core/src/urban/parcels.rs), [routing](../rust/crates/core/src/urban/routing.rs), [network](../rust/crates/core/src/urban/network.rs).
-- Archived documents: [HANDOFF](../.local-archive/publication-2026-10-09/repository/HANDOFF.md), [BUGS](../.local-archive/publication-2026-10-09/repository/BUGS.md), [urban geometry](../.local-archive/publication-2026-10-09/repository/web/URBAN_GEOMETRY.md), [urban morphology](../.local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md).
+- Local study inputs: `HANDOFF.md`, `BUGS.md`, `web/URBAN_GEOMETRY.md` and `web/URBAN_MORPHOLOGY.md` from the October 9 working archive. These session documents are not distributed; their historical observations are summarised in this study.
 - [Local historical settlement catalogue](catalogue_settlements_antiquite_moyen_age_rpg.md), to retain distinctions between form, use, environment and origin.
 
 Archived documents sometimes express older intentions different from observed current methods; they were used as context, not sole proof of implementation.

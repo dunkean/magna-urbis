@@ -13,6 +13,7 @@ export type RuntimeLanguage = Language;
 const entries: readonly (readonly [string, string])[] = [
   ...engineRuntimeEntries,
   ['Rust · composition urbaine…', 'Rust · urban composition…'],
+  ['Envoi du terrain au moteur urbain…', 'Sending the terrain to the urban engine…'],
   ...neuralDownloadMessages.map(([en, fr]) => [fr, en] as const),
   ["Créez d’abord le relief.", "Create the terrain first."],
   ["Chargement du moteur Rust/WASM (threads)…", "Loading the Rust/WASM engine (threads)…"],
@@ -397,6 +398,8 @@ const templatePairs: readonly (readonly [string, string])[] = [
   ['Le moteur Rust n’a pas renvoyé {field}.', 'The Rust engine did not return {field}.'],
   ['{name} : plan, rues, parcelles et bâtiments…', '{name}: plan, streets, parcels and buildings…'],
   ['Lieu {done}/{total} ({name})', 'Settlement {done}/{total} ({name})'],
+  ['Rust · composition urbaine… ({name})', 'Rust · urban composition… ({name})'],
+  ['Lieux prêts : {done}/{total}', 'Settlements ready: {done}/{total}'],
   ['Rust · maisons sources {done}/{total}…', 'Rust · baseline houses {done}/{total}…'],
   ['Rust · maisons {done}/{total}…', 'Rust · houses {done}/{total}…'],
   ['Relief terminé · {backend} · hydrologie et biomes ensuite', 'Terrain complete · {backend} · hydrology and biomes next'],

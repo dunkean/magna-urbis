@@ -1304,6 +1304,7 @@ fn assemble(site: &Site, cfg: &LayoutConfig, kind: Kind, morph: &Morph, roads: &
         })
         .collect();
     let structure = UrbanStructure {
+        quarter_baseline: None,
         shanty: None,
         spring_sites: vec![],
         gate_village_centers: vec![],
@@ -1906,15 +1907,15 @@ fn linear(
         let mut kept: Vec<Street> = vec![];
         for mut cut in cuts {
             let width = cut.widths[0];
-            let Some(trimmed) = street_village::to_last_plot(&cut.path, width * 0.5 + 3.0, &blocks) else {
-                continue;
-            };
             let end = *cut.path.last().unwrap();
             let anchored = surface.wet(end)
                 || streets.iter().chain(&kept).any(|s| {
                     s.path.windows(2).any(|w| g::distance(end, w[0], w[1]).0 < s.widths[0] * 0.5 + width)
                 });
             if !anchored {
+                let Some(trimmed) = street_village::to_last_plot(&cut.path, width * 0.5 + 3.0, &blocks) else {
+                    continue;
+                };
                 cut.path = trimmed;
                 cut.widths = vec![width; cut.path.len()];
             }

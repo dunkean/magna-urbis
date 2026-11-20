@@ -11,6 +11,10 @@ import {
   CITY_LOD_LIMITS,
   FAR_TOWN_FADE,
   PARCHMENT_HATCH,
+  TURF_LOOK,
+  turfCover,
+  turfFarTone,
+  turfRoof,
   blockOps,
   buildingBody,
   buildingsShown,
@@ -32,9 +36,13 @@ import {
   streetShown,
   townRestGaps,
   wallLook,
+  RIM_DEVICE_MPP,
   type RestState,
 } from '../src/render/city/look';
 import { mockCanvas } from '../scripts/fakeworld';
+import { city3dScene } from '../src/render/city3dMeshes';
+import { colourDistance } from '../src/render/roofContrast';
+import { BUILDING_STRIDE, buildingBatches } from '../src/render/world/buildingsMesh';
 
 const ring = (x: number, y: number, w: number, h: number) => [
   { x, y },
@@ -255,6 +263,7 @@ describe('town look: one description for both renderers', () => {
       buildings: false,
       farRaster: false,
       canopyClearing: false,
+      urbanLanduse: false,
       diagnostics: false,
       overPass: false,
       content,
@@ -263,6 +272,52 @@ describe('town look: one description for both renderers', () => {
     // Strict: anything the Canvas town paints differently keeps its repaint.
     expect(townRestGaps({ ...rest, content: { ...content, waterways: true } })).toContain('canals at full strength over the town');
     expect(townRestGaps({ ...rest, dpr: 2 })).toContain('outlines wider than a device pixel');
-    expect(townRestGaps({ ...rest, palette: 'terrain', streets: 'natural', lod: 'near', mpp: 1.2, buildings: true }).length).toBeGreaterThan(2);
+    expect(townRestGaps({ ...rest, urbanLanduse: true })).toContain('urban land-use tint');
+    // Natural ground: the roof grain marks are drawn; the road paint and the snow mantle's marks are not.
+    const natural = { ...rest, palette: 'terrain' as const, streets: 'natural' as const, lod: 'near' as const, mpp: 1.2, buildings: true };
+    expect(townRestGaps(natural)).toEqual(['ground-textured road paint, wear, grain, cobbles, kerbs and sidewalks', 'street surface junctions and ends']);
+    expect(townRestGaps({ ...natural, snow: 0.5 })).toContain('uneven snow marks');
+  });
+});
+
+describe('roofs in volume', () => {
+  it('paints the tilted view’s roof faces with the colours of the top view’s pans', () => {
+    const footprint = [{ outer: ring(2000, 2000, 12, 6), holes: [] }],
+      massing = [{ floors: 2, eave_m: 6, rise_m: 3, roof: 'hip', ridges: [[2003, 2003, 2009, 2003]], cover: 'slate', wall: 'brick', tone: 0.37 }];
+    const source = {
+      buildings: [{ id: 'h1', parcel_id: 'h1', function: 'domestic', recipe_id: 'silhouette', variant_id: 'silhouette', culture: { culture: 'x' }, ground_z_m: 0, footprint, roof_footprint: footprint, programme: { role: 'dwelling.house', massing } }],
+      refusals: [],
+      open_spaces: [],
+    } as unknown as PlacementBatch;
+    const town = buildCityBuildings(source, undefined),
+      item = town.items[0],
+      roofs = town.roofs!,
+      volumes = city3dScene(source);
+    for (const palette of ['terrain', 'parchment'] as const) {
+      const frame = roofFrame({ palette, mpp: 2 * RIM_DEVICE_MPP, dpr: 1, diagnostic: 'none' }),
+        paint = { appearance: { style: 'cartographic' as const, diagnostic: 'none' as const }, materials: volumes.materials ?? [], snowAltitudes: { get: () => undefined }, look: { frame, item: (id: string) => (id === item.id ? item : undefined) } };
+      const painted = new Set<string>();
+      for (const batch of buildingBatches(volumes.buildings, [2000, 2000], paint, false))
+        for (let i = 0; i < batch.data.length; i += BUILDING_STRIDE) {
+          // Faces painted by the town look carry a grain gain on the normal's length (code >= 64).
+          if (Math.round((Math.hypot(batch.data[i + 3], batch.data[i + 4], batch.data[i + 5]) - 1) * 32) >= 64) painted.add(hex((Math.round(batch.data[i + 6] * 255) << 16) | (Math.round(batch.data[i + 7] * 255) << 8) | Math.round(batch.data[i + 8] * 255)));
+        }
+      const pans = new Set<string>();
+      for (let k = 0; k < roofs.shapes.length; k++) if (!roofs.patch?.[k]) pans.add(hex(rgb(roofPanPaint(frame, item, roofs, k, 0).color)));
+      expect(painted.size).toBeGreaterThan(1);
+      expect([...painted].sort()).toEqual([...pans].sort());
+    }
+  });
+});
+
+describe('turf roofs', () => {
+  it('stand apart from a meadow: mown and wider contrast close, an earth bank far', () => {
+    const grass = [84 / 255, 118 / 255, 54 / 255],
+      turf = [0.45, 0.5, 0.3] as [number, number, number];
+    expect(colourDistance(turfRoof(turf, grass), grass)).toBeGreaterThanOrEqual(TURF_LOOK.contrast - 0.005);
+    expect(turfCover('turf', 'earth') && !turfCover('turf', 'wood') && !turfCover('thatch', 'earth')).toBe(true);
+    const far = turfFarTone([90, 110, 60]);
+    expect(far[0] - far[1]).toBeGreaterThan(90 - 110);
+    expect(far[0] + far[1] + far[2]).toBeLessThan(260);
   });
 });

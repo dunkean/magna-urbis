@@ -61,6 +61,7 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
     pass.setPipeline(pipeline);
     p.setArray('matrix', frame.matrix);
     p.set('exaggeration', frame.exaggeration);
+    p.set('uRoofInkDpr', this.roofInkDpr(frame));
     p.set('useTex', this.atlases ? 2 : 0);
     p.set('softFrom', SOFT_LAYER_FROM);
     p.set('uNight', frame.cave || !this.night ? 0 : this.lightsOn ? 1 : 2);

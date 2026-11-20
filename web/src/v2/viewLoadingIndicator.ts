@@ -8,8 +8,8 @@ registerMessages({ [LABEL]: { en: LABEL, fr: 'Chargement des textures et de la v
 const SHOW_DELAY_MS = 150;
 
 export function mountViewLoadingIndicator(select: HTMLElement): ViewLoadingTracker {
-  insertHTML(select, 'beforebegin', `<span id="view-loading" class="view-loading" role="status" aria-live="polite" aria-busy="false" aria-label="${LABEL}" title="${LABEL}" hidden></span>`);
-  const element = select.previousElementSibling as HTMLElement;
+  insertHTML(select, 'beforebegin', `<span class="view-loading-slot"><span id="view-loading" class="view-loading" role="status" aria-live="polite" aria-busy="false" aria-label="${LABEL}" title="${LABEL}" hidden></span></span>`);
+  const element = select.previousElementSibling!.querySelector<HTMLElement>('#view-loading')!;
   let showTimer: ReturnType<typeof setTimeout> | undefined;
   return new ViewLoadingTracker({
     onChange: busy => {

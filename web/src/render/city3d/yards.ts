@@ -110,7 +110,12 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
   const cached = YARD_MESHES.get(enclosures);
   if (cached && cached.heightAt === heightAt && cached.palette === palette) return cached.buildings;
   const batches = new Map<string, YardBatch>(),
-    { runs, gates } = yardRuns(enclosures as readonly YardBoundary[]);
+    { runs, gates } = yardRuns(enclosures as readonly YardBoundary[]),
+    gatePosts = new Set<Point>();
+  for (const { a, b } of gates) {
+    gatePosts.add(a);
+    gatePosts.add(b);
+  }
   const batchAt = (e: YardBoundary, p: Point): YardBatch => {
     const key = `${Math.floor(p.x / 128)}/${Math.floor(p.y / 128)}/${e.material}/${e.fenceStyle ?? ''}/${e.culture ?? ''}`;
     let batch = batches.get(key);
@@ -246,32 +251,21 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
         ends,
         t.top,
       );
-    } else if (e.fenceStyle === 'wattle') {
-      const ss = yardFiner(line, PANEL_M),
-        top = ss.map(st => 0.8 + 0.06 * noise(st.x, st.y, 9));
-      half = 0.05;
-      height = 0.85;
-      sheet(
-        ss,
-        (_, j) => top[j],
-        (_, j) => (j % 2 ? 0.05 : -0.05),
-        t.body,
-        t.alt,
-      );
-      for (const st of yardFiner(line, POST_M)) post(st, st.g, 0.95, 0.035, t.wood);
     } else {
-      const ss = yardFiner(line, PANEL_M),
-        top = ss.map(st => 0.98 + 0.05 * noise(st.x, st.y, 11));
+      const wattle = e.fenceStyle === 'wattle',
+        ss = yardFiner(line, PANEL_M),
+        top = wattle ? ss.map(st => 0.8 + 0.06 * noise(st.x, st.y, 9)) : ss.map(st => 0.98 + 0.05 * noise(st.x, st.y, 11));
       half = 0.05;
-      height = 1;
-      sheet(
-        ss,
-        (_, j) => top[j],
-        () => 0,
-        t.body,
-        t.alt,
-      );
-      for (const st of yardFiner(line, POST_M)) post(st, st.g, 1.12, 0.05, t.wood);
+      height = wattle ? 0.85 : 1;
+      sheet(ss, (_, j) => top[j], wattle ? (_, j) => (j % 2 && !(run.closed && j === ss.length - 1) ? 0.05 : -0.05) : () => 0, t.body, t.alt);
+      // Each jamb replaces the regular post at its endpoint. A closed run's last station repeats its first post.
+      const posts = yardFiner(line, POST_M),
+        first = gatePosts.has(run.path[0]) ? 1 : 0,
+        end = posts.length - (run.closed || gatePosts.has(run.path[run.path.length - 1]) ? 1 : 0);
+      for (let i = first; i < end; i++) {
+        const st = posts[i];
+        post(st, st.g, wattle ? 0.95 : 1.12, wattle ? 0.035 : 0.05, t.wood);
+      }
     }
     batch.lines.push({ stations: line, closed: run.closed, height, half, side: t.body, top: t.top });
     for (const p of run.path) extend(batch, p, half + 0.1);

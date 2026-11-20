@@ -17,6 +17,21 @@ fn coastSeaField(point:vec2<f32>,n:u32,base:u32)->f32 {
   let south=mix(coastFieldValue(base,i1.y*n+i0.x),coastFieldValue(base,i1.y*n+i1.x),t.x);
   return mix(north,south,t.y);
 }
+// The same C2 width field as Rust smoothing_width, from the shore-noise permutation.
+fn coastSplineWeights(t:f32)->vec4<f32> {
+  let t2=t*t;let t3=t2*t;
+  return vec4<f32>((1.0-t)*(1.0-t)*(1.0-t),3.0*t3-6.0*t2+4.0,-3.0*t3+3.0*t2+3.0*t+1.0,t3)/6.0;
+}
+fn coastWidthWave(xy:vec2<f32>)->f32 {
+  let point=xy/1200.0;let cell=vec2<i32>(floor(point));let f=fract(point);
+  let wx=coastSplineWeights(f.x);let wy=coastSplineWeights(f.y);var wave=0.0;
+  for(var j=0u;j<4u;j++){for(var i=0u;i<4u;i++){
+    let cx=u32((cell.x+i32(i)-1)&255);let cy=u32((cell.y+i32(j)-1)&255);
+    let value=f32(perm[1024u+cx+perm[1024u+cy]])/127.5-1.0;
+    wave+=wx[i]*wy[j]*value;
+  }}
+  return tanh(2.0*wave);
+}
 fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let config=coast[0];let mask=u32(config.x);
   if(mask==0u){return terrainHeight;}
@@ -81,9 +96,13 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
     if(fit.z!=0.0){distance+=fit.w*tanh(clamp((height-fit.y)*fit.z,-9.0,9.0))*smooth01(1.0-abs(distance)/coast[15].x);}
   }
   if(isletHeight>0.0){height=isletHeight;}
-  let cliff=smooth01((fbm(uv/0.12,2u,3u,0.5,0.0)-0.20)/0.25);
   let widthVariation=0.65+1.1*smooth01(fbm(uv/0.21+vec2<f32>(11.7,-4.2),2u,3u,0.5,0.0)+0.5);
-  let ramp=min(max(config.z,height/(p.values[0].x*0.45)),scale*0.18)*widthVariation*apron*(1.0-0.90*cliff);
+  let ramp=min(max(config.z,height/(p.values[0].x*0.45)),scale*0.18)*widthVariation*apron;
   if(distance<=0.0){return -config.w*smooth01(-distance/(ramp*4.0*coast[15].y));}
-  return height*smooth01(distance/ramp);
+  // Smooth low-frequency stretches of variable width, matching Rust smoothing_width.
+  let profile=coast[1];
+  var band=profile.x;
+  if(profile.y>0.0){band*=1.0+profile.y*coastWidthWave(xy);}
+  if(band<=0.0){return height;}
+  return height*smooth01(distance*p.values[0].x/band);
 }

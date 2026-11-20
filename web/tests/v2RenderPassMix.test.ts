@@ -9,7 +9,7 @@ import { resolveSettingsAppearance } from '../src/v2/appearance';
 
 describe('mixing existing display components', () => {
   it('accepts every component and source style without altering any generation input', () => {
-    const components: RenderMixComponent[] = ['ground', 'water', 'roads', 'vegetation', 'buildings', 'text', 'lighting', 'plan'];
+    const components: RenderMixComponent[] = ['ground', 'vegetation', 'buildings', 'text', 'lighting'];
     for (const component of components)
       for (const preset of PRESET_IDS) {
         const settings = defaultSettings(),
@@ -25,34 +25,34 @@ describe('mixing existing display components', () => {
       }
   });
 
-  it('mixes water and vegetation independently while preserving all other components and visibility', () => {
+  it('mixes vegetation while keeping the selected ground and its network looks', () => {
     const settings = defaultSettings();
     writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
-    writeAppearanceControl(settings, 'appearance.composition.networks.water.visible', false);
     const original = structuredClone(currentComposition(settings));
-    mixRenderStyle(settings, 'water', 'cadastre');
-    expect(currentComposition(settings)).toEqual({ ...original, preset: 'custom', networks: { ...original.networks, water: { ...original.networks.water, look: 'ink' } } });
     mixRenderStyle(settings, 'vegetation', 'parchment');
     expect(currentComposition(settings).vegetation.look).toBe('symbols');
     expect(currentComposition(settings).ground).toEqual(original.ground);
-    expect(currentComposition(settings).networks.water.visible).toBe(false);
+    const { networks } = resolveSettingsAppearance(settings, undefined, 'view2d').composition;
+    expect(networks.water).toMatchObject({ look: 'natural', visible: true });
+    expect(networks.roads.look).toBe('rendered');
   });
 
-  it('shares visibility across 2D, 3D and export and restores saved plan layer choices', () => {
+  it('shares the view plan policy and Roads switch across 2D, 3D and export', () => {
     const settings = defaultSettings();
     expect(resolveSettingsAppearance(settings, undefined, 'view3d').city.textured).toBe(false);
-    writeAppearanceControl(settings, 'appearance.city.layers.fronts', true);
-    const streets = resolveSettingsAppearance(settings, undefined, 'view2d').city.layers.streets;
-    writeAppearanceControl(settings, 'appearance.city.plan', false);
+    writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
+    writeAppearanceControl(settings, 'appearance.composition.networks.roads.visible', false);
     for (const target of ['view2d', 'view3d', 'export'] as const) {
       const result = resolveSettingsAppearance(settings, undefined, target);
       expect(result.city.plan).toBe(false);
       for (const name of ['parcels', 'quarters', 'blocks', 'fronts', 'access'] as const) expect(result.city.layers[name]).toBe(false);
-      // Streets are physical objects (URBAN_PHYSICAL_LAYERS): the plan switch no longer hides them.
-      expect(result.city.layers.streets).toBe(streets);
+      expect(result.composition.networks.roads).toMatchObject({ look: 'rendered', visible: false });
+      expect(result.city.layers.streets).toBe(true);
     }
-    expect(settings.appearance!.city!.layers!.fronts).toBe(true);
-    writeAppearanceControl(settings, 'appearance.city.plan', true);
-    expect(resolveSettingsAppearance(settings, undefined, 'view2d').city.layers.fronts).toBe(true);
+    writeAppearanceControl(settings, 'appearance.composition.preset', 'cadastre');
+    const cadastre = resolveSettingsAppearance(settings, undefined, 'view2d');
+    expect(cadastre.city.plan).toBe(true);
+    expect(cadastre.city.layers.parcels).toBe(true);
+    expect(cadastre.composition.networks.roads).toMatchObject({ look: 'ink', visible: true });
   });
 });

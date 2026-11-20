@@ -12,6 +12,7 @@ import { createNativeCityMapAsync, type NativeCityHooks, type NativeCityMap, typ
 import { drawUrbanSemantic } from '../../render/semanticLayer';
 import type { CityScene } from '../../render/cityCanvas';
 import type { View } from '../../render/view';
+import { volumeTownBuildings } from '../../render/cityDrawOptions';
 import type { DisplayParts, SemanticState, Town, TownPaint, WorldBox } from './contract';
 import type { MapState } from './mapState';
 
@@ -33,7 +34,7 @@ export class TownProducts implements Town {
 
   draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, paint: TownPaint): NativeCityMapStats | undefined {
     this.painting = { ...paint, canvas: ctx.canvas };
-    return this.city?.draw(ctx, view, w, h, dpr, this.map.resolved!, this.shownLayers(), this.hooks, paint.stepwise);
+    return this.city?.draw(ctx, view, w, h, dpr, this.map.resolved!, this.shownLayers(), this.hooks, paint.stepwise, paint.planOnly);
   }
   /** The city plan on WebGL2 is uploaded before a synchronous paint. */
   async prepare(): Promise<void> {
@@ -141,10 +142,14 @@ export class TownProducts implements Town {
       return;
     }
     // `progress` (the kept town layer of the current view is complete): same content.
-    const map = await createNativeCityMapAsync(this.map.world!, kind => {
-      if (kind === 'content') this.map.invalidate();
-      else this.map.repaint();
-    });
+    const map = await createNativeCityMapAsync(
+      this.map.world!,
+      kind => {
+        if (kind === 'content') this.map.invalidate();
+        else this.map.repaint();
+      },
+      volumeTownBuildings(this.map.resolved) && this.map.resolved?.target === 'view2d',
+    );
     // Another pass prepared the same cities while the volumes were built: keep one map.
     if (this.map.ownsShared && shared.city?.key === key) {
       map.dispose();

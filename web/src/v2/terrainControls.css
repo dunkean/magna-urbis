@@ -18,6 +18,29 @@
 .parameter-caption {
   line-height: 1.4;
 }
+/* Coast shape first, then a compact profile; descriptions remain available on hover and focus. */
+#terrain-coast-panel .coast-profile-controls {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+#terrain-coast-panel .coast-profile-controls .parameter-form {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+#terrain-coast-panel .coast-profile-controls .parameter-field:has(> .parameter-slider) {
+  grid-template-columns: minmax(0, 1.2fr) minmax(52px, 1fr) 50px;
+  gap: 3px 6px;
+}
+#terrain-coast-panel .coast-profile-controls .parameter-caption {
+  font-size: 10px;
+  line-height: 1.2;
+}
+#terrain-coast-panel .coast-profile-controls input:not([type='range']) {
+  min-height: 22px;
+  padding: 2px 4px;
+  font-size: 10px;
+}
 .parameter-help {
   font-size: 10px;
   color: var(--muted, #b0ad9b);

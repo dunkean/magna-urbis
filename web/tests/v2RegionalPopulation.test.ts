@@ -17,6 +17,22 @@ function region(culture = 'european-organic', climate = 'temperate', relief = 'f
   return s;
 }
 describe('regional population and distribution', () => {
+  it('caps automatic 40 km settlements at 20,000 while keeping a rural hierarchy', () => {
+    for (const culture of ['european-organic', 'american-grid']) {
+      const s = region(culture),
+        before = structuredClone(s),
+        p = regionalPopulation(s);
+      expect(p.places.every(place => place.population <= 20000)).toBe(true);
+      expect(p.counts.village).toBeGreaterThan(0);
+      expect(p.counts.hamlet).toBeGreaterThan(0);
+      expect(p.counts.farmstead).toBeGreaterThan(0);
+      expect(p.allocatedPopulation).toBe(p.population);
+      expect(p.unallocated).toBe(0);
+      expect(effectiveRegion(s).placement.list).toEqual(p.places);
+      expect(s).toEqual(before);
+      expect(regionalPopulation(decodeCityCode(encodeCityCode(s)).settings)).toEqual(p);
+    }
+  });
   it('resizes the automatic places for a typed population without changing their number', () => {
     for (const culture of ['european-organic', 'elven', 'halfling']) {
       const automatic = regionalPopulation(region(culture));
@@ -86,15 +102,17 @@ describe('regional population and distribution', () => {
   it('scales with area, environmental carrying density and culture instead of a principal settlement', () => {
     const s = region(),
       plain = regionalPopulation(s);
-    s.extent = 20000;
-    expect(regionalPopulation(s).population).toBe(plain.population / 4);
+    s.extent = 10000;
+    const ten = regionalPopulation(s);
+    s.extent = 5000;
+    expect(regionalPopulation(s).population).toBe(Math.round(ten.population / 4));
     const arctic = regionalPopulation(region('inuit-camp', 'arctic', 'high-mountains'));
     expect(arctic.population).toBeLessThan(plain.population / 50);
     expect(Math.max(0, ...arctic.places.map(p => p.population))).toBeLessThanOrEqual(120);
     expect(arctic.counts.city + arctic.counts.town + arctic.counts.village).toBe(0);
     const modern = regionalPopulation(region('american-grid'));
-    expect(modern.population).toBeGreaterThan(plain.population * 10);
-    expect(Math.max(...modern.places.map(p => p.population))).toBeGreaterThan(100000);
+    expect(modern.population).toBeGreaterThan(plain.population);
+    expect(Math.max(...modern.places.map(p => p.population))).toBeLessThanOrEqual(20000);
     expect(plain.allocatedPopulation).toBe(plain.population);
     expect(modern.allocatedPopulation).toBe(modern.population);
   });

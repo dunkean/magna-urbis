@@ -34,7 +34,7 @@ export function installBenchRenderSettings(): void {
     forms.push(
       mountParameterForm(
         body,
-        fields.map(field => (field.options ? { ...field, options: field.options.filter(option => styleAvailableOnPage(String(option.value), 'bench')) } : field)),
+        fields.map(field => (field.options && (field.path === 'appearance.composition.preset' || field.path.startsWith('appearance.composition.ground.')) ? { ...field, options: field.options.filter(option => styleAvailableOnPage(option.value, 'bench')) } : field)),
         {
           getValue: path => readSettingPath({ appearance: resolvedValues(resolveBenchAppearance({}, 'view2d')) }, path),
           setValue: (path, value) => {
@@ -90,7 +90,6 @@ export function installBenchRenderSettings(): void {
       driven('#roadBlend', c.networks.roads.look === 'ink' ? 'classic' : 'blended');
       driven('[data-render="groundBlend"]', r.city.groundBlend);
       driven('#showLanduse', true);
-      driven('#showPlan', r.city.plan);
       driven('#showLegend', r.cartography.legend);
       driven('#showFrame', r.ground.layers.frame);
       driven('#landuseStyle', r.palette.mapStyle);
@@ -192,7 +191,6 @@ export function installBenchRenderSettings(): void {
     move('water', '#showWater, #showLakes, #showOxbows');
     move('roads', '#roadRendering, #roadShow');
     move('landuse', '#showLanduse');
-    move('buildings', '#showPlan');
     move('diagnostics', '#hydroOverlay');
     for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-render-settings-category]'))) {
       const category = element.dataset.renderSettingsCategory as RenderSection;

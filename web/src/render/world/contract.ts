@@ -2,9 +2,11 @@
  * Contract of the world view (render/world/): the map is the world seen from above, and one camera goes from that top
  * view to a tilted perspective of the relief, with no second engine.
  *
- *   camera.ts       the camera: its pose from a view (centre, scale, pitch, yaw), its matrices, the ground point under
- *                   a pixel, pan and zoom on the ground. Pure math: the compositor fills the frame with it, the viewer
- *                   navigates with it.
+ *   camera.ts       the camera: its pose from a view (centre, scale, pitch, yaw; or a free eye), its matrices, the
+ *                   ground point under a pixel, the screen point of a ground point, pan and zoom on the ground. Pure
+ *                   math: the compositor fills the frame with it, the viewer navigates and the page picks with it.
+ *   navigation.ts   walking and flying: a free eye entered from the orbit camera, moved and turned (pure math).
+ *   buildingsPick.ts the building volume under a pixel: a ray against the boxes of the blocks, then of their buildings.
  *   heights.ts      the relief of a map on the CPU (the camera stands on it, picking reads it) and as a texture.
  *   patches.ts      which squares of the map a frame draws and how finely: a bounded quadtree walk.
  *   footprint.ts    which tier of baked ground tiles a square is draped with.
@@ -57,7 +59,7 @@ export interface FrameCamera {
   /** The same projection for positions given relative to `target`: float32 map coordinates resolve 4 mm on a 40 km
    * map, a pixel at the closest zoom, so a layer subtracts the target on the CPU and draws with this matrix. */
   readonly targetViewProjection: Float32Array;
-  /** The ground point at the centre of the view, and the eye: x, y, z. */
+  /** The ground point at the centre of the view (the ground under the eye for a free eye), and the eye: x, y, z. */
   readonly target: Float64Array;
   readonly eye: Float64Array;
   /** Unit vectors of the camera in the world: towards the right of the screen, its top, and into the picture. */
@@ -66,6 +68,9 @@ export interface FrameCamera {
   readonly forward: Float64Array;
   /** Device pixels on screen per unit of (offset across the view axis / depth along it). */
   readonly focal: number;
+  /** How far the camera looks (metres): from the eye to the target for the orbit camera, a fixed reach for a free eye
+   * (walking, flying), whose target is the ground under it. The haze and the fading of far names scale with it. */
+  readonly distance: number;
   /** Depths of the near and far planes along the view axis (metres). */
   readonly near: number;
   readonly far: number;
@@ -95,10 +100,11 @@ export interface DrapeTiles {
   revision(): number;
   /** A tilted frame is about to name the tiles it shows: the list of the previous one is dropped. */
   begin(): void;
-  /** The baked tile that shows the square (tier, ix, iy): that tile, or the matching part of its nearest baked
-   * ancestor (never a hole once tier 0 is baked). False when nothing is baked. Marks what it returns as shown and
-   * asks for the tile itself when it is missing or stale, `priority` lowest first. */
-  resolve(tier: number, ix: number, iy: number, priority: number, out: DrapeTile): boolean;
+  /** The baked tile that shows the square (squareTier, sx, sy) of the frame, wanted at `tier` (<= squareTier): that
+   * tile, else the nearest baked tile holding the square (tilePyramid.ts findTile; never a hole once tier 0 is
+   * baked), `out` being the part of it under the square. False when nothing is baked. Marks what it returns as shown
+   * and asks for the wanted tile when it is missing or stale, `priority` lowest first. */
+  resolve(squareTier: number, sx: number, sy: number, tier: number, priority: number, out: DrapeTile): boolean;
   pageCount(): number;
   page(index: number): WebGLTexture;
 }
@@ -116,9 +122,12 @@ export interface DrapeCanvas {
   readonly dpr: number;
   /** Light display quality: sources drop optional detail. */
   readonly light: boolean;
+  /** How many times the source being asked has already painted this tile in this bake (see DrapeSource.paint). */
+  readonly step: number;
   /** Lays a premultiplied texture over the tile with source-over: the tile's west edge reads `uWest`, its north edge
-   * `vNorth`, and so on (a texture rendered with y up has its north at v = 1). Parts outside 0..1 are left untouched. */
-  put(texture: WebGLTexture, uWest: number, vNorth: number, uEast: number, vSouth: number, opacity: number): void;
+   * `vNorth`, and so on (a texture rendered with y up has its north at v = 1). Only the part of the texture inside
+   * `uMin`..`vMax` (the whole of it by default) is laid; the rest of the tile is left untouched. */
+  put(texture: WebGLTexture, uWest: number, vNorth: number, uEast: number, vSouth: number, opacity: number, uMin?: number, vMin?: number, uMax?: number, vMax?: number): void;
   /** A cleared, transparent, multisampled target of `pixels` x `pixels` (RGBA8 + depth24/stencil8), bound, with the
    * state of `resetLiveState`: the isolated group of a source that needs its own blending, stencil or opacity. The
    * source draws the tile's square into the whole target, north at the top, then calls `putGroup`. Undefined when the
@@ -126,19 +135,28 @@ export interface DrapeCanvas {
   group(): WebGLFramebuffer | undefined;
   /** Resolves the group and lays it over the tile with `opacity`. */
   putGroup(opacity: number): void;
+  /** The source painted this tile without a product that is still being made for its scale (contour paths in the
+   * worker): the tile is baked again, alone, when the source's `arrivals` changes. */
+  provisional(): void;
 }
 
 /** What a layer that lies flat on the ground gives the map drape (LiveLayer.drape). Called between frames only. */
 export interface DrapeSource {
   /** Changes whenever `paint` would paint another picture, or `ready` could answer differently for good: the tiles
-   * baked before are stale. Read once per work slice. */
+   * baked before are stale. Content only: a product made per scale or per view does not move it (`arrivals`). Read
+   * once per work slice. */
   revision(): number;
+  /** Changes when a product that a tile was painted without arrives: only the tiles painted `provisional` are baked
+   * again. Absent: the source never paints a tile provisionally. */
+  arrivals?(): number;
   /** False while the source cannot paint this tile yet (programs linking, data not on the GPU): the tile is baked
    * later, and until then the drape bakes nothing. A source with nothing to show is ready and paints nothing. Cheap. */
   ready(canvas: DrapeCanvas): boolean;
-  /** Paints the source's picture of the tile. Only called when every source answered `ready`. The state on entry is
-   * `resetLiveState` with the tile bound; the source may leave any state behind. */
-  paint(canvas: DrapeCanvas): void;
+  /** Paints the source's picture of the tile, or a part of it: a source whose picture is long to make answers true
+   * to be called again for the same tile (`canvas.step` counts its calls), in this work slice or a later one, before
+   * the next source paints. Only called when every source answered `ready`, and never while the view moves. The state
+   * on entry is `resetLiveState` with the tile bound; the source may leave any state behind. */
+  paint(canvas: DrapeCanvas): boolean | void;
 }
 
 /** What the draped ground did in its last frame. */
@@ -147,6 +165,10 @@ export interface DrapedGroundStats {
   triangles: number;
   /** Squares of the map drawn (instances of the grid mesh). */
   patches: number;
+  /** Of those, the squares shown by a ground tile of another tier than the one wanted, and the squares whose map
+   * drape is another tier's tile or none (the wanted tile is not baked yet). */
+  otherTier: number;
+  drapeOtherTier: number;
   /** Instance lists sent to the GPU since the context was created: one per frame whose camera or tiles changed. */
   uploads: number;
 }

@@ -18,8 +18,8 @@ function uploadTable(gl: WebGL2RenderingContext, texture: WebGLTexture, rgba: Ui
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 }
 
-type FillExtra = 'hatch' | 'grain' | 'rim';
-const FILL_EXTRAS: readonly FillExtra[] = ['hatch', 'grain', 'rim'];
+type FillExtra = 'hatch' | 'grain' | 'rim' | 'lay';
+const FILL_EXTRAS: readonly FillExtra[] = ['hatch', 'grain', 'rim', 'lay'];
 /** Colour tables kept per fill mesh: the four levels of detail of a look and a previous look or two. */
 const TABLES_KEPT = 6;
 /** A fill mesh on the GPU: shared vertices, one VAO for triangles, one for lines, two colour tables per kept state
@@ -33,10 +33,12 @@ export class FillPack {
   mats?: WebGLTexture;
   private geometryBytes: number;
   /** Extra per-feature tables of the current state (live look): parchment hatch strength (plan), roof grain data and
-   * wall-rim colours (buildings, cityGlStyle CityGlRoofGrain); null when the state has none. */
+   * wall-rim colours and how the grain tile lies on each pan (buildings, styleTables CityGlRoofGrain); null when the
+   * state has none. */
   hatch: WebGLTexture | null = null;
   grain: WebGLTexture | null = null;
   rim: WebGLTexture | null = null;
+  lay: WebGLTexture | null = null;
   private tables = new Map<string, { fill: WebGLTexture; edge: WebGLTexture; extra: Partial<Record<FillExtra, WebGLTexture>>; draws?: CityGlDraws }>();
   constructor(
     private gl: WebGL2RenderingContext,
@@ -105,6 +107,7 @@ export class FillPack {
     this.hatch = t.extra.hatch ?? null;
     this.grain = t.extra.grain ?? null;
     this.rim = t.extra.rim ?? null;
+    this.lay = t.extra.lay ?? null;
   }
   /** Makes the kept tables of state `key` current; undefined when they are not kept. */
   table(key: string): { draws?: CityGlDraws } | undefined {
@@ -131,7 +134,7 @@ export class FillPack {
       for (const x of Object.values(t.extra)) if (x) gl.deleteTexture(x);
     }
     this.tables.clear();
-    this.fill = this.edge = this.hatch = this.grain = this.rim = null;
+    this.fill = this.edge = this.hatch = this.grain = this.rim = this.lay = null;
   }
 }
 /** Segment instances on the GPU (36-byte stride), with outer/inner colour tables. */

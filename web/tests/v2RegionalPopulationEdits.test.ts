@@ -5,6 +5,20 @@ import { clearRegionalPopulation, editRegionalPopulation, followEnvironmentPopul
 import { encodeCityCode, decodeCityCode } from '../src/v2/cityCode';
 
 describe('regional population controls', () => {
+  it('restores automatic sizes after a saved large local population and pinned counts', () => {
+    const s = defaultSettings();
+    s.extent = 40000;
+    const automatic = regionalPopulation(s);
+    s.local = { main: { population: 40000, culture: 'medina' }, 'village-0': { population: 45000 } };
+    s.region = { demography: { population: 85000, counts: { city: 1, town: 0, village: 0, hamlet: 0, farmstead: 0 }, followCulture: false } };
+    followEnvironmentPopulation(s);
+    expect(s.local.main).toEqual({ culture: 'medina' });
+    expect(s.local['village-0'].population).toBeUndefined();
+    const reset = regionalPopulation(s);
+    expect(reset.places.map(p => p.population)).toEqual(automatic.places.map(p => p.population));
+    expect(reset.counts).toEqual(automatic.counts);
+    expect(reset.places.every(p => p.population <= 20000)).toBe(true);
+  });
   it('pins only the class being edited instead of freezing every displayed count', () => {
     const s = defaultSettings();
     s.extent = 40000;

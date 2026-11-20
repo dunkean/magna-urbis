@@ -175,6 +175,8 @@ pub(super) struct Fields {
     pub land_part: Vec<u32>,
     pub land_area: Vec<f64>,
     pub sat: Vec<u32>,
+    /// Terraced village land: up to a 45 degree hillside, with the same dry/flood rules.
+    pub terrace_sat: Vec<u32>,
     /// Dry-land height range, for the elevation preference.
     pub dry_range: (f32, f32),
     /// Steepest grade along each long road move from each cell, computed by the first road
@@ -483,12 +485,16 @@ impl Fields {
             land_area.push(dry as f64 * cell * cell);
         }
         let mut sat = vec![0; (n + 1) * (n + 1)];
+        let mut terrace_sat = vec![0; (n + 1) * (n + 1)];
         for y in 0..n {
             let mut row = 0;
+            let mut terrace_row = 0;
             for x in 0..n {
                 let i = y * n + x;
                 row += u32::from(r.water[i] == 0 && slope[i] < 0.2 && buildable_hab[i] >= 1.0);
+                terrace_row += u32::from(r.water[i] == 0 && slope[i] <= 1.0 && buildable_hab[i] >= 1.0);
                 sat[(y + 1) * (n + 1) + x + 1] = sat[y * (n + 1) + x + 1] + row;
+                terrace_sat[(y + 1) * (n + 1) + x + 1] = terrace_sat[y * (n + 1) + x + 1] + terrace_row;
             }
         }
         Self {
@@ -508,6 +514,7 @@ impl Fields {
             land_part,
             land_area,
             sat,
+            terrace_sat,
             dry_range,
             long_grades: std::sync::OnceLock::new(),
             move_masks: Default::default(),
@@ -546,16 +553,22 @@ impl Fields {
             + (p.x / self.cell).floor().clamp(0.0, (self.r.n - 1) as f64) as usize
     }
     pub fn fraction(&self, p: Point, rad: f64) -> f64 {
+        self.fraction_of(&self.sat, p, rad)
+    }
+    pub fn terrace_fraction(&self, p: Point, rad: f64) -> f64 {
+        self.fraction_of(&self.terrace_sat, p, rad)
+    }
+    fn fraction_of(&self, sat: &[u32], p: Point, rad: f64) -> f64 {
         let n = self.r.n;
         let k = n + 1;
         let x0 = ((p.x - rad) / self.cell).floor().max(0.0) as usize;
         let x1 = ((p.x + rad) / self.cell).floor().min((n - 1) as f64) as usize;
         let y0 = ((p.y - rad) / self.cell).floor().max(0.0) as usize;
         let y1 = ((p.y + rad) / self.cell).floor().min((n - 1) as f64) as usize;
-        let s = self.sat[(y1 + 1) * k + x1 + 1] as i64
-            - self.sat[y0 * k + x1 + 1] as i64
-            - self.sat[(y1 + 1) * k + x0] as i64
-            + self.sat[y0 * k + x0] as i64;
+        let s = sat[(y1 + 1) * k + x1 + 1] as i64
+            - sat[y0 * k + x1 + 1] as i64
+            - sat[(y1 + 1) * k + x0] as i64
+            + sat[y0 * k + x0] as i64;
         s as f64
             / (((x1 - x0 + 1) * (y1 - y0 + 1)) as f64).max(
                 (2.0 * rad / self.cell)

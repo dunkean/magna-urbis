@@ -40,7 +40,6 @@ export function mountCityDom(cityContext: City3dContext): void {
     <div class="city3d-bar" role="group" aria-label="Vue 3D">
       <label data-navigation-label>Navigation <select data-navigation><option value="orbit">Orbite</option><option value="walk">Marche</option><option value="fly">Vol libre</option></select></label>
       <label title="Fond drapé sur le relief">Sol <select data-ground><option value="map">Carte pré-rendue</option><option value="render">Rendu 3D (sol procédural)</option></select></label>
-      <label title="Contours des îlots et des parcelles dessinés sur le sol (les rues suivent l’interrupteur Routes)"><input type="checkbox" data-plan checked>Plan</label>
       <label title="Textures des toits, murs, rues et places (bâtiments et constructions seulement)"><input type="checkbox" data-textured>Textures</label>
       <label title="Arbres modélisés près de la caméra (sol satellite)"><input type="checkbox" data-trees>Arbres 3D</label>
       <label title="Distance d'affichage des arbres modélisés (m)" data-tree-distance-label hidden>Distance des arbres <input type="range" data-tree-distance min="200" max="1500" step="100" value="600"></label>
@@ -118,7 +117,7 @@ export function mountCityDom(cityContext: City3dContext): void {
     cityContext.$('.city3d-bar').append(label);
   }
 
-  if (cityContext.options.sharedVisibilityControls) for (const selector of ['[data-plan]', '[data-refinement]', '[data-colors]']) cityContext.$(selector)?.closest('label')?.setAttribute('hidden', '');
+  if (cityContext.options.sharedVisibilityControls) for (const selector of ['[data-refinement]', '[data-colors]']) cityContext.$(selector)?.closest('label')?.setAttribute('hidden', '');
 
   if (cityContext.options.advancedControls) {
     for (const selector of ['[data-ground]', '[data-refinement]', '[data-colors]']) {

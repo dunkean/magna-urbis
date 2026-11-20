@@ -6,11 +6,12 @@ import type { CityScene } from '../cityCanvas';
 import type { TextSettings } from '../textLayer';
 import type { VegetationStyle } from '../canopy';
 import type { BrushImages } from '../brushes';
-import type { World, Polygon } from '../../gen/types';
+import type { World, Polygon, LandKind } from '../../gen/types';
 import type { Palette, MapStyle } from '../styles';
 import type { RenderColors } from '../customColors';
 import type { RoadLook } from '../composition';
 import type { RoadStyle } from '../roadStyle';
+import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { Scene, SceneMask } from '../scene';
 import type { View, Rect4 } from '../view';
 import type { Label } from '../labels';
@@ -18,6 +19,7 @@ import type { PlacedMapLabel } from '../mapLabels';
 import type { MapInformation, SemanticLegendEntry } from '../legend';
 import type { ResolvedDisplayQuality } from '../displayQuality';
 import type { LiveLayer, LiveTextPlacement } from '../live/contract';
+import type { OverlayInk } from '../live/contourInk';
 
 export interface CanvasLike {
   width: number;
@@ -26,15 +28,21 @@ export interface CanvasLike {
 }
 
 export interface CanvasRendererDeps {
+  /** Farm and placeholder house meshes are already drawn by the composed view. */
+  volumeBuildings?(): boolean;
+  /** The roof look for farm and placeholder houses painted on the map. */
+  buildingRoofs?(): Pick<UrbanBuildingAppearance, 'roof' | 'smoothRoofs'>;
   /** Footprints of isolated houses and farms (native scenes): woods are cleared around them like around a farmstead. */
   buildingClearings?(): readonly Polygon[];
+  /** Full-quality ownership when a light scene also retains flat polygons for the live shader. */
+  fullLanduse?: (kind: LandKind) => boolean;
   separateText?: boolean;
   textSources?(): readonly CityScene[] | undefined;
   colors?: RenderColors;
   roadLook?: RoadLook;
   /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
   roadStyle?: () => RoadStyle;
-  /** The Urban plan switch, read per frame (it joins the raster tile keys, no rebuild): false hides the abstract plan marks (the dashed site reserve outline). */
+  /** Whether the map style draws plan marks such as the dashed site reserve outline, read per frame. */
   urbanPlan?: () => boolean;
   /** Path2D constructor (default: RecPath2D, a native Path2D that both vector engines can draw). */
   Path2D?: new () => Path2D;
@@ -42,6 +50,9 @@ export interface CanvasRendererDeps {
   createCanvas?: (w: number, h: number) => CanvasLike | null;
   /** Terrain bitmap provider (default: hillshade raster). Return null to skip terrain. */
   terrain?: (world: World, pal: Palette) => CanvasImageSource | null;
+  /** The land a transparent sheet keeps its tints on, when `terrain` leaves out what the ground paints (the woods of
+   * `groundTrees`); default: the terrain bitmap. */
+  land?: () => CanvasImageSource | undefined;
   /** Keep the map background transparent when composing a separate overlay. */
   transparentBackground?: boolean;
   /** The ground under the overlay draws the cave rock itself (Underdark on material grounds, terrainGl.ts): the overlay
@@ -61,12 +72,27 @@ export interface CanvasRendererDeps {
   brushes?: BrushImages;
   /** Irregular, shaded foliage in place of round forest/orchard symbols. */
   vegetation?: VegetationStyle;
+  /** True while the ground under the overlay paints the woods (their wash, the shade around them and the tree symbols:
+   * render/treeSymbols.ts): the overlay leaves the forest class out. Read per paint. */
+  groundTrees?: () => boolean;
   /** Decorative field scale, independent of the retained terrain extent. */
   furrowReferenceSize?: number;
   /** Natural layers owned by another pass (no fabricated world): they are neither built nor drawn. Absent = all. */
   mask?: SceneMask;
   /** Semantic land use of another pass, painted after the land-use layers and before water, roads and labels. `key` joins the raster tile keys, so a new look repaints the tiles; `draw` gets the world-coordinate context, the culling rect and the world units per screen pixel. */
-  semantic?: { key(): string; draw(ctx: CanvasRenderingContext2D, rect: Rect4, mpp: number, quality?: ResolvedDisplayQuality): void; legend?(): readonly SemanticLegendEntry[] };
+  semantic?: {
+    /** World ink drawn between the retained area prefix and semantic suffix, independently of band recordings. */
+    createInk?(gl: WebGL2RenderingContext): OverlayInk | undefined;
+    key(): string;
+    /** `key` without the products made per view (contour paths from the worker, the water raster of the view): a rectangle drawn with all of them in hand stays valid while only those move. The live overlay keys its regions on it (cartography/liveHost.ts). */
+    look(): string;
+    /** Changes when a product made per view arrives. */
+    arrivals(): number;
+    /** Draws so far that lacked a product still being made (contour paths in the worker, a water mask coarser than the view's): what such a draw recorded is redone when `arrivals` changes. */
+    provisional(): number;
+    draw(ctx: CanvasRenderingContext2D, rect: Rect4, mpp: number, quality?: ResolvedDisplayQuality): void;
+    legend?(): readonly SemanticLegendEntry[];
+  };
 }
 
 export interface FrameStats {

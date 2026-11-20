@@ -37,7 +37,8 @@ describe('city help localization', () => {
       expect(translateRuntimeMessage(row[1], code)).toBe(row[index]);
     }
     const bridge = readFileSync(new URL('../../src/v2/rustUrban.ts', import.meta.url), 'utf8');
-    expect(bridge).toContain("report('urban-layout', 'Rust · urban composition…', 0)");
+    expect(bridge).toContain("report('urban-layout', `Rust · urban composition… (${place.name ?? key})`, 0)");
+    expect(translateRuntimeMessage('Rust · urban composition… (Aubeville)', 'fr')).toBe('Rust · composition urbaine… (Aubeville)');
     expect(bridge).not.toContain("report('urban-layout', 'Rust · composition urbaine…'");
   });
 });

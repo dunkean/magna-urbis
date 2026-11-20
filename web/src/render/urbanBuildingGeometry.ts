@@ -1,5 +1,5 @@
 import type { MaterialSlots, Point, Surface } from '../../../rust/bridge/housesContract';
-import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import type { ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseMaterial } from '../../../rust/bridge/housesContract';
 import type { NativeBuildingProjection } from '../ui/urbanBuildingProjection';
 import type { ParentMember3dVisual } from '../ui/urbanParent3d';
@@ -8,6 +8,12 @@ import { earcut } from './cityGlEarcut';
 
 export type BuildingVector = [number, number, number];
 type RoofMesh = PlacedBuilding['volumes'][number]['roof_mesh'];
+export interface OverviewVolume extends ArchitectureVolume {
+  /** Main roof pans and gables to draw in place of the overview cap. */
+  overview_roof_faces?: [number, number];
+  /** Standing details that remain visible at the overview scale, such as sails. */
+  overview_faces?: [number, number];
+}
 const FACE_TRIANGLES = new WeakMap<object, number[]>();
 /** Native roof pans can be concave. Triangulate in their own plane so a fan
  * cannot cover a neighbouring pan or courtyard when the near LOD appears. */
@@ -27,6 +33,18 @@ function faceTriangles(mesh: RoofMesh, face: RoofMesh['faces'][number]): number[
   FACE_TRIANGLES.set(face, triangles);
   return triangles;
 }
+
+function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle: BuildingTriangle) => void, start = 0, end = mesh.faces.length): void {
+  for (let f = start; f < end && f < mesh.faces.length; f++) {
+    const face = mesh.faces[f];
+    const triangles = faceTriangles(mesh, face);
+    for (let i = 0; i + 2 < triangles.length; i += 3) {
+      const points = triangles.slice(i, i + 3).map(index => mesh.vertices[index]);
+      if (points.some(p => !p)) continue;
+      emit({ points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: 'roof' });
+    }
+  }
+}
 /** `yard`: a lot boundary, its own class: the building colours never reach it. `ground`: the ground under each point, when the
  * mesh does not stand on one level. */
 export interface BuildingTriangle {
@@ -37,8 +55,14 @@ export interface BuildingTriangle {
   material?: string;
   ground?: [number, number, number];
 }
+/** Display works can retain separate solid prisms, so gate lintels do not fill their passages. */
+export interface BuildingWalkSolid {
+  footprint: Surface;
+  z_min_m: number;
+  z_max_m: number;
+}
 /** A cartographic projection is never a PlacedBuilding or a realization input. */
-export type Building3dVisual = PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual;
+export type Building3dVisual = (PlacedBuilding | NativeBuildingProjection | ParentMember3dVisual) & { walkSolids?: readonly BuildingWalkSolid[] };
 export interface Building3dScene {
   buildings: readonly Building3dVisual[];
   materials?: HouseMaterial[];
@@ -236,45 +260,28 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     for (const triangle of surfaceTriangles(building.roof_footprint)) emit({ points: triangle.map(p => [p.x, p.y, building.ground_z_m + building.height_m]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material: materials.cladding, surface: 'roof' });
     return;
   }
-  for (const volume of building.volumes) {
+  for (const volume of building.volumes as OverviewVolume[]) {
     // Chimneys, dormers and porches are far below a pixel where the overview is shown.
     if (overview && volume.role === MINOR_VOLUME_ROLE) continue;
     const foundation = volume.foundation;
     if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, true);
     if (volume.envelope !== 'open') for (const level of volume.levels) extrude(level.footprint, level.z_m, level.height_m, level.materials ?? volume.materials, false);
-    if (overview) {
-      // Subpixel facets become a capped native body outline, retaining each
-      // volume's holes, location and maximum physical height. Picking shares it.
+    const mesh = volume.roof_mesh;
+    if (!overview) {
+      if (mesh) emitRoofFaces(mesh, volume.materials, emit);
+      continue;
+    }
+    if (mesh && volume.overview_roof_faces) {
+      emitRoofFaces(mesh, volume.materials, emit, ...volume.overview_roof_faces);
+    } else {
+      // Complex subpixel facets become a capped native body outline with the same holes and height.
       const eaves = volume.z_m + volume.wall_height_m,
         top = eaves + volume.roof_height_m;
       if (volume.envelope !== 'open') extrude(volume.footprint, eaves, volume.roof_height_m, volume.materials, false, volume.materials.cladding);
       for (const triangle of surfaceTriangles(volume.footprint)) emit({ points: triangle.map(p => [p.x, p.y, top]) as BuildingTriangle['points'], normal: [0, 0, 1], materials: volume.materials, material: volume.materials.cladding, surface: 'roof' });
-      // Standing works that make the building what it is from afar (mill sails, a water wheel: city3dMeshes.ts
-      // `overview_faces`) stay on the capped body: a windmill without sails is a box.
-      const kept = (volume as { overview_faces?: [number, number] }).overview_faces,
-        mesh = volume.roof_mesh;
-      if (kept && mesh)
-        for (let f = kept[0]; f < kept[1] && f < mesh.faces.length; f++) {
-          const face = mesh.faces[f],
-            triangles = faceTriangles(mesh, face);
-          for (let i = 0; i + 2 < triangles.length; i += 3) {
-            const points = triangles.slice(i, i + 3).map(index => mesh.vertices[index]);
-            if (points.some(p => !p)) continue;
-            emit({ points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials: volume.materials, material: face.material, surface: 'roof' });
-          }
-        }
-      continue;
     }
-    const roof = volume.roof_mesh;
-    if (roof)
-      for (const face of roof.faces) {
-        const triangles = faceTriangles(roof, face);
-        for (let i = 0; i + 2 < triangles.length; i += 3) {
-          const points = triangles.slice(i, i + 3).map(index => roof.vertices[index]);
-          if (points.some(p => !p)) continue;
-          emit({ points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials: volume.materials, material: face.material, surface: 'roof' });
-        }
-      }
+    // Keep the sails of a windmill and other standing works at the overview scale.
+    if (mesh && volume.overview_faces) emitRoofFaces(mesh, volume.materials, emit, ...volume.overview_faces);
   }
   const materials = building.volumes[0]?.materials;
   if (materials) for (const foundation of building.structural_foundations ?? []) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, materials, true, materials.base);

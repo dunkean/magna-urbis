@@ -94,6 +94,8 @@ export class CartographyContext {
   activeDpr: number | undefined;
   /** True while drawVector records for the GPU engine (set at each drawVector entry). */
   recordingNow = false;
+  /** Drape paths are clipped outside the recorded band and its paint reach before construction. */
+  recordingClip: Rect4 | undefined;
   /** Set while a band is recorded for the live overlay layer: drawVector then marks where its soft area prefix ends
    * (CRISP_MARK). Every other recording (tiles, captures, drape) is left as it was. */
   markCrisp = false;
@@ -259,11 +261,12 @@ export class CartographyContext {
       big = l.index.bigInRect(rect);
     const stamp = tiles.map(t => `${t}:${l.tileKeys?.[t] ?? ''}`).join(';') + '|' + big.map(i => `${i}:${l.bigKeys?.[Array.prototype.indexOf.call(l.index.big, i)] ?? ''}`).join(';');
     const recording = this.recordingNow;
-    return this.cached(`${l.name}|clip|${recording ? 'gpu' : `${rect.minX},${rect.minY},${rect.maxX},${rect.maxY}`}|${stamp}`, () => {
+    const clipTo = recording ? this.recordingClip : rect;
+    return this.cached(`${l.name}|clip|${recording ? 'gpu|' : ''}${clipTo ? `${clipTo.minX},${clipTo.minY},${clipTo.maxX},${clipTo.maxY}` : ''}|${stamp}`, () => {
       const ids: number[] = [];
       for (const t of tiles) for (const i of l.index.itemsOf(t)) ids.push(i);
       ids.push(...big);
-      return polyPath(recording ? this.recordedP : this.P, l, ids, 0, recording ? undefined : rect);
+      return polyPath(recording ? this.recordedP : this.P, l, ids, 0, clipTo);
     });
   };
 

@@ -12,7 +12,7 @@ import type { CityCanopy } from '../../cityGrove';
 export interface LiveCityTowns {
   /** Every town's plan and buildings merged as one GL scene (the GL path's plan; buildings of every town, those of the
    * native house renderer as their city volumes), in resumable steps. Run at rest, once per town content. */
-  sceneSteps(): Generator<void, { plan: CityScene; buildings: CityBuildings }>;
+  sceneSteps(planOnly?: boolean): Generator<void, { plan: CityScene; buildings?: CityBuildings }>;
   /** Merged buildings for a view when a town is prepared in tiers (more than LARGE_TOWN_BUILDINGS): the same object
    * while the tiers of that view do not change. Undefined: no tiered town. */
   buildingsFor?(viewport: Box, mpp: number): CityBuildings | undefined;
@@ -37,7 +37,8 @@ export function liveCityBlock(appearance: ResolvedAppearance, visibility: Partia
   const c = appearance.composition;
   // Partial exports keep Canvas 2D, which honours each layer switch.
   if (visibility?.city === false || visibility?.roads === false || visibility?.streets === false) return 'export-layers';
-  if (c.landuse.urban !== 'off') return 'urban-landuse';
+  // An urban land use is drawn without its tint (restCoverage: the town at rest is the Canvas town's): blocked, a look
+  // such as the cadastre would show no town while the view moves nor in a tilted view.
   if (appearance.underdark || c.ambience === 'night') return 'night';
   return null;
 }

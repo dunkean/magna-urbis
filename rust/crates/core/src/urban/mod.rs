@@ -58,6 +58,8 @@ mod site_options_tests;
 mod regression;
 #[cfg(test)]
 mod panic20k_tests;
+#[cfg(test)]
+mod reroll_panic_tests;
 pub mod roles;
 mod routing;
 mod trim;
@@ -258,6 +260,9 @@ pub struct Layout {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UrbanStructure {
+    /// Source plan data needed to keep unaffected lots through a quarter redraw.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quarter_baseline: Option<Box<edits::quarter_baseline::QuarterBaseline>>,
     /// Appended informal quarters, with the formal prefix boundaries retained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shanty: Option<shanty::Extension>,
@@ -484,6 +489,10 @@ pub struct Partition {
     /// Resolved enclosure values (culture defaults and overrides) of this city.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enclosure: Option<enclosure::Resolved>,
+    /// The blocks `parcels[].block` indexes when structural block edits
+    /// changed the input layout's (`partition_layout`); absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepared: Option<PreparedBlocks>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -594,6 +603,8 @@ pub struct LayoutConfig {
     pub site_archetype: String,
     /// Placement context per settlement when a request contains several towns.
     pub site_archetypes: std::collections::BTreeMap<String, String>,
+    /// User-placed foundations. Every urban stage keeps the supplied centre.
+    pub fixed_sites: std::collections::BTreeSet<String>,
     pub suburbs: String,
     /// Informal peripheral quarters: 0 disables, 1 cultural default, up to 3.
     pub shanty_scale: f64,
@@ -807,6 +818,14 @@ pub struct LayoutConfig {
     pub phase_overrides: std::collections::BTreeMap<String, PhaseOverride>,
     /// Per-quarter user edits (inspector « éditer un quartier »); empty by default.
     pub overrides: UrbanOverrides,
+    /// Set by the parcel stage on a layout whose blocks carry structural block
+    /// edits (`edits/blocks.rs`): what to restore before preparing it again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_edits: Option<BlockEdits>,
+    /// Output only, set by the quarter stage when quarter splits were applied
+    /// (`edits/quarter_parts.rs`); never read as an input.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quarter_edits: Option<QuarterEdits>,
     /// Yield correction of the adaptive-capacity plan, set only by the closed
     /// loop of `quarters::generate` (0 = none). Internal, never serialized.
     #[serde(skip)]
@@ -894,9 +913,21 @@ pub struct QuarterOverride {
     /// and the main streets; the quarter's interior is redrawn inside it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shape: Option<Shape>,
-    /// The quarter owns no block any more; main streets stay.
+    /// Split into 2..64 closed parts (`urban/edits/quarter_parts.rs`), applied
+    /// last on the finished quarter plan: each clipped to the quarter and cut
+    /// out of the parts before it; together they must cover it. Part 0 keeps
+    /// index `i`, part `k` is appended after the plan's quarters and keyed
+    /// `"<i>/<k>"` (`LayoutConfig::quarter_edits`). No street is built.
+    /// `"<i>"` keys only; exclusive with `shape`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Vec<Shape>>,
+    /// The quarter owns no block any more; main streets stay. On a part key
+    /// `"<i>/<k>"`: the part keeps its outline and index, its blocks hold no lot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted: Option<bool>,
+    /// Hide selected split pieces, including part 0, without removing siblings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted_parts: Vec<usize>,
     /// Redraw of the quarter's interior (streets, blocks, lots); absent = original.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salt: Option<u32>,
@@ -922,6 +953,7 @@ impl Default for LayoutConfig {
             settlement_form: "auto".into(),
             site_archetype: String::new(),
             site_archetypes: std::collections::BTreeMap::new(),
+            fixed_sites: std::collections::BTreeSet::new(),
             suburbs: "auto".into(),
             shanty_scale: 1.0,
             phases: 0,
@@ -1003,6 +1035,8 @@ impl Default for LayoutConfig {
             params: json!({}),
             phase_overrides: Default::default(),
             overrides: UrbanOverrides::default(),
+            block_edits: None,
+            quarter_edits: None,
             capacity_yield: 0.0,
             capacity_floor: 0.0,
         }
@@ -1059,7 +1093,9 @@ pub struct ParcelOverrides {
     pub blocks: std::collections::BTreeMap<String, BlockOverride>,
     pub parcels: std::collections::BTreeMap<String, ParcelOverride>,
 }
-/// Local cadastral layout inside a retained street block. Borders and streets stay fixed.
+/// Edit of one retained street block, keyed `"<i>"` (block `i` of the input
+/// layout) or `"<i>/<k>"` (part `k ≥ 1` of split block `i`); see `urban/edits/blocks.rs`.
+/// Without `shape`, `parts` or `deleted`, borders and streets stay fixed.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct BlockOverride {
@@ -1070,6 +1106,92 @@ pub struct BlockOverride {
     pub salt: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub house_config: Option<serde_json::Value>,
+    /// New outline, clipped to the block's quarter, the street and wall ribbons
+    /// and the other blocks (`"<i>"` keys only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
+    /// Split into 2..64 closed parts, clipped like `shape` and each cut out of
+    /// the ones before it: part 0 keeps index `i`, part `k` is `"<i>/<k>"`
+    /// (`"<i>"` keys only; exclusive with `shape`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Vec<Shape>>,
+    /// The block (or part) holds no lot: kind `deleted`, open ground.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    /// Deleted pieces of `parts`, including part 0 without deleting its siblings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted_parts: Vec<usize>,
+}
+/// Record of the structural block edits applied to a prepared layout
+/// (`LayoutConfig::block_edits`, `Partition::prepared`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BlockEdits {
+    /// Block count of the input layout; parts `k ≥ 1` are appended after it.
+    pub count: usize,
+    /// Signature of the prepared block list (count, kinds, quarters).
+    pub signature: String,
+    /// Input blocks replaced in place (reshaped, split or deleted).
+    pub originals: Vec<OriginalBlock>,
+    /// Every edited surface of the prepared list, by prepared index.
+    pub origins: Vec<BlockOrigin>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginalBlock {
+    pub index: usize,
+    pub block: Block,
+}
+/// Prepared block `block` is part `part` of input block `source` (part 0 for a
+/// reshaped or deleted block); its edit key is `"<source>"` or `"<source>/<part>"`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BlockOrigin {
+    pub block: usize,
+    pub source: usize,
+    pub part: usize,
+    pub deleted: bool,
+}
+/// Record of the quarter splits applied by the quarter stage
+/// (`LayoutConfig::quarter_edits`, `edits/quarter_parts.rs`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct QuarterEdits {
+    /// Quarter count of the plan before the splits; parts `k ≥ 1` follow it.
+    pub count: usize,
+    /// Block count before the splits; extra pieces of cut blocks follow it.
+    pub block_count: usize,
+    /// Every output quarter of a split (part 0 included), by output index.
+    /// Quarters absent here were not split.
+    pub parts: Vec<QuarterPart>,
+    /// Outline of each split quarter before the split.
+    pub originals: Vec<OriginalQuarter>,
+}
+/// Output quarter `quarter` is part `part` of source quarter `source`; its
+/// edit key is `"<source>"` (part 0) or `"<source>/<part>"`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct QuarterPart {
+    pub quarter: usize,
+    pub source: usize,
+    pub part: usize,
+    pub deleted: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginalQuarter {
+    pub index: usize,
+    pub shape: Shape,
+}
+/// Blocks the lots of a partition index, when structural block edits changed
+/// them: the caller replaces `layout.blocks` with `blocks` and
+/// `layout.config.block_edits` with `edits` (`partition_layout`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PreparedBlocks {
+    pub blocks: Vec<Block>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edits: Option<BlockEdits>,
 }
 /// Forced use of one lot: a catalogue role (`worship.parish`, `commerce.inn`,
 /// `open.garden`, `dwelling.mansion`…), a houses function, a household count.
@@ -1087,6 +1209,11 @@ pub struct ParcelOverride {
     /// or take back the difference. The lot keeps its id.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shape: Option<Shape>,
+    /// Split into 2..64 closed parts, clipped to the lot and each cut out of
+    /// the ones before it. Part 0 keeps the id; part `k` is `"<id>/part-<k>"`
+    /// (addressable by its own override). Exclusive with `shape`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Vec<Shape>>,
     /// `merge` (absorbed by its best neighbour) or `garden` (unbuilt open ground).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted: Option<String>,
@@ -1767,7 +1894,8 @@ pub fn generate_quarters(
         // places it reserves become cores of land it flows around.
         let cored = neighbours::reserve_cores(seed, site, config, surface, roads);
         let site = cored.as_ref().unwrap_or(site);
-        let relocated = neighbours::relocate(site, surface);
+        let fixed = config.fixed_sites.contains(&site.key);
+        let relocated = if fixed { None } else { neighbours::relocate(site, surface) };
         let site = relocated.as_ref().unwrap_or(site);
         let joined_roads = neighbours::roads(site, roads);
         let roads = joined_roads.as_deref().unwrap_or(roads);
@@ -1791,7 +1919,10 @@ pub fn generate_quarters(
         // Resolve the effective shore once for every plan/finish path, including
         // small kinds and quarter edits. The programme must see the same ground.
         let physical_surface = surface;
-        let stilt = geography::stilt_ground(site, culture, surface);
+        let stilt = geography::stilt_ground(site, culture, surface).map(|mut ground| {
+            if fixed { ground.site.center = site.center; }
+            ground
+        });
         let (site, surface) = stilt
             .as_ref()
             .map_or((site, surface), |ground| (&ground.site, ground.surface(surface)));
@@ -1825,7 +1956,7 @@ pub fn generate_quarters(
         let plan_at = |config: &LayoutConfig, site: &Site| -> Result<Layout, String> {
             // One lap per call, each with its own duration (`URBAN_PROFILE`).
             let mut laps = network::Lap::new("tail");
-            let small = (kind.small() && config.footprint.mechanism != "legacy")
+            let small = (kind.small() && !fixed && config.footprint.mechanism != "legacy")
                 .then(|| kinds::lay_out(&key_seed, site, config, kind, &morph, surface, roads))
                 .flatten();
             let mut layout = match small {
@@ -1976,7 +2107,7 @@ pub fn generate_quarters(
                 ground.balance(seed, layout, physical_surface, |s| plan_at(config, s), |l| finish(l))
             } else { Ok(layout) }
         };
-        let mut layout = edits::with_quarter_edits(config, plan, finish)?;
+        let (mut layout, baseline) = edits::with_quarter_edits(config, plan, finish)?;
         // Invariant (no earth street on water), on the physical surface: after the last
         // stage that adds or moves formal streets, before the shanty records their count
         // (its own ways are laid dry). Slope wards reuse streets of such a layout.
@@ -1992,6 +2123,12 @@ pub fn generate_quarters(
         // Last: a gate no street uses any more closes (the curtain opens only where a street passes).
         fortification::drop_dead_gates(&mut layout);
         laps.lap("drop_dead_gates");
+        if let Some(mut baseline) = baseline {
+            network::clear_water(&mut baseline, site.population, physical_surface, stilt.as_ref().map(|_| surface), config.max_street_grade);
+            harbour_furniture::furnish(&key_seed, &mut baseline, site.population, config, physical_surface);
+            fortification::drop_dead_gates(&mut baseline);
+            edits::quarter_baseline::retain(&mut layout, baseline);
+        }
         Ok(layout)
         };
         // A town whose strict house gates refuse most of its land (a user-placed
@@ -2005,7 +2142,10 @@ pub fn generate_quarters(
         let relaxable = config.programme.slope_relax == 0.0
             && (config.programme.intent == "settlement" || roles::is_isolated(&config.programme.intent))
             && site.population > 0;
-        let ahead = if relaxable && !kind.small() { footprint::slope_relax_ahead(&key_seed, site, config, surface, roads) } else { 0.0 };
+        let mountain_village = (15..1000).contains(&site.population) && slopes::eligible(site, config, surface, kind);
+        let ahead = if relaxable && (!kind.small() || fixed || mountain_village) {
+            footprint::slope_relax_ahead(&key_seed, site, config, surface, roads)
+        } else { 0.0 };
         #[cfg(not(target_arch = "wasm32"))]
         if ahead > 0.0 && std::env::var("URBAN_PROFILE").is_ok() {
             eprintln!("  slope_relax.ahead: {ahead}");
@@ -2025,7 +2165,7 @@ pub fn generate_quarters(
         // every other place keeps the normal layout and the flank ladder
         // below, unchanged.
         let mut sloped = false;
-        if slopes::eligible(site, config, surface, kind) && slopes::short(&layout) {
+        if slopes::eligible(site, config, surface, kind) && (slopes::short(&layout) || site.population < 1000) {
             // After a ward is added to a finished layout: access and programme
             // for each trial; the rest of the `finish` tail once, on the
             // adopted layout (`last`). `trim::finish` is not rerun: its
@@ -2134,7 +2274,16 @@ pub fn generate_quarters(
                 }
             }
         }
+        let baseline = if !site.neighbours.is_empty() {
+            edits::quarter_baseline::restore(&layout, &ParcelConfig::default()).map(|(layout, _)| layout)
+        } else {
+            None
+        };
         neighbours::settle(seed, &mut layout, site, surface);
+        if let Some(mut baseline) = baseline {
+            neighbours::settle(seed, &mut baseline, site, surface);
+            edits::quarter_baseline::retain(&mut layout, baseline);
+        }
         layout.claim = neighbours::claim(&layout);
         Ok(layout)
     });
@@ -2221,6 +2370,34 @@ pub(super) fn probe_parcels(seed: &str, layout: &Layout) -> Result<Partition, St
     laps.lap("consolidate");
     Ok(partition)
 }
+
+fn allocate_cadastre(
+    layout: &Layout,
+    partition: &mut Partition,
+    baseline: Option<&mut (Layout, Partition)>,
+) -> BTreeSet<String> {
+    let Some((original_layout, original)) = baseline else {
+        programme::allocate(layout, partition);
+        return BTreeSet::new();
+    };
+    let keep = edits::quarter_baseline::retained_lots(layout, &partition.parcels, original_layout, original);
+    programme::allocate(original_layout, original);
+    let reference = original.programme.as_ref().map(|pr| (pr, &keep));
+    programme::allocate_from_reference(layout, partition, reference);
+    if !keep.is_empty() {
+        // The allocator itself can release unbuilt village land to gardens.
+        let previous: std::collections::BTreeMap<_, _> = original.parcels.iter()
+            .map(|p| (p.id.as_str(), (&p.use_kind, &p.reason))).collect();
+        for p in &mut partition.parcels {
+            if keep.contains(&p.id) && let Some(&(use_kind, reason)) = previous.get(p.id.as_str()) {
+                p.use_kind.clone_from(use_kind);
+                p.reason.clone_from(reason);
+            }
+        }
+    }
+    keep
+}
+
 pub fn generate_parcels(
     seed: &str,
     layouts: &[Layout],
@@ -2252,10 +2429,15 @@ pub fn generate_parcels(
     }
     // Layouts are cut independently, in parallel; the first error in input
     // order wins, as in a serial loop.
-    par::map(layouts, |_, layout| -> Result<Partition, String> {
+    par::map(layouts, |_, input| -> Result<Partition, String> {
+        let source_config = config;
+        // Structural block edits reshape the actual blocks once, before the cut;
+        // the settings are then keyed by prepared index.
+        let prepared = edits::blocks::prepare(input, config);
+        let config = prepared.config.as_ref();
         // Cut the formal cadastre first; informal pockets use its remaining budget.
-        let full_layout = layout;
-        let formal = shanty::formal_layout(layout);
+        let full_layout = prepared.layout.as_ref();
+        let formal = shanty::formal_layout(full_layout);
         let layout = formal.as_ref();
         let culture = if config.culture == "site" {
             &layout.culture
@@ -2278,22 +2460,36 @@ pub fn generate_parcels(
         let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
         // One lap per call, each with its own duration (`URBAN_PROFILE`).
         let mut laps = network::Lap::new("parcels");
+        let mut baseline = None;
+        if input.structure.as_ref().is_some_and(|s| s.quarter_baseline.is_some())
+            && let Some((original, original_cfg)) = edits::quarter_baseline::restore(input, source_config)
+        {
+            let prepared = edits::blocks::prepare(&original, &original_cfg);
+            let original = prepared.layout.into_owned();
+            let lots = parcels::generate(&key_seed, &original, &prepared.config, &morph)?;
+            baseline = Some((original, lots));
+        }
         let mut partition = parcels::generate(&key_seed, layout, config, &morph)?;
         laps.lap("generate");
-        programme::allocate(layout, &mut partition);
+        let kept = allocate_cadastre(layout, &mut partition, baseline.as_mut());
         laps.lap("allocate.1");
         programme::camps::release_unbuilt(layout, &mut partition, false);
         laps.lap("release_unbuilt.1");
-        programme::consolidate(&mut partition);
+        programme::consolidate_cadastre(&mut partition, &kept);
         laps.lap("consolidate");
         // Edits address the occupied properties, including their merged yards.
         edits::apply_parcel_edits(layout, &mut partition);
         laps.lap("apply_parcel_edits");
-        programme::allocate(layout, &mut partition);
+        if let Some((original_layout, original)) = &mut baseline {
+            programme::camps::release_unbuilt(original_layout, original, false);
+            programme::consolidate(original);
+            edits::apply_parcel_edits(original_layout, original);
+        }
+        let kept = allocate_cadastre(layout, &mut partition, baseline.as_mut());
         laps.lap("allocate.2");
         programme::camps::release_unbuilt(layout, &mut partition, true);
         laps.lap("release_unbuilt.2");
-        programme::finish_lots(layout, &mut partition);
+        programme::finish_cadastre(layout, &mut partition, &kept);
         laps.lap("finish_lots");
         roles::face_quays(layout, &mut partition);
         laps.lap("face_quays");
@@ -2308,8 +2504,27 @@ pub fn generate_parcels(
         partition.enclosure = Some(enclosure::resolve(culture, layout.programme.as_ref().map(|p| p.population), config));
         shanty::allocate(full_layout, &mut partition);
         laps.lap("enclosure+shanty");
+        if let std::borrow::Cow::Owned(l) = &prepared.layout {
+            partition.prepared = Some(PreparedBlocks {
+                blocks: l.blocks.clone(),
+                edits: l.config.as_ref().and_then(|c| c.block_edits.clone()),
+            });
+        }
+        partition.warnings.extend(prepared.warnings.iter().cloned());
         Ok(partition)
     })
     .into_iter()
     .collect()
+}
+/// The layout a partition's lots index: `layout` with the partition's prepared
+/// blocks (structural block edits), as every later stage must read it.
+pub fn partition_layout(layout: &Layout, partition: &Partition) -> Layout {
+    let mut l = layout.clone();
+    if let Some(p) = &partition.prepared {
+        l.blocks = p.blocks.clone();
+        if p.edits.is_some() || l.config.as_ref().is_some_and(|c| c.block_edits.is_some()) {
+            l.config.get_or_insert_with(Default::default).block_edits = p.edits.clone();
+        }
+    }
+    l
 }

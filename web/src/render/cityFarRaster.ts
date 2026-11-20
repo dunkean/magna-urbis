@@ -10,6 +10,7 @@ import type { CityBuilding, CityBuildings, CityPalette, CityScene } from './city
 import { planBuildingColors } from './cityBuildingPalette';
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { toneStamp } from './groundTone';
+import { TURF_LOOK, turfCover, turfFarTone } from './city/turfLook';
 
 // The fade band is the look's (city/farTown.ts); re-exported for the hosts and tests that read it from here.
 export { FAR_TOWN_FADE, farTownAlpha, farTownBuildingsShown } from './city/look';
@@ -82,12 +83,15 @@ function signedArea(ring: readonly { x: number; y: number }[]): number {
   return s / 2;
 }
 
+/** A turf building on a natural ground stands in its earth bank (city/turfLook.ts). */
+const banked = (b: CityBuilding, palette: CityPalette, custom?: string): boolean => palette === 'terrain' && !custom && turfCover(b.material?.cover, b.material?.wall);
 /** Mean colour of a building seen from above on this palette: its roof (snow on it when the ground is snowed). */
 function buildingTone(b: CityBuilding, palette: CityPalette, custom?: string): [number, number, number] {
   const roof = rgbOf(custom ?? planBuildingColors(b, palette).roof),
     age = b.age ?? 0.5,
     k = ROOF_MEAN * (1 + (0.5 - age) * 0.07);
-  const c: [number, number, number] = [roof[0] * k, roof[1] * k, roof[2] * k];
+  const mean: [number, number, number] = [roof[0] * k, roof[1] * k, roof[2] * k],
+    c = banked(b, palette, custom) ? turfFarTone(mean) : mean;
   const snow = palette === 'terrain' ? mapGroundSnow(b.snowAltitude ?? b.building.ground_z_m) : 0;
   if (snow > 0) {
     const s = Math.min(1, snow) * 0.6;
@@ -124,7 +128,7 @@ function buildRaster(scene: CityScene, b: CityBuildings, palette: CityPalette, n
   // The footprints filled at the cell size, anti-aliased (the canvas gives each cell its built share), one path per
   // roof tone and block shade: overlapping buildings of one group unite, courts stay open.
   ctx0.setTransform(1 / cell, 0, 0, 1 / cell, -x0 / cell, -y0 / cell);
-  const groups = new Map<string, { color: string; path: Path2D }>();
+  const groups = new Map<string, { color: string; path: Path2D; bank: boolean }>();
   const ring = (path: Path2D, points: readonly { x: number; y: number }[], hole: boolean): void => {
     if (points.length < 3) return;
     const n = points.length,
@@ -144,16 +148,22 @@ function buildRaster(scene: CityScene, b: CityBuildings, palette: CityPalette, n
     if (!group) {
       const m = 1 + BLOCK_MOTTLE * (shade - 1),
         t = buildingTone(item, palette, custom).map(v => Math.round(Math.max(0, Math.min(255, v * m))));
-      groups.set(tk, (group = { color: `rgb(${t[0]},${t[1]},${t[2]})`, path: new Path2D() }));
+      groups.set(tk, (group = { color: `rgb(${t[0]},${t[1]},${t[2]})`, path: new Path2D(), bank: banked(item, palette, custom) }));
     }
     for (const sh of item.surface) {
       ring(group.path, sh.outer, false);
       for (const hole of sh.holes ?? []) ring(group.path, hole, true);
     }
   });
+  // A banked mound covers its footprint and the bank round it (a stroke twice the bank's width on the outline).
+  ctx0.lineJoin = 'round';
+  ctx0.lineWidth = 2 * TURF_LOOK.bank.widthM;
   for (const g of groups.values()) {
     ctx0.fillStyle = g.color;
     ctx0.fill(g.path, 'nonzero');
+    if (!g.bank) continue;
+    ctx0.strokeStyle = g.color;
+    ctx0.stroke(g.path);
   }
   ctx0.setTransform(1, 0, 0, 1, 0, 0);
   const shadeAlpha = palette === 'parchment' ? 0.2 : 0.3,

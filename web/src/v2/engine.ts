@@ -246,6 +246,7 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         // Local CUDA services select their own device; an unrelated browser driver
         // must not hold up their model loading.
         if (remoteNeural) compute = 'gpu';
+        else if (runtime!.backend === 'native' && runtime!.source === 'procedural') compute = 'cpu';
         else {
           report(onProgress, 'compute', 'Detecting CPU and WebGPU capabilities…', 0, 0);
           try {
@@ -874,11 +875,14 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     let leader = 0;
     const last: (Parameters<ProgressCallback>[0] | undefined)[] = [];
     const towns = places.map((place, i) => forSettlement(onProgress, i, n, place));
+    // The leader's rows also count the towns the other lanes have finished meanwhile.
+    let ready = 0;
+    const counted = (p: Parameters<ProgressCallback>[0]): Parameters<ProgressCallback>[0] => ({ ...p, detail: `Settlements ready: ${ready}/${n}` });
     const forward =
       (i: number) =>
       (p: Parameters<ProgressCallback>[0]): void => {
         last[i] = p;
-        if (i === leader) towns[i]?.(p);
+        if (i === leader) towns[i]?.(counted(p));
       };
     const { generateRustTown, releaseUrbanLanes } = await import('./rustUrban');
     let completed = false;
@@ -902,6 +906,8 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
         } catch (error) {
           waiters[i]({ ok: false, error });
         } finally {
+          ready++;
+          if (i !== leader && last[leader]) towns[leader]?.(counted(last[leader]!));
           work.complete(i);
         }
       }
@@ -912,7 +918,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
       for (let i = 0; i < n; i++) {
         leader = i;
         report(towns[i], 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, n);
-        if (last[i]) towns[i]?.(last[i]!);
+        if (last[i]) towns[i]?.(counted(last[i]!));
         const outcome = await outcomes[i];
         if (!outcome.ok) throw outcome.error;
         await buildTown(world, settings, places[i].key, undefined, stages.get(places[i].key), Promise.resolve(outcome.value));
@@ -929,6 +935,15 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
   return world;
 }
 
+/** Direct route edits already have valid placement: do not replan or replace the hand-edited network. */
+export async function updateRoadTowns(source: World, settings: V2Settings, keys: readonly string[], mode: 'access' | 'rebuild', onProgress?: ProgressCallback): Promise<World> {
+  const cities = source.debug?.v2RustCities as Record<string, import('./rustUrban').RustTownSnapshot> | undefined;
+  const external = keys.filter(key => cities?.[key]?.pendingRoadChanges?.adaptAccess !== false);
+  if (mode === 'access') return (await import('./roadTownAccess')).rebuildTownRoadAccesses(source, settings, external);
+  const accessed = external.length ? await (await import('./roadTownAccess')).rebuildTownRoadAccesses(source, settings, external) : source;
+  return (await import('./urbanRoadRebuild')).rebuildRoadBlocks(accessed, settings, keys, onProgress);
+}
+
 /** Strict native urban stages can be inspected and resumed independently. */
 export async function generateTownStage(regionWorld: World, settings: V2Settings, key: string, stage: V2TownStage, onProgress?: ProgressCallback): Promise<World> {
   validateSettings(settings);
@@ -939,6 +954,16 @@ export async function generateTownStage(regionWorld: World, settings: V2Settings
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;
+}
+
+/** Direct outline edits stay inside the chosen settlement; do not replan neighbouring towns or the countryside. */
+export async function updateContourTown(source: World, settings: V2Settings, key: string, onProgress?: ProgressCallback): Promise<World> {
+  validateSettings(settings);
+  assertRegion(source, settings);
+  const world = cloneV2WorldForGeneration(source),
+    previous = (source.debug?.v2RustCities as Record<string, import('./rustUrban').RustTownSnapshot> | undefined)?.[key];
+  await buildTown(world, settings, key, onProgress, previous?.stage ?? 'buildings');
+  return { ...world, terrain: source.terrain, landuse: source.landuse };
 }
 
 export { serializeProject, parseProject, validateSettings } from './project';

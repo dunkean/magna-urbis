@@ -9,6 +9,7 @@ import { tileRoadVisible, drawTileRoads } from '../src/render/tileNetworks';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveAppearance } from '../src/render/appearanceRecipe';
 import { GROUND_VARIANTS, STYLE_IDS, presetComposition, validateComposition, withGroundVariant, type CompositionRecipe } from '../src/render/composition';
+import { ROOF_MODES } from '../src/render/roofMode';
 
 const resolve = (composition: CompositionRecipe, target: 'view2d' | 'view3d' = 'view2d') => resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
 const edit = (id: Parameters<typeof presetComposition>[0], change: (c: CompositionRecipe) => void) => {
@@ -26,11 +27,12 @@ describe('render composition', () => {
   it('validates Minimal and resolves its independent path, palette and optional layers', () => {
     const c = presetComposition('minimal');
     expect(() => validateComposition(c)).not.toThrow();
-    expect(c.ground).toEqual({ look: 'minimal', variant: 'minimal', contours: false });
+    expect(c.ground).toEqual({ look: 'minimal', variant: 'minimal', contours: true });
     expect(c.effects.relief).toBe(false);
     expect(c.vegetation.look).toBe('none');
     expect(c.landuse).toMatchObject({ rural: 'off', urban: 'off' });
-    expect(c.buildings).toMatchObject({ visible: true, look: 'footprints', parcels: false });
+    expect(c.buildings).toMatchObject({ visible: true, look: 'footprints' });
+    expect(resolve(c).city.layers.parcels).toBe(false);
     expect(c.annotations).toEqual({ legend: false, cartouche: false });
     expect(
       Object.entries(c.text.groups)
@@ -64,14 +66,32 @@ describe('render composition', () => {
       const c = presetComposition(id);
       expect(() => validateComposition(c), id).not.toThrow();
       expect(GROUND_VARIANTS[c.ground.look]).toContain(c.ground.variant);
+      expect(c.buildings.roof).toBe('v2');
     }
+  });
+  it.each(ROOF_MODES)('validates and resolves the %s roof mode in both views', roof => {
+    const c = edit('parchment', recipe => {
+      recipe.buildings.roof = roof;
+    });
+    expect(() => validateComposition(c)).not.toThrow();
+    expect(resolve(c).composition.buildings.roof).toBe(roof);
+    expect(resolve(c, 'view3d').composition.buildings.roof).toBe(roof);
+    expect(moved(presetComposition('parchment'), c)).toEqual(roof === 'v2' ? [] : ['city']);
+  });
+  it('uses the V2 roof on recipes saved without a roof mode and rejects unknown modes', () => {
+    const c = presetComposition('parchment');
+    delete c.buildings.roof;
+    expect(() => validateComposition(c)).not.toThrow();
+    expect(resolve(c).composition.buildings.roof).toBe('v2');
+    expect(moved(presetComposition('parchment'), c)).toEqual([]);
+    c.buildings.roof = 'unknown' as never;
+    expect(() => validateComposition(c)).toThrow('buildings.roof');
   });
   it('draws the mixed recipe on the same ground with its canonical detailed 2D buildings', () => {
     const r = resolve(
       edit('parchment', c => {
         c.vegetation.look = 'procedural-canopy';
         c.landuse.rural = 'categorical';
-        c.networks.roads.look = 'ink';
         c.buildings.look = 'footprints';
       }),
     );
@@ -116,7 +136,7 @@ describe('render composition', () => {
       moved(
         base,
         edit('parchment', c => {
-          c.buildings.parcels = true;
+          c.buildings.roof = 'v1';
         }),
       ),
     ).toEqual(['city']);

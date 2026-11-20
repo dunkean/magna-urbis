@@ -26,6 +26,7 @@ const PARTS: readonly (keyof PageParts)[] = [
   'labelEditor',
   'riverEditor',
   'roadEditor',
+  'contourEditor',
   'townMover',
   'nativeNeuralManager',
   'neuralModelManager',
@@ -90,7 +91,6 @@ function initialWork(): PageWork {
     neuralSelectionRevision: 0,
     parcelMerge: undefined,
     workbenchLayout: undefined,
-    roadDisplay: undefined,
     smallPlaces: undefined,
     // Seeded by mountRecipeTracking (settings.ts) once the forms have mounted; touchRecipe never runs before.
     regionalParents: new WeakMap<V2Settings, string>(),

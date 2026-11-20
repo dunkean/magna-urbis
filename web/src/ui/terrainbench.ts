@@ -1,3 +1,6 @@
+import { coastProfile, DEFAULT_COAST_PROFILE } from '../../../rust/bridge/terrainCoastProfile';
+import { terrainCoastFields } from '../v2/terrainControlSchema';
+import { mountParameterForm, readSettingPath, writeSettingPath } from './parameterForm';
 import { setMapClimateZone } from '../render/seasonPalette';
 import { climateZoneOf, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { selectCityLod } from '../render/cityCanvas';
@@ -494,6 +497,7 @@ let settings: TerrainSettings = {
     return index < 0 ? mask : mask | (1 << index);
   }, 0),
   islandMode: (ISLAND_MODES as readonly string[]).includes(query.get('islands') ?? '') ? (query.get('islands') as IslandMode) : 'island',
+  coastProfile: Object.fromEntries(Object.entries(DEFAULT_COAST_PROFILE).map(([key, value]) => [key, finite(query.get(`coast_${key}`), value)])),
   mountainMix: bounded(finite(query.get('mix'), 0.5), 0, 1),
   erosion: bounded(finite(query.get('erosion'), 1), 0, 2),
   resolution: 512,
@@ -1455,6 +1459,14 @@ updateContourControl();
 let draftCoastMask = settings.coastMask ?? 0;
 const coastButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-coast]'));
 el<HTMLSelectElement>('islandMode').value = settings.islandMode!;
+const draftCoastProfile = { terrain: { coastProfile: coastProfile(settings) } };
+mountParameterForm(el('coastProfileControls'), terrainCoastFields, {
+  getValue: path => readSettingPath(draftCoastProfile, path),
+  setValue: (path, value) => {
+    writeSettingPath(draftCoastProfile, path, value);
+    parameterChanged();
+  },
+});
 function updateCoastControl(): void {
   const cavern = el<HTMLSelectElement>('relief').value === 'cavern';
   coastButtons.forEach(button => {
@@ -1731,6 +1743,7 @@ function shareQuery(): string {
   if (settings.relief !== 'cavern' && settings.coastMask) {
     params.set('coasts', COAST_DIRECTIONS.filter((_, i) => settings.coastMask! & (1 << i)).join(','));
     params.set('islands', settings.islandMode ?? 'island');
+    for (const [key, value] of Object.entries(coastProfile(settings))) params.set(`coast_${key}`, String(value));
   }
   if (settings.sketch) {
     if (appliedSketchRef?.sketch === settings.sketch) params.set('heightmap', appliedSketchRef.id);
@@ -2804,7 +2817,7 @@ try {
 
 function readSettings(stage: GenerationStage = 'all', reportError = true): TerrainSettings | undefined {
   if (stage === 'hydrology') return { ...settings, hydrology: readHydrology() };
-  if (stage === 'coasts') return { ...settings, coastMask: settings.relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode };
+  if (stage === 'coasts') return { ...settings, coastMask: settings.relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, coastProfile: { ...draftCoastProfile.terrain.coastProfile } };
   const source = el<HTMLSelectElement>('terrainSource').value as TerrainSource;
   const width = Number(input('width').value),
     sampleSpacing = Number(input('sampleSpacing').value),
@@ -2855,6 +2868,7 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
     environment,
     coastMask: relief === 'cavern' ? 0 : draftCoastMask,
     islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode,
+    coastProfile: { ...draftCoastProfile.terrain.coastProfile },
     erosion: Number(input('erosion').value),
     mountainMix: Number(input('mountainMix').value),
     resolution: 512,
@@ -2917,7 +2931,7 @@ function generate(stage: GenerationStage = 'all', inspection?: TerrainRequest['i
     stage === 'hydrology'
       ? { ...settings, hydrology: draft.hydrology, ...(isNeuralSource(settings.source) ? {} : { climate: draft.climate, climateValues: draft.climateValues }) }
       : stage === 'coasts'
-        ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode }
+        ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode, coastProfile: draft.coastProfile }
         : stage === 'relief'
           ? {
               ...settings,
@@ -3018,7 +3032,7 @@ function updateStageStates(): void {
     ['seed', 'width', 'sampleSpacing', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'fidelity', 'refine', 'coarseModel', 'baseModel', 'decoderModel'].some(
       key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings],
     );
-  const coastChanged = draft.coastMask !== settings.coastMask || draft.islandMode !== settings.islandMode;
+  const coastChanged = draft.coastMask !== settings.coastMask || draft.islandMode !== settings.islandMode || JSON.stringify(coastProfile(draft)) !== JSON.stringify(coastProfile(settings));
   const hydroChanged = JSON.stringify(draft.hydrology) !== JSON.stringify(settings.hydrology) || (!neural && climateChanged);
   el('reliefState').textContent = reliefChanged ? 'changed' : '';
   el('coastState').textContent = reliefChanged ? 'recalculate after terrain' : coastChanged ? 'changed' : '';

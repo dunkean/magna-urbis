@@ -22,9 +22,12 @@
  * Otherwise the exact Canvas 2D town (cityCanvas drawCitySteps) repaints the view at rest, as it does captures and exports.
  *
  * A tilted frame (render/world/contract.ts) shows the town plan on the terrain: the layer gives the map drape a
- * `DrapeSource` that draws the plan of a tile's square with the same renderer, without the far rasters and the
- * canopy, and without the buildings, which stand on the plan as volumes (render/world/buildingsLayer.ts); flat
- * footprints (the silhouette style, which has no volumes) stay on the plan.
+ * `DrapeSource` that draws the town of a tile's square with the same renderer, buildings included as the top view draws
+ * them (roofs in the town's look), without the far rasters and the canopy: the far town reads as the map draped on the
+ * relief, and near the camera the buildings stand on it as volumes (render/world/buildingsLayer.ts), each covering
+ * its own roof on the drape; where the volumes' budget or size drops them, the drape's roofs remain. The drape's state
+ * of the renderer has its colour tables computed in slices by `work` before a tile is drawn, like those of the top view. While the camera is tilted the layer prepares nothing that only the top view shows (building tiers
+ * of a large town, the tables and the warm-up of its levels of detail, far rasters, canopy).
  */
 import type { LiveCityEnv, LiveFrame, LiveLayer, LiveLayerStats } from '../../live/contract';
 import type { DrapeCanvas, DrapeSource } from '../../world/contract';
@@ -44,10 +47,12 @@ import { createCityGlRendererOn } from '../gl/renderer';
 import { cityBuildingAppearance } from '../../cityDrawOptions';
 import { townWaterColour } from '../../townWater';
 import { grainMeansReady, grainMeansStep } from '../../cityGlGrain';
+import { CoverGrainTexture } from '../../world/buildingsGrain';
 import type { YardBoundary } from '../../cityLotEnclosures';
 import { CanopyDiscs } from './canopyDiscs';
 import { FarRasters } from './farRasters';
 import { liveCityBlock, type LiveCityTowns } from './contract';
+import { countWork } from '../../workCount';
 
 interface Look {
   appearance: ResolvedAppearance;
@@ -70,11 +75,13 @@ const finite = (value: number | undefined, fallback: number, min: number, max: n
 const LEVEL_MPP: Record<CityLod, number> = { close: 0.4, near: 1.2, mid: 4, far: 16 };
 
 export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv, towns: LiveCityTowns): LiveLayer {
+  countWork('town.liveLayer');
   let renderer: CityGlSharedRenderer | undefined,
     broken = false,
     disposed = false;
   /** The merge in progress, the scene handed to the renderer, the buildings last handed to it, builds still running. */
-  let merging: Generator<void, { plan: CityScene; buildings: CityBuildings }> | undefined;
+  const planOnly = !!env.volumeBuildings?.();
+  let merging: Generator<void, { plan: CityScene; buildings?: CityBuildings }> | undefined;
   let requested: CityScene | undefined,
     built: CityBuildings | undefined,
     building = 0;
@@ -92,6 +99,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   const parallelLink = !!gl.getExtension('KHR_parallel_shader_compile'),
     far = new FarRasters(gl),
     canopy = new CanopyDiscs(gl);
+  /** Natural roofs: the Canvas grain tiles on the GPU (one family per `work` call) for the pans' grain marks, and the
+   * mean tone of the snow mantle (cityGlGrain.ts); a frame waits for both, as for its colour tables. */
+  const grainTiles = new CoverGrainTexture(gl);
+  let grainTilesDone = false;
+  const naturalGrain = (l: Look): boolean => l.base.palette === 'terrain' && !!l.base.live?.grain;
+  const grainReady = (l: Look): boolean => !naturalGrain(l) || (grainMeansReady() && grainTilesDone);
+  /** The live look of a frame: the grain tiles handed over. */
+  const liveOf = (l: Look): CityGlDrawOptions['live'] => (grainTilesDone && naturalGrain(l) ? { ...l.base.live!, grainMarks: grainTiles.texture } : l.base.live);
   let meshBytes = 0;
   /** Lot enclosure lists handed to the renderer. */
   let yardsFor: readonly (readonly YardBoundary[] | undefined)[] | undefined;
@@ -148,6 +163,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       buildings: buildingsShown(shown) && (footprint || roofPansShown(shown) || o.view === 'roles'),
       farRaster,
       canopyClearing: !!a.composition.vegetation.procedural,
+      urbanLanduse: a.composition.landuse.urban !== 'off',
       diagnostics: !!(layers.fronts || layers.axes || layers.access || layers.reserve || layers.allocated || layers.quarters || layers.centers || o.refusedParcels?.size),
       // The canals of the Canvas town are painted again at full strength over the composited town; this layer has no
       // pass over its group (contract.ts).
@@ -157,11 +173,15 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     rest = { look: l, level, dpr: frame.dpr, farRaster, snow, content: held, gaps: townRestGaps(state) };
     return rest.gaps;
   }
-  /** The map drape's tiles hold the plan of this revision: bumped whenever the plan a tile shows may have changed
-   * (look, scene, enclosures, water: all of them drop the prepared tables). */
-  let drapeRevision = 0;
+  /** The map drape's tiles hold the town of this revision: bumped whenever what a tile shows changes (the look, the plan
+   * of a new scene, a building tier uploaded, the lot enclosures, the water). */
+  let drapeRevision = 0,
+    drapeYardsAsMeshes = false;
+  /** The colour tables of the plan as the drape draws it at a level of detail, being computed in slices by `work`. */
+  let drapePreparing: { level: CityLod; steps: Generator<void, void> } | undefined;
   const unprepare = (): void => {
-    drapeRevision++;
+    drapePreparing?.steps.return();
+    drapePreparing = undefined;
     preparedLods.clear();
     warmedLods.clear();
     preparing?.steps.return();
@@ -178,7 +198,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     const roads = appearance.composition.networks.roads,
       buildingsVisible = vis.city !== false && city.visible;
     // As drawCitySteps decides it (the look's farTownShown), for the towns of city volumes.
-    const farTown = !!appearance.traits?.satelliteVariant && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
+    const farTown = !planOnly && !!appearance.traits?.satelliteVariant && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
     look = {
       appearance,
       visibility,
@@ -193,10 +213,12 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         palette: city.palette,
         layers: towns.layers(appearance, vis),
         buildingStyle: buildingAppearance.style,
+        smoothRoofs: buildingAppearance.smoothRoofs,
+        roof: buildingAppearance.roof,
         // The Canvas town ignores `painted` for city volumes, and the live look omits textures (flat colours).
         paintedBuildings: false,
         textured: false,
-        buildingsVisible,
+        buildingsVisible: buildingsVisible && !planOnly,
         diagnostic: buildingAppearance.diagnostic,
         refusedParcels: buildingAppearance.diagnostic === 'access' ? towns.refused() : undefined,
         colors: appearance.palette.colors,
@@ -206,13 +228,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
           emphasis: roads.emphasis ?? 1,
           waterColor: townWaterColour(appearance),
           // Natural grounds: the Canvas town lays its procedural grain unless textured materials replace it.
-          grain: !city.textured,
+          grain: !planOnly && !city.textured,
           lineWidth: finite(city.width, 0.6, 0, 5),
           farTown,
         },
       },
     };
     unprepare();
+    drapeRevision++;
     far.ready = false;
     checked = undefined;
     return look;
@@ -227,12 +250,16 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     viewport: viewportOf(frame),
     metresPerPixel: 1 / frame.view.scale,
     lod: frameLod,
+    live: liveOf(l),
     water: env.water?.(),
     target: { framebuffer: frame.target, width: frame.width, height: frame.height },
   });
   function dropExtras(deleteHandles: boolean): void {
     far.drop(deleteHandles);
     canopy.drop(deleteHandles);
+    if (deleteHandles) grainTiles.dispose();
+    else grainTiles.lost();
+    grainTilesDone = false;
     if (deleteHandles && warm) {
       gl.deleteFramebuffer(warm.framebuffer);
       gl.deleteRenderbuffer(warm.color);
@@ -260,6 +287,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     requested = built = undefined;
     yardsFor = undefined;
     unprepare();
+    drapeRevision++;
     generation++;
     building = 0;
     meshBytes = 0;
@@ -356,11 +384,30 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     gl.viewport(0, 0, frame.width, frame.height);
   }
 
-  /** The town plan of a tilted frame, for the map drape: everything of the town that lies flat on the ground. */
+  /** How the drape draws the town of a tile: the look's options for the tile's square. */
+  const drapeOptions = (l: Look, tile: DrapeCanvas, target?: WebGLFramebuffer): CityGlDrawOptions => {
+    const mpp = 1 / tile.scale;
+    return {
+      ...l.base,
+      layers: drapeYardsAsMeshes ? { ...l.base.layers, lotEnclosureMeshes: true } : l.base.layers,
+      live: liveOf(l),
+      viewport: tile.rect,
+      metresPerPixel: mpp,
+      lod: selectCityLod(mpp),
+      water: env.water?.(),
+      target: target && { framebuffer: target, width: tile.pixels, height: tile.pixels },
+    };
+  };
+  /** The town of a tilted frame, for the map drape: the plan and the buildings as the top view draws them. */
   const drape: DrapeSource = {
     revision(): number {
       // A new appearance is a new look, which drops the tables.
       lookNow();
+      const yardsAsMeshes = env.volumeYards?.() ?? false;
+      if (yardsAsMeshes !== drapeYardsAsMeshes) {
+        drapeYardsAsMeshes = yardsAsMeshes;
+        drapeRevision++;
+      }
       return drapeRevision;
     },
     ready(tile: DrapeCanvas): boolean {
@@ -368,26 +415,26 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       if (disposed || broken) return true;
       const l = lookNow();
       if (l.reason || l.opacity <= 0) return true;
-      if (!renderer || !renderer.programsLinked || !requested || !renderer.ready || renderer.pendingUpload) return false;
-      if (l.base.palette === 'terrain' && l.base.live?.grain && !grainMeansReady()) return false;
-      return preparedLods.has(selectCityLod(1 / tile.scale));
+      // The plan is all the drape draws: a building tier being packed or uploaded does not hold it back.
+      if (!renderer || !renderer.programsLinked || !requested || !renderer.ready) return false;
+      if (!grainReady(l)) return false;
+      const options = drapeOptions(l, tile);
+      if (!renderer.check(options)) return true;
+      // Its tables at this level are not kept: `work` computes them in slices, one state of the renderer at a time.
+      const level = options.lod!;
+      if (!preparing && drapePreparing?.level !== level) {
+        drapePreparing?.steps.return();
+        drapePreparing = { level, steps: renderer.prepareSteps(options) };
+      }
+      return false;
     },
     paint(tile: DrapeCanvas): void {
       const l = lookNow();
       if (disposed || broken || !renderer || l.reason || l.opacity <= 0) return;
       const target = tile.group();
       if (!target) return;
-      const mpp = 1 / tile.scale,
-        options: CityGlDrawOptions = {
-          ...l.base,
-          buildingsVisible: !!l.base.buildingsVisible && l.base.buildingStyle === 'silhouette',
-          viewport: tile.rect,
-          metresPerPixel: mpp,
-          lod: selectCityLod(mpp),
-          water: env.water?.(),
-          target: { framebuffer: target, width: tile.pixels, height: tile.pixels },
-        };
-      // The tables of the plan without buildings are the renderer's to keep per state; this is a work slice.
+      const options = drapeOptions(l, tile, target);
+      // `ready` saw the tables kept; a state that changed since is completed here, once.
       if (renderer.check(options)) renderer.prepare(options);
       renderer.draw(options);
       tile.putGroup(l.opacity);
@@ -406,8 +453,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     if (renderer.pendingUpload) return 'upload pending';
     const l = lookNow();
     if (l.reason) return l.reason;
-    // Natural roofs take the mean tone of the Canvas grain: its tile means are measured in work first.
-    if (l.base.palette === 'terrain' && l.base.live?.grain && !grainMeansReady()) return 'grain means';
+    // Natural roofs take the grain marks and the snow's mean tone: the tiles are uploaded and measured in work first.
+    if (!grainReady(l)) return 'roof grain';
     const level = selectCityLod(1 / frame.view.scale, lod);
     // The colour tables of the frame's level of detail are prepared in `work`; a draw never computes them.
     if (!preparedLods.has(level)) return 'tables not prepared';
@@ -437,10 +484,13 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       return !why;
     },
     restExact(frame) {
+      // The volume scene uses this GPU street and parcel plan in both cameras. Its drawn plan is authoritative.
+      if (planOnly) return !!content && !notReady(frame);
       // Strict: any element the Canvas town would paint differently keeps its repaint at rest. Read by the probes:
       // what is still missing for this frame.
       const held = content,
-        gaps = held && !notReady(frame) ? restGaps(frame, lookNow(), selectCityLod(1 / frame.view.scale, lod), held) : undefined;
+        l = lookNow(),
+        gaps = held && !notReady(frame) ? restGaps(frame, l, selectCityLod(1 / frame.view.scale, lod), held) : undefined;
       (globalThis as { __muLiveCityGaps?: readonly string[] }).__muLiveCityGaps = gaps;
       return !!gaps && gaps.length === 0;
     },
@@ -479,9 +529,10 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       if (!requested) {
         // The scene is merged and requested at rest only (slices); its polygons are then packed a slice per call.
         if (moving && !merging) return true;
-        merging ??= towns.sceneSteps();
+        merging ??= towns.sceneSteps(planOnly);
         const r = renderer;
         advance(merging, start, budgetMs, scene => {
+          countWork('town.sceneMerge');
           merging = undefined;
           requested = scene.plan;
           built = scene.buildings;
@@ -505,14 +556,18 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         meshBytes = renderer.stats().gpuBytes;
         stats.gpuBytes = bytes();
         unprepare();
+        // The plan or a building tier: the drape shows both.
+        drapeRevision++;
         yardsFor = undefined;
         content = undefined;
         return true;
       }
       if (!renderer.ready) return building > 0;
+      // What only the top view shows waits for it: a tilted frame has the plan in the map drape and the buildings as volumes.
+      const tilted = !!frame?.camera.tilted;
       // Large towns: the tier of a resting view (base items, or the detail of the visible tiles), as the exact town
       // swaps it. A moving view keeps the uploaded tier.
-      if (frame && towns.buildingsFor && !moving && !building) {
+      if (frame && !planOnly && towns.buildingsFor && !moving && !building && !tilted) {
         const next = towns.buildingsFor(viewportOf(frame), 1 / frame.view.scale);
         if (next && next !== built) {
           built = next;
@@ -524,16 +579,32 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       const l = lookNow(),
         water = env.water?.();
       if (l.reason) return building > 0;
-      // The grain tile means (one cover kind per call, a few ms), shared by every town layer.
-      if (l.base.palette === 'terrain' && l.base.live?.grain && grainMeansStep()) return true;
+      // The snow tile means (one kind per call, a few ms), shared by every town layer; then the grain tiles, one family per call.
+      if (naturalGrain(l) && grainMeansStep()) return true;
+      if (naturalGrain(l) && !grainTilesDone) {
+        grainTilesDone = grainTiles.step();
+        if (grainTilesDone) env.invalidate();
+        return true;
+      }
       if (preparedWater !== water) {
         unprepare();
+        drapeRevision++;
         preparedWater = water;
+      }
+      // The tables the map drape waits for, in slices (never while the layer's own are half computed).
+      if (drapePreparing && !preparing) {
+        const job = drapePreparing,
+          t = performance.now();
+        advance(job.steps, start, budgetMs, () => {
+          if (drapePreparing === job) drapePreparing = undefined;
+        });
+        stats.prepareMs = performance.now() - t;
+        return true;
       }
       const own = selectCityLod(1 / frame.view.scale, lod);
       // Colour tables, one level of detail at a time in slices: the view's level first, then the others, so a zoom
       // across a level finds its tables kept.
-      if (preparing || preparedLods.size < LODS.length) {
+      if (preparing || (preparedLods.size < LODS.length && !tilted)) {
         if (!preparing) {
           const level = preparedLods.has(own) ? LODS.find(x => !preparedLods.has(x))! : own;
           preparing = { level, steps: renderer.prepareSteps(optionsFor(frame, l, level)) };
@@ -548,7 +619,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         return true;
       }
       // Warm-up, one level per call (own level first), at rest or for the level the moving view needs.
-      const cold = !warmedLods.has(own) ? own : moving ? undefined : LODS.find(x => !warmedLods.has(x));
+      const cold = tilted ? undefined : !warmedLods.has(own) ? own : moving ? undefined : LODS.find(x => !warmedLods.has(x));
       if (cold) {
         const t = performance.now();
         try {
@@ -575,8 +646,10 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
           stats.gpuBytes = bytes();
           // New enclosure colour tables: prepared again (a few texels), then warmed.
           unprepare();
+          drapeRevision++;
           return true;
         }
+        if (tilted) return building > 0;
         if (canopy.set(towns.canopies())) {
           stats.gpuBytes = bytes();
           warmedLods.clear();

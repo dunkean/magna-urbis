@@ -10,6 +10,7 @@
  * (ink water) share their programs.
  */
 import { styleTraits } from '../../render/terrainStyle';
+import { getDisplayQuality } from '../../render/displayQuality';
 import { mapGpuLight, mapGpuLowEnd } from '../glContextRecovery';
 import type { TerrainLook } from './contract';
 
@@ -37,16 +38,30 @@ export const lookMode = (look: TerrainLook): number => (styleTraits(look.style).
  * later from a worker), not the field's arrival: deciding on the field compiled a forest-off pair first, then
  * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand.
  * `forestUploaded`: a forest field is on the GPU. */
+export const lightTerrainAllowed = (look: TerrainLook): boolean => styleTraits(look.style).satelliteVariant === 0 || mapGpuLight();
+/** A Satellite fast recipe simplifies buildings, while its complete ground and water keep full quality.
+ * Pass selection and shader uniforms must use the same value or encoded river regimes reach the screen as RGB. */
+export const terrainDrawQuality = (look: TerrainLook, quality: number): number => (lightTerrainAllowed(look) ? quality : 0);
+export const lightTerrainLook = (look: TerrainLook): boolean => (look.displayLight ?? (!look.mesh3d && getDisplayQuality() === 'light')) && lightTerrainAllowed(look);
 export function lookVariant(look: TerrainLook, forestUploaded: boolean): TerrainVariant {
+  // Mode zero eliminates the entire natural-material shader and the auxiliary crown/water pass at compile time.
+  // Captures pin displayLight=false; live world tiles use the same policy as the view, not capture quality.
+  if (lightTerrainLook(look)) {
+    const mode = styleTraits(look.style).elevation ? 1 : 0;
+    return { mode, v2: 0, forest: false, brushes: treeSymbolsOn(look, mode) };
+  }
   const mode = lookMode(look);
   return lightVariant({
     mode,
     v2: styleTraits(look.style).satelliteVariant,
     forest: !look.underdark && !styleTraits(look.style).fantasy && (look.independentCanopy === true || mode === 3) && (look.groundCover === true || forestUploaded),
-    brushes: styleTraits(look.style).forestBrushes && mode === 3,
+    // Mode 3: the painted forest brushes; mode 0: the paper map's tree symbols on the same atlas binding.
+    brushes: (styleTraits(look.style).forestBrushes && mode === 3) || treeSymbolsOn(look, mode),
   });
 }
+/** The variant draws the paper map's woods (render/treeSymbols.ts): only the shaded paper ground, mode 0. */
+export const treeSymbolsOn = (look: TerrainLook, mode: number): boolean => mode === 0 && !!look.treeSymbols;
 
 /** Speculative preparation of the next likely look: never on an integrated/software GPU or after a loss (a heavy
  * speculative link or pipeline can itself lose the context). */
-export const speculativePrewarmAllowed = (): boolean => !(mapGpuLowEnd() || mapGpuLight());
+export const speculativePrewarmAllowed = (): boolean => getDisplayQuality() !== 'light' && !(mapGpuLowEnd() || mapGpuLight());

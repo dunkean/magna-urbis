@@ -1,3 +1,51 @@
+## Alpha 0.3.11
+
+- Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.
+- Remove offshore sediment plumes while retaining the flared river mouths and their smooth transition into the sea.
+- Start with a fresh biome, relief and coherent coastline recipe; enable “Reload previous map at startup” in Settings to restore the last saved map instead. Explicitly opened maps keep their own recipe.
+- Synchronize visible climate and relief choices with the fresh startup recipe, using reliefs supported by the selected terrain engine.
+- Fix town composition rerolls crashing when final street and block processing changes their indices.
+- Preserve the parcels of untouched quarters when regenerating a quarter, and trim village lanes to their last served plot.
+- Release cadastral source geometry after baking, prepare complex overlay snapshots before navigation and reduce allocations while drawing strokes.
+- Reduce building buffer duplication, reuse visible chunk selections and streamline building cache uploads and eviction without changing their appearance.
+- Keep the same smooth GPU houses in flat and tilted views, without preparing a second Canvas house rendering on capable devices; retain Canvas for machines that need it.
+- Fix flickering house and parcel fences when panning or tilting the map.
+- Choose roof rendering independently: V1 with roof edges, V2 without traced edges, Flat without roof textures, or Minimal blocks without pitched roofs.
+- Preserve the shading of pitched roofs, including Newar houses, at medium zoom.
+- Keep loaded 3D trees stable while nearby forest blocks finish loading, including when the camera stays still.
+- Keep nearby trees detailed, restore foliage grain and canopy tones matching the satellite ground, and broaden conifer crowns.
+- Recompute urban planning bounds when a small settlement's population is increased, so mountain towns can reach nearby buildable land instead of retaining farm-sized bounds.
+- Keep nearby 3D trees visible when orbiting close to the ground or looking toward the horizon, and restore the terrain exaggeration slider with its current multiplier in the tilted-view toolbar.
+- Discard the previous map's 3D trees when regenerating with trees switched off, so re-enabling them cannot restore trees over the new sea or terrain.
+- Keep Satellite fast's terrain and vegetation identical to Satellite, while retaining simplified textured buildings.
+- Remove dashed town reserve outlines from Satellite and Satellite fast.
+- Publish regenerated towns in 2D without requiring a 3D switch, continue unfinished Canvas paints, and keep the central generation card visible alongside town-name spinners until the new display is complete.
+- Keep Atlas free of contour lines and urban ground fills, showing houses and roads only. Atlas, Cadastre and Topography keep only building volumes above their map in the tilted view.
+- Let each map appearance choose its river, road and town-plan rendering, keep a simple Show roads switch, and keep the toolbar steady while the view loads.
+- Reuse fixed-definition town and land-use rasters in Cadastre, and retained contour rasters in Topography and Parchment instead of redrawing contour triangles at each frame. Topography uses 1 m contours with 5 m index lines.
+- Reduce the density of Parchment's drawn trees.
+- Stabilize 3D tree populations and detail changes, fade in new tree blocks, reduce tree mesh and instance-buffer costs, thin dense tropical stands and shorten bare conifer trunks.
+- Keep coastal smoothing to a configurable median width and slow, seeded width variation along the shore, without cliff profiles or inland relief reshaping. The compact controls sit below the coast choices, with help in tooltips.
+- Tilt, fly and walk through the map with one continuous camera; lock the view to 2D and adjust the viewing depth.
+- Keep loaded towns and contour lines cached across map styles and camera changes, with sharper navigation and faster map preparation.
+- Draw parchment woods on the GPU and simplify light map styles; choose an initial style suited to the device's graphics capabilities.
+- Extend the tree viewing range to 5 km, fade distant trees and keep trunks off building footprints.
+- Edit roads and contour lines directly on the map, with persistent road controls and coordinated updates to affected town blocks and farmland.
+- Limit automatic settlements to 20,000 inhabitants, improve mountain villages and preserve manually placed foundations.
+- Confirm resets and town moves inside the app, and keep generation progress visible independently of settlement generation.
+- Open the four latest versions' release notes from the top bar.
+- Keep 3D harbour structures, boats and equipment on the displayed terrain and water instead of outdated planning heights, including exposed dry riverbeds; anchor pier piles in the bed.
+- Preserve dwellings when a major landmark is requested in a camp or another settlement with a single residential block.
+- Embed a compact city preview in an iframe using Azgaar burg data or city URL parameters, with automatic generation and a link to the full editor.
+- Explore varied city previews with a randomize button, and distinguish individual buildings with clearer outlines and contrasting landmark colors in the Minimal map style.
+- Pan and zoom inside city previews with mouse, touch and keyboard controls, including cached thumbnails, and reset the view to frame the city.
+- Harmonize building daylight in 2D and 3D: domes, pitched roofs, flat roofs and walls share softer, consistent shading across architectural styles.
+- Walk mode collides with house exteriors and fortifications, slides along walls and keeps gate passages open.
+- Fix startup and reloads getting stuck when the browser GPU driver does not answer. Native procedural generation no longer waits for an unused browser GPU.
+- Keep generation settings and imported heightmaps when reloading during an interrupted or unfinished restoration.
+
+macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
+
 ## Alpha 0.3.10
 
 Replaces 0.3.9, whose build stopped on an outdated test before publication (no 0.3.9 packages exist).

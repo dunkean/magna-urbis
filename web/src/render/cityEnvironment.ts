@@ -11,6 +11,7 @@ import { terrainStyle } from './terrainStyle';
 import { CONTOUR_INTERVAL } from './contours';
 import { underdarkCavernOf } from './underdarkCavern';
 import { underdarkLightingLook } from './underdarkLighting';
+import { cityBuildingAppearance } from './cityDrawOptions';
 
 export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composition.ambience, underdark: r.underdark, waterLook: r.composition.networks.water.look, waterVisible: r.ground.layers.water, groundCover: r.composition.vegetation.procedural });
 
@@ -48,8 +49,10 @@ export function cityForestInput(seed: string, climate: { temperature: number; pr
 
 const VEGETATION: readonly LandKind[] = ['forest', 'meadow', 'marsh', 'commons'];
 const atlasPlate = (r: ResolvedAppearance): boolean => r.composition.recipe.ground.look === 'atlas' && r.ground.traits.family === 'map';
-/** V2's vector overlay ownership: material/Illustrated grounds already paint their farmland. */
+/** V2's vector overlay ownership: full material/Illustrated grounds paint their farmland; light grounds need
+ * flat polygons here because their shader has neither occupation nor procedural crowns. Exports resolve full. */
 export function cityOverlayLandKinds(r: ResolvedAppearance): true | ((kind: LandKind) => boolean) {
+  if (r.quality === 'light' && !r.ground.traits.fantasy && !r.ground.traits.satelliteVariant) return true;
   const symbols = r.composition.vegetation.cartographic;
   // An atlas plate is physical geography: the hypsometric tints and relief are the map. Woods stay as a faint wash
   // (palette forestTint); fields, pastures and the other land-use polygons are not drawn.
@@ -67,12 +70,27 @@ export function cityForestSettings(query: URLSearchParams) {
 
 /** The vector water remains visible through opaque rural ground washes. */
 export const cityWaterCutsLand = (r: ResolvedAppearance): boolean => r.composition.networks.water.visible && r.composition.networks.water.look === 'ink';
+/** The dashed site reserve is a planning annotation, never part of a satellite ground. */
+export const cityOverlayPlanMarks = (r: ResolvedAppearance): boolean => r.city.plan && !r.ground.traits.satelliteVariant;
 /** A cached vector scene must be rebuilt when its layer ownership changes. */
-export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.stringify([r.ground.traits.family, r.ground.traits.fantasy, r.composition.vegetation.cartographic, atlasPlate(r)]);
+export const cityOverlayLandKey = (r: ResolvedAppearance): string => JSON.stringify([r.ground.traits.family, r.ground.traits.fantasy, r.composition.vegetation.cartographic, atlasPlate(r), r.quality === 'light']);
 
 /** Both 2D hosts use the raster tile renderer and the retained map extent for decorative field scale. */
-export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number) {
-  return { transparentBackground: true, raster: true, vegetation: r.vegetation.symbols, furrowReferenceSize: mapSize, mask: { landuse: cityOverlayLandKinds(r) }, urbanPlan: () => r.city.plan };
+export function cityCountrysideCanvasOptions(r: ResolvedAppearance, mapSize: number, current: () => ResolvedAppearance = () => r) {
+  const fullLanduse = cityOverlayLandKinds({ ...r, quality: 'full' });
+  return {
+    transparentBackground: true,
+    raster: true,
+    vegetation: r.vegetation.symbols,
+    furrowReferenceSize: mapSize,
+    mask: { landuse: cityOverlayLandKinds(r) },
+    ...(r.quality === 'light' && fullLanduse !== true ? { fullLanduse } : {}),
+    urbanPlan: () => cityOverlayPlanMarks(r),
+    buildingRoofs: () => {
+      const { roof, smoothRoofs } = cityBuildingAppearance(current());
+      return { roof, smoothRoofs };
+    },
+  };
 }
 
 /** Whole crowns remain readable at near town scale, including the narrower bench viewport. */

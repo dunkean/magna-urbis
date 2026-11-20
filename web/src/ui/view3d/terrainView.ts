@@ -12,7 +12,6 @@ import type { CavernField } from '../../render/underdarkCavern';
 import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { Building3dVisual, Building3dScene } from '../../render/urbanBuildingGeometry';
 import { UrbanBuildingPass } from '../urbanBuilding3d';
-import { UrbanBuildingGround } from '../urbanBuildingGround';
 import type { UrbanGroundCuts } from '../urbanGroundCuts';
 import type { Terrain3dBillboard, Terrain3dBillboards } from '../terrain3dBillboards';
 import { TerrainViewContext } from './terrain/context';
@@ -121,7 +120,7 @@ export class Terrain3d {
     const fungi = new UnderdarkFungi(context, resources, surface, rig, cavern, forest, waterAt);
     const billboards = new TerrainBillboards(context, resources, surface, rig, () => this.billboardsReady());
     this.parts = { status, surface, cavern, rig, buildings, forest, tree, meshes, tiles, trees, fungi, billboards };
-    this.navigation = new TerrainNavigation(context, rig, surface);
+    this.navigation = new TerrainNavigation(context, rig, surface, buildings);
     this.frames = new TerrainFrameLoop(context, this.parts, (frame, w, h, draws) => this.renderFrame(frame, w, h, draws), onRender);
     this.projection = new TerrainProjection(context, surface, rig, () => this.frames.displayedGrids, buildings);
     this.attach();
@@ -260,6 +259,8 @@ export class Terrain3d {
     const buildings = this.parts.buildings;
     if (!buildings.visible || !changes.length) return [];
     const missing = buildings.pass.replaceBuildings(changes);
+    const absent = new Set(missing);
+    for (const building of changes) if (!absent.has(building.id)) buildings.walkCollisions.replace(building);
     this.context.request();
     return missing;
   }
@@ -486,8 +487,7 @@ export class Terrain3d {
     context.events.abort();
     this.clearPatches();
     buildings.pass.dispose();
-    buildings.scene = undefined;
-    surface.buildingGround = new UrbanBuildingGround();
+    buildings.assign(undefined, buildings.appearance, false);
     forest.clear();
     this.disposeBackend();
     forest.forget();

@@ -98,7 +98,7 @@ export function terrainStageValidityKeys(settings: V2Settings): Map<string, stri
   keys.set('relief-refine', `${backend}|${signatures.get('sampling')}`);
   keys.set('cover-climate', stableKey([backend, signatures.get('hydrology'), terrain.forest, stepSeed(settings.options.seed, 'cover-climate')]));
   if (!terrain.procedural || settings.options.importedHeight || terrain.sketch || terrain.zones || terrain.modification) {
-    const { forest, hydrology, sketch, zones, modification, coastMask, islandMode, procedural, generalSeed, ...relief } = terrain;
+    const { forest, hydrology, sketch, zones, modification, coastMask, islandMode, coastProfile, procedural, generalSeed, ...relief } = terrain;
     const image = settings.options.importedHeight;
     const { coastAfter, coastIterations, coastIncision, coastThermal, coastDiffusion, enabled, ...generation } = procedural ?? {};
     const { coastCut, coasts, ...generationEnabled } = enabled ?? {};
@@ -113,7 +113,7 @@ export function terrainStageValidityKeys(settings: V2Settings): Map<string, stri
       image && [image.w, image.h, image.elevations ? fingerprintBytes(new Uint8Array(image.elevations.buffer, image.elevations.byteOffset, image.elevations.byteLength)) : fingerprintBytes(image.rgba), settings.options.heightScale, settings.options.importSea],
     ]);
     keys.set('relief-heightmap-fit', root);
-    const coast = stableKey([root, coastMask, islandMode, coastAfter, coastIterations, coastIncision, coastThermal, coastDiffusion, coastCut, coasts, stepSeed(settings.options.seed, 'relief-coast-cut')]);
+    const coast = stableKey([root, coastMask, islandMode, coastProfile, coastAfter, coastIterations, coastIncision, coastThermal, coastDiffusion, coastCut, coasts, stepSeed(settings.options.seed, 'relief-coast-cut')]);
     for (const id of keys.keys()) if (id.startsWith('relief-')) keys.set(id, id === 'relief-coast-cut' || id === 'relief-coasts' ? coast : root);
     keys.set('water-hydrology', stableKey([coast, hydrology]));
     keys.set('cover-climate', stableKey([coast, hydrology, forest, stepSeed(settings.options.seed, 'cover-climate')]));

@@ -41,7 +41,6 @@ export abstract class ListReplayer {
   /** Batch breaks per path list (see fills and strokes). */
   private fillRuns = new WeakMap<readonly RecordedPath[], Uint8Array>();
   private strokeRuns = new WeakMap<readonly RecordedPath[], Uint8Array>();
-  private directStrokeRuns = new WeakMap<readonly RecordedPath[], Uint8Array>();
 
   constructor(
     protected gl: WebGL2RenderingContext,
@@ -68,6 +67,16 @@ export abstract class ListReplayer {
     this.programs.clear();
     this.gl.deleteVertexArray(this.vao);
     this.vao = null;
+  }
+
+  /** The fixed sheet has only baked quads left. Release the last clip and VAO bindings too. */
+  releasePreparedLists(): void {
+    this.resources.dispose();
+    this.currentClip = undefined;
+    this.fillRuns = new WeakMap();
+    this.strokeRuns = new WeakMap();
+    this.gl.deleteVertexArray(this.vao);
+    this.vao = this.gl.createVertexArray();
   }
 
   /** State of the context this instance does not own that the winding stencil depends on (reset in `setup`). */
@@ -437,26 +446,33 @@ export abstract class ListReplayer {
       for (const entry of held) pinned.delete(entry);
       held.length = 0;
     };
-    const cache = direct ? this.directStrokeRuns : this.strokeRuns,
-      known = cache.get(op.paths),
-      breaks = known ?? new Uint8Array(op.paths.length);
+    const known = direct ? undefined : this.strokeRuns.get(op.paths),
+      breaks = !direct && !known ? new Uint8Array(op.paths.length) : undefined;
     const key = `${op.cap}/${op.join}`;
     let index = 0;
     try {
       for (const path of op.paths) {
-        const entry = this.resources.geometry(path, m, op.transform),
-          b = transformedBox(entry.geometry.bbox, m, pad);
-        if (!direct && (known ? known[index] : boxes.some(other => overlaps(other, b)) ? (breaks[index] = 1) : 0)) flush();
+        const entry = this.resources.geometry(path, m, op.transform);
+        // Direct strokes draw each fragment as it arrives. They need neither a coverage rectangle
+        // nor overlap checks. For stencil strokes only the first replay needs the individual boxes.
+        if (!direct) {
+          const b = transformedBox(entry.geometry.bbox, m, pad);
+          if (known?.[index]) flush();
+          else if (breaks && boxes.some(other => overlaps(other, b))) {
+            breaks[index] = 1;
+            flush();
+          }
+          if (breaks) boxes.push(b);
+          box = union(box, b);
+        }
         index++;
         const slices = this.resources.strokeSlices(entry, op, key);
         pinned.add(entry);
         held.push(entry);
         meshes.push(slices);
-        boxes.push(b);
-        box = union(box, b);
       }
       flush();
-      if (!known) cache.set(op.paths, breaks);
+      if (breaks) this.strokeRuns.set(op.paths, breaks);
     } finally {
       for (const entry of held) pinned.delete(entry);
     }
@@ -554,11 +570,13 @@ export abstract class ListReplayer {
     this.resetForeignState();
   }
   /** The ops of one list under `post`, inside the scissor in force. */
-  protected replayList(list: DisplayList, post: Mat): void {
+  protected replayList(list: DisplayList, post: Mat, continuing = false): void {
     // Each part starts from the full clip (the stencil clear of the first clip change respects the scissor).
     this.post = post;
-    this.currentClip = undefined;
-    this.clipBox = this.viewport;
+    if (!continuing) {
+      this.currentClip = undefined;
+      this.clipBox = this.viewport;
+    }
     this.stats.ops += list.ops.length;
     for (const op of list.ops) {
       this.clip(op.clip);

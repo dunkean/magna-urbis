@@ -1,6 +1,6 @@
 /**
  * World tiles of the live compositor on WebGPU (as gl/worldTiles.ts): the live redraw's passes for a world square at
- * `px`² device pixels, full quality, on the tiles' own opaque WebGPU canvas (configured once per device, kept at the
+ * `px`² device pixels, live display quality, on the tiles' own opaque WebGPU canvas (configured once per device, kept at the
  * tile size), with the tiles' own intermediate targets. The display canvas, its fallback presentation and the live
  * view's caches are untouched. The canvas must be copied in the same task (the current texture of a WebGPU canvas
  * expires with it). Never a stand-in pipeline, never a synchronous one.

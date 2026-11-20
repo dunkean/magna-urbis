@@ -91,6 +91,11 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.bindTexture(gl.TEXTURE_2D, c.lake ?? c.empty);
   gl.uniform1i(r('uLake'), 2);
   gl.uniform1f(r('uMapW'), look.mapWidth);
+  // Until the painted program links, a regime layer must use real water ink, never its encoded RGB.
+  const paint = c.painted && !c.overlay && !!c.programs.water(c.waitPainted),
+    flat = rivers.regime && !c.overlay && !paint,
+    color = waterUniforms(c.water).colors;
+  gl.uniform4f(r('uFlatWater'), color[0], color[1], color[2], flat ? 1 : 0);
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, c.overlay ?? c.empty);
   gl.uniform1i(r('uOverlay'), 3);
@@ -108,7 +113,7 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, target.texture);
-  if (c.painted && !c.overlay) {
+  if (paint) {
     paintWater(c, 0, rivers.regime);
     return;
   }

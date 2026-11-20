@@ -11,7 +11,7 @@ import { rasterizeSvg as imageOf } from '../../render/svgRaster';
 import { RetainedBudget } from '../../render/retainedBudget';
 import { getLanguage } from '../i18n';
 import { getDistanceUnit } from '../units';
-import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions } from '../../render/cityEnvironment';
+import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions, cityOverlayPlanMarks } from '../../render/cityEnvironment';
 import { displayQualityFor } from '../../render/displayQuality';
 import type { World, LandKind } from '../../gen/types';
 import type { City3dPhysicalGround as PhysicalGround } from '../../ui/city3d';
@@ -27,12 +27,14 @@ import { renderSvg } from '../../render/svg';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { settlementRaster, type SettlementRaster } from '../../../../rust/bridge/settlements';
 import { v1LandCanvas } from '../../render/v1Landscape';
+import { punchWoods } from '../../render/treeSymbols';
 import { riverSegments } from '../../ui/vectorWaterRender';
 import { hydrologySegments, hydrologyWaterColour } from '../../../../rust/bridge/hydrologyRender';
 import { passKeys } from '../passes/pass';
 import { buildScene, type SceneMask, type Scene } from '../../render/scene';
 import { drawRuralSemantic, ruralSemanticLegend, urbanSemanticLegend } from '../../render/semanticLayer';
 import { contourDrawOf } from '../../render/composition';
+import { hasRetainedInk } from '../../render/cartography/mapRecording';
 import type { SemanticLegendEntry } from '../../render/legend';
 import { sceneDirty, worldDirty, changedShapes, shapeKey, mergeRects } from '../../render/sceneDiff';
 import type { Rect } from '../../render/tileindex';
@@ -62,6 +64,12 @@ export class CartographyProducts implements Cartography {
   /** Dormant renderers of other looks. */
   private retained = new RetainedBudget();
   private landRaster?: { terrain: TerrainData; raster: SettlementRaster };
+  /** For the renderer's semantic hook (render/cartography/contract.ts `arrivals`, `provisional`): the water rasters
+   * (view, whole map) last seen and how many have arrived, the draws made without a product still being made. */
+  private semanticWaterView?: object;
+  private semanticWaterBase?: object;
+  private semanticWaterViews = 0;
+  private provisionalDraws = 0;
 
   constructor(
     private readonly map: MapState,
@@ -89,8 +97,22 @@ export class CartographyProducts implements Cartography {
     // Every course cuts the backdrop, dry beds included: their symbols are drawn in the vector water below.
     const water = { ...this.parts.water.waterDisplay(), season: undefined },
       rivers = !r.composition.networks.water.visible ? undefined : t.water ? riverSegments(t.water, water) : t.hydrology ? hydrologySegments(t.hydrology, hydrologyWaterColour(r.ground.style, r.palette.colors)) : undefined;
-    return v1LandCanvas(this.landRaster.raster, 'parchment', this.map.world!.options.biome, rivers);
+    const land = (this.land = v1LandCanvas(this.landRaster.raster, 'parchment', this.map.world!.options.biome, rivers));
+    // Woods painted by the ground (render/treeSymbols.ts): the ground draws this land under them, the overlay keeps it
+    // only around them, so they show through (its tints are still masked by the whole land: `land`).
+    const ground = this.parts.ground;
+    if (!this.woodsOnGround) {
+      ground.gpu?.setLandBackdrop(undefined);
+      return land;
+    }
+    ground.gpu!.setLandBackdrop(land);
+    return punchWoods(land, this.map.world!.landuse?.areas ?? [], this.map.world!.mapSize);
   }
+  /** The GPU ground paints the woods of a parchment look (render/treeSymbols.ts): the overlay leaves them out. Set when
+   * the overlay renderer is made, after the ground passes. */
+  private woodsOnGround = false;
+  /** The whole lit land of the last backdrop (the overlay's tint mask). */
+  private land?: HTMLCanvasElement;
   private shownWorld(): World {
     const world = this.map.world!,
       layers = this.map.exportLayers,
@@ -198,18 +220,22 @@ export class CartographyProducts implements Cartography {
     this.map.stats.cartographyUpdate = 'rebuilt';
     const map = this.map;
     const palette = { ...biomePalette(r.palette.mapStyle, world.options.biome), frameKind: 'none' as const, ...(layers.decor === false ? { grid: null } : {}) };
+    const semanticLook = (): string =>
+      `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}|v${this.map.volumeBuildings ? 1 : 0}${this.map.volumeBuildings ? '' : `|roof:${this.map.resolved?.composition.buildings.roof ?? r.composition.buildings.roof}`}`;
+    this.woodsOnGround = this.parts.ground.gpuActive && !!this.parts.ground.treeSymbols();
     this.renderer = createCanvasRenderer(this.overlay, shown, palette, {
       colors: r.palette.colors,
       separateText: true,
       textSources: () => this.parts.town.city?.scenes(),
-      ...cityCountrysideCanvasOptions(r, world.mapSize),
+      ...cityCountrysideCanvasOptions(r, world.mapSize, () => this.map.resolved ?? r),
       buildingClearings: () => buildingOccupationShapes({ buildings: clearingBuildings(this.map.world!) } as never)?.map(shape => shape.outer) ?? [],
+      volumeBuildings: () => this.map.volumeBuildings,
       transparentBackground: true,
       groundCaverns: () => this.parts.ground.gpuActive && this.map.resolved?.ground.traits.family === 'material',
       terrain: () => this.landBackdrop(),
       scene: built,
       mask,
-      urbanPlan: () => this.map.resolved?.city.plan !== false,
+      urbanPlan: () => !!this.map.resolved && cityOverlayPlanMarks(this.map.resolved),
       roadLook: r.composition.networks.roads.look,
       roadStyle: () => {
         const c = this.map.resolved!.composition;
@@ -217,17 +243,39 @@ export class CartographyProducts implements Cartography {
       },
       // Read per frame: a new look repaints the raster tiles through `key`, never the cartography pass.
       semantic: {
-        key: () =>
-          `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}:${this.parts.contours.revision}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey(), this.parts.water.vectorView?.region]) : ''}`,
+        createInk: gl => this.parts.contours.createLiveInk(gl),
+        key: () => `${semanticLook()}|${this.parts.contours.revision}|${this.parts.water.waterAboveLand() ? JSON.stringify(this.parts.water.vectorView?.region) : ''}`,
+        look: semanticLook,
+        arrivals: () => {
+          const water = this.parts.water;
+          // Tilted, the cut is the whole-map raster's (WaterProducts.cutWater): a raster of a top view is no arrival.
+          if (water.waterAboveLand() && ((!water.tilted && water.vectorView !== this.semanticWaterView) || water.vectorBase !== this.semanticWaterBase)) {
+            if (!water.tilted) this.semanticWaterView = water.vectorView;
+            this.semanticWaterBase = water.vectorBase;
+            this.semanticWaterViews++;
+          }
+          return this.parts.contours.revision + this.semanticWaterViews;
+        },
+        provisional: () => this.provisionalDraws,
         draw: (ctx, rect, mpp, quality) => {
           this.paintRural(ctx, rect, mpp, quality === 'light');
           this.parts.water.cutWater(ctx, rect);
+          // Contour paths still in the worker, or a finer water mask on its way (cutWater used the whole-map raster, or
+          // nothing, while the raster of the view is made): this draw is redone when they arrive. A mask that is final
+          // for the view (the view's raster, or the whole-map one with no request in flight) does not move.
+          const water = this.parts.water,
+            view = water.vectorView?.region,
+            covered = !!view && view.x <= rect.minX && view.y <= rect.minY && view.x + view.width >= rect.maxX && view.y + view.height >= rect.maxY;
+          const coarser = water.tilted ? !water.vectorBase : !covered && (!water.vectorBase || water.vectorPending);
+          if ((!hasRetainedInk(ctx) && this.parts.contours.pendingAt(mpp)) || (water.waterAboveLand() && !!water.vectors && coarser)) this.provisionalDraws++;
         },
         legend: () => this.semanticLegend(),
       },
       invalidate: () => this.map.invalidate(),
       brushes,
       vegetation: r.vegetation.symbols,
+      groundTrees: () => this.woodsOnGround,
+      land: () => (this.woodsOnGround ? this.land : undefined),
       get dpr() {
         return map.dpr;
       },
@@ -345,10 +393,10 @@ export class CartographyProducts implements Cartography {
     if (!inline && before && before.key !== this.semantic.key && this.renderer) return this.overlaysPass();
   }
   paintRural(ctx: CanvasRenderingContext2D, viewport: WorldBox, mpp: number, light = false): void {
-    this.parts.contours.paintContours(ctx, viewport, mpp, 1, light);
+    if (!hasRetainedInk(ctx)) this.parts.contours.paintContours(ctx, viewport, mpp, 1, light);
     const s = this.semantic;
     const lineView = this.map.resolved?.composition.variant === 'topographic';
-    if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.map.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes, patterns: !lineView, fieldStrips: lineView });
+    if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.map.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes, patterns: !light && !lineView, fieldStrips: lineView });
   }
   private semanticLegend(): SemanticLegendEntry[] {
     const s = this.semantic;

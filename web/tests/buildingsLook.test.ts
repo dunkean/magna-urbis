@@ -30,10 +30,29 @@ describe('building look regression', () => {
         .map(f => roofLight(f.normal))
         .sort((a, b) => a - b);
       expect(shades).toHaveLength(4);
-      expect(shades[3] - shades[0]).toBeGreaterThan(0.85);
-      for (let i = 1; i < shades.length; i++) expect(shades[i] - shades[i - 1]).toBeGreaterThan(0.025);
+      expect(shades[3] - shades[0]).toBeGreaterThan(0.1);
+      expect(shades[3] - shades[0]).toBeLessThan(0.3);
+      for (let i = 1; i < shades.length; i++) expect(shades[i] - shades[i - 1]).toBeGreaterThan(0.002);
     }
     expect(roofPlaneLight([0, 0, 1])).toBe(1);
+  });
+
+  it('keeps dome slopes close to flat roofs and continuous with walls', () => {
+    const pans = pieceRoof(square(6), { ...flat(6), roof: 'dome', rise_m: 6 }, 0);
+    expect(pans.length).toBeGreaterThan(4);
+    for (const { normal } of pans) {
+      const light = roofPlaneLight(normal);
+      expect(light).toBeGreaterThan(0.78);
+      expect(light).toBeLessThan(1.12);
+    }
+    // A dome skirt approaching a wall must keep its light, including across the
+    // old 3D roof/wall cutoff; a near-flat pan must also meet a flat roof smoothly.
+    for (const up of [0, 0.05, 1]) {
+      const a = Math.acos(up),
+        n = (angle: number) => [Math.sin(angle), 0, Math.cos(angle)];
+      expect(Math.abs(roofPlaneLight(n(a - 0.0001)) - roofPlaneLight(n(a + 0.0001)))).toBeLessThan(0.001);
+    }
+    expect(roofPlaneLight([-0.5, -0.5, 0.707])).toBeGreaterThan(roofPlaneLight([0.5, 0.5, 0.707]));
   });
 
   it('varies crown colours independently of the top lobe, with deterministic seeds', () => {

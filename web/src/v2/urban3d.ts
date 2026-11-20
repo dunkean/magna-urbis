@@ -1,6 +1,7 @@
 import { underdarkSceneLook } from '../render/underdarkLighting';
 import { cityGroundSettings, cityGroundLook } from '../render/cityEnvironment';
 import { retainedDecorOf } from './decorTerrain';
+import { v2WorldDecor } from './worldDecor';
 import { decorWater3d } from '../ui/decorWater3d';
 import { paintSeaCover } from '../render/seaCover';
 import { cityRegionalStreets, usesNativeHouseRenderer } from '../render/cityContract';
@@ -121,7 +122,6 @@ export function withV2ActivityScene(scene: PlacementBatch | undefined, activitie
   };
 }
 /** Physical raster reference is cached per terrain. Retained geographic domains are reused by 3D. */
-const rasterMetrics = new WeakMap<ReturnType<typeof rustSettlementRaster>, { minHeight: number; maxHeight: number; land: number }>();
 const rasterWater = new WeakMap<ReturnType<typeof rustSettlementRaster>, Float32Array>();
 const waterDisplays = new WeakMap<ReturnType<typeof rustSettlementRaster>, Map<string, City3dWaterDisplay>>();
 function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay {
@@ -258,9 +258,8 @@ export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
   return { ground, plan: city.plan, colors: city.colors, exaggeration: city.exaggeration, refinement: city.refinement, trees3d: city.trees3d, treeDistance: city.treeDistance };
 }
 /** Toolbar changes must not pin the ground or other controls to stale values from the previous style. */
-export function v2CityViewPatch(previous: City3dViewSettings, value: City3dViewSettings): AppearancePatch | undefined {
-  const controls = value;
-  const changed = Object.entries(controls).filter(([key, next]) => next !== previous[key as keyof City3dViewSettings]);
+export function v2CityViewPatch(previous: City3dViewSettings, value: Omit<City3dViewSettings, 'plan'>): AppearancePatch | undefined {
+  const changed = Object.entries(value).filter(([key, next]) => key !== 'plan' && next !== previous[key as keyof City3dViewSettings]);
   return changed.length ? { city: Object.fromEntries(changed) } : undefined;
 }
 /** All material modes consume one physical surface and the same display-only recipe. */
@@ -307,59 +306,6 @@ export function createV2Terrain3dSampler(world: World, settings: V2Settings, gro
   const sampler = createTerrainSurfaceSampler(base, look, [], true);
   if (!material?.displacement) return sampler;
   return createGroundDisplacementSampler(sampler, { seed: look.seed, sourceCell: look.sourceCell, macroSampler: createTerrainSurfaceSampler(base, { ...look, refine: false }, [], false), climate: [look.climate!.temperature, look.climate!.precipitation] });
-}
-export function v2WorldDecor(world: World, settings: V2Settings): Decor {
-  const retained = retainedDecorOf(world.terrain);
-  if (retained) return retained;
-  const raster = rustSettlementRaster(world);
-  let metrics = rasterMetrics.get(raster);
-  if (!metrics) {
-    const heights = raster.height;
-    let minHeight = Infinity,
-      maxHeight = -Infinity,
-      wet = 0;
-    for (let i = 0; i < heights.length; i++) {
-      minHeight = Math.min(minHeight, heights[i]);
-      maxHeight = Math.max(maxHeight, heights[i]);
-      if (raster.water[i]) wet++;
-    }
-    metrics = { minHeight, maxHeight, land: 1 - wet / heights.length };
-    rasterMetrics.set(raster, metrics);
-  }
-  const { minHeight, maxHeight, land } = metrics,
-    native = nativeTerrainOf(world),
-    configuration = effectiveTerrainSettings(settings, world.mapSize);
-  // The zone names the decor; its effective values travel with it.
-  const climate = configuration.climateZone ?? configuration.climate ?? 'temperate';
-  const query = new URLSearchParams({ climate });
-  for (const [key, value] of Object.entries(configuration.climateValues ?? {})) query.set(key, String(value));
-  return {
-    raster,
-    meta: {
-      format: 'magna-decor',
-      version: 1,
-      id: `v2-${world.seed}`,
-      label: 'Magna Urbis V2',
-      tags: { climate },
-      seed: world.seed,
-      width: world.mapSize,
-      query: query.toString(),
-      created: '',
-      settlements: [],
-      roadConfig: null,
-      roads: null,
-      waterSvg: '',
-      terrainDisplay: {
-        floor: native?.field?.floor ?? minHeight,
-        sourceCell: native ? native.width / (native.field?.n ?? native.resolution) : world.terrain.height.cell,
-        refine: configuration.refine !== false && configuration.relief !== 'cavern',
-        globalMinHeight: native?.globalMinHeight ?? minHeight,
-        globalMaxHeight: native?.globalMaxHeight ?? maxHeight,
-        motifSize: native?.motifSize ?? configuration.motifSize,
-      },
-      stats: { land, minHeight, maxHeight, riverKm: 0, roadKm: 0 },
-    },
-  };
 }
 /** Stage metadata can change without changing native geometry. Keep renderer
  * indexes when only progress/warnings/bookkeeping headers have changed. */

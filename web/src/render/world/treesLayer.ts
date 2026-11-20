@@ -1,48 +1,67 @@
-/**
- * The modelled trees of the tilted world view (volumes.ts): the satellite looks' near trees of the 3D view (sizes by
- * biome, social classes, giants, stems, crowns: ui/terrain3dTrees.ts), standing on TerrainHeights, drawn after the
- * terrain with depth.
- *
- * Instances are built per block of the map (treesBlocks.ts), once per content, in work slices of 24 m, the blocks a
- * frame wanted nearest first, and kept on the GPU within a byte budget. A frame draws the blocks within the tree
- * distance and in view: one instanced draw each, the lathe coarser with the distance (treesShader.ts) and far blocks
- * thinned to a prefix of their shuffled instances; beyond the distance, the painted crowns of the ground carry the
- * forest. A frame builds and uploads nothing, and allocates nothing.
- */
+/** Trees for the tilted world view. A streamed block uploads one instance buffer, shared by all three indexed
+ * silhouettes. Camera motion changes the lengths of its nested instance ranges. Each tree is drawn once.
+ * Hidden views retain their cache. New map terrain retires all blocks before the next draw. */
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
+import { TreeDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
-import { TREES_BLOCK, treeBlockSteps, treeDrawCount, treeInputsKey, treeLathe } from './treesBlocks';
-import { TREE_LATHES, WORLD_TREE_VS, latheVertices, worldTreeFs } from './treesShader';
-import { VOLUME_LIGHT, ViewVolume, hazeDistance, linkVolumeProgram, uniformsOf, volumesShown, type VolumeLayer } from './volumes';
+import type { Building3dScene } from '../urbanBuildingGeometry';
+import { treeBuildings, type TreeBuildings } from './treesBuildings';
+import { TreeContent, treeSamplesMatch, type TreeSamples } from './treesContent';
+import { TREES_BLOCK, TREE_SIZE_M, treeBlockSteps, treeCloseShare, treeDrawShare, treeInputsKey, treeSolidShare, type TreeBlock } from './treesBlocks';
+import { SATELLITE_TREES, TREE_MESHES, WORLD_TREE_FS, WORLD_TREE_VS, type TreePalette } from './treesShader';
+import { TREE_MAX_BLOCKS, treeMemoryBudget, treeTriangleBudget } from './treesRange';
+import { TreeCoverage } from './treesVisibility';
+import { VOLUME_LIGHT, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 
 export interface WorldTreesOptions {
   /** The inputs of the near trees of the satellite looks, as the 3D view makes them (ui/view3d/terrain/trees.ts),
    * without `height` (the trees stand on `terrain`); undefined: no modelled trees (another look, or switched off). A
-   * new object is compared by content (treeInputsKey) and by its water cover function. */
+   * publication triggers local content checks in work slices (TreeContent), without dropping installed blocks. */
   inputs(): Omit<TreeInputs, 'height'> | undefined;
   terrain(): TerrainHeights | undefined;
-  /** Tree distance (m), the 3D view's slider (clampTreeDistance). */
+  /** Identity of the published map terrain. Replacing a map retires its entire forest, even while trees are hidden. */
+  terrainSource?(): object | undefined;
+  /** Published town footprints; indexed once per scene, queried only while building a tree block. */
+  buildings?(): Building3dScene | undefined;
+  /** Tree distance (m), the 3D view's slider (clampTreeDistance): a horizontal radius around the target. */
   distance(): number;
+  /** The "3D trees" switch: off, nothing is drawn or built, and the blocks already built are kept for the next time. */
+  shown(): boolean;
   /** Night ambience: the trees take the night tint. */
   night?(): boolean;
+  /** The colours of the look (SATELLITE_TREES when absent): uniforms, so a change of look rebuilds no block. */
+  palette?(): TreePalette;
   /** GPU memory the blocks may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a frame (a wanted block was built). */
   invalidate(): void;
 }
+export interface WorldTreesLayer extends VolumeLayer {
+  /** This view still owes a streamed block or the end of its on-screen fade. */
+  pendingPresentation(): boolean;
+}
 
-const BUDGET_BYTES = 32 * 1024 * 1024;
-/** Blocks a frame may want or draw: (2 x 1500 m / 96 m + 2)^2. */
-const MAX_BLOCKS = 1100;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uLathe', 'uCrown', 'eye', 'treeLight', 'fogDistance', 'uNight', 'uShown'] as const;
-type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
-const CROWNS = TREE_LATHES.map(lathe => Int32Array.from({ length: 6 }, (_, i) => lathe.crown[i] ?? 5));
-const VERTICES = TREE_LATHES.map(latheVertices);
-/** The light in the 3D view's frame (x, up, y south), as the tree fragment shader reads it. */
-const LIGHT = [VOLUME_LIGHT[0], VOLUME_LIGHT[2], VOLUME_LIGHT[1]] as const;
+const STREAM_FADE_MS = 280;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uVisibility', 'uSegments', 'uFacing', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
+type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>; indices: WebGLBuffer; vertices: WebGLBuffer };
+const MESH_VERTICES = Float32Array.from(TREE_MESHES.flatMap(mesh => mesh.vertices));
+const INDICES = Uint16Array.from(
+  TREE_MESHES.flatMap((mesh, i) => {
+    const first = TREE_MESHES.slice(0, i).reduce((n, earlier) => n + earlier.vertices.length / 4, 0);
+    return mesh.indices.map(index => first + index);
+  }),
+);
+const INDEX_OFFSETS = TREE_MESHES.map((_, i) => TREE_MESHES.slice(0, i).reduce((n, mesh) => n + mesh.indices.length * Uint16Array.BYTES_PER_ELEMENT, 0));
+const TRIANGLES = TREE_MESHES.map(mesh => mesh.indices.length / 3);
+
+/** Horizontal distance from a point to the block whose north-west corner is (minX, minY). */
+const gapTo = (minX: number, minY: number, x: number, y: number): number => Math.hypot(Math.max(minX - x, 0, x - minX - TREES_BLOCK), Math.max(minY - y, 0, y - minY - TREES_BLOCK));
 
 interface Slot {
+  content: string;
+  checked: number;
+  samples: TreeSamples;
   vao?: WebGLVertexArrayObject;
   buffer?: WebGLBuffer;
   count: number;
@@ -52,35 +71,53 @@ interface Slot {
   low: number;
   high: number;
   top: number;
+  /** Ground under the block centre, used by the streamer's coarse visibility test. */
+  centreHeight: number;
+  centreRevision: number;
+  born: number;
+  /** Base instance currently bound in the VAO. */
+  first: number;
+  radius: number;
 }
 interface Building {
   key: number;
-  steps: Generator<void, Float32Array>;
-  ms: number;
+  content: string;
+  steps: Generator<void, TreeBlock>;
 }
 
-export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: WorldTreesOptions): VolumeLayer {
-  /** `instances` drawn, `blocks` drawn, `bytes` on the GPU, `blockMs` build time of the last block, `sliceMs` the
-   * longest work slice so far. */
-  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, blocks: 0, bytes: 0, blockMs: 0, sliceMs: 0 };
+export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: WorldTreesOptions): WorldTreesLayer {
+  const stats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0, instances: 0, bytes: 0 };
+  const diagnostics = layerDiagnosticsEnabled() ? new TreeDiagnostics(stats) : undefined;
   const volume = new ViewVolume();
+  const coverage = new TreeCoverage();
   const slots = new Map<number, Slot>();
-  const wantKey = new Float64Array(MAX_BLOCKS),
-    wantPriority = new Float64Array(MAX_BLOCKS),
-    drawn: Slot[] = [],
-    drawnKey = new Float64Array(MAX_BLOCKS),
-    drawnLathe = new Int8Array(MAX_BLOCKS),
-    drawnCount = new Int32Array(MAX_BLOCKS);
+  const wantKey = new Float64Array(TREE_MAX_BLOCKS),
+    wantPriority = new Float64Array(TREE_MAX_BLOCKS);
+  // Counts are nested prefixes of one stable order: close trees, all solid trees, then all visible trees.
+  const visible: Slot[] = [],
+    visibleKey = new Float64Array(TREE_MAX_BLOCKS),
+    visibleAll = new Int32Array(TREE_MAX_BLOCKS),
+    visibleSolid = new Int32Array(TREE_MAX_BLOCKS),
+    visibleClose = new Int32Array(TREE_MAX_BLOCKS),
+    visibleWeight = new Float64Array(TREE_MAX_BLOCKS);
+  let visibleCount = 0;
   let wanted = 0,
-    drawnCountTotal = 0,
     tick = 0,
-    bytes = 0;
-  let plain: Program | undefined, fading: Program | undefined;
+    bytes = 0,
+    presentationPending = false;
+  let program: Program | undefined;
+  /** The program the driver is linking (startVolumeProgram), from the first work slice on. */
+  let linking: WebGLProgram | undefined;
   let source: Omit<TreeInputs, 'height'> | undefined,
     sourceKey = '',
     heights: TerrainHeights | undefined,
     inputs: TreeInputs | undefined;
   let building: Building | undefined;
+  let scene: Building3dScene | undefined, buildings: TreeBuildings | undefined;
+  let revision = 0,
+    reliefRevision = 0,
+    content: TreeContent | undefined;
+  let terrainSource: object | undefined;
   let distance = NaN,
     limits: TreeLimits = treeLimits(600);
 
@@ -93,19 +130,32 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     for (const slot of slots.values()) drop(slot);
     slots.clear();
     building = undefined;
-    wanted = drawnCountTotal = 0;
+    wanted = visibleCount = 0;
+    visible.length = 0;
+    presentationPending = false;
   };
 
-  /** The inputs of the page: other trees or another terrain start the blocks again. */
+  /** A new publication checks local content in work slices. Installed blocks remain visible until replaced. */
   const sync = (): void => {
     const next = options.inputs(),
-      nextHeights = options.terrain();
+      nextHeights = options.terrain(),
+      nextScene = options.buildings?.(),
+      nextSource = options.terrainSource?.();
+    if (nextSource !== terrainSource) {
+      dropAll();
+      terrainSource = nextSource;
+    }
     const key = next ? treeInputsKey(next) : '';
-    if (key === sourceKey && next?.water === source?.water && nextHeights === heights) return;
-    dropAll();
+    if (next === source && key === sourceKey && nextHeights === heights && nextScene === scene) return;
+    building = undefined;
+    revision++;
+    if (nextHeights !== heights) reliefRevision++;
     source = next;
     sourceKey = key;
     heights = nextHeights;
+    scene = nextScene;
+    buildings = treeBuildings(scene);
+    options.invalidate();
     if (!next || !nextHeights) {
       inputs = undefined;
       return;
@@ -114,20 +164,45 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       unit = relief.exaggeration > 0 ? 1 / relief.exaggeration : 1;
     // The builder wants the ground in metres (0 and below: the sea, no tree); TerrainHeights gives it as drawn.
     inputs = { ...next, height: (x, y) => relief.heightAt(x, y) * unit };
+    content = new TreeContent(inputs, buildings);
   };
 
-  const upload = (key: number, data: Float32Array): void => {
-    const count = data.length / TREE_STRIDE,
-      slot: Slot = { count, bytes: data.byteLength, used: tick, low: Infinity, high: -Infinity, top: 0 };
-    for (let i = 0; i < data.length; i += TREE_STRIDE) {
+  const upload = (key: number, block: TreeBlock, signature: string): void => {
+    const previous = slots.get(key);
+    const relief = heights!;
+    const data = block.data,
+      count = block.count,
+      centreHeight = relief.heightAt(((key % 65536) + 0.5) * TREES_BLOCK, (Math.floor(key / 65536) + 0.5) * TREES_BLOCK),
+      slot: Slot = {
+        content: signature,
+        checked: revision,
+        samples: block.samples,
+        count,
+        bytes: data.byteLength,
+        used: tick,
+        low: Infinity,
+        high: -Infinity,
+        top: 0,
+        centreHeight,
+        centreRevision: reliefRevision,
+        radius: 0,
+        born: previous?.count ? previous.born : performance.now(),
+        first: 0,
+      };
+    for (let i = 0; i < count * TREE_STRIDE; i += TREE_STRIDE) {
       slot.low = Math.min(slot.low, data[i + 2]);
       slot.high = Math.max(slot.high, data[i + 2]);
       slot.top = Math.max(slot.top, data[i + 4]);
+      slot.radius = Math.max(slot.radius, data[i + 3]);
     }
     if (count) {
       slot.vao = gl.createVertexArray()!;
       slot.buffer = gl.createBuffer()!;
       gl.bindVertexArray(slot.vao);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, program!.indices);
+      gl.bindBuffer(gl.ARRAY_BUFFER, program!.vertices);
+      gl.enableVertexAttribArray(3);
+      gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       for (let i = 0; i < 3; i++) {
@@ -139,85 +214,121 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
       bytes += data.byteLength;
     } else slot.bytes = 0;
+    if (previous) drop(previous);
     slots.set(key, slot);
   };
 
   /** Over budget: the blocks drawn least recently go, never one of the last frame. */
-  const evict = (): void => {
-    const budget = options.budgetBytes ?? BUDGET_BYTES;
-    while (bytes > budget) {
-      let oldest = -1,
-        used = tick;
-      for (const [key, slot] of slots)
-        if (slot.bytes && slot.used < used) {
-          used = slot.used;
-          oldest = key;
-        }
-      if (oldest < 0) return;
-      drop(slots.get(oldest)!);
-      slots.delete(oldest);
+  const evict = (deadline: number): boolean => {
+    const budget = options.budgetBytes ?? treeMemoryBudget(distance);
+    if (bytes <= budget) return false;
+    // Large ranges can retain thousands of blocks. Order once instead of scanning the whole cache for every
+    // eviction; lowering the distance must not turn reclamation into a quadratic, unbounded work slice.
+    const stale = [...slots].filter(([, slot]) => slot.bytes && slot.used < tick).sort((a, b) => a[1].used - b[1].used);
+    for (const [key, slot] of stale) {
+      if (bytes <= budget) return false;
+      if (performance.now() >= deadline) return true;
+      drop(slot);
+      slots.delete(key);
     }
+    return false;
   };
 
-  const link = (fade: boolean): Program => {
-    const program = linkVolumeProgram(gl, WORLD_TREE_VS, worldTreeFs(fade), 'World trees');
-    return { program, u: uniformsOf(gl, program, UNIFORMS) };
+  /** The program once the driver has linked it: started in the first visible work slice and polled in later ones;
+   * false while it links. Hidden trees do not compile a program or build blocks. */
+  const link = (): boolean => {
+    if (program) return true;
+    linking ??= startVolumeProgram(gl, WORLD_TREE_VS, WORLD_TREE_FS);
+    if (!volumeProgramLinked(gl, linking, 'World trees')) return false;
+    const indices = gl.createBuffer()!,
+      vertices = gl.createBuffer()!;
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+    gl.bufferData(gl.ARRAY_BUFFER, MESH_VERTICES, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, INDICES, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    program = { program: linking, u: uniformsOf(gl, linking, UNIFORMS), indices, vertices };
+    linking = undefined;
+    options.invalidate();
+    return true;
   };
   const slice = (started: number, pending: boolean): boolean => {
-    const ms = performance.now() - started;
-    if (ms > stats.sliceMs) stats.sliceMs = ms;
+    diagnostics?.slice(started);
     return pending;
   };
 
   return {
     name: 'trees',
     tilts: true,
+    tiltOnly: true,
     ready: () => true,
-    restExact: frame => !volumesShown(frame.camera) || (!wanted && !building),
+    pendingPresentation: () => presentationPending && options.shown(),
     work(budgetMs, frame) {
       const started = performance.now();
+      const terrain = options.terrain();
+      // Keep both the installed blocks and any partially built block while hidden. Even a stale wanted list must
+      // not build after the camera zooms out or the switch turns off, before the next draw clears that list.
+      if (!options.shown() || !frame || !volumesDrawn(frame.camera) || !terrain || coverage.opacity(frame, terrain, options.distance()) === 0) return false;
       sync();
-      if (!inputs) return false;
-      plain ??= link(false);
-      fading ??= link(true);
+      const linked = link();
+      if (!inputs) return !linked;
+      if (!linked) return slice(started, true);
       for (;;) {
+        if (performance.now() - started > budgetMs) return slice(started, true);
         if (!building) {
           // The nearest block the last frame wanted that is not built yet.
           let best = -1;
-          for (let i = 0; i < wanted; i++) if (!slots.has(wantKey[i]) && (best < 0 || wantPriority[i] < wantPriority[best])) best = i;
+          for (let i = 0; i < wanted; i++) if (slots.get(wantKey[i])?.checked !== revision && (best < 0 || wantPriority[i] < wantPriority[best])) best = i;
           if (best < 0) {
             wanted = 0;
             break;
           }
           const key = wantKey[best];
-          building = { key, steps: treeBlockSteps(inputs, key % 65536, Math.floor(key / 65536)), ms: 0 };
           wantKey[best] = wantKey[wanted - 1];
           wantPriority[best] = wantPriority[wanted - 1];
           wanted--;
+          const bx = key % 65536,
+            by = Math.floor(key / 65536),
+            signature = content!.key(bx, by),
+            slot = slots.get(key);
+          if (slot && slot.content === signature && treeSamplesMatch(slot.samples, inputs)) {
+            slot.checked = revision;
+            if (slot.centreRevision !== reliefRevision) {
+              slot.centreRevision = reliefRevision;
+              slot.centreHeight = heights!.heightAt((bx + 0.5) * TREES_BLOCK, (by + 0.5) * TREES_BLOCK);
+            }
+            stats.reused = (stats.reused ?? 0) + 1;
+            continue;
+          }
+          building = { key, content: signature, steps: treeBlockSteps(inputs, bx, by, buildings) };
+          diagnostics?.startBlock();
         }
         if (performance.now() - started > budgetMs) return slice(started, true);
-        const unit = performance.now(),
-          step = building.steps.next();
-        building.ms += performance.now() - unit;
+        const step = diagnostics ? diagnostics.step(building.steps) : building.steps.next();
         if (step.done) {
-          upload(building.key, step.value);
-          stats.blockMs = building.ms;
+          upload(building.key, step.value, building.content);
+          diagnostics?.built();
           building = undefined;
           if (frame?.camera.tilted) options.invalidate();
         }
       }
-      evict();
-      return slice(started, false);
+      return slice(started, evict(started + budgetMs));
     },
     draw(frame: LiveFrame) {
       const started = performance.now(),
         camera = frame.camera,
-        shown = volumesShown(camera);
+        standing = volumesDrawn(camera) && options.shown();
       tick++;
-      stats.drawCalls = stats.triangles = stats.instances = stats.blocks = 0;
-      drawnCountTotal = 0;
+      stats.drawCalls = stats.triangles = stats.instances = 0;
+      diagnostics?.selection();
+      if (standing) sync();
       const relief = heights;
-      if (shown > 0 && relief && inputs && plain && fading) {
+      const opacity = standing && relief ? coverage.opacity(frame, relief, options.distance()) : 0;
+      stats.opacity = opacity;
+      presentationPending = opacity > 0 && !!inputs && !program;
+      if (opacity > 0 && relief && inputs && program) {
         if (options.distance() !== distance) {
           distance = options.distance();
           limits = treeLimits(distance);
@@ -225,95 +336,155 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         const tx = camera.target[0],
           ty = camera.target[1],
           tz = camera.target[2],
-          ex = camera.eye[0],
-          ey = camera.eye[1],
+          // The eye's ground point: the trees in front of it are the ones the user stands among when the camera is low.
+          gx = camera.eye[0],
+          gy = camera.eye[1],
           rise = camera.rise,
           drawnPerMetre = relief.exaggeration * rise,
-          far = limits.far;
-        // An eye higher above the ground than the tree distance sees no modelled tree (the 3D view's rule).
-        const lift = camera.eye[2] - relief.heightAt(ex, ey) * rise;
+          far = limits.far,
+          // CSS pixels per metre at a depth of one metre, and the closest depth a block is measured at.
+          focal = camera.focal / frame.dpr,
+          closest = Math.max(camera.near, 0.5),
+          streamRadius = Math.hypot(TREES_BLOCK * 0.71 + 16, 80 * rise);
         wanted = 0;
-        if (lift <= far) {
-          volume.set(camera);
-          const last = Math.ceil(relief.width / TREES_BLOCK) - 1,
-            bx0 = Math.max(0, Math.floor((ex - far) / TREES_BLOCK)),
-            bx1 = Math.min(last, Math.floor((ex + far) / TREES_BLOCK)),
-            by0 = Math.max(0, Math.floor((ey - far) / TREES_BLOCK)),
-            by1 = Math.min(last, Math.floor((ey + far) / TREES_BLOCK));
-          for (let by = by0; by <= by1; by++)
-            for (let bx = bx0; bx <= bx1; bx++) {
-              const minX = bx * TREES_BLOCK,
-                minY = by * TREES_BLOCK,
-                near = Math.hypot(Math.max(minX - ex, 0, ex - minX - TREES_BLOCK), Math.max(minY - ey, 0, ey - minY - TREES_BLOCK));
-              if (near > far) continue;
-              const key = by * 65536 + bx,
-                slot = slots.get(key),
-                x = minX + TREES_BLOCK / 2 - tx,
-                y = minY + TREES_BLOCK / 2 - ty;
-              if (!slot) {
-                // Not built: wanted, those in view first (the ground under its centre stands for its trees).
-                if (wanted < MAX_BLOCKS) {
-                  const z = relief.heightAt(x + tx, y + ty) * rise - tz;
-                  wantKey[wanted] = key;
-                  wantPriority[wanted++] = near + (volume.sees(x, y, z, TREES_BLOCK * 0.71 + 60) ? 0 : 1e6);
-                }
-                continue;
+        visibleCount = 0;
+        volume.set(camera);
+        let demand = 0;
+        const last = Math.ceil(relief.width / TREES_BLOCK) - 1,
+          bx0 = Math.max(0, Math.floor((Math.min(tx, gx) - far) / TREES_BLOCK)),
+          bx1 = Math.min(last, Math.floor((Math.max(tx, gx) + far) / TREES_BLOCK)),
+          by0 = Math.max(0, Math.floor((Math.min(ty, gy) - far) / TREES_BLOCK)),
+          by1 = Math.min(last, Math.floor((Math.max(ty, gy) + far) / TREES_BLOCK));
+        for (let by = by0; by <= by1; by++)
+          for (let bx = bx0; bx <= bx1; bx++) {
+            const minX = bx * TREES_BLOCK,
+              minY = by * TREES_BLOCK;
+            // Within the tree distance of the target or of the eye's ground point, horizontally.
+            if (Math.min(gapTo(minX, minY, tx, ty), gapTo(minX, minY, gx, gy)) > far) continue;
+            const key = by * 65536 + bx,
+              slot = slots.get(key),
+              centreX = minX + TREES_BLOCK / 2,
+              centreY = minY + TREES_BLOCK / 2,
+              x = centreX - tx,
+              y = centreY - ty,
+              z = (slot?.centreRevision === reliefRevision ? slot.centreHeight : relief.heightAt(centreX, centreY)) * rise - tz;
+            if (!volume.sees(x, y, z, streamRadius)) continue;
+            const depth = volume.depth(x, y, z),
+              pixels = (TREE_SIZE_M * focal) / Math.max(depth, closest),
+              density = treeDrawShare(pixels),
+              solidShare = treeSolidShare(pixels),
+              closeShare = treeCloseShare(pixels);
+            if (!density) continue;
+            // Reserve once from the view, including empty and unbuilt blocks.
+            // The local mesh cost gives near, solid crowns most of the budget.
+            const weight = density * (TRIANGLES[2] + solidShare * (TRIANGLES[1] - TRIANGLES[2]) + closeShare * (TRIANGLES[0] - TRIANGLES[1])) * (0.7 + 0.3 * solidShare);
+            demand += weight;
+            if (!slot || slot.checked !== revision) {
+              if (wanted < TREE_MAX_BLOCKS) {
+                wantKey[wanted] = key;
+                wantPriority[wanted++] = depth;
               }
-              if (!slot.count) continue;
-              const low = slot.low * drawnPerMetre,
-                high = slot.high * drawnPerMetre + slot.top * rise,
-                z = (low + high) / 2 - tz;
-              if (!volume.sees(x, y, z, Math.hypot(TREES_BLOCK * 0.71, (high - low) / 2))) continue;
-              const lathe = treeLathe(near, limits),
-                count = treeDrawCount(slot.count, near, limits);
-              if (lathe < 0 || !count || drawnCountTotal >= MAX_BLOCKS) continue;
-              slot.used = tick;
-              drawn[drawnCountTotal] = slot;
-              drawnKey[drawnCountTotal] = key;
-              drawnLathe[drawnCountTotal] = lathe;
-              drawnCount[drawnCountTotal++] = count;
+              if (!slot) continue;
             }
-        }
-        if (drawnCountTotal) {
-          const { program, u } = shown < 1 ? fading : plain;
-          gl.useProgram(program);
-          gl.disable(gl.BLEND);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LESS);
-          gl.depthMask(true);
-          gl.disable(gl.CULL_FACE);
+            // Keep the same candidates in memory even if their finely bounded
+            // geometry is just off screen, so work cannot evict and rebuild it.
+            slot.used = tick;
+            if (!slot.count || visibleCount >= TREE_MAX_BLOCKS) continue;
+            const low = slot.low * drawnPerMetre,
+              high = slot.high * drawnPerMetre + slot.top * rise,
+              centre = (low + high) / 2 - tz,
+              radius = Math.hypot(TREES_BLOCK * 0.71 + slot.radius * 1.25, (high - low) / 2);
+            if (!volume.sees(x, y, centre, radius)) continue;
+            const all = Math.round(slot.count * density);
+            if (!all) continue;
+            visible[visibleCount] = slot;
+            visibleKey[visibleCount] = key;
+            visibleAll[visibleCount] = all;
+            visibleSolid[visibleCount] = Math.round(all * solidShare);
+            visibleClose[visibleCount] = Math.round(all * closeShare);
+            visibleWeight[visibleCount++] = weight;
+          }
+        visible.length = visibleCount;
+        presentationPending = wanted > 0;
+        const trianglesPerWeight = treeTriangleBudget(far) / Math.max(demand, 1e-6);
+        if (visibleCount) {
+          const u = program.u;
+          gl.useProgram(program.program);
+          volumeDepth(gl);
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform2f(u.uRelief, drawnPerMetre, rise);
-          gl.uniform4f(u.uFade, ex - tx, ey - ty, limits.near, limits.far);
-          gl.uniform3f(u.eye, ex - tx, camera.eye[2] - tz, ey - ty);
-          gl.uniform3f(u.treeLight, LIGHT[0], LIGHT[1], LIGHT[2]);
+          // Ring coverage and zoom coverage are multiplied in the shader, without changing geometry or caches.
+          gl.uniform4f(u.uFade, gx - tx, gy - ty, limits.near, limits.far);
+          gl.uniform1f(u.uVisibility, opacity);
+          gl.uniform3f(u.eye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
+          gl.uniform3f(u.treeLight, VOLUME_LIGHT[0], VOLUME_LIGHT[1], VOLUME_LIGHT[2]);
           gl.uniform1f(u.fogDistance, hazeDistance(camera));
           gl.uniform1i(u.uNight, options.night?.() ? 1 : 0);
-          gl.uniform1f(u.uShown, shown);
-          for (let lathe = 0; lathe < TREE_LATHES.length; lathe++) {
-            let set = false;
-            for (let i = 0; i < drawnCountTotal; i++) {
-              if (drawnLathe[i] !== lathe) continue;
-              if (!set) {
-                set = true;
-                gl.uniform2i(u.uLathe, TREE_LATHES[lathe].segments, TREE_LATHES[lathe].stem);
-                gl.uniform1iv(u.uCrown, CROWNS[lathe]);
+          const palette = options.palette?.() ?? SATELLITE_TREES,
+            repaint = palette.repaint;
+          gl.uniform3f(u.uTrunk, palette.trunk[0], palette.trunk[1], palette.trunk[2]);
+          gl.uniform1i(u.uRepaint, repaint ? 1 : 0);
+          if (repaint) {
+            gl.uniform4f(u.uRepaintLow, repaint.low[0], repaint.low[1], repaint.low[2], repaint.from);
+            gl.uniform4f(u.uRepaintHigh, repaint.high[0], repaint.high[1], repaint.high[2], repaint.to);
+          }
+          gl.uniform3f(u.uFacing, camera.right[0], camera.right[1], -camera.forward[2]);
+          let fading = false,
+            previousLevel = -1,
+            leastDensity = 1;
+          for (let i = 0; i < visibleCount; i++) {
+            const slot = visible[i],
+              key = visibleKey[i],
+              minX = (key % 65536) * TREES_BLOCK,
+              minY = Math.floor(key / 65536) * TREES_BLOCK;
+            const base = visibleAll[i] * TRIANGLES[2],
+              extra = visibleSolid[i] * (TRIANGLES[1] - TRIANGLES[2]) + visibleClose[i] * (TRIANGLES[0] - TRIANGLES[1]),
+              // Reduce the density of each tier together under pressure, so a
+              // resolved crown never becomes a billboard just to save triangles.
+              share = Math.min(1, (visibleWeight[i] * trianglesPerWeight) / (base + extra)),
+              all = Math.floor(visibleAll[i] * share),
+              solid = Math.floor(visibleSolid[i] * share),
+              close = Math.floor(visibleClose[i] * share);
+            if (diagnostics) leastDensity = Math.min(leastDensity, all / visibleAll[i]);
+            if (!all) continue;
+            const t = Math.min(1, Math.max(0, (started - slot.born) / STREAM_FADE_MS));
+            if (t < 1) fading = true;
+            gl.uniform4f(u.uBlock, minX - tx, minY - ty, -tz, t * t * (3 - 2 * t));
+            gl.bindVertexArray(slot.vao!);
+            let first = 0;
+            for (let level = 0; level < TREE_MESHES.length; level++) {
+              const end = level === 0 ? close : level === 1 ? solid : all;
+              const count = end - first;
+              if (!count) continue;
+              const mesh = TREE_MESHES[level];
+              if (level !== previousLevel) {
+                gl.uniform1i(u.uSegments, mesh.segments);
+                previousLevel = level;
               }
-              const key = drawnKey[i],
-                bx = key % 65536,
-                by = Math.floor(key / 65536);
-              gl.uniform3f(u.uBlock, bx * TREES_BLOCK - tx, by * TREES_BLOCK - ty, -tz);
-              gl.bindVertexArray(drawn[i].vao!);
-              gl.drawArraysInstanced(gl.TRIANGLES, 0, VERTICES[lathe], drawnCount[i]);
+              if (slot.first !== first) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer!);
+                for (let a = 0; a < 3; a++) gl.vertexAttribPointer(a, 4, gl.FLOAT, false, TREE_STRIDE * 4, first * TREE_STRIDE * 4 + a * 16);
+                slot.first = first;
+              }
+              gl.drawElementsInstanced(gl.TRIANGLES, mesh.indices.length, gl.UNSIGNED_SHORT, INDEX_OFFSETS[level], count);
               stats.drawCalls++;
-              stats.instances += drawnCount[i];
-              stats.triangles += (drawnCount[i] * VERTICES[lathe]) / 3;
+              stats.instances += count;
+              stats.triangles += count * TRIANGLES[level];
+              first = end;
+            }
+            if (diagnostics) {
+              visibleAll[i] = all;
+              diagnostics.block(visibleAll, i, i + 1, minX, minY, TREES_BLOCK, tx, ty, gx, gy, far);
             }
           }
-          stats.blocks = drawnCountTotal;
+          if (fading) {
+            presentationPending = true;
+            options.invalidate();
+          }
+          diagnostics?.levels(1, 1 / Math.max(0.01, leastDensity));
           gl.bindVertexArray(null);
-          gl.disable(gl.DEPTH_TEST);
-          gl.enable(gl.BLEND);
+          gl.bindBuffer(gl.ARRAY_BUFFER, null);
+          volumeDepthEnd(gl);
         }
       } else wanted = 0;
       stats.bytes = bytes;
@@ -326,15 +497,21 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       // Every handle is dead: forget them without deleting (the block being built goes on).
       slots.clear();
       bytes = 0;
-      plain = fading = undefined;
-      drawnCountTotal = 0;
+      program = linking = undefined;
+      visibleCount = 0;
+      visible.length = 0;
+      presentationPending = false;
     },
     stats: () => stats,
     dispose() {
       dropAll();
-      if (plain) gl.deleteProgram(plain.program);
-      if (fading) gl.deleteProgram(fading.program);
-      plain = fading = undefined;
+      if (program) {
+        gl.deleteBuffer(program.indices);
+        gl.deleteBuffer(program.vertices);
+        gl.deleteProgram(program.program);
+      }
+      if (linking) gl.deleteProgram(linking);
+      program = linking = undefined;
       source = heights = inputs = undefined;
     },
   };

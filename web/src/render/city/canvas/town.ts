@@ -64,6 +64,7 @@ import { shapeBox, overlaps, centroid } from '../model/geometry';
 import { CityDrawOptions, CityFrameStats } from './contract';
 import { hatchPattern, shapePath, linePath, Style, Batches } from './batches';
 import { roofShadowPaths, SHADOW_STEP, drawPlanRoofsSteps } from './roofs';
+import { countWork } from '../../workCount';
 
 /** Street surface rings per scene, by streets, widths and edges drawn (a few camera steps). */
 const SURFACE_CACHE = new WeakMap<object, Map<string, { casing: { street: number; path: Path2D }[]; fill: { street: number; path: Path2D }[]; inner: { street: number; path: Path2D }[] }>>();
@@ -355,16 +356,18 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
   // Buildings: native renderer (compact / detailed) or batched silhouettes. On satellite grounds the far raster stands
   // for them above the fade band, whatever the level's hysteresis, so zooming either way crosses the same blend.
   const footprint = o.appearance.style === 'silhouette',
+    minimalRoof = o.appearance.roof === 'minimal',
     shown: BuildingsShownInput = { view, lod, mpp, footprint, diagnostic: o.appearance.diagnostic, buildingsVisible: o.buildingsVisible && !!o.buildings, farTown: o.farTown, houseRenderer: !!o.renderer };
   const farTown = farTownShown(shown);
   if (o.buildings && buildingsShown(shown)) {
+    countWork('town.canvasHousePaint');
     const colors = buildingColors(o.appearance.colors, o.appearance.ambience);
     if (o.renderer && view === 'buildings' && !footprint) {
       stats.pending = o.renderer.draw(ctx, { viewport, metresPerPixel: mpp, appearance: o.appearance, selectedId: o.selectedBuilding }).rasterTilesPending > 0;
     } else {
       const body: BuildingFrame = { view, palette, footprint, diagnostic: o.appearance.diagnostic, colors },
         roofs = o.buildings.roofs,
-        pans = !!roofs && roofPansShown(shown);
+        pans = !minimalRoof && !!roofs && roofPansShown(shown);
       if (roofs && pans) {
         let paths = roofShadowPaths.get(roofs);
         if (!paths) roofShadowPaths.set(roofs, (paths = []));
@@ -384,9 +387,9 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       for (const i of o.buildings.bins.query(viewport)) {
         const b = o.buildings.items[i];
         stats.buildings++;
-        const made = buildingBody(body, b, !!roofs),
-          style: Style = { fill: made.fill, stroke: made.stroke, width: px(made.widthPx) };
-        if (footprint) {
+        const made = buildingBody(body, b, !!roofs && !minimalRoof),
+          style: Style = { fill: made.fill, stroke: o.appearance.smoothRoofs && !footprint ? undefined : made.stroke, width: px(made.widthPx) };
+        if (footprint || minimalRoof) {
           if (!b.footprintPath) {
             b.footprintPath = new Path2D();
             for (const s of b.footprint ?? b.building.footprint) b.footprintPath.addPath(shapePath(s));
@@ -411,7 +414,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       }
       if (footprint) for (const i of o.buildings.bins.query(viewport)) drawRuinPlan(ctx, o.buildings.items[i].ruins ?? [], mpp);
       const selected = o.selectedBuilding === undefined ? undefined : o.buildings.byId.get(o.selectedBuilding);
-      const selectedPath = selected === undefined ? undefined : footprint ? o.buildings.items[selected].footprintPath : o.buildings.items[selected].path;
+      const selectedPath = selected === undefined ? undefined : footprint || minimalRoof ? o.buildings.items[selected].footprintPath : o.buildings.items[selected].path;
       if (selectedPath) {
         ctx.strokeStyle = SELECTION.stroke!;
         ctx.lineWidth = px(SELECTION.widthPx!);
@@ -419,7 +422,10 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       }
     }
   }
-  if (farTown) drawFarTown(ctx, scene, o.farBuildings ?? o.buildings!, { viewport, mpp, dpr: o.dpr, palette, night, custom: o.colors?.building, alpha: farTownAlpha(mpp), onReady: o.onTexturesReady });
+  if (farTown) {
+    if (farTownAlpha(mpp) > 0) countWork('town.canvasFarHouses');
+    drawFarTown(ctx, scene, o.farBuildings ?? o.buildings!, { viewport, mpp, dpr: o.dpr, palette, night, custom: o.colors?.building, alpha: farTownAlpha(mpp), onReady: o.onTexturesReady });
+  }
 
   if ((o.appearance.lightsOn ?? night) && o.appearance.diagnostic === 'none') {
     if (!o.deferNightTown) drawNightTown(ctx, scene, viewport, mpp, parchment, layers.streets);

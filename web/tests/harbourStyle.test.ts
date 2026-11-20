@@ -163,4 +163,42 @@ describe('harbour vocabulary shared by the plan and the 3D city', () => {
     }
     expect(field?.options?.every(o => !/^[a-z-]+$/.test(o.label))).toBe(true);
   });
+  it('rebases the whole harbour when planning water is ten metres above the displayed dry bed', () => {
+    const qs = [...quays, item('pier', 'timber', rectangle(8, -30, 2, 20)), item('kerb', 'stone', rectangle(0, -1, 20, 1)), item('cargo', 'crates', rectangle(5, 3, 2, 2)), item('boat-ashore', 'cog', rectangle(25, 3, 8, 3))].map(q => ({ ...q, deck_z_m: q.deck_z_m + 10 }));
+    const buildings = city3dQuays(
+      [{ ...layout, structure: { quays: qs } } as Layout],
+      () => 2,
+      () => NaN,
+    );
+    const volume = (kind: string) => buildings.flatMap(b => b.volumes).find(v => v.id === `city3d-quay:0:${qs.findIndex(q => q.kind === kind)}:deck`)!;
+    expect(volume('boat').z_m).toBeCloseTo(2 - 0.35);
+    expect(volume('boat').roof_mesh.vertices.every(p => Math.abs(p.z - (2 + harbours.boats.cog.freeboard)) < 1e-6)).toBe(true);
+    expect(volume('cabin').z_m).toBeCloseTo(2 + harbours.boats.cog.freeboard);
+    expect(volume('mast').z_m).toBeCloseTo(volume('cabin').z_m);
+    expect(volume('crane').z_m).toBeCloseTo(2.02);
+    expect(volume('crane-jib').z_m).toBeCloseTo(2.02 + 6);
+    expect(volume('cargo').z_m).toBeCloseTo(2.02);
+    expect(volume('boat-ashore').z_m).toBeCloseTo(2);
+    expect(volume('kerb').roof_mesh.vertices.every(p => p.z < 2.3)).toBe(true);
+    expect(volume('pier').roof_mesh.vertices.every(p => Math.abs(p.z - 2.4) < 1e-6)).toBe(true);
+    expect(volume('quay').roof_mesh.vertices.every(p => p.z < 2.5)).toBe(true);
+    expect(qs.every(q => q.deck_z_m === 13)).toBe(true);
+  });
+  it('keeps boat parts at the hull reference on slopes and anchors long pier piles in the bed', () => {
+    const slope = (x: number) => 2 + x * 0.1;
+    const buildings = city3dQuays([layout], slope, slope);
+    const volumes = buildings.flatMap(b => b.volumes);
+    const get = (kind: string) => volumes.find(v => v.id === `city3d-quay:0:${quays.findIndex(q => q.kind === kind)}:deck`)!;
+    expect(get('cabin').z_m).toBeCloseTo(get('boat').roof_mesh.vertices[0].z);
+    expect(get('mast').z_m).toBeCloseTo(get('cabin').z_m);
+    const pier = item('pier', 'timber', rectangle(0, -20, 2, 20));
+    const deep = city3dQuays(
+      [{ ...layout, structure: { quays: [pier] } } as Layout],
+      () => -12,
+      () => 2,
+    );
+    const piles = deep.flatMap(b => b.volumes).filter(v => v.id.includes(':post:'));
+    expect(piles.length).toBeGreaterThan(0);
+    expect(piles.every(v => v.z_m <= -12)).toBe(true);
+  });
 });

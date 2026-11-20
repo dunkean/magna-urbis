@@ -9,7 +9,11 @@
  * the names is asked whether what its live layer draws is its picture at rest (LiveLayer.restExact):
  *  - yes: nothing else is painted for it, the compositor keeps drawing it, and a frame at rest costs what a moving
  *    frame costs;
- *  - no (a look its live layer does not cover, a layer that failed): the exact renderer of that layer paints it in
+ *  - not yet, and its live layer has work left (a region of the overlay being recorded for this view, the town's
+ *    meshes, the names placed for it): the layer gets a slice of work, the compositor keeps drawing what it has, and
+ *    the question is asked again at the frame its work ends or shows something new;
+ *  - no, and no work left (a look its live layer does not cover, a layer that failed, the processor drawing the
+ *    map): the exact renderer of that layer paints it in
  *    its stepwise mode (non-blocking: it paints what it has and asks for the frame again as it progresses) into a 2D
  *    canvas stacked above the compositor's, shown once its paint is complete.
  * The exact canvases lie above the compositor's canvas, so a layer shown by one takes the layers above it with it:
@@ -25,8 +29,10 @@
  * standing on it. No picture at rest is made for it and no exact canvas is shown (they are pictures of the top view);
  * the furniture is hidden (a scale bar measures nothing in perspective). This view gives the compositor, the ground
  * layer and the names the relief of the map (`relief`), and places the names of a tilted view at rest. The town's
- * buildings and the modelled trees stand on the terrain as volumes (render/world/volumes.ts): two more layers, fed by
- * worldVolumes.ts, which draw nothing in the top view.
+ * buildings and modelled trees stand on the terrain as volumes (render/world/volumes.ts), fed by worldVolumes.ts.
+ * Volume-style houses also use that layer overhead; modelled trees belong to the tilted view. A click on a tilted view picks with the camera's ray (`pick`:
+ * the building volume in front of the ground, else the ground point), and its picture is the compositor's frame read
+ * back (`capture`).
  */
 import { createLiveCompositor, type LiveCompositor } from '../../render/live/compositor';
 import { liveStats, noteLiveUnit } from '../../render/live/liveStats';
@@ -37,10 +43,12 @@ import type { CanvasRenderer } from '../../render/canvas';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
 import { dualCameras } from '../../render/live/policy';
-import { isTilted } from '../../render/world/camera';
-import { createWorldBuildingsLayer } from '../../render/world/buildingsLayer';
+import { createCameraPose, groundHit, isTilted, pixelRay, poseCamera } from '../../render/world/camera';
+import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../render/world/buildingsLayer';
+import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
+import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
-import { createWorldTreesLayer } from '../../render/world/treesLayer';
+import { createWorldTreesLayer, type WorldTreesLayer } from '../../render/world/treesLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
 import { StepwisePaint } from '../../render/stepwisePaint';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
@@ -53,6 +61,8 @@ import type { MapState } from './mapState';
 import type { DisplayReadiness } from './readiness';
 import { SETTLE_MS, type ViewMotion } from './viewMotion';
 import { WorldVolumes } from './worldVolumes';
+import { machineDecision, reportMachineCompositor } from '../machineTier';
+import { volumeTownBuildings } from '../../render/cityDrawOptions';
 
 /** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on while it waits. */
 export const GROUND_WARMING = 'ground warming';
@@ -62,8 +72,8 @@ const EXACT_LAYER_CSS = 'position:absolute;left:0;top:0;visibility:hidden';
 const FURNITURE_MS = 100;
 /** Placeholder view of a stand-in that is being cleared. */
 const WHOLE_VIEW: View = { cx: 0, cy: 0, scale: 1 };
-/** The slice of glyph work the text layer gets in the frame that places the names of a view at rest. */
-const NAMES_SLICE_MS = 2;
+/** The slice of work a live layer that is not its picture at rest yet gets in a frame of the view at rest. */
+const REST_SLICE_MS = 2;
 /** The names of a tilted view are those of the top view of its centre and scale, placed over a square this many
  * times the larger side of the viewport: a tilted camera sees further than the top view's rectangle, towards the
  * horizon and on both sides of it. Beyond, the names would fade anyway (render/live/textLayer.ts). */
@@ -84,20 +94,20 @@ const atOrAbove = (layer: ExactLayer, from: ExactLayer | undefined): boolean => 
 
 /**
  * The picture of the view at rest:
- *   due            : not made for this view yet (the view moves, or has just arrived);
- *   live           : the compositor's layers are the picture; nothing else is painted;
- *   awaiting-names : as `live`, but the text layer is still preparing the names placed for this view;
- *   painting       : the exact renderers are painting the layers from `exactFrom` up, in steps;
- *   exact          : those exact canvases are complete and shown.
+ *   due      : not made for this view yet (the view moves, or has just arrived);
+ *   live     : the compositor's layers are the picture; nothing else is painted;
+ *   awaiting : as `live`, but a live layer (`awaited`) is still preparing its picture at rest for this view;
+ *   painting : the exact renderers are painting the layers from `exactFrom` up, in steps;
+ *   exact    : those exact canvases are complete and shown.
  */
-type RestPicture = 'due' | 'live' | 'awaiting-names' | 'painting' | 'exact';
+type RestPicture = 'due' | 'live' | 'awaiting' | 'painting' | 'exact';
 
 export class ComposedView {
   private live?: LiveCompositor;
   /** No WebGL2, a software renderer or a layer factory that threw: `blocked` for good. */
   private refused = false;
   /** The objects the live layers were made from: a new terrain renderer, cartography or city map gets new layers. */
-  private owners: { gpu?: TerrainRenderer; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; volumes?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
+  private owners: { gpu?: TerrainRenderer; terrain?: TerrainData; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; volumes?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
   /** The compositor's canvas and the exact canvases are in the page. */
   private onPage = false;
   /** Off the page, waiting for the first tile of the ground layer: its baking goes on. */
@@ -115,6 +125,8 @@ export class ComposedView {
   private rest: RestPicture = 'due';
   /** The lowest layer the picture at rest paints with its exact renderer (undefined: none). */
   private exactFrom?: ExactLayer;
+  /** The lowest layer below `exactFrom` whose live layer is still preparing its picture at rest (undefined: none). */
+  private awaited?: ExactLayer;
   /** The lowest layer whose exact canvas is on screen; the canvases above it are too, and the compositor draws none of them. */
   private shownFrom?: ExactLayer;
   /** The exact town paint of the picture at rest is incomplete. */
@@ -138,6 +150,11 @@ export class ComposedView {
   private readonly cityEnv: LiveCityEnv;
   /** The town in volume and the trees of the tilted map, for the two volume layers. */
   private readonly volumes: WorldVolumes;
+  /** The buildings layer on the compositor, for picking. */
+  private buildings?: WorldBuildingsLayer;
+  private trees?: WorldTreesLayer;
+  private volumeBuildings = false;
+  private exactPlan = false;
 
   constructor(
     private readonly map: MapState,
@@ -147,8 +164,13 @@ export class ComposedView {
     private readonly readiness: DisplayReadiness,
   ) {
     const { water, town } = parts;
-    this.cityEnv = { appearance: () => map.resolved!, visibility: () => town.shownLayers(), water: () => water.cityWater, invalidate: map.compose };
-    this.volumes = new WorldVolumes(map, parts, () => this.relief());
+    this.cityEnv = { appearance: () => map.resolved!, visibility: () => town.shownLayers(), water: () => water.cityWater, volumeBuildings: () => this.volumeBuildings, volumeYards: () => this.volumes.yardsShown(), invalidate: map.compose };
+    this.volumes = new WorldVolumes(
+      map,
+      parts,
+      () => this.relief(),
+      () => this.volumeBuildings,
+    );
   }
 
   /** Inside a compositor frame or work slice: a frame request raised now comes from a live layer. */
@@ -178,6 +200,10 @@ export class ComposedView {
     }
     return this.heights.relief;
   }
+  /** Collision geometry is published with the town scene, independently of visible mesh LOD. */
+  walkCollisions(): Terrain3dCollisions | undefined {
+    return this.map.exportLayers.city !== false ? this.volumes.walkCollisions : undefined;
+  }
   /** The last frame was drawn with a tilted camera. */
   get tilted(): boolean {
     return this.pitch !== 0 || this.yaw !== 0;
@@ -191,26 +217,41 @@ export class ComposedView {
     const r = map.resolved;
     if (!r || !map.world) return 'no map';
     if (r.target !== 'view2d') return 'not the 2D view';
-    if (!ground.gpuActive || !ground.gpu) return 'CPU ground';
     if (ground.fantasy || isFantasyStyle(r.ground.style)) return 'illustrated ground';
-    const live = (this.live ??= createLiveCompositor({ invalidate: map.compose, quality: getDisplayQuality, relief: () => this.relief(), mapSize: () => map.world?.mapSize ?? 0 }));
+    // The GPU terrain renderer, or the CPU raster of a look without relief (GroundProducts.groundTiles).
+    if (!ground.groundTiles()) return 'CPU ground';
+    const live = (this.live ??= createLiveCompositor({
+      invalidate: map.compose,
+      quality: getDisplayQuality,
+      relief: () => this.relief(),
+      mapSize: () => map.world?.mapSize ?? 0,
+      restPending: () => this.motion.restOwed || this.rest === 'due' || this.rest === 'painting' || !!this.awaited,
+    }));
     if (!live) {
       this.refused = true;
+      reportMachineCompositor(false);
       return 'no hardware WebGL2';
     }
-    if (!live.active()) return 'context lost';
+    if (!live.active()) {
+      reportMachineCompositor(false);
+      return 'context lost';
+    }
     try {
       this.syncLayers(live);
     } catch (error) {
       // A layer factory of another module threw: the map is not composed, rather than failing every frame.
       console.warn('Live compositor: layer setup failed, the map is not composed.', error);
       this.refused = true;
+      reportMachineCompositor(false);
       map.stats.liveError = String(error);
       return 'layer setup failed';
     }
+    reportMachineCompositor(true);
+    if (this.volumeBuildings && !live.hasLayer('buildings')) return 'building meshes unavailable';
     if (!live.hasLayer('ground')) return 'no ground layer';
     // No baked tile covers the view yet and nothing stands in for the ground: a composed frame would show bare paper.
-    if (!live.layerReady('ground', view, w, h, Math.min(2, dpr)) && !ground.miniGround()) return GROUND_WARMING;
+    // The miniature's capture stands in for the top view only; a tilted frame draws no stand-in.
+    if (!live.layerReady('ground', view, w, h, Math.min(2, dpr)) && (isTilted(view) || !ground.miniGround())) return GROUND_WARMING;
     return undefined;
   }
 
@@ -219,10 +260,13 @@ export class ComposedView {
       owners = this.owners,
       map = this.map,
       { ground, cartography, town } = this.parts;
-    if (owners.gpu !== ground.gpu) {
+    // One ground layer per terrain and renderer: the baked tiles of another terrain must never show under this one (a
+    // stale tile is only a fair stand-in for the same terrain in another look).
+    if (owners.gpu !== ground.gpu || owners.terrain !== map.native) {
       owners.gpu = ground.gpu;
+      owners.terrain = map.native;
       owners.ground = false;
-      live.setLayer('ground', ground.gpu ? createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), invalidate: map.compose }) : undefined);
+      live.setLayer('ground', createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), invalidate: map.compose }));
     }
     // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also
     // restarts the compositor's work loop.
@@ -237,15 +281,22 @@ export class ComposedView {
     // One pair of volume layers for the page: they read the town and the trees of whichever map is on display.
     if (!owners.volumes) {
       owners.volumes = true;
-      live.setLayer('buildings', createWorldBuildingsLayer(gl, this.volumes.buildings));
-      live.setLayer('trees', createWorldTreesLayer(gl, this.volumes.trees));
+      live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
+      live.setLayer('trees', (this.trees = createWorldTreesLayer(gl, this.volumes.trees)));
     }
     if (owners.cartography !== cartography.renderer) {
       owners.cartography = cartography.renderer;
       live.setLayer('overlay', cartography.renderer?.createLiveLayer(gl));
       live.invalidateLayer('text');
     }
-    if (owners.city !== town.city) {
+    const volumeBuildings = !!map.native && !dualCameras() && machineDecision().tier === 'capable' && volumeTownBuildings(map.resolved);
+    map.volumeBuildings = volumeBuildings;
+    if (owners.city !== town.city || this.volumeBuildings !== volumeBuildings) {
+      this.volumeBuildings = volumeBuildings;
+      live.setStandIn('city', undefined, WHOLE_VIEW, 1, 1);
+      this.shownFrom = undefined;
+      this.rest = 'due';
+      this.applyVisibility();
       owners.city = town.city;
       live.setLayer('city', town.city?.createLiveLayer(gl, this.cityEnv));
     }
@@ -259,9 +310,9 @@ export class ComposedView {
     if (!live) return;
     // Another ground style or terrain: the rasters of the previous map must not stand in for this one.
     if (before.resolved?.ground.style !== r.ground.style || before.native !== this.map.native) live.clearStandIns();
-    // Another terrain: the baked tiles of the previous map must never show under this one (a stale tile is only a
-    // fair stand-in for the same terrain in another look). The next frame makes a new ground layer.
-    if (before.native !== this.map.native) this.owners.gpu = undefined;
+    // Another map style: the old look leaves the screen as soon as the coarsest tiles of the new one are baked (the
+    // first thing baked), and nothing of it is ever drawn with the new one.
+    if (before.resolved && before.resolved.styleId !== r.styleId) live.lookChanged();
     // The terrain pass takes the renderer away while it runs (gpuActive), and the ground layer's work stops without
     // one: its tiles are marked stale (they keep showing until re-baked) and the work loop starts again.
     if (ran.includes('terrainData')) live.invalidateLayer('ground');
@@ -314,8 +365,10 @@ export class ComposedView {
   }
   /** Another view takes the page: the compositor's canvas and the exact canvases leave it. */
   leave(): void {
+    this.map.volumeBuildings = false;
     if (!this.onPage) return;
     this.onPage = false;
+    this.parts.water.tilted = false;
     this.live?.canvas.remove();
     this.overlayOnPage?.remove();
     this.overlayOnPage = undefined;
@@ -324,7 +377,7 @@ export class ComposedView {
       canvas.remove();
       canvas.width = canvas.height = 0;
     }
-    this.shownFrom = this.exactFrom = undefined;
+    this.shownFrom = this.exactFrom = this.awaited = undefined;
     this.townPending = false;
     this.rest = 'due';
     this.cssW = this.cssH = 0;
@@ -344,8 +397,8 @@ export class ComposedView {
     this.live?.setPaused(this.map.suspended || this.map.preparing || !(this.onPage || this.warming));
   }
   private applyVisibility(): void {
-    if (this.overlayOnPage) this.overlayOnPage.style.visibility = atOrAbove('overlay', this.shownFrom) ? 'visible' : 'hidden';
-    this.cityCanvas.style.visibility = atOrAbove('city', this.shownFrom) ? 'visible' : 'hidden';
+    if (this.overlayOnPage) this.overlayOnPage.style.visibility = !this.volumeBuildings && atOrAbove('overlay', this.shownFrom) ? 'visible' : 'hidden';
+    this.cityCanvas.style.visibility = !this.volumeBuildings && atOrAbove('city', this.shownFrom) ? 'visible' : 'hidden';
     this.textCanvas.style.visibility = atOrAbove('text', this.shownFrom) ? 'visible' : 'hidden';
   }
   private show(from: ExactLayer | undefined): void {
@@ -362,6 +415,8 @@ export class ComposedView {
       map = this.map;
     this.enter(live, w, h);
     map.dpr = dpr;
+    // A tilted map drapes the whole-map water raster: the land is cut with it too, never with a raster of the top view.
+    this.parts.water.tilted = isTilted(view);
     if (isTilted(view)) {
       this.drawTilted(live, view, w, h, dpr, moved, now);
       return;
@@ -379,7 +434,7 @@ export class ComposedView {
     // At rest: the picture at rest when it is due (the view came to rest, the content changed, a stepwise paint
     // progressed, the names were being prepared), else the compositor alone (a ground tile arrived, the page asked
     // for a frame of the same content).
-    if (this.rest === 'due' || this.rest === 'awaiting-names' || this.paintedRevision !== map.paintRevision) this.restFrame(live, view, w, h, dpr, now);
+    if (this.rest === 'due' || this.rest === 'painting' || this.awaited || this.paintedRevision !== map.paintRevision) this.restFrame(live, view, w, h, dpr, now);
     else this.composeFrame(live, view, w, h, dpr, false, now);
   }
   private viewRested = (): void => {
@@ -397,6 +452,11 @@ export class ComposedView {
     this.yaw = yaw;
     this.show(undefined);
     this.rest = 'due';
+    // The picture at rest of the top view is not owed here: a layer awaited for it, or an exact paint under way, would
+    // keep the page's pending work above 0 for as long as the view stays tilted, and the readiness loop (settled)
+    // would ask for a frame at every animation frame.
+    this.exactFrom = this.awaited = undefined;
+    this.townPending = false;
     this.motion.restDone();
     if (changed) {
       this.tiltMovingUntil = now + SETTLE_MS;
@@ -409,6 +469,9 @@ export class ComposedView {
       this.volumes.refresh();
     }
     this.composeFrame(live, view, w, h, dpr, moving, now);
+    // A tilted view at rest is presented by this frame: the readiness marks of the request (visible-complete ends the
+    // page's wait for the display) are given here as the top view's picture at rest gives them.
+    if (!moving) this.readiness.notePresented();
   }
   /** The names of a tilted view at rest: the placement of the top view of its centre and scale (the names then keep
    * the sizes and the spacing of the map the camera tilts from), over a wider square. Placing for the perspective
@@ -442,9 +505,11 @@ export class ComposedView {
       vectors = tilted ? water.vectorRaster({ cx: size / 2, cy: size / 2, scale: DRAPED_WATER_PIXELS / size }, DRAPED_WATER_PIXELS, DRAPED_WATER_PIXELS, 1, false) : water.vectorRaster(view, w, h, dpr, !moving);
     live.setWater(vectors?.image, vectors?.region);
     live.setPaper(map.groundPaper);
-    live.setLayerShown('overlay', !atOrAbove('overlay', this.shownFrom));
+    const exactOverlay = atOrAbove('overlay', this.shownFrom),
+      exactCity = atOrAbove('city', this.shownFrom) && (!this.volumeBuildings || this.exactPlan);
+    live.setLayerShown('overlay', this.volumeBuildings || !exactOverlay, this.volumeBuildings && exactOverlay);
     live.setLayerShown('text', !atOrAbove('text', this.shownFrom));
-    live.setLayerShown('city', !atOrAbove('city', this.shownFrom) && (map.exportLayers.city !== false || map.exportLayers.streets !== false));
+    live.setLayerShown('city', (this.volumeBuildings || !exactCity) && (map.exportLayers.city !== false || map.exportLayers.streets !== false), this.volumeBuildings && exactCity);
     live.setLayerShown('buildings', map.exportLayers.city !== false);
     live.draw(view, w, h, ratio, moving);
     // Ground tiles not baked yet (the first frames of a map or of a look) and nothing to stand in for them: the
@@ -516,9 +581,17 @@ export class ComposedView {
       renderer.placeText(view, w, h);
       reportDrawnLabels(renderer.lastPlaced().map(p => p.label.id));
     }
-    const from = this.lowestExact(live, view, w, h, ratio, cityOn),
-      namesAwaited = from === 'awaited';
-    const exactFrom = (this.exactFrom = from === 'awaited' ? undefined : from);
+    const { exact: exactFrom, awaited } = this.restPlan(live, view, w, h, ratio, cityOn);
+    this.exactFrom = exactFrom;
+    this.awaited = awaited;
+    this.exactPlan = exactFrom === 'city' || exactFrom === 'overlay';
+    if (this.volumeBuildings && exactFrom === 'overlay' && cityOn && live.hasLayer('city')) {
+      const ready = live.layerReady('city', view, w, h, ratio);
+      if (ready || live.layerPending('city')) {
+        this.exactPlan = false;
+        if (!ready) this.awaited ??= 'city';
+      }
+    }
     let overlayPending = false;
     this.townPending = false;
     if (exactFrom) {
@@ -540,45 +613,50 @@ export class ComposedView {
           cartography.paintOverlay(view, pixelW, pixelH, true);
           t = noteExact('exact:overlay', t);
         }
-        if (exactFrom !== 'text') {
+        if (this.exactPlan) {
           const ctx = cleared(this.cityCanvas);
           // The ground is the compositor's canvas below: the town clears its own pixels over the rivers, and those
           // of the exact overlay canvas under it.
-          if (cityOn) map.stats.city = town.draw(ctx, view, w, h, dpr, { stepwise: { key: map.townContent, moving: false }, overlayBelow: exactFrom === 'overlay' ? cartography.overlay.getContext('2d') : null });
+          if (cityOn) map.stats.city = town.draw(ctx, view, w, h, dpr, { planOnly: this.volumeBuildings, stepwise: { key: map.townContent, moving: false }, overlayBelow: exactFrom === 'overlay' ? cartography.overlay.getContext('2d') : null });
           t = noteExact('exact:city', t);
         }
         const names = cleared(this.textCanvas);
         renderer?.drawText(names, view, w, h);
         noteExact('exact:text', t);
       });
-      this.townPending = exactFrom !== 'text' && cityOn && !!(map.stats.city as { pending?: boolean } | undefined)?.pending;
+      this.townPending = this.exactPlan && cityOn && !!(map.stats.city as { pending?: boolean } | undefined)?.pending;
       overlayPending = exactFrom === 'overlay' && (StepwisePaint.pending(map) > 0 || (renderer?.lastStats().rasterPending ?? 0) > 0);
     }
     const complete = !!exactFrom && !this.townPending && !overlayPending;
     this.show(this.nextShown(exactFrom, complete, !!exactFrom && (live.layerReady(exactFrom, view, w, h, ratio) || live.hasStandIn(exactFrom))));
-    this.composeFrame(live, view, w, h, dpr, false, now, true);
     // The complete exact rasters stand in for their layers at the next gesture.
     if (exactFrom) {
       if (exactFrom === 'overlay' && !overlayPending) live.setStandIn('overlay', cartography.overlay, view, w, h);
-      if (exactFrom !== 'text' && !this.townPending) live.setStandIn('city', cityOn && town.city ? this.cityCanvas : undefined, view, w, h);
+      if (this.exactPlan && !this.townPending) live.setStandIn('city', cityOn && town.city ? this.cityCanvas : undefined, view, w, h);
       live.setStandIn('text', renderer ? this.textCanvas : undefined, view, w, h);
     }
-    this.rest = exactFrom ? (complete ? 'exact' : 'painting') : namesAwaited ? 'awaiting-names' : 'live';
+    this.composeFrame(live, view, w, h, dpr, false, now, true);
+    this.rest = exactFrom ? (complete ? 'exact' : 'painting') : awaited ? 'awaiting' : 'live';
+    liveStats().rest = { picture: this.rest, exactFrom, awaited };
     noteLiveUnit('rest', started);
     this.readiness.notePresented();
   }
-  /** The lowest of the overlay, the town and the names whose live layer is not its picture at rest for this view;
-   * undefined when all three are; `awaited` when only the names are missing and the text layer is preparing them. */
-  private lowestExact(live: LiveCompositor, view: View, w: number, h: number, ratio: number, cityOn: boolean): ExactLayer | 'awaited' | undefined {
+  /** Of the overlay, the town and the names: the lowest whose live layer is not its picture at rest for this view and
+   * cannot become it (`exact`), and below it the lowest whose live layer is still preparing it (`awaited`). */
+  private restPlan(live: LiveCompositor, view: View, w: number, h: number, ratio: number, cityOn: boolean): { exact?: ExactLayer; awaited?: ExactLayer } {
     const { cartography, town } = this.parts;
-    // Without a cartography there is no overlay and no name to paint; a hidden town has nothing to paint either.
-    if (cartography.renderer && !live.restExact('overlay', view, w, h, ratio)) return 'overlay';
-    if (cityOn && town.city && !live.restExact('city', view, w, h, ratio)) return 'city';
-    if (!cartography.renderer || live.restExact('text', view, w, h, ratio)) return undefined;
-    // The text layer holds the names of another placement (they keep following the map meanwhile): it gets a slice
-    // of work now, and the names are painted exact only if it has nothing left to do and still cannot show them.
-    if (live.advanceLayer('text', NAMES_SLICE_MS)) return 'awaited';
-    return live.restExact('text', view, w, h, ratio) ? undefined : 'text';
+    let awaited: ExactLayer | undefined;
+    for (const layer of EXACT_LAYERS) {
+      // Without a cartography there is no overlay and no name to paint; a hidden town has nothing to paint either.
+      if (layer === 'city' ? !cityOn || !town.city : !cartography.renderer) continue;
+      if (live.restExact(layer, view, w, h, ratio)) continue;
+      // The live layer holds another region, mesh tier or placement (it keeps following the map meanwhile): it gets
+      // a slice of work now, and the layer is painted exact only once it has nothing left to do and still cannot
+      // show its picture at rest.
+      if (live.advanceLayer(layer, REST_SLICE_MS)) awaited ??= layer;
+      else if (!live.restExact(layer, view, w, h, ratio)) return { exact: layer, awaited };
+    }
+    return { awaited };
   }
   /** The exact canvases to have on screen. Those from `from` up change hands together: when their paints are complete,
    * or as they fill when the compositor has nothing to show for the lowest of them (`covered` false: no live layer
@@ -591,11 +669,37 @@ export class ComposedView {
     return shown && !atOrAbove(from, shown) ? shown : shown ? from : undefined;
   }
 
+  // --- picking and captures of a tilted view --------------------------------------------------------------------------
+
+  /** What lies under the CSS pixel (sx, sy) of a tilted view: the ground point, and the building volume in front of the
+   * ground there among those `accept` takes (with the point where the ray meets its box). Undefined when the pixel
+   * shows neither (the sky). CPU only, for a click. */
+  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+    const relief = this.relief(),
+      pose = poseCamera(createCameraPose(), view, h, relief),
+      point: [number, number] = [0, 0],
+      ground = groundHit(pose, sx, sy, w, h, relief, point);
+    const ray = new Float64Array(3);
+    pixelRay(pose, sx, sy, w, h, ray);
+    const hit = this.map.exportLayers.city !== false ? this.buildings?.pick(pose.eye, ray, pose.rise, ground, accept) : undefined;
+    if (hit) return { x: pose.eye[0] + ray[0] * hit.t, y: pose.eye[1] + ray[1] * hit.t, building: hit.building };
+    return ground < Infinity ? { x: point[0], y: point[1] } : undefined;
+  }
+  /** The tilted view as a picture, the compositor's frame at `dpr` (LiveCompositor.capture). */
+  capture(view: View, w: number, h: number, dpr: number, out: HTMLCanvasElement): boolean {
+    return !!this.live?.active() && this.live.capture(view, w, h, Math.min(2, dpr), out);
+  }
+
   // --- pending work, style switch, disposal --------------------------------------------------------------------------
 
-  /** Pending work that only concerns the view on screen: the picture at rest, the names being prepared, the town paint. */
+  /** Pending work that only concerns the view on screen: the picture at rest, a live layer preparing it, the town paint. */
   pendingViewOnly(): number {
-    return Number(this.motion.restOwed) + Number(this.rest === 'awaiting-names') + Number(this.townPending);
+    const visibleVolumes = !!this.volumeBuildings && this.map.exportLayers.city !== false;
+    const volumes = this.tilted || visibleVolumes ? Number(this.volumes.pending()) + Number(!!this.live?.layerPending('buildings')) + Number(visibleVolumes && !this.buildings?.presented()) : 0;
+    const forest = !!(this.tilted && this.live?.active() && this.trees?.pendingPresentation());
+    // A completed paint job still owes its final presentation frame. Tilted and fallback frames do not use `rest`.
+    const picture = !this.tilted && this.live?.active() && (this.rest === 'due' || this.rest === 'painting');
+    return Number(this.motion.restOwed) + Number(!!this.awaited) + Number(this.townPending) + Number(!!picture) + volumes + Number(forest);
   }
   /** Overlay rasters the exact overlay paint still waits for (none when the overlay at rest is the live layer). */
   pendingOverlay(): number {
@@ -607,10 +711,13 @@ export class ComposedView {
     const shown = this.motion.frame,
       live = this.live;
     if (!this.onPage || !shown || !live?.active()) return undefined;
+    // The ground of a new terrain has no tile yet (the view holds its last picture, mapView.ts): a frame drawn now
+    // would be bare paper. Nothing is frozen: the canvases stay as they are through the passes.
+    if (!live.layerReady('ground', shown.view, shown.w, shown.h, Math.min(2, shown.dpr))) return undefined;
     if (!live.draw(shown.view, shown.w, shown.h, Math.min(2, shown.dpr), false)) return undefined;
     const sources = [live.canvas];
-    if (atOrAbove('overlay', this.shownFrom) && this.overlayOnPage) sources.push(this.overlayOnPage);
-    if (atOrAbove('city', this.shownFrom)) sources.push(this.cityCanvas);
+    if (!this.volumeBuildings && atOrAbove('overlay', this.shownFrom) && this.overlayOnPage) sources.push(this.overlayOnPage);
+    if (!this.volumeBuildings && atOrAbove('city', this.shownFrom)) sources.push(this.cityCanvas);
     if (atOrAbove('text', this.shownFrom)) sources.push(this.textCanvas);
     if (this.furnitureCanvas.style.visibility !== 'hidden') sources.push(this.furnitureCanvas);
     return sources;
@@ -629,5 +736,7 @@ export class ComposedView {
     clearTimeout(this.tiltTimer);
     this.live?.dispose();
     this.live = undefined;
+    this.buildings = undefined;
+    this.trees = undefined;
   }
 }

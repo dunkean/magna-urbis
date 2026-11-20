@@ -1,6 +1,8 @@
-# Magna Urbis: technical architecture and scientific foundations
+# Magna Urbis: historical technical architecture and scientific foundations
 
-Document status: **October 14, 2026**. Since then the Rust engine has become the generation engine of Magna Urbis V2 (alpha, November 2026); the [illustrated atlas](https://magna-urbis.org/scientific/index.html) describes the current pipeline stage by stage. At the date of this document, the TypeScript application was the most complete reference and the Rust/WebAssembly version was **being implemented and integrated**. This document describes paths present in the repository and their foundations, without proposing a new definitive architecture.
+Document status: **October 14, 2026**. Since then the Rust engine has become the generation engine of Magna Urbis V2 (alpha, November 2026); the [illustrated atlas](https://magna-urbis.org/scientific/index.html) describes the current pipeline stage by stage. At the date of this document, the TypeScript application was the most complete reference and the Rust/WebAssembly version was **being implemented and integrated**. Keep it as a historical method reference, not a current setup or component-status guide. Source links follow the current crate layout; the implementation and integration claims remain dated. For the maintained architecture and setup, use the [project README](../README.md), [Rust crate guide](../rust/README.md) and [V2 launch guide](../rust/desktop-v2/README.md).
+
+For current neural runtime and weight selection, use the [model documentation](../rust/models/neural-earth/README.md) and [native desktop profile](../rust/models/neural-earth/desktop-profile.json), rather than the historical implementation below.
 
 Code links distinguish methods actually used from scientific references that explain or compare an approach. The cited papers do not constitute scientific validation of Magna Urbis: the project's parameters, simplifications and artistic choices have their own domain of validity.
 
@@ -37,7 +39,7 @@ seed + parameters
 houses: independent engine, connection to parcels in progress
 ```
 
-A parcel change does not need to recompute terrain. The camera samples the retained surface: zooming reruns neither erosion nor neural networks. See the [terrain engine](../rust/crates/core/src/engine.rs), [settlements](../rust/crates/core/src/settlements/mod.rs) and [urban stages](../rust/crates/core/src/urban/mod.rs).
+A parcel change does not need to recompute terrain. The camera samples the retained surface: zooming reruns neither erosion nor neural networks. See the [terrain engine](../rust/crates/terrain/src/engine.rs), [settlements](../rust/crates/core/src/settlements/mod.rs) and [urban stages](../rust/crates/core/src/urban/mod.rs).
 
 ### Exploring the implementations
 
@@ -54,7 +56,7 @@ To reproduce a result, retain the seed, applied parameters and versions of the e
 
 ## 2. Procedural terrain: noise, patterns and scales
 
-Coherent noise assigns nearby values to nearby coordinates. Perlin's work on gradient noise is the classic reference; the local implementation uses **2D simplex noise** and sums of octaves. This variant must be distinguished from improved Perlin noise, cited here as general background. [Perlin, 2002](https://mrl.cs.nyu.edu/~perlin/paper445.pdf); [local code](../rust/crates/core/src/noise.rs).
+Coherent noise assigns nearby values to nearby coordinates. Perlin's work on gradient noise is the classic reference; the local implementation uses **2D simplex noise** and sums of octaves. This variant must be distinguished from improved Perlin noise, cited here as general background. [Perlin, 2002](https://mrl.cs.nyu.edu/~perlin/paper445.pdf); [local code](../rust/crates/terrain/src/noise.rs).
 
 A simplified sum is:
 
@@ -64,7 +66,7 @@ h_noise(x, y) = Σ a_k · N(f_k · x, f_k · y)
 
 `N` is coherent noise, `f_k` its frequency and `a_k` the octave's amplitude. Low frequencies structure large masses; high frequencies add detail. *Domain warping* distorts evaluation coordinates using other noise fields, avoiding overly regular ridges. The term “fractal” describes this multiscale construction; it does not demonstrate a geological law.
 
-Map size and pattern scale are separate. Terrain families add shape constraints: plain, hills, valley, mountains, plateau, canyon, volcano or caldera. Coastal cutting defines a signed surface with sea at zero, then retains the results of physical processing. Octaves unresolved at the sampling scale are filtered to limit artifacts. See the [core](../rust/crates/core/src/lib.rs), [coasts](../rust/crates/core/src/coast.rs) and [noise preparation](../rust/crates/core/src/generation_noise.rs).
+Map size and pattern scale are separate. Terrain families add shape constraints: plain, hills, valley, mountains, plateau, canyon, volcano or caldera. Coastal cutting defines a signed surface with sea at zero, then retains the results of physical processing. Octaves unresolved at the sampling scale are filtered to limit artifacts. See the [core](../rust/crates/core/src/lib.rs), [coasts](../rust/crates/terrain/src/coast.rs) and [noise preparation](../rust/crates/terrain/src/generation_noise.rs).
 
 ## 3. Erosion: drainage, incision and redistribution
 
@@ -72,7 +74,7 @@ Map size and pattern scale are separate. Terrain families add shape constraints:
 
 An elevation field contains closed depressions and flat areas where slope alone cannot choose a downstream direction. **Priority-Flood** explores cells from outlets in increasing elevation order and computes the level needed to drain each depression. This level is a drainage potential; it does not mean that every depression must become a lake or be physically filled. [Barnes, Lehman and Mulla, 2014](https://doi.org/10.1016/j.cageo.2013.04.024); [authors' implementation](https://github.com/r-barnes/Barnes2013-Depressions).
 
-For erosion, **D∞** routing estimates a direction on triangular facets around a cell and divides contributing area between two downstream neighbors. It reduces the preference of D8 grids for eight fixed directions. The final vector network instead uses its own drainage topology: the two representations serve different purposes. [Tarboton, 1997](https://doi.org/10.1029/96WR03137); [erosion code](../rust/crates/core/src/erosion.rs).
+For erosion, **D∞** routing estimates a direction on triangular facets around a cell and divides contributing area between two downstream neighbors. It reduces the preference of D8 grids for eight fixed directions. The final vector network instead uses its own drainage topology: the two representations serve different purposes. [Tarboton, 1997](https://doi.org/10.1029/96WR03137); [erosion code](../rust/crates/terrain/src/erosion.rs).
 
 ### Fluvial incision
 
@@ -84,7 +86,7 @@ The *stream-power* law relates bed lowering to drainage area and slope. A refere
 
 `h` is elevation, `U` uplift, `A` contributing area, `S` slope and `K` erodibility. The exponents describe the model's response. Braun and Willett's implicit solver handles downstream dependencies without requiring the small steps of an explicit scheme. [Braun and Willett, 2013](https://doi.org/10.1016/j.geomorph.2012.10.008).
 
-Magna Urbis applies an interactive adaptation: capped contributing area, attenuated response on gentle slopes, bounded incision and implicit updates toward downstream elevation. The “erosion” setting controls intensity, not a calibrated geological duration. The equation above explains the family of methods; it is not an exact transcription of every generator pass. Threshold openings and partial basin filling are also bounded. [CPU implementation](../rust/crates/core/src/erosion.rs); [GPU passes](../rust/bridge/terrainErosion.wgsl).
+Magna Urbis applies an interactive adaptation: capped contributing area, attenuated response on gentle slopes, bounded incision and implicit updates toward downstream elevation. The “erosion” setting controls intensity, not a calibrated geological duration. The equation above explains the family of methods; it is not an exact transcription of every generator pass. Threshold openings and partial basin filling are also bounded. [CPU implementation](../rust/crates/terrain/src/erosion.rs); [GPU passes](../rust/bridge/terrainErosion.wgsl).
 
 ### Thermal relaxation and hillslope diffusion
 
@@ -96,15 +98,15 @@ Thermal relaxation moves material when slope exceeds a talus threshold. Diffusio
 
 ### Drainage graph and river geometry
 
-The hydrology stage reads the physical surface and builds downstream directions, contributing areas, basins and depressions. Initial diagnostics remain separate from routing decisions and terrain corrections. A bounded breach can open a depression that is not retained; flats require topological ordering to avoid loops and arbitrary flow. [Hydrology](../rust/crates/core/src/hydrology.rs); [flats](../rust/crates/core/src/hydrology_flats.rs); [depressions](../rust/crates/core/src/hydrology_depressions.rs).
+The hydrology stage reads the physical surface and builds downstream directions, contributing areas, basins and depressions. Initial diagnostics remain separate from routing decisions and terrain corrections. A bounded breach can open a depression that is not retained; flats require topological ordering to avoid loops and arbitrary flow. [Hydrology](../rust/crates/terrain/src/hydrology.rs); [flats](../rust/crates/terrain/src/hydrology_flats.rs); [depressions](../rust/crates/terrain/src/hydrology_depressions.rs).
 
 Drainage cells then become a **vector graph**: sources, reaches, confluences and outlets. Widths and profiles are evaluated along centerlines; incised beds and water surfaces also contribute to terrain sampling. Shared nodes maintain confluence joins. The water profile must remain downhill and compatible with ground-correction budgets.
 
-Local curves use deterministic multiscale variation in physical units constrained by terrain. They are not a sine wave drawn over a grid line. Meander-migration models such as Howard and Knutson's provide scientific comparison; the current Rust module is not a complete reimplementation of that time-dependent simulation. [Howard and Knutson, 1984](https://doi.org/10.1029/WR020i011p01659); [Rust curves](../rust/crates/core/src/hydrology_meanders.rs).
+Local curves use deterministic multiscale variation in physical units constrained by terrain. They are not a sine wave drawn over a grid line. Meander-migration models such as Howard and Knutson's provide scientific comparison; the current Rust module is not a complete reimplementation of that time-dependent simulation. [Howard and Knutson, 1984](https://doi.org/10.1029/WR020i011p01659); [Rust curves](../rust/crates/terrain/src/hydrology_meanders.rs).
 
 ### Lakes and water balance
 
-A topographic depression does not guarantee a permanent lake. The local module estimates annual runoff from precipitation and empirical evapotranspiration depending on temperature and elevation. A lake reaches a level compatible with its inflows and surface evaporation: it can remain closed or overflow at its threshold and pass on the surplus. Artistic minima and caps remain generator parameters. [Local water balance](../rust/crates/core/src/hydrology_balance.rs).
+A topographic depression does not guarantee a permanent lake. The local module estimates annual runoff from precipitation and empirical evapotranspiration depending on temperature and elevation. A lake reaches a level compatible with its inflows and surface evaporation: it can remain closed or overflow at its threshold and pass on the surplus. Artistic minima and caps remain generator parameters. [Local water balance](../rust/crates/terrain/src/hydrology_balance.rs).
 
 The **Fill–Spill–Merge** family retains depressions and distributes inflows among basins that fill, spill and merge. The local module takes inspiration from it for a simplified equilibrium on its drainage; it does not reproduce the published algorithm's entire hierarchy and dynamics. [Barnes, Callaghan and Wickert, 2021](https://esurf.copernicus.org/articles/9/105/2021/).
 
@@ -130,7 +132,7 @@ The local profile is `coarse4` → original base in one evaluation → distilled
 
 Diffusion-model theory distinguishes the denoising network, its conditioning and the sampling scheme. EDM and EDM2 provide formulations and normalization mechanisms used by this family of networks. Distillation trains a student to replace a more expensive chain; consistency models in particular allow generation in few evaluations. This does not make any original model reliable in one pass. [Karras et al., 2022](https://arxiv.org/abs/2206.00364), [Karras et al., 2024](https://arxiv.org/abs/2312.02696), [Song et al., 2023](https://proceedings.mlr.press/v202/song23a.html).
 
-The sketch controls large shapes and climate guides learned structures. A small feature below coarse resolution is not guaranteed to survive. The neural surface is imported without reapplying procedural erosion and coastal cutting; hydrology is a separate stage. [Sketch](../rust/crates/neural/src/sketch.rs); [imported surface](../rust/crates/core/src/engine.rs).
+The sketch controls large shapes and climate guides learned structures. A small feature below coarse resolution is not guaranteed to survive. The neural surface is imported without reapplying procedural erosion and coastal cutting; hydrology is a separate stage. [Sketch](../rust/crates/neural/src/sketch.rs); [imported surface](../rust/crates/terrain/src/engine.rs).
 
 ### Relationship to Neural Earth and Orogen
 

@@ -67,6 +67,7 @@ export interface LandPainters {
   readonly landFill: (kind: keyof Palette['land']) => string;
   readonly landAlpha: (kind: keyof Palette['land']) => number;
   readonly fillLand: (name: string, kind: keyof Palette['land']) => void;
+  readonly fillLandSteps: (name: string, kind: keyof Palette['land']) => Generator<void>;
   readonly multiply: (on: boolean) => void;
 }
 

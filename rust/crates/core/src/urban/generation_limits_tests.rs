@@ -67,6 +67,26 @@ fn wizard_800_reserves_and_allocates_its_cultural_tower() {
 }
 
 #[test]
+fn a_fixed_mountain_village_builds_stepped_homes_from_its_exact_foundation() {
+    let (n, width) = (128, 4000.0);
+    let height: Vec<f32> = (0..n * n).map(|i| (20.0 + 0.8 * (i % n) as f64 * width / n as f64) as f32).collect();
+    let water = vec![0; n * n];
+    let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+    let site = Site { key: "mountain-village".into(), name: String::new(), population: 300,
+        culture: "byzantine-greek".into(), center: Point { x: 2011.37, y: 1997.21 }, radius: 200.0, neighbours: vec![] };
+    let cfg = LayoutConfig { fixed_sites: BTreeSet::from([site.key.clone()]), ..Default::default() };
+    let layouts = generate_quarters("fixed-mountain-village", &[site.clone()], &cfg, surface, &[]).unwrap();
+    let l = &layouts[0];
+    assert_eq!(l.center, site.center);
+    let core = &l.structure.as_ref().expect("mountain foundation").centers[0];
+    assert_eq!(core.point, site.center, "a mountain village must not snap to a flatter neighbouring cell");
+    let parts = generate_parcels("fixed-mountain-village", &layouts, &ParcelConfig::default()).unwrap();
+    let requests = building_sites::requests("fixed-mountain-village", &layouts, &parts, surface, &vec![0.0; n * n], None).unwrap();
+    let homes: Vec<_> = requests.iter().filter(|r| r["function"] != "open_space" && r["terrain"]["max_foundation_step_m"].as_f64().unwrap_or(0.0) > 0.75).collect();
+    assert!(homes.len() >= 20, "a 39 degree village needs real stepped house requests, got {}: {:?}", homes.len(), l.warnings);
+}
+
+#[test]
 fn constrained_medina_keeps_what_fits_and_reports_achieved_population() {
     let (layouts, parts, requests) = town("medina", 8000, 4000.0, 0.0, Some(110.0));
     assert!(!requests.is_empty(), "A habitable island must retain a partial town");

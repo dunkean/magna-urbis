@@ -1,16 +1,16 @@
 /**
  * The last controls of the page: language and units (and what they redraw), the workbench layout, the reset button, the
- * settlements' name origin and the road display control. Mounted after every form they sync; `initializeLanguage`
+ * settlements' name origin. Mounted after every form they sync; `initializeLanguage`
  * runs here, once the page's texts and language listeners exist.
  */
 import type { PageActions, PageState } from './contract';
 import { setText, translate, setLanguage, onLanguageChange, initializeLanguage, numberLocale, registerMessages, type Language } from '../i18n';
 import { getDistanceUnit, onUnitsChange, unitFactor, type DistanceUnit } from '../units';
 import { mountWorkbenchLayout } from '../workbenchLayout';
-import { mountRoadDisplayControl } from '../roadDisplayControl';
 import { mountNameOriginControls } from '../nameOriginControls';
 import { saveAutosaveNow } from '../autosave';
 import { resetSettings, markAllStagesStale, RESET_LABEL, RESET_TITLE, RESET_CONFIRM, RESET_DONE } from '../settingsReset';
+import { confirmAction } from '../actionDialog';
 import { $ } from './dom';
 
 export function mountPreferences(state: PageState, actions: PageActions): void {
@@ -95,8 +95,18 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
     reset.setAttribute('data-i18n-title', RESET_TITLE);
     reset.title = translate(RESET_TITLE);
     $('#map-advanced-open').after(reset);
+    let confirming = false;
     reset.onclick = async () => {
-      if (state.busy || !window.confirm(translate(RESET_CONFIRM))) return;
+      if (state.busy || confirming) return;
+      confirming = true;
+      let confirmed = false;
+      try {
+        confirmed = await confirmAction(RESET_CONFIRM, { id: 'reset-settings-dialog', title: RESET_TITLE, confirmLabel: RESET_LABEL, danger: true });
+      } finally {
+        confirming = false;
+      }
+      // A generation may have started while the dialog was open.
+      if (!confirmed || state.busy) return;
       state.labelBaseline = undefined;
       state.smallPlaceRecipe = undefined;
       await state.smallPlaces?.stop();
@@ -140,13 +150,4 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
       }),
     );
   }
-
-  // Roads as plan, hidden or rendered: next to the urban plan field of the top bar.
-  state.roadDisplay = mountRoadDisplayControl(document.querySelector('[data-setting-path="appearance.city.plan"]')?.closest('.parameter-field') ?? null, $('.view-strip'), {
-    getSettings: () => state.settings,
-    onChange: () => {
-      state.projectRevision++;
-      actions.scheduleAppearance();
-    },
-  });
 }

@@ -64,7 +64,7 @@ function wallPieces(points: Point[], gates: Point[]): { pieces: Point[][]; gateT
 export function cityGroundSubjects(layouts: readonly Layout[], partitions: readonly Partition[] = []): Shape[] {
   const shapes: Shape[] = [];
   for (const layout of layouts) {
-    for (const block of layout.blocks) shapes.push(block.kind === 'reserve' ? softenRuralGround(block.shape) : block.shape);
+    for (const block of layout.blocks) if (block.kind !== 'deleted') shapes.push(block.kind === 'reserve' ? softenRuralGround(block.shape) : block.shape);
     for (const shape of layout.structure?.allocated?.length ? layout.structure.allocated : layout.quarters.map(q => q.shape)) shapes.push(shape);
     for (const parcel of partitions.find(p => p.key === layout.key)?.parcels ?? []) shapes.push(parcel.use === 'reserve' ? softenRuralGround(parcel.shape) : parcel.shape);
   }
@@ -110,6 +110,8 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
       return { zone: kind === 'faubourg' ? 'faubourg' : z, phase: p, peripheral: kind === 'faubourg' || (['edge', 'faubourg', 'village'].includes(growth?.zone ?? z) && !walled) };
     };
     layout.blocks.forEach((block, bi) => {
+      // A deleted native block keeps its slot so the indices of the others stay those of the native layout.
+      if (block.kind === 'deleted') return;
       const z = zoneOf(block.quarter, block.zone, block.phase),
         district = byQuarter.get(block.quarter);
       const shape = block.kind === 'reserve' ? softenRuralGround(block.shape) : block.shape;

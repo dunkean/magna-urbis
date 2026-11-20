@@ -11,7 +11,9 @@ import { validateSettings } from '../project';
 import type { QuarterOverride, BlockOverride, ParcelOverride } from '../../../../rust/bridge/urbanConfig';
 import { polygonArea } from '../urbanEditOptions';
 import { mergedOutline, type LotShape } from '../parcelMerge';
-import { blockEditId } from '../../../../rust/bridge/urbanBlockEdits';
+import { blockEditKey } from '../../../../rust/bridge/urbanBlockEdits';
+import { quarterEditKey } from '../../../../rust/bridge/urbanQuarterEdits';
+import { editableContours } from '../contourEdits';
 import { pointInRing } from '../../gen/geo/poly';
 import { townUrban } from '../edits';
 import { mountUrbanControls } from '../urbanControls';
@@ -99,7 +101,7 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
         kind === 'quarter'
           ? urban.quarters.map((q, i) => ({ shape: q.poly, id: q.nativeId, index: i }))
           : kind === 'block'
-            ? urban.blocks.map((ring, i) => ({ shape: layout?.blocks[i]?.shape ?? { outer: ring, holes: [] }, id: layout ? blockEditId(layout, layout.blocks[i].shape) : undefined, index: i }))
+            ? urban.blocks.map((ring, i) => ({ shape: layout?.blocks[i]?.kind === 'deleted' ? { outer: [], holes: [] } : (layout?.blocks[i]?.shape ?? { outer: ring, holes: [] }), id: layout ? blockEditKey(layout, i) : undefined, index: i }))
             : urban.parcels.map((parcel, i) => ({ shape: native?.partitions?.[0]?.parcels[i]?.shape ?? { outer: parcel.poly, holes: [] }, id: parcel.nativeId, index: i }));
       const item = items.find(item => (selectedId !== undefined ? item.id === selectedId : pointInRing(item.shape.outer, p) && !item.shape.holes?.some(h => pointInRing(h, p))));
       if (!item) continue;
@@ -120,9 +122,11 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
         actions.appendLocalFacts($('#building-inspector'), settlement.key, { kind, index: item.index });
         return true;
       }
-      const quarterId = kind === 'quarter' ? nativeId : kind === 'block' ? String(layout!.blocks[item.index].quarter) : String(layout?.blocks[urban.parcels[item.index].block]?.quarter ?? 0);
-      const blockId = kind === 'block' ? nativeId : kind === 'parcel' && layout ? blockEditId(layout, layout.blocks[urban.parcels[item.index].block].shape) : undefined;
-      const blockIds = new Set(kind === 'quarter' ? layout?.blocks.flatMap((b, i) => (String(b.quarter) === nativeId ? [String(i)] : [])) : kind === 'block' ? [String(item.index)] : []);
+      // Saved recipes name a quarter or block by its stable edit key; the native index only addresses this layout.
+      const quarterIndex = kind === 'quarter' ? item.index : kind === 'block' ? layout!.blocks[item.index].quarter : (layout?.blocks[urban.parcels[item.index].block]?.quarter ?? 0);
+      const quarterId = layout ? quarterEditKey(layout, quarterIndex) : String(quarterIndex);
+      const blockId = kind === 'block' ? nativeId : kind === 'parcel' && layout ? blockEditKey(layout, urban.parcels[item.index].block) : undefined;
+      const blockIds = new Set(kind === 'quarter' ? layout?.blocks.flatMap((b, i) => (b.quarter === item.index ? [String(i)] : [])) : kind === 'block' ? [String(item.index)] : []);
       const parcelIds = new Set(
         kind === 'parcel'
           ? [nativeId]
@@ -132,7 +136,12 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
               .filter((id): id is string => !!id),
       );
       const children = {
-        blocks: layout ? [...blockIds].map(id => blockEditId(layout, layout.blocks[Number(id)].shape)) : [],
+        blocks: layout
+          ? [...blockIds].flatMap(id => {
+              const key = blockEditKey(layout, Number(id));
+              return key ? [key] : [];
+            })
+          : [],
         parcels: [...parcelIds],
         requests: [
           ...new Set(
@@ -197,6 +206,18 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
         map: $('#map'),
         getView: () => state.client.viewer.getView(),
       });
+      const contourButton = document.createElement('button');
+      contourButton.type = 'button';
+      contourButton.className = 'small';
+      contourButton.dataset.editContour = kind;
+      setText(contourButton, 'Edit outline');
+      contourButton.onclick = () => {
+        const chosen = state.world && editableContours(state.world, kind, state.settings).find(t => t.town === settlement.key && t.id === nativeId);
+        if (!chosen) return;
+        state.selectionOutline.set();
+        state.contourEditor.edit(chosen);
+      };
+      $('#subdivision-actions').append(contourButton);
       $('#subdivision-apply').onclick = () => {
         try {
           apply(get() ?? {});
@@ -215,7 +236,7 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
       const controls = $('#subdivision-controls');
       const allocation = kind === 'parcel' ? native?.programmePartitions?.[0]?.programme?.allocations.find(a => a.parcelId === nativeId) : undefined;
       if (kind === 'parcel') mountParcelMerge(settlement.key, nativeId, item.index, item.shape, allocation?.role);
-      const quarter = layout?.quarters[Number(quarterId)];
+      const quarter = layout?.quarters[quarterIndex];
       const defaults: Record<string, unknown> =
         kind === 'quarter'
           ? { culture: layout?.phases?.[quarter?.phase ?? 0]?.culture ?? layout?.culture, zone: quarter?.zone }

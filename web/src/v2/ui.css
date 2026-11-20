@@ -1,4 +1,23 @@
 @import url('../ui/exportCrop.css');
+dialog.v2-action-dialog {
+  width: min(500px, 94vw);
+}
+dialog.v2-action-dialog > .hint {
+  white-space: pre-line;
+  line-height: 1.65;
+  margin-top: 12px;
+}
+dialog.v2-action-dialog .dialog-actions {
+  flex-wrap: wrap;
+}
+dialog.v2-action-dialog button.danger {
+  background: #8f4930;
+  border-color: #ca8e68;
+  color: #fff0df;
+}
+dialog.v2-action-dialog button.danger:hover:not(:disabled) {
+  background: #a55a3b;
+}
 .viewer-direct:has(+ canvas[hidden]) {
   display: none;
 }
@@ -80,6 +99,19 @@
 .style-control #view3d {
   padding: 6px 9px;
   font-size: 11px;
+}
+.style-control #view3d:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.style-control #view-lock2d {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 6px;
+  margin-right: -4px;
+}
+.style-control #view-lock2d[aria-pressed='false'] {
+  opacity: 0.6;
 }
 .style-control #capture3d {
   font-size: 10px;
@@ -1340,6 +1372,14 @@ dialog .file-card p {
   * {
     animation: none !important;
     transition: none !important;
+  }
+  /* The busy indicators keep turning, slowly: a still ring would say the page is stuck (Windows turns its animations off
+     in Remote Desktop sessions, which sets this preference). */
+  .view-loading {
+    animation: view-loading-spin 2.4s linear infinite !important;
+  }
+  .spinner {
+    animation: spin 2.4s linear infinite !important;
   }
 }
 

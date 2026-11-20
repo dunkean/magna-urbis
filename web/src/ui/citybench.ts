@@ -1,3 +1,4 @@
+import { contourRaster, contourRasterUrl } from '../render/contourRaster';
 import { fortificationClearings } from '../render/forestClearance';
 import { underdarkSceneLook } from '../render/underdarkLighting';
 import { cityGroundSettings, cityGroundLook, cityForestInput, cityForestSettings } from '../render/cityEnvironment';
@@ -23,7 +24,7 @@ import type { Decor } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
 import { clampView, fitView, panBy, zoomAt, type View } from '../render/view';
 import { CITY_LOD_OFF } from '../render/cityCanvas';
-import { cityContourPaths, cityContourPathsReady, type CityContourPaths } from '../render/cityContours';
+import { cityContourPaths, cityContourPathsPending, cityContourPathsReady, type CityContourPaths } from '../render/cityContours';
 import { renderRustTerrain, terrainContourWidths } from '../../../rust/bridge/terrainRender';
 import { getBenchRenderColors, writeRenderColorsQuery } from './benchRenderColors';
 import { isTerrainStyle, styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
@@ -422,8 +423,30 @@ function drawContours(): void {
   }
   const mode = contourDrawOf(r.composition.recipe);
   const paths = cityContourPaths(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale, r.composition.recipe.ground.variant === 'topographic', contoursReady, mode.detail, mode.sparse);
-  const layer = contours.querySelector('g')!,
-    [thin, index] = Array.from(layer.querySelectorAll('path'));
+  const layer = contours.querySelector('g')!;
+  if (mode.detail === 'fixed' || r.composition.recipe.ground.variant === 'topographic') {
+    if (cityContourPathsPending(terrain, new URLSearchParams(decor.meta.query).get('relief') ?? 'flat', view.scale, r.composition.recipe.ground.variant === 'topographic', mode.detail, mode.sparse)) return;
+    if (!paths.step) return;
+    const pal = terrainStyle(r.ground.style, getBenchRenderColors()).palette;
+    const plate = contourRaster(paths, terrain.width, { color: pal.contour, opacity: pal.contourOpacity * mode.opacity, thinWeight: pal.contourThinW ?? 1, indexWeight: pal.contourIndexW / 1.6, topographic: r.composition.recipe.ground.variant === 'topographic' });
+    let image = layer.querySelector('image');
+    if (!image) {
+      layer.innerHTML = `<image width="${terrain.width}" height="${terrain.width}"/>`;
+      image = layer.querySelector('image')!;
+      shownContours = undefined;
+    }
+    const url = contourRasterUrl(plate);
+    if (image.getAttribute('href') !== url) image.setAttribute('href', url);
+    contours.dataset.step = String(paths.step);
+    contourScale = view.scale;
+    contourStyle = backgroundStyle;
+    return;
+  }
+  if (layer.querySelector('image')) {
+    layer.innerHTML = '<path vector-effect="non-scaling-stroke"/><path vector-effect="non-scaling-stroke"/>';
+    shownContours = undefined;
+  }
+  const [thin, index] = Array.from(layer.querySelectorAll('path'));
   if (shownContours !== paths) {
     thin.setAttribute('d', paths.thin);
     index.setAttribute('d', paths.index);
@@ -752,7 +775,7 @@ const city3d = mountCity3d({
   },
   onViewSettingsChange: value => {
     if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground));
-    for (const key of ['plan', 'colors', 'exaggeration', 'refinement', 'trees3d', 'treeDistance'] as const) setBenchAppearanceField(`city.${key}`, value[key]);
+    for (const key of ['colors', 'exaggeration', 'refinement', 'trees3d', 'treeDistance'] as const) setBenchAppearanceField(`city.${key}`, value[key]);
   },
   getGroundSettings: ground => {
     if (!decor) return;
@@ -1195,7 +1218,6 @@ el<HTMLInputElement>('showContours').onchange = () => {
   drawContours();
   save();
 };
-el<HTMLInputElement>('showPlan').onchange = event => settlements.urban.setPlanVisible((event.target as HTMLInputElement).checked);
 el<HTMLSelectElement>('backgroundStyle').value = backgroundStyle;
 el<HTMLSelectElement>('backgroundStyle').onchange = event => {
   const value = (event.target as HTMLSelectElement).value;

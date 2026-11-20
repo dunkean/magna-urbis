@@ -163,7 +163,12 @@ pub(in super::super) fn sited(
     cfg: &LayoutConfig,
     surface: Surface<'_>,
 ) -> Option<Site> {
-    if !port_town(cfg) || surface.n < 2 || surface.wet(site.center)
+    // A bridge town may embank its own river. Crossing context alone never
+    // commissions a harbour or moves its foundation towards another water.
+    let river_crossing = cfg.site_archetype == "bridge"
+        && !cfg.programme.navigable_access
+        && !cfg.programme.functions.as_ref().is_some_and(|f| f.port > 0.0);
+    if !port_town(cfg) || river_crossing || cfg.fixed_sites.contains(&site.key) || surface.n < 2 || surface.wet(site.center)
         || site.population >= 3000 && parameterized(cfg) {
         return None;
     }
@@ -181,6 +186,11 @@ pub(in super::super) fn sited(
         cfg.max_street_grade
     };
     let search = (2.5 * site.radius).max(1000.0);
+    // A port is supplied from its town over land. A flat offshore island is
+    // never a substitute for an inaccessible mainland coast, even if it has
+    // more room. Reuse one terrain router for the shortlisted bank candidates.
+    let mut approach = routing::RoutePlanner::new(surface, (site.center.x - search, site.center.y - search,
+        site.center.x + search, site.center.y + search));
     let at = |p: Point| ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
     let centre = |i: i64, j: i64| Point {
         x: (i as f64 + 0.5) * cell,
@@ -326,6 +336,9 @@ pub(in super::super) fn sited(
         }) else {
             continue;
         };
+        if approach.route(site.center, center, cfg.max_street_grade).is_none() {
+            continue;
+        }
         let land = flood(
             surface,
             center,
@@ -2078,6 +2091,42 @@ mod tests {
             ..surface
         };
         assert!(sited(&site, &cfg, steep).is_none());
+    }
+
+    #[test]
+    fn a_cliff_coast_never_sends_its_town_to_an_offshore_island() {
+        let (n, width) = (256, 2048.0);
+        let cell = width / n as f64;
+        let island = |x: f64, y: f64| (x - 200.0).hypot(y - 1000.0) < 120.0;
+        let water: Vec<u8> = (0..n * n).map(|i| {
+            let (x, y) = (((i % n) as f64 + 0.5) * cell, ((i / n) as f64 + 0.5) * cell);
+            u8::from(x < 400.0 && !island(x, y))
+        }).collect();
+        let height: Vec<f32> = (0..n * n).map(|i|
+            if ((i % n) as f64 + 0.5) * cell < 416.0 { 2.0 } else { 42.0 }).collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+        let site = Site { key: "mainland".into(), name: String::new(), population: 500,
+            culture: "european-organic".into(), center: Point { x: 1200.0, y: 1000.0 }, radius: 180.0, neighbours: vec![] };
+        let cfg = LayoutConfig { site_archetype: "harbor".into(), ..Default::default() };
+        assert!(sited(&site, &cfg, surface).is_none(), "an unreachable island cannot rescue a cliff harbour");
+        let resident = Site { center: Point { x: 200.0, y: 1000.0 }, ..site.clone() };
+        assert!(!surface.wet(resident.center), "the island stays available to an independently placed settlement");
+    }
+
+    #[test]
+    fn a_crossing_is_not_a_harbour_order_and_a_manual_foundation_never_moves() {
+        let (n, width) = (128, 2048.0);
+        let height = vec![2.0; n * n];
+        let water: Vec<u8> = (0..n * n).map(|i| u8::from(i % n < 25)).collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+        let site = Site { key: "manual".into(), name: String::new(), population: 500,
+            culture: "european-organic".into(), center: Point { x: 900.0, y: 1000.0 }, radius: 180.0, neighbours: vec![] };
+        let mut cfg = LayoutConfig { site_archetype: "bridge".into(), ..Default::default() };
+        assert!(sited(&site, &cfg, surface).is_none());
+        cfg.site_archetype = "harbor".into();
+        assert!(sited(&site, &cfg, surface).is_some(), "a reachable harbour still has a shore");
+        cfg.fixed_sites.insert(site.key.clone());
+        assert!(sited(&site, &cfg, surface).is_none());
     }
 
     /// A quay never stands where the land behind it climbs faster than a

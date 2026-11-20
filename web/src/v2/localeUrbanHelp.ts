@@ -215,4 +215,7 @@ export const urbanHelpMessages: readonly (readonly [string, string, string, stri
   [
     ...Object.entries({ ...urbanParameterHelp, ...urbanContextHelp }).map(([key, en]) => [en, ...translations[key]] as const),
     ['Rust · urban composition…', 'Rust · composition urbaine…', 'Rust · composición urbana…', 'Rust · composição urbana…', 'Rust · 城市构成…', 'Rust · التكوين الحضري…', 'Rust · городская композиция…', 'Rust · 都市構成…'],
+    ['Rust · urban composition… ({name})', 'Rust · composition urbaine… ({name})', 'Rust · composición urbana… ({name})', 'Rust · composição urbana… ({name})', 'Rust · 城市构成… ({name})', 'Rust · التكوين الحضري… ({name})', 'Rust · городская композиция… ({name})', 'Rust · 都市構成… ({name})'],
+    ['Settlements ready: {done}/{total}', 'Lieux prêts : {done}/{total}', 'Asentamientos listos: {done}/{total}', 'Povoados prontos: {done}/{total}', '已就绪聚落：{done}/{total}', 'المستوطنات الجاهزة: {done}/{total}', 'Готовые поселения: {done}/{total}', '完成した集落：{done}/{total}'],
+    ['Sending the terrain to the urban engine…', 'Envoi du terrain au moteur urbain…', 'Enviando el terreno al motor urbano…', 'Enviando o terreno ao motor urbano…', '正在将地形发送到城市引擎…', 'جارٍ إرسال التضاريس إلى المحرك الحضري…', 'Передача рельефа городскому движку…', '地形を都市エンジンへ送信しています…'],
   ];

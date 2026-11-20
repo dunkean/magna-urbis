@@ -206,7 +206,7 @@ if (process.argv.includes('--serve')) {
       assert(switchingWhileBusy, 'The live-language test did not observe an active calculation');
       assert(await page.locator('#language-select').isEnabled(), 'Language picker is disabled during generation');
       await language('fr');
-      assert.match(await page.locator('#progress-label').textContent(), /quartiers|parcelles|bâtiments|Mise à jour|Lieux|Dessin|Préparation/);
+      assert.match(await page.locator('#progress-label').textContent(), /quartiers|parcelles|bâtiments|Mise à jour|Lieux|Génération des lieux|Dessin|Préparation/);
     });
     await assertFrench();
     await language('en');

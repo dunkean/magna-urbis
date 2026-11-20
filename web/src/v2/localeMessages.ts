@@ -1,4 +1,5 @@
 import { localeExtraLatin } from './localeExtraLatin';
+import { localeCoasts } from './localeCoasts';
 import { localeExtraAsia } from './localeExtraAsia';
 import { localeExtraArRu } from './localeExtraArRu';
 import { localeNaming } from './localeNaming';
@@ -9,6 +10,8 @@ import { localeExtraFill } from './localeExtraFill';
 import { localeExtraCultures } from './localeExtraCultures';
 import { neuralDownloadMessages } from './neuralDownloadMessages';
 import { editingMessages } from './editingMessages';
+import { roadEditorMessages } from './roadEditorMessages';
+import { isolatedPlaceMessages } from './isolatedPlaceMessages';
 import { symbolicMapMessages } from './symbolicMapMessages';
 import { coastTraceMessages } from './coastTraceMessages';
 import { engineRuntimeEntries, engineRuntimeTemplates } from './engineRuntimeMessages';
@@ -8380,6 +8383,7 @@ export const localeMessages: Record<'es' | 'pt' | 'zh' | 'ar' | 'ru' | 'ja', Rec
 for (const [language, messages] of Object.entries({ ...localeExtraLatin, ...localeExtraAsia, ...localeExtraArRu })) {
   Object.assign(localeMessages[language as keyof typeof localeMessages], messages);
 }
+for(const [language,messages] of Object.entries(localeCoasts))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeUnderdark))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeNaming))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
 for(const [language,messages] of Object.entries(localeEditor))Object.assign(localeMessages[language as keyof typeof localeMessages],messages);
@@ -8389,6 +8393,8 @@ for(const [language,messages] of Object.entries(localeExtraCultures))Object.assi
 for (const [index, language] of (['es', 'pt', 'zh', 'ar', 'ru', 'ja'] as const).entries()) {
   for (const row of neuralDownloadMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of editingMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of roadEditorMessages) localeMessages[language][row[0]] = row[index + 2];
+  for (const row of isolatedPlaceMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of urbanHelpMessages) localeMessages[language][row[0]] = row[index + 2];
   for (const row of cityCodeMessages) localeMessages[language][row[0]] = row[index + 1];
   for (const row of [...coastTraceMessages, ...symbolicMapMessages]) localeMessages[language][row[0]] = row[index + 1];

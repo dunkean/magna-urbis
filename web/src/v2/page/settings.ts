@@ -81,6 +81,7 @@ export function createSettingsActions(state: PageState, actions: PageActions) {
     actions.syncDisplayWidgets();
     state.renderControls.sync();
     state.mapControls.sync();
+    state.chain.sync();
     actions.syncNameOrigins();
     return state.client.setAppearance(state.settings).catch(actions.reportAppearanceError);
   }

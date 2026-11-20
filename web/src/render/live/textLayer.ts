@@ -383,15 +383,17 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     counters.pendingLabels = pending ? pending.source.placed.length - pending.label : 0;
   }
 
+  /** A distant placement magnifies flat atlas glyphs while its replacement is prepared. */
+  const tiltedFits = (frame: LiveFrame): boolean => !!tilted && Math.abs(Math.log2(frame.view.scale / placedScale)) <= 0.5;
+
   /** The program of a tilted frame and its camera: the batches are then drawn as in the top view. */
   function useTilted(frame: LiveFrame, p: TiltedProgram): void {
     const camera = frame.camera,
-      target = camera.target,
-      eye = camera.eye;
+      target = camera.target;
     gl.useProgram(p.handle);
     gl.uniformMatrix4fv(p.projection, false, camera.targetViewProjection);
     gl.uniform3f(p.origin, originX - target[0], originY - target[1], -target[2]);
-    gl.uniform4f(p.scale, camera.rise, placedScale, frame.dpr, Math.hypot(eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]));
+    gl.uniform4f(p.scale, camera.rise, placedScale, frame.dpr, camera.distance);
     gl.uniform2f(p.viewport, frame.width, frame.height);
     gl.uniform1i(p.atlas, 0);
   }
@@ -401,7 +403,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     isolated: false,
     tilts: true,
     ready(frame): boolean {
-      if (frame.camera.tilted && !tilted) return false;
+      if (frame.camera.tilted && !tiltedFits(frame)) return false;
       return !options.placement() || (!disposed && complete && frame.dpr === density);
     },
     restExact(frame): boolean {
@@ -502,7 +504,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
       const started = performance.now();
       counters.drawCalls = 0;
       counters.triangles = 0;
-      if (disposed || !options.placement() || !complete || !program || batches.length === 0 || (frame.camera.tilted && !tilted)) {
+      if (disposed || !options.placement() || !complete || !program || batches.length === 0 || (frame.camera.tilted && !tiltedFits(frame))) {
         counters.ms = performance.now() - started;
         return;
       }

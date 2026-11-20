@@ -8,16 +8,17 @@
 import { roadCanopyRevision } from '../roadStyle';
 import { whiteWaterRevision } from '../whiteWater';
 import { View, Rect4 } from '../view';
-import { RecordingCanvas } from '../gpu/recorder';
 import type { DisplayList } from '../gpu/contract';
 import type { LiveLayer } from '../live/contract';
 import { createOverlayLayer, type OverlayBand, type OverlayPlan } from '../live/overlayLayer';
-import { getVectorEngine, noteGpuFallback } from '../vectorEngine';
+import { liveVectorEngine, noteGpuFallback } from '../vectorEngine';
 import { noteLiveUnit } from '../live/liveStats';
 import { CanvasLike } from './contract';
 import type { CartographyContext } from './context';
-import { drawVector } from './vector';
-import { releaseDrapeTemps } from './woods';
+import { drawVector, drawVectorSteps } from './vector';
+import { growRect } from './geometry';
+import { releaseDrapeTemps, warmTreeMarks } from './woods';
+import { createMapRecording } from './mapRecording';
 
 export function createLiveHost(c: CartographyContext) {
   const { deps, now } = c;
@@ -28,14 +29,23 @@ export function createLiveHost(c: CartographyContext) {
     REGION_MAX_WAIT_MS = 1500;
   /** Live overlay layer: a region is recorded in this many horizontal bands, one per idle step. */
   const REGION_BANDS = 4;
+  const fixedRaster = (): boolean => c.pal.name === 'cadastre';
   /** A recording of the map for the live overlay layer has failed under this key: not tried again until it changes. */
   let regionFailed = '';
   /** Layers made by createLiveLayer and not yet disposed: a scene update makes their regions stale too. */
   const liveLayers = new Set<LiveLayer>();
-  /** Everything a recorded region depends on besides its rectangle. */
-  const regionKey = (scale: number, dpr: number, light: boolean): string => `${scale}|${dpr}|${light}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+  /** Everything a recorded region depends on besides its rectangle and the products made per view (`arrivals`). */
+  const regionKey = (scale: number, dpr: number, light: boolean): string =>
+    `${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
   /** The region recorded for a view: a margin around it, edges on a lattice, the half-octave scale, horizontal bands. */
   function regionPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan {
+    if (fixedRaster()) {
+      // One 8192px sheet, split into 2048px squares so no giant render target is allocated.
+      const rect = { minX: 0, minY: 0, maxX: c.S, maxY: c.S },
+        bands: Rect4[] = [];
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) bands.push({ minX: (x * c.S) / 4, minY: (y * c.S) / 4, maxX: ((x + 1) * c.S) / 4, maxY: ((y + 1) * c.S) / 4 });
+      return { key, rect, scale: 8192 / c.S, dpr: 1, bands };
+    }
     const scale = 2 ** (Math.round(2 * Math.log2(view.scale)) / 2),
       hw = (cssW / view.scale) * (0.5 + REGION_MARGIN),
       hh = (cssH / view.scale) * (0.5 + REGION_MARGIN);
@@ -48,12 +58,13 @@ export function createLiveHost(c: CartographyContext) {
     return { key, rect, scale, dpr, bands };
   }
   /** Records one band with the crisp mark; undefined (and the key marked failed) when the recorder cannot represent it. */
-  function recordBand(plan: OverlayPlan, band: Rect4): OverlayBand | undefined {
+  function recordBand(plan: OverlayPlan, band: Rect4, retainedInk: boolean): OverlayBand | undefined {
     const cx = (band.minX + band.maxX) / 2,
       cy = (band.minY + band.maxY) / 2;
     const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
       h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
-    const rec = new RecordingCanvas(w, h);
+    const rec = createMapRecording(w, h, retainedInk);
+    const provisional = deps.semantic?.provisional() ?? 0;
     let list: DisplayList | undefined;
     c.markCrisp = true;
     try {
@@ -70,19 +81,72 @@ export function createLiveHost(c: CartographyContext) {
       regionFailed = plan.key;
       return undefined;
     }
-    return { list, rect: band, cx, cy, w, h };
+    return { list, rect: band, cx, cy, w, h, provisional: (deps.semantic?.provisional() ?? 0) !== provisional };
+  }
+  /** Keep the recorder private across yields; renderer flags are borrowed only during a single step. */
+  function* recordDrapeSteps(plan: OverlayPlan, band: Rect4, light: boolean): Generator<void, OverlayBand | undefined> {
+    const cx = (band.minX + band.maxX) / 2,
+      cy = (band.minY + band.maxY) / 2;
+    const w = Math.max(1, Math.ceil((band.maxX - band.minX) * plan.scale * plan.dpr)),
+      h = Math.max(1, Math.ceil((band.maxY - band.minY) * plan.scale * plan.dpr));
+    const rec = createMapRecording(w, h),
+      provisional = deps.semantic?.provisional() ?? 0;
+    // Nearby tiles share their clipped paths across bands. Coarse map-wide tiles must cut to the band itself.
+    const clip = growRect(plan.rect.maxX - plan.rect.minX <= 4 * c.scene.tileSize ? plan.rect : band, Math.max(16, 4 / (plan.scale * plan.dpr)));
+    const steps = drawVectorSteps(c, { cx, cy, scale: plan.scale }, rec as unknown as CanvasLike, 'map', band);
+    try {
+      for (;;) {
+        const before = { stepwise: c.stepwise, light: c.activeLight, dpr: c.activeDpr, clip: c.recordingClip, crisp: c.markCrisp, recording: c.recordingNow },
+          t = now();
+        let done: boolean | undefined;
+        c.stepwise = true;
+        c.activeLight = light;
+        c.activeDpr = plan.dpr;
+        c.recordingClip = clip;
+        c.markCrisp = true;
+        c.recordingNow = true;
+        try {
+          done = steps.next().done;
+        } finally {
+          c.stepwise = before.stepwise;
+          c.activeLight = before.light;
+          c.activeDpr = before.dpr;
+          c.recordingClip = before.clip;
+          c.markCrisp = before.crisp;
+          c.recordingNow = before.recording;
+          noteLiveUnit('record:drape', t);
+        }
+        if (done) break;
+        yield;
+      }
+      const list = rec.finish();
+      if (list.unsupported) throw new Error(list.unsupported);
+      return { list, rect: band, cx, cy, w, h, provisional: (deps.semantic?.provisional() ?? 0) !== provisional };
+    } catch (error) {
+      noteGpuFallback(`record: ${error instanceof Error ? error.message : String(error)}`);
+      regionFailed = plan.key;
+      return undefined;
+    } finally {
+      steps.return(c.stats);
+      releaseDrapeTemps(c);
+    }
   }
   /** The overlay layer of the live compositor: regions of the map recorded here (regionPlan, recordBand) and replayed
    * in the compositor's context. */
   function createLiveLayer(gl: WebGL2RenderingContext): LiveLayer | undefined {
     if (deps.raster === false || !deps.invalidate) return undefined;
+    const ink = deps.semantic?.createInk?.(gl);
     const layer = createOverlayLayer(gl, {
-      active: () => !c.disposed && !c.rasterFailed && getVectorEngine() === 'gpu',
+      ink,
+      fixedRaster,
+      active: () => !c.disposed && !c.rasterFailed && liveVectorEngine() === 'gpu',
       key: (scale, dpr, light) => {
         const key = regionKey(scale, dpr, light);
         return key === regionFailed ? undefined : key;
       },
       plan: regionPlan,
+      arrivals: () => deps.semantic?.arrivals() ?? 0,
+      warm: deadline => c.disposed || warmTreeMarks(c, deadline),
       record(plan, band, light) {
         // One band is one step: recorded at the region's quality and at the compositor's pixel ratio.
         const stepwise = c.stepwise,
@@ -93,7 +157,7 @@ export function createLiveHost(c: CartographyContext) {
         c.activeLight = light;
         c.activeDpr = plan.dpr;
         try {
-          return recordBand(plan, band);
+          return recordBand(plan, band, !!ink);
         } finally {
           c.stepwise = stepwise;
           c.activeLight = wasLight;
@@ -101,6 +165,7 @@ export function createLiveHost(c: CartographyContext) {
           noteLiveUnit('record:band', t);
         }
       },
+      recordSteps: recordDrapeSteps,
       invalidate: () => {
         if (!c.disposed) deps.invalidate?.();
       },

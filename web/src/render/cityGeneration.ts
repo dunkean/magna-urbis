@@ -50,6 +50,11 @@ export function citySiteArchetypes(sites: readonly { key: string; siteType?: str
   );
 }
 
+/** Same manual-foundation contract for the V2 world and native placement records in City Bench. */
+export function cityFixedSites(sites: readonly { key: string; fixed?: boolean; position?: { x: number; y: number } | null; scores?: { manual?: boolean } }[]): string[] {
+  return sites.filter(site => site.fixed || site.position != null || site.scores?.manual).map(site => site.key);
+}
+
 /** Quarter labels receive the same cultural place name on both pages. */
 export function cityNamedSite<T extends { key: string; name?: string; culture: string }>(site: T, seed: string, language = 'auto'): T & { name: string } {
   return { ...site, name: site.name?.trim() || generateToponymRecord({ seed, key: `settlement:${site.key}`, kind: 'town', culture: site.culture, language }).cultural };

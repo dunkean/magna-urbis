@@ -3,6 +3,7 @@ import { pointInRing } from '../gen/geo/poly';
 import { translateLand, translateBuildingScene } from '../ui/urbanSnapshot';
 import type { RustTownSnapshot } from './rustUrban';
 import { setRoadPath } from './networkEdits';
+import { urbanStreetId, editableUrbanRoads } from './urbanRoadEditing';
 
 /** Direct translation of one city: terrain and all other cities remain shared. */
 export function moveTown(source: World, key: string, target: Vec2): World {
@@ -28,9 +29,10 @@ export function moveTown(source: World, key: string, target: Vec2): World {
   if (cities?.[key]) {
     const original = cities[key],
       snapshot = { ...original };
-    for (const field of ['layouts', 'compositionLayouts', 'partitions', 'cadastralPartitions', 'programmePartitions', 'requests'] as const) {
+    for (const field of ['layouts', 'compositionLayouts', 'partitions', 'cadastralPartitions', 'programmePartitions', 'requests', 'roadSources', 'streetEdits', 'pendingRoadChanges'] as const) {
       if (original[field]) Object.assign(snapshot, { [field]: translateLand(original[field], dx, dy) });
     }
+    if (snapshot.streetEdits) snapshot.streetEdits = snapshot.streetEdits.map(e => ({ ...e, id: e.original ? urbanStreetId(e.layout, e.original) : e.id }));
     // Architectural resolved plans are local opaque records. Move their world surfaces only.
     if (original.scene) snapshot.scene = translateBuildingScene(original.scene, dx, dy);
     if (original.houseBaseline && original.scene)
@@ -74,6 +76,7 @@ export function moveTown(source: World, key: string, target: Vec2): World {
     const road = source.roads![i],
       segment = output?.segments?.[i],
       path = road.path;
+    if (road.urban) continue;
     const attached = (end: 0 | 1) => (segment && output?.junctions ? output.junctions[end ? segment.b : segment.a]?.site === key : Math.hypot(path[end ? path.length - 1 : 0].x - town.center.x, path[end ? path.length - 1 : 0].y - town.center.y) <= Math.max(5, town.radius * 1.2));
     const start = attached(0),
       end = attached(1);
@@ -104,5 +107,6 @@ export function moveTown(source: World, key: string, target: Vec2): World {
       }),
     };
   }
-  return next;
+  delete next.debug!.v2UrbanRoadStamp;
+  return editableUrbanRoads(next);
 }

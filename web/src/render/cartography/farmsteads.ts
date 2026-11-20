@@ -38,7 +38,7 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       brushFill('farm-gardens', 'garden', sc);
       brushFill('farm-orchards', 'orchard', sc);
     }
-    if (polyL('farm-fungal-gardens')?.polys.length && lod.textures) {
+    if (!c.activeLight && polyL('farm-fungal-gardens')?.polys.length && lod.textures) {
       const pat = getPattern(ctx, 'fungal-farm', 8, 8, 0, (cx, k) => drawPanelCanvas(cx, { w: 0, h: 0, prims: underdarkMark('garden', 4 * k, 4 * k, 1.7 * k, pal, k) }, 0, 0, family));
       const l = polyL('farm-fungal-gardens');
       if (pat && l) {
@@ -77,21 +77,22 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       );
     if (natural) {
       if (lod.band >= 2) timedRec('farm-trees', () => drawFarmLots(ctx, c.world, { part: 'trees', viewport: pathRect, mpp: px(1), night: roadStyle.night, Path: P }));
-    } else if (lod.band >= 2 && polyL('farm-trees')) {
+    } else if (!c.activeLight && lod.band >= 2 && polyL('farm-trees')) {
       if (brushes) brushTrees('farm-trees', true);
       else {
         fillPolys('farm-trees', pal.treeFill);
         strokePolys('farm-trees', pal.treeInk, lw(0.3, 0.3), 0.8);
       }
     }
-    if (natural && px(1) <= CITY_LOD_LIMITS[1]) {
+    const roofs = !c.deps.volumeBuildings?.();
+    if (roofs && natural && px(1) <= CITY_LOD_LIMITS[1]) {
       // The roof and wall painter of the towns, at the scales where a town shows its buildings (cast shadow, pan
       // light, grain by cover and culture, weathering, snow); paths of the class this renderer records.
-      timedRec('farm-roofs', () => drawFarmRoofs(ctx, c.world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P }));
-    } else {
+      timedRec('farm-roofs', () => drawFarmRoofs(ctx, c.world, { viewport: pathRect, mpp: px(1), dpr, palette: 'terrain', night: roadStyle.night, Path: P, roofAppearance: c.deps.buildingRoofs?.() }));
+    } else if (roofs) {
       fillPolys('farm-buildings', pal.farmRoof);
       // Further out a natural ground keeps the plain roof tint without ink, like the few pixels of a town roof.
-      if (!natural) {
+      if (!natural && !c.activeLight) {
         strokePolys('farm-buildings', pal.farmInk, lw(0.5, 0.6));
         if (lod.band >= 2)
           strokeLines(
@@ -105,5 +106,5 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       }
     }
   }
-  if (luOn && lod.strips) timedRec('rural', () => drawRuralDetails(ctx, c.world, pal));
+  if (!c.activeLight && luOn && lod.strips) timedRec('rural', () => drawRuralDetails(ctx, c.world, pal));
 }

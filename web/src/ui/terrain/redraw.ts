@@ -11,6 +11,7 @@
  * 4. without a water layer: the rivers and the retained water over the map;
  * 5. WebGPU only: present (the map target holds GL rows, flipped onto the canvas).
  */
+import { lightTerrainLook } from './variant';
 import { styleTraits, terrainStyle } from '../../render/terrainStyle';
 import { biomePalette } from '../../render/biomes';
 import type { Rect4, View } from '../../render/view';
@@ -68,7 +69,7 @@ export function lookPalettes(look: TerrainLook) {
 export type LookPalettes = ReturnType<typeof lookPalettes>;
 
 /** The look paints its water (depth, shelf, glint, wet banks: renderWaterShader.ts); other looks keep the flat ink. */
-export const paintedWaterLook = (look: TerrainLook): boolean => look.waterLook === 'natural' || styleTraits(look.style).neuralEarth;
+export const paintedWaterLook = (look: TerrainLook): boolean => !lightTerrainLook(look) && (look.waterLook === 'natural' || styleTraits(look.style).neuralEarth);
 /** The painted-water program is part of the look (lookLinked / variantReady): a painted look with water to paint. */
 export const needsPaintedWater = (look: TerrainLook, riverCount: number, retainedPaths: number): boolean => paintedWaterLook(look) && (riverCount > 0 || retainedPaths > 0);
 /** Rivers and retained water are drawn: the water layer is shown, or the style always draws water. */
@@ -93,7 +94,7 @@ export function tileViewState(box: Rect4, px: number, ratio: number): ViewState 
 /** View of a world-space capture of `size`² pixels. */
 export const captureViewState = (region: { x: number; y: number; width: number }, size: number): ViewState => ({ view: { cx: region.x + region.width / 2, cy: region.y + region.width / 2, scale: size / region.width }, width: size, height: size });
 /** Look of a world-space capture: 3D ground constants, no frame; the ground overlay is the water-only pass. */
-export const captureLook = (look: TerrainLook, groundOverlay: boolean): TerrainLook => ({ ...look, frame: false, contours: groundOverlay ? false : look.contours, mesh3d: true, groundCapture: groundOverlay });
+export const captureLook = (look: TerrainLook, groundOverlay: boolean): TerrainLook => ({ ...look, displayLight: false, frame: false, contours: groundOverlay ? false : look.contours, mesh3d: true, groundCapture: groundOverlay });
 
 /** A value as JSON reads it back: undefined and non-finite numbers are null. */
 const jsonScalar = (v: unknown): unknown => (v === undefined || (typeof v === 'number' && !Number.isFinite(v)) ? null : v);

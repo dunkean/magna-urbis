@@ -4,7 +4,7 @@
  */
 import type { PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
 import type { MaterialPattern, Point, Surface, Vertex3 } from '../../../../rust/bridge/housesContract';
-import { surfaceTriangles } from '../urbanBuildingGeometry';
+import { surfaceTriangles, type Building3dVisual, type BuildingWalkSolid } from '../urbanBuildingGeometry';
 import { RoofBuilder, ringArea, insetRoof, nearestOnSegment } from './roofGeometry';
 import { slots } from './materials';
 import { baseVolume } from './volume';
@@ -39,6 +39,7 @@ function densify(ring: readonly Point[], step: number): Point[] {
 export class WallMesh {
   readonly roof = new RoofBuilder();
   readonly footprint: Surface = [];
+  readonly walkSolids: BuildingWalkSolid[] = [];
   bottom = Infinity;
   top = -Infinity;
   private face(points: Vertex3[], material: string): void {
@@ -67,6 +68,14 @@ export class WallMesh {
         );
       }
     const flat = { outer: rings[0], holes: rings.slice(1) };
+    let low = Infinity,
+      high = -Infinity;
+    for (const ring of rings)
+      for (const p of ring) {
+        low = Math.min(low, zb(p));
+        high = Math.max(high, zt(p));
+      }
+    this.walkSolids.push({ footprint: [flat], z_min_m: low, z_max_m: high });
     if (cap)
       for (const t of surfaceTriangles([flat]))
         this.face(
@@ -214,7 +223,7 @@ export class Curtain {
   }
 }
 
-export function wallPiece(id: string, variant: string, mesh: WallMesh, pattern: MaterialPattern): PlacedBuilding | undefined {
+export function wallPiece(id: string, variant: string, mesh: WallMesh, pattern: MaterialPattern): (PlacedBuilding & Pick<Building3dVisual, 'walkSolids'>) | undefined {
   if (mesh.empty) return undefined;
   const ground = mesh.bottom,
     materials = slots(pattern, pattern),
@@ -242,5 +251,6 @@ export function wallPiece(id: string, variant: string, mesh: WallMesh, pattern: 
     simplification: 'recipe_volumes',
     diagnostics: ['city3d fortification (display only)'],
     resolved: null,
+    walkSolids: id.includes(':moat-bridge') ? [] : mesh.walkSolids,
   };
 }

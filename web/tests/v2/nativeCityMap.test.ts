@@ -4,6 +4,7 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { CityDrawOptions, CityScene } from '../../src/render/cityCanvas';
 import type { BuildingRenderMetrics } from '../../src/render/urbanBuildingLod';
 import { createNativeCityMap } from '../../src/v2/nativeCityMap';
+import * as work from '../../src/render/workCount';
 import { resolveAppearance, URBAN_PLAN_LAYERS, type AppearanceInput } from '../../src/render/appearanceRecipe';
 const resolved = (a: AppearanceInput) => resolveAppearance(a, { mapStyle: a.style }, { nativeCities: true }, 'view2d');
 
@@ -104,6 +105,29 @@ afterEach(() => {
 });
 
 describe('V2 retained native city map', () => {
+  it('keeps a ground-only paint independent of the native house renderer and its far or merged plan', () => {
+    vi.stubGlobal('OffscreenCanvas', undefined);
+    draw.mockImplementation(drawNative);
+    const count = vi.spyOn(work, 'countWork');
+    try {
+      const map = createNativeCityMap(world(), vi.fn()),
+        ctx = new Context();
+      const appearance = resolved({ style: 'atlas', city: { painted: true } });
+      map.draw(ctx.asContext(), { cx: 70, cy: 20, scale: 10 }, 1600, 400, 1, appearance, {}, undefined, undefined, true);
+      expect(draw).toHaveBeenCalled();
+      for (const [, , options] of draw.mock.calls) {
+        expect(options.buildings).toBeUndefined();
+        expect(options.buildingsVisible).toBe(false);
+        expect(options.renderer).toBeUndefined();
+      }
+      expect(count).not.toHaveBeenCalledWith('town.canvasHouseRenderer');
+      expect(count).not.toHaveBeenCalledWith('town.canvasPlanMerge');
+      map.dispose();
+    } finally {
+      count.mockRestore();
+    }
+  });
+
   it('leaves legacy worlds to their original renderer without constructing a raster', () => {
     const map = createNativeCityMap({ options: {} } as World, vi.fn());
     const stats = map.draw(new Context().asContext(), { cx: 0, cy: 0, scale: 1 }, 100, 100, 1, resolved({ style: 'atlas' }));
@@ -182,13 +206,13 @@ describe('V2 retained native city map', () => {
     expect(invalidated).not.toHaveBeenCalled();
   });
 
-  it('exports urban streets independently from buildings and cadastral ground', () => {
+  it.each(['atlas', 'parchment'] as const)('exports urban streets independently from buildings and cadastral ground in %s', style => {
     vi.stubGlobal('OffscreenCanvas', undefined);
     draw.mockImplementation(drawNative);
     const map = createNativeCityMap(world(), vi.fn()),
       ctx = new Context(),
       camera = { cx: 70, cy: 20, scale: 10 };
-    const appearance = resolved({ style: 'atlas', textured: false });
+    const appearance = resolved({ style, textured: false });
     const streets = map.draw(ctx.asContext(), camera, 1600, 400, 2, appearance, { city: false, streets: true, roads: false, labels: false });
     const streetOptions = draw.mock.calls[0][2];
     expect(streetOptions.buildingsVisible).toBe(false);
@@ -204,7 +228,8 @@ describe('V2 retained native city map', () => {
     const buildings = map.draw(ctx.asContext(), camera, 1600, 400, 2, appearance, { city: true, streets: false });
     const buildingOptions = draw.mock.calls[0][2];
     expect(buildingOptions.layers.streets).toBe(false);
-    expect(buildingOptions.layers.parcels).toBe(true);
+    // Atlas exports its houses and roads without parcel ground, independently of the streets switch.
+    expect(buildingOptions.layers.parcels).toBe(style === 'parchment');
     expect(buildingOptions.buildingsVisible).toBe(true);
     expect(buildings.visibleBuildings).toBe(2);
     map.dispose();

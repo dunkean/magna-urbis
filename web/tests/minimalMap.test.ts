@@ -27,7 +27,7 @@ function build(features: MinimalFeature[]) {
   return result;
 }
 function context() {
-  const calls: { kind: string; color: string | CanvasGradient | CanvasPattern; alpha: number; path?: Path2D }[] = [];
+  const calls: { kind: string; color: string | CanvasGradient | CanvasPattern; alpha: number; width?: number; path?: Path2D }[] = [];
   const ctx = {
     canvas: { width: 1000, height: 1000 },
     fillStyle: '',
@@ -40,7 +40,7 @@ function context() {
       calls.push({ kind: 'fill', color: this.fillStyle, alpha: this.globalAlpha, path });
     },
     stroke(this: CanvasRenderingContext2D, path: Path2D) {
-      calls.push({ kind: 'stroke', color: this.strokeStyle, alpha: this.globalAlpha, path });
+      calls.push({ kind: 'stroke', color: this.strokeStyle, alpha: this.globalAlpha, width: this.lineWidth, path });
     },
     measureText(text: string) {
       return { width: text.length * 6 };
@@ -54,9 +54,19 @@ function context() {
   } as unknown as CanvasRenderingContext2D;
   return { ctx, calls };
 }
-const options = () => ({ view: { cx: 500, cy: 500, scale: 1 }, width: 1000, height: 1000, dpr: 1, recipe: presetComposition('minimal'), places: [], textLayout: { labels: [] } });
+const options = (): Parameters<typeof paintMinimalMap>[2] => ({ view: { cx: 500, cy: 500, scale: 1 }, width: 1000, height: 1000, dpr: 1, recipe: presetComposition('minimal'), places: [], textLayout: { labels: [] } });
 
 describe('Minimal retained painter', () => {
+  it('keeps house outlines visible at city-preview scale', () => {
+    const geometry = build([{ layer: 'building', points: square(450, 450), closed: true }]);
+    const recorded = context(),
+      scale = 0.2;
+    paintMinimalMap(recorded.ctx, geometry, { ...options(), view: { cx: 500, cy: 500, scale } });
+    const outline = recorded.calls.find(call => call.kind === 'stroke' && call.color === PALETTES.minimal.urban.massEdge);
+    expect(outline?.alpha).toBe(1);
+    expect(outline!.width! * scale).toBeGreaterThanOrEqual(0.5);
+    expect(outline!.width! * scale).toBeLessThanOrEqual(0.8);
+  });
   it('retains sea and lake islands independently of ring winding', () => {
     const coast = square(0, 0, 100),
       island = square(20, 20, 60),
@@ -102,7 +112,7 @@ describe('Minimal retained painter', () => {
     o.recipe.landuse.rural = 'categorical';
     o.recipe.landuse.classes = { forest: false };
     o.recipe.landuse.opacity = 0.23;
-    o.recipe.networks.water.visible = false;
+    o.layers = { ...o.layers, water: false };
     o.recipe.networks.roads.visible = false;
     paintMinimalMap(local.ctx, geometry, o);
     expect(local.calls.filter(c => c.color === PALETTES.minimal.urban.mass)).toHaveLength(1);
@@ -129,12 +139,14 @@ describe('Minimal retained painter', () => {
       data = Float32Array.from({ length: n * n }, (_, i) => 100 - Math.hypot((i % n) - 31.5, Math.floor(i / n) - 31.5) * 4);
     const lines = [...minimalContours({ data, n, width: 1000, maxHeight: 100 })];
     expect(lines.length).toBeGreaterThan(5);
-    expect(lines.every(line => line.closed)).toBe(true);
+    expect(lines.some(line => line.closed)).toBe(true);
+    expect(lines.every(line => line.points.length <= 64)).toBe(true);
     expect(lines.some(line => line.layer === 'contourIndex')).toBe(true);
     const contours = build(lines),
       off = context(),
       on = context(),
       o = options();
+    o.recipe.ground.contours = false;
     paintMinimalMap(off.ctx, build([]), { ...o, contours });
     expect(off.calls).toHaveLength(0);
     o.recipe.ground.contours = true;

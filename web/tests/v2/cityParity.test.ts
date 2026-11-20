@@ -11,7 +11,7 @@ import { resolveRustUrbanControls, townRoadStreets, townSiteArchetypes } from '.
 import { regionalStreets } from '../../../rust/bridge/urban';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
 import type { World } from '../../src/gen/types';
-import { citySiteArchetypes, cityTownRoads } from '../../src/render/cityGeneration';
+import { citySiteArchetypes, cityFixedSites, cityTownRoads } from '../../src/render/cityGeneration';
 import { urbanSeed } from '../../src/v2/urbanSeeds';
 import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { siteVisualScene, silhouetteScene, type CityPlacementRequest } from '../../src/ui/urbanSilhouettes';
@@ -19,7 +19,8 @@ import { projectUrbanSite } from '../../src/ui/urbanSiteStore';
 import { applySettlementStyle } from '../../src/ui/urbanSettlementStyles';
 import { CITY_DISPLAY_DEFAULTS, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
 import { CITY_DEFAULT_PARCEL_FIT, CITY_RASTER_RESOLUTION, cityRasterSide, parcelFitOf, defaultCityLayoutConfig, CITY_LAYOUT_DEFAULTS } from '../../src/render/cityGeneration';
-import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions } from '../../src/render/cityDrawOptions';
+import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions, volumeTownBuildings } from '../../src/render/cityDrawOptions';
+import { ROOF_MODES } from '../../src/render/roofMode';
 import { URBAN_PHYSICAL_LAYERS, URBAN_PLAN_LAYERS, resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
 import type { V2Settings } from '../../src/v2/contracts';
 import type { Options } from '../../src/gen/types';
@@ -495,6 +496,21 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/v2/urban3d.ts')).toContain('roads = townRoadStreets(world);');
   });
 
+  it('carries manual foundations into both city consumers', () => {
+    expect(cityFixedSites([{ key: 'main', fixed: true }, { key: 'auto' }])).toEqual(['main']);
+    expect(
+      cityFixedSites([
+        { key: 'main', position: { x: 120, y: 340 } },
+        { key: 'auto', position: null },
+      ]),
+    ).toEqual(['main']);
+    expect(cityFixedSites([{ key: 'main', scores: { manual: true } }])).toEqual(['main']);
+    const saved = { ...defaultLayoutConfig(), fixedSites: ['main'] };
+    expect(normalizeLayoutConfig(saved).fixedSites).toEqual(['main']);
+    expect(read('../../src/ui/terrainUrban.ts')).toContain('message.layoutConfig.fixedSites = cityFixedSites(selected);');
+    expect(read('../../src/v2/rustUrban.ts')).toContain('fixedSites: cityFixedSites([place])');
+  });
+
   it('draws every stage from the one general seed when no variation is set', () => {
     const s = settings('abc');
     for (const stage of ['composition', 'streets', 'parcels', 'programme', 'buildings', 'houses'] as const) expect(urbanSeed(s, 'a', stage)).toBe(urbanSeed(s, 'a'));
@@ -536,27 +552,23 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/ui/urbanSceneWorker.ts')).toContain("from './urbanSilhouettes'");
   });
 
-  it('resolves the road display (plan, none, rendered) once for 2D, 3D and both pages', () => {
+  it('resolves each map look’s roads and water once for 2D, 3D and both pages', () => {
     for (const style of PRESET_IDS) {
       const c = presetComposition(style),
-        satellite = style.startsWith('satellite');
-      expect(c.networks.roads.surface, style).toBe(satellite ? 'rendered' : 'plan');
-      for (const target of ['view2d', 'view3d'] as const) {
-        const r = resolveAppearance({ style: 'parchment', composition: c }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-        expect(r.composition.networks.roads.look === 'rendered', `${style} ${target}`).toBe(satellite);
+        satellite = style.startsWith('satellite'),
+        roadLook = satellite ? 'rendered' : style.startsWith('parchment') ? 'wash' : 'ink',
+        retained = { ...c, preset: 'custom' as const, networks: { roads: { ...c.networks.roads, visible: false, look: 'natural', surface: 'plan' }, water: { ...c.networks.water, visible: false, look: 'wash' } } };
+      expect(() => validateComposition(retained)).not.toThrow();
+      for (const target of ['view2d', 'view3d', 'export'] as const) {
+        const r = resolveAppearance({ style: 'parchment', composition: retained }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        expect(r.composition.networks.roads, `${style} ${target}`).toMatchObject({ look: roadLook, visible: false });
+        expect(r.composition.networks.water, `${style} ${target}`).toMatchObject({ look: satellite ? 'natural' : 'ink', visible: true });
+        expect(r.ground.layers.water).toBe(true);
         const frame = { viewport: { minX: 0, minY: 0, maxX: 100, maxY: 100 }, mpp: 1, dpr: 1 };
         expect(cityDrawOptions({ appearance: r, city: r.city, frame, lod: 'near', layers: r.city.layers, labelsAllowed: true, buildingAppearance: cityBuildingAppearance(r), page: { buildingsVisible: true } }).roadLook).toBe(r.composition.networks.roads.look);
         expect(city3dPlanOptions(r).roadLook).toBe(r.composition.networks.roads.look);
       }
     }
-    // A vector style keeps its plan roads when the recipe asks for the painted surface.
-    const parchment = presetComposition('parchment');
-    parchment.networks.roads.surface = 'rendered';
-    expect(resolveAppearance({ style: 'parchment', composition: parchment }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').composition.networks.roads.look).toBe('wash');
-    const satellite = presetComposition('satellite');
-    satellite.networks.roads.surface = 'plan';
-    expect(resolveAppearance({ style: 'parchment', composition: satellite }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d').composition.networks.roads.look).toBe('natural');
-    expect(() => validateComposition({ ...satellite, networks: { ...satellite.networks, roads: { ...satellite.networks.roads, surface: 'paint' } } })).toThrow(/surface/);
     // Both pages set the biome soil of the rendered surface through the same ground tones.
     for (const page of ['../../src/v2/display/appearance.ts', '../../src/v2/urban3d.ts']) expect(read(page)).toContain('roadSoilOf(');
   });
@@ -588,12 +600,54 @@ describe('V2 and City Bench stay in sync', () => {
     }
   });
 
+  it('uses the same unoutlined roof appearance for volume recipes in plan, tilt and export', () => {
+    for (const style of ['satellite', 'satellite-light', 'satellite-2', 'parchment', 'atlas', 'cadastre', 'topographic', 'minimal'] as const) {
+      const smooth = !['cadastre', 'topographic', 'minimal'].includes(style);
+      for (const target of ['view2d', 'view3d', 'export'] as const) {
+        const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        expect(cityBuildingAppearance(r).smoothRoofs, `${style} ${target}`).toBe(smooth);
+      }
+    }
+  });
+
+  it('shares the roof choice across map and 3D hosts and invalidates the city appearance', () => {
+    for (const target of ['view2d', 'view3d', 'export'] as const) {
+      const keys = new Set<string>();
+      for (const roof of ROOF_MODES) {
+        const composition = presetComposition('satellite');
+        composition.buildings.roof = roof;
+        const r = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        expect(cityBuildingAppearance(r).roof).toBe(roof);
+        expect(volumeTownBuildings(r), `${roof} keeps GPU volume ownership`).toBe(true);
+        expect(cityBuildingAppearance(r).smoothRoofs).toBe(roof !== 'v1');
+        expect(city3dPlanOptions(r).appearance.roof).toBe(roof);
+        keys.add(r.keys.city);
+      }
+      expect(keys.size).toBe(ROOF_MODES.length);
+    }
+  });
+
+  it('keeps fallback farm and placeholder roofs synchronized with the live roof choice', () => {
+    const appearance = (roof: (typeof ROOF_MODES)[number]) => {
+      const composition = presetComposition('satellite');
+      composition.buildings.roof = roof;
+      return resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
+    };
+    let current = appearance('v2');
+    const countryside = cityCountrysideCanvasOptions(current, 4000, () => current);
+    for (const roof of ROOF_MODES) {
+      current = appearance(roof);
+      expect(countryside.buildingRoofs()).toEqual({ roof, smoothRoofs: roof !== 'v1' });
+    }
+  });
+
   it('stands lot fences with the buildings, not with the parcel diagram, in 2D and 3D', () => {
     for (const style of PRESET_IDS)
       for (const target of ['view2d', 'view3d'] as const) {
         const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-        expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(r.composition.buildings.visible);
-        expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(r.composition.buildings.visible);
+        const fences = r.composition.recipe.ground.look !== 'atlas' && r.composition.buildings.visible;
+        expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(fences);
+        expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(fences);
       }
     const hidden = presetComposition('parchment');
     hidden.buildings.visible = false;
@@ -603,34 +657,32 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/ui/view3d/cityBuildings.ts')).toContain('yardsShown = !flat && yardLayers?.lotEnclosures !== false;');
   });
 
-  it('hides only the plan drawing with Urban plan off: roads, walls, fences, water and lights keep their own switches', () => {
-    for (const style of ['parchment', 'satellite', 'satellite-2'] as const)
+  it('keeps Satellite towns free of abstract plan graphics even with retained plan overrides', () => {
+    for (const style of ['satellite', 'satellite-light', 'satellite-2'] as const)
       for (const target of ['view2d', 'view3d', 'export'] as const) {
-        const composition = presetComposition(style);
-        composition.buildings.parcels = true;
-        composition.buildings.blocks = true;
-        const r = resolveAppearance({ style: 'parchment', composition, city: { plan: false } }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
+        const base = presetComposition(style);
+        const composition = { ...base, buildings: { ...base.buildings, parcels: true, blocks: true, districts: true } };
+        const r = resolveAppearance({ style: 'parchment', composition, city: { plan: true, layers: { fronts: true, domains: true } } }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
         const on = resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
         // Abstract plan graphics off: outlines (planLines), block and lot washes, quarters, domains, tints, diagrams.
         for (const layer of URBAN_PLAN_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(false);
         // Real objects unchanged: streets, walls, fences/hedges/gates with their yards, gardens and squares as ground, waterways.
         for (const layer of URBAN_PHYSICAL_LAYERS) expect(r.city.layers[layer], `${style} ${target} ${layer}`).toBe(on.city.layers[layer]);
         expect(r.city.layers, `${style} ${target}`).toMatchObject({ planLines: false, streets: true, enclosures: true, lotEnclosures: true });
-        // The map overlay's dashed site reserve outline follows the switch per frame (raster tile keys) with no overlay
-        // rebuild: a rebuild repaints the countryside field strips at a coarser look.
+        // The map overlay's dashed site reserve outline follows the same policy.
         expect(cityCountrysideCanvasOptions(r, 4000).urbanPlan(), `${style} ${target}`).toBe(false);
         expect(r.keys.cartography, `${style} ${target}`).toBe(on.keys.cartography);
         expect(city3dPlanOptions(r).layers.streets, `${target} 3D`).toBe(true);
         expect(cityBuildingAppearance(r), `${style} ${target}`).toEqual(cityBuildingAppearance(resolveAppearance({ style: 'parchment', composition }, { mapStyle: 'parchment' }, { nativeCities: true }, target)));
       }
-    // No page gates its streets, regional roads or whole plan scene on the switch; all use withoutUrbanPlan.
+    // No page gates streets, regional roads or a whole plan scene on the abstract plan policy.
     expect(read('../../src/v2/nativeCityMap.ts')).not.toMatch(/city\.plan \?/);
     const city3d = read('../../src/ui/view3d/cityDrape.ts');
     expect(city3d).not.toMatch(/planOverlay && !tile\.preview|planOverlay \? cityPlan\(\)/);
     expect(city3d).toContain('withoutUrbanPlan(requestedLayers)');
     expect(read('../../src/ui/terrainUrban.ts')).toContain('withoutUrbanPlan(cityLook().layers)');
     expect(read('../../src/render/cartography/structures.ts')).toContain('c.world.site && deps.urbanPlan?.() !== false) drawSiteMarker(');
-    expect(read('../../src/v2/display/cartographyProducts.ts')).toContain('urbanPlan: () => this.map.resolved?.city.plan !== false,');
+    expect(read('../../src/v2/display/cartographyProducts.ts')).toContain('urbanPlan: () => !!this.map.resolved && cityOverlayPlanMarks(this.map.resolved),');
     // Dashed refused-lot outlines are plan lines in both draw paths.
     expect(read('../../src/render/city/canvas/town.ts')).toContain('layers.planLines !== false && o.refusedParcels?.size');
     expect(read('../../src/render/city/gl/styleTables.ts')).toContain("layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size");
@@ -1193,6 +1245,7 @@ describe('causeways are ordinary raised roads', () => {
       { x: 10, y: 0 },
     ];
     const scene = {
+      layouts: [],
       streets: [
         { role: 'causeway', rank: 1, street: { path } },
         { role: 'street', rank: 1, street: { path } },

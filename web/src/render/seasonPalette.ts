@@ -4,6 +4,7 @@
  * the palette is resolved in many places and every one of them must agree. */
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import { CLIMATE_ZONE_VALUES, type ClimateValues, type ClimateZone } from '../../../rust/bridge/terrainClimate';
+import { AUTUMN_CROWN_MEAN } from '../../../rust/bridge/terrainForestSeason';
 import type { Palette } from './styles';
 
 export interface SeasonPaint {
@@ -18,7 +19,6 @@ export interface SeasonPaint {
 }
 const SNOW = '#f1f3ef',
   BARE_WOOD = '#8d8373',
-  AUTUMN_WOOD = '#b78a3e',
   SPRING_WOOD = '#a6bc72',
   YOUNG_CROP = '#b4c47c',
   STUBBLE = '#c29a5c';
@@ -125,9 +125,17 @@ function cropTone(c: string, herb: SeasonPaint['herb']): string {
     value = (herb[0] + herb[1] + herb[2]) / 3;
   return tinted(mix(mix(c, YOUNG_CROP, 0.4 * growing), STUBBLE, 0.3 * ripe), [Math.min(1, value + 0.1), Math.min(1, value + 0.1), Math.min(1, value + 0.1)]);
 }
+/** Same population hue as the ground's unresolved crowns, retaining each map token's exposure. */
+function autumnWood(c: string, s: SeasonPaint): string {
+  if (!isHex(c)) return c;
+  const color = rgb(c),
+    fall = s.autumn * (1 - s.evergreen),
+    lum = color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722;
+  return hex(color.map((v, i) => v * (1 - fall * AUTUMN_CROWN_MEAN.weight) + lum * AUTUMN_CROWN_MEAN.hue[i] * fall));
+}
 function woodTone(c: string, s: SeasonPaint): string {
   const deciduous = 1 - s.evergreen;
-  return mix(mix(mix(c, BARE_WOOD, 0.7 * (1 - s.leaf)), AUTUMN_WOOD, 0.35 * s.autumn * deciduous), SPRING_WOOD, 0.15 * s.spring * deciduous);
+  return mix(autumnWood(mix(c, BARE_WOOD, 0.7 * (1 - s.leaf)), s), SPRING_WOOD, 0.15 * s.spring * deciduous);
 }
 /** Land use and water share the calendar; paper and relief keep their authored tones. */
 export function applySeason(pal: Palette, s: SeasonPaint): Palette {
@@ -153,7 +161,7 @@ export function applySeason(pal: Palette, s: SeasonPaint): Palette {
     furrow: snowed(pal.furrow, 0.6),
     hedge: wood(pal.hedge),
     treeFill: wood(pal.treeFill),
-    treeInk: snowed(pal.treeInk, 0.25),
+    treeInk: snowed(autumnWood(pal.treeInk, s), 0.25),
     orchardDot: snowed(pal.orchardDot, 0.25),
     grass: snowed(tinted(pal.grass, s.herb), 0.6),
     reed: snowed(tinted(pal.reed, s.herb), 0.5),

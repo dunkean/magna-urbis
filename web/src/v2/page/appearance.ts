@@ -15,7 +15,6 @@ export function createAppearanceActions(state: PageState, actions: PageActions) 
   async function refreshAppearance(): Promise<void> {
     state.workbenchLayout?.sync();
     state.sceneControls.sync();
-    state.roadDisplay?.sync();
     state.city3d?.syncControls();
     const revision = ++state.renderRevision,
       appearanceStart = performance.now();

@@ -174,6 +174,11 @@ export class TerrainGpu implements TerrainRenderer {
     if (this.fallback) return this.fallback.setOverlay(overlay);
     this.changed(this.parts.inputs.setOverlay(overlay));
   }
+  /** The paper map's lit land, drawn under the woods of its tree symbols (render/treeSymbols.ts). */
+  setLandBackdrop(image: HTMLCanvasElement | undefined): void {
+    if (this.fallback) return this.fallback.setLandBackdrop(image);
+    this.changed(this.parts.inputs.setLandBackdrop(image));
+  }
   /** Render3D forest: texture uploads only. `undefined` restores the macro canopy of the material exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
     if (this.fallback) return this.fallback.setForest(field, occupation);

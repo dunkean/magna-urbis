@@ -546,3 +546,49 @@ export function visibleRanges<T extends { box: CityGlBox4 }>(chunks: readonly T[
   }
   return out;
 }
+
+interface FillRanges {
+  bounds: CityGlBox4;
+  triangles: number[];
+  lines: number[];
+}
+const fillRanges = new WeakMap<readonly CityGlChunk[], FillRanges>();
+
+/** Append a visible index range to a reused flat list of [start, count] pairs. */
+function appendFillRange(out: number[], at: number, range: CityGlRange): number {
+  if (!range.count) return at;
+  if (at && out[at - 2] + out[at - 1] === range.start) {
+    out[at - 1] += range.count;
+    return at;
+  }
+  out[at] = range.start;
+  out[at + 1] = range.count;
+  return at + 2;
+}
+
+/** Town meshes are immutable. Fills, outlines, hatching and repeated shadow passes share one chunk scan per view.
+ * The returned arrays belong to this mesh and are reused for its next view. */
+export function visibleFillRanges(chunks: readonly CityGlChunk[], view: { minX: number; minY: number; maxX: number; maxY: number }): FillRanges {
+  let ranges = fillRanges.get(chunks);
+  if (!ranges) {
+    ranges = { bounds: [NaN, NaN, NaN, NaN], triangles: [], lines: [] };
+    fillRanges.set(chunks, ranges);
+  }
+  const { bounds, triangles, lines } = ranges;
+  if (bounds[0] === view.minX && bounds[1] === view.minY && bounds[2] === view.maxX && bounds[3] === view.maxY) return ranges;
+  bounds[0] = view.minX;
+  bounds[1] = view.minY;
+  bounds[2] = view.maxX;
+  bounds[3] = view.maxY;
+  let triEnd = 0,
+    lineEnd = 0;
+  for (const chunk of chunks) {
+    const b = chunk.box;
+    if (b[0] > view.maxX || b[2] < view.minX || b[1] > view.maxY || b[3] < view.minY) continue;
+    triEnd = appendFillRange(triangles, triEnd, chunk.triangles);
+    lineEnd = appendFillRange(lines, lineEnd, chunk.lines);
+  }
+  triangles.length = triEnd;
+  lines.length = lineEnd;
+  return ranges;
+}

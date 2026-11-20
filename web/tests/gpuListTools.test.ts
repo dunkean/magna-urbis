@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { newPath } from '../src/render/gpu/path';
 import { RecordingCanvas, type RecordingContext } from '../src/render/gpu/recorder';
 import { CRISP_MARK, type FillOp, type PathGeometry, type StrokeOp } from '../src/render/gpu/contract';
-import { clipGeometry, clipList, cullList, cullSegments, markIndex, splitList } from '../src/render/gpu/listTools';
+import { boundedList, clipGeometry, clipList, cullList, cullSegments, markIndex, splitList } from '../src/render/gpu/listTools';
 
 const record = (w: number, h: number): { canvas: RecordingCanvas; ctx: CanvasRenderingContext2D } => {
   const canvas = new RecordingCanvas(w, h);
@@ -10,6 +10,30 @@ const record = (w: number, h: number): { canvas: RecordingCanvas; ctx: CanvasRen
 };
 
 describe('display list marks and split', () => {
+  it('bounds drape batches without changing path order, alpha or clipping', () => {
+    const { canvas, ctx } = record(100, 100);
+    ctx.beginPath();
+    ctx.rect(0, 0, 100, 100);
+    ctx.clip();
+    ctx.globalAlpha = 0.3;
+    for (let i = 0; i < 100; i++) {
+      const path = newPath();
+      path.rect(i, 0, 2, 20); // Overlapping translucent paths must retain their original per-path blending.
+      ctx.fill(path);
+    }
+    const list = canvas.finish(),
+      bounded = boundedList(list);
+    const before = list.ops.flatMap(op => (op.type === 'fill' ? op.paths : []));
+    const after = bounded.ops.flatMap(op => (op.type === 'fill' ? op.paths : []));
+    expect(after).toEqual(before);
+    for (const op of bounded.ops) {
+      expect(op.clip).toBe(list.ops[0].clip);
+      if (op.type === 'fill') {
+        expect(op.alpha).toBe(0.3);
+        expect(op.paths.length).toBeLessThanOrEqual(32);
+      }
+    }
+  });
   it('marks a section boundary, stops merging across it and splits there', () => {
     const { canvas, ctx } = record(100, 100);
     const a = newPath(),

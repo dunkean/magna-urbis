@@ -2934,7 +2934,7 @@ fn generate_planned(
     // A ring camp (tents, huts round a byre) has no quay: it keeps its own ground.
     let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
     let camp = super::kinds::ring_camp(culture, site.population, cfg);
-    let harboured = (!stilt_grounded && site.population < 3000 && !camp)
+    let harboured = (!stilt_grounded && !cfg.fixed_sites.contains(&site.key) && site.population < 3000 && !camp)
         .then(|| macroplan::harbour::sited(site, cfg, surface))
         .flatten();
     // The landing is a move for the better only: a relocation that leaves no
@@ -4332,6 +4332,9 @@ fn generate_once(
     }
     lap("squares");
     if cfg.monument != "none"
+        // A monument precinct must not consume the settlement's only residential
+        // block. Camps keep their whole ring/row plan in that one block.
+        && blocks.iter().filter(|b| b.kind == "block").count() > 1
         && let Some(b) = blocks
             .iter_mut()
             .filter(|b| b.kind == "block")

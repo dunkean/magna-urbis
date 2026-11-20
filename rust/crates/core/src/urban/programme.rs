@@ -1948,9 +1948,19 @@ fn roof_households(house: f64, occupancy: &roles::Occupancy) -> f64 {
 /// Priority bands: reserved institutions, then sited trades, then shops scaled to
 /// the land actually left, then housing, then explicit gardens on the remainder.
 pub fn allocate(layout: &Layout, partition: &mut Partition) {
+    allocate_from_reference(layout, partition, None);
+}
+
+/// Keep the ownership of unchanged lots when a structural edit reallocates
+/// their neighbours. Kept allocations are charged against the same demands.
+pub(super) fn allocate_from_reference(
+    layout: &Layout,
+    partition: &mut Partition,
+    reference: Option<(&UrbanProgramme, &BTreeSet<String>)>,
+) {
     if let std::borrow::Cow::Owned(formal) = super::shanty::formal_layout(layout) {
         partition.parcels.retain(|p| !p.provenance.iter().any(|s| s == "informal-growth"));
-        allocate(&formal, partition);
+        allocate_from_reference(&formal, partition, reference);
         super::shanty::allocate(layout, partition);
         return;
     }
@@ -2047,6 +2057,10 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     }
     let part: &Partition = partition;
     let parcels = &part.parcels;
+    let retained = |pi: usize| reference.is_some_and(|(_, keep)| keep.contains(&parcels[pi].id));
+    let previous: HashMap<_, _> = reference.into_iter().flat_map(|(pr, _)| &pr.allocations)
+        .map(|a| (a.parcel_id.as_str(), a)).collect();
+    let kept = |pi: usize| retained(pi).then(|| previous.get(parcels[pi].id.as_str()).copied()).flatten();
     let (edges, neighbours) = graph(part);
     pr.adjacency = edges;
     lap("graph");
@@ -2278,7 +2292,43 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             }
         }
     }
-    let locked: Vec<bool> = forced.iter().map(Option::is_some).collect();
+    // Fill the kept slots before any competitive siting. Use their actual
+    // allocation, including deliberately vacant gardens and explicit uses.
+    if let Some((original, _)) = reference {
+        for (pi, slot) in assignments.iter_mut().enumerate() {
+            let Some(allocation) = kept(pi).filter(|_| slot.is_none()) else { continue };
+            let di = if let Some(di) = pr.demands.iter().position(|d| d.id == allocation.demand_id) {
+                di
+            } else {
+                let Some(source) = original.demands.iter().find(|d| d.id == allocation.demand_id) else { continue };
+                let mut source = source.clone();
+                source.parcel_capacity = 0.0;
+                source.built_capacity = 0.0;
+                source.open_capacity = 0.0;
+                source.deficit = source.requested;
+                if source.role == "open.garden" || source.id.ends_with("/demand/enclosed-open") {
+                    source.requested = 0.0;
+                }
+                let di = pr.demands.len();
+                pr.demands.push(source);
+                admission.push(vec![false; parcels.len()]);
+                di
+            };
+            *slot = Some(di);
+            pr.demands[di].parcel_capacity += allocation.capacity;
+            if pr.demands[di].role == "open.garden" || pr.demands[di].id.ends_with("/demand/enclosed-open") {
+                pr.demands[di].requested += allocation.capacity;
+                pr.demands[di].target_area = pr.demands[di].requested;
+            }
+        }
+        for row in &mut admission {
+            for (pi, admissible) in row.iter_mut().enumerate() {
+                // An unchanged plot without an allocation also keeps its use.
+                if assignments[pi].is_none() && retained(pi) { *admissible = false; }
+            }
+        }
+    }
+    let locked: Vec<bool> = forced.iter().enumerate().map(|(pi, f)| f.is_some() || retained(pi)).collect();
     // Band 1: reserved institutions take their own blocks; legacy area demands
     // (commons, markets without a catalogue) keep the bounded scan.
     let mut order = (0..pr.demands.len()).collect::<Vec<_>>();
@@ -2349,6 +2399,17 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .clamp(0.0, 3.0);
     let trade_share = if density.is_finite() { (0.04 + 0.2 * density).min(0.45) } else { 0.24 };
     let mut trade_budget = ((housing_plots as f64 * trade_share).floor() as usize).max(1);
+    if reference.is_some() {
+        let kept_homes = (0..parcels.len()).filter(|&pi| kept(pi).is_some_and(|a| a.households > 0.0)).count();
+        let kept_trades = (0..parcels.len()).filter(|&pi| {
+            retained(pi) && assignments[pi].is_some_and(|di| {
+                let d = &pr.demands[di];
+                d.sites > 0 && d.unit != "domesticUnits" && !reserved_for.contains_key(&parcels[pi].block)
+            })
+        }).count();
+        trade_budget = (((housing_plots + kept_homes) as f64 * trade_share).floor() as usize).max(1)
+            .saturating_sub(kept_trades);
+    }
     for &di in &order {
         let d = &pr.demands[di];
         if d.sites == 0 || d.unit == "domesticUnits" {
@@ -2365,6 +2426,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         let free_now = &assignments;
         let mut candidates: Vec<(usize, f64)> = super::par::range(parcels.len(), |pi| {
             (free_now[pi].is_none()
+                && !retained(pi)
                 && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                     || d.function == "common" && parcels[pi].use_kind == "garden")
                 && !reserved_for.contains_key(&parcels[pi].block)
@@ -2562,17 +2624,22 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     // ordinary homes and the tower is mostly offices, shops and landmark.
     let mut tower_households = vec![0.0; parcels.len()];
     let towers: Vec<usize> = (0..parcels.len())
-        .filter(|&pi| forced[pi].is_none() && assignments[pi].is_some_and(|di|
+        .filter(|&pi| !locked[pi] && assignments[pi].is_some_and(|di|
             pr.demands[di].role.starts_with("housing.") && pr.demands[di].unit != "domesticUnits"))
         .collect();
-    if let Some(&home) = dwelling.iter().find(|&&di| pr.demands[di].function == "domestic")
-        && !towers.is_empty()
-    {
+    if let Some(&home) = dwelling.iter().find(|&&di| pr.demands[di].function == "domestic") {
         let asked: f64 = dwelling.iter().map(|&di| pr.demands[di].requested).sum();
-        let each = (roles::tower_home_share(pr.population) * asked / towers.len() as f64).floor();
-        if each >= 1.0 {
-            for &pi in &towers { tower_households[pi] = each; }
-            pr.demands[home].parcel_capacity += each * towers.len() as f64;
+        let kept_tower_homes: f64 = (0..parcels.len()).filter_map(kept)
+            .filter(|a| a.role.starts_with("housing.") && a.unit != "domesticUnits")
+            .map(|a| a.households).sum();
+        pr.demands[home].parcel_capacity += kept_tower_homes;
+        if !towers.is_empty() {
+            let room = roles::tower_home_share(pr.population) * asked - kept_tower_homes;
+            let each = (room / towers.len() as f64).floor();
+            if each >= 1.0 {
+                for &pi in &towers { tower_households[pi] = each; }
+                pr.demands[home].parcel_capacity += each * towers.len() as f64;
+            }
         }
     }
     pr.housing_capacity = household_caps.iter().sum();
@@ -2584,13 +2651,18 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .map(|&di| (pr.demands[di].requested - pr.demands[di].parcel_capacity).max(0.0))
         .sum();
     let supply: f64 = (0..parcels.len())
-        .filter(|&pi| assignments[pi].is_none())
+        .filter(|&pi| assignments[pi].is_none() && !retained(pi))
         .map(|pi| household_caps[pi])
         .sum();
     let free = assignments.iter().map(Option::is_none).collect::<Vec<_>>();
     let pressures = parcels.iter().map(|p| p.pressure).collect::<Vec<_>>();
     let mut households = spread_households(&household_caps, &pressures, &free, wanted.ceil(),
         super::zone_blend::enabled(layout).then_some(&land_areas[..]));
+    for (pi, homes) in households.iter_mut().enumerate() {
+        if let Some(allocation) = kept(pi) {
+            *homes = allocation.households;
+        }
+    }
     // Band 3 and 4: shops first but only for their share of the land actually
     // left, then housing; shops can no longer starve households.
     let short = if wanted > 0.0 {
@@ -2715,6 +2787,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             let mut ranked: Vec<usize> = (0..parcels.len())
                 .filter(|&pi| {
                     assignments[pi].is_none()
+                        && !retained(pi)
                         && matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                 })
                 .collect();
@@ -2782,7 +2855,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         // plot; housing tops up its own plots, busiest first, within capacity.
         if !commercial && pr.demands[di].parcel_capacity + 0.01 < goal {
             let mut own: Vec<usize> = (0..parcels.len())
-                .filter(|&pi| assignments[pi] == Some(di) && households[pi] < household_caps[pi])
+                .filter(|&pi| assignments[pi] == Some(di) && !retained(pi) && households[pi] < household_caps[pi])
                 .collect();
             own.sort_by(|&a, &b| pressures[b].total_cmp(&pressures[a]).then(a.cmp(&b)));
             let rounds = own.iter().map(|&pi| (household_caps[pi] - households[pi]).max(0.0).ceil() as usize).max().unwrap_or(0);
@@ -2898,7 +2971,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     vacant.sort_by(|&a, &b| enclosed[b].cmp(&enclosed[a])
         .then(if enclosed[a] && enclosed[b] { center_distances[a].total_cmp(&center_distances[b]) } else { std::cmp::Ordering::Equal }));
     for pi in vacant {
-        if assignments[pi].is_some() || !public_street(&parcels[pi]) && !enclosed_at(pi) { continue; }
+        if assignments[pi].is_some() || retained(pi) || !public_street(&parcels[pi]) && !enclosed_at(pi) { continue; }
         let Some(di) = dwelling.iter().copied().filter(|&di|admission[di][pi] && donors.get(&di).is_some_and(|h|!h.is_empty()))
             .max_by_key(|di|donors[di].peek().copied()) else { continue };
         let (_,Reverse(j)) = donors.get_mut(&di).unwrap().pop().unwrap();
@@ -2919,6 +2992,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .filter(|&pi| {
             !isolated
                 && assignments[pi].is_none()
+                && !retained(pi)
                 && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                     || parcels[pi].use_kind == "garden" && parcels[pi].family != "reserve"
                         && parcels[pi].reason != "camp-open"
@@ -2931,17 +3005,25 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .collect();
     if !gardens.is_empty() {
         let total: f64 = gardens.iter().map(|&pi| land_areas[pi]).sum();
-        let mut g = demand(
-            &part.key,
-            "common",
-            total,
-            false,
-            "Remainder of buildable plots after housing: private gardens and yards".into(),
-        );
-        g.id = format!("{}/demand/garden", part.key);
-        g.role = "open.garden".into();
-        let gi = pr.demands.len();
-        pr.demands.push(g);
+        let id = format!("{}/demand/garden", part.key);
+        let gi = if let Some(gi) = pr.demands.iter().position(|d| d.id == id) {
+            pr.demands[gi].requested += total;
+            pr.demands[gi].target_area += total;
+            gi
+        } else {
+            let mut g = demand(
+                &part.key,
+                "common",
+                total,
+                false,
+                "Remainder of buildable plots after housing: private gardens and yards".into(),
+            );
+            g.id = id;
+            g.role = "open.garden".into();
+            let gi = pr.demands.len();
+            pr.demands.push(g);
+            gi
+        };
         for &pi in &gardens {
             take(&mut pr, &mut assignments, pi, gi, land_areas[pi]);
         }
@@ -2953,6 +3035,7 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .filter(|&pi| {
             !isolated
                 && assignments[pi].is_none()
+                && !retained(pi)
                 && enclosed[pi]
                 && parcels[pi].family == "reserve"
                 && (parcels[pi].use_kind == "reserve" && parcels[pi].reason == "reserve"
@@ -2963,17 +3046,25 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         .collect();
     if !enclosed_open.is_empty() {
         let total: f64 = enclosed_open.iter().map(|&pi| land_areas[pi]).sum();
-        let mut d = demand(
-            &part.key,
-            "common",
-            total,
-            false,
-            "Unbuilt land kept inside the circuit: the open land of the culture's enclosures".into(),
-        );
-        d.id = format!("{}/demand/enclosed-open", part.key);
-        d.role = super::composition::enclosed_open(&layout.culture, pr.population).0.into();
-        let di = pr.demands.len();
-        pr.demands.push(d);
+        let id = format!("{}/demand/enclosed-open", part.key);
+        let di = if let Some(di) = pr.demands.iter().position(|d| d.id == id) {
+            pr.demands[di].requested += total;
+            pr.demands[di].target_area += total;
+            di
+        } else {
+            let mut d = demand(
+                &part.key,
+                "common",
+                total,
+                false,
+                "Unbuilt land kept inside the circuit: the open land of the culture's enclosures".into(),
+            );
+            d.id = id;
+            d.role = super::composition::enclosed_open(&layout.culture, pr.population).0.into();
+            let di = pr.demands.len();
+            pr.demands.push(d);
+            di
+        };
         for &pi in &enclosed_open {
             take(&mut pr, &mut assignments, pi, di, land_areas[pi]);
         }
@@ -2982,6 +3073,11 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
     let mut allocation_parcels: Vec<usize> = Vec::with_capacity(parcels.len());
     for (pi, &assignment) in assignments.iter().enumerate() {
         let Some(di) = assignment else { continue };
+        if let Some(allocation) = kept(pi) {
+            pr.allocations.push(allocation.clone());
+            allocation_parcels.push(pi);
+            continue;
+        }
         let p = &parcels[pi];
         let d = &pr.demands[di];
         // Gardens need no building recipe; they keep the parcel's cultural route.
@@ -3184,7 +3280,9 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
         }
         for p in &mut partition.parcels {
             let open = layout.blocks.get(p.block).is_some_and(|b| b.kind == "block");
-            if open && !built[p.block] && matches!(p.use_kind.as_str(), "plot" | "residual") {
+            if open && !built[p.block] && matches!(p.use_kind.as_str(), "plot" | "residual")
+                && reference.is_none_or(|(_, keep)| !keep.contains(&p.id))
+            {
                 p.use_kind = "garden".into();
                 p.reason = "unbuilt-block".into();
             }
@@ -3200,8 +3298,11 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
 pub(super) fn consolidate(partition: &mut Partition) {
     lots::consolidate(None,partition);
 }
-pub(super) fn finish_lots(layout: &Layout, partition: &mut Partition) {
-    lots::consolidate(Some(layout),partition);
+pub(super) fn consolidate_cadastre(partition: &mut Partition, kept: &BTreeSet<String>) {
+    lots::consolidate_cadastre(None, partition, kept);
+}
+pub(super) fn finish_cadastre(layout: &Layout, partition: &mut Partition, kept: &BTreeSet<String>) {
+    lots::consolidate_cadastre(Some(layout), partition, kept);
     super::springs::allocate(layout, partition);
 }
 /// Heap tier of a main-street lot for housing: above any cohesion bonus.
@@ -3603,7 +3704,12 @@ pub fn reallocate(layouts: &[Layout], partitions: &[Partition]) -> Result<Vec<Pa
             .iter()
             .find(|l| l.key == p.key)
             .ok_or("Partition has no retained layout")?;
-        allocate(layout, p);
+        if p.prepared.is_some() {
+            let prepared = super::partition_layout(layout, p);
+            allocate(&prepared, p);
+        } else {
+            allocate(layout, p);
+        }
     }
     Ok(out)
 }

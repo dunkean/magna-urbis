@@ -1078,7 +1078,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
     const grid = document.createElement('div');
     grid.className = 'coast-grid';
     grid.append(compass, presets);
-    panel.insertBefore(grid, panel.querySelector('.terrain-coast-trace-actions'));
+    panel.insertBefore(grid, panel.querySelector('.coast-profile-controls') ?? panel.querySelector('.terrain-coast-trace-actions'));
     grid.addEventListener('click', () => {
       markStale('relief-coast-cut');
       sync();

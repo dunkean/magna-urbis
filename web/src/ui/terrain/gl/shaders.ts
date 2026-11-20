@@ -8,6 +8,7 @@
 import { NEURAL_EARTH_MATERIAL_GLSL, GROUND_COVER_WATER_GLSL, groundCoverInputsGlsl } from '../../../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../../../rust/bridge/terrainMaterial3d';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL } from '../../../../../rust/bridge/terrainForest';
+import { TREE_SYMBOLS_GLSL } from '../../../render/treeSymbolsGlsl';
 import { RENDER_V2_GLSL } from '../../../../../rust/bridge/terrainRenderV2';
 import { RENDER_V2_COAST_GLSL } from '../../../../../rust/bridge/terrainRenderV2Coast';
 import { UNDERDARK_GLSL } from '../../../../../rust/bridge/terrainRenderUnderdark';
@@ -209,6 +210,7 @@ ${NEURAL_EARTH_MATERIAL_GLSL}
 ${TERRAIN_3D_NOISE_GLSL}
 ${groundCoverInputsGlsl(RENDER_3D_MATERIAL_GLSL)}
 ${RENDER_3D_FOREST_GLSL}
+${TREE_SYMBOLS_GLSL}
 ${RENDER_V2_GLSL}
 ${WATER_FRESH_ICE_GLSL}
 ${WATER_REGIME_GLSL}
@@ -263,7 +265,14 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
     }
     applyGroundOccupation(m,world,uPx);
     if(uForest==1)applyForest(m,world,uPx,uLight.xzy);
+    vec3 canopyHue=groundToDisplay(m.albedo);
     applyPaperMap(m,world,uPx);
+    if(uPaperMap==1){
+      // The ink-and-wash ramp sets value, but its olive forest must retain the seasonal crown hue, including
+      // green evergreens among turned broadleaves. The unresolved V2 mean carries that same hue already.
+      vec3 paper=groundToDisplay(m.albedo);vec3 luma=vec3(.2126,.7152,.0722);
+      m.albedo=groundToLinear(mix(paper,canopyHue*dot(paper,luma)/max(dot(canopyHue,luma),.02),forestSeason().x*forestMapCover));
+    }
     vec3 rgb=uRenderV2>0?v2ShadeGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength):shadeTerrainGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
     return uRenderV2>0?v2DisplayShoulder(rgb):rgb;
   }
@@ -438,6 +447,18 @@ void main() {
       if(uNight==1 && uMode<2)crowns=moonlight(crowns);
       color=mix(color,crowns,forestMapCover*landCover);
     }
+    // Paper map woods (render/treeSymbolsGlsl.ts): their wash on the ground, then the engraved tree symbols over it.
+    if(uForestBrushes==1 && uMode==0)if(uGroundCapture==0){
+      // The overlay's lit land (cartographyProducts landBackdrop) on the shore ring's binding, box mipmaps of a
+      // transparent-on-water image: rgb / a is the land colour.
+      if(uHasLandBackdrop==1){
+        vec4 land=textureLod(uShoreRing,world/uMapW,max(0.,log2(uPx*float(textureSize(uShoreRing,0).x)/uMapW)));
+        color=mix(color,land.rgb/max(land.a,1e-3),land.a*landCover);
+      }
+      color=mix(color,treeWash(color,world),landCover);
+      vec4 trees=treeSymbols(world)*landCover;
+      color=trees.rgb+color*(1.-trees.a);
+    }
 #endif
     // One V2 water evaluation per fragment (the three cases below only choose its inputs).
     bool v2w=false;vec3 wBase=color;float wCover=0.,wKind=1.,wDepth=0.;
@@ -545,12 +566,10 @@ void main() {
           // The aux-texture variant only mixes wBase where water remains: a fully dry or frozen bed is the ground itself.
           color=wBase;
         } else {
-          // A river's sediment plume, painted as a silt tint over the captured sea (renderWaterShader.ts).
-          vec3 painted=water.rgb/max(water.a,1e-3);
-          wTint.z=smoothstep(-.12,.3,painted.r-painted.b);
-          wEst=water.a*(1.-wTint.z)*(1.-smoothstep(0.,6.,-s.x));
+          // The short river ribbon overlaps the coast and blends into the sea by depth, without an offshore plume.
+          wEst=water.a*(1.-smoothstep(0.,6.,-s.x));
           wTint.xy=vec2(waterTea(),waterGlacial())*wEst;
-          wRiver=water.a*(1.-wTint.z);
+          wRiver=water.a;
         }
       }
       else color=color*(1.-water.a*under)+water.rgb*under;
@@ -719,11 +738,15 @@ precision highp float; precision highp int; precision highp sampler2D;
 in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
 out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
+// Unpainted water keeps coverage and replaces encoded seasonal RGB with one palette colour.
+uniform vec4 uFlatWater;
 uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN;
 vec4 bw(float t) { float t2=t*t,t3=t2*t,u=1.-t; return vec4(u*u*u,3.*t3-6.*t2+4.,-3.*t3+3.*t2+3.*t+1.,t3)/6.; }
 ${LAKE_GLSL}
 void main() {
+  // Sediment capsules are data for the material water compositor, not standalone blue blobs offshore.
+  if (uFlatWater.a > 0. && vColor.b >= .5) discard;
   vec2 a = vSeg.xy, b = vSeg.zw, pa = vP - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
   float d = length(pa - ba * h);
@@ -734,7 +757,7 @@ void main() {
   }
   if (alpha <= 0.0) discard;
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
-  vec3 color = vColor;
+  vec3 color = uFlatWater.a > 0. ? uFlatWater.rgb : vColor;
   if (uHasOverlay == 1) { vec4 overlay = texture(uOverlay, (uOrigin + vP * uPx) / uMapW); color = mix(color, overlay.rgb, overlay.a); }
   outColor = vec4(color * alpha, alpha);
 }`;

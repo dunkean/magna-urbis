@@ -31,6 +31,7 @@ import { drawTownFrame } from './frame';
 import { Triangulator } from './triangulator';
 import { cityGlPick } from './hostTools';
 import { SOFTWARE_GL } from '../../softwareGl';
+import { countWork } from '../../workCount';
 
 const defaultWorkers = (): number => Math.max(0, Math.min(4, ((globalThis.navigator?.hardwareConcurrency ?? 2) >> 1) - 1));
 export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas, create: CityGlCreateOptions = {}): CityGlRenderer {
@@ -303,6 +304,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       painted = !footprint && (o.paintedBuildings ?? renderBackground);
     const style: CityGlStyleState = {
       buildingStyle: o.buildingStyle,
+      roof: o.roof,
       view: o.view,
       lod,
       palette,
@@ -320,7 +322,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
     const key = JSON.stringify([o.view, lod, palette, layers, style.buildingsVisible, o.buildingStyle, refusedKey(o.refusedParcels), painted, style.blended, toneKey()]) + liveKey;
     const softStreets = !!style.blended && !(o.textured && palette !== 'parchment' && palette !== 'ink'),
       sKey = `${palette}|${softStreets}|${colorKey}|${toneKey()}|${liveKey}`;
-    const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}|${liveKey}`;
+    const bKey = `${o.view}|${palette}|${style.diagnostic}|${o.buildingStyle}|${o.roof ?? ''}|${buildingGeneration}|${painted}|${colorKey}|${roofSeasonKey()}|${liveKey}`;
     return { palette, layers, footprint, renderBackground, painted, style, key, softStreets, sKey, bKey };
   }
   /** What a draw state needs on the GPU besides the meshes: street strokes of the road-surface switch, colour and
@@ -493,6 +495,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       if (p) commitPlan = undefined;
       else commitBuildings = undefined;
       const ms = p?.() ?? b?.() ?? 0;
+      if (p || b) countWork('town.upload');
       gl.bindVertexArray(null); // StrokePack leaves its VAO bound: nothing of ours stays bound in the shared context
       if (p && buildStats) buildStats.uploadMs = ms;
       else if (b && buildingStats) buildingStats.uploadMs = ms;
@@ -573,6 +576,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       return false;
     },
     async setScene(next, nextBuildings, options = {}) {
+      countWork('town.packScene');
       const gen = ++generation,
         start = performance.now(),
         workers = options.workers ?? defaultWorkers();
@@ -587,7 +591,10 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
         out.walls = cityWallStrokes(next, o);
         out.towers = buildTowers(cityStrokedWalls(next), o);
         yield; // walls hook
-        if (nextBuildings) out.built = yield* packBuildingsSteps(nextBuildings, o);
+        if (nextBuildings) {
+          countWork('town.planHouseMesh');
+          out.built = yield* packBuildingsSteps(nextBuildings, o);
+        }
       };
       // Shared context: packed in slices by `step()`; a newer scene drops every packing in progress.
       if (deferUpload) {
@@ -636,6 +643,7 @@ function cityGlCore(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement | Offs
       return buildStats;
     },
     async setBuildings(next, options = {}) {
+      countWork('town.packBuildings');
       const gen = ++buildingGeneration,
         start = performance.now(),
         workers = options.workers ?? defaultWorkers(),

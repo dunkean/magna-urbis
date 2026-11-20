@@ -23,7 +23,7 @@ export const PASSES: Readonly<Record<PassName, PassSpec>> = {
     owns: ['GPU look uniforms', 'cpu: terrain raster + background SVG'],
     invalidation: 'season, lighting, palette, contours, layers; never a GPU upload',
   },
-  forest: { inputs: ['keys.forest', 'revisions.terrain|landuse|cities|settlements', 'effective forest settings'], owns: ['GPU forest field'], invalidation: 'forest settings, terrain' },
+  forest: { inputs: ['keys.forest', 'revisions.terrain|roads|landuse|cities|settlements', 'effective forest settings'], owns: ['GPU forest field'], invalidation: 'forest settings, terrain, circulation and occupation' },
   water: {
     inputs: ['keys.water', 'revisions.terrain', 'layers.water', 'mode'],
     owns: ['GPU water/overlay textures', 'water vector SVG'],
@@ -60,8 +60,8 @@ export function passKeys(i: PassInput): Record<PassName, string> {
   const cartLayers = j(l.roads, l.landuse, l.city, l.streets, l.labels, l.decor, l.background, l.terrain, l.water, l.decor);
   return {
     terrainData: j(v.terrain, rel(i), mode),
-    terrainLook: j(k.terrainLook, i.effective, mode, rel(i), l.decor, l.background, v.terrain, ...(mode === 'cpu' ? [k.terrainBase, k.forest, k.water, l.water, l.terrain, i.forestEffective, v.landuse] : [])),
-    forest: mode === 'cpu' ? 'in-terrain' : j(k.forest, v.terrain, v.landuse, v.cities, v.settlements, i.forestEffective, rel(i)),
+    terrainLook: j(k.terrainLook, i.effective, mode, rel(i), l.decor, l.background, v.terrain, ...(mode === 'cpu' ? [k.terrainBase, k.forest, k.water, l.water, l.terrain, i.forestEffective, v.roads, v.landuse, v.cities, v.settlements] : [])),
+    forest: mode === 'cpu' ? 'in-terrain' : j(k.forest, v.terrain, v.roads, v.landuse, v.cities, v.settlements, i.forestEffective, rel(i)),
     // The season and the climate zone set the water regime (dry beds, ice).
     water: j(k.water, v.terrain, l.water, mode, rel(i), isResourceDiagnostic(r.diagnostic) ? v.settlements : null, r.ground.season, r.ground.calendar, i.effective),
     frame: j(r.ground.style, r.palette.colors, rel(i), r.ground.layers.frame, l.decor),

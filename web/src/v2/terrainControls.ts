@@ -3,7 +3,7 @@ import { openMethodNote } from '../ui/methodNotes';
 import type { V2Settings } from './contracts';
 import { adaptedExtent } from './settings';
 import { heightmapPixels, setHeightmapDefinition } from './heightmapModel';
-import { canUseTracedCoast, effectiveTerrainSettings } from './terrainSettings';
+import { canUseTracedCoast, effectiveTerrainSettings, terrainReliefAvailable } from './terrainSettings';
 import { coastTraceMode } from './coastTrace';
 import { bindTree, onLanguageChange, registerMessages, setText, setDynamicText, translate, numberLocale } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
@@ -26,6 +26,7 @@ import {
   coastDirections,
   toggleCoastDirection,
   climateZoneBiome,
+  terrainCoastFields,
 } from './terrainControlSchema';
 import './terrainControls.css';
 import { applyRuntimePath, normalizeRuntime } from './runtimeChoices';
@@ -526,6 +527,15 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   traceHint.className = 'hint terrain-coast-trace-hint';
   setText(traceHint, ui.traceHint);
   coasts.append(traceActions, traceHint);
+  const profileControls = document.createElement('div');
+  profileControls.className = 'coast-profile-controls';
+  coasts.insertBefore(profileControls, traceActions);
+  const coastProfileForm = document.createElement('div');
+  profileControls.append(coastProfileForm);
+  form(
+    coastProfileForm,
+    terrainCoastFields.map(field => ({ ...field, helpDisplay: 'tooltip' })),
+  );
   const quickOptions = document.createElement('div');
   quickOptions.className = 'terrain-quick-options';
   root.append(quickOptions);
@@ -661,6 +671,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     const metres = adaptedExtent(settings),
       factor = unitFactor(unit.value as PhysicalUnit);
     const isClassicEngine = settings.runtime?.backend === 'typescript';
+    coastProfileForm.hidden = isClassicEngine;
     const effective = effectiveTerrainSettings(settings, metres);
     const capability = terrainCapability({ ...effective, backend: settings.runtime?.backend });
     const min = capability.minWidth,
@@ -792,8 +803,8 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     root.querySelector<HTMLElement>('[data-field-path="terrain.islandMode"]')!.hidden = importedSurface || symbolic || isClassic;
     root.querySelector<HTMLElement>('[data-field-path="terrain.climate"]')!.hidden = isClassic;
     root.querySelector<HTMLElement>('[data-field-path="options.biome"]')!.hidden = !isClassic;
-    for (const option of Array.from(reliefSelect.options))
-      option.disabled = (isNeural && !['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'].includes(option.value)) || (compact && !['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'high-mountains'].includes(option.value));
+    const method = isNeural ? 'neural' : compact ? 'compact' : 'procedural';
+    for (const option of Array.from(reliefSelect.options)) option.disabled = !terrainReliefAvailable(option.value, method);
   }
   void loadTerrainControlDefaults()
     .then(reader => {

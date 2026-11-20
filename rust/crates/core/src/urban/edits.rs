@@ -25,6 +25,10 @@ use super::{
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(super) mod blocks;
+pub(super) mod quarter_baseline;
+pub(super) mod quarter_parts;
+
 /// Vertex bounds of an edited outline (outer ring).
 const MAX_VERTICES: usize = 512;
 const MAX_COORDINATE: f64 = 1e6;
@@ -52,8 +56,10 @@ fn structural(o: &QuarterOverride) -> bool {
 fn without_structure(o: &QuarterOverride) -> QuarterOverride {
     QuarterOverride {
         shape: None,
+        parts: None,
         deleted: None,
         salt: None,
+        deleted_parts: vec![],
         ..o.clone()
     }
 }
@@ -82,12 +88,13 @@ pub(super) fn validate_quarters(cfg: &LayoutConfig) -> Result<(), String> {
             return Err("Retouche de quartier invalide (forme)".into());
         }
     }
-    Ok(())
+    quarter_parts::validate(cfg)
 }
 /// `deleted` is `merge` or `garden`; anything else is a malformed edit.
 pub(super) fn validate_parcels(cfg: &super::ParcelConfig) -> Result<(), String> {
+    blocks::validate(cfg)?;
     for (id, edit) in &cfg.overrides.blocks {
-        if id.parse::<usize>().is_err()
+        if blocks::parse_key(id).is_none()
             || edit.density.is_some_and(|d| !d.is_finite() || !(0.1..=10.0).contains(&d))
             || edit.culture.as_deref().is_some_and(|c| super::culture::mapping(c).is_none())
             || edit.role.as_deref().is_some_and(|r| !r.is_empty() && r != "auto" && super::roles::role_function(r).is_none())
@@ -103,6 +110,11 @@ pub(super) fn validate_parcels(cfg: &super::ParcelConfig) -> Result<(), String> 
             return Err(format!(
                 "Retouche parcelle {id} : suppression invalide (« merge » ou « garden »)"
             ));
+        }
+        if o.parts.as_ref().is_some_and(|p| {
+            o.shape.is_some() || !(2..=64).contains(&p.len()) || p.iter().any(|s| !valid_shape(s))
+        }) {
+            return Err(format!("Invalid lot edit {id} (parts)"));
         }
     }
     Ok(())
@@ -192,16 +204,28 @@ struct QuarterEdit {
 /// `plan(c)` lays out the site with config `c` (quarter stage, kind stamp,
 /// access refinement); `finish(l)` summarizes and prepares the programme.
 /// Without any structural field this is exactly `plan(cfg)` then `finish`.
+/// Quarter splits (`parts`) are never seen by the plan: they are applied once,
+/// last, on the finished layout (`quarter_parts`).
 pub(super) fn with_quarter_edits(
     cfg: &LayoutConfig,
     plan: impl Fn(&LayoutConfig) -> Result<Layout, String> + Sync + Send,
     finish: impl Fn(&mut Layout) -> Result<(), String> + Sync + Send,
-) -> Result<Layout, String> {
+) -> Result<(Layout, Option<Layout>), String> {
     validate_quarters(cfg)?;
+    let base = quarter_parts::base(cfg);
+    let (mut layout, baseline) = spliced_quarters(&base, plan, finish)?;
+    quarter_parts::apply(&mut layout, cfg);
+    Ok((layout, baseline))
+}
+fn spliced_quarters(
+    cfg: &LayoutConfig,
+    plan: impl Fn(&LayoutConfig) -> Result<Layout, String> + Sync + Send,
+    finish: impl Fn(&mut Layout) -> Result<(), String> + Sync + Send,
+) -> Result<(Layout, Option<Layout>), String> {
     if !cfg.overrides.quarters.values().any(structural) {
         let mut layout = plan(cfg)?;
         finish(&mut layout)?;
-        return Ok(layout);
+        return Ok((layout, None));
     }
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
@@ -256,11 +280,10 @@ pub(super) fn with_quarter_edits(
     let Splice {
         layout: mut spliced,
         origin,
-        streets,
         edited,
     } = splice(&l0, l1.as_ref(), &edits, &mut warnings);
     spliced.programme = None;
-    let kinds: Vec<String> = spliced.blocks.iter().map(|b| b.kind.clone()).collect();
+    let freeze_inputs = FreezeInputs::new(&spliced, &l0, &origin);
     // Both finishes are independent; errors keep the serial order.
     let (spliced_done, l0_done) = if super::par::threads() > 1 {
         let slots = [std::sync::Mutex::new(Some(spliced)), std::sync::Mutex::new(Some(l0))];
@@ -280,6 +303,7 @@ pub(super) fn with_quarter_edits(
     r?;
     let (l0, r0) = l0_done;
     r0?;
+    let (origin, streets, kinds) = freeze_inputs.remap(&spliced, &l0);
     freeze(&mut spliced, &l0, &origin, &streets, &kinds, &mut warnings);
     spliced.warnings.extend(warnings);
     // The parcel stage reads the salts and deletions.
@@ -294,7 +318,44 @@ pub(super) fn with_quarter_edits(
             edited.len()
         );
     }
-    Ok(spliced)
+    let baseline = (!edited.is_empty() && origin.iter().any(Option::is_some)).then_some(l0);
+    Ok((spliced, baseline))
+}
+
+/// Finishing can split/reorder blocks (deep lanes, source-site ground) and prune or subdivide streets. Splice indices
+/// refer to the unfinished layouts, so carry their provenance through exact geometry identities before freezing the
+/// final programme. A new or recut block keeps the finished programme's own choice; an unchanged block keeps L0's.
+struct FreezeInputs {
+    blocks: BTreeMap<Vec<u8>, (Option<Vec<u8>>, String)>,
+}
+fn block_identity(b: &Block) -> Vec<u8> {
+    // The programme may change the kind to reserve:* without changing the physical block's identity.
+    serde_json::to_vec(&(b.quarter, b.phase, &b.zone, b.axis, &b.shape)).expect("block identity")
+}
+impl FreezeInputs {
+    fn new(spliced: &Layout, l0: &Layout, origin: &[Option<usize>]) -> Self {
+        let blocks = spliced.blocks.iter().zip(origin).map(|(b, source)| {
+            (block_identity(b), (source.map(|i| block_identity(&l0.blocks[i])), b.kind.clone()))
+        }).collect();
+        Self { blocks }
+    }
+    fn remap(&self, spliced: &Layout, l0: &Layout) -> (Vec<Option<usize>>, Vec<Option<usize>>, Vec<String>) {
+        let base: BTreeMap<Vec<u8>, usize> = l0.blocks.iter().enumerate().rev()
+            .map(|(i, b)| (block_identity(b), i)).collect();
+        let mut origin = Vec::with_capacity(spliced.blocks.len());
+        let mut kinds = Vec::with_capacity(spliced.blocks.len());
+        for b in &spliced.blocks {
+            let before = self.blocks.get(&block_identity(b));
+            origin.push(before.and_then(|(source, _)| source.as_ref()).and_then(|key| base.get(key)).copied());
+            kinds.push(before.map_or_else(|| b.kind.clone(), |(_, kind)| kind.clone()));
+        }
+        // Reservation street indices also belong to the finished layouts. Width/rank changes keep the same axis;
+        // paths removed or cut differently cannot inherit a reservation through an old numeric position.
+        let streets: BTreeMap<Vec<u8>, usize> = spliced.streets.iter().enumerate().rev()
+            .map(|(i, s)| (serde_json::to_vec(&s.path).expect("street identity"), i)).collect();
+        let street_map = l0.streets.iter().map(|s| streets.get(&serde_json::to_vec(&s.path).expect("street identity")).copied()).collect();
+        (origin, street_map, kinds)
+    }
 }
 
 fn bbox_hit(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64), pad: f64) -> bool {
@@ -565,8 +626,6 @@ struct Splice {
     layout: Layout,
     /// `L0` index of every block taken unchanged (`None`: a new block).
     origin: Vec<Option<usize>>,
-    /// Index in the splice of every `L0` street (`None`: removed).
-    streets: Vec<Option<usize>>,
     /// Quarters whose content changed.
     edited: BTreeSet<usize>,
 }
@@ -704,12 +763,10 @@ fn splice(
         .map(|(k, _)| *k)
         .collect();
     let mut streets: Vec<Street> = vec![];
-    let mut street_map = vec![None; l0.streets.len()];
     for (k, st) in l0.streets.iter().enumerate() {
         if removed.contains(&k) {
             continue;
         }
-        street_map[k] = Some(streets.len());
         streets.push(st.clone());
     }
     let dropped = removed.len();
@@ -882,7 +939,6 @@ fn splice(
     Splice {
         layout: s,
         origin,
-        streets: street_map,
         edited: touched,
     }
 }
@@ -1484,6 +1540,37 @@ fn give(lots: &[Option<Parcel>], candidates: &[usize], piece: &Shape) -> Option<
         .find_map(|(ni, ..)| single_union(&lots[ni].as_ref()?.shape, piece).map(|u| (ni, clean(u))))
 }
 
+/// Closed parts of a split lot, in order: each clipped to the lot and cut out
+/// of the parts before it; together they must cover the lot (a chord cut
+/// loses no land). All or nothing.
+fn split_lot(old: &Shape, parts: &[Shape]) -> Result<Vec<Shape>, &'static str> {
+    let mut taken: Vec<(Shape, (f64, f64, f64, f64))> = vec![];
+    let mut out = vec![];
+    for part in parts {
+        if !valid_shape(part) {
+            return Err("invalid part");
+        }
+        let valid = largest(g::union(&[g::normalized(Shape {
+            outer: g::unneedled(&part.outer, LOT_TOLERANCE.1),
+            holes: vec![],
+        })]))
+        .ok_or("degenerate part")?;
+        let piece = largest(subtract(g::intersection(&valid, old), &taken))
+            .filter(|s| g::area(s) >= MIN_REMAINDER)
+            .ok_or("a part is empty or too small")?;
+        let piece = clean(piece);
+        let bb = g::bbox(&piece);
+        taken.push((piece.clone(), bb));
+        out.push(piece);
+    }
+    let area = g::area(old);
+    let covered: f64 = out.iter().map(g::area).sum();
+    if covered < area - (0.02 * area).max(LOT_TOLERANCE.0) {
+        return Err("the parts do not cover the lot");
+    }
+    Ok(out)
+}
+
 /// Hook of the parcel stage, between the lot cut and the programme: lot
 /// shapes first, then deletions, each in id order. Every edit is all or
 /// nothing: it is tried on a copy and kept only when the block stays an exact
@@ -1496,12 +1583,20 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
         .overrides
         .parcels
         .iter()
-        .filter(|(_, o)| o.shape.is_some() || o.deleted.is_some())
+        .filter(|(_, o)| o.shape.is_some() || o.parts.is_some() || o.deleted.is_some())
         .map(|(k, o)| (k.clone(), o.clone()))
         .collect();
     if edits.is_empty() {
         return;
     }
+    // Splits first (a part is then addressable by its own id), then shapes,
+    // then deletions, each in id order.
+    let edits: Vec<(String, ParcelOverride)> = edits
+        .iter()
+        .filter(|(_, o)| o.parts.is_some())
+        .chain(edits.iter().filter(|(_, o)| o.parts.is_none()))
+        .cloned()
+        .collect();
     let index = FrontageIndex::new(layout);
     let mut lots: Vec<Option<Parcel>> = std::mem::take(&mut partition.parcels)
         .into_iter()
@@ -1523,6 +1618,39 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
             .get(block)
             .map_or([0.0; 4], |b| block_metrics(&b.shape, &all))
     };
+    for (id, o) in edits.iter().filter(|(_, o)| o.parts.is_some()) {
+        let Some(ai) = find(&lots, id) else {
+            warnings.push(format!("Lot edit {id}: split ignored (lot not found)"));
+            continue;
+        };
+        let source = lots[ai].as_ref().unwrap();
+        let bi = source.block;
+        match split_lot(&source.shape, o.parts.as_ref().unwrap()) {
+            Err(why) => warnings.push(format!("Lot edit {id}: split ignored ({why})")),
+            Ok(pieces) => {
+                before.entry(bi).or_insert_with(|| metrics(&lots, bi));
+                let source = lots[ai].as_ref().unwrap().clone();
+                let (slot, rank) = order[ai];
+                let mut pieces = pieces.into_iter();
+                let first = lots[ai].as_mut().unwrap();
+                first.shape = pieces.next().unwrap();
+                requalify(first, layout, &index, "edit:split");
+                for (k, piece) in pieces.enumerate() {
+                    let mut part = source.clone();
+                    part.id = format!("{id}/part-{}", k + 1);
+                    part.parent_ids = vec![id.clone()];
+                    part.provenance = vec!["edit:split".into()];
+                    part.shape = piece;
+                    requalify(&mut part, layout, &index, "edit:split");
+                    if !lot_served(&part) {
+                        warnings.push(format!("Lot edit {id}: part {} has no street access", k + 1));
+                    }
+                    lots.push(Some(part));
+                    order.push((slot, rank + k + 1));
+                }
+            }
+        }
+    }
     for (id, o) in edits.iter().filter(|(_, o)| o.shape.is_some()) {
         let user = o.shape.as_ref().unwrap();
         let Some(ai) = find(&lots, id) else {

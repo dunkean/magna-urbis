@@ -21,7 +21,6 @@ registerMessages({
   Buildings: { en: 'Buildings', fr: 'Bâtiments' },
   Lighting: { en: 'Lighting', fr: 'Éclairage' },
   Texts: { en: 'Texts', fr: 'Textes' },
-  'Urban plan': { en: 'Urban plan', fr: 'Plan urbain' },
   Contours: { en: 'Contours', fr: 'Courbes de niveau' },
   Active: { en: 'Active', fr: 'Actif' },
   Off: { en: 'Off', fr: 'Désactivé' },
@@ -40,10 +39,8 @@ interface Pass {
 const passes: Pass[] = [
   { name: 'Ground shader', path: 'appearance.terrainLayers.hypsometry', component: 'ground', fields: ['appearance.composition.ground.look', 'appearance.composition.ground.variant', 'appearance.city.exaggeration', 'appearance.city.refinement'] },
   { name: 'Relief shading', path: 'appearance.composition.effects.relief' },
-  { name: 'Water', path: 'appearance.composition.networks.water.visible', component: 'water', fields: ['appearance.composition.networks.water.look', 'appearance.composition.networks.water.waves'] },
   { name: 'Vegetation', path: 'appearance.composition.vegetation.look', component: 'vegetation', fields: ['appearance.composition.vegetation.look'] },
-  { name: 'Roads', path: 'appearance.composition.networks.roads.visible', component: 'roads', fields: ['appearance.composition.networks.roads.look'] },
-  { name: 'Urban plan', path: 'appearance.city.plan', component: 'plan', fields: ['appearance.composition.buildings.parcels', 'appearance.composition.buildings.blocks', 'appearance.composition.buildings.districts'] },
+  { name: 'Roads', path: 'appearance.composition.networks.roads.visible' },
   { name: 'Buildings', path: 'appearance.composition.buildings.visible', component: 'buildings', fields: ['appearance.composition.buildings.look', 'appearance.city.colors'] },
   { name: 'Texts', path: 'appearance.composition.text.visible', component: 'text', fields: ['appearance.composition.text.look'] },
   { name: 'Lighting', path: 'appearance.composition.effects.lighting.enabled', component: 'lighting' },
@@ -56,16 +53,15 @@ const passes: Pass[] = [
 const THEMES: readonly { id: string; title: string; passes: readonly string[]; stages: readonly string[] }[] = [
   { id: 'ground', title: 'Ground and relief', passes: ['Ground shader', 'Relief shading', 'Contours'], stages: ['display-terrain', 'display-relief'] },
   { id: 'vegetation', title: 'Vegetation and land use', passes: ['Vegetation', 'Land use'], stages: ['display-vegetation', 'display-landuse'] },
-  { id: 'water', title: 'Water', passes: ['Water'], stages: ['display-water'] },
+  { id: 'water', title: 'Water', passes: [], stages: ['display-water'] },
   { id: 'roads', title: 'Roads', passes: ['Roads'], stages: ['display-roads'] },
-  { id: 'buildings', title: 'Buildings and urban plan', passes: ['Urban plan', 'Buildings'], stages: ['display-buildings'] },
+  { id: 'buildings', title: 'Buildings', passes: ['Buildings'], stages: ['display-buildings'] },
   { id: 'text', title: 'Text and labels', passes: ['Texts'], stages: ['display-text', 'display-labels'] },
   { id: 'effects', title: 'Lighting and effects', passes: ['Lighting'], stages: ['display-ambience'] },
 ];
 registerMessages({
   'Ground and relief': { en: 'Ground and relief', fr: 'Sol et relief' },
   'Vegetation and land use': { en: 'Vegetation and land use', fr: 'Végétation et occupation du sol' },
-  'Buildings and urban plan': { en: 'Buildings and urban plan', fr: 'Bâtiments et plan urbain' },
   'Text and labels': { en: 'Text and labels', fr: 'Textes et étiquettes' },
   'Lighting and effects': { en: 'Lighting and effects', fr: 'Lumière et effets' },
 });
@@ -128,7 +124,7 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
     card.append(toggle);
     const shared = !['Vegetation', 'Land use'].includes(pass.name) && field(pass.path);
     if (shared) {
-      if (shared.closest('.toolbar-row') && pass.component !== 'roads') {
+      if (shared.closest('.toolbar-row')) {
         const placeholder = document.createElement('span');
         placeholder.className = 'render-pass-placeholder';
         placeholder.setAttribute('aria-hidden', 'true');
@@ -279,7 +275,6 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
     for (const { stage, wrapper } of fine)
       wrapper.hidden =
         (stage === 'display-vegetation' && recipe.vegetation.look === 'none') ||
-        (stage === 'display-water' && !recipe.networks.water.visible) ||
         (stage === 'display-roads' && !recipe.networks.roads.visible) ||
         (stage === 'display-buildings' && !recipe.buildings.visible) ||
         (stage === 'display-text' && !recipe.text.visible) ||

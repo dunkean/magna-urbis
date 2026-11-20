@@ -7,19 +7,30 @@
  *  - the camera's motion (viewMotion.ts): moving or at rest;
  *  - the frozen picture of a style switch: while the appearance passes run, a copy of the last picture stays on screen
  *    and follows the view;
- *  - the capture frame: an exact frame laid over the view for a screenshot, kept until the camera moves.
+ *  - the capture frame: an exact frame laid over the view for a screenshot, kept until the camera moves (a tilted
+ *    view: the compositor's frame read back, the exact renderers paint the top view only);
+ *  - picking: the ground point and the building under a pixel (the 2D mapping in the top view, the camera's ray when
+ *    tilted).
  *
  * Only the composed view draws a tilted camera (render/world/): the element says so to the viewer
  * (`data-camera="tilt"`), which then lets the camera tilt; under the fallback view the camera stays the top view.
+ *
+ * Loading never moves the camera nor changes the view in charge. The fallback view takes over for its own cases only
+ * (no hardware WebGL2, an illustrated ground, a lost context, `?display=fallback`); a wait that ends by itself
+ * (the ground of a new terrain baking its first tiles) leaves the composed view in charge with its last picture on
+ * screen, whole, until it can compose again: the new terrain is never drawn with what the previous one left. Before the
+ * first composed picture the fallback shows that wait with its ground alone: the map only ever adds to what it shows.
  */
 import { noteFallbackFrame } from '../../render/live/liveStats';
 import { fallbackForced } from '../../render/live/policy';
 import { initializeDisplayQuality, noteDisplayNavigation, onDisplayQualityChange } from '../../render/displayQuality';
 import { onVectorEngineChange } from '../../render/vectorEngine';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
-import type { View } from '../../render/view';
+import { screenToWorld, type View } from '../../render/view';
+import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { isTilted } from '../../render/world/camera';
 import type { WorldRelief } from '../../render/world/contract';
+import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import { suspendFantasyRaster } from '../../ui/fantasyRaster';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { ComposedView, GROUND_WARMING } from './composedView';
@@ -40,6 +51,8 @@ export class MapView implements AppearanceListener, ViewStatus {
   private readonly composed: ComposedView;
   private readonly fallback: FallbackView;
   private presenter: Presenter = 'none';
+  /** The composed view has presented a picture: the start-up is over. */
+  private started = false;
   /** The picture kept on screen while the appearance passes run, and the view it shows. */
   private frozen?: { element: HTMLDivElement; view: View; w: number; h: number };
   /** An exact frame covers the view (prepareCapture), through late invalidations, until the camera moves. */
@@ -77,7 +90,7 @@ export class MapView implements AppearanceListener, ViewStatus {
       return;
     }
     if (this.captured) {
-      if (!isTilted(view) && sameFrame(this.captured, view, w, h, dpr)) return;
+      if (sameFrame(this.captured, view, w, h, dpr)) return;
       this.releaseCapture();
     }
     const now = performance.now(),
@@ -89,16 +102,28 @@ export class MapView implements AppearanceListener, ViewStatus {
     const blocked = fallbackForced() ? 'forced fallback' : this.composed.blocked(view, w, h, dpr);
     map.stats.live = blocked ?? 'compositor';
     if (!blocked) {
+      this.started = true;
       if (this.presenter === 'fallback') this.fallback.leave();
       this.present('composed');
       this.composed.draw(view, w, h, dpr, moved, now);
+      return;
+    }
+    // The composed view is on screen and only waits for the first tiles of a new ground: its last picture stays (the
+    // compositor's canvas keeps what it presented), the camera keeps its pose, and its preparation goes on; the
+    // frame is asked again when the tiles are there.
+    if (blocked === GROUND_WARMING && this.presenter === 'composed') {
+      map.stats.live = `holding: ${blocked}`;
+      this.composed.syncWork();
       return;
     }
     if (this.presenter === 'composed') this.composed.leave();
     this.present('fallback');
     this.composed.standBy(blocked === GROUND_WARMING);
     noteFallbackFrame(blocked);
-    this.fallback.draw(view, w, h, dpr, moved, now);
+    // Before the first composed picture (the first map of the page, a reload) a warming ground is shown by the
+    // fallback's ground alone: its picture of the overlay, the town and the names would leave the screen when the
+    // compositor takes over, and the map must only ever add to what it shows (paper, ground, water, overlay, town, names).
+    this.fallback.draw(view, w, h, dpr, moved, now, blocked === GROUND_WARMING && !this.started);
   }
   /** Notes the view in charge, and tells the viewer through the element whether it draws a tilted camera. */
   private present(presenter: Presenter): void {
@@ -110,6 +135,9 @@ export class MapView implements AppearanceListener, ViewStatus {
   /** The relief of the map on screen, for the viewer's zoom on the terrain (Viewer.setRelief). */
   relief(): WorldRelief | undefined {
     return this.composed.relief();
+  }
+  walkCollisions(): Terrain3dCollisions | undefined {
+    return this.presenter === 'composed' ? this.composed.walkCollisions() : undefined;
   }
   private current(): ComposedView | FallbackView | undefined {
     return this.presenter === 'composed' ? this.composed : this.presenter === 'fallback' ? this.fallback : undefined;
@@ -181,6 +209,9 @@ export class MapView implements AppearanceListener, ViewStatus {
     this.frozen = undefined;
     this.fallback.thaw();
     this.composed.thaw();
+    // Products can finish while preparing hides the frame. Publish the completed state even when no worker or
+    // program has another callback left to wake the view (notably a regenerated town on an unchanged terrain).
+    if (!map.disposed && !map.suspended && map.world) map.repaint();
   }
   contentChanged(ran: readonly string[], before: { resolved?: ResolvedAppearance; native?: TerrainData }): void {
     this.composed.contentChanged(ran, before);
@@ -206,7 +237,8 @@ export class MapView implements AppearanceListener, ViewStatus {
   }
   private followFrozen(view: View, w: number, h: number): void {
     const previous = this.frozen;
-    if (!previous) return;
+    // A tilted picture stays where it is: a 2D transform cannot follow a perspective.
+    if (!previous || isTilted(previous.view) || isTilted(view)) return;
     const k = view.scale / previous.view.scale,
       tx = (w - previous.w) / 2 + (previous.view.cx - view.cx) * view.scale,
       ty = (h - previous.h) / 2 + (previous.view.cy - view.cy) * view.scale;
@@ -233,17 +265,32 @@ export class MapView implements AppearanceListener, ViewStatus {
       frame = this.motion.frame;
     this.suspendStepwisePaints();
     this.motion.restDone();
-    // A tilted view is the compositor's frame as it is: the exact renderers paint the top view only.
-    if (this.presenter === 'composed' && this.composed.tilted) return;
     if (!frame || !map.world) {
       if (this.parts.ground.gpuActive) this.parts.ground.gpu!.redrawForCapture();
       return;
     }
     const canvas = this.captureCanvas;
-    this.exact.paint(canvas, frame.view, frame.w, frame.h, frame.dpr, { stepwise: false, groundBeneath: false });
+    // A tilted view is the compositor's frame read back: the exact renderers paint the top view only.
+    if (isTilted(frame.view)) {
+      if (this.presenter !== 'composed' || !this.composed.capture(frame.view, frame.w, frame.h, frame.dpr, canvas)) return;
+    } else this.exact.paint(canvas, frame.view, frame.w, frame.h, frame.dpr, { stepwise: false, groundBeneath: false });
     canvas.style.cssText = `position:absolute;left:0;top:0;z-index:1;width:${frame.w}px;height:${frame.h}px`;
     this.element.append(canvas);
     this.captured = { view: { ...frame.view }, w: frame.w, h: frame.h, dpr: frame.dpr };
+  }
+  /** The tilted view on screen as a picture at its pixel ratio (the PNG of the view); undefined in the top view. */
+  captureView(): HTMLCanvasElement | undefined {
+    const frame = this.motion.frame,
+      canvas = document.createElement('canvas');
+    if (!frame || !isTilted(frame.view) || this.presenter !== 'composed') return undefined;
+    return this.composed.capture(frame.view, frame.w, frame.h, frame.dpr, canvas) ? canvas : undefined;
+  }
+  /** The ground point under the CSS pixel (sx, sy) of `view`, and in a tilted view the building volume in front of it
+   * among those `accept` takes; undefined when the pixel shows no ground (the sky of a tilted view). */
+  pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
+    if (isTilted(view) && this.presenter === 'composed') return this.composed.pick(view, w, h, sx, sy, accept);
+    const [x, y] = screenToWorld(view, w, h, sx, sy);
+    return { x, y };
   }
   private releaseCapture(): void {
     if (!this.captured) return;

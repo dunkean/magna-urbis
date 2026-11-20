@@ -29,7 +29,7 @@ export function builtLandCentre(layouts: readonly CoreLayout[] | undefined): Cor
   for (const layout of layouts ?? [])
     for (const block of layout.blocks ?? []) {
       const ring = block.shape.outer;
-      if (block.kind === 'reserve' || ring.length < 3) continue;
+      if (block.kind === 'reserve' || block.kind === 'deleted' || ring.length < 3) continue;
       let area = 0,
         cx = 0,
         cy = 0;

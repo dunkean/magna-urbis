@@ -205,6 +205,20 @@ describe('continuous vector water', () => {
     expect(Math.abs(input - output - evaporation)).toBeLessThan(input * 1e-6);
   });
 
+  it('keeps humid river mouths connected without offshore sediment capsules or SVG plumes', async () => {
+    const source = await basin(),
+      line: RiverLine = { points: [600, 3250, 350, 3250, 150, 3250], area: [1e6, 8e6, 16e6], level: [3, 1, 0], kind: [0, 0, 0] },
+      water = { ...source, rivers: { ...source.rivers!, rivers: [line], braids: [], oxbows: [], distributaries: [] } },
+      wet: WaterDisplay = { ...display, style: 'render3d', material: true, season: { zone: 'tropical', season: 0.5 } },
+      segments = riverSegments(water, wet);
+    expect(segments.length).toBeGreaterThan(9);
+    for (let i = 0; i < segments.length; i += 9) expect(segments[i + 8]).toBe(0);
+    expect(segments[segments.length - 7]).toBeLessThan(195);
+    const svg = vectorWaterSvg(water, { ...wet, material: false });
+    expect(svg).toContain('class="water"');
+    expect(svg).not.toContain('fill-opacity=');
+  });
+
   it('uses physical widths, splits braid discharge and widens marine estuaries with river size', async () => {
     const water = await basin();
     const line: RiverLine = { points: [600, 3250, 150, 3250], area: [1e6, 16e6], level: [3, 0], kind: [0, 0], threads: [1, 2] };

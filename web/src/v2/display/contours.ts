@@ -1,34 +1,50 @@
 /**
- * Contour lines of the map, inked on the vector overlay (above the land-use tints and the parchment backdrop that
+ * Contour lines of the map, retained as a transparent raster plate on the overlay (above the land-use tints and the parchment backdrop that
  * would hide a ground-shader line) and on the 3D drape tiles.
  *
  * The paths come from render/cityContours.ts, computed in a worker; this object holds the look decision, the Canvas
  * strokes and the wait for paths still in the worker. Called by the cartography's semantic hook (2D), by the physical
  * ground of the 3D drape and by the captures, which await the paths of their scale first.
  */
-import { newPath } from '../../render/gpu/path';
-import { RecordingContext } from '../../render/gpu/recorder';
+import { RecOnlyPath2D } from '../../render/gpu/path';
+import { RecordingCanvas, RecordingContext } from '../../render/gpu/recorder';
+import type { DisplayList } from '../../render/gpu/contract';
+import { createContourInk, type ContourInkSource, type OverlayInk } from '../../render/live/contourInk';
 import { terrainStyle } from '../../render/terrainStyle';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { effectiveTerrainSettings } from '../terrainSettings';
 import { isFantasyStyle } from '../../../../rust/bridge/fantasyTerrain';
 import { contourDrawOf } from '../../render/composition';
 import type { Rect } from '../../render/tileindex';
-import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsReady } from '../../render/cityContours';
+import { cityContourPaths, cityFineContours, cityContoursPending, cityContourPathsPending, cityContourPathsReady } from '../../render/cityContours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../render/strokes';
+import { countWork } from '../../render/workCount';
+import { contourRaster, type ContourRaster } from '../../render/contourRaster';
 import type { Contours } from './contract';
 import type { MapState } from './mapState';
 
 /** Contour width factor on the 3D drape tiles. */
 const DRAPE_CONTOUR_WEIGHT = 1.8;
-/** Parsed contour paths, kept as long as their cached strings. */
-const CONTOUR_PATHS = new WeakMap<object, Partial<Record<'thin' | 'index' | 'recThin' | 'recIndex', Path2D>>>();
-/** Contour data is absolute M/L/Z only. The GPU engine cannot record a native Path2D(string), so it gets the same lines as a RecPath2D. */
-function recordedContourPath(d: string): Path2D {
-  // A character scan (the producer writes `M x,y L x,y ... Z` with fixed decimals): map-wide sets hold megabytes, which a
-  // regular expression and split parse an order of magnitude slower.
-  const path = newPath(),
-    n = d.length;
+/** Squares per side of the map a contour set is cut into: a paint strokes the chunks under its rectangle, not the
+ * whole map's lines (a stroke of a map-wide path costs the whole path on every tile and in every band). */
+const CHUNKS_PER_SIDE = 16;
+interface ContourChunk {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  d: string;
+  path?: Path2D;
+  recorded?: Path2D;
+}
+type ContourSet = { thin: string; index: string };
+/** The chunks of each set, kept as long as its cached strings. */
+const CONTOUR_CHUNKS = new WeakMap<ContourSet, Partial<Record<'thin' | 'index', ContourChunk[]>>>();
+/** Contour data is absolute M/L/Z only, written with fixed decimals. A character scan: map-wide sets hold megabytes,
+ * which a regular expression and split parse an order of magnitude slower. `point` gets each vertex and the offset of
+ * its command, `close` each Z. */
+function scanContourPath(d: string, point: (move: boolean, x: number, y: number, at: number) => void, close?: () => void): void {
+  const n = d.length;
   let i = 0;
   const num = (): number => {
     let sign = 1,
@@ -55,28 +71,150 @@ function recordedContourPath(d: string): Path2D {
     return sign * (whole + frac / div);
   };
   while (i < n) {
-    const c = d.charCodeAt(i++);
-    if (c === 90) path.closePath();
+    const at = i,
+      c = d.charCodeAt(i++);
+    if (c === 90) close?.();
     else if (c === 77 || c === 76) {
       const x = num();
       i++;
       const y = num();
-      if (c === 77) path.moveTo(x, y);
-      else path.lineTo(x, y);
+      point(c === 77, x, y, at);
     }
   }
+}
+/** The GPU engine cannot record a native Path2D(string), so it gets the same lines as a RecPath2D. */
+function recordedContourPath(d: string): Path2D {
+  const path = new RecOnlyPath2D();
+  scanContourPath(
+    d,
+    (move, x, y) => (move ? path.moveTo(x, y) : path.lineTo(x, y)),
+    () => path.closePath(),
+  );
   return path;
 }
-const contourPath = (set: { thin: string; index: string }, kind: 'thin' | 'index', recording = false): Path2D => {
-  let parsed = CONTOUR_PATHS.get(set);
-  if (!parsed) CONTOUR_PATHS.set(set, (parsed = {}));
-  if (recording) return (parsed[kind === 'thin' ? 'recThin' : 'recIndex'] ??= recordedContourPath(set[kind]));
-  return (parsed[kind] ??= new Path2D(set[kind]));
+/** The lines of a set cut by square, once per set: each line goes whole to the square of its centre and a chunk's box
+ * is its lines' union, so the chunks that meet a rectangle hold every line that reaches it, each stroked as before. */
+function contourChunks(set: ContourSet, kind: 'thin' | 'index', size: number): ContourChunk[] {
+  let held = CONTOUR_CHUNKS.get(set);
+  if (!held) CONTOUR_CHUNKS.set(set, (held = {}));
+  const known = held[kind];
+  if (known) return known;
+  countWork('contour.chunkSplit');
+  const d = set[kind],
+    cell = size / CHUNKS_PER_SIDE,
+    squares = new Map<number, { minX: number; minY: number; maxX: number; maxY: number; parts: string[] }>();
+  let start = -1,
+    minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  const square = (v: number): number => Math.max(0, Math.min(CHUNKS_PER_SIDE - 1, Math.floor(v / cell)));
+  const flush = (end: number): void => {
+    if (start < 0 || !(maxX >= minX)) return;
+    const key = square((minY + maxY) / 2) * CHUNKS_PER_SIDE + square((minX + maxX) / 2);
+    let sq = squares.get(key);
+    if (!sq) squares.set(key, (sq = { minX, minY, maxX, maxY, parts: [] }));
+    sq.minX = Math.min(sq.minX, minX);
+    sq.minY = Math.min(sq.minY, minY);
+    sq.maxX = Math.max(sq.maxX, maxX);
+    sq.maxY = Math.max(sq.maxY, maxY);
+    sq.parts.push(d.slice(start, end));
+  };
+  scanContourPath(d, (move, x, y, at) => {
+    if (move) {
+      flush(at);
+      start = at;
+      minX = minY = Infinity;
+      maxX = maxY = -Infinity;
+    }
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  });
+  flush(d.length);
+  return (held[kind] = [...squares.values()].map(({ parts, ...box }) => ({ ...box, d: parts.join('') })));
+}
+const chunkPath = (chunk: ContourChunk, recording: boolean): Path2D => {
+  if (recording) return (chunk.recorded ??= recordedContourPath(chunk.d));
+  return (chunk.path ??= new Path2D(chunk.d));
 };
+
+const WORLD_LISTS = new WeakMap<ContourRaster, DisplayList>();
+/** The retained plate is one image, never millions of stroke triangles. */
+function worldContourList(plate: ContourRaster): DisplayList {
+  let list = WORLD_LISTS.get(plate);
+  if (list) return list;
+  const canvas = new RecordingCanvas(plate.worldSize, plate.worldSize);
+  canvas.getContext('2d')!.drawImage(plate.canvas, 0, 0, plate.worldSize, plate.worldSize);
+  list = canvas.finish();
+  WORLD_LISTS.set(plate, list);
+  return list;
+}
 
 export class ContourInk implements Contours {
   revision = 0;
   private contourWaiters = new Map<TerrainData, Set<() => void>>();
+  private liveInks = new Map<WebGL2RenderingContext, OverlayInk>();
+  private landform?: { revision: number; settings: MapState['settings']; size: number; look: { landform: string } | undefined };
+  private liveAppearance?: Pick<MapState, 'townContent' | 'native' | 'settings' | 'resolved' | 'exportLayers' | 'world'> & { contours: number; source?: ContourInkSource };
+
+  createLiveInk(gl: WebGL2RenderingContext): OverlayInk | undefined {
+    if (!this.map.resolved?.ground.contours) return undefined;
+    if (contourDrawOf(this.map.resolved?.composition.recipe).detail !== 'fixed') return undefined;
+    let ink = this.liveInks.get(gl);
+    if (!ink) {
+      ink = createContourInk(gl, () => this.liveSource());
+      if (ink) this.liveInks.set(gl, ink);
+    }
+    return ink;
+  }
+  private liveSource(): ContourInkSource | null | undefined {
+    const previous = this.liveAppearance;
+    if (
+      previous &&
+      previous.townContent === this.map.townContent &&
+      previous.contours === this.revision &&
+      previous.native === this.map.native &&
+      previous.resolved === this.map.resolved &&
+      previous.settings === this.map.settings &&
+      previous.exportLayers === this.map.exportLayers &&
+      previous.world === this.map.world
+    )
+      return previous.source;
+    const appearance = { townContent: this.map.townContent, contours: this.revision, native: this.map.native, resolved: this.map.resolved, settings: this.map.settings, exportLayers: this.map.exportLayers, world: this.map.world };
+    const look = this.contourLook();
+    if (!look) {
+      this.liveAppearance = appearance;
+      return undefined;
+    }
+    const r = this.map.resolved!,
+      terrain = this.map.native!,
+      mode = contourDrawOf(r.composition.recipe);
+    const paths = cityContourPaths(terrain, look.landform, 0, r.composition.recipe.ground.variant === 'topographic', undefined, 'fixed', mode.sparse);
+    if (cityContourPathsPending(terrain, look.landform, 0, r.composition.recipe.ground.variant === 'topographic', 'fixed', mode.sparse)) {
+      this.afterContours(this.contoursReady);
+      return null;
+    }
+    const source: ContourInkSource = { terrain, list: worldContourList(this.plate(paths)) };
+    this.liveAppearance = { ...appearance, source };
+    return source;
+  }
+  private plate(paths: ContourSet): ContourRaster {
+    const r = this.map.resolved!,
+      pal = terrainStyle(r.ground.style, r.palette.colors).palette;
+    return contourRaster(paths, this.map.native!.width, {
+      color: pal.contour,
+      opacity: pal.contourOpacity * contourDrawOf(r.composition.recipe).opacity,
+      thinWeight: pal.contourThinW ?? 1,
+      indexWeight: pal.contourIndexW / 1.6,
+      topographic: r.composition.recipe.ground.variant === 'topographic',
+    });
+  }
+  dispose(): void {
+    for (const ink of this.liveInks.values()) ink.dispose();
+    this.liveInks.clear();
+  }
 
   constructor(
     private readonly map: MapState,
@@ -126,14 +264,29 @@ export class ContourInk implements Contours {
     await cityContourPathsReady(terrain, look.landform, scale, topographic, mode.detail, mode.sparse);
     while (cityContoursPending(terrain)) await new Promise(resolve => setTimeout(resolve, 16));
   }
+  pendingAt(mpp: number): boolean {
+    const look = this.contourLook();
+    if (!look) return false;
+    const topographic = this.map.resolved!.composition.recipe.ground.variant === 'topographic',
+      mode = contourDrawOf(this.map.resolved!.composition.recipe);
+    // Other sets (fine blocks, ordinary zoom levels) are traced synchronously when painted: never missing.
+    if (!topographic && mode.detail !== 'fixed') return false;
+    // The fixed set has no scale (its key ignores it); scale 0 also keeps out the fine blocks warming for the view.
+    return cityContourPathsPending(this.map.native!, look.landform, mode.detail === 'fixed' ? 0 : 1 / mpp, topographic, mode.detail, mode.sparse);
+  }
   /** Contours are drawn on the vector overlay, above the land-use tints and the parchment backdrop that would hide a ground-shader line. */
   contourLook(): { landform: string } | undefined {
     const r = this.map.resolved,
       t = this.map.native,
       world = this.map.world;
     if (!r || !t || !world || !r.ground.contours || this.map.exportLayers.terrain === false || (!this.map.layers().relief && r.composition.variant !== 'topographic') || t.caveMask.length || isFantasyStyle(r.ground.style)) return undefined;
-    const landform = effectiveTerrainSettings(this.map.settings!, world.mapSize).relief;
-    return landform === 'cavern' ? undefined : { landform };
+    // The appearance revision also changes when settings are edited in place. Deriving the entire terrain recipe
+    // just to read its relief in every region-key/readiness query otherwise allocates on every navigation frame.
+    if (!this.landform || this.landform.revision !== this.map.townContent || this.landform.settings !== this.map.settings || this.landform.size !== world.mapSize) {
+      const landform = effectiveTerrainSettings(this.map.settings!, world.mapSize).relief;
+      this.landform = { revision: this.map.townContent, settings: this.map.settings, size: world.mapSize, look: landform === 'cavern' ? undefined : { landform } };
+    }
+    return this.landform.look;
   }
   /** Same screen weight at every zoom; close views split the interval (cityFineContours) instead of losing the lines on flat ground. */
   /** Contours on one 3D drape tile (world square `box` on `target`); heavier than on the flat map, as the tile is seen minified and at a slant. */
@@ -158,8 +311,29 @@ export class ContourInk implements Contours {
     const farLight = light && sc < 1;
     const topographic = this.map.resolved!.composition.recipe.ground.variant === 'topographic',
       mode = contourDrawOf(this.map.resolved!.composition.recipe);
-    // Fixed (V1): the same whole-map set at every zoom, so no zoom repaints its lines; only the stroke weight follows the scale.
-    const fine = farLight || topographic || mode.detail === 'fixed' ? undefined : cityFineContours(this.map.native!, look.landform, sc, viewport);
+    if (mode.detail === 'fixed' || topographic) {
+      const paths = cityContourPaths(this.map.native!, look.landform, 0, topographic, undefined, 'fixed', mode.sparse);
+      if (cityContourPathsPending(this.map.native!, look.landform, 0, topographic, 'fixed', mode.sparse)) {
+        this.afterContours(defer?.() ?? this.contoursReady);
+        return false;
+      }
+      if (!paths.step) return false;
+      const plate = this.plate(paths),
+        x = Math.max(0, viewport.minX),
+        y = Math.max(0, viewport.minY),
+        w = Math.min(plate.worldSize, viewport.maxX) - x,
+        h = Math.min(plate.worldSize, viewport.maxY) - y;
+      if (!(w > 0 && h > 0)) return false;
+      const density = 1 / plate.metresPerTexel;
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(plate.canvas, x * density, y * density, w * density, h * density, x, y, w, h);
+      ctx.restore();
+      return true;
+    }
+    // Legacy zoom-detail looks retain their vector painter; fixed looks only sample their one plate above.
+    const fine = farLight ? undefined : cityFineContours(this.map.native!, look.landform, sc, viewport);
     let sets = fine?.blocks;
     if (!sets) {
       sets = [cityContourPaths(this.map.native!, look.landform, sc, topographic, undefined, mode.detail, mode.sparse)].filter(paths => paths.step);
@@ -172,11 +346,26 @@ export class ContourInk implements Contours {
     ctx.lineCap = 'round';
     ctx.globalAlpha = pal.contourOpacity * 0.7 * mode.opacity;
     ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, (pal.contourThinW ?? 1) * weight);
-    const recording = ctx instanceof RecordingContext;
-    if (!farLight) for (const set of sets) if (set.thin) ctx.stroke(contourPath(set, 'thin', recording));
+    const recording = ctx instanceof RecordingContext,
+      size = this.map.native!.width,
+      indexWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, (pal.contourIndexW / 1.6) * weight),
+      reach = Math.max(ctx.lineWidth, indexWidth);
+    countWork(recording ? 'contour.record' : 'contour.canvas');
+    let strokes = 0;
+    const stroke = (kind: 'thin' | 'index'): void => {
+      for (const set of sets)
+        if (set[kind])
+          for (const chunk of contourChunks(set, kind, size))
+            if (chunk.maxX + reach >= viewport.minX && chunk.minX - reach <= viewport.maxX && chunk.maxY + reach >= viewport.minY && chunk.minY - reach <= viewport.maxY) {
+              ctx.stroke(chunkPath(chunk, recording));
+              strokes++;
+            }
+    };
+    if (!farLight) stroke('thin');
     ctx.globalAlpha = pal.contourOpacity * mode.opacity;
-    ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, (pal.contourIndexW / 1.6) * weight);
-    for (const set of sets) if (set.index) ctx.stroke(contourPath(set, 'index', recording));
+    ctx.lineWidth = indexWidth;
+    stroke('index');
+    countWork('contour.chunksStroked', strokes);
     ctx.restore();
     return true;
   }

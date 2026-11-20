@@ -1,64 +1,79 @@
-/**
- * The modelled trees of the world view in blocks of the map, without GL: the instances of one block (the 3D view's
- * builder, ui/terrain3dTrees.ts, in its area mode: every tree of the block, nothing around an eye), and what a frame
- * draws of a block at a distance: which lathe (treesShader.ts), how many of its trees. The GPU side is treesLayer.ts.
- *
- * A block is built once per content (field, occupation, season, terrain) whatever the camera does: the eye moving or
- * turning builds nothing. Its instances are shuffled, so a frame draws a prefix of them to thin a far block evenly
- * (the 3D view thinned its far ring by distance in the same proportion, (full / distance)^2).
- */
-import { buildNearTreesSteps, TREE_BLOCK, TREE_STRIDE, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
-import { TREE_LATHES } from './treesShader';
+/** Modelled world trees in view-independent blocks. Every distance draws ranges of the same shuffled array.
+ * Detail and thinning follow the projected size of a stand tree in CSS pixels. */
+import { buildNearTreesSteps, TREE_BLOCK, TREE_STRIDE, type TreeInputs } from '../../ui/terrain3dTrees';
+import type { TreeBuildings } from './treesBuildings';
+import type { TreeSamples } from './treesContent';
 
 /** Side of a block of trees (m): a multiple of the builder's own block. About 600 trees in a dense stand. */
 export const TREES_BLOCK = 4 * TREE_BLOCK;
-/** Lathe by distance, as a share of the tree distance: full within 30 %, middle within 60 %, far to the end. */
-const LATHE_SHARE = [0.3, 0.6, 1];
+/** Height of the tree a block's screen size is measured with (m): a typical stand tree. */
+export const TREE_SIZE_M = 15;
+/** A block has one stable instance order for all distances and detail levels. */
+export interface TreeBlock {
+  data: Float32Array;
+  count: number;
+  samples: TreeSamples;
+}
 
-/** The instances of the block (bx, by): positions relative to its north-west corner, in a shuffled order. One step per
- * 24 m of the block. */
-export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number): Generator<void, Float32Array> {
+/** The instances of the block (bx, by). One step per 24 m of the block. */
+export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buildings?: TreeBuildings): Generator<void, TreeBlock> {
   const minX = bx * TREES_BLOCK,
     minY = by * TREES_BLOCK;
-  const trees = yield* buildNearTreesSteps(inputs, { x: minX, y: minY, forwardX: 0, forwardY: 1, area: { minX, minY, maxX: minX + TREES_BLOCK, maxY: minY + TREES_BLOCK } });
-  const count = trees.length / TREE_STRIDE,
-    out = new Float32Array(trees.length);
-  // Fisher-Yates on a hash of the block: the same order for the same block.
-  const order = new Uint32Array(count);
-  for (let i = 0; i < count; i++) order[i] = i;
-  let state = (Math.imul(bx, 0x9e3779b1) ^ Math.imul(by, 0x85ebca77) ^ 0x2545f491) >>> 0;
+  const water: number[] = [],
+    height: number[] = [];
+  const observed: TreeInputs = {
+    ...inputs,
+    water: (x, y) => {
+      const value = inputs.water(x, y);
+      water.push(x, y, value);
+      return value;
+    },
+    height: (x, y) => {
+      const value = inputs.height(x, y);
+      height.push(x, y, value ?? NaN);
+      return value;
+    },
+  };
+  const trees = yield* buildNearTreesSteps(observed, { x: minX, y: minY, forwardX: 0, forwardY: 1, area: { minX, minY, maxX: minX + TREES_BLOCK, maxY: minY + TREES_BLOCK } });
+  let count = 0;
+  for (let i = 0; i < trees.length; i += TREE_STRIDE) {
+    if (buildings && !buildings.keeps(trees[i], trees[i + 1], trees[i + 3])) continue;
+    const to = count++ * TREE_STRIDE;
+    if (to !== i) trees.copyWithin(to, i, i + TREE_STRIDE);
+    trees[to] -= minX;
+    trees[to + 1] -= minY;
+  }
+  const data = trees.subarray(0, count * TREE_STRIDE);
+  // Shuffle once. All levels and all density changes address ranges of this same array.
+  let state = Math.imul(bx, 0x9e3779b1) ^ Math.imul(by, 0x85ebca77) ^ 0x2545f491 || 1;
   for (let i = count - 1; i > 0; i--) {
     state ^= state << 13;
     state ^= state >>> 17;
     state ^= state << 5;
-    state >>>= 0;
-    const j = state % (i + 1),
-      t = order[i];
-    order[i] = order[j];
-    order[j] = t;
+    const j = (state >>> 0) % (i + 1);
+    for (let k = 0; k < TREE_STRIDE; k++) {
+      const value = data[i * TREE_STRIDE + k];
+      data[i * TREE_STRIDE + k] = data[j * TREE_STRIDE + k];
+      data[j * TREE_STRIDE + k] = value;
+    }
   }
-  for (let i = 0; i < count; i++) {
-    const from = order[i] * TREE_STRIDE,
-      to = i * TREE_STRIDE;
-    for (let k = 0; k < TREE_STRIDE; k++) out[to + k] = trees[from + k];
-    out[to] -= minX;
-    out[to + 1] -= minY;
-  }
-  return out;
+  return { data, count, samples: { water: Float64Array.from(water), height: Float64Array.from(height) } };
 }
 
-/** Lathe of a block whose nearest point is `distance` (m) from the eye, horizontally; -1 beyond the tree distance. */
-export function treeLathe(distance: number, limits: TreeLimits): number {
-  for (let i = 0; i < TREE_LATHES.length; i++) if (distance <= LATHE_SHARE[i] * limits.far) return i;
-  return -1;
-}
-/** Trees drawn of a block of `count` whose nearest point is `distance` from the eye: all within `full`, then
- * (full / distance)^2 of them. */
-export function treeDrawCount(count: number, distance: number, limits: TreeLimits): number {
-  return distance <= limits.full ? count : Math.ceil((count * limits.full * limits.full) / (distance * distance));
+const transition = (pixels: number, start: number, end: number): number => {
+  const t = Math.min(1, Math.max(0, (pixels - start) / (end - start)));
+  return t * t * (3 - 2 * t);
+};
+/** Cumulative shares upgraded from the impostor to a solid crown, then to the close mesh. */
+export const treeSolidShare = (pixels: number): number => transition(pixels, 18, 38);
+export const treeCloseShare = (pixels: number): number => transition(pixels, 64, 112);
+/** Even very distant trees leave individually as their painted crowns take over. */
+export const treeDrawShare = (pixels: number): number => Math.min(1, (pixels / 5) ** 2) * transition(pixels, 1, 2);
+export function treeDrawCount(count: number, pixels: number): number {
+  return Math.round(count * treeDrawShare(pixels));
 }
 
-/** What changes the trees of a block: the inputs' content (the water cover function is the inputs' identity). */
+/** Cheap publication stamp. TreeContent and the block's callback samples decide whether its contents changed. */
 export function treeInputsKey(inputs: Omit<TreeInputs, 'height'>): string {
   return [
     inputs.field.key,

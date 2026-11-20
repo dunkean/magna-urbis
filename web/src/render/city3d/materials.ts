@@ -99,12 +99,26 @@ export const hex6 = (t: readonly number[]): string =>
 
 export const tinted = (id: string, tint: string): string => (tint ? `${id}@${tint}` : id);
 
+/** The massing of a volume as the top view's town reads it (one pan's cover, wall, tone and asked wall colour), by the
+ * slots object paletteSlots made for that volume: the tilted view paints the volume's faces with the 2D town's look
+ * (render/world/buildingsMesh.ts, render/city/buildingLook.ts volumeRoofPaint). */
+export interface MassingLook {
+  cover: string;
+  wall: string;
+  tone: number;
+  tint?: string;
+}
+const massingLooks = new WeakMap<MaterialSlots, MassingLook>();
+export const massingLookOf = (slots: MaterialSlots): MassingLook | undefined => massingLooks.get(slots);
+
 /** `tint`: wall colour the volume asks for ("#rrggbb"); the wall goes three quarters of the way to its muted tone,
  * by the helper the 2D plan uses (tintedWallColor). */
 export function paletteSlots(plain: MaterialSlots, culture: string, wall: string, cover: string, tone: number, role: string, tint?: string): MaterialSlots {
   const p = buildingTint(culture, wall, cover, Math.round(tone * 15) / 15, role);
   const w = tinted(plain.coating, hex6(tint ? tintedWallColor(p.wall, tint, wall) : p.wall));
-  return { ...plain, frame: w, infill: w, coating: w, base: w, cladding: tinted(plain.cladding, hex6(p.roof)) };
+  const slots = { ...plain, frame: w, infill: w, coating: w, base: w, cladding: tinted(plain.cladding, hex6(p.roof)) };
+  massingLooks.set(slots, { cover, wall, tone, tint });
+  return slots;
 }
 
 export const OPENING = 'city3d:wall:opening@393126';

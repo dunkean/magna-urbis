@@ -5,6 +5,8 @@ import { CORE_STAGES, coreOperations, proceduralSignatures, stableKey, TerrainFi
 import { nativeRequest, nativeSession } from './nativeEngine';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import type { TerrainSettings } from './terrain';
+import { coastProfile } from './terrainCoastProfile';
+import { cutPipelineCoast } from './terrainCoastWasm';
 import { stepSeed } from './generationSeed';
 import { sourceDefinition } from './terrainDefinition';
 
@@ -145,6 +147,7 @@ export async function generateCpuTerrain(
         checkpoint: slot,
         mask: cut ? settings.coastMask : 0,
         mode: settings.islandMode ?? 'island',
+        coastProfile: coastProfile(settings),
         preview: previews || slot === operations.length - 1,
       });
       const bytes = await response.arrayBuffer();
@@ -155,7 +158,7 @@ export async function generateCpuTerrain(
         current.pipeline!.set_noise(values.coarse, values.fine);
       }
       if (stage === 'coastCut') {
-        if (cut) current.pipeline!.cut_coast(settings.coastMask!, settings.islandMode ?? 'island');
+        if (cut) cutPipelineCoast(current.pipeline!, settings.coastMask!, settings.islandMode ?? 'island', coastProfile(settings));
       } else current.pipeline!.advance(CORE_STAGES.indexOf(stage as (typeof CORE_STAGES)[number]));
       current.pipeline!.checkpoint(slot);
       if (previews || slot === operations.length - 1) height = current.pipeline!.height();

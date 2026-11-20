@@ -105,6 +105,8 @@ struct TerrainSettings {
     #[serde(default = "island")]
     island_mode: String,
     #[serde(default)]
+    coast_profile: magna_urbis_core::CoastProfile,
+    #[serde(default)]
     erosion_tuning: HashMap<String, f64>,
     sketch: Option<Value>,
     surface: Option<Vec<f32>>,
@@ -288,6 +290,7 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
                 )?,
             }
         };
+        terrain.set_coast_profile(settings.coast_profile)?;
         terrain.set_coast(settings.coast_mask, &settings.island_mode)?;
         // Regional and coastal/zoned fields are already physical metre rasters.
         // Preserve their control points rather than smoothing them a second time.
@@ -1354,7 +1357,7 @@ pub(crate) fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> A
                 return Ok(Reply{kind:"application/octet-stream",body});
             }
             if input["command"]=="coast" {
-                pipeline.cut_coast(input["mask"].as_u64().filter(|&m|m<=255).ok_or("Invalid coast mask")? as u32,input["mode"].as_str().ok_or("Missing coast mode")?)?;
+                pipeline.cut_coast(input["mask"].as_u64().filter(|&m|m<=255).ok_or("Invalid coast mask")? as u32,input["mode"].as_str().ok_or("Missing coast mode")?, serde_json::from_value(input.get("coastProfile").cloned().unwrap_or_else(|| json!({}))).map_err(|e|e.to_string())?)?;
                 pipeline.checkpoint(checkpoint)?;
                 let height=if input["preview"]==true {pipeline.height()}else{Vec::new()};
                 let mut body=Vec::with_capacity(height.len()*4);extend_f32_le(&mut body,&height);

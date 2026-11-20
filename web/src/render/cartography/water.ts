@@ -32,7 +32,7 @@ export function paintWater(c: CartographyContext, f: VectorFrame): void {
   }
   fillPolys('sea', pal.seaFill, 1, 'evenodd');
   fillPolys('lakes', pal.lakeFill, 1, 'nonzero');
-  const waterImage = getWater();
+  const waterImage = c.activeLight ? undefined : getWater();
   if (waterImage)
     for (const name of ['sea', 'lakes'] as const) {
       const layer = polyL(name);
@@ -45,7 +45,7 @@ export function paintWater(c: CartographyContext, f: VectorFrame): void {
       }
     }
   const wl = pal.waterLines;
-  if (wl && sc >= 0.11) {
+  if (!c.activeLight && wl && sc >= 0.11) {
     const gap = wl.gap;
     const wpat = getPattern(ctx, 'waterlines', gap, gap, 0, (cx, k) => {
       cx.globalAlpha = wl.opacity;
@@ -67,5 +67,5 @@ export function paintWater(c: CartographyContext, f: VectorFrame): void {
   strokePolys('sea', pal.waterEdge, lw(1.5 * u, 1.2));
   strokePolys('lakes', pal.waterEdge, lw(1.3 * u, 1.1));
   // White water of steep rivers over a satellite ground (whiteWater.ts): above the water, under the roads and bridges.
-  if (!roadStyle.night) timedRec('white-water', () => drawWhiteWater(ctx, P, pathRect, sc));
+  if (!c.activeLight && !roadStyle.night) timedRec('white-water', () => drawWhiteWater(ctx, P, pathRect, sc));
 }

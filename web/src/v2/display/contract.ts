@@ -21,6 +21,7 @@ import type { CanvasRenderer } from '../../render/canvas';
 import type { SemanticLook } from '../../render/composition';
 import type { ExportLayers } from '../../render/exportLayers';
 import type { GroundTileRenderer } from '../../render/live/contract';
+import type { OverlayInk } from '../../render/live/contourInk';
 import type { Rect } from '../../render/tileindex';
 import type { View } from '../../render/view';
 import type { ViewRasterRegion } from '../../render/viewRaster';
@@ -78,6 +79,8 @@ export interface Ground {
   miniGround(): HTMLCanvasElement | undefined;
   /** The terrain renderer as the live ground layer bakes from it; undefined while it cannot draw the map. */
   groundTiles(): GroundTileRenderer | undefined;
+  /** The paper map woods of the look (render/treeSymbols.ts): the GPU ground draws them when it is active. */
+  treeSymbols(): { conifer: number } | undefined;
 }
 
 export interface Water {
@@ -96,6 +99,9 @@ export interface Water {
   waterDisplay(): WaterDisplay;
   /** The ink water must read above the land-use tints. */
   waterAboveLand(): boolean;
+  /** The map on screen is tilted (set by the composed view): `cutWater` uses the whole-map raster, the one the map
+   * drape lays as water, so no raster made for a top view changes the drape's tiles. */
+  tilted: boolean;
   /** Erases what `ctx` holds over the vector water. */
   cutWater(ctx: CanvasRenderingContext2D, rect: WorldBox): void;
   /** The raster for a frame; `refine` false keeps the one at hand instead of asking for a finer one. */
@@ -105,10 +111,14 @@ export interface Water {
 }
 
 export interface Contours {
+  createLiveInk(gl: WebGL2RenderingContext): OverlayInk | undefined;
+  dispose(): void;
   /** Changes with every new set of paths. */
   readonly revision: number;
   /** Paths still being computed. */
   pending(): number;
+  /** The set `paintContours` draws at `mpp` is still in the worker (it draws the last set, or none, meanwhile). */
+  pendingAt(mpp: number): boolean;
   /** The landform the contours are drawn for; undefined when the look has none. */
   contourLook(): { landform: string } | undefined;
   /** Resolves once the paths of this scale and box are computed. */
@@ -144,6 +154,8 @@ export interface Cartography {
 
 /** How one paint of the town is made (Town.draw). */
 export interface TownPaint {
+  /** The world building meshes draw all houses above this ground and street pass. */
+  planOnly?: boolean;
   /** The exact town renderer keeps a town layer and repaints it in steps; absent: one complete paint. */
   stepwise?: NativeCityStepwise;
   /** The ground was laid in this same canvas (captures, exports): the rivers are put back over the town by drawing it

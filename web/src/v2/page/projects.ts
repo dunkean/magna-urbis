@@ -2,6 +2,7 @@
  * Opening a project: the import dialog (project, recipe or composition, heightmap), the expert recipe dialog, city
  * codes and links, and `loadProject`, which replaces the page's project (also used by the autosave restore).
  */
+import { protectMachineStyle } from '../machineTier';
 import type { PageActions, PageState } from './contract';
 import { setHTML, insertHTML, setText, getLanguage } from '../i18n';
 import type { World } from '../../gen/types';
@@ -20,6 +21,7 @@ import { composeJob, projectJob } from './projectWorkers';
 
 export function createProjectsActions(state: PageState, actions: PageActions) {
   async function loadProject(project: { settings: V2Settings; mods: unknown[]; world?: World }): Promise<void> {
+    protectMachineStyle();
     state.labelBaseline = undefined;
     state.smallPlaceRecipe = undefined;
     await state.smallPlaces?.stop();

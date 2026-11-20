@@ -2,15 +2,72 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detectPlatform, loopbackServer, resolveCompute, runtimeOptions, generateEngineHeight } from '../src/v2/platform';
 import { validateTerrainSettings, type V2TerrainSettings } from '../src/v2/terrainSettings';
 import { rerollSeed } from '../../rust/bridge/generationSeed';
+import { requestWebGpuAdapter, requestWebGpuDevice } from '../../rust/bridge/webGpuAdapter';
 const bridge = vi.hoisted(() => ({ sample: vi.fn() }));
 vi.mock('../../rust/bridge/terrain', () => ({ sampleRustTerrain: bridge.sample }));
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('V2 execution capability boundaries', () => {
+  it('also releases standalone display adapter and device requests that never answer', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('navigator', { gpu: { requestAdapter: () => new Promise(() => {}) } });
+    const adapter = requestWebGpuAdapter();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(await adapter).toBeNull();
+    let finish!: (device: GPUDevice) => void;
+    const creating = requestWebGpuDevice({
+      requestDevice: () =>
+        new Promise<GPUDevice>(resolve => {
+          finish = resolve;
+        }),
+    } as GPUAdapter);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(await creating).toBeNull();
+    const destroy = vi.fn();
+    finish({ destroy } as unknown as GPUDevice);
+    await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce());
+  });
+  it('finishes local detection when the GPU adapter never answers', async () => {
+    vi.useFakeTimers();
+    const requestAdapter = vi.fn(() => new Promise<never>(() => {}));
+    vi.stubGlobal('navigator', { gpu: { requestAdapter } });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ service: 'magna-urbis-local', backend: 'rust-native', capabilities: ['terrain'] }) })),
+    );
+    const detecting = detectPlatform({ profile: 'local' });
+    await vi.waitFor(() => expect(requestAdapter).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(2500);
+    const caps = await detecting;
+    expect(caps.webgpu).toBe(false);
+    expect(caps.local.available).toBe(true);
+  });
+  it('cleans up a late GPU device without changing the completed detection', async () => {
+    vi.useFakeTimers();
+    let finish!: (device: { destroy: () => void }) => void;
+    const requestDevice = vi.fn(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        }),
+    );
+    vi.stubGlobal('navigator', { gpu: { requestAdapter: async () => ({ requestDevice }) } });
+    const detecting = detectPlatform({ profile: 'web' });
+    await vi.waitFor(() => expect(requestDevice).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(2500);
+    const caps = await detecting;
+    expect(caps.webgpu).toBe(false);
+    const destroy = vi.fn();
+    finish({ destroy });
+    await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce());
+    expect(caps.webgpu).toBe(false);
+    expect(caps.adapterName).toBeUndefined();
+  });
   it('accepts the internal variation seed at execution without adding it to public recipes', async () => {
     const seed = rerollSeed('terrain-draw', ['relief-noise', 'water-hydrology']);
     bridge.sample.mockResolvedValue({ resolution: 64, height: new Float32Array(64 ** 2).fill(12.125), maxHeight: 12.125, minHeight: 12.125, generationMs: 1, backend: 'wasm', generationBackend: 'cpu' });

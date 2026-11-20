@@ -17,6 +17,7 @@
 import { onDisplayQualityChange } from '../render/displayQuality';
 import { disposeForestBrushes } from '../render/forestBrushAtlas';
 import { disposeCrownClumps } from '../render/crownClumpAtlas';
+import { disposeTreeSymbols } from '../render/treeSymbols';
 import { styleTraits } from '../render/terrainStyle';
 import type { Rect4, View } from '../render/view';
 import type { ForestField, ForestOccupation } from '../../../rust/bridge/terrainForest';
@@ -100,6 +101,7 @@ export class TerrainGl {
     lost.programs.lose();
     disposeForestBrushes(this.gl, false);
     disposeCrownClumps(this.gl, false);
+    disposeTreeSymbols(this.gl, false);
     this.parts = this.build();
     this.parts.inputs.replay(lost.inputs, this.look?.mapWidth);
     this.changed('content');
@@ -138,6 +140,10 @@ export class TerrainGl {
   }
   setOverlay(overlay: OverlayLayer | undefined): void {
     this.changed(this.parts.inputs.setOverlay(overlay));
+  }
+  /** The paper map's lit land, drawn under the woods of its tree symbols (render/treeSymbols.ts). */
+  setLandBackdrop(image: HTMLCanvasElement | undefined): void {
+    this.changed(this.parts.inputs.setLandBackdrop(image));
   }
   /** Render3D forest: texture uploads only. `undefined` restores the macro canopy of the material exactly. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
@@ -279,6 +285,7 @@ export class TerrainGl {
     inputs.dispose();
     disposeForestBrushes(this.gl);
     disposeCrownClumps(this.gl);
+    disposeTreeSymbols(this.gl);
     tiles.dispose();
     captures.dispose();
   }

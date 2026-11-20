@@ -12,6 +12,7 @@
  *   streetLook.ts    streets: shown ranks, widths, casings, beds, sidewalks, wear, slush, ends, rails
  *   buildingLook.ts  buildings: bodies, roof pans (light, weathering, grain, rims, snow), cast shadows, mill marks
  *   canopyLook.ts    the canopy as discs (GPU town)
+ *   turfLook.ts      turf roofs on a natural ground: mown tone, wider contrast, earth bank seen from afar
  *   farTown.ts       satellite far raster: fade band
  *   planPath.ts      where the GPU plan renderer on its own canvas reads these rules differently, and why
  *   restCoverage.ts  what of the town at rest the GPU town draws, per look and level (LiveLayer.restExact)
@@ -33,6 +34,7 @@ export * from './farTown';
 export * from './restCoverage';
 export * from './planPath';
 export * from './canopyLook';
+export * from './turfLook';
 
 /** Group opacity of the town over the map when the appearance gives none. */
 const TOWN_OPACITY = 0.8;

@@ -10,7 +10,7 @@ param(
     [string]$Tile = 'mountains--temperate',
     [ValidateSet('Dessus','3D')][string]$Mode = 'Dessus',
     [string]$Catalog = '',
-    [string]$Godot = 'D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe'
+    [string]$Godot = $env:GODOT
 )
 $ErrorActionPreference = 'Stop'
 function Require-File([string]$Path, [switch]$AllowEmpty) {
@@ -18,8 +18,15 @@ function Require-File([string]$Path, [switch]$AllowEmpty) {
     if (!$AllowEmpty -and (Get-Item -LiteralPath $Path).Length -eq 0) { throw "Fichier vide : $Path" }
     return (Resolve-Path -LiteralPath $Path).Path
 }
+function Resolve-Godot([string]$Executable) {
+    if (!$Executable) { $Executable = 'godot' }
+    if (Test-Path -LiteralPath $Executable -PathType Leaf) { return Require-File $Executable }
+    $command = Get-Command -Name $Executable -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (!$command) { throw "Godot executable not found: $Executable. Pass -Godot <path>, set GODOT, or add godot to PATH. No automatic downloads." }
+    return Require-File $command.Source
+}
 if (!$Scene) {
-    $Godot = Require-File $Godot
+    $Godot = Resolve-Godot $Godot
     $project = Join-Path $PSScriptRoot 'godot-render'
     if (!$Catalog) { $Catalog = Join-Path $project 'tiles/catalog.json' }
     $Catalog = Require-File $Catalog
@@ -121,7 +128,7 @@ $coordinates = foreach ($part in $parts) {
 if ($Resolution -notmatch '^([0-9]+)x([0-9]+)$' -or [int]$Matches[1] -lt 64 -or [int]$Matches[1] -gt 4096 -or [int]$Matches[2] -lt 64 -or [int]$Matches[2] -gt 4096) { throw 'Resolution attendue : WIDTHxHEIGHT, chaque dimension de 64 à 4096.' }
 if ($Frames -lt 0) { throw 'Frames doit être positif ou nul (interactif).' }
 if ($Capture -and $Frames -eq 0) { $Frames = 2 }
-$Godot = Require-File $Godot; $Scene = Require-File $Scene
+$Godot = Resolve-Godot $Godot; $Scene = Require-File $Scene
 $project = Join-Path $PSScriptRoot 'godot-render'
 foreach ($file in @('project.godot','main.gd','render_original_rd.gd')) { $null = Require-File (Join-Path $project $file) }
 foreach ($program in @('terrain','river','composite','renderWater')) {

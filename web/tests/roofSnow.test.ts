@@ -50,8 +50,10 @@ describe('physical roof snow and relief', () => {
     expect(steep.every(p => p.points.every(v => v.x > 0 && v.x < 10 && v.y > 0 && v.y < 6))).toBe(true);
     expect(roofSnowPatches(points, [0, 1, 0])).toHaveLength(0);
   });
-  it('retains strong face separation on low-pitch roofs and cool snow in shade', () => {
-    expect(roofLight([-0.2, -0.2, 0.959]) - roofLight([0.2, 0.2, 0.959])).toBeGreaterThan(0.5);
+  it('retains gentle face separation on low-pitch roofs and cool snow in shade', () => {
+    const separation = roofLight([-0.2, -0.2, 0.959]) - roofLight([0.2, 0.2, 0.959]);
+    expect(separation).toBeGreaterThan(0.05);
+    expect(separation).toBeLessThan(0.15);
     const shade = snowRoofTint([0.3, 0.3, 0.3], 1, -0.4),
       lit = snowRoofTint([0.3, 0.3, 0.3], 1, 0.3);
     expect(lit[0]).toBeGreaterThan(shade[0]);
