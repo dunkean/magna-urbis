@@ -219,7 +219,6 @@ export function dispersedFarms(cc: CampCtx, c: Vec2, statuses: Status[], o: Disp
     const fi = new FrontIndex([lane]);
     const blocks = carveBlocks(Q, pathRibbons([lane]), []);
     blocks.forEach(blk => {
-      const bi = out.blocks.length;
       out.blocks.push({ poly: blk, kind: 'block', quarter: qi });
     });
     const order = blocks.map((b, k) => ({ b, k, a: area(b) })).sort((x, y) => y.a - x.a);

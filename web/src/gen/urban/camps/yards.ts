@@ -101,7 +101,6 @@ export function yardsVillage(cc: CampCtx, c: Vec2, pop: number, v: YardVariant, 
   const sk = Math.pow(cc.sprawl, 0.85);
   v = { ...v, yardA: [v.yardA[0] * sk, v.yardA[1] * sk], occupancy: Math.min(1, v.occupancy / Math.pow(cc.sprawl, v.occupancy < 1 ? 0.3 : 0)), radius: (p: number) => YARD_VARIANTS[v.id].radius(p) * Math.sqrt(sk) };
   const nFarm = Math.max(3, Math.round(pop / v.per));
-  const yardM = (v.yardA[0] + v.yardA[1]) / 2;
   const R = v.radius(pop) - 20;
   // ---- the outline: an oval along the road (germanic), a near circle (celtic rath / hillfort), a loose disc (norse)
   const sr = rng.fork('shape');
