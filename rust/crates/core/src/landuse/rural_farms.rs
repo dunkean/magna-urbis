@@ -577,7 +577,11 @@ pub(crate) fn generate<'a>(
     };
     let size = s(&input.options["size"]);
     let main_culture = s(&input.options["culture"]);
-    if enabled {
+    // Underdark: farms belong to the cave towns. No farm lines the roads across the cave floor and no farm hamlet
+    // stands apart (the settlement stage places the cave hamlets); the rare farms on unreached floor come from the
+    // field budget (rural.rs `cave_farm_cap`).
+    let countryside = enabled && !input.biome.starts_with("underdark");
+    if countryside {
         let base = match size {
             "hamlet" => 0.0,
             "village" => 2.0,
@@ -702,7 +706,7 @@ pub(crate) fn generate<'a>(
             made += 1;
         }
     }
-    if enabled {
+    if countryside {
         let base = match size {
             "hamlet" => 0.0,
             "village" | "town" => 1.0,

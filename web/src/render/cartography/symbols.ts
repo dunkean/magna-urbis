@@ -13,7 +13,7 @@ import { Palette } from '../styles';
 import { orientPos } from '../../gen/geo/poly';
 import { TextureLayer, textureMarks, type Mark } from '../scene';
 import { Rect4 } from '../view';
-import { appendUnderdarkMark, underdarkTextureSpec } from '../underdark';
+import { appendUnderdarkMark, fungalBedLook, underdarkTextureSpec } from '../underdark';
 import { RecordingContext } from '../gpu/recorder';
 import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
@@ -367,7 +367,13 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
   }
   const penInk = (c: string): string => (pen ? mixHex(c, pal.inkSoft, 0.32) : c),
     penAlpha = pen && spec.shape !== 'circle' ? (spec.shape === 'dot' ? 0.78 : 0.62) : 1;
-  if (spec.fill) {
+  // Underdark fungal beds: small caps of the bed look (render/underdark.ts fungalBedLook), filled, no ink ring.
+  const bed = underground && (tl.kind === 'garden' || tl.kind === 'field') ? fungalBedLook(pal) : undefined;
+  if (bed) {
+    ctx.globalAlpha = 0.8 * spec.alpha;
+    ctx.fillStyle = bed.cap;
+    for (const p of strokeP) ctx.fill(p, 'nonzero');
+  } else if (spec.fill) {
     ctx.globalAlpha = spec.alpha * penAlpha;
     ctx.fillStyle = penInk(pal[spec.fill] as string);
     for (const p of fillP) ctx.fill(p, 'nonzero');
@@ -380,7 +386,7 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
   }
-  for (const p of strokeP) ctx.stroke(p);
+  if (!bed) for (const p of strokeP) ctx.stroke(p);
   if (pen) ctx.restore();
   if (strayKind) {
     const tree = TEX.forest,

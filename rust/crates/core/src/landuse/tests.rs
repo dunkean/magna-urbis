@@ -228,6 +228,13 @@ fn underdark_rural_land_is_fungus_beds_and_cave_floor() {
             assert_eq!(a.cultivation.as_deref(), Some("fungal"));
         }
     }
+    // Farms stand by the cave towns: no roadside farms or farm hamlets, and the farms on unreached floor stay few.
+    let (farms, people) = (out.layer.farmsteads.len(), out.stats["field.people"]);
+    assert!(farms <= rural::cave_farm_cap(people), "{farms} farms for {people} people");
+    let hamlet = |f: &Value| arr(&f["tags"]).iter().any(|t| s(t) == "hamlet");
+    assert!(!out.layer.farmsteads.iter().any(hamlet));
+    let caps = [0.0, 2600.0, 15000.0, 1e6].map(rural::cave_farm_cap);
+    assert_eq!(caps, [0, 6, 30, 40]);
 }
 #[test]
 fn ts_rural_and_farm_fixture() {

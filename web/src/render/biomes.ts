@@ -39,6 +39,9 @@ function climatePalette(style: MapStyle | Palette, value?: string): Palette {
       damp = night ? '#3f4c4a' : '#909f99'; // damp: moss and fungal beds, not open water
     const fungal = night ? '#9f93b6' : '#b4a4c9',
       ink = night ? '#d1c8df' : '#514763';
+    // Cultivated fungal beds (farm plots, fungal land use, town gardens): dark compost of the cave floor's own tones,
+    // marked with small caps (render/underdark.ts), never a pale patch.
+    const bed = night ? '#2c2723' : '#62584c';
     const pal: Palette = {
       ...base,
       hedgeOn: false,
@@ -61,7 +64,7 @@ function climatePalette(style: MapStyle | Palette, value?: string): Palette {
             riverFill: night ? '#7baeb8' : '#9ebfc1',
             riverEdge: night ? '#91bcc3' : '#446873',
             waterEdge: night ? '#72959f' : '#496976',
-            land: { field: fungal, meadow: stone, pasture: stone, commons: stone, forest: fungal, orchard: fungal, marsh: damp, garden: fungal },
+            land: { field: bed, meadow: stone, pasture: stone, commons: stone, forest: fungal, orchard: fungal, marsh: damp, garden: bed },
             treeFill: fungal,
             treeInk: ink,
             orchardDot: ink,
@@ -78,7 +81,7 @@ function climatePalette(style: MapStyle | Palette, value?: string): Palette {
               street: night ? '#4d475c' : '#b2abbc',
               streetEdge: ink,
               yard: night ? '#464051' : '#a9a2b3',
-              garden: fungal,
+              garden: bed,
               gardenInk: ink,
               mass: night ? '#7b718d' : '#71657f',
               massEdge: night ? '#d2c8df' : '#322a43',
