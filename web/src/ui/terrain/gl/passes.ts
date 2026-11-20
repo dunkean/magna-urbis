@@ -7,7 +7,6 @@ import { renderWaterRings } from '../../../render/renderWaterShader';
 import { waterUniforms } from '../../../render/waterStyle';
 import { styleTraits } from '../../../render/terrainStyle';
 import { rgbaTarget, type GlViewTargets } from './resources';
-import { lightTerrainLook } from '../variant';
 import { waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import type { GlPrograms } from './programs';
 import type { RetainedWaterSource } from '../retainedWater';
@@ -92,7 +91,9 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.bindTexture(gl.TEXTURE_2D, c.lake ?? c.empty);
   gl.uniform1i(r('uLake'), 2);
   gl.uniform1f(r('uMapW'), look.mapWidth);
-  const flat = rivers.regime && !c.overlay && lightTerrainLook(look),
+  // Until the painted program links, a regime layer must use real water ink, never its encoded RGB.
+  const paint = c.painted && !c.overlay && !!c.programs.water(c.waitPainted),
+    flat = rivers.regime && !c.overlay && !paint,
     color = waterUniforms(c.water).colors;
   gl.uniform4f(r('uFlatWater'), color[0], color[1], color[2], flat ? 1 : 0);
   gl.activeTexture(gl.TEXTURE3);
@@ -112,7 +113,7 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, target.texture);
-  if (c.painted && !c.overlay) {
+  if (paint) {
     paintWater(c, 0, rivers.regime);
     return;
   }

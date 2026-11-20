@@ -93,8 +93,6 @@ void main() {
     vec4 own = tap(f);
     // Decoded back to dry and ice (regimeRgb stores running and open water so MAX keeps them on overlaps).
     vec3 regime = clamp(own.rgb / max(own.a, 1e-3), 0., 1.); regime.rg = 1. - regime.rg;
-    // b: a sediment plume above .5 (plumeRgb); rivers carry 0.
-    float plume = max(0., regime.b - .5) * 2.;
     // Flow direction in the world (y down): along the bank, perpendicular to the nearest bank.
     vec2 bankDir = vec2(nearest.x, -nearest.y), along = vec2(-bankDir.y, bankDir.x);
     // Centre of the channel: 0 at the bank, 1 a few pixels in (hairline streams stay near 0.3).
@@ -113,14 +111,6 @@ void main() {
     vec3 neighbour = 1. - clamp(near.rgb / max(near.a, 1e-3), 0., 1.);
     bankColor = mix(bankColor, vec3(.78, .70, .56), smoothstep(.3, .8, neighbour.r));
     bankA *= 1. - (uRegime == 2 ? smoothstep(.3, .8, neighbour.r) : .6 * smoothstep(.3, .8, max(neighbour.r, neighbour.g)));
-    if (near.a > .002 && near.b / near.a > .5) bankA = 0.;
-    if (plume > 0.) {
-      // Sediment plume over the sea: a translucent silt tint, feathered at its edges and streaked by the current.
-      float feather = smoothstep(0., 8. * uDpr, depth) * (.55 + .45 * waterRegimeNoise(world / 260. + along * 3.));
-      float amount = plume * feather * .7;
-      outColor = vec4(vec3(.70, .50, .20) * amount, amount);
-      return;
-    }
   }
   outColor = vec4(color * a + bankColor * bankA * (1. - a), a + bankA * (1. - a));
 }`;

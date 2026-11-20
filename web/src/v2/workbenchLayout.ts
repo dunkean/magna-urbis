@@ -222,7 +222,7 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     if (quick) {
       for (const field of Array.from(quick.querySelectorAll<HTMLElement>('.parameter-field'))) {
         const path = field.querySelector<HTMLElement>('[data-setting-path]')?.dataset.settingPath;
-        if (!['appearance.composition.ground.contours', 'appearance.composition.networks.water.visible', 'appearance.composition.networks.roads.visible', 'appearance.composition.text.visible'].includes(path ?? '')) row.querySelector('.stage-body')!.prepend(field);
+        if (!['appearance.composition.ground.contours', 'appearance.composition.networks.roads.visible', 'appearance.composition.text.visible'].includes(path ?? '')) row.querySelector('.stage-body')!.prepend(field);
       }
       const views = quick.querySelector<HTMLElement>('.icon-segments');
       if (views) views.remove();
@@ -230,11 +230,6 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     }
     mapAdvanced.grid.append(row);
   }
-  const plan = $<HTMLElement>('[data-setting-path="appearance.city.plan"]').closest<HTMLElement>('.parameter-field')!;
-  const sharedPlan = document.createElement('div');
-  sharedPlan.className = 'stage-quick';
-  sharedPlan.append(plan);
-  $('.view-strip').insertBefore(sharedPlan, mapAdvanced.button);
   const buildings = $<HTMLElement>('[data-setting-path="appearance.composition.buildings.visible"]').closest<HTMLElement>('.parameter-field')!,
     roofs = $<HTMLSelectElement>('#roof-display').closest<HTMLElement>('.parameter-field')!;
   const sharedBuildings = document.createElement('div');

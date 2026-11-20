@@ -39,6 +39,9 @@ export const lookMode = (look: TerrainLook): number => (styleTraits(look.style).
  * the forest-on pair, two heavy compilations for one look. Without its field the forest code finds no stand.
  * `forestUploaded`: a forest field is on the GPU. */
 export const lightTerrainAllowed = (look: TerrainLook): boolean => styleTraits(look.style).satelliteVariant === 0 || mapGpuLight();
+/** A Satellite fast recipe simplifies buildings, while its complete ground and water keep full quality.
+ * Pass selection and shader uniforms must use the same value or encoded river regimes reach the screen as RGB. */
+export const terrainDrawQuality = (look: TerrainLook, quality: number): number => (lightTerrainAllowed(look) ? quality : 0);
 export const lightTerrainLook = (look: TerrainLook): boolean => (look.displayLight ?? (!look.mesh3d && getDisplayQuality() === 'light')) && lightTerrainAllowed(look);
 export function lookVariant(look: TerrainLook, forestUploaded: boolean): TerrainVariant {
   // Mode zero eliminates the entire natural-material shader and the auxiliary crown/water pass at compile time.

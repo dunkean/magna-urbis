@@ -9,7 +9,7 @@ import type { Building3dScene } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
-import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, blockHidden, blockLevel, worldPaint, worldSeat } from './buildingsBlocks';
+import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, blockHidden, blockLevel, worldPaint, worldSeat, yardBlockLevel } from './buildingsBlocks';
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
 import { VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
@@ -257,7 +257,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
    * the depth's triangle budget, the farthest units go one level coarser, round after round, until the frame fits. A unit whose
    * buildings span DETAILED_PIXELS keeps its full volumes whatever the budget: the near field never coarsens. The frame's
    * triangles. */
-  const select = (tx: number, ty: number, focal: number, boxed: boolean | 'overview', keepFar: boolean, flat: boolean): number => {
+  const select = (tx: number, ty: number, focal: number, boxed: boolean | 'overview', keepFar: boolean, flat: boolean, yardRise: number): number => {
     const depthSetting = getViewDepth(),
       budget = buildingTriangleBudget(depthSetting),
       wholeTown = keepFar || depthSetting >= VIEW_DEPTH_MAX;
@@ -271,9 +271,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         size = b.width * focal,
         depth = slot.depth,
         radius = visibleRadius[v],
-        nearPixels = size / Math.max(1, depth - radius),
-        near = blockLevel(b, nearPixels, boxed, depthSetting, keepFar);
+        nearPixels = size / Math.max(1, depth - radius);
       slot.need = 0;
+      // Near the zenith the face of a wooden panel projects to less than one pixel even in a close view.
+      const near = b.yard ? (slot.yardLevel = yardBlockLevel(b, nearPixels, slot.yardLevel, nearPixels * yardRise)) : blockLevel(b, nearPixels, boxed, depthSetting, keepFar);
       if (near === hidden) continue;
       diagnostics?.block();
       // One level over the block (all yards): one unit. Otherwise each cell at its own.
@@ -429,8 +430,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           depthSetting = getViewDepth();
         for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
           const slot = cache.slots[s],
-            b = slot.block,
-            low = b.low * rise,
+            b = slot.block;
+          // The flat town already draws antialiased fence strokes, including the gate jambs.
+          if (flat && b.yard) continue;
+          const low = b.low * rise,
             high = b.high * rise;
           const x = (b.minX + b.maxX) / 2 - tx,
             y = (b.minY + b.maxY) / 2 - ty,
@@ -448,7 +451,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           visible[visibleCount++] = slot;
         }
         // The levels by screen size, the far end coarser while the frame passes its triangle budget.
-        select(tx, ty, focal, boxed, keepFar, flat);
+        select(tx, ty, focal, boxed, keepFar, flat, rise * Math.abs(camera.up[2]));
         if (drawTotal) {
           const u = program.u;
           gl.useProgram(program.program);

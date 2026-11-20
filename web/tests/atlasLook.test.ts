@@ -27,8 +27,7 @@ describe('Atlas display', () => {
     const composition = presetComposition('atlas');
     // An existing recipe cannot reintroduce an urban tint or block fill over Atlas.
     composition.landuse.urban = 'categorical';
-    composition.buildings.blocks = true;
-    composition.buildings.parcels = true;
+    const retained = { ...composition, buildings: { ...composition.buildings, blocks: true, parcels: true } };
     const shape = {
       outer: [
         { x: 0, y: 0 },
@@ -39,7 +38,7 @@ describe('Atlas display', () => {
       holes: [],
     };
     for (const target of ['view2d', 'view3d', 'export'] as const) {
-      const appearance = resolveAppearance({ style: 'atlas', composition, city: { layers: { ...DEFAULT_CITY_LAYERS } } }, { mapStyle: 'atlas' }, { nativeCities: true }, target);
+      const appearance = resolveAppearance({ style: 'atlas', composition: retained, city: { layers: { ...DEFAULT_CITY_LAYERS } } }, { mapStyle: 'atlas' }, { nativeCities: true }, target);
       expect(appearance.composition.landuse.urban).toBe('off');
       expect(appearance.city.visible).toBe(true);
       expect(appearance.city.layers.streets).toBe(true);

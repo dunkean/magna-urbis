@@ -258,9 +258,8 @@ export function v2Terrain3dView(settings: V2Settings): City3dViewSettings {
   return { ground, plan: city.plan, colors: city.colors, exaggeration: city.exaggeration, refinement: city.refinement, trees3d: city.trees3d, treeDistance: city.treeDistance };
 }
 /** Toolbar changes must not pin the ground or other controls to stale values from the previous style. */
-export function v2CityViewPatch(previous: City3dViewSettings, value: City3dViewSettings): AppearancePatch | undefined {
-  const controls = value;
-  const changed = Object.entries(controls).filter(([key, next]) => next !== previous[key as keyof City3dViewSettings]);
+export function v2CityViewPatch(previous: City3dViewSettings, value: Omit<City3dViewSettings, 'plan'>): AppearancePatch | undefined {
+  const changed = Object.entries(value).filter(([key, next]) => key !== 'plan' && next !== previous[key as keyof City3dViewSettings]);
   return changed.length ? { city: Object.fromEntries(changed) } : undefined;
 }
 /** All material modes consume one physical surface and the same display-only recipe. */

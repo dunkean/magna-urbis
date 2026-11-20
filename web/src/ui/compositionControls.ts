@@ -102,11 +102,6 @@ const semanticEntries = [
   ['categorical', 'Category colours', 'Couleurs par catégorie'],
   ['outlines', 'Outline only', 'Contours seuls'],
 ] as const;
-const networkEntries = [
-  ['inherit', 'Follow the ground', 'Selon le fond'],
-  ['ink', 'Ink', 'Encre'],
-  ['natural', 'Natural', 'Naturel'],
-] as const;
 const ROOF_LABELS: Record<RoofMode, readonly [string, string]> = { v1: ['V1 · Edges', 'V1 · Arêtes'], v2: ['V2 · 3D', 'V2 · 3D'], flat: ['Flat', 'Sans texture'], minimal: ['Minimal', 'Minimal'] };
 const styleFrench: Record<string, string> = {
   'parchment-render': 'Satellite peint',
@@ -221,10 +216,7 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
     // An absent class key means shown; a change moves only `keys.semantic`.
     ...LAND_KINDS.map(kind => ({ ...flag(`composition.landuse.classes.${kind}`, ...LAND_KIND_LABELS[kind]), defaultValue: true })),
     flag('composition.networks.roads.visible', 'Show roads', 'Afficher les routes'),
-    choice('composition.networks.roads.look', 'Road look', 'Aspect des routes', [...networkEntries, ['wash', 'Wash', 'Lavis']]),
     number('composition.networks.roads.emphasis', 'Road emphasis', 'Présence des routes', 0.5, 1.5, 0.05),
-    flag('composition.networks.water.visible', 'Show rivers and water', 'Afficher les rivières et l’eau'),
-    choice('composition.networks.water.look', 'Water look', 'Aspect de l’eau', networkEntries),
     { ...flag('composition.networks.water.waves', 'Coastal swell and surf (satellite)', 'Houle et écume côtières (satellite)'), defaultValue: COAST_WAVES_DEFAULT },
     flag('composition.buildings.visible', 'Show buildings', 'Afficher les bâtiments'),
     {
@@ -248,9 +240,6 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
       ['simple-volumes', 'Simple volumes', 'Volumes simples'],
       ['detailed-volumes', 'Detailed volumes', 'Volumes détaillés'],
     ]),
-    flag('composition.buildings.parcels', 'Parcels', 'Parcelles'),
-    flag('composition.buildings.blocks', 'Blocks', 'Îlots'),
-    flag('composition.buildings.districts', 'Districts', 'Quartiers'),
     flag('composition.text.visible', 'Text', 'Textes'),
     {
       ...choice('composition.text.amount', 'Amount of labels', 'Quantité de labels', [
@@ -304,9 +293,9 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
     'composition.effects.lighting.strength',
     'composition.effects.lighting.exaggeration',
   ],
-  roads: ['composition.networks.roads.visible', 'composition.networks.roads.look', 'composition.networks.roads.emphasis'],
-  water: ['composition.networks.water.visible', 'composition.networks.water.look', 'composition.networks.water.waves'],
-  buildings: ['composition.buildings.visible', 'composition.buildings.roof', 'composition.buildings.look', 'composition.buildings.parcels', 'composition.buildings.blocks', 'composition.buildings.districts'],
+  roads: ['composition.networks.roads.visible', 'composition.networks.roads.emphasis'],
+  water: ['composition.networks.water.waves'],
+  buildings: ['composition.buildings.visible', 'composition.buildings.roof', 'composition.buildings.look'],
   text: [
     'composition.text.visible',
     'composition.text.amount',
@@ -339,7 +328,7 @@ export const LIMITATION_ROW: Record<Limitation['pass'], string> = {
   ground: 'composition.ground.look',
   vegetation: 'composition.vegetation.look',
   landuse: 'composition.landuse.rural',
-  networks: 'composition.networks.roads.look',
+  networks: 'composition.networks.roads.visible',
   buildings: 'composition.buildings.look',
   annotations: 'composition.annotations.legend',
   text: 'composition.text.visible',
@@ -412,23 +401,13 @@ const cityFields: ParameterField[] = [
   number('city.opacity', 'City opacity', 'Opacité des villes', 0, 1, 0.05),
   number('city.width', 'City line width (px)', 'Épaisseur des traits urbains (px)', 0, 5, 0.1),
 ];
-const cityLayerOrder = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'streets', 'enclosures', 'lotEnclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes', 'access'] as const;
+const cityLayerOrder = ['streets', 'enclosures', 'lotEnclosures', 'gardens', 'places'] as const;
 const layerLabels: Record<(typeof cityLayerOrder)[number], readonly [string, string]> = {
-  reserve: ['Growth reserves', 'Réserves de croissance'],
-  allocated: ['Allocated urban land', 'Terre urbaine attribuée'],
-  centers: ['District centres', 'Noyaux de quartier'],
-  domains: ['Reserved domains', 'Domaines réservés'],
-  quarters: ['Computational districts', 'Secteurs de calcul'],
-  blocks: ['Blocks', 'Îlots'],
   streets: ['Urban streets', 'Rues urbaines'],
   enclosures: ['Walls and gates', 'Enceintes et portes'],
-  parcels: ['Parcels', 'Parcelles'],
   gardens: ['Gardens', 'Jardins'],
   places: ['Squares and commons', 'Places et communs'],
   lotEnclosures: ['Plot enclosures', 'Clôtures des parcelles'],
-  fronts: ['Accessible frontages', 'Façades accessibles'],
-  axes: ['Parcel axes', 'Axes des parcelles'],
-  access: ['Parcel access status', 'Statut de desserte des parcelles'],
 };
 const cityLayerFields = cityLayerOrder.map(layer => flag(`city.layers.${layer}`, ...layerLabels[layer]));
 export const fantasyFields: ParameterField[] = [
@@ -509,13 +488,6 @@ export const diagnosticFields = [
   ),
 ];
 const perspectiveFields = [
-  {
-    ...flag('city.plan', 'Urban plan', 'Plan urbain'),
-    help: copy(
-      'Shows or hides the town plan drawing: block and parcel outlines, quarters and domains. Roads, walls, buildings and lights keep their own switches.',
-      'Affiche ou masque le dessin du plan de ville : contours des îlots et des parcelles, quartiers et domaines. Routes, remparts, bâtiments et lumières gardent leurs propres interrupteurs.',
-    ),
-  },
   choice('city.colors', 'Building colours in 3D', 'Couleurs des bâtiments en 3D', [
     ['materials', 'Materials', 'Matériaux'],
     ['uses', 'Uses', 'Usages'],
@@ -541,7 +513,7 @@ export const RENDER_SECTION_FIELDS: Record<RenderSection, readonly string[]> = {
   ambience: [],
   roads: ['city.layers.streets'],
   water: ['lakes', 'oxbows'],
-  buildings: ['city.plan', 'city.colors', ...strip(cityFields), ...strip(cityLayerFields).filter(path => path !== 'city.layers.streets')],
+  buildings: ['city.colors', ...strip(cityFields), ...strip(cityLayerFields).filter(path => path !== 'city.layers.streets')],
   text: [],
   diagnostics: ['diagnostic', 'resourcePotential'],
 };

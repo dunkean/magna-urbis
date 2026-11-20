@@ -90,7 +90,6 @@ export function installBenchRenderSettings(): void {
       driven('#roadBlend', c.networks.roads.look === 'ink' ? 'classic' : 'blended');
       driven('[data-render="groundBlend"]', r.city.groundBlend);
       driven('#showLanduse', true);
-      driven('#showPlan', r.city.plan);
       driven('#showLegend', r.cartography.legend);
       driven('#showFrame', r.ground.layers.frame);
       driven('#landuseStyle', r.palette.mapStyle);
@@ -192,7 +191,6 @@ export function installBenchRenderSettings(): void {
     move('water', '#showWater, #showLakes, #showOxbows');
     move('roads', '#roadRendering, #roadShow');
     move('landuse', '#showLanduse');
-    move('buildings', '#showPlan');
     move('diagnostics', '#hydroOverlay');
     for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-render-settings-category]'))) {
       const category = element.dataset.renderSettingsCategory as RenderSection;

@@ -11,7 +11,6 @@ import { writeAppearanceControl } from '../src/v2/renderControls';
 const snowComposition = () => {
   const c = presetComposition('satellite');
   c.ground.variant = 'render-v2-snow';
-  c.networks.water.visible = false;
   c.effects.season = 0.125;
   c.effects.lighting = { enabled: true, azimuth: 90, elevation: 15, strength: 2, exaggeration: 1 };
   return c;
@@ -142,7 +141,7 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
       appearance: { style: 'parchment', terrainStyle: 'render-v2-snow', composition: snowComposition(), terrainLayers: { relief: true, hypsometry: true, frame: false, water: false }, city: { refinement: 'source' } },
     };
     expect(v2Terrain3dView(settings).ground).toBe('render-v2-snow');
-    expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ renderV2: 5, v2Season: 0.125, lighting: settings.appearance!.composition!.effects.lighting, waterVisible: false, displacement: false, climate: { temperature: 24, precipitation: 70 } });
+    expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ renderV2: 5, v2Season: 0.125, lighting: settings.appearance!.composition!.effects.lighting, waterVisible: true, displacement: false, climate: { temperature: 24, precipitation: 70 } });
     expect(v2Terrain3dGround(world, settings, 'render3d-brush')?.forestBrushes).toBe(true);
     // A deliberate Advanced override lasts until the user selects another style.
     settings.appearance!.composition = undefined;
@@ -156,7 +155,8 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
   it('does not pin a ground or unrelated defaults when a 3D toolbar option changes', () => {
     const settings: V2Settings = { options: makeOptions({ seed: 'view-patch' }), extent: 1000, settlementCount: 1, local: {}, generation: 'procedural', appearance: { style: 'parchment', composition: presetComposition('satellite') } };
     const previous = v2Terrain3dView(settings);
-    expect(v2CityViewPatch(previous, { ...previous, plan: !previous.plan })).toEqual({ city: { plan: !previous.plan } });
+    const stalePlan = { ...previous, plan: !previous.plan };
+    expect(v2CityViewPatch(previous, stalePlan)).toBeUndefined();
     expect(v2CityViewPatch(previous, { ...previous })).toBeUndefined();
     expect(v2CityViewPatch(previous, { ...previous, ground: 'map' })).toEqual({ city: { ground: 'map' } });
     expect(v2CityViewPatch(previous, { ...previous, trees3d: true })).toEqual({ city: { trees3d: true } });

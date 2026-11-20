@@ -175,7 +175,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   }
   /** The map drape's tiles hold the town of this revision: bumped whenever what a tile shows changes (the look, the plan
    * of a new scene, a building tier uploaded, the lot enclosures, the water). */
-  let drapeRevision = 0;
+  let drapeRevision = 0,
+    drapeYardsAsMeshes = false;
   /** The colour tables of the plan as the drape draws it at a level of detail, being computed in slices by `work`. */
   let drapePreparing: { level: CityLod; steps: Generator<void, void> } | undefined;
   const unprepare = (): void => {
@@ -386,13 +387,27 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   /** How the drape draws the town of a tile: the look's options for the tile's square. */
   const drapeOptions = (l: Look, tile: DrapeCanvas, target?: WebGLFramebuffer): CityGlDrawOptions => {
     const mpp = 1 / tile.scale;
-    return { ...l.base, live: liveOf(l), viewport: tile.rect, metresPerPixel: mpp, lod: selectCityLod(mpp), water: env.water?.(), target: target && { framebuffer: target, width: tile.pixels, height: tile.pixels } };
+    return {
+      ...l.base,
+      layers: drapeYardsAsMeshes ? { ...l.base.layers, lotEnclosureMeshes: true } : l.base.layers,
+      live: liveOf(l),
+      viewport: tile.rect,
+      metresPerPixel: mpp,
+      lod: selectCityLod(mpp),
+      water: env.water?.(),
+      target: target && { framebuffer: target, width: tile.pixels, height: tile.pixels },
+    };
   };
   /** The town of a tilted frame, for the map drape: the plan and the buildings as the top view draws them. */
   const drape: DrapeSource = {
     revision(): number {
       // A new appearance is a new look, which drops the tables.
       lookNow();
+      const yardsAsMeshes = env.volumeYards?.() ?? false;
+      if (yardsAsMeshes !== drapeYardsAsMeshes) {
+        drapeYardsAsMeshes = yardsAsMeshes;
+        drapeRevision++;
+      }
       return drapeRevision;
     },
     ready(tile: DrapeCanvas): boolean {

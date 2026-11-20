@@ -77,8 +77,7 @@ export function setBenchRenderCapabilities(next: RenderCapabilities, nextTarget:
   for (const { path } of renderControlFields) {
     const field = path.replace('appearance.', '');
     if (next.buildings === false && ['city.diagnostic', 'city.painted', 'city.colors'].includes(field)) limitations.push({ pass: 'buildings', kind: 'data', field, reason: 'No buildings in the retained products.' });
-    else if (!next.nativeCities && (field.startsWith('city.layers.') || ['city.view', 'city.palette', 'city.opacity', 'city.width', 'city.plan'].includes(field)))
-      limitations.push({ pass: 'landuse', kind: 'data', field, reason: 'No urban land-use polygons in the retained products.' });
+    else if (!next.nativeCities && (field.startsWith('city.layers.') || ['city.view', 'city.palette', 'city.opacity', 'city.width'].includes(field))) limitations.push({ pass: 'landuse', kind: 'data', field, reason: 'No urban land-use polygons in the retained products.' });
     if (next.ruralLanduse === false && ['vegetation', 'composition.vegetation.forestTone'].includes(field)) limitations.push({ pass: 'vegetation', kind: 'data', field, reason: 'No rural land-use polygons in the retained products.' });
     if (
       next.nativeTerrain === false &&

@@ -61,7 +61,7 @@ describe('V2 appearance recipes and export snapshots', () => {
       options = svgOptionsForDisplay({}, display);
     expect(display).toMatchObject({ style: 'topographic', landuse: false, contours: true, raster: false, fieldOutlines: true, buildings: true });
     expect(options).toMatchObject({ landuse: false, contours: true, raster: false, fieldOutlines: true });
-    expect(settings.appearance.composition).toMatchObject({ vegetation: { look: 'none' }, landuse: { rural: 'outlines', urban: 'off', classes: { field: true, forest: false } }, effects: { relief: false }, networks: { roads: { visible: true }, water: { visible: true } } });
+    expect(settings.appearance.composition).toMatchObject({ vegetation: { look: 'none' }, landuse: { rural: 'outlines', urban: 'off', classes: { field: true, forest: false } }, effects: { relief: false }, networks: { roads: { visible: true } } });
   });
   it('round trips the complete bench display recipe without changing the generation cache key', () => {
     const settings = defaultSettings(),

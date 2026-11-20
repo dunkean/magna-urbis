@@ -10,7 +10,7 @@ import { bindForestBrushes } from '../../../render/forestBrushAtlas';
 import { bindCrownClumps, crownClumpMode } from '../../../render/crownClumpAtlas';
 import { bindTreeSymbols } from '../../../render/treeSymbols';
 import { dropHiddenDetails } from '../layers';
-import { hasAuxPass, lookVariant, variantKey, type TerrainVariant } from '../variant';
+import { hasAuxPass, lookVariant, terrainDrawQuality, variantKey, type TerrainVariant } from '../variant';
 import { detailQuad, fadeProgress, lookPalettes, paintedWaterLook, redrawFrame, separateWaterLayer, waterBand, type RedrawFrame, type ViewState } from '../redraw';
 import { writeFieldParams, writeLookParams, writeMapParamsAfterWaterLayer, writeWaterLayerParams, type LookBindings, type LookParamsState, type LookTexture } from '../lookParams';
 import { GlViewTargets, emptyUintTexture, rgbaTarget, uintTarget, type GlHeightLayer } from './resources';
@@ -254,7 +254,7 @@ export class GlRedraw {
     const exact = req.capturing || framebuffer !== null || look.mesh3d === true,
       wait = req.capturing || framebuffer !== null || look.mesh3d === true;
     // Live world tiles follow display quality; only captures force full. Tiles never wait for a link.
-    const quality = displayQualityUniform(!exact);
+    const quality = terrainDrawQuality(req.look, displayQualityUniform(!exact));
     const program = this.terrainProgram(look, wait, req.capturing);
     if (!program) return false;
     this.programs.current = program;

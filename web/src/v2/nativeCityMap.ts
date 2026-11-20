@@ -27,6 +27,7 @@ import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import { cityBuildingAppearance, cityDrawOptions, finishCityFrame } from '../render/cityDrawOptions';
 import type { HouseMaterial, Surface } from '../../../rust/bridge/housesContract';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import type { LotEnclosure } from '../../../rust/bridge/urban';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { nativeCitiesOf } from './nativeProducts';
 import { cityGroundOf } from './rustUrban';
@@ -77,6 +78,8 @@ export interface NativeCityMap {
   suspendStepwise(): void;
   /** The city plans (activity sites included), for the semantic district layer. */
   scenes(): readonly CityScene[];
+  /** Boundaries derived from the retained base buildings, in town-sized slices. */
+  lotEnclosureSteps(): Generator<void, readonly LotEnclosure[]>;
   /** The town item of a building (by id) as this map draws it: the tilted view's volumes take its look from it. */
   building(id: string): CityBuilding | undefined;
   /** Uploads the WebGL2 plan a frame with this appearance would use, if any (exports draw synchronously). */
@@ -361,7 +364,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   }
   type TownFrame = { view: View; w: number; h: number; dpr: number; appearance: ResolvedAppearance; visibility: Partial<ExportLayers>; hooks?: NativeCityHooks; lod: CityLod; rasterTown?: number; planOnly?: boolean };
   const townLayers = (appearance: ResolvedAppearance, visibility: Partial<ExportLayers>): CityLayers => {
-    // Urban plan off is already folded into city.layers (withoutUrbanPlan): streets, walls and lamps stay.
+    // The map style's plan policy is already folded into city.layers.
     const requestedLayers = appearance.city.layers;
     return { ...(visibility.city === false ? EMPTY_LAYERS : requestedLayers), streets: appearance.composition.networks.roads.visible && visibility.streets !== false && requestedLayers.streets, ...(appearance.composition.networks.water.visible ? {} : { waterways: false }) };
   };
@@ -378,6 +381,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     const palette = city.palette,
       buildingAppearance: UrbanBuildingAppearance = cityBuildingAppearance(appearance);
     const layers = townLayers(appearance, visibility);
+    if (f.planOnly && layers.lotEnclosures !== false) yield* lotEnclosureSteps();
     const painted = city.painted,
       textured = city.textured;
     const images = textured && palette !== 'parchment' && palette !== 'ink' ? materialImagesNow(invalidate) : undefined;
@@ -512,16 +516,24 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     if (!sameParts(parts)) liveTier = { parts, merged: mergeCityBuildings(liveParts(parts)) };
     return liveTier!.merged;
   }
+  let volumeLots: readonly LotEnclosure[] | undefined;
+  function* lotEnclosureSteps(): Generator<void, readonly LotEnclosure[]> {
+    if (volumeLots) return volumeLots;
+    const lots: LotEnclosure[] = [];
+    for (const entry of entries) {
+      const base = entry.large?.base ?? entry.buildings;
+      updateYardEnclosures(entry.plan, base.items, () => base.items.map(b => b.building));
+      for (const lot of entry.plan.lotEnclosures ?? []) lots.push(lot);
+      yield;
+    }
+    return (volumeLots ??= lots);
+  }
   /** The live scene in resumable steps (a few milliseconds each): the GL path's merged plan when it has none yet, then
    * every entry's buildings. The exact draw may build its plan meanwhile; the first one made is kept. */
   let volumePlan: CityScene | undefined;
   function* liveSceneSteps(planOnly = false): Generator<void, { plan: CityScene; buildings?: CityBuildings }> {
     if (planOnly) {
-      for (const entry of entries) {
-        const base = entry.large?.base ?? entry.buildings;
-        updateYardEnclosures(entry.plan, base.items, () => base.items.map(b => b.building));
-        yield;
-      }
+      yield* lotEnclosureSteps();
       volumePlan ??= glScene?.plan ?? (yield* mergeCityPlansSteps(entries.map(entry => ({ plan: entry.plan })))).plan;
       return { plan: volumePlan };
     }
@@ -549,6 +561,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
   }
   return {
     scenes: () => textScenes,
+    lotEnclosureSteps,
     building(id) {
       for (const entry of entries) {
         const buildings = entry.large?.base ?? entry.buildings,

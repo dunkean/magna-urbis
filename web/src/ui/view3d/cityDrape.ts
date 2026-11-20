@@ -156,7 +156,7 @@ export async function loadTile(cityContext: City3dContext, tile: Terrain3dTile):
     return groundTile.getContext('2d')!;
   };
   const planOptions = cityContext.options.getPlanOptions?.();
-  // Roads follow only the Roads switch (the plan layers' streets flag); the Urban plan switch never hides them.
+  // Roads follow the Roads switch in the plan layers.
   const roads = !tile.preview && planOptions?.layers?.streets !== false ? cityContext.groundRegionalStreets().filter(road => tileRoadVisible(road, box, mpp)) : undefined;
   if (roads?.length) {
     const roadLook = planOptions?.roadLook ?? (planOptions?.groundBlend ? 'natural' : 'ink');
@@ -200,7 +200,7 @@ export async function loadTile(cityContext: City3dContext, tile: Terrain3dTile):
     cityContext.footprintPlans.set(footprintScene, footprints);
   }
   const city = cityContext.cityPlan() ?? (footprints ? cityContext.emptyFootprintPlan : undefined);
-  // The Urban plan switch hides only the plan drawing (withoutUrbanPlan); streets, walls and lamps stay.
+  // The map style only suppresses the abstract plan drawing here.
   const requestedLayers = planOptions?.layers ?? PLAN_LAYERS;
   const planLayers = { ...(cityContext.planOverlay ? requestedLayers : withoutUrbanPlan(requestedLayers)), lotEnclosureMeshes: planOptions?.layers?.lotEnclosureMeshes !== false },
     lod = selectCityLod(mpp);

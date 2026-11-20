@@ -9,7 +9,7 @@
 import { displayQualityUniform } from '../../../render/displayQuality';
 import { setSeasonCalendarGpu } from '../../../../../rust/bridge/terrainRenderV2Zones';
 import { dropHiddenDetails } from '../layers';
-import { hasAuxPass } from '../variant';
+import { hasAuxPass, terrainDrawQuality } from '../variant';
 import { detailQuad, fadeProgress, lookPalettes, paintedWaterLook, redrawFrame, separateWaterLayer, waterBand, type RedrawFrame, type ViewState } from '../redraw';
 import { writeFieldParams, writeLookParams, writeMapParamsAfterWaterLayer, writeWaterLayerParams, type LookBindings, type LookParamsState, type LookTexture } from '../lookParams';
 import { MAP_FORMAT, TERRAIN_TEXTURES, type GpuShared } from './device';
@@ -232,7 +232,7 @@ export class GpuRedraw {
     if (!req.tile) this.hooks.displayDrawn();
     if (!this.hooks.alive() || !this.inputs.base || this.gpu.lost) return false;
     const look = req.look;
-    const quality = displayQualityUniform(!(req.capturing || (req.offscreen && !req.tile) || req.wait || look.mesh3d === true));
+    const quality = terrainDrawQuality(look, displayQualityUniform(!(req.capturing || (req.offscreen && !req.tile) || req.wait || look.mesh3d === true)));
     const chosen = this.pipelines.map(look, req.wait, req.capturing);
     if (!chosen) return false;
     this.request = req;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setDisplayAppearanceQuality, setDisplayQualityPreference } from '../src/render/displayQuality';
-import { lookVariant, mapPasses, speculativePrewarmAllowed } from '../src/ui/terrain/variant';
-import { captureLook, lookPalettes } from '../src/ui/terrain/redraw';
+import { lookVariant, mapPasses, speculativePrewarmAllowed, terrainDrawQuality } from '../src/ui/terrain/variant';
+import { captureLook, lookPalettes, paintedWaterLook, separateWaterLayer } from '../src/ui/terrain/redraw';
 import { writeLookParams, type LookBindings, type LookParamsState } from '../src/ui/terrain/lookParams';
 import { DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING } from '../src/render/terrainLighting';
 import { DEFAULT_FRACTAL_DETAIL } from '../../rust/bridge/terrainAdjust';
@@ -54,7 +54,7 @@ describe('flat light look policy', () => {
   it.each(['satellite', 'satellite-light'] as const)('omits dashed town reserve outlines from %s, including exports', style => {
     for (const target of ['view2d', 'view3d', 'export'] as const) {
       const appearance = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-      expect(appearance.city.plan).toBe(true);
+      expect(appearance.city.plan).toBe(false);
       expect(cityCountrysideCanvasOptions(appearance, 4000).urbanPlan()).toBe(false);
     }
   });
@@ -85,6 +85,15 @@ describe('flat light look policy', () => {
     writeLookParams(bindings, { ...state, quality: 1 });
     expect(values).toEqual(full);
     expect(values.has('forest:true')).toBe(true);
+  });
+  it('keeps encoded rivers inside the material water pass when Satellite buildings use fast quality', () => {
+    const look = lookOf('render-v2');
+    setDisplayAppearanceQuality('light');
+    const quality = terrainDrawQuality(look, 1);
+    expect(quality).toBe(0);
+    expect(quality === 0 && paintedWaterLook(look)).toBe(true);
+    expect(quality === 0 && separateWaterLayer(look, lookVariant(look, true).forest)).toBe(true);
+    expect(terrainDrawQuality(lookOf('parchment'), 1)).toBe(1);
   });
   it.each(['parchment'] as const)('removes optional ground passes for %s and preserves full capture variants', style => {
     setDisplayQualityPreference('full');

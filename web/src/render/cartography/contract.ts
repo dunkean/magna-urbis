@@ -42,7 +42,7 @@ export interface CanvasRendererDeps {
   roadLook?: RoadLook;
   /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
   roadStyle?: () => RoadStyle;
-  /** The Urban plan switch, read per frame (it joins the raster tile keys, no rebuild): false hides the abstract plan marks (the dashed site reserve outline). */
+  /** Whether the map style draws plan marks such as the dashed site reserve outline, read per frame. */
   urbanPlan?: () => boolean;
   /** Path2D constructor (default: RecPath2D, a native Path2D that both vector engines can draw). */
   Path2D?: new () => Path2D;

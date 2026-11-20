@@ -7,7 +7,6 @@
 import { renderWaterRings } from '../../../render/renderWaterShader';
 import { waterUniforms } from '../../../render/waterStyle';
 import { styleTraits } from '../../../render/terrainStyle';
-import { lightTerrainLook } from '../variant';
 import { waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import { MAP_FORMAT, type GpuShared } from './device';
 import { gpuTarget, type GpuImage, type GpuViewTargets, type Target } from './resources';
@@ -107,7 +106,7 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   r.float('uDpr', c.stylePixelRatio);
   r.int('uPhysicalWidth', styleTraits(look.style).physicalRiverWidth ? 1 : 0);
   r.float('uMapW', look.mapWidth);
-  const flat = rivers.regime && !c.overlay && lightTerrainLook(look),
+  const flat = rivers.regime && !c.overlay && !c.painted,
     color = waterUniforms(c.water).colors;
   r.vec4('uFlatWater', color[0], color[1], color[2], flat ? 1 : 0);
   r.int('uHasOverlay', c.overlay ? 1 : 0);

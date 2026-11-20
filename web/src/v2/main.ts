@@ -18,7 +18,6 @@ import './workbench.css';
 import './workbenchLayout'; // with cultureBrowser, advancedPanel, cityPatternChoices, renderSettingsPanel, nameVisibilityControls, sectionIndex, renderPassControls, settlementPopulationPanel
 import './localFacts';
 import './sceneControls';
-import './roadDisplayControl';
 import './editingTools';
 import '../ui/exportCrop';
 import './client'; // with desktopNeural, desktopUpdates

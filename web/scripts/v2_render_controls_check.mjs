@@ -51,14 +51,30 @@ try {
   assert.equal(await roof.inputValue(), 'v2');
   assert.deepEqual(await roof.locator('option').evaluateAll(options => options.map(option => option.value)), ['v1', 'v2', 'flat', 'minimal']);
   assert.equal(await roof.locator('option[value=v1]').textContent(), 'V1 · Arêtes');
+  assert(
+    await page.evaluate(() => {
+      const style = document.querySelector('#map-style'),
+        spinner = document.querySelector('#view-loading');
+      const original = spinner.hidden,
+        left = style.getBoundingClientRect().left;
+      spinner.hidden = !original;
+      const stable = style.getBoundingClientRect().left === left;
+      spinner.hidden = original;
+      return stable;
+    }),
+    'the spinner reserves space in the toolbar',
+  );
   const advanced = page.locator('.view-strip > .workbench-advanced');
-  const flags = ['appearance.composition.ground.contours', 'appearance.composition.networks.water.visible', 'appearance.composition.text.visible', 'appearance.city.plan', 'appearance.composition.buildings.visible'];
+  const flags = ['appearance.composition.ground.contours', 'appearance.composition.networks.roads.visible', 'appearance.composition.text.visible', 'appearance.composition.buildings.visible'];
+  for (const path of ['appearance.composition.networks.water.visible', 'appearance.composition.networks.water.look', 'appearance.composition.networks.roads.look', 'appearance.city.plan']) {
+    assert.equal(await page.locator(`[data-setting-path="${path}"]`).count(), 0);
+  }
   await page.evaluate(paths => {
     window.sharedFlags = paths.map(path => document.querySelector(`[data-setting-path="${path}"]`));
   }, flags);
   await page.locator('#map-advanced-open').click();
   await advanced.locator('[data-render-pass=ground]').waitFor();
-  assert.equal(await advanced.locator('.render-pass-card').count(), 11);
+  assert.equal(await advanced.locator('.render-pass-card').count(), 9);
   await page.screenshot({ path: fileURLToPath(new URL('render-advanced-overview.png', out)) });
   // One page: component settings are open in their cards, no disclosure to click.
   assert.equal(await advanced.locator('details').count(), 0, 'no disclosure inside the advanced render view');
@@ -82,7 +98,7 @@ try {
   for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
   assert.equal(await page.locator('.toolbar-row [data-ground]').count(), 0);
   assert.equal(await page.locator('.toolbar-row [data-textured]:visible,.toolbar-row [data-plan]:visible').count(), 0);
-  assert(await page.locator('.toolbar-row #road-display').isVisible());
+  assert.equal(await page.locator('#road-display').count(), 0);
   await page.locator('#map-advanced-open').click();
   assert(await advanced.locator('[data-render-pass=ground] > .render-pass-options').isVisible());
   assert(await advanced.locator('[data-ground]').isVisible());
@@ -92,7 +108,6 @@ try {
   await page.locator('#map-style').selectOption('satellite');
   await page.locator('#map-advanced-open').click();
   assert.equal(await advanced.locator('[data-ground]').inputValue(), 'render-v2', 'a new preset clears the old ground override');
-  await advanced.locator('[data-render-pass=water] .render-pass-source select').selectOption('cadastre');
   await advanced.locator('[data-render-pass=vegetation] .render-pass-source select').selectOption('parchment');
   const vegetation = advanced.locator('[data-pass-switch="appearance.composition.vegetation.look"]');
   await vegetation.uncheck();
@@ -102,7 +117,7 @@ try {
   await roof.selectOption('minimal');
   const mixed = await exportProject();
   assert.equal(mixed.settings.appearance.composition.ground.look, 'satellite');
-  assert.equal(mixed.settings.appearance.composition.networks.water.look, 'ink');
+  assert.deepEqual(mixed.settings.appearance.composition.networks.water, {});
   assert.equal(mixed.settings.appearance.composition.vegetation.look, 'symbols');
   assert.equal(mixed.settings.appearance.composition.buildings.roof, 'minimal');
   assert.equal(mixed.settings.appearance.city?.ground, undefined);

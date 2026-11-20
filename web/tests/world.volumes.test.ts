@@ -4,8 +4,9 @@ import type { Building3dScene, BuildingTriangle } from '../src/render/urbanBuild
 import { roofEdgeMasks } from '../src/render/roofEdges';
 import type { RoofMode } from '../src/render/roofMode';
 import { city3dBuildings, city3dBuildingsSteps } from '../src/render/city3d/display';
+import { city3dLotEnclosures } from '../src/render/city3d/yards';
 import type { LiveFrame } from '../src/render/live/contract';
-import { BUILDING_BLOCK, BlockGrouping, TownAltitudes, blockLevel, blockPart, worldPaint, worldSeat } from '../src/render/world/buildingsBlocks';
+import { BUILDING_BLOCK, BlockGrouping, TownAltitudes, blockLevel, blockPart, worldPaint, worldSeat, yardBlockLevel } from '../src/render/world/buildingsBlocks';
 import { createWorldBuildingsLayer } from '../src/render/world/buildingsLayer';
 import { BuildingBlockCache } from '../src/render/world/buildingsCache';
 import { expandBuildingPart, indexBuildingPart } from '../src/render/world/buildingsIndex';
@@ -203,6 +204,46 @@ describe('world buildings', () => {
     layer.draw(frame(gl, { ...view, pitch: 0.0001 }, heights));
     expect(layer.stats!().triangles).toBe(drawn);
     expect(vi.mocked(gl.bufferData).mock.calls.length).toBe(uploaded);
+    layer.dispose();
+  });
+
+  it('leaves overhead fences to the plan and keeps a ribbon at the start of a tilt', () => {
+    const heights = relief(4000),
+      gl = mockGl(),
+      buildings = city3dLotEnclosures(
+        [
+          {
+            path: [
+              { x: 330, y: 350 },
+              { x: 370, y: 350 },
+            ],
+            material: 'fence',
+            side: 'front',
+          },
+        ],
+        rawOf(heights),
+      ),
+      scene = { buildings },
+      layer = createWorldBuildingsLayer(gl, { scene: () => scene, terrain: () => heights, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), topView: () => true, invalidate: () => {} }),
+      view = { cx: 350, cy: 350, scale: 6 };
+    const draw = (pitch: number) => {
+      const shown = frame(gl, { ...view, pitch }, heights);
+      while (layer.work!(Infinity, shown));
+      layer.draw(shown);
+      while (layer.work!(Infinity, shown));
+      layer.draw(shown);
+      return layer.stats!().triangles;
+    };
+    expect(draw(0)).toBe(0);
+    const ribbon = draw(0.0001);
+    expect(ribbon).toBeGreaterThan(0);
+    expect(draw(0.5)).toBeGreaterThan(ribbon);
+    expect(draw(0.0001)).toBe(ribbon);
+    const [yard] = grouped(scene, heights);
+    expect(yardBlockLevel(yard, 3.4, 1)).toBe(1);
+    expect(yardBlockLevel(yard, 3.4, 0)).toBe(0);
+    expect(yardBlockLevel(yard, 6, 1, 0.9)).toBe(1);
+    expect(yardBlockLevel(yard, 6, 0, 0.9)).toBe(0);
     layer.dispose();
   });
 

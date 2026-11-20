@@ -263,7 +263,7 @@ export function paintMinimalMap(
       ctx.globalAlpha = 1;
     }
   }
-  if (recipe.networks.water.visible && layers.water !== false) {
+  if (layers.water !== false) {
     fill('water', palette.seaFill);
     stroke('water', palette.waterEdge, 1, 0.1, 60);
     fill('river', palette.riverFill);

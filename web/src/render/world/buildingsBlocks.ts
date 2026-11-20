@@ -255,13 +255,21 @@ const LEVEL_PIXELS = [10, 6, 3];
 /** Yards (pixels per metre): no lot boundary once a metre spans under a quarter pixel. */
 const YARD_HIDDEN = 0.25;
 
+/** Keep the current detail near a threshold, including where an overhead fence panel becomes edge-on. */
+export function yardBlockLevel(block: BuildingBlock, pixels: number, previous = 0, projectedHeight = Infinity): number {
+  const hidden = blockHidden(block);
+  if (pixels < YARD_HIDDEN * (previous === hidden ? 1.15 : 1)) return hidden;
+  const min = projectedHeight < (previous === 0 ? 0.85 : 1) ? 1 : 0;
+  return Math.max(min, yardLod(pixels, previous));
+}
+
 /** Level of buildings of a block whose mean building spans `pixels` CSS px (per metre for yards), `blockHidden` for
- * nothing. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. No hysteresis: the
+ * nothing. `boxed`: the buildings are boxes however near (a fast look); yards keep their levels. No hysteresis for buildings: the
  * frame's budget (buildingsLayer.ts) demotes units independently, and a level only ever changes over a whole cell.
  * Depth extends the projected-size thresholds; at maximum every building remains at least a box. */
 export function blockLevel(block: BuildingBlock, pixels: number, boxed: boolean | 'overview' = false, depth = 1, keepFar = false): number {
   const hidden = blockHidden(block);
-  if (block.yard) return pixels < YARD_HIDDEN ? hidden : yardLod(pixels, 0);
+  if (block.yard) return yardBlockLevel(block, pixels);
   for (let i = boxed === 'overview' ? 1 : boxed ? BOX_LEVEL : 0; i < LEVEL_PIXELS.length; i++) if (pixels * depth >= LEVEL_PIXELS[i]) return i;
   return keepFar || depth >= VIEW_DEPTH_MAX ? BOX_LEVEL : hidden;
 }

@@ -31,7 +31,8 @@ describe('render composition', () => {
     expect(c.effects.relief).toBe(false);
     expect(c.vegetation.look).toBe('none');
     expect(c.landuse).toMatchObject({ rural: 'off', urban: 'off' });
-    expect(c.buildings).toMatchObject({ visible: true, look: 'footprints', parcels: false });
+    expect(c.buildings).toMatchObject({ visible: true, look: 'footprints' });
+    expect(resolve(c).city.layers.parcels).toBe(false);
     expect(c.annotations).toEqual({ legend: false, cartouche: false });
     expect(
       Object.entries(c.text.groups)
@@ -91,7 +92,6 @@ describe('render composition', () => {
       edit('parchment', c => {
         c.vegetation.look = 'procedural-canopy';
         c.landuse.rural = 'categorical';
-        c.networks.roads.look = 'ink';
         c.buildings.look = 'footprints';
       }),
     );
@@ -136,7 +136,7 @@ describe('render composition', () => {
       moved(
         base,
         edit('parchment', c => {
-          c.buildings.parcels = true;
+          c.buildings.roof = 'v1';
         }),
       ),
     ).toEqual(['city']);

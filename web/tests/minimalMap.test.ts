@@ -54,7 +54,7 @@ function context() {
   } as unknown as CanvasRenderingContext2D;
   return { ctx, calls };
 }
-const options = () => ({ view: { cx: 500, cy: 500, scale: 1 }, width: 1000, height: 1000, dpr: 1, recipe: presetComposition('minimal'), places: [], textLayout: { labels: [] } });
+const options = (): Parameters<typeof paintMinimalMap>[2] => ({ view: { cx: 500, cy: 500, scale: 1 }, width: 1000, height: 1000, dpr: 1, recipe: presetComposition('minimal'), places: [], textLayout: { labels: [] } });
 
 describe('Minimal retained painter', () => {
   it('keeps house outlines visible at city-preview scale', () => {
@@ -112,7 +112,7 @@ describe('Minimal retained painter', () => {
     o.recipe.landuse.rural = 'categorical';
     o.recipe.landuse.classes = { forest: false };
     o.recipe.landuse.opacity = 0.23;
-    o.recipe.networks.water.visible = false;
+    o.layers = { ...o.layers, water: false };
     o.recipe.networks.roads.visible = false;
     paintMinimalMap(local.ctx, geometry, o);
     expect(local.calls.filter(c => c.color === PALETTES.minimal.urban.mass)).toHaveLength(1);

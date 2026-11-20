@@ -566,12 +566,10 @@ void main() {
           // The aux-texture variant only mixes wBase where water remains: a fully dry or frozen bed is the ground itself.
           color=wBase;
         } else {
-          // A river's sediment plume, painted as a silt tint over the captured sea (renderWaterShader.ts).
-          vec3 painted=water.rgb/max(water.a,1e-3);
-          wTint.z=smoothstep(-.12,.3,painted.r-painted.b);
-          wEst=water.a*(1.-wTint.z)*(1.-smoothstep(0.,6.,-s.x));
+          // The short river ribbon overlaps the coast and blends into the sea by depth, without an offshore plume.
+          wEst=water.a*(1.-smoothstep(0.,6.,-s.x));
           wTint.xy=vec2(waterTea(),waterGlacial())*wEst;
-          wRiver=water.a*(1.-wTint.z);
+          wRiver=water.a;
         }
       }
       else color=color*(1.-water.a*under)+water.rgb*under;
@@ -740,13 +738,15 @@ precision highp float; precision highp int; precision highp sampler2D;
 in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
 out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
-// Light water keeps coverage and replaces encoded seasonal RGB with one palette colour.
+// Unpainted water keeps coverage and replaces encoded seasonal RGB with one palette colour.
 uniform vec4 uFlatWater;
 uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN;
 vec4 bw(float t) { float t2=t*t,t3=t2*t,u=1.-t; return vec4(u*u*u,3.*t3-6.*t2+4.,-3.*t3+3.*t2+3.*t+1.,t3)/6.; }
 ${LAKE_GLSL}
 void main() {
+  // Sediment capsules are data for the material water compositor, not standalone blue blobs offshore.
+  if (uFlatWater.a > 0. && vColor.b >= .5) discard;
   vec2 a = vSeg.xy, b = vSeg.zw, pa = vP - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
   float d = length(pa - ba * h);

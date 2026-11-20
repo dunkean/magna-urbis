@@ -1,13 +1,12 @@
 /**
  * The last controls of the page: language and units (and what they redraw), the workbench layout, the reset button, the
- * settlements' name origin and the road display control. Mounted after every form they sync; `initializeLanguage`
+ * settlements' name origin. Mounted after every form they sync; `initializeLanguage`
  * runs here, once the page's texts and language listeners exist.
  */
 import type { PageActions, PageState } from './contract';
 import { setText, translate, setLanguage, onLanguageChange, initializeLanguage, numberLocale, registerMessages, type Language } from '../i18n';
 import { getDistanceUnit, onUnitsChange, unitFactor, type DistanceUnit } from '../units';
 import { mountWorkbenchLayout } from '../workbenchLayout';
-import { mountRoadDisplayControl } from '../roadDisplayControl';
 import { mountNameOriginControls } from '../nameOriginControls';
 import { saveAutosaveNow } from '../autosave';
 import { resetSettings, markAllStagesStale, RESET_LABEL, RESET_TITLE, RESET_CONFIRM, RESET_DONE } from '../settingsReset';
@@ -151,13 +150,4 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
       }),
     );
   }
-
-  // Roads as plan, hidden or rendered: next to the urban plan field of the top bar.
-  state.roadDisplay = mountRoadDisplayControl(document.querySelector('[data-setting-path="appearance.city.plan"]')?.closest('.parameter-field') ?? null, $('.view-strip'), {
-    getSettings: () => state.settings,
-    onChange: () => {
-      state.projectRevision++;
-      actions.scheduleAppearance();
-    },
-  });
 }

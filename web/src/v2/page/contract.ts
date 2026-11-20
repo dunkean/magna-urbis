@@ -4,7 +4,6 @@
  */
 import type { mountWorkbenchLayout } from '../workbenchLayout';
 import type { mountSceneControls } from '../sceneControls';
-import type { mountRoadDisplayControl } from '../roadDisplayControl';
 import type { mountEditingTools } from '../editingTools';
 import type { mountRenderControls } from '../renderControls';
 import type { World, UrbanBuilding } from '../../gen/types';
@@ -94,7 +93,7 @@ export interface PageModel {
  * - namingRevision, namingWork: redrawNames (mapEditing), serialized and superseded by revision.
  * - neuralSelectionRevision: inspectNeuralSelection (runtime).
  * - parcelMerge: the parcel merge tool (subdivisionInspector); the map click (toolbar) feeds it.
- * - workbenchLayout, roadDisplay: mounted last (preferences); readers before that see undefined.
+ * - workbenchLayout: mounted last (preferences); readers before that see undefined.
  * - smallPlaces: the background queue (generation), mounted after the recipe forms.
  */
 export interface PageWork {
@@ -116,7 +115,6 @@ export interface PageWork {
   neuralSelectionRevision: number;
   parcelMerge: { key: string; id: string; add(p: { x: number; y: number }): void } | undefined;
   workbenchLayout: ReturnType<typeof mountWorkbenchLayout> | undefined;
-  roadDisplay: ReturnType<typeof mountRoadDisplayControl> | undefined;
   smallPlaces: SmallPlaceQueue | undefined;
   regionalParents: WeakMap<V2Settings, string>;
 }

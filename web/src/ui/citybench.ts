@@ -775,7 +775,7 @@ const city3d = mountCity3d({
   },
   onViewSettingsChange: value => {
     if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground));
-    for (const key of ['plan', 'colors', 'exaggeration', 'refinement', 'trees3d', 'treeDistance'] as const) setBenchAppearanceField(`city.${key}`, value[key]);
+    for (const key of ['colors', 'exaggeration', 'refinement', 'trees3d', 'treeDistance'] as const) setBenchAppearanceField(`city.${key}`, value[key]);
   },
   getGroundSettings: ground => {
     if (!decor) return;
@@ -1218,7 +1218,6 @@ el<HTMLInputElement>('showContours').onchange = () => {
   drawContours();
   save();
 };
-el<HTMLInputElement>('showPlan').onchange = event => settlements.urban.setPlanVisible((event.target as HTMLInputElement).checked);
 el<HTMLSelectElement>('backgroundStyle').value = backgroundStyle;
 el<HTMLSelectElement>('backgroundStyle').onchange = event => {
   const value = (event.target as HTMLSelectElement).value;

@@ -11,7 +11,6 @@ import type { City3dContext } from './cityContext';
 export function changedView(cityContext: City3dContext): void {
   cityContext.options.onViewSettingsChange?.({
     ground: cityContext.ground,
-    plan: cityContext.planOverlay,
     colors: cityContext.colors,
     exaggeration: cityContext.terrain?.getCamera().exaggeration ?? Number(cityContext.$<HTMLInputElement>('[data-relief]').value),
     refinement: cityContext.refinement,
@@ -52,7 +51,6 @@ export function syncView(cityContext: City3dContext): void {
   cityContext.terrain?.setTreeDistance(cityContext.treeDistance);
   cityContext.terrain?.setNearTrees(cityContext.nearTrees);
   cityContext.$<HTMLSelectElement>('[data-ground]').value = cityContext.ground;
-  cityContext.$<HTMLInputElement>('[data-plan]').checked = cityContext.planOverlay;
   cityContext.$<HTMLSelectElement>('[data-colors]').value = cityContext.colors;
   if (cityContext.options.materialGrounds) cityContext.$<HTMLSelectElement>('[data-refinement]').value = cityContext.refinement;
   const exaggeration = Math.max(0.2, Math.min(5, saved.exaggeration ?? cityContext.terrain?.getCamera().exaggeration ?? 1));
@@ -75,17 +73,6 @@ export function localizeControls(cityContext: City3dContext): void {
   cityContext.$<HTMLOptionElement>('[data-navigation] option[value="orbit"]').textContent = urbanText(['Orbite', 'Orbit', '环绕', 'Órbita', 'Órbita']);
   cityContext.$<HTMLOptionElement>('[data-navigation] option[value="fly"]').textContent = urbanText(['Vol libre', 'Free flight', '自由飞行', 'Vuelo libre', 'Voo livre']);
   cityContext.$<HTMLOptionElement>('[data-navigation] option[value="walk"]').textContent = urbanText(['Marche', 'Walk', '行走', 'Caminar', 'Caminhar']);
-  label(
-    '[data-plan]',
-    ['Plan', 'Plan', '平面', 'Plano', 'Planta'],
-    [
-      'Contours des îlots et des parcelles dessinés sur le sol (les rues suivent l’interrupteur Routes)',
-      'Block and parcel outlines drawn on the ground (streets follow the Roads switch)',
-      '绘制在地面的街区与地块轮廓（街道由道路开关控制）',
-      'Contornos de manzanas y parcelas dibujados en el suelo (las calles siguen el interruptor Carreteras)',
-      'Contornos de quadras e parcelas desenhados no solo (as ruas seguem o interruptor Estradas)',
-    ],
-  );
   label(
     '[data-textured]',
     ['Textures', 'Textures', '纹理', 'Texturas', 'Texturas'],
@@ -176,11 +163,6 @@ export function connectCityControls(cityContext: City3dContext): void {
     }
   };
 
-  cityContext.$<HTMLInputElement>('[data-plan]').onchange = event => {
-    cityContext.planOverlay = (event.target as HTMLInputElement).checked;
-    cityContext.changedView();
-    cityContext.terrain?.invalidateTiles();
-  };
   // Hide or show only: the tree stream is built on the first switch-on, nothing else of the scene is rebuilt.
   cityContext.$<HTMLInputElement>('[data-trees]').onchange = event => {
     cityContext.nearTrees = (event.target as HTMLInputElement).checked;

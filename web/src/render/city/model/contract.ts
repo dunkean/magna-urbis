@@ -35,7 +35,7 @@ export interface CityLayers {
   enclosures: boolean;
   /** Composition visibility for all parcel types and details; retained on the GPU's Canvas overlay. */ parcelOverlay?: boolean;
   /** Walls, hedges and fences of the lots; absent = shown. */ lotEnclosures?: boolean;
-  /** Abstract outlines of lots, blocks and squares (the Urban plan's lines); absent = shown. */ planLines?: boolean;
+  /** Abstract outlines of lots, blocks and squares; absent = shown. */ planLines?: boolean;
   /** The fences stand as 3D meshes: the plan paints the yard ground only. */ lotEnclosureMeshes?: boolean;
   /** Streets as a ground surface (square junctions, curb returns, tapers); absent = on, off = round-capped strokes. */ roadSurface?: boolean;
   parcels: boolean;

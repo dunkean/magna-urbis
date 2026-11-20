@@ -23,7 +23,7 @@ import type { WaterSurface } from '../../render/terrainWater';
 import { isNeuralRefinement } from '../terrainRefinement';
 import { treeSymbolWash } from '../../render/treeSymbols';
 import type { Palette } from '../../render/styles';
-import { lightTerrainAllowed, treeSymbolsOn } from './variant';
+import { terrainDrawQuality, treeSymbolsOn } from './variant';
 import { fadeProgress, waterBand, type LookPalettes, type RedrawFrame } from './redraw';
 import type { HeightLayer, TerrainLook } from './contract';
 import type { StackedLayer } from './layers';
@@ -122,7 +122,7 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
     { definition, pal, water } = s.palettes;
   // Light ground has no procedural detail or auxiliary pass, even in close world tiles. The palette and
   // source-height hillshade carry the style; no crown atlas, shore-light bake, material or fractal octaves.
-  const light = s.quality > 0 && lightTerrainAllowed(look);
+  const light = terrainDrawQuality(look, s.quality) > 0;
   b.int('uQuality', light ? s.quality : 0);
   b.vec2('uCanvas', frame.width, frame.height);
   b.vec2('uOrigin', frame.origin[0], frame.origin[1]);

@@ -2,7 +2,7 @@
  *
  * Dry climates: only the largest flows stay perennial; smaller courses become intermittent, then ephemeral beds
  * (wadis) that dry out in the dry season, and lakes draw down to a pale exposed shore. Cold climates: rivers and lakes
- * freeze in winter and thaw in spring. Wet climates and seasons: rivers carry a sediment plume into the sea.
+ * freeze in winter and thaw in spring. Wet climates affect inland water turbidity; no offshore sediment is drawn.
  * The zone calendar (terrainRenderV2Zones.ts) drives everything: its rain regime places the dry season, its low-ground
  * snow places the freeze. Ink styles draw the regime as symbols (vectorWaterRender.ts); the material styles get it
  * encoded in the river segment colour (`regimeRgb`) and read it in their water shaders (WATER_REGIME_GLSL).
@@ -30,7 +30,7 @@ export interface WaterClimate {
   rain: number;
   /** Freshwater ice cover of small still water, 0–1. */
   ice: number;
-  /** Sediment plume at river mouths, 0–1. */
+  /** Seasonal sediment load for inland water turbidity, 0–1. */
   sediment: number;
   /** Lake draw-down of the season, 0–1 (1: about 80 m of exposed shore). */
   drop: number;
@@ -101,11 +101,9 @@ export function riverState(c: WaterClimate, q: number): RiverState {
   return { dry, ice: c.ice >= 0.5 ? 1 : 0 };
 }
 
-/** Segment colour of the material styles: r running water (1 − dry), g open water (1 − ice), b 0 on a river and a
- * sediment plume above .5 (.5 + plume / 2, plume capsules only). Capsules blend with MAX, so where a dry or frozen
+/** Segment colour of the material styles: r running water (1 − dry), g open water (1 − ice), b 0. Capsules blend with MAX, so where a dry or frozen
  * tributary overlaps a running trunk the running water wins. */
 export const regimeRgb = (s: RiverState): [number, number, number] => [1 - s.dry, 1 - s.ice, 0];
-export const plumeRgb = (plume: number): [number, number, number] => [1, 1, 0.5 + 0.5 * clamp01(plume)];
 
 /** Symbol class of the ink styles. */
 export type RiverSymbol = 'water' | 'intermittent' | 'dry' | 'ice';

@@ -239,11 +239,12 @@ export const DEFAULT_CITY = {
 } as const;
 /** Previous 3D defaults, used while `unifiedDefaults` is off. */
 const LEGACY_3D_CITY = { view: 'parcels', palette: 'terrain', opacity: 1 } as const;
-/** The Urban plan switch hides the abstract plan graphics only: lot, block and square outlines (`planLines`), the
+/** Abstract plan graphics: lot, block and square outlines (`planLines`), the
  * translucent block and lot washes (`blocks`, `parcels`), quarters, domains, reserve and allocation tints, centres,
  * and the frontage / axis / access diagrams. */
 export const URBAN_PLAN_LAYERS = ['reserve', 'allocated', 'centers', 'domains', 'quarters', 'blocks', 'parcels', 'planLines', 'fronts', 'axes', 'access'] as const satisfies readonly (keyof CityLayers)[];
-/** Physical objects stay whatever the Urban plan switch: streets, town walls, lot fences, hedges, walls and gates
+const URBAN_PLAN_LAYER_NAMES: ReadonlySet<string> = new Set(URBAN_PLAN_LAYERS);
+/** Physical objects include streets, town walls, lot fences, hedges, walls and gates
  * with their yard ground, gardens and paved squares (as ground, unoutlined), waterways; buildings, trees, water,
  * bridges and lights are not city layers at all. */
 export const URBAN_PHYSICAL_LAYERS = ['streets', 'enclosures', 'lotEnclosures', 'parcelOverlay', 'gardens', 'places', 'waterways'] as const satisfies readonly (keyof CityLayers)[];
@@ -274,7 +275,9 @@ function applicable(colors: RenderColors | undefined, traits: StyleTraits): Rend
 
 export function resolveAppearance(appearance: AppearanceInput | undefined, base: AppearanceBase, capabilities: RenderCapabilities, target: RenderTarget, flags: ResolveFlags = {}): ResolvedAppearance {
   const underdark = (flags.biome ?? capabilities.biome) === 'underdark';
-  const a = appearance?.composition ? applyComposition(appearance, appearance.composition, underdark) : appearance,
+  // A composition owns its plan drawing. Keep only physical layer overrides from the saved project.
+  const configured = appearance?.composition && appearance.city?.layers ? { ...appearance, city: { ...appearance.city, layers: Object.fromEntries(Object.entries(appearance.city.layers).filter(([layer]) => !URBAN_PLAN_LAYER_NAMES.has(layer))) } } : appearance;
+  const a = configured?.composition ? applyComposition(configured, configured.composition, underdark) : configured,
     preview = !!flags.preview;
   const mapStyle = a?.style ?? base.mapStyle,
     styleId = a?.terrainStyle ?? mapStyle,
@@ -351,7 +354,7 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     opacity: c?.opacity ?? (legacy3d ? LEGACY_3D_CITY.opacity : DEFAULT_CITY.opacity),
     width: c?.width ?? DEFAULT_CITY.width,
     ground: c?.ground ?? (traits.ground3d ? (styleId as CityGround) : 'map'),
-    plan: c?.plan ?? DEFAULT_CITY.plan,
+    plan: !atlas && (c?.plan ?? DEFAULT_CITY.plan),
     colors: c?.colors ?? (c?.diagnostic === 'uses' ? 'uses' : DEFAULT_CITY.colors),
     exaggeration: c?.exaggeration ?? DEFAULT_CITY.exaggeration,
     refinement: c?.refinement ?? DEFAULT_CITY.refinement,
@@ -359,9 +362,8 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     treeDistance: c?.treeDistance ?? DEFAULT_CITY.treeDistance,
   };
 
-  // The shared Urban plan switch hides the same plan drawing in 2D, 3D and export (withoutUrbanPlan).
-  if (!city.plan) city.layers = withoutUrbanPlan(city.layers);
   if (atlas) city.layers = buildingsAndRoadsOnly(city.layers);
+  else if (!city.plan) city.layers = withoutUrbanPlan(city.layers);
 
   if (target !== 'view3d') {
     city.buildingStyle = flatBuildings ? 'silhouette' : 'cartographic';

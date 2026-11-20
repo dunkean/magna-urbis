@@ -29,6 +29,8 @@ export interface BuildingSlot {
   /** Depth along the view axis at that draw, and its tick. */
   depth: number;
   seen: number;
+  /** Last screen-size level of a yard block, before the triangle budget. */
+  yardLevel: number;
 }
 
 interface BuildingJob {
@@ -63,7 +65,7 @@ export class BuildingBlockCache {
   setBlocks(blocks: BuildingBlock[]): void {
     this.overviewCursor = 0;
     this.blocks = blocks;
-    this.slots = blocks.map(block => ({ block, levels: new Array<BuildingLevel | undefined>(block.levels).fill(undefined), need: 0, depth: Infinity, seen: -1 }));
+    this.slots = blocks.map(block => ({ block, levels: new Array<BuildingLevel | undefined>(block.levels).fill(undefined), need: 0, depth: Infinity, seen: -1, yardLevel: 0 }));
   }
   clear(): void {
     for (const slot of this.slots) for (let i = 0; i < slot.levels.length; i++) this.dropLevel(slot, i);

@@ -467,6 +467,46 @@ describe('house yards', () => {
     expect(yardRuns(gap).gates).toHaveLength(1);
     expect(yardRuns(gap).runs).toHaveLength(2);
   });
+  it('emits a single wooden post at a loop seam and at each gate jamb', () => {
+    const style = { material: 'fence', side: 'front' } as const;
+    const meshes = city3dLotEnclosures([
+      {
+        ...style,
+        path: [
+          { x: 0, y: 0 },
+          { x: 6, y: 0 },
+          { x: 6, y: 6 },
+          { x: 0, y: 6 },
+          { x: 0, y: 0 },
+        ],
+      },
+      {
+        ...style,
+        path: [
+          { x: 20, y: 0 },
+          { x: 26, y: 0 },
+        ],
+      },
+      {
+        ...style,
+        path: [
+          { x: 28, y: 0 },
+          { x: 34, y: 0 },
+        ],
+      },
+    ]);
+    for (const x of [0, 26, 28]) {
+      let postFaces = 0;
+      for (const {
+        volumes: [{ roof_mesh: mesh }],
+      } of meshes)
+        for (const face of mesh.faces) {
+          const vertices = face.vertices.map(i => mesh.vertices[i]);
+          if (vertices.some(p => p.z > 1.05) && vertices.every(p => Math.abs(p.x - x) < 0.1 && Math.abs(p.y) < 0.1)) postFaces++;
+        }
+      expect(postFaces).toBe(2); // the two crossed faces of one post
+    }
+  });
   it('3D: same gate gaps, low relief-following bands, few triangles per metre', () => {
     const enclosures = [
       {

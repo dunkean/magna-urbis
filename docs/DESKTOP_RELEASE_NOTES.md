@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.
+- Remove offshore sediment plumes while retaining the flared river mouths and their smooth transition into the sea.
 - Start with a fresh biome, relief and coherent coastline recipe; enable “Reload previous map at startup” in Settings to restore the last saved map instead. Explicitly opened maps keep their own recipe.
 - Synchronize visible climate and relief choices with the fresh startup recipe, using reliefs supported by the selected terrain engine.
 - Fix town composition rerolls crashing when final street and block processing changes their indices.
@@ -7,6 +9,7 @@
 - Release cadastral source geometry after baking, prepare complex overlay snapshots before navigation and reduce allocations while drawing strokes.
 - Reduce building buffer duplication, reuse visible chunk selections and streamline building cache uploads and eviction without changing their appearance.
 - Keep the same smooth GPU houses in flat and tilted views, without preparing a second Canvas house rendering on capable devices; retain Canvas for machines that need it.
+- Fix flickering house and parcel fences when panning or tilting the map.
 - Choose roof rendering independently: V1 with roof edges, V2 without traced edges, Flat without roof textures, or Minimal blocks without pitched roofs.
 - Preserve the shading of pitched roofs, including Newar houses, at medium zoom.
 - Keep loaded 3D trees stable while nearby forest blocks finish loading, including when the camera stays still.
@@ -18,6 +21,7 @@
 - Remove dashed town reserve outlines from Satellite and Satellite fast.
 - Publish regenerated towns in 2D without requiring a 3D switch, continue unfinished Canvas paints, and keep the central generation card visible alongside town-name spinners until the new display is complete.
 - Keep Atlas free of contour lines and urban ground fills, showing houses and roads only. Atlas, Cadastre and Topography keep only building volumes above their map in the tilted view.
+- Let each map appearance choose its river, road and town-plan rendering, keep a simple Show roads switch, and keep the toolbar steady while the view loads.
 - Reuse fixed-definition town and land-use rasters in Cadastre, and retained contour rasters in Topography and Parchment instead of redrawing contour triangles at each frame. Topography uses 1 m contours with 5 m index lines.
 - Reduce the density of Parchment's drawn trees.
 - Stabilize 3D tree populations and detail changes, fade in new tree blocks, reduce tree mesh and instance-buffer costs, thin dense tropical stands and shorten bare conifer trunks.
