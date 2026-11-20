@@ -13,6 +13,7 @@ import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, blockHidden, blockLevel, worldP
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
 import { VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
+import { CAVE_DUSK, caveFogRange, type WorldCave } from './cave';
 import { pickBuilding, type BuildingPick } from './buildingsPick';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 import { CoverGrainTexture } from './buildingsGrain';
@@ -33,6 +34,8 @@ export interface WorldBuildingsOptions {
   look?(): VolumeTownLook | undefined;
   /** The relief of the map, the draped ground's; undefined: nothing to stand on yet. */
   terrain(): TerrainHeights | undefined;
+  /** The Underdark of the map (cave.ts): the town is lit by its lanterns and dissolves into the cave's darkness. */
+  cave?(): WorldCave | undefined;
   /** A fast look: the buildings are drawn as boxes however near (blockLevel). */
   boxed?(): boolean;
   /** The same meshes draw the top view, including far buildings that have no draped plan copy. */
@@ -58,9 +61,11 @@ const MAX_UNITS = 32768;
 /** Draws a frame may issue: a block whole, or the runs of its cells that share a level. */
 const MAX_DRAWS = 8192;
 const CELLS = BLOCK_CELLS * BLOCK_CELLS;
+/** Underdark: the fog range of the frame, refilled in place. */
+const caveFog: [number, number] = [0, 1];
 /** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
 const DORMANT_LOOKS = 2;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
@@ -462,7 +467,15 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           gl.uniform1f(u.uRoofInkDpr, roof === 'v1' ? frame.dpr : 0);
           gl.uniform3f(u.uEye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
           gl.uniform2f(u.uAir, hazeDistance(camera), rise);
-          gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);
+          const cave = flat ? undefined : options.cave?.();
+          if (cave) {
+            const fog = caveFogRange(cave, camera, heights?.exaggeration ?? 1, caveFog);
+            gl.uniform3f(u.uHaze, CAVE_DUSK[0], CAVE_DUSK[1], CAVE_DUSK[2]);
+            gl.uniform4f(u.uCave, cave.lightsOn ? 1 : 2, cave.lightsOn ? 1.05 - 0.45 * cave.settings.darkness : 0.08, fog[0], fog[1]);
+          } else {
+            gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);
+            gl.uniform4f(u.uCave, 0, 1, 1e9, 2e9);
+          }
           gl.uniform1i(u.uNight, night);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, grain.texture ?? null);

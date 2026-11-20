@@ -210,6 +210,18 @@ export function cavernWallAt(field: CavernField, x: number, y: number): number {
   const at = (a: number, b: number): number => field.wall[Math.min(n - 1, Math.max(0, b)) * n + Math.min(n - 1, Math.max(0, a))];
   return (at(i, j) * (1 - fx) + at(i + 1, j) * fx) * (1 - fy) + (at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx) * fy;
 }
+/** The layer's heights as the section model shows them, per cell of the field's grid: rock stops at the roof of its
+ * chamber and rises to it as a wall from its contour; floors stay as they are (the 3D view's surface does the same per
+ * vertex). The relief of the tilted map is this grid. */
+export function cavernSectionHeights(data: Float32Array, field: CavernField): Float32Array {
+  const out = new Float32Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    const roof = field.roof[i],
+      height = Math.min(data[i], roof);
+    out[i] = height + (roof - height) * field.wall[i];
+  }
+  return out;
+}
 /** Bilinear texel channel (0 rock, 1 roof - base, 2 openness, 3 clearance). */
 export function cavernTexelAt(field: CavernField, x: number, y: number, channel: number): number {
   const n = field.n,

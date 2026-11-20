@@ -16,8 +16,9 @@ import type { LiveLayer } from '../live/contract';
 import type { FrameCamera } from './contract';
 import { getViewDepth } from './viewDepth';
 
-/** The names the compositor gives the volume layers: in LIVE_LAYER_ORDER after 'city', before 'text'. */
-export type VolumeLayerName = 'buildings' | 'trees';
+/** The names the compositor gives the volume layers: in LIVE_LAYER_ORDER after 'city', before 'text'. 'cave' is the
+ * Underdark's roof and mushrooms (caveLayer.ts). */
+export type VolumeLayerName = 'buildings' | 'trees' | 'cave';
 /** The compositor layer contract restricted to world volumes. */
 export interface VolumeLayer extends Omit<LiveLayer, 'name' | 'isolated' | 'tilts'> {
   readonly name: VolumeLayerName;

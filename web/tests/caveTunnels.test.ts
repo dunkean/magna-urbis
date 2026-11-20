@@ -31,6 +31,8 @@ describe('Underdark tunnels', () => {
       ],
     };
     expect(tunnelStrokes(dug, 2).filter(s => s.d.length === 2 && s.d[0].y === s.d[1].y)).toHaveLength(2);
+    // A dug tunnel is the road's bore, not a carved floor: it keeps the road's width on a coarse terrain grid.
+    expect(tunnelStrokes(dug, 40)[0].width).toBe(6);
     expect(caveTunnelsSvg([tube], 20)).toContain('layer-cave-tunnels');
   });
   it('names each kind with its own generic word', () => {

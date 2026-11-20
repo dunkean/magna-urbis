@@ -201,11 +201,17 @@ void main(){
     // A roof face painted by the top view's town look: its colour holds the light of its slope and the ambience
     // (volumeRoofPaint); the grain marks of its cover family are the top view's, the snow class keeps its own.
     rgb=cls>.5&&cls<18.5?coverGrainMarks(base,cls,N,grainPosition,townGain):materialGrain(base,cls,N,grainPosition,fp);
+  }else if(uCave.x>.5){
+    // Underdark: no sky. The town's lanterns light the walls (warm, dimmed by the darkness), roofs get their side
+    // light only, and the lit openings glow while they are resolved.
+    rgb=materialGrain(base,cls,N,grainPosition,fp)*baseOcclusion(n,facadePosition)*vec3(1.,.84,.66)*uCave.y*mix(1.,.5,smoothstep(.45,.8,N.y));
+    if(lit&&uCave.x<1.5)rgb=mix(rgb,vec3(1.,.64,.28),.9*(1.-smoothstep(.45,1.2,length(fwidth(facadePosition)))));
   }else{
     float light=buildingLight(N);
     rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
   }
   if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
-  float haze=min(.62,1.-exp(-pow(vDistance/uAir.x,2.)*.11))*uAir.y;
+  // The far town dissolves into the cave's darkness as the ground does (uHaze is that darkness then), else into the haze.
+  float haze=uCave.x>.5?smoothstep(uCave.z,uCave.w,vDistance)*uAir.y:min(.62,1.-exp(-pow(vDistance/uAir.x,2.)*.11))*uAir.y;
   color=vec4(mix(rgb,uHaze,haze),1.);
 }`;

@@ -17,6 +17,7 @@ import { LATTICE, MAX_PATCHES, PatchList, lodEyeHeight, morphStart, patchLevels,
 import { SQUARE_FLOATS, SQUARE_TRIANGLES, TerrainMesh } from './terrainMesh';
 import { tileKey } from './tilePyramid';
 import { hazeDistance } from './volumes';
+import { CAVE_DUSK, caveFogRange, caveLamps, type WorldCave } from './cave';
 
 /** Control heights assumed for a map whose relief is not known: the ground is then draped flat. */
 const FLAT_GRID = 1024;
@@ -60,6 +61,9 @@ export class DrapedGround {
    * the two maps swap at each selection. */
   private tierOf = new Map<number, number>();
   private tierBefore = new Map<number, number>();
+  /** Underdark: the fog range and the lanterns of the frame, refilled in place. */
+  private readonly fog: [number, number] = [0, 1];
+  private readonly lamps = new Float32Array(64);
 
   constructor(
     private readonly gl: WebGL2RenderingContext,
@@ -207,8 +211,9 @@ export class DrapedGround {
     this.stats.uploads++;
   }
 
-  /** Draws the ground of a tilted frame over `paper`, the colour around the map (0..1 components). */
-  draw(frame: LiveFrame, heights: TerrainHeights | undefined, paper: readonly [number, number, number]): void {
+  /** Draws the ground of a tilted frame over `paper`, the colour around the map (0..1 components); in the Underdark
+   * (`cave`) under no sky, in the cave's own light. */
+  draw(frame: LiveFrame, heights: TerrainHeights | undefined, paper: readonly [number, number, number], cave?: WorldCave): void {
     const gl = this.gl,
       camera = frame.camera,
       stats = this.stats;
@@ -217,8 +222,10 @@ export class DrapedGround {
     const mesh = this.mesh!,
       rise = camera.rise;
     if (!this.selected(frame, heights)) this.select(frame, heights);
-    // Beyond the map and above the horizon: the paper in the top view, the haze once the relief stands.
-    gl.clearColor(paper[0] + (HAZE[0] - paper[0]) * rise, paper[1] + (HAZE[1] - paper[1]) * rise, paper[2] + (HAZE[2] - paper[2]) * rise, 1);
+    // Beyond the map and above the horizon: the paper in the top view, the haze once the relief stands (the darkness
+    // of the cave in the Underdark).
+    const air = cave && heights ? CAVE_DUSK : HAZE;
+    gl.clearColor(paper[0] + (air[0] - paper[0]) * rise, paper[1] + (air[1] - paper[1]) * rise, paper[2] + (air[2] - paper[2]) * rise, 1);
     gl.clearDepth(1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     stats.drawCalls = this.draws;
@@ -242,7 +249,16 @@ export class DrapedGround {
     else gl.uniform4f(u.uGrid, 1, 1, 0, 0);
     gl.uniform3f(u.uLight, LIGHT[0], LIGHT[1], LIGHT[2]);
     gl.uniform3f(u.uAir, SLOPE_LIGHT * rise, hazeDistance(camera), rise);
-    gl.uniform3f(u.uHaze, HAZE[0], HAZE[1], HAZE[2]);
+    gl.uniform3f(u.uHaze, air[0], air[1], air[2]);
+    if (cave && heights) {
+      const fog = caveFogRange(cave, camera, heights.exaggeration, this.fog);
+      gl.uniform4f(u.uCave, rise, fog[0], fog[1], cave.settings.darkness);
+      gl.uniform1i(u.uCaveLampCount, caveLamps(cave, 0, 0, this.lamps));
+      gl.uniform4fv(u.uCaveLamps, this.lamps);
+    } else {
+      gl.uniform4f(u.uCave, 0, 0, 1, 0);
+      gl.uniform1i(u.uCaveLampCount, 0);
+    }
     gl.uniform1i(u.uTiles, 0);
     gl.uniform1i(u.uHeights, 1);
     gl.uniform1i(u.uDrape, 2);

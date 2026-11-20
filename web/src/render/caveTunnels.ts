@@ -2,7 +2,7 @@
  *  each tunnel as floor between the rock; this layer only types it, discreetly:
  *  - lava tube: a smooth dark basalt lining with a faint ropy centre;
  *  - river passage: a narrow pale ledge path beside the water of the slot;
- *  - dug tunnel (roads): straight dressed edges and portals at both mouths. */
+ *  - dug tunnel (roads): bare floor at the road's width and a portal at both mouths; the road draws itself over it. */
 import type { CaveTunnel, Vec2 } from '../gen/types';
 
 export interface TunnelStroke {
@@ -38,7 +38,12 @@ export function tunnelStrokes(t: CaveTunnel, cell: number): TunnelStroke[] {
       { d: t.path, color: '#5b5262', width: Math.max(0.6, 0.18 * hw), alpha: 0.35, dash: [0.9 * hw, 0.6 * hw] },
     ];
   if (t.kind === 'river-passage') return [{ d: offset(t.path, 0.72 * hw), color: '#7d7488', width: Math.max(0.8, 0.22 * hw), alpha: 0.5, cap: 'round' }];
-  // Dug: dressed straight walls, a regular floor and two portal bars.
+  // Dug: the road's own bore, which the terrain carve never opened, so it keeps the road's width whatever the cell.
+  // Bare trodden floor under the road (no slab, no kerb lines) and a portal bar at each mouth.
+  return dugStrokes(t, t.halfWidth);
+}
+
+function dugStrokes(t: CaveTunnel, hw: number): TunnelStroke[] {
   const ends = [t.path[0], t.path[t.path.length - 1]];
   const portals = ends.map((p, k) => {
     const q = k ? t.path[t.path.length - 2] : t.path[1],
@@ -50,12 +55,7 @@ export function tunnelStrokes(t: CaveTunnel, cell: number): TunnelStroke[] {
       { x: p.x + (dy / l) * hw * 1.4, y: p.y - (dx / l) * hw * 1.4 },
     ];
   });
-  return [
-    { d: t.path, color: '#6f6878', width: 2 * hw, alpha: 0.4, cap: 'butt' },
-    { d: offset(t.path, hw), color: '#2a2630', width: Math.max(0.8, 0.2 * hw), alpha: 0.7, cap: 'butt' },
-    { d: offset(t.path, -hw), color: '#2a2630', width: Math.max(0.8, 0.2 * hw), alpha: 0.7, cap: 'butt' },
-    ...portals.map(d => ({ d, color: '#8a8094', width: Math.max(1, 0.5 * hw), alpha: 0.7, cap: 'butt' as const })),
-  ];
+  return [{ d: t.path, color: '#706a72', width: 2 * hw, alpha: 0.35, cap: 'round' }, ...portals.map(d => ({ d, color: '#8a8094', width: Math.max(1, 0.5 * hw), alpha: 0.7, cap: 'butt' as const }))];
 }
 
 export function drawCaveTunnels(ctx: CanvasRenderingContext2D, tunnels: readonly CaveTunnel[] | undefined, cell: number): void {

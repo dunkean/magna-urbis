@@ -9,6 +9,7 @@
  *   overlay : the cartography overlay, retained display lists replayed in this context (CanvasRenderer.createLiveLayer)
  *   city    : town meshes (NativeCityMap.createLiveLayer)
  *   buildings, trees : the volumes of a tilted frame (render/world/volumes.ts); they draw nothing in the top view
+ *   cave    : the roof and the mushrooms of the Underdark in a tilted frame (render/world/caveLayer.ts)
  *   text    : names and symbols from a glyph atlas (render/live/textLayer.ts)
  *
  * The compositor (render/live/compositor.ts) owns the canvas, the context, the frame, the isolated group target and
@@ -45,13 +46,14 @@
 import type { Rect4, View } from '../view';
 import type { DrapeSource, DrapeTiles, FrameCamera, WorldRelief } from '../world/contract';
 import type { TerrainHeights } from '../world/heights';
+import type { WorldCave } from '../world/cave';
 
 /** Context attributes of the compositor canvas. `getContext('webgl2', ...)` on that canvas returns this context. */
 export const LIVE_CONTEXT_ATTRIBUTES: WebGLContextAttributes = { alpha: true, premultipliedAlpha: true, antialias: false, depth: true, stencil: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
 
-export type LiveLayerName = 'ground' | 'water' | 'overlay' | 'city' | 'buildings' | 'trees' | 'text';
+export type LiveLayerName = 'ground' | 'water' | 'overlay' | 'city' | 'buildings' | 'trees' | 'cave' | 'text';
 /** Bottom to top. */
-export const LIVE_LAYER_ORDER: readonly LiveLayerName[] = ['ground', 'water', 'overlay', 'city', 'buildings', 'trees', 'text'];
+export const LIVE_LAYER_ORDER: readonly LiveLayerName[] = ['ground', 'water', 'overlay', 'city', 'buildings', 'trees', 'cave', 'text'];
 
 export interface LiveFrame {
   readonly gl: WebGL2RenderingContext;
@@ -180,6 +182,8 @@ export interface LiveGroundOptions {
   paper(): string;
   /** The relief of the map, for the frames of a tilted camera; undefined: such a frame drapes the ground flat. */
   terrain(): TerrainHeights | undefined;
+  /** The Underdark of the map (render/world/cave.ts): a tilted frame shows its ground in the cave's darkness. */
+  cave?(): WorldCave | undefined;
   /** GPU memory the tile cache may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a new frame (a finer tile arrived). */

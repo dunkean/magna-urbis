@@ -198,7 +198,25 @@ export function poseCamera(pose: CameraPose, view: View, cssH: number, relief?: 
 export type WritableFrameCamera = { -readonly [K in keyof FrameCamera]: FrameCamera[K] } & { readonly pose: CameraPose };
 export function createFrameCamera(): WritableFrameCamera {
   const pose = createCameraPose();
-  return { pose, pitch: 0, yaw: 0, tilted: false, rise: 0, viewProjection: new Float32Array(16), targetViewProjection: new Float32Array(16), target: pose.target, eye: pose.eye, right: pose.right, up: pose.up, forward: pose.forward, focal: 1, distance: 1, near: 0, far: 1 };
+  return {
+    pose,
+    pitch: 0,
+    yaw: 0,
+    tilted: false,
+    free: false,
+    rise: 0,
+    viewProjection: new Float32Array(16),
+    targetViewProjection: new Float32Array(16),
+    target: pose.target,
+    eye: pose.eye,
+    right: pose.right,
+    up: pose.up,
+    forward: pose.forward,
+    focal: 1,
+    distance: 1,
+    near: 0,
+    far: 1,
+  };
 }
 
 /** One row set of a perspective matrix: `tr`, `tu`, `tf` are the eye-relative origin along right, up and forward. */
@@ -223,6 +241,7 @@ export function frameCamera(camera: WritableFrameCamera, view: View, cssW: numbe
   camera.pitch = pose.pitch;
   camera.yaw = pose.yaw;
   camera.tilted = pose.tilted;
+  camera.free = pose.free;
   camera.rise = pose.rise;
   camera.focal = pose.focal * dpr;
   camera.distance = pose.distance;
