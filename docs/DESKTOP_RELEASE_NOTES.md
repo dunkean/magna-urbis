@@ -49,6 +49,9 @@
 - Underdark, tilted map: a brighter cave, with lantern light around isolated farms and more glowing mushrooms.
 - Underdark lava tubes are no longer drawn as a dark band with a dashed centre line.
 - Underdark road tunnels are drawn as bare ground at the road's own width instead of a wide grey slab with kerbs.
+- Underdark: fungal farms stay by the cave towns. The countryside no longer fills with hundreds of farmsteads: no roadside farms or farm hamlets, and at most one isolated farm per 500 inhabitants (40 per map).
+- Underdark: fungal farm beds are dark compost of the cave floor's tones with small, faintly glowing mushroom caps in every map style, instead of a pale field with a purple symbol.
+- Underdark lava tubes and river passages are narrow guts a few metres wide on every map size, instead of passages at least two terrain cells wide; roads and rivers still pass through them.
 
 macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
 

@@ -4,7 +4,7 @@ import { fakeWorld, mockCanvas, MockPath2D } from '../scripts/fakeworld';
 import { renderSvg } from '../src/render/svg';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { biomePalette } from '../src/render/biomes';
-import { underdarkMark, underdarkPatterns, underdarkTextureSpec } from '../src/render/underdark';
+import { fungalBedLook, underdarkMark, underdarkPatterns, underdarkTextureSpec } from '../src/render/underdark';
 import { cavernWallFill, cavernRockPixels, cavernFungalRoomsSvg } from '../src/render/caverns';
 import { supportsPaintedBiome } from '../src/render/brushes';
 import { fmtPop, legendModel, townTitle } from '../src/render/legend';
@@ -65,6 +65,24 @@ describe('cavern walls and underground pebble correction', () => {
     expect(underdarkTextureSpec('commons')).toEqual({ spacing: 28, radius: 2.5 });
     expect(underdarkPatterns(pal, 1)).toBe(underdarkPatterns(pal, 20));
     expect(underdarkPatterns(pal)).toContain('id="p-commons" patternUnits="userSpaceOnUse" width="28" height="28"');
+  });
+  it('draws fungal beds as dark compost with small caps, never a pale patch with a purple glyph', () => {
+    const rgb = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const light = (hex: string) => rgb(hex).reduce((n, v, i) => n + v * [0.3, 0.55, 0.15][i], 0);
+    const earthy = (hex: string) => rgb(hex)[2] <= rgb(hex)[0] + 0.02;
+    for (const style of ['parchment', 'topographic', 'atlas', 'night'] as const) {
+      const pal = biomePalette(style, 'underdark');
+      for (const look of [fungalBedLook(pal), fungalBedLook(pal, true)]) {
+        expect(light(look.bed), style).toBeLessThan(0.45);
+        expect(earthy(look.bed) && earthy(look.cap), style).toBe(true);
+      }
+      expect(fungalBedLook(pal).bed).toBe(pal.land.garden);
+      expect(fungalBedLook(pal, true).edge).toBeUndefined();
+      // Caps only: filled circles of the bed look, no outline and no polygon glyph.
+      const marks = underdarkMark('garden', 10, 10, 3, pal);
+      expect(marks.every(m => m.t === 'circle' && !m.stroke)).toBe(true);
+      expect(marks.filter(m => m.t === 'circle' && m.fill === fungalBedLook(pal).cap).length).toBeGreaterThanOrEqual(3);
+    }
   });
   it('clips SVG water and objects to authoritative compound floors and preserves the old biome', () => {
     const w = cavernWorld(),

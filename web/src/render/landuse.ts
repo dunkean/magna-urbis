@@ -15,7 +15,7 @@ import { f1, pathD } from './util';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
 import { CANOPY_LEVELS, canopyRuns, naturalMarks, regionalRank, roadCanopyOpacity, roadToneAt, roadWidth, type RoadStyle } from './roadStyle';
 import { MAP_STROKES, svgMapStroke } from './strokes';
-import { underdarkPatterns, underdarkMarkSvg } from './underdark';
+import { fungalBedLook, underdarkPatterns, underdarkMarkSvg } from './underdark';
 import { canopyAreaMarks, canopySvg, type VegetationStyle } from './canopy';
 import { insideArea } from './scene';
 import { forestLandPaint, FOREST_EDGE_WIDTH, FOREST_EDGE_BLUR } from './landuseForestTone';
@@ -313,7 +313,9 @@ function farmSvg(f: Farmstead, pal: Palette, brushes?: SvgBrushes, fungal = f.cu
     return d ? `<path d="${d}" fill="${c}"${extra}/>` : '';
   };
   let o = `<g class="farm" data-type="${f.type ?? ''}" data-size="${f.size ?? ''}">`;
-  o += fill('garden', pal.land.garden, ` stroke="${pal.hedge}" stroke-width="0.4"`) + fill('orchard', pal.land.orchard) + fill('paddock', pal.land.pasture);
+  // A fungal bed (render/underdark.ts fungalBedLook): dark compost ringed by a light farm ink, its caps from p-fungal-farm.
+  const bed = fungal ? fungalBedLook(pal) : undefined;
+  o += (bed ? fill('garden', bed.bed, bed.edge ? ` stroke="${bed.edge}" stroke-width="0.3" stroke-opacity="0.45"` : '') : fill('garden', pal.land.garden, ` stroke="${pal.hedge}" stroke-width="0.4"`)) + fill('orchard', pal.land.orchard) + fill('paddock', pal.land.pasture);
   if (brushes) o += (fungal ? '' : fill('garden', `url(#${brushes.pattern('garden')})`)) + fill('orchard', `url(#${brushes.pattern('orchard')})`);
   if (fungal) o += fill('garden', 'url(#p-fungal-farm)');
   o += fill('platform', 'none', ` stroke="${pal.farmInk}" stroke-width="0.5" stroke-dasharray="1.6 1.2" stroke-opacity="0.7"`);
@@ -361,7 +363,7 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
   // farm drives + farmsteads first (below roads)
   const farms = world.landuse?.farmsteads ?? [];
   if ((layers.city || layers.roads) && farms.length) {
-    if (isUnderdarkBiome(world.options.biome) || farms.some(f => f.cultivation === 'fungal')) out += `<defs><pattern id="p-fungal-farm" patternUnits="userSpaceOnUse" width="8" height="8">${underdarkMarkSvg('garden', 4, 4, 1.7, pal)}</pattern></defs>`;
+    if (isUnderdarkBiome(world.options.biome) || farms.some(f => f.cultivation === 'fungal')) out += `<defs><pattern id="p-fungal-farm" patternUnits="userSpaceOnUse" width="8" height="8">${underdarkMarkSvg('garden', 4, 4, 3.4, pal)}</pattern></defs>`;
     out += `<g class="farmsteads">`;
     for (const f of farms) {
       const dl = f.drive.length > 1 ? Math.hypot(f.drive[f.drive.length - 1].x - f.drive[0].x, f.drive[f.drive.length - 1].y - f.drive[0].y) : 0;
