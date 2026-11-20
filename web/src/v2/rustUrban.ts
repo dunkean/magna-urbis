@@ -365,6 +365,11 @@ export { projectRustTown } from './rustTownProjection';
 import { projectRustTown } from './rustTownProjection';
 
 /** Execute only invalidated native stages; house edits do not rerun terrain, layouts or cadastral partition. */
+/** Towns a run generates at once on the shared WASM engine (`townLanes.ts`): their quarters requests form one batch. */
+let urbanQuartersWave = 1;
+export function setUrbanQuartersWave(towns: number): void {
+  urbanQuartersWave = towns;
+}
 /** Free the dedicated native sessions of the concurrent city lanes (one raster each). */
 export async function releaseUrbanLanes(): Promise<void> {
   const lanes = [...engines.entries()].filter(([name]) => name.includes('|lane'));
@@ -431,7 +436,20 @@ export async function generateRustTown(
       : { backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: retainedLayouts ?? [], streetEdits: previous?.streetEdits, buildingIds: [], warnings: [] };
   // Reuse one terrain handle for this ordered request chain, not one copy for each urban step.
   let engine: UrbanEngine | undefined;
+  // Wall time of each stage request as this realm sees it (engine, transfer, decode), kept in the town's stats.
+  const stageMs: Record<string, number> = {};
+  let wasmMode: string | undefined;
   const request = async (kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity', extras: Record<string, unknown>): Promise<SiteResponse> => {
+    const t0 = performance.now();
+    try {
+      const response = await stageRequest(kind, extras);
+      if (response.wasm) wasmMode = `${response.wasm.mode}:${response.wasm.threads}`;
+      return response;
+    } finally {
+      stageMs[kind] = (stageMs[kind] ?? 0) + performance.now() - t0;
+    }
+  };
+  const stageRequest = async (kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity', extras: Record<string, unknown>): Promise<SiteResponse> => {
     let raster: SettlementRaster | undefined;
     const engineKey = `${backend}|${runtime?.server ?? ''}${lane === undefined ? '' : `|lane${lane}`}`;
     let retained = engines.get(engineKey);
@@ -439,8 +457,8 @@ export async function generateRustTown(
     if (!retained) {
       resume = shown;
       report('urban-engine', backend === 'native' ? 'Loading the native Rust urban engine…' : 'Loading the Rust/WASM urban engine…', 0);
-      const module = await import('../../../rust/bridge/urban');
-      retained = { engine: module.createUrbanEngine(runtime) };
+      // Set before any await: towns started together share one engine (one terrain, one quarters batch).
+      retained = { engine: import('../../../rust/bridge/urban').then(m => m.createUrbanEngine(runtime)) };
       engines.set(engineKey, retained);
     }
     try {
@@ -507,11 +525,25 @@ export async function generateRustTown(
         return { id: 1, error: String(error) };
       }
     }
-    input = sent;
+    // WASM: the engine replies the display rows of the sites (binary) instead of the complete requests.
+    input =
+      backend !== 'native' && kind === 'buildingSites' && visuals
+        ? { ...sent, visuals: true }
+        : // Towns generated concurrently on this WASM engine: their quarters run as one parallel call.
+          backend !== 'native' && kind === 'quarters' && urbanQuartersWave > 1
+          ? { ...sent, batch: urbanQuartersWave }
+          : sent;
     const { visuals: _visuals, ...plain } = extras;
     extras = plain;
     try {
       const pending = engine.run({ id: 1, kind, seed, runtime, ...(raster ? { raster } : {}), ...input } as Parameters<UrbanEngine['run']>[0], { terrainSent: resumed });
+      // The WASM engine takes the raster as soon as it is called: the other towns go on at once (a failure resets the key below).
+      if (raster && backend !== 'native' && primed) {
+        retained.terrainKey = terrainKey;
+        retained.priming = undefined;
+        primed();
+        primed = undefined;
+      }
       if (kind === 'quarters' && backend === 'native') {
         // The engine composes the town on its own thread: meanwhile this worker computes the raster-only fields of the
         // land-use stage that follows (finishTowns), once the request has left (one macrotask).
@@ -529,7 +561,9 @@ export async function generateRustTown(
       // Parcels, programme and built capacity reply with a binary pack: the snapshot and the projection read objects
       // (a built-capacity pack takes its parcels from the uploaded partitions).
       if (result.partitionsPack && !result.partitions) result.partitions = partitionsFromPack(result.partitionsPack, extras.partitions as Partition[] | undefined);
-      if (!result.error && raster) retained.terrainKey = terrainKey;
+      let sites: UrbanSiteVisual[] | undefined;
+      if (result.siteVisuals) sites = (await import('../render/cityDisplayBuffers')).decodeCitySiteVisuals(result.siteVisuals) as unknown as UrbanSiteVisual[];
+      if (raster) retained.terrainKey = result.error ? undefined : terrainKey;
       if (backend === 'native' && !result.error) {
         if (kind === 'quarters') retained.layouts = result.layouts;
         else if (kind === 'parcels' || kind === 'programme') {
@@ -543,7 +577,7 @@ export async function generateRustTown(
           retained.source = result.urbanSource;
         }
       } else if (backend === 'native') retained.layouts = retained.partitions = retained.source = undefined;
-      return result;
+      return sites ? { ...result, sites } : result;
     } finally {
       if (primed) {
         retained.priming = undefined;
@@ -644,8 +678,10 @@ export async function generateRustTown(
         snapshot.sites = response.sites;
         snapshot.siteQuery = response.siteQuery;
       } else {
-        const requests = required<PlacementRequest[]>(response, 'placementRequests');
+        const requests = required<PlacementRequest[]>(response, 'placementRequests'),
+          t0 = performance.now();
         snapshot.sites = requests.map((request, offset) => projectUrbanSite(request as CityPlacementRequest, offset));
+        stageMs.siteProjection = performance.now() - t0;
         // City volumes keep only the projection; the complete requests stay in this worker for edits.
         if (architecture === 'silhouette') wasmSiteRequests.set(snapshot.sites, requests);
         else snapshot.requests = requests;
@@ -933,7 +969,9 @@ export async function generateRustTown(
     ]),
   ];
   const projection = stageIndex < 3 ? { ...snapshot, scene: undefined, partitions: stageIndex === 0 ? undefined : stageIndex === 1 ? (snapshot.cadastralPartitions ?? snapshot.partitions) : (snapshot.programmePartitions ?? snapshot.partitions) } : snapshot;
+  const projected = performance.now();
   const urban = projectRustTown(projection, options.population, options.culture);
+  stageMs.townProjection = performance.now() - projected;
   snapshot.buildingIds = projection.buildingIds;
   report('urban-complete', `Rust · ${target === 'buildings' ? 'maisons' : target === 'programme' ? 'programme' : target === 'parcels' ? 'parcelles' : 'plan'} prêt`, 5);
   return {
@@ -946,6 +984,8 @@ export async function generateRustTown(
       [`v2.urbanRefusals:${key}`]: stageIndex >= 3 ? (snapshot.scene?.refusals.length ?? 0) : 0,
       [`v2.housesRegenerated:${key}`]: stageIndex >= 3 ? (snapshot.lastBuildingRequests ?? 0) : 0,
       [`v2.urbanWarnings:${key}`]: [...new Set(snapshot.warnings)].join(' | '),
+      ...Object.fromEntries(Object.entries(stageMs).map(([stage, ms]) => [`ms.town.${stage}:${key}`, Math.round(ms)])),
+      ...(wasmMode ? { [`v2.urbanWasm:${key}`]: wasmMode } : {}),
     },
   };
 }

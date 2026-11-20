@@ -344,6 +344,10 @@ export interface UrbanRequest {
   keys?: string[];
   /** Native programme: continue from the parcels the engine session holds (no layouts/partitions upload). */
   retained?: boolean;
+  /** WASM building sites: reply their display rows (`siteVisuals`) instead of the complete requests. */
+  visuals?: boolean;
+  /** WASM quarters: towns generated concurrently on this engine; their quarters run as one parallel call. */
+  batch?: number;
 }
 export interface UrbanResponse {
   id: number;
@@ -356,6 +360,8 @@ export interface UrbanResponse {
   /** `magna-city-parcels` pack of the partitions, in place of `partitions`: the realm that
    * consumes the response materialises it (`responsePartitions`, `partitionsFromPack`). */
   partitionsPack?: ArrayBuffer;
+  /** WASM building sites with `visuals`: the `magna-city-sites` display rows (`decodeCitySiteVisuals`), as the native `buildingSiteVisuals` read. */
+  siteVisuals?: ArrayBuffer;
   /** Browser WASM execution mode that produced this response (threads/single/pool). */
   wasm?: WasmThreadsInfo;
 }
@@ -490,14 +496,15 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   // layouts and partitions of the last stage under ids. `items` are the JS objects
   // handed to the caller; a later request carrying the same objects (or the
   // layoutsId) reuses the Rust copy instead of re-sending ≈5 MB of JSON.
-  // `json` is the layouts text the UI received, kept only for cache digests.
-  let retainedLayouts: { id: number; items: Layout[]; json?: string; digest?: string; rust?: number; terrain?: SettlementTerrain } | undefined;
+  // `json` also supplies the layouts payload for the legacy WASM API.
+  let retainedLayouts: { id: number; items: Layout[]; json?: string; digest?: Promise<string>; rust?: number; terrain?: SettlementTerrain } | undefined;
   // Pack replies: `pack` is the buffer handed out; the partitions the caller
   // materialises from it (`partitionsFromPack`) are recognised by `packOf`.
   let retainedPartitions: { items?: Partition[]; pack?: ArrayBuffer; rust: number; terrain: SettlementTerrain } | undefined;
-  // Rust JSON text of every product array this engine returned (cache digests and sizes).
+  // Rust JSON text of cached product arrays (digests and sizes).
   const texts = new WeakMap<object, string>(),
     digests = new WeakMap<object, Promise<string>>();
+  const layoutSources = new WeakMap<Layout, Layout[]>();
   const parsed = <T extends object>(json: string): T => {
     const value = JSON.parse(json) as T;
     texts.set(value, json);
@@ -513,8 +520,8 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     return digest;
   };
   // Cache hits skip the raster upload; build the terrain lazily on the first miss.
-  let pendingRaster: SettlementRaster | undefined, terrainRaster: SettlementRaster | undefined, pendingDigest: string | undefined;
-  const rasterDigests = new WeakMap<object, Promise<string>>();
+  let pendingRaster: SettlementRaster | undefined, terrainRaster: SettlementRaster | undefined;
+  const rasterDigests = new WeakMap<SettlementRaster, Promise<string>>();
   const native = nativeRasterClient();
   type Requests = import('./urbanArchitecture').PlacementRequest[];
   const sameItems = <T>(a: readonly T[], b: readonly T[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -528,6 +535,8 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     retain_partitions_pack(bytes: Uint8Array): number;
     urban_built_capacity_resident(partitionsId: number, scene: string): Uint8Array;
   };
+  type SiteDisplayTerrain = SettlementTerrain & { urban_building_site_display_resident(seed: string, layoutsId: number, partitionsId: number, culture: string | undefined, version: number): Uint8Array };
+  const siteDisplay = (t: SettlementTerrain): boolean => typeof (t as Partial<SiteDisplayTerrain>).urban_building_site_display_resident === 'function';
   // A boolean, not a type guard: with the current package every terrain has the pack calls, and a guard would
   // type the branches kept for a package built before them (threads and release variants rebuild separately) as unreachable.
   const packs = (t: SettlementTerrain): boolean => typeof (t as Partial<PackTerrain>).urban_parcels_resident_pack === 'function';
@@ -599,29 +608,72 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
     return { partitions: parsed<Partition[]>(json), rust };
   };
   const sitesResident = async (t: SettlementTerrain, seed: string, layoutsId: number, partitionsId: number, culture: string | undefined): Promise<Requests> => {
-    const serial = () => parsed<Requests>(t.urban_building_sites_resident(seed, layoutsId, partitionsId, culture, 0, 0xffffffff));
+    const serial = () => JSON.parse(t.urban_building_sites_resident(seed, layoutsId, partitionsId, culture, 0, 0xffffffff)) as Requests;
     if (!pool || pool.size < 2) return serial();
     const total = t.urban_building_sites_total_resident(layoutsId, partitionsId);
     if (total < 32) return serial();
     // Several slices per participant: sites differ in cost, the queue balances them.
     const jobs = ranges(total, Math.min(Math.ceil(total / 16), pool.size * 4)).map(([a, b]): PoolArgs => ({ start: String(a), end: String(b) }));
     const parts = await pool.run('sites-resident', jobs, { seed, culture, image: t.export_resident(layoutsId, partitionsId) }, a => t.urban_building_sites_resident(seed, layoutsId, partitionsId, culture, Number(a.start), Number(a.end)));
-    return parsed<Requests>(joinArrays(parts));
+    return JSON.parse(joinArrays(parts)) as Requests;
   };
+  type BatchTerrain = SettlementTerrain & { urban_quarters_batch(jobs: string): string };
+  const quartersBatches = (t: SettlementTerrain): boolean => typeof (t as Partial<BatchTerrain>).urban_quarters_batch === 'function';
+  type QuartersJob = { seed: string; sites: string; config: string; roads: string };
+  /** Quarters jobs gathered until the `expected` towns asked, then run as one call. The wait only bounds a town that
+   * reuses its plan and never asks; a job that arrives later starts a new call. On a failed call each job runs alone:
+   * its own result or its own error. */
+  let wave: { t: SettlementTerrain; jobs: { job: QuartersJob; resolve: (json: string) => void; reject: (error: unknown) => void }[]; expected: number; timer: ReturnType<typeof setTimeout> } | undefined;
+  const QUARTERS_WAVE_WAIT_MS = 3000;
+  const flushQuarters = (): void => {
+    const current = wave;
+    if (!current) return;
+    wave = undefined;
+    clearTimeout(current.timer);
+    const { t, jobs } = current;
+    const text = (j: QuartersJob): string => `{"seed":${JSON.stringify(j.seed)},"sites":${j.sites},"config":${j.config},"roads":${j.roads}}`;
+    let replies: string[] | undefined;
+    if (jobs.length > 1)
+      try {
+        replies = (t as BatchTerrain).urban_quarters_batch(`[${jobs.map(({ job }) => text(job)).join(',')}]`).split('\u001e');
+      } catch {
+        /* each job alone below */
+      }
+    jobs.forEach(({ job, resolve, reject }, i) => {
+      if (replies?.length === jobs.length) {
+        resolve(replies[i]);
+        return;
+      }
+      try {
+        resolve((t as BatchTerrain).urban_quarters_batch(`[${text(job)}]`));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+  const batchQuarters = (t: SettlementTerrain, job: QuartersJob, expected: number): Promise<string> =>
+    new Promise((resolve, reject) => {
+      if (wave && wave.t !== t) flushQuarters();
+      wave ??= { t, jobs: [], expected, timer: setTimeout(flushQuarters, QUARTERS_WAVE_WAIT_MS) };
+      wave.jobs.push({ job, resolve, reject });
+      if (wave.jobs.length >= wave.expected) flushQuarters();
+    });
   // JSON path of packages without the resident API.
   const quartersJson = async (t: SettlementTerrain, seed: string, sites: RoadSite[], config: string, roads: string): Promise<Layout[]> => {
-    const serial = () => JSON.parse(t.urban_quarters(seed, JSON.stringify(sites), config, roads)) as Layout[];
+    const serial = () => parsed<Layout[]>(t.urban_quarters(seed, JSON.stringify(sites), config, roads));
     if (!pool || pool.size < 2 || sites.length < 2 || new Set(sites.map(s => s.key)).size !== sites.length) return serial();
     const jobs = ranges(sites.length, pool.size).map(([a, b]): PoolArgs => ({ seed, sites: JSON.stringify(sites.slice(a, b)), config, roads }));
     try {
-      return (await pool.run('quarters', jobs, undefined, a => t.urban_quarters(a.seed!, a.sites!, a.config!, a.roads!))).flatMap(json => JSON.parse(json) as Layout[]);
+      return parsed<Layout[]>(joinArrays(await pool.run('quarters', jobs, undefined, a => t.urban_quarters(a.seed!, a.sites!, a.config!, a.roads!))));
     } catch {
       return serial();
     }
   };
   /** `keepLayouts`: a lazily built terrain for a cache-hit plan keeps the layouts the caller refers to. */
   const runWasmUncached = async (request: UrbanRequest, keepLayouts = false): Promise<UrbanResponse> => {
-    if (request.raster) {
+    // Concurrent towns send the same raster object: the terrain built from it serves them all (a rebuild would
+    // free the terrain a pending quarters batch holds).
+    if (request.raster && !(terrain && terrainRaster === request.raster)) {
       const r = request.raster;
       validatePhysicalTerrain(r.physical);
       // Bound helper copies of the full height plane; a later smaller raster can use the pool again.
@@ -664,6 +716,14 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       retainedPartitions = undefined;
       const config = JSON.stringify(nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true))),
         roads = JSON.stringify(request.roads ?? []);
+      if (resident && (request.batch ?? 1) > 1 && quartersBatches(t)) {
+        // Independent towns: one call, the towns as parallel items of the rayon pool. Nothing is resident:
+        // the next stage uploads these layouts, as after a cache hit.
+        const json = await batchQuarters(t, { seed: request.seed, sites: JSON.stringify(request.sites ?? []), config, roads }, request.batch!);
+        const layouts = parsed<Layout[]>(json);
+        retainedLayouts = { id: request.id, items: layouts, json };
+        return { id: request.id, layouts, ms: performance.now() - start };
+      }
       if (resident) {
         const { layouts, json } = await quartersResident(t, request.seed, request.sites ?? [], config, roads);
         retainedLayouts = { id: request.id, items: layouts, json, rust: t.resident_layouts_id(), terrain: t };
@@ -699,6 +759,11 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         return { id: request.id, partitions, ms: performance.now() - start };
       }
       if (request.kind === 'buildingSites') {
+        // Display rows only, generated in chunks: the complete requests are read on demand (house edits).
+        if (request.visuals && siteDisplay(t)) {
+          const siteVisuals = packBuffer((t as SiteDisplayTerrain).urban_building_site_display_resident(request.seed, layoutsId, partitionsHandle(t, request.partitions ?? []), request.architectureCulture, 2));
+          return { id: request.id, siteVisuals, ms: performance.now() - start };
+        }
         const placementRequests = await sitesResident(t, request.seed, layoutsId, partitionsHandle(t, request.partitions ?? []), request.architectureCulture);
         return { id: request.id, placementRequests, ms: performance.now() - start };
       }
@@ -747,52 +812,71 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       }
     }
   };
+  type CachedUrbanResult = Pick<UrbanResponse, 'partitions' | 'partitionsPack'> & { layoutsJson?: string };
+  const rememberLayouts = (layouts: Layout[]): void => {
+    if (layouts.length) layoutSources.set(layouts[0], layouts);
+  };
   const runCached = async (request: UrbanRequest): Promise<UrbanResponse> => {
+    const raster = (pendingRaster = request.raster ?? pendingRaster);
     let key: string | undefined;
-    try {
-      if (request.raster) {
-        pendingRaster = request.raster;
-        let digest = rasterDigests.get(request.raster);
-        if (!digest) rasterDigests.set(request.raster, (digest = digestValue(request.raster)));
-        pendingDigest = await digest;
+    // The normal town chain retains its building sites with the snapshot.
+    if (raster && request.kind !== 'buildingSites') {
+      try {
+        let layoutsDigest: string | undefined;
+        if (request.kind !== 'quarters' && !request.layouts && request.layoutsId !== undefined) {
+          const held = retainedLayouts;
+          if (held?.id !== request.layoutsId) return runWasm(request);
+          layoutsDigest = await (textDigest(held.items) ?? (held.digest ??= sha256([held.json ?? JSON.stringify(nativeLayouts(held.items))])));
+        }
+        // Keep the upload flag in the key. The raster bytes are covered by the terrain digest.
+        const keyed: Record<string, unknown> = { ...request, raster: request.raster ? true : undefined };
+        if (request.layouts) {
+          // Road replay can wrap the same layout objects in a new array.
+          const source = layoutSources.get(request.layouts[0]);
+          const layouts = source && (source === request.layouts || sameItems(request.layouts, source)) ? source : request.layouts;
+          const digest = textDigest(layouts);
+          if (digest) keyed.layouts = { $digest: await digest };
+        }
+        if (request.partitions) {
+          const digest = textDigest(request.partitions);
+          if (digest) keyed.partitions = { $digest: await digest };
+        }
+        let digest = rasterDigests.get(raster);
+        if (!digest) rasterDigests.set(raster, (digest = digestValue(raster)));
+        key = await urbanCacheKey(keyed, { engine: engineId(), terrain: await digest, retainedLayouts: layoutsDigest });
+      } catch {
+        /* cache is optional */
       }
-      let layoutsDigest: string | undefined;
-      if (request.kind !== 'quarters' && !request.layouts && request.layoutsId !== undefined) {
-        if (retainedLayouts?.id !== request.layoutsId) return runWasm(request);
-        retainedLayouts.digest ??= await sha256([retainedLayouts.json ?? JSON.stringify(nativeLayouts(retainedLayouts.items))]);
-        layoutsDigest = retainedLayouts.digest;
-      }
-      // Products this engine returned are keyed by the digest of their Rust
-      // text, without re-serialising megabytes of geometry in JS.
-      const keyed: Record<string, unknown> = { ...request };
-      for (const name of ['layouts', 'partitions'] as const) {
-        const digest = request[name] && textDigest(request[name]!);
-        if (digest) keyed[name] = { $digest: await digest };
-      }
-      if (pendingDigest) key = await urbanCacheKey(keyed, { engine: engineId(), terrain: pendingDigest, retainedLayouts: layoutsDigest });
-    } catch {
-      key = undefined;
     }
     if (key) {
-      const hit = await readUrbanCache<Pick<UrbanResponse, 'layouts' | 'partitions' | 'placementRequests' | 'partitionsPack'>>(key);
-      if (hit && (hit.layouts || hit.partitions || hit.placementRequests || hit.partitionsPack)) {
-        if (request.kind === 'quarters' && hit.layouts) retainedLayouts = { id: request.id, items: hit.layouts };
-        return { id: request.id, ...hit, ms: 0 };
+      try {
+        const hit = await readUrbanCache<CachedUrbanResult>(key);
+        if (request.kind === 'quarters' && hit?.layoutsJson !== undefined) {
+          const layouts = parsed<Layout[]>(hit.layoutsJson);
+          const json = resident ? hit.layoutsJson : JSON.stringify(nativeLayouts(layouts));
+          rememberLayouts(layouts);
+          retainedLayouts = { id: request.id, items: layouts, json };
+          return { id: request.id, layouts, ms: 0 };
+        }
+        if (hit?.partitions || hit?.partitionsPack) return { id: request.id, ...hit, ms: 0 };
+      } catch {
+        /* cache is optional */
       }
     }
-    const lazy = !request.raster && !!pendingRaster && terrainRaster !== pendingRaster;
-    const response = await runWasm(lazy ? { ...request, raster: pendingRaster } : request, lazy && request.kind !== 'quarters');
-    if (!response.error && key) {
-      const { id: _id, ms: _ms, wasm: _wasm, ...value } = response;
-      // Byte size from the Rust texts when known: no JSON.stringify of the result.
-      const present = ([value.layouts, value.partitions, value.placementRequests] as (object | undefined)[]).filter((v): v is object => !!v);
-      const known = present.every(v => texts.has(v)) ? present.reduce((n, v) => n + texts.get(v)!.length, 0) : undefined;
-      // The pack is stored as bytes. Copy it now: the caller may transfer (detach) the response's buffer.
-      const pack = value.partitionsPack;
-      if (pack && pack.byteLength > URBAN_CACHE_MAX_BYTES / 2) {
-        /* too large to cache */
-      } else if (pack) void writeUrbanCache(key, { ...value, partitionsPack: pack.slice(0) }, known === undefined ? undefined : known + pack.byteLength);
-      else void writeUrbanCache(key, value, present.length ? known : undefined);
+    const lazy = !request.raster && !!raster && terrainRaster !== raster;
+    const response = await runWasm(lazy ? { ...request, raster } : request, lazy && request.kind !== 'quarters');
+    if (!response.error) {
+      const { layouts, partitions, partitionsPack: pack } = response;
+      if (layouts) {
+        rememberLayouts(layouts);
+        const json = texts.get(layouts);
+        if (key && json !== undefined) void writeUrbanCache(key, { layoutsJson: json }, json.length);
+      } else if (key && pack && pack.byteLength <= URBAN_CACHE_MAX_BYTES / 2) {
+        // Copy before the caller can transfer the response's buffer.
+        void writeUrbanCache(key, { partitionsPack: pack.slice(0) }, pack.byteLength);
+      } else if (key && partitions) {
+        void writeUrbanCache(key, { partitions }, texts.get(partitions)?.length);
+      }
     }
     return response;
   };

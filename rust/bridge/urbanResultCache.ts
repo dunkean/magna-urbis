@@ -4,7 +4,8 @@
 export const URBAN_CACHE_VERSION = 2;
 export const URBAN_CACHE_MAX_BYTES = 300 * 1024 * 1024;
 const DB_NAME = 'magna-urbis-urban-cache',
-  STORE = 'results';
+  STORE = 'results',
+  META = 'metadata';
 
 export interface UrbanCacheEntryMeta {
   key: string;
@@ -45,8 +46,8 @@ export function digestValue(value: unknown): Promise<string> {
   return sha256([json ?? 'null', ...binary]);
 }
 
-/** Key = digest of everything the result depends on. `retained` is the exact
- * layouts JSON (or raster digest) the request refers to indirectly. */
+/** Key = digest of everything the result depends on, including the digests
+ * of the raster and any layouts the request refers to indirectly. */
 export async function urbanCacheKey(request: Record<string, unknown>, context: { engine: string; terrain?: string; retainedLayouts?: string }): Promise<string> {
   const input: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(request)) if (!IGNORED.has(name) && name !== 'layoutsId' && value !== undefined) input[name] = value;
@@ -67,7 +68,6 @@ export function planEviction(entries: UrbanCacheEntryMeta[], incoming: number, m
 
 interface StoredEntry {
   key: string;
-  time: number;
   bytes: number;
   value: unknown;
 }
@@ -76,15 +76,22 @@ function openDb(): Promise<IDBDatabase | undefined> {
   dbPromise ??= new Promise(resolve => {
     try {
       if (typeof indexedDB === 'undefined') return resolve(undefined);
-      const open = indexedDB.open(DB_NAME, 1);
+      const open = indexedDB.open(DB_NAME, 2);
       open.onupgradeneeded = () => {
         try {
-          open.result.createObjectStore(STORE, { keyPath: 'key' });
+          const db = open.result;
+          if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
+          db.createObjectStore(STORE, { keyPath: 'key' });
+          db.createObjectStore(META, { keyPath: 'key' });
         } catch {
-          /* ignore */
+          open.transaction?.abort();
         }
       };
-      open.onsuccess = () => resolve(open.result);
+      open.onsuccess = () => {
+        const db = open.result;
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
       open.onerror = open.onblocked = () => resolve(undefined);
     } catch {
       resolve(undefined);
@@ -92,28 +99,27 @@ function openDb(): Promise<IDBDatabase | undefined> {
   });
   return dbPromise;
 }
-function wrap<T>(request: IDBRequest<T>): Promise<T | undefined> {
-  return new Promise(resolve => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => resolve(undefined);
-  });
-}
-
 export async function readUrbanCache<T>(key: string): Promise<T | undefined> {
   try {
     const db = await openDb();
     if (!db) return undefined;
-    const entry = await wrap<StoredEntry | undefined>(db.transaction(STORE, 'readonly').objectStore(STORE).get(key));
-    if (!entry) return undefined;
-    // Touch for LRU; failure is irrelevant.
-    try {
-      db.transaction(STORE, 'readwrite')
-        .objectStore(STORE)
-        .put({ ...entry, time: Date.now() });
-    } catch {
-      /* ignore */
-    }
-    return entry.value as T;
+    return await new Promise<T | undefined>(resolve => {
+      const tx = db.transaction([STORE, META], 'readwrite');
+      const get = tx.objectStore(STORE).get(key);
+      get.onsuccess = () => {
+        const entry = get.result as StoredEntry | undefined;
+        if (entry) {
+          // Touch in the same transaction so eviction cannot race the update.
+          try {
+            tx.objectStore(META).put({ key, bytes: entry.bytes, time: Date.now() } satisfies UrbanCacheEntryMeta);
+          } catch {
+            /* ignore */
+          }
+        }
+        resolve(entry?.value as T | undefined);
+      };
+      get.onerror = () => resolve(undefined);
+    });
   } catch {
     return undefined;
   }
@@ -140,14 +146,29 @@ export async function writeUrbanCache(key: string, value: unknown, knownBytes?: 
     if (!db) return;
     const bytes = knownBytes ?? cacheValueBytes(value);
     if (bytes > URBAN_CACHE_MAX_BYTES / 2) return;
-    const all = (await wrap<StoredEntry[]>(db.transaction(STORE, 'readonly').objectStore(STORE).getAll())) ?? [];
-    const drop = planEviction(
-      all.filter(e => e.key !== key).map(({ key, bytes, time }) => ({ key, bytes, time })),
-      bytes,
-    );
-    const store = db.transaction(STORE, 'readwrite').objectStore(STORE);
-    for (const old of drop) store.delete(old);
-    store.put({ key, time: Date.now(), bytes, value } satisfies StoredEntry);
+    await new Promise<void>(resolve => {
+      const tx = db.transaction([STORE, META], 'readwrite');
+      const store = tx.objectStore(STORE),
+        meta = tx.objectStore(META);
+      const all = meta.getAll();
+      tx.oncomplete = tx.onabort = () => resolve();
+      all.onsuccess = () => {
+        try {
+          const entries = all.result as UrbanCacheEntryMeta[];
+          for (const old of planEviction(
+            entries.filter(e => e.key !== key),
+            bytes,
+          )) {
+            store.delete(old);
+            meta.delete(old);
+          }
+          store.put({ key, bytes, value } satisfies StoredEntry);
+          meta.put({ key, bytes, time: Date.now() } satisfies UrbanCacheEntryMeta);
+        } catch {
+          tx.abort();
+        }
+      };
+    });
   } catch {
     /* cache is optional */
   }

@@ -275,6 +275,36 @@ impl SettlementTerrain {
         self.resident.set_layouts(layouts);
         Ok(json)
     }
+    /// Quarters of several independent towns in one call, each job exactly the
+    /// call `urban_quarters_resident(seed, sites, config, roads)` would make. The
+    /// jobs run as parallel items of the rayon pool (threads build), so towns share
+    /// one instance and one pool. Replies each job's layouts JSON, in job order,
+    /// separated by U+001E (never present in JSON text); nothing is made resident.
+    /// The first error in job order wins.
+    pub fn urban_quarters_batch(&self, jobs: &str) -> Result<String, JsValue> {
+        #[derive(serde::Deserialize)]
+        struct Job {
+            seed: String,
+            sites: Vec<magna_urbis_core::urban::Site>,
+            config: magna_urbis_core::urban::LayoutConfig,
+            roads: Vec<magna_urbis_core::urban::Street>,
+        }
+        let jobs = serde_json::from_str::<Vec<Job>>(jobs).map_err(js_err)?;
+        let inner = &self.inner;
+        let run = |job: &Job| -> Result<String, String> {
+            let output = inner.urban_quarters(&job.seed, &job.sites, &job.config, &job.roads)?;
+            serde_json::to_string(&output).map_err(|e| e.to_string())
+        };
+        #[cfg(feature = "threads")]
+        let results: Vec<Result<String, String>> = {
+            use rayon::prelude::*;
+            jobs.par_iter().map(run).collect()
+        };
+        #[cfg(not(feature = "threads"))]
+        let results: Vec<Result<String, String>> = jobs.iter().map(run).collect();
+        let texts = results.into_iter().collect::<Result<Vec<_>, _>>().map_err(|e| JsValue::from_str(&e))?;
+        Ok(texts.join("\u{1e}"))
+    }
     /// Retain layouts given as JSON (explicit plans, or pool slices merged as
     /// text). Returns their id; partitions are dropped.
     pub fn retain_layouts_json(&mut self, layouts: &str) -> Result<u32, JsValue> {
@@ -449,6 +479,33 @@ impl SettlementTerrain {
             )
             .map_err(|e| JsValue::from_str(&e))?;
         serde_json::to_string(&result).map_err(js_err)
+    }
+    /// Display rows of the building sites of resident products: the
+    /// `magna-city-sites` blob of the native `buildingSiteVisuals` read (origin =
+    /// first layout centre), generated in chunks without the request trees.
+    pub fn urban_building_site_display_resident(
+        &self,
+        seed: &str,
+        layouts_id: u32,
+        partitions_id: u32,
+        architecture_culture: Option<String>,
+        version: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        let layouts = self.resident.layouts(layouts_id)?;
+        let partitions = self.resident.partitions(partitions_id)?;
+        let origin = layouts
+            .first()
+            .map_or(magna_urbis_core::urban::Point { x: 0.0, y: 0.0 }, |layout| layout.center);
+        self.inner
+            .urban_building_site_display(
+                seed,
+                &layouts,
+                &partitions,
+                architecture_culture.as_deref(),
+                origin,
+                version,
+            )
+            .map_err(|e| JsValue::from_str(&e))
     }
     /// Display buffers (`urban::display`, same blob as the native
     /// `displayBuffers` read) of resident products; `partitions_id` 0: none.

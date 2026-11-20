@@ -646,6 +646,21 @@ function assertRegion(world: World, settings: V2Settings): void {
 
 /** Independent native cities computed at once (the engine has one thread per connection). */
 const TOWN_CONCURRENCY = 4;
+/** Towns of a WASM run generated at once (1: one by one). Threads package only: the towns share this worker's
+ * engine and their quarters run as parallel items of its rayon pool (`urban_quarters_batch`). Memory bounds the
+ * count (`townLanes.ts`). Single-thread lane workers measured slower than one by one (2026-11-20): not used. */
+/** `free`: towns of the run that wait for no other town; they ask for their quarters together (one batch). */
+async function wasmTownConcurrency(populations: number[], free: number): Promise<number> {
+  if (populations.length < 2) return 1;
+  const [{ wasmThreadsInfo }, { wasmTownLanes }, { setUrbanQuartersWave }] = await Promise.all([import('../../../rust/bridge/wasmThreads'), import('./townLanes'), import('./rustUrban')]);
+  if (wasmThreadsInfo().mode !== 'threads') return 1;
+  // Only a package with the batched quarters call gains from it.
+  const { SettlementTerrain } = await (await import('../../../rust/bridge/wasmRuntime')).loadCoreWasm();
+  if (typeof (SettlementTerrain.prototype as { urban_quarters_batch?: unknown }).urban_quarters_batch !== 'function') return 1;
+  const towns = wasmTownLanes(populations, navigator.hardwareConcurrency || 4, (navigator as { deviceMemory?: number }).deviceMemory);
+  setUrbanQuartersWave(Math.min(towns, free));
+  return towns;
+}
 /** Native towns of a run with the never-built earlier towns they may border, each after those it waits for
  * (`townNeighbours`); the classic engine keeps the selection as it is. */
 function townRun(world: World, settings: V2Settings, keys: readonly string[]): TownRun | undefined {
@@ -756,6 +771,7 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
   const nativeRegion = world.debug?.v2RustRegion as import('./region').RustRegionSnapshot | undefined;
   const nativeCities = Object.values((world.debug?.v2RustCities ?? {}) as Record<string, import('./rustUrban').RustTownSnapshot>);
   if (nativeRegion && nativeCities.length) {
+    const landuseStart = performance.now();
     const { rustSettlementRaster } = await import('./rustUrban');
     const raster = rustSettlementRaster(world),
       config = effectiveTerrainSettings(settings, world.mapSize),
@@ -781,6 +797,7 @@ async function finishTowns(world: World, settings: V2Settings, onProgress?: Prog
       runtime: settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined,
     });
     world.landuse = rural.landuse;
+    world.stats['ms.landuse'] = Math.round(performance.now() - landuseStart);
   } else if (world.urban) {
     const mainOptions = { ...world.options, ...settings.local.main };
     // Rust resource soil (depth, stoniness, drainage); the noise field only when no resource payload exists (TypeScript backend).
@@ -851,9 +868,15 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
     places.map(place => place.key),
     through,
   );
-  // WASM calls share this worker's JS thread: concurrent lanes only duplicate terrain/pools.
-  // Its one engine uses the internal Rust/pool parallelism where a stage has enough work.
-  if (backend !== 'native' || places.length < 2 || TOWN_CONCURRENCY < 2) {
+  // Native lanes are engine sessions; WASM towns share this worker's engine (`wasmTownConcurrency`).
+  const concurrency =
+    backend === 'native'
+      ? TOWN_CONCURRENCY
+      : await wasmTownConcurrency(
+          places.map(place => Number(world.stats['v2.population:' + place.key] ?? place.population)),
+          places.filter(place => !run?.waits.get(place.key)?.length).length,
+        );
+  if (places.length < 2 || concurrency < 2) {
     for (let i = 0; i < places.length; i++) {
       const town = forSettlement(onProgress, i, places.length, places[i]);
       report(town, 'town', `${places[i].name ?? places[i].key}: plan, streets, parcels and buildings…`, i, places.length);
@@ -902,7 +925,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
             if (claim) fresh.set(dep, claim);
           }
           const neighbours = run ? neighbourClaimsOf(world, settings, places[i].key, fresh) : undefined;
-          waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), stages.get(places[i].key), laneId, neighbours) });
+          waiters[i]({ ok: true, value: await generateRustTown(world, settings, places[i].key, forward(i), stages.get(places[i].key), backend === 'native' ? laneId : undefined, neighbours) });
         } catch (error) {
           waiters[i]({ ok: false, error });
         } finally {
@@ -913,7 +936,7 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
       }
     };
     const lanes: Promise<void>[] = [];
-    for (let k = 0; k < Math.min(TOWN_CONCURRENCY, n); k++) lanes.push(lane(k));
+    for (let k = 0; k < Math.min(concurrency, n); k++) lanes.push(lane(k));
     try {
       for (let i = 0; i < n; i++) {
         leader = i;
@@ -928,8 +951,10 @@ export async function generateTowns(regionWorld: World, settings: V2Settings, on
       work.stop();
       await Promise.allSettled(lanes);
       if (!keepUrbanLanes || !completed) await releaseUrbanLanes();
+      if (backend !== 'native') (await import('./rustUrban')).setUrbanQuartersWave(1);
     }
   }
+  world.stats['ms.townLoop'] = Math.round(performance.now() - t0);
   await finishTowns(world, settings, onProgress);
   world.stats['ms.towns'] = Math.round(performance.now() - t0);
   return world;

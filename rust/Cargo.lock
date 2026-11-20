@@ -4184,6 +4184,7 @@ name = "magna-urbis-wasm"
 version = "0.1.0"
 dependencies = [
  "magna-urbis-core",
+ "rayon",
  "rmp-serde",
  "serde",
  "serde_json",

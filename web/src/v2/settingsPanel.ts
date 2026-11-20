@@ -496,8 +496,10 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
             .map(([k, v]) => `${k}: ${String(v)}`)
             .join(' · ')
         : '';
+    // The mode that runs, not the setting: "Automatic" starts the threads package on an isolated page.
+    const running = (s.wasmThreads as { mode?: string } | undefined)?.mode ?? (s.threads === 'pool' ? 'pool' : s.threads === 'on' || (s.threads === 'auto' && !threadsUnavailable) ? 'threads' : 'single');
     row(
-      s.threads === 'pool' ? 'backend-pool' : s.threads === 'on' ? 'backend-wasm-threads' : 'backend-wasm-single',
+      running === 'pool' ? 'backend-pool' : running === 'threads' ? 'backend-wasm-threads' : 'backend-wasm-single',
       T.wasm,
       'ok',
       T.available,
