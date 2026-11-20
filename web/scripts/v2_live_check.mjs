@@ -38,6 +38,13 @@ async function record(name, extra = {}) {
   console.log(`${name}: ${current.footer}`);
   return current;
 }
+async function renderedTiltedMap() {
+  // The continuous camera keeps the map canvas and its GPU volumes; there is no separate city3d HUD.
+  await page.waitForFunction(() => document.querySelector('#view3d')?.getAttribute('aria-pressed') === 'true' && document.querySelector('#map-canvas')?.dataset.renderPending === '0' && window.__muLive?.active && window.__muLive.layers.buildings?.triangles > 0, null, {
+    timeout: 120000,
+  });
+  return page.evaluate(() => ({ buildings: window.__muLive.layers.buildings, ground: window.__muLive.layers.ground, pending: window.__muLive.pending }));
+}
 async function recipe(change) {
   await page.locator('#expert-open').click();
   const value = JSON.parse(await page.locator('#expert-json').inputValue());
@@ -199,8 +206,7 @@ try {
   await page.locator('#view3d').click();
   await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true', null, { timeout: 120000 });
   await run('02-complete-map', '#run-chain');
-  await page.waitForFunction(() => Number(document.querySelector('.city3d-info b')?.textContent.replace(/\D/g, '')) > 0, null, { timeout: 90000 });
-  const full3d = await record('full-generation-in-3d', { info: await page.locator('.city3d-info').textContent() });
+  const full3d = await record('full-generation-in-3d', { display: await renderedTiltedMap() });
   assert.doesNotMatch(full3d.toast ?? '', /toDataURL|recursive use|unsafe aliasing/);
   await page.screenshot({ path: resolve(out, '02-complete-map-3d.png') });
   await page.locator('#view3d').click();
@@ -233,6 +239,7 @@ try {
   report.checks.push({ name: 'save-reopen', exactHeights: true, exactBuildings: true });
   await page.locator('#view3d').click();
   await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true', null, { timeout: 120000 });
+  await renderedTiltedMap();
   await page.screenshot({ path: resolve(out, '04-3d.png') });
   await page.locator('#view3d').click();
   await page.locator('#map-style').selectOption('satellite');
