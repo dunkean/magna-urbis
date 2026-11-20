@@ -21,11 +21,6 @@ export function grow(box: Box, points: readonly Point[], pad = 0): Box {
 export const shapeBox = (shape: Shape): Box => grow({ ...EMPTY }, shape.outer);
 export const surfaceBox = (surface: Surface): Box => surface.reduce((box, shape) => grow(box, shape.outer), { ...EMPTY });
 export const overlaps = (a: Box, b: Box): boolean => a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
-export const ringArea = (ring: readonly Point[]): number => {
-  let s = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
-  return s / 2;
-};
 function inRing(ring: readonly Point[], p: Point): boolean {
   let hit = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) if (ring[i].y > p.y !== ring[j].y > p.y && p.x < ((ring[j].x - ring[i].x) * (p.y - ring[i].y)) / (ring[j].y - ring[i].y) + ring[i].x) hit = !hit;

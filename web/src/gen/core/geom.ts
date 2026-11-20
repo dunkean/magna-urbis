@@ -17,8 +17,9 @@ export const norm = (a: Vec2): Vec2 => {
 };
 export const perp = (a: Vec2): Vec2 => ({ x: -a.y, y: a.x });
 
-/** Signed area (positive = CCW in a y-up frame, CW visually in y-down). */
-export function polygonArea(p: Polygon): number {
+/** Signed area of a ring, including the edge from the last vertex to the first.
+ * Positive for counterclockwise winding in y-up coordinates (clockwise on y-down screens). */
+export function polygonArea(p: readonly Vec2[]): number {
   let s = 0;
   for (let i = 0, n = p.length; i < n; i++) {
     const a = p[i],

@@ -1,7 +1,7 @@
 import type { CityLod, CityPalette, CityParcel, CityScene } from './cityCanvas';
 import { CITY_LOD_LIMITS, SpatialBins, shapeBox } from './cityCanvas';
 import type { LotEnclosure, Point, ResolvedEnclosure, Shape } from '../../../rust/bridge/urban';
-import { polygonContains } from '../gen/core/geom';
+import { polygonArea, polygonContains } from '../gen/core/geom';
 import { cultureEnclosure, type CultureEnclosure } from './hedges';
 import { yardRuns, yardStyle } from './yardStyle';
 
@@ -39,12 +39,7 @@ const unit = (p: Point): Point => {
   const l = length(p) || 1;
   return { x: p.x / l, y: p.y / l };
 };
-const signed = (r: readonly Point[]): number =>
-  r.reduce((s, a, i) => {
-    const b = r[(i + 1) % r.length];
-    return s + a.x * b.y - b.x * a.y;
-  }, 0) / 2;
-const area = (r: readonly Point[]): number => Math.abs(signed(r));
+const area = (r: readonly Point[]): number => Math.abs(polygonArea(r));
 const perimeter = (r: readonly Point[]): number =>
   r.reduce((s, a, i) => {
     const b = r[(i + 1) % r.length];
@@ -283,7 +278,7 @@ function simplifyChain(path: readonly Point[], tol: number, blocked: (a: Point, 
 /** The ring moved `d` inwards, closed by construction: a side too short to survive goes, an acute corner is mitred short.
  * Undefined when too little is left or the ring crosses itself. */
 function insetRing(ring: readonly Point[], d: number): Point[] | undefined {
-  const r = signed(ring) < 0 ? [...ring].reverse() : [...ring],
+  const r = polygonArea(ring) < 0 ? [...ring].reverse() : [...ring],
     inner = (a: Point, b: Point): Point => {
       const e = unit(minus(b, a));
       return { x: -e.y, y: e.x };

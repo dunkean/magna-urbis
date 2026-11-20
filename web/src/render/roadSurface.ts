@@ -15,6 +15,7 @@
  * The casing is the same surface with every half width grown by `extra` (and every
  * curb return shrunk by it), so its outline runs parallel to the fill's. */
 import type { Point } from '../../../rust/bridge/urban';
+import { polygonArea } from '../gen/core/geom';
 
 export interface SurfaceStreet {
   path: readonly Point[];
@@ -71,12 +72,7 @@ const unit = (v: Point): Point => {
 /** Left normal (counter-clockwise quarter turn). */
 const left = (v: Point): Point => ({ x: -v.y, y: v.x });
 const cross = (a: Point, b: Point): number => a.x * b.y - a.y * b.x;
-const signedArea = (r: readonly Point[]): number => {
-  let s = 0;
-  for (let i = 0, j = r.length - 1; i < r.length; j = i++) s += cross(r[j], r[i]);
-  return s / 2;
-};
-const ccw = (r: Point[]): Point[] => (signedArea(r) < 0 ? r.reverse() : r);
+const ccw = (r: Point[]): Point[] => (polygonArea(r) < 0 ? r.reverse() : r);
 
 /** Points of an arc around `c` from angle a0 sweeping `sweep` (signed), ends included. */
 function arc(c: Point, r: number, a0: number, sweep: number, tolerance: number): Point[] {

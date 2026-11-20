@@ -13,6 +13,27 @@ const sq = (x: number, y: number, s: number) => [
   { x, y: y + s },
 ];
 
+describe('polygonArea', () => {
+  it('returns signed area for either winding of a translated readonly ring', () => {
+    const ring = Object.freeze(sq(32_000.25, -27_000.5, 12.5));
+    expect(polygonArea(ring)).toBe(156.25);
+    expect(polygonArea([...ring].reverse())).toBe(-156.25);
+    expect(polygonArea([...ring, ring[0]])).toBe(156.25);
+  });
+
+  it('returns zero for an empty or degenerate ring', () => {
+    const points = [
+      { x: 2, y: 1 },
+      { x: 4, y: 2 },
+      { x: 6, y: 3 },
+    ];
+    expect(polygonArea([])).toBe(0);
+    expect(polygonArea(points.slice(0, 1))).toBe(0);
+    expect(polygonArea(points.slice(0, 2))).toBe(0);
+    expect(polygonArea(points)).toBe(0);
+  });
+});
+
 describe('poly', () => {
   it('cleans duplicates, collinear points and short edges', () => {
     const r = cleanRing([

@@ -1,5 +1,6 @@
 import type { Shape, Point } from '../../../rust/bridge/urban';
-import { ringProblem, projectOnSegment, signedArea } from '../ui/cityShapeEditor';
+import { polygonArea } from '../gen/core/geom';
+import { ringProblem, projectOnSegment } from '../ui/cityShapeEditor';
 import { pointInRing } from '../gen/geo/poly';
 
 export type ContourSelection = { kind: 'line' } | { kind: 'point'; ring: number; index: number } | { kind: 'segment'; ring: number; index: number };
@@ -12,7 +13,7 @@ export function contourProblem(shape: Shape): string | undefined {
   // details have no editable handles and must not invalidate a valid outer ring.
   for (const hole of shape.holes) {
     if (hole.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return 'Coordonnée invalide';
-    if (Math.abs(signedArea(hole)) < 1) continue;
+    if (Math.abs(polygonArea(hole)) < 1) continue;
     const error = ringProblem(hole);
     if (error) return error;
     if (!hole.every(p => pointInRing(shape.outer, p))) return 'A courtyard must stay inside its outline.';
@@ -100,7 +101,7 @@ export function splitContour(shape: Shape, first: number, second: number): [Shap
   };
   const a: Shape = { outer: arc(first, second), holes: [] },
     b: Shape = { outer: arc(second, first), holes: [] };
-  if (ringProblem(a.outer) || ringProblem(b.outer) || Math.abs(Math.abs(signedArea(a.outer)) + Math.abs(signedArea(b.outer)) - Math.abs(signedArea(ring))) > 0.01) throw new Error('The cut must stay inside the selected area.');
+  if (ringProblem(a.outer) || ringProblem(b.outer) || Math.abs(Math.abs(polygonArea(a.outer)) + Math.abs(polygonArea(b.outer)) - Math.abs(polygonArea(ring))) > 0.01) throw new Error('The cut must stay inside the selected area.');
   for (const hole of shape.holes) {
     if (hole.some((p, i) => crosses(ring[first], ring[second], p, hole[(i + 1) % hole.length]))) throw new Error('The cut crosses a courtyard. Choose another boundary point.');
     const target = pointInRing(a.outer, hole[0]) ? a : b;

@@ -4,6 +4,7 @@
  * roof pans, height shadows) and the 3D view. The building shown is the planned
  * silhouette raised in volume; no other house generator is involved. */
 import type { Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
+import { polygonArea } from '../gen/core/geom';
 import { treeDwelling, treeCrownFaces, type TreeDwelling } from './cityTrees';
 import { roofPlaneLight } from './roofPlaneLight';
 import { intersectionS, unionS } from '../gen/geo/bool';
@@ -202,11 +203,6 @@ export function massingFootprint(footprint: Surface, massing?: readonly MassingP
   return shapes.length > 1 ? unionS(shapes[0], ...shapes.slice(1)) : shapes;
 }
 
-const signedArea = (ring: readonly Point[]): number =>
-  ring.reduce((s, p, i) => {
-    const n = ring[(i + 1) % ring.length];
-    return s + p.x * n.y - n.x * p.y;
-  }, 0) / 2;
 function centroid(ring: readonly Point[]): Point {
   let a = 0,
     x = 0,
@@ -224,7 +220,7 @@ function centroid(ring: readonly Point[]): Point {
 }
 /** Inward miter offset (outer rings CCW, holes CW), miter-limited. */
 function insetRing(ring: readonly Point[], distance: number, outer: boolean): Point[] {
-  const ccw = signedArea(ring) > 0,
+  const ccw = polygonArea(ring) > 0,
     points = ccw === outer ? ring : [...ring].reverse(),
     n = points.length,
     out: Point[] = [];
@@ -306,7 +302,7 @@ function pointInRing(p: Point, ring: readonly Point[]): boolean {
   return inside;
 }
 function isConvex(ring: readonly Point[]): boolean {
-  const area = signedArea(ring),
+  const area = polygonArea(ring),
     s = Math.sign(area);
   if (!s) return false;
   for (let i = 0; i < ring.length; i++) if (cross2(ring[i], ring[(i + 1) % ring.length], ring[(i + 2) % ring.length]) * s < -1e-7 * (1 + Math.abs(area))) return false;
@@ -323,14 +319,14 @@ function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
 /** Plan check of a roof: every face simple and wound like the ring, faces tile the ring
  * (areas add up), and for convex rings no vertex leaves it: no fold, no crossing. */
 function validRoof(ring: readonly Point[], faces: readonly Vertex3[][]): boolean {
-  const total = signedArea(ring),
+  const total = polygonArea(ring),
     s = Math.sign(total);
   if (!s) return false;
   const A = Math.abs(total),
     convex = isConvex(ring);
   let sum = 0;
   for (const f of faces) {
-    const a = signedArea(f) * s;
+    const a = polygonArea(f) * s;
     if (a < -0.002 * A - 1e-6) return false;
     sum += a;
     if (f.length > 3)
@@ -578,7 +574,7 @@ function ring(f: Faces, shape: Shape, eave: number, rise: number): void {
       }, 0),
     0,
   );
-  const area = Math.abs(signedArea(shape.outer)) - shape.holes.reduce((s, r) => s + Math.abs(signedArea(r)), 0);
+  const area = Math.abs(polygonArea(shape.outer)) - shape.holes.reduce((s, r) => s + Math.abs(polygonArea(r)), 0);
   if (perimeter <= 0 || area <= 0) return;
   const d = Math.min(6, area / perimeter),
     top = eave + rise;
@@ -712,7 +708,7 @@ function flatPlanRoof(v: ResolvedVolume, face: RoofFace, roofHoles: Point[][], s
     holes = roofHoles.filter(h => h.length >= 3);
   const rings: [Point[], boolean][] = [[ring, true], ...holes.map(h => [h, false] as [Point[], boolean])];
   const perimeter = rings.reduce((s, [r]) => s + r.reduce((t, p, k) => t + Math.hypot(r[(k + 1) % r.length].x - p.x, r[(k + 1) % r.length].y - p.y), 0), 0);
-  const area = Math.abs(signedArea(ring)) - holes.reduce((s, h) => s + Math.abs(signedArea(h)), 0);
+  const area = Math.abs(polygonArea(ring)) - holes.reduce((s, h) => s + Math.abs(polygonArea(h)), 0);
   // Rim: a parapet reads a little wider; never more than a fraction of the inradius, so the field stays.
   // At the 1.4 px/m core view, a terrace bevel is ~1.5–1.7 px plus its dark seam.
   const w = terrace ? Math.min(1.45, perimeter > 0 ? (0.9 * area) / perimeter : 0) : Math.min((v.detail?.parapet_m ?? 0) > 0.05 ? 0.8 : 0.6, Math.max(0.3, 0.07 * Math.sqrt(Math.max(0, area))), perimeter > 0 ? (0.3 * area) / perimeter : 0);
@@ -818,7 +814,7 @@ function convexShadow(ring: readonly Point[], height: number, k = 0.55): Shape |
   if (height <= 0.05 || ring.length < 3) return undefined;
   const dx = height * k,
     dy = height * k * 0.8,
-    r = signedArea(ring) < 0 ? [...ring].reverse() : ring,
+    r = polygonArea(ring) < 0 ? [...ring].reverse() : ring,
     n = r.length,
     outer: Point[] = [];
   // Counter-clockwise ring: an edge leads when the shift leaves the ring through it; the hull follows the shifted leading edges.
