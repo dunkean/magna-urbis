@@ -12,6 +12,7 @@
 import type { Layout, Point, Shape } from '../../../rust/bridge/urban';
 import type { ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
+import { polygonArea } from '../gen/core/geom';
 import { MINOR_VOLUME_ROLE, building3dHeight, type Building3dVisual } from './urbanBuildingGeometry';
 
 /** Culture data: which ornaments a town of the culture carries. */
@@ -85,11 +86,6 @@ function inRing(ring: readonly Point[], x: number, y: number): boolean {
   }
   return c;
 }
-const ringArea = (ring: readonly Point[]): number => {
-  let s = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
-  return s / 2;
-};
 
 interface Item {
   id: string;
@@ -106,7 +102,7 @@ function itemOf(b: Source): Item | undefined {
   let ring: Point[] | undefined,
     area = 0;
   for (const s of b.footprint ?? []) {
-    const a = Math.abs(ringArea(s.outer));
+    const a = Math.abs(polygonArea(s.outer));
     if (a > area) {
       area = a;
       ring = s.outer;
@@ -256,7 +252,7 @@ function drowWebs(layout: Layout, items: Item[], out: UnderdarkOrnaments & { hei
   }
   // Canopies over a couple of squares, hung from the surrounding roofs.
   const squares = (layout.blocks ?? [])
-    .map(b => ({ b, area: Math.abs(ringArea(b.shape.outer)) }))
+    .map(b => ({ b, area: Math.abs(polygonArea(b.shape.outer)) }))
     .filter(({ b, area }) => (b.kind === 'place' || b.kind === 'market') && area >= 100 && area <= 6000 && b.shape.outer.length >= 3)
     .sort((p, q) => q.area - p.area)
     .slice(0, n > 150 ? 2 : 1);
@@ -384,7 +380,7 @@ function duergarForges(layout: Layout, items: Item[], out: UnderdarkOrnaments & 
     let best = Infinity,
       mouth: [Point, Point] = [i.ring[0], i.ring[1]],
       normal = { x: 0, y: 1 };
-    const ccw = ringArea(i.ring) > 0;
+    const ccw = polygonArea(i.ring) > 0;
     for (let k = 0; k < i.ring.length; k++) {
       const a = i.ring[k],
         b = i.ring[(k + 1) % i.ring.length],
@@ -413,7 +409,7 @@ function duergarSpikes(layout: Layout, items: Item[], out: UnderdarkOrnaments & 
   if (!pool.length) pool = items.filter(i => i.landmark);
   for (const i of pool.sort((a, b) => b.area - a.area).slice(0, 10)) {
     const points: OrnamentSpikes['points'] = [],
-      ccw = ringArea(i.ring) > 0;
+      ccw = polygonArea(i.ring) > 0;
     for (let k = 0; k < i.ring.length && points.length < 40; k++) {
       const a = i.ring[k],
         b = i.ring[(k + 1) % i.ring.length],
@@ -901,7 +897,7 @@ export function city3dUnderdarkOrnaments(plan: UnderdarkOrnaments, heightAt?: (x
     ].map(([k, j]) => ({ x: gt.x + (k * gt.ux - j * gt.uy) * h, y: gt.y + (k * gt.uy + j * gt.ux) * h }));
     const g = Math.min(...c.map(p => ground(p.x, p.y))) - 0.3,
       z1 = Math.max(...c.map(p => ground(p.x, p.y))) + gt.height;
-    if (ringArea(c) < 0) c.reverse();
+    if (polygonArea(c) < 0) c.reverse();
     for (let k = 0; k < 4; k++) {
       const a = c[k],
         b = c[(k + 1) % 4];

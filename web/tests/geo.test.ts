@@ -4,7 +4,7 @@ import { union, difference, intersection, mpArea } from '../src/gen/geo/bool';
 import { splitByChord, lpoly, rayHit, insidePieces } from '../src/gen/geo/split';
 import { ribbon, insetConvex, sweepLeft } from '../src/gen/geo/offset';
 import { StreetGraph } from '../src/gen/geo/graph';
-import { polygonArea } from '../src/gen/core/geom';
+import { netPolygonArea, polygonArea } from '../src/gen/core/geom';
 
 const sq = (x: number, y: number, s: number) => [
   { x, y },
@@ -12,6 +12,47 @@ const sq = (x: number, y: number, s: number) => [
   { x: x + s, y: y + s },
   { x, y: y + s },
 ];
+
+describe('polygonArea', () => {
+  it('returns signed area for either winding of a translated readonly ring', () => {
+    const ring = Object.freeze(sq(32_000.25, -27_000.5, 12.5));
+    expect(polygonArea(ring)).toBe(156.25);
+    expect(polygonArea([...ring].reverse())).toBe(-156.25);
+    expect(polygonArea([...ring, ring[0]])).toBe(156.25);
+  });
+
+  it('returns zero for an empty or degenerate ring', () => {
+    const points = [
+      { x: 2, y: 1 },
+      { x: 4, y: 2 },
+      { x: 6, y: 3 },
+    ];
+    expect(polygonArea([])).toBe(0);
+    expect(polygonArea(points.slice(0, 1))).toBe(0);
+    expect(polygonArea(points.slice(0, 2))).toBe(0);
+    expect(polygonArea(points)).toBe(0);
+  });
+});
+
+describe('netPolygonArea', () => {
+  it('returns the outer area when holes are omitted or empty', () => {
+    const outer = Object.freeze(sq(0, 0, 10));
+    expect(netPolygonArea(outer)).toBe(100);
+    expect(netPolygonArea(outer, [])).toBe(100);
+  });
+
+  it('subtracts each hole regardless of its winding or the outer winding', () => {
+    const outer = sq(0, 0, 10);
+    const first = sq(1, 1, 2);
+    const second = sq(5, 5, 3);
+    expect(netPolygonArea(outer, Object.freeze([Object.freeze(first), Object.freeze(second)]))).toBe(87);
+    expect(netPolygonArea([...outer].reverse(), [[...first].reverse(), second])).toBe(87);
+  });
+
+  it('returns the arithmetic difference when holes exceed the outer area', () => {
+    expect(netPolygonArea(sq(0, 0, 2), [sq(0, 0, 3)])).toBe(-5);
+  });
+});
 
 describe('poly', () => {
   it('cleans duplicates, collinear points and short edges', () => {

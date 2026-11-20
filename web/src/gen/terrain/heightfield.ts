@@ -43,10 +43,6 @@ export function reliefHeight(relief: Relief, mapSize: number): number {
 /** Distance inland over which land rises from the shoreline to full height. */
 const COAST_RAMP: Record<Relief, number> = { flat: 260, hills: 420, valley: 420, mountains: 380 };
 
-const smooth = (t: number): number => {
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  return t * t * (3 - 2 * t);
-};
 const clamp = (v: number, a: number, b: number): number => (v < a ? a : v > b ? b : v);
 
 /** fBm with octave wavelengths expressed in meters: from lam0 down to lamMin. Roughly [-1, 1]. */

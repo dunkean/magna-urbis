@@ -13,6 +13,7 @@
 //! Every term is a function of the world point, so two windows agree where they overlap.
 use super::keys::{cell_size, key, unit, ValueNoise};
 use super::prior::RegionPrior;
+use super::smoothstep;
 
 const PARENT_LOD: i32 = 10;
 /// Calibration samples per parent side, and proportional-fitting rounds (cheap: argmax only).
@@ -44,11 +45,6 @@ pub struct Rock {
     pub weatherability: f32,
     /// Bed azimuth, tangent to the folded contacts, degrees clockwise from north in [0, 180).
     pub azimuth: f32,
-}
-
-fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
-    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 pub struct Geology {

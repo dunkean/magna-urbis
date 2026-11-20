@@ -12,6 +12,7 @@
  *   Trees planted by the farm itself (orchards, shelter belts) are drawn by the farm, not by the forest.
  */
 import type { Polygon, Polyline, Vec2, World, LandUseLayer } from '../gen/types';
+import { polygonArea } from '../gen/core/geom';
 
 const ROAD_WIDTH: Record<string, number> = { major: 8, minor: 3.6, track: 3 };
 export const ROAD_MARGIN = 2.5,
@@ -95,13 +96,7 @@ export function forestCorridors(
 export function growRing(ring: Polygon, d: number): Polygon {
   const n = ring.length;
   if (n < 3) return ring;
-  let area = 0;
-  for (let i = 0; i < n; i++) {
-    const a = ring[i],
-      b = ring[(i + 1) % n];
-    area += a.x * b.y - b.x * a.y;
-  }
-  const s = area > 0 ? 1 : -1;
+  const s = polygonArea(ring) > 0 ? 1 : -1;
   const normal = (a: Vec2, b: Vec2): Vec2 => {
     const dx = b.x - a.x,
       dy = b.y - a.y,

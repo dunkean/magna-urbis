@@ -3,6 +3,7 @@
 import type { HouseMaterial, MaterialSlots, Point, RoofEdgeKind, Surface } from '../../../rust/bridge/housesContract';
 import type { ArchitectureFunction, ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { houseMaterialColor } from '../../../rust/bridge/houseRender';
+import { polygonArea } from '../gen/core/geom';
 import { buildingPaint, type UrbanBuildingAppearance } from './urbanBuildingStyle';
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { roofSnowPatches, snowRoofTint } from './roofSnow';
@@ -241,15 +242,6 @@ function clippedLine(line: Line, surface: Surface): Line[] {
   }
   return output;
 }
-function signedArea(ring: readonly Point[]): number {
-  let area = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i],
-      b = ring[(i + 1) % ring.length];
-    area += a.x * b.y - b.x * a.y;
-  }
-  return area / 2;
-}
 function appendRings(sink: PathSink, rings: readonly RingPath[]): void {
   for (const { points, reverse } of rings) {
     if (points.length < 3) continue;
@@ -268,7 +260,7 @@ function geometryPath(surface: Surface, metrics: Pick<BuildingRenderMetrics, 'pr
     for (const [hole, points] of [polygon.outer, ...polygon.holes].entries()) {
       if (points.length < 3 || !points.every(validPoint)) continue;
       // Nonzero winding unions overlapping roofs, unlike a single evenodd batch.
-      rings.push({ points, reverse: signedArea(points) < 0 !== hole > 0 });
+      rings.push({ points, reverse: polygonArea(points) < 0 !== hole > 0 });
       vertices += points.length;
     }
   }

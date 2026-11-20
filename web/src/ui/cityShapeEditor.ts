@@ -15,6 +15,7 @@
  * The geometry helpers are pure and unit tested (`web/tests/cityShapeEditor.test.ts`). */
 
 import { localizeCityInspector } from './cityInspectorLocale';
+import { polygonArea } from '../gen/core/geom';
 
 export interface Pt {
   x: number;
@@ -23,11 +24,6 @@ export interface Pt {
 
 // ---------------------------------------------------------------- pure helpers
 const cross = (o: Pt, a: Pt, b: Pt): number => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-export const signedArea = (ring: readonly Pt[]): number => {
-  let s = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
-  return s / 2;
-};
 
 /** `ring` with `p` inserted after vertex `edge` (on the edge edge → edge+1). */
 export function insertVertex(ring: readonly Pt[], edge: number, p: Pt): Pt[] {
@@ -83,7 +79,7 @@ export function ringProblem(ring: readonly Pt[]): string | undefined {
   if (ring.length > 512) return 'Au plus 512 sommets';
   if (ring.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return 'Coordonnée invalide';
   if (selfIntersects(ring)) return 'Contour invalide (auto-intersection)';
-  if (Math.abs(signedArea(ring)) < 1) return 'Contour sans surface';
+  if (Math.abs(polygonArea(ring)) < 1) return 'Contour sans surface';
   return undefined;
 }
 /** Rounded to 0.1 m; consecutive duplicates, the closing copy and collinear vertices dropped. */
@@ -184,7 +180,7 @@ export function simplifyLotRing(ring: readonly Pt[]): Pt[] {
     }
   }
   out = douglasPeucker(out, 0.1);
-  return out.length >= 3 && Math.abs(signedArea(out)) >= 1 ? out : ring.slice();
+  return out.length >= 3 && Math.abs(polygonArea(out)) >= 1 ? out : ring.slice();
 }
 
 // ---------------------------------------------------------------- styles

@@ -185,7 +185,6 @@ export function mayaCity(cc: CampCtx, c: Vec2, pop: number, rng: Rng): CampOut {
     plazas.push(g.kind === 'twin' ? { cu: du, cv: dv, w: 92, h: 92, kind: 'twin' } : { cu: du, cv: dv, w: 64, h: 52, kind: 'group' });
   }
   // ---- plaza quarters, blocks, parcels and their buildings
-  const pr = rng.fork('plazas');
   const plazaPolys: Polygon[] = [];
   for (const pz of plazas) {
     const poly = box(pz.cu, pz.cv, pz.w - 4, pz.h - 4);

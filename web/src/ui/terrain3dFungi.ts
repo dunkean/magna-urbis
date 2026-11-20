@@ -103,7 +103,6 @@ const ss = (a: number, b: number, v: number): number => {
   const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
-const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 const wayRooms = new WeakMap<object, ForestRoom>();
 

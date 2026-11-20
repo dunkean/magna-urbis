@@ -7,6 +7,7 @@
  * through a cross-fade with the same mean colour and density. Cost: the build is proportional to the buildings,
  * once per town and look; a frame draws one image (proportional to pixels). */
 import type { CityBuilding, CityBuildings, CityPalette, CityScene } from './cityCanvas';
+import { polygonArea } from '../gen/core/geom';
 import { planBuildingColors } from './cityBuildingPalette';
 import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
 import { toneStamp } from './groundTone';
@@ -77,11 +78,6 @@ const rgbOf = (hex: string): [number, number, number] => {
   const v = parseInt(hex.slice(1), 16);
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 };
-function signedArea(ring: readonly { x: number; y: number }[]): number {
-  let s = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
-  return s / 2;
-}
 
 /** A turf building on a natural ground stands in its earth bank (city/turfLook.ts). */
 const banked = (b: CityBuilding, palette: CityPalette, custom?: string): boolean => palette === 'terrain' && !custom && turfCover(b.material?.cover, b.material?.wall);
@@ -132,7 +128,7 @@ function buildRaster(scene: CityScene, b: CityBuildings, palette: CityPalette, n
   const ring = (path: Path2D, points: readonly { x: number; y: number }[], hole: boolean): void => {
     if (points.length < 3) return;
     const n = points.length,
-      reverse = signedArea(points) < 0 !== hole,
+      reverse = polygonArea(points) < 0 !== hole,
       at = (i: number) => points[reverse ? n - 1 - i : i];
     path.moveTo(at(0).x, at(0).y);
     for (let i = 1; i < n; i++) path.lineTo(at(i).x, at(i).y);

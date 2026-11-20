@@ -4,10 +4,10 @@
  * and roofs.ts.
  */
 import type { Point, Shape } from '../../../../../rust/bridge/urban';
+import { polygonArea } from '../../../gen/core/geom';
 // enclosures hook (cityLotEnclosures.ts)
 // walls hook (cityWalls.ts)
 import { PARCHMENT_HATCH } from '../look';
-import { ringArea } from '../model/geometry';
 
 /** Ink hatching in screen pixels (one tile per context, rescaled to the frame): the look's PARCHMENT_HATCH as a pattern. */
 const hatches = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
@@ -43,7 +43,7 @@ export function shapePath(shape: Shape, Path: new () => Path2D = Path2D): Path2D
   const path = new Path();
   const ring = (points: readonly Point[], hole: boolean): void => {
     if (points.length < 3) return;
-    const reverse = ringArea(points) < 0 !== hole,
+    const reverse = polygonArea(points) < 0 !== hole,
       n = points.length,
       at = (i: number): Point => points[reverse ? n - 1 - i : i];
     path.moveTo(at(0).x, at(0).y);

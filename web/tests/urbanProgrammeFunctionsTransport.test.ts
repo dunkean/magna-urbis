@@ -3,8 +3,10 @@ import type { UrbanRequest, Layout, Partition } from '../../rust/bridge/urban';
 import type { SettlementRaster } from '../../rust/bridge/settlements';
 
 const wasm = vi.hoisted(() => ({ supported: false, version: 1, wrapperThrows: false, constructors: vi.fn(), quarters: vi.fn((_seed: string, _sites: string, _config: string, _roads: string) => '[]') }));
-vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', () => ({
+vi.mock('../../rust/pkg/wasm/magna_urbis_wasm.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../rust/pkg/wasm/magna_urbis_wasm.js')>()),
   default: vi.fn(),
+  initSync: undefined,
   SettlementTerrain: class {
     static get urban_programme_functions_version() {
       return wasm.supported

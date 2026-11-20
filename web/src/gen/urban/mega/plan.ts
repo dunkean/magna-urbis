@@ -221,15 +221,6 @@ const smoothCirc = (v: number[], w: number, passes: number): number[] => {
   return a;
 };
 
-/** Closed polygon simplification (Ramer–Douglas–Peucker, keeping the ring closed). */
-function simplifyRing(ring: Polygon, tol: number): Polygon {
-  const s = simplify(ring.concat([ring[0]]), tol);
-  s.pop();
-  return s.length >= 3 ? s : ring;
-}
-
-const starPoly = (c: Vec2, r: number[]): Polygon => orientPos(r.map((v, j) => ({ x: c.x + Math.cos((j / r.length) * TAU) * v, y: c.y + Math.sin((j / r.length) * TAU) * v })));
-
 /** Point where the ray from c along angle a leaves the (star-shaped) ring. */
 function ringAt(ring: Polygon, c: Vec2, a: number): Vec2 | null {
   const h = rayHit(ring, c, { x: Math.cos(a), y: Math.sin(a) }, 1e6, 0.01);

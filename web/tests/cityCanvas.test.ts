@@ -3,6 +3,7 @@ import type { Layout, Partition, Point, Shape } from '../../rust/bridge/urban';
 import type { PlacementBatch } from '../../rust/bridge/urbanArchitecture';
 import { buildCityBuildings, buildCityScene, districtRoleLabel, drawCity, pickCity, roleFamily, selectCityLod, type CityDrawOptions, type CityLayers } from '../src/render/cityCanvas';
 import { cityGlOverlayLayers } from '../src/render/cityGl';
+import { defaultText } from '../src/render/textLayer';
 import { mockCanvas, MockPath2D } from '../scripts/fakeworld';
 
 const square = (x: number, y: number, size: number): Shape => ({
@@ -117,6 +118,7 @@ describe('City Bench canvas scene', () => {
             width: 1,
             layers: overlay ? cityGlOverlayLayers(layers) : layers,
             buildingsVisible: false,
+            text: defaultText({ levels: { districts: 100 } }),
             appearance: { style: 'cartographic', diagnostic: 'none' },
           };
           const shown = drawCity(ctx, scene, options);

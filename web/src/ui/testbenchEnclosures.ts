@@ -1,4 +1,5 @@
 import type { Layout, Partition, Point, Shape } from '../../../rust/bridge/urban';
+import { polygonArea } from '../gen/core/geom';
 import { buildCityScene } from '../render/cityCanvas';
 import { buildYardEnclosures, type YardHouse } from '../render/cityLotEnclosures';
 
@@ -21,13 +22,6 @@ type HouseSource = { parcel_id: string; footprint: readonly Shape[]; programme?:
 
 const COLOR = { wall: '#333', fence: '#b5651d', hedge: '#2f7d32' } as const;
 const ring = (r: readonly Point[]): string => (r.length ? 'M' + r.map(p => `${p.x},${p.y}`).join('L') + 'Z' : '');
-const areaOf = (r: readonly Point[]): number =>
-  Math.abs(
-    r.reduce((s, a, i) => {
-      const b = r[(i + 1) % r.length];
-      return s + a.x * b.y - b.x * a.y;
-    }, 0),
-  ) / 2;
 function hullArea(points: readonly Point[]): number {
   const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
   if (p.length < 3) return 0;
@@ -40,7 +34,7 @@ function hullArea(points: readonly Point[]): number {
     }
     return h.slice(0, -1);
   };
-  return areaOf([...half(p), ...half([...p].reverse())]);
+  return Math.abs(polygonArea([...half(p), ...half([...p].reverse())]));
 }
 function segDistance(p: Point, a: Point, b: Point): number {
   const dx = b.x - a.x,
@@ -57,7 +51,7 @@ export function benchEnclosureLayers(layouts: readonly Layout[], partitions: rea
   for (const p of partitions.flatMap(q => q.parcels)) {
     if (p.shape.outer.length < 3) continue;
     stats.lots++;
-    const solidity = areaOf(p.shape.outer) / (hullArea(p.shape.outer) || 1),
+    const solidity = Math.abs(polygonArea(p.shape.outer)) / (hullArea(p.shape.outer) || 1),
       weak = solidity < 0.8;
     if (weak) stats.weakLots++;
     if (show.lots)

@@ -10,6 +10,7 @@
  * Enclosures without the new fields (older engines) are left to the legacy wall drawing:
  * cityWallDetails() returns undefined for them. */
 import type { Enclosure, Point, Shape } from '../../../rust/bridge/urban';
+import { polygonArea } from '../gen/core/geom';
 import type { Box, CityLod, CityPalette, CityScene } from './cityCanvas';
 import { META, STROKE_STRIDE, type CityGlStrokes } from './cityGlBuild';
 import { earcut } from './cityGlEarcut';
@@ -57,15 +58,6 @@ export interface WallDetail {
 }
 
 const dist = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y);
-function signedArea(r: readonly Point[]): number {
-  let a = 0;
-  for (let i = 0, n = r.length; i < n; i++) {
-    const p = r[i],
-      q = r[(i + 1) % n];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a / 2;
-}
 interface Ring {
   pts: Point[];
   cum: number[];
@@ -80,7 +72,7 @@ function ringOf(path: readonly Point[]): Ring | undefined {
   const cum = [0];
   for (let i = 0; i < pts.length; i++) cum.push(cum[i] + dist(pts[i], pts[(i + 1) % pts.length]));
   // Counter-clockwise rings (positive area) have their outside on the right of each edge.
-  return { pts, cum, length: cum[pts.length], out: signedArea(pts) > 0 ? 1 : -1 };
+  return { pts, cum, length: cum[pts.length], out: polygonArea(pts) > 0 ? 1 : -1 };
 }
 /** Arc length of the point of the ring nearest to p. */
 function project(r: Ring, p: Point): { s: number; d: number; tangent: Point } {
@@ -745,7 +737,7 @@ export function cityWallMesh(scene: CityScene, origin: Point): WallMesh | undefi
     const a = offsetLine(p.points, -d.width / 2, 1, p.closed),
       b = offsetLine(p.points, d.width / 2, 1, p.closed);
     // A closed curtain is a ring: the larger offset is the outer boundary, the other the hole.
-    const [outer, inner] = Math.abs(signedArea(a)) > Math.abs(signedArea(b)) ? [a, b] : [b, a];
+    const [outer, inner] = Math.abs(polygonArea(a)) > Math.abs(polygonArea(b)) ? [a, b] : [b, a];
     polygon(p.closed ? { outer, holes: [inner] } : { outer: [...a, ...b.reverse()], holes: [] }, cls_, false);
   };
   const ranges: Record<'ground' | 'strips' | 'cast' | 'rest', [number, number]> = { ground: [0, 0], strips: [0, 0], cast: [0, 0], rest: [0, 0] };

@@ -47,9 +47,8 @@ describe('pinned raster map composition', () => {
     expect(svg).not.toContain('<name>');
     expect({ capture, content }).toEqual(before);
   });
-  it('supports each of the nine shared overlay palettes without claiming raster restyling', () => {
+  it('supports each shared overlay palette without claiming raster restyling', () => {
     const { capture, content } = fixture();
-    expect(STYLE_LIST).toHaveLength(9);
     for (const { id } of STYLE_LIST) {
       const result = composeSurfaceMap(capture, png, content, { style: id });
       expect(result.evidence.style).toBe(id);

@@ -1,13 +1,7 @@
 import type { Layout, Parcel } from '../../../rust/bridge/urban';
+import { netPolygonArea } from '../gen/core/geom';
 
 const escape = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const area = (ring: { x: number; y: number }[]): number =>
-  Math.abs(
-    ring.reduce((sum, p, i) => {
-      const q = ring[(i + 1) % ring.length];
-      return sum + p.x * q.y - q.x * p.y;
-    }, 0),
-  ) / 2;
 const uses: Record<string, string> = { plot: 'Terrain constructible', garden: 'Jardin voulu', place: 'Place', compound: 'Enclos / domaine', market: 'Marché', reserve: 'Réserve', common: 'Commun', residual: 'Résidu non constructible', court: 'Cour et circulation conservées' };
 const accesses: Record<string, string> = { public: 'Rue publique', collective: 'Accès collectif', private: 'Accès privé', unserved: 'Sans desserte', reserved: 'Espace réservé', attached: 'Arrière-fond rattaché' };
 
@@ -16,7 +10,7 @@ export function parcelInspectionHtml(parcel: Parcel, layout: Layout, ordinal: nu
   const block = layout.blocks[parcel.block],
     quarter = block && layout.quarters[block.quarter];
   const phase = layout.phases?.[block?.phase ?? quarter?.phase ?? 0];
-  const surface = Math.max(0, area(parcel.shape.outer) - parcel.shape.holes.reduce((sum, ring) => sum + area(ring), 0));
+  const surface = Math.max(0, netPolygonArea(parcel.shape.outer, parcel.shape.holes));
   const rows: [string, string][] = [
     ['Résultat', uses[parcel.use] ?? parcel.use],
     ['Îlot / quartier', `${parcel.block + 1} / ${(block?.quarter ?? 0) + 1}`],
