@@ -9,7 +9,7 @@ import { yardStyle } from '../yardStyle';
 import { drawRuralDetails } from '../ruralDetails';
 import { roadWidth, strokeNaturalRoad } from '../roadStyle';
 import { drawPanelCanvas } from '../legend';
-import { underdarkMark } from '../underdark';
+import { fungalBedLook, fungalBedMarks } from '../underdark';
 import type { CartographyContext } from './context';
 import type { VectorFrame } from './frame';
 
@@ -32,14 +32,17 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
       fillPolys('farm-orchards', pal.land.orchard);
       fillPolys('farm-paddocks', pal.land.pasture);
     }
-    fillPolys('farm-fungal-gardens', pal.land.garden);
-    strokePolys('farm-fungal-gardens', pal.hedge, lw(0.4, 0.3), 0.8);
+    // Fungal beds (render/underdark.ts fungalBedLook): dark compost with small caps; a vector map rings them with its
+    // farm ink, a material ground leaves them unlined in the cave floor.
+    const bed = fungalBedLook(pal, natural, roadStyle.night);
+    fillPolys('farm-fungal-gardens', bed.bed, natural ? 0.85 : 1);
+    if (bed.edge) strokePolys('farm-fungal-gardens', bed.edge, lw(0.3, 0.3), 0.45);
     if (brushes && lod.textures) {
       brushFill('farm-gardens', 'garden', sc);
       brushFill('farm-orchards', 'orchard', sc);
     }
     if (!c.activeLight && polyL('farm-fungal-gardens')?.polys.length && lod.textures) {
-      const pat = getPattern(ctx, 'fungal-farm', 8, 8, 0, (cx, k) => drawPanelCanvas(cx, { w: 0, h: 0, prims: underdarkMark('garden', 4 * k, 4 * k, 1.7 * k, pal, k) }, 0, 0, family));
+      const pat = getPattern(ctx, `fungal-farm:${bed.cap}`, 8, 8, 0, (cx, k) => drawPanelCanvas(cx, { w: 0, h: 0, prims: fungalBedMarks(4 * k, 4 * k, 3.4 * k, bed) }, 0, 0, family));
       const l = polyL('farm-fungal-gardens');
       if (pat && l) {
         ctx.fillStyle = pat;

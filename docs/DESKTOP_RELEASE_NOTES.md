@@ -46,6 +46,8 @@
 - Underdark, tilted map: the caves are back in relief, with rock walls rising to the roof of each chamber and tunnel (the appearance's roof height), a black sky, the cave's darkness and lantern light on the ground and the town, modelled mushrooms, and no surface trees.
 - Underdark: the cave roof is back, cut away around the view in orbit and whole overhead when walking or flying.
 - Underdark road tunnels are drawn as bare ground at the road's own width instead of a wide grey slab with kerbs.
+- Underdark: fungal farms stay by the cave towns. The countryside no longer fills with hundreds of farmsteads: no roadside farms or farm hamlets, and at most one isolated farm per 500 inhabitants (40 per map).
+- Underdark: fungal farm beds are dark compost of the cave floor's tones with small, faintly glowing mushroom caps in every map style, instead of a pale field with a purple symbol.
 
 macOS support is deferred until native neural inference and desktop packaging are validated on Apple Silicon.
 

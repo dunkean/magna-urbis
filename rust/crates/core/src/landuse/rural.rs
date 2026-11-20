@@ -1013,7 +1013,12 @@ pub fn generate_rural(input: &Input) -> Result<RuralOutput, String> {
         // Households left for new farms: those not already busy on worked land, less the farms
         // already drawn.
         let free_households = (households - (keep as f64 / holding as f64).ceil()).max(0.0) as usize;
-        let max_farms = free_households.saturating_sub(farmsteads.len());
+        let mut max_farms = free_households.saturating_sub(farmsteads.len());
+        // Underdark: the fungal farms are the cultivated land of the cave towns; a farm out on the cave floor is rare
+        // (`cave_farm_cap`), never one per free household.
+        if under {
+            max_farms = max_farms.min(cave_farm_cap(people).saturating_sub(farmsteads.len()));
+        }
         // Out of reach: suited land (good soil, gentle slope, dry, habitable) gets farmers while
         // the budget and the households last, nearest to the market first; each new farm claims
         // one holding within its reach (`claim_holdings`).
@@ -1728,6 +1733,15 @@ pub(crate) fn holding_ha(biome: &str, climate: &str) -> f64 {
     } else {
         12.0
     }
+}
+/// Inhabitants of an Underdark region per farm standing apart from its places, and the most such farms on any map.
+const CAVE_PEOPLE_PER_FARM: f64 = 500.0;
+const CAVE_FARMS_MAX: usize = 40;
+/// Farms of an Underdark region outside its towns (placed farmstead settlements and farms for unreached cave floor
+/// together): one per `CAVE_PEOPLE_PER_FARM` inhabitants, at most `CAVE_FARMS_MAX`. The fungal beds are worked from
+/// the cave towns; the land no town reaches stays wild floor rather than gaining a farm per household.
+pub(crate) fn cave_farm_cap(people: f64) -> usize {
+    ((people.max(0.0) / CAVE_PEOPLE_PER_FARM).ceil() as usize).min(CAVE_FARMS_MAX)
 }
 /// Farming households of a region: the share of each place's people who farm (a farmstead all
 /// of them, a hamlet 85 %, a village 70 %, then a smooth decline to a quarter at 5,000 and a tenth
