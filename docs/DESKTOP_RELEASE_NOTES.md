@@ -10,7 +10,7 @@
 - Discard the previous map's 3D trees when regenerating with trees switched off, so re-enabling them cannot restore trees over the new sea or terrain.
 - Keep Satellite fast's terrain and vegetation identical to Satellite, while retaining simplified textured buildings.
 - Remove dashed town reserve outlines from Satellite and Satellite fast.
-- Publish regenerated towns in 2D without requiring a 3D switch, continue unfinished Canvas paints, and show a spinner beside each town name until its first display is complete.
+- Publish regenerated towns in 2D without requiring a 3D switch, continue unfinished Canvas paints, and keep the central generation card visible alongside town-name spinners until the new display is complete.
 - Keep Atlas free of contour lines and urban ground fills, showing houses and roads only. Atlas, Cadastre and Topography keep only building volumes above their map in the tilted view.
 - Reuse fixed-definition town and land-use rasters in Cadastre, and retained contour rasters in Topography and Parchment instead of redrawing contour triangles at each frame. Topography uses 1 m contours with 5 m index lines.
 - Reduce the density of Parchment's drawn trees.

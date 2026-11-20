@@ -87,7 +87,9 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
       state.canvas.hidden = false;
       $('#empty-map').hidden = true;
       actions.updateWorld();
-      void actions.refresh3dWorld();
+      // The town-name spinners complement this card: generation owns it until the new picture is presented.
+      await actions.refresh3dWorld();
+      await state.client.displaySettled();
       performance.measure('v2:show', { start: showStart });
       if (['region', 'settlements'].includes(action)) actions.selectTab('settlements');
       else if (['all', 'towns'].includes(action)) actions.selectTab('cities');
