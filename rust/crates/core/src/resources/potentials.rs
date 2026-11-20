@@ -3,7 +3,7 @@
 //! (Ecocrop trapezoids, Miami NPP, NE lithology table) on the R2 soil fields; all O(blocks).
 //! Objects (ore, salt_deposit, coal, settlement, road, crossing) are not fields.
 use super::soil::nearest_seed;
-use super::ResourceFields;
+use super::{smoothstep, ResourceFields};
 
 /// What the soil pass keeps for the potentials (block-aligned, same indexing as the fields).
 pub(super) struct Inputs<'a> {
@@ -77,10 +77,6 @@ impl Potentials {
     }
 }
 
-fn smooth(a: f64, b: f64, x: f64) -> f64 {
-    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
 /// Ecocrop trapezoid: 0 below `a` and above `d`, 1 on [b, c].
 fn trapezoid(x: f64, a: f64, b: f64, c: f64, d: f64) -> f64 {
     if x <= a || x >= d {
@@ -228,12 +224,12 @@ pub(super) fn compute(f: &ResourceFields, g: &Inputs<'_>) -> Potentials {
         let npp = npp(local_t, eff_p);
         // Woody cover: biome x rain x moisture, none above the snow line or on bare rock.
         let woody = woody0
-            * smooth(150.0, 700.0, precip)
+            * smoothstep(150.0, 700.0, precip)
             * (0.5 + 0.9 * moisture).min(1.0)
-            * smooth(-2.0, 3.0, local_t)
-            * smooth(0.05, 0.4, depth);
+            * smoothstep(-2.0, 3.0, local_t)
+            * smoothstep(0.05, 0.4, depth);
         o.wood = woody as f32;
-        let mature = (0.3 + 0.35 * moisture + 0.2 * smooth(8.0, 25.0, slope) + 0.15 * smooth(500.0, 3000.0, g.dist_wet[k] as f64)).min(1.0);
+        let mature = (0.3 + 0.35 * moisture + 0.2 * smoothstep(8.0, 25.0, slope) + 0.15 * smoothstep(500.0, 3000.0, g.dist_wet[k] as f64)).min(1.0);
         o.timber = (woody * mature) as f32;
         // Arable: most limiting of T and P trapezoids x slope x soil x stones x drainage.
         let climate = trapezoid(local_t, 1.0, 6.0, 18.0, 26.0).min(trapezoid(precip, 200.0, 450.0, 1400.0, 2400.0));
@@ -243,12 +239,12 @@ pub(super) fn compute(f: &ResourceFields, g: &Inputs<'_>) -> Potentials {
             * (1.0 - stones)
             * DRAIN_ARABLE[f.drainage[k].min(4) as usize]) as f32;
         let herb = 1.0 - woody;
-        let pasture = npp * herb * (-slope / 40.0).exp() * smooth(0.03, 0.2, depth) * (1.0 - 0.5 * stones);
+        let pasture = npp * herb * (-slope / 40.0).exp() * smoothstep(0.03, 0.2, depth) * (1.0 - 0.5 * stones);
         o.pasture = pasture as f32;
         // Summer range: altitude x the lowlands' cold or dry season shortfall.
         let deficit = 0.35 + 0.65 * ((7.0 - t_sea) / 8.0).clamp(0.0, 1.0).max(((800.0 - precip) / 500.0).clamp(0.0, 1.0));
-        o.upland_pasture = (pasture * smooth(400.0, 1000.0, height) * deficit) as f32;
-        o.wind_exposure = (smooth(3.0, 40.0, tpi(k)) * (1.0 - 0.85 * woody)) as f32;
+        o.upland_pasture = (pasture * smoothstep(400.0, 1000.0, height) * deficit) as f32;
+        o.wind_exposure = (smoothstep(3.0, 40.0, tpi(k)) * (1.0 - 0.85 * woody)) as f32;
         // Stone: lithology x exposed rock x hardness.
         let rock = f.bedrock[k] as usize;
         let hard = f.hardness[k] as f64;
@@ -260,9 +256,9 @@ pub(super) fn compute(f: &ResourceFields, g: &Inputs<'_>) -> Potentials {
         let alluvial = f.alluvial[k] as f64;
         let clay_src = (if rock == 3 { 0.8_f64 } else { 0.0 }).max(alluvial);
         o.clay = ((f.clay[k] as f64 / 0.45).min(1.0) * clay_src * (-slope / 8.0).exp() * (depth / 0.5).min(1.0)) as f32;
-        let dune = (-(d_sea[k] as f64) / 500.0).exp() * smooth(25.0, 3.0, height);
+        let dune = (-(d_sea[k] as f64) / 500.0).exp() * smoothstep(25.0, 3.0, height);
         let sand_src = (if rock == 2 { 0.7_f64 } else { 0.0 }).max(0.6 * alluvial).max(0.9 * dune);
-        o.sand = (smooth(0.3, 0.8, f.sand[k] as f64) * sand_src * (-slope / 15.0).exp()) as f32;
+        o.sand = (smoothstep(0.3, 0.8, f.sand[k] as f64) * sand_src * (-slope / 15.0).exp()) as f32;
         // Coast: concave shoreline (low sea share in the window) close to the sea.
         let near_sea = (-(d_sea[k] as f64) / 600.0).exp();
         let concave = ((0.5 - sea_share(k)) / 0.3).clamp(0.0, 1.0);

@@ -136,6 +136,11 @@ impl ResourceFields {
     }
 }
 
+fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 /// Block LOD for a DEM cell size: the finest of 60/120/240 m not finer than the DEM.
 fn block_lod(cell: f64) -> i32 {
     if cell <= 60.0 {

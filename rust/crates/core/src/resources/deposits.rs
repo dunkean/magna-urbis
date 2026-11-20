@@ -13,7 +13,7 @@
 use super::keys::{cell_id, cell_key, cell_size, key, splitmix, unit, ValueNoise};
 use super::potentials::Inputs;
 use super::soil::nearest_seed;
-use super::ResourceFields;
+use super::{smoothstep, ResourceFields};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -66,10 +66,6 @@ pub const HOST: [[bool; 8]; 9] = {
 };
 const SIGMA: f64 = 0.7;
 
-fn smooth(a: f64, b: f64, x: f64) -> f64 {
-    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
 fn normal(u1: f64, u2: f64) -> f64 {
     (-2.0 * (1.0 - u1).ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
 }
@@ -106,7 +102,7 @@ pub(super) fn draw(f: &ResourceFields, g: &Inputs<'_>, seed: u64, origin: (i64, 
         let noise = ValueNoise::new(seed, &format!("deposit-{name}"), lod);
         move |k: usize| {
             let (wx, wy) = world(k);
-            smooth(-0.3, 0.7, noise.at(wx, wy))
+            smoothstep(-0.3, 0.7, noise.at(wx, wy))
         }
     };
     let (iron_p, coal_p, hydro_p) = (province("ironstone", 6), province("coal", 7), province("hydrothermal", 6));
@@ -134,7 +130,7 @@ pub(super) fn draw(f: &ResourceFields, g: &Inputs<'_>, seed: u64, origin: (i64, 
             3 => {
                 if r == 0 { (-(d_other[k] as f64) / 250.0).exp() } else { (-(d_granite[k] as f64) / 400.0).exp() }
             }
-            4 => smooth(500.0, 1100.0, precip) * coal_p(k),
+            4 => smoothstep(500.0, 1100.0, precip) * coal_p(k),
             5 => {
                 let source = if r == 7 { 1.0 } else { (-(d_evap[k] as f64) / 800.0).exp() };
                 source * (-(f.hand[k] as f64) / 15.0).exp()
@@ -143,7 +139,7 @@ pub(super) fn draw(f: &ResourceFields, g: &Inputs<'_>, seed: u64, origin: (i64, 
             7 | 8 => {
                 let share = if fam == 7 { upstream(k, &[0, 5]) } else { upstream(k, &[0]) };
                 let bed = if g.channel[k] { 1.0 } else { f.alluvial[k] as f64 };
-                smooth(0.15, 0.6, share) * bed * (-slope(k) / 4.0).exp() * smooth(0.5e6, 5.0e6, g.area[k])
+                smoothstep(0.15, 0.6, share) * bed * (-slope(k) / 4.0).exp() * smoothstep(0.5e6, 5.0e6, g.area[k])
             }
             _ => 0.0,
         }
