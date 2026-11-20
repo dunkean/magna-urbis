@@ -2,6 +2,15 @@ name: Desktop V2 release
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Desktop candidate to build and test
+        type: choice
+        default: desktop
+        options:
+          - desktop
+          - macos-arm64
+          - macos-arm64-hardware
   push:
     tags: ['desktop-v*']
 
@@ -15,14 +24,11 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-2022
-            platform: windows-x64
-            bundles: nsis
-          - os: ubuntu-22.04
-            platform: linux-x64
-            bundles: deb,appimage
+      matrix: ${{ fromJSON(
+        inputs.target == 'macos-arm64-hardware' && '{"include":[{"os":["self-hosted","macOS","ARM64","magna-desktop"],"platform":"macos-arm64","bundles":"dmg"}]}' ||
+        inputs.target == 'macos-arm64' && '{"include":[{"os":"macos-15","platform":"macos-arm64","bundles":"dmg"}]}' ||
+        '{"include":[{"os":"windows-2022","platform":"windows-x64","bundles":"nsis"},{"os":"ubuntu-22.04","platform":"linux-x64","bundles":"deb,appimage"}]}'
+        ) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -34,6 +40,11 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Check desktop version and release tag
         run: node web/scripts/v2_version.mjs --check
+      - name: Check Apple Silicon toolchain
+        if: matrix.platform == 'macos-arm64'
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(node -p process.arch)" = arm64
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -61,12 +72,20 @@ jobs:
         working-directory: web
         run: npm run prepare:v2 -- --no-threads
       - name: Build desktop installers and both native engines
+        if: matrix.platform != 'macos-arm64'
         working-directory: web
         run: npm run app:v2:build -- --bundles=${{ matrix.bundles }}
+      - name: Build Apple Silicon DMG and both native engines
+        if: matrix.platform == 'macos-arm64'
+        timeout-minutes: 30
+        working-directory: web
+        run: npm run app:v2:build -- --bundles=dmg --features=desktop-smoke --config='{"bundle":{"macOS":{"signingIdentity":"-"}}}'
       - uses: actions/setup-python@v5
+        if: matrix.platform != 'macos-arm64'
         with:
           python-version: '3.12'
       - name: Check optional runtime and model tooling
+        if: matrix.platform != 'macos-arm64'
         shell: bash
         run: |
           python -m unittest discover -s python_runtime -p "test_*.py"
@@ -80,6 +99,7 @@ jobs:
           npm run typecheck
           npx vitest run tests/v2Illustration.test.ts tests/v2Platform.test.ts tests/v2PythonRuntimeSelection.test.ts tests/v2DesktopUpdates.test.ts tests/v2/desktopNeural.test.ts tests/neuralModels.test.ts
       - name: Test native service inputs and verified download handling
+        if: matrix.platform != 'macos-arm64'
         working-directory: rust
         shell: bash
         run: |
@@ -97,6 +117,18 @@ jobs:
         run: node web/scripts/v2_neural_release.mjs
       - name: Check resources and stage release assets
         run: node web/scripts/v2_release_check.mjs --platform=${{ matrix.platform }}
+      - name: Prepare verified neural weights for the macOS smoke test
+        if: matrix.platform == 'macos-arm64'
+        run: node web/scripts/v2_neural_release.mjs --output="${RUNNER_TEMP}/magna-macos-weights"
+      - name: Run the installed app in WKWebView
+        if: matrix.platform == 'macos-arm64'
+        timeout-minutes: 12
+        env:
+          MAGNA_REQUIRE_MAC_GPU: ${{ inputs.target == 'macos-arm64-hardware' && '1' || '0' }}
+        run: |
+          cd release-v2/macos-arm64
+          shasum -a 256 -c SHA256SUMS-macos-arm64.txt
+          node ../../web/scripts/v2_macos_check.mjs ./*.dmg "${RUNNER_TEMP}/magna-macos-weights"
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-v2-${{ matrix.platform }}
@@ -110,7 +142,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v')
     needs: build
     runs-on: ubuntu-22.04
     permissions:

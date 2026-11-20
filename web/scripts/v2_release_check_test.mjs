@@ -11,7 +11,7 @@ await mkdir(temporary, { recursive: true });
 const base = await mkdtemp(join(temporary, 'release-collection-'));
 try {
   const version = JSON.parse(await readFile(join(root, 'rust/desktop-v2/tauri.conf.json'), 'utf8')).version;
-  for (const platform of ['windows-x64', 'linux-x64']) {
+  for (const platform of ['windows-x64', 'linux-x64', 'macos-arm64']) {
     const resources = join(base, platform, 'resources'),
       bundle = join(base, platform, 'bundle'),
       output = join(base, platform, 'output');
@@ -37,7 +37,7 @@ try {
     await rm(join(pythonScripts, 'neural_sampling.py'));
     await assert.rejects(checkResources(resources, platform), /neural_sampling\.py/);
     await stageTerrainPythonScripts(join(root, 'web'), pythonScripts);
-    const extensions = platform === 'windows-x64' ? ['x64-setup.exe'] : ['amd64.deb', 'amd64.AppImage'];
+    const extensions = { 'windows-x64': ['x64-setup.exe'], 'linux-x64': ['amd64.deb', 'amd64.AppImage'], 'macos-arm64': ['aarch64.dmg'] }[platform];
     for (const extension of extensions) await writeFile(join(bundle, `Magna Urbis V2_${version}_${extension}`), 'installer fixture');
     const binary = join(base, 'app.exe');
     await writeFile(binary, 'desktop fixture');
@@ -48,17 +48,18 @@ try {
       files.every(file => !file.includes(' ')),
       'GitHub must not rename collected assets',
     );
-    assert.equal(files.length, 4, 'No duplicate portable archive under its unsanitized name');
+    const count = platform === 'macos-arm64' ? 1 : 2;
+    assert.equal(files.length, count + 2, 'Only expected installers, metadata and checksums');
     const metadata = JSON.parse(await readFile(join(output, `metadata-${platform}.json`), 'utf8'));
     const checksums = await readFile(join(output, `SHA256SUMS-${platform}.txt`), 'utf8');
-    assert.equal(metadata.artifacts.length, 2);
+    assert.equal(metadata.artifacts.length, count);
     for (const artifact of metadata.artifacts) {
       assert.ok(artifact.file.startsWith('Magna.Urbis.V2_'));
       assert.ok(files.includes(artifact.file));
       assert.ok(checksums.includes(`${artifact.sha256}  ${artifact.file}\n`));
     }
   }
-  console.log('Windows/Linux asset names, checksums and metadata match public GitHub filenames; no duplicate ZIP.');
+  console.log('Desktop asset names, checksums and metadata match GitHub filenames.');
 } finally {
   const parent = await realpath(temporary),
     target = await realpath(base),

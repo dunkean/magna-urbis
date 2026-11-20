@@ -16,7 +16,8 @@ const options = Object.fromEntries(
   }),
 );
 const platform = options.platform;
-if (!['windows-x64', 'linux-x64'].includes(platform)) throw new Error('Use --platform=windows-x64 or --platform=linux-x64');
+const platforms = { 'windows-x64': ['.exe'], 'linux-x64': ['.deb', '.AppImage'], 'macos-arm64': ['.dmg'] };
+if (!Object.hasOwn(platforms, platform)) throw new Error(`Use --platform with one of: ${Object.keys(platforms).join(', ')}`);
 const target = join(root, 'rust/desktop-v2/target/release');
 const resources = resolve(options.resources ?? join(root, platform === 'windows-x64' ? 'rust/desktop-v2/target/release/resources' : 'rust/desktop-v2/resources'));
 const bundle = resolve(options.bundle ?? join(root, 'rust/desktop-v2/target/release/bundle'));
@@ -30,7 +31,7 @@ const all = await files(bundle);
 const version = JSON.parse(await readFile(join(root, 'rust/desktop-v2/tauri.conf.json'), 'utf8')).version;
 if (typeof version !== 'string' || !version) throw new Error('Desktop version is missing');
 const versionPattern = new RegExp(`(?:^|[^0-9])${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^0-9])`);
-const extensions = platform === 'windows-x64' ? ['.exe'] : ['.deb', '.AppImage'];
+const extensions = platforms[platform];
 const installers = extensions.map(ext => {
   const matches = all.filter(path => path.endsWith(ext) && versionPattern.test(basename(path)));
   if (matches.length !== 1) throw new Error(`Expected exactly one ${ext} installer for version ${version} in ${bundle}; found ${matches.length}`);

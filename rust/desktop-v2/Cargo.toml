@@ -19,6 +19,7 @@ sha2 = "0.10"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+desktop-smoke = []
 
 [profile.release]
 opt-level = 3
