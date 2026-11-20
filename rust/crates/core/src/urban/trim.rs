@@ -32,12 +32,41 @@ fn interior(role: &str) -> bool {
 
 /// The capacity plan's vacant land inside the wall (or core) must get the
 /// same access and cadastral chance as any other block before trimming.
+/// The block outlines lose their jogs (`without_jogs`) before the trim's probe and the final cut read them.
 pub(super) fn prepare(layout: &mut Layout) {
     let rings: Vec<Shape> = layout.enclosures.iter().map(|e| Shape { outer: e.path.clone(), holes: vec![] }).collect();
     for b in &mut layout.blocks {
         if b.kind == "reserve" && (b.zone == "core" || rings.iter().any(|r| g::contains(r, g::interior_point(&b.shape)))) {
             b.kind = "block".into();
         }
+        // A street village sizes its strips by frontage. Their vertices carry
+        // that subdivision through to the parcel cut, even at a short bend.
+        if layout.archetype != "street-village" {
+            without_jogs(&mut b.shape.outer);
+            b.shape.holes.iter_mut().for_each(without_jogs);
+        }
+    }
+}
+
+/// Vertices closer than this (m) to the previous one leave a block outline.
+const JOG: f64 = 0.05;
+/// Drops the vertices of a closed ring within `JOG` of the previous one kept. The ribbon cuts leave
+/// jogs of a few centimetres between a chord and the next piece of the same street; each splits that
+/// frontage into separate contacts, and the lot cutter then searches the lots across it for a free
+/// witness (close to a second on one such block of 1,400 m²).
+fn without_jogs(ring: &mut Vec<Point>) {
+    let near = |a: Point, b: Point| (a.x - b.x).hypot(a.y - b.y) < JOG;
+    let mut out: Vec<Point> = Vec::with_capacity(ring.len());
+    for &p in ring.iter() {
+        if out.last().is_none_or(|&q| !near(p, q)) {
+            out.push(p);
+        }
+    }
+    while out.len() > 3 && near(out[0], out[out.len() - 1]) {
+        out.pop();
+    }
+    if out.len() >= 3 && out.len() < ring.len() {
+        *ring = out;
     }
 }
 

@@ -864,7 +864,6 @@ fn pockets(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
 fn candidates(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
     let r = &shape.outer;
     if r.len() < 4 { return vec![]; }
-    let mut found = vec![];
     let n = r.len();
     // Twice-around prefix of the shoelace terms: the signed area of the chain
     // r[i..=j] closed by its chord in O(1). A chain clearly positive (> 1 m²)
@@ -876,7 +875,8 @@ fn candidates(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
     }
     let corners: Vec<_> = (0..n).filter(|&i|
         cross(dir(r[(i + n - 1) % n], r[i]), dir(r[i], r[(i + 1) % n])) >= -1e-8).collect();
-    for &i in &corners {
+    let corners_found = super::par::map(&corners, |_, &i| {
+        let mut found = Vec::new();
         for &j in &corners {
             let span = (j + n - i) % n;
             if span < 2 { continue; }
@@ -892,14 +892,16 @@ fn candidates(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
             }
             if let Some(p) = pocket_candidate(shape, i, end, r[i], r[j], limits, false) { found.push(p); }
         }
-    }
+        found
+    });
     // Opposing stretches can fold inside a broad, otherwise shallow bay.
     // Use their closest endpoint/projection, rather than moving either stretch.
     // Sides whose boxes lie more than the fold gap apart have no point pair
     // closer than it: skipped.
     let boxes: Vec<[f64; 4]> = (0..n).map(|i| { let (a, b) = (r[i], r[(i + 1) % n]);
         [a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y)] }).collect();
-    for i in 0..r.len() {
+    let folds = super::par::map(&boxes, |i, _| {
+        let mut found = Vec::new();
         for j in 0..r.len() {
             if i == j || (i + 1) % r.len() == j || (j + 1) % r.len() == i { continue; }
             let (p, q) = (boxes[i], boxes[j]);
@@ -913,8 +915,9 @@ fn candidates(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
                 if let Some(p) = pocket_candidate(shape, i, j, a, b, limits, true) { found.push(p); }
             }
         }
-    }
-    found
+        found
+    });
+    corners_found.into_iter().chain(folds).flatten().collect()
 }
 /// HEAD's trace is unchanged except for a deep re-entrant bay or a narrow fold.
 /// No resampling, global simplification, setback or minimum front length.
@@ -1930,23 +1933,8 @@ pub(super) fn build(
     }
     // --- water gates: pair each entry into the water with the next exit.
     let has_towers = style.corner_turn.is_some() || style.tower_spacing.is_some();
-    if banks.len() >= 2 && banks.iter().any(|b| b.1) && banks.iter().any(|b| !b.1) {
-        let m = banks.len();
-        for k in 0..m {
-            if !banks[k].1 {
-                continue;
-            }
-            let Some(j) = (1..m).map(|o| (k + o) % m).find(|&j| !banks[j].1) else {
-                continue;
-            };
-            if (1..m)
-                .map(|o| (k + o) % m)
-                .take_while(|&x| x != j)
-                .any(|x| banks[x].1)
-            {
-                continue; // two entries in a row: not a crossing pair
-            }
-            let (a, b) = (banks[k].0, banks[j].0);
+    if !banks.is_empty() {
+        for (a, b) in water_passages(banks) {
             let shore = {
                 let (first, last) = (seg_of(a), seg_of(b));
                 let (mut wet, mut river, mut transverse, mut samples) = (false, true, 0, 0);
@@ -2889,22 +2877,21 @@ pub(super) fn build(
                 .min_by(|x, y| x.0.total_cmp(&y.0)) else { return false };
             salients.iter().any(|s| near_ring(c, s)) && !lands.iter().filter(|l| g::area(l) >= 0.25 * big).any(|l| near_ring(c, l))
         };
-        for p in band {
-            for d in g::dry_clip(&surface, &p) {
-                if g::area(&d) > 20.0 && off_gap(&d) && !far_bank(&d) {
-                    ditch.push(Work {
-                        kind: if let Some(wetness) = style.ditch_wetness {
-                            parameters::ditch_kind(&d, surface, rng, wetness).into()
-                        } else if style.dry_ditches && style.ditch == "auto" {
-                            options::ditch_kind(&d, surface, rng).into()
-                        } else { kind.into() },
-                        shape: d,
-                        height_m: depth,
-                        passage: None,
-                    });
-                }
-            }
-        }
+        ditch.extend(super::par::map(&band, |_, p| {
+            g::dry_clip(&surface, p).into_iter()
+                .filter(|d| g::area(d) > 20.0 && off_gap(d) && !far_bank(d))
+                .map(|shape| Work {
+                    kind: if let Some(wetness) = style.ditch_wetness {
+                        parameters::ditch_kind(&shape, surface, rng, wetness).into()
+                    } else if style.dry_ditches && style.ditch == "auto" {
+                        options::ditch_kind(&shape, surface, rng).into()
+                    } else { kind.into() },
+                    shape,
+                    height_m: depth,
+                    passage: None,
+                })
+                .collect::<Vec<_>>()
+        }).into_iter().flatten());
         if has("glacis") {
             let far = buffer_all(&moat_core, berm + dw + 20.0);
             let band: Vec<Shape> = far
@@ -3388,10 +3375,22 @@ const GATE_REACH: f64 = 8.0;
 /// after the gates were decided keeps its crossing, and `reconcile_gates` opens
 /// its gate.
 ///
-/// The ramp of a lesser street that the wall cuts before the trims (`main_too`)
-/// leads to its bridge on one side only: its pieces are ordinary streets from
-/// then on, which the trims keep or prune by the doors on them like any other.
+/// A cut ramp keeps its approach role only on the piece that meets its bridge.
 fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too: bool, surface: Surface<'_>) {
+    let passages: Vec<_> = enclosures.iter().flat_map(|e| &e.gatehouses)
+        .filter(|gh| matches!(gh.kind.as_str(), "water" | "shore"))
+        .map(|gh| (gh.passage[0], gh.passage[1]))
+        .collect();
+    close_crossings_at(streets, enclosures, main_too, surface, &passages);
+}
+
+/// Each entry immediately followed by an exit, including across the seam of a closed curtain.
+fn water_passages(banks: &[(Point, bool)]) -> impl Iterator<Item = (Point, Point)> + '_ {
+    banks.iter().zip(banks.iter().cycle().skip(1))
+        .filter_map(|(a, b)| (a.1 && !b.1).then_some((a.0, b.0)))
+}
+
+fn close_crossings_at(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too: bool, surface: Surface<'_>, passages: &[(Point, Point)]) {
     let walls: Vec<(Near, f64, &Enclosure)> = enclosures
         .iter()
         .filter(|e| !e.style.is_empty() && e.path.len() >= 4)
@@ -3400,12 +3399,12 @@ fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too
     if walls.is_empty() {
         return;
     }
-    let passages: Vec<(Point, Point)> = enclosures
-        .iter()
-        .flat_map(|e| e.gatehouses.iter())
-        .filter(|gh| matches!(gh.kind.as_str(), "water" | "shore"))
-        .map(|gh| (gh.passage[0], gh.passage[1]))
-        .collect();
+    let mut landings = std::collections::HashSet::new();
+    if main_too {
+        for deck in streets.iter().filter(|s| s.role == "bridge") {
+            landings.extend(deck.path.first().into_iter().chain(deck.path.last()).map(|&p| super::network::key(p)));
+        }
+    }
     let mut out: Vec<Street> = Vec::with_capacity(streets.len());
     for mut s in std::mem::take(streets) {
         let lesser = gate_budget::priority(&s) < 2;
@@ -3488,7 +3487,12 @@ fn close_crossings(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_too
             }
             path.push(p1);
             widths.push(w1);
-            let role = if main_too && lesser && s.role == "approach" { if s.rank <= 2 { "street" } else { "lane" } } else { s.role.as_str() };
+            let role = if main_too && lesser && s.role == "approach"
+                && !landings.contains(&super::network::key(p0)) && !landings.contains(&super::network::key(p1)) {
+                if s.rank <= 2 { "street" } else { "lane" }
+            } else {
+                s.role.as_str()
+            };
             out.push(Street { path, widths, rank: s.rank, role: role.into() });
         }
     }
@@ -3972,7 +3976,8 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
         shapes: reserve_all,
     };
     let blocks = std::mem::take(&mut layout.blocks);
-    let out = super::par::map(&blocks, |_, b| {
+    let frontage = OnceLock::new();
+    let out = super::par::map(&blocks, |i, b| {
         // Quarter partitioning can leave a tiny piece just clear of the
         // curtain. It follows the same rule as a piece cut by the reserve.
         if b.kind == "block" && g::area(&b.shape) < MIN_BLOCK_PIECE && walls.iter().any(|(near, reach)|
@@ -3980,12 +3985,21 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
         if reserve.hits(&b.shape) <= 0.5 {
             return vec![b.clone()];
         }
-        reserve
-            .from(vec![b.shape.clone()])
-            .into_iter()
-            .filter(|s| g::area(s) >= MIN_BLOCK_PIECE)
-            .map(|shape| super::Block { shape, ..b.clone() })
-            .collect::<Vec<_>>()
+        let pieces = reserve.from(vec![b.shape.clone()]);
+        let split = pieces.len() > 1 && b.kind == "block";
+        pieces.into_iter().filter(|s| g::area(s) >= MIN_BLOCK_PIECE)
+            .map(|shape| {
+                let mut piece = super::Block { shape, ..b.clone() };
+                // A curtain can cut the street off one piece of a serviced block.
+                // Its landlocked backland stays open, as on the parcel cut.
+                if split && !layout.programme.iter().flat_map(|p| &p.reservations).any(|r| r.block == i)
+                    && super::parcels::access_fronts(&piece.shape, layout,
+                        frontage.get_or_init(|| super::parcels::FrontageIndex::new(layout))).is_empty() {
+                    piece.kind = "reserve".into();
+                }
+                piece
+            })
+            .collect()
     });
     layout.blocks = out.into_iter().flatten().collect();
     #[cfg(not(target_arch = "wasm32"))]

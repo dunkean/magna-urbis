@@ -3063,9 +3063,10 @@ fn generate_planned(
     let Some(p) = capacity::of(&first) else {
         return Ok(first);
     };
+    let tolerance = (0.05 * p.required).max(if cfg.small_place_capacity { 8.0 } else { 0.0 });
     if cfg.capacity_yield > 0.0
         || p.forecast <= 0.0
-        || p.shortfall <= (0.05 * p.required).max(if cfg.small_place_capacity { 8.0 } else { 0.0 })
+        || p.shortfall <= tolerance
         || p.measured_plan <= 0.0
     {
         return Ok(first);
@@ -3084,6 +3085,13 @@ fn generate_planned(
     } else {
         p.measured_plan
     };
+    // On a fully extended, fully densified plan, a sample within the planning
+    // tolerance confirms the forecast. Recalibrate only for a new deficit or
+    // when the measured blocks cannot accommodate the households themselves.
+    if planned == 1.0 && p.extension >= capacity::EXTENSION
+        && measured >= p.households && measured >= at - tolerance {
+        return Ok(first);
+    }
     let ratio = (measured / at.max(1e-9)).clamp(0.3, 0.99);
     let again = LayoutConfig {
         capacity_yield: ratio,

@@ -720,7 +720,9 @@ impl Raster {
         let cell = CELL.max((x1 - x0).max(y1 - y0) / MAX_SIDE);
         let r = (CLOSE / cell).ceil() as usize;
         let pad = (r + 3) as f64 * cell;
-        let (x0, y0) = (x0 - pad, y0 - pad);
+        // Anchor cells in world coordinates so a distant block moving by a fraction of
+        // a cell cannot shift the road handover at the opposite edge of the claim.
+        let (x0, y0) = ((x0 / cell).floor() * cell - pad, (y0 / cell).floor() * cell - pad);
         let nx = ((x1 + pad - x0) / cell).ceil() as usize + 1;
         let ny = ((y1 + pad - y0) / cell).ceil() as usize + 1;
         let mut raster = Raster { x0, y0, cell, nx, ny, on: vec![false; nx * ny] };
@@ -1006,6 +1008,17 @@ mod tests {
     }
     fn built(layout: &Layout) -> usize {
         layout.blocks.iter().filter(|b| b.kind != "reserve").count()
+    }
+
+    #[test]
+    fn a_subcell_change_to_a_block_keeps_the_opposite_claim_edge() {
+        let outline = |west| {
+            let block = g::rectangle(west, 21.0, 171.0, 120.0);
+            Raster::new(&[&block]).unwrap().outline()
+        };
+        let original = outline(20.1);
+        assert!(!original.is_empty());
+        assert_eq!(original, outline(20.1 + 0.000_001));
     }
 
     #[test]

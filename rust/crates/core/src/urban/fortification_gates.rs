@@ -282,7 +282,10 @@ pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circ
         gates: kept.iter().map(|p| p.at).collect(),
         ..Default::default()
     };
-    close_crossings(streets, std::slice::from_ref(&e), true, surface);
+    // A shore opening already serves its quay and bridge before the gatehouses are built.
+    let banks = super::super::composition::water_gates(&e.path, surface);
+    let passages: Vec<_> = water_passages(&banks).collect();
+    close_crossings_at(streets, std::slice::from_ref(&e), true, surface, &passages);
     (Shape { outer: ring, holes: wall.holes.clone() }, kept, shut)
 }
 
@@ -899,6 +902,27 @@ mod tests {
                 assert!(std::ptr::eq(a, b) || dist(a.at, b.at) >= 40.0, "gates {:?} and {:?} are too close", a.at, b.at);
             }
         }
+    }
+
+    #[test]
+    fn a_shore_opening_keeps_its_access_and_a_cut_ramp_keeps_its_deck_end() {
+        let water: Vec<u8> = (0..256).map(|i| u8::from(i % 16 == 8)).collect();
+        let surface = Surface { water: &water, ..flat() };
+        let bank = (1020.0, 550.0);
+        let access = road(&[bank, (1020.0, 750.0)], 2, "street");
+        let mut streets = vec![
+            road(&[(950.0, 500.0), (950.0, 750.0)], 1, "regional"),
+            access.clone(),
+            road(&[bank, (930.0, 750.0)], 3, "approach"),
+            road(&[bank, (1156.0, 550.0)], 3, "bridge"),
+        ];
+        let (_, gates, _) = decide(&town(), &mut streets, &circuit(false, 0.0), surface);
+        assert_eq!(gates.len(), 1);
+        assert!(streets.iter().any(|s| s.path == access.path));
+        let mut ramps = streets.iter().filter(|s| s.role == "approach");
+        assert_eq!(ramps.next().unwrap().path[0], pt(bank.0, bank.1));
+        assert!(ramps.next().is_none());
+        assert!(streets.iter().any(|s| s.role == "lane" && s.path.last() == Some(&pt(930.0, 750.0))));
     }
 
     /// At a kept passage the curtain turns square to its street, through the same gate point; the street

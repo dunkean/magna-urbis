@@ -10,8 +10,8 @@ mod policy;
 pub(super) use policy::{bank_dead_ends, junction_triangles};
 pub(super) use site_options::{clean_options, narrow_options};
 
-type Key = (i64, i64);
-const EPS: f64 = 1e-6;
+pub(super) type Key = (i64, i64);
+pub(super) const EPS: f64 = 1e-6;
 /// Ways whose ends are structures (decks, quays, stairs, wall lanes), never trimmed as loose ends.
 const CROSSINGS: [&str; 12] = ["bridge", "ford", "causeway", "quay", "pier", "mole", "landing", "boardwalk", "walkway", "stairs", "port-stairs", "wall-lane"];
 
@@ -22,7 +22,7 @@ pub(super) fn downgrade_path(s: &mut Street) {
     s.widths = (0..s.path.len()).map(|i| s.widths.get(i).or(s.widths.last()).copied().unwrap_or(2.0).min(2.0)).collect();
 }
 
-fn key(p: Point) -> Key {
+pub(super) fn key(p: Point) -> Key {
     (
         (p.x * 10000.0).round() as i64,
         (p.y * 10000.0).round() as i64,
@@ -37,7 +37,7 @@ fn lerp(a: Point, b: Point, t: f64) -> Point {
         y: a.y + (b.y - a.y) * t,
     }
 }
-fn protected(s: &Street) -> bool {
+pub(super) fn protected(s: &Street) -> bool {
     matches!(
         s.role.as_str(),
         "regional" | "bridge" | "ford" | "causeway" | "approach" | "peripheral" | "outbound"
@@ -1563,7 +1563,7 @@ fn clear_spurs(
         (tail >= 1 && head < n - 1 - tail && long(&last)).then_some(last),
     ]
 }
-fn private(s: &Street) -> bool {
+pub(super) fn private(s: &Street) -> bool {
     matches!(
         s.role.as_str(),
         "close" | "derb" | "hutong" | "roji" | "collective" | "private"
@@ -1640,7 +1640,7 @@ pub(super) fn enclosure_lanes(
         }
     }
 }
-fn width(s: &Street, i: usize) -> f64 {
+pub(super) fn width(s: &Street, i: usize) -> f64 {
     s.widths
         .get(i)
         .copied()
@@ -2041,17 +2041,17 @@ pub(super) fn town_roads(streets: &mut [Street], built: &[super::Shape], arteria
 }
 
 #[derive(Clone, Copy)]
-struct Segment {
-    street: usize,
-    offset: usize,
-    a: Point,
-    b: Point,
+pub(super) struct Segment {
+    pub(super) street: usize,
+    pub(super) offset: usize,
+    pub(super) a: Point,
+    pub(super) b: Point,
 }
 
 /// Traverse only cells crossed by the segment, including both sides of an exact
 /// corner. Work is proportional to length instead of rectangular bounding area.
 /// Pairs `(j, i)`, `j < i`, ascending and without repeats.
-fn candidates(segments: &[Segment], cell: f64) -> Vec<(usize, usize)> {
+pub(super) fn candidates(segments: &[Segment], cell: f64) -> Vec<(usize, usize)> {
     let mut buckets: std::collections::HashMap<(i64, i64), Vec<usize>> = Default::default();
     let mut pairs = Vec::new();
     for (i, segment) in segments.iter().enumerate() {
@@ -2133,7 +2133,7 @@ fn projection(p: Point, a: Point, b: Point) -> Option<f64> {
     }
 }
 
-fn crossings(a: Segment, b: Segment) -> Vec<(f64, f64, Point)> {
+pub(super) fn crossings(a: Segment, b: Segment) -> Vec<(f64, f64, Point)> {
     let ax = a.b.x - a.a.x;
     let ay = a.b.y - a.a.y;
     let bx = b.b.x - b.a.x;
@@ -2373,23 +2373,12 @@ impl Graph {
     }
 }
 
-/// Invariant (no doubled corridor): a street whose ribbon overlaps the ribbon
-/// of a more important one (lower rank, else wider, else earlier) along at
-/// least 90 % of its length leaves no land between them: it is a copy of that
-/// corridor, not a second road, and is removed.
-/// Streets that met it elsewhere than on the survivor are carried on to the
-/// survivor's centreline (within its ribbon plus their own width), so the
-/// network keeps every junction. Protected roads are never removed. Sampling
-/// is every 2 m against a 32 m bucket grid of segments.
-fn drop_shadowed(streets: &mut Vec<Street>) {
-    drop_shadowed_within(streets, 0.0, &[], None);
-}
 /// Narrowest land between two parallel streets that still holds a lot (m).
 pub(super) const MIN_LAND: f64 = 4.0;
 /// Invariant (no sliver between two streets): a street running within
 /// `MIN_LAND` of the ribbon of a more important one along at least 90 % of
 /// its length leaves between them a strip too thin for any lot; it doubles
-/// that street and is removed (`drop_shadowed`, with the strip counted as
+/// that street and is removed (`shadowed_copies`, with the strip counted as
 /// shared land), its junctions carried onto the survivor. A curtain between
 /// the two keeps both: each serves its own side of the wall. Returns whether
 /// a street went (the network is then planarized again).
@@ -2410,9 +2399,17 @@ pub(super) fn drop_narrow_doubles(
     }
     changed
 }
-/// `drop_shadowed` counting as covered the samples within `gap` of the
-/// dominating ribbon when no `walls` segment runs between them.
-fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Point)], surface: Option<super::Surface<'_>>) {
+/// Invariant (no doubled corridor): a street whose ribbon overlaps the ribbon
+/// of a more important one (lower rank, else wider, else earlier) along at
+/// least 90 % of its length leaves no land between them: it is a copy of that
+/// corridor, not a second road, and is removed. Protected roads are never
+/// removed. Sampling is every 2 m against a 32 m bucket grid of segments.
+/// Samples within `gap` of the dominating ribbon count as covered when no
+/// `walls` segment runs between them. Returns each copy with the street that
+/// survives it; streets that met a copy elsewhere than on its survivor are
+/// carried onto the survivor's centreline (within its ribbon plus their own
+/// width) by the caller, so the network keeps every junction.
+fn shadowed_copies(streets: &[Street], gap: f64, walls: &[(Point, Point)], surface: Option<super::Surface<'_>>) -> Vec<(usize, usize)> {
     const CELL: f64 = 32.0;
     let rank_key = |i: usize, s: &Street| {
         let w = s.widths.iter().copied().fold(0.0_f64, f64::max);
@@ -2509,8 +2506,18 @@ fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Po
             replaced.push((i, j));
         }
     }
+    replaced
+}
+/// Removes the shadowed copies (`shadowed_copies`) and carries the streets
+/// that ended on one onto its survivor.
+fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Point)], surface: Option<super::Surface<'_>>) {
+    let replaced = shadowed_copies(streets, gap, walls, surface);
     if replaced.is_empty() {
         return;
+    }
+    let mut removed = vec![false; streets.len()];
+    for &(i, _) in &replaced {
+        removed[i] = true;
     }
     // Reattach streets that ended on a removed copy (endpoint index, so the
     // pass is linear in the removed copies' vertices).
@@ -2570,116 +2577,6 @@ fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Po
         k += 1;
         !removed[k - 1]
     });
-}
-
-/// Invariant (no broken joint): two loose street ends closer than the wider
-/// street's width plus 2 m are one street interrupted by the lattice: they
-/// are joined by a short segment. Pairs are matched nearest first through a
-/// 16 m bucket grid; a street is never joined to itself. A loose end within
-/// another street's ribbon is carried onto that street's centreline.
-fn join_close_ends(streets: &mut [Street], surface: Option<super::Surface<'_>>) -> bool {
-    const CELL: f64 = 16.0;
-    let graph = Graph::new(streets);
-    // (point, street, at its last vertex, width)
-    let mut ends: Vec<(Point, usize, bool, f64)> = vec![];
-    for (i, s) in streets.iter().enumerate() {
-        if protected(s) || private(s) || s.path.len() < 2 {
-            continue;
-        }
-        let n = s.path.len();
-        for (k, last) in [(0, false), (n - 1, true)] {
-            if graph.degree(s.path[k]) == 1 {
-                ends.push((s.path[k], i, last, width(s, k)));
-            }
-        }
-    }
-    let cell = |p: Point| ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64);
-    let mut buckets: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
-    for (e, end) in ends.iter().enumerate() {
-        buckets.entry(cell(end.0)).or_default().push(e);
-    }
-    let mut pairs: Vec<(f64, usize, usize)> = vec![];
-    for (e, &(p, i, _, w)) in ends.iter().enumerate() {
-        let (cx, cy) = cell(p);
-        for bx in cx - 1..=cx + 1 {
-            for by in cy - 1..=cy + 1 {
-                for &f in buckets.get(&(bx, by)).into_iter().flatten() {
-                    let (q, j, _, v) = ends[f];
-                    let d = distance(p, q);
-                    if f > e && j != i && d > EPS && d <= w.max(v) + 2.0
-                        && !surface.is_some_and(|s| site_options::different_level(s, p, q)) {
-                        pairs.push((d, e, f));
-                    }
-                }
-            }
-        }
-    }
-    pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
-    let mut used = vec![false; ends.len()];
-    let mut changed = false;
-    for (_, e, f) in pairs {
-        let ((_, i, last, w), (q, _, _, _)) = (ends[e], ends[f]);
-        if used[e] || used[f] {
-            continue;
-        }
-        used[e] = true;
-        used[f] = true;
-        changed = true;
-        let s = &mut streets[i];
-        if last {
-            s.path.push(q);
-            s.widths.push(w);
-        } else {
-            s.path.insert(0, q);
-            s.widths.insert(0, w);
-        }
-    }
-    // A loose end left inside another street's ribbon (a lane laid beside
-    // it stops half a metre short of the junction) touches that street: it
-    // is carried onto its centreline, which needs no new ground.
-    let mut segments: BTreeMap<(i64, i64), Vec<(usize, usize)>> = BTreeMap::new();
-    for (j, t) in streets.iter().enumerate() {
-        for (k, w) in t.path.windows(2).enumerate() {
-            let pad = 0.5 * width(t, k).max(width(t, k + 1)) + 1.0;
-            let (x0, x1) = (w[0].x.min(w[1].x) - pad, w[0].x.max(w[1].x) + pad);
-            let (y0, y1) = (w[0].y.min(w[1].y) - pad, w[0].y.max(w[1].y) + pad);
-            for bx in (x0 / CELL).floor() as i64..=(x1 / CELL).floor() as i64 {
-                for by in (y0 / CELL).floor() as i64..=(y1 / CELL).floor() as i64 {
-                    segments.entry((bx, by)).or_default().push((j, k));
-                }
-            }
-        }
-    }
-    for (e, &(p, i, last, _)) in ends.iter().enumerate() {
-        if used[e] {
-            continue;
-        }
-        let best = segments
-            .get(&cell(p))
-            .into_iter()
-            .flatten()
-            .filter(|&&(j, _)| j != i)
-            .filter_map(|&(j, k)| {
-                let t = &streets[j];
-                let (d, _, q) = super::geometry::distance(p, t.path[k], t.path[k + 1]);
-                let reach = 0.5 * width(t, k).max(width(t, k + 1)) + 0.5;
-                (d > EPS && d <= reach && !surface.is_some_and(|s| site_options::different_level(s, p, q))).then_some((d, j, q))
-            })
-            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        if let Some((_, _, q)) = best {
-            let s = &mut streets[i];
-            let w = width(s, if last { s.path.len() - 1 } else { 0 });
-            if last {
-                s.path.push(q);
-                s.widths.push(w);
-            } else {
-                s.path.insert(0, q);
-                s.widths.insert(0, w);
-            }
-            changed = true;
-        }
-    }
-    changed
 }
 
 /// Invariant (no stub): a loose spur shorter than its own width serves no
@@ -4816,20 +4713,24 @@ fn clean_terrain(
     centers: &[Point], surface: Option<super::Surface<'_>>,
 ) -> Vec<String> {
     let mut laps = Lap::new("clean");
-    planarize(streets, radius);
-    laps.lap("planarize");
-    let before_copies = streets.len();
-    if surface.is_some() { drop_shadowed_within(streets, 0.0, &[], surface); }
-    else { drop_shadowed(streets); }
+    // One graph load nodes the crossings; the copies found on its streets go,
+    // and the loose ends are seated on their hosts in the graph itself, so the
+    // exported network needs no second planarization.
+    let mut net = super::street_graph::StreetGraph::load(streets, radius);
+    *streets = net.export();
+    laps.lap("graph_load");
+    let copies = shadowed_copies(streets, 0.0, &[], surface);
     laps.lap("shadowed");
-    let joined = join_close_ends(streets, surface);
-    laps.lap("close_ends");
-    if joined || streets.len() < before_copies {
-        // Reattached ends land on the survivors' sides and joints may cross
-        // other streets: split them there.
-        planarize(streets, radius);
+    let seats = net.seat(&copies, &|a, b| !surface.is_some_and(|s| site_options::different_level(s, a, b)));
+    *streets = net.export();
+    drop(net);
+    laps.lap("graph_seat");
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var_os("URBAN_PROFILE").is_some() {
+        eprintln!("  clean.seats: {seats:?}");
     }
-    laps.lap("planarize.2");
+    #[cfg(target_arch = "wasm32")]
+    let _ = seats;
     let mut graph = Graph::new(streets);
     for &p in centers {
         if let Some((d, s)) = streets

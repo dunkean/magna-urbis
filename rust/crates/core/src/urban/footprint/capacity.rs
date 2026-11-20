@@ -673,8 +673,8 @@ fn yield_at(
 ) -> Yield {
     let t = t.clamp(0.0, 1.0);
     let at = |k: f64| probe(culture, donor, epoch, k, cfg, population);
-    let (a, b, s) = if t <= 0.0 {
-        return at(0.0);
+    let (a, b, s) = if t == 0.0 || t == 1.0 {
+        return at(t);
     } else if t <= 0.5 {
         (at(0.0), at(0.5), t / 0.5)
     } else {

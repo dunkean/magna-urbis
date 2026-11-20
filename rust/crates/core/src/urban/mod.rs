@@ -64,6 +64,7 @@ pub mod roles;
 mod routing;
 mod trim;
 mod slopes;
+mod street_graph;
 mod widths;
 pub mod neighbours;
 mod zone_blend;
@@ -1947,7 +1948,7 @@ pub fn generate_quarters(
         let neighbour_land = neighbours::Mask::of(site);
         // Resolve the tissue for each attempt: the capacity ladder starts with
         // the culture's normal streets and only later tries contour terraces.
-        let lay = |config: &LayoutConfig| -> Result<Layout, String> {
+        let formal = |config: &LayoutConfig| -> Result<(Layout, Option<Layout>), String> {
         // The kind the attempt asks for: `effective` wrote the resolved kind to
         // `settlement_form`; the household ladder below may gather a hamlet or a
         // string that found no ground into a clustered plan.
@@ -2135,7 +2136,11 @@ pub fn generate_quarters(
                 ground.balance(seed, layout, physical_surface, |s| plan_at(config, s), |l| finish(l))
             } else { Ok(layout) }
         };
-        let (mut layout, baseline) = edits::with_quarter_edits(config, plan, finish)?;
+        edits::with_quarter_edits(config, plan, finish)
+        };
+        // The tail every laid site receives, the layout and the baseline of its quarter edits alike.
+        let complete_site = |mut layout: Layout, baseline: Option<Layout>, config: &LayoutConfig| {
+        let kind = kinds::Kind::from_id(&config.settlement_form).unwrap_or(kind);
         // Invariant (no earth street on water), on the physical surface: after the last
         // stage that adds or moves formal streets, before the shanty records their count
         // (its own ways are laid dry). Slope wards reuse streets of such a layout.
@@ -2157,8 +2162,9 @@ pub fn generate_quarters(
             fortification::drop_dead_gates(&mut baseline);
             edits::quarter_baseline::retain(&mut layout, baseline);
         }
-        Ok(layout)
+        layout
         };
+        let lay = |config: &LayoutConfig| formal(config).map(|(layout, baseline)| complete_site(layout, baseline, config));
         // A town whose strict house gates refuse most of its land (a user-placed
         // town on a mountain flank) relaxes its slope gates. The level is read
         // from the terrain before the first pass (`footprint::slope_relax_ahead`):
@@ -2188,13 +2194,44 @@ pub fn generate_quarters(
         } else {
             config
         };
-        let mut layout = lay(first)?;
-        // A slope town whose normal build falls short because of its slopes
-        // runs the household ladder (`slopes`), from the level chosen above;
-        // every other place keeps the normal layout and the flank ladder
-        // below, unchanged.
-        let mut sloped = false;
-        if slopes::eligible(site, config, surface, kind) && (slopes::short(&layout) || site.population < 1000) {
+        let mut chosen = first.clone();
+        let (mut layout, mut baseline) = formal(first)?;
+        // The land gate reads only formal blocks, their environment and their capacity.
+        // Choose that land before siting informal housing and measuring the finished cadastre.
+        if relaxable {
+            let shortfall = |l: &Layout| footprint::capacity::of(l).map_or(0.0, |p| p.shortfall);
+            let mut share = housable_share(&layout);
+            let mut missing = shortfall(&layout);
+            for relax in profiles::SLOPE_RELAX_STEPS.into_iter().filter(|&relax| relax > ahead) {
+                if share >= profiles::SLOPE_RELAX_GOAL {
+                    break;
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                if std::env::var("URBAN_PROFILE").is_ok() {
+                    eprintln!("  slope_relax.fallback: {relax} (housable share {share:.2}, households missing {missing:.0})");
+                }
+                let mut relaxed = config.clone();
+                relaxed.programme.slope_relax = relax;
+                let Ok((next, next_baseline)) = formal(&relaxed) else { continue };
+                let (next_share, next_missing) = (housable_share(&next), shortfall(&next));
+                if next_missing < missing || (next_missing == missing && next_share > share) {
+                    (layout, baseline, share, missing, chosen) = (next, next_baseline, next_share, next_missing, relaxed);
+                }
+            }
+            if chosen.programme.slope_relax > 0.0 {
+                layout.warnings.push(format!(
+                    "Site trop pentu pour les règles ordinaires : maisons admises sur des pentes plus fortes, sur soubassements en gradins (assouplissement {:.0} %).",
+                    chosen.programme.slope_relax * 100.0
+                ));
+            }
+        }
+        let mut layout = complete_site(layout, baseline, &chosen);
+        // A relaxed footprint can meet the land goal and still lack homes.
+        // Count its formal parcel allocations before accepting it. Informal
+        // pockets can cover a remaining deficit on the household ladder.
+        if slopes::eligible(site, config, surface, kind) && (slopes::short(&layout) || site.population < 1000
+            || chosen.programme.slope_relax > ahead && housed_households(seed, &layout)
+                < footprint::capacity::households(culture, site.population)) {
             // After a ward is added to a finished layout: access and programme
             // for each trial; the rest of the `finish` tail once, on the
             // adopted layout (`last`). `trim::finish` is not rerun: its
@@ -2212,43 +2249,9 @@ pub fn generate_quarters(
                 Ok(())
             };
             let others: Vec<Point> = sites[..valid].iter().filter(|s| s.key != site.key).map(|s| s.center).collect();
-            layout = match slopes::complete(seed, site, first, surface, roads, &others, layout, &lay, retail) {
-                Ok(done) => { sloped = true; done }
-                Err(normal) => normal,
+            layout = match slopes::complete(seed, site, &chosen, surface, roads, &others, layout, &lay, retail) {
+                Ok(done) | Err(done) => done,
             };
-        }
-        // Safety net: when the first layout still leaves its houses less than
-        // half of its land, the whole town is laid out again with the gates
-        // relaxed further, step by step, until they suffice or are open. The
-        // layout kept houses the most households (the capacity plan's
-        // shortfall on its final blocks), then leaves its houses the most land.
-        if !sloped && relaxable {
-            let shortfall = |l: &Layout| footprint::capacity::of(l).map_or(0.0, |p| p.shortfall);
-            let mut share = housable_share(&layout);
-            let mut missing = shortfall(&layout);
-            let mut chosen = ahead;
-            for relax in profiles::SLOPE_RELAX_STEPS.into_iter().filter(|&relax| relax > ahead) {
-                if share >= profiles::SLOPE_RELAX_GOAL {
-                    break;
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                if std::env::var("URBAN_PROFILE").is_ok() {
-                    eprintln!("  slope_relax.fallback: {relax} (housable share {share:.2}, households missing {missing:.0})");
-                }
-                let mut relaxed = config.clone();
-                relaxed.programme.slope_relax = relax;
-                let Ok(next) = lay(&relaxed) else { continue };
-                let (next_share, next_missing) = (housable_share(&next), shortfall(&next));
-                if next_missing < missing || (next_missing == missing && next_share > share) {
-                    (layout, share, missing, chosen) = (next, next_share, next_missing, relax);
-                }
-            }
-            if chosen > 0.0 {
-                layout.warnings.push(format!(
-                    "Site trop pentu pour les règles ordinaires : maisons admises sur des pentes plus fortes, sur soubassements en gradins (assouplissement {:.0} %).",
-                    chosen * 100.0
-                ));
-            }
         }
         // Invariant (no empty settlement): a hamlet or a village whose finished plan
         // houses less than half of its households on the real cut (a camp lattice on
