@@ -10,8 +10,8 @@
 import type { Vec2, Polygon } from '../core/geom';
 import { dist, polygonCentroid } from '../core/geom';
 import type { Rng } from '../core/rng';
-import { area, inscribed, pointInRing, distToRing, orientPos, obb, cleanRing } from '../geo/poly';
-import { MultiPoly, differenceS, intersectionS, unionS } from '../geo/bool';
+import { area, inscribed, pointInRing, distToRing, orientPos, obb } from '../geo/poly';
+import { differenceS, intersectionS, unionS } from '../geo/bool';
 import { disk } from '../geo/offset';
 import { churchFootprint } from './landmarks';
 import type { ArchBldg } from './bops';
@@ -212,71 +212,6 @@ function walledMarket(lot: Polygon, cx: CompoundCtx): CompoundOut {
   out.lines.push({ kind: 'compound-wall', path: lot, closed: true, width: 1.4 });
   void cx;
   return out;
-}
-
-/**
- * Concentric rings of a convex-ish lot cut by causeways: moat / bailey bands as separate parcels. Returns the
- * inner core (the rest) and the parcels of each band.
- */
-function bands(lot: Polygon, widths: { w: number; use: string }[], axis: Vec2, c: Vec2, causeway: number): { parcels: { poly: Polygon; use: string }[]; core: Polygon | null; rings: Polygon[] } {
-  const parcels: { poly: Polygon; use: string }[] = [];
-  const rings: Polygon[] = [];
-  let cur: MultiPoly = [{ outer: lot, holes: [] }];
-  const ob = obb(lot);
-  const L = 2 * (ob.hu + ob.hv) + 50;
-  // the causeway strip along `axis` through c (both sides)
-  const nx = -axis.y,
-    ny = axis.x;
-  const strip: Polygon = orientPos([
-    { x: c.x - axis.x * L + (nx * causeway) / 2, y: c.y - axis.y * L + (ny * causeway) / 2 },
-    { x: c.x + axis.x * L + (nx * causeway) / 2, y: c.y + axis.y * L + (ny * causeway) / 2 },
-    { x: c.x + axis.x * L - (nx * causeway) / 2, y: c.y + axis.y * L - (ny * causeway) / 2 },
-    { x: c.x - axis.x * L - (nx * causeway) / 2, y: c.y - axis.y * L - (ny * causeway) / 2 },
-  ]);
-  for (const { w, use } of widths) {
-    const outer = cur.reduce((b, ph) => (area(ph.outer) > area(b.outer) ? ph : b)).outer;
-    rings.push(outer);
-    const inner = shrink(outer, w);
-    if (!inner) return { parcels, core: outer, rings };
-    const band = differenceS(outer, inner);
-    const moat = differenceS(band, strip);
-    for (const ph of moat) if (!ph.holes.length && area(ph.outer) > 5) parcels.push({ poly: ph.outer, use });
-    for (const ph of intersectionS(band, strip)) if (!ph.holes.length && area(ph.outer) > 1) parcels.push({ poly: ph.outer, use: use === 'moat' ? 'causeway' : use + '-gate' });
-    cur = [{ outer: inner, holes: [] }];
-  }
-  const core = cur[0].outer;
-  rings.push(core);
-  return { parcels, core, rings };
-}
-
-/** Inward offset of a ring by d (difference with its boundary ribbon), largest piece. */
-function shrink(p: Polygon, d: number): Polygon | null {
-  const closed = p.concat([p[0]]);
-  const n = closed.length;
-  // boundary band as a union of edge rectangles (exact enough for straight-sided lots)
-  const parts: Polygon[] = [];
-  for (let i = 1; i < n; i++) {
-    const a = closed[i - 1],
-      b = closed[i],
-      l = dist(a, b) || 1;
-    const nx = (-(b.y - a.y) / l) * d,
-      ny = ((b.x - a.x) / l) * d;
-    const ux = ((b.x - a.x) / l) * d,
-      uy = ((b.y - a.y) / l) * d;
-    parts.push(
-      orientPos([
-        { x: a.x - nx - ux, y: a.y - ny - uy },
-        { x: b.x - nx + ux, y: b.y - ny + uy },
-        { x: b.x + nx + ux, y: b.y + ny + uy },
-        { x: a.x + nx - ux, y: a.y + ny - uy },
-      ]),
-    );
-  }
-  const band = unionS(parts[0], ...parts.slice(1).map((q): MultiPoly => [{ outer: q, holes: [] }]));
-  const r = differenceS(p, band);
-  let best: Polygon | null = null;
-  for (const ph of r) if (!best || area(ph.outer) > area(best)) best = ph.outer;
-  return best && area(best) > 50 ? cleanRing(best, 0.3, 1) : null;
 }
 
 // ---------------------------------------------------------------- Japanese castle (moats, baileys, keep)
