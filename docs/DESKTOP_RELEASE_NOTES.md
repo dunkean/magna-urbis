@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Try the experimental Apple Silicon build using the DMG preview on GitHub Releases.
 - Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.
 - Remove offshore sediment plumes while retaining the flared river mouths and their smooth transition into the sea.
 - Start with a fresh biome, relief and coherent coastline recipe; enable “Reload previous map at startup” in Settings to restore the last saved map instead. Explicitly opened maps keep their own recipe.
