@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { outsideUrbanStreets, prepareUrbanRoadClip, regionalOutsideUrban, urbanRoadOwnership } from '../../rust/bridge/urbanNetwork';
 import type { Layout, Shape, Street } from '../../rust/bridge/urban';
-import { regionalSegmentId, regionalStreets } from '../../rust/bridge/urbanRoads';
 import type { RoadOutput } from '../../rust/bridge/settlements';
 
 const rectangle = (x0: number, y0: number, x1: number, y1: number): Shape => ({
@@ -276,67 +275,5 @@ describe('regional geometry outside native urban quarters', () => {
       [-5, 0],
       [7, 15],
     ]);
-  });
-});
-
-describe('regional roads ended by growth towns', () => {
-  // One source segment of 256 m: its stations run from x = -64, the town's entries stand at x = 0 and x = 128.
-  const source: Street = {
-    path: [
-      { x: -64, y: 5 },
-      { x: 192, y: 5 },
-    ],
-    widths: [4, 4],
-    rank: 1,
-    role: 'regional',
-  };
-  const network: RoadOutput = {
-    segments: [{ class: 'main', surface: 'dirt', profile: 'medieval', width: 4, a: 0, b: 1, path: source.path, crossings: [], length: 256, grade: 0, importance: 10 }],
-    junctions: [],
-    warnings: [],
-    unreachable: [],
-    routes: 1,
-    lengthByClass: {},
-    lengthBySurface: {},
-    ms: 0,
-  };
-  const growth = (
-    fate: 'ended' | 'kept',
-    entries = [
-      { x: 0, y: 5 },
-      { x: 128, y: 5 },
-    ],
-  ): Layout => ({ ...layout(), regionalRoadResult: [{ id: regionalSegmentId(0), entries, kept: fate === 'kept' ? [[64, 192]] : [], ended: fate === 'ended' ? [[64, 192]] : [] }] });
-
-  it('draws an ended road up to the town entries only and leaves it no routable edge between them', () => {
-    expect(xPaths(outsideUrbanStreets([source], [growth('ended')], [source]))).toEqual([
-      [-64, 0],
-      [128, 192],
-    ]);
-    // The land-use network (regional roads outside towns) stops at the entries too.
-    const routable = regionalOutsideUrban(network, [growth('ended')]);
-    expect(xPaths(routable)).toEqual([
-      [-64, 0],
-      [128, 192],
-    ]);
-    expect(routable.flatMap(s => s.path).some(p => p.x > 1e-9 && p.x < 128 - 1e-9)).toBe(false);
-    // The 3D ground clips the station-tagged pieces a town was generated from, without a source list.
-    expect(xPaths(outsideUrbanStreets(regionalStreets(network), [growth('ended')]))).toEqual([
-      [-64, 0],
-      [128, 192],
-    ]);
-  });
-
-  it('keeps a kept road, a classic town and a result from another network snapshot unchanged', () => {
-    const whole = [[-64, 192]];
-    expect(xPaths(outsideUrbanStreets([source], [growth('kept')], [source]))).toEqual(whole);
-    expect(xPaths(regionalOutsideUrban(network, [growth('kept')]))).toEqual(whole);
-    expect(xPaths(regionalOutsideUrban(network, [layout()]))).toEqual(whole);
-    // Entries off the indexed source: the ids refer to another snapshot, so the plain ownership clip applies.
-    const stale = growth('ended', [
-      { x: 0, y: 50 },
-      { x: 128, y: 50 },
-    ]);
-    expect(xPaths(regionalOutsideUrban(network, [stale]))).toEqual(whole);
   });
 });

@@ -5,7 +5,6 @@ import { urbanRoleChoices } from './urbanRoleNames';
 import { defaultLayoutConfig, defaultParcelConfig, ACTIVITY_TEMPLATES, FORTIFICATION_STYLES, PROGRAMME_FUNCTIONS } from '../../../rust/bridge/urbanConfig';
 import { HOUSE_SCHEMA, type HouseConfig, type WorkshopRequest } from '../../../rust/bridge/housesContract';
 import type { ParameterField } from './parameterForm';
-import { CITY_TOWN_ENGINE } from '../render/cityContract';
 import { HARBOUR_TYPES, HARBOUR_TYPE_NAMES } from '../render/harbourStyle';
 import { urbanActivityNames, urbanCultureNames, urbanExtraChoiceNames, urbanExtraFieldNames } from './urbanLabelNames';
 import { urbanHelp } from './urbanParameterHelp';
@@ -23,7 +22,6 @@ export interface UrbanParameterField extends ParameterField {
   nullable?: boolean;
 }
 export const urbanFieldNames: Record<string, readonly [string, string]> = {
-  engine: CITY_TOWN_ENGINE.label,
   culture: ['Culture', 'Culture'],
   preset: ['Morphology preset', 'Préréglage morphologique'],
   recipe: ['Recipe', 'Recette'],
@@ -343,13 +341,11 @@ export const urbanChoiceNames: Record<string, readonly [string, string]> = {
   ...urbanCultureNames,
   ...urbanActivityNames,
   ...urbanExtraChoiceNames,
-  ...CITY_TOWN_ENGINE.choices,
 };
 const choices = (values: readonly string[]) => values.map(value => ({ value, label: urbanChoiceNames[value]?.[0] ?? pretty(value) }));
 /** Cultures offered by every culture select of the urban controls (V2 and City Bench). */
 export const urbanCultureChoices = (): { value: string; label: string }[] => choices(Object.keys(urbanCatalogue.cultures));
 const enums: Record<string, readonly string[]> = {
-  engine: Object.keys(CITY_TOWN_ENGINE.choices),
   axisAlignment: ['regional', 'culture'],
   campGrowth: ['ring', 'concentric', 'clusters'],
   zoneDensity: ['phases', 'gradient'],

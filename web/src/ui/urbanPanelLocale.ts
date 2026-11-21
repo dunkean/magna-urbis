@@ -1,12 +1,9 @@
-import { CITY_TOWN_ENGINE } from '../render/cityContract';
 import { LOCALE_KEY, savedLocale, type Locale } from './shellLocale';
 
 type Words = readonly [string, string, string, string, string];
 const languages: Locale[] = ['fr', 'en', 'zh', 'es', 'pt'];
-const bilingual = ([en, fr]: readonly [string, string]): Words => [fr, en, en, en, en];
 export function urbanText(words: Words): string { return words[languages.indexOf(typeof window === 'undefined' ? 'fr' : savedLocale())]; }
 const labels: Record<string, Words> = {
-  engine: bilingual(CITY_TOWN_ENGINE.label),
   campRingWobble:['À tester · Irrégularité du cercle','Testing · Camp circle irregularity','测试 · 营地圆环不规则度','En prueba · Irregularidad del círculo','Em teste · Irregularidade do círculo'],
   naturalCampApproaches:['À tester · Accès des villages à maisons longues','Testing · Longhouse village entrances','测试 · 长屋村落入口','En prueba · Accesos de aldeas de casas largas','Em teste · Acessos das aldeias de casas longas'],
   composition:['Génération','Generation','生成方式','Generación','Geração'],
@@ -86,7 +83,6 @@ const footprint: Record<string, Words> = {
   gapSize:['Taille des coupures (m)','Gap size (m)','间隙大小（米）','Tamaño de interrupciones (m)','Tamanho das lacunas (m)'],
 };
 const options: Record<string, Record<string, Words>> = {
-  engine: Object.fromEntries(Object.entries(CITY_TOWN_ENGINE.choices).map(([id, words]) => [id, bilingual(words)])),
   composition:{settlement:['Agglomération complète','Complete settlement','完整聚落','Asentamiento completo','Povoado completo'], district:['Secteur isolé · ancien banc','Single sector · legacy bench','单个分区 · 旧工作台','Sector aislado · banco antiguo','Setor isolado · bancada antiga']},
   portType:{auto:['Selon la culture (tirage)','From the culture (seeded)','按文化（随机）','Según la cultura (sorteo)','Conforme a cultura (sorteio)'], bare:['Quais et jetées nus','Bare quays and piers','仅码头与栈桥','Muelles y espigones desnudos','Cais e molhes simples'],
     'merchant-quay':['Quais marchands','Merchant quays','商贸码头','Muelles mercantes','Cais mercantes'], 'fishing-harbour':['Port de pêche','Fishing harbour','渔港','Puerto pesquero','Porto de pesca'], 'small-craft-basin':['Bassin de petites embarcations','Small-craft basin','小船港池','Dársena de embarcaciones menores','Doca de pequenas embarcações'],
@@ -134,7 +130,6 @@ const seedText: Words[] = [
   ['Graine parcelles','Parcel seed','地块种子','Semilla de parcelas','Semente dos lotes'],
 ];
 const summaries: Record<string, Words> = {
-  Avancé: ['Avancé', 'Advanced', '高级', 'Avanzado', 'Avançado'],
   'Graine':['Graine','Seed','种子','Semilla','Semente'],
   'Revue v7 (02/11)':['Revue v7 (02/11)','Review v7 (02/11)','v7 复核（11/02）','Revisión v7 (02/11)','Revisão v7 (02/11)'],
   'Routes et maisons (31/10)':['Routes et maisons (31/10)','Roads and houses (31/10)','道路与房屋（10/31）','Calles y casas (31/10)','Ruas e casas (31/10)'],

@@ -1,5 +1,5 @@
 /**
- * City generation and display contract shared by the V2 and City Bench.
+ * City display contract shared by the V2 and City Bench.
  *
  * The V2 is the reference renderer; City Bench and the v7 sheets must show the same city.
  * Every display choice that both pages make (building architecture, 2D engine, defaults)
@@ -7,12 +7,9 @@
  * here, and `web/tests/v2/cityParity.test.ts` keeps the two pages honest.
  */
 import type { UrbanSceneMode } from '../ui/urbanSceneProtocol';
-import type { LayoutEngine } from '../../../rust/bridge/urbanConfig';
 import { DEFAULT_CITY, DEFAULT_CITY_LAYERS, type ResolvedAppearance } from './appearanceRecipe';
 import { cityGlBlocker, type RenderMode } from './renderMode';
 import { groundRoadLook } from './composition';
-
-export const CITY_TOWN_ENGINE = { label: ['Town engine', 'Moteur de ville'], choices: { classic: ['Classic', 'Classique'], growth: ['Growth (experimental)', 'Croissance (expérimental)'] } satisfies Record<LayoutEngine, readonly [string, string]> } as const;
 
 /** Building architecture: city volumes raised by `urban/massing.rs` (silhouettes),
  * or native house plans from the houses crate (compact plans, detailed houses). */

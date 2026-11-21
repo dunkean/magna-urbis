@@ -423,7 +423,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     // Generation replaces these snapshots. Styling and replacing the SVG layer
     // retain the same clipping and curve geometry without repeating preparation.
     if (preparedOwnership !== urbanOwnership || preparedOutput !== output) {
-      clipUrban = urbanOwnership?.length ? prepareUrbanRoadClip(bridgeRoadOwnership(urbanOwnership, output), output?.segments) : undefined;
+      clipUrban = urbanOwnership?.length ? prepareUrbanRoadClip(bridgeRoadOwnership(urbanOwnership, output)) : undefined;
       preparedOwnership = urbanOwnership;
       preparedOutput = output;
       pathCache = new WeakMap();

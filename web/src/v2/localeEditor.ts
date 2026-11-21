@@ -1,8 +1,6 @@
 /** Editor (quarter / block / parcel / house) labels in all eight interface languages: en, fr, es, pt, zh, ar, ru, ja. */
 /* No i18n import: localeMessages (loaded by i18n) reads this table. urbanControls registers the English/French pairs. */
 const rows = [
-  ['Town engine','Moteur de ville','Motor de trazado urbano','Motor de traçado urbano','城市布局引擎','محرك تخطيط المدينة','Движок планировки города','街のレイアウトエンジン'],
-  ['Growth (experimental)','Croissance (expérimental)','Crecimiento (experimental)','Crescimento (experimental)','生长（实验性）','النمو (تجريبي)','Рост (экспериментальный)','成長（実験的）'],
   ['Urban plan','Plan urbain','Plano urbano','Plano urbano','城市平面','المخطط العمراني','Городской план','都市計画'],
   ['Parcel content','Contenu de la parcelle','Contenido de la parcela','Conteúdo da parcela','地块内容','محتوى القطعة','Содержимое участка','区画の内容'],
   ['House type','Type de maison','Tipo de casa','Tipo de casa','房屋类型','نوع المنزل','Тип дома','家屋の種類'],

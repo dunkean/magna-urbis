@@ -19,7 +19,7 @@ import { createCanvasRenderer, type CanvasRenderer } from '../../render/canvas';
 import { roadGroundTones } from '../../render/roadStyle';
 import { displayWorld } from '../../render/displayWorld';
 import { buildingOccupationShapes } from '../../ui/forestOccupation';
-import { nativeCitiesOf, regionalRoadSources } from '../nativeProducts';
+import { nativeCitiesOf } from '../nativeProducts';
 import { activityScene } from '../activitySites';
 import { mapSeasonKey } from '../../render/seasonPalette';
 import { biomePalette } from '../../render/biomes';
@@ -121,10 +121,9 @@ export class CartographyProducts implements Cartography {
     const hideUrban = this.map.scene!.capabilities.nativeCities || layers.city === false;
     let shown = displayWorld(world, { roads: layers.roads, city: hideUrban ? false : undefined }, r.city.visible);
     const seed = displaySeed(world.seed);
-    // Around native towns the regional roads and decks are owned as in 3D: the town draws its approaches and decks,
-    // and the streets that replaced a regional road it ended.
+    // Around native towns the regional roads and decks are owned as in 3D: the town draws its approaches and decks.
     const layouts = this.map.scene!.capabilities.nativeCities ? nativeCitiesOf(world).flatMap(city => city.layouts ?? []) : [];
-    if (layouts.length) shown = { ...shown, ...cityRegionalNetwork(shown.roads, shown.bridges, layouts, regionalRoadSources(world)) };
+    if (layouts.length) shown = { ...shown, ...cityRegionalNetwork(shown.roads, shown.bridges, layouts) };
     return shown.seed === seed ? shown : { ...shown, seed };
   }
   /** Land classes the vector overlay paints. A material ground draws the physical land use in its shader, so the overlay keeps only the vegetation symbols asked for. */

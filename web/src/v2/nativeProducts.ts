@@ -3,13 +3,10 @@ import type { World } from '../gen/types';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import type { RenderCapabilities } from '../render/appearanceRecipe';
 import type { RustTownSnapshot } from './rustUrban';
-import type { RustRegionSnapshot } from './region';
-import type { RegionalSource } from '../../../rust/bridge/roadFates';
 import type { V2TerrainLayer } from './terrainProjection';
 import { nativeCityStageView } from './cityStageOutput';
 
 const NONE: readonly RustTownSnapshot[] = Object.freeze([]);
-const NO_ROADS: readonly RegionalSource[] = Object.freeze([]);
 const stageViews = new WeakMap<World, { source: Readonly<Record<string, RustTownSnapshot>>; stage: string; selection: string; cities: readonly RustTownSnapshot[] }>();
 /** Every retained snapshot by settlement key, including those without a layout yet. */
 export function nativeCityRecords(world: World | undefined): Readonly<Record<string, RustTownSnapshot>> | undefined {
@@ -48,9 +45,4 @@ export function worldCapabilities(world: World | undefined): RenderCapabilities 
   const native = nativeTerrainOf(world),
     cities = nativeCitiesOf(world);
   return { nativeCities: cities.length > 0, nativeTerrain: !!native, vectorWater: !!native?.water, hydrology: !!native?.hydrology, parcels: cities.some(city => !!city.partitions?.length), buildings: cities.some(city => !!city.scene?.buildings.length) };
-}
-/** The regional roads the towns' `regionalSegmentId` ids index, as `townRoadStreets` sent them: the native network,
- * else the projected roads of a TypeScript region. */
-export function regionalRoadSources(world: World | undefined): readonly RegionalSource[] {
-  return (world?.debug?.v2RustRegion as RustRegionSnapshot | undefined)?.roads?.segments ?? world?.roads ?? NO_ROADS;
 }

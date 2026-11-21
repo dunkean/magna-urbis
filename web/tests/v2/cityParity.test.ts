@@ -8,10 +8,7 @@ import { buildNearTrees, buildNearTreesSteps, type TreeInputs } from '../../src/
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolveRustUrbanControls, townRoadStreets, townSiteArchetypes } from '../../src/v2/rustUrban';
-import { regionalStreets, type Layout } from '../../../rust/bridge/urban';
-import { outsideUrbanStreets, prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
-import { bridgeRoadOwnership, cityRegionalNetwork } from '../../src/render/cityBridges';
-import { regionalRoadSources } from '../../src/v2/nativeProducts';
+import { regionalStreets } from '../../../rust/bridge/urban';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
 import type { World } from '../../src/gen/types';
 import { citySiteArchetypes, cityFixedSites, cityTownRoads } from '../../src/render/cityGeneration';
@@ -20,7 +17,7 @@ import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normal
 import { siteVisualScene, silhouetteScene, type CityPlacementRequest } from '../../src/ui/urbanSilhouettes';
 import { projectUrbanSite } from '../../src/ui/urbanSiteStore';
 import { applySettlementStyle } from '../../src/ui/urbanSettlementStyles';
-import { CITY_DISPLAY_DEFAULTS, CITY_TOWN_ENGINE, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
+import { CITY_DISPLAY_DEFAULTS, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
 import { CITY_DEFAULT_PARCEL_FIT, CITY_RASTER_RESOLUTION, cityRasterSide, parcelFitOf, defaultCityLayoutConfig, CITY_LAYOUT_DEFAULTS } from '../../src/render/cityGeneration';
 import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions, volumeTownBuildings } from '../../src/render/cityDrawOptions';
 import { ROOF_MODES } from '../../src/render/roofMode';
@@ -43,7 +40,6 @@ import { drawFantasyRaster, suspendFantasyRaster, KEEP_NONE, type FantasyRaster 
 import { STRUCTURE_ROLES } from '../../src/render/groundBlend';
 import { streetColors } from '../../src/render/cityGlStyle';
 import { CROSSINGS } from '../../src/render/city/look';
-import { urbanControlFields } from '../../src/v2/urbanControlSchema';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const settings = (seed: string): V2Settings => ({ options: { seed }, local: {}, urban: { backend: 'rust' } }) as unknown as V2Settings;
@@ -487,13 +483,6 @@ describe('V2 and City Bench stay in sync', () => {
       [0, 'regional'],
       [1, 'regional'],
     ]);
-    expect(bench.map(s => s.regionalSource)).toEqual([
-      { id: 'segment:0', stations: [0, 100, 120] },
-      { id: 'segment:0', stations: [120, 180] },
-      { id: 'segment:0', stations: [180, 200, 300] },
-      { id: 'segment:1', stations: [0, 100, 200, 300] },
-    ]);
-    expect(regionalStreets(output, i => i === 1)).toEqual([bench[3]]);
     expect(townRoadStreets(world)).toBe(v2); // stable identity: no rebuilt bridges or ground tiles on refresh
     expect(cityTownRoads).toBe(regionalStreets);
     // City Bench: the requested site type, else the placed archetype; the V2 reads the same native placement record.
@@ -507,56 +496,6 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/v2/urban3d.ts')).toContain('roads = townRoadStreets(world);');
   });
 
-  it('hides the regional stretch a growth town ended alike in the V2, City Bench and the 3D ground', () => {
-    const road = {
-      a: 0,
-      b: 1,
-      class: 'main',
-      surface: 'dirt',
-      width: 4,
-      length: 512,
-      path: [
-        { x: 0, y: 300 },
-        { x: 512, y: 300 },
-      ],
-      crossings: [],
-    };
-    const output = { segments: [road] } as unknown as RoadOutput;
-    const town = {
-      key: 'main',
-      culture: 'european',
-      center: { x: 256, y: 300 },
-      quarters: [],
-      streets: [],
-      blocks: [],
-      warnings: [],
-      regionalRoadResult: [
-        {
-          id: 'segment:0',
-          entries: [
-            { x: 128, y: 300 },
-            { x: 384, y: 300 },
-          ],
-          kept: [],
-          ended: [[128, 384]],
-        },
-      ],
-    } as unknown as Layout;
-    const world = { roads: [{ path: road.path, width: 4, kind: 'major' }], debug: { v2RustRegion: { roads: output } } } as unknown as World;
-    const xs = (streets: readonly { path: { x: number }[] }[]): number[][] => streets.map(s => s.path.map(p => p.x));
-    const v2 = cityRegionalNetwork(world.roads, undefined, [town], regionalRoadSources(world)).roads!;
-    const bench = prepareUrbanRoadClip(bridgeRoadOwnership([town], output), output.segments)([{ path: road.path, widths: [4, 4], rank: 1, role: 'regional' }]);
-    const ground = outsideUrbanStreets(regionalStreets(output), [town]);
-    expect(xs(v2)).toEqual([
-      [0, 128],
-      [384, 512],
-    ]);
-    expect(xs(bench)).toEqual(xs(v2));
-    expect(xs(ground)).toEqual(xs(v2));
-    expect(regionalRoadSources(world)).toBe(output.segments);
-    expect(read('../../src/ui/terrainRoads.ts')).toContain('prepareUrbanRoadClip(bridgeRoadOwnership(urbanOwnership, output), output?.segments)');
-    expect(read('../../src/v2/display/cartographyProducts.ts')).toContain('cityRegionalNetwork(shown.roads, shown.bridges, layouts, regionalRoadSources(world))');
-  });
   it('carries manual foundations into both city consumers', () => {
     expect(cityFixedSites([{ key: 'main', fixed: true }, { key: 'auto' }])).toEqual(['main']);
     expect(
@@ -840,22 +779,6 @@ describe('V2 and City Bench stay in sync', () => {
     expect(layout.naturalCampApproaches).toBe(true);
     expect(layout.ribbonWidthVariation).toBe(0.5);
     for (const file of ['../../src/v2/rustUrban.ts', '../../src/v2/urbanControls.ts', '../../src/ui/terrainUrban.ts']) expect(read(file)).toContain('defaultCityLayoutConfig as defaultLayoutConfig');
-  });
-
-  it('shares the town engine selector and defaults to classic', () => {
-    expect(CITY_TOWN_ENGINE).toEqual({ label: ['Town engine', 'Moteur de ville'], choices: { classic: ['Classic', 'Classique'], growth: ['Growth (experimental)', 'Croissance (expérimental)'] } });
-    expect(urbanControlFields().find(field => field.path === 'layout.engine')).toMatchObject({ section: 'layout', label: CITY_TOWN_ENGINE.label[0], type: 'select', options: Object.entries(CITY_TOWN_ENGINE.choices).map(([value, [label]]) => ({ value, label })) });
-    const bench = read('../../src/ui/terrainUrban.ts');
-    expect(bench).toContain('class="advanced" data-town-engine');
-    expect(bench).toContain('CITY_TOWN_ENGINE.choices');
-    expect(defaultCityLayoutConfig().engine).toBe('classic');
-    expect(normalizeLayoutConfig({}).engine).toBe('classic');
-    expect(normalizeLayoutConfig(applySettlementStyle('culture', { ...defaultCityLayoutConfig(), engine: 'growth' }).layout).engine).toBe('growth');
-    const current = settings('engine');
-    const options = { culture: 'west' } as Options;
-    expect(resolveRustUrbanControls(current, 'a', options).layout.engine).toBe('classic');
-    current.urban!.layout = { engine: 'growth' };
-    expect(resolveRustUrbanControls(current, 'a', options).layout.engine).toBe('growth');
   });
 
   it('shares canopy/night finishing, native house LOD and the 3D ground-plan options', () => {

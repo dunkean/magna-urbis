@@ -6,7 +6,7 @@ import { Rng } from '../gen/core/rng';
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { sizeForPop } from '../gen/options';
 import { circle, clipConvex, voronoiRegions } from '../gen/settlements/planner';
-import { effectiveRegion, usesGrowthPlacement, validateRegionSettings } from './regionSettings';
+import { effectiveRegion, validateRegionSettings } from './regionSettings';
 import type { V2Settings, ProgressCallback } from './contracts';
 import type { SettlementEngine } from '../../../rust/bridge/settlementEngine';
 import { loopbackServer } from './platform';
@@ -139,8 +139,7 @@ export async function planRustRegion(world: World, settings: V2Settings, onProgr
     engine.terrainKey = '';
     return new Error(error);
   };
-  const placementRequest = usesGrowthPlacement(settings) ? { ...placement, engine: 'growth' } : placement;
-  let response = await engine.engine.run({ id: 1, seed: roadsOnly ? roadSeed : placeSeed, ...(raster ? { raster } : {}), ...(roadsOnly ? { sites: retainedSites() } : { place: placementRequest }), roads: roadsOnly ? roads : null, runtime });
+  let response = await engine.engine.run({ id: 1, seed: roadsOnly ? roadSeed : placeSeed, ...(raster ? { raster } : {}), ...(roadsOnly ? { sites: retainedSites() } : { place: placement }), roads: roadsOnly ? roads : null, runtime });
   if ('error' in response) throw failed(response.error);
   if (!roadsOnly) {
     const placed = response.settlements;

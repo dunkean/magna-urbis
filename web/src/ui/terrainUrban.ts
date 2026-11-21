@@ -99,7 +99,7 @@ import { parcelInspectionHtml } from './urbanInspector';
 import { updateUrbanBuildingSelection } from './urbanBuildingSelection';
 import { buildingSettings, workshopSettings, appliedWorkshopSnapshot, mergeCityWorkshop, mergeWorkshopCities } from './urbanSnapshot';
 import { programmeSvg, refusalSvg } from '../render/urbanProgramme';
-import { DEFAULT_CITY_ARCHITECTURE, CITY_DISPLAY_DEFAULTS, CITY_TOWN_ENGINE, cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
+import { DEFAULT_CITY_ARCHITECTURE, CITY_DISPLAY_DEFAULTS, cityGlBlockReason, usesNativeHouseRenderer } from '../render/cityContract';
 import { citySettlementRaster, citySiteArchetypes, cityFixedSites, cityTownRoads } from '../render/cityGeneration';
 import { openMethodNote } from './methodNotes';
 import { applySettlementStyle, installSettlementStyles } from './urbanSettlementStyles';
@@ -503,7 +503,6 @@ export function createTerrainUrban(options: {
     `<label>${label}<select data-${footprint ? 'footprint' : 'config'}="${key}">${Object.entries(values)
       .map(([id, text]) => `<option value="${id}">${esc(text)}</option>`)
       .join('')}</select></label>`;
-  const engineControls = `<details class="advanced" data-town-engine><summary>Avancé</summary>${select('engine', CITY_TOWN_ENGINE.label[1], Object.fromEntries(Object.entries(CITY_TOWN_ENGINE.choices).map(([id, [, fr]]) => [id, fr])))}</details>`;
   const footprintNumber = (key: string, label: string, min: number, max: number, step = 1): string => number(key, label, min, max, step).replace('data-config=', 'data-footprint=');
   const footprintControls = `<div class="urban-footprint-controls"><div class="control-group">${select('family', 'Forme de ville', families, true)}${select('mechanism', 'Croissance', mechanisms, true)}</div><details class="advanced"><summary>Dimensions et budget</summary><div class="control-group">${select('budget', 'Budget spatial', { population: 'Population / densité brute', radius: 'Rayon artistique' }, true)}${footprintNumber('grossDensity', 'Densité brute (hab./ha · 0 = culture)', 0, 1000, 1)}${footprintNumber('aspect', 'Allongement', 1, 6, 0.1)}${footprintNumber('orientation', 'Orientation (°)', -180, 180, 5)}${footprintNumber('nuclei', 'Noyaux de croissance', 1, 6)}${footprintNumber('irregularity', 'Irrégularité', 0, 1, 0.05)}${footprintNumber('anisotropy', 'Attraction des axes', 0, 1, 0.05)}${footprintNumber('separation', 'Écartement des noyaux', 0.4, 3, 0.1)}${footprintNumber('epochs', 'Étapes de croissance', 1, 5)}</div></details><details class="advanced" data-sparse-growth><summary>Dispersion et coupures</summary><div class="control-group">${footprintNumber('cohesion', 'Cohésion', 0, 1, 0.05)}${footprintNumber('satellites', 'Propension aux satellites', 0, 1, 0.05)}${footprintNumber('branchDepth', 'Profondeur des branches', 0, 1, 0.05)}${footprintNumber('gapSize', 'Taille des coupures (m)', 10, 500, 10)}</div><small>Baisser la cohésion laisse plus de terrain libre ; les chemins peuvent le traverser. Les formes géométriques imposées conservent leur contour.</small></details></div>`;
   const tissueControls = `<div class="urban-tissue-controls"><div class="control-group">${select('tissue', 'Maillage des rues', tissues)}${select('accessMode', 'Accessibilité des îlots', { adaptive: 'Adaptative selon le parcellaire', cultural: 'Dessertes culturelles', none: 'Conserver les accès existants' })}${select('campGrowth', 'Grands camps', { ring: 'Un anneau', concentric: 'Anneaux concentriques', clusters: 'Plusieurs camps' })}${select('zoneDensity', 'Densité des zones', { phases: 'Par phase', gradient: 'Gradient' })}</div><details class="advanced"><summary>Réglages des accès</summary><div class="control-group">${number('accessDepth', 'Profondeur accessible (m · 0 = culture)', 0, 200, 5)}${number('accessBudget', 'Accès ajoutés au plus par îlot', 0, 12)}</div></details></div>`;
@@ -591,7 +590,6 @@ export function createTerrainUrban(options: {
       ${kind === 'quarters' ? `<details class="advanced"><summary>Rues et relief</summary><div class="control-group">${number('maxStreetGrade', 'Pente maximale des rues (m/m)', 0.02, 0.3, 0.01)}${number('maxLaneGrade', 'Pente maximale des ruelles (m/m)', 0.02, 0.4, 0.01)}<label><input data-config="allowStairs" type="checkbox">Autoriser les escaliers piétons</label>${number('maxStairGrade', 'Pente maximale des escaliers (m/m)', 0.02, 1, 0.01)}</div><small>0,12 = 12 % : 12 m de montée pour 100 m au sol. Les rues cherchent un passage praticable ; les escaliers sont dessinés avec des marches. Les ponts régionaux conservent leur franchissement.</small></details>` : ''}
       <details class="advanced"><summary>Tous les paramètres natifs</summary><div data-fields class="urban-fields"></div><label>Overrides JSON<textarea data-json rows="4" spellcheck="false" placeholder="{}"></textarea></label><small>Les valeurs modifiées remplacent la recette. Les mesures géométriques sont en mètres (surfaces en m²).${kind === 'quarters' ? ' En progression automatique, les valeurs par zone affichées sont celles du cœur ; sélectionnez une zone pour modifier ses valeurs, puis revenez à la progression automatique.' : ''}</small><button data-reset type="button">Réinitialiser les paramètres</button></details>
       ${kind === 'quarters' ? '<small>Relief, rivières et lacs viennent du terrain réel. Les réglages de relief synthétique de l’ancien bench sont remplacés par les blocs 1–3.</small>' : ''}
-      ${kind === 'quarters' ? engineControls : ''}
       <div data-warnings role="status"></div></div>`;
     stages.insertBefore(p, options.before);
     return p;
@@ -705,7 +703,7 @@ export function createTerrainUrban(options: {
     planCulture.dataset.planCultureOverride = '';
     planCulture.insertAdjacentHTML('beforeend', '<button type="button" data-plan-culture-site>Plan : comme le lieu</button><small data-plan-culture-note role="status"></small>');
     from<HTMLSelectElement>('[data-config="culture"]', planCulture).options[0].textContent = 'Comme le profil du lieu';
-    plan.controls.append(planCulture, from('[data-town-engine]'));
+    plan.controls.append(planCulture);
     plan.controls.insertAdjacentHTML('beforeend', controlRelevanceControlsHtml());
     seedBox.remove();
     // 4 · Footprint and growth, then the isolated-sector scene of the former bench.
@@ -2206,7 +2204,6 @@ export function createTerrainUrban(options: {
       recordStageMs('quarters', response.ms);
       status('quarters', `Rust · ${layouts?.length ?? 0} ${urbanText(['implantations', 'settlements', '聚落', 'asentamientos', 'assentamentos'])} · ${count} ${urbanText(['îlots', 'blocks', '街区', 'manzanas', 'quadras'])} · ${response.ms?.toFixed(0)} ms`);
       one('quarters', '[data-state]').textContent = `${count} îlots`;
-      // City Bench displays native layout warnings verbatim.
       one('quarters', '[data-warnings]').textContent = warningText((layouts ?? []).flatMap(l => l.warnings.map(w => `${l.key} : ${w}`)));
       if (parcelEnabled) request('parcels');
       else status('parcels', urbanText(['Génération des parcelles désactivée.', 'Parcel generation disabled.', '地块生成已禁用。', 'Generación de parcelas desactivada.', 'Geração de lotes desativada.']));

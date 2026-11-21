@@ -1,6 +1,5 @@
 /** Display catalog for authored Rust/bridge diagnostics. Keep protocol keys and slot values intact. */
 export const engineRuntimeEntries: readonly (readonly [string, string])[] = [
-  ['Moteur de croissance : pas encore disponible', 'Growth engine: not available yet'],
   ['Contour conservé — contraintes du site', 'Outline kept — site constraints'],
   ['Enceinte flanquée — site pentu', 'Flanked wall — steep site'],
   ["Village groupé — pas de voie traversante", "Clustered village — no through road"],
@@ -60,7 +59,6 @@ export const engineRuntimeEntries: readonly (readonly [string, string])[] = [
   ["quartier supprimé", "the quarter is deleted"],
   ["partie vide ou trop petite dans le quartier", "a part is empty or too small inside the quarter"],
   ["les parties ne couvrent pas le quartier", "the parts do not cover the quarter"],
-  ['Moteur de ville invalide : choisissez classic ou growth', 'Invalid town engine: expected classic or growth'],
   ['La scène précédente utilise un schéma architectural incompatible.', 'The previous scene uses an incompatible architecture schema.'],
   ['Changer de générateur architectural nécessite de remplacer toute la scène.', 'Changing architecture generator requires replacing the whole scene.'],
   ['Une retouche ne peut pas mélanger plans architecturaux compacts et volumes de recettes détaillés.', 'A selected edit cannot mix compact architectural plans with detailed recipe volumes.'],
@@ -838,10 +836,6 @@ export const engineRuntimeTemplates: readonly (readonly [string, string])[] = [
   ["Retouche quartier {quarter} — {count} îlots de moins de {minimum} m² retirés", "Quarter edit {quarter} — {count} blocks below {minimum} m² dropped"],
   ["Capacité prévue {percent} % — limites du site ou de la densité", "Planned capacity {percent} % — site or density limits"],
   ["Retouche parcelle {id} — la parcelle {neighbour} perdrait son accès", "Lot edit {id} — lot {neighbour} would lose street access"],
-  ["Logement {percent} % — capacité parcellaire", "Housing {percent} % — lot capacity"],
-  ["Logement {percent} % — terrain épuisé", "Housing {percent} % — land exhausted"],
-  ["Rues organiques — tissu {id} absent", "Organic streets — missing tissue {id}"],
-  ["Rues organiques — tissu {id} indisponible", "Organic streets — unsupported tissue {id}"],
   ['La retouche native a renvoyé un identifiant de résultat inattendu ou en double : {value1}.', 'Native edit returned an unexpected or duplicate result ID: {value1}.'],
   ['La retouche native a changé l’identifiant de parcelle de {value1}.', 'Native edit changed the parcel ID of {value1}.'],
   ['La retouche native a renvoyé un résultat bâtiment ou espace ouvert incorrect pour {value1}.', 'Native edit returned the wrong building/open-space result for {value1}.'],
