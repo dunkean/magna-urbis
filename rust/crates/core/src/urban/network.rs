@@ -1,8 +1,8 @@
 //! Final planar street junctions, connected components and served open edges.
 //! All edits subdivide or shorten existing segments; no shortcut changes grades.
+use super::profile::Lap;
 use crate::urban::warnings;
 // `parcels.rs` reaches the profiling laps through this module.
-pub(super) use super::profile::Lap;
 use super::{Point, Street};
 use std::collections::{BTreeMap, BTreeSet};
 

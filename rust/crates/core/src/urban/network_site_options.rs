@@ -1,5 +1,5 @@
 use super::*;
-use super::super::{Enclosure, LayoutConfig, Surface, geometry as g, routing};
+use super::super::{Enclosure, LayoutConfig, Surface, geometry as g, profile::Lap, routing};
 
 pub(super) fn different_level(surface: Surface<'_>, a: Point, b: Point) -> bool {
     (surface.height_at(a) - surface.height_at(b)).abs() >= 1.5

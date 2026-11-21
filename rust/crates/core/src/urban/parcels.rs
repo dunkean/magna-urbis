@@ -110,7 +110,7 @@ fn generate_cut(
     };
     let mut diagnostics = super::PartitionDiagnostics::default();
     let root = Rng::new(seed).fork(&format!("parcels:{}", layout.key));
-    let mut laps = super::network::Lap::new("parcels.cut");
+    let mut laps = super::profile::Lap::new("parcels.cut");
     let index = FrontageIndex::new(layout);
     laps.lap("frontage-index");
     let preparation = Preparation::new(layout, cfg, morph)?;

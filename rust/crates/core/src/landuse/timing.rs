@@ -21,7 +21,7 @@ impl Clock {
     }
 }
 
-/// Laps for `URBAN_PROFILE`, as `urban::network::Lap`: each `lap` prints the time since the
+/// Laps for `URBAN_PROFILE`, as `urban::profile::Lap`: each `lap` prints the time since the
 /// previous one as `  {prefix}.{label}: N ms`. Silent without the variable and on wasm.
 pub struct Lap {
     #[cfg(not(target_arch = "wasm32"))]
