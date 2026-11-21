@@ -13,6 +13,7 @@ import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { Building3dVisual, Building3dScene } from '../../render/urbanBuildingGeometry';
 import { UrbanBuildingPass } from '../urbanBuilding3d';
 import type { UrbanGroundCuts } from '../urbanGroundCuts';
+import type { UrbanGroundShape } from '../urbanGroundShape';
 import type { Terrain3dBillboard, Terrain3dBillboards } from '../terrain3dBillboards';
 import { TerrainViewContext } from './terrain/context';
 import type { FrameGeometry, Patch, PatchDraw, Terrain3dCamera, Terrain3dForestSettings, Terrain3dGroundSettings, Terrain3dLookSettings, Terrain3dOptions, Terrain3dStatus, Terrain3dTile, Terrain3dTileContent, TerrainResources, WaterSurface } from './terrain/contract';
@@ -241,6 +242,15 @@ export class Terrain3d {
     this.context.request();
   }
 
+  /** Levelled hillside lots (urbanGroundShape.ts), undefined for the natural ground: built once per town content by the
+   * 3D view on `naturalGroundAt`; a new one reshapes the patches. */
+  setGroundShape(shape: UrbanGroundShape | undefined): void {
+    if (shape === this.parts.surface.groundShape) return;
+    this.parts.surface.groundShape = shape;
+    this.clearPatches();
+    this.context.request();
+  }
+
   /** Presentation consumes the same immutable native scene as the map. */
   setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
     const { buildings, billboards, forest } = this.parts;
@@ -310,6 +320,10 @@ export class Terrain3d {
 
   groundAt(x: number, y: number): number | undefined {
     return this.parts.surface.groundAt(x, y);
+  }
+
+  naturalGroundAt(x: number, y: number): number | undefined {
+    return this.parts.surface.naturalAt(x, y);
   }
 
   pickBuilding(x: number, y: number): string | undefined {
@@ -451,6 +465,7 @@ export class Terrain3d {
     if (surface.layer) target.setSurface(surface.layer, surface.water, surface.waterVisible);
     target.setHeightSampler(surface.heightSampler);
     target.setGroundCuts(surface.groundCuts);
+    target.setGroundShape(surface.groundShape);
     target.setTileBoundaries(context.tileBounds);
     target.setBuildings(buildings.scene, buildings.appearance, buildings.visible);
     const replaced = buildings.pass.replacedBuildings();
@@ -495,6 +510,7 @@ export class Terrain3d {
     surface.layer = undefined;
     surface.water = undefined;
     surface.heightSampler = undefined;
+    surface.groundShape = undefined;
     tiles.loader = undefined;
     this.navigation.forgetPointers();
     billboards.source = undefined;

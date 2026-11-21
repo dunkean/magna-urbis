@@ -10,6 +10,7 @@ import { mountTextOverlay3d } from '../textOverlay3d';
 import { mountLegendOverlay3d } from '../legendOverlay3d';
 import { type Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { buildCityBuildings, buildCityScene } from '../../render/cityCanvas';
+import { CITY_DISPLAY_DEFAULTS } from '../../render/cityContract';
 import type { PlacementBatch, PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
 import { City3dOptions, City3d } from './cityTypes';
 
@@ -45,6 +46,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   cityContext.waterPath = (...args) => cityWater.waterPath(cityContext, ...args);
   cityContext.loadImage = (...args) => cityGround.loadImage(cityContext, ...args);
   cityContext.setSurface = (...args) => cityGround.setSurface(cityContext, ...args);
+  cityContext.seatSamplers = (...args) => cityGround.seatSamplers(cityContext, ...args);
   cityContext.syncImage = (...args) => cityGround.syncImage(cityContext, ...args);
   cityContext.applyGround = (...args) => cityGround.applyGround(cityContext, ...args);
   cityContext.materialCover = (...args) => cityWater.materialCover(cityContext, ...args);
@@ -87,6 +89,8 @@ export function mountCity3d(options: City3dOptions): City3d {
   /** Modelled near trees: off by default, the view opens on the painted canopy and builds them on the first switch-on. */
   cityContext.nearTrees = false;
   cityContext.treeDistance = 600;
+  cityContext.groundShaping = CITY_DISPLAY_DEFAULTS.groundShaping;
+  cityContext.builtTerraces = CITY_DISPLAY_DEFAULTS.terraces;
 
   cityContext.groundKey = '';
   cityContext.planKey = '';
@@ -146,6 +150,8 @@ export function mountCity3d(options: City3dOptions): City3d {
 
   cityContext.groundCutsOf = undefined;
   cityContext.groundCutsOn = undefined;
+  cityContext.groundShapeInputs = [];
+  cityContext.groundShapeStats = { lots: 0, ms: 0 };
 
   cityContext.byId = new Map<string, Building3dVisual>();
   cityContext.bridgesOf = [undefined, undefined];

@@ -16,6 +16,8 @@ export function changedView(cityContext: City3dContext): void {
     refinement: cityContext.refinement,
     trees3d: cityContext.nearTrees,
     treeDistance: cityContext.treeDistance,
+    groundShaping: cityContext.groundShaping,
+    terraces: cityContext.builtTerraces,
   });
 }
 
@@ -42,6 +44,11 @@ export function syncView(cityContext: City3dContext): void {
   if (saved.refinement) cityContext.refinement = saved.refinement;
   if (saved.trees3d !== undefined) cityContext.nearTrees = saved.trees3d;
   if (saved.treeDistance !== undefined) cityContext.treeDistance = Math.max(200, Math.min(1500, saved.treeDistance));
+  // The hillside ground choices come from the shared settings (Advanced): a change rebuilds the ground and the seats.
+  const hillside = (saved.groundShaping ?? cityContext.groundShaping) !== cityContext.groundShaping || (saved.terraces ?? cityContext.builtTerraces) !== cityContext.builtTerraces;
+  cityContext.groundShaping = saved.groundShaping ?? cityContext.groundShaping;
+  cityContext.builtTerraces = saved.terraces ?? cityContext.builtTerraces;
+  if (hillside && cityContext.active) cityContext.syncBuildings(true);
   const treeGround = cityContext.options.getGroundSettings?.(cityContext.ground),
     treesAvailable = !cityContext.softwareMaterial && !!treeGround?.renderV2 && !treeGround.forestBrushes && treeGround.groundCover !== false;
   cityContext.$<HTMLInputElement>('[data-trees]').closest('label')!.hidden = !treesAvailable;

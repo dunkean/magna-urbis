@@ -30,7 +30,7 @@ import { buildingRayDistance, eachBuildingTriangle, type BuildingTriangle } from
 import { PRESET_IDS, isHiddenPreset, styleAvailableOnPage, presetComposition, validateComposition, withCompositionQuality, resolveComposition, DEFAULT_CROWN_DETAIL } from '../../src/render/composition';
 import { crownClumpMode } from '../../src/render/crownClumpAtlas';
 import { styleTraits } from '../../src/render/terrainStyle';
-import { PRESET_OPTIONS, compositionMessages } from '../../src/ui/compositionControls';
+import { PRESET_OPTIONS, RENDER_SECTION_FIELDS, compositionMessages, renderControlFields } from '../../src/ui/compositionControls';
 import { passKeys } from '../../src/v2/passes/pass';
 import { FallbackGround } from '../../src/ui/terrain/fallbackGround';
 import { terrain3dPixelRatio, TERRAIN_3D_MOVING_PIXELS, TERRAIN_3D_FRAME_PIXELS } from '../../src/ui/terrain3dResolution';
@@ -527,6 +527,35 @@ describe('V2 and City Bench stay in sync', () => {
     expect(v2).toContain('cityArchitectureOf');
     expect(CITY_DISPLAY_DEFAULTS.view).toBe('buildings');
     expect(CITY_DISPLAY_DEFAULTS.palette).toBe('parchment');
+  });
+
+  it('shares the hillside ground choices (levelled lots, built terraces) and their defaults on both pages', () => {
+    expect(CITY_DISPLAY_DEFAULTS.groundShaping).toBe(true);
+    expect(CITY_DISPLAY_DEFAULTS.terraces).toBe(true);
+    const view3d = (city?: AppearanceInput['city']) => resolveAppearance({ style: 'parchment', city }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view3d').city;
+    expect([view3d().groundShaping, view3d().terraces]).toEqual([true, true]);
+    const off = view3d({ groundShaping: false, terraces: false });
+    expect([off.groundShaping, off.terraces]).toEqual([false, false]);
+    // One Advanced field each, from the shared field list both pages' panels are built from, with its French label.
+    for (const path of ['city.groundShaping', 'city.terraces']) {
+      const field = renderControlFields.find(f => f.path === `appearance.${path}`);
+      expect(field?.type).toBe('boolean');
+      expect(compositionMessages[field!.label]?.fr).toBeTruthy();
+      expect(RENDER_SECTION_FIELDS.relief).toContain(path);
+    }
+    // Both pages mount the one 3D view, which reads the choices from their view settings and seats every structure on
+    // the terrain's shaped ground (groundAt).
+    const bench = read('../../src/ui/citybench.ts'),
+      v2 = read('../../src/v2/urban3d.ts'),
+      buildings = read('../../src/ui/view3d/cityBuildings.ts'),
+      ground = read('../../src/ui/view3d/cityGround.ts');
+    expect(bench).toContain('groundShaping: r.city.groundShaping,');
+    expect(bench).toContain('terraces: r.city.terraces,');
+    expect(bench).toContain("'groundShaping', 'terraces'] as const) setBenchAppearanceField");
+    expect(v2).toContain('groundShaping: city.groundShaping, terraces: city.terraces');
+    expect(buildings).toContain('t.setGroundShape(');
+    expect(buildings).toContain('terraces: cityContext.builtTerraces');
+    expect(ground).toContain('city3dSurfaceSamplers(d.raster, (x, y) => t.groundAt(x, y))');
   });
 
   it('builds the same silhouette scene on both paths', () => {

@@ -65,6 +65,8 @@
 - Stepped streets stand as real flights of steps in 3D: level treads in the colour of the street they continue, lighter risers sized to the slope, landings at turns and on long climbs, stone cheeks down to the ground, over a plain paved strip instead of a hatched band; in 2D their tread hatching spans the whole width.
 - Streets meet as one surface: a street joining another stops flush at its far edge instead of a rounded end sticking out by a metre or two, bends between streets close with a proper join, and dead ends are cut square, in every map style, 2D and on the 3D ground.
 - Town walls open the number of gates their size allows (about five at 10,000 inhabitants, eight for a large city) instead of one wherever a street or a bridge ramp reached them. At a gate the curtain turns square to its street, with its gatehouse; the other streets end at the wall, and a main road left without a gate goes round the moat to the nearest one.
+- Stepped streets also stand as flights of steps on the tilted map.
+- New 3D option in Advanced, "Built terraces in 3D" (on by default), shows or hides the stone terraces and retaining walls under the hillside houses of terracing cultures.
 
 The Apple Silicon DMG is signed ad hoc and distributed without Apple notarization. GitHub Actions tests the packaged app. Native neural GPU inference on a physical Mac remains unverified.
 

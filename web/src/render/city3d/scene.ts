@@ -66,9 +66,18 @@ const hasTreeDwelling = (b: PlacedBuilding): boolean => {
 /** An activity building drawn from its massing (activitySites.ts `massingScene`), not a native plan. */
 const activityMassing = (b: PlacedBuilding): boolean => b.recipe_id.startsWith('activity:') && Array.isArray((b as PlacedBuilding & { programme?: { massing?: unknown } }).programme?.massing);
 
+/** What city3dScene seats buildings on: the ground and the water under them, the realized native exteriors that
+ * replace buildings by id, and whether the massing's built terraces are drawn (true by default). */
+export interface City3dSceneOptions {
+  heightAt?: City3dHeight;
+  waterAt?: City3dHeight;
+  details?: ReadonlyMap<string, PlacedBuilding>;
+  terraces?: boolean;
+}
+
 /** Display batch for the 3D pass. `details` replaces buildings by their realized
  * native exterior (same id). Ids, parcels and functions are those of the scene. */
-export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dHeight; waterAt?: City3dHeight; details?: ReadonlyMap<string, PlacedBuilding> } = {}): PlacementBatch & { kinds: Record<City3dKind, number> } {
+export function city3dScene(scene: PlacementBatch, options: City3dSceneOptions = {}): PlacementBatch & { kinds: Record<City3dKind, number> } {
   const kinds: Record<City3dKind, number> = { silhouette: 0, compact: 0, detailed: 0 };
   // Thousands of full tree meshes exceed the page's 4 GB and kill it (elven 10k).
   const lightTrees = scene.buildings.filter(hasTreeDwelling).length > LIGHT_TREES_FROM;
@@ -83,7 +92,7 @@ export function city3dScene(scene: PlacementBatch, options: { heightAt?: City3dH
     // displayed terrain the same way (seatPlan).
     const kind = activityMassing(source) ? 'silhouette' : city3dKind(source);
     kinds[kind]++;
-    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt, lightTrees) : kind === 'compact' ? compactBuilding(seatPlan(source, options.heightAt)) : seatPlan(source, options.heightAt);
+    return kind === 'silhouette' ? silhouetteBuilding(source, options.heightAt, options.waterAt, lightTrees, options.terraces ?? true) : kind === 'compact' ? compactBuilding(seatPlan(source, options.heightAt)) : seatPlan(source, options.heightAt);
   });
   return { ...scene, materials: [...(scene.materials ?? []), ...CITY3D_MATERIALS], buildings, kinds };
 }

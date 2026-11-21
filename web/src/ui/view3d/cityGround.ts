@@ -74,18 +74,12 @@ export async function loadImage(cityContext: City3dContext, url: string): Promis
 export function setSurface(cityContext: City3dContext, d: Decor): void {
   const t = cityContext.terrain!,
     r = d.raster;
-  // The natural drawn ground (before footings and moats carve it): one height for town, roads, bridges, quays and walls.
-  const samplers = city3dSurfaceSamplers(r, (x, y) => t.groundAt(x, y));
   cityContext.surfaceDecor = d;
-  cityContext.heightAt = samplers.heightAt;
-  cityContext.bridgeWaterAt = cityContext.stiltWaterAt = samplers.waterAt;
+  cityContext.seatSamplers(d);
   cityContext.sceneOf = undefined;
   cityContext.sourceEpoch++;
   cityContext.details.clear();
   cityContext.detailBases.clear();
-  // Every displayed structure shares the terrain's unexaggerated surface.
-  // Quay water also samples the wet edge of its bank band, outside the mask.
-  cityContext.quayHeightAt = cityContext.quayWaterAt = cityContext.heightAt;
   cityContext.waterMask = undefined;
   cityContext.waterPaths = undefined;
   cityContext.openWater = undefined;
@@ -99,6 +93,17 @@ export function setSurface(cityContext: City3dContext, d: Decor): void {
   cityContext.backgroundKey = undefined;
   cityContext.syncImage(d);
   cityContext.applyGround();
+}
+
+/** The drawn ground before footings and moats carve it, with its levelled hillside lots: one height for town, roads,
+ * bridges, quays and walls. Every displayed structure shares the terrain's unexaggerated surface; quay water also
+ * samples the wet edge of its bank band, outside the mask. New samplers rebuild every structure seated on them. */
+export function seatSamplers(cityContext: City3dContext, d: Decor): void {
+  const t = cityContext.terrain!,
+    samplers = city3dSurfaceSamplers(d.raster, (x, y) => t.groundAt(x, y));
+  cityContext.heightAt = samplers.heightAt;
+  cityContext.bridgeWaterAt = cityContext.stiltWaterAt = samplers.waterAt;
+  cityContext.quayHeightAt = cityContext.quayWaterAt = cityContext.heightAt;
 }
 
 /** The 2D background may change (map style selector): follow its image. */

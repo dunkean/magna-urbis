@@ -113,6 +113,7 @@ export function createCityApi(cityContext: City3dContext): City3d {
       bridges: cityContext.bridgeStats,
       walls: cityContext.wallStats,
       stairs: cityContext.stairStats,
+      groundShape: cityContext.groundShapeStats,
       lod: cityContext.terrain?.getLodInfo(),
       parentWindow:
         cityContext.sceneOf && 'projection' in cityContext.sceneOf && cityContext.sceneOf.projection === 'native-parent-window-3d-1'

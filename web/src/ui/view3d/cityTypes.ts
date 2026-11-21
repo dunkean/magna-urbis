@@ -113,6 +113,9 @@ export interface City3dViewSettings {
   refinement: 'source' | 'noise';
   trees3d: boolean;
   /** Render distance of the modelled trees (m). */ treeDistance: number;
+  /** Hillside lots levelled into the 3D ground, and built terraces under hillside houses (appearanceRecipe.ts CityInput). */
+  groundShaping: boolean;
+  terraces: boolean;
 }
 
 export interface City3dSurface {
@@ -209,6 +212,8 @@ export interface City3dStats {
   realizeError?: string;
   bridges?: { count: number; first?: Point };
   walls?: City3dWallStats;
+  /** Levelled hillside lots in the 3D ground and the time their shaping took to build. */
+  groundShape?: { lots: number; ms: number };
   lod?: ReturnType<Terrain3d['getLodInfo']>;
   parentWindow?: { complete: boolean; reason: string; parents: number; members: number };
 }

@@ -56,6 +56,9 @@ export interface V2CityAppearance {
   /** Modelled near trees and their display distance, saved independently of machine defaults. */
   trees3d?: boolean;
   treeDistance?: number;
+  /** Hillside lots levelled into the 3D ground and built terraces under hillside houses (appearanceRecipe.ts CityInput). */
+  groundShaping?: boolean;
+  terraces?: boolean;
 }
 export interface V2Appearance {
   /** Pass-by-pass recipe (render/composition.ts): the source of truth of every field it covers. */

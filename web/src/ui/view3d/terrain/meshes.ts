@@ -105,7 +105,7 @@ export class PatchMeshes {
     return heights;
   }
 
-  /** The grid of a tile from its own height layer, with the same detail, footings, cuts and lakes as the surface. */
+  /** The grid of a tile from its own height layer, with the same detail, levelled lots, footings, cuts and lakes as the surface. */
   *decodedGrid(tile: Terrain3dTile, layer: HeightLayer): Generator<void, Float32Array> {
     if (layer.n < 2 || layer.data.length !== layer.n * layer.n || !(layer.width > 0) || tile.x < layer.x || tile.y < layer.y || tile.x + tile.width > layer.x + layer.width + 1e-5 || tile.y + tile.width > layer.y + layer.width + 1e-5)
       throw new Error('Grille de relief 3D incomplète.');
@@ -130,6 +130,7 @@ export class PatchMeshes {
           wy = tile.y + y * step;
         let height = sample(wx, wy, step);
         if (!Number.isFinite(height)) throw new Error('Altitude 3D non finie.');
+        if (surface.groundShape) height = surface.groundShape.shape(wx, wy, height);
         height = surface.buildingGround.constrain(wx, wy, height);
         height = surface.groundCuts.lower(wx, wy, height);
         if (surface.waterVisible) {

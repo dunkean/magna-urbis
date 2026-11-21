@@ -771,11 +771,21 @@ const city3d = mountCity3d({
   },
   getViewSettings: () => {
     const r = resolveBenchAppearance({}, 'view3d');
-    return { ground: r.city.ground as import('./city3d').City3dGround, plan: r.city.plan, colors: r.city.colors, exaggeration: r.city.exaggeration, refinement: r.city.refinement, trees3d: r.city.trees3d, treeDistance: r.city.treeDistance };
+    return {
+      ground: r.city.ground as import('./city3d').City3dGround,
+      plan: r.city.plan,
+      colors: r.city.colors,
+      exaggeration: r.city.exaggeration,
+      refinement: r.city.refinement,
+      trees3d: r.city.trees3d,
+      treeDistance: r.city.treeDistance,
+      groundShaping: r.city.groundShaping,
+      terraces: r.city.terraces,
+    };
   },
   onViewSettingsChange: value => {
     if (value.ground !== resolveBenchAppearance({}, 'view3d').city.ground) setBenchComposition(withGroundVariant(getBenchComposition(), value.ground === 'map' ? 'parchment' : value.ground === 'render' ? 'render3d' : value.ground));
-    for (const key of ['colors', 'exaggeration', 'refinement', 'trees3d', 'treeDistance'] as const) setBenchAppearanceField(`city.${key}`, value[key]);
+    for (const key of ['colors', 'exaggeration', 'refinement', 'trees3d', 'treeDistance', 'groundShaping', 'terraces'] as const) setBenchAppearanceField(`city.${key}`, value[key]);
   },
   getGroundSettings: ground => {
     if (!decor) return;

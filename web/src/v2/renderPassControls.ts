@@ -7,6 +7,7 @@ import { readSettingPath } from './parameterForm';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
 import { mountNameVisibilityControls } from './nameVisibilityControls';
 import { mountSectionIndex } from './sectionIndex';
+import { dualCameras } from '../render/live/policy';
 
 registerMessages({
   'Shaders & layers': { en: 'Shaders & layers', fr: 'Shaders et couches' },
@@ -37,7 +38,12 @@ interface Pass {
   fields?: string[];
 }
 const passes: Pass[] = [
-  { name: 'Ground shader', path: 'appearance.terrainLayers.hypsometry', component: 'ground', fields: ['appearance.composition.ground.look', 'appearance.composition.ground.variant', 'appearance.city.exaggeration', 'appearance.city.refinement'] },
+  {
+    name: 'Ground shader',
+    path: 'appearance.terrainLayers.hypsometry',
+    component: 'ground',
+    fields: ['appearance.composition.ground.look', 'appearance.composition.ground.variant', 'appearance.city.exaggeration', 'appearance.city.refinement', 'appearance.city.groundShaping', 'appearance.city.terraces'],
+  },
   { name: 'Relief shading', path: 'appearance.composition.effects.relief' },
   { name: 'Vegetation', path: 'appearance.composition.vegetation.look', component: 'vegetation', fields: ['appearance.composition.vegetation.look'] },
   { name: 'Roads', path: 'appearance.composition.networks.roads.visible' },
@@ -268,9 +274,10 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
     }
     const waves = field('appearance.composition.networks.water.waves');
     if (waves) waves.hidden = !traits.satelliteVariant;
-    for (const path of ['appearance.city.exaggeration', 'appearance.city.refinement', 'appearance.city.colors']) {
+    for (const path of ['appearance.city.exaggeration', 'appearance.city.refinement', 'appearance.city.colors', 'appearance.city.groundShaping', 'appearance.city.terraces']) {
       const control = field(path);
-      if (control) control.hidden = mode !== '3D';
+      // Only the separate 3D view (`?camera=dual`) shapes its ground: the tilted map does not offer the choice.
+      if (control) control.hidden = mode !== '3D' || (path === 'appearance.city.groundShaping' && !dualCameras());
     }
     for (const { stage, wrapper } of fine)
       wrapper.hidden =

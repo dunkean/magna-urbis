@@ -18,14 +18,14 @@ import { cityBridgeStreets } from '../cityBridges';
 import { farmPlacedBuildings } from '../farmRoofs';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 import { city3dBridges } from './bridges';
-import { city3dProjectionScene, city3dScene, type City3dDisplayScene } from './scene';
+import { city3dProjectionScene, city3dScene, type City3dDisplayScene, type City3dSceneOptions } from './scene';
 import type { City3dHeight } from './types';
 import { city3dWalls } from './walls';
 
 /** The buildings of a source scene (a placement batch, or a projection of accepted plans) as display meshes, each on
  * the ground under it; `waterAt` lifts stilt houses over the water, `details` are the exact meshes already made. */
-export function city3dBuildings(scene: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, options: { heightAt?: City3dHeight; waterAt?: City3dHeight; details?: ReadonlyMap<string, PlacedBuilding> }): City3dDisplayScene | undefined {
-  return scene ? ('projection' in scene ? city3dProjectionScene(scene, { details: options.details }) : city3dScene(scene, { heightAt: options.heightAt, waterAt: options.waterAt, details: options.details })) : undefined;
+export function city3dBuildings(scene: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, options: City3dSceneOptions): City3dDisplayScene | undefined {
+  return scene ? ('projection' in scene ? city3dProjectionScene(scene, { details: options.details }) : city3dScene(scene, options)) : undefined;
 }
 
 /** The ground the structures stand on and the water they cross or border. `height` is the undug ground: moat water
@@ -86,7 +86,7 @@ const isTreeDwelling = (b: PlacedBuilding): boolean => {
  * buildings, kinds and materials, in the same order. city3dScene decides light tree meshes from the number of tree
  * dwellings it is given; above the threshold the tree dwellings go in steps of more than it, so each step decides as
  * the whole town would. */
-export function* city3dBuildingsSteps(scene: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, options: { heightAt?: City3dHeight; waterAt?: City3dHeight; details?: ReadonlyMap<string, PlacedBuilding> }): Generator<void, City3dDisplayScene | undefined> {
+export function* city3dBuildingsSteps(scene: PlacementBatch | NativeBuildingProjectionScene | Parent3dScene | undefined, options: City3dSceneOptions): Generator<void, City3dDisplayScene | undefined> {
   if (!scene || 'projection' in scene) return city3dBuildings(scene, options);
   const trees = scene.buildings.filter(isTreeDwelling),
     light = trees.length > LIGHT_TREES_FROM,

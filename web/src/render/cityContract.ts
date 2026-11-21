@@ -20,7 +20,17 @@ export const DEFAULT_CITY_ARCHITECTURE: CityArchitecture = 'silhouette';
 export const cityArchitectureOf = (value: unknown): CityArchitecture => (CITY_ARCHITECTURES.includes(value as CityArchitecture) ? (value as CityArchitecture) : DEFAULT_CITY_ARCHITECTURE);
 
 /** Display defaults of one city: the V2 table (`appearanceRecipe.ts`), imported by City Bench instead of a private copy. */
-export const CITY_DISPLAY_DEFAULTS = Object.freeze({ view: DEFAULT_CITY.view, palette: DEFAULT_CITY.palette, buildingStyle: DEFAULT_CITY.buildingStyle, opacity: DEFAULT_CITY.opacity, width: DEFAULT_CITY.width, groundBlend: DEFAULT_CITY.groundBlend, layers: DEFAULT_CITY_LAYERS });
+export const CITY_DISPLAY_DEFAULTS = Object.freeze({
+  view: DEFAULT_CITY.view,
+  palette: DEFAULT_CITY.palette,
+  buildingStyle: DEFAULT_CITY.buildingStyle,
+  opacity: DEFAULT_CITY.opacity,
+  width: DEFAULT_CITY.width,
+  groundBlend: DEFAULT_CITY.groundBlend,
+  layers: DEFAULT_CITY_LAYERS,
+  groundShaping: DEFAULT_CITY.groundShaping,
+  terraces: DEFAULT_CITY.terraces,
+});
 
 /** Building plans drawn by the native house renderer (houses crate: compact, detailed). City volumes
  * (`generator_version: 'silhouette'`) are plan silhouettes with roof pans and shadows (cityMassing.ts),

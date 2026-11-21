@@ -487,7 +487,7 @@ export const diagnosticFields = [
     POTENTIAL_IDS.map(id => [id, ...potentialLabels[id]] as const),
   ),
 ];
-const perspectiveFields = [
+const perspectiveFields: ParameterField[] = [
   choice('city.colors', 'Building colours in 3D', 'Couleurs des bâtiments en 3D', [
     ['materials', 'Materials', 'Matériaux'],
     ['uses', 'Uses', 'Usages'],
@@ -497,6 +497,19 @@ const perspectiveFields = [
     ['source', 'Source heights', 'Altitudes source'],
     ['noise', 'Multiscale detail', 'Détail multi-échelle'],
   ]),
+  {
+    ...flag('city.groundShaping', 'Level hillside lots in 3D', 'Niveler les parcelles en pente en 3D'),
+    help: copy(
+      'The displayed ground is cut and filled into a level platform under each sloping lot; the slope is taken by a bank at the lot edges.',
+      'Le sol affiché est taillé et remblayé en un palier sous chaque parcelle en pente ; la pente est reprise par un talus en limite de parcelle.',
+    ),
+    helpDisplay: 'tooltip',
+  },
+  {
+    ...flag('city.terraces', 'Built terraces in 3D', 'Terrasses bâties en 3D'),
+    help: copy('Slab and retaining wall under the hillside houses of terracing cultures.', 'Dalle et mur de soutènement sous les maisons à flanc de pente des cultures en terrasses.'),
+    helpDisplay: 'tooltip',
+  },
 ];
 /** Level 3: the fine controls the recipe does not drive. */
 export const advancedFields = [...advancedCommonFields, ...terrainFields, ...cityFields, ...cityLayerFields, ...perspectiveFields, ...fantasyFields, ...forestFields, ...diagnosticFields];
@@ -506,7 +519,7 @@ export const renderControlFields = [...Object.values(compositionFields), ...adva
 const strip = (fields: readonly ParameterField[]) => fields.map(field => field.path.replace('appearance.', ''));
 export const RENDER_SECTION_FIELDS: Record<RenderSection, readonly string[]> = {
   general: ['terrainLayers.frame'],
-  relief: ['city.exaggeration', 'city.refinement'],
+  relief: ['city.exaggeration', 'city.refinement', 'city.groundShaping', 'city.terraces'],
   ground: ['terrainLayers.hypsometry'],
   vegetation: ['vegetation', ...strip(fantasyFields), ...strip(forestFields)],
   landuse: [],

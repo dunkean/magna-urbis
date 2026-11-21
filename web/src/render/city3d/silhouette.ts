@@ -21,8 +21,9 @@ const PLANAR_ROOFS = new Set(['gable', 'hip', 'pyramid', 'shed', 'ring']);
 
 /** Extruded silhouette: walls of `floors × 3 m`, a gable or hip roof on
  * rectangular shapes, a pitched border elsewhere, a foundation down to the lowest
- * terrain sample under the whole footprint so no wall floats above a slope or a cliff. */
-export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight, waterAt?: City3dHeight, lightTrees = false): PlacedBuilding {
+ * terrain sample under the whole footprint so no wall floats above a slope or a cliff. `terraces`: false drops the
+ * built terraces of the massing (Advanced › "Built terraces"), each piece then standing on its own footing. */
+export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHeight, waterAt?: City3dHeight, lightTrees = false, terraces = true): PlacedBuilding {
   const footprint = building.footprint,
     area = surfaceArea(footprint),
     m = silhouetteMassing(building, area);
@@ -48,14 +49,14 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
     // below a floor, and a piece seated lower names its own ground (SeatedVolume).
     let site = -Infinity;
     for (const { seat } of seats) site = Math.max(site, seat);
-    const terraces: ArchitectureVolume['foundation'][] = [];
+    const terraceFootings: ArchitectureVolume['foundation'][] = [];
     const volumes = footprint.flatMap((shape, i) => {
       const piece = massing[i],
         { seat: ground, low } = seats[i],
-        terrace = pieceTerrace(piece);
+        terrace = terraces ? pieceTerrace(piece) : undefined;
       const foundation = { footprint, z_min_m: low - CITY3D_FOOTING_DEPTH_M, z_max_m: ground };
       // A terraced piece stands on its terrace (drawn as a structural foundation): no footing of its own.
-      if (terrace) terraces.push(terraceFooting(terrace, ground, heightAt));
+      if (terrace) terraceFootings.push(terraceFooting(terrace, ground, heightAt));
       return pieces[i].map((v, j) => {
         const plain = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof),
           roof = new RoofBuilder();
@@ -185,7 +186,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
       ground_z_m: site,
       roof_footprint: treeCrowns ? volumes.flatMap(v => v.footprint) : building.roof_footprint.length ? building.roof_footprint : footprint,
       volumes,
-      ...(terraces.length ? { structural_foundations: [...(building.structural_foundations ?? []), ...terraces] } : {}),
+      ...(terraceFootings.length ? { structural_foundations: [...(building.structural_foundations ?? []), ...terraceFootings] } : {}),
     };
   }
   // A level floor clears the high side of a hillside (clamping a reference to the low side buries terraces and

@@ -1,6 +1,6 @@
 /**
  * The relief of a 3D terrain view and its one height function. Terrain3d sets the inputs (height layer, lakes, detail
- * sampler, building footings, moat cuts); patches, meshes, camera, picking, trees and mushrooms read heights here, so
+ * sampler, levelled hillside lots, building footings, moat cuts); patches, meshes, camera, picking, trees and mushrooms read heights here, so
  * the mesh, the eye clearance and every placed instance agree on the same ground.
  */
 import { cavernRoofAt, cavernWallAt, type CavernField } from '../../../render/underdarkCavern';
@@ -8,6 +8,7 @@ import { lakeSample } from '../../lakeGeometry';
 import type { HeightLayer } from '../../terrain/contract';
 import { UrbanBuildingGround } from '../../urbanBuildingGround';
 import { UrbanGroundCuts } from '../../urbanGroundCuts';
+import type { UrbanGroundShape } from '../../urbanGroundShape';
 import { clamp } from './policy';
 import type { TerrainViewContext } from './context';
 import type { WaterSurface } from './contract';
@@ -77,6 +78,8 @@ export class TerrainSurface {
   maxSlope = 0;
   /** Detailed ground sampler (the material ground's displacement), else the layer's spline. */
   heightSampler?: (x: number, y: number, metresPerPixel: number) => number;
+  /** Hillside lots levelled into the ground (Advanced › "Level hillside lots"), when on and any lot slopes. */
+  groundShape?: UrbanGroundShape;
   /** Building footings and town moats carved into the ground. */
   buildingGround = new UrbanBuildingGround();
   groundCuts = new UrbanGroundCuts();
@@ -122,9 +125,10 @@ export class TerrainSurface {
     this.heightRange = Math.max(0, high - low);
   }
 
-  /** `carved`: false skips the building footings and moat cuts, giving the natural drawn ground that those
-   * footings and structures are themselves seated on (groundAt). */
-  surface(x: number, y: number, metresPerPixel: number, detail = true, carved = true): number {
+  /** `carved`: false skips the building footings and moat cuts, giving the drawn ground that those footings and
+   * structures are themselves seated on (groundAt). `shaped`: false also skips the levelled hillside lots, giving the
+   * natural ground their levels are taken from (naturalAt). */
+  surface(x: number, y: number, metresPerPixel: number, detail = true, carved = true, shaped = true): number {
     const layer = this.layer;
     if (!layer) return 0;
     const u = (x - layer.x) / layer.width,
@@ -143,6 +147,7 @@ export class TerrainSurface {
       height = Math.min(height, roof);
       if (wall > 0) height += (roof - height) * wall;
     }
+    if (shaped && this.groundShape) height = this.groundShape.shape(x, y, height);
     if (carved) {
       height = this.buildingGround.constrain(x, y, height);
       height = this.groundCuts.lower(x, y, height);
@@ -160,7 +165,8 @@ export class TerrainSurface {
     return this.surface(x, y, 0);
   }
 
-  /** The drawn ground before building footings and moats carve it (metres, unexaggerated). Town structures seat on it:
+  /** The drawn ground before building footings and moats carve it, with its levelled hillside lots (metres,
+   * unexaggerated). Town structures seat on it:
    * sampling heightAt instead would feed each footing back into the next rebuild and sink the town step by step. */
   groundAt(x: number, y: number): number | undefined {
     if (!this.layer) return undefined;
@@ -168,5 +174,13 @@ export class TerrainSurface {
     // residual is filtered to exactly 0, as on the mesh a town is seen on, and its five extra relief probes and
     // noise field per sample are skipped. The relief itself is the same.
     return this.surface(x, y, 2, true, false);
+  }
+
+  /** The natural relief under the levelled lots (no detail residual, footing, cut or shaping, metres): their platform
+   * levels are read here, tens of thousands of spline reads for a large town. Under a house the platform is level at
+   * that height whatever the detail residual; around it the bank absorbs the difference. */
+  naturalAt(x: number, y: number): number | undefined {
+    if (!this.layer) return undefined;
+    return this.surface(x, y, 2, false, false, false);
   }
 }

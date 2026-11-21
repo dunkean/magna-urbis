@@ -82,6 +82,8 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     boolean(value.city.painted, 'appearance.city.painted');
     boolean(value.city.plan, 'appearance.city.plan');
     boolean(value.city.trees3d, 'appearance.city.trees3d');
+    boolean(value.city.groundShaping, 'appearance.city.groundShaping');
+    boolean(value.city.terraces, 'appearance.city.terraces');
     number(value.city.opacity, 'appearance.city.opacity', 0, 1);
     number(value.city.width, 'appearance.city.width', 0, 5);
     // New controls use .2–3; keep the former upper bound valid for retained projects.

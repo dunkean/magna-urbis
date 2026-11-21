@@ -62,6 +62,7 @@ const MIRRORED = new Set<PropertyKey>([
   'setSurface',
   'setHeightSampler',
   'setGroundCuts',
+  'setGroundShape',
   'setGroundMaterial',
   'setLook',
   'setRenderV2Season',

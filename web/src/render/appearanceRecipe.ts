@@ -41,6 +41,12 @@ export interface CityInput {
   trees3d?: boolean;
   /** Render distance of the modelled 3D trees (m, 200..1500; 600 by default). */
   treeDistance?: number;
+  /** 3D view, on by default: hillside lots levelled into the displayed ground (cut and fill under the lots, banks at
+   * their edges, ui/urbanGroundShape.ts); everything seated on the ground reads that shaped ground. */
+  groundShaping?: boolean;
+  /** 3D view, on by default: the built terraces (slab and retaining wall) the generator sends under the hillside houses
+   * of the terracing cultures. */
+  terraces?: boolean;
 }
 /** The persisted recipe: every field optional, nothing expanded. */
 export interface AppearanceInput {
@@ -160,6 +166,8 @@ export interface CityComponent {
   refinement: 'source' | 'noise';
   trees3d: boolean;
   treeDistance: number;
+  groundShaping: boolean;
+  terraces: boolean;
 }
 export interface Incompatibility {
   field: string;
@@ -236,6 +244,8 @@ export const DEFAULT_CITY = {
   groundBlend: 'classic',
   trees3d: false,
   treeDistance: 600,
+  groundShaping: true,
+  terraces: true,
 } as const;
 /** Previous 3D defaults, used while `unifiedDefaults` is off. */
 const LEGACY_3D_CITY = { view: 'parcels', palette: 'terrain', opacity: 1 } as const;
@@ -360,6 +370,8 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     refinement: c?.refinement ?? DEFAULT_CITY.refinement,
     trees3d: c?.trees3d ?? DEFAULT_CITY.trees3d,
     treeDistance: c?.treeDistance ?? DEFAULT_CITY.treeDistance,
+    groundShaping: c?.groundShaping ?? DEFAULT_CITY.groundShaping,
+    terraces: c?.terraces ?? DEFAULT_CITY.terraces,
   };
 
   if (atlas) city.layers = buildingsAndRoadsOnly(city.layers);
@@ -503,6 +515,8 @@ export function resolvedValues(r: ResolvedAppearance): AppearanceInput {
       refinement: r.city.refinement,
       trees3d: r.city.trees3d,
       treeDistance: r.city.treeDistance,
+      groundShaping: r.city.groundShaping,
+      terraces: r.city.terraces,
       groundBlend: r.city.groundBlend,
       painted: r.city.painted,
       ground: r.city.ground,

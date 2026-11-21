@@ -26,6 +26,9 @@ import { city3dBuildingsSteps, city3dFarmBuildings, city3dStructures, city3dWith
 import type { City3dDisplayScene } from '../../render/city3d/scene';
 import type { City3dHeight } from '../../render/city3d/types';
 import { city3dLotEnclosures } from '../../render/city3d/yards';
+import { city3dStairs } from '../../render/city3dStairs';
+import { stairStreetColor, type StairPaintOptions } from '../../render/city/streetLook';
+import { roadGroundKey } from '../../render/roadStyle';
 import { cityRegionalStreets } from '../../render/cityContract';
 import { RIM_DEVICE_MPP, roofFrame, roofPansShown, type VolumeTownLook } from '../../render/city/buildingLook';
 import { cityBuildingAppearance, city3dPlanOptions } from '../../render/cityDrawOptions';
@@ -117,7 +120,7 @@ export class WorldVolumes {
   /** The towns' meshes (city3dBuildingsSteps), which no look changes, and the scenes composed from them per look (a few,
    * most recent last): a switch between looks of the same town publishes the scene it made before, whose blocks the
    * buildings layer keeps. Dropped with the town or the relief. */
-  private townMeshes?: { cities: readonly RustTownSnapshot[]; world: World; heights: TerrainHeights; city?: NativeCityMap; display: City3dDisplayScene | undefined; scenes: Map<string, { display?: City3dDisplayScene; collisions?: Terrain3dCollisions }> };
+  private townMeshes?: { cities: readonly RustTownSnapshot[]; world: World; heights: TerrainHeights; terraces: boolean; city?: NativeCityMap; display: City3dDisplayScene | undefined; scenes: Map<string, { display?: City3dDisplayScene; collisions?: Terrain3dCollisions }> };
   /** Displayed water cover of the map the trees keep off, one function per world (the trees compare it by identity). */
   private waterOf?: { world: World; rivers?: Float32Array; at: (x: number, y: number) => number };
   /** The top view's town look the volumes take, and what it was made for (the town map, the look on screen, the
@@ -306,9 +309,12 @@ export class WorldVolumes {
     const cities = v2NativeCities(world),
       city = this.parts.town.city,
       of = this.townOf,
-      // The city key of the appearance (keys.city) without the trees' switch and distance: they change no building.
-      town = { ...r.city, trees3d: undefined, treeDistance: undefined },
-      key = JSON.stringify([shown, yards, plan.waterColor, plan.palette, r.underdark, town, r.palette.colors, r.composition.ambience]);
+      // The city key of the appearance (keys.city) without the trees' switch and distance, which change no building, nor
+      // the levelled lots, which only the separate 3D view's ground takes (ui/view3d/cityBuildings.ts).
+      town = { ...r.city, trees3d: undefined, treeDistance: undefined, groundShaping: undefined },
+      // Flights of steps take the colour their street has on the map under them (`stairStreetColor`).
+      stairPaint: StairPaintOptions = { palette: plan.palette, roadLook: plan.roadLook, roadEmphasis: plan.roadEmphasis, streetPalette: plan.streetPalette, colors: plan.colors, groundBlend: plan.groundBlend, night: plan.night, appearance: look },
+      key = JSON.stringify([shown, yards, plan.waterColor, plan.palette, r.underdark, town, r.palette.colors, r.composition.ambience, stairPaint, roadGroundKey()]);
     // The same town on the same relief keeps its scene object: the buildings layer starts again for a new one.
     if (world === of.world && heights === of.heights && city === of.city && key === of.key && sameV2NativeInputs(of.cities, cities, 'scene') && sameV2NativeInputs(of.cities, cities, 'layouts')) {
       this.appearance = appearance;
@@ -322,7 +328,7 @@ export class WorldVolumes {
       return;
     }
     let meshes = this.townMeshes;
-    const sameTown = !!meshes && meshes.world === world && meshes.heights === heights && sameV2NativeInputs(meshes.cities, cities, 'scene') && sameV2NativeInputs(meshes.cities, cities, 'layouts');
+    const sameTown = !!meshes && meshes.world === world && meshes.heights === heights && meshes.terraces === r.city.terraces && sameV2NativeInputs(meshes.cities, cities, 'scene') && sameV2NativeInputs(meshes.cities, cities, 'layouts');
     if (sameTown && meshes!.city !== city) {
       meshes!.city = city;
       meshes!.scenes.clear();
@@ -344,11 +350,14 @@ export class WorldVolumes {
       source = withV2ActivityScene(combineV2NativeScenes(cities), activityScene(world));
     if (!sameTown) {
       countWork('volumes.compose');
-      meshes = this.townMeshes = { cities, world, heights, city, display: yield* city3dBuildingsSteps(source, { heightAt }), scenes: new Map() };
+      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, city, display: yield* city3dBuildingsSteps(source, { heightAt, terraces: r.city.terraces }), scenes: new Map() };
     }
     const display = meshes!.display;
     yield;
     const structures = buildingsOnly ? undefined : city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt }, plan.waterColor, false);
+    yield;
+    // Stepped streets stand as flights of steps on the relief (city3dStairs.ts).
+    const stairs = buildingsOnly ? [] : city3dStairs(layouts, heightAt, street => stairStreetColor(street, stairPaint));
     yield;
     const enclosures = yards && city ? city3dLotEnclosures(yield* city.lotEnclosureSteps(), heightAt, plan.palette) : [];
     yield;
@@ -360,7 +369,7 @@ export class WorldVolumes {
     // Published whole, once made: the buildings layer starts its blocks again for a new scene object.
     this.townOf = { cities, world, heights, city, key };
     this.appearance = appearance;
-    this.display = city3dWithExtras(display, [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...enclosures, ...groves, ...ornaments, ...farms]);
+    this.display = city3dWithExtras(display, [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...stairs, ...enclosures, ...groves, ...ornaments, ...farms]);
     this.walkCollisions = this.display ? new Terrain3dCollisions(this.display, heights, heights.exaggeration) : undefined;
     meshes!.scenes.set(key, { display: this.display, collisions: this.walkCollisions });
     if (meshes!.scenes.size > LOOK_SCENES) meshes!.scenes.delete(meshes!.scenes.keys().next().value!);

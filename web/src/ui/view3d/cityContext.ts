@@ -51,6 +51,9 @@ export interface City3dContext {
   refinement: City3dViewSettings['refinement'];
   nearTrees: boolean;
   treeDistance: number;
+  /** Hillside ground choices (Advanced): levelled lots, built terraces. */
+  groundShaping: boolean;
+  builtTerraces: boolean;
   groundKey: string;
   planKey: string;
   proceduralGround: boolean;
@@ -96,6 +99,8 @@ export interface City3dContext {
   converting: Set<string>;
   groundCutsOf: readonly Layout[] | undefined;
   groundCutsOn: unknown;
+  groundShapeInputs: unknown[];
+  groundShapeStats: { lots: number; ms: number };
   byId: Map<string, Building3dVisual>;
   bridgesOf: [readonly Layout[] | undefined, readonly Street[] | undefined];
   bridgeStats: { count: number; first?: Point };
@@ -134,6 +139,7 @@ export interface City3dContext {
   waterPath: (d: Decor) => Path2D | undefined;
   loadImage: (url: string) => Promise<HTMLImageElement>;
   setSurface: (d: Decor) => void;
+  seatSamplers: (d: Decor) => void;
   syncImage: (d: Decor) => void;
   applyGround: () => void;
   coverOf: { mask: HTMLCanvasElement; paths?: Path2D; display?: City3dWaterDisplay; retained?: City3dRetainedWater; visible: boolean; canvas: HTMLCanvasElement } | undefined;

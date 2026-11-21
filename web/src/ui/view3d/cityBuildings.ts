@@ -6,6 +6,7 @@ import { updateYardEnclosures } from '../../render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../../render/city3dMeshes';
 import { city3dBuildings, city3dFarmBuildings, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
 import { UrbanGroundCuts } from '../urbanGroundCuts';
+import { UrbanGroundShape, groundShapeLots } from '../urbanGroundShape';
 import { city3dStairs } from '../../render/city3dStairs';
 import { stairStreetColor, type StairPaintOptions } from '../../render/cityCanvas';
 import { roadGroundKey } from '../../render/roadStyle';
@@ -38,6 +39,30 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     force = true;
     t.invalidateTiles();
   }
+  const scene = cityContext.options.getProjection?.() ?? cityContext.options.getScene(),
+    layouts = cityContext.options.getLayouts?.(),
+    regional = cityContext.options.getRegionalStreets?.();
+  // Hillside lots levelled into the 3D ground (Advanced, urbanGroundShape.ts), once per lots, buildings, relief and
+  // choice; off, nothing is built and the terrain keeps its natural ground. Everything below seats on that ground: a new
+  // shaping gives it new samplers, which rebuild it.
+  const shapePartitions = cityContext.groundShaping && !flat ? cityContext.options.getPartitions?.() : undefined,
+    nextShape = [shapePartitions, shapePartitions && scene, shapePartitions && cityContext.surfaceDecor, shapePartitions && cityContext.options.getSurface?.()?.height.data, t];
+  if (nextShape.some((input, i) => input !== cityContext.groundShapeInputs[i])) {
+    cityContext.groundShapeInputs = nextShape;
+    const started = performance.now(),
+      lots =
+        shapePartitions?.length && scene
+          ? groundShapeLots(
+              shapePartitions,
+              scene.buildings.map(b => b.footprint),
+            )
+          : [],
+      shape = new UrbanGroundShape(lots, (x, y) => t.naturalGroundAt(x, y));
+    t.setGroundShape(shape.empty ? undefined : shape);
+    cityContext.groundShapeStats = { lots: shape.size, ms: Math.round(performance.now() - started) };
+    if (cityContext.surfaceDecor) cityContext.seatSamplers(cityContext.surfaceDecor);
+    force = true;
+  }
   const farmsteads = cityContext.options.getSemantic?.()?.landuse?.farmsteads;
   const placeholders = cityContext.options.getPlaceholderBuildings?.();
   if (farmsteads !== cityContext.farmInputs[0] || cityContext.heightAt !== cityContext.farmInputs[1] || placeholders !== cityContext.farmInputs[2]) {
@@ -45,9 +70,6 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     cityContext.farmBuildings = undefined;
     force = true;
   }
-  const scene = cityContext.options.getProjection?.() ?? cityContext.options.getScene(),
-    layouts = cityContext.options.getLayouts?.(),
-    regional = cityContext.options.getRegionalStreets?.();
   if (layouts !== cityContext.bridgesOf[0] || regional !== cityContext.bridgesOf[1]) {
     cityContext.bridgesOf = [layouts, regional];
     force = true;
@@ -96,7 +118,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     clearTimeout(cityContext.detailTimer);
     cityContext.pendingSwaps.clear();
     const started = performance.now();
-    cityContext.display = city3dBuildings(scene, { heightAt: cityContext.heightAt, waterAt: cityContext.stiltWaterAt, details: cityContext.details });
+    cityContext.display = city3dBuildings(scene, { heightAt: cityContext.heightAt, waterAt: cityContext.stiltWaterAt, details: cityContext.details, terraces: cityContext.builtTerraces });
     if (nextStructureInputs.some((input, i) => input !== cityContext.structureInputs[i])) {
       cityContext.structureInputs = nextStructureInputs;
       // Architecture edits/colours do not change bridges, walls or quays.
