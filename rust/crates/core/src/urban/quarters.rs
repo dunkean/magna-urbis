@@ -7,6 +7,7 @@ use super::{
     composition, macroplan, network, profiles, routing,
 };
 use crate::{noise::Noise, rng::Rng};
+use magna_urbis_geom::surface::TerrainView;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 use std::sync::OnceLock;
 
@@ -768,21 +769,11 @@ impl Field<'_> {
             .and_then(|i| self.phase_morphs.get(i))
             .unwrap_or(self.p)
     }
-    fn gradient(&self, p: Point, r: f64) -> (f64, f64) {
-        (
-            (self.surface.height_at(Point { x: p.x + r, y: p.y })
-                - self.surface.height_at(Point { x: p.x - r, y: p.y }))
-                / (2.0 * r),
-            (self.surface.height_at(Point { x: p.x, y: p.y + r })
-                - self.surface.height_at(Point { x: p.x, y: p.y - r }))
-                / (2.0 * r),
-        )
-    }
     fn adapt_angle(&self, p: Point, angle: f64) -> f64 {
         if self.adaptation == 0.0 {
             return angle;
         }
-        let (gx, gy) = self.gradient(
+        let (gx, gy) = self.surface.slope_at(
             p,
             (self.surface.width / self.surface.n as f64).clamp(10.0, 35.0),
         );
@@ -882,7 +873,7 @@ impl Field<'_> {
             .and_then(|i| trace.phases.get(i))
             .unwrap_or(&trace.default);
         let (nz, base) = self.base(p, params);
-        let (gx, gy) = self.gradient(p, 70.0);
+        let (gx, gy) = self.surface.slope_at(p, 70.0);
         let slope = gx.hypot(gy);
         if params.grid {
             if let Some(frame) = self.frame.filter(|_| slope < 0.08) {

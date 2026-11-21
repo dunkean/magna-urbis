@@ -124,26 +124,7 @@ pub(in super::super) fn port_town(cfg: &LayoutConfig) -> bool {
 }
 
 pub(in super::super) fn water_code(surface: Surface<'_>, p: Point) -> u8 {
-    // Underdark cave rock is raster class 2 like a lake: it is no water at all.
-    if p.x < 0.0 || p.y < 0.0 || p.x >= surface.width || p.y >= surface.width || surface.solid(p) {
-        return 0;
-    }
-    let x = (p.x / surface.width * surface.n as f64) as usize;
-    let y = (p.y / surface.width * surface.n as f64) as usize;
-    let c = surface.water[y.min(surface.n - 1) * surface.n + x.min(surface.n - 1)];
-    if c != 0 || !surface.wet(p) { return c; }
-    // Vector shore margins can be wet inside a dry raster cell. Keep the
-    // nearest water kind, otherwise a river margin is mistaken for a sea.
-    let mut nearest = (f64::INFINITY, 1);
-    let cell = surface.width / surface.n as f64;
-    for j in y.saturating_sub(2)..=(y + 2).min(surface.n - 1) {
-        for i in x.saturating_sub(2)..=(x + 2).min(surface.n - 1) {
-            let kind = surface.water[j * surface.n + i];
-            let d = dist(p, Point { x: (i as f64 + 0.5) * cell, y: (j as f64 + 0.5) * cell });
-            if kind != 0 && d < nearest.0 { nearest = (d, kind); }
-        }
-    }
-    nearest.1
+    surface.classify_water(p)
 }
 
 /// Distance from the town centre to its harbour front: the core reaches the

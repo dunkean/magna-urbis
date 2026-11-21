@@ -1364,6 +1364,66 @@ impl Surface<'_> {
         if self.geometry.is_some() { return false; }
         self.water[y * self.n + x] != 0
     }
+
+    fn classify_water(&self, p: Point) -> u8 {
+        // Cave rock shares the lake code on the planning grid.
+        if p.x < 0.0 || p.y < 0.0 || p.x >= self.width || p.y >= self.width || self.solid(p) {
+            return 0;
+        }
+        let x = (p.x / self.width * self.n as f64) as usize;
+        let y = (p.y / self.width * self.n as f64) as usize;
+        let code = self.water[y.min(self.n - 1) * self.n + x.min(self.n - 1)];
+        if code != 0 || !self.wet(p) {
+            return code;
+        }
+        // Wet shoreline margins can lie inside dry planning cells. Use the
+        // nearest water class, falling back to sea if the grid has none nearby.
+        let mut nearest = (f64::INFINITY, 1);
+        let cell = self.width / self.n as f64;
+        for j in y.saturating_sub(2)..=(y + 2).min(self.n - 1) {
+            for i in x.saturating_sub(2)..=(x + 2).min(self.n - 1) {
+                let kind = self.water[j * self.n + i];
+                let distance = p.distance(Point {
+                    x: (i as f64 + 0.5) * cell,
+                    y: (j as f64 + 0.5) * cell,
+                });
+                if kind != 0 && distance < nearest.0 {
+                    nearest = (distance, kind);
+                }
+            }
+        }
+        nearest.1
+    }
+}
+
+impl magna_urbis_geom::surface::TerrainView for Surface<'_> {
+    fn width(&self) -> f64 {
+        self.width
+    }
+
+    fn height_resolution(&self) -> usize {
+        Surface::height_resolution(self)
+    }
+
+    fn water_resolution(&self) -> usize {
+        self.n
+    }
+
+    fn height_at(&self, p: Point) -> f64 {
+        Surface::height_at(self, p)
+    }
+
+    fn wet(&self, p: Point) -> bool {
+        Surface::wet(self, p)
+    }
+
+    fn water_code(&self, p: Point) -> u8 {
+        self.classify_water(p)
+    }
+
+    fn dry_clip(&self, shape: &Shape) -> Vec<Shape> {
+        geometry::dry_clip(self, shape)
+    }
 }
 
 #[cfg(test)]

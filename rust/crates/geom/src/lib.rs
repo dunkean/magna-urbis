@@ -3,6 +3,7 @@
 mod overlay;
 mod polygon;
 mod spatial;
+pub mod surface;
 
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
