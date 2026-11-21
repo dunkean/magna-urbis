@@ -12,19 +12,9 @@ mod placement;
 mod remote;
 pub mod roads;
 
+pub use magna_urbis_geom::Point;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct Point {
-    pub x: f64,
-    pub y: f64,
-}
-impl Point {
-    fn distance(self, b: Self) -> f64 {
-        (self.x - b.x).hypot(self.y - b.y)
-    }
-}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]

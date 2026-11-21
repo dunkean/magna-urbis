@@ -538,11 +538,20 @@ dependencies = [
  "delaunator",
  "geo",
  "i_overlay",
+ "magna-urbis-geom",
  "magna-urbis-random",
  "magna-urbis-terrain",
  "rayon",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "magna-urbis-geom"
+version = "0.1.0"
+dependencies = [
+ "geo",
+ "serde",
 ]
 
 [[package]]

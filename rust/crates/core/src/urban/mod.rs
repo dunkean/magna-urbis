@@ -70,18 +70,12 @@ pub mod neighbours;
 mod zone_blend;
 
 use crate::rng::Rng;
-pub use crate::settlements::Point;
+pub use magna_urbis_geom::{Point, Shape};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct Shape {
-    pub outer: Vec<Point>,
-    #[serde(default)]
-    pub holes: Vec<Vec<Point>>,
-}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Street {
     pub path: Vec<Point>,
