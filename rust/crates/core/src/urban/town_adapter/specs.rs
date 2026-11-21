@@ -1,17 +1,17 @@
 //! Resolve the growth engine's specs with classic's culture and recipe readers.
 
 use magna_urbis_town::spec::{
-    CharterSpec, CircumstanceModifiers, DefensiveShares, ExtensionHabit, FossilRule,
-    FoundingFocusKind, HarbourEnclosure, HarbourSpec, HarbourThresholds, PhaseSpec,
-    ProgrammeThresholds, RoadFate, SurveySpec, TissueParameter, TissueSpec, TownSpecs, WallKind,
-    WallSpec, WallStyleSpec,
+    CharterSpec, CircumstanceModifiers, CrossingSpec, DefensiveShares, ExtensionHabit, FossilRule,
+    FoundingFocusKind, HarbourEnclosure, HarbourSpec, HarbourThresholds, HarbourWorksSpec,
+    PhaseSpec, PrecinctSpec, ProgrammeThresholds, RoadFate, SurveySpec, TissueParameter,
+    TissueSpec, TownSpecs, WallKind, WallSpec, WallStyleSpec,
 };
 use magna_urbis_town::tissue::organic::{FieldOrientation, OrganicParams};
 use serde_json::Value;
 
 use super::super::{
-    LayoutConfig, Morph, Point, Site, catalogue, composition, footprint, fortification,
-    harbour_furniture, kinds, macroplan::harbour, profiles, roles, with_tissue,
+    LayoutConfig, Morph, Point, Site, catalogue, composition, culture as culture_map, footprint,
+    fortification, harbour_furniture, kinds, macroplan::harbour, profiles, roles, with_tissue,
 };
 use crate::settlements::{demographics, extent_radius};
 
@@ -163,7 +163,18 @@ pub(in crate::urban) fn build(culture: &str, cfg: &LayoutConfig) -> Result<TownS
         },
         lane_grade: cfg.max_lane_grade,
         strong_point_top_grade: cfg.max_lane_grade,
+        // The culture's house admissibility, widened to the terrace limit where it terraces.
+        house_grade: culture_map::mapping_for(culture, &cfg.programme.period).map_or(
+            SurveySpec::default().house_grade,
+            |m| profiles::house_slope(culture, m.admissibility.max_slope, 0.0),
+        ),
         ..SurveySpec::default()
+    };
+    let (_, ford_span) = footprint::crossings::spans(culture, 0);
+    let crossing = CrossingSpec {
+        builders: footprint::crossings::builders(culture),
+        ford_span,
+        ..CrossingSpec::default()
     };
     Ok(TownSpecs {
         charter,
@@ -173,6 +184,8 @@ pub(in crate::urban) fn build(culture: &str, cfg: &LayoutConfig) -> Result<TownS
         survey,
         harbour,
         growth: Default::default(),
+        precinct: PrecinctSpec::default(),
+        crossing,
     })
 }
 
@@ -482,6 +495,13 @@ fn harbour_spec(culture: &str, cfg: &LayoutConfig, profile: profiles::UrbanProfi
         _ if matches!(profile.fortification, "wall" | "auto") => HarbourEnclosure::SeaWall, // default, to tune on sheets
         _ => HarbourEnclosure::OpenFront, // default, to tune on sheets
     };
+    // Classic's quay budget is half again as long for a harbour site or a port function.
+    let port_function = cfg.programme.functions.as_ref().is_some_and(|f| f.port > 0.0);
+    let port_factor = if matches!(cfg.site_archetype.as_str(), "harbor" | "harbour") || port_function {
+        1.5
+    } else {
+        1.0
+    };
     HarbourSpec {
         enclosure_habit,
         quay_per_sqrt_pop: params.quay_per_sqrt_pop,
@@ -491,6 +511,14 @@ fn harbour_spec(culture: &str, cfg: &LayoutConfig, profile: profiles::UrbanProfi
             piers,
             moles,
             basins: moles,
+        },
+        works: HarbourWorksSpec {
+            port_town: harbour::port_town(cfg),
+            quay_width: params.quay_width,
+            pier_spacing: params.pier_spacing,
+            pier_length: [params.pier_length.0, params.pier_length.1],
+            port_factor,
+            ..HarbourWorksSpec::default()
         },
     }
 }

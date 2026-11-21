@@ -1,25 +1,31 @@
-//! The ring loop: armature, quarters in station order, count, ageing, promotions, stop.
+//! The ring loop: armature, quarters in station order, count, ageing, dated events, stop.
 
 use std::collections::HashSet;
 
-use magna_urbis_geom::Point;
+use magna_urbis_geom::{self as g, Point, Shape};
 use magna_urbis_random::Rng;
 
 use super::commit::quarter_ops;
-use super::contour::Lattice;
+use super::contour::{Land, Lattice};
 use super::count::{self, Birth, QuarterRecord};
 use super::driver::{Driver, Step};
 use super::par;
 use super::sectors::{self, Sector};
-use crate::armature::{self, Draw, chain_ops};
-use crate::graph::{Clock, EdgeClass, FaceId, Key};
+use crate::armature::{self, BoundaryArc, Draw, chain_ops};
+use crate::graph::{Clock, EdgeClass, FaceId, FaceKind, Graph, Key, Level};
 use crate::journal::{Cursor, EventKind, Op, QuarterDraft, event_stream};
-use crate::tissue::organic::{self, OrganicSite};
+use crate::survey::QuarterSlope;
+use crate::tissue::organic::{self, OrganicParams, OrganicSite};
+use crate::tissue::stairs;
+use crate::walls::{self, Precinct};
+use crate::water;
 
 /// Rank of boundary edges: below every street.
 const BOUNDARY_RANK: u8 = 4;
 /// Fill steps an intramural quarter gains per ring, one more than the others.
 const INTRAMURAL_STEPS: usize = 2;
+/// Rings in a row that may open nothing in an open precinct before it is raised as it stands.
+const IDLE_RINGS: u32 = 2;
 
 /// Extra cost levels, in survey cells above a ring's level, tried when its outline cannot be
 /// drawn against the graph.
@@ -31,6 +37,7 @@ fn profiled() -> bool {
 }
 
 /// How a ring ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RingEnd {
     /// Its quarters opened and older quarters aged.
     Opened,
@@ -72,16 +79,39 @@ impl Driver<'_> {
     }
 
     /// One ring: freeze the cost field, extend the armature and draw the boundary, open the
-    /// sectors as quarters in station order, then age the older quarters.
+    /// sectors as quarters in station order and age the older quarters; then the ring's dated
+    /// events (precinct surveys, a precinct that can open nothing more raised as it stands) and
+    /// its water crossing.
     fn ring(&mut self, ring: u32) -> Result<RingEnd, String> {
-        let started = std::time::Instant::now();
-        let costs = self.cost_field();
         let level = f64::from(ring + 1) * self.spec.ring_step;
+        let costs = self.cost_field();
         let lattice = Lattice::new(&self.survey, &costs);
+        self.frozen = Some(costs);
+        self.opened_in_ring = 0;
+        let end = self.ring_quarters(ring, &lattice, level)?;
+        if end == RingEnd::Stopped {
+            return Ok(end);
+        }
+        let idle = self.open_sectors.is_some() && self.opened_in_ring == 0;
+        self.idle_rings = if idle { self.idle_rings + 1 } else { 0 };
+        self.dated_events(true, self.idle_rings >= IDLE_RINGS)?;
+        let crossed = self.water_step(level)?;
+        // A crossing opens a far bank: the next ring grows there instead of ageing out.
+        Ok(if crossed && end == RingEnd::Exhausted {
+            RingEnd::Empty
+        } else {
+            end
+        })
+    }
+
+    /// The ring's armature, quarters and ageing.
+    fn ring_quarters(&mut self, ring: u32, lattice: &Lattice, level: f64) -> Result<RingEnd, String> {
+        let started = std::time::Instant::now();
+        let seeds = water::far_landings(self.writer.graph(), self.writer.journal());
         // The ring's land at its level, then at a few slightly higher levels: when the outline
         // of one meets the graph too closely to be drawn (two crossings closer than the minimum
         // gap), the next, a few metres out, usually does not.
-        let land = lattice.land(level);
+        let land = lattice.land(level, &seeds);
         let whole = land.as_ref().is_none_or(|l| l.whole);
         let prepared = started.elapsed();
         let ended = if whole {
@@ -96,7 +126,8 @@ impl Driver<'_> {
         };
         let kind = EventKind::ExtendArmature { ring };
         let event = kind.key();
-        let applied = self.event(kind, |d, at| d.extension(&event, &lattice, level, at))?;
+        let applied =
+            self.event(kind, |d, at| d.extension(&event, lattice, &seeds, level, at))?;
         let trace = |what: &str, sectors: usize, d: &Self| {
             if profiled() {
                 eprintln!(
@@ -114,8 +145,13 @@ impl Driver<'_> {
             trace("no-arc", 0, self);
             return Ok(ended);
         };
+        let extra = self.precinct_faces(level);
         let graph = self.writer.graph();
-        let sectors = sectors::of_ring(graph, &self.writer.journal().events[index].ops, &costs);
+        let Some(costs) = self.frozen.as_ref() else {
+            return Ok(ended);
+        };
+        let sectors =
+            sectors::of_ring(graph, &self.writer.journal().events[index].ops, costs, &extra);
         if sectors.is_empty() {
             trace("no-sector", 0, self);
             return Ok(ended);
@@ -136,8 +172,17 @@ impl Driver<'_> {
     }
 
     /// The operations of a ring's `ExtendArmature` event: its boundary arcs, then each axis
-    /// prolonged across it. `None` when no arc can be drawn.
-    fn extension(&self, event: &Key, lattice: &Lattice, level: f64, at: Clock) -> Option<Vec<Op>> {
+    /// prolonged across it, then a gate wherever an axis now crosses a circuit. `None` when no
+    /// arc can be drawn and no precinct is open (an open precinct's land may be reached without
+    /// an arc, its wall street bounding it already).
+    fn extension(
+        &self,
+        event: &Key,
+        lattice: &Lattice,
+        seeds: &[Point],
+        level: f64,
+        at: Clock,
+    ) -> Option<Vec<Op>> {
         let mut stage = self.writer.stage(at);
         let mut rank = 0;
         let mut arcs = HashSet::new();
@@ -147,8 +192,8 @@ impl Driver<'_> {
         let width = params.width_by_rank[2] * params.width_scale;
         let drawn = LEVEL_TRIES
             .iter()
-            .filter_map(|&t| lattice.land(level + t * self.survey.cell_size()))
-            .map(|land| armature::arcs(stage.graph(), &land.outline, self.spec.min_quarter_depth))
+            .filter_map(|&t| lattice.land(level + t * self.survey.cell_size(), seeds))
+            .map(|land| self.ring_arcs(stage.graph(), &land))
             .find(|arcs| !arcs.is_empty())
             .unwrap_or_default();
         for arc in drawn {
@@ -166,7 +211,7 @@ impl Driver<'_> {
             }
         }
         if arcs.is_empty() {
-            return None;
+            return self.open_sectors.is_some().then(|| stage.into_ops());
         }
         let focus = self.focus?;
         let reach = 4.0 * (self.spec.ring_step + self.survey.cell_size());
@@ -182,13 +227,74 @@ impl Driver<'_> {
             params.max_street_grade,
             reach,
         );
+        let circuits: Vec<&Precinct> = self
+            .precincts
+            .iter()
+            .chain(self.castle.iter().map(|c| &c.precinct))
+            .collect();
+        let chains: Vec<Key> = self.arms.iter().map(|a| a.chain.clone()).collect();
+        for op in walls::gates_on_circuits(stage.graph(), &circuits, &chains) {
+            let _ = stage.try_push(vec![op]);
+        }
         Some(stage.into_ops())
     }
 
+    /// The boundary arcs of a ring's land: one set per piece of land, each piece cut to the open
+    /// precinct's line while a precinct is open.
+    fn ring_arcs(&self, graph: &Graph, land: &Land) -> Vec<BoundaryArc> {
+        let depth = self.spec.min_quarter_depth;
+        let mut out = Vec::new();
+        for outline in &land.outlines {
+            match &self.open_sectors {
+                Some(open) => {
+                    let piece = Shape {
+                        outer: outline.clone(),
+                        holes: vec![],
+                    };
+                    for cut in open.clip(&piece) {
+                        out.extend(armature::arcs(graph, &g::normalized(cut).outer, depth));
+                    }
+                }
+                None => out.extend(armature::arcs(graph, outline, depth)),
+            }
+        }
+        out
+    }
+
+    /// The unbuilt faces of the open precinct's land cheaper than `level`: a ring reaches them
+    /// even where its land covers the precinct whole and no arc is drawn.
+    fn precinct_faces(&self, level: f64) -> Vec<FaceId> {
+        let (Some(open), Some(costs)) = (&self.open_sectors, &self.frozen) else {
+            return Vec::new();
+        };
+        let graph = self.writer.graph();
+        let outside = graph.outside(Level::Ground);
+        let b = g::bbox(&open.land);
+        graph
+            .live_faces()
+            .filter(|&f| {
+                f != outside
+                    && graph.face(f).level == Level::Ground
+                    && *graph.face(f).kind.current() == FaceKind::Unbuilt
+            })
+            .filter(|&f| {
+                graph.outline(f).is_some_and(|s| {
+                    let fb = g::bbox(&s);
+                    fb.0 <= b.2
+                        && fb.2 >= b.0
+                        && fb.1 <= b.3
+                        && fb.3 >= b.1
+                        && open.admits(&s)
+                        && costs.cost_at(g::interior_point(&s)) < level
+                })
+            })
+            .collect()
+    }
+
     /// Open the ring's sectors in station order. The drafts are laid in parallel with the phase
-    /// at hand, and laid again for the sectors left when a promotion changes the phase. After
-    /// each quarter: count, promotions, stop test; the ring is cut at the first station whose
-    /// count reaches the target.
+    /// at hand, and laid again for the sectors left when a promotion changes the phase. While a
+    /// precinct is open only its sectors open. After each quarter: count, dated events, stop
+    /// test; the ring is cut at the first station whose count reaches the target.
     fn open(
         &mut self,
         ring: u32,
@@ -199,6 +305,13 @@ impl Driver<'_> {
         let mut drafts: Vec<Option<QuarterDraft>> = vec![None; sectors.len()];
         let mut laid_in: Option<usize> = None;
         for (i, sector) in sectors.iter().enumerate() {
+            if self
+                .open_sectors
+                .as_ref()
+                .is_some_and(|open| !open.admits(&sector.outline))
+            {
+                continue;
+            }
             let quarter = Key::quarter(ring, &sector.station);
             if !self.recorded_keys.contains(&quarter) && laid_in != Some(self.phase) {
                 let fresh = self.lay(ring, &sectors[i..], field);
@@ -215,7 +328,7 @@ impl Driver<'_> {
                 );
             }
             let phase = self.phase;
-            let (tissue, _) = self.tissue(phase);
+            let (tissue, _) = self.birth_tissue(phase);
             let kind = EventKind::OpenQuarter {
                 ring,
                 station: sector.station.clone(),
@@ -229,8 +342,9 @@ impl Driver<'_> {
             if let Some(index) = applied {
                 self.count(ring, sector, index, phase, tissue, level);
                 self.cursor.last_station = Some(sector.station.clone());
+                self.opened_in_ring += 1;
             }
-            self.promote()?;
+            self.dated()?;
             if self.reached() {
                 return Ok(Step::Stop);
             }
@@ -238,16 +352,29 @@ impl Driver<'_> {
         Ok(Step::Go)
     }
 
-    /// Lay the drafts of `sectors` in parallel, with the current phase's tissue, each from its
-    /// frozen outline and its own stream; none for a quarter the stopped town already holds.
+    /// Lay the drafts of `sectors` in parallel, with the tissue a quarter born now takes, each
+    /// from its frozen outline and its own stream; none for a quarter the stopped town already
+    /// holds. A quarter mostly too steep for a plain house takes the tissue's terraced form, and
+    /// short stepped links join its contour streets.
     fn lay(
         &self,
         ring: u32,
         sectors: &[Sector],
         field: &[Vec<Point>],
     ) -> Vec<Option<QuarterDraft>> {
-        let (tissue, _) = self.tissue(self.phase);
-        let params = self.organic(self.phase);
+        let (tissue, _) = self.birth_tissue(self.phase);
+        let base = self.birth_organic(self.phase);
+        // Slope is read serially: the survey stays on this thread.
+        let params: Vec<OrganicParams> = sectors
+            .iter()
+            .map(|s| {
+                if self.survey.quarter_slope(&s.outline).terraced() {
+                    base.terraced()
+                } else {
+                    base.clone()
+                }
+            })
+            .collect();
         let site = OrganicSite {
             centre: self.focus_position(),
             radius: self.spec.nucleus_radius,
@@ -256,14 +383,17 @@ impl Driver<'_> {
         let terrain = self.request.terrain;
         let seed = self.request.seed;
         let recorded = &self.recorded_keys;
-        par::map(sectors, |_, sector| {
+        par::map(sectors, |i, sector| {
             let quarter = Key::quarter(ring, &sector.station);
             if recorded.contains(&quarter) {
                 return None;
             }
+            let params = &params[i];
             let mut rng = event_stream(seed, &quarter);
-            let draft =
-                organic::lay_streets(&sector.outline, terrain, field, &site, &params, &mut rng);
+            let mut draft =
+                organic::lay_streets(&sector.outline, terrain, field, &site, params, &mut rng);
+            let links = stairs::stepped_links(&draft, &sector.outline, terrain, params);
+            draft.streets.extend(links);
             Some(QuarterDraft {
                 ring,
                 station: sector.station.clone(),
@@ -275,7 +405,8 @@ impl Driver<'_> {
     }
 
     /// Count the quarter opened by event `index` at each fill step of its phase at birth, and
-    /// add its first step to the clock.
+    /// add its first step to the clock. A quarter born in an open precinct is intramural; slope
+    /// lowers its density.
     fn count(
         &mut self,
         ring: u32,
@@ -301,9 +432,9 @@ impl Driver<'_> {
         }
         let spec = &self.plan.phases[phase].spec;
         let base = self.plan.phases[0].spec.density;
-        let (_, tissue_spec) = self.tissue(phase);
-        // Precincts, which open their sectors in the intramural regime, come in a later lot.
-        let intramural = false;
+        let (_, tissue_spec) = self.birth_tissue(phase);
+        let intramural = self.open_sectors.is_some();
+        let slope: QuarterSlope = self.survey.quarter_slope(&sector.outline);
         let mut fill_schedule = if spec.fill_schedule.is_empty() {
             vec![1.0]
         } else {
@@ -316,24 +447,25 @@ impl Driver<'_> {
             .flatten();
         let compact = compact_spec.map(|t| {
             let density = if base > 0.0 { spec.compact_density / base } else { 1.0 };
-            (t.recipe.as_str(), t.zone.as_str(), density)
+            (t.recipe.as_str(), t.zone.as_str(), density * slope.density)
         });
         let compact_step = compact.map(|_| fill_schedule.len());
         if compact.is_some() {
             fill_schedule.push(1.0);
         }
+        let density = if base > 0.0 { spec.density / base } else { 1.0 };
         let birth = Birth {
-            pressure: count::pressure(sector.cost, level, intramural),
+            pressure: count::pressure(sector.cost, level),
             recipe: tissue_spec.map_or("", |t| t.recipe.as_str()),
             zone: tissue_spec.map_or("", |t| t.zone.as_str()),
-            density: if base > 0.0 { spec.density / base } else { 1.0 },
+            density: density * slope.density,
             intramural,
             fill_schedule: &fill_schedule[..compact_step.unwrap_or(fill_schedule.len())],
             compact,
         };
         let levels = count::levels(graph, &faces, self.clock, self.capacity, &birth);
         if profiled() {
-            let land: f64 = faces.iter().filter_map(|&f| graph.outline(f)).map(|o| magna_urbis_geom::area(&o)).sum();
+            let land: f64 = faces.iter().filter_map(|&f| graph.outline(f)).map(|o| g::area(&o)).sum();
             let edges = event.born.edges.len();
             eprintln!(
                 "  growth.quarter ring={ring} faces={} edges={edges} land={:.0} m2 cost={:.0} levels={:?}",
@@ -363,7 +495,7 @@ impl Driver<'_> {
     }
 
     /// Age the quarters born before `ring` by one fill step, intramural ones first and by one
-    /// step more; promotions and the stop test follow each step.
+    /// step more; dated events and the stop test follow each step.
     fn age_ring(&mut self, ring: u32) -> Result<Step, String> {
         for q in self.ageing_order(|record| record.ring < ring) {
             let steps = if self.quarters[q].intramural {
@@ -375,7 +507,7 @@ impl Driver<'_> {
                 if !self.age(q)? {
                     break;
                 }
-                self.promote()?;
+                self.dated()?;
                 if self.reached() {
                     return Ok(Step::Stop);
                 }
@@ -392,7 +524,7 @@ impl Driver<'_> {
             for q in self.ageing_order(|_| true) {
                 if self.age(q)? {
                     aged = true;
-                    self.promote()?;
+                    self.dated()?;
                     if self.reached() {
                         return Ok(Step::Stop);
                     }

@@ -257,8 +257,8 @@ pub fn plan_arms(
 /// Prolong each arm from its tip on the town's limit across the ring, to the first arc of the
 /// ring it meets (`arcs` holds their chain keys). The axis runs straight on, or turned by up to
 /// about 30 degrees where the straight line meets closed land, a grade steeper than `max_grade`
-/// or a street; it crosses regional roads and other axes. An arm that cannot be prolonged keeps
-/// its tip; it is tried again at the next ring.
+/// or a street; it crosses regional roads, other axes, and precinct and wall lines. An arm that
+/// cannot be prolonged keeps its tip; it is tried again at the next ring.
 #[allow(clippy::too_many_arguments)]
 pub fn extend(
     stage: &mut Stage,
@@ -288,9 +288,18 @@ pub fn extend(
             let Some(raw) = crossings(graph, &[from, far], [true, false], false) else {
                 continue;
             };
+            // An axis runs on across regional roads (a road's bridge piece is part of its
+            // road), other axes, and precinct and wall lines, where it opens a gate.
             let crosses = |hit: &Hit| {
                 let edge = graph.edge(hit.edge);
-                *edge.class.current() == EdgeClass::RegionalRoad
+                let class = *edge.class.current();
+                matches!(
+                    class,
+                    EdgeClass::RegionalRoad
+                        | EdgeClass::GridAxis
+                        | EdgeClass::Precinct
+                        | EdgeClass::Wall
+                ) || (class == EdgeClass::Bridge && edge.road_source.is_some())
                     || edge.chain.as_ref().is_some_and(|c| arm_chains.contains(c))
             };
             let Some(end) = raw.iter().find(|&h| !crosses(h)) else {
@@ -337,8 +346,9 @@ pub fn cost_lines(graph: &Graph, spec: &GrowthSpec, arms: &[Arm]) -> Vec<CostLin
         .filter_map(|e| {
             let edge = graph.edge(e);
             let axis = edge.chain.as_ref().is_some_and(|c| arm_chains.contains(c));
+            // A regional road keeps its weight once a planned grid takes it as an axis.
             let (multiplier, crossings) = match edge.class.current() {
-                EdgeClass::RegionalRoad => (spec.regional_road_cost, true),
+                EdgeClass::RegionalRoad | EdgeClass::GridAxis => (spec.regional_road_cost, true),
                 EdgeClass::Street | EdgeClass::Lane | EdgeClass::Stairs if axis => {
                     (spec.axis_cost, false)
                 }
@@ -356,14 +366,18 @@ pub fn cost_lines(graph: &Graph, spec: &GrowthSpec, arms: &[Arm]) -> Vec<CostLin
         .collect()
 }
 
-/// The lines that orient the street field: regional roads and main axes, in table order.
+/// The lines that orient the street field: regional roads (also once a planned grid takes them
+/// as axes) and main axes, in table order.
 pub fn field_lines(graph: &Graph, arms: &[Arm]) -> Vec<Vec<Point>> {
     let arm_chains: HashSet<&Key> = arms.iter().map(|a| &a.chain).collect();
     graph
         .live_edges()
         .filter(|&e| {
             let edge = graph.edge(e);
-            *edge.class.current() == EdgeClass::RegionalRoad
+            matches!(
+                edge.class.current(),
+                EdgeClass::RegionalRoad | EdgeClass::GridAxis
+            )
                 || edge.chain.as_ref().is_some_and(|c| arm_chains.contains(c))
         })
         .map(|e| graph.edge(e).polyline.clone())

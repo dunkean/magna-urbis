@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use magna_urbis_geom::{Point, Shape, area, surface::TerrainView};
+use magna_urbis_geom::{Point, Shape, area, contains, interior_point, surface::TerrainView};
 
 use super::{Capacity, CapacityBlock, CapacityInputs, Verdict, run, verdict};
 use crate::charter::PlannedSetting;
@@ -10,23 +10,37 @@ use crate::journal::{Event, EventKind};
 use crate::spec::{
     CharterSpec, CircumstanceModifiers, DefensiveShares, ExtensionHabit, FossilRule,
     FoundingFocusKind, GrowthSpec, HarbourEnclosure, HarbourSpec, HarbourThresholds, PhaseSpec,
-    ProgrammeThresholds, RoadFate, SurveySpec, TissueSpec, TownSpecs, WallSpec,
+    ProgrammeThresholds, RoadFate, SurveySpec, TissueSpec, TownSpecs, WallKind, WallSpec,
 };
 use crate::tissue::organic::OrganicParams;
-use crate::{TownRequest, TownSite};
+use crate::walls::Purpose;
+use crate::{RegionalRoad, TownRequest, TownSite};
 
 const WIDTH: f64 = 2048.0;
 const CENTRE: Point = point(1024.0, 1024.0);
 /// Square metres of block per household at full occupation.
 const LAND_PER_HOUSEHOLD: f64 = 150.0;
+/// Inhabitants per household in these specs.
+const HOUSEHOLD: f64 = 4.0;
 
 const fn point(x: f64, y: f64) -> Point {
     Point { x, y }
 }
 
-/// A dry plain, or an island when `island` gives the radius of its shore around the centre.
+/// A dry plain, cut to an island when `island` gives the radius of its shore around the centre,
+/// to a coast when `sea` gives the abscissa the sea begins at, and by a river running north to
+/// south between the two abscissae of `river`.
+#[derive(Default)]
 struct Terrain {
     island: Option<f64>,
+    sea: Option<f64>,
+    river: Option<[f64; 2]>,
+}
+
+impl Terrain {
+    fn in_river(&self, p: Point) -> bool {
+        self.river.is_some_and(|[a, b]| (a..b).contains(&p.x))
+    }
 }
 
 impl TerrainView for Terrain {
@@ -46,9 +60,15 @@ impl TerrainView for Terrain {
         !(0.0..WIDTH).contains(&p.x)
             || !(0.0..WIDTH).contains(&p.y)
             || self.island.is_some_and(|r| p.distance(CENTRE) > r)
+            || self.sea.is_some_and(|x| p.x >= x)
+            || self.in_river(p)
     }
     fn water_code(&self, p: Point) -> u8 {
-        if self.wet(p) { 1 } else { 0 }
+        match (self.wet(p), self.in_river(p)) {
+            (false, _) => 0,
+            (true, true) => 3,
+            (true, false) => 1,
+        }
     }
     fn dry_clip(&self, shape: &Shape) -> Vec<Shape> {
         vec![shape.clone()]
@@ -153,26 +173,63 @@ fn specs() -> TownSpecs {
                 moles: None,
                 basins: None,
             },
+            works: Default::default(),
         },
         growth: GrowthSpec {
             reach: 600.0,
-            household_size: 4.0,
+            household_size: HOUSEHOLD,
             ..GrowthSpec::default()
         },
+        precinct: Default::default(),
+        crossing: Default::default(),
     }
 }
 
-fn roads() -> Vec<Vec<Point>> {
-    vec![
-        vec![point(300.0, 1034.0), point(1750.0, 1010.0)],
-        vec![point(1016.0, 300.0), point(1040.0, 1760.0)],
-    ]
+/// An enclosed village: every town of these specs is enclosed from founding, in palisades.
+fn walled_specs() -> TownSpecs {
+    let mut specs = specs();
+    specs.charter.defensive_shares.enclosed_from_founding = 1.0;
+    for phase in &mut specs.phases {
+        phase.wall_kind = Some(WallKind::Palisade);
+    }
+    specs
+}
+
+/// A port town: it keeps a harbour on the best front within reach.
+fn port_specs() -> TownSpecs {
+    let mut specs = specs();
+    specs.harbour.works.port_town = true;
+    specs
+}
+
+fn lines(lines: &[[Point; 2]]) -> Vec<RegionalRoad> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, [a, b])| RegionalRoad::from_polyline(format!("road:{i}"), vec![*a, *b], 0))
+        .collect()
+}
+
+/// Two regional roads crossing near the centre.
+fn roads() -> Vec<RegionalRoad> {
+    lines(&[
+        [point(300.0, 1034.0), point(1750.0, 1010.0)],
+        [point(1016.0, 300.0), point(1040.0, 1760.0)],
+    ])
+}
+
+/// Two regional roads crossing near the centre, both kept off a sea east of x = 1300.
+fn inland_roads() -> Vec<RegionalRoad> {
+    lines(&[
+        [point(300.0, 1034.0), point(1200.0, 1020.0)],
+        [point(1016.0, 300.0), point(1040.0, 1760.0)],
+    ])
 }
 
 fn request<'a>(
     specs: &'a TownSpecs,
     terrain: &'a Terrain,
-    roads: &'a [Vec<Point>],
+    roads: &'a [RegionalRoad],
 ) -> TownRequest<'a> {
     TownRequest {
         site: TownSite {
@@ -189,14 +246,26 @@ fn request<'a>(
         neighbour_claims: &[],
         seed: "growth-test",
         planned: PlannedSetting::Auto,
+        harbour_landing: None,
     }
+}
+
+/// Grow with `specs` on `terrain` along `roads` to `target` households, resuming `from` when
+/// given.
+fn grow_with(
+    specs: &TownSpecs,
+    terrain: &Terrain,
+    roads: &[RegionalRoad],
+    target: Clock,
+    from: Option<&TownPlan>,
+) -> TownPlan {
+    let request = request(specs, terrain, roads);
+    run(&request, &ByArea, target, from.map(|p| &p.stop.checkpoint)).unwrap()
 }
 
 /// Grow on `terrain` to `target` households, resuming `from` when given.
 fn grow(terrain: &Terrain, target: Clock, from: Option<&TownPlan>) -> TownPlan {
-    let (specs, roads) = (specs(), roads());
-    let request = request(&specs, terrain, &roads);
-    run(&request, &ByArea, target, from.map(|p| &p.stop.checkpoint)).unwrap()
+    grow_with(&specs(), terrain, &roads(), target, from)
 }
 
 fn households(h: f64) -> Clock {
@@ -251,11 +320,44 @@ fn first(plan: &TownPlan, test: impl Fn(&EventKind) -> bool) -> (usize, Clock) {
     (i, events(plan)[i].clock)
 }
 
+/// The latest date of the events before event `i` that are dated before it: a town grown to it
+/// stops before the step that led to event `i`.
+fn date_before(plan: &TownPlan, i: usize) -> Clock {
+    let at = events(plan)[i].clock;
+    events(plan)[..i]
+        .iter()
+        .rev()
+        .map(|e| e.clock)
+        .find(|&c| c < at)
+        .unwrap_or(Clock::ZERO)
+}
+
+/// Stop on either side of the first event satisfying `test` in `direct`, check both stops are
+/// prefixes that fall where they should, and that both resume to `direct`.
+fn stops_around(
+    specs: &TownSpecs,
+    terrain: &Terrain,
+    roads: &[RegionalRoad],
+    direct: &TownPlan,
+    test: impl Fn(&EventKind) -> bool,
+) {
+    let (i, at) = first(direct, test);
+    let target = direct.stop.target;
+    let before = grow_with(specs, terrain, roads, date_before(direct, i), None);
+    let after = grow_with(specs, terrain, roads, at, None);
+    assert_prefix(&before, direct);
+    assert_prefix(&after, direct);
+    assert!(events(&before).len() <= i, "stopped after the event");
+    assert!(events(&after).len() > i, "stopped before the event");
+    assert_same(&grow_with(specs, terrain, roads, target, Some(&before)), direct);
+    assert_same(&grow_with(specs, terrain, roads, target, Some(&after)), direct);
+}
+
 const FAR: f64 = 600.0;
 
 #[test]
 fn resuming_a_stopped_town_matches_growing_it_directly() {
-    let plain = Terrain { island: None };
+    let plain = Terrain::default();
     let small = grow(&plain, households(150.0), None);
     assert!(
         !small.quarters.is_empty(),
@@ -271,7 +373,7 @@ fn resuming_a_stopped_town_matches_growing_it_directly() {
 
 #[test]
 fn stops_on_either_side_of_an_ageing_step_resume_alike() {
-    let plain = Terrain { island: None };
+    let plain = Terrain::default();
     let direct = grow(&plain, households(FAR), None);
     let (i, at) = first(&direct, |k| matches!(k, EventKind::AgeQuarter { .. }));
     let before = grow(&plain, at, None);
@@ -286,12 +388,12 @@ fn stops_on_either_side_of_an_ageing_step_resume_alike() {
 
 #[test]
 fn stops_on_either_side_of_a_promotion_resume_alike() {
-    let plain = Terrain { island: None };
+    let plain = Terrain::default();
     let direct = grow(&plain, households(FAR), None);
     let (i, at) = first(&direct, |k| matches!(k, EventKind::Promote { .. }));
     // The promotion follows the count that crossed its threshold: stopping when the clock
     // reaches the date of the event before it stops before that count.
-    let before = grow(&plain, events(&direct)[i - 1].clock, None);
+    let before = grow(&plain, date_before(&direct, i), None);
     let after = grow(&plain, at, None);
     assert_prefix(&before, &direct);
     assert_prefix(&after, &direct);
@@ -307,6 +409,7 @@ fn stops_on_either_side_of_a_promotion_resume_alike() {
 fn an_island_runs_out_of_land_and_ages_its_core_to_the_last_step() {
     let island = Terrain {
         island: Some(190.0),
+        ..Terrain::default()
     };
     let plan = grow(&island, households(5000.0), None);
     assert!(!plan.quarters.is_empty());
@@ -335,4 +438,115 @@ fn the_ninety_percent_rule_reopens_once() {
         Verdict::Reopen { missing: 20.0 }
     );
     assert!(matches!(verdict(80.0, 100.0, true), Verdict::Short(_)));
+}
+
+/// Households of the quarters whose land lies within `circuit`, and of all quarters.
+fn housed_within(plan: &TownPlan, circuit: &Shape) -> (f64, f64) {
+    let graph = &plan.graph;
+    plan.quarters.iter().fold((0.0, 0.0), |(inside, total), q| {
+        let households = q.population / HOUSEHOLD;
+        let within = q
+            .faces
+            .iter()
+            .filter_map(|&f| graph.outline(f))
+            .next()
+            .is_some_and(|s| contains(circuit, interior_point(&s)));
+        (inside + if within { households } else { 0.0 }, total + households)
+    })
+}
+
+#[test]
+fn an_enclosed_village_of_a_thousand_raises_its_wall_round_most_households() {
+    let (specs, plain, roads) = (walled_specs(), Terrain::default(), roads());
+    let plan = grow_with(&specs, &plain, &roads, households(1000.0 / HOUSEHOLD), None);
+    assert!(
+        events(&plan)
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::SurveyPrecinct { precinct: 0, .. })),
+        "no founding precinct"
+    );
+    assert!(
+        events(&plan)
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::RaiseWall { .. })),
+        "no wall raised"
+    );
+    let wall = plan
+        .walls
+        .iter()
+        .find(|w| w.precinct.purpose == Purpose::Town && w.precinct.raised.is_some())
+        .expect("a raised town wall");
+    let (inside, total) = housed_within(&plan, &wall.precinct.enclosed);
+    assert!(total > 0.0);
+    assert!(
+        inside / total >= 0.6,
+        "{inside:.0} of {total:.0} households inside"
+    );
+}
+
+#[test]
+fn stops_on_either_side_of_a_wall_raise_resume_alike() {
+    let (specs, plain, roads) = (walled_specs(), Terrain::default(), roads());
+    let direct = grow_with(&specs, &plain, &roads, households(FAR), None);
+    stops_around(&specs, &plain, &roads, &direct, |k| {
+        matches!(k, EventKind::RaiseWall { .. })
+    });
+}
+
+/// The sea begins 276 m east of the centre.
+fn coast() -> Terrain {
+    Terrain {
+        sea: Some(1300.0),
+        ..Terrain::default()
+    }
+}
+
+#[test]
+fn a_coast_town_grows_to_its_harbour_and_gets_a_quay() {
+    let (specs, terrain, roads) = (port_specs(), coast(), inland_roads());
+    let plan = grow_with(&specs, &terrain, &roads, households(FAR), None);
+    assert!(
+        events(&plan)
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::OpenHarbour { .. })),
+        "no harbour opened: {:?}",
+        plan.warnings
+    );
+    assert!(
+        plan.quays.iter().any(|q| q.role == "quay"),
+        "no quay exported"
+    );
+}
+
+#[test]
+fn stops_on_either_side_of_a_harbour_opening_resume_alike() {
+    let (specs, terrain, roads) = (port_specs(), coast(), inland_roads());
+    let direct = grow_with(&specs, &terrain, &roads, households(FAR), None);
+    stops_around(&specs, &terrain, &roads, &direct, |k| {
+        matches!(k, EventKind::OpenHarbour { .. })
+    });
+}
+
+#[test]
+fn a_river_town_crosses_to_the_far_bank() {
+    // A 24 m stream 150 m east of the centre, crossed by the east-west regional road.
+    let terrain = Terrain {
+        river: Some([1170.0, 1194.0]),
+        ..Terrain::default()
+    };
+    let plan = grow(&terrain, households(1500.0), None);
+    assert!(
+        events(&plan)
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::CrossWater { .. })),
+        "no crossing: {:?}",
+        plan.warnings
+    );
+    let far = plan.quarters.iter().any(|q| {
+        q.faces
+            .iter()
+            .filter_map(|&f| plan.graph.outline(f))
+            .any(|s| interior_point(&s).x > 1194.0)
+    });
+    assert!(far, "no quarter on the far bank");
 }

@@ -121,15 +121,7 @@ pub(in crate::urban) fn street_count(population: u32, frontage: f64) -> usize {
 /// fords. A village fords or bridges a stream; a 5 000-inhabitant town spans
 /// about 25 m; a large city builds multi-arch bridges over rivers of 100 m and more.
 pub(in super::super) fn spans(culture: &str, population: u32) -> (f64, f64) {
-    let builders = match culture {
-        "roman-core" | "chinese" | "venetian-lagoon" | "khmer" | "persian" | "dwarven"
-        | "stilt-town" | "wizard-city" | "gnomish" | "korean" | "japanese-jokamachi" => 1.25,
-        "nomad-camp" | "native-plains" | "kraal" | "barbarian" | "barbarian-celtic"
-        | "barbarian-norse" | "norse-ringfort" | "orcish" | "mississippian"
-        | "native-iroquoian" | "myconid-colony" | "sahel" | "yoruba" | "celtic-oppidum"
-        | "halfling" | "native-pueblo" => 0.55,
-        _ => 1.0,
-    };
+    let builders = builders(culture);
     let span = (builders * 12.0 * (population as f64 / 1000.0).sqrt()).clamp(0.0, 400.0);
     let ford = if population < 1200 || builders < 1.0 {
         10.0
@@ -137,6 +129,20 @@ pub(in super::super) fn spans(culture: &str, population: u32) -> (f64, f64) {
         0.0
     };
     (span, ford)
+}
+
+/// The culture's bridge builders factor: 1.25 for strong builders, 0.55 for cultures that rarely
+/// bridge, 1 otherwise.
+pub(in super::super) fn builders(culture: &str) -> f64 {
+    match culture {
+        "roman-core" | "chinese" | "venetian-lagoon" | "khmer" | "persian" | "dwarven"
+        | "stilt-town" | "wizard-city" | "gnomish" | "korean" | "japanese-jokamachi" => 1.25,
+        "nomad-camp" | "native-plains" | "kraal" | "barbarian" | "barbarian-celtic"
+        | "barbarian-norse" | "norse-ringfort" | "orcish" | "mississippian"
+        | "native-iroquoian" | "myconid-colony" | "sahel" | "yoruba" | "celtic-oppidum"
+        | "halfling" | "native-pueblo" => 0.55,
+        _ => 1.0,
+    }
 }
 
 /// Bank cells: buildable cells separated from a 4-neighbour by water, either a

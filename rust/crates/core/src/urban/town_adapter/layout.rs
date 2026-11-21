@@ -39,7 +39,8 @@ pub(super) fn build(
         culture: culture.into(),
         center: plan.center,
         quarters: Vec::with_capacity(plan.quarters.len()),
-        streets: streets(graph, clock, &town_faces(plan)),
+        streets: streets(graph, clock, &town_faces(plan), &plan.fords.iter().collect()),
+        regional_road_result: plan.regional_road_result.clone(),
         blocks: Vec::new(),
         warnings: Vec::new(),
         enclosures: Vec::new(),
@@ -48,6 +49,15 @@ pub(super) fn build(
         structure: None,
         claim: Default::default(),
     };
+    // The harbour's works as classic's streets (roles quay, mole, pier, landing): the graph's
+    // quay edges are left out of `streets` for these.
+    layout.streets.extend(plan.quays.iter().map(|q| Street {
+        key: Some(key_string(&q.key)),
+        path: q.path.clone(),
+        widths: q.widths.clone(),
+        rank: q.rank,
+        role: q.role.into(),
+    }));
     let index = parcels::FrontageIndex::new(&layout);
     let spec = BlockSpec::default();
     let mut structure = UrbanStructure {
@@ -125,13 +135,19 @@ pub(super) fn build(
             phase: slot,
             zone: phase.zone.clone(),
         });
+        // A quarter hanging on the harbour is a port district (design 6), by lineage.
+        let role = if plan.port_quarters.contains(&birth.key) {
+            "port"
+        } else {
+            ""
+        };
         structure.districts.push(UrbanDistrict {
             id: quarter,
             center: 0,
             phase: slot,
             tissue: birth.tissue.clone(),
             quarters: vec![quarter],
-            role: String::new(),
+            role: role.into(),
             wealth: 0.5,
             label: String::new(),
         });
@@ -167,6 +183,22 @@ pub(super) fn build(
             }
         }
     }
+    // The castle's bailey stands outside the housing budget: a reserve of the founding quarter.
+    if let Some(bailey) = &plan.bailey
+        && !layout.quarters.is_empty()
+    {
+        structure.reserve.push(bailey.clone());
+        layout.blocks.push(Block {
+            key: Some("bailey".into()),
+            shape: bailey.clone(),
+            quarter: 0,
+            kind: "reserve:bailey".into(),
+            axis: Point { x: 1.0, y: 0.0 },
+            zone: layout.quarters[0].zone.clone(),
+            phase: Some(layout.quarters[0].phase),
+            fill: None,
+        });
+    }
     for phase in &mut phases {
         phase.shapes = g::union(&phase.shapes);
     }
@@ -186,15 +218,22 @@ fn bordered(graph: &Graph, id: EdgeId, town: &HashSet<FaceId>, both: bool) -> bo
     if both { sides[0] && sides[1] } else { sides[0] || sides[1] }
 }
 
-fn streets(graph: &Graph, clock: Clock, town: &HashSet<FaceId>) -> Vec<Street> {
+fn streets(
+    graph: &Graph,
+    clock: Clock,
+    town: &HashSet<FaceId>,
+    fords: &HashSet<&Key>,
+) -> Vec<Street> {
     let mut chains = BTreeSet::new();
     let mut loose = Vec::new();
     for id in graph.live_edges() {
         let edge = graph.edge(id);
         // A regional road runs on beyond the town, and a ring boundary may run between two
-        // unopened faces: only their stretches along a quarter are streets.
+        // unopened faces: only their stretches along a quarter are streets. The harbour's
+        // works are exported from the harbour itself.
         let kept = match edge.class.current() {
             EdgeClass::RegionalRoad | EdgeClass::Boundary => bordered(graph, id, town, false),
+            EdgeClass::Quay => false,
             _ => true,
         };
         if !kept {
@@ -217,10 +256,14 @@ fn streets(graph: &Graph, clock: Clock, town: &HashSet<FaceId>) -> Vec<Street> {
                     EdgeClass::RegionalRoad | EdgeClass::Boundary => {
                         bordered(graph, step.edge, town, false)
                     }
+                    EdgeClass::Quay => false,
                     _ => true,
                 })
                 .filter_map(|step| {
                     let mut street = street(graph.edge(step.edge), clock, step.half.is_forward())?;
+                    if fords.contains(&graph.edge(step.edge).stem) {
+                        street.role = "ford".into();
+                    }
                     // A boundary between two rings is an ordinary street; the outermost one,
                     // with open land beyond, is the town's peripheral street (classic's role),
                     // so that the lots of the last ring keep the access they were counted with.
@@ -235,6 +278,9 @@ fn streets(graph: &Graph, clock: Clock, town: &HashSet<FaceId>) -> Vec<Street> {
     }
     streets.extend(loose.into_iter().filter_map(|edge| {
         let mut street = street(edge, clock, true)?;
+        if fords.contains(&edge.stem) {
+            street.role = "ford".into();
+        }
         if *edge.class.current() == EdgeClass::Boundary {
             let id = graph.edge_id(&edge.key)?;
             if !bordered(graph, id, town, true) {
@@ -259,6 +305,8 @@ fn street(edge: &Edge, clock: Clock, forward: bool) -> Option<Street> {
         EdgeClass::Quay => "quay",
         EdgeClass::Bridge => "bridge",
         EdgeClass::RegionalRoad => "regional",
+        // A regional alignment taken into a planned grid is one of its streets.
+        EdgeClass::GridAxis => "street",
         EdgeClass::HarbourRoad => "port-road",
         EdgeClass::CastleRoad => "street",
         // A ring boundary along a quarter (the caller keeps only those) is a street.

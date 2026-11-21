@@ -120,7 +120,7 @@ impl Survey {
         )?);
         let fronts = shore::fronts(&grid, terrain, spec);
         let strong_points = summits::strong_points(&grid, terrain, spec);
-        let costs = CostField::compute(grid, spec, &[]);
+        let costs = CostField::compute(grid, spec, &[], None);
         Ok(Self {
             costs,
             fronts,
@@ -186,7 +186,17 @@ impl Survey {
 
     /// Build a new cost snapshot with the supplied armature paths.
     pub fn recompute_costs(&self, paths: &[CostPath<'_>]) -> CostField {
-        CostField::compute(Arc::clone(&self.costs.grid), &self.spec, paths)
+        CostField::compute(Arc::clone(&self.costs.grid), &self.spec, paths, None)
+    }
+
+    /// Build a new cost snapshot with the supplied armature paths, every reached cell then
+    /// lowered by `discount` at its position (a harbour front's), floored at zero.
+    pub fn recompute_costs_with(
+        &self,
+        paths: &[CostPath<'_>],
+        discount: &dyn Fn(Point) -> f64,
+    ) -> CostField {
+        CostField::compute(Arc::clone(&self.costs.grid), &self.spec, paths, Some(discount))
     }
 }
 

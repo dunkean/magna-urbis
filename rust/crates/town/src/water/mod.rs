@@ -18,8 +18,7 @@
 //!
 //! # Integration
 //!
-//! 1. **Specs**: `spec::CrossingSpec` is new and not yet in `TownSpecs`; add it there as
-//!    `#[serde(default)] pub crossing: CrossingSpec`. Core's `town_adapter/specs.rs` sets
+//! 1. **Specs**: `TownSpecs::crossing` (`spec::CrossingSpec`). Core's `town_adapter/specs.rs` sets
 //!    `builders` to the culture factor of classic's `footprint::crossings::spans` (1.25, 0.55
 //!    or 1; expose it as a function there) and `ford_span` to 10 (0 for a culture that never
 //!    fords, none today); the growth test specs use `CrossingSpec::default()`.

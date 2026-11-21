@@ -158,6 +158,8 @@ fn specs() -> TownSpecs {
             works: Default::default(),
         },
         growth: Default::default(),
+        precinct: Default::default(),
+        crossing: Default::default(),
     }
 }
 
@@ -182,6 +184,7 @@ fn request<'a>(
         neighbour_claims: &[],
         seed,
         planned: PlannedSetting::Auto,
+        harbour_landing: None,
     }
 }
 

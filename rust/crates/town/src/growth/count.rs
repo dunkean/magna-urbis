@@ -78,15 +78,15 @@ pub(super) struct Birth<'a> {
 
 /// The pressure frozen at birth: classic's decay with access cost (`parcels/pressure.rs`), read
 /// from the quarter's cost in effective metres and scaled by the ring's outer level as the
-/// town's extent, then raised inside an enclosure as classic's `parcels.rs` does.
-pub(super) fn pressure(cost: f64, extent: f64, intramural: bool) -> f64 {
+/// town's extent. The capacity raises it inside an enclosure, as classic's `parcels.rs` does,
+/// from the intramural flag of its inputs.
+pub(super) fn pressure(cost: f64, extent: f64) -> f64 {
     let scale = extent.clamp(60.0, 600.0);
-    let p = if cost.is_finite() {
+    if cost.is_finite() {
         (0.12 + 0.88 * (-cost / scale).exp()).clamp(0.0, 1.0)
     } else {
         0.12
-    };
-    if intramural { 0.65 + 0.35 * p } else { p }
+    }
 }
 
 /// Households of the quarter whose faces are `faces` at each step of its fill schedule, its

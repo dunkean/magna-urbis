@@ -28,9 +28,11 @@ pub(super) struct Sector {
 
 /// The sectors of a ring, in station order, read from the graph just after the ring's
 /// `ExtendArmature` event, whose operations are `ops`. A sector is a face on the left of one of
-/// the ring's boundary arcs. Its station is the first node of its arc piece of smallest key and
-/// the rank of that piece among the node's arms: the same whatever order the ring is computed in.
-pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField) -> Vec<Sector> {
+/// the ring's boundary arcs, or one of `extra` (an open precinct's land the ring reaches, which
+/// its wall street bounds already). Its station is the first node of its arc piece of smallest
+/// key (for an extra face, of its boundary edge of smallest key) and the rank of that piece among
+/// the node's arms: the same whatever order the ring is computed in.
+pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField, extra: &[FaceId]) -> Vec<Sector> {
     let chains: BTreeSet<&Key> = ops
         .iter()
         .filter_map(|op| match op {
@@ -55,6 +57,20 @@ pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField) -> Vec<Secto
                     }
                 })
                 .or_insert(step.edge);
+        }
+    }
+    for &face in extra {
+        if faces.contains_key(&face) || face == outside {
+            continue;
+        }
+        let piece = graph
+            .walks(face)
+            .into_iter()
+            .flatten()
+            .map(|h| h.edge())
+            .min_by(|&a, &b| graph.edge(a).key.cmp(&graph.edge(b).key));
+        if let Some(piece) = piece {
+            faces.insert(face, piece);
         }
     }
     let mut sectors: Vec<Sector> = faces

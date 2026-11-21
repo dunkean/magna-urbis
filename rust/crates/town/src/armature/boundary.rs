@@ -25,14 +25,17 @@ pub struct BoundaryArc {
     pub hits: Vec<Hit>,
 }
 
-/// Whether a face is part of the town: a block, or land opened by a ring and not yet laid out
-/// (on the left of a boundary edge). The unbounded face and faces left between roads outside
-/// the town are not.
+/// Whether a face is part of the town: a block, a plaza, a precinct's works strip, a harbour's
+/// apron, a castle's bailey, or land opened by a ring and not yet laid out (on the left of a
+/// boundary edge). The unbounded face and faces left between roads outside the town are not.
 pub fn in_town(graph: &Graph, face: FaceId) -> bool {
     if face == graph.outside(Level::Ground) {
         return false;
     }
-    if *graph.face(face).kind.current() == FaceKind::Block {
+    if matches!(
+        graph.face(face).kind.current(),
+        FaceKind::Block | FaceKind::Plaza | FaceKind::Works | FaceKind::Apron | FaceKind::Bailey
+    ) {
         return true;
     }
     graph

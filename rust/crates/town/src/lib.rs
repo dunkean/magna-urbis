@@ -102,6 +102,9 @@ pub struct TownRequest<'a> {
     pub seed: &'a str,
     /// Whether to use the culture's planned share or explicitly lay a frame.
     pub planned: PlannedSetting,
+    /// The landing of the harbour front the regional placement reserved for this town, if any:
+    /// its harbour is opened on the front at that landing.
+    pub harbour_landing: Option<Point>,
 }
 
 /// Generate a town layout from its site and resolved specs, counting its quarters with

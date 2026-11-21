@@ -129,6 +129,7 @@ impl QuarterCapacity<'_, '_> {
                 zone: inputs.zone.into(),
             }],
             streets,
+            regional_road_result: None,
             blocks: blocks
                 .iter()
                 .map(|b| Block {

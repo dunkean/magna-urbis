@@ -47,8 +47,8 @@
 //! quarter records. On resume it calls the same functions on the graph as it stood (the survey
 //! is deterministic) to rebuild these records, and applies the recorded operations.
 //!
-//! Inputs the loop assembles once per call: a [`PrecinctSite`] (terrain, `specs.wall`, a
-//! `PrecinctSpec` — to be added to `TownSpecs` as `#[serde(default)] precinct` — the ring's
+//! Inputs the loop assembles once per call: a [`PrecinctSite`] (terrain, `specs.wall`,
+//! `specs.precinct`, the ring's
 //! frozen cost field, the household size, the neighbour claims, the arm chains of
 //! `Driver::arms`, the harbour's [`HarbourSide`] when one is decided, the castle when founded).
 //!

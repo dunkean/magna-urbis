@@ -109,6 +109,9 @@ pub struct OpenSectors {
     pub land: Shape,
     /// Parts of it that stay closed (a bailey, a camp's common).
     pub closed: Vec<Shape>,
+    /// The line a ring's land is cut to: between the curtain and the wall street, inside the
+    /// works strip, so that no cut runs along either line.
+    pub bound: Shape,
 }
 
 impl OpenSectors {
@@ -120,7 +123,7 @@ impl OpenSectors {
 
     /// A ring's land cut to the precinct's, so that its boundary arcs end on the wall street.
     pub fn clip(&self, outline: &Shape) -> Vec<Shape> {
-        let inside = g::intersection(outline, &self.land);
+        let inside = g::intersection(outline, &self.bound);
         if self.closed.is_empty() {
             return inside;
         }
@@ -388,6 +391,9 @@ pub(super) fn lay(
     }
 
     let mut land = outline.clone();
+    // A quarter of a metre inside the curtain's inner face: in the works strip, which the wall
+    // street (when drawn) bounds half a metre further in.
+    let bound = largest(buffer(&outline, -(curtain * 0.5 + 0.25))).unwrap_or_else(|| outline.clone());
     let mut wall_street = None;
     if circuit.wall_street {
         let inset = curtain * 0.5 + site.spec.wall_street_width * 0.5 + 0.5;
@@ -457,6 +463,7 @@ pub(super) fn lay(
         open_sectors: OpenSectors {
             land,
             closed: circuit.closed,
+            bound,
         },
         reserves,
         closed_crossings,

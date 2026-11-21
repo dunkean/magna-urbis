@@ -1,11 +1,21 @@
 //! Finished graph and growth metadata for downstream consumers.
 
-use magna_urbis_geom::Point;
+use magna_urbis_geom::{Point, Shape};
 use serde::{Deserialize, Serialize};
 
 use crate::graph::{Clock, FaceId, Graph, Key};
 use crate::growth::QuarterRecord;
+use crate::harbour::HarbourStreet;
 use crate::journal::{Checkpoint, Cursor, Journal};
+use crate::walls::Precinct;
+
+/// A circuit of the town, from which the adapter builds classic's enclosure and its works.
+#[derive(Clone, Debug)]
+pub struct WallPlan {
+    pub precinct: Precinct,
+    /// Inhabitants housed when it was raised, or at the stop while it is open.
+    pub population: u32,
+}
 
 /// A growth regime reached at a dated promotion.
 #[derive(Clone, Debug, PartialEq)]
@@ -58,6 +68,16 @@ pub struct TownPlan {
     pub quarters: Vec<QuarterPlan>,
     /// Regional connectivity at the stop. Defaults to `None` when no source road enters.
     pub regional_road_result: Option<Vec<RoadResult>>,
+    /// The founding castle's circuit first, then the town's circuits in survey order.
+    pub walls: Vec<WallPlan>,
+    /// The harbour's quay, moles, piers and landing stages as classic streets.
+    pub quays: Vec<HarbourStreet>,
+    /// Keys of the port quarters, those that hang on the harbour.
+    pub port_quarters: Vec<Key>,
+    /// Stems of the ford edges, exported with role `ford`.
+    pub fords: Vec<Key>,
+    /// The castle's bailey, land outside the housing budget.
+    pub bailey: Option<Shape>,
     /// Short messages about generation limits or decisions.
     pub warnings: Vec<String>,
     /// Where growth stopped, to resume the town or reopen it once.

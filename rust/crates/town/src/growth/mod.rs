@@ -10,13 +10,15 @@
 //! 3. each quarter is counted at birth through [`Capacity`], with its inputs frozen then, and
 //!    the clock is the sum of the counts;
 //! 4. the quarters of earlier rings age by one fill step, intramural first;
-//! 5. promotions whose threshold the clock crossed are applied (walls, harbours and road fates
-//!    join this step in later lots);
+//! 5. the dated events whose threshold the clock crossed, in this order: promotions, road fates,
+//!    the harbour (opened, then extended), the walls (a full precinct raised, then the next
+//!    surveyed), and once per ring the water crossing to a far bank;
 //! 6. the stop test: growth stops as soon as the clock reaches the target.
 //!
 //! Steps 3, 5 and 6 follow every quarter and every ageing step, so a ring is cut at the first
-//! station that crosses a threshold and dated events see the town as it stood. When no land is
-//! left, quarters go on ageing without new rings.
+//! station that crosses a threshold and dated events see the town as it stood; precinct surveys
+//! and water crossings are decided at a ring's end. While a precinct is open only its sectors
+//! open, in the intramural regime. When no land is left, quarters go on ageing without new rings.
 //!
 //! **Stop and resume.** The stop is a checkpoint: the journal and a cursor. Resuming replays the
 //! journal through the same loop and goes on from where it stood, so generating to P1 and
@@ -28,7 +30,9 @@ mod commit;
 mod contour;
 mod count;
 mod driver;
+mod events;
 mod par;
+mod precincts;
 mod rings;
 mod sectors;
 #[cfg(test)]

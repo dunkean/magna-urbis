@@ -1,10 +1,12 @@
-//! The open land of a ring: survey cells cheaper than the ring's outer level, as one outline.
+//! The open land of a ring: survey cells cheaper than the ring's outer level, one outline per
+//! piece of land.
 //!
-//! The cells reachable from the focus below the level are taken by 4-connected flood fill, their
-//! holes filled (a pond inside the land is no boundary of the ring) and the corners where two
-//! cells touch only diagonally widened by one cell, so that the cells' outer edge is one simple
-//! loop. The loop runs along cell sides, so it follows banks and cliffs (closed cells) to half a
-//! cell; it is simplified to less than half a cell, which keeps the focus inside.
+//! The cells reachable below the level from the focus, and from the far landing of every water
+//! crossing, are taken by 4-connected flood fill. Each piece (the focus's bank, each far bank)
+//! has its holes filled (a pond inside the land is no boundary of the ring) and the corners where
+//! two cells touch only diagonally widened by one cell, so that the cells' outer edge is one
+//! simple loop. The loop runs along cell sides, so it follows banks and cliffs (closed cells) to
+//! half a cell; it is simplified to less than half a cell, which keeps its seed inside.
 
 use magna_urbis_geom::{Point, Shape, contains, signed, simple, simplify};
 
@@ -33,9 +35,11 @@ pub(super) struct Lattice {
 
 /// The land open below a level.
 pub(super) struct Land {
-    /// Outer loop, counter-clockwise, first point not repeated.
-    pub outline: Vec<Point>,
-    /// Whether the land holds every cell reachable from the centre: no later ring can add any.
+    /// Outer loop of each piece, counter-clockwise, first point not repeated; the focus's piece
+    /// first, then the far banks' in crossing order.
+    pub outlines: Vec<Vec<Point>>,
+    /// Whether the land holds every cell reachable from the centre and the far landings: no
+    /// later ring can add any.
     pub whole: bool,
 }
 
@@ -73,30 +77,63 @@ impl Lattice {
         }
     }
 
-    /// The land reachable from the centre at a cost below `level`, or `None` when even the centre
-    /// is not open.
-    pub(super) fn land(&self, level: f64) -> Option<Land> {
+    /// The land reachable at a cost below `level` from the centre and from each of `seeds` (the
+    /// far landings), or `None` when even the centre is not open or its piece cannot be traced.
+    pub(super) fn land(&self, level: f64, seeds: &[Point]) -> Option<Land> {
         let start = self.index(-self.first.0 + 1, -self.first.1 + 1);
         if !(self.cost[start] < level) {
             return None;
         }
-        let mut mask = self.flood(start, |c| c < level);
-        let reachable = self.flood(start, f64::is_finite);
-        let count = |m: &[bool]| m.iter().filter(|&&x| x).count();
-        let whole = count(&mask) == count(&reachable);
-        for _ in 0..CLEAN_ROUNDS {
-            self.fill_holes(&mut mask);
-            if !self.widen_corners(&mut mask) {
-                break;
+        let mut starts = vec![(start, self.centre)];
+        for &p in seeds {
+            if let Some(at) = self.at(p)
+                && self.cost[at] < level
+                && starts.iter().all(|&(s, _)| s != at)
+            {
+                starts.push((at, p));
             }
         }
-        self.fill_holes(&mut mask);
-        let outline = self.trace(&mask)?;
-        Some(Land { outline, whole })
+        let cells: Vec<usize> = starts.iter().map(|&(s, _)| s).collect();
+        let count = |m: &[bool]| m.iter().filter(|&&x| x).count();
+        let whole =
+            count(&self.flood(&cells, |c| c < level)) == count(&self.flood(&cells, f64::is_finite));
+        let mut taken = vec![false; self.cost.len()];
+        let mut outlines = Vec::new();
+        for (k, &(seed, inside)) in starts.iter().enumerate() {
+            if taken[seed] {
+                continue;
+            }
+            let mut mask = self.flood(&[seed], |c| c < level);
+            for _ in 0..CLEAN_ROUNDS {
+                self.fill_holes(&mut mask);
+                if !self.widen_corners(&mut mask) {
+                    break;
+                }
+            }
+            self.fill_holes(&mut mask);
+            for (t, &m) in taken.iter_mut().zip(&mask) {
+                *t |= m;
+            }
+            match self.trace(&mask, inside) {
+                Some(outline) => outlines.push(outline),
+                // The focus's own piece must be drawn; a far bank that cannot be waits.
+                None if k == 0 => return None,
+                None => {}
+            }
+        }
+        Some(Land { outlines, whole })
     }
 
     fn index(&self, i: i64, j: i64) -> usize {
         j as usize * self.width + i as usize
+    }
+
+    /// The lattice cell holding `p`, if it lies on the lattice.
+    fn at(&self, p: Point) -> Option<usize> {
+        let i = ((p.x - self.centre.x) / self.step).round() as i64 - self.first.0 + 1;
+        let j = ((p.y - self.centre.y) / self.step).round() as i64 - self.first.1 + 1;
+        (i >= 0 && j >= 0 && (i as usize) < self.width && (j as usize) < self.height)
+            .then(|| self.index(i, j))
     }
 
     fn neighbours(&self, at: usize) -> impl Iterator<Item = usize> + '_ {
@@ -110,11 +147,13 @@ impl Lattice {
             })
     }
 
-    /// Cells 4-connected to `start` whose cost passes `keep`.
-    fn flood(&self, start: usize, keep: impl Fn(f64) -> bool) -> Vec<bool> {
+    /// Cells 4-connected to one of `starts` whose cost passes `keep`, the starts included.
+    fn flood(&self, starts: &[usize], keep: impl Fn(f64) -> bool) -> Vec<bool> {
         let mut mask = vec![false; self.cost.len()];
-        let mut stack = vec![start];
-        mask[start] = true;
+        let mut stack = starts.to_vec();
+        for &start in starts {
+            mask[start] = true;
+        }
         while let Some(at) = stack.pop() {
             for next in self.neighbours(at) {
                 if !mask[next] && keep(self.cost[next]) {
@@ -177,8 +216,9 @@ impl Lattice {
     }
 
     /// The outer loop of a hole-free, 4-connected mask without diagonal-only corners,
-    /// counter-clockwise, collinear corners dropped, then simplified.
-    fn trace(&self, mask: &[bool]) -> Option<Vec<Point>> {
+    /// counter-clockwise, collinear corners dropped, then simplified; the smoothest
+    /// simplification is kept only when it still holds `inside`.
+    fn trace(&self, mask: &[bool], inside: Point) -> Option<Vec<Point>> {
         let corners = self.width + 1;
         let corner = |i: usize, j: usize| j * corners + i;
         let mut next = vec![usize::MAX; corners * (self.height + 1)];
@@ -249,7 +289,7 @@ impl Lattice {
                     outer: r.to_vec(),
                     holes: vec![],
                 },
-                self.centre,
+                inside,
             )
         };
         if valid(&smooth) && holds_centre(&smooth) {

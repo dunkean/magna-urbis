@@ -4,14 +4,19 @@ mod capacity;
 mod layout;
 pub(super) mod specs;
 mod tail;
+mod walls;
 
 #[cfg(test)]
 mod tests;
 
 use magna_urbis_town::growth::{self, Verdict};
+use magna_urbis_town::harbour::claimable_front;
 use magna_urbis_town::{RegionalRoad, RoadSource, TownPlan, TownRequest, TownSite, charter::PlannedSetting};
 
-use super::{Layout, LayoutConfig, ParcelConfig, Site, Street, Surface, footprint, kinds};
+use super::{
+    Layout, LayoutConfig, ParcelConfig, Site, Street, Surface, footprint, kinds,
+    macroplan::harbour, regional_harbour_specs,
+};
 
 /// Return a growth layout when the requested site can be handled by the growth engine.
 pub(super) fn generate(
@@ -87,6 +92,18 @@ pub(super) fn generate(
     } else {
         None
     };
+    // The front the regional placement reserved for a port town: placement claims it with the
+    // same survey from the same centre, so it is found again here rather than carried along.
+    let harbour_landing = specs
+        .harbour
+        .works
+        .port_town
+        .then(|| {
+            let (survey, works) = regional_harbour_specs(culture);
+            claimable_front(&surface, site.center, &survey, &works)
+        })
+        .flatten()
+        .map(|front| front.landing);
     let request = TownRequest {
         site: TownSite {
             center: site.center,
@@ -102,6 +119,7 @@ pub(super) fn generate(
         neighbour_claims: &neighbour_claims,
         seed: &key_seed,
         planned: PlannedSetting::Auto,
+        harbour_landing,
     };
     let capacity = capacity::QuarterCapacity {
         seed: &key_seed,
@@ -113,6 +131,12 @@ pub(super) fn generate(
     let kind = kinds::resolve(site, config, regional_roads);
     let finish = |plan: &TownPlan| -> Option<Layout> {
         let mut layout = layout::build(plan, site, config, culture).ok()?;
+        // The walls' works are faces before any lot next to them is cut; the quays exported as
+        // streets give classic's quay platforms, which the harbour furniture reads.
+        walls::enclose(plan, &mut layout, config, surface);
+        if !plan.quays.is_empty() {
+            harbour::platforms(&mut layout, surface);
+        }
         tail::finish(seed, &key_seed, &mut layout, site, config, kind, surface).ok()?;
         layout.warnings.extend(plan.warnings.iter().cloned());
         Some(layout)

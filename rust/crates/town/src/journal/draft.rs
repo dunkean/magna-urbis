@@ -145,6 +145,7 @@ pub fn ops_for_draft(
             widths: street.widths.clone(),
             owner: Some(quarter.clone()),
             chain: Some(key.clone()),
+            road_source: None,
             face_names: Some([key.child(tag::BLOCK, &[0]), key.child(tag::BLOCK, &[1])]),
         };
         let [a, b] = ends;

@@ -2,6 +2,7 @@
 
 - In the Growth engine, automatic settlements leave room for a port town's harbour and its approach.
 - In the Growth engine, regional roads can end at city entrances while their central stretches become local streets.
+- In the Growth engine, towns build terraces and stairs on slopes, grow to their harbour and open quays, cross rivers by bridges and fords, and raise their walls once the walled land is full.
 - Town warnings are one short line each, in English or French.
 - Download the experimental Apple Silicon DMG from GitHub Releases alongside the Windows and Linux packages.
 - Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.

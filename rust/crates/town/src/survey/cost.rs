@@ -27,9 +27,23 @@ pub struct CostField {
 }
 
 impl CostField {
-    pub(super) fn compute(grid: Arc<Grid>, spec: &SurveySpec, paths: &[CostPath<'_>]) -> Self {
+    /// Propagate costs from the centre over open cells and along `paths`, then lower each
+    /// reached cell by `discount` at its position, floored at zero.
+    pub(super) fn compute(
+        grid: Arc<Grid>,
+        spec: &SurveySpec,
+        paths: &[CostPath<'_>],
+        discount: Option<&dyn Fn(Point) -> f64>,
+    ) -> Self {
         let cheap = cheap_edges(&grid, spec, paths);
-        let costs = propagate(&grid, spec, Metric::Cost, &cheap);
+        let mut costs = propagate(&grid, spec, Metric::Cost, &cheap);
+        if let Some(discount) = discount {
+            for (cost, cell) in costs.iter_mut().zip(&grid.cells) {
+                if cost.is_finite() {
+                    *cost = (*cost - discount(cell.position).max(0.0)).max(0.0);
+                }
+            }
+        }
         let mut order: Vec<_> = (0..costs.len()).filter(|&i| costs[i].is_finite()).collect();
         order.sort_unstable_by(|&a, &b| costs[a].total_cmp(&costs[b]).then(a.cmp(&b)));
         Self { grid, costs, order }

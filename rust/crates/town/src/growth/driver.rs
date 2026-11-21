@@ -18,12 +18,15 @@ use super::count::QuarterRecord;
 use crate::TownRequest;
 use crate::armature::{self, Arm};
 use crate::charter::{self, Charter, PhasePlan};
-use crate::export::{DatedPhase, QuarterPlan, Stop, TownPlan};
+use crate::export::{DatedPhase, QuarterPlan, Stop, TownPlan, WallPlan};
 use crate::graph::{Clock, Key, NodeId};
+use crate::harbour::{self, FrontChoice, HarbourState};
 use crate::journal::{Checkpoint, Cursor, Event, EventKind, Op, Writer};
 use crate::spec::{FoundingFocusKind, GrowthSpec, TissueSpec};
 use crate::survey::{CostField, CostPath, Survey};
 use crate::tissue::organic::OrganicParams;
+use crate::walls::{self, Castle, OpenSectors, Precinct};
+use crate::water;
 
 /// Cell size of the graph's spatial index in metres: about a block side.
 const GRAPH_CELL: f64 = 32.0;
@@ -59,6 +62,25 @@ pub(super) struct Driver<'a> {
     pub arms: Vec<Arm>,
     pub cursor: Cursor,
     pub warnings: Vec<String>,
+    /// The regional roads as plain lines, for the street field and the castle road.
+    pub road_lines: Vec<Vec<Point>>,
+    /// The cost field frozen at the start of the current ring (or at founding).
+    pub frozen: Option<CostField>,
+    /// Quarters opened in the current ring.
+    pub opened_in_ring: usize,
+    /// Rings in a row that opened nothing while a precinct was open.
+    pub idle_rings: u32,
+    /// The harbour front the town uses, and its harbour once opened.
+    pub front: Option<FrontChoice>,
+    pub harbour: Option<HarbourState>,
+    /// The founding castle.
+    pub castle: Option<Castle>,
+    /// The town's circuits in survey order (citadels included, the castle apart).
+    pub precincts: Vec<Precinct>,
+    /// While the last precinct is open: the land its sectors open on.
+    pub open_sectors: Option<OpenSectors>,
+    /// Intramural households when the last wall was raised.
+    pub inside_at_raise: f64,
 }
 
 impl<'a> Driver<'a> {
@@ -95,6 +117,23 @@ impl<'a> Driver<'a> {
                 &request.specs.survey,
             )?
         };
+        // The harbour is decided once, on the survey the town grows on: on the front the
+        // regional placement reserved, else the best the town can reach.
+        let specs = request.specs;
+        let front = match request.harbour_landing {
+            Some(landing) => harbour::front_at_landing(
+                &survey,
+                charter.focus.position,
+                landing,
+                &specs.harbour.works,
+            ),
+            None => harbour::choose_front(&survey, &charter, &specs.harbour),
+        };
+        let road_lines: Vec<Vec<Point>> = request
+            .regional_roads
+            .iter()
+            .map(|r| r.points.clone())
+            .collect();
         let recorded: VecDeque<Event> = from
             .map(|c| c.journal.events.iter().cloned().collect())
             .unwrap_or_default();
@@ -122,7 +161,33 @@ impl<'a> Driver<'a> {
                 cost_field_at: 0,
             },
             warnings: Vec::new(),
+            road_lines,
+            frozen: None,
+            opened_in_ring: 0,
+            idle_rings: 0,
+            front,
+            harbour: None,
+            castle: None,
+            precincts: Vec::new(),
+            open_sectors: None,
+            inside_at_raise: 0.0,
         })
+    }
+
+    /// Whether an event keyed `key` can be applied now: always on a fresh run; while a resumed
+    /// run replays its record, only when it is the next recorded event. Callers that compute an
+    /// expensive plan test this first.
+    pub(super) fn may_apply(&self, key: &Key) -> bool {
+        self.recorded.front().is_none_or(|e| &e.key == key)
+    }
+
+    /// The operations of `ops` the graph accepts, each tried on its own in order, at the clock.
+    pub(super) fn accepted(&self, ops: Vec<Op>) -> Vec<Op> {
+        let mut stage = self.writer.stage(self.clock);
+        for op in ops {
+            let _ = stage.try_push(vec![op]);
+        }
+        stage.into_ops()
     }
 
     /// Apply an event of `kind` at the current clock and return its position in the journal.
@@ -162,7 +227,11 @@ impl<'a> Driver<'a> {
             .map_err(|e| format!("Event {key:?} refused: {e}"))
     }
 
-    /// `Found`: regional roads and the founding focus; then the main axes are planned from it.
+    /// `Found`: regional roads, the castle and its road when the focus is a strong point, the
+    /// founding focus, and the harbour road to a distant front; then the main axes are planned
+    /// from the focus, and an enclosed charter surveys its founding precinct. The founding stage
+    /// is computed on a resumed run too, so that the castle and the harbour road are known; the
+    /// recorded operations are the ones applied.
     pub(super) fn found(&mut self) -> Result<(), String> {
         let centre = self.survey.center();
         let kind = EventKind::Found {
@@ -170,31 +239,58 @@ impl<'a> Driver<'a> {
             focus: focus_name(self.charter.focus.kind).into(),
         };
         let event = kind.key();
-        let applied = self.event(kind, |d, at| {
-            let mut stage = d.writer.stage(at);
-            armature::regional_roads(
+        let specs = self.request.specs;
+        let mut stage = self.writer.stage(self.clock);
+        armature::fate::import_regional_roads(
+            &mut stage,
+            &event,
+            self.request.regional_roads,
+            centre,
+            self.spec.reach,
+            self.spec.regional_road_width,
+        );
+        let mut focus_at = centre;
+        if self.charter.focus.kind == FoundingFocusKind::StrongPoint
+            && let Some(point) = self.survey.strong_points().first()
+            && let Some((castle, warnings)) = walls::found_castle(
                 &mut stage,
-                &event,
-                d.request.regional_roads,
-                centre,
-                d.spec.reach,
-                d.spec.regional_road_width,
-            );
-            // The harbour road, the castle road and the founding precinct of an enclosed
-            // charter join the founding here, between the roads and the focus.
-            armature::place_focus(&mut stage, centre);
-            Some(stage.into_ops())
-        })?;
-        if applied.is_none() {
+                &self.survey,
+                self.request.terrain,
+                point,
+                f64::from(self.charter.founding_cohort),
+                &self.road_lines,
+                specs.survey.lane_grade,
+                &specs.precinct,
+            )
+        {
+            focus_at = castle.foot;
+            self.warnings.extend(warnings);
+            self.castle = Some(castle);
+        }
+        armature::place_focus(&mut stage, focus_at);
+        if let Some(front) = self.front.clone().filter(|f| !f.at_focus) {
+            let laid = armature::focus_node(stage.graph(), focus_at).and_then(|n| {
+                let focus_key = stage.graph().node(n).key.clone();
+                let path = harbour::harbour_road(&self.survey, focus_at, &front, &specs.harbour)?;
+                harbour::lay_harbour_road(&mut stage, &event, &path, &focus_key, &specs.harbour)
+            });
+            if laid.is_none() {
+                self.front = None;
+                self.warnings
+                    .push("No harbour — no road (Pas de port — pas de route)".into());
+            }
+        }
+        let ops = stage.into_ops();
+        if self.event(kind, |_, _| Some(ops))?.is_none() {
             return Err("The founding was not applied".into());
         }
         let graph = self.writer.graph();
-        let focus = armature::focus_node(graph, centre).ok_or("The founding placed no focus")?;
+        let focus = armature::focus_node(graph, focus_at).ok_or("The founding placed no focus")?;
         let params = self.organic(0);
         self.arms = armature::plan_arms(
             graph,
             focus,
-            self.request.regional_roads,
+            &self.road_lines,
             self.request.terrain,
             &self.survey,
             &params,
@@ -203,7 +299,8 @@ impl<'a> Driver<'a> {
             Rng::new(self.request.seed).fork("armature"),
         );
         self.focus = Some(focus);
-        Ok(())
+        self.frozen = Some(self.cost_field());
+        self.found_precinct()
     }
 
     /// The tissue quarters born in `phase` are laid with: the charter's founding tissue in the
@@ -227,6 +324,26 @@ impl<'a> Driver<'a> {
             .unwrap_or_default()
     }
 
+    /// The tissue a quarter born now in `phase` is laid with: inside an open precinct the
+    /// phase's compact tissue (the charter's founding tissue in the founding phase, compact
+    /// already for an enclosed town), elsewhere the phase's own.
+    pub(super) fn birth_tissue(&self, phase: usize) -> (String, Option<&'a TissueSpec>) {
+        if self.open_sectors.is_none() || phase == 0 {
+            return self.tissue(phase);
+        }
+        let id = self.plan.phases[phase].spec.compact_tissue_id.clone();
+        let spec = self.request.specs.tissues.iter().find(|t| t.id == id);
+        (id, spec)
+    }
+
+    /// The organic street morphology of `birth_tissue`.
+    pub(super) fn birth_organic(&self, phase: usize) -> OrganicParams {
+        self.birth_tissue(phase)
+            .1
+            .and_then(|t| t.organic.clone())
+            .unwrap_or_default()
+    }
+
     /// Position of the founding focus.
     pub(super) fn focus_position(&self) -> Point {
         self.focus.map_or(self.survey.center(), |f| {
@@ -234,9 +351,20 @@ impl<'a> Driver<'a> {
         })
     }
 
-    /// The cost field over the graph as it stands: open ground, cheaper along the armature.
+    /// The cost field over the graph as it stands: open ground, cheaper along the armature, the
+    /// harbour road and quay and across the water crossings, and lowered around the harbour's
+    /// front so that the town grows towards it.
     pub(super) fn cost_field(&self) -> CostField {
-        let lines = armature::cost_lines(self.writer.graph(), self.spec, &self.arms);
+        let graph = self.writer.graph();
+        let specs = self.request.specs;
+        let mut lines = armature::cost_lines(graph, self.spec, &self.arms);
+        lines.extend(harbour::cost_lines(graph, self.spec));
+        lines.extend(water::cost_lines(
+            graph,
+            self.writer.journal(),
+            self.spec,
+            &specs.crossing,
+        ));
         let paths: Vec<CostPath<'_>> = lines
             .iter()
             .map(|line| CostPath {
@@ -245,7 +373,16 @@ impl<'a> Driver<'a> {
                 allow_crossings: line.crossings,
             })
             .collect();
-        self.survey.recompute_costs(&paths)
+        match &self.front {
+            Some(front) => {
+                // The discount falls off at the field's cheapest multiplier, so the discounted
+                // land stays connected to the centre.
+                let slope = self.spec.regional_road_cost.min(self.spec.axis_cost);
+                let discount = harbour::front_discount(front, &specs.harbour, slope);
+                self.survey.recompute_costs_with(&paths, &|p| discount.at(p))
+            }
+            None => self.survey.recompute_costs(&paths),
+        }
     }
 
     /// Whether the target is housed.
@@ -305,12 +442,43 @@ impl<'a> Driver<'a> {
             .collect();
         let checkpoint = self.writer.checkpoint(self.cursor.clone());
         let focus = self.focus_position();
+        let roads = armature::fate::road_result(graph);
+        let (quays, port_quarters) = match &self.harbour {
+            Some(state) => (
+                harbour::export_quays(graph, state),
+                harbour::port_quarters(graph, &self.quarters, state),
+            ),
+            None => (Vec::new(), Vec::new()),
+        };
+        let household_size = self.spec.household_size;
+        let at_stop = walls::inhabitants(self.clock, household_size);
+        let walls: Vec<WallPlan> = self
+            .castle
+            .iter()
+            .map(|c| &c.precinct)
+            .chain(&self.precincts)
+            .map(|p| WallPlan {
+                population: p
+                    .raised
+                    .map_or(at_stop, |at| walls::inhabitants(at, household_size).max(1)),
+                precinct: p.clone(),
+            })
+            .collect();
+        let mut fords: Vec<Key> = water::ford_stems(self.writer.journal()).into_iter().collect();
+        fords.sort();
+        let bailey = self.castle.as_ref().map(|c| c.outline.clone());
         TownPlan {
             clock: self.clock,
             center: self.charter.center,
             focus,
             phases,
             quarters,
+            regional_road_result: (!roads.is_empty()).then_some(roads),
+            walls,
+            quays,
+            port_quarters,
+            fords,
+            bailey,
             warnings: self.warnings,
             stop: Stop {
                 checkpoint,

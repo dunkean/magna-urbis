@@ -26,6 +26,12 @@ pub struct TownSpecs {
     /// Ring steps, counting and armature weights of the growth loop.
     #[serde(default)]
     pub growth: GrowthSpec,
+    /// Sizing and clearances of precincts, castles, citadels and camps.
+    #[serde(default)]
+    pub precinct: PrecinctSpec,
+    /// What water the town can cross, and how.
+    #[serde(default)]
+    pub crossing: CrossingSpec,
 }
 
 /// Parameters of the growth loop. None of them may depend on the requested population: the
@@ -459,8 +465,7 @@ pub struct WallSpec {
     pub keeps_citadel: bool,
 }
 
-/// Starting values for precincts, castles, citadels and camps, to tune on review sheets. Not yet
-/// part of [`TownSpecs`]: the integration lot adds it there as `#[serde(default)] precinct`.
+/// Starting values for precincts, castles, citadels and camps, to tune on review sheets.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PrecinctSpec {
@@ -629,8 +634,7 @@ pub struct HarbourThresholds {
 
 /// What water a growing town can cross, and how. The span rule is classic's
 /// (`footprint::crossings::spans`): `builders` × `spanPerSqrtThousand` × √(P / 1000) metres, at
-/// most `maxSpan`; a ford where the stream is narrow and the culture fords. Not yet part of
-/// [`TownSpecs`]: the integration lot adds it there as `#[serde(default)] crossing`.
+/// most `maxSpan`; a ford where the stream is narrow and the culture fords.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct CrossingSpec {
