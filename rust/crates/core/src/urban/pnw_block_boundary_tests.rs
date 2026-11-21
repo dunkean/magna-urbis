@@ -1,4 +1,5 @@
-use super::*;
+use super::{Bins, block_boundary_served};
+use crate::urban::{Layout, LayoutConfig, Point, Shape, Site, Street, Surface, geometry as g};
 use serde::Deserialize;
 use serde_json::json;
 fn observed(shape: &Shape, streets: &[Street]) -> bool {
