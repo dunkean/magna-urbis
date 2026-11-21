@@ -52,7 +52,7 @@ const WARD_ZONE: &str = "middle";
 
 /// A town of the quarter grammar whose reach holds steep dry ground.
 pub(super) fn eligible(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, kind: Kind) -> bool {
-    if cfg.programme.intent != "settlement" || site.population < super::HOUSED_FROM
+    if cfg.programme.intent != "settlement" || site.population < super::pipeline::HOUSED_FROM
         || matches!(kind, Kind::Camp | Kind::Ruin)
         || cfg.placement != "center" || cfg.footprint.mechanism == "legacy"
         || cfg.tissue != "culture" || cfg.site_adaptation == 0.0 {
@@ -78,7 +78,7 @@ pub(super) fn eligible(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, ki
 pub(super) fn short(layout: &Layout) -> bool {
     let land_short = layout.structure.as_ref().is_some_and(|s|
         s.metrics.target_area > 0.0 && s.metrics.shortfall_area > LAND_SHORTFALL * s.metrics.target_area);
-    land_short || super::housable_share(layout) < profiles::SLOPE_RELAX_GOAL
+    land_short || super::pipeline::housable_share(layout) < profiles::SLOPE_RELAX_GOAL
 }
 
 fn grade(p: Point, d: f64, surface: Surface<'_>) -> f64 {
@@ -131,7 +131,7 @@ pub(super) fn complete(
     // (`footprint::slope_relax_ahead`, carried by `cfg`).
     let mut relaxed = cfg.programme.slope_relax;
     for relax in STREET_RELAX.into_iter().filter(|&relax| relax > cfg.programme.slope_relax) {
-        if housed >= goal || super::housable_share(&best) >= profiles::SLOPE_RELAX_GOAL { break; }
+        if housed >= goal || super::pipeline::housable_share(&best) >= profiles::SLOPE_RELAX_GOAL { break; }
         let mut trial = base.clone();
         trial.programme.slope_relax = relax;
         if let Ok(candidate) = lay(&trial) && let Some(found) = better(&candidate, housed) {
