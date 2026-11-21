@@ -1,5 +1,7 @@
 # Town engine 2: implementation plan
 
+Abandoned on 21 November 2026: the growth towns did not reach the look of the classic engine. The code is archived under the tags `archive/town-engine-2-growth-2026-11-21` and `archive/town-engine-2-shape-2026-11-21`; the planar graph and the geometry kernel were kept.
+
 21 November 2026. The order of work for `TOWN_ENGINE_2_DESIGN_2026-11-21.md` (the design; section numbers below refer to it). One session is two to three hours of agent work plus the supervisor's build, tests and review. Estimates are judgements; each milestone ends on measures and, where towns change, a V2 sheet against classic.
 
 ## 1. How the work runs

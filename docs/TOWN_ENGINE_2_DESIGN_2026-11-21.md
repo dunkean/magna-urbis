@@ -1,5 +1,7 @@
 # Town engine 2: growth by dated steps on a graph
 
+Abandoned on 21 November 2026: the growth towns did not reach the look of the classic engine. The code is archived under the tags `archive/town-engine-2-growth-2026-11-21` and `archive/town-engine-2-shape-2026-11-21`; the planar graph and the geometry kernel were kept.
+
 21 November 2026. Definitive design, approved by the owner on 21 November after two rounds of independent review (Fable 5.2 and Astra 6.2) and three rounds of discussion. Nothing described here is implemented yet; the order of work is in `TOWN_ENGINE_2_PLAN_2026-11-21.md`. It replaces, for the new engine, the roadmap of `STREET_GRAPH_DESIGN_2026-11-20.md` (steps 2 to 13) and the repair plan of `PLANNER_STABILITY_DESIGN_2026-11-21.md`, whose diagnosis it keeps as the list of what not to rebuild. It extends `GROW_UNTIL_HOUSED_2026-11-15.md`. Paths without a prefix are in `rust/crates/core/src/urban/`.
 
 ## 1. Summary
