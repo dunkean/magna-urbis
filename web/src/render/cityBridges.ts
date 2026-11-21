@@ -1,6 +1,7 @@
 import type { Layout, Point, Street } from '../../../rust/bridge/urban';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
 import { outsideUrbanStreets, urbanRoadOwnership } from '../../../rust/bridge/urbanNetwork';
+import type { RegionalSource } from '../../../rust/bridge/roadFates';
 
 /** Dry waterLevel cells contain terrain height. Never interpolate those
  * hillside samples into the water surface beside a bridge abutment. */
@@ -112,26 +113,28 @@ export function cityBridgeStreets(layouts: readonly Layout[], regional: readonly
 
 type RegionalRoad = { path: Point[]; width: number };
 type RegionalBridge = { a: Point; b: Point; width: number };
-const shownNetworks = new WeakMap<object, { roads?: readonly RegionalRoad[]; bridges?: readonly RegionalBridge[]; layouts: readonly Layout[]; out: { roads?: RegionalRoad[]; bridges?: RegionalBridge[] } }>();
+const shownNetworks = new WeakMap<object, { roads?: readonly RegionalRoad[]; bridges?: readonly RegionalBridge[]; layouts: readonly Layout[]; sources?: readonly RegionalSource[]; out: { roads?: RegionalRoad[]; bridges?: RegionalBridge[] } }>();
 /** The regional roads and decks a 2D map draws around native towns, owned exactly as the 3D ground and decks are
  * (city3d `outsideUrbanStreets`, `cityBridgeStreets`): a regional road is drawn outside the towns' road ownership only,
  * where the town draws its own approaches bending onto its decks, and a regional deck that a town crossing replaces
- * is not drawn. Town bridge records with a `kind` stay. Memoized per network and layouts, never per frame. */
-export function cityRegionalNetwork<R extends RegionalRoad, B extends RegionalBridge>(roads: readonly R[] | undefined, bridges: readonly B[] | undefined, layouts: readonly Layout[]): { roads?: R[]; bridges?: B[] } {
+ * is not drawn. A stretch a growth town ended is not drawn between its entries (`sources`: the source list the towns'
+ * regional ids index). Town bridge records with a `kind` stay. Memoized per network and layouts, never per frame. */
+export function cityRegionalNetwork<R extends RegionalRoad, B extends RegionalBridge>(roads: readonly R[] | undefined, bridges: readonly B[] | undefined, layouts: readonly Layout[], sources?: readonly RegionalSource[]): { roads?: R[]; bridges?: B[] } {
   if (!layouts.length) return { roads: roads as R[] | undefined, bridges: bridges as B[] | undefined };
   const key = (roads ?? bridges) as object | undefined;
   if (!key) return {};
   const memo = shownNetworks.get(key);
-  if (memo && memo.roads === roads && memo.bridges === bridges && memo.layouts.length === layouts.length && memo.layouts.every((l, i) => l === layouts[i])) return memo.out as { roads?: R[]; bridges?: B[] };
+  if (memo && memo.roads === roads && memo.bridges === bridges && memo.sources === sources && memo.layouts.length === layouts.length && memo.layouts.every((l, i) => l === layouts[i])) return memo.out as { roads?: R[]; bridges?: B[] };
   const shown =
     roads &&
     outsideUrbanStreets(
       roads.map((r, i) => ({ path: r.path, widths: r.path.map(() => r.width), rank: i, role: 'regional' })),
       layouts as Layout[],
+      sources,
     ).map(s => ({ ...roads[s.rank], path: s.path }));
   const decks = bridges?.filter(b => typeof (b as { kind?: unknown }).kind === 'string' || !urbanReplacesCrossing({ path: [b.a, b.b], widths: [b.width, b.width], rank: 0, role: 'bridge' }, layouts));
   const out = { roads: shown, bridges: decks };
-  shownNetworks.set(key, { roads, bridges, layouts: layouts.slice(), out });
+  shownNetworks.set(key, { roads, bridges, layouts: layouts.slice(), sources, out });
   return out;
 }
 

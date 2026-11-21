@@ -1,5 +1,6 @@
 import type { Layout, Shape, Street } from './urban';
 import type { Point, RoadOutput } from './settlements';
+import { endedRegionalStretches, type RegionalSource } from './roadFates';
 
 type Bounds = [number, number, number, number];
 const EPS = 1e-8;
@@ -64,12 +65,43 @@ function oriented(ring: Point[], positive: boolean): Point[] {
   return area >= 0 === positive ? ring : [...ring].reverse();
 }
 
+/** A strip along one street segment: its widest end plus one metre for the casing, as the SVG draws a constant
+ * width per segment (this also contains variable-width ribbons). */
+function segmentStrip(street: Street, i: number): Shape | undefined {
+  const a = street.path[i - 1],
+    b = street.path[i];
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    length = Math.hypot(dx, dy);
+  if (length <= EPS) return undefined;
+  const wa = street.widths[i - 1] ?? street.widths.at(-1) ?? 3,
+    wb = street.widths[i] ?? wa;
+  const halfWidth = Math.max(0, wa, wb) * 0.5 + 1;
+  const nx = (-dy / length) * halfWidth,
+    ny = (dx / length) * halfWidth;
+  return {
+    outer: [
+      { x: a.x + nx, y: a.y + ny },
+      { x: a.x - nx, y: a.y - ny },
+      { x: b.x - nx, y: b.y - ny },
+      { x: b.x + nx, y: b.y + ny },
+    ],
+    holes: [],
+  };
+}
+
 /** Native ownership for both transport clipping and an SVG nonzero union mask.
  * Allocated land leaves water holes open unless an explicit crossing owns them.
  * Legacy layouts retain quarter ownership; a growth reserve never hides a road.
+ * `ended`: regional stretches growth towns ended (`endedRegionalStretches`), owned whole by their towns.
  */
-export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
+export function urbanRoadOwnership(layouts: Layout[], ended: readonly Street[] = []): Shape[] {
   const shapes: Shape[] = [];
+  for (const street of ended)
+    for (let i = 1; i < street.path.length; i++) {
+      const strip = segmentStrip(street, i);
+      if (strip) shapes.push(strip);
+    }
   for (const layout of layouts) {
     const allocated = layout.structure && layout.structure.mechanism !== 'legacy' ? layout.structure.allocated : layout.quarters.map(q => q.shape);
     for (const shape of allocated)
@@ -97,26 +129,8 @@ export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
           const w = Math.max(street.widths[i - 1] ?? 0, street.widths[i] ?? 0) * 0.5 + 3;
           if (!nearBlock(a, w) && !nearBlock(b, w) && !nearBlock(interpolate(a, b, 0.5), w)) continue;
         }
-        const dx = b.x - a.x,
-          dy = b.y - a.y,
-          length = Math.hypot(dx, dy);
-        if (length <= EPS) continue;
-        const wa = street.widths[i - 1] ?? street.widths.at(-1) ?? 3,
-          wb = street.widths[i] ?? wa;
-        // The SVG draws a constant width per segment. Taking its widest end
-        // also contains variable-width ribbons, plus one metre for the casing.
-        const halfWidth = Math.max(0, wa, wb) * 0.5 + 1;
-        const nx = (-dy / length) * halfWidth,
-          ny = (dx / length) * halfWidth;
-        shapes.push({
-          outer: [
-            { x: a.x + nx, y: a.y + ny },
-            { x: a.x - nx, y: a.y - ny },
-            { x: b.x - nx, y: b.y - ny },
-            { x: b.x + nx, y: b.y + ny },
-          ],
-          holes: [],
-        });
+        const strip = segmentStrip(street, i);
+        if (strip) shapes.push(strip);
       }
     }
   }
@@ -221,19 +235,25 @@ function uncovered(a: Point, b: Point, covered: Map<string, [number, number][]>)
     .sort((a, b) => a[0] - b[0]);
 }
 
-/** Keep original regional geometry outside attributed land and crossing ribbons.
+/** Keep original regional geometry outside attributed land, crossing ribbons and the stretches growth towns ended.
  * This is a downstream view; neither RoadOutput nor the generation inputs change.
  * Type-only imports keep this adapter usable without loading the Rust WASM engine.
+ * `sources`: the source list the towns' regional ids index; without it, the `regionalSource` stations of `streets`.
  */
-export function outsideUrbanStreets(streets: Street[], layouts: Layout[]): Street[] {
-  return prepareUrbanRoadClip(layouts)(streets);
+export function outsideUrbanStreets(streets: Street[], layouts: Layout[], sources?: readonly RegionalSource[]): Street[] {
+  return roadClip(layouts, endedRegionalStretches(layouts, sources, streets))(streets);
 }
 
 /** Prepare an immutable layout snapshot once for all regional roads and display styles.
  * Each call retains its own duplicate coverage, including independent bridge artwork.
+ * `sources`: the source list the towns' regional ids index (the routed segments), for the stretches they ended.
  */
-export function prepareUrbanRoadClip(layouts: Layout[]): (streets: Street[]) => Street[] {
-  const masks = urbanRoadOwnership(layouts).map(shape => ({ shape, bounds: bounds(shape.outer) }));
+export function prepareUrbanRoadClip(layouts: Layout[], sources?: readonly RegionalSource[]): (streets: Street[]) => Street[] {
+  return roadClip(layouts, endedRegionalStretches(layouts, sources));
+}
+
+function roadClip(layouts: Layout[], ended: readonly Street[]): (streets: Street[]) => Street[] {
+  const masks = urbanRoadOwnership(layouts, ended).map(shape => ({ shape, bounds: bounds(shape.outer) }));
   // A regional piece lying wholly inside the cadastre's blocks is a retired
   // trajectory (e.g. through plots released by the occupancy trim): the plan
   // replaced it, so it is not drawn. A piece reaching the fields stays whole.
@@ -311,6 +331,7 @@ function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Boun
   return result;
 }
 
+/** The regional network outside the towns: what land use connects to. A road a growth town ended stops at its entries. */
 export function regionalOutsideUrban(roads: RoadOutput | undefined, layouts: Layout[]): Street[] {
-  return outsideUrbanStreets(roads?.segments.map(segment => ({ path: segment.path, widths: segment.path.map(() => segment.width), rank: segment.class === 'highway' ? 0 : segment.class === 'main' ? 1 : 2, role: 'regional' })) ?? [], layouts);
+  return outsideUrbanStreets(roads?.segments.map(segment => ({ path: segment.path, widths: segment.path.map(() => segment.width), rank: segment.class === 'highway' ? 0 : segment.class === 'main' ? 1 : 2, role: 'regional' })) ?? [], layouts, roads?.segments);
 }

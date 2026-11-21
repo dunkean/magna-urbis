@@ -360,11 +360,13 @@ export function editableUrbanRoads(source: World): World {
       }
     }
   let world = connectedGraph({ ...source, roads, debug: { ...source.debug, ...(native ? { v2RustRegion: { ...(source.debug!.v2RustRegion as object), roads: { ...native, segments: kept! } } } : {}) } });
+  // A regional road a growth town ended is not pickable between its entries: the town's street there is.
   const visible =
     cityRegionalNetwork(
       world.roads!.filter(r => !r.urban).map((r, i) => ({ ...r, pickIndex: i })),
       world.bridges,
       owners.flatMap(c => c.layouts),
+      native?.segments ?? source.roads,
     ).roads ?? [];
   const paths = new Map<number, Polyline[]>();
   for (const road of visible) {

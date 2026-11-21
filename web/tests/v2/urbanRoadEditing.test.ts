@@ -140,3 +140,32 @@ describe('local city reconstruction after street edits', () => {
     expect(snapshot.pendingRoadChanges).toBeUndefined();
   });
 });
+
+describe('regional roads ended by growth towns in the road editor', () => {
+  // A regional road along y = 300 between two quarters; the town's entries stand at x = 100 and x = 400.
+  const growth = (fate: 'ended' | 'kept'): World => {
+    const base = fixture(),
+      north = square(100, 320, 300),
+      south = square(100, -20, 300);
+    const layout = {
+      ...city(base).layouts[0],
+      quarters: [north, south].map(shape => ({ shape, phase: 0 })),
+      streets: [],
+      blocks: [],
+      structure: { mechanism: 'growth', allocated: [north, south] },
+      regionalRoadResult: [{ id: 'segment:0', entries: [p(100, 300), p(400, 300)], kept: fate === 'kept' ? [[100, 400]] : [], ended: fate === 'ended' ? [[100, 400]] : [] }],
+    } as unknown as Layout;
+    return { ...base, roads: [{ path: [p(0, 300), p(600, 300)], width: 4, kind: 'major' }], debug: { v2RustCities: { main: { ...city(base), layouts: [layout] } } } } as unknown as World;
+  };
+
+  it('picks nothing on the regional road between the entries of a town that ended it', () => {
+    const ended = editableUrbanRoads(growth('ended'));
+    expect(roadAt(ended, p(250, 300), 1)).toBeUndefined();
+    expect(roadAt(ended, p(50, 300), 1)?.index).toBe(0);
+    expect(roadAt(ended, p(500, 300), 1)?.index).toBe(0);
+  });
+
+  it('keeps a kept regional road pickable through the town', () => {
+    expect(roadAt(editableUrbanRoads(growth('kept')), p(250, 300), 1)?.index).toBe(0);
+  });
+});

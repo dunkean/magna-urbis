@@ -8,7 +8,10 @@ import { buildNearTrees, buildNearTreesSteps, type TreeInputs } from '../../src/
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolveRustUrbanControls, townRoadStreets, townSiteArchetypes } from '../../src/v2/rustUrban';
-import { regionalStreets } from '../../../rust/bridge/urban';
+import { regionalStreets, type Layout } from '../../../rust/bridge/urban';
+import { outsideUrbanStreets, prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
+import { bridgeRoadOwnership, cityRegionalNetwork } from '../../src/render/cityBridges';
+import { regionalRoadSources } from '../../src/v2/nativeProducts';
 import type { RoadOutput } from '../../../rust/bridge/settlements';
 import type { World } from '../../src/gen/types';
 import { citySiteArchetypes, cityFixedSites, cityTownRoads } from '../../src/render/cityGeneration';
@@ -504,6 +507,56 @@ describe('V2 and City Bench stay in sync', () => {
     expect(read('../../src/v2/urban3d.ts')).toContain('roads = townRoadStreets(world);');
   });
 
+  it('hides the regional stretch a growth town ended alike in the V2, City Bench and the 3D ground', () => {
+    const road = {
+      a: 0,
+      b: 1,
+      class: 'main',
+      surface: 'dirt',
+      width: 4,
+      length: 512,
+      path: [
+        { x: 0, y: 300 },
+        { x: 512, y: 300 },
+      ],
+      crossings: [],
+    };
+    const output = { segments: [road] } as unknown as RoadOutput;
+    const town = {
+      key: 'main',
+      culture: 'european',
+      center: { x: 256, y: 300 },
+      quarters: [],
+      streets: [],
+      blocks: [],
+      warnings: [],
+      regionalRoadResult: [
+        {
+          id: 'segment:0',
+          entries: [
+            { x: 128, y: 300 },
+            { x: 384, y: 300 },
+          ],
+          kept: [],
+          ended: [[128, 384]],
+        },
+      ],
+    } as unknown as Layout;
+    const world = { roads: [{ path: road.path, width: 4, kind: 'major' }], debug: { v2RustRegion: { roads: output } } } as unknown as World;
+    const xs = (streets: readonly { path: { x: number }[] }[]): number[][] => streets.map(s => s.path.map(p => p.x));
+    const v2 = cityRegionalNetwork(world.roads, undefined, [town], regionalRoadSources(world)).roads!;
+    const bench = prepareUrbanRoadClip(bridgeRoadOwnership([town], output), output.segments)([{ path: road.path, widths: [4, 4], rank: 1, role: 'regional' }]);
+    const ground = outsideUrbanStreets(regionalStreets(output), [town]);
+    expect(xs(v2)).toEqual([
+      [0, 128],
+      [384, 512],
+    ]);
+    expect(xs(bench)).toEqual(xs(v2));
+    expect(xs(ground)).toEqual(xs(v2));
+    expect(regionalRoadSources(world)).toBe(output.segments);
+    expect(read('../../src/ui/terrainRoads.ts')).toContain('prepareUrbanRoadClip(bridgeRoadOwnership(urbanOwnership, output), output?.segments)');
+    expect(read('../../src/v2/display/cartographyProducts.ts')).toContain('cityRegionalNetwork(shown.roads, shown.bridges, layouts, regionalRoadSources(world))');
+  });
   it('carries manual foundations into both city consumers', () => {
     expect(cityFixedSites([{ key: 'main', fixed: true }, { key: 'auto' }])).toEqual(['main']);
     expect(
