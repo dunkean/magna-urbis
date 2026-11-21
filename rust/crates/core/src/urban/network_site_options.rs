@@ -1,5 +1,10 @@
-use super::*;
-use super::super::{Enclosure, LayoutConfig, Surface, geometry as g, profile::Lap, routing};
+use super::junctions::{clean_terrain, planarize};
+use super::parallel::{MIN_LAND, drop_narrow_doubles, drop_shadowed_within};
+use super::policy;
+use super::spatial::{BoxGrid, EPS, Key, distance, key, lerp, segment_box};
+use super::street::{private, protected, width};
+use crate::urban::{Enclosure, LayoutConfig, Point, Street, Surface, geometry as g, profile::Lap, routing};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn different_level(surface: Surface<'_>, a: Point, b: Point) -> bool {
     (surface.height_at(a) - surface.height_at(b)).abs() >= 1.5
@@ -156,7 +161,12 @@ fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surf
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{clean_options, narrow_options};
+    use super::super::analysis::Graph;
+    use super::super::junctions::clean_with_centers;
+    use super::super::parallel::drop_narrow_doubles;
+    use super::super::spatial::distance;
+    use crate::urban::{Enclosure, LayoutConfig, Point, Shape, Street, Surface, routing};
     fn street(points: &[(f64, f64)], rank: usize) -> Street {
         Street { path: points.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![4.0; points.len()], rank, role: "street".into() }
     }
@@ -216,7 +226,7 @@ mod tests {
             clean_options(&mut b,Point{x:90.,y:50.},200.,true,&[],&off,surface));
         assert_eq!(serde_json::to_vec(&a).unwrap(),serde_json::to_vec(&b).unwrap());
     }
-    fn witness(name:&str, roads:&[Street], shapes:&[super::super::super::Shape]) {
+    fn witness(name:&str, roads:&[Street], shapes:&[Shape]) {
         if let Ok(out)=std::env::var("SITE_OPTS_WITNESSES") {
             crate::urban::site_options_tests::svg(&out,name,roads,shapes,200.);
         }

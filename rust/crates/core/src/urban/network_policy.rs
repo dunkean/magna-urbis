@@ -1,7 +1,13 @@
 //! Local road invariants. Spatial buckets and bounded neighbourhoods keep the
 //! work proportional to road length; rejected harbour decks use bounded local routes.
-use super::*;
-use crate::urban::{Layout, Surface, geometry as g, routing};
+use super::analysis::Graph;
+use super::bridge_construction::deck_landing_grade;
+use super::junctions::planarize;
+use super::parallel::MIN_LAND;
+use super::spatial::{EPS, Key, distance, key, lerp};
+use super::street::{CROSSINGS, private, protected, width};
+use crate::urban::{Layout, Point, Street, Surface, geometry as g, profile::Lap, routing};
+use std::collections::{BTreeMap, BTreeSet};
 
 const CELL: f64 = 32.0;
 
@@ -566,7 +572,14 @@ pub(in crate::urban) fn junction_triangles(streets: &mut Vec<Street>, grid: bool
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{bank_dead_ends, harbour_clearance, junction_triangles, remove_edges, river_spurs, small_loops};
+    use super::super::analysis::Graph;
+    use super::super::bridge_construction::deck_landing_grade;
+    use super::super::bridge_selection::select_bridges_graded;
+    use super::super::exits::ensure_regional_access;
+    use super::super::spatial::{distance, key};
+    use crate::urban::{Layout, Point, Street, Surface, routing};
+    use std::collections::BTreeSet;
     fn road(points: &[(f64, f64)], role: &str) -> Street {
         Street {
             path: points.iter().map(|&(x, y)| Point { x, y }).collect(),

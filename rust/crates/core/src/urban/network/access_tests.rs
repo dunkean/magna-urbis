@@ -1,7 +1,12 @@
 //! Fringe routes, regional access, and streets alongside or through walls.
 
 use super::street;
-use super::super::{Curtains, Graph, cap_gate_passages, clear_spurs, distance, ensure_regional_access, lerp, planarize, resolve_exits};
+use super::super::analysis::Graph;
+use super::super::curtains::{Curtains, clear_spurs};
+use super::super::exits::{ensure_regional_access, resolve_exits};
+use super::super::junctions::planarize;
+use super::super::spatial::{distance, lerp};
+use super::super::wall_streets::cap_gate_passages;
 use crate::urban::{Point, Street};
 
 #[test]
@@ -42,7 +47,7 @@ fn fringe_exits_form_connected_peripheral_sections_or_reclaimed_caps() {
     planarize(&mut streets, 120.0);
     let graph = Graph::new(&streets);
     assert!(streets.iter().any(|s| s.role == "peripheral"));
-    assert!(graph.degrees.vals.iter().all(|&n| n >= 2));
+    assert!((&graph.degrees).into_iter().all(|(_, &n)| n >= 2));
     assert!(streets.iter().all(|s| crate::urban::routing::path_clear(
         surface,
         &s.path,

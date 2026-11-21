@@ -1,7 +1,13 @@
 //! Bridge approaches, deck selection, and trimming streets at the bank.
 
 use super::street;
-use super::super::{Graph, WATER_ROLES, bridge_water, distance, dry_streets, join_crossings, key, select_bridges, width};
+use super::super::analysis::Graph;
+use super::super::bridge_construction::bridge_water;
+use super::super::bridge_selection::select_bridges;
+use super::super::crossing_approaches::join_crossings;
+use super::super::spatial::{distance, key};
+use super::super::street::width;
+use super::super::water_clearance::{WATER_ROLES, dry_streets};
 use crate::urban::Point;
 
 #[test]

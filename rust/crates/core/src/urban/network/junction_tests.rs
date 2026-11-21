@@ -1,7 +1,11 @@
 //! Segment intersections, corridor cleanup, and the shape of dead ends.
 
 use super::street;
-use super::super::{Graph, Segment, candidates, clean, crossings, dead_ends, distance, drop_narrow_doubles, key, square_ends};
+use super::super::analysis::{Graph, dead_ends};
+use super::super::ends::square_ends;
+use super::super::junctions::clean;
+use super::super::parallel::drop_narrow_doubles;
+use super::super::spatial::{Segment, candidates, crossings, distance, key};
 use crate::urban::Point;
 
 #[test]
