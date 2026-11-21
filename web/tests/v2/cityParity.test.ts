@@ -17,7 +17,7 @@ import { defaultLayoutConfig, defaultParcelConfig, normalizeLayoutConfig, normal
 import { siteVisualScene, silhouetteScene, type CityPlacementRequest } from '../../src/ui/urbanSilhouettes';
 import { projectUrbanSite } from '../../src/ui/urbanSiteStore';
 import { applySettlementStyle } from '../../src/ui/urbanSettlementStyles';
-import { CITY_DISPLAY_DEFAULTS, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
+import { CITY_DISPLAY_DEFAULTS, CITY_TOWN_ENGINE, DEFAULT_CITY_ARCHITECTURE, cityRegionalStreets } from '../../src/render/cityContract';
 import { CITY_DEFAULT_PARCEL_FIT, CITY_RASTER_RESOLUTION, cityRasterSide, parcelFitOf, defaultCityLayoutConfig, CITY_LAYOUT_DEFAULTS } from '../../src/render/cityGeneration';
 import { cityBuildingAppearance, cityDrawOptions, city3dPlanOptions, volumeTownBuildings } from '../../src/render/cityDrawOptions';
 import { ROOF_MODES } from '../../src/render/roofMode';
@@ -40,6 +40,7 @@ import { drawFantasyRaster, suspendFantasyRaster, KEEP_NONE, type FantasyRaster 
 import { STRUCTURE_ROLES } from '../../src/render/groundBlend';
 import { streetColors } from '../../src/render/cityGlStyle';
 import { CROSSINGS } from '../../src/render/city/look';
+import { urbanControlFields } from '../../src/v2/urbanControlSchema';
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
 const settings = (seed: string): V2Settings => ({ options: { seed }, local: {}, urban: { backend: 'rust' } }) as unknown as V2Settings;
@@ -779,6 +780,22 @@ describe('V2 and City Bench stay in sync', () => {
     expect(layout.naturalCampApproaches).toBe(true);
     expect(layout.ribbonWidthVariation).toBe(0.5);
     for (const file of ['../../src/v2/rustUrban.ts', '../../src/v2/urbanControls.ts', '../../src/ui/terrainUrban.ts']) expect(read(file)).toContain('defaultCityLayoutConfig as defaultLayoutConfig');
+  });
+
+  it('shares the town engine selector and defaults to classic', () => {
+    expect(CITY_TOWN_ENGINE).toEqual({ label: ['Town engine', 'Moteur de ville'], choices: { classic: ['Classic', 'Classique'], growth: ['Growth (experimental)', 'Croissance (expérimental)'] } });
+    expect(urbanControlFields().find(field => field.path === 'layout.engine')).toMatchObject({ section: 'layout', label: CITY_TOWN_ENGINE.label[0], type: 'select', options: Object.entries(CITY_TOWN_ENGINE.choices).map(([value, [label]]) => ({ value, label })) });
+    const bench = read('../../src/ui/terrainUrban.ts');
+    expect(bench).toContain('class="advanced" data-town-engine');
+    expect(bench).toContain('CITY_TOWN_ENGINE.choices');
+    expect(defaultCityLayoutConfig().engine).toBe('classic');
+    expect(normalizeLayoutConfig({}).engine).toBe('classic');
+    expect(normalizeLayoutConfig(applySettlementStyle('culture', { ...defaultCityLayoutConfig(), engine: 'growth' }).layout).engine).toBe('growth');
+    const current = settings('engine');
+    const options = { culture: 'west' } as Options;
+    expect(resolveRustUrbanControls(current, 'a', options).layout.engine).toBe('classic');
+    current.urban!.layout = { engine: 'growth' };
+    expect(resolveRustUrbanControls(current, 'a', options).layout.engine).toBe('growth');
   });
 
   it('shares canopy/night finishing, native house LOD and the 3D ground-plan options', () => {

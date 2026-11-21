@@ -1,6 +1,7 @@
 /** English source copy for city controls. Keep explanations about the generated result,
  * including automatic values, separate from labels and native storage paths. */
 export const urbanParameterHelp: Record<string, string> = {
+  engine: 'Selects the town layout engine. The experimental option uses Classic for now.',
   culture: 'Chooses the cultural rules for streets, lots and buildings. Automatic follows the settlement’s culture.',
   preset: 'Applies a set of street and parcel dimensions. From culture uses the selected culture’s morphology.',
   recipe: 'Chooses the planning recipe for this growth zone. Automatic lets the culture select it for each phase.',

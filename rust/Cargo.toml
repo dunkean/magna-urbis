@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/geom", "crates/terrain", "crates/wasm", "crates/neural", "crates/random", "crates/houses", "crates/houses-wasm", "crates/local"]
+members = ["crates/core", "crates/geom", "crates/terrain", "crates/town", "crates/wasm", "crates/neural", "crates/random", "crates/houses", "crates/houses-wasm", "crates/local"]
 # The optional browser neural adapter uses Neural Earth's shared GPU runtime.
 # Keep that build dependency out of ordinary terrain/houses builds.
 exclude = ["crates/neural-wasm", "crates/neural-native"]
@@ -32,6 +32,11 @@ overflow-checks = false
 
 # Urban/settlements/resources: edited all the time, so cheap to recompile.
 [profile.dev.package.magna-urbis-core]
+opt-level = 1
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.magna-urbis-town]
 opt-level = 1
 debug-assertions = false
 overflow-checks = false

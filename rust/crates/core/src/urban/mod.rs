@@ -65,6 +65,7 @@ mod routing;
 mod trim;
 mod slopes;
 mod street_graph;
+mod town_adapter;
 mod widths;
 pub mod neighbours;
 mod zone_blend;
@@ -571,6 +572,8 @@ pub struct Site {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct LayoutConfig {
+    /// Chooses the `classic` or `growth` town layout engine.
+    pub engine: String,
     pub programme: ProgrammeContext,
     #[serde(default = "culture_axis")]
     pub axis_alignment: String,
@@ -946,6 +949,7 @@ pub struct QuarterOverride {
 impl Default for LayoutConfig {
     fn default() -> Self {
         Self {
+            engine: "classic".into(),
             programme: ProgrammeContext::default(),
             footprint: FootprintConfig::default(),
             axis_alignment: "regional".into(),
@@ -1795,6 +1799,9 @@ pub fn generate_quarters(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Result<Vec<Layout>, String> {
+    if !matches!(config.engine.as_str(), "classic" | "growth") {
+        return Err("Invalid town engine: expected classic or growth".into());
+    }
     if !config.port_detachment.is_finite() || !(0.0..=1.0).contains(&config.port_detachment)
         || config.port_shelter.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
     {
@@ -1939,6 +1946,7 @@ pub fn generate_quarters(
     }
     // Repeated programme/cadastre probes share exact sub-results (`probe_cache`).
     let _probe_scope = probe_cache::Scope::open();
+    let regional_roads = roads;
     let mut crossing_roads = roads.to_vec();
     network::bridge_water(&mut crossing_roads, surface, config.max_street_grade);
     let roads = crossing_roads.as_slice();
@@ -1960,7 +1968,13 @@ pub fn generate_quarters(
                 || !(0.0..=surface.width).contains(&site.center.y)
         })
         .unwrap_or(sites.len());
+    let use_growth = config.engine == "growth";
     let laid = par::map(&sites[..valid], |_, site| -> Result<Layout, String> {
+        if use_growth
+            && let Some(layout) = town_adapter::generate(seed, site, config, surface, regional_roads)
+        {
+            return Ok(layout);
+        }
         // A town with neighbours starts from free ground, and its roads stop at
         // their land and lead on into their edge streets (`neighbours`). Later
         // places it reserves become cores of land it flows around.
@@ -2375,6 +2389,9 @@ pub fn generate_quarters(
             edits::quarter_baseline::retain(&mut layout, baseline);
         }
         layout.claim = neighbours::claim(&layout);
+        if use_growth {
+            layout.warnings.push("Growth engine: not available yet".into());
+        }
         Ok(layout)
     });
     let mut out = Vec::with_capacity(laid.len());

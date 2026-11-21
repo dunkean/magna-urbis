@@ -9,6 +9,7 @@ publish.workspace = true
 magna-urbis-geom = { path = "../geom" }
 magna-urbis-random = { path = "../random" }
 magna-urbis-terrain = { path = "../terrain" }
+magna-urbis-town = { path = "../town" }
 serde = { version = "1", features = ["derive"] }
 delaunator = "1"
 geo = { version = "=0.33.1", default-features = false, features = ["earcut"] }
@@ -26,7 +27,7 @@ rayon = { version = "1.12", optional = true }
 [features]
 # Rayon on wasm32 (shared-memory build) for urban and terrain kernels.
 # Native builds always use rayon.
-threads = ["dep:rayon", "magna-urbis-terrain/threads"]
+threads = ["dep:rayon", "magna-urbis-terrain/threads", "magna-urbis-town/threads"]
 
 [dev-dependencies]
 magna-urbis-geom = { path = "../geom", features = ["test-support"] }

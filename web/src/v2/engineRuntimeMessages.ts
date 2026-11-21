@@ -1,5 +1,7 @@
 /** Display catalog for authored Rust/bridge diagnostics. Keep protocol keys and slot values intact. */
 export const engineRuntimeEntries: readonly (readonly [string, string])[] = [
+  ['Moteur de croissance : pas encore disponible', 'Growth engine: not available yet'],
+  ['Moteur de ville invalide : choisissez classic ou growth', 'Invalid town engine: expected classic or growth'],
   ['La scène précédente utilise un schéma architectural incompatible.', 'The previous scene uses an incompatible architecture schema.'],
   ['Changer de générateur architectural nécessite de remplacer toute la scène.', 'Changing architecture generator requires replacing the whole scene.'],
   ['Une retouche ne peut pas mélanger plans architecturaux compacts et volumes de recettes détaillés.', 'A selected edit cannot mix compact architectural plans with detailed recipe volumes.'],

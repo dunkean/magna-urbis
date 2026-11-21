@@ -285,7 +285,9 @@ export interface FootprintConfig {
  * retains the cultural style when an explicit style does not fit the kind. */
 export const FORTIFICATION_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curtain', 'flanked', 'concentric', 'rammed-earth', 'wengcheng', 'bastioned'] as const;
 export type FortificationStyle = (typeof FORTIFICATION_STYLES)[number];
+export type LayoutEngine = 'classic' | 'growth';
 export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOperators' | 'streetAlignedHomes' | 'denserSmallholdings' | 'plotEnclosure' | 'fieldEnclosure' | 'countrysideEnclosures' | 'enclosureMaterial'> {
+  engine: LayoutEngine;
   phaseOverrides?: Record<string, PhaseOverride>;
   /** Output only: set on a layout prepared by the parcel stage (structural block edits); never sent as an input. */
   blockEdits?: import('./urban').BlockEdits;
@@ -419,6 +421,7 @@ export const defaultFootprintConfig = (): FootprintConfig => ({
   gapSize: 60,
 });
 export const defaultLayoutConfig = (): LayoutConfig => ({
+  engine: 'classic',
   programme: defaultProgrammeContext(),
   axisAlignment: 'regional',
   mixCulture: '',
