@@ -133,19 +133,26 @@ pub(super) fn clip(ring: &[Point], planes: &[Plane]) -> Vec<Point> {
             return Vec::new();
         }
         let input = std::mem::take(&mut out);
-        for i in 0..input.len() {
-            let p = input[i];
-            let q = input[(i + 1) % input.len()];
-            let (dp, dq) = (dot(n, p) - c, dot(n, q) - c);
-            if dp <= 0.0 {
-                out.push(p);
-            }
-            if (dp < 0.0 && dq > 0.0) || (dp > 0.0 && dq < 0.0) {
-                out.push(add(p, scale(sub(q, p), dp / (dp - dq))));
-            }
-        }
+        visit_clipped(&input, n, c, |p| out.push(p));
     }
     out
+}
+
+/// Emit the kept vertices and intersections of a nonempty ring in boundary order.
+fn visit_clipped(ring: &[Point], n: Point, c: f64, mut visit: impl FnMut(Point)) {
+    let first = &ring[0];
+    let mut dp = dot(n, *first) - c;
+    let next = ring.iter().skip(1).chain(std::iter::once(first));
+    for (&p, &q) in ring.iter().zip(next) {
+        let dq = dot(n, q) - c;
+        if dp <= 0.0 {
+            visit(p);
+        }
+        if (dp < 0.0 && dq > 0.0) || (dp > 0.0 && dq < 0.0) {
+            visit(add(p, scale(sub(q, p), dp / (dp - dq))));
+        }
+        dp = dq;
+    }
 }
 
 pub(super) fn ring_area(r: &[Point]) -> f64 {
@@ -156,8 +163,28 @@ pub(super) fn ring_area(r: &[Point]) -> f64 {
 /// boolean operation: one Sutherland-Hodgman pass per ring (exact for any simple
 /// ring against one half-plane, concave ones included).
 pub(super) fn half_area(shape: &Shape, axis: Point, at: f64) -> f64 {
-    let plane = [(axis, at)];
-    let ring = |r: &[Point]| ring_area(&clip(r, &plane)).abs();
+    let ring = |r: &[Point]| {
+        if r.len() < 3 {
+            return 0.0;
+        }
+        // Sum the same shoelace terms as the clipped ring, in the same order.
+        let cross = |a: Point, b: Point| a.x * b.y - b.x * a.y;
+        let mut first = None;
+        let mut previous = r[0];
+        let mut sum = -0.0;
+        visit_clipped(r, axis, at, |p| {
+            if first.is_some() {
+                sum += cross(previous, p);
+            } else {
+                first = Some(p);
+            }
+            previous = p;
+        });
+        if let Some(p) = first {
+            sum += cross(previous, p);
+        }
+        (sum * 0.5).abs()
+    };
     ring(&shape.outer) - shape.holes.iter().map(|h| ring(h)).sum::<f64>()
 }
 
@@ -169,4 +196,36 @@ pub(super) fn profile_half() {
         HALF_CALLS.swap(0, std::sync::atomic::Ordering::Relaxed),
         HALF_NANOS.swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / 1e6,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn half_area_matches_the_clipped_ring_bits() {
+        let concave = [(0., 0.), (9., 0.), (9., 4.), (6., 4.), (6., 9.), (0., 9.)];
+        let hole = [(1., 1.), (1., 3.), (3., 3.), (3., 1.)];
+        for offset in [0.0, -127.1, 1e9] {
+            let point = |&(x, y): &(f64, f64)| Point { x: x + offset, y: y + offset };
+            let mut shape = Shape {
+                outer: concave.iter().map(point).collect(),
+                holes: vec![hole.iter().map(point).collect()],
+            };
+            for _ in 0..2 {
+                for axis in [Point { x: 1.0, y: 0.0 }, Point { x: 0.37, y: -0.81 }] {
+                    let origin = dot(axis, shape.outer[0]);
+                    for distance in [-20.0, -1.0, 0.0, 0.25, 4.0, 9.0, 20.0] {
+                        let at = origin + distance;
+                        let expected = |ring: &[Point]| ring_area(&clip(ring, &[(axis, at)])).abs();
+                        let expected = expected(&shape.outer)
+                            - shape.holes.iter().map(|h| expected(h)).sum::<f64>();
+                        assert_eq!(half_area(&shape, axis, at).to_bits(), expected.to_bits());
+                    }
+                }
+                shape.outer.reverse();
+                shape.holes[0].reverse();
+            }
+        }
+    }
 }
