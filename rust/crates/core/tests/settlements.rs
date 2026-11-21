@@ -1040,12 +1040,12 @@ fn fixed_wet_points_are_not_silently_relocated_and_invalid_configs_fail() {
     assert!(
         out.warnings
             .iter()
-            .any(|w| w == "wet: manual position is wet or solid rock")
+            .any(|w| w == "wet skipped — water or rock")
     );
     assert!(
         out.warnings
             .iter()
-            .any(|w| w == "wet (300 inhabitants): no suitable position available")
+            .any(|w| w == "wet unplaced (300 people) — no suitable site")
     );
     let cfg = list(vec![
         fixed("dup", 300, 3000.0, 8000.0),
