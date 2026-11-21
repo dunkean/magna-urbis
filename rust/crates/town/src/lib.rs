@@ -45,8 +45,8 @@ pub struct TownRequest<'a> {
     pub site: TownSite,
     /// Resolved generation specs supplied by the caller.
     pub specs: &'a TownSpecs,
-    /// Read-only terrain at the site and its surroundings.
-    pub terrain: &'a dyn TerrainView,
+    /// Read-only terrain at the site and its surroundings, shared by the quarters laid in parallel.
+    pub terrain: &'a (dyn TerrainView + Sync),
     /// Regional roads as polylines in map-local metres.
     pub regional_roads: &'a [Vec<Point>],
     /// Land already claimed by neighbours, including any holes.
@@ -57,10 +57,11 @@ pub struct TownRequest<'a> {
     pub planned: PlannedSetting,
 }
 
-/// Generate a town layout from its site and resolved specs.
+/// Generate a town layout from its site and resolved specs, counting its quarters with
+/// `capacity`. [`growth::resume`] and [`growth::reopen`] continue a stopped town.
 pub fn generate(
-    _request: TownRequest<'_>,
-    _capacity: &dyn growth::Capacity,
+    request: TownRequest<'_>,
+    capacity: &dyn growth::Capacity,
 ) -> Result<TownPlan, String> {
-    Err("not implemented".into())
+    growth::generate(&request, capacity)
 }

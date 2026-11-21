@@ -23,6 +23,60 @@ pub struct TownSpecs {
     pub survey: SurveySpec,
     /// Harbour enclosure and expansion parameters.
     pub harbour: HarbourSpec,
+    /// Ring steps, counting and armature weights of the growth loop.
+    #[serde(default)]
+    pub growth: GrowthSpec,
+}
+
+/// Parameters of the growth loop. None of them may depend on the requested population: the
+/// target enters only the stop test, which is what lets a stopped town resume to a larger one.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GrowthSpec {
+    /// Cost step between two ring levels, in effective metres. The default 100 m opens about
+    /// two blocks and their streets per ring on flat land.
+    pub ring_step: f64,
+    /// Survey reach around the founding focus in metres. The default 1500 m holds a town of
+    /// about 50,000 on flat land; land beyond it never opens.
+    pub reach: f64,
+    /// Inhabitants per household, to read the target and the phase thresholds as households.
+    /// The default 3.7 is classic's European village household (3.15 persons, 0.85 home each).
+    pub household_size: f64,
+    /// Radius in metres of the town's nucleus given to the street field; roads within 1.5
+    /// radii orient it. The default 200 m is classic's radius of a 3,000 town.
+    pub nucleus_radius: f64,
+    /// Effective metres per metre along a regional road (default 0.75: rings reach a third
+    /// farther along a road than across open ground).
+    pub regional_road_cost: f64,
+    /// Effective metres per metre along a main axis (default 0.85).
+    pub axis_cost: f64,
+    /// Effective metres per metre along any other street (default 0.9).
+    pub street_cost: f64,
+    /// Drawn width in metres of a regional road inside the town (default 8, classic's rank-0 street).
+    pub regional_road_width: f64,
+    /// A ring's new boundary is kept only where some point of it lies farther than this from
+    /// every existing edge (metres); a shallower strip waits for the next ring. The default
+    /// 15 m is a little less than classic's smallest block width (17 m).
+    pub min_quarter_depth: f64,
+    /// Rings opened at most, a guard for sites whose land never runs out (default 200).
+    pub max_rings: u32,
+}
+
+impl Default for GrowthSpec {
+    fn default() -> Self {
+        Self {
+            ring_step: 100.0,
+            reach: 1500.0,
+            household_size: 3.7,
+            nucleus_radius: 200.0,
+            regional_road_cost: 0.75,
+            axis_cost: 0.85,
+            street_cost: 0.9,
+            regional_road_width: 8.0,
+            min_quarter_depth: 15.0,
+            max_rings: 200,
+        }
+    }
 }
 
 /// Thresholds and costs for terrain survey. Grades are rise over horizontal run.

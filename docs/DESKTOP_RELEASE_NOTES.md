@@ -67,6 +67,9 @@
 - Town walls open the number of gates their size allows (about five at 10,000 inhabitants, eight for a large city) instead of one wherever a street or a bridge ramp reached them. At a gate the curtain turns square to its street, with its gatehouse; the other streets end at the wall, and a main road left without a gate goes round the moat to the nearest one.
 - Stepped streets also stand as flights of steps on the tilted map.
 - New 3D option in Advanced, "Built terraces in 3D" (on by default), shows or hides the stone terraces and retaining walls under the hillside houses of terracing cultures.
+- The experimental Growth town engine reuses the classic parcel and building stages for supported towns.
+
+<!-- FR: Le moteur de ville expérimental Croissance réutilise le parcellaire et les bâtiments du moteur classique pour les villes prises en charge. -->
 
 The Apple Silicon DMG is signed ad hoc and distributed without Apple notarization. GitHub Actions tests the packaged app. Native neural GPU inference on a physical Mac remains unverified.
 

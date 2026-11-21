@@ -11,6 +11,13 @@ magna-urbis-random = { path = "../random" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Deterministic per-quarter parallelism (growth/par.rs), as in core: native builds always use
+# rayon; wasm32 runs serially unless the `threads` feature is on.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = "1.12"
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rayon = { version = "1.12", optional = true }
+
 [features]
 # The host selects the shared-memory WebAssembly build through this feature.
-threads = []
+threads = ["dep:rayon"]

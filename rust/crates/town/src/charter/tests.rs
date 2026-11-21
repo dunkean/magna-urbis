@@ -156,6 +156,7 @@ fn specs() -> TownSpecs {
             quay_per_sqrt_pop: 6.0,
             thresholds: harbour_works,
         },
+        growth: Default::default(),
     }
 }
 

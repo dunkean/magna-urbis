@@ -11,6 +11,7 @@ mod draft;
 mod dump;
 mod events;
 mod ops;
+mod stage;
 #[cfg(test)]
 mod tests;
 mod writer;
@@ -25,6 +26,7 @@ pub use draft::{Committed, QuarterDraft, commit_drafts, ops_for_draft};
 pub use dump::dump_event;
 pub use events::{EventKind, event_stream};
 pub use ops::{Anchor, Op};
+pub use stage::Stage;
 pub use writer::Writer;
 
 /// The events of one town in the order they were applied.
