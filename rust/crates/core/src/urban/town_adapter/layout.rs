@@ -233,11 +233,16 @@ fn streets(graph: &Graph, clock: Clock, town: &HashSet<FaceId>) -> Vec<Street> {
                 }),
         );
     }
-    streets.extend(
-        loose
-            .into_iter()
-            .filter_map(|edge| street(edge, clock, true)),
-    );
+    streets.extend(loose.into_iter().filter_map(|edge| {
+        let mut street = street(edge, clock, true)?;
+        if *edge.class.current() == EdgeClass::Boundary {
+            let id = graph.edge_id(&edge.key)?;
+            if !bordered(graph, id, town, true) {
+                street.role = "peripheral".into();
+            }
+        }
+        Some(street)
+    }));
     streets
 }
 
