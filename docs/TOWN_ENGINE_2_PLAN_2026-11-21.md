@@ -6,10 +6,10 @@
 
 Owner's rules of 21 November 2026:
 
-- **Three checkpoints, and only three.** The work is coded in three batches: A = M0, M1, M2; B = M3, M4, M5; C = M6, M7, M8. A compile check is allowed after each milestone; tests, review and fixes only at the checkpoints. At each checkpoint the supervisor builds, tests, fixes, lands on `main`, and the owner tests before the next batch starts.
+- **Three checkpoints, and only three.** The work is coded in three batches: A = M0, M1, M2; B = M3, M4, M5; C = M6, M7, M8. At the end of each batch, and only then, the supervisor compiles, then tests, fixes and lands on `main`; the owner tests before the next batch starts.
 - **Look and feel, not bits.** The port does not chase byte-identical output. A change that makes the code more logical, more understandable or more maintainable is preferred, provided the towns keep the look and feel of classic (judged on sheets at the checkpoints).
 - **Models.** Sonnet for simple lots; Opus 5.5 high and Codex Sol 6.2 high for the rest; Fable or Astra only for a hard problem that Opus and Sol could not solve.
-- **Agents.** Independent agents, one lot each, time-boxed. Agents do not compile and do not run tests. After each milestone the supervisor compiles (and fixes compile errors only); tests, replays, sheets and reviews happen only at the three checkpoints.
+- **Agents.** Independent agents, one lot each, time-boxed. Agents do not compile and do not run tests. Nothing is compiled between checkpoints.
 - **Where.** The batch is coded in the worktree `D:\workspace\self\mu-wt\engine2`, branch `work/town-engine-2`, with its own `rust/target` (the worktree's default; a second worktree must not share the main checkout's target, see the stale-build note in the project memory). Each lot is committed locally by the supervisor (as dunkean) when its agent reports. At the checkpoint the branch is rebased on `origin/main`, built, tested, fixed and pushed to `main` (fast-forward). Classic stays the default engine, so landing changes no town until the owner switches.
 - **Agents never stop or restart the engine on port 8791, never use the owner's browser, never publish.** Nothing is published (site, desktop release) without the owner's approval.
 - **Code rules** (design 9): the `magna-urbis-town` crate knows nothing of classic; only `journal` writes the graph; modules depend only as listed; no file over about 800 lines; English code and comments that say what the code does and why; Prettier on every touched TypeScript file; `docs/DESKTOP_RELEASE_NOTES.md` updated for every user-visible change, in English with a French translation of user-facing text.
@@ -139,4 +139,4 @@ Owner tests: at checkpoints A (after M2), B (after M5) and C (after M8).
 
 ## 4. What starts first
 
-M0.1, M0.2, M0.3 (Sol, in that order), then M1 and M2 lot by lot in the engine worktree; checkpoint A after M2.
+M0.1, M0.2, M0.3 (Sol, in that order), then M1 and M2 lot by lot in the engine worktree, never compiled before checkpoint A (after M2).
