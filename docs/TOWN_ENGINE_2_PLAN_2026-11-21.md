@@ -4,19 +4,22 @@
 
 ## 1. How the work runs
 
-- **Branch and landing.** Work lands on `main` as direct commits by dunkean, fast-forward, no pull requests. The growth engine stays behind the `layout.engine` option with classic as the default, so landing on `main` changes no town until the owner switches. Nothing is published (site, desktop release) without his approval.
-- **Before every session**: `git fetch origin` and `git rev-list --left-right --count origin/main...HEAD` must print `0 0` on the working branch; other sessions push to `main` during the day.
-- **One lot at a time**, measured. An agent writes its code and stops; it may run `cargo check` on its own change and the unit tests of its own module (`cargo-sync.ps1 test -p magna-urbis-town --lib <module>::`). The supervisor then builds once and tests once (`rust/scripts/cargo-sync.ps1`, shared `rust/target`, cores 3 to 23), replays the suite, and either lands the lot or sends one correction. If it still fails: the cause is reported, the lot is not landed.
-- **Models.** Opus 5.5 high for the algorithmic lots (graph, journal, tissue ports, growth, precincts, tracers, harbour); Codex Sol 6.2 high for the mechanical ones (extraction, plumbing of options, adapters, packs, tests scaffolding, translations). Fable or Astra only for complex reviews (the spike and each milestone gate).
-- **Agents never stop or restart the engine on port 8791, never use the owner's browser, never publish.** Shots run headless on the RTX 5090 (`VK_LOADER_DEVICE_ID_FILTER=0x2b85`), one page server per agent on its own port, stopped by PID.
+Owner's rules of 21 November 2026:
+
+- **Three checkpoints, and only three.** The work is coded in three batches: A = M0, M1, M2; B = M3, M4, M5; C = M6, M7, M8. Between checkpoints there is no supervisor build, test or review round. At each checkpoint the supervisor builds, tests, fixes, lands on `main`, and the owner tests before the next batch starts.
+- **Look and feel, not bits.** The port does not chase byte-identical output. A change that makes the code more logical, more understandable or more maintainable is preferred, provided the towns keep the look and feel of classic (judged on sheets at the checkpoints).
+- **Models.** Sonnet for simple lots; Opus 5.5 high and Codex Sol 6.2 high for the rest; Fable or Astra only for a hard problem that Opus and Sol could not solve.
+- **Agents.** Independent agents, one lot each, time-boxed. An agent may run `cargo check` and the unit tests of the module it writes (`cargo-sync.ps1 test -p magna-urbis-town --lib <module>::`), as `CLAUDE.md` allows; it does not build the engines, replay towns or shoot pages.
+- **Where.** The batch is coded in the worktree `D:\workspace\self\mu-wt\engine2`, branch `work/town-engine-2`, with its own `rust/target` (the worktree's default; a second worktree must not share the main checkout's target, see the stale-build note in the project memory). Each lot is committed locally by the supervisor (as dunkean) when its agent reports. At the checkpoint the branch is rebased on `origin/main`, built, tested, fixed and pushed to `main` (fast-forward). Classic stays the default engine, so landing changes no town until the owner switches.
+- **Agents never stop or restart the engine on port 8791, never use the owner's browser, never publish.** Nothing is published (site, desktop release) without the owner's approval.
 - **Code rules** (design 9): the `magna-urbis-town` crate knows nothing of classic; only `journal` writes the graph; modules depend only as listed; no file over about 800 lines; English code and comments that say what the code does and why; Prettier on every touched TypeScript file; `docs/DESKTOP_RELEASE_NOTES.md` updated for every user-visible change, in English with a French translation of user-facing text.
-- **Measures** (design 13): the replay suite of `web/out/perf-2026-11-14/` (`runcase.py`, `quality.py`, `budget.py`) and `web/out/roads-2026-11-20/roads_metrics.py`, run with the growth engine against classic on the same cases; timings only on a quiet machine, a case run twice when a number matters.
+- **Checkpoint measures** (design 13): the replay suite of `web/out/perf-2026-11-14/` (`runcase.py`, `quality.py`, `budget.py`) and `web/out/roads-2026-11-20/roads_metrics.py` with growth against classic; V2 sheets; timings on a quiet machine.
 
 ## 2. Milestones
 
 ### M0. Extraction and plumbing (3 sessions)
 
-Classic must come out byte-identical: the 26 towns and 7 water towns of the replay suite produce identical `0001.json`, the `urban::` suite passes, the WebAssembly packages build.
+Classic keeps working unchanged in behaviour (checked at checkpoint A: replay suite, `urban::` tests, WebAssembly packages).
 
 | Lot | Content | Model |
 | --- | --- | --- |
@@ -26,17 +29,16 @@ Classic must come out byte-identical: the 26 towns and 7 water towns of the repl
 
 ### M1. The spike (7 sessions)
 
-Goal: prove the three unknowns on one quarter before building growth: the face-to-block offset, the organic look inside a quarter outline, capacity at birth. End: a sheet of the same site, classic and growth, in the V2, native and WebAssembly; reviewed by Fable; approved by the owner before M2.
+Goal: prove the three unknowns on one quarter before building growth: the face-to-block offset, the organic look inside a quarter outline, capacity at birth. End: a harness that lays one quarter at a replay site, through the native engine, WebAssembly and the V2 behind the option; its sheet is part of checkpoint A.
 
 | Lot | Content | Model |
 | --- | --- | --- |
 | 1.1 | `graph`: half-edge structure per level; insert, split, dangling, remove and merge; face walks; versioned attributes; lineage keys; spatial index; invariant property tests (Euler per level, closed walks, no crossing, stable ids under shuffled insertion). | Opus |
 | 1.2 | `journal`: event enum (design 3.2), the single writer validating operation lists, replay to any event, checkpoint and resume, JSON dump per event; the canonical commit order of parallel drafts. | Opus |
-| 1.3 | `tissue/organic` A: port of classic's street field and trace (`quarters.rs`: `Field`, `Field::angle`, `trace`) as a pure function from an outline, the survey view and a spec to edges. Golden test: on a fixed outline, traced streets match classic's within a tolerance. | Opus |
+| 1.3 | `tissue/organic` A: port of classic's street field and trace (`quarters.rs`: `Field`, `Field::angle`, `trace`) as a pure function from an outline, the survey view and a spec to edges. Test: on a fixed outline, the traced streets have classic's look (comparable directions, spacing and curvature; not byte-identical). | Opus |
 | 1.4 | `tissue/organic` B: port of the recursive split (`split_quarter`) into faces; faces to buildable outlines by per-face offset (design 3.1); robustness tests on sharp corners, short edges, dangling edges. If the offset is not robust: per-face ribbon fallback, reported. | Opus |
 | 1.5 | Adapter, ordinary town: chains to streets, faces to blocks, quarters, phases, minimal structure, claim; the tail of design 10 run as listed; `Capacity` implemented in core with the probe cadastre on one quarter with frozen inputs. | Sol, reviewed by Opus |
 | 1.6 | Spike harness: one hand-placed quarter at a replay site, through native engine, WebAssembly and the V2 behind the option; resume from a checkpoint; sheet against classic; timings. | Opus |
-| 1.7 | Gate: Fable review of the spike code and sheet against the design; corrections. | Fable, then Opus |
 
 ### M2. Growth (7 sessions)
 
@@ -50,7 +52,7 @@ Goal: an ordinary unwalled organic town grows from founding to its target. End: 
 | 2.4 | Count and stop: clock from capacities, 90 % rule, one reopening, stop checkpoint and resume; ageing (intramural first), fill schedule; prefix tests and the stop-at-every-event tests. | Opus |
 | 2.5 | Staged occupation: a fixed set of lots per block occupied progressively, tested offline on classic's cuts for European organic, Chinese grid and medina (design 3.3); the allocation reads the fill share. | Opus |
 | 2.6 | Integration: growth on the unwalled organic cases of the suite and two new cases (a 1,500 village, a 20,000 open town); measures and sheet. | Sol, measures by the supervisor |
-| 2.7 | Gate: owner review of the sheet. | — |
+| 2.7 | **Checkpoint A**: build, tests, replay suite, sheets (spike and growth), fixes, landing on `main`; the owner tests. | supervisor |
 
 ### M3. Slope, water and harbour (9 sessions)
 
@@ -61,7 +63,7 @@ Goal: an ordinary unwalled organic town grows from founding to its target. End: 
 | 3.3 | Harbour survey: fronts (port of `shore_runs`, gentleness and navigability tests, `harbour_shelter.rs`) within the culture's reach; harbour as founding focus; harbour road; front discount; distant harbour as part of the town (graph, districts, claim). | Opus |
 | 3.4 | Regional placement: a front claimed by a town receives no other settlement (`rust/crates/core/src/settlements/placement.rs`); tests. | Sol |
 | 3.5 | `OpenHarbour`, `ExtendHarbour`: quay edge, apron, landing nodes, waterfront tissue front, √P quay length, works thresholds from `harbours.json`; port districts by lineage; export of `structure.quays` and districts for harbour furniture and roles. | Opus |
-| 3.6 | Integration and gate: the 7 water towns, `q-eo-2500-harbor`, `q-hanseatic-10000-harbor`, an inland port 400 m from its harbour, a detached harbour on a cliff coast; outgrowth, quay and wet measures; sheet; owner review. | Sol, measures by the supervisor |
+| 3.6 | Cases: the 7 water towns, `q-eo-2500-harbor`, `q-hanseatic-10000-harbor`, an inland port 400 m from its harbour, a detached harbour on a cliff coast, prepared for checkpoint B. | Sonnet |
 
 ### M4. Walls, castles, nested circuits (9 sessions)
 
@@ -74,7 +76,7 @@ Goal: an ordinary unwalled organic town grows from founding to its target. End: 
 | 4.5 | Grown regime (precinct around aged quarters, youngest ring outside), lobes and concentric steps, fossil rule by `RetypeChain`, nested circuits, citadel. | Opus |
 | 4.6 | Hilltop castle: strong points in the survey, castle focus, castle circuit and bailey, castle road, town at the foot; join at two nodes or apart. | Opus |
 | 4.7 | Measures: `quality.py` additions (inside share, precinct void, occupied frontage along the wall street, wet curtain outside gate spans, landing streets on a curtain without a gate, castle rate); new cases (walled village of 1,000, hilltop castle town, two-circuit city). | Sol |
-| 4.8 | Integration and gate: all walled cases of the suite and the new ones; Fable review; sheet; owner review. | Sol, Fable |
+| 4.8 | Cases: all walled cases of the suite and the new ones, prepared for checkpoint B. | Sonnet |
 
 ### M5. Regional roads (5 sessions)
 
@@ -83,7 +85,7 @@ Goal: an ordinary unwalled organic town grows from founding to its target. End: 
 | 5.1 | Import with source segment ids and station intervals (`rust/bridge/urbanRoads.ts`, the regional road model). | Sol |
 | 5.2 | Dated fates by phase spec: kept, absorbed, demoted or ended by `RetypeChain`; entry nodes; the per-road result exported. | Opus |
 | 5.3 | Regional network update from the result (endpoints, connectivity, crossings, lengths); display and road editor (`rust/bridge/urbanNetwork.ts`, `web/src/render/cityBridges.ts`, `web/src/v2/urbanRoadEditing.ts`). | Opus |
-| 5.4 | Gate: large towns with roads through the centre; routability across the region; sheet. | Sol, supervisor |
+| 5.4 | **Checkpoint B**: build, tests, replay suite with water, harbour, walled and road cases, sheets, fixes, landing on `main`; the owner tests. | supervisor |
 
 ### M6. Tissues and planned towns (10 sessions)
 
@@ -97,7 +99,7 @@ In the owner's order: the Chinese grid first.
 | 6.4 | Other grids (Roman, colonial, bastide), wards, radial. | Opus |
 | 6.5 | `tissue/string` (street villages) and hamlets. | Opus |
 | 6.6 | `tissue/camp`: port of the camp tessellation and kinds; flat figure and daughter lobes; defensive site (scarp and cross-rampart, common share). | Opus |
-| 6.7 | Integration per tissue on the suite and new cases (planned Chinese town, colonial grid with capacity above population, camp on a flat site, camp on a spur); gate: Fable review, sheet, owner review. | Sol, Fable |
+| 6.7 | Cases per tissue (planned Chinese town, colonial grid with capacity above population, camp on a flat site, camp on a spur), prepared for checkpoint C. | Sonnet |
 
 ### M7. Product (8 sessions)
 
@@ -106,12 +108,12 @@ In the owner's order: the Chinese grid first.
 | 7.1 | Neighbours, pinned sites, imposed radius at scale; several growth towns on one map. | Opus |
 | 7.2 | V2 quarter edits on growth towns as events replayed from the point they touch (or kept on classic if the owner prefers). | Opus |
 | 7.3 | Performance pass: native and WebAssembly (single thread and threaded), journal and graph memory and transfer; the targets of design 12. | Opus |
-| 7.4 | Full review sheets: every suite case and the new ones, classic against growth, 2D clean and a few 3D. | Sol |
-| 7.5 | Decision with the owner: growth as default, per culture or everywhere; classic kept for the kinds that did not move. | — |
+| 7.4 | Sheet scripts for every suite case and the new ones, classic against growth, 2D clean and a few 3D, ready for checkpoint C. | Sonnet |
+| 7.5 | After checkpoint C, decision with the owner: growth as default, per culture or everywhere; classic kept for the kinds that did not move. | — |
 
 ### M8. Retained cuts (4 sessions)
 
-`generate_parcels` accepts the birth cuts after block preparation, with explicit invalidation (seed, settings, geometry, frontage, cut-relevant programme inputs); one cut instead of two; measured.
+`generate_parcels` accepts the birth cuts after block preparation, with explicit invalidation (seed, settings, geometry, frontage, cut-relevant programme inputs); one cut instead of two. Then **checkpoint C**: build, tests, full replay suite, all sheets, fixes, landing on `main`; the owner tests.
 
 ### Side lot W. Short warnings (1 to 2 sessions, any time)
 
@@ -133,8 +135,8 @@ The owner approved one-line warnings (21 November). Today about 40 messages, man
 | W Short warnings | 1 to 2 |
 | **Total** | **about 63** (range 55 to 75) |
 
-Owner reviews: end of M1 (go or no-go on the approach), M2, M3, M4, M6, M7.
+Owner tests: at checkpoints A (after M2), B (after M5) and C (after M8).
 
 ## 4. What starts first
 
-M0.1 and M0.2 (Sol, mechanical, byte-identical gate), then M0.3; in parallel and independent, side lot W if the owner wants it now. M1 starts when M0 has landed.
+M0.1, M0.2, M0.3 (Sol, in that order), then M1 and M2 lot by lot in the engine worktree; checkpoint A after M2.
