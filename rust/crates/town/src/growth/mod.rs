@@ -1,24 +1,26 @@
-//! Ring growth, event ordering, capacity counting, stopping and resuming.
+//! Growth by quarters on a street skeleton, event ordering, capacity counting, stopping and
+//! resuming.
 //!
-//! A town grows ring by ring over the survey's cost field, in fixed steps of effective metres.
-//! One ring is one or more clock steps, each in this order:
-//! 1. its cost field is frozen and `ExtendArmature` draws its boundary (the parts of its outer
-//!    cost level outside the town) and prolongs the main axes across it, splitting it into
-//!    sectors;
-//! 2. each sector is opened as a quarter keyed `(ring, station)`: drafts are laid in parallel
-//!    from the frozen outlines and committed in station order;
+//! At founding the street skeleton is drawn over all the land the survey reaches (`skeleton`):
+//! classic's macroplan of main axes and quarter streets, planned but not built. The town then
+//! grows by steps, each in this order:
+//! 1. the cost field is frozen (anisotropic: cheap along roads and built streets, noisy across
+//!    open ground) and a far bank newly reached by a crossing gets its skeleton;
+//! 2. the frontier cells (unopened cells of the skeleton touching the town) within the step's
+//!    span of the cheapest are opened as quarters keyed `(step, station)`: drafts are laid in
+//!    parallel and committed cheapest first; each opening builds the planned streets along it;
 //! 3. each quarter is counted at birth through [`Capacity`], with its inputs frozen then, and
 //!    the clock is the sum of the counts;
-//! 4. the quarters of earlier rings age by one fill step, intramural first;
+//! 4. the quarters of earlier steps age by one fill step, intramural first;
 //! 5. the dated events whose threshold the clock crossed, in this order: promotions, road fates,
 //!    the harbour (opened, then extended), the walls (a full precinct raised, then the next
-//!    surveyed), and once per ring the water crossing to a far bank;
+//!    surveyed), and once per step the water crossing to a far bank;
 //! 6. the stop test: growth stops as soon as the clock reaches the target.
 //!
-//! Steps 3, 5 and 6 follow every quarter and every ageing step, so a ring is cut at the first
-//! station that crosses a threshold and dated events see the town as it stood; precinct surveys
-//! and water crossings are decided at a ring's end. While a precinct is open only its sectors
-//! open, in the intramural regime. When no land is left, quarters go on ageing without new rings.
+//! Steps 3, 5 and 6 follow every quarter and every ageing step, so a step is cut at the first
+//! quarter that crosses a threshold and dated events see the town as it stood; precinct surveys
+//! and water crossings are decided at a step's end. While a precinct is open only its cells
+//! open, in the intramural regime. When no land is left, quarters go on ageing without new steps.
 //!
 //! **Stop and resume.** The stop is a checkpoint: the journal and a cursor. Resuming replays the
 //! journal through the same loop and goes on from where it stood, so generating to P1 and
@@ -26,6 +28,7 @@
 //! only the stop test. The final allocation is the caller's: [`verdict`] applies the 90 % rule
 //! and [`reopen`] the one reopening.
 
+mod cells;
 mod commit;
 mod contour;
 mod count;
@@ -33,8 +36,8 @@ mod driver;
 mod events;
 mod par;
 mod precincts;
-mod rings;
-mod sectors;
+mod skeleton;
+mod steps;
 #[cfg(test)]
 mod tests;
 

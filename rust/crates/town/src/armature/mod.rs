@@ -1,12 +1,13 @@
-//! Main street chains: regional roads, the tissue's main axes and each ring's boundary.
+//! Main street chains: regional roads and the tissue's main axes.
 //!
 //! Regional roads enter whole at founding, clipped to the survey reach: they exist before the
-//! town and already cross every ring. The tissue's main axes start at the founding focus as
-//! classic's organic spines do (`cultural_spines` in core's `urban/macroplan.rs`: diameters
-//! through the nucleus, the first along the town's orientation, the others evenly turned from
-//! it (three, so that the town radiates six main streets as classic's do), an arm that would
-//! double a regional road left out and its opposite arm continuing the road) and are prolonged ring by ring, from their tip on the town's limit to the new
-//! boundary. Harbour and castle roads join the founding chains in later lots.
+//! town. The tissue's main axes start at the founding focus as classic's organic spines do
+//! (`cultural_spines` in core's `urban/macroplan.rs`: diameters through the nucleus, the first
+//! along the town's orientation, the others evenly turned from it (three, so that the town
+//! radiates six main streets as classic's do), an arm that would double a regional road left
+//! out and its opposite arm continuing the road). The growth engine traces them through the
+//! street field with its skeleton (`growth/skeleton.rs`). Harbour and castle roads join the
+//! founding chains.
 
 mod boundary;
 mod chain;
@@ -36,8 +37,6 @@ const ROAD_JOIN: f64 = 1.0;
 const ALONG_ROAD: f64 = 0.85;
 /// Distance along a road at which its direction from the focus is read (metres).
 const ROAD_SIGHT: f64 = 60.0;
-/// Turns tried, in radians, when an axis cannot run straight on (about 15 and 30 degrees).
-const DETOURS: [f64; 5] = [0.0, 0.26, -0.26, 0.52, -0.52];
 
 /// One main axis from the founding focus.
 #[derive(Clone, Debug, PartialEq)]
@@ -254,88 +253,6 @@ pub fn plan_arms(
     arms
 }
 
-/// Prolong each arm from its tip on the town's limit across the ring, to the first arc of the
-/// ring it meets (`arcs` holds their chain keys). The axis runs straight on, or turned by up to
-/// about 30 degrees where the straight line meets closed land, a grade steeper than `max_grade`
-/// or a street; it crosses regional roads, other axes, and precinct and wall lines. An arm that
-/// cannot be prolonged keeps its tip; it is tried again at the next ring.
-#[allow(clippy::too_many_arguments)]
-pub fn extend(
-    stage: &mut Stage,
-    event: &Key,
-    next_rank: &mut u32,
-    arms: &[Arm],
-    focus: NodeId,
-    arcs: &HashSet<Key>,
-    survey: &Survey,
-    terrain: &dyn TerrainView,
-    max_grade: f64,
-    reach: f64,
-) {
-    let arm_chains: HashSet<&Key> = arms.iter().map(|a| &a.chain).collect();
-    for arm in arms {
-        let graph = stage.graph();
-        let tip = tip(graph, &arm.chain, focus);
-        let from = graph.node(tip).position;
-        let tip_key = graph.node(tip).key.clone();
-        for turn in DETOURS {
-            let graph = stage.graph();
-            let bearing = arm.bearing + turn;
-            let far = Point {
-                x: from.x + bearing.cos() * reach,
-                y: from.y + bearing.sin() * reach,
-            };
-            let Some(raw) = crossings(graph, &[from, far], [true, false], false) else {
-                continue;
-            };
-            // An axis runs on across regional roads (a road's bridge piece is part of its
-            // road), other axes, and precinct and wall lines, where it opens a gate.
-            let crosses = |hit: &Hit| {
-                let edge = graph.edge(hit.edge);
-                let class = *edge.class.current();
-                matches!(
-                    class,
-                    EdgeClass::RegionalRoad
-                        | EdgeClass::GridAxis
-                        | EdgeClass::Precinct
-                        | EdgeClass::Wall
-                ) || (class == EdgeClass::Bridge && edge.road_source.is_some())
-                    || edge.chain.as_ref().is_some_and(|c| arm_chains.contains(c))
-            };
-            let Some(end) = raw.iter().find(|&h| !crosses(h)) else {
-                continue;
-            };
-            if !graph
-                .edge(end.edge)
-                .chain
-                .as_ref()
-                .is_some_and(|c| arcs.contains(c))
-            {
-                continue;
-            }
-            let path = [from, end.point];
-            if !passable(survey, terrain, &path, max_grade) {
-                continue;
-            }
-            let Some(hits) = crossings(graph, &path, [true, true], false) else {
-                continue;
-            };
-            let draw = Draw {
-                event,
-                next_rank: &mut *next_rank,
-                chain: Some(arm.chain.clone()),
-                class: EdgeClass::Street,
-                rank: arm.rank,
-                width: arm.width,
-            };
-            let (ops, _) = chain_ops(draw, &path, Tip::Node(tip_key.clone()), end.tip(), &hits);
-            if stage.try_push(ops).is_ok() {
-                break;
-            }
-        }
-    }
-}
-
 /// The armature's lines with their weights in the cost field: regional roads, axes, and the
 /// other streets of the town. Boundaries and the like carry no traffic.
 pub fn cost_lines(graph: &Graph, spec: &GrowthSpec, arms: &[Arm]) -> Vec<CostLine> {
@@ -382,56 +299,6 @@ pub fn field_lines(graph: &Graph, arms: &[Arm]) -> Vec<Vec<Point>> {
         })
         .map(|e| graph.edge(e).polyline.clone())
         .collect()
-}
-
-/// The far end of an arm's chain: the chain end farthest from the focus, or the focus itself.
-fn tip(graph: &Graph, chain: &Key, focus: NodeId) -> NodeId {
-    let at = graph.node(focus).position;
-    let mut degree: std::collections::BTreeMap<NodeId, u32> = Default::default();
-    for step in graph.faces_along_chain(chain) {
-        for n in graph.edge(step.edge).nodes {
-            *degree.entry(n).or_default() += 1;
-        }
-    }
-    degree
-        .into_iter()
-        .filter(|&(_, d)| d == 1)
-        .map(|(n, _)| n)
-        .max_by(|&a, &b| {
-            let (da, db) = (
-                graph.node(a).position.distance(at),
-                graph.node(b).position.distance(at),
-            );
-            da.total_cmp(&db).then(a.cmp(&b))
-        })
-        .unwrap_or(focus)
-}
-
-/// Whether a straight axis keeps to open land and to `max_grade`, sampled every half cell; the
-/// last cell before its end is not tested, since the boundary runs half a cell beyond open land.
-fn passable(survey: &Survey, terrain: &dyn TerrainView, path: &[Point; 2], max_grade: f64) -> bool {
-    let [a, b] = *path;
-    let length = a.distance(b);
-    let spacing = survey.cell_size() * 0.5;
-    let steps = (length / spacing).ceil().max(1.0) as usize;
-    let at = |t: f64| Point {
-        x: a.x + (b.x - a.x) * t,
-        y: a.y + (b.y - a.y) * t,
-    };
-    let mut previous = terrain.height_at(a);
-    for i in 1..=steps {
-        let t = i as f64 / steps as f64;
-        let p = at(t);
-        if length * (1.0 - t) > survey.cell_size() && survey.closed_at(p) {
-            return false;
-        }
-        let height = terrain.height_at(p);
-        if (height - previous).abs() > max_grade * length / steps as f64 {
-            return false;
-        }
-        previous = height;
-    }
-    true
 }
 
 /// Where an inserted road end sits: on a node or an edge within `ROAD_JOIN`, else free.

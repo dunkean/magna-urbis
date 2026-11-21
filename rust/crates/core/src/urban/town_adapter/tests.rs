@@ -147,9 +147,8 @@ fn cross() -> Layout {
 fn cross_exports_two_blocks_with_classic_parcel_frontage() {
     let layout = cross();
     assert_eq!(layout.blocks.len(), 2);
-    // The four arms of the cross, and the four boundary edges that face open land: the town's peripheral streets.
-    assert_eq!(layout.streets.iter().filter(|s| s.role != "peripheral").count(), 4);
-    assert_eq!(layout.streets.iter().filter(|s| s.role == "peripheral").count(), 4);
+    // The four arms of the cross; the boundary edges that face open land are no streets.
+    assert_eq!(layout.streets.len(), 4);
     assert_eq!(layout.quarters.len(), 1);
     assert!(layout.quarters[0].key.is_some());
     assert!(
@@ -162,7 +161,7 @@ fn cross_exports_two_blocks_with_classic_parcel_frontage() {
         layout
             .streets
             .iter()
-            .all(|s| s.key.is_some() && (s.role == "peripheral" || s.widths == [8.0, 8.0]))
+            .all(|s| s.key.is_some() && s.widths == [8.0, 8.0])
     );
 
     let cfg = ParcelConfig::default();

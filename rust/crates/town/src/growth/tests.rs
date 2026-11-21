@@ -175,9 +175,12 @@ fn specs() -> TownSpecs {
             },
             works: Default::default(),
         },
+        // Quarters of a small town's size, so that these towns of a few hundred households
+        // open enough of them to age, promote, wall, cross and reach their harbour.
         growth: GrowthSpec {
             reach: 600.0,
             household_size: HOUSEHOLD,
+            quarter_area: 4000.0,
             ..GrowthSpec::default()
         },
         precinct: Default::default(),
@@ -534,7 +537,9 @@ fn a_river_town_crosses_to_the_far_bank() {
         river: Some([1170.0, 1194.0]),
         ..Terrain::default()
     };
-    let plan = grow(&terrain, households(1500.0), None);
+    // Large enough that the town still grows once the crossing is built: growth runs out along
+    // the roads first, and reaches the bank once the near land costs more than the crossing.
+    let plan = grow(&terrain, households(2500.0), None);
     assert!(
         events(&plan)
             .iter()

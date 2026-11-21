@@ -43,7 +43,7 @@ use crate::export::RoadResult;
 use crate::graph::{
     Clock, EdgeClass, EdgeId, FaceId, FaceKind, Graph, Key, Level, NodeId, NodeKind,
 };
-use crate::journal::{EventKind, Op};
+use crate::journal::Op;
 use crate::spec::{PhaseSpec, RoadFate, TownForm};
 
 /// Update source stretches and the entry nodes at the current graph's clock.
@@ -299,45 +299,31 @@ fn entry_nodes(
     entries
 }
 
-/// The oldest boundary's left faces and everything reachable from them across internal edges.
+/// The town's core: its town faces that joined the town first (by the date their kind became a
+/// town kind, else their birth), the founding quarter.
 fn oldest_ring(graph: &Graph) -> HashSet<FaceId> {
-    let mut rings: BTreeMap<u32, HashSet<EdgeId>> = BTreeMap::new();
-    for id in graph.live_edges() {
-        let edge = graph.edge(id);
-        let Some(original) = graph.edge_id(&edge.stem).map(|e| graph.edge(e)) else {
-            continue;
-        };
-        if original.class.at(original.life.born) != Some(&EdgeClass::Boundary) {
-            continue;
-        }
-        let Some(&ring) = edge.stem.parts().get(3) else {
-            continue;
-        };
-        if edge
-            .stem
-            .parts()
-            .starts_with((EventKind::ExtendArmature { ring }).key().parts())
-        {
-            rings.entry(ring).or_default().insert(id);
-        }
-    }
-    let Some((_, boundary)) = rings.first_key_value() else {
+    let outside = graph.outside(Level::Ground);
+    let town_since = |face: FaceId| {
+        let f = graph.face(face);
+        f.kind
+            .changes()
+            .iter()
+            .find(|(_, kind)| matches!(kind, FaceKind::Block | FaceKind::Plaza))
+            .map(|(at, _)| (*at).max(f.life.born))
+    };
+    let dated: Vec<(FaceId, Clock)> = graph
+        .live_faces()
+        .filter(|&f| f != outside && graph.face(f).level == Level::Ground)
+        .filter_map(|f| Some((f, town_since(f)?)))
+        .collect();
+    let Some(first) = dated.iter().map(|&(_, at)| at).min() else {
         return HashSet::new();
     };
-    let mut cache = HashMap::new();
-    let mut pending: Vec<_> = boundary.iter().map(|&edge| graph.left_face(edge)).collect();
-    let mut inside = HashSet::new();
-    while let Some(face) = pending.pop() {
-        if !town_face(graph, &mut cache, face) || !inside.insert(face) {
-            continue;
-        }
-        for half in graph.walks(face).into_iter().flatten() {
-            if !boundary.contains(&half.edge()) {
-                pending.push(graph.half(half.twin()).face);
-            }
-        }
-    }
-    inside
+    dated
+        .into_iter()
+        .filter(|&(_, at)| at == first)
+        .map(|(f, _)| f)
+        .collect()
 }
 
 fn merge(mut intervals: Vec<(f64, f64)>) -> Vec<(f64, f64)> {

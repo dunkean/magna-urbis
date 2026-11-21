@@ -84,6 +84,8 @@ pub struct Survey {
     fronts: Vec<HarbourFront>,
     strong_points: Vec<StrongPoint>,
     spec: SurveySpec,
+    /// Factor per cell on the cost of open ground in recomputed fields, when set.
+    noise: Option<Arc<Vec<f64>>>,
 }
 
 impl Survey {
@@ -120,12 +122,13 @@ impl Survey {
         )?);
         let fronts = shore::fronts(&grid, terrain, spec);
         let strong_points = summits::strong_points(&grid, terrain, spec);
-        let costs = CostField::compute(grid, spec, &[], None);
+        let costs = CostField::compute(grid, spec, &[], None, None);
         Ok(Self {
             costs,
             fronts,
             strong_points,
             spec: spec.clone(),
+            noise: None,
         })
     }
 
@@ -184,9 +187,17 @@ impl Survey {
         &self.costs
     }
 
+    /// Scale the cost of open ground in every recomputed field by `factor` at each cell's
+    /// position (a seeded noise, so that growth does not go alike in every direction).
+    pub fn set_cost_noise(&mut self, factor: impl Fn(Point) -> f64) {
+        let factors = self.costs.grid.cells.iter().map(|c| factor(c.position)).collect();
+        self.noise = Some(Arc::new(factors));
+    }
+
     /// Build a new cost snapshot with the supplied armature paths.
     pub fn recompute_costs(&self, paths: &[CostPath<'_>]) -> CostField {
-        CostField::compute(Arc::clone(&self.costs.grid), &self.spec, paths, None)
+        let noise = self.noise.as_deref().map(Vec::as_slice);
+        CostField::compute(Arc::clone(&self.costs.grid), &self.spec, paths, None, noise)
     }
 
     /// Build a new cost snapshot with the supplied armature paths, every reached cell then
@@ -196,7 +207,8 @@ impl Survey {
         paths: &[CostPath<'_>],
         discount: &dyn Fn(Point) -> f64,
     ) -> CostField {
-        CostField::compute(Arc::clone(&self.costs.grid), &self.spec, paths, Some(discount))
+        let noise = self.noise.as_deref().map(Vec::as_slice);
+        CostField::compute(Arc::clone(&self.costs.grid), &self.spec, paths, Some(discount), noise)
     }
 }
 

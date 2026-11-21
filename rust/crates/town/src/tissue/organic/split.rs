@@ -518,9 +518,16 @@ impl<'f, 'a> Splitter<'f, 'a> {
             let f = frame(&pc.shape);
             // A block target drawn log-uniformly in the zone's range, a little
             // smaller near the centre.
+            let from_centre = f.c.distance(field.centre);
+            let widening = if params.target_growth > 0.0 {
+                1.0 + from_centre / params.target_growth
+            } else {
+                1.0
+            };
             let target = bs[0].max(1.0)
                 * (bs[1].max(bs[0].max(1.0)) / bs[0].max(1.0)).powf(rng.float())
-                * (0.85 + 0.15 * smooth(f.c.distance(field.centre), 50.0, 320.0));
+                * (0.85 + 0.15 * smooth(from_centre, 50.0, 320.0))
+                * widening;
             let small = a0 < target && f.hu / f.hv.max(1.0) < params.max_aspect;
             if pc.kind != PieceKind::Block || small || a0 < 2.0 * params.min_block {
                 out.push(pc);

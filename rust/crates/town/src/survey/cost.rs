@@ -34,9 +34,10 @@ impl CostField {
         spec: &SurveySpec,
         paths: &[CostPath<'_>],
         discount: Option<&dyn Fn(Point) -> f64>,
+        noise: Option<&[f64]>,
     ) -> Self {
         let cheap = cheap_edges(&grid, spec, paths);
-        let mut costs = propagate(&grid, spec, Metric::Cost, &cheap);
+        let mut costs = propagate(&grid, spec, Metric::Cost, &cheap, noise);
         if let Some(discount) = discount {
             for (cost, cell) in costs.iter_mut().zip(&grid.cells) {
                 if cost.is_finite() {
@@ -79,11 +80,11 @@ enum Metric {
 }
 
 pub(super) fn land_distances(grid: &Grid, spec: &SurveySpec) -> Vec<f64> {
-    propagate(grid, spec, Metric::Distance, &CheapEdges::new())
+    propagate(grid, spec, Metric::Distance, &CheapEdges::new(), None)
 }
 
 pub(super) fn access_grades(grid: &Grid, spec: &SurveySpec) -> Vec<f64> {
-    propagate(grid, spec, Metric::AccessGrade, &CheapEdges::new())
+    propagate(grid, spec, Metric::AccessGrade, &CheapEdges::new(), None)
 }
 
 #[derive(Clone, Copy)]
@@ -115,7 +116,15 @@ impl PartialEq for Candidate {
 
 impl Eq for Candidate {}
 
-fn propagate(grid: &Grid, spec: &SurveySpec, metric: Metric, cheap: &CheapEdges) -> Vec<f64> {
+/// Costs from the centre. `noise`, a factor per cell, scales the cost of open ground (not of the
+/// cheap edges along the armature).
+fn propagate(
+    grid: &Grid,
+    spec: &SurveySpec,
+    metric: Metric,
+    cheap: &CheapEdges,
+    noise: Option<&[f64]>,
+) -> Vec<f64> {
     let mut costs = vec![f64::INFINITY; grid.cells.len()];
     let Some(center) = grid.open_at(grid.center) else {
         return costs;
@@ -138,7 +147,10 @@ fn propagate(grid: &Grid, spec: &SurveySpec, metric: Metric, cheap: &CheapEdges)
             let total = match metric {
                 Metric::Cost => {
                     let slope = grade.max(a.slope).max(b.slope);
-                    cost + length * (1.0 + (slope / spec.terrace_limit).powf(spec.slope_power))
+                    let factor = noise.map_or(1.0, |n| 0.5 * (n[index] + n[next]));
+                    cost + length
+                        * factor
+                        * (1.0 + (slope / spec.terrace_limit).powf(spec.slope_power))
                 }
                 Metric::Distance => cost + length,
                 Metric::AccessGrade if grade <= spec.lane_grade => cost.max(grade),

@@ -6,7 +6,7 @@
 //! reaches is applied from the record instead of being recomputed (no street is laid again),
 //! after checking that it falls at the same place and date. Counts, phases and ages are rebuilt
 //! along the way exactly as the first run made them. Once the record is used up the loop goes on
-//! computing, so resuming to a larger target continues the same ring from the same station.
+//! computing, so resuming to a larger target continues the same step from the same station.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -25,6 +25,7 @@ use crate::journal::{Checkpoint, Cursor, Event, EventKind, Op, Writer};
 use crate::spec::{FoundingFocusKind, GrowthSpec, TissueSpec};
 use crate::survey::{CostField, CostPath, Survey};
 use crate::tissue::organic::OrganicParams;
+use crate::tissue::organic::noise::Noise;
 use crate::walls::{self, Castle, OpenSectors, Precinct};
 use crate::water;
 
@@ -64,12 +65,14 @@ pub(super) struct Driver<'a> {
     pub warnings: Vec<String>,
     /// The regional roads as plain lines, for the street field and the castle road.
     pub road_lines: Vec<Vec<Point>>,
-    /// The cost field frozen at the start of the current ring (or at founding).
+    /// The cost field frozen at the start of the current step (or at founding).
     pub frozen: Option<CostField>,
-    /// Quarters opened in the current ring.
-    pub opened_in_ring: usize,
-    /// Rings in a row that opened nothing while a precinct was open.
-    pub idle_rings: u32,
+    /// Quarters opened in the current step.
+    pub opened_in_step: usize,
+    /// Steps in a row that opened nothing while a precinct was open.
+    pub idle_steps: u32,
+    /// The highest cost of a quarter opened so far (effective metres): the town's extent.
+    pub extent: f64,
     /// The harbour front the town uses, and its harbour once opened.
     pub front: Option<FrontChoice>,
     pub harbour: Option<HarbourState>,
@@ -92,20 +95,20 @@ impl<'a> Driver<'a> {
         from: Option<&Checkpoint>,
     ) -> Result<Self, String> {
         let spec = &request.specs.growth;
-        if !(spec.ring_step > 0.0 && spec.household_size > 0.0 && spec.reach > 0.0) {
+        if !(spec.step_span > 0.0 && spec.household_size > 0.0 && spec.reach > 0.0) {
             return Err("Invalid growth specification".into());
         }
         let site = &request.site;
         let first = Survey::from_request(request, spec.reach)?;
         let (charter, plan) = charter::found(request, &first)?;
-        // A pinned site or an imposed radius keeps the requested centre; otherwise the rings
-        // are measured from the founding focus.
+        // A pinned site or an imposed radius keeps the requested centre; otherwise costs are
+        // measured from the founding focus.
         let at = if site.pinned || site.radius.is_some() {
             site.center
         } else {
             charter.focus.position
         };
-        let survey = if at.distance(first.center()) < first.cell_size() * 0.5 {
+        let mut survey = if at.distance(first.center()) < first.cell_size() * 0.5 {
             first
         } else {
             Survey::new(
@@ -117,6 +120,15 @@ impl<'a> Driver<'a> {
                 &request.specs.survey,
             )?
         };
+        // Open ground costs more or less by a seeded noise, so that the town does not grow
+        // alike in every direction.
+        if spec.cost_noise > 0.0 {
+            let noise = Noise::new(Rng::new(request.seed).fork("cost-noise"));
+            let (amplitude, wavelength) = (spec.cost_noise, spec.cost_noise_wavelength.max(1.0));
+            survey.set_cost_noise(|p| {
+                (1.0 + amplitude * noise.fbm(p.x / wavelength, p.y / wavelength, 2)).max(0.2)
+            });
+        }
         // The harbour is decided once, on the survey the town grows on: on the front the
         // regional placement reserved, else the best the town can reach.
         let specs = request.specs;
@@ -163,8 +175,9 @@ impl<'a> Driver<'a> {
             warnings: Vec::new(),
             road_lines,
             frozen: None,
-            opened_in_ring: 0,
-            idle_rings: 0,
+            opened_in_step: 0,
+            idle_steps: 0,
+            extent: 0.0,
             front,
             harbour: None,
             castle: None,
@@ -229,7 +242,8 @@ impl<'a> Driver<'a> {
 
     /// `Found`: regional roads, the castle and its road when the focus is a strong point, the
     /// founding focus, and the harbour road to a distant front; then the main axes are planned
-    /// from the focus, and an enclosed charter surveys its founding precinct. The founding stage
+    /// from the focus, the street skeleton is drawn, and an enclosed charter surveys its founding
+    /// precinct. The founding stage
     /// is computed on a resumed run too, so that the castle and the harbour road are known; the
     /// recorded operations are the ones applied.
     pub(super) fn found(&mut self) -> Result<(), String> {
@@ -300,6 +314,7 @@ impl<'a> Driver<'a> {
         );
         self.focus = Some(focus);
         self.frozen = Some(self.cost_field());
+        self.found_skeleton()?;
         self.found_precinct()
     }
 

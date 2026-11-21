@@ -39,9 +39,9 @@ pub struct TownSpecs {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct GrowthSpec {
-    /// Cost step between two ring levels, in effective metres. The default 100 m opens about
-    /// two blocks and their streets per ring on flat land.
-    pub ring_step: f64,
+    /// Cost span of one growth step, in effective metres: a step opens the frontier quarters
+    /// whose cost lies within this of the cheapest (default 60, about one quarter on flat land).
+    pub step_span: f64,
     /// Survey reach around the founding focus in metres. The default 1500 m holds a town of
     /// about 50,000 on flat land; land beyond it never opens.
     pub reach: f64,
@@ -51,36 +51,47 @@ pub struct GrowthSpec {
     /// Radius in metres of the town's nucleus given to the street field; roads within 1.5
     /// radii orient it. The default 200 m is classic's radius of a 3,000 town.
     pub nucleus_radius: f64,
-    /// Effective metres per metre along a regional road (default 0.75: rings reach a third
-    /// farther along a road than across open ground).
+    /// Effective metres per metre along a regional road (default 0.3: the town reaches about
+    /// three times farther along a road than across open ground, ribbons first, infill after).
     pub regional_road_cost: f64,
-    /// Effective metres per metre along a main axis (default 0.85).
+    /// Effective metres per metre along a built main street (default 0.5).
     pub axis_cost: f64,
-    /// Effective metres per metre along any other street (default 0.9).
+    /// Effective metres per metre along any other built street or lane (default 0.8).
     pub street_cost: f64,
+    /// Relative amplitude of the seeded noise on the cost of open ground (default 0.25), two
+    /// octaves, so that the town does not grow alike in every direction.
+    pub cost_noise: f64,
+    /// Wavelength in metres of the first octave of that noise (default 350).
+    pub cost_noise_wavelength: f64,
     /// Drawn width in metres of a regional road inside the town (default 8, classic's rank-0 street).
     pub regional_road_width: f64,
-    /// A ring's new boundary is kept only where some point of it lies farther than this from
-    /// every existing edge (metres); a shallower strip waits for the next ring. The default
-    /// 15 m is a little less than classic's smallest block width (17 m).
-    pub min_quarter_depth: f64,
-    /// Rings opened at most, a guard for sites whose land never runs out (default 200).
-    pub max_rings: u32,
+    /// Area in square metres of a quarter of the street skeleton at the founding focus (default
+    /// 15,000: classic's village quarters are 1 to 1.5 ha). Quarters are drawn from 0.9 to 1.9
+    /// times it, grown with the distance from the focus by `quarter_growth`.
+    pub quarter_area: f64,
+    /// Distance in metres from the focus over which a quarter grows by its own area at the
+    /// focus (default 250: 4 to 6 ha at 600 m, classic's town quarters; 10 ha at the reach).
+    pub quarter_growth: f64,
+    /// Growth steps at most, a guard for sites whose land never runs out (default 400).
+    pub max_steps: u32,
 }
 
 impl Default for GrowthSpec {
     fn default() -> Self {
         Self {
-            ring_step: 100.0,
+            step_span: 60.0,
             reach: 1500.0,
             household_size: 3.7,
             nucleus_radius: 200.0,
-            regional_road_cost: 0.75,
-            axis_cost: 0.85,
-            street_cost: 0.9,
+            regional_road_cost: 0.3,
+            axis_cost: 0.5,
+            street_cost: 0.8,
+            cost_noise: 0.25,
+            cost_noise_wavelength: 350.0,
             regional_road_width: 8.0,
-            min_quarter_depth: 15.0,
-            max_rings: 200,
+            quarter_area: 15_000.0,
+            quarter_growth: 250.0,
+            max_steps: 400,
         }
     }
 }

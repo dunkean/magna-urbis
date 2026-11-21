@@ -147,7 +147,7 @@ impl Driver<'_> {
         precinct.raised = Some(self.clock);
         precinct.kind = Some(kind);
         self.open_sectors = None;
-        self.idle_rings = 0;
+        self.idle_steps = 0;
         self.inside_at_raise = self.households_inside().0;
         self.citadel(i)
     }
@@ -350,7 +350,7 @@ impl Driver<'_> {
             self.inside_at_raise = self.households_inside().0;
         } else {
             self.open_sectors = Some(open_sectors);
-            self.idle_rings = 0;
+            self.idle_steps = 0;
         }
         self.precincts.push(precinct);
         Ok(true)

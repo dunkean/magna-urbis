@@ -35,7 +35,7 @@
 
 mod field;
 pub(crate) mod grade;
-mod noise;
+pub(crate) mod noise;
 mod params;
 mod slope;
 mod split;
@@ -82,6 +82,27 @@ pub fn split_quarter(
     OrganicSplit {
         streets: splitter.streets,
         pieces,
+    }
+}
+
+/// The town's street field as the tissue reads it, for lines drawn ahead of the tissue (the
+/// growth engine's main axes): its direction at a point, modulo a right angle.
+pub struct StreetField<'a>(Field<'a>);
+
+impl<'a> StreetField<'a> {
+    /// The field of a town whose main chains and regional roads are `armature`.
+    pub fn new(
+        terrain: &'a dyn TerrainView,
+        armature: &'a [Vec<Point>],
+        site: &OrganicSite,
+        params: &'a OrganicParams,
+    ) -> Self {
+        Self(Field::new(terrain, armature, site, params, 0.0))
+    }
+
+    /// Street direction at `p`, modulo a right angle.
+    pub fn angle(&self, p: Point) -> f64 {
+        self.0.angle(p)
     }
 }
 

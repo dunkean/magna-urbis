@@ -1,18 +1,18 @@
-//! A ring's new boundary: the parts of its outer cost level that lie outside the town.
+//! The limits of a piece of land as boundary arcs: the parts of its outline that lie outside the
+//! town and off existing edges.
 //!
-//! The ring's outline (the open land cheaper than its outer level, counter-clockwise) is cut
-//! wherever it meets the graph. A stretch whose middle lies in a town face is dropped: there the
-//! previous ring's boundary, or a street, already bounds the ring. The other stretches, joined
-//! end to end, are the ring's arcs: each starts and ends on the town's limit, or closes around
-//! the town when nothing is built yet. Walked counter-clockwise, an arc has the new land on its
-//! left, so a ring's sectors are the faces on the left of its arcs.
+//! The outline (counter-clockwise) is cut wherever it meets the graph. A stretch whose middle
+//! lies in a town face, or along an existing edge, is dropped. The other stretches, joined end
+//! to end, are the arcs: each starts and ends on the graph, or closes around the land when it
+//! meets nothing. Walked counter-clockwise, an arc has the land on its left. The growth engine
+//! draws the limits of its street skeleton with them.
 
 use magna_urbis_geom::Point;
 
 use super::chain::{Hit, MIN_GAP, Tip, crossings};
-use crate::graph::{EdgeClass, FaceId, FaceKind, Graph, Level, NodeKind, ON_EDGE};
+use crate::graph::{FaceId, FaceKind, Graph, Level, NodeKind, ON_EDGE};
 
-/// One stretch of a ring's outline to insert as a boundary chain.
+/// One stretch of a land's outline to insert as a boundary chain.
 #[derive(Clone, Debug)]
 pub struct BoundaryArc {
     /// The drawn line, ends included.
@@ -26,28 +26,19 @@ pub struct BoundaryArc {
 }
 
 /// Whether a face is part of the town: a block, a plaza, a precinct's works strip, a harbour's
-/// apron, a castle's bailey, or land opened by a ring and not yet laid out (on the left of a
-/// boundary edge). The unbounded face and faces left between roads outside the town are not.
+/// apron or a castle's bailey. The unbounded face, the skeleton's unopened cells and faces left
+/// between roads outside the town are not.
 pub fn in_town(graph: &Graph, face: FaceId) -> bool {
-    if face == graph.outside(Level::Ground) {
-        return false;
-    }
-    if matches!(
-        graph.face(face).kind.current(),
-        FaceKind::Block | FaceKind::Plaza | FaceKind::Works | FaceKind::Apron | FaceKind::Bailey
-    ) {
-        return true;
-    }
-    graph
-        .walks(face)
-        .iter()
-        .flatten()
-        .any(|&h| h.is_forward() && *graph.edge(h.edge()).class.current() == EdgeClass::Boundary)
+    face != graph.outside(Level::Ground)
+        && matches!(
+            graph.face(face).kind.current(),
+            FaceKind::Block | FaceKind::Plaza | FaceKind::Works | FaceKind::Apron | FaceKind::Bailey
+        )
 }
 
-/// The arcs of a ring whose outline is `outline` (closed, counter-clockwise, first point not
-/// repeated). An arc that stays everywhere within `min_depth` of existing edges is left out:
-/// the strip it would open is too thin for a quarter and waits for the next ring.
+/// The arcs of a piece of land whose outline is `outline` (closed, counter-clockwise, first
+/// point not repeated). An arc that stays everywhere within `min_depth` of existing edges is
+/// left out.
 pub fn arcs(graph: &Graph, outline: &[Point], min_depth: f64) -> Vec<BoundaryArc> {
     if outline.len() < 3 {
         return Vec::new();

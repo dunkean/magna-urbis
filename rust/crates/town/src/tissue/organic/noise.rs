@@ -4,13 +4,13 @@
 use magna_urbis_random::Rng;
 use std::f64::consts::TAU;
 
-pub(super) struct Noise {
+pub(crate) struct Noise {
     perm: [u8; 512],
     gradients: [(f64, f64); 32],
 }
 
 impl Noise {
-    pub(super) fn new(mut rng: Rng) -> Self {
+    pub(crate) fn new(mut rng: Rng) -> Self {
         let mut p = std::array::from_fn::<_, 256, _>(|i| i as u8);
         for i in (1..256).rev() {
             let j = (rng.float() * (i + 1) as f64).floor() as usize;
@@ -63,7 +63,7 @@ impl Noise {
 
     /// Fractal sum of `octaves` bands with gain one half, normalised to the
     /// range of one band.
-    pub(super) fn fbm(&self, x: f64, y: f64, octaves: usize) -> f64 {
+    pub(crate) fn fbm(&self, x: f64, y: f64, octaves: usize) -> f64 {
         let (mut amp, mut freq, mut sum, mut norm) = (1.0, 1.0, 0.0, 0.0);
         for o in 0..octaves {
             sum += amp * self.noise(x * freq + o as f64 * 17.3, y * freq - o as f64 * 9.1);

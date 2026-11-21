@@ -1,5 +1,5 @@
-//! The open land of a ring: survey cells cheaper than the ring's outer level, one outline per
-//! piece of land.
+//! The open land the town can reach: survey cells cheaper than a level, one outline per piece of
+//! land. The street skeleton is drawn over it.
 //!
 //! The cells reachable below the level from the focus, and from the far landing of every water
 //! crossing, are taken by 4-connected flood fill. Each piece (the focus's bank, each far bank)
@@ -14,10 +14,11 @@ use crate::survey::{CostField, Survey};
 
 /// Simplification tolerance in cells: under half a cell, so the centre cell stays inside.
 const TOLERANCE: f64 = 0.45;
-/// Tolerance in cells tried first: it drops the cell staircase, so a boundary that becomes a
-/// street runs straight, and it rarely runs along an older boundary traced on the same cells.
-/// Kept only when the loop stays simple and holds the centre.
+/// Tolerance in cells tried first: it drops the cell staircase, so the land's limit runs
+/// straight. Kept only when the loop stays simple and holds the centre.
 const SMOOTH_TOLERANCE: f64 = 1.3;
+/// Cells around a seed searched for open land.
+const SEED_REACH: i64 = 3;
 /// Rounds of hole filling and corner widening before the loop is traced.
 const CLEAN_ROUNDS: usize = 8;
 
@@ -38,9 +39,6 @@ pub(super) struct Land {
     /// Outer loop of each piece, counter-clockwise, first point not repeated; the focus's piece
     /// first, then the far banks' in crossing order.
     pub outlines: Vec<Vec<Point>>,
-    /// Whether the land holds every cell reachable from the centre and the far landings: no
-    /// later ring can add any.
-    pub whole: bool,
 }
 
 impl Lattice {
@@ -86,17 +84,13 @@ impl Lattice {
         }
         let mut starts = vec![(start, self.centre)];
         for &p in seeds {
-            if let Some(at) = self.at(p)
+            if let Some(at) = self.open_near(p)
                 && self.cost[at] < level
                 && starts.iter().all(|&(s, _)| s != at)
             {
-                starts.push((at, p));
+                starts.push((at, self.position(at)));
             }
         }
-        let cells: Vec<usize> = starts.iter().map(|&(s, _)| s).collect();
-        let count = |m: &[bool]| m.iter().filter(|&&x| x).count();
-        let whole =
-            count(&self.flood(&cells, |c| c < level)) == count(&self.flood(&cells, f64::is_finite));
         let mut taken = vec![false; self.cost.len()];
         let mut outlines = Vec::new();
         for (k, &(seed, inside)) in starts.iter().enumerate() {
@@ -121,19 +115,42 @@ impl Lattice {
                 None => {}
             }
         }
-        Some(Land { outlines, whole })
+        Some(Land { outlines })
     }
 
     fn index(&self, i: i64, j: i64) -> usize {
         j as usize * self.width + i as usize
     }
 
-    /// The lattice cell holding `p`, if it lies on the lattice.
-    fn at(&self, p: Point) -> Option<usize> {
+    /// The open lattice cell nearest `p` within `SEED_REACH` cells (a landing on the bank may lie
+    /// on a wet cell).
+    fn open_near(&self, p: Point) -> Option<usize> {
         let i = ((p.x - self.centre.x) / self.step).round() as i64 - self.first.0 + 1;
         let j = ((p.y - self.centre.y) / self.step).round() as i64 - self.first.1 + 1;
-        (i >= 0 && j >= 0 && (i as usize) < self.width && (j as usize) < self.height)
-            .then(|| self.index(i, j))
+        let mut best: Option<(i64, usize)> = None;
+        for dj in -SEED_REACH..=SEED_REACH {
+            for di in -SEED_REACH..=SEED_REACH {
+                let (x, y) = (i + di, j + dj);
+                if x < 0 || y < 0 || x as usize >= self.width || y as usize >= self.height {
+                    continue;
+                }
+                let at = self.index(x, y);
+                let d = di * di + dj * dj;
+                if self.cost[at].is_finite() && best.is_none_or(|(b, _)| d < b) {
+                    best = Some((d, at));
+                }
+            }
+        }
+        best.map(|(_, at)| at)
+    }
+
+    /// The centre of lattice cell `at`.
+    fn position(&self, at: usize) -> Point {
+        let (i, j) = ((at % self.width) as i64, (at / self.width) as i64);
+        Point {
+            x: self.centre.x + (self.first.0 + i - 1) as f64 * self.step,
+            y: self.centre.y + (self.first.1 + j - 1) as f64 * self.step,
+        }
     }
 
     fn neighbours(&self, at: usize) -> impl Iterator<Item = usize> + '_ {

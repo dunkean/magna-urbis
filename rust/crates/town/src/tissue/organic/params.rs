@@ -67,6 +67,10 @@ pub struct OrganicParams {
     /// Elongation (long over short side) above which a piece smaller than its
     /// target is still cut: 2.6, or 7 in a faubourg.
     pub max_aspect: f64,
+    /// Distance in metres from the town centre over which a piece's target area grows by its
+    /// own size, 0 for none (default 0: classic's block targets). The growth engine's street
+    /// skeleton uses it for quarters that widen outwards.
+    pub target_growth: f64,
     /// Width in metres per street rank 0 to 4 (`widthByRank`; 8, 6.2, 4.6, 3.2, 2.5).
     pub width_by_rank: [f64; 5],
     /// Multiplier on every width (`widthScale`; 1).
@@ -171,6 +175,7 @@ impl Default for OrganicParams {
             place_threshold: 900.0,
             long_cut: 0.0,
             max_aspect: 2.6,
+            target_growth: 0.0,
             width_by_rank: [8.0, 6.2, 4.6, 3.2, 2.5],
             width_scale: 1.0,
             width_jitter: 0.12,

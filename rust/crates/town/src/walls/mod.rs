@@ -63,15 +63,11 @@
 //!    For a camp charter use [`survey_camp`] with [`flat_figure`] (focus, the regional road's
 //!    bearing, the phase's compact density) or, on a spur, hilltop, meander or island archetype,
 //!    [`defensive_figure`]; the camp's precinct is raised when full like any other.
-//! 3. **While a precinct is open** (step 1 and 2 of design 3.2's order): the ring's land is cut
-//!    with `PrecinctPlan::open_sectors.clip` before its boundary arcs are drawn, and a sector
-//!    opens only if `open_sectors.admits(&sector.outline)`; such quarters are counted with
-//!    `intramural = true` and the phase's compact tissue. The plan's `reserves` (ditch band) are
-//!    closed land for the ring lattice. `armature::extend` must let an axis cross `Precinct` and
-//!    `Wall` edges (as it crosses regional roads); at the end of each `ExtendArmature` stage,
-//!    [`gates_on_circuits`] (the stage's graph, every precinct, the arm chains) gives the
-//!    `SetNodeKind` operations that make each new crossing of a main chain a gate, pushed on
-//!    the same stage.
+//! 3. **While a precinct is open** (step 2 of design 3.2's order): the precinct line splits the
+//!    skeleton's cells it crosses, and a frontier cell opens only if
+//!    `open_sectors.admits(&cell.outline)`; such quarters are counted with `intramural = true`
+//!    and the phase's compact tissue. [`gates_on_circuits`] (a graph, every precinct, the arm
+//!    chains) gives the `SetNodeKind` operations that make each crossing of a main chain a gate.
 //! 4. **Step 5 of design 3.2, walls** (after promotions, road fates and the harbour): for the
 //!    open precinct, [`raise_when_full`] (graph, precinct, the current phase's `PhaseDraw` from
 //!    `charter.draws.phases`); when it returns operations apply them as

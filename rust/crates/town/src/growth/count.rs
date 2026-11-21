@@ -14,9 +14,9 @@ const FRONT_SLACK: f64 = 2.0;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuarterRecord {
-    /// The quarter's key, `(ring, station)`.
+    /// The quarter's key, `(step, station)`.
     pub key: Key,
-    /// Its ring.
+    /// The growth step it was born in.
     pub ring: u32,
     /// Its station.
     pub station: Station,
@@ -77,8 +77,8 @@ pub(super) struct Birth<'a> {
 }
 
 /// The pressure frozen at birth: classic's decay with access cost (`parcels/pressure.rs`), read
-/// from the quarter's cost in effective metres and scaled by the ring's outer level as the
-/// town's extent. The capacity raises it inside an enclosure, as classic's `parcels.rs` does,
+/// from the quarter's cost in effective metres and scaled by the town's extent then (the
+/// highest cost opened, plus a step). The capacity raises it inside an enclosure, as classic's `parcels.rs` does,
 /// from the intramural flag of its inputs.
 pub(super) fn pressure(cost: f64, extent: f64) -> f64 {
     let scale = extent.clamp(60.0, 600.0);
@@ -146,11 +146,11 @@ fn capacity_blocks(graph: &Graph, face: FaceId, clock: Clock) -> Vec<CapacityBlo
         .into_iter()
         .flatten()
         .map(|h| graph.edge(h.edge()))
-        // A boundary becomes a street once the next ring opens beyond it: it is frontage.
+        // A provisional edge (a planned street not built yet, the land's limit) gives no access.
         .filter(|edge| {
             !matches!(
                 edge.class.current(),
-                EdgeClass::Precinct | EdgeClass::Wall | EdgeClass::Canal
+                EdgeClass::Precinct | EdgeClass::Wall | EdgeClass::Canal | EdgeClass::Boundary
             )
         })
         .map(|edge| {

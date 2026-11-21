@@ -47,8 +47,8 @@ pub fn quay_length(spec: &HarbourSpec, inhabitants: u32) -> f64 {
     (p * w.quay_share * w.port_factor).clamp(w.min_quay, cap)
 }
 
-/// Whether the town has reached the front of `choice`: a street or a ring boundary lies within
-/// a landing street's reach of its landing.
+/// Whether the town has reached the front of `choice`: a built street lies within a landing
+/// street's reach of its landing (the skeleton's planned streets, still boundaries, do not).
 pub fn opened(choice: &FrontChoice, graph: &Graph, spec: &HarbourSpec) -> bool {
     // Roads run there before the town: the harbour road ends on the landing.
     graph
@@ -57,7 +57,7 @@ pub fn opened(choice: &FrontChoice, graph: &Graph, spec: &HarbourSpec) -> bool {
         .any(|e| {
             matches!(
                 graph.edge(e).class.current(),
-                EdgeClass::Street | EdgeClass::Lane | EdgeClass::Stairs | EdgeClass::Boundary
+                EdgeClass::Street | EdgeClass::Lane | EdgeClass::Stairs
             )
         })
 }

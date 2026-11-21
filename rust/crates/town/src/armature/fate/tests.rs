@@ -5,8 +5,8 @@ use crate::RegionalRoad;
 use crate::armature::{Draw, arcs, chain_ops};
 use crate::charter::{Charter, FoundingFocus};
 use crate::export::RoadResult;
-use crate::graph::{Clock, EdgeClass, Graph, Level, NodeKind};
-use crate::journal::{EventKind, Writer};
+use crate::graph::{Clock, EdgeClass, FaceKind, Graph, Level, NodeKind};
+use crate::journal::{EventKind, Op, Writer};
 use crate::spec::{
     CircumstanceModifiers, DefensiveIntent, ExtensionHabit, FossilRule, FoundingFocusKind,
     HarbourEnclosure, HarbourThresholds, PhaseSpec, ProgrammeThresholds, RoadFate, TownDraws,
@@ -136,6 +136,18 @@ fn open_ring(writer: &mut Writer, ring: u32, radius: f64, clock: Clock) {
         let (ops, _) = chain_ops(draw, &arc.path, arc.start, arc.end, &arc.hits);
         stage.try_push(ops).unwrap();
     }
+    // The land the loop closes joins the town, as an opened quarter does.
+    let graph = stage.graph();
+    let outside = graph.outside(Level::Ground);
+    let blocks: Vec<Op> = graph
+        .live_faces()
+        .filter(|&f| f != outside && *graph.face(f).kind.current() == FaceKind::Unbuilt)
+        .map(|f| Op::SetFaceKind {
+            face: graph.face(f).key.clone(),
+            kind: FaceKind::Block,
+        })
+        .collect();
+    stage.try_push(blocks).unwrap();
     writer.apply(clock, kind, stage.into_ops()).unwrap();
 }
 

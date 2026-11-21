@@ -212,10 +212,11 @@ fn town_faces(plan: &TownPlan) -> HashSet<FaceId> {
     plan.quarters.iter().flat_map(|q| q.faces.iter().copied()).collect()
 }
 
-/// Whether an edge borders a quarter on both sides (`both`) or on at least one.
-fn bordered(graph: &Graph, id: EdgeId, town: &HashSet<FaceId>, both: bool) -> bool {
-    let sides = [graph.left_face(id), graph.right_face(id)].map(|f| town.contains(&f));
-    if both { sides[0] && sides[1] } else { sides[0] || sides[1] }
+/// Whether an edge borders a quarter on at least one side.
+fn bordered(graph: &Graph, id: EdgeId, town: &HashSet<FaceId>) -> bool {
+    [graph.left_face(id), graph.right_face(id)]
+        .iter()
+        .any(|f| town.contains(f))
 }
 
 fn streets(
@@ -228,12 +229,12 @@ fn streets(
     let mut loose = Vec::new();
     for id in graph.live_edges() {
         let edge = graph.edge(id);
-        // A regional road runs on beyond the town, and a ring boundary may run between two
-        // unopened faces: only their stretches along a quarter are streets. The harbour's
-        // works are exported from the harbour itself.
+        // A regional road runs on beyond the town: only its stretches along a quarter are
+        // streets. A boundary (a planned street not built yet, the land's limit) is none. The
+        // harbour's works are exported from the harbour itself.
         let kept = match edge.class.current() {
-            EdgeClass::RegionalRoad | EdgeClass::Boundary => bordered(graph, id, town, false),
-            EdgeClass::Quay => false,
+            EdgeClass::RegionalRoad => bordered(graph, id, town),
+            EdgeClass::Quay | EdgeClass::Boundary => false,
             _ => true,
         };
         if !kept {
@@ -253,24 +254,14 @@ fn streets(
                 .faces_along_chain(chain)
                 .into_iter()
                 .filter(|step| match graph.edge(step.edge).class.current() {
-                    EdgeClass::RegionalRoad | EdgeClass::Boundary => {
-                        bordered(graph, step.edge, town, false)
-                    }
-                    EdgeClass::Quay => false,
+                    EdgeClass::RegionalRoad => bordered(graph, step.edge, town),
+                    EdgeClass::Quay | EdgeClass::Boundary => false,
                     _ => true,
                 })
                 .filter_map(|step| {
                     let mut street = street(graph.edge(step.edge), clock, step.half.is_forward())?;
                     if fords.contains(&graph.edge(step.edge).stem) {
                         street.role = "ford".into();
-                    }
-                    // A boundary between two rings is an ordinary street; the outermost one,
-                    // with open land beyond, is the town's peripheral street (classic's role),
-                    // so that the lots of the last ring keep the access they were counted with.
-                    if *graph.edge(step.edge).class.current() == EdgeClass::Boundary
-                        && !bordered(graph, step.edge, town, true)
-                    {
-                        street.role = "peripheral".into();
                     }
                     Some(street)
                 }),
@@ -280,12 +271,6 @@ fn streets(
         let mut street = street(edge, clock, true)?;
         if fords.contains(&edge.stem) {
             street.role = "ford".into();
-        }
-        if *edge.class.current() == EdgeClass::Boundary {
-            let id = graph.edge_id(&edge.key)?;
-            if !bordered(graph, id, town, true) {
-                street.role = "peripheral".into();
-            }
         }
         Some(street)
     }));
@@ -309,12 +294,8 @@ fn street(edge: &Edge, clock: Clock, forward: bool) -> Option<Street> {
         EdgeClass::GridAxis => "street",
         EdgeClass::HarbourRoad => "port-road",
         EdgeClass::CastleRoad => "street",
-        // A ring boundary along a quarter (the caller keeps only those) is a street.
-        EdgeClass::Boundary => {
-            return street_of(edge, clock, forward, 2, "street");
-        }
         // The other edges delimit land and do not carry street traffic.
-        EdgeClass::Wall | EdgeClass::Precinct | EdgeClass::Canal => {
+        EdgeClass::Wall | EdgeClass::Precinct | EdgeClass::Canal | EdgeClass::Boundary => {
             return None;
         }
     };

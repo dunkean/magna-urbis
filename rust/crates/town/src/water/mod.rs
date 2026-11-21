@@ -30,14 +30,10 @@
 //!    multiplier. Bridges are `EdgeClass::Bridge` on the deck, which `armature::cost_lines`
 //!    leaves out, and fords are ground streets over wet cells, which it walks without crossings:
 //!    both carry traffic only through these lines.
-//! 3. **Rings grow from the far landings** (`growth/contour.rs`): `Lattice::land` floods from the
-//!    centre and also from the cell of every point of `far_landings(graph, journal)` whose cost
-//!    is below the level, and traces one outline per flooded component (the components are
-//!    disjoint, water lies between them). `ExtendArmature` (`Driver::extension`) calls
-//!    `armature::arcs` once per outline and inserts every arc; `whole` compares the union of the
-//!    flooded cells with every cell of finite cost. The far approach's end (or the far landing
-//!    when there is no approach) is the tip of the crossing's chain, so `armature::extend`
-//!    prolongs that axis from the far bank at the next ring.
+//! 3. **Growth goes on from the far landings** (`growth/skeleton.rs`, `growth/cells.rs`): at the
+//!    next step `Lattice::land` floods from the cell of every point of `far_landings(graph,
+//!    journal)` and the far bank no skeleton covers yet gets its own (`ExtendArmature { ring:
+//!    step }`: its limits and quarter streets); the cell holding a far landing is on the frontier.
 //! 4. **Arms**: after a `CrossWater` event is applied, and after a recorded one is replayed on
 //!    resume, `driver.arms.extend(crossing_arms(graph, journal, &driver.arms))`: a crossing that
 //!    joined a street off the axes opened a new axis across the water.
