@@ -23,8 +23,18 @@
 //! (split by a regional road) continue the same rings. The tessellation is
 //! derived from the layout only (centre, blocks, streets, key), never from the
 //! block, so every block call sees the same camp.
+use super::lot_envelopes;
 use super::super::geometry::{bbox, ribbon, union};
-use super::*;
+use super::{contacts, families};
+use super::admission::compact_fallback;
+use super::contacts::{Front, FrontageIndex};
+use super::cut_geometry::{add, distance, dot, length, scale, sub, unit};
+use super::identity::parcel;
+use super::qualification::qualify;
+use super::seams::shared;
+use crate::rng::Rng;
+use crate::urban::{Layout, Morph, Parcel, ParcelConfig, Partition, Point, Shape};
+use crate::urban::geometry::{area, difference, intersection};
 use std::f64::consts::{PI, TAU};
 
 #[path = "camp_forms.rs"]
@@ -757,7 +767,7 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
                     let mut potential=fronts.clone();potential.extend(contacts::boundary_contacts(&cell,&eligible));
                     if profile.as_ref().is_some_and(|c| {
                         let a=&c.admissibility;
-                        families::envelope(&cell,&potential,a.min_frontage,a.min_depth,a.min_access_width).is_none()
+                        lot_envelopes::envelope(&cell,&potential,a.min_frontage,a.min_depth,a.min_access_width).is_none()
                     }) {continue;}
                     // `campFringe` (metres): a ragged edge, so the houses form an irregular oval
                     // with open ground inside, not a disc cut along the lattice.
@@ -1234,6 +1244,7 @@ fn assemble_with_contacts(
 
 #[cfg(test)]
 mod tests {
+    use crate::urban::parcels::contacts::frontage;
     use super::super::super::geometry::rectangle;
     use super::*;
 

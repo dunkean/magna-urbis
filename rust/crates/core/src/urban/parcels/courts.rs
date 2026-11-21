@@ -8,7 +8,8 @@
 //! the programme's own houses role (a house → `dwelling`, a tenement →
 //! `communal_dwelling`, a shop → `mixed_residential`) when the lot holds any
 //! source of that role. Same envelope test (`parcel_envelope`, 0.6 m clearance).
-use super::{Parcel, parcel_envelope};
+use super::lot_envelopes::parcel_envelope;
+use crate::urban::Parcel;
 use std::sync::OnceLock;
 
 struct Source {
@@ -114,7 +115,7 @@ fn fitting<'a>(
     pack: &'a str,
     keep: impl Fn(&Source) -> bool + 'a,
 ) -> impl Iterator<Item = &'static Source> + 'a {
-    let lot = super::area(&p.shape);
+    let lot = crate::urban::geometry::area(&p.shape);
     let mut tried: Vec<([u64; 3], bool)> = Vec::new();
     let p = p.clone();
     sources()

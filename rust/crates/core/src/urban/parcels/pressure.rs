@@ -1,6 +1,11 @@
 //! Smooth occupation pressure on the retained pedestrian network. No street,
 //! reserve or wall is created or moved by this calculation.
-use super::*;
+
+use super::contacts::{FrontageIndex, frontages};
+use super::cut_geometry::{add, dot, length, scale, sub};
+use crate::urban::{Layout, Morph, Point, Shape};
+use crate::urban::geometry::area;
+
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
@@ -155,12 +160,13 @@ pub(super) fn for_layout(layout: &Layout) -> Vec<f64> {
 
 // Keep the metric normalizer distinct from the parent's vector scale helper.
 fn scale_point(p: Point, s: f64) -> Point {
-    super::scale(p, s)
+    scale(p, s)
 }
 
 #[cfg(test)]
 mod enclosure_tests {
-    use super::*;
+    use crate::urban::Layout;
+
     #[test]
     fn enclosed_quarters_share_access_across_a_bridge() {
         let mut l: Layout = serde_json::from_value(serde_json::json!({
@@ -318,4 +324,64 @@ pub(super) fn adjusted(
         out[i] = base * (1.0 + variation * (lo + (hi - lo) * local_pressure - 1.0));
     }
     out
+}
+
+/// Network pressures, memoised across the probes of one quarters run: the
+/// programme and the cadastre of one probe ask for the same network.
+static PRESSURES: crate::urban::probe_cache::Memo<std::sync::Arc<Vec<f64>>> = crate::urban::probe_cache::Memo::new();
+pub(in crate::urban) fn occupation_pressures(layout: &Layout) -> Vec<f64> {
+    // Circuits indexed by ordinate (same even/odd arithmetic as `contains`):
+    // a town wall has thousands of vertices and every block asks.
+    let rings: Vec<_> = layout.enclosures.iter().filter(|e| e.purpose.is_empty())
+        .map(|e| crate::urban::geometry::ContainmentIndex::new(&Shape { outer:e.path.clone(), holes:vec![] })).collect();
+    let network = network_pressures(layout);
+    // Pure per block: in parallel, in block order.
+    crate::urban::par::range(network.len().min(layout.blocks.len()), |i| {
+        let (p, b) = (network[i], &layout.blocks[i]);
+        // Serviced land inside an enceinte is urban tissue, even in its youngest epoch.
+        if p > 0.0 && rings.iter().any(|r| r.contains(crate::urban::geometry::interior_point(&b.shape))) {
+            0.65 + 0.35 * p
+        } else { p }
+    })
+}
+fn network_pressures(layout: &Layout) -> Vec<f64> {
+    if !crate::urban::probe_cache::enabled() {
+        return for_layout(layout);
+    }
+    // `for_layout` reads the streets (geometry, widths, rank, role), the
+    // centres and the block outlines; nothing else of the layout.
+    let mut k = crate::urban::probe_cache::Key::new("parcels.pressures/v1");
+    k.usize(layout.streets.len());
+    for s in &layout.streets {
+        k.ring(&s.path).usize(s.widths.len());
+        for &w in &s.widths {
+            k.f64(w);
+        }
+        k.usize(s.rank).str(&s.role);
+    }
+    match layout.structure.as_ref() {
+        Some(st) => {
+            k.bool(true).usize(st.centers.len());
+            for c in &st.centers {
+                k.point(c.point);
+            }
+        }
+        None => {
+            k.bool(false);
+        }
+    }
+    k.point(layout.center).usize(layout.blocks.len());
+    for b in &layout.blocks {
+        k.shape(&b.shape);
+    }
+    if let Some(hit) = PRESSURES.get(&k) {
+        return hit.as_ref().clone();
+    }
+    let pressures = for_layout(layout);
+    PRESSURES.put(k, std::sync::Arc::new(pressures.clone()));
+    pressures
+}
+
+pub(super) fn clear_probe_cache() {
+    PRESSURES.clear();
 }

@@ -12,7 +12,12 @@
 //! the block exactly. Deterministic per block seed; neighbour search runs on a
 //! uniform grid with the Voronoi security radius (no O(n²) pass).
 use super::super::geometry::{bbox, centroid, contains, interior_point, ribbon, union};
-use super::*;
+use super::contacts::{Front, frontage};
+use super::cut_geometry::{add, distance, dot, length, normal, scale, sub, unit};
+use super::identity::parcel;
+use crate::rng::Rng;
+use crate::urban::{Morph, Parcel, Point, Shape};
+use crate::urban::geometry::{area, difference, intersection};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 

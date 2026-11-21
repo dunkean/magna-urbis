@@ -1474,7 +1474,8 @@ fn rock_sanctuary(x: &mut Site) -> bool {
 #[cfg(test)]
 mod tests {
     use super::super::super::super::{Point, Shape, geometry};
-    use super::super::super::occupation::{Frame, ring_area};
+    use super::super::super::cut_geometry::ring_area;
+    use super::super::super::occupation::Frame;
     use super::*;
 
     /// The part as a shape: outer ring counter-clockwise, its court clockwise.

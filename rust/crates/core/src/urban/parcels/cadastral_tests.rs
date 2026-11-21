@@ -1,5 +1,22 @@
 use super::super::geometry::rectangle;
-use super::*;
+use super::lot_envelopes;
+use super::{generate, pressure, tidy};
+use super::admission::witnessed_by;
+use super::contacts::{Front, FrontageIndex, continuous_frontage, frontage, frontages, runs};
+use super::court_pairs::pair_courts;
+use super::cut_geometry::{bounds, length, sub};
+use super::fields::keep_gardens;
+use super::identity::parcel;
+use super::lot_envelopes::parcel_envelope;
+use super::neighbour_repair::{balance_neighbours, share_out, split_corners};
+use super::pressure::occupation_pressures;
+use super::qualification::qualify;
+use super::seams::{joined, shared};
+use super::strip_layout::{MAX_DEPTH_SHARE, strips};
+use super::wall_lots::lean_to_lots;
+use crate::rng::Rng;
+use crate::urban::{Layout, Morph, Parcel, ParcelConfig, Partition, Point, Shape};
+use crate::urban::geometry::{area, difference};
 use serde_json::json;
 
 fn fixture(street_split: bool, block_split: bool, culture: &str) -> Layout {
@@ -38,15 +55,15 @@ fn public_witness_and_access_use_the_same_frontage_tolerance() {
     };
     // The body fits behind a public facade shorter than its 5.6 m module,
     // but that must not become an admitted plot with an unserved access.
-    assert!(families::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_none());
+    assert!(lot_envelopes::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_none());
     front.b.x = 5.6;
-    assert!(families::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_some());
+    assert!(lot_envelopes::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_some());
     // An actual private gate remains independent of the interior body width.
     front.b.x = 0.8;
     front.gate = true;
-    assert!(families::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_some());
+    assert!(lot_envelopes::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_some());
     front.b.x = 0.799;
-    assert!(families::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_none());
+    assert!(lot_envelopes::envelope(&shape, &[front], 5.6, 8.25, 0.8).is_none());
 }
 
 #[test]

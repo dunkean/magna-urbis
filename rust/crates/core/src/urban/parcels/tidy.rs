@@ -2,7 +2,13 @@
 //! sliver lots, no long thin arm. Every operation moves ground between lots of
 //! one block (the block keeps its exact coverage) and never takes a lot's
 //! witness away.
-use super::*;
+use super::contacts::{Front, frontage};
+use super::cut_geometry::{add, dot, length, normal, scale, sub, unit};
+use super::depth::lot_depth;
+use super::identity::parcel;
+use super::seams::{boxes_touch, joined, shared};
+use crate::urban::{Morph, Parcel, Point, Shape};
+use crate::urban::geometry::{area, difference};
 
 /// A convex corner sharper than this (degrees) is a needle tip.
 const TIP_ANGLE: f64 = 25.0;
@@ -150,8 +156,10 @@ fn along(r: &[Point], i: usize, step: isize, dist: f64) -> Point {
 
 /// Contacts alone, for the tests that run these passes outside `generate`.
 #[cfg(test)]
-pub(super) fn refresh(p: &mut Parcel, fronts: &[Front], layout: &Layout) {
-    p.contacts = contacts::boundary_contacts(&p.shape, fronts)
+pub(super) fn refresh(p: &mut Parcel, fronts: &[Front], layout: &crate::urban::Layout) {
+    use super::contacts::{access_kind, boundary_contacts};
+
+    p.contacts = boundary_contacts(&p.shape, fronts)
         .iter()
         .map(|f| super::super::ParcelContact {
             a: f.a,
@@ -1103,7 +1111,8 @@ pub(super) fn tidy(
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::Street;
+    use crate::urban::{Layout, Street};
+    use crate::urban::parcels::contacts::street_runs;
     use super::*;
     use serde_json::json;
 

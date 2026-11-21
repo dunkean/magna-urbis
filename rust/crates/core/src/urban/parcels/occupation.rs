@@ -10,10 +10,11 @@
 //! walls). A mass that does not fit one wing width is dropped, never clipped
 //! into a sliver; a court keeps at least the culture's wing width on every
 //! side. Every piece is a valid simple polygon at least `wing` thick.
-use super::*;
-
-/// Keep points `p` with `dot(n, p) <= c`.
-pub(super) type Plane = (Point, f64);
+use super::contacts::{Front, parcel_fronts, runs};
+use super::cut_geometry::{Plane, add, clip, distance, dot, length, normal, ring_area, scale, sub, unit};
+use crate::rng::Rng;
+use crate::urban::{Morph, Parcel, Point, Shape};
+use crate::urban::geometry::{area, difference, intersection};
 
 /// What the parcel builds, chosen from the cultural recipe (buildingOp,
 /// plotOp, arch.typology), the zone, the function and the programme role.
@@ -211,33 +212,6 @@ fn zoned(m: &Morph, key: &str, zone: &str, fallback: [f64; 2]) -> [f64; 2] {
     } else {
         fallback
     }
-}
-
-/// Sutherland-Hodgman against a convex window: exact for any simple subject.
-pub(super) fn clip(ring: &[Point], planes: &[Plane]) -> Vec<Point> {
-    let mut out = ring.to_vec();
-    for &(n, c) in planes {
-        if out.len() < 3 {
-            return Vec::new();
-        }
-        let input = std::mem::take(&mut out);
-        for i in 0..input.len() {
-            let p = input[i];
-            let q = input[(i + 1) % input.len()];
-            let (dp, dq) = (dot(n, p) - c, dot(n, q) - c);
-            if dp <= 0.0 {
-                out.push(p);
-            }
-            if (dp < 0.0 && dq > 0.0) || (dp > 0.0 && dq < 0.0) {
-                out.push(add(p, scale(sub(q, p), dp / (dp - dq))));
-            }
-        }
-    }
-    out
-}
-
-pub(super) fn ring_area(r: &[Point]) -> f64 {
-    super::super::geometry::signed(r)
 }
 
 /// Frame of one frontage run: `u` along the street, `n` into the parcel and the
@@ -2683,7 +2657,7 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
                 };
                 let corner = add(scale(main.u, s0), scale(main.n, tf));
                 let court = [s0 + wing, s1 - wing, front_end, front_end + court_d];
-                let fits = super::families::rect_within(
+                let fits = super::lot_envelopes::rect_within(
                     &Shape {
                         outer: lay.b.to_vec(),
                         holes: vec![],
@@ -2693,7 +2667,7 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
                     main.n,
                     s1 - s0,
                     end - tf,
-                ) && super::families::rect_within(
+                ) && super::lot_envelopes::rect_within(
                     &outer_shape,
                     add(
                         scale(main.u, court[0] - wing),
@@ -3602,7 +3576,7 @@ fn preview_form(p: &Parcel, o: &Occupancy, resolved:Option<Kind>) -> (Vec<(Shape
                         scale(main.u, x0 - court_wing),
                         scale(main.n, y0 - court_wing),
                     );
-                    super::families::rect_within(
+                    super::lot_envelopes::rect_within(
                         &outer_shape,
                         grown,
                         main.u,
@@ -4078,6 +4052,7 @@ fn dedup(ring: Vec<Point>) -> Vec<Point> {
 
 #[cfg(test)]
 mod tests {
+    use crate::urban::Layout;
     use super::super::super::geometry::rectangle;
     use super::*;
     use serde_json::json;

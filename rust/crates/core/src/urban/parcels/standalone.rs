@@ -1,8 +1,11 @@
 //! Monument and utility forms on a free-standing plot (an isolated chapel,
 //! temple, inn or monastery of the countryside): the forms of `monuments` and
 //! `landmark` laid on a rectangle of open ground, outside any lot.
-use super::occupation::{Frame, ring_area, thickness};
-use super::*;
+use super::occupation::{Frame, Occupancy, thickness};
+use super::cut_geometry::{ring_area, add, dot, length, scale, sub};
+use crate::rng::Rng;
+use crate::urban::{Morph, Point, Shape};
+use crate::urban::geometry::{area, intersection};
 
 /// Thinnest side of a range (a court's wing), as a town lot's `minWing`.
 const RANGE_M: f64 = 3.0;

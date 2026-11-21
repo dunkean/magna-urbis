@@ -8,8 +8,10 @@
 //! `t` inwards, the street at `t = ta`): every part is the buildable lot clipped
 //! by a convex window, so it always lies inside the parcel, and parts are laid
 //! side by side (no overlaps). Deterministic from the parcel seed.
-use super::occupation::{Frame, Occupancy, Plane, circle, clip, clip_parts, ring_area};
-use super::*;
+use super::occupation::{Frame, Occupancy, circle, clip_parts};
+use super::cut_geometry::{Plane, clip, ring_area, add, dot, length, scale, sub};
+use crate::rng::Rng;
+use crate::urban::{Point, Shape};
 
 pub(super) type Part = (Vec<Point>, Option<Vec<Point>>, &'static str);
 
@@ -133,7 +135,7 @@ impl Site<'_> {
         };
         let hole = (g - e > 1.0
             && k - h > 1.0
-            && super::families::rect_within(
+            && super::lot_envelopes::rect_within(
                 &shape,
                 self.at(e, h),
                 self.f.u,
@@ -635,6 +637,7 @@ fn kasbah(x:&mut Site)->Option<()> {
 
 #[cfg(test)]
 mod wall_options_tests {
+    use crate::urban::Morph;
     use super::*;
     #[test]
     fn kasbah_option_is_an_inhabited_multi_court_compound() {

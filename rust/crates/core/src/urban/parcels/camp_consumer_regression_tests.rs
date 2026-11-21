@@ -9,8 +9,8 @@ fn captured(raw: &[u8]) -> (Layout, Morph) {
 }
 fn cells(layout: &Layout, m: &Morph, bi: usize) -> Vec<Parcel> {
     let b = &layout.blocks[bi];
-    let index = super::super::FrontageIndex::new(layout);
-    let mut fronts = super::super::frontages(&b.shape, layout, &index);
+    let index = FrontageIndex::new(layout);
+    let mut fronts = contacts::frontages(&b.shape, layout, &index);
     lots(&b.shape, bi, b.axis, &mut fronts, m, layout)
 }
 fn exact_partition(block: &Shape, parcels: &[Parcel]) {

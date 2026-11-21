@@ -1,6 +1,8 @@
 //! Whole old shared() is a bit oracle on EVERY real call under cfg(test).
 //! Not compiled in non-test release; no threshold, probe or order change.
-use super::*;
+use super::cut_geometry::{dot, length, sub, unit};
+use super::seams::shared;
+use crate::urban::{Point, Shape};
 
 pub(super) fn assert_legacy(a: &Shape, b: &Shape, actual: f64) {
     let expected = legacy_shared(a, b);

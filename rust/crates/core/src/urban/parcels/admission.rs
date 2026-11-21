@@ -4,7 +4,7 @@
 //! ordinary house (a single or strip recipe of the same architecture pack).
 //! Both tiers are real houses recipes, so the houses engine stays the judge.
 use super::super::culture::UrbanAdmissibility;
-use super::Shape;
+use crate::urban::Shape;
 use serde::Deserialize;
 use std::sync::OnceLock;
 

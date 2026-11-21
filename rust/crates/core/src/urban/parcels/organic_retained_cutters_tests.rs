@@ -1,5 +1,5 @@
 use super::*;
-use super::super::super::{geometry as g,generate_parcels};
+use super::super::super::{Layout, ParcelConfig, Partition, geometry as g,generate_parcels};
 
 #[test]
 fn no_rejected_path_cap_keeps_each_original_segment_cutter_exact() {

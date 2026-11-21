@@ -7,8 +7,10 @@
 //! thus shows a few derelict lots, an abandoned one (decay 1) roofless shells
 //! among shut houses. Ruins (`.ruin`) are broken walls (occupation.rs
 //! `ruined`); every broken wall comes from `broken_walls`.
-use super::occupation::{Occupancy, clip_parts, ring_area, thickness};
-use super::*;
+use super::occupation::{Occupancy, clip_parts, thickness};
+use super::cut_geometry::{ring_area, add, dot, length, normal, scale, sub, unit};
+use crate::rng::Rng;
+use crate::urban::{Parcel, Point, Shape};
 
 /// How far an empty building has fallen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -273,6 +275,7 @@ fn mound(body: &Shape, at: Point, inward: Point, wall: f64, size: f64, rng: &mut
 
 #[cfg(test)]
 mod tests {
+    use crate::urban::{Morph, geometry::area};
     use super::*;
     use crate::urban::geometry::rectangle;
 
