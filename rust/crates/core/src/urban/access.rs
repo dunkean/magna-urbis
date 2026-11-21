@@ -49,7 +49,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
     if cfg.access_mode != "adaptive" || cfg.access_budget == 0 {
         return;
     }
-    let mut laps = network::Lap::new("access_refine");
+    let mut laps = super::profile::Lap::new("access_refine");
     let mut added = 0;
     // Stair lanes only for cultures that build stairs (same rule as the plan).
     let stairs = super::profiles::stairs_allowed(cfg, &layout.culture);

@@ -1,5 +1,6 @@
 //! Captured V2 composition reroll, followed by the retained composition's street variation.
 use super::*;
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

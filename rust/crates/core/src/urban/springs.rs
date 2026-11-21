@@ -1,7 +1,7 @@
 //! Source-bound civic sites. Culture and scale choices live in spring_water.json;
 //! this module only enforces proximity, dry footing, reservations and access.
 use super::{activities as act, geometry as g, *};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::OnceLock};
 

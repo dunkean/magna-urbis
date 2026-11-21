@@ -110,7 +110,7 @@ fn street_use(p: &super::Parcel, role: &str, layout: &Layout, walls: &[g::Contai
         || urban(p,layout,walls))
 }
 fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &LayoutConfig, population: u32, surface: Surface<'_>) -> Option<Unbuilt> {
-    let mut laps = super::network::Lap::new("tail.trim.unbuilt");
+    let mut laps = super::profile::Lap::new("tail.trim.unbuilt");
     let mut probe = layout.clone();
     // The published cadastre reads the user config restored by kinds::finish.
     probe.config = Some(original.clone());
@@ -118,7 +118,7 @@ fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &Layout
     laps.lap("clone+summarize");
     programme::prepare(&mut probe, population, &config.programme, surface).ok()?;
     laps.lap("programme.prepare");
-    let part = super::probe_parcels(seed, &probe).ok()?;
+    let part = super::pipeline::probe_parcels(seed, &probe).ok()?;
     laps.lap("probe_parcels");
     let part = &part;
     let walls = walls(layout);
@@ -156,7 +156,7 @@ fn unbuilt(seed: &str, layout: &Layout, config: &LayoutConfig, original: &Layout
         .iter()
         .enumerate()
         .map(|(i, b)| b.kind == "block" && (!built[i] || sparse(i)) && !reserved.contains(&i))
-        .collect();
+        .collect();
     // Consolidated yards can reach a different street from their house. Only
     // retained contacts justify fringe frontage; urban properties keep their yards.
     // Pure per lot: in parallel, flattened in lot order.
@@ -674,7 +674,7 @@ fn served(layout: &Layout, lots: Vec<Shape>) -> Vec<Shape> {
 pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, original: &LayoutConfig, population: u32, surface: Surface<'_>) -> (usize, Vec<Shape>) {
     let mut released = 0;
     let mut built_lots = vec![];
-    let mut laps = super::network::Lap::new("tail.trim.run");
+    let mut laps = super::profile::Lap::new("tail.trim.run");
     verges(layout);
     laps.lap("verges");
     // Each pass rebuilds the cadastre. Retain the best partial town when a
@@ -731,7 +731,7 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
     if layout.programme.as_ref().is_none_or(|p| super::roles::is_isolated(&p.context.intent)) { return vec![]; }
     // The lots of the last pass that show a building.
     let mut built: Vec<Shape> = vec![];
-    let mut laps = super::network::Lap::new(if bridgeheads { "tail.trim.bridgeheads" } else { "tail.trim.finish" });
+    let mut laps = super::profile::Lap::new(if bridgeheads { "tail.trim.bridgeheads" } else { "tail.trim.finish" });
     for pass in 0..super::generation_limits::REFINEMENT_PASSES {
         let before = if profiled() { frontage_length(layout) } else { 0.0 };
         let found = super::generate_parcels(seed,std::slice::from_ref(layout),&ParcelConfig::default());
@@ -890,7 +890,7 @@ pub(super) fn footprint(layout: &mut Layout) {
     }
     let Some(s) = layout.structure.as_mut() else { return };
     use geo::Buffer;
-    let mut laps = super::network::Lap::new("tail.trim.footprint");
+    let mut laps = super::profile::Lap::new("tail.trim.footprint");
     let reach = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         g::shapes(geo::MultiPolygon(built.iter().map(g::polygon).collect::<Vec<_>>()).buffer(12.0))
     }))

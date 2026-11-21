@@ -1,6 +1,7 @@
 //! Stream X contracts: effective ground is shared by planning and programme;
 //! the original wet terrain is retained for site requests, never construction proof.
 use super::*;
+use serde_json::Value;
 
 fn shore_water(n: usize, width: f64, bank: f64) -> Vec<u8> {
     (0..n * n)

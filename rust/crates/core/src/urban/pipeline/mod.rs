@@ -16,13 +16,17 @@
 //!
 //! Every stage reads the town context and mutates the layout in place; the
 //! profiling laps (`URBAN_PROFILE`) keep one label per stage.
+//!
+//! The parcel chain (`parcels`) cuts the lots of a finished layout.
 mod complete;
 mod finish;
 mod ladders;
+mod parcels;
 mod plan;
 mod validate;
 
 pub(super) use ladders::{HOUSED_FROM, housable_share};
+pub(super) use parcels::{cut_parcels, probe_parcels, validate_parcels};
 pub(super) use validate::{valid_sites, validate};
 
 use super::geography::StiltGround;

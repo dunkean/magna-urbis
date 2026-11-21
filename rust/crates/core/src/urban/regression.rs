@@ -644,7 +644,7 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
 
 fn legacy_config() -> LayoutConfig {
     LayoutConfig {
-        footprint: super::legacy_footprint(),
+        footprint: super::config::legacy_footprint(),
         access_mode: "cultural".into(),
         ..LayoutConfig::default()
     }

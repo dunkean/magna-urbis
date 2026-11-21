@@ -2964,7 +2964,7 @@ pub(super) fn generate(
     roads: &[Street],
     stilt_grounded: bool,
 ) -> Result<Layout, String> {
-    let mut laps = super::network::Lap::new("quarters");
+    let mut laps = super::profile::Lap::new("quarters");
     let mut layout = generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded)?;
     laps.lap("planned");
     // A minimum of one household per enclosed block must fit the +30 %
@@ -5119,7 +5119,7 @@ mod tests {
             neighbours: Vec::new(),
         };
         let cfg = LayoutConfig {
-            footprint: super::super::legacy_footprint(),
+            footprint: super::super::config::legacy_footprint(),
             access_mode: "cultural".into(),
             preset: "morph/european-organic".into(),
             ..LayoutConfig::default()

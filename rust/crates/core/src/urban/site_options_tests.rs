@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 pub(super) fn svg(out: &str, name: &str, streets: &[Street], shapes: &[Shape], width:f64) {
     let mut text = format!("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {width} {width}' width='900' height='900'><rect width='{width}' height='{width}' fill='#f3efda'/>");

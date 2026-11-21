@@ -7,6 +7,7 @@
 //! edited ones, using the parcel options of the current request.
 use super::super::*;
 use super::{blocks, quarter_parts, stripped, structural};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The common part is already in the edited layout. Only replaced geometry

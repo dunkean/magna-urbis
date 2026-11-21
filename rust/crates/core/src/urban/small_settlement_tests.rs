@@ -1,6 +1,7 @@
 //! A 500-inhabitant settlement is built, and a walled one is built tight.
 use super::geometry as g;
 use super::*;
+use serde_json::Value;
 
 /// (parcels, building requests, enclosed area m2, walled) of one 500-hab. village on flat land.
 fn village(culture: &str, population: u32) -> (usize, usize, f64, bool, f64) {

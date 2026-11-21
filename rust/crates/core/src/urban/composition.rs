@@ -1665,7 +1665,7 @@ fn fit_to_built(layout: &mut super::Layout, population: u32, surface: Surface<'_
     if !layout.enclosures.iter().any(|e| e.purpose.is_empty() && e.path.len() >= 4) { return; }
     let share = enclosed_open(&layout.culture, population).1;
     let reserved: std::collections::HashSet<_> = layout.programme.iter().flat_map(|p| p.reservations.iter().map(|r| r.block)).collect();
-    let mut laps = super::network::Lap::new("fit");
+    let mut laps = super::profile::Lap::new("fit");
     let kept: Vec<(bool, &super::Block)> = layout.blocks.iter().enumerate()
         .filter(|(i, b)| matches!(b.kind.as_str(), "block" | "place") || reserved.contains(i))
         .map(|(i, b)| (reserved.contains(&i), b)).collect();

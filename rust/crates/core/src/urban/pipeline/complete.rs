@@ -4,7 +4,8 @@
 use super::Town;
 use super::plan::formal;
 use crate::urban::kinds::Kind;
-use crate::urban::network::{self, Lap};
+use crate::urban::network;
+use crate::urban::profile::Lap;
 use crate::urban::{LayoutConfig, Layout, edits, fortification, harbour_furniture, shanty};
 
 /// A formal plan at `config`, completed: one rung of the later ladders.

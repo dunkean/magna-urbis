@@ -1098,7 +1098,7 @@ fn housed(seed: &str, layout: &Layout, cfg: &LayoutConfig, population: u32, surf
     if super::programme::prepare(&mut probe, population, &cfg.programme, surface).is_err() {
         return (0.0, vec![]);
     }
-    let Ok(part) = super::probe_parcels(seed, &probe) else { return (0.0, vec![]) };
+    let Ok(part) = super::pipeline::probe_parcels(seed, &probe) else { return (0.0, vec![]) };
     let block_of: std::collections::HashMap<&str, usize> = part.parcels.iter().map(|p| (p.id.as_str(), p.block)).collect();
     let mut blocks = vec![(0.0, true); layout.blocks.len()];
     let mut total = 0.0;

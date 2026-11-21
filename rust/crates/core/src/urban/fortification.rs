@@ -3632,7 +3632,7 @@ fn reconcile_gates(e: &mut Enclosure, streets: &[Street], _surface: Surface<'_>)
 /// (bridges, walkways, trims): `settle`'s rule against the final network.
 /// A gatehouse whose gate closed goes with it.
 pub(super) fn sync_gates(layout: &mut super::Layout, surface: Surface<'_>) {
-    let mut laps = super::network::Lap::new("sync_gates");
+    let mut laps = super::profile::Lap::new("sync_gates");
     let old_masses = gate_masses(layout);
     // Late streets (bridgeheads, bank links) obey the same crossing rule.
     close_crossings(&mut layout.streets, &layout.enclosures, false, surface);

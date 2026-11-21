@@ -3,7 +3,8 @@
 use super::Town;
 use super::finish::finish;
 use crate::urban::kinds::{self, Kind};
-use crate::urban::network::{self, Lap};
+use crate::urban::network;
+use crate::urban::profile::Lap;
 use crate::urban::{
     LayoutConfig, Layout, Morph, Point, Site, access, composition, edits, fortification, macroplan, quarters, resolve, trim,
     with_tissue,

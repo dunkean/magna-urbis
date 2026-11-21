@@ -4,7 +4,8 @@
 //! the water sources.
 use super::Town;
 use super::plan::Attempt;
-use crate::urban::network::{self, Lap};
+use crate::urban::network;
+use crate::urban::profile::Lap;
 use crate::urban::{
     Layout, Point, Shape, access, composition, deep_blocks, fortification, kinds, lagoon, macroplan, neighbours, programme, springs,
     trim,

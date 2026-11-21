@@ -1754,7 +1754,7 @@ mod tests {
             road((800.0, 100.0), (800.0, 1500.0)),
         ];
         let cfg = LayoutConfig {
-            footprint: super::super::legacy_footprint(),
+            footprint: super::super::config::legacy_footprint(),
             ..LayoutConfig::default()
         };
         let cat = super::super::catalogue();

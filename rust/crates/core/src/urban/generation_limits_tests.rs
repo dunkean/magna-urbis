@@ -1,6 +1,7 @@
 use super::*;
 use crate::urban::{self, *};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 
 fn town(culture: &str, population: u32, width: f64, slope: f64, island: Option<f64>) -> (Vec<Layout>, Vec<Partition>, Vec<Value>) {
     let n = 64;

@@ -5,8 +5,9 @@
 use super::Town;
 use super::complete::lay;
 use super::plan::formal;
+use super::probe_parcels;
 use crate::urban::{
-    LayoutConfig, Layout, Point, ProgrammeContext, access, culture, footprint, fortification, geometry, kinds, probe_parcels,
+    LayoutConfig, Layout, Point, ProgrammeContext, access, culture, footprint, fortification, geometry, kinds,
     profiles, programme, roles, slopes, springs, trim, warnings,
 };
 

@@ -2,6 +2,9 @@
 //! Its independent stream and retained prefix counts protect formal geometry,
 //! cadastral IDs, service budgets and building heights when its scale changes.
 use super::{geometry as g, *};
+use crate::rng::Rng;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::borrow::Cow;
 use std::f64::consts::TAU;
 

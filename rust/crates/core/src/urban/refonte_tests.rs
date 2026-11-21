@@ -1,6 +1,8 @@
 //! Small contract and geometry regressions for the redesigned native pipeline.
 use super::geometry as g;
 use super::*;
+use serde_json::json;
+use std::collections::BTreeSet;
 
 #[cfg(test)]
 mod site_selection {
