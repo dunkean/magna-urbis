@@ -1,7 +1,15 @@
 //! Rock barriers, cave circuits and passages.
 
-use super::*;
-use crate::urban::{Geography, LayoutConfig, VectorGeography};
+use crate::rng::Rng;
+use crate::urban::{
+    Enclosure, Geography, LayoutConfig, Shape, Street, Surface, VectorGeography,
+    composition, geometry as g,
+};
+use super::super::build::build;
+use super::cave_circuits;
+use super::super::geometry::{add, closed, dir, disc, dist, pt};
+use super::super::street_clearance::Predicted;
+use super::super::style::styled;
 
 const W: f64 = 2048.0;
 const N: usize = 256;
@@ -41,10 +49,10 @@ fn walls16_cave_town_closes_its_three_passages() {
     assert!(cave && circuits.len() == 1, "no cave circuit");
     let path = closed(&circuits[0].outer);
     let streets = vec![road(&[(2040.0, 1024.0), (1024.0, 1024.0)]), road(&[(1024.0, 10.0), (1024.0, 1024.0)]), road(&[(13.0, 2012.0), (881.0, 1181.0), (1024.0, 1024.0)])];
-    let mut gates = super::super::super::composition::gates(&path, &streets);
+    let mut gates = composition::gates(&path, &streets);
     let land = gates.len();
     assert_eq!(land, 3, "one gate per road entrance");
-    let banks = super::super::super::composition::water_gates(&path, s);
+    let banks = composition::water_gates(&path, s);
     for &(p, _) in &banks {
         if gates.iter().all(|&q| dist(p, q) >= 8.0) {
             gates.push(p);

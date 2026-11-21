@@ -1,9 +1,18 @@
 //! Towers, gatehouses, bastions and shore passages on one circuit.
 
-use super::{add, area, buffer, build, cross, dir, dist, dot, flank_stations, g, normals, overlaps, pt, ribbon_half, styled, turn_at, unit};
-use super::test_fixtures::{N, W, built, built_with, octagon, predicted, river, street, streets, structures, surface};
-use crate::urban::{Enclosure, LayoutConfig, Point, Shape, Street, composition};
 use crate::rng::Rng;
+use crate::urban::{Enclosure, LayoutConfig, Point, Shape, Street, composition, geometry as g};
+use super::build::build;
+use super::geometry::{
+    add, area, buffer, cross, dir, dist, dot,
+    normals, overlaps, pt, ribbon_half, turn_at, unit,
+};
+use super::style::styled;
+use super::towers::flank_stations;
+use super::test_fixtures::{
+    N, W, built, built_with, octagon, predicted, river,
+    street, streets, structures, surface,
+};
 
 /// Review 03/11 (medina village): a curtain that turns at its last corner
 /// and runs on along the shore for a few metres before the water ends at

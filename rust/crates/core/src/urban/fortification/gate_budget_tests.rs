@@ -1,6 +1,9 @@
 //! Gate selection, diversions and closed crossings.
 
-use super::*;
+use crate::urban::{Enclosure, Layout, Point, Shape, Street, Surface, composition, geometry as g};
+use super::super::dead_gates::drop_dead_gates;
+use super::{Circuit, FRONT, cumulated, decide, divert, gate_budget, round_outside, segment_of, throat};
+use super::super::geometry::{closed, cross, dir, dist, normals, pt};
 
 /// Walls review 17/11: the gate budget follows the population (2-4 under 5 000, 5 at 10 000,
 /// 6-8 for large cities) and keeps two for a castle.
@@ -17,7 +20,7 @@ fn walls17_a_gate_leading_nowhere_closes() {
     let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
     let street = |a: (f64, f64), b: (f64, f64)| Street { path: vec![pt(a.0, a.1), pt(b.0, b.1)], widths: vec![6.0; 2], rank: 1, role: "street".into() };
     let e = Enclosure { path, kind: "wall".into(), style: "curtain".into(), curtain_width_m: 3.0, gates: vec![pt(1000.0, 600.0), pt(1000.0, 1400.0)], ..Default::default() };
-    let mut layout = super::super::super::Layout {
+    let mut layout = Layout {
         config: None, programme: None, key: "gates".into(), culture: "european-organic".into(), center: pt(1000.0, 1000.0),
         quarters: vec![], streets: vec![street((1000.0, 1000.0), (1000.0, 580.0)), street((1000.0, 1000.0), (1000.0, 1900.0))],
         blocks: vec![], warnings: vec![], enclosures: vec![e], phases: vec![], archetype: String::new(), structure: None, claim: Default::default(),
@@ -61,7 +64,7 @@ fn town() -> Shape {
     g::rectangle(600.0, 600.0, 1400.0, 1400.0)
 }
 fn crossing_points(wall: &Shape, streets: &[Street]) -> Vec<Point> {
-    super::super::super::composition::gates(&closed(&wall.outer), streets)
+    composition::gates(&closed(&wall.outer), streets)
 }
 
 /// The budget binds whatever the role: of six main roads into a town of 10 000 (five gates), the

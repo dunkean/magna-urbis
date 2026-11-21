@@ -1,6 +1,9 @@
 //! The ground and enclosure of a heights castle.
 
-use super::*;
+use crate::rng::Rng;
+use crate::urban::{LayoutConfig, Shape, Street, Surface, geometry as g};
+use super::super::geometry::pt;
+use super::{heights_castle, wrap_castle};
 
 #[test]
 fn a_knoll_at_the_rim_carries_a_castle_the_town_wall_runs_round() {

@@ -1,8 +1,14 @@
 //! Shared fortification test surfaces, streets, circuits and towns.
 
-use super::{Predicted, build, dist, g, pt, styled};
-use crate::urban::{Enclosure, Layout, LayoutConfig, Point, Shape, Site, Street, Surface, composition, generate_quarters};
 use crate::rng::Rng;
+use crate::urban::{
+    Enclosure, Layout, LayoutConfig, Point, Shape, Site, Street,
+    Surface, composition, generate_quarters,
+};
+use super::build::build;
+use super::geometry::{dist, pt};
+use super::street_clearance::Predicted;
+use super::style::styled;
 
 pub(super) const W: f64 = 2048.0;
 

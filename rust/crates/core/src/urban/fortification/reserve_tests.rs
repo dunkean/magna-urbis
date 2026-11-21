@@ -1,9 +1,22 @@
 //! Curtain and ditch reserves, blocks and faubourg frontage.
 
-use super::{Cut, Near, add, area, build, closed, continuous_moat, curtain_body, dir, dist, dot, embedded, family, fronted, g, pt, resolve, ribbon_half, settle, styled};
-use super::test_fixtures::{N, built_with, octagon, predicted, river, street, streets, surface, town, town_with};
-use crate::urban::{Attached, Block, Enclosure, LayoutConfig, ParcelConfig, Point, Shape, Work, composition, generate_parcels};
 use crate::rng::Rng;
+use crate::urban::{
+    Attached, Block, Enclosure, LayoutConfig, ParcelConfig, Point, Shape,
+    Work, composition, generate_parcels, geometry as g, parcels,
+};
+use super::build::build;
+use super::geometry::{Cut, add, closed, curtain_body, dir, dist, dot, pt, ribbon_half};
+use super::moat::{continuous_moat, embedded};
+use super::reserve::fronted;
+use super::settle::settle;
+use super::street_clearance::Near;
+use super::style::styled;
+use super::test_fixtures::{
+    N, built_with, octagon, predicted, river, street, streets,
+    surface, town, town_with,
+};
+use super::test_fixtures;
 
 #[test]
 fn review_curtain_reserves_both_faces_and_moat_cuts_stay_local() {
@@ -27,7 +40,7 @@ fn review_curtain_reserves_both_faces_and_moat_cuts_stay_local() {
     }
     // A river-side curtain is not an arcade along the bank.
     let water:Vec<_> = river(1000.0,1080.0).into_iter().map(|w|if w>0 {3} else {0}).collect();
-    let surface = super::test_fixtures::surface(&height,&water);
+    let surface = test_fixtures::surface(&height,&water);
     e.path = vec![pt(800.0,600.0),pt(1004.0,600.0),pt(1004.0,1400.0),pt(800.0,1400.0),pt(800.0,600.0)];
     let banks = composition::water_gates(&e.path,surface);
     e.gates = banks.iter().map(|b|b.0).collect();
@@ -279,7 +292,7 @@ fn served_lean_tos_leave_the_reserve_as_faubourg_lots() {
     let cfg = ParcelConfig::default();
     let morph = crate::urban::resolve(&layout.culture, &cfg.preset, &cfg.recipe,
         "core", cfg.density, &cfg.params, "parcels").unwrap();
-    let part = crate::urban::parcels::generate("walls", layout, &cfg, &morph).unwrap();
+    let part = parcels::generate("walls", layout, &cfg, &morph).unwrap();
     let lots: Vec<_> = part
         .parcels
         .iter()

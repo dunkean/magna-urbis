@@ -6,7 +6,9 @@
 //! curtain, its towers, its gates and gatehouses where a street crosses them, and no wet moat
 //! (`Style::cave`). Only a town whose surroundings are mostly solid rock is concerned: a surface town
 //! (no solid ground) keeps its circuit unchanged.
-use super::*;
+
+use crate::urban::{Point, Shape, Surface, geometry as g};
+use super::geometry::{Box2, V, add, buffer, dir, dist, pt};
 
 /// Grid step (m) of the floor analysis; coarser for a very large town (at most `MAX_SIDE` cells a side).
 const CELL: f64 = 4.0;
@@ -279,5 +281,5 @@ fn chamber_circuit(walls: &[Shape], surface: Surface<'_>) -> Option<Shape> {
 }
 
 #[cfg(test)]
-#[path = "fortification/cave_tests.rs"]
+#[path = "cave_tests.rs"]
 mod tests;

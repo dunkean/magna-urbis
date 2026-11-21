@@ -3,8 +3,12 @@
 //! the knoll stands within it, astride the wall when it stands at the rim
 //! (the town wall then runs round the castle and meets its curtain). The
 //! programme's castle or keep (`site: summit`) lands in it by the same height.
-use super::*;
-use super::super::LayoutConfig;
+
+use crate::rng::Rng;
+use crate::urban::{LayoutConfig, Point, Shape, Street, Surface, geometry as g};
+use super::geometry::{add, buffer, pt};
+use super::style::{culture_override, group, num};
+use super::trace::village_trace;
 
 /// Share of towns that crown their knoll (fortifications.json `heightsCastle`,
 /// culture then group); planned and Chinese cities keep their palace precinct.
@@ -143,5 +147,5 @@ pub(in super::super) fn wrap_castle(walls: Vec<Shape>, castle: &Shape) -> Vec<Sh
 }
 
 #[cfg(test)]
-#[path = "fortification/heights_tests.rs"]
+#[path = "heights_tests.rs"]
 mod tests;

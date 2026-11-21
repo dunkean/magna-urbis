@@ -1,4 +1,17 @@
-use super::*;
+//! Configured curtain styles, extensions and port walls.
+
+use crate::rng::Rng;
+use crate::urban::{
+    Enclosure, Geography, Layout, LayoutConfig, Point, Shape, Site,
+    Street, Surface, VectorGeography, generate_quarters, geometry as g, routing,
+};
+use super::super::geometry::{disc, pt};
+use super::{
+    adherence, cuts, ditch_kind, grade, inside, parameter_trace, port_quarters,
+    port_walls, river_mode, safe_trace, share, stiffness, valid_parameters, wall_shape,
+};
+use super::super::style::styled;
+
 const N:usize=128;
 const W:f64=2048.0;
 fn surface<'a>(height:&'a [f32],water:&'a [u8])->Surface<'a> {Surface {geometry:None,width:W,n:N,height,water, interpolation: Default::default(),}}
@@ -87,14 +100,14 @@ fn reviewed_witness_matrix() {
     let Ok(root)=std::env::var("WALL_PARAMS_FIXTURES") else {return;};
     #[derive(serde::Deserialize)] #[serde(rename_all="camelCase")]
     struct Fixture {seed:String,n:usize,width:f64,height:Vec<f32>,water:Vec<u8>,
-        geometry:Option<super::super::super::VectorGeography>,sites:Vec<super::super::super::Site>,roads:Vec<Street>,layout_config:LayoutConfig}
+        geometry:Option<VectorGeography>,sites:Vec<Site>,roads:Vec<Street>,layout_config:LayoutConfig}
     use std::fmt::Write;
     let out=std::path::PathBuf::from(std::env::var("WALL_PARAMS_OUT").unwrap());std::fs::create_dir_all(&out).unwrap();
     let cultures=std::env::var("WALL_PARAMS_CULTURES").unwrap_or("hanseatic,european-organic,al-andalus,caucasian-highland".into());
     for culture in cultures.split(',') {
         let f:Fixture=serde_json::from_slice(&std::fs::read(std::path::Path::new(&root).join(format!("{culture}.json"))).unwrap()).unwrap();
         let vector=f.geometry.as_ref().map(|g|(g.land.clone(),g.water.clone()));
-        let geo=f.geometry.map(|g|super::super::super::Geography::new(g,f.width).unwrap());
+        let geo=f.geometry.map(|g|Geography::new(g,f.width).unwrap());
         let surface=Surface {geometry:geo.as_ref(),n:f.n,width:f.width,height:&f.height,water:&f.water, interpolation: Default::default(),};
         let mut cases=vec![("default".into(),f.layout_config.clone())];
         if std::env::var("WALL_PARAMS_BASELINE").is_err() {
@@ -110,7 +123,7 @@ fn reviewed_witness_matrix() {
         }
         for (name,cfg) in cases {
             if let Ok(only)=std::env::var("WALL_PARAMS_CASES") {if !only.split(',').any(|s|s==name) {continue;}}
-            let layouts=super::super::super::generate_quarters(&f.seed,&f.sites,&cfg,surface,&f.roads).unwrap();let l=&layouts[0];
+            let layouts=generate_quarters(&f.seed,&f.sites,&cfg,surface,&f.roads).unwrap();let l=&layouts[0];
             if name=="s0-t0" {
                 let path=out.join(format!("{culture}-default.json"));
                 if path.exists() {

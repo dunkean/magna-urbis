@@ -5,7 +5,7 @@ use magna_urbis_geom::difference_many;
 pub(super) use magna_urbis_geom::{
     BoxGrid, ContainmentIndex, Region, area, band_edges, band_within, bbox, boxes_meet, centroid,
     cleaned, contains, difference, distance, interior_point, intersection, normalized, polygon,
-    rectangle, ribbon, segment_hit, segment_within, shapes, signed, simple, simple_around, simplify,
+    rectangle, ribbon, segment_hit, segment_within, shapes, signed, simple, simplify,
     split, touching_side, union, unneedled,
 };
 #[allow(unused_imports)]

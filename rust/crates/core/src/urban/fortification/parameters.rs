@@ -1,12 +1,24 @@
 //! Independent wall controls; absent controls retain the historical draw.
-use super::*;
-use super::super::{Layout, LayoutConfig, warnings};
-use super::super::routing::{self, RoutePlanner};
+
+use crate::rng::Rng;
+use crate::urban::{
+    Enclosure, Gatehouse, Layout, LayoutConfig, Point, Shape, Surface,
+    composition, geometry as g, routing, warnings,
+};
+use crate::urban::routing::RoutePlanner;
+use super::build::build;
+use super::geometry::{add, area, buffer, dir, disc, dist, normals, quad};
+use super::settle::settle;
+use super::street_clearance::Predicted;
+use super::style::{data, group, num, styled, text};
+use super::trace::wet_length;
+use super::options;
 
 pub(super) fn river_mode(cfg: &LayoutConfig) -> &str {
     if cfg.river_control_mode.is_empty() { if cfg.river_control { "bank-walls-chain" } else { "none" } }
     else { &cfg.river_control_mode }
 }
+#[cfg(test)]
 fn stiffness(cfg: &LayoutConfig) -> f64 { cfg.wall_stiffness.unwrap_or(f64::from(cfg.medieval_walls)) }
 /// Default stiffness of a culture's curtain (fortifications.json `groups.*.wallStiffness`);
 /// the old medieval toggle still means 1, an explicit value always wins.
@@ -415,8 +427,8 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
     layout.enclosures.retain(|e|!e.purpose.is_empty() && e.purpose!="port");
     for (i,(shape,purpose)) in traced.into_iter().enumerate() {
         let mut path=shape.outer;path.push(path[0]);
-        let mut gates=super::super::composition::gates(&path,&layout.streets);let land=gates.len();
-        let banks=super::super::composition::water_gates(&path,surface);
+        let mut gates=composition::gates(&path,&layout.streets);let land=gates.len();
+        let banks=composition::water_gates(&path,surface);
         for &(p,_) in &banks {if !gates.iter().any(|&q|dist(p,q)<8.0) {gates.push(p);}}
         let mut e=Enclosure {path,kind:template.kind.clone(),purpose:purpose.into(),gates,..Default::default()};
         build(&mut e,land,&banks,&layout.streets,surface,&style,pop,&predicted,&Rng::new(&format!("{}:port-wall:{i}",layout.key)));
@@ -441,11 +453,11 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
         }
         layout.enclosures.push(e);
     }
-    super::settle(layout,surface);
-    if river_mode(cfg)=="bank-walls-chain" {super::options::river_works(layout,surface);}
+    settle(layout,surface);
+    if river_mode(cfg)=="bank-walls-chain" {options::river_works(layout,surface);}
     true
 }
 
 #[cfg(test)]
-#[path = "fortification_params_tests.rs"]
+#[path = "parameters_tests.rs"]
 mod tests;

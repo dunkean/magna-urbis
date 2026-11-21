@@ -3,7 +3,9 @@
 //! and the stretch between them is shared: it stays the boundary between old
 //! town and new town. The old circuit and the extension are two closed
 //! enclosures whose union is one closed outline.
-use super::*;
+
+use crate::urban::{Enclosure, Point, Shape, Work, geometry as g};
+use super::geometry::{buffer_all, dist};
 
 /// Growth is lopsided when the centroid of every epoch's circuit sits more
 /// than a third of the old radius from the old centroid.
@@ -91,5 +93,5 @@ pub(in super::super) fn dedupe_shared(e: &mut Enclosure, kept: &Shape) {
 }
 
 #[cfg(test)]
-#[path = "fortification/extension_tests.rs"]
+#[path = "extension_tests.rs"]
 mod tests;

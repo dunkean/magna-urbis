@@ -1,65 +1,22 @@
 //! Opt-in wall morphology. Every disabled path returns before geometry or RNG work.
-use super::*;
-use super::super::{Layout, LayoutConfig};
+
+use crate::rng::Rng;
+use crate::urban::{
+    Enclosure, Layout, LayoutConfig, Point, Shape, Surface, Work,
+    composition, geometry as g, programme,
+};
+use super::geometry::{Cut, V, add, buffer, dir, disc, dist, normals, pt, quad};
+use super::settle::settle;
+use super::style::{culture_override, data, group, num};
+use super::parameters;
 
 #[cfg(test)]
-#[path = "fortification_options_tests.rs"]
+#[path = "options_tests.rs"]
 mod tests;
 
 pub(in super::super) fn keeps_citadel(culture: &str) -> bool {
     culture_override(culture).iter().rev().find_map(|v| v["innerEnclosure"].as_str())
         .or_else(|| group(culture)["innerEnclosure"].as_str()) == Some("citadel")
-}
-
-/// Local angular trace: use nearby slope breaks, and the last dry bank position.
-/// Existing cross-river curtains are left to the water-gate mechanism.
-pub(in super::super) fn option_trace(shape: Shape, surface: Surface<'_>, cfg: &LayoutConfig, wall_width:f64) -> Shape {
-    if !cfg.medieval_walls && !cfg.river_control { return shape; }
-    let mut path = shape.outer.clone();
-    path.push(path[0]);
-    let ns = normals(&path);
-    let mut points = vec![];
-    for (i, w) in path.windows(2).enumerate() {
-        let steps = (dist(w[0], w[1]) / 24.0).ceil().max(1.0) as usize;
-        for k in 0..steps {
-            let p = add(w[0], dir(w[0], w[1]), dist(w[0], w[1]) * k as f64 / steps as f64);
-            let n = ns[i];
-            let on_shore = cfg.river_control && surface.wet(p)
-                && !surface.wet(add(p,n,-wall_width-4.0)) && surface.wet(add(p,n,wall_width+4.0));
-            if surface.wet(p) && !on_shore { points.push(p); continue; }
-            let mut best = if on_shore {add(p,n,-wall_width-2.0)} else {p};
-            let mut score = 0.0;
-            if cfg.medieval_walls {
-                for off in [-12.0_f64, -6.0, 0.0, 6.0, 12.0] {
-                    let q = add(p, n, off);
-                    if surface.wet(q) || surface.wet(add(q, n, 4.0)) { continue; }
-                    let h = surface.height_at(q);
-                    let inside = surface.height_at(add(q, n, -12.0));
-                    let outside = surface.height_at(add(q, n, 12.0));
-                    let escarpment = (h - outside).max(0.0) / 12.0;
-                    let slope_break = ((inside - h) - (h - outside)).abs() / 12.0;
-                    let candidate = escarpment + slope_break - off.abs() * 0.004;
-                    if candidate > score { score = candidate; best = q; }
-                }
-            }
-            if cfg.river_control && !on_shore {
-                // Stay on this bank; never jump to the opposite dry bank.
-                if let Some(d) = (1..=40).map(|k| k as f64 * 2.0)
-                    .find(|&d| surface.wet(add(p, n, d))) {
-                    let candidate = add(p, n, d - wall_width - 2.0);
-                    if !surface.wet(candidate) { best = candidate; }
-                }
-            }
-            points.push(best);
-        }
-    }
-    points.push(points[0]);
-    let mut ring = g::simplify(&points, if cfg.medieval_walls { 4.0 } else { 1.5 }, |_| false);
-    ring.pop();
-    let trace = g::normalized(Shape { outer: ring, holes: shape.holes.clone() });
-    if trace.outer.len() < 3 || !g::simple(&trace)
-        || wet_length(&trace.outer, surface) > wet_length(&shape.outer, surface) + 2.0
-        || area(&g::intersection(&trace, &shape)) < g::area(&shape) * 0.94 { shape } else { trace }
 }
 
 /// Supply must be local and downhill from a nearby water level. A low wet
@@ -92,12 +49,12 @@ pub(super) fn ditch_kind(shape: &Shape, surface: Surface<'_>, rng: &Rng) -> &'st
 /// An actual gate square is public land; service selection then locates inns
 /// and a suburb church around these same nuclei, using existing cultural demand.
 pub(in super::super) fn prepare_options(layout: &mut Layout, cfg: &LayoutConfig, surface: Surface<'_>) {
-    super::super::composition::prepare_gate_villages(layout, cfg, surface);
-    if super::parameters::river_mode(cfg) == "bank-walls-chain" { river_works(layout,surface); }
+    composition::prepare_gate_villages(layout, cfg, surface);
+    if parameters::river_mode(cfg) == "bank-walls-chain" { river_works(layout,surface); }
 }
 
-pub(in super::super) fn service_cost(layout:&Layout,d:&super::super::programme::Demand,p:Point)->f64 {
-    super::super::composition::gate_service_cost(layout, d, p)
+pub(in super::super) fn service_cost(layout:&Layout,d:&programme::Demand,p:Point)->f64 {
+    composition::gate_service_cost(layout, d, p)
 }
 
 pub(super) fn river_works(layout:&mut Layout,surface:Surface<'_>) {
@@ -214,7 +171,7 @@ pub(super) fn river_works(layout:&mut Layout,surface:Surface<'_>) {
     if !works.is_empty() {
         layout.enclosures[0].reserve.extend(works.iter().filter(|w|w.kind!="river-chain").map(|w|w.shape.clone()));
         layout.enclosures[0].outworks.extend(works);
-        super::settle(layout,surface);
+        settle(layout,surface);
     }
 }
 

@@ -1,5 +1,17 @@
-use super::*;
-use super::super::super::{composition, Site};
+//! Optional fortification works and the streets and lots they serve.
+
+use crate::rng::Rng;
+use crate::urban::{
+    Block, Enclosure, Geography, Layout, LayoutConfig, ParcelConfig, Point,
+    Shape, Site, Street, Surface, VectorGeography, composition, generate_parcels,
+    generate_quarters, geometry as g, routing,
+};
+use super::super::build::build;
+use super::super::geometry::{Cut, add, area, dir, dist, normals, pt};
+use super::{ditch_kind, finish_options, keeps_citadel, prepare_options};
+use super::super::street_clearance::Predicted;
+use super::super::style::styled;
+use super::super::trace::wet_length;
 
 const N:usize=128;
 const W:f64=2048.0;
@@ -142,7 +154,7 @@ fn inner_estates_keep_a_gate_and_gate_squares_are_real_public_land() {
     }
     l.programme=None;l.enclosures.clear();l.quarters[0].zone="faubourg".into();
     let center=point(800.0,850.0);
-    l.blocks.push(super::super::super::Block {shape:g::rectangle(760.0,810.0,840.0,890.0),
+    l.blocks.push(Block {shape:g::rectangle(760.0,810.0,840.0,890.0),
         quarter:0,kind:"block".into(),zone:"faubourg".into(),phase:Some(0),axis:point(1.0,0.0)});
     l.streets.push(Street {role:"gate-village".into(),..street(point(800.0,750.0),center)});
     prepare_options(&mut l,&LayoutConfig {gate_villages:true,..Default::default()},s);
@@ -160,9 +172,9 @@ fn river_witness_on_off_svg() {
     let Ok(path)=std::env::var("WALLS_OPTS_FIXTURE") else {return;};
     #[derive(serde::Deserialize)] #[serde(rename_all="camelCase")]
     struct Fixture {seed:String,n:usize,width:f64,height:Vec<f32>,water:Vec<u8>,
-        geometry:Option<super::super::super::VectorGeography>,sites:Vec<Site>,roads:Vec<Street>,layout_config:LayoutConfig}
+        geometry:Option<VectorGeography>,sites:Vec<Site>,roads:Vec<Street>,layout_config:LayoutConfig}
     let f:Fixture=serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    let geography=f.geometry.map(|g|super::super::super::Geography::new(g,f.width).unwrap());
+    let geography=f.geometry.map(|g|Geography::new(g,f.width).unwrap());
     let s=Surface {geometry:geography.as_ref(),width:f.width,n:f.n,height:&f.height,water:&f.water, interpolation: Default::default(),};
     let out=std::env::var("WALLS_OPTS_OUT").unwrap();std::fs::create_dir_all(&out).unwrap();
     for culture in ["european-organic","bastide","al-andalus","medina","hanseatic"] {
@@ -172,7 +184,7 @@ fn river_witness_on_off_svg() {
                 ..f.layout_config.clone()};
             let c=composition::generate(&f.seed,&site,&cfg,s,&f.roads,site.radius).unwrap();
             for road in c.plan.streets.iter().filter(|s|s.role=="gate-village") {
-                assert!(super::super::super::routing::path_clear(s,&road.path,0.12),"gate village crosses water or a cliff");
+                assert!(routing::path_clear(s,&road.path,0.12),"gate village crosses water or a cliff");
             }
             let (x0,y0,x1,y1)=g::bbox(&c.plan.envelope);
             let mut svg=format!("<svg xmlns='http://www.w3.org/2000/svg' viewBox='{} {} {} {}' width='1100' height='1100'><rect x='{}' y='{}' width='{}' height='{}' fill='#f2e5bf'/>",x0-80.0,y0-80.0,x1-x0+160.0,y1-y0+160.0,x0-80.0,y0-80.0,x1-x0+160.0,y1-y0+160.0);
@@ -192,13 +204,13 @@ fn river_witness_on_off_svg() {
             std::fs::write(std::path::Path::new(&out).join(format!("{culture}-{}.json",if on{"on"}else{"off"})),
                 serde_json::to_vec(&serde_json::json!({"enclosures":c.plan.enclosures,"quarters":c.plan.quarters,"streets":c.plan.streets})).unwrap()).unwrap();
             if culture=="european-organic" && on {
-                let cities=super::super::super::generate_quarters(&f.seed,&[site.clone()],&cfg,s,&f.roads).unwrap();
+                let cities=generate_quarters(&f.seed,&[site.clone()],&cfg,s,&f.roads).unwrap();
                 let city=&cities[0];
                 assert_eq!(city.programme.as_ref().unwrap().population,10000);
                 assert!(city.blocks.iter().any(|b|b.kind=="place" && b.zone=="faubourg"),"no real gate square");
                 assert!(city.enclosures.iter().any(|e|e.purpose=="cathedral-close"),"no cathedral close on the reserved estate");
                 assert!(city.enclosures.iter().flat_map(|e|&e.outworks).any(|w|w.kind=="river-chain"),"no channel control at the river-bank town");
-                let parts=super::super::super::generate_parcels(&f.seed,&cities,&super::super::super::ParcelConfig::default()).unwrap();
+                let parts=generate_parcels(&f.seed,&cities,&ParcelConfig::default()).unwrap();
                 let pr=parts[0].programme.as_ref().unwrap();
                 for role in ["commerce.inn","worship.parish"] {
                     let outside=pr.allocations.iter().filter(|a|a.role==role).filter(|a| {
@@ -213,4 +225,55 @@ fn river_witness_on_off_svg() {
             }
         }
     }
+}
+
+/// Local angular trace: use nearby slope breaks, and the last dry bank position.
+/// Existing cross-river curtains are left to the water-gate mechanism.
+fn option_trace(shape: Shape, surface: Surface<'_>, cfg: &LayoutConfig, wall_width:f64) -> Shape {
+    if !cfg.medieval_walls && !cfg.river_control { return shape; }
+    let mut path = shape.outer.clone();
+    path.push(path[0]);
+    let ns = normals(&path);
+    let mut points = vec![];
+    for (i, w) in path.windows(2).enumerate() {
+        let steps = (dist(w[0], w[1]) / 24.0).ceil().max(1.0) as usize;
+        for k in 0..steps {
+            let p = add(w[0], dir(w[0], w[1]), dist(w[0], w[1]) * k as f64 / steps as f64);
+            let n = ns[i];
+            let on_shore = cfg.river_control && surface.wet(p)
+                && !surface.wet(add(p,n,-wall_width-4.0)) && surface.wet(add(p,n,wall_width+4.0));
+            if surface.wet(p) && !on_shore { points.push(p); continue; }
+            let mut best = if on_shore {add(p,n,-wall_width-2.0)} else {p};
+            let mut score = 0.0;
+            if cfg.medieval_walls {
+                for off in [-12.0_f64, -6.0, 0.0, 6.0, 12.0] {
+                    let q = add(p, n, off);
+                    if surface.wet(q) || surface.wet(add(q, n, 4.0)) { continue; }
+                    let h = surface.height_at(q);
+                    let inside = surface.height_at(add(q, n, -12.0));
+                    let outside = surface.height_at(add(q, n, 12.0));
+                    let escarpment = (h - outside).max(0.0) / 12.0;
+                    let slope_break = ((inside - h) - (h - outside)).abs() / 12.0;
+                    let candidate = escarpment + slope_break - off.abs() * 0.004;
+                    if candidate > score { score = candidate; best = q; }
+                }
+            }
+            if cfg.river_control && !on_shore {
+                // Stay on this bank; never jump to the opposite dry bank.
+                if let Some(d) = (1..=40).map(|k| k as f64 * 2.0)
+                    .find(|&d| surface.wet(add(p, n, d))) {
+                    let candidate = add(p, n, d - wall_width - 2.0);
+                    if !surface.wet(candidate) { best = candidate; }
+                }
+            }
+            points.push(best);
+        }
+    }
+    points.push(points[0]);
+    let mut ring = g::simplify(&points, if cfg.medieval_walls { 4.0 } else { 1.5 }, |_| false);
+    ring.pop();
+    let trace = g::normalized(Shape { outer: ring, holes: shape.holes.clone() });
+    if trace.outer.len() < 3 || !g::simple(&trace)
+        || wet_length(&trace.outer, surface) > wet_length(&shape.outer, surface) + 2.0
+        || area(&g::intersection(&trace, &shape)) < g::area(&shape) * 0.94 { shape } else { trace }
 }

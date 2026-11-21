@@ -1,7 +1,7 @@
 //! Style resolution by culture, population, period and terrain.
 
-use super::{Inputs, resolve};
 use crate::rng::Rng;
+use super::style::{Inputs, resolve};
 
 fn inputs<'a>(culture: &'a str, pop: u32, period: &'a str, relief: f64) -> Inputs<'a> {
     Inputs {

@@ -1,8 +1,15 @@
 //! Gate reconciliation and how final streets meet the curtain.
 
-use super::{Cut, Near, area, close_crossings, closed, dist, g, guard_main_gates, pt, reconcile_gates, settle, stop_at_curtains};
-use super::test_fixtures::{N, W, built, octagon, river, street, streets, structures, surface, town, town_on};
-use crate::urban::{Block, Enclosure, Layout, Point, Shape, Street, composition};
+use crate::urban::{Block, Enclosure, Layout, Point, Shape, Street, composition, geometry as g};
+use super::crossings::{close_crossings, stop_at_curtains};
+use super::geometry::{Cut, closed, dist, pt};
+use super::reconcile::{guard_main_gates, reconcile_gates};
+use super::settle::settle;
+use super::street_clearance::Near;
+use super::test_fixtures::{
+    N, W, built, octagon, river, street, streets,
+    structures, surface, town, town_on,
+};
 
 #[test]
 fn review_forced_circuits_gain_water_gates_and_keep_regional_access() {

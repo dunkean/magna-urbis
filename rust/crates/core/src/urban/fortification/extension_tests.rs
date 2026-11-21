@@ -1,6 +1,8 @@
 //! Shared curtains and gates in attached enclosures.
 
-use super::*;
+use crate::urban::{Enclosure, Point, Shape, Tower, geometry as g};
+use super::{attach, dedupe_shared, inner_gates, lopsided, shared_length};
+use super::super::geometry::{disc, pt};
 
 #[test]
 fn an_attached_extension_shares_a_stretch_of_the_old_wall_and_the_union_stays_closed() {

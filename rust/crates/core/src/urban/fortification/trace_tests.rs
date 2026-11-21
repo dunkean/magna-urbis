@@ -1,10 +1,19 @@
 //! Curtain traces, pocket repair and occupied banks.
 
-use super::{CONTOUR_PAIRS, PocketLimits, TRACE_PAIRS, area, bastioned_trace, build, curtain_trace, disc, dist, g, hill_trace, pockets, pt, styled, trace_enclosures, wet_length, without_invaginations};
-use super::test_fixtures::{N, W, octagon, predicted, river, street, streets, surface};
-use crate::urban::{Enclosure, Geography, LayoutConfig, Point, Shape, Site, Street, Surface, VectorGeography, composition};
-use crate::rng::Rng;
 use serde_json::Value;
+use crate::rng::Rng;
+use crate::urban::{
+    Enclosure, Geography, LayoutConfig, Point, Shape, Site, Street,
+    Surface, VectorGeography, composition, geometry as g,
+};
+use super::build::build;
+use super::geometry::{area, disc, dist, pt};
+use super::pockets::{PocketLimits, pockets, without_invaginations};
+use super::style::styled;
+use super::trace::{
+    CONTOUR_PAIRS, TRACE_PAIRS, bastioned_trace, curtain_trace, hill_trace, trace_enclosures, wet_length,
+};
+use super::test_fixtures::{N, W, octagon, predicted, river, street, streets, surface};
 
 fn notch(depth: f64, width: f64) -> Shape {
     g::normalized(Shape { outer: vec![pt(400.0, 400.0), pt(700.0, 400.0),
