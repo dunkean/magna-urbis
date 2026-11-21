@@ -113,9 +113,10 @@ pub fn label(id: &str) -> &'static str {
 }
 
 /// Site archetypes where a small town is worth a wall, or a village clusters.
-const DEFENSIVE: [&str; 4] = ["hilltop", "spur", "pass", "island"];
+pub(super) const DEFENSIVE: [&str; 4] = ["hilltop", "spur", "pass", "island"];
+pub(super) const WALLED_TOWN_MINIMUM: u32 = 2500;
 /// Cultures whose villages are enclosed by definition: the draw that leaves most villages open skips them.
-const FORTIFIED_VILLAGES: [&str; 10] = [
+pub(super) const FORTIFIED_VILLAGES: [&str; 10] = [
     "kraal", "maori-pa", "guarani-village", "mississippian", "native-iroquoian",
     "nubian-fortified", "ksar-oasis", "levantine-tell", "celtic-oppidum", "norse-ringfort",
 ];
@@ -323,7 +324,7 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
     ) != "none";
     let defensive = DEFENSIVE.contains(&cfg.site_archetype.as_str());
     if pop < 5000 {
-        if fortifies && (pop >= 2500 || defensive) {
+        if fortifies && (pop >= WALLED_TOWN_MINIMUM || defensive) {
             Kind::WalledTown
         } else {
             Kind::MarketTown
@@ -442,7 +443,7 @@ pub(super) fn effective(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> (L
             set(&mut c.suburbs, "auto", "few");
             // A small bourg grew in two periods (founding, market growth); a
             // larger one keeps the default three, its faubourg included.
-            if default_epochs && site.population < 2500 {
+            if default_epochs && site.population < WALLED_TOWN_MINIMUM {
                 c.footprint.epochs = 2;
             }
         }

@@ -10,13 +10,13 @@ pub(super) fn river_mode(cfg: &LayoutConfig) -> &str {
 fn stiffness(cfg: &LayoutConfig) -> f64 { cfg.wall_stiffness.unwrap_or(f64::from(cfg.medieval_walls)) }
 /// Default stiffness of a culture's curtain (fortifications.json `groups.*.wallStiffness`);
 /// the old medieval toggle still means 1, an explicit value always wins.
-fn culture_stiffness(cfg: &LayoutConfig, culture: &str) -> f64 {
+pub(in super::super) fn culture_stiffness(cfg: &LayoutConfig, culture: &str) -> f64 {
     let base=num(group(culture),"wallStiffness",num(&data()["groups"]["default"],"wallStiffness",0.0));
     cfg.wall_stiffness.unwrap_or(if cfg.medieval_walls {1.0} else {num(&data()["wallStiffness"],culture,base)})
 }
 /// Height a straight run may rise above its ends: `wallRelief` 0 → 2 m (round every
 /// knoll), 1 → no limit; absent → the data's maxCrestM.
-fn crest_limit(cfg: &LayoutConfig) -> f64 {
+pub(in super::super) fn crest_limit(cfg: &LayoutConfig) -> f64 {
     match cfg.wall_relief { Some(r) if r>=1.0 => f64::INFINITY, Some(r) => 2.0+38.0*r.max(0.0), None => num(&data()["trace"],"maxCrestM",12.0) }
 }
 /// How a second enclosure relates to the first: the parameter, else the culture's default.
@@ -24,7 +24,7 @@ pub(in super::super) fn wall_extension(cfg: &LayoutConfig, culture: &str) -> Str
     if !cfg.wall_extension.is_empty() { return cfg.wall_extension.clone(); }
     text(group(culture),"wallExtension",&text(&data()["groups"]["default"],"wallExtension","concentric"))
 }
-fn adherence(cfg: &LayoutConfig) -> f64 { cfg.wall_terrain.unwrap_or(f64::from(cfg.medieval_walls)) }
+pub(in super::super) fn adherence(cfg: &LayoutConfig) -> f64 { cfg.wall_terrain.unwrap_or(f64::from(cfg.medieval_walls)) }
 fn grade() -> f64 { num(&data()["trace"],"maxGrade",0.9) }
 pub(in super::super) fn valid_parameters(cfg: &LayoutConfig) -> bool {
     [cfg.wall_stiffness,cfg.wall_terrain,cfg.ditch_wetness].iter().flatten()

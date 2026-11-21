@@ -14,6 +14,7 @@ pub mod walls;
 pub mod water;
 
 pub use export::TownPlan;
+use charter::PlannedSetting;
 use magna_urbis_geom::{Point, Shape, surface::TerrainView};
 use serde::{Deserialize, Serialize};
 use spec::TownSpecs;
@@ -32,6 +33,9 @@ pub struct TownSite {
     pub population: u32,
     /// Culture key retained with the town for downstream stages.
     pub culture: String,
+    /// Site archetype supplied by settlement placement, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archetype: Option<String>,
 }
 
 /// Inputs for a single run of the growth engine.
@@ -48,6 +52,8 @@ pub struct TownRequest<'a> {
     pub neighbour_claims: &'a [Shape],
     /// Town seed used to derive its event streams.
     pub seed: &'a str,
+    /// Whether to use the culture's planned share or explicitly lay a frame.
+    pub planned: PlannedSetting,
 }
 
 /// Generate a town layout from its site and resolved specs.

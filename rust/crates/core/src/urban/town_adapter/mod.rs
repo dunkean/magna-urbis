@@ -1,5 +1,7 @@
 //! Adapts growth engine inputs and outputs to the core urban stages.
 
+pub(super) mod specs;
+
 use super::{Layout, LayoutConfig, Site, Street, Surface};
 
 /// Return a growth layout when the requested site can be handled by the growth engine.

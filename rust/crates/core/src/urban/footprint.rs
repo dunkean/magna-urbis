@@ -508,7 +508,7 @@ fn capacity_epochs_surveyed(
 const ENCLOSED_BLOCKS: f64 = 4.0;
 /// Gross inhabitants/hectare an enceinte is sized for at village scale: a wall
 /// is paid per metre, so it never encloses open land.
-const ENCLOSED_DENSITY: f64 = 150.0;
+pub(super) const ENCLOSED_DENSITY: f64 = 150.0;
 /// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the
 /// population, never a flat minimum that would inflate a small village's wall).
 /// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the

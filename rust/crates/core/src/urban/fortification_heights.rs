@@ -8,7 +8,7 @@ use super::super::LayoutConfig;
 
 /// Share of towns that crown their knoll (fortifications.json `heightsCastle`,
 /// culture then group); planned and Chinese cities keep their palace precinct.
-fn culture_share(culture: &str) -> f64 {
+pub(in super::super) fn culture_share(culture: &str) -> f64 {
     culture_override(culture).iter().rev().find_map(|v| v["heightsCastle"].as_f64())
         .unwrap_or_else(|| num(group(culture), "heightsCastle", 0.0))
 }

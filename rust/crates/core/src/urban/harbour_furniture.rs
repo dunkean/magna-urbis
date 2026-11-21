@@ -45,7 +45,7 @@ const MAX_CARGO: usize = 36;
 const MAX_FRONTS: usize = 64;
 const MAX_KERBS: usize = 90;
 
-fn data() -> &'static Value {
+pub(super) fn data() -> &'static Value {
     static DATA: OnceLock<Value> = OnceLock::new();
     DATA.get_or_init(|| serde_json::from_str(include_str!("harbours.json")).expect("harbours.json"))
 }
@@ -1268,7 +1268,7 @@ fn canal_boats(seed: &str, layout: &mut Layout) {
 }
 
 /// The harbour family of a culture (`default` when no family names it).
-fn family_of(culture: &str) -> &'static Value {
+pub(super) fn family_of(culture: &str) -> &'static Value {
     let families = &data()["families"];
     families
         .as_object()
@@ -1286,7 +1286,7 @@ fn small_craft(culture: &str) -> Option<(&'static str, f64, f64)> {
 
 /// Settlements under this population (and every port of a `simple` family)
 /// get one plain landing instead of quays and harbour works.
-const TOWN_PORT: u32 = 2500;
+pub(super) const TOWN_PORT: u32 = 2500;
 /// Width of a plain landing strip: 2 m on the bank, 0.5 m over the water.
 const STRIP: (f64, f64) = (2.0, 0.5);
 /// Height of a plain landing's deck above its water (m).

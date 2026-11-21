@@ -8,7 +8,7 @@ use super::geometry as g;
 use super::programme::BlockEnvironment;
 use super::{Layout, Point, QuarterOverride, UrbanDistrict};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 use std::sync::OnceLock;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -374,19 +374,11 @@ fn density_scale(e: &ServiceEntry, density: f64, nucleus: bool, required: bool) 
         None
     }
 }
-/// Combinable effects are applied once per catalogue entry. Shared count
-/// effects use their maximum; no Cartesian duplicate service demands.
-/// A culture's own entries (`cultureServices`) replace the family entry of
-/// the same role. `density` divides `per` and the population thresholds (by
-/// its square root) and multiplies `max`; singular entries (per = 0) stay one.
-pub fn services_scaled(
+/// Merge the culture's service overrides and place its nucleus in the programme.
+pub(super) fn service_entries(
     culture: &str,
-    population: u32,
-    functions: super::programme::ProgrammeFunctions,
-    density: f64,
-) -> Vec<ServiceNeed> {
-    use std::borrow::Cow;
-    let pop = f64::from(population);
+    pop: f64,
+) -> (Vec<Cow<'static, ServiceEntry>>, Option<&'static String>) {
     let cat = catalogue();
     let mut entries: Vec<Cow<'static, ServiceEntry>> = cat
         .families
@@ -446,6 +438,22 @@ pub fn services_scaled(
             );
         }
     }
+    (entries, nucleus_role)
+}
+
+/// Combinable effects are applied once per catalogue entry. Shared count
+/// effects use their maximum; no Cartesian duplicate service demands.
+/// A culture's own entries (`cultureServices`) replace the family entry of
+/// the same role. `density` divides `per` and the population thresholds (by
+/// its square root) and multiplies `max`; singular entries (per = 0) stay one.
+pub fn services_scaled(
+    culture: &str,
+    population: u32,
+    functions: super::programme::ProgrammeFunctions,
+    density: f64,
+) -> Vec<ServiceNeed> {
+    let pop = f64::from(population);
+    let (entries, nucleus_role) = service_entries(culture, pop);
     entries
         .into_iter()
         .filter_map(|e| {

@@ -76,6 +76,10 @@ pub(in super::super) struct Harbour {
     /// Lagoon towns line every shore and canal with quays (fondamenta).
     pub fondamenta: bool,
 }
+
+pub(in super::super) const HARBOUR_REACH_MIN: f64 = 1000.0;
+pub(in super::super) const MOLE_POPULATION_MIN: u32 = 6000;
+
 impl Default for Harbour {
     fn default() -> Self {
         Self {
@@ -166,7 +170,7 @@ pub(in super::super) fn sited(
     } else {
         cfg.max_street_grade
     };
-    let search = (2.5 * site.radius).max(1000.0);
+    let search = (2.5 * site.radius).max(HARBOUR_REACH_MIN);
     // A port is supplied from its town over land. A flat offshore island is
     // never a substitute for an inaccessible mainland coast, even if it has
     // more room. Reuse one terrain router for the shortlisted bank candidates.
@@ -922,7 +926,7 @@ pub(in super::super) fn seaward(
 /// Narrowest water a quay may front (m): two barges' beams and the way
 /// between them. A stream narrower than this is crossed and banked, not
 /// berthed.
-const NAVIGABLE: f64 = 10.0;
+pub(in super::super) const NAVIGABLE: f64 = 10.0;
 
 /// Width of the water beside a quay (m): across the first water met within
 /// 15 m and two raster cells of the path, square to it, at a quarter, half and three quarters of
@@ -1289,7 +1293,7 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
     let mut own: Vec<(Point, Point)> = vec![];
     let mut roots: Vec<Point> = vec![];
     // Moles first: they claim the best front.
-    if moles && (h.basin || !h.fondamenta) && !small && population >= 6000.0 {
+    if moles && (h.basin || !h.fondamenta) && !small && population >= f64::from(MOLE_POPULATION_MIN) {
         let best = quays
             .iter()
             .filter(|q|front_water(surface,&q.path).is_some_and(|(kind,_)|kind=="sea"))

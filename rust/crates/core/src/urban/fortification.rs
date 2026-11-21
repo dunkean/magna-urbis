@@ -386,81 +386,95 @@ fn period_allows(style: &str, period: &str, culture: &str) -> bool {
     }
 }
 
-/// The style of a fortification of `kind`, deterministic per site (`rng` is
-/// the site's `fortification` stream; only forks of it are drawn).
-pub(super) fn resolve(kind: &str, i: &Inputs, rng: &Rng, warnings: &mut Vec<String>) -> Style {
+fn style_choices<'a>(kind: &str, i: &Inputs<'a>) -> (Vec<(&'a str, u32)>, bool) {
     let material = culture_override(i.culture)
         .iter()
         .rev()
         .find_map(|o| o["material"].as_str())
         .unwrap_or("");
-    let mut id = match kind {
-        "hedge" => "hedge".to_string(),
-        "palisade" if material == "timber-earth" => "gord".into(),
-        "palisade" => "palisade".into(),
-        _ => String::new(),
+    if STYLES.contains(&i.forced) && family(i.forced) == family_of_kind(kind) {
+        return (vec![(i.forced, 1)], true);
+    }
+    match kind {
+        "hedge" => return (vec![("hedge", 1)], false),
+        "palisade" if material == "timber-earth" => return (vec![("gord", 1)], false),
+        "palisade" => return (vec![("palisade", 1)], false),
+        _ => {}
+    }
+    let p = prosperity(i.pop, i.state);
+    let defensive = matches!(i.archetype, "hilltop" | "spur" | "pass" | "island");
+    let [own, cat] = culture_override(i.culture);
+    let table = if cat["styles"].is_array() {
+        &cat["styles"]
+    } else if own["styles"].is_array() {
+        &own["styles"]
+    } else {
+        &group(i.culture)["styles"]
     };
-    let mut forced = false;
-    if i.forced != "auto" && STYLES.contains(&i.forced) {
-        if family(i.forced) == family_of_kind(kind) {
-            id = i.forced.into();
-            forced = true;
-        } else {
-            warnings.push(format!(
-                "Style de fortification « {} » incompatible avec {} : style culturel conservé.",
-                i.forced,
-                label(kind)
-            ));
-        }
+    let mut candidates: Vec<_> = table
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|c| {
+            let s = c["style"].as_str().unwrap_or("");
+            family(s) == "wall"
+                && Style::preset(s).is_some()
+                && c["minPop"].as_u64().is_none_or(|m| i.pop as u64 >= m)
+                && c["maxPop"].as_u64().is_none_or(|m| i.pop as u64 <= m)
+                && c["periods"]
+                    .as_array()
+                    .is_none_or(|a| a.iter().any(|x| x.as_str() == Some(i.period)))
+                && period_allows(s, i.period, i.culture)
+                && (c["needs"].as_str() != Some("strong") || p > 0.6 || defensive)
+        })
+        .map(|c| {
+            (
+                c["style"].as_str().unwrap_or("flanked"),
+                c["weight"].as_u64().unwrap_or(1).max(1) as u32,
+            )
+        })
+        .collect();
+    if candidates.is_empty() {
+        candidates.push((if i.pop >= 3000 { "flanked" } else { "curtain" }, 1));
     }
-    if id.is_empty() {
-        let p = prosperity(i.pop, i.state);
-        let defensive = matches!(i.archetype, "hilltop" | "spur" | "pass" | "island");
-        let [own, cat] = culture_override(i.culture);
-        let table = if cat["styles"].is_array() {
-            &cat["styles"]
-        } else if own["styles"].is_array() {
-            &own["styles"]
-        } else {
-            &group(i.culture)["styles"]
-        };
-        let candidates: Vec<(&str, u32)> = table
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|c| {
-                let s = c["style"].as_str().unwrap_or("");
-                family(s) == "wall"
-                    && Style::preset(s).is_some()
-                    && c["minPop"].as_u64().is_none_or(|m| i.pop as u64 >= m)
-                    && c["maxPop"].as_u64().is_none_or(|m| i.pop as u64 <= m)
-                    && c["periods"]
-                        .as_array()
-                        .is_none_or(|a| a.iter().any(|x| x.as_str() == Some(i.period)))
-                    && period_allows(s, i.period, i.culture)
-                    && (c["needs"].as_str() != Some("strong") || p > 0.6 || defensive)
-            })
-            .map(|c| {
-                (
-                    c["style"].as_str().unwrap_or("flanked"),
-                    c["weight"].as_u64().unwrap_or(1).max(1) as u32,
-                )
-            })
-            .collect();
-        id = if candidates.is_empty() {
-            if i.pop >= 3000 { "flanked" } else { "curtain" }.into()
-        } else {
-            let weights: Vec<u32> = candidates.iter().map(|c| c.1).collect();
-            let k = rng
-                .fork("style")
-                .weighted_index(&weights)
-                .unwrap_or_default();
-            candidates[k].0.into()
-        };
+    (candidates, false)
+}
+
+/// Resolved precinct styles and their catalogue weights before the town's draw.
+pub(super) fn growth_styles(kind: &str, i: &Inputs<'_>, cfg: &LayoutConfig) -> Vec<(Style, u32)> {
+    let (choices, forced) = style_choices(kind, i);
+    choices
+        .into_iter()
+        .map(|(id, weight)| {
+            let mut style = styled(id, i.culture, i.pop);
+            style.forced = forced;
+            style.options(cfg);
+            (style, weight)
+        })
+        .collect()
+}
+
+/// The style of a fortification of `kind`, deterministic per site (`rng` is
+/// the site's `fortification` stream; only forks of it are drawn).
+pub(super) fn resolve(kind: &str, i: &Inputs, rng: &Rng, warnings: &mut Vec<String>) -> Style {
+    let (choices, forced) = style_choices(kind, i);
+    if !forced && STYLES.contains(&i.forced) {
+        warnings.push(format!(
+            "Style de fortification « {} » incompatible avec {} : style culturel conservé.",
+            i.forced,
+            label(kind)
+        ));
     }
+    let mut id = if let [(id, _)] = choices.as_slice() {
+        *id
+    } else {
+        let weights: Vec<u32> = choices.iter().map(|c| c.1).collect();
+        let k = rng.fork("style").weighted_index(&weights).unwrap_or_default();
+        choices[k].0
+    };
     // Terrain modifiers apply after the draw, so the draw itself stays stable.
-    let hill = i.relief > 0.07 && family(&id) == "wall";
-    if hill && !forced && matches!(id.as_str(), "bastioned" | "concentric") {
+    let hill = i.relief > 0.07 && family(id) == "wall";
+    if hill && !forced && matches!(id, "bastioned" | "concentric") {
         warnings.push(format!(
             "Fortification : tracé {} ramené à une enceinte flanquée (relief).",
             if id == "bastioned" {
@@ -469,9 +483,9 @@ pub(super) fn resolve(kind: &str, i: &Inputs, rng: &Rng, warnings: &mut Vec<Stri
                 "à double enceinte"
             }
         ));
-        id = "flanked".into();
+        id = "flanked";
     }
-    let mut s = styled(&id, i.culture, i.pop);
+    let mut s = styled(id, i.culture, i.pop);
     s.hill = hill;
     s.forced = forced;
     s
@@ -490,11 +504,14 @@ pub(super) use options::{option_trace, keeps_citadel, prepare_options, finish_op
 
 #[path = "fortification_heights.rs"]
 mod heights;
-pub(super) use heights::{heights_castle, wrap_castle};
+pub(super) use heights::{culture_share as heights_castle_share, heights_castle, wrap_castle};
 
 #[path = "fortification_params.rs"]
 mod parameters;
-pub(super) use parameters::{valid_parameters, parameter_trace, port_walls, wall_extension};
+pub(super) use parameters::{
+    adherence, crest_limit, culture_stiffness, parameter_trace, port_walls, valid_parameters,
+    wall_extension,
+};
 
 #[path = "fortification_extension.rs"]
 mod extension;

@@ -92,20 +92,47 @@ impl Default for SurveySpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CharterSpec {
-    /// Kind of focus placed by the founding event.
-    pub founding_focus: FoundingFocusKind,
-    /// Whether the town opens land in rings from founding or starts with a planned frame.
-    pub form: TownForm,
-    /// Whether and when the town begins its precinct cycle.
-    pub defensive_intent: DefensiveIntent,
-    /// Town-specific outcomes of the founding draws.
-    pub draws: TownDraws,
+    /// Available founding focuses in culture preference order.
+    pub founding_rule: Vec<FoundingFocusKind>,
+    /// Housed population the first precinct of an enclosed town is sized for.
+    pub founding_cohort: u32,
+    /// Minimum request for which this culture can lay a planned frame.
+    pub planned_founding_cohort: u32,
+    /// Share of eligible towns founded with a planned frame in auto mode.
+    pub planned_share: f64,
+    /// Tissue of a town founded below the planned cohort.
+    pub village_tissue_id: String,
+    /// Tissue used in a planned frame.
+    pub planned_tissue_id: String,
+    /// Defensive shares at a site without an archetype-specific preference.
+    pub defensive_shares: DefensiveShares,
+    /// Shares that replace the default for a named site archetype.
+    pub defensive_by_archetype: BTreeMap<String, DefensiveShares>,
+    /// Chance of founding at a surveyed strong point without a defensive archetype.
+    pub strong_point_share: f64,
+    /// Radius in metres for finding local regional roads and their crossings.
+    pub regional_road_reach: f64,
+    /// Maximum water span in metres for a founding ford or bridge.
+    pub ford_max_span: f64,
+    pub bridge_max_span: f64,
+    /// Grade at the surveyed centre above which the site counts as steep.
+    pub steep_grade: f64,
+}
+
+/// Unconditional shares of each defensive intent. The remaining share is unwalled.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefensiveShares {
+    pub enclosed_from_founding: f64,
+    pub walled_when_grown: f64,
 }
 
 /// Feature around which the town is founded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FoundingFocusKind {
+    /// The requested site when no preferred feature is available.
+    Site,
     /// Crossing of regional roads.
     RoadCrossing,
     /// Ford on a regional route.
@@ -163,6 +190,8 @@ pub struct PhaseDraw {
     pub promotion_threshold: u32,
     /// Kind of wall permitted for the next raise, if any.
     pub wall_kind: Option<WallKind>,
+    /// Style of the next wall trace and its works.
+    pub wall_style: Option<String>,
     /// Capacity multiplier used to size the next precinct at compact density.
     pub precinct_step: f64,
     /// Additional share of intramural capacity from ageing before the next survey.
@@ -187,18 +216,55 @@ pub struct PhaseSpec {
     pub circumstance_modifiers: CircumstanceModifiers,
     /// Tissue identifier for quarters born in this phase.
     pub tissue_id: String,
+    /// Tissue used inside a surveyed precinct.
+    pub compact_tissue_id: String,
+    /// Gross inhabitants per hectare for newly opened land.
+    pub density: f64,
+    /// Gross inhabitants per hectare used to size an open precinct.
+    pub compact_density: f64,
+    /// Occupied share of a quarter's fixed lots at birth and each successive age.
+    pub fill_schedule: Vec<f64>,
     /// Kind of wall permitted for the next raise, if any.
     pub wall_kind: Option<WallKind>,
+    /// Weighted styles eligible for this phase's wall kind.
+    pub wall_styles: Vec<WallStyleSpec>,
+    /// This phase allows a town walled when grown to start its first precinct.
+    pub walls_when_grown: bool,
     /// Capacity multiplier used to size the next precinct at compact density.
     pub precinct_step: f64,
     /// Additional share of intramural capacity from ageing before the next survey.
     pub precinct_gain: f64,
+    /// Absolute spread about the phase's precinct step and gain, respectively.
+    pub precinct_step_spread: f64,
+    pub precinct_gain_spread: f64,
     /// Desired treatment of the old wall line at the next raise.
     pub fossil_rule: FossilRule,
     /// Preferred shape of the next precinct extension.
     pub extension_habit: ExtensionHabit,
     /// Treatment of regional roads through the town when it reaches this phase.
     pub road_fate: RoadFate,
+    /// Treatment of those roads in a planned town.
+    pub planned_road_fate: RoadFate,
+    /// Population thresholds for the reused programme.
+    pub programme: ProgrammeThresholds,
+    /// Population thresholds for harbour works permitted in this phase.
+    pub harbour_works: HarbourThresholds,
+}
+
+/// A wall style eligible for a phase, with its resulting kind and relative weight.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WallStyleSpec {
+    pub id: String,
+    pub kind: WallKind,
+    pub weight: u32,
+}
+
+/// Housed population in inhabitants at which a programme can be introduced.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ProgrammeThresholds {
+    pub market: Option<u32>,
+    pub hall: Option<u32>,
+    pub cathedral: Option<u32>,
 }
 
 /// Multipliers on the drawn promotion threshold. A value of 1 leaves it unchanged.
@@ -274,6 +340,11 @@ pub enum RoadFate {
 pub struct TissueSpec {
     /// Stable identifier used by a phase to select this tissue.
     pub id: String,
+    /// Street and block pattern interpreted by the tissue stage.
+    pub pattern: String,
+    /// Culture recipe and zone used by the downstream lot cut.
+    pub recipe: String,
+    pub zone: String,
     /// Values interpreted by the selected street and block pattern.
     pub parameters: BTreeMap<String, TissueParameter>,
     /// Street morphology when the tissue is organic.
@@ -281,12 +352,14 @@ pub struct TissueSpec {
     pub organic: Option<OrganicParams>,
 }
 
-/// Scalar parameter for a tissue pattern.
+/// Parameter for a tissue pattern, resolved for its zone.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TissueParameter {
     /// Continuous or integer-valued numeric setting.
     Number(f64),
+    /// Range or other ordered numeric settings.
+    Numbers(Vec<f64>),
     /// Boolean switch.
     Flag(bool),
     /// Named mode or choice.
@@ -303,8 +376,12 @@ pub struct WallSpec {
     pub terrain_adherence: f64,
     /// Maximum crest relief, in metres, that a straight run can cross.
     pub crest_limit: f64,
-    /// Resolved style identifier for the wall trace and works.
+    /// Baseline style when a phase does not supply an eligible style.
     pub style: String,
+    /// Cultural shape of the enclosure, used with the phase's wall style.
+    pub enclosure_shape: String,
+    /// Whether the culture keeps a citadel on open land when there is no castle.
+    pub keeps_citadel: bool,
 }
 
 /// Controls for choosing and extending a harbour front.
