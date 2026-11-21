@@ -49,7 +49,7 @@ fn high_ground_reserves_the_highest_admissible_blocks_for_church_and_keep() {
         streets:vec![Street{key: None, path:vec![Point{x:100.,y:465.},Point{x:900.,y:465.}],widths:vec![6.;2],rank:1,role:"street".into()}],
         blocks:points.iter().map(|&x|Block{key: None, shape:geometry::rectangle(x-32.,468.,x+32.,532.),quarter:0,kind:"block".into(),axis:Point{x:1.,y:0.},zone:"core".into(),fill: None, phase:None}).collect(),
         warnings:vec![],enclosures:vec![],phases:vec![],archetype:"city".into(),structure:None,
-        claim: Default::default(),};
+        claim: Default::default(),regional_road_result: None,};
     let mut on=base.clone();on.config.as_mut().unwrap().power_high_ground=true;
     programme::prepare(&mut base,10000,&ProgrammeContext::default(),surface).unwrap();
     programme::prepare(&mut on,10000,&ProgrammeContext::default(),surface).unwrap();
