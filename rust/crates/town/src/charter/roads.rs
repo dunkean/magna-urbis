@@ -24,7 +24,7 @@ impl RoadFacts {
             r.min(spec.regional_road_reach)
         });
         let mut facts = Self::default();
-        let mut previous = Vec::new();
+        let mut previous: Vec<[Point; 2]> = Vec::new();
         for road in roads {
             let mut segments = Vec::new();
             let mut run = WaterRun::default();

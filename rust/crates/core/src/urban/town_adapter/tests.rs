@@ -121,11 +121,12 @@ fn cross() -> Layout {
             quarters: vec![QuarterPlan {
                 key: quarter_key,
                 phase: 0,
-                tissue: "organic",
+                tissue: "organic".into(),
                 faces,
                 fill_level: 1.0,
             }],
             warnings: vec![],
+            stop: Default::default(),
         },
         &site,
         &LayoutConfig::default(),

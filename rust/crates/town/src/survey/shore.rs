@@ -275,7 +275,7 @@ impl Shore {
 
         // A water code identifies the kind of water, but even a lake shore
         // needs an unbroken channel of usable width directly off the bank.
-        let wet = |d| {
+        let wet = |d: f64| {
             let p = behind(middle, -d);
             in_terrain(p, grid.width) && terrain.wet(p)
         };

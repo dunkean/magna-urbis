@@ -441,7 +441,7 @@ fn style_choices<'a>(kind: &str, i: &Inputs<'a>) -> (Vec<(&'a str, u32)>, bool) 
 }
 
 /// Resolved precinct styles and their catalogue weights before the town's draw.
-pub(super) fn growth_styles(kind: &str, i: &Inputs<'_>, cfg: &LayoutConfig) -> Vec<(Style, u32)> {
+pub(super) fn growth_styles(kind: &str, i: &Inputs<'_>, cfg: &super::LayoutConfig) -> Vec<(Style, u32)> {
     let (choices, forced) = style_choices(kind, i);
     choices
         .into_iter()

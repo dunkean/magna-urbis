@@ -4196,6 +4196,7 @@ version = "0.1.0"
 dependencies = [
  "magna-urbis-geom",
  "magna-urbis-random",
+ "rayon",
  "serde",
  "serde_json",
 ]

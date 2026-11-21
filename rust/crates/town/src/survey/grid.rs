@@ -326,7 +326,7 @@ fn slope_at(
     if p.x >= step && p.y >= step && p.x + step < width && p.y + step < width {
         return terrain.slope_at(p, step);
     }
-    let grade = |dx, dy| {
+    let grade = |dx: f64, dy: f64| {
         let (a, b) = (offset(p, -dx, -dy), offset(p, dx, dy));
         match (in_terrain(a, width), in_terrain(b, width)) {
             (true, true) => (terrain.height_at(b) - terrain.height_at(a)) / (2.0 * step),

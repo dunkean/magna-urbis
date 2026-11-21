@@ -331,7 +331,7 @@ pub(in crate::urban) fn housing_probe_programme(
         warnings: vec![],
         housing_capacity: 0.0,
         navigable_frontage: false,
-    });
+    }
 }
 
 /// Households and garden land that the parcel stage gives each block of a
