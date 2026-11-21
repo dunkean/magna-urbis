@@ -1,5 +1,6 @@
 //! Footprint capacity probes and housing slope relaxation.
-use super::{budget, capacity, capacity_epochs_surveyed, housing_relaxation, terrain};
+use super::super::{capacity, epochs::budget, terrain};
+use super::{capacity_epochs_surveyed, housing_relaxation};
 use crate::urban::{LayoutConfig, Morph, Point, Site, Surface, resolve};
 
 /// Zone, recipe and land share of each growth epoch, for the capacity plan.

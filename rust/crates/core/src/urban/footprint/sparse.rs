@@ -1,6 +1,11 @@
 //! Optional porous growth. Travel remains possible through unoccupied land;
 //! only terrain-routed, substantial components survive as new neighbourhoods.
-use super::*;
+use super::geometry::{distance, union};
+use super::lattice::Grid;
+use super::site::slope;
+use crate::rng::Rng;
+use crate::urban::{LayoutConfig, Point, Shape, Street, Surface, UrbanCenter, geometry as g, routing};
+use std::f64::consts::TAU;
 
 pub(super) fn enabled(cfg: &LayoutConfig) -> bool {
     let f = &cfg.footprint;
@@ -324,7 +329,9 @@ pub(super) fn serve(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::geometry::area;
+    use super::serve;
+    use crate::urban::{LayoutConfig, Point, Street, Surface, UrbanCenter, geometry as g, routing};
 
     /// Review 03/11 (native-plains camp 1500, concentric): a patch at the camp
     /// gate, on the regional road, was linked to the camp's centre by a street

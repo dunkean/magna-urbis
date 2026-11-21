@@ -9,7 +9,8 @@
 //! each used one becomes a street of role `bridge` (or `ford`) at street width.
 //! Without a regional or buildable crossing, water stays a boundary.
 use super::super::{Point, Street, Surface, routing};
-use super::{Grid, distance};
+use super::geometry::distance;
+use super::lattice::Grid;
 use std::collections::HashMap;
 
 /// Physical and cultural limits of the crossings a town may build.
@@ -558,8 +559,12 @@ pub(super) fn candidates(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::urban::{LayoutConfig, Site, generate_quarters, geography, geometry as g, network};
+    use super::{deck, street_count};
+    use super::super::geometry::distance;
+    use crate::urban::{
+        LayoutConfig, Point, Site, Street, Surface, generate_quarters, geography, geometry as g,
+        network, routing,
+    };
 
     fn street(points: &[(f64, f64)], role: &str) -> Street {
         Street { path: points.iter().map(|&(x, y)| Point { x, y }).collect(),

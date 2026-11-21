@@ -1,6 +1,10 @@
 //! Real PNW input plus explicitly synthetic corridor guards; no input repair.
-use super::*;
-use super::super::resolve;
+use super::generate;
+use super::ribbon::internal_ribbon_guides;
+use crate::urban::{
+    LayoutConfig, Morph, Point, Shape, Site, Street, Surface, geometry as g, resolve, routing,
+};
+use geo::{Relate, Validation};
 use serde::Deserialize;
 use serde_json::{Value,json};
 #[derive(Deserialize)]

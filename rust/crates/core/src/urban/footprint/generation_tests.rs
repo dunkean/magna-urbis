@@ -1,8 +1,9 @@
 //! Footprint sizing, foundation placement and accessible growth.
-use super::{
-    area, budget, distance, epoch_densities, epoch_fractions, epoch_zone, family, generate,
-    geography, orientation, planned, summit_access, template,
-};
+use super::archetypes::{family, planned, template};
+use super::epochs::{budget, epoch_densities, epoch_fractions, epoch_zone};
+use super::geometry::{area, distance};
+use super::site::{geography, orientation, summit_access};
+use super::generate;
 use crate::rng::Rng;
 use crate::urban::{
     FootprintConfig, LayoutConfig, Morph, Point, Site, Street, Surface, UrbanCenter, composition,

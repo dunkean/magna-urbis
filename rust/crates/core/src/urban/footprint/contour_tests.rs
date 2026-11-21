@@ -1,5 +1,7 @@
 //! Growth contours preserve buildable land, components and water holes.
-use super::{Grid, area, distance, dry, smooth_growth};
+use super::contours::smooth_growth;
+use super::geometry::{area, distance, dry};
+use super::lattice::Grid;
 use crate::rng::Rng;
 use crate::urban::{Point, Shape, Surface, geography, geometry as g};
 use geo::Validation;
