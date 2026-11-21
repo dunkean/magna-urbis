@@ -3,7 +3,7 @@
 use magna_urbis_geom::{Point, Shape, distance};
 use serde::{Deserialize, Serialize};
 
-use super::{Capacity, CapacityBlock, CapacityInputs};
+use super::{Capacity, CapacityBlock, CapacityInputs, par};
 use crate::blocks::{BlockSpec, from_graph};
 use crate::graph::{Clock, EdgeClass, FaceId, Graph, Key, Station};
 
@@ -34,6 +34,10 @@ pub struct QuarterRecord {
     pub levels: Vec<Clock>,
     /// The fill step reached, from 0 at birth.
     pub step: usize,
+    /// The step from which the quarter is rebuilt in its phase's compact tissue (the last one),
+    /// when that tissue differs from the one it was born with: old quarters densify with age.
+    #[serde(default)]
+    pub compact_step: Option<usize>,
 }
 
 impl QuarterRecord {
@@ -45,6 +49,11 @@ impl QuarterRecord {
     /// Occupied share of its lots at its fill step.
     pub fn fill(&self) -> f64 {
         self.fill_schedule[self.step]
+    }
+
+    /// Whether the quarter has been rebuilt in its phase's compact tissue.
+    pub fn compact(&self) -> bool {
+        self.compact_step.is_some_and(|c| self.step >= c)
     }
 
     /// Households the next fill step adds, or `None` at the last step.
@@ -62,6 +71,9 @@ pub(super) struct Birth<'a> {
     pub density: f64,
     pub intramural: bool,
     pub fill_schedule: &'a [f64],
+    /// The phase's compact tissue (recipe, zone, density) when it differs from the birth tissue:
+    /// counted once more, fully occupied, as the quarter's last ageing step.
+    pub compact: Option<(&'a str, &'a str, f64)>,
 }
 
 /// The pressure frozen at birth: classic's decay with access cost (`parcels/pressure.rs`), read
@@ -90,17 +102,33 @@ pub(super) fn levels(
         .iter()
         .flat_map(|&face| capacity_blocks(graph, face, clock))
         .collect();
-    let mut out: Vec<Clock> = Vec::with_capacity(birth.fill_schedule.len());
-    for &fill in birth.fill_schedule {
-        let inputs = CapacityInputs {
+    let mut inputs: Vec<CapacityInputs<'_>> = birth
+        .fill_schedule
+        .iter()
+        .map(|&fill| CapacityInputs {
             pressure: birth.pressure,
             recipe: birth.recipe,
             zone: birth.zone,
             density: birth.density,
             intramural: birth.intramural,
             fill_level: fill,
-        };
-        let housed = Clock::from_households(capacity.households(&blocks, inputs));
+        })
+        .collect();
+    if let Some((recipe, zone, density)) = birth.compact {
+        inputs.push(CapacityInputs {
+            pressure: birth.pressure,
+            recipe,
+            zone,
+            density,
+            intramural: birth.intramural,
+            fill_level: 1.0,
+        });
+    }
+    // Each level is an independent cut and allocation of the same blocks: counted in parallel.
+    let counts = par::map(&inputs, |_, &at| capacity.households(&blocks, at));
+    let mut out: Vec<Clock> = Vec::with_capacity(counts.len());
+    for housed in counts {
+        let housed = Clock::from_households(housed);
         let floor = out.last().copied().unwrap_or(Clock::ZERO);
         out.push(housed.max(floor));
     }
@@ -118,10 +146,11 @@ fn capacity_blocks(graph: &Graph, face: FaceId, clock: Clock) -> Vec<CapacityBlo
         .into_iter()
         .flatten()
         .map(|h| graph.edge(h.edge()))
+        // A boundary becomes a street once the next ring opens beyond it: it is frontage.
         .filter(|edge| {
             !matches!(
                 edge.class.current(),
-                EdgeClass::Boundary | EdgeClass::Precinct | EdgeClass::Wall | EdgeClass::Canal
+                EdgeClass::Precinct | EdgeClass::Wall | EdgeClass::Canal
             )
         })
         .map(|edge| {

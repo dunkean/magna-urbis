@@ -8,9 +8,10 @@ mod tail;
 #[cfg(test)]
 mod tests;
 
-use magna_urbis_town::{TownRequest, TownSite, charter::PlannedSetting};
+use magna_urbis_town::growth::{self, Verdict};
+use magna_urbis_town::{TownPlan, TownRequest, TownSite, charter::PlannedSetting};
 
-use super::{Layout, LayoutConfig, Site, Street, Surface, kinds};
+use super::{Layout, LayoutConfig, ParcelConfig, Site, Street, Surface, kinds};
 
 /// Return a growth layout when the requested site can be handled by the growth engine.
 pub(super) fn generate(
@@ -74,10 +75,51 @@ pub(super) fn generate(
         config,
         surface,
     };
-    let plan = magna_urbis_town::generate(request, &capacity).ok()?;
-    let mut layout = layout::build(&plan, site, config, culture).ok()?;
     let kind = kinds::resolve(site, config, regional_roads);
-    tail::finish(seed, &key_seed, &mut layout, site, config, kind, surface).ok()?;
-    layout.warnings.extend(plan.warnings);
+    let finish = |plan: &TownPlan| -> Option<Layout> {
+        let mut layout = layout::build(plan, site, config, culture).ok()?;
+        tail::finish(seed, &key_seed, &mut layout, site, config, kind, surface).ok()?;
+        layout.warnings.extend(plan.warnings.iter().cloned());
+        Some(layout)
+    };
+    let plan = growth::generate(&request, &capacity).ok()?;
+    let mut layout = finish(&plan)?;
+    // The final allocation on the real cut decides (design 3.3): a town housing at least 90 % of
+    // its households is kept, with a warning when short; below that growth reopens once at its
+    // cursor, for the households missing scaled by how far the birth counts were off.
+    let wanted = growth::target_households(&request);
+    let mut housed = housed_by_lots(seed, &layout);
+    if let Verdict::Reopen { .. } = growth::verdict(housed, wanted, false) {
+        let counted = plan.stop.target.households().max(1.0);
+        let ratio = (wanted / housed.max(1.0)).min(REOPEN_RATIO);
+        if let Ok(more) = growth::reopen(&request, &capacity, &plan, counted * (ratio - 1.0))
+            && let Some(next) = finish(&more)
+        {
+            let homes = housed_by_lots(seed, &next);
+            if homes > housed {
+                (layout, housed) = (next, homes);
+            }
+        }
+    }
+    if let Verdict::Short(line) = growth::verdict(housed, wanted, true) {
+        layout.warnings.push(line);
+    }
     Some(layout)
 }
+
+/// Households the town's lot stage houses: the published cut and its allocations, as the
+/// parcels stage runs them on this layout.
+fn housed_by_lots(seed: &str, layout: &Layout) -> f64 {
+    super::generate_parcels(seed, std::slice::from_ref(layout), &ParcelConfig::default())
+        .map_or(0.0, |parts| {
+            parts
+                .iter()
+                .filter_map(|p| p.programme.as_ref())
+                .flat_map(|p| &p.allocations)
+                .map(|a| a.households)
+                .sum()
+        })
+}
+
+/// The most a reopening multiplies a town's count by.
+const REOPEN_RATIO: f64 = 3.0;

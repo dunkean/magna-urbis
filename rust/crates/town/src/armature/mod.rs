@@ -2,10 +2,10 @@
 //!
 //! Regional roads enter whole at founding, clipped to the survey reach: they exist before the
 //! town and already cross every ring. The tissue's main axes start at the founding focus as
-//! classic's organic spines do (`cultural_spines` in core's `urban/macroplan.rs`: two
-//! diameters through the nucleus, the first along the town's orientation, the second square to
-//! it, an arm that would double a regional road left out and its opposite arm continuing the
-//! road) and are prolonged ring by ring, from their tip on the town's limit to the new
+//! classic's organic spines do (`cultural_spines` in core's `urban/macroplan.rs`: diameters
+//! through the nucleus, the first along the town's orientation, the others evenly turned from
+//! it (three, so that the town radiates six main streets as classic's do), an arm that would
+//! double a regional road left out and its opposite arm continuing the road) and are prolonged ring by ring, from their tip on the town's limit to the new
 //! boundary. Harbour and castle roads join the founding chains in later lots.
 
 mod boundary;
@@ -222,7 +222,9 @@ pub fn plan_arms(
     };
     let width = |rank: u8| params.width_by_rank[usize::from(rank).min(4)] * params.width_scale;
 
-    let diameters = if params.radial { 4 } else { 2 };
+    // Classic's organic towns radiate six to eight main streets from their centre: three
+    // diameters, four for a radial tissue, less those a regional road already runs along.
+    let diameters = if params.radial { 4 } else { 3 };
     let mut arms = Vec::new();
     for i in 0..diameters {
         let jitter = if params.radial && i > 0 {

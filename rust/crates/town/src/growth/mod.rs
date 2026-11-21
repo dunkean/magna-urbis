@@ -70,8 +70,9 @@ pub struct CapacityInputs<'a> {
     pub fill_level: f64,
 }
 
-/// Counts households in a quarter using its blocks and birth conditions.
-pub trait Capacity {
+/// Counts households in a quarter using its blocks and birth conditions. The levels of one
+/// quarter are counted in parallel, hence `Sync`.
+pub trait Capacity: Sync {
     /// Count households at the requested fill level using only this quarter.
     fn households(&self, blocks: &[CapacityBlock], inputs: CapacityInputs<'_>) -> f64;
 }

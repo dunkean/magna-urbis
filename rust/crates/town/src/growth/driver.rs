@@ -289,6 +289,15 @@ impl<'a> Driver<'a> {
                     .filter(|&f| graph.face(f).life.live())
                     .collect(),
                 fill_level: q.fill(),
+                population: q.housed().households() * self.spec.household_size,
+                aged: q
+                    .compact()
+                    .then(|| {
+                        let id = &self.plan.phases[q.phase].spec.compact_tissue_id;
+                        self.request.specs.tissues.iter().find(|t| &t.id == id)
+                    })
+                    .flatten()
+                    .map(|t| (t.recipe.clone(), t.zone.clone())),
             })
             .collect();
         let phases = (0..=self.phase)

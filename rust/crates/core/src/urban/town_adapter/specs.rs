@@ -63,8 +63,15 @@ pub(in crate::urban) fn build(culture: &str, cfg: &LayoutConfig) -> Result<TownS
             radius: extent_radius(sample),
             neighbours: Vec::new(),
         };
-        let (zone, recipe_name) = footprint::epoch_zone(&open, culture, sample, epoch);
-        let recipe_name = if name == "hamlet" { name } else { recipe_name };
+        // The founding phases lay the town's oldest quarters. Classic densifies a village's own
+        // farm tissue until it houses its households (`footprint::capacity`); growth has no such
+        // forecast, so they take the tissue of a town's middle ring, which holds about what
+        // classic's densified village holds (lots of 400 to 600 m²).
+        let (zone, recipe_name) = if matches!(name, "hamlet" | "village") {
+            ("middle", "ring")
+        } else {
+            footprint::epoch_zone(&open, culture, sample, epoch)
+        };
         let recipe = phase_recipe(culture, sample, recipe_name, &open);
         let morph = phase_morph(culture, &recipe, zone, &open)?;
         let compact = LayoutConfig {

@@ -6,12 +6,16 @@
 //! loop. The loop runs along cell sides, so it follows banks and cliffs (closed cells) to half a
 //! cell; it is simplified to less than half a cell, which keeps the focus inside.
 
-use magna_urbis_geom::{Point, Shape, signed, simple, simplify};
+use magna_urbis_geom::{Point, Shape, contains, signed, simple, simplify};
 
 use crate::survey::{CostField, Survey};
 
 /// Simplification tolerance in cells: under half a cell, so the centre cell stays inside.
 const TOLERANCE: f64 = 0.45;
+/// Tolerance in cells tried first: it drops the cell staircase, so a boundary that becomes a
+/// street runs straight, and it rarely runs along an older boundary traced on the same cells.
+/// Kept only when the loop stays simple and holds the centre.
+const SMOOTH_TOLERANCE: f64 = 1.3;
 /// Rounds of hole filling and corner widening before the loop is traced.
 const CLEAN_ROUNDS: usize = 8;
 
@@ -230,7 +234,6 @@ impl Lattice {
         };
         let points: Vec<Point> = ring.into_iter().map(point).collect();
         let corners_only = drop_collinear(&points);
-        let simplified = simplify_ring(&corners_only, TOLERANCE * self.step);
         let valid = |r: &[Point]| {
             r.len() >= 3
                 && signed(r) > 0.0
@@ -239,6 +242,20 @@ impl Lattice {
                     holes: vec![],
                 })
         };
+        let smooth = simplify_ring(&corners_only, SMOOTH_TOLERANCE * self.step);
+        let holds_centre = |r: &[Point]| {
+            contains(
+                &Shape {
+                    outer: r.to_vec(),
+                    holes: vec![],
+                },
+                self.centre,
+            )
+        };
+        if valid(&smooth) && holds_centre(&smooth) {
+            return Some(smooth);
+        }
+        let simplified = simplify_ring(&corners_only, TOLERANCE * self.step);
         if valid(&simplified) {
             Some(simplified)
         } else if valid(&corners_only) {

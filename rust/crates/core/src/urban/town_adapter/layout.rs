@@ -1,10 +1,10 @@
 //! Project the finished graph into the index-based urban layout.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use magna_urbis_town::TownPlan;
 use magna_urbis_town::blocks::{self, BlockSpec};
-use magna_urbis_town::graph::{Clock, Edge, EdgeClass, FaceKind, Graph, Key};
+use magna_urbis_town::graph::{Clock, Edge, EdgeClass, EdgeId, FaceId, FaceKind, Graph, Key};
 
 use super::super::{
     Block, GrowthPhase, Layout, LayoutConfig, Point, Quarter, Site, Street, UrbanCenter,
@@ -39,7 +39,7 @@ pub(super) fn build(
         culture: culture.into(),
         center: plan.center,
         quarters: Vec::with_capacity(plan.quarters.len()),
-        streets: streets(graph, clock),
+        streets: streets(graph, clock, &town_faces(plan)),
         blocks: Vec::new(),
         warnings: Vec::new(),
         enclosures: Vec::new(),
@@ -71,9 +71,42 @@ pub(super) fn build(
         ..UrbanStructure::default()
     };
     for birth in &plan.quarters {
-        let phase = phases
-            .get_mut(birth.phase)
-            .ok_or_else(|| format!("Unknown growth phase for {:?}", birth.key))?;
+        // A quarter rebuilt in its compact tissue with age is cut as a phase of its own: its
+        // birth phase with the compact recipe and zone, holding its inhabitants and land.
+        let slot = match &birth.aged {
+            None => birth.phase,
+            Some((recipe, zone)) => {
+                let base = phases
+                    .get(birth.phase)
+                    .ok_or_else(|| format!("Unknown growth phase for {:?}", birth.key))?;
+                let kind = format!("{}-aged", base.kind);
+                match phases.iter().position(|p| p.kind == kind) {
+                    Some(at) => at,
+                    None => {
+                        let aged = GrowthPhase {
+                            kind,
+                            recipe: recipe.clone(),
+                            zone: zone.clone(),
+                            population: 0.0,
+                            target_area: 0.0,
+                            ..base.clone()
+                        };
+                        phases.push(aged);
+                        phases.len() - 1
+                    }
+                }
+            }
+        };
+        if slot != birth.phase {
+            let land: f64 = birth.faces.iter().filter_map(|&f| graph.outline(f)).map(|s| g::area(&s)).sum();
+            let born = &mut phases[birth.phase];
+            born.population = (born.population - birth.population).max(0.0);
+            born.target_area = (born.target_area - land).max(0.0);
+            let aged = &mut phases[slot];
+            aged.population += birth.population;
+            aged.target_area += land;
+        }
+        let phase = &mut phases[slot];
         let key = key_string(&birth.key);
         let mut faces = birth.faces.clone();
         faces.retain(|&id| graph.face(id).life.live() && graph.face(id).life.alive_at(clock));
@@ -89,13 +122,13 @@ pub(super) fn build(
         layout.quarters.push(Quarter {
             key: Some(key),
             shape,
-            phase: birth.phase,
+            phase: slot,
             zone: phase.zone.clone(),
         });
         structure.districts.push(UrbanDistrict {
             id: quarter,
             center: 0,
-            phase: birth.phase,
+            phase: slot,
             tissue: birth.tissue.clone(),
             quarters: vec![quarter],
             role: String::new(),
@@ -128,7 +161,7 @@ pub(super) fn build(
                     kind: kind.into(),
                     axis,
                     zone: phase.zone.clone(),
-                    phase: Some(birth.phase),
+                    phase: Some(slot),
                     fill: Some(birth.fill_level),
                 });
             }
@@ -142,11 +175,32 @@ pub(super) fn build(
     Ok(layout)
 }
 
-fn streets(graph: &Graph, clock: Clock) -> Vec<Street> {
+/// The live faces of the town's quarters.
+fn town_faces(plan: &TownPlan) -> HashSet<FaceId> {
+    plan.quarters.iter().flat_map(|q| q.faces.iter().copied()).collect()
+}
+
+/// Whether an edge borders a quarter on both sides (`both`) or on at least one.
+fn bordered(graph: &Graph, id: EdgeId, town: &HashSet<FaceId>, both: bool) -> bool {
+    let sides = [graph.left_face(id), graph.right_face(id)].map(|f| town.contains(&f));
+    if both { sides[0] && sides[1] } else { sides[0] || sides[1] }
+}
+
+fn streets(graph: &Graph, clock: Clock, town: &HashSet<FaceId>) -> Vec<Street> {
     let mut chains = BTreeSet::new();
     let mut loose = Vec::new();
     for id in graph.live_edges() {
         let edge = graph.edge(id);
+        // A regional road runs on beyond the town: only its stretches along a quarter are
+        // streets. A ring boundary is a street once quarters lie on both of its sides.
+        let kept = match edge.class.current() {
+            EdgeClass::RegionalRoad => bordered(graph, id, town, false),
+            EdgeClass::Boundary => bordered(graph, id, town, true),
+            _ => true,
+        };
+        if !kept {
+            continue;
+        }
         if let Some(chain) = &edge.chain {
             chains.insert(chain);
         } else {
@@ -160,6 +214,11 @@ fn streets(graph: &Graph, clock: Clock) -> Vec<Street> {
             graph
                 .faces_along_chain(chain)
                 .into_iter()
+                .filter(|step| match graph.edge(step.edge).class.current() {
+                    EdgeClass::RegionalRoad => bordered(graph, step.edge, town, false),
+                    EdgeClass::Boundary => bordered(graph, step.edge, town, true),
+                    _ => true,
+                })
                 .filter_map(|step| street(graph.edge(step.edge), clock, step.half.is_forward())),
         );
     }
@@ -186,11 +245,19 @@ fn street(edge: &Edge, clock: Clock, forward: bool) -> Option<Street> {
         EdgeClass::RegionalRoad => "regional",
         EdgeClass::HarbourRoad => "port-road",
         EdgeClass::CastleRoad => "street",
+        // A ring boundary between two quarters (the caller keeps only those) is a street.
+        EdgeClass::Boundary => {
+            return street_of(edge, clock, forward, 2, "street");
+        }
         // The other edges delimit land and do not carry street traffic.
-        EdgeClass::Boundary | EdgeClass::Wall | EdgeClass::Precinct | EdgeClass::Canal => {
+        EdgeClass::Wall | EdgeClass::Precinct | EdgeClass::Canal => {
             return None;
         }
     };
+    street_of(edge, clock, forward, rank, role)
+}
+
+fn street_of(edge: &Edge, _clock: Clock, forward: bool, rank: usize, role: &str) -> Option<Street> {
     let mut path = edge.polyline.clone();
     let mut widths = edge.widths.clone();
     if !forward {

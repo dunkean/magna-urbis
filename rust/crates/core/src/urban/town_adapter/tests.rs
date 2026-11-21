@@ -124,6 +124,8 @@ fn cross() -> Layout {
                 tissue: "organic".into(),
                 faces,
                 fill_level: 1.0,
+                population: 1000.0,
+                aged: None,
             }],
             warnings: vec![],
             stop: Default::default(),

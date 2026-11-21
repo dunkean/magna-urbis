@@ -28,6 +28,10 @@ pub struct QuarterPlan {
     /// Handles in `TownPlan::graph`.
     pub faces: Vec<FaceId>,
     pub fill_level: f64,
+    /// Inhabitants it holds at its fill step.
+    pub population: f64,
+    /// Recipe and zone of the compact tissue it was rebuilt in with age, if it was.
+    pub aged: Option<(String, String)>,
 }
 
 /// A town layout and its generation warnings.
