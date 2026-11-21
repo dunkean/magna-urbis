@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::tissue::organic::OrganicParams;
+
 /// Resolved specs for one town.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,8 +18,74 @@ pub struct TownSpecs {
     pub tissues: Vec<TissueSpec>,
     /// Tracing parameters for the town's precincts and walls.
     pub wall: WallSpec,
-    /// Harbour siting and expansion parameters.
+    /// Terrain thresholds and costs used to survey the site.
+    #[serde(default)]
+    pub survey: SurveySpec,
+    /// Harbour enclosure and expansion parameters.
     pub harbour: HarbourSpec,
+}
+
+/// Thresholds and costs for terrain survey. Grades are rise over horizontal run.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SurveySpec {
+    /// Grid spacing in metres. The default 8 m resolves a street or terrace.
+    pub cell_size: f64,
+    /// Maximum buildable ground grade. The default 1.25 is the cliff limit for terraces.
+    pub cliff_limit: f64,
+    /// Grade at which a metre costs twice as much as on flat ground.
+    pub terrace_limit: f64,
+    /// Exponent in the slope factor `1 + (grade / terrace_limit)^slope_power`.
+    pub slope_power: f64,
+    /// Minimum change in grade across a cell to flag a break. Crests use a quarter of this.
+    pub slope_break: f64,
+    /// Fixed cost in effective metres per entry into a water span.
+    pub water_charge: f64,
+    /// Minimum clear water width in metres for navigation.
+    pub navigable_width: f64,
+    /// Maximum straight-line distance in metres from the centre to a harbour front.
+    pub harbour_reach: f64,
+    /// Minimum continuous length in metres for a usable shore run.
+    pub harbour_min_front: f64,
+    /// Maximum grade along a front and across its inland approach strip.
+    pub harbour_bank_grade: f64,
+    /// Radius in metres of the ring used to measure summit prominence.
+    pub strong_point_radius: f64,
+    /// Minimum summit elevation above the median open ground in metres.
+    pub strong_point_min_rise: f64,
+    /// Minimum summit elevation above its surrounding ring in metres.
+    pub strong_point_min_prominence: f64,
+    /// Minimum contiguous area of a dry, level summit in square metres.
+    pub strong_point_min_top_area: f64,
+    /// Maximum ground grade for a level summit cell.
+    pub strong_point_top_grade: f64,
+    /// Maximum grade along a route to a summit.
+    pub lane_grade: f64,
+}
+
+impl Default for SurveySpec {
+    fn default() -> Self {
+        Self {
+            cell_size: 8.0,
+            cliff_limit: 1.25,
+            terrace_limit: 0.65,
+            slope_power: 2.0,
+            slope_break: 0.08,
+            water_charge: 80.0,
+            // Allow a 10 m channel and look for an 80 m bank at street grade.
+            navigable_width: 10.0,
+            harbour_reach: 1000.0,
+            harbour_min_front: 80.0,
+            harbour_bank_grade: 0.12,
+            // Survey a small bailey and test its rise and local prominence.
+            strong_point_radius: 60.0,
+            strong_point_min_rise: 5.0,
+            strong_point_min_prominence: 3.0,
+            strong_point_min_top_area: 1225.0,
+            strong_point_top_grade: 0.18,
+            lane_grade: 0.18,
+        }
+    }
 }
 
 /// Decisions fixed at founding.
@@ -208,6 +276,9 @@ pub struct TissueSpec {
     pub id: String,
     /// Values interpreted by the selected street and block pattern.
     pub parameters: BTreeMap<String, TissueParameter>,
+    /// Street morphology when the tissue is organic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organic: Option<OrganicParams>,
 }
 
 /// Scalar parameter for a tissue pattern.
@@ -240,8 +311,6 @@ pub struct WallSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarbourSpec {
-    /// Maximum distance from the site to survey for harbour fronts, in metres.
-    pub reach: f64,
     /// Preferred wall treatment at a chosen harbour front.
     pub enclosure_habit: HarbourEnclosure,
     /// Metres of quay per square root of housed population in inhabitants.
