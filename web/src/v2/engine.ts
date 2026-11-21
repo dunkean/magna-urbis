@@ -16,7 +16,7 @@ import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/b
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
 import { matchesRustTransport, terrainRecipeSettings } from './runtimeChoices';
-import { effectiveRegion, generationRegion } from './regionSettings';
+import { effectiveRegion, generationRegion, usesGrowthPlacement } from './regionSettings';
 import { regionalPopulation, REGIONAL_POPULATION_VERSION } from './regionalPopulation';
 import { routeRoads } from '../gen/roads/regional';
 import { planSettlements, settlementRequests } from '../gen/settlements/planner';
@@ -592,6 +592,7 @@ function regionKey(settings: V2Settings): string {
       .map(([key, o]) => [key, o.center, o.siteType, o.sitePrefs, key === 'main' ? o.roads : undefined]),
     ...(stepSeed(o.seed, 'settle-sites') !== seedRoot(o.seed) || stepSeed(o.seed, 'settle-roads') !== seedRoot(o.seed) ? [stepSeed(o.seed, 'settle-sites'), stepSeed(o.seed, 'settle-roads')] : []),
     REGIONAL_POPULATION_VERSION,
+    ...(usesGrowthPlacement(settings) ? ['growth'] : []),
   ]);
 }
 function historicalClassicRegionKey(settings: V2Settings): string {

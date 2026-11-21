@@ -1,6 +1,7 @@
 //! Finished graph and growth metadata for downstream consumers.
 
 use magna_urbis_geom::Point;
+use serde::{Deserialize, Serialize};
 
 use crate::graph::{Clock, FaceId, Graph, Key};
 use crate::growth::QuarterRecord;
@@ -34,6 +35,18 @@ pub struct QuarterPlan {
     pub aged: Option<(String, String)>,
 }
 
+/// How the part of one source segment inside a town connects to the regional network.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RoadResult {
+    pub id: String,
+    /// Town entries in ascending source-station order.
+    pub entries: Vec<Point>,
+    /// Intervals retaining regional connectivity, including planned axes.
+    pub kept: Vec<(f64, f64)>,
+    /// Intervals occupied by local streets where regional connectivity has ended.
+    pub ended: Vec<(f64, f64)>,
+}
+
 /// A town layout and its generation warnings.
 #[derive(Clone, Debug)]
 pub struct TownPlan {
@@ -43,6 +56,8 @@ pub struct TownPlan {
     pub focus: Point,
     pub phases: Vec<DatedPhase>,
     pub quarters: Vec<QuarterPlan>,
+    /// Regional connectivity at the stop. Defaults to `None` when no source road enters.
+    pub regional_road_result: Option<Vec<RoadResult>>,
     /// Short messages about generation limits or decisions.
     pub warnings: Vec<String>,
     /// Where growth stopped, to resume the town or reopen it once.

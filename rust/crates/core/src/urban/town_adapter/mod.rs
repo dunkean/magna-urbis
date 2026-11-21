@@ -9,7 +9,7 @@ mod tail;
 mod tests;
 
 use magna_urbis_town::growth::{self, Verdict};
-use magna_urbis_town::{TownPlan, TownRequest, TownSite, charter::PlannedSetting};
+use magna_urbis_town::{RegionalRoad, RoadSource, TownPlan, TownRequest, TownSite, charter::PlannedSetting};
 
 use super::{Layout, LayoutConfig, ParcelConfig, Site, Street, Surface, footprint, kinds};
 
@@ -20,6 +20,7 @@ pub(super) fn generate(
     config: &LayoutConfig,
     surface: Surface<'_>,
     regional_roads: &[Street],
+    road_sources: &[Option<RoadSource>],
 ) -> Option<Layout> {
     let site_config;
     let config = if let Some(archetype) = config.site_archetypes.get(&site.key) {
@@ -44,7 +45,35 @@ pub(super) fn generate(
     // number of households, and its clock stops where the programme's demand is met.
     let wanted = footprint::capacity::households(culture, site.population);
     let population = (wanted * specs.growth.household_size).round().min(f64::from(u32::MAX)) as u32;
-    let roads: Vec<_> = regional_roads.iter().map(|s| s.path.clone()).collect();
+    let mut roads: Vec<RegionalRoad> = Vec::new();
+    for (index, street) in regional_roads.iter().enumerate() {
+        if street.path.len() < 2 {
+            continue;
+        }
+        let rank = street.rank.min(usize::from(u8::MAX)) as u8;
+        let Some(source) = road_sources.get(index).and_then(Option::as_ref) else {
+            roads.push(RegionalRoad::from_polyline(format!("street:{index}"), street.path.clone(), rank));
+            continue;
+        };
+        // The bridge splits a source segment at crossing spans for Classic. Rejoin its
+        // contiguous runs so Growth imports it as one chain.
+        if let Some(previous) = roads.last_mut()
+            && previous.id == source.id
+            && previous.rank == rank
+            && previous.stations.last() == source.stations.first()
+            && previous.points.last() == street.path.first()
+        {
+            previous.points.extend_from_slice(&street.path[1..]);
+            previous.stations.extend_from_slice(&source.stations[1..]);
+        } else {
+            roads.push(RegionalRoad {
+                id: source.id.clone(),
+                points: street.path.clone(),
+                stations: source.stations.clone(),
+                rank,
+            });
+        }
+    }
     let neighbour_claims: Vec<_> = site
         .neighbours
         .iter()

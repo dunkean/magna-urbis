@@ -622,6 +622,7 @@ fn probe_uncached(
                 y: p.y,
             });
     let layout = Layout {
+        regional_road_result: None,
         config: Some(LayoutConfig {
             culture: culture.into(),
             ..cfg.clone()

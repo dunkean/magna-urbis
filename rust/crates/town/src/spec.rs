@@ -115,6 +115,17 @@ pub struct SurveySpec {
     pub strong_point_top_grade: f64,
     /// Maximum grade along a route to a summit.
     pub lane_grade: f64,
+    /// Steepest ground a plain house stands on; steeper open land is built in terraces. The
+    /// default 0.2126 (tan 12°) is the catalogue's house admissibility (`max_slope` of the
+    /// culture mapping), which classic's `profiles::house_slope` widens to `TERRACE_SLOPE`
+    /// (tan 30°, the terrace limit) for cultures that terrace.
+    pub house_grade: f64,
+    /// Grade up to which land keeps its full housing density (default 0.05, to tune on sheets).
+    pub dense_grade: f64,
+    /// Share of the flat-land housing density kept at and beyond the terrace limit (default
+    /// 0.45, to tune on sheets). Between the dense grade and the terrace limit the share falls
+    /// along a smoothstep.
+    pub terrace_density: f64,
 }
 
 impl Default for SurveySpec {
@@ -138,6 +149,9 @@ impl Default for SurveySpec {
             strong_point_min_top_area: 1225.0,
             strong_point_top_grade: 0.18,
             lane_grade: 0.18,
+            house_grade: 0.2126,
+            dense_grade: 0.05,
+            terrace_density: 0.45,
         }
     }
 }
@@ -295,9 +309,11 @@ pub struct PhaseSpec {
     pub fossil_rule: FossilRule,
     /// Preferred shape of the next precinct extension.
     pub extension_habit: ExtensionHabit,
-    /// Treatment of regional roads through the town when it reaches this phase.
+    /// Treatment of regional roads through the town in this phase. Defaults to kept.
+    #[serde(default)]
     pub road_fate: RoadFate,
-    /// Treatment of those roads in a planned town.
+    /// Treatment of those roads in a planned town. Defaults to absorbed by the grid.
+    #[serde(default = "default_planned_road_fate")]
     pub planned_road_fate: RoadFate,
     /// Population thresholds for the reused programme.
     pub programme: ProgrammeThresholds,
@@ -376,17 +392,22 @@ pub enum ExtensionHabit {
 }
 
 /// Dated treatment of a regional road stretch through the town.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RoadFate {
     /// Continue as a main street.
+    #[default]
     Kept,
     /// Join an axis of the planned frame.
     Absorbed,
-    /// Retain the connection at a lower street rank.
+    /// End the through route at the town entries and demote its oldest-ring streets to rank 2.
     Demoted,
-    /// End the through connection at a town feature such as a gate or plaza.
+    /// End the through route at the town entries, retaining the local street ranks.
     Ended,
+}
+
+fn default_planned_road_fate() -> RoadFate {
+    RoadFate::Absorbed
 }
 
 /// Parameters for laying streets and blocks in a quarter.
@@ -438,6 +459,63 @@ pub struct WallSpec {
     pub keeps_citadel: bool,
 }
 
+/// Starting values for precincts, castles, citadels and camps, to tune on review sheets. Not yet
+/// part of [`TownSpecs`]: the integration lot adds it there as `#[serde(default)] precinct`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PrecinctSpec {
+    /// Gross inhabitants per hectare a precinct is sized at when the phase gives no compact
+    /// density. The default 150 is classic's `ENCLOSED_DENSITY` (`footprint.rs`).
+    pub enclosed_density: f64,
+    /// A new precinct encloses at least this multiple of the land of the one it extends
+    /// (default 1.15), so that a raise always opens some land.
+    pub min_growth: f64,
+    /// Clear distance in metres between a precinct line and a neighbour's claim (default 25 m,
+    /// a ditch and a road).
+    pub neighbour_clearance: f64,
+    /// Clear distance in metres between a precinct line and a harbour's quay, apron or service
+    /// row it must stay out of (default 6 m).
+    pub harbour_clearance: f64,
+    /// Width in metres of the street along the inside of a precinct (default 4 m, classic's
+    /// wall lane).
+    pub wall_street_width: f64,
+    /// Below this many inhabitants an extension with the lobe habit is a lobe; beyond it the
+    /// town builds concentric circuits (default 10,000, design 5.2).
+    pub lobe_limit: f64,
+    /// Land of a citadel on open land in square metres (default 10,000 m², 1 ha).
+    pub citadel_area: f64,
+    /// Inhabitants one camp unit's figure is sized for (default 500).
+    pub camp_unit: u32,
+    /// Length over width of a flat camp's figure (default 1.25, the Roman playing card).
+    pub camp_aspect: f64,
+    /// Share of a defensive camp's enclosed land kept open as common (default 0.3).
+    pub camp_common_share: f64,
+    /// Fall in metres below the summit at which a defensive camp's scarp line runs (default 8).
+    pub scarp_drop: f64,
+    /// Farthest a castle road may run from the castle gate to reach the regional road, in
+    /// metres (default 900).
+    pub castle_road_reach: f64,
+}
+
+impl Default for PrecinctSpec {
+    fn default() -> Self {
+        Self {
+            enclosed_density: 150.0,
+            min_growth: 1.15,
+            neighbour_clearance: 25.0,
+            harbour_clearance: 6.0,
+            wall_street_width: 4.0,
+            lobe_limit: 10_000.0,
+            citadel_area: 10_000.0,
+            camp_unit: 500,
+            camp_aspect: 1.25,
+            camp_common_share: 0.3,
+            scarp_drop: 8.0,
+            castle_road_reach: 900.0,
+        }
+    }
+}
+
 /// Controls for choosing and extending a harbour front.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -448,6 +526,80 @@ pub struct HarbourSpec {
     pub quay_per_sqrt_pop: f64,
     /// Population thresholds for opening and extending the harbour.
     pub thresholds: HarbourThresholds,
+    /// Quay, landing, road and works geometry.
+    #[serde(default)]
+    pub works: HarbourWorksSpec,
+}
+
+/// Geometry of a harbour's quay, landings, road and works. The defaults are classic's
+/// (`macroplan/harbour.rs`: `Harbour::default`, `quay_budget`, `landing_streets`, `works`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HarbourWorksSpec {
+    /// Whether the town keeps a harbour on a front that is not its founding focus: classic's
+    /// port town (a harbour site archetype, navigable access or a port function). Default false:
+    /// only a town founded on its front has a harbour.
+    pub port_town: bool,
+    /// Drawn quay width in metres (default 6).
+    pub quay_width: f64,
+    /// Metres of quay per housed inhabitant, the demand of a small landing; the quay is the
+    /// smaller of this and `quayPerSqrtPop`·√P (default 0.035, classic's `quay_budget`).
+    pub quay_share: f64,
+    /// Multiplier on `quay_share` for a port function or a harbour site (default 1; classic
+    /// uses 1.5 for a harbour archetype).
+    pub port_factor: f64,
+    /// Shortest quay in metres (default 20).
+    pub min_quay: f64,
+    /// Distance between landings along the quay in metres (default 120).
+    pub landing_spacing: f64,
+    /// Longest landing street from a landing to the town in metres (default 80).
+    pub landing_reach: f64,
+    /// Drawn width of a landing street in metres (default 4).
+    pub landing_width: f64,
+    /// Drawn width of the harbour road in metres (default 5, classic's port road).
+    pub road_width: f64,
+    /// Steepest grade of the harbour road and the landing streets (default 0.12, classic's street grade).
+    pub road_grade: f64,
+    /// Length in metres of the cost discount around the chosen front (default 150): land on the
+    /// quay costs that much less, land that far from it nothing less.
+    pub front_discount: f64,
+    /// A front whose landing lies within this distance of the founding focus is the focus's own
+    /// harbour, with no harbour road (metres, default 120).
+    pub attached_reach: f64,
+    /// Weight of shelter against distance over land when a front is chosen (default 0.5).
+    pub shelter_weight: f64,
+    /// Radius in metres kept free of other settlements around the landing (default 150).
+    pub reservation_radius: f64,
+    /// Full width in metres kept free along the straight approach to the landing (default 60).
+    pub reservation_corridor_width: f64,
+    /// Distance between piers along the quay in metres (default 110).
+    pub pier_spacing: f64,
+    /// Shortest and longest pier over open water in metres (default 18 to 45).
+    pub pier_length: [f64; 2],
+}
+
+impl Default for HarbourWorksSpec {
+    fn default() -> Self {
+        Self {
+            port_town: false,
+            quay_width: 6.0,
+            quay_share: 0.035,
+            port_factor: 1.0,
+            min_quay: 20.0,
+            landing_spacing: 120.0,
+            landing_reach: 80.0,
+            landing_width: 4.0,
+            road_width: 5.0,
+            road_grade: 0.12,
+            front_discount: 150.0,
+            attached_reach: 120.0,
+            shelter_weight: 0.5,
+            reservation_radius: 150.0,
+            reservation_corridor_width: 60.0,
+            pier_spacing: 110.0,
+            pier_length: [18.0, 45.0],
+        }
+    }
 }
 
 /// Relationship of a curtain to the quay and its service row.
@@ -473,4 +625,57 @@ pub struct HarbourThresholds {
     pub moles: Option<u32>,
     /// Add basins when permitted in the current phase.
     pub basins: Option<u32>,
+}
+
+/// What water a growing town can cross, and how. The span rule is classic's
+/// (`footprint::crossings::spans`): `builders` × `spanPerSqrtThousand` × √(P / 1000) metres, at
+/// most `maxSpan`; a ford where the stream is narrow and the culture fords. Not yet part of
+/// [`TownSpecs`]: the integration lot adds it there as `#[serde(default)] crossing`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CrossingSpec {
+    /// The culture's bridge builders: 1.25 for strong builders, 0.55 for cultures that rarely
+    /// bridge, 1 otherwise (default 1, classic's factor).
+    pub builders: f64,
+    /// Metres of span per √(inhabitants / 1000) at a builders factor of 1 (default 12: a
+    /// 5,000 town spans about 27 m).
+    pub span_per_sqrt_thousand: f64,
+    /// Widest bridge any town builds, in metres (default 400).
+    pub max_span: f64,
+    /// Widest non-navigable water forded rather than bridged, in metres; 0 for a culture that
+    /// never fords (default 10, classic's).
+    pub ford_span: f64,
+    /// A town of strong or ordinary builders fords only below this many inhabitants; above it
+    /// it bridges (default 1,200, classic's).
+    pub ford_population: u32,
+    /// Widest water crossed by a ferry landing pair when it is too wide to bridge, in metres;
+    /// 0 for no ferries (default 600).
+    pub ferry_span: f64,
+    /// Effective metres per metre of water crossed by ferry (default 3), against the main
+    /// axis's cost per metre on a bridge or a ford.
+    pub ferry_cost: f64,
+    /// Smallest dry open land of a far bank worth crossing to, in square metres (default
+    /// 5,000, half a hectare: no bridge to an islet).
+    pub min_far_land: f64,
+    /// Longest approach from the chain to the bridge's near landing, in metres (default 150).
+    pub approach_reach: f64,
+    /// Narrowest drawn bridge or ford, in metres (default 4).
+    pub min_width: f64,
+}
+
+impl Default for CrossingSpec {
+    fn default() -> Self {
+        Self {
+            builders: 1.0,
+            span_per_sqrt_thousand: 12.0,
+            max_span: 400.0,
+            ford_span: 10.0,
+            ford_population: 1200,
+            ferry_span: 600.0,
+            ferry_cost: 3.0,
+            min_far_land: 5000.0,
+            approach_reach: 150.0,
+            min_width: 4.0,
+        }
+    }
 }

@@ -6,12 +6,14 @@ pub mod activities;
 mod countryside;
 pub mod demographics;
 mod grid;
+mod harbour;
 pub mod installations;
 pub mod nodes;
 mod placement;
 mod remote;
 pub mod roads;
 
+pub use harbour::HarbourReservation;
 pub use magna_urbis_geom::Point;
 use crate::urban::warnings;
 use serde::{Deserialize, Serialize};
@@ -54,6 +56,8 @@ impl Default for SettlementSpec {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
+    /// Map's town layout engine (`classic` or `growth`).
+    pub engine: String,
     /// auto | counts | list
     pub mode: String,
     /// Automatic composition: `zipf` (rank-size from the main population) or the legacy `classes` bands.
@@ -100,6 +104,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            engine: "classic".into(),
             mode: "auto".into(),
             distribution: "classes".into(),
             main: SettlementSpec {
@@ -185,6 +190,8 @@ pub struct Settlement {
     pub cls: String,
     pub archetype: String,
     pub radius: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harbour_reservation: Option<HarbourReservation>,
     pub scores: Scores,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -280,13 +287,40 @@ impl Terrain {
         config: &crate::urban::LayoutConfig,
         roads: &[crate::urban::Street],
     ) -> Result<Vec<crate::urban::Layout>, String> {
+        self.urban_quarters_with_sources(seed, sites, config, roads, &[])
+    }
+
+    /// Generate urban cuts from bridge streets with optional regional source stations.
+    pub fn urban_quarters_with_roads(
+        &self,
+        seed: &str,
+        sites: &[crate::urban::Site],
+        config: &crate::urban::LayoutConfig,
+        roads: Vec<crate::urban::LayoutRoad>,
+    ) -> Result<Vec<crate::urban::Layout>, String> {
+        let (streets, sources): (Vec<_>, Vec<_>) = roads
+            .into_iter()
+            .map(|road| (road.street, road.regional_source))
+            .unzip();
+        self.urban_quarters_with_sources(seed, sites, config, &streets, &sources)
+    }
+
+    fn urban_quarters_with_sources(
+        &self,
+        seed: &str,
+        sites: &[crate::urban::Site],
+        config: &crate::urban::LayoutConfig,
+        roads: &[crate::urban::Street],
+        sources: &[Option<magna_urbis_town::RoadSource>],
+    ) -> Result<Vec<crate::urban::Layout>, String> {
         let r = &self.fields.r;
-        let mut layouts = crate::urban::generate_quarters(
+        let mut layouts = crate::urban::generate_quarters_with_sources(
             seed,
             sites,
             config,
             self.urban_surface(),
             roads,
+            sources,
         )?;
         crate::urban::display::quay_water_levels(&mut layouts, r.width, r.n, &r.water, &r.water_level);
         // Underdark invariant: nothing stands on cave rock. The clip to the solid rock keeps every
@@ -487,7 +521,9 @@ impl Terrain {
     }
     pub fn place(&self, seed: &str, cfg: &Config) -> Result<Output, String> {
         validate(cfg, self.fields.r.width)?;
-        let mut out = placement::place(seed, &self.fields, cfg);
+        let harbour_surface = (cfg.engine == "growth" && self.fields.cave.is_none())
+            .then(|| self.urban_surface());
+        let mut out = placement::place_on_terrain(seed, &self.fields, cfg, harbour_surface);
         out.activities = activities::place(&out.settlements, self.resources(), &self.fields);
         // Rural places of worship, then the dispersed farms round every site already standing.
         let worship = countryside::worship(&out.settlements, &self.fields, &out.activities);
@@ -604,6 +640,7 @@ fn validate(cfg: &Config, width: f64) -> Result<(), String> {
         || cfg.list.len() > 1000
         || cfg.counts.values().any(|&n| n > 1000)
         || cfg.counts.values().copied().sum::<usize>() > 1000
+        || !["classic", "growth"].contains(&cfg.engine.as_str())
         || !["auto", "counts", "list"].contains(&cfg.mode.as_str())
         || !["classes", "zipf"].contains(&cfg.distribution.as_str())
     {

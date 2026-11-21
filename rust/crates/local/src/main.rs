@@ -912,11 +912,11 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
             .unwrap_or_default();
         let roads = input
             .get("roads")
-            .map(value::<Vec<urban::Street>>)
+            .map(value::<Vec<urban::LayoutRoad>>)
             .transpose()?
             .unwrap_or_default();
         let config: urban::LayoutConfig = value(&input["layoutConfig"])?;
-        let layouts = terrain.urban_quarters(seed, &sites, &config, &roads)?;
+        let layouts = terrain.urban_quarters_with_roads(seed, &sites, &config, roads)?;
         let ms = millis(started);
         // Reparse serialized decimal coordinates, as the WASM parcel boundary does.
         // Deserializing Value directly retains native f64 bits and can change cuts.

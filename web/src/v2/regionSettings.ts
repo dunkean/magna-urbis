@@ -18,6 +18,10 @@ export interface V2RegionSettings {
 }
 /** Native: a 500-inhabitant village costs ~0.8 s of urban work plus the shared land-use update; see smallPlaces.ts. */
 export const DEFAULT_AUTO_BUILD_POPULATION = 500;
+export function usesGrowthPlacement(settings: V2Settings): boolean {
+  const backend = settings.runtime?.backend;
+  return (backend === 'native' || backend === 'rust') && settings.urban?.layout?.engine === 'growth';
+}
 /** The regional recipe that generation depends on: the background build limit is a scheduling choice, not a product input. */
 export function generationRegion(region: V2RegionSettings | undefined): V2RegionSettings | undefined {
   if (!region || region.autoBuildPopulation === undefined) return region;

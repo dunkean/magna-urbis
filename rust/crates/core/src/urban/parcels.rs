@@ -5267,6 +5267,7 @@ mod tests {
                 .collect(),
         );
         let layout = Layout {
+            regional_road_result: None,
             config: None,
             programme: None,
             key: "unserved-deep-sector".into(),
@@ -5397,6 +5398,7 @@ mod tests {
                 .collect(),
         );
         let layout = Layout {
+            regional_road_result: None,
             config: None,
             programme: None,
             key: "frontage-fixture".into(),
@@ -5737,6 +5739,7 @@ mod tests {
             zone: zone.into(),
         };
         let layout = Layout {
+            regional_road_result: None,
             config: Some(super::super::LayoutConfig::default()),
             programme: None,
             key: "edited-quarter".into(),
@@ -5817,6 +5820,7 @@ mod tests {
     /// A one-quarter european layout of the given blocks and streets.
     fn strip_layout(key: &str, blocks: Vec<Block>, streets: Vec<Street>) -> Layout {
         Layout {
+            regional_road_result: None,
             config: Some(super::super::LayoutConfig::default()),
             programme: None,
             key: key.into(),

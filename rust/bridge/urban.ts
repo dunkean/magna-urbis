@@ -26,6 +26,16 @@ export interface Street {
   rank: number;
   role: string;
 }
+export interface LayoutRoad extends Street {
+  /** One station in source-segment metres for each path vertex. */
+  regionalSource?: { id: string; stations: number[] };
+}
+export interface RoadResult {
+  id: string;
+  entries: Point[];
+  kept: [number, number][];
+  ended: [number, number][];
+}
 export interface Quarter {
   shape: Shape;
   phase: number;
@@ -126,6 +136,7 @@ export interface Claim {
 /** A site of a `quarters` request: `neighbours` are the claims of the earlier towns it must keep off and join. */
 export type UrbanSite = RoadSite & { neighbours?: Claim[] };
 export interface Layout {
+  regionalRoadResult?: RoadResult[];
   config?: LayoutConfig;
   programme?: UrbanProgramme;
   key: string;
@@ -321,7 +332,7 @@ export function layoutExtent(layouts?: Layout[]): { center: Point; radius: numbe
 }
 
 /** Regional roads as urban streets (pure, `urbanRoads.ts`). */
-export { regionalStreets } from './urbanRoads';
+export { regionalSegmentId, regionalStreets } from './urbanRoads';
 export interface UrbanRequest {
   id: number;
   seed: string;
@@ -332,7 +343,7 @@ export interface UrbanRequest {
   scene?: import('./urbanArchitecture').PlacementBatch;
   raster?: SettlementRaster;
   sites?: UrbanSite[];
-  roads?: Street[];
+  roads?: LayoutRoad[];
   layoutConfig?: LayoutConfig;
   parcelConfig?: ParcelConfig;
   layouts?: Layout[];

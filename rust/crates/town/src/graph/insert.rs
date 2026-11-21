@@ -4,6 +4,8 @@ use std::f64::consts::TAU;
 
 use magna_urbis_geom::{Point, Shape, signed};
 
+use crate::RoadSource;
+
 use super::index::{Contact, TOUCH, bbox, contacts, nearest_on};
 use super::topology::{NewFace, angle, ring_contains};
 use super::{
@@ -101,7 +103,8 @@ impl Graph {
                 return Err(GraphError::DuplicateKey(name.clone()));
             }
         }
-        let (mut polyline, widths) = cleaned(spec.polyline, spec.widths)?;
+        let (mut polyline, widths, road_source) =
+            cleaned(spec.polyline, spec.widths, spec.road_source)?;
         let last = polyline.len() - 1;
         let ends = [
             self.resolve(ends[0], polyline[0])?,
@@ -158,6 +161,7 @@ impl Graph {
             rank: Versioned::new(at, spec.rank),
             owner: spec.owner,
             chain: spec.chain,
+            road_source,
         });
         change.born.edges.push(e);
         let halves = [HalfId::forward(e), HalfId::backward(e)];
@@ -405,7 +409,7 @@ impl Graph {
         change: &mut Change,
     ) -> Result<NodeId, GraphError> {
         let old = self.edges[edge.ix()].clone();
-        let (p, w) = (&old.polyline, &old.widths);
+        let p = &old.polyline;
         let last = p.len() - 1;
         let (_, seg, q) = nearest_on(p, point);
         let vertex = if seg > 0 && q.distance(p[seg]) < TOUCH {
@@ -415,31 +419,27 @@ impl Graph {
         } else {
             None
         };
-        let (first, second, first_w, second_w) = match vertex {
-            Some(v) => (
-                p[..=v].to_vec(),
-                p[v..].to_vec(),
-                w[..=v].to_vec(),
-                w[v..].to_vec(),
-            ),
+        let (first, second) = match vertex {
+            Some(v) => (p[..=v].to_vec(), p[v..].to_vec()),
             None => {
-                let len = p[seg].distance(p[seg + 1]);
-                let s = if len > 0.0 {
-                    p[seg].distance(q) / len
-                } else {
-                    0.0
-                };
-                let wq = w[seg] + (w[seg + 1] - w[seg]) * s;
                 let mut first = p[..=seg].to_vec();
                 first.push(q);
                 let mut second = vec![q];
                 second.extend_from_slice(&p[seg + 1..]);
-                let mut first_w = w[..=seg].to_vec();
-                first_w.push(wq);
-                let mut second_w = vec![wq];
-                second_w.extend_from_slice(&w[seg + 1..]);
-                (first, second, first_w, second_w)
+                (first, second)
             }
+        };
+        let len = p[seg].distance(p[seg + 1]);
+        let fraction = if len > 0.0 {
+            p[seg].distance(q) / len
+        } else {
+            0.0
+        };
+        let [first_w, second_w] = split_profile(&old.widths, vertex, seg, fraction);
+        let [first_source, second_source] = match &old.road_source {
+            Some(source) => split_profile(&source.stations, vertex, seg, fraction)
+                .map(|stations| Some(RoadSource { id: source.id.clone(), stations })),
+            None => [None, None],
         };
         let position = first[first.len() - 1];
         if position.distance(p[0]) < MIN_PIECE || position.distance(p[last]) < MIN_PIECE {
@@ -452,7 +452,7 @@ impl Graph {
         self.retire_edge(edge, at);
         let keys = [a, n, b].map(|x| self.nodes[x.ix()].key.clone());
         let piece =
-            |from: usize, polyline: Vec<Point>, widths: Vec<f64>, nodes: [NodeId; 2]| Edge {
+            |from: usize, polyline: Vec<Point>, widths: Vec<f64>, nodes: [NodeId; 2], road_source| Edge {
                 key: old
                     .stem
                     .nested(tag::PIECE_FROM, &keys[from])
@@ -467,9 +467,10 @@ impl Graph {
                 rank: Versioned::new(at, *old.rank.current()),
                 owner: old.owner.clone(),
                 chain: old.chain.clone(),
+                road_source,
             };
-        let e1 = self.push_edge(piece(0, first, first_w, [a, n]));
-        let e2 = self.push_edge(piece(1, second, second_w, [n, b]));
+        let e1 = self.push_edge(piece(0, first, first_w, [a, n], first_source));
+        let e2 = self.push_edge(piece(1, second, second_w, [n, b], second_source));
         for (h, face) in [
             (HalfId::forward(e1), ff),
             (HalfId::forward(e2), ff),
@@ -581,10 +582,33 @@ impl Graph {
     }
 }
 
-/// Drop repeated points and check the width profile.
-fn cleaned(polyline: Vec<Point>, widths: Vec<f64>) -> Result<(Vec<Point>, Vec<f64>), GraphError> {
+/// Split a per-vertex profile at a vertex or interpolate a new sample.
+fn split_profile(values: &[f64], vertex: Option<usize>, segment: usize, fraction: f64) -> [Vec<f64>; 2] {
+    if let Some(vertex) = vertex {
+        return [values[..=vertex].to_vec(), values[vertex..].to_vec()];
+    }
+    let value = values[segment] + (values[segment + 1] - values[segment]) * fraction;
+    let mut first = values[..=segment].to_vec();
+    first.push(value);
+    let mut second = vec![value];
+    second.extend_from_slice(&values[segment + 1..]);
+    [first, second]
+}
+
+/// Drop repeated points and their width and source-station samples.
+fn cleaned(
+    polyline: Vec<Point>,
+    widths: Vec<f64>,
+    mut road_source: Option<RoadSource>,
+) -> Result<(Vec<Point>, Vec<f64>, Option<RoadSource>), GraphError> {
     if widths.len() != polyline.len() {
         return Err(GraphError::Degenerate("one width per polyline vertex"));
+    }
+    if road_source
+        .as_ref()
+        .is_some_and(|source| !source.matches_vertices(polyline.len()))
+    {
+        return Err(GraphError::Degenerate("invalid regional road stations"));
     }
     if polyline
         .iter()
@@ -594,17 +618,26 @@ fn cleaned(polyline: Vec<Point>, widths: Vec<f64>) -> Result<(Vec<Point>, Vec<f6
     }
     let mut points: Vec<Point> = Vec::with_capacity(polyline.len());
     let mut kept = Vec::with_capacity(widths.len());
-    for (p, w) in polyline.into_iter().zip(widths) {
+    let mut kept_stations = road_source
+        .as_ref()
+        .map(|source| Vec::with_capacity(source.stations.len()));
+    for (i, (p, w)) in polyline.into_iter().zip(widths).enumerate() {
         if points.last().is_some_and(|q| q.distance(p) < TOUCH) {
             continue;
         }
         points.push(p);
         kept.push(w);
+        if let Some((source, kept)) = road_source.as_ref().zip(kept_stations.as_mut()) {
+            kept.push(source.stations[i]);
+        }
     }
     if points.len() < 2 {
         return Err(GraphError::Degenerate("polyline shorter than one segment"));
     }
-    Ok((points, kept))
+    if let Some((source, stations)) = road_source.as_mut().zip(kept_stations) {
+        source.stations = stations;
+    }
+    Ok((points, kept, road_source))
 }
 
 /// A polyline may touch itself only where consecutive segments share their vertex.

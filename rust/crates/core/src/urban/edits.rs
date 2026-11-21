@@ -459,6 +459,7 @@ fn fronted(candidates: &[&Street], blocks: &[&Shape]) -> Vec<bool> {
         return out;
     }
     let mini = Layout {
+        regional_road_result: None,
         config: None,
         programme: None,
         key: String::new(),

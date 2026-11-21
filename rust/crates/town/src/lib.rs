@@ -39,6 +39,53 @@ pub struct TownSite {
     pub archetype: Option<String>,
 }
 
+/// A segment of the regional network in its source direction.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RegionalRoad {
+    pub id: String,
+    pub points: Vec<Point>,
+    /// Metres from the start of the source segment, one value per point.
+    pub stations: Vec<f64>,
+    pub rank: u8,
+}
+
+/// Provenance of a drawn piece of a regional segment.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RoadSource {
+    pub id: String,
+    /// Source stations in the drawn line's vertex order.
+    pub stations: Vec<f64>,
+}
+
+impl RoadSource {
+    /// Whether the ID and station sequence can describe this many vertices.
+    pub fn matches_vertices(&self, count: usize) -> bool {
+        !self.id.is_empty()
+            && self.stations.len() == count
+            && self.stations.iter().all(|s| s.is_finite() && *s >= 0.0)
+            && self.stations.windows(2).all(|w| w[0] <= w[1])
+    }
+}
+
+impl RegionalRoad {
+    /// A plain polyline defines its own source segment, starting at station zero.
+    pub fn from_polyline(id: String, points: Vec<Point>, rank: u8) -> Self {
+        let mut stations = Vec::with_capacity(points.len());
+        if !points.is_empty() {
+            stations.push(0.0);
+        }
+        for (i, pair) in points.windows(2).enumerate() {
+            stations.push(stations[i] + pair[0].distance(pair[1]));
+        }
+        Self {
+            id,
+            points,
+            stations,
+            rank,
+        }
+    }
+}
+
 /// Inputs for a single run of the growth engine.
 pub struct TownRequest<'a> {
     /// Site and target population.
@@ -47,8 +94,8 @@ pub struct TownRequest<'a> {
     pub specs: &'a TownSpecs,
     /// Read-only terrain at the site and its surroundings, shared by the quarters laid in parallel.
     pub terrain: &'a (dyn TerrainView + Sync),
-    /// Regional roads as polylines in map-local metres.
-    pub regional_roads: &'a [Vec<Point>],
+    /// Regional roads in map-local metres, with their source stationing.
+    pub regional_roads: &'a [RegionalRoad],
     /// Land already claimed by neighbours, including any holes.
     pub neighbour_claims: &'a [Shape],
     /// Town seed used to derive its event streams.

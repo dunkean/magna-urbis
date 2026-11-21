@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- In the Growth engine, automatic settlements leave room for a port town's harbour and its approach.
+- In the Growth engine, regional roads can end at city entrances while their central stretches become local streets.
 - Town warnings are one short line each, in English or French.
 - Download the experimental Apple Silicon DMG from GitHub Releases alongside the Windows and Linux packages.
 - Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.

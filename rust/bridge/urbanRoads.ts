@@ -1,16 +1,29 @@
 // Regional roads as urban streets: a light module (no WASM or engine imports), so the V2 can import it statically.
 import type { Point, RoadOutput } from './settlements';
-import type { Street } from './urban';
+import type { LayoutRoad } from './urban';
 
-/** Preserve crossing spans when the regional network becomes urban frontage. */
-export function regionalStreets(roads?: RoadOutput | null): Street[] {
+/** Segment identity in the source network snapshot, before filtering or splitting. */
+export function regionalSegmentId(index: number): string {
+  return `segment:${index}`;
+}
+
+/** Cumulative distance from the first vertex of a source segment. */
+export function roadStations(points: readonly Point[]): number[] {
+  if (!points.length) return [];
+  const stations = [0];
+  for (let i = 1; i < points.length; i++) stations.push(stations[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+  return stations;
+}
+
+/** Preserve crossing spans and source stations when the regional network becomes urban frontage. */
+export function regionalStreets(roads?: RoadOutput | null, include?: (index: number) => boolean): LayoutRoad[] {
   return (
-    roads?.segments.flatMap(segment => {
+    roads?.segments.flatMap((segment, index) => {
+      if (include && !include(index)) return [];
       const points = segment.path;
       if (points.length < 2) return [];
       const rank = segment.class === 'highway' ? 0 : segment.class === 'main' ? 1 : 2;
-      const station = [0];
-      for (let i = 1; i < points.length; i++) station.push(station[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+      const station = roadStations(points);
       const project = (p: Point): number => {
         let best = Infinity,
           at = 0;
@@ -45,13 +58,15 @@ export function regionalStreets(roads?: RoadOutput | null): Street[] {
           b = points[i];
         return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
       };
-      return cuts.slice(1).flatMap((to, i): Street[] => {
+      const id = regionalSegmentId(index);
+      return cuts.slice(1).flatMap((to, i): LayoutRoad[] => {
         const from = cuts[i];
         if (to - from < 0.001) return [];
         const mid = (from + to) / 2,
           role = crossings.find(c => mid >= c.from && mid <= c.to)?.role ?? 'regional';
-        const path = [pointAt(from), ...points.filter((_, j) => station[j] > from && station[j] < to), pointAt(to)];
-        return [{ path, widths: path.map(() => segment.width), rank, role }];
+        const interior = points.flatMap((p, j) => (station[j] > from && station[j] < to ? [{ point: p, station: station[j] }] : []));
+        const path = [pointAt(from), ...interior.map(v => v.point), pointAt(to)];
+        return [{ path, widths: path.map(() => segment.width), rank, role, regionalSource: { id, stations: [from, ...interior.map(v => v.station), to] } }];
       });
     }) ?? []
   );

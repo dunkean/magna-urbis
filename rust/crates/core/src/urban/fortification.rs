@@ -5299,6 +5299,7 @@ mod tests {
             phase: None,
         };
         let mut layout = super::super::Layout {
+            regional_road_result: None,
             config: None,
             programme: None,
             key: "settle".into(),

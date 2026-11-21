@@ -8,6 +8,7 @@
 
 use magna_urbis_geom::Point;
 
+use crate::RoadSource;
 use crate::graph::{EdgeClass, EdgeId, EdgeSpec, Graph, Key, Level, NodeKind, tag};
 use crate::journal::{Anchor, Op};
 
@@ -181,26 +182,55 @@ pub fn chain_ops(
     end: Tip,
     hits: &[Hit],
 ) -> (Vec<Op>, Key) {
+    chain_ops_with_source(draw, path, start, end, hits, None)
+}
+
+pub(super) fn chain_ops_with_source(
+    draw: Draw<'_>,
+    path: &[Point],
+    start: Tip,
+    end: Tip,
+    hits: &[Hit],
+    source: Option<(&str, &[f64])>,
+) -> (Vec<Op>, Key) {
     // The drawn line with the crossings as vertices; `stops` mark where pieces end.
     let mut points: Vec<Point> = vec![path[0]];
+    let mut stations = source.map(|(_, stations)| vec![stations[0]]);
     let mut stops: Vec<(usize, Option<&Meet>)> = Vec::with_capacity(hits.len());
     let mut k = 0;
+    let mut walked = 0.0;
     for i in 0..path.len() - 1 {
+        let length = if source.is_some() { path[i].distance(path[i + 1]) } else { 0.0 };
         while k < hits.len() && hits[k].segment == i {
-            let p = hits[k].point;
+            let hit = &hits[k];
+            let p = hit.point;
             let last = points.len() - 1;
+            let station = source.map(|(_, values)| {
+                let t = if length > 0.0 { ((hit.along - walked) / length).clamp(0.0, 1.0) } else { 0.0 };
+                values[i] + (values[i + 1] - values[i]) * t
+            });
             if points[last].distance(p) < 1e-9 && last > 0 {
                 points[last] = p;
+                if let Some((stations, station)) = stations.as_mut().zip(station) {
+                    stations[last] = station;
+                }
             } else {
                 points.push(p);
+                if let Some((stations, station)) = stations.as_mut().zip(station) {
+                    stations.push(station);
+                }
             }
-            stops.push((points.len() - 1, Some(&hits[k].meet)));
+            stops.push((points.len() - 1, Some(&hit.meet)));
             k += 1;
         }
         let next = path[i + 1];
         if points[points.len() - 1].distance(next) > 1e-9 {
             points.push(next);
+            if let Some((stations, (_, values))) = stations.as_mut().zip(source) {
+                stations.push(values[i + 1]);
+            }
         }
+        walked += length;
     }
     let last = points.len() - 1;
     if stops.is_empty() && matches!(start, Tip::Free(_)) && end == Tip::Start && last >= 2 {
@@ -267,6 +297,10 @@ pub fn chain_ops(
         };
         let polyline = points[bounds[piece]..=bounds[piece + 1]].to_vec();
         let widths = vec![draw.width; polyline.len()];
+        let road_source = stations.as_ref().zip(source).map(|(stations, (id, _))| RoadSource {
+            id: id.to_owned(),
+            stations: stations[bounds[piece]..=bounds[piece + 1]].to_vec(),
+        });
         let spec = EdgeSpec {
             key: key.clone(),
             level: Level::Ground,
@@ -276,6 +310,7 @@ pub fn chain_ops(
             widths,
             owner: None,
             chain: Some(chain.clone()),
+            road_source,
             face_names: None,
         };
         ops.push(Op::InsertEdge {

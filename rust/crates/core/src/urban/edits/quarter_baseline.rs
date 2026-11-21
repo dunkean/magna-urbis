@@ -129,6 +129,7 @@ pub(in crate::urban) fn restore(
         cfg
     });
     let base = Layout {
+        regional_road_result: None,
         config: cfg,
         programme: Some(source.programme.clone()),
         key: input.key.clone(),

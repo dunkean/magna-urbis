@@ -1344,6 +1344,7 @@ fn assemble(site: &Site, cfg: &LayoutConfig, kind: Kind, morph: &Morph, roads: &
         },
     };
     Some(Layout {
+        regional_road_result: None,
         config: Some(cfg.clone()),
         programme: None,
         key: site.key.clone(),

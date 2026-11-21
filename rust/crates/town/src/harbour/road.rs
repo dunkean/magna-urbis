@@ -67,11 +67,19 @@ pub fn harbour_road(
     front: &FrontChoice,
     spec: &HarbourSpec,
 ) -> Option<Vec<Point>> {
+    road_to_landing(survey, focus, front.landing, spec.works.road_grade)
+}
+
+pub(super) fn road_to_landing(
+    survey: &Survey,
+    focus: Point,
+    target: Point,
+    road_grade: f64,
+) -> Option<Vec<Point>> {
     let step = survey.cell_size();
-    let grade_limit = spec.works.road_grade.max(1e-6);
+    let grade_limit = road_grade.max(1e-6);
     let open = |p: Point| survey.cell_at(p).filter(|c| !c.closed);
     let start = open(focus)?;
-    let target = front.landing;
     // The landing lies on the waterline's inland side: the nearest open cell takes it.
     let goal = (-2..=2)
         .flat_map(|dx| (-2..=2).map(move |dy| (dx, dy)))

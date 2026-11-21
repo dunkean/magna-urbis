@@ -3376,6 +3376,7 @@ fn generate_once(
     }
     if quarters.is_empty() {
         return Ok(Layout {
+            regional_road_result: None,
             config: Some(applied.clone()),
             programme: None,
             key: site.key.clone(),
@@ -4175,6 +4176,7 @@ fn generate_once(
     });
     if let Some(p) = plan.as_mut().filter(|_| !ample) {
         let mut probe = Layout {
+            regional_road_result: None,
             config: Some(applied.clone()),
             programme: None,
             key: site.key.clone(),
@@ -4471,6 +4473,7 @@ fn generate_once(
     network::join_waterfront(&mut streets, radius);
     lap("join_waterfront");
     let mut layout = Layout {
+        regional_road_result: None,
         config: Some(applied.clone()),
         programme: None,
         key: site.key.clone(),

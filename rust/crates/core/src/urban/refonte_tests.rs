@@ -415,6 +415,7 @@ fn mixed_influences_share_land_exactly_and_reach_parcels() {
 fn deep_layout() -> Layout {
     let shape = g::rectangle(600.0, 600.0, 840.0, 900.0);
     Layout {
+        regional_road_result: None,
         config: None,
         programme: None,
         key: "deep".into(),

@@ -484,6 +484,13 @@ describe('V2 and City Bench stay in sync', () => {
       [0, 'regional'],
       [1, 'regional'],
     ]);
+    expect(bench.map(s => s.regionalSource)).toEqual([
+      { id: 'segment:0', stations: [0, 100, 120] },
+      { id: 'segment:0', stations: [120, 180] },
+      { id: 'segment:0', stations: [180, 200, 300] },
+      { id: 'segment:1', stations: [0, 100, 200, 300] },
+    ]);
+    expect(regionalStreets(output, i => i === 1)).toEqual([bench[3]]);
     expect(townRoadStreets(world)).toBe(v2); // stable identity: no rebuilt bridges or ground tiles on refresh
     expect(cityTownRoads).toBe(regionalStreets);
     // City Bench: the requested site type, else the placed archetype; the V2 reads the same native placement record.

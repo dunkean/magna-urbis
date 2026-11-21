@@ -6,7 +6,7 @@ import type { V2Settings } from './contracts';
 import { fingerprintBytes, fingerprintNumbers } from './terrainFingerprint';
 import type { World } from '../gen/types';
 import { urbanSeed } from './urbanSeeds';
-import { generationRegion } from './regionSettings';
+import { generationRegion, usesGrowthPlacement } from './regionSettings';
 import { seedRoot, seedSubset, stepSeed } from '../../../rust/bridge/generationSeed';
 import { engineIdentityOf, terrainRecipeSettings } from './runtimeChoices';
 
@@ -32,6 +32,7 @@ export function settlementStageValidityKeys(settings: V2Settings, terrainKey?: s
     settings.region?.resolution,
     settings.region?.cropSurplus,
     Object.entries(settings.local).map(([key, local]) => [key, local.population, local.culture, local.center, local.siteType, local.sitePrefs]),
+    ...(usesGrowthPlacement(settings) ? ['growth'] : []),
   ]);
   return new Map([
     ['settle-sites', sites],

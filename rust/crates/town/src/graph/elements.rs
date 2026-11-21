@@ -4,6 +4,7 @@ use std::fmt;
 
 use magna_urbis_geom::{Point, Shape};
 use serde::{Deserialize, Serialize};
+use crate::RoadSource;
 
 use super::history::{Life, Versioned};
 use super::key::{EdgeId, FaceId, HalfId, Key, NodeId};
@@ -75,6 +76,8 @@ pub enum EdgeClass {
     Bridge,
     /// A regional road crossing or reaching the town.
     RegionalRoad,
+    /// A regional alignment taken into a planned town's main grid.
+    GridAxis,
     /// The road between the town and its harbour.
     HarbourRoad,
     /// The road up to a castle.
@@ -149,6 +152,8 @@ pub struct Edge {
     pub owner: Option<Key>,
     /// Key of the chain (a street or wall drawn as one line) the edge belongs to, if any.
     pub chain: Option<Key>,
+    /// Source stations for a regional segment, retained after splits and retypes.
+    pub road_source: Option<RoadSource>,
 }
 
 /// One side of an edge. Its face lies on its left.
@@ -203,6 +208,9 @@ pub struct EdgeSpec {
     pub owner: Option<Key>,
     /// Chain the edge belongs to.
     pub chain: Option<Key>,
+    /// Source stations for a regional segment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub road_source: Option<RoadSource>,
     /// Keys for the faces on the left and right of the edge when it splits a face; derived from
     /// the faces' outer walks when absent.
     pub face_names: Option<[Key; 2]>,
@@ -221,6 +229,7 @@ impl EdgeSpec {
             widths,
             owner: None,
             chain: None,
+            road_source: None,
             face_names: None,
         }
     }

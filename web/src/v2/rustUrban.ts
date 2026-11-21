@@ -2,7 +2,8 @@ import { cityNamedSite } from '../render/cityGeneration';
 import { defaultCityLayoutConfig as defaultLayoutConfig } from '../render/cityGeneration';
 import { springPoints } from '../../../rust/bridge/urbanGeography';
 import type { World, UrbanLayer, UrbanBuilding, PolyH, UrbanZone, StreetRole, Options } from '../gen/types';
-import type { Claim, Layout, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
+import type { Claim, Layout, LayoutRoad, Partition, UrbanResponse, Street, UrbanEngine } from '../../../rust/bridge/urban';
+import { regionalSegmentId, roadStations } from '../../../rust/bridge/urbanRoads';
 import { nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint, townPopulationAndRadius } from './townNeighbours';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { defaultParcelConfig, normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
@@ -261,15 +262,18 @@ export function cityGroundOf(world: World): CityGroundRaster {
 /** Regional roads of a V2 town, for its generation and its 3D bridges: the retained native network split at its
  * crossings and ranked by class, exactly as City Bench sends it (`cityTownRoads`). A TypeScript region has no
  * native network and keeps its projected roads. */
-const townRoads = new WeakMap<object, Street[]>();
-export function townRoadStreets(world: World): Street[] {
+const townRoads = new WeakMap<object, LayoutRoad[]>();
+export function townRoadStreets(world: World): LayoutRoad[] {
   const native = (world.debug?.v2RustRegion as RustRegionSnapshot | undefined)?.roads;
   if (native) {
     let streets = townRoads.get(native);
-    if (!streets) townRoads.set(native, (streets = cityTownRoads({ ...native, segments: native.segments.filter((_, i) => !world.roads?.[i]?.urban) })));
+    if (!streets) townRoads.set(native, (streets = cityTownRoads(native, i => !world.roads?.[i]?.urban)));
     return streets;
   }
-  return (world.roads ?? []).filter(r => !r.urban).map(road => ({ path: road.path, widths: road.path.map(() => road.width), rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional' }));
+  return (world.roads ?? []).flatMap((road, index): LayoutRoad[] => {
+    if (road.urban) return [];
+    return [{ path: road.path, widths: road.path.map(() => road.width), rank: road.kind === 'major' ? 1 : road.kind === 'minor' ? 2 : 3, role: 'regional', regionalSource: { id: regionalSegmentId(index), stations: roadStations(road.path) } }];
+  });
 }
 /** Site archetype of a V2 town (layout `siteArchetypes`), from its native placement record as City Bench reads it. */
 export function townSiteArchetypes(world: World, key: string, explicit?: Record<string, string>): Record<string, string> {

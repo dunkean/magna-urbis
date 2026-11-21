@@ -29,6 +29,7 @@ fn strip() -> Layout {
         phase: None,
     };
     Layout {
+        regional_road_result: None,
         config: Some(LayoutConfig::default()),
         programme: None,
         key: "block-edits".into(),

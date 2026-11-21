@@ -10,6 +10,7 @@
 
 mod boundary;
 mod chain;
+pub mod fate;
 
 use std::collections::HashSet;
 use std::f64::consts::PI;

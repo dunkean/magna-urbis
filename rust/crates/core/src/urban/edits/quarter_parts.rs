@@ -496,6 +496,7 @@ mod tests {
     /// Quarter 0 holds a left block, a right block and a block across x = 50.
     fn town() -> Layout {
         Layout {
+            regional_road_result: None,
             config: Some(LayoutConfig::default()),
             programme: None,
             key: "t".into(),

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use magna_urbis_geom::{Point, distance, segment_hit};
 
-use crate::{spec::CharterSpec, survey::Survey};
+use crate::{RegionalRoad, spec::CharterSpec, survey::Survey};
 
 #[derive(Default)]
 pub(super) struct RoadFacts {
@@ -14,7 +14,7 @@ pub(super) struct RoadFacts {
 
 impl RoadFacts {
     pub(super) fn inspect(
-        roads: &[Vec<Point>],
+        roads: &[RegionalRoad],
         survey: &Survey,
         radius: Option<f64>,
         spec: &CharterSpec,
@@ -29,7 +29,7 @@ impl RoadFacts {
             let mut segments = Vec::new();
             let mut run = WaterRun::default();
             let mut station = 0.0;
-            for pair in road.windows(2) {
+            for pair in road.points.windows(2) {
                 let [a, b] = [pair[0], pair[1]];
                 let length = a.distance(b);
                 if !length.is_finite() {

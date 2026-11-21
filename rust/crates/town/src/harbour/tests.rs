@@ -200,6 +200,13 @@ fn a_town_four_hundred_metres_inland_gets_a_harbour_road_and_a_front() {
     let choice = choose_front(&survey, &charter, &port).expect("a front within reach");
     assert!(!choice.at_focus, "the harbour is distant");
     assert!((choice.landing.distance(focus) - 405.0).abs() < 10.0);
+    let reserved = claimable_front(&Coast, focus, &SurveySpec::default(), &port.works)
+        .expect("the same front at regional placement");
+    assert!(reserved.landing.distance(choice.landing) < survey.cell_size());
+    let founding_focus = p(focus.x, focus.y + 40.0);
+    let recovered = front_at_landing(&survey, founding_focus, reserved.landing, &port.works)
+        .expect("the reserved landing remains usable after choosing the focus");
+    assert!(recovered.landing.distance(reserved.landing) < survey.cell_size());
 
     let road = harbour_road(&survey, focus, &choice, &port).expect("a road to the water");
     assert_eq!(road[0], focus);

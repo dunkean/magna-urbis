@@ -4,7 +4,7 @@ use magna_urbis_geom::{Point, Shape, surface::TerrainView};
 
 use super::{PhasePlan, PlannedSetting, effective_form, found};
 use crate::{
-    TownRequest, TownSite,
+    RegionalRoad, TownRequest, TownSite,
     spec::{
         CharterSpec, CircumstanceModifiers, DefensiveIntent, DefensiveShares, ExtensionHabit,
         FossilRule, FoundingFocusKind, HarbourEnclosure, HarbourSpec, HarbourThresholds, PhaseSpec,
@@ -164,7 +164,7 @@ fn specs() -> TownSpecs {
 fn request<'a>(
     specs: &'a TownSpecs,
     terrain: &'a Terrain,
-    roads: &'a [Vec<Point>],
+    roads: &'a [RegionalRoad],
     seed: &'a str,
 ) -> TownRequest<'a> {
     TownRequest {
@@ -211,7 +211,9 @@ fn the_charter_is_stable_for_the_seed_and_grown_targets_above_the_cohort() {
 #[test]
 fn named_threshold_draws_depend_on_seed_and_stay_within_the_spread() {
     let specs = specs();
-    let roads = [vec![point(410.0, 512.0), point(550.0, 512.0)]];
+    let roads = [RegionalRoad::from_polyline(
+        "market-road".into(), vec![point(410.0, 512.0), point(550.0, 512.0)], 1,
+    )];
     let mut request = request(&specs, &PLAIN, &roads, "alpha");
     let survey = survey(&request);
     let (first, first_plan) = found(&request, &survey).unwrap();
@@ -251,8 +253,8 @@ fn named_threshold_draws_depend_on_seed_and_stay_within_the_spread() {
 fn a_regional_crossing_brings_the_market_forward() {
     let specs = specs();
     let roads = [
-        vec![point(390.0, 512.0), point(550.0, 512.0)],
-        vec![point(495.0, 580.0), point(495.0, 512.0)],
+        RegionalRoad::from_polyline("main".into(), vec![point(390.0, 512.0), point(550.0, 512.0)], 1),
+        RegionalRoad::from_polyline("branch".into(), vec![point(495.0, 580.0), point(495.0, 512.0)], 2),
     ];
     let mut request = request(&specs, &PLAIN, &roads[..1], "crossing");
     let survey = survey(&request);
@@ -271,11 +273,11 @@ fn a_regional_crossing_brings_the_market_forward() {
 #[test]
 fn a_bridge_site_uses_a_regional_road_span_between_banks() {
     let specs = specs();
-    let road = [vec![
-        point(400.0, 512.0),
-        point(504.0, 512.0),
-        point(560.0, 512.0),
-    ]];
+    let road = [RegionalRoad::from_polyline(
+        "bridge-road".into(),
+        vec![point(400.0, 512.0), point(504.0, 512.0), point(560.0, 512.0)],
+        1,
+    )];
     let mut request = request(&specs, &RIVER, &road, "bridge");
     request.site.archetype = Some("bridge".into());
     let (charter, _) = found(&request, &survey(&request)).unwrap();

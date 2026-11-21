@@ -232,6 +232,7 @@ impl Graph {
                 widths: old.widths.clone(),
                 owner: old.owner.clone(),
                 chain: old.chain.clone(),
+                road_source: old.road_source.clone(),
                 face_names: None,
             };
             change.extend(self.insert_edge(spec, ends, at)?);

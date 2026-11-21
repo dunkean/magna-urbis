@@ -62,8 +62,16 @@
 //!    harbour::port_town(cfg), quay_width, pier_spacing and pier_length from
 //!    harbour::params(culture), port_factor: 1.5 for a harbour archetype or a port function,
 //!    ..Default::default() }`, in the test `works: Default::default()`.
-//! 8. **Placement** (plan lot 3.4): a distant harbour belongs to its town; `export_quays` and
-//!    the harbour road are part of the town's claim.
+//! 8. **Regional placement** runs before `Found` and before the clock steps in design 3.2.
+//!    After placing a port-capable town, core calls `claimable_front(terrain, center,
+//!    &survey_spec, &works_spec)` with `works_spec.port_town = true`, and keeps the landing's
+//!    disc and the straight centre-to-landing corridor clear of later automatic sites.
+//!    Pass the reservation's landing and port intent into the growth request. In step 1
+//!    above, after resolving the charter and final survey, call `front_at_landing(&survey,
+//!    charter.focus.position, reserved_landing, &specs.harbour.works)`. Use that `FrontChoice`
+//!    for the `Found` road and the dated harbour events in design 3.2. `None` leaves the
+//!    harbour unopened. Requests without a reservation use `choose_front`. Include the
+//!    built harbour and its road in the town claim at finish.
 //!
 //! The landing threshold of a town founded on its front, the ring that reaches a distant
 //! front, and the dates of works are all clock values, so the prefix property holds: the
@@ -79,7 +87,7 @@ mod works;
 
 use std::collections::HashSet;
 
-use magna_urbis_geom::{Point, interior_point, simplify};
+use magna_urbis_geom::{Point, interior_point, simplify, surface::TerrainView};
 
 pub use export::{HarbourStreet, export_quays, work_role};
 pub use quay::{extend_harbour, extension_due, open_harbour, opened, quay_length};
@@ -90,7 +98,7 @@ use crate::charter::Charter;
 use crate::graph::{EdgeClass, Graph, Key, Level, NodeKind};
 use crate::growth::QuarterRecord;
 use crate::journal::{EventKind, Journal};
-use crate::spec::{FoundingFocusKind, GrowthSpec, HarbourSpec};
+use crate::spec::{FoundingFocusKind, GrowthSpec, HarbourSpec, HarbourWorksSpec, SurveySpec};
 use crate::survey::{BankId, Survey};
 
 /// Key segment tags of harbour elements, after the graph's own (`graph::tag`).
@@ -262,48 +270,99 @@ impl FrontDiscount {
 /// otherwise, for a port town (`works.portTown`), the best front reachable over land by distance
 /// over land, shelter and gentleness. `None`: no harbour.
 pub fn choose_front(survey: &Survey, charter: &Charter, spec: &HarbourSpec) -> Option<FrontChoice> {
-    let fronts = survey.fronts();
     let focus = charter.focus.position;
-    let index = if charter.focus.kind == FoundingFocusKind::HarbourFront {
-        // The charter was resolved on the request's survey; this one may be centred elsewhere,
-        // so its front is the one whose shore passes nearest the charter's landing.
+    if charter.focus.kind == FoundingFocusKind::HarbourFront {
+        // The charter's survey may have a different centre and different front indices.
         let at = charter.harbour_front.map_or(focus, |h| h.position);
-        let reach = 2.0 * survey.cell_size();
-        fronts
-            .iter()
-            .enumerate()
-            .map(|(i, f)| (i, line::project(&f.shore, at).1))
-            .filter(|&(_, d)| d <= reach)
-            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
-            .map(|(i, _)| i)?
-    } else if spec.works.port_town {
-        fronts
-            .iter()
-            .enumerate()
-            .filter_map(|(i, f)| {
-                let land = f.land_distance?;
-                let grade = mean_grade(survey, &f.shore);
-                let score = land - spec.works.shelter_weight * FRONT_WEIGHT * f.shelter_score
-                    + FRONT_WEIGHT * grade;
-                Some((i, score))
-            })
-            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
-            .map(|(i, _)| i)?
-    } else {
+        let index = front_near(survey, at, 2.0 * survey.cell_size())?;
+        return make_choice(survey, index, focus, focus, &spec.works);
+    }
+    choose_port_front(survey, focus, &spec.works)
+}
+
+/// Locate the reserved front in a new survey and keep its landing near the reserved position.
+pub fn front_at_landing(
+    survey: &Survey,
+    focus: Point,
+    landing: Point,
+    works: &HarbourWorksSpec,
+) -> Option<FrontChoice> {
+    let reach = 2.0 * survey.cell_size() + 0.5 * works.quay_width;
+    let index = front_near(survey, landing, reach)?;
+    make_choice(survey, index, focus, landing, works)
+}
+
+fn front_near(survey: &Survey, at: Point, reach: f64) -> Option<usize> {
+    survey
+        .fronts()
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (i, line::project(&f.shore, at).1))
+        .filter(|&(_, d)| d <= reach)
+        .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+        .map(|(i, _)| i)
+}
+
+/// Survey the front a port can claim from the regional placement centre before roads and charter.
+/// The distant front must admit a harbour road at the culture's street grade.
+pub fn claimable_front(
+    terrain: &dyn TerrainView,
+    center: Point,
+    survey_spec: &SurveySpec,
+    works: &HarbourWorksSpec,
+) -> Option<FrontChoice> {
+    if !works.port_town || survey_spec.harbour_reach <= 0.0 {
         return None;
-    };
-    let front = &fronts[index];
+    }
+    // Sample past the search radius so the last shore segment has wet and dry neighbours.
+    let reach = survey_spec.harbour_reach + 2.0 * survey_spec.cell_size;
+    let survey = Survey::new(terrain, center, reach, None, &[], survey_spec).ok()?;
+    let choice = choose_port_front(&survey, center, works)?;
+    if !choice.at_focus {
+        road::road_to_landing(&survey, center, choice.landing, works.road_grade)?;
+    }
+    Some(choice)
+}
+
+fn choose_port_front(survey: &Survey, focus: Point, works: &HarbourWorksSpec) -> Option<FrontChoice> {
+    if !works.port_town {
+        return None;
+    }
+    let index = survey
+        .fronts()
+        .iter()
+        .enumerate()
+        .filter_map(|(i, front)| {
+            let land = front.land_distance?;
+            let grade = mean_grade(survey, &front.shore);
+            let score = land - works.shelter_weight * FRONT_WEIGHT * front.shelter_score
+                + FRONT_WEIGHT * grade;
+            Some((i, score))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+        .map(|(i, _)| i)?;
+    make_choice(survey, index, focus, focus, works)
+}
+
+fn make_choice(
+    survey: &Survey,
+    index: usize,
+    focus: Point,
+    landing_near: Point,
+    works: &HarbourWorksSpec,
+) -> Option<FrontChoice> {
+    let front = &survey.fronts()[index];
     if front.shore.len() < 2 {
         return None;
     }
-    let half = spec.works.quay_width * 0.5;
+    let half = works.quay_width * 0.5;
     let line = simplify(&line::offset(&front.shore, half), LINE_TOLERANCE, |_| false);
-    let (landing_station, _) = line::project(&line, focus);
+    let (landing_station, _) = line::project(&line, landing_near);
     let landing = line::point_at(&line, landing_station).0;
     Some(FrontChoice {
         index: index as u32,
         bank_id: front.bank_id,
-        at_focus: landing.distance(focus) <= spec.works.attached_reach,
+        at_focus: landing.distance(focus) <= works.attached_reach,
         line,
         landing_station,
         landing,

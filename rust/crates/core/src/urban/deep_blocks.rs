@@ -247,6 +247,7 @@ mod tests {
         let block = g::rectangle(0.0, 0.0, 300.0, 160.0);
         let (l, r, t, b) = (-2.0, 302.0, 162.0, -2.0);
         let mut layout = Layout {
+            regional_road_result: None,
             config: Some(LayoutConfig::default()),
             programme: None,
             key: "t".into(),
