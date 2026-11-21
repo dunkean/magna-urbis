@@ -1,6 +1,8 @@
 //! A camp's open land is no evidence for a native urban facility.
-use super::*;
-use super::super::Morph;
+use crate::urban::{Layout, Morph, Parcel, Partition, roles};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use super::{Demand, ProgrammeContext, adjacency::graph, environment::{block_culture, profile_pack}};
 
 pub(super) fn camp(layout: &Layout, population: u32) -> bool {
     if let Some(cfg) = &layout.config { !roles::is_isolated(&cfg.programme.intent)
@@ -91,7 +93,8 @@ pub(super) fn explain(layout: &Layout, population: u32, d: &mut Demand, context:
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Layout, Partition, supported};
+    use super::super::{allocate, demand::demand};
     #[test]
     fn exact_p06_reallocation_keeps_needs_and_refuses_unsourced_urban_facilities() {
         let layout: Layout = serde_json::from_slice(include_bytes!("fixtures/camp-p06-layout.json")).unwrap();

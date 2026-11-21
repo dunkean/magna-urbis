@@ -1,9 +1,13 @@
 //! Parcel admission, housing allocation and land capacity.
 
-use super::super::geometry::rectangle;
-use super::test_fixtures::{context_for, layout, partition, prepare_case};
-use super::*;
+use crate::urban::{Layout, Point, Surface, culture::mapping, geometry::rectangle, roles};
 use serde_json::json;
+
+use super::{Allocation, ProgrammeContext, allocate, has_envelope, lots, prepare};
+use super::adjacency::{graph, shared};
+use super::admission::eligible;
+use super::housing::{COLLECTIVE_TYPOLOGIES, household_capacity, spread_households};
+use super::test_fixtures::{context_for, layout, partition, prepare_case};
 
 #[test]
 fn domestic_land_budget_uses_the_same_units_as_the_current_building_path() {
@@ -199,7 +203,7 @@ fn an_owned_rear_garden_connects_spare_land_to_its_house() {
     assert!(rear.front.is_none() && rear.contacts.is_empty());
 }
 
-/// Review #17: with more lots than households, gardens go to the lane
+/// With more lots than households, gardens go to the lane
 /// lots and every main-street lot holds a house, even when the lane lots
 /// are nearer the centre; infill respects the population margin.
 #[test]

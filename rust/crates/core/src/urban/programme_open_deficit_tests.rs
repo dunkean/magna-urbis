@@ -1,7 +1,10 @@
 //! Partial outcome transport regression on TWO real historical open requests.
 //! No accepted compact-plan building is replayed or credited as capacity.
-use super::*;
+use crate::urban::Partition;
+use serde::Serialize;
 use serde_json::{json, Value};
+
+use super::{BuiltCapacity, BuiltOpenSpace, BuiltScene, carry_open_deficits, reconcile_built};
 
 const HORREUM: &str = "layout-f9dab5910f08a8a2/block-534caa150eda7de7/parcel-ffd73c3204267a37";
 const TEMPLE: &str = "layout-f9dab5910f08a8a2/block-fec2c1fd938da55b/parcel-2c651ca5f91cb329";

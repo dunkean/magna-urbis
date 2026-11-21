@@ -1,8 +1,9 @@
 //! Reconciliation of realised buildings, refusals and open ground.
 
-use super::super::geometry::rectangle;
+use crate::urban::geometry::rectangle;
+
+use super::{Allocation, BuiltCapacity, BuiltOpenSpace, BuiltRefusal, BuiltScene, reconcile_built};
 use super::test_fixtures::{partition, prepare_case};
-use super::*;
 
 #[test]
 fn realized_capacity_keeps_land_built_refusals_and_open_surfaces_separate() {

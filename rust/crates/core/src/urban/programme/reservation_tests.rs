@@ -1,9 +1,26 @@
 //! Demand preparation, service siting and whole-block reservations.
 
-use super::super::geometry::rectangle;
-use super::test_fixtures::{context_for, layout, partition, prepare_case};
-use super::*;
+use crate::urban::{Layout, Point, Shape, Surface, geometry::{area, centroid, rectangle}};
 use serde_json::json;
+use std::collections::BTreeSet;
+
+use super::{BuiltOpenSpace, BuiltScene, ProgrammeContext, Reservation, allocate, has_envelope,
+    prepare, reallocate, reconcile_built};
+use super::admission::{eligible, public_open_access};
+use super::environment::block_is_wet;
+use super::test_fixtures::{context_for, layout, partition, prepare_case};
+
+/// Uses the same continuous metric contacts as cadastral qualification.
+fn block_front(layout: &Layout, shape: &Shape) -> Option<(usize, f64)> {
+    crate::urban::parcels::block_contacts(shape, layout)
+        .into_iter()
+        .max_by(|a, b| {
+            a.length
+                .total_cmp(&b.length)
+                .then_with(|| b.street.cmp(&a.street))
+        })
+        .map(|c| (c.street, c.length))
+}
 
 #[test]
 fn shoreline_roundoff_is_not_an_inundated_service_block() {
@@ -53,7 +70,7 @@ fn shoreline_roundoff_is_not_an_inundated_service_block() {
     assert!(block_is_wet(surface, &submerged, centroid(&submerged)));
 }
 
-/// Invariant (Round 7 J): a facility block is reserved only where its
+/// A facility block is reserved only where its
 /// pinned native recipe can be founded at a street pose.
 #[test]
 fn facilities_reserve_only_blocks_that_found_their_recipe() {

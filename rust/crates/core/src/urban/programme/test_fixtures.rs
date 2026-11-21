@@ -1,14 +1,15 @@
 //! Shared layouts and partitions for programme tests.
 
-use super::super::geometry::rectangle;
-use super::{Layout, Partition, ProgrammeContext, Surface, prepare};
+use crate::urban::{Layout, Partition, Surface, geometry::rectangle, roles};
 use serde_json::json;
 
+use super::{ProgrammeContext, ProgrammeFunctions, prepare};
+
 /// Test shorthand: an isolated intent, or one specialisation at full weight.
-pub(super) fn context_for(label: &str) -> super::ProgrammeContext {
-    let mut c = super::ProgrammeContext::default();
-    if super::roles::is_isolated(label) { c.intent = label.into(); return c; }
-    let mut f = super::ProgrammeFunctions::default();
+pub(super) fn context_for(label: &str) -> ProgrammeContext {
+    let mut c = ProgrammeContext::default();
+    if roles::is_isolated(label) { c.intent = label.into(); return c; }
+    let mut f = ProgrammeFunctions::default();
     match label {
         "agricultural" => f.agricultural = 1.0, "crossroads" => f.commerce = 1.0, "artisan" => f.artisan = 1.0,
         "riverine" => f.riverine = 1.0, "port" => f.port = 1.0, "capital" => f.capital = 1.0, _ => return c,

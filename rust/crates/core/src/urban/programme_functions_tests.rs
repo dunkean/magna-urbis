@@ -1,6 +1,9 @@
 //! Real programme preparation on a tiny dry layout. These tests measure demand
 //! and prerequisites, never pretend that a house or navigable route was built.
-use super::*;
+use crate::urban::{Layout, Surface, roles};
+use std::collections::BTreeSet;
+
+use super::{Demand, ProgrammeContext, ProgrammeFunctions, UrbanProgramme, prepare};
 
 fn prepared(context: &ProgrammeContext, population: u32) -> UrbanProgramme {
     let mut layout: Layout = serde_json::from_value(serde_json::json!({

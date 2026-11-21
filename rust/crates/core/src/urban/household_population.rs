@@ -1,6 +1,8 @@
 //! A stable mix of planned occupants. Household counts still drive allocation;
 //! occupants are separate demographic data, not certified building capacity.
-use super::{roles, UrbanProgramme};
+use crate::urban::roles;
+
+use super::UrbanProgramme;
 
 fn hash(id: &str) -> u64 {
     id.bytes().fold(14695981039346656037u64, |h, b| (h ^ u64::from(b)).wrapping_mul(1099511628211))

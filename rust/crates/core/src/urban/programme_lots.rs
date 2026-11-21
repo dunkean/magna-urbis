@@ -1,6 +1,8 @@
 //! Spare cadastral cells belong to an occupied property, not to nobody.
-use super::*;
-use super::super::geometry as g;
+use crate::urban::{Layout, Parcel, Partition, Shape, geometry as g, roles};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use super::adjacency::{graph, shared};
 
 pub(super) fn consolidate(layout: Option<&Layout>, part: &mut Partition) {
     consolidate_cadastre(layout, part, &BTreeSet::new());
