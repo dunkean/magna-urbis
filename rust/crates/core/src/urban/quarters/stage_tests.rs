@@ -1,12 +1,11 @@
 //! Integration fixtures and profiling probes for the quarter stage.
 
-use super::{generate, len, touches};
+use super::{generate, service::touches, streets::len};
 use crate::urban::{Layout, LayoutConfig, Point, Shape, Site, Street, Surface, footprint::capacity, geometry as g};
-use magna_urbis_geom::surface::TerrainView;
 use std::f64::consts::PI;
 
 /// Flat plain crossed by two regional roads; returns the full native quarter stage.
-pub(in super::super) fn flat_city(
+fn flat_city(
     culture: &str,
     population: u32,
     fortification: &str,
@@ -383,7 +382,7 @@ fn small_settlement_keeps_disjoint_quarters_and_dry_paths() {
     }
 }
 
-/// Mountain bay (TODO bug 2): a 250 m coastal shelf under a 0.35 slope cut
+/// Mountain bay: a 250 m coastal shelf under a 0.35 slope cut
 /// by ravines, sea to the east, one coastal road. Roman tissue, no stairs.
 fn bay_city(cfg: &LayoutConfig) -> Layout {
     let (n, width) = (256, 4000.0);
