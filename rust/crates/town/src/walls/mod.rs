@@ -24,17 +24,96 @@
 //! Not ported here: the knoll repair of `parameter_trace` (with an explicit relief
 //! limit, a founding line over a knoll is routed round it, which needs a router) and
 //! `occupied_banks` (the precinct survey keeps to occupied banks).
+//!
+//! The precinct cycle (design 5.2, 5.3, 5.5) is built on the tracers:
+//! - `land.rs`: a precinct's land, the cheapest open cells of the cost field, as an outline;
+//! - `clearance.rs`: local pull-back of a line from neighbours and a harbour, never dropping it;
+//! - `insert.rs`: circuits drawn into the graph (loops, lines between two points of a standing
+//!   circuit, seated nodes);
+//! - `precinct.rs`: `SurveyPrecinct` (land, trace, clearance, gates, wall street, works faces,
+//!   ditch reserve) and the predicate that opens only a precinct's land;
+//! - `raise.rs`: `RaiseWall` when full, the works inputs, when the next survey is due;
+//! - `water_side.rs`: channels on flow-normal spans, sea wall, open front, harbour outside;
+//! - `growth_regime.rs`: the grown regime, lobes and concentric steps, the fossil rule, gates on
+//!   standing circuits, the citadel;
+//! - `castle.rs`: the founding castle, its bailey and road, and its join with a town precinct;
+//! - `camp.rs`: flat and defensive camp figures and their common.
+//!
+//! # Integration
+//!
+//! Every function below reads the graph (through the writer or a stage), the survey and the
+//! specs, and returns operations or plain results; the growth loop applies them as events. It
+//! keeps the town's precincts (`Precinct`, in survey order) and its castle (`Castle`) beside its
+//! quarter records. On resume it calls the same functions on the graph as it stood (the survey
+//! is deterministic) to rebuild these records, and applies the recorded operations.
+//!
+//! Inputs the loop assembles once per call: a [`PrecinctSite`] (terrain, `specs.wall`, a
+//! `PrecinctSpec` — to be added to `TownSpecs` as `#[serde(default)] precinct` — the ring's
+//! frozen cost field, the household size, the neighbour claims, the arm chains of
+//! `Driver::arms`, the harbour's [`HarbourSide`] when one is decided, the castle when founded).
+//!
+//! 1. **Found** (design 4.3), within the `Found` stage, after `armature::regional_roads` and
+//!    before `armature::place_focus`: when the focus is a strong point, [`found_castle`] with the
+//!    survey's first strong point, the founding cohort and the regional roads; it draws the
+//!    circuit (class `Wall`, raised at once, its face a `Bailey`), the castle gate and the castle
+//!    road. The founding focus is then placed at `Castle::foot` instead of the summit.
+//! 2. **Founding precinct**, for a charter enclosed from founding: right after `Found`, at clock
+//!    0 and before the first ring, a `SurveyPrecinct { precinct: 0, step: 1.0 }` event with
+//!    the operations of [`survey_precinct`] (`existing: None`, sized for the founding cohort).
+//!    For a camp charter use [`survey_camp`] with [`flat_figure`] (focus, the regional road's
+//!    bearing, the phase's compact density) or, on a spur, hilltop, meander or island archetype,
+//!    [`defensive_figure`]; the camp's precinct is raised when full like any other.
+//! 3. **While a precinct is open** (step 1 and 2 of design 3.2's order): the ring's land is cut
+//!    with `PrecinctPlan::open_sectors.clip` before its boundary arcs are drawn, and a sector
+//!    opens only if `open_sectors.admits(&sector.outline)`; such quarters are counted with
+//!    `intramural = true` and the phase's compact tissue. The plan's `reserves` (ditch band) are
+//!    closed land for the ring lattice. `armature::extend` must let an axis cross `Precinct` and
+//!    `Wall` edges (as it crosses regional roads); at the end of each `ExtendArmature` stage,
+//!    [`gates_on_circuits`] (the stage's graph, every precinct, the arm chains) gives the
+//!    `SetNodeKind` operations that make each new crossing of a main chain a gate, pushed on
+//!    the same stage.
+//! 4. **Step 5 of design 3.2, walls** (after promotions, road fates and the harbour): for the
+//!    open precinct, [`raise_when_full`] (graph, precinct, the current phase's `PhaseDraw` from
+//!    `charter.draws.phases`); when it returns operations apply them as
+//!    `raise_event(precinct, kind)` and set `precinct.raised`. Before applying a concentric
+//!    raise, [`fossil`] on the circuit it overtakes gives one `RetypeChain { chain, step, class,
+//!    rank }` event (removals pushed one by one on a stage, keeping those accepted). The adapter
+//!    builds the works from [`works_inputs`] (graph, precinct, terrain, inhabitants housed,
+//!    a `WorksContext` resolved in core) and commits their works and reserves as faces before
+//!    any lot next to them is cut.
+//!    Then, once [`survey_due`] holds (inside and outside households, inside at the raise, the
+//!    phase's draw), the next [`survey_precinct`] with `existing: Some(last)`, the households
+//!    housed, the clock: lobe or concentric by [`extension`]; the castle joined when
+//!    [`joins`]. A town walled when grown, at its first phase with `walls_when_grown`, calls
+//!    [`survey_grown`] (quarters as [`QuarterAge`]) instead, and applies [`raise_ops`] at once.
+//!    A culture whose `WallSpec::keeps_citadel` holds and whose focus is no strong point calls
+//!    [`citadel_outline`] and [`survey_citadel`] on its first raised circuit.
+//! 5. **Harbour** (`ExtendHarbour`, before the wall in each step): [`landing_gates`] on the
+//!    standing precinct of the harbour's side adds water gates at new landings, never moving it.
+//! 6. **Finish**: `PrecinctPlan::closed_crossings` are street ends at the wall for the adapter;
+//!    [`common_ops`] types the unbuilt faces of a defensive camp's common.
 
 mod across;
 mod attach;
 mod bastioned;
+mod camp;
+mod castle;
+mod clearance;
 mod geometry;
+mod growth_regime;
+mod insert;
+mod land;
 mod params;
+mod precinct;
+mod raise;
 mod square;
 mod village;
+mod water_side;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod precinct_tests;
 
 use magna_urbis_geom::{self as g, Point, Shape, surface::TerrainView};
 
@@ -48,6 +127,31 @@ pub use bastioned::bastioned_trace;
 pub use params::{Regularity, parameter_trace};
 pub use square::{grid_frame, square_trace};
 pub use village::{curtain_trace, hill_trace, polygonal_fit, village_trace};
+
+pub use camp::{common_land, common_ops, defensive_figure, flat_figure, survey_camp};
+pub use castle::{
+    Castle, bailey_area, castle_key, castle_outline, castle_road, field_gate, found_castle, joins,
+    wrap,
+};
+pub use clearance::{Cleared, Obstacle, pull_back};
+pub use growth_regime::{
+    ChainRetype, Extension, QuarterAge, aged_land, citadel_outline, extension, fossil,
+    gates_on_circuits, survey_citadel, survey_grown,
+};
+pub use insert::{Line, Stroke, insert_between, insert_loop, insert_to_edge, open_path, seat_nodes};
+pub use land::{Land, cells_outline, cheapest_land, land_for};
+pub use precinct::{
+    Gate, OpenSectors, Precinct, PrecinctPlan, PrecinctSite, Purpose, Route, curtain_width,
+    ditch_width, gate_budget, precinct_key, survey_precinct,
+};
+pub use raise::{
+    GateStreet, WorksContext, WorksInputs, WorksStreet, inhabitants, is_full, outside_share,
+    raise_event, raise_ops, raise_when_full, survey_due, wall_kind_name, works_inputs,
+};
+pub use water_side::{
+    ChannelSpan, HarbourSide, WaterPlan, flow_normal_spans, landing_gates, seat_water_plan,
+    water_plan, waterline,
+};
 
 /// Cross-grade of a circuit's ground above which a masonry wall follows the contour.
 const HILL_RELIEF: f64 = 0.07;
