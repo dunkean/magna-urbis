@@ -19,9 +19,21 @@ pub(super) struct QuarterCapacity<'a, 'terrain> {
 impl Capacity for QuarterCapacity<'_, '_> {
     fn households(&self, blocks: &[CapacityBlock], inputs: CapacityInputs<'_>) -> f64 {
         if blocks.is_empty() || inputs.fill_level <= 0.0 {
+            if std::env::var_os("URBAN_PROFILE").is_some() {
+                eprintln!("  growth.capacity none: no buildable block");
+            }
             return 0.0;
         }
-        self.probe_quarter(blocks, inputs).unwrap_or(0.0)
+        let counted = self.probe_quarter(blocks, inputs);
+        if std::env::var_os("URBAN_PROFILE").is_some() && !counted.as_ref().is_ok_and(|&h| h > 0.0) {
+            let fronts: usize = blocks.iter().map(|b| b.frontage_edges.len()).sum();
+            eprintln!(
+                "  growth.capacity none: blocks={} fronts={fronts} zone={} result={counted:?}",
+                blocks.len(),
+                inputs.zone
+            );
+        }
+        counted.unwrap_or(0.0)
     }
 }
 

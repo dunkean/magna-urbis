@@ -11,7 +11,7 @@ mod tests;
 use magna_urbis_town::growth::{self, Verdict};
 use magna_urbis_town::{TownPlan, TownRequest, TownSite, charter::PlannedSetting};
 
-use super::{Layout, LayoutConfig, ParcelConfig, Site, Street, Surface, kinds};
+use super::{Layout, LayoutConfig, ParcelConfig, Site, Street, Surface, footprint, kinds};
 
 /// Return a growth layout when the requested site can be handled by the growth engine.
 pub(super) fn generate(
@@ -38,6 +38,12 @@ pub(super) fn generate(
         &config.culture
     };
     let specs = specs::build(culture, config).ok()?;
+    // The households the programme will ask for: the culture's household size at this
+    // population (4.5 persons in a European town of 20,000, 3.7 in a village). Growth counts
+    // in households of its own size, so it is asked for the population that makes the same
+    // number of households, and its clock stops where the programme's demand is met.
+    let wanted = footprint::capacity::households(culture, site.population);
+    let population = (wanted * specs.growth.household_size).round().min(f64::from(u32::MAX)) as u32;
     let roads: Vec<_> = regional_roads.iter().map(|s| s.path.clone()).collect();
     let neighbour_claims: Vec<_> = site
         .neighbours
@@ -57,7 +63,7 @@ pub(super) fn generate(
             center: site.center,
             pinned: config.fixed_sites.contains(&site.key),
             radius,
-            population: site.population,
+            population,
             culture: culture.clone(),
             archetype: (!config.site_archetype.is_empty()).then(|| config.site_archetype.clone()),
         },
@@ -87,8 +93,10 @@ pub(super) fn generate(
     // The final allocation on the real cut decides (design 3.3): a town housing at least 90 % of
     // its households is kept, with a warning when short; below that growth reopens once at its
     // cursor, for the households missing scaled by how far the birth counts were off.
-    let wanted = growth::target_households(&request);
     let mut housed = housed_by_lots(seed, &layout);
+    if std::env::var_os("URBAN_PROFILE").is_some() {
+        eprintln!("  growth.housed first={housed:.0} wanted={wanted:.0} clock={:.0}", plan.clock.households());
+    }
     if let Verdict::Reopen { .. } = growth::verdict(housed, wanted, false) {
         let counted = plan.stop.target.households().max(1.0);
         let ratio = (wanted / housed.max(1.0)).min(REOPEN_RATIO);
@@ -96,6 +104,9 @@ pub(super) fn generate(
             && let Some(next) = finish(&more)
         {
             let homes = housed_by_lots(seed, &next);
+            if std::env::var_os("URBAN_PROFILE").is_some() {
+                eprintln!("  growth.housed reopened={homes:.0} clock={:.0}", more.clock.households());
+            }
             if homes > housed {
                 (layout, housed) = (next, homes);
             }
@@ -107,10 +118,18 @@ pub(super) fn generate(
     Some(layout)
 }
 
-/// Households the town's lot stage houses: the published cut and its allocations, as the
-/// parcels stage runs them on this layout.
+/// Households the town houses at the end of the chain: the parcels stage's cut and allocation,
+/// then the programme stage's reallocation of those lots, on the layout as the engine hands it
+/// on (serialised and read back, which rounds its coordinates as the parcels stage sees them).
 fn housed_by_lots(seed: &str, layout: &Layout) -> f64 {
-    super::generate_parcels(seed, std::slice::from_ref(layout), &ParcelConfig::default())
+    let Some(layouts) = serde_json::to_vec(std::slice::from_ref(layout))
+        .ok()
+        .and_then(|text| serde_json::from_slice::<Vec<Layout>>(&text).ok())
+    else {
+        return 0.0;
+    };
+    super::generate_parcels(seed, &layouts, &ParcelConfig::default())
+        .and_then(|parts| super::programme::reallocate(&layouts, &parts))
         .map_or(0.0, |parts| {
             parts
                 .iter()

@@ -191,11 +191,10 @@ fn streets(graph: &Graph, clock: Clock, town: &HashSet<FaceId>) -> Vec<Street> {
     let mut loose = Vec::new();
     for id in graph.live_edges() {
         let edge = graph.edge(id);
-        // A regional road runs on beyond the town: only its stretches along a quarter are
-        // streets. A ring boundary is a street once quarters lie on both of its sides.
+        // A regional road runs on beyond the town, and a ring boundary may run between two
+        // unopened faces: only their stretches along a quarter are streets.
         let kept = match edge.class.current() {
-            EdgeClass::RegionalRoad => bordered(graph, id, town, false),
-            EdgeClass::Boundary => bordered(graph, id, town, true),
+            EdgeClass::RegionalRoad | EdgeClass::Boundary => bordered(graph, id, town, false),
             _ => true,
         };
         if !kept {
@@ -215,11 +214,23 @@ fn streets(graph: &Graph, clock: Clock, town: &HashSet<FaceId>) -> Vec<Street> {
                 .faces_along_chain(chain)
                 .into_iter()
                 .filter(|step| match graph.edge(step.edge).class.current() {
-                    EdgeClass::RegionalRoad => bordered(graph, step.edge, town, false),
-                    EdgeClass::Boundary => bordered(graph, step.edge, town, true),
+                    EdgeClass::RegionalRoad | EdgeClass::Boundary => {
+                        bordered(graph, step.edge, town, false)
+                    }
                     _ => true,
                 })
-                .filter_map(|step| street(graph.edge(step.edge), clock, step.half.is_forward())),
+                .filter_map(|step| {
+                    let mut street = street(graph.edge(step.edge), clock, step.half.is_forward())?;
+                    // A boundary between two rings is an ordinary street; the outermost one,
+                    // with open land beyond, is the town's peripheral street (classic's role),
+                    // so that the lots of the last ring keep the access they were counted with.
+                    if *graph.edge(step.edge).class.current() == EdgeClass::Boundary
+                        && !bordered(graph, step.edge, town, true)
+                    {
+                        street.role = "peripheral".into();
+                    }
+                    Some(street)
+                }),
         );
     }
     streets.extend(
@@ -245,7 +256,7 @@ fn street(edge: &Edge, clock: Clock, forward: bool) -> Option<Street> {
         EdgeClass::RegionalRoad => "regional",
         EdgeClass::HarbourRoad => "port-road",
         EdgeClass::CastleRoad => "street",
-        // A ring boundary between two quarters (the caller keeps only those) is a street.
+        // A ring boundary along a quarter (the caller keeps only those) is a street.
         EdgeClass::Boundary => {
             return street_of(edge, clock, forward, 2, "street");
         }
