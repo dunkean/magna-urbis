@@ -4197,6 +4197,7 @@ dependencies = [
  "magna-urbis-geom",
  "magna-urbis-random",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

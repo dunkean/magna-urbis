@@ -27,6 +27,7 @@ pub use elements::{
     HalfEdge, Level, Node, NodeKind, Sector,
 };
 pub use history::{Life, Versioned};
+pub use insert::{MIN_PIECE, ON_EDGE, SNAP};
 pub use key::{Clock, EdgeId, FaceId, HalfId, Key, NodeId, Station, tag};
 
 use index::{Contact, Grid, bbox, contacts, nearest_on};

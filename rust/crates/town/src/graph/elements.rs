@@ -184,7 +184,8 @@ pub struct Face {
 }
 
 /// What to insert: the drawn edge and its attributes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EdgeSpec {
     /// Lineage key: the creating event's key and the edge's rank in it.
     pub key: Key,

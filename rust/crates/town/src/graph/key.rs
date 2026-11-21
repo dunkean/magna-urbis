@@ -38,6 +38,8 @@ pub mod tag {
     pub const REANCHOR: u32 = 13;
     /// A node placed by the caller.
     pub const NODE: u32 = 14;
+    /// The element a journal event acts on, nested.
+    pub const SUBJECT: u32 = 15;
 }
 
 /// A lineage key: the identity of an element derived from what created it, never from

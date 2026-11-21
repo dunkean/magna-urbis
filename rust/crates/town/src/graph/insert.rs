@@ -12,11 +12,11 @@ use super::{
 };
 
 /// Largest gap between a polyline end and the node it is said to end on (metres).
-pub(super) const SNAP: f64 = 1e-6;
+pub const SNAP: f64 = 1e-6;
 /// Largest gap between a polyline end and the edge it is said to fall on (metres).
-const ON_EDGE: f64 = 1e-4;
+pub const ON_EDGE: f64 = 1e-4;
 /// Shortest piece left on either side of a split (metres).
-const MIN_PIECE: f64 = 0.01;
+pub const MIN_PIECE: f64 = 0.01;
 
 /// An edge end checked against the graph, before anything is changed.
 #[derive(Clone, Copy, Debug)]
