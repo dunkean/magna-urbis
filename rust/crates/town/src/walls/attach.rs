@@ -33,10 +33,25 @@ pub fn attach(old: &Shape, full: &Shape) -> Option<Shape> {
             .flat_map(|s| g::difference(s, old))
             .collect(),
     )?;
-    let lobe = Shape {
+    let mut lobe = Shape {
         outer: lobe.outer,
         holes: vec![],
     };
+    // A lobe reaching round the old circuit can close a pocket against it: the pocket lies
+    // inside the new line, so it belongs to the lobe.
+    if let [one] = g::union(&[old.clone(), lobe.clone()]).as_slice()
+        && !one.holes.is_empty()
+    {
+        let filled = Shape {
+            outer: one.outer.clone(),
+            holes: vec![],
+        };
+        let pieces = g::difference(&filled, old);
+        lobe = largest(pieces).map(|s| Shape {
+            outer: s.outer,
+            holes: vec![],
+        })?;
+    }
     if g::area(&lobe) < 15_000.0
         || g::area(&lobe) < 0.1 * a_old
         || shared_length(old, &lobe) < 3.0 * reach

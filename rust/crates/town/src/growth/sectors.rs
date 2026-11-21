@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use magna_urbis_geom::{Shape, area, interior_point};
 
-use crate::graph::{EdgeClass, EdgeId, FaceId, Graph, HalfId, Key, Level, Station};
+use crate::graph::{EdgeClass, FaceId, Graph, HalfId, Key, Level, Station};
 use crate::journal::Op;
 use crate::survey::CostField;
 
@@ -29,9 +29,10 @@ pub(super) struct Sector {
 /// The sectors of a ring, in station order, read from the graph just after the ring's
 /// `ExtendArmature` event, whose operations are `ops`. A sector is a face on the left of one of
 /// the ring's boundary arcs, or one of `extra` (an open precinct's land the ring reaches, which
-/// its wall street bounds already). Its station is the first node of its arc piece of smallest
-/// key (for an extra face, of its boundary edge of smallest key) and the rank of that piece among
-/// the node's arms: the same whatever order the ring is computed in.
+/// its wall street bounds already). Its station is the origin node of the half of its arc piece of
+/// smallest key that bounds it (for an extra face, of its boundary edge of smallest key) and the
+/// rank of that half among the node's arms: the same whatever order the ring is computed in, and
+/// distinct for the two faces either side of one edge.
 pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField, extra: &[FaceId]) -> Vec<Sector> {
     let chains: BTreeSet<&Key> = ops
         .iter()
@@ -41,7 +42,7 @@ pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField, extra: &[Fac
         })
         .collect();
     let outside = graph.outside(Level::Ground);
-    let mut faces: BTreeMap<FaceId, EdgeId> = BTreeMap::new();
+    let mut faces: BTreeMap<FaceId, HalfId> = BTreeMap::new();
     for chain in chains {
         for step in graph.faces_along_chain(chain) {
             let face = graph.left_face(step.edge);
@@ -52,11 +53,11 @@ pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField, extra: &[Fac
             faces
                 .entry(face)
                 .and_modify(|best| {
-                    if key < &graph.edge(*best).key {
-                        *best = step.edge;
+                    if key < &graph.edge(best.edge()).key {
+                        *best = HalfId::forward(step.edge);
                     }
                 })
-                .or_insert(step.edge);
+                .or_insert(HalfId::forward(step.edge));
         }
     }
     for &face in extra {
@@ -67,8 +68,11 @@ pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField, extra: &[Fac
             .walks(face)
             .into_iter()
             .flatten()
-            .map(|h| h.edge())
-            .min_by(|&a, &b| graph.edge(a).key.cmp(&graph.edge(b).key));
+            .min_by(|&a, &b| {
+                // A dangling edge lies twice on the walk: its forward half is taken.
+                let side = |h: HalfId| (&graph.edge(h.edge()).key, !h.is_forward());
+                side(a).cmp(&side(b))
+            });
         if let Some(piece) = piece {
             faces.insert(face, piece);
         }
@@ -80,11 +84,12 @@ pub(super) fn of_ring(graph: &Graph, ops: &[Op], costs: &CostField, extra: &[Fac
             if area(&outline) < MIN_AREA {
                 return None;
             }
-            let host = graph.edge(piece).nodes[0];
+            let nodes = graph.edge(piece.edge()).nodes;
+            let host = if piece.is_forward() { nodes[0] } else { nodes[1] };
             let arm = graph
                 .arms(host, Level::Ground)
                 .iter()
-                .position(|&h| h == HalfId::forward(piece))? as u32;
+                .position(|&h| h == piece)? as u32;
             let mut outline_edges: Vec<Key> = graph
                 .walks(face)
                 .into_iter()

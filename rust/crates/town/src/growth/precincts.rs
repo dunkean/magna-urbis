@@ -98,9 +98,10 @@ impl Driver<'_> {
         )
     }
 
-    /// The wall step: raise the open precinct when full (or, with `force`, as it stands); at a
-    /// ring's end (`ring_end`) survey the next precinct when it is due, or the first circuit of
-    /// a town walled when grown once its phase allows it.
+    /// The wall step: raise the open precinct when full (or, with `force`, as it stands); survey
+    /// the next precinct as soon as it is due, so that the faubourg outside the standing wall
+    /// stays under its bound; at a ring's end (`ring_end`) survey the first circuit of a town
+    /// walled when grown once its phase allows it.
     pub(super) fn wall_step(&mut self, ring_end: bool, force: bool) -> Result<(), String> {
         if self.charter.defensive_intent == DefensiveIntent::Never {
             return Ok(());
@@ -112,10 +113,7 @@ impl Driver<'_> {
         if let Some(i) = self.precincts.iter().rposition(|p| p.raised.is_none()) {
             return self.raise(i, &draw, force);
         }
-        if ring_end {
-            self.next_precinct(&draw)?;
-        }
-        Ok(())
+        self.next_precinct(&draw, ring_end)
     }
 
     /// Raise precinct `i` in the kind its survey drew (the phase's, else a hedge) when every
@@ -149,7 +147,33 @@ impl Driver<'_> {
         self.open_sectors = None;
         self.idle_rings = 0;
         self.inside_at_raise = self.households_inside().0;
-        self.citadel(i)
+        self.citadel(i)?;
+        // Design 5.2: once the wall stands, the walled town densifies up to the charter's gain
+        // before the next survey, instead of spilling into a faubourg.
+        let goal = self.inside_at_raise * (1.0 + draw.precinct_gain.max(0.0));
+        self.age_within(goal)
+    }
+
+    /// Age the intramural quarters, one fill step each in turn, until the households inside the
+    /// standing walls reach `goal`, no step remains or the target is housed; the dated events
+    /// follow each step.
+    fn age_within(&mut self, goal: f64) -> Result<(), String> {
+        loop {
+            let mut aged = false;
+            for q in self.ageing_order(|record| record.intramural) {
+                if self.reached() || self.households_inside().0 >= goal {
+                    return Ok(());
+                }
+                let step = self.quarters[q].step;
+                if self.age(q)? && self.quarters[q].step > step {
+                    aged = true;
+                    self.dated()?;
+                }
+            }
+            if !aged {
+                return Ok(());
+            }
+        }
     }
 
     /// The circuit a concentric raise of precinct `i` overtakes: the last raised town circuit
@@ -204,15 +228,16 @@ impl Driver<'_> {
     }
 
     /// The next precinct, once the standing one has aged by its gain or the faubourg outside it
-    /// has grown to its bound; or the first circuit of a town walled when grown.
-    fn next_precinct(&mut self, draw: &PhaseDraw) -> Result<(), String> {
+    /// has grown to its bound; or, at a ring's end, the first circuit of a town walled when grown.
+    fn next_precinct(&mut self, draw: &PhaseDraw, ring_end: bool) -> Result<(), String> {
         let last = self
             .precincts
             .iter()
             .rposition(|p| matches!(p.purpose, Purpose::Town | Purpose::Camp));
         let plan = match last {
             None => {
-                let grown = self.charter.defensive_intent == DefensiveIntent::WalledWhenGrown
+                let grown = ring_end
+                    && self.charter.defensive_intent == DefensiveIntent::WalledWhenGrown
                     && self.plan.phases[self.phase].spec.walls_when_grown;
                 if !grown || !self.may_apply(&walls::precinct_key(0)) {
                     return Ok(());

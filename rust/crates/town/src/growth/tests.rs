@@ -529,12 +529,14 @@ fn stops_on_either_side_of_a_harbour_opening_resume_alike() {
 
 #[test]
 fn a_river_town_crosses_to_the_far_bank() {
-    // A 24 m stream 150 m east of the centre, crossed by the east-west regional road.
+    // A 24 m stream 150 m east of the centre, crossed by the east-west regional road. The far
+    // bank is due once the near bank's cheapest land costs more than the crossing (after the
+    // third ring here); the target lets the next ring open whole, whatever its station order.
     let terrain = Terrain {
         river: Some([1170.0, 1194.0]),
         ..Terrain::default()
     };
-    let plan = grow(&terrain, households(1500.0), None);
+    let plan = grow(&terrain, households(2500.0), None);
     assert!(
         events(&plan)
             .iter()

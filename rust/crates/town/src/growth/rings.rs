@@ -292,7 +292,8 @@ impl Driver<'_> {
     }
 
     /// Open the ring's sectors in station order. The drafts are laid in parallel with the phase
-    /// at hand, and laid again for the sectors left when a promotion changes the phase. While a
+    /// at hand, and laid again for the sectors left when a promotion, a precinct survey or a
+    /// raise changes the tissue. While a
     /// precinct is open only its sectors open. After each quarter: count, dated events, stop
     /// test; the ring is cut at the first station whose count reaches the target.
     fn open(
@@ -303,7 +304,9 @@ impl Driver<'_> {
         level: f64,
     ) -> Result<Step, String> {
         let mut drafts: Vec<Option<QuarterDraft>> = vec![None; sectors.len()];
-        let mut laid_in: Option<usize> = None;
+        // The phase and precinct regime the drafts were laid in: a promotion, a survey or a
+        // raise during the ring changes the tissue the remaining sectors are laid with.
+        let mut laid_in: Option<(usize, bool)> = None;
         for (i, sector) in sectors.iter().enumerate() {
             if self
                 .open_sectors
@@ -313,12 +316,13 @@ impl Driver<'_> {
                 continue;
             }
             let quarter = Key::quarter(ring, &sector.station);
-            if !self.recorded_keys.contains(&quarter) && laid_in != Some(self.phase) {
+            let regime = (self.phase, self.open_sectors.is_some());
+            if !self.recorded_keys.contains(&quarter) && laid_in != Some(regime) {
                 let fresh = self.lay(ring, &sectors[i..], field);
                 for (slot, draft) in drafts[i..].iter_mut().zip(fresh) {
                     *slot = draft;
                 }
-                laid_in = Some(self.phase);
+                laid_in = Some(regime);
             }
             let draft = drafts[i].take();
             if profiled() {
@@ -537,7 +541,7 @@ impl Driver<'_> {
     }
 
     /// Quarters chosen by `keep`, intramural first, then by key.
-    fn ageing_order(&self, keep: impl Fn(&QuarterRecord) -> bool) -> Vec<usize> {
+    pub(super) fn ageing_order(&self, keep: impl Fn(&QuarterRecord) -> bool) -> Vec<usize> {
         let mut order: Vec<usize> = (0..self.quarters.len())
             .filter(|&q| keep(&self.quarters[q]))
             .collect();
@@ -551,7 +555,7 @@ impl Driver<'_> {
     }
 
     /// Raise quarter `q` by one fill step. Returns whether it had a step left.
-    fn age(&mut self, q: usize) -> Result<bool, String> {
+    pub(super) fn age(&mut self, q: usize) -> Result<bool, String> {
         let record = &self.quarters[q];
         let Some(increment) = record.next_increment() else {
             return Ok(false);
