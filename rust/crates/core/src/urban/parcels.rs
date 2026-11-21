@@ -1,5 +1,6 @@
 //! Street-fronting cadastral partitions, in metres. Every cut retains the
 //! parent's frame and every unclaimed piece remains explicit back land.
+use crate::urban::warnings;
 use super::geometry::{area, difference, intersection};
 use super::{Layout, Morph, Parcel, ParcelConfig, Partition, Point, Shape};
 use crate::rng::Rng;
@@ -3912,7 +3913,7 @@ impl Coverage {
             let (residual, overlap) = (self.residual, self.overlap);
             cut.warnings.insert(
                 at,
-                format!("Îlot {bi} : couverture résiduelle {residual:.3} m², chevauchement {overlap:.3} m²"),
+                warnings::parcel_coverage(bi, residual, overlap),
             );
         }
     }
@@ -4030,13 +4031,6 @@ struct StoredCut {
     cut: BlockCut,
     coverage: std::sync::OnceLock<Coverage>,
 }
-/// The two warnings a cut may name its block in (see `generate`).
-fn block_warning_tail<'a>(w: &'a str, bi: usize) -> Option<(&'static str, &'a str)> {
-    let a = format!("Îlot {bi} :");
-    let b = format!("Block {bi}:");
-    if let Some(rest) = w.strip_prefix(a.as_str()) { return Some(("Îlot", rest)); }
-    w.strip_prefix(b.as_str()).map(|rest| ("Block", rest))
-}
 impl StoredCut {
     fn indices(cut: &mut BlockCut) -> impl Iterator<Item = &mut usize> {
         cut.parcels.iter_mut().flat_map(|p| {
@@ -4048,7 +4042,7 @@ impl StoredCut {
         // The block number is not part of the key: it must be recoverable from
         // the cut (every lot's `block`, the warnings' prefix) to be renumbered.
         if cut.parcels.iter().any(|p| p.block != bi)
-            || cut.warnings.iter().any(|w| block_warning_tail(w, bi).is_none())
+            || cut.warnings.iter().any(|w| warnings::block_warning_index(w, bi).is_none())
         {
             return;
         }
@@ -4082,8 +4076,8 @@ impl StoredCut {
                 p.block = bi;
             }
             for w in &mut cut.warnings {
-                let (head, rest) = block_warning_tail(w, self.bi)?;
-                *w = if head == "Îlot" { format!("Îlot {bi} :{rest}") } else { format!("Block {bi}:{rest}") };
+                let index = warnings::block_warning_index(w, self.bi)?;
+                w.replace_range(index, &bi.to_string());
             }
         }
         Some(cut)
@@ -4669,9 +4663,7 @@ fn generate_cut(
                 street: None,
                 front_length: 0.0,
             });
-            out.warnings.push(format!(
-                "Îlot {bi} : aucun contact continu avec une rue ; terrain laissé en espace ouvert"
-            ));
+            out.warnings.push(warnings::open_block(bi));
             resolve_identity(&mut unserved, bi, &block_id);
             out.parcels.push(unserved);
             out.diagnostics.covered_area += area(&block.shape);
@@ -5104,10 +5096,7 @@ fn generate_cut(
             .sum::<f64>();
         out.uncovered = Some(out.warnings.len());
         if (actual - expected).abs() > expected.max(1.0) * 1e-5 {
-            out.warnings.push(format!(
-                "Block {bi}: cadastral area residual {:.3} m²",
-                actual - expected
-            ));
+            out.warnings.push(warnings::parcel_area_residual(bi, actual - expected));
         }
         // An id is minted from a parcel's geometry at its birth and kept while
         // tidying reshapes it, so a later cut (an arm garden) can reproduce an

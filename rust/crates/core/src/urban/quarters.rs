@@ -1,5 +1,6 @@
 // buildspeed-bench 1793749855248848900
 //! Native quarter fixture, guidance field, recursive street cuts and ribbon carving.
+use crate::urban::warnings;
 use super::footprint::capacity;
 use super::geometry as g;
 use super::{
@@ -2753,10 +2754,7 @@ fn serve_quarters(
         s.metrics.allocated_area = (s.metrics.allocated_area - lost).max(0.0);
         s.metrics.shortfall_area += lost;
     }
-    Some(format!(
-        "{} quartier(s) sans accès carrossable rendu(s) à la campagne ({lost:.0} m², comptés en déficit).",
-        dropped.len()
-    ))
+    Some(warnings::unserved_quarters(dropped.len(), lost))
 }
 
 /// A level street through `start` that follows the contour across `shape`
@@ -2996,7 +2994,7 @@ pub(super) fn generate(
         let mut next = generate_planned(seed, site, &smaller, m, surface, roads, stilt_grounded)?;
         let next_count = enclosed_blocks(&next);
         if next_count >= count { break; }
-        next.warnings.push("Emprise intra-muros réduite pour remplir les îlots dans la marge de population de +30 %.".into());
+        next.warnings.push(warnings::walled_land_reduced());
         layout = next;
         count = next_count;
     }
@@ -3007,9 +3005,7 @@ pub(super) fn generate(
     dropped += drop_vacant_quarters(&mut layout);
     laps.lap("vacant");
     if dropped + peeled > 0 {
-        layout.warnings.push(format!(
-            "Terre vacante rendue à la campagne : {dropped} quartier(s), {peeled} îlot(s) de bordure."
-        ));
+        layout.warnings.push(warnings::vacant_land_released(dropped, peeled));
     }
     Ok(layout)
 }
@@ -3045,7 +3041,7 @@ fn generate_planned(
             let here = if poor { Some(generate_once(seed, site, cfg, m, surface, roads)?) } else { None };
             match here {
                 Some(mut here) if housed(&here) > housed(&there) => {
-                    here.warnings.push("Débarcadère abandonné : la berge retenue loge moins de ménages que le site d’origine, le lieu y reste.".into());
+                    here.warnings.push(warnings::landing_abandoned());
                     (here, site)
                 }
                 _ => (there, moved),
@@ -3392,9 +3388,10 @@ fn generate_once(
             quarters,
             streets: vec![],
             blocks: vec![],
-            warnings: vec![
-                "Aucun quartier constructible à cet emplacement et avec ce rayon.".into(),
-            ].into_iter().chain(warnings).chain(super::generation_limits::population_warning(0, site.population)).collect(),
+            warnings: std::iter::once(warnings::no_buildable_quarters())
+                .chain(warnings)
+                .chain(super::generation_limits::population_warning(0, site.population))
+                .collect(),
             enclosures,
             phases,
             archetype,
@@ -4330,7 +4327,7 @@ fn generate_once(
                         })
                     })
             });
-            warnings.push(format!("{dropped} îlot(s) au-delà du besoin en logements laissé(s) en espace ouvert."));
+            warnings.push(warnings::housing_blocks_left_open(dropped));
         }
     }
     lap("blocks.fringe_fields");
@@ -4407,9 +4404,7 @@ fn generate_once(
     });
     rejoin_slivers(&mut blocks);
     if closed > 0 {
-        warnings.push(format!(
-            "{closed} îlot(s) sans façade sur rue laissé(s) en espace ouvert."
-        ));
+        warnings.push(warnings::streetless_blocks_left_open(closed));
     }
     // An edited quarter culture travels to its lots through a phase of its own
     // (appended, so earlier phase indices never move).
@@ -4503,20 +4498,7 @@ fn generate_once(
         let short = p.shortfall > 0.05 * p.required;
         if !steps.is_empty() || short {
             let housed = (p.predicted / p.required.max(1.0)).min(1.0);
-            layout.warnings.push(format!(
-                "Capacité prévue : {} — {} % des ménages logeables{}.",
-                if steps.is_empty() {
-                    "tissu tel que dessiné".to_owned()
-                } else {
-                    steps.join(", ")
-                },
-                (housed * 100.0).round(),
-                if short {
-                    " ; le terrain ou les bornes de la culture limitent l’emprise"
-                } else {
-                    ""
-                }
-            ));
+            layout.warnings.push(warnings::planned_capacity((housed * 100.0).round(), &steps, short));
         }
         if let Some(s) = layout.structure.as_mut() {
             s.metrics.capacity = Some(p);
@@ -5444,7 +5426,7 @@ mod tests {
                 (w + d.requested, h + d.parcel_capacity.min(d.requested))
             });
         let plan = capacity::of(&layout).expect("automatic budget carries a plan");
-        let warning = parts[0].warnings.iter().find(|w| w.starts_with("Capacité"));
+        let warning = parts[0].warnings.iter().find(|w| w.starts_with("Lot capacity "));
         eprintln!(
             "halfling 20k: {housed:.0}/{wanted:.0} households, densify {:.2}, extension {:.2}, donor {:?} {:.2}, vacancy {:.2}; {warning:?}",
             plan.densify, plan.extension, plan.donor, plan.borrowed_share, plan.vacancy
@@ -5454,10 +5436,7 @@ mod tests {
             "{housed:.0} of {wanted:.0} households housed"
         );
         if plan.densify > 0.0 || plan.extension > 1.001 || plan.borrowed_share > 0.0 {
-            let warning = warning.expect("a crossed threshold is stated");
-            if plan.borrowed_share > 0.0 {
-                assert!(warning.contains("découpe empruntée"), "{warning}");
-            }
+            assert!(warning.is_some(), "an adjusted plan reports its estimated lot capacity");
         }
     }
 

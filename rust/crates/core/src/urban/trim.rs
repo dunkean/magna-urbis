@@ -12,6 +12,7 @@
 //! pruned back to the last useful junction. Necessary empty links become field
 //! paths; bridges, quays and gate connections remain. It runs before the fortification is settled,
 //! and the footprint outline follows the built blocks (`footprint`).
+use crate::urban::warnings;
 use super::{Layout, LayoutConfig, ParcelConfig, Point, Shape, Street, Surface, access, geometry as g, programme};
 use std::collections::{HashMap, HashSet};
 
@@ -707,7 +708,7 @@ pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, origin
         if count == 0 && after >= before - 1e-6 { break; }
     }
     if released > 0 {
-        layout.warnings.push(format!("{released} îlot(s) sans construction rendu(s) aux champs, avec leurs rues."));
+        layout.warnings.push(warnings::unbuilt_blocks_released(released));
     }
     (released, built_lots)
 }

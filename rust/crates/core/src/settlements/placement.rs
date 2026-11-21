@@ -1,3 +1,4 @@
+use crate::urban::warnings;
 use super::grid::Fields;
 use super::{
     Config, Output, Point, Scores, Settlement, SettlementSpec, class_of, extent_gap, extent_radius,
@@ -857,7 +858,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             if f.r.water[i] == 0 {
                 chosen = Some((i, p));
             } else {
-                out.warnings.push(format!("{}: manual position is wet or solid rock", s.key));
+                out.warnings.push(warnings::manual_site_blocked(&s.key));
             }
         } else {
             // Attempts: the requested size (with its explicit site type first), then one class
@@ -948,10 +949,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         if chosen.is_none() && s.position.is_none() && f.cave.is_some() {
             if let Some((i, room)) = cave_room(f, &s, cfg, &noise, &out.settlements, &candidates, &land) {
                 if room < requested {
-                    out.warnings.push(format!(
-                        "{}: lowered from {} to {} inhabitants to fit its cave chamber",
-                        s.key, requested, room
-                    ));
+                    out.warnings.push(warnings::cave_population_reduced(&s.key, requested, room));
                     lowered = Some(room);
                 }
                 chosen = Some((i, f.pos(i)));
@@ -961,15 +959,15 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         let Some((i, mut p)) = chosen else {
             if f.cave.is_some() {
                 dropped_underground += 1;
-                out.warnings.push(format!("{} ({} inhabitants): no open cave floor left; not placed", s.key, requested));
+                out.warnings.push(warnings::cave_site_missing(&s.key, requested));
             } else {
-                out.warnings.push(format!("{} ({} inhabitants): no suitable position available", s.key, requested));
+                out.warnings.push(warnings::site_missing(&s.key, requested));
             }
             continue;
         };
         let pop = lowered.unwrap_or(requested);
         if pop < requested && !forced {
-            out.warnings.push(format!("{}: lowered from {} to {} inhabitants: no room for it on the map", s.key, requested, pop));
+            out.warnings.push(warnings::map_population_reduced(&s.key, requested, pop));
         }
         s.population = pop;
         let ext = extent_radius(pop);
@@ -998,21 +996,15 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
             scores.ranking_population = Some(reference);
         }
         if s.position.is_some() && !valid {
-            out.warnings.push(format!(
-                "{}: manual position bypasses slope, flood or buildable-land preferences",
-                s.key
-            ));
+            out.warnings.push(warnings::manual_site_unsuitable(&s.key));
         }
         let site_kept = explicit && !site_dropped && matches(f, i, &s);
         if explicit && !site_kept {
             // Never silent: a requested site type that could not be met is announced.
             out.warnings.push(if water_site(&s.site_type) {
-                format!(
-                    "{}: no {} site on the water, even on a narrow or steep shore; the town is placed away from the water without this role",
-                    s.key, s.site_type
-                )
+                warnings::water_site_missing(&s.key, &s.site_type)
             } else {
-                format!("{}: no {} site available; sampling another available site", s.key, s.site_type)
+                warnings::requested_site_missing(&s.key, &s.site_type)
             });
         }
         let mut kind = if site_kept {
@@ -1041,7 +1033,7 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         }
     }
     if dropped_underground > 0 {
-        out.warnings.push(format!("{} places not placed: no open cave floor left", dropped_underground));
+        out.warnings.push(warnings::cave_sites_missing(dropped_underground));
     }
     out
 }
@@ -1111,7 +1103,7 @@ mod tests {
         let out = place("required-steep-town", &f, &cfg);
         assert_eq!(out.requested, 1);
         assert!(out.settlements.is_empty(), "{:?}", out.settlements.iter().map(|s| s.center).collect::<Vec<_>>());
-        assert!(out.warnings.iter().any(|w| w.contains("steep-town (5000 inhabitants): no suitable position available")));
+        assert!(out.warnings.iter().any(|w| w == "steep-town unplaced (5000 people) — no suitable site"));
     }
 
     #[test]
@@ -1200,7 +1192,7 @@ mod tests {
         assert_eq!(town.spec.population, spec.population);
         assert!(town.center.x < 2400.0, "town at {:?}", town.center);
         assert_ne!(town.archetype, "harbor");
-        assert!(out.warnings.iter().any(|w| w.contains("no harbor site on the water")));
+        assert!(out.warnings.iter().any(|w| w.ends_with("no harbor — unsuitable shore")));
     }
 
     #[test]
@@ -1210,7 +1202,7 @@ mod tests {
         let out = place("dry-harbour", &f, &cfg);
         assert_eq!(out.settlements.len(), 1);
         assert_ne!(out.settlements[0].archetype, "harbor");
-        assert!(out.warnings.iter().any(|w| w.contains("no harbor site on the water")));
+        assert!(out.warnings.iter().any(|w| w.ends_with("no harbor — unsuitable shore")));
     }
 
     /// 64 × 50 m cells of cave rock (class 2 at ground level, as the bridge sends it) with two
@@ -1257,7 +1249,7 @@ mod tests {
         let chamber = |cx: f64| out.settlements.iter()
             .any(|s| (s.center.x - (cx + 0.5) * 50.0).hypot(s.center.y - 32.5 * 50.0) <= 425.0);
         assert!(chamber(12.0) && chamber(52.0), "both chambers used");
-        assert!(out.warnings.iter().any(|w| w.contains("not placed: no open cave floor left")));
+        assert!(out.warnings.iter().any(|w| w.ends_with(" — no cave floor")));
     }
 
     /// An archipelago: four islands (250 m radius, 6 m high) in the sea, and a lagoon of water
@@ -1334,13 +1326,13 @@ mod tests {
         let s = &out.settlements[0];
         assert_eq!(s.spec.population, 20000, "{:?}", out.warnings);
         assert_eq!(f.r.water[f.index(s.center)], 0);
-        assert!(!out.warnings.iter().any(|w| w.contains("to fit its cave chamber")));
+        assert!(!out.warnings.iter().any(|w| w.ends_with(" — small cave chamber")));
         // One 250 m chamber alone: beyond the caps, lowered and announced.
         let small = cave_grid(64, 4000.0, 4.0, 32, 64, 0);
         let out = place("cave-small", &small, &cfg);
         assert_eq!(out.settlements.len(), 1);
         assert!(out.settlements[0].spec.population < 20000);
-        assert!(out.warnings.iter().any(|w| w.contains("lowered from 20000")), "{:?}", out.warnings);
+        assert!(out.warnings.iter().any(|w| w.contains("/20000 people — small cave chamber")), "{:?}", out.warnings);
     }
 
     /// 6.4 km, 100 m cells: flat land (10 m) west of x = 4 km, the sea east of it, and land
@@ -1616,7 +1608,7 @@ mod tests {
         let s = &out.settlements[0];
         assert!(s.spec.population < 5000);
         assert_eq!(shrink(5000), Some(999));
-        assert!(out.warnings.iter().any(|w| w.contains(&format!("lowered from 5000 to {}", s.spec.population))), "{:?}", out.warnings);
+        assert!(out.warnings.iter().any(|w| w.ends_with(&format!("{}/5000 people — map too small", s.spec.population))), "{:?}", out.warnings);
     }
 
     /// Repulsion grows with size: on an open 20 km plain, towns keep at least half their pair

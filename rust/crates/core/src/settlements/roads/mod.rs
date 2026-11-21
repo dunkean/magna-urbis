@@ -12,6 +12,7 @@ pub mod profile;
 mod search;
 mod tunnelling;
 
+use crate::urban::warnings;
 use super::grid::Fields;
 use super::{Point, extent_radius};
 use crate::{noise::Noise, rng::Rng};
@@ -754,17 +755,14 @@ pub(super) fn route(
     let inside = |p: &Point| (0.0..width).contains(&p.x) && (0.0..width).contains(&p.y);
     let mut access_warnings = vec![];
     if activity.len() > 1000 {
-        access_warnings.push(format!("{} activity sites beyond 1000 get no access path", activity.len() - 1000));
+        access_warnings.push(warnings::activity_access_limit(activity.len() - 1000, 1000));
     }
     let kept: Vec<RoadSite> = activity
         .iter()
         .take(1000)
         .filter_map(|s| {
             if !inside(&s.center) {
-                access_warnings.push(format!(
-                    "Activity site {} outside the map at ({:.1}, {:.1}): no access path",
-                    s.key, s.center.x, s.center.y
-                ));
+                access_warnings.push(warnings::activity_outside_map(&s.key, s.center.x, s.center.y));
                 return None;
             }
             let mut s = (*s).clone();
@@ -780,10 +778,7 @@ pub(super) fn route(
                 if s.approach.last() != Some(&last) {
                     s.approach.push(last);
                 }
-                access_warnings.push(format!(
-                    "Activity site {}: approach of {} points thinned to {}",
-                    s.key, len, s.approach.len()
-                ));
+                access_warnings.push(warnings::activity_approach_thinned(&s.key, len, s.approach.len()));
             }
             Some(s)
         })
@@ -1055,10 +1050,7 @@ pub(super) fn route(
         }
     }
     if !out.unreachable.is_empty() {
-        out.warnings.push(format!(
-            "{} settlements cannot be reached by road",
-            out.unreachable.len()
-        ));
+        out.warnings.push(warnings::settlements_unreachable(out.unreachable.len()));
     }
     Ok(out)
 }
@@ -1177,10 +1169,10 @@ pub(super) fn enforce(f: &Fields, route_cell: f64, out: &mut RoadOutput) {
         *out.length_by_surface.entry(s.surface.clone()).or_default() += s.length;
     }
     if wet > 0 {
-        out.warnings.push(format!("{} road sections over open water removed", wet));
+        out.warnings.push(warnings::wet_road_sections(wet));
     }
     if dead > 0 {
-        out.warnings.push(format!("{} dead-end road sections without a destination removed", dead));
+        out.warnings.push(warnings::dead_road_sections(dead));
     }
 }
 
@@ -1563,8 +1555,8 @@ mod tests {
         assert_eq!(out.segments.len(), 1, "the causeway road alone is left");
         assert_eq!((out.segments[0].a, out.segments[0].b), (0, 1));
         assert_eq!(out.junctions.iter().map(|j| (j.site.as_deref(), j.degree)).collect::<Vec<_>>(), [(Some("mid"), 1), (Some("east"), 1)]);
-        assert!(out.warnings.iter().any(|w| w == "1 road sections over open water removed"), "{:?}", out.warnings);
-        assert!(out.warnings.iter().any(|w| w == "1 dead-end road sections without a destination removed"), "{:?}", out.warnings);
+        assert!(out.warnings.iter().any(|w| w == "Road sections removed: 1 — open water"), "{:?}", out.warnings);
+        assert!(out.warnings.iter().any(|w| w == "Road sections removed: 1 — no destination"), "{:?}", out.warnings);
         assert_eq!(out.length_by_class.get("track"), Some(&2000.0));
         // A network that keeps the invariants is left as it is, without a word.
         let before = out.segments.len();

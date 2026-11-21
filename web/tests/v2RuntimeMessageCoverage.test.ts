@@ -21,6 +21,7 @@ describe('engine and bridge presentation-message coverage', () => {
         value.ok_or("Missing value")?;
         value.map_err(|_| "Invalid field")?;
         warnings.push(format!("{name}: no suitable land"));
+        log_warning_detail(format_args!("{name} has no eligible site in the survey."));
         let reason = r#"Une raison lisible"#;
       }
       #[cfg(test)] mod tests { fn helper() { Err("Test error"); } }

@@ -91,7 +91,7 @@ fn constrained_medina_keeps_what_fits_and_reports_achieved_population() {
     let (layouts, parts, requests) = town("medina", 8000, 4000.0, 0.0, Some(110.0));
     assert!(!requests.is_empty(), "A habitable island must retain a partial town");
     assert!(!layouts[0].blocks.is_empty());
-    assert!(parts[0].warnings.iter().any(|w| w.starts_with("Population target not reached:") && w.contains("/8000 inhabitants.")), "{:?}", parts[0].warnings);
+    assert!(parts[0].warnings.iter().any(|w| urban::warnings::is_population_shortfall(w) && w.contains("/8000 —")), "{:?}", parts[0].warnings);
 }
 
 #[test]
@@ -117,5 +117,5 @@ fn celtic_mu3_choices_keep_real_deficit_requests_compatible_with_allocations() {
     let carried = programme::carry_open_deficits(&parts, &scene, &requests).unwrap();
     let reconciled = programme::reconcile_built(&parts, &carried).unwrap();
     assert_eq!(carried.open_spaces.len(), scene.open_spaces.len());
-    assert!(reconciled[0].warnings.iter().any(|w| w.starts_with("Population target not reached:")));
+    assert!(reconciled[0].warnings.iter().any(|w| urban::warnings::is_population_shortfall(w)));
 }

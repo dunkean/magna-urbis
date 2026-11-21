@@ -13,6 +13,7 @@ mod remote;
 pub mod roads;
 
 pub use magna_urbis_geom::Point;
+use crate::urban::warnings;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -303,7 +304,7 @@ impl Terrain {
                 layout.blocks.retain(|b| !b.shape.outer.iter().any(deep));
                 let removed = before - layout.blocks.len();
                 if removed > 0 {
-                    layout.warnings.push(format!("{} blocks on cave rock removed", removed));
+                    layout.warnings.push(warnings::cave_blocks_removed(removed));
                 }
             }
         }
@@ -731,7 +732,7 @@ mod physical_tests {
         let cfg = roads::RoadConfig { density: 0.0, exits: roads::ExitCounts::default(), activity_access: true, ..Default::default() };
         let routed = terrain.roads("edge", &sites, &cfg).expect("roads, not an error");
         assert!(!routed.segments.is_empty());
-        assert!(routed.warnings.iter().any(|w| w.contains("thinned to")), "{:?}", routed.warnings);
+        assert!(routed.warnings.iter().any(|w| w.ends_with(" — route simplified")), "{:?}", routed.warnings);
         assert!(routed.warnings.iter().any(|w| w.contains("outside the map")), "{:?}", routed.warnings);
     }
 
@@ -875,6 +876,6 @@ mod physical_tests {
                     "city block vertex {p:?} touches the rock");
             }
         }
-        assert!(!layouts.iter().flat_map(|l| &l.warnings).any(|w| w.contains("blocks on cave rock removed")));
+        assert!(!layouts.iter().flat_map(|l| &l.warnings).any(|w| w.ends_with(" — solid cave rock")));
     }
 }

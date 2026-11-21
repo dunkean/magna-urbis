@@ -602,7 +602,7 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
     // Peripheral vacancy is exercised, and its edge land returns to the
     // countryside instead of a fringe of empty blocks.
     assert!(
-        open.warnings.iter().any(|w| w.starts_with("Terre vacante rendue")),
+        open.warnings.iter().any(|w| w.starts_with("Vacant land released")),
         "the open seed must exercise peripheral vacancy: {:?}",
         open.warnings
     );

@@ -1,4 +1,5 @@
 //! Requested regional gateways, dry border candidates, routing and traffic.
+use crate::urban::warnings;
 use super::*;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -315,10 +316,7 @@ fn warn(out: &mut RoadOutput) {
         .map(|((class, reason), count)| format!("{count} {class}: {reason}"))
         .collect::<Vec<_>>()
         .join("; ");
-    out.warnings.push(format!(
-        "Map exits: {obtained} of {} obtained ({detail})",
-        out.exits.len()
-    ));
+    out.warnings.push(warnings::map_exits(obtained, out.exits.len(), &detail));
 }
 
 pub(super) fn add_trips(
@@ -602,7 +600,7 @@ mod tests {
         assert_eq!(out.exits[0].reason.as_deref(), Some("no dry border"));
         assert_eq!(
             out.warnings,
-            ["Map exits: 0 of 1 obtained (1 main: no dry border)"]
+            ["Map exits: 0/1 — site constraints"]
         );
         let empty = super::super::route("empty-region", &f, &[], &cfg).unwrap();
         assert_eq!(empty.exits[0].reason.as_deref(), Some("no settlements"));
@@ -699,7 +697,7 @@ mod tests {
         assert!(
             out.warnings
                 .iter()
-                .any(|w| w == "Map exits: 0 of 1 obtained (1 main: no route)")
+                .any(|w| w == "Map exits: 0/1 — site constraints")
         );
     }
 

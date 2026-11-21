@@ -1,5 +1,6 @@
 //! Settlement composition, before quarter and block subdivision. Cultural phase
 //! thresholds, population shares and road ribbons follow the TypeScript planner.
+use crate::urban::warnings;
 use super::{
     Enclosure, GrowthPhase, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface,
     UrbanCenter, UrbanEvent, catalogue, footprint, fortification, geometry as g, kinds::Kind,
@@ -533,8 +534,7 @@ pub(super) fn generate(
                 nucleus_radius,
             });
         }
-        plan.warnings
-            .push("Aucune voie traversante : le village-rue utilise un noyau groupé.".into());
+        plan.warnings.push(warnings::clustered_street_village());
     }
     let mut phases = vec![];
     let mut cumulative = 0.0;
@@ -687,7 +687,7 @@ pub(super) fn generate(
         );
         plan.streets.extend(retained);
         if shapes.is_empty() {
-            plan.warnings.push("Aucun faubourg réalisable sur les approches de ce lieu ; leur budget reste visible dans la composition.".into());
+            plan.warnings.push(warnings::no_suburbs());
         }
         phases.push(GrowthPhase {
             culture: culture.into(),
@@ -2531,10 +2531,7 @@ fn fortify(
         match enclosed(walled, "bastioned") {
             Some(traced) => traced,
             None => {
-                plan.warnings.push(
-                    "Fortification : tracé bastionné impossible sur ce contour, enceinte flanquée conservée."
-                        .into(),
-                );
+                plan.warnings.push(warnings::flanked_wall());
                 let (hill, forced) = (style.hill, style.forced);
                 style = fortification::resolve(
                     kind,
@@ -2578,7 +2575,7 @@ fn fortify(
                     match fortification::attach(&o, &walls[0]) {
                         Some(e) => { attached = true; vec![o, e] }
                         None => {
-                            plan.warnings.push("Enceinte accolée impossible sur ce contour, enceinte concentrique conservée.".into());
+                            plan.warnings.push(warnings::concentric_wall());
                             walls
                         }
                     }
@@ -2588,7 +2585,7 @@ fn fortify(
         }
         None => {
             if extension == "attached" && walled >= 2 {
-                plan.warnings.push("Enceinte accolée impossible sur ce contour, enceinte concentrique conservée.".into());
+                plan.warnings.push(warnings::concentric_wall());
             }
             walls
         }

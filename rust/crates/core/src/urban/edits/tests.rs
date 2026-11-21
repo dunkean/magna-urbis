@@ -196,7 +196,7 @@ fn quarter_salt_redraws_only_that_quarter() {
         one.streets.len(),
         one.warnings
             .iter()
-            .filter(|w| w.starts_with("Retouche"))
+            .filter(|w| w.starts_with("Quarter edit"))
             .collect::<Vec<_>>()
     );
     assert_eq!(json(&one), json(&again), "salt 1 reproduces itself");
@@ -626,7 +626,7 @@ fn stale_edits_warn_and_never_fail() {
         stale
             .warnings
             .iter()
-            .any(|w| w.contains("Q999") && w.contains("introuvable"))
+            .any(|w| w.contains("Q999") && w.contains("missing"))
     );
     assert_eq!(json(&base.blocks), json(&stale.blocks));
     assert_eq!(json(&base.streets), json(&stale.streets));
@@ -667,7 +667,7 @@ fn stale_edits_warn_and_never_fail() {
     for id in ["gone/shape", "gone/merge", "gone/salt"] {
         assert!(
             all.iter()
-                .any(|w| w.contains(id) && w.contains("introuvable")),
+                .any(|w| w.contains(id) && w.contains("missing")),
             "{id}: {all:?}"
         );
     }
@@ -745,7 +745,7 @@ fn quarter_reshape_stays_within_the_outline_and_off_its_neighbours() {
         assert!(inside, "a neighbour block grew or moved");
     }
     assert!(
-        clipped == 0 || shaped.warnings.iter().any(|w| w.contains("rogné")),
+        clipped == 0 || shaped.warnings.iter().any(|w| w.ends_with(" neighbouring blocks clipped")),
         "clipped neighbours are announced"
     );
     for b in shaped.blocks.iter().filter(|b| b.quarter == k) {
@@ -807,7 +807,7 @@ fn unmoved_outlines_change_nothing() {
     assert_eq!(
         same.warnings
             .iter()
-            .filter(|w| w.contains("identique"))
+            .filter(|w| w.ends_with("same as the current outline"))
             .count(),
         20
     );
@@ -829,7 +829,7 @@ fn unmoved_outlines_change_nothing() {
         shaped
             .warnings
             .iter()
-            .any(|w| w.starts_with(&format!("Retouche Q{k} :")) && w.contains("identique")),
+            .any(|w| w.starts_with(&format!("Quarter edit Q{k} —")) && w.ends_with("same as the current outline")),
         "{:?}",
         shaped.warnings
     );
@@ -876,7 +876,7 @@ fn lot_reshape_keeps_every_served_lot_served() {
             ),
         );
         let after = block_lots(&edited, x.block);
-        if edited.warnings.iter().any(|w| w.contains("desserte")) {
+        if edited.warnings.iter().any(|w| w.ends_with("would lose street access")) {
             refused += 1;
             assert_eq!(
                 json(&base.parcels),
@@ -937,7 +937,7 @@ fn service_lots_cannot_be_deleted() {
         assert!(
             p.warnings
                 .iter()
-                .any(|w| w.contains(&x.id) && w.contains("service"))
+                .any(|w| w.contains(&x.id) && w.ends_with(" — protected public lot"))
         );
     }
 }
@@ -986,7 +986,7 @@ fn quarter_salt_keeps_its_services() {
             !salted
                 .warnings
                 .iter()
-                .any(|w| w.contains("sans îlot réservé"))
+                .any(|w| w.ends_with(" services moved to lots"))
         );
     }
 }

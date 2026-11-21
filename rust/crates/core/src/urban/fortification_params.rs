@@ -1,6 +1,6 @@
 //! Independent wall controls; absent controls retain the historical draw.
 use super::*;
-use super::super::{Layout, LayoutConfig};
+use super::super::{Layout, LayoutConfig, warnings};
 use super::super::routing::{self, RoutePlanner};
 
 pub(super) fn river_mode(cfg: &LayoutConfig) -> &str {
@@ -341,7 +341,7 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
                 }
                 main.push(shore.clone());main=g::union(&main);
             }
-            if main.len()>baseline.len() {layout.warnings.push("Enceinte du port : liaison impraticable, circuit séparé conservé.".into());}
+            if main.len()>baseline.len() {layout.warnings.push(warnings::separate_port_wall());}
         }
         main=whole_quarters(main,layout,&port,outside);
     }
@@ -384,7 +384,7 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
         let covered:Vec<_>=traced.iter().map(|(s,_)|s.clone()).collect();
         let missing:Vec<_>=port.iter().filter(|&&qi|!inside(&covered,&layout.quarters[qi].shape)).map(|&qi|layout.quarters[qi].shape.clone()).collect();
         if !missing.is_empty() {
-            layout.warnings.push("Enceinte du port : raccordement contraint, quartiers protégés par leur propre circuit.".into());
+            layout.warnings.push(warnings::port_quarter_walls(missing.len()));
             own.extend(g::union(&missing));
         }
     }
@@ -405,7 +405,7 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
                 if accepted.is_some() {break;}
             }
             if let Some(sh)=accepted {traced.push((sh,"port"));}
-            else {layout.warnings.push("Enceinte portuaire : rive impraticable, quartier conservé hors les murs.".into());}
+            else {layout.warnings.push(warnings::port_outside_wall());}
         }
     }
     let template=&old[0];

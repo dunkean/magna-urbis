@@ -35,7 +35,7 @@ fn programme_functions_prepare_combines_capital_port_artisan_at_zero_half_and_fu
             let port = generic(&programme, "warehouse").unwrap();
             assert!(port.requires.iter().any(|r| r == "navigableAccess"));
             assert_eq!(port.deficit, port.requested);
-            assert!(programme.warnings.iter().any(|m| m.contains("sans rive navigable mesurée")));
+            assert!(programme.warnings.iter().any(|m| m == "Port storage missing — no navigable shore"));
         }
     }
 }
@@ -65,7 +65,7 @@ fn programme_functions_isolated_intent_wins_and_port_declaration_does_not_certif
     let isolated = prepared(&ProgrammeContext { intent: "isolated-mill".into(), functions: Some(weights), ..Default::default() }, 600);
     assert_eq!(isolated.demands.len(), 1);
     assert_eq!(isolated.demands[0].role, "craft.mill");
-    assert!(isolated.warnings.iter().any(|w| w.contains("non applicables")));
+    assert!(isolated.warnings.iter().any(|w| w == "Town functions skipped — isolated site"));
     assert!(!isolated.demands.iter().any(|d| d.role == "commerce.warehouse"));
     let dry_port = prepared(&ProgrammeContext { functions: Some(weights), navigable_access: true, ..Default::default() }, 600);
     let warehouse = generic(&dry_port, "warehouse").unwrap();

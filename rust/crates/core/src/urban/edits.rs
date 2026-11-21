@@ -15,6 +15,7 @@
 //! programme: a reshaped lot takes land from its block neighbours and gives its
 //! remainder to the neighbour sharing the longest edge; a deleted lot merges
 //! into its best neighbour or stays as a garden. Ids never re-hash.
+use crate::urban::warnings;
 use super::geometry as g;
 use super::parcels::{FrontageIndex, network_contacts};
 use super::programme::Demand;
@@ -257,7 +258,7 @@ fn spliced_quarters(
                     },
                 );
             }
-            _ => warnings.push(format!("Retouche Q{k} : quartier introuvable, ignorée")),
+            _ => warnings.push(warnings::quarter_edit_missing(k)),
         }
     }
     let l1 = if edits.values().any(|e| !e.deleted && (e.salt || e.shape)) {
@@ -268,12 +269,12 @@ fn spliced_quarters(
     } else {
         None
     };
-    // The variant plan's own verdicts on the outlines (« forme ignorée … »).
+    // Carry the variant plan's verdicts on quarter outlines into the splice.
     if let Some(l1) = &l1 {
         warnings.extend(
             l1.warnings
                 .iter()
-                .filter(|w| w.starts_with("Retouche Q"))
+                .filter(|w| warnings::quarter_outline_key(w).is_some())
                 .cloned(),
         );
     }
@@ -648,21 +649,18 @@ fn splice(
         }
         let Some(l1) = l1 else { continue };
         let (Some(q0), Some(q1)) = (l0.quarters.get(i), l1.quarters.get(i)) else {
-            warnings.push(format!("Retouche Q{i} : quartier absent du nouveau tirage"));
+            warnings.push(warnings::quarter_redraw_missing(i));
             continue;
         };
         let (a0, a1) = (g::area(&q0.shape), g::area(&q1.shape));
         let reshaped = e.shape && q1.shape != q0.shape;
         if !reshaped && (a1 - a0).abs() > 0.01 * a0.max(1.0) {
-            warnings.push(format!(
-                "Retouche Q{i} : tirage impossible (quartier instable entre deux tracés)"
-            ));
+            warnings.push(warnings::quarter_redraw_unstable(i));
             continue;
         }
         // Never silent: a shape the variant plan did not apply says so.
-        let prefix = format!("Retouche Q{i} :");
-        if e.shape && !reshaped && !warnings.iter().any(|w| w.starts_with(&prefix)) {
-            warnings.push(format!("{prefix} forme ignorée (sans effet sur le plan)"));
+        if e.shape && !reshaped && !warnings.iter().any(|w| warnings::quarter_outline_key(w) == Some(i)) {
+            warnings.push(warnings::quarter_shape_ignored(i, "no change to layout"));
         }
         if !reshaped && !e.salt {
             continue;
@@ -715,9 +713,7 @@ fn splice(
             .filter(|&&k| bbox_hit(g::bbox(&l0.blocks[k].shape), g::bbox(&redrawn[&i]), 0.0))
             .count();
         if n > 0 && redrawn[&i] != l0.quarters[i].shape {
-            warnings.push(format!(
-                "Retouche Q{i} : {n} îlot(s) des quartiers voisins rogné(s) par la nouvelle forme"
-            ));
+            warnings.push(warnings::quarter_clipped_neighbours(i, n));
         }
     }
     let kept: Vec<&Shape> = l0
@@ -796,17 +792,13 @@ fn splice(
                 let ribbon = g::ribbon(&st.path, &st.widths);
                 let intrusion: f64 = foreign.iter().map(|b| overlap_area(&ribbon, b)).sum();
                 if intrusion > 0.5 {
-                    warnings.push(format!(
-                        "Retouche Q{i} : une rue du nouveau tracé empiétait sur un îlot voisin, retirée"
-                    ));
+                    warnings.push(warnings::quarter_street_intrusion(i));
                     continue;
                 }
                 streets.push(st.clone());
             }
             if skipped > 0 {
-                warnings.push(format!(
-                    "Retouche Q{i} : {skipped} rue(s) du nouveau tracé longeant un îlot voisin, retirée(s)"
-                ));
+                warnings.push(warnings::quarter_streets_skipped(i, skipped));
             }
         }
     }
@@ -861,9 +853,7 @@ fn splice(
                 }
             }
             if out.is_empty() {
-                warnings.push(format!(
-                    "Retouche Q{i} : le nouveau tracé ne laisse aucun îlot constructible"
-                ));
+                warnings.push(warnings::quarter_no_blocks(i));
             }
             let before = blocks_signature(l0, i);
             let after: Vec<String> = out
@@ -871,9 +861,7 @@ fn splice(
                 .map(|b| serde_json::to_string(&b.shape).unwrap_or_default())
                 .collect();
             if before == after {
-                warnings.push(format!(
-                    "Retouche Q{i} : tirage sans effet sur les îlots (seules les parcelles changent)"
-                ));
+                warnings.push(warnings::quarter_blocks_unchanged(i));
             }
             new_blocks.insert(i, out);
         }
@@ -933,10 +921,7 @@ fn splice(
         }
     }
     if dropped > 0 && !deleted.is_empty() {
-        warnings.push(format!(
-            "Retouche : {} quartier(s) supprimé(s), {dropped} rue(s) locale(s) retirée(s)",
-            deleted.len()
-        ));
+        warnings.push(warnings::quarters_deleted(deleted.len(), dropped));
     }
     Splice {
         layout: s,
@@ -1082,9 +1067,7 @@ fn freeze(
         ps.reservations = reservations;
         s.programme = Some(ps);
         if displaced > 0 {
-            warnings.push(format!(
-                "Retouche : {displaced} service(s) sans îlot réservé, placé(s) sur des parcelles"
-            ));
+            warnings.push(warnings::services_displaced(displaced));
         }
         if let Some(st) = s.structure.as_mut() {
             st.metrics.reserved_area = s
@@ -1128,7 +1111,7 @@ fn freeze(
 /// than `QUARTER_TOLERANCE` from it (`redraw`). The gain
 /// is clipped to dry land; the edited quarter wins over its neighbours, which
 /// give up the overlap. Streets and walls are carved out of its blocks later,
-/// like everywhere else. Every refusal is a « forme ignorée » warning.
+/// like everywhere else. Every refusal reports why the outline was kept.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn reshape_quarters(
     quarters: &mut [Quarter],
@@ -1154,17 +1137,17 @@ pub(super) fn reshape_quarters(
         let old = quarters[i].shape.clone();
         let old_area = g::area(&old);
         let ignore = |why: &str, warnings: &mut Vec<String>| {
-            warnings.push(format!("Retouche Q{i} : forme ignorée ({why})"));
+            warnings.push(warnings::quarter_shape_ignored(i, why));
         };
         let Some(valid) = largest(g::union(&[g::normalized(Shape {
             outer: user.outer.clone(),
             holes: vec![],
         })])) else {
-            ignore("contour dégénéré", warnings);
+            ignore("degenerate outline", warnings);
             continue;
         };
         if overlap_area(std::slice::from_ref(&valid), &old) < 0.1 * old_area {
-            ignore("ne recouvre plus le quartier", warnings);
+            ignore("no longer covers the quarter", warnings);
             continue;
         }
         let Some(Outline {
@@ -1175,11 +1158,11 @@ pub(super) fn reshape_quarters(
             g::dry_clip(&surface, p)
         })
         else {
-            ignore("identique à la forme actuelle", warnings);
+            ignore("same as the current outline", warnings);
             continue;
         };
         let Some(shape) = shape else {
-            ignore("rien ne reste après découpe", warnings);
+            ignore("nothing left after clipping", warnings);
             continue;
         };
         if moved_area(&shape, &old) < 1.0 {
@@ -1197,16 +1180,16 @@ pub(super) fn reshape_quarters(
             .iter()
             .any(|p| (p.x - center.x).hypot(p.y - center.y) > 2.0 * radius.max(100.0));
         if area < 200.0 {
-            ignore("moins de 200 m²", warnings);
+            ignore("under 200 m²", warnings);
             continue;
         } else if area > (4.0 * old_area).max(200_000.0) {
-            ignore("trop grande", warnings);
+            ignore("outline too large", warnings);
             continue;
         } else if far {
-            ignore("trop loin du centre", warnings);
+            ignore("too far from centre", warnings);
             continue;
         } else if overlap < 0.1 * old_area {
-            ignore("ne recouvre plus le quartier", warnings);
+            ignore("no longer covers the quarter", warnings);
             continue;
         }
         // The neighbours give up the land taken (the gains only, so a
@@ -1230,7 +1213,7 @@ pub(super) fn reshape_quarters(
             }
         }
         if swallowed {
-            ignore("absorberait un quartier voisin entier", warnings);
+            ignore("would absorb a neighbouring quarter", warnings);
             continue;
         }
         for (j, rest) in shrunk {
@@ -1622,13 +1605,13 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
     };
     for (id, o) in edits.iter().filter(|(_, o)| o.parts.is_some()) {
         let Some(ai) = find(&lots, id) else {
-            warnings.push(format!("Lot edit {id}: split ignored (lot not found)"));
+            warnings.push(warnings::lot_split_ignored(id, "lot not found"));
             continue;
         };
         let source = lots[ai].as_ref().unwrap();
         let bi = source.block;
         match split_lot(&source.shape, o.parts.as_ref().unwrap()) {
-            Err(why) => warnings.push(format!("Lot edit {id}: split ignored ({why})")),
+            Err(why) => warnings.push(warnings::lot_split_ignored(id, why)),
             Ok(pieces) => {
                 before.entry(bi).or_insert_with(|| metrics(&lots, bi));
                 let source = lots[ai].as_ref().unwrap().clone();
@@ -1645,7 +1628,7 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
                     part.shape = piece;
                     requalify(&mut part, layout, &index, "edit:split");
                     if !lot_served(&part) {
-                        warnings.push(format!("Lot edit {id}: part {} has no street access", k + 1));
+                        warnings.push(warnings::lot_part_unserved(id, k + 1));
                     }
                     lots.push(Some(part));
                     order.push((slot, rank + k + 1));
@@ -1656,9 +1639,7 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
     for (id, o) in edits.iter().filter(|(_, o)| o.shape.is_some()) {
         let user = o.shape.as_ref().unwrap();
         let Some(ai) = find(&lots, id) else {
-            warnings.push(format!(
-                "Retouche parcelle {id} : introuvable (quartier modifié ?)"
-            ));
+            warnings.push(warnings::lot_edit_missing(id));
             continue;
         };
         let bi = lots[ai].as_ref().unwrap().block;
@@ -1666,10 +1647,10 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
             continue;
         };
         let ignore = |why: &str, warnings: &mut Vec<String>| {
-            warnings.push(format!("Retouche parcelle {id} : forme ignorée ({why})"));
+            warnings.push(warnings::lot_shape_ignored(id, why));
         };
         if !valid_shape(user) {
-            ignore("contour invalide", &mut warnings);
+            ignore("invalid outline", &mut warnings);
             continue;
         }
         // Needles narrower than the tolerance (the lot's own zero-width ones,
@@ -1678,12 +1659,12 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
             outer: g::unneedled(&user.outer, LOT_TOLERANCE.1),
             holes: vec![],
         })])) else {
-            ignore("contour dégénéré", &mut warnings);
+            ignore("degenerate outline", &mut warnings);
             continue;
         };
         let old = lots[ai].as_ref().unwrap().shape.clone();
         if overlap_area(std::slice::from_ref(&valid), &old) < 0.1 * g::area(&old) {
-            ignore("ne recouvre plus la parcelle", &mut warnings);
+            ignore("no longer covers the lot", &mut warnings);
             continue;
         }
         // Gains stay within the block and off the lots already edited.
@@ -1702,15 +1683,15 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
             subtract(g::intersection(p, &block.shape), &guards)
         })
         else {
-            ignore("identique à la forme actuelle", &mut warnings);
+            ignore("same as the current outline", &mut warnings);
             continue;
         };
         let Some(shape) = shape.filter(|s| g::area(s) >= 4.0) else {
-            ignore("hors de l'îlot ou trop petite", &mut warnings);
+            ignore("outside block or too small", &mut warnings);
             continue;
         };
         if moved_area(&shape, &old) < 0.5 {
-            ignore("sans effet dans l'îlot", &mut warnings);
+            ignore("no change within block", &mut warnings);
             continue;
         }
         // Trial on a copy; only the block's lots change.
@@ -1803,19 +1784,14 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
         if let Some(&ni) = cut_off {
             let who = lots[ni].as_ref().unwrap().id.clone();
             if ni == ai {
-                ignore("elle perdrait sa desserte", &mut warnings);
+                ignore("would lose street access", &mut warnings);
             } else {
-                ignore(
-                    &format!("la parcelle {who} perdrait sa desserte"),
-                    &mut warnings,
-                );
+                warnings.push(warnings::lot_neighbour_unserved(id, &who));
             }
             continue;
         }
         for gone in absorbed {
-            warnings.push(format!(
-                "Retouche parcelle {id} : la parcelle {gone} est absorbée"
-            ));
+            warnings.push(warnings::lot_absorbed(id, &gone));
         }
         before.entry(bi).or_insert_with(|| metrics(&lots, bi));
         lots = trial;
@@ -1828,16 +1804,12 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
     }
     for (id, o) in edits.iter().filter(|(_, o)| o.deleted.is_some()) {
         let Some(ai) = find(&lots, id) else {
-            warnings.push(format!(
-                "Retouche parcelle {id} : introuvable (quartier modifié ?)"
-            ));
+            warnings.push(warnings::lot_edit_missing(id));
             continue;
         };
         let bi = lots[ai].as_ref().unwrap().block;
         if service_lot(lots[ai].as_ref().unwrap(), layout) {
-            warnings.push(format!(
-                "Retouche parcelle {id} : parcelle d'un service ou d'un espace public, suppression ignorée (retouchez le quartier)"
-            ));
+            warnings.push(warnings::public_lot_kept(id));
             continue;
         }
         before.entry(bi).or_insert_with(|| metrics(&lots, bi));
@@ -1865,9 +1837,7 @@ pub(super) fn apply_parcel_edits(layout: &Layout, partition: &mut Partition) {
                 requalify(s, layout, &index, "edit:merged");
                 continue;
             }
-            warnings.push(format!(
-                "Retouche parcelle {id} : aucune voisine pour la fusion, laissée en jardin"
-            ));
+            warnings.push(warnings::lot_left_garden(id));
         }
         let a = lots[ai].as_mut().unwrap();
         a.use_kind = "garden".into();
@@ -1944,9 +1914,7 @@ pub(super) fn forced_use<'a>(
     options.sort();
     options.dedup();
     if options.is_empty() {
-        return Err(format!(
-            "Retouche parcelle {id} : aucun usage admissible pour un nouveau tirage"
-        ));
+        return Err(warnings::lot_no_admissible_use(id));
     }
     let (role, function) =
         options[(fnv(&format!("{id}#{salt}")) % options.len() as u64) as usize].clone();

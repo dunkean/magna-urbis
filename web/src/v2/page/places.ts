@@ -11,7 +11,7 @@ import { isolatedPlacesOf } from '../isolatedPlaces';
 import { demographicClass } from '../../../../rust/bridge/settlementDemography';
 import { nativeCityRecords } from '../nativeProducts';
 import { cityReachedPopulation, populationText, populationShortfallText } from '../../render/cityPopulation';
-import { nameNeighbourWarning } from '../townNeighbours';
+import { emptyTownWarningKeys, isNeighbourWarning, nameNeighbourWarning } from '../townNeighbours';
 import { townUrban } from '../edits';
 import { TownFirstDisplay } from '../townFirstDisplay';
 import { stageById, type StageFamily } from '../stageRegistry';
@@ -82,21 +82,18 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
       : undefined;
   }
 
-  /** The urban engine's "Neighbouring towns:" warnings of a planned place (site keys, as the engine writes them). */
+  /** The engine's warnings about neighbouring towns, with site keys. */
   function neighbourWarnings(key: string): string[] {
     const native = nativeCityRecords(state.world ?? undefined)?.[key];
     // The layout keeps the engine's text (site keys); the snapshot's copy may already carry other names.
     const raw = (native?.layouts ?? []).flatMap(layout => layout.warnings ?? []);
-    return [...new Set(raw.length ? raw : (native?.warnings ?? []))].filter(w => w.startsWith('Neighbouring towns:'));
+    return [...new Set(raw.length ? raw : (native?.warnings ?? []))].filter(isNeighbourWarning);
   }
 
-  /** Neighbours whose land left no room for this place ("announced empty"): it is listed as absorbed by them. */
+  /** A place with no room is listed as absorbed by the neighbours that claim the land. */
   function absorbedBy(key: string): string | undefined {
-    const empty = actions
-      .neighbourWarnings(key)
-      .map(w => /^Neighbouring towns: no free land is left beside (.+?); the town is announced empty\.$/.exec(w))
-      .find(Boolean);
-    return empty ? empty[1].split(', ').map(placeName).join(', ') : undefined;
+    const empty = actions.neighbourWarnings(key).map(emptyTownWarningKeys).find(Boolean);
+    return empty?.map(placeName).join(', ');
   }
 
   /** The Places list ⚠: the capacity shortfall, else the neighbours' warnings (a place they leave short or empty). */
@@ -106,7 +103,7 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
     return actions
       .neighbourWarnings(key)
       .map(w => translate(nameNeighbourWarning(w, placeName)))
-      .join(' ');
+      .join('\n');
   }
 
   function populationMarkup(key: string, target: number): string {

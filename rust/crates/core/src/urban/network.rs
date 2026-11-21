@@ -1,5 +1,6 @@
 //! Final planar street junctions, connected components and served open edges.
 //! All edits subdivide or shorten existing segments; no shortcut changes grades.
+use crate::urban::warnings;
 use super::{Point, Street};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1044,7 +1045,7 @@ pub(super) fn ensure_regional_access(layout: &mut super::Layout, roads: &[Street
         if let Some(path) = planner.route(p,q,cfg.max_lane_grade)
             && !path.windows(2).any(|w|curtains.crosses(w[0],w[1])) {
             layout.streets.push(Street {key: None, widths:vec![2.5;path.len()],path,rank:3,role:"outbound".into()});
-            layout.warnings.push("Accès régional rétabli après déplacement de l’emprise.".into());
+            layout.warnings.push(warnings::regional_access_restored());
             return;
         }
     }
@@ -4797,10 +4798,7 @@ fn clean_terrain(
         }
     }
     if streets.len() < before {
-        vec![format!(
-            "{} fragments de rues isolés écartés.",
-            before - streets.len()
-        )]
+        vec![warnings::isolated_streets_removed(before - streets.len())]
     } else {
         vec![]
     }

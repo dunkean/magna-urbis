@@ -1,4 +1,5 @@
 //! Work bounds for placement on clipped or otherwise constrained land.
+use crate::urban::warnings;
 use super::{Point, programme::UrbanProgramme};
 
 /// Cadastre/frontage feedback is a refinement, never a convergence requirement.
@@ -37,12 +38,12 @@ pub(super) fn samples(bounds: (f64, f64, f64, f64), step: f64, cap: usize) -> Ve
 }
 
 pub(super) fn population_warning(achieved: u32, target: u32) -> Option<String> {
-    (achieved < target).then(|| format!("Population target not reached: {achieved}/{target} inhabitants."))
+    (achieved < target).then(|| warnings::population_shortfall(achieved, target))
 }
 
 /// Replace the estimate when built outcomes arrive; never credit an open lot.
 pub(super) fn report_population(pr: &mut UrbanProgramme, built: bool) {
-    pr.warnings.retain(|w| !w.starts_with("Population target not reached:"));
+    pr.warnings.retain(|w| !warnings::is_population_shortfall(w));
     if super::roles::is_isolated(&pr.context.intent) || pr.context.intent == "activity" { return; }
     let (wanted, held) = pr.demands.iter().filter(|d| d.unit == "domesticUnits")
         .fold((0.0, 0.0), |(wanted, held), d| (wanted + d.requested,

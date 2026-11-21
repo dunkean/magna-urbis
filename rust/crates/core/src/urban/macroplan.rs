@@ -1,5 +1,6 @@
 //! Geography first: preserve regional corridors, then partition their dry land.
 //! The cultural envelope is a growth budget, not a mandatory peripheral street.
+use crate::urban::warnings;
 use super::{
     Enclosure, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, UrbanStructure,
     geometry as g, profiles, routing,
@@ -1322,10 +1323,7 @@ pub(super) fn generate_oriented_domain(
                 ..st
             });
         } else {
-            warnings.push(
-                "Une approche régionale impraticable ne peut pas être raccordée à cette pente."
-                    .into(),
-            );
+            warnings.push(warnings::regional_approach_steep());
         }
     }
     streets = retained;
@@ -1522,8 +1520,8 @@ pub(super) fn generate_oriented_domain(
                 regions.push(b);
                 rejected.clear();
                 cut_any = true;
-                if cut_grade != cfg.max_street_grade && !warnings.iter().any(|w: &String| w.starts_with("Pente trop forte pour les rues de quartier")) {
-                    warnings.push("Pente trop forte pour les rues de quartier : les quartiers sont découpés par escaliers.".into());
+                if cut_grade != cfg.max_street_grade && !warnings.iter().any(|w: &String| w == warnings::QUARTER_STAIRS) {
+                    warnings.push(warnings::quarter_stairs());
                 }
             } else {
                 rejected.push(index);
@@ -1614,8 +1612,7 @@ pub(super) fn generate_oriented_domain(
         })
         .collect();
     if streets.is_empty() {
-        warnings
-            .push("Terrain trop contraint : aucun axe carrossable ne rejoint ce quartier.".into());
+        warnings.push(warnings::no_quarter_road());
     }
     Plan {
         envelope,

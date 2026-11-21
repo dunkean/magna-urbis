@@ -1,4 +1,5 @@
 //! Retained vector land and physical water, shared by both urban benches.
+use crate::urban::warnings;
 use super::{Point, Shape, geometry as g};
 use geo::BooleanOps;
 use serde::Deserialize;
@@ -480,7 +481,7 @@ impl StiltGround {
             }
             let share = wet / area.max(1.);
             if (share-self.water_share).abs() > 0.1 {
-                current.warnings.push(format!("Occupation sur pilotis : {:.0} % sur l’eau ; la rive et le terrain limitent l’objectif de {:.0} %.",share*100.,self.water_share*100.));
+                current.warnings.push(warnings::stilt_water_share(share * 100.0, self.water_share * 100.0));
             }
             return Ok(current);
         }
@@ -521,7 +522,7 @@ impl StiltGround {
         }
         let (mut layout,_,share) = best.unwrap();
         if (share-self.water_share).abs() > 0.1 {
-            layout.warnings.push(format!("Occupation sur pilotis : {:.0} % sur l’eau ; la rive et le terrain limitent l’objectif de {:.0} %.",share*100.,self.water_share*100.));
+            layout.warnings.push(warnings::stilt_water_share(share * 100.0, self.water_share * 100.0));
         }
         Ok(layout)
     }

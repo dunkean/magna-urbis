@@ -182,16 +182,26 @@ function reservedNeighbours(world: World, settings: V2Settings, seats: readonly 
   });
 }
 
-/** The urban engine names neighbours by site key in its "Neighbouring towns:" warnings; the V2 shows their names. */
+const emptyTownWarning = 'Town empty — land claimed by ';
+const neighbourWarning = /^(No wall — neighbour too close: |Town empty — land claimed by |Households \d+\/\d+ — land claimed by )(.+)$/u;
+
+export function isNeighbourWarning(warning: string): boolean {
+  return warning === 'No wall — neighbour too close' || neighbourWarning.test(warning);
+}
+
+export function emptyTownWarningKeys(warning: string): string[] | undefined {
+  return warning.startsWith(emptyTownWarning) ? warning.slice(emptyTownWarning.length).split(', ') : undefined;
+}
+
+/** Replace site keys with the names shown on the map. */
 export function nameNeighbourWarning(warning: string, nameOf: (key: string) => string | undefined): string {
-  const match = /^(Neighbouring towns: (?:the enclosure is not raised, its circuit would cross the land of |no free land is left beside |the land of ))(.+?)(\.|; the town is announced empty\.| limits this town; .*)$/.exec(warning);
+  const match = neighbourWarning.exec(warning);
   return match
     ? match[1] +
         match[2]
           .split(', ')
           .map(key => nameOf(key) || key)
-          .join(', ') +
-        match[3]
+          .join(', ')
     : warning;
 }
 

@@ -27,6 +27,7 @@
 //! Cost: one pass over the street segments and their blocks (a 64 m bucket grid), a shore search from
 //! candidate nodes bounded by `max(mouthM, feederM)`, one Dijkstra over the candidate graph, a sort, and
 //! union-find repairs: linear or n log n in the street segments, a few ms for a 20 000-inhabitant town.
+use crate::urban::warnings;
 use super::{Layout,LayoutConfig,Point,Shape,Surface,geometry as g};
 use serde::{Serialize,Deserialize};
 use std::cmp::Reverse;
@@ -102,11 +103,18 @@ pub(super) fn apply(layout:&mut Layout,cfg:&LayoutConfig,surface:Surface<'_>) {
     if layout.structure.is_none() {return;}
     let mut stats=Stats::default();
     let water=match params(&layout.culture,cfg) {Some(p)=>plan(layout,p,surface,&mut stats),None=>vec![]};
-    // One line per canal town: the length at each stage of the growth (review and tuning).
-    layout.warnings.retain(|w|!w.starts_with("Canals: "));
+    // Keep one canal summary per town and log the lengths for tuning.
+    layout.warnings.retain(|w|!w.starts_with(warnings::CANALS_PREFIX));
     if stats.town>0. {
         let s=&stats;
-        layout.warnings.push(format!("Canals: streets {:.0} m; candidates {:.0} m main, {:.0} m canal, {:.0} m rio, {:.0} m connector; {} openings; reachable {:.0} m; laid {:.0} m, given back {:.0} m, pruned {:.0} m, cut off {:.0} m; final {:.0} m; {} water levels, {} locks.", s.town, s.candidates[0], s.candidates[1], s.candidates[2], s.candidates[3], s.openings, s.reachable, s.laid, s.given_back, s.pruned, s.cut_off, s.fin, s.levels, s.locks));
+        layout.warnings.push(warnings::canals(s.fin, s.locks));
+        warnings::log_warning_detail(format_args!(
+            "Canals: streets {:.0} m; candidates {:.0} m main, {:.0} m canal, {:.0} m rio, {:.0} m connector; \
+             {} openings; reachable {:.0} m; laid {:.0} m, given back {:.0} m, pruned {:.0} m, cut off {:.0} m; \
+             final {:.0} m; {} water levels, {} locks.",
+            s.town, s.candidates[0], s.candidates[1], s.candidates[2], s.candidates[3], s.openings,
+            s.reachable, s.laid, s.given_back, s.pruned, s.cut_off, s.fin, s.levels, s.locks,
+        ));
     }
     layout.structure.as_mut().unwrap().waterways=water;
 }
@@ -262,7 +270,7 @@ fn drop_unfed(segs:&[Seg],roots:&[usize],in_w:&mut [bool])->f64 {
     removed
 }
 
-/// Lengths (m) at each stage of a canal town's growth, written to the layout warnings by `apply`.
+/// Lengths (m) at each stage of canal growth, logged for profiling.
 #[derive(Default)]
 struct Stats { town:f64, candidates:[f64;4], openings:usize, reachable:f64, laid:f64, given_back:f64, pruned:f64, cut_off:f64, fin:f64, levels:usize, locks:usize }
 

@@ -22,6 +22,7 @@
 //! carry `deleted` and every non-structural setting; a part inherits the
 //! settings of its source block unless it sets its own. The geometry of a part
 //! is edited in the source's `parts[k]`.
+use crate::urban::warnings;
 use super::super::geometry as g;
 use super::super::{
     Block, BlockEdits, BlockOrigin, BlockOverride, Layout, OriginalBlock, ParcelConfig, Shape,
@@ -178,7 +179,7 @@ pub(crate) fn prepare<'a>(input: &'a Layout, cfg: &'a ParcelConfig) -> Prepared<
     sources.sort_by_key(|s| s.0);
     for (i, o) in sources {
         let ignore = |why: &str, warnings: &mut Vec<String>| {
-            warnings.push(format!("Block edit {i}: ignored ({why})"));
+            warnings.push(warnings::block_edit_ignored(i, why));
         };
         let Some(old) = l.blocks.get(i).filter(|_| i < n).cloned() else {
             ignore("block not found", &mut warnings);
@@ -248,14 +249,14 @@ pub(crate) fn prepare<'a>(input: &'a Layout, cfg: &'a ParcelConfig) -> Prepared<
                     origin.deleted = true;
                 }
             }
-            None => warnings.push(format!("Block edit {k}: ignored (part not found)")),
+            None => warnings.push(warnings::block_part_missing(k)),
         }
     }
     for k in edits.keys() {
         if parse_key(k).is_some_and(|(i, p)| p > 0 && !placed.contains_key(&(i, p)))
             && edits[k].deleted != Some(true)
         {
-            warnings.push(format!("Block edit {k}: ignored (part not found)"));
+            warnings.push(warnings::block_part_missing(k));
         }
     }
     // Settings keyed by prepared index; a part inherits its source's.

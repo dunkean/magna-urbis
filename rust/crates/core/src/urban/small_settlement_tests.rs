@@ -206,7 +206,7 @@ fn empty_blocks(culture: &str) -> (usize, usize, f64) {
     if std::env::var("EMPTY_DETAIL").is_ok() || std::env::var("TRIM_DETAIL").is_ok() {
         let open = blocks.iter().filter(|b| b.kind == "reserve").count();
         let len: f64 = layouts[0].streets.iter().filter(|s| matches!(s.role.as_str(), "street" | "lane")).flat_map(|s| s.path.windows(2)).map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y)).sum();
-        println!("  {culture}: ordinary {} reserve {open} street+lane length {len:.0} m; {:?}", blocks.iter().filter(|b| b.kind == "block").count(), layouts[0].warnings.iter().filter(|w| w.contains("champs")).collect::<Vec<_>>());
+        println!("  {culture}: ordinary {} reserve {open} street+lane length {len:.0} m; {:?}", blocks.iter().filter(|b| b.kind == "block").count(), layouts[0].warnings.iter().filter(|w| w.contains("fields")).collect::<Vec<_>>());
     }
     (blocks.len(), empty.len(), lost / total.max(1.0))
 }
@@ -363,7 +363,7 @@ fn an_overlarge_enclosure_replans_its_land_budget_before_filling() {
     cfg.footprint.gross_density = 5.;
     let layout = generate_quarters("fill-budget",&[site],&cfg,surface,&[]).unwrap().remove(0);
     assert!(!layout.enclosures.is_empty());
-    assert!(layout.warnings.iter().any(|w|w.starts_with("Emprise intra-muros réduite")),"enclosure did not replan its excessive budget");
+    assert!(layout.warnings.iter().any(|w|w.starts_with("Walled area reduced")),"enclosure did not replan its excessive budget");
     assert!(layout.structure.as_ref().unwrap().metrics.target_area < 1_000_000.);
     let parts = generate_parcels("fill-budget",&[layout],&ParcelConfig::default()).unwrap();
     let pr = parts[0].programme.as_ref().unwrap();
@@ -765,7 +765,7 @@ fn a_village_forced_onto_a_steep_flank_builds_homes_and_reports_its_shortfall() 
     eprintln!("steep flank: relax {} housed {housed:.0}/{wanted:.0} households, {sites} sites, warnings {:?}", pr.context.slope_relax, layouts[0].warnings);
     assert!(housed >= 0.25 * wanted, "housed {housed:.0} of {wanted:.0} households");
     assert!(pr.allocations.iter().filter(|a| a.unit == "domesticUnits").all(|a| a.households <= 1.0), "village homes hold one household");
-    assert!(housed >= wanted - 0.5 || pr.warnings.iter().any(|w| w.starts_with("Population target not reached:")),
+    assert!(housed >= wanted - 0.5 || pr.warnings.iter().any(|w| super::warnings::is_population_shortfall(w)),
         "a shortfall of {:.0} households must be reported: {:?}", wanted - housed, pr.warnings);
 }
 
@@ -866,7 +866,7 @@ fn small_farms_and_roadside_shrines_on_a_steep_cone_keep_their_buildings() {
                 if grade > 0.0 {
                     assert!(requests.iter().any(|r| r["terrain"]["max_foundation_step_m"].as_f64().unwrap_or(0.0) > 0.75),
                         "{template} {name} grade {grade}: foundation did not adapt");
-                    assert!(layouts[0].programme.as_ref().unwrap().warnings.iter().any(|w| w.contains("gradins")),
+                    assert!(layouts[0].programme.as_ref().unwrap().warnings.iter().any(|w| w.starts_with("Stepped foundations, ")),
                         "{template} {name} grade {grade}: missing terrain warning");
                 }
                 eprintln!("utility cone {template}/{culture} {name} grade {grade}: {buildings} buildings");
@@ -957,7 +957,7 @@ fn a_town_and_village_use_the_buildable_terraces_of_a_volcano_flank() {
         assert!(domestic >= minimum / 2, "{population} on grade {grade}: {domestic} domestic sites");
         // The 2k town fills on its normal build and never enters the ladder.
         if population == 10_000 {
-            assert!(layouts[0].warnings.iter().any(|w| w == super::slopes::TERRACED || w == super::slopes::FRONTAGE));
+            assert!(layouts[0].warnings.iter().any(|w| w == "Housing terraces — steep slopes" || w == "Roadside terraces — steep slopes"));
         }
         assert!(layouts[0].streets.iter().any(|s| matches!(s.role.as_str(), "street" | "lane" | "stairs")));
         assert!(layouts[0].structure.as_ref().is_some_and(|s| s.metrics.allocated_area >= 10_000.0));
@@ -1005,7 +1005,7 @@ fn slope_ladder_houses_10k_canyon_and_volcano_towns() {
             .map(|r|r["preview"].as_array().map_or(0,Vec::len)).sum();
         eprintln!("{culture}: {buildings} buildings, {housed:.0}/{wanted:.0} households; {:?}",layouts[0].warnings);
         // Requirement: the town is filled, or it says it is full.
-        let exhausted=layouts[0].warnings.iter().any(|w|w==super::slopes::EXHAUSTED);
+        let exhausted = layouts[0].warnings.iter().any(|w| w.starts_with("Housing ") && w.ends_with(" — steep site"));
         assert!(housed>=wanted*0.95||exhausted,"{culture}: {housed}/{wanted} households, no shortfall warning");
         assert!(housed>=wanted*0.5,"{culture}: {housed}/{wanted} households");
         assert!(buildings>=250,"{culture}: only {buildings} buildings");
@@ -1043,9 +1043,10 @@ fn flat_towns_keep_the_normal_layout() {
         let layouts = generate_quarters("flat-town", std::slice::from_ref(&site), &cfg, surface, &[]).unwrap();
         let (effective, kind) = kinds::effective(&site, &cfg, &[]);
         assert!(!super::slopes::eligible(&site, &effective, surface, kind), "{population}: flat site surveyed as a slope");
-        for w in [super::slopes::DENSIFIED, super::slopes::TERRACED, super::slopes::FRONTAGE, super::slopes::EXHAUSTED] {
+        for w in ["Denser housing — steep site", "Housing terraces — steep slopes", "Roadside terraces — steep slopes"] {
             assert!(!layouts[0].warnings.iter().any(|x| x == w), "{population}: {w}");
         }
+        assert!(!layouts[0].warnings.iter().any(|w| w.starts_with("Housing ") && w.ends_with(" — steep site")));
         let again = generate_quarters("flat-town", &[site], &cfg, surface, &[]).unwrap();
         assert_eq!(serde_json::to_vec(&layouts).unwrap(), serde_json::to_vec(&again).unwrap());
     }

@@ -1,5 +1,6 @@
 //! Neutral coarse placement intents. No dependency on the architectural engine:
 //! JSON follows the documented houses placement boundary, without renderer data.
+use crate::urban::warnings;
 use super::geometry::interior_point;
 use super::{Layout, Parcel, Partition, Point, Surface};
 use serde::Serialize;
@@ -556,8 +557,7 @@ fn deficit_message(cause: &str) -> &'static str {
         }
     }
 }
-/// The urban-deficit warning of a set of site requests (counts by cause and
-/// households not lodged), in French, or `None` when every lot is buildable.
+/// The urban-deficit warning, or `None` when every lot is buildable.
 pub fn deficit_warning(requests: &[Value]) -> Option<String> {
     let (mut shape, mut slope, mut source, mut households) = (0usize, 0usize, 0usize, 0.0f64);
     for r in requests {
@@ -570,16 +570,7 @@ pub fn deficit_warning(requests: &[Value]) -> Option<String> {
         }
         households += d["households"].as_f64().unwrap_or(0.0);
     }
-    (shape + slope + source > 0).then(|| {
-        format!(
-            "Déficit urbain : {} lot(s) sans bâtiment natif admissible ({} par la pente, {} par la forme, {} par une source fonctionnelle absente) ; {:.1} ménage(s) non logé(s), aucun remplacement par un bâtiment plus petit.",
-            shape + slope + source,
-            slope,
-            shape,
-            source,
-            households
-        )
-    })
+    (shape + slope + source > 0).then(|| warnings::building_deficit(slope, shape, source, households))
 }
 /// Hard transport bounds; budgets count the serialized UTF-8 requests array,
 /// including its brackets and commas, not the surrounding page metadata.
@@ -2481,7 +2472,7 @@ mod tests {
     /// Invariant: a lot on which no source houses may draw has a founded
     /// pose is not sent to be drawn and refused, and no smaller house stands
     /// for it: it stays open land with an explicit deficit (cause and
-    /// households), counted by the French warning. The same lot on level
+    /// households), counted by the warning. The same lot on level
     /// ground stays a home of the wished composition.
     #[test]
     fn a_lot_no_native_house_can_found_is_an_explicit_deficit() {
@@ -2548,7 +2539,7 @@ mod tests {
         assert!(steep_site.get("native_minimum_candidates").is_none());
         let warning = deficit_warning(std::slice::from_ref(&steep_site)).unwrap();
         assert!(
-            warning.contains("1 lot(s)") && warning.contains("2.0 ménage(s)"),
+            warning == "Unbuilt lots: 1, unhoused households: 2.0 — no fitting building",
             "{warning}"
         );
         let level = site(&flat);
@@ -2759,7 +2750,7 @@ mod tests {
             assert_eq!(site["programme"]["source_coverage"]["status"],"missing");
             assert_eq!(site["programme"]["source_coverage"]["functional_footing_tested"],false);
             let warning=deficit_warning(std::slice::from_ref(site)).unwrap();
-            assert!(warning.contains("0 par la pente, 0 par la forme, 1 par une source"),"{warning}");
+            assert!(warning.starts_with("Unbuilt lots: 1, "),"{warning}");
         }
     }
     #[test]

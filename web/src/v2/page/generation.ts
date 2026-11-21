@@ -105,8 +105,9 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
         actions.toast(`${refused} construction(s) refused. Each settlement report explains the constraints.`, true);
       }
       if (state.world.stats['settlements.warning']) {
-        actions.log(String(state.world.stats['settlements.warning']));
-        if (!refused) actions.toast(String(state.world.stats['settlements.warning']));
+        const warnings = String(state.world.stats['settlements.warning']).split(' | ').join('\n');
+        actions.log(warnings);
+        if (!refused) actions.toast(warnings);
       }
       if (key && retainedSelection?.settlement === key) {
         const buildings = townUrban(state.world, key)?.buildings ?? [],

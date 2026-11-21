@@ -12,6 +12,7 @@
 //! building, ruin, farmstead, camp, hamlet, street village) are therefore laid
 //! out here directly, as plots fronting a road, a track or a lane, with the
 //! same `Layout` contract (quarters, blocks, streets, phases, structure).
+use crate::urban::warnings;
 use super::{
     Block, GrowthPhase, Layout, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface,
     UrbanCenter, UrbanDistrict, UrbanEvent, UrbanMetrics, UrbanStructure, composition,
@@ -496,15 +497,7 @@ pub(super) fn finish(layout: &mut Layout, kind: Kind, original: &LayoutConfig) {
                 s.role = "track".into();
             }
         }
-        let condition = match (kind, state) {
-            (Kind::Ruin, _) => "",
-            (_, "ruined") => " en ruine",
-            _ => " à l’abandon",
-        };
-        layout.warnings.push(format!(
-            "{}{condition} : rues retournées à l’état de chemins.",
-            kind.label()
-        ));
+        layout.warnings.push(warnings::tracks_for_decay(kind.id(), state));
     }
 }
 
@@ -1084,9 +1077,7 @@ pub(super) fn lay_out(
             if cfg.village_streets && homes < need * 0.95 {
                 let plain = LayoutConfig { village_streets: false, ..cfg.clone() };
                 if let Some((mut ribbon, more)) = laid(&plain).filter(|(_, h)| *h > homes) {
-                    ribbon.warnings.push(format!(
-                        "Village-rue lu du site trop court ({homes:.0} foyers sur {need:.0}) : ruban simple ({more:.0} foyers)."
-                    ));
+                    ribbon.warnings.push(warnings::plain_village_ribbon(homes, need, more));
                     return Some(ribbon);
                 }
             }

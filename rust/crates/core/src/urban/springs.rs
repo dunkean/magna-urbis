@@ -226,7 +226,7 @@ pub(super) fn reserve(layout: &mut Layout, town: &Site, surface: Surface<'_>, cf
             preferences.iter().find_map(|id|find(layout,forbidden,&mut near,source,id,surface,cfg,&mut budget))
         };
         let Some(mut water)=found else {
-            layout.warnings.push(format!("Spring at {:.1},{:.1}: no dry accessible water-building site within {} m",source.x,source.y,r.max_offset_m));
+            layout.warnings.push(warnings::spring_site_missing(source.x, source.y, r.max_offset_m));
             continue;
         };
         water.id=format!("{}/spring/{i}",layout.key);

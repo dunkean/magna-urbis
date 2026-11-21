@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Town warnings are one short line each, in English or French.
 - Download the experimental Apple Silicon DMG from GitHub Releases alongside the Windows and Linux packages.
 - Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.
 - Remove offshore sediment plumes while retaining the flared river mouths and their smooth transition into the sea.

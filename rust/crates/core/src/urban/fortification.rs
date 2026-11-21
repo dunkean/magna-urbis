@@ -15,6 +15,7 @@
 //! The union of the curtain body and every structure outside the inner face is
 //! the enclosure's `reserve`; quarters give it up (`yield_reserve`), so no
 //! block or lot is ever cut in a tower, a ditch or a glacis.
+use crate::urban::warnings;
 use super::{
     Attached, Enclosure, Gatehouse, Point, Quarter, Shape, Street, Surface, Tower, Work,
     geometry as g,
@@ -291,13 +292,6 @@ pub(super) fn family(style: &str) -> &'static str {
         _ => "wall",
     }
 }
-fn label(kind: &str) -> &'static str {
-    match kind {
-        "palisade" => "palissade",
-        "hedge" => "haie",
-        _ => "muraille",
-    }
-}
 fn culture_override(culture: &str) -> [&'static Value; 2] {
     [
         &data()["cultures"][culture],
@@ -459,11 +453,7 @@ pub(super) fn growth_styles(kind: &str, i: &Inputs<'_>, cfg: &super::LayoutConfi
 pub(super) fn resolve(kind: &str, i: &Inputs, rng: &Rng, warnings: &mut Vec<String>) -> Style {
     let (choices, forced) = style_choices(kind, i);
     if !forced && STYLES.contains(&i.forced) {
-        warnings.push(format!(
-            "Style de fortification « {} » incompatible avec {} : style culturel conservé.",
-            i.forced,
-            label(kind)
-        ));
+        warnings.push(warnings::incompatible_wall_style(i.forced, kind));
     }
     let mut id = if let [(id, _)] = choices.as_slice() {
         *id
@@ -475,14 +465,7 @@ pub(super) fn resolve(kind: &str, i: &Inputs, rng: &Rng, warnings: &mut Vec<Stri
     // Terrain modifiers apply after the draw, so the draw itself stays stable.
     let hill = i.relief > 0.07 && family(id) == "wall";
     if hill && !forced && matches!(id, "bastioned" | "concentric") {
-        warnings.push(format!(
-            "Fortification : tracé {} ramené à une enceinte flanquée (relief).",
-            if id == "bastioned" {
-                "bastionné"
-            } else {
-                "à double enceinte"
-            }
-        ));
+        warnings.push(warnings::wall_style_for_relief(id));
         id = "flanked";
     }
     let mut s = styled(id, i.culture, i.pop);
@@ -4745,7 +4728,7 @@ mod tests {
             ..inputs("slavic-gord", 3000, "", 0.0)
         };
         assert_eq!(resolve("palisade", &forced, &rng, &mut w).id, "gord");
-        assert!(w[0].contains("incompatible avec palissade"));
+        assert_eq!(w[0], "Wall style bastioned skipped — incompatible fortification");
     }
 
     /// I1 and I2: the old fields keep their meaning (gates on the path and on

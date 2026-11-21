@@ -10,14 +10,15 @@
 //! - Once the blocks exist, on a deterministic sample of the real blocks
 //!   (`measure`), to set the lot densification and the fringe vacancy.
 //!
-//! When the yield is short, bounded steps follow in a fixed order, each
-//! reported in French: (1) densify within the culture's own ranges (narrower
+//! When the yield is short, diagnostics record the bounded steps in order:
+//! (1) densify within the culture's own ranges (narrower
 //! lots and smaller blocks toward the preset minima, coverage and floors toward
 //! the upper bounds, fewer fringe fields); (2) extend the footprint up to
 //! `EXTENSION` times the nominal area; (3) densify to the culture's bounds and
 //! widen up to `OWN_REACH`. A culture never borrows another culture's cutting
 //! (user rule 03/11): beyond that the shortfall stays explicit; no capacity is
 //! invented.
+use crate::urban::warnings;
 use super::super::geometry as g;
 use super::super::programme::{BlockEnvironment, Demand, UrbanProgramme};
 use super::super::{
@@ -1304,18 +1305,7 @@ pub(in crate::urban) fn measure(
     })
 }
 
-/// Culture label for messages (« Java » for « Java · ville de cours et enclos »).
-pub(in crate::urban) fn label(culture: &str) -> String {
-    catalogue()["cultures"][culture]["label"]
-        .as_str()
-        .map(|l| l.split(" · ").next().unwrap_or(l).to_owned())
-        .unwrap_or_else(|| culture.to_owned())
-}
-/// French decimal: 1.4 → « 1,4 ».
-pub(in crate::urban) fn decimal(x: f64, digits: usize) -> String {
-    format!("{x:.digits$}").replace('.', ",")
-}
-/// The plan's thresholds, in French (empty when the tissue suffices as drawn).
+/// Diagnostic details of the plan's thresholds, empty when the tissue suffices as drawn.
 pub(in crate::urban) fn describe(culture: &str, plan: &CapacityPlan) -> Vec<String> {
     let mut steps = vec![];
     if plan.densify > 0.0 {
@@ -1323,38 +1313,38 @@ pub(in crate::urban) fn describe(culture: &str, plan: &CapacityPlan) -> Vec<Stri
             (plan.garden_share * 100.0).round(),
             (plan.densified_garden * 100.0).round(),
         );
-        steps.push(format!(
-            "tissu {} densifié à {} % de ses bornes{}",
-            label(culture),
+        steps.push(warnings::warning_detail_text(format_args!(
+            "{} tissue densified to {} % of its limits{}",
+            culture,
             (plan.densify * 100.0).round(),
             if after < before {
-                format!(" (jardins {before} → {after} %)")
+                format!(" (gardens {before} → {after} %)")
             } else {
                 String::new()
             }
-        ));
+        )));
     }
     if plan.calibration > 0.0 && (plan.calibration - 1.0).abs() > 0.001 {
-        steps.push(format!(
-            "rendement du tissu recalé à {} % de la prévision après mesure des îlots",
+        steps.push(warnings::warning_detail_text(format_args!(
+            "tissue yield recalibrated to {} % of the forecast after measuring blocks",
             (plan.calibration * 100.0).round()
-        ));
+        )));
     }
     if plan.vacancy < 0.999 {
-        steps.push(format!(
-            "champs de lisière réduits à {} %",
+        steps.push(warnings::warning_detail_text(format_args!(
+            "fringe fields reduced to {} %",
             (plan.vacancy * 100.0).round()
-        ));
+        )));
     }
     if plan.extension > 1.001 {
-        steps.push(format!("emprise ×{}", decimal(plan.extension, 2)));
+        steps.push(warnings::warning_detail_text(format_args!("footprint ×{:.2}", plan.extension)));
     }
     if !plan.donor.is_empty() && plan.borrowed_share > 0.0 {
-        steps.push(format!(
-            "découpe empruntée à {} sur {} % des quartiers",
-            label(&plan.donor),
+        steps.push(warnings::warning_detail_text(format_args!(
+            "tissue borrowed from {} for {} % of quarters",
+            plan.donor,
             (plan.borrowed_share * 100.0).round()
-        ));
+        )));
     }
     steps
 }

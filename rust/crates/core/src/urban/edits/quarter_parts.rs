@@ -22,6 +22,7 @@
 //! inherits its source's settings unless it sets its own: the resolved
 //! settings are written under the part's output index in the output
 //! `overrides.quarters`, so every later stage reads them like any quarter's.
+use crate::urban::warnings;
 use super::super::geometry as g;
 use super::super::{
     Block, Layout, LayoutConfig, OriginalQuarter, Quarter, QuarterEdits, QuarterOverride,
@@ -167,7 +168,7 @@ pub(super) fn apply(layout: &mut Layout, cfg: &LayoutConfig) {
     sources.sort_by_key(|s| s.0);
     for (i, parts) in sources {
         let ignore = |why: &str, warnings: &mut Vec<String>| {
-            warnings.push(format!("Quarter edit {i}: parts ignored ({why})"));
+            warnings.push(warnings::quarter_split_ignored(i, why));
         };
         if i >= n {
             ignore("quarter not found", &mut warnings);
@@ -224,7 +225,7 @@ pub(super) fn apply(layout: &mut Layout, cfg: &LayoutConfig) {
     for (k, o) in edits.iter().filter(|(k, _)| child(k)) {
         let Some((i, p)) = parse_key(k) else { continue };
         let Some(&q) = placed.get(&(i, p)) else {
-            warnings.push(format!("Quarter edit {k}: ignored (part not found)"));
+            warnings.push(warnings::quarter_part_missing(k));
             continue;
         };
         if o.deleted != Some(true) {
@@ -232,9 +233,7 @@ pub(super) fn apply(layout: &mut Layout, cfg: &LayoutConfig) {
         }
         let kept = delete_blocks(layout, q);
         if kept > 0 {
-            warnings.push(format!(
-                "Quarter edit {k}: {kept} block(s) holding a service or a public space kept"
-            ));
+            warnings.push(warnings::public_blocks_kept(k, kept));
         }
         if let Some(r) = record.parts.iter_mut().find(|r| r.quarter == q) {
             r.deleted = true;
@@ -245,7 +244,7 @@ pub(super) fn apply(layout: &mut Layout, cfg: &LayoutConfig) {
         for part in &edit.deleted_parts {
             if let Some(&quarter) = placed.get(&(source, *part)) {
                 let kept = delete_blocks(layout, quarter);
-                if kept > 0 { warnings.push(format!("Quarter edit {key}/{part}: {kept} public block(s) kept")); }
+                if kept > 0 { warnings.push(warnings::public_blocks_kept(format_args!("{key}/{part}"), kept)); }
                 if let Some(record) = record.parts.iter_mut().find(|r| r.quarter == quarter) { record.deleted = true; }
             }
         }
@@ -406,9 +405,7 @@ fn split_blocks(
         became.entry(j).or_default().push(idx);
     }
     if dropped > 0 {
-        warnings.push(format!(
-            "Quarter edit {source}: {dropped} block sliver(s) under {MIN_PIECE} m² dropped"
-        ));
+        warnings.push(warnings::block_slivers_dropped(source, dropped, MIN_PIECE));
     }
     let Some(p) = layout.programme.as_mut() else { return };
     // Appended pieces take their source block's environment (block-indexed, in order).
@@ -627,7 +624,7 @@ mod tests {
         let l = split_town(&cfg);
         assert_eq!(l.quarters.len(), 2);
         assert!(l.config.as_ref().unwrap().quarter_edits.is_none());
-        assert!(l.warnings.iter().any(|w| w.starts_with("Quarter edit 0: parts ignored")));
+        assert!(l.warnings.iter().any(|w| w.starts_with("Quarter edit 0 — split skipped")));
     }
 
     #[test]

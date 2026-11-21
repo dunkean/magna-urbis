@@ -119,8 +119,7 @@ async function prepareRoadEdit(state: PageState, actions: PageActions, before: W
   }
 }
 
-const OUTLINE_KEPT = 'The engine kept the existing outline. Check the surrounding streets, neighbours and reserved areas.';
-registerMessages({ [OUTLINE_KEPT]: { en: OUTLINE_KEPT, fr: 'Le moteur a conservé le contour existant. Vérifiez les rues, les voisins et les surfaces réservées autour.' } });
+const OUTLINE_KEPT = 'Outline kept — site constraints';
 
 /** One outline edit: the chosen town alone is rebuilt through its current stage with the edited recipe. Returns the
  * engine's warning when it refused or changed the outline. */
@@ -148,7 +147,7 @@ async function applyContourEdit(state: PageState, actions: PageActions, edit: Co
   const warningsOf = (world: World) => (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[edit.target.town]?.warnings ?? [];
   const warnings = warningsOf(updated),
     previous = warningsOf(before);
-  const pattern = /retouche|outline|contour|split|block edit|parcel edit|quarter edit/i;
+  const pattern = /retouche|outline|contour|split|block edit|lot edit|parcel edit|quarter edit/i;
   const targets = editableContours(updated, edit.target.kind),
     actual = targets.find(t => t.town === edit.target.town && t.id === edit.target.id);
   const unchanged = edit.parts ? targets.length <= editableContours(before, edit.target.kind).length : edit.shape ? actual && controlledContour(edit.target.shape, actual.shape) === actual.shape : !!actual;

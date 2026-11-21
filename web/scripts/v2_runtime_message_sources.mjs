@@ -146,7 +146,7 @@ export function rustMessageLiterals(source) {
       if (/\b(?:starts_with|ends_with|contains|strip_prefix|strip_suffix|replace|include_str|include_bytes)\b/u.test(stack.at(-1)?.call ?? '')) continue;
       const error = /\b(?:Err|ok_or|ok_or_else|map_err|bail|ensure)\b/u.test(calls);
       const prose = /\p{L}[^\n]*\s+[^\n]*\p{L}/u.test(token.value.replace(/\{[^{}]*\}/gu, 'VALUE')) && !/^\s*[{[]\s*"|^HTTP\/|\r\n|^\(.*=>|^'fortran_order'/u.test(token.value);
-      const trace = /\b(?:println|eprintln|print|eprint|assert|assert_eq|assert_ne|debug_assert|expect|panic)\b/u.test(calls);
+      const trace = /\b(?:println|eprintln|print|eprint|assert|assert_eq|assert_ne|debug_assert|expect|panic|log_warning_detail|warning_detail_text)\b/u.test(calls);
       const field = /\b(?:reason|message|warning|detail|label|status)\s*[:=]\s*(?:Some\s*\()?$/u.test(context);
       // Prose also catches indirect error closures and warning/reason helpers.
       if (!trace && (error || prose || (field && /\s/u.test(token.value))) && token.value.trim()) {

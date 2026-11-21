@@ -67,6 +67,7 @@ mod slopes;
 mod street_graph;
 mod town_adapter;
 mod widths;
+pub(crate) mod warnings;
 pub mod neighbours;
 mod zone_blend;
 
@@ -1986,8 +1987,11 @@ pub fn generate_quarters(
     let use_growth = config.engine == "growth";
     let laid = par::map(&sites[..valid], |_, site| -> Result<Layout, String> {
         if use_growth
-            && let Some(layout) = town_adapter::generate(seed, site, config, surface, regional_roads)
+            && let Some(mut layout) = town_adapter::generate(seed, site, config, surface, regional_roads)
         {
+            for line in &mut layout.warnings {
+                warnings::shorten_growth(line);
+            }
             return Ok(layout);
         }
         // A town with neighbours starts from free ground, and its roads stop at
@@ -2302,10 +2306,7 @@ pub fn generate_quarters(
                 }
             }
             if chosen.programme.slope_relax > 0.0 {
-                layout.warnings.push(format!(
-                    "Site trop pentu pour les règles ordinaires : maisons admises sur des pentes plus fortes, sur soubassements en gradins (assouplissement {:.0} %).",
-                    chosen.programme.slope_relax * 100.0
-                ));
+                layout.warnings.push(warnings::house_slope_relaxed(chosen.programme.slope_relax * 100.0));
             }
         }
         let mut layout = complete_site(layout, baseline, &chosen);
@@ -2382,14 +2383,10 @@ pub fn generate_quarters(
                     }
                 }
                 if homes > was && gathered {
-                    layout.warnings.push(format!(
-                        "Aucun terrain pour ses fermes le long du chemin ({was:.0} ménages logés sur {need:.0}) : lieu regroupé autour de son centre ({homes:.0} ménages logés)."
-                    ));
+                    layout.warnings.push(warnings::farms_clustered(was, need, homes));
                 }
                 if homes > was && land > 1.0 {
-                    layout.warnings.push(format!(
-                        "Plan trop à l’étroit pour ses ménages ({was:.0} logés sur {need:.0}) : lieu tracé sur {land:.0} fois plus de terrain ({homes:.0} ménages logés)."
-                    ));
+                    layout.warnings.push(warnings::footprint_expanded(was, need, land, homes));
                 }
             }
         }
@@ -2405,7 +2402,7 @@ pub fn generate_quarters(
         }
         layout.claim = neighbours::claim(&layout);
         if use_growth {
-            layout.warnings.push("Growth engine: not available yet".into());
+            layout.warnings.push(warnings::growth_unavailable());
         }
         Ok(layout)
     });
@@ -2622,7 +2619,7 @@ pub fn generate_parcels(
         let housed = partition.programme.as_ref().is_some_and(|p| p.allocations.iter().any(|a| a.households > 0.0));
         if layout.programme.as_ref().is_some_and(|p| p.population > 0) && !housed
             && !partition.parcels.iter().any(|p| matches!(p.use_kind.as_str(), "plot" | "compound")) {
-            partition.warnings.push("Aucune habitation : le site ou la grammaire de la culture ne laisse aucune parcelle bâtissable — essayer un autre site, un rayon plus grand ou une autre culture.".into());
+            partition.warnings.push(warnings::no_housing());
         }
         partition.enclosure = Some(enclosure::resolve(culture, layout.programme.as_ref().map(|p| p.population), config));
         shanty::allocate(full_layout, &mut partition);

@@ -6,6 +6,7 @@
 //! within the culture's limits, then relax the culture streets' house gates;
 //! (b) grow onto the flanks, as terrace wards on land the town left aside and
 //! as terraced frontage along the existing roads; (c) warn when still short.
+use crate::urban::warnings;
 use super::{Block, Layout, LayoutConfig, ParcelConfig, Point, ProgrammeContext, Quarter, Shape, Site,
     Street, Surface, UrbanDistrict, geometry as g, kinds::Kind, profiles, programme};
 
@@ -48,11 +49,6 @@ const CLIP_STEP: f64 = 6.0;
 const WARD_REACH: f64 = 12.0;
 /// Zone of the added wards: ordinary town plots, outside the founding core.
 const WARD_ZONE: &str = "middle";
-
-pub(super) const DENSIFIED: &str = "Slope town: smaller plots and taller houses within the culture's limits were tried before extending onto the slopes.";
-pub(super) const TERRACED: &str = "Slope town: contour terraces with stepped foundations extend housing onto the flanks the town had left aside.";
-pub(super) const FRONTAGE: &str = "Slope town: terraced plots line both sides of the existing roads on the flanks.";
-pub(super) const EXHAUSTED: &str = "Slope town housing shortfall: usable terraces and the culture's maximum density cannot accommodate all requested households.";
 
 /// A town of the quarter grammar whose reach holds steep dry ground.
 pub(super) fn eligible(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, kind: Kind) -> bool {
@@ -192,16 +188,13 @@ pub(super) fn complete(
         if retail(&mut tailed, &context(&best), true).is_ok() { best = tailed; }
     }
     // (c) Say what was done, and warn when the town is truly full.
-    if densified { best.warnings.push(DENSIFIED.into()); }
+    if densified { best.warnings.push(warnings::slope_densified()); }
     if relaxed > 0.0 {
-        best.warnings.push(format!(
-            "Site trop pentu pour les règles ordinaires : maisons admises sur des pentes plus fortes, sur soubassements en gradins (assouplissement {:.0} %).",
-            relaxed * 100.0
-        ));
+        best.warnings.push(warnings::house_slope_relaxed(relaxed * 100.0));
     }
-    if terraced { best.warnings.push(TERRACED.into()); }
-    if fronted { best.warnings.push(FRONTAGE.into()); }
-    if housed < goal { best.warnings.push(EXHAUSTED.into()); }
+    if terraced { best.warnings.push(warnings::slope_terraces()); }
+    if fronted { best.warnings.push(warnings::slope_frontage()); }
+    if housed < goal { best.warnings.push(warnings::slope_shortfall(housed, wanted)); }
     Ok(best)
 }
 

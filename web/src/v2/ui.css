@@ -888,6 +888,9 @@ input[type='checkbox'] {
   border-color: #dd977d;
   color: #ffd7c1;
 }
+.toast > span {
+  white-space: pre-line;
+}
 .mobile-toggle {
   display: none;
 }

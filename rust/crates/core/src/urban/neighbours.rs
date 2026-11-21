@@ -11,6 +11,7 @@
 //! A site without neighbours never enters the geometry of this module: every
 //! entry point returns at once on `site.neighbours.is_empty()`, so its layout
 //! is the same as without the feature, apart from the `claim` it carries.
+use crate::urban::warnings;
 use super::{Block, Layout, Point, Shape, Site, Street, Surface, geometry as g, network, par};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -416,9 +417,9 @@ pub(super) fn enforce(layout: &mut Layout, mask: &Mask, drop_blocks: bool) -> bo
     });
     for k in dropped {
         changed = true;
-        let key = mask.keys.get(k).map_or("a neighbouring town", String::as_str);
+        let key = mask.keys.get(k).map(String::as_str);
         // One line per neighbour, however many circuits it stops.
-        let warning = format!("Neighbouring towns: the enclosure is not raised, its circuit would cross the land of {key}.");
+        let warning = warnings::wall_neighbour(key);
         if !layout.warnings.contains(&warning) { layout.warnings.push(warning); }
     }
     // Streets stop at the land itself; the margin is left for a street
@@ -587,17 +588,13 @@ pub(super) fn settle(seed: &str, layout: &mut Layout, site: &Site, surface: Surf
     }
     let keys = near.join(", ");
     if empty {
-        layout.warnings.push(format!(
-            "Neighbouring towns: no free land is left beside {keys}; the town is announced empty."
-        ));
+        layout.warnings.push(warnings::land_neighbours(&keys));
         return;
     }
     if let Some((wanted, housed)) = super::slopes::households(seed, layout)
         && wanted > 0.0 && housed < 0.98 * wanted
     {
-        layout.warnings.push(format!(
-            "Neighbouring towns: the land of {keys} limits this town; {housed:.0} of {wanted:.0} households housed."
-        ));
+        layout.warnings.push(warnings::housing_neighbours(housed, wanted, &keys));
     }
 }
 
@@ -1036,7 +1033,7 @@ mod tests {
             "no street of the second town ends on an edge street of the first");
         assert!(built(&layout) > 0);
         let short = layout.structure.as_ref().is_some_and(|s| s.metrics.shortfall_area > 0.02 * s.metrics.target_area);
-        assert!(!short || layout.warnings.iter().any(|w| w.starts_with("Neighbouring towns")) || layout.warnings.iter().any(|w| w.contains("Emprise")),
+        assert!(!short || has_neighbour_warning(&layout) || layout.warnings.iter().any(|w| w.starts_with("Town land ")),
             "{:?}", layout.warnings);
     }
 
@@ -1050,7 +1047,7 @@ mod tests {
         let layout = town(&second, &height, &water);
         assert!(!claim.land.iter().any(|l| g::contains(l, layout.center)), "centre {:?} on the first town", layout.center);
         assert!(overlap(&layout, &claim) < 1.0);
-        assert!(built(&layout) > 0 || layout.warnings.iter().any(|w| w.starts_with("Neighbouring towns")));
+        assert!(built(&layout) > 0 || has_neighbour_warning(&layout));
     }
 
     #[test]
@@ -1066,7 +1063,13 @@ mod tests {
         boxed.neighbours = vec![claim.clone()];
         let layout = town(&boxed, &height, &water);
         assert!(overlap(&layout, &claim) < 1.0);
-        assert!(layout.warnings.iter().any(|w| w.starts_with("Neighbouring towns")), "{:?}", layout.warnings);
+        assert!(has_neighbour_warning(&layout), "{:?}", layout.warnings);
+    }
+
+    fn has_neighbour_warning(layout: &Layout) -> bool {
+        layout.warnings.iter().any(|w| {
+            w.contains(" — land claimed by ") || w.starts_with("No wall — neighbour too close")
+        })
     }
 
     #[test]

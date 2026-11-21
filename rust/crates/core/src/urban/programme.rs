@@ -4,6 +4,7 @@
 //! landmarks and large programmes reserve whole blocks before the cadastre,
 //! small trades take plots after it, then shops, then housing, and every
 //! buildable plot left over becomes an explicit garden or yard.
+use crate::urban::warnings;
 use super::culture::{CultureMapping, mapping};
 use super::geometry::{area, centroid, difference};
 use super::roles::{self, Frame, SiteFacts};
@@ -374,10 +375,7 @@ fn prepare_inner(
         .filter_map(|id| {
             let selected = super::culture::isolated_mapping(id, &context.period, &context.intent);
             if selected.is_none() {
-                warnings.push(format!(
-                    "No supported native recipe for culture:{id}; period:{}",
-                    context.period
-                ));
+                warnings.push(warnings::missing_native_recipe(id, &context.period));
             }
             selected
         })
@@ -386,7 +384,7 @@ fn prepare_inner(
     let role = if context.functions.is_some() { "explicit" } else { "automatic" };
     let functions = context.functions.unwrap_or_else(|| ProgrammeFunctions::automatic(population, cultural_functions == "communal", context.navigable_access));
     if context.functions.is_some_and(ProgrammeFunctions::active) && roles::is_isolated(&context.intent) {
-        warnings.push("Les fonctions urbaines sont conservées mais non applicables à un établissement isolé ; seule son intention est appliquée.".into());
+        warnings.push(warnings::isolated_functions());
     }
     // A hamlet has no shop: its few households farm.
     let mixed_share = if population < 150 {
@@ -618,7 +616,7 @@ fn prepare_inner(
     // NAVIGABLE wide. Port storage is allocated only against it.
     let navigable = super::macroplan::harbour::navigable(layout, surface);
     if !navigable && functions.port > 0.0 && !isolated {
-        warnings.push("Fonction portuaire demandée sans rive navigable mesurée (quai sur un chenal assez large) : le stockage portuaire reste un déficit. La fonction ne crée ni eau, ni chenal, ni quai.".into());
+        warnings.push(warnings::port_storage_deficit());
     }
     if !navigable {
         for d in demands.iter_mut().filter(|d| d.site == "quay") {
@@ -641,7 +639,7 @@ fn prepare_inner(
     if !environment.iter().any(|e| e.waterfront) {
         let dropped: BTreeSet<String> = demands.iter().filter(|d| d.requires.iter().any(|r| r == "waterfront")).map(|d| d.role.clone()).collect();
         if !dropped.is_empty() {
-            warnings.push(format!("Besoins liés à l’eau retirés faute de rive mesurée : {}. Aucune rivière n’est créée.", dropped.into_iter().collect::<Vec<_>>().join(", ")));
+            warnings.push(warnings::waterfront_uses_removed(&dropped));
         }
         demands.retain(|d| !d.requires.iter().any(|r| r == "waterfront"));
     }
@@ -1077,7 +1075,7 @@ fn prepare_inner(
                 let yard = super::activities::retained_yard(layout, &context.template, bi, &layout.blocks[bi].shape, &surface);
                 let step = super::activities::yard_step(&yard, &surface);
                 if step > 0.75 {
-                    warnings.push(format!("Site utilitaire pentu : bâtiments conservés sur des soubassements en gradins (dénivelé maximal {:.2} m par bâtiment).", step));
+                    warnings.push(warnings::stepped_activity(step));
                 }
             }
             used.insert(bi);
@@ -1116,7 +1114,7 @@ fn prepare_inner(
         };
         if !fallback.is_empty() && d.reasons.last().is_some_and(|r| r.starts_with("No suitably sized")) {
             d.reasons.pop();
-            warnings.push("Ferme isolée : aucune parcelle ne remplit les règles ordinaires ; son terrain est réservé tel quel.".into());
+            warnings.push(warnings::isolated_farm_reserve());
         }
         for &(bi, street, front) in &fallback {
             used.insert(bi);
@@ -2005,6 +2003,11 @@ fn allocate_inner(
     }
     // Source sites have their own fixed geometry and never compete for homes.
     partition.parcels.retain(|p| p.reason != "spring-water");
+    // A partition allocated before has had its blocks' fill shares applied once already: the lots
+    // left vacant then went to gardens and were merged into the occupied properties, so thinning
+    // the lots that remain again would apply the share twice (the parcels stage's second
+    // allocation and the programme stage's reallocation).
+    let thinned = partition.programme.is_some();
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     #[cfg(target_arch = "wasm32")]
@@ -2275,7 +2278,11 @@ fn allocate_inner(
         .collect::<Vec<_>>();
     // Staged occupation (`Block::fill`): the lots past a block's fill share
     // admit no use and end as open land. Classic blocks have no fill share.
-    let unfilled = fill::vacant(layout, parcels, |block| reserved_for.contains_key(&block));
+    let unfilled = if thinned {
+        vec![false; parcels.len()]
+    } else {
+        fill::vacant(layout, parcels, |block| reserved_for.contains_key(&block))
+    };
     if unfilled.contains(&true) {
         for row in &mut admission {
             for (admissible, &vacant) in row.iter_mut().zip(&unfilled) {
@@ -2316,8 +2323,7 @@ fn allocate_inner(
                 continue;
             }
             let Some(&pi) = index.get(id.as_str()) else {
-                pr.warnings
-                    .push(format!("Parcelle « {id} » introuvable : surcharge ignorée"));
+                pr.warnings.push(warnings::lot_override_missing(id));
                 continue;
             };
             // edits hook (urban/edits.rs): a lot salt draws its use among the admissible ones.
@@ -2329,8 +2335,7 @@ fn allocate_inner(
             };
             let ov = &*drawn;
             let Some((di, role)) = override_demand(&mut pr, &part.key, ov) else {
-                pr.warnings
-                    .push(format!("Surcharge invalide pour la parcelle « {id} »"));
+                pr.warnings.push(warnings::lot_override_invalid(id));
                 continue;
             };
             admission.resize(pr.demands.len(), vec![false; parcels.len()]);
@@ -3039,7 +3044,7 @@ fn allocate_inner(
         take(&mut pr,&mut assignments,pi,di,1.0);
         scattered += 1;
     }
-    if scattered > 0 { pr.warnings.push(format!("{scattered} ménage(s) réparti(s) sur des façades vacantes, sans population supplémentaire.")); }
+    if scattered > 0 { pr.warnings.push(warnings::households_scattered(scattered)); }
     // Band 5: every plot left over is an explicit garden, orchard or yard.
     // A substantial wall-side verge also needs a cultural land use, even when
     // its width rules out a house. Only small incidental verges stay unallocated.
@@ -3259,12 +3264,9 @@ fn allocate_inner(
         }
     }
     if pr.context.mode == "strict" && pr.cultures.iter().any(|c| !c.borrowing.is_empty()) {
-        pr.warnings
-            .push("Strict mode refuses declared cultural borrowing".into());
+        pr.warnings.push(warnings::strict_cultural_borrowing());
     }
-    // Adaptive capacity (`footprint::capacity`): every threshold crossed is
-    // stated with its numbers, and so is a deficit the terrain or the
-    // culture's bounds left; capacity is never invented.
+    // Report the estimated capacity and log the steps and limits of the plan.
     if let Some(plan) = super::footprint::capacity::of(layout) {
         let (wanted, housed) = pr
             .demands
@@ -3303,22 +3305,18 @@ fn allocate_inner(
                 && (plan.borrowed_share >= 0.999
                     || (plan.donor.is_empty()
                         && plan.extension >= super::footprint::capacity::EXTENSION - 0.01));
-            steps.push(format!(
-                "déficit de {:.0} ménages : {}",
+            steps.push(warnings::warning_detail_text(format_args!(
+                "Shortfall of {:.0} households: {}",
                 wanted - housed,
                 if bounded {
-                    "le terrain ou les bornes de la culture limitent la capacité"
+                    "terrain or cultural limits constrain capacity"
                 } else {
-                    "l’estimation parcellaire sur les îlots réels est inférieure à la prévision du tissu"
+                    "the estimate from actual lots is below the tissue forecast"
                 }
-            ));
+            )));
         }
         if !steps.is_empty() {
-            partition.warnings.push(format!(
-                "Capacité parcellaire estimée après affectation : {} — {} % du besoin en ménages couvert selon le modèle. Capacité habitante non évaluée.",
-                steps.join(", "),
-                (share * 100.0).floor()
-            ));
+            partition.warnings.push(warnings::parcel_capacity((share * 100.0).floor(), &steps));
         }
     }
     // A small village is cut to the lots its programme fills: a block that received no
@@ -3346,8 +3344,8 @@ fn allocate_inner(
         }
     }
     super::generation_limits::report_population(&mut pr, false);
-    partition.warnings.retain(|w| !w.starts_with("Population target not reached:"));
-    partition.warnings.extend(pr.warnings.iter().filter(|w| w.starts_with("Population target not reached:")).cloned());
+    partition.warnings.retain(|w| !warnings::is_population_shortfall(w));
+    partition.warnings.extend(pr.warnings.iter().filter(|w| warnings::is_population_shortfall(w)).cloned());
     partition.programme = Some(pr);
     super::springs::allocate(layout, partition);
     lap("done");
@@ -4053,8 +4051,8 @@ pub fn reconcile_built(
                 (demand.requested - demand.built_capacity - demand.open_capacity).max(0.0);
         }
         super::generation_limits::report_population(programme, true);
-        partition.warnings.retain(|w| !w.starts_with("Population target not reached:"));
-        partition.warnings.extend(programme.warnings.iter().filter(|w| w.starts_with("Population target not reached:")).cloned());
+        partition.warnings.retain(|w| !warnings::is_population_shortfall(w));
+        partition.warnings.extend(programme.warnings.iter().filter(|w| warnings::is_population_shortfall(w)).cloned());
     }
     Ok(result)
 }
@@ -5238,11 +5236,9 @@ mod tests {
                 serde_json::to_value(&without_plan.programme).unwrap());
             let pr = with_plan.programme.as_ref().unwrap();
             assert!(pr.demands.iter().all(|d| d.built_capacity == 0. && d.open_capacity == 0.));
-            let warning = with_plan.warnings.iter().find(|w| w.starts_with("Capacité parcellaire estimée après affectation :"))
+            let warning = with_plan.warnings.iter().find(|w| w.starts_with("Lot capacity "))
                 .expect("parcel estimate must state its planning scope");
-            assert!(warning.contains("du besoin en ménages couvert selon le modèle"), "{warning}");
-            assert!(warning.contains("Capacité habitante non évaluée"), "{warning}");
-            assert!(!warning.contains("ménages logés"), "{warning}");
+            assert!(warning.ends_with(" — model estimate"), "{warning}");
             if requested == 1. { assert!(warning.contains("100 %"), "{warning}"); }
         }
     }

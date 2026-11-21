@@ -4,6 +4,7 @@
 //! accessible growth uses an anisotropic multi-source arrival field. The latter
 //! is a bounded local raster (at most 192² cells), not a regional simulation.
 //! All mechanisms preserve every dry component and interior exclusion.
+use crate::urban::warnings;
 use super::{
     LayoutConfig, Morph, Point, Shape, Site, Street, Surface, UrbanCenter, UrbanEvent,
     UrbanMetrics, UrbanStructure, geometry as g, macroplan, profiles, routing,
@@ -2655,7 +2656,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let growth_roads = [roads, guides.as_slice(),port_roads.as_slice()].concat();
     let mut warnings = vec![];
     if centers.is_empty() {
-        warnings.push("Aucun noyau sec disponible : le budget urbain reste non attribué.".into());
+        warnings.push(warnings::dry_core_missing());
     }
     let culture = if cfg.culture == "site" {
         &site.culture
@@ -2806,7 +2807,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             }
         }
         if laddered > first_area {
-            warnings.push("Pente trop forte pour des rues : la ville gagne son terrain par escaliers et terrasses.".into());
+            warnings.push(warnings::town_terraces());
         }
         best
     };
@@ -2848,9 +2849,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         phases.clear();
         guides.clear();
         if allocated.is_empty() && warnings.is_empty() {
-            warnings.push(
-                "Aucun noyau constructible accessible : le programme reste non attribué.".into(),
-            );
+            warnings.push(warnings::buildable_core_missing());
         }
     } else if mechanism != "planned" {
         guides = self::guides(guide_family, centers[0].point, guide_radius, angle, &rng);
@@ -2862,9 +2861,9 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             vec![]
         };
         warnings.push(if internal.is_empty() {
-            "Fondation linéaire : aucun axe interne physiquement admissible ; la desserte reste non résolue.".into()
+            warnings::ribbon_without_access()
         } else {
-            "Aucune route régionale proche : une fondation linéaire fournit l'axe interne du ruban, sans connexion régionale attestée.".into()
+            warnings::ribbon_without_regional_road()
         });
         guides.extend(internal);
     }
@@ -2901,12 +2900,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
         *p = again;
     }
     if shortfall > target * 0.02 {
-        warnings.push(format!(
-            "Emprise contrainte : {:.0} m² attribués sur {:.0} m² prévus ({:.1} % de déficit).",
-            allocated_area,
-            target,
-            shortfall / target * 100.0
-        ));
+        warnings.push(warnings::land_shortfall(allocated_area, target, shortfall / target * 100.0));
     }
     if let (Some(k), Some(p)) = (cave_pack, plan.as_mut()) {
         p.cave_pack = k;
@@ -2978,7 +2972,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             .map(|d| format!("{d:.0}"))
             .collect::<Vec<_>>()
             .join(" / ");
-        warnings.push(format!("Budget foncier automatique : {density:.1} hab./ha brut en moyenne ; densités par époque (cœur → périphérie) {densities} hab./ha ; budget de composition, pas une capacité bâtie."));
+        warnings.push(warnings::automatic_land_budget(density, &densities));
     }
     Footprint {
         structure,

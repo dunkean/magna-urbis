@@ -1457,7 +1457,7 @@ mod tests {
                 programme: Some(city),
                 key: "city".into(),
                 parcels: vec![p0, p1, p2],
-                warnings: vec!["Population target not reached".into()],
+                warnings: vec!["Population 0/8000 — housing shortfall".into()],
                 diagnostics: Some(PartitionDiagnostics { covered_area: 1.0 / 7.0, residual_area: 0.0, overlap_area: 2.5, unserved_area: 1e-9 }),
                 enclosure: Some(Resolved { plot: 0.35, front: 1.2345678901234567, material: "wall".into(), ..Resolved::default() }),
                 prepared: None,

@@ -147,14 +147,14 @@ fn a_longhouse_shelters_two_or_three_households() {
 }
 
 /// A farmstead is one household on its reserved block (use `reserve`, role `dwelling.farm`):
-/// it is built, and carries no "Aucune habitation" notice (both farms of the reported map did).
+/// it is built, and carries no "No housing" notice (both farms of the reported map did).
 #[test]
 fn a_farmstead_with_its_farm_is_not_announced_empty() {
     for (culture, population) in [("pnw-plank-village", 10), ("european-organic", 9)] {
         let b = build(culture, population, &junction());
         eprintln!("VILLAGE-CHAIN {culture} {population}: {} · {} homes\n  {}", b.kind, b.homes, b.warnings.join("\n  "));
         assert!(b.homes >= 1, "{culture}: a farm of {population} inhabitants without its farm");
-        assert!(!b.warnings.iter().any(|w| w.starts_with("Aucune habitation")), "{culture}: {:?}", b.warnings);
+        assert!(!b.warnings.iter().any(|w| w.starts_with("No housing")), "{culture}: {:?}", b.warnings);
     }
 }
 

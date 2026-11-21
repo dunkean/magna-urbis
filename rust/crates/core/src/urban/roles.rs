@@ -4,6 +4,7 @@
 //! at random, so the same town always reads the same way. Building roles are
 //! counted per culture family from population thresholds; `function` stays one
 //! of the six houses functions and the rich id travels as `role`.
+use crate::urban::warnings;
 use super::geometry as g;
 use super::programme::BlockEnvironment;
 use super::{Layout, Point, QuarterOverride, UrbanDistrict};
@@ -1020,9 +1021,7 @@ pub fn assign(
                 .filter_map(|(k, o)| match k.parse::<usize>() {
                     Ok(q) if q < layout.quarters.len() => Some((q, o.clone())),
                     _ => {
-                        warnings.push(format!(
-                            "Quartier « {k} » introuvable : surcharge de rôle ignorée"
-                        ));
+                        warnings.push(warnings::quarter_role_missing(k));
                         None
                     }
                 })
@@ -1553,11 +1552,7 @@ fn carve_port<'a>(
     let mut it = keep.iter();
     fixed_roles.retain(|_| *it.next().unwrap());
     if served + 0.5 < total {
-        warnings.push(format!(
-            "Quais hors du district portuaire : {:.0} m de façade sur {:.0} m (quartier central ou autre rive).",
-            total - served,
-            total
-        ));
+        warnings.push(warnings::quays_outside_port(total - served, total));
     }
 }
 

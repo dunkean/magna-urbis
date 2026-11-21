@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { World } from '../../src/gen/types';
 import type { Claim } from '../../../rust/bridge/urban';
 import type { V2Settings } from '../../src/v2/contracts';
-import { claimReaches, compareTowns, nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint, neighbourReach, planTownRun, type TownSeat } from '../../src/v2/townNeighbours';
+import { claimReaches, compareTowns, emptyTownWarningKeys, isNeighbourWarning, nameNeighbourWarning, neighbourClaimsOf, neighbourFingerprint, neighbourReach, planTownRun, type TownSeat } from '../../src/v2/townNeighbours';
 import { extentRadius } from '../../src/gen/settlements/planner';
 import { translateLand } from '../../src/ui/urbanSnapshot';
 
@@ -139,26 +139,31 @@ describe('neighbouring towns', () => {
 describe('neighbouring-town warnings', () => {
   it('translates the three engine warnings into French and keeps the town keys and counts', async () => {
     const { translateRuntimeMessage } = await import('../../src/v2/runtimeMessages');
-    expect(translateRuntimeMessage('Neighbouring towns: the enclosure is not raised, its circuit would cross the land of village-2.', 'fr')).toBe('Villes voisines : l’enceinte n’est pas élevée, son tracé traverserait les terres de village-2.');
-    expect(translateRuntimeMessage('Neighbouring towns: no free land is left beside main, village-1; the town is announced empty.', 'fr')).toBe('Villes voisines : il ne reste aucune terre libre à côté de main, village-1 ; la ville est annoncée vide.');
-    expect(translateRuntimeMessage('Neighbouring towns: the land of main limits this town; 120 of 300 households housed.', 'fr')).toBe('Villes voisines : les terres de main limitent cette ville ; 120 ménages logés sur 300.');
-    expect(translateRuntimeMessage('Neighbouring towns: the enclosure is not raised, its circuit would cross the land of a neighbouring town.', 'fr')).toBe('Villes voisines : l’enceinte n’est pas élevée, son tracé traverserait les terres d’une ville voisine.');
+    expect(translateRuntimeMessage('No wall — neighbour too close: village-2', 'fr')).toBe('Pas d’enceinte — voisin trop proche : village-2');
+    expect(translateRuntimeMessage('Town empty — land claimed by main, village-1', 'fr')).toBe('Ville vide — terres de main, village-1');
+    expect(translateRuntimeMessage('Households 120/300 — land claimed by main', 'fr')).toBe('Ménages 120/300 — terres de main');
+    expect(translateRuntimeMessage('No wall — neighbour too close', 'fr')).toBe('Pas d’enceinte — voisin trop proche');
   });
   it('elides « de » before a name that starts with a vowel or an h', async () => {
     const { translateRuntimeMessage } = await import('../../src/v2/runtimeMessages');
-    const fr = (name: string) => translateRuntimeMessage(`Neighbouring towns: the land of ${name} limits this town; 120 of 300 households housed.`, 'fr');
-    expect(fr('Aubeville')).toBe('Villes voisines : les terres d’Aubeville limitent cette ville ; 120 ménages logés sur 300.');
-    expect(fr('Hautbourg')).toBe('Villes voisines : les terres d’Hautbourg limitent cette ville ; 120 ménages logés sur 300.');
-    expect(fr('Éclose')).toBe('Villes voisines : les terres d’Éclose limitent cette ville ; 120 ménages logés sur 300.');
-    expect(fr('Bourg-Neuf')).toBe('Villes voisines : les terres de Bourg-Neuf limitent cette ville ; 120 ménages logés sur 300.');
-    expect(translateRuntimeMessage('Neighbouring towns: no free land is left beside Aubeville; the town is announced empty.', 'fr')).toBe('Villes voisines : il ne reste aucune terre libre à côté d’Aubeville ; la ville est annoncée vide.');
+    const fr = (name: string) => translateRuntimeMessage(`Households 120/300 — land claimed by ${name}`, 'fr');
+    expect(fr('Aubeville')).toBe('Ménages 120/300 — terres d’Aubeville');
+    expect(fr('Hautbourg')).toBe('Ménages 120/300 — terres d’Hautbourg');
+    expect(fr('Éclose')).toBe('Ménages 120/300 — terres d’Éclose');
+    expect(fr('Bourg-Neuf')).toBe('Ménages 120/300 — terres de Bourg-Neuf');
+    expect(translateRuntimeMessage('Town empty — land claimed by Aubeville', 'fr')).toBe('Ville vide — terres d’Aubeville');
   });
   it('names the neighbours by their display name, the key when the town has none', () => {
     const names: Record<string, string> = { main: 'Aubeville', 'village-1': 'Bourg-Neuf' };
     const nameOf = (key: string) => names[key];
-    expect(nameNeighbourWarning('Neighbouring towns: the enclosure is not raised, its circuit would cross the land of main.', nameOf)).toBe('Neighbouring towns: the enclosure is not raised, its circuit would cross the land of Aubeville.');
-    expect(nameNeighbourWarning('Neighbouring towns: no free land is left beside main, village-1, far; the town is announced empty.', nameOf)).toBe('Neighbouring towns: no free land is left beside Aubeville, Bourg-Neuf, far; the town is announced empty.');
-    expect(nameNeighbourWarning('Neighbouring towns: the land of main limits this town; 120 of 300 households housed.', nameOf)).toBe('Neighbouring towns: the land of Aubeville limits this town; 120 of 300 households housed.');
-    expect(nameNeighbourWarning('Emprise main.', nameOf)).toBe('Emprise main.');
+    const empty = 'Town empty — land claimed by main, village-1, far';
+    expect(nameNeighbourWarning('No wall — neighbour too close: main', nameOf)).toBe('No wall — neighbour too close: Aubeville');
+    expect(nameNeighbourWarning(empty, nameOf)).toBe('Town empty — land claimed by Aubeville, Bourg-Neuf, far');
+    expect(nameNeighbourWarning('Households 120/300 — land claimed by main', nameOf)).toBe('Households 120/300 — land claimed by Aubeville');
+    expect(nameNeighbourWarning('No housing — no buildable lots', nameOf)).toBe('No housing — no buildable lots');
+    expect(isNeighbourWarning(empty)).toBe(true);
+    expect(isNeighbourWarning('No housing — no buildable lots')).toBe(false);
+    expect(emptyTownWarningKeys(empty)).toEqual(['main', 'village-1', 'far']);
+    expect(emptyTownWarningKeys('No wall — neighbour too close: main')).toBeUndefined();
   });
 });
