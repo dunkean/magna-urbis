@@ -165,6 +165,7 @@ pub(in crate::urban) fn build(culture: &str, cfg: &LayoutConfig) -> Result<TownS
         wall,
         survey,
         harbour,
+        growth: Default::default(),
     })
 }
 

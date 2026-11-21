@@ -20,6 +20,8 @@ mod lots;
 pub(in crate::urban) mod camps;
 #[path = "household_population.rs"]
 mod household_population;
+#[path = "programme_fill.rs"]
+mod fill;
 pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
 
 /// Share of the town plan's block area (inside the wall; without a wall, the
@@ -592,14 +594,7 @@ fn prepare_inner(
     lap("contacts");
     let quay_water = roles::quay_water_fronts(layout, surface);
     let mut environment = super::par::map(&layout.blocks, |block, b| {
-            let c = centroid(&b.shape);
-            let h = surface.height_at(c);
-            let slope = b
-                .shape
-                .outer
-                .iter()
-                .map(|p| (surface.height_at(*p) - h).abs() / dist(*p, c).max(1.0))
-                .fold(0.0, f64::max);
+            let (c, h, slope) = block_grade(surface, &b.shape);
             let front = water_front(&surface, &b.shape).or(quay_water[block]);
             BlockEnvironment {
                 pressure: if surface.wet(c) {
@@ -1178,11 +1173,21 @@ fn prepare_inner(
 #[cfg(test)]
 #[path = "programme_functions_tests.rs"]
 mod programme_functions_tests;
+
+pub(super) fn block_grade(surface: Surface<'_>, shape: &Shape) -> (Point, f64, f64) {
+    let center = centroid(shape);
+    let height = surface.height_at(center);
+    let slope = shape.outer.iter()
+        .map(|&p| (surface.height_at(p) - height).abs() / dist(p, center).max(1.0))
+        .fold(0.0, f64::max);
+    (center, height, slope)
+}
+
 /// A coastal contour can lie a few micrometres outside the exact land after
 /// clipping. A wet boundary vertex alone must not disqualify an otherwise dry
 /// block. Only these suspicious blocks need a boolean clip; interiors retain
 /// the cheap point test. This is programme eligibility, not building clearance.
-fn block_is_wet(surface: Surface<'_>, shape: &Shape, center: Point) -> bool {
+pub(super) fn block_is_wet(surface: Surface<'_>, shape: &Shape, center: Point) -> bool {
     if surface.wet(center) {
         return true;
     }
@@ -1975,9 +1980,26 @@ pub(super) fn allocate_from_reference(
     partition: &mut Partition,
     reference: Option<(&UrbanProgramme, &BTreeSet<String>)>,
 ) {
+    allocate_inner(layout, partition, reference, None);
+}
+
+pub(super) fn allocate_quarter_probe(
+    layout: &Layout,
+    partition: &mut Partition,
+    intramural: bool,
+) {
+    allocate_inner(layout, partition, None, Some(intramural));
+}
+
+fn allocate_inner(
+    layout: &Layout,
+    partition: &mut Partition,
+    reference: Option<(&UrbanProgramme, &BTreeSet<String>)>,
+    frozen_intramural: Option<bool>,
+) {
     if let std::borrow::Cow::Owned(formal) = super::shanty::formal_layout(layout) {
         partition.parcels.retain(|p| !p.provenance.iter().any(|s| s == "informal-growth"));
-        allocate_from_reference(&formal, partition, reference);
+        allocate_inner(&formal, partition, reference, frozen_intramural);
         super::shanty::allocate(layout, partition);
         return;
     }
@@ -2124,7 +2146,9 @@ pub(super) fn allocate_from_reference(
         .iter()
         .map(|e| super::geometry::ContainmentIndex::new(&Shape { outer: e.path.clone(), holes: vec![] }))
         .collect();
-    let enclosed: Vec<bool> = if enclosure_shapes.is_empty() {
+    let enclosed: Vec<bool> = if let Some(intramural) = frozen_intramural {
+        vec![intramural; parcels.len()]
+    } else if enclosure_shapes.is_empty() {
         vec![false; parcels.len()]
     } else {
         super::par::map(&centres, |_, &c| enclosure_shapes.iter().any(|s| s.contains(c)))
@@ -2249,6 +2273,16 @@ pub(super) fn allocate_from_reference(
             row
         })
         .collect::<Vec<_>>();
+    // Staged occupation (`Block::fill`): the lots past a block's fill share
+    // admit no use and end as open land. Classic blocks have no fill share.
+    let unfilled = fill::vacant(layout, parcels, |block| reserved_for.contains_key(&block));
+    if unfilled.contains(&true) {
+        for row in &mut admission {
+            for (admissible, &vacant) in row.iter_mut().zip(&unfilled) {
+                *admissible &= !vacant;
+            }
+        }
+    }
     let take = |pr: &mut UrbanProgramme,
                 assignments: &mut Vec<Option<usize>>,
                 pi: usize,
@@ -2446,6 +2480,7 @@ pub(super) fn allocate_from_reference(
         let mut candidates: Vec<(usize, f64)> = super::par::range(parcels.len(), |pi| {
             (free_now[pi].is_none()
                 && !retained(pi)
+                && !unfilled[pi]
                 && (matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                     || d.function == "common" && parcels[pi].use_kind == "garden")
                 && !reserved_for.contains_key(&parcels[pi].block)
@@ -2604,12 +2639,14 @@ pub(super) fn allocate_from_reference(
             let limits = memo
                 .mapping(layout, pi, p, "domestic")
                 .map_or([1, 1], |c| c.admissibility.floors);
-            // A densified tissue (adaptive capacity) raises the floors toward
-            // the upper bound its houses admit, never past it.
+            // A densified tissue (adaptive capacity), or a block filled past
+            // all its lots (`Block::fill`), raises the floors toward the upper
+            // bound its houses admit, never past it.
             let (cap, storeys) = (tissue.cap, tissue.storeys);
             let drawn = storeys[0] + (storeys[1] - storeys[0]) * p.pressure.clamp(0.0, 1.0);
             let top = f64::from(limits[1].max(limits[0])).min(cap.map_or(f64::MAX, f64::from));
-            let floors = (drawn + (top - drawn).max(0.0) * densify)
+            let raise = fill::storey_raise(densify, layout.blocks.get(p.block).and_then(|b| b.fill));
+            let floors = (drawn + (top - drawn).max(0.0) * raise)
                 .round()
                 .clamp(f64::from(limits[0]).min(top), top);
             let capacity = household_capacity(
@@ -2807,6 +2844,7 @@ pub(super) fn allocate_from_reference(
                 .filter(|&pi| {
                     assignments[pi].is_none()
                         && !retained(pi)
+                        && !unfilled[pi]
                         && matches!(parcels[pi].use_kind.as_str(), "plot" | "compound")
                 })
                 .collect();

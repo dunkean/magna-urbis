@@ -1846,6 +1846,7 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
+            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0; 2],
             rank: 1,
@@ -2048,6 +2049,7 @@ mod tests {
             let c = width / 2.0;
             let roads = [
                 Street {
+                    key: None,
                     path: vec![
                         Point { x: 200.0, y: c },
                         Point {
@@ -2060,6 +2062,7 @@ mod tests {
                     role: "regional".into(),
                 },
                 Street {
+                    key: None,
                     path: vec![
                         Point { x: c, y: 200.0 },
                         Point {
@@ -2142,6 +2145,7 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
+            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0; 2],
             rank: 1,
@@ -2299,6 +2303,7 @@ parcels {} demands {:?}; quarters {quarters_ms} ms, parcels+alloc {parcels_ms} m
             interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
+            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0; 2],
             rank: 1,

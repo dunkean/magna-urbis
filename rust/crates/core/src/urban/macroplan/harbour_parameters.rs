@@ -292,18 +292,18 @@ pub(in super::super::super) fn extend(regions: &[Shape], streets: &mut Vec<Stree
         shapes.retain(|s|g::area(s)>500.0);
         if let Some(si)=existing {streets[si].role="port-road".into();}
         streets.retain(|s|s.role!="quay");
-        streets.push(Street{widths:vec![width;path.len()],path:path.clone(),rank:1,role:"quay".into()});
+        streets.push(Street{key: None, widths:vec![width;path.len()],path:path.clone(),rank:1,role:"quay".into()});
         let road=if existing.is_some() {road[..2].to_vec()} else {road};
         if length(&road)>1.0 {
             let steep=road.windows(2).map(|w|routing::segment_grade(surface,w[0],w[1])).fold(0.0,f64::max);
             let stairs=steep>cfg.max_lane_grade;
-            streets.push(Street{widths:vec![if stairs {3.0} else {5.0};road.len()],path:road,rank:if stairs {3} else {1},role:if stairs {"port-stairs"} else {"port-road"}.into()});
+            streets.push(Street{key: None, widths:vec![if stairs {3.0} else {5.0};road.len()],path:road,rank:if stairs {3} else {1},role:if stairs {"port-stairs"} else {"port-road"}.into()});
         }
         if let Some((row,link))=row {
-            streets.push(Street{widths:vec![5.0;link.len()],path:link,rank:2,role:"port-street".into()});
+            streets.push(Street{key: None, widths:vec![5.0;link.len()],path:link,rank:2,role:"port-street".into()});
             if row.len()>=3 {
                 for path in [vec![row[1],row[0]],vec![row[1],row[2]]] {
-                    streets.push(Street{widths:vec![4.0;2],path,rank:2,role:"port-street".into()});
+                    streets.push(Street{key: None, widths:vec![4.0;2],path,rank:2,role:"port-street".into()});
                 }
             }
         }
@@ -379,7 +379,7 @@ mod tests {
             center:Point{x:1300.0,y:300.0},radius:500.0,
             neighbours: Vec::new(),};
         let regions=vec![g::rectangle(1100.0,200.0,1398.0,400.0)];
-        let road=Street{path:vec![Point{x:1200.0,y:220.0},Point{x:1300.0,y:380.0}],widths:vec![5.0;2],rank:1,role:"street".into()};
+        let road=Street{key: None, path:vec![Point{x:1200.0,y:220.0},Point{x:1300.0,y:380.0}],widths:vec![5.0;2],rank:1,role:"street".into()};
         for d in [0.0,1.0] {
             let cfg=LayoutConfig{site_archetype:"harbor".into(),port_detachment:d,port_shelter:Some(0.75),..LayoutConfig::default()};
             let mut streets=vec![road.clone()];
@@ -420,7 +420,7 @@ mod tests {
             center:Point{x:1300.0,y:300.0},radius:500.0,
             neighbours: Vec::new(),};
         let regions=vec![g::rectangle(1100.0,200.0,1398.0,400.0)];
-        let road=Street{path:vec![Point{x:1200.0,y:220.0},Point{x:1300.0,y:380.0}],widths:vec![5.0;2],rank:1,role:"street".into()};
+        let road=Street{key: None, path:vec![Point{x:1200.0,y:220.0},Point{x:1300.0,y:380.0}],widths:vec![5.0;2],rank:1,role:"street".into()};
         for (archetype,sea) in [("harbor",true),("bridge",false)] {
             let cfg=LayoutConfig{site_archetype:archetype.into(),port_detachment:0.4,port_shelter:Some(0.75),..LayoutConfig::default()};
             assert_eq!(open_water_town(&site,surface,&cfg),sea);

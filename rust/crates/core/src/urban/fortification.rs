@@ -2745,6 +2745,7 @@ pub(super) fn build(
                     [-face - h - 0.5, far],
                 ));
                 lanes.push(Street {
+                    key: None,
                     widths: vec![lw; lane.len()],
                     path: lane,
                     rank: 3,
@@ -3087,6 +3088,7 @@ pub(super) fn yield_reserve(quarters: &mut Vec<Quarter>, enclosures: &[Enclosure
             .into_iter()
             .filter(|s| g::area(s) >= if cut { MIN_PIECE } else { 1.0 })
             .map(|shape| Quarter {
+                key: None,
                 shape,
                 phase: q.phase,
                 zone: q.zone.clone(),
@@ -3510,7 +3512,7 @@ fn close_crossings_at(streets: &mut Vec<Street>, enclosures: &[Enclosure], main_
             } else {
                 s.role.as_str()
             };
-            out.push(Street { path, widths, rank: s.rank, role: role.into() });
+            out.push(Street { key: None, path, widths, rank: s.rank, role: role.into() });
         }
     }
     *streets = out;
@@ -4275,6 +4277,7 @@ mod tests {
     }
     fn street(points: &[(f64, f64)], rank: usize, width: f64) -> Street {
         Street {
+            key: None,
             path: points.iter().map(|&(x, y)| pt(x, y)).collect(),
             widths: vec![width; points.len()],
             rank,
@@ -5298,6 +5301,7 @@ mod tests {
         streets.push(street(&[(1000.0, 1000.0), (1400.0, 1400.0)], 2, 5.0));
         let tower = e.towers_detail[e.towers_detail.len() / 2].center;
         let block = super::super::Block {
+            key: None,
             shape: g::rectangle(
                 tower.x - 25.0,
                 tower.y - 25.0,
@@ -5308,6 +5312,7 @@ mod tests {
             kind: "block".into(),
             axis: pt(1.0, 0.0),
             zone: "core".into(),
+            fill: None,
             phase: None,
         };
         let mut layout = super::super::Layout {

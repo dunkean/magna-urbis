@@ -72,6 +72,7 @@ impl Crossing {
             y: self.exit.y + uy * abutment,
         };
         let street = |path: Vec<Point>, role: &str| Street {
+            key: None,
             widths: vec![rules.width; path.len()],
             path,
             rank: 1,
@@ -562,7 +563,7 @@ mod tests {
     use crate::urban::{LayoutConfig, Site, generate_quarters, geography, geometry as g, network};
 
     fn street(points: &[(f64, f64)], role: &str) -> Street {
-        Street { path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
+        Street { key: None, path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
             widths: vec![6.0; points.len()], rank: 1, role: role.into() }
     }
     fn coverage(streets: &[Street], surface: Surface<'_>) -> usize {
@@ -699,8 +700,9 @@ mod tests {
         })).unwrap();
         l.streets = streets;
         l.blocks = bounds.iter().map(|&(a, b, c, d)| crate::urban::Block {
+            key: None,
             shape: g::rectangle(a, b, c, d), quarter: 0, kind: "block".into(),
-            axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), phase: None,
+            axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), fill: None, phase: None,
         }).collect();
         l
     }

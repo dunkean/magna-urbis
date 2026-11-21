@@ -158,7 +158,7 @@ fn merge_partial(streets: &mut [Street], walls: &[(Point, Point)], surface: Surf
 mod tests {
     use super::*;
     fn street(points: &[(f64, f64)], rank: usize) -> Street {
-        Street { path: points.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![4.0; points.len()], rank, role: "street".into() }
+        Street { key: None, path: points.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![4.0; points.len()], rank, role: "street".into() }
     }
     fn fixture() -> Vec<Street> {
         vec![street(&[(20., 50.), (160., 50.)], 1),

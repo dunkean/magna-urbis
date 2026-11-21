@@ -7,7 +7,7 @@ fn point(x:f64,y:f64)->Point {pt(x,y)}
 fn surface<'a>(height:&'a [f32],water:&'a [u8])->Surface<'a> {
     Surface {geometry:None,width:W,n:N,height,water, interpolation: Default::default(),}
 }
-fn street(a:Point,b:Point)->Street {Street {path:vec![a,b],widths:vec![6.0;2],rank:1,role:"regional".into()}}
+fn street(a:Point,b:Point)->Street {Street {key: None, path:vec![a,b],widths:vec![6.0;2],rank:1,role:"regional".into()}}
 fn layout(shape:Shape,streets:Vec<Street>)->Layout {
     serde_json::from_value(serde_json::json!({"key":"walls-options","culture":"european-organic",
         "center":point(900.0,1000.0),"quarters":[{"shape":shape,"phase":0,"zone":"core"}],
@@ -142,8 +142,8 @@ fn inner_estates_keep_a_gate_and_gate_squares_are_real_public_land() {
     }
     l.programme=None;l.enclosures.clear();l.quarters[0].zone="faubourg".into();
     let center=point(800.0,850.0);
-    l.blocks.push(super::super::super::Block {shape:g::rectangle(760.0,810.0,840.0,890.0),
-        quarter:0,kind:"block".into(),zone:"faubourg".into(),phase:Some(0),axis:point(1.0,0.0)});
+    l.blocks.push(super::super::super::Block {key: None, shape:g::rectangle(760.0,810.0,840.0,890.0),
+        quarter:0,kind:"block".into(),zone:"faubourg".into(),fill: None, phase:Some(0),axis:point(1.0,0.0)});
     l.streets.push(Street {role:"gate-village".into(),..street(point(800.0,750.0),center)});
     prepare_options(&mut l,&LayoutConfig {gate_villages:true,..Default::default()},s);
     let place=l.blocks.iter().find(|b|b.kind=="place").unwrap();

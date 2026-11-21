@@ -238,7 +238,7 @@ pub(super) fn reserve(layout: &mut Layout, town: &Site, surface: Surface<'_>, cf
         let ribbon=g::ribbon(&water.path,&[r.path_width_m]);
         masks.extend(ribbon.iter().cloned());
         if let Some(ground)=ground.as_mut() {ground.push(water.shape.clone()); ground.extend(ribbon);}
-        layout.streets.push(Street{path:water.path.clone(),widths:vec![r.path_width_m],rank:3,role:"path".into()});
+        layout.streets.push(Street{key: None, path:water.path.clone(),widths:vec![r.path_width_m],rank:3,role:"path".into()});
         layout.structure.get_or_insert_with(UrbanStructure::default).spring_sites.push(water);
     }
     routing::tally("springs");

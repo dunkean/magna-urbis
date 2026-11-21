@@ -58,6 +58,9 @@ pub struct TownRequest<'a> {
 }
 
 /// Generate a town layout from its site and resolved specs.
-pub fn generate(_request: TownRequest<'_>) -> Result<TownPlan, String> {
+pub fn generate(
+    _request: TownRequest<'_>,
+    _capacity: &dyn growth::Capacity,
+) -> Result<TownPlan, String> {
     Err("not implemented".into())
 }

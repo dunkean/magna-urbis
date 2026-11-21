@@ -15,13 +15,13 @@ fn port_stairs_serve_stores_above_the_bank_only_when_joined_to_a_quay() {
             {"shape":g::rectangle(900.0,1002.0,925.0,1060.0),"quarter":0,"kind":"block","axis":{"x":1.0,"y":0.0}}
         ]
     })).unwrap();
-    let quay=Street{path:vec![Point{x:995.0,y:950.0},Point{x:995.0,y:1050.0}],widths:vec![6.0;2],rank:1,role:"quay".into()};
+    let quay=Street{key: None, path:vec![Point{x:995.0,y:950.0},Point{x:995.0,y:1050.0}],widths:vec![6.0;2],rank:1,role:"quay".into()};
     layout.streets.push(quay);
     assert_eq!(quay_contacts(&layout),vec![0.0,0.0]);
-    layout.streets.push(Street{path:vec![Point{x:995.0,y:1000.0},Point{x:950.0,y:1000.0}],widths:vec![3.0;2],rank:3,role:"port-stairs".into()});
+    layout.streets.push(Street{key: None, path:vec![Point{x:995.0,y:1000.0},Point{x:950.0,y:1000.0}],widths:vec![3.0;2],rank:3,role:"port-stairs".into()});
     assert!(quay_contacts(&layout)[0]>=QUAY_FRONT,"working dock access serves the upper store");
     assert_eq!(quay_contacts(&layout)[1],0.0);
-    layout.streets.push(Street{path:vec![Point{x:950.0,y:1000.0},Point{x:900.0,y:1000.0}],widths:vec![4.0;2],rank:2,role:"port-street".into()});
+    layout.streets.push(Street{key: None, path:vec![Point{x:950.0,y:1000.0},Point{x:900.0,y:1000.0}],widths:vec![4.0;2],rank:2,role:"port-street".into()});
     assert!(quay_contacts(&layout)[1]>=QUAY_FRONT,"the dock's own street serves its inland store");
     layout.streets[1].path[0].x=985.0;
     assert_eq!(quay_contacts(&layout),vec![0.0,0.0],"an orphan stair is not quay frontage");

@@ -98,6 +98,7 @@ fn an_inherited_bent_crossroads_is_the_village_spine_without_a_parallel_cultural
     ]
     .iter()
     .map(|&end| Street {
+        key: None,
         path: vec![center, end],
         widths: vec![2.52; 2],
         rank: 2,
@@ -243,6 +244,7 @@ fn primary_regional_entry_rotates_the_foundation_over_culture_and_nearby_tracks(
     let angle = 27.0_f64.to_radians();
     let roads = vec![
         Street {
+            key: None,
             path: [-600.0, 600.0]
                 .map(|d| Point {
                     x: center.x + angle.cos() * d,
@@ -254,6 +256,7 @@ fn primary_regional_entry_rotates_the_foundation_over_culture_and_nearby_tracks(
             role: "regional".into(),
         },
         Street {
+            key: None,
             path: vec![
                 Point { x: 200.0, y: 800.0 },
                 Point {
@@ -418,11 +421,14 @@ fn deep_layout() -> Layout {
         culture: "european-organic".into(),
         center: Point { x: 720.0, y: 750.0 },
         quarters: vec![Quarter {
+            key: None,
             shape: shape.clone(),
             phase: 0,
             zone: "core".into(),
         }],
         blocks: vec![Block {
+            key: None,
+            fill: None,
             phase: Some(0),
             shape,
             quarter: 0,
@@ -431,6 +437,7 @@ fn deep_layout() -> Layout {
             zone: "core".into(),
         }],
         streets: vec![Street {
+            key: None,
             path: vec![Point { x: 600.0, y: 597.0 }, Point { x: 840.0, y: 597.0 }],
             widths: vec![6.0; 2],
             rank: 1,
@@ -613,6 +620,7 @@ fn final_network_retains_every_explicit_nucleus() {
         .map(|i| {
             let x = 100.0 + i as f64 * 300.0;
             Street {
+                key: None,
                 path: vec![
                     Point { x, y: 100.0 },
                     Point {

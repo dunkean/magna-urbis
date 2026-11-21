@@ -300,6 +300,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
                     }
                     accepted = Some((
                         Street {
+                            key: None,
                             path,
                             widths,
                             rank: 4,
@@ -352,7 +353,8 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
     }
     layout.blocks = result;
     laps.lap(&format!("lanes ({added} added)"));
-    if added > 0 {
+    // Growth graph streets already meet at shared nodes.
+    if added > 0 && layout.structure.as_ref().is_none_or(|s| s.mechanism != "growth") {
         let centers = layout
             .structure
             .as_ref()
@@ -396,6 +398,10 @@ pub(super) fn summarize(layout: &mut Layout, cfg: &LayoutConfig) {
     // Difference includes fortification strips: expose the full circulation/edge budget.
     s.metrics.street_area = (s.metrics.allocated_area - blocks_area).max(0.0);
     s.metrics.shortfall_area = (s.metrics.target_area - s.metrics.allocated_area).max(0.0);
+    // The graph adapter assigns districts from the quarters' birth tissues.
+    if s.mechanism == "growth" {
+        return;
+    }
     let mut groups: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
     for (qi, q) in layout.quarters.iter().enumerate() {
         let p = g::interior_point(&q.shape);

@@ -679,12 +679,14 @@ fn pocket(
     let first_street = layout.streets.len();
     let mut local = vec![
         Street {
+            key: None,
             path: entrance,
             widths: vec![2.4],
             rank: 3,
             role: "path".into(),
         },
         Street {
+            key: None,
             path: lane.clone(),
             widths: vec![rng.range(3.0, 4.3)],
             rank: 3,
@@ -749,6 +751,7 @@ fn pocket(
                 rng.range(-1.4, 1.4),
             );
             let branch = Street {
+                key: None,
                 path: vec![root, middle, end],
                 widths: vec![1.1],
                 rank: 4,
@@ -949,6 +952,7 @@ fn pocket(
                 continue;
             }
             let spur = Street {
+                key: None,
                 path: vec![goal, door],
                 widths: vec![0.85],
                 rank: 4,
@@ -993,16 +997,19 @@ fn pocket(
     let block = layout.blocks.len();
     let phase = layout.quarters.first().map_or(0, |q| q.phase);
     layout.quarters.push(Quarter {
+        key: None,
         shape: shape.clone(),
         phase,
         zone: "shanty".into(),
     });
     layout.blocks.push(Block {
+        key: None,
         shape,
         quarter,
         kind: "shanty".into(),
         axis: u,
         zone: "shanty".into(),
+        fill: None,
         phase: Some(phase),
     });
     layout.streets.extend(local);
@@ -1303,6 +1310,7 @@ mod tests {
         // An empty tail must stop at an interior junction, preserving the
         // occupied branch and remapping its access after an empty path is removed.
         let street = |path| Street {
+            key: None,
             path,
             widths: vec![2.],
             rank: 3,
@@ -1347,6 +1355,7 @@ mod tests {
             neighbours: Vec::new(),
         };
         let road = Street {
+            key: None,
             path: vec![Point { x: 200., y: 2000. }, Point { x: 3800., y: 2000. }],
             widths: vec![6.],
             rank: 1,
@@ -1659,27 +1668,32 @@ mod tests {
         let square = g::rectangle(1800., 1800., 2200., 2200.);
         let mut proto = bare[0].clone();
         proto.quarters = vec![Quarter {
+            key: None,
             shape: square.clone(),
             phase: 0,
             zone: "core".into(),
         }];
         proto.blocks = vec![Block {
+            key: None,
             shape: square.clone(),
             quarter: 0,
             kind: "residential".into(),
             axis: Point { x: 1., y: 0. },
             zone: "core".into(),
+            fill: None,
             phase: Some(0),
         }];
         proto.enclosures.clear();
         proto.streets = vec![
             Street {
+                key: None,
                 path: vec![Point { x: 1600., y: 2250. }, Point { x: 2400., y: 2250. }],
                 widths: vec![5.],
                 rank: 1,
                 role: "road".into(),
             },
             Street {
+                key: None,
                 path: vec![Point { x: 2250., y: 1600. }, Point { x: 2250., y: 2400. }],
                 widths: vec![5.],
                 rank: 1,

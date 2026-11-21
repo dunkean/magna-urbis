@@ -632,7 +632,7 @@ fn emit(s: &Street, from: usize, to: usize, out: &mut Vec<Street>) {
         return;
     }
     let widths: Vec<f64> = (from..=to).map(|i| s.widths.get(i).or(s.widths.last()).copied().unwrap_or(4.0)).collect();
-    out.push(Street { path: s.path[from..=to].to_vec(), widths, rank: s.rank, role: s.role.clone() });
+    out.push(Street { key: None, path: s.path[from..=to].to_vec(), widths, rank: s.rank, role: s.role.clone() });
 }
 
 
@@ -969,7 +969,7 @@ mod tests {
         let surface = Surface { geometry:None, width:6000., n, height:&height, water:&water, interpolation: Default::default(),};
         let site = super::super::Site { key:"fill3".into(),name:String::new(),population,culture:culture.into(),center:Point{x:if river {2800.} else {3000.},y:3000.},radius:150., neighbours: Vec::new() };
         let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
-        let roads = if river { vec![Street { path:vec![Point{x:0.,y:3000.},Point{x:6000.,y:3000.}],widths:vec![8.;2],rank:1,role:"regional".into() }] } else { vec![] };
+        let roads = if river { vec![Street { key: None, path:vec![Point{x:0.,y:3000.},Point{x:6000.,y:3000.}],widths:vec![8.;2],rank:1,role:"regional".into() }] } else { vec![] };
         let l = super::super::generate_quarters("fill3", &[site], &cfg, surface, &roads).unwrap().remove(0);
         let part = super::super::generate_parcels("fill3", std::slice::from_ref(&l), &ParcelConfig::default()).unwrap().remove(0);
         let requests = super::super::building_sites::requests("fill3",std::slice::from_ref(&l),std::slice::from_ref(&part),surface,&level,None).unwrap();
@@ -999,7 +999,7 @@ mod tests {
         let site = super::super::Site { key:"town".into(),name:String::new(),population,culture:culture.into(),center:Point{x:2500.,y:2500.},radius:150., neighbours: Vec::new() };
         let mut cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         cfg.hide_unused_quarters = hide;
-        let road = |a: (f64,f64), b: (f64,f64)| Street { path:vec![Point{x:a.0,y:a.1},Point{x:b.0,y:b.1}],widths:vec![8.;2],rank:1,role:"regional".into() };
+        let road = |a: (f64,f64), b: (f64,f64)| Street { key: None, path:vec![Point{x:a.0,y:a.1},Point{x:b.0,y:b.1}],widths:vec![8.;2],rank:1,role:"regional".into() };
         let roads = vec![road((0.,2500.),(5000.,2500.)), road((2500.,0.),(2500.,5000.))];
         let l = super::super::generate_quarters(seed, &[site], &cfg, surface, &roads).unwrap();
         let parts = super::super::generate_parcels(seed, &l, &ParcelConfig::default()).unwrap();

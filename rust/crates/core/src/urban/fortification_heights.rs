@@ -160,7 +160,7 @@ mod tests {
         let water = vec![0_u8; n * n];
         let town = Shape { outer: vec![pt(400.0, 400.0), pt(880.0, 400.0), pt(880.0, 880.0), pt(400.0, 880.0)], holes: vec![] };
         let cfg = LayoutConfig { heights_castle: "force".into(), ..Default::default() };
-        let street = [Street { path: vec![pt(500.0, 640.0), knoll], widths: vec![6.0; 2], rank: 1, role: "street".into() }];
+        let street = [Street { key: None, path: vec![pt(500.0, 640.0), knoll], widths: vec![6.0; 2], rank: 1, role: "street".into() }];
         let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default(),};
         let castle = heights_castle(std::slice::from_ref(&town), std::slice::from_ref(&town), &street, surface, &cfg, "european-organic", 5000, &Rng::new("castle"))
             .expect("a castle on the knoll");

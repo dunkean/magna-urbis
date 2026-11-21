@@ -16,7 +16,7 @@ fn inputs(c: &Case) -> (Site, LayoutConfig, Vec<Street>) {
         neighbours: Vec::new(), };
     let mut cfg = LayoutConfig::default();
     cfg.footprint.budget = "radius".into();
-    let roads = vec![Street { path: vec![Point { x: 1000., y: c.road_y }, Point { x: 3000., y: c.road_y }],
+    let roads = vec![Street { key: None, path: vec![Point { x: 1000., y: c.road_y }, Point { x: 3000., y: c.road_y }],
         widths: vec![6., 6.], rank: 0, role: "regional".into() }];
     (site, cfg, roads)
 }

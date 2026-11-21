@@ -2,8 +2,8 @@ use super::*;
 fn p(x:f64,y:f64)->Point {Point {x,y}}
 fn plan()->macroplan::Plan {
     macroplan::Plan {envelope:g::rectangle(150.0,200.0,1000.0,850.0),structure:None,
-        quarters:vec![Quarter {shape:g::rectangle(150.0,200.0,1000.0,850.0),phase:0,zone:"faubourg".into()}],
-        streets:vec![Street {path:vec![p(100.0,480.0),p(250.0,475.0),p(400.0,500.0),p(900.0,500.0)],
+        quarters:vec![Quarter {key: None, shape:g::rectangle(150.0,200.0,1000.0,850.0),phase:0,zone:"faubourg".into()}],
+        streets:vec![Street {key: None, path:vec![p(100.0,480.0),p(250.0,475.0),p(400.0,500.0),p(900.0,500.0)],
             widths:vec![6.0;4],rank:1,role:"regional".into()}],
         enclosures:vec![Enclosure {path:closed(&g::rectangle(400.0,300.0,850.0,700.0).outer),
             gates:vec![p(400.0,500.0)],kind:"wall".into(),..Default::default()}],warnings:vec![]}

@@ -502,6 +502,7 @@ fn cultural_family_selection_changes_the_actual_cadastral_operator() {
 fn quarter_phase_supplies_culture_when_older_blocks_omit_phase() {
     let mut layout = fixture(false, false, "european-organic");
     layout.quarters = vec![super::super::Quarter {
+        key: None,
         shape: layout.blocks[0].shape.clone(),
         phase: 1,
         zone: "core".into(),
@@ -1485,6 +1486,8 @@ fn merge_city(culture: &str, op: &str, merge: f64, seed: &str) -> Partition {
     {
         let _ = k;
         layout.blocks.push(Block {
+            key: None,
+            fill: None,
             phase: None,
             shape: rectangle(x, y, 200.0, 60.0),
             quarter: 0,
@@ -1495,6 +1498,7 @@ fn merge_city(culture: &str, op: &str, merge: f64, seed: &str) -> Partition {
     }
     for (x, y) in [(0.0, 0.0), (240.0, 0.0), (0.0, 150.0), (240.0, 150.0)] {
         streets.push(Street {
+            key: None,
             path: vec![
                 Point { x: x - 3.0, y: y - 3.0 },
                 Point { x: x + 203.0, y: y - 3.0 },

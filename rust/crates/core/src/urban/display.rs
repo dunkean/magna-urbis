@@ -495,11 +495,13 @@ mod tests {
     #[test]
     fn display_buffers_round_trip_geometry_and_codes() {
         let block = Block {
+            key: None,
             shape: square(100.0, 100.0, 40.0),
             quarter: 0,
             kind: "block".into(),
             axis: Point { x: 1.0, y: 0.0 },
             zone: "core".into(),
+            fill: None,
             phase: None,
         };
         let mut with_hole = square(100.0, 100.0, 20.0);
@@ -519,12 +521,14 @@ mod tests {
             ..Default::default()
         });
         layout.quarters.push(Quarter {
+            key: None,
             shape: square(90.0, 90.0, 60.0),
             phase: 0,
             zone: "core".into(),
         });
         layout.blocks.push(block);
         layout.streets.push(Street {
+            key: None,
             path: vec![Point { x: 90.0, y: 95.0 }, Point { x: 150.0, y: 95.0 }],
             widths: vec![6.0, 6.0],
             rank: 1,
@@ -593,7 +597,7 @@ mod tests {
             "quarters": [], "streets": [], "blocks": [], "warnings": []
         })).unwrap();
         for width in [1.5, 3.0, 8.0] {
-            layout.streets.push(Street { path: vec![Point { x: 90.0, y: 100.0 + width }, Point { x: 120.0, y: 100.0 + width }],
+            layout.streets.push(Street { key: None, path: vec![Point { x: 90.0, y: 100.0 + width }, Point { x: 120.0, y: 100.0 + width }],
                 widths: vec![width; 2], rank: 4, role: "bridge".into() });
         }
         let blob = display_buffers(&[layout], &[], false);

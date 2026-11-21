@@ -569,7 +569,7 @@ impl StiltGround {
                         run.path.push(b);
                         run.widths.push(width);
                     } else {
-                        runs.push(super::Street { path:vec![a,b], widths:vec![width;2], rank:s.rank, role:role.into() });
+                        runs.push(super::Street { key: None, path:vec![a,b], widths:vec![width;2], rank:s.rank, role:role.into() });
                     }
                 }
             }
@@ -618,7 +618,7 @@ impl StiltGround {
                     if cross.abs()>1e-6 {simple.push(w[1]);}
                 }
                 simple.push(*path.last().unwrap());
-                streets.push(super::Street{widths:vec![2.4;simple.len()],path:simple,rank:3,role:"pier".into()});
+                streets.push(super::Street{key: None, widths:vec![2.4;simple.len()],path:simple,rank:3,role:"pier".into()});
             }
         }
     }
@@ -802,7 +802,7 @@ mod tests {
             assert!(!planning.wet(Point{x:530.,y:500.}));
             assert!(planning.wet(Point{x:570.,y:500.}),"deep water stays unavailable");
             for k in 0..n*n {if water[k]!=0 && ground.water[k]==0 {assert!((k%n) as f64*cell-500.<ground.reach+cell);}}
-            let mut streets=vec![super::super::Street{path:vec![Point{x:530.,y:490.},Point{x:530.,y:510.}],widths:vec![3.;2],rank:3,role:"street".into()}];
+            let mut streets=vec![super::super::Street{key: None, path:vec![Point{x:530.,y:490.},Point{x:530.,y:510.}],widths:vec![3.;2],rank:3,role:"street".into()}];
             ground.walkways(&mut streets,surface);
             assert!(streets.iter().any(|s|s.role=="pier" && s.path.iter().any(|&p|!surface.wet(p))),"offshore component needs a land landing");
         }
@@ -814,7 +814,7 @@ mod tests {
         assert!(!swamp.surface(surface).wet(Point{x:530.,y:500.}),"a river inside the cultural distance/depth limits remains buildable across its channel");
         assert_eq!(swamp.surface(surface).height_at(Point{x:530.,y:500.}),0.,"planning follows the deck, not the river bed");
         assert_eq!(surface.height_at(Point{x:530.,y:500.}),-8.,"physical foundation evidence stays intact");
-        let mut streets=vec![super::super::Street{path:vec![Point{x:480.,y:500.},Point{x:580.,y:500.}],widths:vec![3.;2],rank:3,role:"street".into()}];
+        let mut streets=vec![super::super::Street{key: None, path:vec![Point{x:480.,y:500.},Point{x:580.,y:500.}],widths:vec![3.;2],rank:3,role:"street".into()}];
         swamp.walkways(&mut streets,surface);
         super::super::network::bridge_water_on_ground(&mut streets,swamp.surface(surface),surface,0.12);
         assert!(streets.iter().any(|s|s.role=="boardwalk"),"an inhabited water neighbourhood is not a redundant bank-to-bank bridge");

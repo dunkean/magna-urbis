@@ -18,6 +18,7 @@ fn town(cfg: &LayoutConfig) -> Layout {
         interpolation: Default::default(),
     };
     let road = |a: (f64, f64), b: (f64, f64)| Street {
+        key: None,
         path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
         widths: vec![7.0, 7.0],
         rank: 0,
@@ -1006,10 +1007,12 @@ fn quarter_edits_do_not_depend_on_the_thread_count() {
 #[test]
 fn programme_freeze_remaps_finished_blocks_and_streets() {
     let block = |x: f64, kind: &str| super::Block {
+        key: None,
         shape: g::rectangle(x, 0.0, x + 10.0, 10.0), quarter: 0, kind: kind.into(),
-        axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), phase: Some(0),
+        axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), fill: None, phase: Some(0),
     };
     let road = |x: f64| Street {
+        key: None,
         path: vec![Point { x, y: 0.0 }, Point { x, y: 10.0 }], widths: vec![4.0; 2], rank: 1, role: "street".into(),
     };
     let mut base: Layout = serde_json::from_value(serde_json::json!({

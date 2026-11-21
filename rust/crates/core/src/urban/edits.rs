@@ -849,11 +849,13 @@ fn splice(
                         kind = "reserve".into();
                     }
                     out.push(Block {
+                        key: None,
                         shape: clean(piece),
                         quarter: i,
                         kind,
                         axis: b.axis,
                         zone: b.zone.clone(),
+                        fill: b.fill,
                         phase: b.phase.and_then(|p| phase_map.get(p).copied().flatten()),
                     });
                 }

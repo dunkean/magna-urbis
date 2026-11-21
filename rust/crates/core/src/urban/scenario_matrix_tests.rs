@@ -11,6 +11,7 @@ fn run(culture: &str, population: u32, cfg: &LayoutConfig) -> (Layout, Partition
     let (height, water) = (vec![0.0; n * n], vec![0u8; n * n]);
     let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water, interpolation: Default::default(),};
     let road = Street {
+        key: None,
         path: vec![Point { x: 300.0, y: 4520.0 }, Point { x: 8700.0, y: 4480.0 }],
         widths: vec![6.0, 6.0], rank: 0, role: "regional".into(),
     };
@@ -73,7 +74,7 @@ fn an_activity_intent_far_from_any_road_still_builds() {
     let n = 128;
     let (height, water) = (vec![0.0; n * n], vec![0u8; n * n]);
     let surface = Surface { geometry: None, width: 9000.0, n, height: &height, water: &water, interpolation: Default::default(),};
-    for (template, roads) in [("windmill_site", vec![]), ("hardrock_mine", vec![Street { path: vec![Point { x: 300.0, y: 4560.0 }, Point { x: 8700.0, y: 4560.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() }])] {
+    for (template, roads) in [("windmill_site", vec![]), ("hardrock_mine", vec![Street { key: None, path: vec![Point { x: 300.0, y: 4560.0 }, Point { x: 8700.0, y: 4560.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() }])] {
         let mut cfg = LayoutConfig::default();
         cfg.programme.intent = "activity".into();
         cfg.programme.template = template.into();
@@ -100,7 +101,7 @@ fn every_utility_sheet_row_builds_its_yard() {
         cfg.programme.intent = "activity".into();
         cfg.programme.template = template.into();
         let site = Site { key: "row".into(), name: String::new(), population: 500, culture: culture.into(), center: Point { x: 4500.0, y: 4560.0 }, radius: 300.0, neighbours: Vec::new() };
-        let road = Street { path: vec![Point { x: 300.0, y: 4500.0 }, Point { x: 8700.0, y: 4300.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() };
+        let road = Street { key: None, path: vec![Point { x: 300.0, y: 4500.0 }, Point { x: 8700.0, y: 4300.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() };
         let layouts = generate_quarters("row", &[site], &cfg, surface, &[road]).expect("plan");
         let partitions = generate_parcels("row", &layouts, &ParcelConfig::default()).expect("parcels");
         let ok = built_roles(&partitions[0]).iter().any(|r| r == "craft.activity");

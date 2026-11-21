@@ -709,6 +709,7 @@ fn settle(shape: &Shape, obstacles: &[Shape], surface: &Surface<'_>, keep: f64) 
 }
 fn street(path: Vec<Point>, width: f64, rank: usize, role: &str) -> Street {
     Street {
+        key: None,
         widths: vec![width; path.len()],
         path,
         rank,
@@ -1286,6 +1287,7 @@ fn assemble(site: &Site, cfg: &LayoutConfig, kind: Kind, morph: &Morph, roads: &
     let quarters: Vec<Quarter> = shapes
         .iter()
         .map(|s| Quarter {
+            key: None,
             shape: s.clone(),
             phase: 0,
             zone: zone.clone(),
@@ -1296,11 +1298,13 @@ fn assemble(site: &Site, cfg: &LayoutConfig, kind: Kind, morph: &Morph, roads: &
         .iter()
         .enumerate()
         .map(|(i, (s, k))| Block {
+            key: None,
             shape: s.clone(),
             quarter: i,
             kind: (*k).into(),
             axis: plan.axis,
             zone: zone.clone(),
+            fill: None,
             phase: Some(0),
         })
         .collect();
@@ -2287,6 +2291,7 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = Street {
+            key: None,
             path: vec![
                 Point {
                     x: 500.0,
@@ -2343,6 +2348,7 @@ mod tests {
         };
         let p = |x: f64, y: f64| Point { x, y };
         let road = |a: Point, b: Point| Street {
+            key: None,
             path: vec![a, b],
             widths: vec![6.0, 6.0],
             rank: 1,

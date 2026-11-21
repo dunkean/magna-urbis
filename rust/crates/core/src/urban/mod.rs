@@ -79,6 +79,9 @@ use std::sync::OnceLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Street {
+    /// Lineage key of the growth graph edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub path: Vec<Point>,
     pub widths: Vec<f64>,
     pub rank: usize,
@@ -86,6 +89,9 @@ pub struct Street {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Quarter {
+    /// Lineage root of the quarter's growth graph faces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub shape: Shape,
     pub phase: usize,
     #[serde(default = "core_zone")]
@@ -221,6 +227,9 @@ pub struct Attached {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
+    /// Lineage key of the growth graph face.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub shape: Shape,
     pub quarter: usize,
     pub kind: String,
@@ -229,6 +238,12 @@ pub struct Block {
     pub zone: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<usize>,
+    /// Staged occupation set by the growth engine (`programme_fill.rs`): up to
+    /// 1 the share of the block's lots occupied, street lots first; above 1
+    /// every lot is occupied and the excess (up to 2) raises storeys toward
+    /// the culture's limit. `None` (classic) lets demand alone decide.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Layout {

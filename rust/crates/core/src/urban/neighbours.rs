@@ -314,7 +314,7 @@ pub(super) fn roads(site: &Site, roads: &[Street]) -> Option<Vec<Street>> {
     for r in roads {
         match mask.cut_path(&r.path, &r.widths) {
             None => out.push(r.clone()),
-            Some(pieces) => out.extend(pieces.into_iter().map(|(path, widths)| Street { path, widths, rank: r.rank, role: r.role.clone() })),
+            Some(pieces) => out.extend(pieces.into_iter().map(|(path, widths)| Street { key: None, path, widths, rank: r.rank, role: r.role.clone() })),
         }
     }
     out.extend(mask.streets.iter().cloned());
@@ -438,7 +438,7 @@ pub(super) fn enforce(layout: &mut Layout, mask: &Mask, drop_blocks: bool) -> bo
                 Some((path, widths)) => { s.path = path; s.widths = widths; }
                 None => { gone.insert(i); }
             }
-            extra.extend(pieces.map(|(path, widths)| Street { path, widths, rank: s.rank, role: s.role.clone() }));
+            extra.extend(pieces.map(|(path, widths)| Street { key: s.key.clone(), path, widths, rank: s.rank, role: s.role.clone() }));
         }
         let mut i = 0;
         layout.streets.retain(|_| { i += 1; !gone.contains(&(i - 1)) });
@@ -513,7 +513,7 @@ fn join(layout: &mut Layout, mask: &Mask) -> usize {
             if let Some((d, q)) = near_claim(end, JOIN)
                 && d > 0.5 && !crosses_block(end, q)
             {
-                connectors.push(Street { path: vec![end, q], widths: vec![width, width], rank: s.rank, role: s.role.clone() });
+                connectors.push(Street { key: None, path: vec![end, q], widths: vec![width, width], rank: s.rank, role: s.role.clone() });
             }
         }
     }
@@ -535,7 +535,7 @@ fn join(layout: &mut Layout, mask: &Mask) -> usize {
         {
             let s = &layout.streets[i];
             let width = *c.widths.last().unwrap();
-            connectors.push(Street { path: vec![q, end], widths: vec![width, width], rank: s.rank.max(c.rank), role: s.role.clone() });
+            connectors.push(Street { key: None, path: vec![q, end], widths: vec![width, width], rank: s.rank.max(c.rank), role: s.role.clone() });
         }
     }
     let added = connectors.len();
@@ -912,7 +912,7 @@ impl Raster {
                     path.reverse();
                     widths.reverse();
                 }
-                out.push(Street { path, widths, rank: s.rank, role: s.role.clone() });
+                out.push(Street { key: None, path, widths, rank: s.rank, role: s.role.clone() });
             }
         }
         out
@@ -993,7 +993,7 @@ mod tests {
         }
     }
     fn road() -> Street {
-        Street { path: vec![Point { x: 200.0, y: 3000.0 }, Point { x: 5800.0, y: 3000.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() }
+        Street { key: None, path: vec![Point { x: 200.0, y: 3000.0 }, Point { x: 5800.0, y: 3000.0 }], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() }
     }
     fn town(s: &Site, height: &[f32], water: &[u8]) -> Layout {
         let surface = Surface { geometry: None, width: WIDTH, n: 128, height, water, interpolation: Default::default() };
@@ -1124,7 +1124,7 @@ mod tests {
         assert!(blocks.iter().all(|b| g::contains(&land[0], g::centroid(b))));
         let area = g::area(&land[0]);
         assert!(area > 108.0 * 50.0 && area < 120.0 * 62.0, "{area}");
-        let street = Street { path: vec![Point { x: 25.0, y: 25.0 }, Point { x: 25.0, y: 200.0 }], widths: vec![5.0, 5.0], rank: 2, role: "street".into() };
+        let street = Street { key: None, path: vec![Point { x: 25.0, y: 25.0 }, Point { x: 25.0, y: 200.0 }], widths: vec![5.0, 5.0], rank: 2, role: "street".into() };
         let stubs = raster.stubs(&[street]);
         assert_eq!(stubs.len(), 1);
         assert!(stubs[0].path.last().unwrap().y > 60.0);

@@ -88,6 +88,7 @@ fn remove_edges(streets: &mut Vec<Street>, gone: &BTreeSet<(usize, usize)>) {
             if gone.contains(&(i, j)) && !crossing {
                 if path.len() >= 2 {
                     out.push(Street {
+                        key: None,
                         path: std::mem::take(&mut path),
                         widths: std::mem::take(&mut widths),
                         rank: s.rank,
@@ -105,6 +106,7 @@ fn remove_edges(streets: &mut Vec<Street>, gone: &BTreeSet<(usize, usize)>) {
         }
         if path.len() >= 2 {
             out.push(Street {
+                key: None,
                 path,
                 widths,
                 rank: s.rank,
@@ -569,6 +571,7 @@ mod tests {
     use super::*;
     fn road(points: &[(f64, f64)], role: &str) -> Street {
         Street {
+            key: None,
             path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
             widths: vec![4.0; points.len()],
             rank: 2,
@@ -1026,7 +1029,7 @@ pub(super) fn harbour_clearance(layout: &mut Layout, surface: Surface<'_>, popul
             }
             if replacement.is_some() { break; }
         }
-        let street = |path: Vec<Point>, role: &str| Street { widths: vec![width; path.len()], path, rank, role: role.into() };
+        let street = |path: Vec<Point>, role: &str| Street { key: None, widths: vec![width; path.len()], path, rank, role: role.into() };
         if let Some((ends, left, right)) = replacement {
             layout.streets.extend([street(left, "approach"), street(ends.to_vec(), "bridge"), street(right, "approach")]);
         } else if let Some(path) = land_route(a, b) {

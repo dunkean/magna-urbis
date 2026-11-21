@@ -1744,6 +1744,7 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
+            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0, 6.0],
             rank: 1,
