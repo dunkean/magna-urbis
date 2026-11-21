@@ -142,6 +142,16 @@ impl<'a> Driver<'a> {
             ),
             None => harbour::choose_front(&survey, &charter, &specs.harbour),
         };
+        if std::env::var_os("URBAN_PROFILE").is_some() {
+            eprintln!(
+                "  growth.harbour port={} reserved={} fronts={} focus={:?} chosen={:?}",
+                specs.harbour.works.port_town,
+                request.harbour_landing.is_some(),
+                survey.fronts().len(),
+                charter.focus.kind,
+                front.as_ref().map(|f| (f.index, f.at_focus, f.landing))
+            );
+        }
         let road_lines: Vec<Vec<Point>> = request
             .regional_roads
             .iter()

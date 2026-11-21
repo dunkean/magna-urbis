@@ -123,8 +123,19 @@ pub(super) fn build(
         faces.sort_by(|&a, &b| graph.face(a).key.cmp(&graph.face(b).key));
         let outlines: Vec<_> = faces.iter().filter_map(|&id| graph.outline(id)).collect();
         let mut shapes = g::union(&outlines);
-        if shapes.len() != 1 {
-            return Err(format!("Growth quarter {key} has no single outline"));
+        // A quarter whose every face was merged into an older quarter's holds no land of its own.
+        if shapes.is_empty() {
+            super::super::warnings::log_warning_detail(format_args!("Growth quarter {key} holds no face of its own."));
+            continue;
+        }
+        // Faces a later merge gave to an older quarter can leave a quarter in pieces: its
+        // largest piece stands for it, and every face keeps its blocks.
+        if shapes.len() > 1 {
+            super::super::warnings::log_warning_detail(format_args!(
+                "Growth quarter {key} in {} pieces: the largest is its outline.",
+                shapes.len()
+            ));
+            shapes.sort_by(|a, b| g::area(a).total_cmp(&g::area(b)));
         }
         let shape = shapes.pop().unwrap();
         phase.shapes.push(shape.clone());
