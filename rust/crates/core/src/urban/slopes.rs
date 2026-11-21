@@ -280,7 +280,7 @@ fn clip(street: &Street, keep: impl Fn(Point) -> bool) -> Vec<Street> {
     let mut run: Vec<(Point, f64)> = vec![];
     let mut flush = |run: &mut Vec<(Point, f64)>| {
         if run.len() >= 2 {
-            out.push(Street { key: None, path: run.iter().map(|r| r.0).collect(), widths: run.iter().map(|r| r.1).collect(),
+            out.push(Street { path: run.iter().map(|r| r.0).collect(), widths: run.iter().map(|r| r.1).collect(),
                 rank: street.rank, role: street.role.clone() });
         }
         run.clear();
@@ -311,8 +311,8 @@ fn add_ward(layout: &mut Layout, blocks: Vec<(Shape, Point)>, streets: Vec<Stree
     for (shape, axis) in blocks {
         let quarter = layout.quarters.len();
         quarters.push(quarter);
-        layout.quarters.push(Quarter { key: None, shape: shape.clone(), phase, zone: WARD_ZONE.into() });
-        layout.blocks.push(Block { key: None, shape, quarter, kind: "block".into(), axis, zone: WARD_ZONE.into(), fill: None, phase: Some(phase) });
+        layout.quarters.push(Quarter { shape: shape.clone(), phase, zone: WARD_ZONE.into() });
+        layout.blocks.push(Block { shape, quarter, kind: "block".into(), axis, zone: WARD_ZONE.into(), phase: Some(phase) });
     }
     layout.streets.extend(streets);
     if let Some(structure) = &mut layout.structure {
@@ -456,8 +456,8 @@ mod tests {
         let path = vec![Point { x: 2000.0, y: 1400.0 }, Point { x: 2050.0, y: 2600.0 }, Point { x: 2100.0, y: 1400.0 }];
         // A far road the town must not import, beyond its reach.
         let far = vec![Point { x: 100.0, y: 100.0 }, Point { x: 300.0, y: 100.0 }];
-        let roads = vec![Street { key: None, widths: vec![4.0; path.len()], path, rank: 2, role: "regional".into() },
-            Street { key: None, widths: vec![4.0; 2], path: far, rank: 2, role: "regional".into() }];
+        let roads = vec![Street { widths: vec![4.0; path.len()], path, rank: 2, role: "regional".into() },
+            Street { widths: vec![4.0; 2], path: far, rank: 2, role: "regional".into() }];
         let mut layout = empty_layout(&site);
         assert!(extend_frontage(&mut layout, &site, surface, &roads, &[]));
         // Map roads are never copied whole into the town; roads outside it are untouched.
@@ -484,7 +484,7 @@ mod tests {
         let height: Vec<f32> = (0..n * n).map(|i| 10.0 + (i % n) as f32 * 20.0).collect();
         let surface = slope_surface(&height, &vec![0; n * n], n);
         let path = vec![Point { x: 2050.0, y: 1000.0 }, Point { x: 2050.0, y: 3000.0 }];
-        let roads = vec![Street { key: None, widths: vec![4.0; 2], path, rank: 2, role: "regional".into() }];
+        let roads = vec![Street { widths: vec![4.0; 2], path, rank: 2, role: "regional".into() }];
         let a = Site { key: "a".into(), name: String::new(), population: 10_000, culture: "byzantine-greek".into(),
             center: Point { x: 2000.0, y: 1700.0 }, radius: 735.0,
             neighbours: Vec::new(), };
@@ -494,8 +494,8 @@ mod tests {
         let quay = Shape { outer: vec![Point { x: 2000.0, y: 1300.0 }, Point { x: 2100.0, y: 1300.0 },
             Point { x: 2100.0, y: 1340.0 }, Point { x: 2000.0, y: 1340.0 }], holes: vec![] };
         let mut la = empty_layout(&a);
-        la.blocks.push(Block { key: None, shape: reserve.clone(), quarter: 0, kind: "reserve".into(), axis: Point { x: 1.0, y: 0.0 },
-            zone: "core".into(), fill: None, phase: Some(0) });
+        la.blocks.push(Block { shape: reserve.clone(), quarter: 0, kind: "reserve".into(), axis: Point { x: 1.0, y: 0.0 },
+            zone: "core".into(), phase: Some(0) });
         la.structure = Some(super::super::UrbanStructure { quays: vec![super::super::macroplan::harbour::Quay {
             kind: "quay".into(), shape: quay.clone(), deck_z_m: 0.0, material: "stone".into() }], ..Default::default() });
         let mut lb = empty_layout(&b);

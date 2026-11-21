@@ -168,7 +168,6 @@ mod tests {
         };
         let cfg: LayoutConfig = serde_json::from_str(include_str!("fixtures/small-layout-config.json")).unwrap();
         let roads = vec![Street {
-            key: None,
             path: vec![Point { x: 0.0, y: 3000.0 }, Point { x: 6000.0, y: 3000.0 }],
             widths: vec![8.0; 2], rank: 1, role: "regional".into(),
         }];

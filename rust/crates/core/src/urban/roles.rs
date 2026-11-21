@@ -9,7 +9,7 @@ use super::geometry as g;
 use super::programme::BlockEnvironment;
 use super::{Layout, Point, QuarterOverride, UrbanDistrict};
 use serde::Deserialize;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -375,11 +375,19 @@ fn density_scale(e: &ServiceEntry, density: f64, nucleus: bool, required: bool) 
         None
     }
 }
-/// Merge the culture's service overrides and place its nucleus in the programme.
-pub(super) fn service_entries(
+/// Combinable effects are applied once per catalogue entry. Shared count
+/// effects use their maximum; no Cartesian duplicate service demands.
+/// A culture's own entries (`cultureServices`) replace the family entry of
+/// the same role. `density` divides `per` and the population thresholds (by
+/// its square root) and multiplies `max`; singular entries (per = 0) stay one.
+pub fn services_scaled(
     culture: &str,
-    pop: f64,
-) -> (Vec<Cow<'static, ServiceEntry>>, Option<&'static String>) {
+    population: u32,
+    functions: super::programme::ProgrammeFunctions,
+    density: f64,
+) -> Vec<ServiceNeed> {
+    use std::borrow::Cow;
+    let pop = f64::from(population);
     let cat = catalogue();
     let mut entries: Vec<Cow<'static, ServiceEntry>> = cat
         .families
@@ -439,22 +447,6 @@ pub(super) fn service_entries(
             );
         }
     }
-    (entries, nucleus_role)
-}
-
-/// Combinable effects are applied once per catalogue entry. Shared count
-/// effects use their maximum; no Cartesian duplicate service demands.
-/// A culture's own entries (`cultureServices`) replace the family entry of
-/// the same role. `density` divides `per` and the population thresholds (by
-/// its square root) and multiplies `max`; singular entries (per = 0) stay one.
-pub fn services_scaled(
-    culture: &str,
-    population: u32,
-    functions: super::programme::ProgrammeFunctions,
-    density: f64,
-) -> Vec<ServiceNeed> {
-    let pop = f64::from(population);
-    let (entries, nucleus_role) = service_entries(culture, pop);
     entries
         .into_iter()
         .filter_map(|e| {
@@ -1841,7 +1833,6 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
-            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0; 2],
             rank: 1,
@@ -2044,7 +2035,6 @@ mod tests {
             let c = width / 2.0;
             let roads = [
                 Street {
-                    key: None,
                     path: vec![
                         Point { x: 200.0, y: c },
                         Point {
@@ -2057,7 +2047,6 @@ mod tests {
                     role: "regional".into(),
                 },
                 Street {
-                    key: None,
                     path: vec![
                         Point { x: c, y: 200.0 },
                         Point {
@@ -2140,7 +2129,6 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
-            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0; 2],
             rank: 1,
@@ -2298,7 +2286,6 @@ parcels {} demands {:?}; quarters {quarters_ms} ms, parcels+alloc {parcels_ms} m
             interpolation: Default::default(),
         };
         let road = |a: (f64, f64), b: (f64, f64)| Street {
-            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0; 2],
             rank: 1,

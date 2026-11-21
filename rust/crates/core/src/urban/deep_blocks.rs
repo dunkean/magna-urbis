@@ -203,7 +203,6 @@ pub(super) fn run(layout: &mut Layout) -> usize {
                 Some((path, pieces)) => {
                     lanes += 1;
                     layout.streets.push(Street {
-                        key: None,
                         widths: vec![width; path.len()],
                         path,
                         rank: 3,
@@ -233,7 +232,6 @@ mod tests {
 
     fn road(a: (f64, f64), b: (f64, f64)) -> Street {
         Street {
-            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![4.0; 2],
             rank: 2,
@@ -247,15 +245,14 @@ mod tests {
         let block = g::rectangle(0.0, 0.0, 300.0, 160.0);
         let (l, r, t, b) = (-2.0, 302.0, 162.0, -2.0);
         let mut layout = Layout {
-            regional_road_result: None,
             config: Some(LayoutConfig::default()),
             programme: None,
             key: "t".into(),
             culture: "european-organic".into(),
             center: Point { x: 150.0, y: 80.0 },
-            quarters: vec![Quarter { key: None, shape: g::rectangle(-50.0, -50.0, 350.0, 210.0), phase: 0, zone: "core".into() }],
+            quarters: vec![Quarter { shape: g::rectangle(-50.0, -50.0, 350.0, 210.0), phase: 0, zone: "core".into() }],
             streets: vec![road((l, b), (r, b)), road((r, b), (r, t)), road((r, t), (l, t)), road((l, t), (l, b))],
-            blocks: vec![Block { key: None, shape: block, quarter: 0, kind: "block".into(), axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), fill: None, phase: None }],
+            blocks: vec![Block { shape: block, quarter: 0, kind: "block".into(), axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), phase: None }],
             warnings: vec![],
             enclosures: vec![],
             phases: vec![],

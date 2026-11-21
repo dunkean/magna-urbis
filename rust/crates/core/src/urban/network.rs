@@ -718,7 +718,6 @@ pub(super) fn resolve_exits(
     let mut served = BTreeSet::new();
     let mut feeders = 0;
     let make = |path: Vec<Point>, w: f64, role: &str| Street {
-        key: None,
         widths: vec![w; path.len()],
         path,
         rank: 2,
@@ -1044,7 +1043,7 @@ pub(super) fn ensure_regional_access(layout: &mut super::Layout, roads: &[Street
         let mut planner = routing::RoutePlanner::new(surface,(p.x.min(q.x)-pad,p.y.min(q.y)-pad,p.x.max(q.x)+pad,p.y.max(q.y)+pad));
         if let Some(path) = planner.route(p,q,cfg.max_lane_grade)
             && !path.windows(2).any(|w|curtains.crosses(w[0],w[1])) {
-            layout.streets.push(Street {key: None, widths:vec![2.5;path.len()],path,rank:3,role:"outbound".into()});
+            layout.streets.push(Street {widths:vec![2.5;path.len()],path,rank:3,role:"outbound".into()});
             layout.warnings.push(warnings::regional_access_restored());
             return;
         }
@@ -1154,7 +1153,7 @@ pub(super) fn join_bank_networks(layout: &mut super::Layout, surface: super::Sur
         if ra == rb { continue; }
         set[ra] = rb;
         let (_, path) = links[n].take().unwrap();
-        layout.streets.push(Street { key: None, widths: vec![3.5; path.len()], path, rank: 3, role: "street".into() });
+        layout.streets.push(Street { widths: vec![3.5; path.len()], path, rank: 3, role: "street".into() });
     }
 }
 
@@ -1403,7 +1402,6 @@ fn inner_ring(
                     kept += length;
                     used.extend([(a.street, a.end), (b.street, b.end)]);
                     sections.push(Street {
-                        key: None,
                         widths: vec![lane.width; p.len()],
                         path: p,
                         rank: 2,
@@ -1423,7 +1421,6 @@ fn inner_ring(
                             kept += spur.windows(2).map(|w| distance(w[0], w[1])).sum::<f64>();
                             used.insert(end);
                             sections.push(Street {
-                                key: None,
                                 widths: vec![lane.width; spur.len()],
                                 path: spur,
                                 rank: 2,
@@ -1626,7 +1623,6 @@ pub(super) fn enclosure_lanes(
                     path.push(b);
                 } else if path.len() >= 2 {
                     streets.push(Street {
-                        key: None,
                         widths: vec![w; path.len()],
                         path: std::mem::take(&mut path),
                         rank: 2,
@@ -1636,7 +1632,6 @@ pub(super) fn enclosure_lanes(
             }
             if path.len() >= 2 {
                 streets.push(Street {
-                    key: None,
                     widths: vec![w; path.len()],
                     path,
                     rank: 2,
@@ -1900,7 +1895,6 @@ pub(super) fn hierarchy(
                 widths
             };
             result.push(Street {
-                key: None,
                 path,
                 widths,
                 rank,
@@ -2253,7 +2247,6 @@ fn planarize(streets: &mut Vec<Street>, radius: f64) {
                 widths.push(width(s, j + 1));
             } else if path.len() >= 2 {
                 unique.push(Street {
-                    key: None,
                     path: std::mem::take(&mut path),
                     widths: std::mem::take(&mut widths),
                     rank: s.rank,
@@ -2263,7 +2256,6 @@ fn planarize(streets: &mut Vec<Street>, radius: f64) {
         }
         if path.len() >= 2 {
             unique.push(Street {
-                key: None,
                 path,
                 widths,
                 rank: s.rank,
@@ -3250,7 +3242,6 @@ fn footbridges(streets: &mut Vec<Street>, surface: super::Surface<'_>, max_grade
         };
         let w = end_width(a.0, a.1).min(end_width(b.0, b.1));
         streets.push(Street {
-            key: None,
             path: vec![a.2, b.2],
             widths: vec![w; 2],
             rank: streets[a.0].rank.max(streets[b.0].rank),
@@ -3395,13 +3386,13 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
                 while b < next.min(to + 200.0) && (!land(at(b)) || !routing::segment_clear(surface, at(b), at((b + step).min(next)), max_grade)) { b = (b + step).min(next); }
             }
             if a > cursor + EPS { let path = slice(cursor, a);
-                dry.push(Street { key: None, widths: vec![w; path.len()], path, rank: s.rank, role: role.into() });
+                dry.push(Street { widths: vec![w; path.len()], path, rank: s.rank, role: role.into() });
             }
             requests.push(Request { a: at(a), b: at(b), middle: at((from + to) * 0.5), width: w, rank: s.rank, path: slice(a, b), retain, crossing: s.role == "bridge", causeway: s.role == "causeway", surface });
             cursor = b;
         }
         if cursor < total - EPS { let path = slice(cursor, total);
-            dry.push(Street { key: None, widths: vec![w; path.len()], path, rank: s.rank, role: role.into() });
+            dry.push(Street { widths: vec![w; path.len()], path, rank: s.rank, role: role.into() });
         }
     }
     laps.lap("split");
@@ -3444,7 +3435,7 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
     };
     let bank_street = |surface: super::Surface<'_>, path: Vec<Point>, width: f64, rank: usize| {
         let role = if routing::path_clear(surface, &path, max_grade) { "approach" } else { "causeway" };
-        Street { key: None, widths: vec![width; path.len()], path, rank, role: role.into() }
+        Street { widths: vec![width; path.len()], path, rank, role: role.into() }
     };
     // Old deck records can contain long dry approaches and their junctions.
     // Keep that bank network available while choosing the shorter wet span.
@@ -3547,13 +3538,13 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
         });
         if on_platform {
             // A supported quay joint is a causeway, not a second quay branch.
-            decks.push(Street { key: None, widths: vec![r.width; r.path.len()], path: r.path, rank: r.rank, role: "causeway".into() });
+            decks.push(Street { widths: vec![r.width; r.path.len()], path: r.path, rank: r.rank, role: "causeway".into() });
             continue;
         }
         // A deck spans running water only. A causeway culture's raised road
         // over a lake or the sea stays the causeway it was routed as.
         if r.causeway && r.path.windows(2).any(|w| crossings::over_still_water(channel_surface, w[0], w[1])) {
-            decks.push(Street { key: None, widths: vec![r.width; r.path.len()], path: r.path, rank: r.rank, role: "causeway".into() });
+            decks.push(Street { widths: vec![r.width; r.path.len()], path: r.path, rank: r.rank, role: "causeway".into() });
             continue;
         }
         let middle = if surface.wet(r.middle) { r.middle } else {
@@ -3606,7 +3597,7 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
                 for (a, b) in routing::water_intervals(surface, w[0], w[1]).into_iter().chain(std::iter::once((1.0, 1.0))) {
                     if a - cursor > 1e-6 {
                         let path = vec![lerp(w[0], w[1], cursor), lerp(w[0], w[1], a)];
-                        dry.push(Street { key: None, widths: vec![r.width; 2], path, rank: r.rank, role: "approach".into() });
+                        dry.push(Street { widths: vec![r.width; 2], path, rank: r.rank, role: "approach".into() });
                     }
                     cursor = b;
                 }
@@ -3676,7 +3667,7 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
         for path in paths.unwrap().into_iter().filter(|p| p.len() >= 2) {
             dry.push(bank_street(surface, path, r.width, r.rank));
         }
-        decks.push(Street { key: None, path: ends.to_vec(), widths: vec![r.width; 2], rank: r.rank, role: "bridge".into() });
+        decks.push(Street { path: ends.to_vec(), widths: vec![r.width; 2], rank: r.rank, role: "bridge".into() });
     }
     laps.lap("requests");
     dry.extend(decks); *streets = dry;
@@ -3823,10 +3814,10 @@ fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], banks: &Grap
         let rank = a.rank.max(b.rank).max(2);
         for k in 0..2 {
             if distance(joints[k], ends[k]) > 0.05 {
-                added.push(Street { key: None, path: vec![joints[k], ends[k]], widths: vec![width; 2], rank, role: "approach".into() });
+                added.push(Street { path: vec![joints[k], ends[k]], widths: vec![width; 2], rank, role: "approach".into() });
             }
         }
-        added.push(Street { key: None, path: ends.to_vec(), widths: vec![width; 2], rank, role: "bridge".into() });
+        added.push(Street { path: ends.to_vec(), widths: vec![width; 2], rank, role: "bridge".into() });
         middles.push((lerp(ends[0], ends[1], 0.5), bank_pair));
     }
     laps.lap("decks");
@@ -3853,7 +3844,7 @@ fn dry_road_segments(land: &[Street], roads: &[Street], surface: super::Surface<
         .filter(|s| !matches!(s.role.as_str(), "bridge" | "ford" | "causeway"))
         .flat_map(|s| (1..s.path.len()).map(|i| (s.path[i - 1], s.path[i], width(s, i - 1))).collect::<Vec<_>>())
         .filter(|&(a, b, _)| inside(a) && inside(b) && distance(a, b) > EPS && super::routing::water_intervals(surface, a, b).is_empty())
-        .map(|(a, b, w)| Street { key: None, path: vec![a, b], widths: vec![w; 2], rank: 0, role: "regional".into() })
+        .map(|(a, b, w)| Street { path: vec![a, b], widths: vec![w; 2], rank: 0, role: "regional".into() })
         .collect()
 }
 /// The dry road pieces vertex `i` of `s` meets: where their carriageways meet
@@ -3958,7 +3949,7 @@ pub(super) fn tie_banks_to_road(layout: &mut super::Layout, roads: &[Street], su
                 planner.route(p, q, cfg.max_lane_grade).filter(|path| clear(path))
             };
             let Some(path) = path else { continue };
-            layout.streets.push(Street { key: None, widths: vec![2.5; path.len()], path, rank: 3, role: "outbound".into() });
+            layout.streets.push(Street { widths: vec![2.5; path.len()], path, rank: 3, role: "outbound".into() });
             break;
         }
     }
@@ -4131,7 +4122,7 @@ fn select_bridges_inner(layout: &mut super::Layout, population: u32, surface: su
                 kept.push(w[1]); left -= length;
             }
             if left <= 80.0 && routing::path_clear(surface, &kept, f64::INFINITY) {
-                outward.push(Street { key: None, widths: vec![width(s, 0); kept.len()], path: kept, rank: s.rank, role: s.role.clone() });
+                outward.push(Street { widths: vec![width(s, 0); kept.len()], path: kept, rank: s.rank, role: s.role.clone() });
             }
         }
     }
@@ -4667,7 +4658,7 @@ fn dry_streets(streets: &mut Vec<Street>, culture: &str, population: u32, surfac
             if cut_a && let Some(&j) = inside.first() && j - a < STUB { a = j; }
             if b - a <= 1e-6 { return; }
             let (path, widths) = slice(a, b);
-            out.push(Street { key: None, path, widths, rank: s.rank, role: s.role.clone() });
+            out.push(Street { path, widths, rank: s.rank, role: s.role.clone() });
         };
         let index = streets.len();
         let (mut cursor, mut cut) = (0.0, false);
@@ -4679,14 +4670,14 @@ fn dry_streets(streets: &mut Vec<Street>, culture: &str, population: u32, surfac
                 Cut::Trim => {}
                 Cut::Deck => {
                     let role = if b - a - 2.0 * ABUTMENT <= ford { "ford" } else { "bridge" };
-                    streets.push(Street { key: None, path: vec![at(a).0, at(b).0], widths: vec![wide; 2], rank: s.rank, role: role.into() });
+                    streets.push(Street { path: vec![at(a).0, at(b).0], widths: vec![wide; 2], rank: s.rank, role: role.into() });
                 }
                 Cut::Platform if b - a > 1e-6 => {
                     // `StiltGround::walkways`: a regional way stands on a pier, a street on a boardwalk.
                     let regional = s.rank == 0 || matches!(s.role.as_str(), "regional" | "road" | "outbound");
                     let (path, widths) = slice(a, b);
                     let widths: Vec<f64> = widths.into_iter().map(|w| if regional { w } else { w.min(3.0) }).collect();
-                    streets.push(Street { key: None, path, widths, rank: s.rank, role: (if regional { "pier" } else { "boardwalk" }).into() });
+                    streets.push(Street { path, widths, rank: s.rank, role: (if regional { "pier" } else { "boardwalk" }).into() });
                 }
                 Cut::Platform => {}
             }
@@ -4821,7 +4812,6 @@ mod tests {
             interpolation: Default::default(),
         };
         let quarter = super::super::Quarter {
-            key: None,
             shape: super::super::geometry::rectangle(80.0, 80.0, 320.0, 320.0),
             phase: 0,
             zone: "core".into(),
@@ -4895,13 +4885,11 @@ mod tests {
         // Walled town (x < 400) and an open faubourg against its east side.
         let quarters = [
             Quarter {
-                key: None,
                 shape: g::rectangle(200.0, 200.0, 400.0, 600.0),
                 phase: 0,
                 zone: "core".into(),
             },
             Quarter {
-                key: None,
                 shape: g::rectangle(400.0, 200.0, 640.0, 600.0),
                 phase: 1,
                 zone: "edge".into(),
@@ -5020,7 +5008,6 @@ mod tests {
             })
             .remove(0);
         let quarters = [Quarter {
-            key: None,
             shape,
             phase: 1,
             zone: "edge".into(),
@@ -5118,7 +5105,6 @@ mod tests {
             ..Default::default()
         };
         let quarters = [Quarter {
-            key: None,
             shape: g::rectangle(195.0, 195.0, 400.0, 605.0),
             phase: 1,
             zone: "core".into(),
@@ -5213,7 +5199,6 @@ mod tests {
             ..Default::default()
         };
         let quarters = [Quarter {
-            key: None,
             shape: g::rectangle(195.0, 195.0, 400.0, 605.0),
             phase: 1,
             zone: "core".into(),
@@ -5283,7 +5268,6 @@ mod tests {
             ..Default::default()
         };
         let mut streets = vec![Street {
-            key: None,
             path: vec![Point { x: 300.0, y: 400.0 }, Point { x: 520.0, y: 400.0 }],
             widths: vec![9.0, 9.0],
             rank: 0,
@@ -5303,7 +5287,6 @@ mod tests {
 
     fn street(points: &[(f64, f64)], role: &str) -> Street {
         Street {
-            key: None,
             path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
             widths: vec![5.0; points.len()],
             rank: 2,
@@ -5336,9 +5319,8 @@ mod tests {
         })).unwrap();
         layout.streets = streets;
         layout.blocks = [(810.0, 100.0, 890.0, 700.0), (1110.0, 100.0, 1190.0, 700.0)].iter().map(|&(a, b, c, d)| Block {
-            key: None,
             shape: g::rectangle(a, b, c, d), quarter: 0, kind: "block".into(),
-            axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), fill: None, phase: None,
+            axis: Point { x: 1.0, y: 0.0 }, zone: "core".into(), phase: None,
         }).collect();
         select_bridges(&mut layout, 500, surface, &[]);
         let decks: Vec<_> = layout.streets.iter().filter(|s| s.role == "bridge").collect();
@@ -5385,7 +5367,6 @@ mod tests {
             interpolation: Default::default(),
         };
         let quarter = Quarter {
-            key: None,
             shape: g::rectangle(200.0, 200.0, 400.0, 400.0),
             phase: 0,
             zone: "core".into(),
@@ -5908,7 +5889,7 @@ mod v7_access_tests {
             "streets":[{"path":[{"x":600.,"y":400.},{"x":600.,"y":600.}],"widths":[4.],"rank":2,"role":"street"}]
         })).unwrap();
         let original = serde_json::to_value(&layout.streets[0]).unwrap();
-        let roads = [Street {key: None, path:vec![Point{x:100.,y:1.},Point{x:100.,y:999.}],widths:vec![6.],rank:1,role:"regional".into()}];
+        let roads = [Street {path:vec![Point{x:100.,y:1.},Point{x:100.,y:999.}],widths:vec![6.],rank:1,role:"regional".into()}];
         let height = vec![10.;32*32];let water = vec![0;32*32];
         let surface = super::super::Surface {geometry:None,width:1000.,n:32,height:&height,water:&water, interpolation: Default::default(),};
         ensure_regional_access(&mut layout,&roads,surface,&Default::default());

@@ -19,25 +19,21 @@ fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shape {
 /// Two 120 × 30 m blocks along one street, in one quarter.
 fn strip() -> Layout {
     let block = |x: f64| Block {
-        key: None,
         shape: rect(x, 0.0, x + 120.0, 30.0),
         quarter: 0,
         kind: "block".into(),
         axis: Point { x: 1.0, y: 0.0 },
         zone: "edge".into(),
-        fill: None,
         phase: None,
     };
     Layout {
-        regional_road_result: None,
         config: Some(LayoutConfig::default()),
         programme: None,
         key: "block-edits".into(),
         culture: "european-organic".into(),
         center: Point { x: 0.0, y: 0.0 },
-        quarters: vec![Quarter { key: None, shape: rect(-500.0, -500.0, 500.0, 500.0), phase: 0, zone: "edge".into() }],
+        quarters: vec![Quarter { shape: rect(-500.0, -500.0, 500.0, 500.0), phase: 0, zone: "edge".into() }],
         streets: vec![Street {
-            key: None,
             path: vec![Point { x: -10.0, y: -3.0 }, Point { x: 260.0, y: -3.0 }],
             widths: vec![6.0; 2],
             rank: 1,

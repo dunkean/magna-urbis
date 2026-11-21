@@ -306,7 +306,7 @@ mod tests {
         Surface { geometry, width: W, n: N, height, water, interpolation: Default::default() }
     }
     fn road(points: &[(f64, f64)]) -> Street {
-        Street { key: None, path: points.iter().map(|&(x, y)| pt(x, y)).collect(), widths: vec![6.0; points.len()], rank: 1, role: "regional".into() }
+        Street { path: points.iter().map(|&(x, y)| pt(x, y)).collect(), widths: vec![6.0; points.len()], rank: 1, role: "regional".into() }
     }
 
     /// Walls review 16/11 (Underdark): a town in a chamber with three entrances is closed by three

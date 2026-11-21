@@ -6,7 +6,7 @@ fn observed(shape: &Shape, streets: &[Street]) -> bool {
  let reach=streets.iter().flat_map(|s|s.widths.iter()).fold(0_f64,|a,&w|a.max(w))*0.5+2.;
  block_boundary_served(shape,streets,&all,reach)
 }
-fn street(a:Point,b:Point)->Street { Street {key: None, path:vec![a,b],widths:vec![6.,6.],rank:1,role:"street".into()} }
+fn street(a:Point,b:Point)->Street { Street {path:vec![a,b],widths:vec![6.,6.],rank:1,role:"street".into()} }
 fn baseline()->Layout {serde_json::from_slice::<Vec<Layout>>(include_bytes!("fixtures/pnw-ribbon-only-layout.json")).unwrap().remove(0)}
 #[test]
 fn real_pnw_carved_hole_faces_the_retained_native_street() {

@@ -76,10 +76,6 @@ pub(in super::super) struct Harbour {
     /// Lagoon towns line every shore and canal with quays (fondamenta).
     pub fondamenta: bool,
 }
-
-pub(in super::super) const HARBOUR_REACH_MIN: f64 = 1000.0;
-pub(in super::super) const MOLE_POPULATION_MIN: u32 = 6000;
-
 impl Default for Harbour {
     fn default() -> Self {
         Self {
@@ -170,7 +166,7 @@ pub(in super::super) fn sited(
     } else {
         cfg.max_street_grade
     };
-    let search = (2.5 * site.radius).max(HARBOUR_REACH_MIN);
+    let search = (2.5 * site.radius).max(1000.0);
     // A port is supplied from its town over land. A flat offshore island is
     // never a substitute for an inaccessible mainland coast, even if it has
     // more room. Reuse one terrain router for the shortlisted bank candidates.
@@ -847,7 +843,6 @@ pub(in super::super) fn quays(
             budget -= length(&path);
             laid.push(path.clone());
             streets.push(Street {
-                key: None,
                 widths: vec![width; path.len()],
                 path,
                 rank: 1,
@@ -927,7 +922,7 @@ pub(in super::super) fn seaward(
 /// Narrowest water a quay may front (m): two barges' beams and the way
 /// between them. A stream narrower than this is crossed and banked, not
 /// berthed.
-pub(in super::super) const NAVIGABLE: f64 = 10.0;
+const NAVIGABLE: f64 = 10.0;
 
 /// Width of the water beside a quay (m): across the first water met within
 /// 15 m and two raster cells of the path, square to it, at a quarter, half and three quarters of
@@ -1210,7 +1205,6 @@ fn landing_streets(
             joints.push((s, p));
             if d > 1.0 {
                 links.push(Street {
-                    key: None,
                     path: vec![p, q],
                     widths: vec![4.0; 2],
                     rank: 2,
@@ -1295,7 +1289,7 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
     let mut own: Vec<(Point, Point)> = vec![];
     let mut roots: Vec<Point> = vec![];
     // Moles first: they claim the best front.
-    if moles && (h.basin || !h.fondamenta) && !small && population >= f64::from(MOLE_POPULATION_MIN) {
+    if moles && (h.basin || !h.fondamenta) && !small && population >= 6000.0 {
         let best = quays
             .iter()
             .filter(|q|front_water(surface,&q.path).is_some_and(|(kind,_)|kind=="sea"))
@@ -1338,7 +1332,6 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
                         own.extend(path.windows(2).map(|w| (w[0], w[1])));
                         roots.push(path[0]);
                         out.push(Street {
-                            key: None,
                             widths: vec![(population.sqrt() * 0.08).clamp(3.0, 12.0); path.len()],
                             path,
                             rank: 2,
@@ -1420,7 +1413,6 @@ fn works_with_minimum(streets: &[Street], surface: Surface<'_>, site: &Site, cul
             roots.push(p);
             piers += 1;
             out.push(Street {
-                key: None,
                 path: vec![p, end],
                 widths: vec![if landing { 3.0 } else { 5.0 }; 2],
                 rank: 3,
@@ -1617,7 +1609,7 @@ mod tests {
     fn timber_landings_are_small_and_all_platforms_need_a_bank_connection() {
         let (height, water) = coast(256);
         let surface = Surface { geometry: None, width: 256.0, n: 256, height: &height, water: &water, interpolation: Default::default() };
-        let street = |a, b, role: &str| Street { key: None, path: vec![a, b], widths: vec![6.0; 2], rank: 3, role: role.into() };
+        let street = |a, b, role: &str| Street { path: vec![a, b], widths: vec![6.0; 2], rank: 3, role: role.into() };
         let streets = vec![
             // A pier joins one offshore quay, a boardwalk joins the other.
             street(Point { x: 140.0, y: 100.0 }, Point { x: 80.0, y: 100.0 }, "pier"),
@@ -1678,7 +1670,7 @@ mod tests {
         let mut building_need=vec![];
         for pop in [500,10_000] {
             let site=Site {key:"scale".into(),name:String::new(),population:pop,culture:"hanseatic".into(),center:Point{x:180.,y:128.},radius:120., neighbours: Vec::new()};
-            let mut streets=vec![Street {key: None, path:vec![Point{x:180.,y:4.},Point{x:180.,y:252.}],widths:vec![5.;2],rank:1,role:"street".into()}];
+            let mut streets=vec![Street {path:vec![Point{x:180.,y:4.},Point{x:180.,y:252.}],widths:vec![5.;2],rank:1,role:"street".into()}];
             quays(std::slice::from_ref(&domain),&mut streets,surface,&cfg,&site,"hanseatic",true);
             let metres:f64=streets.iter().filter(|s|s.role=="quay").map(|s|length(&s.path)).sum();
             // A village keeps a short landing (quay_budget), a town a real front.
@@ -1717,7 +1709,7 @@ mod tests {
                 center: Point { x: 1500.0, y: 1400.0 }, radius: 480.0,
                 neighbours: Vec::new(), };
             let cfg = LayoutConfig { site_archetypes: std::collections::BTreeMap::from([("port-10k".into(), if river { "bridge" } else { "harbor" }.into())]), ..LayoutConfig::default() };
-            let roads = [Street { key: None, path: vec![Point { x: 100.0, y: 1400.0 }, Point { x: 1690.0, y: 1400.0 }], widths: vec![7.0; 2], rank: 1, role: "regional".into() }];
+            let roads = [Street { path: vec![Point { x: 100.0, y: 1400.0 }, Point { x: 1690.0, y: 1400.0 }], widths: vec![7.0; 2], rank: 1, role: "regional".into() }];
             let layouts = generate_quarters("port-invariant", &[site], &cfg, surface, &roads).unwrap();
             let l = &layouts[0];
             let platforms = &l.structure.as_ref().unwrap().quays;
@@ -1833,7 +1825,6 @@ mod tests {
             holes: vec![],
         });
         let road = Street {
-            key: None,
             path: vec![Point { x: 175.0, y: 10.0 }, Point { x: 175.0, y: 246.0 }],
             widths: vec![5.0; 2],
             rank: 1,
@@ -1935,7 +1926,6 @@ mod tests {
         let mut cfg = LayoutConfig::default();
         cfg.programme.functions = Some(crate::urban::programme::ProgrammeFunctions { port: 1.0, ..Default::default() });
         let road = Street {
-            key: None,
             path: vec![Point { x: 175.0, y: 42.0 }, Point { x: 175.0, y: 214.0 }],
             widths: vec![5.0; 2],
             rank: 1,
@@ -1977,7 +1967,7 @@ mod tests {
         // quay set back behind it, its paving spread across the road.
         let water: Vec<u8> = (0..n * n).map(|i| if ((i % n) as f64 + 0.5) * 4.0 >= 116.0 && ((i % n) as f64 + 0.5) * 4.0 < 140.0 { 3 } else { 0 }).collect();
         let surface = Surface { geometry: None, width: 256.0, n, height: &height, water: &water, interpolation: Default::default() };
-        let bank = Street { key: None, path: vec![Point { x: 143.0, y: 30.0 }, Point { x: 143.0, y: 226.0 }], widths: vec![5.0; 2], rank: 2, role: "approach".into() };
+        let bank = Street { path: vec![Point { x: 143.0, y: 30.0 }, Point { x: 143.0, y: 226.0 }], widths: vec![5.0; 2], rank: 2, role: "approach".into() };
         let mut streets = vec![road.clone(), bank];
         quays(&[g::rectangle(140.0, 40.0, 210.0, 216.0)], &mut streets, surface, &cfg, &site, "european-organic", true);
         assert!(!streets.iter().any(|s| s.role == "quay"), "a quay behind the bank road");

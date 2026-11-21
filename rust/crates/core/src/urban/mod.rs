@@ -65,7 +65,6 @@ mod routing;
 mod trim;
 mod slopes;
 mod street_graph;
-mod town_adapter;
 mod widths;
 pub(crate) mod warnings;
 pub mod neighbours;
@@ -73,7 +72,6 @@ mod zone_blend;
 
 use crate::rng::Rng;
 pub use magna_urbis_geom::{Point, Shape};
-use magna_urbis_town::RoadSource;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -81,30 +79,13 @@ use std::sync::OnceLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Street {
-    /// Lineage key of the growth graph edge.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
     pub path: Vec<Point>,
     pub widths: Vec<f64>,
     pub rank: usize,
     pub role: String,
 }
-
-/// A street in a layout request, with optional provenance from the regional network.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LayoutRoad {
-    #[serde(flatten)]
-    pub street: Street,
-    #[serde(default)]
-    pub regional_source: Option<RoadSource>,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Quarter {
-    /// Lineage root of the quarter's growth graph faces.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
     pub shape: Shape,
     pub phase: usize,
     #[serde(default = "core_zone")]
@@ -240,9 +221,6 @@ pub struct Attached {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
-    /// Lineage key of the growth graph face.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
     pub shape: Shape,
     pub quarter: usize,
     pub kind: String,
@@ -251,12 +229,6 @@ pub struct Block {
     pub zone: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<usize>,
-    /// Staged occupation set by the growth engine (`programme_fill.rs`): up to
-    /// 1 the share of the block's lots occupied, street lots first; above 1
-    /// every lot is occupied and the excess (up to 2) raises storeys toward
-    /// the culture's limit. `None` (classic) lets demand alone decide.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fill: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Layout {
@@ -270,9 +242,6 @@ pub struct Layout {
     pub center: Point,
     pub quarters: Vec<Quarter>,
     pub streets: Vec<Street>,
-    /// Regional connections through this town in source-segment stations.
-    #[serde(default, rename = "regionalRoadResult", skip_serializing_if = "Option::is_none")]
-    pub regional_road_result: Option<Vec<magna_urbis_town::export::RoadResult>>,
     pub blocks: Vec<Block>,
     pub warnings: Vec<String>,
     #[serde(default)]
@@ -603,8 +572,6 @@ pub struct Site {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct LayoutConfig {
-    /// Chooses the `classic` or `growth` town layout engine.
-    pub engine: String,
     pub programme: ProgrammeContext,
     #[serde(default = "culture_axis")]
     pub axis_alignment: String,
@@ -980,7 +947,6 @@ pub struct QuarterOverride {
 impl Default for LayoutConfig {
     fn default() -> Self {
         Self {
-            engine: "classic".into(),
             programme: ProgrammeContext::default(),
             footprint: FootprintConfig::default(),
             axis_alignment: "regional".into(),
@@ -1640,27 +1606,6 @@ pub fn culture_site_weight(culture: &str, site: &str) -> f64 {
         .as_f64()
         .unwrap_or(1.0)
 }
-/// Default growth harbour survey and quay geometry used during regional placement.
-pub(crate) fn regional_harbour_specs(
-    culture: &str,
-) -> (magna_urbis_town::spec::SurveySpec, magna_urbis_town::spec::HarbourWorksSpec) {
-    use magna_urbis_town::spec::{HarbourWorksSpec, SurveySpec};
-
-    let config = LayoutConfig::default();
-    let stairs = profiles::stairs_allowed(&config, culture);
-    let survey = SurveySpec {
-        harbour_reach: macroplan::harbour::HARBOUR_REACH_MIN,
-        harbour_bank_grade: if stairs { config.max_stair_grade } else { config.max_street_grade },
-        navigable_width: macroplan::harbour::NAVIGABLE,
-        ..SurveySpec::default()
-    };
-    let works = HarbourWorksSpec {
-        port_town: true,
-        quay_width: macroplan::harbour::params(culture).quay_width,
-        ..HarbourWorksSpec::default()
-    };
-    (survey, works)
-}
 /// Land (m²) the town plan budgets for a place of this culture and population (default layout
 /// settings); `None` when the culture's morph does not resolve. Read by settlement placement.
 pub fn planned_land(culture: &str, population: u32) -> Option<f64> {
@@ -1851,30 +1796,6 @@ pub fn generate_quarters(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Result<Vec<Layout>, String> {
-    generate_quarters_with_sources(seed, sites, config, surface, roads, &[])
-}
-
-pub(crate) fn generate_quarters_with_sources(
-    seed: &str,
-    sites: &[Site],
-    config: &LayoutConfig,
-    surface: Surface<'_>,
-    roads: &[Street],
-    sources: &[Option<RoadSource>],
-) -> Result<Vec<Layout>, String> {
-    if !matches!(config.engine.as_str(), "classic" | "growth") {
-        return Err("Invalid town engine: expected classic or growth".into());
-    }
-    let use_growth = config.engine == "growth";
-    if use_growth
-        && roads.iter().zip(sources).any(|(street, source)| {
-            source
-                .as_ref()
-                .is_some_and(|source| !source.matches_vertices(street.path.len()))
-        })
-    {
-        return Err("Invalid regional road source stations".into());
-    }
     if !config.port_detachment.is_finite() || !(0.0..=1.0).contains(&config.port_detachment)
         || config.port_shelter.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
     {
@@ -2019,7 +1940,6 @@ pub(crate) fn generate_quarters_with_sources(
     }
     // Repeated programme/cadastre probes share exact sub-results (`probe_cache`).
     let _probe_scope = probe_cache::Scope::open();
-    let regional_roads = roads;
     let mut crossing_roads = roads.to_vec();
     network::bridge_water(&mut crossing_roads, surface, config.max_street_grade);
     let roads = crossing_roads.as_slice();
@@ -2042,14 +1962,6 @@ pub(crate) fn generate_quarters_with_sources(
         })
         .unwrap_or(sites.len());
     let laid = par::map(&sites[..valid], |_, site| -> Result<Layout, String> {
-        if use_growth
-            && let Some(mut layout) = town_adapter::generate(seed, site, config, surface, regional_roads, sources)
-        {
-            for line in &mut layout.warnings {
-                warnings::shorten_growth(line);
-            }
-            return Ok(layout);
-        }
         // A town with neighbours starts from free ground, and its roads stop at
         // their land and lead on into their edge streets (`neighbours`). Later
         // places it reserves become cores of land it flows around.
@@ -2457,9 +2369,6 @@ pub(crate) fn generate_quarters_with_sources(
             edits::quarter_baseline::retain(&mut layout, baseline);
         }
         layout.claim = neighbours::claim(&layout);
-        if use_growth {
-            layout.warnings.push(warnings::growth_unavailable());
-        }
         Ok(layout)
     });
     let mut out = Vec::with_capacity(laid.len());

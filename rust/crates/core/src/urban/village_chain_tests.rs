@@ -19,7 +19,6 @@ use super::*;
 /// 4.05 m and one of 2.7 m leave the centre (captured `/urban` request, simplified).
 fn junction() -> Vec<Street> {
     let road = |width: f64, points: &[(f64, f64)]| Street {
-        key: None,
         path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
         widths: vec![width; points.len()],
         rank: 2,

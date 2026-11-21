@@ -591,7 +591,7 @@ pub(in super::super) fn divert(e: &Enclosure, kept: &[Passage], shut: &[Passage]
             }
             s.path.insert(ik + 1, end);
         }
-        streets.push(Street { key: None, widths: vec![c.width; line.len()], path: line, rank: c.rank, role: "approach".into() });
+        streets.push(Street { widths: vec![c.width; line.len()], path: line, rank: c.rank, role: "approach".into() });
     }
 }
 
@@ -765,7 +765,7 @@ pub(in super::super) fn drop_dead_gates(layout: &mut super::super::Layout) {
         let (mut path, mut widths): (Vec<Point>, Vec<f64>) = (vec![], vec![]);
         let flush = |path: &mut Vec<Point>, widths: &mut Vec<f64>, out: &mut Vec<Street>| {
             if path.len() >= 2 {
-                out.push(Street { key: None, path: std::mem::take(path), widths: std::mem::take(widths), rank: s.rank, role: s.role.clone() });
+                out.push(Street { path: std::mem::take(path), widths: std::mem::take(widths), rank: s.rank, role: s.role.clone() });
             } else {
                 path.clear();
                 widths.clear();
@@ -823,10 +823,9 @@ mod tests {
     #[test]
     fn walls17_a_gate_leading_nowhere_closes() {
         let path = closed(&g::rectangle(600.0, 600.0, 1400.0, 1400.0).outer);
-        let street = |a: (f64, f64), b: (f64, f64)| Street { key: None, path: vec![pt(a.0, a.1), pt(b.0, b.1)], widths: vec![6.0; 2], rank: 1, role: "street".into() };
+        let street = |a: (f64, f64), b: (f64, f64)| Street { path: vec![pt(a.0, a.1), pt(b.0, b.1)], widths: vec![6.0; 2], rank: 1, role: "street".into() };
         let e = Enclosure { path, kind: "wall".into(), style: "curtain".into(), curtain_width_m: 3.0, gates: vec![pt(1000.0, 600.0), pt(1000.0, 1400.0)], ..Default::default() };
         let mut layout = super::super::super::Layout {
-            regional_road_result: None,
             config: None, programme: None, key: "gates".into(), culture: "european-organic".into(), center: pt(1000.0, 1000.0),
             quarters: vec![], streets: vec![street((1000.0, 1000.0), (1000.0, 580.0)), street((1000.0, 1000.0), (1000.0, 1900.0))],
             blocks: vec![], warnings: vec![], enclosures: vec![e], phases: vec![], archetype: String::new(), structure: None, claim: Default::default(),
@@ -860,7 +859,7 @@ mod tests {
         Surface { geometry: None, width: 2048.0, n: 16, height: &FLAT, water: &DRY, interpolation: Default::default() }
     }
     fn road(points: &[(f64, f64)], rank: usize, role: &str) -> Street {
-        Street { key: None, path: points.iter().map(|&(x, y)| pt(x, y)).collect(), widths: vec![6.0; points.len()], rank, role: role.into() }
+        Street { path: points.iter().map(|&(x, y)| pt(x, y)).collect(), widths: vec![6.0; points.len()], rank, role: role.into() }
     }
     fn circuit(squared: bool, improvisation: f64) -> Circuit<'static> {
         Circuit { pop: 10_000, purpose: "", kind: "wall", curtain_width: 3.0, moat: 0.0, grade: 0.12, squared, key: "gates", improvisation }

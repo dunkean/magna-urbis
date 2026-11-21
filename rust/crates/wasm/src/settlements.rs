@@ -39,11 +39,11 @@ impl SettlementTerrain {
         let sites = serde_json::from_str::<Vec<magna_urbis_core::urban::Site>>(sites)
             .map_err(decode_error)?;
         let cfg = serde_json::from_str(config).map_err(decode_error)?;
-        let roads = serde_json::from_str::<Vec<magna_urbis_core::urban::LayoutRoad>>(roads)
+        let roads = serde_json::from_str::<Vec<magna_urbis_core::urban::Street>>(roads)
             .map_err(decode_error)?;
         let output = self
             .inner
-            .urban_quarters_with_roads(seed, &sites, &cfg, roads)
+            .urban_quarters(seed, &sites, &cfg, &roads)
             .map_err(|e| JsValue::from_str(&e))?;
         serde_json::to_string(&output).map_err(decode_error)
     }

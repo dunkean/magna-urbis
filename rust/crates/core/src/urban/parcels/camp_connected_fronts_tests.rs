@@ -39,7 +39,7 @@ fn generated_public_lanes_on_carved_holes_anchor_camp_paths() {
     block.holes.push(g::rectangle(-12.,-1.,12.,1.).outer.into_iter().rev().collect());
     let mut l=layout_at(0.);l.streets[0].path=vec![Point{x:-11.,y:0.},Point{x:11.,y:0.}];
     l.streets[0].role="lane".into();l.streets[0].rank=1;
-    l.blocks.push(super::super::super::Block{key: None, shape:block,quarter:0,kind:"block".into(),axis:Point{x:1.,y:0.},zone:"village".into(),fill: None, phase:None});
+    l.blocks.push(super::super::super::Block{shape:block,quarter:0,kind:"block".into(),axis:Point{x:1.,y:0.},zone:"village".into(),phase:None});
     assert_eq!(regional_streets(&l),vec![true]);
     l.streets[0].role="track".into();l.streets[0].rank=4;
     assert_eq!(regional_streets(&l),vec![false]);
@@ -49,7 +49,7 @@ fn nearest_street_and_disconnected_local_road_cannot_certify_a_path() {
     let p=g::rectangle(5.,10.,7.,18.);let block=g::rectangle(0.,0.,20.,20.);
     let eligible=front_edges(&p);let mut l=layout_at(-1.);
     assert!(certified(&block,&[p.clone()],&eligible,&l).is_empty(),"the 10m gap is real");
-    l.streets.push(super::super::super::Street{key: None, path:vec![Point{x:0.,y:9.},Point{x:20.,y:9.}],widths:vec![2.,2.],rank:4,role:"collective".into()});
+    l.streets.push(super::super::super::Street{path:vec![Point{x:0.,y:9.},Point{x:20.,y:9.}],widths:vec![2.,2.],rank:4,role:"collective".into()});
     assert_eq!(regional_streets(&l),vec![true,false]);
     assert!(certified(&block,&[p],&eligible,&l).is_empty(),"actual contact on a disconnected street is insufficient");
 }

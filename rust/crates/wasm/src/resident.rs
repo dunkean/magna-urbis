@@ -266,10 +266,10 @@ impl SettlementTerrain {
             serde_json::from_str::<Vec<magna_urbis_core::urban::Site>>(sites).map_err(js_err)?;
         let cfg = serde_json::from_str(config).map_err(js_err)?;
         let roads =
-            serde_json::from_str::<Vec<magna_urbis_core::urban::LayoutRoad>>(roads).map_err(js_err)?;
+            serde_json::from_str::<Vec<magna_urbis_core::urban::Street>>(roads).map_err(js_err)?;
         let output = self
             .inner
-            .urban_quarters_with_roads(seed, &sites, &cfg, roads)
+            .urban_quarters(seed, &sites, &cfg, &roads)
             .map_err(|e| JsValue::from_str(&e))?;
         let (json, layouts) = normalised(&output)?;
         self.resident.set_layouts(layouts);
@@ -287,21 +287,21 @@ impl SettlementTerrain {
             seed: String,
             sites: Vec<magna_urbis_core::urban::Site>,
             config: magna_urbis_core::urban::LayoutConfig,
-            roads: Vec<magna_urbis_core::urban::LayoutRoad>,
+            roads: Vec<magna_urbis_core::urban::Street>,
         }
         let jobs = serde_json::from_str::<Vec<Job>>(jobs).map_err(js_err)?;
         let inner = &self.inner;
-        let run = |job: Job| -> Result<String, String> {
-            let output = inner.urban_quarters_with_roads(&job.seed, &job.sites, &job.config, job.roads)?;
+        let run = |job: &Job| -> Result<String, String> {
+            let output = inner.urban_quarters(&job.seed, &job.sites, &job.config, &job.roads)?;
             serde_json::to_string(&output).map_err(|e| e.to_string())
         };
         #[cfg(feature = "threads")]
         let results: Vec<Result<String, String>> = {
             use rayon::prelude::*;
-            jobs.into_par_iter().map(run).collect()
+            jobs.par_iter().map(run).collect()
         };
         #[cfg(not(feature = "threads"))]
-        let results: Vec<Result<String, String>> = jobs.into_iter().map(run).collect();
+        let results: Vec<Result<String, String>> = jobs.iter().map(run).collect();
         let texts = results.into_iter().collect::<Result<Vec<_>, _>>().map_err(|e| JsValue::from_str(&e))?;
         Ok(texts.join("\u{1e}"))
     }

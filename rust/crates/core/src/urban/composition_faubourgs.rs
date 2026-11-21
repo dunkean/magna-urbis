@@ -102,7 +102,7 @@ pub(in super::super) fn grow_gate_villages(plan:&mut macroplan::Plan,cfg:&Layout
         let (b,_)=at(&path,(station+18.0).min(length(&path)));
         if !routing::path_clear(surface,&[a,center,b],cfg.max_street_grade) {continue;}
         occupied.push(center);
-        lanes.push(Street {key: None, path:vec![a,center,b],widths:vec![3.5,4.0+6.0*strength,3.2],rank:2,role:"gate-village".into()});
+        lanes.push(Street {path:vec![a,center,b],widths:vec![3.5,4.0+6.0*strength,3.2],rank:2,role:"gate-village".into()});
         let mut rng=Rng::new(&format!("faubourg-lanes:{:.1}:{:.1}",gate.x,gate.y));
         let side=if rng.chance(0.5) {1.0} else {-1.0};
         let first=lanes.len();
@@ -135,7 +135,7 @@ pub(in super::super) fn grow_gate_villages(plan:&mut macroplan::Plan,cfg:&Layout
                 if lane[4..9].iter().any(|&p|lanes[first..].iter()
                     .any(|s:&Street|s.path.windows(2).any(|w|g::distance(p,w[0],w[1]).0<16.0))) {continue;}
                 let width=rng.range(2.8,3.8);
-                lanes.push(Street {key: None, widths:(0..lane.len()).map(|i|width*(1.0-0.18*i as f64/12.0)
+                lanes.push(Street {widths:(0..lane.len()).map(|i|width*(1.0-0.18*i as f64/12.0)
                     *rng.range(0.92,1.08)).collect(),path:lane,rank:3,role:"faubourg-lane".into()});
                 break;
             }
@@ -187,10 +187,10 @@ pub(in super::super) fn prepare_gate_villages(layout:&mut Layout,cfg:&LayoutConf
         if overlap<50.0 || g::area(&square)<500.0*strength*strength {continue;}
         layout.blocks=std::mem::take(&mut layout.blocks).into_iter().flat_map(|b|
             g::difference(&b.shape,&square).into_iter().map(move |shape|Block {shape,..b.clone()})).collect();
-        layout.blocks.push(Block {key: None, shape:square.clone(),quarter:qi,kind:"place".into(),axis:Point {x:1.0,y:0.0},
-            zone:"faubourg".into(),fill: None, phase:Some(layout.quarters[qi].phase)});
+        layout.blocks.push(Block {shape:square.clone(),quarter:qi,kind:"place".into(),axis:Point {x:1.0,y:0.0},
+            zone:"faubourg".into(),phase:Some(layout.quarters[qi].phase)});
         let mut path=square.outer;path.push(path[0]);
-        layout.streets.push(Street {key: None, widths:vec![2.5+strength;path.len()],path,rank:3,role:"market".into()});
+        layout.streets.push(Street {widths:vec![2.5+strength;path.len()],path,rank:3,role:"market".into()});
         retained.push(p);
     }
     // Trim ran with the legacy streets. New lanes can now serve vacant land

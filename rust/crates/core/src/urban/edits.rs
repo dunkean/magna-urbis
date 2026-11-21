@@ -459,7 +459,6 @@ fn fronted(candidates: &[&Street], blocks: &[&Shape]) -> Vec<bool> {
         return out;
     }
     let mini = Layout {
-        regional_road_result: None,
         config: None,
         programme: None,
         key: String::new(),
@@ -842,13 +841,11 @@ fn splice(
                         kind = "reserve".into();
                     }
                     out.push(Block {
-                        key: None,
                         shape: clean(piece),
                         quarter: i,
                         kind,
                         axis: b.axis,
                         zone: b.zone.clone(),
-                        fill: b.fill,
                         phase: b.phase.and_then(|p| phase_map.get(p).copied().flatten()),
                     });
                 }

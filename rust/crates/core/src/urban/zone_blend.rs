@@ -520,7 +520,6 @@ mod tests {
             cfg.zone_density = d.into();
         }
         let roads = vec![Street {
-            key: None,
             path: vec![Point { x: 0.0, y: 3000.0 }, Point { x: 6000.0, y: 3000.0 }],
             widths: vec![8.0; 2], rank: 1, role: "regional".into(),
         }];

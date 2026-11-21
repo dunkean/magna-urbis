@@ -1132,7 +1132,6 @@ fn add(
         })
         .collect();
     streets.push(Street {
-        key: None,
         path,
         widths,
         rank,
@@ -2375,7 +2374,6 @@ fn clip_street(st: &Street, surface: Surface<'_>, quarters: Option<&[Quarter]>) 
                     .is_some_and(|p| (p.x - start.x).hypot(p.y - start.y) > 1e-6)
                 {
                     out.push(Street {
-                        key: None,
                         path: std::mem::take(&mut path),
                         widths: std::mem::take(&mut widths),
                         rank: st.rank,
@@ -2390,7 +2388,6 @@ fn clip_street(st: &Street, surface: Surface<'_>, quarters: Option<&[Quarter]>) 
                 widths.push(wa + (wb - wa) * pair[1]);
             } else if path.len() > 1 {
                 out.push(Street {
-                    key: None,
                     path: std::mem::take(&mut path),
                     widths: std::mem::take(&mut widths),
                     rank: st.rank,
@@ -2401,7 +2398,6 @@ fn clip_street(st: &Street, surface: Surface<'_>, quarters: Option<&[Quarter]>) 
     }
     if path.len() > 1 {
         out.push(Street {
-            key: None,
             path,
             widths,
             rank: st.rank,
@@ -3252,7 +3248,6 @@ fn generate_once(
                 bottom.reverse();
                 pts.extend(bottom);
                 raw.push(Quarter {
-                    key: None,
                     shape: g::normalized(Shape {
                         outer: pts,
                         holes: vec![],
@@ -3275,7 +3270,6 @@ fn generate_once(
                 .into_iter()
                 .filter(|p| g::area(p) > 1.0)
                 .map(move |shape| Quarter {
-                    key: None,
                     shape,
                     phase: q.phase,
                     zone: q.zone.clone(),
@@ -3376,7 +3370,6 @@ fn generate_once(
     }
     if quarters.is_empty() {
         return Ok(Layout {
-            regional_road_result: None,
             config: Some(applied.clone()),
             programme: None,
             key: site.key.clone(),
@@ -3931,7 +3924,6 @@ fn generate_once(
         for (shape, source) in frontage {
             let phase = quarters[source].phase;
             quarters.push(Quarter {
-                key: None,
                 shape: shape.clone(),
                 phase,
                 zone: quarters[source].zone.clone(),
@@ -3998,7 +3990,7 @@ fn generate_once(
             d(a).total_cmp(&d(b))
         }).map_or(0,|q|q.phase);
         let qi=quarters.len();
-        quarters.push(Quarter{key: None, shape:shape.clone(),phase,zone:"edge".into()});
+        quarters.push(Quarter{shape:shape.clone(),phase,zone:"edge".into()});
         pieces.push(macroplan::harbour::port_blocks(&shape).into_iter().map(|shape|Piece{shape,level:0,kind:"block".into()}).collect());
         if let Some(p)=phases.get_mut(phase) {p.shapes.push(shape.clone());}
         if let Some(s)=&mut structure {
@@ -4137,8 +4129,6 @@ fn generate_once(
         for (shape, f, vacancy, phase) in shapes {
             vacancies.push(vacancy);
             blocks.push(Block {
-                key: None,
-                fill: None,
                 phase,
                 zone: if let Some(i) = phase {
                     phases[i].zone.clone()
@@ -4176,7 +4166,6 @@ fn generate_once(
     });
     if let Some(p) = plan.as_mut().filter(|_| !ample) {
         let mut probe = Layout {
-            regional_road_result: None,
             config: Some(applied.clone()),
             programme: None,
             key: site.key.clone(),
@@ -4473,7 +4462,6 @@ fn generate_once(
     network::join_waterfront(&mut streets, radius);
     lap("join_waterfront");
     let mut layout = Layout {
-        regional_road_result: None,
         config: Some(applied.clone()),
         programme: None,
         key: site.key.clone(),
@@ -4590,7 +4578,6 @@ pub(super) fn probe_quarter(
                 })
                 .collect::<Vec<_>>();
             Street {
-                key: None,
                 widths: vec![main; path.len()],
                 path,
                 rank: 1,
@@ -4632,7 +4619,6 @@ pub(super) fn probe_quarter(
         blend: None,
     };
     let quarter = Quarter {
-        key: None,
         shape: Shape {
             outer: corners.to_vec(),
             holes: vec![],
@@ -4667,13 +4653,11 @@ pub(super) fn probe_quarter(
         for shape in polys.into_iter().filter(|p| g::area(p) > 1.0) {
             let f = frame(&shape);
             blocks.push(Block {
-                key: None,
                 shape,
                 quarter: 0,
                 kind: pc.kind.clone(),
                 axis: f.u,
                 zone: zone.into(),
-                fill: None,
                 phase: Some(0),
             });
         }
@@ -4817,7 +4801,6 @@ mod tests {
     #[test]
     fn peripheral_frontage_never_enters_the_wall_reserve() {
         let road = Street {
-            key: None,
             path: vec![Point { x: 0.0, y: 50.0 }, Point { x: 100.0, y: 50.0 }],
             widths: vec![6.0, 6.0],
             rank: 2,
@@ -4868,7 +4851,6 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = |a: Point, b: Point| Street {
-            key: None,
             path: (0..=24)
                 .map(|i| Point {
                     x: a.x + (b.x - a.x) * i as f64 / 24.0,
@@ -5256,7 +5238,6 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = Street {
-            key: None,
             path: (0..=40)
                 .map(|i| Point {
                     x: c + 200.0,
@@ -5464,7 +5445,6 @@ mod tests {
             .map(|b| {
                 let (dx, dy) = (b.to_radians().cos(), b.to_radians().sin());
                 Street {
-                    key: None,
                     path: (0..=24)
                         .map(|i| Point {
                             x: c + dx * 1400.0 * (1.0 - i as f64 / 24.0),
@@ -5643,13 +5623,11 @@ mod tests {
     #[test]
     fn a_sliver_block_rejoins_the_block_it_touches() {
         let block = |shape: Shape, quarter: usize| Block {
-            key: None,
             shape,
             quarter,
             kind: "block".into(),
             axis: Point { x: 1.0, y: 0.0 },
             zone: "core".into(),
-            fill: None,
             phase: None,
         };
         let mut blocks = vec![

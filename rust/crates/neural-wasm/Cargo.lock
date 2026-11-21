@@ -496,7 +496,6 @@ dependencies = [
  "magna-urbis-geom",
  "magna-urbis-random",
  "magna-urbis-terrain",
- "magna-urbis-town",
  "rayon",
  "serde",
  "serde_json",
@@ -535,15 +534,6 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "magna-urbis-town"
-version = "0.1.0"
-dependencies = [
- "magna-urbis-geom",
- "magna-urbis-random",
- "serde",
 ]
 
 [[package]]

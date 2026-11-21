@@ -135,7 +135,6 @@ fn basin(surface: Surface<'_>, path: &[Point], population:u32) -> Option<Vec<Str
             let mid=super::super::point(a2,b2,0.5);
             if !clear(surface,mid,add(mid,n,NAVIGABLE*2.0)) {continue;}
             return Some([vec![a,a1,a2],vec![b,b1,b2]].into_iter().map(|path|Street {
-                key: None,
                 widths:vec![(f64::from(population).sqrt()*0.06).clamp(3.0,10.0);path.len()],
                 path,rank:2,role:"mole".into(),
             }).collect());
@@ -207,7 +206,7 @@ mod tests {
         let (n,width)=(200,2000.0);let height=vec![0.0;n*n];
         let water:Vec<u8>=(0..n*n).map(|i|if (100..104).contains(&(i%n)) {3} else {0}).collect();
         let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
-        let quay=Street {key: None, path:vec![Point{x:990.0,y:980.0},Point{x:990.0,y:1018.0}],widths:vec![5.0;2],rank:1,role:"quay".into()};
+        let quay=Street {path:vec![Point{x:990.0,y:980.0},Point{x:990.0,y:1018.0}],widths:vec![5.0;2],rank:1,role:"quay".into()};
         let site=Site{key:"short".into(),name:String::new(),culture:"venetian-lagoon".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0, neighbours: Vec::new()};
         assert!(super::super::works(std::slice::from_ref(&quay),surface,&site,&site.culture).is_empty());
         let on=works(&[quay],surface,&site,&site.culture);
@@ -263,7 +262,7 @@ mod tests {
         let water:Vec<u8>=(0..n*n).map(|i|u8::from(i%n>=100)).collect();
         let surface=Surface{geometry:None,n,width,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"shore".into(),name:String::new(),culture:"swahili-stone-town".into(),population:10000,center:Point{x:900.0,y:1000.0},radius:400.0, neighbours: Vec::new()};
-        let front=|x|Street{key: None, path:vec![Point{x,y:800.0},Point{x,y:1200.0}],widths:vec![6.0;2],rank:1,role:"quay".into()};
+        let front=|x|Street{path:vec![Point{x,y:800.0},Point{x,y:1200.0}],widths:vec![6.0;2],rank:1,role:"quay".into()};
         assert!(works(&[front(1010.0)],surface,&site,&site.culture).is_empty());
         let attached=works(&[front(990.0)],surface,&site,&site.culture);
         assert!(attached.iter().any(|s|s.role=="mole"));

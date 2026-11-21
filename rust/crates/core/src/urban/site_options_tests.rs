@@ -45,11 +45,11 @@ fn high_ground_reserves_the_highest_admissible_blocks_for_church_and_keep() {
     let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water, interpolation: Default::default(),};
     let points=[150.,250.,350.,450.,550.,650.,750.,850.];
     let mut base=Layout{config:Some(LayoutConfig::default()),programme:None,key:"ridge".into(),culture:"european-organic".into(),
-        center:Point{x:350.,y:500.},quarters:vec![Quarter{key: None, shape:geometry::rectangle(100.,400.,900.,600.),phase:0,zone:"core".into()}],
-        streets:vec![Street{key: None, path:vec![Point{x:100.,y:465.},Point{x:900.,y:465.}],widths:vec![6.;2],rank:1,role:"street".into()}],
-        blocks:points.iter().map(|&x|Block{key: None, shape:geometry::rectangle(x-32.,468.,x+32.,532.),quarter:0,kind:"block".into(),axis:Point{x:1.,y:0.},zone:"core".into(),fill: None, phase:None}).collect(),
+        center:Point{x:350.,y:500.},quarters:vec![Quarter{shape:geometry::rectangle(100.,400.,900.,600.),phase:0,zone:"core".into()}],
+        streets:vec![Street{path:vec![Point{x:100.,y:465.},Point{x:900.,y:465.}],widths:vec![6.;2],rank:1,role:"street".into()}],
+        blocks:points.iter().map(|&x|Block{shape:geometry::rectangle(x-32.,468.,x+32.,532.),quarter:0,kind:"block".into(),axis:Point{x:1.,y:0.},zone:"core".into(),phase:None}).collect(),
         warnings:vec![],enclosures:vec![],phases:vec![],archetype:"city".into(),structure:None,
-        claim: Default::default(),regional_road_result: None,};
+        claim: Default::default(),};
     let mut on=base.clone();on.config.as_mut().unwrap().power_high_ground=true;
     programme::prepare(&mut base,10000,&ProgrammeContext::default(),surface).unwrap();
     programme::prepare(&mut on,10000,&ProgrammeContext::default(),surface).unwrap();

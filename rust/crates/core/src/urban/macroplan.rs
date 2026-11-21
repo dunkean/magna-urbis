@@ -113,7 +113,6 @@ pub(super) fn clip(st: &Street, shape: &Shape) -> Vec<Street> {
             if g::contains(shape, point(a, b, 0.5)) {
                 if path.last().is_some_and(|&p| dist(p, a) > 1e-5) {
                     result.push(Street {
-                        key: None,
                         path: std::mem::take(&mut path),
                         widths: std::mem::take(&mut widths),
                         rank: st.rank,
@@ -128,7 +127,6 @@ pub(super) fn clip(st: &Street, shape: &Shape) -> Vec<Street> {
                 widths.push(wa + (wb - wa) * t[1]);
             } else if path.len() > 1 {
                 result.push(Street {
-                    key: None,
                     path: std::mem::take(&mut path),
                     widths: std::mem::take(&mut widths),
                     rank: st.rank,
@@ -139,7 +137,6 @@ pub(super) fn clip(st: &Street, shape: &Shape) -> Vec<Street> {
     }
     if path.len() > 1 {
         result.push(Street {
-            key: None,
             path,
             widths,
             rank: st.rank,
@@ -210,7 +207,6 @@ fn split_joined_roads(regions: &mut Vec<Shape>, roads: &[Street]) {
                     split_by(
                         regions,
                         &Street {
-                            key: None,
                             path,
                             widths: vec![],
                             rank: left.rank.min(right.rank),
@@ -400,7 +396,6 @@ fn join_crossing_approaches(
                 if joint.len() >= 2 {
                     let w = spans[i].widths.first().copied().unwrap_or(5.0);
                     joints.push(Street {
-                        key: None,
                         widths: vec![w; joint.len()],
                         path: joint,
                         rank: 0,
@@ -502,7 +497,6 @@ fn camp_entrance(
                 break;
             }
             Street {
-                key: None,
                 widths: vec![s.widths.first().copied().unwrap_or(5.0); way.len()],
                 path: way,
                 rank: s.rank,
@@ -562,11 +556,11 @@ mod camp_approach_tests {
     #[test]
     fn camp_destination_paths_keep_their_bends_and_widths_but_real_through_routes_survive() {
         let envelope = g::rectangle(0., 0., 200., 200.);
-        let road = Street { key: None, path: vec![Point{x:0.,y:100.},Point{x:200.,y:100.}], widths:vec![6.,8.],rank:0,role:"regional".into() };
+        let road = Street { path: vec![Point{x:0.,y:100.},Point{x:200.,y:100.}], widths:vec![6.,8.],rank:0,role:"regional".into() };
         let mut streets = vec![road.clone()];
         camp_approaches(&mut streets, &envelope, 3., true);
         assert_eq!(serde_json::to_vec(&streets).unwrap(), serde_json::to_vec(&vec![road]).unwrap());
-        let inbound = Street { key: None, path: vec![Point{x:0.,y:100.},Point{x:8.,y:102.},Point{x:16.,y:100.},Point{x:100.,y:100.}],
+        let inbound = Street { path: vec![Point{x:0.,y:100.},Point{x:8.,y:102.},Point{x:16.,y:100.},Point{x:100.,y:100.}],
             widths: vec![2.1;4], rank:2, role:"regional".into() };
         streets = vec![inbound.clone()];
         camp_approaches(&mut streets, &envelope, 3., true);
@@ -580,7 +574,7 @@ mod camp_approach_tests {
     #[test]
     fn an_existing_crossing_and_wholly_internal_access_are_never_dropped() {
         let envelope = g::rectangle(0., 0., 200., 200.);
-        let make=|role:&str,path:Vec<Point>|Street{key: None, widths:vec![6.;path.len()],path,rank:0,role:role.into()};
+        let make=|role:&str,path:Vec<Point>|Street{widths:vec![6.;path.len()],path,rank:0,role:role.into()};
         let original=vec![make("bridge",vec![Point{x:0.,y:100.},Point{x:200.,y:100.}]),make("regional",vec![Point{x:80.,y:100.},Point{x:120.,y:100.}])];
         let mut streets=original.clone();camp_approaches(&mut streets,&envelope,3.,true);
         assert_eq!(serde_json::to_vec(&streets).unwrap(),serde_json::to_vec(&original).unwrap());
@@ -588,7 +582,7 @@ mod camp_approach_tests {
     #[test]
     fn a_generated_camp_entrance_keeps_the_relay_to_its_inner_paths() {
         let envelope=g::rectangle(0.,0.,200.,200.);let c=Point{x:100.,y:100.};
-        let guide=Street{key: None, path:vec![Point{x:0.,y:100.},c],widths:vec![5.;2],rank:1,role:"street".into()};
+        let guide=Street{path:vec![Point{x:0.,y:100.},c],widths:vec![5.;2],rank:1,role:"street".into()};
         let mut streets=vec![guide];
         assert!(camp_entrance(&mut streets,&envelope,c,100.,&[]));
         assert_eq!(streets.len(),1);
@@ -601,7 +595,7 @@ mod camp_approach_tests {
         let envelope=g::rectangle(100.,100.,300.,300.);
         let height=(0..64*64).map(|i|if (30..34).contains(&(i%64)){1000.}else{10.}).collect::<Vec<f32>>();
         let water=vec![0;64*64];let surface=Surface{geometry:None,width:400.,n:64,height:&height,water:&water, interpolation: Default::default(),};
-        let road=Street{key: None, path:vec![Point{x:100.,y:200.},Point{x:300.,y:200.}],widths:vec![6.;2],rank:0,role:"regional".into()};
+        let road=Street{path:vec![Point{x:100.,y:200.},Point{x:300.,y:200.}],widths:vec![6.;2],rank:0,role:"regional".into()};
         assert!(!routing::path_clear(surface,&road.path,0.12));
         let mut entrances=vec![Street {path:vec![road.path[0],Point{x:200.,y:200.}],..road.clone()},
             Street {path:vec![Point{x:200.,y:200.},road.path[1]],..road}];
@@ -612,7 +606,7 @@ mod camp_approach_tests {
     #[test]
     fn regional_role_preserves_every_real_entrance_independently_of_rank() {
         let envelope=g::rectangle(0.,0.,200.,200.);let c=Point{x:100.,y:100.};
-        let make=|a,b,rank|Street{key: None, path:vec![a,b],widths:vec![6.;2],rank,role:"regional".into()};
+        let make=|a,b,rank|Street{path:vec![a,b],widths:vec![6.;2],rank,role:"regional".into()};
         let mut roads=vec![make(Point{x:0.,y:100.},c,1),make(Point{x:100.,y:0.},c,2),make(c,Point{x:200.,y:100.},0)];
         let original=serde_json::to_vec(&roads).unwrap();
         camp_entrance(&mut roads,&envelope,c,100.,&[]);
@@ -1029,7 +1023,6 @@ fn cultural_spines(
             m.width(if i == 0 { 0 } else { 1 }, rng)
         };
         let street = Street {
-            key: None,
             widths: vec![width; path.len()],
             path,
             rank: usize::from(i > 0),
@@ -1093,7 +1086,6 @@ fn cultural_spines(
     *regions = partition;
     let width = m.width(1, rng);
     streets.push(Street {
-        key: None,
         widths: vec![width; path.len()],
         path,
         rank: 1,
@@ -1510,7 +1502,6 @@ pub(super) fn generate_oriented_domain(
             if let Some((_, a, b, path)) = selected {
                 let width = m.width(if streets.is_empty() { 0 } else { 1 }, &mut rng);
                 streets.push(Street {
-                    key: None,
                     widths: vec![width; path.len()],
                     path,
                     rank: 1,
@@ -1533,7 +1524,6 @@ pub(super) fn generate_oriented_domain(
         let target = nearest(anchor, &streets).map(|v| v.1).unwrap_or(c);
         if let Some(path) = planner.route(anchor, target, cfg.max_street_grade) {
             streets.push(Street {
-                key: None,
                 widths: vec![m.width(1, &mut rng); path.len()],
                 path,
                 rank: 1,
@@ -1604,7 +1594,6 @@ pub(super) fn generate_oriented_domain(
                 "edge".into()
             };
             Quarter {
-                key: None,
                 shape,
                 phase: usize::from(d > 0.65),
                 zone,
@@ -1892,7 +1881,6 @@ fn add_landing_rows(
             // A row lane steeper than street grade is a lane, as in quarters.
             let street = routing::path_clear(surface, &lane, cfg.max_street_grade);
             streets.push(Street {
-                key: None,
                 widths: vec![LANE; lane.len()],
                 path: lane,
                 rank: if street { 2 } else { 3 },
@@ -1937,7 +1925,6 @@ mod tests {
             })
         };
         let road = Street {
-            key: None,
             path: vec![Point { x: 160., y: 30. }, Point { x: 160., y: 210. }],
             widths: vec![5.; 2],
             rank: 1,
@@ -2018,7 +2005,6 @@ mod tests {
             holes: vec![],
         });
         let mut streets = vec![Street {
-            key: None,
             path: vec![Point { x: 160., y: 30. }, Point { x: 160., y: 210. }],
             widths: vec![5.; 2],
             rank: 1,
@@ -2081,7 +2067,6 @@ mod tests {
     fn regional_branches_partition_at_their_shared_nucleus() {
         let mut regions = vec![g::rectangle(0.0, 0.0, 100.0, 100.0)];
         let road = |a: Point| Street {
-            key: None,
             path: vec![a, Point { x: 50.0, y: 50.0 }],
             widths: vec![6.0; 2],
             rank: 0,
@@ -2207,7 +2192,6 @@ mod tests {
 
     fn way(points: &[(f64, f64)], rank: usize, role: &str) -> Street {
         Street {
-            key: None,
             path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
             widths: vec![5.0; points.len()],
             rank,

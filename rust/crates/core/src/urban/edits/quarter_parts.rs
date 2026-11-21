@@ -197,7 +197,6 @@ pub(super) fn apply(layout: &mut Layout, cfg: &LayoutConfig) {
                 i
             } else {
                 layout.quarters.push(Quarter {
-                    key: None,
                     shape: piece.clone(),
                     phase: old.phase,
                     zone: old.zone.clone(),
@@ -482,13 +481,11 @@ mod tests {
     }
     fn block(shape: Shape, quarter: usize) -> Block {
         Block {
-            key: None,
             shape,
             quarter,
             kind: "block".into(),
             axis: Point { x: 1.0, y: 0.0 },
             zone: "core".into(),
-            fill: None,
             phase: Some(0),
         }
     }
@@ -496,18 +493,16 @@ mod tests {
     /// Quarter 0 holds a left block, a right block and a block across x = 50.
     fn town() -> Layout {
         Layout {
-            regional_road_result: None,
             config: Some(LayoutConfig::default()),
             programme: None,
             key: "t".into(),
             culture: String::new(),
             center: Point { x: 100.0, y: 50.0 },
             quarters: vec![
-                Quarter { key: None, shape: rect(0.0, 0.0, 100.0, 100.0), phase: 0, zone: "core".into() },
-                Quarter { key: None, shape: rect(110.0, 0.0, 200.0, 100.0), phase: 0, zone: "core".into() },
+                Quarter { shape: rect(0.0, 0.0, 100.0, 100.0), phase: 0, zone: "core".into() },
+                Quarter { shape: rect(110.0, 0.0, 200.0, 100.0), phase: 0, zone: "core".into() },
             ],
             streets: vec![Street {
-                key: None,
                 path: vec![Point { x: 105.0, y: -10.0 }, Point { x: 105.0, y: 110.0 }],
                 widths: vec![8.0, 8.0],
                 rank: 1,

@@ -109,7 +109,6 @@ fn terrain(kind: &str, width: f64, n: usize) -> (Vec<f32>, Vec<u8>, Vec<Street>)
         }
     }
     let road = |path: Vec<Point>| Street {
-        key: None,
         widths: vec![6.0; path.len()],
         path,
         rank: 1,
@@ -148,7 +147,6 @@ fn terrain(kind: &str, width: f64, n: usize) -> (Vec<f32>, Vec<u8>, Vec<Street>)
     }
     if kind == "river" {
         roads.push(Street {
-            key: None,
             path: vec![
                 Point {
                     x: width * 0.3,

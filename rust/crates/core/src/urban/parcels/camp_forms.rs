@@ -706,7 +706,7 @@ mod review_tests {
         let (height,water) = (vec![0.;64*64],vec![0;64*64]);
         let surface = Surface {geometry:None,width:4000.,n:64,height:&height,water:&water, interpolation: Default::default(),};
         let site = Site {key:"native-groups".into(),name:String::new(),population:1500,culture:"nomad-camp".into(),center:Point{x:2000.,y:2000.},radius:300., neighbours: Vec::new()};
-        let roads = [Street {key: None, path:vec![Point{x:1500.,y:2000.},Point{x:2500.,y:2000.}],widths:vec![4.;2],rank:0,role:"regional".into()}];
+        let roads = [Street {path:vec![Point{x:1500.,y:2000.},Point{x:2500.,y:2000.}],widths:vec![4.;2],rank:0,role:"regional".into()}];
         let draw = || {
             let cfg = LayoutConfig {camp_growth:"clusters".into(),..Default::default()};
             let layouts = generate_quarters("native-groups",std::slice::from_ref(&site),&cfg,surface,&roads).unwrap();
@@ -725,7 +725,7 @@ mod review_tests {
         let (height,water) = (vec![0.;64*64],vec![0;64*64]);
         let surface = Surface {geometry:None,width:4000.,n:64,height:&height,water:&water, interpolation: Default::default(),};
         let site = Site {key:"native-wobble".into(),name:String::new(),population:500,culture:"native-plains".into(),center:Point{x:2000.,y:2000.},radius:150., neighbours: Vec::new()};
-        let roads = [Street {key: None, path:vec![Point{x:1500.,y:2000.},Point{x:2500.,y:2000.}],widths:vec![4.;2],rank:0,role:"regional".into()}];
+        let roads = [Street {path:vec![Point{x:1500.,y:2000.},Point{x:2500.,y:2000.}],widths:vec![4.;2],rank:0,role:"regional".into()}];
         let draw = |wobble| {
             let cfg = LayoutConfig {camp_ring_wobble:wobble,..Default::default()};
             let layouts = generate_quarters("native-wobble",std::slice::from_ref(&site),&cfg,surface,&roads).unwrap();

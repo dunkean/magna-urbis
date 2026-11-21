@@ -114,10 +114,9 @@ pub fn label(id: &str) -> &'static str {
 }
 
 /// Site archetypes where a small town is worth a wall, or a village clusters.
-pub(super) const DEFENSIVE: [&str; 4] = ["hilltop", "spur", "pass", "island"];
-pub(super) const WALLED_TOWN_MINIMUM: u32 = 2500;
+const DEFENSIVE: [&str; 4] = ["hilltop", "spur", "pass", "island"];
 /// Cultures whose villages are enclosed by definition: the draw that leaves most villages open skips them.
-pub(super) const FORTIFIED_VILLAGES: [&str; 10] = [
+const FORTIFIED_VILLAGES: [&str; 10] = [
     "kraal", "maori-pa", "guarani-village", "mississippian", "native-iroquoian",
     "nubian-fortified", "ksar-oasis", "levantine-tell", "celtic-oppidum", "norse-ringfort",
 ];
@@ -325,7 +324,7 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
     ) != "none";
     let defensive = DEFENSIVE.contains(&cfg.site_archetype.as_str());
     if pop < 5000 {
-        if fortifies && (pop >= WALLED_TOWN_MINIMUM || defensive) {
+        if fortifies && (pop >= 2500 || defensive) {
             Kind::WalledTown
         } else {
             Kind::MarketTown
@@ -444,7 +443,7 @@ pub(super) fn effective(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> (L
             set(&mut c.suburbs, "auto", "few");
             // A small bourg grew in two periods (founding, market growth); a
             // larger one keeps the default three, its faubourg included.
-            if default_epochs && site.population < WALLED_TOWN_MINIMUM {
+            if default_epochs && site.population < 2500 {
                 c.footprint.epochs = 2;
             }
         }
@@ -702,7 +701,6 @@ fn settle(shape: &Shape, obstacles: &[Shape], surface: &Surface<'_>, keep: f64) 
 }
 fn street(path: Vec<Point>, width: f64, rank: usize, role: &str) -> Street {
     Street {
-        key: None,
         widths: vec![width; path.len()],
         path,
         rank,
@@ -1278,7 +1276,6 @@ fn assemble(site: &Site, cfg: &LayoutConfig, kind: Kind, morph: &Morph, roads: &
     let quarters: Vec<Quarter> = shapes
         .iter()
         .map(|s| Quarter {
-            key: None,
             shape: s.clone(),
             phase: 0,
             zone: zone.clone(),
@@ -1289,13 +1286,11 @@ fn assemble(site: &Site, cfg: &LayoutConfig, kind: Kind, morph: &Morph, roads: &
         .iter()
         .enumerate()
         .map(|(i, (s, k))| Block {
-            key: None,
             shape: s.clone(),
             quarter: i,
             kind: (*k).into(),
             axis: plan.axis,
             zone: zone.clone(),
-            fill: None,
             phase: Some(0),
         })
         .collect();
@@ -1344,7 +1339,6 @@ fn assemble(site: &Site, cfg: &LayoutConfig, kind: Kind, morph: &Morph, roads: &
         },
     };
     Some(Layout {
-        regional_road_result: None,
         config: Some(cfg.clone()),
         programme: None,
         key: site.key.clone(),
@@ -2283,7 +2277,6 @@ mod tests {
             interpolation: Default::default(),
         };
         let road = Street {
-            key: None,
             path: vec![
                 Point {
                     x: 500.0,
@@ -2340,7 +2333,6 @@ mod tests {
         };
         let p = |x: f64, y: f64| Point { x, y };
         let road = |a: Point, b: Point| Street {
-            key: None,
             path: vec![a, b],
             widths: vec![6.0, 6.0],
             rank: 1,

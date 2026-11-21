@@ -38,7 +38,7 @@ fn a_500_inhabitant_camp_keeps_its_entrance_and_building_sites() {
 #[test]
 fn camp_entries_use_real_roads_at_every_rank_and_never_a_field_track() {
     let mut layout:Layout=serde_json::from_value(serde_json::json!({"key":"entry","culture":"native-plains","center":{"x":40.,"y":20.},"quarters":[],"blocks":[],"streets":[],"warnings":[]})).unwrap();
-    layout.streets.push(super::super::super::Street{key: None, path:vec![Point{x:-3.,y:0.},Point{x:-3.,y:40.}],widths:vec![6.;2],rank:1,role:"regional".into()});
+    layout.streets.push(super::super::super::Street{path:vec![Point{x:-3.,y:0.},Point{x:-3.,y:40.}],widths:vec![6.;2],rank:1,role:"regional".into()});
     for rank in [0,1,2,4] {layout.streets[0].rank=rank;assert_eq!(forms::entries(&layout,layout.center).len(),1);}
     layout.streets[0].role="track".into();assert!(forms::entries(&layout,layout.center).is_empty());
     layout.streets[0].role="lane".into();layout.streets[0].rank=1;assert_eq!(forms::entries(&layout,layout.center).len(),1);

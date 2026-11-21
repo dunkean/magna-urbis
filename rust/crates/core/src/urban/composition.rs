@@ -266,7 +266,6 @@ fn approaches(
                     continue;
                 }
                 result.push(Street {
-                    key: None,
                     widths: vec![street.widths.last().copied().unwrap_or(5.0); path.len()],
                     path,
                     rank: 1,
@@ -506,7 +505,6 @@ pub(super) fn generate(
                 .iter()
                 .flat_map(|s| g::dry_clip(&surface, s))
                 .map(|shape| Quarter {
-                    key: None,
                     shape,
                     phase: 0,
                     zone: specs[0].0.clone(),
@@ -571,7 +569,6 @@ pub(super) fn generate(
                     .flat_map(|s| g::intersection(&q.shape, s))
                     .filter(|s| g::area(s) > 1.0)
                     .map(|shape| Quarter {
-                        key: None,
                         shape,
                         phase: i,
                         zone: zone.clone(),
@@ -679,7 +676,6 @@ pub(super) fn generate(
                 .into_iter()
                 .filter(|s| g::area(s) > 25.0)
                 .map(|shape| Quarter {
-                    key: None,
                     shape,
                     phase: phases.len(),
                     zone: faub_zone.into(),
@@ -2070,7 +2066,6 @@ fn partition(quarters: &mut Vec<Quarter>, regions: &[Shape]) {
                     .into_iter()
                     .filter(|s| g::area(s) > 1.0)
                     .map(|shape| Quarter {
-                        key: None,
                         shape,
                         phase: q.phase,
                         zone: q.zone.clone(),
@@ -2083,7 +2078,6 @@ fn partition(quarters: &mut Vec<Quarter>, regions: &[Shape]) {
                 .into_iter()
                 .filter(|s| g::area(s) > 1.0)
                 .map(|shape| Quarter {
-                    key: None,
                     shape,
                     phase: q.phase,
                     zone: q.zone.clone(),
@@ -2234,7 +2228,7 @@ fn fill_enclosures(
     };
     for shape in &added {
         if let Some(e) = epoch_of(phases, g::interior_point(shape)) {
-            quarters.push(Quarter { key: None, shape: shape.clone(), phase: e, zone: phases[e].zone.clone() });
+            quarters.push(Quarter { shape: shape.clone(), phase: e, zone: phases[e].zone.clone() });
         }
     }
     // The land the quarters gained joins its epoch, outside every epoch's own land.
@@ -2256,9 +2250,9 @@ fn fill_enclosures(
 
 #[test]
 fn enclosed_quarters_reach_the_ring_road_without_claiming_water() {
-    let mut quarters = vec![Quarter { key: None, shape:g::rectangle(20.,20.,80.,80.), phase:0, zone:"core".into() }];
+    let mut quarters = vec![Quarter { shape:g::rectangle(20.,20.,80.,80.), phase:0, zone:"core".into() }];
     let wall = g::rectangle(10.,10.,90.,90.);
-    let road = Street { key: None, path:vec![Point{x:10.,y:50.},Point{x:90.,y:50.}],widths:vec![4.;2],rank:1,role:"street".into() };
+    let road = Street { path:vec![Point{x:10.,y:50.},Point{x:90.,y:50.}],widths:vec![4.;2],rank:1,role:"street".into() };
     let height = vec![10.;100];
     let water: Vec<_> = (0..100).map(|i|u8::from(i % 10 >= 8)).collect();
     let surface = Surface {geometry:None,width:100.,n:10,height:&height,water:&water, interpolation: Default::default(),};
@@ -2290,7 +2284,7 @@ fn rectangular_enclosure_runs_on_its_grid_and_is_filled_to_the_wall() {
     let cardinal = fortification::square_trace(&outline, surface, true, false, None).unwrap();
     assert!(axes(&cardinal).iter().all(|d| d.min(90. - d) < 0.5), "{:?}", axes(&cardinal));
     let quarters: Vec<Quarter> = [(-150., -100.), (0., -100.), (-150., 0.), (0., 0.)].iter()
-        .map(|&(x, y)| Quarter { key: None, shape: square(a, x, y, x + 150., y + 100.), phase: 0, zone: "core".into() }).collect();
+        .map(|&(x, y)| Quarter { shape: square(a, x, y, x + 150., y + 100.), phase: 0, zone: "core".into() }).collect();
     let grid = grid_frame(&quarters).unwrap();
     assert!((grid.to_degrees() - 3.).abs() < 0.1, "{}", grid.to_degrees());
     let wall = fortification::square_trace(&outline, surface, true, false, Some(grid)).unwrap();
@@ -2300,11 +2294,11 @@ fn rectangular_enclosure_runs_on_its_grid_and_is_filled_to_the_wall() {
     // join the town; the one a street cuts off becomes a quarter of its own.
     let a = 20f64.to_radians();
     let mut quarters: Vec<Quarter> = [(-100., -100.), (0., -100.), (-100., 0.), (0., 0.)].iter()
-        .map(|&(x, y)| Quarter { key: None, shape: square(a, x, y, x + 100., y + 100.), phase: 0, zone: "core".into() }).collect();
+        .map(|&(x, y)| Quarter { shape: square(a, x, y, x + 100., y + 100.), phase: 0, zone: "core".into() }).collect();
     let outline = square(a, -100., -100., 100., 100.);
     let (x0, y0, x1, y1) = g::bbox(&outline);
     let wall = g::rectangle(x0, y0, x1, y1);
-    let street = Street { key: None, path: vec![turn(a, -120., 100.), turn(a, 120., 100.)], widths: vec![6.; 2], rank: 1, role: "street".into() };
+    let street = Street { path: vec![turn(a, -120., 100.), turn(a, 120., 100.)], widths: vec![6.; 2], rank: 1, role: "street".into() };
     let mut phases = vec![GrowthPhase { culture: "chinese".into(), kind: "foundation".into(), zone: "core".into(), recipe: String::new(),
         population: 1000., target_area: 40_000., shapes: vec![outline.clone()] }];
     fill_enclosures(&mut quarters, &mut phases, std::slice::from_ref(&wall), 1, std::slice::from_ref(&street), surface);
@@ -2329,9 +2323,9 @@ fn polygonal_enclosure_is_filled_to_the_wall_and_frames_its_grid() {
         at(170. * t.cos(), 170. * t.sin()) }).collect(), holes: vec![] });
     assert!(!rectangular(&wall));
     let mut quarters: Vec<Quarter> = [(-100., -100.), (0., -100.), (-100., 0.), (0., 0.)].iter()
-        .map(|&(x, y)| Quarter { key: None, shape: square(x, y, x + 100., y + 100.), phase: 0, zone: "core".into() }).collect();
+        .map(|&(x, y)| Quarter { shape: square(x, y, x + 100., y + 100.), phase: 0, zone: "core".into() }).collect();
     let outline = square(-100., -100., 100., 100.);
-    let street = Street { key: None, path: vec![turn(-250., 100.), turn(250., 100.)], widths: vec![6.; 2], rank: 1, role: "street".into() };
+    let street = Street { path: vec![turn(-250., 100.), turn(250., 100.)], widths: vec![6.; 2], rank: 1, role: "street".into() };
     let mut phases = vec![GrowthPhase { culture: "chinese".into(), kind: "foundation".into(), zone: "core".into(), recipe: String::new(),
         population: 1000., target_area: 40_000., shapes: vec![outline] }];
     fill_enclosures(&mut quarters, &mut phases, std::slice::from_ref(&wall), 1, std::slice::from_ref(&street), surface);
@@ -2657,7 +2651,6 @@ fn fortify(
                 });
                 for path in rings {
                     plan.streets.push(Street {
-                        key: None,
                         widths: vec![morph.width(1, &mut rng); path.len()],
                         path,
                         rank: 1,

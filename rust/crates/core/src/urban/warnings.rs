@@ -32,53 +32,6 @@ pub(crate) fn warning_detail_text(detail: fmt::Arguments<'_>) -> String {
 pub(crate) const QUARTER_STAIRS: &str = "Quarter stairs — streets too steep";
 pub(crate) const CANALS_PREFIX: &str = "Canals: ";
 
-/// Convert the growth layout's bilingual messages at the point they enter core.
-pub(super) fn shorten_growth(line: &mut String) {
-    let Some((english, _)) = line.split_once(" (") else {
-        return;
-    };
-    let short = if let Some(percent) = english.strip_prefix("Housing ").and_then(|rest| rest.strip_suffix(" %")) {
-        growth_housing_shortfall(percent)
-    } else if let Some(percent) = english.strip_prefix("Out of land: ").and_then(|rest| rest.strip_suffix(" % housed")) {
-        growth_land_shortfall(percent)
-    } else if let Some(tissue) = english.strip_prefix("Tissue ") {
-        if let Some(id) = tissue.strip_suffix(" missing: organic streets") {
-            growth_missing_tissue(id)
-        } else if let Some(id) = tissue.strip_suffix(" not available yet: organic streets") {
-            growth_unsupported_tissue(id)
-        } else {
-            return;
-        }
-    } else {
-        return;
-    };
-    *line = short;
-}
-
-fn growth_housing_shortfall(percent: &str) -> String {
-    log_warning_detail(format_args!(
-        "The growth engine's final allocation housed {percent} % of requested households."
-    ));
-    format!("Housing {percent} % — lot capacity")
-}
-
-fn growth_land_shortfall(percent: &str) -> String {
-    log_warning_detail(format_args!("The growth engine ran out of land at {percent} % of the household target."));
-    format!("Housing {percent} % — land exhausted")
-}
-
-fn growth_missing_tissue(id: &str) -> String {
-    log_warning_detail(format_args!("Tissue {id} is missing, so the growth engine uses organic streets."));
-    format!("Organic streets — missing tissue {id}")
-}
-
-fn growth_unsupported_tissue(id: &str) -> String {
-    log_warning_detail(format_args!(
-        "Tissue {id} is not available yet, so the growth engine uses organic streets."
-    ));
-    format!("Organic streets — unsupported tissue {id}")
-}
-
 pub(crate) fn clustered_street_village() -> String {
     log_warning_detail(format_args!(
         "The street village uses a clustered core because no road runs through the site."
@@ -238,13 +191,6 @@ pub(crate) fn footprint_expanded(before: f64, target: f64, factor: f64, housed: 
         "The plan was too tight ({before:.0} of {target:.0} households housed), so the town was laid out on {factor:.0} times the land ({housed:.0} households housed)."
     ));
     format!("Town expanded ×{factor:.0}, {housed:.0}/{target:.0} households — cramped plan")
-}
-
-pub(crate) fn growth_unavailable() -> String {
-    log_warning_detail(format_args!(
-        "The growth engine is unavailable for this layout. The classic engine was used."
-    ));
-    "Growth engine: not available yet".into()
 }
 
 pub(crate) fn no_housing() -> String {

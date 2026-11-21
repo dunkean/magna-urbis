@@ -163,7 +163,6 @@ fn guides(family: &str, center: Point, radius: f64, angle: f64, rng: &Rng) -> Ve
     paths
         .into_iter()
         .map(|path| Street {
-            key: None,
             widths: vec![5.0; path.len()],
             path,
             rank: 1,
@@ -510,7 +509,7 @@ fn capacity_epochs_surveyed(
 const ENCLOSED_BLOCKS: f64 = 4.0;
 /// Gross inhabitants/hectare an enceinte is sized for at village scale: a wall
 /// is paid per metre, so it never encloses open land.
-pub(super) const ENCLOSED_DENSITY: f64 = 150.0;
+const ENCLOSED_DENSITY: f64 = 150.0;
 /// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the
 /// population, never a flat minimum that would inflate a small village's wall).
 /// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the
@@ -886,7 +885,7 @@ fn summit_access(site: &Site, cfg: &LayoutConfig, surface: Surface<'_>, roads: &
     let mut planner = routing::RoutePlanner::new(surface, (start.x.min(summit.x) - margin, start.y.min(summit.y) - margin,
         start.x.max(summit.x) + margin, start.y.max(summit.y) + margin));
     let path = planner.route(start, summit, cfg.max_street_grade)?;
-    Some((summit, Some(Street { key: None, widths: vec![5.0; path.len()], path, rank: 1, role: "street".into() })))
+    Some((summit, Some(Street { widths: vec![5.0; path.len()], path, rank: 1, role: "street".into() })))
 }
 #[allow(clippy::too_many_arguments)]
 fn centers(
@@ -2386,7 +2385,7 @@ fn internal_ribbon_guides(
                         routing::path_clear(surface, &closed, cfg.max_street_grade)
                     })
                 }) { continue; }
-                accepted.push(Street { key: None, path, widths, rank:clipped.rank, role:clipped.role });
+                accepted.push(Street { path, widths, rank:clipped.rank, role:clipped.role });
             }
         }
     }
@@ -2438,7 +2437,6 @@ fn ribbon(
     let fallback = paths.is_empty();
     let paths = if fallback {
         vec![Street {
-            key: None,
             path: vec![
                 at(
                     c,
@@ -2608,7 +2606,7 @@ let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
             let route=planner.route(a,b,cfg.max_street_grade).map(|p|(p,"street",5.0))
                 .or_else(||planner.route(a,b,cfg.max_lane_grade).map(|p|(p,"lane",3.0)))?;
             centers.push(UrbanCenter {id:centers.len(),point:b,weight:0.65});
-            Some(Street {key: None, widths:vec![route.2;route.0.len()],path:route.0,rank:1,role:route.1.into()})
+            Some(Street {widths:vec![route.2;route.0.len()],path:route.0,rank:1,role:route.1.into()})
         })
     } else {None};
     // A port grows along its harbour shore.
@@ -3065,7 +3063,7 @@ mod tests {
         let surface=Surface{geometry:None,width:1000.,n,height:&height,water:&water, interpolation: Default::default(),};
         let site=Site{key:"hill".into(),name:String::new(),culture:"european-organic".into(),population:3000,center:Point{x:480.,y:500.},radius:300., neighbours: Vec::new()};
         let cfg=LayoutConfig{power_high_ground:true,site_archetype:"hilltop".into(),..Default::default()};
-        let roads=vec![Street{key: None, path:vec![Point{x:350.,y:250.},Point{x:350.,y:750.}],widths:vec![5.;2],rank:1,role:"regional".into()}];
+        let roads=vec![Street{path:vec![Point{x:350.,y:250.},Point{x:350.,y:750.}],widths:vec![5.;2],rank:1,role:"regional".into()}];
         assert!(summit_access(&site,&LayoutConfig{power_high_ground:false,..cfg.clone()},surface,&roads,300.).is_none());
         let (summit,route)=summit_access(&site,&cfg,surface,&roads,300.).expect("reachable hilltop");
         let route=route.expect("summit approach");
@@ -3469,7 +3467,6 @@ mod tests {
         };
         let (west, east) = (62.0 / 128.0 * 3000.0, 65.0 / 128.0 * 3000.0);
         let road = |a: f64, b: f64, role: &str| Street {
-            key: None,
             path: vec![Point { x: a, y: 1500.0 }, Point { x: b, y: 1500.0 }],
             widths: vec![8.0, 8.0],
             rank: 1,

@@ -46,13 +46,10 @@ fn from_plan(p: &'static serde_json::Value) -> UrbanProfile {
     }
 }
 
-pub(super) const VILLAGE_PROFILE_LIMIT: u32 = 1200;
-pub(super) const HAMLET_PROFILE_LIMIT: u32 = 200;
-
 pub(super) fn settlement_profile(culture: &str, population: u32, phases: usize) -> UrbanProfile {
     let c = composition::culture_data(culture, population);
     let mut p = from_plan(&c["plan"]);
-    if population >= VILLAGE_PROFILE_LIMIT && phases > 1 && c["ring"].is_object() {
+    if population >= 1200 && phases > 1 && c["ring"].is_object() {
         let enclosure = &c["ring"]["enclosure"];
         p.enclosure = enclosure["shape"].as_str().unwrap_or(p.enclosure);
         p.fortification = enclosure["wall"].as_str().unwrap_or(p.fortification);
@@ -65,8 +62,8 @@ pub(super) fn settlement_profile(culture: &str, population: u32, phases: usize) 
         if p.pattern == "grid" && op == Some("organic") {
             p.pattern = "organic";
         }
-    } else if population < VILLAGE_PROFILE_LIMIT {
-        let form = &c[if population < HAMLET_PROFILE_LIMIT {
+    } else if population < 1200 {
+        let form = &c[if population < 200 {
             "hamlet"
         } else {
             "village"

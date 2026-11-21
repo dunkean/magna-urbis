@@ -120,7 +120,6 @@ fn village_shape(culture: &str, population: u32, slope: f64) -> (f64, f64, f64) 
         neighbours: Vec::new(),
     };
     let road = Street {
-        key: None,
         path: (0..=12).map(|i| Point { x: 500.0 * i as f64, y: 3000.0 + 40.0 * ((i as f64) * 0.9).sin() }).collect(),
         widths: vec![6.0; 13],
         rank: 1,
@@ -593,7 +592,7 @@ fn large_camps_reached_by_track_ends_keep_their_homes() {
     let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
     let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
     let p = |x: f64, y: f64| Point { x, y };
-    let track = |a: Point, b: Point, width: f64| Street { key: None, path: vec![a, b], widths: vec![width; 2], rank: 2, role: "regional".into() };
+    let track = |a: Point, b: Point, width: f64| Street { path: vec![a, b], widths: vec![width; 2], rank: 2, role: "regional".into() };
     let roads = [
         track(p(0., 2043.), p(1762., 2004.), 2.1),
         track(p(1762., 2004.), p(2000., 2000.), 2.1),
@@ -637,7 +636,7 @@ fn review12_a_longhouse_village_on_trail_ends_builds_its_longhouses() {
     let n = 16;
     let (h, w, level) = (vec![10.0_f32; n * n], vec![0_u8; n * n], vec![0.0_f32; n * n]);
     let s = Surface { geometry: None, width: 4000.0, n, height: &h, water: &w, interpolation: Default::default(),};
-    let trail = |pts: &[(f64, f64)]| Street { key: None, path: pts.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![1.62; pts.len()], rank: 2, role: "regional".into() };
+    let trail = |pts: &[(f64, f64)]| Street { path: pts.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![1.62; pts.len()], rank: 2, role: "regional".into() };
     let roads = [
         trail(&[(2261., 1141.), (2254., 1260.), (2220., 1413.), (2168., 1603.), (2164., 1716.), (2105., 1870.), (2020., 1996.)]),
         trail(&[(2020., 1996.), (2000., 2000.)]),
@@ -993,7 +992,7 @@ fn slope_ladder_houses_10k_canyon_and_volcano_towns() {
         } else {
             vec![Point{x:4300.0,y:2300.0},Point{x:4240.0,y:3700.0},Point{x:4180.0,y:2300.0},Point{x:4120.0,y:3700.0}]
         };
-        let roads=vec![Street {key: None, widths:vec![4.0;path.len()],path,rank:2,role:"regional".into()}];
+        let roads=vec![Street {widths:vec![4.0;path.len()],path,rank:2,role:"regional".into()}];
         let layouts=generate_quarters("slope-ladder",&[site],&cfg,surface,&roads).unwrap();
         let parts=generate_parcels("slope-ladder",&layouts,&ParcelConfig::default()).unwrap();
         let parts=programme::reallocate(&layouts,&parts).unwrap();

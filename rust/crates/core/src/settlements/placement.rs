@@ -1,8 +1,8 @@
-use crate::urban::{Surface, warnings};
+use crate::urban::warnings;
 use super::grid::Fields;
 use super::{
     Config, Output, Point, Scores, Settlement, SettlementSpec, class_of, extent_gap, extent_radius,
-    harbour, pair_spacing, smooth,
+    pair_spacing, smooth,
 };
 use crate::{noise::Noise, rng::Rng};
 use std::collections::BTreeMap;
@@ -772,27 +772,16 @@ fn repel(f: &Fields, penalty: &mut [Vec<f32>], stride: usize, cfg: &Config, spac
         }
     }
 }
-#[cfg(test)]
-pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
-    place_on_terrain(seed, f, cfg, None)
-}
-
 /// The site model (see `web/out/settlement-review/PLACEMENT_MODEL.md`).
 /// - Static layers, once per map: room (summed-area table), water reached over the ground and
 ///   access from the regional entries (slope-weighted cost-distances, `LandMasses`), terrain and
 ///   culture (`score`), one per size band and culture.
 /// - Places in descending size, each drawn (seeded, weighted) from its band layer restricted to
 ///   the cells that hold it: land rule (`LandMasses::admits`), room for its population, frame,
-///   explicit site type and existing harbour reservations; then the dynamic layers are updated
-///   around it (`repel`).
+///   explicit site type; then the dynamic layers are updated around it (`repel`).
 /// - No cell: the place shrinks one class and draws again (announced); a user's site type is
 ///   given up before that. Explicit positions are kept as given.
-pub(super) fn place_on_terrain(
-    seed: &str,
-    f: &Fields,
-    cfg: &Config,
-    harbour_surface: Option<Surface<'_>>,
-) -> Output {
+pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
     let root = Rng::new(&format!("magna-urbis:{seed}"));
     let noise = Noise::new(root.fork("settlements").fork("noise"));
     let usable =
@@ -847,7 +836,6 @@ pub(super) fn place_on_terrain(
     let spacing_scale = cave_spacing * if cfg.mode == "auto" { cfg.spread.max(0.05) } else { 1.0 };
     let mut statics: BTreeMap<String, Vec<Option<f32>>> = BTreeMap::new();
     let mut penalty: Vec<Vec<f32>> = (0..BAND_REPS.len()).map(|_| vec![0.0f32; n * n]).collect();
-    let mut harbour_exclusions = harbour_surface.map(|_| vec![false; n * n]);
     let mut dropped_underground = 0usize;
     for (index, mut s) in requests.into_iter().enumerate() {
         if s.key.is_empty() {
@@ -908,10 +896,7 @@ pub(super) fn place_on_terrain(
                 let mut weights: Vec<Option<f64>> = crate::urban::par::map(&candidates, |k, &i| {
                     let base = layer[k]?;
                     let repelled = dynamic[i];
-                    if !repelled.is_finite()
-                        || harbour_exclusions.as_ref().is_some_and(|cells| cells[i])
-                        || !land.admits(f, i, &spec, index)
-                    {
+                    if !repelled.is_finite() || !land.admits(f, i, &spec, index) {
                         return None;
                     }
                     let p = f.pos(i);
@@ -996,7 +981,6 @@ pub(super) fn place_on_terrain(
             if land.admits(f, j, &s, index)
                 && score(f, j, &s, &prep, cfg, &noise, &land).1
                 && out.settlements.iter().all(|o| jitter.distance(o.center) >= extent_gap(pop, o.spec.population))
-                && (harbour_exclusions.is_none() || !harbour::reserved(&out.settlements, jitter))
             {
                 p = jitter;
             }
@@ -1035,22 +1019,6 @@ pub(super) fn place_on_terrain(
         if s.name.is_empty() {
             s.name = if s.key == "main" { "Main settlement".into() } else { s.key.clone() };
         }
-        let harbour_reservation = harbour_surface.and_then(|surface| {
-            // A water site or a preference for harbours can make an inland place a port.
-            // The survey confirms it has a navigable front and an approach within reach.
-            let port_capable = pop >= 150
-                && prep.shore >= INLAND_HARBOUR_WEIGHT
-                && (water_site(&kind)
-                    || matches!(s.site_type.as_str(), "harbor" | "lakeshore")
-                    || prep.shore > 1.0);
-            if !port_capable {
-                return None;
-            }
-            harbour::reserve(surface, f, &s.culture, p, &out.settlements)
-        });
-        if let (Some(claim), Some(cells)) = (harbour_reservation, harbour_exclusions.as_mut()) {
-            claim.exclude(f, p, cells);
-        }
         repel(f, &mut penalty, stride, cfg, spacing_scale, p, pop);
         out.settlements.push(Settlement {
             spec: s,
@@ -1058,7 +1026,6 @@ pub(super) fn place_on_terrain(
             cls: class_of(pop).into(),
             archetype: kind,
             radius: ext,
-            harbour_reservation,
             scores,
         });
         if budget && index > 0 {

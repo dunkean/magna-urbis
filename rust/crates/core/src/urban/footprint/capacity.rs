@@ -283,16 +283,18 @@ fn compact_village(morph: &mut Morph, zone: &str, population: u32) {
     }
 }
 
-/// A probe measures admissible dwellings with no competing uses or demand cap.
-pub(in crate::urban) fn housing_probe_programme(
-    key: &str,
-    culture: &str,
-    cfg: &LayoutConfig,
+/// Households and garden land that the parcel stage gives each block of a
+/// layout, under the allocation of the city (`programme::allocate`) with an
+/// unbounded housing demand: every admissible plot holds its household cap.
+fn run(
+    mut layout: Layout,
     environment: Vec<BlockEnvironment>,
+    seed: &str,
+    cfg: &LayoutConfig,
     population: u32,
-) -> UrbanProgramme {
+) -> Option<Vec<(f64, f64)>> {
     let mut wanted = Demand {
-        id: format!("{key}/demand/domestic"),
+        id: format!("{}/demand/domestic", layout.key),
         function: "domestic".into(),
         unit: "domesticUnits".into(),
         requested: 1.0e8,
@@ -313,14 +315,14 @@ pub(in crate::urban) fn housing_probe_programme(
         placement: String::new(),
     };
     wanted.deficit = wanted.requested;
-    UrbanProgramme {
+    layout.programme = Some(UrbanProgramme {
         version: 1,
         population: population.max(1),
         // The given population is the town's before any decay: capacity is
         // measured on the thriving town (no empty or ruined homes), and the
         // state then only empties buildings of the same plan.
         context: super::super::programme::ProgrammeContext { state: "thriving".into(), decay: Some(0.0), ..cfg.programme.clone() },
-        cultures: super::super::culture::mapping_for(culture, &cfg.programme.period)
+        cultures: super::super::culture::mapping_for(&layout.culture, &cfg.programme.period)
             .into_iter()
             .collect(),
         demands: vec![wanted],
@@ -332,22 +334,7 @@ pub(in crate::urban) fn housing_probe_programme(
         warnings: vec![],
         housing_capacity: 0.0,
         navigable_frontage: false,
-    }
-}
-
-/// Households and garden land that the parcel stage gives each block of a
-/// layout, under the allocation of the city (`programme::allocate`) with an
-/// unbounded housing demand: every admissible plot holds its household cap.
-fn run(
-    mut layout: Layout,
-    environment: Vec<BlockEnvironment>,
-    seed: &str,
-    cfg: &LayoutConfig,
-    population: u32,
-) -> Option<Vec<(f64, f64)>> {
-    layout.programme = Some(housing_probe_programme(
-        &layout.key, &layout.culture, cfg, environment, population,
-    ));
+    });
     let parcel_cfg = ParcelConfig {
         density: cfg.density,
         ..ParcelConfig::default()
@@ -622,7 +609,6 @@ fn probe_uncached(
                 y: p.y,
             });
     let layout = Layout {
-        regional_road_result: None,
         config: Some(LayoutConfig {
             culture: culture.into(),
             ..cfg.clone()
@@ -632,7 +618,6 @@ fn probe_uncached(
         culture: culture.into(),
         center,
         quarters: vec![Quarter {
-            key: None,
             shape: shapes[0].clone(),
             phase: 0,
             zone: zone.into(),

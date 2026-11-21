@@ -338,7 +338,7 @@ impl StreetGraph {
                     path.push(self.nodes[e.ends[1] as usize].p);
                     widths.extend_from_slice(&e.widths[1..]);
                 }
-                Street { key: None, path, widths, rank: chain.rank, role: chain.role.clone() }
+                Street { path, widths, rank: chain.rank, role: chain.role.clone() }
             })
             .collect()
     }
@@ -837,7 +837,7 @@ mod tests {
     use super::*;
 
     fn street(points: &[(f64, f64)], w: f64, rank: usize, role: &str) -> Street {
-        Street { key: None, path: points.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![w; points.len()], rank, role: role.into() }
+        Street { path: points.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![w; points.len()], rank, role: role.into() }
     }
     fn run(streets: &[Street]) -> (Vec<Street>, Seats) {
         let mut g = StreetGraph::load(streets, 200.0);

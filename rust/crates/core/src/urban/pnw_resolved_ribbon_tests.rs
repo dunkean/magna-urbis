@@ -31,13 +31,13 @@ fn resolved_auto_and_explicit_ribbon_use_the_same_existing_constructor() {
 #[test]
 fn an_existing_regional_axis_is_not_duplicated_as_a_fallback_guide() {
  let f=fixture();let s=surface(&f);let m=morph(&f);let c=f.sites[0].center;
- let road=Street{key: None, path:vec![Point{x:c.x-600.,y:c.y},Point{x:c.x+600.,y:c.y}],widths:vec![5.;2],rank:1,role:"regional".into()};
+ let road=Street{path:vec![Point{x:c.x-600.,y:c.y},Point{x:c.x+600.,y:c.y}],widths:vec![5.;2],rank:1,role:"regional".into()};
  let original=serde_json::to_vec(&road).unwrap();
  let output=generate(&f.seed,&f.sites[0],&f.layout_config,&m,s,std::slice::from_ref(&road),f.sites[0].radius);
  assert!(output.structure.metrics.allocated_area>0.);assert!(output.guides.is_empty(),"The imported axis already belongs to growth_roads");
  assert_eq!(serde_json::to_vec(&road).unwrap(),original);
 }
-fn axis()->Street{Street{key: None, path:vec![Point{x:100.,y:300.},Point{x:500.,y:300.}],widths:vec![5.;2],rank:1,role:"street".into()}}
+fn axis()->Street{Street{path:vec![Point{x:100.,y:300.},Point{x:500.,y:300.}],widths:vec![5.;2],rank:1,role:"street".into()}}
 fn test_surface<'a>(height:&'a[f32],water:&'a[u8])->Surface<'a>{Surface{geometry:None,width:640.,n:64,height,water, interpolation: Default::default(),}}
 #[test]
 fn a_hole_inside_the_full_stroke_refuses_an_otherwise_clear_centerline() {

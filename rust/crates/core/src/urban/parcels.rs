@@ -296,10 +296,6 @@ impl FrontageIndex {
         let mut cells: BTreeMap<(i32, i32), Vec<(usize, usize)>> = BTreeMap::new();
         for (si, s) in layout.streets.iter().enumerate() {
             if s.role == "track" && s.rank >= 4 { continue; }
-            // Only at-grade ways provide parcel frontages on the growth graph.
-            if s.key.is_some() && matches!(s.role.as_str(), "boundary" | "bridge") {
-                continue;
-            }
             for (j, w) in s.path.windows(2).enumerate() {
                 let x0 = ((w[0].x.min(w[1].x) - 14.0) / 64.0).floor() as i32;
                 let x1 = ((w[0].x.max(w[1].x) + 14.0) / 64.0).floor() as i32;
@@ -4151,7 +4147,7 @@ pub(super) fn generate(
     cfg: &ParcelConfig,
     morph: &Morph,
 ) -> Result<Partition, String> {
-    generate_cut(seed, layout, cfg, morph, true, None)
+    generate_cut(seed, layout, cfg, morph, true)
 }
 /// `generate` without the coverage accounts of the cut blocks (`Coverage`):
 /// the same lots and the same warnings but the residual-coverage one, and
@@ -4163,52 +4159,14 @@ pub(super) fn generate_probe(
     cfg: &ParcelConfig,
     morph: &Morph,
 ) -> Result<Partition, String> {
-    generate_cut(seed, layout, cfg, morph, false, None)
+    generate_cut(seed, layout, cfg, morph, false)
 }
-
-/// Cut one growth quarter at its birth pressure, without computing a network gradient.
-pub(super) fn generate_quarter_probe(
-    seed: &str,
-    layout: &Layout,
-    cfg: &ParcelConfig,
-    morph: &Morph,
-    pressure: f64,
-) -> Result<Partition, String> {
-    generate_cut(seed, layout, cfg, morph, false, Some(pressure))
-}
-fn cut_pressures(layout: &Layout) -> Vec<f64> {
-    // The first environment entry of each block, found in one pass.
-    let mut first_environment: Vec<Option<&super::programme::BlockEnvironment>> = vec![None; layout.blocks.len()];
-    for e in layout.programme.iter().flat_map(|pr| &pr.environment) {
-        if let Some(slot) = first_environment.get_mut(e.block)
-            && slot.is_none()
-        {
-            *slot = Some(e);
-        }
-    }
-    let road_pressures = super::composition::gate_pressures(layout, occupation_pressures(layout).into_iter()
-        .enumerate().map(|(bi,p)|first_environment.get(bi).copied().flatten().map_or(p,|e|e.pressure)).collect());
-    // Quarters and blocks have their own character around the access
-    // gradient (« des quartiers variables »): a denser, taller quarter here,
-    // a looser one there, never a uniform ring. One draw per quarter and per
-    // block, so lots, coverage, house sizes and floors all read the same.
-    road_pressures.iter().enumerate().map(|(bi, &p)| {
-        let quarter = layout.blocks[bi].quarter;
-        let q = Rng::new(&layout.key).fork(&format!("quarter-character:{quarter}")).range(-0.12, 0.12);
-        // Keyed by place, not by index: redrawing one quarter leaves the others.
-        let c = super::geometry::centroid(&layout.blocks[bi].shape);
-        let b = Rng::new(&layout.key).fork(&format!("block-character:{:.0}:{:.0}", c.x, c.y)).range(-0.06, 0.06);
-        (p + q + b).clamp(0.05, 1.0)
-    }).collect()
-}
-
 fn generate_cut(
     seed: &str,
     layout: &Layout,
     cfg: &ParcelConfig,
     morph: &Morph,
     covered: bool,
-    frozen_pressure: Option<f64>,
 ) -> Result<Partition, String> {
     let mut result = Partition {
         config: Some(cfg.clone()),
@@ -4225,11 +4183,29 @@ fn generate_cut(
     let mut laps = super::network::Lap::new("parcels.cut");
     let index = FrontageIndex::new(layout);
     laps.lap("frontage-index");
-    let road_pressures = if let Some(pressure) = frozen_pressure {
-        vec![pressure; layout.blocks.len()]
-    } else {
-        cut_pressures(layout)
-    };
+    // The first environment entry of each block, found in one pass.
+    let mut first_environment: Vec<Option<&super::programme::BlockEnvironment>> = vec![None; layout.blocks.len()];
+    for e in layout.programme.iter().flat_map(|pr| &pr.environment) {
+        if let Some(slot) = first_environment.get_mut(e.block)
+            && slot.is_none()
+        {
+            *slot = Some(e);
+        }
+    }
+    let road_pressures = super::composition::gate_pressures(layout, occupation_pressures(layout).into_iter()
+        .enumerate().map(|(bi,p)|first_environment.get(bi).copied().flatten().map_or(p,|e|e.pressure)).collect());
+    // Quarters and blocks have their own character around the access
+    // gradient (« des quartiers variables »): a denser, taller quarter here,
+    // a looser one there, never a uniform ring. One draw per quarter and per
+    // block, so lots, coverage, house sizes and floors all read the same.
+    let road_pressures: Vec<f64> = road_pressures.iter().enumerate().map(|(bi, &p)| {
+        let quarter = layout.blocks[bi].quarter;
+        let q = Rng::new(&layout.key).fork(&format!("quarter-character:{quarter}")).range(-0.12, 0.12);
+        // Keyed by place, not by index: redrawing one quarter leaves the others.
+        let c = super::geometry::centroid(&layout.blocks[bi].shape);
+        let b = Rng::new(&layout.key).fork(&format!("block-character:{:.0}:{:.0}", c.x, c.y)).range(-0.06, 0.06);
+        (p + q + b).clamp(0.05, 1.0)
+    }).collect();
     let culture = if cfg.culture == "site" {
         &layout.culture
     } else {
@@ -5193,7 +5169,6 @@ mod tests {
         layout.streets = [3, 1, 1]
             .into_iter()
             .map(|rank| Street {
-                key: None,
                 path: vec![Point { x: -96.0, y: -3.0 }, Point { x: 96.0, y: -3.0 }],
                 widths: vec![6.0; 2],
                 rank,
@@ -5272,7 +5247,6 @@ mod tests {
                 .collect(),
         );
         let layout = Layout {
-            regional_road_result: None,
             config: None,
             programme: None,
             key: "unserved-deep-sector".into(),
@@ -5285,8 +5259,6 @@ mod tests {
             enclosures: vec![],
             warnings: vec![],
             blocks: vec![Block {
-                key: None,
-                fill: None,
                 phase: None,
                 shape: shape.clone(),
                 quarter: 0,
@@ -5295,7 +5267,6 @@ mod tests {
                 zone: "core".into(),
             }],
             streets: vec![Street {
-                key: None,
                 path: vec![Point { x: 0.0, y: -3.0 }, Point { x: 240.0, y: -3.0 }],
                 widths: vec![6.0; 2],
                 rank: 1,
@@ -5403,7 +5374,6 @@ mod tests {
                 .collect(),
         );
         let layout = Layout {
-            regional_road_result: None,
             config: None,
             programme: None,
             key: "frontage-fixture".into(),
@@ -5416,8 +5386,6 @@ mod tests {
             enclosures: vec![],
             warnings: vec![],
             blocks: vec![Block {
-                key: None,
-                fill: None,
                 phase: None,
                 shape: shape.clone(),
                 quarter: 0,
@@ -5426,7 +5394,6 @@ mod tests {
                 zone: "core".into(),
             }],
             streets: vec![Street {
-                key: None,
                 path: vec![
                     Point { x: -3.0, y: -3.0 },
                     Point { x: 103.0, y: -3.0 },
@@ -5521,8 +5488,6 @@ mod tests {
         }))
         .unwrap();
         layout.blocks = vec![Block {
-            key: None,
-            fill: None,
             phase: None,
             shape: shape.clone(),
             quarter: 0,
@@ -5531,7 +5496,6 @@ mod tests {
             zone: "core".into(),
         }];
         layout.streets = vec![Street {
-            key: None,
             path: vec![
                 Point { x: -3.0, y: -3.0 },
                 Point { x: 99.0, y: -3.0 },
@@ -5734,8 +5698,6 @@ mod tests {
     /// Two quarters of one block each along a street, every phase in `zone`.
     fn two_quarters(zone: &str) -> (Layout, impl Fn(&Layout, usize) -> usize) {
         let block = |x: f64, q: usize| Block {
-            key: None,
-            fill: None,
             phase: None,
             shape: rectangle(x, 0.0, x + 120.0, 30.0),
             quarter: q,
@@ -5744,7 +5706,6 @@ mod tests {
             zone: zone.into(),
         };
         let layout = Layout {
-            regional_road_result: None,
             config: Some(super::super::LayoutConfig::default()),
             programme: None,
             key: "edited-quarter".into(),
@@ -5763,7 +5724,6 @@ mod tests {
             center: Point { x: 120.0, y: 15.0 },
             quarters: (0..2)
                 .map(|q| super::super::Quarter {
-                    key: None,
                     shape: rectangle(q as f64 * 130.0, 0.0, q as f64 * 130.0 + 120.0, 30.0),
                     phase: 0,
                     zone: zone.into(),
@@ -5773,7 +5733,6 @@ mod tests {
             warnings: vec![],
             blocks: vec![block(0.0, 0), block(130.0, 1)],
             streets: vec![Street {
-                key: None,
                 path: vec![Point { x: -10.0, y: -3.0 }, Point { x: 260.0, y: -3.0 }],
                 widths: vec![6.0; 2],
                 rank: 1,
@@ -5798,11 +5757,10 @@ mod tests {
 
     #[test]
     fn block_edit_recuts_only_its_own_lots_and_retains_streets() {
-        let blocks = [0.0, 130.0].into_iter().map(|x| Block { key: None, fill: None, phase: None,
+        let blocks = [0.0, 130.0].into_iter().map(|x| Block { phase: None,
             shape: rectangle(x, 0., x + 120., 30.), quarter: 0, kind: "block".into(),
             axis: Point { x: 1., y: 0. }, zone: "edge".into() }).collect();
         let layout = strip_layout("edited-block", blocks, vec![Street {
-            key: None,
             path: vec![Point { x: -10., y: -3. }, Point { x: 260., y: -3. }],
             widths: vec![6.; 2], rank: 1, role: "street".into() }]);
         let original = serde_json::to_value(&layout).unwrap();
@@ -5825,7 +5783,6 @@ mod tests {
     /// A one-quarter european layout of the given blocks and streets.
     fn strip_layout(key: &str, blocks: Vec<Block>, streets: Vec<Street>) -> Layout {
         Layout {
-            regional_road_result: None,
             config: Some(super::super::LayoutConfig::default()),
             programme: None,
             key: key.into(),
@@ -5843,7 +5800,6 @@ mod tests {
             culture: "european-organic".into(),
             center: Point { x: 0.0, y: 0.0 },
             quarters: vec![super::super::Quarter {
-                key: None,
                 shape: rectangle(-500.0, -500.0, 500.0, 500.0),
                 phase: 0,
                 zone: "edge".into(),
@@ -5857,7 +5813,6 @@ mod tests {
     }
     fn road(a: (f64, f64), b: (f64, f64), rank: usize) -> Street {
         Street {
-            key: None,
             path: vec![Point { x: a.0, y: a.1 }, Point { x: b.0, y: b.1 }],
             widths: vec![6.0; 2],
             rank,
@@ -5866,8 +5821,6 @@ mod tests {
     }
     fn edge_block(shape: Shape, kind: &str) -> Block {
         Block {
-            key: None,
-            fill: None,
             phase: None,
             shape,
             quarter: 0,

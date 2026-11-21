@@ -45,7 +45,7 @@ const MAX_CARGO: usize = 36;
 const MAX_FRONTS: usize = 64;
 const MAX_KERBS: usize = 90;
 
-pub(super) fn data() -> &'static Value {
+fn data() -> &'static Value {
     static DATA: OnceLock<Value> = OnceLock::new();
     DATA.get_or_init(|| serde_json::from_str(include_str!("harbours.json")).expect("harbours.json"))
 }
@@ -1268,7 +1268,7 @@ fn canal_boats(seed: &str, layout: &mut Layout) {
 }
 
 /// The harbour family of a culture (`default` when no family names it).
-pub(super) fn family_of(culture: &str) -> &'static Value {
+fn family_of(culture: &str) -> &'static Value {
     let families = &data()["families"];
     families
         .as_object()
@@ -1286,7 +1286,7 @@ fn small_craft(culture: &str) -> Option<(&'static str, f64, f64)> {
 
 /// Settlements under this population (and every port of a `simple` family)
 /// get one plain landing instead of quays and harbour works.
-pub(super) const TOWN_PORT: u32 = 2500;
+const TOWN_PORT: u32 = 2500;
 /// Width of a plain landing strip: 2 m on the bank, 0.5 m over the water.
 const STRIP: (f64, f64) = (2.0, 0.5);
 /// Height of a plain landing's deck above its water (m).
@@ -1633,7 +1633,7 @@ fn shore_landing(seed: &str, layout: &mut Layout, population: u32, cfg: &LayoutC
         return;
     }
     if let Some(path) = track {
-        layout.streets.push(Street { key: None, widths: vec![2.0; path.len()], path, rank: 4, role: "track".into() });
+        layout.streets.push(Street { widths: vec![2.0; path.len()], path, rank: 4, role: "track".into() });
     }
     if let Some(structure) = layout.structure.as_mut() {
         structure.quays.extend(items);
@@ -2013,7 +2013,7 @@ mod tests {
     }
     /// A quay street along `x`, from y = 40 to y = 216, with its platform.
     fn quay(x: f64) -> (Vec<Street>, Vec<Quay>) {
-        let street = Street { key: None, path: vec![Point { x, y: 40.0 }, Point { x, y: 216.0 }], widths: vec![6.0; 2], rank: 2, role: "quay".into() };
+        let street = Street { path: vec![Point { x, y: 40.0 }, Point { x, y: 216.0 }], widths: vec![6.0; 2], rank: 2, role: "quay".into() };
         let platform = Quay { kind: "quay".into(), shape: rectangle(x - 3.0, 40.0, x + 3.0, 216.0), deck_z_m: 2.0, material: "stone".into() };
         (vec![street], vec![platform])
     }
@@ -2029,7 +2029,7 @@ mod tests {
         let (height, water) = raster(1, 0.0, 128.0);
         let surface = ground(&height, &water);
         let (mut streets, mut platforms) = quay(132.0);
-        streets.push(Street { key: None, path: vec![Point { x: 132.0, y: 100.0 }, Point { x: 100.0, y: 100.0 }], widths: vec![5.0; 2], rank: 3, role: "pier".into() });
+        streets.push(Street { path: vec![Point { x: 132.0, y: 100.0 }, Point { x: 100.0, y: 100.0 }], widths: vec![5.0; 2], rank: 3, role: "pier".into() });
         platforms.push(Quay { kind: "pier".into(), shape: rectangle(100.0, 97.5, 132.0, 102.5), deck_z_m: 2.0, material: "timber".into() });
         let harbour = plan("seed", "hanseatic", 10_000, "merchant-quay", &streets, &platforms, surface);
         assert_eq!(harbour.site, "sea");
@@ -2258,7 +2258,7 @@ mod tests {
                 "quarters": [], "blocks": [], "warnings": [], "structure": {"quays": platforms}, "streets": streets
             }))
             .unwrap();
-            layout.streets.push(Street { key: None, path: vec![Point { x: 132.0, y: 100.0 }, Point { x: 110.0, y: 100.0 }], widths: vec![3.0; 2], rank: 3, role: "landing".into() });
+            layout.streets.push(Street { path: vec![Point { x: 132.0, y: 100.0 }, Point { x: 110.0, y: 100.0 }], widths: vec![3.0; 2], rank: 3, role: "landing".into() });
             furnish("seed", &mut layout, population, &LayoutConfig::default(), surface);
             layout
         };

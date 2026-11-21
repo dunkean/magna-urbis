@@ -172,7 +172,6 @@ mod tests {
     use super::*;
     fn street(points: &[(f64, f64)], w: f64, role: &str) -> Street {
         Street {
-            key: None,
             path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
             widths: vec![w; points.len()],
             rank: 2,

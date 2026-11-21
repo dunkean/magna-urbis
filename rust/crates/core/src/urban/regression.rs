@@ -19,7 +19,6 @@ fn site(culture: &str) -> Site {
 
 fn street(points: &[(f64, f64)], role: &str) -> Street {
     Street {
-        key: None,
         path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
         widths: vec![6.0; points.len()],
         rank: 1,

@@ -9,7 +9,7 @@ struct RecordedCase {
 }
 fn cases()->Vec<RecordedCase>{serde_json::from_slice(include_bytes!("fixtures/camp-kind-mapping-cases.json")).unwrap()}
 fn site(culture:&str,population:u32)->Site{Site{key:"camp-mapping".into(),name:String::new(),culture:culture.into(),population,center:Point{x:2000.,y:2000.},radius:200., neighbours: Vec::new()}}
-fn crossing(center:Point)->Vec<Street>{vec![Street{key: None, path:vec![Point{x:center.x-1000.,y:center.y},Point{x:center.x+1000.,y:center.y}],widths:vec![6.,6.],rank:0,role:"regional".into()}]}
+fn crossing(center:Point)->Vec<Street>{vec![Street{path:vec![Point{x:center.x-1000.,y:center.y},Point{x:center.x+1000.,y:center.y}],widths:vec![6.,6.],rank:0,role:"regional".into()}]}
 
 #[test]
 fn camp_mapping_actual_metadata_cases_are_radius_and_road_independent_at_this_boundary(){

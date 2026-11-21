@@ -1140,7 +1140,6 @@ mod tests {
         }))
         .unwrap();
         layout.streets = vec![Street {
-            key: None,
             path: vec![at(0.0, -3.0), at(60.0, -3.0)],
             widths: vec![6.0; 2],
             rank: 1,
