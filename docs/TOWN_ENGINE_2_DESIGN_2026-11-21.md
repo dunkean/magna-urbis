@@ -1,272 +1,335 @@
 # Town engine 2: growth by dated steps on a graph
 
-21 November 2026. Design document, written before any code. Nothing described here is implemented. Revised the same day after two independent reviews (one by Fable 5.2, one by Astra 6.2) checked the first draft against the code; their findings are folded in, and the points still open are listed in section 14. It replaces, for the new engine, the roadmap of `STREET_GRAPH_DESIGN_2026-11-20.md` (steps 2 to 13) and the repair plan of `PLANNER_STABILITY_DESIGN_2026-11-21.md`, whose diagnosis it keeps as the list of what not to rebuild. It extends `GROW_UNTIL_HOUSED_2026-11-15.md`. Paths without a prefix are in `rust/crates/core/src/urban/`.
+21 November 2026. Definitive design, approved by the owner on 21 November after two rounds of independent review (Fable 5.2 and Astra 6.2) and three rounds of discussion. Nothing described here is implemented yet; the order of work is in `TOWN_ENGINE_2_PLAN_2026-11-21.md`. It replaces, for the new engine, the roadmap of `STREET_GRAPH_DESIGN_2026-11-20.md` (steps 2 to 13) and the repair plan of `PLANNER_STABILITY_DESIGN_2026-11-21.md`, whose diagnosis it keeps as the list of what not to rebuild. It extends `GROW_UNTIL_HOUSED_2026-11-15.md`. Paths without a prefix are in `rust/crates/core/src/urban/`.
 
 ## 1. Summary
 
-- The present layout engine stays as it is ("classic"), frozen: bug fixes only. A second engine is written beside it, chosen by a layout option; classic remains the default until the owner approves the new towns on review sheets.
-- The new engine replaces the layout stage: land, armature, quarters, streets, blocks, walls. The stages that follow (lots, programme, building sites, display) are reused, but not untouched: they read far more from the layout than its geometry, they key everything on indices, and they recompute pressure and allocation over the whole town. Section 9 lists what they read; section 10 what must change in them, now and for the later chronology.
-- A town is a planar graph: streets, walls, bridges and quays are typed edges between shared nodes, blocks are faces, quarters are lineage roots of faces, lots are a split tree inside a face. Every element has an identity derived from its lineage and a birth date.
-- A town is built by dated events; the clock is the housed population. Growth advances where building is possible, ranked by a cost, and stops when the households are housed. There is no capacity forecast, no replan, no whole-town trim loop, no global slope slider.
-- Walls, the fate of regional roads through the centre, and the ageing of the core are dated events. The journal is designed so that later events can pierce streets and merge blocks and lots; that mechanism is not built now.
-- The first milestone after the base is a spike: one occupied quarter with today's street look, exported, counted, resumed, shown in the V2 on native and WebAssembly. The estimate is 50 to 70 sessions, not 30 to 45.
+- The present layout engine stays as it is ("classic"), frozen: bug fixes only. A second engine ("growth") is written beside it, chosen by a layout option; classic stays the default until the owner approves growth towns on review sheets.
+- Growth replaces the layout stage (land, armature, quarters, streets, blocks, walls, harbour plan). The later stages (lots, programme, building sites, display) are reused through an adapter that is not thin: section 10.
+- A town is one planar graph. Streets, walls, quays and bridges are typed edges between shared nodes; blocks are faces; a quarter is the lineage root of its faces. Every element has an identity derived from its lineage and a birth date.
+- A town is built by dated events. The clock is the housed population. The **charter**, decided at founding, holds only what never changes (culture, site, founding focus, planned or grown, defensive intent, the town's own draws). The **phases** (hamlet, village, market town, town, city) are dated promotions at thresholds drawn per town around the culture's values and moved by circumstances; a promotion changes what is born afterwards, never what exists.
+- Growth opens land in rings of a cost field and stops when the households are housed. There is no capacity forecast, no replan, no whole-town trim loop, no global slope slider.
+- A wall's land is **surveyed before it is built**: a closed precinct is traced on open land, by today's tracers (stiffness, relief, square, bastioned), with its gates; only its sectors open, in compact tissue, up to the wall street; the wall is **raised when the precinct is full**. Density and wall therefore come from one prior decision, as in classic, and the town adapts to its wall.
+- Harbour fronts are surveyed before founding. A harbour can found the town; otherwise a harbour road is part of the armature from founding and growth stretches along it to the water. The harbour is decided before the wall in every step, and the wall takes it as a constraint. A distant harbour belongs to its town.
+- Fortified camps, hilltop castles and nested walls follow from the same model: a camp is an enclosed charter with a camp tissue; a castle on a height is a founding focus; an inner circuit is a former outer wall.
+- Planned towns (imperial Chinese capitals, colonial grids built for 100,000) are a charter choice offered in the visible town settings: their frame is drawn for a planned capacity and filled over time.
+- About 55 to 75 sessions. The first milestone after the extraction is a spike: one occupied quarter with today's street look, exported, counted, resumed, shown in the V2.
 
 ## 2. Scope
 
-**Replaced, in the new engine only.** `footprint.rs` and `footprint/*` (except what section 9 keeps), `composition.rs`, `quarters.rs`, `network.rs`, `trim.rs`, the trace and gate decision of `fortification*.rs`, `macroplan*.rs` except the harbour planner, `slopes.rs`, `footprint/capacity.rs`, the ladders of `mod.rs`. These files total about 39,000 lines (not 50,000 as first written).
+**Replaced, in the growth engine only** (about 39,000 lines of classic): `footprint.rs` and `footprint/*` except what section 10 keeps, `composition.rs`, `quarters.rs`, `network.rs`, `trim.rs`, the trace and gate decision of `fortification*.rs`, `macroplan*.rs` including the harbour plan, `slopes.rs`, `footprint/capacity.rs`, the ladders of `mod.rs`.
 
-**Ported, not rewritten: the street look.** The organic street shapes the owner likes come from the street field and its tracing in `quarters.rs` (`Field`, `Field::angle` at `quarters.rs:879`, `trace`, the recursive `split_quarter` at `quarters.rs:1569`). The new engine ports that code as `tissue/organic` and makes it write edges and faces into the graph instead of polylines. The same holds for each tissue later: the present cutters are the reference look, ported one at a time.
+**Ported, not rewritten.** The look is classic's, ported piece by piece:
+- streets: the organic field and its tracing (`quarters.rs`: `Field`, `Field::angle` at line 879, `trace`, the recursive `split_quarter` at line 1569) become `tissue/organic`; each other tissue is ported from its classic cutter;
+- wall traces: `parameter_trace` (`fortification_params.rs:41`), `village_trace`, `hill_trace`, `square_trace`, `bastioned_trace` (`fortification.rs:1271`), `straight_across`, `attach` (`fortification_extension.rs`), the castle contour of `fortification_heights.rs`;
+- harbour siting and fronts: `shore_runs`, the gentle-bank and navigability tests, `harbour_shelter.rs`, the quay rules of `macroplan/harbour.rs` (one continuous quay between water and the first row of lots, length `quayPerSqrtPop`·√P, a landing street about every 120 m, never behind a bank street);
+- camp figures: the tessellation of `parcels/camp.rs` and the camp kinds of `kinds.rs`.
 
-**Reused through an interface.** The lot cut (`parcels*`), the programme (`programme.rs`), building sites, massing, roles, the culture catalogue and forms, harbour furniture, the packs and the bridge, the whole display. The wall works (towers, gate houses, moat pieces, `fortification::build`) are reused; section 5 says what they require of a trace.
+**Reused through an interface.** The lot cut (`parcels*`), the programme (`programme.rs`), building sites, massing, roles, the culture catalogue and forms, harbour furniture, wall works (`fortification::build`), the packs and the bridge, the whole display.
 
-**Kept on classic at first, through the engine option**: camps, stilt and lagoon towns, tree dwellings, the Underdark, isolated structures and farms, informal quarters, and harbour towns until the harbour planner (`macroplan/harbour*.rs`, 3,905 lines, which produces the `structure.quays` that harbour furniture and roles consume) is ported behind the new armature. They move over one by one, or never.
+**Kept on classic**, through the engine option, until they move or for good: stilt and lagoon towns, tree dwellings, the Underdark, isolated structures and farms, informal quarters (shanty extension). Camps and harbour towns move in milestones 3 and 6 (plan).
 
-**Existing street graph.** `street_graph.rs` (1,039 lines, used by `network::clean_terrain`) is classic's junction owner: it rebuilds a graph from polylines. The new engine does not reuse it as its model (its ids are rebuilt on each call and it holds no faces), but its node merging and tests are a starting point for `graph`.
+**Existing street graph.** `street_graph.rs` (1,039 lines, classic's junction owner) rebuilds a graph from polylines on each call and holds no faces; it is not the model, but its node merging and tests are a starting point for `graph`.
 
 ## 3. The model
 
 ### 3.1 The graph
 
-A half-edge structure. Elements carry:
+A half-edge structure, one planar subdivision per `level` (ground, deck, terrace).
 
-- **identity**: a lineage key, never an allocation counter. A quarter's key is `(ring, station)`, where the station is the position of its host on the armature (the node it hangs from and the arm it opens), so that the same quarter gets the same key whatever order the ring is computed in and whether the ring is complete or truncated. A block's key is its quarter's key plus its path in that quarter's split; an edge's key is the key of the event that created it plus its rank in that event. Numeric handles for speed are an index into a table keyed by those keys.
-- **`born`, `died`**: clock values. `died` is set by events that retire an element (a split edge retires and is replaced by two; a demoted road stretch retires).
-- **`parents`**: the elements it came from (one for a split, several for a merge).
-- **mutable attributes are versioned**: a rank or a role that changes at a date is a list of `(from, value)`, so that the town at any date is a filter.
+Every element carries:
+- **identity** from lineage, never from allocation order. A quarter's key is `(ring, station)`, the station being the position of its host on the armature (the node it hangs from and the arm it opens), so the same quarter gets the same key whatever order a ring is computed in and whether the ring is complete or truncated. A block's key is its quarter's key and its path in the quarter's split; an edge's key is the key of the event that created it and its rank in that event. Numeric handles are indices into a table keyed by those keys.
+- **`born`, `died`** (clock values); an element that is split or merged retires and its children are born.
+- **`parents`**: one for a split, several for a merge.
+- **versioned attributes**: a rank, role or class that changes at a date is a list of `(from, value)`; the town at any date is a filter.
 
 Kinds:
+- **Node**: position; kind (junction, street end, dead end, gate, water gate, landing, bridge end, town entry, castle gate); arms in angular order.
+- **Edge**: two nodes; its polyline as drawn (the shape is kept, only the ends are shared); `class` (street, lane, stairs, wall, precinct, quay, bridge, regional road, harbour road, castle road, canal, boundary); rank; width profile; level; owner quarter; chain.
+- **Face**: boundary walks; kind (block, plaza, reserve, works, apron, common, bailey, unbuilt).
 
-- **Node**: position; kind (junction, street end, gate, water gate, bridge end, landing, town entry, dead end); arms in angular order.
-- **Edge**: its two nodes; its polyline as drawn (shape kept, only the ends shared); `class` (street, lane, wall, quay, bridge, regional road, canal, **boundary**: the provisional outer limit of a ring, see 4.3); rank; width profile; `level` (ground, deck, terrace); the quarter that owns it; its chain.
-- **Face**: its boundary cycles; kind (block, plaza, reserve, water passage, unbuilt). Faces are flat: the graph is one planar subdivision. A quarter is not a face but the lineage root of the faces it created.
+Rules:
+- **Decks**: a bridge over a street lies on another level; no node where levels cross.
+- **Dangling edges** are allowed (cul-de-sac, derb): the face keeps an inner tree in its walk.
+- **Water** stays a survey mask with bank components; quays, bridges, fords and canal banks are edges.
+- **Buildable outline of a block**: the face minus the half-widths of its boundary edges (with their width profiles), minus works and reserves, minus plazas carved inside, computed per face from its own boundary. It cannot produce the hairlines of classic's ribbon differences; its robustness on sharp corners and very short edges is the first thing the spike proves.
 
-**Decks**: a bridge or a raised road over a street is two edges at different `level`s that do not meet; planarity is checked per level, and a crossing of levels creates no node.
+Operations, each with invariant tests (Euler per level, closed walks, no crossing on a level, ids stable under re-ordering): insert an edge in a face (split); insert an edge ending on an edge (that edge retires, two are born); insert a dangling edge; remove an edge (two faces merge, one face born with two parents); merge nodes; retype or rerank at a date; query arms, sectors, faces along a chain; spatial index per level. Retire and merge have real callers from the start: road demotion (4.6), precinct retype (5.3).
 
-**Dangling edges** are allowed (a cul-de-sac, a derb): an edge whose end node has one arm lies inside a face, which then has an inner tree in its boundary walk.
+### 3.2 The journal
 
-**Water** stays in the survey as a mask with bank components; only quays, bridges, fords and canal banks are edges.
-
-**From faces to buildable land.** A face is bounded by centrelines. A block's buildable outline is the face minus the half-widths of its boundary edges (with their width profiles), minus wall and works reserves, minus plazas carved inside it. This offset is computed per face from its own boundary only, so it never produces the hairlines of classic's ribbon differences; its robustness on sharp corners and very short edges is the first thing the spike must show (classic never established it: step 11 of the street-graph roadmap).
-
-Operations, all local, each with invariant tests (Euler's relation per level, closed boundary walks, no crossing on a level, ids stable under re-ordering): insert an edge between two nodes in one face (split); insert an edge whose end falls on an edge (split that edge: it retires, two children are born); insert a dangling edge; remove an edge (merge two faces into one with two parents); merge two nodes; retype or rerank an edge at a date; query arms, sectors and the faces along a chain; a spatial index over edges per level. The removal and merge operations get one real caller in the first version: the demotion of a regional road through the centre (4.6).
-
-### 3.2 The journal and the order of events
-
-The town is the fold of an append-only list of events. Each event records its clock value, its inputs, the stream it draws from (keyed on the town seed and the event's lineage key, not its rank) and the ids it created.
+The town is the fold of an append-only list of events. Each records its clock value, inputs, its random stream (keyed on the town seed and the event's lineage key) and the ids it created.
 
 | Event | What it does |
 | --- | --- |
-| `Found` | Inserts the regional roads crossing the site as chains; opens the founding quarter at the crossing, ford, castle or harbour the culture founds on, with the founding extent of 4.2. |
+| `Found` | Applies the charter: regional roads as chains, founding focus (crossing, ford, castle, harbour, planned frame), harbour road or castle road if any, the founding precinct if the charter is enclosed, the founding quarter. |
+| `Promote` | Moves the town to its next phase: new regime for what is born afterwards (5.1). |
 | `ExtendArmature` | Prolongs main chains outwards from existing nodes. |
-| `OpenQuarter` | Lays a quarter between armature edges and boundary edges (4.3), with its streets by its tissue and its blocks. |
+| `OpenQuarter` | Lays a quarter in a sector: streets by its tissue, blocks. |
 | `AgeQuarter` | Raises the fill level of a quarter's blocks by one step. |
-| `RaiseWall` | Inserts a wall circuit around the faces existing at that date, with gates and reserves. |
-| `CrossWater` | Inserts a bridge or a landing and opens the far bank. |
-| `RetypeChain` | Changes the state of a stretch of a regional road (kept, demoted, ended) at a date: the first event that retires edges. |
+| `SurveyPrecinct` | Traces the next precinct on open land, with its gates, wall street and reserves (5.2). |
+| `RaiseWall` | Retypes a full precinct into a wall of the phase's kind; creates no geometry. |
+| `RetypeChain` | Changes a chain's class or rank at a date (road demotion, old wall into boulevard, fossil). |
+| `OpenHarbour` | Inserts the quay edge, apron face and landing nodes on a surveyed front. |
+| `ExtendHarbour` | Lengthens the quay, adds piers, moles and basins at their thresholds, adds water gates at new landings. |
+| `CrossWater` | Inserts a bridge or a ferry landing and opens a far bank. |
 
 Reserved, not implemented: `PierceStreet`, `MergeFaces`, `MergeLots`, `Rebuild`, `Demolish`.
 
-**Order within one clock step**, fixed and tested: (1) the ring's armature extensions; (2) its quarters, laid in parallel into drafts and committed in canonical order of their station keys; (3) the count; (4) ageing of older quarters; (5) dated events whose threshold was crossed during this step (road fates, then walls, then water crossings), in that order; (6) the stop test.
+**Order within one clock step**, fixed and tested:
+1. armature extensions of the ring;
+2. quarters of the open sectors, laid in parallel into drafts, committed in canonical order of their station keys;
+3. the count;
+4. ageing, intramural first;
+5. dated events whose threshold was crossed during the step, in this order: promotions; road fates; harbour (open, extend); wall (raise a full precinct, then survey the next); water crossings;
+6. the stop test.
 
-**Stop and resume.** The stop is not an event but a checkpoint: the journal plus a cursor (ring, last station committed, the frozen cost field of that ring). Resuming continues the same ring from the cursor with the same frozen field. A ring's cost field and candidate order are frozen when the ring starts; armature built during the ring affects only the next ring.
+A ring is split at the first station whose commit crosses a threshold, so that dated events see the town exactly as it stood.
 
-**Prefix property**, restated: generating to P1, then resuming to P2, gives the same graph and the same journal as generating to P2 directly, at ring granularity. It holds if ring boundaries depend on the cost field and the graph only, ids come from lineage, every quarter's capacity is fixed at its birth (3.3), and the target population enters only the stop test. Lot occupancy across the whole town is *not* prefix-stable (3.3); the prefix property is a test on the graph and the journal, not on the final allocation.
+**Stop and resume.** The stop is a checkpoint, not an event: the journal and a cursor (ring, last station committed, the ring's frozen cost field). Resuming continues from the cursor. A ring's cost field and candidate order are frozen when it starts; armature built during the ring affects the next ring only.
+
+**Prefix property.** For a given charter, generating to P1 then resuming to P2 gives the same graph and journal as generating to P2 directly. It holds because ring boundaries depend on the cost field and the graph only, ids come from lineage, capacities are fixed at birth (3.3), thresholds are drawn from the seed, and the target enters only the stop test. Two exceptions, both decided by the owner on 21 November: a planned charter draws its frame for a planned capacity (5.4); and a town asked smaller than its culture's planned founding cohort is founded in the culture's village form. The final allocation is not prefix-stable and is not tested as such.
 
 ### 3.3 Capacity, the clock and the count
 
-Classic has two measures of housing (the layout probe sums allocated households; the slope check regenerates parcels, reallocates and caps by demand, `mod.rs:2342,2384`, `slopes.rs:98`), and the allocation redistributes households over the whole town on every call (`programme.rs:2578`): adding a quarter can move people out of old ones. A growth engine cannot stop on such a count.
+Classic has two measures of housing and its allocation redistributes households over the whole town on every call (`mod.rs:2342,2384`, `slopes.rs:98`, `programme.rs:2578`). Growth separates the clock from the final allocation.
 
-The design therefore separates the clock from the final allocation:
-
-- **Capacity at birth.** When a quarter is born, its blocks are cut with the existing lot cut on that quarter alone (the probe cadastre path), with the pressure, recipe, zone and density frozen at their value at birth (today pressure is scaled by total block area, `parcels/pressure.rs:108`, and raised inside any enclosure, `parcels.rs:393`). The households those lots hold, at the fill level of the quarter's age, are its capacity. It never changes afterwards except by `AgeQuarter`, which adds a precomputed increment.
-- **The clock** is the sum of the capacities of the quarters born so far. Growth stops when it reaches the requested households.
-- **The final allocation** runs once at the end, as today, over the whole town. It is checked against the clock: a town housing at least 90 % of its households is accepted with a one-line warning (owner, 21 November); below that, the gap is reported and the engine reopens growth at the cursor, at most once. The only hard floor is the standing rule: no town without houses.
-- **Lots are cut twice** in the first versions: once per quarter for its capacity (cheap, frozen inputs), once at the end by the reused lot stage on the whole town. Reusing the birth cuts as final lots needs a new entry in `generate_parcels` that accepts retained cuts after block preparation, with explicit invalidation rules (seed, settings, geometry, frontage, cut-relevant programme inputs); that is milestone 7, not a premise.
-- **Fill levels** are an occupation share applied by the allocation per quarter age. The hierarchical lot split (a child inside its parent, which the later chronology needs) is not assumed: European organic cuts burgage strips, the organic cutter relaxes a whole-block Voronoi, Roman and Chinese grids use courtyard operators, the medina cuts shop strips and subdivides the rear (`parcels/organic.rs`, `parcels.rs:4707,4725`, `parcels/families.rs:505`), and none keeps a parent tree through repairs and consolidation. Milestone 2 tests whether a fixed set of leaves per block, occupied progressively, is enough; nested subdivision is a later decision.
+- **Capacity at birth.** When a quarter is born, its blocks are cut by the existing lot cut on that quarter alone, with pressure, recipe, zone, density and the intramural regime frozen at their values at birth (today pressure is scaled by total block area, `parcels/pressure.rs:108`, and raised inside any enclosure to 0.65 + 0.35·p, `parcels.rs:393`). The households its lots hold at its fill level are its capacity. Ageing adds a precomputed increment.
+- **The clock** is the sum of capacities born so far. Growth stops when it reaches the requested households.
+- **The final allocation** runs once at the end over the whole town. A town housing at least 90 % of its households is accepted with a one-line warning; below that, growth reopens at the cursor once and the gap is reported. The only hard floor: no town without houses.
+- **Lots are cut twice** in the first versions (birth cut for capacity, final cut by the reused lot stage). One cut is milestone 9 of the plan (retained cuts with explicit invalidation).
+- **Fill levels** are an occupation share per quarter age, applied by the allocation. Milestone 2 tests that a fixed set of lots per block, occupied progressively, is enough on three tissues; a hierarchical lot split is not assumed.
 
 ### 3.4 Single writer
 
-Only `journal` mutates the graph. Every other module is a function from a read-only view of the graph and the survey (and its spec) to a list of operations; `journal` validates and applies them. This is the rule that prevents classic's tangle, where nearly every function takes `&mut Layout`: no module can depend on another's side effects, and every change is visible as an operation in the journal.
+Only `journal` mutates the graph. Every other module is a function from a read-only view (graph, survey, spec) to a list of operations, which `journal` validates and applies. No module depends on another's side effects; every change is visible in the journal.
 
-## 4. One generation, step by step
+## 4. One generation
 
 ### 4.1 Survey
 
-Once per site, from the terrain alone: slope, cliffs, water and its connected bank components, the neighbours' claims, the pinned centre and the imposed radius. Result: a cost field over open land and a mask of closed land (neighbours' land, water, cliffs, outside an imposed radius).
+Once per site, from the terrain alone:
+- slope, cliffs, breaks of slope, crests;
+- water, its connected bank components, navigability;
+- **harbour fronts**: gentle, navigable shore runs of usable length with a shelter score, each keyed by bank component and station, within the culture's harbour reach of the site (not only next to it);
+- **strong points**: prominent, level-topped, dry heights reachable at lane grade, scored as classic's knoll test;
+- neighbours' claims, the pinned centre, the imposed radius.
 
-Cost of a cell: distance to the centre along the graph and across open ground, times a slope factor (flat 1, rising steeply towards the culture's terrace limit), plus a charge per water crossing. Slope is a cost and a density, not a gate: flat land opens first, a steep cell opens only when cheaper land is used up, with a lower density and the culture's terraced tissue; only cliffs are closed.
+Result: a cost field over open land and a mask of closed land. Cost of a cell: distance to the centre along the graph and across open ground, times a slope factor (flat 1, rising towards the culture's terrace limit), plus a charge per water crossing, minus a fixed-length discount around a chosen harbour front. Slope is a cost and a density, not a gate: steep land opens late, less dense, terraced; only cliffs are closed.
 
-### 4.2 Founding
+### 4.2 The charter
 
-The founding quarter is placed at the site's focus (crossing of regional roads, ford, castle, harbour), chosen by the culture's founding rule. Its extent is a **founding population** read from the culture (a market village, a castrum, a planned grid, a castle town), not from the target population: the target only says when to stop. A castrum or a planned grid founds a larger extent at once and may raise its wall at founding (5).
+Decided at founding, never changed afterwards. Plain data resolved in core from the culture, the site and the town's seed:
+- **founding focus**: crossing of regional roads, ford, bridge, harbour front, strong point (castle), planned frame;
+- **form**: grown, or **planned** (a frame drawn for a planned capacity: castrum, Chinese imperial or prefectural grid, bastide, colonial grid). Drawn from the culture's share, and settable by the user (5.4);
+- **defensive intent**: enclosed from founding, walled when grown, or never; drawn from the culture, the site archetype (a spur, a hilltop, a meander raise it) and the per-site draw that exists today (`kinds.rs:429`);
+- **the town's draws**: promotion thresholds (5.1), precinct steps and gains (5.2), wall kind ladder, fossil rule (whether an old wall stays, becomes a boulevard or disappears), extension habit (lobes or concentric), harbour enclosure habit.
 
-### 4.3 Rings and quarters
+The charter never reads the target population, except for the two exceptions of 3.2.
 
-- **Ring.** The cells whose cost lies between two levels. The levels are fixed steps of the cost field (in effective metres), not fractions of the target, so ring boundaries never depend on the population asked.
-- **Armature first.** At the start of a ring, main chains are extended across it from existing nodes: regional roads first, then the tissue's axes (radials, rings, grid axes). They split the ring into **sectors**.
-- **Quarter.** A sector of the ring, between two armature chains, the previous ring's outer boundary and a new **boundary** edge along the ring's outer cost level, simplified and snapped to the nearest terrain feature (bank, contour, field line). A boundary edge is a provisional limit: when the next ring opens on the other side, the quarter laid there either keeps it as a street (back lanes of a ring road, a common case in grown towns) or the tissue's streets cross it and it retires. Concentric rings are avoided because the tissue lays the streets inside the quarter, and the boundary is only kept when the tissue says so.
-- **Truncated ring.** The stop keeps the ring's quarters up to the one that reaches the target, in station order; the others are discarded before their lots are cut.
+### 4.3 Founding
 
-### 4.4 The tissue
+`Found` places the focus and the founding quarter. If the focus is a harbour front, the founding quarter lies between the quay and the market. If the town's best front is not at the focus but within reach, a **harbour road** is laid from the focus to it as an armature chain. If the focus is a strong point, the castle circuit is traced on its contour and raised at once (its interior is a bailey, outside the housing budget), a **castle road** switches back down to the regional road, and the founding quarter opens on the first buildable shelf below the castle gate. If the charter is enclosed, the founding precinct is surveyed (5.2) before the founding quarter is laid in it. If the charter is planned, the frame is drawn (5.4).
 
-The tissue lays a quarter's streets and blocks inside its outline. `tissue/organic` is the port of classic's field and trace (2); other tissues follow in milestone 6. A tissue reads the outline, the survey (contours for streets along slopes), the armature and its spec; it returns edges and faces. Stepped links on steep ground are short edges of role `stairs`, placed only across a contour where the slope exceeds the street grade, by the owner's rule (no long clusters of flights).
+### 4.4 Rings, sectors, quarters
 
-### 4.5 Ageing
+- **Ring**: the cells whose cost lies between two levels; levels are fixed steps of the cost field (effective metres), never fractions of the target.
+- **Armature first**: at the start of a ring, main chains are prolonged across it (regional roads, harbour and castle roads, the tissue's axes), splitting it into sectors.
+- **Quarter**: a sector between two armature chains, the previous ring's outer boundary and a **boundary** edge along the ring's outer cost level, snapped to a nearby feature (bank, contour, field line). A boundary edge is provisional: the next ring keeps it as a street when the tissue says so (back lanes of a ring road) or its streets cross it and it retires.
+- **Inside an open precinct** only the precinct's sectors open, and its wall street bounds them (5.2).
+- **Truncated ring**: the stop keeps the ring's quarters up to the one that reaches the target, in station order.
 
-Older quarters gain one fill step at each ring; when land runs out (pinned radius, island, neighbours), ageing continues without new rings until the core reaches its last fill step or the target is housed. A walled interior ages one step further than the outside.
+Because cost is measured along the graph, rings stretch along the harbour road and the castle road: the town grows towards the water or under its castle without a special rule.
+
+### 4.5 Tissue
+
+A tissue lays a quarter's streets and blocks inside its outline. It reads the outline, the survey (contours for streets along slopes), the armature, the wall street and gates of its precinct, the quay of its harbour, and its spec (from the culture and the current phase). Waterfront quarters receive the quay as their front: streets square to it at the landing nodes, the first row of lots on the quay. Stepped links on steep ground are short `stairs` edges across a contour where the slope exceeds the street grade (owner's rule: no long clusters of flights).
 
 ### 4.6 Regional roads
 
-A regional road enters the graph at `Found` as a chain, with its source segment ids and station intervals carried through the import (today `rust/bridge/urbanRoads.ts` splits regional segments into anonymous urban streets). Inside the town each stretch has a dated state:
+A regional road enters at `Found` as a chain, with its source segment ids and station intervals carried through the import (today `rust/bridge/urbanRoads.ts` splits regional segments into anonymous urban streets). Each stretch inside the town has a dated state: **kept** as a main street; **absorbed** by a grid axis (planned towns); **demoted or ended** by a `RetypeChain` when the town passes a phase whose spec says so (the usual fate of a road through the centre of a large town), cut at a plaza or precinct, or ended at a gate or entry node. The engine returns per road its entry nodes and the intervals kept, redirected or ended; the regional network, the display and the road editor apply that result (`rust/bridge/urbanNetwork.ts`, `web/src/render/cityBridges.ts`, `web/src/v2/urbanRoadEditing.ts`), so that no routable edge crosses a town where its road was ended.
 
-- **kept**: a main street (grown towns: the road was there first);
-- **absorbed**: carried by the nearest grid axis (planned grids);
-- **demoted or ended**: when the town grows past a culture- and size-dependent threshold, a `RetypeChain` event demotes the central stretch to ordinary streets, cuts it at a plaza or precinct, or ends the road at a gate or an entry node. This is the usual fate of a road through the centre of a large town, and it happens late, not at founding.
+### 4.7 Ageing
 
-The engine returns, per regional road, its entry nodes and the intervals kept, redirected or ended. The regional network must then update its endpoints, connectivity, crossings and lengths, and the display and the road editor must use that result (`rust/bridge/urbanNetwork.ts`, `web/src/render/cityBridges.ts`, `web/src/v2/urbanRoadEditing.ts`): hiding a stroke while the regional graph keeps a routable edge across the town would be wrong. This is milestone 5.
-
-### 4.7 Water and slope
-
-Each bank is a connected component of the survey. A far bank opens by `CrossWater` when its land is cheaper than what is left on the near side; the crossing is placed on the armature, square to the flow. Quays are edges along a bank inside the town; harbour basins wait for the ported harbour planner (2).
+Older quarters gain one fill step at each ring, intramural quarters first and one step further. When land runs out (pinned radius, island, neighbours), ageing continues without new rings until the core reaches its last fill step or the target is housed.
 
 ### 4.8 Finish
 
-After the stop: fringe (exits, gate villages, fields handed to the land-use stage), neighbour claim, the adapter (9), then the final lot cut, programme and building sites. Finish work is outside the journal: it is recomputed from the final graph and never resumed.
+After the stop: fringe (exits, gate villages, fields handed to land use), neighbour claim (it includes a detached harbour and its road), the adapter (10), then the final lot cut, programme and building sites. Finish is outside the journal: recomputed from the final graph, never resumed.
 
-### 4.9 Warnings and constraints
+### 4.9 Constraints and warnings
 
-A pinned centre stays exactly where it was put; an imposed radius closes the land beyond it; a town that runs out of land is delivered smaller. Warnings are one short line in English with their French translation: the fact, the figure, the cause in three words ("Housing 91 % — steep site", "No wall — neighbour too close"); the detail goes to the journal.
+A pinned centre stays exactly where it was put; an imposed radius closes the land beyond it; a town out of land is delivered smaller. Warnings are one short line in English with their French translation: fact, figure, cause in three words ("Housing 91 % — steep site", "No wall — neighbour too close"); the detail goes to the journal.
 
-## 5. Walls: when, where, and what the works need
+## 5. Phases, walls, planned towns
 
-- **When.** At a population read from the culture, as a new catalogue value per culture (today `profiles::fortification`, `profiles.rs:117`, is a yes or no on the final population), or at founding for a castrum, a planned town or a castle town. A second circuit may come when the population outside reaches a set share of the inside.
-- **Where.** Around the faces existing at that date, through land not yet opened: the wall cuts no block and is never refitted. Along water it stands back from banks and shores, crosses a channel on a flow-normal span with a water gate, and keeps both occupied banks in one circuit; these rules failed three times in classic only because classic had to refit an existing plan (`web/out/roads-2026-11-20/walls-water/NOTES.md`).
-- **Neighbour clearance** is checked on the final joined circuit, after any rounding, and the circuit is pulled back locally where it touches a claim; a wall is never dropped for a local overlap. (Classic lost a medina's wall because the rounding of a joined circuit crossed a claim by 95.72 m² while every piece cleared it.)
-- **Gates.** The edges leaving the town at that date are ranked (regional roads, then main streets); the best, up to the number the circuit's length allows, become gate nodes; the others end at the wall; the curtain turns square to its street at a gate.
-- **What `fortification::build` requires** (`fortification.rs:1428` and its callees): an explicitly closed path; land gates first, then ordered entry and exit waterline intercepts; the actual street segments at each gate (it searches within 0.1 m for direction and width); the physical surface; the resolved style; the event population; predicted widths and dwelling dimensions; a random stream. It returns lanes and writes works and reserve polygons. The adapter supplies all of it from the graph, and the works and reserves are inserted as faces *before* any lot next to the wall is cut.
-- **After.** Inside, quarters only age. New quarters are born outside, attached to gate nodes: the faubourgs. The moat reserve is closed land. An older wall stays in the graph.
+### 5.1 Phases as dated promotions
 
-## 6. What disappears
+The phases (hamlet, village, market town, town, city, and the culture's own names) are no longer a class fixed by the target. Each is reached by `Promote` when the housed population crosses the town's threshold for it. A threshold is drawn per town around the culture's value (spread about ±30 %, a catalogue value) and moved by circumstances read from the survey and the graph: a crossing of regional roads or a navigable harbour lowers the market-town threshold, an isolated or steep site raises it.
 
-The capacity forecast, its donor probes and the replan; the slope relaxation levels and the household ladders; the whole-town trim loop and its second run after a wall; the fit of the wall to the built land; the junction repairs (`planarize`, `join_close_ends`, `drop_stubs`); the display's own joining of street ends once it reads nodes. Every knife-edge of the stability diagnosis sat in one of these.
+A promotion changes, for what is born afterwards:
+- the tissue and density of new quarters (and their fill schedule);
+- the wall kind of the next raise (hedge or ditch, palisade, wall, bastioned) and the precinct step;
+- the programme's thresholds (market, hall, cathedral) as read by the reused programme;
+- the fate of regional roads through the centre;
+- the harbour's works thresholds.
 
-## 7. The later chronology: what is anticipated, what is not
+What exists keeps the form of its birth and only densifies. A city's core is therefore a former village or market town, dense by age; its outer quarters carry the tissue of their own phase. A town is never "designed as a city" unless its charter is planned (5.4).
 
-**Built now:** lineage ids; `born`, `died` and versioned attributes; the operations that retire and merge (with a real caller, 4.6); the journal as the only way to change a town; finish outside the journal.
+### 5.2 Precincts: surveyed before built, raised when full
 
-**Not solved by this design, and to be rewritten when the chronology comes** (honest list; both reviews found it):
+This is what makes a walled town dense and makes it adapt to its wall, as classic does with `enclosed` (`footprint.rs:176`: the enclosed land uses the culture's compact core tissue, floor 150 inhabitants per hectare at `footprint.rs:511`) and `fill_enclosures` (`composition.rs:2190`).
 
-- Everything downstream is keyed by index: `Parcel.block` (`mod.rs:456`), `ParcelContact.street` (`mod.rs:470`), programme reservations by block and street (`programme.rs:118`), block environments (`programme.rs:170`), districts by quarter (`mod.rs:311`), block override keys (`mod.rs:1114`), building site access (`building_sites.rs:20`), the parcel pack (`parcel_pack.rs:592`). `Street`, `Block` and `Quarter` have no id field.
-- Lot identity is a hash of the block outline (`parcels.rs:734`): piercing a block would re-identify and re-roll all its lots.
-- Lot cut and allocation run over the whole town (`mod.rs:2509`): one pierced street would reshuffle who lives where.
+- **`SurveyPrecinct`** traces a closed `precinct` chain on open land. It encloses the existing precinct (if any) plus land for `step` × the households housed at that date, at the phase's compact density, taken from the cheapest cells of the cost field so that slope and water shape it. The founding precinct of an enclosed charter is sized for the culture's founding cohort. The wall tracer of the charter regularises the line (stiffness, terrain adherence, crest limit, square or bastioned style, attachment for lobes), checks neighbour clearance on the final joined line (pulling it back locally, never dropping it) and keeps clear of a harbour's approach and service row (5.5). Gates are decided at once on the armature; the curtain, the wall street along the inside, the ditch and the works enter as faces and edges.
+- **While a precinct is open**, only its sectors open; quarters are born with compact tissue and the intramural pressure in their frozen inputs; the tissue lays its streets to the wall street and the gates. The town has the shape of a walled town before the wall stands.
+- **`RaiseWall`** fires when every sector of the precinct is born and the phase allows a wall of that kind; it retypes the precinct chain into a wall of the phase's kind and calls the reused works (`fortification::build`, which needs an explicitly closed path, land gates first then ordered waterline intercepts, the street segments at each gate within 0.1 m, the physical surface, the resolved style, the event population, predicted widths and dwelling dimensions, a random stream; its works and reserves are faces committed before any lot next to them is cut).
+- **Then** intramural ageing runs up to the charter's `gain`, then the next survey.
 
-So the first versions carry graph ids into the `Layout` as new optional fields and keep the index fields; moving the downstream stages to ids, a per-block cut and allocation, and lot identity from face lineage are a separate project before any core-modifying event. The design commits to making that project possible, not to doing it.
+By construction: a wall never encloses a sector that was never opened (no reserve, no half-empty enclosure); density does not jump at the wall date; the share of households outside the standing wall stays below `1 − 1/step`. Starting values (to be tuned on sheets): masonry step 1.4 to 1.6, gain 0.25 to 0.35; hedge, palisade and earthwork step about 1.2 with the old line retired. Below about 10,000 inhabitants enlargements are lobes on the cheapest side, beyond concentric, per the charter's extension habit.
 
-## 8. Code organisation
+**A town walled when grown** (a market town walled at its promotion): the first precinct is surveyed around the quarters aged at least one step; the youngest ring stays outside as a faubourg; it is raised at once.
 
-A new crate, `magna-urbis-town`. Before it, a mechanical extraction below both engines:
+**Cases**:
+- *European walled village of 1,000*: enclosed charter, founding precinct for the cohort, hedge or palisade steps; at 1,000 about 6 to 7 ha walled, 80 to 90 % of households inside, the rest a compact start of the next lobe at the main gate.
+- *Walled medina*: enclosed from founding, derbs laid to the wall, attached lobes, old line retired.
+- *Planned grid*: see 5.4.
+- *Large city*: concentric precincts; the old circuit is kept, becomes a boulevard or disappears per the fossil rule.
 
-- a **geometry kernel** crate: `Point`, `Shape`, the polygon operations of `urban/geometry` (today it imports `Surface`, and `dry_clip` calls vector geography: those calls stay in core);
-- a **surface view**: sampling of height, slope and water, and dry clipping, split from the town policy in `geography.rs` (which also holds stilt planning, parcel generation and routing: those stay in core);
+### 5.3 Nested walls, citadels, camps, castles
+
+- **Nested walls are what the cycle leaves, never a request.** An inner circuit is a former outer wall, with its gates, its wall street and its older tissue. With lobes, only the shared stretch becomes inner. A `RetypeChain` applies the fossil rule at the next raise; a new main chain crossing a kept wall adds a gate node.
+- **Citadel**: the founding castle, or, for cultures whose spec calls for one without a height, a precinct surveyed on open land astride the town line at its strongest corner, with a field gate.
+- **Hilltop castle with its town**: a strong point as founding focus (4.3). The town grows at the foot and up the gentler slopes along the castle road. At each precinct survey the town wall either joins the castle circuit at two nodes (the castle chain becomes a fixed arc of the precinct, the castle keeps a field gate) or stays apart when unopenable slope separates them, linked by the road.
+- **Fortified camps**: an enclosed charter with a cheap wall kind and the `camp` tissue (the ported tessellation; the figure is the precinct). On a flat site, a regular figure sized for one unit of the culture (not for the target); a daughter figure is a lobe, a concentric row is a step, the rampart re-raised without a fossil. On a defensive site (spur, hilltop, meander, island) the precinct is the scarp line plus a cross-rampart at the neck, at full terrain adherence; this is the one case where enclosed land may stay open, typed as common up to the culture's share.
+
+### 5.4 Planned towns
+
+A planned charter draws a **frame** at founding for a **planned capacity**: the rectangle of wards and its gate axes for a Chinese imperial or prefectural town, the grid of a colonial or bastide town, the castrum. The planned capacity defaults to the requested population and can be set explicitly; the setting is a visible town option (not hidden in Advanced), with the culture's share as the default draw. The frame's main axes, gates and wall line (if any) exist from founding; its blocks open over time from the centre and the axes, densest first, each quarter in the frame's tissue. With the default capacity the population fills the frame. A capacity set above the population is the intended case of a town built for more people than it holds (a colonial grid laid out for 100,000, an imperial capital with fields inside its walls): the frame's streets stand, its outer blocks stay unbuilt plots or fields, as the culture's spec types them. Growth beyond a full frame extends it by further frame modules. A town asked below the culture's planned founding cohort is founded in the culture's village form (3.2).
+
+### 5.5 Harbour and wall together
+
+The harbour is decided before the wall in every step, and every precinct survey takes fronts, harbour road, quay edges, apron and service row as constraints. The water side of a precinct takes one of three forms, chosen from the charter's harbour enclosure habit and the site:
+- **sea wall**: the curtain runs on the land side of the quay; each landing node is a water gate;
+- **open front**: the curtain ends on the waterline at both ends of the quay, with terminal towers (cheap wall kinds, sheltered basins);
+- **harbour outside**: the curtain passes behind the service row with a port gate on the harbour road; when the harbour quarter grows to a step, it becomes its own lobe precinct (the "separate" harbour is this ordinary cycle).
+
+A later quay extension adds water gates at new landing nodes and never moves a curtain. Channels: the curtain crosses on a flow-normal span with a water gate, both occupied banks in one circuit, bank identity from survey components and bridge nodes. **A distant harbour** (a front within reach but not at the focus) belongs to its town: its quarter is born at the end of the harbour road (a second nucleus when the coast between is unbuildable), it is part of the town's graph, districts and claim, and the regional placement does not place another settlement on that front.
+
+## 6. Harbours
+
+- `OpenHarbour` fires when a ring first touches the chosen front, or at the culture's landing population when the harbour founded the town. It inserts the quay edge, the apron face and the landing nodes.
+- `ExtendHarbour` lengthens the quay with √(housed); piers, moles and basins are dated edges at the thresholds of `harbours.json`; the current phase's spec decides the works.
+- Port districts are the quarters whose lineage hangs on harbour nodes; no geometric search.
+- The reused harbour furniture and roles read the quays and platforms exported by the adapter (`structure.quays`, port districts).
+
+## 7. What disappears
+
+The capacity forecast, its donor probes and the replan; the slope relaxation levels and the household ladders; the whole-town trim loop and its second run after a wall; `fit_enclosures`, `fit_to_built`, `join_side_by_side`, `fit_built_circuits`; the harbour's refit of walls (`port_walls`, `open_gates`); the castle searched inside the built town (`heights_castle`); the moved centre of an inland port (`harbour::sited`); the junction repairs (`planarize`, `join_close_ends`, `drop_stubs`); the display's own joining of street ends once it reads nodes; the fixed population classes.
+
+## 8. The later chronology
+
+**Built now**: lineage ids; `born`, `died`, versioned attributes; retire and merge operations with real callers; the journal as the only way to change a town; finish outside the journal.
+
+**Not solved, to be done before any core-modifying event**: the downstream stages are keyed by index (`Parcel.block` `mod.rs:456`, `ParcelContact.street` `mod.rs:470`, programme reservations `programme.rs:118`, block environments `programme.rs:170`, districts by quarter `mod.rs:311`, block overrides `mod.rs:1114`, site access `building_sites.rs:20`, the parcel pack `parcel_pack.rs:592`); lot identity is a hash of the block outline (`parcels.rs:734`); lot cut and allocation are whole-town (`mod.rs:2509`). Moving them to ids, a per-block cut and allocation, and lot identity from face lineage is a separate project; this design makes it possible, it does not do it.
+
+## 9. Code organisation
+
+A new crate, `magna-urbis-town`. Before it, an extraction below both engines (classic unchanged, replay suite identical):
+- a **geometry kernel** crate: `Point` (today `settlements/mod.rs:19`), `Shape` (`urban/mod.rs:80`), the polygon operations of `urban/geometry.rs` (1,352 lines; its `Surface` uses and the `dry_clip` call into vector geography stay in core);
+- a **surface view**: height, slope and water sampling and dry clipping split out of `Surface` (`urban/mod.rs:1274`) and `geography.rs` (stilt planning, parcels and routing stay in core);
 - the random streams already have a leaf crate (`rust/crates/random`).
 
-Specs are resolved in core and passed as plain data: tissue, occupancy, admission and fortification specs built from the catalogue and the profiles (`profiles.rs`, `culture.rs`). Counting lots needs the lot cut, which stays in core: the town crate defines a `Capacity` trait that core implements (a quarter's blocks and frozen inputs in, households out). The dependency stays one-way, core → town.
+Specs are resolved in core and passed as plain data: charter, phase specs, tissue specs, wall specs and harbour specs, built from the catalogue, `fortifications.json`, `harbours.json` and the profiles. The lot cut stays in core: the town crate defines a `Capacity` trait that core implements. Dependency one-way, core → town.
 
 | Module | Holds | Reads |
 | --- | --- | --- |
 | `graph` | half-edge structure per level, operations, invariants, spatial index | geometry |
 | `journal` | events, the single writer, replay, checkpoints, dumps | graph |
-| `survey` | slope, banks, cliffs, masks, cost field | geometry, surface view |
-| `armature` | main chains, regional roads and their fate | graph, survey |
-| `tissue/*` | one file per pattern: organic (ported field and trace), grid, radial, medina, ward, string | graph, survey |
-| `walls` | when, where, gates, water fronts, clearance | graph, survey |
-| `water` | crossings, quays | graph, survey |
-| `growth` | the orchestrator: rings, order of events, count through `Capacity`, stop, resume | all of the above |
-| `export` | the plan handed out: graph, faces, dates, warnings | graph, journal |
+| `survey` | slope, banks, fronts, strong points, masks, cost field | geometry, surface view |
+| `charter` | the charter and phase thresholds from the specs and the seed | survey |
+| `armature` | main chains, regional roads and their fates, harbour and castle roads | graph, survey |
+| `tissue/*` | one file per pattern, ported: organic, grid, radial, medina, ward, string, camp | graph, survey |
+| `walls/*` | precincts, tracers (ported), gates, water sides, clearance, raise | graph, survey |
+| `harbour/*` | fronts, quays, extensions | graph, survey |
+| `water` | crossings | graph, survey |
+| `growth` | the orchestrator: rings, order of events, count through `Capacity`, stop, resume | all above |
+| `export` | graph, faces, dates, warnings, road results | graph, journal |
 
-Rules: dependencies only as listed; only `journal` writes; no file over about 800 lines; no function that takes the whole town when it needs one face; no culture lookup inside the crate. Where complexity will pile up anyway, and the guard for each: `tissue/organic` (split the port by step: field, trace, split, blocks), `walls` (trace, gates and water fronts in separate files), `growth` (only order and stop; all geometry in the modules it calls), the adapter in core (one file per consumer family, section 9).
+Rules: dependencies only as listed; only `journal` writes; no file over about 800 lines; no function that takes the whole town when it needs one face; no culture lookup inside the crate. The adapter in core lives in `urban/town_adapter/`, one file per consumer family.
 
-**Debugging.** Every run can write its journal; `replay --until <event>` rebuilds the graph at any step; a dump per event (JSON, and later an SVG) shows what it added. A fault is found by bisecting the journal.
+**Debugging**: every run can write its journal; `replay --until <event>` rebuilds the graph at any step; a JSON dump per event, later an SVG. **Tests**: per module on hand-made inputs; graph invariants as property tests; ids stable under shuffled worker completion; prefix tests; stops just before and after ageing, a survey, a raise and a promotion; exhausted land; zero admissible homes; then the replay suite.
 
-**Tests.** Per module on small hand-made inputs; graph invariants as property tests; ids stable under shuffled worker completion; the prefix property on three towns; stopping inside a ring just before ageing and just before a wall threshold, with exhausted land and with zero admissible homes; then the replay suite of `web/out/perf-2026-11-14/`.
+## 10. The contract with the rest of the chain
 
-## 9. The contract with the rest of the chain
+The adapter writes a `Layout` the reused stages accept. Besides streets, blocks, quarters and enclosures, they read:
+- **lots** (`parcels*`): phase culture, recipe and zone (cutter choice, `parcels.rs:4228`); district membership (tissue, `parcels.rs:4397`); planned population and optional capacity data (`parcels.rs:4251`); `archetype` and `config`; block kind and axis; street paths, per-sample widths, ranks and roles for frontage and kerb contact (`parcels.rs:290-310,374,3032`, `parcels/contacts.rs:142,173`); `programme.environment` and gate pressures (`parcels.rs:4194,4201`);
+- **programme, sites, massing**: centres and streets for pressure (`parcels/pressure.rs:52`); slope, wetness, navigable quay frontage; district roles and wealth; `reserve:programme` blocks; zone, pressure and distance to centre (`programme.rs:586,624,637,1089`, `building_sites.rs:144,310,1221`, `massing.rs:250,516`);
+- **structure**: centres, districts, allocated and reserve masks, metrics, history, quays and port districts, springs, gate village centres (read by the page, for example `web/src/v2/roadTownAccess.ts`);
+- **neighbours and edits**: the claim (`neighbours.rs:20,621`), the quarter edit baseline (`edits/quarter_baseline.rs`);
+- **packs and bridge**: block and street indices in the parcel pack; district role and wealth in the display pack; structure version, mechanism, family, phases (`rust/bridge/urban.ts:62,95`).
 
-The adapter (in core, `urban/town_adapter/`, one file per consumer family) writes a `Layout` that the reused stages accept. It is not thin. Beyond streets, blocks, quarters and enclosures, the later stages read:
+Phases map onto `GrowthPhase` (kind, recipe, zone, population, target area, shapes) by phase of birth.
 
-- **Lots** (`parcels*`): phase culture, recipe and zone, which select the cutter (`parcels.rs:4228`); district membership, which selects tissue (`parcels.rs:4397`); planned population and optional capacity data (`parcels.rs:4251`); `archetype` and `config`; block kind (buildable or `reserve:*`) and axis; street paths, per-sample widths, ranks and roles for frontage and kerb contact (`parcels.rs:290-310,374,3032`, `parcels/contacts.rs:142,173`: `boundary` and `bridge` excluded, `derb`, `hutong`, `roji`, `close` change access); `programme.environment` and gate pressures (`parcels.rs:4194,4201`).
-- **Programme, building sites, massing**: centres and streets for network pressure (`parcels/pressure.rs:52`); slope, wetness and navigable quay frontage; district roles and wealth; blocks turned into `reserve:programme`; zone, pressure and distance to the centre for massing (`programme.rs:586,624,637,1089`, `building_sites.rs:144,310,1221`, `massing.rs:250,516`).
-- **Structure**: centres, districts, allocated and reserve masks, metrics, history, quays and port districts, springs, gate village centres (read by the bridge and the page, for example `web/src/v2/roadTownAccess.ts`).
-- **Neighbours and edits**: the claim (held land, outward street stubs, programme reservations, enclosed interiors, works, quays; `neighbours.rs:20,621`); the quarter edit baseline (`edits/quarter_baseline.rs`).
-- **Packs and bridge**: block and street indices in the parcel pack; district role and wealth joined to blocks in the display pack; structure version, mechanism, family, phases with kind, population, target area and shapes (`rust/bridge/urban.ts:62,95`).
+**Classic's layout tail** (`mod.rs:1986-2166`) on a growth layout:
 
-**The tail of classic's layout stage** (`mod.rs:1986-2166`, about 25 calls) is decided call by call:
-
-| Call | On a growth layout |
+| Call | Growth |
 | --- | --- |
-| `kinds::stamp`, `kinds::finish` | run (kind bookkeeping) |
-| `trim::prepare`, `trim::run`, `trim::finish`, `trim::bridgeheads`, `trim::footprint` | dropped: growth keeps only what it built |
-| `access::refine`, `access::summarize` | run: access lanes and deep-block lanes, districts (`access.rs:409-451`) |
+| `kinds::stamp`, `kinds::finish` | run |
+| `trim::*` | dropped |
+| `access::refine`, `access::summarize` | run (access and deep-block lanes, districts) |
 | `fortification::enforce`, `settle`, `sync_gates`, `drop_dead_gates` | replaced by `walls` |
-| `fortification::prepare_options`, `finish_options` | run (wall options read by the programme) |
+| `fortification::prepare_options`, `finish_options` | run |
 | `composition::fit_enclosures`, `join_side_by_side`, `fit_built_circuits` | dropped |
-| `network::polish_ends`, `clear_water`, `bridge_water_on_ground`, `select_bridges_graded`, `tie_banks_to_road`, `ensure_regional_access`, `reserved_streets`, `remap_reservations` | replaced by `armature` and `water` (the graph guarantees what they repair) |
-| `programme::prepare` | run, once, after the adapter |
+| `network::polish_ends`, `clear_water`, `bridge_water_on_ground`, `select_bridges_graded`, `tie_banks_to_road`, `ensure_regional_access`, `reserved_streets`, `remap_reservations` | replaced by `armature`, `water`, `harbour` |
+| `programme::prepare` | run once, after the adapter |
 | `springs::reserve` | run |
-| `lagoon::apply`, `shanty::extend` | not on growth layouts (those kinds stay on classic) |
-| `harbour_furniture::furnish` | run once the harbour planner is ported |
+| `lagoon::apply`, `shanty::extend` | not on growth layouts |
+| `harbour_furniture::furnish` | run |
 | `neighbours::settle`, `neighbours::claim` | run |
-| `edits::with_quarter_edits` | not available on growth towns until milestone 8 |
+| `edits::with_quarter_edits` | not on growth towns until the plan's product milestone |
 
-## 10. Interfaces
+## 11. Interfaces
 
-- **Option**: `layout.engine` = `classic` (default) or `growth`, shared by the V2 and City Bench through the city contract, with the parity test extended.
-- **New optional fields** in `Layout`: the graph (nodes, edges, faces, ids, dates, levels) and the regional road result (4.6). Index fields stay.
-- **Bridge and packs**: one optional field each; the WebAssembly packages and the native engine are rebuilt together when it lands (a contract change breaks the page otherwise).
-- **Display**: unchanged at first; later it reads nodes and drops its own end joining.
-- **Saved projects**: a town saved with one engine is regenerated by that engine; nothing is migrated.
+- **Options**: `layout.engine` = `classic` (default) or `growth`; `layout.planned` (auto from the culture, or planned with a planned capacity) as a visible town setting. Shared by the V2 and City Bench through the city contract, with the parity test extended.
+- **New optional `Layout` fields**: the graph (nodes, edges, faces, ids, dates, levels), the journal summary (phases and their dates, precincts, raises), the regional road result. Index fields stay.
+- **Bridge and packs**: one optional field each; the WebAssembly packages and the native engine are rebuilt together when it lands.
+- **Display**: unchanged at first; later reads nodes and drops its own end joining.
+- **Saved projects**: regenerated by the engine they were saved with; nothing migrated.
 
-## 11. Performance
+## 12. Performance
 
-Classic today (quarters stage, 8 threads, `runs-main1`): about 2 s at 10,000 inhabitants, 4.5 s at 20,000, 11 s at 50,000, 13 s at 100,000; towns paying a redraw take 12 to 60 s.
+Classic (quarters stage, 8 threads, `runs-main1`): about 2 s at 10,000, 4.5 s at 20,000, 11 s at 50,000, 13 s at 100,000; towns paying a redraw 12 to 60 s. Growth saves by not redrawing and not trimming, and can lose it by repeating global work per quarter (classic: street split of a 20,000 town 1.4 s, one bridge request lap 0.6 s, final cut 0.2 s; at 100,000 final cut 0.8 s and first allocation 0.2 s). Rules: a birth cut reads frozen inputs, never a town-wide quantity; the cost field is updated per ring; rings keep the parallel pool busy (a thin ring is merged with the next for the parallel work, keeping its own clock steps).
 
-The saving must come from not redrawing and not trimming, and can be eaten by per-quarter repetition of global work: in classic the street split of a 20,000 town costs 1.4 s, one bridge request lap 0.6 s, the final cut 0.2 s; at 100,000 the final cut and the first allocation cost 0.8 and 0.2 s. Rules: the birth cut of a quarter reads frozen inputs and never a town-wide quantity; the cost field is updated per ring, not per quarter; rings are wide enough to keep the parallel pool busy (classic cuts 109 quarters in one parallel pass), and a thin ring is merged with the next one for the parallel work while keeping its own clock steps.
+Targets, on layout plus parcels, natively and in single-thread and threaded WebAssembly: never slower than classic on a supported town; at most 70 % of classic from 20,000 inhabitants (an experiment to confirm per tissue); no town over 1.5 times the median of its size class. Journal and graph memory and their transfer to the page are measured.
 
-Targets, measured on layout plus parcels (the birth cuts move lot work into the layout stage), on the replay suite, natively and in single-thread and threaded WebAssembly: never slower than classic on a supported town; at most 70 % of classic from 20,000 inhabitants, as an experiment to confirm per tissue; no town over 1.5 times the median of its size class. Also measured: journal and graph memory and their transfer to the page.
+## 13. Measures and acceptance
 
-## 12. Roadmap
+The replay suite (`web/out/perf-2026-11-14/`, 26 towns and 7 water towns) gains: a walled village of 1,000; a planned Chinese town; a hilltop castle town; a camp on a flat site and one on a spur; an inland port town with a harbour 400 m away; a town with a distant detached harbour. `quality.py` gains: share of households inside standing circuits, precinct void, occupied frontage along the inner wall street, wet curtain outside gate spans, landing streets ending on a curtain without a gate, castle rate on hilltop sites, outgrowth to the harbour (a continuous built path from centre to quay, main lobe within 30° of the harbour road). Reference values from classic (`runs-main1`, `runs-water-main1`): walled land built 62 to 80 %, households per walled hectare 28 to 57 by culture, zero empty walled blocks. Every milestone that changes towns ends on a V2 sheet against classic.
 
-Each milestone is one or more sessions of two to three hours, one at a time, ending on measures and, where towns change, a sheet.
+## 14. Risks
 
-| | Milestone | Delivers | Sessions |
-| --- | --- | --- | --- |
-| 0 | Extraction | geometry kernel and surface view below both engines; classic unchanged (replay suite identical) | 2 to 3 |
-| 1 | Spike | `graph` (the operations needed), `journal` minimal, one hand-placed quarter with the ported organic field, faces to buildable blocks, capacity through `Capacity`, the adapter for an ordinary town, a sheet against classic on native, WebAssembly and in the V2; resume from a checkpoint | 6 to 8 |
-| 2 | Growth | survey and cost field, rings, sectors, boundary edges, the stop, ageing, the prefix tests; a fixed set of leaves per block occupied progressively, on three cultures | 6 to 8 |
-| 3 | Slope and water | cost and density by slope, terraced tissue, stepped links, banks, crossings, quays | 5 to 7 |
-| 4 | Walls | dates in the catalogue, trace, gates, works through `fortification::build`, faubourgs, water fronts, clearance | 6 to 8 |
-| 5 | Regional roads | segment ids through the import, dated fates, the regional network and display update, the editor | 4 to 6 |
-| 6 | Tissues | grid, medina, wards, radial, street village, each ported from classic's look | 8 to 12 |
-| 7 | Retained cuts | `generate_parcels` accepts the birth cuts, with invalidation; one cut instead of two | 3 to 4 |
-| 8 | Product | V2 edits on growth towns, harbour planner port, neighbours and pinned sites at scale, performance pass, review sheets against classic | 6 to 10 |
+- The face-to-block offset may not be robust on sharp corners: then blocks are computed per face by classic's ribbon method; the graph and growth are kept.
+- The ported organic field may not behave inside small quarter outlines: the spike's sheet decides.
+- Capacity at birth against final allocation: if the gap is often above 10 %, the final allocation becomes per quarter, which touches `programme.rs`.
+- Precinct steps and gains, promotion spreads: judgement values, tuned on sheets.
+- The organic tissue against a stiff precinct may leave slivers along the wall street: measured from milestone 4.
+- Two engines to keep: accepted; classic is frozen.
+- The long tail (edits, special kinds) may stay on classic.
 
-About 50 to 70 sessions. A first town is visible at the end of milestone 1 (about two weeks at the present pace). What can be cut if needed: the second circuit, SVG dumps, V2 edits on growth towns (they stay on classic), retained cuts.
+## 15. Decisions taken (21 November 2026)
 
-## 13. Risks
+- Growth by dated steps on a graph; classic frozen beside it; small modules, single writer.
+- Losing up to 10 % of housed households is accepted with a warning; warnings are one short line.
+- Pinned sites and imposed radius are respected exactly.
+- Slope is a growth cost, not a global slider.
+- Second tissue after organic: the Chinese grid.
+- Harbours: surveyed before founding, harbour road and outgrowth, decided before walls, distant harbours belong to their town; the harbour plan moves early (plan milestone 3).
+- Walls: charter at founding, precinct surveyed before built, wall raised when full; camps, hilltop castles and nested walls follow from it.
+- Phases are dated promotions at thresholds drawn per town and moved by circumstances, not classes fixed by the target.
+- A town asked below its culture's planned founding cohort is founded in its village form.
+- Planned towns are kept and offered as a visible town setting with a planned capacity.
+- Wall dates and phase thresholds per culture in the catalogue; regional road fates by phase spec.
 
-- **The spike may show that faces offset into buildable blocks are not robust** on sharp corners and short edges. Then the face stays the model and the buildable outline is computed by classic's ribbon method per face; the engine still gains the graph and the growth, not the hairline fix.
-- **The ported field may not behave inside small quarter outlines** as it does inside classic's large ones (look of the streets). The spike's sheet decides.
-- **Capacity at birth versus final allocation**: if the gap is often above 10 %, the final allocation must become per quarter, which touches `programme.rs`.
-- **Two engines to keep.** Accepted: classic is frozen, and the kinds that never move stay there.
-- **The long tail** (edits, harbours, special kinds) is where a rewrite usually stalls: it is last on purpose and may stay on classic.
+## 16. Not verified
 
-## 14. Open questions for the owner
-
-1. Wall dates: per culture in the catalogue (recommended), with one global setting to advance or delay them?
-2. Fate of regional roads inside towns: decided by culture and size (recommended), with a per-town override in Advanced?
-3. First tissue after organic: grid (Roman, Chinese) or medina?
-4. Harbour towns on classic until milestone 8 (recommended), or the harbour planner earlier?
-
-## 15. Not verified
-
-Nothing was built or run for this document. Not established: that the face offset is robust (milestone 1); that the organic field ports to quarter outlines without losing its look (milestone 1); that a fixed set of leaves per block supports staged occupation on three tissues (milestone 2); the gap between capacity at birth and final allocation; laptop and WebAssembly latency. The reviews did not read in full `programme.rs`, `trim.rs`, `edits.rs`, `parcels/occupation.rs`, `kinds*.rs` or the V2 edit tools beyond their index keys. The session estimate is a judgement.
+Nothing was built or run for this document. To be established by the plan's milestones: the face offset's robustness; the organic field inside quarter outlines; staged occupation of fixed lots on three tissues; the gap between capacity at birth and final allocation; precinct values on sheets; laptop and WebAssembly latency. The reviews did not read in full `programme.rs`, `trim.rs`, `edits.rs`, `parcels/occupation.rs`, `kinds*.rs`, `fortification::build`'s callees, `fortification_extension.rs`, `roles.rs` port districts, the harbour works or the camp forms.
