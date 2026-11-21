@@ -155,6 +155,7 @@ fn specs() -> TownSpecs {
             enclosure_habit: HarbourEnclosure::HarbourOutside,
             quay_per_sqrt_pop: 6.0,
             thresholds: harbour_works,
+            works: Default::default(),
         },
         growth: Default::default(),
     }
