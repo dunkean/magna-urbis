@@ -469,7 +469,7 @@ fn family_of_kind(kind: &str) -> &'static str {
 
 #[path = "fortification_options.rs"]
 mod options;
-pub(super) use options::{option_trace, keeps_citadel, prepare_options, finish_options, gate_villages, service_cost};
+pub(super) use options::{keeps_citadel, prepare_options, finish_options, service_cost};
 
 #[path = "fortification_heights.rs"]
 mod heights;

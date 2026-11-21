@@ -3679,7 +3679,7 @@ fn bridge_water_inner<'a>(streets: &mut Vec<Street>, surface: super::Surface<'a>
 /// original roads never crossed water. Both ramps must reach existing streets
 /// entirely on land; no routing search or isolated landing is introduced.
 fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], banks: &Graph, served: &[bool], surface: super::Surface<'_>, max_grade: f64, joined: Option<&[usize]>) -> bool {
-    use super::{footprint::crossings, geometry as g, routing};
+    use super::{geometry as g, routing};
     struct Sample { p: Point, a: Point, b: Point, rank: usize, width: f64, bank: usize }
     let mut laps = Lap::new("bank_crossings");
     let mut samples = vec![];

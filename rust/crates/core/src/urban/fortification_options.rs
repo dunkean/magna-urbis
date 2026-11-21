@@ -1,6 +1,6 @@
 //! Opt-in wall morphology. Every disabled path returns before geometry or RNG work.
 use super::*;
-use super::super::{Layout, LayoutConfig, GrowthPhase};
+use super::super::{Layout, LayoutConfig};
 
 #[cfg(test)]
 #[path = "fortification_options_tests.rs"]
@@ -87,13 +87,6 @@ pub(super) fn ditch_kind(shape: &Shape, surface: Surface<'_>, rng: &Rng) -> &'st
     let probability = if wet_plain >= 4 { 0.5 } else { 0.25 };
     let key = format!("ditch-supply:{:.0}:{:.0}", (p.x / 48.0).floor(), (p.y / 48.0).floor());
     if supply && relief < 1.5 && rng.fork(&key).chance(probability) { "wet" } else { "dry" }
-}
-
-/// Legacy internal entry point; composition now enriches the inherited land.
-pub(in super::super) fn gate_villages(plan: &mut super::super::macroplan::Plan,
-    _phases: &mut [GrowthPhase], _walls: &[Shape], surface: Surface<'_>) {
-    super::super::composition::grow_gate_villages(plan,
-        &LayoutConfig {gate_village:Some(1.0),..Default::default()}, surface);
 }
 
 /// An actual gate square is public land; service selection then locates inns

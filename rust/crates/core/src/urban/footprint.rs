@@ -512,10 +512,6 @@ const ENCLOSED_BLOCKS: f64 = 4.0;
 const ENCLOSED_DENSITY: f64 = 150.0;
 /// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the
 /// population, never a flat minimum that would inflate a small village's wall).
-/// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the
-/// population, never a flat minimum that would inflate a small village's wall).
-/// m2 the founding epoch of a planned grid needs (about six blocks and their streets).
-const ENCLOSED_GRID_CORE: f64 = 30_000.0;
 const ENCLOSED_GRID_PER_INHABITANT: f64 = 70.0;
 /// Gross inhabitants/hectare below which a small open village is not spread:
 /// the catalogue's 25-40 hab./ha scatters a few hundred people over 15-25 ha of

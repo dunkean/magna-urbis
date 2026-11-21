@@ -8,7 +8,7 @@ use super::{
 };
 #[path = "composition_faubourgs.rs"]
 mod faubourgs;
-pub(super) use faubourgs::{prepare_gate_villages, gate_service_cost, gate_demands, gate_morph, gate_activity, gate_pressures, grow_gate_villages};
+pub(super) use faubourgs::{prepare_gate_villages, gate_service_cost, gate_demands, gate_morph, gate_activity, gate_pressures};
 use crate::rng::Rng;
 use geo::algorithm::bool_ops::unary_union;
 
