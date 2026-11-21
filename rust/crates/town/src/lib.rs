@@ -1,6 +1,7 @@
 //! Dated town growth on a street and block graph.
 
 pub mod armature;
+pub mod blocks;
 pub mod charter;
 pub mod export;
 pub mod graph;
