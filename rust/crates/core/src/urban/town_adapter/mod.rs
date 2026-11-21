@@ -43,7 +43,9 @@ pub(super) fn generate(
     } else {
         &config.culture
     };
-    let specs = specs::build(culture, config).ok()?;
+    let specs = specs::build(culture, config)
+        .map_err(|e| unavailable("specs", &e))
+        .ok()?;
     // The households the programme will ask for: the culture's household size at this
     // population (4.5 persons in a European town of 20,000, 3.7 in a village). Growth counts
     // in households of its own size, so it is asked for the population that makes the same
@@ -130,18 +132,24 @@ pub(super) fn generate(
     };
     let kind = kinds::resolve(site, config, regional_roads);
     let finish = |plan: &TownPlan| -> Option<Layout> {
-        let mut layout = layout::build(plan, site, config, culture).ok()?;
+        let mut layout = layout::build(plan, site, config, culture)
+            .map_err(|e| unavailable("layout", &e))
+            .ok()?;
         // The walls' works are faces before any lot next to them is cut; the quays exported as
         // streets give classic's quay platforms, which the harbour furniture reads.
         walls::enclose(plan, &mut layout, config, surface);
         if !plan.quays.is_empty() {
             harbour::platforms(&mut layout, surface);
         }
-        tail::finish(seed, &key_seed, &mut layout, site, config, kind, surface).ok()?;
+        tail::finish(seed, &key_seed, &mut layout, site, config, kind, surface)
+            .map_err(|e| unavailable("tail", &e))
+            .ok()?;
         layout.warnings.extend(plan.warnings.iter().cloned());
         Some(layout)
     };
-    let plan = growth::generate(&request, &capacity).ok()?;
+    let plan = growth::generate(&request, &capacity)
+        .map_err(|e| unavailable("growth", &e))
+        .ok()?;
     let mut layout = finish(&plan)?;
     // The final allocation on the real cut decides (design 3.3): a town housing at least 90 % of
     // its households is kept, with a warning when short; below that growth reopens once at its
@@ -164,6 +172,11 @@ pub(super) fn generate(
                 (layout, housed) = (next, homes);
             }
         }
+    }
+    // The hard floor (design 3.3): no town without houses; classic lays this site instead.
+    if housed < 1.0 {
+        unavailable("housing", &"no household housed");
+        return None;
     }
     if let Verdict::Short(line) = growth::verdict(housed, wanted, true) {
         layout.warnings.push(line);
@@ -191,6 +204,11 @@ fn housed_by_lots(seed: &str, layout: &Layout) -> f64 {
                 .map(|a| a.households)
                 .sum()
         })
+}
+
+/// Write to the diagnostic log why the growth engine gave up on a town (classic is used).
+fn unavailable(stage: &str, error: &dyn std::fmt::Display) {
+    super::warnings::log_warning_detail(format_args!("Growth engine, {stage}: {error}"));
 }
 
 /// The most a reopening multiplies a town's count by.

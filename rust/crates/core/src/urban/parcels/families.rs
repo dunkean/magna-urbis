@@ -332,9 +332,13 @@ pub(super) fn courts(
     {
         use geo::{Area, BooleanOps};
         let spine = rect(-width * 0.5, width * 0.5, 0.0, depth);
-        let outside = super::super::geometry::polygon(&spine)
-            .difference(&super::super::geometry::polygon(shape))
-            .unsigned_area();
+        // i_overlay can panic on a degenerate block: the spine is then taken not to fit.
+        let outside = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::super::geometry::polygon(&spine)
+                .difference(&super::super::geometry::polygon(shape))
+                .unsigned_area()
+        }))
+        .unwrap_or(f64::INFINITY);
         if outside > 1e-5 {
             return courtyards(shape, block, axis, fronts, morph, zone, rng);
         }

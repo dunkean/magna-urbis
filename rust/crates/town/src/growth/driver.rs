@@ -8,7 +8,7 @@
 //! along the way exactly as the first run made them. Once the record is used up the loop goes on
 //! computing, so resuming to a larger target continues the same ring from the same station.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use magna_urbis_geom::{Point, area};
 use magna_urbis_random::Rng;
@@ -19,7 +19,7 @@ use crate::TownRequest;
 use crate::armature::{self, Arm};
 use crate::charter::{self, Charter, PhasePlan};
 use crate::export::{DatedPhase, QuarterPlan, Stop, TownPlan, WallPlan};
-use crate::graph::{Clock, Key, NodeId};
+use crate::graph::{Clock, FaceId, Key, NodeId};
 use crate::harbour::{self, FrontChoice, HarbourState};
 use crate::journal::{Checkpoint, Cursor, Event, EventKind, Op, Writer};
 use crate::spec::{FoundingFocusKind, GrowthSpec, TissueSpec};
@@ -116,6 +116,19 @@ impl<'a> Driver<'a> {
                 request.neighbour_claims,
                 &request.specs.survey,
             )?
+        };
+        // A focus on closed ground (a cliff cell, a gully, water) grows nothing: unless the site
+        // is pinned, the town is founded on the nearest open ground that has room around it.
+        let survey = match open_ground(&survey).filter(|_| !site.pinned) {
+            Some(at) => Survey::new(
+                request.terrain,
+                at,
+                spec.reach,
+                site.radius,
+                request.neighbour_claims,
+                &request.specs.survey,
+            )?,
+            None => survey,
         };
         // The harbour is decided once, on the survey the town grows on: on the front the
         // regional placement reserved, else the best the town can reach.
@@ -412,6 +425,30 @@ impl<'a> Driver<'a> {
     pub(super) fn finish(mut self) -> TownPlan {
         self.tissue_warnings();
         let graph = self.writer.graph();
+        // A face split after its quarter's birth (a later precinct, a gate street, an axis) is
+        // retired: its quarter holds its live descendants instead, each face in one quarter only.
+        let mut children: HashMap<&Key, Vec<FaceId>> = HashMap::new();
+        for f in graph.all_faces() {
+            for parent in &graph.face(f).life.parents {
+                children.entry(parent).or_default().push(f);
+            }
+        }
+        let mut claimed: HashSet<FaceId> = HashSet::new();
+        let mut live_faces = |keys: &[Key]| -> Vec<FaceId> {
+            let mut out = Vec::new();
+            let mut stack: Vec<FaceId> = keys.iter().rev().filter_map(|k| graph.face_id(k)).collect();
+            while let Some(f) = stack.pop() {
+                let face = graph.face(f);
+                if face.life.live() {
+                    if claimed.insert(f) {
+                        out.push(f);
+                    }
+                } else if let Some(next) = children.get(&face.key) {
+                    stack.extend(next.iter().rev());
+                }
+            }
+            out
+        };
         let quarters: Vec<QuarterPlan> = self
             .quarters
             .iter()
@@ -419,12 +456,7 @@ impl<'a> Driver<'a> {
                 key: q.key.clone(),
                 phase: q.phase,
                 tissue: q.tissue.clone(),
-                faces: q
-                    .faces
-                    .iter()
-                    .filter_map(|k| graph.face_id(k))
-                    .filter(|&f| graph.face(f).life.live())
-                    .collect(),
+                faces: live_faces(&q.faces),
                 fill_level: q.fill(),
                 population: q.housed().households() * self.spec.household_size,
                 aged: q
@@ -554,6 +586,41 @@ impl<'a> Driver<'a> {
             self.warnings.push(line);
         }
     }
+}
+
+/// Cells around a founding cell, in survey cells, that must be mostly open for a town to start.
+const ROOM_CELLS: i64 = 2;
+
+/// The centre of the open cell nearest a survey's centre with open ground on most of the cells
+/// around it, when the centre itself is closed; `None` when the centre is open or no cell fits.
+fn open_ground(survey: &Survey) -> Option<Point> {
+    let centre = survey.center();
+    if !survey.closed_at(centre) {
+        return None;
+    }
+    let step = survey.cell_size();
+    let at = |p: Point| (((p.x - centre.x) / step).round() as i64, ((p.y - centre.y) / step).round() as i64);
+    let open: HashSet<(i64, i64)> = survey.cells().filter(|c| !c.closed).map(|c| at(c.position)).collect();
+    let side = 2 * ROOM_CELLS + 1;
+    let room = |(i, j): (i64, i64)| {
+        let mut n = 0;
+        for dj in -ROOM_CELLS..=ROOM_CELLS {
+            for di in -ROOM_CELLS..=ROOM_CELLS {
+                n += i64::from(open.contains(&(i + di, j + dj)));
+            }
+        }
+        n * 4 >= side * side * 3
+    };
+    survey
+        .cells()
+        .filter(|c| !c.closed && room(at(c.position)))
+        .map(|c| c.position)
+        .min_by(|a, b| {
+            a.distance(centre)
+                .total_cmp(&b.distance(centre))
+                .then(a.x.total_cmp(&b.x))
+                .then(a.y.total_cmp(&b.y))
+        })
 }
 
 /// The founding focus as the `Found` event names it.

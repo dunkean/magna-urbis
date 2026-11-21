@@ -4942,20 +4942,25 @@ fn generate_cut(
                             })
                     });
                 use geo::{Area, BooleanOps};
-                let merged = geo::algorithm::bool_ops::unary_union(
-                    children
-                        .iter()
-                        .map(|p| super::geometry::polygon(&p.shape))
-                        .collect::<Vec<_>>()
-                        .iter(),
-                );
-                let original = super::geometry::polygon(&parent.shape);
                 let tolerance = 1e-5_f64.max(area(&parent.shape) * 1e-8);
-                let difference = original.difference(&merged).unsigned_area()
-                    + merged.difference(&original).unsigned_area();
-                let overlap = (children.iter().map(|p| area(&p.shape)).sum::<f64>()
-                    - merged.unsigned_area())
-                .max(0.0);
+                // i_overlay can panic on degenerate pieces: the split is then not admitted.
+                let (difference, overlap) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let merged = geo::algorithm::bool_ops::unary_union(
+                        children
+                            .iter()
+                            .map(|p| super::geometry::polygon(&p.shape))
+                            .collect::<Vec<_>>()
+                            .iter(),
+                    );
+                    let original = super::geometry::polygon(&parent.shape);
+                    let difference = original.difference(&merged).unsigned_area()
+                        + merged.difference(&original).unsigned_area();
+                    let overlap = (children.iter().map(|p| area(&p.shape)).sum::<f64>()
+                        - merged.unsigned_area())
+                    .max(0.0);
+                    (difference, overlap)
+                }))
+                .unwrap_or((f64::INFINITY, 0.0));
                 if admitted && difference + overlap <= tolerance {
                     for p in &mut children {
                         p.parent_ids = vec![parent.id.clone()];

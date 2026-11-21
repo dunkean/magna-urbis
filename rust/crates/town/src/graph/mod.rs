@@ -168,6 +168,11 @@ impl Graph {
             .map(|i| EdgeId(i as u32))
     }
 
+    /// Every face ever born, live or retired.
+    pub fn all_faces(&self) -> impl Iterator<Item = FaceId> + '_ {
+        (0..self.faces.len()).map(|i| FaceId(i as u32))
+    }
+
     /// Faces standing at `clock`, the unbounded faces included.
     pub fn faces_at(&self, clock: Clock) -> impl Iterator<Item = FaceId> + '_ {
         (0..self.faces.len())

@@ -77,6 +77,12 @@ impl Lattice {
         }
     }
 
+    /// Whether the centre is open land: a ring that finds no land below its level then only
+    /// waits for a higher level (a steep site), it has not exhausted the site.
+    pub(super) fn centre_open(&self) -> bool {
+        self.cost[self.index(-self.first.0 + 1, -self.first.1 + 1)].is_finite()
+    }
+
     /// The land reachable at a cost below `level` from the centre and from each of `seeds` (the
     /// far landings), or `None` when even the centre is not open or its piece cannot be traced.
     pub(super) fn land(&self, level: f64, seeds: &[Point]) -> Option<Land> {

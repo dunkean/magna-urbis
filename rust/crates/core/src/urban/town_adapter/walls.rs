@@ -3,6 +3,7 @@
 //! then give up the works' land before any lot is cut.
 
 use magna_urbis_town::TownPlan;
+use magna_urbis_town::graph::EdgeClass;
 use magna_urbis_town::walls::{WorksContext, works_inputs};
 
 use super::super::{
@@ -25,7 +26,7 @@ pub(super) fn enclose(
     let raised: Vec<_> = plan
         .walls
         .iter()
-        .filter(|w| w.precinct.raised.is_some())
+        .filter(|w| w.precinct.raised.is_some() && standing(plan, &w.precinct))
         .collect();
     if raised.is_empty() {
         return;
@@ -166,3 +167,23 @@ fn yield_works(layout: &mut Layout) {
     }
     layout.blocks = blocks;
 }
+
+/// Whether a raised circuit still stands at the stop: an old line the fossil rule removed or
+/// turned into a boulevard keeps its record but no longer carries a wall. A lobe's line keeps its
+/// own stretch only, the shared one being the old circuit's.
+fn standing(plan: &TownPlan, precinct: &magna_urbis_town::walls::Precinct) -> bool {
+    let graph = &plan.graph;
+    let wall: f64 = graph
+        .faces_along_chain(&precinct.chain)
+        .iter()
+        .map(|s| graph.edge(s.edge))
+        .filter(|e| e.life.live() && *e.class.current() == EdgeClass::Wall)
+        .map(|e| e.polyline.windows(2).map(|w| w[0].distance(w[1])).sum::<f64>())
+        .sum();
+    let ring = &precinct.outline.outer;
+    let perimeter: f64 = (0..ring.len()).map(|i| ring[i].distance(ring[(i + 1) % ring.len()])).sum();
+    wall >= STANDING_SHARE * perimeter
+}
+
+/// Share of a circuit's perimeter that must still carry a wall for it to be exported.
+const STANDING_SHARE: f64 = 0.25;

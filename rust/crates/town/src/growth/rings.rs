@@ -112,7 +112,13 @@ impl Driver<'_> {
         // of one meets the graph too closely to be drawn (two crossings closer than the minimum
         // gap), the next, a few metres out, usually does not.
         let land = lattice.land(level, &seeds);
-        let whole = land.as_ref().is_none_or(|l| l.whole);
+        // No land below the level is not the end of the site: on a steep flank the first rings
+        // hold too little to be drawn; only a closed centre or land that holds every reachable
+        // cell ends the rings.
+        let whole = match &land {
+            Some(l) => l.whole,
+            None => !lattice.centre_open(),
+        };
         let prepared = started.elapsed();
         let ended = if whole {
             RingEnd::Exhausted
@@ -131,8 +137,9 @@ impl Driver<'_> {
         let trace = |what: &str, sectors: usize, d: &Self| {
             if profiled() {
                 eprintln!(
-                    "  growth.ring {ring} level={level:.0} land={} whole={whole} {what} sectors={sectors} quarters={} clock={:.0}/{:.0} prepare={} ms total={} ms",
+                    "  growth.ring {ring} level={level:.0} land={} centre={} whole={whole} {what} sectors={sectors} quarters={} clock={:.0}/{:.0} prepare={} ms total={} ms",
                     land.is_some(),
+                    lattice.centre_open(),
                     d.quarters.len(),
                     d.clock.households(),
                     d.target.households(),
