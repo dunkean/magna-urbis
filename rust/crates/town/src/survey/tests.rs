@@ -120,6 +120,32 @@ fn terrace_costs_rise_and_cliffs_close_land_beyond_them() {
 }
 
 #[test]
+fn slope_lowers_density_and_terraces_steep_land_without_closing_it() {
+    let spec = SurveySpec::default();
+    let flat = survey(&PLAIN, CENTER, 96.0, &spec);
+    let cell = flat.cell_at(CENTER).unwrap();
+    near(flat.slope_density(cell), 1.0);
+    assert!(!flat.terraced(cell));
+
+    let ramp = Terrain {
+        height: |q| 0.25 * q.x,
+        ..PLAIN
+    };
+    let site = survey(&ramp, CENTER, 96.0, &spec);
+    let cell = site.cell_at(CENTER).unwrap();
+    assert!(!cell.closed && site.terraced(cell));
+    let density = site.slope_density(cell);
+    assert!(
+        spec.terrace_density < density && density < 1.0,
+        "density {density}"
+    );
+    let quarter = site.quarter_slope(&magna_urbis_geom::rectangle(440.0, 472.0, 520.0, 552.0));
+    assert!((quarter.mean_grade - 0.25).abs() < 1e-6);
+    assert!(quarter.terraced());
+    assert!((quarter.density - density).abs() < 1e-9);
+}
+
+#[test]
 fn neighbour_claims_respect_holes_and_the_radius_is_exact_at_a_query_point() {
     let claim = Shape {
         outer: vec![

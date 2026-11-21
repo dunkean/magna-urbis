@@ -20,6 +20,12 @@
 //! - `split`: `split_quarter`, `cut_candidate`, `street_anchors`,
 //!   `straight_cut`, `chord_split`, `acute_ends`, `frame`, `add`.
 //!
+//! On a steep quarter (`slope`: mean grade past `SlopeParams::steep_grade`) the
+//! field takes the contour as a floor on its contour weights, the split adds a
+//! cost to cuts across the contours and lays no stairs; the stepped links
+//! between its contour streets are laid afterwards by `tissue::stairs`. A quarter
+//! on terraced land is laid with `OrganicParams::terraced`.
+//!
 //! Left to other tissues or stages: the planned grid (`streetOp: grid`,
 //! lattices and frames), camps, growth phases inside one quarter and their
 //! zone blend, dead-end closes (`closes`), and block carving by street ribbons.
@@ -28,16 +34,17 @@
 //! The planning-grid water stencil reads the terrain's water class per cell.
 
 mod field;
-mod grade;
+pub(crate) mod grade;
 mod noise;
 mod params;
+mod slope;
 mod split;
 mod trace;
 
 #[cfg(test)]
 mod tests;
 
-pub use params::{FieldOrientation, OrganicParams, OrganicSite};
+pub use params::{FieldOrientation, OrganicParams, OrganicSite, SlopeParams, TerracedParams};
 pub use split::{Piece, PieceKind};
 
 use crate::tissue::{DraftStreet, TissueDraft};
@@ -68,7 +75,8 @@ pub fn split_quarter(
     params: &OrganicParams,
     rng: &mut Rng,
 ) -> OrganicSplit {
-    let field = Field::new(terrain, armature, site, params);
+    let steep = slope::steepness(outline, terrain, params);
+    let field = Field::new(terrain, armature, site, params, steep);
     let mut splitter = Splitter::new(&field);
     let pieces = splitter.run(outline, rng);
     OrganicSplit {

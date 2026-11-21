@@ -4,6 +4,7 @@ mod cost;
 mod grid;
 mod shelter;
 mod shore;
+mod slope;
 mod summits;
 
 #[cfg(test)]
@@ -18,6 +19,7 @@ use crate::{TownRequest, spec::SurveySpec};
 use grid::Grid;
 
 pub use cost::{CostField, CostPath};
+pub use slope::QuarterSlope;
 
 /// Index of the lowest row-major cell in a dry component of the survey grid.
 pub type BankId = usize;

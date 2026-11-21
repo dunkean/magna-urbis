@@ -201,6 +201,9 @@ pub(super) struct Field<'a> {
     pub(super) terrain: &'a dyn TerrainView,
     pub(super) params: &'a OrganicParams,
     pub(super) centre: Point,
+    /// How fully the quarter answers its slope, 0 to 1 (`slope::steepness`): the field turns
+    /// along the contours and the split prefers cuts along them.
+    pub(super) steep: f64,
     roads: RoadIndex<'a>,
     /// Orientation of the road nearest the town centre (0 for a cardinal culture).
     angle: f64,
@@ -220,6 +223,7 @@ impl<'a> Field<'a> {
         armature: &'a [Vec<Point>],
         site: &OrganicSite,
         params: &'a OrganicParams,
+        steep: f64,
     ) -> Self {
         let centre = site.centre;
         let roads = RoadIndex::new(armature, site.radius * 1.5);
@@ -265,6 +269,7 @@ impl<'a> Field<'a> {
             terrain,
             params,
             centre,
+            steep,
             roads,
             angle,
             terrain_angle,
@@ -387,9 +392,12 @@ impl<'a> Field<'a> {
         } + params.field_twist;
         let mut cx = (4.0 * th).cos();
         let mut cy = (4.0 * th).sin();
+        // A steep quarter takes the contour as a floor on every contour weight, wherever the
+        // local slope gives the contour a direction.
+        let steep = self.steep * params.slope.contour_weight * smooth(slope, 0.01, 0.04);
         // Terraces: the contour on any real slope, the town's contour elsewhere.
         if cf > 0.0 {
-            let w = cf * smooth(slope, 0.02, 0.06);
+            let w = (cf * smooth(slope, 0.02, 0.06)).max(steep);
             cx = (1.0 - w) * (4.0 * self.terrain_angle).cos() + w * (4.0 * contour).cos();
             cy = (1.0 - w) * (4.0 * self.terrain_angle).sin() + w * (4.0 * contour).sin();
             return self.adapt_angle(p, cy.atan2(cx) / 4.0);
@@ -404,7 +412,9 @@ impl<'a> Field<'a> {
             cy = (1.0 - w) * cy + w * (4.0 * a).sin();
         }
         let cb = params.contour_blend;
-        let w = (0.75 * smooth(slope, 0.06, 0.14)).max(cb * smooth(slope, 0.025, 0.08));
+        let w = (0.75 * smooth(slope, 0.06, 0.14))
+            .max(cb * smooth(slope, 0.025, 0.08))
+            .max(steep);
         cx = (1.0 - w) * cx + w * (4.0 * contour).cos();
         cy = (1.0 - w) * cy + w * (4.0 * contour).sin();
         // The noise is halved at the very centre and full beyond 120 m.

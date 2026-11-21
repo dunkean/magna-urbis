@@ -309,11 +309,14 @@ fn valid_spec(spec: &SurveySpec) -> bool {
         spec.strong_point_min_top_area,
         spec.strong_point_top_grade,
         spec.lane_grade,
+        spec.house_grade,
     ]
     .into_iter()
     .all(|value| value.is_finite() && value > 0.0)
         && nonnegative(spec.water_charge)
         && nonnegative(spec.harbour_reach)
+        && nonnegative(spec.dense_grade)
+        && (0.0..=1.0).contains(&spec.terrace_density)
 }
 
 fn slope_at(

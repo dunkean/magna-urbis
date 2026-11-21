@@ -1,6 +1,7 @@
 //! Street and block patterns fitted to a quarter's outline and its surrounding features.
 
 pub mod organic;
+pub mod stairs;
 
 use magna_urbis_geom::Point;
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,8 @@ pub struct DraftStreet {
     pub path: Vec<Point>,
     /// Street rank: 2 for a street through land worth many blocks, 3 for a lane.
     pub rank: u8,
-    /// `street`, `lane` or `stairs`.
+    /// `street`, `lane` or `stairs`. The vertices of a stairs path between its ends are
+    /// landings when it comes from `stairs::stepped_links`.
     pub role: String,
     /// Carriageway width in metres at each vertex of `path`.
     pub widths: Vec<f64>,

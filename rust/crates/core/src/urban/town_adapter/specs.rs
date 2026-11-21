@@ -609,6 +609,7 @@ fn organic_params(morph: &Morph, zone: &str, pattern: &str, cfg: &LayoutConfig) 
         max_lane_grade: cfg.max_lane_grade,
         max_stair_grade: cfg.max_stair_grade,
         allow_stairs: profiles::stairs_allowed(cfg, &cfg.culture),
+        ..defaults
     }
 }
 

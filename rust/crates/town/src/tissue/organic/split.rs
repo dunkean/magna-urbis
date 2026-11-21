@@ -4,6 +4,7 @@
 
 use super::field::{Field, smooth};
 use super::grade::{path_clear, path_grade};
+use super::slope::cross_contour;
 use super::trace::{TraceIndex, trace};
 use crate::tissue::DraftStreet;
 use magna_urbis_geom::{
@@ -168,6 +169,12 @@ impl<'f, 'a> Splitter<'f, 'a> {
         }
     }
 
+    /// Whether a cut may be a flight of stairs. On a steep quarter it may not: its flights are
+    /// the stepped links laid after the split (`tissue::stairs`), short and spaced.
+    fn stairs_allowed(&self) -> bool {
+        self.field.params.allow_stairs && self.field.steep == 0.0
+    }
+
     /// Add a street whose width changes gradually from one random end width to the other.
     fn add(&mut self, path: Vec<Point>, rank: u8, role: &str, rng: &mut Rng) {
         if path.len() < 2 || length(&path) < 0.2 {
@@ -202,9 +209,10 @@ impl<'f, 'a> Splitter<'f, 'a> {
     }
 
     /// One cut through `seed` along `heading`: traced within the street
-    /// grades (lane, then stairs when allowed, as fallbacks), snapped onto the
-    /// piece's corners, with both sides admissible. Its cost weighs balance,
-    /// grade and slenderness, with a small random share.
+    /// grades (lane, then one short flight of stairs when allowed, as
+    /// fallbacks), snapped onto the piece's corners, with both sides
+    /// admissible. Its cost weighs balance, grade, slenderness and, on a steep
+    /// quarter, its run across the contours, with a small random share.
     #[allow(clippy::too_many_arguments)]
     fn candidate(
         &self,
@@ -234,21 +242,32 @@ impl<'f, 'a> Splitter<'f, 'a> {
                 trace(field, &pc.shape, index, seed, heading, limit)?,
             ))
         };
-        let (mut back, front) = traced(grade)
-            .or_else(|| traced(params.max_lane_grade))
-            .or_else(|| {
-                if params.allow_stairs {
-                    traced(params.max_stair_grade)
-                } else {
-                    None
-                }
-            })?;
+        let stairs = self.stairs_allowed();
+        let walked = traced(grade).or_else(|| traced(params.max_lane_grade));
+        let (mut back, front, flight) = match walked {
+            Some((back, front)) => (back, front, false),
+            None if stairs => {
+                let (back, front) = traced(params.max_stair_grade)?;
+                (back, front, true)
+            }
+            None => return None,
+        };
         back.reverse();
         back.extend(front.into_iter().skip(1));
+        // A cut that needs stairs is one flight, and flights stay short.
+        if flight && length(&back) > params.slope.stairs.max_length {
+            return None;
+        }
         // The 5 m steps carry no shape below half a metre; fewer vertices make
-        // every later split cheaper.
+        // every later split cheaper. A steep quarter lays no stairs, so there the
+        // simplified cut keeps lane grade.
+        let simple_grade = if field.steep > 0.0 {
+            params.max_lane_grade
+        } else {
+            params.max_stair_grade
+        };
         let simple = simplify(&back, 0.5, |_| false);
-        if simple.len() < back.len() && path_clear(terrain, &simple, params.max_stair_grade) {
+        if simple.len() < back.len() && path_clear(terrain, &simple, simple_grade) {
             back = simple;
         }
         // Snap each end onto the nearest piece corner within reach, so streets
@@ -265,7 +284,7 @@ impl<'f, 'a> Splitter<'f, 'a> {
                 snapped[end] = v;
             }
         }
-        let allowed = if params.allow_stairs {
+        let allowed = if stairs {
             params.max_stair_grade
         } else {
             params.max_lane_grade
@@ -302,6 +321,12 @@ impl<'f, 'a> Splitter<'f, 'a> {
             return None;
         }
         let steepest = path_grade(terrain, &back);
+        // On a steep quarter, cuts along the contours are preferred.
+        let across = if field.steep > 0.0 {
+            field.steep * params.slope.contour_cut * cross_contour(terrain, &back)
+        } else {
+            0.0
+        };
         let cost = (aa - ab).abs() / a0
             + if steepest > params.max_lane_grade {
                 0.8
@@ -313,6 +338,7 @@ impl<'f, 'a> Splitter<'f, 'a> {
             + 0.25
                 * ((fa.hu / fa.hv.max(1.0) - 2.5).max(0.0)
                     + (fb.hu / fb.hv.max(1.0) - 2.5).max(0.0))
+            + across
             + rng.float() * 0.08;
         Some(Candidate {
             cost,
@@ -391,7 +417,7 @@ impl<'f, 'a> Splitter<'f, 'a> {
             }
         }
         let reach = 2.0 * (f.hu + f.hv) + 10.0;
-        let grade = if params.allow_stairs {
+        let grade = if self.stairs_allowed() {
             params.max_stair_grade
         } else {
             params.max_lane_grade

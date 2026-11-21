@@ -84,12 +84,12 @@ fn inspect(terrain: &dyn TerrainView, a: Point, b: Point, dry: bool) -> Option<f
 }
 
 /// Steepest grade along the segment, wet or dry; infinite off the map.
-pub(super) fn segment_grade(terrain: &dyn TerrainView, a: Point, b: Point) -> f64 {
+pub(crate) fn segment_grade(terrain: &dyn TerrainView, a: Point, b: Point) -> f64 {
     inspect(terrain, a, b, false).unwrap_or(f64::INFINITY)
 }
 
 /// Whether the segment stays on dry land within `max_grade`.
-pub(super) fn segment_clear(terrain: &dyn TerrainView, a: Point, b: Point, max_grade: f64) -> bool {
+pub(crate) fn segment_clear(terrain: &dyn TerrainView, a: Point, b: Point, max_grade: f64) -> bool {
     inspect(terrain, a, b, true).is_some_and(|g| g <= max_grade + 1e-8)
 }
 

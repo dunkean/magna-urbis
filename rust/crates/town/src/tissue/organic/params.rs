@@ -1,6 +1,7 @@
 //! Plain-data inputs of the organic tissue: the culture's street morphology and
 //! the town context shared by all of its quarters.
 
+use crate::tissue::stairs::StairParams;
 use magna_urbis_geom::Point;
 use magna_urbis_random::Rng;
 use serde::{Deserialize, Serialize};
@@ -81,6 +82,73 @@ pub struct OrganicParams {
     /// Whether cuts may be stairs: the layout setting and a culture that builds
     /// stairs or terraces (false for the European organic culture).
     pub allow_stairs: bool,
+    /// Response to slope: contour streets on steep quarters, the terraced tissue and the
+    /// stepped links between contour streets.
+    pub slope: SlopeParams,
+}
+
+/// How the organic tissue answers a slope. A quarter whose mean grade passes `steep_grade`
+/// turns its streets along the contours and prefers cuts along them; its cuts are never stairs,
+/// as flights are laid afterwards by the stepped links under the owner's rule (short, sparse,
+/// never side by side).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SlopeParams {
+    /// Mean grade of a quarter from which its streets turn along the contours; the response is
+    /// full from twice this grade (default 0.08, between the 6 % at which classic's field
+    /// starts turning streets along contours and the 12 % street grade).
+    pub steep_grade: f64,
+    /// Share of the contour direction in the field of a fully steep quarter (default 0.95).
+    pub contour_weight: f64,
+    /// Cost added to a cut running straight across the contours in a fully steep quarter, on
+    /// the scale of the split's balance and slenderness costs (default 1.5: a cut along the
+    /// contours wins until the strips it leaves grow about five times longer than deep).
+    pub contour_cut: f64,
+    /// Tissue of a quarter most of whose land is terraced.
+    pub terraced: TerracedParams,
+    /// Stepped links between contour streets.
+    pub stairs: StairParams,
+}
+
+impl Default for SlopeParams {
+    fn default() -> Self {
+        Self {
+            steep_grade: 0.08,
+            contour_weight: 0.95,
+            contour_cut: 1.5,
+            terraced: TerracedParams::default(),
+            stairs: StairParams::default(),
+        }
+    }
+}
+
+/// The terraced form of a tissue: shallow blocks drawn out along the contour between two
+/// contour streets, with narrow lots. Defaults to tune on sheets.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TerracedParams {
+    /// Multiplier on the zone's block size range and smallest block (default 0.6).
+    pub block_scale: f64,
+    /// Smallest block width in metres, across the contour (default 14: a row of shallow
+    /// terrace houses back to back with the row above).
+    pub min_width: f64,
+    /// Elongation up to which a block smaller than its target is left uncut (default 6: long
+    /// strips along the contour are the terrace's form).
+    pub max_aspect: f64,
+    /// Multiplier on lot frontage for the lot cut of terraced blocks (default 0.75: terrace lots
+    /// are narrower along the contour).
+    pub lot_frontage_scale: f64,
+}
+
+impl Default for TerracedParams {
+    fn default() -> Self {
+        Self {
+            block_scale: 0.6,
+            min_width: 14.0,
+            max_aspect: 6.0,
+            lot_frontage_scale: 0.75,
+        }
+    }
 }
 
 impl Default for OrganicParams {
@@ -110,11 +178,24 @@ impl Default for OrganicParams {
             max_lane_grade: 0.18,
             max_stair_grade: 0.65,
             allow_stairs: false,
+            slope: SlopeParams::default(),
         }
     }
 }
 
 impl OrganicParams {
+    /// The same tissue in its terraced form, for a quarter most of whose land is terraced.
+    pub fn terraced(&self) -> Self {
+        let t = &self.slope.terraced;
+        Self {
+            block_size: self.block_size.map(|a| a * t.block_scale),
+            min_block: self.min_block * t.block_scale,
+            min_width: self.min_width.min(t.min_width),
+            max_aspect: self.max_aspect.max(t.max_aspect),
+            ..self.clone()
+        }
+    }
+
     /// Width of a new street of `rank` at one of its ends.
     pub(super) fn width(&self, rank: u8, rng: &mut Rng) -> f64 {
         self.width_by_rank[usize::from(rank).min(4)]
