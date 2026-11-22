@@ -5,7 +5,7 @@
  */
 import { renderV2ZoneUniform } from '../../../../../rust/bridge/terrainRenderV2Zones';
 import { DEFAULT_TERRAIN_LIGHTING, terrainLights } from '../../../render/terrainLighting';
-import { buildNearTrees, buildNearTreesSteps, clampTreeDistance, TREE_DISTANCE_DEFAULT, TREE_STRIDE, treeLimits, type TreeInputs } from '../../terrain3dTrees';
+import { buildNearTrees, buildNearTreesSteps, clampTreeDistance, TREE_BLOCK, TREE_DISTANCE_DEFAULT, TREE_STRIDE, treeLimits, type TreeInputs } from '../../terrain3dTrees';
 import type { TerrainViewContext } from './context';
 import type { FrameGeometry, TerrainResources } from './contract';
 import type { TerrainCameraRig } from './camera';
@@ -131,7 +131,7 @@ export class NearTrees {
       this.complete = false;
       return;
     }
-    const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl, distance: this.distance };
+    const view = { x, y, forwardX: frame.forward[0] / fl, forwardY: frame.forward[2] / fl, distance: this.distance, inView: this.inView(frame) };
     // Key cells are 40 m: masks within this radius of the stream's eye can reach a tree of this stream or the next.
     this.area = { x, y, r: treeLimits(this.distance).far + 60 };
     const install = (values: Float32Array): void => {
@@ -172,6 +172,30 @@ export class NearTrees {
       .finally(() => {
         this.jobs--;
       });
+  }
+
+  /** Whether a tree block (side TREE_BLOCK, from its ground to the tallest crown) meets the frame's view, with a margin
+   * for small turns: a clip-space outcode test of its eight corners, conservative (never drops a visible block). */
+  private inView(frame: FrameGeometry): (x: number, y: number) => boolean {
+    const c = this.rig.camera,
+      m = frame.matrix,
+      half = TREE_BLOCK / 2,
+      margin = 1.2;
+    return (x, y) => {
+      const ground = (this.surface.heightAt(x, y) ?? 0) * c.exaggeration - frame.targetHeight;
+      let codes = 0x1f;
+      for (let k = 0; k < 8; k++) {
+        const lx = x - c.x + (k & 1 ? half : -half),
+          lz = y - c.y + (k & 2 ? half : -half),
+          ly = ground + (k & 4 ? 50 : -8) * c.exaggeration;
+        const px = m[0] * lx + m[4] * ly + m[8] * lz + m[12],
+          py = m[1] * lx + m[5] * ly + m[9] * lz + m[13],
+          w = (m[3] * lx + m[7] * ly + m[11] * lz + m[15]) * margin;
+        codes &= (px < -w ? 1 : 0) | (px > w ? 2 : 0) | (py < -w ? 4 : 0) | (py > w ? 8 : 0) | (w <= 0 ? 16 : 0);
+        if (!codes) return true;
+      }
+      return false;
+    };
   }
 
   /** uForestTrees of the ground shader: eye xy and the fade radii, w = 0 without trees. */

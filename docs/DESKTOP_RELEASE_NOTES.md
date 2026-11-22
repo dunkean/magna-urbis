@@ -16,6 +16,7 @@
 - V1 roof edges are finer and softer, and diagonals inside warped roof surfaces are hidden.
 - Preserve the shading of pitched roofs, including Newar houses, at medium zoom.
 - Keep loaded 3D trees stable while nearby forest blocks finish loading, including when the camera stays still.
+- Load the 3D trees in view first when the camera is tilted, instead of filling the unseen ground under the camera before them.
 - Keep nearby trees detailed, restore foliage grain and canopy tones matching the satellite ground, and broaden conifer crowns.
 - Recompute urban planning bounds when a small settlement's population is increased, so mountain towns can reach nearby buildable land instead of retaining farm-sized bounds.
 - Keep nearby 3D trees visible when orbiting close to the ground or looking toward the horizon, and restore the terrain exaggeration slider with its current multiplier in the tilted-view toolbar.

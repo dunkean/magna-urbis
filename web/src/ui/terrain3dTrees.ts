@@ -89,6 +89,9 @@ export interface TreeView {
   forwardX: number;
   forwardY: number;
   /** Render distance (m); the default when absent. */ distance?: number;
+  /** Whether the block of side TREE_BLOCK with this centre can show in the frame: those blocks are built first, nearest
+   * first, then the others (a tilted eye does not fill the unseen ground under it before the visible trees). */
+  inView?: (x: number, y: number) => boolean;
   /** Every tree whose centre lies in this square instead, its corners on the TREE_BLOCK grid: no distance, direction,
    * thinning or cap (the world view builds its trees per block of the map, render/world/treesBlocks.ts). */
   area?: { minX: number; minY: number; maxX: number; maxY: number };
@@ -543,8 +546,10 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     bx1 = Math.floor((view.x + TREE_FAR) / block);
   const by0 = Math.floor((view.y - TREE_FAR) / block),
     by1 = Math.floor((view.y + TREE_FAR) / block);
-  // Visible blocks, nearest first: partial streams and the instance cap both keep the trees around the eye.
-  const blocks: [number, number, number][] = [];
+  // Blocks in the view first, then the others, each nearest first: partial streams and the instance cap keep the
+  // visible trees around the eye.
+  const blocks: [number, number, number][] = [],
+    unseen = 4 * (TREE_FAR + block) ** 2;
   if (area) for (let by = Math.round(area.minY / block); by < Math.round(area.maxY / block); by++) for (let bx = Math.round(area.minX / block); bx < Math.round(area.maxX / block); bx++) blocks.push([0, bx, by]);
   else
     for (let by = by0; by <= by1; by++)
@@ -553,7 +558,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           dy = (by + 0.5) * block - view.y,
           d2 = dx * dx + dy * dy;
         if (d2 > (TREE_FAR + block) ** 2 || dx * view.forwardX + dy * view.forwardY < -2 * block) continue;
-        blocks.push([d2, bx, by]);
+        blocks.push([view.inView && !view.inView((bx + 0.5) * block, (by + 0.5) * block) ? d2 + unseen : d2, bx, by]);
       }
   blocks.sort((a, b) => a[0] - b[0]);
   const social: ForestSocial = { share: 1, width: 1, rank: 4 },
