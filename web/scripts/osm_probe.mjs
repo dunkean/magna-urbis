@@ -1,5 +1,6 @@
 // From web/: node scripts/osm_probe.mjs [--lat 43.2085] [--lon 2.3575] [--size 4000] [--grid 512] [--zoom 14]
 //                                         [--name Carcassonne] [--culture european-organic] [--out out/osm-probe/carcassonne.muproj]
+//                                         [--commune "Les Matelles"] (town content limited to that admin_level=8 boundary)
 // Look spike for an OpenStreetMap import (web/out/proposals-2026-11-22/osm-import.md). It fetches one square of OSM
 // (Overpass API) and real elevation (AWS Terrain Tiles, Terrarium PNG). Then it writes a V2 project (.muproj) whose
 // recipe carries the DEM as an imported heightmap and whose saved world holds the OSM town: streets, regional roads,
@@ -29,7 +30,7 @@ const LAT0 = Number(args.lat ?? 43.2085),
   SIZE = Number(args.size ?? 4000),
   GRID = Number(args.grid ?? 512),
   ZOOM = Number(args.zoom ?? 14),
-  NAME = args.name ?? 'Carcassonne',
+  NAME = args.name ?? args.commune?.replace(/^"|"$/g, '') ?? 'Carcassonne',
   CULTURE = args.culture ?? 'european-organic';
 const OUT = resolve(WEB, args.out ?? 'out/osm-probe/carcassonne.muproj');
 const CACHE = resolve(WEB, 'out/osm-probe/cache');
@@ -100,17 +101,38 @@ async function cached(file, fetcher) {
   writeFileSync(path, bytes);
   return bytes;
 }
+/** One Overpass query with retries: the public instances answer 429/502/504 or a runtime-error remark under load. */
+async function overpass(q, label) {
+  const endpoints = [...new Set([OVERPASS, 'https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'])];
+  for (let attempt = 0; ; attempt++) {
+    const endpoint = endpoints[attempt % endpoints.length];
+    try {
+      console.log(`Overpass ${label} (${endpoint}, try ${attempt + 1})`);
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+      const value = JSON.parse(text);
+      if (/runtime error/i.test(value.remark ?? '')) throw new Error(value.remark);
+      return Buffer.from(text, 'utf8');
+    } catch (error) {
+      if (attempt >= 7) throw error;
+      const pause = 15000 * (attempt + 1);
+      console.log(`  failed (${String(error.message ?? error).slice(0, 160)}); retry in ${pause / 1000} s`);
+      await new Promise(ok => setTimeout(ok, pause));
+    }
+  }
+}
 const overpassKey = createHash('sha1').update(query).digest('hex').slice(0, 16);
-const osm = JSON.parse(
-  (
-    await cached(`overpass-${overpassKey}.json`, async () => {
-      console.log('Overpass:', bbox);
-      const response = await fetch(OVERPASS, { method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(query) });
-      if (!response.ok) throw new Error(`Overpass ${response.status}: ${(await response.text()).slice(0, 300)}`);
-      return Buffer.from(await response.arrayBuffer());
-    })
-  ).toString('utf8'),
-);
+const osm = JSON.parse((await cached(`overpass-${overpassKey}.json`, () => overpass(query, bbox))).toString('utf8'));
+// --commune "<name>": its admin_level=8 boundary (the relation crossing the map square) limits the town content.
+const COMMUNE = args.commune?.replace(/^"|"$/g, '');
+let communeRelation;
+if (COMMUNE) {
+  const q = `[out:json][timeout:90];relation["boundary"="administrative"]["admin_level"="8"]["name"="${COMMUNE.replace(/"/g, '\\"')}"](${bbox});out geom;`;
+  const found = JSON.parse((await cached(`commune-${createHash('sha1').update(q).digest('hex').slice(0, 16)}.json`, () => overpass(q, `commune ${COMMUNE}`))).toString('utf8'));
+  communeRelation = found.elements.find(e => e.type === 'relation');
+  if (!communeRelation) throw new Error(`No admin_level=8 boundary named "${COMMUNE}" crosses the map square.`);
+}
 const osmTimestamp = osm.osm3s?.timestamp_osm_base ?? '';
 console.log(`OSM elements: ${osm.elements.length} (base ${osmTimestamp})`);
 
@@ -382,6 +404,8 @@ const streets = [],
   footprint = [],
   places = [];
 let roadSerial = 0;
+/** OSM identity and use of each building, for the 3D scene (not written into the world's urban layer). */
+const buildingRoles = new Map();
 for (const el of osm.elements) {
   const t = tags(el);
   if (el.type === 'node') {
@@ -434,17 +458,24 @@ for (const el of osm.elements) {
       }
       const religious = ['church', 'cathedral', 'chapel'].includes(t.building) || t.amenity === 'place_of_worship';
       const castle = t.building === 'castle' || t.historic === 'castle';
-      buildings.push({
+      // Untagged heights of the fortifications and churches: OSM levels say nothing useful there.
+      const tower = t['tower:type'] === 'defensive' || t.historic === 'tower' || t.building === 'tower',
+        curtain = t.defensive_works === 'curtain_wall',
+        tagged = t.height !== undefined || t['building:levels'] !== undefined;
+      const fixedHeight = tagged ? height : tower ? 15 : curtain ? 10 : religious ? 18 : castle ? 16 : height;
+      const building = {
         poly: a.outer,
         courtyards: a.holes,
         kind: KIND[t.building] ?? (religious || castle ? 'collective' : 'domestic'),
-        height: Math.round(height * 100) / 100,
+        height: Math.round(fixedHeight * 100) / 100,
         arch: 'silhouette',
-        roof: ROOF[t['roof:shape']] ?? (area > 600 ? 'flat' : area > 250 ? 'hip' : 'gable'),
-        storeys: Math.max(1, Math.min(100, Math.round(levels))),
+        roof: ROOF[t['roof:shape']] ?? (tower ? 'conical' : curtain ? 'flat' : area > 600 ? 'flat' : area > 250 ? 'hip' : 'gable'),
+        storeys: Math.max(1, Math.min(100, Math.round(tagged || !(tower || curtain || religious || castle) ? levels : fixedHeight / 3.5))),
         material: 'stone',
         orientation,
-      });
+      };
+      buildings.push(building);
+      buildingRoles.set(building, { osmId: `${el.type}-${el.id}`, function: religious ? 'religious' : castle || tower || curtain ? 'defensive' : building.kind === 'domestic' ? 'domestic' : 'mixed', curtain, tower });
       if ((religious || castle) && t.name) landmarks.push({ kind: castle ? 'castle' : t.building === 'cathedral' ? 'cathedral' : 'church', poly: a.outer, name: t.name });
     }
     continue;
@@ -478,6 +509,35 @@ for (const el of osm.elements) {
     continue;
   }
   if (URBAN_LANDUSE.has(t.landuse)) footprint.push(...areas(el).filter(visible));
+}
+
+// Commune limit: town content is kept when its centre lies inside the boundary; roads, rivers, water and relief stay
+// over the whole square.
+let commune;
+if (communeRelation) {
+  const outer = joinRings(communeRelation.members.filter(m => m.type === 'way' && m.role !== 'inner' && m.geometry).map(m => m.geometry.filter(Boolean))).map(r => openRing(pts(r)));
+  const inner = joinRings(communeRelation.members.filter(m => m.type === 'way' && m.role === 'inner' && m.geometry).map(m => m.geometry.filter(Boolean))).map(r => openRing(pts(r)));
+  const inside = p => outer.some(r => pointInRing(r, p)) && !inner.some(r => pointInRing(r, p));
+  commune = { outer, inner, inside };
+  const keep = (list, at) => {
+    const kept = list.filter(item => inside(at(item)));
+    list.length = 0;
+    list.push(...kept);
+  };
+  const before = { buildings: buildings.length, streets: streets.length, landAreas: landAreas.length, footprint: footprint.length };
+  keep(buildings, b => centroid(b.poly));
+  keep(streets, s => s.path[Math.floor(s.path.length / 2)]);
+  keep(squares, a => centroid(a.outer));
+  keep(landmarks, l => centroid(l.poly));
+  keep(landAreas, a => centroid(a.poly));
+  keep(footprint, a => centroid(a.outer));
+  keep(wallWays, w => w.path[Math.floor(w.path.length / 2)]);
+  keep(towerPoints, p => p);
+  keep(gatePoints, p => p);
+  const kept = places.filter(p => p.name === NAME || inside(p.p));
+  places.length = 0;
+  places.push(...kept);
+  console.log(`Commune ${COMMUNE}: buildings ${before.buildings} -> ${buildings.length}, streets ${before.streets} -> ${streets.length}, land areas ${before.landAreas} -> ${landAreas.length}, urban areas ${before.footprint} -> ${footprint.length}`);
 }
 
 // Walls: towers and gates near the curtain.
@@ -587,7 +647,8 @@ const terrain = {
 
 // ---------- town ----------
 const town = places.find(p => p.name === NAME) ?? places.find(p => ['city', 'town'].includes(p.place));
-const cite = places.find(p => /cit[ée]/i.test(p.name));
+// La Cité is the historic core of Carcassonne; elsewhere the town's own place node.
+const cite = NAME === 'Carcassonne' ? places.find(p => /cit[ée]/i.test(p.name)) : undefined;
 const center = cite?.p ?? town?.p ?? { x: half, y: half };
 if (!footprint.length && buildings.length) {
   // Fallback: the buildings' bounding box.
@@ -647,6 +708,107 @@ const settlement = {
   urban,
 };
 
+// ---------- 3D: the retained town snapshot the V2 draws its houses from ----------
+// The V2 3D view (urban3d.ts) raises the houses of `world.debug.v2RustCities[key].scene`, a PlacementBatch, only for a
+// town snapshot at stage 'buildings' with a layout (v2/nativeProducts.ts nativeCitiesOf). City volumes
+// ('silhouette' generator) read each building's `programme.massing` (render/cityMassing.ts readMassing): one piece per
+// footprint shape, with eave height, roof form and rise, and ridges. Saved projects carry the same record. With it, the
+// 2D plan is drawn by the City Bench renderer from the snapshot's layout and scene, and no longer from `world.urban`.
+const groundAt = (x, y) => {
+  const fx = Math.max(0, Math.min(GRID - 1, x / cell - 0.5)),
+    fy = Math.max(0, Math.min(GRID - 1, y / cell - 0.5));
+  const ax = Math.floor(fx),
+    ay = Math.floor(fy),
+    bx = Math.min(GRID - 1, ax + 1),
+    by = Math.min(GRID - 1, ay + 1),
+    tx = fx - ax,
+    ty = fy - ay,
+    h = height.data;
+  return (h[ay * GRID + ax] * (1 - tx) + h[ay * GRID + bx] * tx) * (1 - ty) + (h[by * GRID + ax] * (1 - tx) + h[by * GRID + bx] * tx) * ty;
+};
+const MASSING_ROOF = { gable: 'gable', hip: 'hip', flat: 'flat', dome: 'dome', pyramidal: 'pyramid', conical: 'cone', barrel: 'barrel' };
+const round2 = v => Math.round(v * 100) / 100;
+function massingOf(b, serial) {
+  const u = { x: Math.cos(b.orientation), y: Math.sin(b.orientation) },
+    v = { x: -u.y, y: u.x },
+    c = centroid(b.poly);
+  let u0 = Infinity,
+    u1 = -Infinity,
+    v0 = Infinity,
+    v1 = -Infinity;
+  for (const p of b.poly) {
+    const pu = (p.x - c.x) * u.x + (p.y - c.y) * u.y,
+      pv = (p.x - c.x) * v.x + (p.y - c.y) * v.y;
+    u0 = Math.min(u0, pu);
+    u1 = Math.max(u1, pu);
+    v0 = Math.min(v0, pv);
+    v1 = Math.max(v1, pv);
+  }
+  const halfWidth = (v1 - v0) / 2,
+    vm = (v0 + v1) / 2;
+  const roof = MASSING_ROOF[b.roof] ?? 'gable';
+  const rise = roof === 'flat' ? 0 : roof === 'cone' ? Math.min(8, halfWidth * 1.6) : roof === 'dome' || roof === 'barrel' ? halfWidth : Math.min(6, Math.tan((38 * Math.PI) / 180) * halfWidth);
+  // Hip ridges stop half a width short of both ends; gables run the whole length.
+  const inset = roof === 'hip' ? Math.min(halfWidth, (u1 - u0) / 2) : 0;
+  const at = t => ({ x: c.x + u.x * t + v.x * vm, y: c.y + u.y * t + v.y * vm });
+  const a = at(u0 + inset),
+    e = at(u1 - inset);
+  const ridges = roof === 'gable' || roof === 'hip' || roof === 'barrel' ? [[round2(a.x), round2(a.y), round2(e.x), round2(e.y)]] : [];
+  const eave = Math.max(2.5, b.height - rise);
+  return { floors: b.storeys, eave_m: round2(eave), rise_m: round2(rise), roof, ridges, cover: roof === 'flat' ? 'stone' : 'tile', wall: 'stone', tone: round2(0.85 + 0.15 * ((serial * 0.618034) % 1)) };
+}
+const sceneBuildings = buildings.map((b, i) => {
+  const role = buildingRoles.get(b),
+    id = `osm/${role?.osmId ?? i}/${i}`,
+    c = centroid(b.poly),
+    footprint = [{ outer: b.poly, holes: b.courtyards }];
+  return {
+    id,
+    parcel_id: `osm/${role?.osmId ?? i}`,
+    function: role?.function ?? 'domestic',
+    culture: { culture: CULTURE, pack: '', mode: 'historical_inspired', borrowing: null },
+    recipe_id: 'silhouette',
+    variant_id: 'silhouette',
+    transform: { origin: { x: 0, y: 0 }, orientation_deg: 0 },
+    ground_z_m: round2(groundAt(c.x, c.y)),
+    footprint,
+    roof_footprint: footprint,
+    courtyards: [],
+    circulation: [],
+    entrance: c,
+    access_id: '',
+    volumes: [],
+    useful_area_m2: round2(Math.abs(signedArea(b.poly)) * b.storeys),
+    domestic_units: role?.function === 'domestic' ? 1 : 0,
+    structural_features: [],
+    simplification: 'recipe_volumes',
+    diagnostics: ['osm:footprint'],
+    resolved: null,
+    programme: { built_area_m2: round2(Math.abs(signedArea(b.poly))), floors: [b.storeys, b.storeys], landmark: role?.function === 'religious' || role?.function === 'defensive', massing: [massingOf(b, i)] },
+  };
+});
+const nativeTown = {
+  backend: 'rust-wasm-cpu',
+  stage: 'buildings',
+  layoutKey: `osm:${osmTimestamp}:${bbox}`,
+  layouts: [
+    {
+      key: 'main',
+      culture: CULTURE,
+      center,
+      quarters: footprint.map(a => ({ shape: a, phase: 0, zone: 'core' })),
+      streets: streets.map(s => ({ path: s.path, widths: s.widths, rank: s.rank, role: s.role })),
+      blocks: footprint.map(a => ({ shape: a, quarter: 0, kind: 'block', axis: { x: 1, y: 0 }, zone: 'core', phase: 0 })),
+      enclosures: [],
+      warnings: [],
+    },
+  ],
+  partitions: [{ key: 'main', parcels: [], warnings: [] }],
+  scene: { schema_version: '1', generator_version: 'silhouette', buildings: sceneBuildings, refusals: [], open_spaces: [] },
+  buildingIds: sceneBuildings.map(b => b.id),
+  warnings: [],
+};
+
 // ---------- names ----------
 const entries = [];
 const mid = path => path[Math.floor(path.length / 2)];
@@ -697,6 +859,7 @@ const world = {
   settlements: [settlement],
   landuse: { areas: landAreas, farmsteads: [], reserve: urban.footprint, ways: [], headlands: [] },
   names: { family: 'french', town: NAME, entries },
+  debug: { v2RustCities: { main: nativeTown } },
   stats: {
     'v2.stage': 'towns',
     'v2.engine': V2_ENGINE_VERSION,
