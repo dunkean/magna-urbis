@@ -1,9 +1,18 @@
 ## Alpha 0.3.11
 
+- Share a map with a short code: a 6-character seed followed only by what differs from the default city (size, biome, relief, coast, terrain engine, parameters, rerolls, simple place edits and pins). The default city is just its seed. The current code is always shown in the top bar with copy buttons; MU3 codes no longer open.
+- Sliders snap to the steps the short code stores, so a shared map shows exactly the values you set.
+- Seeds are 6 characters (digits and letters); the dice draws a new one and any typed seed becomes a valid one. The default map now starts from the seed “magnas”.
+- Drop numbered pins on the map with “Drop pin” in the map toolbar; the Share dialog lists them, gives each an optional text and centres the map on a pin. Pin positions travel in the short code, with custom added or moved settlements; texts stay in the project.
+- Copy a map for debugging as plain text (code, build and pin texts); pasting it opens the map with its pins. Export renamed places and edited labels as a names JSON file.
+- Add a settlement of your choice from the Settlements page: choose its population and culture, then click on the map to place it. The other places and their towns stay as they are; the new place is joined to the nearest road and only its town is generated. Remove it from its settlement inspector.
+- Settlements added or moved by hand stay in place when the settlement counts, population or density change: the automatic places are drawn around them. A new placement asks whether to keep them.
+- Change the biome of a generated map without regenerating it: the climate tiles repaint the kept relief, water, land use and towns with the new biome's ground, palette, vegetation tones, seasons and snow. “Regenerate the relief for this biome” rebuilds the relief for it, and any new relief uses the biome on screen.
 - Add the White map style for studying town plans: a white ground with relief shading, grey building footprints, roads, town walls and flat water, without land use, vegetation, textures or contour lines.
 - Show each town layer on its own from the map toolbar: roads, quarters, blocks, parcels and houses, to inspect the street network, blocks or lots without the houses. Satellite styles keep their towns free of plan graphics.
 - Keep generating maps and background towns while the browser tab is hidden or minimised; the map is drawn when the tab is shown again.
 - Keep the houses and 3D trees already built when switching to a map style that draws them the same way, instead of rebuilding them.
+- Choose the special buildings of a town: its options list the default draw (building type and number), and you can change any number or add another building type from the catalogue. “Suggest” lets the programme lower a number for the town’s size and sites; “Force” places exact numbers first and shows placed/requested with a warning when a site is missing. The old castle, cathedral and palace options are removed.
 - Town warnings are one short line each, in English or French.
 - Download the experimental Apple Silicon DMG from GitHub Releases alongside the Windows and Linux packages.
 - Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.

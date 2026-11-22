@@ -131,7 +131,7 @@ pub(super) fn assign(
         .collect();
     order.sort_by_key(|&di| {
         let d = &pr.demands[di];
-        (!d.landmark, admitted[di], d.id.clone())
+        (!d.explicit, !d.landmark, admitted[di], d.id.clone())
     });
     for &di in &order {
         let d = &pr.demands[di];
@@ -264,7 +264,9 @@ pub(super) fn assign(
         let mut crowd = vec![0.0; kept.len()];
         let mut taken = vec![false; kept.len()];
         let mut chosen: Vec<usize> = vec![];
-        for _ in 0..d.sites.saturating_sub(placed).min(trade_budget).min(kept.len()) {
+        // A forced count is outside the trade budget; automatic trades share what is left.
+        let budget = if d.explicit { usize::MAX } else { trade_budget };
+        for _ in 0..d.sites.saturating_sub(placed).min(budget).min(kept.len()) {
             let best = (0..kept.len())
                 .filter(|&k| !taken[k])
                 .map(|k| (k, kept[k].1 + 3.0 * crowd[k]))
@@ -276,7 +278,9 @@ pub(super) fn assign(
                 crowd[j] += (1.0 - dist(centres[c.0], q) / spacing).max(0.0);
             }
             chosen.push(kept[k].0);
-            trade_budget -= 1;
+            if !d.explicit {
+                trade_budget -= 1;
+            }
         }
         for &pi in &chosen {
             let cap = capacity(land_areas[pi], &pr.demands[di]);

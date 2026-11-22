@@ -11,7 +11,7 @@ import { firstPendingGeneration, runRemainingGeneration } from '../fullGeneratio
 import type { Options } from '../../gen/options';
 import type { V2TownStage, UrbanSeedStage } from '../contracts';
 import type { BuildingEdit } from '../edits';
-import { mountTerrainControls } from '../terrainControls';
+import { applyDisplayBiome, mountTerrainControls } from '../terrainControls';
 import { batchUrbanSync, mountUrbanControls, type UrbanControlParts } from '../urbanControls';
 import { mountStageChain } from '../stageChain';
 import type { StageDef, StageFamily } from '../stageRegistry';
@@ -173,6 +173,7 @@ export function mountGenerationControls(state: PageState, actions: PageActions):
       state.regionControls?.sync();
       actions.syncUrbanBackend();
     },
+    onAppearance: actions.scheduleAppearance,
     disabled: () => state.busy,
     context: { getWorld: () => state.world, onApply: () => void actions.generate('terrain') },
   });
@@ -271,6 +272,12 @@ export function mountStageControls(state: PageState, actions: PageActions): void
           importImage: () => $<HTMLInputElement>('#heightmap-file').click(),
           onError: error => actions.toast(String(error), true),
         }),
+    },
+    regenerateBiome: () => {
+      if (state.busy || !applyDisplayBiome(state.settings)) return;
+      actions.touchRecipe();
+      state.terrainControls.sync();
+      void actions.generate('terrain');
     },
     onFamily: family => {
       actions.syncFullGenerationButton(family);

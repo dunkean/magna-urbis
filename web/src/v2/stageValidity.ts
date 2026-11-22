@@ -28,6 +28,7 @@ export function settlementStageValidityKeys(settings: V2Settings, terrainKey?: s
     o.workflow,
     settings.settlementCount,
     settings.region?.placement,
+    settings.region?.customPlaces,
     settings.region?.demography,
     settings.region?.resolution,
     settings.region?.cropSurplus,

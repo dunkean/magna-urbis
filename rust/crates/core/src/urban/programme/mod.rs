@@ -37,7 +37,7 @@ pub use built_capacity::{
     reconcile_built,
 };
 pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
-pub use model::{Adjacency, Allocation, BlockEnvironment, Demand, ProgrammeContext, Reservation, UrbanProgramme};
+pub use model::{Adjacency, Allocation, BlockEnvironment, CountOutcome, Demand, ProgrammeContext, Reservation, UrbanProgramme};
 pub use preparation::prepare;
 pub(super) use reservations::clear_probe_cache;
 

@@ -13,12 +13,14 @@ import { forcedUseRefusal } from '../urbanEditOptions';
 import { applyBuildingEdits, townUrban, buildingSignature } from '../edits';
 import { stagesForAction } from '../stageRegistry';
 import { effectiveRegion } from '../regionSettings';
-import { cityStageValidityKeys } from '../stageValidity';
+import { cityStageValidityKeys, generationValidityKeys, savedGenerationKey } from '../stageValidity';
+import { applyDisplayBiome } from '../terrainControls';
 import { SmallPlaceQueue, boundedSmallPlaceRun } from '../smallPlaces';
 import { applyLabelEdits } from '../mapLabels';
 import { migrateUrbanSeeds } from '../urbanSeeds';
 import { scheduleAutosave } from '../autosave';
 import { $ } from './dom';
+import { confirmCustomSettlements } from './settlementAdd';
 import { displayedOrHidden } from './visibility';
 
 export function createGenerationActions(state: PageState, actions: PageActions) {
@@ -35,8 +37,13 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
     await actions.generate('town', state.world.settlements.find(place => place.main)?.key ?? 'main');
   }
 
-  async function generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<boolean> {
+  async function generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, keepCustom = false): Promise<boolean> {
     if (state.busy) return false;
+    // A new placement keeps or drops the settlements the user added or moved.
+    if (!keepCustom && ['all', 'region', 'settlements'].includes(action) && state.world && !terrainStage) {
+      if (!(await confirmCustomSettlements(state)) || state.busy) return false;
+      actions.touchRecipe();
+    }
     state.cancelled = false;
     const previousSeed = state.settings.options.seed;
     migrateUrbanSeeds(state.settings);
@@ -48,6 +55,11 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
       actions.toast('Create the territory first.');
       actions.selectTab('terrain');
       return false;
+    }
+    // A relief that regenerates anyway (seed, size, relief changes) is made for the biome on screen.
+    if ((action === 'terrain' || action === 'all') && !terrainStage) {
+      const base = state.previewBase?.pristine ?? state.previewBase?.world ?? state.pristine ?? state.world;
+      if ((!base || generationValidityKeys(state.settings, base).get('relief-source') !== savedGenerationKey(base, 'relief-source')) && applyDisplayBiome(state.settings)) state.terrainControls.sync();
     }
     if (['all', 'region', 'settlements'].includes(action)) state.workbenchLayout?.prepareGeneration();
     actions.setBusy(true);

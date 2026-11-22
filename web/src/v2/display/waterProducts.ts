@@ -15,7 +15,7 @@ import { setWhiteWater, WHITE_WATER_ENABLED } from '../../render/whiteWater';
 import { vectorWhiteWater } from '../../render/whiteWaterCourses';
 import { terrainStyle } from '../../render/terrainStyle';
 import { moonlightSvg } from '../../render/materialLook';
-import { effectiveTerrainSettings } from '../terrainSettings';
+import { displayTerrainSettings } from '../displayBiome';
 import { riverSegments, vectorWaterSvg, vectorOverlaySvg, vectorOverlayPixels, type WaterDisplay, type VectorOverlay } from '../../ui/vectorWaterRender';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour } from '../../../../rust/bridge/hydrologyRender';
 import type { HydrologyOverlay } from '../../../../rust/bridge/hydrology';
@@ -50,7 +50,7 @@ export class WaterProducts implements Water {
   waterDisplay(): WaterDisplay {
     const r = this.map.resolved!,
       t = this.map.native!,
-      effective = effectiveTerrainSettings(this.map.settings!, this.map.world!.mapSize);
+      effective = displayTerrainSettings(this.map.settings!, this.map.world!.mapSize);
     return {
       style: r.ground.traits.fantasy && r.composition.networks.water.look === 'natural' ? 'render3d' : r.ground.style,
       colors: r.palette.colors,

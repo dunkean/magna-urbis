@@ -18,7 +18,7 @@ import { renderScene } from './renderScene';
 import { nativeCitiesOf, nativeTerrainOf } from './nativeProducts';
 import { resolveSettingsAppearance } from './appearance';
 import type { AppearancePatch, ResolvedAppearance } from '../render/appearanceRecipe';
-import { effectiveTerrainSettings } from './terrainSettings';
+import { displayBiomeName, displayTerrainSettings } from './displayBiome';
 import { DEFAULT_TERRAIN_LIGHTING } from '../render/terrainLighting';
 import { terrainStyle } from '../render/terrainStyle';
 import { createTerrainSurfaceSampler } from '../ui/terrainSurface';
@@ -133,7 +133,7 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
     ink = r.composition.networks.water.look === 'ink';
   // The seasonal water regime as in 2D (vectorWaterRender.ts): same network, display threshold and calendar.
   const vector = renderScene(world, settings).terrain.water,
-    effective = effectiveTerrainSettings(settings, world.mapSize);
+    effective = displayTerrainSettings(settings, world.mapSize);
   const regimeDisplay: WaterDisplay | undefined =
     vector && shown
       ? {
@@ -264,7 +264,7 @@ export function v2CityViewPatch(previous: City3dViewSettings, value: Omit<City3d
 }
 /** All material modes consume one physical surface and the same display-only recipe. */
 export function v2Terrain3dGround(world: World, settings: V2Settings, ground: City3dGround): Terrain3dGroundSettings | undefined {
-  const config = effectiveTerrainSettings(settings, world.mapSize),
+  const config = displayTerrainSettings(settings, world.mapSize),
     r = v2Resolved3d(settings, world),
     native = renderScene(world, settings).nativeTerrain;
   return cityGroundSettings(r, ground, {
@@ -278,7 +278,7 @@ export function v2Terrain3dGround(world: World, settings: V2Settings, ground: Ci
 }
 export function createV2Terrain3dSampler(world: World, settings: V2Settings, ground: City3dGround): ReturnType<typeof createTerrainSurfaceSampler> {
   const base = v2Terrain3dSurface(world, settings).height,
-    config = effectiveTerrainSettings(settings, world.mapSize),
+    config = displayTerrainSettings(settings, world.mapSize),
     native = renderScene(world, settings).nativeTerrain;
   const r = v2Resolved3d(settings, world),
     material = v2Terrain3dGround(world, settings, ground),
@@ -353,7 +353,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       url = options.getBackground?.();
     if (!isFantasyStyle(style) || !r.ground.layers.relief || !url?.startsWith('data:image/svg+xml')) return;
     const terrain = renderScene(world, settings).terrain,
-      config = { ...effectiveTerrainSettings(settings, world.mapSize), seed: world.seed };
+      config = { ...displayTerrainSettings(settings, world.mapSize), seed: world.seed };
     const key = JSON.stringify([style, config.seed, config.width, config.climate, config.climateValues, r.vegetation.fantasy]);
     if (illustration?.url === url && illustration.terrain === terrain && illustration.key === key) return illustration.value;
     let pending: ReturnType<typeof terrain3dIllustratedSvg> | undefined;
@@ -408,10 +408,10 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
     setRoadGround(
       world.landuse,
       world.mapSize,
-      roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome), roadSoilOf(effectiveTerrainSettings(settings, world.mapSize).climateZone, world.options.biome)),
+      roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, displayBiomeName(settings, world)), roadSoilOf(displayTerrainSettings(settings, world.mapSize).climateZone, displayBiomeName(settings, world))),
       r.composition.ambience === 'night',
     );
-    const climate = JSON.stringify([settings.terrain?.climate, settings.terrain?.climateValues, settings.terrain?.motifSize, settings.terrain?.refine, settings.terrain?.relief]);
+    const climate = JSON.stringify([settings.terrain?.climate, settings.terrain?.climateValues, settings.appearance?.biome, settings.terrain?.motifSize, settings.terrain?.refine, settings.terrain?.relief]);
     if (world.terrain !== terrainOf) {
       terrainOf = world.terrain;
       decor = v2WorldDecor(world, settings);
@@ -577,7 +577,7 @@ export async function mountV2Urban3d(options: V2Urban3dOptions): Promise<V2Urban
       const settings = options.getSettings(),
         r = v2Resolved3d(settings, world);
       if (!r.composition.networks.water.visible) return;
-      const effective = effectiveTerrainSettings(settings, world.mapSize);
+      const effective = displayTerrainSettings(settings, world.mapSize);
       return decorWater3d(decor, r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : 'render3d', r.ground.lakes, r.palette.colors, {
         zone: effective.climateZone,
         season: r.ground.season,

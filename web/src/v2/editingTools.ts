@@ -36,7 +36,7 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
   function sync(): void {
     const available = api.canEdit(),
       selectable = api.canSelect();
-    for (const selector of ['#labels-open', '#rivers-open', '#move-towns', '[data-network-quick]']) document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => (control.disabled = !available));
+    for (const selector of ['#labels-open', '#rivers-open', '#move-towns', '#add-settlement', '[data-network-quick]']) document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => (control.disabled = !available));
     inspect.disabled = !selectable;
     $<HTMLSelectElement>('#inspect-target').disabled = !selectable || !inspect.checked;
     setText($('#edit-done'), api.roadSession?.() ? 'Validate road edits' : 'Finish editing');

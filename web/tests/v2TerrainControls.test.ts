@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { allTerrainFields, climateZoneBiome, coastDirections, terrainBasicFields, terrainControlMessages, toggleCoastDirection } from '../src/v2/terrainControlSchema';
-import { terrainClimateChoice, setTerrainClimateChoice } from '../src/v2/terrainControls';
+import { terrainClimateChoice, setTerrainClimateChoice, chooseDisplayBiome, applyDisplayBiome } from '../src/v2/terrainControls';
+import { displayBiomeName, displayTerrainSettings } from '../src/v2/displayBiome';
+import { validateAppearance } from '../src/v2/appearance';
 import { defaultSettings } from '../src/v2/settings';
 import { UNDERDARK_CULTURES } from '../src/v2/underdarkCultures';
 import { readSettingPath, writeSettingPath } from '../src/v2/parameterForm';
@@ -63,6 +65,27 @@ describe('V2 climate zones', () => {
     setTerrainClimateChoice(draft, 'nordic');
     expect(draft.terrain!.climateValues).toBeUndefined();
     expect(draft.options.culture).toBe('european-organic');
+  });
+  it('repaints a generated map in a display biome, keeping the generation recipe until the relief is regenerated', () => {
+    const draft = defaultSettings();
+    setTerrainClimateChoice(draft, 'temperate');
+    const world = { options: { biome: 'temperate' } } as never;
+    const recipe = JSON.stringify([draft.options, draft.terrain]);
+    expect(chooseDisplayBiome(draft, undefined, 'desert')).toBe(false);
+    expect(chooseDisplayBiome(draft, world, 'desert')).toBe(true);
+    expect(JSON.stringify([draft.options, draft.terrain])).toBe(recipe);
+    expect(terrainClimateChoice(draft)).toBe('desert');
+    expect(displayTerrainSettings(draft, 6000).climateZone).toBe('desert');
+    expect(effectiveTerrainSettings(draft, 6000).climateZone).toBe('temperate');
+    expect(displayBiomeName(draft, world)).toBe('desert');
+    expect(() => validateAppearance(draft.appearance)).not.toThrow();
+    expect(chooseDisplayBiome(draft, world, 'temperate')).toBe(true);
+    expect(draft.appearance!.biome).toBeUndefined();
+    expect(chooseDisplayBiome(draft, world, 'nordic')).toBe(true);
+    expect(applyDisplayBiome(draft)).toBe(true);
+    expect(draft.appearance!.biome).toBeUndefined();
+    expect(effectiveTerrainSettings(draft, 6000).climateZone).toBe('nordic');
+    expect(chooseDisplayBiome(draft, { options: { biome: 'underdark' } } as never, 'desert')).toBe(false);
   });
 });
 describe('V2 Terrainbench control parity', () => {

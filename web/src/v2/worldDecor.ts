@@ -5,7 +5,7 @@ import type { V2Settings } from './contracts';
 import { retainedDecorOf } from './decorTerrain';
 import { rustSettlementRaster } from './rustUrban';
 import { nativeTerrainOf } from './nativeProducts';
-import { effectiveTerrainSettings } from './terrainSettings';
+import { displayTerrainSettings } from './displayBiome';
 
 const rasterMetrics = new WeakMap<ReturnType<typeof rustSettlementRaster>, { minHeight: number; maxHeight: number; land: number }>();
 
@@ -29,7 +29,7 @@ export function v2WorldDecor(world: World, settings: V2Settings): Decor {
   }
   const { minHeight, maxHeight, land } = metrics,
     native = nativeTerrainOf(world),
-    configuration = effectiveTerrainSettings(settings, world.mapSize);
+    configuration = displayTerrainSettings(settings, world.mapSize);
   // The zone names the decor; its effective values travel with it.
   const climate = configuration.climateZone ?? configuration.climate ?? 'temperate';
   const query = new URLSearchParams({ climate });

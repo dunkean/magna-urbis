@@ -2,7 +2,7 @@
 
 use crate::urban::{Layout, composition, roles, warnings, culture::CultureMapping};
 
-use super::{Demand, ProgrammeContext, ProgrammeFunctions, camps};
+use super::{CountOutcome, Demand, ProgrammeContext, ProgrammeFunctions, camps};
 
 /// Tokens with a real consumer (`programme_tokens.json`, shared with the UI
 /// suggestions). Any other imported string is kept in the context and has no
@@ -52,6 +52,7 @@ pub(super) fn demand(key: &str, function: &str, amount: f64, domestic: bool, why
         landmark: false,
         district: String::new(),
         placement: String::new(),
+        explicit: false,
     }
 }
 /// Role id of demands created before the service catalogue.
@@ -74,7 +75,7 @@ pub(super) fn initial_demands(
     cultural_functions: &str,
     cultures: &[CultureMapping],
     warnings: &mut Vec<String>,
-) -> (Vec<Demand>, ProgrammeFunctions, bool) {
+) -> (Vec<Demand>, ProgrammeFunctions, bool, Vec<CountOutcome>) {
     let n = f64::from(population);
     let role = if context.functions.is_some() { "explicit" } else { "automatic" };
     let functions = context.functions.unwrap_or_else(|| ProgrammeFunctions::automatic(population, cultural_functions == "communal", context.navigable_access));
@@ -167,9 +168,23 @@ pub(super) fn initial_demands(
     }
     let isolated_rule = roles::isolated(&context.intent);
     let isolated = isolated_rule.is_some();
+    let mut counts = vec![];
     if !isolated {
         // Data-driven building roles, landmarks first so they win central land.
         let mut needs = roles::services_for_layout(layout, population, functions);
+        // The automatic draw, reported beside the requested counts.
+        let mut drawn = roles::site_counts(&needs);
+        for role in roles::resolve_counts(&mut needs, &context.counts, &layout.culture, population) {
+            warnings.push(warnings::count_role_unknown(&role));
+        }
+        for role in context.counts.keys() {
+            drawn.entry(role.clone()).or_insert(0);
+        }
+        counts = drawn
+            .into_iter()
+            .map(|(role, auto)| CountOutcome { requested: context.counts.get(&role).copied(), role, auto, placed: 0 })
+            .collect();
+        let force = context.count_mode == "force";
         needs.sort_by_key(|s| !s.entry.landmark);
         for need in needs {
             let e = &need.entry;
@@ -220,6 +235,7 @@ pub(super) fn initial_demands(
                 "parcel"
             }
             .into();
+            d.explicit = force && context.counts.contains_key(&e.role);
             demands.push(d);
         }
     }
@@ -264,7 +280,7 @@ pub(super) fn initial_demands(
             d.provenance.push(format!("Explicit combined functions:{}", serde_json::to_string(&functions).expect("validated finite function weights")));
         }
     }
-    (demands, functions, isolated)
+    (demands, functions, isolated, counts)
 }
 
 pub(super) fn capacity(a: f64, d: &Demand) -> f64 {

@@ -67,6 +67,8 @@ export interface V2Appearance {
   roads?: boolean;
   buildings?: boolean;
   forest?: Partial<ForestSettings>;
+  /** Display biome (a surface climate zone, displayBiome.ts): repaints the kept relief without regenerating it. */
+  biome?: import('../../../rust/bridge/terrainClimate').ClimateZone;
   /** The original cartographic palette remains valid for all historical V2 projects. */
   style: MapStyle;
   terrainStyle?: TerrainStyle;
@@ -111,6 +113,8 @@ export interface V2Settings {
   appearance?: V2Appearance;
   /** Cartographic names can be edited without regenerating terrain or buildings. */
   naming?: import('../gen/names/types').NamingSettings;
+  /** Map pins in integer world metres; their coordinates travel in the short code, their texts only in the project. */
+  pins?: { x: number; y: number; text?: string }[];
   runtime?: {
     compute: 'auto' | 'cpu' | 'gpu';
     backend: 'typescript' | 'rust' | 'native';

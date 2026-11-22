@@ -1089,6 +1089,7 @@ pub(super) fn allocate(layout: &Layout, partition: &mut Partition) {
             landmark: false,
             district: "shanty".into(),
             placement: "parcel".into(),
+            explicit: false,
         });
     }
     for p in &e.pockets {

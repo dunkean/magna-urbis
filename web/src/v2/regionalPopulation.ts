@@ -117,7 +117,7 @@ export interface RegionalPopulationPlan {
 const zeroCounts = () => Object.fromEntries(POPULATION_CLASSES.map(id => [id, 0])) as Record<PopulationClass, number>;
 const classOf = (key: string, first: PopulationClass) => (key === 'main' ? first : (key.replace(/-\d+$/, '') as PopulationClass));
 
-/** One deterministic plan shared by the panel, generation, workers and MU3 reconstruction.
+/** One deterministic plan shared by the panel, generation, workers and short-code reconstruction.
  * The list of places is primary: its counts come from the map size, biome and culture (never from
  * a population the user typed). The population is the sum of the places: adding a town adds its
  * inhabitants; a typed population or density only resizes the places, keeping their number, and
@@ -136,12 +136,12 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
   let defaultDensity = areaKm2 ? recommendedPopulation / areaKm2 : profile.density * environmentFactor;
   const manual = settings.region?.placement;
   if (manual?.mode === 'list' || (!manual?.mode && manual?.list?.length)) {
-    const places = (manual.list ?? []).map(p => ({ ...p, ...(settings.local[p.key]?.population !== undefined ? { population: settings.local[p.key].population! } : {}), ...(settings.local[p.key]?.culture ? { culture: settings.local[p.key].culture! } : {}) }));
+    const places = withCustomPlaces(
+      (manual.list ?? []).map(p => ({ ...p, ...(settings.local[p.key]?.population !== undefined ? { population: settings.local[p.key].population! } : {}), ...(settings.local[p.key]?.culture ? { culture: settings.local[p.key].culture! } : {}) })),
+      customPlacesOf(settings),
+    );
     const counts = zeroCounts();
-    places.forEach(p => {
-      const c = MINIMUM.findIndex(min => p.population >= min);
-      counts[POPULATION_CLASSES[c < 0 ? MINIMUM.length - 1 : c]]++;
-    });
+    places.forEach(p => counts[classOfPopulation(p.population)]++);
     const allocatedPopulation = places.reduce((n, p) => n + p.population, 0),
       isolatedDensity = d.isolatedDensity ?? 1;
     const isolatedCount = isolatedSites(areaKm2, environmentFactor, allocatedPopulation, profile, d);
@@ -260,12 +260,17 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
           makeSlots(counts).reduce((n, s) => n + s.max, 0),
         );
   const density = d.population === undefined && d.density !== undefined ? d.density : areaKm2 ? population / areaKm2 : 0;
+  // Custom places are fixed: a typed population or density includes them, the automatic places share the rest.
+  const custom = customPlacesOf(settings),
+    fixed = custom.reduce((n, p) => n + p.population, 0),
+    typed = d.population !== undefined || d.density !== undefined,
+    target = typed ? Math.max(0, population - fixed) : population;
   // 4. Fit the list to that population, keeping the number of places whenever a class change can.
-  if (population <= 0)
+  if (target <= 0)
     POPULATION_CLASSES.forEach((id, i) => {
       if (free(i)) counts[id] = 0;
     });
-  const limits = automaticSettlementLimits(areaKm2, population);
+  const limits = automaticSettlementLimits(areaKm2, target);
   let capacity = Math.max(0, 1000 - Object.values(counts).reduce((n, v) => n + v, 0));
   const largestFree = () => POPULATION_CLASSES.findIndex((id, i) => counts[id] > 0 && free(i));
   // Class changes skip the classes whose count the user fixed.
@@ -277,7 +282,7 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
   let slots = makeSlots(counts);
   // Too many people for the classes: the largest automatic place moves up a class, else a larger
   // settlement is added within the surface ceilings (never extra rural places).
-  while (slots.reduce((n, s) => n + s.max, 0) < population) {
+  while (slots.reduce((n, s) => n + s.max, 0) < target) {
     const i = largestFree(),
       j = i >= 0 ? nextFree(i, -1) : -1,
       up = POPULATION_CLASSES[j];
@@ -286,7 +291,7 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
       counts[up]++;
     } else {
       const minimum = slots.reduce((n, s) => n + s.min, 0);
-      const index = POPULATION_CLASSES.findIndex((id, k) => free(k) && counts[id] < limits[id] && MINIMUM[k] <= population - minimum);
+      const index = POPULATION_CLASSES.findIndex((id, k) => free(k) && counts[id] < limits[id] && MINIMUM[k] <= target - minimum);
       if (index < 0 || capacity <= 0) break;
       counts[POPULATION_CLASSES[index]]++;
       capacity--;
@@ -295,7 +300,7 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
   }
   // Too few people: the largest automatic place moves down a class; once none can, the last
   // automatic place is dropped. A farmstead is one household, never a remainder of one or two people.
-  while (slots.reduce((n, s) => n + s.min, 0) > population) {
+  while (slots.reduce((n, s) => n + s.min, 0) > target) {
     const i = largestFree(),
       j = i >= 0 ? nextFree(i, 1) : -1;
     if (j >= 0) {
@@ -311,12 +316,37 @@ export function regionalPopulation(settings: V2Settings): RegionalPopulationPlan
     counts[classOf(slots[k].spec.key, first)]--;
     slots = makeSlots(counts);
   }
-  allocate(slots, population);
-  const places = slots.map(s => s.spec),
-    allocatedPopulation = places.reduce((n, p) => n + p.population, 0);
+  allocate(slots, target);
+  const firstClass = POPULATION_CLASSES.find(id => counts[id] > 0) ?? 'farmstead';
+  for (const place of custom) {
+    const replaced = slots.find(s => s.spec.key === place.key);
+    if (replaced) counts[classOf(replaced.spec.key, firstClass)]--;
+    counts[classOfPopulation(place.population)]++;
+  }
+  const places = withCustomPlaces(
+      slots.map(s => s.spec),
+      custom,
+    ),
+    allocatedPopulation = places.reduce((n, p) => n + p.population, 0),
+    total = typed ? Math.max(population, fixed) : population + fixed;
   const isolatedDensity = d.isolatedDensity ?? 1;
   const isolatedCount = isolatedSites(areaKm2, environmentFactor, allocatedPopulation, profile, d);
-  return { areaKm2, environmentFactor, defaultDensity, density, recommendedPopulation, population, allocatedPopulation, counts, places, classSizes, isolatedDensity, isolatedCount, profile: profile.id, unallocated: population - allocatedPopulation };
+  return { areaKm2, environmentFactor, defaultDensity, density, recommendedPopulation, population: total, allocatedPopulation, counts, places, classSizes, isolatedDensity, isolatedCount, profile: profile.id, unallocated: total - allocatedPopulation };
+}
+
+/** The class a place of this many inhabitants counts in (a list entry below the farm floor still counts as a farmstead). */
+function classOfPopulation(population: number): PopulationClass {
+  const c = MINIMUM.findIndex(min => population >= min);
+  return POPULATION_CLASSES[c < 0 ? MINIMUM.length - 1 : c];
+}
+/** The user's custom places (`region.customPlaces`) with their local population and culture edits. */
+export function customPlacesOf(settings: V2Settings): SettlementSpec[] {
+  return (settings.region?.customPlaces ?? []).map(p => ({ ...p, ...(settings.local[p.key]?.population !== undefined ? { population: settings.local[p.key].population! } : {}), ...(settings.local[p.key]?.culture ? { culture: settings.local[p.key].culture! } : {}) }));
+}
+/** Places with the custom ones fixed among them: a custom place replaces the place of the same key, the others follow. */
+export function withCustomPlaces(places: readonly SettlementSpec[], custom: readonly SettlementSpec[]): SettlementSpec[] {
+  const byKey = new Map(custom.map(p => [p.key, p]));
+  return [...places.map(p => byKey.get(p.key) ?? p), ...custom.filter(p => !places.some(q => q.key === p.key))];
 }
 
 /** Stable thinning of feasible native activity sites, before they become road destinations. */

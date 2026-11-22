@@ -23,6 +23,7 @@ import { roadSoilOf, roadGroundTones, setRoadGround } from '../../render/roadSty
 import { setMapClimateZone, setMapSeason } from '../../render/seasonPalette';
 import { biomePalette } from '../../render/biomes';
 import { terrainStyle } from '../../render/terrainStyle';
+import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
 import { effectiveTerrainSettings } from '../terrainSettings';
 import { terrainRendererBackend } from '../../ui/terrainRenderer';
 import { renderScene } from '../renderScene';
@@ -64,12 +65,18 @@ export class AppearancePasses {
       map.scene = scene;
       map.native = scene.terrain;
       if (previous.native !== map.native) performance.mark('mu:terrain-data');
-      const effective = effectiveTerrainSettings(settings, world.mapSize);
+      const effective = displayTerrainSettings(settings, world.mapSize);
       setMapSeason(r.ground.season, effective.climateZone, r.ground.calendar);
       setMapClimateZone(effective.climateZone, effective.climateValues);
-      setRoadGround(world.landuse, world.mapSize, roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, world.options.biome), roadSoilOf(effective.climateZone, world.options.biome)), r.composition.ambience === 'night');
+      setRoadGround(
+        world.landuse,
+        world.mapSize,
+        roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, displayBiomeName(settings, world)), roadSoilOf(effective.climateZone, displayBiomeName(settings, world))),
+        r.composition.ambience === 'night',
+      );
       const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);
-      const forestKey = JSON.stringify([effective.forest, effective.climateValues]);
+      // The forest field grows from the generation climate (displayForest.ts): a display biome only repaints it.
+      const forestKey = JSON.stringify([effective.forest, effectiveTerrainSettings(settings, world.mapSize).climateValues]);
       const worldSig = JSON.stringify([world.mapSize, world.seed, world.options.biome, getLanguage(), getDistanceUnit(), settings.naming?.mode, settings.naming?.mapLanguage, settings.naming?.script]);
       map.input = () => ({ r, revisions: scene.revisions, layers, mode: ground.mode(), effective: effectiveKey, forestEffective: forestKey, worldSig });
       map.paper = terrainStyle(r.styleId, r.palette.colors).palette.paper;

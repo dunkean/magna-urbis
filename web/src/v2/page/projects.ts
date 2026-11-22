@@ -116,6 +116,8 @@ export function mountProjectFiles(state: PageState, actions: PageActions): void 
   state.cityCodeSharing = mountCityCodeSharing({
     getRecipe: () => ({ settings: state.settings, mods: state.mods }),
     busy: () => state.busy,
+    toast: message => actions.toast(message),
+    changed: () => actions.touchRecipe(),
     load: async recipe => {
       if (state.busy) return;
       actions.setBusy(true);

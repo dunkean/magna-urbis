@@ -790,6 +790,8 @@ export const engineRuntimeTemplates: readonly (readonly [string, string])[] = [
   ["Parcelles non bâties : {count}, ménages non logés : {households} — aucun bâtiment adapté", "Unbuilt lots: {count}, unhoused households: {households} — no fitting building"],
   ["Canaux : {length} m — {locks} écluses", "Canals: {length} m — {locks} locks"],
   ["{count} usages de l’eau écartés — aucune rive", "{count} water uses dropped — no waterfront"],
+  ["Nombre de bâtiments {role} ignoré — type de bâtiment inconnu", "Building count {role} ignored — unknown building type"],
+  ["Nombre de bâtiments {role} : {placed}/{requested} placés — aucun site adapté", "Building count {role}: {placed}/{requested} placed — no suitable site"],
   ["Capacité prévue {percent} % — plan adapté", "Planned capacity {percent} % — adapted plan"],
   ["Capacité parcellaire {percent} % — estimation du modèle", "Lot capacity {percent} % — model estimate"],
   ["Îlots retirés : {count} — roche de grotte", "Blocks removed: {count} — solid cave rock"],

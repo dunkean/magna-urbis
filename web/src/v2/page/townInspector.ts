@@ -16,6 +16,7 @@ import type { V2TownStage } from '../contracts';
 import { urbanParameterHelp } from '../urbanParameterHelp';
 import { townUrban, type BuildingEdit } from '../edits';
 import { mountUrbanControls, writeUrbanControl } from '../urbanControls';
+import { mountProgrammeCounts, programmeCountRows } from '../programmeCounts';
 import { mountNameOriginControls } from '../nameOriginControls';
 import { mountPlaceRename } from '../placeRename';
 import { mountDeletedSubdivisions } from '../localUrbanEditor';
@@ -23,6 +24,7 @@ import { rerollSettlement } from '../urbanSeeds';
 import { resetUrbanChildren } from '../generationEdits';
 import { $, esc, options, wallStyles } from './dom';
 import { populationFormat } from './places';
+import { appendRemoveCustomSettlement } from './settlementAdd';
 
 export function createTownInspector(state: PageState, actions: PageActions) {
   function showInspector(key: string, focus = false): void {
@@ -201,6 +203,19 @@ export function createTownInspector(state: PageState, actions: PageActions) {
         ),
       );
       const native = nativeCityRecords(state.world)?.[key];
+      insertHTML($('#local-urban-controls'), 'beforebegin', '<div class="section" id="local-programme-counts"></div>');
+      state.inspectorForms.push(
+        mountProgrammeCounts($('#local-programme-counts'), {
+          key,
+          getSettings: () => state.settings,
+          culture: () => state.settings.local[key]?.culture ?? s.culture,
+          rows: () => programmeCountRows((native?.partitions ?? []).map(partition => partition.programme)),
+          changed: () => {
+            actions.touchRecipe();
+            $<HTMLTextAreaElement>('#local-rust-json').value = JSON.stringify(state.settings.urban?.local?.[key] ?? {}, null, 2);
+          },
+        }),
+      );
       if (native) {
         const refusals = native.stage === 'buildings' ? (native.scene?.refusals ?? []) : [],
           warnings = native.warnings ?? [];
@@ -293,6 +308,7 @@ export function createTownInspector(state: PageState, actions: PageActions) {
       actions.touchRecipe();
       void actions.generate('town', key);
     };
+    appendRemoveCustomSettlement(state, actions, rebuildActions, key);
     organizeInspector($('#inspector'));
     actions.appendLocalFacts($('#inspector'), key);
     // The camera goes to the place's published centre: its built core when the town stands beside its placed centre.

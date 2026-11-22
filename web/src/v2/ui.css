@@ -10,6 +10,15 @@ dialog.v2-action-dialog > .hint {
 dialog.v2-action-dialog .dialog-actions {
   flex-wrap: wrap;
 }
+dialog.v2-action-dialog .dialog-fields {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+}
+dialog.v2-action-dialog .dialog-fields :is(input, select) {
+  width: 100%;
+  margin-bottom: 8px;
+}
 dialog.v2-action-dialog button.danger {
   background: #8f4930;
   border-color: #ca8e68;

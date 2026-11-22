@@ -331,11 +331,49 @@ pub(super) fn finish(
             }
         }
     }
+    count_outcomes(partition, &mut pr);
     crate::urban::generation_limits::report_population(&mut pr, false);
     partition.warnings.retain(|w| !warnings::is_population_shortfall(w));
     partition.warnings.extend(pr.warnings.iter().filter(|w| warnings::is_population_shortfall(w)).cloned());
     partition.programme = Some(pr);
     crate::urban::springs::allocate(layout, partition);
+}
+
+/// Distinct sites holding each counted role (`UrbanProgramme::counts`): a
+/// reserved block is one site whatever its lots, any other plot is one. A
+/// forced count left short adds a warning; a suggested one stays silent.
+pub(super) fn count_outcomes(partition: &mut Partition, pr: &mut UrbanProgramme) {
+    partition.warnings.retain(|w| !warnings::is_count_shortfall(w));
+    if pr.counts.is_empty() {
+        return;
+    }
+    let block_of: HashMap<&str, usize> = partition.parcels.iter().map(|p| (p.id.as_str(), p.block)).collect();
+    let role_of: HashMap<&str, &str> = pr.demands.iter().map(|d| (d.id.as_str(), d.role.as_str())).collect();
+    let reserved: BTreeSet<(&str, usize)> = pr.reservations.iter().map(|r| (r.demand_id.as_str(), r.block)).collect();
+    let mut sites: BTreeMap<&str, BTreeSet<(usize, &str)>> = BTreeMap::new();
+    for r in &pr.reservations {
+        if let Some(&role) = role_of.get(r.demand_id.as_str()) {
+            sites.entry(role).or_default().insert((r.block, ""));
+        }
+    }
+    for a in &pr.allocations {
+        let Some(&role) = role_of.get(a.demand_id.as_str()) else { continue };
+        let in_reserve = block_of.get(a.parcel_id.as_str()).is_some_and(|&b| reserved.contains(&(a.demand_id.as_str(), b)));
+        if !in_reserve {
+            sites.entry(role).or_default().insert((usize::MAX, a.parcel_id.as_str()));
+        }
+    }
+    let force = pr.context.count_mode == "force";
+    let mut short = vec![];
+    for row in &mut pr.counts {
+        row.placed = sites.get(row.role.as_str()).map_or(0, |s| s.len() as u32);
+        if let Some(n) = row.requested.filter(|&n| force && row.placed < n) {
+            short.push(warnings::programme_count_short(&row.role, row.placed, n));
+        }
+    }
+    partition.warnings.extend(short.iter().cloned());
+    pr.warnings.retain(|w| !warnings::is_count_shortfall(w));
+    pr.warnings.extend(short);
 }
 
 /// Settlement state (`services.json` states): a share of the built lots

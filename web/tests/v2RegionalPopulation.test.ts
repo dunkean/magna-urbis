@@ -10,7 +10,7 @@ import { resetRegionalChildren, resetUrbanChildren } from '../src/v2/generationE
 function region(culture = 'european-organic', climate = 'temperate', relief = 'flat') {
   const s = defaultSettings();
   s.extent = 40000;
-  s.options.seed = '42';
+  s.options.seed = 'f0rtyt';
   s.options.culture = culture;
   s.terrain!.climate = climate as NonNullable<typeof s.terrain>['climate'];
   s.terrain!.relief = relief as NonNullable<typeof s.terrain>['relief'];
@@ -233,11 +233,11 @@ describe('regional population and distribution', () => {
     delete s.region.demography!.density;
     expect(regionalPopulation(s).population).toBeGreaterThan(0);
   });
-  it('reconstructs automatic inhabitants from MU3 without embedding the generated settlement list', () => {
+  it('reconstructs automatic inhabitants from the short code without embedding the generated settlement list', () => {
     const s = region('american-grid'),
       code = encodeCityCode(s),
       restored = decodeCityCode(code).settings;
-    expect(code).toMatch(/^MU3\./);
+    expect(code).toMatch(/^f0rtyt/);
     expect(code.length).toBeLessThan(200);
     expect(regionalPopulation(restored)).toEqual(regionalPopulation(s));
     expect(restored.region?.placement?.list).toBeUndefined();

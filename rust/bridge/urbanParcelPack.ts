@@ -467,7 +467,7 @@ export function materializePartitions(pack: ParcelPack, base?: readonly Partitio
     return (baseByKey.get(key)?.programme as unknown as Record<string, unknown[]> | undefined)?.[name] ?? [];
   };
   /** Serde field order of `UrbanProgramme`; any further shell member follows. */
-  const PROGRAMME = ['version', 'population', 'context', 'cultures', 'demands', 'reservations', 'allocations', 'adjacency', 'environment', 'reconciliationPasses', 'warnings', 'housingCapacity', 'navigableFrontage'];
+  const PROGRAMME = ['version', 'population', 'context', 'cultures', 'demands', 'reservations', 'allocations', 'adjacency', 'environment', 'reconciliationPasses', 'warnings', 'housingCapacity', 'navigableFrontage', 'counts'];
   const COLUMNS: Record<string, (key: string, p: ParcelPackPartition) => unknown> = {
     allocations: (key, p) => rows(allocationAt, p.allocations, key, 'allocations'),
     adjacency: (key, p) => rows(adjacencyAt, p.adjacency, key, 'adjacency'),

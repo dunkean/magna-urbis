@@ -4,6 +4,10 @@ import type { V2Settings } from './contracts';
 import { adaptedExtent } from './settings';
 import { heightmapPixels, setHeightmapDefinition } from './heightmapModel';
 import { canUseTracedCoast, effectiveTerrainSettings, terrainReliefAvailable } from './terrainSettings';
+import { displayClimateOverride } from './displayBiome';
+import { climateZoneOf } from '../../../rust/bridge/terrainClimate';
+import { isUnderdarkBiome } from '../gen/biomes';
+import type { World } from '../gen/types';
 import { coastTraceMode } from './coastTrace';
 import { bindTree, onLanguageChange, registerMessages, setText, setDynamicText, translate, numberLocale } from './i18n';
 import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterField, type ParameterForm } from './parameterForm';
@@ -41,6 +45,8 @@ import { getDistanceUnit, onUnitsChange, unitFactor, formatDistance, convertUnit
 export interface TerrainControlBindings {
   getSettings(): V2Settings;
   onChange(): void;
+  /** A display-only change (the display biome): repaint the kept map. */
+  onAppearance?(): void;
   disabled?: () => boolean;
   context?: TerrainSketchContext;
 }
@@ -133,14 +139,37 @@ const seaNames: Record<(typeof coastDirections)[number], [string, string]> = {
 };
 for (const pair of Object.values(seaNames)) copy(...pair);
 
-/** UI choices: Underdark stays a biome; the stored climate remains a surface zone. */
-export function terrainClimateChoice(settings: V2Settings): string {
+/** The biome the relief was generated for (the recipe): Underdark stays a biome; the stored climate remains a surface zone. */
+export function terrainGenerationClimateChoice(settings: V2Settings): string {
   if (settings.options.biome === 'underdark') return 'underdark';
   if (settings.terrain?.climateValues) return 'custom';
   return effectiveTerrainSettings(settings, adaptedExtent(settings)).climateZone!;
 }
+/** UI choice: the display biome when one repaints the kept relief, else the generation biome. */
+export function terrainClimateChoice(settings: V2Settings): string {
+  return displayClimateOverride(settings) ?? terrainGenerationClimateChoice(settings);
+}
+/** With a surface map on screen, a surface zone only repaints it (`appearance.biome`); the relief is kept. Returns false
+ * when the choice must change the generation biome instead (no map yet, Underdark, custom climate). */
+export function chooseDisplayBiome(settings: V2Settings, world: World | undefined, value: string): boolean {
+  const zone = climateZoneOf(value);
+  if (!world || !zone || value !== zone || isUnderdarkBiome(world.options.biome) || isUnderdarkBiome(String(settings.options.biome))) return false;
+  settings.appearance ??= { style: settings.options.style };
+  if (zone === terrainGenerationClimateChoice(settings)) delete settings.appearance.biome;
+  else settings.appearance.biome = zone;
+  return true;
+}
+/** The display biome becomes the generation biome (the next relief run uses it). Returns whether the recipe changed. */
+export function applyDisplayBiome(settings: V2Settings): boolean {
+  const zone = displayClimateOverride(settings);
+  if (!zone) return false;
+  setTerrainClimateChoice(settings, zone);
+  return true;
+}
 export function setTerrainClimateChoice(settings: V2Settings, value: string): void {
   const effective = effectiveTerrainSettings(settings, adaptedExtent(settings));
+  // A generation biome is painted as itself.
+  if (settings.appearance) delete settings.appearance.biome;
   settings.terrain ??= {};
   if (value === 'underdark') {
     // Keep even an inferred climate when its biome becomes Underdark.
@@ -207,6 +236,12 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
     if (path === 'terrain.sampleSpacing' && typeof value === 'number' && setHeightmapDefinition(settings, value)) {
       // Size and image definition edit the same footprint.
     } else if (path === 'terrain.climate') {
+      if (chooseDisplayBiome(settings, bindings.context?.getWorld(), String(value))) {
+        bindings.onChange();
+        bindings.onAppearance?.();
+        sync();
+        return;
+      }
       setTerrainClimateChoice(settings, String(value));
     } else {
       if (path.startsWith('terrain.climateValues.') && !settings.terrain?.climateValues) {

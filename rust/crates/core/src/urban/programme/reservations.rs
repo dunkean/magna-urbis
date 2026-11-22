@@ -65,10 +65,12 @@ pub(super) fn reserve_blocks(
         })
         .map(|(i, _)| i)
         .collect::<Vec<_>>();
-    // Existing markets and constrained built functions retain first choice;
-    // open commons then use remaining public land, never private rear gardens.
+    // Forced counts choose first. Existing markets and constrained built
+    // functions then retain first choice; open commons use remaining public
+    // land, never private rear gardens.
     reservation_order.sort_by_key(|&i| {
         (
+            !demands[i].explicit,
             match demands[i].function.as_str() {
                 "market" => 0,
                 "warehouse" => 1,
@@ -380,7 +382,7 @@ pub(super) fn reserve_blocks(
                 && d.function == "common" && a > d.target_area.max(30.0) * slack {
                 return None;
             }
-            if !existing_open && enclosed[bi] && d.function == "common" && d.site != "nucleus"
+            if !existing_open && enclosed[bi] && d.function == "common" && d.site != "nucleus" && !d.explicit
                 && open_taken + a > open_budget {
                 return None;
             }
@@ -460,7 +462,7 @@ pub(super) fn reserve_blocks(
             .filter(|&(bi, _, _)| {
                 let converted = enclosed[bi] && layout.blocks[bi].kind == "block"
                     && matches!(d.function.as_str(), "market" | "common");
-                if converted && d.function == "common" && d.site != "nucleus" && open_taken + areas[bi] > open_budget {
+                if converted && d.function == "common" && d.site != "nucleus" && !d.explicit && open_taken + areas[bi] > open_budget {
                     return false;
                 }
                 if converted {

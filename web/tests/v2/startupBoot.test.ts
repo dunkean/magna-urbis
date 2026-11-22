@@ -72,7 +72,7 @@ it('boots to a fresh randomized proposal by default without regenerating the sav
   const { state, actions, syncLandscape } = await boot(false, saved);
   expect(state.settings.options.seed).not.toBe('old map');
   expect(state.settings.options.biome).not.toBe(saved.settings.options.biome);
-  expect(syncLandscape).toHaveNthReturnedWith(1, { seed: 'magna-urbis', climateZone: 'temperate', relief: 'hills' });
+  expect(syncLandscape).toHaveNthReturnedWith(1, { seed: 'magnas', climateZone: 'temperate', relief: 'hills' });
   expect(syncLandscape).toHaveLastReturnedWith({ seed: state.settings.options.seed, climateZone: 'savanna', relief: 'mixed' });
   expect(state.mods).toEqual([]);
   expect(hooks.load).not.toHaveBeenCalled();
@@ -93,7 +93,7 @@ it('keeps the existing restoration path and restores the saved viewport when opt
 it('keeps benchmark and explicit test loads stable without reading autosave or drawing random choices', async () => {
   const random = vi.spyOn(Math, 'random');
   const { state } = await boot(true, { settings: defaultSettings(), mods: [] }, '?test=1');
-  expect(state.settings.options.seed).toBe('magna-urbis');
+  expect(state.settings.options.seed).toBe('magnas');
   expect(hooks.takeAutosave).not.toHaveBeenCalled();
   expect(random).not.toHaveBeenCalled();
 });

@@ -7,8 +7,19 @@ interface Choice<T extends string> {
   danger?: boolean;
 }
 let queued: Promise<unknown> = Promise.resolve();
-/** Application-owned modal: shared palette, explicit action labels, focus and keyboard handling. */
-export function chooseAction<T extends string>(options: { id: string; title: string; message: string; details?: readonly string[]; choices: readonly Choice<T>[]; cancelValue?: T; remember?: string }): Promise<{ value: T | undefined; remember: boolean }> {
+/** Application-owned modal: shared palette, explicit action labels, focus and keyboard handling.
+ * `content`: form fields shown above the actions. `accept`: false keeps the dialog open (an invalid field). */
+export function chooseAction<T extends string>(options: {
+  id: string;
+  title: string;
+  message: string;
+  details?: readonly string[];
+  content?: HTMLElement;
+  choices: readonly Choice<T>[];
+  cancelValue?: T;
+  accept?: (value: T) => boolean;
+  remember?: string;
+}): Promise<{ value: T | undefined; remember: boolean }> {
   const task = queued.then(
     () =>
       new Promise<{ value: T | undefined; remember: boolean }>(resolve => {
@@ -43,6 +54,7 @@ export function chooseAction<T extends string>(options: { id: string; title: str
           }
           modal.append(list);
         }
+        if (options.content) modal.append(options.content);
         const remember = document.createElement('input');
         remember.type = 'checkbox';
         remember.checked = true;
@@ -86,7 +98,9 @@ export function chooseAction<T extends string>(options: { id: string; title: str
             button.autofocus = true;
           }
           if (choice.danger) button.classList.add('danger');
-          button.onclick = () => finish(choice.value);
+          button.onclick = () => {
+            if (choice.value === options.cancelValue || !options.accept || options.accept(choice.value)) finish(choice.value);
+          };
           actions.append(button);
         }
         modal.append(actions);

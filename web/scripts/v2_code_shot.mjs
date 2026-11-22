@@ -1,5 +1,5 @@
-// Shoot a V2 map from a MU3 city code (headless Chrome, RTX 5090, ANGLE Vulkan, native :8791 engine).
-//   node scripts/v2_code_shot.mjs --code "MU3.…" --out out/<dir> [--port 5173] [--zooms 0,4,8] [--style satellite|parchment] [--view 2d|3d] [--trees] [--source neural-python]
+// Shoot a V2 map from a short city code (headless Chrome, RTX 5090, ANGLE Vulkan, native :8791 engine).
+//   node scripts/v2_code_shot.mjs --code "<code>" --out out/<dir> [--port 5173] [--zooms 0,4,8] [--style satellite|parchment] [--view 2d|3d] [--trees] [--source neural-python]
 // Waits for the V2 to be idle, then saves one screenshot per wheel-zoom level centred on the map.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -17,7 +17,7 @@ const zooms = arg('zooms', '0,4,8').split(',').map(Number);
 const style = arg('style', '');
 const view = arg('view', '2d');
 if (!code) {
-  console.error('usage: --code "MU3.…" --out <dir>');
+  console.error('usage: --code "<code>" --out <dir>');
   process.exit(1);
 }
 fs.mkdirSync(out, { recursive: true });

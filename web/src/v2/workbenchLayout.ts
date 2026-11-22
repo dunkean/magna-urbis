@@ -189,7 +189,7 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   const moveTools = document.createElement('div');
   moveTools.className = 'settlement-position-tools';
   general.append(moveTools);
-  for (const id of ['move-towns', 'town-positions-apply', 'town-positions-cancel']) moveTools.append($('#' + id));
+  for (const id of ['add-settlement', 'move-towns', 'town-positions-apply', 'town-positions-cancel']) moveTools.append($('#' + id));
   const countLegacy = $('#town-count').closest<HTMLElement>('[data-control]');
   countLegacy?.remove();
   const selection = $('.inspector-mode');

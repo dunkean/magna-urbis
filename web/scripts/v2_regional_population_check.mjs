@@ -112,7 +112,7 @@ try {
     );
     assert.equal(Number(await page.locator('#region-population').inputValue()), summary.population);
     assert.equal(summary.allocated, summary.population);
-    assert(summary.code < initialCodeLength + 250, 'automatic places do not expand MU3');
+    assert(summary.code < initialCodeLength + 250, 'automatic places do not expand the code');
     assert.equal((await recipe()).region?.placement?.list, undefined);
     scenarios.push({ culture, ...summary });
     await page.screenshot({ path: `${out}/${culture}.png` });

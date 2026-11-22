@@ -10,7 +10,7 @@ import type { World } from '../src/gen/types';
 
 const base = () => {
   const s = defaultSettings();
-  s.options.seed = '42';
+  s.options.seed = 'f0rtyt';
   return s;
 };
 const town = { id: 'settlement:east', town: 'east' },
@@ -38,7 +38,7 @@ describe('V2 toponym overrides', () => {
     expect(settings.naming?.places?.east).toBeUndefined();
   });
 
-  it('is kept by the project file and left out of the MU3 code', () => {
+  it('is kept by the project file and left out of the short code', () => {
     const settings = base();
     renameToponym(settings, town, 'Le Gué');
     renameToponym(settings, river, 'Blackwater');
@@ -52,7 +52,7 @@ describe('V2 toponym overrides', () => {
       shared = decodeCityCode(code).settings;
     expect(code).not.toContain('Blackwater');
     expect(shared.naming?.places).toBeUndefined();
-    expect(Object.keys(shared.naming?.labels ?? {})).toEqual(['free:note']);
+    expect(shared.naming?.labels).toBeUndefined();
     expect(settings.naming?.places).toEqual({ east: 'Le Gué' });
   });
 

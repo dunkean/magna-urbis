@@ -2,6 +2,7 @@
 
 use crate::urban::{Shape, roles, culture::CultureMapping};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use super::ProgrammeFunctions;
 
@@ -33,8 +34,20 @@ pub struct ProgrammeContext {
     /// strict gates leave most of the town's land unbuildable.
     #[serde(skip_serializing_if = "is_zero")]
     pub slope_relax: f64,
+    /// Requested building counts per catalogue role (`worship.parish`,
+    /// `defence.keep`): a missing role stays automatic, 0 means none
+    /// (`roles::resolve_counts`, at most `roles::MAX_ROLE_COUNT`).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub counts: BTreeMap<String, u32>,
+    /// How `counts` apply: `suggest` (targets placed in the ordinary order,
+    /// reduced silently when the town lacks size or sites) or `force` (exact
+    /// counts placed before the automatic buildings, a warning per shortfall).
+    #[serde(skip_serializing_if = "is_suggest")]
+    pub count_mode: String,
 }
 fn is_zero(v: &f64) -> bool { *v == 0.0 }
+fn is_suggest(v: &str) -> bool { v == "suggest" }
+fn is_false(v: &bool) -> bool { !*v }
 impl Default for ProgrammeContext {
     fn default() -> Self {
         Self {
@@ -49,6 +62,8 @@ impl Default for ProgrammeContext {
             state: "thriving".into(),
             decay: None,
             slope_relax: 0.0,
+            counts: BTreeMap::new(),
+            count_mode: "suggest".into(),
         }
     }
 }
@@ -86,6 +101,10 @@ pub struct Demand {
     /// `block` = whole block reserved before cuts; `parcel` = plot chosen after cuts.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub placement: String,
+    /// A forced count (`ProgrammeContext::count_mode`): placed before the
+    /// automatic demands, outside the trade budget and the open-land cap.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub explicit: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,4 +203,22 @@ pub struct UrbanProgramme {
     /// evidence port storage is allocated against. Never a declared label.
     #[serde(default)]
     pub navigable_frontage: bool,
+    /// Building counts per role: the automatic draw, the request and the
+    /// sites placed, so the UI shows the default draw and the result.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub counts: Vec<CountOutcome>,
+}
+/// One role of `UrbanProgramme::counts`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CountOutcome {
+    pub role: String,
+    /// Sites the programme draws for the role without a request.
+    pub auto: u32,
+    /// Requested count (`ProgrammeContext::counts`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested: Option<u32>,
+    /// Distinct sites (reserved blocks or plots) holding the role after allocation.
+    #[serde(default)]
+    pub placed: u32,
 }

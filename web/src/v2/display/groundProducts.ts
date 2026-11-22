@@ -19,7 +19,7 @@ import { renderRustTerrain, renderTerrainCanopy, terrainLandClip } from '../../.
 import { seaDistanceSurface, seaMaterialSvg } from '../../render/terrainWater';
 import { DEFAULT_FRACTAL_DETAIL, seedHash } from '../../../../rust/bridge/terrainAdjust';
 import { climateOf, type TerrainData, type TerrainSettings } from '../../../../rust/bridge/terrain';
-import { effectiveTerrainSettings } from '../terrainSettings';
+import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
 import { createTerrainRenderer, type TerrainRenderer } from '../../ui/terrainRenderer';
 import { MAP_GPU_FAILED_MESSAGE, MAP_GPU_LIGHTER_MESSAGE, MapContextLostError, enterMapGpuLight, isMapContextLost, noteMapRenderer } from '../../ui/glContextRecovery';
 import { registerFantasyBrushes, isFantasyStyle, renderFantasyTerrain, prepareFantasyTerrain } from '../../../../rust/bridge/fantasyTerrain';
@@ -200,7 +200,7 @@ export class GroundProducts implements Ground {
       r = this.map.resolved!,
       style = r.ground.style,
       colors = r.palette.colors;
-    const effective = effectiveTerrainSettings(settings, world.mapSize),
+    const effective = displayTerrainSettings(settings, world.mapSize),
       layers = this.map.layers(),
       lighting = r.ground.lighting;
     if (this.gpuActive) {
@@ -319,7 +319,7 @@ export class GroundProducts implements Ground {
       world = this.map.world;
     if (!r || !world || r.ground.style !== 'parchment' || r.vegetation.symbols !== 'canopy' || r.composition.vegetation.look !== 'symbols') return undefined;
     if (!r.cartography.landuse || this.map.exportLayers.landuse === false || isUnderdarkBiome(world.options.biome)) return undefined;
-    return { conifer: coniferShare(world.options.biome) };
+    return { conifer: coniferShare(displayBiomeName(this.map.settings, world)) };
   }
   private occupationCache?: { world: World; revision: string; data: Promise<ForestOccupation | undefined> };
   /** Accepted footprints exclude vegetation independently of building visibility. Both rasters run in the

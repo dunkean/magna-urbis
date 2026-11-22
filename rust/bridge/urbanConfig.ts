@@ -16,6 +16,23 @@ export interface ProgrammeContext {
   state?: ProgrammeState;
   /** Share of empty buildings, 0..1; absent or null = the state's default. */
   decay?: number | null;
+  /** Requested building counts per catalogue role (`worship.parish`): absent role = automatic, 0 = none. */
+  counts?: Record<string, number>;
+  /** How `counts` apply: `suggest` (absent: targets the programme may reduce silently) or `force` (exact, placed first, warned when short). */
+  countMode?: ProgrammeCountMode;
+}
+export type ProgrammeCountMode = 'suggest' | 'force';
+/** Most buildings of one role a town may request (Rust `roles::MAX_ROLE_COUNT`). */
+export const MAX_ROLE_COUNT = 64;
+/** Catalogue role id shape (`worship.parish`, `civic.power-plant.atomic`). */
+const ROLE_ID = /^[a-z]+(\.[a-z0-9-]+)+$/;
+/** Valid requested counts only: role ids of the catalogue's shape, integers clamped to 0..MAX_ROLE_COUNT. */
+export function normalizeProgrammeCounts(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+  for (const [role, count] of Object.entries(value as Record<string, unknown>))
+    if (ROLE_ID.test(role) && typeof count === 'number' && Number.isFinite(count)) out[role] = Math.max(0, Math.min(MAX_ROLE_COUNT, Math.round(count)));
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 /** A single structure without a town: one intent on one unsubdivided domain. */
 export type ProgrammeIsolatedIntent = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower' | 'activity';
@@ -541,6 +558,9 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   if (saved?.programme?.template) config.programme.template = saved.programme.template;
   if (saved?.programme?.state !== undefined) config.programme.state = saved.programme.state;
   if (saved?.programme?.decay !== undefined) config.programme.decay = saved.programme.decay;
+  const counts = normalizeProgrammeCounts(saved?.programme?.counts);
+  if (Object.keys(counts).length) config.programme.counts = counts;
+  if (config.programme.counts && saved?.programme?.countMode === 'force') config.programme.countMode = 'force';
   if (saved?.programme?.functions !== undefined) config.programme.functions = saved.programme.functions === null ? null : normalizeProgrammeFunctions(saved.programme.functions);
   if (saved?.siteArchetype) config.siteArchetype = saved.siteArchetype;
   if (saved?.siteArchetypes) config.siteArchetypes = { ...saved.siteArchetypes };

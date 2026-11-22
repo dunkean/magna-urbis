@@ -14,7 +14,8 @@ import { adaptedExtent } from './settings';
 import { mountHeightmapFit } from './heightmapLibrary';
 import { stageLed, terrainStageValidityKeys, settlementStageValidityKeys, cityStageValidityKeys } from './stageValidity';
 import { mountSectionIndex } from './sectionIndex';
-import type { TerrainControls } from './terrainControls';
+import { terrainGenerationClimateChoice, type TerrainControls } from './terrainControls';
+import { displayClimateOverride } from './displayBiome';
 import type { V2Progress, V2Settings, V2TerrainSettings } from './contracts';
 import type { World } from '../gen/types';
 import './stageChain.css';
@@ -36,6 +37,8 @@ const T = {
   size: copy('Size', 'Taille'),
   stale: copy('Settings changed since the last run', 'Réglages modifiés depuis la dernière exécution'),
   waterLandforms: copy('Water and landforms', 'Eau et formes du relief'),
+  regenerateBiome: copy('Regenerate the relief for this biome', 'Régénérer le relief pour ce biome'),
+  displayBiome: copy('Repainted only: the relief, water and land use are kept from the {biome} biome.', 'Repeinte seulement : le relief, l’eau et l’occupation du sol restent ceux du biome {biome}.'),
   cached: copy('Kept from an earlier run', 'Conservé d’une exécution précédente'),
   running: copy('Running', 'En cours'),
   disabled: copy('Disabled · never run', 'Désactivée · ne jamais lancer'),
@@ -132,6 +135,8 @@ export interface StageChainBindings {
   availability(): { checked: boolean; webgpu: boolean; native: boolean; python: boolean };
   heightmap: { source(host: HTMLElement): { sync(): void } };
   onFamily?(family: StageFamily): void;
+  /** The display biome becomes the generation biome and the relief is regenerated for it. */
+  regenerateBiome?(): void;
 }
 export interface StageChain {
   clearResults(): void;
@@ -880,9 +885,11 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       getValue: b.terrain.access.get,
       disabled: b.busy,
       setValue: (path, value) => {
-        const biome = b.terrain.access.get('options.biome');
+        const biome = b.terrain.access.get('options.biome'),
+          recipe = climateRecipe();
         b.terrain.access.set(path, value);
-        markStale(b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate');
+        // A display biome repaints the kept relief: nothing to recompute.
+        if (climateRecipe() !== recipe) markStale(b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate');
         sync();
       },
     }),
@@ -1117,6 +1124,35 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       reroll.title = translate(T.rerollCoastHelp);
     });
   }
+  /** The climate inputs of the recipe: a display biome leaves them unchanged. */
+  function climateRecipe(): string {
+    const settings = get();
+    return JSON.stringify([settings.options.biome, settings.terrain?.climate, settings.terrain?.climateValues]);
+  }
+  /** Under the climate tiles, while a display biome repaints the kept relief: what is kept, and the explicit relief run. */
+  function displayBiomeNote(field: HTMLElement): void {
+    const box = document.createElement('div');
+    box.className = 'display-biome-note';
+    const note = document.createElement('p');
+    note.className = 'hint';
+    const regenerate = document.createElement('button');
+    regenerate.type = 'button';
+    regenerate.className = 'display-biome-regenerate';
+    setText(regenerate, T.regenerateBiome);
+    regenerate.onclick = () => b.regenerateBiome?.();
+    box.append(note, regenerate);
+    field.append(box);
+    const generated = () => {
+      const zone = terrainGenerationClimateChoice(get());
+      return terrainBasicFields.find(f => f.path === 'terrain.climate')!.options!.find(o => o.value === zone)?.label ?? zone;
+    };
+    const message = () => translate(T.displayBiome).replace('{biome}', translate(generated()).toLocaleLowerCase(getLanguage() === 'fr' ? 'fr' : 'en'));
+    syncers.push(() => {
+      box.hidden = !b.regenerateBiome || !displayClimateOverride(get(), b.getWorld());
+      regenerate.disabled = b.busy();
+      setDynamicText(note, message);
+    });
+  }
   function prepareLandscapeStrip(field: HTMLElement, kind: 'climate' | 'relief'): void {
     field.classList.add('climate-picker', `${kind}-picker`);
     const select = field.querySelector<HTMLSelectElement>('select')!;
@@ -1151,10 +1187,11 @@ export function mountStageChain(b: StageChainBindings): StageChain {
         button.setAttribute('aria-label', translate(label));
       });
       button.onclick = () => {
-        const biome = b.terrain.access.get('options.biome');
+        const biome = b.terrain.access.get('options.biome'),
+          recipe = climateRecipe();
         select.value = option.value;
         select.dispatchEvent(new Event('change', { bubbles: true }));
-        markStale(kind === 'relief' || b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate');
+        if (kind === 'relief' || climateRecipe() !== recipe) markStale(kind === 'relief' || b.terrain.access.get('options.biome') !== biome ? 'relief-source' : 'relief-climate');
         sync();
       };
       button.onkeydown = event => {
@@ -1171,6 +1208,7 @@ export function mountStageChain(b: StageChainBindings): StageChain {
       strip.append(button);
     }
     field.append(strip);
+    if (kind === 'climate') displayBiomeNote(field);
     const selected = document.createElement('output');
     selected.className = 'climate-selected';
     const caption = field.querySelector('.parameter-caption')!,

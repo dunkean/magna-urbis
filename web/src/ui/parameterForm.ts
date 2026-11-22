@@ -1,6 +1,7 @@
 import { bindTree, setText, setDynamicText, translate, onLanguageChange, getLanguage } from '../v2/i18n';
 import { convertUnits, displayUnit, getDistanceUnit, onUnitsChange, unitInputNumber, type PhysicalUnit } from '../v2/units';
 import { mountCityPatternChoices } from '../v2/cityPatternChoices';
+import { levelStep, snapParameter } from '../v2/cityCodeFormat';
 
 /** `group` puts a contextual choice in an option group; `note` is a short qualifier shown after its label. */
 export interface ParameterChoice {
@@ -141,7 +142,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
       slider.className = 'parameter-slider';
       slider.min = String(field.min);
       slider.max = String(field.max);
-      slider.step = String(field.step ?? 'any');
+      slider.step = String((!field.toInput && levelStep(field)) || (field.step ?? 'any'));
       slider.id = `${input.id}-slider`;
       slider.setAttribute('aria-label', field.label);
       slider.dataset.sliderPath = field.path;
@@ -194,7 +195,7 @@ export function mountParameterForm(root: HTMLElement, fields: readonly Parameter
             return;
           }
         }
-        if (typeof value === 'number') value = Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity, value));
+        if (typeof value === 'number') value = snapParameter(field, Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity, value)));
       } else value = field.optional && input.value === '' ? undefined : input.value;
       input.removeAttribute('aria-invalid');
       if (slider && value !== undefined) slider.value = String(inputConversion(field, value));

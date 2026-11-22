@@ -1,29 +1,24 @@
-// From web/: node scripts/city_code_decode.mjs "<MU3.… V2 city code>" | @<file holding the code>
-// Prints the raw recipe (seed, biome, culture, relief, extent, settings delta, variations, mods) as JSON.
-import { tsImport } from 'tsx/esm/api';
+// From web/: npx vite-node scripts/city_code_decode.mjs "<short city code or debug text>" | @<file holding it>
+// (vite-node, not node: the code module graph imports CSS and JSON.)
+// Prints the parsed code (seed, header, params, edits, pins) and the main decoded choices as JSON.
 import { readFileSync } from 'node:fs';
-const m = await tsImport('../src/ui/recipeCodec.ts', import.meta.url);
-const { decodeCompact } = m.decodeCompact ? m : m.default;
-const defaults = JSON.parse(readFileSync(new URL('../src/v2/cityCodeDefaults.json', import.meta.url)));
-const baseline = defaults.settings;
-// Long codes exceed the Windows command line: pass `@path/to/code.txt` instead.
+import { parseCode, decodeCityCode, cityCodeFromInput } from '../src/v2/cityCode.ts';
 const argument = process.argv.slice(2).join(' ').trim();
-const code = (argument.startsWith('@') ? readFileSync(argument.slice(1), 'utf8') : argument).replace(/\s/g, '');
-const [root, choices, extent, saved = baseline, variations = {}, mods = []] = decodeCompact(code, ['', 0, baseline.extent, baseline, {}, []], 'MU3.');
-// "Follow the environment" (region.demography.followCulture, absent = ticked): `user` when the culture was picked by hand.
-const followCulture = saved.region?.demography?.followCulture ?? baseline.region?.demography?.followCulture ?? true;
+const text = argument.startsWith('@') ? readFileSync(argument.slice(1), 'utf8') : argument;
+const { settings } = decodeCityCode(text);
+const o = settings.options;
 console.log(
   JSON.stringify(
     {
-      seed: root,
-      biome: defaults.biomes[choices & 7],
-      culture: defaults.cultures[(choices >>> 3) & 255],
-      cultureChosenBy: followCulture === false ? 'user' : 'environment',
-      relief: defaults.reliefs[choices >>> 11],
-      extent: extent === 0 ? 'auto' : extent,
-      settings: saved,
-      variations,
-      mods,
+      code: parseCode(cityCodeFromInput(text.trim().split(/\r?\n/)[0])),
+      seed: o.seed,
+      biome: o.biome,
+      culture: o.culture,
+      cultureChosenBy: settings.region?.demography?.followCulture === false ? 'user' : 'environment',
+      relief: settings.terrain?.relief ?? o.relief,
+      extent: settings.extent,
+      source: settings.runtime?.source,
+      pins: settings.pins ?? [],
     },
     null,
     1,

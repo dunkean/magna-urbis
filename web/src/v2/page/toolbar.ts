@@ -9,6 +9,7 @@ import { buildingAt, nearestSettlement } from '../edits';
 import { migrateUrbanSeeds } from '../urbanSeeds';
 import { $ } from './dom';
 import { pickOnMap } from './worldPicking';
+import { randomRootSeed, rootSeedFromText } from '../cityCode';
 
 export function mountToolbar(state: PageState, actions: PageActions): void {
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-option]').forEach(input =>
@@ -20,6 +21,9 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
         const axis = key.endsWith('x') ? 'x' : 'y';
         if (value === undefined) delete state.settings.options.center;
         else state.settings.options.center = { ...(state.settings.options.center ?? { x: adaptedExtent(state.settings) / 2, y: adaptedExtent(state.settings) / 2 }), [axis]: value };
+      } else if (key === 'seed') {
+        // The root seed is 6 letters a-z; any typed text maps to one.
+        state.settings.options.seed = input.value = rootSeedFromText(String(value ?? ''));
       } else (state.settings.options as unknown as Record<string, unknown>)[key] = value;
       actions.touchRecipe();
       if (key === 'sprawl' && value === undefined) input.value = '1';
@@ -32,7 +36,7 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
 
   $('#random-seed').onclick = () => {
     migrateUrbanSeeds(state.settings);
-    state.settings.options.seed = Array.from(crypto.getRandomValues(new Uint32Array(2)), n => n.toString(36)).join('-');
+    state.settings.options.seed = randomRootSeed();
     state.mods = [];
     actions.touchRecipe();
     actions.syncControls();
@@ -88,7 +92,7 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
   });
 
   $('#map').addEventListener('click', e => {
-    if (!state.world || state.busy || (!state.pendingRegionPosition && !state.labelEditor.active() && !$<HTMLInputElement>('#inspect-mode').checked) || Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y) > 5) return;
+    if (!state.world || state.busy || (!state.pendingRegionPosition && !state.pendingSettlement && !state.labelEditor.active() && !$<HTMLInputElement>('#inspect-mode').checked) || Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y) > 5) return;
     // The point the click means: under the pixel in the top view, what the camera sees there when tilted.
     const rect = $('#map').getBoundingClientRect(),
       picked = pickOnMap(state, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
@@ -97,6 +101,12 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
       { x, y } = p;
     if (state.labelEditor.active()) {
       state.labelEditor.pick(p);
+      return;
+    }
+    if (state.pendingSettlement) {
+      const place = state.pendingSettlement;
+      state.pendingSettlement = undefined;
+      place(p);
       return;
     }
     if (state.pendingRegionPosition) {

@@ -27,7 +27,7 @@
 //! `programme` (absent = `None`) holds the `UrbanProgramme` fields in serde
 //! order without the three columnar lists: `version`, `population`, `context`,
 //! `cultures`, `demands`, `reservations`, `reconciliationPasses`, `warnings`,
-//! `housingCapacity`, `navigableFrontage`; `allocations`, `adjacency` and
+//! `housingCapacity`, `navigableFrontage`, `counts?`; `allocations`, `adjacency` and
 //! `environment` go back between `reservations` and `reconciliationPasses`.
 //!
 //! Sections (MAX = u32::MAX; "codes" index the named table; "Strings" =
@@ -96,7 +96,7 @@
 //! or environment); only a full pack is an exact inverse.
 use super::enclosure::Resolved;
 use super::pack::{Codes, Strings, Writer};
-use super::programme::{Adjacency, Allocation, BlockEnvironment, Demand, ProgrammeContext, Reservation, UrbanProgramme};
+use super::programme::{Adjacency, Allocation, BlockEnvironment, CountOutcome, Demand, ProgrammeContext, Reservation, UrbanProgramme};
 use super::roles::{HousingFloorModel, HousingFloorNeed};
 use super::{CultureMapping, Parcel, ParcelAccess, ParcelConfig, ParcelContact, Partition, PartitionDiagnostics, Point, Shape};
 use serde::{Deserialize, Serialize};
@@ -259,7 +259,10 @@ struct ProgrammeOut<'a> {
     warnings: &'a [String],
     housing_capacity: f64,
     navigable_frontage: bool,
+    #[serde(skip_serializing_if = "no_counts")]
+    counts: &'a [CountOutcome],
 }
+fn no_counts(counts: &&[CountOutcome]) -> bool { counts.is_empty() }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ShellIn {
@@ -293,6 +296,8 @@ struct ProgrammeIn {
     warnings: Vec<String>,
     housing_capacity: f64,
     navigable_frontage: bool,
+    #[serde(default)]
+    counts: Vec<CountOutcome>,
 }
 
 /// Floats of a JSON value, depth first, object members in map order.
@@ -459,7 +464,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
             Some(programme) => {
                 let UrbanProgramme {
                     version, population, context, cultures, demands, reservations, allocations, adjacency, environment,
-                    reconciliation_passes, warnings: programme_warnings, housing_capacity, navigable_frontage,
+                    reconciliation_passes, warnings: programme_warnings, housing_capacity, navigable_frontage, counts,
                 } = programme;
                 na += allocations.len();
                 nj += adjacency.len();
@@ -564,6 +569,7 @@ pub fn pack(partitions: &[Partition], groups: Option<&[&str]>, envelope: &Value)
                     warnings: programme_warnings,
                     housing_capacity: *housing_capacity,
                     navigable_frontage: *navigable_frontage,
+                    counts,
                 })
             }
         };
@@ -1220,7 +1226,7 @@ pub fn unpack(bytes: &[u8]) -> Result<Vec<Partition>, String> {
             None => None,
             Some(ProgrammeIn {
                 version, population, context, cultures, demands, reservations, reconciliation_passes,
-                warnings: programme_warnings, housing_capacity, navigable_frontage,
+                warnings: programme_warnings, housing_capacity, navigable_frontage, counts,
             }) => Some(UrbanProgramme {
                 version,
                 population,
@@ -1250,6 +1256,7 @@ pub fn unpack(bytes: &[u8]) -> Result<Vec<Partition>, String> {
                 warnings: programme_warnings,
                 housing_capacity,
                 navigable_frontage,
+                counts,
             }),
         };
         out.push(Partition { config, programme, key, parcels, warnings, diagnostics, enclosure, prepared });
@@ -1370,6 +1377,7 @@ mod tests {
             warnings: vec![],
             housing_capacity: 0.0,
             navigable_frontage: false,
+            counts: vec![],
         }
     }
 

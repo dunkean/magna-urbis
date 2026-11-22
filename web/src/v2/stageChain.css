@@ -514,6 +514,12 @@
   color: var(--gold);
   text-align: right;
 }
+.display-biome-note .hint {
+  margin: 0 0 4px;
+}
+.display-biome-regenerate {
+  width: 100%;
+}
 .family-general .terrain-coasts {
   border: 0;
   padding: 0;

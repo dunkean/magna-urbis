@@ -2,12 +2,15 @@ import type { RoadConfig, SettlementConfig, SettlementSpec } from '../../../rust
 import type { V2Settings } from './contracts';
 import { CULTURES, SITE_ARCHETYPES, SIZE_SHORTCUT } from '../gen/options';
 import { TERRAIN_RELIEFS } from './terrainSettings';
-import { regionalPopulation, type RegionalDemography } from './regionalPopulation';
+import { customPlacesOf, regionalPopulation, withCustomPlaces, type RegionalDemography } from './regionalPopulation';
 import { effectiveRegionalExits, REGIONAL_EXIT_CLASSES } from './regionalExits';
 
 export interface V2RegionSettings {
   demography?: RegionalDemography;
   placement?: Partial<SettlementConfig>;
+  /** Places the user added or moved: fixed sites every placement keeps, the automatic places being drawn around them.
+   * Each one has a position. A manual `placement.list` entry with the same key gives way to it. */
+  customPlaces?: SettlementSpec[];
   /** null disables regional roads. */
   roads?: (Omit<Partial<RoadConfig>, 'exits'> & { exits?: Partial<RoadConfig['exits']> }) | null;
   resolution?: number;
@@ -71,6 +74,7 @@ export function effectiveRegion(settings: V2Settings): { placement: SettlementCo
   if (local.center !== undefined) placement.main.position = local.center;
   if (local.sitePrefs !== undefined) placement.main.sitePrefs = { ...placement.main.sitePrefs, ...local.sitePrefs, weights: { ...placement.main.sitePrefs.weights, ...local.sitePrefs.weights } };
   placement.counts = { city: 0, town: 0, village, hamlet: secondary - village, farmstead: 0, ...p?.counts };
+  const custom = new Set((settings.region?.customPlaces ?? []).map(place => place.key));
   placement.list = (p?.list ?? []).map((spec, index) => {
     const overrides = settings.local[spec.key] ?? {};
     return {
@@ -83,19 +87,27 @@ export function effectiveRegion(settings: V2Settings): { placement: SettlementCo
       ...(overrides.sitePrefs ? { sitePrefs: { ...spec.sitePrefs, ...overrides.sitePrefs, weights: { ...spec.sitePrefs?.weights, ...overrides.sitePrefs.weights } } } : {}),
     };
   });
-  if (manualList) placement.mode = 'list';
+  if (manualList) {
+    placement.mode = 'list';
+    placement.list = withCustomPlaces(placement.list, customPlacesOf(settings));
+  }
   if (!manualList) {
     const plan = regionalPopulation(settings);
     placement.mode = 'list';
     const first = placement.main;
-    placement.list = plan.places.map(spec => ({
-      ...spec,
-      ...(spec.key === 'main' ? { name: first.name, siteType: first.siteType, position: first.position, sitePrefs: first.sitePrefs } : {}),
-      ...(settings.local[spec.key]?.center ? { position: settings.local[spec.key].center } : {}),
-      ...(settings.local[spec.key]?.culture ? { culture: settings.local[spec.key].culture! } : {}),
-      ...(settings.local[spec.key]?.siteType ? { siteType: settings.local[spec.key].siteType! } : {}),
-      ...(settings.local[spec.key]?.sitePrefs ? { sitePrefs: settings.local[spec.key].sitePrefs! } : {}),
-    }));
+    // The plan holds the custom places already, at their own positions.
+    placement.list = plan.places.map(spec =>
+      custom.has(spec.key)
+        ? spec
+        : {
+            ...spec,
+            ...(spec.key === 'main' ? { name: first.name, siteType: first.siteType, position: first.position, sitePrefs: first.sitePrefs } : {}),
+            ...(settings.local[spec.key]?.center ? { position: settings.local[spec.key].center } : {}),
+            ...(settings.local[spec.key]?.culture ? { culture: settings.local[spec.key].culture! } : {}),
+            ...(settings.local[spec.key]?.siteType ? { siteType: settings.local[spec.key].siteType! } : {}),
+            ...(settings.local[spec.key]?.sitePrefs ? { sitePrefs: settings.local[spec.key].sitePrefs! } : {}),
+          },
+    );
     placement.main = placement.list[0] ?? regionSpec('main', 1);
     placement.counts = plan.counts;
     placement.farmDensity = 0;
@@ -158,7 +170,18 @@ export function validateRegionSettings(value: unknown, width = 100000): void {
     }
   };
   const region = object(value, 'regional settings');
-  fields(region, ['demography', 'placement', 'roads', 'resolution', 'cropSurplus', 'autoBuildPopulation'], 'region');
+  fields(region, ['demography', 'placement', 'customPlaces', 'roads', 'resolution', 'cropSurplus', 'autoBuildPopulation'], 'region');
+  if (region.customPlaces !== undefined) {
+    if (!Array.isArray(region.customPlaces) || region.customPlaces.length > 1000) throw new Error('Invalid custom places.');
+    const keys = new Set<string>();
+    region.customPlaces.forEach((entry, index) => {
+      spec(entry, `customPlaces[${index}]`, false);
+      const place = entry as SettlementSpec;
+      if (!place.position) throw new Error('A custom place needs a position.');
+      if (keys.has(place.key)) throw new Error('Custom place keys must be unique.');
+      keys.add(place.key);
+    });
+  }
   if (region.demography !== undefined) {
     const d = object(region.demography, 'demography');
     fields(d, ['density', 'population', 'counts', 'isolatedDensity', 'isolatedCount', 'followCulture'], 'demography');

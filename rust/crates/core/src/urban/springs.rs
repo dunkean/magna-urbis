@@ -288,7 +288,7 @@ pub(super) fn allocate(layout: &Layout, partition: &mut Partition) {
         pr.demands.push(programme::Demand {id:water.id.clone(),function:"collective".into(),unit:"usefulArea".into(),
             requested:area,target_area:area,target_frontage:0.,provenance:vec!["spring-water".into()],requires:vec!["water".into()],
             parcel_capacity:area,built_capacity:0.,open_capacity:0.,deficit:area,reasons:vec!["Dedicated source building".into()],
-            role:"civic.bathhouse".into(),sites:1,site:"waterfront".into(),landmark:true,district:"civic".into(),placement:"parcel".into()});
+            role:"civic.bathhouse".into(),sites:1,site:"waterfront".into(),landmark:true,district:"civic".into(),placement:"parcel".into(),explicit:false});
         pr.allocations.push(programme::Allocation {parcel_id:water.id.clone(),demand_id:water.id.clone(),
             function:"collective".into(),culture:layout.culture.clone(),
             architecture_pack:pr.cultures.iter().find(|c|c.culture==layout.culture).unwrap().architecture_pack.clone(),

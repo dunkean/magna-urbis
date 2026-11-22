@@ -313,6 +313,7 @@ fn run(
         landmark: false,
         district: String::new(),
         placement: String::new(),
+        explicit: false,
     };
     wanted.deficit = wanted.requested;
     layout.programme = Some(UrbanProgramme {
@@ -334,6 +335,7 @@ fn run(
         warnings: vec![],
         housing_capacity: 0.0,
         navigable_frontage: false,
+        counts: vec![],
     });
     let parcel_cfg = ParcelConfig {
         density: cfg.density,
@@ -814,7 +816,10 @@ fn reserved_land(
     let minimum = super::super::culture::mapping_for(culture, &cfg.programme.period)
         .map_or(0.0, |m| m.admissibility.min_area);
     let module = module.max(minimum);
-    roles::services_scaled(culture, population, functions, cfg.singular_density)
+    // Requested counts size the land budget too: twelve churches need their blocks.
+    let mut needs = roles::services_scaled(culture, population, functions, cfg.singular_density);
+    roles::resolve_counts(&mut needs, &cfg.programme.counts, culture, population);
+    needs
         .iter()
         .filter(|n| roles::reserves_block(&n.entry))
         .map(|n| n.sites as f64 * module.min(n.area.max(minimum)))

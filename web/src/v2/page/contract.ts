@@ -87,6 +87,7 @@ export interface PageModel {
  * - open3dToken, open3dSeq: the 3D button (view3d); projects clear the token. Zero = no opening in flight.
  * - chainSyncFrame: scheduleChainSync (stageChain).
  * - pendingRegionPosition: the region form's position picker (stageChain), the map click (toolbar).
+ * - pendingSettlement: the Add settlement tool (settlementAdd) waits for its map click (toolbar).
  * - inspectorForms: the inspectors push their forms; disposeInspectorForms (places) empties the list.
  * - urbanControls: an inert stand-in until the urban stage forms mount (stageChain).
  * - nameOrigins: the settlements' name-origin form (preferences).
@@ -107,6 +108,7 @@ export interface PageWork {
   open3dSeq: number;
   chainSyncFrame: number;
   pendingRegionPosition: string | undefined;
+  pendingSettlement: ((point: { x: number; y: number }) => void) | undefined;
   inspectorForms: UrbanControls[];
   urbanControls: UrbanControls;
   nameOrigins: ReturnType<typeof mountNameOriginControls>[];
@@ -220,7 +222,8 @@ export interface PageActions {
   showProgressSettlement(settlement?: V2Progress['settlement']): void;
   // generation
   generateMainOnly(): Promise<void>;
-  generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string): Promise<boolean>;
+  /** `keepCustom`: a run that places the settlements keeps the custom places without asking. */
+  generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, keepCustom?: boolean): Promise<boolean>;
   smallPlaceRecipeKey(): string;
   // inspectors
   showInspector(key: string, focus?: boolean): void;

@@ -434,6 +434,20 @@ pub(crate) fn waterfront_uses_removed(roles: &BTreeSet<String>) -> String {
     format!("{count} water uses dropped — no waterfront")
 }
 
+/// A requested building count names a role without a catalogue row.
+pub(crate) fn count_role_unknown(role: &str) -> String {
+    format!("Building count {role} ignored — unknown building type")
+}
+
+pub(crate) fn is_count_shortfall(line: &str) -> bool {
+    line.starts_with("Building count ") && line.ends_with(" — no suitable site")
+}
+
+/// A forced building count left short after allocation.
+pub(crate) fn programme_count_short(role: &str, placed: u32, requested: u32) -> String {
+    format!("Building count {role}: {placed}/{requested} placed — no suitable site")
+}
+
 pub(crate) fn planned_capacity(percent: f64, steps: &[String], limited: bool) -> String {
     log_warning_detail(format_args!(
         "Planned capacity: {} — {percent:.0} % of households can be housed{}.",

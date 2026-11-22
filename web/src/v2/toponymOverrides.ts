@@ -7,7 +7,7 @@ import type { LabelEdit } from './mapLabels';
  * - any other toponym lives in `naming.labels[nameEntryId].text` (applied after generation);
  * - visibility is `naming.labels[id].hidden` (true hidden, false always shown, absent automatic).
  * They are keyed by the stable name-entry id or settlement key, kept by the project file,
- * and left out of the MU3 share code (see `stripToponymOverrides`).
+ * and left out of the short share code (see `stripToponymOverrides`).
  */
 export const TOPONYM_MAX_LENGTH = 200;
 type Naming = NonNullable<V2Settings['naming']>;
@@ -103,7 +103,7 @@ export function setToponymHidden(settings: V2Settings, target: ToponymTarget, hi
   }
 }
 
-/** MU3 codes carry the generation recipe only: settlement renames and edits of generated labels
+/** Short codes carry the generation recipe only: settlement renames and edits of generated labels
  * (names, visibility, position, style) stay in the project. Author free labels keep travelling. */
 export function stripToponymOverrides(naming: Naming): void {
   delete naming.places;

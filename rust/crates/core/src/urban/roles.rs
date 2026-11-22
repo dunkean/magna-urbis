@@ -499,6 +499,77 @@ pub fn services_scaled(
         .collect()
 }
 
+/// Most buildings of one role a town may request (`ProgrammeContext::counts`).
+pub const MAX_ROLE_COUNT: u32 = 64;
+
+/// Catalogue row of a role for a culture: the culture's own entry, its
+/// family's, the rural and harbour rows, then any other family's.
+fn catalogue_entry(culture: &str, role: &str) -> Option<&'static ServiceEntry> {
+    let cat = catalogue();
+    let find = |list: &'static [ServiceEntry]| list.iter().find(|e| e.role == role);
+    cat.culture_services.get(culture).and_then(|l| find(l.as_slice()))
+        .or_else(|| cat.families.get(family(culture)).and_then(|l| find(l.as_slice())))
+        .or_else(|| find(cat.rural.as_slice()))
+        .or_else(|| find(cat.harbour.as_slice()))
+        .or_else(|| cat.families.values().chain(cat.culture_services.values()).find_map(|l| find(l.as_slice())))
+}
+/// Whether a role has a catalogue row a count can build.
+pub fn countable_role(role: &str) -> bool {
+    catalogue_entry("", role).is_some()
+}
+/// Sites per role of a list of needs (the automatic draw before requests).
+pub fn site_counts(needs: &[ServiceNeed]) -> BTreeMap<String, u32> {
+    let mut out = BTreeMap::new();
+    for need in needs {
+        *out.entry(need.entry.role.clone()).or_insert(0) += need.sites as u32;
+    }
+    out
+}
+/// Applies requested building counts (`ProgrammeContext::counts`) to a
+/// place's needs: an exact number of sites, bypassing population thresholds,
+/// caps, density and functions. 0 removes the role (the nucleus landmark
+/// included). A role the place does not draw takes its catalogue row from any
+/// family, built in the place's own culture. In a hybrid place the count
+/// replaces every community's entry and all sites go to the place's culture.
+/// Returns the requested roles without a catalogue row.
+pub fn resolve_counts(needs: &mut Vec<ServiceNeed>, counts: &BTreeMap<String, u32>, culture: &str, population: u32) -> Vec<String> {
+    let mut unknown = vec![];
+    for (role, &n) in counts {
+        let n = n.min(MAX_ROLE_COUNT) as usize;
+        let mut found = false;
+        needs.retain_mut(|need| {
+            if need.entry.role != *role {
+                return true;
+            }
+            let keep = n > 0 && !found;
+            found = true;
+            if keep {
+                need.sites = n;
+                need.entry.culture.clear();
+            }
+            keep
+        });
+        if found || n == 0 {
+            continue;
+        }
+        let Some(entry) = catalogue_entry(culture, role) else {
+            unknown.push(role.clone());
+            continue;
+        };
+        let mut entry = entry.clone();
+        entry.culture.clear();
+        let pop = f64::from(population);
+        let area = if entry.per_capita > 0.0 {
+            (pop * entry.per_capita / n as f64).clamp(entry.area[0], entry.area[1])
+        } else {
+            let t = ((pop / entry.min_pop.max(1.0)).log10() / 2.0).clamp(0.0, 1.0);
+            entry.area[0] + (entry.area[1] - entry.area[0]) * t
+        };
+        needs.push(ServiceNeed { entry, sites: n, area });
+    }
+    unknown
+}
+
 /// Quay services exist in every culture, but only a built port requests them.
 /// The layout's singular density scales the family and harbour counts.
 pub fn services_for_layout(layout: &Layout, population: u32, functions: super::programme::ProgrammeFunctions) -> Vec<ServiceNeed> {
@@ -1755,6 +1826,28 @@ mod tests {
         generate_quarters,
     };
     use super::*;
+
+    #[test]
+    fn requested_counts_set_exact_sites_remove_zero_and_add_catalogue_roles() {
+        let mut needs = services("european-organic", 5000);
+        let drawn = site_counts(&needs);
+        let mut roles = drawn.keys().cloned();
+        let (gone, more) = (roles.next().unwrap(), roles.next().unwrap());
+        let foreign = catalogue().families.values().flatten().map(|e| e.role.clone()).find(|r| !drawn.contains_key(r)).unwrap();
+        let counts = BTreeMap::from([(gone.clone(), 0), (more.clone(), 5), (foreign.clone(), 2), ("nonsense.role".to_string(), 3)]);
+        assert_eq!(resolve_counts(&mut needs, &counts, "european-organic", 5000), vec!["nonsense.role".to_string()]);
+        let after = site_counts(&needs);
+        assert!(!after.contains_key(&gone), "0 removes the role");
+        assert_eq!(after[&more], 5, "an exact count, past the catalogue cap");
+        assert_eq!(after[&foreign], 2, "a role the town does not draw comes from the catalogue");
+        assert!(needs.iter().all(|n| n.sites > 0 && n.entry.culture.is_empty()));
+        assert!(countable_role(&foreign) && !countable_role("nonsense.role"));
+        for (role, n) in &drawn {
+            if role != &gone && role != &more {
+                assert_eq!(after[role], *n, "other roles stay automatic");
+            }
+        }
+    }
 
     #[test]
     fn service_counts_scale_with_population_and_culture() {

@@ -447,6 +447,20 @@ describe('V2 and City Bench stay in sync', () => {
     });
   }
 
+  it('sends the same requested building counts to the programme on both pages', () => {
+    const current = settings('counts');
+    const programme = { counts: { 'worship.parish': 4, 'defence.keep': 0, 'Bad key': 2, 'commerce.market': 99 }, countMode: 'force' };
+    current.urban!.local = { a: { layout: { programme } as never } };
+    const v2 = resolveRustUrbanControls(current, 'a', { culture: 'west', sprawl: 1, walls: 'auto', suburbs: 'auto', population: 3000 } as unknown as Options).layout;
+    const style = applySettlementStyle('culture', normalizeLayoutConfig(defaultCityLayoutConfig()), 'west');
+    const bench = normalizeLayoutConfig({ ...style.layout, programme: { ...style.layout.programme, ...programme } as never });
+    expect(v2.programme).toEqual(bench.programme);
+    expect(v2.programme.counts).toEqual({ 'commerce.market': 64, 'defence.keep': 0, 'worship.parish': 4 });
+    expect(v2.programme.countMode).toBe('force');
+    // The old castle, cathedral and palace options no longer reach the native layout.
+    const old = resolveRustUrbanControls(settings('counts'), 'a', { culture: 'west', castle: 'yes', cathedral: 'yes', palace: 'yes' } as unknown as Options).layout;
+    expect(old.monument).toBe(defaultLayoutConfig().monument);
+  });
   it('sends the same regional roads and site archetype to the town generator on both pages', () => {
     const road = {
       a: 0,

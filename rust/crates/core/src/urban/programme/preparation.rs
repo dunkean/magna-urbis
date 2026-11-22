@@ -28,6 +28,9 @@ fn prepare_inner(
         || context.resources.len() > 64
         || context.lore.len() > 32
         || context.period.len() > 64
+        || !["suggest", "force"].contains(&context.count_mode.as_str())
+        || context.counts.len() > 256
+        || context.counts.values().any(|&n| n > roles::MAX_ROLE_COUNT)
     {
         return Err("Invalid urban programme context".into());
     }
@@ -66,7 +69,7 @@ fn prepare_inner(
         })
         .collect::<Vec<_>>();
 
-    let (mut demands, functions, isolated) =
+    let (mut demands, functions, isolated, counts) =
         initial_demands(layout, population, context, cultural_functions, &cultures, &mut warnings);
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
@@ -151,6 +154,7 @@ fn prepare_inner(
         warnings,
         housing_capacity: 0.0,
         navigable_frontage: navigable,
+        counts,
     });
     Ok(())
 }

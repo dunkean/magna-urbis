@@ -10,7 +10,7 @@ import { defaultCityLayoutConfig } from '../render/cityGeneration';
 //                            autoPosition: true, site: 'plain', options: ['townMainRoad'], params: { density: '1.2' } })
 //   await __v2Test.run()                       // the decor as the whole world -> placement and roads -> the town
 //   await __v2Test.view('2d' | '2d-core' | '2d-b')   // frame the town as City Bench's "City" button does, in the real viewport
-//   await __v2Test.code()                      // the MU3 generation code of the prepared town (V2 Share dialog)
+//   await __v2Test.code()                      // the short generation code of the prepared town (V2 Share dialog)
 //   __v2Test.summary()                         // town, site scores, shore distances, camp extent, activity yard
 //   __v2Test.camera3d() / __v2Test.setCamera3d(camera)   // the tilt of the map's camera: { x, y, scale, pitch, yaw, navigation, eye? },
 //                                                          // radians, pitch 0 = straight down, yaw clockwise from north; any subset to
@@ -255,10 +255,10 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       bindings.getViewer().setView(view);
       return bindings.getViewer().getView();
     },
-    /** The V2 generation code (MU3) of the prepared town: paste it in the V2 Share dialog to generate it again. */
+    /** The V2 short generation code of the prepared town: paste it in the V2 Share dialog to generate it again. */
     async code(): Promise<string> {
       const { encodeCityCode } = await import('./cityCode');
-      return encodeCityCode(bindings.getSettings(), []);
+      return encodeCityCode(bindings.getSettings());
     },
     /** The current world, for capture scripts (engine request replays). */
     world: () => bindings.getWorld(),

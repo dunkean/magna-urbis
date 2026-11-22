@@ -23,6 +23,7 @@ import { nativeCitiesOf } from '../nativeProducts';
 import { activityScene } from '../activitySites';
 import { mapSeasonKey } from '../../render/seasonPalette';
 import { biomePalette } from '../../render/biomes';
+import { displayBiomeName } from '../displayBiome';
 import { renderSvg } from '../../render/svg';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { settlementRaster, type SettlementRaster } from '../../../../rust/bridge/settlements';
@@ -97,7 +98,7 @@ export class CartographyProducts implements Cartography {
     // Every course cuts the backdrop, dry beds included: their symbols are drawn in the vector water below.
     const water = { ...this.parts.water.waterDisplay(), season: undefined },
       rivers = !r.composition.networks.water.visible ? undefined : t.water ? riverSegments(t.water, water) : t.hydrology ? hydrologySegments(t.hydrology, hydrologyWaterColour(r.ground.style, r.palette.colors)) : undefined;
-    const land = (this.land = v1LandCanvas(this.landRaster.raster, 'parchment', this.map.world!.options.biome, rivers));
+    const land = (this.land = v1LandCanvas(this.landRaster.raster, 'parchment', displayBiomeName(this.map.settings, this.map.world), rivers));
     // Woods painted by the ground (render/treeSymbols.ts): the ground draws this land under them, the overlay keeps it
     // only around them, so they show through (its tints are still masked by the whole land: `land`).
     const ground = this.parts.ground;
@@ -171,7 +172,7 @@ export class CartographyProducts implements Cartography {
       r.city.visible,
       shown.seed,
       world.mapSize,
-      world.options.biome,
+      displayBiomeName(this.map.settings, world),
     ]);
     if (this.cartographyKey !== productKey && this.cartographyState?.config !== config) {
       const hit = this.retained.take<CartographyProduct>('product:' + productKey);
@@ -219,7 +220,7 @@ export class CartographyProducts implements Cartography {
     this.renderer?.dispose();
     this.map.stats.cartographyUpdate = 'rebuilt';
     const map = this.map;
-    const palette = { ...biomePalette(r.palette.mapStyle, world.options.biome), frameKind: 'none' as const, ...(layers.decor === false ? { grid: null } : {}) };
+    const palette = { ...biomePalette(r.palette.mapStyle, displayBiomeName(this.map.settings, world)), frameKind: 'none' as const, ...(layers.decor === false ? { grid: null } : {}) };
     const semanticLook = (): string =>
       `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}|v${this.map.volumeBuildings ? 1 : 0}${this.map.volumeBuildings ? '' : `|roof:${this.map.resolved?.composition.buildings.roof ?? r.composition.buildings.roof}`}`;
     this.woodsOnGround = this.parts.ground.gpuActive && !!this.parts.ground.treeSymbols();
@@ -339,7 +340,7 @@ export class CartographyProducts implements Cartography {
       labels: false,
       brushes: sources,
       vegetation: r.vegetation.symbols,
-      roadGround: roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, this.map.world!.options.biome)),
+      roadGround: roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, displayBiomeName(this.map.settings, this.map.world))),
       roadLook: r.composition.networks.roads.look,
       roadEmphasis: r.composition.networks.roads.emphasis,
       roadNight: r.composition.ambience === 'night',

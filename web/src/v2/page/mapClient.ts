@@ -7,6 +7,7 @@ import { setText, numberLocale } from '../i18n';
 import { StudioClient } from '../client';
 import { createSelectionOverlay } from '../selectionOverlay';
 import { mountMeasureTool } from '../measureTool';
+import { mountPinTool } from '../pinTool';
 import { $ } from './dom';
 
 export function mountMapClient(state: PageState, actions: PageActions): void {
@@ -45,6 +46,7 @@ export function mountMapClient(state: PageState, actions: PageActions): void {
   );
 
   mountMeasureTool({ map: $('#map'), canvas: state.canvas, slot: $('.view-strip'), readout: $('#cursor-readout'), getView: () => state.client.viewer.getView(), getHeight: () => state.world?.terrain.height, getMapSize: () => state.world?.mapSize });
+  mountPinTool({ map: $('#map'), canvas: state.canvas, slot: $('.view-strip'), getView: () => state.client.viewer.getView(), setView: view => state.client.viewer.setView(view), getMapSize: () => state.world?.mapSize, getSettings: () => state.settings, changed: () => actions.touchRecipe() });
 
   state.selectionOutline = createSelectionOverlay(
     $('#map'),

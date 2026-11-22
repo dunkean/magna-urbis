@@ -168,6 +168,8 @@ export function createExportsActions(state: PageState, actions: PageActions) {
               ? 'The recipe retains settings and edits. Faithful reproduction requires the same engine version.'
               : format === 'seed'
                 ? 'The seed alone contains neither your settings nor your edits.'
+                : format === 'names'
+                  ? 'Renamed places and edited labels, which the short code does not carry.'
                 : !available
                   ? 'SVG is unavailable for the current style. Use PNG.'
                   : 'Visual exports use the current map without rerunning generation.',
@@ -184,6 +186,8 @@ export function mountExports(state: PageState, actions: PageActions): void {
     'SVG is unavailable for the current style. Use PNG.': { en: 'SVG is unavailable for the current style. Use PNG.', fr: 'Le SVG n’est pas disponible pour le style actuel. Utilisez le PNG.' },
     'SVG vector map · unavailable for this style': { en: 'SVG vector map · unavailable for this style', fr: 'Carte vectorielle SVG · indisponible pour ce style' },
     'Encoding PNG…': { en: 'Encoding PNG…', fr: 'Encodage du PNG…' },
+    'Names · JSON': { en: 'Names · JSON', fr: 'Noms · JSON' },
+    'Renamed places and edited labels, which the short code does not carry.': { en: 'Renamed places and edited labels, which the short code does not carry.', fr: 'Les lieux renommés et les étiquettes modifiées, que le code court ne contient pas.' },
   });
 
   $<HTMLSelectElement>('#export-format').onchange = actions.syncExportOptions;
@@ -193,7 +197,7 @@ export function mountExports(state: PageState, actions: PageActions): void {
     const format = $<HTMLSelectElement>('#export-format').value;
     migrateUrbanSeeds(state.settings);
     $<HTMLInputElement>('#seed').value = state.settings.options.seed;
-    if (!state.world && !['recipe', 'seed'].includes(format)) {
+    if (!state.world && !['recipe', 'seed', 'names'].includes(format)) {
       actions.toast('Create a map first.');
       return;
     }
@@ -215,6 +219,9 @@ export function mountExports(state: PageState, actions: PageActions): void {
           }),
           `${name}.${format}.json`,
         );
+      } else if (format === 'names') {
+        const naming = state.settings.naming ?? {};
+        actions.download(new Blob([JSON.stringify({ format: 'magna-urbis-v2-names', version: 1, places: naming.places ?? {}, labels: naming.labels ?? {} }, null, 2)], { type: 'application/json' }), `${name}.names.json`);
       } else if (format === 'seed') {
         actions.download(new Blob([JSON.stringify({ format: 'magna-urbis-v2-seed', version: 1, seed: state.settings.options.seed })], { type: 'application/json' }), `${name}.seed.json`);
       } else if (format === 'heightmap') {

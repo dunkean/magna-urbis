@@ -16,8 +16,9 @@ import { generateNaturalCoverNative, generateRuralNative } from '../../../rust/b
 import { chooseSiteRust } from '../../../rust/bridge/siteNative';
 import { loopbackServer } from './platform';
 import { matchesRustTransport, terrainRecipeSettings } from './runtimeChoices';
-import { effectiveRegion, generationRegion } from './regionSettings';
-import { regionalPopulation, REGIONAL_POPULATION_VERSION } from './regionalPopulation';
+import { effectiveRegion } from './regionSettings';
+import { regionalPopulation } from './regionalPopulation';
+import { placementKey, regionKey } from './regionKeys';
 import { routeRoads } from '../gen/roads/regional';
 import { planSettlements, settlementRequests } from '../gen/settlements/planner';
 import { routeNetwork } from '../gen/settlements/network';
@@ -571,48 +572,10 @@ export async function planRegion(terrainWorld: World, settings: V2Settings, onPr
   return world;
 }
 
-/** Only parameters that can move the regional sites require replanning. Town morphology remains local. */
-function regionKey(settings: V2Settings): string {
-  const o = settings.options;
-  return stableStringify([
-    o.population,
-    o.culture,
-    o.siteType,
-    o.sitePrefs,
-    o.center,
-    o.roads,
-    o.settlements,
-    o.workflow,
-    settings.runtime?.backend,
-    generationRegion(settings.region),
-    settings.settlementCount,
-    Object.entries(settings.local)
-      .filter(([key, o]) => o.center !== undefined || o.siteType !== undefined || o.sitePrefs !== undefined || (key === 'main' && o.roads !== undefined))
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, o]) => [key, o.center, o.siteType, o.sitePrefs, key === 'main' ? o.roads : undefined]),
-    ...(stepSeed(o.seed, 'settle-sites') !== seedRoot(o.seed) || stepSeed(o.seed, 'settle-roads') !== seedRoot(o.seed) ? [stepSeed(o.seed, 'settle-sites'), stepSeed(o.seed, 'settle-roads')] : []),
-    REGIONAL_POPULATION_VERSION,
-  ]);
-}
 function historicalClassicRegionKey(settings: V2Settings): string {
   const frame: unknown[] = JSON.parse(regionKey(settings));
   frame.splice(8, 2);
   return stableStringify(frame);
-}
-function placementKey(settings: V2Settings): string {
-  const recipe = { ...settings, options: { ...settings.options }, local: { ...settings.local }, ...(settings.region ? { region: { ...settings.region } } : {}) };
-  delete (recipe.options as Partial<Options>).roads;
-  if (recipe.region) {
-    delete recipe.region.roads;
-    delete recipe.region.resolution;
-    if (!Object.keys(recipe.region).length) delete recipe.region;
-  }
-  if (recipe.local.main) {
-    recipe.local.main = { ...recipe.local.main };
-    delete recipe.local.main.roads;
-  }
-  recipe.options.seed = seedSubset(recipe.options.seed, key => key !== 'settle-roads');
-  return regionKey(recipe);
 }
 /** Reuse exact sites, terrain and city geometry while replacing only the regional road network. */
 export async function rerouteRegion(source: World, settings: V2Settings, onProgress?: ProgressCallback): Promise<World> {

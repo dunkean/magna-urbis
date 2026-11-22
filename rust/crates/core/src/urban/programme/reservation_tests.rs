@@ -4,7 +4,7 @@ use crate::urban::{Layout, Point, Shape, Surface, geometry::{area, centroid, rec
 use serde_json::json;
 use std::collections::BTreeSet;
 
-use super::{BuiltOpenSpace, BuiltScene, ProgrammeContext, Reservation, allocate, has_envelope,
+use super::{BuiltOpenSpace, BuiltScene, ProgrammeContext, Reservation, UrbanProgramme, allocate, has_envelope,
     prepare, reallocate, reconcile_built};
 use super::admission::{eligible, public_open_access};
 use super::environment::block_is_wet;
@@ -677,4 +677,58 @@ fn a_reserved_sliver_cannot_satisfy_a_built_institution() {
         &institutional,
         l.programme.as_ref().unwrap()
     ));
+}
+
+#[test]
+fn requested_counts_become_demands_reported_beside_the_automatic_draw() {
+    let height = vec![0.0; 32 * 32];
+    let water = vec![0; 32 * 32];
+    for mode in ["suggest", "force"] {
+        let mut l = layout("european-organic");
+        let context = ProgrammeContext {
+            counts: [("worship.parish".to_string(), 3), ("craft.smithy".to_string(), 0), ("worship.cathedral".to_string(), 1)].into(),
+            count_mode: mode.into(),
+            ..ProgrammeContext::default()
+        };
+        let surface = Surface { geometry: None, width: 1000.0, n: 32, height: &height, water: &water, interpolation: Default::default() };
+        prepare(&mut l, 600, &context, surface).unwrap();
+        let programme = l.programme.as_ref().unwrap();
+        let sites = |role: &str| programme.demands.iter().filter(|d| d.role == role).map(|d| d.sites).sum::<usize>();
+        assert_eq!((sites("worship.parish"), sites("craft.smithy"), sites("worship.cathedral")), (3, 0, 1));
+        let force = mode == "force";
+        for d in &programme.demands {
+            assert_eq!(d.explicit, force && matches!(d.role.as_str(), "worship.parish" | "worship.cathedral"), "{}", d.id);
+        }
+        let row = |role: &str| programme.counts.iter().find(|c| c.role == role).cloned().unwrap();
+        assert_eq!(row("worship.parish").requested, Some(3));
+        assert!(row("worship.parish").auto > 0, "the default draw of a 600-people town has a parish");
+        assert_eq!((row("worship.cathedral").auto, row("worship.cathedral").requested), (0, Some(1)));
+        assert!(programme.counts.iter().any(|c| c.requested.is_none() && c.auto > 0), "unrequested roles keep their automatic count");
+    }
+}
+
+#[test]
+fn forced_counts_report_placed_sites_and_warn_when_short() {
+    let l = layout("european-organic");
+    let mut part = partition(&l);
+    let demand = "programme-case/demand/worship.parish";
+    let allocation = |parcel: &str| json!({"parcelId":parcel,"demandId":demand,"function":"collective","culture":"european-organic",
+        "architecturePack":"EUR-MED","capacity":100.0,"unit":"usefulAreaM2","score":0.0,"reasons":[],"role":"worship.parish"});
+    for (mode, warned) in [("force", true), ("suggest", false)] {
+        let mut pr: UrbanProgramme = serde_json::from_value(json!({"version":1,"population":600,
+            "context":{"counts":{"worship.parish":3},"countMode":mode},"cultures":[],
+            "demands":[{"id":demand,"function":"collective","unit":"usefulAreaM2","requested":300.0,"targetArea":100.0,"targetFrontage":8.0,
+                "provenance":[],"requires":[],"parcelCapacity":0.0,"builtCapacity":0.0,"deficit":0.0,"reasons":[],"role":"worship.parish","sites":3}],
+            "reservations":[{"id":"r0","demandId":demand,"block":0,"shape":l.blocks[0].shape,"street":0,"frontage":20.0}],
+            // A reserved block is one site whatever its lots; a plot elsewhere is another.
+            "allocations":[allocation("lot/0"), allocation("lot/0"), allocation("lot/1")],
+            "adjacency":[],"environment":[],"reconciliationPasses":0,"warnings":[],
+            "counts":[{"role":"worship.parish","auto":1,"requested":3}]})).unwrap();
+        super::outcomes::count_outcomes(&mut part, &mut pr);
+        assert_eq!(pr.counts[0].placed, 2);
+        let short = "Building count worship.parish: 2/3 placed — no suitable site".to_string();
+        assert_eq!(part.warnings.contains(&short), warned, "{mode}");
+        assert_eq!(pr.warnings.contains(&short), warned, "{mode}");
+        part.warnings.clear();
+    }
 }

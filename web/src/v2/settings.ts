@@ -5,7 +5,7 @@ import { presetComposition } from '../render/composition';
 
 export function defaultSettings(): V2Settings {
   return {
-    options: makeOptions({ seed: 'magna-urbis', population: 2500, biome: 'temperate', relief: 'hills', coast: 'S' }),
+    options: makeOptions({ seed: 'magnas', population: 2500, biome: 'temperate', relief: 'hills', coast: 'S' }),
     extent: 6000,
     settlementCount: 0,
     local: {},

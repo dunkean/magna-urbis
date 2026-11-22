@@ -82,6 +82,7 @@ function initialWork(): PageWork {
     open3dSeq: 0,
     chainSyncFrame: 0,
     pendingRegionPosition: undefined,
+    pendingSettlement: undefined,
     inspectorForms: [],
     // An inert stand-in until the urban stage forms mount into the chain.
     urbanControls: { sync() {}, dispose() {} },

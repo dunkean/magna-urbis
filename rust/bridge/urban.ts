@@ -266,6 +266,8 @@ export interface UrbanDemand {
   openCapacity?: number;
   deficit: number;
   reasons: string[];
+  /** A forced building count: placed before the automatic demands. */
+  explicit?: boolean;
 }
 export interface UrbanAllocation {
   parcelId: string;
@@ -299,6 +301,17 @@ export interface UrbanProgramme {
   housingCapacity?: number;
   /** Measured navigable quay frontage: the only evidence port storage is allocated against. */
   navigableFrontage?: boolean;
+  /** Building counts per role: the automatic draw, the requested count and the sites placed. */
+  counts?: ProgrammeCountOutcome[];
+}
+/** One role of `UrbanProgramme.counts` (Rust `programme::CountOutcome`). */
+export interface ProgrammeCountOutcome {
+  role: string;
+  /** Sites the programme draws without a request. */
+  auto: number;
+  requested?: number;
+  /** Distinct sites (reserved blocks or plots) holding the role after allocation. */
+  placed: number;
 }
 /** Include outward growth when framing a completed settlement. */
 export function layoutExtent(layouts?: Layout[]): { center: Point; radius: number } | undefined {

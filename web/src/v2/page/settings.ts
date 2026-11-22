@@ -56,6 +56,8 @@ export function createSettingsActions(state: PageState, actions: PageActions) {
     actions.updateExtent();
     actions.scheduleChainSync();
     setText($('#footer-status'), state.world ? actions.fullGenerationStatus() : 'Terrain and water, in one click');
+    // Listeners that show the recipe (the top-bar code, pin markers) refresh on this event.
+    globalThis.window?.dispatchEvent(new Event('v2-recipe-change'));
   }
 
   function updateExtent(): void {
@@ -63,6 +65,7 @@ export function createSettingsActions(state: PageState, actions: PageActions) {
   }
 
   function syncControls(): Promise<void> {
+    globalThis.window?.dispatchEvent(new Event('v2-recipe-change'));
     if (!state.world?.stats['v2.previewStage']) state.previewBase = undefined;
     document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-option]').forEach(input => {
       const key = input.dataset.option!;

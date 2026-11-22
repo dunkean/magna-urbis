@@ -5,6 +5,8 @@ import { isMapStyle } from '../render/styles';
 import { isTerrainStyle } from '../render/terrainStyle';
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
+import { CLIMATE_ZONES } from '../../../rust/bridge/terrainClimate';
+import { displayBiomeName } from './displayBiome';
 import { TREE_DISTANCE_MAX, TREE_DISTANCE_MIN } from '../ui/terrain3dTrees';
 import { setLanduseForestTone } from '../render/landuseForestTone';
 import { validateRenderColors } from '../render/customColors';
@@ -49,6 +51,7 @@ export function validateAppearance(value: unknown): asserts value is V2Appearanc
     'appearance.diagnostic',
   );
   enumeration(value.resourcePotential, POTENTIAL_IDS, 'appearance.resourcePotential');
+  enumeration(value.biome, CLIMATE_ZONES, 'appearance.biome');
   for (const key of ['contours', 'landuse', 'labels', 'legend', 'cartouche', 'textured', 'painted', 'lakes', 'oxbows', 'roads', 'buildings', 'unifiedDefaults']) boolean(value[key], `appearance.${key}`);
   if (value.colors !== undefined) validateRenderColors(value.colors);
   if (value.forest !== undefined) {
@@ -116,7 +119,7 @@ export function resolveSettingsAppearance(settings: V2Settings, world: World | u
   }
   // The land-use painters (2D canvas, SVG export, legend) read the shared value; the recipe is its source of truth.
   setLanduseForestTone(appearance.composition.vegetation.forestTone);
-  return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest }, worldCapabilities(world), target, { ...flags, biome: world?.options.biome ?? o.biome });
+  return resolveAppearance(appearance, { mapStyle: o.style, contours: o.contours, landuse: o.landuse, labels: o.labels, legend: o.legend, forest: settings.terrain?.forest }, worldCapabilities(world), target, { ...flags, biome: displayBiomeName(settings, world) });
 }
 /** Classic-renderer / export display options derived from the resolved cartography. */
 export function resolvedDisplayOptions(r: ResolvedAppearance): V2ExportDisplay {

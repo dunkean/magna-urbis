@@ -22,6 +22,8 @@ import { atTopView } from './editingToolbar';
 import { translateLand } from '../../ui/urbanSnapshot';
 import { renameMap } from '../mapNaming';
 import { $ } from './dom';
+import { mountSettlementAdd } from './settlementAdd';
+import { keepMovedSettlement } from '../settlementAdd';
 
 export function createMapEditingActions(state: PageState, actions: PageActions) {
   function syncNameOrigins(): void {
@@ -225,6 +227,8 @@ export function mountMapEditing(state: PageState, actions: PageActions): void {
     apply: edit => applyContourEdit(state, actions, edit),
   });
 
+  mountSettlementAdd(state, actions, $('.v2-network-shortcuts'));
+
   state.townMover = mountTownMoveEditor({
     map: $('#map'),
     toolbar: $('.v2-network-shortcuts'),
@@ -258,9 +262,12 @@ export function mountMapEditing(state: PageState, actions: PageActions): void {
           const scope = state.settings.urban?.local?.[key];
           if (previous) for (const edits of [scope?.layout?.overrides?.quarters, scope?.parcels?.overrides?.parcels]) for (const edit of Object.values(edits ?? {})) if (edit.shape) edit.shape = translateLand(edit.shape, center.x - previous.x, center.y - previous.y);
           state.settings.local[key] = { ...state.settings.local[key], center: { ...center } };
+          // A moved place stays where the user put it through later placements (count, population or density edits).
+          const town = state.world.settlements?.find(place => place.key === key);
+          if (town) keepMovedSettlement(state.settings, town, center);
         }
         actions.touchRecipe();
-        await actions.generate('region');
+        await actions.generate('region', undefined, undefined, undefined, undefined, undefined, true);
       },
     },
     commit: async (next, key, dx, dy) => {
