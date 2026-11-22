@@ -67,6 +67,8 @@ interface Look {
   canopy: boolean;
   /** Options of every frame of this look but the view, the level of detail, the water and the target. */
   base: Omit<CityGlDrawOptions, 'viewport' | 'metresPerPixel'>;
+  /** What the look reads of its appearance; another appearance with the same key keeps the prepared tables. Empty: never shared. */
+  key: string;
 }
 const LODS: readonly CityLod[] = ['far', 'mid', 'near', 'close'];
 const finite = (value: number | undefined, fallback: number, min: number, max: number): number => (value !== undefined && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback);
@@ -187,7 +189,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     preparing?.steps.return();
     preparing = undefined;
   };
-  /** The look of the current appearance and visibility, rebuilt when either object changes. */
+  /** The look of the current appearance and visibility, rebuilt when what it reads of them changes: another style with
+   * the same town look keeps its colour tables, drape tiles and far rasters. */
   function lookNow(): Look {
     const appearance = env.appearance(),
       visibility = env.visibility();
@@ -199,9 +202,10 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       buildingsVisible = vis.city !== false && city.visible;
     // As drawCitySteps decides it (the look's farTownShown), for the towns of city volumes.
     const farTown = !planOnly && !!appearance.traits?.satelliteVariant && buildingsVisible && city.view === 'buildings' && buildingAppearance.style !== 'silhouette' && buildingAppearance.diagnostic === 'none';
-    look = {
+    const next: Look = {
       appearance,
       visibility,
+      key: '',
       reason: liveCityBlock(appearance, visibility),
       opacity: townOpacity(city.opacity),
       farTown,
@@ -234,6 +238,14 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
         },
       },
     };
+    // The rest gaps also read the textures, the procedural canopy and the urban land use (restGaps).
+    if (!next.base.refusedParcels) next.key = JSON.stringify([next.reason, next.opacity, next.farTown, next.far, next.canopy, next.base, city.textured, appearance.composition.vegetation.procedural, appearance.composition.landuse.urban]);
+    if (look?.key && look.key === next.key) {
+      look.appearance = appearance;
+      look.visibility = visibility;
+      return look;
+    }
+    look = next;
     unprepare();
     drapeRevision++;
     far.ready = false;

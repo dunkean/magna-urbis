@@ -46,6 +46,7 @@ import type { WorldCave } from '../../render/world/cave';
 import { UNDERDARK_CAVERN_DEFAULTS, type CavernField } from '../../render/underdarkCavern';
 import { riverCover } from '../../render/world/treesWater';
 import { PAINTED_TREES, SATELLITE_TREES, type TreePalette } from '../../render/world/treesShader';
+import { treeInputsKey } from '../../render/world/treesBlocks';
 import type { City3dGround } from '../../ui/city3d';
 import { clampTreeDistance, TREE_DISTANCE_DEFAULT, type TreeInputs } from '../../ui/terrain3dTrees';
 import { renderV2ZoneUniform } from '../../../../rust/bridge/terrainRenderV2Zones';
@@ -124,8 +125,8 @@ export class WorldVolumes {
   /** Displayed water cover of the map the trees keep off, one function per world (the trees compare it by identity). */
   private waterOf?: { world: World; rivers?: Float32Array; at: (x: number, y: number) => number };
   /** The top view's town look the volumes take, and what it was made for (the town map, the look on screen, the
-   * ground tones and the season its colours read). */
-  private lookOf?: { key: string; city: unknown; resolved?: ResolvedAppearance; look?: VolumeTownLook };
+   * ground tones and the season its colours read, the roof frame input). */
+  private lookOf?: { stamp: string; key: string; city: unknown; resolved?: ResolvedAppearance; look?: VolumeTownLook };
   /** The composition in progress, and its idle callback. */
   private job?: Generator<void, void>;
   private idle?: number;
@@ -261,29 +262,20 @@ export class WorldVolumes {
   private townLook(): VolumeTownLook | undefined {
     const city = this.parts.town.city,
       resolved = this.map.resolved,
-      key = `${toneStamp()}|${roofSeasonKey()}`,
+      stamp = `${toneStamp()}|${roofSeasonKey()}`,
       of = this.lookOf;
-    if (of && of.city === city && of.resolved === resolved && of.key === key) return of.look;
-    let look: VolumeTownLook | undefined;
+    if (of && of.city === city && of.resolved === resolved && of.stamp === stamp) return of.look;
+    let input: Parameters<typeof roofFrame>[0] | undefined;
     if (city && resolved) {
       const a = cityBuildingAppearance(resolved),
         view = resolved.city.view;
       if (a.style !== 'silhouette' && roofPansShown({ view, footprint: false, diagnostic: a.diagnostic ?? 'none' }))
-        look = {
-          frame: roofFrame({
-            palette: resolved.city.palette,
-            mpp: 2 * RIM_DEVICE_MPP,
-            dpr: 1,
-            night: !!resolved.underdark || resolved.composition.ambience === 'night',
-            cave: !!resolved.underdark,
-            diagnostic: a.diagnostic ?? 'none',
-            colors: a.colors,
-            textured: resolved.city.textured,
-          }),
-          item: id => city.building(id),
-        };
+        input = { palette: resolved.city.palette, mpp: 2 * RIM_DEVICE_MPP, dpr: 1, night: !!resolved.underdark || resolved.composition.ambience === 'night', cave: !!resolved.underdark, diagnostic: a.diagnostic ?? 'none', colors: a.colors, textured: resolved.city.textured };
     }
-    this.lookOf = { key, city, resolved, look };
+    // Another style with the same roof frame keeps the look object: the buildings layer keeps its meshes.
+    const key = JSON.stringify(input ?? null);
+    const look = of && of.city === city && of.stamp === stamp && of.key === key ? of.look : input && city ? { frame: roofFrame(input), item: (id: string) => city.building(id) } : undefined;
+    this.lookOf = { stamp, key, city, resolved, look };
     return look;
   }
 
@@ -309,12 +301,11 @@ export class WorldVolumes {
     const cities = v2NativeCities(world),
       city = this.parts.town.city,
       of = this.townOf,
-      // The city key of the appearance (keys.city) without the trees' switch and distance, which change no building, nor
-      // the levelled lots, which only the separate 3D view's ground takes (ui/view3d/cityBuildings.ts).
-      town = { ...r.city, trees3d: undefined, treeDistance: undefined, groundShaping: undefined },
       // Flights of steps take the colour their street has on the map under them (`stairStreetColor`).
       stairPaint: StairPaintOptions = { palette: plan.palette, roadLook: plan.roadLook, roadEmphasis: plan.roadEmphasis, streetPalette: plan.streetPalette, colors: plan.colors, groundBlend: plan.groundBlend, night: plan.night, appearance: look },
-      key = JSON.stringify([shown, yards, plan.waterColor, plan.palette, r.underdark, town, r.palette.colors, r.composition.ambience, stairPaint, roadGroundKey()]);
+      // What the scene reads of the look (the extras below; the buildings' colours are the layer's appearance): another
+      // style with the same inputs keeps the scene object, whose blocks the buildings and trees layers keep.
+      key = JSON.stringify([shown, yards, buildingsOnly, r.underdark, r.city.terraces, r.composition.networks.roads.visible, plan.waterColor, plan.palette, stairPaint, roadGroundKey()]);
     // The same town on the same relief keeps its scene object: the buildings layer starts again for a new one.
     if (world === of.world && heights === of.heights && city === of.city && key === of.key && sameV2NativeInputs(of.cities, cities, 'scene') && sameV2NativeInputs(of.cities, cities, 'layouts')) {
       this.appearance = appearance;
@@ -383,7 +374,7 @@ export class WorldVolumes {
       this.treeSource = undefined;
       return;
     }
-    this.treeSource = {
+    const next: TreeSource = {
       field,
       occupation: v2ForestOccupation(world),
       seed: ground.seed >>> 0,
@@ -396,6 +387,9 @@ export class WorldVolumes {
       calendar: ground.v2Calendar,
       water: this.waterAt(world),
     };
+    // Another style with the same trees keeps the inputs object: the trees layer keeps its blocks without checking them.
+    const held = this.treeSource;
+    if (!held || held.field !== next.field || held.occupation !== next.occupation || held.water !== next.water || treeInputsKey(held) !== treeInputsKey(next)) this.treeSource = next;
   }
   /** The forest field of the look arrived: the trees are made at the next tilted frame at rest. */
   private forestReady = (): void => {

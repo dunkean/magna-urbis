@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Keep generating maps and background towns while the browser tab is hidden or minimised; the map is drawn when the tab is shown again.
+- Keep the houses and 3D trees already built when switching to a map style that draws them the same way, instead of rebuilding them.
 - Town warnings are one short line each, in English or French.
 - Download the experimental Apple Silicon DMG from GitHub Releases alongside the Windows and Linux packages.
 - Keep Satellite rivers correctly shaded in fast and reduced-quality displays, without exposing encoded water data as green ribbons.

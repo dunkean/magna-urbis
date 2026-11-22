@@ -335,13 +335,14 @@ export class ComposedView {
     // one: its tiles are marked stale (they keep showing until re-baked) and the work loop starts again.
     if (ran.includes('terrainData')) live.invalidateLayer('ground');
     // The semantic hook of the overlay (contours, rural semantics, water cut) and the town hooks (urban semantics,
-    // rivers) are the display's own state.
+    // rivers) are the display's own state. The town layer follows its look itself (townLayer.ts lookNow).
     if (ran.some(name => name === 'cartography' || name === 'overlays' || name === 'semantic' || name === 'water' || name === 'frame')) live.invalidateLayer('overlay');
-    if (ran.some(name => name === 'city' || name === 'semantic' || name === 'water') || before.resolved?.keys.city !== r.keys.city) live.invalidateLayer('city');
+    if (ran.some(name => name === 'city' || name === 'semantic' || name === 'water')) live.invalidateLayer('city');
   }
-  /** The display quality or the vector engine changed: what the overlay, the town and the names retain is stale. */
+  /** The display quality or the vector engine changed: what the overlay and the names retain is stale. The live town
+   * reads neither, and keeps its tables (its look follows the appearance, townLayer.ts lookNow). */
   invalidateLayers(): void {
-    for (const name of EXACT_LAYERS) this.live?.invalidateLayer(name);
+    for (const name of ['overlay', 'text'] as const) this.live?.invalidateLayer(name);
     this.rest = 'due';
   }
 
