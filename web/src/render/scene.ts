@@ -24,6 +24,7 @@ import { offsetRibbon, polygonCentroid } from '../gen/core/geom';
 import { pointInRing, orientPos } from '../gen/geo/poly';
 import { TileIndex, boxesOf, chunkPolyline } from './tileindex';
 import { holdingTone } from './furrows';
+import { edgeShareOf, latticeRange, orchardAxis, orchardClears, orchardTree, ringsDistance, type OrchardTree } from './orchardRows';
 import { pavementSites, splitByPavement, type RoadPavement } from './roadPavement';
 
 export const TILE_SIZE = 250;
@@ -873,51 +874,26 @@ export function textureMarks(layer: TextureLayer, tile: number, sp: number, salt
   return out;
 }
 
-/** Rows belong to each holding, aligned to its access/contours. World-space
- * coordinates and a crown setback keep rows stable across tiles and zooms. */
+/** Rows belong to each holding, on the orchard lattice the 3D trees and the ground shader share (orchardRows.ts):
+ * the same points, radii and edge clearance. World-space coordinates keep rows stable across tiles and zooms. */
 export function orchardMarks(layer: TextureLayer, tile: number, seed: string): Mark[] {
   const rect = layer.index.tileRect(tile),
-    out: Mark[] = [];
-  let seedValue = 2166136261;
-  for (let i = 0; i < seed.length; i++) seedValue = Math.imul(seedValue ^ seed.charCodeAt(i), 16777619);
+    out: Mark[] = [],
+    tree = {} as OrchardTree;
+  let material = 2166136261;
+  for (let i = 0; i < seed.length; i++) material = Math.imul(material ^ seed.charCodeAt(i), 16777619);
   for (const id of layer.index.itemsOf(tile)) {
-    const area = layer.areas[id];
-    let direction = 0,
-      longest = 0;
-    for (let k = 0; k < area.poly.length; k++) {
-      const a = area.poly[k],
-        b = area.poly[(k + 1) % area.poly.length],
-        d = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-      if (d > longest) {
-        longest = d;
-        direction = Math.atan2(b.y - a.y, b.x - a.x);
-      }
-    }
-    const angle = area.stripAngle ?? direction;
-    const ca = Math.cos(angle),
-      sa = Math.sin(angle);
-    const corners = [
-      [rect.minX, rect.minY],
-      [rect.maxX, rect.minY],
-      [rect.maxX, rect.maxY],
-      [rect.minX, rect.maxY],
-    ];
-    const us = corners.map(([x, y]) => x * ca + y * sa),
-      vs = corners.map(([x, y]) => -x * sa + y * ca);
-    const salt = Math.floor(hash3(Math.round(area.poly[0].x * 7), Math.round(area.poly[0].y * 7), seedValue) * 0x7fffffff);
-    const spacing = 8,
-      offset = hash3(salt, 0, 31) * spacing;
-    for (let j = Math.floor((Math.min(...vs) - offset) / spacing); j <= Math.ceil((Math.max(...vs) - offset) / spacing); j++) {
-      for (let i = Math.floor(Math.min(...us) / spacing); i <= Math.ceil(Math.max(...us) / spacing); i++) {
-        const u = (i + 0.5 + (hash3(i, j, salt + 41) - 0.5) * 0.12) * spacing,
-          v = j * spacing + offset;
-        const x = u * ca - v * sa,
-          y = u * sa + v * ca;
+    const area = layer.areas[id],
+      rings = [area.poly, ...(area.holes ?? [])];
+    const [ca, sa] = orchardAxis(area);
+    const [i0, i1, j0, j1] = latticeRange([rect.minX, rect.minY, rect.maxX, rect.minY, rect.maxX, rect.maxY, rect.minX, rect.maxY], ca, sa);
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const { x, y } = orchardTree(i, j, ca, sa, material, tree);
         if (x < rect.minX || x >= rect.maxX || y < rect.minY || y >= rect.maxY || !insideArea(area, x, y)) continue;
-        if (Array.from({ length: 8 }, (_, k) => [5.3 * Math.cos(angle + (k * Math.PI) / 4), 5.3 * Math.sin(angle + (k * Math.PI) / 4)]).some(([dx, dy]) => !insideArea(area, x + dx, y + dy))) continue;
-        out.push({ x, y, r: 0.8 + 0.3 * hash3(i, j, salt + 23), k: hash3(i, j, salt + 29) });
+        if (!orchardClears(edgeShareOf(ringsDistance(rings, x, y)), tree.radius)) continue;
+        out.push({ x, y, r: 0.8 + 0.3 * ((tree.radius - 2.3) / 0.4), k: ((tree.h2 & 255) + 0.5) / 256 });
       }
-    }
   }
   return out;
 }

@@ -11,6 +11,8 @@ import { buildNearTrees, buildNearTreesSteps, TREE_STRIDE, treeLimits, type Tree
 import { forestOccupation } from '../src/ui/forestOccupation';
 import { withLandDetail } from '../src/ui/landDetail';
 import { ForestRoom } from '../src/render/forestRoom';
+import { orchardAxis } from '../src/render/orchardRows';
+import { seedHash } from '../../rust/bridge/terrainAdjust';
 
 const pal = biomePalette('parchment', 'temperate');
 const rect = (x: number, y: number, size: number) => [
@@ -22,10 +24,9 @@ const rect = (x: number, y: number, size: number) => [
 
 describe('individual canopy stamps', () => {
   it('aligns orchard rows to the holding and retains identical trees across tile sizes', () => {
-    const angle = 0.63,
-      ca = Math.cos(angle),
-      sa = Math.sin(angle);
+    const angle = 0.63;
     const areas = [{ kind: 'orchard' as const, poly: rect(20, 20, 200), holes: [rect(80, 80, 45)], stripAngle: angle }];
+    const [ca, sa] = orchardAxis(areas[0]);
     const collect = (tileSize: number) => {
       const layer: TextureLayer = { kind: 'orchard', areas, index: new TileIndex(256, tileSize, boxesOf(areas.map(a => a.poly)), 'overlap') };
       return layer.index
@@ -36,17 +37,38 @@ describe('individual canopy stamps', () => {
     const marks = collect(64);
     expect(marks).toEqual(collect(128));
     expect(marks.length).toBeGreaterThan(100);
-    const rows = marks.map(m => -m.x * sa + m.y * ca);
-    const phase = rows[0];
-    for (const row of rows) expect((row - phase) / 8).toBeCloseTo(Math.round((row - phase) / 8), 8);
-    for (const m of marks)
-      for (const [dx, dy] of [
-        [4.5, 0],
-        [-4.5, 0],
-        [0, 4.5],
-        [0, -4.5],
-      ])
-        expect(insideArea(areas[0], m.x + dx, m.y + dy)).toBe(true);
+    // Rows on the shared 8 m lattice of the quantised frame, within its 0.06-cell jitter.
+    for (const m of marks) {
+      const v = (-m.x * sa + m.y * ca) / 8 - 0.5;
+      expect(Math.abs(v - Math.round(v))).toBeLessThan(0.061);
+      expect(insideArea(areas[0], m.x, m.y)).toBe(true);
+    }
+  });
+
+  it('plants the 2D orchard marks on the points of the 3D fruit trees, far from the world origin', () => {
+    const angle = 0.4137,
+      ca = Math.cos(angle),
+      sa = Math.sin(angle);
+    const rotate = (ring: { x: number; y: number }[]) => ring.map(p => ({ x: 4180 + p.x * ca - p.y * sa, y: 3090 + p.x * sa + p.y * ca }));
+    const orchard = { kind: 'orchard' as const, poly: rotate(rect(0, 0, 160)), holes: [rotate(rect(60, 60, 30))] };
+    const landuse = { areas: [orchard], reserve: [], farmsteads: [] };
+    const occupation = withLandDetail(forestOccupation(landuse), landuse)!;
+    const rgba = new Uint8Array(32 * 32 * 4);
+    for (let i = 0; i < rgba.length; i += 4) rgba.set([230, 110, 180, 128], i);
+    const seed = 'rows-parity';
+    const inputs: TreeInputs = { field: { x: 3900, y: 2900, width: 640, n: 32, rgba, key: 'dense' }, occupation, seed: seedHash(seed), climate: { temperature: 16, precipitation: 1200 }, renderV2: 1, zone: 1, season: 0.5, water: () => 0, height: () => 20 };
+    const trees = buildNearTrees(inputs, { x: 4100, y: 3200, forwardX: 0, forwardY: 1, area: { minX: 3900, minY: 2900, maxX: 4300, maxY: 3400 } });
+    const fruit: [number, number][] = [];
+    for (let i = 0; i < trees.length; i += TREE_STRIDE) if (insideArea(orchard, trees[i], trees[i + 1]) && trees[i + 6] === 0 && trees[i + 3] <= 2.7) fruit.push([trees[i], trees[i + 1]]);
+    const layer: TextureLayer = { kind: 'orchard', areas: [orchard], index: new TileIndex(8192, 128, boxesOf([orchard.poly]), 'overlap') };
+    const marks = layer.index.tilesInRect({ minX: 3900, minY: 2900, maxX: 4300, maxY: 3400 }).flatMap(t => canopyMarks(layer, t, seed));
+    const key = (x: number, y: number) => `${x.toFixed(6)},${y.toFixed(6)}`;
+    // The 3D stream stores float32 positions.
+    const points = new Set(marks.map(m => key(Math.fround(m.x), Math.fround(m.y))));
+    expect(fruit.length).toBeGreaterThan(200);
+    for (const [x, y] of fruit) expect(points.has(key(x, y))).toBe(true);
+    // Only raster gates the 2D marks do not see (sub-texel edges) may leave a mark without its 3D tree.
+    expect(fruit.length / marks.length).toBeGreaterThan(0.9);
   });
 
   it('uses the same bounded tree stream for fruit rows and excludes natural trees inside the parcel', () => {

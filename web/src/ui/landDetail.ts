@@ -3,6 +3,7 @@ import type { LandArea, LandUseLayer, World } from '../gen/types';
 import type { ForestOccupation, LandDetail } from '../../../rust/bridge/terrainForest';
 import { fillRings } from './forestOccupation';
 import { cultureEra } from '../gen/options';
+import { orchardAxis, rowBytes, rowDirection } from '../render/orchardRows';
 const details = new WeakMap<LandUseLayer, Map<string, LandDetail | undefined>>();
 
 /**
@@ -178,22 +179,6 @@ function cultureResolver(landuse: LandUseLayer, cultures: LandCultures | undefin
     return culture;
   };
 }
-/** Direction of the longest edge: rows of an orchard or a garden follow their plot. */
-function longestEdge(ring: Polygon): number {
-  let best = 0,
-    angle = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i],
-      b = ring[(i + 1) % ring.length],
-      d = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-    if (d > best) {
-      best = d;
-      angle = Math.atan2(b.y - a.y, b.x - a.x);
-    }
-  }
-  return angle;
-}
-
 /**
  * Rasterises the holdings of the rural land use for the satellite ground: the shader draws crops, furrows and
  * balks from it, so fields keep their real strips and directions without any vector overlay.
@@ -304,7 +289,7 @@ function buildLandDetail(landuse: LandUseLayer, cultures: LandCultures | undefin
     }
     const crops = cropsOf(cultureAt(cx / area.poly.length, cy / area.poly.length), cultures?.biome);
     const [base, , spread] = pickCrop(crops, unit(index * 2 + 1)),
-      direction = area.stripAngle ?? longestEdge(area.poly);
+      direction = rowDirection(area);
     // A garden's crop is jittered like a strip: with its direction it gives each plot its own identity in the shader.
     const tone = area.kind === 'garden' ? Math.min(1, Math.max(0, base + (unit(index * 2 + 2) * 2 - 1) * spread)) : base;
     paint([area.poly, ...(area.holes ?? [])], tone, direction, !!area.strips?.length);
@@ -316,8 +301,8 @@ function buildLandDetail(landuse: LandUseLayer, cultures: LandCultures | undefin
   });
   const rgba = new Uint8Array(n * n * 4),
     scale = 127.5 / R;
-  const cos2 = angle.map(a => Math.round((Math.cos(2 * a) * 0.5 + 0.5) * 255)),
-    sin2 = angle.map(a => Math.round((Math.sin(2 * a) * 0.5 + 0.5) * 255)),
+  const cos2 = angle.map(a => rowBytes(a)[0]),
+    sin2 = angle.map(a => rowBytes(a)[1]),
     tone = crop.map(c => Math.round(c * 255));
   // Crops meet at the true edge: a texel across from another strip takes its share, so filtering draws a straight line.
   // Only on fine rasters: on a coarse one the shader reads each holding from its inside (landDetailInside) and a shared
@@ -372,15 +357,7 @@ function buildLandDetail(landuse: LandUseLayer, cultures: LandCultures | undefin
     rgba[o + 3] = Math.max(128, Math.min(255, Math.round(127.5 + edge[i] * scale)));
     hash = Math.imul(hash ^ id ^ i ^ (rgba[o] << 24) ^ (rgba[o + 1] << 8) ^ (rgba[o + 2] << 16), 0x01000193);
   }
-  const orchards = areas
-    .filter(a => a.kind === 'orchard')
-    .map(a => {
-      const direction = a.stripAngle ?? longestEdge(a.poly);
-      const co = (Math.round((Math.cos(2 * direction) * 0.5 + 0.5) * 255) / 255) * 2 - 1;
-      const si = (Math.round((Math.sin(2 * direction) * 0.5 + 0.5) * 255) / 255) * 2 - 1;
-      const angle = 0.5 * Math.atan2(si, co);
-      return { poly: a.poly, holes: a.holes, along: [Math.cos(angle), Math.sin(angle)] as [number, number] };
-    });
+  const orchards = areas.filter(a => a.kind === 'orchard').map(a => ({ poly: a.poly, holes: a.holes, along: orchardAxis(a) }));
   return { x, y, width: n * cell, n, rgba, orchards, key: `land:${x}:${y}:${n * cell}:${n}:${(hash >>> 0).toString(36)}` };
 }
 

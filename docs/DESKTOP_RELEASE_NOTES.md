@@ -11,6 +11,7 @@
 - Add the White map style for studying town plans: a white ground with relief shading, grey building footprints, roads, town walls and flat water, without land use, vegetation, textures or contour lines.
 - Show each town layer on its own from the map toolbar: roads, quarters, blocks, parcels and houses, to inspect the street network, blocks or lots without the houses. Satellite styles keep their towns free of plan graphics.
 - Keep generating maps and background towns while the browser tab is hidden or minimised; the map is drawn when the tab is shown again.
+- Fix orchard rows drawn in 2D drifting away from the 3D fruit trees away from the map origin: the 2D marks, the 3D trees and the Satellite crowns now share one row lattice per orchard.
 - Keep the houses and 3D trees already built when switching to a map style that draws them the same way, instead of rebuilding them.
 - Choose the special buildings of a town: its options list the default draw (building type and number), and you can change any number or add another building type from the catalogue. “Suggest” lets the programme lower a number for the town’s size and sites; “Force” places exact numbers first and shows placed/requested with a warning when a site is missing. The old castle, cathedral and palace options are removed.
 - Town warnings are one short line each, in English or French.

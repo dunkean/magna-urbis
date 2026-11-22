@@ -11,6 +11,7 @@ import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/f
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { FOREST_BIOMES, FOREST_GIANT_PAINTED, FOREST_HEDGE_WIDEN, FOREST_LANDMARK, FOREST_LANDMARK_MAX, FOREST_LONE_WIDEN, forestBiomeRow, forestGiant, forestSocial, forestWetConifer, type ForestBiome, type ForestSocial } from '../../../rust/bridge/terrainForestStature';
+import { ORCHARD_SPACING, orchardClears, orchardTree, rowAxisOfBytes, type OrchardTree } from '../render/orchardRows';
 import { FOREST_CLUMP_GLSL, FOREST_CROWN_PIGMENTS, FOREST_FIELD, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
 /** Render distance of the near trees (m), adjustable: full trees within `near` (2/3 of it), none beyond `far`. Beyond,
@@ -480,6 +481,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     }
     return hit;
   };
+  const tree = {} as OrchardTree;
   for (const patch of detail?.orchards ?? []) {
     const [ca, sa] = patch.along;
     const us = patch.poly.map(p => p.x * ca + p.y * sa),
@@ -493,20 +495,15 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
       cv.push(-corners[k] * sa + corners[k + 1] * ca);
     }
     const reach = area ? 1 : TREE_FAR + 1;
-    const i0 = Math.floor(Math.max(Math.min(...us), Math.min(...cu) - reach) / 8),
-      i1 = Math.ceil(Math.min(Math.max(...us), Math.max(...cu) + reach) / 8);
-    const j0 = Math.floor(Math.max(Math.min(...vs), Math.min(...cv) - reach) / 8),
-      j1 = Math.ceil(Math.min(Math.max(...vs), Math.max(...cv) + reach) / 8);
+    const i0 = Math.floor(Math.max(Math.min(...us), Math.min(...cu) - reach) / ORCHARD_SPACING),
+      i1 = Math.ceil(Math.min(Math.max(...us), Math.max(...cu) + reach) / ORCHARD_SPACING);
+    const j0 = Math.floor(Math.max(Math.min(...vs), Math.min(...cv) - reach) / ORCHARD_SPACING),
+      j1 = Math.ceil(Math.min(Math.max(...vs), Math.max(...cv) + reach) / ORCHARD_SPACING);
     for (let j = j0; j <= j1; j++) {
       yield;
       for (let i = i0; i <= i1; i++) {
-        const h = forestHash(i, j, 877, seed),
-          h2 = forestHash(i, j, 878, seed);
-        const u = (i + 0.5 + (u8(h, 0) - 0.5) * 0.12) * 8,
-          v = (j + 0.5 + (u8(h, 8) - 0.5) * 0.12) * 8;
-        const x = ca * u - sa * v,
-          y = sa * u + ca * v,
-          dx = x - view.x,
+        const { x, y, radius, height, h, h2 } = orchardTree(i, j, ca, sa, seed, tree);
+        const dx = x - view.x,
           dy = y - view.y;
         const d2 = dx * dx + dy * dy;
         if (area) {
@@ -518,11 +515,10 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         if (!inside(patch.poly, x, y) || patch.holes?.some(hole => inside(hole, x, y)) || occAt(x, y)?.[2] !== 4) continue;
         const di = clamp(Math.floor(((x - detail!.x) / detail!.width) * detail!.n), 0, detail!.n - 1),
           dj = clamp(Math.floor(((y - detail!.y) / detail!.width) * detail!.n), 0, detail!.n - 1);
-        const d = (dj * detail!.n + di) * 4,
-          radius = 2.3 + 0.4 * u8(h, 16),
-          height = 6 + 1.2 * u8(h2, 16);
-        const a = 0.5 * Math.atan2((detail!.rgba[d + 2] / 255) * 2 - 1, (detail!.rgba[d + 1] / 255) * 2 - 1);
-        if (Math.cos(a) * ca + Math.sin(a) * sa <= 0.9999 || (detail!.rgba[d + 3] / 255) * 6 <= radius * 1.2) continue;
+        const d = (dj * detail!.n + di) * 4;
+        // The texel must hold this parcel's frame (a neighbour holding has its own), and the crown clear its limit.
+        const [ta, tb] = rowAxisOfBytes(detail!.rgba[d + 1], detail!.rgba[d + 2]);
+        if (ta * ca + tb * sa <= 0.9999 || !orchardClears(detail!.rgba[d + 3] / 255, radius)) continue;
         if (clearingRoom && !clearingRoom.keeps(x, y, radius)) continue;
         if (heightGate(fieldAt(x, y)?.height ?? 0) <= 0.5 || inputs.water(x, y) >= 0.05) continue;
         const z = inputs.height(x, y);
