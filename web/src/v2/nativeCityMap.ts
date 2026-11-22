@@ -392,7 +392,7 @@ export function createNativeCityMap(world: World, onInvalidate: (kind: NativeCit
     try {
       ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
       // Activity / node installations: flat ground under every building.
-      if (buildingsVisible && appearance.composition.recipe.ground.look !== 'atlas') drawInstallations(ctx, sites, viewport, mpp, palette !== 'parchment' && palette !== 'ink');
+      if (buildingsVisible && appearance.composition.recipe.ground.look !== 'atlas' && appearance.composition.recipe.ground.look !== 'white') drawInstallations(ctx, sites, viewport, mpp, palette !== 'parchment' && palette !== 'ink');
       if (!reason) {
         if (!prepareGl()) reason = gl?.unavailable !== false ? 'gl-unavailable' : 'gl-not-ready';
         else {

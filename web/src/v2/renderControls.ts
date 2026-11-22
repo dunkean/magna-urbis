@@ -11,7 +11,7 @@ import { mountParameterForm, readSettingPath, writeSettingPath, type ParameterFi
 import { mountRenderSettingsPanel, mountRenderColorControls, splitSectionLevels, type RenderSection, type SectionLevels } from '../ui/renderSettingsPanel';
 import { styleTraits, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import { paletteColors, type RenderColorKey } from '../render/customColors';
-import { GROUND_VARIANTS, type CompositionRecipe } from '../render/composition';
+import { GROUND_VARIANTS, TOWN_PLAN_LAYERS, townPlanSwitches, type CompositionRecipe } from '../render/composition';
 import {
   compositionMessages,
   advancedFields,
@@ -94,7 +94,7 @@ export function renderControlValues(settings: V2Settings, world?: World): V2Appe
 }
 /** The recipe the panel shows: the saved one, or the one `resolveSettingsAppearance` falls back to. */
 export function currentComposition(settings: V2Settings, world?: World): CompositionRecipe {
-  return renderControlValues(settings, world).composition!;
+  return resolveSettingsAppearance(settings, world, 'view2d').composition.recipe;
 }
 /** A selected preset alone is unchanged. Compare the advanced display values with those the same recipe inherits. */
 export function appearanceCustomized(settings: V2Settings, world?: World): boolean {
@@ -288,6 +288,12 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
     // The variant row lists the variants of the chosen look and disappears when there is only one.
     for (const option of Array.from(variantSelect.options)) option.hidden = option.disabled = !variants.includes(option.value as TerrainStyle);
     variantField.hidden = variants.length <= 1;
+    // Town plan switches only where the ground can draw them.
+    const offered = townPlanSwitches(a.composition!.ground.look);
+    for (const layer of TOWN_PLAN_LAYERS) {
+      const field = fieldOf(`composition.buildings.${layer}`);
+      if (field) field.hidden = !offered.includes(layer);
+    }
     const resolved = resolveSettingsAppearance(settings, world, bindings.getTarget?.() ?? 'view2d');
     showIncompatibilities(resolved);
     showLimitations(resolved);

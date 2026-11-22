@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Add the White map style for studying town plans: a white ground with relief shading, grey building footprints, roads, town walls and flat water, without land use, vegetation, textures or contour lines.
+- Show each town layer on its own from the map toolbar: roads, quarters, blocks, parcels and houses, to inspect the street network, blocks or lots without the houses. Satellite styles keep their towns free of plan graphics.
 - Keep generating maps and background towns while the browser tab is hidden or minimised; the map is drawn when the tab is shown again.
 - Keep the houses and 3D trees already built when switching to a map style that draws them the same way, instead of rebuilding them.
 - Town warnings are one short line each, in English or French.

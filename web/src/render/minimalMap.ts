@@ -1,7 +1,7 @@
 /** Retained, bounded-cost Canvas 2D basemap. Data in, paths and pixels out; no page or GPU dependencies. */
 import { PALETTES } from './styles';
 import { viewRect, type View, type Rect4 } from './view';
-import type { CompositionRecipe } from './composition';
+import type { CompositionRecipe, TownPlan } from './composition';
 import type { ExportLayers } from './exportLayers';
 import type { LandKind } from '../gen/types';
 export { minimalContours } from './minimalContours';
@@ -191,6 +191,8 @@ export function paintMinimalMap(
     height: number;
     dpr: number;
     recipe: CompositionRecipe;
+    /** The town plan layers shown (composition `townPlanOf`); absent: blocks under shown houses only. */
+    plan?: Pick<TownPlan, 'districts' | 'blocks'>;
     places: readonly MinimalPlace[];
     textLayout: MinimalTextLayout;
     layoutText?: boolean;
@@ -268,7 +270,8 @@ export function paintMinimalMap(
     stroke('water', palette.waterEdge, 1, 0.1, 60);
     fill('river', palette.riverFill);
   }
-  if (recipe.buildings.visible && layers.city !== false) fill('block', palette.urban.yard);
+  const plan = options.plan ?? { districts: false, blocks: recipe.buildings.visible };
+  if (plan.blocks && layers.city !== false) fill('block', palette.urban.yard);
   const localAlpha = fade((scale * 8 - 1) / 0.8);
   if (recipe.networks.roads.visible) {
     if (layers.roads !== false) {
@@ -294,6 +297,11 @@ export function paintMinimalMap(
     fill('landmark', palette.urban.landmark);
     stroke('landmark', palette.urban.landmarkEdge, 0.8, 0.1, 10);
     stroke('wall', palette.urban.wall, 1.5, 1, 7);
+  }
+  if (plan.districts && layers.city !== false) {
+    ctx.setLineDash([4 / scale, 3 / scale]);
+    stroke('quarter', palette.inkSoft, 1.2, 0.2, 12, 0.8);
+    ctx.setLineDash([]);
   }
   if (recipe.networks.roads.visible && layers.streets !== false) {
     fill('bridge', palette.roadFill);

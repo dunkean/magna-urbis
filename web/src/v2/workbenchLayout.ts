@@ -33,6 +33,7 @@ registerMessages({
   'Black and white': { en: 'Black and white', fr: 'Noir et blanc' },
   Coloured: { en: 'Coloured', fr: 'Coloré' },
   Textured: { en: 'Textured', fr: 'Texturé' },
+  'Town layers': { en: 'Town layers', fr: 'Couches de la ville' },
 });
 
 onLanguageChange(() => document.querySelectorAll<HTMLOptGroupElement>('optgroup[data-culture-group]').forEach(group => (group.label = translate(group.dataset.cultureGroup!))));
@@ -222,7 +223,7 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     if (quick) {
       for (const field of Array.from(quick.querySelectorAll<HTMLElement>('.parameter-field'))) {
         const path = field.querySelector<HTMLElement>('[data-setting-path]')?.dataset.settingPath;
-        if (!['appearance.composition.ground.contours', 'appearance.composition.networks.roads.visible', 'appearance.composition.text.visible'].includes(path ?? '')) row.querySelector('.stage-body')!.prepend(field);
+        if (!['appearance.composition.ground.contours', 'appearance.composition.text.visible'].includes(path ?? '')) row.querySelector('.stage-body')!.prepend(field);
       }
       const views = quick.querySelector<HTMLElement>('.icon-segments');
       if (views) views.remove();
@@ -230,11 +231,17 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     }
     mapAdvanced.grid.append(row);
   }
-  const buildings = $<HTMLElement>('[data-setting-path="appearance.composition.buildings.visible"]').closest<HTMLElement>('.parameter-field')!,
-    roofs = $<HTMLSelectElement>('#roof-display').closest<HTMLElement>('.parameter-field')!;
+  // Town layers, each its own switch (visibility only): roads, quarters, blocks, parcels, houses; then the roofs.
+  const fieldAt = (path: string) => $<HTMLElement>(`[data-setting-path="appearance.composition.${path}"]`).closest<HTMLElement>('.parameter-field')!;
+  const townLayers = document.createElement('div');
+  townLayers.className = 'town-layers';
+  townLayers.setAttribute('role', 'group');
+  townLayers.dataset.i18nAriaLabel = 'Town layers';
+  townLayers.setAttribute('aria-label', translate('Town layers'));
+  townLayers.append(...['networks.roads.visible', 'buildings.districts', 'buildings.blocks', 'buildings.parcels', 'buildings.visible'].map(fieldAt));
   const sharedBuildings = document.createElement('div');
   sharedBuildings.className = 'stage-quick';
-  sharedBuildings.append(buildings, roofs);
+  sharedBuildings.append(townLayers, $<HTMLSelectElement>('#roof-display').closest<HTMLElement>('.parameter-field')!);
   $('.view-strip').insertBefore(sharedBuildings, mapAdvanced.button);
   const texture = $<HTMLElement>('[data-setting-path="appearance.textured"]').closest<HTMLElement>('.parameter-field')!;
   mapAdvanced.grid.prepend(texture);

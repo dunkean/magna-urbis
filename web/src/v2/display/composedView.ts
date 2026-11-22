@@ -606,7 +606,8 @@ export class ComposedView {
     this.exactPlan = exactFrom === 'city' || exactFrom === 'overlay';
     if (this.volumeBuildings && exactFrom === 'overlay' && cityOn && live.hasLayer('city')) {
       const ready = live.layerReady('city', view, w, h, ratio);
-      if (ready || live.layerPending('city')) {
+      // Its plan stands for the exact one, but for the quarter outlines that only the Canvas town draws.
+      if ((ready && !this.map.resolved?.city.layers.quarters) || live.layerPending('city')) {
         this.exactPlan = false;
         if (!ready) this.awaited ??= 'city';
       }

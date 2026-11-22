@@ -3,9 +3,9 @@
   "version": 1,
   "paletteSource": "web/src/render/styles.ts",
   "sourceFilesSha256": {
-    "web/src/render/styles.ts": "52a9fa8db83675877f2bc12e10a4551a178a8ce7d5a2b4b809eb06c4f47291e6",
-    "web/src/render/waterStyle.ts": "002c3ab51c8aec7b7a7c5aa79b4129084fd90def4389106b3d2eeca93ec95bdf",
-    "web/src/render/terrainStyle.ts": "8bea6e0959819185e9e3107dde7fcb73fcb930f2aa75b5e42adb8cc82f704e8d"
+    "web/src/render/styles.ts": "a29152ea4f0e787b633520856eefd0970f709ec4fe80d16e4e7de77929398fc7",
+    "web/src/render/waterStyle.ts": "1acbd9730ad38970e8ca8243f63fe67b3a8049c2a8f24f40c5cbdc14c43244ce",
+    "web/src/render/terrainStyle.ts": "caba0071fefd9b266f02556f5e39b0705cdedf9edfa0288f1c22df1e27a804c5"
   },
   "palettes": {
     "minimal": {
@@ -120,11 +120,11 @@
       "urban": {
         "street": "#ffffff",
         "streetEdge": "#cfc8bb",
-        "yard": "#ebe5da",
+        "yard": "#eee6d8",
         "garden": "#d3cf98",
         "gardenInk": "#6f7a42",
-        "mass": "#cbbba8",
-        "massEdge": "#a8957f",
+        "mass": "#cdb99b",
+        "massEdge": "#725c47",
         "massEdgeW": 0.3,
         "plotLine": "#5a4530",
         "plotAlpha": 0.45,
@@ -138,8 +138,8 @@
         "towerScale": 1,
         "blockEdge": "#5a4530",
         "blockEdgeW": 0.4,
-        "landmark": "#9c8a76",
-        "landmarkEdge": "#a8957f",
+        "landmark": "#b28755",
+        "landmarkEdge": "#624b35",
         "shadow": null,
         "lit": null
       },
@@ -1446,6 +1446,161 @@
       "waterAboveLand": true,
       "furlongAlpha": 0.35
     },
+    "white": {
+      "name": "white",
+      "label": "White",
+      "paper": "#ffffff",
+      "ink": "#222222",
+      "inkSoft": "#6b6b6b",
+      "hypso": [
+        [
+          0,
+          "#ffffff"
+        ],
+        [
+          1,
+          "#ffffff"
+        ]
+      ],
+      "shade": 0.8,
+      "hatch": 0,
+      "grain": 0,
+      "seaFill": "#dbe7ef",
+      "water": {
+        "stops": [
+          [
+            0,
+            "#7d9fb8"
+          ],
+          [
+            0.12,
+            "#dbe7ef"
+          ],
+          [
+            1,
+            "#dbe7ef"
+          ]
+        ],
+        "bandFraction": 0.016
+      },
+      "lakeFill": "#dbe7ef",
+      "waterEdge": "#7d9fb8",
+      "ripple": "#ffffff",
+      "rippleOpacity": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "riverFill": "#7d9fb8",
+      "riverEdge": "#7d9fb8",
+      "waterLines": null,
+      "contour": "#9a9a9a",
+      "contourOpacity": 0.4,
+      "contourIndexW": 1.9,
+      "frame": "#222222",
+      "frameKind": "none",
+      "accent": "#222222",
+      "grid": null,
+      "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
+      "land": {
+        "field": "#ffffff",
+        "meadow": "#ffffff",
+        "pasture": "#ffffff",
+        "forest": "#ffffff",
+        "orchard": "#ffffff",
+        "garden": "#ffffff",
+        "marsh": "#ffffff",
+        "commons": "#ffffff"
+      },
+      "landOpacity": 0,
+      "landBlend": "multiply",
+      "tex": {
+        "field": false,
+        "meadow": false,
+        "pasture": false,
+        "forest": false,
+        "orchard": false,
+        "garden": false,
+        "marsh": false,
+        "commons": false
+      },
+      "treeShape": "blob",
+      "stripA": "#e8d9a4",
+      "stripB": "#d9c488",
+      "stripAlpha": [
+        0,
+        0
+      ],
+      "furrow": "#8d7443",
+      "furrowAlpha": 0,
+      "hedge": "#5f6d3d",
+      "hedgeOn": false,
+      "treeFill": "#98a57b",
+      "treeInk": "#596144",
+      "grass": "#5f7a3c",
+      "reed": "#4f7a72",
+      "orchardDot": "#55703a",
+      "roadEdge": "#5a5a5a",
+      "roadFill": "#ffffff",
+      "trackFill": "#8c8c8c",
+      "rural": {
+        "track": 0.55,
+        "way": 0.3,
+        "headland": 0
+      },
+      "bridgeDeck": "#ffffff",
+      "bridgeInk": "#333333",
+      "farmRoof": "#4d4d4d",
+      "farmInk": "#1f1f1f",
+      "farmYard": "#ffffff",
+      "marker": "#b3261e",
+      "urban": {
+        "street": "#ffffff",
+        "streetEdge": "#7a7a7a",
+        "yard": "#ffffff",
+        "garden": "#ffffff",
+        "gardenInk": "#9a9a9a",
+        "mass": "#4d4d4d",
+        "massEdge": "#1f1f1f",
+        "massEdgeW": 0.3,
+        "plotLine": "#9a9a9a",
+        "plotAlpha": 0.3,
+        "plotLightAlpha": 0,
+        "plotW": 0.12,
+        "place": "#ffffff",
+        "placeInk": "#b4b4b4",
+        "wall": "#262626",
+        "wallFill": "#262626",
+        "wallScale": 0.85,
+        "towerScale": 1,
+        "blockEdge": "#5a5a5a",
+        "blockEdgeW": 0.38,
+        "landmark": "#333333",
+        "landmarkEdge": "#1a1a1a",
+        "shadow": null,
+        "lit": null
+      },
+      "lab": {
+        "water": "#3f6a88",
+        "wood": "#555555",
+        "town": "#151515",
+        "halo": "#ffffff",
+        "haloOp": 0.85,
+        "areaCaps": "upper",
+        "waterItalic": true
+      },
+      "cart": {
+        "fill": "#ffffff",
+        "stroke": "#222222",
+        "accent": "#222222",
+        "ornate": false,
+        "op": 0.96
+      },
+      "forestTint": 0,
+      "furlongAlpha": 0,
+      "waterAboveLand": true
+    },
     "night": {
       "name": "night",
       "label": "Night",
@@ -1728,11 +1883,11 @@
         "urban": {
           "street": "#ffffff",
           "streetEdge": "#cfc8bb",
-          "yard": "#ebe5da",
+          "yard": "#eee6d8",
           "garden": "#d3cf98",
           "gardenInk": "#6f7a42",
-          "mass": "#cbbba8",
-          "massEdge": "#a8957f",
+          "mass": "#cdb99b",
+          "massEdge": "#725c47",
           "massEdgeW": 0.3,
           "plotLine": "#5a4530",
           "plotAlpha": 0.45,
@@ -1746,8 +1901,8 @@
           "towerScale": 1,
           "blockEdge": "#5a4530",
           "blockEdgeW": 0.4,
-          "landmark": "#9c8a76",
-          "landmarkEdge": "#a8957f",
+          "landmark": "#b28755",
+          "landmarkEdge": "#624b35",
           "shadow": null,
           "lit": null
         },
@@ -3355,6 +3510,198 @@
           [
             1,
             "#a9d9ef"
+          ]
+        ],
+        "bandFraction": 0.016
+      }
+    },
+    "white": {
+      "id": "white",
+      "label": "White",
+      "palette": {
+        "name": "white",
+        "label": "White",
+        "paper": "#ffffff",
+        "ink": "#222222",
+        "inkSoft": "#6b6b6b",
+        "hypso": [
+          [
+            0,
+            "#ffffff"
+          ],
+          [
+            1,
+            "#ffffff"
+          ]
+        ],
+        "shade": 0.8,
+        "hatch": 0,
+        "grain": 0,
+        "seaFill": "#dbe7ef",
+        "water": {
+          "stops": [
+            [
+              0,
+              "#7d9fb8"
+            ],
+            [
+              0.12,
+              "#dbe7ef"
+            ],
+            [
+              1,
+              "#dbe7ef"
+            ]
+          ],
+          "bandFraction": 0.016
+        },
+        "lakeFill": "#dbe7ef",
+        "waterEdge": "#7d9fb8",
+        "ripple": "#ffffff",
+        "rippleOpacity": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "riverFill": "#7d9fb8",
+        "riverEdge": "#7d9fb8",
+        "waterLines": null,
+        "contour": "#9a9a9a",
+        "contourOpacity": 0.4,
+        "contourIndexW": 1.9,
+        "frame": "#222222",
+        "frameKind": "none",
+        "accent": "#222222",
+        "grid": null,
+        "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
+        "land": {
+          "field": "#ffffff",
+          "meadow": "#ffffff",
+          "pasture": "#ffffff",
+          "forest": "#ffffff",
+          "orchard": "#ffffff",
+          "garden": "#ffffff",
+          "marsh": "#ffffff",
+          "commons": "#ffffff"
+        },
+        "landOpacity": 0,
+        "landBlend": "multiply",
+        "tex": {
+          "field": false,
+          "meadow": false,
+          "pasture": false,
+          "forest": false,
+          "orchard": false,
+          "garden": false,
+          "marsh": false,
+          "commons": false
+        },
+        "treeShape": "blob",
+        "stripA": "#e8d9a4",
+        "stripB": "#d9c488",
+        "stripAlpha": [
+          0,
+          0
+        ],
+        "furrow": "#8d7443",
+        "furrowAlpha": 0,
+        "hedge": "#5f6d3d",
+        "hedgeOn": false,
+        "treeFill": "#98a57b",
+        "treeInk": "#596144",
+        "grass": "#5f7a3c",
+        "reed": "#4f7a72",
+        "orchardDot": "#55703a",
+        "roadEdge": "#5a5a5a",
+        "roadFill": "#ffffff",
+        "trackFill": "#8c8c8c",
+        "rural": {
+          "track": 0.55,
+          "way": 0.3,
+          "headland": 0
+        },
+        "bridgeDeck": "#ffffff",
+        "bridgeInk": "#333333",
+        "farmRoof": "#4d4d4d",
+        "farmInk": "#1f1f1f",
+        "farmYard": "#ffffff",
+        "marker": "#b3261e",
+        "urban": {
+          "street": "#ffffff",
+          "streetEdge": "#7a7a7a",
+          "yard": "#ffffff",
+          "garden": "#ffffff",
+          "gardenInk": "#9a9a9a",
+          "mass": "#4d4d4d",
+          "massEdge": "#1f1f1f",
+          "massEdgeW": 0.3,
+          "plotLine": "#9a9a9a",
+          "plotAlpha": 0.3,
+          "plotLightAlpha": 0,
+          "plotW": 0.12,
+          "place": "#ffffff",
+          "placeInk": "#b4b4b4",
+          "wall": "#262626",
+          "wallFill": "#262626",
+          "wallScale": 0.85,
+          "towerScale": 1,
+          "blockEdge": "#5a5a5a",
+          "blockEdgeW": 0.38,
+          "landmark": "#333333",
+          "landmarkEdge": "#1a1a1a",
+          "shadow": null,
+          "lit": null
+        },
+        "lab": {
+          "water": "#3f6a88",
+          "wood": "#555555",
+          "town": "#151515",
+          "halo": "#ffffff",
+          "haloOp": 0.85,
+          "areaCaps": "upper",
+          "waterItalic": true
+        },
+        "cart": {
+          "fill": "#ffffff",
+          "stroke": "#222222",
+          "accent": "#222222",
+          "ornate": false,
+          "op": 0.96
+        },
+        "forestTint": 0,
+        "furlongAlpha": 0,
+        "waterAboveLand": true
+      },
+      "traits": {
+        "family": "map",
+        "ground3d": false,
+        "neuralEarth": false,
+        "satelliteVariant": 0,
+        "forestBrushes": false,
+        "waterAlwaysDrawn": false,
+        "physicalRiverWidth": false,
+        "seaInMaterial": false,
+        "customWaterColors": true,
+        "elevation": false,
+        "contours": true,
+        "customGroundColors": true,
+        "cartographicVegetation": true,
+        "paintedCityByDefault": false
+      },
+      "water": {
+        "stops": [
+          [
+            0,
+            "#7d9fb8"
+          ],
+          [
+            0.12,
+            "#dbe7ef"
+          ],
+          [
+            1,
+            "#dbe7ef"
           ]
         ],
         "bandFraction": 0.016

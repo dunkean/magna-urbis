@@ -33,7 +33,7 @@ function climatePalette(style: MapStyle | Palette, value?: string): Palette {
   const cached = key && CACHE.get(key);
   if (cached) return cached;
   if (isUnderdarkBiome(biome)) {
-    const mono = ['engraving', 'blueprint'].includes(base.name),
+    const mono = ['engraving', 'blueprint', 'white'].includes(base.name),
       night = base.name === 'night';
     const stone = night ? '#353344' : '#aaa3b1',
       damp = night ? '#3f4c4a' : '#909f99'; // damp: moss and fungal beds, not open water
@@ -99,7 +99,7 @@ function climatePalette(style: MapStyle | Palette, value?: string): Palette {
   }
   const dry = biome === 'desert',
     cold = biome === 'tundra';
-  const colorful = !['engraving', 'blueprint', 'night'].includes(base.name);
+  const colorful = !['engraving', 'blueprint', 'night', 'white'].includes(base.name);
   const tones = GROUND[biome],
     crops = CROPS[biome as keyof typeof CROPS];
   const pal: Palette = {

@@ -83,6 +83,7 @@ const STYLE_ENTRIES = [
   ['atlas', 'Atlas', 'Atlas'],
   ['cadastre', 'Cadastre', 'Cadastre'],
   ['topographic', 'Topographic', 'Topographique'],
+  ['white', 'White', 'Blanc'],
   ['satellite', 'Satellite', 'Satellite'],
   ['satellite-2', 'Painted satellite', 'Satellite peint'],
   ['parchment', 'Parchment', 'Parchemin'],
@@ -111,6 +112,7 @@ const styleFrench: Record<string, string> = {
   blueprint: 'Plan bleu',
   illuminated: 'Enluminure',
   topographic: 'Topographique',
+  white: 'Blanc',
   night: 'Nocturne',
   render3d: 'Render3D · Multi-échelle',
   'fantasy-ink': 'Fantasy · Encre N&B',
@@ -215,10 +217,14 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
     ]),
     // An absent class key means shown; a change moves only `keys.semantic`.
     ...LAND_KINDS.map(kind => ({ ...flag(`composition.landuse.classes.${kind}`, ...LAND_KIND_LABELS[kind]), defaultValue: true })),
-    flag('composition.networks.roads.visible', 'Show roads', 'Afficher les routes'),
+    flag('composition.networks.roads.visible', 'Roads', 'Routes'),
     number('composition.networks.roads.emphasis', 'Road emphasis', 'Présence des routes', 0.5, 1.5, 0.05),
     { ...flag('composition.networks.water.waves', 'Coastal swell and surf (satellite)', 'Houle et écume côtières (satellite)'), defaultValue: COAST_WAVES_DEFAULT },
-    flag('composition.buildings.visible', 'Show buildings', 'Afficher les bâtiments'),
+    // Town layers, each shown apart: roads, quarters, blocks, parcels, houses. Absent plan switches follow the ground look.
+    flag('composition.buildings.districts', 'Quarters', 'Quartiers'),
+    flag('composition.buildings.blocks', 'Blocks', 'Îlots'),
+    flag('composition.buildings.parcels', 'Parcels', 'Parcelles'),
+    flag('composition.buildings.visible', 'Houses', 'Maisons'),
     {
       ...choice(
         'composition.buildings.roof',
@@ -295,7 +301,7 @@ export const RENDER_COMPOSITION_ROWS: Record<RenderSection, readonly string[]> =
   ],
   roads: ['composition.networks.roads.visible', 'composition.networks.roads.emphasis'],
   water: ['composition.networks.water.waves'],
-  buildings: ['composition.buildings.visible', 'composition.buildings.roof', 'composition.buildings.look'],
+  buildings: ['composition.buildings.visible', 'composition.buildings.districts', 'composition.buildings.blocks', 'composition.buildings.parcels', 'composition.buildings.roof', 'composition.buildings.look'],
   text: [
     'composition.text.visible',
     'composition.text.amount',

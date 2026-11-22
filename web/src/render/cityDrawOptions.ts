@@ -28,7 +28,7 @@ export function volumeTownBuildings(a: ResolvedAppearance | undefined): boolean 
   // In the separate 3D camera, city.view selects the ground diagram underneath the standing houses.
   if (a.target !== 'view3d' && a.city.view !== 'buildings') return false;
   const ground = a.composition.recipe.ground.look;
-  return ground !== 'cadastre' && ground !== 'topographic' && ground !== 'minimal';
+  return ground !== 'cadastre' && ground !== 'topographic' && ground !== 'minimal' && ground !== 'white';
 }
 
 /** Survey plans retain their ink; V1 alone outlines the pans of a volume roof. */

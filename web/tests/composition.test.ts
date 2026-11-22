@@ -172,7 +172,7 @@ describe('render composition', () => {
     expect(resolve(c).composition.recipe.effects.ambience).toBe('night');
   });
   it('lists the styles, a cadastre default variant and validated global effects', () => {
-    expect(STYLE_IDS).toEqual(['minimal', 'atlas', 'cadastre', 'topographic', 'satellite', 'satellite-2', 'parchment', 'illustration']);
+    expect(STYLE_IDS).toEqual(['minimal', 'atlas', 'cadastre', 'topographic', 'white', 'satellite', 'satellite-2', 'parchment', 'illustration']);
     expect(GROUND_VARIANTS.cadastre[0]).toBe('cadastre');
     expect(presetComposition('cadastre').ground.variant).toBe('cadastre');
     expect(presetComposition('atlas').effects).toMatchObject({ ambience: 'day', season: 0.5, relief: true });

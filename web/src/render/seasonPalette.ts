@@ -167,7 +167,7 @@ export function applySeason(pal: Palette, s: SeasonPaint): Palette {
     reed: snowed(tinted(pal.reed, s.herb), 0.5),
   };
 }
-const MONOCHROME = new Set(['engraving', 'blueprint', 'night']);
+const MONOCHROME = new Set(['engraving', 'blueprint', 'night', 'white']);
 const cache = new WeakMap<Palette, Map<string, Palette>>();
 /** Terrain material ramps need the water tokens alone; biomePalette owns seasonal land. */
 export function seasonalWaterPalette(pal: Palette): Palette {

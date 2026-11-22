@@ -53,6 +53,7 @@ export function* minimalFeatures(world: World, scene: RenderScene): Generator<Mi
   for (const city of scene.cities) {
     for (const layout of city.layouts) {
       for (const block of layout.blocks) if (block.kind !== 'deleted') yield polygon('block', block.shape);
+      for (const quarter of layout.quarters) yield polygon('quarter', quarter.shape);
       for (const street of layout.streets) for (let i = 1; i < street.path.length; i++) yield { layer: street.rank <= 1 ? 'streetMajor' : 'streetMinor', points: [street.path[i - 1], street.path[i]] };
       for (const wall of layout.enclosures ?? []) yield { layer: 'wall', points: wall.path, closed: true };
       for (const waterway of layout.structure?.waterways ?? []) {
@@ -243,6 +244,7 @@ export class MinimalRenderer {
       height: h,
       dpr,
       recipe: this.resolved.composition.recipe,
+      plan: this.resolved.composition.buildings,
       places: this.places,
       textLayout: this.textLayout,
       layoutText,
@@ -282,6 +284,7 @@ export class MinimalRenderer {
         height: size,
         dpr: 1,
         recipe: this.resolved.composition.recipe,
+        plan: this.resolved.composition.buildings,
         places: this.places,
         textLayout: { labels: [] },
         relief: this.relief,

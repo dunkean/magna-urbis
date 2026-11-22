@@ -338,8 +338,15 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
   };
   const terrainColors = a?.colors && (Object.fromEntries(TERRAIN_COLOR_KEYS.map(token => [token, a.colors![token]])) as RenderColors);
   // The flat map styles own their building ink; material colours remain per house.
-  const flatBuildings = styleId === 'minimal' || styleId === 'cadastre' || styleId === 'topographic';
-  const houseColors = styleId === 'cadastre' ? { ...a?.colors, building: '#323232', buildingEdge: '#000000' } : styleId === 'topographic' ? { ...a?.colors, building: undefined, buildingEdge: '#262626' } : a?.colors;
+  const flatBuildings = styleId === 'minimal' || styleId === 'cadastre' || styleId === 'topographic' || styleId === 'white';
+  const houseColors =
+    styleId === 'cadastre'
+      ? { ...a?.colors, building: '#323232', buildingEdge: '#000000' }
+      : styleId === 'white'
+        ? { ...a?.colors, building: '#4d4d4d', buildingEdge: '#1f1f1f' }
+        : styleId === 'topographic'
+          ? { ...a?.colors, building: undefined, buildingEdge: '#262626' }
+          : a?.colors;
   const palette: PaletteComponent = { mapStyle, colors: houseColors, terrainColors, applicableColors: applicable(a?.colors, groundTraits) };
   const cartography: CartographyComponent = {
     landuseForestTone: composition.vegetation.forestTone,
@@ -480,7 +487,8 @@ function pick(colors: RenderColors, tokens: readonly string[]): unknown[] {
 /** The fully defaulted values as persisted-appearance shape (what the controls display). */
 export function resolvedValues(r: ResolvedAppearance): AppearanceInput {
   return {
-    composition: r.composition.recipe,
+    // The town plan switches show what is drawn: the recipe's choice, else the ground look's.
+    composition: { ...r.composition.recipe, buildings: { ...r.composition.recipe.buildings, districts: r.composition.buildings.districts, blocks: r.composition.buildings.blocks, parcels: r.composition.buildings.parcels } },
     style: r.palette.mapStyle,
     terrainStyle: r.styleId,
     renderer: r.path === 'composite' ? 'bench' : 'classic',

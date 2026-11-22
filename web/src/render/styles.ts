@@ -9,7 +9,7 @@
 import type { StyleName } from '../gen/options';
 import { waterRamp, type WaterStyle } from './waterStyle';
 
-export type MapStyle = StyleName | 'minimal' | 'watabou' | 'engraving' | 'cadastre' | 'blueprint' | 'illuminated' | 'topographic' | 'night';
+export type MapStyle = StyleName | 'minimal' | 'watabou' | 'engraving' | 'cadastre' | 'blueprint' | 'illuminated' | 'topographic' | 'white' | 'night';
 export type LandKindKey = 'field' | 'meadow' | 'pasture' | 'forest' | 'orchard' | 'garden' | 'marsh' | 'commons';
 export type FrameKind = 'double' | 'thin' | 'ticks' | 'blueprint' | 'illuminated' | 'none';
 
@@ -839,6 +839,87 @@ const topographic = derive('topographic', 'Topographic', {
   cart: { fill: '#fffdf6', stroke: '#262626', accent: '#3d9ac7', op: 0.96 },
 });
 
+/** White plan for studying towns: white paper under the hillshade alone, flat pale water, grey footprints and roads; no land use, textures or symbols. */
+const white = derive('white', 'White', {
+  paper: '#ffffff',
+  ink: '#222222',
+  inkSoft: '#6b6b6b',
+  hypso: [
+    [0, '#ffffff'],
+    [1, '#ffffff'],
+  ],
+  shade: 0.8,
+  hatch: 0,
+  grain: 0,
+  water: {
+    stops: [
+      [0, '#7d9fb8'],
+      [0.12, '#dbe7ef'],
+      [1, '#dbe7ef'],
+    ],
+    bandFraction: 0.016,
+  },
+  waterEdge: '#7d9fb8',
+  ripple: '#ffffff',
+  rippleOpacity: [0, 0, 0, 0],
+  riverEdge: '#7d9fb8',
+  waterLines: null,
+  contour: '#9a9a9a',
+  contourOpacity: 0.4,
+  frame: '#222222',
+  frameKind: 'none',
+  accent: '#222222',
+  grid: null,
+  fontFamily: SANS,
+  land: { field: '#ffffff', meadow: '#ffffff', pasture: '#ffffff', forest: '#ffffff', orchard: '#ffffff', garden: '#ffffff', marsh: '#ffffff', commons: '#ffffff' },
+  landOpacity: 0,
+  forestTint: 0,
+  furlongAlpha: 0,
+  waterAboveLand: true,
+  tex: Object.fromEntries(Object.keys(ALL_TEX).map(key => [key, false])) as Palette['tex'],
+  stripAlpha: [0, 0],
+  furrowAlpha: 0,
+  hedgeOn: false,
+  roadEdge: '#5a5a5a',
+  roadFill: '#ffffff',
+  trackFill: '#8c8c8c',
+  rural: { track: 0.55, way: 0.3, headland: 0 },
+  bridgeDeck: '#ffffff',
+  bridgeInk: '#333333',
+  farmRoof: '#4d4d4d',
+  farmInk: '#1f1f1f',
+  farmYard: '#ffffff',
+  marker: '#b3261e',
+  urban: {
+    street: '#ffffff',
+    streetEdge: '#7a7a7a',
+    yard: '#ffffff',
+    garden: '#ffffff',
+    gardenInk: '#9a9a9a',
+    mass: '#4d4d4d',
+    massEdge: '#1f1f1f',
+    massEdgeW: 0.3,
+    plotLine: '#9a9a9a',
+    plotAlpha: 0.3,
+    plotLightAlpha: 0,
+    plotW: 0.12,
+    place: '#ffffff',
+    placeInk: '#b4b4b4',
+    wall: '#262626',
+    wallFill: '#262626',
+    wallScale: 0.85,
+    towerScale: 1,
+    blockEdge: '#5a5a5a',
+    blockEdgeW: 0.38,
+    landmark: '#333333',
+    landmarkEdge: '#1a1a1a',
+    shadow: null,
+    lit: null,
+  },
+  lab: { water: '#3f6a88', wood: '#555555', town: '#151515', halo: '#ffffff', haloOp: 0.85, areaCaps: 'upper', waterItalic: true },
+  cart: { fill: '#ffffff', stroke: '#222222', accent: '#222222', op: 0.96 },
+});
+
 /** Night: dark navy ground, dark roofs with warm deterministic lit windows, faintly lit streets, black-blue water. */
 const night = derive('night', 'Night', {
   paper: '#0c111f',
@@ -970,7 +1051,7 @@ const minimal = derive('minimal', 'Minimal', {
 // Rivers are slightly brighter than the shore; the generic derivation uses the shore token.
 minimal.riverFill = '#a9cde2';
 
-export const PALETTES: Record<MapStyle, Palette> = { minimal, parchment: PARCHMENT, atlas, watabou, engraving, cadastre, blueprint, illuminated, topographic, night };
+export const PALETTES: Record<MapStyle, Palette> = { minimal, parchment: PARCHMENT, atlas, watabou, engraving, cadastre, blueprint, illuminated, topographic, white, night };
 
 /** Display order for the UI. */
 export const STYLE_LIST: { id: MapStyle; label: string }[] = (Object.values(PALETTES) as Palette[]).map(p => ({ id: p.name, label: p.label }));

@@ -496,8 +496,9 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       return !why;
     },
     restExact(frame) {
-      // The volume scene uses this GPU street and parcel plan in both cameras. Its drawn plan is authoritative.
-      if (planOnly) return !!content && !notReady(frame);
+      // The volume scene uses this GPU street and parcel plan in both cameras. Its drawn plan is authoritative, but for
+      // the quarter outlines, which only the Canvas town draws.
+      if (planOnly) return !!content && !notReady(frame) && !(lookNow().base.layers as CityLayers).quarters;
       // Strict: any element the Canvas town would paint differently keeps its repaint at rest. Read by the probes:
       // what is still missing for this frame.
       const held = content,

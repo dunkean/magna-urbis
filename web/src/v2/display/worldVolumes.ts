@@ -206,7 +206,7 @@ export class WorldVolumes {
     // The appearance of the volumes is the separate 3D view's; the ground they stand on is the look on screen.
     const r = v2Resolved3d(settings, world),
       ground = v2Terrain3dGround(world, settings, resolved.traits.ground3d ? (resolved.styleId as City3dGround) : 'map'),
-      buildingsOnly = ['atlas', 'cadastre', 'topographic'].includes(r.composition.recipe.ground.look),
+      buildingsOnly = ['atlas', 'cadastre', 'topographic', 'white'].includes(r.composition.recipe.ground.look),
       shown = r.city.buildingStyle !== 'silhouette' && r.composition.buildings.visible && r.composition.buildings.meshes !== 'none';
     this.yardMeshes = !!city && shown && !buildingsOnly && r.city.layers.lotEnclosures !== false;
     this.treesOn = r.city.trees3d;

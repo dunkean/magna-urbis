@@ -27,10 +27,10 @@ import type { Options } from '../../src/gen/types';
 import { city3dScene } from '../../src/render/city3dMeshes';
 import { pieceShadow, pieceShadows, pieceVolumes, planRoof, volumeRoof, type MassingPiece } from '../../src/render/cityMassing';
 import { buildingRayDistance, eachBuildingTriangle, type BuildingTriangle } from '../../src/render/urbanBuildingGeometry';
-import { PRESET_IDS, isHiddenPreset, styleAvailableOnPage, presetComposition, validateComposition, withCompositionQuality, resolveComposition, DEFAULT_CROWN_DETAIL } from '../../src/render/composition';
+import { PRESET_IDS, isHiddenPreset, styleAvailableOnPage, presetComposition, validateComposition, withCompositionQuality, resolveComposition, townPlanSwitches, DEFAULT_CROWN_DETAIL } from '../../src/render/composition';
 import { crownClumpMode } from '../../src/render/crownClumpAtlas';
 import { styleTraits } from '../../src/render/terrainStyle';
-import { PRESET_OPTIONS, RENDER_SECTION_FIELDS, compositionMessages, renderControlFields } from '../../src/ui/compositionControls';
+import { PRESET_OPTIONS, RENDER_COMPOSITION_ROWS, RENDER_SECTION_FIELDS, compositionMessages, renderControlFields } from '../../src/ui/compositionControls';
 import { passKeys } from '../../src/v2/passes/pass';
 import { FallbackGround } from '../../src/ui/terrain/fallbackGround';
 import { terrain3dPixelRatio, TERRAIN_3D_MOVING_PIXELS, TERRAIN_3D_FRAME_PIXELS } from '../../src/ui/terrain3dResolution';
@@ -630,8 +630,8 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('uses the same unoutlined roof appearance for volume recipes in plan, tilt and export', () => {
-    for (const style of ['satellite', 'satellite-light', 'satellite-2', 'parchment', 'atlas', 'cadastre', 'topographic', 'minimal'] as const) {
-      const smooth = !['cadastre', 'topographic', 'minimal'].includes(style);
+    for (const style of ['satellite', 'satellite-light', 'satellite-2', 'parchment', 'atlas', 'cadastre', 'topographic', 'white', 'minimal'] as const) {
+      const smooth = !['cadastre', 'topographic', 'white', 'minimal'].includes(style);
       for (const target of ['view2d', 'view3d', 'export'] as const) {
         const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
         expect(cityBuildingAppearance(r).smoothRoofs, `${style} ${target}`).toBe(smooth);
@@ -674,7 +674,7 @@ describe('V2 and City Bench stay in sync', () => {
     for (const style of PRESET_IDS)
       for (const target of ['view2d', 'view3d'] as const) {
         const r = resolveAppearance({ style: 'parchment', composition: presetComposition(style) }, { mapStyle: 'parchment' }, { nativeCities: true }, target);
-        const fences = r.composition.recipe.ground.look !== 'atlas' && r.composition.buildings.visible;
+        const fences = r.composition.recipe.ground.look !== 'atlas' && r.composition.recipe.ground.look !== 'white' && r.composition.buildings.visible;
         expect(r.city.layers.lotEnclosures, `${style} ${target}`).toBe(fences);
         expect(city3dPlanOptions(r).layers.lotEnclosures, `${style} ${target} 3D`).toBe(fences);
       }
@@ -715,6 +715,23 @@ describe('V2 and City Bench stay in sync', () => {
     // Dashed refused-lot outlines are plan lines in both draw paths.
     expect(read('../../src/render/city/canvas/town.ts')).toContain('layers.planLines !== false && o.refusedParcels?.size');
     expect(read('../../src/render/city/gl/styleTables.ts')).toContain("layers.planLines !== false && atLeast(lod, 'near') && s.refusedParcels?.size");
+  });
+
+  it('shows the town plan switches as city layers on both pages, without touching roads or houses', () => {
+    // Both pages mount the switches from the shared buildings rows and resolve them with the shared resolver.
+    expect(RENDER_COMPOSITION_ROWS.buildings).toEqual(expect.arrayContaining(['composition.buildings.districts', 'composition.buildings.blocks', 'composition.buildings.parcels']));
+    expect(read('../../src/ui/benchRenderSettings.ts')).toContain('mountCompositionSection(level, key, mountIn, text)');
+    const base = presetComposition('parchment'),
+      at = (buildings: object) => resolveAppearance({ style: 'parchment', composition: { ...base, buildings: { ...base.buildings, ...buildings } } }, { mapStyle: 'parchment' }, { nativeCities: true }, 'view2d');
+    const plain = at({});
+    expect(plain.city.layers).toMatchObject({ quarters: false, blocks: true, parcels: false, parcelOverlay: false });
+    const inspected = at({ districts: true, blocks: false, parcels: true, visible: false });
+    expect(inspected.city.layers).toMatchObject({ quarters: true, blocks: false, parcels: true, parcelOverlay: true, streets: true });
+    expect(inspected.composition.buildings).toMatchObject({ districts: true, blocks: false, parcels: true, visible: false });
+    expect(inspected.keys.roads).toBe(plain.keys.roads);
+    // Plan-less grounds offer no switch; Minimal has no lots.
+    for (const look of ['satellite', 'satellite-2', 'atlas'] as const) expect(townPlanSwitches(look), look).toEqual([]);
+    expect(townPlanSwitches('minimal')).toEqual(['districts', 'blocks']);
   });
 
   it('builds the drawCity options of both pages with the shared function only', () => {
