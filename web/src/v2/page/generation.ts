@@ -19,6 +19,7 @@ import { applyLabelEdits } from '../mapLabels';
 import { migrateUrbanSeeds } from '../urbanSeeds';
 import { scheduleAutosave } from '../autosave';
 import { $ } from './dom';
+import { displayedOrHidden } from './visibility';
 
 export function createGenerationActions(state: PageState, actions: PageActions) {
   function smallPlaceRecipeKey(): string {
@@ -83,13 +84,13 @@ export function createGenerationActions(state: PageState, actions: PageActions) 
       $<HTMLButtonElement>('#cancel-job').disabled = true;
       actions.log('Preparing the scene and drawing in the render worker…');
       const showStart = performance.now();
-      await state.client.show(state.world, action === 'town' || action === 'towns');
+      await displayedOrHidden(state.client.show(state.world, action === 'town' || action === 'towns'));
       state.canvas.hidden = false;
       $('#empty-map').hidden = true;
       actions.updateWorld();
       // The town-name spinners complement this card: generation owns it until the new picture is presented.
-      await actions.refresh3dWorld();
-      await state.client.displaySettled();
+      await displayedOrHidden(actions.refresh3dWorld());
+      await displayedOrHidden(state.client.displaySettled());
       performance.measure('v2:show', { start: showStart });
       if (['region', 'settlements'].includes(action)) actions.selectTab('settlements');
       else if (['all', 'towns'].includes(action)) actions.selectTab('cities');
@@ -175,12 +176,14 @@ export function mountBackgroundPlaces(state: PageState, actions: PageActions): v
       actions.log(`Built in the background: ${keys.map(key => settlementDisplayName(state.world!, key, state.settings) ?? key).join(', ')}`);
       // Same world swap as after a targeted build: the place now has its `urban` layer and detail 'eager'.
       for (const key of keys) window.dispatchEvent(new CustomEvent('v2-place-built', { detail: { key, world: state.world } }));
-      await state.client.show(state.world, true);
+      await displayedOrHidden(state.client.show(state.world, true));
       actions.updateWorld(true);
       scheduleAutosave();
     },
     idle: async () => {
       for (;;) {
+        // Nobody gestures in a hidden tab, and Chrome throttles its idle callbacks: the next batch starts at once.
+        if (!state.busy && document.hidden) return;
         const quiet = performance.now() - state.lastGesture;
         if (state.busy || quiet < GESTURE_QUIET_MS) {
           await new Promise(resolve => setTimeout(resolve, state.busy ? 250 : GESTURE_QUIET_MS - quiet));

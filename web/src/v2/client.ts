@@ -102,9 +102,11 @@ export class StudioClient {
     request?.mark('fields-ready');
     // Material setters queue a draw; status from the preceding style is not its readiness.
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    const until = performance.now() + 90_000;
+    let until = performance.now() + 90_000;
     for (;;) {
       if (!view.active || request !== this.readiness) return;
+      // A hidden tab draws no frame: its time does not count against the drawing.
+      if (document.hidden) until = performance.now() + 90_000;
       const stats = view.stats(),
         lod = stats.lod;
       if (stats.programsReady) request?.mark('programs-ready');
