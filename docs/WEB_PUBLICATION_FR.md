@@ -6,6 +6,14 @@ Les sources des deux versions restent dans `dunkean/magna-urbis`.
 | --- | --- | --- | --- |
 | V2 | https://magna-urbis.org/ | `dunkean/magna-urbis` | `gh-pages` |
 | V1 | https://v1.magna-urbis.org/ | `dunkean/magna-urbis-v1` | `gh-pages` |
+| Expérimentale | https://magna-urbis.org/next/ | `dunkean/magna-urbis` | `gh-pages`, dossier `next/` |
+
+La version expérimentale est l’application V2 construite depuis le `HEAD`
+committé du checkout où l’on lance la commande, quelle que soit sa branche :
+`node scripts/deploy_site.mjs next`. Elle ne remplace que le dossier `next/`,
+et une publication V2 le conserve. Elle partage le worktree `publish-v2`, donc
+sa cible Rust et ses paquets WASM. Même origine que la V2 : le cache des modèles
+neuronaux et le stockage local du navigateur sont partagés entre les deux.
 
 `www.magna-urbis.org` redirige vers le domaine principal. Les domaines sont
 configurés dans Settings → Pages de chaque dépôt, avec HTTPS imposé.

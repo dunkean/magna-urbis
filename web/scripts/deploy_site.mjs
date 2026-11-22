@@ -1,4 +1,4 @@
-/** Publish a committed source snapshot to one of the two custom domains. */
+/** Publish a committed source snapshot: V1 or V2 on their custom domains, or the experimental `next` build at magna-urbis.org/next/. */
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,10 +7,17 @@ import { fileURLToPath } from 'node:url';
 import { stageNeuralPublication } from './neural_publication.mjs';
 
 const version = process.argv[2] ?? 'v2';
-if (!['v1', 'v2'].includes(version)) throw new Error('Usage: node scripts/deploy_site.mjs v1|v2');
+if (!['v1', 'v2', 'next'].includes(version)) throw new Error('Usage: node scripts/deploy_site.mjs v1|v2|next');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const targets = { v1: { repository: 'https://github.com/dunkean/magna-urbis-v1.git', domain: 'v1.magna-urbis.org', output: 'dist' }, v2: { repository: 'https://github.com/dunkean/magna-urbis.git', domain: 'magna-urbis.org', output: 'dist-v2' } };
+// `next` is the V2 app built from any committed HEAD (a work branch), published in the `next/`
+// folder of the V2 site: it replaces only that folder, and a V2 publication keeps it.
+const targets = {
+  v1: { repository: 'https://github.com/dunkean/magna-urbis-v1.git', domain: 'v1.magna-urbis.org', output: 'dist', folder: '' },
+  v2: { repository: 'https://github.com/dunkean/magna-urbis.git', domain: 'magna-urbis.org', output: 'dist-v2', folder: '' },
+  next: { repository: 'https://github.com/dunkean/magna-urbis.git', domain: 'magna-urbis.org', output: 'dist-v2', folder: 'next' },
+};
 const target = targets[version];
+const app = version === 'v1' ? 'v1' : 'v2';
 /** Days a hashed asset of an earlier build stays published, for pages opened before a publication. */
 const ASSET_RETENTION_DAYS = 3;
 function run(command, args, cwd = root, capture = false) {
@@ -35,8 +42,10 @@ const temporary = mkdtempSync(join(temporaryRoot, 'magna-urbis-publish-'));
 // One persistent worktree per site, beside the checkout: it is reset to the published commit
 // each time, but keeps node_modules, the Rust target and the built WASM packages between runs,
 // so a publication rebuilds only what the commit changed. `--fresh` rebuilds everything.
-const source = resolve(root, '..', '_worktrees', `publish-${version}`),
-  site = join(temporary, 'site');
+// `next` shares the V2 worktree: it builds the same app, so its Rust target and packages are reused.
+const source = resolve(root, '..', '_worktrees', `publish-${app}`),
+  clone = join(temporary, 'site'),
+  site = join(clone, target.folder);
 const state = join(source, '.publish-state');
 const fresh = process.argv.includes('--fresh');
 /** Inputs of a step, as git object ids of the commit: equal ids mean byte-identical inputs. */
@@ -70,7 +79,7 @@ try {
     run('npm', ['run', 'prepare:v2'], web);
     remember('wasm', wasm);
   } else console.log('prepare:v2 skipped: Rust sources and preparation scripts unchanged since the last publication.');
-  if (version === 'v2') {
+  if (app === 'v2') {
     // The detached worktree has no sibling infinite_map or generated neural package.
     // Accept only the prepared main-checkout runtime and verified profile; never rebuild it here.
     // Staged afresh each time: the persistent worktree must not carry an older model set.
@@ -86,7 +95,8 @@ try {
   const artifact = join(web, target.output);
   if (!existsSync(join(artifact, 'index.html'))) throw new Error('Missing index.html in build output');
 
-  run('git', ['clone', '--depth', '1', '--branch', 'gh-pages', target.repository, site]);
+  run('git', ['clone', '--depth', '1', '--branch', 'gh-pages', target.repository, clone]);
+  mkdirSync(site, { recursive: true });
   // A page opened before this publication still lazily loads chunks of its own build: hashed
   // assets that leave the build stay published for ASSET_RETENTION_DAYS, counted from the first
   // publication without them (assets-retained.json on gh-pages records that date per file).
@@ -104,9 +114,9 @@ try {
     retained[name] = since;
     renameSync(join(site, 'assets', name), join(retainedDir, name));
   }
-  // Preserve the separately published gallery and documentation.
+  // Preserve the separately published gallery, documentation and experimental build.
   for (const entry of readdirSync(site)) {
-    if (['.git', 'gallery', 'scientific'].includes(entry)) continue;
+    if (['.git', 'gallery', 'scientific', 'next'].includes(entry)) continue;
     const path = resolve(site, entry);
     if (dirname(path) !== resolve(site)) throw new Error('Unexpected publication path');
     rmSync(path, { recursive: true, force: true });
@@ -118,20 +128,20 @@ try {
   for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
     if (existsSync(join(source, name))) cpSync(join(source, name), join(site, name));
   }
-  writeFileSync(join(site, 'CNAME'), `${target.domain}\n`);
-  writeFileSync(join(site, '.nojekyll'), '');
+  writeFileSync(join(clone, 'CNAME'), `${target.domain}\n`);
+  writeFileSync(join(clone, '.nojekyll'), '');
   writeFileSync(join(site, 'version.json'), `${JSON.stringify({ version, revision })}\n`);
   if (version === 'v2') {
     mkdirSync(join(site, 'v2'), { recursive: true });
     writeFileSync(join(site, 'v2/index.html'), '<!doctype html><meta charset="utf-8"><title>Magna Urbis V2</title><meta http-equiv="refresh" content="0;url=/"><script>location.replace("/"+location.search+location.hash)</script><a href="/">Magna Urbis V2</a>\n');
   }
-  run('git', ['add', '-A'], site);
-  if (run('git', ['diff', '--cached', '--name-only'], site, true)) {
-    run('git', ['commit', '-m', `Publish Magna Urbis ${version.toUpperCase()} (${revision.slice(0, 8)})`], site);
+  run('git', ['add', '-A'], clone);
+  if (run('git', ['diff', '--cached', '--name-only'], clone, true)) {
+    run('git', ['commit', '-m', `Publish Magna Urbis ${version.toUpperCase()} (${revision.slice(0, 8)})`], clone);
     // A concurrent publication fails safely: no force push.
-    run('git', ['push', 'origin', 'gh-pages'], site);
+    run('git', ['push', 'origin', 'gh-pages'], clone);
   }
-  console.log(`Published ${version.toUpperCase()}: https://${target.domain}/ (${revision})`);
+  console.log(`Published ${version.toUpperCase()}: https://${target.domain}/${target.folder ? `${target.folder}/` : ''} (${revision})`);
 } finally {
   if (dirname(resolve(temporary)) !== temporaryRoot) throw new Error('Unexpected temporary directory');
   rmSync(temporary, { recursive: true, force: true });
