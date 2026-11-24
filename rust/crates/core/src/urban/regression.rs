@@ -316,6 +316,9 @@ fn assert_physical(layout: &Layout, surface: Surface<'_>, cfg: &LayoutConfig) {
             );
             assert!(street.widths.iter().all(|&w| w <= 2.2));
             cfg.max_stair_grade
+        } else if street.rank >= 3 && super::profiles::stairs_allowed(cfg, &layout.culture) {
+            // The gentler stretches of a steep link, and a lane beside a stair.
+            cfg.max_stair_grade
         } else if street.rank >= 3 {
             cfg.max_lane_grade
         } else {
@@ -420,7 +423,8 @@ fn report_frontage(label: &str, layout: &Layout) {
 #[test]
 fn seeded_hillside_enforces_street_lane_and_optional_stair_grades() {
     let n = 64;
-    let height: Vec<_> = (0..n * n).map(|i| (i % n) as f32 * 8.0 * 0.28).collect();
+    let slope = |grade: f32| -> Vec<f32> { (0..n * n).map(|i| (i % n) as f32 * 8.0 * grade).collect() };
+    let (height, gentle) = (slope(0.5), slope(0.28));
     let water = vec![0; n * n];
     let surface = Surface {
         geometry: None,
@@ -445,6 +449,7 @@ fn seeded_hillside_enforces_street_lane_and_optional_stair_grades() {
         "the regression must exercise stair generation"
     );
     cfg.allow_stairs = false;
+    let surface = Surface { height: &gentle, ..surface };
     let without = run("urban-slope-stairs-20261013", &site, &cfg, surface, &roads);
     assert_connected(&without);
     assert_physical(&without, surface, &cfg);

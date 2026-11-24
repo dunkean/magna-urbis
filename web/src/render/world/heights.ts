@@ -4,11 +4,13 @@
  *
  * On the CPU the camera stands on it and picking reads it (`heightAt`); on the GPU the terrain mesh displaces its
  * vertices with the same spline of the same grid (`createHeightTexture`, terrainShader.ts), so the eye, the picked
- * point and the drawn ground agree, and the geometry is the surface whose shading the baked ground tiles carry.
+ * point and the drawn ground agree, and the geometry is the surface whose shading the baked ground tiles carry. The
+ * towns' shaped ground (groundShape.ts) is added to it on both sides.
  *
  * Built by the composed view (v2/display/composedView.ts), once per terrain and vertical exaggeration.
  */
 import type { WorldRelief } from './contract';
+import type { GroundShape } from './groundShape';
 
 const wx = new Float64Array(4),
   wy = new Float64Array(4);
@@ -26,6 +28,8 @@ export class TerrainHeights implements WorldRelief {
   readonly high: number;
   /** WorldRelief.solidAt: set by the owner of an Underdark relief (v2/display/composedView.ts). */
   solidAt?: (x: number, y: number) => boolean;
+  /** The ground shaped for the towns of the map, set whole by its maker (v2/display/worldVolumes.ts) for each town content. */
+  shape?: GroundShape;
 
   constructor(
     /** Control heights in metres, row by row from the north-west corner. */
@@ -51,6 +55,15 @@ export class TerrainHeights implements WorldRelief {
   }
 
   heightAt(x: number, y: number): number {
+    const natural = this.naturalAt(x, y);
+    return this.shape ? natural + this.shape.drawnAt(x, y) * this.exaggeration : natural;
+  }
+  groundAt(x: number, y: number): number {
+    const natural = this.naturalAt(x, y);
+    return this.shape ? natural + this.shape.groundAt(x, y) * this.exaggeration : natural;
+  }
+  /** The relief of the terrain alone, no ground shaped. */
+  naturalAt(x: number, y: number): number {
     const n = this.n,
       data = this.data,
       gx = Math.max(0, Math.min(1, x / this.width)) * n - 0.5,

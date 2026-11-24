@@ -1,5 +1,27 @@
 ## Alpha 0.3.11
 
+- Town walls are continuous closed rings: only land, harbour and water gates interrupt them, and they stand on dry ground back from shores and banks. Wide rivers give each bank its own wall; narrow channels get a water gate.
+- Harbours lie outside the wall by default, reached through harbour gates; choosing “inside” keeps the quays within it. Moats stop short of rivers and the sea.
+- Stairs appear only on really steep stretches, as straight flights in towns or winding flights in mountain cultures; other sloping links stay lanes. Crowded or sharp bridge ends gain a short straight approach.
+- Pueblo town outlines no longer follow the survey grid through houses.
+- Islands, islets and small coasts rise on natural slopes scaled to their size, with limited local cliffs. Peninsulas come in ten seeded families, and rocky coastlines are finely indented while sandy ones stay smooth.
+- River valleys are asymmetric and irregular, with cut banks, slip-off slopes and terraces; medium and large rivers have narrower beds.
+- Rivers or lakes set to 0 are now really absent, including in the Underdark.
+- Underdark: a cavern share setting, great halls with very high ceilings, narrow side tunnels, dead ends and sealed chambers.
+- Rivers, lakes and their beds share one colour by biome and season, rivers and dry beds no longer run under the sea, Mediterranean rivers keep more summer water, and low water wanders and braids inside its bed.
+- Moat water has one colour in 2D and 3D and stands higher; dry moats follow climate and season.
+- Softer Satellite transitions between ground types and along rivers.
+- Season changes in the drawn maps no longer rebuild the map. Parchment trees match the biome and season: turned foliage in autumn, bare trees in winter, snow on land and trees.
+- Alpine forests climb to an irregular tree line; oversized pines are gone and deciduous trees are bare in winter, in 2D and 3D.
+- Ground lines on maps are continuous instead of dashed. Cadastre houses are drawn at a higher definition.
+- Tilted map: hillside lots are levelled, moats are dug and houses no longer float; fences stay visible further and thin out smoothly; farms stay visible further; map names fade out; trees clear at once from a rebuilt town.
+- Satellite banks carry reeds, sedge, dry grass and tamarisk by climate.
+- Flat roofs show their parapet edges in V1 roofs.
+- Selection tool in the map toolbar, in every view, with one sheet for any selected entity.
+- Cursor coordinates and altitude stay visible in tilted views; pins work there too.
+- Settlement sizes follow a continuous distribution before places become villages, towns or cities; automatic villages are no longer capped at 999.
+- Shorter share codes: the dice steps to the next seed, quarter and block edits are shared, imported relief is flagged. Fixed lake coverage, landform scale and forest density in share codes.
+- Heightmaps export as 16-bit PNG.
 - Share a map with a short code: a 6-character seed followed only by what differs from the default city (size, biome, relief, coast, terrain engine, parameters, rerolls, simple place edits and pins). The default city is just its seed. The current code is always shown in the top bar with copy buttons; MU3 codes no longer open.
 - Sliders snap to the steps the short code stores, so a shared map shows exactly the values you set.
 - Seeds are 6 characters (digits and letters); the dice draws a new one and any typed seed becomes a valid one. The default map now starts from the seed “magnas”.

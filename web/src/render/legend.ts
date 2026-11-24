@@ -242,25 +242,24 @@ function treeSymbol(pal: Palette, x: number, y: number, r: number): Prim[] {
   const rr = pal.treeShape === 'dot' ? r * 0.55 : r;
   return [{ t: 'circle', x, y, r: rr, fill: pal.treeFill, stroke: pal.treeInk, sw: 0.6 }];
 }
-function lineSwatch(edge: string, fill: string | null, w: number, dash?: number[]): (x: number, y: number) => Prim[] {
+function lineSwatch(edge: string, fill: string | null, w: number): (x: number, y: number) => Prim[] {
   return (x, y) => {
     const pts: [number, number][] = [
       [x, y + SH / 2],
       [x + SW, y + SH / 2],
     ];
-    const out: Prim[] = [{ t: 'line', pts, stroke: edge, sw: w + 2, dash }];
+    const out: Prim[] = [{ t: 'line', pts, stroke: edge, sw: w + 2 }];
     if (fill) out.push({ t: 'line', pts, stroke: fill, sw: w });
     return out;
   };
 }
 
-export type SemanticPatternId = 'none' | 'furrows' | 'dots' | 'trees' | 'grid' | 'cross' | 'reeds' | 'dashes';
+export type SemanticPatternId = 'none' | 'furrows' | 'dots' | 'trees' | 'grid' | 'cross' | 'reeds' | 'strokes';
 /** One semantic land-use class of the legend: its own colour, whatever the ground palette (semanticLayer.ts builds them). */
 export interface SemanticLegendEntry {
   label: string;
   color: string;
   pattern: SemanticPatternId;
-  dash: readonly number[];
   look: 'subtle' | 'categorical' | 'outlines';
 }
 /** Swatch of a semantic class: tint, pattern and border as the map draws them (the same alpha per look, at legend scale). */
@@ -342,7 +341,7 @@ function semanticSwatch(e: SemanticLegendEntry): (x: number, y: number) => Prim[
               ),
             );
           break;
-        case 'dashes':
+        case 'strokes':
           out.push(
             mark(
               [
@@ -490,8 +489,7 @@ export function legendModel(world: World, pal: Palette, semantic: readonly Seman
           [x + SW, y + SH / 2],
         ],
         stroke: pal.roadEdge,
-        sw: 1.3,
-        dash: [4, 3],
+        sw: 1.1,
       },
     ]);
   if (world.bridges?.length) add('Bridge', (x, y) => [{ t: 'rect', x: x + 6, y: y + 1, w: 12, h: SH - 2, fill: pal.bridgeDeck, stroke: pal.bridgeInk, sw: 0.8 }]);

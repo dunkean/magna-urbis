@@ -19,9 +19,9 @@
  * - savanna: scattered flat-topped acacias 6-12 m with crowns 10-15 m, wider than tall; baobabs 20-25 m;
  * - tropical rainforest: 35-45 m canopy, crowns 12-20 m, emergents 55-70 m (dipterocarps, Ceiba; Whitmore 1998);
  * - wetland (swamp forest, alder carr, mangrove): low and dense, 10-20 m, crowns 5-8 m.
- * Giants: tropical emergents; coastal temperate rainforest conifers of 60-90 m (Sitka spruce, Douglas fir, redwood;
- * Van Pelt 2001) where a temperate climate is very wet; elsewhere veteran trees about 1.5-1.8 times their stand with a
- * much wider crown (veteran/ancient tree surveys), and landmark trees in open land. */
+ * Giants: tropical emergents; elsewhere veteran broadleaves about 1.5-1.8 times their stand with a much wider crown
+ * (veteran/ancient tree surveys), and landmark trees in open land. A conifer giant barely passes its stand
+ * (terrain3dTrees.ts CONIFER_GIANT). */
 
 export interface ForestBiome {
   /** 3D stand top height = softCap(field height x stature, cap) (m). */
@@ -97,11 +97,6 @@ export interface ForestSocial {
   width: number;
   rank: number;
 }
-const sstep = (a: number, b: number, v: number): number => {
-  let t = (v - a) / (b - a);
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  return t * t * (3 - 2 * t);
-};
 /** Kraft (1884) classes, heights as a share of the stand top height: predominant/dominant 0.94-1.24 (cubic tail: few
  * predominant), co-dominant 0.82-0.94, intermediate 0.66-0.82, suppressed/understory 0.45-0.64, young 0.38-0.62;
  * open-grown 0.6-1.0. Class shares: a closed tall canopy keeps few small trees, margins and open stands carry the young
@@ -141,8 +136,6 @@ export function forestGiant(x: number, y: number, draw: number, share: number, s
     cy = (gy + 0.3 + 0.4 * u8(8)) * FOREST_GROVE;
   return draw < share * (Math.hypot(x - cx, y - cy) < (0.12 + 0.18 * u8(16)) * FOREST_GROVE ? FOREST_GROVE_IN : FOREST_GROVE_OUT);
 }
-/** Coastal temperate rainforest: very wet, mild, non-tropical; its conifer giants reach 2.4 times the canopy. */
-export const forestWetConifer = (trop: number, humid: number, temperature: number): number => (1 - trop) * sstep(2.2, 3.5, humid) * sstep(5, 10, temperature);
 
 const f = (v: number): string => (Number.isInteger(v) ? `${v}.` : String(v));
 /** Needs groundHash, forestU8 and v2Zoned/v2Zone (RENDER_V2_ZONE_GLSL). */

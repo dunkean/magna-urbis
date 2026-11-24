@@ -40,7 +40,10 @@ vec3 naturalMapWater(vec3 base,vec3 p,float footprint){
     float r=band*(i==0?.025:i==1?.15:.6);
     position+=(displayWaterCover(p.xz+vec2(r,0.))+displayWaterCover(p.xz-vec2(r,0.))+displayWaterCover(p.xz+vec2(0.,r))+displayWaterCover(p.xz-vec2(0.,r)))/12.;
   }
-  vec3 water=materialWater(p.xz,position,footprint);if(uNight==1)water=moonlight(water);
+  vec3 water=materialWater(p.xz,position,footprint);
+  // Inland water, above the sea's level, takes its climate tone unless it is frozen.
+  if(uWaterSeason.y<.5)water=mix(water,freshWaterTone(water),smoothstep(.1,1.,p.y));
+  if(uNight==1)water=moonlight(water);
   return mix(base,water,cover);
 }
 `;

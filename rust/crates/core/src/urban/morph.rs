@@ -93,6 +93,10 @@ pub fn culture_site_weight(culture: &str, site: &str) -> f64 {
         .as_f64()
         .unwrap_or(1.0)
 }
+/// A people of villages and camps (catalogue `cultures.<id>.camp`): its places become towns only when large.
+pub fn culture_of_villages(culture: &str) -> bool {
+    catalogue()["cultures"][culture]["camp"].is_object()
+}
 /// Culture site preference by key with an explicit default (e.g. `mountainFace`, 0 = none).
 pub fn culture_site_pref(culture: &str, key: &str, default: f64) -> f64 {
     catalogue()["cultures"][culture]["sitePrefs"][key]

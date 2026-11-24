@@ -86,7 +86,7 @@ mod types;
 
 pub use config::{FootprintConfig, LayoutConfig, ParcelConfig, StyleSheet};
 pub use magna_urbis_geom::{Point, Shape};
-pub use morph::{culture_site_pref, culture_site_weight};
+pub use morph::{culture_of_villages, culture_site_pref, culture_site_weight};
 pub use overrides::{
     BlockEdits, BlockOrigin, BlockOverride, OriginalBlock, OriginalQuarter, ParcelOverride, ParcelOverrides, PhaseOverride,
     QuarterEdits, QuarterOverride, QuarterPart, UrbanOverrides,

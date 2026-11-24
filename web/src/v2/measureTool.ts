@@ -29,6 +29,8 @@ export interface MeasureToolApi {
   /** Element that receives the X / Y / Z readout under the cursor. */
   readout: HTMLElement;
   getView(): View;
+  /** The ground point under a pixel of the map, in the top view or tilted. */
+  groundAt(sx: number, sy: number): Point | undefined;
   getHeight(): Grid | undefined;
   getMapSize(): number | undefined;
 }
@@ -272,6 +274,13 @@ export function mountMeasureTool(api: MeasureToolApi): { deactivate(): void } {
   api.readout.innerHTML = '<span>X <b data-axis="x">—</b></span><span>Y <b data-axis="y">—</b></span><span>Z <b data-axis="z">—</b></span>';
   const cells = { x: api.readout.querySelector('[data-axis="x"]')!, y: api.readout.querySelector('[data-axis="y"]')!, z: api.readout.querySelector('[data-axis="z"]')! };
   let last: Point | undefined;
+  let pointer: Point | undefined,
+    readoutFrame = 0;
+  // A tilted view finds the ground along the pixel's ray: once per frame, however fast the pointer moves.
+  const readPointer = (): void => {
+    readoutFrame = 0;
+    showReadout(pointer && api.groundAt(pointer.x, pointer.y));
+  };
   function showReadout(p?: Point): void {
     last = p;
     const n = (metres: number, decimals = 0): string => `${metres.toLocaleString(numberLocale(), { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} m`;
@@ -282,14 +291,16 @@ export function mountMeasureTool(api: MeasureToolApi): { deactivate(): void } {
     cells.z.textContent = ok && height ? n(sampleGrid(height, p!.x, p!.y), 1) : '—';
   }
   map.addEventListener('pointermove', e => {
-    const p = toWorld(local(e));
-    showReadout(p);
+    pointer = local(e);
+    if (!readoutFrame) readoutFrame = requestAnimationFrame(readPointer);
     if (active) {
+      const p = toWorld(pointer);
       cursor = (e.target as Element).closest('.measure-panel') ? undefined : p;
       if (drag || !(e.buttons & 1)) schedule();
     }
   });
   map.addEventListener('pointerleave', () => {
+    pointer = undefined;
     showReadout(undefined);
     cursor = undefined;
     schedule();

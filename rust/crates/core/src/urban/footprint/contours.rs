@@ -1,122 +1,211 @@
 //! Smooth vector contours extracted from the growth lattice and preserve exclusions.
 use super::geometry::{area, distance, union};
-use crate::urban::{Point, Shape, Surface, geometry as g};
+use crate::urban::{Point, Shape, Surface, composition, geometry as g};
 use geo::{LineString, Simplify, Validation};
+
+/// A ring of the lattice, its steps collapsed, its undulations attenuated and its corners rounded.
+fn ring(points: &[Point], step: f64) -> Vec<Point> {
+    // Collapse complete lattice steps before rounding. Rounding each raw
+    // right angle alone preserves the staircase at every zoom level.
+    let mut closed: Vec<_> = points
+        .iter()
+        .map(|p| geo::Coord { x: p.x, y: p.y })
+        .collect();
+    if let Some(p) = closed.first().copied() {
+        closed.push(p);
+    }
+    let simplified = LineString(closed).simplify(step * 0.55);
+    let mut outline: Vec<_> = simplified
+        .0
+        .into_iter()
+        .map(|p| Point { x: p.x, y: p.y })
+        .collect();
+    outline.pop();
+    if outline.len() < 3 {
+        return points.to_vec();
+    }
+    // Sample by physical distance so long sides and dense raster corners
+    // receive the same smoothing, without shrinking narrow branches.
+    let mut points: Vec<_> = outline
+        .iter()
+        .zip(outline.iter().cycle().skip(1))
+        .take(outline.len())
+        .flat_map(|(&a, &b)| {
+            let n = (distance(a, b) / step).ceil().max(1.0) as usize;
+            (0..n).map(move |i| {
+                let t = i as f64 / n as f64;
+                Point {
+                    x: a.x * (1.0 - t) + b.x * t,
+                    y: a.y * (1.0 - t) + b.y * t,
+                }
+            })
+        })
+        .collect();
+    // Attenuate residual one-cell undulations over several cells before
+    // fitting the corners. Keep displacement below half a cell so thin
+    // arms retain their supporting cell centers.
+    let sampled = points.clone();
+    for _ in 0..3 {
+        points = (0..points.len())
+            .map(|i| {
+                let mut p = Point { x: 0.0, y: 0.0 };
+                for (j, weight) in [1.0, 4.0, 6.0, 4.0, 1.0].into_iter().enumerate() {
+                    let q = points[(i + points.len() + j - 2) % points.len()];
+                    p.x += q.x * weight / 16.0;
+                    p.y += q.y * weight / 16.0;
+                }
+                let a = sampled[i];
+                let t = (step * 0.45 / distance(a, p).max(1.0e-9)).min(1.0);
+                Point {
+                    x: a.x + (p.x - a.x) * t,
+                    y: a.y + (p.y - a.y) * t,
+                }
+            })
+            .collect();
+    }
+    for _ in 0..3 {
+        points = points
+            .iter()
+            .zip(points.iter().cycle().skip(1))
+            .take(points.len())
+            .flat_map(|(&a, &b)| {
+                let t = 0.25;
+                [
+                    Point {
+                        x: a.x * (1.0 - t) + b.x * t,
+                        y: a.y * (1.0 - t) + b.y * t,
+                    },
+                    Point {
+                        x: a.x * t + b.x * (1.0 - t),
+                        y: a.y * t + b.y * (1.0 - t),
+                    },
+                ]
+            })
+            .collect();
+    }
+    let mut closed: Vec<_> = points
+        .iter()
+        .map(|p| geo::Coord { x: p.x, y: p.y })
+        .collect();
+    if let Some(p) = closed.first().copied() {
+        closed.push(p);
+    }
+    let simplified = LineString(closed).simplify(step * 0.025);
+    let mut result: Vec<_> = simplified
+        .0
+        .into_iter()
+        .map(|p| Point { x: p.x, y: p.y })
+        .collect();
+    if result.len() > 1 {
+        result.pop();
+    }
+    result
+}
+
+/// Open-space holes left by the lattice are smoothed like the outline; exact
+/// water holes (clipped from vector geography) are never axis-aligned and stay.
+fn smooth_holes(original: &Shape, step: f64) -> Vec<Vec<Point>> {
+    let lattice = |ring: &[Point]| {
+        ring.iter()
+            .zip(ring.iter().cycle().skip(1))
+            .all(|(a, b)| (a.x - b.x).abs() < 1e-6 || (a.y - b.y).abs() < 1e-6)
+    };
+    original.holes.iter().map(|h| if lattice(h) { ring(h, step) } else { h.clone() }).collect()
+}
+
+/// Whether a smoothed contour still holds its district: its boundary cell
+/// centres (`anchors`), the interior, and a displacement in scale with the lattice.
+/// Boundary displacement scales with perimeter and grid spacing, not just total
+/// area. An area cap (1%, then 8%) rejected valid smoothing of small or
+/// elongated districts (two-cell faubourg arms move a fifth of their area) and
+/// restored their whole staircase.
+fn keeps_land(original: &Shape, candidate: &Shape, step: f64, anchors: &[Point]) -> bool {
+    let changed_area =
+        area(&g::difference(original, candidate)) + area(&g::difference(candidate, original));
+    let perimeter: f64 = std::iter::once(&original.outer)
+        .chain(&original.holes)
+        .flat_map(|r| r.iter().zip(r.iter().cycle().skip(1)).take(r.len()))
+        .map(|(&a, &b)| distance(a, b))
+        .sum();
+    changed_area <= perimeter * step * 0.6 + 0.001
+        && g::contains(candidate, g::interior_point(original))
+        && anchors.iter().all(|&p| g::contains(candidate, p))
+}
+
+/// Contour of a district the lattice smoothing refused: its notches are filled
+/// (a closing contains the whole district), the residual steps straightened and
+/// the corners cut by less than the half cell that holds the boundary centres.
+/// Larger reaches straighten longer steps; the first simple, dry contour with
+/// the district's own holes is kept, the exact one only when none is.
+pub(super) fn closed_contour(original: &Shape, step: f64, surface: Surface<'_>, anchors: &[Point]) -> Shape {
+    if g::area(original) < step * step {
+        return original.clone();
+    }
+    let outline = geo::MultiPolygon(vec![g::polygon(&Shape { outer: original.outer.clone(), holes: vec![] })]);
+    let inside = g::interior_point(original);
+    let own: Vec<Point> = anchors.iter().copied().filter(|&p| g::contains(original, p)).collect();
+    let mut holes = vec![smooth_holes(original, step)];
+    if !original.holes.is_empty() {
+        holes.push(original.holes.clone());
+    }
+    for reach in [1.5, 0.6] {
+        let closed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            g::shapes(composition::closing(&outline, reach * step))
+        }))
+        .unwrap_or_default();
+        // A bay the closing shuts would become a courtyard: a smaller reach keeps it open.
+        let [piece] = closed.as_slice() else { continue };
+        if !piece.holes.is_empty() {
+            continue;
+        }
+        let outer = cut_corners(&piece.outer, step);
+        for holes in &holes {
+            let shape = g::normalized(Shape { outer: outer.clone(), holes: holes.clone() });
+            if shape.outer.len() < 3 || !g::polygon(&shape).is_valid() {
+                continue;
+            }
+            // Filled notches may reach over a bank: the dry piece that holds the district stays.
+            let dry = g::dry_clip(&surface, &shape).into_iter().find(|s| g::contains(s, inside));
+            if let Some(s) = dry
+                && s.holes.len() == original.holes.len()
+                && g::polygon(&s).is_valid()
+                && keeps_land(original, &s, step, &own)
+            {
+                return s;
+            }
+        }
+    }
+    original.clone()
+}
+
+/// A ring straightened within a fifth of a cell, its corners cut short.
+fn cut_corners(ring: &[Point], step: f64) -> Vec<Point> {
+    let mut closed: Vec<_> = ring.iter().map(|p| geo::Coord { x: p.x, y: p.y }).collect();
+    if let Some(p) = closed.first().copied() {
+        closed.push(p);
+    }
+    let mut line = LineString(closed).simplify(step * 0.2).0;
+    line.pop();
+    let toward = |a: geo::Coord<f64>, b: geo::Coord<f64>| {
+        let l = (b.x - a.x).hypot(b.y - a.y).max(1e-9);
+        let t = (step * 0.4 / l).min(0.25);
+        Point { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+    };
+    let n = line.len();
+    (0..n).flat_map(|i| [toward(line[i], line[(i + n - 1) % n]), toward(line[i], line[(i + 1) % n])]).collect()
+}
 
 /// Remove the growth lattice's right-angle staircase without reconstructing a
 /// shoreline. Water holes remain frozen and the result is re-clipped against the
 /// original terrain mask. Every narrow-arm boundary cell retains its center.
-/// Invalid or materially different candidates keep the exact original contour.
+/// Invalid or materially different candidates take the closed contour, which holds
+/// the whole district (`closed_contour`).
 pub(super) fn smooth_growth(
     shapes: &[Shape],
     step: f64,
     surface: Surface<'_>,
     anchors: &[Point],
 ) -> Vec<Shape> {
-    fn ring(points: &[Point], step: f64) -> Vec<Point> {
-        // Collapse complete lattice steps before rounding. Rounding each raw
-        // right angle alone preserves the staircase at every zoom level.
-        let mut closed: Vec<_> = points
-            .iter()
-            .map(|p| geo::Coord { x: p.x, y: p.y })
-            .collect();
-        if let Some(p) = closed.first().copied() {
-            closed.push(p);
-        }
-        let simplified = LineString(closed).simplify(step * 0.55);
-        let mut outline: Vec<_> = simplified
-            .0
-            .into_iter()
-            .map(|p| Point { x: p.x, y: p.y })
-            .collect();
-        outline.pop();
-        if outline.len() < 3 {
-            return points.to_vec();
-        }
-        // Sample by physical distance so long sides and dense raster corners
-        // receive the same smoothing, without shrinking narrow branches.
-        let mut points: Vec<_> = outline
-            .iter()
-            .zip(outline.iter().cycle().skip(1))
-            .take(outline.len())
-            .flat_map(|(&a, &b)| {
-                let n = (distance(a, b) / step).ceil().max(1.0) as usize;
-                (0..n).map(move |i| {
-                    let t = i as f64 / n as f64;
-                    Point {
-                        x: a.x * (1.0 - t) + b.x * t,
-                        y: a.y * (1.0 - t) + b.y * t,
-                    }
-                })
-            })
-            .collect();
-        // Attenuate residual one-cell undulations over several cells before
-        // fitting the corners. Keep displacement below half a cell so thin
-        // arms retain their supporting cell centers.
-        let sampled = points.clone();
-        for _ in 0..3 {
-            points = (0..points.len())
-                .map(|i| {
-                    let mut p = Point { x: 0.0, y: 0.0 };
-                    for (j, weight) in [1.0, 4.0, 6.0, 4.0, 1.0].into_iter().enumerate() {
-                        let q = points[(i + points.len() + j - 2) % points.len()];
-                        p.x += q.x * weight / 16.0;
-                        p.y += q.y * weight / 16.0;
-                    }
-                    let a = sampled[i];
-                    let t = (step * 0.45 / distance(a, p).max(1.0e-9)).min(1.0);
-                    Point {
-                        x: a.x + (p.x - a.x) * t,
-                        y: a.y + (p.y - a.y) * t,
-                    }
-                })
-                .collect();
-        }
-        for _ in 0..3 {
-            points = points
-                .iter()
-                .zip(points.iter().cycle().skip(1))
-                .take(points.len())
-                .flat_map(|(&a, &b)| {
-                    let t = 0.25;
-                    [
-                        Point {
-                            x: a.x * (1.0 - t) + b.x * t,
-                            y: a.y * (1.0 - t) + b.y * t,
-                        },
-                        Point {
-                            x: a.x * t + b.x * (1.0 - t),
-                            y: a.y * t + b.y * (1.0 - t),
-                        },
-                    ]
-                })
-                .collect();
-        }
-        let mut closed: Vec<_> = points
-            .iter()
-            .map(|p| geo::Coord { x: p.x, y: p.y })
-            .collect();
-        if let Some(p) = closed.first().copied() {
-            closed.push(p);
-        }
-        let simplified = LineString(closed).simplify(step * 0.025);
-        let mut result: Vec<_> = simplified
-            .0
-            .into_iter()
-            .map(|p| Point { x: p.x, y: p.y })
-            .collect();
-        if result.len() > 1 {
-            result.pop();
-        }
-        result
-    }
-    // Open-space holes left by the lattice are smoothed like the outline; exact
-    // water holes (clipped from vector geography) are never axis-aligned and stay.
-    let lattice = |ring: &[Point]| {
-        ring.iter()
-            .zip(ring.iter().cycle().skip(1))
-            .all(|(a, b)| (a.x - b.x).abs() < 1e-6 || (a.y - b.y).abs() < 1e-6)
-    };
     // A smoothed corner that grazes a channel cuts off dry crumbs far below a
     // growth cell; they are not land of the town and must not veto the outline.
     let dry_main = |s: &Shape| -> Vec<Shape> {
@@ -129,14 +218,10 @@ pub(super) fn smooth_growth(
     for original in shapes {
         let outline = g::normalized(Shape {
             outer: ring(&original.outer, step),
-            holes: original
-                .holes
-                .iter()
-                .map(|h| if lattice(h) { ring(h, step) } else { h.clone() })
-                .collect(),
+            holes: smooth_holes(original, step),
         });
         if outline.outer.len() < 3 || !g::polygon(&outline).is_valid() {
-            candidates.push(original.clone());
+            candidates.push(closed_contour(original, step, surface, anchors));
             continue;
         }
         let mut clipped = dry_main(&outline);
@@ -144,16 +229,17 @@ pub(super) fn smooth_growth(
             || clipped[0].holes.len() != original.holes.len()
             || !g::polygon(&clipped[0]).is_valid()
         {
-            candidates.push(original.clone());
+            candidates.push(closed_contour(original, step, surface, anchors));
             continue;
         }
+        let own: Vec<Point> = anchors.iter().copied().filter(|&p| g::contains(original, p)).collect();
         // Preserve an isolated boundary cell locally instead of restoring the
         // staircase of the entire district when one smoothing corner clips it.
         // Raster water holes are lattice rings too: their rounded corners can
         // swallow a cell centre and are pushed back the same way.
         let mut repaired = clipped[0].clone();
         let mut moved = false;
-        for &p in anchors.iter().filter(|&&p| g::contains(original, p)) {
+        for &p in &own {
             if g::contains(&repaired, p) {
                 continue;
             }
@@ -242,9 +328,9 @@ pub(super) fn smooth_growth(
                 if next.len() == 1
                     && next[0].holes.len() == original.holes.len()
                     && g::polygon(&next[0]).is_valid()
-                    && anchors
+                    && own
                         .iter()
-                        .filter(|&&p| g::contains(original, p) && g::contains(&clipped[0], p))
+                        .filter(|&&p| g::contains(&clipped[0], p))
                         .all(|&p| g::contains(&next[0], p))
                 {
                     clipped = next;
@@ -253,30 +339,12 @@ pub(super) fn smooth_growth(
         }
         let candidate = &clipped[0];
         let original_area = g::area(original);
-        let changed_area =
-            area(&g::difference(original, candidate)) + area(&g::difference(candidate, original));
-        let protected = anchors
-            .iter()
-            .copied()
-            .filter(|&p| g::contains(original, p));
-        // Boundary displacement scales with perimeter and grid spacing, not
-        // just total area. An area cap (1%, then 8%) rejected valid smoothing of
-        // small or elongated districts (two-cell faubourg arms move a fifth of
-        // their area) and restored their whole staircase; boundary cell centres
-        // and the net area bound below already protect the land.
-        let perimeter: f64 = std::iter::once(&original.outer)
-            .chain(&original.holes)
-            .flat_map(|r| r.iter().zip(r.iter().cycle().skip(1)).take(r.len()))
-            .map(|(&a, &b)| distance(a, b))
-            .sum();
-        let accepted = changed_area <= perimeter * step * 0.6 + 0.001
-            && (g::area(candidate) - original_area).abs() <= original_area * 0.02 + 0.001
-            && g::contains(candidate, g::interior_point(original))
-            && protected.into_iter().all(|p| g::contains(candidate, p));
+        let accepted = keeps_land(original, candidate, step, &own)
+            && (g::area(candidate) - original_area).abs() <= original_area * 0.02 + 0.001;
         candidates.push(if accepted {
             candidate.clone()
         } else {
-            original.clone()
+            closed_contour(original, step, surface, anchors)
         });
     }
     let original_holes: usize = shapes.iter().map(|s| s.holes.len()).sum();

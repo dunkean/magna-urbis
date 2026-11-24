@@ -418,5 +418,14 @@ float forestBankCover(vec2 world,float fp){
   float area=textureLod(uForestBank,uv,max(log2(fp/cell),0.)).a;
   return mix(sharp,area,groundSmooth(.5*cell,2.*cell,fp));
 }
+// Coverage of the bank ribbon for the open ground, 0 to about 1: the texel area filtered over at least two texels, so
+// it fades outward without the texel steps of the envelope margin. Widths under a texel keep their area share.
+float forestBankRibbon(vec2 world,float fp){
+  if(uHasForestBank==0)return 0.;
+  vec2 uv=(world-uForestRect.xy)/uForestRect.z;
+  if(any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return 0.;
+  float cell=uForestRect.z/float(textureSize(uForestBank,0).x);
+  return textureLod(uForestBank,uv,max(log2(fp/cell),1.)).a/max(forestBankDensity(float(${FOREST_BANK_MAX_WIDTH})),.05);
+}
 float forestShrubShare(float h){return 1.-groundSmooth(${FOREST_SHRUB_HEIGHTS[0]}.,${FOREST_SHRUB_HEIGHTS[1]},h);}
 `;

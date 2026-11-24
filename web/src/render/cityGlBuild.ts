@@ -428,9 +428,9 @@ export function meshFeatureAt(mesh: CityGlFillMesh, layer: string, point: Point)
 
 // ---------------------------------------------------------------- stroke and point instances
 /** Stroke instance: ax, ay, bx, by, width (m), min width (CSS px), along (m from the
- * polyline start, for dashes), feature id (u32), meta (u32). 36 bytes. */
+ * polyline start), feature id (u32), meta (u32). 36 bytes. */
 export const STROKE_STRIDE = 9;
-export const META = { rank: 0xf, crossing: 1 << 4, buttStart: 1 << 5, buttEnd: 1 << 6, dash: 1 << 7, solidEdge: 1 << 8 } as const;
+export const META = { rank: 0xf, crossing: 1 << 4, buttStart: 1 << 5, buttEnd: 1 << 6, solidEdge: 1 << 8 } as const;
 export interface CityGlStrokes {
   data: ArrayBuffer;
   count: number;
@@ -509,7 +509,7 @@ export function buildStreetStrokes(scene: CityScene, origin: Point, surface = tr
       k = key(i),
       rank = Math.min(15, Math.max(0, s.rank));
     for (let r = Math.max(0, k); r < 16; r++) if (firstWithRank[r] < 0) firstWithRank[r] = w.n;
-    const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'ford' ? META.dash : 0) | (s.role === 'bridge' || s.role === 'mole' ? META.solidEdge : 0);
+    const meta = rank | (CROSSINGS.has(s.role) ? META.crossing : 0) | (s.role === 'bridge' || s.role === 'mole' ? META.solidEdge : 0);
     const ck = `${k}|${cells[i]}`,
       before = w.n;
     putPolyline(w, s.joined.stroke, origin, !surface || isBoardwalk(s.role) || !s.joined.widths.length ? s.width : s.joined.widths.map(x => (Number.isFinite(x) && x > 0 ? x : s.width)), streetMinPx(s.role, s.rank, planPath), i, meta, true);
@@ -532,7 +532,7 @@ export function buildWallStrokes(scene: CityScene, origin: Point): CityGlStrokes
   const w = strokeWriter(scene.walls.reduce((s, wall) => s + wall.pieces.reduce((t, p) => t + Math.max(0, p.length - 1), 0), 0));
   scene.walls.forEach((wall, i) => {
     const palisade = wall.kind === 'palisade';
-    for (const piece of wall.pieces) putPolyline(w, piece, origin, palisade ? 2 : 3.5, 2.4, i, palisade ? META.dash : 0, true);
+    for (const piece of wall.pieces) putPolyline(w, piece, origin, palisade ? 2 : 3.5, 2.4, i, 0, true);
   });
   return { data: w.buffer.slice(0, w.n * STROKE_STRIDE * 4), count: w.n, firstWithRank: new Array(16).fill(0) };
 }

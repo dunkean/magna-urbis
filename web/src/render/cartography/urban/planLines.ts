@@ -35,24 +35,24 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
         w = l.width;
       const one = (color: string, width: number, alpha = 1, dash: number[] = [], cap: CanvasLineCap = 'round'): void => strokeLines([l], color, () => width, alpha, dash, cap);
       if (k === 'moat' || k === 'canal') continue;
-      else if (k === 'hedge') one(treeInk, lw(2.6, 0.8), 0.8, fine ? [3, 1.5] : [], 'butt');
+      else if (k === 'hedge') one(treeInk, lw(2.2, 0.7), 0.7, [], 'butt');
       else if (k === 'track') {
         const rural = !open && !stilts;
-        one(rural ? ruralInk(pal) : open ? earth : U.street, lw(rural ? 1.6 : open ? 2.6 : 3, rural ? 0.9 : 0.6), rural ? pal.rural.track : open ? 0.75 : 1, rural ? [6, 3.5] : [], rural ? 'butt' : 'round');
-      } else if (k === 'weir') one(U.wall, lw(1.4, 0.5), 1, fine ? [1.2, 0.6] : [], 'butt');
+        one(rural ? ruralInk(pal) : open ? earth : U.street, lw(rural ? 1.6 : open ? 2.6 : 3, rural ? 0.9 : 0.6), rural ? pal.rural.track : open ? 0.75 : 1, [], rural ? 'butt' : 'round');
+      } else if (k === 'weir') one(U.wall, lw(1.2, 0.5), 0.8, [], 'butt');
       else if (k === 'parterre') {
         if (fine) one(U.plotLine, lw(0.5, 0.4));
       } else if (k === 'footpath') {
         if (fine) one(open ? earth : U.street, lw(1.4, 0.6));
       } else if (k === 'roof-line') {
         if (near) one(U.massEdge, lw(0.2, 0.3), 0.7, [], 'butt');
-      } else if (k === 'garden-hedge') one(treeInk, lw(1.2, 0.5), 0.7, fine ? [1.6, 0.7] : [], 'butt');
+      } else if (k === 'garden-hedge') one(treeInk, lw(1.2, 0.5), 0.6, [], 'butt');
       else if (k === 'bund') {
         if (fine) one(U.plotLine, lw(0.4, 0.3), 0.35, [], 'butt');
       } else if (k === 'turf-wall') {
         one(mixHex(pal.grass, U.wall, 0.35), lw(2.2, 0.8), 0.42);
         if (fine) one(U.wall, lw(0.16, 0.3), 0.45);
-      } else if (k === 'albarrada') one(U.wall, lw(0.85, 0.4), 0.4, fine ? [0.9, 0.45] : []);
+      } else if (k === 'albarrada') one(U.wall, lw(0.85, 0.4), 0.35);
       else if (k === 'ghat-steps') {
         if (fine) one(U.plotLine, lw(0.3, 0.4));
       } else if (k === 'terrace') one(U.wall, lw(TS.wall.width, TS.wall.minPx), TS.wall.alpha);
@@ -61,7 +61,7 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
       else if (k === 'andene-hachure' || k === 'terrace-tread') {
         if (terraceDetail > 0) one(U.wall, lw(TS.hatch.width, TS.hatch.minPx), TS.hatch.alpha * terraceDetail, [], 'butt');
       } else if (k === 'terrace-stair') one(U.wall, lw(TS.stair.width, TS.stair.minPx), TS.stair.alpha);
-      else if (k === 'thorn-fence') one(treeInk, lw(2.2, 0.8), 0.85, near ? [1.3, 0.9] : []);
+      else if (k === 'thorn-fence') one(treeInk, lw(1.8, 0.7), 0.7);
       else if (k === 'rampart') {
         one(U.garden, lw(7, 1.4), 0.9);
         one(U.wall, lw(0.6, 0.4));
@@ -84,15 +84,14 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
       } else if (k === 'hachure') {
         if (terraceDetail > 0) one(U.wall, lw(TS.hatch.width, TS.hatch.minPx), TS.hatch.alpha * terraceDetail, [], 'butt');
       } else if (CAMP_FENCE_W[k] !== undefined) {
-        // a rail with its posts (stakes close together for a palisade); zoomed out, a thin line
+        // a continuous rail (thicker for the close stakes of a palisade); zoomed out, a thin line
         const st = FENCE_STYLE[k] ?? FENCE_STYLE['yard-fence'];
         const far = !fine && k !== 'palisade' && k !== 'kraal-fence';
         if (far) {
           if (lod.band >= 1) one(U.wall, lw(st[0], 0.3), 0.6);
         } else {
           one(U.wall, lw(st[0], 0.35), 0.8);
-          if (near) one(U.wall, st[1], 0.9, [st[2], st[3]], 'butt');
-          else if (k === 'palisade' || k === 'kraal-fence') one(U.wall, lw(st[1], 0.5), 0.75);
+          if (k === 'palisade' || k === 'kraal-fence') one(U.wall, lw(0.7 * st[1], 0.5), 0.75);
         }
       } else one(U.wall, lw(WALL_LINE_W[k] ?? 1, 0.8), 1, [], 'square');
     }
@@ -147,7 +146,7 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
   );
   strokeLines(thin.filter(isEarth), mixHex(pal.farmYard, pal.trackFill, 0.12), l => minPx(l) / sc, 0.8);
   ctx.restore();
-  if (polyL('landmarks') && near) strokePolys('landmarks', U.landmark, lw(0.6, 0.6), 0.5, [px(5), px(3)]);
+  if (polyL('landmarks') && near) strokePolys('landmarks', U.landmark, lw(0.45, 0.5), 0.4);
   // zoomed out: the landmark sites (wells, crosses, markets, compounds' named buildings) as a solid outline of at
   // least ~1.8 px, so the small ones stay visible on the full map
   else if (polyL('landmarks')) strokePolys('landmarks', U.landmarkEdge, lw(0.6, 1.8), 0.9);

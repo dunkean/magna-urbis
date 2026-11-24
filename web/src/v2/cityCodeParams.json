@@ -322,5 +322,18 @@
  "urban.houses.house_config.variation",
  "urban.houses.house_config.wealth",
  "urban.houses.house_config.overrides.courtyard_ratio",
- "urban.houses.house_config.workshop.support.kind"
+ "urban.houses.house_config.workshop.support.kind",
+ "options.biome",
+ "quarter.tissue",
+ "quarter.zone",
+ "quarter.density",
+ "quarter.role",
+ "quarter.wealth",
+ "quarter.buildingCulture",
+ "quarter.deleted",
+ "block.density",
+ "block.operator",
+ "block.role",
+ "block.deleted",
+ "terrain.underdarkCaverns"
 ]

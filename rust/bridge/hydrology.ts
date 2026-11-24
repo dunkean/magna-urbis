@@ -111,6 +111,8 @@ export const DEFAULT_HYDROLOGY: HydrologySettings = {
   confluence: 'climate',
   deltas: true,
 };
+/** Whether the lake settings ask for no lake at all: the policy, or a share, coverage or largest size of 0. */
+export const lakesOff = (settings: Pick<HydrologySettings, 'lakes' | 'lakeAbundance' | 'lakeCoverage' | 'maxLakeArea'>): boolean => settings.lakes === 'none' || !(settings.lakeAbundance > 0 && settings.lakeCoverage > 0 && settings.maxLakeArea > 0);
 /** River threshold of the vector chain: 0 means about 0.3 % of the map (5 km² on 40 km). */
 export const riverAreaFor = (settings: HydrologySettings, width: number): number => (settings.riverArea > 0 ? settings.riverArea : Math.max(0.02, 0.003 * (width / 1000) ** 2));
 export type HydrologyOverlay = 'none' | 'basins' | 'accumulation' | 'flow' | 'depressions' | 'lakes' | 'channels' | 'raw-basins' | 'raw-accumulation' | 'raw-flow' | 'raw-depressions' | 'flats' | 'flat-rank';
@@ -212,7 +214,7 @@ export class PreparedHydrology {
       settings.main,
       settings.density,
       settings.wetness,
-      settings.lakes,
+      lakesOff(settings) ? 'none' : settings.lakes,
       settings.meanders,
       settings.meanderIntensity,
       settings.estuary,

@@ -74,6 +74,8 @@ pub(super) fn finish(at: &Attempt<'_, '_>, layout: &mut Layout) -> Result<(), St
         network::remap_reservations(layout, &reserved);
     }
     laps.lap("trim.bridgeheads");
+    network::bridge_leads(layout, physical, config);
+    laps.lap("bridge_leads");
     if macroplan::harbour::port_town(config) {
         macroplan::harbour::protect_navigation(layout, physical, town.roads);
     }

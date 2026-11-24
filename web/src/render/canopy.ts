@@ -9,6 +9,9 @@ import { TREE_CELLS, treeMask } from './parchmentTrees';
 export type VegetationStyle = 'classic' | 'canopy';
 /** `conifer` is a dense rounded conifer crown seen from above (cold and mixed woods). */
 export type CanopyKind = 'forest' | 'orchard' | 'conifer';
+/** Symbols of the ground's woods (treeSymbols.ts), in the order of their atlas layers. `bare`: a leafless broadleaf. */
+export const TREE_SPECIES = ['broadleaf', 'conifer', 'bare', 'palm'] as const;
+export type TreeSpecies = (typeof TREE_SPECIES)[number];
 /** A filled shape, or with `line` a closed ink contour of that width (glyph units). */
 interface LeafShape {
   points: Vec2[];
@@ -86,16 +89,86 @@ export function canopyAreaMarks(areas: TextureLayer['areas'], kind: 'forest' | '
     .sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
+/** Turned crowns by hue family: gold, orange and rust. */
+const TURNED = ['#d3a23c', '#cb7a2e', '#a94c2b'] as const,
+  SNOW = '#f5f6f2';
 /** Small hue and lightness differences, while monochrome palettes stay monochrome. */
 export function canopyColor(pal: Palette, tone: number): string {
   const hue = Math.floor(tone / 4),
     mono = ['engraving', 'blueprint', 'night'].includes(pal.name);
-  const base = mono || !hue ? pal.treeFill : mix(pal.treeFill, hue === 1 ? '#b2ad63' : '#67998c', 0.14);
+  const leaf = mono || !hue ? pal.treeFill : mix(pal.treeFill, hue === 1 ? '#b2ad63' : '#67998c', 0.14),
+    base = mix(leaf, TURNED[hue], 0.5 * (pal.season?.autumn ?? 0));
   return mix(base, pal.treeInk, 0.06 + (tone % 4) * 0.075);
+}
+/** The palette of the trees that keep their leaves: the authored foliage, with the snow of the date. */
+const evergreenPalette = (pal: Palette): Palette => (pal.season ? { ...pal, treeFill: pal.season.fill, treeInk: pal.season.ink, season: { ...pal.season, leaf: 1, autumn: 0 } } : pal);
+/** A deciduous symbol that stands bare at the date: the leafless share of the season, always the same trees first. */
+const isBare = (kind: CanopyKind, variant: number, pal: Palette): boolean => kind !== 'conifer' && !!pal.season && hash3(variant, 557, 3) >= pal.season.leaf;
+
+/** A leafless crown seen from above: limbs forking from the trunk inside a faint haze of twigs, white once it snows. */
+export function bareGlyph(kind: 'forest' | 'orchard', variant: number, pal: Palette): LeafShape[] {
+  const h = (salt: number): number => hash3(variant, kind === 'orchard' ? 433 : 431, salt),
+    r = kind === 'orchard' ? 3.6 : 5.8,
+    mono = ['engraving', 'blueprint', 'night'].includes(pal.name),
+    bark = mono ? pal.treeInk : mix(pal.season?.ink ?? pal.treeInk, '#6a5a48', 0.55),
+    snow = pal.season?.snow ?? 0,
+    limbs = 6 + Math.floor(h(1) * 3),
+    turn = h(2) * Math.PI * 2;
+  const haze = Array.from({ length: 28 }, (_, k) => {
+    const a = (k * Math.PI) / 14,
+      rr = r * (0.86 + 0.1 * Math.sin(a * 3 + turn) + 0.06 * Math.sin(a * 5 + 2 * turn));
+    return { x: Math.cos(a) * rr, y: Math.sin(a) * rr };
+  });
+  const shapes: LeafShape[] = [
+    { points: haze.map(p => ({ x: p.x + 0.6, y: p.y + 0.8 })), fill: bark, alpha: 0.08 },
+    { points: haze, fill: mix(mix(bark, pal.paper, 0.45), SNOW, snow), alpha: 0.2 + 0.35 * snow },
+  ];
+  const line = (points: Vec2[], width: number): void => {
+    shapes.push({ points, fill: bark, alpha: 0.85, line: width, open: true });
+  };
+  for (let i = 0; i < limbs; i++) {
+    const a = turn + ((i + 0.5 * (h(10 + i) - 0.5)) * Math.PI * 2) / limbs,
+      len = r * (0.72 + 0.26 * h(30 + i)),
+      bend = a + 0.3 * (h(50 + i) - 0.5),
+      at = (angle: number, d: number, from: Vec2 = { x: 0, y: 0 }): Vec2 => ({ x: from.x + Math.cos(angle) * d, y: from.y + Math.sin(angle) * d }),
+      fork = at(a, len * 0.45);
+    line([{ x: 0, y: 0 }, fork, at(bend, len)], 0.4);
+    line([fork, at(a + 0.55 + 0.2 * h(70 + i), len * 0.42, fork)], 0.24);
+    line([fork, at(a - 0.55 - 0.2 * h(90 + i), len * 0.36, fork)], 0.24);
+  }
+  // The snow lies on the limbs lit from the upper left.
+  if (snow > 0.05) for (const s of shapes.slice(2)) shapes.push({ ...s, points: s.points.map(p => ({ x: p.x - 0.14, y: p.y - 0.18 })), fill: SNOW, alpha: 0.75 * snow, line: s.line! * 0.7 });
+  return shapes;
+}
+
+/** A palm seen from above: arched fronds around a dark heart. Kept green all year. */
+export function palmGlyph(variant: number, pal: Palette, tone: number): LeafShape[] {
+  const h = (salt: number): number => hash3(variant, 619, salt),
+    tree = evergreenPalette(pal),
+    crown = mix(mix(canopyColor(tree, tone), '#7f9a4e', 0.3), tree.treeInk, 0.12),
+    ink = mix(tree.treeInk, pal.ink, 0.35),
+    fronds = 9 + Math.floor(h(1) * 3),
+    turn = h(2) * Math.PI * 2,
+    r = 5.4 * (0.9 + 0.2 * h(3));
+  const frond = (i: number, dx: number, dy: number): Vec2[] => {
+    const a = turn + ((i + 0.35 * (h(10 + i) - 0.5)) * Math.PI * 2) / fronds,
+      len = r * (0.8 + 0.25 * h(30 + i)),
+      at = (d: number, side: number): Vec2 => ({ x: dx + Math.cos(a) * d - Math.sin(a) * side, y: dy + Math.sin(a) * d + Math.cos(a) * side });
+    return [at(0.3, 0), at(len * 0.35, 0.62), at(len * 0.75, 0.5), at(len, 0.05), at(len * 0.75, -0.42), at(len * 0.35, -0.55)];
+  };
+  const all = Array.from({ length: fronds }, (_, i) => i);
+  return [
+    ...all.map((i): LeafShape => ({ points: frond(i, 0.6, 0.85), fill: tree.treeInk, alpha: 0.2 })),
+    ...all.map((i): LeafShape => ({ points: frond(i, 0, 0), fill: i % 3 ? crown : mix(crown, pal.paper, 0.22), alpha: 0.95 })),
+    ...all.map((i): LeafShape => ({ points: frond(i, 0, 0), fill: ink, alpha: 0.65, line: 0.22 })),
+    { points: Array.from({ length: 8 }, (_, k) => ({ x: Math.cos((k * Math.PI) / 4) * 0.9, y: Math.sin((k * Math.PI) / 4) * 0.9 })), fill: ink, alpha: 0.6 },
+  ];
 }
 
 export function canopyGlyph(kind: CanopyKind, variant: number, pal: Palette, tone: number): LeafShape[] {
-  if (kind === 'conifer') return coniferGlyph(variant, pal, tone);
+  if (kind === 'conifer') return coniferGlyph(variant, evergreenPalette(pal), tone);
+  if (isBare(kind, variant, pal)) return bareGlyph(kind, variant, pal);
+  const snow = pal.season?.snow ?? 0;
   const h = (salt: number): number => hash3(variant, kind === 'orchard' ? 211 : 101, salt);
   const r = kind === 'orchard' ? 3.8 : 6.1,
     phase = h(4) * Math.PI * 2,
@@ -141,6 +214,7 @@ export function canopyGlyph(kind: CanopyKind, variant: number, pal: Palette, ton
     { points: ring, fill: crown, alpha: pal.name === 'parchment' ? 0.9 : 0.96 },
     { points: ring.map(p => ({ x: p.x * 0.8 + r * 0.14, y: p.y * 0.8 + r * 0.16 })), fill: mix(crown, pal.treeInk, 0.5), alpha: 0.58 },
     { points: ring.map(p => ({ x: p.x * 0.58 - r * 0.2, y: p.y * 0.58 - r * 0.2 })), fill: mix(crown, pal.paper, 0.38), alpha: 0.82 },
+    ...(snow > 0 ? [{ points: ring.map(p => ({ x: p.x * 0.7 - r * 0.15, y: p.y * 0.7 - r * 0.17 })), fill: SNOW, alpha: 0.8 * snow }] : []),
     ...hatch,
     { points: ring, fill: ink, alpha: 0.72, line: kind === 'orchard' ? 0.3 : 0.34 },
   ];
@@ -185,6 +259,7 @@ function coniferGlyph(variant: number, pal: Palette, tone: number): LeafShape[] 
     { points: ring(0.82, 0.5, 0.6), fill: dark, alpha: 0.5 },
     { points: ring(0.62, -r * 0.16, -r * 0.18), fill: light, alpha: 0.5 },
     ...tufts,
+    ...(pal.season?.snow ? [{ points: ring(0.68, -r * 0.14, -r * 0.16), fill: SNOW, alpha: 0.8 * pal.season.snow }] : []),
     { points: ring(0.3, 0.15, 0.2), fill: dark, alpha: 0.6 },
     { points: ring(1), fill: ink, alpha: 0.3, line: 0.22 },
   ];
@@ -224,9 +299,28 @@ export class CanvasCanopy {
     this.engraved = pal.name === 'parchment';
   }
 
+  /** The snow of the date over what is painted so far (`cx` in glyph units, upper-left light). */
+  private paintSnow(cx: CanvasRenderingContext2D, half: number): void {
+    const snow = this.pal.season?.snow ?? 0;
+    if (!snow) return;
+    const cap = cx.createLinearGradient(-half * 0.8, -half * 0.8, half * 0.75, half * 0.75);
+    cap.addColorStop(0, `rgba(246,247,243,${0.92 * snow})`);
+    cap.addColorStop(0.45, `rgba(246,247,243,${0.6 * snow})`);
+    cap.addColorStop(0.75, 'rgba(246,247,243,0)');
+    cx.globalCompositeOperation = 'source-atop';
+    cx.globalAlpha = 1;
+    cx.fillStyle = cap;
+    cx.fillRect(-10, -10, 20, 20);
+    cx.globalCompositeOperation = 'source-over';
+  }
   /** One engraved tree in glyph units around the origin (the atlas cell is 20 units): the crown mask is washed in the
    * tone's colour and shaded from the upper-left light, then the ink strokes, and the cast shadow goes behind. */
   private paintEngraved(cx: CanvasRenderingContext2D, kind: CanopyKind, variant: number, tone: number): void {
+    if (kind !== 'conifer' && isBare(kind, variant, this.pal)) {
+      this.paint(cx, bareGlyph(kind, variant, this.pal));
+      cx.globalAlpha = 1;
+      return;
+    }
     const pal = this.pal,
       h = (salt: number): number => hash3(variant, kind === 'orchard' ? 211 : kind === 'conifer' ? 307 : 101, salt + 500);
     const pick = (cells: readonly number[], t: number): number => cells[Math.min(cells.length - 1, Math.floor(t * cells.length))];
@@ -274,6 +368,7 @@ export class CanvasCanopy {
     cx.fillStyle = light;
     cx.fillRect(-10, -10, 20, 20);
     cx.globalCompositeOperation = 'source-over';
+    this.paintSnow(cx, half);
     // Twice: the fine engraved strokes stay a firm dark line once the sprite is reduced.
     cx.save();
     cx.rotate(angle);
@@ -295,7 +390,7 @@ export class CanvasCanopy {
   /** Conifer seen from above: a compact filled crown with 5 to 7 short pointed lobes (three variants), washed, shaded and
    * inked like the round engraved crowns so both read as one family. */
   private paintConiferCrown(cx: CanvasRenderingContext2D, variant: number, tone: number, span: number, h: (salt: number) => number): void {
-    const pal = this.pal,
+    const pal = evergreenPalette(this.pal),
       teeth = [8, 10, 11][Math.min(2, Math.floor(h(1) * 3))],
       R = span * 0.44,
       angle = h(4) * Math.PI * 2;
@@ -340,6 +435,7 @@ export class CanvasCanopy {
     cx.beginPath();
     cx.arc(0, 0, R * 0.36, 0, Math.PI * 2);
     cx.fill();
+    this.paintSnow(cx, R);
     cx.strokeStyle = mix(pal.treeInk, pal.ink, 0.4);
     cx.lineWidth = 0.28;
     cx.lineJoin = 'round';
@@ -353,10 +449,13 @@ export class CanvasCanopy {
     cx.restore();
   }
 
-  /** One engraved symbol (broadleaf or conifer) around the origin in glyph units (a 20-unit cell): the ground's tree
-   * symbol atlas (treeSymbols.ts) is painted with it. */
-  paintSymbol(cx: CanvasRenderingContext2D, conifer: boolean, variant: number, tone: number): void {
-    this.paintEngraved(cx, conifer ? 'conifer' : 'forest', variant, tone);
+  /** One symbol around the origin in glyph units (a 20-unit cell): the ground's tree symbol atlas (treeSymbols.ts) is
+   * painted with it. */
+  paintSymbol(cx: CanvasRenderingContext2D, species: TreeSpecies, variant: number, tone: number): void {
+    if (species === 'bare' || species === 'palm') {
+      this.paint(cx, species === 'bare' ? bareGlyph('forest', variant, this.pal) : palmGlyph(variant, this.pal, tone));
+      cx.globalAlpha = 1;
+    } else this.paintEngraved(cx, species === 'conifer' ? 'conifer' : 'forest', variant, tone);
   }
 
   private glyph(kind: CanopyKind, variant: number, tone: number): LeafShape[] {

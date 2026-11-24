@@ -377,7 +377,12 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   float phase=clamp(uV2Season,0.,1.),green=.5+.5*sin(phase*6.2831853-1.5707963);
   vec3 micro=clamp(surfaceMicroTone,vec3(.35),vec3(1.65)),bare=renderGuideOpen/micro;
   vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;
-  vec2 grid=uv*uOccupationN-.5,f=fract(grid);ivec2 base=ivec2(floor(grid));
+  // The class raster is read through a wander, so no frontier follows its texels: a third of a texel (8 m at most) for
+  // tended land, whose limits stay near their polygons, a wider one for wild land below. Its scale follows the texel: on
+  // a large map (texels of tens of metres) a fixed 22 m kept the texel blobs.
+  uint salt=uMaterialSeed+1091u;float ws=max(1.,cell/24.);
+  vec2 broad=vec2(surfaceNoise(vec3(world/(43.*ws),0.),salt),surfaceNoise(vec3(world/(43.*ws),0.),salt+1u));
+  vec2 grid=(uv+broad*min(.35*cell,8.)/uOccupationRect.z)*uOccupationN-.5,f=fract(grid);ivec2 base=ivec2(floor(grid));
   ivec2 top=ivec2(int(uOccupationN)-1);
   // A nearest class gate cut the filtered signed edge back to whole texels: blend categorical responses, not IDs.
   // The loops only sum class weights. Each material is then evaluated once: inlined in the loops, they multiplied
@@ -418,11 +423,7 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   float wildShare=1.-tendedShare-hardShare;
   float wMeadow=0.,wPasture=0.,wHeath=0.,wMarsh=0.;
   if(wildShare>.001){
-    uint salt=uMaterialSeed+1091u;
-    // The wander follows the class texel: on a large map (texels of tens of metres) a fixed 22 m kept the texel blobs.
-    float ws=max(1.,cell/24.);
-    vec2 wander=(vec2(surfaceNoise(vec3(world/(43.*ws),0.),salt),surfaceNoise(vec3(world/(43.*ws),0.),salt+1u))*16.
-      +vec2(surfaceNoise(vec3(world/(13.*ws),0.),salt+2u),surfaceNoise(vec3(world/(13.*ws),0.),salt+3u))*6.)*ws;
+    vec2 wander=(broad*16.+vec2(surfaceNoise(vec3(world/(13.*ws),0.),salt+2u),surfaceNoise(vec3(world/(13.*ws),0.),salt+3u))*6.)*ws;
     vec2 wgrid=(uv+wander/uOccupationRect.z)*uOccupationN-.5,wf=fract(wgrid);ivec2 wbase=ivec2(floor(wgrid));
     for(int y=0;y<2;y++)for(int x=0;x<2;x++){
       int cls=int(texelFetch(uOccupation,clamp(wbase+ivec2(x,y),ivec2(0),top),0).b*255.+.5);

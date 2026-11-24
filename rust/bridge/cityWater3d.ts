@@ -1,6 +1,6 @@
 import { WATER_FRESH_ICE_GLSL } from '../../web/src/render/waterRegime';
 
-/** City water uses the map's optical depth and climate, retaining v2 ice and shores. */
+/** City water uses the map's optical depth and climate, retaining v2 ice and shores. Needs freshWaterTone (materialLook). */
 export const CITY_WATER_3D_GLSL = `${WATER_FRESH_ICE_GLSL}
 // x optical depth of inland water, y distance to the nearest bank in metres (128 beyond the search, -1 unknown).
 vec2 cityWaterDepth(vec2 world,float footprint,float cover){
@@ -34,9 +34,7 @@ vec3 cityWaterAt(vec3 base,vec3 surface,vec2 world,float footprint,float cover){
   if(!sea){vec2 bed=cityWaterDepth(world,footprint,cover);depth=bed.x;bank=bed.y;}
   vec3 water=v2WaterColor(v2Local(surface,world,0.,footprint),world,footprint,cover,sea?1.:3.,depth);
   if(!sea){
-    water=mix(water,water*vec3(.86,.70,.48),waterTea());
-    water=mix(water,vec3(.38,.62,.62),.45*waterGlacial());
-    water=mix(water,vec3(.45,.38,.25),.275*waterSediment());
+    water=freshWaterTone(water);
     // Fresh ice from the snow of the land at the water's altitude (v2WinterFresh, set by the v2Local above), as on
     // the 2D map: border ice grown from the banks, an open channel in wide water until the cold is deep. Without a
     // bank distance (light display tier) the water is open or frozen across.

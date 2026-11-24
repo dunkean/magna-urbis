@@ -758,7 +758,6 @@ export const engineRuntimeEntries: readonly (readonly [string, string])[] = [
 export const engineRuntimeTemplates: readonly (readonly [string, string])[] = [
   ["Emprise réduite de {percent} % — contraintes du site", "Town land {percent} % short — site constraints"],
   ["Budget foncier {density} hab./ha — densité automatique", "Land budget {density} people/ha — automatic density"],
-  ["Enceintes séparées pour {quarters} quartiers portuaires — raccordement contraint", "Separate walls for {quarters} port quarters — constrained link"],
   ["Style {style} écarté — fortification incompatible", "Wall style {style} skipped — incompatible fortification"],
   ["Emprise sur pilotis {share}/{target} % — contraintes de rive", "Stilt land {share}/{target} % — shore constraints"],
   ["Village en ruban {more}/{need} ménages — voie trop courte", "Village ribbon {more}/{need} households — short road"],

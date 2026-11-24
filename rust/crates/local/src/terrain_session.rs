@@ -67,6 +67,12 @@ struct Carve {
     /// Natural tunnels amount (0 none); absent, the default.
     #[serde(default)]
     tunnels: Option<f64>,
+    /// Share of the map the caverns open; absent, the default.
+    #[serde(default)]
+    caverns: Option<f64>,
+    /// Lakes amount (0 none); absent, the default.
+    #[serde(default)]
+    lakes: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -151,6 +157,8 @@ fn apply(op: &str, raw: &[u8], plane: Vec<f32>, state: &mut Session) -> ApiResul
             let terrain = state.terrain.as_mut().ok_or(MISSING)?;
             let mut options = magna_urbis_core::underdark::UnderdarkOptions::default();
             if let Some(amount) = carve.tunnels { options.natural_tunnels = amount as f32; }
+            if let Some(share) = carve.caverns { options.caverns = share as f32; }
+            if let Some(amount) = carve.lakes { options.lakes = amount as f32; }
             terrain.carve_underdark_with(&carve.seed, &options)?;
             reply(terrain, Vec::new(), Vec::new(), Value::Null)
         }

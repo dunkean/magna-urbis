@@ -8,7 +8,7 @@ import { settlementDisplayName } from '../mapPresentation';
 import { localFactsHtml, type LocalFactsInput } from '../localFacts';
 import { activitySitesOf } from '../activitySites';
 import { isolatedPlacesOf } from '../isolatedPlaces';
-import { demographicClass } from '../../../../rust/bridge/settlementDemography';
+import { DEMOGRAPHIC_CLASSES } from '../../../../rust/bridge/settlementDemography';
 import { nativeCityRecords } from '../nativeProducts';
 import { cityReachedPopulation, populationText, populationShortfallText } from '../../render/cityPopulation';
 import { emptyTownWarningKeys, isNeighbourWarning, nameNeighbourWarning } from '../townNeighbours';
@@ -19,6 +19,9 @@ import { $, esc } from './dom';
 
 /** Number formatting of the population texts, in the current language. */
 export const populationFormat = () => ({ t: translate, locale: numberLocale() });
+
+/** Order of the Places list groups: the identity the placement gave each place, largest first. */
+const classRank = (cls: string): number => DEMOGRAPHIC_CLASSES.findIndex(c => c.id === cls);
 
 export function createPlacesActions(state: PageState, actions: PageActions) {
   const placeName = (key: string): string => (state.world && settlementDisplayName(state.world, key, state.settings)) || key;
@@ -152,10 +155,10 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
       $('#settlement-list'),
       towns.length
         ? [...towns]
-            .sort((a, b) => b.population - a.population)
+            .sort((a, b) => classRank(b.cls) - classRank(a.cls) || b.population - a.population)
             .map(
               (s, index, list) =>
-                `${index === 0 || demographicClass(list[index - 1].population) !== demographicClass(s.population) ? `<h3 class="settlement-group">${esc(translate(demographicClass(s.population)))}</h3>` : ''}<div class="settlement-choice"><input type="radio" name="city-target" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}', s.name ?? s.key))}" ${state.selectedCities.has(s.key) ? 'checked' : ''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${state.selectedTown === s.key}"><span class="settlement-dot ${(s.main ? state.world?.urban : s.urban) ? 'ready' : ''}"></span><span class="grow"><span class="settlement-name"><strong>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</strong><span class="view-loading town-render-loading" data-town-render-loading="${esc(s.key)}" role="status" aria-busy="${firstDisplay.pending(state.world, s.key)}" aria-label="Loading textures and view…" title="Loading textures and view…"${firstDisplay.pending(state.world, s.key) ? '' : ' hidden'}></span>${((warning: string) => (warning ? `<span class="settlement-warning" role="img" title="${esc(warning)}" aria-label="${esc(warning)}">⚠</span>` : ''))(actions.placeWarningText(s.key, s.population))}</span><small>${actions.populationMarkup(s.key, s.population)} · <span>${esc(s.archetype)}</span></small><small class="settlement-stage">${actions.cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? state.world?.urban : s.urban) ? '↗' : '＋'}</span></button></div>`,
+                `${index === 0 || list[index - 1].cls !== s.cls ? `<h3 class="settlement-group">${esc(translate(s.cls))}</h3>` : ''}<div class="settlement-choice"><input type="radio" name="city-target" data-city-select="${esc(s.key)}" aria-label="${esc(translate('Select {name} for generation').replace('{name}', s.name ?? s.key))}" ${state.selectedCities.has(s.key) ? 'checked' : ''}><button class="settlement-item" data-town="${esc(s.key)}" aria-pressed="${state.selectedTown === s.key}"><span class="settlement-dot ${(s.main ? state.world?.urban : s.urban) ? 'ready' : ''}"></span><span class="grow"><span class="settlement-name"><strong>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</strong><span class="view-loading town-render-loading" data-town-render-loading="${esc(s.key)}" role="status" aria-busy="${firstDisplay.pending(state.world, s.key)}" aria-label="Loading textures and view…" title="Loading textures and view…"${firstDisplay.pending(state.world, s.key) ? '' : ' hidden'}></span>${((warning: string) => (warning ? `<span class="settlement-warning" role="img" title="${esc(warning)}" aria-label="${esc(warning)}">⚠</span>` : ''))(actions.placeWarningText(s.key, s.population))}</span><small>${actions.populationMarkup(s.key, s.population)} · <span>${esc(s.archetype)}</span></small><small class="settlement-stage">${actions.cityStageLabel(s.key)}</small></span><span class="count-badge">${(s.main ? state.world?.urban : s.urban) ? '↗' : '＋'}</span></button></div>`,
             )
             .join('')
         : '<p class="hint">Create settlement sites to select a place.</p>',
@@ -235,6 +238,7 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
     actions.syncPlacesPanel();
     state.chain.sync();
     actions.syncLocalFacts();
+    actions.refreshEntitySheet();
     syncFirstDisplay();
     void waitForFirstDisplay();
   }

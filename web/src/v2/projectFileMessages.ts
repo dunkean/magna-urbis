@@ -6,7 +6,7 @@ const rows: readonly (readonly [string, string])[] = [
   ['Binary .muproj, complete JSON, or seeds + settings. Projects retain the elevation grids.', 'Fichier binaire .muproj, JSON complet ou graines + réglages. Les projets conservent les grilles d’altitude.'],
   ['The binary project retains the exact map, settings and edits in a compressed file.', 'Le projet binaire conserve la carte exacte, les réglages et les modifications dans un fichier compressé.'],
   ['The JSON project is a readable interchange format. Use Save map for a smaller file.', 'Le projet JSON est un format d’échange lisible. Utilisez Enregistrer la carte pour un fichier plus petit.'],
-  ['256-level PNG accompanied by minimum/maximum elevations. Save map retains the exact FP32 grids.', 'PNG à 256 niveaux accompagné des altitudes minimale et maximale. Enregistrer la carte conserve les grilles FP32 exactes.'],
+  ['65,536-level PNG with its elevation range, ready to import again. Save map retains the exact FP32 grids.', 'PNG à 65 536 niveaux avec sa plage d’altitudes, prêt à être réimporté. Enregistrer la carte conserve les grilles FP32 exactes.'],
   ['Binary project is too large (2 GiB compressed maximum).', 'Projet binaire trop volumineux (2 Gio compressés maximum).'],
   ['Project is too large after decompression (1.5 GiB maximum).', 'Projet trop volumineux après décompression (1,5 Gio maximum).'],
   ['JSON project is too large (256 MiB maximum). Use a .muproj file for large maps.', 'Projet JSON trop volumineux (256 Mio maximum). Utilisez un fichier .muproj pour les grandes cartes.'],

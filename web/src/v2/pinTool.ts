@@ -1,8 +1,8 @@
-/** Map pins (`settings.pins`): a "Drop pin" toggle in the view strip, numbered markers on the 2D map (SVG overlay, as
+/** Map pins (`settings.pins`): a "Drop pin" toggle in the view strip, numbered markers on the map (SVG overlay, as
  * the measure tool) and `centerOn` for the pin list. Coordinates are integer world metres; they travel in the short
  * code, the optional texts only in the project. */
 import type { View } from '../render/view';
-import { screenToWorld, worldToScreen } from '../render/view';
+import type { ScreenProjection } from '../render/world/camera';
 import type { V2Settings } from './contracts';
 import { registerMessages, setText } from './i18n';
 import './pinTool.css';
@@ -18,6 +18,9 @@ export interface PinToolApi {
   slot: HTMLElement;
   getView(): View;
   setView(view: View): void;
+  /** Where the ground is on screen, in the top view or tilted. */
+  projection(): ScreenProjection;
+  groundAt(sx: number, sy: number): { x: number; y: number } | undefined;
   getMapSize(): number | undefined;
   getSettings(): V2Settings;
   /** The pins changed (recipe edit). */
@@ -49,14 +52,11 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
     frame = 0,
     press: { id: number; x: number; y: number } | undefined;
   const pins = () => api.getSettings().pins ?? [];
+  const at: [number, number] = [0, 0];
   function draw(): void {
     frame = 0;
-    const view = api.getView(),
-      list = pins(),
-      w = map.clientWidth,
-      h = map.clientHeight;
-    // Markers follow the flat 2D map; a tilted or free camera hides them rather than misplacing them.
-    svg.style.display = view.pitch || view.eye !== undefined ? 'none' : '';
+    const projection = api.projection(),
+      list = pins();
     while (svg.childElementCount > list.length) svg.lastElementChild!.remove();
     while (svg.childElementCount < list.length) {
       const group = document.createElementNS(ns, 'g'),
@@ -70,9 +70,10 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
       svg.append(group);
     }
     list.forEach((pin, i) => {
-      const [x, y] = worldToScreen(view, w, h, pin.x, pin.y),
-        group = svg.children[i] as SVGGElement;
-      group.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+      const group = svg.children[i] as SVGGElement;
+      // A pin behind a tilted camera has no place on screen.
+      group.style.display = projection.project(pin.x, pin.y, at) ? '' : 'none';
+      group.setAttribute('transform', `translate(${at[0].toFixed(1)} ${at[1].toFixed(1)})`);
       group.lastElementChild!.textContent = String(i + 1);
       const title = pin.text ? `#${i + 1} ${pin.text}` : `#${i + 1}`;
       if (group.dataset.title !== title) {
@@ -95,7 +96,11 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
     map.querySelector('.canvas-wrap')?.classList.toggle('pinning', on);
     schedule();
   };
-  button.onclick = () => setActive(!active);
+  button.onclick = () => {
+    // One map tool at a time.
+    if (!active) window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'navigate' }));
+    setActive(!active);
+  };
   window.addEventListener('v2-edit-mode', event => {
     if ((event as CustomEvent<string>).detail !== 'navigate') setActive(false);
   });
@@ -112,9 +117,11 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
     press = undefined;
     if (moved) return; // A drag pans the map.
     const r = map.getBoundingClientRect(),
-      [x, y] = screenToWorld(api.getView(), map.clientWidth, map.clientHeight, e.clientX - r.left, e.clientY - r.top),
+      point = api.groundAt(e.clientX - r.left, e.clientY - r.top),
       size = api.getMapSize();
-    if (size === undefined || x < 0 || y < 0 || x >= size || y >= size) return;
+    if (!point || size === undefined) return;
+    const { x, y } = point;
+    if (x < 0 || y < 0 || x >= size || y >= size) return;
     const settings = api.getSettings();
     (settings.pins ??= []).push({ x: Math.round(x), y: Math.round(y) });
     api.changed();

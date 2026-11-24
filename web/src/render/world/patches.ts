@@ -40,6 +40,11 @@ export const morphStart = (ratio: number): number => 0.5 + 0.8 / ratio;
  * the spline surface has nothing more to show. */
 export const patchLevels = (n: number): number => Math.max(1, Math.ceil(Math.log2(n / LATTICE)) + 1);
 
+/** Cells (m) the mesh needs to show a shaped town ground (groundShape.ts): two or three across a lot. */
+const SHAPED_CELL = 3.5;
+/** Levels of the quadtree where towns shape the ground: finer near the eye only, as every level. */
+export const shapedPatchLevels = (levels: number, mapSize: number): number => levels + Math.max(0, Math.min(4, Math.ceil(Math.log2(mapSize / 2 ** levels / LATTICE / SHAPED_CELL))));
+
 export interface PatchQuery {
   /** Side of the map in metres. */
   mapSize: number;

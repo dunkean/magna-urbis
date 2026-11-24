@@ -142,13 +142,16 @@ pub(super) fn dig_moat(
             }
         }
     }
+    // A run that faces natural water within 40 m outside digs none: the water is its moat (cave
+    // rock is no water).
+    let waterside = |i: usize| !style.cave && [10.0, 20.0, 30.0, 40.0].iter().any(|&off| wet_outward(path[i], path[i + 1], ns[i], surface, off) > 0.3);
     // No ditch along steep or water-side runs, nor at a faubourg gate front.
     // A run's no-ditch zone stops square at its ends: the ditch of the next,
     // dry and level run goes on round the corner up to the water or the
     // slope instead of stopping tens of metres short of it.
     let no_ditch = Cut::new(
         (0..n_seg)
-            .filter(|&i| steep[i])
+            .filter(|&i| steep[i] || waterside(i))
             .map(|i| {
                 let (a, b) = (path[i], path[i + 1]);
                 let t = dir(a, b);

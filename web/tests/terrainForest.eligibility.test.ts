@@ -51,9 +51,24 @@ describe('forest field follows Render tree eligibility', () => {
   });
 
   it('leaves no potential height above the treeline for planted woods', async () => {
-    // 3.5 km in the temperate preset: summer ≈ 1 °C, far above Render's tree limit.
-    const high = band(await build(() => 3500), 0, width);
+    // 4.5 km in the temperate preset, far above the tree line of any massif.
+    const high = band(await build(() => 4500), 0, width);
     expect(high.cover).toBe(0);
     expect(high.height).toBe(0);
+  });
+
+  it('carries alpine forest to a ragged line near 2,000 m, open in its upper belt', async () => {
+    const alpine = async (z: number) => {
+      const data = new Float32Array(n * n).fill(z);
+      const field = await buildForestField({ seed: 428019, climate: [9, 1500], height: { x: 0, y: 0, width, n, data } }, settings, WEB);
+      let sum = 0;
+      for (let o = 0; o < field.rgba.length; o += 4) sum += field.rgba[o] / 255;
+      return sum / (field.rgba.length / 4);
+    };
+    const [closed, belt, above] = [await alpine(1300), await alpine(1800), await alpine(2600)];
+    expect(closed).toBeGreaterThan(0.35);
+    expect(belt).toBeGreaterThan(0.03);
+    expect(belt).toBeLessThan(closed * 0.8);
+    expect(above).toBeLessThan(0.02);
   });
 });

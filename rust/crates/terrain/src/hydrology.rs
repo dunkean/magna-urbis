@@ -1728,6 +1728,10 @@ fn principal_source(
     cell: f32,
     width: f32,
 ) -> (Option<usize>, bool) {
+    // River density 0: no river at all, the principal included.
+    if cfg.density <= 0.0 {
+        return (None, false);
+    }
     let area = width * width;
     let threshold = 1_800_000.0 / cfg.density.max(0.15).powf(1.5) / cfg.wetness;
     let mut distance = vec![0.0_f32; h.len()];
@@ -1886,9 +1890,9 @@ fn rivers(
             }
         }
     }
-    // Small lakes still have an explicit spill stream, independently of tributary density.
+    // Small lakes still have an explicit spill stream, whatever the tributary density above 0.
     // Sorted ids keep geometry and node ordering deterministic across native/WASM builds.
-    let mut outlets: Vec<_> = lake_outlets.into_iter().collect();
+    let mut outlets: Vec<_> = lake_outlets.into_iter().filter(|_| cfg.density > 0.0).collect();
     outlets.sort_unstable_by_key(|&(lake, _)| lake);
     for (lake, mut i) in outlets {
         loop {

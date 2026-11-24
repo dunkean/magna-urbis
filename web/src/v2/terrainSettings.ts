@@ -194,6 +194,7 @@ export function effectiveTerrainSettings(settings: V2Settings, width: number): E
     underdark: settings.options.biome === 'underdark' ? true : undefined,
     // Natural tunnels only exist in the Underdark: the amount stays out of every other map's settings.
     underdarkTunnels: settings.options.biome === 'underdark' ? (t.underdarkTunnels ?? 1) : undefined,
+    underdarkCaverns: settings.options.biome === 'underdark' ? (t.underdarkCaverns ?? 0.2) : undefined,
     coarseModel: runtime?.source === 'neural-python' ? t.coarseModel : undefined,
     baseModel: runtime?.source === 'neural-python' ? t.baseModel : undefined,
     decoderModel: runtime?.source === 'neural-python' ? t.decoderModel : undefined,
@@ -255,6 +256,7 @@ export function validateTerrainSettings(value: unknown, allowTracedCoast = false
     'procedural',
     'underdark',
     'underdarkTunnels',
+    'underdarkCaverns',
   ];
   if (value.heightmap !== undefined) {
     const info = value.heightmap;
@@ -290,6 +292,7 @@ export function validateTerrainSettings(value: unknown, allowTracedCoast = false
   numeric(value.resolution, 'resolution', 64, 1024, true);
   numeric(value.sampleSpacing, 'sampleSpacing', 1, 1000);
   numeric(value.underdarkTunnels, 'underdarkTunnels', 0, 3);
+  numeric(value.underdarkCaverns, 'underdarkCaverns', 0.02, 0.6);
   numeric(value.fidelity, 'fidelity', 0.001, 2);
   for (const key of ['coarseModel', 'baseModel', 'decoderModel']) if (value[key] !== undefined && (typeof value[key] !== 'string' || (value[key] as string).length > 300)) throw new Error(`Invalid terrain.${key}.`);
   const ranges: Record<string, Record<string, readonly [number, number]>> = {

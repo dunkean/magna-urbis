@@ -37,20 +37,9 @@ Ces coefficients sont des **réglages de génération de mondes**, et non des es
 
 ### Plancher des cartes rudes
 
-Sur une carte alpine, arctique, désertique ou souterraine, l'estimation réaliste donne parfois une poignée d'habitants (alpin, haute montagne, 10 km avec côte : 12 habitants). Une table `SETTLEMENT_FLOOR` (`regionalPopulation.ts`) fixe un minimum de lieux par largeur de carte ; elle remplace la liste automatique seulement quand la population réaliste lui est inférieure. Elle ne s'applique jamais à une population, une densité ou des effectifs imposés.
+Sur une carte alpine, arctique, désertique ou souterraine, l'estimation réaliste donne parfois une poignée d'habitants (alpin, haute montagne, 10 km avec côte : 12 habitants). `settlementFloor` (`regionalPopulation.ts`) fixe un minimum de lieux et d'habitants par largeur de carte (environ 3 lieux et 140 habitants à 2,4 km, 6 et 600 à 10 km, 12 et 2 400 à 40 km) ; il remplace l'estimation seulement quand elle lui est inférieure. Il ne s'applique jamais à une population, une densité ou des effectifs imposés.
 
-| Largeur | Lieux minimaux | Habitants |
-|---|---|---:|
-| < 2 km | 1 hameau, 1 ferme | ~60 |
-| 2,4 km | 2 hameaux, 1 ferme | ~110 |
-| 5 km | 1 village, 1 hameau, 2 fermes | ~370 |
-| 10 km | 1 village, 2 hameaux, 2 fermes | ~420 |
-| 20 km | 2 villages, 3 hameaux, 3 fermes | ~770 |
-| 40 km | 1 bourg, 3 villages, 4 hameaux, 4 fermes | ~2 600 |
-| 100 km | 3 bourgs, 6 villages, 6 hameaux, 4 fermes | ~6 600 |
-| 200 km | 5 bourgs, 10 villages, 6 hameaux, 4 fermes | ~10 800 |
-
-Plusieurs petits lieux plutôt qu'un grand : chacun demande peu de terrain plat, et le placement abaisse un lieu d'une classe s'il manque de place. Une culture sans une classe (camps) reçoit la plus grande classe qu'elle construit. Une région tempérée reste au-dessus (10 km : 750 à 6 000 habitants selon le relief).
+Plusieurs petits lieux plutôt qu'un grand : chacun demande peu de terrain plat, et le placement réduit progressivement un lieu s'il manque de place. Un lieu ne dépasse pas le maximum automatique de sa culture (camps). Une région tempérée reste au-dessus (10 km : 750 à 6 000 habitants selon le relief).
 
 `population automatique = max(population réaliste, plancher)`
 
@@ -71,34 +60,23 @@ La surface automatique sans largeur explicite vaut 40 × 40 km ; elle n'est plus
 
 ## Profils culturels
 
-| Profil | Densité de référence | Résilience | Maximum automatique d'un lieu | Répartition |
-|---|---:|---:|---:|---|
-| Historique par défaut | 75 | 1 | 300 000 | 22 % villes, 23 % bourgs, 35 % villages, 13 % hameaux, 7 % fermes |
-| Moderne / futuriste | 1 200 | 0,5 | 5 000 000 | 78 % villes, 14 % bourgs, 5 % villages, 2 % hameaux, 1 % fermes |
-| Très dense : highrise, megacity, arcology, cyberpunk | 3 000 | 0,5 | 5 000 000 | Comme moderne, avec de plus grandes villes de référence |
-| Mobile : camps sibériens, nomades, ordu, Plaines, nordiques | 1,2 | 0,8 | 400 | Petits villages, hameaux et foyers dispersés |
-| Camp inuit | 0,75 | 0,7 | 120 | 80 % hameaux, 20 % foyers ; pas de ville automatique de 5 000 habitants |
-| Villages : PNW, Guarani, Iroquoiens, kraal, Budj Bim | 4 | 0,9 | 900 | 55 % villages, 35 % hameaux, 10 % fermes |
-| Montagnard : nains / duergars | 50 | 0,55 | 300 000 | Répartition historique |
-| Terrasses : Inca, Himalaya, Caucase, Tibet, Newar | 50 | 0,7 | 300 000 | Répartition historique |
-| Dispersé : elfes, halflings, hommes-lézards, myconides | 25 | 1 | 10 000 | 10 % bourgs, 55 % villages, 25 % hameaux, 10 % fermes |
+| Profil | Densité de référence | Résilience | Maximum automatique d'un lieu |
+|---|---:|---:|---:|
+| Historique par défaut | 75 | 1 | 300 000 |
+| Moderne / futuriste | 1 200 | 0,5 | 5 000 000 |
+| Très dense : highrise, megacity, arcology, cyberpunk | 3 000 | 0,5 | 5 000 000 |
+| Mobile : camps sibériens, nomades, ordu, Plaines, nordiques | 1,2 | 0,8 | 400 |
+| Camp inuit | 0,75 | 0,7 | 120 |
+| Villages : PNW, Guarani, Iroquoiens, kraal, Budj Bim | 4 | 0,9 | 900 |
+| Montagnard : nains / duergars | 50 | 0,55 | 300 000 |
+| Terrasses : Inca, Himalaya, Caucase, Tibet, Newar | 50 | 0,7 | 300 000 |
+| Dispersé : elfes, halflings, hommes-lézards, myconides | 25 | 1 | 10 000 |
 
 Les identifiants exacts sont résolus par `populationProfile` dans `web/src/v2/regionalPopulation.ts`. Les cultures modernes sont identifiées par `cultureEra`, et non par une recherche du mot « modern » dans leur nom.
 
-Les parts démographiques ne doivent pas multiplier les petits lieux coûteux à construire. En automatique, les fermes isolées sont limitées à une pour 2 000 habitants (24 au maximum), et les hameaux à un pour 1 000 habitants (48 au maximum). Les habitants sont redistribués entre les lieux restants, sans réduction de la population régionale. Une culture dont les lieux sont tous petits conserve le nombre nécessaire pour loger sa population. Les effectifs explicitement imposés restent prioritaires. Une région historique ou elfique de 10 000 habitants produit ainsi au plus 5 fermes et 10 hameaux.
+Le nombre de lieux automatiques suit la largeur de la carte et la racine de la population (`automaticPlaceLimit`, 60 au plus) : il ne multiplie pas les petits lieux coûteux à construire. Les effectifs explicitement imposés restent prioritaires.
 
 La construction de fond se fait par lots de huit lieux au maximum, en utilisant les quatre voies de génération du parcours « Construire les villes sélectionnées ». Les cultures agricoles, noms et affichage régionaux sont actualisés une seule fois par lot. Une annulation ou une modification de la carte rejette tout résultat tardif ; le lieu sélectionné est prioritaire dans le lot suivant.
-
-Exemples sur **40 × 40 km avec côte**, graine `42` :
-
-| Culture et milieu | Population régionale | Plus grand lieu | Sites isolés demandés |
-|---|---:|---:|---:|
-| Européen historique, plaine tempérée | 98 400 | 48 026 | 394 |
-| Inuit, plaine arctique | 432 (plancher) | 120 | 1 |
-| Inuit, haute montagne arctique | 432 (plancher) | 120 | 1 |
-| American grid, plaine tempérée | 1 574 400 | Environ 580 000 | Selon cible et ressources |
-
-Les populations locales varient avec la graine. Ces nombres décrivent la demande avant les refus éventuels du placement.
 
 ## Répartition et modifications
 
@@ -106,10 +84,10 @@ Les catégories suivent les seuils du catalogue démographique commun : fermes 1
 
 La liste de lieux est primaire, la population en découle. Les effectifs automatiques viennent de la taille de carte, du milieu et de la culture (population automatique ci-dessus), jamais d'une population saisie.
 
-1. Le budget de chaque catégorie de la liste automatique est déterminé par le profil culturel. Un reliquat descend vers la catégorie suivante.
-2. Changer un compteur impose cette seule catégorie et change la population des habitants des lieux ajoutés ou retirés (taille moyenne de la catégorie dans la liste automatique) : ajouter un bourg ajoute ses habitants. Si une population ou une densité a été saisie, elle est corrigée du même écart. Saisir une population ou une densité redimensionne les lieux sans changer leur nombre ; un lieu change d'une classe (en sautant les classes imposées) quand la sienne ne peut plus contenir sa taille, et un lieu n'est ajouté ou retiré que si aucun changement de classe ne suffit. La liste est limitée à 1 000 lieux ; le panneau refuse un ajout qui dépasse ce total sans diminuer d'autres compteurs. Une recette partielle peut toujours imposer une seule catégorie, les autres restant automatiques.
-3. Chaque lieu reçoit un poids reproductible à partir de sa clé et de `settle-sites`. Les réglages avancés de variation et de loi rang-taille peuvent modifier ces poids.
-4. Les habitants sont répartis sous les planchers et plafonds des catégories. Les populations locales imposées sont fixées avant la distribution du solde.
+1. Les tailles sont tirées d'abord : une loi rang-taille continue (`rankSizes`), du plus grand lieu possible jusqu'à un foyer, ajustée au total et bornée par le plus grand lieu automatique (20 000 habitants ou le maximum de la culture). Aucun plafond de catégorie : un village peut dépasser 999 habitants.
+2. La catégorie comptée dans le panneau se lit sur la taille. L'identité (village, bourg, ville) est donnée après le placement, par la taille, le site et la culture (`demographics::identity` : un lieu d'échange devient bourg plus tôt, un village agricole ou un peuple de villages plus tard). Les clés des lieux (`main`, `site-<rang>`) ne portent pas de catégorie.
+3. Saisir une population ou une densité redimensionne les lieux sans changer leur nombre ; un total trop petit retire les derniers lieux plutôt que de partager un foyer.
+4. Imposer un compteur garde les plus grands lieux de cette catégorie et en ajoute de la taille habituelle (taille moyenne de la catégorie dans la liste automatique) ; si une population ou une densité a été saisie, elle est corrigée du même écart. Les lieux libres restent hors des catégories imposées. Les populations locales imposées sont fixées avant la distribution du solde. La liste est limitée à 1 000 lieux.
 5. La somme est exactement la population régionale lorsque les choix sont compatibles. Si les effectifs imposés exigent davantage d'habitants ou ne peuvent en contenir autant, l'interface affiche la somme répartie et l'écart ; elle n'invente pas des habitants ailleurs.
 6. Une liste manuelle de lieux reste prioritaire. Modifier les contrôles régionaux réactive explicitement la distribution automatique, sans effacer la liste conservée dans la recette.
 

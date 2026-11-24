@@ -76,7 +76,8 @@ fn a_ridge_is_routed_around_even_for_a_stiff_wall() {
 #[test]
 fn all_port_modes_keep_entire_quarters_on_one_side() {
     let h=vec![10.0;N*N];let w=vec![0;N*N];let s=surface(&h,&w);
-    for mode in ["auto","inside","separate","outside"] {
+    // `inside` and `outside` are decided when the circuit is traced (`water::water_fronts`).
+    for mode in ["auto","separate"] {
         let mut l=layout();let shape=g::rectangle(560.0,560.0,1040.0,1240.0);
         l.enclosures.push(Enclosure {path:ring(&shape),kind:"wall".into(),style:"flanked".into(),..Default::default()});
         let quarters=l.quarters.clone();
@@ -85,8 +86,6 @@ fn all_port_modes_keep_entire_quarters_on_one_side() {
         let walls:Vec<_>=l.enclosures.iter().map(wall_shape).collect();
         for q in &quarters {assert!(!cuts(&walls,&q.shape),"{mode}: split quarter");}
         assert_eq!(l.quarters.len(),quarters.len());
-        if mode=="inside" {assert!(share(&walls,&quarters[1].shape)>0.999);}
-        if mode=="outside" {assert!(share(&walls,&quarters[1].shape)<0.001);}
         if mode=="separate" {assert!(l.enclosures.iter().any(|e|e.purpose=="port"));}
         let before=serde_json::to_vec(&l).unwrap();
         assert!(!port_walls(&mut l,&LayoutConfig {port_enclosure:mode.into(),..Default::default()},s),"{mode}: non-idempotent reconciliation");

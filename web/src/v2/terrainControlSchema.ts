@@ -170,6 +170,24 @@ export const terrainBasicFields: ParameterField[] = [
     placeholder: copy('Default · a few', 'Par défaut · quelques-uns'),
     defaultValue: 1,
   },
+  {
+    ...number(
+      'underdarkCaverns',
+      'Underdark cavern share',
+      'Part de cavernes de l’Outreterre',
+      0.02,
+      0.6,
+      0.02,
+      [
+        'Share of the map opened by the caverns of the Underdark (0.2 by default). Lower values leave more rock, and narrower tunnels and galleries.',
+        'Part de la carte ouverte par les cavernes de l’Outreterre (0,2 par défaut). Les valeurs basses laissent plus de roche, et des tunnels et galeries plus étroits.',
+      ],
+      true,
+    ),
+    id: 'terrain-underdark-caverns',
+    placeholder: copy('Default · 0.2', 'Par défaut · 0,2'),
+    defaultValue: 0.2,
+  },
 ];
 export const terrainProceduralFields: ParameterField[] = [
   select(

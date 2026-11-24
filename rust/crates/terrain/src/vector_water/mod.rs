@@ -16,6 +16,7 @@ use crate::priority_flood::{FloodGrids, flood_grids};
 pub use conditioning::{Conditioning, ConditioningResult, condition_relief};
 pub use incision::{bed_depth, incise_rivers};
 pub use lake::{LakeField, lake_field};
+pub use rivers::channel_width;
 use serde::{Deserialize, Serialize};
 pub use wire::{request, request_with_clock};
 
@@ -91,16 +92,23 @@ pub struct Settings {
     /// Shortest drawn river course in metres; absent or zero retains the 150 m default.
     #[serde(default)]
     pub min_river_length: f64,
-    /// River density under 1 (the V2 `Rivers` setting; absent, 0 or 1 and more: every river): whole rivers are
-    /// dropped, the smallest catchments first. Where a stream begins does not depend on it: that is `river_area`,
-    /// `headwaters` and `min_river_length`. See `rivers::network::select_rivers`.
-    #[serde(default)]
+    /// River density (the V2 `Rivers` setting): 0 no river, 1 and more (also when absent) every river. Between them,
+    /// whole rivers are dropped, the smallest catchments first. Where a stream begins does not depend on it: that is
+    /// `river_area`, `headwaters` and `min_river_length`. See `rivers::network::select_rivers`.
+    #[serde(default = "every_river")]
     pub density: f64,
+    /// No lake at all (the V2 `Lakes` setting at 0, or the policy `No lakes`): every basin is crossed to its spill,
+    /// whatever the conditioning left of it.
+    #[serde(default)]
+    pub no_lakes: bool,
     /// Share of the cut-off loops of the meanders kept as oxbow lakes, 0 (none: the default, also when absent) to 1.
     /// A cut-off otherwise leaves dry ground: the course simply loses its loop. A kept loop is a lake of its own,
     /// detached from the course and partly silted (`rivers::network::clear_oxbows`).
     #[serde(default)]
     pub oxbows: f64,
+}
+fn every_river() -> f64 {
+    1.0
 }
 /// Least water depth (m) of the terminal lake drawn in a closed basin a river reaches; a shallower closed basin is
 /// crossed by its course (`compute_water`).
@@ -205,7 +213,11 @@ fn compute_water_timed(
     let total = n * n;
     let (mut lake, mut lakes, mut closed_lakes, mut lake_area_km2);
     let (mut lake_level, mut lake_kind) = (None, None);
-    if s.balance {
+    if s.no_lakes {
+        let weight = s.balance.then(|| balance::runoff_weights(height, &h.grids.sea, climate));
+        h = hydro_options(height, n, width, weight.as_deref(), None, None);
+        (lake, lakes, closed_lakes, lake_area_km2) = (vec![0; total], 0, 0, 0.0);
+    } else if s.balance {
         let balance_started = now();
         let mut b = balance::water_balance(
             height,
@@ -298,7 +310,7 @@ fn compute_water_timed(
         for &cc in h.grids.order.iter().rev() {
             let c = cc as usize;
             let r = h.grids.receiver[c];
-            if h.grids.accumulation[c] as f64 >= s.river_area * 1e6 {
+            if s.density > 0.0 && h.grids.accumulation[c] as f64 >= s.river_area * 1e6 {
                 upstream[c] = 1
             }
             if r >= 0 && upstream[c] != 0 {
@@ -362,7 +374,8 @@ fn compute_water_timed(
     }
     let river_cells = (0..total)
         .filter(|&c| {
-            h.grids.sea[c] == 0
+            s.density > 0.0
+                && h.grids.sea[c] == 0
                 && lake[c] == 0
                 && h.grids.accumulation[c] as f64 >= s.river_area * 1e6
         })

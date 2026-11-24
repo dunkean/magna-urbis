@@ -20,8 +20,9 @@ describe('render passes', () => {
     expect(Object.keys(PASSES).sort()).toEqual([...PASS_ORDER].sort());
     for (const spec of Object.values(PASSES)) expect(spec.inputs.length).toBeGreaterThan(0);
   });
-  // The season also sets the water regime (dry beds, ice), so the water pass follows it.
-  it('a season change repaints the vector map and the water, a lighting change only the terrain look', async () => {
+  // The season also sets the water regime (dry beds, ice), so the water pass follows it. The vector map reads its
+  // seasonal palette when it paints (CanvasRendererDeps.palette): nothing of it is built again.
+  it('a season change repaints the ground and the water, a lighting change only the terrain look', async () => {
     const withEffects = (change: (c: CompositionRecipe) => void): AppearanceInput => {
       const composition = presetComposition('parchment');
       change(composition);
@@ -35,7 +36,7 @@ describe('render passes', () => {
           c.effects.season = 0.9;
         }),
       ),
-    ).toEqual(['terrainLook', 'water', 'cartography']);
+    ).toEqual(['terrainLook', 'water']);
     expect(
       await reruns(
         plain,

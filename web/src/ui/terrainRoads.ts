@@ -48,14 +48,12 @@ const profileWords: Record<string, Words> = {
 };
 /** Fill and casing; dirt has no casing. */
 const SURFACE_COLOR: Record<RoadSurface, [string, string | null]> = { dirt: ['#8b6840', null], gravel: ['#f2ead6', '#8b7c63'], paved: ['#c9b98f', '#5e4a34'], flagstone: ['#d9c8a1', '#463729'] };
-const DASH: Partial<Record<RoadClass, string>> = { track: '5 3', trail: '1.2 3' };
 
-/** How one road is drawn: fill, optional casing (drawn 1.6 px wider underneath), width, dash. */
+/** How one road is drawn: fill, optional casing (drawn 1.6 px wider underneath), width. */
 interface RoadPaint {
   fill: string;
   casing: string | null;
   width: number;
-  dash?: string;
 }
 export type RoadPreset = 'surface' | 'atlas' | 'topographic' | 'ink' | 'minimal' | 'render';
 /** Display only: changing it redraws the network without routing it again. */
@@ -69,28 +67,28 @@ export interface RoadStyle {
 }
 export const defaultRoadStyle = (): RoadStyle => ({ preset: 'surface', width: 1, opacity: 1, curves: true, casing: true, crossings: true });
 const byClass =
-  (colors: Record<RoadClass, [string, string | null]>, widths: Record<RoadClass, number> = CLASS_PX, dash = DASH) =>
-  (c: RoadClass): RoadPaint => ({ fill: colors[c][0], casing: colors[c][1], width: widths[c], dash: dash[c] });
+  (colors: Record<RoadClass, [string, string | null]>, widths: Record<RoadClass, number> = CLASS_PX) =>
+  (c: RoadClass): RoadPaint => ({ fill: colors[c][0], casing: colors[c][1], width: widths[c] });
 const PRESETS: Record<RoadPreset, { label: string; paint(c: RoadClass, s: RoadSurface): RoadPaint }> = {
-  surface: { label: 'By surface', paint: (c, s) => ({ fill: SURFACE_COLOR[s][0], casing: SURFACE_COLOR[s][1], width: CLASS_PX[c], dash: DASH[c] }) },
+  surface: { label: 'By surface', paint: (c, s) => ({ fill: SURFACE_COLOR[s][0], casing: SURFACE_COLOR[s][1], width: CLASS_PX[c] }) },
   atlas: { label: 'Road atlas', paint: byClass({ highway: ['#d8342c', '#7a1d18'], main: ['#f2a33a', '#7a4a12'], local: ['#fff8e6', '#6b5a45'], track: ['#8a6a45', null], trail: ['#8a6a45', null] }) },
   topographic: {
     label: 'Topographic',
-    paint: byClass({ highway: ['#e8412f', '#262626'], main: ['#f7d54c', '#262626'], local: ['#ffffff', '#303030'], track: ['#303030', null], trail: ['#303030', null] }, { highway: 3.4, main: 2.8, local: 2.0, track: 1.1, trail: 0.9 }, { track: '6 2.5', trail: '2.5 2.5' }),
+    paint: byClass({ highway: ['#e8412f', '#262626'], main: ['#f7d54c', '#262626'], local: ['#ffffff', '#303030'], track: ['#303030', null], trail: ['#303030', null] }, { highway: 3.4, main: 2.8, local: 2.0, track: 1.1, trail: 0.9 }),
   },
   ink: {
     label: 'Ink on parchment',
-    paint: byClass({ highway: ['#3f2a1c', null], main: ['#4a3222', null], local: ['#56392a', null], track: ['#5f4334', null], trail: ['#6a4d3c', null] }, { highway: 2.4, main: 1.9, local: 1.4, track: 1.1, trail: 0.9 }, { track: '6 3', trail: '1 2.6' }),
+    paint: byClass({ highway: ['#3f2a1c', null], main: ['#4a3222', null], local: ['#56392a', null], track: ['#5f4334', null], trail: ['#6a4d3c', null] }, { highway: 2.4, main: 1.9, local: 1.4, track: 1.1, trail: 0.9 }),
   },
   // Painted for the Render map style: drawn by drawRender (roadPaintRender.ts); this paint is the legend's.
   render: {
     label: 'Render · painted',
     paint: (c, s) => {
       const fill = renderRoadStrokes(c, s).find(k => k.layer === 'fill')!;
-      return { fill: fill.color, casing: s === 'dirt' ? null : '#2e2216', width: RENDER_ROAD_PX[c], dash: fill.dash };
+      return { fill: fill.color, casing: s === 'dirt' ? null : '#2e2216', width: RENDER_ROAD_PX[c] };
     },
   },
-  minimal: { label: 'Minimal', paint: byClass({ highway: ['#4d463e', null], main: ['#4d463e', null], local: ['#5d554b', null], track: ['#6e655a', null], trail: ['#6e655a', null] }, { highway: 2.0, main: 1.6, local: 1.2, track: 1.0, trail: 0.8 }, { trail: '3 3' }) },
+  minimal: { label: 'Minimal', paint: byClass({ highway: ['#4d463e', null], main: ['#4d463e', null], local: ['#5d554b', null], track: ['#6e655a', null], trail: ['#6e655a', null] }, { highway: 2.0, main: 1.6, local: 1.2, track: 1.0, trail: 0.8 }) },
 };
 const PRESET_IDS = Object.keys(PRESETS) as RoadPreset[];
 /** The paint of a road under a style: the preset scaled by the width setting, casing optional. */
@@ -356,10 +354,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const classes = ROAD_CLASSES.filter(c => (output ? output.segments.some(s => s.class === c) : true));
     const surfaces = ROAD_SURFACES.filter(s => (output ? output.segments.some(r => r.surface === s) : true));
     const sample = (cls: RoadClass, surface: RoadSurface): string => {
-      const { fill, casing, width, dash } = paintOf(style, cls, surface),
-        w = Math.min(width, 7),
-        d = dash ? ` stroke-dasharray="${dash}"` : '';
-      return `<svg width="26" height="10" aria-hidden="true" opacity="${style.opacity}">${casing ? `<line x1="2" y1="5" x2="24" y2="5" stroke="${casing}" stroke-width="${w + 1.6}" stroke-linecap="round"${d}/>` : ''}<line x1="2" y1="5" x2="24" y2="5" stroke="${fill}" stroke-width="${w}" stroke-linecap="round"${d}/></svg>`;
+      const { fill, casing, width } = paintOf(style, cls, surface),
+        w = Math.min(width, 7);
+      return `<svg width="26" height="10" aria-hidden="true" opacity="${style.opacity}">${casing ? `<line x1="2" y1="5" x2="24" y2="5" stroke="${casing}" stroke-width="${w + 1.6}" stroke-linecap="round"/>` : ''}<line x1="2" y1="5" x2="24" y2="5" stroke="${fill}" stroke-width="${w}" stroke-linecap="round"/></svg>`;
     };
     const km = (v = 0): string => `${(v / 1000).toFixed(1)} km`;
     q('#roadLegend').innerHTML = `<div>${classes
@@ -407,7 +404,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       p.setAttribute('stroke-linejoin', 'round');
       p.setAttribute('stroke-linecap', 'round');
       for (const [k, v] of Object.entries(extra)) p.setAttribute(k, v);
-      // After the extras: a `style` extra (metric dashes) must not drop the CSS width.
+      // After the extras: a `style` extra must not drop the CSS width.
       if (typeof width === 'number') p.setAttribute('stroke-width', String(+width.toFixed(2)));
       else p.style.strokeWidth = width;
       return p;
@@ -463,22 +460,17 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       const mid = !v1 && s.path.length ? s.path[s.path.length >> 1] : undefined,
         ground = mid && groundAt(mid.x, mid.y, 2);
       const tinted = ground ? toneStreet(ground, s.class === 'track' || s.class === 'trail' ? 'track' : 'road', { highway: 0, main: 1, local: 2, track: 3, trail: 4 }[s.class]) : undefined;
-      const { width: w, dash } = paint,
+      const { width: w } = paint,
         fill = (['track', 'trail'].includes(s.class) ? colors.track : colors.road) ?? tinted?.fill ?? paint.fill,
         casing = style.casing ? (colors.roadEdge ?? tinted?.edge ?? paint.casing) : null;
-      const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
       // World-size feature: the preset width is a screen floor under the road's metric width (V1 paints are metric already).
       const body = v1 ? w : roadStrokeWidth({ scale: 1, addPx: 0, addM: 0 }, w, s.width),
         plus = (px: number): number | string => (v1 ? w + px : `calc(${body} + ${px}px)`);
       if (d) {
-        if (casing) casings.append(line(d, casing, v1?.casingWidth ?? plus(1.6), extra));
-        // A dashed track: its metric width as a continuous earth band, the dashed symbol at its preset width on top.
-        if (dash && !v1) fills.append(line(d, fill, body, { opacity: '0.35', 'stroke-linecap': 'butt' }), line(d, fill, w, extra));
-        else {
-          const road = line(d, fill, body, extra);
-          if (v1) road.setAttribute('opacity', String(v1.opacity));
-          fills.append(road);
-        }
+        if (casing) casings.append(line(d, casing, v1?.casingWidth ?? plus(1.6)));
+        const road = line(d, fill, body);
+        if (v1) road.setAttribute('opacity', String(v1.opacity));
+        fills.append(road);
       }
       // A crossing can extend beyond the main segment's visible pieces. Clip it
       // independently once, including its casing, rather than repeating its art.
@@ -490,7 +482,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
             crossings.append(line(cd, '#4f3c2a', plus(3.4), { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', plus(1.2), { 'stroke-linecap': 'butt' }));
           } else if (c.kind === 'causeway') {
             crossings.append(line(cd, tinted?.edge ?? '#5d5446', plus(2.6)), line(cd, tinted?.fill ?? '#cfc3a5', plus(0.8)));
-          } else crossings.append(line(cd, '#3f7fa6', plus(0.6), { 'stroke-dasharray': '1 2.5' }));
+          } else crossings.append(line(cd, '#3f7fa6', plus(0.6), { opacity: '0.5' }));
         }
       if (d) {
         const hit = line(d, 'transparent', Math.max(8, w + 6));
@@ -574,7 +566,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
           else if (c.kind === 'causeway') crossings.append(stroke(cd, tint?.edge ?? '#5d5446', `calc(${w} + 2.6px)`), stroke(cd, tint?.fill ?? '#cfc3a5', `calc(${w} + 0.8px)`));
           else {
             const f = stroke(cd, '#3f7fa6', `calc(${w} + 0.6px)`);
-            f.setAttribute('stroke-dasharray', '1 2.5');
+            f.setAttribute('opacity', '0.5');
             crossings.append(f);
           }
         }
@@ -610,7 +602,6 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       p.setAttribute('stroke-linejoin', 'round');
       p.setAttribute('stroke-linecap', k.cap ?? 'round');
       p.style.strokeWidth = width;
-      if (k.dash) p.setAttribute('stroke-dasharray', k.dash);
       return p;
     };
     // Ditch bands: wide stroke minus the verges, for every ditched road at once.

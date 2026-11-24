@@ -6,9 +6,8 @@ import { advancedPanel } from './advancedPanel';
 import { mountRenderPassControls } from './renderPassControls';
 import { mountSectionIndex } from './sectionIndex';
 import { editorButtonIcon } from './editorIcons';
-import { recommendedCulture } from './settlementDefaults';
 import { mountSettlementPopulationPanel } from './settlementPopulationPanel';
-import { cultureEnvironment, plausibleCultures, randomCulture } from './environmentCultures';
+import { automaticCulture, cultureEnvironment, plausibleCultures, randomCulture } from './environmentCultures';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
 import { currentComposition, writeAppearanceControl } from './renderControls';
 import './workbenchLayout.css';
@@ -312,7 +311,7 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
     // A loaded code, recipe or project keeps its culture (a new settings object starts from its own environment).
     // "Follow the environment" re-picks only after an environment change (or ticking it) that rules the current culture out.
     if (previous.autoCulture && (cultureEnvironmentKey !== previous.cultureEnvironment || force) && !plausibleCultures(s).includes(s.options.culture)) {
-      s.options.culture = recommendedCulture(s);
+      s.options.culture = automaticCulture(s);
       api.syncForms();
     }
     previous.cultureEnvironment = cultureEnvironmentKey;

@@ -77,6 +77,8 @@ export interface BuildingPaint {
   collectPalette?: boolean;
   /** The world shader reads V1 roof edge coordinates from the sign bits of vertex colours. */
   roofInk?: boolean;
+  /** The coarse levels of lot boundaries are strips that WORLD_BUILDING_VS widens (urbanBuildingGeometry.ts yardStrip). */
+  yardStrips?: boolean;
   /** Mean ground of the town of a building (by id), which sets its snow (roofSnow.ts townRoofAltitudes). */
   snowAltitudes: { get(id: string): number | undefined };
   /** The tilted world view: the top view's town look. A massing roof face of a building the town draws takes the
@@ -142,6 +144,9 @@ const SNOW_CLASS = 28;
 /** Class of a window lit at night (city3dMeshes.ts `LIT_WINDOW`), in every appearance and in both programs: past the
  * grain classes, it only tells the shaders which faces glow (buildingNight). */
 const LIT_CLASS = 32;
+/** Classes of a lot boundary strip, whose normal holds the side of the line of each vertex: a side face, the level top. */
+const STRIP_SIDE_CLASS = 33,
+  STRIP_TOP_CLASS = 34;
 /** The matches of the two material id patterns read for every triangle, kept per id (a scene has a few dozen ids). */
 const displayMaterials = new Map<string, RegExpExecArray | null>(),
   materialTints = new Map<string, RegExpExecArray | null>();
@@ -270,7 +275,9 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       // takes the snow class in place of its cover's.
       // A face painted by the town look takes the grain family of its pan (the top view's grain marks, COVER_GRAIN_GLSL).
       const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
-      const unit = (1 + faceCode(id === 'city3d:wall:lit' ? LIT_CLASS : cls, townRoof?.gain) / 32) / (Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
+      const lateral = face.lateral,
+        code = lateral ? (face.normal[2] > 0.5 ? STRIP_TOP_CLASS : STRIP_SIDE_CLASS) : id === 'city3d:wall:lit' ? LIT_CLASS : cls,
+        unit = (1 + faceCode(code, townRoof?.gain) / 32) / (lateral ? 1 : Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
       const key = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
       let group = groups.get(key);
       if (!group) {
@@ -300,9 +307,9 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         data[at++] = p[0] - origin[0];
         data[at++] = seatOut[0];
         data[at++] = p[1] - origin[1];
-        data[at++] = face.normal[0] * unit;
-        data[at++] = face.normal[2] * unit;
-        data[at++] = face.normal[1] * unit;
+        data[at++] = (lateral ? lateral[i].x : face.normal[0]) * unit;
+        data[at++] = (lateral ? 0 : face.normal[2]) * unit;
+        data[at++] = (lateral ? lateral[i].y : face.normal[1]) * unit;
         const on = edges & ~(1 << i);
         if (textured) {
           const [u, v] = faceUv(p, face.normal, layer);
@@ -332,10 +339,10 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     };
     if (canInk) {
       const triangles: BuildingTriangle[] = [];
-      eachBuildingTriangle(building, face => triangles.push(face), overview, featureLod, yardLevel);
+      eachBuildingTriangle(building, face => triangles.push(face), overview, featureLod, yardLevel, paint.yardStrips);
       const masks = roofEdgeMasks(triangles);
       triangles.forEach((face, i) => paintTriangle(face, masks[i]));
-    } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel);
+    } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel, paint.yardStrips);
   }
   const batches: BuildingBatchData[] = [];
   for (const { batch, length } of groups.values()) {

@@ -299,9 +299,7 @@ export function paintMinimalMap(
     stroke('wall', palette.urban.wall, 1.5, 1, 7);
   }
   if (plan.districts && layers.city !== false) {
-    ctx.setLineDash([4 / scale, 3 / scale]);
-    stroke('quarter', palette.inkSoft, 1.2, 0.2, 12, 0.8);
-    ctx.setLineDash([]);
+    stroke('quarter', palette.inkSoft, 0.8, 0.15, 8, 0.55);
   }
   if (recipe.networks.roads.visible && layers.streets !== false) {
     fill('bridge', palette.roadFill);

@@ -5,9 +5,11 @@
  * command encoder; parameters go through the frame's storage slots.
  */
 import { renderWaterRings } from '../../../render/renderWaterShader';
+import { waterBed } from '../../../render/waterPalette';
+import { hexToRgb } from '../../../render/styles';
 import { waterUniforms } from '../../../render/waterStyle';
 import { styleTraits } from '../../../render/terrainStyle';
-import { waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
+import { layerFreshWater, layerWaterInk, waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import { MAP_FORMAT, type GpuShared } from './device';
 import { gpuTarget, type GpuImage, type GpuViewTargets, type Target } from './resources';
 import type { Params } from './params';
@@ -68,6 +70,8 @@ export function composite(c: GpuWaterPass, source: GPUTextureView, destination: 
     w.setArray('uWaterStopT', palette.positions);
     w.int('uWaterStopCount', c.water.stops.length);
     w.int('uRegime', Number(regime));
+    w.vec4('uFreshWater', ...layerFreshWater(c.look, c.water, c.painted));
+    w.vec3('uWaterBed', ...waterBed(c.look.climateZone));
     bindGroup = device.createBindGroup({
       layout: gpu.layouts.water,
       entries: [
@@ -107,8 +111,8 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   r.int('uPhysicalWidth', styleTraits(look.style).physicalRiverWidth ? 1 : 0);
   r.float('uMapW', look.mapWidth);
   const flat = rivers.regime && !c.overlay && !c.painted,
-    color = waterUniforms(c.water).colors;
-  r.vec4('uFlatWater', color[0], color[1], color[2], flat ? 1 : 0);
+    color = hexToRgb(layerWaterInk(look, c.water, c.painted));
+  r.vec4('uFlatWater', color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : 0);
   r.int('uHasOverlay', c.overlay ? 1 : 0);
   r.int('uHasLake', c.lake ? c.lakeMode : 0);
   r.float('uLakeN', c.lakeN);
@@ -136,7 +140,7 @@ export function renderRetainedWater(c: GpuWaterPass, source: RetainedWaterSource
   const { device, frame, look, targets } = c,
     { width, height } = frame;
   const resized = targets.retainedWater?.width !== width || targets.retainedWater.height !== height;
-  if (targets.retained.paint(source, frame.origin, frame.px, width, height, c.water.stops[0][1], c.painted, look.waterStyle ?? look.style, resized)) {
+  if (targets.retained.paint(source, frame.origin, frame.px, width, height, layerWaterInk(look, c.water, c.painted), c.painted, look.waterStyle ?? look.style, resized)) {
     if (resized) {
       targets.retainedWater?.texture.destroy();
       const texture = device.createTexture({ size: [width, height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });

@@ -49,7 +49,8 @@ function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle
   }
 }
 /** `yard`: a lot boundary, its own class: the building colours never reach it. `ground`: the ground under each point, when the
- * mesh does not stand on one level. */
+ * mesh does not stand on one level. `lateral`: the side of the line each point of a strip lies on (unit plan vectors): the
+ * tilted map's shader widens the strip along it as it gets thin on screen; its face is level when `normal` points up. */
 export interface BuildingTriangle {
   points: [BuildingVector, BuildingVector, BuildingVector];
   normal: BuildingVector;
@@ -59,6 +60,7 @@ export interface BuildingTriangle {
   /** Side from this vertex to the next, internal to a roof pan. */
   hiddenEdge?: number;
   ground?: [number, number, number];
+  lateral?: [Point, Point, Point];
 }
 /** Display works can retain separate solid prisms, so gate lintels do not fill their passages. */
 export interface BuildingWalkSolid {
@@ -74,6 +76,10 @@ export interface Building3dScene {
   /** Accepted source records for terrain/forest exclusion, independent of
    * purely visual exterior overlays. Omitted on legacy scenes. */
   occupationBuildings?: readonly Building3dVisual[];
+}
+/** A projection whose walls start below its ground, at the bottom of the footing of the building it stands for. */
+export interface FootedProjection {
+  base_z_m?: number;
 }
 export function isBuildingProjection(building: Building3dVisual): building is NativeBuildingProjection | ParentMember3dVisual {
   return 'projection' in building && (building.projection === 'native-building-visual-1' || building.projection === 'native-parent-member-3d-1');
@@ -155,6 +161,54 @@ function yardRibbon(line: YardLine, lod: number, materials: MaterialSlots, emit:
       quad(a, b, [b[0], b[1], p.g + line.height], [a[0], a[1], p.g + line.height], p.g, p.g, [sign * p.my, -sign * p.mx, 0], line.side);
     }
 }
+/** A lot boundary as a strip at its real width: its top, and both sides while they span a pixel (`sides`). The tilted map
+ * draws it past the near mesh at every distance (its shader keeps it about a pixel wide, then sinks it into the ground),
+ * so a boundary never jumps from one width to another. */
+function yardStrip(line: YardLine, sides: boolean, materials: MaterialSlots, emit: (triangle: BuildingTriangle) => void): void {
+  const { half, height, stations } = line;
+  const edge = (s: YardStation, sign: number): { at: (z: number) => BuildingVector; side: Point; g: number } => {
+    const l = Math.hypot(s.mx, s.my) || 1;
+    return { at: z => [s.x + sign * s.mx * half, s.y + sign * s.my * half, s.g + z], side: { x: (sign * s.mx) / l, y: (sign * s.my) / l }, g: s.g };
+  };
+  type Edge = ReturnType<typeof edge>;
+  const quad = (corners: readonly [Edge, number][], normal: BuildingVector, material: string): void => {
+    for (const [i, j, k] of [
+      [0, 1, 2],
+      [0, 2, 3],
+    ]) {
+      const [a, b, c] = [corners[i], corners[j], corners[k]];
+      emit({ points: [a[0].at(a[1]), b[0].at(b[1]), c[0].at(c[1])], normal, materials, material, surface: 'yard', ground: [a[0].g, b[0].g, c[0].g], lateral: [a[0].side, b[0].side, c[0].side] });
+    }
+  };
+  for (let j = 1; j < stations.length; j++) {
+    const p = stations[j - 1],
+      q = stations[j],
+      pairs = [1, -1].map(sign => [edge(p, sign), edge(q, sign)] as const),
+      [[pl, ql], [pr, qr]] = pairs;
+    quad(
+      [
+        [pl, height],
+        [ql, height],
+        [qr, height],
+        [pr, height],
+      ],
+      [0, 0, 1],
+      line.top,
+    );
+    if (!sides) continue;
+    for (const [a, b] of pairs)
+      quad(
+        [
+          [a, -0.15],
+          [b, -0.15],
+          [b, height],
+          [a, height],
+        ],
+        [a.side.x, a.side.y, 0],
+        line.side,
+      );
+  }
+}
 /** A display volume seated below its building's ground (a barn downhill of its house, city3dMeshes.ts) names its own
  * ground: under the relief exaggeration its walls keep their height above that ground, not above the building's. */
 export type SeatedVolume = PlacedBuilding['volumes'][number] & { ground_m?: number };
@@ -196,15 +250,19 @@ export function surfaceTriangles(surface: Surface): [Point, Point, Point][] {
 }
 
 /** One display mesh iterator shared by GPU preparation and picking. All z are
- * absolute physical metres; roof faces are copied from native geometry. */
-export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod, yardLevel = overview ? 1 : 0): void {
+ * absolute physical metres; roof faces are copied from native geometry. `yardStrips`: the coarse levels of a lot
+ * boundary are strips (the tilted map) instead of ribbons of a fixed width per level. */
+export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod, yardLevel = overview ? 1 : 0, yardStrips = false): void {
   if (isYardMesh(building)) {
     const {
       yard,
       volumes: [{ roof_mesh: mesh, materials }],
     } = building as PlacedBuilding & { yard: YardMesh };
     if (yardLevel > 0) {
-      for (const line of yard.lines) yardRibbon(line, yardLevel, materials, emit);
+      for (const line of yard.lines) {
+        if (yardStrips) yardStrip(line, yardLevel === 1, materials, emit);
+        else yardRibbon(line, yardLevel, materials, emit);
+      }
       return;
     }
     for (const face of mesh.faces)
@@ -265,8 +323,9 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     // Display-only height extrusion and horizontal roof-outline cap. These are
     // explicitly cartographic proxies, never fabricated native walls, volumes,
     // foundations, gables or source draws. Picking uses these same triangles.
-    const materials = building.materials ?? PROXY_MATERIALS;
-    extrude(building.footprint, building.ground_z_m, building.height_m, materials, false);
+    const materials = building.materials ?? PROXY_MATERIALS,
+      base = Math.min(building.ground_z_m, (building as FootedProjection).base_z_m ?? Infinity);
+    extrude(building.footprint, base, building.ground_z_m + building.height_m - base, materials, false);
     for (const triangle of surfaceTriangles(building.roof_footprint)) emit({ points: triangle.map(p => [p.x, p.y, building.ground_z_m + building.height_m]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material: materials.cladding, surface: 'roof' });
     return;
   }

@@ -23,6 +23,7 @@ import { unzlibSync } from 'fflate';
 import atlas from '../../../render/assets/fantasy/forest-brushes.json';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../../../rust/bridge/terrainForest';
 import { waterSeasonUniforms } from '../../../render/seasonPalette';
+import { freshWater3d } from '../../../render/waterPalette';
 import { shoreRingPixels } from '../../../../../rust/bridge/terrainForestBeach';
 import { renderV2GlacierSources } from '../../../../../rust/bridge/terrainRenderV2';
 import { renderV2ZoneUniform, setSeasonCalendarGpu } from '../../../../../rust/bridge/terrainRenderV2Zones';
@@ -348,6 +349,7 @@ export class Terrain3dGpu extends Terrain3d {
     p.set('displayWaterVisible', context.look.waterVisible === false ? 0 : 1);
     p.set('displayWaterBand', layer.width * 0.016);
     p.setArray('uWaterSeason', waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
+    p.setArray('uFreshWater', freshWater3d(settings));
     const canopy = settings ?? forest.settings;
     if (canopy) {
       const lights = terrainLights(canopy.lighting);

@@ -60,7 +60,9 @@ describe('regional population controls', () => {
     const before = regionalPopulation(s);
     editRegionalPopulation(s, 'town', before.counts.town + 1);
     expect(s.region?.demography?.population).toBe(7000 + before.classSizes.town);
-    expect(regionalPopulation(s).places).toHaveLength(before.places.length + 1);
+    const after = regionalPopulation(s);
+    expect(after.counts.town).toBe(before.counts.town + 1);
+    expect(after.allocatedPopulation).toBe(7000 + before.classSizes.town);
     editRegionalPopulation(s, 'town', undefined);
     expect(s.region?.demography?.population).toBe(7000);
   });

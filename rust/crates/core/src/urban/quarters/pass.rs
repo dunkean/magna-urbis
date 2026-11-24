@@ -183,7 +183,7 @@ pub(super) fn generate_once(
         &mut quarters, &mut streets, &mut pieces, &enclosures, &mut phases, &mut structure,
         open_edge, site, cfg, applied, m, surface, &rng, &lap,
     );
-    finish_connections(&mut streets, surface, cfg, m, path_camp, &lap);
+    finish_connections(&mut streets, &enclosures, site, surface, cfg, m, path_camp, &lap);
     let (mut blocks, vacancies) = carve_blocks(
         pieces, &quarters, &streets, &enclosures, &phases, &walled, cfg, surface,
         center, radius, nucleus_radius, site.population, &lap,

@@ -15,16 +15,17 @@ import type { ClimateZone } from '../../../../rust/bridge/terrainClimate';
 import { FRACTAL_ROTATIONS } from '../../../../rust/bridge/terrainAdjust';
 import { styleTraits } from '../../render/terrainStyle';
 import { terrainLights } from '../../render/terrainLighting';
+import { waterBed } from '../../render/waterPalette';
 import { waterUniforms } from '../../render/waterStyle';
 import { groundCoverActive } from '../../render/materialLook';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../render/strokes';
 import type { CrownDetail } from '../../render/crownClumpAtlas';
 import type { WaterSurface } from '../../render/terrainWater';
 import { isNeuralRefinement } from '../terrainRefinement';
-import { treeSymbolWash } from '../../render/treeSymbols';
+import { treeSymbolSeason, treeSymbolSpecies, treeSymbolWash } from '../../render/treeSymbols';
 import type { Palette } from '../../render/styles';
 import { terrainDrawQuality, treeSymbolsOn } from './variant';
-import { fadeProgress, waterBand, type LookPalettes, type RedrawFrame } from './redraw';
+import { fadeProgress, lookFreshWater, waterBand, type LookPalettes, type RedrawFrame } from './redraw';
 import type { HeightLayer, TerrainLook } from './contract';
 import type { StackedLayer } from './layers';
 
@@ -82,7 +83,7 @@ export interface LookParamsState {
   lake: number;
   lakeN: number;
   overlay: boolean;
-  city: readonly [number, number];
+  city: boolean;
 }
 
 /** '#rgb' or '#rrggbb' as linear 0-1 components (no colour-space conversion). */
@@ -129,6 +130,8 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.float('uPx', frame.px);
   b.float('uDpr', s.stylePixelRatio);
   b.floats('uWaterSeason', 2, waterSeasonUniforms(look.v2Season, look.climateZone, look.v2Calendar));
+  b.floats('uFreshWater', 4, lookFreshWater(look, water));
+  b.floats('uWaterBed', 3, waterBed(look.climateZone));
   b.int('uGroundCapture', look.groundCapture ? 1 : 0);
   b.int('uNaturalWater', !light && look.waterLook === 'natural' ? 1 : 0);
   b.int('uNight', look.ambience === 'night' ? 1 : 0);
@@ -160,13 +163,14 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   // when the light azimuth changes; the previous texture stays until the new texels are ready).
   b.shoreRing(light ? 0 : mode);
   const brushes = !light && styleTraits(look.style).forestBrushes && mode === 3,
-    symbols = treeSymbolsOn(look, mode);
-  b.brushes(brushes, light ? 'plain' : look.crownDetail, symbols ? pal : undefined);
+    symbols = treeSymbolsOn(look, mode) ? look.treeSymbols : undefined;
+  b.brushes(brushes, light ? 'plain' : look.crownDetail, symbols?.palette);
   // The paper map's lit land takes the shore ring's binding (natural looks only, mode >= 2): uHasLandBackdrop.
-  b.landBackdrop(symbols);
+  b.landBackdrop(!!symbols);
   if (symbols) {
-    b.floats('uTreeWash', 4, treeSymbolWash(pal));
-    b.float('uTreeConifer', look.treeSymbols!.conifer);
+    b.floats('uTreeWash', 4, treeSymbolWash(symbols.palette));
+    b.floats('uTreeSeason', 4, treeSymbolSeason(symbols.palette));
+    b.floats('uTreeSpecies', 4, treeSymbolSpecies(symbols));
   }
   b.int('uPaperMap', styleTraits(look.style).paperMap ? 1 : 0);
   b.int('uRenderV2', light ? 0 : styleTraits(look.style).satelliteVariant);
@@ -175,7 +179,7 @@ export function writeLookParams(b: LookBindings, s: LookParamsState): number {
   b.float('uV2Season', look.v2Season ?? 0.5);
   b.seasonCalendar(look.climateZone, look.v2Calendar);
   b.int('uMaterialZone', renderV2ZoneUniform(look.climateZone));
-  b.vec2('uCityWater', s.city[0], s.city[1]);
+  b.int('uCityWater', s.city ? 1 : 0);
   b.int('uEnhanced3d', !light && (look.mesh3d || styleTraits(look.style).ground3d) ? 1 : 0);
   b.int('uRefinementMode', look.refinement3d === 'source' ? 0 : isNeuralRefinement(look.refinement3d ?? 'noise') ? 2 : 1);
   const refined = s.refined,

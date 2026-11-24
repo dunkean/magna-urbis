@@ -13,6 +13,16 @@ export type NativeReliefBuild =
   | { kind: 'surface'; seed: string; width: number }
   | { kind: 'zonedSurface'; seed: string; width: number; motifSize: number; zones: unknown };
 
+/** Underdark carve options (`UnderdarkOptions` in Rust); an absent one takes the engine's default. */
+export interface UnderdarkCarve {
+  /** Natural and side tunnels amount: 0 none, 1 a few, up to 3. */
+  tunnels?: number;
+  /** Share of the map the caverns open. */
+  caverns?: number;
+  /** Lakes amount: 0 none. */
+  lakes?: number;
+}
+
 /** Same fields as the WASM `TerrainOutput`; `free` is a no-op. */
 export interface NativeReliefRegion {
   x: number;
@@ -90,9 +100,8 @@ export class NativeReliefEngine {
   }
 
   /** `carve_underdark`: the retained relief becomes caves and tunnels. */
-  /** `tunnels`: natural tunnels amount (0 none); an older service ignores it and uses its default. */
-  carveUnderdark(seed: string, tunnels?: number): Promise<void> {
-    return this.mutate({ op: 'underdark', seed, ...(tunnels !== undefined ? { tunnels } : {}) });
+  carveUnderdark(seed: string, options: UnderdarkCarve): Promise<void> {
+    return this.mutate({ op: 'underdark', seed, ...options });
   }
 
   async sampleRegion(x: number, y: number, extent: number, resolution: number): Promise<NativeReliefRegion> {

@@ -3,10 +3,13 @@
 import type { Point, Polygon } from '../../../../rust/bridge/housesContract';
 import { isYardMesh, type Building3dScene } from '../urbanBuildingGeometry';
 import { ringContains } from '../ringRows';
+import { TREES_BLOCK } from './treesBlocks';
 
 const CELL = 32;
+/** Widest wall margin (m): the footprints this near a block decide which of its trees stand. */
+const REACH = 3;
 /** Small trees keep their crown clear of a wall; large trees may overhang, but their trunk stays outside. */
-export const treeBuildingMargin = (radius: number): number => Math.min(3, Math.max(0.5, radius));
+export const treeBuildingMargin = (radius: number): number => Math.min(REACH, Math.max(0.5, radius));
 
 function segmentDistanceSquared(x: number, y: number, a: Point, b: Point): number {
   const dx = b.x - a.x,
@@ -16,9 +19,16 @@ function segmentDistanceSquared(x: number, y: number, a: Point, b: Point): numbe
   return (x - a.x - t * dx) ** 2 + (y - a.y - t * dy) ** 2;
 }
 
+const hash = (text: string): number => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+};
+
 export class TreeBuildings {
   private readonly cells = new Map<string, Polygon[]>();
-  private readonly signatures = new WeakMap<Polygon, string>();
+  /** Per block of trees: sum and exclusive or of the hashes of the footprints that reach it, whatever their order. */
+  private readonly blocks = new Map<number, [number, number]>();
   constructor(scene: Building3dScene) {
     for (const building of scene.buildings) {
       if (isYardMesh(building)) continue;
@@ -35,7 +45,16 @@ export class TreeBuildings {
           maxY = Math.max(maxY, p.y);
         }
         if (![minX, minY, maxX, maxY].every(Number.isFinite)) continue;
-        this.signatures.set(shape, JSON.stringify(shape));
+        const signature = hash(JSON.stringify(shape));
+        for (let y = Math.floor((minY - REACH) / TREES_BLOCK); y <= Math.floor((maxY + REACH) / TREES_BLOCK); y++)
+          for (let x = Math.floor((minX - REACH) / TREES_BLOCK); x <= Math.floor((maxX + REACH) / TREES_BLOCK); x++) {
+            const key = y * 65536 + x,
+              block = this.blocks.get(key);
+            if (block) {
+              block[0] = (block[0] + signature) >>> 0;
+              block[1] = (block[1] ^ signature) >>> 0;
+            } else this.blocks.set(key, [signature, signature]);
+          }
         for (const ring of [shape.outer, ...shape.holes]) ringContains(ring, minX, minY);
         for (let y = Math.floor(minY / CELL); y <= Math.floor(maxY / CELL); y++)
           for (let x = Math.floor(minX / CELL); x <= Math.floor(maxX / CELL); x++) {
@@ -48,14 +67,10 @@ export class TreeBuildings {
     }
   }
 
-  /** Only footprints within the maximum wall margin can affect this block. */
-  key(x: number, y: number, size: number): string {
-    const shapes = new Set<Polygon>();
-    for (let cy = Math.floor((y - 3) / CELL); cy <= Math.floor((y + size + 3) / CELL); cy++) for (let cx = Math.floor((x - 3) / CELL); cx <= Math.floor((x + size + 3) / CELL); cx++) for (const shape of this.cells.get(`${cx},${cy}`) ?? []) shapes.add(shape);
-    return [...shapes]
-      .map(shape => this.signatures.get(shape)!)
-      .sort()
-      .join('|');
+  /** Stamp of the footprints that can affect the block (bx, by); 0 off the buildings. Cheap: read per frame. */
+  blockKey(bx: number, by: number): number {
+    const block = this.blocks.get(by * 65536 + bx);
+    return block ? block[0] * 0x100000 + (block[1] & 0xfffff) : 0;
   }
 
   keeps(x: number, y: number, radius: number): boolean {

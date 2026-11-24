@@ -38,6 +38,7 @@ export function drawVector(c: CartographyContext, view: View, target: CanvasLike
 
 /** Same calls and draw order as a synchronous vector draw, with boundaries for the drape's idle slices. */
 export function* drawVectorSteps(c: CartographyContext, view: View, target: CanvasLike = c.canvas, mode: DrawMode = 'all', fullRect?: Rect4): Generator<void, FrameStats> {
+  c.syncPalette();
   const { deps, pal, S, now, cache, furrowCache, brushes } = c;
   const t0 = now();
   const ctx = target.getContext('2d');
@@ -103,7 +104,7 @@ export function* drawVectorSteps(c: CartographyContext, view: View, target: Canv
       ctx.save();
       if (floorClip) ctx.clip(floorClip, 'nonzero');
     }
-    // hierarchy: cased major roads; thinner cased minor roads; tracks as thin dashed earth lines from mid zoom only
+    // hierarchy: cased major roads; thinner cased minor roads; tracks as thin earth lines from mid zoom only
     const f: VectorFrame = {
       ...base,
       ...roads,

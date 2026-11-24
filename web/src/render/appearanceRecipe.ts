@@ -441,7 +441,6 @@ export function resolveAppearance(appearance: AppearanceInput | undefined, base:
     ),
     forest: key(vegetation.forest, groundTraits.forestClearingProfile, groundTraits.forestBrushes, ground.layers.water),
     cartography: key(
-      groundTraits.satelliteVariant ? null : [ground.season, ground.calendar],
       mapStyle,
       capabilities.nativeCities && !cartography.legend ? omit(a?.colors, OVERLAY_FOREIGN_COLORS) : a?.colors,
       ground.style,

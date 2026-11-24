@@ -19,7 +19,7 @@ export function regionalParentKey(settings: V2Settings): string {
 }
 /** Keys of the automatic plan's slots (regionalPopulation): a list made only of them is a frozen copy of one draw
  * (moved towns, "use the current places"), not a list of places the user added. */
-const AUTOMATIC_PLACE = /^(main|(city|town|village|hamlet|farmstead)-\d+)$/;
+const AUTOMATIC_PLACE = /^(main|site-\d+)$/;
 
 /** Upstream regional changes replace descendant recipes; restored complete projects are not edits.
  * `previousParentKey`: the regionalParentKey before the change. A new region seed also drops a list frozen from

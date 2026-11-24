@@ -18,6 +18,9 @@
  * The names are those placed for the top view of the frame's centre and scale; they fade out where the ground is seen
  * at less than about half that scale (far away, towards the horizon), where they would pile up, and are dropped
  * behind the eye. They are not hidden by the relief in front of them.
+ *
+ * The names belong to the map seen from above: the whole layer, toponyms and labels, fades as the relief rises
+ * (`tiltedNamesOpacity`) and is gone once it stands. A turned top view keeps them.
  */
 import { fontString } from '../labelStyles';
 import type { GlyphPos, PlacedMapLabel } from '../mapLabels';
@@ -54,6 +57,14 @@ const ATTRIBUTE_SIZES = [2, 2, 1, 4, 4, 4, 2];
 /** Scale of the ground under a name over the scale at the centre of the view: names fade out between these. */
 const FADE_FROM = 0.58,
   FADE_TO = 0.4;
+/** Share of the relief shown (FrameCamera.rise) between which the names leave a tilting map. */
+const TILT_FADE_FROM = 0.3,
+  TILT_FADE_TO = 0.9;
+/** Opacity of the names at a rise of the relief: 1 in the top view, 0 in the 3D view. */
+export function tiltedNamesOpacity(rise: number): number {
+  const t = Math.max(0, Math.min(1, (TILT_FADE_TO - rise) / (TILT_FADE_TO - TILT_FADE_FROM)));
+  return t * t * (3 - 2 * t);
+}
 const VERTEX = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 aWorld;
@@ -93,6 +104,7 @@ uniform vec3 uOrigin;
 // Share of the relief shown, CSS pixels per metre of the placement, device pixels per CSS pixel, depth of the target.
 uniform vec4 uScale;
 uniform vec2 uViewport;
+uniform float uOpacity;
 out vec2 vUV;
 out vec4 vColour;
 void main() {
@@ -109,7 +121,7 @@ void main() {
   else if (aGround.y > 0.5) gl_Position = uProjection * vec4(anchor.xy + placed / uScale.y, anchor.z, 1.0);
   else gl_Position = vec4(clip.xy / clip.w + placed * uScale.z * vec2(2.0, -2.0) / uViewport, 0.0, 1.0);
   vUV = aUV.xy + corner * aUV.zw;
-  vColour = aColour * fade;
+  vColour = aColour * (fade * uOpacity);
 }`;
 const FRAGMENT = `#version 300 es
 precision highp float;
@@ -133,6 +145,7 @@ interface TiltedProgram {
   origin: WebGLUniformLocation | null;
   scale: WebGLUniformLocation | null;
   viewport: WebGLUniformLocation | null;
+  opacity: WebGLUniformLocation | null;
   atlas: WebGLUniformLocation | null;
 }
 interface CpuBatch {
@@ -211,6 +224,7 @@ function createTiltedProgram(gl: WebGL2RenderingContext): TiltedProgram {
     origin: gl.getUniformLocation(program, 'uOrigin'),
     scale: gl.getUniformLocation(program, 'uScale'),
     viewport: gl.getUniformLocation(program, 'uViewport'),
+    opacity: gl.getUniformLocation(program, 'uOpacity'),
     atlas: gl.getUniformLocation(program, 'uAtlas'),
   };
 }
@@ -395,14 +409,18 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
     gl.uniform3f(p.origin, originX - target[0], originY - target[1], -target[2]);
     gl.uniform4f(p.scale, camera.rise, placedScale, frame.dpr, camera.distance);
     gl.uniform2f(p.viewport, frame.width, frame.height);
+    gl.uniform1f(p.opacity, tiltedNamesOpacity(camera.rise));
     gl.uniform1i(p.atlas, 0);
   }
+  /** The 3D view shows no name. */
+  const hidden = (frame: LiveFrame): boolean => frame.camera.tilted && tiltedNamesOpacity(frame.camera.rise) <= 0;
 
   return {
     name: 'text',
     isolated: false,
     tilts: true,
     ready(frame): boolean {
+      if (hidden(frame)) return true;
       if (frame.camera.tilted && !tiltedFits(frame)) return false;
       return !options.placement() || (!disposed && complete && frame.dpr === density);
     },
@@ -423,6 +441,8 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
         return false;
       }
       if (!frame) return true;
+      // Nothing is prepared for names the frame does not show; the next frame of the top view carries on.
+      if (hidden(frame)) return false;
       if (frame.camera.tilted && !tilted && !tiltedFailed) {
         try {
           tilted = createTiltedProgram(gl);
@@ -504,7 +524,7 @@ export function createLiveTextLayer(gl: WebGL2RenderingContext, options: LiveTex
       const started = performance.now();
       counters.drawCalls = 0;
       counters.triangles = 0;
-      if (disposed || !options.placement() || !complete || !program || batches.length === 0 || (frame.camera.tilted && !tiltedFits(frame))) {
+      if (disposed || !options.placement() || !complete || !program || batches.length === 0 || hidden(frame) || (frame.camera.tilted && !tiltedFits(frame))) {
         counters.ms = performance.now() - started;
         return;
       }

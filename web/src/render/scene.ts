@@ -150,7 +150,7 @@ export const WALL_LINE_W: Record<string, number> = {
 };
 export const CAMP_FENCE_W: Record<string, number> = { 'kraal-fence': 1.1, 'yard-fence': 0.45, 'pen-fence': 0.5, 'orda-fence': 0.8, palisade: 1.2, 'turf-wall': 2.2, albarrada: 0.9 };
 /** Fences drawn as fences (same table as urban.ts): [rail width, post width, post length, gap] in meters. */
-export const FENCE_STYLE: Record<string, [number, number, number, number]> = { 'yard-fence': [0.16, 0.55, 0.45, 2.4], 'pen-fence': [0.14, 0.45, 0.4, 1.8], 'orda-fence': [0.2, 0.7, 0.55, 1.6], palisade: [0.3, 1.05, 0.55, 0.28], 'kraal-fence': [0.3, 1.15, 0.8, 0.5] };
+export const FENCE_STYLE: Record<string, [number, number]> = { 'yard-fence': [0.16, 0.55], 'pen-fence': [0.14, 0.45], 'orda-fence': [0.2, 0.7], palisade: [0.3, 1.05], 'kraal-fence': [0.3, 1.15] };
 /** Plan-line kinds with their own rule (anything else falls back to the wall-like stroke). */
 export const URBAN_SPECIAL_LINES = [
   'moat',

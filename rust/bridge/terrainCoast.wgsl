@@ -1,5 +1,5 @@
 // The dedicated third simplex stream matches Rust's shore-noise fork.
-// Sixteen header vec4s (profile, unused offsets and turns, character, six bumps, then the
+// Sixteen header vec4s (profile, smoothing and natural slope, cliff and shore cut, character, six bumps, then the
 // relief fit: shift/median/inverse spread/drowning and band/shelf/sea count/field n), then
 // the sea capsules, two vec4s each (endpoints; radii), then the optional row-major n*n
 // sea field padded to a vec4, then each land capsule is three vec4s:
@@ -31,6 +31,14 @@ fn coastWidthWave(xy:vec2<f32>)->f32 {
     wave+=wx[i]*wy[j]*value;
   }}
   return tanh(2.0*wave);
+}
+// As Rust `relief_rank`, `rise` and `cliff`.
+fn coastRank(height:f32)->f32 {let fit=coast[14];return tanh(clamp((height-fit.y)*fit.z,-9.0,9.0));}
+fn coastRise(x:f32,toe:f32)->f32 {let t=clamp(x,0.0,1.0);return t*t*(3.0-2.0*t)+toe*t*(1.0-t)*(1.0-t);}
+fn coastCliff(gentle:f32,islet:f32,width:f32)->f32 {
+  var limit=min(coast[2].x,width*0.004);
+  if(islet>0.0){limit=min(limit,islet*0.04);}
+  return limit*smooth01((0.28-gentle)/0.2);
 }
 fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let config=coast[0];let mask=u32(config.x);
@@ -85,6 +93,8 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
       }
     }
   }
+  // Stretches of coast, as Rust `gentleness`.
+  let gentle=smooth01(fbm(uv/0.21+vec2<f32>(11.7,-4.2),2u,3u,0.5,0.0)+0.5);
   // Seeded bays and headlands, as in Rust; islets keep their own outline.
   if(isletHeight==0.0){
     for(var k=0u;k<min(u32(coast[7].z),6u);k++){
@@ -93,16 +103,37 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
     }
     // Fitted shift and relief drowning, as Rust `Coast::distance`.
     let fit=coast[14];distance+=fit.x;
-    if(fit.z!=0.0){distance+=fit.w*tanh(clamp((height-fit.y)*fit.z,-9.0,9.0))*smooth01(1.0-abs(distance)/coast[15].x);}
+    distance+=fit.w*coastRank(height)*smooth01(1.0-abs(distance)/coast[15].x);
+    // Fractal cut near the shoreline, as Rust `shore_cut`.
+    let near=1.0-abs(distance)/0.03;
+    if(near>0.0){distance+=coast[2].y*(1.15-gentle)*smooth01(near)*fbm(uv/0.012+vec2<f32>(31.7,-8.3),2u,4u,0.6,footprint/0.012);}
   }
-  if(isletHeight>0.0){height=isletHeight;}
-  let widthVariation=0.65+1.1*smooth01(fbm(uv/0.21+vec2<f32>(11.7,-4.2),2u,3u,0.5,0.0)+0.5);
-  let ramp=min(max(config.z,height/(p.values[0].x*0.45)),scale*0.18)*widthVariation*apron;
-  if(distance<=0.0){return -config.w*smooth01(-distance/(ramp*4.0*coast[15].y));}
+  let width=p.values[0].x;
+  let islet=isletHeight>0.0;
+  if(islet){height=isletHeight;}
+  if(distance<=0.0){
+    let ramp=max(min(max(config.z,height/(width*0.45)),scale*0.18),config.w/width);
+    return -config.w*coastRise(-distance/(4.0*ramp*apron*coast[15].y*(0.65+1.1*gentle)),0.5);
+  }
   // Smooth low-frequency stretches of variable width, matching Rust smoothing_width.
-  let profile=coast[1];
+  let metres=distance*width;let profile=coast[1];
+  let isletSize=select(0.0,scale*width,islet);
+  let cliff=coastCliff(gentle,isletSize,width);
   var band=profile.x;
   if(profile.y>0.0){band*=1.0+profile.y*coastWidthWave(xy);}
-  if(band<=0.0){return height;}
-  return height*smooth01(distance*p.values[0].x/band);
+  band=min(band,width*0.12)*(1.0-0.85*smooth01(cliff/20.0));
+  var ground=height;
+  if(band>0.0){ground*=coastRise(metres/band,0.3);}
+  if(ground<=0.0){return ground;}
+  // Natural height limit behind the shore, as Rust `ceiling`.
+  var rank=0.0;
+  if(!islet){rank=coastRank(height);}
+  let steep=1.0-gentle;
+  let tilt=clamp(sqrt(250.0/max(profile.x,40.0)),0.5,1.6);
+  let slope=profile.z*(0.65+0.7*steep)*tilt*(1.0+0.35*rank)/sqrt(apron);
+  let beach=0.25+0.75*steep;
+  let ease=beach+(1.0-beach)*metres/(metres+min(width*0.012,120.0));
+  let limit=cliff*smooth01(metres/(1.0+0.6*cliff))+slope*metres*ease;
+  let low=min(ground,limit);let ratio=low/max(ground,limit);let square=ratio*ratio;
+  return low/sqrt(sqrt(1.0+square*square));
 }

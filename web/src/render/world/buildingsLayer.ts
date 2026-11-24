@@ -9,7 +9,7 @@ import type { Building3dScene } from '../urbanBuildingGeometry';
 import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
-import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, blockHidden, blockLevel, worldPaint, worldSeat, yardBlockLevel } from './buildingsBlocks';
+import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, YARD_HOUSE, blockHidden, blockLevel, worldPaint, worldSeat, yardBlockLevel, yardRise } from './buildingsBlocks';
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
 import { VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
@@ -63,9 +63,11 @@ const MAX_DRAWS = 8192;
 const CELLS = BLOCK_CELLS * BLOCK_CELLS;
 /** Underdark: the fog range of the frame, refilled in place. */
 const caveFog: [number, number] = [0, 1];
+/** Pixels per metre between which the lot boundaries of the frame rise from the ground, refilled in place. */
+const yardSizes: [number, number] = [0, 1];
 /** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
 const DORMANT_LOOKS = 2;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uYard', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
@@ -262,7 +264,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
    * the depth's triangle budget, the farthest units go one level coarser, round after round, until the frame fits. A unit whose
    * buildings span DETAILED_PIXELS keeps its full volumes whatever the budget: the near field never coarsens. The frame's
    * triangles. */
-  const select = (tx: number, ty: number, focal: number, boxed: boolean | 'overview', keepFar: boolean, flat: boolean, yardRise: number): number => {
+  const select = (tx: number, ty: number, focal: number, boxed: boolean | 'overview', keepFar: boolean, flat: boolean, panelRise: number): number => {
     const depthSetting = getViewDepth(),
       budget = buildingTriangleBudget(depthSetting),
       wholeTown = keepFar || depthSetting >= VIEW_DEPTH_MAX;
@@ -279,12 +281,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         nearPixels = size / Math.max(1, depth - radius);
       slot.need = 0;
       // Near the zenith the face of a wooden panel projects to less than one pixel even in a close view.
-      const near = b.yard ? (slot.yardLevel = yardBlockLevel(b, nearPixels, slot.yardLevel, nearPixels * yardRise)) : blockLevel(b, nearPixels, boxed, depthSetting, keepFar);
+      const near = b.yard ? (slot.yardLevel = yardBlockLevel(b, nearPixels, slot.yardLevel, nearPixels * panelRise, depthSetting)) : blockLevel(b, nearPixels, boxed, depthSetting, keepFar);
       if (near === hidden) continue;
       diagnostics?.block();
       // One level over the block (all yards): one unit. Otherwise each cell at its own.
       if (flat || b.yard || near === blockLevel(b, size / Math.max(1, depth + radius), boxed, depthSetting, keepFar)) {
-        addUnit(slot, -1, nearPixels, near);
+        addUnit(slot, -1, b.yard ? nearPixels * YARD_HOUSE : nearPixels, near);
         continue;
       }
       const z = visibleZ[v],
@@ -309,7 +311,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
         for (let k = 0; k < unitCount && triangles > budget; k++) {
           const i = order[k],
             slot = unitSlot[i];
-          const coarsest = blockHidden(slot.block) - (wholeTown && !slot.block.yard ? 1 : 0);
+          // Lot boundaries leave with the distance alone, sunk into the ground; a busy frame only thins their mesh.
+          const coarsest = blockHidden(slot.block) - (wholeTown || slot.block.yard ? 1 : 0);
           if (unitPixels[i] >= DETAILED_PIXELS || unitLevel[i] >= coarsest) continue;
           const level = unitLevel[i] + 1,
             cost = costOf(slot, level, unitCell[i]);
@@ -465,6 +468,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           gl.uniform1f(u.uRise, rise);
           gl.uniform1i(u.uTop, flat ? 1 : 0);
           gl.uniform1f(u.uRoofInkDpr, roof === 'v1' ? frame.dpr : 0);
+          yardRise(depthSetting, yardSizes);
+          gl.uniform3f(u.uYard, focal, yardSizes[0], yardSizes[1]);
           gl.uniform3f(u.uEye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
           gl.uniform2f(u.uAir, hazeDistance(camera), rise);
           const cave = flat ? undefined : options.cave?.();

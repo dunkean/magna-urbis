@@ -20,7 +20,7 @@ export interface WaterSeason {
 }
 
 /** Share of the courses that lose their flow in an average year: 1 desert (only exotic trunks keep water). */
-const ARIDITY: Partial<Record<ClimateZone, number>> = { desert: 1, savanna: 0.72, steppe: 0.5, mediterranean: 0.3 };
+const ARIDITY: Partial<Record<ClimateZone, number>> = { desert: 1, savanna: 0.72, steppe: 0.5, mediterranean: 0.15 };
 /** Sediment load reaching the sea in the wet season: warm weathered basins carry the most. */
 const SEDIMENT: Partial<Record<ClimateZone, number>> = { tropical: 1, savanna: 1, wetland: 0.7, temperate: 0.45, continental: 0.45, mediterranean: 0.35, steppe: 0.3, nordic: 0.2, alpine: 0.25, arctic: 0.1, desert: 0.1 };
 
@@ -68,7 +68,7 @@ const YEAR_S = 31_557_600;
 export const meanDischarge = (area: number, r0: number): number => (Math.max(0, area) * Math.max(0, r0) * 1e-3) / YEAR_S;
 /** Discharge scale of the regime (m³/s, log): size 0 at 10 L/s (a brook), 1 at 10 m³/s (a river that crosses a
  * desert). The zone's aridity then sets the perennial threshold on it (`riverState`): about 8 m³/s in a desert,
- * 0.4 m³/s in a steppe, 0.13 m³/s in a mediterranean zone; humid zones (aridity 0) keep every course running. */
+ * 0.4 m³/s in a steppe, 0.03 m³/s in a mediterranean zone; humid zones (aridity 0) keep every course running. */
 const REGIME_LOW = 0.01,
   REGIME_HIGH = 10;
 export const dischargeSize = (discharge: number): number => (discharge > 0 ? clamp01(Math.log(discharge / REGIME_LOW) / Math.log(REGIME_HIGH / REGIME_LOW)) : 0);
@@ -116,17 +116,12 @@ export function riverSymbol(s: RiverState): RiverSymbol {
 
 const glslFloat = (v: number): string => (Math.round(v * 1000) / 1000).toFixed(3);
 const zoneFloats = (values: Partial<Record<ClimateZone, number>>): string => `float[${CLIMATE_ZONES.length}](${CLIMATE_ZONES.map(z => glslFloat(values[z] ?? 0)).join(',')})`;
-/** Humic (tea-coloured) lake and bog water of the boreal zones; milky glacial flour of the alpine lakes. */
-const TEA: Partial<Record<ClimateZone, number>> = { nordic: 0.65, wetland: 0.55, continental: 0.3, arctic: 0.25 };
-const GLACIAL: Partial<Record<ClimateZone, number>> = { alpine: 1, arctic: 0.2 };
 
-/** Inland water climate of the zone and season in the Render v2 shaders (after RENDER_V2_GLSL: uMaterialZone, the
- * season functions and v2WinterFresh). Fresh ice is not here: the winter module derives it from the land's snow. */
+/** Inland water climate of the zone and season in the Render v2 shaders (after RENDER_V2_GLSL: uMaterialZone and the
+ * season functions). Fresh ice is not here: the winter module derives it from the land's snow; water colour neither
+ * (waterPalette.ts). */
 export const WATER_FRESH_ICE_GLSL = `
 const float V2_WATER_ARIDITY[${CLIMATE_ZONES.length}]=${zoneFloats(ARIDITY)};
-const float V2_WATER_TEA[${CLIMATE_ZONES.length}]=${zoneFloats(TEA)};
-const float V2_WATER_GLACIAL[${CLIMATE_ZONES.length}]=${zoneFloats(GLACIAL)};
-const float V2_WATER_SEDIMENT[${CLIMATE_ZONES.length}]=${zoneFloats(SEDIMENT)};
 int waterZone(){return clamp(uMaterialZone-1,0,${CLIMATE_ZONES.length - 1});}
 // Lake draw-down of the dry season (dropOf in waterRegime.ts), 0-1.
 float waterLakeDrop(){
@@ -134,16 +129,10 @@ float waterLakeDrop(){
   vec4 w=v2SeasonWeights();float rain=max(0.,1.+v2SeasonClimate().x*(w.z-w.x));
   return V2_WATER_ARIDITY[waterZone()]*clamp(1.-.8*rain,0.,1.);
 }
-float waterTea(){return uMaterialZone>0?V2_WATER_TEA[waterZone()]:0.;}
-float waterGlacial(){return uMaterialZone>0?V2_WATER_GLACIAL[waterZone()]:0.;}
-float waterSediment(){
-  if(uMaterialZone<=0)return 0.;
-  vec4 w=v2SeasonWeights();float rain=max(0.,1.+v2SeasonClimate().x*(w.z-w.x));
-  return V2_WATER_SEDIMENT[waterZone()]*clamp(rain-.9*V2_WATER_ARIDITY[waterZone()],0.,1.)*(1.-v2WinterFresh);
-}
 `;
 /** Painting of the regime (dry bed, pools, ice, exposed shore) shared by the material water compositors. */
 export const WATER_REGIME_GLSL = `
+uniform vec3 uWaterBed; // bed of the climate zone (waterPalette.ts waterBed): dry channels and exposed lake shores alike
 float waterRegimeHash(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+19.19);return fract(p.x*p.y);}
 float waterRegimeNoise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);return mix(mix(waterRegimeHash(i),waterRegimeHash(i+vec2(1.,0.)),u.x),mix(waterRegimeHash(i+vec2(0.,1.)),waterRegimeHash(i+vec2(1.,1.)),u.x),u.y);}
 // Frozen fresh water, following the water's own outline: a continuous pale blue-grey sheet, a darker grey-blue bank
@@ -160,15 +149,15 @@ vec3 waterIceColor(vec2 world,float edge,float cracks,vec2 along){
 }
 // A dry course is one flat silt band with a slightly darker bank, without surface texture.
 vec3 waterDryBed(vec2 world,float centre){
-  return mix(vec3(.69,.57,.40),vec3(.80,.70,.53),smoothstep(0.,.35,centre));
+  return uWaterBed*mix(.88,1.,smoothstep(0.,.35,centre));
 }
 // Draw-down changes the amount of open water uniformly, never into mottled pools.
 float waterDryPools(vec2 world,float dry,float centre){
   return 1.-smoothstep(.15,.55,dry);
 }
-// Exposed lake shore of the dry season: pale cracked mud and salt-whitened silt.
+// Exposed lake shore of the dry season: the bed of its rivers, with a faint drying mottle.
 vec3 waterExposedShore(vec2 world){
   float n=waterRegimeNoise(world/48.)*.6+waterRegimeNoise(world/11.)*.4;
-  return mix(vec3(.66,.60,.50),vec3(.84,.80,.71),n);
+  return uWaterBed*mix(.92,1.05,n);
 }
 `;

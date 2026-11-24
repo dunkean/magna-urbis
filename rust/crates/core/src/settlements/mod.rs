@@ -692,9 +692,6 @@ pub fn extent_gap(a: u32, b: u32) -> f64 {
     let (a, b) = (extent_radius(a), extent_radius(b));
     a + b + 60.0 + 0.25 * a.max(b)
 }
-fn class_of(pop: u32) -> &'static str {
-    demographics::class_of(pop)
-}
 fn smooth(v: f64, lo: f64, hi: f64) -> f64 {
     let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)

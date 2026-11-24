@@ -39,6 +39,10 @@ export interface CanvasRendererDeps {
   separateText?: boolean;
   textSources?(): readonly CityScene[] | undefined;
   colors?: RenderColors;
+  /** The resolved palette (biome and season applied, before `colors`), read at each paint: another season is another
+   * palette object, painted with the scene, paths and marks of the same renderer. Absent: the biome palette of the
+   * style given to createCanvasRenderer. */
+  palette?: () => Palette;
   roadLook?: RoadLook;
   /** Look, emphasis and ambience of the roads, read per frame so a new emphasis repaints without a rebuild. */
   roadStyle?: () => RoadStyle;

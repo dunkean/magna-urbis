@@ -45,8 +45,8 @@ const GROUND_SHARE = 0.6;
 /** A moving frame newer than this means the per-frame slices own the work: idle callbacks stay out of the gesture. */
 const GESTURE_MS = 120;
 
-const WORK_UNIT: Record<LiveLayerName, string> = { ground: 'work:ground', water: 'work:water', overlay: 'work:overlay', city: 'work:city', buildings: 'work:buildings', trees: 'work:trees', cave: 'work:cave', text: 'work:text' };
-const DRAW_UNIT: Record<LiveLayerName, string> = { ground: 'draw:ground', water: 'draw:water', overlay: 'draw:overlay', city: 'draw:city', buildings: 'draw:buildings', trees: 'draw:trees', cave: 'draw:cave', text: 'draw:text' };
+const WORK_UNIT: Record<LiveLayerName, string> = { ground: 'work:ground', water: 'work:water', overlay: 'work:overlay', city: 'work:city', buildings: 'work:buildings', trees: 'work:trees', banks: 'work:banks', cave: 'work:cave', text: 'work:text' };
+const DRAW_UNIT: Record<LiveLayerName, string> = { ground: 'draw:ground', water: 'draw:water', overlay: 'draw:overlay', city: 'draw:city', buildings: 'draw:buildings', trees: 'draw:trees', banks: 'draw:banks', cave: 'draw:cave', text: 'draw:text' };
 const stats = liveStats();
 
 interface LiveCompositorOptions {
@@ -144,7 +144,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     paused = false,
     paper = '';
   const layers: Partial<Record<LiveLayerName, LiveLayer>> = {};
-  const shown: Record<LiveLayerName, boolean> = { ground: true, water: true, overlay: true, city: true, buildings: true, trees: true, cave: true, text: true };
+  const shown: Record<LiveLayerName, boolean> = { ground: true, water: true, overlay: true, city: true, buildings: true, trees: true, banks: true, cave: true, text: true };
   const standIns: Partial<Record<LiveLayerName, Raster>> = {};
   const preferRaster: Partial<Record<LiveLayerName, boolean>> = {};
   const states = {} as Record<LiveLayerName, LiveLayerState>;

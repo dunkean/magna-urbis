@@ -21,7 +21,7 @@ import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { ExportLayers } from '../../render/exportLayers';
 import { roadSoilOf, roadGroundTones, setRoadGround } from '../../render/roadStyle';
 import { setMapClimateZone, setMapSeason } from '../../render/seasonPalette';
-import { biomePalette } from '../../render/biomes';
+import { climatePalette } from '../../render/biomes';
 import { terrainStyle } from '../../render/terrainStyle';
 import { displayBiomeName, displayTerrainSettings } from '../displayBiome';
 import { effectiveTerrainSettings } from '../terrainSettings';
@@ -71,7 +71,8 @@ export class AppearancePasses {
       setRoadGround(
         world.landuse,
         world.mapSize,
-        roadGroundTones(r.ground.traits.family === 'material', biomePalette(r.palette.mapStyle, displayBiomeName(settings, world)), roadSoilOf(effective.climateZone, displayBiomeName(settings, world))),
+        // The ground of the roads keeps its summer tones: their own snow follows the date (roadStyle.ts roadTone).
+        roadGroundTones(r.ground.traits.family === 'material', climatePalette(r.palette.mapStyle, displayBiomeName(settings, world)), roadSoilOf(effective.climateZone, displayBiomeName(settings, world))),
         r.composition.ambience === 'night',
       );
       const effectiveKey = JSON.stringify([effective.relief, effective.refine, effective.detailNoise, effective.climate, effective.climateValues, effective.climateZone, effective.hydrology?.riverMode]);

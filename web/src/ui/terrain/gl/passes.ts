@@ -4,10 +4,12 @@
  * layer and the map pass call them with the destination framebuffer (redraw.ts lists the passes).
  */
 import { renderWaterRings } from '../../../render/renderWaterShader';
+import { waterBed } from '../../../render/waterPalette';
+import { hexToRgb } from '../../../render/styles';
 import { waterUniforms } from '../../../render/waterStyle';
 import { styleTraits } from '../../../render/terrainStyle';
 import { rgbaTarget, type GlViewTargets } from './resources';
-import { waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
+import { layerFreshWater, layerWaterInk, waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import type { GlPrograms } from './programs';
 import type { RetainedWaterSource } from '../retainedWater';
 import type { TerrainLook } from '../contract';
@@ -68,6 +70,8 @@ export function paintWater(c: GlWaterPass, unit: number, regime: boolean | numbe
   gl.uniform1fv(u('uWaterStopT[0]'), palette.positions);
   gl.uniform1i(u('uWaterStopCount'), c.water.stops.length);
   gl.uniform1i(u('uRegime'), Number(regime));
+  gl.uniform4f(u('uFreshWater'), ...layerFreshWater(c.look, c.water, c.painted));
+  gl.uniform3f(u('uWaterBed'), ...waterBed(c.look.climateZone));
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
@@ -94,8 +98,8 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   // Until the painted program links, a regime layer must use real water ink, never its encoded RGB.
   const paint = c.painted && !c.overlay && !!c.programs.water(c.waitPainted),
     flat = rivers.regime && !c.overlay && !paint,
-    color = waterUniforms(c.water).colors;
-  gl.uniform4f(r('uFlatWater'), color[0], color[1], color[2], flat ? 1 : 0);
+    color = hexToRgb(layerWaterInk(look, c.water, c.painted));
+  gl.uniform4f(r('uFlatWater'), color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : 0);
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, c.overlay ?? c.empty);
   gl.uniform1i(r('uOverlay'), 3);
@@ -128,7 +132,7 @@ export function renderRetainedWater(c: GlWaterPass, source: RetainedWaterSource,
   targets.retainedTexture ??= gl.createTexture()!;
   gl.activeTexture(gl.TEXTURE11);
   gl.bindTexture(gl.TEXTURE_2D, targets.retainedTexture);
-  if (targets.retained.paint(source, frame.origin, frame.px, frame.width, frame.height, c.water.stops[0][1], c.painted, look.waterStyle ?? look.style)) {
+  if (targets.retained.paint(source, frame.origin, frame.px, frame.width, frame.height, layerWaterInk(look, c.water, c.painted), c.painted, look.waterStyle ?? look.style)) {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, targets.retained.canvas!);

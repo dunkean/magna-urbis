@@ -70,6 +70,15 @@ fn fill_noise(
     }
     out
 }
+/// Runoff of each cell relative to the runoff at sea level (0 in the sea).
+pub(super) fn runoff_weights(height: &[f32], sea: &[u8], climate: Climate) -> Vec<f32> {
+    let reference = climate.runoff().r0;
+    let mut weight = vec![0.0; height.len()];
+    crate::terrain_par::cells(&mut weight, |c, value| {
+        *value = if sea[c] != 0 { 0.0 } else { (climate.runoff_at(height[c] as f64) / reference) as f32 };
+    });
+    weight
+}
 pub(super) fn water_balance(
     source: &[f32],
     n: usize,
@@ -84,14 +93,7 @@ pub(super) fn water_balance(
     let cell_area = (width / n as f64).powi(2);
     let height = fill_noise(source, n, width, min_depth, min_area, drainage);
     let runoff = climate.runoff();
-    let mut weight = vec![0.0; total];
-    crate::terrain_par::cells(&mut weight, |c, value| {
-        *value = if sea[c] != 0 {
-            0.0
-        } else {
-            (climate.runoff_at(height[c] as f64) / runoff.r0) as f32
-        };
-    });
+    let weight = runoff_weights(&height, sea, climate);
     let evap = |z: f64| climate.potential(z) / runoff.r0;
     let routing = crate::priority_flood::routing_grids(&height, n);
     let g = &routing;

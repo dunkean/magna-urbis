@@ -2,7 +2,7 @@ import { cityOverlayLandKinds, cityOverlayLandKey, cityWaterCutsLand, cityCountr
 import { executionRuntime } from './executionProfile';
 import { benchOverlayChange } from './benchComposition';
 import { feedLanduse } from '../render/groundTone';
-import { v1LandCanvas, v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
+import { seasonLand, v1LandCanvas, v1LandscapeCanvas, type V1LandscapeStyle } from '../render/v1Landscape';
 import { CityGround } from '../render/cityGround';
 import { bindGear, gearButton } from './mapGroup';
 import { localizeCityInspector } from './cityInspectorLocale';
@@ -330,7 +330,7 @@ export function createUrbanLanduse(options: {
       terrain: () => {
         if (v1Style) return v1LandscapeCanvas(context!.raster, v1Style, scene!.options.biome);
         // The parchment tints multiply over the lit ground: a transparent canvas has nothing to multiply with.
-        if (composition.variant === 'parchment' && appearance.ground.layers.relief) return v1LandCanvas(context!.raster, 'parchment', scene!.options.biome);
+        if (composition.variant === 'parchment' && appearance.ground.layers.relief) return seasonLand(v1LandCanvas(context!.raster, 'parchment', scene!.options.biome), context!.raster);
         if (!background.image || background.opacity <= 0) return null;
         if (background.opacity === 1) return background.image;
         const base = document.createElement('canvas');

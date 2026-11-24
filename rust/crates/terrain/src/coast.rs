@@ -3,8 +3,8 @@
 use crate::{Noise, Rng, smooth};
 use std::f64::consts::TAU;
 
-/// Header floats: profile (slot 0: direction mask or TRACED), per-direction reach,
-/// character, bumps, then the relief fit
+/// Header floats: profile (slot 0: direction mask or TRACED), natural slopes and shore cut
+/// (slots 6, 8, 9), character, bumps, then the relief fit
 /// (slots 56..61: shift, median, inverse spread, drowning, band, shelf), sea count (62)
 /// and field size (63). After the 64-float header: 8 floats per sea capsule, then the
 /// optional row-major n*n sea field padded to 4 floats, then 12 floats per land capsule.
@@ -21,6 +21,16 @@ const SHELF: usize = 61;
 /// Sea capsules (8 floats each) follow the header, before the field and land capsules.
 const SEA_COUNT: usize = 62;
 const FIELD_N: usize = 63;
+/// Natural shore slopes: mean rise per metre inland (vec4 1.z), tallest cliff in metres and
+/// amplitude of the shore cut in map widths (vec4 2.xy).
+const SLOPE: usize = 6;
+const CLIFF: usize = 8;
+const CUT: usize = 9;
+/// The shore cut acts within this distance of the shoreline, at this first wavelength (map widths).
+const CUT_REACH: f64 = 0.03;
+const CUT_WAVE: f64 = 0.012;
+/// Largest factor of `CUT`, on the steepest stretches.
+const CUT_STEEP: f64 = 1.15;
 const SEA_STRIDE: usize = 8;
 /// Active mainland marker, outside the eight direction bits and distinct from islands.
 const TRACED: f32 = 256.0;
@@ -28,7 +38,8 @@ const TRACED: f32 = 256.0;
 /// at most 75 * max((0.5 - r²)⁴ r) = 75 * 0.0092 each.
 const NOISE_BOUND: f64 = 2.1;
 
-/// Width of the shoreline transition; never reshapes the inland relief or the coastline.
+/// Width of the shoreline transition; never moves the coastline. A narrower width also allows
+/// steeper natural slopes behind the shore.
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CoastProfile {
@@ -51,6 +62,8 @@ impl CoastProfile {
 pub(crate) struct Coast {
     profile: CoastProfile,
     rng: Rng,
+    /// Map width, in metres.
+    width: f64,
     pub noise: Noise,
     pub parameters: Vec<f32>,
     /// Plan length before the offshore islets, which are placed again once fitted.
@@ -64,11 +77,13 @@ impl Coast {
             profile: CoastProfile::default(),
             noise: Noise::new(rng.fork("shore-noise")),
             rng,
+            width,
             parameters: vec![
                 0.0,
                 0.0,
                 (motif * 0.070).clamp(35.0, 450.0).min(width * 0.060) as f32 / width as f32,
-                (amp * 0.25).clamp(12.0, 250.0) as f32,
+                // The sea floor of a small map stays at the scale of that map.
+                (amp * 0.25).clamp(12.0, 250.0).min(width * 0.02).max(6.0) as f32,
                 0.0,
                 0.0,
                 0.0,
@@ -94,19 +109,9 @@ impl Coast {
         // GPU vec4 1.xy, mirrored by terrainCoast.wgsl.
         self.parameters[4] = self.profile.width as f32;
         self.parameters[5] = self.profile.variability as f32;
-        // Seeded coast character: uneven sea reach per direction, a broad warp
-        // and noise amplitudes from smooth sandy bights to ragged rocky shores.
+        // Seeded coast character: a broad warp and noise amplitudes from smooth sandy
+        // bights to ragged rocky shores.
         let mut character = self.rng.fork("coast-character");
-        for i in 0..8 {
-            // Shore offset from the centre along direction i, and a turn of its shoreline.
-            let diagonal = i % 2 == 1;
-            self.parameters[8 + i] = if diagonal {
-                character.range(0.26, 0.40)
-            } else {
-                character.range(0.14, 0.34)
-            } as f32;
-            self.parameters[16 + i] = character.range(-0.30, 0.30) as f32;
-        }
         let rugged = character.float();
         let header = [
             character.range(0.03, 0.14),
@@ -127,6 +132,11 @@ impl Coast {
         self.parameters[DROWNING] = (drowned.range(0.035, 0.17)).min(band * 0.6) as f32;
         self.parameters[DROWNING_BAND] = band as f32;
         self.parameters[SHELF] = drowned.range(0.55, 2.1) as f32;
+        // Natural slopes behind the shore; cliffs are a local style some coasts never draw.
+        let mut slopes = self.rng.fork("coast-slopes");
+        self.parameters[SLOPE] = slopes.range(0.22, 0.42) as f32;
+        self.parameters[CLIFF] = ((slopes.float() - 0.3).max(0.0) * 64.0) as f32;
+        self.parameters[CUT] = slopes.range(0.0015, 0.0045) as f32;
         self.islets_from = HEADER;
         self.archipelago = false;
         if mask == 0 {
@@ -167,8 +177,9 @@ impl Coast {
         let peninsula = mode == "peninsula";
         let archipelago = !peninsula
             && (mode == "archipelago" || (mode == "random" && self.rng.fork("mode").float() < 0.5));
+        let mut narrow = false;
         if mask == 255 && peninsula {
-            self.peninsula(&mut rng);
+            narrow = self.peninsula(&mut rng);
         } else if mask == 255 {
             let count = if archipelago {
                 3 + (rng.float() * 5.0) as usize
@@ -224,9 +235,9 @@ impl Coast {
                 self.body(&mut rng, cx, cy, radius, arms);
             }
         }
-        // Bays could sever an isthmus; islands only take small coves and points.
+        // Bays could sever a narrow land; islands only take small coves and points.
         let lone_cove = mask.count_ones() == 1 && mask.trailing_zeros() % 2 == 0;
-        if !archipelago && !(mask == 255 && peninsula) && !lone_cove {
+        if !archipelago && !narrow && !lone_cove {
             self.shore_features(&mut rng, false);
         }
         self.islets_from = self.parameters.len();
@@ -304,10 +315,13 @@ impl Coast {
         let archipelago = self.archipelago;
         let mut rng = self.rng.fork("islets");
         let wanted = if mask == 255 && archipelago {
-            18 + (rng.float() * 15.0) as usize
+            18.0 + (rng.float() * 15.0).floor()
         } else {
-            6 + (rng.float() * 9.0) as usize
+            6.0 + (rng.float() * 9.0).floor()
         };
+        // A small map shows a shorter stretch of coast: fewer rocks, none under a few metres wide.
+        let wanted = (wanted * (self.width / 8000.0).sqrt().clamp(0.3, 1.0)).ceil() as usize;
+        let smallest = (18.0 / self.width).min(0.04);
         let mut sizes = self.rng.fork("islet-sizes");
         let radii: Vec<f64> = (0..wanted)
             .map(|i| {
@@ -318,13 +332,14 @@ impl Coast {
                 } else {
                     sizes.float()
                 };
-                if size_class < 0.6 {
+                let radius: f64 = if size_class < 0.6 {
                     sizes.range(0.0025, 0.0085)
                 } else if size_class < 0.9 {
                     sizes.range(0.009, 0.023)
                 } else {
                     sizes.range(0.025, 0.045)
-                }
+                };
+                radius.max(smallest)
             })
             .collect();
         let mut islets: Vec<(f64, f64, f64)> = Vec::new();
@@ -528,55 +543,149 @@ impl Coast {
         }
     }
 
-    /// A landmass joined to one map edge by a narrow, crooked isthmus that
-    /// lands on a sliver of continental shore: little access by land.
-    fn peninsula(&mut self, rng: &mut Rng) {
+    /// A landmass joined to one map edge, of a seeded family: hook, tapering cape, tombolo,
+    /// double lobe, narrow neck, rocky headland, curved spit, broad blunt, claw or winding
+    /// ribbon. The axis, its bends and its widths are seeded too. Returns whether the land is
+    /// too narrow for bays, which could sever it.
+    fn peninsula(&mut self, rng: &mut Rng) -> bool {
         let side = (rng.float() * 4.0) as usize % 4;
         let (nx, ny) = [(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)][side];
-        let (tx, ty) = (-ny, nx);
-        let along = rng.range(-0.22, 0.22);
-        let radius = rng.range(0.27, 0.34);
-        let push = rng.range(0.04, 0.10);
-        let (cx, cy) = (
-            0.5 - nx * push + tx * along * 0.4,
-            0.5 - ny * push + ty * along * 0.4,
-        );
-        let arms = 1 + (rng.float() * 2.0) as usize;
-        self.body(rng, cx, cy, radius, arms);
-        let neck = rng.range(0.026, 0.04);
+        let (tx, ty): (f64, f64) = (-ny, nx);
+        let along = rng.range(-0.3, 0.3);
+        // Just beyond the map edge, aiming at the middle of the map.
+        let root: (f64, f64) = (0.5 + tx * along + nx * 0.56, 0.5 + ty * along + ny * 0.56);
+        let aim = (0.5 + rng.range(-0.14, 0.14) - root.0, 0.5 + rng.range(-0.14, 0.14) - root.1);
+        let heading = aim.1.atan2(aim.0) + rng.range(-0.2, 0.2);
         let phase = rng.range(0.0, 100.0);
-        let shore = (0.5 + tx * along + nx * 0.5, 0.5 + ty * along + ny * 0.5);
-        let start = (cx + nx * radius * 0.45, cy + ny * radius * 0.45);
-        let mut last = start;
-        let steps = 3;
-        for j in 1..=steps {
-            let t = j as f64 / steps as f64;
-            let bend = if j == steps {
-                0.0
-            } else {
-                rng.range(-0.07, 0.07)
-            };
-            let next = (
-                start.0 + (shore.0 + nx * 0.06 - start.0) * t + tx * bend,
-                start.1 + (shore.1 + ny * 0.06 - start.1) * t + ty * bend,
-            );
-            let ra = if j == 1 { neck * 1.5 } else { neck };
-            let rb = if j == steps { neck * 1.7 } else { neck };
-            self.capsule(last, next, ra, rb, neck * 3.0, phase);
-            last = next;
-        }
+        let turn = if rng.float() < 0.5 { -1.0 } else { 1.0 };
+        let family = (rng.float() * 10.0) as usize;
+        // Narrowest radius near the root: the drowned relief may not sever the land there.
+        let (neck, narrow) = match family {
+            // Hook: an arm bending back on itself near its end.
+            0 => {
+                let (wide, bend) = (rng.range(0.06, 0.10), turn * rng.range(1.7, 2.7));
+                let spine = walk(rng, root, heading - turn * 0.3, 0.95, 7, |t| bend * t * t, |t| wide * (1.0 - 0.6 * t));
+                self.ribbon(&spine, phase);
+                (wide * 0.5, true)
+            }
+            // Tapering cape: a broad root down to a point.
+            1 => {
+                let (wide, tip, bend) = (rng.range(0.15, 0.24), rng.range(0.012, 0.03), turn * rng.range(0.0, 0.8));
+                let (length, taper) = (rng.range(0.6, 0.85), rng.range(0.6, 1.3));
+                let spine = walk(rng, root, heading, length, 6, |t| bend * t, |t| tip + (wide - tip) * (1.0 - t.powf(taper)));
+                self.ribbon(&spine, phase);
+                (wide, false)
+            }
+            // Tombolo: an island tied to the shore by a thin bar.
+            2 => {
+                let (bar, length, bend) = (rng.range(0.013, 0.022), rng.range(0.28, 0.40), turn * rng.range(0.2, 0.9));
+                let spine = walk(rng, root, heading, length, 4, |t| bend * t, |t| bar * (1.3 - 0.4 * t));
+                self.ribbon(&spine, phase);
+                let (x, y, _) = spine[spine.len() - 1];
+                let radius = rng.range(0.17, 0.26);
+                let reach = radius * 0.4 / (x - root.0).hypot(y - root.1).max(1e-6);
+                let (cx, cy) = (x + (x - root.0) * reach, y + (y - root.1) * reach);
+                self.ribbon(&[(x, y, bar), (cx, cy, radius * 0.25)], phase + 80.0);
+                self.body(rng, cx, cy, radius, 1);
+                (bar * 0.7, true)
+            }
+            // Double lobe: two swellings joined by a waist.
+            3 => {
+                let (waist, swell, bend) = (rng.range(0.03, 0.05), rng.range(0.09, 0.15), turn * rng.range(0.0, 0.9));
+                let second = rng.range(0.5, 1.1);
+                let lobes = |t: f64| waist + swell * (TAU * t * 0.95).sin().powi(2) * (if t > 0.5 { second } else { 1.0 });
+                let spine = walk(rng, root, heading, 0.82, 8, |t| bend * t, lobes);
+                self.ribbon(&spine, phase);
+                (waist * 0.8, true)
+            }
+            // Narrow neck: a branched landmass behind a crooked isthmus.
+            4 => {
+                let (isthmus, radius, length) = (rng.range(0.024, 0.04), rng.range(0.24, 0.33), rng.range(0.30, 0.42));
+                let spine = walk(rng, root, heading, length, 4, |t| turn * 0.6 * t, |t| isthmus * (1.3 - 0.4 * t));
+                self.ribbon(&spine, phase);
+                let (x, y, _) = spine[spine.len() - 1];
+                let (cx, cy) = (0.175 + 0.65 * x, 0.175 + 0.65 * y);
+                self.ribbon(&[(x, y, isthmus), (cx, cy, radius * 0.25)], phase + 80.0);
+                let arms = 1 + (rng.float() * 2.0) as usize;
+                self.body(rng, cx, cy, radius, arms);
+                (isthmus * 0.7, true)
+            }
+            // Rocky headland: a broad trunk splaying into points with coves between them.
+            5 => {
+                let (wide, length) = (rng.range(0.14, 0.22), rng.range(0.36, 0.5));
+                let trunk = walk(rng, root, heading, length, 4, |_| 0.0, |t| wide * (1.0 - 0.35 * t));
+                self.ribbon(&trunk, phase);
+                let (x, y, _) = trunk[trunk.len() - 1];
+                let points = 3 + (rng.float() * 3.0) as usize;
+                for k in 0..points {
+                    let fan = heading + (k as f64 / (points - 1) as f64 - 0.5) * 2.6 + rng.range(-0.25, 0.25);
+                    let (length, width) = (rng.range(0.14, 0.30), rng.range(0.035, 0.07));
+                    let arm = walk(rng, (x, y), fan, length, 3, |t| turn * 0.3 * t, |t| width * (1.0 - 0.75 * t));
+                    self.ribbon(&arm, phase + 80.0 * (k + 1) as f64);
+                }
+                (wide, false)
+            }
+            // Curved spit: a long thin arc of sand.
+            6 => {
+                let (width, bend, length) = (rng.range(0.022, 0.038), turn * rng.range(1.1, 2.0), rng.range(0.9, 1.15));
+                let spine = walk(rng, root, heading - bend * 0.35, length, 9, |t| bend * t.powf(1.3), |t| width * (1.1 - 0.45 * t));
+                self.ribbon(&spine, phase);
+                (width * 0.6, true)
+            }
+            // Broad blunt: hardly a neck, a wide square head.
+            7 => {
+                let (wide, flare, length) = (rng.range(0.20, 0.28), rng.range(-0.15, 0.2), rng.range(0.48, 0.66));
+                let spine = walk(rng, root, heading, length, 4, |t| turn * 0.25 * t, |t| wide * (1.0 + flare * t));
+                self.ribbon(&spine, phase);
+                (wide, false)
+            }
+            // Claw: two arms round a bay.
+            8 => {
+                let (wide, length) = (rng.range(0.07, 0.12), rng.range(0.30, 0.40));
+                let trunk = walk(rng, root, heading, length, 3, |_| 0.0, |t| wide * (1.1 - 0.3 * t));
+                self.ribbon(&trunk, phase);
+                let (x, y, _) = trunk[trunk.len() - 1];
+                for way in [-1.0, 1.0] {
+                    let (spread, bend, width) = (rng.range(0.8, 1.2), rng.range(1.2, 2.0), rng.range(0.045, 0.08));
+                    let length = rng.range(0.36, 0.52);
+                    let arm = walk(rng, (x, y), heading + way * spread, length, 5, |t| -way * bend * t, |t| width * (1.0 - 0.6 * t));
+                    self.ribbon(&arm, phase + 120.0 + 60.0 * way);
+                }
+                (wide * 0.7, true)
+            }
+            // Winding ribbon.
+            _ => {
+                let (width, sway, waves) = (rng.range(0.045, 0.085), turn * rng.range(0.6, 1.1), rng.range(0.8, 1.6));
+                let length = rng.range(0.85, 1.05);
+                let spine = walk(rng, root, heading, length, 9, |t| sway * (TAU * waves * t).sin(), |t| width * (1.0 - 0.35 * t));
+                self.ribbon(&spine, phase);
+                (width * 0.6, true)
+            }
+        };
+        self.parameters[DROWNING] = self.parameters[DROWNING].min((neck * 0.5) as f32);
         // The continent itself mostly lies beyond the frame.
-        let reach = rng.range(0.14, 0.30);
-        let (ox, oy) = (shore.0 + nx * 0.10, shore.1 + ny * 0.10);
-        let (a, b) = (rng.range(0.6, 1.2), rng.range(0.6, 1.2));
+        let reach = rng.range(0.10, 0.34);
+        let (ox, oy) = (0.5 + tx * along + nx * 0.60, 0.5 + ty * along + ny * 0.60);
+        let (a, b) = (rng.range(0.5, 1.3), rng.range(0.5, 1.3));
         self.capsule(
             (ox - tx * reach * a, oy - ty * reach * a),
             (ox + tx * reach * b, oy + ty * reach * b),
             0.14,
             0.14,
             0.22,
-            phase + 7.0,
+            phase + 600.0,
         );
+        narrow
+    }
+
+    /// A chain of capsules along `(x, y, radius)` points. Each one has its own phase: the
+    /// detail noise is cached per phase and scales with the local width.
+    fn ribbon(&mut self, points: &[(f64, f64, f64)], phase: f64) {
+        for (k, pair) in points.windows(2).enumerate() {
+            let (a, b) = (pair[0], pair[1]);
+            let scale = (2.4 * a.2.min(b.2)).clamp(0.03, 0.30);
+            self.capsule((a.0, a.1), (b.0, b.1), a.2, b.2, scale, phase + 3.3 * (k + 1) as f64);
+        }
     }
 
     /// Seeded bays (negative) and headlands (positive) centred on the shore
@@ -646,7 +755,7 @@ impl Coast {
         // of the mainland's height at their offshore position.
         let rocky = rng.float() < 0.55;
         let peak = if rocky {
-            rng.range(0.45, 1.5) * (self.depth() * 0.8).clamp(10.0, 70.0)
+            (rng.range(0.45, 1.5) * (self.depth() * 0.8).clamp(10.0, 70.0)).min(r * self.width * 0.5)
         } else {
             rng.range(0.8, 5.0)
         };
@@ -733,13 +842,13 @@ impl Coast {
     /// lowlands) lets the sea in as bays, rias and estuaries; high ground holds out as
     /// headlands and, offshore, as islets. Bounded by the drowning, fading beyond its band.
     fn relief_term(&self, relief: f64, distance: f64) -> f64 {
-        let inverse = self.parameters[RELIEF_INVERSE] as f64;
-        if inverse == 0.0 {
-            return 0.0;
-        }
-        let z = ((relief - self.parameters[RELIEF_MEDIAN] as f64) * inverse).tanh();
         let band = self.parameters[DROWNING_BAND] as f64;
-        self.parameters[DROWNING] as f64 * z * smooth(1.0 - distance.abs() / band)
+        self.parameters[DROWNING] as f64 * self.relief_rank(relief) * smooth(1.0 - distance.abs() / band)
+    }
+
+    /// Place of this marine relief between the low (-1) and high (1) ground; 0 before the fit.
+    fn relief_rank(&self, relief: f64) -> f64 {
+        ((relief - self.parameters[RELIEF_MEDIAN] as f64) * self.parameters[RELIEF_INVERSE] as f64).tanh()
     }
 
     /// Signed distance (positive inland) of the fitted coast over this marine `relief`.
@@ -748,8 +857,47 @@ impl Coast {
         if islet_height == 0.0 {
             distance += self.parameters[SHIFT] as f64;
             distance += self.relief_term(relief, distance);
+            distance += self.shore_cut(x, y, footprint, distance);
         }
         (distance, scale, islet_height, apron)
+    }
+
+    /// Stretches of coast, 0 on the steep resistant ones to 1 on the gentle ones.
+    fn gentleness(&self, x: f64, y: f64) -> f64 {
+        smooth(self.noise.fbm(x / 0.21 + 11.7, y / 0.21 - 4.2, 3) + 0.5)
+    }
+
+    /// Fractal cut of the shoreline, evaluated near it only: indented where the coast is
+    /// steep and resistant, almost nothing on gentle stretches. The shore keeps its side
+    /// beyond the reach. `shoreDetail.ts` continues it below the cells.
+    fn shore_cut(&self, x: f64, y: f64, footprint: f64, distance: f64) -> f64 {
+        let near = 1.0 - distance.abs() / CUT_REACH;
+        if near <= 0.0 {
+            return 0.0;
+        }
+        self.parameters[CUT] as f64 * (CUT_STEEP - self.gentleness(x, y)) * smooth(near)
+            * self.noise.fbm_filtered(x / CUT_WAVE + 31.7, y / CUT_WAVE - 8.3, 4, 0.6, footprint / CUT_WAVE)
+    }
+
+    /// Natural height limit `metres` behind the shore: a seeded slope, gentler near the water
+    /// on the gentle stretches and following the relief's ridges and valleys (`z`), plus on the
+    /// steepest stretches a cliff of limited height. An island cannot stand higher than its
+    /// distance to the sea allows, whatever its size. `islet` is an islet's size in metres.
+    fn ceiling(&self, metres: f64, gentle: f64, apron: f64, z: f64, islet: f64) -> f64 {
+        let steep = 1.0 - gentle;
+        let tilt = (250.0 / self.profile.width.max(40.0)).sqrt().clamp(0.5, 1.6);
+        let slope = self.parameters[SLOPE] as f64 * (0.65 + 0.7 * steep) * tilt * (1.0 + 0.35 * z) / apron.sqrt();
+        let beach = 0.25 + 0.75 * steep;
+        let ease = beach + (1.0 - beach) * metres / (metres + (self.width * 0.012).min(120.0));
+        let cliff = self.cliff(gentle, islet);
+        cliff * smooth(metres / (1.0 + 0.6 * cliff)) + slope * metres * ease
+    }
+
+    /// Cliff height of a stretch, bounded by the map and by the islet it stands on.
+    fn cliff(&self, gentle: f64, islet: f64) -> f64 {
+        let limit = (self.parameters[CLIFF] as f64).min(self.width * 0.004);
+        let limit = if islet > 0.0 { limit.min(islet * 0.04) } else { limit };
+        limit * smooth((0.28 - gentle) / 0.2)
     }
 
     /// The geometric plan alone: shorelines, landmasses, islets, bays and headlands.
@@ -860,12 +1008,17 @@ impl Coast {
         (distance, scale, islet_height, apron)
     }
 
-    /// Coastal band, in map widths, of a shore of this `scale` and `apron`: four of its
-    /// widest ramps (largest `width_variation`, no cliff), as `shore` uses. A ramp
-    /// grows with the relief it cuts. Beyond the band the sea floor is flat at `-depth`.
+    /// Width of the sea slope, in map widths, of a shore of this `scale` and `apron` on an
+    /// average stretch. It grows with the relief it cuts and never falls to the sea floor
+    /// steeper than a natural slope. Beyond it the sea floor is flat at `-depth`.
+    fn sea_slope(&self, scale: f64, apron: f64, relief: f64, width: f64) -> f64 {
+        let ramp = (self.parameters[2] as f64).max(relief / (width * 0.45)).min(scale * 0.18).max(self.depth() / width);
+        4.0 * ramp * apron * self.shelf()
+    }
+
+    /// Coastal band, in map widths: the sea slope on its widest stretch.
     fn shore_band(&self, scale: f64, apron: f64, relief: f64, width: f64) -> f64 {
-        4.0 * (self.parameters[2] as f64).max(relief / (width * 0.45)).min(scale * 0.18) * 1.75 * apron
-            * self.shelf()
+        self.sea_slope(scale, apron, relief, width) * 1.75
     }
 
     /// Seeded shelf width: narrow steep shores to broad shallow ones.
@@ -891,11 +1044,8 @@ impl Coast {
             }
         }
         // The fitted shift and the relief drowning raise the land by at most this much.
-        if at(RELIEF_INVERSE) != 0.0 {
-            let z = ((height - at(RELIEF_MEDIAN)) * at(RELIEF_INVERSE)).tanh();
-            raised += at(DROWNING) * z.max(0.0);
-        }
-        raised += at(SHIFT).max(0.0);
+        raised += at(DROWNING) * self.relief_rank(height).max(0.0);
+        raised += at(SHIFT).max(0.0) + at(CUT) * CUT_STEEP * NOISE_BOUND;
         let mask = at(0) as u32;
         if mask != 255 {
             // The warp moves the sample by at most `reach`; bound the field and
@@ -991,31 +1141,62 @@ impl Coast {
         let height = self.marine_relief(height);
         let (distance, scale, islet_height, apron) =
             self.distance(x / width, y / width, footprint / width, height);
-        let height = if islet_height > 0.0 {
-            islet_height
-        } else {
-            height
-        };
-        // Keep the previous coastal cut without cliff sectors or inland lowland reshaping.
-        let width_variation = 0.65
-            + 1.1
-                * smooth(
-                    self.noise
-                        .fbm(x / (width * 0.21) + 11.7, y / (width * 0.21) - 4.2, 3)
-                        + 0.5,
-                );
-        let ramp = (self.parameters[2] as f64)
-            .max(height / (width * 0.45))
-            .min(scale * 0.18)
-            * width_variation
-            * apron;
+        let islet = islet_height > 0.0;
+        let height = if islet { islet_height } else { height };
+        let gentle = self.gentleness(x / width, y / width);
         if distance <= 0.0 {
-            -self.depth() * smooth(-distance / (ramp * 4.0 * self.shelf()))
-        } else {
-            let band = self.smoothing_width(x, y);
-            if band > 0.0 { height * smooth(distance * width / band) } else { height }
+            let slope = self.sea_slope(scale, apron, height, width) * (0.65 + 1.1 * gentle);
+            return -self.depth() * rise(-distance / slope, 0.5);
         }
+        let metres = distance * width;
+        // The smoothing never covers a whole small map, and narrows at the foot of a cliff.
+        let islet_size = if islet { scale * width } else { 0.0 };
+        let cliff = self.cliff(gentle, islet_size);
+        let band = self.smoothing_width(x, y).min(width * 0.12) * (1.0 - 0.85 * smooth(cliff / 20.0));
+        let land = if band > 0.0 { height * rise(metres / band, 0.3) } else { height };
+        if land <= 0.0 {
+            return land;
+        }
+        // Smooth minimum: the relief well under the natural limit keeps its height.
+        let z = if islet { 0.0 } else { self.relief_rank(height) };
+        let limit = self.ceiling(metres, gentle, apron, z, islet_size);
+        let (low, high) = (land.min(limit), land.max(limit));
+        low / (1.0 + (low / high).powi(4)).powf(0.25)
     }
+}
+
+/// Rise from 0 to 1 over `t` in 0..1, leaving the shore at a slope `toe` and joining flat.
+fn rise(t: f64, toe: f64) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t) + toe * t * (1.0 - t) * (1.0 - t)
+}
+
+/// Points `(x, y, radius)` along a path of this `length` and initial `heading`, two per step:
+/// `turn(t)` bends it, `radius(t)` sets its width, both with seeded irregularity. The path
+/// stays inside the map, short of its edges.
+fn walk(
+    rng: &mut Rng,
+    from: (f64, f64),
+    heading: f64,
+    length: f64,
+    steps: usize,
+    turn: impl Fn(f64) -> f64,
+    radius: impl Fn(f64) -> f64,
+) -> Vec<(f64, f64, f64)> {
+    let pieces = steps * 2;
+    let (mut x, mut y) = from;
+    let mut points = vec![(x, y, radius(0.0))];
+    for k in 1..=pieces {
+        let t = k as f64 / pieces as f64;
+        let angle = heading + turn(t) + rng.range(-0.28, 0.28);
+        let step = length / pieces as f64 * rng.range(0.75, 1.25);
+        let width = radius(t) * rng.range(0.74, 1.26);
+        let margin = 0.06 + width * 0.6;
+        x = (x + angle.cos() * step).clamp(margin, 1.0 - margin);
+        y = (y + angle.sin() * step).clamp(margin, 1.0 - margin);
+        points.push((x, y, width));
+    }
+    points
 }
 
 /// Decode the web mask and retain the centre of an edge-replicated, padded exact EDT.
@@ -1145,7 +1326,6 @@ mod open_sea_tests {
             let (a, b) = (cut.apply(x, y, 4000.0, 300.0, 0.0), wide.apply(x, y, 4000.0, 300.0, 0.0));
             assert_eq!(a > 0.0, b > 0.0);
             if a <= 0.0 { assert_eq!(a, b); }
-            if original.0 * 4000.0 >= 1000.0 { assert_eq!(a, b); }
             if a - b > 10.0 { softened += 1; }
         }}
         let span = widths.iter().copied().fold(f64::NEG_INFINITY, f64::max) - widths.iter().copied().fold(f64::INFINITY, f64::min);
@@ -1158,6 +1338,53 @@ mod open_sea_tests {
             assert!(profile.validate().is_err());
         }
         assert!(serde_json::from_str::<CoastProfile>(r#"{"cliffs":1}"#).is_err());
+    }
+
+    /// Small islands under high relief: the height is bounded by the distance to the sea, and
+    /// a cliff by the size of the map.
+    #[test]
+    fn islands_rise_from_the_sea_on_natural_slopes() {
+        for (width, mode) in [(1500.0, "archipelago"), (4000.0, "archipelago"), (4000.0, "island"), (4000.0, "peninsula"), (25000.0, "archipelago")] {
+            for seed in 0..3 {
+                let mut coast = Coast::new(Rng::new(&format!("natural-{seed}")).fork("coast"), width, 10000.0, 1500.0, 0.0);
+                coast.configure(255, mode).unwrap();
+                let relief: Vec<f32> = hills(48).into_iter().map(|h| h * 4.0).collect();
+                coast.fit(&relief, 48).unwrap();
+                let mut land = 0;
+                for i in 0..96 * 96 {
+                    let (x, y) = (((i % 96) as f64 + 0.5) / 96.0, ((i / 96) as f64 + 0.5) / 96.0);
+                    let height = relief[(i / 192) * 48 + (i % 96) / 2] as f64;
+                    let h = coast.apply(x * width, y * width, width, height, 0.0);
+                    let metres = coast.distance(x, y, 0.0, height).0 * width;
+                    assert_eq!(h > 0.0, metres > 0.0);
+                    if h > 0.0 {
+                        land += 1;
+                        assert!(h <= metres * 0.95 + (width * 0.004).min(45.0), "{mode} {width} m, seed {seed}: {h} m at {metres} m from the sea");
+                    }
+                }
+                assert!(land > 0);
+            }
+        }
+    }
+
+    /// Rerolls draw different peninsulas: each stays joined to a side and keeps open sea, and
+    /// two consecutive seeds never draw the same land.
+    #[test]
+    fn peninsulas_are_diverse() {
+        let n = 48;
+        let masks: Vec<Vec<bool>> = (0..20).map(|seed| {
+            let mut coast = Coast::new(Rng::new(&format!("peninsula-{seed}")).fork("coast"), 25000.0, 10000.0, 1000.0, 0.0);
+            coast.configure(255, "peninsula").unwrap();
+            let land: Vec<bool> = (0..n * n).map(|i| coast.geometry(((i % n) as f64 + 0.5) / n as f64, ((i / n) as f64 + 0.5) / n as f64, 0.0).0 > 0.0).collect();
+            let share = land.iter().filter(|&&l| l).count() as f64 / land.len() as f64;
+            assert!((0.02..0.85).contains(&share), "seed {seed}: land share {share}");
+            assert!((0..n).any(|k| land[k] || land[(n - 1) * n + k] || land[k * n] || land[k * n + n - 1]), "seed {seed}: not joined to a side");
+            land
+        }).collect();
+        for (k, pair) in masks.windows(2).enumerate() {
+            let differ = pair[0].iter().zip(&pair[1]).filter(|(a, b)| a != b).count();
+            assert!(differ * 20 >= n * n, "seeds {k} and {} differ by {differ} cells", k + 1);
+        }
     }
 
     /// Pack cell-centred sea samples in the web contract's least-significant-bit order.

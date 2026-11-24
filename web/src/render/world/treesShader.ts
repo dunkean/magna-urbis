@@ -77,6 +77,7 @@ uniform int uNight;
 out vec3 colour;
 out vec3 grain;
 flat out float modelOpacity;
+flat out float bareCrown; // leafless crown of the season
 ${TREE_PROFILE_GLSL}
 const float WORLD_NEEDLE_R[6]=float[6](1.,.69,.86,.51,.61,0.);
 void main(){
@@ -87,6 +88,7 @@ void main(){
   float h=treeShape.x,r=treeBase.w,bottom=clamp(h-treeShape.y,.02*h,.75*h);
   float stem=max(max(needle?h/90.:h/64.,r/(needle?8.:12.)),.17);
   float u=0.,width=stem,y=0.;
+  bareCrown=0.;
   vec2 dir,offset=vec2(0.),phase=vec2(cos(treeShape.w),sin(treeShape.w));
   vec3 normal;
   bool trunk;
@@ -123,6 +125,7 @@ void main(){
   }
   if(!trunk){
     if(!needle && treeColor.w>.5)width*=.8;
+    bareCrown=treeColor.w>.5?1.:0.;
     if(parasol)offset+=phase*(.14*r*u);
   }
   vec2 local=offset+dir*width;
@@ -148,6 +151,7 @@ precision highp float;
 in vec3 colour;
 in vec3 grain;
 flat in float modelOpacity;
+flat in float bareCrown;
 uniform highp int uSegments;
 out vec4 color;
 float grainHash(vec2 p){
@@ -162,6 +166,18 @@ float grainNoise(vec2 p){
 }
 void main(){
   vec3 base=colour;
+  // A leafless crown is the web of its branches: limbs and twigs along the zero lines of two octaves of noise, the sky
+  // and the ground between them. Once twigs are under a pixel, the same share of the crown is kept as a screen.
+  if(bareCrown>.5){
+    float kept=.5;
+    if(uSegments>0){
+      vec2 q=grain.xy*vec2(1.15,.62);
+      float twig=min(abs(grainNoise(q)),1.3*abs(grainNoise(q*2.1+11.3)));
+      vec2 size=fwidth(q);
+      kept=mix(1.-step(.085,twig),.5,smoothstep(.25,.7,max(size.x,size.y)));
+    }
+    if(kept<=fract(52.9829189*fract(dot(floor(gl_FragCoord.xy),vec2(.00583715,.06711056)))))discard;
+  }
   // Billboards are too small for any grain. A derivative gate removes the
   // pattern before its clumps or strands are subpixel, including on a tilt.
   if(uSegments>0){

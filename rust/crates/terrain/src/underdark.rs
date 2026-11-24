@@ -2,8 +2,9 @@
 //!
 //! The relief is read as the floor of the underworld, not inverted. Its drainage network becomes
 //! the tunnels (width grows with the upstream area, with irregular river rooms), its low basins and
-//! plains become wide caverns with rock pillars, and a sparse worm network adds dry galleries.
-//! Every opening is joined to the main network, so roads and rivers can reach every chamber.
+//! plains become wide caverns with rock pillars and a few great halls, and a sparse worm network adds dry galleries.
+//! Every one of these is joined to the main network, so roads and rivers can reach it. The small scale comes last
+//! (`underdark_sides.rs`): narrow side tunnels, dead ends, blind chambers and chambers sealed in the rock.
 //! Rock keeps the floor of its nearest opening plus a wall that rises with the distance to it, so
 //! water falling on the rock drains into the nearest gallery. The ordinary hydrology then runs on
 //! this surface: rivers follow the tunnels and lakes fill the closed caverns.
@@ -19,6 +20,10 @@ use crate::noise::Noise;
 use crate::rng::Rng;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+
+#[path = "underdark_sides.rs"]
+mod sides;
+use sides::{Fissure, GutPoint, carve_gut, side_network};
 
 /// Carved surface (metres, strictly positive) and its rock mask (1 = solid rock, 0 = open floor).
 pub struct UnderdarkField {
@@ -166,11 +171,6 @@ fn quantile(values: &[f32], q: f64) -> f32 {
     sample[((sample.len() - 1) as f64 * q.clamp(0.0, 1.0)).round() as usize]
 }
 
-/// The carve as it was before tunnels, kept to prove that amount 0 is byte-identical (remove once checked).
-#[cfg(test)]
-#[path = "underdark_reference.rs"]
-mod underdark_reference;
-
 #[derive(PartialEq)]
 struct Node(f32, u32);
 impl Eq for Node {}
@@ -187,10 +187,34 @@ pub fn carve(seed: &str, width: f64, heights: &[f32]) -> Result<UnderdarkField, 
 /// Carve the underworld with explicit options.
 pub fn carve_with(seed: &str, width: f64, heights: &[f32], options: &UnderdarkOptions) -> Result<UnderdarkField, String> {
     let (tubes, passages) = tunnel_counts(options.natural_tunnels, width as f32);
-    carve_counts(seed, width, heights, tubes, passages)
+    carve_counts(seed, width, heights, tubes, passages, options)
 }
 
-fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, passage_count: usize) -> Result<UnderdarkField, String> {
+/// Share of the map the caverns open by default.
+const CAVERN_SHARE: f32 = 0.2;
+/// `UnderdarkOptions::lakes` of an ordinary map: the bowls and basins below are set for it.
+const COMMON_LAKES: f32 = 0.5;
+
+/// Great halls (x, y, radius in cells): two to four wide openings on the most cavernous ground, far from one another.
+fn great_halls(depth: &[f32], n: usize, w: f32, girth: f32, rng: &Rng) -> Vec<(f32, f32, f32)> {
+    let mut rng = rng.fork("great-halls");
+    let count = (2.0 + w / 20_000.0).round().min(4.0) as usize;
+    let (stride, margin) = ((n / 64).max(2), n / 12);
+    let mut sites: Vec<usize> = (margin..n - margin).step_by(stride)
+        .flat_map(|y| (margin..n - margin).step_by(stride).map(move |x| y * n + x)).collect();
+    sites.sort_by(|&a, &b| depth[b].partial_cmp(&depth[a]).unwrap_or(Ordering::Equal).then(a.cmp(&b)));
+    let mut halls: Vec<(f32, f32, f32)> = Vec::new();
+    for i in sites {
+        if halls.len() >= count { break; }
+        let (x, y) = ((i % n) as f32 + 0.5, (i / n) as f32 + 0.5);
+        if halls.iter().any(|h| (h.0 - x).hypot(h.1 - y) < 0.28 * n as f32) { continue; }
+        let radius = (w * rng.range(0.035, 0.06) as f32 * girth).min(1200.0) * n as f32 / w;
+        halls.push((x, y, radius));
+    }
+    halls
+}
+
+fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, passage_count: usize, options: &UnderdarkOptions) -> Result<UnderdarkField, String> {
     let n = (heights.len() as f64).sqrt() as usize;
     if n < 16 || n * n != heights.len() { return Err("Underdark: square surface of at least 16² required.".into()); }
     if !heights.iter().all(|h| h.is_finite()) { return Err("Underdark: non-finite surface.".into()); }
@@ -219,9 +243,13 @@ fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, pass
     let grids = crate::priority_flood::flood_grids(&smooth, n, (cell * cell) as f64, None, None, None);
     let area = grids.accumulation;
 
+    // A map of fewer caverns is tighter everywhere: its corridors and galleries narrow too.
+    let share = if options.caverns.is_finite() { options.caverns.clamp(0.02, 0.6) } else { CAVERN_SHARE };
+    let girth = (share / CAVERN_SHARE).sqrt().clamp(0.45, 1.25);
+    let least = cell * girth.clamp(0.7, 1.0);
     let a_min = (w * w * 0.0016).max(30.0 * cell * cell);
-    let r0 = (w * 0.0032).max(2.2 * cell).min(90.0);
-    let r_max = (w * 0.018).max(4.0 * cell);
+    let r0 = (w * 0.0032 * girth).max(2.2 * least).min(90.0);
+    let r_max = (w * 0.018 * girth).max(4.0 * least);
 
     // 4. Caverns: basins and plains below their surroundings, shaped by a broad noise.
     let reach = ((w * 0.05 / cell).round() as usize).clamp(3, n / 4);
@@ -247,7 +275,21 @@ fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, pass
             *d = *d / spread + 0.8 * flat + 2.4 * shape;
         }
     });
-    let cavern_cut = quantile(&depth, 0.80);
+    let halls = great_halls(&depth, n, w, girth, &root);
+    // Distance to the nearest great hall, in radii of that hall.
+    let to_hall = |x: usize, y: usize| halls.iter()
+        .map(|h| (x as f32 + 0.5 - h.0).hypot(y as f32 + 0.5 - h.1) / h.2).fold(f32::INFINITY, f32::min);
+    crate::terrain_par::rows(&mut depth, n, |y, row| {
+        for (x, d) in row.iter_mut().enumerate() {
+            let e = to_hall(x, y);
+            if e >= 1.5 { continue; }
+            let (px, py) = (((x as f64) + 0.5) * cell as f64, ((y as f64) + 0.5) * cell as f64);
+            let edge = 1.0 + 0.4 * noise2.fbm(px / (w as f64 * 0.025) + 7.0, py / (w as f64 * 0.025) - 91.0, 3) as f32;
+            let t = ((1.15 - e / edge) / 0.5).clamp(0.0, 1.0);
+            *d += 3.2 * t * t * (3.0 - 2.0 * t);
+        }
+    });
+    let cavern_cut = quantile(&depth, 1.0 - share as f64);
     let cavern: Vec<bool> = depth.iter().map(|&p| p > cavern_cut).collect();
 
     // 5. Dry galleries: zero crossings of a warped noise, a sparse labyrinth of narrow passages.
@@ -262,7 +304,7 @@ fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, pass
             *v = if keep > -0.05 { noise3.fbm(wx, wy, 3).abs() as f32 } else { 1.0 };
         }
     });
-    let gallery_half = (r0 * 0.7).max(1.8 * cell) / (lambda as f32 * 0.9);
+    let gallery_half = (r0 * 0.7).max(1.8 * least) / (lambda as f32 * 0.9);
 
     // 3. Corridors: river corridors whose radius grows with the upstream area, swelling into river rooms.
     // (Computed after the caverns and galleries, which do not depend on them: river passages need both.)
@@ -332,7 +374,11 @@ fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, pass
         let rough = if to_slot.is_empty() { wall } else { wall * (1.0 - calm(i)) };
         let t = tunnel[i] + rough * (r0 / cell) * 0.9;
         let g = gallery_value[i] < gallery_half * (1.0 + 0.6 * wall);
-        let pillar = cavern[i] && noise.noise(x / (r0 as f64 * 3.2) + 77.0, y / (r0 as f64 * 3.2) - 3.0) > 0.68;
+        // Pillars stand everywhere but rarely in a great hall, whose vault spans it.
+        let pillar = cavern[i] && {
+            let p = noise.noise(x / (r0 as f64 * 3.2) + 77.0, y / (r0 as f64 * 3.2) - 3.0);
+            p > 0.68 && (p > 0.82 || to_hall(i % n, i / n) > 0.9)
+        };
         open[i] = (t > 0.0 || cavern[i] || g) && !pillar;
     }
     // A river passage's D8 chain steps diagonally: the lower corner of each diagonal step opens too, so the gut is
@@ -465,13 +511,19 @@ fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, pass
     if tube_count > 0 {
         tunnels.extend(lava_tubes(&mut open, &mut floor, &grids.filled, n, cell, w, tube_count, &root.fork("lava-tubes"), &mut guts));
     }
+    // 8c. Side tunnels, dead ends, blind and sealed chambers: they scale with the natural tunnels.
+    let amount = if options.natural_tunnels.is_finite() { options.natural_tunnels.clamp(0.0, 3.0) } else { 0.0 };
+    let fissures: Vec<Fissure> = side_network(&mut open, &mut floor, &grids.filled, n, cell, w, amount, &root.fork("side-tunnels"), &mut guts);
 
     // 9. Wall distance: smoothed, then held to the carved sign so narrow passages keep their connection.
     let (sdf, dist, near, to_rock) = wall_distance(&open, n);
     // The exported soft field draws each natural tunnel at its real width; the relief below keeps the plain distance.
     let soft = if guts.lines.is_empty() { None } else { Some(gut_soft_field(&sdf, &open, &guts, n)) };
 
-    // Underground lakes: some caverns sink into a bowl, deepest far from the walls; the water budget fills it.
+    // Underground lakes: some caverns sink into a bowl, deepest far from the walls; the water budget fills it. With fewer
+    // lakes the bowls get rarer and smaller; without lakes (0) there is none, and step 11 silts every basin.
+    let lakes = if options.lakes.is_finite() { options.lakes.max(0.0) } else { COMMON_LAKES };
+    let lake_shift = if lakes > 0.0 { ((lakes / COMMON_LAKES).log2() * 0.06).clamp(-0.3, 0.15) } else { f32::NEG_INFINITY };
     let bowl_reach = (r0 * 3.0).max(4.0 * cell);
     // Lakes sit on the rivers (a bowl away from the drainage would stay dry in the water budget): a cavern
     // qualifies near a corridor that drains at least 20 tunnel heads.
@@ -483,7 +535,7 @@ fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, pass
             let i = y * n + x;
             if !open[i] || !cavern[i] || -river[i] * cell > bowl_reach * 4.0 { continue; }
             let (px, py) = (((x as f64) + 0.5) * cell as f64, ((y as f64) + 0.5) * cell as f64);
-            let lake = noise2.fbm(px / (w as f64 * 0.07) - 211.0, py / (w as f64 * 0.07) + 63.0, 2) as f32;
+            let lake = noise2.fbm(px / (w as f64 * 0.07) - 211.0, py / (w as f64 * 0.07) + 63.0, 2) as f32 + lake_shift;
             if lake <= 0.0 { continue; }
             let t = (to_rock[i] * cell / bowl_reach).min(1.0);
             *f -= (8.0 + 40.0 * lake).min(18.0) * t * t * (3.0 - 2.0 * t) * (lake / 0.04).min(1.0);
@@ -510,16 +562,18 @@ fn carve_counts(seed: &str, width: f64, heights: &[f32], tube_count: usize, pass
             *h = base + 0.5 + wall * rise + wall * 0.18 * crag * rise + dist[i] * cell * 0.02;
         }
     });
-    // 11. Lakes and silt: a closed basin of middling size (0.04 % to 2 % of the map, at least 4 m deep) stays
-    // closed, so the water budget fills it as an underground lake; every other basin fills with sediment
-    // (small pits and the huge drowned valleys alike), which leaves flat cavern floors.
+    for fissure in &fissures { fissure.cut(&mut height, &open, n); }
+    // 11. Lakes and silt: a closed basin of middling size (0.04 % to 2 % of the map, at least 4 m deep, deeper where
+    // few lakes are asked) stays closed, so the water budget fills it as an underground lake; every other basin fills
+    // with sediment (small pits and the huge drowned valleys alike), which leaves flat cavern floors. No lake asked: all.
+    let least_depth = 4.0 / (lakes / COMMON_LAKES).min(1.0);
     let filled = crate::priority_flood::flood_surface(&height, n, false).filled;
     let pit: Vec<bool> = (0..total).map(|i| filled[i] - height[i] > 0.01).collect();
     let (labels, sizes) = components(&pit, n);
     let mut deepest = vec![0.0f32; sizes.len()];
     for i in 0..total { if pit[i] { let d = &mut deepest[labels[i] as usize]; *d = d.max(filled[i] - height[i]); } }
     let (lake_min, lake_max) = ((total as f32 * 0.0004) as usize, (total as f32 * 0.02) as usize);
-    let keep: Vec<bool> = (0..sizes.len()).map(|k| deepest[k] >= 4.0 && (lake_min..=lake_max).contains(&sizes[k])).collect();
+    let keep: Vec<bool> = (0..sizes.len()).map(|k| lakes > 0.0 && deepest[k] >= least_depth && (lake_min..=lake_max).contains(&sizes[k])).collect();
     for i in 0..total { if pit[i] && !keep[labels[i] as usize] { height[i] = filled[i]; } }
     Ok(UnderdarkField { height, rock: open.iter().map(|&o| u8::from(!o)).collect(), sdf: soft.unwrap_or(sdf), tunnels })
 }
@@ -612,15 +666,19 @@ pub struct UnderdarkTunnel {
     pub points: Vec<[f32; 2]>,
 }
 
-/// Carve options carried by the recipe (`TerrainSettings.underdarkTunnels`).
+/// Carve options carried by the recipe (`TerrainSettings.underdarkTunnels`, `underdarkCaverns` and the lake settings).
 #[derive(Clone, Copy, Debug)]
 pub struct UnderdarkOptions {
-    /// Natural tunnels amount: 0 none (the carve is then unchanged), 1 a few (default), up to 3.
+    /// Natural tunnels amount: 0 none, 1 a few (default), up to 3. Side tunnels and sealed chambers follow it.
     pub natural_tunnels: f32,
+    /// Share of the map the caverns open (0.02 to 0.6); under the default, corridors and galleries narrow with it.
+    pub caverns: f32,
+    /// Lakes amount (the `Lakes` setting, 0 to 4): 0 carves no lake bowl and silts every basin.
+    pub lakes: f32,
 }
 
 impl Default for UnderdarkOptions {
-    fn default() -> Self { Self { natural_tunnels: 1.0 } }
+    fn default() -> Self { Self { natural_tunnels: 1.0, caverns: CAVERN_SHARE, lakes: COMMON_LAKES } }
 }
 
 /// Flattened wire form: per tunnel `[kind, half_width, count, x0, y0, x1, y1, …]` (metres).
@@ -824,7 +882,7 @@ fn lava_tubes(open: &mut [bool], floor: &mut [f32], water: &[f32], n: usize, cel
         top
     };
     let mut mids: Vec<(f32, f32)> = Vec::new();
-    let mut tube_dist = vec![f32::INFINITY; total];
+    let mut best = vec![f32::INFINITY; total];
     let mut tunnels = Vec::new();
     for cand in cands {
         if tunnels.len() >= count { break; }
@@ -880,52 +938,18 @@ fn lava_tubes(open: &mut [bool], floor: &mut [f32], water: &[f32], n: usize, cel
                     let (qx, qy) = (gx as f32 + 0.5 - x, gy as f32 + 0.5 - y);
                     if qx * qx + qy * qy > reach * reach { continue; }
                     let j = gy as usize * n + gx as usize;
-                    if open[j] || tube_dist[j].is_finite() { return false; }
+                    if open[j] { return false; }
                 }
             }
             true
         });
         if !clear { continue; }
-        // Carve: the rock cells within the gut's radius open, and so does the chain of cells under the centre line (a
-        // diagonal step also opens the corner nearer the line), so the tube is 4-connected however narrow; the nearest
-        // sample sets the floor on the mouth-to-mouth grade. The soft wall field draws the gut at its real width.
-        let mut carved: Vec<usize> = Vec::new();
-        let mut chain: Vec<usize> = Vec::new();
-        let mut last: Option<(isize, isize)> = None;
-        for &(x, y, t, _, rad) in &pts {
+        // Carve on the mouth-to-mouth grade.
+        let line: Vec<GutPoint> = pts.iter().map(|&(x, y, t, _, r)| {
             let tm = ((t * full - ext) / len).clamp(0.0, 1.0);
-            let h = ha + (hb - ha) * tm;
-            let mut take = |gx: isize, gy: isize| {
-                if gx < 0 || gy < 0 || gx >= n as isize || gy >= n as isize { return; }
-                let dd = (gx as f32 + 0.5 - x).hypot(gy as f32 + 0.5 - y);
-                let j = gy as usize * n + gx as usize;
-                if open[j] && !tube_dist[j].is_finite() { return; }
-                if !tube_dist[j].is_finite() { carved.push(j); }
-                if dd < tube_dist[j] { tube_dist[j] = dd; floor[j] = h; }
-            };
-            let rr = rad.ceil() as isize;
-            let (cx, cy) = (x.floor() as isize, y.floor() as isize);
-            for dy in -rr..=rr {
-                for dx in -rr..=rr {
-                    let (qx, qy) = ((cx + dx) as f32 + 0.5 - x, (cy + dy) as f32 + 0.5 - y);
-                    if qx * qx + qy * qy <= rad * rad { take(cx + dx, cy + dy); }
-                }
-            }
-            take(cx, cy);
-            if let Some((px, py)) = last {
-                if px != cx && py != cy {
-                    let d1 = (cx as f32 + 0.5 - x).hypot(py as f32 + 0.5 - y);
-                    let d2 = (px as f32 + 0.5 - x).hypot(cy as f32 + 0.5 - y);
-                    if d1 <= d2 { take(cx, py); } else { take(px, cy); }
-                }
-            }
-            if cx >= 0 && cy >= 0 && cx < n as isize && cy < n as isize { chain.push(cy as usize * n + cx as usize); }
-            last = Some((cx, cy));
-        }
-        for &j in &carved { open[j] = true; }
-        chain.sort_unstable();
-        guts.lines.push(pts.iter().map(|&(x, y, _, _, g)| (x, y, g)).collect());
-        guts.cells.extend(carved.iter().map(|&j| (j, chain.binary_search(&j).is_ok())));
+            GutPoint { x, y, r, h: ha + (hb - ha) * tm }
+        }).collect();
+        carve_gut(open, floor, &mut best, n, &line, guts);
         let mut points: Vec<[f32; 2]> = pts.iter().step_by(5).map(|&(x, y, _, _, _)| [x * cell, y * cell]).collect();
         if let Some(&(x, y, _, _, _)) = pts.last() { if samples % 5 != 0 { points.push([x * cell, y * cell]); } }
         if hb > ha { points.reverse(); }
@@ -954,8 +978,7 @@ mod tests {
         let open: Vec<bool> = field.rock.iter().map(|&r| r == 0).collect();
         let share = open.iter().filter(|&&o| o).count() as f64 / (n * n) as f64;
         assert!((0.2..0.7).contains(&share), "open share {share}");
-        let (_, sizes) = components(&open, n);
-        assert_eq!(sizes.len(), 1, "one network, got {sizes:?}");
+        one_network_and_sealed_chambers(&open, n, 8000.0);
         assert!(field.height.iter().all(|h| h.is_finite() && *h > 0.0));
         // Rock rises well above the floor a few cells inside the wall.
         let deep: Vec<usize> = (0..n * n).filter(|&i| field.sdf[i] > 6.0).collect();
@@ -965,16 +988,37 @@ mod tests {
         assert!(rock_mean > floor_mean + 40.0, "rock {rock_mean} floor {floor_mean}");
     }
 
+    /// Every opening belongs to one network, but for small chambers sealed in the rock (under 0.1 % of the map each).
+    fn one_network_and_sealed_chambers(open: &[bool], n: usize, w: f32) {
+        let (_, sizes) = components(open, n);
+        let main = sizes.iter().copied().max().unwrap_or(0);
+        let limit = (2.0 * std::f32::consts::PI * (140.0 * n as f32 / w).powi(2)) as usize;
+        assert!(sizes.iter().all(|&s| s == main || s <= limit), "one network and small chambers, got {sizes:?}");
+    }
+
     #[test]
-    fn zero_tunnels_is_byte_identical_to_the_carve_before_tunnels() {
+    fn no_tunnels_leaves_one_network_and_no_lakes_leaves_no_basin() {
         let n = 192;
         let surface = relief(n);
-        let now = carve_with("seed", 8000.0, &surface, &UnderdarkOptions { natural_tunnels: 0.0 }).unwrap();
-        let before = super::underdark_reference::carve("seed", 8000.0, &surface).unwrap();
-        assert!(now.tunnels.is_empty());
-        assert_eq!(now.rock, before.rock);
-        assert!(now.height.iter().zip(&before.height).all(|(a, b)| a.to_bits() == b.to_bits()), "height differs");
-        assert!(now.sdf.iter().zip(&before.sdf).all(|(a, b)| a.to_bits() == b.to_bits()), "sdf differs");
+        let options = UnderdarkOptions { natural_tunnels: 0.0, lakes: 0.0, ..UnderdarkOptions::default() };
+        let field = carve_with("seed", 8000.0, &surface, &options).unwrap();
+        assert!(field.tunnels.is_empty());
+        let open: Vec<bool> = field.rock.iter().map(|&r| r == 0).collect();
+        assert_eq!(components(&open, n).1.len(), 1, "no sealed chamber without tunnels");
+        let filled = crate::priority_flood::flood_surface(&field.height, n, false).filled;
+        assert!(filled.iter().zip(&field.height).all(|(a, b)| a - b < 0.02), "a basin is left without lakes");
+    }
+
+    #[test]
+    fn a_smaller_cavern_share_opens_less_ground() {
+        let n = 192;
+        let surface = relief(n);
+        let open = |caverns: f32| {
+            let options = UnderdarkOptions { caverns, ..UnderdarkOptions::default() };
+            carve_with("seed", 8000.0, &surface, &options).unwrap().rock.iter().filter(|&&r| r == 0).count()
+        };
+        let (tight, common, wide) = (open(0.06), open(0.2), open(0.4));
+        assert!(1.25 * (tight as f64) < common as f64 && common < wide, "open cells {tight}, {common}, {wide}");
     }
 
     /// Two rooms 12 cells apart across rock, joined only by a long corridor round the top.
@@ -1036,7 +1080,7 @@ mod tests {
     fn tunnel_counts_and_lengths_are_bounded() {
         let n = 256;
         let (w, amount) = (8000.0f32, 3.0f32);
-        let field = carve_with("seed", w as f64, &relief(n), &UnderdarkOptions { natural_tunnels: amount }).unwrap();
+        let field = carve_with("seed", w as f64, &relief(n), &UnderdarkOptions { natural_tunnels: amount, ..UnderdarkOptions::default() }).unwrap();
         let (tubes, passages) = tunnel_counts(amount, w);
         let count = |k: u8| field.tunnels.iter().filter(|t| t.kind == k).count();
         assert!(count(TUNNEL_LAVA_TUBE) <= tubes && count(TUNNEL_RIVER_PASSAGE) <= passages);
@@ -1046,7 +1090,7 @@ mod tests {
             assert!(length <= l_max * 1.1 + 3.0 * w / n as f32, "tube length {length}");
         }
         let open: Vec<bool> = field.rock.iter().map(|&r| r == 0).collect();
-        assert_eq!(components(&open, n).1.len(), 1, "one network with tunnels");
+        one_network_and_sealed_chambers(&open, n, w);
         // The planning mask reads the soft field's sign at the cell centres: it is the carve's, cell for cell.
         assert!(field.sdf.iter().zip(&open).all(|(&d, &o)| (d < 0.0) == o), "soft field sign differs from the carve");
         assert_eq!(tunnel_counts(0.0, w), (0, 0));
@@ -1082,8 +1126,9 @@ mod tests {
     fn river_passages_never_raise_the_water() {
         let n = 256;
         let surface = relief(n);
-        let without = carve_counts("seed", 8000.0, &surface, 0, 0).unwrap();
-        let with = carve_counts("seed", 8000.0, &surface, 0, 4).unwrap();
+        let options = UnderdarkOptions { natural_tunnels: 0.0, ..UnderdarkOptions::default() };
+        let without = carve_counts("seed", 8000.0, &surface, 0, 0, &options).unwrap();
+        let with = carve_counts("seed", 8000.0, &surface, 0, 4, &options).unwrap();
         let a = crate::priority_flood::flood_surface(&without.height, n, false).filled;
         let b = crate::priority_flood::flood_surface(&with.height, n, false).filled;
         for i in 0..n * n {

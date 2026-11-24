@@ -2441,7 +2441,6 @@ export function createTerrainUrban(options: {
           const p = add(retainedPath(shape, shapePath), '#6a8eb1', '#416784', render.width * 2);
           p.dataset.urbanSurface = 'reserve';
           p.setAttribute('fill-opacity', '0.08');
-          p.setAttribute('stroke-dasharray', '7 4');
         }
       if (render.allocated)
         for (const shape of l.structure?.allocated ?? []) {
@@ -2449,7 +2448,7 @@ export function createTerrainUrban(options: {
           p.dataset.urbanSurface = 'allocated';
           p.setAttribute('fill-opacity', '0.12');
         }
-      if (render.quarters) for (const [i, quarter] of l.quarters.entries()) add(retainedPath(quarter.shape, shapePath), 'none', render.palette === 'growth' ? growthColor(i) : palette[i % palette.length], render.width * 2).setAttribute('stroke-dasharray', '4 3');
+      if (render.quarters) for (const [i, quarter] of l.quarters.entries()) add(retainedPath(quarter.shape, shapePath), 'none', render.palette === 'growth' ? growthColor(i) : palette[i % palette.length], render.width * 1.5);
       const peripheral = (quarter: number, zone?: string, phase?: number): boolean => {
         const p = l.phases?.[phase ?? l.quarters[quarter]?.phase];
         return p?.kind === 'faubourg' || (['edge', 'faubourg', 'village'].includes(p?.zone ?? zone ?? l.quarters[quarter]?.zone ?? 'core') && !l.enclosures?.length);
@@ -2475,7 +2474,6 @@ export function createTerrainUrban(options: {
           );
           p.dataset.phase = String(block.phase ?? l.quarters[block.quarter]?.phase ?? 0);
           p.dataset.blockKind = block.kind;
-          if (block.kind.startsWith('reserve')) p.setAttribute('stroke-dasharray', '3 2');
           if (peripheral(block.quarter, block.zone, block.phase)) {
             p.setAttribute('fill-opacity', '0.55');
             p.setAttribute('stroke-opacity', '0.35');
@@ -2555,7 +2553,6 @@ export function createTerrainUrban(options: {
             for (const part of detailed) {
               const p = add(part.d, part.fill, part.stroke, part.width, true);
               p.dataset.enclosure = enclosure.kind;
-              if (part.dash) p.setAttribute('stroke-dasharray', part.dash);
               if (part.opacity !== undefined && part.opacity < 1) p.setAttribute('opacity', String(part.opacity));
             }
             continue;
@@ -2564,8 +2561,7 @@ export function createTerrainUrban(options: {
             palisade = enclosure.kind === 'palisade';
           const wall = add(d, 'none', palisade ? '#72533a' : '#544d43', palisade ? 2 : 3.5, true);
           wall.dataset.enclosure = enclosure.kind;
-          if (palisade) wall.setAttribute('stroke-dasharray', '1.3 0.5');
-          else add(d, 'none', '#b6a793', 1.7, true);
+          if (!palisade) add(d, 'none', '#b6a793', 1.7, true);
         }
       if (render.centers && l.structure) {
         for (const center of l.structure.centers) {

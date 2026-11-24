@@ -51,9 +51,9 @@ import type { WorldCave } from '../world/cave';
 /** Context attributes of the compositor canvas. `getContext('webgl2', ...)` on that canvas returns this context. */
 export const LIVE_CONTEXT_ATTRIBUTES: WebGLContextAttributes = { alpha: true, premultipliedAlpha: true, antialias: false, depth: true, stencil: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' };
 
-export type LiveLayerName = 'ground' | 'water' | 'overlay' | 'city' | 'buildings' | 'trees' | 'cave' | 'text';
+export type LiveLayerName = 'ground' | 'water' | 'overlay' | 'city' | 'buildings' | 'trees' | 'banks' | 'cave' | 'text';
 /** Bottom to top. */
-export const LIVE_LAYER_ORDER: readonly LiveLayerName[] = ['ground', 'water', 'overlay', 'city', 'buildings', 'trees', 'cave', 'text'];
+export const LIVE_LAYER_ORDER: readonly LiveLayerName[] = ['ground', 'water', 'overlay', 'city', 'buildings', 'trees', 'banks', 'cave', 'text'];
 
 export interface LiveFrame {
   readonly gl: WebGL2RenderingContext;

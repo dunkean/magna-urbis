@@ -8,6 +8,7 @@ import { AUTUMN_CROWN_MEAN } from '../../../rust/bridge/terrainForestSeason';
 import type { Palette } from './styles';
 
 export interface SeasonPaint {
+  /** Colour ratio of the herbs to their own summer (the palettes are authored in summer). */
   herb: readonly [number, number, number];
   leaf: number;
   evergreen: number;
@@ -22,9 +23,7 @@ const SNOW = '#f1f3ef',
   SPRING_WOOD = '#a6bc72',
   YOUNG_CROP = '#b4c47c',
   STUBBLE = '#c29a5c';
-/** Summer is the palette as authored. */
-const SUMMER = 0.5;
-let season = SUMMER,
+let season = 0.5,
   zone: ClimateZone | undefined,
   calendar: SeasonCalendar | undefined;
 let climate: ClimateValues | undefined;
@@ -68,6 +67,13 @@ export function mapGroundSnow(altitude = 0, settings?: GroundSnowSettings): numb
   const cover = Math.max(smooth(2, -5, cold + (warm - cold) * phase + thaw), smooth(2.5, -2.5, warm)) * supply;
   return smooth(0.405, 0.465, cover);
 }
+/** Snow of the paper ground at an altitude (0-1): the low-ground snow of the zone's calendar, more where the climate
+ * keeps it. */
+export const mapSnowCover = (altitude = 0): number => (zone ? Math.max(seasonPaint(season, zone, calendar).snow, mapGroundSnow(altitude)) : 0);
+/** Seasonal colour ratio of the open ground. */
+export const mapHerbTint = (): SeasonPaint['herb'] => (zone ? seasonPaint(season, zone, calendar).herb : [1, 1, 1]);
+/** The climate zone of the map and its calendar, for what grows on it (treeSpecies.ts). */
+export const mapZone = (): { zone: ClimateZone | undefined; larch: number } => ({ zone, larch: zone ? calendarSeason(zone, calendar).larch : 0 });
 /** Crown state of the map season, for the town crowns painted over natural grounds (cityGrove.ts): leaf fullness,
  * spring and autumn weights, winter leaf of the zone (evergreen share) and the calendar's crown snow setting. */
 export function mapCrownSeason(): { leaf: number; spring: number; autumn: number; evergreen: number; crownSnow: number } {
@@ -75,7 +81,18 @@ export function mapCrownSeason(): { leaf: number; spring: number; autumn: number
   const s = seasonPaint(season, zone, calendar);
   return { leaf: s.leaf, spring: s.spring, autumn: s.autumn, evergreen: s.evergreen, crownSnow: calendar?.crownSnow ?? 0.7 };
 }
-export const roofSeasonKey = (): string => `${zone}|${season}|${JSON.stringify(calendar)}|${JSON.stringify(climate)}`;
+/** Altitudes (m) whose snow tells two dates apart for what only wears the ground snow. */
+const SNOW_LEVELS = Array.from({ length: 17 }, (_, i) => i * 250);
+let snowKey: { season: number; zone: ClimateZone | undefined; calendar: SeasonCalendar | undefined; climate: ClimateValues | undefined; key: string } | undefined;
+/** Part of the cache keys of what depends on the season through the ground snow alone (roofs, roads, river ice): dates
+ * with the same snow share it, so that a bare spring and a bare autumn recolour nothing. */
+export function roofSeasonKey(): string {
+  if (snowKey?.season !== season || snowKey.zone !== zone || snowKey.calendar !== calendar || snowKey.climate !== climate)
+    snowKey = { season, zone, calendar, climate, key: SNOW_LEVELS.map(level => mapGroundSnow(level).toFixed(3)).join() };
+  return snowKey.key;
+}
+/** Zone and date of the map, with the zone's year there: the water palette reads them (waterPalette.ts). */
+export const mapSeasonState = (): { zone?: ClimateZone; season: number; paint?: SeasonPaint } => ({ zone, season, ...(zone ? { paint: seasonPaint(season, zone, calendar) } : {}) });
 /** Part of every cache key of a seasonal map layer. */
 export const mapSeasonKey = (): string => (zone ? `${zone}:${Math.round(season * 100)}:${JSON.stringify(calendar ?? {})}` : '');
 
@@ -105,8 +122,9 @@ const tinted = (c: string, ratio: readonly number[]): string => (isHex(c) ? hex(
 export function seasonPaint(value: number, climateZone: ClimateZone, edits?: SeasonCalendar): SeasonPaint {
   const w = seasonWeights(value),
     year = calendarSeason(climateZone, edits),
-    blend = (row: readonly number[]): number => row.reduce((sum, v, i) => sum + v * w[i], 0);
-  return { herb: [0, 1, 2].map(i => blend(year.herb.map(c => c[i]))) as unknown as SeasonPaint['herb'], leaf: blend(year.leaf), evergreen: year.leaf[0], snow: blend(year.snow), spring: w[1], autumn: w[3], seaIce: blend(year.seaIce), winter: w[0] };
+    blend = (row: readonly number[]): number => row.reduce((sum, v, i) => sum + v * w[i], 0),
+    herb = [0, 1, 2].map(i => blend(year.herb.map(c => c[i])) / year.herb[2][i]) as unknown as SeasonPaint['herb'];
+  return { herb, leaf: blend(year.leaf), evergreen: year.leaf[0], snow: blend(year.snow), spring: w[1], autumn: w[3], seaIce: blend(year.seaIce), winter: w[0] };
 }
 
 /** Cartographic water follows the same calendar as land; shore ice is strongest at the coastal end. */
@@ -138,7 +156,7 @@ function woodTone(c: string, s: SeasonPaint): string {
   return mix(autumnWood(mix(c, BARE_WOOD, 0.7 * (1 - s.leaf)), s), SPRING_WOOD, 0.15 * s.spring * deciduous);
 }
 /** Land use and water share the calendar; paper and relief keep their authored tones. */
-export function applySeason(pal: Palette, s: SeasonPaint): Palette {
+export function applySeason(pal: Palette, s: SeasonPaint, crownSnow = 0.7): Palette {
   const snowed = (c: string, cover = 0.85): string => mix(c, SNOW, s.snow * cover);
   const herbs = (c: string): string => snowed(tinted(c, s.herb));
   const crops = (c: string): string => snowed(cropTone(c, s.herb), 0.8);
@@ -162,6 +180,7 @@ export function applySeason(pal: Palette, s: SeasonPaint): Palette {
     hedge: wood(pal.hedge),
     treeFill: wood(pal.treeFill),
     treeInk: snowed(autumnWood(pal.treeInk, s), 0.25),
+    season: { fill: pal.treeFill, ink: pal.treeInk, leaf: s.leaf, autumn: s.autumn * (1 - s.evergreen), spring: s.spring * (1 - s.evergreen), snow: Math.min(1, s.snow * crownSnow * 1.25) },
     orchardDot: snowed(pal.orchardDot, 0.25),
     grass: snowed(tinted(pal.grass, s.herb), 0.6),
     reed: snowed(tinted(pal.reed, s.herb), 0.5),
@@ -193,8 +212,7 @@ export function seasonalPalette(pal: Palette): Palette {
   if (!entries) cache.set(pal, (entries = new Map()));
   let found = entries.get(key);
   if (!found) {
-    const paint = seasonPaint(season, zone!, calendar);
-    entries.set(key, (found = season === SUMMER ? waterSeason(pal, paint) : applySeason(pal, paint)));
+    entries.set(key, (found = applySeason(pal, seasonPaint(season, zone!, calendar), calendar?.crownSnow)));
   }
   return found;
 }

@@ -43,6 +43,8 @@ export interface WorldTreesLayer extends VolumeLayer {
 }
 
 const STREAM_FADE_MS = 280;
+/** Brought forward before every other wanted block (m): the blocks whose trees stand on a town built since. */
+const RETIRED_FIRST = 1e6;
 const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uVisibility', 'uSegments', 'uFacing', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>; indices: WebGLBuffer; vertices: WebGLBuffer };
 const MESH_VERTICES = Float32Array.from(TREE_MESHES.flatMap(mesh => mesh.vertices));
@@ -61,6 +63,8 @@ const gapTo = (minX: number, minY: number, x: number, y: number): number => Math
 interface Slot {
   content: string;
   checked: number;
+  /** The footprints its trees keep off (TreeBuildings.blockKey). */
+  town: number;
   samples: TreeSamples;
   vao?: WebGLVertexArrayObject;
   buffer?: WebGLBuffer;
@@ -135,7 +139,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     presentationPending = false;
   };
 
-  /** A new publication checks local content in work slices. Installed blocks remain visible until replaced. */
+  /** A new publication checks local content in work slices. Installed blocks remain visible until replaced, except those
+   * whose footprints changed: their trees would stand on the new town until a slice reaches them. */
   const sync = (): void => {
     const next = options.inputs(),
       nextHeights = options.terrain(),
@@ -176,6 +181,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       slot: Slot = {
         content: signature,
         checked: revision,
+        town: buildings?.blockKey(key % 65536, Math.floor(key / 65536)) ?? 0,
         samples: block.samples,
         count,
         bytes: data.byteLength,
@@ -379,16 +385,19 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             // The local mesh cost gives near, solid crowns most of the budget.
             const weight = density * (TRIANGLES[2] + solidShare * (TRIANGLES[1] - TRIANGLES[2]) + closeShare * (TRIANGLES[0] - TRIANGLES[1])) * (0.7 + 0.3 * solidShare);
             demand += weight;
+            let retired = false;
             if (!slot || slot.checked !== revision) {
+              retired = !!slot && !!buildings && slot.town !== buildings.blockKey(bx, by);
               if (wanted < TREE_MAX_BLOCKS) {
                 wantKey[wanted] = key;
-                wantPriority[wanted++] = depth;
+                wantPriority[wanted++] = retired ? depth - RETIRED_FIRST : depth;
               }
               if (!slot) continue;
             }
             // Keep the same candidates in memory even if their finely bounded
             // geometry is just off screen, so work cannot evict and rebuild it.
             slot.used = tick;
+            if (retired) continue;
             if (!slot.count || visibleCount >= TREE_MAX_BLOCKS) continue;
             const low = slot.low * drawnPerMetre,
               high = slot.high * drawnPerMetre + slot.top * rise,

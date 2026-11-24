@@ -223,10 +223,11 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
                         "collective"
                     };
                     if !routing::path_clear(surface, &path, cfg.max_lane_grade) {
-                        if stairs && routing::path_clear(surface, &path, cfg.max_stair_grade) {
-                            role = "stairs";
-                        } else {
+                        if !stairs || !routing::path_clear(surface, &path, cfg.max_stair_grade) {
                             continue;
+                        }
+                        if super::quarters::mostly_stairs(&path, surface, cfg) {
+                            role = "stairs";
                         }
                     }
                     let base = if role == "stairs" { 2.0 } else { 2.6 };

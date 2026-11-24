@@ -2,12 +2,12 @@
 
 use crate::rng::Rng;
 use crate::urban::{
-    Enclosure, Gatehouse, Layout, LayoutConfig, Point, Shape, Surface,
+    Enclosure, Layout, LayoutConfig, Point, Shape, Surface,
     composition, geometry as g, routing, warnings,
 };
 use crate::urban::routing::RoutePlanner;
 use super::build::build;
-use super::geometry::{add, area, buffer, dir, disc, dist, normals, quad};
+use super::geometry::{add, area, buffer, dir, disc, dist, normals};
 use super::settle::settle;
 use super::street_clearance::Predicted;
 use super::style::{data, group, num, styled, text};
@@ -86,23 +86,28 @@ pub(in super::super) fn parameter_trace(shape: Shape, surface: Surface<'_>, cfg:
     // run are kept, so the trace stays stiff elsewhere and follows the town
     // only there. (Routed ridge detours folded circuits into slivers.)
     let n=points.len()-1;
+    // First founding index of a point, and the water (m) of each founding segment, read once on demand.
+    let mut at=std::collections::HashMap::with_capacity(n);
+    for (i,q) in points[..n].iter().enumerate() {at.entry((q.x.to_bits(),q.y.to_bits())).or_insert(i);}
+    let index=|p:Point| at.get(&(p.x.to_bits(),p.y.to_bits())).copied();
+    let wet=|a:Point,b:Point| wet_length(&[a,b],surface)*0.5;
+    let segments:Vec<std::cell::OnceCell<f64>>=vec![std::cell::OnceCell::new();n];
+    let founding_wet=|k:usize| *segments[k].get_or_init(||wet(points[k],points[(k+1)%n]));
     while epsilon>=0.1 {
         let mut kept=vec![false;n];
         for _ in 0..16 {
-            let keep=|p:Point| points[..n].iter().position(|q|q.x==p.x && q.y==p.y).is_some_and(|i|kept[i]);
+            let keep=|p:Point| index(p).is_some_and(|i|kept[i]);
             let mut outer=g::simplify(&points,epsilon,keep);outer.pop();
             let candidate=g::normalized(Shape {outer,holes:shape.holes.clone()});
             if !(candidate.outer.len()>=3 && g::simple(&candidate)
                 && area(&g::intersection(&candidate,&shape))>=g::area(&shape)*(0.99-0.14*stiff)) {break;}
-            let index=|p:Point| points[..n].iter().position(|q|q.x==p.x && q.y==p.y);
             // Water too is judged per run: a straight run may not cross more water
             // than the founding path between its two ends (river crossings stay).
-            let wet=|a:Point,b:Point| wet_length(&[a,b],surface)*0.5;
             // The founding arc a run replaces: the shorter way round (the
             // candidate ring may be reoriented by normalization).
             let arc=|i:usize,j:usize| if (j+n-i)%n<=(i+n-j)%n {(i,j)} else {(j,i)};
             let wetter=|a:Point,b:Point| match (index(a),index(b)) {
-                (Some(i),Some(j)) => { let (mut k,j)=arc(i,j); let mut w=0.0; while k!=j { w+=wet(points[k],points[(k+1)%n]); k=(k+1)%n; } wet(a,b)>w+4.0 }
+                (Some(i),Some(j)) => { let (mut k,j)=arc(i,j); let mut w=0.0; while k!=j { w+=founding_wet(k); k=(k+1)%n; } wet(a,b)>w+4.0 }
                 _ => false };
             let mut ring=candidate.outer.clone();ring.push(ring[0]);
             // A run already made of founding points is the founding trace itself.
@@ -114,7 +119,7 @@ pub(in super::super) fn parameter_trace(shape: Shape, surface: Surface<'_>, cfg:
                     all
                 }
                 _ => true };
-            let bad:Vec<_>=ring.windows(2).filter(|w|(!clear_within(surface,w[0],w[1],limit) || wetter(w[0],w[1])) && !founding(w[0],w[1])).map(|w|(w[0],w[1])).collect();
+            let bad:Vec<_>=ring.windows(2).filter(|w|!founding(w[0],w[1]) && (!clear_within(surface,w[0],w[1],limit) || wetter(w[0],w[1]))).map(|w|(w[0],w[1])).collect();
             if bad.is_empty() {
                 // An explicit relief limit also holds for the founding trace: where it
                 // runs over a knoll above the limit, the curtain is routed round it.
@@ -302,12 +307,11 @@ fn whole_quarters(mut walls:Vec<Shape>,layout:&Layout,port:&[usize],outside:bool
 }
 
 pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:Surface<'_>)->bool {
-    let mode=if cfg.port_enclosure.is_empty() {"auto"} else {cfg.port_enclosure.as_str()};
-    // The accepted smooth default is an unchanged foundation. Safety checks
-    // constrain every new trace and every requested enclosure decision.
-    // Stiffness and terrain adherence act on the trace in the quarter stage
-    // (parameter_trace). Re-tracing walls here, after parcels, emptied stiff
-    // towns: only an explicit port or river decision reworks the circuits.
+    // The harbour side of a town circuit (outside, or inside when asked) is decided
+    // when it is traced (`water::water_fronts`), like stiffness and terrain adherence
+    // (`parameter_trace`). Re-tracing walls here, after parcels, emptied stiff towns:
+    // only a separate port circuit or an explicit river control reworks the circuits.
+    let mode=if cfg.port_enclosure=="separate" {"separate"} else {"auto"};
     if river_mode(cfg)=="none" && mode=="auto" {return false;}
     let _profile=routing::Profile::new("wall.port-enclosures");
     let old:Vec<_>=layout.enclosures.iter().filter(|e|e.purpose.is_empty() && e.path.len()>=4).cloned().collect();
@@ -320,13 +324,7 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
     if !unsafe_wall && !partial {
         if port.is_empty() {return false;}
         let own:Vec<_>=layout.enclosures.iter().filter(|e|e.purpose=="port").map(wall_shape).collect();
-        if mode=="inside" {
-            let mut all=baseline.clone();all.extend(own.iter().cloned());
-            if port.iter().all(|&qi|inside(&all,&layout.quarters[qi].shape)) {return false;}
-        }
         if mode=="separate" && port.iter().all(|&qi|inside(&own,&layout.quarters[qi].shape)) {return false;}
-        if mode=="outside" && port.iter().all(|&qi|share(&baseline,&layout.quarters[qi].shape)*g::area(&layout.quarters[qi].shape)<=5.0)
-            && layout.enclosures.iter().any(|e|e.gatehouses.iter().any(|g|g.kind=="water")) {return false;}
     }
     let mut main=baseline.clone();
     let mut own=vec![];
@@ -366,7 +364,7 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
         let mut pieces=vec![sh];
         for _ in 0..4 {
             let additions:Vec<_>=layout.quarters.iter().enumerate().filter(|(qi,q)|
-                !(port.contains(qi) && (mode=="outside" || mode=="separate")) && cuts(&pieces,&q.shape))
+                !(port.contains(qi) && mode=="separate") && cuts(&pieces,&q.shape))
                 .map(|(_,q)|q.shape.clone()).collect();
             if additions.is_empty() {break;}
             pieces.extend(additions);pieces=g::union(&pieces);
@@ -382,7 +380,6 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
     // Keep it and protect the remaining shore quarters with their own walls.
     for base in &baseline {
         if inside(&traced.iter().map(|(s,_)|s.clone()).collect::<Vec<_>>(),base) {continue;}
-        if mode=="outside" && port.iter().any(|&qi|share(std::slice::from_ref(base),&layout.quarters[qi].shape)*g::area(&layout.quarters[qi].shape)>5.0) {continue;}
         if !base.outer.iter().zip(base.outer.iter().cycle().skip(1)).take(base.outer.len()).all(|(&a,&b)|clear_segment(surface,a,b)) {continue;}
         let occupied_cut=layout.quarters.iter().enumerate().any(|(qi,q)| {
             if !cuts(std::slice::from_ref(base),&q.shape) {return false;}
@@ -391,14 +388,6 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
             enclosed.min(total-enclosed)>20.0
         });
         if !occupied_cut {traced.push((base.clone(),""));}
-    }
-    if mode=="inside" {
-        let covered:Vec<_>=traced.iter().map(|(s,_)|s.clone()).collect();
-        let missing:Vec<_>=port.iter().filter(|&&qi|!inside(&covered,&layout.quarters[qi].shape)).map(|&qi|layout.quarters[qi].shape.clone()).collect();
-        if !missing.is_empty() {
-            layout.warnings.push(warnings::port_quarter_walls(missing.len()));
-            own.extend(g::union(&missing));
-        }
     }
     for sh in own {
         let accepted=safe_trace(&sh,surface).filter(|s|!layout.quarters.iter().any(|q|cuts(std::slice::from_ref(s),&q.shape)));
@@ -427,30 +416,10 @@ pub(in super::super) fn port_walls(layout:&mut Layout,cfg:&LayoutConfig,surface:
     layout.enclosures.retain(|e|!e.purpose.is_empty() && e.purpose!="port");
     for (i,(shape,purpose)) in traced.into_iter().enumerate() {
         let mut path=shape.outer;path.push(path[0]);
-        let mut gates=composition::gates(&path,&layout.streets);let land=gates.len();
+        let gates=composition::gates(&path,&layout.streets);let land=gates.len();
         let banks=composition::water_gates(&path,surface);
-        for &(p,_) in &banks {if !gates.iter().any(|&q|dist(p,q)<8.0) {gates.push(p);}}
         let mut e=Enclosure {path,kind:template.kind.clone(),purpose:purpose.into(),gates,..Default::default()};
         build(&mut e,land,&banks,&layout.streets,surface,&style,pop,&predicted,&Rng::new(&format!("{}:port-wall:{i}",layout.key)));
-        if mode=="outside" && purpose.is_empty() {
-            // A real port approach opens the town curtain. It remains a port
-            // gate even when the quay is too far away for a channel span.
-            let approach=e.gates.iter().enumerate().filter(|(_,p)|layout.streets.iter().any(|st|
-                st.path.windows(2).any(|w|g::distance(**p,w[0],w[1]).0<2.0)))
-                .min_by(|(_,a),(_,b)| {
-                    let distance=|p:Point|port.iter().map(|&qi|dist(p,g::interior_point(&layout.quarters[qi].shape))).fold(f64::INFINITY,f64::min);
-                    distance(**a).total_cmp(&distance(**b))
-                }).map(|(i,&p)|(i,p));
-            if let Some((gate,p))=approach {
-                if let Some(gh)=e.gatehouses.iter_mut().find(|gh|gh.gate==gate) {gh.kind="water".into();}
-                else if let Some(st)=layout.streets.iter().find(|st|st.path.windows(2).any(|w|g::distance(p,w[0],w[1]).0<2.0)) {
-                    let w=st.path.windows(2).min_by(|a,b|g::distance(p,a[0],a[1]).0.total_cmp(&g::distance(p,b[0],b[1]).0)).unwrap();
-                    let along=dir(w[0],w[1]);let across=(-along.1,along.0);let width=st.widths.first().copied().unwrap_or(6.0);
-                    e.gatehouses.push(Gatehouse {gate,kind:"water".into(),shape:quad(p,along,across,[-4.0,4.0],[-width*0.5,width*0.5]),
-                        masses:vec![],passage:[add(p,along,-4.0),add(p,along,4.0)],passage_width_m:width,height_m:e.height_m});
-                }
-            }
-        }
         layout.enclosures.push(e);
     }
     settle(layout,surface);

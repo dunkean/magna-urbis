@@ -13,6 +13,7 @@ import { chooseExportArea, chooseExportCrop } from '../../ui/exportCrop';
 import { canvasPng, cropCanvasPng } from '../../ui/canvasExport';
 import { supportsSvgExport } from '../exportOptions';
 import { exportPng } from '../../ui/pngExport';
+import { heightmapPng } from '../../ui/terrainHeightmap';
 import ExportWorker from '../export.worker?worker';
 import { migrateUrbanSeeds } from '../urbanSeeds';
 import { $ } from './dom';
@@ -121,30 +122,19 @@ export function createExportsActions(state: PageState, actions: PageActions) {
 
   async function heightmapBlob(): Promise<{ blob: Blob; metadata: Blob }> {
     if (!state.world) throw new Error('Create a map first.');
-    const grid = state.world.terrain.height,
-      c = document.createElement('canvas');
-    c.width = grid.w;
-    c.height = grid.h;
-    const ctx = c.getContext('2d')!,
-      pixels = ctx.createImageData(grid.w, grid.h);
+    const grid = state.world.terrain.height;
+    if (grid.w !== grid.h) throw new Error('The heightmap export needs a square map.');
     let lo = Infinity,
       hi = -Infinity;
     for (const value of grid.data) {
       lo = Math.min(lo, value);
       hi = Math.max(hi, value);
     }
-    for (let i = 0; i < grid.data.length; i++) {
-      const value = Math.round((255 * (grid.data[i] - lo)) / Math.max(1e-9, hi - lo));
-      pixels.data.set([value, value, value, 255], i * 4);
-    }
-    ctx.putImageData(pixels, 0, 0);
-    actions.log(`8-bit heightmap: black ${lo.toFixed(3)} m, white ${hi.toFixed(3)} m. Use a JSON project to retain FP32.`);
+    // The same 16-bit file as the relief editor's: its metre range is embedded, an import gives the same altitudes back.
+    const png = heightmapPng({ version: 1, resolution: grid.w, heights: grid.data as unknown as number[] }, state.world.mapSize);
+    actions.log(`16-bit heightmap: black ${lo.toFixed(3)} m, white ${hi.toFixed(3)} m. Use a JSON project to retain FP32.`);
     const metadata = new Blob([JSON.stringify({ format: 'magna-urbis-heightmap', version: 1, width: grid.w, height: grid.h, mapSize: state.world.mapSize, minHeight: lo, maxHeight: hi, seed: state.world.seed }, null, 2)], { type: 'application/json' });
-    try {
-      return { blob: await canvasPng(c), metadata };
-    } finally {
-      c.width = c.height = 0;
-    }
+    return { blob: new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' }), metadata };
   }
 
   function syncExportOptions(): void {
@@ -163,7 +153,7 @@ export function createExportsActions(state: PageState, actions: PageActions) {
         : format === 'project'
           ? 'The JSON project is a readable interchange format. Use Save map for a smaller file.'
           : format === 'heightmap'
-            ? '256-level PNG accompanied by minimum/maximum elevations. Save map retains the exact FP32 grids.'
+            ? '65,536-level PNG with its elevation range, ready to import again. Save map retains the exact FP32 grids.'
             : format === 'recipe'
               ? 'The recipe retains settings and edits. Faithful reproduction requires the same engine version.'
               : format === 'seed'

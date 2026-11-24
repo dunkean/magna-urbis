@@ -285,7 +285,50 @@ describe('world buildings', () => {
     expect(yardBlockLevel(yard, 3.4, 0)).toBe(0);
     expect(yardBlockLevel(yard, 6, 1, 0.9)).toBe(1);
     expect(yardBlockLevel(yard, 6, 0, 0.9)).toBe(0);
+    // The depth setting keeps them as it keeps the houses.
+    expect(yardBlockLevel(yard, 0.1)).toBe(yard.levels);
+    expect(yardBlockLevel(yard, 0.1, 0, Infinity, 2)).toBeLessThan(yard.levels);
     layer.dispose();
+  });
+
+  it('inks the rim of a parapet, not the other level faces of a wall', () => {
+    const face = (points: [number, number, number][], material: string, normal: [number, number, number] = [0, 0, 1]) => ({ points, normal, material, materials: {}, surface: 'roof' }) as unknown as BuildingTriangle,
+      rim: [number, number, number][] = [
+        [0, 0, 5],
+        [6, 0, 5],
+        [5.7, 0.3, 5],
+      ],
+      ledge: [number, number, number][] = [
+        [0, 0, 3],
+        [0.3, 0, 3],
+        [0.3, 0.2, 3],
+      ];
+    expect([...roofEdgeMasks([face(rim, 'city3d:wall:plaster'), face(ledge, 'city3d:wall:plaster'), face(rim, 'city3d:wall:plaster', [0, 0.6, 0.8])])]).toEqual([7, 0, 0]);
+  });
+
+  it('stands a far box on its footing, and weighs a farm by its buildings, not by the rails of its pens', () => {
+    const heights = relief(4000),
+      scene = town(1, heights),
+      [block] = grouped(scene, heights),
+      paint = worldPaint(scene, { style: 'cartographic', diagnostic: 'none' }, new TownAltitudes()),
+      data = blockPart(block, 2, paint, worldSeat(heights, heights.exaggeration), 0, 1);
+    let low = 0;
+    for (let i = 1; i < data.length; i += BUILDING_STRIDE) low = Math.min(low, data[i]);
+    expect(low).toBeLessThan(-1.5);
+    const rails = Array.from({ length: 60 }, (_, k) => {
+      const x = 320 + k,
+        outer = [
+          { x, y: 360 },
+          { x: x + 0.24, y: 360 },
+          { x: x + 0.24, y: 368 },
+          { x, y: 368 },
+        ];
+      return { ...sources(1)[0], id: `rail-${k}`, footprint: [{ outer, holes: [] }], roof_footprint: [{ outer, holes: [] }], programme: { massing: [{ floors: 1, eave_m: 1.1, rise_m: 0, roof: 'flat', ridges: [], cover: 'shingle', wall: 'wood', tone: 0.4 }] } } as unknown as PlacedBuilding;
+    });
+    const farm = city3dBuildings(batch([...sources(4), ...rails]), { heightAt: rawOf(heights) })!,
+      [yard] = grouped(farm, heights);
+    expect(yard.buildings.length).toBe(64);
+    expect(yard.width).toBeGreaterThan(5);
   });
 
   it('stands silhouette houses on the drawn terrain under them, with their real height, in the blocks they cover', () => {

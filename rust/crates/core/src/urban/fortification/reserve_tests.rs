@@ -38,15 +38,14 @@ fn review_curtain_reserves_both_faces_and_moat_cuts_stay_local() {
     for p in [pt(1000.0,590.0),pt(1200.0,590.0),pt(1410.0,1000.0)] {
         assert!(e.ditch.iter().any(|s|g::contains(&s.shape,p)),"moat lost away from local road {p:?}");
     }
-    // A river-side curtain is not an arcade along the bank.
+    // A river-side curtain is neither an arcade nor an open front along the bank: it stays whole.
     let water:Vec<_> = river(1000.0,1080.0).into_iter().map(|w|if w>0 {3} else {0}).collect();
     let surface = test_fixtures::surface(&height,&water);
     e.path = vec![pt(800.0,600.0),pt(1004.0,600.0),pt(1004.0,1400.0),pt(800.0,1400.0),pt(800.0,600.0)];
     let banks = composition::water_gates(&e.path,surface);
     e.gates = banks.iter().map(|b|b.0).collect();
     build(&mut e,0,&banks,&[],surface,&style,10_000,&predicted(),&Rng::new("water2-bank"));
-    assert!(!e.gatehouses.is_empty());
-    assert!(e.gatehouses.iter().all(|g|g.kind=="shore"));
+    assert!(e.gatehouses.is_empty());
 }
 
 /// Review 03/11 (european-organic river town): a moat the town has grown

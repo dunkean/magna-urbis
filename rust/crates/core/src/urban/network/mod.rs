@@ -3,6 +3,7 @@
 mod analysis;
 mod banks;
 mod bridge_construction;
+mod bridge_leads;
 mod bridge_selection;
 mod crossing_approaches;
 mod curtains;
@@ -26,6 +27,7 @@ mod tests;
 pub(super) use analysis::dead_ends;
 pub(super) use banks::{join_bank_networks, tie_banks_to_road};
 pub(super) use bridge_construction::{bridge_water, bridge_water_on_ground};
+pub(super) use bridge_leads::bridge_leads;
 #[cfg(test)]
 pub(super) use bridge_selection::select_bridges;
 pub(super) use bridge_selection::{select_bridges_graded, village_crossings};

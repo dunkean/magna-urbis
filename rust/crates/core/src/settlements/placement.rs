@@ -1,7 +1,7 @@
 use crate::urban::warnings;
 use super::grid::Fields;
 use super::{
-    Config, Output, Point, Scores, Settlement, SettlementSpec, class_of, extent_gap, extent_radius,
+    Config, Output, Point, Scores, Settlement, SettlementSpec, demographics, extent_gap, extent_radius,
     pair_spacing, smooth,
 };
 use crate::{noise::Noise, rng::Rng};
@@ -714,10 +714,12 @@ fn band_of(pop: u32) -> usize {
         4
     }
 }
-/// One class down (city → town → village → hamlet), for a place no cell can hold.
+/// The next smaller size tried for a place no cell can hold, down to one household: a continuous scale, so that the
+/// reduced place fills its site whatever its class.
 fn shrink(pop: u32) -> Option<u32> {
-    [19999, 999, 149, 14].into_iter().find(|&p| p < pop)
+    (pop > HOUSEHOLD).then(|| (pop * 7 / 10).max(HOUSEHOLD))
 }
+const HOUSEHOLD: u32 = 5;
 /// How strongly a new place of `big` inhabitants repels a later place of band population `q`
 /// (score units at the centre, fading to 0 at their pair spacing): towns and large villages
 /// keep well apart; hamlets and farms near a much larger place are welcome (satellites).
@@ -779,8 +781,9 @@ fn repel(f: &Fields, penalty: &mut [Vec<f32>], stride: usize, cfg: &Config, spac
 /// - Places in descending size, each drawn (seeded, weighted) from its band layer restricted to
 ///   the cells that hold it: land rule (`LandMasses::admits`), room for its population, frame,
 ///   explicit site type; then the dynamic layers are updated around it (`repel`).
-/// - No cell: the place shrinks one class and draws again (announced); a user's site type is
+/// - No cell: the place shrinks (`shrink`) and draws again (announced); a user's site type is
 ///   given up before that. Explicit positions are kept as given.
+/// - Its identity (village, town, city) is read last, from its size, site and culture.
 pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
     let root = Rng::new(&format!("magna-urbis:{seed}"));
     let noise = Noise::new(root.fork("settlements").fork("noise"));
@@ -861,8 +864,8 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                 out.warnings.push(warnings::manual_site_blocked(&s.key));
             }
         } else {
-            // Attempts: the requested size (with its explicit site type first), then one class
-            // smaller at a time. The Underdark keeps its own lowering (`cave_room`).
+            // Attempts: the requested size (with its explicit site type first), then smaller and
+            // smaller. The Underdark keeps its own lowering (`cave_room`).
             let mut attempts = vec![];
             if explicit {
                 attempts.push((requested, true));
@@ -1021,9 +1024,9 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         }
         repel(f, &mut penalty, stride, cfg, spacing_scale, p, pop);
         out.settlements.push(Settlement {
+            cls: demographics::identity(pop, &kind, crate::urban::culture_of_villages(&s.culture)).into(),
             spec: s,
             center: p,
-            cls: class_of(pop).into(),
             archetype: kind,
             radius: ext,
             scores,
@@ -1607,7 +1610,7 @@ mod tests {
         assert_eq!(out.settlements.len(), 1);
         let s = &out.settlements[0];
         assert!(s.spec.population < 5000);
-        assert_eq!(shrink(5000), Some(999));
+        assert_eq!(shrink(5000), Some(3500));
         assert!(out.warnings.iter().any(|w| w.ends_with(&format!("{}/5000 people — map too small", s.spec.population))), "{:?}", out.warnings);
     }
 

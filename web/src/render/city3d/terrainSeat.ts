@@ -132,7 +132,8 @@ export function terraceFooting(terrace: { ring: Point[]; wall_m: number }, seat:
 }
 /** A native plan (compact or detailed, houses crate) seated on the displayed terrain like the city volumes: the whole
  * plan moves to `terrainSeat` of its footprint, and each footing standing on the ground reaches below the lowest ground
- * sample. The plan itself is returned when nothing moves. */
+ * sample. A closed plan without any footing gets a plinth under its footprint where the ground drops under it: nothing
+ * floats. The plan itself is returned when nothing moves. */
 export function seatPlan(building: PlacedBuilding, heightAt?: City3dHeight): PlacedBuilding {
   const terrain = heightAt && Number.isFinite(building.ground_z_m) ? footprintTerrain(building.footprint, heightAt) : undefined;
   if (!terrain) return building;
@@ -140,7 +141,8 @@ export function seatPlan(building: PlacedBuilding, heightAt?: City3dHeight): Pla
     bottom = terrain.low - CITY3D_FOOTING_DEPTH_M;
   // A footing standing on the ground (its bottom at or below the plan's ground) left above the displayed ground.
   const short = (f: { z_min_m: number } | undefined): boolean => !!f && f.z_min_m <= building.ground_z_m + 1e-6 && f.z_min_m + dz > terrain.low;
-  if (Math.abs(dz) < 1e-6 && !building.volumes.some(v => short(v.foundation)) && !building.structural_foundations?.some(short)) return building;
+  const bare = terrain.high - terrain.low > 0.1 && building.volumes.some(v => v.envelope !== 'open') && !building.volumes.some(v => v.foundation?.footprint.length) && !building.structural_foundations?.length;
+  if (!bare && Math.abs(dz) < 1e-6 && !building.volumes.some(v => short(v.foundation)) && !building.structural_foundations?.some(short)) return building;
   const footing = <T extends { z_min_m: number; z_max_m: number }>(f: T): T => ({ ...f, z_min_m: short(f) ? Math.min(f.z_min_m + dz, bottom) : f.z_min_m + dz, z_max_m: f.z_max_m + dz });
   const volumes = building.volumes.map(v => ({
     ...v,
@@ -153,7 +155,7 @@ export function seatPlan(building: PlacedBuilding, heightAt?: City3dHeight): Pla
     ...building,
     ground_z_m: building.ground_z_m + dz,
     volumes,
-    ...(building.structural_foundations ? { structural_foundations: building.structural_foundations.map(footing) } : {}),
+    ...(bare ? { structural_foundations: [{ footprint: building.footprint, z_min_m: bottom, z_max_m: building.ground_z_m + dz }] } : building.structural_foundations ? { structural_foundations: building.structural_foundations.map(footing) } : {}),
     structural_features: building.structural_features?.map(f => ({ ...f, z_m: f.z_m + dz, vertices3d: f.vertices3d.map(p => ({ ...p, z: p.z + dz })) })),
   };
 }

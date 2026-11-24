@@ -94,7 +94,11 @@ export interface MeanderOptions {
 }
 
 export { vectorRivers } from '../../../rust/bridge/waterNative';
-/** Pure hydraulic width used by renderers. */
+/** Hydraulic width of a channel (m) for a catchment in m². Twin: `channel_width` in rust/crates/terrain/src/vector_water/rivers.rs. */
 export function channelWidth(area: number, scale: number): number {
-  return scale * 3 * Math.pow(area / 1e6, 0.45);
+  return scale * 2.55 * Math.pow(area / 1e6, 0.405);
+}
+/** Catchment (m²) of a channel `width` metres wide: `channelWidth` inverted. */
+export function channelArea(width: number, scale: number): number {
+  return 1e6 * Math.pow(Math.max(0, width) / (2.55 * scale), 1 / 0.405);
 }

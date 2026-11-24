@@ -186,7 +186,7 @@ describe('road surfaces', () => {
     expect(clips.every(p => polygonArea(p.outer) > 0)).toBe(true);
   });
 
-  it('renders rural landmark access tracks as earth dashes while preserving paved places and open paths', () => {
+  it('renders rural landmark access tracks as earth lines while preserving paved places and open paths', () => {
     const w = surfaceWorld();
     w.urban!.lines = [
       {
@@ -213,13 +213,14 @@ describe('road surfaces', () => {
     const pal = PALETTES.parchment,
       svg = urbanLayer(w, pal, 1, false);
     expect(svg).toContain(`stroke="${ruralInk(pal)}" stroke-opacity="${pal.rural.track}"`);
-    expect(svg).toContain('stroke-linecap="butt" stroke-dasharray="6 3.5"');
+    expect(svg).toContain('stroke-linecap="butt"');
+    expect(svg).not.toContain('stroke-dasharray');
     expect(svg).toContain(`class="u-places"><path d="M30 30L50 30L50 50L30 50Z" fill="${pal.urban.place}"`);
     w.urban!.renderHints = { towerShape: 'round', openGround: true };
-    expect(urbanLayer(w, pal, 1, false)).not.toContain('stroke-dasharray="6 3.5"');
+    expect(urbanLayer(w, pal, 1, false)).not.toContain('stroke-dasharray');
     w.urban!.renderHints = { towerShape: 'round', stilts: true };
     const stilt = urbanLayer(w, pal, 1, false);
-    expect(stilt).not.toContain('stroke-dasharray="6 3.5"');
+    expect(stilt).not.toContain('stroke-dasharray');
     expect(stilt).toContain(`stroke="${pal.urban.street}" stroke-opacity="1" stroke-width="3" stroke-linecap="round"`);
   });
 });

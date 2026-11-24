@@ -10,7 +10,7 @@ import { ForestClearingRoom } from '../render/forestClearance';
 import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/forestRoom';
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
-import { FOREST_BIOMES, FOREST_GIANT_PAINTED, FOREST_HEDGE_WIDEN, FOREST_LANDMARK, FOREST_LANDMARK_MAX, FOREST_LONE_WIDEN, forestBiomeRow, forestGiant, forestSocial, forestWetConifer, type ForestBiome, type ForestSocial } from '../../../rust/bridge/terrainForestStature';
+import { FOREST_BIOMES, FOREST_GIANT_PAINTED, FOREST_HEDGE_WIDEN, FOREST_LANDMARK, FOREST_LANDMARK_MAX, FOREST_LONE_WIDEN, forestBiomeRow, forestGiant, forestSocial, type ForestBiome, type ForestSocial } from '../../../rust/bridge/terrainForestStature';
 import { ORCHARD_SPACING, orchardClears, orchardTree, rowAxisOfBytes, type OrchardTree } from '../render/orchardRows';
 import { FOREST_CLUMP_GLSL, FOREST_CROWN_PIGMENTS, FOREST_FIELD, FOREST_PERLIN_GLSL, FOREST_TAU_TABLE, forestHash, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 
@@ -238,6 +238,16 @@ const CLASS_TONE = [1.05, 0.93, 0.97, 1, 1, 1];
 const FORM_BROAD = 0,
   FORM_SPIRE = 1,
   FORM_PARASOL = 2;
+/** Tallest credible tree of each form (m), giants included: a spire (spruce, fir, pine), an umbrella pine, a savanna
+ * parasol, a broadleaf outside and inside the tropical forest (emergents). */
+const SPIRE_MAX = 40,
+  UMBRELLA_MAX = 20,
+  PARASOL_MAX = 24,
+  BROAD_MAX = 42,
+  EMERGENT_MAX = 64;
+/** A conifer giant over its stand top: an old tree among its neighbours, never a spire standing out of the forest. */
+const CONIFER_GIANT = 1.2;
+const tallest = (shape: number, tropical: number): number => (shape >= FORM_PARASOL ? (shape === FORM_PARASOL ? PARASOL_MAX : UMBRELLA_MAX) : shape === FORM_SPIRE ? SPIRE_MAX : mix(BROAD_MAX, EMERGENT_MAX, tropical));
 /** 3D form of one tree on top of its painted crown's class: `height` over the stand top height, `crown` the live crown
  * ratio, `shape` the instance form, `tone`. */
 interface TreeForm {
@@ -250,10 +260,10 @@ interface TreeForm {
  * of about half their height, landmark trees in open land 0.85. Conifer spires retain low boughs.
  * Parasols (flat-topped crown in the upper third, on a bare bole): savanna acacias, the savanna share of broadleaves, and
  * Mediterranean umbrella pines, half of the conifers of a Mediterranean climate; `pick` (0..1) draws them. */
-function treeForm(form: TreeForm, social: ForestSocial, biome: ForestBiome, giant: boolean, needle: boolean, margin: number, krumm: number, kind: readonly number[], wetConifer: number, top: number, v: number, w: number, pick: number): void {
+function treeForm(form: TreeForm, social: ForestSocial, biome: ForestBiome, giant: boolean, needle: boolean, margin: number, krumm: number, kind: readonly number[], top: number, v: number, w: number, pick: number): void {
   let crown: number;
   if (giant) {
-    form.height = (needle ? mix(biome.giantHeight, 2.4, wetConifer) : biome.giantHeight) * (0.9 + 0.2 * v);
+    form.height = (needle ? CONIFER_GIANT : biome.giantHeight) * (0.9 + 0.2 * v);
     crown = social.rank === 5 ? 0.85 : needle ? 0.82 : mix(0.7, 0.5, kind[1]);
     form.tone = 1;
   } else {
@@ -287,7 +297,7 @@ export function buildNearTrees(inputs: TreeInputs, view: TreeView): Float32Array
 
 const wayRooms = new WeakMap<object, ForestRoom>();
 /** One point index per list of ways, kept with the occupation that carries it. */
-function wayRoomOf(ways: NonNullable<ForestOccupation['ways']>): ForestRoom {
+export function wayRoomOf(ways: NonNullable<ForestOccupation['ways']>): ForestRoom {
   let room = wayRooms.get(ways);
   if (!room) wayRooms.set(ways, (room = new ForestRoom(ways as readonly ForestCorridor[], [])));
   return room;
@@ -329,8 +339,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   // Biome stature (terrainForestStature.ts): crown size and spacing, class shares, giants; the same row as forestBiome().
   const biomeRow = forestBiomeRow(inputs.renderV2, inputs.zone),
     biome = FOREST_BIOMES[biomeRow],
-    tropicalCanopy = biomeRow === 9 ? 1 : kind[1],
-    wetConifer = forestWetConifer(trop, humid, T);
+    tropicalCanopy = biomeRow === 9 ? 1 : kind[1];
   const fieldAt = (x: number, y: number): Stand | undefined => {
     if (!bilinear(field.rgba, field.n, field.x, field.y, field.width, x, y, px)) return undefined;
     let cover = px[0] / 255,
@@ -698,7 +707,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           const z = inputs.height(cx, cy);
           if (z === undefined || z <= 0) continue;
           const hf = forestHash(i, j, level * 2 + 83, crownSeed);
-          treeForm(form, social, biome, giant, isNeedle, margin, krumm, kind, wetConifer, softCap(height * biome.stature, biome.cap), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(hf, 16), u8(hf, 0));
+          treeForm(form, social, biome, giant, isNeedle, margin, krumm, kind, softCap(height * biome.stature, biome.cap), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(hf, 16), u8(hf, 0));
           // Use the paint's species pigments and local field tone, preserving the seasonal tint of each crown.
           const tint = u8(Math.imul(h2, 0x9e3779b9) >>> 0, 0),
             tone = (0.86 + 0.28 * tint) * form.tone * (1 + 0.34 * (centre.tone - 0.5));
@@ -731,13 +740,15 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           // (3 m storeys): the stand top height saturates smoothly below the biome cap, then each tree takes its class
           // share of it, so the stand structure survives the cap; a giant's height comes from its class, not the field.
           let width = r;
-          let tree = softCap(height * biome.stature, biome.cap) * form.height;
+          let tree = Math.min(softCap(height * biome.stature, biome.cap) * form.height, tallest(form.shape, tropicalCanopy) * (0.9 + 0.1 * tint));
           // Broaden slender crowns within their existing planting cell before reducing height.
           // Clearings still win: a constrained crown keeps its painted radius and a shorter stem.
           if (form.shape === FORM_SPIRE) {
             const broader = Math.min(Math.max(width, tree / 10.4), 1.14 * s);
             if (broader === width || !clearingRoom || clearingRoom.keeps(cx, cy, broader)) width = broader;
             tree = Math.min(tree, 10.4 * width);
+            // A giant's widened crown stays a conifer's: a cone taller than wide, whatever its painted crown.
+            if (krumm < 0.5) width = Math.min(width, 0.2 * tree + 1);
           }
           tree = Math.max(1.5, tree);
           const crown = form.shape === FORM_SPIRE ? Math.max(form.crown * tree, tree - Math.min(3.5, 1.6 * width)) : form.crown * tree;

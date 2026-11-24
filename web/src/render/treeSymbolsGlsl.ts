@@ -1,10 +1,11 @@
 /**
  * GLSL of the paper map's tree symbols (treeSymbols.ts): a leaf module, read by the WGSL generator with the ground shaders.
  */
-/** Side of a symbol layer (texels) and the layers: TREE_SYMBOL_KINDS broadleaf variants, then as many conifers. */
+/** Side of a symbol layer (texels) and the layers: TREE_SYMBOL_KINDS variants of each species, in the order of canopy.ts
+ * TREE_SPECIES (broadleaf, conifer, bare, palm). */
 export const TREE_SYMBOL_SIZE = 128,
   TREE_SYMBOL_KINDS = 16,
-  TREE_SYMBOL_LAYERS = 2 * TREE_SYMBOL_KINDS;
+  TREE_SYMBOL_LAYERS = 4 * TREE_SYMBOL_KINDS;
 /** Keep the engraved crowns legible as individual marks instead of a nearly solid canopy. */
 export const TREE_SYMBOL_DENSITY = 0.5,
   TREE_SYMBOL_LIGHT_DENSITY = 0.3;
@@ -17,9 +18,12 @@ export const TREE_SYMBOL_DENSITY = 0.5,
  * Distances are the occupation's: signed metres to forest land, encoded over 8 texels (32 m on a 6 km map, 210 m on a
  * 40 km map), so the wash levels of the overlay (8, 20, 36 and 56 m in) are pressed into that range on small maps;
  * each level fades in over a band around its depth, the steps of the overlay read as rings once the trees thin out.
+ *
+ * The atlas holds the summer symbols; the date of the map is uniforms: `uTreeSeason` (share of the deciduous trees in
+ * leaf, turned foliage, snow on the crowns, spring green) and `uTreeSpecies` (conifers, palms, larches among conifers).
  */
 export const TREE_SYMBOLS_GLSL = `
-uniform vec4 uTreeWash;uniform float uTreeConifer;uniform int uHasLandBackdrop;
+uniform vec4 uTreeWash;uniform vec4 uTreeSeason;uniform vec4 uTreeSpecies;uniform int uHasLandBackdrop;
 // Occupation classes that root no tree symbol: orchards, gardens, construction, lanes, road corridors, covered ways.
 bool treeSymbolBarred(int cls){return cls==4||cls==5||cls==8||cls==9||cls==11||cls==12;}
 vec3 treeWash(vec3 color,vec2 world){
@@ -40,6 +44,17 @@ vec3 treeWash(vec3 color,vec2 world){
   }
 
   return color;
+}
+// A symbol at the date of the map: the turned or spring foliage of a deciduous crown (its wash, not its ink) and the
+// snow on the side lit from the upper left. pick: its place in the stand.
+vec4 treeSymbolSeason(vec4 t,vec2 lit,float turns,float pick,float bareTree){
+  if(t.a<=0.)return t;
+  vec3 c=t.rgb/t.a;const vec3 luma=vec3(.2126,.7152,.0722);float l=dot(c,luma),wash=smoothstep(.2,.46,l);
+  vec3 hue=pick<.34?vec3(.83,.64,.24):pick<.68?vec3(.80,.48,.18):pick<.9?vec3(.66,.30,.17):vec3(.55,.58,.36);
+  c=mix(c,hue*min(1.35,1.12*l/dot(hue,luma)),wash*turns*(.75+.25*fract(pick*7.3)));
+  c=mix(c,c*vec3(1.06,1.1,.82),wash*uTreeSeason.w*(1.-bareTree)*.6);
+  float cap=uTreeSeason.z*smoothstep(-.55,.45,-.5*(lit.x+lit.y))*mix(.85*mix(.35,1.,wash),.45,bareTree);
+  return vec4(mix(c,vec3(.965,.969,.953),cap)*t.a,t.a);
 }
 vec4 treeSymbols(vec2 world){
   if(uHasOccupation==0)return vec4(0.);
@@ -64,10 +79,16 @@ vec4 treeSymbols(vec2 world){
     if(o.y<=0.||treeSymbolBarred(int(o.z))||forestClearingAt(c)>=0.)continue;
     // Stands thin toward the edge and open in the glades of the satellite stand mosaic.
     if(forestPatchThreshold(c).x>=mix(.78,.95,smoothstep(0.,24.,o.y)))continue;
-    bool needle=uTreeConifer>0.&&forestU8(h2,8u)<clamp(uTreeConifer+.9*forestGlade(c).x,0.,1.);
+    bool needle=uTreeSpecies.x>0.&&forestU8(h2,8u)<clamp(uTreeSpecies.x+.9*forestGlade(c).x,0.,1.);
+    float pick=forestU8(h2,24u);
+    bool palm=!needle&&pick<uTreeSpecies.y,larch=needle&&pick<uTreeSpecies.z,sheds=larch||(!needle&&!palm);
+    bool bare=sheds&&forestU8(h,24u)>=uTreeSeason.x;
     vec2 uv=d/(2.*ext)+.5;if((h2&1u)==1u)uv.x=1.-uv.x;
-    float layer=(needle?${TREE_SYMBOL_KINDS}.:0.)+floor(forestU8(h2,16u)*${TREE_SYMBOL_KINDS}.);
+    float kind=bare?2.:needle?1.:palm?3.:0.;
+    float layer=kind*${TREE_SYMBOL_KINDS}.+floor(forestU8(h2,16u)*${TREE_SYMBOL_KINDS}.);
     vec4 t=textureLod(uForestBrushAtlas,vec3(uv,layer),max(0.,log2(${TREE_SYMBOL_SIZE}.*uPx/(2.*ext)))+(light?1.:0.));
+    // Larches turn gold.
+    t=treeSymbolSeason(t,d/ext,sheds&&!bare?uTreeSeason.y:0.,larch?.1:pick,bare?1.:0.);
     acc=t+acc*(1.-t.a);
   }
   return acc*vis;

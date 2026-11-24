@@ -374,7 +374,9 @@ function drawTextureMarks(c: CartographyContext, ctx: CanvasRenderingContext2D, 
     ctx.fillStyle = bed.cap;
     for (const p of strokeP) ctx.fill(p, 'nonzero');
   } else if (spec.fill) {
-    ctx.globalAlpha = spec.alpha * penAlpha;
+    // A bare wood or orchard is hollow rings: the fill follows the leaves.
+    const leaves = pal.season && (tl.kind === 'forest' || tl.kind === 'orchard') ? 0.25 + 0.75 * pal.season.leaf : 1;
+    ctx.globalAlpha = spec.alpha * penAlpha * leaves;
     ctx.fillStyle = penInk(pal[spec.fill] as string);
     for (const p of fillP) ctx.fill(p, 'nonzero');
   }

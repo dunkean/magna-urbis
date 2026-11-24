@@ -327,3 +327,25 @@ fn smoothing_retains_thin_branches_components_centers_and_exact_water_holes() {
     assert_eq!(retained.len(), 1);
     assert!((area(&retained) - area(&sliver)).abs() < 1.0e-6);
 }
+
+/// The contour of a district the smoothing refused is simple, holds all its
+/// cells and leaves the lattice steps.
+#[test]
+fn a_refused_contour_is_closed_around_the_district_instead_of_kept_on_the_lattice() {
+    let grid = Grid { x0: 0.0, y0: 0.0, step: 10.0, nx: 64, ny: 64 };
+    let mask: Vec<_> = (0..grid.nx * grid.ny)
+        .map(|i| {
+            let (x, y) = (i % grid.nx, i / grid.nx);
+            (20..32).contains(&x) && (20..32).contains(&y) && x + y < 52
+        })
+        .collect();
+    let (h, w) = (vec![0.0; 64 * 64], vec![0; 64 * 64]);
+    let surface = Surface { geometry: None, width: 640.0, n: 64, height: &h, water: &w, interpolation: Default::default() };
+    let raw = grid.contours(&mask);
+    let anchors = grid.boundary_centers(&mask);
+    let closed = super::contours::closed_contour(&raw[0], grid.step, surface, &anchors);
+    assert!(g::polygon(&closed).is_valid());
+    assert!(anchors.iter().all(|&p| g::contains(&closed, p)));
+    assert!(lattice_stairs(&raw, grid.step) > 8);
+    assert!(lattice_stairs(std::slice::from_ref(&closed), grid.step) <= 2);
+}

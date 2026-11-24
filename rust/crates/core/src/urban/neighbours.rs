@@ -200,6 +200,10 @@ impl Mask {
     pub(super) fn cut_free(&self, s: &Shape) -> Vec<Shape> {
         self.cut(s, false).unwrap_or_else(|| vec![s.clone()])
     }
+    /// A circuit on the closed `path` would stand on a neighbour's land (`enforce` does not raise it).
+    pub(super) fn refuses(&self, path: &[Point]) -> bool {
+        self.touched_by(&Shape { outer: path.to_vec(), holes: vec![] }).is_some() || path.iter().any(|&p| self.on_land(p))
+    }
     /// Claim index of the first land piece `s` overlaps.
     fn touched_by(&self, s: &Shape) -> Option<usize> {
         if s.outer.len() < 3 {

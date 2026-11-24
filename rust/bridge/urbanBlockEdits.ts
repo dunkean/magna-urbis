@@ -36,13 +36,15 @@ export function inputBlocks(layout: Layout): Block[] {
   for (const original of edits.originals) blocks[original.index] = original.block;
   return blocks;
 }
-/** Saved key of block `index` of a layout (prepared or not): `block:<hash>` of its input geometry, `/<k>` for part k ≥ 1 of a split block. */
-export function blockEditKey(layout: Layout, index: number): string | undefined {
+/** Saved key of block `index` of a layout (prepared or not): `block:<hash>` of its input geometry, `/<k>` for part k ≥ 1
+ * of a split block. An edit in `saved` under the block's position (opened share code) keeps that key. */
+export function blockEditKey(layout: Layout, index: number, saved?: Readonly<Record<string, unknown>>): string | undefined {
   const blocks = inputBlocks(layout);
   const origin = layout.config?.blockEdits?.origins.find(o => o.block === index);
   const source = origin ? origin.source : index;
   if (!blocks[source]) return undefined;
-  const id = blockEditId(layout, blocks[source].shape);
+  const position = blockPositionKey(...blockPositions(layout)[source]),
+    id = saved?.[position] ? position : blockEditId(layout, blocks[source].shape);
   return origin?.part ? `${id}/${origin.part}` : id;
 }
 /** The layout every stage after the parcels reads: the partition's prepared blocks, when it has any. */
@@ -56,12 +58,36 @@ export function partitionLayout(layout: Layout, partition: Pick<Partition, 'prep
   }
   return { ...layout, blocks: prepared.blocks, ...(config ? { config } : {}) };
 }
+/** Saved key of a block named by its position (share codes): quarter, then rank among the quarter's blocks. */
+export const BLOCK_POSITION_KEY = /^block:(\d+)\.(\d+)$/;
+export const blockPositionKey = (quarter: number, rank: number): string => `block:${quarter}.${rank}`;
+const positions = new WeakMap<Layout, [number, number][]>();
+/** [quarter, rank in the quarter] of every block of a layout before structural block edits. */
+export function blockPositions(layout: Layout): readonly [number, number][] {
+  let list = positions.get(layout);
+  if (!list) {
+    const ranks = new Map<number, number>();
+    list = inputBlocks(layout).map(block => {
+      const rank = ranks.get(block.quarter) ?? 0;
+      ranks.set(block.quarter, rank + 1);
+      return [block.quarter, rank];
+    });
+    positions.set(layout, list);
+  }
+  return list;
+}
+/** Position of the block a saved key names by its geometry; undefined for a part of a split block or another plan. */
+export function blockAddress(layout: Layout, saved: string): [number, number] | undefined {
+  const index = inputBlocks(layout).findIndex(block => blockEditId(layout, block.shape) === saved);
+  return index < 0 ? undefined : blockPositions(layout)[index];
+}
 /** The native contract uses indices only within one request. Resolve saved IDs after laying out the town:
- * `block:<hash>` → `"<i>"`, `block:<hash>/<k>` → `"<i>/<k>"` (part k of split block i). */
+ * `block:<hash>` or `block:<quarter>.<rank>` → `"<i>"`, `block:<hash>/<k>` → `"<i>/<k>"` (part k of split block i). */
 export function runtimeBlockEdits(config: ParcelConfig, layouts: readonly Layout[]): ParcelConfig {
   if (!config.overrides?.blocks || !Object.keys(config.overrides.blocks).length) return config;
   const layout = layouts[0];
   const index = new Map((layout ? inputBlocks(layout) : []).map((block, i) => [blockEditId(layout, block.shape), i]));
+  if (layout) blockPositions(layout).forEach(([quarter, rank], i) => index.set(blockPositionKey(quarter, rank), i));
   const blocks = Object.fromEntries(
     Object.entries(config.overrides.blocks).flatMap(([key, edit]) => {
       const slash = key.indexOf('/', 'block:'.length);

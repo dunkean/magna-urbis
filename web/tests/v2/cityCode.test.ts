@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { COUNT_ROLES, CULTURES, cityDebugText, codeBaseline, decodeCityCode, encodeCityCode, formatCode, parseCode, rootSeedFromText, settlementKey, settlementNumber } from '../../src/v2/cityCode';
+import { COUNT_ROLES, CULTURES, cityDebugText, codeBaseline, decodeCityCode, encodeCityCode, formatCode, nextRootSeed, parseCode, rootSeedFromText, settlementKey, settlementNumber } from '../../src/v2/cityCode';
 import { candidateParameters, codeParameters, listedParameterKeys } from '../../src/v2/cityCodeParams';
 import { levelValue, parameterLevels, readParamId, snapParameter, valueLevel, writeInt, writeParamId } from '../../src/v2/cityCodeFormat';
-import { writeSettingPath } from '../../src/v2/parameterForm';
+import { readSettingPath, writeSettingPath } from '../../src/v2/parameterForm';
 import { rerollSeed, stepSeed } from '../../../rust/bridge/generationSeed';
 import { rerollSettlement } from '../../src/v2/urbanSeeds';
+import { automaticCulture, plausibleCultures } from '../../src/v2/environmentCultures';
+import { randomInitialSettings } from '../../src/v2/startup';
+import { blockAddress, blockEditId, runtimeBlockEdits } from '../../../rust/bridge/urbanBlockEdits';
 
 const same = (code: string) => expect(encodeCityCode(decodeCityCode(code).settings)).toBe(code);
 
@@ -16,16 +19,43 @@ describe('short city code', () => {
   it('writes header offsets from the defaults and trims trailing zeros', () => {
     const settings = codeBaseline();
     settings.options.biome = 'desert';
-    expect(encodeCityCode(settings)).toBe('magnas02');
+    settings.options.culture = automaticCulture(settings);
+    expect(encodeCityCode(settings)).toBe('magnas7');
     settings.runtime!.source = 'neural-wasm';
     settings.generation = 'neural';
     settings.extent = 40000;
     settings.terrain!.coastMask = 16 | 4;
+    settings.terrain!.islandMode = 'peninsula';
     const code = encodeCityCode(settings);
-    expect(code).toBe('magnash20041');
+    expect(code).toBe('magnas70g4h1');
     const decoded = decodeCityCode(code).settings;
-    expect([decoded.options.biome, decoded.runtime?.source, decoded.extent, decoded.terrain?.coastMask]).toEqual(['desert', 'neural-wasm', 40000, 20]);
+    expect([decoded.options.biome, decoded.runtime?.source, decoded.extent, decoded.terrain?.coastMask, decoded.terrain?.islandMode]).toEqual(['desert', 'neural-wasm', 40000, 20, 'peninsula']);
+    expect(decoded.options.culture).toBe(settings.options.culture);
     same(code);
+  });
+  it('gives a fresh random map a code of at most 10 characters', () => {
+    for (let i = 0; i < 40; i++) {
+      let n = i;
+      const settings = randomInitialSettings(codeBaseline(), () => ((n = (n * 1103515245 + 12345) >>> 0) % 1000) / 1000);
+      const code = encodeCityCode(settings);
+      expect(code.length).toBeLessThanOrEqual(10);
+      expect(plausibleCultures(settings)).toContain(settings.options.culture);
+      same(code);
+    }
+  });
+  it('rolls the root seed as seed + 1', () => {
+    expect(nextRootSeed('magnas')).toBe('magnat');
+    expect(nextRootSeed('00000z')).toBe('000010');
+    expect(nextRootSeed('zzzzzz')).toBe('000000');
+  });
+  it('marks a relief it does not carry', () => {
+    const settings = codeBaseline();
+    settings.options.importedHeight = { w: 2, h: 2, rgba: new Uint8ClampedArray(16) };
+    expect(encodeCityCode(settings)).toBe('magnas*');
+    const decoded = decodeCityCode('magnas*-018');
+    expect(decoded.reliefMissing).toBe(true);
+    expect(decoded.settings.options.importedHeight).toBeUndefined();
+    expect(decodeCityCode('magnas').reliefMissing).toBeUndefined();
   });
   it('lists every eligible parameter and quantises values to each parameter domain', () => {
     const listed = new Set(listedParameterKeys());
@@ -40,11 +70,23 @@ describe('short city code', () => {
     const settings = codeBaseline();
     settings.options.culture = CULTURES[40];
     const fine = [...codeParameters().byKey.values()].find(p => p.scope === 'settings' && p.field.type === 'number' && parameterLevels(p.field) > 32)!;
-    writeSettingPath(settings, fine.path, levelValue(fine.field, 37));
+    writeSettingPath(settings, fine.path, fine.field.fromInput?.(levelValue(fine.field, 37)) ?? levelValue(fine.field, 37));
     const code = encodeCityCode(settings);
     expect(code).toBe(`magnas-018${writeParamId(fine.id)}15`);
     expect(decodeCityCode(code).settings.options.culture).toBe(CULTURES[40]);
     same(code);
+  });
+  it('round-trips the numbers shown in other units than they are stored in', () => {
+    const converted = [...codeParameters().byKey.values()].filter(p => p.scope === 'settings' && p.field.type === 'number' && p.field.toInput);
+    expect(converted.map(p => p.key)).toEqual(expect.arrayContaining(['terrain.motifSize', 'terrain.hydrology.lakeCoverage', 'terrain.forest.density']));
+    for (const { path, field } of converted) {
+      const settings = codeBaseline(),
+        value = Number(field.fromInput!(levelValue(field, 3)));
+      writeSettingPath(settings, path, value);
+      const code = encodeCityCode(settings);
+      expect(Number(readSettingPath(decodeCityCode(code).settings, path)), path).toBeCloseTo(value, 6);
+      same(code);
+    }
   });
   it('keeps the display biome as a parameter', () => {
     const settings = codeBaseline();
@@ -56,15 +98,15 @@ describe('short city code', () => {
   it('stores local reroll iterations, never seeds', () => {
     const settings = codeBaseline();
     settings.options.seed = rerollSeed(rerollSeed(settings.options.seed, ['settle-sites']), ['settle-sites']);
-    rerollSettlement(settings, 'town-0');
+    rerollSettlement(settings, 'site-1');
     const code = encodeCityCode(settings);
-    expect(code).toBe(`magnas_i02_${settlementNumber('town-0')}u1`);
+    expect(code).toBe(`magnas_i02_${settlementNumber('site-1')}u1`);
     const decoded = decodeCityCode(code).settings;
     expect(stepSeed(decoded.options.seed, 'settle-sites')).toBe(stepSeed(settings.options.seed, 'settle-sites'));
     same(code);
   });
   it('addresses settlement and quarter edits hierarchically, in code order', () => {
-    expect(settlementKey(settlementNumber('village-3')!)).toBe('village-3');
+    expect(settlementKey(settlementNumber('site-3')!)).toBe('site-3');
     const settings = codeBaseline();
     settings.local['main'] = { culture: CULTURES[5] as never, population: 4000 };
     settings.urban = { backend: 'rust', local: { main: { layout: { overrides: { quarters: { '4': { salt: 8 } } } } as never } } };
@@ -73,6 +115,24 @@ describe('short city code', () => {
     expect(code).toMatch(/^magnas_o0[0-9a-z]+_0o3x0l0[0-9a-z]{2}_0\.4u8$/);
     same(code);
     expect(formatCode(parseCode('magnas_c.4u8_cl005ic3!0g00h0'))).toBe('magnas_c.4u8_cl005ic3!0g00h0');
+  });
+  it('names quarter and block edits by their position in the plan', () => {
+    const square = (x: number) => ({ outer: [{ x, y: 0 }, { x: x + 1, y: 0 }, { x: x + 1, y: 1 }], holes: [] });
+    const layout = { key: 'main', blocks: [{ quarter: 2, shape: square(0) }, { quarter: 4, shape: square(2) }, { quarter: 4, shape: square(4) }] } as never;
+    const saved = blockEditId(layout, (layout as { blocks: { shape: never }[] }).blocks[2].shape);
+    const settings = codeBaseline();
+    settings.urban = {
+      backend: 'rust',
+      local: { main: { layout: { overrides: { quarters: { '4': { tissue: 'grid', culture: CULTURES[40], salt: 2 } } } } as never, parcels: { overrides: { blocks: { [saved]: { salt: 1, operator: 'strips' } } } } as never } },
+    };
+    expect(encodeCityCode(settings)).not.toContain('0.4.1');
+    const code = encodeCityCode(settings, (_key, key) => blockAddress(layout, key));
+    expect(code).toMatch(/_0\.4u2l018.+_0\.4\.1u1l/);
+    const main = decodeCityCode(code).settings.urban!.local!.main;
+    expect(main.layout!.overrides!.quarters!['4']).toEqual({ tissue: 'grid', culture: CULTURES[40], salt: 2 });
+    expect(main.parcels!.overrides!.blocks).toEqual({ 'block:4.1': { salt: 1, operator: 'strips' } });
+    expect(runtimeBlockEdits(main.parcels as never, [layout]).overrides!.blocks).toEqual({ '2': { salt: 1, operator: 'strips' } });
+    same(code);
   });
   it('encodes custom places as settlement edits', () => {
     const settings = codeBaseline();
@@ -87,10 +147,10 @@ describe('short city code', () => {
   it('encodes per-town building counts and their mode', () => {
     const settings = codeBaseline();
     const [first, second] = COUNT_ROLES;
-    settings.urban = { backend: 'rust', local: { 'town-0': { layout: { programme: { counts: { [second]: 3, [first]: 0 }, countMode: 'force' } } as never } } };
+    settings.urban = { backend: 'rust', local: { 'site-1': { layout: { programme: { counts: { [second]: 3, [first]: 0 }, countMode: 'force' } } as never } } };
     const code = encodeCityCode(settings);
-    expect(code).toBe(`magnas_${writeInt(settlementNumber('town-0')!)}K100000103`);
-    const programme = decodeCityCode(code).settings.urban?.local?.['town-0']?.layout?.programme as { counts?: Record<string, number>; countMode?: string };
+    expect(code).toBe(`magnas_${writeInt(settlementNumber('site-1')!)}K100000103`);
+    const programme = decodeCityCode(code).settings.urban?.local?.['site-1']?.layout?.programme as { counts?: Record<string, number>; countMode?: string };
     expect(programme).toMatchObject({ counts: { [first]: 0, [second]: 3 }, countMode: 'force' });
     same(code);
   });

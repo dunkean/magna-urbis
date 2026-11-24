@@ -15,6 +15,8 @@ import type { Box, CityLod, CityPalette, CityScene } from './cityCanvas';
 import { META, STROKE_STRIDE, type CityGlStrokes } from './cityGlBuild';
 import { earcut } from './cityGlEarcut';
 import { moatSpans, moatSpanShape } from './city3dMoat';
+import { dryDitchColour } from './waterPalette';
+import { mapSeasonKey } from './seasonPalette';
 import { nightRoof } from './cityNight';
 
 // ---------------------------------------------------------------- geometry
@@ -370,15 +372,16 @@ interface Ink {
   edgeAlpha: number;
 }
 const ink = (fill: string | undefined, fillAlpha: number, edge: string | undefined, edgeAlpha = 1): Ink => ({ fill, fillAlpha, edge, edgeAlpha });
-function polyInk(cat: Cat, family: Family, palette: CityPalette, painted: boolean): Ink {
+/** `water`: the town's water (townWaterColour), the colour of the 3D moat sheet. */
+function polyInk(cat: Cat, family: Family, palette: CityPalette, painted: boolean, water?: string): Ink {
   const t = tone(family, palette),
     parch = palette === 'parchment',
     inkP = palette === 'ink';
   switch (cat) {
     case 'ditchWet':
-      return parch ? ink('#bccbc8', 1, PARCH.edge, 0.7) : inkP ? ink('#c9d3cc', 1, INK.edge, 0.7) : ink(painted ? '#86abb9' : '#93b8c6', 0.95, '#5f8797', 0.9);
+      return parch ? ink(water ?? '#bccbc8', 1, PARCH.edge, 0.7) : inkP ? ink(water ?? '#c9d3cc', 1, INK.edge, 0.7) : ink(water ?? '#93b8c6', 1, '#6f624a', 0.7);
     case 'ditchDry':
-      return parch ? ink('#d8c79a', 0.85, PARCH.edge, 0.45) : inkP ? ink('#c9b48f', 0.55, INK.edge, 0.4) : ink('#8a7a5e', 0.45, '#6f624a', 0.5);
+      return parch ? ink('#d8c79a', 0.85, PARCH.edge, 0.45) : inkP ? ink('#c9b48f', 0.55, INK.edge, 0.4) : ink(dryDitchColour(), 0.75, '#6f624a', 0.5);
     case 'glacis':
       return parch ? ink('#efe4c4', 0.6, PARCH.edge, 0.3) : inkP ? ink('#e3d1b5', 0.4, INK.edge, 0.3) : ink('#d8ccb0', 0.35, '#8f8268', 0.35);
     case 'citadel':
@@ -419,6 +422,8 @@ export interface CityWallDraw {
   lod: CityLod;
   palette: CityPalette;
   night?: boolean;
+  /** Moat water (townWaterColour). */
+  water?: string;
 }
 interface CanvasCache {
   polys: Map<string, { cat: Cat; family: Family; path: Path2D }>;
@@ -463,7 +468,7 @@ function fillPolys(ctx: CanvasRenderingContext2D, d: WallDetail, o: CityWallDraw
   const px = o.mpp;
   for (const g of canvasOf(d).polys.values()) {
     if (GROUND.has(g.cat) !== ground || !shown(g.cat, o.lod)) continue;
-    const k = polyInk(g.cat, g.family, o.palette, painted);
+    const k = polyInk(g.cat, g.family, o.palette, painted, o.water);
     if (o.night) {
       if (k.fill) k.fill = nightRoof(k.fill, o.palette === 'parchment');
       if (k.edge) k.edge = '#8194a9';
@@ -541,18 +546,14 @@ export function drawCityWalls(ctx: CanvasRenderingContext2D, scene: CityScene, o
     if (k.stakes) {
       ctx.strokeStyle = k.stakes;
       ctx.lineWidth = Math.max(d.family === 'hedge' ? 2 : 1.5, minPx);
-      ctx.setLineDash(d.family === 'hedge' ? [Math.max(1, px * 1.5), Math.max(0.6, px)] : [Math.max(1.3, px * 2), Math.max(0.5, px)]);
       ctx.stroke(c.solid);
       ctx.stroke(c.closedSolid);
       ctx.stroke(c.water);
-      ctx.setLineDash([]);
     } else {
-      // Arcade over a water gate: piers and arches.
+      // Arcade over a water gate.
       ctx.strokeStyle = k.arcade;
       ctx.lineWidth = body;
-      ctx.setLineDash([Math.max(2, px * 2), Math.max(1.6, px)]);
       ctx.stroke(c.water);
-      ctx.setLineDash([]);
     }
     fillPolys(ctx, d, o, false, painted);
   }
@@ -609,19 +610,19 @@ export function cityWallStrokes(scene: CityScene, origin: Point): CityGlStrokes 
     const d = details[i];
     if (!d) {
       const palisade = wall.kind === 'palisade';
-      for (const p of wall.pieces) line(p, false, palisade ? 2 : 3.5, 2.4, i, palisade ? META.dash : 0, true);
+      for (const p of wall.pieces) line(p, false, palisade ? 2 : 3.5, 2.4, i, 0, true);
       return;
     }
     const f0 = n + 4 * i;
     for (const p of d.pieces) {
       if (p.water) {
-        line(p.points, false, d.stakes ? 1.5 : d.width, 2.4, f0 + 3, META.dash, true);
+        line(p.points, false, d.stakes ? 1.5 : d.width, 2.4, f0 + 3, 0, true);
         continue;
       }
       if (!d.stakes || d.bank) line(p.points, p.closed, d.width, 2.4, f0, 0, !p.closed);
       // Light core without a pixel floor: a solid band when small, a double line when large.
       if (!d.stakes) line(p.points, p.closed, (d.width - 2 * d.edge) / 0.45, 0, f0 + 1, 0, !p.closed);
-      else line(p.points, p.closed, d.family === 'hedge' ? 2 : 1.5, d.bank ? 2 : 2.4, f0 + 2, META.dash, !p.closed);
+      else line(p.points, p.closed, d.family === 'hedge' ? 2 : 1.5, d.bank ? 2 : 2.4, f0 + 2, 0, !p.closed);
     }
   });
   return { data: buffer.slice(0, k * STROKE_STRIDE * 4), count: k, firstWithRank: new Array(16).fill(0) };
@@ -771,6 +772,8 @@ export interface CityGlWallDraw {
   palette: CityPalette;
   painted: boolean;
   enabled: boolean;
+  /** Moat water (townWaterColour). */
+  water?: string;
 }
 export interface CityGlWalls {
   upload(scene: CityScene | undefined, origin: Point): void;
@@ -817,14 +820,14 @@ export function createCityGlWalls(gl: WebGL2RenderingContext): CityGlWalls {
     bytes = 0;
   };
   const colors = (o: CityGlWallDraw): void => {
-    const key = `${o.palette}|${o.lod}|${o.painted}`;
+    const key = `${o.palette}|${o.lod}|${o.painted}|${o.water}|${mapSeasonKey()}`;
     if (key === colorKey || !mesh) return;
     colorKey = key;
     fills.fill(0);
     edges.fill(0);
     mesh.classes_.forEach((c, i) => {
       if (!shown(c.cat, o.lod)) return;
-      const k = polyInk(c.cat, c.family, o.palette, o.painted);
+      const k = polyInk(c.cat, c.family, o.palette, o.painted, o.water);
       if (k.fill && k.fillAlpha > 0) {
         const [r, g, b] = rgbOf(k.fill);
         fills.set([r / 255, g / 255, b / 255, k.fillAlpha], i * 4);
@@ -917,7 +920,6 @@ export interface CityWallSvgPart {
   stroke: string;
   width: number;
   opacity?: number;
-  dash?: string;
 }
 const svgCache = new WeakMap<Enclosure, Map<string, CityWallSvgPart[]>>();
 const f2 = (v: number): string => (Math.round(v * 100) / 100).toString();
@@ -966,8 +968,8 @@ export function cityWallSvg(e: Enclosure, palette: CityPalette): CityWallSvgPart
   if (k.core && solid) parts.push({ d: solid, fill: 'none', stroke: k.core, width: Math.max(0.4, d.width - 2 * d.edge) });
   if (k.stakes) {
     const all = solid + water;
-    if (all) parts.push({ d: all, fill: 'none', stroke: k.stakes, width: d.family === 'hedge' ? 2 : 1.5, dash: d.family === 'hedge' ? '1.5 1' : '1.3 0.5' });
-  } else if (water) parts.push({ d: water, fill: 'none', stroke: k.arcade, width: d.width, dash: '2 1.6' });
+    if (all) parts.push({ d: all, fill: 'none', stroke: k.stakes, width: d.family === 'hedge' ? 2 : 1.5 });
+  } else if (water) parts.push({ d: water, fill: 'none', stroke: k.arcade, width: d.width });
   polys(false);
   byPalette.set(palette, parts);
   return parts;

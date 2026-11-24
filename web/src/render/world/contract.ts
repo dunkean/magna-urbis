@@ -8,6 +8,8 @@
  *   navigation.ts   walking and flying: a free eye entered from the orbit camera, moved and turned (pure math).
  *   buildingsPick.ts the building volume under a pixel: a ray against the boxes of the blocks, then of their buildings.
  *   heights.ts      the relief of a map on the CPU (the camera stands on it, picking reads it) and as a texture.
+ *   groundShape.ts  the ground of the towns on that relief: levelled hillside lots and dug moats (groundShapeTexture.ts
+ *                   on the GPU).
  *   patches.ts      which squares of the map a frame draws and how finely: a bounded quadtree walk.
  *   footprint.ts    which tier of baked ground tiles a square is draped with.
  *   terrainMesh.ts  the one grid mesh, its program and the instanced draw (terrainShader.ts holds the GLSL).
@@ -41,6 +43,8 @@ export interface WorldRelief {
   readonly high: number;
   /** Height of the ground at a map point, in metres as drawn at full relief; clamped at the map edge. */
   heightAt(x: number, y: number): number;
+  /** The same ground before the moats are dug: what town walls, bridges and quays stand on. Absent: `heightAt`. */
+  groundAt?(x: number, y: number): number;
   /** Rock that stands as a wall at a map point (the Underdark's cave rock): a flying eye below its top is stopped by
    * it instead of being lifted over it. Absent: every rise of the ground lifts the eye. */
   solidAt?(x: number, y: number): boolean;

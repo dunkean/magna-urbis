@@ -23,6 +23,7 @@ mod street_clearance;
 mod style;
 mod towers;
 mod trace;
+mod water;
 
 pub(super) use build::build;
 pub(super) use cave::cave_circuits;
@@ -42,6 +43,7 @@ pub(super) use style::{Inputs, STYLES, family, resolve};
 pub(super) use trace::{
     bastioned_trace, curtain_trace, hill_trace, square_trace, trace_enclosures, village_trace,
 };
+pub(super) use water::{audit_layout as water_audit, kept_fronts, parted_by_water, walled_on_water, water_fronts};
 
 #[cfg(test)]
 mod reserve_tests;

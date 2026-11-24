@@ -24,7 +24,8 @@ const CACHE = new Map<string, Palette>();
 
 /** Shared palette for SVG, Canvas, terrain and legend, in the map's season. Never mutate the registered map styles. */
 export const biomePalette = (style: MapStyle | Palette, value?: string): Palette => seasonalPalette(climatePalette(style, value));
-function climatePalette(style: MapStyle | Palette, value?: string): Palette {
+/** The palette of a style in a biome, before the season. */
+export function climatePalette(style: MapStyle | Palette, value?: string): Palette {
   const base = typeof style === 'string' ? PALETTES[style] : style;
   const biome = biomeName(value);
   if (biome === 'temperate') return base;

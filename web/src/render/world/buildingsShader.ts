@@ -147,7 +147,7 @@ export const WORLD_BUILDING_VS = `#version 300 es
 precision highp float;
 precision highp int;
 // Block-local x, height above the seat (m), block-local y; the normal in the 3D view's frame (x, up, y south) with the
-// material class on its length; the colour; the terrain height under the building, metres as drawn at full relief.
+// material class on its length (classes 33 and 34: side and top of a lot boundary strip, the side it lies on instead); the colour; the terrain height under the building, metres as drawn at full relief.
 layout(location=0) in vec3 position;
 layout(location=1) in vec3 normal;
 layout(location=2) in vec3 albedo;
@@ -158,6 +158,8 @@ uniform vec3 uBlock;
 uniform float uRise;
 uniform bool uTop;
 uniform float uRoofInkDpr;
+// Lot boundary strips: CSS pixels per metre at a depth of one metre, pixels per metre between which they rise from the ground.
+uniform vec3 uYard;
 // Eye relative to the target.
 uniform vec3 uEye;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
@@ -170,12 +172,23 @@ void main(){
   // in sixteenths of a face the town look painted (0: not painted). Block-local metres keep the grain's hashes exact.
   float code=floor((length(normal)-1.)*32.+.5),painted=floor(code/64.);
   materialClass=code-64.*painted;townGain=painted/15.;
-  grainPosition=position;facadePosition=position;
-  vec3 world=vec3(uBlock.xy+position.xz,(seat+position.y)*uRise+uBlock.z);
+  vec3 place=position;
+  if(materialClass>32.5){
+    // A strip of lot boundary: its normal is the side of the line the vertex lies on. It stays about a pixel wide however
+    // far, and sinks into the ground before its block is left out: no width or presence ever jumps.
+    float pixels=uYard.x/max((uProjection*vec4(uBlock.xy+place.xz,(seat+place.y)*uRise+uBlock.z,1.)).w,1.);
+    float stand=smoothstep(uYard.y,uYard.z,pixels);
+    place.xz+=n.xz*(stand*clamp(.42/pixels-.1,0.,1.2));
+    place.y*=stand;
+    n=materialClass>33.5?vec3(0.,1.,0.):n;
+    materialClass=0.;
+  }
+  grainPosition=place;facadePosition=place;
+  vec3 world=vec3(uBlock.xy+place.xz,(seat+place.y)*uRise+uBlock.z);
   vDistance=length(world-uEye);
   gl_Position=uProjection*vec4(world,1.);
   // Orthographic plan pixels ignore height; the depth buffer still chooses the uppermost roof.
-  if(uTop) gl_Position.z=clamp(-(seat+position.y)*.00001,-.95,.95);
+  if(uTop) gl_Position.z=clamp(-(seat+place.y)*.00001,-.95,.95);
 }`;
 
 export const WORLD_BUILDING_FS = `#version 300 es

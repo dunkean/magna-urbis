@@ -1,9 +1,11 @@
 import { CULTURES, cultureEra } from '../gen/options';
+import { Rng } from '../gen/core/rng';
+import { seedRoot } from '../../../rust/bridge/generationSeed';
 import { climateZoneOf, type ClimateZone } from '../../../rust/bridge/terrainClimate';
 import type { V2Settings } from './contracts';
 import { UNDERDARK_CULTURES } from './underdarkCultures';
 import { effectiveTerrainSettings } from './terrainSettings';
-import { adaptedExtent } from './settings';
+import { adaptedExtent, defaultSettings } from './settings';
 
 export interface CultureHabitat {
   climates: readonly ClimateZone[];
@@ -121,6 +123,15 @@ export function plausibleCultures(settings: V2Settings): readonly string[] {
   return Object.entries(CULTURE_HABITATS)
     .filter(([, h]) => h.climates.includes(env.climate) && h.reliefs.includes(env.relief) && (!h.coast || env.coast))
     .map(([id]) => id);
+}
+
+/** The culture of a region when nobody chose one: the default culture where it fits the environment, else a draw of the
+ * root seed among those that do. The short code leaves it out. */
+export function automaticCulture(settings: V2Settings): string {
+  const preferred = defaultSettings().options.culture,
+    plausible = plausibleCultures(settings);
+  if (!plausible.length || plausible.includes(preferred)) return preferred;
+  return randomCulture(settings, true, () => new Rng(`culture:${seedRoot(settings.options.seed)}`).float());
 }
 
 /** Uniform draw; a dice click can omit the current choice to make every click useful. */

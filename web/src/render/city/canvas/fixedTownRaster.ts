@@ -11,15 +11,24 @@ export interface TownRasterTile {
   ready: boolean;
   town: number;
 }
+/** Definition of the sheets: pixels per metre a small town gets, and the pixels of one town and of all the towns
+ * together (each pixel costs four bytes of canvas and as much of texture). */
+const SHEET_SCALE = 8;
+export const TOWN_SHEET_PIXELS = 24e6,
+  ALL_SHEET_PIXELS = 36e6;
 export function townRasterLayout(bounds: readonly Rect4[]): { rect: Rect4; scale: number; width: number; height: number; town: number }[] {
-  return bounds.flatMap((b, town) => {
-    // A placed town without an urban plan has the empty extent (+Infinity, -Infinity).
-    // It has no pixels to bake; passing that rectangle to the spatial bins cannot terminate.
+  // A placed town without an urban plan has the empty extent (+Infinity, -Infinity).
+  // It has no pixels to bake; passing that rectangle to the spatial bins cannot terminate.
+  const sheets = bounds.flatMap((b, town) => {
     if (![b.minX, b.minY, b.maxX, b.maxY].every(Number.isFinite) || b.maxX < b.minX || b.maxY < b.minY) return [];
     const width = Math.max(1, b.maxX - b.minX + 16),
       height = Math.max(1, b.maxY - b.minY + 16);
-    // Full close-detail geometry, up to four pixels/metre and four megapixels per town.
-    const scale = Math.min(4, 4096 / width, 4096 / height, Math.sqrt(4e6 / (width * height)));
+    return [{ b, town, width, height, pixels: Math.min(TOWN_SHEET_PIXELS, SHEET_SCALE ** 2 * width * height) }];
+  });
+  // Many towns share the total in proportion to what each asks for.
+  const share = Math.min(1, ALL_SHEET_PIXELS / sheets.reduce((sum, s) => sum + s.pixels, 1));
+  return sheets.flatMap(({ b, town, width, height, pixels }) => {
+    const scale = Math.sqrt((pixels * share) / (width * height));
     const out = [];
     for (let y = 0; y < Math.ceil(height * scale); y += 1024)
       for (let x = 0; x < Math.ceil(width * scale); x += 1024) {
@@ -73,6 +82,7 @@ export class FixedTownRaster {
     ctx.save();
     ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
     ctx.globalAlpha *= alpha;
+    ctx.imageSmoothingQuality = 'high';
     for (const t of this.tiles) if (t.ready) ctx.drawImage(t.canvas, t.rect.minX, t.rect.minY, t.rect.maxX - t.rect.minX, t.rect.maxY - t.rect.minY);
     ctx.restore();
   }
@@ -139,7 +149,9 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
           gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, tile.canvas);
           gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          // The sheet is much finer than a view of the whole town: its mipmaps keep the outlines from aliasing there.
+          gl.generateMipmap(gl.TEXTURE_2D);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);

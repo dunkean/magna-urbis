@@ -11,6 +11,7 @@ use super::moat::{continuous_moat, embedded};
 use super::reconcile::{guard_main_gates, reconcile_gates};
 use super::reserve::{fronted, gate_masses, release_gate_reserve, trim_blocks};
 use super::street_clearance::{Near, Predicted, near_ribbons};
+use super::water::kept_fronts;
 use super::style::{Inputs, resolve};
 
 /// Last word on the gates, once every later stage has moved streets
@@ -60,6 +61,22 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
     // works. They obey the same water, reserve and gate rules as historical ones.
     if layout.enclosures.iter().any(|e| e.style.is_empty() && e.path.len()>=4) {
         let cfg = layout.config.clone().unwrap_or_default();
+        // A circuit without works (a forced footprint, a refit, a join) obeys the water rule of the
+        // trace before it is built: dry land behind its wall walk, one ring per bank of a wide
+        // water. A circuit that already does is not moved; a gate point off the new line goes.
+        let occupied: Vec<Shape> = layout.quarters.iter().map(|q| q.shape.clone()).collect();
+        let harbour = composition::harbour_fronts(layout);
+        layout.enclosures = std::mem::take(&mut layout.enclosures).into_iter().flat_map(|e| -> Vec<crate::urban::Enclosure> {
+            if !e.style.is_empty() || e.path.len() < 4 { return vec![e]; }
+            let ring = Shape { outer: e.path[..e.path.len() - 1].to_vec(), holes: vec![] };
+            let rings = kept_fronts(vec![ring.clone()], &occupied, &harbour, surface, 0.0);
+            if rings.len() == 1 && rings[0] == ring { return vec![e]; }
+            rings.into_iter().map(|r| {
+                let path = closed(&r.outer);
+                let gates = e.gates.iter().copied().filter(|&q| path.windows(2).any(|w| g::distance(q, w[0], w[1]).0 < 1.0)).collect();
+                crate::urban::Enclosure { path, gates, kind: e.kind.clone(), purpose: e.purpose.clone(), ..Default::default() }
+            }).collect()
+        }).collect();
         let pop = layout.structure.as_ref().map_or_else(|| layout.phases.iter().map(|p|p.population).sum(),
             |s|s.metrics.planned_population).max(500.0).round() as u32;
         let predicted = Predicted {widths:[9.0,8.0,5.0,3.5,3.0],arterial:1,dwelling:[5.0;2]};
@@ -85,7 +102,6 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
             }
             let land = e.gates.len();
             let banks = composition::water_gates(&e.path,surface);
-            for &(p,_) in &banks { if e.gates.iter().all(|&g|dist(g,p)>=8.0) {e.gates.push(p);} }
             // Access lanes added this late would change the road network.
             style.attached = 0.0;
             build(e,land,&banks,&layout.streets,surface,&style,pop,&predicted,&rng);

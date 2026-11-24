@@ -80,7 +80,7 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
       const ways = linesOf(l => l.name === 'field-ways');
       if (natural) {
         if (ways.length) strokeEarthRoads(ways, 'path', roadWidth('path', ways[0].width * 0.7, sc));
-      } else strokeLines(ways, trackInk(rk, pal.roadFill), () => lw(1.4, 0.8), Math.min(1, pal.rural.way * inkAlpha), lod.band >= 2 ? [px(6), px(4)] : [], 'butt');
+      } else strokeLines(ways, trackInk(rk, pal.roadFill), () => lw(1.4, 0.8), Math.min(1, pal.rural.way * inkAlpha), [], 'butt');
     }
     if (pal.hedgeOn) {
       const hedge = fieldHedgeStyle(pal, u);
@@ -100,14 +100,14 @@ export function paintFieldNetwork(c: CartographyContext, f: VectorFrame): void {
           k.color,
           () => lw(k.width, 0.35),
           k.alpha * Math.min(1, sc / 0.3),
-          k.dash.map(px),
+          [],
           'butt',
         );
       }
       if (!c.activeLight && lod.band >= 2 && polyL('hedge-trees')) {
         if (brushes) brushTrees('hedge-trees');
         else {
-          fillPolys('hedge-trees', pal.treeFill, 0.75);
+          fillPolys('hedge-trees', pal.treeFill, 0.75 * (0.3 + 0.7 * (pal.season?.leaf ?? 1)));
           strokePolys('hedge-trees', pal.treeInk, lw(0.3 * fu, 0.35), 0.5);
         }
       }

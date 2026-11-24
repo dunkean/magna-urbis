@@ -1,5 +1,6 @@
 //! Street grade checks, network cleanup, exits and hierarchy before block carving.
 
+use super::stairs;
 use crate::rng::Rng;
 use crate::urban::{
     Enclosure, LayoutConfig, Morph, Point, Quarter, Site, Street, Surface, UrbanStructure,
@@ -42,6 +43,7 @@ pub(super) fn finish_streets(
             && cfg.allow_stairs
             && routing::path_clear(surface, &s.path, cfg.max_stair_grade)
         {
+            // A steep link: `stairs::settle` decides its lanes and its stairs.
             s.role = "stairs".into();
             for w in &mut s.widths {
                 *w = w.min(2.2);
@@ -145,8 +147,11 @@ pub(super) fn finish_streets(
     path_camp
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn finish_connections(
     streets: &mut Vec<Street>,
+    enclosures: &[Enclosure],
+    site: &Site,
     surface: Surface<'_>,
     cfg: &LayoutConfig,
     m: &Morph,
@@ -165,4 +170,7 @@ pub(super) fn finish_connections(
             if s.role == "street" { s.role = "lane".into(); }
         }
     }
+    let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
+    stairs::settle(streets, enclosures, surface, cfg, culture);
+    lap("stairs");
 }

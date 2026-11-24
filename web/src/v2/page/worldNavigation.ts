@@ -2,8 +2,8 @@
  * The controls of the tilted map (single camera): the bar of the separate 3D view's toolbar, shown while the map is
  * tilted, with its navigation select (orbit, walk, free flight: Viewer.setNavigation, render/world/navigation.ts) and
  * the modelled trees (worldTrees.ts, mounted after this), and the PNG of the view (the compositor's tilted frame read
- * back, LiveCompositor.capture). While tilted, the measure tool and the cursor readout, which read the map through the
- * 2D mapping, are put away. Mounted by view3d.ts for the single camera only; with `?camera=dual` the separate 3D view
+ * back, LiveCompositor.capture). While tilted, the measure tool, which reads the map through the 2D mapping, is put
+ * away. Mounted by view3d.ts for the single camera only; with `?camera=dual` the separate 3D view
  * keeps its own controls and its own PNG.
  */
 import { isTilted } from '../../render/world/camera';
@@ -56,12 +56,10 @@ export function mountWorldNavigation(state: PageState, actions: PageActions): vo
       bar.append(capture);
     }
     bar.hidden = capture.hidden = !tilted;
-    // The measure tool and the readout read the map through the 2D mapping: away while tilted (the tilt ends a
-    // measurement already, through the edit mode event).
-    const measure = document.querySelector<HTMLButtonElement>('#measure-tool'),
-      readout = document.querySelector<HTMLElement>('#cursor-readout');
+    // The measure tool reads the map through the 2D mapping: away while tilted (the tilt ends a measurement already,
+    // through the edit mode event).
+    const measure = document.querySelector<HTMLButtonElement>('#measure-tool');
     if (measure) measure.disabled = tilted;
-    if (readout) readout.style.visibility = tilted ? 'hidden' : '';
   });
   select.onchange = () => {
     viewer.setNavigation(select.value as Navigation);

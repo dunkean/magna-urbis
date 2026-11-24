@@ -5,6 +5,7 @@
  * restored context; the WebGPU view (gpu/view.ts) has its own and never creates this one.
  */
 import { waterSeasonUniforms } from '../../../render/seasonPalette';
+import { freshWater3d } from '../../../render/waterPalette';
 import { bindForest, bindLandDetail, deleteForestTextures, forestTexture, forestTextures, type ForestTextures } from '../../terrain/gl/forest';
 import type { HeightLayer } from '../../terrain/contract';
 import { shoreRingPixels, shoreRingTexture } from '../../../../../rust/bridge/terrainForestBeach';
@@ -371,6 +372,7 @@ export class GlTerrainRenderer {
     gl.uniform1f(u('fogDistance'), rig.fogDistance());
     const settings = context.ground;
     gl.uniform2fv(u('uWaterSeason'), waterSeasonUniforms(settings?.v2Season, settings?.climateZone, settings?.v2Calendar));
+    gl.uniform4f(u('uFreshWater'), ...freshWater3d(settings));
     const canopy = settings ?? forest.settings;
     gl.uniform1i(u('groundEnabled'), settings ? 1 : 0);
     gl.uniform1i(u('proceduralPreview'), settings ? 1 : 0);

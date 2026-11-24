@@ -110,12 +110,16 @@ float v2GlacierProximity(vec2 world){
   float source=0.;for(int i=0;i<8;i++)source=max(source,uV2GlacierSources[i].z*(1.-sstep(0.,80000.,distance(world,uV2GlacierSources[i].xy))));return source;
 }
 V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
+  v2OccupationShare=v2OccupationShares(world);
   float annual=uMaterialClimate.x-.0065*max(s.x,0.);
   // Same continental growing-season proxy as the canonical forest field.
   float amplitude=6.+.5*max(0.,10.-uMaterialClimate.x);
   float rain=uMaterialClimate.y;
   float arid=1.-sstep(.35,1.,rain/max(120.,20.*uMaterialClimate.x+280.));
-  float bank=uForest==1?forestBankCover(world,max(1.,footprint)):0.;
+  // Riparian ribbon of the open ground: the filtered bank coverage, fading outward along a ragged line. The crisp margin
+  // of the gallery envelope drew its texels as a frontier against the bare soil.
+  float bank=uForest==1?forestBankRibbon(world,footprint):0.;
+  if(bank>0.)bank=.9*sstep(.02,.3,bank*max(.2,1.+.45*v2Pattern(vec3(world,0.),70.,footprint,uMaterialSeed+791u)));
   vec3 year=v2Zoned()?v2SeasonClimate():vec3(0.);
   V2Env e=v2Evaluate(vec3(world,0.),s.x,s.yz,tpi,annual+amplitude,annual-amplitude-year.y,rain*.5*(1.+year.x),rain*.5*(1.-year.x),.15+.50*arid,bank,fract(uV2Season+1.-V2_SEASON_LAG),footprint,uMaterialSeed);
   // A thawing zone raises its snow line; the perennial floor of the summits stays.
@@ -168,8 +172,8 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   if(v2Zoned())e.leaf=mix(v2SeasonLeaf(),1.,e.needle);
   v2ZoneWet=0.;v2ZoneBare=0.;if(v2Zoned())v2ZoneEnv(e,s,world,tpi,footprint);
   // Riparian fringe: the open ground along a bank is lusher and greener than the land behind it (reeds, sedge, wet
-  // grass), the green ribbon of a river in a dry zone. It reuses the bank term of the gallery envelope, no new
-  // search: full on gentle reaches, gone in gorges, on rock and under snow, stronger where the climate is dry.
+  // grass), the green ribbon of a river in a dry zone: full on gentle reaches, gone in gorges, on rock and under snow,
+  // stronger where the climate is dry.
   // Set after v2ZoneEnv, so it does not open the gallery stands as the zone's own wet ground does.
   if(v2Zoned())if(bank>0.){
     float fringe=bank*(1.-sstep(.12,.45,slope))*(1.-e.snow)*step(0.,s.x)*(1.-clamp(e.rock,0.,1.));
@@ -177,7 +181,7 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
     v2ZoneWet=max(v2ZoneWet,mix(.4,.8,arid)*fringe);
   }
   // Construction excludes tree roots, not the surrounding soil/grass response: changing it made a pale pad per house.
-  if(uHasOccupation==1){vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;if(all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)))){int cls=int(groundOccupation(world).z);if(cls==8)e.woody=0.;}}
+  e.woody*=1.-v2OccupationShare.y;
   if(forestClearingAt(world)>=0.)e.woody=0.;
   float water=forestWaterCoverage(world);e.woody*=1.-water;e.grass*=1.-water;
   // Preserve the retained physical beach footprint at every detail level.
@@ -382,9 +386,9 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
   // Fresh water reads as the same water along its network. The caller composites the coverage, so a narrow or
   // antialiased stream is not optically thinner (coverage does not enter the colour), and the depth keeps a floor:
   // a small stream is a little lighter and clearer than its trunk, never bed-coloured beside deep blue. A lake (kind 2)
-  // takes its own depth (v2LakeDepth): its shallow margin shows the bed.
+  // takes its own depth (v2LakeDepth) between the same floor and a cap near a river's: one water from river to lake.
   float optical=max(depth,0.),share=cover;
-  if(kind>1.5){optical=max(depth,kind<2.5?.3:2.5);share=1.;}
+  if(kind>1.5){optical=max(depth,2.5);if(kind<2.5)optical=min(optical,12.);share=1.;}
   if(uQuality>0){
     // Retain the bathymetric/seasonal palette without cellular ice or shore searches.
     bool sea=kind<1.5;

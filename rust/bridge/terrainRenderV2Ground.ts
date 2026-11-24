@@ -14,6 +14,23 @@ vec4 v2GroundUnit=vec4(0.);
 // Site of this fragment: x damp rim around a pan, y wash (pale channel floor of a hollow), z relief position
 // (-1 hollow, 1 knob, from the 300 m TPI), w the 900 m mottle of v2ZoneEnv.
 vec4 v2GroundSite=vec4(0.);
+// Shares of the occupation raster around a fragment: x tended land (fields, orchards, gardens, town ground, buildings,
+// lanes), y buildings. The four nearest classes are weighted, never one texel: a nearest class drew the texel grid as
+// the frontier of the ground. Set once per fragment by v2Local.
+vec2 v2OccupationShare=vec2(0.);
+vec2 v2OccupationShares(vec2 world){
+  if(uHasOccupation==0)return vec2(0.);
+  vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;
+  if(any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return vec2(0.);
+  vec2 grid=uv*uOccupationN-.5,f=fract(grid),share=vec2(0.);ivec2 base=ivec2(floor(grid)),top=ivec2(int(uOccupationN)-1);
+  for(int k=0;k<4;k++){
+    ivec2 o=ivec2(k&1,k>>1);
+    int cls=int(texelFetch(uOccupation,clamp(base+o,ivec2(0),top),0).b*255.+.5);
+    float w=(o.x==0?1.-f.x:f.x)*(o.y==0?1.-f.y:f.y);
+    if(cls==8)share+=w;else if(cls==1||cls==4||cls==5||cls==7||cls==9)share.x+=w;
+  }
+  return share;
+}
 // Level of a unit-variance field above which a share of the ground lies (logistic approximation of the normal quantile).
 float v2GroundQuantile(float share){float p=clamp(share,.001,.999);return .5*log((1.-p)/p);}
 // Splits the open ground of a zone into its geomorphic units. Each unit is the part of a field above the level
@@ -27,20 +44,15 @@ void v2GroundUnits(vec4 U,float wash,vec3 s,vec2 world,float tpi,float fp,float 
   float slope=length(s.yz),rel=clamp(tpi*40.,-1.,1.);
   v2GroundUnit=vec4(0.);v2GroundSite=vec4(0.,0.,rel,mottle);
   if(open>.003&&U.x+U.y+U.z+U.w>0.){
-    float free=open;
-    if(uHasOccupation==1){
-      // Tended land (fields, orchards, gardens, town ground, buildings, lanes) keeps the plain zone ground. Grazing,
-      // commons and meadows cover most of the countryside of a map: in dry and cold zones they are the open ground
-      // itself and carry its units.
-      int cls=int(groundOccupation(world).z);
-      if(cls==1||cls==4||cls==5||cls==7||cls==8||cls==9)free=0.;
-    }
     float edge=0.;
     if(uQuality==0){
       for(int k=0;k<2;k++){
         if(fp<(k==0?63.:14.4))edge+=(k==0?.42:.2)*v2Pattern(vec3(world,0.),k==0?210.:48.,fp,uMaterialSeed+771u+uint(k));
       }
     }
+    // Tended land keeps the plain zone ground, along a ragged contour of its share. Grazing, commons and meadows cover
+    // most of the countryside of a map: in dry and cold zones they are the open ground itself and carry its units.
+    float free=open*(1.-sstep(.2,.8,v2OccupationShare.x+.3*edge*v2OccupationShare.x*(1.-v2OccupationShare.x)));
     float w=clamp(.006*fp,.035,.6),gentle=1.-sstep(.10,.28,slope);
     float pan=0.,rim=0.,sand=0.,pave=0.,gravel=0.;
     if(U.w>0.){

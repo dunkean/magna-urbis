@@ -111,11 +111,9 @@ function drawTownBridge(ctx: CanvasRenderingContext2D, sh: BridgeShapes, pal: Pa
   if (sh.seams && sc > 2) {
     poly(sh.seams.pts);
     ctx.strokeStyle = pal.bridgeInk;
-    ctx.globalAlpha = 0.45;
+    ctx.globalAlpha = 0.3;
     ctx.lineWidth = sh.seams.w;
-    ctx.setLineDash(sh.seams.dash);
     ctx.stroke();
-    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
   ctx.strokeStyle = pal.bridgeInk;
@@ -184,10 +182,9 @@ function drawBridges(ctx: CanvasRenderingContext2D, world: World, pal: Palette, 
 export function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal: Palette, sc: number, labels: boolean): void {
   const c = world.site!.center,
     px = (v: number): number => v / sc;
-  ctx.setLineDash([px(7), px(4.5)]);
   ctx.strokeStyle = pal.ink;
-  ctx.globalAlpha = 0.7;
-  ctx.lineWidth = px(1.2);
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = px(0.8);
   for (const poly of world.landuse?.reserve ?? []) {
     if (poly.length < 3) continue;
     ctx.beginPath();
@@ -196,7 +193,6 @@ export function drawSiteMarker(ctx: CanvasRenderingContext2D, world: World, pal:
     ctx.closePath();
     ctx.stroke();
   }
-  ctx.setLineDash([]);
   ctx.globalAlpha = 1;
   if (!labels) return;
   const r = px(7);

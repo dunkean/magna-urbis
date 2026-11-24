@@ -5,10 +5,14 @@
 //! - the bed lies below its banks by a depth that grows with the channel width (`bed_depth`);
 //! - the water surface of the line never rises downstream and sits inside that bed, under the bank top.
 //! - the ground along every course is lowered into a valley whose depth and width grow with its catchment, as far
-//!   as the relief lacks one (`valley_depth`, `Section`).
+//!   as the relief lacks one (`valley_depth`, `Section`). The two sides of a valley differ (`Flank`): the course wanders
+//!   between the sides of its floor, a steep cut bank stands outside its bends and a gentle slip-off slope inside, the
+//!   floor widens and narrows, and hard and soft rock steepen or open the sides, with terraces in places.
 //! Lakes, the sea and the planform are untouched; only land cells within the valley reach of a course are lowered.
 use super::rivers::{Line, channel_width};
 use super::{Settings, Water};
+use crate::noise::Noise;
+use crate::rng::Rng;
 
 /// Depth of a bed below its banks (m) for a channel `width` metres wide.
 pub fn bed_depth(width: f64) -> f64 {
@@ -43,11 +47,18 @@ const VALLEY_DEPTH: f64 = 2.5;
 const VALLEY_DEEPEST: f64 = 40.0;
 /// Share of the local relief a valley may take: a plain has no shoulders to cut a valley under, hills have.
 const VALLEY_RELIEF_SHARE: f64 = 0.8;
-/// Mean side slope of a valley (rise over run); it varies by a quarter along the course.
+/// Mean side slope of a valley (rise over run): rock and bends move it between `SIDE_RANGE` (`flanks`).
 const VALLEY_SIDE: f64 = 0.12;
-/// Half width of the valley floor beyond the banks, in channel widths (the width of the river itself, without the
-/// display scale of the drawn channel).
+const SIDE_RANGE: (f64, f64) = (0.045, 0.45);
+/// Mean half width of the valley floor beyond the banks, in channel widths (the width of the river itself, without the
+/// display scale of the drawn channel). The two half widths of a floor share an irregular total.
 const VALLEY_FLOOR: f64 = 2.0;
+/// Share of the floor by which its edge moves with the rock (`rough`), and of the side's own run.
+const ROUGH_FLOOR: f64 = 0.4;
+const ROUGH_SIDE: f64 = 0.2;
+/// Wavelength (m) of the rock the valley sides are cut in, and of the spurs and hollows of their edge.
+const ROCK_WAVE: f64 = 650.0;
+const ROUGH_WAVE: f64 = 90.0;
 /// Widest half width of a valley (m): the pass visits no cell farther from a course.
 const VALLEY_REACH: f64 = 600.0;
 /// Least fall of a bed towards the end of its course (rise over run) where a valley deepens it: the valley never
@@ -58,34 +69,151 @@ const VALLEY_BLEND: f64 = 0.6;
 
 /// Smooth minimum of `a` and `b` over `k` (polynomial): equal to the minimum when they differ by more than `k`.
 fn smooth_min(a: f64, b: f64, k: f64) -> f64 {
+    let k = k.max(1e-9);
     let h = (k - (a - b).abs()).max(0.0);
     a.min(b) - h * h / (4.0 * k)
 }
 
+fn smooth(t: f64) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// One side of a valley at a vertex of its course: bank and floor widths (m), rise of the floor away from the banks
+/// and slope of the valley side (rise over run), height and tread of its terrace (m, 0: none), and the distance to the
+/// axis where the cut ends (m).
+#[derive(Clone, Copy)]
+struct Flank {
+    bank: f64,
+    floor: f64,
+    tilt: f64,
+    side: f64,
+    step: f64,
+    tread: f64,
+    reach: f64,
+}
+impl Flank {
+    fn mix(self, other: Self, t: f64) -> Self {
+        let lerp = |a: f64, b: f64| a + (b - a) * t;
+        Self {
+            bank: lerp(self.bank, other.bank),
+            floor: lerp(self.floor, other.floor),
+            tilt: lerp(self.tilt, other.tilt),
+            side: lerp(self.side, other.side),
+            step: lerp(self.step, other.step),
+            tread: lerp(self.tread, other.tread),
+            reach: lerp(self.reach, other.reach),
+        }
+    }
+}
+
+/// Running mean of `values` over `span` entries on each side.
+fn running_mean(values: &[f64], span: usize) -> Vec<f64> {
+    let mut sum = vec![0.0; values.len() + 1];
+    for (k, &v) in values.iter().enumerate() {
+        sum[k + 1] = sum[k] + v
+    }
+    (0..values.len())
+        .map(|k| {
+            let (a, b) = (k.saturating_sub(span), (k + span).min(values.len() - 1));
+            (sum[b + 1] - sum[a]) / (b + 1 - a) as f64
+        })
+        .collect()
+}
+
+/// The two sides of the valley along a course (`[0]` on its right, `[1]` on the side of the normal (-dy, dx)).
+/// The floor has an irregular total width, which the course shares unequally: it wanders from one side to the other
+/// and leans on the outside of its bends. The sides are steeper in hard rock and over a cut bank, gentler on a slip-off
+/// slope. Near both ends of the course the two sides become equal: the cut closes round them without a step.
+fn flanks(line: &Line, arc: &[f64], width_scale: f64, cell: f64, index: usize, noise: &Noise) -> Vec<[Flank; 2]> {
+    let m = line.points.len() / 2;
+    let at = |k: usize| (line.points[2 * k], line.points[2 * k + 1]);
+    let total = arc[m - 1];
+    let spacing = (total / (m - 1) as f64).max(1e-6);
+    let window = |k: usize| (((4.0 * cell).max(6.0 * channel_width(line.area[k], 1.0)) / spacing).ceil() as usize).max(1);
+    // Turn of the course about a vertex, 1 for a full bend towards side 1.
+    let turn: Vec<f64> = (0..m)
+        .map(|k| {
+            let q = window(k).min(k).min(m - 1 - k);
+            let ((ax, ay), (x, y), (bx, by)) = (at(k - q), at(k), at(k + q));
+            let (ux, uy, vx, vy) = (x - ax, y - ay, bx - x, by - y);
+            ((ux * vy - uy * vx).atan2(ux * vx + uy * vy) / 0.8).clamp(-1.0, 1.0)
+        })
+        .collect();
+    let turn = running_mean(&turn, window(m / 2) / 2);
+    let lane = index as f64 * 17.31;
+    (0..m)
+        .map(|k| {
+            let (own, wide) = (channel_width(line.area[k], 1.0), channel_width(line.area[k], width_scale));
+            let wanted = valley_depth(line.area[k]);
+            let inner = (0.5 * wide).max(0.75 * cell);
+            let wave = (14.0 * own).max(260.0);
+            let along = |wave: f64, row: f64| noise.noise(arc[k] / wave, lane + row);
+            let wander = (1.5 * along(wave, 3.0) + 0.6 * along(0.31 * wave, 5.0)).clamp(-1.0, 1.0);
+            let breadth = 2.0_f64.powf(1.1 * along(1.3 * wave, 7.0) + 0.6 * along(0.4 * wave, 11.0)).clamp(0.4, 2.0);
+            // A bend holds the course against its outside; the course wanders with the room the bend leaves it.
+            let lean = turn[k] + (1.0 - turn[k].abs()) * wander;
+            let (p0, p1) = (at(k.saturating_sub(2)), at((k + 2).min(m - 1)));
+            let l = (p1.0 - p0.0).hypot(p1.1 - p0.1).max(1e-9);
+            let (nx, ny) = (-(p1.1 - p0.1) / l, (p1.0 - p0.0) / l);
+            let (x, y) = at(k);
+            let sides: [Flank; 2] = std::array::from_fn(|side| {
+                let sign: f64 = if side == 1 { 1.0 } else { -1.0 };
+                // Inside of a bend (slip-off slope) and outside of it (cut bank).
+                let (slip, cut) = ((sign * turn[k]).max(0.0), (-sign * turn[k]).max(0.0));
+                let off = sign * (inner + wide + 2.0 * VALLEY_FLOOR * own + 60.0);
+                let (rx, ry) = ((x + nx * off) / ROCK_WAVE, (y + ny * off) / ROCK_WAVE);
+                let rock = (1.3 * noise.noise(rx, ry) + 0.6 * noise.noise(3.7 * rx + 21.0, 3.7 * ry - 8.0)).clamp(-1.0, 1.0);
+                let bank = (wide * (1.0 + 0.8 * slip - 0.45 * cut)).max(BANK_CELLS * cell);
+                let floor = 2.0 * VALLEY_FLOOR * own * breadth * (0.5 + 0.44 * sign * lean) * (-0.45 * rock).exp();
+                let slope = (VALLEY_SIDE * (0.55 * rock).exp() * (1.0 + 1.6 * cut) * (1.0 - 0.45 * slip)).clamp(SIDE_RANGE.0, SIDE_RANGE.1);
+                // Terraces: in places, where the valley is deep enough to hold one.
+                let terrace = smooth(2.0 * along(0.8 * wave, 13.0 + 4.0 * side as f64) + 0.4 * slip - cut) * smooth((wanted - 2.5) / 4.0);
+                let step = terrace * wanted * (0.3 + 0.25 * breadth.min(1.0));
+                let tread = terrace * (1.5 * VALLEY_FLOOR * own + 6.0).min(70.0);
+                let reach = (inner + bank + (1.0 + ROUGH_FLOOR) * floor + tread + wanted / (slope * (1.0 - ROUGH_SIDE))).min(VALLEY_REACH).max(inner + bank);
+                Flank { bank, floor, tilt: 0.004 + 0.03 * slip, side: slope, step, tread, reach }
+            });
+            let own_sides = smooth(arc[k].min(total - arc[k]) / wave);
+            let mean = sides[0].mix(sides[1], 0.5);
+            sides.map(|flank| mean.mix(flank, own_sides))
+        })
+        .collect()
+}
+
 /// One cross-section, from the axis of a course outwards (`d`, m), as a height: the bed (`z`, flat over half the
-/// channel), the banks rising by the bed depth to the valley floor, the floor, then the valley sides at `side`, with
-/// a rounded foot.
+/// channel), the banks rising by the bed depth to the valley floor, the floor, then the valley side with a rounded foot
+/// and its terrace. `rough` (-1 to 1) moves the edge of the floor and the run of the side: spurs and hollows.
 struct Section {
     z: f64,
     depth: f64,
     inner: f64,
-    bank: f64,
-    floor: f64,
-    side: f64,
+    flank: Flank,
 }
 impl Section {
-    fn at(&self, d: f64) -> f64 {
+    fn at(&self, d: f64, rough: f64) -> f64 {
         if d <= self.inner {
             return self.z;
         }
-        let u = ((d - self.inner) / self.bank).min(1.0);
-        let banks = self.z + self.depth * u * u * (3.0 - 2.0 * u);
-        let e = d - self.inner - self.bank - self.floor;
-        if e <= 0.0 {
+        let f = &self.flank;
+        let x = d - self.inner - f.bank;
+        let banks = self.z + self.depth * smooth((d - self.inner) / f.bank);
+        if x <= 0.0 {
             return banks;
         }
-        let r = self.floor.max(1.0);
-        banks + self.side * if e < r { e * e / (2.0 * r) } else { e - 0.5 * r }
+        let edge = f.floor * (1.0 + ROUGH_FLOOR * rough);
+        let floor = banks + f.tilt * x.min(edge);
+        let e = (x - edge) * (1.0 - ROUGH_SIDE * rough);
+        if e <= 0.0 {
+            return floor;
+        }
+        let r = f.floor.max(1.0);
+        let run = f.step / f.side;
+        let start = if run < 0.5 * r { (2.0 * r * run).sqrt() } else { run + 0.5 * r };
+        let on_tread = (e - start).clamp(0.0, f.tread);
+        let e = e - on_tread;
+        let rise = if e < r { e * e / (2.0 * r) } else { e - 0.5 * r };
+        floor + f.side * rise + 0.02 * on_tread
     }
 }
 
@@ -94,8 +222,9 @@ impl Section {
 ///
 /// Invariants (per course): the bed never rises downstream (running minimum, except where it crosses ground higher
 /// than `EXTRA_CUT` over its depth), the water surface never rises and lies in the bed under its banks, and every
-/// cell takes the lower of its ground and one cross-section of the course: bed, banks, valley floor and sides. The
-/// cross-section is a function of the distance to the course alone, so a diagonal bed is as smooth as a straight one.
+/// cell takes the lower of its ground and one cross-section of the course: bed, banks, valley floor and sides. The bed
+/// and its banks are a function of the distance to the course and of its side alone, so a diagonal bed is as smooth as
+/// a straight one; only the valley floor's edge and sides take the roughness of the rock at each cell.
 /// The valley only cuts what the relief lacks: its depth is the wanted depth (`valley_depth`, at most half the local
 /// relief) less the depth of the valley the relief already has, so the valleys of mountains are not cut twice and
 /// plains get little more than their beds. The largest courses are cut first and the others sample the cut ground,
@@ -106,6 +235,10 @@ pub(super) fn incise_lines(height: &mut [f32], n: usize, width: f64, lines: &mut
     }
     let cell = width / n as f64;
     let original = height.to_vec();
+    let noise = Noise::new(Rng::new("valley-sides"));
+    let rough_scale = 1.0 / ROUGH_WAVE.max(6.0 * cell);
+    // Roughness of the rock at a cell, drawn the first time a valley side reaches it.
+    let mut rough = vec![f32::NAN; n * n];
     let mut order: Vec<usize> = (0..lines.len()).collect();
     order.sort_by(|&a, &b| {
         let area = |i: usize| lines[i].area.last().copied().unwrap_or(0.0);
@@ -124,18 +257,11 @@ pub(super) fn incise_lines(height: &mut [f32], n: usize, width: f64, lines: &mut
         for k in 1..m {
             arc[k] = arc[k - 1] + (at(k).0 - at(k - 1).0).hypot(at(k).1 - at(k - 1).1)
         }
-        // Per vertex: the floor half width (bed, banks, floor), the valley depth still to cut and the side slope.
-        let phase = (index as f64 * 2.399_963).rem_euclid(std::f64::consts::TAU);
+        // Per vertex: the two sides of the valley and the valley depth still to cut.
+        let flank = flanks(line, &arc, width_scale, cell, index, &noise);
         let mut extra = vec![0.0; m];
-        let mut side = vec![VALLEY_SIDE; m];
-        let mut reach = vec![0.0; m];
         for k in 0..m {
-            let (inner, bank) = ((0.5 * wide[k]).max(0.75 * cell), wide[k].max(BANK_CELLS * cell));
-            let floor = VALLEY_FLOOR * channel_width(line.area[k], 1.0);
             let wanted = valley_depth(line.area[k]);
-            side[k] = VALLEY_SIDE * (1.0 + 0.25 * (0.6 * (arc[k] / 700.0 + phase).sin() + 0.4 * (arc[k] / 230.0 + 2.0 * phase).sin()));
-            let half = (inner + bank + floor + wanted / side[k]).min(VALLEY_REACH).max(inner + bank);
-            reach[k] = half;
             let (p0, p1) = (at(k.saturating_sub(2)), at((k + 2).min(m - 1)));
             let l = (p1.0 - p0.0).hypot(p1.1 - p0.1);
             if l < 1e-9 || wanted <= 0.0 {
@@ -144,8 +270,9 @@ pub(super) fn incise_lines(height: &mut [f32], n: usize, width: f64, lines: &mut
             let (nx, ny) = (-(p1.1 - p0.1) / l, (p1.0 - p0.0) / l);
             let (x, y) = at(k);
             let sample = |s: f64| bilinear(height, n, cell, x + nx * s, y + ny * s);
-            let (l1, r1) = (sample(half), sample(-half));
-            let (l3, r3) = (sample(2.0 * half).max(sample(3.0 * half)), sample(-2.0 * half).max(sample(-3.0 * half)));
+            let (left, right) = (flank[k][1].reach, -flank[k][0].reach);
+            let (l1, r1) = (sample(left), sample(right));
+            let (l3, r3) = (sample(2.0 * left).max(sample(3.0 * left)), sample(2.0 * right).max(sample(3.0 * right)));
             let existing = (l1.min(r1) - ground[k]).max(0.0);
             // The relief the valley may cut into: the lower of the highest grounds within three half widths.
             let relief = (l1.max(l3).min(r1.max(r3)) - ground[k]).max(0.0);
@@ -153,14 +280,7 @@ pub(super) fn incise_lines(height: &mut [f32], n: usize, width: f64, lines: &mut
         }
         // The valley depth varies smoothly along the course (a running mean over about 12 cells).
         let span = ((4.0 * cell) / (arc[m - 1] / (m - 1) as f64).max(1e-6)).ceil() as usize;
-        let mut sum = vec![0.0; m + 1];
-        for k in 0..m {
-            sum[k + 1] = sum[k] + extra[k]
-        }
-        let extra: Vec<f64> = (0..m).map(|k| {
-            let (a, b) = (k.saturating_sub(span), (k + span).min(m - 1));
-            (sum[b + 1] - sum[a]) / (b + 1 - a) as f64
-        }).collect();
+        let extra = running_mean(&extra, span);
         // The bed: a running minimum of the ground less the bed and valley depths, never under the bed this course
         // ends on (that of the course it joins, at grade), and the valley never under the line falling by
         // `VALLEY_GRADE` to that end.
@@ -200,15 +320,8 @@ pub(super) fn incise_lines(height: &mut [f32], n: usize, width: f64, lines: &mut
             let (dx, dy) = (bx - ax, by - ay);
             let l2 = (dx * dx + dy * dy).max(1e-12);
             let w = wide[k].max(wide[j]);
-            let section = |t: f64| Section {
-                z: bed[k] + (bed[j] - bed[k]) * t,
-                depth: bed_depth(w),
-                inner: (0.5 * w).max(0.75 * cell),
-                bank: w.max(BANK_CELLS * cell),
-                floor: VALLEY_FLOOR * channel_width(line.area[k].max(line.area[j]), 1.0),
-                side: side[k],
-            };
-            let far = reach[k].max(reach[j]);
+            let (depth, inner) = (bed_depth(w), (0.5 * w).max(0.75 * cell));
+            let far = flank[k].iter().chain(&flank[j]).fold(0.0_f64, |far, f| far.max(f.reach));
             let low = |v: f64| ((v - far) / cell).floor().max(0.0) as usize;
             let high = |v: f64| (((v + far) / cell).floor().max(0.0) as usize).min(n - 1);
             for yy in low(ay.min(by))..=high(ay.max(by)) {
@@ -223,19 +336,35 @@ pub(super) fn incise_lines(height: &mut [f32], n: usize, width: f64, lines: &mut
                     if d >= far {
                         continue;
                     }
+                    let side = usize::from(dx * py - dy * px > 0.0);
+                    let flank = flank[k][side].mix(flank[j][side], t);
+                    if d >= flank.reach {
+                        continue;
+                    }
                     let here = height[c] as f64;
-                    let s = section(t).at(d);
+                    let section = Section { z: bed[k] + (bed[j] - bed[k]) * t, depth, inner, flank };
+                    // The roughest ground is the lowest section: no cell it leaves uncut needs its rock drawn.
+                    if section.at(d, 1.0) >= here + 2.0 * VALLEY_BLEND {
+                        continue;
+                    }
+                    if rough[c].is_nan() {
+                        let (x, y) = ((xx as f64 + 0.5) * cell * rough_scale, (yy as f64 + 0.5) * cell * rough_scale);
+                        rough[c] = (1.4 * noise.fbm(x, y, 2)).clamp(-1.0, 1.0) as f32
+                    }
+                    let s = section.at(d, rough[c] as f64);
                     if s >= here + VALLEY_BLEND {
                         continue;
                     }
                     // The valley side blends into the ground, and fades out over the last fifth of the reach.
-                    let u = ((d - 0.8 * far) / (0.2 * far)).clamp(0.0, 1.0);
-                    let fade = 1.0 - u * u * (3.0 - 2.0 * u);
+                    let fade = 1.0 - smooth((d - 0.8 * flank.reach) / (0.2 * flank.reach));
+                    // Invariant: a cell is the lowest of the cuts of the stretches near it, each made in the original
+                    // ground, and the bed is never blended. A blend into the ground already cut lowered a cell again
+                    // at every stretch that reached it: the bed rose where fewer reached it, at the end of the course.
                     let ground = original[c] as f64;
-                    let cut = here - smooth_min(here, s, VALLEY_BLEND);
+                    let cut = ground - smooth_min(ground, s, VALLEY_BLEND * smooth((d - inner) / flank.bank));
                     // Near the sea the cut keeps half of the height over one metre: the smoothed delta of the
                     // display may not take low ground under the sea.
-                    let target = (here - cut * fade).max(ground.min(1.0 + 0.5 * (ground - 1.0)));
+                    let target = (ground - cut * fade).max(ground.min(1.0 + 0.5 * (ground - 1.0)));
                     if target < here {
                         height[c] = target as f32
                     }
@@ -321,7 +450,8 @@ mod tests {
             assert!(top - bed <= bed_depth(w) + EXTRA_CUT + valley_depth(2.0e6) + 0.5, "bounded cut");
             // The cut fades out within the valley reach: the ground beyond it is untouched.
             let (tx, ty) = (line.points[2 * k + 4] - line.points[2 * k - 4], line.points[2 * k + 5] - line.points[2 * k - 3]);
-            let reach = (inner + bank + VALLEY_FLOOR * channel_width(2.0e6, 1.0) + valley_depth(2.0e6) / (0.75 * VALLEY_SIDE)).min(VALLEY_REACH);
+            let floor = 2.0 * VALLEY_FLOOR * channel_width(2.0e6, 1.0) * 2.0 * 0.94 * 0.45_f64.exp();
+            let reach = (inner + 1.8 * bank + (1.0 + ROUGH_FLOOR) * floor + 70.0 + valley_depth(2.0e6) / (SIDE_RANGE.0 * (1.0 - ROUGH_SIDE))).min(VALLEY_REACH);
             let (l, far) = (tx.hypot(ty), reach + 1.5 * cell);
             let (fx, fy) = (x - ty / l * far, y + tx / l * far);
             if (0..line.level.len()).all(|j| (line.points[2 * j] - fx).hypot(line.points[2 * j + 1] - fy) >= far - 1e-6) {
@@ -413,6 +543,43 @@ mod tests {
         let step = at(&height, t.points[2 * last - 6], t.points[2 * last - 5]) - at(&height, ex, ey);
         eprintln!("tributary: last metres fall {step:.2} m onto the main bed");
         assert!((-0.1..=1.0).contains(&step), "the tributary meets the main bed at grade ({step:.2} m)");
+    }
+
+    /// The two sides of a valley: over a winding course the outside of the bends has the narrower floor and the steeper
+    /// side, the floor widens and narrows along the course, and at both ends the sides are equal.
+    #[test]
+    fn valley_sides_lean_with_the_bends_and_vary_along_the_course() {
+        let mut line = Line::default();
+        for k in 0..1200 {
+            let x = 5.0 * k as f64;
+            line.points.extend([x, 3000.0 + 160.0 * (x / 130.0).sin()]);
+            line.area.push(60.0e6);
+        }
+        let m = line.points.len() / 2;
+        let mut arc = vec![0.0; m];
+        for k in 1..m {
+            arc[k] = arc[k - 1] + (line.points[2 * k] - line.points[2 * k - 2]).hypot(line.points[2 * k + 1] - line.points[2 * k - 1])
+        }
+        let sides = flanks(&line, &arc, 3.0, 10.0, 0, &Noise::new(Rng::new("valley-sides")));
+        for k in [0, m - 1] {
+            assert!((sides[k][0].floor - sides[k][1].floor).abs() < 1e-9 && (sides[k][0].side - sides[k][1].side).abs() < 1e-9);
+        }
+        // Crests of the sine turn towards falling y (side 0 is inside: the course runs along x), troughs the other way.
+        let (mut inside, mut outside, mut totals) = ((0.0, 0.0), (0.0, 0.0), Vec::new());
+        for k in 200..m - 200 {
+            let wave = (line.points[2 * k] / 130.0).sin();
+            totals.push(sides[k][0].floor + sides[k][1].floor);
+            if wave.abs() < 0.9 {
+                continue;
+            }
+            let inner = usize::from(wave < 0.0);
+            inside = (inside.0 + sides[k][inner].floor, inside.1 + sides[k][inner].side);
+            outside = (outside.0 + sides[k][1 - inner].floor, outside.1 + sides[k][1 - inner].side);
+        }
+        assert!(inside.0 > 1.5 * outside.0, "floor inside {} and outside {}", inside.0, outside.0);
+        assert!(outside.1 > 1.5 * inside.1, "side outside {} and inside {}", outside.1, inside.1);
+        let (low, high) = totals.iter().fold((f64::INFINITY, 0.0_f64), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+        assert!(high > 1.8 * low, "floor width from {low:.0} to {high:.0} m");
     }
 
     /// Lakes and the sea are not cut, and the surface does not go under the level the course ends at.

@@ -227,8 +227,12 @@ export interface PageActions {
   smallPlaceRecipeKey(): string;
   // inspectors
   showInspector(key: string, focus?: boolean): void;
+  rerollTown(key: string): void;
   showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void;
   inspectSubdivision(kind: 'quarter' | 'block' | 'parcel', p: { x: number; y: number }, settlementKey?: string, selectedId?: string): boolean;
+  // entity sheet
+  inspectEntity(point: { x: number; y: number }, picked?: NonNullable<ReturnType<typeof buildingAt>>): void;
+  refreshEntitySheet(): void;
   // projects
   loadProject(project: { settings: V2Settings; mods: unknown[]; world?: World }): Promise<void>;
   // exports

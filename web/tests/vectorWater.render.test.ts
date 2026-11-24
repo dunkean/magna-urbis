@@ -219,6 +219,34 @@ describe('continuous vector water', () => {
     expect(svg).not.toContain('fill-opacity=');
   });
 
+  it('lets the thread of a wide bed wander inside it and stops the bare bed at the coastline', async () => {
+    const source = await basin(),
+      points = Array.from({ length: 30 }, (_, k) => [6000 - 200 * k, 3250])
+        .flat()
+        .concat(150, 3250),
+      line: RiverLine = { points, area: points.filter((_, i) => i % 2 === 0).map(() => 16e6), level: new Array(31).fill(2), kind: new Array(31).fill(0) },
+      water = { ...source, runoff: { r0: 50, e0: 900, aridity: 1 }, rivers: { ...source.rivers!, rivers: [line], braids: [], oxbows: [], distributaries: [] } } as VectorWater,
+      segments = riverSegments(water, { ...display, style: 'render3d', material: true, thread: true, season: { zone: 'mediterranean', season: 0 } });
+    let widest = 0,
+      reach = 0,
+      mouth = Infinity,
+      bare = Infinity;
+    for (let i = 0; i < segments.length; i += 9) {
+      const [, , x1, y1, , w1, running] = segments.subarray(i, i + 9);
+      if (running === 0) {
+        widest = Math.max(widest, w1);
+        bare = Math.min(bare, x1);
+      } else {
+        reach = Math.max(reach, Math.abs(y1 - 3250));
+        mouth = Math.min(mouth, x1);
+        expect(Math.abs(y1 - 3250)).toBeLessThan(widest / 2 + 1);
+      }
+    }
+    expect(reach).toBeGreaterThan(1);
+    expect(mouth).toBeLessThan(195);
+    expect(bare).toBeGreaterThan(190);
+  });
+
   it('uses physical widths, splits braid discharge and widens marine estuaries with river size', async () => {
     const water = await basin();
     const line: RiverLine = { points: [600, 3250, 150, 3250], area: [1e6, 16e6], level: [3, 0], kind: [0, 0], threads: [1, 2] };
@@ -246,7 +274,7 @@ describe('continuous vector water', () => {
       expect(w1 / w0).toBeLessThan(1.3);
       if (x0 >= 195 && x1 < 195) coast = w0 + ((w1 - w0) * (x0 - 195)) / (x0 - x1);
     }
-    expect(coast / own).toBeGreaterThan(2.4);
+    expect(coast / own).toBeGreaterThan(2.1);
     // The ribbon ends just past the coastline, in the sea: no long ribbon drawn out over the water.
     const last = segments.length - 9;
     expect(segments[last + 2]).toBeLessThan(195);

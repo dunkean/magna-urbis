@@ -23,11 +23,12 @@ import { nativeCitiesOf } from '../nativeProducts';
 import { activityScene } from '../activitySites';
 import { mapSeasonKey } from '../../render/seasonPalette';
 import { biomePalette } from '../../render/biomes';
+import type { Palette } from '../../render/styles';
 import { displayBiomeName } from '../displayBiome';
 import { renderSvg } from '../../render/svg';
 import type { TerrainData } from '../../../../rust/bridge/terrain';
 import { settlementRaster, type SettlementRaster } from '../../../../rust/bridge/settlements';
-import { v1LandCanvas } from '../../render/v1Landscape';
+import { seasonLand, v1LandCanvas } from '../../render/v1Landscape';
 import { punchWoods } from '../../render/treeSymbols';
 import { riverSegments } from '../../ui/vectorWaterRender';
 import { hydrologySegments, hydrologyWaterColour } from '../../../../rust/bridge/hydrologyRender';
@@ -40,6 +41,7 @@ import type { SemanticLegendEntry } from '../../render/legend';
 import { sceneDirty, worldDirty, changedShapes, shapeKey, mergeRects } from '../../render/sceneDiff';
 import type { Rect } from '../../render/tileindex';
 import { seedSubset } from '../../../../rust/bridge/generationSeed';
+import { isUnderdarkBiome } from '../../gen/biomes';
 import { cityRegionalNetwork } from '../../render/cityBridges';
 import type { View } from '../../render/view';
 import type { Cartography, DisplayParts, SemanticState, WorldBox } from './contract';
@@ -54,6 +56,14 @@ const displaySeed = (seed: string): string => seedSubset(seed, key => !key.start
 const clearingBuildings = (world: World) => [...nativeCitiesOf(world).flatMap(city => city.scene?.buildings ?? []), ...(activityScene(world)?.buildings ?? [])];
 /** Reach of the overlay products derived from a changed shape (forest wash fringe 140 m, lone trees 120 m, clearings, sprites). */
 const DERIVED_REACH = 220;
+/** The palette of the overlay (no frame of its own, no drawing grid without decor), one object per resolved palette. */
+const overlayPalettes = [new WeakMap<Palette, Palette>(), new WeakMap<Palette, Palette>()];
+function overlayPalette(source: Palette, decor: boolean): Palette {
+  const known = overlayPalettes[decor ? 1 : 0];
+  let found = known.get(source);
+  if (!found) known.set(source, (found = { ...source, frameKind: 'none', ...(decor ? {} : { grid: null }) }));
+  return found;
+}
 type CartographyProduct = { renderer: CanvasRenderer; overlay: HTMLCanvasElement; state: { config: string; scene: Scene; world: World }; physical?: PhysicalGround };
 
 export class CartographyProducts implements Cartography {
@@ -65,6 +75,7 @@ export class CartographyProducts implements Cartography {
   /** Dormant renderers of other looks. */
   private retained = new RetainedBudget();
   private landRaster?: { terrain: TerrainData; raster: SettlementRaster };
+  private dryLand?: { raster: SettlementRaster; key: string; canvas: HTMLCanvasElement };
   /** For the renderer's semantic hook (render/cartography/contract.ts `arrivals`, `provisional`): the water rasters
    * (view, whole map) last seen and how many have arrived, the draws made without a product still being made. */
   private semanticWaterView?: object;
@@ -96,9 +107,18 @@ export class CartographyProducts implements Cartography {
     if (!t || r.composition.variant !== 'parchment' || !r.ground.layers.relief) return null;
     if (this.landRaster?.terrain !== t) this.landRaster = { terrain: t, raster: settlementRaster(t) };
     // Every course cuts the backdrop, dry beds included: their symbols are drawn in the vector water below.
-    const water = { ...this.parts.water.waterDisplay(), season: undefined },
-      rivers = !r.composition.networks.water.visible ? undefined : t.water ? riverSegments(t.water, water) : t.hydrology ? hydrologySegments(t.hydrology, hydrologyWaterColour(r.ground.style, r.palette.colors)) : undefined;
-    const land = (this.land = v1LandCanvas(this.landRaster.raster, 'parchment', displayBiomeName(this.map.settings, this.map.world), rivers));
+    const raster = this.landRaster.raster,
+      biome = displayBiomeName(this.map.settings, this.map.world),
+      water = { ...this.parts.water.waterDisplay(), season: undefined },
+      key = JSON.stringify([biome, r.composition.networks.water.visible, water]);
+    // The summer sheet, once per terrain, biome and water: a new date only lays its tint and snow over it.
+    if (this.dryLand?.raster !== raster || this.dryLand.key !== key) {
+      const rivers = !r.composition.networks.water.visible ? undefined : t.water ? riverSegments(t.water, water) : t.hydrology ? hydrologySegments(t.hydrology, hydrologyWaterColour(r.ground.style, r.palette.colors)) : undefined;
+      this.dryLand = { raster, key, canvas: v1LandCanvas(raster, 'parchment', biome, rivers) };
+    }
+    const dry = this.dryLand.canvas,
+      season = (canvas: HTMLCanvasElement): HTMLCanvasElement => (isUnderdarkBiome(this.map.world!.options.biome) ? canvas : seasonLand(canvas, raster)),
+      land = (this.land = season(dry));
     // Woods painted by the ground (render/treeSymbols.ts): the ground draws this land under them, the overlay keeps it
     // only around them, so they show through (its tints are still masked by the whole land: `land`).
     const ground = this.parts.ground;
@@ -107,7 +127,7 @@ export class CartographyProducts implements Cartography {
       return land;
     }
     ground.gpu!.setLandBackdrop(land);
-    return punchWoods(land, this.map.world!.landuse?.areas ?? [], this.map.world!.mapSize);
+    return season(punchWoods(dry, this.map.world!.landuse?.areas ?? [], this.map.world!.mapSize));
   }
   /** The GPU ground paints the woods of a parchment look (render/treeSymbols.ts): the overlay leaves them out. Set when
    * the overlay renderer is made, after the ground passes. */
@@ -137,7 +157,7 @@ export class CartographyProducts implements Cartography {
       r = this.map.resolved!,
       layers = this.map.exportLayers,
       scene = this.map.scene!;
-    const productKey = JSON.stringify([passKeys(this.map.input()).cartography, mapSeasonKey(), getLanguage(), getDistanceUnit(), scene.revisions.cities]);
+    const productKey = JSON.stringify([passKeys(this.map.input()).cartography, getLanguage(), getDistanceUnit(), scene.revisions.cities]);
     // Before the dispose: 3D tiles may paint through the current renderer during this wait.
     const brushes = r.cartography.painted ? ((await paintedBrushes()) ?? undefined) : undefined;
     const shown = this.shownWorld();
@@ -146,13 +166,12 @@ export class CartographyProducts implements Cartography {
     const cartographic = r.composition.vegetation.cartographic;
     const mask: SceneMask = { water: false, contours: false, landuse: !landuse ? false : this.overlayLandKinds() };
     const v = scene.revisions,
-      sceneKey = JSON.stringify(['scene', mapSeasonKey(), cityOverlayLandKey(r), v.roads, v.landuse, v.settlements, v.terrain, v.cities, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, shown.seed, world.options.biome]);
+      sceneKey = JSON.stringify(['scene', cityOverlayLandKey(r), v.roads, v.landuse, v.settlements, v.terrain, v.cities, layers.roads, layers.city, r.city.visible, landuse, cartographic, world.mapSize, shown.seed, world.options.biome]);
     const built = this.map.shared.cache.get(sceneKey, () => buildScene(shown, undefined, { mask }));
     // Same overlay configuration on the same map (a town build or edit): keep the renderer and its tiles, repaint only the changed areas.
     const config = JSON.stringify([
       r.keys.cartography,
       v.terrain,
-      mapSeasonKey(),
       cityOverlayLandKey(r),
       landuse,
       cartographic,
@@ -209,7 +228,6 @@ export class CartographyProducts implements Cartography {
         const next: Scene = { ...built, dirty: rects };
         if (this.renderer.update(shown, next)) {
           this.cartographyState = { config, scene: built, world: shown };
-          if (this.physical) this.physical.key = productKey;
           this.map.stats.cartographyUpdate = { dirty: rects.length, area: Math.round((rects.reduce((sum, d) => sum + (d.maxX - d.minX) * (d.maxY - d.minY), 0) / (world.mapSize * world.mapSize)) * 1000) / 10, ms: Math.round(performance.now() - started) };
           performance.measure('v2:cartography-dirty', { start: started });
           this.map.passes.reset('overlays');
@@ -220,12 +238,17 @@ export class CartographyProducts implements Cartography {
     this.renderer?.dispose();
     this.map.stats.cartographyUpdate = 'rebuilt';
     const map = this.map;
-    const palette = { ...biomePalette(r.palette.mapStyle, displayBiomeName(this.map.settings, world)), frameKind: 'none' as const, ...(layers.decor === false ? { grid: null } : {}) };
+    const mapStyle = r.palette.mapStyle,
+      biome = displayBiomeName(this.map.settings, world),
+      decor = layers.decor !== false;
+    // The palette of the moment: a new season is a new object, read at each paint (CanvasRendererDeps.palette).
+    const palette = (): Palette => overlayPalette(biomePalette(mapStyle, biome), decor);
     const semanticLook = (): string =>
       `${this.semantic?.key ?? ''}|c${this.parts.contours.contourLook()?.landform ?? ''}:${JSON.stringify(contourDrawOf(this.map.resolved?.composition.recipe))}|w${this.parts.water.waterAboveLand() ? JSON.stringify([this.map.resolved!.keys.water, mapSeasonKey()]) : ''}|v${this.map.volumeBuildings ? 1 : 0}${this.map.volumeBuildings ? '' : `|roof:${this.map.resolved?.composition.buildings.roof ?? r.composition.buildings.roof}`}`;
     this.woodsOnGround = this.parts.ground.gpuActive && !!this.parts.ground.treeSymbols();
-    this.renderer = createCanvasRenderer(this.overlay, shown, palette, {
+    this.renderer = createCanvasRenderer(this.overlay, shown, mapStyle, {
       colors: r.palette.colors,
+      palette,
       separateText: true,
       textSources: () => this.parts.town.city?.scenes(),
       ...cityCountrysideCanvasOptions(r, world.mapSize, () => this.map.resolved ?? r),
@@ -284,8 +307,11 @@ export class CartographyProducts implements Cartography {
     const renderer = this.renderer;
     this.cartographyState = { config, scene: built, world: shown };
     // The 3D drape tiles take the physical land use without the semantic hook: their contours are inked here, at the tile's scale.
+    const seasonKey = (): string => `${this.cartographyKey}|${mapSeasonKey()}`;
     this.physical = {
-      key: productKey,
+      get key() {
+        return seasonKey();
+      },
       ready: (box, pixels) => this.parts.contours.contoursAt(pixels / (box.maxX - box.minX), box),
       preview: (target, box) => renderer.drawCachedMap(target, box),
       paint: (target, box, options, defer) => {

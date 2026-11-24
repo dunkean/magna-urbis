@@ -4,7 +4,7 @@
  * clearings and orchards, the room woods leave for roads and farms, and the conifer share per climate.
  * Reads: scene, world, palette, the path cache. Writes: forestWashes, forestRoom (context caches).
  */
-import { biomeName } from '../../gen/biomes';
+import { treeMix } from '../treeSpecies';
 import { FARM_MARGIN, ForestRoom, farmClearings, forestCorridors, growRing } from '../forestRoom';
 import { FOREST_EDGE_WIDTH } from '../landuseForestTone';
 import { rasterizePolys } from '../../gen/geo/raster';
@@ -18,10 +18,6 @@ import { Rect4 } from '../view';
 import type { CartographyContext } from './context';
 import { frac, clumpNoise, addRing, layerHash } from './geometry';
 
-/** Share of conifers in the woods of each climate; a broad noise mixes the stands at the transitions. */
-const CONIFER_SHARE: Partial<Record<string, number>> = { tundra: 0.88, forest: 0.5, steppe: 0.3, temperate: 0.14 };
-/** Conifer share of the woods of a world biome (also the ground's tree symbols, render/treeSymbols.ts). */
-export const coniferShare = (biome: Parameters<typeof biomeName>[0]): number => CONIFER_SHARE[biomeName(biome)] ?? 0;
 export const indicator = (field: Float32Array, test: (value: number, index: number) => boolean): Float32Array => {
   const out = new Float32Array(field.length);
   for (let i = 0; i < out.length; i++) if (test(field[i], i)) out[i] = 1;
@@ -153,6 +149,6 @@ export const roomOf = (c: CartographyContext): ForestRoom =>
   (c.forestRoom ??= new ForestRoom(forestCorridors(c.world), [...farmClearings(c.world.landuse), ...(c.world.landuse?.areas ?? []).filter(a => a.kind === 'orchard'), ...(c.deps.buildingClearings?.() ?? []).map(r => growRing(r, FARM_MARGIN))]));
 /** Conifer or broadleaf for a forest crown, from the climate and a broad mixing noise. */
 export function coniferOf(c: CartographyContext, m: Mark): boolean {
-  const share = coniferShare(c.world.options.biome);
+  const share = treeMix(c.world.options.biome).conifer;
   return share > 0 && frac(m.k * 53.3) < Math.max(0, Math.min(1, share + (clumpNoise(m.x, m.y, 420, 9) - 0.5) * 1.3));
 }

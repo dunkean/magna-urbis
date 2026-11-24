@@ -131,14 +131,12 @@ export function roadPainters(c: CartographyContext, f: FrameBase): RoadPainters 
     canopyMerged(tracks).forEach((path, level) => {
       if (!path) return;
       ctx.strokeStyle = trackInk(ruralInk(pal), pal.roadFill);
-      ctx.lineWidth = Math.min(lw(1.3, 0.85), px(2.2));
-      ctx.globalAlpha = Math.min(1, pal.rural.track * inkAlpha) * roadCanopyOpacity('track', level / (CANOPY_LEVELS - 1));
+      ctx.lineWidth = Math.min(lw(1.1, 0.75), px(1.8));
+      ctx.globalAlpha = Math.min(1, 0.8 * pal.rural.track * inkAlpha) * roadCanopyOpacity('track', level / (CANOPY_LEVELS - 1));
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'round';
-      ctx.setLineDash([px(lod.band >= 2 ? 7 : 5), px(lod.band >= 2 ? 4 : 3)]);
       ctx.stroke(path);
     });
-    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     ctx.lineCap = 'round';
   };

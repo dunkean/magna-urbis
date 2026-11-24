@@ -34,6 +34,13 @@ pub(super) fn complete(town: &Town<'_>, mut layout: Layout, baseline: Option<Lay
     // Last: a gate no street uses any more closes (the curtain opens only where a street passes).
     fortification::drop_dead_gates(&mut layout);
     laps.lap("drop_dead_gates");
+    // The wall and water rule on the finished town (`URBAN_PROFILE`): only a gate interrupts a
+    // curtain and none stands in water. Every line should read "gaps 0 (0 m), wet curtain 0 m".
+    if std::env::var("URBAN_PROFILE").is_ok() {
+        for (i, found) in fortification::water_audit(&layout, town.surface).iter().enumerate() {
+            eprintln!("  wall water audit: {} circuit {i}: gaps {} ({:.0} m), wet curtain {:.0} m", town.site.key, found.gaps, found.gap_m, found.wet_m);
+        }
+    }
     if let Some(mut baseline) = baseline {
         network::clear_water(&mut baseline, population, town.physical, reclaimed, config.max_street_grade);
         harbour_furniture::furnish(&town.key_seed, &mut baseline, population, config, town.physical);

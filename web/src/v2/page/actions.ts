@@ -16,6 +16,7 @@ import { createGenerationActions } from './generation';
 import { createTownInspector } from './townInspector';
 import { createHouseInspector } from './houseInspector';
 import { createSubdivisionInspector } from './subdivisionInspector';
+import { createEntitySheet } from './entitySheet';
 import { createProjectsActions } from './projects';
 import { createExportsActions } from './exports';
 
@@ -35,6 +36,7 @@ export function createPageActions(state: PageState): PageActions {
     createTownInspector(state, actions),
     createHouseInspector(state, actions),
     createSubdivisionInspector(state, actions),
+    createEntitySheet(state, actions),
     createProjectsActions(state, actions),
     createExportsActions(state, actions),
   );

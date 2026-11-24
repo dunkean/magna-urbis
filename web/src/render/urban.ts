@@ -211,14 +211,14 @@ function buildingsSvg(ub: NonNullable<World['urban']>, U: Palette['urban'], lw: 
 const GROUND_USES = new Set(['bailey', 'causeway', 'ghat', 'castle-honmaru', 'compound:castle-honmaru', 'bailey-gate', 'esplanade']);
 /** Fences of camps and villages (width m): byre, yard, pen and orda fences, palisade lines inside a village. */
 const CAMP_FENCES: Record<string, number> = { 'kraal-fence': 1.1, 'yard-fence': 0.45, 'pen-fence': 0.5, 'orda-fence': 0.8, palisade: 1.2, 'turf-wall': 2.2, albarrada: 0.9 };
-/** Fences drawn as fences: a rail line with its posts (stakes close together for a palisade); a turf wall is a low
- * grassy bank; a dry-stone wall a row of stones. */
+/** Fences drawn as one continuous rail (thicker for the close stakes of a palisade); a turf wall is a low grassy bank. */
 function fenceSvg(k: string, d: string, pal: Palette, lw: (m: number, px: number) => string): string {
   const U = pal.urban;
   if (k === 'turf-wall') return `<path d="${d}" fill="none" stroke="${mixHex(pal.grass, U.wall, 0.35)}" stroke-opacity="0.42" stroke-width="${lw(2.2, 0.8)}"/><path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.45" stroke-width="${lw(0.16, 0.15)}"/>`;
-  if (k === 'albarrada') return `<path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.4" stroke-width="${lw(0.85, 0.3)}" stroke-dasharray="0.9 0.45" stroke-linecap="round"/>`;
-  const [rail, pw, pl, gap] = FENCE_STYLE[k] ?? FENCE_STYLE['yard-fence'];
-  return `<path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.8" stroke-width="${lw(rail, 0.18)}"/><path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.9" stroke-width="${f1(pw)}" stroke-dasharray="${pl} ${gap}" stroke-linecap="butt"/>`;
+  if (k === 'albarrada') return `<path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.4" stroke-width="${lw(0.85, 0.3)}" stroke-linecap="round"/>`;
+  const [rail, stakes] = FENCE_STYLE[k] ?? FENCE_STYLE['yard-fence'],
+    close = k === 'palisade' || k === 'kraal-fence';
+  return `<path d="${d}" fill="none" stroke="${U.wall}" stroke-opacity="0.8" stroke-width="${close ? f1(0.7 * stakes) : lw(rail, 0.18)}"/>`;
 }
 const WALL_LINES: Record<string, number> = {
   'arcane-circle': 0.5,
@@ -289,7 +289,7 @@ function cultureUnderlay(ub: NonNullable<World['urban']>, pal: Palette, lw: (m: 
     const d = corn.map(l => pathD(l.poly, true)).join('');
     // (the corn hills in rows: a dense dot texture that reads as a tilled field from afar)
     s += `<defs><pattern id="p-ucorn" patternUnits="userSpaceOnUse" width="2.6" height="2.6" patternTransform="rotate(12)"><circle cx="1.3" cy="1.3" r="0.6" fill="${U.gardenInk}" opacity="0.75"/></pattern></defs>`;
-    s += `<g class="u-cornfields"><path d="${d}" fill="${mixHex(pal.land.field, U.gardenInk, 0.14)}" stroke="${U.gardenInk}" stroke-opacity="0.55" stroke-width="${lw(0.45, 0.25)}" stroke-dasharray="2 1"/><path d="${d}" fill="url(#p-ucorn)"/></g>`;
+    s += `<g class="u-cornfields"><path d="${d}" fill="${mixHex(pal.land.field, U.gardenInk, 0.14)}" stroke="${U.gardenInk}" stroke-opacity="0.55" stroke-width="${lw(0.45, 0.25)}"/><path d="${d}" fill="url(#p-ucorn)"/></g>`;
   }
   const cem = ub.landmarks.filter(l => l.kind === 'cemetery');
   if (cem.length) s += `<path d="${cem.map(l => pathD(l.poly, true)).join('')}" fill="${U.garden}"/><path d="${cem.map(l => pathD(l.poly, true)).join('')}" fill="url(#p-ugrave)"/>`;
@@ -316,11 +316,11 @@ function cultureOverlay(ub: NonNullable<World['urban']>, pal: Palette, lw: (m: n
   }
   for (const [k, ds] of byKind) {
     const d = ds.join('');
-    if (k === 'hedge') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(2.6, 0.8)}" stroke-opacity="0.8" stroke-dasharray="3 1.5"/>`;
+    if (k === 'hedge') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(2.6, 0.8)}" stroke-opacity="0.8"/>`;
     else if (k === 'track') {
       const rural = !open && !ub.renderHints?.stilts;
-      s += `<path d="${d}" fill="none" stroke="${rural ? ruralInk(pal) : open ? pathEarth(pal) : U.street}" stroke-opacity="${rural ? pal.rural.track : open ? 0.75 : 1}" stroke-width="${lw(rural ? 1.6 : open ? 2.6 : 3, rural ? 0.9 : 0.6)}" stroke-linecap="${rural ? 'butt' : 'round'}"${rural ? ' stroke-dasharray="6 3.5"' : ''}/>`;
-    } else if (k === 'weir') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(1.4, 0.5)}" stroke-dasharray="1.2 0.6"/>`;
+      s += `<path d="${d}" fill="none" stroke="${rural ? ruralInk(pal) : open ? pathEarth(pal) : U.street}" stroke-opacity="${rural ? pal.rural.track : open ? 0.75 : 1}" stroke-width="${lw(rural ? 1.6 : open ? 2.6 : 3, rural ? 0.9 : 0.6)}" stroke-linecap="${rural ? 'butt' : 'round'}"/>`;
+    } else if (k === 'weir') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(1.4, 0.5)}"/>`;
     else if (k === 'parterre' || k === 'footpath') s += `<path d="${d}" fill="none" stroke="${k === 'footpath' ? (open ? pathEarth(pal) : U.street) : U.plotLine}" stroke-width="${lw(k === 'footpath' ? 1.4 : 0.5, 0.15)}" stroke-linecap="round"/>`;
     else if (k === 'ghat-steps') s += `<path d="${d}" fill="none" stroke="${U.plotLine}" stroke-width="${lw(0.3, 0.12)}"/>`;
     else if (k === 'terrace') s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(TS.wall.width, TS.wall.minPx)}" stroke-opacity="${TS.wall.alpha}"/>`;
@@ -343,9 +343,9 @@ function cultureOverlay(ub: NonNullable<World['urban']>, pal: Palette, lw: (m: n
         .join('');
       s += `<path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(TS.stair.width, TS.stair.minPx)}" stroke-opacity="${TS.stair.alpha}"/>`;
       if (ticks) s += `<path class="u-terrace-treads" d="${ticks}" fill="none" stroke="${U.wall}" stroke-width="${TS.hatch.width}" stroke-opacity="${TS.hatch.alpha}" stroke-linecap="butt"/>`;
-    } else if (k === 'thorn-fence') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(2.2, 0.8)}" stroke-opacity="0.85" stroke-dasharray="1.3 0.9" stroke-linecap="round"/>`;
+    } else if (k === 'thorn-fence') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(2.2, 0.8)}" stroke-opacity="0.85" stroke-linecap="round"/>`;
     else if (CAMP_FENCES[k]) s += fenceSvg(k, d, pal, lw);
-    else if (k === 'garden-hedge') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(1.2, 0.4)}" stroke-opacity="0.7" stroke-dasharray="1.6 0.7"/>`;
+    else if (k === 'garden-hedge') s += `<path d="${d}" fill="none" stroke="${pal.treeInk ?? '#4a6a3a'}" stroke-width="${lw(1.2, 0.4)}" stroke-opacity="0.7"/>`;
     else if (k === 'bund') s += `<path d="${d}" fill="none" stroke="${U.plotLine}" stroke-opacity="0.35" stroke-width="${lw(0.4, 0.1)}" stroke-linecap="butt"/>`;
     else if (k === 'roof-line') s += `<path d="${d}" fill="none" stroke="${U.massEdge}" stroke-opacity="0.7" stroke-width="${lw(0.2, 0.08)}" stroke-linecap="butt"/>`;
     else if (k === 'rampart') s += `<path d="${d}" fill="none" stroke="${U.garden}" stroke-width="${lw(7, 1.4)}" stroke-opacity="0.9"/><path d="${d}" fill="none" stroke="${U.wall}" stroke-width="${lw(0.6, 0.3)}"/>`;

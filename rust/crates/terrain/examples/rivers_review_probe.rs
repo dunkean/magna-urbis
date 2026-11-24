@@ -18,7 +18,7 @@
 //! than 5 m above the water 2.5 cells away): sinuosity of 400 m reaches, straight runs (vertices within
 //! max(0.75 m, 0.15 width) of a chord), water surface rising downstream, bed rising downstream, and incision of the
 //! bed and of the water surface below the lower bank.
-use magna_urbis_terrain::vector_water::{Climate, Conditioning, Settings, condition_and_water_timed};
+use magna_urbis_terrain::vector_water::{Climate, Conditioning, Settings, channel_width, condition_and_water_timed};
 use magna_urbis_terrain::{GenerationNoisePlan, TerrainGenerator, TerrainPipeline};
 use serde_json::json;
 use std::time::Instant;
@@ -247,7 +247,7 @@ fn run(out: &str, label: &str, filter: &str, times: usize, mode: &str) {
                 };
                 let settings = Settings {
                     river_area: (0.003 * (width / 1000.0).powi(2)).max(0.02), lake_depth: if wet { 0.2 } else { 1.0 }, lake_area: if wet { 0.3 } else { 10.0 },
-                    river_mode: "vector".into(), density: if density < 1.0 { density } else { 0.0 },
+                    river_mode: "vector".into(), density, no_lakes: false,
                     // Oxbow lakes: none, an occasional one in a marsh (as the bridge sends); OXBOWS=x overrides.
                     oxbows: std::env::var("OXBOWS").ok().and_then(|v| v.parse().ok()).unwrap_or(if wet { 0.35 } else { 0.0 }),
                     flat_slope: 1.0, sinuosity: 1.8, width_scale: 3.0, balance: true, braiding: 1.0, anabranching: true, terrain_influence: true,
@@ -291,7 +291,7 @@ fn run(out: &str, label: &str, filter: &str, times: usize, mode: &str) {
                         continue;
                     }
                     let pt = |k: usize| (line.points[2 * k], line.points[2 * k + 1]);
-                    let wide: Vec<f64> = line.area.iter().map(|&v| settings.width_scale * 3.0 * (v / 1e6).powf(0.45)).collect();
+                    let wide: Vec<f64> = line.area.iter().map(|&v| channel_width(v, settings.width_scale)).collect();
                     let mut arc = vec![0.0; m];
                     for k in 1..m {
                         arc[k] = arc[k - 1] + (pt(k).0 - pt(k - 1).0).hypot(pt(k).1 - pt(k - 1).1);
@@ -483,7 +483,7 @@ fn run(out: &str, label: &str, filter: &str, times: usize, mode: &str) {
                     if length > oxbow_at.2 {
                         oxbow_at = (line.points[2 * (m / 2)], line.points[2 * (m / 2) + 1], length);
                     }
-                    let wide = settings.width_scale * 3.0 * (line.area[0] / 1e6).powf(0.45);
+                    let wide = channel_width(line.area[0], settings.width_scale);
                     oxbow_lines.push(json!({
                         "points": line.points.iter().map(|v| (v * 10.0).round() / 10.0).collect::<Vec<_>>(),
                         "width": vec![(wide * 10.0).round() / 10.0; m],
@@ -690,7 +690,7 @@ fn run(out: &str, label: &str, filter: &str, times: usize, mode: &str) {
                         }
                         let owner = network.rivers.iter().find(|l| l.id == thread.id);
                         let l: f64 = (1..m).map(|k| (thread.points[2 * k] - thread.points[2 * k - 2]).hypot(thread.points[2 * k + 1] - thread.points[2 * k - 1])).sum();
-                        let w = settings.width_scale * 3.0 * (3.0 * thread.area[m / 2] / 1e6).powf(0.45);
+                        let w = channel_width(3.0 * thread.area[m / 2], settings.width_scale);
                         let mut peak = 0.0_f64;
                         if let Some(owner) = owner {
                             for k in 0..m {

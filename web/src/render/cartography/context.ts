@@ -46,6 +46,13 @@ const FURROW_CACHE_MAX = FURROW_HOLDER_BUDGET * 2;
 /** Terrain bitmaps shared by every renderer of one terrain and palette (the default hillshade only). */
 const TERRAIN_IMAGES = new WeakMap<World['terrain'], WeakMap<Palette, { mapSize: number; image: CanvasImageSource }>>();
 
+const paletteIds = new WeakMap<Palette, number>();
+let paletteCount = 0;
+const paletteIdOf = (pal: Palette): number => {
+  let id = paletteIds.get(pal);
+  if (id === undefined) paletteIds.set(pal, (id = ++paletteCount));
+  return id;
+};
 type FurrowPaths = { holder: Path2D; strips: Path2D; lines: Path2D };
 export type DrawMode = 'all' | 'map' | 'overlays' | 'ground';
 
@@ -63,8 +70,10 @@ function defaultCreateCanvas(w: number, h: number): CanvasLike | null {
 }
 
 export class CartographyContext {
-  readonly basePalette: Palette;
-  readonly pal: Palette;
+  basePalette: Palette;
+  pal: Palette;
+  /** Identity of the palette (the same object, the same id): part of the keys of everything painted. */
+  paletteId: number;
   /** Side of the map square (m). */
   readonly S: number;
   /** Same unit as svg.ts, used for a few decorative widths. */
@@ -75,8 +84,8 @@ export class CartographyContext {
   /** Polygon paths built for a GPU recording only (their cache keys never meet the Canvas ones): no native path. */
   readonly recordedP: new () => Path2D;
   readonly makeCanvas: (w: number, h: number) => CanvasLike | null;
-  readonly canopy: CanvasCanopy | undefined;
-  readonly brushes: CanvasBrushes | undefined;
+  canopy: CanvasCanopy | undefined;
+  brushes: CanvasBrushes | undefined;
   readonly family: string;
   readonly overlays: Overlays;
 
@@ -150,7 +159,8 @@ export class CartographyContext {
   ) {
     this.sourceWorld = world0;
     const world = (this.world = cavernDisplayWorld(deps.scene?.renderedWorld ? { ...deps.scene.renderedWorld, options: world0.options, names: world0.names } : renderView(cavernDisplayWorld(world0))));
-    this.basePalette = biomePalette(style, world.options.biome);
+    this.basePalette = deps.palette?.() ?? biomePalette(style, world.options.biome);
+    this.paletteId = paletteIdOf(this.basePalette);
     const pal = (this.pal = applyRenderColors(this.basePalette, deps.colors));
     this.scene = deps.scene ?? buildScene(world0, deps.tileSize, { mask: deps.mask });
     this.S = world.mapSize;
@@ -160,19 +170,44 @@ export class CartographyContext {
     this.P = deps.Path2D ?? RecPath2D;
     this.recordedP = this.P === RecPath2D ? RecOnlyPath2D : this.P;
     this.makeCanvas = deps.createCanvas ?? defaultCreateCanvas;
+    this.tintStamps();
+    this.family = FONT_STACKS[pal.name] ?? pal.fontFamily;
+    this.overlays = { labels: world.options.labels !== false, legend: !!world.options.legend, cartouche: true };
+  }
+
+  /** The stamps tinted by the palette: the canopy sprites and the painted brushes. */
+  private tintStamps(): void {
+    const { deps, world, pal } = this;
+    this.canopy?.dispose();
+    this.brushes?.dispose();
     this.canopy = deps.vegetation === 'canopy' && !isUnderdarkBiome(world.options.biome) ? new CanvasCanopy(world.seed, pal, this.makeCanvas) : undefined;
-    let brushes: CanvasBrushes | undefined;
+    this.brushes = undefined;
     if (deps.brushes && supportsPaintedBiome(world.options.biome)) {
       try {
-        brushes = new CanvasBrushes(world, pal, deps.brushes, this.makeCanvas);
+        this.brushes = new CanvasBrushes(world, pal, deps.brushes, this.makeCanvas);
       } catch {
         /* Vector symbols when allocations/tinting are unavailable. */
       }
     }
-    this.brushes = brushes;
-    this.family = FONT_STACKS[pal.name] ?? pal.fontFamily;
-    this.overlays = { labels: world.options.labels !== false, legend: !!world.options.legend, cartouche: true };
   }
+  /** Takes the palette of the moment (CanvasRendererDeps.palette) at the start of a paint or of a key, and returns its
+   * id. Another season only drops what holds colours; the scene, the paths, the marks and the washes are kept. */
+  readonly syncPalette = (): number => {
+    const next = this.deps.palette?.();
+    if (next && next !== this.basePalette) {
+      this.basePalette = next;
+      this.paletteId = paletteIdOf(next);
+      this.pal = applyRenderColors(next, this.deps.colors);
+      this.tintStamps();
+      this.treeSprites.clear();
+      this.layerTiles.clear();
+      this.penSheets.clear();
+      this.patterns.clear();
+      this.terrainImg = this.waterImg = this.cavernRockImg = this.densityImg = undefined;
+      this.dropPanels();
+    }
+    return this.paletteId;
+  };
 
   /** The pixel ratio of the draw in progress. */
   readonly dpr = (): number => this.activeDpr ?? this.deps.dpr ?? (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;

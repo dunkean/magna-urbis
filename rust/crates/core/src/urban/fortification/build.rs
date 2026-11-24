@@ -10,14 +10,18 @@ use super::geometry::{
 };
 use super::moat::{choose_moat, continuous_moat, dig_moat};
 use super::outworks::{citadel, outer_works};
-use super::shore::{WallWalk, merge_shore_passages, shore_gaps};
+use super::shore::{WallWalk, shore_gaps};
 use super::street_clearance::{Predicted, street_clear, street_segments};
 use super::style::Style;
 use super::towers::towers_and_bastions;
+use super::water::{gate_spans, short_of_water};
 
-/// Every structure of one circuit. `land` gates come first in `e.gates` (street
-/// crossings), the rest are water gates; `banks` are the curtain's land/water
-/// transitions in path order (`true`: entering water).
+/// Every structure of one circuit. `e.gates` holds its `land` gates (street
+/// crossings); the ends of its water gates are added here. `banks` are the
+/// curtain's land/water transitions in path order (`true`: entering water).
+/// Only a gate interrupts the curtain: a wet stretch a water gate spans opens
+/// on one, any other keeps its curtain (`water::water_fronts` keeps the trace
+/// off the water).
 #[allow(clippy::too_many_arguments)]
 pub(in super::super) fn build(
     e: &mut Enclosure,
@@ -81,8 +85,9 @@ pub(in super::super) fn build(
         steep: &steep, wet: &wet,
     };
     let walk = WallWalk::new(&path);
-    let banks = merge_shore_passages(&ctx, &walk, banks);
-    // A moved or merged passage end is a gate point of the curtain.
+    // A cave circuit keeps every rock contact: its short barriers between the rock are the curtain.
+    let banks = if style.cave { banks.to_vec() } else { gate_spans(&walk, banks) };
+    // Each passage end is a gate point of the curtain.
     for &(p, _) in &banks {
         if e.gates.iter().all(|&q| dist(q, p) >= 8.0) {
             e.gates.push(p);
@@ -104,7 +109,7 @@ pub(in super::super) fn build(
     towers_and_bastions(&ctx, e, &gate_clear, &mut works, rng);
 
     let major_land: Vec<usize> = (0..land).filter(|&i| infos[i].major).collect();
-    // Nothing of the curtain stands inside a shore passage.
+    // Nothing of a cave curtain stands inside the rock.
     let shore_gaps = shore_gaps(&walk, &works.gatehouses);
     let in_gap = |p: Point| {
         let s = walk.arc(p);
@@ -124,8 +129,8 @@ pub(in super::super) fn build(
     citadel(&ctx, moat, &mut works.outworks, &mut ditch, rng);
 
     let Works { towers, gatehouses, bastions, outworks, extra_reserve, .. } = works;
-    // Rule: the moat is a ring or nothing (no stubs between cuts).
-    let ditch = continuous_moat(ditch, &path, surface);
+    // Rule: the moat stops short of natural water, and is a ring or nothing (no stubs between cuts).
+    let ditch = continuous_moat(short_of_water(ditch, surface), &path, surface);
     // Same bounded mitres as the drawn curtain, with a quantisation margin.
     // Rounded buffers leave buildable wedges under its corners.
     let body = curtain_body(&path,c,h);

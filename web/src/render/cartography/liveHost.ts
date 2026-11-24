@@ -36,7 +36,7 @@ export function createLiveHost(c: CartographyContext) {
   const liveLayers = new Set<LiveLayer>();
   /** Everything a recorded region depends on besides its rectangle and the products made per view (`arrivals`). */
   const regionKey = (scale: number, dpr: number, light: boolean): string =>
-    `${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    `${c.syncPalette()}|${fixedRaster() ? 'fixed-cadastre' : `${scale}|${dpr}|${light}`}|${deps.semantic?.look() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
   /** The region recorded for a view: a margin around it, edges on a lattice, the half-octave scale, horizontal bands. */
   function regionPlan(view: View, cssW: number, cssH: number, dpr: number, key: string): OverlayPlan {
     if (fixedRaster()) {

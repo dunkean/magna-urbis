@@ -111,7 +111,7 @@ export class TreeContent {
     raster(hash, occupation, occupation?.rgba, 4, x, y, occupation ? REACH + occupation.width / occupation.n : 0);
     raster(hash, occupation?.detail, occupation?.detail?.rgba, 4, x, y);
     this.geometry.key(bx, by, hash);
-    hash.add(this.buildings?.key(x, y, TREES_BLOCK) ?? '');
+    hash.add(String(this.buildings?.blockKey(bx, by) || ''));
     const key = hash.value();
     this.keys.set(block, key);
     return key;

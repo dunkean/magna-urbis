@@ -22,6 +22,7 @@ import type { SemanticLook } from '../../render/composition';
 import type { ExportLayers } from '../../render/exportLayers';
 import type { GroundTileRenderer } from '../../render/live/contract';
 import type { OverlayInk } from '../../render/live/contourInk';
+import type { TreeSymbolLook } from '../../render/treeSymbols';
 import type { Rect } from '../../render/tileindex';
 import type { View } from '../../render/view';
 import type { ViewRasterRegion } from '../../render/viewRaster';
@@ -80,7 +81,7 @@ export interface Ground {
   /** The terrain renderer as the live ground layer bakes from it; undefined while it cannot draw the map. */
   groundTiles(): GroundTileRenderer | undefined;
   /** The paper map woods of the look (render/treeSymbols.ts): the GPU ground draws them when it is active. */
-  treeSymbols(): { conifer: number } | undefined;
+  treeSymbols(): TreeSymbolLook | undefined;
 }
 
 export interface Water {

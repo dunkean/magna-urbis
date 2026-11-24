@@ -7,9 +7,9 @@ import { surfaceTriangles } from './urbanBuildingGeometry';
  * - a wet moat's water sheet, at its water level inside the dug ditch (the banks above it hide its edges: it follows the shore);
  * - at each land gate whose street crosses the moat, a bridge deck with parapets at the undug ground level, spanning the ditch.
  * `g` is the placement height: the undug ground on which walls, bridges and quays stand. `height_m` of a ditch is its depth. */
-export const MOAT_WATER_DEFAULT = '#6f8f98';
-/** Water level below the rim, as a share of the depth. */
-const WATER_SHARE = 0.55;
+const MOAT_WATER_DEFAULT = '#6f8f98';
+/** Drop from the rim of a wet moat to its water: a third of its depth, so the banks show and the water fills the ditch. */
+const freeboard = (depth: number): number => Math.min(1.2, Math.max(0.5, depth / 3));
 type Shape = { outer: Point[]; holes: Point[][] };
 type Face = (points: Vertex3[], material: string) => void;
 type Prism = (shape: Shape, bottom: (p: Point) => number, top: (p: Point) => number, side: string, cap: string | undefined, under?: boolean) => void;
@@ -50,7 +50,7 @@ export function moatFaces(ditch: { kind: string; shape: Shape; height_m: number 
   const outer = ditch.shape?.outer;
   if (ditch.kind !== 'wet' || !outer || outer.length < 3) return;
   const holes = (ditch.shape.holes ?? []).filter(r => r.length >= 3),
-    level = moatDepth(ditch) * WATER_SHARE,
+    level = freeboard(moatDepth(ditch)),
     tris: [Point, Point, Point][] = [];
   for (const t of surfaceTriangles([{ outer: densify(outer, MAX_EDGE), holes: holes.map(h => densify(h, MAX_EDGE)) }])) fine(t, tris);
   const sheet = `city3d:water@${waterColor.replace('#', '')}`;

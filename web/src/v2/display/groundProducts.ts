@@ -35,7 +35,10 @@ import type { Ground } from './contract';
 import type { MapState } from './mapState';
 import { svgOf, wholeMap } from './mapSvg';
 import { isUnderdarkBiome } from '../../gen/biomes';
-import { coniferShare } from '../../render/cartography/forest';
+import { treeMix } from '../../render/treeSpecies';
+import { applyRenderColors } from '../../render/customColors';
+import { biomePalette } from '../../render/biomes';
+import type { TreeSymbolLook } from '../../render/treeSymbols';
 
 /** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
 type BaseRaster = { svg: string; image?: HTMLCanvasElement; fantasy?: FantasyRaster };
@@ -314,12 +317,13 @@ export class GroundProducts implements Ground {
   }
   /** The paper map's woods are drawn by the GPU ground (render/treeSymbols.ts) when its look is a parchment with tree
    * symbols and visible land use; the overlay then leaves the forest class out (CartographyDeps.groundTrees). */
-  treeSymbols(): { conifer: number } | undefined {
+  treeSymbols(): TreeSymbolLook | undefined {
     const r = this.map.resolved,
       world = this.map.world;
     if (!r || !world || r.ground.style !== 'parchment' || r.vegetation.symbols !== 'canopy' || r.composition.vegetation.look !== 'symbols') return undefined;
     if (!r.cartography.landuse || this.map.exportLayers.landuse === false || isUnderdarkBiome(world.options.biome)) return undefined;
-    return { conifer: coniferShare(displayBiomeName(this.map.settings, world)) };
+    const biome = displayBiomeName(this.map.settings, world);
+    return { palette: applyRenderColors(biomePalette(r.palette.mapStyle, biome), r.palette.colors), ...treeMix(biome) };
   }
   private occupationCache?: { world: World; revision: string; data: Promise<ForestOccupation | undefined> };
   /** Accepted footprints exclude vegetation independently of building visibility. Both rasters run in the

@@ -25,6 +25,7 @@ import type { FrameRequest } from '../ui/viewer';
 import type { ExportLayers } from '../render/exportLayers';
 import type { Building3dVisual } from '../render/urbanBuildingGeometry';
 import { screenToWorld } from '../render/view';
+import { createCameraPose, groundPoint, isTilted, poseCamera } from '../render/world/camera';
 import { publishWasmThreads, wasmWorkerFailed, wasmWorkerOptions } from '../../../rust/bridge/wasmThreads';
 import { loadRenderGeometry, renderGeometryReady } from '../../../rust/bridge/renderGeometry';
 import { mapPresentation } from './mapPresentation';
@@ -698,6 +699,18 @@ export class StudioClient {
   }
   /** What lies under the CSS pixel (sx, sy) of the map: the ground point (map metres) and, in a tilted view, the building
    * volume in front of it among those `accept` takes. Undefined where the pixel shows no ground (the sky of a tilted view). */
+  /** The ground point under the CSS pixel (sx, sy) of the map, in the top view or tilted; undefined in the sky. */
+  groundAt(sx: number, sy: number, w: number, h: number): { x: number; y: number } | undefined {
+    const view = this.viewer.getView();
+    if (!isTilted(view)) {
+      const [x, y] = screenToWorld(view, w, h, sx, sy);
+      return { x, y };
+    }
+    const relief = this.bench?.relief(),
+      point: [number, number] = [0, 0];
+    return groundPoint(poseCamera(this.groundPose, view, h, relief), sx, sy, w, h, relief, point) ? { x: point[0], y: point[1] } : undefined;
+  }
+  private readonly groundPose = createCameraPose();
   pickAt(sx: number, sy: number, w: number, h: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
     const view = this.viewer.getView();
     if (this.benchActive && this.bench) return this.bench.pick(view, w, h, sx, sy, accept);

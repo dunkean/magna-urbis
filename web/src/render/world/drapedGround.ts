@@ -5,15 +5,17 @@
  * slices and `draw` for every frame whose camera is tilted, and keeps drawing the top view itself.
  *
  * A frame costs one instanced draw per page of ground tiles it shows and builds nothing: the mesh is one grid, the
- * heights one texture uploaded once per terrain (`prepare`), the drape one texture array, and the only data sent while
- * the camera moves is the list of the squares to draw, a few kilobytes; a frame whose camera and tiles are those of
- * the previous one sends nothing.
+ * heights one texture uploaded once per terrain (`prepare`), the towns' shaped ground one more per town content, the
+ * drape one texture array, and the only data sent while the camera moves is the list of the squares to draw, a few
+ * kilobytes; a frame whose camera and tiles are those of the previous one sends nothing.
  */
 import type { LiveFrame } from '../live/contract';
 import type { DrapedGroundStats, DrapeTile, DrapeTiles } from './contract';
 import { drapeTier } from './footprint';
+import type { GroundShape } from './groundShape';
+import { GroundShapeTexture } from './groundShapeTexture';
 import { createHeightTexture, type TerrainHeights } from './heights';
-import { LATTICE, MAX_PATCHES, PatchList, lodEyeHeight, morphStart, patchLevels, patchRatio, selectPatches, type PatchQuery } from './patches';
+import { LATTICE, MAX_PATCHES, PatchList, lodEyeHeight, morphStart, patchLevels, patchRatio, selectPatches, shapedPatchLevels, type PatchQuery } from './patches';
 import { SQUARE_FLOATS, SQUARE_TRIANGLES, TerrainMesh } from './terrainMesh';
 import { tileKey } from './tilePyramid';
 import { hazeDistance } from './volumes';
@@ -29,6 +31,8 @@ const SLOPE_LIGHT = 0.5;
 const HAZE: readonly [number, number, number] = [0.77, 0.85, 0.88];
 /** Pages of baked tiles a frame may show (the ground layer holds at most 32). */
 const MAX_PAGES = 64;
+/** First of the two texture units of the shaped ground (GroundShapeTexture.bind). */
+const SHAPE_UNIT = 3;
 
 export class DrapedGround {
   readonly stats: DrapedGroundStats = { drawCalls: 0, triangles: 0, patches: 0, uploads: 0, otherTier: 0, drapeOtherTier: 0 };
@@ -37,6 +41,7 @@ export class DrapedGround {
   private heightTexture?: WebGLTexture;
   private uploaded?: Float32Array;
   private flat?: WebGLTexture;
+  private readonly shape: GroundShapeTexture;
   private readonly patches = new PatchList();
   private readonly query: PatchQuery = { mapSize: 1, levels: 1, ratio: 3, low: 0, high: 0, tanX: 1, tanY: 1 };
   private readonly tile: DrapeTile = { page: 0, layer: 0, u0: 0, v0: 0, span: 1 };
@@ -57,6 +62,7 @@ export class DrapedGround {
   /** What the squares in the buffer were selected for: a frame with the same values draws them again as they are. */
   private readonly selectedFor = new Float64Array(16 + 3 + 7).fill(NaN);
   private selectedHeights?: TerrainHeights;
+  private selectedShape?: GroundShape;
   /** Tier of the tiles each square of the last selection showed, by square key (footprint.ts drapeTier `previous`);
    * the two maps swap at each selection. */
   private tierOf = new Map<number, number>();
@@ -68,7 +74,9 @@ export class DrapedGround {
   constructor(
     private readonly gl: WebGL2RenderingContext,
     private readonly tiles: DrapeTiles,
-  ) {}
+  ) {
+    this.shape = new GroundShapeTexture(gl);
+  }
 
   /** Between frames: the program and the mesh, and the heights of the map when they changed (once per terrain). */
   prepare(heights: TerrainHeights | undefined): void {
@@ -83,6 +91,7 @@ export class DrapedGround {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.bindTexture(gl.TEXTURE_2D, null);
     }
+    this.shape.prepare(heights?.shape);
     if (heights?.data === this.uploaded) return;
     if (this.heightTexture) gl.deleteTexture(this.heightTexture);
     this.heightTexture = heights && createHeightTexture(gl, heights);
@@ -93,7 +102,7 @@ export class DrapedGround {
   private selected(frame: LiveFrame, heights: TerrainHeights | undefined): boolean {
     const key = this.selectedFor,
       camera = frame.camera;
-    let same = this.selectedHeights === heights;
+    let same = this.selectedHeights === heights && this.selectedShape === heights?.shape;
     const note = (index: number, value: number): void => {
       if (key[index] !== value) {
         key[index] = value;
@@ -110,6 +119,7 @@ export class DrapedGround {
     note(24, this.tiles.mapSize());
     note(25, frame.drape ? frame.drape.revision() : -1);
     this.selectedHeights = heights;
+    this.selectedShape = heights?.shape;
     return same;
   }
 
@@ -120,10 +130,13 @@ export class DrapedGround {
       query = this.query,
       mapSize = tiles.mapSize();
     query.mapSize = mapSize;
-    query.levels = patchLevels(heights?.n ?? FLAT_GRID);
+    const shape = heights?.shape,
+      levels = patchLevels(heights?.n ?? FLAT_GRID);
+    // A shaped ground takes a finer mesh near the eye; its squares keep the tiles the natural ground asks for.
+    query.levels = shape ? shapedPatchLevels(levels, mapSize) : levels;
     query.ratio = patchRatio(camera.focal / frame.dpr, frame.quality);
-    query.low = heights ? heights.low * camera.rise : 0;
-    query.high = heights ? heights.high * camera.rise : 0;
+    query.low = heights ? (heights.low + (shape?.low ?? 0) * heights.exaggeration) * camera.rise : 0;
+    query.high = heights ? (heights.high + (shape?.high ?? 0) * heights.exaggeration) * camera.rise : 0;
     query.tanX = frame.width / (2 * camera.focal);
     query.tanY = frame.height / (2 * camera.focal);
     const list = this.patches;
@@ -159,7 +172,7 @@ export class DrapedGround {
         iy = list.iy[i],
         finer = 2 ** (tier - 1),
         key = tileKey(tier, ix, iy);
-      const shown = drapeTier(camera.focal, list.depth[i], mapSize, tiles.tilePixels, tier, finest, previous.get(key) ?? (tier > 0 ? (previous.get(tileKey(tier - 1, ix >> 1, iy >> 1)) ?? -1) : -1));
+      const shown = drapeTier(camera.focal, list.depth[i], mapSize, tiles.tilePixels, Math.min(tier, levels), finest, previous.get(key) ?? (tier > 0 ? (previous.get(tileKey(tier - 1, ix >> 1, iy >> 1)) ?? -1) : -1));
       current.set(key, shown);
       if (!tiles.resolve(tier, ix, iy, shown, list.centreOffset[i], tile) || tile.page >= MAX_PAGES) continue;
       // The part of the wanted tile under the square: another span means another tier stands in.
@@ -218,7 +231,7 @@ export class DrapedGround {
       camera = frame.camera,
       stats = this.stats;
     // Normally done by a work slice; a first tilted frame that comes before it prepares here, once.
-    if (!this.mesh || !this.flat || heights?.data !== this.uploaded) this.prepare(heights);
+    if (!this.mesh || !this.flat || heights?.data !== this.uploaded || heights?.shape !== this.shape.current) this.prepare(heights);
     const mesh = this.mesh!,
       rise = camera.rise;
     if (!this.selected(frame, heights)) this.select(frame, heights);
@@ -262,6 +275,10 @@ export class DrapedGround {
     gl.uniform1i(u.uTiles, 0);
     gl.uniform1i(u.uHeights, 1);
     gl.uniform1i(u.uDrape, 2);
+    gl.uniform1i(u.uShape, SHAPE_UNIT);
+    gl.uniform1i(u.uShapeIndex, SHAPE_UNIT + 1);
+    gl.uniform1i(u.uShapeSide, this.shape.side);
+    this.shape.bind(SHAPE_UNIT);
     const ranges = this.ranges,
       drape = this.draped && frame.drape && frame.drape.pageCount() > 0 ? frame.drape.page(0) : undefined;
     gl.activeTexture(gl.TEXTURE1);
@@ -275,6 +292,7 @@ export class DrapedGround {
       mesh.drawSquares(ranges[d * 3 + 1], ranges[d * 3 + 2]);
     }
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    this.shape.bind(SHAPE_UNIT, false);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
     gl.activeTexture(gl.TEXTURE1);
@@ -288,6 +306,7 @@ export class DrapedGround {
   /** Every GL handle is dead; the next `prepare` builds them again. */
   contextLost(): void {
     this.mesh = undefined;
+    this.shape.contextLost();
     this.heightTexture = undefined;
     this.flat = undefined;
     this.uploaded = undefined;
@@ -298,6 +317,7 @@ export class DrapedGround {
   dispose(): void {
     const gl = this.gl;
     this.mesh?.dispose();
+    this.shape.dispose();
     if (this.heightTexture) gl.deleteTexture(this.heightTexture);
     if (this.flat) gl.deleteTexture(this.flat);
     this.contextLost();

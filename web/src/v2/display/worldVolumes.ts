@@ -10,8 +10,9 @@
  * the map does not change.
  *
  * The town is the display scene of the separate 3D view, from the same parts (render/city3d/display.ts) and the same
- * appearance (the 3D resolution of the settings), on the relief of the tilted map: buildings of the towns and of the
- * activity sites, bridges, walls, quays, boardwalks, lot boundaries, groves, underdark ornaments, farms and stand-in
+ * appearance (the 3D resolution of the settings), on the relief of the tilted map and the ground the towns shape on it
+ * (render/world/groundShape.ts: hillside lots levelled, moats dug), made first and hung on the relief: buildings of the
+ * towns and of the activity sites, bridges, walls, quays, boardwalks, lot boundaries, groves, underdark ornaments, farms and stand-in
  * houses. It differs from that view where the page has no equivalent yet: no water level under bridges, quays and
  * stilt houses (they stand on the ground), no exact meshes swapped in by the detail service, canals without their own
  * water surface (the map drape shows it).
@@ -40,6 +41,7 @@ import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/under
 import type { UrbanBuildingAppearance } from '../../render/urbanBuildingStyle';
 import type { WorldBuildingsOptions } from '../../render/world/buildingsLayer';
 import type { TerrainHeights } from '../../render/world/heights';
+import { groundShapeSteps, type GroundShape } from '../../render/world/groundShape';
 import { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { WorldTreesOptions } from '../../render/world/treesLayer';
 import type { WorldCave } from '../../render/world/cave';
@@ -48,6 +50,8 @@ import { riverCover } from '../../render/world/treesWater';
 import { PAINTED_TREES, SATELLITE_TREES, type TreePalette } from '../../render/world/treesShader';
 import { treeInputsKey } from '../../render/world/treesBlocks';
 import type { City3dGround } from '../../ui/city3d';
+import { UrbanGroundCuts } from '../../ui/urbanGroundCuts';
+import { groundShapeLots, type GroundShapeLot } from '../../ui/urbanGroundShape';
 import { clampTreeDistance, TREE_DISTANCE_DEFAULT, type TreeInputs } from '../../ui/terrain3dTrees';
 import { renderV2ZoneUniform } from '../../../../rust/bridge/terrainRenderV2Zones';
 import { activityScene } from '../activitySites';
@@ -86,6 +90,15 @@ export function worldTreesAvailable(world: World | undefined, settings: V2Settin
   const resolved = resolveSettingsAppearance(settings, world, 'view2d');
   return treesInLook(v2Terrain3dGround(world, settings, resolved.traits.ground3d ? (resolved.styleId as City3dGround) : 'map'), resolved);
 }
+/** The lots of each town whose houses stand, to be levelled. */
+function* levelledLots(cities: readonly RustTownSnapshot[]): Generator<readonly GroundShapeLot[]> {
+  for (const city of cities)
+    if (city.partitions?.length && city.scene?.buildings.length)
+      yield groundShapeLots(
+        city.partitions,
+        city.scene.buildings.map(building => building.footprint),
+      );
+}
 /** Time a composition slice may take (ms), and how long an idle callback may wait before it runs anyway. */
 const SLICE_MS = 4,
   IDLE_TIMEOUT_MS = 300;
@@ -121,7 +134,18 @@ export class WorldVolumes {
   /** The towns' meshes (city3dBuildingsSteps), which no look changes, and the scenes composed from them per look (a few,
    * most recent last): a switch between looks of the same town publishes the scene it made before, whose blocks the
    * buildings layer keeps. Dropped with the town or the relief. */
-  private townMeshes?: { cities: readonly RustTownSnapshot[]; world: World; heights: TerrainHeights; terraces: boolean; city?: NativeCityMap; display: City3dDisplayScene | undefined; scenes: Map<string, { display?: City3dDisplayScene; collisions?: Terrain3dCollisions }> };
+  private townMeshes?: {
+    cities: readonly RustTownSnapshot[];
+    world: World;
+    heights: TerrainHeights;
+    terraces: boolean;
+    levelled: boolean;
+    city?: NativeCityMap;
+    /** The ground shaped for the towns, which their meshes stand on. */
+    shape: GroundShape | undefined;
+    display: City3dDisplayScene | undefined;
+    scenes: Map<string, { display?: City3dDisplayScene; collisions?: Terrain3dCollisions }>;
+  };
   /** Displayed water cover of the map the trees keep off, one function per world (the trees compare it by identity). */
   private waterOf?: { world: World; rivers?: Float32Array; at: (x: number, y: number) => number };
   /** The top view's town look the volumes take, and what it was made for (the town map, the look on screen, the
@@ -305,10 +329,12 @@ export class WorldVolumes {
       stairPaint: StairPaintOptions = { palette: plan.palette, roadLook: plan.roadLook, roadEmphasis: plan.roadEmphasis, streetPalette: plan.streetPalette, colors: plan.colors, groundBlend: plan.groundBlend, night: plan.night, appearance: look },
       // What the scene reads of the look (the extras below; the buildings' colours are the layer's appearance): another
       // style with the same inputs keeps the scene object, whose blocks the buildings and trees layers keep.
-      key = JSON.stringify([shown, yards, buildingsOnly, r.underdark, r.city.terraces, r.composition.networks.roads.visible, plan.waterColor, plan.palette, stairPaint, roadGroundKey()]);
+      key = JSON.stringify([shown, yards, buildingsOnly, r.underdark, r.city.terraces, r.city.groundShaping, r.composition.networks.roads.visible, plan.waterColor, plan.palette, stairPaint, roadGroundKey()]);
     // The same town on the same relief keeps its scene object: the buildings layer starts again for a new one.
     if (world === of.world && heights === of.heights && city === of.city && key === of.key && sameV2NativeInputs(of.cities, cities, 'scene') && sameV2NativeInputs(of.cities, cities, 'layouts')) {
       this.appearance = appearance;
+      // A composition given up in between may have left the ground of another town.
+      heights.shape = shown && this.townMeshes?.heights === heights ? this.townMeshes.shape : undefined;
       return;
     }
     if (!shown) {
@@ -316,10 +342,22 @@ export class WorldVolumes {
       this.appearance = appearance;
       this.display = undefined;
       this.walkCollisions = undefined;
+      heights.shape = undefined;
       return;
     }
     let meshes = this.townMeshes;
-    const sameTown = !!meshes && meshes.world === world && meshes.heights === heights && meshes.terraces === r.city.terraces && sameV2NativeInputs(meshes.cities, cities, 'scene') && sameV2NativeInputs(meshes.cities, cities, 'layouts');
+    // The caves keep their own floors.
+    const levelled = r.city.groundShaping && !r.underdark;
+    const sameTown =
+      !!meshes &&
+      meshes.world === world &&
+      meshes.heights === heights &&
+      meshes.terraces === r.city.terraces &&
+      meshes.levelled === levelled &&
+      sameV2NativeInputs(meshes.cities, cities, 'scene') &&
+      sameV2NativeInputs(meshes.cities, cities, 'layouts') &&
+      (!levelled || sameV2NativeInputs(meshes.cities, cities, 'partitions'));
+    if (sameTown) heights.shape = meshes!.shape;
     if (sameTown && meshes!.city !== city) {
       meshes!.city = city;
       meshes!.scenes.clear();
@@ -336,12 +374,16 @@ export class WorldVolumes {
     }
     // The scene holds real heights; the layer seats it on the relief as drawn.
     const unit = heights.exaggeration > 0 ? 1 / heights.exaggeration : 1,
-      heightAt: City3dHeight = (x, y) => heights.heightAt(x, y) * unit;
+      naturalAt = (x: number, y: number): number => heights.naturalAt(x, y) * unit,
+      heightAt: City3dHeight = (x, y) => heights.groundAt(x, y) * unit;
     const layouts = cities.flatMap(city => city.layouts),
       source = withV2ActivityScene(combineV2NativeScenes(cities), activityScene(world));
     if (!sameTown) {
       countWork('volumes.compose');
-      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, city, display: yield* city3dBuildingsSteps(source, { heightAt, terraces: r.city.terraces }), scenes: new Map() };
+      const shape = r.underdark ? undefined : yield* groundShapeSteps(heights.width, levelled ? levelledLots(cities) : [], new UrbanGroundCuts(layouts.flatMap(l => l.enclosures ?? [])), naturalAt);
+      // Everything below stands on this ground, the terrain mesh included.
+      heights.shape = shape;
+      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, levelled, city, shape, display: yield* city3dBuildingsSteps(source, { heightAt, terraces: r.city.terraces }), scenes: new Map() };
     }
     const display = meshes!.display;
     yield;

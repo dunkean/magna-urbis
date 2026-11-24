@@ -77,10 +77,8 @@ export function mountSubdivisionActions(
   const title = label(french, 'New random layout and descendants', 'Nouveau plan aléatoire et descendants');
   dice.title = title;
   dice.setAttribute('aria-label', title);
-  dice.onclick = () => {
-    const salt = (crypto.getRandomValues(new Uint32Array(1))[0] % 2147483647) + 1;
-    act({ salt: salt === get()?.salt ? (salt % 2147483647) + 1 : salt });
-  };
+  // Every roll is the next iteration of the local draw: the share code stores its index.
+  dice.onclick = () => act({ salt: (get()?.salt ?? 0) + 1 });
   host.append(dice);
 }
 

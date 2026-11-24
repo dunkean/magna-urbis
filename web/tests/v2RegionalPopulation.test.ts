@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
-import { regionalPopulation, chooseIsolatedSites, automaticSettlementLimits, automaticIsolatedLimit } from '../src/v2/regionalPopulation';
+import { regionalPopulation, chooseIsolatedSites, automaticPlaceLimit, automaticIsolatedLimit, rankSizes } from '../src/v2/regionalPopulation';
 import { effectiveRegion, validateRegionSettings } from '../src/v2/regionSettings';
 import { encodeCityCode, decodeCityCode } from '../src/v2/cityCode';
 import { rerollSettlement, urbanSeed, URBAN_SEED_STAGES } from '../src/v2/urbanSeeds';
@@ -17,6 +17,17 @@ function region(culture = 'european-organic', climate = 'temperate', relief = 'f
   return s;
 }
 describe('regional population and distribution', () => {
+  it('draws a continuous rank-size distribution before any class', () => {
+    const law = { places: 20, target: 60000, cap: 20000, steepness: 1, jitter: 0.25 };
+    const sizes = rankSizes(law, rank => ((rank * 7919) % 97) / 97);
+    expect(sizes).toHaveLength(20);
+    expect(sizes.reduce((n, size) => n + size, 0)).toBe(60000);
+    expect(new Set(sizes).size).toBeGreaterThan(16);
+    for (let i = 1; i < sizes.length; i++) expect(sizes[i]).toBeLessThanOrEqual(sizes[i - 1]);
+    expect(sizes[0]).toBeLessThanOrEqual(20000);
+    expect(sizes.some(size => size > 999 && size < 3000)).toBe(true);
+    expect(rankSizes({ ...law, places: 4, target: 12 }, () => 0.5)).toHaveLength(2);
+  });
   it('caps automatic 40 km settlements at 20,000 while keeping a rural hierarchy', () => {
     for (const culture of ['european-organic', 'american-grid']) {
       const s = region(culture),
@@ -40,46 +51,40 @@ describe('regional population and distribution', () => {
       s.region = { demography: { population: 10000 } };
       const plan = regionalPopulation(s);
       expect(plan.places).toHaveLength(automatic.places.length);
-      expect(plan.places.length).toBeLessThanOrEqual(30);
       expect(plan.allocatedPopulation).toBe(10000);
       expect(regionalPopulation(decodeCityCode(encodeCityCode(s)).settings)).toEqual(plan);
       s.region.demography!.counts = { farmstead: 150, hamlet: 55 };
       expect(regionalPopulation(s).counts).toMatchObject({ farmstead: 150, hamlet: 55 });
     }
   });
-  it('grows a larger settlement instead of bypassing rural limits for a small-place culture', () => {
+  it('grows the places of a small-place culture to a typed population, without adding places', () => {
     const s = region('inuit-camp');
     s.region = { demography: { population: 10000 } };
     const plan = regionalPopulation(s);
     expect(plan.allocatedPopulation).toBe(10000);
-    expect(plan.places.length).toBeLessThanOrEqual(5);
-    expect(Math.max(...plan.places.map(p => p.population))).toBeGreaterThan(9000);
+    expect(plan.places).toHaveLength(regionalPopulation(region('inuit-camp')).places.length);
+    expect(Math.max(...plan.places.map(p => p.population))).toBeGreaterThan(800);
   });
-  it('bounds every automatic class by map surface and densifies larger settlements', () => {
+  it('bounds the number of automatic places by map surface and densifies larger settlements', () => {
     const s = region();
     s.extent = 10000;
     s.region = { demography: { population: 100000 } };
-    const small = regionalPopulation(s),
-      limits = automaticSettlementLimits(100, 100000);
-    expect(small.counts.village).toBeLessThanOrEqual(2);
-    expect(small.counts.hamlet).toBeLessThanOrEqual(1);
-    expect(small.counts.farmstead).toBeLessThanOrEqual(1);
+    const small = regionalPopulation(s);
+    expect(small.places.length).toBeLessThanOrEqual(automaticPlaceLimit(100, 100000));
     expect(small.isolatedCount).toBeLessThanOrEqual(2);
     expect(small.allocatedPopulation).toBe(100000);
     s.region.demography!.population = 1000000;
     const dense = regionalPopulation(s);
-    expect(dense.counts).toEqual(small.counts);
+    expect(dense.places).toHaveLength(small.places.length);
     expect(Math.max(...dense.places.map(p => p.population))).toBeGreaterThan(Math.max(...small.places.map(p => p.population)) * 5);
     expect(dense.allocatedPopulation).toBe(1000000);
     expect(dense.isolatedCount).toBeLessThanOrEqual(automaticIsolatedLimit(100));
-    for (const id of Object.keys(limits) as (keyof typeof limits)[]) expect(dense.counts[id]).toBeLessThanOrEqual(limits[id]);
   });
-  it('never lifts the small-place or isolated ceilings on a very large populated region', () => {
+  it('never lifts the place or isolated ceilings on a very large populated region', () => {
     const s = region();
     s.extent = 100000;
     s.region = { demography: { population: 100000000, isolatedDensity: 10 } };
     const p = regionalPopulation(s);
-    expect(p.counts).toMatchObject({ village: 10, hamlet: 6, farmstead: 4 });
     expect(p.places.length).toBeLessThanOrEqual(60);
     expect(p.isolatedCount).toBeLessThanOrEqual(16);
     expect(p.allocatedPopulation).toBe(100000000);
@@ -91,7 +96,7 @@ describe('regional population and distribution', () => {
     s.extent = 2400;
     s.region = { demography: { population: 100000000 } };
     const p = regionalPopulation(s);
-    expect(p.counts).toEqual({ city: 1, town: 1, village: 1, hamlet: 1, farmstead: 1 });
+    expect(p.places.length).toBeLessThanOrEqual(3);
     expect(p.unallocated).toBeGreaterThan(0);
     expect(p.allocatedPopulation + p.unallocated).toBe(p.population);
     expect(p.places.every(s => s.population <= 5000000)).toBe(true);
@@ -192,9 +197,9 @@ describe('regional population and distribution', () => {
     expect(small.counts.hamlet).toBeGreaterThanOrEqual(1);
     expect(small.population).toBeLessThan(300);
     const large = regionalPopulation(alpine(40000));
-    expect(large.counts.town).toBeGreaterThanOrEqual(1);
-    expect(large.counts.village).toBeGreaterThanOrEqual(3);
-    expect(regionalPopulation(alpine(100000)).counts.town).toBeGreaterThanOrEqual(3);
+    expect(large.counts.town + large.counts.village).toBeGreaterThanOrEqual(3);
+    const widest = regionalPopulation(alpine(100000)).counts;
+    expect(widest.town + widest.village).toBeGreaterThanOrEqual(4);
     // Temperate stays the realistic estimate, well above the floor.
     for (const relief of ['flat', 'mountains']) {
       const temperate = regionalPopulation(alpine(10000, 'european-organic', 'temperate', relief));

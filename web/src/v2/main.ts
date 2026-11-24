@@ -32,6 +32,7 @@ import './nameOriginControls';
 import './placeRename';
 import './townMoveEditor';
 import './measureTool';
+import './page/entitySheet';
 import './viewLoadingIndicator';
 import './autosave';
 import './settingsReset';

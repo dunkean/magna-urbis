@@ -6,7 +6,7 @@ use crate::urban::kinds::{self, Kind};
 use crate::urban::network;
 use crate::urban::profile::Lap;
 use crate::urban::{
-    LayoutConfig, Layout, Morph, Point, Site, access, composition, edits, fortification, macroplan, quarters, resolve, trim,
+    LayoutConfig, Layout, Morph, Point, Site, access, composition, edits, fortification, quarters, resolve, trim,
     with_tissue,
 };
 
@@ -73,11 +73,17 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
         laps.lap("trim.run.1");
     }
     // Fortifications follow the final streets and blocks.
-    macroplan::harbour::open_gates(&mut layout);
-    laps.lap("open_gates");
     composition::fit_enclosures(&mut layout, site.population, town.surface, built_lots.as_deref());
     laps.lap("fit_enclosures.1");
+    // A join that would stand on a neighbour's land is not made: the circuits stay as they were.
+    let apart = town.neighbour_land.as_ref().map(|mask| (mask, layout.enclosures.clone()));
     composition::join_side_by_side(&mut layout, town.surface);
+    if let Some((mask, apart)) = apart
+        && layout.enclosures.iter().any(|e| mask.refuses(&e.path))
+        && !apart.iter().any(|e| mask.refuses(&e.path))
+    {
+        layout.enclosures = apart;
+    }
     laps.lap("join_side_by_side");
     // A circuit without works is a curtain the fit drew back or joined (or a forced
     // footprint): `settle` decides its gates and closes the streets it now crosses.

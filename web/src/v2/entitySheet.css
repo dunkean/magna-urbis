@@ -1,0 +1,62 @@
+/* The sheet of the selected entity: a card over the map, beside the zoom tools. */
+.entity-sheet {
+  position: absolute;
+  left: 72px;
+  top: 20px;
+  width: 270px;
+  max-width: calc(100% - 92px);
+  max-height: calc(100% - 190px);
+  overflow: auto;
+  padding: 14px 16px;
+  z-index: 12;
+}
+.entity-sheet[hidden] {
+  display: none;
+}
+.entity-sheet h2 {
+  font:
+    20px Georgia,
+    serif;
+  margin: 2px 24px 4px 0;
+  overflow-wrap: anywhere;
+}
+.entity-sheet-close {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.entity-sheet-parents {
+  font-size: 11px;
+  color: var(--muted);
+}
+.entity-sheet-parents button {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font-size: 11px;
+}
+.entity-sheet .local-facts-grid {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.entity-sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.entity-sheet-actions button {
+  font-size: 11px;
+  padding: 6px 9px;
+}
+@media (max-width: 800px) {
+  .entity-sheet {
+    left: 56px;
+    top: 12px;
+    max-height: 45%;
+  }
+}

@@ -43,7 +43,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style): boolean {
     const { scene, sourceWorld, world } = c;
     if ((c.brushes || c.canopy) && nextSource.seed !== sourceWorld.seed) return false;
-    if (nextSource.mapSize !== c.S || biomePalette(nextStyle, nextSource.options.biome) !== c.basePalette) return false;
+    if (nextSource.mapSize !== c.S || (!c.deps.palette && biomePalette(nextStyle, nextSource.options.biome) !== c.basePalette)) return false;
     // Prepare potentially fallible metadata before committing the replacement.
     const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options } : renderView(cavernDisplayWorld(nextSource)));
     const nextLabels = names.namesOf(nextWorld);
@@ -100,7 +100,9 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     get scene() {
       return c.scene;
     },
-    palette: c.pal,
+    get palette() {
+      return c.pal;
+    },
     draw: tiles.draw,
     drawText: names.drawText,
     placeText: names.placeText,

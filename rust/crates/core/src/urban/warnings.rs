@@ -112,13 +112,6 @@ pub(crate) fn separate_port_wall() -> String {
     "Separate port wall — no viable link".into()
 }
 
-pub(crate) fn port_quarter_walls(quarters: usize) -> String {
-    log_warning_detail(format_args!(
-        "The port wall connection is constrained, so {quarters} quarters are protected by their own circuit."
-    ));
-    format!("Separate walls for {quarters} port quarters — constrained link")
-}
-
 pub(crate) fn port_outside_wall() -> String {
     log_warning_detail(format_args!(
         "The shore is impassable for the port enclosure, so the quarter remains outside the walls."

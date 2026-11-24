@@ -99,6 +99,9 @@ fn params(culture:&str,cfg:&LayoutConfig)->Option<Params> {
     })
 }
 
+/// The culture digs canals at this configuration: its water is part of its street network.
+pub(super) fn canal_town(culture:&str,cfg:&LayoutConfig)->bool {params(culture,cfg).is_some()}
+
 pub(super) fn apply(layout:&mut Layout,cfg:&LayoutConfig,surface:Surface<'_>) {
     if layout.structure.is_none() {return;}
     let mut stats=Stats::default();

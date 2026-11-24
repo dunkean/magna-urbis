@@ -264,6 +264,9 @@ function surfaceCover(fraction: number, pattern: number, retained: number, sharp
   return c + ((clamp(sharp) * c * (1 - c) * pattern) / Math.sqrt(1 + pattern * pattern)) * Math.sqrt(retained);
 }
 const ROCK_TAN = Math.tan((40 * Math.PI) / 180);
+/** Warm-season cooling with altitude (°C/m) inside a massif, less than the free-air lapse rate: mountain forests climb
+ * to their real line (about 2,000 m in an alpine climate). */
+const FOREST_LAPSE = 0.0045;
 
 /** Render's tree eligibility E in [0,1] per field texel: the semantic terms of
  * Neural Earth's surfaceMaterial (outcrop exposure and its crag/grove pattern,
@@ -358,10 +361,14 @@ function renderEligibility(layer: ForestFieldInput['height'], climate: readonly 
       const outcrop = surfaceCover(exposure, 0.75 * cragValue + 0.25 * grove, cragKept, 0.35);
       const supply = sstep(60, 400, P * wetShift * (1 + 0.5 * valley - 0.25 * ridge));
       const perennial = sstep(2.5, -2.5, Math.max(ts, tw) + 0.35 * m1) * supply;
-      // Render: trees ∝ (1 − outcrop). Rock-coloured ground (outcrop ≳ .6) is
-      // sharpened to almost no trees; mild outcrops keep most of their stands.
-      const rock = sstep(0.3, 0.85, 1 - outcrop) * (1 - sstep(ROCK_TAN * 0.9, ROCK_TAN * 1.6, grade));
-      eligible[o] = rock * (1 - perennial) * sstep(5.5, 13.5, tHot + boost + 0.8 * valley);
+      // Render: trees ∝ (1 − outcrop). Bare rock keeps none; stands root among mild and middling outcrops.
+      const rock = sstep(0.22, 0.68, 1 - outcrop) * (1 - sstep(ROCK_TAN * 0.9, ROCK_TAN * 1.6, grade));
+      // Tree line: warmth under the canopy (FOREST_LAPSE), more of it on sunny slopes (south, +y) and in sheltered
+      // gullies, ragged with the crag noise; the belt below it opens gradually.
+      const warmth = T + 6 + boost - FOREST_LAPSE * h + 0.8 * m2 * (0.25 + 0.75 * sstep(0.015, 0.12, Math.abs(tpi))) + 0.8 * valley - 0.4 * ridge - (1.4 * gy) / Math.sqrt(1 + grade * grade) + 0.9 * cragValue;
+      // Avalanche tracks and scree aprons break the upper forest on steep ground.
+      const track = sstep(0.35, 0.65, grade) * (1 - sstep(9, 12.5, warmth)) * sstep(0.3, 0.75, -cragValue);
+      eligible[o] = rock * (1 - perennial) * sstep(5.5, 13.5, T + 6 + boost) * sstep(5.5, 9.5, warmth) * (1 - 0.85 * track);
     }
   return eligible;
 }
@@ -393,7 +400,7 @@ export async function buildForestField(input: ForestFieldInput, settings: Forest
   const density = clamp(settings.density, 0, 2),
     clearings = clamp(settings.clearings, 0, 1);
   const terrainKey =
-    `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}` + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
+    `forest8:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}` + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
   const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}` + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
   const planes = await forestPlanes(
     { seed, climate: input.climate, x: layer.x, y: layer.y, width: layer.width, n, height: layer.data, water: input.water, riverSegments: input.riverSegments, enabled: settings.enabled, density, clearings, progressive: input.clearingProfile === 'progressive' },
@@ -413,7 +420,7 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
   const density = clamp(settings.density, 0, 2),
     clearings = clamp(settings.clearings, 0, 1);
   const terrainKey =
-    `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}` + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
+    `forest8:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}` + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
   const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}` + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
   const rgba = new Uint8Array(N * N * 4),
     data = layer.data;
@@ -494,7 +501,7 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
         // growing season warms with continentality: T+6 + .5·max(0, 10−T). Hyytiälä (T≈3.5) and BOREAS NSA
         // (T≈−3) carry 6–13 m closed forests with July ≈ 15–16 °C; T ≥ 10 °C is unchanged.
         const local = T - 0.0065 * Math.max(z, 0),
-          grow = local + 6 + growBoost,
+          grow = T - FOREST_LAPSE * Math.max(z, 0) + 6 + growBoost,
           humid0 = P / Math.max(20 * local + 280, 120);
         const gx = i / step,
           gy = j / step,
@@ -521,7 +528,7 @@ function buildForestFieldTs(input: ForestFieldInput, settings: ForestSettings): 
         // Ragged treeline: ~6.4 °C growing-season isotherm, higher in sheltered gullies.
         const treeline = grow + 0.9 * noise6[5] + 0.7 * valley - 0.5 * ridge;
         // Rock, slope and snow come from Render's eligibility at full resolution.
-        const thermal = sstep(5, 8.5, treeline),
+        const thermal = sstep(4.5, 7, treeline),
           moisture = sstep(0.38, 1.25, humid);
         const coverMax = 0.6 + 0.38 * sstep(0.8, 2.2, humid);
         // Boreal wet flats open into bog and fen.

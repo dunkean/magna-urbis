@@ -7,16 +7,18 @@
  *   seed), kept where the applied occupation raster has forest land, outside strict woody clearings, orchards, gardens,
  *   lanes, construction and road corridors, thinned by the satellite stand mosaic (forestPatchThreshold) and thinner
  *   along the wood edge. Painter order is the lattice's row order, so every pixel composites the same symbols the same way.
- * - Symbols: the engraved broadleaf and conifer crowns of the overlay (canopy.ts paintSymbol), painted once per
- *   palette into a premultiplied RGBA8 array with box mipmaps (TREE_SYMBOL_LAYERS layers), bound on the brush-atlas
- *   unit (the paper map has no painted brushes or crown clumps).
+ * - Symbols: the engraved crowns of the overlay (canopy.ts paintSymbol) in their summer foliage, leafless broadleaves
+ *   and palms, painted once per biome palette into a premultiplied RGBA8 array with box mipmaps (TREE_SYMBOL_LAYERS
+ *   layers), bound on the brush-atlas unit (the paper map has no painted brushes or crown clumps).
+ * - Season: uniforms (`treeSymbolSeason`, `treeSymbolSpecies`); a new date uploads nothing.
  * - The woods' wash under them (stepped edge levels, the shade fringe on the open land around): terms of the same
  *   shader, from the occupation's signed distance to forest land.
  * - Light quality: a sparser lattice, the atlas one mip coarser, a flat wash and no fringe.
  */
 import { boxMips } from '../ui/boxMips';
-import { CanvasCanopy } from './canopy';
+import { CanvasCanopy, TREE_SPECIES } from './canopy';
 import { forestLandPaint } from './landuseForestTone';
+import type { TreeMix } from './treeSpecies';
 import type { CanvasLike } from './canvas';
 import type { Palette } from './styles';
 
@@ -28,27 +30,36 @@ const makeCanvas = (width: number, height: number): CanvasLike | null => {
   return Object.assign(document.createElement('canvas'), { width, height });
 };
 
+/** What the ground needs to draw the woods of a paper map: the overlay's palette (biome and season) and the species. */
+export interface TreeSymbolLook extends TreeMix {
+  palette: Palette;
+}
+/** The palette with its trees in summer. */
+const summerTrees = (pal: Palette): Palette => (pal.season ? { ...pal, treeFill: pal.season.fill, treeInk: pal.season.ink, season: undefined } : pal);
 /** Palette colours the symbols are painted with (the atlas key). */
-const symbolKey = (pal: Palette): string => [pal.name, pal.treeInk, pal.treeFill, pal.ink, pal.paper].join('|');
+const symbolKey = (pal: Palette): string => [pal.name, pal.season?.ink ?? pal.treeInk, pal.season?.fill ?? pal.treeFill, pal.ink, pal.paper].join('|');
+/** `uTreeSeason` and `uTreeSpecies` (treeSymbolsGlsl.ts). */
+export const treeSymbolSeason = (pal: Palette): [number, number, number, number] => (pal.season ? [pal.season.leaf, pal.season.autumn, pal.season.snow, pal.season.spring] : [1, 0, 0, 0]);
+export const treeSymbolSpecies = (look: TreeSymbolLook): [number, number, number, number] => [look.conifer, look.palm, look.larch, 0];
 let cached: { key: string; levels: readonly Uint8Array[] } | undefined;
-/** Mip chain of the symbol atlas (layer-major, premultiplied RGBA8), painted once per palette. */
+/** Mip chain of the symbol atlas (layer-major, premultiplied RGBA8), painted once per biome palette. */
 export function treeSymbolLevels(pal: Palette): readonly Uint8Array[] {
   const key = symbolKey(pal);
   if (cached?.key === key) return cached.levels;
   const n = TREE_SYMBOL_SIZE,
     data = new Uint8Array(n * n * 4 * TREE_SYMBOL_LAYERS),
     canvas = makeCanvas(n, n),
-    cx = canvas?.getContext('2d');
+    cx = canvas?.getContext('2d', { willReadFrequently: true });
   if (cx) {
-    const canopy = new CanvasCanopy('', pal, makeCanvas);
+    const canopy = new CanvasCanopy('', summerTrees(pal), makeCanvas);
     for (let layer = 0; layer < TREE_SYMBOL_LAYERS; layer++) {
-      const conifer = layer >= TREE_SYMBOL_KINDS,
+      const species = TREE_SPECIES[Math.floor(layer / TREE_SYMBOL_KINDS)],
         variant = layer % TREE_SYMBOL_KINDS;
       cx.setTransform(1, 0, 0, 1, 0, 0);
       cx.clearRect(0, 0, n, n);
       // The 20-unit glyph cell over the whole layer.
       cx.setTransform(n / 20, 0, 0, n / 20, n / 2, n / 2);
-      canopy.paintSymbol(cx, conifer, variant, (variant * (conifer ? 5 : 7)) % 12);
+      canopy.paintSymbol(cx, species, variant, (variant * (species === 'conifer' ? 5 : 7)) % 12);
       const pixels = cx.getImageData(0, 0, n, n).data,
         base = layer * n * n * 4;
       for (let i = 0; i < n * n * 4; i += 4) {

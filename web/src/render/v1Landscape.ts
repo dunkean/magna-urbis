@@ -8,13 +8,15 @@ import { biomePalette } from './biomes';
 import type { BiomeName } from '../gen/biomes';
 import { PALETTES, ruralInk } from './styles';
 import { regionalRoadSurface } from './roadSurfaces';
+import { mapHerbTint, mapSeasonKey, mapSnowCover } from './seasonPalette';
+import { clumpNoise } from './cartography/geometry';
 
 export type V1LandscapeStyle = 'parchment' | 'atlas';
 export function v1RoadPaint(kind: 'major' | 'minor' | 'track', width: number, scale: number, style: V1LandscapeStyle) {
   const pal = PALETTES[style];
-  if (kind === 'track') return { fill: ruralInk(pal), casing: null, width: Math.max(1.6 * scale, 0.9), casingWidth: 0, dash: scale >= 0.3 ? '7 4' : '5 3', opacity: pal.rural.track };
+  if (kind === 'track') return { fill: ruralInk(pal), casing: null, width: Math.max(1.6 * scale, 0.9), casingWidth: 0, opacity: pal.rural.track };
   const surface = regionalRoadSurface(kind, scale, width);
-  return { fill: pal.roadFill, casing: pal.roadEdge, width: surface.fill * scale, casingWidth: surface.casing * scale, dash: undefined, opacity: 1 };
+  return { fill: pal.roadFill, casing: pal.roadEdge, width: surface.fill * scale, casingWidth: surface.casing * scale, opacity: 1 };
 }
 const cache = new WeakMap<SettlementRaster, Map<string, HTMLCanvasElement>>();
 
@@ -172,6 +174,66 @@ export function v1LandCanvas(r: SettlementRaster, style: V1LandscapeStyle, biome
       ctx.stroke();
     }
   entries.set(key, canvas);
+  return canvas;
+}
+
+/** Opacity of a full snow cover on the paper: the relief reads through it. */
+const SNOW_ALPHA = 0.86,
+  SNOW_STEPS = 128,
+  SNOW_SIDE = 512;
+/** Snow of the date by altitude (white, alpha = cover), ragged near its line; undefined: none anywhere. */
+function snowSheet(r: SettlementRaster): HTMLCanvasElement | undefined {
+  let top = 1;
+  for (const h of r.height) if (h > top) top = h;
+  const table = Float32Array.from({ length: SNOW_STEPS + 1 }, (_, i) => mapSnowCover((top * i) / SNOW_STEPS)),
+    even = table.every(v => Math.abs(v - table[0]) < 0.01);
+  if (even && table[0] < 0.01) return undefined;
+  const n = Math.min(SNOW_SIDE, r.n),
+    sheet = Object.assign(document.createElement('canvas'), { width: n, height: n }),
+    ctx = sheet.getContext('2d')!,
+    image = ctx.createImageData(n, n);
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const h = Math.max(0, r.height[Math.floor((y * r.n) / n) * r.n + Math.floor((x * r.n) / n)]),
+        ragged = even ? h : Math.max(0, h + 260 * (clumpNoise(x, y, 14, 7) - 0.5)),
+        i = (y * n + x) * 4;
+      image.data[i] = 246;
+      image.data[i + 1] = 247;
+      image.data[i + 2] = 243;
+      image.data[i + 3] = 255 * SNOW_ALPHA * table[Math.min(SNOW_STEPS, Math.round((ragged / top) * SNOW_STEPS))];
+    }
+  ctx.putImageData(image, 0, 0);
+  return sheet;
+}
+const seasonSheets = new WeakMap<HTMLCanvasElement, { key: string; canvas: HTMLCanvasElement }>();
+/** A lit land at the date of the map: the tint of its open ground and the snow of the zone's calendar, over the kept
+ * summer sheet. Two fills and a stretched snow sheet: the relief and the water mask are never computed again. */
+export function seasonLand(land: HTMLCanvasElement, r: SettlementRaster): HTMLCanvasElement {
+  const key = mapSeasonKey(),
+    found = seasonSheets.get(land);
+  if (found?.key === key) return found.canvas;
+  const herb = mapHerbTint(),
+    brightest = Math.max(...herb),
+    tint = herb.map(v => 1 - 0.5 * (1 - v / brightest)),
+    snow = snowSheet(r),
+    plain = !snow && tint.every(v => v > 0.995);
+  const canvas = plain ? land : Object.assign(document.createElement('canvas'), { width: land.width, height: land.height });
+  if (!plain) {
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(land, 0, 0);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = `rgb(${tint.map(v => Math.round(v * 255)).join(',')})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // The tint also fills the water and the woods left out: the land masks it again.
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(land, 0, 0);
+    if (snow) {
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(snow, 0, 0, canvas.width, canvas.height);
+    }
+  }
+  seasonSheets.set(land, { key, canvas });
   return canvas;
 }
 

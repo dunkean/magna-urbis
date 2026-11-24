@@ -7,7 +7,6 @@ import { readSettingPath } from './parameterForm';
 import { bindTree, registerMessages, setText, translate, onLanguageChange } from './i18n';
 import { mountNameVisibilityControls } from './nameVisibilityControls';
 import { mountSectionIndex } from './sectionIndex';
-import { dualCameras } from '../render/live/policy';
 
 registerMessages({
   'Shaders & layers': { en: 'Shaders & layers', fr: 'Shaders et couches' },
@@ -276,8 +275,7 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
     if (waves) waves.hidden = !traits.satelliteVariant;
     for (const path of ['appearance.city.exaggeration', 'appearance.city.refinement', 'appearance.city.colors', 'appearance.city.groundShaping', 'appearance.city.terraces']) {
       const control = field(path);
-      // Only the separate 3D view (`?camera=dual`) shapes its ground: the tilted map does not offer the choice.
-      if (control) control.hidden = mode !== '3D' || (path === 'appearance.city.groundShaping' && !dualCameras());
+      if (control) control.hidden = mode !== '3D';
     }
     for (const { stage, wrapper } of fine)
       wrapper.hidden =

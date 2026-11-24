@@ -794,9 +794,10 @@ fn sinuosity_share(gradient: f64, flat_gradient: f64) -> f64 {
 /// The selection comes after the tracing: a kept course has the very polyline it has at density 1 (confluences
 /// are drawn on the tributary, so a dropped one leaves no stub on the stem), and its areas, hence its width, still
 /// count the whole catchment. Returns the courses kept; the others are removed from `lines`.
+/// Density 1 and more keeps every course. Density 0 keeps none: `vector_rivers` traces nothing.
 fn select_rivers(lines: &mut [Option<Line>], lake_fed: &[bool], threshold: f64, low: f64, density: f64) -> Vec<bool> {
     let mut keep = vec![true; lines.len()];
-    if !(density > 0.0 && density < 1.0) {
+    if density >= 1.0 {
         return keep;
     }
     let select = low + threshold * (1.0 / (density * density).max(0.0025) - 1.0);
@@ -951,6 +952,9 @@ pub(crate) fn vector_rivers(
     discharge_scale: f64,
     angle: Option<f64>,
 ) -> Network {
+    if s.density <= 0.0 {
+        return Network { width_scale: s.width_scale, ..Network::default() };
+    }
     let n = h.n;
     let total = n * n;
     let cell = h.width / n as f64;

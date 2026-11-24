@@ -1,5 +1,6 @@
 import { encodePng, pngDataUrl } from '../../web/src/render/raster';
 import { waterShoreColor } from '../../web/src/render/terrainStyle';
+import { freshWaterInk } from '../../web/src/render/waterPalette';
 import type { RenderColors } from '../../web/src/render/customColors';
 import { lakeMaterialSvg } from '../../web/src/render/terrainWater';
 import type { HydrologyData, HydrologyOverlay } from './hydrology';
@@ -115,9 +116,9 @@ function diagnosticImage(data: HydrologyData, overlay: HydrologyOverlay): string
   return svg;
 }
 
-/** Water colour of a display style, shared by lakes and rivers. */
+/** Water colour of a display style, shared by lakes and rivers: its own ink, toned by the climate and season of the map. */
 export function hydrologyWaterColour(style: TerrainStyle, colors?: RenderColors): string {
-  return colors?.river ?? colors?.waterShore ?? waterShoreColor(style);
+  return colors?.river ?? colors?.waterShore ?? freshWaterInk(style, waterShoreColor(style));
 }
 
 export function hydrologyLakePath(data: HydrologyData): string {

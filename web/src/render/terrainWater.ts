@@ -4,6 +4,7 @@ import type { World } from '../gen/types';
 import type { Palette } from './styles';
 import type { RenderColors } from './customColors';
 import { terrainStyle, type TerrainStyle } from './terrainStyle';
+import { freshWaterRamp } from './waterPalette';
 import { waterSampler, waterFunctionGlsl, type WaterStyle } from './waterStyle';
 import { productKey, measureDisplayProduct } from './displayProduct';
 import { floatPyramid } from './floatPyramid';
@@ -111,7 +112,8 @@ export function waterMaterialUrl(distance: Float32Array, n: number, width: numbe
 
 /** The vector outline clips the shared material raster, retaining islands. */
 export function lakeMaterialSvg(field: Float32Array, n: number, width: number, path: string, id: string, style: TerrainStyle = 'render', referenceWidth = width, colors?: RenderColors): string {
-  const url = waterMaterialUrl(lakeDistances(field, n, width, referenceWidth), n, width, terrainStyle(style, colors).water, referenceWidth);
+  const water = terrainStyle(style, colors).water,
+    url = waterMaterialUrl(lakeDistances(field, n, width, referenceWidth), n, width, colors?.river || colors?.waterShore ? water : freshWaterRamp(style, water), referenceWidth);
   return `<defs><clipPath id="${id}"><path d="${path}" clip-rule="evenodd"/></clipPath></defs><image width="${width}" height="${width}" href="${url}" clip-path="url(#${id})"/>`;
 }
 

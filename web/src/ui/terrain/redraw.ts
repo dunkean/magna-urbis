@@ -14,6 +14,7 @@
 import { lightTerrainLook } from './variant';
 import { styleTraits, terrainStyle } from '../../render/terrainStyle';
 import { biomePalette } from '../../render/biomes';
+import { CAVE_WATER_TONE, NO_WATER_TONE, freshWater, mapFreshTone, tonedWater, type WaterTone } from '../../render/waterPalette';
 import type { Rect4, View } from '../../render/view';
 import type { WaterSurface } from '../../render/terrainWater';
 import type { HeightLayer, TerrainLook } from './contract';
@@ -67,6 +68,21 @@ export function lookPalettes(look: TerrainLook) {
   return { definition, pal, water };
 }
 export type LookPalettes = ReturnType<typeof lookPalettes>;
+
+/** Fresh-water tone of the ground (uFreshWater): the climate's own on the satellite, the medium's share elsewhere, as the
+ * vector rivers of the same look (hydrologyWaterColour). Custom water colours are never toned; caves have their own. */
+export function lookFreshWater(look: TerrainLook, water: LookPalettes['water']): WaterTone {
+  const traits = styleTraits(look.style),
+    natural = look.waterLook === 'natural';
+  if (look.underdark && (natural || traits.family !== 'map')) return traits.satelliteVariant > 0 ? NO_WATER_TONE : CAVE_WATER_TONE;
+  if (traits.satelliteVariant > 0) return freshWater({ zone: look.climateZone, season: look.v2Season });
+  if (!natural && (look.colors?.river || look.colors?.waterShore)) return NO_WATER_TONE;
+  return mapFreshTone(natural ? 'render3d' : (look.waterStyle ?? look.style), water.stops[0][1]);
+}
+/** Tone of the water layers (rivers, retained water): none where the satellite map pass tones the water it reads. */
+export const layerFreshWater = (look: TerrainLook, water: LookPalettes['water'], painted: boolean): WaterTone => (painted && styleTraits(look.style).satelliteVariant > 0 ? NO_WATER_TONE : lookFreshWater(look, water));
+/** Plain colour of a water layer, '#rrggbb'. */
+export const layerWaterInk = (look: TerrainLook, water: LookPalettes['water'], painted: boolean): string => tonedWater(water.stops[0][1], layerFreshWater(look, water, painted));
 
 /** The look paints its water (depth, shelf, glint, wet banks: renderWaterShader.ts); other looks keep the flat ink. */
 export const paintedWaterLook = (look: TerrainLook): boolean => !lightTerrainLook(look) && (look.waterLook === 'natural' || styleTraits(look.style).neuralEarth);

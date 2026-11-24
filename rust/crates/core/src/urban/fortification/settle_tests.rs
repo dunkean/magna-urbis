@@ -20,8 +20,10 @@ fn review_forced_circuits_gain_water_gates_and_keep_regional_access() {
     let mut access = street(&[(600.0,1000.0),(950.0,1000.0)],1,8.0); access.role="regional".into();
     layout.streets = vec![access];
     let height=vec![10.0;N*N];
-    let water:Vec<_> = river(1100.0,1180.0).into_iter().map(|w|if w>0 {3} else {0}).collect();
+    // A channel a water gate spans (32 m): across a wider one the circuit would split per bank.
+    let water:Vec<_> = river(1100.0,1132.0).into_iter().map(|w|if w>0 {3} else {0}).collect();
     settle(&mut layout,surface(&height,&water));
+    assert_eq!(layout.enclosures.len(),1);
     let e=&layout.enclosures[0];
     assert!(!e.style.is_empty() && !e.reserve.is_empty());
     assert!(e.gates.iter().any(|&p|dist(p,pt(600.0,1000.0))<1.0));

@@ -27,6 +27,7 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
   const dock = $('#editor-dock'),
     inspect = $<HTMLInputElement>('#inspect-mode'),
+    selectTool = $<HTMLButtonElement>('#select-tool'),
     toolbar = $('#header-menu');
   $('#edit-buildings').append($('#inspector'));
   const river = $<HTMLButtonElement>('#edit-rivers [data-network-tool="rivers"]');
@@ -37,7 +38,8 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
     const available = api.canEdit(),
       selectable = api.canSelect();
     for (const selector of ['#labels-open', '#rivers-open', '#move-towns', '#add-settlement', '[data-network-quick]']) document.querySelectorAll<HTMLButtonElement | HTMLInputElement>(selector).forEach(control => (control.disabled = !available));
-    inspect.disabled = !selectable;
+    inspect.disabled = selectTool.disabled = !selectable;
+    selectTool.setAttribute('aria-pressed', String(inspect.checked));
     $<HTMLSelectElement>('#inspect-target').disabled = !selectable || !inspect.checked;
     setText($('#edit-done'), api.roadSession?.() ? 'Validate road edits' : 'Finish editing');
   }
@@ -91,6 +93,7 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
     }
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: inspect.checked ? 'buildings' : 'navigate' }));
   };
+  selectTool.onclick = () => inspect.click();
   $('#labels-open').onclick = () => {
     if (!api.canEdit()) return;
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: mode === 'labels' ? 'navigate' : 'labels' }));

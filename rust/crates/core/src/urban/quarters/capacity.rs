@@ -9,13 +9,14 @@ use super::subdivision::split_quarter;
 use super::vacancy::{drop_vacant_quarters, peel_vacant_edges};
 use crate::urban::{
     Block, Layout, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, edits,
-    footprint::capacity, geography, geometry as g, kinds, macroplan, par, profile::Lap, roles, warnings,
+    footprint::capacity, fortification, geography, geometry as g, kinds, macroplan, par, profile::Lap, roles, warnings,
 };
 use crate::{noise::Noise, rng::Rng};
 
 /// Quarters of one site. Closed loop of the adaptive capacity: when the
-/// measure of the real blocks falls short of the plan by more than 5 % (the
-/// probe over-predicted the tissue), the site is drawn once more with the
+/// measure of the real blocks falls short of the plan by more than 5 % (10 %
+/// for a town walled along water; the probe over-predicted the tissue), the
+/// site is drawn once more with the
 /// probed yields scaled by measured / predicted, so the footprint, the
 /// densification and any borrowing are sized on the measured yield. The
 /// better of the two drawings is kept; the shortfall stays explicit.
@@ -114,7 +115,11 @@ fn generate_planned(
     let Some(p) = capacity::of(&first) else {
         return Ok(first);
     };
-    let tolerance = (0.05 * p.required).max(if cfg.small_place_capacity { 8.0 } else { 0.0 });
+    // A town whose wall stands along water keeps its drawing up to 10 % short (the capacity
+    // warning says so): its circuit stands back from the bank, and a trace moved by a few metres
+    // must not buy a second plan of the whole town.
+    let share = if fortification::walled_on_water(&first, surface) { 0.10 } else { 0.05 };
+    let tolerance = (share * p.required).max(if cfg.small_place_capacity { 8.0 } else { 0.0 });
     if cfg.capacity_yield > 0.0
         || p.forecast <= 0.0
         || p.shortfall <= tolerance

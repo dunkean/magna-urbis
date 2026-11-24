@@ -35,9 +35,49 @@ pub fn class_of(population: u32) -> &'static str {
     catalogue().classes.iter().filter(|(_, c)| population >= c.minimum)
         .max_by_key(|(_, c)| c.minimum).map(|(id, _)| id.as_str()).expect("zero demographic floor")
 }
+/// How much larger than the class floor a place must be to be a town or a city. A place of exchange (a port, a bridge, a
+/// river mouth, a pass) is a town early; a farming village stays one longer, and so does the settlement of a people of
+/// villages and camps.
+fn urban_threshold(archetype: &str, village_culture: bool) -> f64 {
+    let site = match archetype {
+        "harbor" | "estuary" | "bridge" | "confluence" | "pass" => 0.75,
+        "lakeshore" | "meander" | "hilltop" | "spur" | "island" => 1.0,
+        _ => 1.35,
+    };
+    if village_culture { site * 2.5 } else { site }
+}
+/// The identity of a placed settlement: its size comes first, its name (village, town, city) from the size, the site and
+/// the culture. Farmsteads, hamlets and the largest classes are sizes only.
+pub fn identity(population: u32, archetype: &str, village_culture: bool) -> &'static str {
+    let threshold = urban_threshold(archetype, village_culture);
+    match class_of(population) {
+        "village" | "town" | "city" => {
+            if population as f64 >= floor("city") as f64 * threshold.max(1.0) {
+                "city"
+            } else if population as f64 >= floor("town") as f64 * threshold {
+                "town"
+            } else {
+                "village"
+            }
+        }
+        class => class,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn identity_follows_the_size_the_site_and_the_culture() {
+        assert_eq!(identity(800, "bridge", false), "town");
+        assert_eq!(identity(800, "plain", false), "village");
+        assert_eq!(identity(1200, "plain", false), "village");
+        assert_eq!(identity(1400, "plain", false), "town");
+        assert_eq!(identity(2000, "plain", true), "village");
+        assert_eq!(identity(100, "harbor", false), "hamlet");
+        assert_eq!(identity(8, "harbor", false), "farmstead");
+        assert_eq!(identity(80000, "plain", true), "city");
+        assert_eq!(identity(150000, "plain", true), "metropolis");
+    }
     #[test]
     fn demographic_classes_have_unique_floors_and_shortcuts_inside_their_band() {
         let c = catalogue();

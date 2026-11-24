@@ -15,6 +15,7 @@ import { UNDERDARK_GLSL } from '../../../../../rust/bridge/terrainRenderUnderdar
 import { CROWN_WATER_GLSL } from '../../../../../rust/bridge/terrainCrownWater';
 import { FRACTAL_ROTATIONS } from '../../../../../rust/bridge/terrainAdjust';
 import { WATER_STYLE_GLSL } from '../../../render/waterStyle';
+import { SHORE_DETAIL_GLSL } from '../../../render/shoreDetail';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL } from '../../../render/materialLook';
 import { WATER_FRESH_ICE_GLSL, WATER_REGIME_GLSL } from '../../../render/waterRegime';
 import { LAKE_GLSL } from '../../lakeGeometry';
@@ -52,8 +53,8 @@ uniform sampler2D uCave; uniform int uHasCave;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN; // uHasLake: 1 procedural shore, 2 exact shore
 uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uWaterLayer; uniform int uUseWaterLayer;
-// City Bench retained rivers (setRetainedWater city): x 1 grades their depth from the bank, y their sediment tint.
-uniform vec2 uCityWater;
+// City Bench retained rivers (setRetainedWater city): 1 grades their depth from the bank.
+uniform int uCityWater;
 uniform int uWaterVisible; uniform int uRelief; uniform int uMode;             // 0 shaded, 1 elevation colours
 uniform vec3 uPaper, uSea, uBackground, uFrameColor, uContourColor;
 uniform vec3 uShore; uniform int uCoastalSea;
@@ -165,6 +166,8 @@ vec3 detail(vec2 world, vec3 s) {
   float shore = uDetailB.z > 0.0 ? clamp(s.x / uDetailB.z, 0.0, 1.0) : 1.0;
   return vec3(sum.x * shore, sum.yz * shore);
 }
+
+${SHORE_DETAIL_GLSL}
 
 vec3 hypso(float t) {
   vec3 c = uStops[0];
@@ -355,9 +358,11 @@ void main() {
   } else {
     vec3 s = surface(world);
     if (uFloor > 0.0) s.x = max(s.x, uFloor);
+    // The fractal shoreline below the cells (render/shoreDetail.ts): the sea polygon of the engine follows the same line.
+    if (uCoastal == 1 && uUnderdark == 0) s.x += shoreOffset(world, s);
     // Contours follow the raster surface: refinement adds relief, not ink.
     vec3 raster = s;
-    // The engine's shoreline (urban Surface::wet) is this spline's zero level: refinement adds relief, never moves the coast.
+    // The engine's shoreline (its sea polygon) is the zero level of this height: refinement adds relief, never moves the coast.
     float shoreH = s.x;
     if(uEnhanced3d==1 && uGroundCapture==0 && (uQuality==0 || uPx<min(8.,uSourceCell*.25))) {
       if(uRefinementMode==1 && s.x>0.) s+=terrain3dDetail(world,s);
@@ -468,10 +473,10 @@ void main() {
     // Fresh ice of the fragment (terrainRenderV2Winter v2FreshIce): x freeze of the water's altitude, y open channel
     // of a river, z inside a lake, w lake shore; the bank line apart. One sheet evaluation below for every case.
     vec4 wIce=vec4(0.);float wIceEdge=0.;
-    // Water climate tints applied after the evaluation (waterRegime.ts): x humic tea, y glacial milk, z sea sediment plume.
-    vec3 wTint=vec3(0.);
+    // Share of the water that is fresh water: its climate tone is laid after the evaluation (waterPalette.ts).
+    float wFresh=0.;
     // Estuary: share of the river's own water in a sea fragment that lies under a river's ribbon. 1 at the sea-level
-    // line inside the channel, 0 once the sea is 6 m deep: the river's colour runs out into the shallows and fades,
+    // line inside the channel, 0 once the sea is 3 m deep: the river's colour runs out into the shallows and fades,
     // instead of a deep river ending against a pale wedge of sea.
     float wEst=0.;
     // Open cover of a river's water in the fragment (land side: its wet bed; sea side: its share of the estuary), kept
@@ -508,9 +513,8 @@ void main() {
           wBase=mix(wBase,painted,bed*solid);wCover*=1.-solid;
           wBase*=1.-.3*wCover*damp;wCover*=1.-damp;
           // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
-          // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii), and the season's
-          // sediment tints it (waterRegime.ts waterClimate).
-          if(uCityWater.x>0.&&water.a>.002){
+          // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii).
+          if(uCityWater==1&&water.a>.002){
             float bank=128.;ivec2 here=ivec2(gl_FragCoord.xy),top=ivec2(uCanvas)-1;
             if(uQuality>0)bank=water.a/max(length(vec2(dFdx(water.a),dFdy(water.a))),.001);
             else {
@@ -522,7 +526,7 @@ void main() {
               }
             }
             }
-            wDepth=clamp(.07*bank*uPx,.4,6.)*water.a;wTint.z=uCityWater.y*wCover;
+            wDepth=clamp(.07*bank*uPx,.4,6.)*water.a;
           }
           // Distance inside the nearest lake, in device pixels (negative outside a lake: lakeShore is positive inside).
           float m=uHasLake>0?lakeShore(world,uHasLake==1):-1e3;
@@ -530,6 +534,8 @@ void main() {
           // Inside a lake the water is a lake (kind 2), not a river's stream: its depth grows with the distance into the
           // lake, sooner below steep banks (terrainRenderV2 v2LakeDepth); only a wide lake's open water drifts in tone.
           if(m>0.){float d=lakeDistance(world);wKind=2.;wDepth=v2LakeDepth(d,grad);wLake=smoothstep(150.,600.,d);}
+          // Cave water is one colour: no shallow lakes beside deep rivers.
+          if(underdark)wDepth=8.;
           // Dry season of a dry climate: the lake draws down, leaving a pale exposed shore inside its rim.
           float drop=waterLakeDrop()*80.;
           if(drop>1.&&uHasLake>0){
@@ -561,18 +567,24 @@ void main() {
             wIce=vec4(freeze,channel,still,1.-smoothstep(0.,24.*uDpr,inside));
             wIceEdge=mix(rim,1.-smoothstep(.5,3.5*uDpr,inside),still);
           }
-          wTint.xy=vec2(waterTea(),waterGlacial());
+          wFresh=1.;
           wRiver=wCover;
           // The aux-texture variant only mixes wBase where water remains: a fully dry or frozen bed is the ground itself.
           color=wBase;
         } else {
           // The short river ribbon overlaps the coast and blends into the sea by depth, without an offshore plume.
-          wEst=water.a*(1.-smoothstep(0.,6.,-s.x));
-          wTint.xy=vec2(waterTea(),waterGlacial())*wEst;
-          wRiver=water.a;
+          // A dry bed (painted sandy) ends at the coastline: no bed shows under the sea.
+          float running=water.a*(1.-smoothstep(.05,.15,(water.r-water.b)/max(water.a,1e-3)));
+          wEst=running*(1.-smoothstep(0.,3.,-s.x));
+          wFresh=wEst;
+          wRiver=running;
         }
       }
-      else color=color*(1.-water.a*under)+water.rgb*under;
+      else {
+        // Rivers and dry beds stop at the coast: past it they fade into the sea over its first two metres.
+        if(uCoastal==1)under*=1.-smoothstep(0.,2.,-s.x);
+        color=color*(1.-water.a*under)+water.rgb*under;
+      }
     } else if (uWaterVisible == 1 && uHasLake > 0) {
       float m = lakeShore(world, uHasLake == 1);
       float w = max(fwidth(m), 1e-4);
@@ -581,10 +593,12 @@ void main() {
       {
         float position=max(distance,0.)/uSeaBand;
         lakeColor = uNaturalWater==1?materialWater(world,position,uPx):styledWater(position);
+        // The rivers' tone, except over the ice of a frozen natural lake.
+        if(uNaturalWater==0||uWaterSeason.y<.5)lakeColor=freshWaterTone(lakeColor);
       }
       float a=clamp(m/w+.5,0.,1.);
       if(uRenderV2>0){
-        v2w=true;wBase=color;wCover=waterUnderCrown(a,crownCover);wKind=2.;wDepth=v2LakeDepth(distance,grad)*a;wLake=smoothstep(150.,600.,distance);
+        v2w=true;wBase=color;wCover=waterUnderCrown(a,crownCover);wKind=2.;wDepth=underdark?8.:v2LakeDepth(distance,grad)*a;wLake=smoothstep(150.,600.,distance);wFresh=1.;
         if(!underdark){wIce=vec4(v2WinterFresh,0.,1.,1.-smoothstep(0.,24.*uDpr,m/w));wIceEdge=1.-smoothstep(.5,3.5*uDpr,m/w);}
       }else color=mix(color,lakeColor,a);
       coverage=a+coverage*(1.-a);
@@ -597,7 +611,7 @@ void main() {
     }
     // The antialiased coastline: a river crossing it stays water through the band, in its own colour (the estuary's
     // river share), instead of a line of land colour drawn across every mouth like a thin dam.
-    if(uRenderV2>0 && landCover<1.){v2w=true;if(s.x>=0.)wEst=wRiver;wBase=landColor;wCover=waterUnderCrown(1.-landCover*(1.-wRiver),crownCover);wKind=1.;wDepth=max(-s.x,0.);}
+    if(uRenderV2>0 && landCover<1.){v2w=true;if(s.x>=0.){wEst=wRiver;wFresh=wEst;}wBase=landColor;wCover=waterUnderCrown(1.-landCover*(1.-wRiver),crownCover);wKind=1.;wDepth=max(-s.x,0.);}
 #ifdef AUX_PASS
     uint auxWater = 0u;
     if(!underdark && v2w && uV2WaterVisible == 1 && wCover > 0.){
@@ -639,17 +653,17 @@ void main() {
       if(wKind>1.5)color*=1.-.4*forestResolvedShade*wCover;
       // A wide lake's open water drifts in tone along the wind (terrainRenderV2 v2LakeSurface); its shore keeps the bed.
       if(wLake>0.)color=mix(color,v2LakeSurface(color,world,uPx,wLake),wCover);
-      // Boreal humic water darkens to tea; alpine glacial flour turns lakes milky turquoise; silt plumes off river mouths.
-      // Over a frozen sea they lie under the ice.
-      float unfrozen=1.-wSeaIce;
-      color=mix(color,color*vec3(.86,.70,.48),wTint.x*wCover*unfrozen);
-      color=mix(color,vec3(.38,.62,.62),.45*wTint.y*wCover*unfrozen);
-      color=mix(color,vec3(.45,.38,.25),.55*wTint.z*unfrozen);
+      // Climate and season of the fresh water (waterPalette.ts), one tone for rivers, lakes and the estuary's river share;
+      // under the ice of a frozen sea.
+      color=mix(color,freshWaterTone(color),wFresh*wCover*(1.-wSeaIce));
     }
     if(uPaperMap==1&&v2w&&wCover>0.&&!underdark){
       vec3 paper=paperWater(wKind,paperShore(world));
+      // The climate's fresh-water hue as a light wash, at the paper's own value.
+      vec3 hue=mix(vec3(1.),uFreshWater.rgb/max(dot(uFreshWater.rgb,vec3(.2126,.7152,.0722)),.05),.3*uFreshWater.a);
       // A lake takes the sea's paper ramp over its own distance to the bank: a narrow darker margin (60 m), a calm mid-tone centre.
       if(wKind>1.5&&wKind<2.5)paper=paperWater(1.,mix(.6,1.,exp(-max(lakeDistance(world),0.)/60.)));
+      if(wKind>1.5)paper*=hue;
       // Parchment seas take the climate in muted paper tones: greener on warm coasts, clearer when arid, greyer when cold.
       if(wKind<1.5){
         float T=uMaterialClimate.x,warm=smoothstep(17.,25.,T),cold=1.-smoothstep(-1.,6.,T),arid=1.-smoothstep(150.,500.,uMaterialClimate.y);
@@ -658,14 +672,14 @@ void main() {
         paper*=mix(vec3(1.),vec3(.90,.93,.96),cold);
         // The satellite's estuary share (wEst, the river's own water at its mouth and across the antialiased coastline),
         // in the paper river tone: the river runs into the sea instead of stopping at a line of sea colour.
-        paper=mix(paper,paperWater(3.,0.),wEst*(1.-wSeaIce));
+        paper=mix(paper,paperWater(3.,0.)*hue,wEst*(1.-wSeaIce));
       }
       color=mix(wBase,paper,wCover);
     }
-    // Coastal swell and surf on the open sea (terrainRenderV2Coast), fainter in silt plumes. The estuary share is not
+    // Coastal swell and surf on the open sea (terrainRenderV2Coast). The estuary share is not
     // read: the water layer gives it to every shallow sea fragment it covers, not only to river mouths. Sea ice damps
     // the swell and holds no surf: both fade with the frozen share, whatever the brightness of the ice.
-    if(uRenderV2>0)if(v2w&&wKind<1.5&&uV2WaterVisible==1&&!underdark)color=v2CoastSwell(color,world,s,uPx,wCover*(1.-.6*wTint.z)*(1.-wSeaIce));
+    if(uRenderV2>0)if(v2w&&wKind<1.5&&uV2WaterVisible==1&&!underdark)color=v2CoastSwell(color,world,s,uPx,wCover*(1.-wSeaIce));
 #endif
 #ifndef AUX_PASS
     if(underdark && uGroundCapture==0){

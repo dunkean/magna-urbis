@@ -264,7 +264,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     fills(plan, 'quays', false);
     fills(plan, 'quays', true);
   }
-  const wallDraw = { view, mpp, lod, palette, painted: renderBackground && palette !== 'parchment' && palette !== 'ink', enabled: layers.enclosures }; // walls hook
+  const wallDraw = { view, mpp, lod, palette, painted: renderBackground && palette !== 'parchment' && palette !== 'ink', enabled: layers.enclosures, water: o.live?.waterColor }; // walls hook
   frame.drawCalls += wallGl.draw('ground', wallDraw); // walls hook: ditches and glacis under the streets
   // Strokes: streets (casing then fill), walls (outer then inner line).
   let u = strokeP.u;
@@ -279,7 +279,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     gl.uniform1f(u.uFade, 1);
   };
   useStroke(strokeP);
-  const strokes = (pack: StrokePack | undefined, first: number, pass: 0 | 1, p: { edgePx: number; inner: number; minPx: number; maxRank: number; crossings: boolean; dash: number }, single = false): void => {
+  const strokes = (pack: StrokePack | undefined, first: number, pass: 0 | 1, p: { edgePx: number; inner: number; minPx: number; maxRank: number; crossings: boolean }, single = false): void => {
     if (!pack || pack.strokes.count - first <= 0) return;
     const ranges = pack.strokes.chunks ? visibleRanges(pack.strokes.chunks, v, c => ({ start: c.first, count: c.count }), 8 * mpp, first) : [[first, pack.strokes.count - first]];
     if (!ranges.length) return;
@@ -290,7 +290,6 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     gl.uniform1f(u.uMinPxScale, p.minPx);
     gl.uniform1i(u.uMaxRank, p.maxRank);
     gl.uniform1i(u.uCrossings, p.crossings ? 1 : 0);
-    gl.uniform1i(u.uDashKind, p.dash);
     gl.uniform1i(u.uSingle, single ? 1 : 0);
     // Streets stay off the drawn water up to their crossings (sorted last), which run over it.
     const wetFrom = wet && pack === streets ? streetCrossings : -1;
@@ -354,7 +353,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     const first = Math.min(streets.strokes.firstWithRank[maxRank], crossings ? streets.strokes.firstWithRank[0] : Infinity);
     // Casing, soft edge or shoulder width of the frame's street paint (the look's streetEdgePx; none far).
     const mode: StreetMode = !o.live ? 'ink' : groundRoadLook(o.live.roadLook) ? 'natural' : softStreets ? 'soft' : 'ink';
-    const s = { edgePx: lod === 'far' ? 0 : streetEdgePx(mode, lod) * (mode === 'ink' ? Math.max(1, o.live?.emphasis ?? 1) : 1), inner: 1, minPx: 1, maxRank, crossings, dash: 1 };
+    const s = { edgePx: lod === 'far' ? 0 : streetEdgePx(mode, lod) * (mode === 'ink' ? Math.max(1, o.live?.emphasis ?? 1) : 1), inner: 1, minPx: 1, maxRank, crossings };
     const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink' && !softStreets;
     if (paintRoads) useStroke(casingP);
     if (d.streetCasing) strokes(streets, first, 0, s, softStreets && streetSurface);
@@ -374,15 +373,15 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
     useStroke(strokeP);
     const jambs = enclosureJambRank(lod);
     gl.uniform1f(u.uFade, enclosureFade(lod, mpp));
-    strokes(yards.runs, 0, 1, { edgePx: 0, inner: 1, minPx: lod === 'mid' ? ENCLOSURE_MID_WIDTH : 1, maxRank: 15, crossings: false, dash: 0 });
+    strokes(yards.runs, 0, 1, { edgePx: 0, inner: 1, minPx: lod === 'mid' ? ENCLOSURE_MID_WIDTH : 1, maxRank: 15, crossings: false });
     gl.uniform1f(u.uFade, 1);
-    if (jambs >= 0) strokes(yards.jambs, 0, 1, { edgePx: 0, inner: 1, minPx: 1, maxRank: jambs, crossings: false, dash: 0 });
+    if (jambs >= 0) strokes(yards.jambs, 0, 1, { edgePx: 0, inner: 1, minPx: 1, maxRank: jambs, crossings: false });
   }
   frame.drawCalls += wallGl.draw('shadow', wallDraw);
   useStroke(strokeP); // walls hook: painted wall shadows
   if (d.walls && walls) {
     // Wall instances carry the near minimum width; far walls are thinner (the look's wallMinPx).
-    const s = { edgePx: 0, inner: WALL_CORE, minPx: wallMinPx(lod) / wallMinPx('near'), maxRank: 15, crossings: false, dash: 2 };
+    const s = { edgePx: 0, inner: WALL_CORE, minPx: wallMinPx(lod) / wallMinPx('near'), maxRank: 15, crossings: false };
     strokes(walls, 0, 0, s);
     if (d.wallInner) strokes(walls, 0, 1, s);
   }
@@ -514,7 +513,7 @@ export function drawTownFrame(town: GpuTown, o: CityGlDrawOptions, lod: CityLod,
   if (selection) {
     useStroke(strokeP);
     gl.uniform4fv(u.uOverride, rgba01(SELECTION.stroke!));
-    strokes(selection, 0, 1, { edgePx: 0, inner: 1, minPx: 1, maxRank: 15, crossings: true, dash: 0 });
+    strokes(selection, 0, 1, { edgePx: 0, inner: 1, minPx: 1, maxRank: 15, crossings: true });
     gl.uniform4f(u.uOverride, 0, 0, 0, 0);
   }
   gl.bindVertexArray(null);

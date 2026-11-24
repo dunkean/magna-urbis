@@ -4,7 +4,6 @@
  * visible viewport on a Canvas 2D (RetainedWaterRaster), without readback, then the backend uploads that canvas.
  */
 import { retainedWaterPaths, type RetainedWaterPath } from '../../render/retainedWaterGeometry';
-import { waterClimate } from '../../render/waterRegime';
 import { paintRetainedWaterView, retainedRegime, type RetainedRegime } from '../retainedWaterRegime';
 import type { TerrainStyle } from '../../render/terrainStyle';
 import type { RetainedWaterOptions } from './contract';
@@ -15,8 +14,8 @@ export class RetainedWaterSource {
   input?: { svg: string; width: number; options?: RetainedWaterOptions };
   paths: readonly RetainedWaterPath[] = [];
   regime?: RetainedRegime;
-  /** uCityWater: x 1 grades a retained river's depth from the bank, y its sediment tint. */
-  city: [number, number] = [0, 0];
+  /** uCityWater: a retained river's depth is graded from the bank. */
+  city = false;
   /** Identity of the input; part of the auxiliary pass key. */
   key = '';
   /** Replaces the input; false when it is the same. */
@@ -27,7 +26,7 @@ export class RetainedWaterSource {
     this.key = key;
     this.paths = svg ? retainedWaterPaths(svg, width) : [];
     this.regime = retainedRegime(this.paths, width, options?.season);
-    this.city = svg && options?.city ? [1, 0.5 * waterClimate(options.season ?? {}).sediment] : [0, 0];
+    this.city = !!svg && !!options?.city;
     return true;
   }
 }
@@ -53,7 +52,7 @@ export class RetainedWaterRaster {
     const canvas = (this.canvas ??= document.createElement('canvas'));
     if (canvas.width !== width) canvas.width = width;
     if (canvas.height !== height) canvas.height = height;
-    this.coded = Number(paintRetainedWaterView(canvas.getContext('2d')!, source.paths, { x: origin[0], y: origin[1], width: width * px, height: height * px }, { width, height }, stop, source.regime, painted, style)) * (source.city[0] ? 2 : 1);
+    this.coded = Number(paintRetainedWaterView(canvas.getContext('2d')!, source.paths, { x: origin[0], y: origin[1], width: width * px, height: height * px }, { width, height }, stop, source.regime, painted, style)) * (source.city ? 2 : 1);
     this.x = origin[0];
     this.y = origin[1];
     this.px = px;

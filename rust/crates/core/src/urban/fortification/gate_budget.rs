@@ -14,8 +14,8 @@
 //!
 //! Streets drawn later open no gate of their own: `enforce` closes whatever crosses a curtain away from
 //! its gates before the first trim reads the plan. `drop_dead_gates`, last of the pipeline, closes every
-//! gate point that no street uses any more, so the drawn curtain opens only at gates, water gates and
-//! water fronts.
+//! gate point that no street uses any more, so the drawn curtain opens only at gates and water gates
+//! (`water::audit` measures it).
 
 use crate::rng::Rng;
 use crate::urban::{Enclosure, Point, Shape, Street, Surface, composition, geometry as g, routing};
@@ -65,6 +65,8 @@ pub(in super::super) struct Passage {
     arc: f64,
     /// Sine of the angle between the street and the curtain (1: square).
     square: f64,
+    /// A street of this crossing lands on a quay: a harbour gate.
+    harbour: bool,
 }
 
 /// Cumulated lengths of `path`, from 0.
@@ -95,29 +97,40 @@ fn at_arc(path: &[Point], cum: &[f64], s: f64) -> (Point, usize) {
 }
 
 /// The land crossings of the closed `path`: each through crossing of `composition::gates` with the most
-/// important street that passes there. Decks and waterside ways are water passages, not counted.
+/// important street that passes there. Decks and waterside ways are water passages, not counted. A
+/// street that lands on a quay makes its crossing a harbour gate: the harbour stands outside the
+/// curtain (`water::water_fronts`) and is reached through it.
 fn crossings(path: &[Point], cum: &[f64], streets: &[Street], surface: Surface<'_>) -> Vec<Passage> {
+    let quays: Vec<Point> = streets.iter().filter(|s| s.role == "quay").flat_map(|s| s.path.iter().copied()).collect();
     composition::gates(path, streets)
         .into_iter()
         .filter_map(|p| {
             let wet = surface.wet(p);
             let mut best: Option<(u8, f64, usize, V)> = None;
+            let mut harbour = false;
             for st in streets.iter().filter(|s| !water_way(s, wet)) {
+                let mut passes = false;
                 for (i, w) in st.path.windows(2).enumerate() {
                     if dist(w[0], w[1]) > 1e-6 && g::distance(p, w[0], w[1]).0 < 1.0 {
+                        passes = true;
                         let (pr, wd) = (priority(st), st.widths.get(i).copied().unwrap_or(4.0));
                         if best.is_none_or(|b| (pr, wd) > (b.0, b.1)) {
                             best = Some((pr, wd, st.rank, dir(w[0], w[1])));
                         }
                     }
                 }
+                harbour |= passes && st.path.iter().any(|&q| quays.iter().any(|&f| dist(q, f) < 1.0));
             }
             let (priority, width, rank, along) = best?;
             let k = segment_of(path, p);
-            Some(Passage { at: p, along, width, rank, priority, arc: arc_of(path, cum, p), square: cross(along, dir(path[k], path[k + 1])).abs() })
+            Some(Passage { at: p, along, width, rank, priority, arc: arc_of(path, cum, p), square: cross(along, dir(path[k], path[k + 1])).abs(), harbour })
         })
         .collect()
 }
+
+/// Harbour gates a circuit keeps besides its budget, and their spacing (m) along the curtain.
+const HARBOUR_GATES: usize = 3;
+const HARBOUR_SPACING: f64 = 60.0;
 
 /// A street within about 15° of the curtain line grazes it: no gate stands there while another crossing
 /// can take its place.
@@ -147,11 +160,16 @@ fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, surface: 
         })
     };
     let (mut kept, mut dropped): (Vec<Passage>, Vec<Passage>) = (vec![], vec![]);
-    for c in all.iter().filter(|c| c.priority >= 2) {
-        if kept.len() < budget && apart(&kept, c, spacing) { kept.push(*c) } else { dropped.push(*c) }
+    // The landing streets first: the harbour keeps its own gates, whatever the budget of the roads.
+    for c in all.iter().filter(|c| c.harbour) {
+        if kept.len() < HARBOUR_GATES && apart(&kept, c, HARBOUR_SPACING.min(spacing.max(1.0))) { kept.push(*c) } else { dropped.push(*c) }
+    }
+    let harbour = kept.len();
+    for c in all.iter().filter(|c| !c.harbour && c.priority >= 2) {
+        if kept.len() - harbour < budget && apart(&kept, c, spacing) { kept.push(*c) } else { dropped.push(*c) }
     }
     let main = kept.len();
-    for c in all.iter().filter(|c| c.priority < 2) {
+    for c in all.iter().filter(|c| !c.harbour && c.priority < 2) {
         if kept.len() - main < posterns && apart(&kept, c, spacing * 0.5) { kept.push(*c) } else { dropped.push(*c) }
     }
     (kept, dropped)
@@ -287,7 +305,7 @@ pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circ
         gates: kept.iter().map(|p| p.at).collect(),
         ..Default::default()
     };
-    // A shore opening already serves its quay and bridge before the gatehouses are built.
+    // A water passage already serves its channel before the gatehouses are built.
     let banks = composition::water_gates(&e.path, surface);
     let passages: Vec<_> = water_passages(&banks).collect();
     close_crossings_at(streets, std::slice::from_ref(&e), true, surface, &passages);

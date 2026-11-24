@@ -5,6 +5,8 @@ import type { SavedRecipe } from './autosave';
 import { climateZoneBiome } from '../gen/biomes';
 import type { Relief } from '../gen/options';
 import { UNDERDARK_CULTURES } from './underdarkCultures';
+import { automaticCulture } from './environmentCultures';
+import { defaultSettings } from './settings';
 import { CODE_BASE, CODE_DIGITS } from './cityCodeFormat';
 import type { ClimateZone } from '../../../rust/bridge/terrainClimate';
 import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecipe';
@@ -97,6 +99,9 @@ export function randomInitialSettings(previous: V2Settings, random: () => number
     delete local.relief;
     delete local.coast;
   }
+  // A culture nobody chose follows the new environment; a chosen one is a preference.
+  const { culture } = previous.options;
+  if (settings.region?.demography?.followCulture !== false && (culture === defaultSettings().options.culture || culture === automaticCulture(previous) || UNDERDARK_CULTURES.includes(culture))) settings.options.culture = automaticCulture(settings);
   const placement = settings.region?.placement;
   if (placement?.main) delete placement.main.position;
   for (const place of placement?.list ?? []) delete place.position;

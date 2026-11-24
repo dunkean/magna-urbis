@@ -181,12 +181,20 @@ pub(super) fn stop_at_curtains(streets: &mut Vec<Street>, enclosures: &mut [Encl
 
 /// A crossing within this distance (m) of a gate or of a water passage is that gate's street.
 const GATE_REACH: f64 = 8.0;
+/// A street that crosses a curtain within this distance (m) of a bridge deck is the way of that
+/// bridge into the town. A curtain stands on every bank, so the crossing is kept and
+/// `reconcile_gates` opens its gate: a bridge never leads to a blank wall.
+const BRIDGE_GATE: f64 = 30.0;
+/// Bridge gates stand at least this far (m) from each other and from the gates of the circuit: the
+/// street of a bridge nearer than that to a gate goes through that gate.
+const BRIDGE_GATE_SPACING: f64 = 60.0;
 /// Invariant (every crossing of a curtain is a gate): a street that crosses a
 /// curtain away from its gates and its water passages opens no bare gap in the
 /// wall: it is split there, each side ending clear of the curtain body
 /// (`stop_at_curtains` then pulls the ends out of the berm and the moat). The
 /// quarter on each side keeps its own streets; the town is entered through the
-/// gates. Decks and waterside ways pass (`gate_budget::water_way`). With
+/// gates. Decks and waterside ways pass (`gate_budget::water_way`), and so
+/// does the street at a bridge head (`BRIDGE_GATE`). With
 /// `main_too` every other street is held to it; without, only the lesser ones
 /// (`gate_budget::priority` under 2) and every bridge ramp: a main road laid
 /// after the gates were decided keeps its crossing, and `reconcile_gates` opens
@@ -210,6 +218,9 @@ pub(super) fn close_crossings_at(streets: &mut Vec<Street>, enclosures: &[Enclos
     if walls.is_empty() {
         return;
     }
+    let heads: Vec<Point> = streets.iter().filter(|s| s.role == "bridge")
+        .flat_map(|s| s.path.first().into_iter().chain(s.path.last()).copied()).collect();
+    let mut bridge_gates: Vec<Point> = vec![];
     let mut landings = std::collections::HashSet::new();
     if main_too {
         for deck in streets.iter().filter(|s| s.role == "bridge") {
@@ -250,7 +261,14 @@ pub(super) fn close_crossings_at(streets: &mut Vec<Street>, enclosures: &[Enclos
                     if e.gates.iter().any(|&q| dist(q, x) < GATE_REACH)
                         || passages.iter().any(|&(p, q)| g::distance(x, p, q).0 < GATE_REACH)
                         || gate_budget::water_way(&s, surface.wet(x))
+                        || bridge_gates.iter().any(|&q| dist(q, x) < GATE_REACH)
                     {
+                        continue;
+                    }
+                    if heads.iter().any(|&b| dist(b, x) < BRIDGE_GATE)
+                        && e.gates.iter().chain(&bridge_gates).all(|&q| dist(q, x) >= BRIDGE_GATE_SPACING)
+                    {
+                        bridge_gates.push(x);
                         continue;
                     }
                     let sin = cross(dir(w[0], w[1]), dir(a, b)).abs().max(0.3);

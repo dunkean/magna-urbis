@@ -90,8 +90,10 @@ pub struct Network {
     #[serde(skip)]
     pub pruned_cells: usize,
 }
-pub(super) fn channel_width(area: f64, scale: f64) -> f64 {
-    scale * 3.0 * (area / 1e6).powf(0.45)
+/// Width of a channel (m) for a catchment of `area` m², times the drawn `scale`: hydraulic geometry, 1 m for a brook of
+/// 0.1 km² and 16 m for a river of 100 km² at scale 1. Twin: `channelWidth` in `web/src/ui/riverVectors.ts`.
+pub fn channel_width(area: f64, scale: f64) -> f64 {
+    scale * 2.55 * (area / 1e6).powf(0.405)
 }
 fn smoothstep(t: f64) -> f64 {
     if t <= 0.0 {

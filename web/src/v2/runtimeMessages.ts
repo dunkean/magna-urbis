@@ -456,7 +456,7 @@ const templatePairs: readonly (readonly [string, string])[] = [
   ['Import {scope} : {name}', 'Import {scope}: {name}'],
   ['Export : {format}', 'Export: {format}'],
   ['Export PNG : {phase}', 'PNG export: {phase}'],
-  ['Heightmap 8 bits : noir {min} m, blanc {max} m. Projet JSON pour conserver FP32.', '8-bit heightmap: black {min} m, white {max} m. Use a JSON project to retain FP32.'],
+  ['Heightmap 16 bits : noir {min} m, blanc {max} m. Projet JSON pour conserver FP32.', '16-bit heightmap: black {min} m, white {max} m. Use a JSON project to retain FP32.'],
   ['Terminé en {seconds} s · relief {backend} · villes {urban}', 'Finished in {seconds} s · relief {backend} · cities {urban}'],
   ['{kind} · {count} bâtiments · {residents} habitants', '{kind} · {count} buildings · {residents} inhabitants'],
   ...engineRuntimeTemplates,

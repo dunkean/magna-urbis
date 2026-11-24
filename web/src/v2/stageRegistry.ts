@@ -121,6 +121,7 @@ export const STAGES: readonly StageDef[] = [
       'options.seaLevel',
       'options.biome',
       'terrain.underdarkTunnels',
+      'terrain.underdarkCaverns',
       'widget:coasts',
       'terrain.islandMode',
       'terrain.coastProfile.*',

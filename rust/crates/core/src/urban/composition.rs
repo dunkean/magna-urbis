@@ -1251,7 +1251,14 @@ pub(super) fn water_gates(path: &[Point], surface: Surface<'_>) -> Vec<(Point, b
             let p = at(i);
             let now = surface.wet(p);
             if now != was {
-                out.push((if now { at(i - 1) } else { p }, now));
+                // The bank itself, within half a metre, on its dry side: a water gate spans the
+                // water and no more, and its abutments get the whole bank.
+                let (mut dry, mut wet) = if now { (at(i - 1), p) } else { (p, at(i - 1)) };
+                for _ in 0..3 {
+                    let mid = Point { x: (dry.x + wet.x) * 0.5, y: (dry.y + wet.y) * 0.5 };
+                    if surface.wet(mid) { wet = mid } else { dry = mid }
+                }
+                out.push((dry, now));
             }
             was = now;
         }
@@ -1702,6 +1709,9 @@ fn fit_to_built(layout: &mut super::Layout, population: u32, surface: Surface<'_
     let mp = |v: &[Shape]| MultiPolygon(v.iter().map(g::polygon).collect());
     let mut result = Vec::with_capacity(layout.enclosures.len());
     let mut refitted = false;
+    // A refitted front obeys the rule of the first trace (dry land, wall walk, harbour side); the
+    // water gates of the circuit keep their place.
+    let harbour = harbour_fronts(layout);
     laps.lap("occupied");
     for (e, open) in std::mem::take(&mut layout.enclosures).into_iter().zip(open) {
         if !open { result.push(e); continue; }
@@ -1755,7 +1765,9 @@ fn fit_to_built(layout: &mut super::Layout, population: u32, surface: Surface<'_
         laps.lap("refit");
         let Some(refit) = fitted else { result.push(e); continue; };
         refitted = true;
-        for path in refit {
+        let rings: Vec<Shape> = refit.into_iter().map(|path| Shape { outer: path[..path.len() - 1].to_vec(), holes: vec![] }).collect();
+        for ring in fortification::kept_fronts(rings, &near, &harbour, surface, e.curtain_width_m - fortification::ribbon_half(&e.kind)) {
+            let path = closed(&ring.outer);
             result.push(Enclosure { gates: gates(&path, &layout.streets), path, kind: e.kind.clone(), ..Default::default() });
         }
     }
@@ -1950,13 +1962,24 @@ mod wall_density_tests {
         assert!(g::area(&sh)<25_000.);
     }
 }
+/// A harbour stands outside the walls of its town unless it is asked inside. A canal town keeps its
+/// harbour inside: its water is its street network, and its canals pass the curtain at their mouths.
+fn harbour_inside(culture: &str, cfg: &LayoutConfig) -> bool {
+    cfg.port_enclosure == "inside" || matches!(cfg.port_enclosure.as_str(), "" | "auto") && super::lagoon::canal_town(culture, cfg)
+}
+/// The harbour fronts of a laid plan, as its walls met them when they were traced.
+pub(super) fn harbour_fronts(layout: &super::Layout) -> Vec<Shape> {
+    let inside = layout.config.as_ref().is_some_and(|cfg| harbour_inside(&layout.culture, cfg));
+    macroplan::harbour::fronts(&layout.streets, inside)
+}
 /// Half the widest gap (m) between two town circuits that stand side by side.
 const JOIN_REACH: f64 = 40.0;
 /// Two town circuits side by side are one circuit. Where their rings run
 /// within `2 × JOIN_REACH` of each other (without overlapping, nesting or
 /// sharing a stretch, as an attached extension does), the land between them
-/// joins the enclosure and a single curtain runs round both. The joined
-/// circuit carries no works yet: `fortification::settle` builds it.
+/// joins the enclosure and a single curtain runs round both, inside the land
+/// they held together. The joined circuit carries no works yet:
+/// `fortification::settle` builds it.
 pub(super) fn join_side_by_side(layout: &mut super::Layout, surface: Surface<'_>) {
     use geo::{BooleanOps, Buffer, MultiPolygon};
     let town = |e: &Enclosure| e.purpose.is_empty() && e.path.len() >= 4;
@@ -1964,6 +1987,7 @@ pub(super) fn join_side_by_side(layout: &mut super::Layout, surface: Surface<'_>
         g::shapes(g::polygon(s).buffer(d)))).unwrap_or_default();
     // A pair refused once is refused again while neither circuit changes:
     // circuits carry ids, a join gives the merged one a new id.
+    let harbour = harbour_fronts(layout);
     let mut ids: Vec<usize> = (0..layout.enclosures.len()).collect();
     let mut fresh = ids.len();
     let mut refused: std::collections::HashSet<(usize, usize)> = Default::default();
@@ -1991,10 +2015,23 @@ pub(super) fn join_side_by_side(layout: &mut super::Layout, surface: Surface<'_>
                 let touches = |gap: &Shape, near: &[Shape]| near.iter().any(|s| !g::intersection(gap, s).is_empty());
                 let gaps: Vec<Shape> = g::shapes(closing.difference(&pair)).into_iter()
                     .filter(|gap| g::area(gap) > 50.0 && touches(gap, &na) && touches(gap, &nb)).collect();
+                // The two banks of a water no gate spans stay two circuits.
+                if fortification::parted_by_water(&gaps, surface) { continue; }
+                let banks = [sa.clone(), sb.clone()];
                 let merged = union(&[sa, sb].into_iter().chain(gaps).collect::<Vec<_>>());
                 let [one] = merged.as_slice() else { continue; };
-                let trace = fortification::straight_across(&fortification::curtain_trace(&Shape { outer: one.outer.clone(), holes: vec![] }), surface);
-                if trace.outer.len() < 3 || !g::simple(&trace) { continue; }
+                let joined_land = Shape { outer: one.outer.clone(), holes: vec![] };
+                // Rounding the joined outline takes no land outside the two circuits and the gap
+                // between them (a neighbour's claim); a bend that turns into the town is then run
+                // straight across, as on any trace. A join that does not hold is refused and both
+                // circuits stay as they were.
+                let rounded = fortification::curtain_trace(&joined_land);
+                let Some(kept) = g::intersection(&rounded, &joined_land).into_iter().max_by(|x, y| g::area(x).total_cmp(&g::area(y))) else { continue; };
+                let trace = fortification::straight_across(&g::normalized(Shape { outer: kept.outer, holes: vec![] }), surface);
+                if trace.outer.len() < 3 || !g::simple(&trace) || g::area(&trace) < 0.9 * g::area(&joined_land) { continue; }
+                // The joined circuit obeys the water rule as one ring (a channel between the two is
+                // crossed on water gates), or the two stay apart, each on its bank.
+                let Ok([trace]) = <[Shape; 1]>::try_from(fortification::kept_fronts(vec![trace], &banks, &harbour, surface, 0.0)) else { continue; };
                 let kind = if g::area(&closed_shape(a)) >= g::area(&closed_shape(b)) { a.kind.clone() } else { b.kind.clone() };
                 joined = Some((i, j, trace, kind));
                 break 'pairs;
@@ -2552,6 +2589,13 @@ fn fortify(
     let walls = fortification::trace_enclosures(walls, &plan.quarters.iter()
         .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
     let walls = walls.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, style.curtain_width)).collect::<Vec<_>>();
+    // Walls against water are decided here, on the trace, with the quays the plan already laid:
+    // every circuit is a closed ring on dry land behind its wall walk, the harbour outside unless
+    // it is asked inside. Nothing later opens the curtain for the water.
+    let founding: Vec<Shape> = plan.quarters.iter().map(|q| q.shape.clone()).collect();
+    let harbour = macroplan::harbour::fronts(&plan.streets, harbour_inside(culture, cfg));
+    let dry = |walls: Vec<Shape>, width: f64| fortification::water_fronts(walls, &founding, &harbour, surface, width - fortification::ribbon_half(kind));
+    let walls = dry(walls, style.curtain_width);
     // Lopsided growth builds the second enclosure against the old one: the old
     // circuit stays whole and the extension shares a stretch of it.
     let trace = if style.hill { "hill" } else if square { "square" } else if style.id == "bastioned" { "bastioned" } else { "" };
@@ -2566,8 +2610,14 @@ fn fortify(
             let old = old.first().map(|o| fortification::parameter_trace(o.clone(), surface, cfg, culture, style.curtain_width));
             match old {
                 Some(o) if extension == "attached" || fortification::lopsided(&o, &walls[0]) => {
-                    match fortification::attach(&o, &walls[0]) {
-                        Some(e) => { attached = true; vec![o, e] }
+                    // The old circuit obeys the water rule like the new one, as one ring.
+                    let o = dry(vec![o], style.curtain_width);
+                    let pair = match o.as_slice() {
+                        [old] => fortification::attach(old, &walls[0]).map(|e| vec![old.clone(), e]),
+                        _ => None,
+                    };
+                    match pair {
+                        Some(pair) => { attached = true; pair }
                         None => {
                             plan.warnings.push(warnings::concentric_wall());
                             walls
@@ -2669,7 +2719,7 @@ fn fortify(
             let old = fortification::trace_enclosures(old, &plan.quarters.iter()
                 .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
             partition(&mut plan.quarters, &old);
-            inner_walls.extend(old.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, inner_style.curtain_width)));
+            inner_walls.extend(dry(old.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, inner_style.curtain_width)).collect(), inner_style.curtain_width));
         }
     }
     // An older circuit lies inside the newer one, clear of its curtain: it is
@@ -2731,15 +2781,10 @@ fn fortify(
             (kept, shut)
         };
         let path = closed(&wall.outer);
-        let mut gates = gates(&path, &plan.streets);
+        let gates = gates(&path, &plan.streets);
         let land = gates.len();
-        // Where the curtain crosses a river it opens on a water gate.
+        // Where the curtain crosses a channel it opens on a water gate (`fortification::build`).
         let banks = water_gates(&path, surface);
-        for &(p, _) in &banks {
-            if !gates.iter().any(|q| (p.x - q.x).hypot(p.y - q.y) < 8.0) {
-                gates.push(p);
-            }
-        }
         let mut enclosure = Enclosure {
             path,
             kind: kind.into(),

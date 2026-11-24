@@ -25,9 +25,22 @@ fn occupied_banks(shape: &Shape, occupied: &[Shape], surface: Surface<'_>) -> Ve
         .flat_map(|gap| water.iter().flat_map(move |wet| g::intersection(gap, wet))).collect();
     g::union(&kept.into_iter().chain(links).collect::<Vec<_>>())
 }
+/// Vertices from which a circuit is read within a metre by the pocket search.
+const DETAILED: usize = 400;
+/// A bank cut on the water keeps every vertex of its shoreline: the pocket search, quadratic in
+/// them, reads it within a metre (the water rule then sets the curtain back from the shore).
+fn thinned(s: Shape) -> Shape {
+    if s.outer.len() < DETAILED {
+        return s;
+    }
+    let mut outer = g::simplify(&closed(&s.outer), 1.0, |_| false);
+    outer.pop();
+    let thin = Shape { outer, holes: s.holes.clone() };
+    if thin.outer.len() >= 3 && g::simple(&thin) { thin } else { s }
+}
 pub(in super::super) fn trace_enclosures(shapes: Vec<Shape>, occupied: &[Shape], surface: Surface<'_>) -> Vec<Shape> {
     let traced: Vec<_> = shapes.iter().flat_map(|s| occupied_banks(s, occupied, surface))
-        .map(|s| without_invaginations(&s, surface)).collect();
+        .map(|s| without_invaginations(&thinned(s), surface)).collect();
     #[cfg(test)]
     TRACE_PAIRS.with(|pairs| {
         if let Some(pairs) = &mut *pairs.borrow_mut() { pairs.push((shapes, traced.clone())); }

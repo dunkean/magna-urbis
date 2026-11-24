@@ -27,6 +27,16 @@ import { populationFormat } from './places';
 import { appendRemoveCustomSettlement } from './settlementAdd';
 
 export function createTownInspector(state: PageState, actions: PageActions) {
+  /** A new draw of every stage of one town. */
+  function rerollTown(key: string): void {
+    if (state.busy) return;
+    resetUrbanChildren(state.settings, { kind: 'settlement', key }, 'layout.tissue');
+    state.mods = state.mods.filter(m => !(m && typeof m === 'object' && (m as BuildingEdit).settlement === key));
+    rerollSettlement(state.settings, key);
+    $<HTMLInputElement>('#seed').value = state.settings.options.seed;
+    actions.touchRecipe();
+    void actions.generate('town', key);
+  }
   function showInspector(key: string, focus = false): void {
     if (!state.world) return;
     const source = state.world.settlements?.find(s => s.key === key);
@@ -151,15 +161,7 @@ export function createTownInspector(state: PageState, actions: PageActions) {
     rebuildActions.append($('#build-town'), reroll);
     $('#build-town').classList.add('small');
     $('#build-town').textContent = '↻ ' + translate('Regenerate area');
-    reroll.onclick = () => {
-      if (state.busy) return;
-      resetUrbanChildren(state.settings, { kind: 'settlement', key }, 'layout.tissue');
-      state.mods = state.mods.filter(m => !(m && typeof m === 'object' && (m as BuildingEdit).settlement === key));
-      rerollSettlement(state.settings, key);
-      $<HTMLInputElement>('#seed').value = state.settings.options.seed;
-      actions.touchRecipe();
-      void actions.generate('town', key);
-    };
+    reroll.onclick = () => rerollTown(key);
     const backend = state.settings.urban?.backend ?? state.settings.runtime?.backend ?? 'typescript';
     if (backend !== 'typescript') {
       insertHTML(
@@ -320,5 +322,5 @@ export function createTownInspector(state: PageState, actions: PageActions) {
       state.client.viewer.setView({ cx: seat.x, cy: seat.y, scale: Math.min(3, Math.min($('#map').clientHeight, $('#map').clientWidth) / Math.max(600, s.radius * 3)), pitch: current.eye === undefined ? current.pitch : 1, yaw: current.yaw });
     }
   }
-  return { showInspector };
+  return { showInspector, rerollTown };
 }

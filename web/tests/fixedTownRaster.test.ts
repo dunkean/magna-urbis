@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FixedTownRaster, townRasterLayout } from '../src/render/city/canvas/fixedTownRaster';
+import { ALL_SHEET_PIXELS, FixedTownRaster, TOWN_SHEET_PIXELS, townRasterLayout } from '../src/render/city/canvas/fixedTownRaster';
 
 describe('fixed cadastral town sheets', () => {
   it('skips unbuilt towns and keeps the original indices of the populated towns', () => {
@@ -16,8 +16,13 @@ describe('fixed cadastral town sheets', () => {
     const tiles = townRasterLayout(bounds);
     expect(tiles.length).toBeGreaterThan(1);
     expect(tiles.every(t => t.width <= 1024 && t.height <= 1024)).toBe(true);
-    expect(tiles.reduce((sum, t) => sum + t.width * t.height, 0)).toBeLessThan(4.01e6);
+    const pixels = (list: typeof tiles) => list.reduce((sum, t) => sum + t.width * t.height, 0);
+    expect(pixels(tiles)).toBeLessThan(TOWN_SHEET_PIXELS * 1.01);
     expect(new Set(tiles.map(t => t.scale)).size).toBe(1);
+    // A 1.5 km town keeps more than three pixels per metre; many towns share the total.
+    const town = { minX: 0, minY: 0, maxX: 1500, maxY: 1500 };
+    expect(townRasterLayout([town])[0].scale).toBeGreaterThan(3);
+    expect(pixels(townRasterLayout([town, town, town, town, town]))).toBeLessThan(ALL_SHEET_PIXELS * 1.01);
   });
   it('retains completed content and repaints only when its content key changes', () => {
     const raster = new FixedTownRaster((w, h) => ({ width: w, height: h, getContext: () => ({}) }) as unknown as OffscreenCanvas);

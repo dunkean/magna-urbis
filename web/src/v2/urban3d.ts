@@ -4,6 +4,7 @@ import { retainedDecorOf } from './decorTerrain';
 import { v2WorldDecor } from './worldDecor';
 import { decorWater3d } from '../ui/decorWater3d';
 import { paintSeaCover } from '../render/seaCover';
+import { SHORE_DETAIL_REACH } from '../render/shoreDetail';
 import { cityRegionalStreets, usesNativeHouseRenderer } from '../render/cityContract';
 /** Exact City Bench renderer inside V2; no iframe, geometry regeneration or surrogate houses. */
 import { v2DisplayForest, v2DisplayForestAsync, v2ForestOccupation, withBuildingOccupationAsync } from './displayForest';
@@ -195,7 +196,8 @@ function v2WaterDisplay(world: World, settings: V2Settings): City3dWaterDisplay 
       ctx.drawImage(cells, 0, 0, side, side);
       ctx.imageSmoothingEnabled = true;
       const out = ctx.getImageData(0, 0, side, side);
-      paintSeaCover(out.data, sea.data, rgba, sea.n);
+      // The refined sea polygon (v2/shoreline.ts) draws the shore itself: the cover stays off the headlands it leaves dry.
+      paintSeaCover(out.data, sea.data, rgba, sea.n, world.terrain.coastline.length ? SHORE_DETAIL_REACH : 0);
       ctx.putImageData(out, 0, 0);
     }
     const firstLake = world.terrain.coastline.length,

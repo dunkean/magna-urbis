@@ -13,6 +13,21 @@ export type MapStyle = StyleName | 'minimal' | 'watabou' | 'engraving' | 'cadast
 export type LandKindKey = 'field' | 'meadow' | 'pasture' | 'forest' | 'orchard' | 'garden' | 'marsh' | 'commons';
 export type FrameKind = 'double' | 'thin' | 'ticks' | 'blueprint' | 'illuminated' | 'none';
 
+/** State of the trees of a seasonal palette (seasonPalette.ts): its `treeFill` and `treeInk` carry the mean deciduous
+ * tone of the moment, this what one tree symbol needs besides. */
+export interface PaletteSeason {
+  /** Foliage and ink as authored: conifers and palms keep them all year. */
+  fill: string;
+  ink: string;
+  /** Share of the deciduous trees in leaf. */
+  leaf: number;
+  /** Turned foliage of the deciduous trees, 0-1. */
+  autumn: number;
+  spring: number;
+  /** Snow on the crowns, 0-1. */
+  snow: number;
+}
+
 export interface Palette {
   name: MapStyle;
   label: string;
@@ -73,6 +88,8 @@ export interface Palette {
   hedgeOn: boolean;
   treeFill: string;
   treeInk: string;
+  /** Absent: no calendar (the trees as authored, in leaf). */
+  season?: PaletteSeason;
   grass: string;
   reed: string;
   orchardDot: string;

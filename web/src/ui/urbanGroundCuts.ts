@@ -116,6 +116,28 @@ export class UrbanGroundCuts {
     return (x + 32768) * 65536 + (y + 32768);
   }
 
+  /** The nodes (i, j) of a grid of `step` metres that `lower` may dig, one list per piece of moat and gate crossing. */
+  *nodes(step: number): Generator<[number, number][]> {
+    for (let p = 0; p < this.pieces.length; p++) {
+      const { y0, y1 } = this.pieces[p],
+        out: [number, number][] = [];
+      for (let j = Math.ceil(y0 / step); j * step <= y1; j++) {
+        const y = j * step,
+          xs: number[] = [];
+        for (const e of this.rows.get(Math.floor(y / ROW)) ?? []) if (e.piece === p && e.ay > y !== e.by > y) xs.push(((e.bx - e.ax) * (y - e.ay)) / (e.by - e.ay) + e.ax);
+        xs.sort((a, b) => a - b);
+        for (let k = 0; k + 1 < xs.length; k += 2) for (let i = Math.ceil(xs[k] / step); i * step <= xs[k + 1]; i++) out.push([i, j]);
+      }
+      yield out;
+    }
+    for (const sp of this.spans) {
+      const reach = Math.hypot(Math.max(Math.abs(sp.first), Math.abs(sp.last)), sp.half + sp.slope + 0.5),
+        out: [number, number][] = [];
+      for (let j = Math.ceil((sp.b.y - reach) / step); j * step <= sp.b.y + reach; j++) for (let i = Math.ceil((sp.b.x - reach) / step); i * step <= sp.b.x + reach; i++) out.push([i, j]);
+      yield out;
+    }
+  }
+
   /** Height of the dug ground at (x, y), given the undug `height`. */
   lower(x: number, y: number, height: number): number {
     if (this.empty) return height;

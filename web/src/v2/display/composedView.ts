@@ -37,19 +37,20 @@
 import { createLiveCompositor, type LiveCompositor } from '../../render/live/compositor';
 import { liveStats, noteLiveUnit } from '../../render/live/liveStats';
 import { createLiveGroundLayer } from '../../render/live/groundLayer';
-import { createLiveTextLayer } from '../../render/live/textLayer';
+import { createLiveTextLayer, tiltedNamesOpacity } from '../../render/live/textLayer';
 import type { LiveCityEnv } from '../../render/live/contract';
 import type { CanvasRenderer } from '../../render/canvas';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
 import { dualCameras } from '../../render/live/policy';
-import { createCameraPose, groundHit, isTilted, pixelRay, poseCamera } from '../../render/world/camera';
+import { clampPitch, createCameraPose, groundHit, isFreeEye, isTilted, pixelRay, poseCamera, riseAt } from '../../render/world/camera';
 import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../render/world/buildingsLayer';
 import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
 import type { Building3dVisual } from '../../render/urbanBuildingGeometry';
 import { TerrainHeights } from '../../render/world/heights';
 import { cavernField, cavernSectionHeights, cavernTexelAt, underdarkCavernOf } from '../../render/underdarkCavern';
 import { createWorldTreesLayer, type WorldTreesLayer } from '../../render/world/treesLayer';
+import { createWorldBankPlantsLayer } from '../../render/world/bankPlantsLayer';
 import { createWorldCaveLayer } from '../../render/world/caveLayer';
 import { getDisplayQuality } from '../../render/displayQuality';
 import { StepwisePaint } from '../../render/stepwisePaint';
@@ -300,6 +301,7 @@ export class ComposedView {
       owners.volumes = true;
       live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
       live.setLayer('trees', (this.trees = createWorldTreesLayer(gl, this.volumes.trees)));
+      live.setLayer('banks', createWorldBankPlantsLayer(gl, this.volumes.trees));
       live.setLayer('cave', createWorldCaveLayer(gl, { cave: this.volumes.cave, terrain: () => this.relief(), invalidate: map.compose }));
     }
     if (owners.cartography !== cartography.renderer) {
@@ -460,7 +462,7 @@ export class ComposedView {
     if (!this.map.disposed && this.map.world) this.map.repaint();
   };
   /** One frame of a tilted camera: the compositor alone, whose terrain shows the water, the overlay and the town
-   * plan draped on the relief, with the names standing on it. The exact canvases are pictures of the top view: none
+   * plan draped on the relief, with the names standing on it while it rises. The exact canvases are pictures of the top view: none
    * is shown and no picture at rest is made; the next frame of the top view makes its own anew. When the tilted view
    * comes to rest its names are placed. */
   private drawTilted(live: LiveCompositor, view: View, w: number, h: number, dpr: number, moved: boolean, now: number): void {
@@ -497,6 +499,12 @@ export class ComposedView {
    * itself would need the collisions of the projected names; the text layer fades the far ones instead. Placed once
    * per view and content; while the view moves, the names of the last placement follow the terrain. */
   private placeTiltedNames(view: View, w: number, h: number): void {
+    // Names the text layer does not show are not placed.
+    if (tiltedNamesOpacity(isFreeEye(view) ? 1 : riseAt(clampPitch(view.pitch))) <= 0) {
+      this.tiltedNames.revision = -1;
+      reportDrawnLabels([]);
+      return;
+    }
     const renderer = this.parts.cartography.renderer,
       placed = this.tiltedNames,
       side = TILTED_NAMES_REACH * Math.max(w, h),

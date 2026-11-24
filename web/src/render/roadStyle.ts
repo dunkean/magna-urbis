@@ -5,11 +5,11 @@
  * grid; each rank turns that grid into a texture (earth mixed with the ground, lighter on dark ground, darker on pale
  * ground, a little mottling) used as stroke style. The colour then follows the ground per pixel in one stroke call, with
  * no road split and no per-frame sampling. World-anchored, so tiles and frames agree. Wear and uneven edges are extra
- * strokes with irregular dashes, only once a road is wide enough on screen to show them. */
+ * strokes, only once a road is wide enough on screen to show them. */
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { RenderColors } from './customColors';
 import type { Palette } from './styles';
-import { mapGroundSnow, roofSeasonKey } from './seasonPalette';
+import { mapGroundSnow } from './seasonPalette';
 import { RecordingContext } from './gpu/recorder';
 import type { RoadPavement } from './roadPavement';
 
@@ -314,7 +314,7 @@ const texturesOf = new Map<string, Surface>();
 function texture(rank: RoadRank | 'bare', emphasis: number, paved = false, rendered = false): Surface | undefined {
   if (!ground?.data.length) return undefined;
   const soil = rendered ? (ground.soil ?? BIOME_SOIL.temperate) : undefined;
-  const key = `${ground.key}|${rank}${paved ? '|paved' : ''}${soil ? '|r' : ''}|${emphasis}|${roofSeasonKey()}`;
+  const key = `${ground.key}|${rank}${paved ? '|paved' : ''}${soil ? '|r' : ''}|${emphasis}|${mapGroundSnow().toFixed(3)}`;
   let out = texturesOf.get(key);
   if (out) return out;
   const surface = makeSurface(GRID, GRID),
@@ -453,13 +453,11 @@ export function cobbleTone(style: RoadStyle): string {
   return rgbCss(over([200, 206, 212], over([146, 140, 130], s.earth, 0.7), snow * 0.8));
 }
 /** Irregular runs, metres: nothing repeats along a sight line, and they do not depend on the zoom. */
-const EDGE_DASH = [61, 17, 29, 41, 13, 23, 47, 11],
-  WEAR_DASH = [23, 9, 41, 15, 17, 7, 31, 19],
-  RUT_DASH = [19, 5, 33, 9, 13, 4];
+const EDGE_DASH = [61, 17, 29, 41, 13, 23, 47, 11];
 export interface NaturalMarks {
   shadow: { color: string; alpha: number; extra: number } | undefined;
   bed: { alpha: number };
-  wear: { color: string; alpha: number; share: number; dash: readonly number[] } | undefined;
+  wear: { color: string; alpha: number; share: number } | undefined;
   /** Opacity of the grain, 0 until a road is wide enough to show it. */ grain: number;
 }
 /** The strokes of a natural road of `width` world units at `scale` px per unit; each shows only once it can be seen. */
@@ -480,14 +478,14 @@ export function naturalMarks(rank: RoadRank, width: number, scale: number, style
     return {
       shadow: apron > 0 ? { color: rgbCss(apronTone()), alpha: clamp(apron * e, 0, 0.3), extra: Math.max(1.2 / scale, width * (rank === 'track' || rank === 'path' ? 0.45 : 0.32)) } : undefined,
       bed: { alpha: clamp(RENDERED_BED[rank] * e * (1 - 0.3 * merge), 0.2, 1) },
-      wear: px >= 2.6 && px < 9 ? { color: WEAR, alpha: 0.1 * e, share: 0.5, dash: WEAR_DASH } : undefined,
+      wear: px >= 2.6 && px < 9 ? { color: WEAR, alpha: 0.07 * e, share: 0.46 } : undefined,
       grain: px >= 7 ? 0.45 * Math.min(1, e) * grainVisibility(scale) : 0,
     };
   }
   return {
     shadow: s.shoulder > 0 || snow ? { color: snow ? 'rgb(116,139,158)' : SHADOW, alpha: clamp((snow ? 0.2 : s.shoulder) * e, 0, 0.4), extra: Math.max(1.4 / scale, width * 0.34) } : undefined,
     bed: { alpha: clamp((snow ? Math.max(0.8, s.alpha) : s.alpha) * e, 0.2, 1) * (snow ? 1 : cover) },
-    wear: px >= 2.6 && px < 7 ? { color: snow ? 'rgb(128,151,172)' : style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? 0.07 : 0.13) * e, share: 0.56, dash: WEAR_DASH } : undefined,
+    wear: px >= 2.6 && px < 7 ? { color: snow ? 'rgb(128,151,172)' : style.night ? LIGHT_WEAR : WEAR, alpha: (style.night ? 0.05 : 0.09) * e, share: 0.5 } : undefined,
     // The grain tile is per-texel noise: below about one screen pixel per texel the unfiltered pattern aliases into
     // pixel speckle (a grainy, "pixelated" street at town zoom). It fades in between 1 and 2 px per texel.
     grain: px >= 7 ? (style.night ? 0.3 : 0.5) * Math.min(1, e) * (1 - Number(snow)) * grainVisibility(scale) : 0,
@@ -497,12 +495,8 @@ export function naturalMarks(rank: RoadRank, width: number, scale: number, style
 const MARKING = 'rgb(232,228,212)',
   VERGE = 'rgb(168,158,136)',
   SNOW_BANK = 'rgb(238,242,246)',
-  REPAIR = 'rgb(54,52,50)',
+  JOINT = 'rgb(54,52,50)',
   TYRE = 'rgb(198,192,180)';
-/** Metres. Centre line: 3 m dashes every 12 m. Repairs and cracks: long irregular runs, nothing repeats along a sight line. */
-const CENTRE_DASH = [3, 9],
-  REPAIR_DASH = [7, 61, 12, 143, 5, 89, 9, 211],
-  CRACK_DASH = [11, 5, 23, 31, 7, 3, 37, 53];
 const fadeIn = (v: number, from: number, to: number): number => {
   const t = clamp((v - from) / (to - from), 0, 1);
   return t * t * (3 - 2 * t);
@@ -512,7 +506,6 @@ export interface PavedStroke {
   paint?: string;
   width: number;
   alpha: number;
-  dash?: readonly number[];
   cap: CanvasLineCap;
 }
 export interface PavedMarks {
@@ -520,7 +513,7 @@ export interface PavedMarks {
   bed: number;
   /** Gravel verge beside a country road, the ploughed bank in snow. */
   verge: { color: string; alpha: number; extra: number } | undefined;
-  /** Bottom to top: edge lines, wheel paths, repairs, cracks, centre line. Each fades in once it resolves on screen. */
+  /** Bottom to top: edge lines, wheel paths, the joint between lanes, centre line. Each fades in once it resolves on screen. */
   strokes: PavedStroke[];
   /** Opacity of the aggregate grain. */
   grain: number;
@@ -544,10 +537,10 @@ export function pavedMarks(rank: RoadRank, width: number, scale: number, style: 
   // A pale band with its middle restored leaves two thin edge lines; the same trick leaves two lighter wheel paths.
   if (edge > 0.01) strokes.push({ paint: MARKING, width: width - 0.5, alpha: edge, cap: 'round' }, { width: width - 0.5 - 2 * line, alpha: bed, cap: 'round' });
   if (wear > 0.004) strokes.push({ paint: TYRE, width: width * (narrow ? 0.6 : 0.7), alpha: wear, cap: 'round' }, { width: width * (narrow ? 0.26 : 0.4), alpha: bed * 0.7, cap: 'round' });
-  if (detail > 0.01) strokes.push({ paint: REPAIR, width: width * 0.3, alpha: 0.2 * detail, dash: REPAIR_DASH, cap: 'butt' }, { paint: REPAIR, width: Math.max(0.12, 0.8 / scale), alpha: 0.42 * detail, dash: CRACK_DASH, cap: 'butt' });
-  // The centre line shows from about 9 px of carriageway: its 12 m period is then well above the pixel.
+  if (detail > 0.01) strokes.push({ paint: JOINT, width: Math.max(0.12, 0.8 / scale), alpha: 0.16 * detail, cap: 'butt' });
+  // The centre line shows from about 9 px of carriageway.
   const centre = lines ? fadeIn(px, 9, 15) * 0.82 * (1 - 0.8 * snow) * (style.night ? 0.5 : 1) : 0;
-  if (centre > 0.01) strokes.push({ paint: MARKING, width: line, alpha: centre, dash: CENTRE_DASH, cap: 'butt' });
+  if (centre > 0.01) strokes.push({ paint: MARKING, width: 0.8 * line, alpha: 0.6 * centre, cap: 'butt' });
   return { bed, strokes, verge: px >= 3 ? { color: snow ? SNOW_BANK : VERGE, alpha: (snow ? 0.75 * snow : style.night ? 0.1 : 0.3) * e, extra: Math.max(1.2 / scale, width * (snow ? 0.3 : 0.22)) } : undefined, grain: px >= 7 ? 0.2 * e * dry * dim * grainVisibility(scale) : 0 };
 }
 /** Kerb and sidewalk strip of a paved street: pale concrete, snowed over in winter. */
@@ -651,11 +644,10 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
     if (cover < 1) marks.strokes.length = 0;
   }
   // Asphalt stops square: a round cap as wide as the road reads as a drawn lollipop at a loose end or a change of surface.
-  const stroke = (color: string | CanvasPattern, w: number, alpha: number, dash: readonly number[] = [], cap: CanvasLineCap = 'square'): void => {
+  const stroke = (color: string | CanvasPattern, w: number, alpha: number, cap: CanvasLineCap = 'square'): void => {
     ctx.strokeStyle = color;
     ctx.lineWidth = w;
     ctx.globalAlpha = alpha;
-    ctx.setLineDash(dash as number[]);
     ctx.lineCap = cap;
     ctx.stroke(path);
   };
@@ -667,7 +659,7 @@ function strokePavedRoad(ctx: CanvasRenderingContext2D, path: Path2D, rank: Road
     stroke('rgb(130,151,170)', width * 0.66, 0.34 * Number(snow));
     stroke(paint, width * 0.3, marks.bed);
   }
-  for (const s of marks.strokes) stroke(s.paint ?? paint, s.width, s.alpha, s.dash, s.cap);
+  for (const s of marks.strokes) stroke(s.paint ?? paint, s.width, s.alpha, s.cap);
   if (marks.grain) {
     const grain = roadGrain(ctx);
     if (grain) stroke(grain, width, marks.grain);
@@ -727,7 +719,7 @@ export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, r
     stroke(paint, width * (earthen ? 0.66 : 0.88), marks.bed.alpha);
     stroke(paint, width, marks.bed.alpha * (earthen ? 0.72 : 1), EDGE_DASH);
   }
-  if (marks.wear) stroke(marks.wear.color, width * marks.wear.share, marks.wear.alpha * open, marks.wear.dash);
+  if (marks.wear) stroke(marks.wear.color, width * marks.wear.share, marks.wear.alpha * open);
   if (marks.grain) {
     const grain = roadGrain(ctx);
     if (grain) stroke(grain, width, marks.grain * under);
@@ -739,7 +731,7 @@ export function strokeNaturalRoad(ctx: CanvasRenderingContext2D, path: Path2D, r
   } else if (earthen && px >= 5) {
     const grass = texture('bare', style.emphasis),
       p = grass && pattern(ctx, grass);
-    if (p) stroke(p, width * 0.2, 0.55 * under, RUT_DASH);
+    if (p) stroke(p, width * 0.16, 0.38 * under);
   }
   ctx.globalAlpha = 1;
   ctx.setLineDash([]);

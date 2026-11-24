@@ -1,6 +1,6 @@
 import type { V2Settings } from './contracts';
 import type { World } from '../gen/types';
-import { POPULATION_CLASSES, regionalPopulation, automaticSettlementLimits, automaticIsolatedLimit, type RegionalDemography, type PopulationClass } from './regionalPopulation';
+import { POPULATION_CLASSES, regionalPopulation, automaticPlaceLimit, automaticIsolatedLimit, type RegionalDemography, type PopulationClass } from './regionalPopulation';
 import { onLanguageChange, registerMessages, setText, translate } from './i18n';
 import './settlementPopulationPanel.css';
 import { activitySitesOf } from './activitySites';
@@ -35,8 +35,8 @@ registerMessages(
       'Non-residential sites: mills, workshops, shrines… Inhabited farms are counted above. Placement depends on suitable terrain and resources.':
         'Sites sans résidents : moulins, ateliers, sanctuaires… Les fermes habitées sont comptées au-dessus. L’implantation dépend des terrains et ressources disponibles.',
       'Placed: {places} settlements · {population} inhabitants · {isolated} isolated sites': 'Implantés : {places} lieux · {population} habitants · {isolated} sites isolés',
-      'Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. Suggested settlements stay at or below 20,000 inhabitants. A manual population or density can exceed this size; exact counts override the place limits.':
-        'Plafonds automatiques de cette carte : {villages} villages, {hamlets} hameaux, {farms} fermes habitées, {isolated} sites isolés. Les lieux proposés restent à 20 000 habitants maximum. Une population ou densité manuelle peut dépasser cette taille ; des effectifs imposés remplacent les plafonds de lieux.',
+      'Sizes are drawn first, from the largest place down to one household: at most {places} automatic places and {isolated} isolated sites on this map. Suggested settlements stay at or below 20,000 inhabitants; a manual population or density can exceed this size and exact counts override the number of places.':
+        'Les tailles sont tirées d’abord, du plus grand lieu jusqu’au foyer isolé : au plus {places} lieux automatiques et {isolated} sites isolés sur cette carte. Les lieux proposés restent à 20 000 habitants maximum ; une population ou densité manuelle peut dépasser cette taille et des effectifs imposés remplacent le nombre de lieux.',
     }).map(([en, fr]) => [en, { en, fr }]),
   ),
 );
@@ -179,13 +179,8 @@ export function mountSettlementPopulationPanel(host: HTMLElement, api: { getSett
     const s = api.getSettings(),
       plan = regionalPopulation(s),
       d = s.region?.demography ?? {};
-    const limits = automaticSettlementLimits(plan.areaKm2, plan.population);
-    limitsHint.textContent = translate(
-      'Automatic limits for this map: {villages} villages, {hamlets} hamlets, {farms} inhabited farms, {isolated} isolated sites. Suggested settlements stay at or below 20,000 inhabitants. A manual population or density can exceed this size; exact counts override the place limits.',
-    )
-      .replace('{villages}', String(limits.village))
-      .replace('{hamlets}', String(limits.hamlet))
-      .replace('{farms}', String(limits.farmstead))
+    limitsHint.textContent = translate('Sizes are drawn first, from the largest place down to one household: at most {places} automatic places and {isolated} isolated sites on this map. Suggested settlements stay at or below 20,000 inhabitants; a manual population or density can exceed this size and exact counts override the number of places.')
+      .replace('{places}', String(automaticPlaceLimit(plan.areaKm2, plan.recommendedPopulation)))
       .replace('{isolated}', String(automaticIsolatedLimit(plan.areaKm2)));
     for (const control of controls) {
       const { key, input, reset, row, count } = control;

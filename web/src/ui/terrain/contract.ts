@@ -9,6 +9,7 @@ import type { SeasonCalendar } from '../../../../rust/bridge/terrainRenderV2Zone
 import type { ClimateZone } from '../../../../rust/bridge/terrainClimate';
 import type { TerrainStyle } from '../../render/terrainStyle';
 import type { RenderColors } from '../../render/customColors';
+import type { TreeSymbolLook } from '../../render/treeSymbols';
 import type { WaterSeason } from '../../render/waterRegime';
 import type { FractalDetail } from '../../../../rust/bridge/terrainAdjust';
 import type { TerrainRefinement } from '../terrainRefinement';
@@ -37,8 +38,8 @@ export interface TerrainLook {
   crownDetail?: CrownDetail;
   groundCover?: boolean;
   /** Paper map woods drawn by the ground (render/treeSymbols.ts): the wash and the engraved tree symbols of the forest
-   * land, with this share of conifers. Only the shaded paper ground (mode 0) draws them. */
-  treeSymbols?: { conifer: number };
+   * land, in the palette of the overlay and with these species. Only the shaded paper ground (mode 0) draws them. */
+  treeSymbols?: TreeSymbolLook;
   colors?: RenderColors;
   /** V2 composes the retained canopy over every ground; standalone benches keep their material-only canopy. */
   independentCanopy?: boolean;

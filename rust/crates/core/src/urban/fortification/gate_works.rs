@@ -190,11 +190,12 @@ pub(super) fn water_gatehouses(
 ) {
     let &BuildContext { path, n_seg, h, face, ns, height, tower_height, surface, style, .. } = ctx;
     let Works { towers, gatehouses, occupied, .. } = works;
-    // --- water gates: pair each entry into the water with the next exit.
+    // --- water gates: pair each entry into the water with the next exit. On the surface every
+    // passage is a channel a gate spans (`water::gate_spans`); in a cave a rock face stays open (`shore`).
     let has_towers = style.corner_turn.is_some() || style.tower_spacing.is_some();
     if !banks.is_empty() {
         for (a, b) in water_passages(banks) {
-            let shore = {
+            let shore = style.cave && {
                 let (first, last) = (walk.segment_of(a), walk.segment_of(b));
                 let (mut wet, mut river, mut transverse, mut samples) = (false, true, 0, 0);
                 for offset in 0..n_seg {

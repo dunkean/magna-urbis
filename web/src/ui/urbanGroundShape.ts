@@ -11,7 +11,8 @@ import { ringContains } from '../render/ringRows';
  * Built once per settlement content (lots, footprints, relief) by the 3D view (view3d/cityBuildings.ts), which hands it
  * to the terrain with `setGroundShape`; a point finds its lot in one cell of a spatial grid. The terrain applies `shape`
  * to the drawn ground before footings and moats carve it (view3d/terrain/surface.ts), so the buildings, stilts, stairs,
- * walls, fences and trees seated on `groundAt` read the same shaped ground as the mesh. */
+ * walls, fences and trees seated on `groundAt` read the same shaped ground as the mesh. The tilted map samples it onto
+ * the grid its terrain reads (render/world/groundShape.ts). */
 export const GROUND_SHAPE = Object.freeze({
   /** A lot whose natural ground drops less than this across it is left as it is, m. */
   minDrop: 1,
@@ -103,14 +104,23 @@ class LotGrid {
 export class UrbanGroundShape {
   private readonly lots: ShapedLot[] = [];
   private readonly grid = new LotGrid();
-  readonly empty: boolean;
   /** `natural`: the drawn ground before shaping (no footing or moat cut), m. */
-  constructor(lots: readonly GroundShapeLot[], natural: (x: number, y: number) => number | undefined) {
-    for (const lot of lots) {
-      const shaped = shapeLot(lot, natural);
-      if (shaped) this.grid.add(this.lots.push(shaped) - 1, shaped);
-    }
-    this.empty = !this.lots.length;
+  constructor(
+    lots: readonly GroundShapeLot[],
+    private readonly natural: (x: number, y: number) => number | undefined,
+  ) {
+    for (const lot of lots) this.add(lot);
+  }
+  add(lot: GroundShapeLot): void {
+    const shaped = shapeLot(lot, this.natural);
+    if (shaped) this.grid.add(this.lots.push(shaped) - 1, shaped);
+  }
+  get empty(): boolean {
+    return !this.lots.length;
+  }
+  /** What each levelled lot covers, with the blend around its footprints. */
+  boxes(): readonly Box[] {
+    return this.lots;
   }
   /** Number of levelled lots (diagnostics). */
   get size(): number {

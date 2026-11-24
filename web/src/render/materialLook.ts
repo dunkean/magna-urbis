@@ -1,4 +1,5 @@
 import { terrainStyle } from './terrainStyle';
+import { FRESH_WATER_GLSL } from './waterPalette';
 import { WATER_SURFACE_GLSL, waterFunctionGlsl } from './waterStyle';
 
 /** A retained forest field represents procedural-canopy; painted/diagnostic grounds never get cover. */
@@ -17,7 +18,7 @@ export function moonlightSvg(body: string, id: string): string {
     : '';
 }
 /** The material water ramp and surface shading, also usable over a cartographic ground. */
-export const MATERIAL_WATER_GLSL = `${WATER_SURFACE_GLSL}
+export const MATERIAL_WATER_GLSL = `${WATER_SURFACE_GLSL}${FRESH_WATER_GLSL}
 uniform vec2 uWaterSeason;
 ${waterFunctionGlsl('materialWaterRamp', terrainStyle('render3d').water)}
 vec3 materialWater(vec2 world,float position,float px){

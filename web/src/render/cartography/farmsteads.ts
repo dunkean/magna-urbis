@@ -83,7 +83,7 @@ export function paintFarmsteads(c: CartographyContext, f: VectorFrame): void {
     } else if (!c.activeLight && lod.band >= 2 && polyL('farm-trees')) {
       if (brushes) brushTrees('farm-trees', true);
       else {
-        fillPolys('farm-trees', pal.treeFill);
+        fillPolys('farm-trees', pal.treeFill, 0.3 + 0.7 * (pal.season?.leaf ?? 1));
         strokePolys('farm-trees', pal.treeInk, lw(0.3, 0.3), 0.8);
       }
     }

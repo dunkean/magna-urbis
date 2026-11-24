@@ -680,6 +680,7 @@ pub(super) fn split_quarter(
             if steepest > cfg.max_street_grade {
                 rank = 3;
             }
+            // A link over the lane limit is marked; `stairs::settle` keeps stairs on its steep runs only.
             let role = if steepest > cfg.max_lane_grade {
                 rank = 3;
                 "stairs"

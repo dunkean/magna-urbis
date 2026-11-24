@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '../src/v2/settings';
-import { recommendedCounts, recommendedCulture, settlementEnvironment } from '../src/v2/settlementDefaults';
-import { plausibleCultures } from '../src/v2/environmentCultures';
+import { recommendedCounts, settlementEnvironment } from '../src/v2/settlementDefaults';
+import { plausibleCultures, randomCulture } from '../src/v2/environmentCultures';
 import { regionalPopulation } from '../src/v2/regionalPopulation';
 
 describe('workbench environmental settlement suggestions', () => {
@@ -35,7 +35,7 @@ describe('workbench environmental settlement suggestions', () => {
     expect(choices).toContain('persian');
     expect(choices).not.toContain('european-organic');
     for (let i = 0; i < choices.length; i++) {
-      expect(recommendedCulture(settings, () => (i + 0.5) / choices.length)).toBe(choices[i]);
+      expect(randomCulture(settings, true, () => (i + 0.5) / choices.length)).toBe(choices[i]);
     }
   });
   it('detects layer and coastline changes even when the stored climate stays the same', () => {

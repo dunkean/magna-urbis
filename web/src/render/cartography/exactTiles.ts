@@ -36,7 +36,7 @@ import { forestWashSteps } from './forest';
 import { BUILDING_BUDGET_FULL, BUILDING_BUDGET_MAX, BUILDING_BUDGET_INDIV } from './urban/frame';
 
 export function createExactTiles(c: CartographyContext) {
-  const { pal, deps, makeCanvas, now, canvas, cache, polyL, paintMargin } = c;
+  const { deps, makeCanvas, now, canvas, cache, polyL, paintMargin } = c;
   /** Tiles per key (scale, pixel ratio, tile geometry, engine, quality, detail budgets, semantic key, position). */
   const rasterCache = new RasterTileCache<CanvasImageSource>(deps.rasterBytes);
   /** Where each stepwise tile lies and at which density: the stand-in of the 3D drape and of the miniature. */
@@ -109,7 +109,7 @@ export function createExactTiles(c: CartographyContext) {
     const budget = rasterBudget(rect, scale);
     c.layerTilesFit = (c.activeLight && scale < 1) || layerTilesFitView(c, rect, k);
     const requests: { key: string; x: number; y: number }[] = [];
-    const semanticKey = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const semanticKey = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) requests.push({ key: `${scale}|${dpr}|${tilePx}/${gutter}|${engine}|${c.activeLight}|${budget}|${semanticKey}|${x},${y}`, x, y });
     if (requests.length * (tilePx + 2 * gutter) ** 2 * 4 > rasterCache.maxBytes) return drawVector(c, view);
     const buildTile = (request: (typeof requests)[number]): CanvasImageSource => {
@@ -208,7 +208,7 @@ export function createExactTiles(c: CartographyContext) {
           function* () {
             // The first forest tile must not build eleven whole-map wash layers in
             // one step. Captures drain the same generator synchronously.
-            if (!isUnderdarkBiome(c.world.options.biome) && !(light && pal.name === 'parchment' && scale < 1)) {
+            if (!isUnderdarkBiome(c.world.options.biome) && !(light && c.pal.name === 'parchment' && scale < 1)) {
               for (const name of ['lu-forest', 'u-cover-forest']) yield* forestWashSteps(c, name);
             }
             const cx = view.cx / tileSize - 0.5,
@@ -298,7 +298,7 @@ export function createExactTiles(c: CartographyContext) {
   function drawCachedMap(target: CanvasLike, box: Rect4): boolean {
     const ctx = target.getContext('2d');
     if (!ctx) return false;
-    const semantic = `${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
+    const semantic = `${c.syncPalette()}|${deps.semantic?.key() ?? ''}|${deps.roadStyle?.().emphasis ?? 1}|${deps.urbanPlan?.() !== false}|${roadCanopyRevision()}|${whiteWaterRevision()}`;
     const light = displayQualityFor(true) === 'light',
       density = target.width / (box.maxX - box.minX);
     const tiles = [...mapPyramid].filter(([, t]) => t.semantic === semantic && t.light === light && t.density <= density * 2 && t.x < box.maxX && t.y < box.maxY && t.x + t.span > box.minX && t.y + t.span > box.minY).sort((a, b) => a[1].density - b[1].density);

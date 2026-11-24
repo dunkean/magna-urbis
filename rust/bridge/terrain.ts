@@ -16,7 +16,7 @@ import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import { GpuTerrainSampler, prepareGpu, generateGpuNoise, gpuContext, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
 import { generateGpuTerrain, erodeGpuCoast, planGpuErosion, releaseGpuTerrainCheckpoints, type ErosionProfile } from './terrainErosion';
 import { applyPhasorCpu, COMPACT_RELIEFS, compactBudget, compactProfile, COMPACT_VERSION, type PhasorSettings } from './terrainPhasor';
-import { PreparedHydrology, applyHydrologySurface, riverAreaFor, type HydrologyData, type HydrologySettings } from './hydrology';
+import { PreparedHydrology, applyHydrologySurface, lakesOff, riverAreaFor, type HydrologyData, type HydrologySettings } from './hydrology';
 import { applyHydrologyHeight } from './hydrologySurface';
 import type { TerrainScene, TerrainStyle } from './terrainRender';
 import { refineSketch, parseTerrainSketch, neuralSketchInput, heightmapSurface, type TerrainSketch } from './terrainSketch';
@@ -28,7 +28,7 @@ import { conditionRelief, computeVectorWater, conditionAndWater } from './waterN
 import { browserNeural, neuralModule, releaseNeuralBrowser } from './neuralBrowser';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { prepareNativeTerrain, sampleNativeTerrain } from './nativeTerrain';
-import { NativeReliefEngine } from './nativeRelief';
+import { NativeReliefEngine, type UnderdarkCarve } from './nativeRelief';
 import { nativeFetch } from './nativeAvailability';
 import { loadTerrainRuntime, gpuSetupDeadline, type TerrainProgressCallback } from './terrainProgress';
 import { hydrologyGrid, MAX_GPU_SOURCE_RESOLUTION, preferCpuGeneration, sourceDefinition, unsupportedExplicitGpuResolution, type SourceDefinition } from './terrainDefinition';
@@ -101,8 +101,10 @@ export interface TerrainSettings {
   coastProfile?: Partial<import('./terrainCoastProfile').CoastProfile>;
   /** Underdark: the finished relief is carved into caves and tunnels (`carve_underdark`) before the water. */
   underdark?: boolean;
-  /** Underdark natural tunnels amount (lava tubes and river passages): 0 none, 1 a few (default), up to 3. */
+  /** Underdark natural and side tunnels amount: 0 none, 1 a few (default), up to 3. */
   underdarkTunnels?: number;
+  /** Share of an Underdark map its caverns open (default 0.2). */
+  underdarkCaverns?: number;
   /** Encoded independent variations; the ordinary seed remains the initial noise draw. */
   generalSeed?: string;
   /** Coarse original drawing, refined by the procedural generator. */
@@ -605,8 +607,10 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   // Local profile: the relief engine is retained by the native service (no WASM relief work).
   const localRelief = runtime?.profile === 'local' && (nativeGeneration || neural);
   const modificationKey = settings.modification ? JSON.stringify([settings.modification.resolution, settings.modification.width, fingerprintNumbers(settings.modification.delta)]) : '';
+  // The carve replaces the relief: other options need the uncarved relief again.
+  const underdark: UnderdarkCarve = { tunnels: settings.underdarkTunnels, caverns: settings.underdarkCaverns, lakes: settings.hydrology && lakesOff(settings.hydrology) ? 0 : settings.hydrology?.lakeAbundance };
   const key =
-    JSON.stringify([settings.zones, modificationKey, !!settings.underdark, coastSeed, nativeGeneration ? [runtime!.server, coastMask, islandMode, profile] : null, localRelief ? runtime!.server : null]) +
+    JSON.stringify([settings.zones, modificationKey, settings.underdark ? underdark : null, coastSeed, nativeGeneration ? [runtime!.server, coastMask, islandMode, profile] : null, localRelief ? runtime!.server : null]) +
     '|' +
     (neural
       ? JSON.stringify([
@@ -979,15 +983,14 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     modificationApplied = key + '|' + coastKey;
   }
   // Underdark: the finished relief (any source, coasts and sculpt included) becomes caves and tunnels, once per relief.
-  if (settings.underdark && underdarkApplied !== key + '|' + coastKey + '|' + modificationApplied + '|' + (settings.underdarkTunnels ?? '')) {
+  if (settings.underdark && underdarkApplied !== key + '|' + coastKey + '|' + modificationApplied) {
     progress?.('Underdark · carving caverns and tunnels…', { stage: 'terrain-generation' });
     sampler?.dispose();
     sampler = undefined;
     samplerMode = undefined;
-    // An older WASM engine takes only the seed and ignores the amount.
-    if (nativeRelief) await nativeRelief.carveUnderdark(settings.seed, settings.underdarkTunnels);
-    else (engine!.carve_underdark as (seed: string, tunnels?: number) => void)(settings.seed, settings.underdarkTunnels);
-    underdarkApplied = key + '|' + coastKey + '|' + modificationApplied + '|' + (settings.underdarkTunnels ?? '');
+    if (nativeRelief) await nativeRelief.carveUnderdark(settings.seed, underdark);
+    else (engine!.carve_underdark as (seed: string, tunnels?: number, caverns?: number, lakes?: number) => void)(settings.seed, underdark.tunnels, underdark.caverns, underdark.lakes);
+    underdarkApplied = key + '|' + coastKey + '|' + modificationApplied;
   }
   // The overview's physical field and the display field both take the conditioning change on the source grid.
   let upsampled: { delta: Float32Array; m: number; n: number; out: Float32Array } | undefined;
@@ -1012,7 +1015,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     const showErosion = erosionEnabled && config?.showErosion !== false;
     const condMode = erosionEnabled ? config?.condMode : 'none';
     // Vector chain: the lake settings keep a share of the closed depressions as lakes instead of breaching or filling them.
-    const condLakes = vector && config && config.lakes !== 'none' ? [config.lakeAbundance, config.lakeArea, config.lakeDepth, config.lakeCoverage, config.maxLakeArea] : [0, 0, 0, 0, 0];
+    const condLakes = vector && config && !lakesOff(config) ? [config.lakeAbundance, config.lakeArea, config.lakeDepth, config.lakeCoverage, config.maxLakeArea] : [0, 0, 0, 0, 0];
     const conditioningSettings = config && {
       mode: config.condMode,
       strength: config.condStrength,
@@ -1054,9 +1057,11 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       const climate = climateOf(settings);
       const vs = {
         // The tributary density scales the catchment that starts a river; headwaters then follow the valleys upstream.
-        // Below 1 the engine removes whole rivers (smallest first) and keeps the others' sources; above 1 heads extend.
-        riverArea: riverAreaFor(config, settings.width) / Math.max(1, config.density) ** 2,
+        // Below 1 the engine removes whole rivers (smallest first, all at 0) and keeps the others' sources; above 1 heads extend.
+        // At 0 no catchment is large enough: every reader of this threshold then finds no river either.
+        riverArea: config.density > 0 ? riverAreaFor(config, settings.width) / Math.max(1, config.density) ** 2 : 1e9,
         density: Math.min(1, config.density),
+        noLakes: lakesOff(config),
         headwaters: config.headwaters !== false ? 1 : 0,
         minRiverLength: config.minRiverLength,
         lakeDepth: config.lakeDepth,

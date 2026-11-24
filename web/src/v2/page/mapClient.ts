@@ -45,8 +45,9 @@ export function mountMapClient(state: PageState, actions: PageActions): void {
     },
   );
 
-  mountMeasureTool({ map: $('#map'), canvas: state.canvas, slot: $('.view-strip'), readout: $('#cursor-readout'), getView: () => state.client.viewer.getView(), getHeight: () => state.world?.terrain.height, getMapSize: () => state.world?.mapSize });
-  mountPinTool({ map: $('#map'), canvas: state.canvas, slot: $('.view-strip'), getView: () => state.client.viewer.getView(), setView: view => state.client.viewer.setView(view), getMapSize: () => state.world?.mapSize, getSettings: () => state.settings, changed: () => actions.touchRecipe() });
+  const groundAt = (sx: number, sy: number) => state.client.groundAt(sx, sy, $('#map').clientWidth, $('#map').clientHeight);
+  mountMeasureTool({ map: $('#map'), canvas: state.canvas, slot: $('.view-strip'), readout: $('#cursor-readout'), getView: () => state.client.viewer.getView(), groundAt, getHeight: () => state.world?.terrain.height, getMapSize: () => state.world?.mapSize });
+  mountPinTool({ map: $('#map'), canvas: state.canvas, slot: $('.view-strip'), getView: () => state.client.viewer.getView(), setView: view => state.client.viewer.setView(view), projection: () => state.client.viewer.projection(), groundAt, getMapSize: () => state.world?.mapSize, getSettings: () => state.settings, changed: () => actions.touchRecipe() });
 
   state.selectionOutline = createSelectionOverlay(
     $('#map'),

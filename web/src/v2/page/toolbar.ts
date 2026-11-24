@@ -7,9 +7,11 @@ import type { PageActions, PageState } from './contract';
 import { adaptedExtent } from '../settings';
 import { buildingAt, nearestSettlement } from '../edits';
 import { migrateUrbanSeeds } from '../urbanSeeds';
+import { seedRoot } from '../../../../rust/bridge/generationSeed';
 import { $ } from './dom';
 import { pickOnMap } from './worldPicking';
-import { randomRootSeed, rootSeedFromText } from '../cityCode';
+import { nextRootSeed, rootSeedFromText } from '../cityCode';
+import { automaticCulture } from '../environmentCultures';
 
 export function mountToolbar(state: PageState, actions: PageActions): void {
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-option]').forEach(input =>
@@ -36,7 +38,11 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
 
   $('#random-seed').onclick = () => {
     migrateUrbanSeeds(state.settings);
-    state.settings.options.seed = randomRootSeed();
+    const options = state.settings.options,
+      followed = options.culture === automaticCulture(state.settings);
+    options.seed = nextRootSeed(seedRoot(options.seed));
+    // A culture that followed the seed and the environment still does.
+    if (followed) options.culture = automaticCulture(state.settings);
     state.mods = [];
     actions.touchRecipe();
     actions.syncControls();
@@ -121,6 +127,10 @@ export function mountToolbar(state: PageState, actions: PageActions): void {
       return;
     }
     const target = $<HTMLSelectElement>('#inspect-target').value;
+    if (target === 'any') {
+      actions.inspectEntity(p, picked.building);
+      return;
+    }
     if (state.parcelMerge && target === 'parcel') {
       state.parcelMerge.add(p);
       return;

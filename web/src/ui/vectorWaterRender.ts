@@ -2,13 +2,14 @@
 import type { RenderColors } from '../render/customColors';
 import { encodePng, pngDataUrl } from '../render/raster';
 import type { TerrainStyle } from '../../../rust/bridge/terrainRender';
-import { channelWidth, type RiverLine } from './riverVectors';
+import { channelArea, channelWidth, type RiverLine } from './riverVectors';
 import type { VectorWater } from './vectorWater';
 import { marchingSquares } from '../gen/terrain/contour';
 import { lakeSample } from './lakeGeometry';
 import { GridIndex } from '../gen/geo/spatial';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
+import { waterBedInk } from '../render/waterPalette';
 import { headwaterGeometry, isHeadwater, type HeadwaterGeometry } from '../render/riverHeadwaters';
 import { BANKFULL_RUNOFF, dischargeSize, meanDischarge, regimeRgb, riverState, riverSymbol, threadShare, waterClimate, waterRegimeActive, type RiverState, type RiverSymbol, type WaterClimate, type WaterSeason } from '../render/waterRegime';
 import { styleTraits } from '../render/terrainStyle';
@@ -143,8 +144,7 @@ const runoffOf = (water: VectorWater): number => water.runoff?.r0 ?? BANKFULL_RU
 /** Regime size of a drawn bed width (m): the catchment it was sized from (`channelWidth` inverted, so the headwater
  * taper reads as a small stream), as a mean discharge under the network's runoff (`dischargeSize`). */
 export function widthRegimeSize(width: number, scale: number, r0: number): number {
-  const area = 1e6 * Math.pow(Math.max(0, width) / (3 * scale), 1 / 0.45);
-  return dischargeSize(meanDischarge(area, r0));
+  return dischargeSize(meanDischarge(channelArea(width, scale), r0));
 }
 /** Width of the running water inside a bed of width `width` (m) on this network: see `threadShare`. */
 export const threadWidth = (water: VectorWater, width: number): number => width * threadShare(runoffOf(water));
@@ -214,17 +214,18 @@ export interface RegimeInk {
   bed: string;
   ice: string;
   iceLine: string;
-  shore: string;
 }
 /** Ink of each regime symbol in a style: intermittent courses keep the water ink dashed, dry beds (wadis) a dash-dot
  * bed ink over a pale bed wash; the parchment draws both in brown, as the old surveys did. Frozen water: a pale
- * blue-grey sheet inside darker bank lines of the water ink. Dashes in screen pixels. */
+ * blue-grey sheet inside darker bank lines of the water ink. Dashes in screen pixels. The bed wash takes the zone's bed
+ * colour in the style's medium (waterPalette.ts) and serves dry channels and exposed lake shores alike. */
 export function regimeInk(style: TerrainStyle, edge: string): RegimeInk {
-  if (style === 'night') return { intermittent: '#405875', dry: '#45546a', dryDash: [6, 2, 1.5, 2], bed: '#253749', ice: '#758ba0', iceLine: '#526d86', shore: '#35475a' };
+  const bed = (wash: string): string => waterBedInk(style, wash);
+  if (style === 'night') return { intermittent: '#405875', dry: '#45546a', dryDash: [6, 2, 1.5, 2], bed: '#253749', ice: '#758ba0', iceLine: '#526d86' };
   // Parchment: brown dash-dot ink over a pale sandy wash, the classic intermittent-stream symbol of the surveys.
-  if (style === 'parchment') return { intermittent: '#6e5232', dry: '#6e5232', dryDash: [6, 2, 1.5, 2], bed: '#c9a874', ice: '#d9dfd8', iceLine: '#8e9d9a', shore: '#e0d2ae' };
-  if (style === 'render3d' || style === 'render') return { intermittent: edge, dry: '#8c6f4c', dryDash: [5, 2, 1.2, 2], bed: '#cdb48a', ice: '#cbd9e2', iceLine: '#90a9ba', shore: '#cdbf9f' };
-  return { intermittent: edge, dry: '#86663f', dryDash: [5, 2, 1.2, 2], bed: '#e3d4b2', ice: '#d4e2eb', iceLine: '#8fb0c6', shore: '#e6dcc4' };
+  if (style === 'parchment') return { intermittent: '#6e5232', dry: '#6e5232', dryDash: [6, 2, 1.5, 2], bed: bed('#c9a874'), ice: '#d9dfd8', iceLine: '#8e9d9a' };
+  if (style === 'render3d' || style === 'render') return { intermittent: edge, dry: '#8c6f4c', dryDash: [5, 2, 1.2, 2], bed: bed('#cdb48a'), ice: '#cbd9e2', iceLine: '#90a9ba' };
+  return { intermittent: edge, dry: '#86663f', dryDash: [5, 2, 1.2, 2], bed: bed('#e3d4b2'), ice: '#d4e2eb', iceLine: '#8fb0c6' };
 }
 /** Ice bank line width (m): a fraction of the channel, kept between 0.6 m and 3.5 m. */
 const iceEdge = (w: number): number => Math.min(3.5, Math.max(0.6, 0.16 * w));
@@ -273,14 +274,20 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
       const colour = colourOf(geo.kind[start]),
         run = symbolAt(start);
       let end = start + 1;
-      while (end + 1 < widths.length && colourOf(geo.kind[end]) === colour && symbolAt(end) === run) end++;
-      const symbol: RiverSymbol = thread && run === 'water' ? 'dry' : run;
+      while (end + 1 < widths.length && end !== geo.sea - 1 && colourOf(geo.kind[end]) === colour && symbolAt(end) === run) end++;
+      const symbol: RiverSymbol = thread && run === 'water' ? 'dry' : run,
+        bare = symbol === 'dry' || symbol === 'intermittent';
+      // A bare bed stops on the coastline, without a cap: only running water blends into the sea.
+      if (bare && start >= geo.sea - 1) {
+        start = end;
+        continue;
+      }
       const id = `${symbol}${colour}`,
         group = groups.get(id) ?? { symbol, colour, banks: '', inner: '', axes: '' };
       group.banks += riverBank(packed, start, end + 1);
       // Round terminal caps and incident bank joins, like the GPU capsules. A headwater source has none:
       // its bank closes on a point and the hairline axis below is the pen's first touch.
-      const caps = start === 0 && geo.reach > 0 ? [end] : [start, end];
+      const caps = (start === 0 && geo.reach > 0 ? [end] : [start, end]).filter(k => !bare || k < geo.sea - 1 || geo.sea === widths.length);
       for (const k of caps) group.banks += cap(packed[k * 4], packed[k * 4 + 1], widths[k] / 2);
       if (symbol === 'ice') {
         if (!inset) {
@@ -300,27 +307,23 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
     if (thread) {
       // One thread per stretch of running water: it fades into the dry bed (width to zero), without caps there; the
       // ends of the course keep their caps (a confluence, a lake shore, the sea), the source its taper.
-      const packedThread = packed.slice();
-      for (let k = 0; k < widths.length; k++) packedThread[k * 4 + 2] = thread[k];
-      for (let a = 0; a + 1 < widths.length;) {
-        if (!(thread[a] > THREAD_MIN || thread[a + 1] > THREAD_MIN)) {
-          a++;
-          continue;
+      for (const strand of threadStrands(geo, states!, thread)) {
+        const last = strand.widths.length - 1,
+          packedThread = new Float32Array(strand.widths.length * 4);
+        strand.widths.forEach((w, k) => packedThread.set([strand.points[2 * k], strand.points[2 * k + 1], w, 0], k * 4));
+        for (const [a, b] of wetStretches(strand.widths)) {
+          const colour = colourOf(strand.kind[a]),
+            id = `water${colour}`,
+            group = groups.get(id) ?? { symbol: 'water' as RiverSymbol, colour, banks: '', inner: '', axes: '' };
+          group.banks += riverBank(packedThread, a, b + 1);
+          if (a === 0 && geo.reach <= 0) group.banks += cap(strand.points[0], strand.points[1], strand.widths[0] / 2);
+          if (b === last) group.banks += cap(strand.points[2 * b], strand.points[2 * b + 1], strand.widths[b] / 2);
+          group.axes += `M${strand.points
+            .slice(2 * a, 2 * b + 2)
+            .map((v, k) => (k % 2 ? ',' : k ? 'L' : '') + format(v))
+            .join('')}`;
+          groups.set(id, group);
         }
-        let b = a + 1;
-        while (b + 1 < widths.length && (thread[b] > THREAD_MIN || thread[b + 1] > THREAD_MIN)) b++;
-        const colour = colourOf(geo.kind[a]),
-          id = `water${colour}`,
-          group = groups.get(id) ?? { symbol: 'water' as RiverSymbol, colour, banks: '', inner: '', axes: '' };
-        group.banks += riverBank(packedThread, a, b + 1);
-        if (a > 0 || geo.reach <= 0) group.banks += cap(packedThread[a * 4], packedThread[a * 4 + 1], a === 0 ? thread[a] / 2 : 0);
-        if (b === widths.length - 1) group.banks += cap(packedThread[b * 4], packedThread[b * 4 + 1], thread[b] / 2);
-        group.axes += `M${geo.points
-          .slice(2 * a, 2 * b + 2)
-          .map((v, k) => (k % 2 ? ',' : k ? 'L' : '') + format(v))
-          .join('')}`;
-        groups.set(id, group);
-        a = b;
       }
     }
   }
@@ -339,6 +342,103 @@ function threadWidths(water: VectorWater, widths: ArrayLike<number>, states?: Ri
   const share = threadShare(runoffOf(water));
   if (!states || share >= 1) return;
   return Float64Array.from(widths, (w, k) => (states[k].ice >= 0.55 ? 0 : w * share * Math.max(0, Math.min(1, (0.85 - states[k].dry) / 0.85))));
+}
+
+/** A strand of running water inside a bed wider than it: its vertices, widths (m), course style and ice. */
+interface Strand {
+  points: number[];
+  widths: number[];
+  kind: number[];
+  ice: number[];
+}
+const strandHash = (seed: number, i: number): number => {
+  let h = Math.imul(seed ^ Math.imul(i, 374761393), 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 2147483648 - 1;
+};
+/** Smooth 1D value noise in [-1, 1]. */
+const strandNoise = (seed: number, t: number): number => {
+  const i = Math.floor(t),
+    f = t - i,
+    a = strandHash(seed, i);
+  return a + (strandHash(seed, i + 1) - a) * f * f * (3 - 2 * f);
+};
+/** The running water of a course inside its bed: it wanders from bank to bank on three wavelengths of the bed width
+ * instead of following the axis, breaks into tapered pools where the course is intermittent, and splits into a second
+ * strand that leaves and rejoins it in the wide beds. Deterministic per course; its ends stay on the axis (confluence,
+ * lake, sea). Built with the network, never per frame. */
+function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: Float64Array): Strand[] {
+  const p = geo.points,
+    n = geo.widths.length,
+    seed = Math.imul(Math.round(p[0]) ^ Math.imul(Math.round(p[1]), 668265263), 374761393),
+    nx = new Float64Array(n),
+    ny = new Float64Array(n),
+    // Distance along the course, in bed widths.
+    along = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    const a = Math.max(0, k - 1),
+      b = Math.min(n - 1, k + 1),
+      dx = p[2 * b] - p[2 * a],
+      dy = p[2 * b + 1] - p[2 * a + 1],
+      l = Math.hypot(dx, dy) || 1;
+    nx[k] = -dy / l;
+    ny[k] = dx / l;
+    if (k) along[k] = along[k - 1] + Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]) / Math.max(2, (geo.widths[k] + geo.widths[k - 1]) / 2);
+  }
+  const main: Strand = { points: [], widths: [], kind: [], ice: [] },
+    side: Strand = { points: [], widths: [], kind: [], ice: [] };
+  let braided = false;
+  const sample = (k: number, t: number): void => {
+    const next = Math.min(n - 1, k + 1),
+      at = (a: ArrayLike<number>): number => a[k] + (a[next] - a[k]) * t,
+      mix = (a: number, b: number): number => a + (b - a) * t,
+      x = mix(p[2 * k], p[2 * next]),
+      y = mix(p[2 * k + 1], p[2 * next + 1]),
+      bed = at(geo.widths),
+      q = at(along),
+      end = smoothstep(0, 3, Math.min(q, along[n - 1] - q)),
+      broken = smoothstep(0.4, 0.8, mix(states[k].dry, states[next].dry)),
+      pool = 1 - broken * (1 - smoothstep(-0.05, 0.4, strandNoise(seed + 3, q / 3))),
+      width = Math.min(bed, at(thread) * pool * (1 + 0.5 * broken)),
+      room = 0.47 * Math.max(0, bed - width),
+      wander = 1.5 * (0.62 * strandNoise(seed, q / 5.5) + 0.28 * strandNoise(seed + 1, q / 2.1) + 0.1 * strandNoise(seed + 2, q / 0.9)),
+      offset = Math.max(-1, Math.min(1, wander)) * room * end,
+      split = smoothstep(16, 40, bed) * (1 - smoothstep(0.4, 0.6, width / Math.max(1e-6, bed))) * smoothstep(0.1, 0.45, strandNoise(seed + 4, q / 7)) * end,
+      other = offset + (Math.max(-1, Math.min(1, 1.5 * strandNoise(seed + 5, q / 4))) * room - offset) * split,
+      add = (s: Strand, o: number, w: number): void => {
+        s.points.push(x + at(nx) * o, y + at(ny) * o);
+        s.widths.push(w);
+        s.kind.push(geo.kind[k]);
+        s.ice.push(mix(states[k].ice, states[next].ice));
+      };
+    add(main, offset, width * (1 - 0.25 * split));
+    add(side, other, 0.6 * width * split);
+    braided ||= 0.6 * width * split > THREAD_MIN;
+  };
+  sample(0, 0);
+  for (let k = 1; k < n; k++) {
+    const bed = Math.max(geo.widths[k - 1], geo.widths[k]),
+      water = Math.max(thread[k - 1], thread[k]),
+      // Vertices about one bed width apart where the thread has room to wander.
+      pieces = water > THREAD_MIN && bed - water > 5 ? Math.max(1, Math.min(32, Math.ceil(Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]) / Math.max(4, bed)))) : 1;
+    for (let j = 1; j <= pieces; j++) sample(k - 1, j / pieces);
+  }
+  return braided ? [main, side] : [main];
+}
+/** First and last vertex of each stretch of a strand that holds water. */
+function wetStretches(widths: readonly number[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (let a = 0; a + 1 < widths.length;) {
+    if (!(widths[a] > THREAD_MIN || widths[a + 1] > THREAD_MIN)) {
+      a++;
+      continue;
+    }
+    let b = a + 1;
+    while (b + 1 < widths.length && (widths[b] > THREAD_MIN || widths[b + 1] > THREAD_MIN)) b++;
+    out.push([a, b]);
+    a = b;
+  }
+  return out;
 }
 
 /** The same tapered banks as the 2D ink, rasterized by each 3D tile at its own density. */
@@ -408,6 +508,8 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
         // freezes gradually along its channel instead of switching state at each vertex.
         const c0 = regimeRgb(states[i - 1]),
           c1 = regimeRgb(states[i]);
+        // A bare bed stops on the coastline: only running water blends into the sea.
+        if (i >= geo.sea && (thread || c0[0] + c1[0] < 1)) continue;
         const steps = Math.max(1, Math.min(12, Math.ceil(Math.max(Math.abs(c1[0] - c0[0]), Math.abs(c1[1] - c0[1])) / 0.04)));
         for (let k = 0; k < steps; k++) {
           const t0 = k / steps,
@@ -418,21 +520,30 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
             out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), at(c0[0], c1[0], t), at(c0[1], c1[1], t), at(c0[2], c1[2], t));
             continue;
           }
-          // The bed: no running water (r 0), the same ice; the thread inside it carries the regime (MAX blend).
+          // The bed: no running water (r 0), the same ice; the thread runs inside it (below; MAX blend).
           out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), 0, at(c0[1], c1[1], t), at(c0[2], c1[2], t));
-          const w0 = at(thread[i - 1], thread[i], t0),
-            w1 = at(thread[i - 1], thread[i], t1);
-          if (w0 > THREAD_MIN || w1 > THREAD_MIN) out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), w0, w1, at(c0[0], c1[0], t), at(c0[1], c1[1], t), at(c0[2], c1[2], t));
         }
         continue;
       }
       const state = mean(states[i - 1], states[i]);
       // Ink styles: the vector layer draws intermittent and dry courses as symbols over the land.
       const symbol = riverSymbol(state);
-      if (symbol === 'water' && thread) {
-        if (thread[i - 1] > THREAD_MIN || thread[i] > THREAD_MIN) push(x0, y0, x1, y1, thread[i - 1], thread[i], colourOf(kind[i - 1]));
-      } else if (symbol === 'water' || symbol === 'ice') push(x0, y0, x1, y1, widths[i - 1], widths[i], symbol === 'ice' ? ink!.ice : colourOf(kind[i - 1]));
+      if (symbol === 'ice' || (symbol === 'water' && !thread)) push(x0, y0, x1, y1, widths[i - 1], widths[i], symbol === 'ice' ? ink!.ice : colourOf(kind[i - 1]));
     }
+    // The running water inside its bed. Its width and pools already carry the dryness: it is plain water.
+    if (thread)
+      for (const strand of threadStrands(geo, states!, thread))
+        for (let i = 1; i < strand.widths.length; i++) {
+          const w0 = strand.widths[i - 1],
+            w1 = strand.widths[i];
+          if (!(w0 > THREAD_MIN || w1 > THREAD_MIN)) continue;
+          const x0 = strand.points[2 * i - 2],
+            y0 = strand.points[2 * i - 1],
+            x1 = strand.points[2 * i],
+            y1 = strand.points[2 * i + 1];
+          if (display.material) out.push(x0, y0, x1, y1, w0, w1, ...regimeRgb({ dry: 0, ice: (strand.ice[i - 1] + strand.ice[i]) / 2 }));
+          else push(x0, y0, x1, y1, w0, w1, colourOf(strand.kind[i]));
+        }
   };
   const rivers = water.rivers;
   if ((display.riverMode === 'vector' || water.editedNetwork) && rivers) {
@@ -472,11 +583,15 @@ function headwaterSet(water: VectorWater, threshold: number): Set<RiverLine> {
   }
   return set;
 }
+/** A drawn course and the index of its first vertex past the coastline (its vertex count when it ends on land). */
+export interface DrawnCourse extends HeadwaterGeometry {
+  sea: number;
+}
 /** River line geometry as drawn: a genuine headwater emerges from zero width instead of starting as a full-width disc,
  * and a course that ends in the sea opens into its estuary (every style, 2D GPU ribbon, SVG ink and 3D water masks). */
-export function riverGeometry(water: VectorWater, line: RiverLine, thinner: number, riverAreaKm2: number): HeadwaterGeometry {
+export function riverGeometry(water: VectorWater, line: RiverLine, thinner: number, riverAreaKm2: number): DrawnCourse {
   const widths = channelWidths(water, line, thinner);
-  return terminalGeometry(water, line, estuaryGeometry(water, line, headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 }));
+  return coastGeometry(water, line, terminalGeometry(water, line, estuaryGeometry(water, line, headwaterSet(water, riverAreaKm2 * 1e6).has(line) ? headwaterGeometry(line, widths) : { points: line.points, widths, level: line.level, kind: line.kind, reach: 0 })));
 }
 /** A course that ends inland on its own (no receiving course, sea, lake or map edge: a closed basin floor, or the water
  * budget drying it out) fans out into its sink: the channel narrows to a thread over its last stretch instead of
@@ -550,6 +665,54 @@ function surfaceHeight(h: VectorWater['hydro'], px: number, py: number): number 
   return v;
 }
 
+/** A course never runs under the sea: a vertex stands on the coastline, and past it only a short run is left (half the
+ * width there), where the running water blends into the sea. A course wholly under the sea keeps nothing but that run. */
+function coastGeometry(water: VectorWater, line: RiverLine, geo: HeadwaterGeometry): DrawnCourse {
+  const p = geo.points,
+    n = geo.widths.length,
+    height = (k: number): number => surfaceHeight(water.hydro, p[2 * k], p[2 * k + 1]);
+  if (n < 2 || !endsInSea(water, line)) return { ...geo, sea: n };
+  // First vertex of the drowned end, and the heights on both sides of the coastline above it.
+  let first = n,
+    above = height(n - 1),
+    below = above;
+  while (above < 0 && first > 0) {
+    first--;
+    below = above;
+    if (first > 0) above = height(first - 1);
+  }
+  if (first === n) return { ...geo, sea: n };
+  // A wholly drowned course is cut from its first vertex on.
+  const shore = first > 0 ? first : 1,
+    points = p.slice(0, 2 * shore),
+    widths = geo.widths.slice(0, shore),
+    level = geo.level.slice(0, shore),
+    kind = geo.kind.slice(0, shore);
+  // The point at share t between vertex k - 1 and vertex k.
+  const add = (k: number, t: number): void => {
+    const at = (a: readonly number[], i: number, j: number): number => a[i] + (a[j] - a[i]) * t;
+    points.push(at(p, 2 * k - 2, 2 * k), at(p, 2 * k - 1, 2 * k + 1));
+    widths.push(at(geo.widths, k - 1, k));
+    level.push(at(geo.level, k - 1, k));
+    kind.push(geo.kind[t < 1 ? k - 1 : k]);
+  };
+  let from = 0;
+  if (first > 0) {
+    from = above / Math.max(1e-9, above - below);
+    if (from > 0.02 && from < 0.98) add(shore, from);
+  }
+  const sea = widths.length;
+  let left = 0.5 * widths[sea - 1];
+  for (let k = shore; k < n && left > 0; k++, from = 0) {
+    const step = Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]),
+      to = step > 1e-9 ? Math.min(1, from + left / step) : 1;
+    if (to > from) add(k, to);
+    left -= (to - from) * step;
+    if (to < 1) break;
+  }
+  return { points, widths, level, kind, reach: geo.reach, sea };
+}
+
 /** Estuary shape: the funnel spans ESTUARY_LENGTH channel widths before the coastline (by mouth, from the shorter to
  * the longer); its banks open as the power ESTUARY_PROFILE of the distance (a trumpet: concave banks that steepen into
  * the coastline, no corner) and run on into the sea over ESTUARY_SEA of the funnel's length, where the satellite
@@ -621,9 +784,9 @@ function estuaryOf(water: VectorWater, line: RiverLine, width: number): Estuary 
         step = Math.max(0.5, Math.min(cell / 8, width / 2));
       const half = 0.5 * flare * width;
       // First land met walking up from the sea along a line offset by `side` from the axis (linear zero crossing).
-      const crossing = (side: number): number | undefined => {
+      const crossing = (side: number, reach = top): number | undefined => {
         let previous: number | undefined;
-        for (let t = bottom; t <= top; t += step) {
+        for (let t = bottom; t <= reach; t += step) {
           const [x, y, nx, ny] = at(t),
             v = surfaceHeight(h, x + nx * side, y + ny * side);
           if (v > 0) return previous === undefined ? undefined : t - (step * v) / (v - previous);
@@ -632,7 +795,7 @@ function estuaryOf(water: VectorWater, line: RiverLine, width: number): Estuary 
         return undefined;
       };
       const banks = [crossing(-half), crossing(half)].filter((v): v is number => v !== undefined);
-      const coast = banks.length ? (banks[0] + banks[banks.length - 1]) / 2 : (crossing(0) ?? 0);
+      const coast = banks.length ? (banks[0] + banks[banks.length - 1]) / 2 : (crossing(0, back[0]) ?? 0);
       estuary = { coast, length, flare, dx, dy };
     }
   }
@@ -829,7 +992,7 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
         svg += `<path d="${axes}" fill="none" stroke="${ink.iceLine}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
         svg += `<path d="${banks}" fill="${colour}" stroke="none"/>`;
         svg += `<path d="${inner}" fill="${ink.ice}" stroke="none"/>`;
-        svg += `<path d="${axes}" fill="none" stroke="${ink.iceLine}" stroke-width="0.6" stroke-opacity="0.45" stroke-dasharray="14 9" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+        svg += `<path d="${axes}" fill="none" stroke="${ink.iceLine}" stroke-width="0.6" stroke-opacity="0.3" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
       } else {
         // Dry and intermittent beds retain the full river outline as a plain silt band.
         svg += `<path d="${banks}" fill="${ink.bed}" stroke="${ink.dry}" stroke-width="0.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
@@ -851,7 +1014,7 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
   }
   if (material && display.showLakes && !lakeFrozen) svg += vectorLakeMaterial(water, display.style, display.colors);
   // The exposed shore lies over the lake material and the river mouths, inside the lake only.
-  if (lakes && ring > 1) svg += `<clipPath id="water-regime-lakes"><path d="${lakes}" clip-rule="evenodd"/></clipPath><path d="${lakes}" fill="none" stroke="${ink.shore}" stroke-width="${format(2 * ring)}" stroke-linejoin="round" clip-path="url(#water-regime-lakes)"/>`;
+  if (lakes && ring > 1) svg += `<clipPath id="water-regime-lakes"><path d="${lakes}" clip-rule="evenodd"/></clipPath><path d="${lakes}" fill="none" stroke="${ink.bed}" stroke-width="${format(2 * ring)}" stroke-linejoin="round" clip-path="url(#water-regime-lakes)"/>`;
   return svg + '</g>';
 }
 
@@ -879,11 +1042,13 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
     const cell = water.hydro.width / water.hydro.n;
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillStyle = ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2.5 * cell;
+    // The banks and their antialiased edge alone: the covers hold the same banks (never the planning cells of the courses),
+    // and a wider eraser opened the sea along every dry mouth, showing the bed under it.
+    ctx.lineWidth = 2 * mpp;
     for (const g of paths)
       if (g.symbol !== 'water') {
         ctx.fill(g.banksPath);
-        ctx.stroke(g.axesPath);
+        ctx.stroke(g.banksPath);
       }
     if (lakeFrozen && lakes) ctx.fill(lakes, 'evenodd');
     if (ring > 1 && lakes) {
@@ -896,9 +1061,10 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = ctx.strokeStyle = fill;
     for (const g of paths) if (g.symbol === 'water') ctx.fill(g.banksPath);
-    // A material water cover (3D) keeps a shrunken low-water thread in the intermittent courses, as the 2D compositor
-    // keeps its pools: a running trunk narrows into its bed instead of stopping short. Ink styles draw their symbol.
-    if (display.style === 'render3d')
+    // A material water cover (3D) keeps a shrunken low-water thread in the intermittent courses whose water fills its bed
+    // (elsewhere the strands above are that water): a running trunk narrows into its bed instead of stopping short. Ink
+    // styles draw their symbol.
+    if (display.style === 'render3d' && threadShare(runoffOf(water)) >= 1)
       for (const g of paths)
         if (g.symbol === 'intermittent') {
           ctx.save();
@@ -926,7 +1092,7 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
   if (lakes && ring > 1 && dryOn) {
     ctx.save();
     ctx.clip(lakes, 'evenodd');
-    ctx.strokeStyle = material ? '#b9ab8e' : ink.shore;
+    ctx.strokeStyle = ink.bed;
     ctx.lineWidth = 2 * ring;
     ctx.stroke(lakes);
     ctx.restore();

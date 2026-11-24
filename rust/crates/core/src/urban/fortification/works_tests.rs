@@ -10,31 +10,9 @@ use super::geometry::{
 use super::style::styled;
 use super::towers::flank_stations;
 use super::test_fixtures::{
-    N, W, built, built_with, octagon, predicted, river,
+    N, built, built_with, octagon, predicted, river,
     street, streets, structures, surface,
 };
-
-/// Review 03/11 (medina village): a curtain that turns at its last corner
-/// and runs on along the shore for a few metres before the water ends at
-/// that corner; the shore passage starts there.
-#[test]
-fn review11_curtain_ends_at_its_corner_without_a_shore_jog() {
-    let height = vec![10.0f32; N * N];
-    let cell = W / N as f64;
-    let water: Vec<u8> = (0..N * N).map(|i| if (i / N) as f64 * cell >= 1000.0 { 1 } else { 0 }).collect();
-    let surface = surface(&height, &water);
-    let corner = pt(1300.0, 996.0);
-    let path = vec![pt(600.0, 600.0), pt(1300.0, 600.0), corner, pt(1330.0, 1004.0), pt(600.0, 1010.0), pt(600.0, 600.0)];
-    let banks = composition::water_gates(&path, surface);
-    assert_eq!(banks.len(), 2);
-    let mut e = Enclosure { gates: banks.iter().map(|b| b.0).collect(), path, kind: "wall".into(), ..Default::default() };
-    let mut style = styled("curtain", "medina", 500);
-    style.options(&LayoutConfig::default());
-    build(&mut e, 0, &banks, &[], surface, &style, 500, &predicted(), &Rng::new("review11-jog"));
-    let shore: Vec<_> = e.gatehouses.iter().filter(|g| g.kind == "shore").collect();
-    assert_eq!(shore.len(), 1);
-    assert!(shore[0].passage.iter().any(|&p| dist(p, corner) < 3.0), "passage {:?} does not start at the corner", shore[0].passage);
-}
 
 #[test]
 fn review_water_edges_and_timber_are_standard() {
@@ -45,9 +23,11 @@ fn review_water_edges_and_timber_are_standard() {
     assert_eq!(timber.kind, "palisade");
     assert_eq!(timber.material, "timber-earth");
     assert!(timber.curtain_width <= 3.0 && timber.height <= 3.5);
-    for (code, expected) in [(1, "shore"), (3, "water")] {
+    // A channel a gate spans opens on water gates whatever its water class; a wider one opens
+    // nothing: the curtain stays whole (the trace keeps it off the water).
+    for (code, x1, expected) in [(1, 1196.0, 2), (3, 1196.0, 2), (3, 1260.0, 0)] {
         let height = vec![10.0f32; N*N];
-        let water: Vec<_> = river(1180.0,1260.0).into_iter().map(|w| if w != 0 { code } else { 0 }).collect();
+        let water: Vec<_> = river(1180.0,x1).into_iter().map(|w| if w != 0 { code } else { 0 }).collect();
         let surface = surface(&height,&water);
         let path = octagon();
         let banks = composition::water_gates(&path,surface);
@@ -56,8 +36,8 @@ fn review_water_edges_and_timber_are_standard() {
         let mut style = styled("curtain","european-organic",500);
         style.options(&LayoutConfig::default());
         build(&mut e,0,&banks,&[],surface,&style,500,&predicted(),&Rng::new("review-water"));
-        assert!(!e.gatehouses.is_empty());
-        assert!(e.gatehouses.iter().all(|g| g.kind == expected));
+        assert_eq!(e.gatehouses.len(), expected);
+        assert!(e.gatehouses.iter().all(|g| g.kind == "water"));
     }
 }
 
@@ -194,8 +174,8 @@ fn gatehouses_straddle_street_crossings_and_streets_stay_open() {
 /// centre; the curtain opens on paired water gates.
 #[test]
 fn nothing_stands_in_the_water_and_water_gates_pair_banks() {
-    // River code 3: a sea or lake strip opens as shore ends, not water gates.
-    let water: Vec<u8> = river(1180.0, 1260.0).into_iter().map(|w| w * 3).collect();
+    // A channel a water gate spans (16 m): a wider water opens no gate, each bank keeps its ring.
+    let water: Vec<u8> = river(1180.0, 1196.0).into_iter().map(|w| w * 3).collect();
     let height = vec![10.0f32; N * N];
     let s = surface(&height, &water);
     for style in ["flanked", "bastioned"] {

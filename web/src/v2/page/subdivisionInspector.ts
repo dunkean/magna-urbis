@@ -96,12 +96,13 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
       const urban = townUrban(state.world, settlement.key);
       if (!urban) continue;
       const native = nativeCityRecords(state.world)?.[settlement.key],
-        layout = native?.layouts[0];
+        layout = native?.layouts[0],
+        savedBlocks = state.settings.urban?.local?.[settlement.key]?.parcels?.overrides?.blocks;
       const items =
         kind === 'quarter'
           ? urban.quarters.map((q, i) => ({ shape: q.poly, id: q.nativeId, index: i }))
           : kind === 'block'
-            ? urban.blocks.map((ring, i) => ({ shape: layout?.blocks[i]?.kind === 'deleted' ? { outer: [], holes: [] } : (layout?.blocks[i]?.shape ?? { outer: ring, holes: [] }), id: layout ? blockEditKey(layout, i) : undefined, index: i }))
+            ? urban.blocks.map((ring, i) => ({ shape: layout?.blocks[i]?.kind === 'deleted' ? { outer: [], holes: [] } : (layout?.blocks[i]?.shape ?? { outer: ring, holes: [] }), id: layout ? blockEditKey(layout, i, savedBlocks) : undefined, index: i }))
             : urban.parcels.map((parcel, i) => ({ shape: native?.partitions?.[0]?.parcels[i]?.shape ?? { outer: parcel.poly, holes: [] }, id: parcel.nativeId, index: i }));
       const item = items.find(item => (selectedId !== undefined ? item.id === selectedId : pointInRing(item.shape.outer, p) && !item.shape.holes?.some(h => pointInRing(h, p))));
       if (!item) continue;
@@ -125,7 +126,7 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
       // Saved recipes name a quarter or block by its stable edit key; the native index only addresses this layout.
       const quarterIndex = kind === 'quarter' ? item.index : kind === 'block' ? layout!.blocks[item.index].quarter : (layout?.blocks[urban.parcels[item.index].block]?.quarter ?? 0);
       const quarterId = layout ? quarterEditKey(layout, quarterIndex) : String(quarterIndex);
-      const blockId = kind === 'block' ? nativeId : kind === 'parcel' && layout ? blockEditKey(layout, urban.parcels[item.index].block) : undefined;
+      const blockId = kind === 'block' ? nativeId : kind === 'parcel' && layout ? blockEditKey(layout, urban.parcels[item.index].block, savedBlocks) : undefined;
       const blockIds = new Set(kind === 'quarter' ? layout?.blocks.flatMap((b, i) => (b.quarter === item.index ? [String(i)] : [])) : kind === 'block' ? [String(item.index)] : []);
       const parcelIds = new Set(
         kind === 'parcel'
@@ -138,7 +139,7 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
       const children = {
         blocks: layout
           ? [...blockIds].flatMap(id => {
-              const key = blockEditKey(layout, Number(id));
+              const key = blockEditKey(layout, Number(id), savedBlocks);
               return key ? [key] : [];
             })
           : [],

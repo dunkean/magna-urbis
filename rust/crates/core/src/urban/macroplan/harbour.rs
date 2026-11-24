@@ -1464,39 +1464,28 @@ pub struct Quay {
     pub material: String,
 }
 
-/// Open the curtain where a landing street actually crosses it, before the
-/// fortification pass caps streets against closed curtains.
-pub(in super::super) fn open_gates(layout: &mut super::super::Layout) {
-    let fronts: Vec<Point> = layout.streets.iter().filter(|s| s.role == "quay")
-        .flat_map(|s| s.path.iter().copied()).collect();
-    if fronts.is_empty() { return; }
-    // Quay points in 4 m cells: a point within 1 m lies in the cell or a neighbour.
-    let cell = |p: Point| ((p.x / 4.0).floor() as i64, (p.y / 4.0).floor() as i64);
-    let mut cells: std::collections::HashMap<(i64, i64), Vec<Point>> = Default::default();
-    for &q in &fronts { cells.entry(cell(q)).or_default().push(q); }
-    let on_front = |p: Point| {
-        let (cx, cy) = cell(p);
-        (cx - 1..=cx + 1).any(|x| (cy - 1..=cy + 1).any(|y| cells.get(&(x, y)).is_some_and(|v| v.iter().any(|&q| dist(p, q) < 1.0))))
-    };
-    // Curtain edges by their boxes, per enclosure: a street segment tests only those it may meet, in edge order.
-    let mut edges: Vec<Option<g::BoxGrid>> = layout.enclosures.iter().map(|_| None).collect();
-    for st in &layout.streets {
-        if !st.path.iter().any(|&p| on_front(p)) { continue; }
-        for (ei, e) in layout.enclosures.iter_mut().enumerate() {
-            let grid = edges[ei].get_or_insert_with(|| g::BoxGrid::new(e.path.windows(2)
-                .map(|w| (w[0].x.min(w[1].x), w[0].y.min(w[1].y), w[0].x.max(w[1].x), w[0].y.max(w[1].y))).collect()));
-            for w in st.path.windows(2) {
-                let seg = (w[0].x.min(w[1].x), w[0].y.min(w[1].y), w[0].x.max(w[1].x), w[0].y.max(w[1].y));
-                for k in grid.query(seg, 1e-3) {
-                    let edge = [e.path[k], e.path[k + 1]];
-                    if let Some((_, p)) = g::segment_hit(w[0], w[1], edge[0], edge[1])
-                        && !e.gates.iter().any(|&q| dist(p, q) < 4.0) {
-                        e.gates.push(p);
-                    }
-                }
-            }
-        }
+/// Depth (m) of the service strip behind a quay: the curtain of a harbour outside passes behind it.
+const SERVICE_STRIP: f64 = 15.0;
+/// Quays closer than this (m) share one harbour front.
+const FRONT_GAP: f64 = 40.0;
+
+/// The harbour fronts of a plan, which a town wall passes behind when it is traced
+/// (`fortification::water_fronts`): one continuous strip of constant depth along each run of quays,
+/// the quays with their service band, closed over the gaps between them. The landing rows behind it
+/// stay inside the wall and reach the quay through the gates of the gate budget. `inside`, the
+/// strip is the quay alone: the curtain stands right behind it.
+pub(in super::super) fn fronts(streets: &[Street], inside: bool) -> Vec<Shape> {
+    let strip = if inside { 1.0 } else { SERVICE_STRIP };
+    let ribbons: Vec<Shape> = streets.iter().filter(|s| s.role == "quay" && s.path.len() >= 2)
+        .flat_map(|s| {
+            let width = s.widths.iter().copied().fold(0.0, f64::max) + 2.0 * strip;
+            g::ribbon(&s.path, &vec![width; s.path.len()])
+        }).collect();
+    if ribbons.is_empty() {
+        return ribbons;
     }
+    let quays = geo::MultiPolygon(g::union(&ribbons).iter().map(g::polygon).collect());
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g::shapes(super::super::composition::closing(&quays, FRONT_GAP * 0.5)))).unwrap_or(ribbons)
 }
 
 fn timber_port(culture: &str) -> bool {

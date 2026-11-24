@@ -22,7 +22,8 @@ fn v2_settings(width: f64) -> Settings {
         deltas: true,
         headwaters: 1.0,
         min_river_length: 400.0,
-        density: 0.0,
+        density: 1.0,
+        no_lakes: false,
         oxbows: 0.0,
     }
 }
@@ -132,6 +133,27 @@ fn breaches_leave_no_closed_pocket() {
     assert!(lowered > 20, "{lowered} cells lowered");
     assert!(worst <= 0.1, "a lowered cell stands under {worst:.3} m of water");
     assert!(deepest <= 0.3, "no pond is left behind the swell ({deepest:.3} m)");
+}
+
+/// Zero means none: river density 0 draws no course and `no_lakes` no lake, on a relief with a pond and no conditioning.
+#[test]
+fn zero_rivers_and_zero_lakes_leave_none() {
+    let (n, width) = (96_usize, 9600.0_f64);
+    let height: Vec<f32> = (0..n * n)
+        .map(|c| {
+            let (x, y) = ((c % n) as f64 - 48.0, (c / n) as f64 - 48.0);
+            (60.0 - 0.2 * x + 0.002 * y * y - 25.0 * (-(x * x + y * y) / 120.0).exp()) as f32
+        })
+        .collect();
+    let climate = Climate { temperature: 10.0, precipitation: 1000.0 };
+    let run = |density: f64, no_lakes: bool| compute_water(&height, n, width, &Settings { density, no_lakes, ..v2_settings(width) }, climate, "zero", None);
+    let courses = |water: &Water| water.rivers.as_ref().map_or(0, |network| network.rivers.len());
+    let all = run(1.0, false);
+    assert!(courses(&all) > 0 && all.lakes > 0, "{} courses and {} lakes", courses(&all), all.lakes);
+    let dry = run(0.0, false);
+    assert!(courses(&dry) == 0 && dry.river_cells == 0 && dry.lakes > 0);
+    let drained = run(1.0, true);
+    assert!(courses(&drained) > 0 && drained.lakes == 0 && drained.lake.iter().all(|&v| v == 0));
 }
 
 /// Invariant of the river density (the V2 `Rivers` setting): at 0.5 the rivers are a subset of those at 1, each kept

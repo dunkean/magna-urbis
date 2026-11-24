@@ -8,10 +8,12 @@
  * - a lighter shallow shelf and a thin shoreline glint inside the bank of wide water;
  * - a soft damp shadow on the land just outside it;
  * - gentle world-anchored surface variation (static value noise);
+ * - the climate's fresh-water tone over it (waterPalette.ts);
  * - with uRegime, the seasonal regime carried by the river colour (waterRegime.ts regimeRgb):
- *   a flat sandy bed, ice with a darker edge line;
+ *   a flat bed in the zone's bed colour, ice with a darker edge line;
  *   uRegime 2 (City Bench retained banks, city zoom): the dry bed is a flat silt band with a slightly darker edge.
  * Land pixels cost at most 24 taps; nothing is computed on the CPU per pixel. */
+import { FRESH_WATER_GLSL } from './waterPalette';
 import { WATER_STYLE_GLSL, WATER_SURFACE_GLSL } from './waterStyle';
 import { WATER_REGIME_GLSL } from './waterRegime';
 
@@ -26,6 +28,7 @@ uniform float uRings[${RENDER_WATER_RINGS}]; uniform int uRingCount;
 uniform int uRegime;
 ${WATER_STYLE_GLSL}
 ${WATER_SURFACE_GLSL}
+${FRESH_WATER_GLSL}
 ${WATER_REGIME_GLSL}
 out vec4 outColor;
 vec4 tap(vec2 f) { return textureLod(uLayer, clamp(f, vec2(.5), uCanvas - .5) / uCanvas, 0.); }
@@ -85,7 +88,7 @@ void main() {
   // Shoreline glint about one pixel inside the bank.
   float rim = smoothstep(.2 * uDpr, .9 * uDpr, depth) * (1. - smoothstep(1.2 * uDpr, 2.4 * uDpr, depth));
   // Gentle surface variation, finer octave only where it stays above a pixel.
-  color = waterSurfaceShade(color, world, uPx, shelf, rim, wide);
+  color = freshWaterTone(waterSurfaceShade(color, world, uPx, shelf, rim, wide));
   // Wet bank: soft dark shadow on the land side.
   vec3 bankColor = vec3(.055, .085, .045);
   float bankA = .55 * bank * bank;
@@ -109,7 +112,7 @@ void main() {
     if (frozen > 0.) color = mix(color, waterIceColor(world, 1. - smoothstep(.6 * uDpr, 2.2 * uDpr, depth), 0., along), frozen);
     // Land side: a dry bed has pale bars, not a dark wet bank; ice keeps a faint one.
     vec3 neighbour = 1. - clamp(near.rgb / max(near.a, 1e-3), 0., 1.);
-    bankColor = mix(bankColor, vec3(.78, .70, .56), smoothstep(.3, .8, neighbour.r));
+    bankColor = mix(bankColor, uWaterBed, smoothstep(.3, .8, neighbour.r));
     bankA *= 1. - (uRegime == 2 ? smoothstep(.3, .8, neighbour.r) : .6 * smoothstep(.3, .8, max(neighbour.r, neighbour.g)));
   }
   outColor = vec4(color * a + bankColor * bankA * (1. - a), a + bankA * (1. - a));

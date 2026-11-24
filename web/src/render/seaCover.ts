@@ -1,10 +1,10 @@
 /** Sea cover of the 3D water layer, shared by the V2 and City Bench (CLAUDE.md: one shared choice).
  *
- * One coastline: the town engine treats a point as sea where the cubic B-spline of the physical height field is at or
- * below 0 m next to the sea (urban `Surface::wet`), and the 2D map draws its coast at the same zero level (ui/terrainGl.ts
- * land cover; refinement never moves that line). The 3D water layer used to flag each grid point whose control value is
- * <= 0 and spread that flag over the whole cell, so the 3D coast stood up to half a cell (and the control/spline
- * difference) inland of the engine's shore: shore houses, fences and quays stood half in the water.
+ * One coastline: the zero level of the physical field's cubic B-spline with the fractal shore detail (render/shoreDetail.ts),
+ * traced into the sea polygon the town engine reads and drawn by the 2D land cover. The grid here holds the B-spline alone:
+ * the V2 fills the polygon itself, and this cover only the open sea. The 3D water layer used to flag each grid point whose
+ * control value is <= 0 and spread that flag over the whole cell, so the 3D coast stood up to half a cell (and the
+ * control/spline difference) inland of the engine's shore: shore houses, fences and quays stood half in the water.
  * Here each grid point gets a coverage ramp from its signed distance to the spline's zero line (value over gradient, in
  * cells) that crosses the threshold the tile painter keeps (waterCellsWorker.ts, alpha 102/255) on that line: the drawn
  * edge follows the engine's shoreline to a fraction of a cell. */
@@ -13,8 +13,9 @@
 const EDGE = 102 / 255;
 
 /** Paints `rgba` (its alpha scaled by the sea coverage) on the n × n grid points of `height`: full inside the sea, a ramp
- * across the B-spline zero line, nothing on land. Existing stronger alpha (river or lake cells) is kept. */
-export function paintSeaCover(pixels: Uint8ClampedArray, height: ArrayLike<number>, rgba: ArrayLike<number>, n = Math.round(Math.sqrt(height.length))): void {
+ * across the B-spline zero line, nothing on land. Existing stronger alpha (river or lake cells) is kept. `offshore` moves
+ * the edge seaward (cells): a page that also fills the refined sea polygon leaves the shoreline to it. */
+export function paintSeaCover(pixels: Uint8ClampedArray, height: ArrayLike<number>, rgba: ArrayLike<number>, n = Math.round(Math.sqrt(height.length)), offshore = 0): void {
   if (n * n !== height.length) {
     for (let i = 0; i < height.length; i++) if (height[i] <= 0) pixels.set(rgba, i * 4);
     return;
@@ -37,7 +38,7 @@ export function paintSeaCover(pixels: Uint8ClampedArray, height: ArrayLike<numbe
       const d = slope > 1e-6 ? value / slope : value > 0 ? Infinity : -Infinity;
       // A ramp of slope EDGE per cell: both grid points straddling the line stay unclamped, so the bilinear tile upsampling
       // crosses EDGE exactly on the line; full sea from 1.5 cells out, nothing from a cell inland.
-      const cover = Math.max(0, Math.min(1, EDGE * (1 - d)));
+      const cover = Math.max(0, Math.min(1, EDGE * (1 - d - offshore)));
       if (cover <= 0) continue;
       const o = y * n + x,
         a8 = Math.round(cover * alpha);

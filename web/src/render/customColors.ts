@@ -49,6 +49,7 @@ export function applyRenderColors(p: Palette, colors?: RenderColors): Palette {
         : p.hypso,
     land: { ...p.land, forest: c.forest, meadow: c.meadow, field: c.field },
     treeFill: colors.forest ?? p.treeFill,
+    season: p.season && colors.forest ? { ...p.season, fill: colors.forest } : p.season,
     roadFill: c.road,
     roadEdge: c.roadEdge,
     trackFill: c.track,

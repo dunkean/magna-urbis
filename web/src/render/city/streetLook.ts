@@ -29,8 +29,8 @@ const SURFACE_SKIP = new Set(['mole', 'stairs', 'port-stairs', 'landing']);
 /** Untrodden snow in the shade of a quiet lane. */
 const LANE_SNOW = 'rgb(130,151,170)';
 
-/** Ink of a street on the drawn plans: fill, casing, and whether the casing is dashed (fords). */
-export function streetInk(role: string, rank: number, palette: CityPalette): { fill: string; casing: string; dash?: boolean } {
+/** Ink of a street on the drawn plans: fill and casing. */
+export function streetInk(role: string, rank: number, palette: CityPalette): { fill: string; casing: string } {
   if (role === 'track') {
     const ink = palette === 'ink' ? '#776348' : '#a58e65';
     return { fill: ink, casing: ink };
@@ -38,14 +38,14 @@ export function streetInk(role: string, rank: number, palette: CityPalette): { f
   if (role === 'mole') return { fill: quayFill('stone'), casing: '#2b2015' }; // stone port works: dark outline, legible zoomed out
   if (palette === 'ink') return { fill: '#6b5640', casing: '#3c3024' };
   if (isBoardwalk(role)) return { fill: '#b49a6d', casing: '#514431' };
-  if (palette === 'parchment') return role === 'ford' ? { fill: PARCH.ford, casing: PARCH.ink, dash: true } : role === 'bridge' ? { fill: PARCH.bridge, casing: PARCH.wall } : { fill: PARCH.street, casing: PARCH.streetEdge };
+  if (palette === 'parchment') return role === 'ford' ? { fill: PARCH.ford, casing: PARCH.ink } : role === 'bridge' ? { fill: PARCH.bridge, casing: PARCH.wall } : { fill: PARCH.street, casing: PARCH.streetEdge };
   switch (role) {
     case 'bridge':
       return { fill: '#ddd3c2', casing: '#4d4740' };
     case 'causeway':
       return { fill: '#dccaa0', casing: '#76664f' };
     case 'ford':
-      return { fill: '#b9d0d6', casing: '#6f8f9a', dash: true };
+      return { fill: '#b9d0d6', casing: '#6f8f9a' };
     case 'port-stairs':
     case 'stairs':
       return { fill: '#e6d5b2', casing: '#705d45' };
@@ -89,7 +89,6 @@ interface StreetStroke {
   paint: StreetPaint;
   /** World metres. */ width: number;
   alpha?: number;
-  /** World metres. */ dash?: readonly number[];
   cap?: 'round' | 'butt';
 }
 export interface StreetFill {
@@ -159,12 +158,12 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
   const { lod, mpp, night } = f,
     px = (n: number): number => n * mpp,
     strokes: StreetStroke[] = [];
-  const add = (layer: StreetLayer, paint: StreetPaint, width: number, alpha?: number, cap?: 'round' | 'butt', dash?: readonly number[]): void => {
-    strokes.push({ layer, paint, width, alpha, dash, cap });
+  const add = (layer: StreetLayer, paint: StreetPaint, width: number, alpha?: number, cap?: 'round' | 'butt'): void => {
+    strokes.push({ layer, paint, width, alpha, cap });
   };
   // Near and close: streets are their ground surface — square ends at junctions, curb returns, tapers — filled once
-  // per style, so nothing shows twice. Decks, quays, fords, dashed tracks and stairs keep their stroked art.
-  const surfaceOk = (dash?: boolean): boolean => f.layers.roadSurface !== false && atLeast(lod, 'near') && !dash && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
+  // per style, so nothing shows twice. Decks, quays, fords and stairs keep their stroked art.
+  const surfaceOk = (): boolean => f.layers.roadSurface !== false && atLeast(lod, 'near') && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
   // Stroked ways under the surfaced streets, crossings over them.
   const body: StreetLayer = CROSSINGS.has(s.role) ? 'over' : 'under';
   const ink = streetInk(s.role, s.rank, f.streetPalette ?? f.palette);
@@ -205,7 +204,7 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
         add('marks2', busy > 0.5 ? SLUSH : LANE_SNOW, road * (0.5 + 0.32 * busy), (0.2 + 0.32 * busy) * snow, 'butt');
         add('marks2', paintRoad, road * (0.16 + 0.18 * busy), paved.bed * (0.55 + 0.45 * busy), 'butt');
       }
-      for (const k of paved.strokes) add('marks2', k.paint ?? paintRoad, k.width, k.alpha, k.cap as 'round' | 'butt', k.dash);
+      for (const k of paved.strokes) add('marks2', k.paint ?? paintRoad, k.width, k.alpha, k.cap as 'round' | 'butt');
       if (paved.grain) add('marks2', { grain: true }, road, paved.grain, 'butt');
       const sidewalk = walk ? sidewalkTone(f.pavedStyle) : undefined;
       if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge: 0, fill: sidewalk ? { paint: sidewalk, alpha: paved.bed } : bed, inset: walk, inner: sidewalk ? bed : undefined, end: 'square' } };
@@ -229,7 +228,7 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
       add('marks2', busy > 0.5 ? SLUSH : LANE_SNOW, w2 * (0.5 + 0.32 * busy), (0.2 + 0.32 * busy) * snow, 'butt');
       add('marks2', paintRoad, w2 * (0.16 + 0.18 * busy), bedAlpha * (0.55 + 0.45 * busy), 'butt');
     }
-    if (marks.wear) add('marks2', marks.wear.color, w2 * marks.wear.share, marks.wear.alpha, 'butt', marks.wear.dash);
+    if (marks.wear) add('marks2', marks.wear.color, w2 * marks.wear.share, marks.wear.alpha, 'butt');
     if (marks.grain) add('marks2', { grain: true }, w2, marks.grain, 'butt');
     // A loose earth end narrows into the ground; a lane stops flat.
     if (surfaceOk()) return { mode: 'natural', strokes, surface: { w, edge, casing: shoulder && lod !== 'far' ? { paint: shoulder.color, alpha: shoulder.alpha } : undefined, fill: { paint: paintRoad, alpha: bedAlpha }, end: s.role === 'lane' ? 'butt' : 'taper' } };
@@ -258,8 +257,8 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
   const bodyPaint: StreetPaint = !custom && f.roadLook !== 'ink' && f.textured ? { material: streetLayer(s.role, s.rank), fallback: ink.fill } : ink.fill;
   const inkEdge = edge * Math.max(1, f.emphasis),
     inkAlpha = Math.min(1, emphasisAlpha(f.emphasis));
-  if (surfaceOk(ink.dash)) return { mode: 'ink', strokes, surface: { w, edge: inkEdge, casing: edge > 0 ? { paint: ink.casing, alpha: inkAlpha } : undefined, fill: { paint: bodyPaint, alpha: inkAlpha } } };
-  if (edge > 0) add('casing', ink.casing, w2 + 2 * inkEdge, inkAlpha, cap, ink.dash ? [px(4), px(2)] : undefined);
+  if (surfaceOk()) return { mode: 'ink', strokes, surface: { w, edge: inkEdge, casing: edge > 0 ? { paint: ink.casing, alpha: inkAlpha } : undefined, fill: { paint: bodyPaint, alpha: inkAlpha } } };
+  if (edge > 0) add('casing', ink.casing, w2 + 2 * inkEdge, inkAlpha, cap);
   add(body, bodyPaint, w2, inkAlpha, cap);
   const look: StreetLook = { mode: 'ink', strokes };
   if (s.role === 'bridge' && w2 > px(3.5)) look.rails = { paint: ink.casing, width: Math.max(0.25, px(0.55)), offset: w2 / 2 - Math.max(0.4, px(0.8)) };

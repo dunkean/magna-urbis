@@ -4,7 +4,7 @@
  * The vertex shader places one square of the map (an instance of the grid mesh): it moves the odd vertices onto the
  * grid of the level above with the distance (patches.ts explains why that leaves no crack), evaluates the cubic
  * B-spline of the height grid and its slope from the sixteen control points around the vertex (the surface of
- * heights.ts, the one the 2D ground shades), and projects. Positions are sums of whole cells times the cell size plus
+ * heights.ts, the one the 2D ground shades), adds the ground the towns shape (groundShape.ts), and projects. Positions are sums of whole cells times the cell size plus
  * one offset common to the frame, so two squares compute the very same bits for a vertex they share.
  *
  * The fragment shader shows the baked ground tile of the square, then the tile of the map drape over it (mapDrape.ts:
@@ -16,6 +16,7 @@
  * dim ambient and the warm light of the lanterns of the towns and of the nearest isolated buildings, and the far cave dissolves into darkness instead of the haze.
  */
 import { GROUND_LAMPS } from './cave';
+import { GROUND_SHAPE_GLSL } from './groundShapeTexture';
 import { LATTICE } from './patches';
 
 export const TERRAIN_VS = `#version 300 es
@@ -39,6 +40,7 @@ uniform vec3 uLevel;
 // Height grid: cells per metre, cells per side, lowest height drawn (m), metres drawn per metre of height.
 uniform vec4 uGrid;
 uniform sampler2D uHeights;
+${GROUND_SHAPE_GLSL}
 out vec3 vUv; out vec3 vDrapeUv; out vec2 vSlope; out float vDistance; out vec3 vWorld;
 const float CELLS = ${LATTICE}.0;
 vec4 weights(float t) { float t2 = t * t, t3 = t2 * t, s = 1.0 - t; return vec4(s * s * s, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0; }
@@ -64,6 +66,13 @@ void main() {
   }
   slope *= uGrid.x;
   if (height < uGrid.z) { height = uGrid.z; slope = vec2(0.0); }
+  if (uShapeSide > 0) {
+    vec2 at = uTarget.xy + place;
+    if (shapeLayer(at) >= 0) {
+      height += shapeMove(at);
+      slope += 0.5 * vec2(shapeMove(at + vec2(1.0, 0.0)) - shapeMove(at - vec2(1.0, 0.0)), shapeMove(at + vec2(0.0, 1.0)) - shapeMove(at - vec2(0.0, 1.0)));
+    }
+  }
   vec3 position = vec3(place, height * uGrid.w - uTarget.z);
   gl_Position = uProjection * vec4(position, 1.0);
   vUv = vec3(aTile.xy + lattice / CELLS * aTile.z, aSquare.w);

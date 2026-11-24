@@ -66,7 +66,6 @@ export interface Style {
   stroke?: string | CanvasPattern;
   width?: number;
   alpha?: number;
-  dash?: number[];
   cap?: CanvasLineCap;
 }
 const patternIds = new WeakMap<CanvasPattern, number>();
@@ -81,7 +80,7 @@ const patternKey = (v: string | CanvasPattern | undefined): string | undefined =
 export class Batches {
   private groups = new Map<string, { style: Style; path: Path2D }>();
   add(style: Style, path: Path2D): void {
-    const key = `${patternKey(style.fill)}|${patternKey(style.stroke)}|${style.width}|${style.alpha}|${style.dash}|${style.cap}`;
+    const key = `${patternKey(style.fill)}|${patternKey(style.stroke)}|${style.width}|${style.alpha}|${style.cap}`;
     let group = this.groups.get(key);
     if (!group) {
       group = { style, path: new Path2D() };
@@ -99,7 +98,6 @@ export class Batches {
       if (style.stroke && style.width) {
         ctx.strokeStyle = style.stroke;
         ctx.lineWidth = style.width;
-        ctx.setLineDash(style.dash ?? []);
         ctx.lineCap = style.cap ?? 'round';
         ctx.stroke(path);
       }
@@ -119,7 +117,6 @@ export class Batches {
       if (style.stroke && style.width) {
         ctx.strokeStyle = style.stroke;
         ctx.lineWidth = style.width;
-        ctx.setLineDash(style.dash ?? []);
         ctx.lineCap = style.cap ?? 'round';
         ctx.stroke(path);
       }

@@ -217,6 +217,10 @@ fn lattice_at(l: &Lattice, i: usize, j: usize) -> [f64; 4] {
     out
 }
 
+/// Warm-season cooling with altitude (°C/m) inside a massif, less than the free-air lapse rate: mountain forests climb
+/// to their real line (about 2,000 m in an alpine climate).
+const FOREST_LAPSE: f64 = 0.0045;
+
 /// Render's tree eligibility E in [0,1] per field texel.
 fn render_eligibility(p: &ForestParams, heights: &Heights, nn: usize) -> Vec<f32> {
     let [t, pr] = p.climate;
@@ -274,8 +278,16 @@ fn render_eligibility(p: &ForestParams, heights: &Heights, nn: usize) -> Vec<f32
             let outcrop = surface_cover(exposure, 0.75 * crag_value + 0.25 * grove, crag_kept, 0.35);
             let supply = sstep(60.0, 400.0, pr * wet_shift * (1.0 + 0.5 * valley - 0.25 * ridge));
             let perennial = sstep(2.5, -2.5, f64::max(ts, tw) + 0.35 * m1) * supply;
-            let rock = sstep(0.3, 0.85, 1.0 - outcrop) * (1.0 - sstep(rock_tan * 0.9, rock_tan * 1.6, grade));
-            *out = (rock * (1.0 - perennial) * sstep(5.5, 13.5, t_hot + boost + 0.8 * valley)) as f32;
+            let rock = sstep(0.22, 0.68, 1.0 - outcrop) * (1.0 - sstep(rock_tan * 0.9, rock_tan * 1.6, grade));
+            // Tree line: warmth under the canopy (FOREST_LAPSE), more of it on sunny slopes (south, +y) and in
+            // sheltered gullies, ragged with the crag noise; the belt below it opens gradually.
+            let warmth = t + 6.0 + boost - FOREST_LAPSE * h + 0.8 * m2 * (0.25 + 0.75 * sstep(0.015, 0.12, tpi.abs())) + 0.8 * valley
+                - 0.4 * ridge
+                - (1.4 * gy) / f64::sqrt(1.0 + grade * grade)
+                + 0.9 * crag_value;
+            // Avalanche tracks and scree aprons break the upper forest on steep ground.
+            let track = sstep(0.35, 0.65, grade) * (1.0 - sstep(9.0, 12.5, warmth)) * sstep(0.3, 0.75, -crag_value);
+            *out = (rock * (1.0 - perennial) * sstep(5.5, 13.5, t + 6.0 + boost) * sstep(5.5, 9.5, warmth) * (1.0 - 0.85 * track)) as f32;
         }
     });
     eligible
@@ -417,7 +429,7 @@ pub fn build_forest_field(p: &ForestParams) -> Result<ForestPlanes, String> {
             let valley = f64::max(sstep(0.0, -0.06, tpi_far), 0.7 * sstep(0.0, -0.05, tpi_near));
             let ridge = f64::max(sstep(0.0, 0.06, tpi_far), 0.6 * sstep(0.0, 0.05, tpi_near));
             let local = t - 0.0065 * f64::max(z, 0.0);
-            let grow = local + 6.0 + grow_boost;
+            let grow = t - FOREST_LAPSE * f64::max(z, 0.0) + 6.0 + grow_boost;
             let humid0 = pr / f64::max(20.0 * local + 280.0, 120.0);
             let (gx, gy) = (i as f64 / step as f64, j as f64 / step as f64);
             let cx = ((m - 2) as f64).min(gx.floor()) as usize;
@@ -432,7 +444,7 @@ pub fn build_forest_field(p: &ForestParams) -> Result<ForestPlanes, String> {
             let (stand, disturbed, conifer, tone_noise) = (noise6[0], sstep(1.05, 1.5, noise6[1]), noise6[2], noise6[3]);
             let humid = humid0 * (1.0 + 0.7 * valley * (1.0 - sstep(1.5, 3.0, humid0)) - 0.18 * ridge) * (0.12 * noise6[4]).exp();
             let treeline = grow + 0.9 * noise6[5] + 0.7 * valley - 0.5 * ridge;
-            let thermal = sstep(5.0, 8.5, treeline);
+            let thermal = sstep(4.5, 7.0, treeline);
             let moisture = sstep(0.38, 1.25, humid);
             let cover_max = 0.6 + 0.38 * sstep(0.8, 2.2, humid);
             let bog = valley * (1.0 - sstep(0.02, 0.08, slope)) * sstep(1.6, 3.0, humid) * (1.0 - sstep(11.0, 17.0, grow)) * (1.0 - w_trop_region);

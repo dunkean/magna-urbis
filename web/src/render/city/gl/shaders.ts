@@ -138,7 +138,7 @@ void main() {
   outColor = vec4(vColor * (1.0 - sett + 0.08 * wear), 1.0);
 }`;
 /** Segment instance → quad around the capsule; meta bits: 0-3 rank, 4 crossing,
- * 5/6 butt start/end, 7 dashed, 8 solid edge (bridges, quays). */
+ * 5/6 butt start/end, 8 solid edge (bridges, quays). */
 export const STROKE_VS = `#version 300 es
 layout(location = 0) in vec4 aSeg;
 layout(location = 1) in vec3 aShape;
@@ -201,7 +201,7 @@ uniform highp sampler2DArray uAlbedo;
 uniform float uExt[32];
 #endif
 uniform float uMpp, uDevPx, uFade;
-uniform int uPass, uDashKind, uBridgeDeck, uSingle;
+uniform int uPass, uBridgeDeck, uSingle;
 out vec4 outColor;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p) {
@@ -285,10 +285,6 @@ void main() {
   else if (s > vLen) d = (vMeta & 64u) != 0u ? max(t - vHw, s - vLen) : length(vec2(s - vLen, t)) - vHw;
   else d = t - vHw;
   float a = clamp(0.5 - d / uDevPx, 0.0, 1.0);
-  if (uPass == 0 && (vMeta & 128u) != 0u) {
-    float on = uDashKind == 2 ? max(1.3, 2.0 * uMpp) : 4.0 * uMpp, off = uDashKind == 2 ? max(0.5, uMpp) : 2.0 * uMpp;
-    if (mod(vAlong, on + off) > on) a = 0.0;
-  }
   // Single coverage (translucent streets under a stencil): a fragment claims its samples
   // whole, so overlapping segments of one class never blend twice; MSAA smooths the edge.
   if (uSingle == 1) a = a < 0.5 ? 0.0 : 1.0;

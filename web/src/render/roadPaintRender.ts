@@ -23,7 +23,6 @@ export interface RoadStroke {
   addPx: number;
   addM: number;
   opacity?: number;
-  dash?: string;
   cap?: 'butt' | 'round';
   /** Ditches: the band between this stroke and a narrower cut (same base) is kept, through a mask. */
   cut?: { addPx: number; addM: number };
@@ -58,15 +57,15 @@ export function renderRoadStrokes(c: RoadClass, s: RoadSurface): RoadStroke[] {
         ];
   strokes.push(
     { layer: 'shadow', color: '#0b1208', scale: 1, addPx: trail ? 2 : 3.5, addM: trail ? 1.5 : 3, opacity: trail ? 0.22 : 0.32 },
-    s === 'dirt' ? { layer: 'casing', color: CASING.dirt, scale: 1, addPx: 1, addM: 0.6, opacity: 0.6, dash: trail ? '1.2 2.4' : undefined } : { layer: 'casing', color: CASING[s], scale: 1, addPx: 1.6, addM: 1 },
-    { layer: 'fill', color: fill, scale: 1, addPx: 0, addM: 0, dash: trail ? '1.2 2.4' : undefined },
+    s === 'dirt' ? { layer: 'casing', color: CASING.dirt, scale: 1, addPx: 1, addM: 0.6, opacity: trail ? 0.25 : 0.6 } : { layer: 'casing', color: CASING[s], scale: 1, addPx: 1.6, addM: 1 },
+    { layer: 'fill', color: fill, scale: trail ? 0.7 : 1, addPx: 0, addM: 0, opacity: trail ? 0.6 : undefined },
   );
   if (trail) return strokes;
   if (s === 'paved' || s === 'flagstone') {
-    strokes.push({ layer: 'detail', color: s === 'paved' ? '#7d6141' : '#6d604c', scale: 0.82, addPx: 0, addM: 0, opacity: s === 'paved' ? 0.26 : 0.34, dash: s === 'paved' ? '0.6 1.8' : '0.5 1.5', cap: 'butt' });
+    strokes.push({ layer: 'detail', color: s === 'paved' ? '#7d6141' : '#6d604c', scale: 0.82, addPx: 0, addM: 0, opacity: s === 'paved' ? 0.1 : 0.13, cap: 'butt' });
     strokes.push({ layer: 'detail', color: '#f2dfb4', scale: 0.32, addPx: 0, addM: 0, opacity: 0.45 });
-  } else if (s === 'gravel') strokes.push({ layer: 'detail', color: '#8d7c60', scale: 0.62, addPx: 0, addM: 0, opacity: 0.38, dash: '0.4 1.1', cap: 'butt' });
-  else strokes.push({ layer: 'detail', color: '#674a2b', scale: 0.34, addPx: 0, addM: 0, opacity: 0.45, dash: '4 2.5' });
+  } else if (s === 'gravel') strokes.push({ layer: 'detail', color: '#8d7c60', scale: 0.62, addPx: 0, addM: 0, opacity: 0.14, cap: 'butt' });
+  else strokes.push({ layer: 'detail', color: '#674a2b', scale: 0.28, addPx: 0, addM: 0, opacity: 0.3 });
   return strokes;
 }
 
@@ -79,7 +78,6 @@ export function renderCrossingStrokes(kind: 'bridge' | 'ford' | 'causeway'): Roa
       { layer: 'casing', color: '#dacba9', scale: 1, addPx: 3, addM: 2.4, cap: butt },
       { layer: 'casing', color: '#4a3c2d', scale: 1, addPx: 1.2, addM: 0.8, cap: butt },
       { layer: 'fill', color: '#a8957a', scale: 1, addPx: 0, addM: 0, cap: butt },
-      { layer: 'detail', color: '#7a6850', scale: 1, addPx: 0, addM: 0, opacity: 0.55, dash: '1 3.2', cap: butt },
     ];
   if (kind === 'causeway')
     return [
@@ -89,8 +87,8 @@ export function renderCrossingStrokes(kind: 'bridge' | 'ford' | 'causeway'): Roa
       { layer: 'fill', color: '#c4b493', scale: 1, addPx: 0, addM: 0 },
     ];
   return [
-    { layer: 'casing', color: '#7fb0b2', scale: 1, addPx: 0.6, addM: 0.4, opacity: 0.7, dash: '1 2' },
-    { layer: 'detail', color: '#d4e6e1', scale: 0.4, addPx: 0, addM: 0, opacity: 0.8, dash: '0.6 2.4' },
+    { layer: 'casing', color: '#7fb0b2', scale: 1, addPx: 0.6, addM: 0.4, opacity: 0.4 },
+    { layer: 'detail', color: '#d4e6e1', scale: 0.4, addPx: 0, addM: 0, opacity: 0.4 },
   ];
 }
 

@@ -161,13 +161,17 @@ export function cavernField(layer: CaveLayer, clearance: number): CavernField | 
   let base = Infinity;
   for (let i = 0; i < n * n; i++) base = Math.min(base, data[i]);
   const local = new Float32Array(n * n),
-    floor = new Float32Array(n * n);
+    floor = new Float32Array(n * n),
+    // Great halls: how far a place belongs to one (its chamber spreads over 180 m to 420 m of radius).
+    hall = new Float32Array(n * n);
   let roof = new Float32Array(n * n);
   for (let i = 0; i < n * n; i++) {
     floor[i] = open(i) || toOpen[i] < 0 ? data[i] : data[toOpen[i]];
-    // A 200 m chamber keeps 1.2 of the clearance, a great one 2. A passage is a vault: its apex never lower than
-    // 1.5 × its half-width (about 3 × the spread size at its wall), up to 2.2 × the clearance.
-    local[i] = Math.max(clearance * (0.4 + 1.6 * smooth(0, 1, (size[i] * cell) / 400)), Math.min(3 * size[i] * cell, 2.2 * clearance));
+    hall[i] = smooth(180, 420, size[i] * cell);
+    // A 200 m chamber keeps 1.2 of the clearance, a great one 2, and the dome of a great hall rises to 7. A passage is a
+    // vault: its apex never lower than 1.5 × its half-width (about 3 × the spread size at its wall), up to 2.2 × the
+    // clearance.
+    local[i] = Math.max(clearance * (0.4 + 1.6 * smooth(0, 1, (size[i] * cell) / 400) + 5 * hall[i]), Math.min(3 * size[i] * cell, 2.2 * clearance));
     roof[i] = floor[i] + local[i];
   }
   // The nearest-opening floors meet in seams inside the rock: a few box passes over rock cells smooth them.
@@ -203,7 +207,8 @@ export function cavernField(layer: CaveLayer, clearance: number): CavernField | 
       y = (Math.floor(i / n) + 0.5) * cell,
       v = 1.3 * (vaultNoise(x / wave, y / wave) - 0.5) + 0.7 * (vaultNoise((2 * x) / wave + 37.2, (2 * y) / wave + 11.8) - 0.5),
       great = smooth(0, 1, (toRock[i] * cell) / 250),
-      factor = v > 0 ? 1 + (2 + 8 * great) * smooth(0.05, 0.6, v) : 1 - 0.55 * smooth(0.05, 0.55, -v);
+      // The dome of a great hall is high already: it swells less and comes down less.
+      factor = v > 0 ? 1 + (2 + 8 * great) * (1 - 0.9 * hall[i]) * smooth(0.05, 0.6, v) : 1 - 0.55 * (1 - 0.6 * hall[i]) * smooth(0.05, 0.55, -v);
     local[i] = Math.max(local[i] * (1 + away * (factor - 1)), Math.min(local[i], VAULT_LOW));
     roof[i] = floor[i] + local[i];
   }

@@ -2,7 +2,7 @@
  * Look of the town plan: the palettes and the paint of the footprint, the blocks, the parcels, the quays and the walls.
  *
  * Part of the town's look (city/look.ts). Each rule returns the ordered paint operations of one element for one frame
- * state (`PlanFrame`: view, level of detail, palette, ground blend, season); widths and dashes are CSS pixels. The
+ * state (`PlanFrame`: view, level of detail, palette, ground blend, season); widths are CSS pixels. The
  * Canvas town (cityCanvas.ts drawCitySteps) turns each operation into one batched fill or stroke; the GPU town
  * (cityGlStyle.ts) folds the same operations into its per-feature colour tables. Neither holds a colour of its own.
  */
@@ -49,6 +49,15 @@ export const PARCH = {
   wallFill: '#6b5540',
   tower: '#4e3b28',
 };
+/** The parchment plan under the snow of the date: its grounds whiten, its ink stays. */
+const PARCH_GROUNDS = ['block', 'lot', 'yard', 'garden', 'place', 'market', 'common', 'reserve', 'footprint'] as const;
+let snowedParch: { snow: number; table: typeof PARCH } | undefined;
+function parchPlan(): typeof PARCH {
+  const snow = mapGroundSnow();
+  if (!(snow > 0)) return PARCH;
+  if (snowedParch?.snow !== snow) snowedParch = { snow, table: { ...PARCH, ...Object.fromEntries(PARCH_GROUNDS.map(k => [k, mix(PARCH[k], '#f3f4ef', 0.72 * snow)])) } };
+  return snowedParch.table;
+}
 /** Night plan grounds, matched to render/styles.ts PALETTES.night urban colours and buildingColors (dark slate blocks under dark masses). */
 const NIGHT_PLAN = { ink: '#04060e', inkSoft: '#04060e', block: '#182038', lot: '#1d2640', yard: '#141a2c', garden: '#14281f', place: '#2e2b30', market: '#3d372b', common: '#162a30', reserve: '#1a2236', footprint: '#18203a' };
 export const DISTRICT_COLORS: Record<string, string> = {
@@ -127,7 +136,6 @@ export interface PaintOp {
   stroke?: string;
   /** Stroke width, CSS px. */ widthPx?: number;
   alpha?: number;
-  /** Dash pattern, CSS px. */ dashPx?: number[];
   cap?: 'round' | 'butt';
   /** The fill is the parchment hatching (PARCHMENT_HATCH) instead of a colour. */ hatch?: true;
   /** A square or a market: textured materials replace the fill colour with the paving material. */ plaza?: boolean;
@@ -179,7 +187,7 @@ export function planFrame(o: PlanFrameInput): PlanFrame {
     parchment,
     night,
     tabled: parchment || night,
-    C: night ? NIGHT_PLAN : PARCH,
+    C: night ? NIGHT_PLAN : parchment ? parchPlan() : PARCH,
     material,
     naturalGround,
     blend,
@@ -236,7 +244,7 @@ export function blockOps(f: PlanFrame, b: CityBlock, hideLotLines: boolean | und
   else if (view === 'buildings') fill = f.tabled ? C.yard : lod === 'mid' ? mix(districtColor(b.district, growthColor(b.zone)), PAPER, 0.35) : painted ? mix(districtColor(b.district, growthColor(b.zone)), PAINTED_YARD.earth, PAINTED_YARD.share) : '#ece2cb';
   else if (night) fill = C.block;
   else if (palette === 'ink') fill = '#e3d1b5';
-  else if (parchment) fill = PARCH.block;
+  else if (parchment) fill = C.block;
   else fill = palette === 'atlas' ? ATLAS[b.quarter % ATLAS.length] : growthColor(b.zone);
   const stroke = (view === 'buildings' && lod !== 'close') || !blockLine ? undefined : f.outline;
   if (f.blend && fill) {
@@ -258,7 +266,6 @@ export function blockOps(f: PlanFrame, b: CityBlock, hideLotLines: boolean | und
       stroke: stroke ?? (blockLine && parchment && b.kind === 'place' ? PARCH.inkSoft : undefined),
       widthPx: f.lineWidthPx,
       alpha: b.peripheral && view !== 'buildings' ? 0.6 : 1,
-      dashPx: reserve ? [3, 2] : undefined,
     },
   ];
   // Parchment: built blocks hatched in ink, as on the engraved plans.
@@ -317,7 +324,7 @@ export function parcelOps(f: PlanFrame, p: CityParcel, hideLotLines: boolean | u
     if (f.slush && isPlaza(use)) ops.push({ fill: SLUSH, alpha: 0.3 * f.slush });
     if (lod === 'close' && !f.material && lotLine) ops.push({ stroke: f.softLine.color, widthPx: 0.5, alpha: f.softLine.alpha * (ground ? 0.8 : 1) });
   } else if (view === 'parcels') {
-    const fill = palette === 'terrain' ? undefined : night ? (openFill ?? C.lot) : palette === 'ink' ? '#eee0c9' : parchment ? (openFill ?? PARCH.lot) : (openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone)));
+    const fill = palette === 'terrain' ? undefined : night ? (openFill ?? C.lot) : palette === 'ink' ? '#eee0c9' : parchment ? (openFill ?? C.lot) : (openFill ?? (palette === 'atlas' ? ATLAS[p.index % ATLAS.length] : growthColor(p.zone)));
     ops.push({ fill, plaza: isPlaza(use), stroke: atLeast(lod, 'near') && lotLine ? f.outline : undefined, widthPx: f.lineWidthPx, alpha: p.peripheral ? 0.65 : 1 });
   } else if (view === 'uses') {
     if (p.allocation) {
@@ -344,7 +351,7 @@ export function parcelOps(f: PlanFrame, p: CityParcel, hideLotLines: boolean | u
   return ops;
 }
 /** Outline of a parcel whose building was refused (access diagnostic), from near. */
-export const REFUSED_PARCEL: PaintOp = { stroke: urbanFunctionColor('refusal'), widthPx: 1.8, dashPx: [4, 2] };
+export const REFUSED_PARCEL: PaintOp = { stroke: urbanFunctionColor('refusal'), widthPx: 1.4 };
 /** Outline of the selected parcel or building. */
 export const SELECTION: PaintOp = { stroke: '#197ea4', widthPx: 2 };
 
@@ -357,7 +364,6 @@ export const quayPaint = (f: Pick<PlanFrame, 'lod' | 'parchment'>, kind: string,
 interface WallLook {
   /** Stroke width in metres at `mpp` (a wall keeps a minimum on screen). */ thick: number;
   outer: string;
-  /** Dash of a palisade (metres at `mpp`), undefined for masonry. */ dash?: number[];
   /** The lighter core line of a stone wall (none far, none on a palisade). */ inner?: { color: string; share: number };
   /** Gate and wall towers (none far, none on a palisade). */ tower?: { radius: number; fill: string; stroke: string; strokePx: number };
 }
@@ -373,7 +379,6 @@ export function wallLook(kind: string, palette: CityPalette, lod: CityLod, mpp: 
   return {
     thick,
     outer: palisade ? '#72533a' : parchment ? PARCH.wall : '#4b443b',
-    dash: palisade ? [Math.max(1.3, 2 * mpp), Math.max(0.5, mpp)] : undefined,
     inner: !palisade && lod !== 'far' ? { color: parchment ? PARCH.wallFill : '#b6a793', share: WALL_CORE } : undefined,
     tower: !palisade && lod !== 'far' ? { radius: Math.max(thick * 0.95, 2.2 * mpp), fill: parchment ? PARCH.tower : '#5a5248', stroke: parchment ? PARCH.wall : '#2f2a24', strokePx: 0.6 } : undefined,
   };

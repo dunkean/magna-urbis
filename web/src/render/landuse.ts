@@ -273,8 +273,8 @@ function fieldNetwork(world: Pick<World, 'landuse'>, pal: Palette, s: number, sc
   const ways = lu.ways ?? [];
   if (ways.length) {
     const d = ways.map(w => pathD(w, false)).join('');
-    // subtle earth-toned dashed hairlines, never paper-white bands across the fields
-    out += `<g class="lu-ways" fill="none" stroke-linecap="butt" stroke-linejoin="round"><path d="${d}" stroke="${ruralInk(pal)}" stroke-width="${f1(Math.max(1.4, 0.55 * s))}" stroke-opacity="${pal.rural.way}" stroke-dasharray="${f1(4 * s)} ${f1(2.5 * s)}"/></g>`;
+    // subtle earth-toned hairlines, never paper-white bands across the fields
+    out += `<g class="lu-ways" fill="none" stroke-linecap="butt" stroke-linejoin="round"><path d="${d}" stroke="${ruralInk(pal)}" stroke-width="${f1(Math.max(1.4, 0.55 * s))}" stroke-opacity="${pal.rural.way}"/></g>`;
   }
   const hl = lu.headlands ?? [];
   if (hl.length) {
@@ -292,7 +292,7 @@ function fieldNetwork(world: Pick<World, 'landuse'>, pal: Palette, s: number, sc
     ] as const) {
       if (!lines.length) continue;
       const k = fieldBoundaryStyle(pal, s, material);
-      out += `<path class="lu-${material}s" d="${lines.map(line => pathD(line, false)).join('')}" fill="none" stroke="${k.color}" stroke-width="${f1(k.width)}" stroke-opacity="${k.alpha}"${k.dash.length ? ` stroke-dasharray="${k.dash.map(f1).join(' ')}"` : ''}/>`;
+      out += `<path class="lu-${material}s" d="${lines.map(line => pathD(line, false)).join('')}" fill="none" stroke="${k.color}" stroke-width="${f1(k.width)}" stroke-opacity="${k.alpha}"/>`;
     }
     out +=
       `<g class="lu-hedges"><path d="${d}" fill="none" stroke="${style.color}" stroke-width="${f1(style.width)}" stroke-opacity="${style.alpha}" stroke-linecap="round"/>` +
@@ -318,7 +318,7 @@ function farmSvg(f: Farmstead, pal: Palette, brushes?: SvgBrushes, fungal = f.cu
   o += (bed ? fill('garden', bed.bed, bed.edge ? ` stroke="${bed.edge}" stroke-width="0.3" stroke-opacity="0.45"` : '') : fill('garden', pal.land.garden, ` stroke="${pal.hedge}" stroke-width="0.4"`)) + fill('orchard', pal.land.orchard) + fill('paddock', pal.land.pasture);
   if (brushes) o += (fungal ? '' : fill('garden', `url(#${brushes.pattern('garden')})`)) + fill('orchard', `url(#${brushes.pattern('orchard')})`);
   if (fungal) o += fill('garden', 'url(#p-fungal-farm)');
-  o += fill('platform', 'none', ` stroke="${pal.farmInk}" stroke-width="0.5" stroke-dasharray="1.6 1.2" stroke-opacity="0.7"`);
+  o += fill('platform', 'none', ` stroke="${pal.farmInk}" stroke-width="0.5" stroke-opacity="0.7"`);
   o += `<path d="${pathD(f.yard, true)}" fill="${pal.farmYard}" fill-opacity="0.9"/>`;
   o += fill('pen', pal.farmYard, ` stroke="${pal.farmInk}" stroke-width="0.3"`) + fill('threshing-floor', pal.farmYard, ` stroke="${pal.farmInk}" stroke-width="0.4"`);
   o += fill('pond', pal.water.stops[0][1], ` stroke="${pal.waterEdge}" stroke-width="0.5"`);
@@ -370,7 +370,7 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
       if (layers.roads && dl > 0.5) out += `<path d="${pathD(f.drive, false)}" stroke="${pal.trackFill}" stroke-width="${f1(Math.min(2 * s, 3.2))}" stroke-opacity="0.7" stroke-linecap="butt"/>`;
       if (!layers.city) continue;
       if (!f.lot) {
-        out += `<path d="${pathD(f.yard, true)}" fill="${pal.farmYard}" fill-opacity="0.9" stroke="${pal.farmInk}" stroke-width="${f1(0.5 * s)}" stroke-dasharray="${f1(2.5 * s)} ${f1(1.5 * s)}"/>`;
+        out += `<path d="${pathD(f.yard, true)}" fill="${pal.farmYard}" fill-opacity="0.9" stroke="${pal.farmInk}" stroke-width="${f1(0.5 * s)}"/>`;
         out += `<g fill="${pal.farmRoof}" stroke="${pal.farmInk}" stroke-width="${f1(0.7 * s)}">${f.buildings.map(b => `<path d="${pathD(b, true)}"/>`).join('')}</g>`;
         continue;
       }
@@ -382,7 +382,7 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
   for (const k of layers.roads ? kinds : []) {
     const d = by(k);
     if (!d) continue;
-    // hierarchy: cased major roads, thinner minor roads, tracks as thin dashed earth lines
+    // hierarchy: cased major roads, thinner minor roads, tracks as thin earth lines
     if (groundRoadLook(roadLook)) {
       // Same marks as the canvas painter, flat: SVG has no ground texture, so each road takes the tone of its midpoint.
       const style: RoadStyle = { look: 'natural', emphasis: roadEmphasis, night: roadNight, colors };
@@ -401,7 +401,7 @@ export function roadsLayer(world: World, pal: Palette, u: number, brushes?: SvgB
     } else if (k === 'track') {
       for (const road of roads.filter(r => r.kind === k))
         for (const run of canopyRuns(road.path))
-          out += `<path d="${pathD(run.pts, false)}" stroke="${ruralInk(pal)}" stroke-width="${f1(Math.max(1.6, 0.6 * s))}" stroke-dasharray="${f1(6 * s)} ${f1(3.5 * s)}" stroke-linecap="butt" stroke-opacity="${(pal.rural.track * roadCanopyOpacity('track', run.level / (CANOPY_LEVELS - 1))).toFixed(2)}"/>`;
+          out += `<path d="${pathD(run.pts, false)}" stroke="${ruralInk(pal)}" stroke-width="${f1(Math.max(1.6, 0.6 * s))}" stroke-linecap="butt" stroke-opacity="${(pal.rural.track * roadCanopyOpacity('track', run.level / (CANOPY_LEVELS - 1))).toFixed(2)}"/>`;
     } else {
       const road = regionalRoadSurface(k, 1 / u);
       out += `<path d="${d}" stroke="${pal.roadEdge}" stroke-width="${f1(road.casing)}"/>`;
@@ -434,7 +434,7 @@ export function siteLayer(world: World, pal: Palette, u: number, debug: boolean,
   if (!site) return '';
   const c = site.center;
   let out = `<g class="layer-site" fill="none">`;
-  for (const p of world.landuse?.reserve ?? []) out += `<path d="${pathD(p, true)}" stroke="${pal.ink}" stroke-width="${f1(1.5 * u)}" stroke-dasharray="${f1(9 * u)} ${f1(6 * u)}" opacity="0.7"/>`;
+  for (const p of world.landuse?.reserve ?? []) out += `<path d="${pathD(p, true)}" stroke="${pal.ink}" stroke-width="${f1(1.5 * u)}" opacity="0.7"/>`;
   if (!labels) return out + '</g>';
   out += `<circle cx="${f1(c.x)}" cy="${f1(c.y)}" r="${f1(9 * u)}" fill="none" stroke="${pal.ink}" stroke-width="${f1(1.6 * u)}"/>`;
   out += `<circle cx="${f1(c.x)}" cy="${f1(c.y)}" r="${f1(3.4 * u)}" fill="${pal.ink}"/>`;

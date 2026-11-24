@@ -92,23 +92,22 @@ impl Surface<'_> {
         if p.x < 0.0 || p.y < 0.0 || p.x >= self.width || p.y >= self.width {
             return true;
         }
+        // The vector water is the drawn shoreline itself, finer than the height cells.
+        if let Some(geometry) = self.geometry { return geometry.wet(p); }
         let x = (p.x / self.width * self.n as f64) as usize;
         let y = (p.y / self.width * self.n as f64) as usize;
         let x = x.min(self.n - 1);
         let y = y.min(self.n - 1);
         if matches!(self.interpolation, HeightInterpolation::Bilinear)
             && self.height.len() == self.n * self.n {
-            return if let Some(geometry) = self.geometry { geometry.wet(p) }
-                else { self.water[y * self.n + x] != 0 };
+            return self.water[y * self.n + x] != 0;
         }
-        if self.geometry.is_some_and(|geometry| geometry.wet(p)) { return true; }
         // A coastline can cross a dry planning cell on a large map. Only use
         // negative physical elevation where a neighbouring cell is already sea;
         // an isolated inland depression remains dry.
         let sea_nearby = (y.saturating_sub(1)..=(y + 1).min(self.n - 1)).any(|j|
             (x.saturating_sub(1)..=(x + 1).min(self.n - 1)).any(|i| self.water[j * self.n + i] == 1));
         if sea_nearby && self.raw_height_at(p) <= 0.0 { return true; }
-        if self.geometry.is_some() { return false; }
         self.water[y * self.n + x] != 0
     }
 

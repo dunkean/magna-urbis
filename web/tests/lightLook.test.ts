@@ -12,6 +12,7 @@ import { paintFieldTexture } from '../src/render/cartography/fields';
 import { cityOverlayLandKinds, cityCountrysideCanvasOptions } from '../src/render/cityEnvironment';
 import { presetComposition } from '../src/render/composition';
 import { resolveAppearance } from '../src/render/appearanceRecipe';
+import { PALETTES } from '../src/render/styles';
 
 const lookOf = (style: TerrainLook['style']): TerrainLook => ({
   style,
@@ -41,7 +42,7 @@ afterEach(() => {
 
 describe('paper map tree symbols on the ground', () => {
   it('draw in the shaded paper ground at both qualities, on the brush atlas variant, never on other modes', () => {
-    const paper = { ...lookOf('parchment'), groundCover: false, treeSymbols: { conifer: 0.14 } };
+    const paper = { ...lookOf('parchment'), groundCover: false, treeSymbols: { palette: PALETTES.parchment, conifer: 0.14, palm: 0, larch: 0 } };
     setDisplayQualityPreference('full');
     expect(lookVariant(paper, false)).toEqual({ mode: 0, v2: 0, forest: false, brushes: true });
     setDisplayAppearanceQuality('light');
@@ -78,7 +79,7 @@ describe('flat light look policy', () => {
         },
       ) as LookBindings,
       look = lookOf('render-v2'),
-      state: LookParamsState = { look, quality: 0, frame: { width: 512, height: 512, origin: [0, 0], px: 0.02 }, stylePixelRatio: 1, dpr: 1, scale: 50, palettes: lookPalettes(look), mode: 3, forest: true, coastal: false, lake: 0, lakeN: 1, overlay: false, city: [0, 0] };
+      state: LookParamsState = { look, quality: 0, frame: { width: 512, height: 512, origin: [0, 0], px: 0.02 }, stylePixelRatio: 1, dpr: 1, scale: 50, palettes: lookPalettes(look), mode: 3, forest: true, coastal: false, lake: 0, lakeN: 1, overlay: false, city: false };
     writeLookParams(bindings, state);
     const full = new Map(values);
     values.clear();
@@ -119,7 +120,7 @@ describe('flat light look policy', () => {
       },
     ) as LookBindings;
     const look = lookOf(style);
-    const state: LookParamsState = { look, quality: 1, frame: { width: 512, height: 512, origin: [0, 0], px: 0.02 }, stylePixelRatio: 1, dpr: 1, scale: 50, palettes: lookPalettes(look), mode: 0, forest: true, coastal: false, lake: 0, lakeN: 1, overlay: false, city: [0, 0] };
+    const state: LookParamsState = { look, quality: 1, frame: { width: 512, height: 512, origin: [0, 0], px: 0.02 }, stylePixelRatio: 1, dpr: 1, scale: 50, palettes: lookPalettes(look), mode: 0, forest: true, coastal: false, lake: 0, lakeN: 1, overlay: false, city: false };
     writeLookParams(bindings, state);
     for (const name of ['uRenderV2', 'uRefine', 'uOctaves', 'uEnhanced3d', 'uNaturalWater']) expect(values.get('int:' + name)).toEqual([0]);
     expect(values.has('forest:false')).toBe(true);

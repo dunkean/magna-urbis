@@ -106,13 +106,13 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
     return item.groundPath;
   };
   const growthColor = (zone: string): string => ZONE_COLORS[zone] ?? ZONE_COLORS.core;
-  /** The operations of one element, batched over its path: widths and dashes from CSS pixels to world units, the
+  /** The operations of one element, batched over its path: widths from CSS pixels to world units, the
    * hatching and the paving material as patterns of this context. */
   const paint = (ops: readonly PaintOp[], path: Path2D): void => {
     for (const op of ops) {
       const fill = op.hatch ? hatchPattern(ctx, mpp) : op.plaza && op.fill && tex ? (pat(placeLayer()) ?? op.fill) : op.fill;
       if (op.hatch && !fill) continue;
-      batch.add({ fill, stroke: op.stroke, width: op.widthPx === undefined ? undefined : px(op.widthPx), alpha: op.alpha, dash: op.dashPx?.map(px), cap: op.cap }, path);
+      batch.add({ fill, stroke: op.stroke, width: op.widthPx === undefined ? undefined : px(op.widthPx), alpha: op.alpha, cap: op.cap }, path);
     }
   };
 
@@ -190,7 +190,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
     }
   };
 
-  if (layers.enclosures) drawCityWallGround(ctx, scene, { viewport, mpp, lod, palette, night }); // walls hook: ditches and glacis under the streets
+  if (layers.enclosures) drawCityWallGround(ctx, scene, { viewport, mpp, lod, palette, night, water: o.waterColor }); // walls hook: ditches and glacis under the streets
   // Streets: centrelines stroked by rank, casing first, majors and crossings on top. What each street is painted with
   // is the look's (city/streetLook.ts); here its strokes are batched by draw layer and its surface rings are built.
   if (layers.streets) {
@@ -239,7 +239,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       const path = (s.path ??= linePath(s.joined.stroke));
       for (const k of look.strokes) {
         const stroke = paintOf(k.paint);
-        if (stroke) stroked[k.layer].add({ stroke, width: k.width, alpha: k.alpha, dash: k.dash as number[] | undefined, cap: k.cap }, path);
+        if (stroke) stroked[k.layer].add({ stroke, width: k.width, alpha: k.alpha, cap: k.cap }, path);
       }
       if (look.surface) surfaced.push({ s, x: look.surface, casing: look.surface.casing && fillOf(look.surface.casing), fill: fillOf(look.surface.fill), inner: look.surface.inner && fillOf(look.surface.inner) });
       if (look.rails) {
@@ -336,7 +336,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
       const look = wallLook(wall.kind, palette, lod, mpp);
       for (const piece of wall.pieces) {
         const path = linePath(piece);
-        batch.add({ stroke: look.outer, width: look.thick, dash: look.dash, cap: 'butt' }, path);
+        batch.add({ stroke: look.outer, width: look.thick, cap: 'butt' }, path);
         if (look.inner) batch.add({ stroke: (tex && pat(wallStoneLayer(false))) || look.inner.color, width: look.thick * look.inner.share, cap: 'butt' }, path);
       }
       if (!look.tower) continue;
@@ -486,13 +486,13 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
     if (layers.parcelOverlay !== false && layers.planLines !== false && o.refusedParcels?.size)
       for (const i of scene.bins.parcels.query(viewport)) {
         const p = scene.parcels[i];
-        if (p.id && o.refusedParcels.has(p.id)) batch.add({ stroke: REFUSED_PARCEL.stroke, width: px(REFUSED_PARCEL.widthPx!), dash: REFUSED_PARCEL.dashPx!.map(px) }, pathOf(p));
+        if (p.id && o.refusedParcels.has(p.id)) batch.add({ stroke: REFUSED_PARCEL.stroke, width: px(REFUSED_PARCEL.widthPx!) }, pathOf(p));
       }
   }
   for (const layout of scene.layouts) {
-    if (layers.reserve) for (const s of (layout.structure?.reserve ?? []).flatMap(shape => scene.ground?.clip(shape) ?? [shape])) (batch.add({ fill: '#6a8eb1', alpha: 0.08 }, shapePath(s)), batch.add({ stroke: '#416784', width: lineW * 2, dash: [px(7), px(4)] }, shapePath(s)));
+    if (layers.reserve) for (const s of (layout.structure?.reserve ?? []).flatMap(shape => scene.ground?.clip(shape) ?? [shape])) (batch.add({ fill: '#6a8eb1', alpha: 0.08 }, shapePath(s)), batch.add({ stroke: '#416784', width: lineW * 1.5, alpha: 0.7 }, shapePath(s)));
     if (layers.allocated) for (const s of (layout.structure?.allocated ?? []).flatMap(shape => scene.ground?.clip(shape) ?? [shape])) (batch.add({ fill: '#c0a366', alpha: 0.12 }, shapePath(s)), batch.add({ stroke: '#8a632d', width: lineW * 2 }, shapePath(s)));
-    if (layers.quarters) layout.quarters.forEach((q, i) => batch.add({ stroke: palette === 'atlas' ? ATLAS[i % ATLAS.length] : parchment ? PARCH.ink : growthColor(q.zone ?? 'core'), width: lineW * 2, dash: [px(4), px(3)] }, shapePath(q.shape)));
+    if (layers.quarters) layout.quarters.forEach((q, i) => batch.add({ stroke: palette === 'atlas' ? ATLAS[i % ATLAS.length] : parchment ? PARCH.ink : growthColor(q.zone ?? 'core'), width: lineW * 1.5, alpha: 0.7 }, shapePath(q.shape)));
   }
   if (o.selectedParcel !== undefined && scene.parcels[o.selectedParcel]) batch.add({ stroke: SELECTION.stroke, width: px(SELECTION.widthPx!) }, pathOf(scene.parcels[o.selectedParcel]));
   batch.flush(ctx);

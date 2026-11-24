@@ -33,21 +33,20 @@ export interface SemanticClass {
   color: string;
   label: string;
   pattern: SemanticPatternId;
-  /** Border dash, screen pixels. */ dash: readonly number[];
 }
-/** One stable colour, pattern and border dash per rural class (greyscale-readable); independent of the ground palette. Also the legend.
+/** One stable colour and pattern per rural class (greyscale-readable); independent of the ground palette. Also the legend.
  * Soft survey washes, not poster colours (user, 2026-11-13: cadastre "plus douces et moins flashy"); hue and lightness still part the classes.
  * Fields and forests carry no pattern: the ground already draws each field's furrows in its own direction (a global hatch crossed
  * them), and a forest is its tinted zone (tree dots over it doubled the sign). */
 export const RURAL_SEMANTIC: Readonly<Record<LandKind, SemanticClass>> = {
-  field: { color: '#d6b878', label: 'Arable land', pattern: 'none', dash: [] },
-  meadow: { color: '#b2cf95', label: 'Meadow land', pattern: 'none', dash: [] },
-  pasture: { color: '#a3a46e', label: 'Grazing land', pattern: 'dots', dash: [4, 3] },
-  forest: { color: '#5f8a69', label: 'Forest land', pattern: 'none', dash: [] },
-  orchard: { color: '#8db892', label: 'Orchard land', pattern: 'grid', dash: [1.5, 3] },
-  garden: { color: '#c8d08e', label: 'Garden land', pattern: 'cross', dash: [6, 2, 1.5, 2] },
-  marsh: { color: '#86b6b6', label: 'Wetland', pattern: 'reeds', dash: [5, 2] },
-  commons: { color: '#b8afa3', label: 'Common land', pattern: 'dashes', dash: [8, 4] },
+  field: { color: '#d6b878', label: 'Arable land', pattern: 'none' },
+  meadow: { color: '#b2cf95', label: 'Meadow land', pattern: 'none' },
+  pasture: { color: '#a3a46e', label: 'Grazing land', pattern: 'dots' },
+  forest: { color: '#5f8a69', label: 'Forest land', pattern: 'none' },
+  orchard: { color: '#8db892', label: 'Orchard land', pattern: 'grid' },
+  garden: { color: '#c8d08e', label: 'Garden land', pattern: 'cross' },
+  marsh: { color: '#86b6b6', label: 'Wetland', pattern: 'reeds' },
+  commons: { color: '#b8afa3', label: 'Common land', pattern: 'strokes' },
 };
 const RURAL_ORDER: readonly LandKind[] = ['commons', 'pasture', 'meadow', 'marsh', 'field', 'garden', 'orchard', 'forest'];
 
@@ -85,9 +84,9 @@ function mute(hex: string, t: number): string {
 }
 /** District usage classes: the role palette (cityCanvas DISTRICT_ROLES), muted like the rural washes, plus public spaces and a fallback. */
 export const URBAN_SEMANTIC: Readonly<Record<string, SemanticClass>> = {
-  ...Object.fromEntries(Object.entries(DISTRICT_ROLES).map(([role, { color }]): [string, SemanticClass] => [role, { color: mute(color, 0.4), label: URBAN_LABELS_EN[role] ?? role, pattern: 'none', dash: [] }])),
-  public: { color: '#c9d6a0', label: 'Public space', pattern: 'none', dash: [] },
-  other: { color: '#8f8a84', label: 'Other / unknown', pattern: 'none', dash: [] },
+  ...Object.fromEntries(Object.entries(DISTRICT_ROLES).map(([role, { color }]): [string, SemanticClass] => [role, { color: mute(color, 0.4), label: URBAN_LABELS_EN[role] ?? role, pattern: 'none' }])),
+  public: { color: '#c9d6a0', label: 'Public space', pattern: 'none' },
+  other: { color: '#8f8a84', label: 'Other / unknown', pattern: 'none' },
 };
 const URBAN_ORDER = [...Object.keys(DISTRICT_ROLES), 'public', 'other'];
 
@@ -117,8 +116,8 @@ const HATCHES: Readonly<Record<Exclude<SemanticPatternId, 'none'>, readonly Hatc
     { angle: Math.PI / 4, spacing: 6, dash: [], width: 0.8 },
     { angle: -Math.PI / 4, spacing: 6, dash: [], width: 0.8 },
   ],
-  reeds: [{ angle: 0, spacing: 6, dash: [5, 4], width: 1.2, stagger: true }],
-  dashes: [{ angle: -Math.PI / 4, spacing: 9, dash: [8, 6], width: 1 }],
+  reeds: [{ angle: 0, spacing: 6, dash: [], width: 0.7 }],
+  strokes: [{ angle: -Math.PI / 4, spacing: 9, dash: [], width: 0.7 }],
 };
 const MAX_HATCH_LINES = 500;
 
@@ -207,7 +206,7 @@ function paintBatch(ctx: CanvasRenderingContext2D, path: Path2D, area: SemanticB
     ctx.globalAlpha = style.stroke;
     ctx.strokeStyle = style.strokeShade ? shade(cls.color, style.strokeShade) : cls.color;
     ctx.lineWidth = style.strokeWidth * mpp;
-    ctx.setLineDash(cls.dash.map(d => d * mpp));
+    ctx.setLineDash([]);
     ctx.stroke(path);
   } finally {
     ctx.restore();
@@ -380,7 +379,7 @@ export function ruralSemanticLegend(landuse: LandUseLayer | undefined, classes: 
   if (!landuse || !mode) return [];
   let present = RURAL_PRESENT.get(landuse);
   if (!present) RURAL_PRESENT.set(landuse, (present = new Set(landuse.areas.map(a => a.kind))));
-  return RURAL_ORDER.filter(kind => present!.has(kind) && classes[kind] !== false).map(kind => ({ label: RURAL_SEMANTIC[kind].label, color: RURAL_SEMANTIC[kind].color, pattern: RURAL_SEMANTIC[kind].pattern, dash: RURAL_SEMANTIC[kind].dash, look: mode }));
+  return RURAL_ORDER.filter(kind => present!.has(kind) && classes[kind] !== false).map(kind => ({ label: RURAL_SEMANTIC[kind].label, color: RURAL_SEMANTIC[kind].color, pattern: RURAL_SEMANTIC[kind].pattern, look: mode }));
 }
 const URBAN_PRESENT = new WeakMap<CityScene, Set<string>>();
 /** Legend entries of the district usage classes present in the city scenes. */
@@ -400,5 +399,5 @@ export function urbanSemanticLegend(scenes: readonly CityScene[], look: Semantic
     }
     for (const cls of set) present.add(cls);
   }
-  return URBAN_ORDER.filter(cls => present.has(cls)).map(cls => ({ label: URBAN_SEMANTIC[cls].label, color: URBAN_SEMANTIC[cls].color, pattern: 'none' as const, dash: [], look: mode }));
+  return URBAN_ORDER.filter(cls => present.has(cls)).map(cls => ({ label: URBAN_SEMANTIC[cls].label, color: URBAN_SEMANTIC[cls].color, pattern: 'none' as const, look: mode }));
 }

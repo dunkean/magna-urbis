@@ -4,7 +4,7 @@
  */
 import { protectMachineStyle } from '../machineTier';
 import type { PageActions, PageState } from './contract';
-import { setHTML, insertHTML, setText, getLanguage } from '../i18n';
+import { setHTML, insertHTML, setText, getLanguage, registerMessages } from '../i18n';
 import type { World } from '../../gen/types';
 import { readHeightmap } from '../../ui/heightmap';
 import { acceptHeightmap, imageHeightmap } from '../heightmapModel';
@@ -16,6 +16,8 @@ import { resolveAutoBackend } from '../runtimeChoices';
 import { applyLabelEdits } from '../mapLabels';
 import { renameMap } from '../mapNaming';
 import { mountCityCodeSharing } from '../cityCodeSharing';
+import { nativeCityRecords } from '../nativeProducts';
+import { blockAddress } from '../../../../rust/bridge/urbanBlockEdits';
 import { $ } from './dom';
 import { composeJob, projectJob } from './projectWorkers';
 
@@ -68,6 +70,13 @@ export function createProjectsActions(state: PageState, actions: PageActions) {
   return { loadProject };
 }
 
+registerMessages({
+  'This code was shared from an imported or hand-drawn relief: load its heightmap or project to get the same land.': {
+    en: 'This code was shared from an imported or hand-drawn relief: load its heightmap or project to get the same land.',
+    fr: 'Ce code vient d’un relief importé ou dessiné : chargez sa heightmap ou son projet pour retrouver le même terrain.',
+  },
+});
+
 export function mountProjectFiles(state: PageState, actions: PageActions): void {
   insertHTML(
     $('#project-file'),
@@ -115,6 +124,14 @@ export function mountProjectFiles(state: PageState, actions: PageActions): void 
 
   state.cityCodeSharing = mountCityCodeSharing({
     getRecipe: () => ({ settings: state.settings, mods: state.mods }),
+    blockAddress: (key, saved) => {
+      const layout = nativeCityRecords(state.world)?.[key]?.layouts[0];
+      return layout && blockAddress(layout, saved);
+    },
+    exportFile: format => {
+      $<HTMLSelectElement>('#export-format').value = format;
+      $('#export-go').click();
+    },
     busy: () => state.busy,
     toast: message => actions.toast(message),
     changed: () => actions.touchRecipe(),
@@ -124,6 +141,7 @@ export function mountProjectFiles(state: PageState, actions: PageActions): void 
       try {
         await actions.loadProject(recipe);
         actions.log('Import: generation code');
+        if (recipe.reliefMissing) actions.toast('This code was shared from an imported or hand-drawn relief: load its heightmap or project to get the same land.');
       } finally {
         actions.setBusy(false);
       }

@@ -16,8 +16,8 @@ export interface BridgeShapes {
   deckAlpha: number;
   /** Ink strokes: rails, parapets, wings. */
   lines: { pts: Vec2[]; w: number }[];
-  /** Fine ink dashes across the deck (planks, steps): a stroke along the deck dashed into seams. */
-  seams: { pts: Vec2[]; w: number; dash: [number, number] } | null;
+  /** The joint along the deck (planks, steps): one thin continuous line. */
+  seams: { pts: Vec2[]; w: number } | null;
   /** Stepping stones. */
   stones: { c: Vec2; r: number }[];
 }
@@ -71,10 +71,7 @@ export function bridgeShapes(b: KindedBridgeLike): BridgeShapes {
       for (const sg of [1, -1]) lines.push({ pts: [at(s, sg * h), at(s + dir * 1.4, sg * (h + 1.4))], w: railW });
   }
   let seams: BridgeShapes['seams'] = null;
-  if (b.kind === 'footbridge' || b.kind === 'timber-arch') {
-    const step = b.arch === 'stepped' ? 0.7 : 0.95;
-    seams = { pts: [at(s0 + 0.2, 0), at(s1 - 0.2, 0)], w: Math.max(0.2, b.width - 0.5), dash: [0.12, step - 0.12] };
-  }
+  if (b.kind === 'footbridge' || b.kind === 'timber-arch') seams = { pts: [at(s0 + 0.2, 0), at(s1 - 0.2, 0)], w: 0.16 };
   return { deck, deckAlpha: 1, lines, seams, stones: [] };
 }
 
@@ -85,7 +82,7 @@ export function townBridgesSvg(bridges: readonly object[], pal: Palette): string
     if (!isKinded(b)) continue;
     const sh = bridgeShapes(b as KindedBridgeLike);
     if (sh.deck) o += `<path d="${pathD(sh.deck, true)}" fill="${pal.bridgeDeck}"${sh.deckAlpha < 1 ? ` fill-opacity="${sh.deckAlpha}"` : ''} stroke="none"/>`;
-    if (sh.seams) o += `<path d="${pathD(sh.seams.pts, false)}" fill="none" stroke="${pal.bridgeInk}" stroke-opacity="0.45" stroke-width="${f1(sh.seams.w)}" stroke-dasharray="${sh.seams.dash.map(x => x.toFixed(2)).join(' ')}" stroke-linecap="butt"/>`;
+    if (sh.seams) o += `<path d="${pathD(sh.seams.pts, false)}" fill="none" stroke="${pal.bridgeInk}" stroke-opacity="0.45" stroke-width="${f1(sh.seams.w)}" stroke-linecap="butt"/>`;
     for (const l of sh.lines) o += `<path d="${pathD(l.pts, false)}" fill="none" stroke="${pal.bridgeInk}" stroke-width="${l.w.toFixed(2)}" stroke-linecap="butt"/>`;
     for (const st of sh.stones) o += `<circle cx="${f1(st.c.x)}" cy="${f1(st.c.y)}" r="${st.r.toFixed(2)}" fill="${pal.bridgeDeck}" stroke="${pal.bridgeInk}" stroke-width="0.15"/>`;
   }
