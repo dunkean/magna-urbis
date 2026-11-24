@@ -120,6 +120,8 @@ precision mediump float; uniform sampler2D uTex; in vec2 vUv; out vec4 color;
 void main(){color=texture(uTex,vUv);}`;
 /** GPU presentation of the same sheet used by exports and Canvas fallback. No geometry replay. */
 export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTownRaster, prepare: (budget: number) => boolean, opacity: () => number): LiveLayer {
+  // Without the extension its status reads null for ever: the program is then linked on the spot.
+  const parallelLink = !!gl.getExtension('KHR_parallel_shader_compile');
   let program: Program | undefined,
     pending: PendingProgram | undefined,
     vao: WebGLVertexArrayObject | null = null,
@@ -159,7 +161,7 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
         revision++;
       }
       pending ??= program ? undefined : startProgram(gl, VS, FS);
-      if (!program && pending && programLinked(gl, pending, true)) {
+      if (!program && pending && programLinked(gl, pending, parallelLink)) {
         program = finishProgram(gl, pending);
         pending = undefined;
         vao = gl.createVertexArray();
