@@ -133,7 +133,8 @@ fn coastalHeight(xy:vec2<f32>, terrainHeight:f32)->f32 {
   let slope=profile.z*(0.65+0.7*steep)*tilt*(1.0+0.35*rank)/sqrt(apron);
   let beach=0.25+0.75*steep;
   let ease=beach+(1.0-beach)*metres/(metres+min(width*0.012,120.0));
-  let limit=cliff*smooth01(metres/(1.0+0.6*cliff))+slope*metres*ease;
+  var limit=cliff*smooth01(metres/(1.0+0.6*cliff))+slope*metres*ease;
+  if(!islet&&coast[0].x!=255.0){limit+=metres*metres/(260.0*clamp(1500.0/max(scale*width,1.0),1.0,6.0));}
   let low=min(ground,limit);let ratio=low/max(ground,limit);let square=ratio*ratio;
   return low/sqrt(sqrt(1.0+square*square));
 }

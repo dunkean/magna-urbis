@@ -882,15 +882,19 @@ impl Coast {
     /// Natural height limit `metres` behind the shore: a seeded slope, gentler near the water
     /// on the gentle stretches and following the relief's ridges and valleys (`z`), plus on the
     /// steepest stretches a cliff of limited height. An island cannot stand higher than its
-    /// distance to the sea allows, whatever its size. `islet` is an islet's size in metres.
-    fn ceiling(&self, metres: f64, gentle: f64, apron: f64, z: f64, islet: f64) -> f64 {
+    /// distance to the sea allows, whatever its size. `islet` is an islet's size in metres. The
+    /// limit leaves the relief of a mainland (a land some map edge continues) `broad` metres wide
+    /// free within a few hundred metres, so a plateau or a valley behind the shore keeps its level ground.
+    fn ceiling(&self, metres: f64, gentle: f64, apron: f64, z: f64, islet: f64, broad: f64) -> f64 {
         let steep = 1.0 - gentle;
         let tilt = (250.0 / self.profile.width.max(40.0)).sqrt().clamp(0.5, 1.6);
         let slope = self.parameters[SLOPE] as f64 * (0.65 + 0.7 * steep) * tilt * (1.0 + 0.35 * z) / apron.sqrt();
         let beach = 0.25 + 0.75 * steep;
         let ease = beach + (1.0 - beach) * metres / (metres + (self.width * 0.012).min(120.0));
         let cliff = self.cliff(gentle, islet);
-        cliff * smooth(metres / (1.0 + 0.6 * cliff)) + slope * metres * ease
+        let surrounded = self.parameters[0] == 255.0;
+        let release = if islet > 0.0 || surrounded { 0.0 } else { metres * metres / (260.0 * (1500.0 / broad.max(1.0)).clamp(1.0, 6.0)) };
+        cliff * smooth(metres / (1.0 + 0.6 * cliff)) + slope * metres * ease + release
     }
 
     /// Cliff height of a stretch, bounded by the map and by the islet it stands on.
@@ -1159,7 +1163,7 @@ impl Coast {
         }
         // Smooth minimum: the relief well under the natural limit keeps its height.
         let z = if islet { 0.0 } else { self.relief_rank(height) };
-        let limit = self.ceiling(metres, gentle, apron, z, islet_size);
+        let limit = self.ceiling(metres, gentle, apron, z, islet_size, scale * width);
         let (low, high) = (land.min(limit), land.max(limit));
         low / (1.0 + (low / high).powi(4)).powf(0.25)
     }
