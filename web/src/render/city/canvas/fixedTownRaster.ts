@@ -1,4 +1,6 @@
-/** A town sheet baked at one physical resolution. Zooming only samples retained tiles. */
+/** A town sheet baked at fixed physical resolutions: a draft, shown as soon as it is complete, then the fine sheet, which
+ * replaces it town by town. Zooming only samples retained tiles. The map drape waits for the draft alone: while a source
+ * of it is not ready, no tile of any layer is shown on a tilted map. */
 import type { Rect4, View } from '../../view';
 import type { LiveFrame, LiveLayer } from '../../live/contract';
 import { finishProgram, programLinked, startProgram, type Program, type PendingProgram } from '../gl/programs';
@@ -10,13 +12,19 @@ export interface TownRasterTile {
   canvas: Surface;
   ready: boolean;
   town: number;
+  fine: boolean;
 }
-/** Definition of the sheets: pixels per metre a small town gets, and the pixels of one town and of all the towns
+/** Definition of the fine sheets: pixels per metre a small town gets, and the pixels of one town and of all the towns
  * together (each pixel costs four bytes of canvas and as much of texture). */
 const SHEET_SCALE = 8;
 export const TOWN_SHEET_PIXELS = 24e6,
   ALL_SHEET_PIXELS = 36e6;
-export function townRasterLayout(bounds: readonly Rect4[]): { rect: Rect4; scale: number; width: number; height: number; town: number }[] {
+/** Draft of a town: pixels per metre, side and pixels. A fine sheet that is hardly finer than its draft is not made. */
+const DRAFT_SCALE = 4,
+  DRAFT_SIDE = 4096,
+  DRAFT_PIXELS = 4e6,
+  FINE_GAIN = 1.25;
+export function townRasterLayout(bounds: readonly Rect4[]): { rect: Rect4; scale: number; width: number; height: number; town: number; fine: boolean }[] {
   // A placed town without an urban plan has the empty extent (+Infinity, -Infinity).
   // It has no pixels to bake; passing that rectangle to the spatial bins cannot terminate.
   const sheets = bounds.flatMap((b, town) => {
@@ -27,8 +35,9 @@ export function townRasterLayout(bounds: readonly Rect4[]): { rect: Rect4; scale
   });
   // Many towns share the total in proportion to what each asks for.
   const share = Math.min(1, ALL_SHEET_PIXELS / sheets.reduce((sum, s) => sum + s.pixels, 1));
-  return sheets.flatMap(({ b, town, width, height, pixels }) => {
-    const scale = Math.sqrt((pixels * share) / (width * height));
+  const draftScale = ({ width, height }: (typeof sheets)[number]): number => Math.min(DRAFT_SCALE, DRAFT_SIDE / width, DRAFT_SIDE / height, Math.sqrt(DRAFT_PIXELS / (width * height))),
+    fineScale = ({ width, height, pixels }: (typeof sheets)[number]): number => Math.sqrt((pixels * share) / (width * height));
+  const tiles = ({ b, town, width, height }: (typeof sheets)[number], scale: number, fine: boolean) => {
     const out = [];
     for (let y = 0; y < Math.ceil(height * scale); y += 1024)
       for (let x = 0; x < Math.ceil(width * scale); x += 1024) {
@@ -36,10 +45,12 @@ export function townRasterLayout(bounds: readonly Rect4[]): { rect: Rect4; scale
           h = Math.min(1024, Math.ceil(height * scale) - y);
         const minX = b.minX - 8 + x / scale,
           minY = b.minY - 8 + y / scale;
-        out.push({ rect: { minX, minY, maxX: minX + w / scale, maxY: minY + h / scale }, scale, width: w, height: h, town });
+        out.push({ rect: { minX, minY, maxX: minX + w / scale, maxY: minY + h / scale }, scale, width: w, height: h, town, fine });
       }
     return out;
-  });
+  };
+  // Every draft first: it is the picture until the fine sheet of its town is complete.
+  return [...sheets.flatMap(s => tiles(s, draftScale(s), false)), ...sheets.filter(s => fineScale(s) > FINE_GAIN * draftScale(s)).flatMap(s => tiles(s, fineScale(s), true))];
 }
 export class FixedTownRaster {
   key = '';
@@ -52,11 +63,18 @@ export class FixedTownRaster {
     this.key = key;
     this.tiles = townRasterLayout(bounds).flatMap(t => {
       const canvas = this.canvas(t.width, t.height);
-      return canvas ? [{ rect: t.rect, scale: t.scale, canvas, town: t.town, ready: false }] : [];
+      return canvas ? [{ rect: t.rect, scale: t.scale, canvas, town: t.town, fine: t.fine, ready: false }] : [];
     });
   }
+  /** The drafts are painted: every town can be shown. */
   get ready(): boolean {
-    return this.tiles.every(t => t.ready);
+    return this.tiles.every(t => t.fine || t.ready);
+  }
+  /** The tiles that make the picture: of a town, its fine sheet once every tile of it is `there`, else its draft. */
+  shown(there: (tile: TownRasterTile) => boolean): TownRasterTile[] {
+    const fine = new Set(this.tiles.filter(t => t.fine).map(t => t.town));
+    for (const t of this.tiles) if (t.fine && !there(t)) fine.delete(t.town);
+    return this.tiles.filter(t => t.fine === fine.has(t.town) && there(t));
   }
   work(paint: (ctx: CanvasRenderingContext2D, tile: TownRasterTile) => Generator<void, void>, budget = Infinity): boolean {
     const start = performance.now();
@@ -76,14 +94,14 @@ export class FixedTownRaster {
         this.job = undefined;
       }
     } while (performance.now() - start < budget);
-    return !this.ready;
+    return this.tiles.some(t => !t.ready);
   }
   draw(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, dpr: number, alpha: number): void {
     ctx.save();
     ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, (w / 2 - view.cx * view.scale) * dpr, (h / 2 - view.cy * view.scale) * dpr);
     ctx.globalAlpha *= alpha;
     ctx.imageSmoothingQuality = 'high';
-    for (const t of this.tiles) if (t.ready) ctx.drawImage(t.canvas, t.rect.minX, t.rect.minY, t.rect.maxX - t.rect.minX, t.rect.maxY - t.rect.minY);
+    for (const t of this.shown(tile => tile.ready)) ctx.drawImage(t.canvas, t.rect.minX, t.rect.minY, t.rect.maxX - t.rect.minX, t.rect.maxY - t.rect.minY);
     ctx.restore();
   }
   clear(): void {
@@ -108,6 +126,8 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
     key = '',
     revision = 0;
   const textures = new Map<TownRasterTile, WebGLTexture>();
+  /** The tiles drawn (FixedTownRaster.shown of the uploaded ones). */
+  let shown: TownRasterTile[] = [];
   const drop = (handles = true): void => {
     if (handles) {
       for (const t of textures.values()) gl.deleteTexture(t);
@@ -116,11 +136,12 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
       if (vao) gl.deleteVertexArray(vao);
     }
     textures.clear();
+    shown = [];
     program = pending = undefined;
     vao = null;
     key = '';
   };
-  const ready = (): boolean => key === raster.key && raster.ready && textures.size === raster.tiles.length && !!program;
+  const ready = (): boolean => key === raster.key && !!program && raster.tiles.every(t => t.fine || textures.has(t));
   const stats = { drawCalls: 0, triangles: 0, ms: 0 };
   return {
     name: 'city',
@@ -133,6 +154,7 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
       if (key !== raster.key) {
         for (const t of textures.values()) gl.deleteTexture(t);
         textures.clear();
+        shown = [];
         key = raster.key;
         revision++;
       }
@@ -156,7 +178,12 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
           textures.set(tile, texture);
-          revision++;
+          const next = raster.shown(t => textures.has(t));
+          // The drape bakes its tiles again only when the picture changes: a draft tile more, a town turned fine.
+          if (next.length !== shown.length || next.some((t, i) => t !== shown[i])) {
+            shown = next;
+            revision++;
+          }
           return true;
         }
       return more || !ready();
@@ -169,10 +196,10 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
       gl.activeTexture(gl.TEXTURE0);
       gl.uniformMatrix3fv(program.u.uM, false, frame.worldToClip);
       gl.uniform1i(program.u.uTex, 0);
-      for (const [t, texture] of textures) {
+      for (const t of shown) {
         const r = t.rect;
         if (r.minX > frame.rect.maxX || r.maxX < frame.rect.minX || r.minY > frame.rect.maxY || r.maxY < frame.rect.minY) continue;
-        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.bindTexture(gl.TEXTURE_2D, textures.get(t)!);
         gl.uniform4f(program.u.uRect, r.minX, r.minY, r.maxX, r.maxY);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         stats.drawCalls++;
@@ -183,11 +210,11 @@ export function fixedTownRasterLayer(gl: WebGL2RenderingContext, raster: FixedTo
       revision: () => revision,
       ready,
       paint(c) {
-        for (const [t, texture] of textures) {
+        for (const t of shown) {
           const r = t.rect,
             w = r.maxX - r.minX,
             h = r.maxY - r.minY;
-          c.put(texture, (c.rect.minX - r.minX) / w, (c.rect.minY - r.minY) / h, (c.rect.maxX - r.minX) / w, (c.rect.maxY - r.minY) / h, opacity());
+          c.put(textures.get(t)!, (c.rect.minX - r.minX) / w, (c.rect.minY - r.minY) / h, (c.rect.maxX - r.minX) / w, (c.rect.maxY - r.minY) / h, opacity());
         }
       },
     },
