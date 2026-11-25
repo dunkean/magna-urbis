@@ -543,7 +543,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     };
     Object.assign(definition, enginePhysicalPlan);
   };
-  const finishSource = async (input: Float32Array, cpuDetail = false): Promise<Float32Array> => {
+  const finishSource = async (input: Float32Array, cpuDetail = false, retainSea = false): Promise<Float32Array> => {
     let height = cpuDetail && stageEnabled(settings, 'phasor', false) ? applyPhasorCpu(input, settings) : input;
     const p = posteriorSettings(settings),
       w = windSettings(settings);
@@ -571,9 +571,9 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       if (settings.procedural && definition.n <= 1024) postCheckpoints.put(stage, fieldKey, height);
       await lab?.after(stage, lab.previews === false ? undefined : height);
     }
-    // The geographic sampler expects a positive inland source. A cut placed
-    // after normalization may still be signed: keep its land deformation and
-    // let coastal finishing restore the selected sea, as for earlier cuts.
+    // A geographic source still awaiting its coast cut needs positive land elevations.
+    // A finished coast must instead keep its signed seabed through Phasor, wind and conditioning.
+    if (retainSea) return height.map((h, i) => input[i] <= 0 ? input[i] : Math.max(0.3, h));
     return settings.procedural && height.some(h => h < 0.3) ? height.map(h => Math.max(0.3, h)) : height;
   };
   // Handle compilation failure immediately while preparation runs synchronously.
@@ -706,10 +706,8 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
         ? { ...settings, coastMask, erosionTuning: { ...settings.erosionTuning, incision: (settings.erosionTuning?.incision ?? 1) * erosionBiome(settings).water, thermal: (settings.erosionTuning?.thermal ?? 1) * erosionBiome(settings).thermal } }
         : { ...settings, coastMask };
       const result = await prepareNativeTerrain(nativeSettings.sketch && !surfaceInput ? { ...nativeSettings, sketch: undefined } : nativeSettings, runtime!);
-      // The native service already cut the coast; finishing clamps to a positive inland source, so keep its sea.
       // Painted zones are already a finished relief: like the WASM path, they skip the procedural post stages.
-      const finished = surfaceInput !== 'surface' && settings.procedural && !settings.zones ? await finishSource(result.height.slice(), true) : undefined;
-      if (finished && coastMask) for (let i = 0; i < finished.length; i++) if (result.height[i] <= 0) finished[i] = result.height[i];
+      const finished = surfaceInput !== 'surface' && settings.procedural && !settings.zones ? await finishSource(result.height, true, coastMask !== 0) : undefined;
       nativeRelief = await NativeReliefEngine.build(runtime!, { kind: 'surface', seed: coastSeed, width: settings.width }, finished ?? result.height, engineTuning);
       generationBackend = 'native';
       generationReason = 'Terrain and coasts computed by the native Rust service; the surface is retained for GPU rendering and water.';
@@ -830,7 +828,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     if (!cpuPipeline && settings.procedural && (hasCpuPost || (!compact && stageEnabled(settings, 'phasor', false))) && !['gpu-erosion-f32', 'compact-gpu-f32'].includes(generationBackend) && !neural && !surfaceInput && !nativeGeneration && !settings.zones) {
       setEngineCoast(engine!, coastMask, islandMode, profile);
       const sampled = engine!.physical_height_field();
-      const height = await finishSource(sampled, !compact);
+      const height = await finishSource(sampled, !compact, coastMask !== 0);
       engine!.free();
       engine = TerrainEngine.with_surface(coastSeed, settings.width, height);
       engineRetainedCoasts = true;

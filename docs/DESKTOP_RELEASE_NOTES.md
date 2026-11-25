@@ -2,6 +2,7 @@
 
 - In Detailed architecture, country workshops show their work at the door, from potters’ wheels and drying jars to millstones, winding gear and dressed stone. Farmyards, rural shrines and trade buildings use local materials and fittings. Mine headframes, quarry cranes and other yard works follow their generated footprints.
 
+- Coastal plains and archipelagos keep their sea during browser terrain generation, so rivers drain to the shore instead of crossing the seabed in long diagonals.
 - Azgaar FMG matches OpenStreetMap in the top bar, with both import buttons grouped on small screens.
 - Detailed architecture extends to isolated dwellings, farm outbuildings and rural sites. Barns and mills gain regional loading bays and louvred openings, and dovecotes gain flight holes and landing ledges.
 - Detailed castles and watchtowers gain fitted gates, narrow openings and regional crowns, including timber galleries on roofed medieval keeps. Shrines and civic halls gain regional entrances and cornices. Carved roadside markers and memorial columns gain stepped mouldings.
