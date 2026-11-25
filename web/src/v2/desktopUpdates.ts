@@ -1,4 +1,4 @@
-import { registerMessages, setHTML, setText, setDynamicText, translate } from './i18n';
+import { registerMessages, setText, setDynamicText, translate } from './i18n';
 import './desktopUpdates.css';
 
 const releasesApi = 'https://api.github.com/repos/dunkean/magna-urbis/releases?per_page=100';
@@ -96,24 +96,11 @@ export function getLatestDesktopRelease(): Promise<DesktopUpdate | undefined> {
   })());
 }
 
-/** Persistent global web action; the installed app already has its own update action. */
-export function mountDesktopReleaseLink(host: HTMLElement): void {
+/** Resolve the standalone download link to the latest desktop release on the web. */
+export function mountDesktopReleaseLink(link: HTMLAnchorElement): void {
   if ('__TAURI_INTERNALS__' in window || /(?:^|\.)tauri\.localhost$/.test(window.location.hostname) || window.location.protocol === 'tauri:') return;
-  const link = document.createElement('a');
-  link.className = 'desktop-release-link';
-  link.href = desktopReleasesUrl;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  setHTML(link, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4m-4 0h8"/></svg><span>Desktop app</span>');
-  link.setAttribute('data-i18n-title', 'Windows and Linux installers, native neural generation.');
-  link.title = translate('Windows and Linux installers, native neural generation.');
-  const label = link.querySelector('span')!;
-  host.prepend(link);
   void getLatestDesktopRelease().then(release => {
-    if (release) {
-      link.href = release.url;
-      setDynamicText(label, () => translate('Desktop app v{version}').replace('{version}', release.version));
-    }
+    if (release) link.href = release.url;
   });
 }
 

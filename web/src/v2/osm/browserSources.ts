@@ -13,17 +13,17 @@ export async function findOsmPlaces(query: string, language: string, signal: Abo
   return features.filter(feature => feature.properties.name && feature.geometry.coordinates.every(Number.isFinite));
 }
 
-export function browserOsmFetchers(signal: AbortSignal, onFallback?: () => void): OsmFetchers {
+export function browserOsmFetchers(signal: AbortSignal, progress: { onFallback?: () => void; onBytes?: (bytes: number) => void } = {}): OsmFetchers {
   return {
     async overpass(query): Promise<OverpassReply> {
       const failures: string[] = [];
       for (const [attempt, endpoint] of OVERPASS_ENDPOINTS.entries()) {
         signal.throwIfAborted();
-        if (attempt) onFallback?.();
+        if (attempt) progress.onFallback?.();
         try {
           const response = await fetch(endpoint, { method: 'POST', body: new URLSearchParams({ data: query }), signal: AbortSignal.any([signal, AbortSignal.timeout((OVERPASS_IMPORT_TIMEOUT_SECONDS + 10) * 1000)]) });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const result = (await response.json()) as OverpassReply;
+          const result = await overpassReply(response, progress.onBytes);
           if (result.remark || !Array.isArray(result.elements)) throw new Error(result.remark || 'Invalid Overpass reply');
           return result;
         } catch (error) {
@@ -52,4 +52,19 @@ export function browserOsmFetchers(signal: AbortSignal, onFallback?: () => void)
       }
     },
   };
+}
+
+async function overpassReply(response: Response, onBytes?: (bytes: number) => void): Promise<OverpassReply> {
+  if (!response.body || !onBytes) return response.json();
+  let bytes = 0;
+  const stream = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        bytes += chunk.byteLength;
+        onBytes(bytes);
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+  return new Response(stream).json();
 }

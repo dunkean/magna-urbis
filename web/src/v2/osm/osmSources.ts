@@ -1,6 +1,7 @@
 /** OpenStreetMap and elevation sources of an OSM import, browser and Node alike: the Overpass queries, the Terrarium
  * tiles of the square and the DEM grid sampled from them. Network and PNG decoding are injected (`OsmFetchers`), so
  * the page fetches with `fetch` + `createImageBitmap` and the CLI (scripts/osm_probe.mjs) with its disk cache. */
+import { HIGHWAY, LANDUSE, NATURAL, RIVER_WIDTH, URBAN_LANDUSE } from './osmTags';
 
 export interface OsmSquare {
   /** Centre, degrees. */
@@ -66,9 +67,9 @@ export function osmProjection(square: OsmSquare) {
   };
 }
 
-/** Town, water, land use, walls and names. The app includes fences and the requested boundary in the same request. */
-export function overpassQuery(bbox: string, app?: { commune?: string }): string {
-  return `[out:json][timeout:${app ? OVERPASS_IMPORT_TIMEOUT_SECONDS : 180}];
+/** Town, water, land use, walls and names. The probe's archived requests use this format. */
+export function overpassQuery(bbox: string): string {
+  return `[out:json][timeout:180];
 (
   way["highway"](${bbox});
   way["building"](${bbox});
@@ -87,7 +88,7 @@ export function overpassQuery(bbox: string, app?: { commune?: string }): string 
   way["historic"="tower"](${bbox});
   node["place"](${bbox});
   way["place"="square"](${bbox});
-  way["highway"="pedestrian"]["area"="yes"](${bbox});${app ? `\n  ${barrierSelectors(bbox)}${app.commune ? `\n  ${communeSelector(bbox, app.commune)}` : ''}` : ''}
+  way["highway"="pedestrian"]["area"="yes"](${bbox});
 );
 out geom;`;
 }
@@ -101,6 +102,40 @@ export function barrierQuery(bbox: string): string {
 /** The admin_level=8 boundary named `commune` crossing the square. */
 export function communeQuery(bbox: string, commune: string): string {
   return `[out:json][timeout:90];${communeSelector(bbox, commune)}out geom;`;
+}
+
+/** Fetch coordinates and tags for ways. Only relations need their member references and roles. */
+export function overpassImportQuery(bbox: string, commune?: string): string {
+  const isOneOf = (key: string, values: string[]) => `["${key}"~"^(${values.join('|')})$"]`;
+  const building = '["building"]["building"!="no"]';
+  const land = isOneOf('landuse', [...Object.keys(LANDUSE), ...URBAN_LANDUSE, 'reservoir', 'basin']);
+  return `[out:json][timeout:${OVERPASS_IMPORT_TIMEOUT_SECONDS}];
+(
+  way${isOneOf('highway', Object.keys(HIGHWAY))}["footway"!~"^(sidewalk|crossing)$"](${bbox});
+  way["highway"="pedestrian"]["area"="yes"](${bbox});
+  way${building}(${bbox});
+  way["natural"="water"](${bbox});
+  way${isOneOf('waterway', [...Object.keys(RIVER_WIDTH), 'riverbank'])}(${bbox});
+  way${land}(${bbox});
+  way${isOneOf('natural', Object.keys(NATURAL))}(${bbox});
+  way["leisure"~"^(park|garden)$"](${bbox});
+  way["barrier"="city_wall"](${bbox});
+  way["historic"="citywalls"](${bbox});
+  way["man_made"="tower"](${bbox});
+  way["historic"="tower"](${bbox});
+  way["place"="square"](${bbox});
+  ${barrierSelectors(bbox)}
+)->.ways;
+(
+  relation${building}(${bbox});
+  relation["natural"="water"](${bbox});
+  relation${land}(${bbox});
+  node["barrier"="city_gate"](${bbox});
+  node["place"]["name"](${bbox});
+  ${commune ? communeSelector(bbox, commune) : ''}
+)->.other;
+.ways out tags geom qt;
+.other out geom qt;`;
 }
 
 /** Terrarium tiles covering the square at `zoom`. */
@@ -192,8 +227,11 @@ export async function fetchOsmFeatures(square: OsmSquare, options: { commune?: s
 
 export async function fetchOsmImportFeatures(square: OsmSquare, options: { commune?: string }, fetchers: Pick<OsmFetchers, 'overpass'>) {
   const { bbox } = osmProjection(square);
-  const osm = await fetchers.overpass(overpassQuery(bbox, options), bbox);
   const name = options.commune;
+  const osm = await fetchers.overpass(overpassImportQuery(bbox, name), bbox);
+  // Restore stable IDs and draw order after the server's faster quadtile output.
+  const order = { node: 0, way: 1, relation: 2 };
+  osm.elements.sort((a, b) => order[a.type] - order[b.type] || a.id - b.id);
   const commune = name ? osm.elements.find(e => e.type === 'relation' && e.tags?.boundary === 'administrative' && e.tags.admin_level === '8' && e.tags.name === name) : undefined;
   if (name && !commune) throw new Error(`No admin_level=8 boundary named "${name}" crosses the map square.`);
   return { osm, commune };

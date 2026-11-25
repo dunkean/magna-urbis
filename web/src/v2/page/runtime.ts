@@ -119,7 +119,7 @@ export function mountRuntimeSettings(state: PageState, actions: PageActions): vo
 
   mountDesktopUpdates($('.header-tools'), desktopModulesHost);
 
-  mountDesktopReleaseLink($('.project-links'));
+  mountDesktopReleaseLink($<HTMLAnchorElement>('#desktop-download'));
 
   mountV2Illustration({
     host: $('.header-tools'),

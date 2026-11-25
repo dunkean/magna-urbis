@@ -32,8 +32,10 @@ const messages = {
   'Choose a square within the supported bounds (85° S to 85° N, without crossing 180° longitude).': 'Choisissez un carré entre 85° S et 85° N, sans franchir le méridien de 180°.',
   'Downloading AWS elevation…': 'Téléchargement du relief AWS…',
   'Downloading elevation and OpenStreetMap data…': 'Téléchargement du relief et des données OpenStreetMap…',
-  'Downloading OpenStreetMap data…': 'Téléchargement des données OpenStreetMap…',
+  'Waiting for OpenStreetMap…': 'En attente du serveur OpenStreetMap…',
+  'Receiving OpenStreetMap data…': 'Réception des données OpenStreetMap…',
   'Trying another OpenStreetMap server…': 'Nouvelle tentative sur un autre serveur OpenStreetMap…',
+  'A 6 km square is suggested for this place. Increase the side length to cover more of the area.': 'Un carré de 6 km est proposé pour ce lieu. Augmentez le côté pour couvrir une plus grande zone.',
   'Map import progress': 'Progression de l’import',
   'Building the imported map…': 'Construction de la carte importée…',
   'Drawing the imported map…': 'Affichage de la carte importée…',
@@ -45,6 +47,7 @@ registerMessages(Object.fromEntries(Object.entries(messages).map(([en, fr]) => [
 
 const MIN_KM = 0.5;
 const MAX_KM = 20;
+const MAX_SUGGESTED_KM = 6;
 const GRID = 512;
 
 function reliefZoom(square: OsmSquare): number {
@@ -113,6 +116,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
             <label><span class="label">Centre longitude</span><input name="longitude" type="number" min="-180" max="180" step="any" value="2.3575" required></label>
           </div>
           <label><span class="label">Square side (0.5–20 km)</span><input name="side" type="number" min="${MIN_KM}" max="${MAX_KM}" step="any" value="4" required></label>
+          <p class="hint" id="osm-size-hint" hidden>A 6 km square is suggested for this place. Increase the side length to cover more of the area.</p>
           <label><span class="label">Building style</span><select name="culture">${options(CULTURE_LABELS)}</select></label>
           <label><span class="label">Limit urban features to a commune (optional)</span><input name="commune" maxlength="100" aria-describedby="osm-commune-hint"></label>
           <p class="hint" id="osm-commune-hint">Enter the exact OSM name of an admin level 8 boundary. Relief, regional roads and water cover the full square.</p>
@@ -124,6 +128,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       <div class="osm-feedback">
         <div class="osm-progress-heading"><p id="osm-status" role="status" hidden></p><span id="osm-elapsed" class="hint" aria-hidden="true" hidden></span></div>
         <progress id="osm-progress" max="4" aria-label="Map import progress" aria-describedby="osm-status" hidden></progress>
+        <p id="osm-bytes" class="hint" hidden></p>
         <p id="osm-error" class="hint" role="alert" hidden></p>
       </div>
       <div class="dialog-actions"><button id="osm-cancel" type="button">Cancel</button><button id="osm-generate" type="submit" class="primary">Import &amp; generate</button></div>
@@ -139,6 +144,8 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   const resultRow = $('#osm-results-row');
   const status = $('#osm-status');
   const detail = $('#osm-error');
+  const transferred = $('#osm-bytes');
+  const sizeHint = $('#osm-size-hint');
   const progress = $<HTMLProgressElement>('#osm-progress');
   const elapsed = $('#osm-elapsed');
   const canvas = $<HTMLCanvasElement>('#osm-preview');
@@ -200,7 +207,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       controller.abort();
       if (progressTimer) clearInterval(progressTimer);
       progressTimer = undefined;
-      progress.hidden = elapsed.hidden = true;
+      progress.hidden = elapsed.hidden = transferred.hidden = true;
       active = undefined;
       syncBusy(false);
     }
@@ -282,14 +289,20 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     latitude.value = lat.toFixed(6);
     longitude.value = lon.toFixed(6);
     const extent = properties.extent;
+    sizeHint.hidden = true;
     if (extent?.length === 4 && extent.every(Number.isFinite)) {
       const [west, north, east, south] = extent;
       const size = 222.4 * Math.max(Math.abs(north - lat), Math.abs(south - lat), Math.max(Math.abs(east - lon), Math.abs(west - lon)) * Math.cos((lat * Math.PI) / 180));
-      side.value = String(Math.min(MAX_KM, Math.max(MIN_KM, Math.ceil(size * 10) / 10)));
+      side.value = String(Math.min(MAX_SUGGESTED_KM, Math.max(MIN_KM, Math.ceil(size * 10) / 10)));
+      sizeHint.hidden = size <= MAX_SUGGESTED_KM;
     } else side.value = '4';
     clearPreview();
   };
-  for (const field of [latitude, longitude, side]) field.oninput = clearPreview;
+  for (const field of [latitude, longitude, side])
+    field.oninput = () => {
+      sizeHint.hidden = true;
+      clearPreview();
+    };
 
   $('#osm-preview-go').onclick = () => {
     const square = area();
@@ -320,12 +333,16 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       let relief = 0;
       let osm = 0;
       let fallback = false;
+      let received = false;
+      let displayedBytes = '';
+      const megabytes = new Intl.NumberFormat(numberLocale(), { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 });
       const updateNetworkProgress = () => {
         if (signal.aborted) return;
         let message = 'Downloading elevation and OpenStreetMap data…';
         if (osm) message = 'Downloading AWS elevation…';
+        else if (received) message = 'Receiving OpenStreetMap data…';
         else if (fallback) message = 'Trying another OpenStreetMap server…';
-        else if (relief === 1) message = 'Downloading OpenStreetMap data…';
+        else if (relief === 1) message = 'Waiting for OpenStreetMap…';
         showProgress(message, relief + osm);
       };
       updateNetworkProgress();
@@ -341,9 +358,26 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
         fetchOsmImportFeatures(
           square,
           { commune: options.communeName },
-          browserOsmFetchers(signal, () => {
-            fallback = true;
-            updateNetworkProgress();
+          browserOsmFetchers(signal, {
+            onFallback() {
+              fallback = true;
+              received = false;
+              transferred.hidden = true;
+              updateNetworkProgress();
+            },
+            onBytes(bytes) {
+              if (signal.aborted) return;
+              if (!received) {
+                received = true;
+                updateNetworkProgress();
+              }
+              const amount = megabytes.format(bytes / 1_000_000);
+              if (amount !== displayedBytes || transferred.hidden) {
+                displayedBytes = amount;
+                transferred.textContent = `OpenStreetMap · ${amount}`;
+                transferred.hidden = false;
+              }
+            },
           }),
         ).then(features => {
           osm = 1;
@@ -351,6 +385,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
           return features;
         }),
       ]);
+      transferred.hidden = true;
       showProgress('Building the imported map…', 2);
       const result = await convert({ ...features, options, elevations: dem.elevations }, signal);
       signal.throwIfAborted();

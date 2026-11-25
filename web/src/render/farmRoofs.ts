@@ -274,6 +274,13 @@ merfolk-tidal:dome/stone/stone giant-hold:gable/stone/stone goblin-warren:cone/r
     .map(entry => entry.split(':') as [string, string]),
 );
 
+/** Ordinary house of a culture (roof kind, cover, wall, cover pitch in degrees): the same table and pitch rule as the
+ * stand-in houses, for buildings whose plan comes from elsewhere (OSM import). */
+export function cultureHouseLook(culture: string): { roof: MassingRoof; cover: string; wall: string; pitch: number } {
+  const [roof, cover, wall] = (RURAL_HOUSE[culture] ?? 'gable/tile/plaster').split('/') as [MassingRoof, string, string];
+  return { roof, cover, wall, pitch: pitchOf(cover, culture) };
+}
+
 /** A place whose detail is still to come: the stand-in cluster of the map (`placeholderUrban`) as buildings of its
  * culture, and the earth lanes its houses line. Round-house cultures get round houses on the same spots. */
 interface StandIn {

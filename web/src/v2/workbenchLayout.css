@@ -30,6 +30,11 @@
   padding: 4px 8px;
   font-size: 10px;
 }
+#desktop-download {
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--gold);
+}
 #project-links-dialog {
   width: 320px;
 }

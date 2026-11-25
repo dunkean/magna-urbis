@@ -92,7 +92,7 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     else saveAutosaveNow();
   })();
   mountNewButton($('#import-open'));
-  $('#export-open').before($('#city-code-open'));
+  $('#osm-open').before($('#city-code-open'));
 
   const startupProbe = actions.inspectHardware();
 

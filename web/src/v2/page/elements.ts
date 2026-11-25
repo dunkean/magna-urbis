@@ -7,6 +7,7 @@ import logo from '../../ui/assets/logo-magna-urbis.png';
 import { CULTURE_LABELS } from '../../gen/options';
 import { STYLE_LIST } from '../../render/styles';
 import { EXPORT_LAYER_NAMES } from '../../render/exportLayers';
+import { desktopReleasesUrl } from '../desktopUpdates';
 import { $, icon, field, tri, wallStyles, layerNames } from './dom';
 
 export function mountPageShell(localEdition: boolean): void {
@@ -16,6 +17,7 @@ export function mountPageShell(localEdition: boolean): void {
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>The region workshop</p></div><span class="version">V2 · ALPHA</span>
   <button id="project-links-open" type="button" aria-haspopup="dialog" aria-controls="project-links-dialog">Links</button>
+  <a id="desktop-download" href="${desktopReleasesUrl}" target="_blank" rel="noopener noreferrer">Download app</a>
   <div class="project-actions"><button id="import-open">Open</button><button id="save-map">Save map</button><button id="osm-open" type="button" class="primary" aria-haspopup="dialog" aria-controls="osm-dialog" title="Import a real place">Import</button><button id="export-open">Export ↗</button></div>
   <div class="header-tools"><span class="edition">${localEdition ? 'Desktop / local edition' : 'Web edition'}</span><label class="language-control header-language"><select id="language-select" aria-label="Interface language">${LANGUAGES.map(item => `<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><button id="hardware-open" title="Settings, engines and activity">${icon('settings-gear', 20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Settings</span></button></div>
 </header>
@@ -80,7 +82,7 @@ export function mountPageShell(localEdition: boolean): void {
     <a href="https://v1.magna-urbis.org/" target="_blank" rel="noopener">V1 ↗</a>
     <a href="https://github.com/dunkean/magna-urbis" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
     <a href="https://github.com/dunkean/magna-urbis/discussions" target="_blank" rel="noopener noreferrer">Discussions ↗</a>
-    <a href="https://github.com/dunkean/magna-urbis/releases" target="_blank" rel="noopener noreferrer">Releases ↗</a>
+    <a href="${desktopReleasesUrl}" target="_blank" rel="noopener noreferrer">Releases ↗</a>
     <a href="https://ko-fi.com/dunkean" target="_blank" rel="noopener">Ko-fi ↗</a>
   </nav>
   <p id="build-info"></p>
