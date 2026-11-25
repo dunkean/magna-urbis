@@ -15,16 +15,8 @@ export function mountPageShell(localEdition: boolean): void {
     `
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>The region workshop</p></div><span class="version">V2 · ALPHA</span>
-  <button id="osm-open" type="button" class="primary" aria-haspopup="dialog" aria-controls="osm-dialog" title="Import a real place">Import</button>
-  <nav class="project-links">
-    <a href="./scientific/index.html" target="_blank" rel="noopener">How it works? ↗</a>
-    <a href="https://v1.magna-urbis.org/" target="_blank" rel="noopener">V1 ↗</a>
-    <a href="https://github.com/dunkean/magna-urbis" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-    <a href="https://github.com/dunkean/magna-urbis/discussions" target="_blank" rel="noopener noreferrer">Discussions ↗</a>
-    <a href="https://github.com/dunkean/magna-urbis/releases" target="_blank" rel="noopener noreferrer">Releases ↗</a>
-    <a href="https://ko-fi.com/dunkean" target="_blank" rel="noopener">Ko-fi ↗</a>
-    <span id="build-info"></span>
-  </nav><div class="project-actions"><button id="import-open">Open</button><button id="save-map">Save map</button><button id="export-open">Export ↗</button></div>
+  <button id="project-links-open" type="button" aria-haspopup="dialog" aria-controls="project-links-dialog">Links</button>
+  <div class="project-actions"><button id="import-open">Open</button><button id="save-map">Save map</button><button id="osm-open" type="button" class="primary" aria-haspopup="dialog" aria-controls="osm-dialog" title="Import a real place">Import</button><button id="export-open">Export ↗</button></div>
   <div class="header-tools"><span class="edition">${localEdition ? 'Desktop / local edition' : 'Web edition'}</span><label class="language-control header-language"><select id="language-select" aria-label="Interface language">${LANGUAGES.map(item => `<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><button id="hardware-open" title="Settings, engines and activity">${icon('settings-gear', 20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Settings</span></button></div>
 </header>
 <section class="workbench-bar" aria-label="Scene and editing tools">
@@ -81,6 +73,18 @@ export function mountPageShell(localEdition: boolean): void {
     <div class="map-bottom"><div class="glass mini-card"><canvas id="minimap" aria-label="Overview"></canvas><div class="map-scale"><span id="scale-label">—</span><div class="scale-line"></div><p id="map-metrics">No map</p><div id="cursor-readout"></div></div></div></div><div class="legend-strip"></div>
   </section>
 </main>
+<dialog id="project-links-dialog" aria-labelledby="project-links-title">
+  <div class="dialog-head"><h2 id="project-links-title">Links</h2><button data-close="project-links-dialog" aria-label="Close">×</button></div>
+  <nav class="project-links" aria-labelledby="project-links-title">
+    <a href="./scientific/index.html" target="_blank" rel="noopener">How it works? ↗</a>
+    <a href="https://v1.magna-urbis.org/" target="_blank" rel="noopener">V1 ↗</a>
+    <a href="https://github.com/dunkean/magna-urbis" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+    <a href="https://github.com/dunkean/magna-urbis/discussions" target="_blank" rel="noopener noreferrer">Discussions ↗</a>
+    <a href="https://github.com/dunkean/magna-urbis/releases" target="_blank" rel="noopener noreferrer">Releases ↗</a>
+    <a href="https://ko-fi.com/dunkean" target="_blank" rel="noopener">Ko-fi ↗</a>
+  </nav>
+  <p id="build-info"></p>
+</dialog>
 <dialog id="import-dialog"><div class="dialog-head"><div><span class="eyebrow">Return to a region</span><h2>Open & compose</h2></div><button data-close="import-dialog" aria-label="Close">×</button></div><p class="hint">A project contains the map, settings and edits. A recipe recreates a region with the same engine version.</p><div class="file-card"><h3>Magna Urbis V2 project or recipe</h3><p class="hint">Binary .muproj, complete JSON, or seeds + settings. Projects retain the elevation grids.</p><input id="project-file" type="file" accept=".muproj,.json,application/octet-stream,application/json" aria-label="Import a V2 project or recipe"></div><div class="file-card"><h3>Heightmap → territory</h3><p class="hint">Grayscale PNG, JPEG or WebP, cropped to a square. Set the elevation and sea level before creating the terrain. The import replaces the current terrain.</p><input id="heightmap-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Import a heightmap"><button id="clear-heightmap" class="quiet small">Remove imported terrain</button><p class="hint" id="import-height-info">No heightmap imported.</p></div><div class="dialog-actions"><button data-close="import-dialog">Close</button></div></dialog>
 <dialog id="export-dialog"><div class="dialog-head"><div><span class="eyebrow">Take your region with you</span><h2>Export your way</h2></div><button data-close="export-dialog" aria-label="Close">×</button></div><p class="hint">A complete map, a crop, or just the elements you need for your game.</p><div class="control-grid"><div><label class="label" for="export-format">Format</label><select id="export-format"><option value="binary">Save map · .muproj</option><option value="png">Image PNG</option><option value="svg">SVG vector map</option><option value="project">Export complete project (JSON)</option><option value="recipe">Seeds + settings + edits</option><option value="seed">Seed only · JSON</option><option value="heightmap">Heightmap · 16-bit PNG</option><option value="names">Names · JSON</option></select></div></div><div id="export-map-options"><h3>Elements to include</h3><div class="export-layers">${EXPORT_LAYER_NAMES.map(k => `<label class="checkline"><input type="checkbox" data-layer="${k}" checked>${layerNames[k]}</label>`).join('')}</div><div class="control-grid"><div><label class="label" for="export-resolution">Longest edge</label><select id="export-resolution"><option value="1600">1,600 px · quick</option><option value="3000" selected>3,000 px · standard</option><option value="4096">4,096 px · detailed</option></select></div><label class="checkline"><input id="export-crop" type="checkbox" checked>Choose the export area</label></div></div><p class="hint" id="export-note" style="margin-top:15px">Visual exports use the current map without rerunning generation.</p><div class="dialog-actions"><button data-close="export-dialog">Cancel</button><button class="primary" id="export-go">Export</button></div></dialog>
 <dialog id="expert-dialog"><div class="dialog-head"><div><span class="eyebrow">The region recipe</span><h2>Expert settings</h2></div><button data-close="expert-dialog" aria-label="Close">×</button></div><p class="hint">Global settings, local overrides by stable key, growth plans and site preferences. Imported terrain data is retained separately.</p><label class="label" for="expert-json">JSON recipe</label><textarea id="expert-json" spellcheck="false"></textarea><p class="warning" id="expert-error" role="alert"></p><div class="dialog-actions"><button data-close="expert-dialog">Cancel</button><button class="primary" id="expert-apply">Apply recipe</button></div></dialog>

@@ -14,6 +14,8 @@ import { nextRootSeed, rootSeedFromText } from '../cityCode';
 import { automaticCulture } from '../environmentCultures';
 
 export function mountToolbar(state: PageState, actions: PageActions): void {
+  $('#project-links-open').onclick = () => actions.dialog('#project-links-dialog');
+
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-option]').forEach(input =>
     input.addEventListener('change', () => {
       const key = input.dataset.option!,

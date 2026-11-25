@@ -1,5 +1,6 @@
 /** Interface copy. Contract keys, recipes, seeds and user names are never translation keys. */
 export const interfaceEnglish: Record<string,string> = {
+  'Liens':'Links',
   'Relief et eau, en un clic':'Terrain and water, in one click',
   'Style de fortification':'Fortification style','Palissade':'Palisade','Rempart de terre et de bois (gord)':'Earth and timber rampart (gord)',"Haie d'épineux":'Thorn hedge','Courtine':'Curtain wall','Enceinte flanquée de tours':'Wall flanked by towers','Enceintes concentriques':'Concentric walls','Mur en pisé':'Rammed-earth wall','Muraille à barbacanes (wengcheng)':'Wall with barbicans (wengcheng)','Fortification bastionnée':'Bastioned fortification',
   'hab. ·':'pop. ·','habitants ·':'inhabitants ·','Territoire ›':'Territory ›','Identifiant :':'Identifier:','Identifiant du moteur :':'Engine identifier:',

@@ -30,24 +30,30 @@
   padding: 4px 8px;
   font-size: 10px;
 }
+#project-links-dialog {
+  width: 320px;
+}
 .project-links {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  margin-inline-start: 12px;
-  white-space: nowrap;
+  display: grid;
+  gap: 4px;
 }
 .project-links a {
-  color: var(--muted);
-  font-size: 11px;
+  display: block;
+  padding: 9px 10px;
+  border-radius: 5px;
+  color: inherit;
+  font-size: 14px;
   text-decoration: none;
 }
-.project-links a:hover {
+.project-links a:hover,
+.project-links a:focus-visible {
+  background: #dcb86f14;
   color: var(--gold);
 }
 #build-info {
+  margin: 12px 0 0;
   font:
-    9px ui-monospace,
+    11px ui-monospace,
     monospace;
   color: var(--muted);
 }
@@ -860,15 +866,6 @@
   }
 }
 @media (max-width: 1000px) {
-  .project-links {
-    gap: 8px;
-    margin: 0;
-  }
-  #build-info {
-    max-width: 130px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .workbench-advanced {
     left: 336px;
     width: calc(100vw - 352px);
@@ -887,15 +884,8 @@
   }
   .app-header .brand-icon,
   .app-header .version,
-  .app-header .edition,
-  #build-info {
+  .app-header .edition {
     display: none;
-  }
-  .project-links {
-    gap: 7px;
-  }
-  .project-links a {
-    font-size: 9px;
   }
   .app-header .project-actions {
     flex: none;
@@ -904,6 +894,9 @@
   .app-header .project-actions button {
     font-size: 9px;
     padding: 4px;
+  }
+  .app-header .project-actions :is(#osm-open, #export-open) {
+    order: -1;
   }
   .app-header .header-tools button {
     padding: 4px;

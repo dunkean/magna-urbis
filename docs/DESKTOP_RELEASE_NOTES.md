@@ -1,6 +1,7 @@
 ## Alpha 0.3.11
 
-- Open Import directly from the top bar to bring in a real city or region. Search by name or coordinates, preview the AWS elevation, and generate a map with OpenStreetMap data. A progress bar follows the parallel downloads, map preparation and drawing. Imports keep your current display style.
+- Use Import next to Export in the top bar to bring in a real city or region. Search by name or coordinates, preview the AWS elevation, and generate a map with OpenStreetMap data. A progress bar follows the parallel downloads, map preparation and drawing. Imports keep your current display style.
+- Open the Links dialog from the top bar to find the atlas, project links, releases and build information.
 - Choose Detailed architecture under Houses → Roof for fitted doors and windows, raised roof edges and culture-specific materials that follow curved roofs and wrap around corners.
 - In Detailed architecture, gers have open timber smoke crowns, Iroquoian longhouses have vented bark roofs, and elven and tidal homes have accessible galleries and landings.
 - Detailed Indian homes have region-specific verandas, projecting bays and terrace rooms. Clay, stone and lime roofs follow the material and roof slope. Selected European homes gain gabled dormers, and contemporary and futuristic homes can have a recessed rooftop storey.
