@@ -12,7 +12,8 @@
 - River highlights and shallows follow the channel across map tiles. Zooming in on the tilted map keeps banks sharp even on a coarse elevation grid.
 - Natural rivers show soft shallows, short glints across mountain riffles, and tea-brown wetland water. Dry channels have subtle silt and gravel tones, and low water follows the outside of bends.
 - On Satellite maps the ground around a house blends into the surrounding town earth.
-- Close leafless trees now show a trunk and tapered, forked branches on the map and in 3D.
+- Leafless trees keep their forked branches at every 3D detail level. On tilted Satellite maps, distant crowns look rounder from above and stay solid as the view zooms out.
+- Small gorse clumps appear on heathland at close zoom.
 
 - Overhead Satellite and Parchment maps separate roofs from the ground with clearer roof slopes and quieter textures at street scale. The effect fades as the map tilts.
 

@@ -819,9 +819,9 @@ ${TREE_PROFILE_GLSL}void main(){
   int form=int(treeShape.z+.5);bool needle=form==1||form==3,parasol=form>=2,spire=form==1;
   // The instance carries the crown length (live crown ratio times height, buildNearTreesSteps): the crown base.
   float r=treeBase.w,h=treeShape.x,bottom=clamp(h-treeShape.y,.02*h,.75*h);
-  // Resolve only nearby leafless trees. Use the existing instance draw and collapse unused triangles.
+  // Use the forked scaffold throughout the visible range. Collapse unused triangles in the existing instance draw.
   vec3 foot=vec3(treeBase.x-cameraOrigin.x,treeBase.z*exaggeration-cameraOrigin.y,treeBase.y-cameraOrigin.z);
-  if(treeColor.w>.5 && r>.035*max(1.,(matrix*vec4(foot,1.)).w)){
+  if(treeColor.w>.5){
     if(quad>=3*limbCount){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
     int limb=quad/3,side=quad-3*limb;
     vec4 joint=(corner==1||corner==4||corner==5)?limbB[limb]:limbA[limb];

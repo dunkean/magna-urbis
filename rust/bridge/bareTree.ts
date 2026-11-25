@@ -41,6 +41,15 @@ const links = [
 export const bareLimbs = links.map(([a, b]) => [joints[a], joints[b]] as const);
 
 // A single ring at each joint. The section lies in the horizontal plane and the tubes rise along every limb.
+function tubeIndices(limbs: number[][]): number[] {
+  return limbs.flatMap(([a, b]) =>
+    [0, 1, 2].flatMap(i => {
+      const j = (i + 1) % 3;
+      if (joints[b][3] === 0) return [3 * a + i, 3 * b, 3 * a + j];
+      return [3 * a + i, 3 * b + i, 3 * a + j, 3 * a + j, 3 * b + i, 3 * b + j];
+    }),
+  );
+}
 export const bareTreeMesh = {
   segments: -1,
   vertices: joints.flatMap(([x, y, z, r]) =>
@@ -49,13 +58,34 @@ export const bareTreeMesh = {
       return [x + r * Math.cos(a), y, z + r * Math.sin(a), 0.84 + 0.12 * Math.cos(a)];
     }),
   ),
-  indices: links.flatMap(([a, b]) =>
-    [0, 1, 2].flatMap(i => {
-      const j = (i + 1) % 3;
-      if (joints[b][3] === 0) return [3 * a + i, 3 * b, 3 * a + j];
-      return [3 * a + i, 3 * b + i, 3 * a + j, 3 * a + j, 3 * b + i, 3 * b + j];
-    }),
-  ),
+  indices: tubeIndices(links),
+};
+// The same scaffold with terminal twigs pruned. Seven triangular tubes fit the middle foliage budget.
+const middleLinks = [
+  [0, 1],
+  [1, 2],
+  [1, 8],
+  [1, 15],
+  [2, 13],
+  [2, 11],
+  [2, 9],
+];
+export const bareMiddleMesh = { segments: -1, vertices: bareTreeMesh.vertices, indices: tubeIndices(middleLinks) };
+
+// One tapered stroke per limb in the distant silhouette. Its base spans the limb in plan so forks
+// remain separated overhead. In profile the rising limbs read against the sky.
+const distantLinks = middleLinks.slice(0, 6);
+export const bareDistantMesh = {
+  segments: -1,
+  vertices: distantLinks.flatMap(([a, b]) => {
+    const [x, y, z, width] = joints[a],
+      [tx, ty, tz] = joints[b];
+    const scale = (1.4 * width) / Math.hypot(tx - x, tz - z);
+    const dx = (tz - z) * scale,
+      dz = (x - tx) * scale;
+    return [x - dx, y, z - dz, 0.9, x + dx, y, z + dz, 0.9, tx, ty, tz, 1];
+  }),
+  indices: Array.from({ length: distantLinks.length * 3 }, (_, i) => i),
 };
 const gl = (v: number) => v.toFixed(4);
 export const BARE_LIMBS_GLSL = `

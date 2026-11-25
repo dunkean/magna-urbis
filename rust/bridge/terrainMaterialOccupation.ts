@@ -187,10 +187,24 @@ vec3 landGrass(vec2 world,float footprint,float green,vec3 bare,bool grazed){
 // Rough grazing and heath: bracken, gorse and bare patches that dissolve into the surrounding ground.
 vec3 landHeath(vec2 world,float footprint,float green,vec3 bare){
   uint salt=uMaterialSeed+1039u;
-  float broad=surfaceNoise(vec3(world/58.,0.),salt),mid=surfaceNoise(vec3(world/15.,0.),salt+1u),fine=surfaceNoise(vec3(world/4.6,0.),salt+2u);
-  float t=clamp(.5+.8*broad+.5*mid+.3*fine*(1.-groundSmooth(1.,3.,footprint)),0.,1.);
+  float broad=surfaceNoise(vec3(world/58.,0.),salt),mid=surfaceNoise(vec3(world/15.,0.),salt+1u);
+  float t=clamp(.5+.8*broad+.5*mid,0.,1.);
   vec3 bracken=mix(vec3(.40,.33,.23),vec3(.34,.37,.21),green),gorse=mix(vec3(.28,.30,.20),vec3(.25,.32,.18),green);
-  return mix(bare,mix(bracken,gorse,groundSmooth(.35,.75,t)),.5);
+  vec3 ground=mix(bare,mix(bracken,gorse,groundSmooth(.35,.75,t)),.5);
+  // Spend the former fine noise octave on individual clumps only where they resolve.
+  // A single cell hash places a pair of overlapping gorse cushions in patches of heath.
+  if(footprint<.8&&t>.4){
+    vec2 cell=world/3.8+vec2(mid,broad);
+    uint h=groundHash(ivec3(ivec2(floor(cell)),0),salt+2u);
+    vec2 jitter=vec2(h&255u,(h>>8u)&255u)/255.-.5;
+    vec2 d=fract(cell)-.5-.34*jitter;
+    float size=.14+.08*float((h>>16u)&255u)/255.;
+    vec2 a=d/vec2(size,.72*size),b=(d-vec2(.6,-.3)*size)/vec2(.67*size,.8*size);
+    float tuft=max(0.,1.-min(dot(a,a),dot(b,b)));
+    float seen=(1.-groundSmooth(.18,.8,footprint))*groundSmooth(.4,.68,t);
+    ground=mix(ground,gorse*(.72+.55*tuft-.18*a.y),seen*groundSmooth(0.,.45,tuft));
+  }
+  return ground;
 }
 // Fen: reed and sedge mats with ragged edges, hummocks up close, open pools with a crisp shore and thin
 // meandering channels (the zero line of the broad field, about a pixel wide until it fades). From afar the same

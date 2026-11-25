@@ -79,6 +79,11 @@ describe('near trees: biomes and giants', () => {
   const cases: [ClimateZone, number, number, number, number][] = [
     ['temperate', 18, 60, 20, 30],
     ['mediterranean', 11, 60, 7, 15],
+    ['continental', 13, 130, 15, 28],
+    ['alpine', 26, 180, 18, 35],
+    ['steppe', 6, 35, 8, 18],
+    ['desert', 3, 0, 3, 10],
+    ['wetland', 16, 20, 9, 20],
     ['nordic', 21, 220, 12, 20],
     ['arctic', 17, 240, 1.5, 6],
     ['savanna', 6, 0, 6, 12],

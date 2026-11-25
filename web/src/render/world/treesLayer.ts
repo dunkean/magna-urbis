@@ -10,7 +10,7 @@ import type { Building3dScene } from '../urbanBuildingGeometry';
 import { treeBuildings, type TreeBuildings } from './treesBuildings';
 import { TreeContent, treeSamplesMatch, type TreeSamples } from './treesContent';
 import { TREES_BLOCK, TREE_SIZE_M, treeBlockSteps, treeCloseShare, treeDrawShare, treeInputsKey, treeSolidShare, type TreeBlock } from './treesBlocks';
-import { bareTreeMesh } from '../../../../rust/bridge/bareTree';
+import { bareTreeMesh, bareMiddleMesh, bareDistantMesh } from '../../../../rust/bridge/bareTree';
 import { SATELLITE_TREES, TREE_MESHES, WORLD_TREE_FS, WORLD_TREE_VS, type TreePalette } from './treesShader';
 import { TREE_MAX_BLOCKS, treeMemoryBudget, treeTriangleBudget } from './treesRange';
 import { TreeCoverage } from './treesVisibility';
@@ -50,7 +50,7 @@ const RETIRED_FIRST = 1e6;
 const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uVisibility', 'uSegments', 'uFacing', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>; indices: WebGLBuffer; vertices: WebGLBuffer };
 const BRANCH_LEVEL = TREE_MESHES.length;
-const meshes = [...TREE_MESHES, bareTreeMesh];
+const meshes = [...TREE_MESHES, bareTreeMesh, bareMiddleMesh, bareDistantMesh];
 const MESH_VERTICES = Float32Array.from(meshes.flatMap(mesh => mesh.vertices));
 const INDICES = Uint16Array.from(
   meshes.flatMap((mesh, i) => {
@@ -508,7 +508,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
               if (prefix) {
                 const lo = prefix[first], hi = prefix[end];
                 draw(slot, level, first - lo, end - first - (hi - lo));
-                draw(slot, level === 0 ? BRANCH_LEVEL : level, slot.count - prefix[slot.count] + lo, hi - lo);
+                draw(slot, BRANCH_LEVEL + level, slot.count - prefix[slot.count] + lo, hi - lo);
               } else draw(slot, level, first, end - first);
               first = end;
             }

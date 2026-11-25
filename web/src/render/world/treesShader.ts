@@ -31,11 +31,38 @@ function solidTree(segments: number, crown: readonly number[]): TreeMesh {
   return { segments, vertices, indices };
 }
 
+// Spend the intermediate mesh on the silhouette: two staggered six-sided crown rings close on
+// a bottom and top point (24 triangles). The four-sided stem tapers inside the crown (4 triangles).
+function middleTree(): TreeMesh {
+  const vertices: number[] = [],
+    indices: number[] = [];
+  const ring = (profile: number, sides: number, turn = 0) => {
+    const first = vertices.length / 4;
+    for (let i = 0; i < sides; i++) {
+      const a = ((i + turn) * 2 * Math.PI) / sides;
+      vertices.push(profile, i % 2, sides === 1 ? 0 : Math.cos(a), sides === 1 ? 0 : Math.sin(a));
+    }
+    return first;
+  };
+  const foot = ring(-2, 4),
+    collar = ring(-3, 1),
+    base = ring(0, 1);
+  const belly = ring(2, 6),
+    shoulder = ring(3, 6, 0.5),
+    tip = ring(5, 1);
+  for (let i = 0; i < 4; i++) indices.push(foot + i, foot + ((i + 1) % 4), collar);
+  for (let i = 0; i < 6; i++) {
+    const j = (i + 1) % 6;
+    indices.push(base, belly + j, belly + i, belly + i, belly + j, shoulder + i, belly + j, shoulder + j, shoulder + i, shoulder + i, shoulder + j, tip);
+  }
+  return { segments: 6, vertices, indices };
+}
+
 export const TREE_MESHES: readonly TreeMesh[] = [
   solidTree(6, [0, 1, 2, 3, 4, 5]),
-  solidTree(4, [0, 2, 5]),
-  // Upright stem and six-point crown silhouette, six triangles altogether.
-  { segments: 0, vertices: Array.from({ length: 10 }, (_, id) => [id, 0, 0, 0]).flat(), indices: [0, 1, 2, 1, 3, 2, 4, 6, 5, 5, 6, 7, 6, 8, 7, 7, 8, 9] },
+  middleTree(),
+  // Upright stem and two crown bands with a curved outer contour, six triangles altogether.
+  { segments: 0, vertices: Array.from({ length: 10 }, (_, id) => [id, 0, 0, 0]).flat(), indices: [0, 1, 2, 1, 3, 2, 4, 5, 6, 5, 7, 6, 6, 7, 8, 7, 9, 8] },
 ];
 
 type Rgb = readonly [number, number, number];
@@ -76,19 +103,22 @@ uniform float fogDistance;
 uniform int uNight;
 out vec3 colour;
 out vec3 grain;
-flat out float modelOpacity;
-flat out float bareCrown; // leafless crown of the season
+
 ${TREE_PROFILE_GLSL}
 const float WORLD_NEEDLE_R[6]=float[6](1.,.69,.86,.51,.61,0.);
 void main(){
   vec2 place=uBlock.xy+treeBase.xy;
-  modelOpacity=(1.-smoothstep(uFade.z,uFade.w,min(distance(place,uFade.xy),length(place))))*uVisibility*uBlock.w;
+  float coverage=(1.-smoothstep(uFade.z,uFade.w,min(distance(place,uFade.xy),length(place))))*uVisibility*uBlock.w;
+  // Retire whole trees in a fixed order as their painted symbols take over. The same
+  // seed follows an instance through all three LODs and never depends on screen pixels.
+  float rank=fract(treeShape.w*73.271+treeBase.x*.75488+treeBase.y*.56984);
+  if(rank>=coverage){gl_Position=vec4(2.,2.,2.,1.);colour=vec3(0.);grain=vec3(0.);return;}
   int id=int(meshVertex.x),form=int(treeShape.z+.5);
   bool spire=form==1,parasol=form>=2,needle=form==1||form==3;
   float h=treeShape.x,r=treeBase.w,bottom=clamp(h-treeShape.y,.02*h,.75*h);
   float stem=max(max(needle?h/90.:h/64.,r/(needle?8.:12.)),.17);
   float u=0.,width=stem,y=0.;
-  bareCrown=0.;
+  vec3 contour=vec3(0.);
   vec2 dir,offset=vec2(0.),phase=vec2(cos(treeShape.w),sin(treeShape.w));
   vec3 normal;
   bool trunk;
@@ -99,26 +129,24 @@ void main(){
     normal=normalize(vec3(limb,meshVertex.w));
   }else if(uSegments==0){
     trunk=id<4;
-    float side=(id==0||id==2||id==5||id==7)?-1.:1.;
+    float side=(id%2==0)?-1.:1.;
     dir=uFacing.xy*side;
     if(trunk){y=id<2?-.25:bottom;width=id<2?stem*1.18:stem*.78;}
     else {
-      // The two crown ends separate along the ground when seen from above. A pitched card therefore
-      // retains a crown footprint even when the terrain flattens in an overhead orbit.
-      bool tip=id==9,base=id==4,lower=id==5||id==6;
-      u=base?0.:tip?1.:lower?(spire?.10:parasol?.60:.34):(spire?.55:parasol?.86:.73);
-      width=(base||tip)?0.:r*(lower?1.:spire?.58:parasol?.86:.78);
+      float band=float((id-4)/2)-1.;
+      u=band<0.?0.:band>0.?1.:spire?.18:parasol?.68:.45;
+      width=r*(spire&&band>0.?.18:1.);
       y=mix(bottom,h,u);
-      offset=vec2(uFacing.y,-uFacing.x)*r*uFacing.z*(2.*u-1.);
+      offset=vec2(uFacing.y,-uFacing.x)*r*uFacing.z*band;
+      contour=vec3(side,band,1.);
     }
     normal=normalize(vec3(dir*.52+vec2(-uFacing.y,uFacing.x)*.7, trunk?.15:.24+u));
   }else{
     trunk=id<0;
     dir=mat2(phase.x,phase.y,-phase.y,phase.x)*meshVertex.zw;
-    if(trunk){y=id==-2?-.25:bottom;width=id==-2?stem*1.3:stem*.78;}
+    if(trunk){y=id==-2?-.25:id==-3?mix(bottom,h,.25):bottom;width=id==-2?stem*1.3:stem*.78;}
     else {
       int k=id;
-      if(uSegments==4&&parasol&&k==2)k=3;
       u=parasol?PARASOL_U[k]:spire?NEEDLE_U[k]:BROAD_U[k];
       width=r*(parasol?PARASOL_R[k]:spire?WORLD_NEEDLE_R[k]:BROAD_R[k]);
       if(k==0)width=max(width,stem*.78);
@@ -128,17 +156,13 @@ void main(){
     }
     normal=trunk?vec3(dir,0.):normalize(vec3(dir*(u>=1.?0.:1.),spire?.42:(u-.32)*2.6));
   }
-  if(!trunk){
-    if(!needle && treeColor.w>.5)width*=.8;
-    bareCrown=treeColor.w>.5?1.:0.;
-    if(parasol)offset+=phase*(.14*r*u);
-  }
+  if(!trunk&&parasol)offset+=phase*(.14*r*u);
   vec2 local=offset+dir*width;
   vec3 pos=vec3(place+local,treeBase.z*uRelief.x+y*uRelief.y+uBlock.z);
   gl_Position=uProjection*vec4(pos,1.);
   // Anisotropic bark grain, larger crown clumps. Coordinates stay in local
   // metres so the texture remains attached while the camera moves.
-  grain=uSegments>0?vec3(vec2(local.x+.71*local.y,y+.29*local.y)*(trunk?vec2(3.6,.72):vec2(spire?2.1:1.42,1.56))+phase*47.,trunk?.34:spire?.26:.35):vec3(0.);
+  grain=uSegments>0?vec3(vec2(local.x+.71*local.y,y+.29*local.y)*(trunk?vec2(3.6,.72):vec2(spire?2.1:1.42,1.56))+phase*47.,trunk?.34:spire?.26:.35):contour;
   vec3 tint=trunk?uTrunk:treeColor.rgb;
   if(uSegments<0)tint*=meshVertex.w;
   if(uRepaint==1)tint=mix(uRepaintLow.rgb,uRepaintHigh.rgb,smoothstep(uRepaintLow.w,uRepaintHigh.w,dot(tint,vec3(.30,.59,.11))));
@@ -151,13 +175,11 @@ void main(){
   colour=mix(colour,uNight==1?vec3(.018,.028,.065):vec3(.77,.85,.88),fog);
 }`;
 
-/** Screen-door coverage preserves the depth buffer through range and streaming fades. */
+/** Opaque silhouettes. Only the outside corners of the far crown card are clipped. */
 export const WORLD_TREE_FS = `#version 300 es
 precision highp float;
 in vec3 colour;
 in vec3 grain;
-flat in float modelOpacity;
-flat in float bareCrown;
 uniform highp int uSegments;
 out vec4 color;
 float grainHash(vec2 p){
@@ -172,18 +194,7 @@ float grainNoise(vec2 p){
 }
 void main(){
   vec3 base=colour;
-  // A leafless crown is the web of its branches: limbs and twigs along the zero lines of two octaves of noise, the sky
-  // and the ground between them. Once twigs are under a pixel, the same share of the crown is kept as a screen.
-  if(bareCrown>.5){
-    float kept=.5;
-    if(uSegments>0){
-      vec2 q=grain.xy*vec2(1.15,.62);
-      float twig=min(abs(grainNoise(q)),1.3*abs(grainNoise(q*2.1+11.3)));
-      vec2 size=fwidth(q);
-      kept=mix(1.-step(.085,twig),.5,smoothstep(.25,.7,max(size.x,size.y)));
-    }
-    if(kept<=fract(52.9829189*fract(dot(floor(gl_FragCoord.xy),vec2(.00583715,.06711056)))))discard;
-  }
+  if(uSegments==0&&grain.z>.5&&dot(grain.xy,grain.xy)>1.)discard;
   // Billboards are too small for any grain. A derivative gate removes the
   // pattern before its clumps or strands are subpixel, including on a tilt.
   if(uSegments>0){
@@ -191,6 +202,5 @@ void main(){
     float seen=1.-smoothstep(.30,.88,max(fp.x,fp.y));
     if(seen>0.)base*=1.+grain.z*seen*grainNoise(grain.xy);
   }
-  if(modelOpacity<1.&&fract(52.9829189*fract(dot(floor(gl_FragCoord.xy),vec2(.06711056,.00583715))))>=modelOpacity)discard;
   color=vec4(base,1.);
 }`;
