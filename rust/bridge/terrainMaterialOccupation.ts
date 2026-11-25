@@ -387,12 +387,14 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   // A nearest class gate cut the filtered signed edge back to whole texels: blend categorical responses, not IDs.
   // The loops only sum class weights. Each material is then evaluated once: inlined in the loops, they multiplied
   // the shader eightfold and D3D compilers took minutes on the 3D ground.
-  float wField=0.,wOrchard=0.,wGarden=0.,wTown=0.,wLane=0.,wBuilt=0.,hardShare=0.;
+  float wField=0.,wOrchard=0.,wGarden=0.,wTown=0.,wLane=0.,hardShare=0.;
   for(int y=0;y<2;y++)for(int x=0;x<2;x++){
     int cls=int(texelFetch(uOccupation,clamp(base+ivec2(x,y),ivec2(0),top),0).b*255.+.5);
     float weight=(x==0?1.-f.x:f.x)*(y==0?1.-f.y:f.y);
     // Class 11 clearings are wild ground: the lookup below gives them grass.
-    if(cls==8||cls<1||cls>11){hardShare+=weight;if(cls==8){paperTendedShare+=weight;wBuilt+=weight;}}
+    // Building footprints share the surrounding town earth, including the antialiased edge of each roof.
+    if(cls==8){wTown+=weight;paperTendedShare+=weight;}
+    else if(cls<1||cls>11)hardShare+=weight;
     else if(cls==1)wField+=weight;
     else if(cls==4)wOrchard+=weight;
     else if(cls==5)wGarden+=weight;
@@ -404,7 +406,7 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   // drew the limit as rounded texel steps. Towns and buildings override plots; agricultural lanes follow the same
   // smooth plot edge, including beside orchards. Between two detailed classes the class weights stay.
   float detailed=wField+wOrchard+wGarden;
-  if(uHasLandDetail==1&&detailed>0.&&detailed<1.&&wTown+wBuilt<.001){
+  if(uHasLandDetail==1&&detailed>0.&&detailed<1.&&wTown<.001){
     float dcell=uLandDetailRect.z/uLandDetailN,near=1.-groundSmooth(dcell,dcell*2.,footprint);
     if(near>0.){
       float sd=landDetailDist(landDetailSample((world-uLandDetailRect.xy)/uLandDetailRect.z,0.).a),w=.5*max(footprint,.25);

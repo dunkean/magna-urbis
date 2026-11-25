@@ -1,3 +1,4 @@
+import { bareLimbs } from '../../../rust/bridge/bareTree';
 import type { Vec2 } from '../gen/types';
 import type { Palette } from './styles';
 import type { CanvasLike } from './canvas';
@@ -105,39 +106,35 @@ const evergreenPalette = (pal: Palette): Palette => (pal.season ? { ...pal, tree
 /** A deciduous symbol that stands bare at the date: the leafless share of the season, always the same trees first. */
 const isBare = (kind: CanopyKind, variant: number, pal: Palette): boolean => kind !== 'conifer' && !!pal.season && hash3(variant, 557, 3) >= pal.season.leaf;
 
-/** A leafless crown seen from above: limbs forking from the trunk inside a faint haze of twigs, white once it snows. */
+/** A leafless crown seen from above: the same tapered limbs as the close model, lighter under snow. */
 export function bareGlyph(kind: 'forest' | 'orchard', variant: number, pal: Palette): LeafShape[] {
   const h = (salt: number): number => hash3(variant, kind === 'orchard' ? 433 : 431, salt),
     r = kind === 'orchard' ? 3.6 : 5.8,
     mono = ['engraving', 'blueprint', 'night'].includes(pal.name),
     bark = mono ? pal.treeInk : mix(pal.season?.ink ?? pal.treeInk, '#6a5a48', 0.55),
     snow = pal.season?.snow ?? 0,
-    limbs = 6 + Math.floor(h(1) * 3),
     turn = h(2) * Math.PI * 2;
-  const haze = Array.from({ length: 28 }, (_, k) => {
-    const a = (k * Math.PI) / 14,
-      rr = r * (0.86 + 0.1 * Math.sin(a * 3 + turn) + 0.06 * Math.sin(a * 5 + 2 * turn));
-    return { x: Math.cos(a) * rr, y: Math.sin(a) * rr };
-  });
-  const shapes: LeafShape[] = [
-    { points: haze.map(p => ({ x: p.x + 0.6, y: p.y + 0.8 })), fill: bark, alpha: 0.08 },
-    { points: haze, fill: mix(mix(bark, pal.paper, 0.45), SNOW, snow), alpha: 0.2 + 0.35 * snow },
-  ];
-  const line = (points: Vec2[], width: number): void => {
-    shapes.push({ points, fill: bark, alpha: 0.85, line: width, open: true });
-  };
-  for (let i = 0; i < limbs; i++) {
-    const a = turn + ((i + 0.5 * (h(10 + i) - 0.5)) * Math.PI * 2) / limbs,
-      len = r * (0.72 + 0.26 * h(30 + i)),
-      bend = a + 0.3 * (h(50 + i) - 0.5),
-      at = (angle: number, d: number, from: Vec2 = { x: 0, y: 0 }): Vec2 => ({ x: from.x + Math.cos(angle) * d, y: from.y + Math.sin(angle) * d }),
-      fork = at(a, len * 0.45);
-    line([{ x: 0, y: 0 }, fork, at(bend, len)], 0.4);
-    line([fork, at(a + 0.55 + 0.2 * h(70 + i), len * 0.42, fork)], 0.24);
-    line([fork, at(a - 0.55 - 0.2 * h(90 + i), len * 0.36, fork)], 0.24);
+  const project = ([x, , z]: readonly number[]) => ({ x: r * (x * Math.cos(turn) - z * Math.sin(turn)), y: r * (x * Math.sin(turn) + z * Math.cos(turn)) });
+  const shapes: LeafShape[] = [];
+  for (const [a, b] of bareLimbs) {
+    const start = project(a),
+      end = project(b),
+      dx = end.x - start.x,
+      dy = end.y - start.y,
+      len = Math.hypot(dx, dy);
+    const nx = (-dy / len) * r,
+      ny = (dx / len) * r;
+    shapes.push({
+      points: [
+        { x: start.x + nx * a[3], y: start.y + ny * a[3] },
+        { x: end.x + nx * b[3], y: end.y + ny * b[3] },
+        { x: end.x - nx * b[3], y: end.y - ny * b[3] },
+        { x: start.x - nx * a[3], y: start.y - ny * a[3] },
+      ],
+      fill: mix(bark, SNOW, snow * 0.55),
+      alpha: 0.9,
+    });
   }
-  // The snow lies on the limbs lit from the upper left.
-  if (snow > 0.05) for (const s of shapes.slice(2)) shapes.push({ ...s, points: s.points.map(p => ({ x: p.x - 0.14, y: p.y - 0.18 })), fill: SNOW, alpha: 0.75 * snow, line: s.line! * 0.7 });
   return shapes;
 }
 

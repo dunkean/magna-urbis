@@ -1,3 +1,4 @@
+import { BARE_LIMBS_GLSL } from './bareTree';
 /** Render3D forest: one canonical CPU control field per applied tile, plus a
  * world-space GLSL appearance sampled identically by the top-down view, the
  * perspective view and the raster export. Own procedural model; ideas from
@@ -1146,42 +1147,24 @@ const float FOREST_BARE=.335;
 float forestCrownShow(float leaf){return leaf+FOREST_BARE*(1.-leaf);}
 // Leafless wood (display RGB): the twig haze is a light grey-brown with a violet cast, the limb bark darker.
 vec3 forestBareColor(float tint,float wood){return mix(vec3(.37,.33,.315),vec3(.20,.17,.155),wood)*(.88+.24*tint);}
-// Coverage of a line of half-width w pixels at distance d pixels: an anti-aliased edge, dimmed below a pixel of
-// width so a sub-pixel twig keeps its mean coverage instead of aliasing.
-float forestLine(float d,float w){return clamp(max(w,.5)+.5-d,0.,1.)*min(2.*w,1.);}
-// A leafless crown from above, x its cover, y the share of that cover which is wood (limbs, trunk) rather than twig
-// haze. Resolved (radius over about 8 pixels): three to six main limbs leave the trunk at uneven angles, bend and fork
-// once at their own radius, over a twig haze that thins to nothing at the rim, and the trunk is a small dark spot.
-// Below that: a soft centre-weighted stipple without a rim. Both integrate to FOREST_BARE over the crown (measured
-// .332 to .338 from 8 to 60 pixels), so the far mean is the same. One tree hash and one limb hash, no noise.
+// Resolve the same tapered limbs as the close mesh. Below four pixels keep the distant crown.
+${BARE_LIMBS_GLSL}
 vec2 forestBareCrown(float rel,vec2 slope,float tint,float pixels){
-  // 2 FOREST_BARE (1-rel^2) has the mean FOREST_BARE over the disc (area weight 2 rel); .25 is the mean wood share
-  // of the resolved crown, so the stipple has its mean colour and snow load.
-  vec2 bare=vec2(2.*FOREST_BARE*(1.-rel*rel),.25);
-  float detail=groundSmooth(3.,8.,pixels);
-  if(detail>0.){
-    uint h=uint(tint*65536.)*0x9e3779b9u;
-    float limbs=3.+floor(forestU8(h,0u)*4.);
-    // Two low harmonics warp the polar angle: unevenly spaced limbs, no radial symmetry (1-.3-2*.15>0 keeps it monotone).
-    float a=atan(slope.y,slope.x);
-    a+=.3*sin(a+6.2831853*forestU8(h,8u))+.15*sin(2.*a+6.2831853*forestU8(h,16u));
-    float v=a*limbs/6.2831853+forestU8(h,24u),s=floor(v+.5),o=v-s;
-    // The nearest limb's own hash: bend, fork radius, fork spread and the side the branch leaves on.
-    uint hl=((uint(mod(s,limbs))+1u)*0x85ebca6bu)^h;
-    float rf=.3+.35*forestU8(hl,8u),spread=.18+.14*forestU8(hl,16u),side=forestU8(hl,24u)<.5?-1.:1.;
-    o-=(forestU8(hl,0u)-.5)*.3*rel*rel+.035*sin(9.*rel+6.2831853*forestU8(hl,4u));
-    // Past the fork one branch leaves at a wide angle, the other carries on almost straight.
-    float t=max(rel-rf,0.),split=min(abs(o-side*spread*t),abs(o+side*.3*spread*t));
-    float scale=6.2831853/limbs*rel*pixels;
-    float limb=forestLine(split*scale,pixels*(.045-.035*rel)*(1.-.25*groundSmooth(0.,.1,t)));
-    // Fine branchlets: three per limb sector, curving with the crown's own phase, faint and mostly sub-pixel: a haze.
-    float o2=3.*v+.6*rel*sin(2.*a+6.2831853*forestU8(h,12u));o2-=floor(o2+.5);
-    float twig=.5*forestLine(abs(o2)*scale/3.,pixels*.007)*groundSmooth(.2,.45,rel);
-    float wood=max(limb,forestLine(rel*pixels,max(.05*pixels,.6)));
-    float cover=1.-(1.-wood)*(1.-.45*(1.-rel*rel*rel))*(1.-twig);
-    bare=mix(bare,vec2(cover,wood/max(cover,1e-3)),detail);
+  vec2 farCrown=vec2(2.*FOREST_BARE*(1.-rel*rel),.25);
+  if(pixels<=4.)return farCrown;
+  float angle=tint*6.2831853;
+  vec2 p=mat2(cos(angle),-sin(angle),sin(angle),cos(angle))*(-slope*rel/max(length(slope),.0001));
+  float distanceToBark=2.;
+  for(int i=0;i<limbCount;i++){
+    vec2 ab=limbB[i].xz-limbA[i].xz,ap=p-limbA[i].xz;
+    float t=clamp(dot(ap,ab)/max(dot(ab,ab),.0001),0.,1.);
+    float width=mix(limbA[i].w,limbB[i].w,t), reach=width+.5/pixels;
+    vec2 delta=ap-t*ab;
+    float d2=dot(delta,delta);
+    if(d2<reach*reach)distanceToBark=min(distanceToBark,sqrt(d2)-width);
   }
-  return bare;
+  float wood=clamp(.5-distanceToBark*pixels,0.,1.);
+  return mix(farCrown,vec2(wood,1.),groundSmooth(4.,12.,pixels));
 }
 vec3 forestCanopy(ForestStand st,float needle,vec2 jitter,float special){
   vec3 c=forestPalette(st,needle),kind=forestKind(st.trop,st.dry);float temperate=1.-kind.x-kind.y-kind.z;

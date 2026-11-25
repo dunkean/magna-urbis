@@ -9,6 +9,7 @@ import type { Building3dScene } from '../urbanBuildingGeometry';
 import { treeBuildings, type TreeBuildings } from './treesBuildings';
 import { TreeContent, treeSamplesMatch, type TreeSamples } from './treesContent';
 import { TREES_BLOCK, TREE_SIZE_M, treeBlockSteps, treeCloseShare, treeDrawShare, treeInputsKey, treeSolidShare, type TreeBlock } from './treesBlocks';
+import { bareTreeMesh } from '../../../../rust/bridge/bareTree';
 import { SATELLITE_TREES, TREE_MESHES, WORLD_TREE_FS, WORLD_TREE_VS, type TreePalette } from './treesShader';
 import { TREE_MAX_BLOCKS, treeMemoryBudget, treeTriangleBudget } from './treesRange';
 import { TreeCoverage } from './treesVisibility';
@@ -47,15 +48,17 @@ const STREAM_FADE_MS = 280;
 const RETIRED_FIRST = 1e6;
 const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uVisibility', 'uSegments', 'uFacing', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>; indices: WebGLBuffer; vertices: WebGLBuffer };
-const MESH_VERTICES = Float32Array.from(TREE_MESHES.flatMap(mesh => mesh.vertices));
+const BRANCH_LEVEL = TREE_MESHES.length;
+const meshes = [...TREE_MESHES, bareTreeMesh];
+const MESH_VERTICES = Float32Array.from(meshes.flatMap(mesh => mesh.vertices));
 const INDICES = Uint16Array.from(
-  TREE_MESHES.flatMap((mesh, i) => {
-    const first = TREE_MESHES.slice(0, i).reduce((n, earlier) => n + earlier.vertices.length / 4, 0);
+  meshes.flatMap((mesh, i) => {
+    const first = meshes.slice(0, i).reduce((n, earlier) => n + earlier.vertices.length / 4, 0);
     return mesh.indices.map(index => first + index);
   }),
 );
-const INDEX_OFFSETS = TREE_MESHES.map((_, i) => TREE_MESHES.slice(0, i).reduce((n, mesh) => n + mesh.indices.length * Uint16Array.BYTES_PER_ELEMENT, 0));
-const TRIANGLES = TREE_MESHES.map(mesh => mesh.indices.length / 3);
+const INDEX_OFFSETS = meshes.map((_, i) => meshes.slice(0, i).reduce((n, mesh) => n + mesh.indices.length * Uint16Array.BYTES_PER_ELEMENT, 0));
+const TRIANGLES = meshes.map(mesh => mesh.indices.length / 3);
 
 /** Horizontal distance from a point to the block whose north-west corner is (minX, minY). */
 const gapTo = (minX: number, minY: number, x: number, y: number): number => Math.hypot(Math.max(minX - x, 0, x - minX - TREES_BLOCK), Math.max(minY - y, 0, y - minY - TREES_BLOCK));
@@ -66,6 +69,7 @@ interface Slot {
   /** The footprints its trees keep off (TreeBuildings.blockKey). */
   town: number;
   samples: TreeSamples;
+  barePrefix?: Uint32Array;
   vao?: WebGLVertexArrayObject;
   buffer?: WebGLBuffer;
   count: number;
@@ -210,7 +214,24 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       gl.enableVertexAttribArray(3);
       gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      // A stable partition keeps each original LOD range selectable with two instance ranges.
+      let ordered = data;
+      let bareCount = 0;
+      for (let i = 11; i < data.length; i += TREE_STRIDE) if (data[i] > .5) bareCount++;
+      if (bareCount) {
+        const prefix = new Uint32Array(count + 1);
+        ordered = new Float32Array(data.length);
+        let leafy = 0, bare = count - bareCount;
+        for (let i = 0; i < count; i++) {
+          const start = i * TREE_STRIDE, leafless = data[start + 11] > .5;
+          prefix[i + 1] = prefix[i] + Number(leafless);
+          const to = leafless ? bare++ : leafy++;
+          ordered.set(data.subarray(start, start + TREE_STRIDE), to * TREE_STRIDE);
+        }
+        slot.barePrefix = prefix;
+        slot.bytes += prefix.byteLength;
+      }
+      gl.bufferData(gl.ARRAY_BUFFER, ordered, gl.STATIC_DRAW);
       for (let i = 0; i < 3; i++) {
         gl.enableVertexAttribArray(i);
         gl.vertexAttribPointer(i, 4, gl.FLOAT, false, TREE_STRIDE * 4, i * 16);
@@ -218,7 +239,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       }
       gl.bindVertexArray(null);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
-      bytes += data.byteLength;
+      bytes += slot.bytes;
     } else slot.bytes = 0;
     if (previous) drop(previous);
     slots.set(key, slot);
@@ -441,6 +462,23 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           let fading = false,
             previousLevel = -1,
             leastDensity = 1;
+          const draw = (slot: Slot, level: number, first: number, count: number) => {
+            if (!count) return;
+            const mesh = meshes[level];
+            if (level !== previousLevel) {
+              gl.uniform1i(u.uSegments, mesh.segments);
+              previousLevel = level;
+            }
+            if (slot.first !== first) {
+              gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer!);
+              for (let a = 0; a < 3; a++) gl.vertexAttribPointer(a, 4, gl.FLOAT, false, TREE_STRIDE * 4, first * TREE_STRIDE * 4 + a * 16);
+              slot.first = first;
+            }
+            gl.drawElementsInstanced(gl.TRIANGLES, mesh.indices.length, gl.UNSIGNED_SHORT, INDEX_OFFSETS[level], count);
+            stats.drawCalls++;
+            stats.instances += count;
+            stats.triangles += count * TRIANGLES[level];
+          };
           for (let i = 0; i < visibleCount; i++) {
             const slot = visible[i],
               key = visibleKey[i],
@@ -463,22 +501,12 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             let first = 0;
             for (let level = 0; level < TREE_MESHES.length; level++) {
               const end = level === 0 ? close : level === 1 ? solid : all;
-              const count = end - first;
-              if (!count) continue;
-              const mesh = TREE_MESHES[level];
-              if (level !== previousLevel) {
-                gl.uniform1i(u.uSegments, mesh.segments);
-                previousLevel = level;
-              }
-              if (slot.first !== first) {
-                gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer!);
-                for (let a = 0; a < 3; a++) gl.vertexAttribPointer(a, 4, gl.FLOAT, false, TREE_STRIDE * 4, first * TREE_STRIDE * 4 + a * 16);
-                slot.first = first;
-              }
-              gl.drawElementsInstanced(gl.TRIANGLES, mesh.indices.length, gl.UNSIGNED_SHORT, INDEX_OFFSETS[level], count);
-              stats.drawCalls++;
-              stats.instances += count;
-              stats.triangles += count * TRIANGLES[level];
+              const prefix = slot.barePrefix;
+              if (prefix) {
+                const lo = prefix[first], hi = prefix[end];
+                draw(slot, level, first - lo, end - first - (hi - lo));
+                draw(slot, level === 0 ? BRANCH_LEVEL : level, slot.count - prefix[slot.count] + lo, hi - lo);
+              } else draw(slot, level, first, end - first);
               first = end;
             }
             if (diagnostics) {

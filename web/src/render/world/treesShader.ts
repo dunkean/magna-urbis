@@ -92,7 +92,12 @@ void main(){
   vec2 dir,offset=vec2(0.),phase=vec2(cos(treeShape.w),sin(treeShape.w));
   vec3 normal;
   bool trunk;
-  if(uSegments==0){
+  if(uSegments<0){
+    vec2 limb=mat2(phase.x,phase.y,-phase.y,phase.x)*meshVertex.xz;
+    y=meshVertex.y*h; u=meshVertex.y; offset=r*limb;
+    width=0.; dir=vec2(0.); trunk=true;
+    normal=normalize(vec3(limb,meshVertex.w));
+  }else if(uSegments==0){
     trunk=id<4;
     float side=(id==0||id==2||id==5||id==7)?-1.:1.;
     dir=uFacing.xy*side;
@@ -135,8 +140,9 @@ void main(){
   // metres so the texture remains attached while the camera moves.
   grain=uSegments>0?vec3(vec2(local.x+.71*local.y,y+.29*local.y)*(trunk?vec2(3.6,.72):vec2(spire?2.1:1.42,1.56))+phase*47.,trunk?.34:spire?.26:.35):vec3(0.);
   vec3 tint=trunk?uTrunk:treeColor.rgb;
+  if(uSegments<0)tint*=meshVertex.w;
   if(uRepaint==1)tint=mix(uRepaintLow.rgb,uRepaintHigh.rgb,smoothstep(uRepaintLow.w,uRepaintHigh.w,dot(tint,vec3(.30,.59,.11))));
-  float snow=trunk?0.:min(fract(treeColor.w)/.45*mix(.45,1.35,u),.95);
+  float snow=uSegments<0?fract(treeColor.w)*u:trunk?0.:min(fract(treeColor.w)/.45*mix(.45,1.35,u),.95);
   float lit=(.9+.4*max(dot(normal,treeLight),0.))/(.9+.4*max(treeLight.z,0.));
   colour=mix(tint,vec3(.84,.88,.90),snow)*lit*mix(.84,1.,u);
   if(uNight==1)colour*=vec3(.149,.196,.31);

@@ -1,3 +1,4 @@
+import { BARE_LIMBS_GLSL } from '../../../rust/bridge/bareTree';
 /** Satellite 3D near trees: low-poly instanced trees standing on the crowns the ground shader paints
  * (rust/bridge/terrainForest.ts, forestCrown). The placement below is a CPU port of forestCrown on the same
  * hash, lattices, field, occupation, bank and beach rasters, so each tree stands on its painted crown; the
@@ -806,6 +807,7 @@ out float treeLevel;
 // crown radius. Info: x needle, y no foliage (trunk, leafless crown), z snow share, w rim distance (0 top, 1 rim).
 out vec4 crownChart;
 out vec4 crownInfo;
+${BARE_LIMBS_GLSL}
 ${TREE_PROFILE_GLSL}void main(){
   int v=int(gl_VertexID),quad=v/6,corner=v-quad*6;
   int band=quad/${SEGMENTS},seg=quad-band*${SEGMENTS};
@@ -817,6 +819,22 @@ ${TREE_PROFILE_GLSL}void main(){
   int form=int(treeShape.z+.5);bool needle=form==1||form==3,parasol=form>=2,spire=form==1;
   // The instance carries the crown length (live crown ratio times height, buildNearTreesSteps): the crown base.
   float r=treeBase.w,h=treeShape.x,bottom=clamp(h-treeShape.y,.02*h,.75*h);
+  // Resolve only nearby leafless trees. Use the existing instance draw and collapse unused triangles.
+  vec3 foot=vec3(treeBase.x-cameraOrigin.x,treeBase.z*exaggeration-cameraOrigin.y,treeBase.y-cameraOrigin.z);
+  if(treeColor.w>.5 && r>.035*max(1.,(matrix*vec4(foot,1.)).w)){
+    if(quad>=3*limbCount){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);treeNormal=vec3(0.,1.,0.);tint=vec3(0.);treeLevel=0.;crownChart=vec4(0.);crownInfo=vec4(0.,1.,0.,0.);return;}
+    int limb=quad/3,side=quad-3*limb;
+    vec4 joint=(corner==1||corner==4||corner==5)?limbB[limb]:limbA[limb];
+    float angle=2.0943951*float(side+(corner==2||corner==3||corner==5?1:0));
+    vec2 dir=vec2(cos(angle),sin(angle));
+    mat2 turn=mat2(cos(treeShape.w),sin(treeShape.w),-sin(treeShape.w),cos(treeShape.w));
+    vec2 local=turn*(joint.xz+joint.w*dir)*r;
+    world=foot+vec3(local.x,joint.y*h*fade,local.y);
+    treeNormal=normalize(vec3((turn*dir).x,.45,(turn*dir).y));
+    tint=vec3(.24,.19,.14);treeLevel=joint.y;crownChart=vec4(0.);
+    crownInfo=vec4(0.,1.,fract(treeColor.w)*joint.y,0.);
+    gl_Position=matrix*vec4(world,1.);return;
+  }
   float angle=float(seg+dseg)*${((2 * Math.PI) / SEGMENTS).toFixed(7)}+treeShape.w;
   vec2 dir=vec2(cos(angle),sin(angle));
   // Stem girth: diameter at breast height from the slenderness of the tree (height over diameter 30-60 for broadleaves,

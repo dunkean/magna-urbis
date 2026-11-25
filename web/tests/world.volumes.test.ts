@@ -19,6 +19,7 @@ import { createFrameCamera, frameCamera } from '../src/render/world/camera';
 import { TerrainHeights } from '../src/render/world/heights';
 import { TREES_BLOCK, treeBlockSteps, treeCloseShare, treeDrawCount, treeSolidShare } from '../src/render/world/treesBlocks';
 import { createWorldTreesLayer } from '../src/render/world/treesLayer';
+import { bareTreeMesh } from '../../rust/bridge/bareTree';
 import { TREE_MESHES } from '../src/render/world/treesShader';
 import { buildingTriangleBudget, clampViewDepth, setViewDepth, VIEW_DEPTH_DEFAULT, VIEW_DEPTH_MAX } from '../src/render/world/viewDepth';
 import { hazeDistance } from '../src/render/world/volumes';
@@ -479,6 +480,8 @@ describe('world trees', () => {
 
   it('draws coarser lathes and fewer trees as they get smaller on screen', () => {
     expect(TREE_MESHES.map(mesh => mesh.indices.length / 3)).toEqual([78, 28, 6]);
+    expect(bareTreeMesh.indices.length).toBeLessThanOrEqual(TREE_MESHES[0].indices.length);
+    expect(Math.max(...bareTreeMesh.indices)).toBeLessThan(bareTreeMesh.vertices.length / 4);
     // A small zoom change swaps a few individuals between levels, using the same prefix of the block.
     expect([18, 28, 38].map(treeSolidShare)).toEqual([0, 0.5, 1]);
     expect([64, 88, 112].map(treeCloseShare)).toEqual([0, 0.5, 1]);
