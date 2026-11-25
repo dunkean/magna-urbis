@@ -482,6 +482,7 @@ void main() {
     // Open cover of a river's water in the fragment (land side: its wet bed; sea side: its share of the estuary), kept
     // through the antialiased coastline below.
     float wRiver=0.;
+    float riverLight=0.;
     // Frozen share of a sea fragment (v2SeaIceCover of its sea evaluation): the estuary's river water, the climate tints
     // and the swell lie under the sea ice, so a frozen sea is ice to the coastline and across its river mouths.
     float wSeaIce=0.;
@@ -500,6 +501,10 @@ void main() {
           // Bank crowns lean over the water: rooted on land (forestCrown), drawn whole above it.
           float bed=waterUnderCrown(water.a,crownCover);wCover=bed;
           vec3 painted=water.rgb/max(water.a,1e-3);
+          // The natural-water pass already resolved banks and individual riffles. Its blue
+          // stop at the shore is 92/255. Transfer the light around that value onto the
+          // satellite or paper palette; their own water hue and winter cover stay authoritative.
+          if(uNaturalWater==1)riverLight=clamp(painted.b-92./255.,-.18,.35);
           // Sandy beds lean red: they are ground. The compositor's damp shadow on the land beside the water (dark
           // olive, greener than any water colour) is ground too: it darkens the bank. Read as partial water it laid a
           // shallow, bed-coloured fringe along every course, most of what a narrow tributary showed beside its trunk.
@@ -510,7 +515,8 @@ void main() {
           // A dry course shows through the bank crowns.
           float through=uMaterialZone>0?step(.001,V2_WATER_ARIDITY[waterZone()]):0.;
           bed=mix(bed,water.a,solid*through);
-          wBase=mix(wBase,painted,bed*solid);wCover*=1.-solid;
+          // Let the surrounding ground show through the wash of exposed alluvium.
+          wBase=mix(wBase,painted,bed*solid*(uNaturalWater==1?.72:1.));wCover*=1.-solid;
           wBase*=1.-.3*wCover*damp;wCover*=1.-damp;
           // City Bench: a retained river reads as water at city zoom instead of a near-black ribbon. Its depth grows
           // from the bank (distance to the nearest dry pixel over 8 directions and 7 radii).
@@ -656,6 +662,7 @@ void main() {
       // Climate and season of the fresh water (waterPalette.ts), one tone for rivers, lakes and the estuary's river share;
       // under the ice of a frozen sea.
       color=mix(color,freshWaterTone(color),wFresh*wCover*(1.-wSeaIce));
+      if(wKind>2.5&&uRenderV2==1)color+=vec3(.74,.91,1.)*(.72*riverLight*wCover);
     }
     if(uPaperMap==1&&v2w&&wCover>0.&&!underdark){
       vec3 paper=paperWater(wKind,paperShore(world));
@@ -664,6 +671,7 @@ void main() {
       // A lake takes the sea's paper ramp over its own distance to the bank: a narrow darker margin (60 m), a calm mid-tone centre.
       if(wKind>1.5&&wKind<2.5)paper=paperWater(1.,mix(.6,1.,exp(-max(lakeDistance(world),0.)/60.)));
       if(wKind>1.5)paper*=hue;
+      if(wKind>2.5)paper*=1.+.24*riverLight;
       // Parchment seas take the climate in muted paper tones: greener on warm coasts, clearer when arid, greyer when cold.
       if(wKind<1.5){
         float T=uMaterialClimate.x,warm=smoothstep(17.,25.,T),cold=1.-smoothstep(-1.,6.,T),arid=1.-smoothstep(150.,500.,uMaterialClimate.y);

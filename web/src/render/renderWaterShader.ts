@@ -10,8 +10,8 @@
  * - gentle world-anchored surface variation (static value noise);
  * - the climate's fresh-water tone over it (waterPalette.ts);
  * - with uRegime, the seasonal regime carried by the river colour (waterRegime.ts regimeRgb):
- *   a flat bed in the zone's bed colour, ice with a darker edge line;
- *   uRegime 2 (City Bench retained banks, city zoom): the dry bed is a flat silt band with a slightly darker edge.
+ *   exposed alluvium, broken riffles on steep open water, and ice with a darker edge line;
+ *   uRegime 2 (City Bench retained banks, city zoom) fades the damp bank shadow on a dry bed.
  * Land pixels cost at most 24 taps; nothing is computed on the CPU per pixel. */
 import { FRESH_WATER_GLSL } from './waterPalette';
 import { WATER_STYLE_GLSL, WATER_SURFACE_GLSL } from './waterStyle';
@@ -36,7 +36,8 @@ float cover(vec2 f) { return tap(f).a; }
 const vec2 DIRS[8] = vec2[8](vec2(1, 0), vec2(.7071, .7071), vec2(0, 1), vec2(-.7071, .7071), vec2(-1, 0), vec2(-.7071, -.7071), vec2(0, -1), vec2(.7071, -.7071));
 void main() {
   vec2 f = gl_FragCoord.xy;
-  float a = cover(f);
+  vec4 own = tap(f);
+  float a = own.a;
   // Land side: how close the water is, over three rings within the bank width.
   float bank = 0.;
   vec4 near = vec4(0.);
@@ -78,7 +79,7 @@ void main() {
     // A lone straight bank reads 0.755 × its distance: normalized back.
     depth = max(0., (best - t * log(sum)) / .755 + a - 1.);
     // Wide water: still water a few pixels away from the nearest bank.
-    wide = cover(f - nearest * 5. * uDpr);
+    if(uRegime==0)wide = cover(f - nearest * 5. * uDpr);
   }
   vec2 world = uOrigin + vec2(f.x, uCanvas.y - f.y) * uPx;
   // The style's depth ramp over the distance to the bank, as for the sea and lakes.
@@ -88,12 +89,10 @@ void main() {
   // Shoreline glint about one pixel inside the bank.
   float rim = smoothstep(.2 * uDpr, .9 * uDpr, depth) * (1. - smoothstep(1.2 * uDpr, 2.4 * uDpr, depth));
   // Gentle surface variation, finer octave only where it stays above a pixel.
-  color = freshWaterTone(waterSurfaceShade(color, world, uPx, shelf, rim, wide));
   // Wet bank: soft dark shadow on the land side.
   vec3 bankColor = vec3(.055, .085, .045);
   float bankA = .55 * bank * bank;
   if (uRegime >= 1) {
-    vec4 own = tap(f);
     // Decoded back to dry and ice (regimeRgb stores running and open water so MAX keeps them on overlaps).
     vec3 regime = clamp(own.rgb / max(own.a, 1e-3), 0., 1.); regime.rg = 1. - regime.rg;
     // Flow direction in the world (y down): along the bank, perpendicular to the nearest bank.
@@ -102,7 +101,21 @@ void main() {
     float centre = smoothstep(.2 * uDpr, 2.5 * uDpr, depth);
     float dryOn = smoothstep(0., .1, regime.r);
     float pools = mix(1., waterDryPools(world, regime.r, centre), dryOn);
-    vec3 bed = waterDryBed(world, centre);
+    // Reuse the two surface-noise octaves for the bed and water. Both live in map metres.
+    float wash = waterSurfaceNoise(world/61.);
+    float close = 1.-smoothstep(.7,3.,uPx);
+    float grain = mix(.5,waterSurfaceNoise(world/5. + vec2(2.7,8.1)),close);
+    // Bare alluvium has long patches of damp silt and lighter gravel nearer the margins.
+    // Neutral value variation keeps the red-blue difference used to identify exposed ground.
+    vec3 bed = waterDryBed(world, centre) + vec3(.10*(wash-.5) + .035*(grain-.5));
+    float bankMetres = depth*uPx;
+    float deep = smoothstep(1.,22.,bankMetres);
+    color = freshWaterTone(color*(1.02-.15*deep+.055*(wash-.5)));
+    // A few broken pale riffles on descending reaches. Suppress them on unresolved streams,
+    // in standing water and under the seasonal bed and ice layers composed below.
+    float riffle = clamp(regime.b/.45,0.,1.) * centre * close
+                 * smoothstep(.45,.76,wash) * smoothstep(.45,.81,grain);
+    color = mix(color,vec3(.63,.74,.75),.57*riffle);
     color = mix(bed, color, pools);
     // Ice follows the bed: shore ice grows from both banks (up to 40 m) and closes the whole course when frozen,
     // so a thaw leaves a dark open thread down the fast centre. Hairline streams freeze first. Dark bank line on both sides.
@@ -114,7 +127,7 @@ void main() {
     vec3 neighbour = 1. - clamp(near.rgb / max(near.a, 1e-3), 0., 1.);
     bankColor = mix(bankColor, uWaterBed, smoothstep(.3, .8, neighbour.r));
     bankA *= 1. - (uRegime == 2 ? smoothstep(.3, .8, neighbour.r) : .6 * smoothstep(.3, .8, max(neighbour.r, neighbour.g)));
-  }
+  } else color = freshWaterTone(waterSurfaceShade(color, world, uPx, shelf, rim, wide));
   outColor = vec4(color * a + bankColor * bankA * (1. - a), a + bankA * (1. - a));
 }`;
 

@@ -89,12 +89,12 @@ const FRESH: Readonly<Record<ClimateZone, Year>> = {
     [0.33, 0.28, 0.16, 0.65],
     [0.29, 0.27, 0.15, 0.6],
   ],
-  // Bog water.
+  // Tannin-stained water: a cool winter surface, tea-brown in the growing season.
   wetland: [
-    [0.15, 0.16, 0.11, 0.5],
-    [0.17, 0.18, 0.1, 0.55],
-    [0.15, 0.18, 0.09, 0.6],
-    [0.16, 0.16, 0.09, 0.6],
+    [0.16, 0.18, 0.15, 0.6],
+    [0.21, 0.21, 0.14, 0.7],
+    [0.19, 0.19, 0.12, 0.75],
+    [0.20, 0.18, 0.12, 0.73],
   ],
 };
 /** Bare channel and shore ground. Every bed leans red (r - b of at least .15): the terrain shader tells the ground of the

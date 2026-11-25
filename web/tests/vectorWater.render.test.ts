@@ -219,6 +219,17 @@ describe('continuous vector water', () => {
     expect(svg).not.toContain('fill-opacity=');
   });
 
+  it('uses downhill water levels for riffles and leaves upland pools and backwaters calm with the same draw count', async () => {
+    const source = await basin(),
+      line: RiverLine = { points: [1500, 3200, 1700, 3200, 1900, 3200, 2100, 3200], area: Array(4).fill(1e6), level: [1900, 1900, 1870, 1840], kind: [0, 0, 4, 4], joins: 0 },
+      water = { ...source, rivers: { ...source.rivers!, rivers: [line], braids: [], oxbows: [], distributaries: [] } },
+      segments = riverSegments(water, { ...display, style: 'render3d', material: true });
+    expect(segments.length).toBe(3 * 9);
+    expect(segments[8]).toBe(0);
+    expect(segments[17]).toBeGreaterThan(0.4);
+    expect(segments[26]).toBe(0);
+  });
+
   it('lets the thread of a wide bed wander inside it and stops the bare bed at the coastline', async () => {
     const source = await basin(),
       points = Array.from({ length: 30 }, (_, k) => [6000 - 200 * k, 3250])

@@ -373,6 +373,7 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
     seed = Math.imul(Math.round(p[0]) ^ Math.imul(Math.round(p[1]), 668265263), 374761393),
     nx = new Float64Array(n),
     ny = new Float64Array(n),
+    outerBend = new Float64Array(n),
     // Distance along the course, in bed widths.
     along = new Float64Array(n);
   for (let k = 0; k < n; k++) {
@@ -383,6 +384,10 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
       l = Math.hypot(dx, dy) || 1;
     nx[k] = -dy / l;
     ny[k] = dx / l;
+    // The low-water channel hugs the outside of bends, exposing a bar on the inside.
+    // The signed sagitta in bed widths is bounded even at a sharp polyline joint.
+    const sagitta = (p[2 * k] - .5 * (p[2 * a] + p[2 * b])) * nx[k] + (p[2 * k + 1] - .5 * (p[2 * a + 1] + p[2 * b + 1])) * ny[k];
+    outerBend[k] = Math.max(-1, Math.min(1, 2 * sagitta / Math.max(1, geo.widths[k])));
     if (k) along[k] = along[k - 1] + Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]) / Math.max(2, (geo.widths[k] + geo.widths[k - 1]) / 2);
   }
   const main: Strand = { points: [], widths: [], kind: [], ice: [] },
@@ -402,7 +407,8 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
       width = Math.min(bed, at(thread) * pool * (1 + 0.5 * broken)),
       room = 0.47 * Math.max(0, bed - width),
       wander = 1.5 * (0.62 * strandNoise(seed, q / 5.5) + 0.28 * strandNoise(seed + 1, q / 2.1) + 0.1 * strandNoise(seed + 2, q / 0.9)),
-      offset = Math.max(-1, Math.min(1, wander)) * room * end,
+      bend = at(outerBend),
+      offset = Math.max(-1, Math.min(1, wander * (1 - 0.6 * Math.abs(bend)) + 0.8 * bend)) * room * end,
       split = smoothstep(16, 40, bed) * (1 - smoothstep(0.4, 0.6, width / Math.max(1e-6, bed))) * smoothstep(0.1, 0.45, strandNoise(seed + 4, q / 7)) * end,
       other = offset + (Math.max(-1, Math.min(1, 1.5 * strandNoise(seed + 5, q / 4))) * room - offset) * split,
       add = (s: Strand, o: number, w: number): void => {
@@ -466,6 +472,9 @@ export const lakeColour = (display: Pick<WaterDisplay, 'style' | 'riverArea' | '
 
 const rgb = (value: string): [number, number, number] => [parseInt(value.slice(1, 3), 16) / 255, parseInt(value.slice(3, 5), 16) / 255, parseInt(value.slice(5, 7), 16) / 255];
 
+// Water-surface fall along the reach. The upper half of the blue channel is reserved for sediment.
+const riffleStrength = (fall: number, dx: number, dy: number): number => (fall > 0 ? 0.45 * smoothstep(0.015, 0.12, fall / Math.max(1, Math.hypot(dx, dy))) : 0);
+
 /**
  * River segments for the GPU, in drawing order (oxbows, braids, distributaries,
  * rivers): x0, y0, x1, y1, widths at both ends in metres, then r, g, b.
@@ -511,17 +520,18 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
         // A bare bed stops on the coastline: only running water blends into the sea.
         if (i >= geo.sea && (thread || c0[0] + c1[0] < 1)) continue;
         const steps = Math.max(1, Math.min(12, Math.ceil(Math.max(Math.abs(c1[0] - c0[0]), Math.abs(c1[1] - c0[1])) / 0.04)));
+        const riffle = !thinner && i < geo.sea && kind[i - 1] < 4 ? riffleStrength(geo.level[i - 1] - geo.level[i], x1 - x0, y1 - y0) : 0;
         for (let k = 0; k < steps; k++) {
           const t0 = k / steps,
             t1 = (k + 1) / steps,
             t = (t0 + t1) / 2,
             at = (a: number, b: number, u: number): number => a + (b - a) * u;
           if (!thread) {
-            out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), at(c0[0], c1[0], t), at(c0[1], c1[1], t), at(c0[2], c1[2], t));
+            out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), at(c0[0], c1[0], t), at(c0[1], c1[1], t), riffle);
             continue;
           }
           // The bed: no running water (r 0), the same ice; the thread runs inside it (below; MAX blend).
-          out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), 0, at(c0[1], c1[1], t), at(c0[2], c1[2], t));
+          out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), 0, at(c0[1], c1[1], t), riffle);
         }
         continue;
       }
@@ -561,7 +571,14 @@ export function riverSegments(water: VectorWater, display: WaterDisplay): Float3
         y = (c - x) / n,
         nx = next % n,
         ny = (next - nx) / n;
-      push((x + 0.5) * cell, (y + 0.5) * cell, (nx + 0.5) * cell, (ny + 0.5) * cell, channelWidth(a, water.widthScale ?? water.rivers?.widthScale ?? 1), channelWidth(h.accumulation[next], water.widthScale ?? water.rivers?.widthScale ?? 1), edge);
+      const scale = water.widthScale ?? water.rivers?.widthScale ?? 1;
+      let [r, g, b] = colour(edge);
+      if (display.material) {
+        const state = climate ? riverState(climate, dischargeSize(meanDischarge(a, runoffOf(water)))) : { dry: 0, ice: 0 };
+        [r, g] = regimeRgb(state);
+        b = h.sea[next] ? 0 : riffleStrength(h.filled[c] - h.filled[next], (nx - x) * cell, (ny - y) * cell);
+      }
+      out.push((x + 0.5) * cell, (y + 0.5) * cell, (nx + 0.5) * cell, (ny + 0.5) * cell, channelWidth(a, scale), channelWidth(h.accumulation[next], scale), r, g, b);
     }
   return Float32Array.from(out);
 }
