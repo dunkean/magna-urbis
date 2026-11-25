@@ -198,7 +198,7 @@ export class Curtain {
     return best;
   }
   /** Stations from s0 to s1 (s1 may pass the start): every vertex, at most `step` apart. */
-  private stations(s0: number, s1: number, step: number): { p: Point; o: Point }[] {
+  stations(s0: number, s1: number, step: number): { p: Point; o: Point }[] {
     const marks = [s0];
     for (let lap = 0; lap < 2; lap++)
       for (let i = 0; i < this.pts.length; i++) {

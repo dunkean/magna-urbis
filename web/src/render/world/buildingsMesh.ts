@@ -13,6 +13,7 @@
  */
 import type { HouseMaterial, MaterialPattern } from '../../../../rust/bridge/housesContract';
 import { roofEdgeMasks } from '../roofEdges';
+import { boundaryOf } from '../craftedBoundaries';
 import { craftedMageCity } from '../craftedMageCity';
 import { includeCraftedMassing } from '../craftedMassingBounds';
 import { roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
@@ -59,7 +60,20 @@ export function buildingBounds(building: Building3dVisual, crafted = false): Bui
         box[i + 3] = Math.max(box[i + 3], point[i]);
       }
     }
-  if (crafted && !isBuildingProjection(building) && building.volumes.length) includeCraftedMassing(building, box);
+  if (crafted && !isBuildingProjection(building) && building.volumes.length) {
+    const boundary = boundaryOf(building);
+    if (boundary) {
+      for (const line of boundary.lines) for (const p of line.points) {
+        const pad = line.half + 0.48;
+        box[0] = Math.min(box[0], p.x - pad);
+        box[1] = Math.min(box[1], p.y - pad);
+        box[2] = Math.min(box[2], p.g - 0.2);
+        box[3] = Math.max(box[3], p.x + pad);
+        box[4] = Math.max(box[4], p.y + pad);
+        box[5] = Math.max(box[5], p.g + line.height + Math.max(0.85, line.height * 0.22));
+      }
+    } else includeCraftedMassing(building, box);
+  }
   return box;
 }
 
@@ -403,12 +417,13 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       const share = covered ? roofSnowShare(face.normal, -(face.normal[0] + face.normal[1]) * 0.4, heat, /^city3d:cover:([a-z]+)/.exec(material)?.[1]) : 0;
       paintFace(face, edges, (snow * Math.round(share * 8)) / 8);
     };
+    const detailed = !!craftedHouse || (!!patterns && !isBuildingProjection(building) && !!boundaryOf(building));
     if (canInk) {
       const triangles: BuildingTriangle[] = [];
-      eachBuildingTriangle(building, face => triangles.push(face), overview, featureLod, yardLevel, paint.yardStrips, !!craftedHouse);
+      eachBuildingTriangle(building, face => triangles.push(face), overview, featureLod, yardLevel, paint.yardStrips, detailed);
       const masks = roofEdgeMasks(triangles);
       triangles.forEach((face, i) => paintTriangle(face, masks[i]));
-    } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel, paint.yardStrips, !!craftedHouse);
+    } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel, paint.yardStrips, detailed);
   }
   const batches: BuildingBatchData[] = [];
   for (const { batch, length } of groups.values()) {

@@ -171,6 +171,7 @@ export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: 
           culture: { culture, pack: '', mode: 'historical_inspired', borrowing: null },
           recipe_id: 'silhouette',
           variant_id: plot.kind,
+          ...(plot.kind === 'pen' || plot.kind === 'paddock' ? { sitePart: { use: plot.kind, form: 'farm-rail' } } : {}),
           transform: { origin: c, orientation_deg: 0 },
           ground_z_m: Number.isFinite(z) ? z : ground,
           footprint,

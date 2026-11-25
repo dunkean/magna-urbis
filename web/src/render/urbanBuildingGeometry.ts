@@ -6,6 +6,7 @@ import type { ParentMember3dVisual } from '../ui/urbanParent3d';
 import { retainBuildingFeature, type BuildingFeatureLod } from './urbanBuildingFeatureLod';
 import { earcut } from './cityGlEarcut';
 import type { RoofMesh } from './city3d/types';
+import { boundaryOf, emitBoundary } from './craftedBoundaries';
 import { craftedYurt } from './craftedYurt';
 import { craftedArchitecture } from './craftedArchitecture';
 import { craftedRoofMesh } from './craftedRoofMesh';
@@ -130,6 +131,7 @@ export interface YardLine {
 export interface YardMesh {
   ground: number[];
   lines: YardLine[];
+  sheetFaces?: [number, number][];
 }
 /** Levels of a lot boundary: 0 the full mesh; then a plain ribbon. Pixels per metre below which each level starts, and the
  * ribbon's smallest half width there, which keeps the fence on screen once a post or a sheet is well under a pixel. */
@@ -273,6 +275,7 @@ export function surfaceTriangles(surface: Surface): [Point, Point, Point][] {
  * absolute physical metres; roof faces are copied from native geometry. `yardStrips`: the coarse levels of a lot
  * boundary are strips (the tilted map) instead of ribbons of a fixed width per level. */
 export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod, yardLevel = overview ? 1 : 0, yardStrips = false, crafted = false): void {
+  const boundary = crafted && !overview && !isBuildingProjection(building) ? boundaryOf(building) : undefined;
   if (isYardMesh(building)) {
     const {
       yard,
@@ -285,12 +288,25 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
       }
       return;
     }
-    for (const face of mesh.faces)
+    if (boundary) emitBoundary(building as PlacedBuilding, boundary, emit);
+    const skip = boundary ? yard.sheetFaces : undefined;
+    let range = 0;
+    for (let fi = 0; fi < mesh.faces.length; fi++) {
+      while (skip && range < skip.length && fi >= skip[range][1]) range++;
+      if (skip && range < skip.length && fi >= skip[range][0]) continue;
+      const face = mesh.faces[fi];
       for (let i = 1; i + 1 < face.vertices.length; i++) {
         const v = [face.vertices[0], face.vertices[i], face.vertices[i + 1]];
         emit({ points: v.map(k => [mesh.vertices[k].x, mesh.vertices[k].y, mesh.vertices[k].z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: 'yard', ground: v.map(k => yard.ground[k]) as [number, number, number] });
       }
+    }
     return;
+  }
+  if (boundary) {
+    emitBoundary(building as PlacedBuilding, boundary, emit);
+    if (boundary.replace) return;
+    // These volumes already carry their curtain or gate mesh.
+    crafted = false;
   }
   // `out` is `emit`, or for a seated volume `emit` with the volume's own ground under each point.
   let out = emit;

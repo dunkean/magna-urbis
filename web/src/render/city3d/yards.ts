@@ -94,6 +94,9 @@ function yardFiner(line: readonly YardStation[], step: number): YardStation[] {
 }
 
 interface YardBatch {
+  details: import('../craftedBoundaries').BoundaryLine[];
+  sheetFaces: [number, number][];
+  culture: string;
   roof: RoofBuilder;
   ground: number[];
   lines: YardLine[];
@@ -119,7 +122,7 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
   const batchAt = (e: YardBoundary, p: Point): YardBatch => {
     const key = `${Math.floor(p.x / 128)}/${Math.floor(p.y / 128)}/${e.material}/${e.fenceStyle ?? ''}/${e.culture ?? ''}`;
     let batch = batches.get(key);
-    if (!batch) batches.set(key, (batch = { roof: new RoofBuilder(), ground: [], lines: [], material: e.material, bottom: Infinity, top: -Infinity, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }));
+    if (!batch) batches.set(key, (batch = { details: [], sheetFaces: [], culture: e.culture ?? '', roof: new RoofBuilder(), ground: [], lines: [], material: e.material, bottom: Infinity, top: -Infinity, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }));
     return batch;
   };
   const tints = (e: YardBoundary): { body: string; alt: string; top: string; wood: string } => {
@@ -257,7 +260,9 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
         top = wattle ? ss.map(st => 0.8 + 0.06 * noise(st.x, st.y, 9)) : ss.map(st => 0.98 + 0.05 * noise(st.x, st.y, 11));
       half = 0.05;
       height = wattle ? 0.85 : 1;
+      const start = batch.roof.faces.length;
       sheet(ss, (_, j) => top[j], wattle ? (_, j) => (j % 2 && !(run.closed && j === ss.length - 1) ? 0.05 : -0.05) : () => 0, t.body, t.alt);
+      batch.sheetFaces.push([start, batch.roof.faces.length]);
       // Each jamb replaces the regular post at its endpoint. A closed run's last station repeats its first post.
       const posts = yardFiner(line, POST_M),
         first = gatePosts.has(run.path[0]) ? 1 : 0,
@@ -267,6 +272,7 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
         post(st, st.g, wattle ? 0.95 : 1.12, wattle ? 0.035 : 0.05, t.wood);
       }
     }
+    batch.details.push({ points: line, closed: run.closed, kind: e.material === 'hedge' ? 'hedge' : e.material === 'wall' ? 'stone' : e.fenceStyle === 'plank' ? 'boards' : 'woven', height, half, side: t.body, cap: t.top });
     batch.lines.push({ stations: line, closed: run.closed, height, half, side: t.body, top: t.top });
     for (const p of run.path) extend(batch, p, half + 0.1);
   }
@@ -310,11 +316,11 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
       origin = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2 };
     const volume = baseVolume(`yard:${key}:v`, footprint, b.bottom, b.top - b.bottom, 0, slots(pattern, pattern), b.roof.mesh(), 'RF-FLAT', { footprint: [], z_min_m: b.bottom, z_max_m: b.bottom }, []);
     volume.envelope = 'open';
-    const building: PlacedBuilding & { yard: YardMesh } = {
+    const building: import('../craftedBoundaries').BoundaryBuilding & { yard: YardMesh } = {
       id: `yard:${key}`,
       parcel_id: '',
       function: 'collective',
-      culture: { culture: '', pack: '', mode: 'inspired', borrowing: null } as unknown as PlacedBuilding['culture'],
+      culture: { culture: b.culture, pack: '', mode: 'inspired', borrowing: null } as unknown as PlacedBuilding['culture'],
       recipe_id: 'city3d-yard',
       variant_id: `yard:${b.material}`,
       transform: { origin, orientation_deg: 0 },
@@ -332,7 +338,8 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
       simplification: 'recipe_volumes',
       diagnostics: ['city3d yard enclosure'],
       resolved: null,
-      yard: { ground: b.ground, lines: b.lines },
+      boundary: { lines: b.details },
+      yard: { ground: b.ground, lines: b.lines, sheetFaces: b.sheetFaces },
     };
     buildings.push(building);
   }
