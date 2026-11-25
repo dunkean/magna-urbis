@@ -78,6 +78,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           ]);
           if (ground < site) (volume as SeatedVolume).ground_m = ground;
           volume.envelope = 'open';
+          if (culture === 'elven') (volume as OverviewVolume).displayTree = tree;
           return volume;
         }
         const over = v.detail?.overhang_m ?? 0,
@@ -169,6 +170,8 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         );
         // The display skirts extend past the silhouette's source footprint.
         volume.overhang_m = over;
+        if (lift > 0) volume.stiltHeight_m = lift;
+        volume.displayRoofForm = v.roof;
         if (ground < site) (volume as SeatedVolume).ground_m = ground;
         if (form === 'battered') volume.envelope = 'open';
         // Keep the main pans and gables without the small details added to the roof and facade.

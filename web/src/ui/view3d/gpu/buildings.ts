@@ -61,7 +61,9 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     const slice = this.houseLayers;
-    houseSurfaceMips(slice + 1).forEach((source, mipLevel) => {
+    const mips = houseSurfaceMips(slice + 1);
+    if (!mips.length) return false;
+    mips.forEach((source, mipLevel) => {
       device.queue.copyExternalImageToTexture({ source }, { texture: this.gpuHouseAtlas!, mipLevel, origin: [0, 0, slice] }, [source.width, source.height]);
     });
     this.houseLayers++;

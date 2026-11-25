@@ -81,11 +81,11 @@ function stroke(ctx: Brush, tone: number, width: number, x1: number, y1: number,
 }
 
 function roofUnits(ctx: Brush, style: string, seed: number): void {
-  const timber = style === 'shingle' || style === 'bark';
+  const timber = style === 'shingle';
   const scale = style === 'leaf-scale';
   const rock = style === 'slab' || style === 'obsidian' || style === 'paving';
-  const cols = style === 'bark' ? 4 : rock ? 6 : scale ? 9 : 13;
-  const rows = style === 'bark' ? 6 : style === 'paving' ? 6 : scale ? 8 : 12;
+  const cols = rock ? 6 : scale ? 9 : 13;
+  const rows = style === 'paving' ? 6 : scale ? 8 : 12;
   courses(ctx, cols, rows, true, seed, (w, h, rand) => {
     const tint = 192 + rand() * 35,
       end = h + rand() * (rock ? 2.4 : 1.5);
@@ -258,11 +258,61 @@ function canopy(ctx: Brush, seed: number): void {
   }
 }
 
+/** Bark peels off the trunk in broad, uneven sheets. Each lap holds rough fibres and
+ * split ridges; its comparatively faint edges never turn a longhouse into a shingle roof. */
+function barkSheets(ctx: Brush, seed: number): void {
+  courses(ctx, 3, 2, true, seed, (w, h, rand) => {
+    const tone = 199 + rand() * 15;
+    ctx.fillStyle = pigment(tone, 4, 0, -7);
+    ctx.fillRect(0, 0, w, h + 0.5);
+    for (let i = 0; i < 65; i++) {
+      const x = rand() * w,
+        y = rand() * h,
+        end = Math.min(h, y + 6 + rand() * 50);
+      const curl = (rand() - 0.5) * 3.8;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.bezierCurveTo(x + curl, y + 4, x - curl, end - 5, x + curl * 0.45, end);
+      ctx.strokeStyle = grey(tone + (rand() - 0.58) * 37);
+      ctx.lineWidth = 0.4 + rand() * 1.15;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(0, h - 1.2);
+    for (let k = 1; k <= 9; k++) ctx.lineTo((k * w) / 9, h - rand() * 1.8);
+    ctx.strokeStyle = grey(tone - 25);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    stroke(ctx, tone - 18, 0.9, 0.5, h * 0.15, 0.8, h);
+  });
+}
+
+/** The ger's construction seams are geometry. At this scale the wool itself only shows
+ * compressed nap and stray short fibres. Hide has longer, soft, branching wrinkles. */
+function softCover(ctx: Brush, hide: boolean, seed: number): void {
+  courses(ctx, 8, 8, false, seed, (w, h, rand) => {
+    for (let k = 0; k < (hide ? 3 : 38); k++) {
+      const x = w * rand(),
+        y = h * rand(),
+        angle = rand() * TURN;
+      const len = hide ? w * (0.22 + rand() * 0.42) : 0.8 + rand() * 2.1;
+      const dx = Math.cos(angle) * len,
+        dy = Math.sin(angle) * len;
+      const light = 208 + (rand() - 0.55) * (hide ? 22 : 32);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + dx * 0.57 - dy * 0.09, y + dy * 0.54 + dx * 0.09, x + dx, y + dy);
+      ctx.strokeStyle = pigment(light, 2, 0, -3);
+      ctx.lineWidth = hide ? 0.7 : 0.45;
+      ctx.stroke();
+    }
+  });
+}
+
 function sheets(ctx: Brush, style: string, seed: number): void {
   const glass = style === 'glazing' || style === 'solar';
   const plate = style === 'riveted' || style === 'cassette' || style === 'service-panel';
-  const cloth = style === 'felt' || style === 'hide';
-  courses(ctx, glass ? 3 : plate ? 3 : cloth ? 4 : 6, glass ? 4 : plate || cloth ? 3 : 2, !glass, seed, (w, h, rand) => {
+  courses(ctx, glass || plate ? 3 : 6, glass ? 4 : plate ? 3 : 2, !glass, seed, (w, h, rand) => {
     const tone = 199 + rand() * 19;
     const wash = ctx.createLinearGradient(0, 0, w, glass ? h * 0.63 : 0);
     const pane = (light: number): string => (style === 'solar' ? pigment(light, -32, -7, 21) : glass ? pigment(light, -18, 5, 11) : grey(light));
@@ -304,8 +354,6 @@ function sheets(ctx: Brush, style: string, seed: number): void {
     } else if (style === 'solar') {
       for (let i = 1; i < 8; i++) stroke(ctx, tone - 34, 0.85, (i * w) / 8, 1, (i * w) / 8, h - 2);
       for (let i = 1; i < 6; i++) stroke(ctx, tone + 15, 0.65, 3, (i * h) / 6, w, (i * h) / 6);
-    } else if (cloth) {
-      for (let y = 2; y < h - 2; y += 3) stroke(ctx, tone + 20, 0.8, 0.5, y, 3.3, y + 1.1);
     }
   });
 }
@@ -351,10 +399,16 @@ export function paintHouseRoof(ctx: Brush, size: number, culture: string, materi
     case 'slab':
     case 'paving':
     case 'shingle':
-    case 'bark':
     case 'obsidian':
     case 'leaf-scale':
       roofUnits(ctx, style, seed);
+      break;
+    case 'bark':
+      barkSheets(ctx, seed);
+      break;
+    case 'felt':
+    case 'hide':
+      softCover(ctx, style === 'hide', seed);
       break;
     case 'pantile':
     case 'glazed':
@@ -376,8 +430,6 @@ export function paintHouseRoof(ctx: Brush, size: number, culture: string, materi
     case 'glazing':
     case 'solar':
     case 'bitumen':
-    case 'felt':
-    case 'hide':
       sheets(ctx, style, seed);
       break;
   }
@@ -387,10 +439,11 @@ export function paintHouseRoof(ctx: Brush, size: number, culture: string, materi
   const rand = random(seed ^ 0xbea5909),
     turf = style === 'turf',
     skin = style === 'fungal' || style === 'membrane';
+  const soft = style === 'felt' || style === 'hide';
   const grit = style === 'earth' || style === 'bitumen',
     wood = style === 'shingle' || style === 'bark';
   const clouds = noiseField(5, style === 'snow' ? 9 : 5, rand);
-  const spots = noiseField(turf ? 39 : 18, turf ? 30 : 16, rand);
+  const spots = noiseField(turf ? 39 : style === 'fungal' ? 10 : 18, turf ? 30 : style === 'fungal' ? 9 : 16, rand);
   const grain = noiseField(wood ? 112 : 84, wood ? 9 : 79, rand);
   const pixels = ctx.getImageData(0, 0, size, size),
     data = pixels.data;
@@ -408,17 +461,13 @@ export function paintHouseRoof(ctx: Brush, size: number, culture: string, materi
         blue = 0;
       if (skin) {
         if (style === 'fungal') {
-          const patch = spot + fleck * 0.09;
-          relief = patch > 0.22 ? 18 + patch * 30 : patch > 0.16 ? -15 : spot * 20;
-          if (patch > 0.22) {
-            red = -28;
-            green = 22;
-            blue = 15;
-          } else {
-            red = 11;
-            green = -6;
-            blue = 8;
-          }
+          // Low, pale scales emerge from a waxy continuous skin. Their edges soften
+          // into the cap; the underlying pigments can still vary between individuals.
+          const patch = Math.max(0, Math.min(1, (spot + fleck * 0.075 - 0.24) * 8));
+          relief = 22 * patch + spot * 6;
+          red = 4 + 10 * patch;
+          green = -2 + 8 * patch;
+          blue = -4 + 3 * patch;
         } else {
           const vein = Math.abs(spot + 0.12 * fleck);
           relief = vein < 0.034 ? 18 : vein < 0.069 ? -13 : spot * 34;
@@ -438,7 +487,7 @@ export function paintHouseRoof(ctx: Brush, size: number, culture: string, materi
         green = 10;
         blue = -18 - 18 * spot;
       } else if (style === 'earth' && Math.abs(spot + 0.07 * fleck) < 0.015 && clouds(u, v) > 0.1) relief = -23;
-      const weather = relief + (skin || turf ? 38 : 19) * clouds(u, v) + (turf ? 60 : 11) * spot + (turf || wood ? 31 : grit ? 22 : 10) * fleck + (rand() - 0.5) * (grit ? 24 : turf ? 19 : 9);
+      const weather = relief + (turf ? 38 : soft ? 12 : 19) * clouds(u, v) + (turf ? 60 : soft ? 5 : 11) * spot + (turf || wood ? 31 : grit ? 22 : soft ? 6 : 10) * fleck + (rand() - 0.5) * (grit ? 24 : turf ? 19 : soft ? 5 : 9);
       data[offset] += weather + red;
       data[offset + 1] += weather + green;
       data[offset + 2] += weather + blue;

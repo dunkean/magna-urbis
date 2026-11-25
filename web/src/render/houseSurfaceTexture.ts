@@ -10,6 +10,7 @@ interface Tile {
   kind: Kind;
   culture: string;
   material: string;
+  style: string;
   mips?: HTMLCanvasElement[];
 }
 const tiles: Tile[] = [];
@@ -22,18 +23,33 @@ export function houseSurfaceLayer(kind: Kind, culture: string, material: string)
   const known = layers.get(key);
   if (known !== undefined) return known;
   if (tiles.length === HOUSE_TILE_LAYERS) return 0;
-  tiles.push({ kind, culture, material });
+  tiles.push({ kind, culture, material, style });
   layers.set(key, tiles.length);
   return tiles.length;
 }
 
 export const houseSurfaceCount = (): number => tiles.length;
 
+// The four seamless swatches are graded around the atlas's neutral value (.82).
+// An image is requested only when a visible detailed house actually needs one of them.
+const samples: Record<string, [number, number, number]> = { rubble: [0, 0, 0.95], barkSheets: [1, 0, 0.89], bark: [1, 0, 0.82], lime: [0, 1, 0.86], whitewash: [0, 1, 0.9], timberInfill: [0, 1, 0.3], felt: [1, 1, 0.84] };
+let materialSheet: HTMLImageElement | undefined;
+function loadMaterialSheet(): HTMLImageElement {
+  if (!materialSheet) {
+    materialSheet = new Image();
+    materialSheet.src = new URL('./houseMaterials.webp', import.meta.url).href;
+  }
+  return materialSheet;
+}
+
 /** Rasterize each drawing once, then box-filter each successive level. Context restoration reuses the same pixels. */
 export function houseSurfaceMips(layer: number): readonly HTMLCanvasElement[] {
   const tile = tiles[layer - 1];
   if (!tile || typeof document === 'undefined') return [];
   if (tile.mips) return tile.mips;
+  const sample = samples[tile.style];
+  const sheet = sample && typeof Image !== 'undefined' ? loadMaterialSheet() : undefined;
+  if (sheet && !sheet.complete) return [];
   const mips: HTMLCanvasElement[] = [];
   for (let size = HOUSE_TILE_SIZE; size >= 1; size /= 2) {
     const canvas = document.createElement('canvas');
@@ -41,7 +57,15 @@ export function houseSurfaceMips(layer: number): readonly HTMLCanvasElement[] {
     const ctx = canvas.getContext('2d');
     if (!ctx) return [];
     if (mips.length) ctx.drawImage(mips[mips.length - 1], 0, 0, size, size);
-    else (tile.kind === 'roof' ? paintHouseRoof : paintHouseWall)(ctx, size, tile.culture, tile.material);
+    else {
+      (tile.kind === 'roof' ? paintHouseRoof : paintHouseWall)(ctx, size, tile.culture, tile.material);
+      if (sheet && sample && sheet.naturalWidth) {
+        const side = sheet.naturalWidth / 2;
+        ctx.globalAlpha = sample[2];
+        ctx.drawImage(sheet, sample[0] * side, sample[1] * side, side, side, 0, 0, size, size);
+        ctx.globalAlpha = 1;
+      }
+    }
     mips.push(canvas);
   }
   tile.mips = mips;
@@ -57,7 +81,7 @@ export class HouseSurfaceTexture {
   step(): boolean {
     if (this.ready >= tiles.length) return true;
     const mips = houseSurfaceMips(this.ready + 1);
-    if (!mips.length) return true;
+    if (!mips.length) return !materialSheet || materialSheet.complete;
     const gl = this.gl;
     if (!this.texture) {
       this.texture = gl.createTexture() ?? undefined;
@@ -87,28 +111,53 @@ export class HouseSurfaceTexture {
   }
 }
 
-/** Face-local metric axes. V runs down from each ridge, or down a façade from its ground-aligned storeys.
- * Mip filtering resolves the drawing at close range and the town's own palette takes over at map scales. */
+/** The vertex payload of a crafted face is (metric u, metric v, exact sRGB8). */
+export const HOUSE_SURFACE_VERTEX_GLSL = `
+vec3 houseFaceColor(float value){
+  uint c=uint(value<0.?-value-1.:value);
+  return vec3(float(c>>16u),float((c>>8u)&255u),float(c&255u))/255.;
+}`;
+
+/** Surface relief from neighbouring texels in the continuous architectural UV chart. The slope
+ * is transformed into scene axes using the actual face derivatives, so mirrored pans and wraps
+ * keep the same sun direction. No camera-relative height derivatives or inter-face normal samples. */
 export const HOUSE_SURFACE_GLSL = `
 uniform highp sampler2DArray uHouseSurface;
 uniform float uHouseSurfaceReady;
-vec3 houseSurface(vec3 base, float layer, vec3 N, vec3 p){
+vec3 houseSurface(vec3 base, float layer, vec3 N, vec3 p, vec3 surfaceMetres){
   float variation=floor(max(0.,layer-1.)/${HOUSE_TILE_LAYERS}.);
   layer-=variation*${HOUSE_TILE_LAYERS}.;
   if(layer<.5||layer>uHouseSurfaceReady)return base;
-  vec2 q=p.xz;
-  float h=length(N.xz);
-  if(h>.02){
-    vec2 d=N.xz/h;
-    q.x=dot(p.xz,vec2(-d.y,d.x));
-    q.y=dot(p.xz,d)*N.y-p.y*h;
-  }
-  vec2 uv=q/3.+vec2(variation*.237,0.);
+  vec2 uv=surfaceMetres.xy/3.+vec2(variation*.237,0.);
   vec2 dx=dFdx(uv),dy=dFdy(uv);
-  float fade=1.-smoothstep(.10,.45,max(length(dx),length(dy)));
+  float footprint=max(length(dx),length(dy));
+  float fade=1.-smoothstep(.055,.34,footprint);
   vec3 ink=textureGrad(uHouseSurface,vec3(uv,layer-1.),dx,dy).rgb;
-  // A little bleaching or darkening of each lot's finish. Preserve the palette at map scale.
-  float wear=variation*0.04;
-  vec3 pigment=(ink/.82)*vec3(1.-wear*.4,1.-wear*.7,1.-wear);
+  vec3 pigment=mix(vec3(1.),ink/.82,.9);
+  // Slow changes of exposure across the whole building, independent of the repeating units.
+  // Both block grids are multiples of 256 m; these phases remain fixed as the mesh changes level.
+  float phi=variation*1.87;
+  float warp=sin(dot(p,vec3(-.1963495,.29,.3926991))-phi);
+  float weather=sin(dot(p,vec3(.0981748,.16,.1963495))+phi+1.2*warp);
+  weather+=.34*sin(dot(p,vec3(.3926991,.37,-.0981748))+phi+.65*warp);
+  pigment*=vec3(1.)+weather*vec3(.023,.019,.014)-variation*vec3(.006,.009,.012);
+  // Z carries distance below a real overhanging eave, or a value beyond its reach.
+  pigment*=mix(.85,1.,smoothstep(0.,.48,surfaceMetres.z));
+  vec3 px=dFdx(p),py=dFdy(p);
+  vec3 rx=cross(py,N),ry=cross(N,px);
+  float determinant=dot(px,rx);
+  if(footprint<.035&&abs(determinant)>1e-10){
+    const float t=1./256.;
+    const vec3 luma=vec3(.2126,.7152,.0722);
+    vec3 plusU=textureGrad(uHouseSurface,vec3(uv+vec2(t,0.),layer-1.),dx,dy).rgb;
+    vec3 plusV=textureGrad(uHouseSurface,vec3(uv+vec2(0.,t),layer-1.),dx,dy).rgb;
+    // About two centimetres between the darkest recess and brightest raised unit.
+    vec2 dh=vec2(dot(plusU-ink,luma),dot(plusV-ink,luma))*(.022/t);
+    vec3 gradient=(dot(dh,dx)*rx+dot(dh,dy)*ry)/determinant;
+    gradient/=max(1.,length(gradient)/.5);
+    vec3 bumped=normalize(N-gradient);
+    float relief=buildingLight(bumped)/buildingLight(N);
+    pigment*=mix(1.,relief,1.-smoothstep(.008,.035,footprint));
+  }
   return base*mix(vec3(1.),pigment,fade);
 }`;

@@ -15,7 +15,7 @@
 import { MOONLIGHT_GLSL } from '../materialLook';
 import { ROOF_PLANE_LIGHT_GLSL } from '../roofPlaneLight';
 import { COVER_GRAIN_GLSL } from '../buildingMaterials';
-import { HOUSE_SURFACE_GLSL } from '../houseSurfaceTexture';
+import { HOUSE_SURFACE_GLSL, HOUSE_SURFACE_VERTEX_GLSL } from '../houseSurfaceTexture';
 
 // Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
 // works (city walls, bridges: facadePosition.y = -10000) are left as they are.
@@ -165,7 +165,9 @@ uniform vec3 uYard;
 uniform vec3 uEye;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
 flat out float houseLayer;
+out vec3 houseUv;
 out vec3 roofEdge;
+${HOUSE_SURFACE_VERTEX_GLSL}
 void main(){
   n=normalize(normal);base=uRoofInkDpr>0.?abs(albedo):albedo;
   // Inspect the bits directly so black channels can carry a negative zero.
@@ -174,6 +176,8 @@ void main(){
   // in sixteenths of a face the town look painted (0: not painted). Block-local metres keep the grain's hashes exact.
   float code=floor((length(normal)-1.)*32.+.5);
   houseLayer=floor(code/1024.);code-=houseLayer*1024.;
+  houseUv=vec3(albedo.xy,albedo.z<0.?albedo.y:100.);
+  if(houseLayer>.5)base=houseFaceColor(albedo.z);
   float painted=floor(code/64.);
   materialClass=code-64.*painted;townGain=painted/15.;
   vec3 place=position;
@@ -199,6 +203,7 @@ export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
 flat in float houseLayer;
+in vec3 houseUv;
 in vec3 roofEdge; uniform float uRoofInkDpr;
 // Haze distance (m) and share; haze colour.
 uniform vec2 uAir;
@@ -216,7 +221,7 @@ void main(){
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
   vec3 rgb;
-  if(houseLayer>.5)rgb=houseSurface(base,houseLayer,N,grainPosition);
+  if(houseLayer>.5)rgb=houseSurface(base,houseLayer,N,grainPosition,houseUv);
   else if(townGain>0.&&cls>.5&&cls<18.5)rgb=coverGrainMarks(base,cls,N,grainPosition,townGain);
   else rgb=materialGrain(base,cls,N,grainPosition,fp);
   // The town look already includes slope light and ambience on faces it paints.

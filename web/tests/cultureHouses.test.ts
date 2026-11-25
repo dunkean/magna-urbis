@@ -7,6 +7,7 @@ import type { PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 import type { Surface } from '../../rust/bridge/housesContract';
 import { buildingBatches, BUILDING_STRIDE } from '../src/render/world/buildingsMesh';
 import { houseSurfaceLayer } from '../src/render/houseSurfaceTexture';
+import { houseSurfaceMapper } from '../src/render/houseSurfaceUv';
 
 const rect = (w = 12, d = 8): Surface => [
   {
@@ -49,6 +50,78 @@ function house(culture: string, footprint: Surface, detail: VolumeDetail, roof: 
 }
 
 describe('culture house exteriors', () => {
+  it('places capped flues on a seeded subset of large European roof pans', () => {
+    const fitted: boolean[] = [];
+    for (let seed = 0; seed < 16; seed++) {
+      const source = house('european-organic', rect(), {}, 'hip', 5);
+      source.id = 'cottage-' + seed;
+      const b = silhouetteBuilding(source);
+      let cap = false;
+      eachBuildingTriangle(
+        b,
+        t => {
+          if (t.material?.startsWith('city3d:detail:chimney-cap@')) cap = true;
+        },
+        false,
+        undefined,
+        0,
+        false,
+        true,
+      );
+      fitted.push(cap);
+    }
+    expect(fitted).toContain(true);
+    expect(fitted).toContain(false);
+  });
+  it('connects the raised tidal threshold to the ground with a boarding ladder', () => {
+    const b = silhouetteBuilding(house('merfolk-tidal', rect(), { stilts_m: 2.8 }, 'dome', 6));
+    let low = Infinity,
+      high = -Infinity;
+    eachBuildingTriangle(
+      b,
+      t => {
+        if (!t.material?.startsWith('city3d:detail:tidal-ladder@')) return;
+        for (const [, , z] of t.points) {
+          low = Math.min(low, z);
+          high = Math.max(high, z);
+        }
+      },
+      false,
+      undefined,
+      0,
+      false,
+      true,
+    );
+    expect(low).toBeLessThan(0.3);
+    expect(high).toBeGreaterThan(b.volumes[0].z_m);
+  });
+  it.each([
+    ['tibetan-monastery', 'flat', 'battered', 'frieze'],
+    ['wizard-city', 'cone', 'tower', 'bronze'],
+  ] as const)('adds fitted architectural details to %s only at close range in detailed mode', (culture, roof, form, material) => {
+    const b = silhouetteBuilding(house(culture, form === 'tower' ? circle() : rect(), { form, parapet_m: 0.7 }, roof, 18));
+    const count = (crafted: boolean, overview: boolean) => {
+      let total = 0;
+      eachBuildingTriangle(
+        b,
+        face => {
+          if (!face.material?.startsWith('city3d:detail:' + material + '@')) return;
+          expect(Math.hypot(...face.normal)).toBeCloseTo(1);
+          expect(face.points.flat().every(Number.isFinite)).toBe(true);
+          total++;
+        },
+        overview,
+        undefined,
+        0,
+        false,
+        crafted,
+      );
+      return total;
+    };
+    expect(count(true, false)).toBeGreaterThan(0);
+    expect(count(false, false)).toBe(0);
+    expect(count(true, true)).toBe(0);
+  });
   it.each([
     ['elven', 'tree', 0.22],
     ['myconid-colony', 'mushroom', 0.3],
@@ -76,6 +149,34 @@ describe('culture house exteriors', () => {
     if (culture === 'tibetan-monastery') expect(b.volumes[0].envelope).toBe('open');
   });
 
+  it('unwraps a ger around one circumference and across one continuous felt roof', () => {
+    const b = silhouetteBuilding(house('mongol-ordu', circle(), { form: 'yurt' }, 'tent', 1.6));
+    const mapper = houseSurfaceMapper(b);
+    const joins = new Map<string, [number, number]>();
+    const counts = { wall: 0, roof: 0 };
+    eachBuildingTriangle(b, face => {
+      const material = face.material ?? face.materials.coating;
+      const roof = material.startsWith('city3d:cover:felt') && face.normal[2] > 0.25;
+      const wall = face.surface === 'wall' && !face.material && Math.abs(face.normal[2]) < 0.01;
+      if (!wall && !roof) return;
+      const project = mapper(face, material, false);
+      const chart = roof ? 'roof' : 'wall';
+      for (const p of face.points) {
+        const uv = project(p),
+          key = chart + '/' + p.join(',');
+        const shared = joins.get(key);
+        if (shared) {
+          const delta = (uv[0] - shared[0]) / 3;
+          expect(delta).toBeCloseTo(wall ? Math.round(delta) : 0, 6);
+          expect(uv[1]).toBeCloseTo(shared[1], 6);
+          counts[chart]++;
+        } else joins.set(key, uv);
+      }
+    });
+    expect(counts.wall).toBeGreaterThan(15);
+    expect(counts.roof).toBeGreaterThan(15);
+  });
+
   it('keeps the picked cap, gill and annulus colours on the drawn mushroom skin', () => {
     const b = silhouetteBuilding(house('myconid-colony', circle(), { form: 'mushroom' }));
     const colors = new Set(b.volumes[0].roof_mesh.faces.flatMap(f => f.material.match(/@[a-f0-9]{6}@([a-f0-9]{6})$/)?.slice(1) ?? []));
@@ -85,7 +186,7 @@ describe('culture house exteriors', () => {
     for (const { data } of meshes) {
       for (let i = 0; i < data.length; i += BUILDING_STRIDE) {
         if (Math.round((Math.hypot(data[i + 3], data[i + 4], data[i + 5]) - 1) * 32) < 1024) continue;
-        const color = Array.from(data.slice(i + 6, i + 9), v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+        const color = data[i + 8].toString(16).padStart(6, '0');
         if (colors.has(color)) textured.add(color);
       }
     }

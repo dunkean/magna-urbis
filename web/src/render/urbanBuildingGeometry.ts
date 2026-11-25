@@ -6,9 +6,18 @@ import type { ParentMember3dVisual } from '../ui/urbanParent3d';
 import { retainBuildingFeature, type BuildingFeatureLod } from './urbanBuildingFeatureLod';
 import { earcut } from './cityGlEarcut';
 import type { RoofMesh } from './city3d/types';
+import { craftedYurt } from './craftedYurt';
+import { craftedArchitecture } from './craftedArchitecture';
+import { craftedRoofMesh } from './craftedRoofMesh';
 
 export type BuildingVector = [number, number, number];
 export interface OverviewVolume extends ArchitectureVolume {
+  /** Source tree and platform sites for the crafted dwelling. */
+  displayTree?: import('./cityTrees').TreeDwelling;
+  /** Raised deck height above its source seat, for stairs and ladders. */
+  stiltHeight_m?: number;
+  /** The massing roof shape, including profiles sharing the same native family (a barrel and a gable). */
+  displayRoofForm?: import('./cityMassing').MassingRoof;
   /** Main roof pans and gables to draw in place of the overview cap. */
   overview_roof_faces?: [number, number];
   /** Standing details that remain visible at the overview scale, such as sails. */
@@ -252,7 +261,7 @@ export function surfaceTriangles(surface: Surface): [Point, Point, Point][] {
 /** One display mesh iterator shared by GPU preparation and picking. All z are
  * absolute physical metres; roof faces are copied from native geometry. `yardStrips`: the coarse levels of a lot
  * boundary are strips (the tilted map) instead of ribbons of a fixed width per level. */
-export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod, yardLevel = overview ? 1 : 0, yardStrips = false): void {
+export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod, yardLevel = overview ? 1 : 0, yardStrips = false, crafted = false): void {
   if (isYardMesh(building)) {
     const {
       yard,
@@ -345,7 +354,9 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     if (volume.envelope !== 'open') for (const level of volume.levels) extrude(level.footprint, level.z_m, level.height_m, level.materials ?? volume.materials, false);
     const mesh = volume.roof_mesh;
     if (!overview) {
-      if (mesh) emitRoofFaces(mesh, volume.materials, out);
+      if (crafted && craftedYurt(volume, building.culture?.culture ?? '', out)) continue;
+      if (mesh) emitRoofFaces(crafted ? craftedRoofMesh(volume, building.culture?.culture ?? '') : mesh, volume.materials, out);
+      if (crafted && mesh && !volume.displayTree) craftedArchitecture(volume, building.culture?.culture ?? '', out);
       continue;
     }
     if (mesh && volume.overview_roof_faces) {
