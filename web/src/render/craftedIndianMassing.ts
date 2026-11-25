@@ -47,6 +47,7 @@ function frameForEdge(a: Point, b: Point, winding: number): Frame {
 interface Aperture {
   center: Point;
   foot: number;
+  width: number;
   head: number;
   door: boolean;
 }
@@ -56,7 +57,7 @@ function openings(v: OverviewVolume): Aperture[] {
     if (face.vertices.length !== 4 || (face.material !== OPENING && face.material !== LIT_WINDOW)) continue;
     const [a, b, c] = face.vertices.map(i => v.roof_mesh.vertices[i]);
     if (Math.abs(a.z - b.z) > 0.03 || c.z - a.z < 0.4) continue;
-    result.push({ center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, foot: a.z - v.z_m, head: c.z - v.z_m, door: !!(face as { entrance?: true }).entrance || Math.abs(a.z - v.z_m) < 0.16 });
+    result.push({ center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, foot: a.z - v.z_m, width: Math.hypot(b.x - a.x, b.y - a.y), head: c.z - v.z_m, door: !!(face as { entrance?: true }).entrance || Math.abs(a.z - v.z_m) < 0.16 });
   }
   return result;
 }
@@ -139,7 +140,7 @@ function builder(v: OverviewVolume, f: Frame, emit: Emit) {
 }
 type Builder = ReturnType<typeof builder>;
 
-function porch(g: Builder, box: Rect, station: number, head: number, v: OverviewVolume, style: string) {
+function porch(g: Builder, box: Rect, station: number, head: number, v: OverviewVolume, style: string, form: number, doorWidth: number) {
   const tamil = style === 'dravidian-temple',
     modern = style === 'south-asian-metropolis',
     desert = style === 'rajput-fort';
@@ -154,16 +155,19 @@ function porch(g: Builder, box: Rect, station: number, head: number, v: Overview
   g.box(l + 0.13, r - 0.13, 0.018, d + 0.03, 0.005, plinth, base);
   const step = Math.min(0.72, station - l - 0.12, r - station - 0.12);
   if (step > 0.26) g.box(station - step, station + step, d + 0.035, front, 0, 0.13, base);
-  const n = r - l > 5.1 ? 3 : 2,
+  const n = form === 2 ? 4 : form === 1 ? 2 : r - l > 5.1 ? 3 : 2,
     left = l + 0.35,
     right = r - 0.35;
   for (let i = 0; i < n; i++) {
     const s = left + (i * (right - left)) / (n - 1);
-    if (i > 0 && i < n - 1 && Math.abs(s - station) < 0.72) continue;
+    if (Math.abs(s - station) < doorWidth / 2 + 0.2) continue;
     const foot = rectangle(s - 0.19, s + 0.19, postD - 0.19, postD + 0.19);
     const shaft = rectangle(s - 0.095, s + 0.095, postD - 0.095, postD + 0.095);
     g.loft(foot, foot, plinth, plinth + 0.16, base);
-    g.loft(shaft, shaft, plinth + 0.16, low - 0.26, pillar);
+    if (form === 1 && !modern) {
+      const shaftRing = (radius: number) => Array.from({ length: 8 }, (_, j) => ({ x: s + radius * Math.cos((j * Math.PI) / 4), y: postD + radius * Math.sin((j * Math.PI) / 4) }));
+      g.loft(shaftRing(0.14), shaftRing(0.1), plinth + 0.16, low - 0.26, pillar);
+    } else g.loft(shaft, shaft, plinth + 0.16, low - 0.26, pillar);
     g.loft(shaft, rectangle(s - 0.23, s + 0.23, postD - 0.13, postD + 0.13), low - 0.26, low - 0.13, pillar);
   }
   g.box(l + 0.12, r - 0.12, postD - 0.13, postD + 0.13, low - 0.14, low + 0.035, pillar, true);
@@ -173,7 +177,70 @@ function porch(g: Builder, box: Rect, station: number, head: number, v: Overview
     g.box(station + 0.64, r - 0.2, 0.09, 0.61, plinth, plinth + 0.37, cream);
   }
   if (modern || desert) {
-    g.box(l, r, 0, d + 0.16, low + 0.02, top, modern ? concrete : capstone, true);
+    const cover = modern ? concrete : capstone;
+    if (form === 1) {
+      const cut = Math.min(0.52, d * 0.33, (r - l) * 0.16),
+        lip = d + 0.16;
+      const plan = [
+        { x: l, y: 0 },
+        { x: r, y: 0 },
+        { x: r, y: lip - cut },
+        { x: r - cut, y: lip },
+        { x: l + cut, y: lip },
+        { x: l, y: lip - cut },
+      ];
+      g.loft(plan, plan, low + 0.02, top, cover, true);
+    } else if (form === 2 && modern) {
+      const n = Math.max(4, Math.round((r - l) / 0.42));
+      for (let i = 0; i < n; i++) {
+        const x = l + ((i + 0.5) * (r - l)) / n;
+        g.box(x - 0.08, x + 0.08, 0, d + 0.16, low, top, cover, true);
+      }
+    } else {
+      g.box(l, r, 0, d + 0.16, low + 0.02, top, cover, true);
+      if (form === 2) for (const end of [l, r - 0.35]) g.box(end, end + 0.35, 0.01, d * 0.85, low - 0.085, low + 0.035, cover);
+    }
+  } else if (form === 1) {
+    const mid = (l + r) / 2,
+      lip = d + 0.15;
+    g.face(
+      [
+        [l, 0, low],
+        [mid, 0, top],
+        [mid, lip, top],
+        [l, lip, low],
+      ],
+      tile,
+    );
+    g.face(
+      [
+        [mid, 0, top],
+        [r, 0, low],
+        [r, lip, low],
+        [mid, lip, top],
+      ],
+      tile,
+    );
+    g.face(
+      [
+        [l, lip, low],
+        [mid, lip, top],
+        [r, lip, low],
+      ],
+      wood,
+    );
+  } else if (form === 2) {
+    const lip = d + 0.15;
+    g.face(
+      [
+        [l, 0, top],
+        [r, 0, top],
+        [r, lip, low],
+        [l, lip, low],
+      ],
+      tile,
+    );
+    g.box(l, r, lip - 0.085, lip, low - 0.08, low, wood, true);
   } else {
     // The short hipped returns let the separate tiled roof read from the plan and the street.
     const hip = Math.min(0.82, (r - l) * 0.2),
@@ -352,7 +419,7 @@ function layingOut(building: PlacedBuilding, v: OverviewVolume): Plan | undefine
       const d = (culture === 'dravidian-temple' ? 1.9 : modern ? 1.55 : 1.6) * scale + (seed % 3) * 0.08;
       const b = { l, r: l + span, back: 0.005, front: d + 0.2 };
       if (station < l + 0.32 || station > b.r - 0.32 || head > v.wall_height_m - 0.16 || !clearOutside(b, 0, head + 0.78)) continue;
-      commands.push(g => porch(g, b, station, head, v, culture));
+      commands.push(g => porch(g, b, station, head, v, culture, (seed >>> 9) % 3, entry?.width ?? 1));
       break;
     }
   }

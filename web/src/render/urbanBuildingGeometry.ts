@@ -370,7 +370,7 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
       if (crafted && mesh && !volume.displayTree) {
         const hasRoom = roofRoom?.volume === volume;
         if (hasRoom) emitRoofFaces(roofRoom.mesh, volume.materials, out);
-        craftedArchitecture(volume, building.culture?.culture ?? '', out, hasRoom);
+        craftedArchitecture(volume, building.culture?.culture ?? '', out, hasRoom, front?.volume === volume ? front.frame : undefined);
         craftedIndianMassing(building, volume, out);
       }
       continue;

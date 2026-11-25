@@ -46,6 +46,21 @@ describe('regional dwelling frontages', () => {
       ).toBeLessThan(440);
     }
   });
+  it('uses the building identifier to choose reproducible porch construction on a street', () => {
+    for (const culture of ['byzantine-greek', 'sahel', 'stilt-town', 'swahili-stone-town', 'wizard-city']) {
+      const b = house(culture);
+      const topology = new Set<string>();
+      for (let lot = 0; lot < 36 && topology.size < 3; lot++) {
+        const id = 'lot/428/' + lot;
+        const front = detailedHouseFront({ ...b, id });
+        expect(front, culture).toBeTruthy();
+        const faces = front!.mesh.faces.map(f => f.vertices.length).join(',');
+        if (lot === 0) expect(detailedHouseFront({ ...b, id })?.mesh).toEqual(front!.mesh);
+        topology.add(faces);
+      }
+      expect(topology.size, culture).toBeGreaterThanOrEqual(3);
+    }
+  });
   it('fits an actual clear frontage once and avoids a neighbouring wing and a courtyard', () => {
     const b = house('roman-core'),
       a = detailedHouseFront(b);

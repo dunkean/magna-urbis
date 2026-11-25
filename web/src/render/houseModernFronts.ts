@@ -218,19 +218,52 @@ export function mushroomGrower(g: HouseFront): void {
     oak = 'city3d:wall:wood@635347',
     soil = 'city3d:detail:compost@463a32';
   const roof = 'city3d:cover:bark@706e5b';
-  g.face(
-    [
-      [-w, 0, h],
-      [w, 0, h],
-      [w, d, h - 0.26],
-      [-w, d, h - 0.26],
-    ],
-    roof,
-  );
+  const form = (g.seed >>> 9) % 3;
+  // A single lean-to, a ventilated ridge, or staggered side shelters over the growing beds.
+  const edge = h - 0.26;
+  if (form === 0) {
+    g.face(
+      [
+        [-w, 0, h],
+        [w, 0, h],
+        [w, d, edge],
+        [-w, d, edge],
+      ],
+      roof,
+    );
+  } else if (form === 1) {
+    for (const sign of [-1, 1]) {
+      g.face(
+        [
+          [sign * w, 0, edge],
+          [sign * 0.07, 0, h + 0.12],
+          [sign * 0.07, d, h + 0.12],
+          [sign * w, d, edge],
+        ],
+        roof,
+      );
+    }
+    g.box(-0.105, 0.105, 0.02, d - 0.02, h + 0.16, h + 0.21, oak);
+  } else {
+    for (const sign of [-1, 1]) {
+      const inner = sign * Math.min(w * 0.38, 0.54);
+      const reach = sign > 0 ? d : d * 0.79;
+      g.face(
+        [
+          [sign * w, 0, h],
+          [inner, 0, h + 0.08],
+          [inner, reach, edge + 0.08],
+          [sign * w, reach, edge],
+        ],
+        roof,
+      );
+    }
+  }
   for (const s of [-1, 1]) {
-    const x = s * (w - 0.14);
-    g.box(x - 0.065, x + 0.065, d - 0.18, d - 0.05, 0.02, h - 0.26, oak);
-    const inner = Math.max(0.52, w - 0.83);
+    const x = s * (w - 0.14),
+      reach = form === 2 && s < 0 ? d * 0.79 : d;
+    g.box(x - 0.065, x + 0.065, reach - 0.18, reach - 0.05, 0.02, h - 0.26, oak);
+    const inner = Math.max((g.doorWidth ?? 0.96) / 2 + 0.04, w - 0.83);
     if (inner >= w - 0.08) continue;
     const lo = s === 1 ? inner : -w + 0.035,
       hi = s === 1 ? w - 0.035 : -inner;

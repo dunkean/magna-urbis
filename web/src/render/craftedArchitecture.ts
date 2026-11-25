@@ -10,7 +10,7 @@ type Quad = (a: BuildingVector, b: BuildingVector, c: BuildingVector, d: Buildin
 const finish = (name: string, hex: string) => 'city3d:detail:' + name + '@' + hex;
 
 /** Frames follow the four corners of the existing opening, including the lean on a battered wall. */
-function joinery(points: Vertex3[], outward: number, culture: string, volume: OverviewVolume, quad: Quad, entry = false, hoodRoom = 0): void {
+function joinery(points: Vertex3[], outward: number, culture: string, volume: OverviewVolume, quad: Quad, entry = false, hoodRoom = 0, porch?: Vertex3): void {
   const [a, b, c, d] = points,
     w = Math.hypot(b.x - a.x, b.y - a.y),
     h = d.z - a.z;
@@ -70,7 +70,8 @@ function joinery(points: Vertex3[], outward: number, culture: string, volume: Ov
     const leaf = finish('door', industrial ? '546369' : lattice ? '7b4c38' : '70543f');
     bar(0.045, w - 0.045, 0.025, h * 0.83, leaf);
     bar(0.065, w - 0.065, h * 0.83 + 0.015, h * 0.83 + 0.06, pane);
-    if (industrial) {
+    const underPorch = porch && Math.hypot((a.x + b.x) / 2 - porch.x, (a.y + b.y) / 2 - porch.y, a.z - porch.z) < .19;
+    if (industrial && !underPorch) {
       // A folded sheet canopy on two diagonal brackets over the street door.
       const far = 0.56,
         high = h + trim * 2.6;
@@ -212,7 +213,7 @@ function roofEdges(volume: OverviewVolume, culture: string, quad: Quad): void {
 }
 
 /** These fittings belong to the close mesh and share its draw call and material lighting. */
-export function craftedArchitecture(volume: OverviewVolume, culture: string, emit: (face: BuildingTriangle) => void, hasRoofRoom = false): void {
+export function craftedArchitecture(volume: OverviewVolume, culture: string, emit: (face: BuildingTriangle) => void, hasRoofRoom = false, porch?: Vertex3): void {
   const mesh = volume.roof_mesh,
     ring = volume.footprint[0]?.outer;
   if (!mesh || !ring?.length) return;
@@ -262,6 +263,7 @@ export function craftedArchitecture(volume: OverviewVolume, culture: string, emi
         winding < 0 ? (a, b, c, d, m) => quad(b, a, d, c, m) : quad,
         !!(face as { entrance?: true }).entrance,
         selected.get(face),
+        porch,
       );
   }
   roofEdges(volume, culture, quad);

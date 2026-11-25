@@ -1,4 +1,5 @@
 import type { HouseFront } from './houseFrontKit';
+import { historicPorchFamily } from './houseHistoricVariants';
 
 type Point = [number, number, number];
 type Profile = [number, number][];
@@ -480,7 +481,7 @@ function indus(g: HouseFront) {
   for (let i = 0; i < 3; i++) b.box(-l + .008, l - .008, i * .195, (i + 1) * .195, 0, (3 - i) * .035, fired);
 }
 
-export const historicFronts: Record<string, (g: HouseFront) => void> = {
+const regionalFronts: Record<string, (g: HouseFront) => void> = {
   medina, 'roman-core': roman, 'byzantine-greek': byzantine, 'venetian-lagoon': venetian,
   persian, ottoman, sahel, kraal, 'swahili-stone-town': swahili, 'egyptian-planned': egyptian,
   'nubian-fortified': nubian, mesopotamian, 'levantine-tell': levantine, 'oasis-caravan': oasis,
@@ -488,3 +489,7 @@ export const historicFronts: Record<string, (g: HouseFront) => void> = {
   'caucasian-highland': caucasian, 'ethiopian-highland': ethiopian, 'great-zimbabwe': zimbabwe,
   'hausa-kano': hausa, 'hadhrami-tower': hadhrami, 'indus-planned': indus,
 };
+
+export const historicFronts: Record<string, (g: HouseFront) => void> = Object.fromEntries(
+  Object.entries(regionalFronts).map(([id, draw]) => [id, historicPorchFamily(id, draw)]),
+);

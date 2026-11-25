@@ -4,6 +4,7 @@
 - Use Download app in the top bar to open the desktop releases. The Links dialog groups the atlas, project links and build information.
 - Real-place imports request leaner OpenStreetMap data, distinguish server wait from download progress, and suggest a smaller square for large search results.
 - Import streets without OpenStreetMap building footprints and let Magna Urbis generate parcels and buildings along the surveyed streets in the selected culture.
+- Detailed architecture varies porch roofs, supports and entrance layouts from house to house within each culture. The same generated home keeps its porch when revisited.
 - Detailed architecture adds culture-specific entrances and silhouettes across the full catalogue, with regional verandas, snow passages, cliff-like giant portals, Drow silk canopies and Duergar forge vents.
 - In Detailed architecture, mage districts feature fewer tall towers, futuristic houses gain distinct roof structures, and mushroom settlements and underground farms grow layered caps and cultivated beds.
 - Detailed porches, landings and surrounds fit the generated openings, including off-centre doors, raised thresholds and Venetian and Byzantine windows.

@@ -75,6 +75,25 @@ function gable(g: HouseFront, w: number, d: number, ridge: number, eave: number,
   );
 }
 
+// The short ridge closes in a triangular hip towards the street.
+function hip(g: HouseFront, w: number, d: number, ridge: number, eave: number, cover: string, edge = wood): void {
+  const peak: P = [0, d * 0.47, ridge];
+  const back: P = [0, 0, ridge];
+  const left: P = [-w, d, eave],
+    right: P = [w, d, eave];
+  pan(g, [[-w, 0, eave], back, peak, left], 0.085, cover, edge);
+  pan(g, [back, [w, 0, eave], right, peak], 0.085, cover, edge);
+  pan(g, [peak, right, left], 0.085, cover, edge);
+}
+
+/** Plank or mat partition along the side of a porch, held between a sill and top rail. */
+function sideScreen(g: HouseFront, x: number, d: number, z: number, top: number, panel: string, frame = wood): void {
+  const t = Math.min(0.06, Math.abs(x) * 0.045);
+  g.box(x - t, x + t, 0, d, z, z + t, frame);
+  g.box(x - t * 0.65, x + t * 0.65, 0, d, z + t, top - t, panel);
+  g.box(x - t, x + t, 0, d, top - t, top, frame);
+}
+
 function uprights(g: HouseFront, x: number, y: number, base: number, top: number, size: number, mat: string): void {
   for (const sign of [-1, 1]) g.box(sign * x - size / 2, sign * x + size / 2, y - size / 2, y + size / 2, base, top, mat);
 }
@@ -114,6 +133,24 @@ function chinese(g: HouseFront): void {
     d = Math.min(g.depth, 1.35),
     h = high(g, 2.85);
   // Shallow sweep at the eave, changing to a steeper tile pitch against the wall.
+  const variant = g.seed % 3;
+  if (variant) {
+    const r = Math.min(0.1, w * 0.055);
+    if (variant === 1) {
+      hip(g, w, d, h, h * 0.8, indigoTile, darkWood);
+      for (const x of [-w * 0.85, w * 0.85]) {
+        g.post(x, d * 0.72, 0, 0.14, r * 1.45, stone, 6);
+        g.post(x, d * 0.72, 0.14, h * 0.805, r, red, 6);
+      }
+    } else {
+      gable(g, w, d, h, h * 0.78, indigoTile, darkWood);
+      for (const x of [-w * 0.82, w * 0.82]) {
+        g.box(x - r, x + r, 0, d * 0.8, h * 0.77, h * 0.8, wood);
+        g.beam([x, 0.09, h * 0.52], [x, d * 0.76, h * 0.79], r * 1.6, red);
+      }
+    }
+    return;
+  }
   const corner = w * 0.7;
   for (const [l, r] of [
     [-w, -corner],
@@ -166,6 +203,25 @@ function japanese(g: HouseFront): void {
   for (const sign of [-1, 1]) {
     const l = (sign < 0 ? -0.96 : 0.44) * w,
       r = (sign < 0 ? -0.44 : 0.96) * w;
+    const variant = g.seed % 3;
+    if (variant === 1) {
+      // Bent bamboo sweeps away from the plaster at the base of the machiya.
+      const rafter = Math.min(0.045, (r - l) * 0.07);
+      for (let k = 0; k < 4; k++) {
+        const x = l + ((r - l) * (k + 0.5)) / 4;
+        g.beam([x, d * 0.8, 0.055], [x, d * 0.64, h * 0.22], rafter, cane);
+        g.beam([x, d * 0.64, h * 0.22], [x, 0.04, h * 0.4], rafter, cane);
+      }
+      g.box(l, r, d * 0.6, d * 0.67, h * 0.2, h * 0.23, darkWood);
+      continue;
+    }
+    if (variant === 2) {
+      // Hinged shopfront bench, on two wooden legs.
+      g.box(l, r, 0, d * 0.83, h * 0.22, h * 0.25, cedar);
+      for (const x of [l + (r - l) * 0.12, r - (r - l) * 0.12]) g.box(x - 0.025, x + 0.025, d * 0.69, d * 0.77, 0, h * 0.22, wood);
+      g.box(l, r, 0, d * 0.12, h * 0.26, h * 0.65, wood);
+      continue;
+    }
     const out = d * 0.33,
       count = Math.min(6, Math.max(3, Math.floor((r - l) / 0.16)));
     g.box(l, r, 0, out, 0.1, h * 0.23, wood);
@@ -183,7 +239,13 @@ function korean(g: HouseFront): void {
     d = Math.min(g.depth, 1.5),
     h = high(g, 2.65);
   const z = landing(g, w * 0.93, d * 0.68, cedar);
-  shed(g, w, d * 0.88, h, h * 0.83, indigoTile);
+  const variant = g.seed % 3;
+  if (variant === 1) hip(g, w, d * 0.88, h, h * 0.84, indigoTile);
+  else shed(g, w, d * 0.88, h, h * 0.83, indigoTile);
+  if (variant === 2) {
+    sideScreen(g, w * 0.82, d * 0.62, z, h * 0.76, wood, darkWood);
+    sideScreen(g, -w * 0.82, d * 0.39, z, h * 0.33, cedar);
+  }
   for (const x of [-w * 0.78, w * 0.78]) {
     const r = Math.min(0.115, w * 0.08);
     g.post(x, d * 0.58, z, z + 0.16, r * 1.4, stone, 6);
@@ -214,12 +276,18 @@ function khmer(g: HouseFront): void {
   const clear = Math.min(h - 0.12, (g.doorHeight ?? 1.85) + 0.04);
   // The rakes above both jambs must clear the full width of the opening, even on a narrow landing.
   const eave = Math.max(h * 0.7, h - (w * (h - clear - 0.095)) / doorway);
-  gable(g, w, d * 0.62, h, eave, g.cover, cane);
+  const variant = g.seed % 3;
+  const shedEave = Math.max(eave, Math.min(h - 0.012, clear + 0.09));
+  if (variant === 0) gable(g, w, d * 0.62, h, eave, g.cover, cane);
+  if (variant === 1) shed(g, w, d * 0.62, h, shedEave, g.cover, cane);
+  if (variant === 2) hip(g, w, d * 0.62, h, shedEave, g.cover, cane);
   const timber = Math.min(0.14, w * 0.1);
   const support = Math.min(w - timber / 2, Math.max(w * 0.81, doorway + timber / 2));
-  uprights(g, support, d * 0.41, z, h + ((eave - h) * support) / w - 0.095, timber, wood);
+  const supportTop = variant === 0 ? h + ((eave - h) * support) / w - 0.095 : variant === 1 ? h + ((shedEave - h) * 0.41) / 0.62 - 0.075 : h + (shedEave - h) * Math.max(support / w, (0.41 / 0.62 - 0.47) / 0.53) - 0.085;
+  uprights(g, support, d * 0.41, z, supportTop, timber, wood);
   // A light woven knee wall encloses one side of the stair landing.
   const x = support * (g.seed & 1 ? 1 : -1);
+  if (variant === 2) sideScreen(g, -x, d * 0.4, z, z + h * 0.55, cane);
   g.box(x - 0.035, x + 0.035, 0, d * 0.41, z + 0.06, z + h * 0.28, cane);
   g.beam([x, 0.05, z + h * 0.29], [x, d * 0.43, z + h * 0.29], 0.085, wood);
 }
@@ -239,6 +307,18 @@ function himalayan(g: HouseFront): void {
     const x = left * w * 0.76;
     g.box(x - w * 0.19, x + w * 0.19, d * (0.74 + 0.08 * i), d * (0.82 + 0.08 * i), 0, h * (0.48 - 0.16 * i), stone);
   }
+  if (g.seed % 3 === 1) {
+    // An uncovered terrace holds a low parapet at the two outer edges.
+    for (const side of [-1, 1]) sideScreen(g, side * w * 0.89, d * 0.73, h * 0.65, h * 0.82, stone, stone);
+    return;
+  }
+  if (g.seed % 3 === 2) {
+    // One roofed work bay adjoins the open stone terrace.
+    const x = -left * w * 0.76;
+    g.box(x - w * 0.23, x + w * 0.23, 0, d * 0.76, h * 0.88, h * 0.95, ochre);
+    for (const k of [-1, 1]) g.post(x + k * w * 0.14, d * 0.6, h * 0.65, h * 0.88, Math.min(0.065, w * 0.04), darkWood, 5);
+    return;
+  }
   uprights(g, w * 0.75, d * 0.55, h * 0.65, h * 0.88, Math.min(0.2, w * 0.12), darkWood);
   g.box(-w, w, 0, d * 0.7, h * 0.88, h * 0.95, ochre);
   for (const f of [-0.81, -0.42, 0, 0.42, 0.81]) g.box((f - 0.03) * w, (f + 0.03) * w, 0, d * 0.79, h * 0.845, h * 0.9, darkWood);
@@ -249,6 +329,23 @@ function newar(g: HouseFront): void {
     d = Math.min(g.depth, 0.9),
     h = high(g, 3.65);
   // Cantilevered timber window, widening out from a narrow, bracketed sill.
+  const variant = g.seed % 3;
+  if (variant) {
+    shed(g, w, d, h, h * 0.9, g.cover, darkWood);
+    for (const s of [-1, 1]) {
+      const x = s * w * 0.76;
+      g.beam([x, 0.09, h * 0.52], [x, d * 0.78, h * 0.9], Math.min(0.14, w * 0.095), darkWood);
+    }
+    if (variant === 1) return;
+    // An open timber balcony replaces the enclosed projecting lattice bay.
+    g.box(-w * 0.89, w * 0.89, 0, d * 0.82, h * 0.71, h * 0.75, wood);
+    for (const f of [-0.81, -0.46, 0, 0.46, 0.81]) {
+      const x = w * f;
+      g.box(x - 0.03, x + 0.03, d * 0.69, d * 0.78, h * 0.75, h * 0.89, wood);
+    }
+    g.box(-w * 0.88, w * 0.88, d * 0.68, d * 0.8, h * 0.87, h * 0.9, darkWood);
+    return;
+  }
   const y = d * 0.82,
     foot = h * 0.66;
   const back = w * 0.61,
@@ -295,37 +392,42 @@ function javanese(g: HouseFront): void {
   const shoulder = w * 0.73,
     ridge = h * 0.99,
     eave = h * 0.77;
-  pan(
-    g,
-    [
-      [-shoulder, 0, ridge],
-      [shoulder, 0, ridge],
-      [w, d, eave],
-      [-w, d, eave],
-    ],
-    0.08,
-    g.cover,
-  );
-  pan(
-    g,
-    [
-      [shoulder, 0, ridge],
-      [w, 0, eave],
-      [w, d, eave],
-    ],
-    0.08,
-    g.cover,
-  );
-  pan(
-    g,
-    [
-      [-w, 0, eave],
-      [-shoulder, 0, ridge],
-      [-w, d, eave],
-    ],
-    0.08,
-    g.cover,
-  );
+  const variant = g.seed % 3;
+  if (variant === 1) gable(g, w, d, ridge, eave, g.cover);
+  else if (variant === 2) shed(g, w, d, ridge, eave, g.cover);
+  else {
+    pan(
+      g,
+      [
+        [-shoulder, 0, ridge],
+        [shoulder, 0, ridge],
+        [w, d, eave],
+        [-w, d, eave],
+      ],
+      0.08,
+      g.cover,
+    );
+    pan(
+      g,
+      [
+        [shoulder, 0, ridge],
+        [w, 0, eave],
+        [w, d, eave],
+      ],
+      0.08,
+      g.cover,
+    );
+    pan(
+      g,
+      [
+        [-w, 0, eave],
+        [-shoulder, 0, ridge],
+        [-w, d, eave],
+      ],
+      0.08,
+      g.cover,
+    );
+  }
   const z = landing(g, w * 0.9, d * 0.69, stone);
   const r = Math.min(0.13, w * 0.08);
   for (const x of [-w * 0.77, w * 0.77]) {
@@ -340,6 +442,18 @@ function bagan(g: HouseFront): void {
     d = Math.min(g.depth, 1.65),
     h = high(g, 2.85);
   const z = landing(g, w * 0.88, d * 0.65, cedar);
+  const variant = g.seed % 3;
+  if (variant) {
+    if (variant === 1) {
+      shed(g, w, d * 0.84, h, h * 0.79, g.cover);
+      sideScreen(g, w * 0.82, d * 0.62, z, h * 0.63, cane);
+    } else {
+      hip(g, w, d * 0.84, h, h * 0.77, g.cover);
+      for (const side of [-1, 1]) sideScreen(g, side * w * 0.8, d * 0.62, z, h * 0.32, cane, darkWood);
+    }
+    uprights(g, w * 0.8, d * 0.57, z, variant === 1 ? h * 0.857 - 0.07 : h * 0.816 - 0.08, Math.min(w * 0.11, 0.15), darkWood);
+    return;
+  }
   gable(g, w, d * 0.84, h, h * 0.7, g.cover);
   uprights(g, w * 0.8, d * 0.57, z, h * 0.75, Math.min(w * 0.11, 0.15), darkWood);
   const y = d * 0.77;
@@ -362,12 +476,22 @@ function vietnamese(g: HouseFront): void {
   const w = halfSpan(g, 3.2),
     d = Math.min(g.depth, 1.35),
     h = high(g, 2.72);
-  shed(g, w, d, h, h * 0.79, g.cover, darkWood);
+  const variant = g.seed % 3;
+  if (variant === 1) hip(g, w, d, h, h * 0.79, g.cover, darkWood);
+  else shed(g, w, d, h, h * 0.79, g.cover, darkWood);
+  if (variant === 2) {
+    for (const s of [-1, 1]) {
+      const x = s * w * 0.85;
+      g.beam([x, 0.09, h * 0.48], [x, d * 0.72, h * 0.83], Math.min(0.15, w * 0.1), wood);
+      sideScreen(g, x, d * 0.55, 0.17, h * 0.5, wood, darkWood);
+    }
+  }
   const step = Math.min(0.2, h * 0.09);
   g.box(-w * 0.94, w * 0.94, 0, d * 0.95, 0, step * 0.52, 'city3d:wall:brick@ad7357');
   g.box(-w * 0.94, w * 0.94, 0, d * 0.78, step * 0.52, step, 'city3d:wall:brick@a2654b');
   const radius = Math.min(0.09, w * 0.045);
-  for (const f of [-0.85, -0.42, 0.42, 0.85]) {
+  const columns = variant === 2 ? [] : variant === 1 ? [-0.85, 0.85] : [-0.85, -0.42, 0.42, 0.85];
+  for (const f of columns) {
     const x = w * f;
     g.post(x, d * 0.7, step, step + 0.12, radius * 1.4, stone, 5);
     g.post(x, d * 0.7, step + 0.12, h * 0.84, radius, darkWood, 6);
@@ -382,6 +506,25 @@ function tibetan(g: HouseFront): void {
   const jamb = w * 0.64,
     size = Math.min(0.19, w * 0.14);
   // Limewashed outer returns and a deep, stepped timber head painted in bands.
+  if (g.seed % 3 === 1) {
+    // Corbelled flat awning leaves the two sides open.
+    for (const s of [-1, 1]) {
+      const x = s * w * 0.8;
+      g.box(x - size, x + size, 0, d * 0.58, h * 0.61, h * 0.73, darkWood);
+      g.box(x - size, x + size, 0, d * 0.85, h * 0.73, h * 0.84, wood);
+    }
+    g.box(-w, w, 0, d, h * 0.84, h * 0.94, stone);
+    return;
+  }
+  if (g.seed % 3 === 2) {
+    for (const s of [-1, 1]) {
+      const x = s * w * 0.76;
+      g.box(x - size, x + size, 0, d * 0.92, 0, h * 0.42, lime);
+      g.box(x - size, x + size, 0, d * 0.59, h * 0.42, h * 0.77, lime);
+    }
+    g.box(-w * 0.92, w * 0.92, 0, d * 0.59, h * 0.77, h * 0.89, darkWood);
+    return;
+  }
   uprights(g, jamb * 1.16, d * 0.32, 0, h * 0.84, size * 1.65, lime);
   uprights(g, jamb, d * 0.55, 0, h * 0.81, size, darkWood);
   g.box(-w * 0.81, w * 0.81, 0, d * 0.72, h * 0.78, h * 0.86, darkWood);
@@ -393,6 +536,16 @@ function tibetan(g: HouseFront): void {
   }
 }
 
+/** Folded cloth tapers to a tie at the front of the side flap. */
+function tiedFlap(g: HouseFront, side: number, w: number, d: number, h: number, cloth: string): void {
+  const p = (x: number, y: number, z: number): P => [side * x * w, y * d, z * h];
+  const top = [p(0.62, 0.07, 0.91), p(0.96, 0.08, 0.92), p(0.9, 0.68, 0.5), p(0.79, 0.69, 0.49)];
+  const lower = [p(0.79, 0.69, 0.49), p(0.9, 0.68, 0.5), p(0.98, 0.48, 0.085), p(0.75, 0.82, 0.05)];
+  g.face(side > 0 ? top : top.reverse(), cloth);
+  g.face(side > 0 ? lower : lower.reverse(), cloth);
+  g.beam(p(0.82, 0.67, 0.49), p(0.96, 0.31, 0.46), Math.min(0.055, w * 0.055), wood);
+}
+
 function mongol(g: HouseFront): void {
   const w = halfSpan(g, 0.84),
     d = Math.min(g.depth, 0.34),
@@ -402,6 +555,26 @@ function mongol(g: HouseFront): void {
   uprights(g, w * 0.76, d * 0.55, 0, h * 0.9, w * 0.18, painted);
   g.box(-w, w, 0, d * 0.9, h * 0.88, h * 0.99, painted);
   g.box(-w * 0.85, w * 0.85, 0, d, 0, 0.07, wood);
+  if (g.seed % 3 === 1) {
+    // Felt folded over the head on a pole, with the thickness of its roll visible at each end.
+    const r = Math.min(0.115, w * 0.12, h * 0.08),
+      y = d * 0.6,
+      z = h * 0.91;
+    const ring = (x: number): P[] => Array.from({ length: 8 }, (_, i) => [x, y + r * Math.cos((i * Math.PI) / 4), z + r * Math.sin((i * Math.PI) / 4)]);
+    const a = ring(-w * 0.91),
+      b = ring(w * 0.91);
+    for (let i = 0; i < 8; i++) {
+      const j = (i + 1) % 8;
+      g.face([a[i], a[j], b[j], b[i]], felt);
+    }
+    g.face([...a].reverse(), felt);
+    g.face(b, felt);
+    return;
+  }
+  if (g.seed % 3 === 2) {
+    for (const side of [-1, 1]) tiedFlap(g, side, w, d, h, felt);
+    return;
+  }
   // The ger's existing door leaf sits inside this painted timber frame.
   for (const s of [-1, 1]) {
     const x = s * w * 0.76;
@@ -427,6 +600,30 @@ function nomad(g: HouseFront): void {
     d = Math.min(g.depth, 0.73),
     h = high(g, 1.75);
   // The felt door hanging is drawn to one side and tied; the thick rolled head shades the entrance.
+  const variant = g.seed % 3;
+  if (variant === 1) {
+    // Felt shade stretched on two outside poles.
+    const eave = h * 0.83;
+    pan(
+      g,
+      [
+        [-w * 0.76, 0, h],
+        [w * 0.76, 0, h],
+        [w * 0.93, d * 0.88, eave],
+        [-w * 0.93, d * 0.88, eave],
+      ],
+      0.038,
+      felt,
+      hide,
+    );
+    for (const x of [-w * 0.88, w * 0.88]) g.post(x, d * 0.83, 0, eave, Math.min(0.045, w * 0.05), wood, 5);
+    return;
+  }
+  if (variant === 2) {
+    for (const side of [-1, 1]) tiedFlap(g, side, w, d, h, felt);
+    g.beam([-w * 0.9, 0.04, h * 0.9], [w * 0.9, 0.04, h * 0.9], 0.065, wood);
+    return;
+  }
   const sign = g.seed & 1 ? -1 : 1;
   const flap: P[] = [
     [sign * w * 0.87, 0.035, h * 0.93],
@@ -453,14 +650,17 @@ function stiltTown(g: HouseFront): void {
   const radius = Math.min(0.07, w * 0.055);
   const eave = Math.min(h - 0.045, Math.max(h * 0.78, (g.doorHeight ?? 1.85) + 0.11));
   const support = Math.min(w * 0.92, Math.max(w * 0.77, (g.doorWidth ?? 0.95) / 2 + radius + 0.035));
-  const soffit = (y: number) => h + ((eave - h) * y) / (d * 0.66) - 0.075;
+  const variant = g.seed % 3;
+  const soffit = (y: number) => (variant === 1 ? h + ((eave - h) * support) / w - 0.095 : h + ((eave - h) * y) / (d * 0.66) - 0.075);
   for (const x of [-support, support]) {
-    g.post(x, d * 0.46, -g.floor, soffit(d * 0.46), radius, cane, 5);
+    g.post(x, d * 0.46, -g.floor, variant === 2 ? z + 0.8 : soffit(d * 0.46), radius, cane, 5);
     g.beam([x, 0.04, z + 0.73], [x, d * 0.46, z + 0.73], radius * 1.45, cane);
     g.beam([x, 0.06, z + 0.33], [x, d * 0.46, z + 0.33], radius, cane);
-    g.beam([x, d * 0.46, soffit(d * 0.46) - 0.28], [x, d * 0.25, soffit(d * 0.25)], radius * 1.5, wood);
+    if (variant === 2) sideScreen(g, x, d * 0.43, z + 0.1, z + 0.62, cane, cane);
+    else g.beam([x, d * 0.46, soffit(d * 0.46) - 0.28], [x, d * 0.25, soffit(d * 0.25)], radius * 1.5, wood);
   }
-  shed(g, w, d * 0.66, h, eave, palm, cane);
+  if (variant === 0) shed(g, w, d * 0.66, h, eave, palm, cane);
+  if (variant === 1) gable(g, w, d * 0.66, h, eave, palm, cane);
 }
 
 function aztec(g: HouseFront): void {
@@ -472,6 +672,21 @@ function aztec(g: HouseFront): void {
   g.box(-w, w, 0, d * 0.68, 0, step, basalt);
   g.box(-w * 0.96, w * 0.96, 0, d * 0.64, step, step * 1.35, lime);
   g.box(-w * 0.44, w * 0.44, d * 0.68, d, 0, step * 0.62, stone);
+  if (g.seed % 3 === 1) {
+    // Low plastered cheeks return into the patio and leave a gap opposite the entrance.
+    for (const side of [-1, 1]) {
+      const x = side * w * 0.81;
+      g.box(x - w * 0.07, x + w * 0.07, 0, d * 0.6, step * 1.35, h * 0.39, ochre);
+      g.box(x - w * 0.19, x + w * 0.07, d * 0.51, d * 0.62, step * 1.35, h * 0.39, ochre);
+      g.box(x - w * 0.08, x + w * 0.08, 0, d * 0.63, h * 0.39, h * 0.42, lime);
+    }
+    return;
+  }
+  if (g.seed % 3 === 2) {
+    shed(g, w, d * 0.71, h, h * 0.82, palm, cane);
+    uprights(g, w * 0.78, d * 0.56, step * 1.35, h * 0.845, Math.min(0.13, w * 0.09), wood);
+    return;
+  }
   const seatX = (g.seed & 1 ? -1 : 1) * 0.73 * w;
   g.box(seatX - w * 0.18, seatX + w * 0.18, 0, d * 0.62, step * 1.35, h * 0.27, ochre);
   g.box(seatX - w * 0.2, seatX + w * 0.2, 0, d * 0.65, h * 0.27, h * 0.3, lime);
@@ -500,6 +715,30 @@ function inca(g: HouseFront): void {
   // Each jamb converges toward the lintel. The horizontal joints break at different heights.
   const inner = Math.min(0.73, w * 0.58),
     outer = w * 0.93;
+  const variant = g.seed % 3;
+  if (variant === 1) {
+    // A second, shallower trapezoid behind the doorway makes its reveal visible from the street.
+    for (const side of [-1, 1]) {
+      const a = side * w * 0.71,
+        b = side * w * 0.99;
+      const profile: [number, number][] = [
+        [a, 0],
+        [b, 0],
+        [b * 0.9, h * 0.94],
+        [a * 0.88, h * 0.94],
+      ];
+      masonry(g, side < 0 ? profile.reverse() : profile, 0, d * 0.33, stone);
+    }
+    g.box(-w * 0.91, w * 0.91, 0, d * 0.33, h * 0.94, h, stone);
+  }
+  if (variant === 2) {
+    // Two battered wing walls step down towards the outer approach.
+    for (const side of [-1, 1]) {
+      const x = side * w * 0.8;
+      g.box(x - w * 0.11, x + w * 0.11, d * 0.39, d * 0.94, 0, h * 0.29, g.wall);
+      g.box(x - w * 0.1, x + w * 0.1, d * 0.39, d * 0.7, h * 0.29, h * 0.49, stone);
+    }
+  }
   const shades = [g.wall, stone, 'city3d:wall:stone@a39986'];
   for (const side of [-1, 1]) {
     const levels = side > 0 ? [0, 0.26, 0.56, 0.85] : [0, 0.32, 0.61, 0.85];
@@ -508,7 +747,7 @@ function inca(g: HouseFront): void {
       const a = levels[i],
         b = levels[i + 1] - 0.005;
       const shape = [point(inner, a), point(outer, a), point(outer, b), point(inner, b)];
-      masonry(g, side < 0 ? shape.reverse() : shape, 0, d * (0.92 - 0.045 * i), shades[(i + (side + 1) / 2) % 3]);
+      masonry(g, side < 0 ? shape.reverse() : shape, 0, d * (variant === 2 ? 0.45 : 0.92 - 0.045 * i), shades[(i + (side + 1) / 2) % 3]);
     }
   }
   masonry(
@@ -546,6 +785,32 @@ function maya(g: HouseFront): void {
     lime,
     stone,
   );
+  const variant = g.seed % 3;
+  if (variant) {
+    if (variant === 1) {
+      gable(g, w, d * 0.83, h, h * 0.72, palm, cane);
+      uprights(g, w * 0.84, d * 0.63, 0.17, h * 0.765 - 0.09, 0.11, wood);
+    } else {
+      // One roofed end of the apron leaves an open work area beside the doorway.
+      const x = w * 0.75;
+      pan(
+        g,
+        [
+          [w * 0.4, 0, h * 0.95],
+          [w, 0, h * 0.95],
+          [w * 0.92, d * 0.63, h * 0.66],
+          [w * 0.43, d * 0.82, h * 0.66],
+        ],
+        0.12,
+        palm,
+        cane,
+      );
+      g.post(x, d * 0.67, 0.17, h * 0.67, Math.min(0.08, w * 0.07), wood, 5);
+      sideScreen(g, w * 0.87, d * 0.5, 0.17, h * 0.52, cane);
+    }
+    g.box(-w * 0.33, w * 0.33, d * 0.8, d, 0, 0.085, stone);
+    return;
+  }
   const front: P[] = plan.slice(2).map(([x, y]) => [x, y * 1.22, h * 0.72]);
   const rear: P[] = front.map(([x]) => [x * 0.86, 0, h]);
   for (let i = 0; i < front.length - 1; i++) pan(g, [rear[i + 1], rear[i], front[i], front[i + 1]], 0.13, palm, cane);
@@ -564,6 +829,18 @@ function iroquoian(g: HouseFront): void {
     g.post(x, d * 0.87, 0, h * 0.94 - 0.06, r, wood, 5);
     g.beam([x, 0.05, h - 0.11], [x, d * 0.93, h * 0.94 - 0.09], r * 1.7, cedar);
   }
+  const variant = g.seed % 3;
+  if (variant === 1) {
+    for (const side of [-1, 1]) sideScreen(g, w * 0.82 * side, d * 0.87, 0, h * 0.92, bark, cedar);
+    return;
+  }
+  if (variant === 2) {
+    // Bark panels stop at a sheltered storage rack with three rails.
+    const x = -w * 0.81;
+    for (const z of [0.16, 0.42, 0.69]) g.box(x - w * 0.12, x + w * 0.12, 0, d * 0.7, h * z, h * (z + 0.04), cedar);
+    sideScreen(g, x - w * 0.11, d * 0.72, 0, h * 0.75, bark);
+    return;
+  }
   const x = w * (g.seed & 1 ? 0.82 : -0.82);
   for (let i = 0; i < 3; i++) g.box(x - r * 0.3, x + r * 0.3, d * 0.29 * i, d * (0.29 * i + 0.28), 0.03, h * 0.86, bark);
   for (const z of [0.25, 0.7]) g.beam([x * 1.035, 0.04, h * z], [x * 1.035, d * 0.9, h * z], r * 0.8, cedar);
@@ -577,6 +854,21 @@ function pueblo(g: HouseFront): void {
     x = side * w * 0.7,
     rw = Math.min(w * 0.21, 0.45);
   // A smaller stepped volume supports an accessible flat work terrace and its pole ladder.
+  if (g.seed % 3 === 1) {
+    // An open ramada of poles and brush.
+    shed(g, w, d * 0.9, h * 0.83, h * 0.8, cane, wood);
+    uprights(g, w * 0.83, d * 0.75, 0, h * 0.8, Math.min(0.14, w * 0.1), wood);
+    for (const k of [-0.8, -0.4, 0, 0.4, 0.8]) g.box((k - 0.03) * w, (k + 0.03) * w, 0, d * 0.96, h * 0.77, h * 0.81, wood);
+    return;
+  }
+  if (g.seed % 3 === 2) {
+    // A terraced work ledge with a staircase cut into its outer end.
+    for (let i = 0; i < 4; i++) {
+      g.box(x - rw, x + rw, 0, d * (0.95 - 0.19 * i), h * 0.12 * i, h * 0.12 * (i + 1), g.wall);
+    }
+    g.box(-x - rw, -x + rw, 0, d * 0.66, 0, h * 0.23, ochre);
+    return;
+  }
   const level = h * 0.66;
   g.box(x - rw, x + rw, 0, d * 0.47, 0, level, g.wall);
   g.box(x - rw * 1.06, x + rw * 1.06, 0, d * 0.49, level, level + 0.045, ochre);
@@ -594,6 +886,30 @@ function plains(g: HouseFront): void {
   const w = halfSpan(g, 1.22),
     d = Math.min(g.depth, 0.88),
     h = high(g, 1.72);
+  if (g.seed % 3 === 1) {
+    // Hide flap opened upward and held out on sticks.
+    pan(
+      g,
+      [
+        [-w * 0.46, 0, h * 0.88],
+        [w * 0.46, 0, h * 0.88],
+        [w * 0.73, d * 0.8, h * 0.66],
+        [-w * 0.73, d * 0.8, h * 0.66],
+      ],
+      0.025,
+      hide,
+      hide,
+    );
+    for (const side of [-1, 1]) g.beam([side * w * 0.85, d * 0.83, 0.035], [side * w * 0.68, d * 0.76, h * 0.67], 0.045, wood);
+    return;
+  }
+  if (g.seed % 3 === 2) {
+    for (const side of [-1, 1]) {
+      tiedFlap(g, side, w, d, h, hide);
+      g.beam([side * w * 0.87, d * 0.55, 0.035], [side * w * 0.2, 0.035, h * 0.96], 0.045, wood);
+    }
+    return;
+  }
   // The hide edges lean back towards the laced apex. The folded door flap hangs to one side.
   for (const sign of [-1, 1]) {
     const run: P[] = [
@@ -629,6 +945,21 @@ function mississippian(g: HouseFront): void {
     d = Math.min(g.depth, 1.12),
     h = high(g, 2.38);
   // A rectangular, earth-plastered wall bay exposes a short panel of basket-like cane and its uprights.
+  const variant = g.seed % 3;
+  if (variant) {
+    if (variant === 1) {
+      gable(g, w, d, h, h * 0.73, g.cover, cane);
+      uprights(g, w * 0.82, d * 0.8, 0, h * 0.778 - 0.09, 0.13, wood);
+    } else {
+      hip(g, w, d, h, h * 0.76, g.cover, cane);
+      for (const s of [-1, 1]) {
+        const x = s * w * 0.8;
+        sideScreen(g, x, d * 0.75, 0, h * 0.49, ochre, cane);
+        g.post(x, d * 0.75, h * 0.49, h * 0.79, Math.min(0.075, w * 0.07), wood, 5);
+      }
+    }
+    return;
+  }
   const x = (g.seed & 1 ? 1 : -1) * w * 0.76,
     half = w * 0.18;
   g.box(x - half, x + half, 0, d * 0.52, 0, h * 0.42, ochre);
@@ -653,7 +984,16 @@ function maori(g: HouseFront): void {
   const thickness = Math.min(0.19, w * 0.085);
   for (const sign of [-1, 1]) {
     const x = sign * (w - thickness * 0.6);
-    g.box(x - thickness / 2, x + thickness / 2, 0, d * 0.88, 0, eave, g.wall);
+    // The porch can have full returns, one open side, or two open bays with low plank screens.
+    // Keep the whole assembly in the original side-wall strip so an off-centre native door stays clear.
+    const variant = g.seed % 3;
+    const length = variant === 0 || (variant === 1 && sign < 0) ? 0.88 : variant === 1 ? 0.18 : 0.3;
+    g.box(x - thickness / 2, x + thickness / 2, 0, d * length, 0, eave, g.wall);
+    if (variant === 2) {
+      g.box(x - thickness / 2, x + thickness / 2, d * length, d * 0.83, 0, eave * 0.32, cedar);
+      g.box(x - thickness / 2, x + thickness / 2, d * length, d * 0.84, eave * 0.32, eave * 0.36, wood);
+    }
+    if (length < 0.88) g.box(x - thickness / 2, x + thickness / 2, d * length, d * 0.88, eave * 0.91, eave * 0.99, darkWood);
     g.box(x - thickness * 0.59, x + thickness * 0.59, d * 0.81, d * 0.91, 0, eave, cedar);
     const trim = Math.min(w * 0.09, h * 0.065, 0.18);
     g.beam([0, d * 0.9, h - trim * 0.7], [sign * (w - trim), d * 0.9, eave - trim * 0.55], trim, wood);
@@ -673,6 +1013,23 @@ function northwest(g: HouseFront): void {
   const w = halfSpan(g, 2.55),
     d = Math.min(g.depth, 0.92),
     h = high(g, 2.6);
+  const variant = g.seed % 3;
+  if (variant) {
+    if (variant === 1) {
+      // A framed plank vestibule turns the boarding through ninety degrees.
+      shed(g, w, d, h, h * 0.8, 'city3d:cover:shingle@89735d', cedar);
+      for (const side of [-1, 1]) {
+        const x = side * w * 0.84;
+        for (let i = 0; i < 4; i++) g.box(x - w * 0.035, x + w * 0.035, 0, d * 0.82, h * 0.19 * i, h * 0.19 * (i + 1) - 0.012, cedar);
+        g.post(x, d * 0.82, 0, h * 0.83, Math.min(0.12, w * 0.07), darkWood, 6);
+      }
+    } else {
+      gable(g, w, d, h, h * 0.74, 'city3d:cover:shingle@89735d', cedar);
+      uprights(g, w * 0.83, d * 0.78, 0, h * 0.785 - 0.085, Math.min(0.2, w * 0.14), darkWood);
+      g.beam([-w * 0.91, d * 0.77, h * 0.73], [w * 0.91, d * 0.77, h * 0.73], Math.min(0.14, w * 0.12), cedar);
+    }
+    return;
+  }
   // Heavy cedar uprights retain overlapping split planks and carry the low plank eave.
   for (const side of [-1, 1]) {
     const a = side < 0 ? -w * 0.94 : w * 0.49,
@@ -694,9 +1051,24 @@ function inuit(g: HouseFront): void {
     d = Math.min(g.depth, 1.65),
     h = high(g, 1.45);
   // Each vault block spans between two elliptical rings. The tunnel contracts towards the street.
+  const variant = g.seed % 3;
+  if (variant === 2) {
+    // Stepped corbel courses shorten the span until snow slabs can bridge it.
+    for (const side of [-1, 1]) {
+      for (let j = 0; j < 3; j++) {
+        const outer = side * w * (1 - 0.12 * j),
+          inner = side * w * (0.73 - 0.14 * j);
+        g.box(Math.min(inner, outer), Math.max(inner, outer), 0, d * (0.93 - 0.035 * j), h * 0.25 * j, h * 0.25 * (j + 1), snow);
+      }
+    }
+    g.box(-w * 0.61, w * 0.61, 0, d * 0.85, h * 0.75, h * 0.89, snow);
+    return;
+  }
   const at = (angle: number, y: number, inside: boolean): P => {
     const taper = 1 - (0.11 * y) / d;
-    return [-Math.cos(angle) * w * taper * (inside ? 0.7 : 1), y, Math.sin(angle) * h * taper * (inside ? 0.77 : 1)];
+    // The outer half of the second tunnel turns away from the prevailing wind.
+    const turn = variant === 1 ? Math.max(0, (2 * y) / d - 1) * 0.32 : 0;
+    return [w * (turn - Math.cos(angle) * (taper - turn) * (inside ? 0.7 : 1)), y, Math.sin(angle) * h * taper * (inside ? 0.77 : 1)];
   };
   for (let course = 0; course < 2; course++) {
     const rear = course * d * 0.5,
@@ -720,6 +1092,33 @@ function siberian(g: HouseFront): void {
     h = high(g, 1.95);
   const skin = 'city3d:cover:hide@98806a',
     fold = 'city3d:cover:hide@ad9377';
+  const variant = g.seed % 3;
+  if (variant === 1) {
+    // A windward hide hangs on an inclined support beside the entry.
+    const a: P = [-w * 0.55, 0.035, h * 0.97],
+      b: P = [-w * 0.94, d * 0.8, h * 0.56],
+      c: P = [-w * 0.78, d * 0.9, 0.025];
+    g.face([a, b, c, [-w * 0.8, 0.035, 0.025]], skin);
+    g.face([a, [-w * 0.65, 0.035, h * 0.76], b], fold);
+    g.beam([-w * 0.91, d * 0.82, 0.035], b, 0.055, cedar);
+    g.beam(a, [-w * 0.8, 0.04, 0.035], 0.06, wood);
+    return;
+  }
+  if (variant === 2) {
+    // A lifted hide with a peaked ridge and pegged corners.
+    const ridge = h * 0.97;
+    for (const s of [-1, 1]) {
+      const top: P[] = [
+        [0, 0.03, ridge],
+        [s * w * 0.6, 0.03, h * 0.69],
+        [s * w * 0.93, d * 0.81, h * 0.55],
+        [0, d * 0.48, h * 0.81],
+      ];
+      pan(g, s > 0 ? top : top.reverse(), 0.025, skin, fold);
+      g.beam([s * w * 0.92, d * 0.84, 0.035], [s * w * 0.91, d * 0.8, h * 0.56], 0.045, cedar);
+    }
+    return;
+  }
   // The chum has overlapping skins. Lifting the outer cover reveals a pitched opening between the poles.
   const side = g.seed & 1 ? -1 : 1;
   const p = (x: number, y: number, z: number): P => [side * w * x, d * y, h * z];
@@ -737,6 +1136,24 @@ function guarani(g: HouseFront): void {
   const w = halfSpan(g, 2.45),
     d = Math.min(g.depth, 1.55),
     h = high(g, 2.65);
+  const variant = g.seed % 3;
+  if (variant) {
+    if (variant === 1) gable(g, w, d, h, h * 0.7, palm, cane);
+    else {
+      shed(g, w, d, h, h * 0.72, palm, cane);
+      // A palm wing wraps the weather side, opposite the open work side.
+      sideScreen(g, -w * 0.81, d * 0.76, 0, h * 0.69, palm, cane);
+    }
+    for (const side of [-1, 1]) {
+      const x = side * w * 0.81,
+        y = d * 0.79,
+        r = Math.min(0.09, w * 0.07);
+      const bearer = variant === 1 ? h * 0.755 - 0.092 : h * 0.78 - 0.07;
+      g.post(x, y, 0, bearer - h * 0.1, r, wood, 5);
+      for (const fork of [-1, 1]) g.beam([x, y, bearer - h * 0.12], [x + w * 0.065 * fork, y, bearer], r * 1.1, wood);
+    }
+    return;
+  }
   // A low hipped palm roof folds around the opening in the long side of the house.
   const a: P = [-w * 0.49, 0, h],
     b: P = [w * 0.49, 0, h];
@@ -763,12 +1180,25 @@ function budjBim(g: HouseFront): void {
     h = high(g, 1.35);
   // Dry-laid basalt courses turn back to the circular hut wall. Stagger the joints in adjacent courses.
   const rocks = [basalt, 'city3d:wall:stone@706a5e', 'city3d:wall:stone@575754', 'city3d:wall:stone@80796a'];
+  const variant = g.seed % 3;
   for (const side of [-1, 1]) {
     const position = (t: number, offset: number, z: number): P => {
+      if (variant === 1) {
+        // A straight screen on the weather side makes a right-angled return towards the doorway.
+        const turn = Math.max(0, (t - 0.64) / 0.36);
+        const x = 0.84 + 0.12 * offset - 0.24 * turn;
+        return [side * w * x, d * (0.075 + Math.min(t, 0.64) * 1.12 + turn * 0.085), z];
+      }
+      if (variant === 2) {
+        // A long, flared passage between the outer stone jambs.
+        const x = 0.52 + 0.31 * t + 0.105 * offset;
+        return [side * w * x, d * (0.055 + 0.86 * t), z];
+      }
       const angle = 0.07 + t * 1.05;
       return [side * w * (0.46 + (0.43 + offset * 0.12) * Math.cos(angle)), d * (0.05 + (0.71 + offset * 0.17) * Math.sin(angle)), z];
     };
-    for (let level = 0; level < 3; level++) {
+    const courses = variant === 1 && side === 1 ? 1 : variant === 2 ? 4 : 3;
+    for (let level = 0; level < courses; level++) {
       const ends = level === 1 ? [0, 0.26, 0.7, 1] : [0, 0.48, 1];
       for (let i = 0; i < ends.length - 1; i++) {
         const a = ends[i] + 0.008,

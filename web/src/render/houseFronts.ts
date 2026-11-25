@@ -11,11 +11,12 @@ import { historicFronts } from './houseHistoricFronts';
 import { vernacularFronts } from './houseVernacularFronts';
 import { legendFronts } from './houseLegendFronts';
 import { skylineFronts } from './houseSkylineFronts';
-import { modernFronts, mushroomGrower } from './houseModernFronts';
+import { mushroomGrower } from './houseModernFronts';
+import { streetPorches } from './houseStreetPorches';
 import { elvenGallerySite } from './craftedElvenTree';
 import { maoriGables } from './houseMaoriGable';
 
-export const cultureHouseFronts: Readonly<Record<string, FrontDesign>> = { ...historicFronts, ...vernacularFronts, ...legendFronts, ...modernFronts, ...skylineFronts };
+export const cultureHouseFronts: Readonly<Record<string, FrontDesign>> = { ...historicFronts, ...vernacularFronts, ...legendFronts, ...streetPorches, ...skylineFronts };
 type Fit = FrontFrame & Pick<FrontDimensions, 'width' | 'depth' | 'height' | 'eave' | 'doorWidth' | 'doorHeight' | 'hasGableDoor' | 'windows'>;
 interface Front {
   volume: OverviewVolume;

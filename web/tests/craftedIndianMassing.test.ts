@@ -69,6 +69,18 @@ describe('Indian domestic massing', () => {
       expect(mesh.every(t => Math.abs(Math.hypot(...t.normal) - 1) < 1e-6)).toBe(true);
     }
   });
+  it('varies the porch construction on an identical facade in all four South Asian styles', () => {
+    for (const culture of ['dravidian-temple', 'indian-temple', 'rajput-fort', 'south-asian-metropolis']) {
+      const b = house(culture);
+      b.volumes[0].roof_mesh.faces.splice(1); // Only the street door, so this volume gets the porch.
+      const counts = new Set<number>();
+      for (let i = 0; i < 48 && counts.size < 3; i++) {
+        const mesh = draw({ ...b, id: 'terrace-lot-' + i });
+        counts.add(mesh.filter(f => f.points.some(p => p[1] < -0.15 && p[2] < 4)).length);
+      }
+      expect(counts.size, culture).toBeGreaterThanOrEqual(3);
+    }
+  });
   it('keeps the profile outside the true frontage under reversed winding', () => {
     const b = house('dravidian-temple', true);
     expect(
