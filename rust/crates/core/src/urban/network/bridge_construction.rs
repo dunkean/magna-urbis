@@ -545,6 +545,13 @@ pub(super) fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], b
     // Under the village budget a bank pair gets one deck, the best-scored sightline.
     let mut probes: Vec<_> = probes.into_values().flatten().collect();
     if joined.is_some() { probes.sort_by(|a, b| a.3.total_cmp(&b.3)); }
+    // Reuse the stilt network if it already occupies this particular crossing.
+    // Other crossings on the same river can still serve separate streets.
+    let walks: Vec<_> = land.iter().filter(|s| matches!(s.role.as_str(), "boardwalk" | "walkway" | "pier"))
+        .filter_map(|s| {
+            let &c = banks.component.get(&key(*s.path.first()?))?;
+            Some((joined.map_or(c, |j| j[c]), s))
+        }).collect();
     // Deck fits and their ramps are pure per probe: measured up front (in
     // parallel); only the check against the decks already added needs the order.
     let reach = if joined.is_some() { f64::INFINITY } else { 90.0 };
@@ -560,7 +567,16 @@ pub(super) fn built_bank_crossings(streets: &mut Vec<Street>, land: &[Street], b
         if (0..2).any(|k| distance(joints[k], ends[k]) > 200.0
             || !routing::segment_clear(surface, joints[k], ends[k], f64::INFINITY)) { return None; }
         let wet = routing::water_intervals(surface, ends[0], ends[1]);
-        (wet.len() == 1).then_some((ends, joints))
+        let &[(from, to)] = wet.as_slice() else { return None; };
+        // Test the wet span, excluding its dry abutments. Both banks must already
+        // be connected, and the same walkway must cover the crossing at each station.
+        if a.bank == b.bank && walks.iter().any(|&(bank, walk)| bank == a.bank &&
+            [0.05, 0.5, 0.95].iter().all(|t| {
+                let p = lerp(ends[0], ends[1], from + (to - from) * t);
+                walk.path.windows(2).enumerate().any(|(i, w)|
+                    g::distance(p, w[0], w[1]).0 <= width(walk, i) * 0.5)
+            })) { return None; }
+        Some((ends, joints))
     });
     for ((i, j, middle, _), deck) in probes.into_iter().zip(decks) {
         let (a, b) = (&samples[i], &samples[j]);

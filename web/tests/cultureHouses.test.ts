@@ -233,12 +233,12 @@ describe('culture house exteriors', () => {
   });
 
   it('places giant doors outside the wall and scales their opening with the storey', () => {
-    const b = silhouetteBuilding(house('giant-hold', rect(30, 20), {}, 'hip', 15)),
+    const b = silhouetteBuilding(house('giant-hold', rect(30, 20), { body_scale: 3.5 }, 'flat', 17.5)),
       mesh = b.volumes[0].roof_mesh;
     const doors = mesh.faces.filter(f => f.material === 'city3d:wall:opening@393126').map(f => f.vertices.map(i => mesh.vertices[i]));
     expect(doors.length).toBeGreaterThan(0);
     expect(doors[0].every(p => p.y < 0 || p.y > 20 || p.x < 0 || p.x > 30)).toBe(true);
-    expect(Math.max(...doors[0].map(p => p.z))).toBeCloseTo(5.25);
+    expect(Math.max(...doors[0].map(p => p.z))).toBeCloseTo(7.35);
     const drawings = new Map<number, Set<number>>();
     for (const { data } of buildingBatches([b], [0, 0], { appearance: { style: 'cartographic', diagnostic: 'none', roof: 'crafted' }, materials: [], snowAltitudes: new Map() }, false)) {
       for (let i = 0; i < data.length; i += BUILDING_STRIDE) {

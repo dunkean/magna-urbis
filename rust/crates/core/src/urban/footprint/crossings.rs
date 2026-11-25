@@ -792,6 +792,22 @@ mod tests {
     }
 
     #[test]
+    fn grozaghun_uses_the_boardwalk_between_its_banks() {
+        let n = 100;
+        let height = vec![10.; n*n];
+        let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((48..52).contains(&(i % n)))).collect();
+        let surface = Surface { geometry: None, width: 200., n, height: &height, water: &water, interpolation: Default::default() };
+        let streets = vec![street(&[(40.,100.), (96.,100.)], "street"),
+            street(&[(96.,100.), (100.,101.), (104.,102.)], "boardwalk"),
+            street(&[(104.,102.), (160.,102.)], "street"),
+            street(&[(100.,110.), (100.,101.)], "boardwalk")];
+        let mut town = layout(streets, &[(45.,103.,92.,118.), (109.,105.,155.,120.)]);
+        network::select_bridges(&mut town, 2240, surface, &[]);
+        assert!(!town.streets.iter().any(|s| s.role == "bridge" || s.role == "approach"));
+        assert_connected(&town, &[Point{x:40.,y:100.}, Point{x:160.,y:102.}, Point{x:100.,y:110.}]);
+    }
+
+    #[test]
     fn a_nearby_bridge_cannot_hide_a_different_built_part() {
         let n = 200; let height = vec![20.0; n*n];
         let water: Vec<_> = (0..n*n).map(|i| 3 * u8::from((98..102).contains(&(i % n)))).collect();

@@ -391,7 +391,7 @@ mod tests {
         }
         // Metric scale and exterior form of the homes.
         let forms: [(&str, f64, &str); 8] = [
-            ("giant-hold", 2.5, ""), ("elven", 1.0, "tree"), ("myconid-colony", 1.0, "mushroom"),
+            ("giant-hold", 3.5, ""), ("elven", 1.0, "tree"), ("myconid-colony", 1.0, "mushroom"),
             ("native-iroquoian", 1.0, "longhouse"), ("mongol-ordu", 1.0, "yurt"), ("tibetan-monastery", 1.0, "battered"),
             ("wizard-city", 1.0, "mage"), ("merfolk-tidal", 1.0, "stilt"),
         ];

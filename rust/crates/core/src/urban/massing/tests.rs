@@ -126,7 +126,8 @@ fn giant_storeys_use_the_house_metric_scale() {
     let human = massing(&i);
     i.culture = "giant-hold";
     let giant = massing(&i);
-    assert_eq!(giant[0]["eave_m"].as_f64().unwrap(), human[0]["eave_m"].as_f64().unwrap() * 2.5);
+    assert_eq!(giant[0]["eave_m"].as_f64().unwrap(), human[0]["eave_m"].as_f64().unwrap() * 3.5);
+    assert_eq!(giant[0]["volumes"][0]["body_scale"], 3.5);
     assert_eq!(giant[0]["roof"], "flat", "{giant}");
     let recipe = json!({"roof":"gable","storeys":[3,4],"material":"timber"});
     i.arch = &recipe;

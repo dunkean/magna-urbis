@@ -620,7 +620,7 @@ pub(super) fn massing(m: &Input) -> Value {
                         trim,
                         form: exterior,
                         stilts,
-                        body,
+                        body: body * metric_scale,
                         eave: base + eave_v,
                         n: sn,
                         cover,

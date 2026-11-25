@@ -238,7 +238,7 @@ fn giant_house_scale_enlarges_the_body_inside_its_lot() {
     let giant = preview(&p, &home(&morph, "dwelling.house", "giant-body"));
     let human_area: f64 = human.iter().map(area).sum();
     let giant_area: f64 = giant.iter().map(area).sum();
-    assert!(giant_area > 4.0 * human_area, "giant {giant_area}m2, human {human_area}m2");
+    assert!((9.0..=16.0).contains(&(giant_area / human_area)), "giant {giant_area}m2, human {human_area}m2");
     assert!(giant.iter().flat_map(|s| difference(s, &p.shape)).map(|s| area(&s)).sum::<f64>() < 1e-5);
 }
 

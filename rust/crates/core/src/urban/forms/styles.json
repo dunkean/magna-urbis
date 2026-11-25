@@ -95,7 +95,7 @@
     "elven": { "traits": { "form": "tree", "formShare": 0.85 } },
     "ethiopian-highland": { "traits": { "tradition": { "roof": "cone", "pitch": 38, "storeys": [1, 1], "cover": "thatch", "wall": "wood" } } },
     "flemish-cloth-town": { "traits": { "tradition": { "roof": "gable", "pitch": 52, "storeys": [3, 4], "cover": "tile", "wall": "brick", "gableToStreet": true } } },
-    "giant-hold": { "traits": { "tradition": { "roof": "gable", "pitch": 40, "storeys": [2, 3], "cover": "stone", "wall": "stone" }, "metricScale": 2.5, "massiveStorey": true } },
+    "giant-hold": { "traits": { "tradition": { "roof": "gable", "pitch": 40, "storeys": [2, 3], "cover": "stone", "wall": "stone" }, "metricScale": 3.5, "massiveStorey": true } },
     "gnomish": { "traits": { "bodyScale": 0.6 } },
     "goblin-warren": { "traits": { "tradition": { "roof": "cone", "pitch": 40, "storeys": [1, 1], "cover": "thatch", "wall": "stone" }, "bodyScale": 0.75 } },
     "great-zimbabwe": { "traits": { "tradition": { "roof": "cone", "pitch": 38, "storeys": [1, 1], "cover": "thatch", "wall": "wood" } } },

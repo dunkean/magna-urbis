@@ -3,6 +3,9 @@
 - Turning off Follow the environment restores the full culture catalogue immediately, including on the first use after startup.
 - Culture pickers group mages, gnomes, Duergar and other fantasy peoples under Fantasy, with corrected historical categories.
 - Mushrooms, stalactites and stalagmites stay inside the map boundary in the 3D Underdark view.
+- Stilt towns reuse boardwalks that connect both riverbanks when planning bridges and their approach roads.
+- Giant homes use 3.5× human dimensions for their floor plans, storey height and doorways.
+
 - Kraal thorn enclosures now stand in 3D with open entrances. Detailed architecture adds woven fences, split boards, pasture rails, hedge crowns, pointed palisades and regional masonry to yards and town defences.
 
 - In Detailed architecture, country workshops show their work at the door, from potters’ wheels and drying jars to millstones, winding gear and dressed stone. Farmyards, rural shrines and trade buildings use local materials and fittings. Mine headframes, quarry cranes and other yard works follow their generated footprints.

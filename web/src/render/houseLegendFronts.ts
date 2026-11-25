@@ -835,7 +835,10 @@ function merfolk(g: HouseFront) {
 }
 
 function giant(g: HouseFront) {
-  const f = frame(g, 10.8, 7.4),
+  // The lintel starts at 89% of the frame height. Keep it and the corbels clear of the fitted door.
+  const height = Math.max(7.4, ((g.doorHeight ?? 0) + 0.1) / 0.89);
+  if ((g.doorHeight ?? 0) > Math.min(g.height, height) * 0.89 || (g.doorWidth ?? 0) > g.width * 0.35) return;
+  const f = frame(g, g.width, height),
     granite = wall('stone', '89867d'),
     lichen = wall('stone', 'a4a18c');
   for (const s of [-1, 1]) {
