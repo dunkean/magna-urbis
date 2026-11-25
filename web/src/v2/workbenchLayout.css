@@ -897,7 +897,7 @@
     font-size: 9px;
     padding: 4px;
   }
-  .app-header .project-actions :is(#osm-open, #export-open) {
+  .app-header .project-actions :is(#city-code-open, #osm-open, #export-open) {
     order: -1;
   }
   .app-header .header-tools button {

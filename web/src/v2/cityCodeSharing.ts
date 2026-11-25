@@ -47,7 +47,7 @@ export function mountCityCodeSharing(bindings: CityCodeBindings): { restoreFromL
   insertHTML(
     find('import-open'),
     'beforebegin',
-    `<span class="city-code-chip" id="city-code-chip"><code id="city-code-current" aria-label="${text.current}"></code><button id="city-code-chip-copy" class="quiet" title="${text.copyCode}" aria-label="${text.copyCode}">⧉</button><button id="city-code-chip-debug" class="quiet" title="${text.copyDebug}" aria-label="${text.copyDebug}">⧉+</button></span><button id="city-code-open" type="button" aria-haspopup="dialog" aria-controls="fmg-dialog">Azgaar FMG</button>`,
+    `<span class="city-code-chip" id="city-code-chip"><code id="city-code-current" aria-label="${text.current}"></code><button id="city-code-chip-copy" class="quiet" title="${text.copyCode}" aria-label="${text.copyCode}">⧉</button><button id="city-code-chip-debug" class="quiet" title="${text.copyDebug}" aria-label="${text.copyDebug}">⧉+</button></span><button id="city-code-open" type="button" class="primary" aria-haspopup="dialog" aria-controls="fmg-dialog">Azgaar FMG</button>`,
   );
   insertHTML(
     find('toast'),
