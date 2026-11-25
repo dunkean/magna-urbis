@@ -12,6 +12,10 @@ try {
   await page.goto(`${base}/v2.html?empty&lang=fr`, { waitUntil: 'domcontentloaded' });
   await page.locator('#culture-random').waitFor({ state: 'attached' });
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => {
+    const seed = document.querySelector('#seed').value;
+    return seed.length === 6 && seed !== 'magnas';
+  });
   const selected = () => page.locator('[data-option="culture"]').inputValue();
   const pool = () => page.locator('[data-option="culture"]').evaluate(el => Array.from(el.options, option => option.value));
   const automatic = () => page.locator('#culture-environment').isChecked();
@@ -23,6 +27,19 @@ try {
     }, value);
   const click = selector => page.locator(selector).evaluate(el => el.click());
   assert(await automatic());
+  await page.locator('#family-tab-settlements').click();
+  await page.locator('[data-option="culture"]').click();
+  const browserFilter = page.locator('#culture-browser-environment');
+  await browserFilter.uncheck();
+  assert(!(await automatic()));
+  assert.equal(await page.locator('.culture-browser-grid > section').count(), 5);
+  for (const id of ['wizard-city', 'gnomish', 'duergar-hold', 'american-grid', 'cyberpunk']) {
+    assert(await page.locator(`[data-culture-choice="${id}"]`).isVisible(), id);
+  }
+  await browserFilter.check();
+  assert(await automatic());
+  assert.equal(await page.locator('[data-culture-choice="american-grid"]').count(), 0);
+  await page.keyboard.press('Escape');
   assert.equal(await page.locator('#family-region .name-origin-controls').count(), 0);
   assert.equal(await page.locator('#family-settlements #settlements-name-origin').count(), 1);
   await change('#terrain-relief', 'mountains');

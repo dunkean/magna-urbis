@@ -77,6 +77,7 @@ export function createSettingsActions(state: PageState, actions: PageActions) {
     $<HTMLInputElement>('#rust-server').value = state.settings.runtime?.localServer ?? state.bootRuntime.localServer ?? '';
     $<HTMLInputElement>('#python-server').value = state.settings.runtime?.pythonServer ?? state.bootRuntime.pythonServer ?? '';
     state.terrainControls.sync();
+    state.workbenchLayout?.sync();
     state.regionControls.sync();
     state.urbanControls.sync();
     actions.syncUrbanBackend();

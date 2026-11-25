@@ -90,23 +90,14 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   // Keep the roads stage's composite request control visible in the Settlements sidebar.
   const exitsPanel = settlements.querySelector<HTMLElement>('#row-settle-roads .regional-exits');
   if (exitsPanel) general.append(exitsPanel);
-  const state = new WeakMap<V2Settings, { cultureEnvironment: string; autoCulture: boolean }>();
+  const previousEnvironments = new WeakMap<V2Settings, string>();
   // The existing option binding writes the chosen culture before this listener runs.
-  culture.addEventListener('change', () => {
-    const s = api.getSettings();
-    s.region ??= {};
-    s.region.demography ??= {};
-    s.region.demography.followCulture = false;
-    state.get(s)!.autoCulture = false;
-    sync();
-    api.changed();
-  });
+  culture.addEventListener('change', () => followEnvironment(false));
   const followEnvironment = (enabled: boolean) => {
     const s = api.getSettings();
     s.region ??= {};
     s.region.demography ??= {};
     s.region.demography.followCulture = enabled;
-    state.get(s)!.autoCulture = enabled;
     sync(true);
     api.changed();
     api.syncForms();
@@ -115,8 +106,8 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   installCultureBrowser(document.body, { source: culture, get: () => auto.checked, set: followEnvironment });
   function rollCulture(avoidCurrent = false): void {
     const s = api.getSettings(),
-      previous = state.get(s)!;
-    s.options.culture = randomCulture(s, previous.autoCulture, Math.random, avoidCurrent ? s.options.culture : undefined);
+      autoCulture = s.region?.demography?.followCulture ?? true;
+    s.options.culture = randomCulture(s, autoCulture, Math.random, avoidCurrent ? s.options.culture : undefined);
     sync();
     api.syncForms();
     api.changed();
@@ -285,24 +276,20 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   const passes = mountRenderPassControls(mapAdvanced.panel, { getSettings: api.getSettings, onChange: api.appearance });
   bindTree(document.body);
   function sync(force = false): void {
-    const s = api.getSettings();
-    let previous = state.get(s);
-    if (!previous) {
-      previous = { cultureEnvironment: JSON.stringify(cultureEnvironment(s)), autoCulture: s.region?.demography?.followCulture ?? true };
-      state.set(s, previous);
-    }
-    previous.autoCulture = s.region?.demography?.followCulture ?? previous.autoCulture;
-    const cultureEnvironmentKey = JSON.stringify(cultureEnvironment(s));
+    const s = api.getSettings(),
+      autoCulture = s.region?.demography?.followCulture ?? true,
+      cultureEnvironmentKey = JSON.stringify(cultureEnvironment(s)),
+      previousEnvironment = previousEnvironments.get(s) ?? cultureEnvironmentKey,
+      plausible = plausibleCultures(s);
+    previousEnvironments.set(s, cultureEnvironmentKey);
     // A loaded code, recipe or project keeps its culture (a new settings object starts from its own environment).
     // "Follow the environment" re-picks only after an environment change (or ticking it) that rules the current culture out.
-    if (previous.autoCulture && (cultureEnvironmentKey !== previous.cultureEnvironment || force) && !plausibleCultures(s).includes(s.options.culture)) {
+    if (autoCulture && (cultureEnvironmentKey !== previousEnvironment || force) && !plausible.includes(s.options.culture)) {
       s.options.culture = automaticCulture(s);
       api.syncForms();
     }
-    previous.cultureEnvironment = cultureEnvironmentKey;
-    const plausible = plausibleCultures(s);
     // A stored culture outside the environment's list stays selectable (and shown) until the environment changes.
-    const allowed = previous.autoCulture ? allCultureOptions.map(option => option.value).filter(id => plausible.includes(id) || id === s.options.culture) : allCultureOptions.map(option => option.value);
+    const allowed = autoCulture ? allCultureOptions.map(option => option.value).filter(id => plausible.includes(id) || id === s.options.culture) : allCultureOptions.map(option => option.value);
     const choicesKey = allowed.join('|');
     if (choicesKey !== cultureChoices) {
       culture.replaceChildren(...allCultureOptions.filter(option => allowed.includes(option.value)));
@@ -311,13 +298,13 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
       cultureChoices = choicesKey;
     }
     culture.value = s.options.culture;
-    const diceLabel = previous.autoCulture ? 'Random culture suited to this environment' : 'Random pre-modern culture';
+    const diceLabel = autoCulture ? 'Random culture suited to this environment' : 'Random pre-modern culture';
     for (const attr of ['title', 'aria-label']) {
       dice.setAttribute(`data-i18n-${attr}`, diceLabel);
       dice.setAttribute(attr, translate(diceLabel));
     }
     passes.sync();
-    auto.checked = previous.autoCulture;
+    auto.checked = autoCulture;
     demographics.sync();
     display
       .querySelectorAll<HTMLButtonElement>('button')
