@@ -29,6 +29,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
     m = silhouetteMassing(building, area);
   const culture = building.culture.culture,
     programme = (building as PlacedBuilding & { programme?: Programme }).programme;
+  const compound = programme && ('activity' in programme || 'farmstead' in programme);
   const role = `${programme?.role ?? ''} ${m.family}${programme?.landmark ? ' monument' : ''}`;
   // Silhouette plans may carry a zero/centre reference, not a terrain footing: without a sampler they keep it.
   const fallback = Number.isFinite(building.ground_z_m) ? building.ground_z_m : 0;
@@ -76,6 +77,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           const volume = baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, v.rise_m, materials, roof.mesh(), 'RF-DOME', { ...foundation, footprint: [bodyShape] }, [
             { index: 0, footprint: [{ outer: scaledRing(v.shape.outer, v.tree.trunkRadius / v.tree.radius), holes: [] }], z_m: ground, height_m: v.eave_m },
           ]);
+          if (compound) (volume as OverviewVolume).ruralPiece = i;
           if (ground < site) (volume as SeatedVolume).ground_m = ground;
           volume.envelope = 'open';
           if (culture === 'elven') (volume as OverviewVolume).displayTree = tree;
@@ -169,6 +171,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
           [{ index: 0, footprint: [bodyShape], z_m: z0, height_m: v.eave_m + base - z0 }],
         );
         // The display skirts extend past the silhouette's source footprint.
+        if (compound) volume.ruralPiece = i;
         volume.overhang_m = over;
         if (lift > 0) volume.stiltHeight_m = lift;
         volume.displayRoofForm = v.roof;

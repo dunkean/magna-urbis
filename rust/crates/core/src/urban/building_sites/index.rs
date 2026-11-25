@@ -795,7 +795,11 @@ impl BuildingSiteIndex {
                 activity_step = Some(super::super::activities::yard_step(&yard, &surface));
                 parts = yard.iter().map(|b| (super::super::Shape { outer: b.ring.clone(), holes: vec![] }, "building")).collect();
                 activity_massing = Some(yard.iter().flat_map(|b| b.massing.as_array().cloned().unwrap_or_default()).collect());
-                programme["activity"] = json!({"template": pr.context.template, "archetypes": yard.iter().map(|b| b.archetype.clone()).collect::<Vec<_>>()});
+                programme["activity"] = json!({
+                    "template": pr.context.template,
+                    "archetypes": yard.iter().map(|b| &b.archetype).collect::<Vec<_>>(),
+                    "forms": yard.iter().map(|b| &b.look).collect::<Vec<_>>(),
+                });
             }
         }
         let preview: Vec<_> = parts.iter().map(|(s, _)| s).collect();

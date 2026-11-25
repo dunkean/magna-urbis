@@ -314,12 +314,18 @@ function objectGround(b: ActivitySite['buildings'][number]): number | undefined 
 }
 const scenes = new WeakMap<readonly ActivitySite[], PlacementBatch>();
 /** Native plans of the activity buildings (compact/detailed architecture), retained on the world by `planActivityArchitecture`. */
+// Earlier native-plan caches could contain a residential plan in place of a mill or kiln.
+const ACTIVITY_PLAN_VERSION = 2;
 interface ActivityPlans {
+  version: typeof ACTIVITY_PLAN_VERSION;
   sites: readonly ActivitySite[];
   key: string;
   scene: PlacementBatch;
 }
-const plansOf = (world: World | undefined): ActivityPlans | undefined => world?.debug?.v2ActivityPlans as ActivityPlans | undefined;
+function plansOf(world: World | undefined): ActivityPlans | undefined {
+  const plans=world?.debug?.v2ActivityPlans as ActivityPlans | undefined;
+  return plans?.version===ACTIVITY_PLAN_VERSION ? plans : undefined;
+}
 /** One scene for every activity building, or undefined when there is none.
  * Buildings follow the architecture in use: massing silhouettes, or native house plans when the planning step produced them. */
 export function activityScene(world: World | undefined): PlacementBatch | undefined {
@@ -406,6 +412,12 @@ function massingScene(sites: readonly ActivitySite[]): PlacementBatch {
   return scene;
 }
 
+const plannableActivityLooks = new Set(['hut', 'shed', 'long_shed', 'barn', 'storehouse', 'hall', 'courtyard_compound', 'farmhouse', 'house', 'longhouse', 'roundhouse', 'ger']);
+export function retainsActivityMassing(b: ActivitySite['buildings'][number]): boolean {
+  if (objectGround(b) !== undefined || !plannableActivityLooks.has(b.look)) return true;
+  const machinery = (volume: { features?: { kind?: string }[] } | null) => volume?.features?.some(f => f.kind === 'sails' || f.kind === 'wheel');
+  return Array.isArray(b.massing) && b.massing.some(piece => machinery(piece) || (Array.isArray(piece?.volumes) && piece.volumes.some(machinery)));
+}
 const DOMESTIC = /farm|hut|house|cabin|hamlet|shelter|lodge|steading|cottage|yurt|tent/,
   COLLECTIVE = /chapel|shrine|church|temple|hermitage|chantry/;
 const functionOf = (archetype: string): 'domestic' | 'collective' | 'workshop' => (DOMESTIC.test(archetype) ? 'domestic' : COLLECTIVE.test(archetype) ? 'collective' : 'workshop');
@@ -450,7 +462,7 @@ export async function planActivityArchitecture(world: World, settings: V2Setting
         const id = `${site.id}/${k}`,
           pack = byCulture.get(site.culture);
         // Heaps, kilns and racks keep their massing: the house generator never plans them.
-        if (!pack || !massed.has(id) || b.ring.length < 3 || objectGround(b) !== undefined) return;
+        if (!pack || !massed.has(id) || b.ring.length < 3 || retainsActivityMassing(b)) return;
         const lot: Surface = [{ outer: enlarged(b.ring, 1.3), holes: [] }],
           front = lot[0].outer;
         footprints[id] = [{ outer: b.ring, holes: [] }];
@@ -490,6 +502,7 @@ export async function planActivityArchitecture(world: World, settings: V2Setting
       return plan ? { ...plan, sitePart: b.sitePart } : b;
     });
     world.debug.v2ActivityPlans = {
+      version: ACTIVITY_PLAN_VERSION,
       sites,
       key,
       scene: { ...base, generator_version: planned.generator_version, materials: [...materials.values()], buildings, ...(planned.plan_archives ? { plan_archives: planned.plan_archives } : {}) },

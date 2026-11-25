@@ -66,6 +66,10 @@ fn an_activity_intent_builds_its_yard_buildings() {
     assert!(shown.iter().any(|&k| k >= 2), "previews {shown:?}");
     let m = requests.iter().find_map(|r| r["programme"]["massing"].as_array().filter(|a| a.len() >= 2)).expect("yard massing");
     assert!(m.iter().all(|piece| !piece.is_null()));
+    let works = requests.iter().find_map(|r| r["programme"]["activity"].as_object()).expect("activity pieces");
+    let forms = works["forms"].as_array().expect("physical form of each piece");
+    assert_eq!(forms.len(), works["archetypes"].as_array().unwrap().len());
+    assert!(forms.iter().all(|f| f.as_str().is_some_and(|s| !s.is_empty())));
 }
 
 #[test]

@@ -12,12 +12,15 @@ import { craftedRoofMesh } from './craftedRoofMesh';
 import { craftedMageCity } from './craftedMageCity';
 import { architectureUse } from './siteArchitecture';
 import { siteCrown } from './siteCrown';
+import { ruralSiteDetails } from './ruralSiteDetail';
 import { detailedHouseFront } from './houseFronts';
 import { craftedRoofRoom } from './craftedRoofRoom';
 import { craftedIndianMassing } from './craftedIndianMassing';
 
 export type BuildingVector = [number, number, number];
 export interface OverviewVolume extends ArchitectureVolume {
+  /** Original preview footprint when a single parcel contains several working buildings. */
+  ruralPiece?: number;
   /** Source tree and platform sites for the crafted dwelling. */
   displayTree?: import('./cityTrees').TreeDwelling;
   /** Raised deck height above its source seat, for stairs and ladders. */
@@ -347,6 +350,7 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     return;
   }
   if (crafted && building.culture?.culture === 'wizard-city') building = craftedMageCity(building);
+  const works = crafted && !overview ? ruralSiteDetails(building) : undefined;
   const front = crafted && !overview ? detailedHouseFront(building) : null;
   const use = crafted && !overview ? architectureUse(building) : undefined;
   const crown = crafted && !overview ? siteCrown(building) : undefined;
@@ -362,6 +366,11 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
             t.ground = [Math.min(t.points[0][2], seat), Math.min(t.points[1][2], seat), Math.min(t.points[2][2], seat)];
             emit(t);
           };
+    const rural = works?.get(volume);
+    if (rural) {
+      if (rural.volume === volume) emitRoofFaces(rural.mesh, volume.materials, out);
+      if (rural.replace) continue;
+    }
     const foundation = volume.foundation;
     // A footing right under its walls needs no top: its edge would show as a line around the house.
     if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, volume.envelope === 'open' || foundation.footprint[0] !== volume.levels[0]?.footprint[0]);

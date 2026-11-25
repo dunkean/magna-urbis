@@ -1,4 +1,6 @@
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import { hasRuralInstallation } from './ruralInstallations';
+import { partTrade } from './ruralTrades';
 import { roleFamily as serviceFamily } from './cityRoles';
 import { roleFamily } from './city/planLook';
 import type { FrontDesign, HouseFront } from './houseFrontKit';
@@ -10,16 +12,22 @@ export interface SitePart {
   installation?: boolean;
   passage?: boolean;
 }
-export type SiteUse = 'home' | 'stores' | 'birds' | 'gate' | 'sanctuary' | 'hall' | 'marker';
+export type SiteUse = 'home' | 'workshop' | 'stores' | 'birds' | 'gate' | 'sanctuary' | 'hall' | 'marker';
 export type SiteBuilding = PlacedBuilding & { sitePart?: SitePart; programme?: { role?: string | null; archetype?: string | null; landmark?: boolean | null; fungalFarm?: boolean } };
 
 function ruralUse(part: SitePart): SiteUse | undefined {
   const form = part.form.replaceAll('_', '-'),
     use = part.use.replaceAll('_', '-');
-  if (part.installation || /(?:^|-)(?:wall|mound|kerb|cairn|grove|hayrick|wellhead|well|standing-stone|menhir|dolmen|altar|court|terrace|step|plinth)(?:$|-)/.test(form)) return;
+  if (/(?:^|-)(?:ruin|rubble)(?:$|-)/.test(form)) return;
+  if (part.installation || hasRuralInstallation(form) || /(?:^|-)(?:wall|mound|kerb|cairn|grove|hayrick|wellhead|well|standing-stone|menhir|dolmen|altar|court|terrace|step|plinth)(?:$|-)/.test(form)) return;
   if (/column|obelisk|stele|wayside-cross|calvary-cross/.test(form)) return 'marker';
   if (part.passage || /gatehouse|watch-tower|beacon-tower|keep/.test(form)) return 'gate';
   if (/pigeon|dovecote/.test(use)) return 'birds';
+  const trade = partTrade(use, form);
+  if (trade === 'lodging' && /dwelling|hut|cell/.test(form)) return 'home';
+  // Small human entrances take the same fitted cultural joinery as town craft halls.
+  // The wide cart doors of barns and warehouses retain their clear loading bay.
+  if (trade && !['lodging', 'grain', 'store', 'birds', 'trough', 'guard', 'shrine', 'memorial'].includes(trade)) return 'workshop';
   if (/barn|byre|stable|store|granary|shed|workshop|mill|kiln|smithy|cook-house|bakehouse|dryer|cultivation/.test(form)) return 'stores';
   if (/oratory|chapel|nave|shrine|sanctuary|prayer-hall|temple|aedicula|marabout/.test(form)) return 'sanctuary';
   if (/dovecote|pigeon-tower/.test(form)) return 'birds';
@@ -29,6 +37,11 @@ function ruralUse(part: SitePart): SiteUse | undefined {
   if (/house|hut|dwelling|cottage|ger$|yurt|lodge|shelter|tent|cabin/.test(use)) return 'home';
   if (/hall|pavilion|domed|inn|guest|baths/.test(form + ' ' + use)) return 'hall';
   if (/monument|marker|memorial/.test(form)) return 'marker';
+  if (trade === 'memorial') return 'marker';
+  if (trade === 'lodging') return 'hall';
+  if (trade === 'guard') return 'gate';
+  if (trade === 'shrine') return 'sanctuary';
+  if (trade) return 'stores';
 }
 
 export function architectureUse(b: SiteBuilding): SiteUse | undefined {
@@ -198,6 +211,8 @@ export function fittedSiteFront(use: SiteUse, culture: string, regional: FrontDe
   switch (use) {
     case 'gate':
       return g => gate(g, culture);
+    case 'workshop':
+      return g => ((g.doorWidth ?? 1.2) > 2.15 ? loadingBay(g, serviceFamily(culture)) : regional(g));
     case 'stores':
       return g => loadingBay(g, serviceFamily(culture));
     case 'birds':

@@ -152,6 +152,42 @@ function frontage(building: PlacedBuilding, v: OverviewVolume, seed: number, dwe
   }
 }
 
+/** A working bay beside a real exterior wall, clear of entrances, house fronts,
+ * adjacent volumes and courtyard voids. Choose a side of the wall before its centre. */
+export function ruralWorkFrame(b: SiteBuilding, v: OverviewVolume) {
+  const ring = v.levels?.[0]?.footprint?.[0]?.outer ?? v.footprint[0].outer;
+  const winding = Math.sign(ringArea(ring));
+  const front = detailedHouseFront(b)?.frame;
+  const doors = facadeOpenings(v).filter(o => o.door);
+  const edges = ring
+    .map((a, i) => {
+      const c = ring[(i + 1) % ring.length],
+        length = Math.hypot(c.x - a.x, c.y - a.y);
+      return { a, c, length };
+    })
+    .sort((a, b) => b.length - a.length);
+  for (const { a, c, length } of edges) {
+    if (length < 0.48) continue;
+    const ux = (c.x - a.x) / length,
+      uy = (c.y - a.y) / length;
+    const nx = winding * uy,
+      ny = -winding * ux;
+    for (const scale of [1, 0.66]) {
+      const width = Math.min(4, length * 0.75) * scale,
+        depth = Math.min(1.8, width * 0.51);
+      for (const t of [width / (2 * length), 1 - width / (2 * length), 0.5]) {
+        const x = a.x + (c.x - a.x) * t,
+          y = a.y + (c.y - a.y) * t;
+        const near = (px: number, py: number, extent: number) => Math.abs((px - x) * ux + (py - y) * uy) < width / 2 + extent && Math.abs((px - x) * nx + (py - y) * ny) < depth + 0.23;
+        if (doors.some(o => near(o.x, o.y, o.width / 2 + 0.17)) || (b.entrance && near(b.entrance.x, b.entrance.y, 0.6))) continue;
+        if (front && near(front.x + (front.nx * front.depth) / 2, front.y + (front.ny * front.depth) / 2, front.width / 2 + 0.12)) continue;
+        const f = { x: x + nx * 0.08, y: y + ny * 0.08, z: Math.min(b.ground_z_m, v.z_m) + 0.16, nx, ny, width, depth, height: 4.5 };
+        if (fits(b, v, ring, f)) return f;
+      }
+    }
+  }
+}
+
 export function detailedHouseFront(building: PlacedBuilding): Front | null {
   const known = cache.get(building);
   if (known !== undefined) return known;
