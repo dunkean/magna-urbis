@@ -264,7 +264,7 @@ export class UrbanBuildingPass {
     this.snowAltitudes = townRoofAltitudes(scene?.buildings ?? []);
     const sectors = new Map<string, Sector>();
     for (const building of scene?.buildings ?? []) {
-      const box = buildingBounds(building);
+      const box = buildingBounds(building, this.crafted && appearance.diagnostic === 'none' && appearance.style !== 'silhouette');
       const p = isBuildingProjection(building) ? { x: (box[0] + box[3]) / 2, y: (box[1] + box[4]) / 2 } : building.transform.origin;
       const yard = isYardMesh(building),
         origin: [number, number] = [Math.floor(p.x / SECTOR) * SECTOR, Math.floor(p.y / SECTOR) * SECTOR],
@@ -301,7 +301,7 @@ export class UrbanBuildingPass {
         continue;
       }
       entry.building = building;
-      entry.bounds = buildingBounds(building);
+      entry.bounds = buildingBounds(building, this.crafted && this.appearance.diagnostic === 'none' && this.appearance.style !== 'silhouette');
       touched.add(sector);
     }
     for (const sector of touched) {

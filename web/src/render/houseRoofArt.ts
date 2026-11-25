@@ -10,9 +10,56 @@ const grey = (value: number): string => `rgb(${Math.round(value)} ${Math.round(v
 const pigment = (base: number, r: number, g: number, b: number): string => `rgb(${Math.round(base + r)} ${Math.round(base + g)} ${Math.round(base + b)})`;
 const wrap = (v: number, period: number): number => ((v % period) + period) % period;
 const styles = new Set<string>([...COVER_GRAINS, 'leaf-scale', 'obsidian', 'riveted', 'service-panel', 'cassette', 'glazing', 'solar', 'canopy', 'snow', 'bitumen', 'fungal', 'membrane']);
+const indian = new Set(['indian-temple', 'dravidian-temple', 'rajput-fort', 'south-asian-metropolis']);
+const catalogueCovers: Readonly<Record<string, string>> = {
+  'MAT-TILE-CLAY': 'tile',
+  'MAT-PLASTER-LIME': 'plaster',
+  'MAT-SLATE': 'slate',
+  'MAT-STONE-ASHLAR': 'stone',
+  'MAT-STONE-DRY': 'stone',
+  'MAT-STONE-MORTAR': 'stone',
+  'MAT-BASALT': 'stone',
+  'MAT-LIMESTONE': 'stone',
+  'MAT-THATCH': 'thatch',
+  'MAT-REED': 'reed',
+  'MAT-PALM': 'palm',
+  'MAT-BARK': 'bark',
+  'MAT-BAMBOO': 'bamboo',
+  'MAT-WOOD-SHINGLES': 'shingle',
+  'MAT-FELT': 'felt',
+  'MAT-HIDE': 'hide',
+  'MAT-TURF': 'turf',
+  'MAT-MUD-PLASTER': 'earth',
+};
+export type RoofFaceForm = 'terrace' | 'pitch' | 'tower';
+
+/** The actual pan decides the laying direction. Steep masonry over a temple may take dressed
+ * courses; a sloped annex or a flat crown on the same site keeps its own construction. */
+export function roofFaceForm(normal: readonly number[], role: string): RoofFaceForm {
+  const up = Math.abs(normal[2]) / (Math.hypot(normal[0], normal[1], normal[2]) || 1);
+  if (up > 0.995) return 'terrace';
+  return up < 0.72 && /^(?:worship\.(?:temple|shrine)(?:\.|$)|(?:vimana|gopuram)$)/.test(role) ? 'tower' : 'pitch';
+}
 
 /** Canonical artwork key. Different cultures share a layer when their construction is identical. */
-export function houseRoofStyle(culture: string, material: string): string {
+export function houseRoofStyle(culture: string, raw: string, form: RoofFaceForm = 'pitch', fallback?: string): string {
+  // Only catalogue IDs require a pattern fallback. Massing covers already name their material.
+  const declared = catalogueCovers[raw] ?? raw;
+  if (indian.has(culture)) {
+    if (declared === 'tile') {
+      if (form === 'terrace') return 'terrace-clay';
+      return culture === 'south-asian-metropolis' ? 'pressed-clay' : 'country-clay';
+    }
+    if (declared === 'MAT-BURNT-BRICK') return form === 'terrace' ? 'terrace-clay' : 'brick-courses';
+    if (declared === 'stone' || declared === 'slab') {
+      if (form === 'tower') return 'dressed-courses';
+      if (form === 'terrace') return culture === 'rajput-fort' ? 'sandstone-flags' : 'stone-flags';
+      return 'roof-slabs';
+    }
+    if ((declared === 'plaster' || declared === 'lime') && form === 'terrace') return 'lime-terrace';
+  }
+  const cover = catalogueCovers[raw] ?? fallback ?? raw;
+  const material = /^(?:zinc|metal|lead|bitumen|glass|fungal|snow|ruin)$/.test(cover) ? cover : (roofGrain(cover, form === 'terrace', culture) ?? cover);
   const skin = ['lime', 'felt', 'metal', 'steel', 'zinc', 'glass', 'bitumen', 'plaster'].includes(material);
   if (skin) {
     if (culture === 'futuristic-space-colony' || culture === 'corporate-arcology') return material === 'glass' ? 'glazing' : 'cassette';
@@ -42,7 +89,7 @@ export function houseRoofStyle(culture: string, material: string): string {
     case 'fabric':
       return 'felt';
     default:
-      return styles.has(material) ? material : 'lime';
+      return styles.has(material) ? material : '';
   }
 }
 
@@ -56,7 +103,7 @@ function random(seed: number): Random {
 
 /** Repaint the few crossing units just outside the tile with their wrapped seed. Start at the
  * eaves so each upper course can cast a lip over the top of the course below. */
-function courses(ctx: Brush, cols: number, rows: number, stagger: boolean, seed: number, draw: (w: number, h: number, rand: Random) => void): void {
+function courses(ctx: Brush, cols: number, rows: number, stagger: boolean, seed: number, draw: (w: number, h: number, rand: Random, column: number, row: number) => void): void {
   const w = SIDE / cols,
     h = SIDE / rows;
   for (let row = rows; row >= -1; row--) {
@@ -65,7 +112,7 @@ function courses(ctx: Brush, cols: number, rows: number, stagger: boolean, seed:
       const c = wrap(col, cols);
       ctx.save();
       ctx.translate((col + (stagger ? (r & 1) * 0.5 : 0)) * w, row * h);
-      draw(w, h, random(seed ^ Math.imul(c + 1, 0x68bc21eb) ^ Math.imul(r + 1, 0x2c1b3c6d)));
+      draw(w, h, random(seed ^ Math.imul(c + 1, 0x68bc21eb) ^ Math.imul(r + 1, 0x2c1b3c6d)), c, r);
       ctx.restore();
     }
   }
@@ -80,12 +127,111 @@ function stroke(ctx: Brush, tone: number, width: number, x1: number, y1: number,
   ctx.stroke();
 }
 
+/** Stone flags and terrace tiles meet edge to edge. Dressed tower courses are shallower;
+ * only inclined roof slabs leave a slightly darker lap along their lower edge. */
+function fittedCourses(ctx: Brush, style: string, seed: number): void {
+  const brick = style === 'brick-courses',
+    fired = brick || style === 'terrace-clay',
+    sandstone = style === 'sandstone-flags';
+  const cols = brick ? 12 : fired ? 10 : style === 'paving' ? 6 : 4;
+  const rows = brick ? 31 : fired ? 12 : style === 'dressed-courses' ? 11 : style === 'roof-slabs' ? 7 : 5;
+  const mortar = style === 'roof-slabs' ? 1.2 : 0.55;
+  const shift = (c: number, r: number): number => random(seed ^ Math.imul(wrap(c, cols) + 1, 0x68bc21eb) ^ Math.imul(wrap(r, rows) + 1, 0x2c1b3c6d))() - 0.5;
+  courses(ctx, cols, rows, true, seed, (w, h, rand, c, r) => {
+    const x = shift(c, r) * w * 0.3,
+      end = w + shift(c + 1, r) * w * 0.3;
+    const y = shift(0, r) * h * 0.22,
+      bottom = h + shift(0, r + 1) * h * 0.22;
+    const tone = 207 + (rand() - 0.5) * (fired ? 17 : 9);
+    ctx.fillStyle = fired ? pigment(tone, 13, -3, -13) : sandstone ? pigment(tone, 8, 1, -11) : pigment(tone, 1, 0, -2);
+    ctx.fillRect(x, y, end - x + 0.2, bottom - y + 0.2);
+    stroke(ctx, tone - 32, mortar, x + 0.2, y, x + 0.2, bottom);
+    stroke(ctx, tone - 34, mortar, x, bottom - 0.4, end, bottom - 0.4);
+    if (!fired) {
+      for (let i = 0; i < 8; i++) {
+        const px = x + (end - x) * rand(),
+          py = y + (bottom - y) * rand();
+        stroke(ctx, tone + (rand() - 0.5) * 20, 0.45, px, py, Math.min(end, px + 1 + rand() * 3), py + 0.3);
+      }
+    }
+  });
+}
+
+/** Handmade split-cylinder coverings sit in a pan and cap arrangement. Later pressed clay
+ * has broad, flatter faces with shallow longitudinal flutes and narrow interlocking edges. */
+function clayCover(ctx: Brush, pressed: boolean, seed: number): void {
+  courses(ctx, pressed ? 12 : 16, pressed ? 8 : 9, false, seed, (w, h, rand, col) => {
+    const tone = 204 + (rand() - 0.5) * (pressed ? 13 : 22);
+    const clay = (shade: number): string => pigment(tone + shade, 15, -2, -14);
+    // Slightly offset lap joints in adjacent runs. Every wrapped copy of a column uses the same shift.
+    ctx.translate(0, h * 0.32 * random(seed ^ Math.imul(col + 1, 0x85ebca6b))());
+    const pan = ctx.createLinearGradient(0, 0, w, 0);
+    for (const [at, shade] of pressed
+      ? [
+          [0, -19],
+          [0.13, 5],
+          [0.24, 2],
+          [0.32, -7],
+          [0.38, 3],
+          [0.62, 3],
+          [0.69, -7],
+          [0.77, 3],
+          [0.9, 4],
+          [1, -16],
+        ]
+      : [
+          [0, 3],
+          [0.28, -7],
+          [0.54, -2],
+          [0.8, 6],
+          [1, 1],
+        ])
+      pan.addColorStop(at, clay(shade));
+    ctx.fillStyle = pan;
+    ctx.fillRect(0, 0, w + 0.2, h + 0.3);
+    stroke(ctx, tone - 25, 0.8, w * 0.05, h - 1.4, w * 0.57, h - 0.8);
+    if (pressed) return;
+    const left = w * (0.56 + rand() * 0.045),
+      right = w * 0.98,
+      swell = 0.055 * w;
+    const roll = ctx.createLinearGradient(left - swell, 0, right, 0);
+    roll.addColorStop(0, clay(-24));
+    roll.addColorStop(0.36, clay(14));
+    roll.addColorStop(0.62, clay(8));
+    roll.addColorStop(1, clay(-15));
+    ctx.beginPath();
+    ctx.moveTo(left, 0);
+    ctx.lineTo(right - swell, 0);
+    ctx.lineTo(right, h - 1);
+    ctx.quadraticCurveTo((left + right) / 2, h + 1.3, left - swell, h - 0.7);
+    ctx.closePath();
+    ctx.fillStyle = roll;
+    ctx.fill();
+    stroke(ctx, tone - 32, 1, left - swell, h - 0.65, right, h - 1.05);
+  });
+}
+
+function limeTerrace(ctx: Brush, seed: number): void {
+  courses(ctx, 4, 4, false, seed, (w, h, rand) => {
+    for (let k = 0; k < 5; k++) {
+      const x = rand() * w,
+        y = rand() * h;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + w * 0.14, y - h * 0.1, x + w * 0.29, y - h * 0.07);
+      ctx.strokeStyle = grey(205 + rand() * 8);
+      ctx.lineWidth = 0.7 + rand() * 1.1;
+      ctx.stroke();
+    }
+  });
+}
+
 function roofUnits(ctx: Brush, style: string, seed: number): void {
   const timber = style === 'shingle';
   const scale = style === 'leaf-scale';
-  const rock = style === 'slab' || style === 'obsidian' || style === 'paving';
+  const rock = style === 'slab' || style === 'obsidian';
   const cols = rock ? 6 : scale ? 9 : 13;
-  const rows = style === 'paving' ? 6 : scale ? 8 : 12;
+  const rows = scale ? 8 : 12;
   courses(ctx, cols, rows, true, seed, (w, h, rand) => {
     const tint = 192 + rand() * 35,
       end = h + rand() * (rock ? 2.4 : 1.5);
@@ -385,8 +531,7 @@ function noiseField(cols: number, rows: number, rand: Random): (u: number, v: nu
 }
 
 /** Paint one opaque tile whose average sRGB luminance is approximately .82. */
-export function paintHouseRoof(ctx: Brush, size: number, culture: string, material: string, variant = 0): void {
-  const style = houseRoofStyle(culture, material);
+export function paintHouseRoof(ctx: Brush, size: number, style: string, variant = 0): void {
   let seed = variant | 0;
   for (let i = 0; i < style.length; i++) seed = (Math.imul(seed, 31) + style.charCodeAt(i)) | 0;
   ctx.save();
@@ -397,11 +542,26 @@ export function paintHouseRoof(ctx: Brush, size: number, culture: string, materi
     case 'tile':
     case 'slate':
     case 'slab':
-    case 'paving':
     case 'shingle':
     case 'obsidian':
     case 'leaf-scale':
       roofUnits(ctx, style, seed);
+      break;
+    case 'paving':
+    case 'brick-courses':
+    case 'terrace-clay':
+    case 'stone-flags':
+    case 'sandstone-flags':
+    case 'roof-slabs':
+    case 'dressed-courses':
+      fittedCourses(ctx, style, seed);
+      break;
+    case 'country-clay':
+    case 'pressed-clay':
+      clayCover(ctx, style === 'pressed-clay', seed);
+      break;
+    case 'lime-terrace':
+      limeTerrace(ctx, seed);
       break;
     case 'bark':
       barkSheets(ctx, seed);

@@ -8,6 +8,7 @@
  */
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 import { buildingBounds } from './buildingsMesh';
+import { CRAFTED_BLOCK_MARGIN } from '../craftedMassingBounds';
 import { buildingSpan, type BuildingBlock } from './buildingsBlocks';
 import type { WorldRelief } from './contract';
 
@@ -36,11 +37,22 @@ export interface BuildingPick {
 const span: [number, number] = [0, 0];
 /** The building first met by the ray from `origin` along `direction` (map metres, z as drawn) before `limit`, among
  * those `accept` takes. `rise`: the share of the relief the frame shows (FrameCamera.rise). */
-export function pickBuilding(blocks: readonly BuildingBlock[], origin: ArrayLike<number>, direction: ArrayLike<number>, rise: number, relief: WorldRelief, exaggeration: number, limit: number, accept: (building: Building3dVisual) => boolean): BuildingPick | undefined {
+export function pickBuilding(
+  blocks: readonly BuildingBlock[],
+  origin: ArrayLike<number>,
+  direction: ArrayLike<number>,
+  rise: number,
+  relief: WorldRelief,
+  exaggeration: number,
+  limit: number,
+  accept: (building: Building3dVisual) => boolean,
+  crafted = false,
+): BuildingPick | undefined {
   const entered: { block: BuildingBlock; t: number }[] = [];
+  const margin = crafted ? CRAFTED_BLOCK_MARGIN : 0;
   for (const block of blocks) {
     if (block.yard || !block.buildings.length) continue;
-    const t = rayBox(origin, direction, block.minX, block.minY, block.low * rise, block.maxX, block.maxY, block.high * rise);
+    const t = rayBox(origin, direction, block.minX - margin, block.minY - margin, block.low * rise, block.maxX + margin, block.maxY + margin, (block.high + margin) * rise);
     if (t < limit) entered.push({ block, t });
   }
   entered.sort((a, b) => a.t - b.t);
@@ -48,7 +60,7 @@ export function pickBuilding(blocks: readonly BuildingBlock[], origin: ArrayLike
   for (const { block, t: entry } of entered) {
     if (best && entry >= best.t) break;
     for (const building of block.buildings) {
-      const box = buildingBounds(building);
+      const box = buildingBounds(building, crafted);
       buildingSpan(building, box, relief, exaggeration, span);
       const t = rayBox(origin, direction, box[0], box[1], span[0] * rise, box[3], box[4], span[1] * rise);
       if (t < limit && (!best || t < best.t) && accept(building)) best = { building, t };

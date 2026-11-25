@@ -18,6 +18,7 @@ import { pickBuilding, type BuildingPick } from './buildingsPick';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 import { CoverGrainTexture } from './buildingsGrain';
 import { HouseSurfaceTexture, houseSurfaceCount } from '../houseSurfaceTexture';
+import { CRAFTED_BLOCK_MARGIN } from '../craftedMassingBounds';
 import { BuildingBlockCache, type BuildingLevel as Level, type BuildingSlot as Slot } from './buildingsCache';
 import type { VolumeTownLook } from '../city/buildingLook';
 import { BuildingDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
@@ -454,7 +455,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           const x = (b.minX + b.maxX) / 2 - tx,
             y = (b.minY + b.maxY) / 2 - ty,
             z = (low + high) / 2 - tz,
-            radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2;
+            radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2 + (roof === 'crafted' && !b.yard ? CRAFTED_BLOCK_MARGIN * Math.hypot(1,rise) : 0);
           if (!volume.sees(x, y, z, radius)) continue;
           const depth = flat ? 1 : volume.depth(x, y, z);
           // The depth preference extends the subpixel cutoff; maximum depth retains every visible building block.
@@ -528,7 +529,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       dirty = true;
     },
     pick(origin, direction, rise, limit, accept) {
-      return heights && cache.slots.length ? pickBuilding(cache.blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept) : undefined;
+      return heights && cache.slots.length ? pickBuilding(cache.blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept, appearance?.roof === 'crafted' && appearance?.diagnostic === 'none' && appearance.style !== 'silhouette') : undefined;
     },
     contextLost() {
       // Every handle is dead: forget them without deleting.

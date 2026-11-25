@@ -168,7 +168,7 @@ function roofEdges(volume: OverviewVolume, culture: string, quad: Quad): void {
 }
 
 /** These fittings belong to the close mesh and share its draw call and material lighting. */
-export function craftedArchitecture(volume: OverviewVolume, culture: string, emit: (face: BuildingTriangle) => void): void {
+export function craftedArchitecture(volume: OverviewVolume, culture: string, emit: (face: BuildingTriangle) => void, hasRoofRoom = false): void {
   const mesh = volume.roof_mesh,
     ring = volume.footprint[0]?.outer;
   if (!mesh || !ring?.length) return;
@@ -208,5 +208,5 @@ export function craftedArchitecture(volume: OverviewVolume, culture: string, emi
   roofEdges(volume, culture, quad);
   craftedCrown(volume, culture, quad);
   if (culture === 'merfolk-tidal') craftedTidal(volume, emit);
-  craftedRoofFitting(volume, culture, quad);
+  if (!hasRoofRoom) craftedRoofFitting(volume, culture, quad);
 }

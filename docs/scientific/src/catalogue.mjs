@@ -16,6 +16,23 @@ const UI = {
     lead: 'In Magna Urbis a culture is a data sheet. It tells the generator how streets are laid out, how plots are cut, which houses stand on them, which monuments the town builds and what the countryside around it looks like. There are 115 of them, from medieval organic towns to cyberpunk megacities.',
     facts: { total: 'cultures', historical: 'historical', fantasy: 'fantasy and camps', modern: 'modern', future: 'futuristic and alien', farms: 'farm types' },
     howTitle: 'How a style becomes a town',
+    detailTitle: 'Reading a house at close range',
+    detailIntro: 'Choose Detailed architecture in the roofs menu and zoom in. First follow the building’s outline. Its wings, court, floor heights and main roof come from the generated plan. Then look at an opening or a roof edge. The 3D renderer fits joinery, coverings and selected additions to the surfaces available to that profile.',
+    detailExample: 'On a Mongolian ger, follow the felt from the eaves to the timber crown and the ties around the wall. On an Iroquoian longhouse, the cover follows a much longer arch with smoke openings and fastening poles. On a myconid dwelling, raised patches follow the mushroom cap. A town-scale view retains the larger forms as fine details fade. The culture sheets below give the architectural choices and ranges used across many lots.',
+    detailAtlas: 'How geometry, material coordinates and viewing distance interact',
+    compareAlt: 'Two views of a one-storey stone house with a flat roof. On the right a terracotta canopy on posts shelters the front steps and two masonry seats.',
+    compareCaption: 'The same Dravidian-profile house in the standard V2 view (left) and with Detailed architecture (right). The upper volume and parapet appear in both. In the detailed view a tiled thinnai shelters the entrance, and the roof terrace shows a lime finish. The house is isolated with the same camera, lighting and scale in both views.',
+    compareSample: 'This village was generated with a target population of 500 and the seed “cabane”. Of its 189 buildings, 40 dwellings received a projecting addition in the detailed view.',
+    indiaTitle: 'Four Indian and South Asian profiles',
+    indiaHouses: [
+      'A tiled entrance porch on timber posts shelters the step into the house.',
+      'A deeper thinnai, a raised covered space at the entrance, can carry masonry seats on both sides of the passage.',
+      'A jharokha projects an existing upper window on sandstone brackets. A sheltered stone entrance is another possible treatment.',
+      'A concrete loggia with a side screen can project from an upper opening. A slab porch is an alternative at ground level.',
+    ],
+    indiaFit: 'Each eligible main dwelling can receive one projecting frontage feature. A Rajput or metropolitan house may also have a small stair enclosure on a clear flat terrace. Courtyard openings, other masses of the same building and existing rooftop equipment limit where these parts fit. These tests cover the building itself. Checking clearance to a neighbouring parcel requires its boundary.',
+    indiaCover: 'The declared cover, roof pitch and building role determine the surface. A stone terrace can show jointed slabs, a plaster terrace a trowelled lime finish. A steep stone roof over a temple or shrine can show dressed courses. Fired clay on a terrace reads as laid tiles, while a pitched roof can carry overlapping potter-made tiles or, in the metropolitan profile, interlocking manufactured tiles. On stone façades the southern profiles use subdued coursing, and the Rajput profile can show sandstone. These choices apply to the individual volume, so a sacred building and a neighbouring house can read differently.',
+    indiaSources: 'Priya Joseph’s field examples distinguish the stone slabs at Guluru, lime terrace at Devanahalli and potter-made roof tiles at Sural. They provide regional examples of construction. The renderer assigns them using its own material rules.',
     how1: 'The sheet of a culture is read facet by facet. The street plan and the plots come from its urban recipes, the houses and roofs from its building tradition, the monuments from its programme, the farms and hamlets from its countryside entry. Each facet is consumed by one stage of the town pipeline.',
     how2: 'A hybrid style is a sheet whose facets name different cultures, with weights: an old core, a planned extension, then suburbs can each speak another style.',
     figCap: 'The five facets of a culture sheet and the stages that read them. Hybrid sheets feed the same stages from several cultures.',
@@ -55,6 +72,23 @@ const UI = {
     lead: 'Dans Magna Urbis, une culture est une fiche de données. Elle dit au générateur comment les rues s’organisent, comment les parcelles sont découpées, quelles maisons s’y dressent, quels monuments la ville construit et à quoi ressemble la campagne autour. Il y en a 115, des villes médiévales organiques aux mégapoles cyberpunk.',
     facts: { total: 'cultures', historical: 'historiques', fantasy: 'fantasy et camps', modern: 'modernes', future: 'futuristes et aliens', farms: 'types de fermes' },
     howTitle: 'Comment un style devient une ville',
+    detailTitle: 'Observer une maison de près',
+    detailIntro: 'Choisissez Architecture détaillée dans le menu des toits et rapprochez la caméra. Suivez d’abord le contour du bâtiment. Ses ailes, sa cour, les hauteurs des niveaux et le toit principal viennent du plan généré. Observez ensuite une ouverture ou un bord de toit. Le rendu 3D ajuste les menuiseries, les couvertures et certains ouvrages aux surfaces disponibles pour ce profil.',
+    detailExample: 'Sur une yourte mongole, suivez le feutre de l’égout à la couronne de bois, puis les liens autour de la paroi. Sur une maison longue iroquoienne, la couverture épouse une voûte allongée, percée pour la fumée et maintenue par des perches. Sur un habitat myconide, les plaques en relief suivent le chapeau du champignon. À l’échelle de la ville, les grandes formes restent lisibles quand ces détails disparaissent. Les fiches ci-dessous donnent les choix architecturaux et les fourchettes employés sur l’ensemble des lots.',
+    detailAtlas: 'Géométrie, coordonnées de texture et distance de vue',
+    compareAlt: 'Deux vues d’une maison en pierre de plain-pied à toit plat. À droite, un auvent de tuiles sur poteaux abrite les marches d’entrée et deux banquettes maçonnées.',
+    compareCaption: 'La même maison du profil dravidien en vue V2 standard (à gauche) et avec Architecture détaillée (à droite). Le volume supérieur et l’acrotère apparaissent dans les deux vues. En mode détaillé, un thinnai couvert de tuiles abrite l’entrée et la terrasse présente un enduit à la chaux. La maison est isolée avec la même caméra, le même éclairage et la même échelle.',
+    compareSample: 'Ce village a été généré avec une population cible de 500 et la graine « cabane ». Sur ses 189 bâtiments, 40 habitations ont reçu une avancée en mode détaillé.',
+    indiaTitle: 'Quatre profils indiens et sud-asiatiques',
+    indiaHouses: [
+      'Un porche couvert de tuiles, sur des poteaux en bois, abrite le perron de la maison.',
+      'Un thinnai plus profond, espace surélevé et couvert à l’entrée, peut accueillir des sièges maçonnés de part et d’autre du passage.',
+      'Un jharokha prolonge en saillie une fenêtre d’étage, sur des consoles en grès. Un perron abrité en pierre est une autre possibilité.',
+      'Une loggia en béton à écran latéral peut prolonger une baie à l’étage. Une dalle abritant le porche est une variante au rez-de-chaussée.',
+    ],
+    indiaFit: 'Sur un corps de logis qui s’y prête, le rendu peut ajouter une avancée en façade. Une maison rajpoute ou métropolitaine peut aussi recevoir un petit édicule d’escalier sur une terrasse plate dégagée. Les vides de cour, les autres volumes du bâtiment et les équipements déjà présents en toiture limitent les emplacements possibles. Ces tests portent sur le bâtiment lui-même. Vérifier le recul par rapport à une parcelle voisine demanderait sa limite.',
+    indiaCover: 'La couverture déclarée, la pente et la fonction de l’édifice déterminent la finition. Une terrasse en pierre peut montrer des dalles jointives, une terrasse enduite une chaux talochée. Sur un sanctuaire ou un temple, un pan raide en pierre peut recevoir des assises taillées. La terre cuite se présente en carreaux sur une terrasse, en tuiles canal de potier sur certains versants historiques et en tuiles industrielles à emboîtement dans le profil métropolitain. Sur les façades de pierre, les profils du sud présentent des assises discrètes et le profil rajput peut montrer du grès. Le choix se fait volume par volume, jusque sur deux édifices voisins.',
+    indiaSources: 'Les exemples de terrain de Priya Joseph distinguent les dalles de Guluru, la terrasse à la chaux de Devanahalli et les tuiles de potier de Sural. Ils documentent des constructions régionales. Le rendu emploie ses propres règles pour les attribuer.',
     how1: 'La fiche d’une culture se lit facette par facette. Le plan des rues et les parcelles viennent de ses recettes urbaines, les maisons et les toits de sa tradition de bâti, les monuments de son programme, les fermes et les hameaux de son entrée campagne. Chaque facette est consommée par une étape du pipeline de la ville.',
     how2: 'Un style hybride est une fiche dont les facettes désignent des cultures différentes, avec des poids : un vieux cœur, une extension planifiée, puis des faubourgs peuvent chacun parler un autre style.',
     figCap: 'Les cinq facettes d’une fiche de culture et les étapes qui les lisent. Les fiches hybrides alimentent les mêmes étapes depuis plusieurs cultures.',
@@ -226,6 +260,16 @@ ${g.items.map(c => card(c, t, lang)).join('\n')}
 <div class="prose"><p>${t.how1}</p><p>${t.how2}</p></div>
 <figure class="section-figure wide"><div class="plate">${diagram(t)}</div><figcaption>${t.figCap}</figcaption></figure>
 </section>
+<section class="chapter" id="architecture-detail" aria-labelledby="h-detail">
+<h2 id="h-detail">${t.detailTitle}</h2>
+<div class="prose"><p>${t.detailIntro}</p><p>${t.detailExample}</p></div>
+<figure class="section-figure wide" id="architecture-compare"><img src="assets/atlas/architecture-detail.webp" width="1132" height="397" loading="lazy" alt="${esc(t.compareAlt)}"><figcaption>${t.compareCaption} ${t.compareSample}</figcaption></figure>
+<div class="prose"><h3>${t.indiaTitle}</h3>
+<dl class="glossary">${['indian-temple','dravidian-temple','rajput-fort','south-asian-metropolis'].map((id, i) => `<dt><a href="#${id}">${esc(lang === 'fr' ? fr[id].label : cultures.find(c => c.id === id).label)}</a></dt><dd>${t.indiaHouses[i]}</dd>`).join('')}</dl>
+<p>${t.indiaFit}</p><p>${t.indiaCover}</p>
+<p>${t.indiaSources} <a href="https://www.sahapedia.org/native-roofing-systems-of-south-india-processes-and-material-heritage" lang="en">Native Roofing Systems of South India</a></p>
+<p><a href="${lang === 'fr' ? 'fr.html' : 'index.html'}#architecture-detail">${t.detailAtlas}</a></p></div>
+</section>
 ${sections}
 <section class="chapter cat-close" id="captures"><h2>${t.closeTitle}</h2><div class="prose"><p>${t.close}</p></div></section>`;
   const chip = (k, pressed) => `<button type="button" class="chip" data-era-chip="${k}" aria-pressed="${pressed}">${t.chips[k]}</button>`;
@@ -237,6 +281,7 @@ ${sections}
 </div>
 <nav aria-label="${t.routeLabel}" class="cat-route"><ol class="route">
 <li><a href="#how">${t.howTitle}</a></li>
+<li><a href="#architecture-detail">${t.detailTitle}</a></li>
 ${groups.map(g => `<li><a href="#g-${g.key}">${t.group[g.key]}</a></li>`).join('\n')}
 <li><a href="#captures">${t.closeTitle}</a></li>
 </ol></nav>`;

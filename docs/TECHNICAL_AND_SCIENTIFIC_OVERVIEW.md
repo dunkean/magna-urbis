@@ -6,6 +6,10 @@ For current neural runtime and weight selection, use the [model documentation](.
 
 Code links distinguish methods actually used from scientific references that explain or compare an approach. The cited papers do not constitute scientific validation of Magna Urbis: the project's parameters, simplifications and artistic choices have their own domain of validity.
 
+### Current V2 building display (25 November 2026)
+
+The Rust urban programme assigns each site a role and raises its footprint into one or more volumes with floor counts, eaves and roof shapes. The optional **Detailed architecture** roof display reads those volumes. At close range, the renderer fits additional geometry to eligible openings and roofs and maps the material in metres around the structure. At town scale, screen size selects simpler meshes and filtered textures. A count of rendered roof fittings and a count of planned building volumes therefore measure different things. [Illustrated method](scientific/index.html#architecture-detail) · [Architectural catalogue](scientific/catalogue-architecture.html#architecture-detail)
+
 ## 1. System layers
 
 | Layer | Inputs and results | Implementation and status |

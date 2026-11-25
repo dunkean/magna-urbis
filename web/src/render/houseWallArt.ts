@@ -5,6 +5,8 @@ type Finish =
   | 'brick'
   | 'handBrick'
   | 'rubble'
+  | 'coursedStone'
+  | 'sandstone'
   | 'ashlar'
   | 'cyclopean'
   | 'slate'
@@ -64,6 +66,8 @@ const regional = new Map<string, Partial<Record<Finish, Finish>>>();
 function finishes(cultures: string, overrides: Partial<Record<Finish, Finish>>) {
   for (const culture of cultures.split(' ')) regional.set(culture, overrides);
 }
+finishes('indian-temple dravidian-temple south-asian-metropolis', { rubble: 'coursedStone', brick: 'handBrick' });
+finishes('rajput-fort', { rubble: 'sandstone', brick: 'handBrick' });
 finishes('mongol-ordu nomad-camp', { hide: 'felt' });
 finishes('tibetan-monastery himalayan-terraces', { rubble: 'slate', lime: 'whitewash' });
 finishes('elven', { boards: 'treeBark' });
@@ -129,7 +133,8 @@ const seam = (x: number) => Math.min(fract(x), 1 - fract(x));
  * bedding and mortar; plastering and bleaching are separate finishes. */
 function masonry(style: Finish, f: Fields): Sample {
   const fired = style === 'brick' || style === 'handBrick';
-  const rough = style === 'rubble' || style === 'slate' || style === 'coral';
+  const coursed = style === 'coursedStone';
+  const rough = coursed || style === 'rubble' || style === 'slate' || style === 'coral';
   const rows = fired ? 36 : style === 'slate' ? 18 : rough ? 12 : 8;
   const cols = fired ? 13 : rough ? 6 : 4;
   const split = style === 'handBrick';
@@ -149,6 +154,13 @@ function masonry(style: Finish, f: Fields): Sample {
     if (fired) {
       p.r += lot * 5;
       p.b -= lot * 6;
+    }
+    // Narrow lime joints and quiet mineral variation keep shallow walls and parapets legible.
+    if (coursed || style === 'sandstone') {
+      const bedding = f.noise(u, v, 4, 32, 7);
+      p.r += lot * 3;
+      p.b -= lot * 2;
+      return 209 + lot * 6 + bedding * 5 + p.cloud * 5 + p.speckle * 3 - grout * 13 - bevel * 3;
     }
     if (style === 'coral') {
       const shell = unit((f.noise(u, v, 64, 64, 2) - 0.38) * 3);
@@ -339,6 +351,8 @@ function sampler(style: Finish, f: Fields): Sample {
   switch (style) {
     case 'brick':
     case 'handBrick':
+    case 'coursedStone':
+    case 'sandstone':
     case 'rubble':
     case 'ashlar':
     case 'slate':

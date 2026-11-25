@@ -9,6 +9,8 @@ import type { RoofMesh } from './city3d/types';
 import { craftedYurt } from './craftedYurt';
 import { craftedArchitecture } from './craftedArchitecture';
 import { craftedRoofMesh } from './craftedRoofMesh';
+import { craftedRoofRoom } from './craftedRoofRoom';
+import { craftedIndianMassing } from './craftedIndianMassing';
 
 export type BuildingVector = [number, number, number];
 export interface OverviewVolume extends ArchitectureVolume {
@@ -338,6 +340,7 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     for (const triangle of surfaceTriangles(building.roof_footprint)) emit({ points: triangle.map(p => [p.x, p.y, building.ground_z_m + building.height_m]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material: materials.cladding, surface: 'roof' });
     return;
   }
+  const roofRoom = crafted && !overview ? craftedRoofRoom(building) : null;
   for (const volume of building.volumes as OverviewVolume[]) {
     // Chimneys, dormers and porches are far below a pixel where the overview is shown.
     if (overview && volume.role === MINOR_VOLUME_ROLE) continue;
@@ -356,7 +359,12 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     if (!overview) {
       if (crafted && craftedYurt(volume, building.culture?.culture ?? '', out)) continue;
       if (mesh) emitRoofFaces(crafted ? craftedRoofMesh(volume, building.culture?.culture ?? '') : mesh, volume.materials, out);
-      if (crafted && mesh && !volume.displayTree) craftedArchitecture(volume, building.culture?.culture ?? '', out);
+      if (crafted && mesh && !volume.displayTree) {
+        const hasRoom = roofRoom?.volume === volume;
+        if (hasRoom) emitRoofFaces(roofRoom.mesh, volume.materials, out);
+        craftedArchitecture(volume, building.culture?.culture ?? '', out, hasRoom);
+        craftedIndianMassing(building, volume, out);
+      }
       continue;
     }
     if (mesh && volume.overview_roof_faces) {

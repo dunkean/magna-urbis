@@ -13,6 +13,7 @@
  */
 import type { HouseMaterial, MaterialPattern } from '../../../../rust/bridge/housesContract';
 import { roofEdgeMasks } from '../roofEdges';
+import { includeCraftedMassing } from '../craftedMassingBounds';
 import { roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
 import { buildingTint } from '../buildingPalette';
 import { buildingHeat, roofSnowShare, snowRoofTint } from '../roofSnow';
@@ -23,6 +24,7 @@ import type { BuildingFeatureLod } from '../urbanBuildingFeatureLod';
 import { massingLookOf } from '../city3d/materials';
 import { volumeRoofPaint, volumeWallColor, type VolumeTownLook } from '../city/buildingLook';
 import { houseSurfaceLayer, HOUSE_TILE_LAYERS } from '../houseSurfaceTexture';
+import { roofFaceForm } from '../houseRoofArt';
 import { houseSurfaceMapper } from '../houseSurfaceUv';
 
 export type Vec3 = [number, number, number];
@@ -31,7 +33,7 @@ export type BuildingBounds = [number, number, number, number, number, number];
 export const BUILDING_STRIDE = 10;
 
 /** Bounds of a building with its foundations and structural features. */
-export function buildingBounds(building: Building3dVisual): BuildingBounds {
+export function buildingBounds(building: Building3dVisual, crafted = false): BuildingBounds {
   const box: BuildingBounds = [Infinity, Infinity, building.ground_z_m, -Infinity, -Infinity, building.ground_z_m + building3dHeight(building)];
   const features = isBuildingProjection(building) ? [] : building.structural_features;
   for (const surface of [building.footprint, building.roof_footprint, ...features.map(f => f.surface)])
@@ -55,6 +57,7 @@ export function buildingBounds(building: Building3dVisual): BuildingBounds {
         box[i + 3] = Math.max(box[i + 3], point[i]);
       }
     }
+  if (crafted && !isBuildingProjection(building) && building.volumes.length) includeCraftedMassing(building, box);
   return box;
 }
 
@@ -186,7 +189,7 @@ function materialClass(id: string | undefined, normal: readonly number[], cultur
 const roofPatterns: Record<MaterialPattern, string> = { tile: 'tile', thatch: 'thatch', wood: 'shingle', stone: 'slab', earth: 'earth', fabric: 'felt', snow: 'snow', plain: 'lime' };
 const wallPatterns: Record<MaterialPattern, string> = { tile: 'brick', thatch: 'wattle', wood: 'wood', stone: 'stone', earth: 'earth', fabric: 'hide', snow: 'snow', plain: 'plaster' };
 /** Native plans use catalogue IDs. Massing plans also distinguish covers with the same grain, such as zinc and lead. */
-function craftedLayer(face: BuildingTriangle, id: string, culture: string, patterns: Map<string, MaterialPattern>): number {
+function craftedLayer(face: BuildingTriangle, id: string, culture: string, patterns: Map<string, MaterialPattern>, role: string): number {
   // An ornament can tint an already-painted material again (mushroom caps, gills and skirts).
   // The face colour keeps that last tint; the drawing follows the underlying construction.
   const tint = id.indexOf('@');
@@ -195,17 +198,12 @@ function craftedLayer(face: BuildingTriangle, id: string, culture: string, patte
   if (id === 'city3d:tree:crown') return houseSurfaceLayer('roof', culture, 'canopy');
   const m = displayMaterial(id);
   if (m?.[1] === 'wall') return m[2] in WALL_CLASS ? houseSurfaceLayer('wall', culture, m[2]) : 0;
-  if (m?.[1] === 'cover') {
-    const cover = m[2];
-    const flat = Math.abs(face.normal[2]) > .995 * Math.hypot(...face.normal);
-    const material = /^(?:zinc|metal|lead|bitumen|glass|fungal|snow|ruin)$/.test(cover) ? cover : roofGrain(cover, flat, culture);
-    return material ? houseSurfaceLayer('roof', culture, material) : 0;
-  }
+  if (m?.[1] === 'cover') return houseSurfaceLayer('roof', culture, m[2], roofFaceForm(face.normal, role));
   if (id && id !== face.materials.coating && id !== face.materials.cladding) return 0;
   const pattern = patterns.get(id);
   const roof = face.surface === 'roof';
   if (id && !pattern) return 0;
-  return houseSurfaceLayer(roof ? 'roof' : 'wall', culture, (roof ? roofPatterns : wallPatterns)[pattern ?? 'plain']);
+  return roof ? houseSurfaceLayer('roof', culture, id, roofFaceForm(face.normal, role), roofPatterns[pattern ?? 'plain']) : houseSurfaceLayer('wall', culture, wallPatterns[pattern ?? 'plain']);
 }
 /** Texture coordinates (in tiles) of a point of a face, in world metres: vertical faces along the face and down (image upright),
  * pitched faces u along the ridge and v down the slope (stretched by the slope), flat faces on the plan. */
@@ -325,7 +323,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       // takes the snow class in place of its cover's.
       // A face painted by the town look takes the grain family of its pan (the top view's grain marks, COVER_GRAIN_GLSL).
       const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
-      const drawing = aperture ? houseSurfaceLayer('wall', culture, aperture) : craftedHouse && snow < .4 && face.surface !== 'yard' ? craftedLayer(face, id ?? '', culture, craftedHouse) : 0;
+      const drawing = aperture ? houseSurfaceLayer('wall', culture, aperture) : craftedHouse && snow < .4 && face.surface !== 'yard' ? craftedLayer(face, id ?? '', culture, craftedHouse, programme?.role ?? '') : 0;
       const finish = drawing && !aperture ? drawing + finishOffset : drawing;
       const project = drawing && mapper ? mapper(face, id ?? '', !!aperture) : undefined;
       // A complete sRGB8 colour fits exactly in one float. The two released channels carry

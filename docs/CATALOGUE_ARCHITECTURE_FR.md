@@ -4,6 +4,10 @@ This reference preserves the French recipe descriptions of an earlier 79-culture
 
 Each section links to the maintained catalogue instead of embedding diagrams that are no longer distributed. The historical fields below remain useful for tracing the older recipe choices; use the current [Rust catalogue](../rust/crates/core/src/urban/catalogue.json) when changing generation.
 
+### Lire ces recettes avec la V2 actuelle
+
+Une recette historique décrit un plan, une fourchette de dimensions et une tradition constructive. Pour examiner le résultat actuel, consultez une fiche des 115 cultures, puis observez la maison de près avec le mode de toiture **Architecture détaillée**. Les corps de bâtiment viennent de la volumétrie procédurale. Le rendu ajuste ensuite les ouvrages de façade et de toiture à la place disponible. Les captures générales des fiches et les comparaisons de détail portent chacune leur date. [Catalogue actuel en français](scientific/catalogue-architecture-fr.html#architecture-detail) · [Current English catalogue](scientific/catalogue-architecture.html#architecture-detail)
+
 ## Medieval organic (Europe) (`european-organic`)
 
 [Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#european-organic)

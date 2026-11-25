@@ -1,5 +1,5 @@
 import { houseWallStyle, paintHouseWall } from './houseWallArt';
-import { houseRoofStyle, paintHouseRoof } from './houseRoofArt';
+import { houseRoofStyle, paintHouseRoof, type RoofFaceForm } from './houseRoofArt';
 
 /** Each repeating square covers three metres. IDs live as long as the mesh caches and are shared by both 3D views. */
 export const HOUSE_TILE_SIZE = 256;
@@ -17,8 +17,9 @@ const tiles: Tile[] = [];
 const layers = new Map<string, number>();
 
 /** Only distinct drawings get a layer. Zero denotes a surface without a drawing. */
-export function houseSurfaceLayer(kind: Kind, culture: string, material: string): number {
-  const style = kind === 'roof' ? houseRoofStyle(culture, material) : houseWallStyle(culture, material);
+export function houseSurfaceLayer(kind: Kind, culture: string, material: string, form?: RoofFaceForm, fallback?: string): number {
+  const style = kind === 'roof' ? houseRoofStyle(culture, material, form, fallback) : houseWallStyle(culture, material);
+  if (!style) return 0;
   const key = kind + '/' + style;
   const known = layers.get(key);
   if (known !== undefined) return known;
@@ -32,7 +33,7 @@ export const houseSurfaceCount = (): number => tiles.length;
 
 // The four seamless swatches are graded around the atlas's neutral value (.82).
 // An image is requested only when a visible detailed house actually needs one of them.
-const samples: Record<string, [number, number, number]> = { rubble: [0, 0, 0.95], barkSheets: [1, 0, 0.89], bark: [1, 0, 0.82], lime: [0, 1, 0.86], whitewash: [0, 1, 0.9], timberInfill: [0, 1, 0.3], felt: [1, 1, 0.84] };
+const samples: Record<string, [number, number, number]> = { rubble: [0, 0, 0.95], coursedStone: [0, 0, 0.16], sandstone: [0, 1, 0.14], barkSheets: [1, 0, 0.89], bark: [1, 0, 0.82], lime: [0, 1, 0.86], 'lime-terrace': [0, 1, 0.28], whitewash: [0, 1, 0.9], timberInfill: [0, 1, 0.3], felt: [1, 1, 0.84] };
 let materialSheet: HTMLImageElement | undefined;
 function loadMaterialSheet(): HTMLImageElement {
   if (!materialSheet) {
@@ -58,7 +59,8 @@ export function houseSurfaceMips(layer: number): readonly HTMLCanvasElement[] {
     if (!ctx) return [];
     if (mips.length) ctx.drawImage(mips[mips.length - 1], 0, 0, size, size);
     else {
-      (tile.kind === 'roof' ? paintHouseRoof : paintHouseWall)(ctx, size, tile.culture, tile.material);
+      if (tile.kind === 'roof') paintHouseRoof(ctx, size, tile.style);
+      else paintHouseWall(ctx, size, tile.culture, tile.material);
       if (sheet && sample && sheet.naturalWidth) {
         const side = sheet.naturalWidth / 2;
         ctx.globalAlpha = sample[2];

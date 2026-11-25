@@ -7,7 +7,7 @@ import { page, PAGES } from './shell.mjs';
 
 const dir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
-const UPDATED = { en: 'Updated on 14 November 2026.', fr: 'Mis à jour le 14 novembre 2026.' };
+const UPDATED = { en: 'Updated on 25 November 2026.', fr: 'Mis à jour le 25 novembre 2026.' };
 
 for (const name of ['atlas', 'catalogue']) {
   if (only && only !== name) continue;

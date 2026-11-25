@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 const dir = dirname(fileURLToPath(import.meta.url)), root = resolve(dir, '../..');
 const registry = await readFile(resolve(root, 'web/src/v2/stageRegistry.ts'), 'utf8');
-const ids = [...registry.matchAll(/\bid: '([a-z0-9-]+)', family: '/g)].map(m => m[1]);
+const ids = [...registry.matchAll(/\bid:\s*'([a-z0-9-]+)',\s*family:\s*'/g)].map(m => m[1]);
+if (!ids.length) throw new Error('No V2 stage IDs found in the registry');
 const pages = ['index.html', 'fr.html', 'catalogue-architecture.html', 'catalogue-architecture-fr.html'];
 const before = Object.fromEntries(await Promise.all(pages.map(async p => [p, await readFile(resolve(dir, p), 'utf8')])));
 execFileSync(process.execPath, [resolve(dir, 'src/build.mjs')], { stdio: 'ignore' });
