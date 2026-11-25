@@ -1,7 +1,6 @@
 import type { V2Settings } from './contracts';
 import type { World } from '../gen/types';
-import { cultureEra } from '../gen/options';
-import { installCultureBrowser } from './cultureBrowser';
+import { CULTURE_GROUPS, cultureGroup, installCultureBrowser } from './cultureBrowser';
 import { advancedPanel } from './advancedPanel';
 import { mountRenderPassControls } from './renderPassControls';
 import { mountSectionIndex } from './sectionIndex';
@@ -20,11 +19,6 @@ registerMessages({
   'Follow the environment': { en: 'Follow the environment', fr: 'Suivre le milieu naturel' },
   'Random culture suited to this environment': { en: 'Random culture suited to this environment', fr: 'Culture aléatoire adaptée à ce milieu' },
   'Random pre-modern culture': { en: 'Random pre-modern culture', fr: 'Culture pré-moderne aléatoire' },
-  'Medieval cultures': { en: 'Medieval cultures', fr: 'Cultures médiévales' },
-  'Ancient cultures': { en: 'Ancient cultures', fr: 'Cultures antiques' },
-  'Fantasy cultures': { en: 'Fantasy cultures', fr: 'Cultures fantastiques' },
-  'Modern cultures': { en: 'Modern cultures', fr: 'Cultures modernes' },
-  'Futuristic cultures': { en: 'Futuristic cultures', fr: 'Cultures futuristes' },
   'City rendering': { en: 'City rendering', fr: 'Rendu des villes' },
   Footprints: { en: 'Footprints', fr: 'Empreintes' },
   Simple: { en: 'Simple', fr: 'Simple' },
@@ -39,20 +33,14 @@ onLanguageChange(() => document.querySelectorAll<HTMLOptGroupElement>('optgroup[
 
 export function groupCultureSelector(select: HTMLSelectElement): void {
   const selected = select.value,
-    groups = new Map<string, HTMLOptGroupElement>();
+    groups = new Map<string, HTMLOptGroupElement>(),
+    ungrouped: HTMLOptionElement[] = [];
   for (const option of Array.from(select.options)) {
-    const id = option.value;
-    const era = cultureEra(id);
-    const group =
-      era === 'modern'
-        ? 'Modern cultures'
-        : era
-          ? 'Futuristic cultures'
-          : /elven|dwarven|goblin|giant|merfolk|lizard|underdark|orc|halfling|drow|gnome/.test(id)
-            ? 'Fantasy cultures'
-            : /roman|egyptian|nubian|mesopotamian|indus|levantine|greek/.test(id)
-              ? 'Ancient cultures'
-              : 'Medieval cultures';
+    const group = cultureGroup(option.value);
+    if (!group) {
+      ungrouped.push(option);
+      continue;
+    }
     if (!groups.has(group)) {
       const node = document.createElement('optgroup');
       node.dataset.cultureGroup = group;
@@ -61,7 +49,7 @@ export function groupCultureSelector(select: HTMLSelectElement): void {
     }
     groups.get(group)!.append(option);
   }
-  select.replaceChildren(...['Medieval cultures', 'Ancient cultures', 'Fantasy cultures', 'Modern cultures', 'Futuristic cultures'].flatMap(k => groups.get(k) ?? []));
+  select.replaceChildren(...ungrouped, ...CULTURE_GROUPS.flatMap(group => groups.get(group) ?? []));
   select.value = selected;
 }
 

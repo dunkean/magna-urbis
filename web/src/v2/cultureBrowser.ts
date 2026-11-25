@@ -2,18 +2,26 @@ import { CULTURE_LABELS, cultureEra } from '../gen/options';
 import { registerMessages, setText, translate } from './i18n';
 import './cultureBrowser.css';
 
-const groups = ['Medieval cultures', 'Ancient cultures', 'Fantasy cultures', 'Modern cultures', 'Futuristic cultures'] as const;
+export const CULTURE_GROUPS = ['Medieval cultures', 'Ancient cultures', 'Fantasy cultures', 'Modern cultures', 'Futuristic cultures'] as const;
+
+const ancientCultures = new Set(['barbarian', 'celtic-oppidum', 'egyptian-planned', 'indus-planned', 'levantine-tell', 'maya', 'mesopotamian', 'nubian-fortified', 'roman-core']);
+const fantasyCultures = new Set(['drow-enclave', 'duergar-hold', 'dwarven', 'elven', 'giant-hold', 'gnomish', 'goblin-warren', 'halfling', 'lizardfolk-swamp', 'merfolk-tidal', 'myconid-colony', 'necropolis', 'orcish', 'stilt-town', 'wizard-city']);
+
 registerMessages({
   'Choose a culture': { en: 'Choose a culture', fr: 'Choisir une culture' },
   'Search cultures': { en: 'Search cultures', fr: 'Rechercher une culture' },
   'No culture matches.': { en: 'No culture matches.', fr: 'Aucune culture ne correspond.' },
   'Follow the environment': { en: 'Follow the environment', fr: 'Suivre le milieu naturel' },
-  ...Object.fromEntries(groups.map((en, i) => [en, { en, fr: ['Cultures médiévales', 'Cultures antiques', 'Cultures fantastiques', 'Cultures modernes', 'Cultures futuristes'][i] }])),
+  ...Object.fromEntries(CULTURE_GROUPS.map((en, i) => [en, { en, fr: ['Cultures médiévales', 'Cultures antiques', 'Cultures fantastiques', 'Cultures modernes', 'Cultures futuristes'][i] }])),
 });
 const cultures = new Set(CULTURE_LABELS.map(([id]) => id));
-export function cultureGroup(id: string): string {
+export function cultureGroup(id: string): (typeof CULTURE_GROUPS)[number] | undefined {
+  if (!cultures.has(id)) return undefined;
   const era = cultureEra(id);
-  return era === 'modern' ? groups[3] : era ? groups[4] : /elven|dwarven|goblin|giant|merfolk|lizard|underdark|orc|halfling|drow|gnome/.test(id) ? groups[2] : /roman|egyptian|nubian|mesopotamian|indus|levantine|greek/.test(id) ? groups[1] : groups[0];
+  if (era) return era === 'modern' ? 'Modern cultures' : 'Futuristic cultures';
+  if (fantasyCultures.has(id)) return 'Fantasy cultures';
+  if (ancientCultures.has(id)) return 'Ancient cultures';
+  return 'Medieval cultures';
 }
 
 /** Read the live options, including inheritance and environment restrictions. The original
@@ -52,8 +60,8 @@ export function installCultureBrowser(root: HTMLElement, followEnvironment?: { s
     if (!automatic.hidden) auto.checked = followEnvironment!.get();
     const term = search.value.trim().toLocaleLowerCase();
     const options = Array.from(source.options).filter(o => !o.disabled && !o.hidden && !o.closest('optgroup')?.disabled && (!term || o.text.toLocaleLowerCase().includes(term)));
-    for (const group of ['Automatic', ...groups]) {
-      const matches = options.filter(o => (cultures.has(o.value) ? cultureGroup(o.value) === group : group === 'Automatic'));
+    for (const group of ['Automatic', ...CULTURE_GROUPS]) {
+      const matches = options.filter(o => (cultureGroup(o.value) ?? 'Automatic') === group);
       if (!matches.length) continue;
       const section = document.createElement('section'),
         heading = document.createElement('h3');

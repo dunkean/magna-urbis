@@ -29,6 +29,19 @@ try {
   const cultures = page.locator('.culture-browser');
   assert(await cultures.isVisible());
   assert.equal(await cultures.locator('section').count(), 5);
+  const modalGroups = await cultures.locator('[data-culture-choice]').evaluateAll(buttons => Object.fromEntries(buttons.map(button => [button.dataset.cultureChoice, button.closest('section').querySelector('h3').textContent])));
+  const selectGroups = await page.locator('[data-option=culture] optgroup option').evaluateAll(options => Object.fromEntries(options.map(option => [option.value, option.closest('optgroup').label])));
+  assert.deepEqual(modalGroups, selectGroups);
+  const choicesByGroup = group =>
+    Object.keys(modalGroups)
+      .filter(id => modalGroups[id] === group)
+      .sort();
+  assert.deepEqual(choicesByGroup('Fantasy cultures'), ['drow-enclave', 'duergar-hold', 'dwarven', 'elven', 'giant-hold', 'gnomish', 'goblin-warren', 'halfling', 'lizardfolk-swamp', 'merfolk-tidal', 'myconid-colony', 'necropolis', 'orcish', 'stilt-town', 'wizard-city']);
+  assert.deepEqual(choicesByGroup('Ancient cultures'), ['barbarian', 'celtic-oppidum', 'egyptian-planned', 'indus-planned', 'levantine-tell', 'maya', 'mesopotamian', 'nubian-fortified', 'roman-core']);
+  assert.equal(modalGroups['byzantine-greek'], 'Medieval cultures');
+  assert.equal(modalGroups['american-grid'], 'Modern cultures');
+  assert.equal(modalGroups.cyberpunk, 'Futuristic cultures');
+  assert.equal(modalGroups['biopunk-organic-city'], 'Futuristic cultures');
   await page.screenshot({ path: `${out}/cultures.png` });
   await cultures.getByRole('searchbox').fill('Roman');
   await cultures.locator('[data-culture-choice=roman-core]').click();
