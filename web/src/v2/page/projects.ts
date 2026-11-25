@@ -128,24 +128,19 @@ export function mountProjectFiles(state: PageState, actions: PageActions): void 
   };
 
   state.cityCodeSharing = mountCityCodeSharing({
-    getRecipe: () => ({ settings: state.settings, mods: state.mods }),
+    getSettings: () => state.settings,
     blockAddress: (key, saved) => {
       const layout = nativeCityRecords(state.world)?.[key]?.layouts[0];
       return layout && blockAddress(layout, saved);
     },
-    exportFile: format => {
-      $<HTMLSelectElement>('#export-format').value = format;
-      $('#export-go').click();
-    },
     busy: () => state.busy,
     toast: message => actions.toast(message),
-    changed: () => actions.touchRecipe(),
-    load: async recipe => {
+    load: async (recipe, source) => {
       if (state.busy) return;
       actions.setBusy(true);
       try {
         await actions.loadProject(recipe);
-        actions.log('Import: generation code');
+        actions.log(source ? 'Import: Azgaar FMG' : 'Import: generation code');
         if (recipe.reliefMissing) actions.toast('This code was shared from an imported or hand-drawn relief: load its heightmap or project to get the same land.');
       } finally {
         actions.setBusy(false);

@@ -6,12 +6,13 @@
 
 - Overhead Satellite and Parchment maps separate roofs from the ground with clearer roof slopes and quieter textures at street scale. The effect fades as the map tilts.
 
-- Use Import next to Export in the top bar to bring in a real city or region. Search by name or coordinates, preview the AWS elevation, and generate a map with OpenStreetMap data. A progress bar follows the parallel downloads, map preparation and drawing. Imports keep your current display style.
+- Use OpenStreetMap next to Export in the top bar to bring in a real city or region. Search by name or coordinates, preview the AWS elevation, and generate a map with OpenStreetMap data. A progress bar follows the parallel downloads, map preparation and drawing. Imports keep your current display style.
 - Use Download app in the top bar to open the desktop releases. The Links dialog groups the atlas, project links and build information.
 - Real-place imports request leaner OpenStreetMap data, distinguish server wait from download progress, and suggest a smaller square for large search results.
 - Import streets without OpenStreetMap building footprints and let Magna Urbis generate parcels and buildings along the surveyed streets in the selected culture.
 - OpenStreetMap imports switch servers sooner when the first server sends no data, prefer the last successful server, and reuse small recent downloads for the same area in the current session.
 - Failed real-place downloads show a warning naming OpenStreetMap or AWS elevation, with a Retry button and expandable technical details.
+- Azgaar FMG replaces Share in the top bar and gives burg imports their own dialog with a copyable export script and instructions. Manage pins from the map toolbar.
 - Detailed architecture varies porch roofs, supports and entrance layouts from house to house within each culture. The same generated home keeps its porch when revisited.
 - Detailed architecture adds culture-specific entrances and silhouettes across the full catalogue, with regional verandas, snow passages, cliff-like giant portals, Drow silk canopies and Duergar forge vents.
 - In Detailed architecture, mage districts feature fewer tall towers, futuristic houses gain distinct roof structures, and mushroom settlements and underground farms grow layered caps and cultivated beds.

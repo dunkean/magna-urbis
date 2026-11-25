@@ -57,9 +57,6 @@
 .project-actions .city-code-chip button {
   padding: 4px 6px;
 }
-.city-code-pins input {
-  width: 14em;
-}
 .project-actions #export-open {
   border-color: #dcb86f66;
   color: var(--gold);

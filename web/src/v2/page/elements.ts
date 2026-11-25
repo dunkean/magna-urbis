@@ -18,7 +18,7 @@ export function mountPageShell(localEdition: boolean): void {
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>The region workshop</p></div><span class="version">V2 · ALPHA</span>
   <button id="project-links-open" type="button" aria-haspopup="dialog" aria-controls="project-links-dialog">Links</button>
   <a id="desktop-download" href="${desktopReleasesUrl}" target="_blank" rel="noopener noreferrer">Download app</a>
-  <div class="project-actions"><button id="import-open">Open</button><button id="save-map">Save map</button><button id="osm-open" type="button" class="primary" aria-haspopup="dialog" aria-controls="osm-dialog" title="Import a real place">Import</button><button id="export-open">Export ↗</button></div>
+  <div class="project-actions"><button id="import-open">Open</button><button id="save-map">Save map</button><button id="osm-open" type="button" class="primary" aria-haspopup="dialog" aria-controls="osm-dialog" title="Import a real place">OpenStreetMap</button><button id="export-open">Export ↗</button></div>
   <div class="header-tools"><span class="edition">${localEdition ? 'Desktop / local edition' : 'Web edition'}</span><label class="language-control header-language"><select id="language-select" aria-label="Interface language">${LANGUAGES.map(item => `<option value="${item.code}" data-l10n-keep>${item.name}</option>`).join('')}</select></label><button id="hardware-open" title="Settings, engines and activity">${icon('settings-gear', 20)} <span class="status-dot" id="hardware-led"></span> <span id="hardware-caption">Settings</span></button></div>
 </header>
 <section class="workbench-bar" aria-label="Scene and editing tools">

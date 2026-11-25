@@ -4,11 +4,15 @@
 import type { View } from '../render/view';
 import type { ScreenProjection } from '../render/world/camera';
 import type { V2Settings } from './contracts';
-import { registerMessages, setText } from './i18n';
+import { insertHTML, registerMessages, setText, translate } from './i18n';
 import './pinTool.css';
 
 registerMessages({
   'Drop pin': { en: 'Drop pin', fr: 'Poser une épingle' },
+  Pins: { en: 'Pins', fr: 'Épingles' },
+  'Pin text': { en: 'Pin text', fr: 'Texte de l’épingle' },
+  'Remove pin': { en: 'Remove pin', fr: 'Supprimer l’épingle' },
+  'Show on the map': { en: 'Show on the map', fr: 'Afficher sur la carte' },
   'Click on the map to drop a pin. Pins are shared with the map code.': { en: 'Click on the map to drop a pin. Pins are shared with the map code.', fr: 'Cliquez sur la carte pour poser une épingle. Les épingles sont partagées avec le code de la carte.' },
 });
 
@@ -29,8 +33,7 @@ export interface PinToolApi {
 const PIN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 21s-6-6.2-6-11a6 6 0 0 1 12 0c0 4.8-6 11-6 11z"/><circle cx="12" cy="10" r="2.2" fill="currentColor"/></svg>';
 const CLICK_SLOP_PX = 5;
 
-/** `v2-pin-focus` (detail: pin index) centres the view on a pin; `v2-recipe-change` redraws the markers. */
-export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; redraw(): void } {
+export function mountPinTool(api: PinToolApi): void {
   const { map, canvas } = api;
   const ns = 'http://www.w3.org/2000/svg';
   const button = document.createElement('button');
@@ -43,6 +46,19 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
   button.title = 'Click on the map to drop a pin. Pins are shared with the map code.';
   button.setAttribute('data-i18n-title', button.title);
   api.slot.append(button);
+  insertHTML(button, 'afterend', '<button id="pins-open" type="button" aria-haspopup="dialog" aria-controls="pins-dialog" hidden>Pins</button>');
+  insertHTML(
+    map,
+    'afterend',
+    `<dialog id="pins-dialog" aria-labelledby="pins-title">
+      <div class="dialog-head"><h2 id="pins-title">Pins</h2><button type="button" aria-label="Close">×</button></div>
+      <ol></ol>
+    </dialog>`,
+  );
+  const openPins = document.querySelector<HTMLButtonElement>('#pins-open')!;
+  const pinDialog = document.querySelector<HTMLDialogElement>('#pins-dialog')!;
+  const pinList = pinDialog.querySelector('ol')!;
+  pinDialog.querySelector('button')!.onclick = () => pinDialog.close();
   const svg = document.createElementNS(ns, 'svg');
   svg.classList.add('pin-overlay');
   svg.setAttribute('aria-hidden', 'true');
@@ -53,6 +69,50 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
     press: { id: number; x: number; y: number } | undefined;
   const pins = () => api.getSettings().pins ?? [];
   const at: [number, number] = [0, 0];
+  function renderPins(): void {
+    pinList.replaceChildren();
+    pins().forEach((pin, index) => {
+      const item = document.createElement('li');
+      const locate = document.createElement('button');
+      const label = document.createElement('input');
+      const remove = document.createElement('button');
+      locate.type = remove.type = 'button';
+      locate.className = 'quiet';
+      locate.textContent = `#${index + 1} x=${Math.round(pin.x)} y=${Math.round(pin.y)}`;
+      locate.setAttribute('aria-label', translate('Show on the map'));
+      locate.onclick = () => {
+        pinDialog.close();
+        api.setView({ ...api.getView(), cx: pin.x, cy: pin.y });
+        schedule();
+      };
+      label.value = pin.text ?? '';
+      label.maxLength = 80;
+      label.setAttribute('aria-label', translate('Pin text'));
+      label.placeholder = translate('Pin text');
+      label.onchange = () => {
+        if (label.value.trim()) pin.text = label.value.trim();
+        else delete pin.text;
+        api.changed();
+      };
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', translate('Remove pin'));
+      remove.onclick = () => {
+        pins().splice(index, 1);
+        if (!pins().length) {
+          delete api.getSettings().pins;
+          pinDialog.close();
+        }
+        api.changed();
+        renderPins();
+      };
+      item.append(locate, ' ', label, remove);
+      pinList.append(item);
+    });
+  }
+  openPins.onclick = () => {
+    renderPins();
+    pinDialog.showModal();
+  };
   function draw(): void {
     frame = 0;
     const projection = api.projection(),
@@ -104,7 +164,6 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
   window.addEventListener('v2-edit-mode', event => {
     if ((event as CustomEvent<string>).detail !== 'navigate') setActive(false);
   });
-  window.addEventListener('v2-pin-focus', event => focus((event as CustomEvent<number>).detail));
   window.addEventListener('keydown', event => {
     if (active && event.key === 'Escape') setActive(false);
   });
@@ -128,13 +187,10 @@ export function mountPinTool(api: PinToolApi): { centerOn(index: number): void; 
     schedule();
   });
   canvas.addEventListener('pointercancel', () => (press = undefined));
-  window.addEventListener('v2-recipe-change', schedule);
-  schedule();
-  function focus(index: number): void {
-    const pin = pins()[index];
-    if (!pin) return;
-    api.setView({ ...api.getView(), cx: pin.x, cy: pin.y });
+  const syncPins = () => {
+    openPins.hidden = pins().length === 0;
     schedule();
-  }
-  return { centerOn: focus, redraw: schedule };
+  };
+  window.addEventListener('v2-recipe-change', syncPins);
+  syncPins();
 }

@@ -19,3 +19,7 @@
 .map-area .canvas-wrap.pinning canvas {
   cursor: crosshair;
 }
+#pins-dialog input {
+  width: 14em;
+  max-width: 58%;
+}

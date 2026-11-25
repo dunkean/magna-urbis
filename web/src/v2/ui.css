@@ -1626,17 +1626,21 @@ dialog .file-card p {
     top: 150px;
   }
 }
-#city-code-dialog textarea {
+#city-code-input,
+#city-code-copy-value,
+#fmg-dialog textarea {
   height: 84px;
   min-height: 72px;
   font-family: monospace;
   overflow-wrap: anywhere;
 }
-#city-code-output {
+#fmg-script {
   color: var(--gold, #dcb86f);
 }
-#city-code-size {
-  min-height: 1.5em;
+#fmg-copy-status:empty,
+#fmg-error:empty,
+#city-code-error:empty {
+  display: none;
 }
 #city-code-import {
   margin-bottom: 12px;
