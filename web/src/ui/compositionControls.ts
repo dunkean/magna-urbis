@@ -2,7 +2,7 @@ import { SEASON_CALENDAR_FIELDS } from '../../../rust/bridge/terrainRenderV2Zone
 import { DIAGNOSTICS } from '../render/displayDiagnostics';
 import { POTENTIAL_IDS } from '../../../rust/bridge/resources';
 import { COAST_WAVES_DEFAULT, DEFAULT_CROWN_DETAIL, STYLE_IDS, GROUND_VARIANTS, LAND_KINDS, isHiddenPreset, presetComposition, withGroundVariant, type StyleId, type PresetId, type CompositionRecipe, type Limitation } from '../render/composition';
-import { DEFAULT_ROOF_MODE, ROOF_MODES, type RoofMode } from '../render/roofMode';
+import { DEFAULT_ROOF_MODE, type RoofMode } from '../render/roofMode';
 import { UNDERDARK_CAVERN_DEFAULTS } from '../render/underdarkCavern';
 import { TEXT_GROUPS, NAME_LEVELS, nameLevelValue, DEFAULT_TEXT, type TextGroup, type NameLevel } from '../render/textLayer';
 import { TERRAIN_STYLE_LIST, type TerrainStyle } from '../render/terrainStyle';
@@ -103,7 +103,13 @@ const semanticEntries = [
   ['categorical', 'Category colours', 'Couleurs par catégorie'],
   ['outlines', 'Outline only', 'Contours seuls'],
 ] as const;
-const ROOF_LABELS: Record<RoofMode, readonly [string, string]> = { v1: ['V1 · Edges', 'V1 · Arêtes'], v2: ['V2 · 3D', 'V2 · 3D'], crafted: ['Detailed architecture', 'Architecture détaillée'], flat: ['Flat', 'Sans texture'], minimal: ['Minimal', 'Minimal'] };
+const BUILDING_DETAIL_LABELS: Record<RoofMode, string> = {
+  minimal: 'low',
+  flat: 'medium',
+  v2: 'high',
+  v1: 'high*',
+  crafted: 'extra',
+};
 const styleFrench: Record<string, string> = {
   'parchment-render': 'Satellite peint',
   parchment: 'Parchemin',
@@ -228,15 +234,15 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
     {
       ...choice(
         'composition.buildings.roof',
-        'Roof',
-        'Toits',
-        ROOF_MODES.map(mode => [mode, ...ROOF_LABELS[mode]] as const),
+        'Buildings',
+        'Bâtiments',
+        Object.entries(BUILDING_DETAIL_LABELS).map(([mode, label]) => [mode, label, label] as const),
       ),
       id: 'roof-display',
       defaultValue: DEFAULT_ROOF_MODE,
       help: copy(
-        'V1 traces roof edges. V2 uses 3D shading. Detailed architecture adds regional entrances, roof details and materials to homes, farms and monuments, visible up close in 3D. Flat keeps the slopes and shading with plain surfaces. Minimal uses flat-topped blocks.',
-        'V1 trace les arêtes. V2 utilise l’ombrage 3D. Architecture détaillée ajoute des entrées, des toitures et des matériaux propres à la culture des maisons, fermes et monuments, visibles de près en 3D. Sans texture conserve les pentes et l’ombrage sur des surfaces unies. Minimal utilise des volumes à toit plat.',
+        'low uses flat-topped blocks. medium keeps roof slopes and shading on plain surfaces. high uses 3D shading. high* traces roof edges. extra adds regional entrances, roof details and materials, visible up close in 3D.',
+        'low affiche des volumes à toit plat. medium conserve les pentes et l’ombrage sur des surfaces unies. high utilise l’ombrage 3D. high* trace les arêtes des toits. extra ajoute des entrées, des détails de toiture et des matériaux propres à chaque culture, visibles de près en 3D.',
       ),
       helpDisplay: 'tooltip' as const,
     },

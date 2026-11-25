@@ -74,9 +74,9 @@ try {
   assert.equal(await page.locator('#roof-display').count(), 1);
   assert(await roof.isVisible());
   assert.equal(await roof.inputValue(), 'v2');
-  assert.deepEqual(await roof.locator('option').evaluateAll(options => options.map(option => option.value)), ['v1', 'v2', 'crafted', 'flat', 'minimal']);
-  assert.equal(await roof.locator('option[value=crafted]').textContent(), 'Architecture détaillée');
-  assert.equal(await roof.locator('option[value=v1]').textContent(), 'V1 · Arêtes');
+  assert.deepEqual(await roof.locator('option').evaluateAll(options => options.map(option => option.value)), ['minimal', 'flat', 'v2', 'v1', 'crafted']);
+  assert.equal(await roof.locator('option[value=crafted]').textContent(), 'extra');
+  assert.equal(await roof.locator('option[value=v1]').textContent(), 'high*');
   assert(
     await page.evaluate(() => {
       const style = document.querySelector('#map-style'),

@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- The Buildings menu offers five detail levels: low, medium, high, high* and extra.
 - Turning off Follow the environment restores the full culture catalogue immediately, including on the first use after startup.
 - Culture pickers group mages, gnomes, Duergar and other fantasy peoples under Fantasy, with corrected historical categories.
 - Mushrooms, stalactites and stalagmites stay inside the map boundary in the 3D Underdark view.
@@ -35,7 +36,7 @@
 - Detailed architecture adds culture-specific entrances and silhouettes across the full catalogue, with regional verandas, snow passages, cliff-like giant portals, Drow silk canopies and Duergar forge vents.
 - In Detailed architecture, mage districts feature fewer tall towers, futuristic houses gain distinct roof structures, and mushroom settlements and underground farms grow layered caps and cultivated beds.
 - Detailed porches, landings and surrounds fit the generated openings, including off-centre doors, raised thresholds and Venetian and Byzantine windows.
-- Choose Detailed architecture under Houses → Roof for fitted doors and windows, raised roof edges and culture-specific materials that follow curved roofs and wrap around corners.
+- Choose extra in the Buildings menu for fitted doors and windows, raised roof edges and culture-specific materials that follow curved roofs and wrap around corners.
 - In Detailed architecture, gers have open timber smoke crowns, Iroquoian longhouses have vented bark roofs, and elven and tidal homes have accessible galleries and landings.
 - Detailed Indian homes have region-specific verandas, projecting bays and terrace rooms. Clay, stone and lime roofs follow the material and roof slope. Selected European homes gain gabled dormers, and contemporary and futuristic homes can have a recessed rooftop storey.
 - Town walls are continuous closed rings: only land, harbour and water gates interrupt them, and they stand on dry ground back from shores and banks. Wide rivers give each bank its own wall; narrow channels get a water gate.
