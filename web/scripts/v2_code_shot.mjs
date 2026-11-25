@@ -68,37 +68,20 @@ try {
     await settle();
   }
   if (view === '3d') {
-    // Open the 3D view (#view3d) and wait for its ground tiles before shooting.
-    const opened = Date.now();
+    // Tilt the map (#view3d) and wait until nothing is owed to the tilted view before shooting.
+    const opened = Date.now(),
+      tiltedReady = () => document.querySelector('#view3d')?.getAttribute('aria-pressed') === 'true' && document.querySelector('#map-canvas')?.dataset.renderPending === '0';
     await page.locator('#view3d').click();
-    await page
-      .waitForFunction(
-        () => {
-          const s = window.__v2Test?.stats3d?.();
-          return !!s && (!s.lod || s.lod.pending === 0);
-        },
-        null,
-        { timeout: 600000, polling: 100 },
-      )
-      .catch(e => logs.push(`3d: ${e.message}`));
+    await page.waitForFunction(tiltedReady, null, { timeout: 600000, polling: 100 }).catch(e => logs.push(`3d: ${e.message}`));
     console.log('TIMING 3d-ready-ms', Date.now() - opened);
-    // --trees: tick the 3D view's "3D trees" switch (off by default) and time the tree layer.
+    // --trees: tick the "3D trees" switch of the tilted map (off by default) and time the tree layer.
     if (argv.includes('--trees')) {
       const trees = page.locator('[data-trees]');
       if (!(await trees.isChecked())) {
         const t0 = Date.now();
         await trees.check();
-        await page
-          .waitForFunction(
-            () => {
-              const s = window.__v2Test?.stats3d?.();
-              return !!s && (!s.lod || s.lod.pending === 0);
-            },
-            null,
-            { timeout: 600000, polling: 100 },
-          )
-          .catch(e => logs.push(`trees: ${e.message}`));
-        console.log('TIMING trees-ready-ms', Date.now() - t0, 'count', await page.evaluate(() => globalThis.magnaNearTrees));
+        await page.waitForFunction(tiltedReady, null, { timeout: 600000, polling: 100 }).catch(e => logs.push(`trees: ${e.message}`));
+        console.log('TIMING trees-ready-ms', Date.now() - t0);
       }
     }
     await settle(8000);

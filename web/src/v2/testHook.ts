@@ -16,7 +16,6 @@ import { defaultCityLayoutConfig } from '../render/cityGeneration';
 //                                                          // radians, pitch 0 = straight down, yaw clockwise from north; any subset to
 //                                                          // set. navigation 'orbit' | 'walk' | 'fly'; a free eye stands at (x, y) at
 //                                                          // altitude `eye` (metres as drawn) and its pitch may pass the horizon.
-//                                                          // With ?camera=dual: the separate 3D view's camera, once opened with #view3d
 //
 // The world is the saved decor (web/decors/<id>.decor, City Bench `artifact=`): relief, sea, lakes and rivers with their widths
 // are its own cells (settings.decor, v2/decorTerrain.ts). The town is placed by the same rule as City Bench (ui/cityPlacementRule.ts):
@@ -26,7 +25,6 @@ import { defaultCityLayoutConfig } from '../render/cityGeneration';
 import type { SettlementSpec, SettlementOutput } from '../../../rust/bridge/settlements';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urbanConfig';
 import { setStepSeed } from '../../../rust/bridge/generationSeed';
-import { dualCameras } from '../render/live/policy';
 import type { View } from '../render/view';
 import type { World } from '../gen/types';
 import type { V2Settings } from './contracts';
@@ -44,7 +42,6 @@ export interface V2TestBindings {
   /** Resolves when the background build of small places has nothing left to do. */
   smallPlacesSettled?(): Promise<void>;
   getViewer(): { getView(): View; setView(view: View): void; setNavigation(mode: 'orbit' | 'walk' | 'fly'): void; navigation(): 'orbit' | 'walk' | 'fly' };
-  get3d(): { getCamera(): unknown; setCamera(camera: any): void; stats?(): unknown } | undefined;
   prepareCapture?(): void;
   /** Rerolls one town's composition seed and rebuilds that town alone (the "Build town" path). */
   rerollTown?(key: string): void;
@@ -346,15 +343,12 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
     },
     /** Complete the exact, full-quality 2D overlay before a review-sheet screenshot. */
     prepareCapture: () => bindings.prepareCapture?.(),
-    /** The camera that shows the relief: the map's own (centre, scale, pitch, yaw), or with `?camera=dual` the
-     * separate 3D view's. */
+    /** The map's camera, its tilt included (centre, scale, pitch, yaw, navigation). */
     camera3d: () => {
-      if (dualCameras()) return bindings.get3d()?.getCamera();
       const view = bindings.getViewer().getView();
       return { x: view.cx, y: view.cy, scale: view.scale, pitch: view.pitch ?? 0, yaw: view.yaw ?? 0, navigation: bindings.getViewer().navigation(), eye: view.eye };
     },
     setCamera3d: (camera: unknown) => {
-      if (dualCameras()) return bindings.get3d()?.setCamera(camera);
       const viewer = bindings.getViewer(),
         view = viewer.getView(),
         wanted = (camera ?? {}) as { x?: number; y?: number; scale?: number; pitch?: number; yaw?: number; eye?: number; navigation?: 'orbit' | 'walk' | 'fly' };
@@ -362,8 +356,6 @@ export function mountV2TestHook(bindings: V2TestBindings): void {
       const current = viewer.getView();
       viewer.setView({ cx: wanted.x ?? current.cx, cy: wanted.y ?? current.cy, scale: wanted.scale ?? view.scale, pitch: wanted.pitch ?? current.pitch, yaw: wanted.yaw ?? current.yaw, eye: wanted.eye ?? current.eye });
     },
-    /** The 3D view's stats (buildings shown, terrain tile loading: lod.tiles / ready / pending), for the sheet's settle wait. */
-    stats3d: () => bindings.get3d()?.stats?.(),
   };
   (window as any).__v2Test = api;
 }

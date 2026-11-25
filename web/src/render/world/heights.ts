@@ -64,6 +64,10 @@ export class TerrainHeights implements WorldRelief {
   }
   /** The relief of the terrain alone, no ground shaped. */
   naturalAt(x: number, y: number): number {
+    return this.naturalMetresAt(x, y) * this.exaggeration;
+  }
+  /** Natural elevation before vertical exaggeration. */
+  naturalMetresAt(x: number, y: number): number {
     const n = this.n,
       data = this.data,
       gx = Math.max(0, Math.min(1, x / this.width)) * n - 0.5,
@@ -79,7 +83,7 @@ export class TerrainHeights implements WorldRelief {
       for (let i = 0; i < 4; i++) sum += data[row + Math.max(0, Math.min(n - 1, bx + i - 1))] * wx[i];
       height += sum * wy[j];
     }
-    return Math.max(height, this.floor) * this.exaggeration;
+    return Math.max(height, this.floor);
   }
 }
 

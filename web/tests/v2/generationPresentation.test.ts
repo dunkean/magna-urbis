@@ -20,13 +20,17 @@ function deferred() {
 }
 
 function generation() {
-  vi.stubGlobal('document', { querySelector: () => ({ hidden: false, disabled: false }) });
+  vi.stubGlobal('document', {
+    hidden: false,
+    querySelector: () => ({ hidden: false, disabled: false }),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
   vi.stubGlobal(
     'setInterval',
     vi.fn(() => 1),
   );
-  const display = deferred(),
-    tilt = deferred();
+  const display = deferred();
   const world = { stats: {}, settlements: [], urban: { buildings: [] } };
   const state = {
     settings: defaultSettings(),
@@ -38,7 +42,7 @@ function generation() {
     chain: { clearCityResults: vi.fn(), beginRun: vi.fn(), endRun: vi.fn() },
     canvas: { hidden: true },
     smallPlaces: { stop: vi.fn(), start: vi.fn() },
-    client: { run: vi.fn(async () => world), show: vi.fn(), displaySettled: vi.fn(() => display.promise) },
+    client: { run: vi.fn(async () => world), show: vi.fn(async () => {}), displaySettled: vi.fn(() => display.promise) },
   };
   const actions = {
     setBusy: vi.fn((value: boolean) => {
@@ -47,24 +51,19 @@ function generation() {
     log: vi.fn(),
     showProgressSettlement: vi.fn(),
     updateWorld: vi.fn(),
-    refresh3dWorld: vi.fn(() => tilt.promise),
     selectTab: vi.fn(),
     showInspector: vi.fn(),
     smallPlaceRecipeKey: vi.fn(() => 'recipe'),
     reportGenerationFailure: vi.fn(),
   };
   const run = createGenerationActions(state as never, actions as never).generate('town', 'main');
-  return { state, actions, display, tilt, run };
+  return { state, actions, display, run };
 }
 
-it('keeps the generation card busy alongside town-name presentation while the 3D and map frames finish', async () => {
+it('keeps the generation card busy alongside town-name presentation while the map frame finishes', async () => {
   const g = generation();
-  await vi.waitFor(() => expect(g.actions.refresh3dWorld).toHaveBeenCalledOnce());
-  expect(g.actions.updateWorld).toHaveBeenCalledOnce(); // Publishes the names and their first-display spinners.
-  expect(g.state.busy).toBe(true);
-  expect(g.state.client.displaySettled).not.toHaveBeenCalled();
-  g.tilt.resolve();
   await vi.waitFor(() => expect(g.state.client.displaySettled).toHaveBeenCalledOnce());
+  expect(g.actions.updateWorld).toHaveBeenCalledOnce(); // Publishes the names and their first-display spinners.
   expect(g.state.busy).toBe(true);
   expect(g.state.chain.endRun).not.toHaveBeenCalled();
   expect(g.state.smallPlaces.start).not.toHaveBeenCalled();
@@ -77,7 +76,6 @@ it('keeps the generation card busy alongside town-name presentation while the 3D
 
 it('releases the generation card and reports an error if the new display cannot finish', async () => {
   const g = generation();
-  g.tilt.resolve();
   await vi.waitFor(() => expect(g.state.client.displaySettled).toHaveBeenCalledOnce());
   g.display.reject(new Error('Display failed'));
   expect(await g.run).toBe(false);

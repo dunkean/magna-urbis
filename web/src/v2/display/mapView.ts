@@ -82,7 +82,6 @@ export class MapView implements AppearanceListener, ViewStatus {
 
   draw(view: View, w: number, h: number, dpr: number): void {
     const map = this.map;
-    if (map.suspended) return;
     // A failed program is reported by settled()/exactReady() (the appearance status); the view keeps its picture.
     initializeDisplayQuality();
     if (map.preparing) {
@@ -172,17 +171,6 @@ export class MapView implements AppearanceListener, ViewStatus {
   groundCaptureDropped(): void {
     this.composed.groundCaptureDropped();
   }
-  setSuspended(value: boolean): void {
-    const map = this.map;
-    if (map.suspended === value) return;
-    map.suspended = value;
-    this.parts.ground.gpu?.setLivePaused(value || map.preparing);
-    this.composed.syncWork();
-    if (value) {
-      this.suspendStepwisePaints();
-      this.motion.restDone();
-    } else map.invalidate();
-  }
 
   // --- style switch ---------------------------------------------------------------------------------------------------
 
@@ -190,12 +178,10 @@ export class MapView implements AppearanceListener, ViewStatus {
     const map = this.map;
     this.releaseCapture();
     this.suspendStepwisePaints();
-    if (!map.suspended) {
-      this.motion.restDone();
-      const at = this.motion.frame,
-        sources = this.current()?.frozenSources();
-      if (at && sources) this.frozen = { element: this.freeze(sources), view: { ...at.view }, w: at.w, h: at.h };
-    }
+    this.motion.restDone();
+    const at = this.motion.frame,
+      sources = this.current()?.frozenSources();
+    if (at && sources) this.frozen = { element: this.freeze(sources), view: { ...at.view }, w: at.w, h: at.h };
     // The terrain renderer draws nothing by itself, and no tile is baked, while the passes change its state.
     map.preparing = true;
     this.parts.ground.gpu?.setLivePaused(true);
@@ -204,14 +190,14 @@ export class MapView implements AppearanceListener, ViewStatus {
   endAppearanceChange(): void {
     const map = this.map;
     map.preparing = false;
-    this.parts.ground.gpu?.setLivePaused(map.suspended);
+    this.parts.ground.gpu?.setLivePaused(false);
     this.frozen?.element.remove();
     this.frozen = undefined;
     this.fallback.thaw();
     this.composed.thaw();
     // Products can finish while preparing hides the frame. Publish the completed state even when no worker or
     // program has another callback left to wake the view (notably a regenerated town on an unchanged terrain).
-    if (!map.disposed && !map.suspended && map.world) map.repaint();
+    if (!map.disposed && map.world) map.repaint();
   }
   contentChanged(ran: readonly string[], before: { resolved?: ResolvedAppearance; native?: TerrainData }): void {
     this.composed.contentChanged(ran, before);

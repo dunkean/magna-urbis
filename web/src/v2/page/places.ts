@@ -146,7 +146,6 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
     if (!keepInspector) actions.disposeInspectorForms();
     state.regionControls.sync();
     state.terrainControls.sync();
-    state.city3d?.refresh();
     const towns = (state.world.settlements ?? []).map(place => ({ ...place, name: settlementDisplayName(state.world!, place.key, state.settings) }));
     setText($('#map-metrics'), `${state.world.terrain.rivers.length} watercourses\n${towns.length} settlements`);
     const preview = stageById.get(String(state.world.stats['v2.previewStage'] ?? ''));

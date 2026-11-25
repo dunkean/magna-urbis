@@ -182,7 +182,6 @@ const CSS = `.v2-network-editor{display:grid;gap:9px;margin:12px 0;padding:12px;
 .v2-network-banner{position:absolute;top:84px;left:50%;transform:translateX(-50%);z-index:2;max-width:min(560px,80%);padding:8px 13px;font-size:11px;line-height:1.5;pointer-events:none;text-align:center}
 .canvas-wrap.v2-network-active canvas{cursor:crosshair}
 .v2-network-shortcuts{position:absolute;left:22px;top:125px;z-index:4;display:flex;gap:4px;padding:4px}
-.map-area:has(>.city3d:not([hidden]))>.v2-network-shortcuts{display:none}
 .v2-network-shortcuts button{font-size:11px;padding:6px 9px}
 .v2-network-shortcuts button[aria-pressed=true]{color:#ffdc93;border-color:#dcb86f;background:#665435}
 .v2-road-session{position:absolute;bottom:140px;left:22px;z-index:5;display:flex;align-items:center;gap:7px;padding:10px;width:290px;max-width:calc(100% - 24px);flex-wrap:wrap;border:1px solid #dcb86f66;border-radius:8px;pointer-events:auto}.map-bottom>.v2-road-session{bottom:calc(100% + 12px);left:0}.v2-road-session[hidden]{display:none}.v2-road-session span{font-size:11px;line-height:1.4;width:100%}.v2-road-session button{font-size:11px;padding:8px 11px}.v2-road-session [data-road-validate]{order:-1;width:100%;padding:14px 12px;font-size:16px;font-weight:600}.v2-road-session [data-road-feedback]{color:#ffdc93;max-height:64px;overflow:auto}

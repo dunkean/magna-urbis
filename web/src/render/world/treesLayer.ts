@@ -5,6 +5,7 @@ import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { TreeDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 import { TREE_STRIDE, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
+import type { GroundShape } from './groundShape';
 import type { Building3dScene } from '../urbanBuildingGeometry';
 import { treeBuildings, type TreeBuildings } from './treesBuildings';
 import { TreeContent, treeSamplesMatch, type TreeSamples } from './treesContent';
@@ -119,6 +120,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   let source: Omit<TreeInputs, 'height'> | undefined,
     sourceKey = '',
     heights: TerrainHeights | undefined,
+    shape: GroundShape | undefined,
     inputs: TreeInputs | undefined;
   let building: Building | undefined;
   let scene: Building3dScene | undefined, buildings: TreeBuildings | undefined;
@@ -148,6 +150,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
   const sync = (): void => {
     const next = options.inputs(),
       nextHeights = options.terrain(),
+      nextShape = nextHeights?.shape,
       nextScene = options.buildings?.(),
       nextSource = options.terrainSource?.();
     if (nextSource !== terrainSource) {
@@ -155,13 +158,15 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       terrainSource = nextSource;
     }
     const key = next ? treeInputsKey(next) : '';
-    if (next === source && key === sourceKey && nextHeights === heights && nextScene === scene) return;
+    const reliefChanged = nextHeights !== heights || nextShape !== shape;
+    if (next === source && key === sourceKey && !reliefChanged && nextScene === scene) return;
     building = undefined;
     revision++;
-    if (nextHeights !== heights) reliefRevision++;
+    if (reliefChanged) reliefRevision++;
     source = next;
     sourceKey = key;
     heights = nextHeights;
+    shape = nextShape;
     scene = nextScene;
     buildings = treeBuildings(scene);
     options.invalidate();
@@ -169,10 +174,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       inputs = undefined;
       return;
     }
-    const relief = nextHeights,
-      unit = relief.exaggeration > 0 ? 1 / relief.exaggeration : 1;
-    // The builder wants the ground in metres (0 and below: the sea, no tree); TerrainHeights gives it as drawn.
-    inputs = { ...next, height: (x, y) => relief.heightAt(x, y) * unit };
+    // Instance heights are stored in metres. Capture the shaped ground published for this build.
+    inputs = { ...next, height: (x, y) => nextHeights.naturalMetresAt(x, y) + (nextShape?.drawnAt(x, y) ?? 0) };
     content = new TreeContent(inputs, buildings);
   };
 
@@ -550,6 +553,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       if (linking) gl.deleteProgram(linking);
       program = linking = undefined;
       source = heights = inputs = undefined;
+      shape = undefined;
     },
   };
 }

@@ -62,8 +62,6 @@ export interface Viewer {
   setView(v: View): void;
   zoomBy(factor: number): void;
   invalidate(): void;
-  /** Keep shared products/camera while another view covers this viewer. */
-  setPaused(paused: boolean): void;
   getView(): View;
   /** Eases the camera to a pitch (radians, 0 looks straight down) and a yaw (radians clockwise from north; the
    * current one when absent). Without effect while the map on screen does not tilt. */
@@ -95,17 +93,16 @@ export interface Viewer {
 export function createViewer(o: ViewerOptions): Viewer {
   let dirty = false,
     raf = 0,
-    destroyed = false,
-    paused = false;
+    destroyed = false;
   const invalidate = (): void => {
     dirty = true;
-    if (!raf && !destroyed && !paused) raf = requestAnimationFrame(frame);
+    if (!raf && !destroyed) raf = requestAnimationFrame(frame);
   };
   const nav = createViewerNavigation(() => presentation.canTilt(), invalidate);
   const presentation = createViewerPresentation(o, nav, invalidate);
   function frame(stamp?: number): void {
     raf = 0;
-    if (paused || !dirty) return;
+    if (!dirty) return;
     dirty = false;
     nav.step(stamp);
     presentation.draw();
@@ -135,10 +132,6 @@ export function createViewer(o: ViewerOptions): Viewer {
     setWalkCollisions: nav.setWalkCollisions,
     zoomBy: f => nav.zoomBy(f),
     invalidate,
-    setPaused(value: boolean) {
-      paused = value;
-      if (!paused) invalidate();
-    },
     getView: () => nav.camera,
     async waitForFrame() {
       const started = performance.now();

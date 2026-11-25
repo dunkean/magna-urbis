@@ -798,8 +798,8 @@
 #app .toolbar-row > .city3d-bar[hidden] {
   display: none;
 }
-/* The tilted map's row is the 3D view's: its bar takes the room of "Advanced", "Reset" and the measure tool (a 2D
-   tool, disabled while tilted), which the 3D view's row did not show either. */
+/* The bar of the tilted map takes the room of "Advanced", "Reset" and the measure tool (a 2D tool, disabled while
+   tilted). */
 #app .toolbar-row:has(> #world-bar:not([hidden])) :is(#map-advanced-open, #settings-reset, #measure-tool) {
   display: none;
 }
@@ -860,9 +860,6 @@
 #app .city-display-options {
   margin: 0;
   flex-wrap: wrap;
-}
-#view3d-advanced-controls:empty {
-  display: none;
 }
 @media (min-width: 1700px) {
   .workbench-advanced {

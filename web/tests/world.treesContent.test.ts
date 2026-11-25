@@ -4,6 +4,7 @@ import { treeBlockSteps } from '../src/render/world/treesBlocks';
 import { treeBuildings } from '../src/render/world/treesBuildings';
 import { createWorldTreesLayer } from '../src/render/world/treesLayer';
 import { TerrainHeights } from '../src/render/world/heights';
+import { GroundShape, SHAPE_STEP } from '../src/render/world/groundShape';
 import { createFrameCamera, frameCamera } from '../src/render/world/camera';
 import type { LiveFrame } from '../src/render/live/contract';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
@@ -130,9 +131,9 @@ describe('tree block content', () => {
     const layer = createWorldTreesLayer(gl, { inputs: () => inputs, terrain: () => heights, distance: () => 600, shown: () => true, invalidate: () => {} });
     const view = { cx: 1200, cy: 1200, scale: 4, pitch: 0.3, yaw: 0 },
       camera = createFrameCamera();
-    frameCamera(camera, view, 1600, 900, 1600, 900, 1, heights);
     const frame = { gl, view, cssW: 1600, cssH: 900, dpr: 1, width: 1600, height: 900, camera, moving: false } as unknown as LiveFrame;
     const settle = () => {
+      frameCamera(camera, view, 1600, 900, 1600, 900, 1, heights);
       for (let i = 0; i < 4; i++) {
         layer.draw(frame);
         while (layer.work!(8, frame));
@@ -155,15 +156,29 @@ describe('tree block content', () => {
     settle();
     expect(layer.stats!().built).toBe(built);
     expect(vi.mocked(gl.bufferData).mock.calls.length).toBe(uploads);
+    heights = new TerrainHeights(heights.data, 64, 2400, 0, 1.3);
+    settle();
+    expect(layer.stats!().built).toBe(built);
+    expect(vi.mocked(gl.bufferData).mock.calls.length).toBe(uploads);
     water.mockClear();
     layer.draw(frame);
     expect(water).not.toHaveBeenCalled();
+    const shape = new GroundShape(heights.width);
+    for (let y = 1152 / SHAPE_STEP; y <= 1248 / SHAPE_STEP; y++)
+      for (let x = 1152 / SHAPE_STEP; x <= 1248 / SHAPE_STEP; x++) shape.level(x, y, 2);
+    const reused = layer.stats!().reused ?? 0;
+    heights.shape = shape;
+    settle();
+    expect(layer.stats!().built).toBeGreaterThan(built);
+    expect(layer.stats!().reused).toBeGreaterThan(reused);
+    const shaped = layer.stats!().built,
+      shapedCalls = layer.stats!().drawCalls;
     inputs = { ...inputs, season: 0.75 };
     layer.work!(0.001, frame);
     layer.draw(frame);
-    expect(layer.stats!().drawCalls).toBe(calls);
+    expect(layer.stats!().drawCalls).toBe(shapedCalls);
     settle();
-    expect(layer.stats!().built).toBeGreaterThan(built);
+    expect(layer.stats!().built).toBeGreaterThan(shaped);
     expect(vi.mocked(gl.deleteBuffer)).toHaveBeenCalled();
     layer.dispose!();
   });

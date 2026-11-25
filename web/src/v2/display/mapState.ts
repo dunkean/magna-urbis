@@ -4,7 +4,7 @@
  * Every part of the display (v2/display/) reads the map from here. Written by:
  *   appearance.ts : `world`, `scene`, `settings`, `resolved`, `exportLayers`, `native`, the papers, `input`, `request`,
  *                   `townContent`, and `stats.passes/style/renderer/terrainBackend`;
- *   mapView.ts    : `suspended`, `preparing`, `townContent` (another display quality or vector engine), `stats.live`;
+ *   mapView.ts    : `preparing`, `townContent` (another display quality or vector engine), `stats.live`;
  *   the paints    : `dpr` (ExactFrame.paint, ComposedView.draw) and `stats.city` (the statistics of the last exact
  *                   town paint);
  *   the products  : `stats.gpuFallback`, `stats.cartographyUpdate`, `stats.resourcesError`, `passes.reset` (a product
@@ -44,8 +44,6 @@ export class MapState {
   /** Device pixel ratio of the last frame painted (the cartography reads it lazily). */
   dpr = 1;
   disposed = false;
-  /** The 2D view is hidden behind another one (3D): nothing is drawn. */
-  suspended = false;
   /** The appearance passes are running: the terrain renderer's state is changing under them. */
   preparing = false;
   request?: RenderReadiness;
@@ -86,7 +84,7 @@ export class MapState {
     this.frame();
   }
   compose = (): void => {
-    if (!this.disposed && !this.suspended) this.frame();
+    if (!this.disposed) this.frame();
   };
   private frame(): void {
     const only = this.redrawOnly;

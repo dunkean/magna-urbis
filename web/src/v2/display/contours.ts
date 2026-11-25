@@ -1,10 +1,10 @@
 /**
  * Contour lines of the map, retained as a transparent raster plate on the overlay (above the land-use tints and the parchment backdrop that
- * would hide a ground-shader line) and on the 3D drape tiles.
+ * would hide a ground-shader line).
  *
  * The paths come from render/cityContours.ts, computed in a worker; this object holds the look decision, the Canvas
- * strokes and the wait for paths still in the worker. Called by the cartography's semantic hook (2D), by the physical
- * ground of the 3D drape and by the captures, which await the paths of their scale first.
+ * strokes and the wait for paths still in the worker. Called by the cartography's semantic hook and by the captures,
+ * which await the paths of their scale first.
  */
 import { RecOnlyPath2D } from '../../render/gpu/path';
 import { RecordingCanvas, RecordingContext } from '../../render/gpu/recorder';
@@ -23,8 +23,6 @@ import { contourRaster, type ContourRaster } from '../../render/contourRaster';
 import type { Contours } from './contract';
 import type { MapState } from './mapState';
 
-/** Contour width factor on the 3D drape tiles. */
-const DRAPE_CONTOUR_WEIGHT = 1.8;
 /** Squares per side of the map a contour set is cut into: a paint strokes the chunks under its rectangle, not the
  * whole map's lines (a stroke of a map-wide path costs the whole path on every tile and in every band). */
 const CHUNKS_PER_SIDE = 16;
@@ -289,21 +287,7 @@ export class ContourInk implements Contours {
     return this.landform.look;
   }
   /** Same screen weight at every zoom; close views split the interval (cityFineContours) instead of losing the lines on flat ground. */
-  /** Contours on one 3D drape tile (world square `box` on `target`); heavier than on the flat map, as the tile is seen minified and at a slant. */
-  drapeContours(target: HTMLCanvasElement, box: { minX: number; minY: number; maxX: number; maxY: number }, light = false, defer?: () => () => void): boolean {
-    if (!this.contourLook()) return false;
-    const ctx = target.getContext('2d');
-    if (!ctx) return false;
-    const k = target.width / (box.maxX - box.minX);
-    ctx.save();
-    ctx.setTransform(k, 0, 0, k, -box.minX * k, -box.minY * k);
-    ctx.globalCompositeOperation = 'source-over';
-    const drawn = this.paintContours(ctx, box, 1 / k, DRAPE_CONTOUR_WEIGHT, light, defer);
-    ctx.restore();
-    return drawn;
-  }
-  /** `defer` (3D drape squares): contours still in the worker repaint only the squares that drew without them, not the 2D map. */
-  paintContours(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, weight = 1, light = false, defer?: () => () => void): boolean {
+  paintContours(ctx: CanvasRenderingContext2D, viewport: { minX: number; minY: number; maxX: number; maxY: number }, mpp: number, light = false): boolean {
     const look = this.contourLook();
     if (!look) return false;
     const pal = terrainStyle(this.map.resolved!.ground.style, this.map.resolved!.palette.colors).palette,
@@ -314,7 +298,7 @@ export class ContourInk implements Contours {
     if (mode.detail === 'fixed' || topographic) {
       const paths = cityContourPaths(this.map.native!, look.landform, 0, topographic, undefined, 'fixed', mode.sparse);
       if (cityContourPathsPending(this.map.native!, look.landform, 0, topographic, 'fixed', mode.sparse)) {
-        this.afterContours(defer?.() ?? this.contoursReady);
+        this.afterContours(this.contoursReady);
         return false;
       }
       if (!paths.step) return false;
@@ -338,17 +322,17 @@ export class ContourInk implements Contours {
     if (!sets) {
       sets = [cityContourPaths(this.map.native!, look.landform, sc, topographic, undefined, mode.detail, mode.sparse)].filter(paths => paths.step);
     }
-    if (cityContoursPending(this.map.native)) this.afterContours(defer?.() ?? this.contoursReady);
+    if (cityContoursPending(this.map.native)) this.afterContours(this.contoursReady);
     if (!sets.length) return false;
     ctx.save();
     ctx.strokeStyle = pal.contour;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.globalAlpha = pal.contourOpacity * 0.7 * mode.opacity;
-    ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, (pal.contourThinW ?? 1) * weight);
+    ctx.lineWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contour, sc, pal.contourThinW ?? 1);
     const recording = ctx instanceof RecordingContext,
       size = this.map.native!.width,
-      indexWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, (pal.contourIndexW / 1.6) * weight),
+      indexWidth = mapStrokeWidth(CANVAS_MAP_STROKES.contourIndex, sc, pal.contourIndexW / 1.6),
       reach = Math.max(ctx.lineWidth, indexWidth);
     countWork(recording ? 'contour.record' : 'contour.canvas');
     let strokes = 0;

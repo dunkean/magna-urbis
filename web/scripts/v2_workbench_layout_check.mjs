@@ -151,10 +151,8 @@ try {
   assert.equal(await page.locator('#move-towns').getAttribute('aria-pressed'), 'false');
   assert.equal(await page.locator('[data-setting-path="placement.counts.village"]').inputValue(), '3', 'explicit counts survive import and cancelled edits');
   await page.locator('#view3d').click();
-  await page.locator('.toolbar-row > .city3d-bar').waitFor();
-  assert.equal(await page.locator('.toolbar-row [data-ground]').count(), 0, 'Ground lives in Advanced');
-  await page.locator('.city3d-bar [data-north]').click();
-  const bar = await page.locator('.city3d-bar').boundingBox();
+  await page.locator('.toolbar-row > #world-bar').waitFor();
+  const bar = await page.locator('#world-bar').boundingBox();
   assert(bar.y >= 38 && bar.y + bar.height <= toolbar.y + toolbar.height, '3D options live in the second header level');
   await page.screenshot({ path: new URL('3d.png', out).pathname.replace(/^\/(\w:)/, '$1') });
   await page.locator('#view3d').click();

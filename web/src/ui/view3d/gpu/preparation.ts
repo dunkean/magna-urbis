@@ -1,9 +1,8 @@
 /**
- * Prepares the page's WebGPU device once (hardware adapter, stand-in pipelines), prewarms ground pipelines and creates
- * WebGPU views. Called through ui/terrain3dGpu.ts by the renderer host and the pages.
+ * Prepares the page's WebGPU device once (hardware adapter and stand-in pipelines) and creates WebGPU views. Called through ui/terrain3dGpu.ts by the renderer host and the pages.
  */
 import { Terrain3d, type Terrain3dOptions } from '../../terrain3d';
-import { Gpu3d, PREVIEW_GROUND, groundKey } from './device';
+import { Gpu3d, PREVIEW_GROUND } from './device';
 import { SAMPLES } from './layouts';
 import { Terrain3dGpu } from './view';
 
@@ -55,17 +54,6 @@ export function prepareTerrain3dGpu(forced: boolean): Promise<boolean> {
     throw error;
   });
   return shared.then(gpu => !!gpu);
-}
-
-/** Starts creating a ground pipeline (frames at rest) before the 3D view is opened, on the device the view
- * will use: the 2D map calls it while idle once its own look is ready (terrainGpu.ts prewarmLikely). */
-export function prewarmTerrain3dGround(renderV2: number, forest: number, brushes: number): void {
-  void prepareTerrain3dGpu(false).then(
-    ok => {
-      if (ok && ready && !ready.lost) ready.pipeline(groundKey(1, renderV2, forest, brushes), SAMPLES);
-    },
-    () => {},
-  );
 }
 
 /** The WebGPU 3D view on `canvas`, or undefined while (or when) prepareTerrain3dGpu has no device.

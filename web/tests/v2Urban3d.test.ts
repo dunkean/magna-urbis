@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2Terrain3dSurface, v2Terrain3dGround, v2Terrain3dView, v2CityViewPatch, createV2Terrain3dSampler } from '../src/v2/urban3d';
+import { combineV2NativeScenes, sameV2NativeInputs, v2NativeCities, v2Terrain3dGround } from '../src/v2/urban3d';
 import { v2WorldDecor } from '../src/v2/worldDecor';
 import { makeOptions } from '../src/gen/options';
 import type { World } from '../src/gen/types';
@@ -27,7 +27,7 @@ function town(id: string, stage: RustTownSnapshot['stage'] = 'buildings'): RustT
     scene: { schema_version: '1', generator_version: 'architectural-plans-2', buildings: [{ id } as NonNullable<RustTownSnapshot['scene']>['buildings'][number]], refusals: [], open_spaces: [], plan_archives: { [id]: `retained-exact-${id}` } },
   };
 }
-describe('V2 City Bench 3D retained-scene boundary', () => {
+describe('V2 retained scenes of the tilted map', () => {
   it('applies the shared scene controls to 3D without changing generation or the selected house renderer', () => {
     const options = makeOptions({ seed: '3d-controls' });
     const world = { seed: options.seed, options, mapSize: 1000, terrain: { height: { cell: 25 } } } as unknown as World;
@@ -95,7 +95,7 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
     expect(first.meta.stats).toMatchObject({ minHeight: 5, maxHeight: 11, land: 0.75 });
     expect(v2NativeCities(world)).toHaveLength(1);
   });
-  it('shows a terrain-only region from its native control grid and keeps lake levels separate from the bed', () => {
+  it('describes a terrain-only region from its native control grid', () => {
     const options = makeOptions({ seed: 'region-only' }),
       height = new Float32Array([10, 20, 30, 40]),
       field = new Float32Array(16).fill(25);
@@ -115,20 +115,11 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
       },
     } as unknown as World;
     const settings: V2Settings = { options, extent: 100, settlementCount: 0, local: {}, generation: 'procedural', appearance: { style: 'parchment', terrainStyle: 'render-v2', city: { refinement: 'source' } } };
-    const surface = v2Terrain3dSurface(world, settings);
-    expect(surface.height.data).toBe(field);
-    expect(surface.height.n).toBe(4);
-    expect(surface.water!.mask).toEqual(new Float32Array([-1, 1, -1, -1]));
-    expect(surface.water!.levels[1]).toBe(27);
     expect(v2WorldDecor(world, settings).meta.terrainDisplay).toMatchObject({ sourceCell: 25, motifSize: 10000, refine: true, floor: 0.3 });
-    const sample = createV2Terrain3dSampler(world, settings, 'render-v2');
-    expect(sample(50, 50)).toBeCloseTo(25);
     expect(height).toEqual(new Float32Array([10, 20, 30, 40]));
     expect(field.every(value => value === 25)).toBe(true);
-    settings.appearance!.lakes = false;
-    expect(v2Terrain3dSurface(world, settings).water).toBeUndefined();
   });
-  it('restores satellite diagnostics, season, lighting and source/noise preferences without requiring cities', () => {
+  it('restores satellite diagnostics, season and lighting without requiring cities', () => {
     const options = makeOptions({ seed: 'materials' });
     const world = { seed: options.seed, options, mapSize: 1000, terrain: { height: { cell: 25 } } } as unknown as World;
     const settings: V2Settings = {
@@ -140,26 +131,13 @@ describe('V2 City Bench 3D retained-scene boundary', () => {
       terrain: { climate: 'arid' },
       appearance: { style: 'parchment', terrainStyle: 'render-v2-snow', composition: snowComposition(), terrainLayers: { relief: true, hypsometry: true, frame: false, water: false }, city: { refinement: 'source' } },
     };
-    expect(v2Terrain3dView(settings).ground).toBe('render-v2-snow');
     expect(v2Terrain3dGround(world, settings, 'render-v2-snow')).toMatchObject({ renderV2: 5, v2Season: 0.125, lighting: settings.appearance!.composition!.effects.lighting, waterVisible: true, displacement: false, climate: { temperature: 24, precipitation: 70 } });
     expect(v2Terrain3dGround(world, settings, 'render3d-brush')?.forestBrushes).toBe(true);
     // A deliberate Advanced override lasts until the user selects another style.
     settings.appearance!.composition = undefined;
     settings.appearance!.city = { ground: 'map', refinement: 'noise' };
-    expect(v2Terrain3dView(settings).ground).toBe('map');
     expect(v2Terrain3dGround(world, settings, 'map')).toBeUndefined();
     writeAppearanceControl(settings, 'appearance.composition.preset', 'satellite');
     expect(settings.appearance!.city!.ground).toBeUndefined();
-    expect(v2Terrain3dView(settings).ground).toBe('render-v2');
-  });
-  it('does not pin a ground or unrelated defaults when a 3D toolbar option changes', () => {
-    const settings: V2Settings = { options: makeOptions({ seed: 'view-patch' }), extent: 1000, settlementCount: 1, local: {}, generation: 'procedural', appearance: { style: 'parchment', composition: presetComposition('satellite') } };
-    const previous = v2Terrain3dView(settings);
-    const stalePlan = { ...previous, plan: !previous.plan };
-    expect(v2CityViewPatch(previous, stalePlan)).toBeUndefined();
-    expect(v2CityViewPatch(previous, { ...previous })).toBeUndefined();
-    expect(v2CityViewPatch(previous, { ...previous, ground: 'map' })).toEqual({ city: { ground: 'map' } });
-    expect(v2CityViewPatch(previous, { ...previous, trees3d: true })).toEqual({ city: { trees3d: true } });
-    expect(v2CityViewPatch({ ...previous, trees3d: true }, { ...previous, trees3d: false })).toEqual({ city: { trees3d: false } });
   });
 });

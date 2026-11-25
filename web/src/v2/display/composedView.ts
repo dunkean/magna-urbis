@@ -42,7 +42,6 @@ import type { LiveCityEnv } from '../../render/live/contract';
 import type { CanvasRenderer } from '../../render/canvas';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import type { View } from '../../render/view';
-import { dualCameras } from '../../render/live/policy';
 import { clampPitch, createCameraPose, groundHit, isFreeEye, isTilted, pixelRay, poseCamera, riseAt } from '../../render/world/camera';
 import { createWorldBuildingsLayer, type WorldBuildingsLayer } from '../../render/world/buildingsLayer';
 import type { Terrain3dCollisions } from '../../render/world/terrain3dCollisions';
@@ -190,11 +189,10 @@ export class ComposedView {
     this.live?.setStandIn('ground', undefined, WHOLE_VIEW, 1, 1);
   }
 
-  /** The relief the camera stands on and the ground is draped over. Undefined without a terrain, and with
-   * `?camera=dual`, where the map does not tilt. */
+  /** The relief the camera stands on and the ground is draped over; undefined without a terrain. */
   relief(): TerrainHeights | undefined {
     const terrain = this.map.native;
-    if (!terrain || dualCameras()) return undefined;
+    if (!terrain) return undefined;
     const exaggeration = this.map.resolved?.city.exaggeration ?? 1;
     const underdark = this.map.world?.options.biome === 'underdark',
       grid = terrain.field ?? { n: terrain.resolution, data: terrain.height, cave: terrain.caveMask };
@@ -309,7 +307,7 @@ export class ComposedView {
       live.setLayer('overlay', cartography.renderer?.createLiveLayer(gl));
       live.invalidateLayer('text');
     }
-    const volumeBuildings = !!map.native && !dualCameras() && machineDecision().tier === 'capable' && volumeTownBuildings(map.resolved);
+    const volumeBuildings = !!map.native && machineDecision().tier === 'capable' && volumeTownBuildings(map.resolved);
     map.volumeBuildings = volumeBuildings;
     if (owners.city !== town.city || this.volumeBuildings !== volumeBuildings) {
       this.volumeBuildings = volumeBuildings;
@@ -415,7 +413,7 @@ export class ComposedView {
   /** The compositor's preparation runs while it is on screen (or warming) and the terrain renderer's state is still:
    * no tile is baked while the passes change it, nor behind another view. */
   syncWork(): void {
-    this.live?.setPaused(this.map.suspended || this.map.preparing || !(this.onPage || this.warming));
+    this.live?.setPaused(this.map.preparing || !(this.onPage || this.warming));
   }
   private applyVisibility(): void {
     if (this.overlayOnPage) this.overlayOnPage.style.visibility = !this.volumeBuildings && atOrAbove('overlay', this.shownFrom) ? 'visible' : 'hidden';

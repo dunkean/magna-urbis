@@ -3,8 +3,8 @@
  * CPU raster of the terrain with the washes and stamps of an illustrated ground.
  *
  * Holds the three ground passes of `set()` (terrain data, look, forest), the compilation of the look's programs, the
- * recovery from a lost map context, and the whole-map capture of the GPU ground that the miniature, the 3D background
- * and the first composed frames use.
+ * recovery from a lost map context, and the whole-map capture of the GPU ground that the miniature and the first
+ * composed frames use.
  */
 import { rasterizeSvg as imageOf } from '../../render/svgRaster';
 import type { MaterialRasterContext } from '../../../../rust/bridge/terrainMaterialContext';
@@ -30,7 +30,6 @@ import type { GroundTileRenderer } from '../../render/live/contract';
 import { underdarkSceneLook } from '../../render/underdarkLighting';
 import { nativeCitiesOf } from '../nativeProducts';
 import { SOFTWARE_GL } from '../../render/softwareGl';
-import { fantasyRasterImages } from '../../ui/fantasyRaster';
 import type { Ground } from './contract';
 import type { MapState } from './mapState';
 import { svgOf, wholeMap } from './mapSvg';
@@ -40,8 +39,8 @@ import { applyRenderColors } from '../../render/customColors';
 import { biomePalette } from '../../render/biomes';
 import type { TreeSymbolLook } from '../../render/treeSymbols';
 
-/** `svg`: the terrain of the 3D background; `image`: the 2D base, with the crowns of a hidden relief. */
-type BaseRaster = { svg: string; image?: HTMLCanvasElement; fantasy?: FantasyRaster };
+/** `image`: the 2D base, with the crowns of a hidden relief. */
+type BaseRaster = { image?: HTMLCanvasElement; fantasy?: FantasyRaster };
 
 export class GroundProducts implements Ground {
   gpuCanvas = document.createElement('canvas');
@@ -52,12 +51,9 @@ export class GroundProducts implements Ground {
   private uploaded?: TerrainData;
   /** Terrain raster (CPU relief, sea): natural content, whole map. */
   base?: HTMLCanvasElement;
-  private terrainSvg = '';
   /** Illustrated grounds: washes and stamps painted on canvas over `base` (web/src/ui/fantasyRaster.ts). */
   fantasy?: FantasyRaster;
-  private fantasyImages?: { wash: string; stamps: string };
-  /** The whole-map capture of the ground as a URL and as a bitmap; dropped with the ground they show. */
-  private backgroundHref?: string;
+  /** The whole-map capture of the ground as a bitmap; dropped with the ground it shows. */
   private backgroundImage?: HTMLCanvasElement;
   /** The compilation of the look's programs, and its failure: reported by exactReady() and settled(). */
   programWork?: Promise<void>;
@@ -136,7 +132,6 @@ export class GroundProducts implements Ground {
     this.map.request?.mark('programs-ready');
   }
   dropBackground(): void {
-    this.backgroundHref = undefined;
     this.backgroundImage = undefined;
     this.onCaptureDropped();
   }
@@ -208,10 +203,8 @@ export class GroundProducts implements Ground {
       lighting = r.ground.lighting;
     if (this.gpuActive) {
       const source = t.field ?? { n: t.resolution, data: t.height, floor: 0, cave: t.caveMask };
-      this.terrainSvg = '';
       this.base = undefined;
       this.fantasy = undefined;
-      this.fantasyImages = undefined;
       this.gpu!.setLook({
         style,
         colors,
@@ -280,10 +273,9 @@ export class GroundProducts implements Ground {
         const sea = seaMaterialSvg(seaDistanceSurface(t, t.width), t.x, t.y, waterStyle, t.width, colors);
         svg += `<defs><mask id="v2-water-only"><rect width="${t.width}" height="${t.width}" fill="white"/><path d="${terrainLandClip(t)}" fill="black" fill-rule="evenodd"/></mask></defs><g mask="url(#v2-water-only)">${sea}</g>`;
       }
-      // Illustrated grounds have no shader to grade: night is one multiply over the raster, kept in the SVG so 2D, 3D and export agree.
+      // Illustrated grounds have no shader to grade: night is one multiply over the raster, kept in the SVG so 2D and export agree.
       if (r.composition.ambience === 'night' && r.ground.traits.fantasy) svg += `<rect width="${t.width}" height="${t.width}" fill="#26324f" style="mix-blend-mode:multiply"/>`;
       // Relief hidden: no terrain raster carries the vegetation, it lies on the flat palette ground.
-      // `crowns` stay out of the 3D background (`svg`), which gets the canopy from its shader; an Illustrated ground has no such shader.
       let crowns = '';
       if (!layers.relief && this.map.exportLayers.terrain !== false) {
         if (settingsForRender.forest.field) {
@@ -298,16 +290,14 @@ export class GroundProducts implements Ground {
         if (r.ground.traits.family === 'material') svg = moonlightSvg(svg, 'v2-ground-night');
         crowns = moonlightSvg(crowns, 'v2-canopy-night');
       }
-      return { svg, image: svg + crowns ? await imageOf(svgOf(svg + crowns, wholeMap(t.width))) : undefined, fantasy };
+      return { image: svg + crowns ? await imageOf(svgOf(svg + crowns, wholeMap(t.width))) : undefined, fantasy };
     });
     const raster = await pending.catch(error => {
       this.map.shared.cache.delete(cacheKey);
       throw error;
     });
-    this.terrainSvg = raster.svg;
     this.base = raster.image;
     this.fantasy = raster.fantasy;
-    this.fantasyImages = undefined;
     if (this.fantasy) {
       const fantasy = this.fantasy;
       fantasy.onTiles = () => {
@@ -458,35 +448,11 @@ export class GroundProducts implements Ground {
       },
     };
   })();
-  /** Terrain-pass bitmap for 3D; invalidated with the ground, shared without PNG encoding and image decoding. */
-  groundBackground(): HTMLCanvasElement | undefined {
+  /** Terrain-pass bitmap; invalidated with the ground, shared without PNG encoding and image decoding. */
+  private groundBackground(): HTMLCanvasElement | undefined {
     if (this.programWork || this.forestJob || this.programError) return undefined;
     if (this.gpuActive) return (this.backgroundImage ??= this.gpu!.captureMap(1024));
     return undefined;
-  }
-  /** The ground of the 3D view as one whole-map image URL, with the vector water body of the map (`vectors`) when
-   * the ground is not the GPU's. */
-  backgroundUrl(vectors: string): string | undefined {
-    if (!this.backgroundHref) {
-      // The open 3D view also polls while a new world prepares its GPU look.
-      // Keep the background pending until the bitmap is ready; never cache a preview.
-      if (this.gpuActive) this.backgroundHref = this.groundBackground()?.toDataURL('image/png');
-      else if (this.terrainSvg || vectors) {
-        // Illustrated: the canvas-painted ground enters the 3D background draped, as in 2D: wash under the water, stamps over it.
-        let painted = '',
-          wash = '';
-        if (this.fantasy && isFantasyStyle(this.map.resolved!.ground.style)) {
-          const f = this.fantasy,
-            frame = f.painting.frame!,
-            images = (this.fantasyImages ??= fantasyRasterImages(f));
-          const at = `x="${frame.x}" y="${frame.y}" width="${frame.width}" height="${frame.width}" preserveAspectRatio="none"`;
-          wash = `<image class="fantasy-wash" ${at} href="${images.wash}"/>`;
-          painted = `<image class="fantasy-stamps" ${at} href="${images.stamps}"/>`;
-        }
-        this.backgroundHref = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgOf(this.terrainSvg + wash + vectors + painted, wholeMap(this.map.native!.width)))}`;
-      }
-    }
-    return this.backgroundHref;
   }
   dispose(): void {
     this.gpu?.dispose();

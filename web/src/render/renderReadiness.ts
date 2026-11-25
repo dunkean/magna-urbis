@@ -6,7 +6,7 @@ export class RenderReadiness {
   readonly id = ++serial;
   readonly started = performance.now();
   private marks = new Set<RenderMilestone>();
-  constructor(readonly target: '2d' | '3d' | 'capture') {
+  constructor(readonly target: '2d' | 'capture') {
     performance.mark('v2:render:request', { detail: { request: this.id, target } });
   }
   has(phase: RenderMilestone): boolean {

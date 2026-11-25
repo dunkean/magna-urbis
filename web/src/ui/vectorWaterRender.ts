@@ -447,13 +447,6 @@ function wetStretches(widths: readonly number[]): [number, number][] {
   return out;
 }
 
-/** The same tapered banks as the 2D ink, rasterized by each 3D tile at its own density. */
-export function vectorRiverPath(water: VectorWater, display: WaterDisplay): Path2D {
-  const path = new Path2D();
-  if (water.rivers) for (const group of regimeGroups(water, { ...display, season: undefined })) path.addPath(new Path2D(group.banks));
-  return path;
-}
-
 /** Lake draw-down ring width (m): the shore the dry season exposes. */
 const shoreRing = (climate: WaterClimate | undefined): number => (climate ? 80 * climate.drop : 0);
 

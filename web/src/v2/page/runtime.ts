@@ -125,7 +125,6 @@ export function mountRuntimeSettings(state: PageState, actions: PageActions): vo
     host: $('.header-tools'),
     getWorld: () => state.world,
     getSettings: () => state.settings,
-    get3d: () => state.city3d,
     getViewport: () => ({ element: $('#map'), view: state.client.viewer.getView() }),
     beforeCapture2d: () => state.client.prepareViewportCapture(),
     navigation: { getView: () => state.client.viewer.getView(), setView: view => state.client.viewer.setView(view), ready: () => state.client.viewer.waitForFrame() },

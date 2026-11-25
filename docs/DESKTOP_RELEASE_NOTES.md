@@ -37,7 +37,9 @@
 - Softer Satellite transitions between ground types and along rivers.
 - Season changes in the drawn maps no longer rebuild the map. Parchment trees match the biome and season: turned foliage in autumn, bare trees in winter, snow on land and trees.
 - Alpine forests climb to an irregular tree line; oversized pines are gone and deciduous trees are bare in winter, in 2D and 3D.
+- Tilted views reuse 3D trees when relief exaggeration changes and refresh affected trees when town ground is reshaped.
 - Ground lines on maps are continuous instead of dashed. Cadastre houses are drawn at a higher definition.
+- The 3D button tilts the current map. Links that used `?camera=dual` now open the standard map.
 - Tilted map: hillside lots are levelled, moats are dug and houses no longer float; fences stay visible further and thin out smoothly; farms stay visible further; map names fade out; trees clear at once from a rebuilt town.
 - Satellite banks carry reeds, sedge, dry grass and tamarisk by climate.
 - Flat roofs show their parapet edges in V1 roofs.

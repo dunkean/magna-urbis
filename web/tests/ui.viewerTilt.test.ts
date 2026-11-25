@@ -170,15 +170,6 @@ describe('viewer camera tilt', () => {
     expect(renderer.draw).toHaveBeenLastCalledWith(next);
     expect(canvas.style.opacity).toBe('');
     expect(canvas.dataset.presentation).toBeUndefined();
-    next = undefined;
-    viewer.setPaused(true);
-    viewer.setView({ cx: 1500, cy: 1500, scale: 1 });
-    const draws = renderer.draw.mock.calls.length;
-    tick();
-    expect(renderer.draw).toHaveBeenCalledTimes(draws);
-    viewer.setPaused(false);
-    tick();
-    expect(renderer.draw).toHaveBeenCalledTimes(draws + 1);
   });
 
   it('rechecks source camera capability after a direct draw', () => {

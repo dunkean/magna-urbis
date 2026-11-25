@@ -26,7 +26,6 @@ import type { TreeSymbolLook } from '../../render/treeSymbols';
 import type { Rect } from '../../render/tileindex';
 import type { View } from '../../render/view';
 import type { ViewRasterRegion } from '../../render/viewRaster';
-import type { City3dPhysicalGround } from '../../ui/city3d';
 import type { FantasyRaster } from '../../ui/fantasyRaster';
 import type { TerrainRenderer } from '../../ui/terrainRenderer';
 import type { WaterDisplay } from '../../ui/vectorWaterRender';
@@ -73,10 +72,9 @@ export interface Ground {
   readonly forestJob?: Promise<void>;
   /** Resolves when the ground can be drawn exactly (forest applied, programs compiled); rejects with the program error. */
   exactReady(): Promise<void>;
-  /** The whole-map captures show a ground that changed. */
+  /** The whole-map capture shows a ground that changed. */
   dropBackground(): void;
-  /** The whole-map capture of the GPU ground as a bitmap (3D background), and its 2D copy (miniature, ground stand-in). */
-  groundBackground(): HTMLCanvasElement | undefined;
+  /** The 2D copy of the whole-map capture of the GPU ground (miniature, ground stand-in). */
   miniGround(): HTMLCanvasElement | undefined;
   /** The terrain renderer as the live ground layer bakes from it; undefined while it cannot draw the map. */
   groundTiles(): GroundTileRenderer | undefined;
@@ -124,8 +122,7 @@ export interface Contours {
   contourLook(): { landform: string } | undefined;
   /** Resolves once the paths of this scale and box are computed. */
   contoursAt(scale: number, box: Rect): Promise<void>;
-  paintContours(ctx: CanvasRenderingContext2D, viewport: WorldBox, mpp: number, weight?: number, light?: boolean, defer?: () => () => void): boolean;
-  drapeContours(target: HTMLCanvasElement, box: WorldBox, light?: boolean, defer?: () => () => void): boolean;
+  paintContours(ctx: CanvasRenderingContext2D, viewport: WorldBox, mpp: number, light?: boolean): boolean;
 }
 
 /** Semantic land-use state: looks, opacity and classes. */
@@ -149,7 +146,6 @@ export interface Cartography {
   paintOverlay(view: View, pixelW: number, pixelH: number, stepwise: boolean): HTMLCanvasElement | undefined;
   /** Contours and rural semantics, as the overlay paints them through its hook. */
   paintRural(ctx: CanvasRenderingContext2D, viewport: WorldBox, mpp: number, light?: boolean): void;
-  physicalGround(): City3dPhysicalGround | undefined;
   retainedBytes(): number;
 }
 

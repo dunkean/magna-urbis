@@ -121,39 +121,6 @@ export function terrain3dBillboards(terrain: TerrainData, style: TerrainStyle, s
   return pending;
 }
 
-/** V2 already retains the exact SVG background. Remove only the lifted uses, preserving water and grading. */
-export async function terrain3dIllustratedSvg(url: string, terrain: TerrainData, style: TerrainStyle, settings: TerrainSettings, options: FantasyOptions): Promise<Terrain3dIllustration> {
-  const comma = url.indexOf(','),
-    head = url.slice(0, comma),
-    svg = head.includes(';base64') ? atob(url.slice(comma + 1)) : decodeURIComponent(url.slice(comma + 1));
-  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
-  if (doc.querySelector('parsererror')) throw new Error('Invalid Illustrated background SVG.');
-  const painting = isFantasyStyle(style) ? prepareFantasyTerrain(terrain, style, settings, paintingOptions(options, settings.width)) : undefined;
-  if (painting)
-    for (const use of Array.from(doc.querySelectorAll('.fantasy-brushes > use[data-brush]'))) {
-      const family = use.getAttribute('data-brush'),
-        brush = family === 'massifs' ? 5 : family === 'downs' ? 4 : -1;
-      if (isRaised({ brush, width: Number(use.getAttribute('width')) }, painting)) use.remove();
-    }
-  const cleanUrl = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' }));
-  try {
-    const clean = new Image(),
-      draped = new Image();
-    clean.src = cleanUrl;
-    draped.src = url;
-    const [, , billboards] = await Promise.all([clean.decode(), draped.decode(), terrain3dBillboards(terrain, style, settings, options, true)]);
-    const texture = document.createElement('canvas'),
-      full = document.createElement('canvas');
-    texture.width = texture.height = full.width = full.height = 2048;
-    texture.getContext('2d')!.drawImage(clean, 0, 0, texture.width, texture.height);
-    full.getContext('2d')!.drawImage(draped, 0, 0, full.width, full.height);
-    if (billboards?.stamps.length) terrain3dSetRaisedTexture(texture, full);
-    return { texture, billboards };
-  } finally {
-    URL.revokeObjectURL(cleanUrl);
-  }
-}
-
 function decodeLibrary(library: BrushLibrary): Promise<Map<string, HTMLImageElement>> {
   let decoded = decodedLibraries.get(library);
   if (!decoded) {

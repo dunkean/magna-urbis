@@ -68,7 +68,6 @@
     "test:v2:features": "node scripts/v2_feature_check.mjs",
     "test:v2:terrain-controls": "node scripts/v2_terrain_controls_check.mjs",
     "test:v2:terrain-parity": "node scripts/v2_terrain_parity_check.mjs",
-    "test:v2:3d": "node scripts/v2_urban_3d_check.mjs",
     "bench:v2:transport": "node --expose-gc --import tsx scripts/v2_transport_bench.ts",
     "bench:v2:picking": "node --import tsx scripts/v2_picking_bench.ts",
     "format": "prettier --write --ignore-path ../.prettierignore \"src/**/*.{ts,css}\" \"tests/**/*.ts\" \"scripts/**/*.{mjs,js,ts}\" \"*.ts\" \"../rust/bridge/**/*.ts\"",

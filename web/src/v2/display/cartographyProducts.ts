@@ -12,9 +12,7 @@ import { RetainedBudget } from '../../render/retainedBudget';
 import { getLanguage } from '../i18n';
 import { getDistanceUnit } from '../units';
 import { cityOverlayLandKinds, cityOverlayLandKey, cityCountrysideCanvasOptions, cityOverlayPlanMarks } from '../../render/cityEnvironment';
-import { displayQualityFor } from '../../render/displayQuality';
 import type { World, LandKind } from '../../gen/types';
-import type { City3dPhysicalGround as PhysicalGround } from '../../ui/city3d';
 import { createCanvasRenderer, type CanvasRenderer } from '../../render/canvas';
 import { roadGroundTones } from '../../render/roadStyle';
 import { displayWorld } from '../../render/displayWorld';
@@ -64,14 +62,13 @@ function overlayPalette(source: Palette, decor: boolean): Palette {
   if (!found) known.set(source, (found = { ...source, frameKind: 'none', ...(decor ? {} : { grid: null }) }));
   return found;
 }
-type CartographyProduct = { renderer: CanvasRenderer; overlay: HTMLCanvasElement; state: { config: string; scene: Scene; world: World }; physical?: PhysicalGround };
+type CartographyProduct = { renderer: CanvasRenderer; overlay: HTMLCanvasElement; state: { config: string; scene: Scene; world: World } };
 
 export class CartographyProducts implements Cartography {
   renderer?: CanvasRenderer;
   /** The canvas the overlay renderer draws into; swapped when the renderer of another look comes back from the store. */
   overlay = document.createElement('canvas');
   private cartographyKey = '';
-  private physical?: PhysicalGround;
   /** Dormant renderers of other looks. */
   private retained = new RetainedBudget();
   private landRaster?: { terrain: TerrainData; raster: SettlementRaster };
@@ -158,7 +155,6 @@ export class CartographyProducts implements Cartography {
       layers = this.map.exportLayers,
       scene = this.map.scene!;
     const productKey = JSON.stringify([passKeys(this.map.input()).cartography, getLanguage(), getDistanceUnit(), scene.revisions.cities]);
-    // Before the dispose: 3D tiles may paint through the current renderer during this wait.
     const brushes = r.cartography.painted ? ((await paintedBrushes()) ?? undefined) : undefined;
     const shown = this.shownWorld();
     const landuse = layers.landuse !== false && r.cartography.landuse;
@@ -203,7 +199,6 @@ export class CartographyProducts implements Cartography {
         this.renderer = hit.renderer;
         this.overlay = hit.overlay;
         this.cartographyState = hit.state;
-        this.physical = hit.physical;
         this.map.stats.cartographyUpdate = 'retained';
         this.map.passes.reset('overlays');
         return;
@@ -304,30 +299,14 @@ export class CartographyProducts implements Cartography {
         return map.dpr;
       },
     });
-    const renderer = this.renderer;
     this.cartographyState = { config, scene: built, world: shown };
-    // The 3D drape tiles take the physical land use without the semantic hook: their contours are inked here, at the tile's scale.
-    const seasonKey = (): string => `${this.cartographyKey}|${mapSeasonKey()}`;
-    this.physical = {
-      get key() {
-        return seasonKey();
-      },
-      ready: (box, pixels) => this.parts.contours.contoursAt(pixels / (box.maxX - box.minX), box),
-      preview: (target, box) => renderer.drawCachedMap(target, box),
-      paint: (target, box, options, defer) => {
-        // The 3D drape calls its interactive paint `live`: for the exact renderer it is the stepwise one.
-        const stepwise = !!options?.live,
-          ground = renderer.drawGround(target, box, options && { stepwise });
-        return this.parts.contours.drapeContours(target, box, displayQualityFor(stepwise) === 'light', defer) || ground;
-      },
-    };
     this.map.passes.reset('overlays');
   }
   /** Overlay renderer inputs: a matching configuration reuses the renderer through a dirty-region update. */
   private cartographyState?: { config: string; scene: Scene; world: World };
   private storeCartography(): void {
     if (this.renderer && this.cartographyState) {
-      const product: CartographyProduct = { renderer: this.renderer, overlay: this.overlay, state: this.cartographyState, physical: this.physical };
+      const product: CartographyProduct = { renderer: this.renderer, overlay: this.overlay, state: this.cartographyState };
       product.renderer.suspendStepwise();
       this.retained.put('product:' + this.cartographyKey, product, product.renderer.retainedBytes() + product.overlay.width * product.overlay.height * 4, () => {
         product.renderer.dispose();
@@ -336,11 +315,6 @@ export class CartographyProducts implements Cartography {
     }
     this.renderer = undefined;
     this.cartographyState = undefined;
-    this.physical = undefined;
-  }
-  /** The physical land use of the overlay above (composition mask, painted brushes, path caches) for the 3D ground tiles: no second scene. */
-  physicalGround(): PhysicalGround | undefined {
-    return this.physical;
   }
   /** Labels, legend and cartouche on the overlay renderer; the explicit-layers export raster. */
   async overlaysPass(): Promise<void> {
@@ -420,7 +394,7 @@ export class CartographyProducts implements Cartography {
     if (!inline && before && before.key !== this.semantic.key && this.renderer) return this.overlaysPass();
   }
   paintRural(ctx: CanvasRenderingContext2D, viewport: WorldBox, mpp: number, light = false): void {
-    if (!hasRetainedInk(ctx)) this.parts.contours.paintContours(ctx, viewport, mpp, 1, light);
+    if (!hasRetainedInk(ctx)) this.parts.contours.paintContours(ctx, viewport, mpp, light);
     const s = this.semantic;
     const lineView = this.map.resolved?.composition.variant === 'topographic';
     if (s && s.rural !== 'off') drawRuralSemantic(ctx, this.map.world?.landuse, { look: s.rural, opacity: s.opacity, mpp, viewport, classes: s.classes, patterns: !light && !lineView, fieldStrips: lineView });

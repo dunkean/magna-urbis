@@ -8,7 +8,6 @@ export function mountPageDisposal(state: PageState, actions: PageActions): void 
   window.addEventListener('beforeunload', () => {
     clearTimeout(state.renderTimer);
     state.renderControls.dispose();
-    state.city3d?.dispose();
     state.terrainControls.dispose();
     state.urbanControls.dispose();
     state.regionControls.dispose();

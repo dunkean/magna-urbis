@@ -52,7 +52,6 @@ export function createMapEditingActions(state: PageState, actions: PageActions) 
           actions.updateWorld(true);
           actions.syncNameOrigins();
           state.inspectorForms.forEach(form => form.sync());
-          await actions.refresh3dWorld();
         }
       })
       .catch(actions.reportAppearanceError)
@@ -76,7 +75,6 @@ export function createMapEditingActions(state: PageState, actions: PageActions) 
     actions.touchRecipe();
     await state.client.show(next, true);
     actions.updateWorld();
-    void actions.refresh3dWorld();
   }
   return { syncNameOrigins, redrawNames, applyDirectMapEdit };
 }

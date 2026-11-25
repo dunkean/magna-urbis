@@ -84,26 +84,8 @@ dialog.v2-action-dialog button.danger:hover:not(:disabled) {
 .parameter-fieldset:disabled {
   opacity: 0.5;
 }
-.map-area:has(> .city3d:not([hidden])) > .map-topbar {
-  z-index: 7;
-}
-.map-area > .city3d .city3d-bar {
-  top: 82px;
-}
-.map-area > .city3d ~ .inspector,
 .map-area > .inspector {
   z-index: 8;
-}
-.map-area > .city3d .city3d-bar select {
-  color: #253b38;
-  background: #fff;
-}
-.map-area > .city3d .city3d-bar button {
-  color: #253b38;
-  background: #f0f4ef;
-}
-.map-area > .city3d .city3d-bar input {
-  color: #253b38;
 }
 .style-control #view3d {
   padding: 6px 9px;
@@ -127,9 +109,6 @@ dialog.v2-action-dialog button.danger:hover:not(:disabled) {
   white-space: nowrap;
 }
 @media (max-width: 720px) {
-  .map-area > .city3d .city3d-bar {
-    top: 115px;
-  }
   .inspector:has(.v2-urban-controls) {
     width: min(350px, calc(100% - 24px));
   }
@@ -1617,14 +1596,6 @@ dialog .file-card p {
     margin: 0;
     z-index: 1;
   }
-  .map-area:has(> .city3d:not([hidden])) > .inspector-mode {
-    display: none;
-  }
-}
-@media (max-width: 720px) {
-  .map-area > .city3d .city3d-bar {
-    top: 150px;
-  }
 }
 #city-code-input,
 #city-code-copy-value,
@@ -1646,7 +1617,7 @@ dialog .file-card p {
   margin-bottom: 12px;
 }
 
-/* The 3D view (.city3d, z-index 6) fills the map area: keep the progress card and the render-status chip above it. */
+/* The progress card stays above the panels of the map area. */
 .map-area > .progress-card {
   z-index: 12;
 }
@@ -1768,10 +1739,6 @@ html[dir='rtl'] .header-caption {
   color: #ffdc93;
   border-color: #dcb86f;
   background: #665435;
-}
-body:has(.map-area > .city3d:not([hidden])) .header-menu .v2-network-shortcuts,
-body:has(.map-area > .city3d:not([hidden])) .header-menu .inspector-mode {
-  display: none;
 }
 @media (max-width: 720px) {
   .app-header {

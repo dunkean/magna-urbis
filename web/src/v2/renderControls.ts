@@ -3,7 +3,7 @@ import { protectMachineStyle } from './machineTier';
 import type { World } from '../gen/types';
 import type { V2Appearance, V2Settings } from './contracts';
 import { RESOURCE_LEGENDS, diagnosticAvailable, isResourceDiagnostic } from '../render/displayDiagnostics';
-import type { RenderTarget, ResolvedAppearance } from '../render/appearanceRecipe';
+import type { ResolvedAppearance } from '../render/appearanceRecipe';
 import { resolveSettingsAppearance } from './appearance';
 import { resolvedValues } from '../render/appearanceRecipe';
 import { bindTree, registerMessages, setText } from './i18n';
@@ -41,7 +41,6 @@ export interface RenderControlBindings {
   onChange(): void;
   getWorld?(): World | undefined;
   getStyleSelectors?(): readonly HTMLSelectElement[];
-  /** Target of the current view, for the limitations shown under the rows. */ getTarget?(): RenderTarget;
 }
 export interface RenderControls {
   sync(): void;
@@ -294,7 +293,7 @@ export function mountRenderControls(host: HTMLElement, bindings: RenderControlBi
       const field = fieldOf(`composition.buildings.${layer}`);
       if (field) field.hidden = !offered.includes(layer);
     }
-    const resolved = resolveSettingsAppearance(settings, world, bindings.getTarget?.() ?? 'view2d');
+    const resolved = resolveSettingsAppearance(settings, world, 'view2d');
     showIncompatibilities(resolved);
     showLimitations(resolved);
     const customized = appearanceCustomized(settings, world);

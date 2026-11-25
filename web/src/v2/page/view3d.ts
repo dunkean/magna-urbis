@@ -4,19 +4,11 @@
  *
  * The map has one camera: the "3D" button eases it to a tilt and back to the top view, and its label and pressed
  * state follow the camera however it was tilted (`mountTiltButton`); the padlock before it holds the map in the top
- * view (`mountViewLock`, a browser preference, also enforced when 3D is unavailable). While tilted, the separate 3D view's bar at the end
- * of the toolbar, with the navigation (worldNavigation.ts) and the modelled trees (worldTrees.ts), and the PNG of the view.
- *
- * With `?camera=dual` (render/live/policy.ts, temporary) the button opens the separate 3D view instead, as it did:
- * loaded on first use, cancellable by a click on "2D" while it loads, with its PNG capture. That part goes with the
- * 3D view.
+ * view (`mountViewLock`, a browser preference, also enforced when 3D is unavailable). While tilted, a bar at the end
+ * of the toolbar holds the navigation (worldNavigation.ts), the modelled trees (worldTrees.ts) and the PNG of the view.
  */
 import type { PageActions, PageState } from './contract';
 import { insertHTML, setText, setDynamicText } from '../i18n';
-import { applyAppearancePatch } from '../../render/appearanceRecipe';
-import type { UrbanBuilding } from '../../gen/types';
-import { townUrban } from '../edits';
-import { dualCameras } from '../../render/live/policy';
 import { isTilted } from '../../render/world/camera';
 import { $ } from './dom';
 import { mountWorldTreeControls } from './worldTrees';
@@ -24,13 +16,11 @@ import { mountWorldNavigation } from './worldNavigation';
 import { mountWorldDepthControl } from './worldDepth';
 import { mountWorldReliefControl } from './worldRelief';
 import { mountViewLock } from './viewLock';
-import { onMachineDecision } from '../machineTier';
-import { machineViewDefaults } from '../machineView';
 
 /** Pitch the "3D" button eases the camera to: 57 degrees from the vertical. */
 const BUTTON_PITCH = 1;
 
-/** The "3D" button of the single camera: tilts the map in place, and comes back to the top view. */
+/** The "3D" button: tilts the map in place, and comes back to the top view. */
 function mountTiltButton(state: PageState, actions: PageActions): void {
   const button = $<HTMLButtonElement>('#view3d'),
     viewer = state.client.viewer;
@@ -60,7 +50,7 @@ function mountTiltButton(state: PageState, actions: PageActions): void {
 }
 
 export function mountView3d(state: PageState, actions: PageActions): void {
-  insertHTML($('.style-control'), 'beforeend', '<button id="view3d" type="button" aria-pressed="false">3D</button><button id="capture3d" type="button" hidden>PNG 3D ↗</button>');
+  insertHTML($('.style-control'), 'beforeend', '<button id="view3d" type="button" aria-pressed="false">3D</button><button id="capture3d" type="button" hidden>PNG</button>');
 
   insertHTML($('#header-menu'), 'beforeend', '<button id="preview-close" type="button" class="quiet small" hidden></button>');
 
@@ -74,168 +64,12 @@ export function mountView3d(state: PageState, actions: PageActions): void {
     state.previewBase = undefined;
     await state.client.show(state.world, true);
     actions.updateWorld();
-    void actions.refresh3dWorld();
   };
 
-  if (!dualCameras()) {
-    mountTiltButton(state, actions);
-    // The navigation makes the bar the trees' controls join.
-    mountWorldNavigation(state, actions);
-    mountWorldReliefControl(state, actions);
-    mountWorldTreeControls(state, actions);
-    mountWorldDepthControl(state);
-    return;
-  }
-
-  onMachineDecision(choice => {
-    if (machineViewDefaults(choice.tier).available) return;
-    state.open3dToken = 0;
-    state.viewLoading.end('3d-open');
-    state.city3d?.hide();
-    state.client.set3dActive(false);
-    setText($('#view3d'), '3D');
-    $('#view3d').setAttribute('aria-pressed', 'false');
-    $('#capture3d').hidden = true;
-    state.editingTools.sync();
-  });
-
-  // state.open3dToken names the opening in flight (0 = none): the button stays enabled while the 3D view loads, and a
-  // click on "2D" abandons the opening.
-  $('#view3d').onclick = async () => {
-    if ($<HTMLButtonElement>('#view3d').disabled) return;
-    window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: '3d' }));
-    if (!state.world) {
-      actions.toast('Create the terrain first.');
-      return;
-    }
-    if (state.open3dToken || state.city3d?.active) {
-      const opening = state.open3dToken !== 0;
-      state.open3dToken = 0; // a pending opening sees its token vanish and stops without showing the 3D view
-      state.viewLoading.end('3d-open');
-      const mapView = state.city3d?.active ? state.city3d.toMapView() : undefined;
-      if (state.city3d?.active) state.city3d.hide();
-      state.client.set3dActive(false);
-      if (mapView) state.client.viewer.setView(mapView);
-      setText($('#view3d'), '3D');
-      $('#view3d').setAttribute('aria-pressed', 'false');
-      $('#capture3d').hidden = true;
-      state.editingTools.sync();
-      if (opening) {
-        if (!state.busy) $('#progress-card').hidden = true;
-        $<HTMLButtonElement>('#cancel-job').hidden = false;
-        if ($('#render-status').dataset.error !== 'true') $('#render-status').hidden = true;
-      }
-      return;
-    }
-    const myToken = (state.open3dToken = ++state.open3dSeq),
-      stale3d = () => state.open3dToken !== myToken;
-    const viewJob = state.viewLoading.begin('3d-open'); // ended in `finally`, superseded by a newer opening, ended by a click on "2D"
-    setText($('#view3d'), '2D'); // back to 2D is possible at any time, also while the 3D view loads
-    // The progress card stays until the 3D view has drawn a complete first frame (tiles ready, no pending job):
-    // the view needs seconds after it is shown, and a vanished card looked like a freeze.
-    const card3d = $('#progress-card'),
-      cancel3d = $<HTMLButtonElement>('#cancel-job');
-    const step3d = (detail: string) => {
-      if (state.busy || stale3d()) return;
-      card3d.hidden = false;
-      cancel3d.hidden = true;
-      setText($('#progress-label'), 'Opening the 3D view…');
-      setText($('#progress-detail'), detail);
-      setText($('#progress-time'), '');
-      $<HTMLProgressElement>('#progress').removeAttribute('value');
-    };
-    const open3dStart = performance.now(),
-      request3d = state.client.begin3dRequest();
-    state.client.set3dActive(true);
-    try {
-      step3d('Map ground');
-      await state.client.prepare3dBackground();
-      if (stale3d()) return;
-      step3d('3D engine and shaders');
-      if (!state.city3d) {
-        actions.toast('Loading the 3D view…');
-        state.city3d = await (
-          await import('../urban3d')
-        ).mountV2Urban3d({
-          host: $('.map-area'),
-          toolbarHost: $('.toolbar-row'),
-          advancedControls: $('#view3d-advanced-controls'),
-          getWorld: () => state.world,
-          getSettings: () => state.settings,
-          getBackground: () => state.client.backgroundUrl(),
-          getBackgroundImage: () => state.client.groundBackground(),
-          getPhysicalGround: () => state.client.physicalGround(),
-          onAppearancePatch: patch => {
-            state.settings.appearance = applyAppearancePatch(state.settings.appearance, state.settings.options.style, patch);
-            state.projectRevision++;
-            void actions.refreshAppearance();
-          },
-          getTextured: () => state.settings.appearance?.textured ?? false,
-          setTextured: value => {
-            state.settings.appearance = { style: state.settings.options.style, ...state.settings.appearance, textured: value };
-            state.projectRevision++;
-            void actions.refreshAppearance();
-          },
-          getSelected: () => (state.selectedBuilding ? (state.selectedBuilding.building as UrbanBuilding & { nativeId?: string }).nativeId : undefined),
-          onSelect: id => {
-            for (const settlement of state.world?.settlements ?? []) {
-              const urban = townUrban(state.world!, settlement.key),
-                index = urban?.buildings.findIndex(b => (b as UrbanBuilding & { nativeId?: string }).nativeId === id) ?? -1;
-              if (urban && index >= 0) {
-                actions.showBuilding({ settlement: settlement.key, index, building: urban.buildings[index] });
-                break;
-              }
-            }
-          },
-        });
-      }
-      if (stale3d()) return;
-      await state.city3d.prepare();
-      if (stale3d()) return; // back to 2D while loading: the 3D view is never shown
-      state.city3d.show();
-      state.city3d.fromMapView(state.client.viewer.getView());
-      performance.measure('v2:3d:shown', { start: open3dStart });
-      setText($('#view3d'), '2D');
-      $('#view3d').setAttribute('aria-pressed', 'true');
-      $('#capture3d').hidden = false;
-      state.editingTools.sync();
-      step3d('Terrain, buildings and trees');
-      const view3d = state.city3d,
-        status3d = $('#render-status');
-      status3d.hidden = false;
-      setText(status3d, 'HD loading…');
-      const coverageTimer = setInterval(() => {
-        if (request3d.has('first-covered-frame') && !state.busy) card3d.hidden = true;
-      }, 40);
-      try {
-        await state.client.waitFor3d(view3d, request3d);
-      } finally {
-        clearInterval(coverageTimer);
-        status3d.hidden = true;
-      }
-      performance.measure('v2:3d:tiles', { start: open3dStart });
-    } catch (error) {
-      if (stale3d()) return;
-      if (!state.city3d?.active) {
-        state.client.set3dActive(false);
-        setText($('#view3d'), '3D');
-      }
-      actions.toast(String(error), true);
-    } finally {
-      viewJob.end();
-      if (!stale3d()) {
-        state.open3dToken = 0;
-        if (!state.busy) card3d.hidden = true;
-        cancel3d.hidden = false;
-      }
-    }
-  };
-
-  $('#capture3d').onclick = async () => {
-    try {
-      if (state.city3d?.active) actions.download(await state.city3d.capture(), `magna-urbis-${state.settings.options.seed}.3d.png`);
-    } catch (error) {
-      actions.toast(String(error), true);
-    }
-  };
+  mountTiltButton(state, actions);
+  // The navigation makes the bar the trees' controls join.
+  mountWorldNavigation(state, actions);
+  mountWorldReliefControl(state, actions);
+  mountWorldTreeControls(state, actions);
+  mountWorldDepthControl(state);
 }

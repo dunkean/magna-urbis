@@ -1,10 +1,8 @@
 /**
- * The controls of the tilted map (single camera): the bar of the separate 3D view's toolbar, shown while the map is
- * tilted, with its navigation select (orbit, walk, free flight: Viewer.setNavigation, render/world/navigation.ts) and
- * the modelled trees (worldTrees.ts, mounted after this), and the PNG of the view (the compositor's tilted frame read
- * back, LiveCompositor.capture). While tilted, the measure tool, which reads the map through the 2D mapping, is put
- * away. Mounted by view3d.ts for the single camera only; with `?camera=dual` the separate 3D view
- * keeps its own controls and its own PNG.
+ * The controls of the tilted map: a bar of the toolbar, shown while the map is tilted, with its navigation select
+ * (orbit, walk, free flight: Viewer.setNavigation, render/world/navigation.ts) and the modelled trees (worldTrees.ts,
+ * mounted after this), and the PNG of the view (the compositor's tilted frame read back, LiveCompositor.capture).
+ * While tilted, the measure tool, which reads the map through the 2D mapping, is put away. Mounted by view3d.ts.
  */
 import { isTilted } from '../../render/world/camera';
 import type { Navigation } from '../../render/world/navigation';
@@ -29,7 +27,7 @@ registerMessages({
 });
 
 export function mountWorldNavigation(state: PageState, actions: PageActions): void {
-  // The separate 3D view's bar (ui/view3d/cityDom.ts): its markup, so its look in the toolbar (workbenchLayout.css).
+  // The class of City Bench's 3D bar (ui/view3d/cityDom.ts); its look in the toolbar is in workbenchLayout.css.
   insertHTML(
     $('#view3d'),
     'afterend',
@@ -47,7 +45,7 @@ export function mountWorldNavigation(state: PageState, actions: PageActions): vo
     select.value = viewer.navigation();
     if (tilted === isTilted(view)) return;
     tilted = !tilted;
-    // Where the 3D view put its bar: at the end of the toolbar row, before "Advanced". The row is laid out after this
+    // At the end of the toolbar row, before "Advanced". The row is laid out after this
     // mount (workbenchLayout.ts), so the bar joins it at the first tilt. The PNG button goes at its end: the layout put
     // it in the Advanced panel, which the tilted row hides.
     const row = document.querySelector('.toolbar-row');

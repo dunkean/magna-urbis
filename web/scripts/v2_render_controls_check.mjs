@@ -20,18 +20,42 @@ try {
       return send.call(this, message, ...args);
     };
   });
-  // This check exercises the separate 3D canvas and its free-flight controls.
   await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5185'}/v2.html?empty&test=1&lang=fr&camera=dual`);
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
   const fixture = JSON.parse(await readFile(new URL('fixture.json', out), 'utf8'));
   const engineUrl = '/@fs/' + fileURLToPath(new URL('../src/v2/engine.ts', import.meta.url)).replaceAll('\\', '/');
+  const projectUrl = '/@fs/' + fileURLToPath(new URL('../src/v2/project.ts', import.meta.url)).replaceAll('\\', '/');
   const fixtureText = await page.evaluate(
-    async ({ fixture, engineUrl }) => {
+    async ({ fixture, engineUrl, projectUrl }) => {
       const { terrainCacheKey } = await import(engineUrl);
-      fixture.world.stats['v2.terrainKey'] = terrainCacheKey(fixture.settings);
-      return JSON.stringify(fixture);
+      const { parseProjectValue, serializeProject } = await import(projectUrl);
+      const { settings, world, mods } = parseProjectValue(fixture);
+      const { w: resolution, data: height } = world.terrain.height;
+      const elevation = height[0];
+      // The existing flat workbench fixture supplies the terrain in both its legacy and native formats.
+      settings.appearance.renderer = 'bench';
+      world.terrain.v2NativeTerrain = {
+        x: 0,
+        y: 0,
+        width: world.mapSize,
+        resolution,
+        minHeight: elevation,
+        maxHeight: elevation,
+        globalMinHeight: elevation,
+        globalMaxHeight: elevation,
+        motifSize: world.mapSize,
+        height,
+        caveMask: new Uint8Array(),
+        normalX: new Float32Array(height.length),
+        normalY: new Float32Array(height.length),
+        normalZ: new Float32Array(height.length).fill(1),
+        generationMs: 0,
+        field: { n: resolution, data: height, exact: true, floor: 0 },
+      };
+      world.stats['v2.terrainKey'] = terrainCacheKey(settings);
+      return serializeProject(settings, world, mods);
     },
-    { fixture, engineUrl },
+    { fixture, engineUrl, projectUrl },
   );
   await page.locator('#import-open').click();
   await page.locator('#project-file').setInputFiles({ name: 'render-controls.json', mimeType: 'application/json', buffer: Buffer.from(fixtureText) });
@@ -94,29 +118,16 @@ try {
   const edged = await exportProject();
   assert.equal(edged.settings.appearance.composition.preset, 'custom');
   assert.equal(edged.settings.appearance.composition.buildings.roof, 'v1');
-  await page.locator('#view3d').click();
-  const nav = page.locator('.toolbar-row [data-navigation]');
-  await nav.waitFor();
   await page.locator('#map-style').selectOption('satellite');
   await page.waitForFunction(() => document.querySelector('#roof-display').value === 'v2');
-  for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
-  assert.equal(await page.locator('.toolbar-row [data-ground]').count(), 0);
-  assert.equal(await page.locator('.toolbar-row [data-textured]:visible,.toolbar-row [data-plan]:visible').count(), 0);
   assert.equal(await page.locator('#road-display').count(), 0);
   await page.locator('#map-advanced-open').click();
   assert(await advanced.locator('[data-render-pass=ground] > .render-pass-options').isVisible());
-  assert(await advanced.locator('[data-ground]').isVisible());
-  await advanced.locator('[data-ground]').selectOption('map');
-  await page.keyboard.press('Escape');
-  await page.locator('#map-style').selectOption('parchment');
-  await page.locator('#map-style').selectOption('satellite');
-  await page.locator('#map-advanced-open').click();
-  assert.equal(await advanced.locator('[data-ground]').inputValue(), 'render-v2', 'a new preset clears the old ground override');
   await advanced.locator('[data-render-pass=vegetation] .render-pass-source select').selectOption('parchment');
   const vegetation = advanced.locator('[data-pass-switch="appearance.composition.vegetation.look"]');
   await vegetation.uncheck();
   await vegetation.check();
-  await page.screenshot({ path: fileURLToPath(new URL('render-advanced-3d.png', out)) });
+  await page.screenshot({ path: fileURLToPath(new URL('render-advanced-mixed.png', out)) });
   await page.keyboard.press('Escape');
   await roof.selectOption('minimal');
   const mixed = await exportProject();
@@ -126,19 +137,23 @@ try {
   assert.equal(mixed.settings.appearance.composition.buildings.roof, 'minimal');
   assert.equal(mixed.settings.appearance.city?.ground, undefined);
   assert.deepEqual(mixed.world, original.world, 'style composition leaves every generated product untouched');
+  // The tilted map: the same visibility controls, and its navigation on the map's own camera.
+  await page.locator('[data-camera=tilt]').waitFor();
+  await page.locator('#view3d').click();
+  const nav = page.locator('.toolbar-row [data-navigation]');
+  await nav.waitFor();
+  for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
   await nav.selectOption('fly');
-  const canvas = page.locator('.map-area > .city3d canvas').first();
+  const canvas = page.locator('#map-canvas');
   await canvas.focus();
   const initial = await page.evaluate(() => window.__v2Test.camera3d());
   assert.equal(initial.navigation, 'fly');
   await page.keyboard.down('Space');
-  await page.waitForFunction(z => window.__v2Test.camera3d().flightAltitude > z + 3, initial.flightAltitude);
+  await page.waitForFunction(z => window.__v2Test.camera3d().eye > z + 3, initial.eye);
   await page.keyboard.up('Space');
+  // Pitch is measured from straight down: a quarter turn looks at the horizon.
+  await page.evaluate(() => window.__v2Test.setCamera3d({ ...window.__v2Test.camera3d(), pitch: Math.PI / 2 }));
   const raised = await page.evaluate(() => window.__v2Test.camera3d());
-  await page.evaluate(() => {
-    const camera = window.__v2Test.camera3d();
-    window.__v2Test.setCamera3d({ ...camera, pitch: 0 });
-  });
   await page.keyboard.down('KeyW');
   await page.waitForFunction(({ x, y }) => {
     const camera = window.__v2Test.camera3d();
@@ -146,7 +161,7 @@ try {
   }, raised);
   await page.keyboard.up('KeyW');
   const flown = await page.evaluate(() => window.__v2Test.camera3d());
-  assert.equal(flown.flightAltitude, raised.flightAltitude, 'horizontal flight keeps absolute altitude');
+  assert(Math.abs(flown.eye - raised.eye) < 0.01, 'horizontal flight keeps absolute altitude');
   await page.keyboard.press('Escape');
   assert.equal(await nav.inputValue(), 'orbit');
   await nav.selectOption('walk');

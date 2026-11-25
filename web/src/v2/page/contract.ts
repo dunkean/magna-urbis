@@ -26,7 +26,6 @@ import type { mountContourEditor } from '../contourEditor';
 import type { mountTownMoveEditor } from '../townMoveEditor';
 import type { createSelectionOverlay } from '../selectionOverlay';
 import type { mountViewLoadingIndicator } from '../viewLoadingIndicator';
-import type { V2Urban3d } from '../urban3d';
 import type { mountCityCodeSharing } from '../cityCodeSharing';
 import type { LocalFactsInput } from '../localFacts';
 import type { Options } from '../../gen/options';
@@ -48,7 +47,6 @@ import type { buildingAt } from '../edits';
  * - selectedBuilding, selectedSubdivision: the house/subdivision inspectors; cleared by places, settings and reset.
  * - currentTab: selectTab (settings). lastGesture: gesture listeners (generation).
  * - connectLocal: the service-address form (runtime). bootRuntime, localEdition: never rewritten.
- * - city3d: the 3D button (view3d) creates it on first opening; projects dispose it when a recipe without a map is loaded.
  */
 export interface PageModel {
   settings: V2Settings;
@@ -75,7 +73,6 @@ export interface PageModel {
   bootRuntime: ReturnType<typeof runtimeOptions>;
   localEdition: boolean;
   connectLocal: boolean;
-  city3d: V2Urban3d | undefined;
 }
 
 /**
@@ -83,8 +80,7 @@ export interface PageModel {
  * - toastTimer: toast (status). elapsedTimer: generate (generation), setBusy (status).
  * - logs: log (status). logScroll: scrollLog (status).
  * - renderTimer: the scheduled appearance refresh (appearance, stageChain, preferences), cleared on unload.
- * - renderRevision: refreshAppearance / refresh3dWorld (appearance): a newer refresh supersedes work in flight.
- * - open3dToken, open3dSeq: the 3D button (view3d); projects clear the token. Zero = no opening in flight.
+ * - renderRevision: refreshAppearance (appearance): a newer refresh supersedes work in flight.
  * - chainSyncFrame: scheduleChainSync (stageChain).
  * - pendingRegionPosition: the region form's position picker (stageChain), the map click (toolbar).
  * - pendingSettlement: the Add settlement tool (settlementAdd) waits for its map click (toolbar).
@@ -104,8 +100,6 @@ export interface PageWork {
   logScroll: number;
   renderTimer: ReturnType<typeof setTimeout> | undefined;
   renderRevision: number;
-  open3dToken: number;
-  open3dSeq: number;
   chainSyncFrame: number;
   pendingRegionPosition: string | undefined;
   pendingSettlement: ((point: { x: number; y: number }) => void) | undefined;
@@ -192,7 +186,6 @@ export interface PageActions {
   // appearance
   refreshAppearance(): Promise<void>;
   scheduleAppearance(): void;
-  refresh3dWorld(): Promise<void>;
   reportAppearanceError(error: unknown): void;
   syncDisplayWidgets(): void;
   writeRecipe(path: string, value: unknown): void;

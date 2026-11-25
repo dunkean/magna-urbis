@@ -9,7 +9,7 @@
  * buildings per step, city3dBuildingsSteps); the layers read what the last finished one left, the same objects while
  * the map does not change.
  *
- * The town is the display scene of the separate 3D view, from the same parts (render/city3d/display.ts) and the same
+ * The town is the display scene of City Bench's 3D view, from the same parts (render/city3d/display.ts) and the same
  * appearance (the 3D resolution of the settings), on the relief of the tilted map and the ground the towns shape on it
  * (render/world/groundShape.ts: hillside lots levelled, moats dug), made first and hung on the relief: buildings of the
  * towns and of the activity sites, bridges, walls, quays, boardwalks, lot boundaries, groves, underdark ornaments, farms and stand-in
@@ -19,7 +19,7 @@
  *
  * The trees are the near trees of the satellite looks (worldTreesAvailable), shown when the appearance's `trees3d` is
  * on, at its `treeDistance`: the "3D trees" switch and the distance of the map toolbar while the view is tilted
- * (v2/page/view3d.ts), the same settings the separate 3D view's toolbar wrote.
+ * (v2/page/view3d.ts).
  */
 import type { World } from '../../gen/types';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
@@ -227,7 +227,7 @@ export class WorldVolumes {
       this.yardMeshes = false;
       return;
     }
-    // The appearance of the volumes is the separate 3D view's; the ground they stand on is the look on screen.
+    // The appearance of the volumes is the 3D resolution of the settings; the ground they stand on is the look on screen.
     const r = v2Resolved3d(settings, world),
       ground = v2Terrain3dGround(world, settings, resolved.traits.ground3d ? (resolved.styleId as City3dGround) : 'map'),
       buildingsOnly = ['atlas', 'cadastre', 'topographic', 'white'].includes(r.composition.recipe.ground.look),

@@ -35,7 +35,6 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     },
     smallPlacesSettled: () => state.smallPlaces?.settled() ?? Promise.resolve(),
     getViewer: () => state.client.viewer,
-    get3d: () => state.city3d,
     prepareCapture: () => state.client.prepareViewportCapture(),
     rerollTown: key => actions.rerollCityStep('composition', [key]),
     displaySettled: () => state.client.displaySettled(),
@@ -59,7 +58,7 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
       actions.syncControls();
     }
     const startAutosave = () =>
-      armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab, mode3d: !!state.city3d?.active, camera: state.city3d?.active ? state.city3d.getCamera() : undefined } }));
+      armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab } }));
     const machine = await machineProbe;
     if (!previous && !new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
     if (saved) {
@@ -80,10 +79,6 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
       }
       try {
         if (saved.ui?.tab) actions.selectTab(saved.ui.tab);
-        if (saved.ui?.mode3d && state.world && !state.city3d?.active) {
-          await ($('#view3d').onclick as unknown as () => Promise<void>)();
-          if (saved.ui.camera) state.city3d?.setCamera(saved.ui.camera as never);
-        }
       } catch {
         /* View state is optional. */
       }

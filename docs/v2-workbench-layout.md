@@ -28,7 +28,6 @@ npx vite --config vite.v2.config.ts --port 5185
 node scripts/v2_workbench_layout_check.mjs
 node scripts/v2_render_controls_check.mjs
 node scripts/v2_full_generation_check.mjs
-node scripts/v2_navigation_visibility_check.mjs
 npx vitest run tests/v2FullGeneration.test.ts tests/v2Urban3d.test.ts tests/v2RenderControls.test.ts tests/terrain3dNavigation.test.ts tests/v2RenderPassMix.test.ts tests/v2DisplayForest.test.ts tests/appearanceRecipe.test.ts tests/v2Appearance.test.ts tests/v2SettlementDefaults.test.ts tests/v2TownMove.test.ts
 npx tsc --noEmit --pretty false --allowImportingTsExtensions
 ```

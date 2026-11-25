@@ -1,11 +1,9 @@
 /** Connect the existing illustration client to the current V2 view. */
 import { captureViewport, mountIllustration } from '../../../illustration/web/index.mjs';
-import { battlemapCamera } from '../../../illustration/web/framing.mjs';
 import type { World } from '../gen/types';
 import type { View } from '../render/view';
 import { illustrationContext } from '../ui/illustrationContext';
 import type { V2Settings } from './contracts';
-import type { V2Urban3d } from './urban3d';
 import { nativeCitiesOf } from './nativeProducts';
 import { registerMessages, setText, translate } from './i18n';
 
@@ -13,7 +11,6 @@ export interface V2IllustrationOptions {
   host: Element;
   getWorld(): World | undefined;
   getSettings(): V2Settings;
-  get3d(): V2Urban3d | undefined;
   /** The same DOM viewport and camera used by the V2 viewer. */
   getViewport(): { element: HTMLElement; view: View };
   beforeCapture2d?(): void;
@@ -30,20 +27,11 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
   const mounted = mountIllustration({
     host: options.host,
     navigation: options.navigation,
-    prepareBattlemap: ({ pixels, cellMetres }) => {
-      const view = options.get3d(),
-        camera = view?.getCamera(),
-        { element } = options.getViewport();
-      if (!view?.active || !camera) throw new Error('Ouvrez la vue 3D avant de la cadrer.');
-      view.setCamera(battlemapCamera(camera, { width: element.clientWidth, height: element.clientHeight }, pixels, cellMetres));
-    },
     capture: async () => {
       const world = options.getWorld();
       if (!world) throw new Error(translate('Créez d’abord une carte avant de capturer la vue.'));
       const settings = options.getSettings(),
-        { element, view } = options.getViewport(),
-        city3d = options.get3d();
-      const captured = city3d?.active ? await city3d.captureIllustration() : undefined;
+        { element, view } = options.getViewport();
       const scenes = nativeCitiesOf(world)
         .map(city => city.scene)
         .filter(scene => scene !== undefined);
@@ -51,7 +39,6 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
         sourceStyle: settings.appearance?.composition?.ground.variant ?? settings.options.style,
         seed: world.seed,
         view: { ...view },
-        camera: captured?.camera,
         width: element.clientWidth,
         height: element.clientHeight,
         terrain: {
@@ -69,7 +56,6 @@ export function mountV2Illustration(options: V2IllustrationOptions) {
         architecture: settings.urban?.houses,
         generation: { culture: settings.options.culture, population: settings.options.population, size: settings.options.size, workflow: settings.options.workflow, coast: settings.options.coast, river: settings.options.river, biome: settings.options.biome },
       });
-      if (captured) return { image: captured.image, guides: { depth: captured.depth }, context };
       // Freeze the GPU ground before captureViewport composites the visible layers.
       options.beforeCapture2d?.();
       return { image: await captureViewport(element), guides: {}, context };

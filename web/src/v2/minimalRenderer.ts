@@ -274,7 +274,7 @@ export class MinimalRenderer {
   drawMini(size: number): HTMLCanvasElement {
     return this.captureCanvas(size);
   }
-  private captureCanvas(size: number, layers = this.layers): HTMLCanvasElement {
+  private captureCanvas(size: number): HTMLCanvasElement {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     if (this.geometry && this.resolved)
@@ -289,16 +289,13 @@ export class MinimalRenderer {
         textLayout: { labels: [] },
         relief: this.relief,
         contours: this.contours?.exact,
-        layers,
+        layers: this.layers,
       });
     return canvas;
   }
   async capture(size: number): Promise<HTMLCanvasElement> {
     await this.work;
     return this.captureCanvas(size);
-  }
-  groundBackground(): HTMLCanvasElement {
-    return this.captureCanvas(1024, { city: false, roads: false, streets: false, labels: false });
   }
   async settled(): Promise<void> {
     await this.work;

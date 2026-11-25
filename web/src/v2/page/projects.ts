@@ -48,19 +48,9 @@ export function createProjectsActions(state: PageState, actions: PageActions) {
       actions.updateWorld();
       const notice = state.world.stats['v2.compositionNotice'];
       if (notice) actions.toast(String(notice));
-    }
-    // The disposed 3D view must also release the 2D viewer (paused) and the bench (suspended), or the next map stays blank.
-    else {
+    } else {
       $('#map-attribution').hidden = true;
       await state.client.clear();
-      state.city3d?.dispose();
-      state.city3d = undefined;
-      state.open3dToken = 0;
-      state.viewLoading.end('3d-open');
-      state.client.set3dActive(false);
-      setText($('#view3d'), '3D');
-      $('#view3d').setAttribute('aria-pressed', 'false');
-      $('#capture3d').hidden = true;
       state.canvas.hidden = true;
       $('#empty-map').hidden = false;
       setHTML($('#settlement-list'), '<p class="hint">Create the region to restore this recipe’s settlements.</p>');

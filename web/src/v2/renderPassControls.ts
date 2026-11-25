@@ -188,7 +188,6 @@ export function mountRenderPassControls(panel: HTMLElement, api: { getSettings()
       const input = field(path);
       if (input && input !== shared) options.append(input);
     }
-    if (pass.component === 'ground') options.append(document.getElementById('view3d-advanced-controls')!);
     if (pass.component === 'buildings') {
       const icons = grid.querySelector('.city-rendering-settings');
       if (icons) {

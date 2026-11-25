@@ -214,9 +214,6 @@ export function mountWorkbenchLayout(api: { getSettings(): V2Settings; getWorld(
   editor.querySelector('.family-run')?.remove();
   const mapAdvanced = advancedPanel($('.view-strip'), 'Advanced');
   mapAdvanced.button.id = 'map-advanced-open';
-  const viewAdvanced = document.createElement('div');
-  viewAdvanced.id = 'view3d-advanced-controls';
-  mapAdvanced.grid.append(viewAdvanced);
   for (const row of Array.from(editor.querySelectorAll<HTMLElement>('.stage-row'))) {
     const quick = row.querySelector<HTMLElement>('.stage-quick');
     if (quick) {

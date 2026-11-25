@@ -42,7 +42,6 @@ export function mountPreferences(state: PageState, actions: PageActions): void {
         .then(async () => {
           if (revision !== preferenceRevision || state.world !== shown || state.busy) return;
           await state.client.show(shown, true);
-          if (revision === preferenceRevision && state.world === shown) state.city3d?.refresh();
         })
         .catch(actions.reportAppearanceError);
     }

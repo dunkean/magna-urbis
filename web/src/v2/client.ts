@@ -77,56 +77,12 @@ export class StudioClient {
   private bench?: BenchRenderer;
   private minimal?: MinimalRenderer;
   private minimalActive = false;
-  private minimalBackground?: HTMLCanvasElement;
   private benchActive = false;
   private appearanceRevision = 0;
   private brushSourcesSent = false;
   private appearanceWork: Promise<void> = Promise.resolve();
   private appearanceRequest = 0;
   private readiness?: RenderReadiness;
-  private view3dActive = false;
-  set3dActive(value: boolean): void {
-    if (this.view3dActive && !value) this.canvas.dataset.renderPending = '1';
-    this.view3dActive = value;
-    this.viewer.setPaused(value);
-    this.bench?.setSuspended(value);
-    if (value) {
-      clearTimeout(this.benchMiniTimer);
-      this.benchMiniTimer = undefined;
-    }
-  }
-  begin3dRequest(): RenderReadiness {
-    return (this.readiness = new RenderReadiness('3d'));
-  }
-  /** Coarse coverage releases the opening card; exact visible refinement has its own mark. */
-  async waitFor3d(view: { active: boolean; stats(): { programsReady?: boolean; lod?: { tiles: number; ready: number; pending: number; covered?: boolean } } }, request = this.readiness): Promise<void> {
-    request?.mark('fields-ready');
-    // Material setters queue a draw; status from the preceding style is not its readiness.
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    let until = performance.now() + 90_000;
-    for (;;) {
-      if (!view.active || request !== this.readiness) return;
-      // A hidden tab draws no frame: its time does not count against the drawing.
-      if (document.hidden) until = performance.now() + 90_000;
-      const stats = view.stats(),
-        lod = stats.lod;
-      if (stats.programsReady) request?.mark('programs-ready');
-      if (lod?.covered) {
-        request?.mark('first-useful-frame');
-        request?.mark('first-covered-frame');
-      }
-      if (lod && lod.tiles > 0 && lod.ready >= lod.tiles && lod.pending === 0 && stats.programsReady && !this.bench?.derivedPending()) {
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-        if (request === this.readiness) {
-          request?.mark('first-covered-frame');
-          request?.mark('visible-complete');
-        }
-        return;
-      }
-      if (performance.now() > until) throw new Error('The 3D view did not finish drawing within 90 seconds.');
-      await new Promise(resolve => setTimeout(resolve, 40));
-    }
-  }
   private benchMiniRevision = -1;
   /** One resolution per (settings, world, preview): show() and applyAppearance() share it. */
   private resolutions: { settings: V2Settings; world: World | undefined; preview: boolean; resolved: ResolvedAppearance }[] = [];
@@ -151,7 +107,6 @@ export class StudioClient {
   private showRequest = 0;
   /** The bench set() in flight, if any. */
   private benchSetting?: Promise<void>;
-  private classicBackground?: { world: World; key: string; url: string };
   private retained?: { id: number; world: World };
   private pendingDraw: { gen: number; resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> } | null = null;
   private display: DisplayOpts = { style: 'parchment', contours: true, landuse: true, labels: true, legend: false, cartouche: false };
@@ -437,7 +392,6 @@ export class StudioClient {
     this.minimalActive = false;
     this.minimal?.dispose();
     this.minimal = undefined;
-    this.minimalBackground = undefined;
     this.resolutions = [];
     this.presentations = new WeakMap();
     this.resourceCache = undefined;
@@ -446,7 +400,6 @@ export class StudioClient {
     this.bench?.dispose();
     this.bench = undefined;
     this.benchSetting = undefined;
-    this.classicBackground = undefined;
     this.invalidateRetained();
     this.world = null;
     this.syncRenderer?.dispose();
@@ -461,7 +414,7 @@ export class StudioClient {
     await this.init();
   }
   async show(world: World, keepView = false, requested?: RenderReadiness): Promise<void> {
-    const nextRequest = requested ?? new RenderReadiness(this.view3dActive ? '3d' : '2d');
+    const nextRequest = requested ?? new RenderReadiness('2d');
     this.readiness = nextRequest;
     // A preference redraw (language, units) or a new world may start while a style switch is still preparing its
     // renderer: whichever show() started last owns the map, an older one returns once its await is over.
@@ -494,7 +447,6 @@ export class StudioClient {
       this.minimal ??= new MinimalRenderer(() => this.viewer.invalidate());
       await this.minimal.set(world, minimalSettings, minimalAppearance, {}, nextRequest);
       if (superseded()) return;
-      this.minimalBackground = undefined;
       this.minimalActive = true;
       this.viewer.setDirectSource({ element: this.minimal.element, draw: frame => this.drawMinimal(frame) });
       this.viewer.contentChanged(world.mapSize, keepView && !mapChanged);
@@ -503,7 +455,6 @@ export class StudioClient {
     this.minimalActive = false;
     this.minimal?.dispose();
     this.minimal = undefined;
-    this.minimalBackground = undefined;
     if (!renderGeometryReady()) {
       await loadRenderGeometry();
       if (superseded()) return;
@@ -521,9 +472,8 @@ export class StudioClient {
         if (this.benchActive && this.world && !this.bench?.redrawOnly) {
           this.benchMiniRevision = -1;
         }
-        if (this.benchActive && this.world && !this.view3dActive) this.viewer.contentChanged(this.world.mapSize, true);
+        if (this.benchActive && this.world) this.viewer.contentChanged(this.world.mapSize, true);
       });
-      this.bench.setSuspended(this.view3dActive);
       this.viewer.setRelief(() => this.bench?.relief());
       this.viewer.setWalkCollisions(() => this.bench?.walkCollisions());
       this.bench.resourceSource = w => this.resources(w);
@@ -534,8 +484,7 @@ export class StudioClient {
         if (superseded()) return;
       }
       this.benchPreparing++;
-      const request = nextRequest;
-      const setting = this.bench.set(world, settings!, resolved!, {}, this.view3dActive ? new RenderReadiness('2d') : request);
+      const setting = this.bench.set(world, settings!, resolved!, {}, nextRequest);
       this.benchSetting = setting;
       try {
         await setting;
@@ -596,7 +545,7 @@ export class StudioClient {
   }
   private drawMinimal(frame: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number } {
     const renderer = this.minimal;
-    if (!renderer || !this.minimalActive || this.view3dActive) return { ms: 0, band: 0, scale: frame.view.scale };
+    if (!renderer || !this.minimalActive) return { ms: 0, band: 0, scale: frame.view.scale };
     renderer.drawLive(frame.view, frame.w, frame.h, frame.dpr);
     let mini: HTMLCanvasElement | undefined;
     if (frame.mini && (this.benchMiniRevision !== this.appearanceRevision || this.benchMiniSize !== frame.mini)) {
@@ -618,7 +567,7 @@ export class StudioClient {
   private drawBench(frame: FrameRequest): { mini?: HTMLCanvasElement; ms: number; band: number; scale: number } {
     const started = performance.now();
     const renderer = this.bench;
-    if (!renderer || !this.benchActive || this.view3dActive) return { ms: 0, band: 0, scale: frame.view.scale };
+    if (!renderer || !this.benchActive) return { ms: 0, band: 0, scale: frame.view.scale };
     let mini: HTMLCanvasElement | undefined;
     // The whole-map miniature costs as much as a full frame: the live view shows first, the miniature follows in a later frame.
     if (frame.mini && !this.benchPreparing && (this.benchMiniRevision !== this.appearanceRevision || this.benchMiniSize !== frame.mini)) {
@@ -689,9 +638,9 @@ export class StudioClient {
     if (this.minimalActive) return this.minimal!.settled();
     return this.benchActive && this.bench ? this.bench.settled() : Promise.resolve();
   }
-  /** Display work still owed to the 2D view (tiles, textures, programs); 0 in 3D, whose readiness is awaited separately. */
+  /** Display work still owed to the map (tiles, textures, programs). */
   displayPending(): number {
-    return !this.view3dActive && this.benchActive && this.bench ? this.bench.pendingWork() : 0;
+    return this.benchActive && this.bench ? this.bench.pendingWork() : 0;
   }
   /** The tilted view on screen as a picture (the PNG of the view); undefined in the top view or without the bench. */
   captureView(): HTMLCanvasElement | undefined {
@@ -733,7 +682,7 @@ export class StudioClient {
   /** Appearance changes redraw retained geometry. They never enter the generation worker. */
   setAppearance(settings: V2Settings): Promise<void> {
     const request = ++this.appearanceRequest;
-    const readiness = new RenderReadiness(this.view3dActive ? '3d' : '2d');
+    const readiness = new RenderReadiness('2d');
     const snapshot = { ...settings, appearance: settings.appearance ? structuredClone(settings.appearance) : undefined };
     const work = this.appearanceWork
       .catch(() => {})
@@ -772,44 +721,6 @@ export class StudioClient {
       if (this.render && !this.benchActive) this.render.postMessage({ type: 'display', display: this.display });
       throw error;
     }
-  }
-  async prepare3dBackground(): Promise<void> {
-    // A style switch may still be setting up the bench and compiling its look. Capturing earlier
-    // would cache the old map or its preview, or enter a second synchronous pipeline compilation.
-    for (;;) {
-      const work = this.appearanceWork;
-      await work;
-      if (work === this.appearanceWork) break;
-    }
-    if (this.minimalActive) {
-      await this.minimal?.settled();
-      this.minimalBackground ??= this.minimal?.groundBackground();
-      return;
-    }
-    if (this.benchActive) {
-      await this.bench?.exactReady();
-      if (!this.bench?.groundBackground()) this.bench?.backgroundUrl();
-      return;
-    }
-    if (!this.world) return;
-    const key = JSON.stringify(this.display);
-    if (this.classicBackground?.world === this.world && this.classicBackground.key === key) return;
-    const { renderSvg } = await import('../render/svg');
-    const brushes = this.display.painted ? (await import('../render/assets/brushAssets')).BRUSH_SOURCES : undefined;
-    const svg = renderSvg(this.world, { ...this.display, brushes, width: 2048, labels: false, legend: false, cartouche: false, layers: { city: false, streets: false, roads: false, labels: false, decor: false } }); // roads: vectors per 3D tile (city3d), not this map raster
-    this.classicBackground = { world: this.world, key, url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` };
-  }
-  groundBackground(): HTMLCanvasElement | undefined {
-    if (this.minimalActive) return (this.minimalBackground ??= this.minimal?.groundBackground());
-    return this.benchActive ? this.bench?.groundBackground() : undefined;
-  }
-  backgroundUrl(): string | undefined {
-    if (this.minimalActive) return this.groundBackground()?.toDataURL('image/png');
-    return this.benchActive ? this.bench?.backgroundUrl() : this.classicBackground?.url;
-  }
-  /** The classic 3D background already holds the land use. */
-  physicalGround() {
-    return this.benchActive ? this.bench?.physicalGround() : undefined;
   }
   async exportBench(settings: V2Settings, resolved: ResolvedAppearance, size: number, layers: Partial<ExportLayers>): Promise<HTMLCanvasElement> {
     // Style switches may still be preparing the shared GPU resources. Export waits for that work.

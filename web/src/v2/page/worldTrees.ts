@@ -1,10 +1,9 @@
 /**
- * The "3D trees" switch and the tree distance of the single camera: the separate 3D view's controls in its bar
- * (worldNavigation.ts, mounted before this), shown while the map is tilted (the modelled trees stand only in a tilted
+ * The "3D trees" switch and the tree distance, in the bar of the tilted map (worldNavigation.ts, mounted before this),
+ * shown while the map is tilted (the modelled trees stand only in a tilted
  * view) and only for the looks that model their near trees (worldTreesAvailable: not the fast satellite, whose switch
- * is hidden with its setting kept). They write the appearance's `city.trees3d` and `city.treeDistance`, as the separate
- * 3D view's toolbar did; the trees layer reads them (v2/display/worldVolumes.ts). Mounted by view3d.ts for the single
- * camera; with `?camera=dual` the separate 3D view keeps its own controls.
+ * is hidden with its setting kept). They write the appearance's `city.trees3d` and `city.treeDistance`; the trees
+ * layer reads them (v2/display/worldVolumes.ts). Mounted by view3d.ts.
  */
 import { applyAppearancePatch, type AppearancePatch } from '../../render/appearanceRecipe';
 import { isTilted } from '../../render/world/camera';

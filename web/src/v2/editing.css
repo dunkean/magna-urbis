@@ -69,11 +69,6 @@
   z-index: 6;
   overflow: hidden;
 }
-/* Map-space outlines belong to 2D; the 3D viewer projects its own selection. */
-.map-area:has(> .city3d:not([hidden])) [data-urban-selection],
-.map-area:has(> .city3d:not([hidden])) .urban-selection-name {
-  display: none !important;
-}
 body:has(#inspect-mode:not(:checked)) [data-urban-selection],
 body:has(#inspect-mode:not(:checked)) .urban-selection-name {
   display: none !important;
@@ -112,9 +107,6 @@ body:has(#inspect-mode:not(:checked)) .urban-selection-name {
 }
 .v2-moving-towns canvas {
   cursor: grab;
-}
-.map-area:has(> .city3d:not([hidden])) > .v2-town-move-hint {
-  display: none;
 }
 #cityShapeEditor .se-handle {
   filter: drop-shadow(0 1px 2px #0006);

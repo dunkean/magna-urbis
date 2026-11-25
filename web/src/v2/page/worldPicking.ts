@@ -11,7 +11,7 @@ import type { PageState } from './contract';
 export type TownBuilding = { settlement: string; index: number; building: UrbanBuilding };
 type NativeBuilding = UrbanBuilding & { nativeId?: string };
 
-/** The town buildings by the id their volume carries (`nativeId`), as the separate 3D view's selection found them. */
+/** The town buildings by the id their volume carries (`nativeId`). */
 function townBuildingsById(world: World): Map<string, TownBuilding> {
   const byId = new Map<string, TownBuilding>();
   for (const settlement of world.settlements ?? []) {

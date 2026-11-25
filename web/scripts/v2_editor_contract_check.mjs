@@ -106,19 +106,8 @@ try {
   const pending = await recipe();
   assert(Object.values(pending.urban.local).some(local => Object.values(local.layout?.overrides?.quarters ?? {}).some(edit => edit.tissue === 'radial')));
   await page.screenshot({ path: `${out}/quarter.png` });
-  // CSS must hide map-space outlines for the real 3D view state, without hiding its shared scene controls.
-  await page.evaluate(() => {
-    const view = document.createElement('div');
-    view.className = 'city3d';
-    view.id = 'editor-test-3d-state';
-    document.querySelector('.map-area').append(view);
-  });
-  assert.equal(await page.locator('[data-urban-selection]').isVisible(), false);
-  assert.equal(await page.locator('#scene-controls').isVisible(), true);
-  await page.evaluate(() => {
-    window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: '3d' }));
-    document.querySelector('#editor-test-3d-state').remove();
-  });
+  // The tilt ends the editors and clears their outline.
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: '3d' })));
   assert.equal(await page.locator('[data-urban-selection] path').last().getAttribute('d'), '');
   await pick('parcel');
   const parcelTypes = await page.locator('#subdivision-controls [data-setting-path="role"] option').allTextContents();

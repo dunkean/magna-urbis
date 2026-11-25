@@ -6,9 +6,9 @@
  *
  *   mapState.ts            the map on display (world, settings, appearance) and the page's frame hook
  *   appearance.ts          set(): the appearance passes, which make the products below
- *   groundProducts.ts      terrain renderer or CPU raster, forest, programs, whole-map ground capture, 3D background
+ *   groundProducts.ts      terrain renderer or CPU raster, forest, programs, whole-map ground capture
  *   waterProducts.ts       GPU water textures, vector water raster
- *   contours.ts            contour lines inked on the overlay and the 3D drape
+ *   contours.ts            contour lines inked on the overlay
  *   cartographyProducts.ts overlay renderer, semantic land use, export overlays
  *   townProducts.ts        native city map and the paint of the exact town renderer
  *   mapView.ts             the view on screen: motion, style-switch stand-in, capture frame
@@ -24,7 +24,6 @@ import type { MaterialRasterContext } from '../../../rust/bridge/terrainMaterial
 import type { World } from '../gen/types';
 import type { V2Settings } from './contracts';
 import type { ResolvedAppearance } from '../render/appearanceRecipe';
-import type { City3dPhysicalGround as PhysicalGround } from '../ui/city3d';
 import type { View } from '../render/view';
 import type { Building3dVisual } from '../render/urbanBuildingGeometry';
 import type { WorldRelief } from '../render/world/contract';
@@ -119,10 +118,6 @@ export class BenchRenderer {
   set(world: World, settings: V2Settings, r: ResolvedAppearance, layers: Partial<ExportLayers> = {}, request = new RenderReadiness(r.target === 'export' ? 'capture' : '2d')): Promise<void> {
     return this.appearance.apply(world, settings, r, layers, request, this.view);
   }
-  /** The physical land use of the overlay (composition mask, painted brushes, path caches) for the 3D ground tiles: no second scene. */
-  physicalGround(): PhysicalGround | undefined {
-    return this.products.cartography.physicalGround();
-  }
 
   // --- the view on screen --------------------------------------------------------------------------------------------
   drawLive(view: View, w: number, h: number, dpr: number): void {
@@ -131,9 +126,6 @@ export class BenchRenderer {
   /** The whole task of a frame of the page, for the journal of slow units (LiveStats.slow). */
   noteFrame(since: number): void {
     noteLiveUnit('frame', since);
-  }
-  setSuspended(value: boolean): void {
-    this.view.setSuspended(value);
   }
   /** True when the last miniature had its map content and no work was pending: otherwise it must be drawn again. */
   get miniComplete(): boolean {
@@ -148,15 +140,9 @@ export class BenchRenderer {
   pendingWork(): number {
     return this.readiness.pendingWork();
   }
-  derivedPending(): number {
-    return this.readiness.derivedPending();
-  }
   /** Resolves once the progressive updates (woods after a town build) are on screen. */
   settled(): Promise<void> {
     return this.readiness.settled();
-  }
-  exactReady(): Promise<void> {
-    return this.products.ground.exactReady();
   }
 
   // --- exact frames --------------------------------------------------------------------------------------------------
@@ -186,14 +172,6 @@ export class BenchRenderer {
   /** The ground point under a CSS pixel of `view`, and in a tilted view the building volume in front of it. */
   pick(view: View, w: number, h: number, sx: number, sy: number, accept: (building: Building3dVisual) => boolean): { x: number; y: number; building?: Building3dVisual } | undefined {
     return this.view.pick(view, w, h, sx, sy, accept);
-  }
-  /** Terrain-pass bitmap for 3D; invalidated with the ground, shared without PNG encoding and image decoding. */
-  groundBackground(): HTMLCanvasElement | undefined {
-    return this.products.ground.groundBackground();
-  }
-  /** The ground of the 3D view as one whole-map image URL. */
-  backgroundUrl(): string | undefined {
-    return this.products.ground.backgroundUrl(this.products.water.vectors);
   }
 
   dispose(): void {

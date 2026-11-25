@@ -141,7 +141,7 @@ try {
   report.checks.localStructuredForms = true;
   await page.locator('#editor-close').click();
   await page.locator('#view3d').click();
-  await page.locator('.city3d:not([hidden])').waitFor();
+  await page.waitForFunction(() => document.querySelector('#view3d').getAttribute('aria-pressed') === 'true' && document.querySelector('#map-canvas').dataset.renderPending === '0');
   await page.waitForTimeout(1000);
   await page.screenshot({ path: `${out}/native-3d.png` });
   assert.equal(await page.locator('#view3d').textContent(), '2D');

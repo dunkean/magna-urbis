@@ -315,8 +315,7 @@ export function createTownInspector(state: PageState, actions: PageActions) {
     actions.appendLocalFacts($('#inspector'), key);
     // The camera goes to the place's published centre: its built core when the town stands beside its placed centre.
     const seat = s.core ?? s.center;
-    if (focus && state.city3d?.active) state.city3d.focus(seat, s.radius);
-    else if (focus) {
+    if (focus) {
       // A tilted camera stays tilted over the place (a walk or a flight returns to the orbit there).
       const current = state.client.viewer.getView();
       state.client.viewer.setView({ cx: seat.x, cy: seat.y, scale: Math.min(3, Math.min($('#map').clientHeight, $('#map').clientWidth) / Math.max(600, s.radius * 3)), pitch: current.eye === undefined ? current.pitch : 1, yaw: current.yaw });

@@ -3,7 +3,6 @@
  * the blended one for detail layers, the stand-in while they are created (the last drawn variant, else the
  * preview), readiness for world tiles and variantReady, and the idle preparation of the likely next look.
  */
-import { rendererOverride } from '../../rendererOverride';
 import { PREVIEW_VARIANT, SATELLITE_VARIANT, hasAuxPass, lookVariant, mapPasses, speculativePrewarmAllowed, type TerrainVariant } from '../variant';
 import type { GpuShared } from './device';
 import type { TerrainLook } from '../contract';
@@ -81,25 +80,15 @@ export class GpuPipelines {
     });
   }
   /** Once the requested look is drawn, prepare the likely next ones while the page is idle: the Satellite map
-   * pipelines (the heaviest look), then its 3D ground. Never before the requested look: a heavy compilation started
-   * first delays it. A hit makes the later switch or 3D opening immediate; a miss costs background compiler time. */
+   * pipelines. Queue these after the requested look so their compilation cannot delay its first draw. */
   private prewarmLikely(): void {
     if (this.prewarmStarted) return;
     this.prewarmStarted = true;
-    // No speculative heavy pipelines (nor a second 3D device) on an integrated/software GPU or after a loss.
+    // Avoid speculative heavy pipelines on an integrated or software GPU.
     if (!speculativePrewarmAllowed()) return;
-    whenIdle(async () => {
-      const gpu = this.gpu;
-      if (!this.alive() || gpu.lost) return;
-      const satellite = SATELLITE_VARIANT;
-      const keys = mapPasses(satellite).map(pass => {
-        this.terrain(satellite, pass, 'none', false);
-        return gpu.terrainKey(satellite, pass, 'none');
-      });
-      await Promise.all(keys.map(key => gpu.settled(key)));
-      if (!this.alive() || gpu.lost || rendererOverride() === 'webgl') return;
-      // The 3D view's Satellite ground (same Render v2 material, forest on): its own device, created here if needed.
-      (await import('../../terrain3dGpu')).prewarmTerrain3dGround(1, 1, 0);
+    whenIdle(() => {
+      if (!this.alive() || this.gpu.lost) return;
+      for (const pass of mapPasses(SATELLITE_VARIANT)) this.terrain(SATELLITE_VARIANT, pass, 'none', false);
     });
   }
 }

@@ -10,17 +10,6 @@ const forced = typeof location !== 'undefined' && new URLSearchParams(location.s
 export const fallbackForced = (): boolean => forced;
 
 /**
- * `?camera=dual` keeps the two views the page had before the single camera: a 2D map that does not tilt, and a "3D"
- * button that opens the separate 3D view (ui/view3d/). Without it the map has one camera: it tilts in place and the
- * button tilts it. TEMPORARY: the switch exists only until the single camera does what the 3D view did (walk, fly,
- * building picking, captures); it is then deleted together with that view. Read once at load, neither stored nor
- * offered in the page.
- */
-const dual = typeof location !== 'undefined' && new URLSearchParams(location.search).get('camera') === 'dual';
-
-export const dualCameras = (): boolean => dual;
-
-/**
  * Pace of a moving view (compositor.ts): preparation shares the task of a moving frame and its units are indivisible
  * (a ground tile, a recorded band), so it runs in full only while the frames keep the display's pace.
  *

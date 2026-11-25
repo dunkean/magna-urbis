@@ -39,14 +39,10 @@ export class DisplayReadiness {
   async settled(): Promise<void> {
     const ground = this.parts.ground;
     await ground.exactReady();
-    while (!this.map.disposed && !this.map.suspended && (this.pendingWork() || !this.map.request?.has('visible-complete'))) {
+    while (!this.map.disposed && (this.pendingWork() || !this.map.request?.has('visible-complete'))) {
       if (ground.programError) throw ground.programError;
       this.map.repaint();
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     }
-  }
-  /** Work still deriving products after `set()` returned (contours in the worker, the woods, the look's programs). */
-  derivedPending(): number {
-    return this.parts.contours.pending() + Number(!!this.parts.ground.forestJob) + Number(!!this.parts.ground.programWork);
   }
 }

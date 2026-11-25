@@ -120,14 +120,7 @@ try {
       body: 'export const createHotContext=()=>({accept(){},dispose(){},prune(){},invalidate(){},on(){},off(){},send(){},data:{}});export const updateStyle=(id,css)=>{let e=document.querySelector(`style[data-vite-dev-id="${id}"]`);if(!e){e=document.createElement("style");e.dataset.viteDevId=id;document.head.append(e);}e.textContent=css;};export const removeStyle=()=>{};export const injectQuery=u=>u;export const ErrorOverlay=class{};',
     }),
   );
-  // Board-only hook: expose the 3D view's camera so a board can record it and another board can reuse it (--camera-from label).
-  // The default camera fits the buildings, so a climate variant with other farms would otherwise frame the map differently.
-  await page.route(/\/city3d\.ts(\?.*)?$/, async route => {
-    const response = await route.fetch(),
-      body = await response.text();
-    if (!body.includes('return api;')) meta.notes.push('3D camera hook missing');
-    await route.fulfill({ response, body: body.replace('return api;', 'globalThis.__boardCity3d = api; return api;') });
-  });
+  // --camera-from label: the tilted camera another board recorded (`camera3d` of its meta.json, from the page's test hook).
   const cameraFrom = arg('camera-from', '') ? JSON.parse(fs.readFileSync(path.join(web, 'out/render-board', arg('camera-from', ''), 'meta.json'), 'utf8')).camera3d : undefined;
   if (arg('camera-from', '') && !cameraFrom) throw Error(`No camera3d in board ${arg('camera-from', '')}`);
   if (args.includes('--webgpu'))
@@ -336,18 +329,12 @@ try {
       await page.waitForFunction(() => document.querySelector('#view3d')?.getAttribute('aria-pressed') === 'true', null, { timeout: 60000 });
       await settle(6000);
       if (cameraFrom && !meta.cameraRestored) {
-        await page.evaluate(c => {
-          const view = globalThis.__boardCity3d;
-          if (!view) throw Error('3D camera hook missing');
-          view.setCamera(c);
-        }, cameraFrom);
+        if (!Number.isFinite(cameraFrom.scale)) throw Error('The --camera-from board holds the camera of the removed separate 3D view');
+        await page.evaluate(c => window.__v2Test.setCamera3d(c), cameraFrom);
         meta.cameraRestored = arg('camera-from', '');
         await settle(4000);
       }
-      meta.camera3d ??= await page.evaluate(() => {
-        const c = globalThis.__boardCity3d?.getCamera();
-        return c && { x: c.x, y: c.y, distance: c.distance, yaw: c.yaw, pitch: c.pitch, exaggeration: c.exaggeration, navigation: c.navigation };
-      });
+      meta.camera3d ??= await page.evaluate(() => window.__v2Test?.camera3d());
       if (arg('hold')) await page.waitForTimeout(Number(arg('hold')));
       await shot(style, option, '3d');
       await page.evaluate(() => document.querySelector('#view3d').click());

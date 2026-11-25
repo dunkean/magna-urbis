@@ -1,5 +1,4 @@
 /** Camera and navigation for createViewer. Owns orbit, walk/fly, easing and projection so input and presentation share one camera. */
-import { dualCameras } from '../render/live/policy';
 import { View, fitView, clampView, zoomAt, panBy } from '../render/view';
 import { clampLook, clampPitch, panOnGround, screenProjection, wrapYaw, zoomAtGround, type ScreenProjection } from '../render/world/camera';
 import type { WorldRelief } from '../render/world/contract';
@@ -48,7 +47,7 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
   /** The page holds the map in the top view (Viewer.setTiltLocked). */
   let tiltLocked = false;
   /** The frame source presents a map that tilts, and the page lets it. */
-  const tilts = (): boolean => !tiltLocked && !dualCameras() && capable();
+  const tilts = (): boolean => !tiltLocked && capable();
   const free = (): boolean => navigation !== 'orbit' && tilts();
   const tilted = (): boolean => (pitch !== 0 || yaw !== 0 || navigation !== 'orbit') && tilts();
   /** A centre and a scale with the tilt of the camera (a free eye: its look and altitude); in the top view, the view
@@ -304,7 +303,7 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
       // eye is a flight (a walk stays a walk), one without is the orbit.
       tiltTarget = null;
       held.clear();
-      const flat = dualCameras() || tiltLocked,
+      const flat = tiltLocked,
         eye = !flat && Number.isFinite(v.eye);
       if (eye && navigation === 'orbit') orbitPitch = pitch || 1;
       navigation = eye ? (navigation === 'walk' ? 'walk' : 'fly') : 'orbit';

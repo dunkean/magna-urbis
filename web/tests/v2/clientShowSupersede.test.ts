@@ -20,7 +20,6 @@ vi.mock('../../../rust/bridge/renderGeometry', () => ({ renderGeometryReady: () 
 vi.mock('../../src/v2/benchRenderer', () => ({
   BenchRenderer: class {
     element = {};
-    setSuspended(): void {}
     set(_world: unknown, settings: { look: string }): Promise<void> {
       bench.looks.push(settings.look);
       return new Promise(resolve => {
@@ -36,7 +35,13 @@ type Look = { look: string };
 function makeClient(paths: Record<string, string>) {
   bench.releases = [];
   bench.looks = [];
-  const viewer = { setDirectSource: vi.fn(), setSource: vi.fn(), contentChanged: vi.fn() };
+  const viewer = {
+    setDirectSource: vi.fn(),
+    setSource: vi.fn(),
+    contentChanged: vi.fn(),
+    setRelief: vi.fn(),
+    setWalkCollisions: vi.fn(),
+  };
   const client = Object.assign(Object.create(StudioClient.prototype), {
     viewer,
     render: { postMessage: vi.fn() },
@@ -44,7 +49,6 @@ function makeClient(paths: Record<string, string>) {
     benchActive: false,
     benchPreparing: 0,
     minimalActive: false,
-    view3dActive: false,
     showRequest: 0,
     drawingId: 0,
     pendingDraw: null,

@@ -10,8 +10,6 @@ const TAG = `recipe:${V2_ENGINE_VERSION}`;
 const DELAY_MS = 800;
 export interface SavedUi {
   tab?: string;
-  mode3d?: boolean;
-  camera?: unknown;
 }
 export interface SavedRecipe {
   settings: V2Settings;

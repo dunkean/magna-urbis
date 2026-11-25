@@ -507,7 +507,7 @@ describe('V2 and City Bench stay in sync', () => {
     const benchSource = read('../../src/ui/terrainUrban.ts');
     expect(benchSource).toContain('message.layoutConfig.siteArchetypes = citySiteArchetypes(selected);');
     expect(benchSource).toContain('message.roads = cityTownRoads(roads);');
-    expect(read('../../src/v2/urban3d.ts')).toContain('roads = townRoadStreets(world);');
+    expect(read('../../src/v2/display/worldVolumes.ts')).toContain('cityRegionalStreets(r, townRoadStreets(world))');
   });
 
   it('carries manual foundations into both city consumers', () => {
@@ -557,16 +557,18 @@ describe('V2 and City Bench stay in sync', () => {
       expect(compositionMessages[field!.label]?.fr).toBeTruthy();
       expect(RENDER_SECTION_FIELDS.relief).toContain(path);
     }
-    // Both pages mount the one 3D view, which reads the choices from their view settings and seats every structure on
-    // the terrain's shaped ground (groundAt).
+    // City Bench's 3D view and the V2's tilted map read the choices from the same appearance, and seat every structure on
+    // the shaped ground (groundAt).
     const bench = read('../../src/ui/citybench.ts'),
-      v2 = read('../../src/v2/urban3d.ts'),
+      v2 = read('../../src/v2/display/worldVolumes.ts'),
       buildings = read('../../src/ui/view3d/cityBuildings.ts'),
       ground = read('../../src/ui/view3d/cityGround.ts');
     expect(bench).toContain('groundShaping: r.city.groundShaping,');
     expect(bench).toContain('terraces: r.city.terraces,');
     expect(bench).toContain("'groundShaping', 'terraces'] as const) setBenchAppearanceField");
-    expect(v2).toContain('groundShaping: city.groundShaping, terraces: city.terraces');
+    expect(v2).toContain('const levelled = r.city.groundShaping && !r.underdark;');
+    expect(v2).toContain('city3dBuildingsSteps(source, { heightAt, terraces: r.city.terraces })');
+    expect(v2).toContain('heights.groundAt(x, y)');
     expect(buildings).toContain('t.setGroundShape(');
     expect(buildings).toContain('terraces: cityContext.builtTerraces');
     expect(ground).toContain('city3dSurfaceSamplers(d.raster, (x, y) => t.groundAt(x, y))');
@@ -612,8 +614,8 @@ describe('V2 and City Bench stay in sync', () => {
         expect(city3dPlanOptions(r).roadLook).toBe(r.composition.networks.roads.look);
       }
     }
-    // Both pages set the biome soil of the rendered surface through the same ground tones.
-    for (const page of ['../../src/v2/display/appearance.ts', '../../src/v2/urban3d.ts']) expect(read(page)).toContain('roadSoilOf(');
+    // The V2 sets the biome soil of the rendered surface through the shared ground tones, once for both views of the map.
+    expect(read('../../src/v2/display/appearance.ts')).toContain('roadSoilOf(');
   });
 
   it('gives the same drawCity options to both pages for one resolved appearance', () => {
@@ -818,7 +820,8 @@ describe('V2 and City Bench stay in sync', () => {
       bench = read('../../src/ui/terrainUrban.ts');
     for (const page of [v2, bench]) expect(page).toContain('finishCityFrame(ctx,');
     expect(v2).not.toContain('HOUSE_LOD');
-    for (const page of [read('../../src/v2/urban3d.ts'), read('../../src/ui/citybench.ts')]) expect(page).toContain('getPlanOptions: () => city3dPlanOptions(');
+    expect(read('../../src/ui/citybench.ts')).toContain('getPlanOptions: () => city3dPlanOptions(');
+    expect(read('../../src/v2/display/worldVolumes.ts')).toContain('const plan = city3dPlanOptions(r)');
     const composition = presetComposition('parchment');
     composition.effects.ambience = 'night';
     const r = resolveAppearance({ style: 'parchment', composition, unifiedDefaults: true }, {} as never, { nativeCities: true }, 'view3d');
@@ -837,7 +840,8 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('draws stepped streets as 3D flights over a plain ground strip on both pages', () => {
-    for (const page of [read('../../src/v2/urban3d.ts'), read('../../src/ui/citybench.ts')]) expect(page).toContain('mountCity3d(');
+    expect(read('../../src/ui/citybench.ts')).toContain('mountCity3d(');
+    expect(read('../../src/v2/display/worldVolumes.ts')).toContain('city3dStairs(layouts, heightAt, street => stairStreetColor(street, stairPaint))');
     expect(read('../../src/ui/view3d/cityBuildings.ts')).toContain('city3dStairs(layouts ?? [], cityContext.heightAt, street => stairStreetColor(street, stairPaint))');
     expect(read('../../src/ui/view3d/cityDrape.ts').match(/stairMeshes: ?true/g)).toHaveLength(2);
   });
@@ -1215,8 +1219,7 @@ describe('retained city environment parity', () => {
     expect(read('../../src/v2/decorTerrain.ts')).toContain('v2Decor: decor');
     expect(read('../../src/v2/display/waterProducts.ts')).toContain('decorWaterSvg(decor,');
     expect(read('../../src/ui/citybench.ts')).toContain('decorWater3d(decor,');
-    expect(read('../../src/v2/urban3d.ts')).toContain('decorWater3d(decor,');
-    expect(read('../../src/v2/urban3d.ts')).toContain('retainedDecorOf(world.terrain)');
+    expect(read('../../src/v2/display/waterProducts.ts')).toContain('retainedDecorOf(this.map.world!.terrain)');
   });
 
   it('shares countryside generation, physical forest inputs and vector layer ownership', () => {
@@ -1319,7 +1322,7 @@ describe('retained city environment parity', () => {
       expect(driver).toContain("p.evaluate(hideOverlays, '.map-area')");
     }
   });
-  it('draws the 3D sea at the 2D coast in both pages (render/seaCover.ts)', async () => {
+  it('draws the 3D sea of City Bench at the 2D coast (render/seaCover.ts)', async () => {
     const { paintSeaCover } = await import('../../src/render/seaCover');
     // A straight coast: height = x - 3.5 (cells), so the spline's zero line lies at x = 3.5, halfway between points 3 and 4.
     const n = 8,
@@ -1335,8 +1338,7 @@ describe('retained city environment parity', () => {
     expect([...pixels.subarray(4 * n * 4, 4 * n * 4 + 3)]).toEqual([1, 2, 3]);
     // The 2D land cover keeps the same zero line: refinement never turns spline land into sea or back.
     expect(read('../../src/ui/terrain/gl/shaders.ts')).toContain('s.x = shoreH > 0.0 ? max(s.x, min(shoreH, 0.05)) : min(s.x, shoreH);');
-    // V2 (native field) and City Bench (decor heights) paint the sea through the same helper.
-    expect(read('../../src/v2/urban3d.ts')).toContain('paintSeaCover(');
+    // City Bench paints the sea of its 3D view from the decor heights; the V2's tilted map drapes the 2D ground itself.
     expect(read('../../src/ui/view3d/cityWater.ts')).toContain('paintSeaCover(');
   });
 });

@@ -66,7 +66,6 @@ function initialModel(): PageModel {
     bootRuntime,
     localEdition,
     connectLocal: localEdition,
-    city3d: undefined,
   };
 }
 
@@ -78,8 +77,6 @@ function initialWork(): PageWork {
     logScroll: 0,
     renderTimer: undefined,
     renderRevision: 0,
-    open3dToken: 0,
-    open3dSeq: 0,
     chainSyncFrame: 0,
     pendingRegionPosition: undefined,
     pendingSettlement: undefined,

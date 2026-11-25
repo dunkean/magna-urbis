@@ -661,17 +661,6 @@ dialog.workbench-illustration header [data-generate] {
   bottom: auto;
   max-height: calc(100% - 150px);
 }
-.map-area > .city3d .city3d-bar {
-  background: #272923ee;
-  color: #eee9db;
-  border-color: var(--line);
-  border-radius: 9px;
-}
-.map-area > .city3d .city3d-bar :is(select, input, button) {
-  color: #eee9db;
-  background: #20221c;
-  border-color: var(--line);
-}
 @media (min-width: 1700px) {
   #app > .workspace {
     grid-template-columns: 390px minmax(0, 1fr);
@@ -839,9 +828,6 @@ dialog.workbench-illustration header [data-generate] {
   }
   .map-area .map-hint {
     display: none;
-  }
-  .map-area > .city3d .city3d-bar {
-    top: 16px;
   }
   .map-area .editor-dock {
     top: 12px;
