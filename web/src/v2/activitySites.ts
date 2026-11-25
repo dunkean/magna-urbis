@@ -7,6 +7,7 @@ import type { ActivitySite } from '../../../rust/bridge/settlements';
 import type { PlacedBuilding, PlacementBatch, PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
 import type { HouseMaterial, MaterialPattern, Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
 import { buildingRoof, readMassing } from '../render/cityMassing';
+import type { SiteBuilding } from '../render/siteArchitecture';
 import { cityArchitectureOf } from '../render/cityContract';
 import type { V2Settings } from './contracts';
 import { nativeCityRecords } from './nativeProducts';
@@ -365,6 +366,7 @@ function massingScene(sites: readonly ActivitySite[]): PlacementBatch {
         culture: { culture: site.culture, pack: '', mode: 'historical_inspired', borrowing: null },
         recipe_id: `activity:${b.archetype}`,
         variant_id: b.look,
+        sitePart: { use: b.archetype, form: b.look, installation: objectGround(b) !== undefined },
         transform: { origin: { x: site.x, y: site.y }, orientation_deg: (Math.atan2(c.y - a.y, c.x - a.x) * 180) / Math.PI },
         ground_z_m: ground,
         footprint,
@@ -414,11 +416,11 @@ function enlarged(ring: Point[], k: number): Point[] {
   return ring.map(p => ({ x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k }));
 }
 /** Culture id to house pack, read from the retained towns (requests, else scene buildings). The Rust site stage owns the mapping. */
-function packsOf(world: World): { byCulture: Map<string, string>; any?: string } {
+function packsOf(world: World): Map<string, string> {
   const byCulture = new Map<string, string>();
   for (const city of Object.values(nativeCityRecords(world) ?? {}))
     for (const item of [...(city.sites ?? city.requests ?? []), ...(city.scene?.buildings ?? [])]) if (item.culture?.pack && !byCulture.has(item.culture.culture)) byCulture.set(item.culture.culture, item.culture.pack);
-  return { byCulture, any: byCulture.values().next().value };
+  return byCulture;
 }
 /**
  * Follow the architecture in use for the isolated buildings: with compact or detailed architecture each activity building
@@ -434,7 +436,7 @@ export async function planActivityArchitecture(world: World, settings: V2Setting
     delete world.debug.v2ActivityPlans;
     return;
   }
-  const { byCulture, any } = packsOf(world);
+  const byCulture = packsOf(world);
   const key = JSON.stringify([architecture, settings.urban?.houses, settings.urban?.backend, [...byCulture]]);
   const held = plansOf(world);
   if (held?.sites === sites && held.key === key) return;
@@ -446,7 +448,7 @@ export async function planActivityArchitecture(world: World, settings: V2Setting
     for (const site of sites)
       site.buildings.forEach((b, k) => {
         const id = `${site.id}/${k}`,
-          pack = byCulture.get(site.culture) ?? any;
+          pack = byCulture.get(site.culture);
         // Heaps, kilns and racks keep their massing: the house generator never plans them.
         if (!pack || !massed.has(id) || b.ring.length < 3 || objectGround(b) !== undefined) return;
         const lot: Surface = [{ outer: enlarged(b.ring, 1.3), holes: [] }],
@@ -483,10 +485,14 @@ export async function planActivityArchitecture(world: World, settings: V2Setting
       return;
     }
     const materials = new Map([...(base.materials ?? []), ...(planned.materials ?? [])].map(m => [m.id, m]));
+    const buildings = base.buildings.map((b: SiteBuilding) => {
+      const plan = plans.get(b.id);
+      return plan ? { ...plan, sitePart: b.sitePart } : b;
+    });
     world.debug.v2ActivityPlans = {
       sites,
       key,
-      scene: { ...base, generator_version: planned.generator_version, materials: [...materials.values()], buildings: base.buildings.map(b => plans.get(b.id) ?? b), ...(planned.plan_archives ? { plan_archives: planned.plan_archives } : {}) },
+      scene: { ...base, generator_version: planned.generator_version, materials: [...materials.values()], buildings, ...(planned.plan_archives ? { plan_archives: planned.plan_archives } : {}) },
     } satisfies ActivityPlans;
   } catch (error) {
     delete world.debug.v2ActivityPlans;

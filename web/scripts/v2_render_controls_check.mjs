@@ -20,7 +20,8 @@ try {
       return send.call(this, message, ...args);
     };
   });
-  await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5185'}/v2.html?empty&test=1&lang=fr`);
+  // This check exercises the separate 3D canvas and its free-flight controls.
+  await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5185'}/v2.html?empty&test=1&lang=fr&camera=dual`);
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
   const fixture = JSON.parse(await readFile(new URL('fixture.json', out), 'utf8'));
   const engineUrl = '/@fs/' + fileURLToPath(new URL('../src/v2/engine.ts', import.meta.url)).replaceAll('\\', '/');
@@ -49,7 +50,8 @@ try {
   assert.equal(await page.locator('#roof-display').count(), 1);
   assert(await roof.isVisible());
   assert.equal(await roof.inputValue(), 'v2');
-  assert.deepEqual(await roof.locator('option').evaluateAll(options => options.map(option => option.value)), ['v1', 'v2', 'flat', 'minimal']);
+  assert.deepEqual(await roof.locator('option').evaluateAll(options => options.map(option => option.value)), ['v1', 'v2', 'crafted', 'flat', 'minimal']);
+  assert.equal(await roof.locator('option[value=crafted]').textContent(), 'Architecture détaillée');
   assert.equal(await roof.locator('option[value=v1]').textContent(), 'V1 · Arêtes');
   assert(
     await page.evaluate(() => {
@@ -86,6 +88,8 @@ try {
   assert.deepEqual((await exportProject()).settings, original.settings, 'opening Advanced is read-only');
   for (const path of flags) assert(await page.locator(`.toolbar-row [data-setting-path="${path}"]`).isVisible());
   assert(await page.evaluate(paths => paths.every((path, i) => window.sharedFlags[i] === document.querySelector(`[data-setting-path="${path}"]`)), flags));
+  await roof.selectOption('crafted');
+  assert.equal((await exportProject()).settings.appearance.composition.buildings.roof, 'crafted');
   await roof.selectOption('v1');
   const edged = await exportProject();
   assert.equal(edged.settings.appearance.composition.preset, 'custom');

@@ -1,3 +1,4 @@
+import type { SiteUse } from './siteArchitecture';
 import type { Point, Vertex3 } from '../../../rust/bridge/housesContract';
 import type { BuildingTriangle, BuildingVector, OverviewVolume } from './urbanBuildingGeometry';
 import { LIT_WINDOW, OPENING } from './city3d/materials';
@@ -10,7 +11,7 @@ type Quad = (a: BuildingVector, b: BuildingVector, c: BuildingVector, d: Buildin
 const finish = (name: string, hex: string) => 'city3d:detail:' + name + '@' + hex;
 
 /** Frames follow the four corners of the existing opening, including the lean on a battered wall. */
-function joinery(points: Vertex3[], outward: number, culture: string, volume: OverviewVolume, quad: Quad, entry = false, hoodRoom = 0, porch?: Vertex3): void {
+function joinery(points: Vertex3[], outward: number, culture: string, volume: OverviewVolume, quad: Quad, entry = false, hoodRoom = 0, porch?: Vertex3, use?: SiteUse): void {
   const [a, b, c, d] = points,
     w = Math.hypot(b.x - a.x, b.y - a.y),
     h = d.z - a.z;
@@ -33,6 +34,17 @@ function joinery(points: Vertex3[], outward: number, culture: string, volume: Ov
     pane = finish('sash', industrial ? '58686b' : '705b48');
   const trim = Math.min(w * 0.12, tibetan ? 0.15 : 0.095 * Math.max(1, Math.min(2.5, w))),
     sillZ = door ? 0 : -trim * 0.9;
+  // Keep a narrow light through the thickness of a fortified wall. The projected stone
+  // meets the actual aperture, including the inward lean of a tower face.
+  if (use === 'gate' && !door && w > .3 && !industrial) {
+    const slit = Math.min(.19, w*.26), left = (w-slit)/2, right = left+slit;
+    const reveal = Math.min(.12, w*.15), ashlar = volume.materials.coating;
+    quad(at(-.012,0,.08),at(left-reveal,0,.08),at(left-reveal,h,.08),at(-.012,h,.08),ashlar);
+    quad(at(left-reveal,0,.08),at(left,0,.008),at(left,h,.008),at(left-reveal,h,.08),ashlar);
+    quad(at(right,0,.008),at(right+reveal,0,.08),at(right+reveal,h,.08),at(right,h,.008),ashlar);
+    quad(at(right+reveal,0,.08),at(w+.012,0,.08),at(w+.012,h,.08),at(right+reveal,h,.08),ashlar);
+    return;
+  }
   // Splayed inner cheeks meet the glass; the lip catches light on its upper edge.
   quad(at(-trim, sillZ, 0.065), at(0, 0, 0.004), at(0, h, 0.004), at(-trim, h, 0.065), jamb);
   quad(at(w, 0, 0.004), at(w + trim, sillZ, 0.065), at(w + trim, h, 0.065), at(w, h, 0.004), jamb);
@@ -65,6 +77,15 @@ function joinery(points: Vertex3[], outward: number, culture: string, volume: Ov
     }
   }
   const bar = (u0: number, u1: number, v0: number, v1: number, mat: string): void => quad(at(u0, v0, 0.023), at(u1, v0, 0.023), at(u1, v1, 0.023), at(u0, v1, 0.023), mat);
+  if ((use === 'stores' || use === 'birds') && !door) {
+    const material = industrial ? finish('metal-louvre','697780') : finish('timber-louvre','806b51');
+    const n = Math.max(3,Math.min(7,Math.round(h/.23)));
+    for (let k=0;k<n;k++) {
+      const z = k*h/n;
+      quad(at(.015,z+.01,.085),at(w-.015,z+.01,.085),at(w-.015,z+h/n*.89,.025),at(.015,z+h/n*.89,.025),material);
+    }
+    return;
+  }
   if (door) {
     // An inset wooden leaf below its transom; the old deep opening remains visible in the reveal.
     const leaf = finish('door', industrial ? '546369' : lattice ? '7b4c38' : '70543f');
@@ -213,7 +234,7 @@ function roofEdges(volume: OverviewVolume, culture: string, quad: Quad): void {
 }
 
 /** These fittings belong to the close mesh and share its draw call and material lighting. */
-export function craftedArchitecture(volume: OverviewVolume, culture: string, emit: (face: BuildingTriangle) => void, hasRoofRoom = false, porch?: Vertex3): void {
+export function craftedArchitecture(volume: OverviewVolume, culture: string, emit: (face: BuildingTriangle) => void, hasRoofRoom = false, porch?: Vertex3, use?: SiteUse): void {
   const mesh = volume.roof_mesh,
     ring = volume.footprint[0]?.outer;
   if (!mesh || !ring?.length) return;
@@ -264,6 +285,7 @@ export function craftedArchitecture(volume: OverviewVolume, culture: string, emi
         !!(face as { entrance?: true }).entrance,
         selected.get(face),
         porch,
+        use,
       );
   }
   roofEdges(volume, culture, quad);

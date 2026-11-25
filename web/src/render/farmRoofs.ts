@@ -137,6 +137,7 @@ export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: 
         culture: { culture, pack: '', mode: 'historical_inspired', borrowing: null },
         recipe_id: 'silhouette',
         variant_id: b.use,
+        sitePart: { use: b.use, form: b.use, passage: b.passage },
         transform: { origin: { x: f.pos.x, y: f.pos.y }, orientation_deg: (Math.atan2(c.y - a.y, c.x - a.x) * 180) / Math.PI },
         ground_z_m: Number.isFinite(ground) ? ground : 0,
         footprint,

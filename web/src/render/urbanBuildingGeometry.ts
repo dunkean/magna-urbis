@@ -10,6 +10,8 @@ import { craftedYurt } from './craftedYurt';
 import { craftedArchitecture } from './craftedArchitecture';
 import { craftedRoofMesh } from './craftedRoofMesh';
 import { craftedMageCity } from './craftedMageCity';
+import { architectureUse } from './siteArchitecture';
+import { siteCrown } from './siteCrown';
 import { detailedHouseFront } from './houseFronts';
 import { craftedRoofRoom } from './craftedRoofRoom';
 import { craftedIndianMassing } from './craftedIndianMassing';
@@ -346,6 +348,8 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
   }
   if (crafted && building.culture?.culture === 'wizard-city') building = craftedMageCity(building);
   const front = crafted && !overview ? detailedHouseFront(building) : null;
+  const use = crafted && !overview ? architectureUse(building) : undefined;
+  const crown = crafted && !overview ? siteCrown(building) : undefined;
   const roofRoom = crafted && !overview ? craftedRoofRoom(building) : null;
   for (const volume of building.volumes as OverviewVolume[]) {
     // Chimneys, dormers and porches are far below a pixel where the overview is shown.
@@ -364,13 +368,14 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     if (volume.envelope !== 'open') for (const level of volume.levels) extrude(level.footprint, level.z_m, level.height_m, level.materials ?? volume.materials, false);
     const mesh = volume.roof_mesh;
     if (!overview) {
+      if (crown?.volume === volume) emitRoofFaces(crown.mesh, volume.materials, out);
       if (front?.volume === volume) emitRoofFaces(front.mesh, volume.materials, out);
       if (crafted && craftedYurt(volume, building.culture?.culture ?? '', out)) continue;
       if (mesh) emitRoofFaces(crafted ? craftedRoofMesh(volume, building.culture?.culture ?? '') : mesh, volume.materials, out);
       if (crafted && mesh && !volume.displayTree) {
         const hasRoom = roofRoom?.volume === volume;
         if (hasRoom) emitRoofFaces(roofRoom.mesh, volume.materials, out);
-        craftedArchitecture(volume, building.culture?.culture ?? '', out, hasRoom, front?.volume === volume ? front.frame : undefined);
+        craftedArchitecture(volume, building.culture?.culture ?? '', out, hasRoom, front?.volume === volume ? front.frame : undefined, use);
         craftedIndianMassing(building, volume, out);
       }
       continue;

@@ -1,5 +1,6 @@
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { craftedRoofMesh } from './craftedRoofMesh';
+import { siteCrown } from './siteCrown';
 import { detailedHouseFront } from './houseFronts';
 import { craftedIndianMassing } from './craftedIndianMassing';
 import { craftedRoofRoom } from './craftedRoofRoom';
@@ -33,6 +34,7 @@ export function includeCraftedMassing(building: PlacedBuilding, bounds: Bounds):
               point(p.x, p.y, p.z);
             }
       }
+    for (const p of siteCrown(building)?.mesh.vertices ?? []) point(p.x, p.y, p.z);
     for (const p of detailedHouseFront(building)?.mesh.vertices ?? []) point(p.x, p.y, p.z);
     for (const p of craftedRoofRoom(building)?.mesh.vertices ?? []) point(p.x, p.y, p.z);
     for (const volume of building.volumes)

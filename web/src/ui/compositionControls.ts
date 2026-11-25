@@ -235,8 +235,8 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
       id: 'roof-display',
       defaultValue: DEFAULT_ROOF_MODE,
       help: copy(
-        'V1 traces roof edges. V2 uses 3D shading. Detailed architecture adds culture-specific roof and wall finishes, best seen up close in 3D. Flat keeps the slopes and shading with plain surfaces. Minimal uses flat-topped blocks.',
-        'V1 trace les arêtes. V2 utilise l’ombrage 3D. Architecture détaillée habille les toits et les façades selon la culture. Les détails se voient de près en 3D. Sans texture conserve les pentes et l’ombrage sur des surfaces unies. Minimal utilise des volumes à toit plat.',
+        'V1 traces roof edges. V2 uses 3D shading. Detailed architecture adds regional entrances, roof details and materials to homes, farms and monuments, visible up close in 3D. Flat keeps the slopes and shading with plain surfaces. Minimal uses flat-topped blocks.',
+        'V1 trace les arêtes. V2 utilise l’ombrage 3D. Architecture détaillée ajoute des entrées, des toitures et des matériaux propres à la culture des maisons, fermes et monuments, visibles de près en 3D. Sans texture conserve les pentes et l’ombrage sur des surfaces unies. Minimal utilise des volumes à toit plat.',
       ),
       helpDisplay: 'tooltip' as const,
     },

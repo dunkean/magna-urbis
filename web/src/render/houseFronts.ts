@@ -5,7 +5,7 @@ import type { RoofMesh } from './city3d/types';
 import { hash } from './city3d/massing';
 import { inRing, ringArea } from './city3d/roofGeometry';
 import { OPENING, LIT_WINDOW } from './city3d/materials';
-import { roleFamily } from './city/planLook';
+import { architectureUse, fittedSiteFront, type SiteBuilding } from './siteArchitecture';
 import { buildHouseFront, type FrontDesign, type FrontFrame, type FrontDimensions } from './houseFrontKit';
 import { historicFronts } from './houseHistoricFronts';
 import { vernacularFronts } from './houseVernacularFronts';
@@ -63,7 +63,7 @@ function facadeOpenings(v: OverviewVolume) {
   });
 }
 
-function frontage(building: PlacedBuilding, v: OverviewVolume, seed: number): Fit | undefined {
+function frontage(building: PlacedBuilding, v: OverviewVolume, seed: number, dwelling: boolean): Fit | undefined {
   const tree = v.displayTree;
   if (tree) return elvenGallerySite(tree, v.z_m);
   const shape = v.levels?.[0]?.footprint?.[0] ?? v.footprint[0],
@@ -78,9 +78,9 @@ function frontage(building: PlacedBuilding, v: OverviewVolume, seed: number): Fi
     lot = building.entrance;
   const doors = openings.filter(o => o.door).sort((a, b) => (lot ? Math.hypot(a.x - lot.x, a.y - lot.y) - Math.hypot(b.x - lot.x, b.y - lot.y) : 0));
   const target = lot ?? { x: cx, y: cy };
-  const maori = building.culture?.culture === 'maori-pa' && v.displayRoofForm === 'gable';
+  const maori = dwelling && building.culture?.culture === 'maori-pa' && v.displayRoofForm === 'gable';
   const ends = maori ? maoriGables(v, ring) : [];
-  if (building.culture?.culture === 'maori-pa' && !ends.length) return;
+  if (dwelling && building.culture?.culture === 'maori-pa' && !ends.length) return;
   const edges = ring
     .map((a, i) => {
       const b = ring[(i + 1) % ring.length],
@@ -105,6 +105,7 @@ function frontage(building: PlacedBuilding, v: OverviewVolume, seed: number): Fi
   for (const e of edges) {
     if (ends.length && !e.end) continue;
     const door = e.door;
+    if (!dwelling && !door) continue;
     if (doors.length && !door && !e.end) continue;
     const station = e.end ? e.len / 2 : door ? e.station : round ? e.len / 2 : Math.min(e.len - 0.72, Math.max(0.72, e.station));
     // Never move a surround away from its door to make a wide porch fit. Try a narrower
@@ -154,18 +155,20 @@ function frontage(building: PlacedBuilding, v: OverviewVolume, seed: number): Fi
 export function detailedHouseFront(building: PlacedBuilding): Front | null {
   const known = cache.get(building);
   if (known !== undefined) return known;
-  const meta = (building as PlacedBuilding & { programme?: { role?: string; fungalFarm?: boolean } }).programme;
+  const site: SiteBuilding = building;
+  const use = architectureUse(site);
   const culture = building.culture?.culture ?? '';
-  const design = meta?.fungalFarm ? mushroomGrower : cultureHouseFronts[culture];
+  const regional = cultureHouseFronts[culture];
+  const design = site.programme?.fungalFarm ? mushroomGrower : use && regional && fittedSiteFront(use, culture, regional);
   let front: Front | null = null;
-  if (design && (meta?.fungalFarm || ((building.function === 'domestic' || building.function === 'mixed') && roleFamily(meta?.role, building.function) === 'dwelling'))) {
+  if (design) {
     const seed = hash(building.id) >>> 0;
     const hosts = (building.volumes as OverviewVolume[])
       .filter(v => v.role !== 'minor' && v.footprint.length && (v.wall_height_m >= 0.6 || ((culture === 'native-plains' || culture === 'inuit-camp') && v.wall_height_m + v.roof_height_m >= 0.73)))
       .map(volume => ({ volume, area: Math.abs(ringArea(volume.footprint[0].outer)) }))
       .sort((a, b) => b.area - a.area);
     for (const { volume: v } of hosts) {
-      const f = frontage(building, v, seed);
+      const f = frontage(building, v, seed, use === 'home' || !!site.programme?.fungalFarm);
       if (!f) continue;
       const mesh = buildHouseFront(f, { ...f, floor: v.stiltHeight_m ? Math.max(0, v.stiltHeight_m + f.z - v.z_m) : 0, seed, wall: v.materials.coating, cover: v.materials.cladding }, design);
       if (mesh.faces.length) {
