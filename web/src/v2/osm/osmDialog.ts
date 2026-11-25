@@ -3,7 +3,7 @@ import { getLanguage, numberLocale, registerMessages, setHTML, setText, setUserT
 import { $, options } from '../page/dom';
 import type { PageActions, PageState } from '../page/contract';
 import { runtimeWorkerOptions } from '../platform';
-import { browserOsmFetchers, findOsmPlaces } from './browserSources';
+import { browserOsmFetchers, findOsmPlaces, OverpassUnavailable } from './browserSources';
 import { fetchOsmDem, fetchOsmImportFeatures, osmProjection, terrariumTiles, type OsmSquare } from './osmSources';
 import type { OsmImport, OsmImportInput, OsmImportOptions } from './osmImport';
 import OsmWorker from './osm.worker?worker';
@@ -46,6 +46,7 @@ const messages = {
   'Drawing the imported map…': 'Affichage de la carte importée…',
   'The relief preview could not be loaded.': 'Impossible de charger l’aperçu du relief.',
   'The map could not be imported.': 'Impossible d’importer la carte.',
+  'OpenStreetMap servers are unavailable. You can retry with the same area.': 'Les serveurs OpenStreetMap sont indisponibles. Vous pouvez réessayer avec la même zone.',
   'Real place imported.': 'Lieu réel importé.',
   'The map was imported. No buildable frontage was found along the imported streets.': 'La carte a été importée. Aucun terrain constructible n’a été trouvé le long des rues importées.',
 };
@@ -215,7 +216,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     try {
       await task(controller.signal);
     } catch (error) {
-      if (!controller.signal.aborted) feedback(failure, error instanceof Error ? error.message : String(error));
+      if (!controller.signal.aborted) feedback(error instanceof OverpassUnavailable ? 'OpenStreetMap servers are unavailable. You can retry with the same area.' : failure, error instanceof Error ? error.message : String(error));
     } finally {
       controller.abort();
       if (progressTimer) clearInterval(progressTimer);

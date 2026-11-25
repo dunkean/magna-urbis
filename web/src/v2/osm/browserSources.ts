@@ -2,6 +2,14 @@ import { OVERPASS_ENDPOINTS, OVERPASS_IMPORT_TIMEOUT_SECONDS, type OsmFetchers, 
 
 type PhotonFeature = { geometry: { coordinates: [number, number] }; properties: { name: string; city?: string; county?: string; state?: string; country?: string; extent?: [number, number, number, number] } };
 
+const FIRST_RESPONSE_WAIT_MS = 25_000;
+const CACHE_TTL_MS = 15 * 60_000;
+const CACHE_MAX_BYTES = 32 * 1024 * 1024;
+let preferredOverpass: string | undefined;
+let lastOverpass: { query: string; result: OverpassReply; expires: number } | undefined;
+
+export class OverpassUnavailable extends Error {}
+
 export async function findOsmPlaces(query: string, language: string, signal: AbortSignal): Promise<PhotonFeature[]> {
   const params = new URLSearchParams({ q: query, limit: '6' });
   // The public Photon index has a fixed set of supported translation languages.
@@ -16,22 +24,39 @@ export async function findOsmPlaces(query: string, language: string, signal: Abo
 export function browserOsmFetchers(signal: AbortSignal, progress: { onFallback?: () => void; onBytes?: (bytes: number) => void } = {}): OsmFetchers {
   return {
     async overpass(query): Promise<OverpassReply> {
+      signal.throwIfAborted();
+      if (lastOverpass?.query === query && lastOverpass.expires > Date.now()) return lastOverpass.result;
+      if (lastOverpass && lastOverpass.expires <= Date.now()) lastOverpass = undefined;
       const failures: string[] = [];
-      for (const [attempt, endpoint] of OVERPASS_ENDPOINTS.entries()) {
+      const endpoints = preferredOverpass ? [preferredOverpass, ...OVERPASS_ENDPOINTS.filter(endpoint => endpoint !== preferredOverpass)] : OVERPASS_ENDPOINTS;
+      for (const [attempt, endpoint] of endpoints.entries()) {
         signal.throwIfAborted();
         if (attempt) progress.onFallback?.();
+        const firstResponse = new AbortController();
+        // Give a proven server or the last available server the full request budget.
+        const waiting = endpoint !== preferredOverpass && attempt < endpoints.length - 1 ? setTimeout(() => firstResponse.abort(new DOMException(`No response after ${FIRST_RESPONSE_WAIT_MS / 1000} seconds`, 'TimeoutError')), FIRST_RESPONSE_WAIT_MS) : undefined;
         try {
-          const response = await fetch(endpoint, { method: 'POST', body: new URLSearchParams({ data: query }), signal: AbortSignal.any([signal, AbortSignal.timeout((OVERPASS_IMPORT_TIMEOUT_SECONDS + 10) * 1000)]) });
+          const response = await fetch(endpoint, { method: 'POST', body: new URLSearchParams({ data: query }), signal: AbortSignal.any([signal, firstResponse.signal, AbortSignal.timeout((OVERPASS_IMPORT_TIMEOUT_SECONDS + 10) * 1000)]) });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const result = await overpassReply(response, progress.onBytes);
+          let received = 0;
+          const result = await overpassReply(response, bytes => {
+            if (!received) clearTimeout(waiting);
+            received = bytes;
+            progress.onBytes?.(bytes);
+          });
           if (result.remark || !Array.isArray(result.elements)) throw new Error(result.remark || 'Invalid Overpass reply');
+          preferredOverpass = endpoint;
+          if (received && received <= CACHE_MAX_BYTES) lastOverpass = { query, result, expires: Date.now() + CACHE_TTL_MS };
           return result;
         } catch (error) {
           signal.throwIfAborted();
           failures.push(`${new URL(endpoint).host}: ${error instanceof Error ? error.message : String(error)}`);
+          if (preferredOverpass === endpoint) preferredOverpass = undefined;
+        } finally {
+          clearTimeout(waiting);
         }
       }
-      throw new Error(failures.join('\n'));
+      throw new OverpassUnavailable(failures.join('\n'));
     },
 
     async tile(_zoom, _x, _y, url) {
@@ -54,8 +79,8 @@ export function browserOsmFetchers(signal: AbortSignal, progress: { onFallback?:
   };
 }
 
-async function overpassReply(response: Response, onBytes?: (bytes: number) => void): Promise<OverpassReply> {
-  if (!response.body || !onBytes) return response.json();
+async function overpassReply(response: Response, onBytes: (bytes: number) => void): Promise<OverpassReply> {
+  if (!response.body) return response.json();
   let bytes = 0;
   const stream = response.body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
