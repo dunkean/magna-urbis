@@ -80,7 +80,6 @@ registerMessages({
 });
 
 export function mountProjectFiles(state: PageState, actions: PageActions): void {
-  insertHTML($('#import-dialog .file-card'), 'beforebegin', `<div class="file-card"><h3>Import a real place</h3><p class="hint">Import a city or a region with OpenStreetMap data and AWS elevation.</p><button id="osm-open" type="button">Import a real place</button></div>`);
   insertHTML($('#import-dialog'), 'afterend', '<dialog id="osm-dialog" aria-labelledby="osm-title"></dialog>');
   insertHTML($('.map-bottom'), 'beforeend', `<div id="map-attribution" hidden>${osmCredits}</div>`);
   mountOsmImport(state, actions);

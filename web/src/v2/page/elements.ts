@@ -15,6 +15,7 @@ export function mountPageShell(localEdition: boolean): void {
     `
 <header class="app-header">
   <img class="brand-icon" src="${logo}" alt=""><div class="brand"><h1>MAGNA URBIS</h1><p>The region workshop</p></div><span class="version">V2 · ALPHA</span>
+  <button id="osm-open" type="button" class="primary" aria-haspopup="dialog" aria-controls="osm-dialog" title="Import a real place">Import</button>
   <nav class="project-links">
     <a href="./scientific/index.html" target="_blank" rel="noopener">How it works? ↗</a>
     <a href="https://v1.magna-urbis.org/" target="_blank" rel="noopener">V1 ↗</a>

@@ -4,14 +4,14 @@ import { $, options } from '../page/dom';
 import type { PageActions, PageState } from '../page/contract';
 import { runtimeWorkerOptions } from '../platform';
 import { browserOsmFetchers, findOsmPlaces } from './browserSources';
-import { fetchOsmDem, fetchOsmFeatures, osmProjection, terrariumTiles, type OsmSquare } from './osmSources';
+import { fetchOsmDem, fetchOsmImportFeatures, osmProjection, terrariumTiles, type OsmSquare } from './osmSources';
 import type { OsmImport, OsmImportInput, OsmImportOptions } from './osmImport';
 import OsmWorker from './osm.worker?worker';
 import './osmDialog.css';
 
 const messages = {
+  Import: 'Importer',
   'Import a real place': 'Importer un lieu réel',
-  'Import a city or a region with OpenStreetMap data and AWS elevation.': 'Importez une ville ou une région avec les données OpenStreetMap et le relief AWS.',
   'City or region': 'Ville ou région',
   'Place results': 'Résultats de recherche',
   'Map name': 'Nom de la carte',
@@ -31,7 +31,10 @@ const messages = {
   'The search service is unavailable. You can enter the coordinates directly.': 'La recherche est indisponible. Vous pouvez saisir directement les coordonnées.',
   'Choose a square within the supported bounds (85° S to 85° N, without crossing 180° longitude).': 'Choisissez un carré entre 85° S et 85° N, sans franchir le méridien de 180°.',
   'Downloading AWS elevation…': 'Téléchargement du relief AWS…',
+  'Downloading elevation and OpenStreetMap data…': 'Téléchargement du relief et des données OpenStreetMap…',
   'Downloading OpenStreetMap data…': 'Téléchargement des données OpenStreetMap…',
+  'Trying another OpenStreetMap server…': 'Nouvelle tentative sur un autre serveur OpenStreetMap…',
+  'Map import progress': 'Progression de l’import',
   'Building the imported map…': 'Construction de la carte importée…',
   'Drawing the imported map…': 'Affichage de la carte importée…',
   'The relief preview could not be loaded.': 'Impossible de charger l’aperçu du relief.',
@@ -116,9 +119,13 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
         </div>
         <figure class="osm-relief"><div class="osm-preview-frame"><canvas id="osm-preview" width="256" height="256" aria-label="Relief preview" hidden></canvas><span aria-hidden="true">N ↑</span></div><figcaption><button id="osm-preview-go" type="button">Preview relief</button><output id="osm-elevation" class="hint" hidden></output></figcaption></figure>
       </div>
-      <div class="osm-feedback" role="status" aria-live="polite"><p id="osm-status" hidden></p><p id="osm-error" class="hint" hidden></p></div>
       <p class="hint">The imported map replaces the current project. Save your map first if you want to keep it.</p>
       <p class="hint osm-credits">${osmCredits} · <a href="https://github.com/komoot/photon#demo-server" target="_blank" rel="noopener noreferrer">Photon</a></p>
+      <div class="osm-feedback">
+        <div class="osm-progress-heading"><p id="osm-status" role="status" hidden></p><span id="osm-elapsed" class="hint" aria-hidden="true" hidden></span></div>
+        <progress id="osm-progress" max="4" aria-label="Map import progress" aria-describedby="osm-status" hidden></progress>
+        <p id="osm-error" class="hint" role="alert" hidden></p>
+      </div>
       <div class="dialog-actions"><button id="osm-cancel" type="button">Cancel</button><button id="osm-generate" type="submit" class="primary">Import &amp; generate</button></div>
     </form>
   `,
@@ -132,6 +139,8 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   const resultRow = $('#osm-results-row');
   const status = $('#osm-status');
   const detail = $('#osm-error');
+  const progress = $<HTMLProgressElement>('#osm-progress');
+  const elapsed = $('#osm-elapsed');
   const canvas = $<HTMLCanvasElement>('#osm-preview');
   const elevation = $('#osm-elevation');
   const closeButton = $<HTMLButtonElement>('#osm-close');
@@ -148,13 +157,29 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   let places: Awaited<ReturnType<typeof findOsmPlaces>> = [];
   let active: AbortController | undefined;
   let applying = false;
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
   let preview: { key: string; data: Awaited<ReturnType<typeof fetchOsmDem>>['dem'] } | undefined;
 
   function feedback(message = '', error = ''): void {
-    setText(status, message);
+    if (status.dataset.i18n !== message) setText(status, message);
     setUserText(detail, error, '');
     status.hidden = !message;
     detail.hidden = !error;
+  }
+
+  function showProgress(message: string, completed: number): void {
+    if (!progressTimer) {
+      const start = performance.now();
+      const tick = () => {
+        elapsed.textContent = `${Math.floor((performance.now() - start) / 1000)} s`;
+        if (applying) $('#progress-time').textContent = elapsed.textContent;
+      };
+      tick();
+      progressTimer = setInterval(tick, 1000);
+    }
+    feedback(message);
+    progress.value = completed;
+    progress.hidden = elapsed.hidden = false;
   }
 
   function syncBusy(next: boolean): void {
@@ -172,6 +197,10 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     } catch (error) {
       if (!controller.signal.aborted) feedback(failure, error instanceof Error ? error.message : String(error));
     } finally {
+      controller.abort();
+      if (progressTimer) clearInterval(progressTimer);
+      progressTimer = undefined;
+      progress.hidden = elapsed.hidden = true;
       active = undefined;
       syncBusy(false);
     }
@@ -194,11 +223,10 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     return square;
   }
 
-  async function getRelief(square: OsmSquare, zoom: number, signal: AbortSignal) {
+  async function getRelief(square: OsmSquare, zoom: number, signal: AbortSignal, onTiles?: (done: number, total: number) => void) {
     const key = JSON.stringify(square);
     if (preview?.key === key) return preview.data;
-    feedback('Downloading AWS elevation…');
-    const { dem } = await fetchOsmDem(square, { grid: GRID, zoom }, browserOsmFetchers(signal));
+    const { dem } = await fetchOsmDem(square, { grid: GRID, zoom }, browserOsmFetchers(signal), onTiles);
     signal.throwIfAborted();
     preview = { key, data: dem };
     return dem;
@@ -217,7 +245,6 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   });
   $('#osm-open').onclick = () => {
     if (state.busy) return;
-    $<HTMLDialogElement>('#import-dialog').close();
     feedback();
     actions.dialog('#osm-dialog');
   };
@@ -268,6 +295,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     const square = area();
     if (!square) return;
     void run('The relief preview could not be loaded.', async signal => {
+      feedback('Downloading AWS elevation…');
       const dem = await getRelief(square, reliefZoom(square), signal);
       drawRelief(canvas, dem, square);
       const number = new Intl.NumberFormat(numberLocale(), { maximumFractionDigits: 0 });
@@ -289,10 +317,41 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     }
     const options: OsmImportOptions = { ...square, name, culture: culture.value, grid: GRID, zoom: reliefZoom(square), communeName: commune.value.trim() || undefined };
     void run('The map could not be imported.', async signal => {
-      const dem = await getRelief(square, options.zoom, signal);
-      feedback('Downloading OpenStreetMap data…');
-      const features = await fetchOsmFeatures(square, { commune: options.communeName }, browserOsmFetchers(signal));
-      feedback('Building the imported map…');
+      let relief = 0;
+      let osm = 0;
+      let fallback = false;
+      const updateNetworkProgress = () => {
+        if (signal.aborted) return;
+        let message = 'Downloading elevation and OpenStreetMap data…';
+        if (osm) message = 'Downloading AWS elevation…';
+        else if (fallback) message = 'Trying another OpenStreetMap server…';
+        else if (relief === 1) message = 'Downloading OpenStreetMap data…';
+        showProgress(message, relief + osm);
+      };
+      updateNetworkProgress();
+      const [dem, features] = await Promise.all([
+        getRelief(square, options.zoom, signal, (done, total) => {
+          relief = done / total;
+          updateNetworkProgress();
+        }).then(dem => {
+          relief = 1;
+          updateNetworkProgress();
+          return dem;
+        }),
+        fetchOsmImportFeatures(
+          square,
+          { commune: options.communeName },
+          browserOsmFetchers(signal, () => {
+            fallback = true;
+            updateNetworkProgress();
+          }),
+        ).then(features => {
+          osm = 1;
+          updateNetworkProgress();
+          return features;
+        }),
+      ]);
+      showProgress('Building the imported map…', 2);
       const result = await convert({ ...features, options, elevations: dem.elevations }, signal);
       signal.throwIfAborted();
       if (state.busy) throw new Error(translate('A computation is already running.'));
@@ -301,14 +360,22 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       actions.setBusy(true);
       $<HTMLButtonElement>('#cancel-job').disabled = true;
       try {
-        feedback('Drawing the imported map…');
         setText($('#progress-label'), 'Drawing the imported map…');
+        setText($('#progress-detail'), '');
+        $('#progress-time').textContent = elapsed.textContent;
+        const mapProgress = $<HTMLProgressElement>('#progress');
+        mapProgress.value = 75;
+        dialog.close();
+        // A new map uses the current display settings, including the app's lightweight preset on slow hardware.
+        if (state.settings.appearance) result.settings.appearance = structuredClone(state.settings.appearance);
         await actions.loadProject({ settings: result.settings, world: result.world, mods: [] });
         state.client.viewer.fit();
         actions.selectTab(result.summary.buildings ? 'cities' : 'map');
         actions.log(`OpenStreetMap import: ${options.name} · ${result.summary.buildings} buildings · ${result.summary.roads + result.summary.streets} roads and streets`);
+        mapProgress.value = 100;
         actions.toast('Real place imported.');
-        dialog.close();
+      } catch (error) {
+        actions.reportAppearanceError(error);
       } finally {
         applying = false;
         actions.setBusy(false);

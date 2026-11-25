@@ -44,6 +44,7 @@ export interface OsmFetchers {
 }
 
 export const OVERPASS_ENDPOINTS = ['https://overpass.private.coffee/api/interpreter', 'https://overpass-api.de/api/interpreter'];
+export const OVERPASS_IMPORT_TIMEOUT_SECONDS = 45;
 export const TERRARIUM_URL = (zoom: number, x: number, y: number): string => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${x}/${y}.png`;
 export const OSM_ATTRIBUTION = {
   osm: '© OpenStreetMap contributors, data under the Open Database License (ODbL 1.0), https://www.openstreetmap.org/copyright',
@@ -65,9 +66,9 @@ export function osmProjection(square: OsmSquare) {
   };
 }
 
-/** The one Overpass query of the square: town, water, land use, walls, fences and names. */
-export function overpassQuery(bbox: string): string {
-  return `[out:json][timeout:180];
+/** Town, water, land use, walls and names. The app includes fences and the requested boundary in the same request. */
+export function overpassQuery(bbox: string, app?: { commune?: string }): string {
+  return `[out:json][timeout:${app ? OVERPASS_IMPORT_TIMEOUT_SECONDS : 180}];
 (
   way["highway"](${bbox});
   way["building"](${bbox});
@@ -86,17 +87,20 @@ export function overpassQuery(bbox: string): string {
   way["historic"="tower"](${bbox});
   node["place"](${bbox});
   way["place"="square"](${bbox});
-  way["highway"="pedestrian"]["area"="yes"](${bbox});
+  way["highway"="pedestrian"]["area"="yes"](${bbox});${app ? `\n  ${barrierSelectors(bbox)}${app.commune ? `\n  ${communeSelector(bbox, app.commune)}` : ''}` : ''}
 );
 out geom;`;
 }
+
+const barrierSelectors = (bbox: string) => `way["barrier"~"^(fence|wall|hedge|retaining_wall)$"](${bbox});way["natural"="hedge"](${bbox});`;
+const communeSelector = (bbox: string, commune: string) => `relation["boundary"="administrative"]["admin_level"="8"]["name"=${JSON.stringify(commune)}](${bbox});`;
 /** Fences, garden walls and hedges of the square: a query of its own, so a cached main query stays valid. */
 export function barrierQuery(bbox: string): string {
-  return `[out:json][timeout:120];(way["barrier"~"^(fence|wall|hedge|retaining_wall)$"](${bbox});way["natural"="hedge"](${bbox}););out geom;`;
+  return `[out:json][timeout:120];(${barrierSelectors(bbox)});out geom;`;
 }
 /** The admin_level=8 boundary named `commune` crossing the square. */
 export function communeQuery(bbox: string, commune: string): string {
-  return `[out:json][timeout:90];relation["boundary"="administrative"]["admin_level"="8"]["name"=${JSON.stringify(commune)}](${bbox});out geom;`;
+  return `[out:json][timeout:90];${communeSelector(bbox, commune)}out geom;`;
 }
 
 /** Terrarium tiles covering the square at `zoom`. */
@@ -186,7 +190,16 @@ export async function fetchOsmFeatures(square: OsmSquare, options: { commune?: s
   return { osm, commune };
 }
 
-export async function fetchOsmDem(square: OsmSquare, options: { grid: number; zoom: number }, fetchers: Pick<OsmFetchers, 'tile'>) {
+export async function fetchOsmImportFeatures(square: OsmSquare, options: { commune?: string }, fetchers: Pick<OsmFetchers, 'overpass'>) {
+  const { bbox } = osmProjection(square);
+  const osm = await fetchers.overpass(overpassQuery(bbox, options), bbox);
+  const name = options.commune;
+  const commune = name ? osm.elements.find(e => e.type === 'relation' && e.tags?.boundary === 'administrative' && e.tags.admin_level === '8' && e.tags.name === name) : undefined;
+  if (name && !commune) throw new Error(`No admin_level=8 boundary named "${name}" crosses the map square.`);
+  return { osm, commune };
+}
+
+export async function fetchOsmDem(square: OsmSquare, options: { grid: number; zoom: number }, fetchers: Pick<OsmFetchers, 'tile'>, onTiles?: (done: number, total: number) => void) {
   const { bounds } = osmProjection(square);
   const { grid, zoom } = options;
   const tiles = new Map<string, Float32Array>();
@@ -195,6 +208,7 @@ export async function fetchOsmDem(square: OsmSquare, options: { grid: number; zo
     await Promise.all(
       coverage.slice(i, i + 6).map(async ({ x, y }) => {
         tiles.set(`${x}/${y}`, terrariumHeights(await fetchers.tile(zoom, x, y, TERRARIUM_URL(zoom, x, y))));
+        onTiles?.(tiles.size, coverage.length);
       }),
     );
   }

@@ -81,6 +81,25 @@
   margin: 12px 0;
 }
 
+.osm-progress-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#osm-progress {
+  width: 100%;
+  height: 10px;
+  margin-top: 6px;
+  accent-color: var(--gold);
+}
+
+#osm-elapsed {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 #osm-error {
   white-space: pre-line;
   overflow-wrap: anywhere;

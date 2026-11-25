@@ -1,4 +1,4 @@
-import { OVERPASS_ENDPOINTS, type OsmFetchers, type OverpassReply } from './osmSources';
+import { OVERPASS_ENDPOINTS, OVERPASS_IMPORT_TIMEOUT_SECONDS, type OsmFetchers, type OverpassReply } from './osmSources';
 
 type PhotonFeature = { geometry: { coordinates: [number, number] }; properties: { name: string; city?: string; county?: string; state?: string; country?: string; extent?: [number, number, number, number] } };
 
@@ -13,14 +13,15 @@ export async function findOsmPlaces(query: string, language: string, signal: Abo
   return features.filter(feature => feature.properties.name && feature.geometry.coordinates.every(Number.isFinite));
 }
 
-export function browserOsmFetchers(signal: AbortSignal): OsmFetchers {
+export function browserOsmFetchers(signal: AbortSignal, onFallback?: () => void): OsmFetchers {
   return {
     async overpass(query): Promise<OverpassReply> {
       const failures: string[] = [];
-      for (const endpoint of OVERPASS_ENDPOINTS) {
+      for (const [attempt, endpoint] of OVERPASS_ENDPOINTS.entries()) {
         signal.throwIfAborted();
+        if (attempt) onFallback?.();
         try {
-          const response = await fetch(endpoint, { method: 'POST', body: new URLSearchParams({ data: query }), signal: AbortSignal.any([signal, AbortSignal.timeout(195000)]) });
+          const response = await fetch(endpoint, { method: 'POST', body: new URLSearchParams({ data: query }), signal: AbortSignal.any([signal, AbortSignal.timeout((OVERPASS_IMPORT_TIMEOUT_SECONDS + 10) * 1000)]) });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const result = (await response.json()) as OverpassReply;
           if (result.remark || !Array.isArray(result.elements)) throw new Error(result.remark || 'Invalid Overpass reply');
