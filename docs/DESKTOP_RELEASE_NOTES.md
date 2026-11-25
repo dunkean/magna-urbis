@@ -150,6 +150,18 @@
 
 The Apple Silicon DMG is signed ad hoc and distributed without Apple notarization. GitHub Actions tests the packaged app. Native neural GPU inference on a physical Mac remains unverified.
 
+- Steep roads no longer raise stone or timber decks over dry ground. Stairs are short, join two streets and look like lanes from afar; their steps show close up.
+- Town walls no longer fold along small streams, and large towns keep at most two older rings on one bank. Moats end round and short of the shore.
+- Night views: snowed roofs take the moonlight with patchy snow, streets, doors and walls are lit, and sky and haze are dark.
+- Winter trees lose their dark half and rings.
+- Venetian lagoon towns on slopes have more canals, with locks.
+- Nomad camps are full, with rows of tents round a common. Igloos have an entrance tunnel. Drow towers mark noble houses only. Cyberpunk towns are denser, in concrete, asphalt, glass and rust. Chinese, Indian and ksar village courts share walls on their lot limits.
+- Rivers are sharp on the tilted drawn maps, and roads no longer show under town bridges.
+- Houses on slopes are sunk into the hill with a low plinth and terraced ground; tall foundations are gone, and steep wings step down or open a lower storey.
+- Moats are dug with their own form by culture (V ditch, revetted, double, ceremonial, bastioned) and fill: dry grass, gardens, marsh, stagnant, low or full water, ice. Water stays level, held by dams on slopes, and meets the sea through a sluice.
+- Harbours stand on the town's own shore with a yard, warehouses, jetties and boats outside the wall; away from them the wall stands back from the beach, and older rings no longer run beside the outer one.
+- Bridges never cross or overlap. Gates seldom fold the wall into sharp corners. Hairpin bends are rounded.
+
 ## Alpha 0.3.10
 
 Replaces 0.3.9, whose build stopped on an outdated test before publication (no 0.3.9 packages exist).

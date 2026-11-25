@@ -1,7 +1,7 @@
 //! Choose, shape and clip the ditch, berm, glacis and ravelins.
 
 use crate::rng::Rng;
-use crate::urban::{Enclosure, Point, Shape, Surface, Work, geometry as g, par};
+use crate::urban::{Enclosure, MoatSpec, Point, Shape, Surface, Work, geometry as g, par};
 use super::build::{BuildContext, Works};
 use super::gate_works::GateInfo;
 use super::geometry::{
@@ -9,8 +9,10 @@ use super::geometry::{
     dir, dist, quad, segment_relief, tiles, wet_outward,
 };
 use super::shore::WallWalk;
+use super::water::{MOAT_SHORT, near_water};
 use super::options;
 use super::parameters;
+use super::style::{data, num};
 
 #[derive(Clone, Copy)]
 pub(super) struct Moat {
@@ -58,9 +60,42 @@ pub(super) fn choose_moat(ctx: &BuildContext<'_>, dr: &mut Rng, size: f64, dw: f
     };
     // Underdark: no water moat in a cave (a culture's dry ditch stays, across the passages).
     let ditch_kind = if style.cave && ditch_kind == Some("wet") { None } else { ditch_kind };
-    // Depth of the ditch (3D moat): the style's, else from its width.
-    let depth = if style.ditch_depth > 0.0 { style.ditch_depth } else { (dw * 0.35).clamp(1.5, 4.0) };
+    // Depth of the ditch, lip to bottom: the style's, else its form's, else from its width.
+    let depth = if style.ditch_depth > 0.0 { style.ditch_depth } else { num(form(&style.moat_form), "depthM", (dw * 0.35).clamp(1.5, 4.0)) };
     Moat { berm, dw, ditch_kind, depth }
+}
+
+/// Where the ground stops the ditch: one box per steep run and per run that faces natural water within
+/// 40 m outside (the water is its moat; cave rock is no water). Each box ends square with its run,
+/// `margin` m beyond it.
+pub(super) fn natural_stops(ctx: &BuildContext<'_>, moat: Moat, margin: f64) -> Vec<Shape> {
+    let &BuildContext { style, path, n_seg, face, ns, steep, surface, .. } = ctx;
+    let waterside = |i: usize| !style.cave && [10.0, 20.0, 30.0, 40.0, 55.0, 70.0].iter().any(|&off| wet_outward(path[i], path[i + 1], ns[i], surface, off) > 0.3);
+    let reach = face + moat.berm + moat.dw + 30.0;
+    (0..n_seg)
+        .filter(|&i| steep[i] || waterside(i))
+        .map(|i| quad(path[i], dir(path[i], path[i + 1]), ns[i], [-margin, dist(path[i], path[i + 1]) + margin], [-reach, reach]))
+        .collect()
+}
+
+/// A ditch ends round at a natural stop (`stops`, or the water it is short of): the corners a square
+/// cut leaves there are taken off. The ends at streets and gates stay square for their bridges.
+pub(super) fn rounded_ends(ditch: Vec<Work>, stops: Vec<Shape>, dw: f64, surface: Surface<'_>) -> Vec<Work> {
+    let r = 0.45 * dw;
+    if ditch.is_empty() || r <= 0.0 {
+        return ditch;
+    }
+    let stops = Cut::new(stops);
+    let natural = |c: &Shape| stops.hits(c) > 0.0 || c.outer.iter().any(|&p| near_water(p, MOAT_SHORT + 1.5, surface));
+    let joined = g::union(&ditch.iter().map(|d| d.shape.clone()).collect::<Vec<_>>());
+    let corners = joined.iter().flat_map(|s| {
+        let body = Cut::new(buffer_all(&buffer(s, -r), r));
+        body.from(vec![s.clone()]).into_iter().filter(|c| g::area(c) >= 1.0 && natural(c)).collect::<Vec<_>>()
+    }).collect();
+    let corners = Cut::new(corners);
+    ditch.into_iter().flat_map(|d| {
+        corners.from(vec![d.shape.clone()]).into_iter().filter(|s| g::area(s) >= 20.0).map(|shape| Work { shape, ..d.clone() }).collect::<Vec<_>>()
+    }).collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -77,7 +112,7 @@ pub(super) fn dig_moat(
     shore_gaps: &[(f64, f64)],
     rng: &Rng,
 ) -> Vec<Work> {
-    let &BuildContext { style, path, n_seg, poly, face, ns, inner_core, height, clear, street_lines, steep, surface, .. } = ctx;
+    let &BuildContext { style, path, poly, face, ns, inner_core, height, clear, street_lines, surface, .. } = ctx;
     let Moat { berm, dw, ditch_kind, depth } = moat;
     let Works { towers, gatehouses, bastion_union, outworks, extra_reserve, .. } = works;
     // --- ditch pieces (kind decided above).
@@ -142,22 +177,13 @@ pub(super) fn dig_moat(
             }
         }
     }
-    // A run that faces natural water within 40 m outside digs none: the water is its moat (cave
-    // rock is no water).
-    let waterside = |i: usize| !style.cave && [10.0, 20.0, 30.0, 40.0].iter().any(|&off| wet_outward(path[i], path[i + 1], ns[i], surface, off) > 0.3);
     // No ditch along steep or water-side runs, nor at a faubourg gate front.
     // A run's no-ditch zone stops square at its ends: the ditch of the next,
     // dry and level run goes on round the corner up to the water or the
     // slope instead of stopping tens of metres short of it.
     let no_ditch = Cut::new(
-        (0..n_seg)
-            .filter(|&i| steep[i] || waterside(i))
-            .map(|i| {
-                let (a, b) = (path[i], path[i + 1]);
-                let t = dir(a, b);
-                let wd = face + berm + dw + 30.0;
-                quad(a, t, ns[i], [0.0, dist(a, b)], [-wd, wd])
-            })
+        natural_stops(ctx, moat, 0.0)
+            .into_iter()
             .chain(fronts)
             // A shore passage keeps no moat along its open run either.
             .chain(shore_gaps.iter().flat_map(|&(a, l)| {
@@ -239,6 +265,20 @@ pub(super) fn dig_moat(
                 })
                 .collect::<Vec<_>>()
         }).into_iter().flatten());
+        // The outer bank of the form (the spoil thrown up beyond the counterscarp) stands on reserved land.
+        let bank = form(&style.moat_form)["bankM"][0].as_f64().unwrap_or(0.0);
+        if bank > 0.0 {
+            let land: Vec<Shape> = buffer_all(&moat_core, berm + dw + bank)
+                .iter()
+                .flat_map(|o| outer_ring.iter().fold(vec![o.clone()], |acc, i| acc.iter().flat_map(|p| g::difference(p, i)).collect::<Vec<_>>()))
+                .collect();
+            extra_reserve.extend(
+                clear
+                    .from(no_ditch.from(tiles(land, TILE)))
+                    .into_iter()
+                    .filter(|s| !severed(s, path, street_lines)),
+            );
+        }
         if ctx.has("glacis") {
             let far = buffer_all(&moat_core, berm + dw + 20.0);
             let band: Vec<Shape> = far
@@ -269,6 +309,150 @@ pub(super) fn dig_moat(
         });
     }
     ditch
+}
+
+/// The row of a ditch form in the `moats` table of fortifications.json.
+pub(super) fn form(id: &str) -> &'static serde_json::Value {
+    &data()["moats"][id]
+}
+
+/// The form of a dug ditch, its joins to natural water and the `dams` still standing on it, in a town
+/// in `state`; none without a ditch.
+pub(super) fn spec(form: &str, ditch: &[Work], dams: Vec<[Point; 2]>, state: &str, surface: Surface<'_>) -> Option<MoatSpec> {
+    if ditch.is_empty() {
+        return None;
+    }
+    // A dam whose reaches are gone (a street took them) goes with them.
+    let stands = |d: &[Point; 2]| ditch.iter().any(|w| w.shape.outer.iter().any(|&p| dist(p, d[0]).min(dist(p, d[1])) < 3.0));
+    Some(MoatSpec {
+        form: form.into(),
+        sluices: sluices(ditch, surface),
+        dams: dams.into_iter().filter(|d| stands(d)).collect(),
+        state: state.into(),
+    })
+}
+
+/// Rim height (m) a reach may vary by: beyond it a dam starts the next reach.
+const REACH_STEP: f64 = 0.8;
+/// A reach whose rim stands more than this (m) above the lowest reach of its ditch holds no water.
+const REACH_HEAD: f64 = 2.0;
+/// Spacing (m) of the stations along the ditch.
+const REACH_STATION: f64 = 12.0;
+/// The stations before which a dam stands, given the rim height and the wet piece of each station in
+/// walking order: where the rim of the piece being walked has moved by more than `REACH_STEP` since
+/// its last dam. Another piece starts its own reach without a dam.
+pub(super) fn dam_stations(stations: &[(f64, Option<usize>)]) -> Vec<usize> {
+    let mut out = vec![];
+    // The piece and the rim height where the reach being walked began.
+    let mut began: Option<(usize, f64)> = None;
+    for (k, &(rim, piece)) in stations.iter().enumerate() {
+        began = match (piece, began) {
+            (Some(i), Some((j, h))) if i == j && (rim - h).abs() <= REACH_STEP => Some((j, h)),
+            (Some(i), Some((j, _))) if i == j => {
+                out.push(k);
+                Some((i, rim))
+            }
+            (Some(i), _) => Some((i, rim)),
+            (None, _) => None,
+        };
+    }
+    out
+}
+
+/// Rule (water lies level, it never climbs a slope): a wet ditch on sloping ground is cut into
+/// reaches by dams across it, wherever the lower of its two rims has moved by `REACH_STEP` since the
+/// last dam; each reach is one piece, and the reaches more than `REACH_HEAD` above the lowest one of
+/// their ditch are dry (wet below, dry uphill). Returns the pieces and the dams (inner end, outer
+/// end). A ditch on level ground comes back as it is.
+pub(super) fn reaches(ctx: &BuildContext<'_>, walk: &WallWalk<'_>, moat: Moat, ditch: Vec<Work>) -> (Vec<Work>, Vec<[Point; 2]>) {
+    let &BuildContext { path, face, ns, surface, .. } = ctx;
+    if !ditch.iter().any(|d| d.kind == "wet") {
+        return (ditch, vec![]);
+    }
+    let (inner, outer) = (face + moat.berm, face + moat.berm + moat.dw);
+    let n = (walk.total / REACH_STATION).ceil().max(1.0) as usize;
+    // Stations along the middle of the ditch: arc, middle point, the lower rim, the wet piece it lies in.
+    let stations: Vec<(f64, Point, f64, Option<usize>)> = (0..n)
+        .map(|k| {
+            let s = walk.total * k as f64 / n as f64;
+            let (p, seg) = walk.along(s);
+            let mid = add(p, ns[seg], 0.5 * (inner + outer));
+            let rim = surface.height_at(add(p, ns[seg], inner)).min(surface.height_at(add(p, ns[seg], outer)));
+            let piece = ditch.iter().position(|d| d.kind == "wet" && g::contains(&d.shape, mid));
+            (s, mid, rim, piece)
+        })
+        .collect();
+    let mut slabs: Vec<Shape> = vec![];
+    let mut dams: Vec<[Point; 2]> = vec![];
+    for k in dam_stations(&stations.iter().map(|s| (s.2, s.3)).collect::<Vec<_>>()) {
+        // The dam stands half way back to the station before.
+        let (p, seg) = walk.along(stations[k].0 - 0.5 * walk.total / n as f64);
+        slabs.push(quad(p, dir(path[seg], path[seg + 1]), ns[seg], [-0.9, 0.9], [inner - 1.0, outer + 1.0]));
+        dams.push([add(p, ns[seg], inner), add(p, ns[seg], outer)]);
+    }
+    if slabs.is_empty() {
+        return (ditch, dams);
+    }
+    let slabs = Cut::new(slabs);
+    let mut out: Vec<Work> = vec![];
+    for d in ditch {
+        if d.kind != "wet" {
+            out.push(d);
+            continue;
+        }
+        // Each reach with the lowest rim of the stations it holds.
+        let parts: Vec<(Shape, f64)> = slabs
+            .from(vec![d.shape.clone()])
+            .into_iter()
+            .filter(|s| g::area(s) >= 4.0)
+            .map(|s| {
+                let rim = stations.iter().filter(|st| g::contains(&s, st.1)).map(|st| st.2).fold(f64::MAX, f64::min);
+                let rim = if rim == f64::MAX { surface.height_at(g::interior_point(&s)) } else { rim };
+                (s, rim)
+            })
+            .collect();
+        let low = parts.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+        out.extend(parts.into_iter().map(|(shape, rim)| Work {
+            kind: if rim - low > REACH_HEAD { "dry".into() } else { d.kind.clone() },
+            shape,
+            ..d.clone()
+        }));
+    }
+    (out, dams)
+}
+
+/// Heads of one ditch closer than this (m) share a sluice.
+const SLUICE_APART: f64 = 40.0;
+/// Rule (a moat joins water, it is never cut blunt in front of it): where a wet ditch stops
+/// `MOAT_SHORT` m short of natural water, a sluice through the dam left between them joins the two,
+/// from the point of the ditch outline nearest the water to the shore. A dry ditch keeps its round head.
+fn sluices(ditch: &[Work], surface: Surface<'_>) -> Vec<[Point; 2]> {
+    let reach = MOAT_SHORT + 6.0;
+    let shore = |p: Point| -> Option<Point> {
+        if !near_water(p, reach, surface) {
+            return None;
+        }
+        (1..=reach as usize).find_map(|r| {
+            (0..16).find_map(|k| {
+                let a = f64::from(k) * std::f64::consts::TAU / 16.0;
+                let q = add(p, (a.cos(), a.sin()), r as f64);
+                near_water(q, 0.0, surface).then_some(q)
+            })
+        })
+    };
+    let mut heads: Vec<[Point; 2]> = ditch
+        .iter()
+        .filter(|d| d.kind == "wet")
+        .flat_map(|d| d.shape.outer.iter().filter_map(|&p| shore(p).map(|q| [p, q])).collect::<Vec<_>>())
+        .collect();
+    heads.sort_by(|a, b| dist(a[0], a[1]).total_cmp(&dist(b[0], b[1])));
+    let mut kept: Vec<[Point; 2]> = vec![];
+    for h in heads {
+        if kept.iter().all(|k| dist(k[0], h[0]) >= SLUICE_APART) {
+            kept.push(h);
+        }
+    }
+    kept
 }
 
 /// A berm, ditch or glacis piece that a street separates from the curtain:
@@ -328,17 +512,22 @@ const MIN_MOAT_RUN: f64 = 30.0;
 const MIN_MOAT_SHARE: f64 = 0.35;
 /// Invariant (a moat is continuous or absent): pieces shorter than
 /// `MIN_MOAT_RUN` go, and the whole moat goes when what is left covers less
-/// than `MIN_MOAT_SHARE` of the dry length of the curtain.
-pub(super) fn continuous_moat(ditch: Vec<Work>, path: &[Point], surface: Surface<'_>) -> Vec<Work> {
+/// than `MIN_MOAT_SHARE` of the dry length of the curtain. The reaches either side of one of the
+/// `dams` are one run: a dam parts the water, not the moat.
+pub(super) fn continuous_moat(ditch: Vec<Work>, dams: &[[Point; 2]], path: &[Point], surface: Surface<'_>) -> Vec<Work> {
     if ditch.is_empty() {
         return ditch;
     }
+    let bridges = dams.iter().filter(|d| dist(d[0], d[1]) > 0.1).map(|d| {
+        let t = dir(d[0], d[1]);
+        quad(d[0], t, (-t.1, t.0), [-1.0, dist(d[0], d[1]) + 1.0], [-1.0, 1.0])
+    });
     let run = |s: &Shape| {
         let n = s.outer.len();
         (0..n).map(|i| dist(s.outer[i], s.outer[(i + 1) % n])).sum::<f64>() * 0.5
     };
     // Runs are measured on the joined moat (tiles of one run count together).
-    let parts = g::union(&ditch.iter().map(|d| d.shape.clone()).collect::<Vec<_>>());
+    let parts = g::union(&ditch.iter().map(|d| d.shape.clone()).chain(bridges).collect::<Vec<_>>());
     let runs: Vec<f64> = parts.iter().map(|s| run(s)).collect();
     let kept: Vec<Work> = ditch
         .into_iter()

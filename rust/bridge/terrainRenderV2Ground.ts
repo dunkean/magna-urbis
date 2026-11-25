@@ -15,21 +15,52 @@ vec4 v2GroundUnit=vec4(0.);
 // (-1 hollow, 1 knob, from the 300 m TPI), w the 900 m mottle of v2ZoneEnv.
 vec4 v2GroundSite=vec4(0.);
 // Shares of the occupation raster around a fragment: x tended land (fields, orchards, gardens, town ground, buildings,
-// lanes), y buildings. The four nearest classes are weighted, never one texel: a nearest class drew the texel grid as
+// lanes), y buildings, z town ground and buildings. The four nearest classes are weighted, never one texel: a nearest class drew the texel grid as
 // the frontier of the ground. Set once per fragment by v2Local.
-vec2 v2OccupationShare=vec2(0.);
-vec2 v2OccupationShares(vec2 world){
-  if(uHasOccupation==0)return vec2(0.);
+vec3 v2OccupationShare=vec3(0.);
+vec3 v2OccupationShares(vec2 world){
+  if(uHasOccupation==0)return vec3(0.);
   vec2 uv=(world-uOccupationRect.xy)/uOccupationRect.z;
-  if(any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return vec2(0.);
-  vec2 grid=uv*uOccupationN-.5,f=fract(grid),share=vec2(0.);ivec2 base=ivec2(floor(grid)),top=ivec2(int(uOccupationN)-1);
+  if(any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return vec3(0.);
+  vec2 grid=uv*uOccupationN-.5,f=fract(grid);vec3 share=vec3(0.);ivec2 base=ivec2(floor(grid)),top=ivec2(int(uOccupationN)-1);
   for(int k=0;k<4;k++){
     ivec2 o=ivec2(k&1,k>>1);
     int cls=int(texelFetch(uOccupation,clamp(base+o,ivec2(0),top),0).b*255.+.5);
     float w=(o.x==0?1.-f.x:f.x)*(o.y==0?1.-f.y:f.y);
-    if(cls==8)share+=w;else if(cls==1||cls==4||cls==5||cls==7||cls==9)share.x+=w;
+    if(cls==8)share+=w;else if(cls==1||cls==4||cls==5||cls==7||cls==9){share.x+=w;if(cls==7)share.z+=w;}
   }
   return share;
+}
+// Snow a town treads, packs and clears: x the share of the land's own cover that stays, y how packed and dirty it is.
+// The town has the snow line and the season of the land around it (one cover, v2Local); only its wear differs. It is
+// worn between the houses and at their doors, thick again in the corners they enclose and on the lots far from any of
+// them, in patches throughout, and it starts at the town's own polygon (o.x), not on the class texels. A hard frost
+// keeps more of it than a snow about to thaw.
+vec2 v2TownSnow(vec2 world,float temperature,float footprint){
+  float cell=uOccupationRect.z/uOccupationN;
+  float town=v2OccupationShare.z*sstep(0.,max(10.,cell),groundOccupation(world).x);
+  if(town<=0.)return vec2(1.,0.);
+  // Built share of the ten metres around, sixteen texels of a lattice of five metres or a texel under a tent that closes
+  // before the lattice changes: smooth, no copy of the class texels. None on an open lot, a third beside a wall or along
+  // a street, most of it in a corner.
+  float stride=max(1.,floor(5./cell+.5)),near=0.,weight=0.;
+  vec2 lattice=(world-uOccupationRect.xy)/(cell*stride)-.5,at=floor(lattice)-1.;ivec2 top=ivec2(int(uOccupationN)-1);
+  for(int k=0;k<16;k++){
+    vec2 o=at+vec2(float(k&3),float(k>>2));
+    float w=max(0.,1.-.5*distance(o,lattice));w*=w;
+    weight+=w;
+    if(int(texelFetch(uOccupation,clamp(ivec2((o+.5)*stride),ivec2(0),top),0).b*255.+.5)==8)near+=w;
+  }
+  near/=weight;
+  float worn=.05+.4*sstep(0.,.35,near)*(1.-.75*sstep(.5,.9,near));
+  worn=clamp(worn*mix(1.3,.42,sstep(-3.,-12.,temperature)),0.,.5)*town;
+  // Zero-mean wear, as soft as a trodden drift: no hard-edged patch, and the mean where it is not resolved.
+  float patchy=0.;
+  if(uQuality==0)for(int k=0;k<3;k++){
+    float scale=k==0?38.:k==1?13.:4.5;
+    if(footprint<scale*.3)patchy+=(k==0?.4:k==1?.5:.45)*v2Pattern(vec3(world,0.),scale,footprint,uMaterialSeed+1813u+uint(k));
+  }
+  return vec2(clamp(1.-worn*(1.+patchy),.1,1.),worn);
 }
 // Level of a unit-variance field above which a share of the ground lies (logistic approximation of the normal quantile).
 float v2GroundQuantile(float share){float p=clamp(share,.001,.999);return .5*log((1.-p)/p);}

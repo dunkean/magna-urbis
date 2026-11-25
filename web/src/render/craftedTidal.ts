@@ -1,4 +1,4 @@
-import { OPENING } from './city3d/materials';
+import { LIT_WINDOW, OPENING } from './city3d/materials';
 import type { Vertex3 } from '../../../rust/bridge/housesContract';
 import type { BuildingTriangle, BuildingVector, OverviewVolume } from './urbanBuildingGeometry';
 
@@ -18,7 +18,7 @@ export function craftedTidal(volume: OverviewVolume, emit: (face: BuildingTriang
   const mesh = volume.roof_mesh,
     floor = volume.z_m;
   for (const face of mesh.faces) {
-    if (face.material !== OPENING || face.vertices.length !== 4) continue;
+    if ((face.material !== OPENING && face.material !== LIT_WINDOW) || face.vertices.length !== 4) continue;
     const [a, b, c] = face.vertices.map(i => mesh.vertices[i]);
     if (Math.abs(a.z - floor) < 0.15 && Math.abs(a.z - b.z) < 0.02 && c.z - a.z > 0.8) landing(a, b, volume, lift, emit);
   }

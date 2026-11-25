@@ -50,6 +50,7 @@ import { grainMeansReady, grainMeansStep } from '../../cityGlGrain';
 import { CoverGrainTexture } from '../../world/buildingsGrain';
 import type { YardBoundary } from '../../cityLotEnclosures';
 import { CanopyDiscs } from './canopyDiscs';
+import { NightLamps } from './nightLamps';
 import { FarRasters } from './farRasters';
 import { liveCityBlock, type LiveCityTowns } from './contract';
 import { countWork } from '../../workCount';
@@ -65,6 +66,8 @@ interface Look {
   far: { palette: CityPalette; night: boolean; custom?: string };
   /** finishCityFrame draws the canopy (buildings view, no diagnostic, town shown). */
   canopy: boolean;
+  /** A lit night town on the surface: its lamps light the ground of a tilted view. */
+  lamps: boolean;
   /** Options of every frame of this look but the view, the level of detail, the water and the target. */
   base: Omit<CityGlDrawOptions, 'viewport' | 'metresPerPixel'>;
   /** What the look reads of its appearance; another appearance with the same key keeps the prepared tables. Empty: never shared. */
@@ -100,7 +103,8 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   /** The far rasters and the canopy own their program and GPU data; their links are polled like the renderer's. */
   const parallelLink = !!gl.getExtension('KHR_parallel_shader_compile'),
     far = new FarRasters(gl),
-    canopy = new CanopyDiscs(gl);
+    canopy = new CanopyDiscs(gl),
+    lamps = new NightLamps(gl);
   /** Natural roofs: the Canvas grain tiles on the GPU (one family per `work` call) for the pans' grain marks, and the
    * mean tone of the snow mantle (cityGlGrain.ts); a frame waits for both, as for its colour tables. */
   const grainTiles = new CoverGrainTexture(gl);
@@ -212,6 +216,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       // As cityDrawOptions hands them to drawFarTown by day: the city palette, the building ink of the appearance.
       far: { palette: city.palette, night: false, custom: buildingAppearance.colors?.building },
       canopy: buildingsVisible && city.view === 'buildings' && buildingAppearance.diagnostic === 'none',
+      lamps: !!buildingAppearance.lightsOn && !appearance.underdark && buildingAppearance.diagnostic === 'none' && vis.city !== false && !!towns.layers(appearance, vis).streets,
       base: {
         view: city.view,
         palette: city.palette,
@@ -239,7 +244,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       },
     };
     // The rest gaps also read the textures, the procedural canopy and the urban land use (restGaps).
-    if (!next.base.refusedParcels) next.key = JSON.stringify([next.reason, next.opacity, next.farTown, next.far, next.canopy, next.base, city.textured, appearance.composition.vegetation.procedural, appearance.composition.landuse.urban]);
+    if (!next.base.refusedParcels) next.key = JSON.stringify([next.reason, next.opacity, next.farTown, next.far, next.canopy, next.lamps, next.base, city.textured, appearance.composition.vegetation.procedural, appearance.composition.landuse.urban]);
     if (look?.key && look.key === next.key) {
       look.appearance = appearance;
       look.visibility = visibility;
@@ -269,6 +274,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
   function dropExtras(deleteHandles: boolean): void {
     far.drop(deleteHandles);
     canopy.drop(deleteHandles);
+    lamps.drop(deleteHandles);
     if (deleteHandles) grainTiles.dispose();
     else grainTiles.lost();
     grainTilesDone = false;
@@ -426,7 +432,7 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       // Nothing to paint (a failed layer, a look the layer does not cover, a hidden town) is ready.
       if (disposed || broken) return true;
       const l = lookNow();
-      if (l.reason || l.opacity <= 0) return true;
+      if (l.reason || l.opacity <= 0) return !l.lamps || lamps.ready(requested);
       // The plan is all the drape draws: a building tier being packed or uploaded does not hold it back.
       if (!renderer || !renderer.programsLinked || !requested || !renderer.ready) return false;
       if (!grainReady(l)) return false;
@@ -442,7 +448,10 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
     },
     paint(tile: DrapeCanvas): void {
       const l = lookNow();
-      if (disposed || broken || !renderer || l.reason || l.opacity <= 0) return;
+      if (disposed || broken || !renderer) return;
+      // The night plan is the Canvas town's; the drape takes its lamps.
+      if (l.lamps) lamps.paint(tile);
+      if (l.reason || l.opacity <= 0) return;
       const target = tile.group();
       if (!target) return;
       const options = drapeOptions(l, tile, target);
@@ -591,6 +600,13 @@ export function createLiveCityLayer(gl: WebGL2RenderingContext, env: LiveCityEnv
       if (!frame) return building > 0;
       const l = lookNow(),
         water = env.water?.();
+      if (l.lamps && !lamps.ready(requested)) {
+        if (lamps.step(requested, parallelLink)) {
+          drapeRevision++;
+          env.invalidate();
+        }
+        return true;
+      }
       if (l.reason) return building > 0;
       // The snow tile means (one kind per call, a few ms), shared by every town layer; then the grain tiles, one family per call.
       if (naturalGrain(l) && grainMeansStep()) return true;

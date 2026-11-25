@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CITY3D_RETAINING_PLINTH_M, city3dScene, footprintTerrain, silhouetteBuilding } from '../src/render/city3dMeshes';
+import { CITY3D_PLINTH_M, city3dScene, footprintTerrain, silhouetteBuilding } from '../src/render/city3dMeshes';
 import type { MassingPiece } from '../src/render/cityMassing';
 import type { PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 
@@ -21,7 +21,7 @@ describe('buildings on cliffs', () => {
     const footprint = [square(0, 6)];
     const source = { id: 'house', parcel_id: 'p', recipe_id: 'silhouette', ground_z_m: 0, footprint, roof_footprint: footprint, culture: { culture: 'european-organic' }, function: 'domestic', volumes: [], programme: { massing: [flat(6)] } } as unknown as PlacedBuilding;
     const b = silhouetteBuilding(source, cliff);
-    expect(b.ground_z_m).toBe(CITY3D_RETAINING_PLINTH_M);
+    expect(b.ground_z_m).toBe(CITY3D_PLINTH_M);
     expect(b.volumes[0].foundation.z_min_m).toBeLessThanOrEqual(0);
     // A gully between the corners is still sampled: the footing reaches its floor.
     const gully = (x: number): number => (Math.abs(x - 40) < 1.5 ? 0 : 10);
@@ -68,7 +68,7 @@ describe('buildings on cliffs', () => {
     const scene = city3dScene({ schema_version: '1', generator_version: 'activity-sites-1', buildings: [activity], refusals: [], open_spaces: [] }, { heightAt: cliff });
     const b = scene.buildings[0];
     expect(scene.kinds.silhouette).toBe(1);
-    expect(b.ground_z_m).toBe(CITY3D_RETAINING_PLINTH_M);
+    expect(b.ground_z_m).toBe(CITY3D_PLINTH_M);
     expect(Math.min(...b.volumes.map(v => v.foundation?.z_min_m ?? Infinity))).toBeLessThanOrEqual(0);
   });
 });

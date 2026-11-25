@@ -203,7 +203,8 @@ export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppe
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town
  * is built in parts over several work slices, then copied part by part into one buffer (one draw). */
 export function blockPart(block: BuildingBlock, level: number, paint: BuildingPaint, seat: BuildingSeat, from: number, to: number): Float32Array {
-  const buildings = block.buildings.slice(from, to);
+  // From afar a flight of steps is the painted street alone.
+  const buildings = block.buildings.slice(from, to).filter(b => level === 0 || !b.id.startsWith('city3d-stairs'));
   if (block.yard) return joinParts(buildingBatches(buildings, block.origin, paint, level > 0, undefined, level, seat).map(batch => batch.data));
   if (level !== BOX_LEVEL) return joinParts(buildingBatches(buildings, block.origin, paint, level > 0, undefined, undefined, seat).map(batch => batch.data));
   // An open volume (a tree dwelling's trunk and crown, a hall on posts) has no body a box could stand for: its box was a
@@ -257,7 +258,17 @@ export function buildingBox(building: Building3dVisual, minimal = false): Buildi
   if (!building.volumes.length) return building;
   const base_z_m = [...building.volumes.map(v => v.foundation), ...(building.structural_foundations ?? [])].reduce((low, f) => (f ? Math.min(low, f.z_min_m) : low), building.ground_z_m),
     footed: FootedProjection = { base_z_m };
-  return { ...building, ...footed, roof_footprint, projection: 'native-building-visual-1', height_m: building3dHeight(building), materials: building.volumes[0].materials, volumes: undefined, structural_features: undefined, structural_foundations: undefined } as unknown as Building3dVisual;
+  return {
+    ...building,
+    ...footed,
+    roof_footprint,
+    projection: 'native-building-visual-1',
+    height_m: building3dHeight(building),
+    materials: building.volumes[0].materials,
+    volumes: undefined,
+    structural_features: undefined,
+    structural_foundations: undefined,
+  } as unknown as Building3dVisual;
 }
 
 /** Pixels a building spans (its smaller side, the block's mean) from which it is drawn detailed, as an overview (capped

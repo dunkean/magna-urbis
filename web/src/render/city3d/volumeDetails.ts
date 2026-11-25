@@ -8,9 +8,16 @@ import { RoofBuilder, ringArea, insetRing, ringCentre } from './roofGeometry';
 import { featureDome, featureBox, facadeDoor, facadeQuad } from './features';
 import { OPENING, LIT_WINDOW } from './materials';
 import { hash, CITY3D_LEVEL_M } from './massing';
+import type { City3dHeight } from './types';
 
-/** Parapet, roof-top features, trim, facade openings and tent pole of a volume (detailed LOD only), into its roof mesh. */
-export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wallId: string, id: string): void {
+/** Smallest height of a door, and clear height of an opening over the ground outside, m. */
+const LEAST_DOOR_M = 1.6,
+  CLEAR_M = 0.15;
+
+/** Parapet, roof-top features, trim, facade openings and tent pole of a volume (detailed LOD only), into its roof mesh.
+ * `groundAt`: the ground along the walls of a building on a slope: no opening stands under it, the door opens at it, and the
+ * wall under the floor (`cellar`) that it leaves bare is a lower storey with openings of its own. */
+export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wallId: string, id: string, groundAt?: City3dHeight, cellar = false): void {
   const d = v.detail ?? {},
     ring = d.form === 'battered' ? scaledRing(v.shape.outer, 0.92) : v.shape.outer,
     n = ring.length,
@@ -175,6 +182,18 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
     }
     return;
   }
+  // Mouth of a snow house's entrance tunnel, across its axis (the inner end stands inside the dome).
+  if (d.form === 'igloo' && v.roof === 'barrel' && v.ridges.length) {
+    const [x0, y0, x1, y1] = v.ridges[0],
+      l = Math.hypot(x1 - x0, y1 - y0) || 1;
+    for (let i = 0; i < n; i++) {
+      const a = v.shape.outer[i],
+        b = v.shape.outer[(i + 1) % n],
+        w = Math.hypot(b.x - a.x, b.y - a.y);
+      if (w > 0.2 && Math.abs((b.x - a.x) * (x1 - x0) + (b.y - a.y) * (y1 - y0)) < 0.2 * w * l) facadeDoor(roof, a, b, out, 0.18 * w, 0.82 * w, ground + 0.02, eave + 0.55 * v.rise_m, 0.04, OPENING);
+    }
+    return;
+  }
   // Edges by length: red trim band, then a door and windows on the longest ones.
   // Small decorative volumes (chimneys, dormers, porches) have no openings.
   if (d.openings === 'none' || v.minor) return;
@@ -203,14 +222,30 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
       for (const s of [0.3, e.l - 0.8]) facadeQuad(roof, e.a, e.b, out, s, s + 0.5, foot, eave, 0.07, 'city3d:wall:timber');
     }
   if (d.trim === 'red' && parapet > 0) for (const e of edges) facadeQuad(roof, e.a, e.b, out, 0.15, e.l - 0.15, eave - 0.95, eave - 0.4, 0.03, 'city3d:wall:plaster@a75e4b');
-  let windows = 0;
-  const cap = body ? 24 : 10;
-  edges.slice(0, hut ? 1 : body ? 4 : 2).forEach((e, k) => {
+  /** The ground outside the wall at `s` along an edge, over the floor of the volume or not. */
+  const outside = (e: (typeof edges)[number], s: number): number => {
+    const ux = (e.b.x - e.a.x) / e.l,
+      uy = (e.b.y - e.a.y) / e.l,
+      h = groundAt!(e.a.x + ux * s + uy * out * 0.3, e.a.y + uy * s - ux * out * 0.3);
+    return Number.isFinite(h) ? h : -Infinity;
+  };
+  let windows = 0,
+    doors = 0;
+  const cap = body ? 24 : 10,
+    faces = groundAt ? edges.length : hut ? 1 : body ? 4 : 2;
+  edges.slice(0, faces).forEach((e, k) => {
+    // On a slope the door takes the next wall where the longest ones are in the hill.
+    if (k >= (hut ? 1 : body ? 4 : 2) && doors) return;
     const doorW = (hut ? 0.8 : 1.0) * scale,
       doorH = (hut ? 1.6 : 2.1) * scale,
-      doorAt = Math.max(0.3, Math.min(e.l - doorW - 0.3, (((h >>> (k * 3)) % 100) / 100) * e.l));
-    const door = !raised && (k === 0 || (h >>> 5) % 3 === 0);
-    if (door) facadeDoor(roof, e.a, e.b, out, doorAt, doorAt + doorW, ground + 0.02, ground + Math.min(doorH, v.eave_m - 0.2), 0.04, OPENING, batter);
+      doorAt = Math.max(0.3, Math.min(e.l - doorW - 0.3, (((h >>> (k * 3)) % 100) / 100) * e.l)),
+      step = groundAt ? Math.max(ground, outside(e, doorAt + doorW / 2)) : ground,
+      lintel = Math.min(step + doorH, ground + v.eave_m - 0.2);
+    const door = !raised && (k === 0 || !doors || (h >>> 5) % 3 === 0) && (step === ground || lintel - step >= Math.min(LEAST_DOOR_M, doorH));
+    if (door) {
+      doors++;
+      facadeDoor(roof, e.a, e.b, out, doorAt, doorAt + doorW, step + 0.02, lintel, 0.04, (h >>> 9) % 2 ? LIT_WINDOW : OPENING, batter); // one door in two stands open on a lit room at night
+    }
     if (hut || d.openings === 'door') return;
     // Openness (culture data): massive warm-climate walls get fewer, smaller windows, spaced by 1/openness and thinned on the street floor.
     const medina = v.roof === 'flat',
@@ -227,10 +262,33 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
         if (z0 + wh > wall - 0.25 || (medina && (h >>> (c + f)) % 3 === 0)) continue;
         if (f === 0 && open < 1 && ((h >>> (c + 7 * k)) % 100) / 100 >= open * open) continue;
         if (f === 0 && !raised && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3) continue;
-        // One window in three is lit at night, the same ones at every redraw.
-        const lit = (Math.imul(h ^ (c * 73 + f * 151 + k * 283 + 1), 2654435761) >>> 0) % 3 === 0;
+        if (groundAt && (outside(e, s + ww / 2) > foot + z0 - CLEAR_M || (door && foot + z0 < lintel + 0.2 && s < doorAt + doorW + 0.3 && s + ww > doorAt - 0.3))) continue;
+        // Two windows in five are lit at night, the same ones at every redraw.
+        const lit = (Math.imul(h ^ (c * 73 + f * 151 + k * 283 + 1), 2654435761) >>> 0) % 5 < 2;
         facadeQuad(roof, e.a, e.b, out, s, s + ww, foot + z0, foot + z0 + wh, 0.04, lit ? LIT_WINDOW : OPENING, batter);
         windows++;
       }
   });
+  if (groundAt && cellar && !raised && !batter) lowerStorey(roof, edges, out, ground, outside, h);
+}
+
+/** Openings of the storeys under the floor, on the walls the hill leaves bare downhill: windows level along each wall, and a
+ * door at the ground where a whole storey stands free. */
+function lowerStorey(roof: RoofBuilder, edges: readonly { a: Point; b: Point; l: number }[], out: number, floor: number, outside: (e: { a: Point; b: Point; l: number }, s: number) => number, h: number): void {
+  let doors = 0;
+  for (const e of edges) {
+    const count = Math.max(1, Math.floor((e.l - 0.6) / 2.8));
+    for (let c = 0; c < count; c++) {
+      const s = 0.3 + ((c + 0.5) * (e.l - 0.6)) / count,
+        bare = floor - outside(e, s);
+      if (!(bare > 1.4)) continue;
+      const door = !doors && bare > 2.4 && bare < CITY3D_LEVEL_M * 1.6;
+      if (door) {
+        doors++;
+        facadeDoor(roof, e.a, e.b, out, s - 0.5, s + 0.5, floor - bare + 0.02, Math.min(floor - 0.2, floor - bare + 2.1), 0.04, OPENING);
+        continue;
+      }
+      for (let top = 0.4, storey = 0; top + 0.8 + CLEAR_M < bare && storey < 6; top += CITY3D_LEVEL_M, storey++) facadeQuad(roof, e.a, e.b, out, s - 0.35, s + 0.35, floor - top - 0.75, floor - top, 0.04, ((h >>> ((c + storey) % 24)) & 3) === 0 ? LIT_WINDOW : OPENING);
+    }
+  }
 }

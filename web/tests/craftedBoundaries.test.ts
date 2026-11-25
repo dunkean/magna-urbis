@@ -7,7 +7,7 @@ import type { YardBoundary } from '../src/render/cityLotEnclosures';
 import { boundaryOf } from '../src/render/craftedBoundaries';
 import { buildingBounds } from '../src/render/world/buildingsMesh';
 import { eachBuildingTriangle, buildingRayDistance, type BuildingTriangle } from '../src/render/urbanBuildingGeometry';
-import { city3dFarmBuildings } from '../src/render/city3d/display';
+import { city3dFarmBuildings, city3dFarmSources } from '../src/render/city3d/display';
 import type { Farmstead } from '../src/gen/types';
 
 const path = [
@@ -84,7 +84,7 @@ describe('3D boundaries on generated ground', () => {
   });
   it('opens up the individual stock rails of a farm paddock', () => {
     const f = { pos: path[0], culture: 'kraal', angle: 0, yard: [], drive: [], buildings: [], plots: [{ kind: 'paddock', poly: path }] } as unknown as Farmstead;
-    const fences = city3dFarmBuildings([f], undefined, ground) as PlacedBuilding[];
+    const fences = city3dFarmBuildings(city3dFarmSources([f], undefined, ground), { heightAt: ground }) as PlacedBuilding[];
     const b = fences.find(f => !!boundaryOf(f))!;
     expect(boundaryOf(b)?.replace).toBe(true);
     expect(triangles(b, true).some(t => t.material?.includes('binding'))).toBe(true);

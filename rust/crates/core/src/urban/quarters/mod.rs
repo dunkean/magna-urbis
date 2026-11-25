@@ -12,6 +12,7 @@ mod pass;
 mod service;
 mod speculative;
 mod squares;
+mod hairpins;
 mod stairs;
 mod street_finish;
 mod street_index;
@@ -25,6 +26,5 @@ mod stage_tests;
 
 pub(super) use capacity::{generate, probe_quarter};
 pub(super) use frames::outline_frame;
-pub(super) use stairs::mostly_stairs;
 #[cfg(test)]
 pub(super) use frames::enclosure_frame;

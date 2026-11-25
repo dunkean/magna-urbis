@@ -1037,7 +1037,7 @@ const YARDS = new WeakMap<CityScene, object>();
 export function updateYardEnclosures(scene: CityScene, source: object, houses: () => readonly YardHouse[]): void {
   if (YARDS.get(scene) === source) return;
   const result = buildYardEnclosures(scene, houses());
-  scene.lotEnclosures = result.enclosures;
+  scene.lotEnclosures = scene.fixedLotEnclosures?.length ? [...scene.fixedLotEnclosures, ...result.enclosures] : result.enclosures;
   scene.lotYards = result.yards;
   YARDS.set(scene, source);
 }

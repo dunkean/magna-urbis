@@ -562,9 +562,11 @@ fn plan(layout:&Layout,p:Params,surface:Surface<'_>,stats:&mut Stats)->Vec<Water
     let outlet_at:BTreeMap<usize,&Outlet>=outlets.iter().filter(|o|wdeg[o.node]>0).map(|o|(o.node,o)).collect();
     let mut water:Vec<Waterway>=vec![]; let mut index_of=vec![usize::MAX;segs.len()];
     let mut decks:Vec<Point>=vec![];
+    // No canal bridge over another, nor over a street's bridge.
+    let mut laid:Vec<Shape>=layout.streets.iter().filter(|s|s.role=="bridge").flat_map(|s|g::ribbon(&s.path,&s.widths)).collect();
     let mut bridge=|water:&mut Vec<Waterway>,piece:usize,at:Point,shape:Shape| {
-        if piece==usize::MAX || decks.iter().any(|&d|dist(d,at)<BRIDGE_MERGE) {return;}
-        decks.push(at); water[piece].crossings.push(shape);
+        if piece==usize::MAX || decks.iter().any(|&d|dist(d,at)<BRIDGE_MERGE) || laid.iter().any(|d|g::boxes_meet(g::bbox(d),g::bbox(&shape)) && g::intersection(d,&shape).iter().map(g::area).sum::<f64>()>1.) {return;}
+        decks.push(at); laid.push(shape.clone()); water[piece].crossings.push(shape);
     };
     for &e in &chosen {
         let s=&segs[e]; let (a,b)=(points[s.a],points[s.b]); let w=width[e];
@@ -715,6 +717,19 @@ mod tests {
             assert!((s.height_at(a)-s.height_at(b)).abs()<=2.*rise+1e-6,"canal climbs from {a:?} to {b:?}");
             for k in 0..=10 {let q=lerp(a,b,k as f64/10.);assert!(s.height_at(q)>=x.level_m-1e-6,"canal above its bank at {q:?}");}
         }
+    }
+
+    /// On ground rising 3 % from the shore a lagoon town climbs by locks: its network reaches the far side of
+    /// the town instead of stopping within one rise of the water.
+    #[test]
+    fn a_lagoon_town_on_a_gentle_slope_climbs_by_locks() {
+        let height:Vec<f32>=(0..N*N).map(|i|((600.-(i%N) as f64*10.-5.).max(0.)*0.03) as f32).collect();
+        let water=east_water();
+        let mut layout=town("venetian-lagoon");
+        apply(&mut layout,&full(),surface(&height,&water));
+        let w=ways(&layout);
+        assert!(w.iter().any(|x|!x.locks.is_empty()),"no lock on the slope");
+        assert!(w.iter().filter(|x|x.kind=="canal").any(|x|x.path.iter().any(|p|p.x<370.)),"the network stops at the shore");
     }
 
     #[test]

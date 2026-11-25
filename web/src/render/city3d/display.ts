@@ -18,7 +18,9 @@ import { cityBridgeStreets } from '../cityBridges';
 import { farmPlacedBuildings } from '../farmRoofs';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 import { city3dBridges } from './bridges';
-import { city3dProjectionScene, city3dScene, type City3dDisplayScene, type City3dSceneOptions } from './scene';
+import { groundShapePads, type GroundShapePad } from '../../ui/urbanGroundShape';
+import { buildingSeats, city3dProjectionScene, city3dScene, type City3dDisplayScene, type City3dSceneOptions } from './scene';
+import type { SeatGround } from './terrainSeat';
 import type { City3dHeight } from './types';
 import { city3dWalls } from './walls';
 
@@ -33,6 +35,8 @@ export function city3dBuildings(scene: PlacementBatch | NativeBuildingProjection
 export interface City3dStructureGround {
   height?: City3dHeight;
   bridgeWater?: City3dHeight;
+  /** The water causeways cross, where it is known apart from `bridgeWater`. */
+  causewayWater?: City3dHeight;
   quayHeight?: City3dHeight;
   quayWater?: City3dHeight;
 }
@@ -44,23 +48,38 @@ export function city3dStructures(
   ground: City3dStructureGround,
   waterColor: string | undefined,
   canalSurfaces: boolean,
+  /** The town is drawn as a plan in ink: its moat water keeps the plan's wash. */
+  engraved = false,
 ): { bridges: PlacedBuilding[]; walls: PlacedBuilding[]; quays: PlacedBuilding[]; boardwalks: PlacedBuilding[] } {
   const bridgeStreets = cityBridgeStreets(layouts, regional);
   return {
-    bridges: city3dBridges(bridgeStreets, ground.height, ground.bridgeWater),
-    walls: layouts.flatMap((l, li) => city3dWalls(l.enclosures ?? [], ground.height, String(li), l.culture, waterColor)),
+    bridges: city3dBridges(bridgeStreets, ground.height, ground.bridgeWater, ground.causewayWater),
+    walls: layouts.flatMap((l, li) => city3dWalls(l.enclosures ?? [], ground.height, String(li), l.culture, waterColor, engraved)),
     quays: [...city3dQuays(layouts, ground.quayHeight, ground.quayWater), ...city3dWaterways(layouts, waterColor, canalSurfaces)],
     boardwalks: city3dBoardwalks(bridgeStreets, ground.height, ground.bridgeWater),
   };
 }
 
-/** Farm buildings and the stand-in houses of places still waiting for their plan, as meshes like every other
- * building: the massing-to-mesh code, materials, classes, tint and snow of the towns, each on the terrain under its
- * own footprint. */
-export function city3dFarmBuildings(farmsteads: readonly Farmstead[] | undefined, placeholders: readonly PlacedBuilding[] | undefined, heightAt: City3dHeight | undefined): Building3dVisual[] {
-  return farmsteads?.length || placeholders?.length
-    ? city3dScene({ schema_version: '1', generator_version: 'silhouette', buildings: [...(farmsteads?.length ? farmPlacedBuildings(farmsteads, heightAt ?? (() => 0)) : []), ...(placeholders ?? [])], refusals: [], open_spaces: [] }, { heightAt }).buildings
-    : [];
+/** Farm buildings and the stand-in houses of places still waiting for their plan, as placed buildings on the natural ground. */
+export const city3dFarmSources = (farmsteads: readonly Farmstead[] | undefined, placeholders: readonly PlacedBuilding[] | undefined, naturalAt: City3dHeight | undefined): PlacedBuilding[] => [
+  ...(farmsteads?.length ? farmPlacedBuildings(farmsteads, naturalAt ?? (() => 0)) : []),
+  ...(placeholders ?? []),
+];
+
+/** Those buildings as meshes like every other one: the massing-to-mesh code, materials, classes, tint and snow of the
+ * towns, each on the terrain under its own footprint. */
+export const city3dFarmBuildings = (buildings: PlacedBuilding[], options: City3dSceneOptions): Building3dVisual[] => (buildings.length ? city3dScene({ schema_version: '1', generator_version: 'silhouette', buildings, refusals: [], open_spaces: [] }, options).buildings : []);
+
+/** Buildings seated between two steps of city3dPadSteps. */
+const SEATS_PER_STEP = 48;
+/** What the ground is shaped to under buildings (urbanGroundShape.ts): the seats of each one on the natural ground. */
+export function* city3dPadSteps(buildings: readonly PlacedBuilding[], ground: SeatGround, waterAt?: City3dHeight): Generator<void, GroundShapePad[]> {
+  const pads: GroundShapePad[] = [];
+  for (let i = 0; i < buildings.length; i++) {
+    for (const pad of groundShapePads(buildings[i].footprint, buildingSeats(buildings[i], ground, waterAt))) pads.push(pad);
+    if (i % SEATS_PER_STEP === SEATS_PER_STEP - 1) yield;
+  }
+  return pads;
 }
 
 /** The display scene with `extra` meshes added to its buildings (and to those that clear the forest); a scene of

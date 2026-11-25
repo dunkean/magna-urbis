@@ -37,6 +37,8 @@ export class WaterProducts implements Water {
   vectorBase?: VectorRaster;
   vectorView?: VectorRaster;
   private vectorRequest?: Promise<void>;
+  /** The region of that request. */
+  vectorDue?: ViewRasterRegion;
 
   constructor(
     private readonly map: MapState,
@@ -151,7 +153,7 @@ export class WaterProducts implements Water {
     const whole = wholeMap(this.map.native!.width);
     this.vectors = svg;
     this.vectorView = undefined;
-    this.vectorRequest = undefined;
+    this.vectorRequest = this.vectorDue = undefined;
     const image = svg ? await imageOf(svgOf(svg, whole)) : undefined;
     // A newer body was set while this one decoded (set() may start the raster before its last passes).
     if (this.vectors !== svg) return;
@@ -171,7 +173,7 @@ export class WaterProducts implements Water {
   cutWater(ctx: CanvasRenderingContext2D, rect: WorldBox): void {
     if (!this.waterAboveLand()) return;
     const covers = (v?: { region: ViewRasterRegion }): boolean => !!v && v.region.x <= rect.minX && v.region.y <= rect.minY && v.region.x + v.region.width >= rect.maxX && v.region.y + v.region.height >= rect.maxY;
-    const mask = !this.tilted && covers(this.vectorView) ? this.vectorView : this.vectorBase;
+    const mask = covers(this.vectorView) ? this.vectorView : this.vectorBase;
     if (!mask) return;
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
@@ -194,6 +196,14 @@ export class WaterProducts implements Water {
     if (refine) void this.requestVectors(viewRasterRegion(rect, density, size));
     return this.vectorView && viewRasterFits({ ...this.vectorView.region, density }, rect, density, size) ? this.vectorView : this.vectorBase;
   }
+  drapedDetail(view: View, w: number, h: number, dpr: number): VectorRaster | undefined {
+    if (!this.vectors) return undefined;
+    const size = this.map.world!.mapSize,
+      rect = viewRect(view, w, h),
+      density = view.scale * dpr;
+    if (!viewRasterFits(this.vectorView?.region, rect, density, size) && !viewRasterFits(this.vectorBase?.region, rect, density, size, Infinity)) void this.requestVectors(viewRasterRegion(rect, density, size));
+    return this.vectorView;
+  }
   async vectorsReadyFor(view: View, w: number, h: number, dpr: number): Promise<void> {
     const size = this.map.world!.mapSize,
       rect = viewRect(view, w, h),
@@ -206,6 +216,7 @@ export class WaterProducts implements Water {
   private vectorBytes?: { text: string; bytes: Uint8Array };
   private requestVectors(region: ViewRasterRegion): Promise<void> {
     if (this.vectorRequest) return this.vectorRequest;
+    this.vectorDue = region;
     const vectors = this.vectors;
     if (this.vectorBytes?.text !== vectors) this.vectorBytes = { text: vectors, bytes: new TextEncoder().encode(vectors) };
     const request: Promise<void> = imageOf(svgPartsOf(this.vectorBytes.bytes, region))
@@ -219,7 +230,7 @@ export class WaterProducts implements Water {
         () => undefined,
       )
       .finally(() => {
-        if (this.vectorRequest === request) this.vectorRequest = undefined;
+        if (this.vectorRequest === request) this.vectorRequest = this.vectorDue = undefined;
       });
     return (this.vectorRequest = request);
   }

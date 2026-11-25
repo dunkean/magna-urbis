@@ -2,20 +2,24 @@
 
 use super::*;
 
-/// Depth (m) of the service strip behind a quay: the curtain of a harbour outside passes behind it.
-const SERVICE_STRIP: f64 = 15.0;
+/// Least depth (m) of the port yard behind a short landing; a longer quay has the yard of its culture's harbours.
+const LANDING_YARD: f64 = 18.0;
 /// Quays closer than this (m) share one harbour front.
 const FRONT_GAP: f64 = 40.0;
 
 /// The harbour fronts of a plan, which a town wall passes behind when it is traced
-/// (`fortification::water_fronts`): one continuous strip of constant depth along each run of quays,
-/// the quays with their service band, closed over the gaps between them. The landing rows behind it
-/// stay inside the wall and reach the quay through the gates of the gate budget. `inside`, the
-/// strip is the quay alone: the curtain stands right behind it.
-pub(in super::super::super) fn fronts(streets: &[Street], inside: bool) -> Vec<Shape> {
-    let strip = if inside { 1.0 } else { SERVICE_STRIP };
+/// (`fortification::water_fronts`): the port district along each run of quays, closed over the gaps
+/// between them. Behind a quay it is as deep as the port yard of the culture's harbours
+/// (`harbours.json` families, `yard`), never deeper than the quay is long: the row of warehouses and
+/// its lane stand with the quay outside the wall, and the town reaches them through the harbour
+/// gates. `works` is the ground (m) the curtain, its berm and its ditch take in front of it: a front
+/// is deeper by that much, so the yard keeps its own depth. `inside`, the strip is the quay alone: the
+/// curtain stands right behind it.
+pub(in super::super::super) fn fronts(streets: &[Street], inside: bool, culture: &str, works: f64) -> Vec<Shape> {
+    let yard = super::super::super::harbour_furniture::yard(culture);
     let ribbons: Vec<Shape> = streets.iter().filter(|s| s.role == "quay" && s.path.len() >= 2)
         .flat_map(|s| {
+            let strip = if inside { 1.0 } else { yard.min(length(&s.path).max(LANDING_YARD)) + works };
             let width = s.widths.iter().copied().fold(0.0, f64::max) + 2.0 * strip;
             g::ribbon(&s.path, &vec![width; s.path.len()])
         }).collect();

@@ -24,8 +24,8 @@ import { PARCH, SLUSH } from './planLook';
 
 /** Stroked over the street surface. A causeway is not one: it joins the surface as an ordinary raised road. */
 export const CROSSINGS = new Set(['bridge', 'ford', 'pier', 'boardwalk', 'walkway']);
-/** Stroked even near and close: square-ended structures and stepped ways. */
-const SURFACE_SKIP = new Set(['mole', 'stairs', 'port-stairs', 'landing']);
+/** Stroked even near and close: square-ended structures. */
+const SURFACE_SKIP = new Set(['mole', 'port-stairs', 'landing']);
 /** Untrodden snow in the shade of a quiet lane. */
 const LANE_SNOW = 'rgb(130,151,170)';
 
@@ -47,7 +47,6 @@ export function streetInk(role: string, rank: number, palette: CityPalette): { f
     case 'ford':
       return { fill: '#b9d0d6', casing: '#6f8f9a' };
     case 'port-stairs':
-    case 'stairs':
       return { fill: '#e6d5b2', casing: '#705d45' };
     case 'market':
       return { fill: '#f5d98f', casing: '#9a7d4f' };
@@ -111,7 +110,7 @@ interface StreetLook {
   strokes: StreetStroke[];
   surface?: StreetSurface;
   /** Parapet lines of a wide bridge: `offset` from the centreline on each side. */ rails?: { paint: string; width: number; offset: number };
-  /** Treads across a stepped way (close). */ stairs?: { paint: string; width: number };
+  /** Treads across a stepped way, the only mark that tells it from a lane: they fade in as it comes close. */ stairs?: { paint: string; width: number; alpha: number };
 }
 
 interface StreetFrameInput {
@@ -121,7 +120,7 @@ interface StreetFrameInput {
   /** Metres per CSS pixel. */ mpp: number;
   layers: Pick<CityLayers, 'roadSurface'>;
   night?: boolean;
-  /** Stepped streets are 3D flights drawn by the host: their ground strip is painted as an ordinary street. */ stairMeshes?: boolean;
+  /** Stepped streets are 3D flights drawn by the host: the plan draws no treads on them. */ stairMeshes?: boolean;
   roadLook?: RoadLook;
   /** Contrast of the roads against their ground, 0.5–1.5. */ roadEmphasis?: number;
   groundBlend?: boolean;
@@ -153,8 +152,17 @@ interface StreetContext {
 }
 const quarter = (w: number): number => Math.round(w * 4) / 4;
 
+/** Metres per pixel from which the treads of a stepped way fade in, and at which they show in full (a tread every ten pixels). */
+const TREADS_MPP = [0.55, 0.25] as const;
+
 /** The paint of one street for a frame. */
 export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = {}): StreetLook {
+  const look = streetPaint(f, s, town),
+    alpha = Math.min(1, (TREADS_MPP[0] - f.mpp) / (TREADS_MPP[0] - TREADS_MPP[1]));
+  if (alpha > 0 && f.lod === 'close' && ((s.role === 'stairs' && !f.stairMeshes) || s.role === 'port-stairs')) look.stairs = { paint: '#705d45', width: 0.6 * f.mpp, alpha };
+  return look;
+}
+function streetPaint(f: StreetFrame, s: CityStreet, town: StreetContext): StreetLook {
   const { lod, mpp, night } = f,
     px = (n: number): number => n * mpp,
     strokes: StreetStroke[] = [];
@@ -162,7 +170,7 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
     strokes.push({ layer, paint, width, alpha, cap });
   };
   // Near and close: streets are their ground surface — square ends at junctions, curb returns, tapers — filled once
-  // per style, so nothing shows twice. Decks, quays, fords and stairs keep their stroked art.
+  // per style, so nothing shows twice. Decks, quays and fords keep their stroked art.
   const surfaceOk = (): boolean => f.layers.roadSurface !== false && atLeast(lod, 'near') && !CROSSINGS.has(s.role) && !SURFACE_SKIP.has(s.role);
   // Stroked ways under the surfaced streets, crossings over them.
   const body: StreetLayer = CROSSINGS.has(s.role) ? 'over' : 'under';
@@ -176,7 +184,7 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
   ink.casing = f.colors?.roadEdge ?? ink.casing;
   let w = Math.max(s.width, px(streetMinPx(s.role, s.rank))),
     w2 = quarter(w);
-  const structure = STRUCTURE_ROLES.has(s.role) && !(f.stairMeshes && s.role === 'stairs');
+  const structure = STRUCTURE_ROLES.has(s.role);
   if (f.natural && !structure) {
     // Natural grounds: a street narrower than the pixel is not inflated to a plan stroke. It thins to about one
     // pixel and fades with its true share of that pixel, so a town seen from afar is its ground and its roofs,
@@ -262,7 +270,6 @@ export function streetLook(f: StreetFrame, s: CityStreet, town: StreetContext = 
   add(body, bodyPaint, w2, inkAlpha, cap);
   const look: StreetLook = { mode: 'ink', strokes };
   if (s.role === 'bridge' && w2 > px(3.5)) look.rails = { paint: ink.casing, width: Math.max(0.25, px(0.55)), offset: w2 / 2 - Math.max(0.4, px(0.8)) };
-  if (((s.role === 'stairs' && !f.stairMeshes) || s.role === 'port-stairs') && lod === 'close') look.stairs = { paint: '#705d45', width: px(0.6) };
   return look;
 }
 /** The stroke of a street's body (its bed or ink fill) and of its casing (shoulder, soft edge or ink casing; not the

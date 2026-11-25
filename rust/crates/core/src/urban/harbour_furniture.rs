@@ -40,7 +40,8 @@ use std::sync::OnceLock;
 mod canals;
 use canals::{canal_boats, mean};
 mod landings;
-use landings::{TOWN_PORT, family_of, landing, shore_landing, simple_landing, small_craft};
+use landings::{TOWN_PORT, family_of, landing, shore_landing, simple_landing};
+pub(in crate::urban) use landings::yard;
 #[cfg(test)]
 use landings::FOOTPATH_GRADE;
 mod shore;
@@ -666,8 +667,10 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Jetties square to the quay, with the boats lying along them.
-    fn jetties(&mut self, spec: &Value, recipe: &Value, roles: &[(&'static str, f64)], family: &'static Value, reaches: &[Reach], channel: bool) {
+    /// Jetties and finger piers square to the quay, with the boats lying along
+    /// them. `size` scales their length (a larger port berths larger ships).
+    #[allow(clippy::too_many_arguments)]
+    fn jetties(&mut self, spec: &Value, recipe: &Value, roles: &[(&'static str, f64)], family: &'static Value, reaches: &[Reach], channel: bool, size: f64) {
         let spacing = num(spec, "spacing", 40.0);
         let (lo, hi) = (spec["length"][0].as_f64().unwrap_or(8.0), spec["length"][1].as_f64().unwrap_or(16.0));
         let width = num(spec, "width", 2.4).clamp(1.5, 8.0);
@@ -697,7 +700,7 @@ impl<'a> Builder<'a> {
                 let s = s.clamp(r.s0 + width, r.s1 - width);
                 let root = add(r.f.a, r.f.t, s);
                 let Some(e) = self.edge(root, r.f.n, r.f.half) else { continue };
-                let wanted = self.rng.range(lo.min(hi), hi.max(lo));
+                let wanted = self.rng.range(lo.min(hi), hi.max(lo)) * size;
                 // On a river or a canal a stage reaches at most 15 % of the channel.
                 let limit = r.f.open * if channel { 0.15 } else { 0.6 };
                 let n = r.f.n;
@@ -720,7 +723,7 @@ impl<'a> Builder<'a> {
                 for &side in sides {
                     let mut at = if comb { 1.0 } else { (l * 0.4).max(1.0) };
                     while at < l - 2.0 && self.boats < self.boat_cap {
-                        let Some((class, length, beam)) = self.class(roles, family, l - at, 6.0) else { break };
+                        let Some((class, length, beam)) = self.class(roles, family, l - at, 8.0) else { break };
                         if self.rng.chance(if comb { 0.8 } else { fill }) {
                             let c = add(add(root, n, e + at + length * 0.5), r.f.t, side * (width * 0.5 + 0.5 + beam * 0.5));
                             let bow = if self.rng.chance(0.5) { n } else { neg(n) };
@@ -843,7 +846,8 @@ impl<'a> Builder<'a> {
             self.breakwater(reaches, recipe["beacon"].as_bool() == Some(true));
         }
         if recipe["jetties"].is_object() {
-            self.jetties(&recipe["jetties"], recipe, &roles, family, reaches, channel);
+            let size = (f64::from(population) / 10_000.0).sqrt().clamp(0.7, 1.6);
+            self.jetties(&recipe["jetties"], recipe, &roles, family, reaches, channel, size);
         }
         if num(recipe, "slips", 0.0) > 0.0 {
             self.slips(recipe, &roles, family, reaches, length, channel);

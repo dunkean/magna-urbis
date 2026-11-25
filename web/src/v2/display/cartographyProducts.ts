@@ -42,6 +42,7 @@ import { seedSubset } from '../../../../rust/bridge/generationSeed';
 import { isUnderdarkBiome } from '../../gen/biomes';
 import { cityRegionalNetwork } from '../../render/cityBridges';
 import type { View } from '../../render/view';
+import type { ViewRasterRegion } from '../../render/viewRaster';
 import type { Cartography, DisplayParts, SemanticState, WorldBox } from './contract';
 import type { MapState } from './mapState';
 import { paintedBrushes } from './paintedBrushes';
@@ -267,9 +268,8 @@ export class CartographyProducts implements Cartography {
         look: semanticLook,
         arrivals: () => {
           const water = this.parts.water;
-          // Tilted, the cut is the whole-map raster's (WaterProducts.cutWater): a raster of a top view is no arrival.
-          if (water.waterAboveLand() && ((!water.tilted && water.vectorView !== this.semanticWaterView) || water.vectorBase !== this.semanticWaterBase)) {
-            if (!water.tilted) this.semanticWaterView = water.vectorView;
+          if (water.waterAboveLand() && (water.vectorView !== this.semanticWaterView || water.vectorBase !== this.semanticWaterBase)) {
+            this.semanticWaterView = water.vectorView;
             this.semanticWaterBase = water.vectorBase;
             this.semanticWaterViews++;
           }
@@ -281,11 +281,11 @@ export class CartographyProducts implements Cartography {
           this.parts.water.cutWater(ctx, rect);
           // Contour paths still in the worker, or a finer water mask on its way (cutWater used the whole-map raster, or
           // nothing, while the raster of the view is made): this draw is redone when they arrive. A mask that is final
-          // for the view (the view's raster, or the whole-map one with no request in flight) does not move.
+          // for the view (the view's raster, or the whole-map one with no request in flight) does not move. Tilted, the
+          // drape reaches the horizon: only what the raster on its way covers is redone.
           const water = this.parts.water,
-            view = water.vectorView?.region,
-            covered = !!view && view.x <= rect.minX && view.y <= rect.minY && view.x + view.width >= rect.maxX && view.y + view.height >= rect.maxY;
-          const coarser = water.tilted ? !water.vectorBase : !covered && (!water.vectorBase || water.vectorPending);
+            covers = (region?: ViewRasterRegion): boolean => !!region && region.x <= rect.minX && region.y <= rect.minY && region.x + region.width >= rect.maxX && region.y + region.height >= rect.maxY,
+            coarser = !covers(water.vectorView?.region) && (!water.vectorBase || (water.tilted ? covers(water.vectorDue) : water.vectorPending));
           if ((!hasRetainedInk(ctx) && this.parts.contours.pendingAt(mpp)) || (water.waterAboveLand() && !!water.vectors && coarser)) this.provisionalDraws++;
         },
         legend: () => this.semanticLegend(),

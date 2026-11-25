@@ -2,6 +2,7 @@ import type { TerrainData } from './terrain';
 import { lakeSample } from '../../web/src/ui/lakeGeometry';
 import { riverWidths } from '../../web/src/ui/vectorWaterRender';
 import { channelWidth } from '../../web/src/ui/riverVectors';
+import { resampleTerrainSurface } from '../../web/src/render/raster';
 import { createSettlementEngine, type SettlementEngine } from './settlementEngine';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
@@ -329,8 +330,9 @@ export async function runSettlementRequest(request: SettlementRequest): Promise<
  * sea sits there, so the Underdark is told apart from any surface water (Rust `grid::CAVE_ROCK_MARK`). */
 export const CAVE_ROCK_DEPTH = 1000;
 /** Adapt the completed terrain and the displayed water geometry, without regenerating either. */
-/** `upsample`: the planning grid may be finer than the physical source (bilinear heights; water and river masks
- * rasterised from the vector network at the finer cell). Decor exports ask for it; live planning does not. */
+/** `upsample`: the planning grid may be finer than the physical source (heights on the cubic B-spline the ground is drawn
+ * with: bilinear cells have one slope each, which every slope material and frontier then shows as blocks; water and river
+ * masks rasterised from the vector network at the finer cell). Decor exports ask for it; live planning does not. */
 export function settlementRaster(t: TerrainData, maxResolution = 512, upsample = false): SettlementRaster {
   const source = t.physical?.height ?? t.height,
     sn = t.physical?.n ?? t.resolution;
@@ -345,22 +347,14 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
     waterLevel = new Float32Array(size),
     riverWidth = new Float32Array(size),
     riverIds = new Int32Array(size).fill(-1);
-  const sample = (values: ArrayLike<number>, vn: number, x: number, y: number): number => {
-    const gx = Math.max(0, Math.min(vn - 1, (x / width) * vn - 0.5)),
-      gy = Math.max(0, Math.min(vn - 1, (y / width) * vn - 0.5));
-    const xx = Math.floor(gx),
-      yy = Math.floor(gy),
-      dx = gx - xx,
-      dy = gy - yy;
-    const a = values[yy * vn + xx],
-      b = values[yy * vn + Math.min(vn - 1, xx + 1)],
-      c = values[Math.min(vn - 1, yy + 1) * vn + xx],
-      d = values[Math.min(vn - 1, yy + 1) * vn + Math.min(vn - 1, xx + 1)];
-    return (a * (1 - dx) + b * dx) * (1 - dy) + (c * (1 - dx) + d * dx) * dy;
-  };
+  const field = t.field?.n === sn && t.field.data.length === source.length ? t.field : undefined;
+  const upsampled = sn < n ? resampleTerrainSurface({ w: sn, data: field?.data ?? source }, n) : undefined;
+  // A land-only relief has a floor; elsewhere the surface goes on below the sea level.
+  const floor = field && field.floor > 0 ? field.floor : -Infinity;
   // Exact area-weighted box mean for downsampling; no full-size integral plane.
   const groundAt = (x: number, y: number): number => {
-    if (sn <= n) return sample(source, sn, (x + 0.5) * cell, (y + 0.5) * cell);
+    if (upsampled) return Math.max(upsampled[y * n + x], floor);
+    if (sn === n) return source[y * n + x];
     const x0 = (x * sn) / n,
       x1 = ((x + 1) * sn) / n,
       y0 = (y * sn) / n,
@@ -483,7 +477,6 @@ export function settlementRaster(t: TerrainData, maxResolution = 512, upsample =
         segment(p[a], p[a + 1], p[b], p[b + 1], Math.max(p[a + 2], p[b + 2]), p[a + 3], p[b + 3], id);
       }
     }
-  const field = t.field?.n === sn && t.field.data.length === source.length ? t.field : undefined;
   const physical = field ? { n: sn, height: field.data, interpolation: 'bspline' as const, floor: field.floor } : sn !== n ? { n: sn, height: source } : undefined;
   return { width, n, height, water, waterLevel, riverWidth, riverIds, ...(rock ? { rock } : {}), ...(physical ? { physical } : {}) };
 }

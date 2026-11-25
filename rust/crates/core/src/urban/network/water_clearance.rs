@@ -4,6 +4,7 @@ use super::bridge_construction::deck_landing_grade;
 use super::reservations::{remap_reservations, reserved_streets};
 use super::spatial::{BoxGrid, EPS, Key, PointGrid, distance, key, lerp, segment_box};
 use super::street::{CROSSINGS, private, width};
+use super::deck_clearance::meets;
 use crate::urban::{Layout, Point, Street, Surface};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -223,6 +224,7 @@ pub(super) fn dry_streets(streets: &mut Vec<Street>, culture: &str, population: 
     let platform_grid = BoxGrid::new(&platforms.iter().map(|&(a, b, half)| segment_box(a, b, half)).collect::<Vec<_>>(), 32.0);
     let mut decks = PointGrid::new(streets.iter().filter(|s| s.path.len() >= 2 && matches!(s.role.as_str(), "bridge" | "ford" | "causeway"))
         .map(|s| lerp(s.path[0], *s.path.last().unwrap(), 0.5)).collect(), 64.0);
+    let mut laid: Vec<Street> = streets.iter().filter(|s| matches!(s.role.as_str(), "bridge" | "ford")).cloned().collect();
     let (max_span, ford) = crossings::spans(culture, population);
     let old = std::mem::take(streets);
     let mut first: Vec<Option<usize>> = Vec::with_capacity(old.len());
@@ -300,9 +302,11 @@ pub(super) fn dry_streets(streets: &mut Vec<Street>, culture: &str, population: 
                     })
                     && deck_landing_grade(surface, [pa, pb]) <= max_grade + 1e-6
                     && !decks.any_within(lerp(pa, pb, 0.5), crossings::street_spacing(to - from, population))
+                    && !meets(&[pa, pb], s.widths.iter().copied().fold(1.0, f64::max), &laid, surface)
             };
             if deck {
                 decks.push(lerp(at(a).0, at(b).0, 0.5));
+                laid.push(Street { path: vec![at(a).0, at(b).0], widths: vec![s.widths.iter().copied().fold(1.0, f64::max); 2], rank: s.rank, role: "bridge".into() });
                 cuts.push((a, b, Cut::Deck));
                 continue;
             }

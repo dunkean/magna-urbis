@@ -1,6 +1,6 @@
 //! Street grade checks, network cleanup, exits and hierarchy before block carving.
 
-use super::stairs;
+use super::{hairpins, stairs};
 use crate::rng::Rng;
 use crate::urban::{
     Enclosure, LayoutConfig, Morph, Point, Quarter, Site, Street, Surface, UrbanStructure,
@@ -45,9 +45,6 @@ pub(super) fn finish_streets(
         {
             // A steep link: `stairs::settle` decides its lanes and its stairs.
             s.role = "stairs".into();
-            for w in &mut s.widths {
-                *w = w.min(2.2);
-            }
             return true;
         }
         false
@@ -173,4 +170,6 @@ pub(super) fn finish_connections(
     let culture = if cfg.culture == "site" { &site.culture } else { &cfg.culture };
     stairs::settle(streets, enclosures, surface, cfg, culture);
     lap("stairs");
+    hairpins::settle(streets, enclosures, surface);
+    lap("hairpins");
 }

@@ -300,6 +300,7 @@ fn assert_connected(layout: &Layout) {
 /// Independent metre sampling of the exported geometry, including clipped and
 /// snapped endpoints. Unit tests separately check exact bilinear peak detection.
 fn assert_physical(layout: &Layout, surface: Surface<'_>, cfg: &LayoutConfig) {
+    assert!(super::network::deck_clashes(&layout.streets, surface).is_empty(), "two decks cross");
     for street in &layout.streets {
         // Crossings and harbour works (piers, landing stages, moles) stand
         // over the water.
@@ -314,7 +315,6 @@ fn assert_physical(layout: &Layout, surface: Surface<'_>, cfg: &LayoutConfig) {
                 cfg.allow_stairs,
                 "stairs were retained with allowStairs=false"
             );
-            assert!(street.widths.iter().all(|&w| w <= 2.2));
             cfg.max_stair_grade
         } else if street.rank >= 3 && super::profiles::stairs_allowed(cfg, &layout.culture) {
             // The gentler stretches of a steep link, and a lane beside a stair.
@@ -324,7 +324,10 @@ fn assert_physical(layout: &Layout, surface: Surface<'_>, cfg: &LayoutConfig) {
         } else {
             cfg.max_street_grade
         };
-        for p in street.path.windows(2) {
+        let bends = crate::hairpins::bends(&street.path);
+        for (p, bend) in street.path.windows(2).zip(bends) {
+            // A hairpin bend is a levelled platform.
+            let limit = if bend { limit.max(crate::hairpins::PLATFORM) } else { limit };
             let length = (p[1].x - p[0].x).hypot(p[1].y - p[0].y);
             let steps = length.ceil().max(1.0) as usize;
             let at = |t: f64| Point {

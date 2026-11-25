@@ -159,9 +159,10 @@ fn automatic_population_budget_follows_catalogue_cadence_without_overriding_manu
 #[test]
 fn a_suburb_ring_style_builds_its_outer_epoch_with_its_faubourg_tissue() {
     let cfg = LayoutConfig::default();
-    assert_eq!(epoch_zone(&cfg, "cyberpunk", 25_000, 0), ("core", "core"));
-    assert_eq!(epoch_zone(&cfg, "cyberpunk", 25_000, 1), ("middle", "ring"));
-    assert_eq!(epoch_zone(&cfg, "cyberpunk", 25_000, 2), ("edge", "faubourg"));
+    assert_eq!(epoch_zone(&cfg, "american-grid", 25_000, 0), ("core", "core"));
+    assert_eq!(epoch_zone(&cfg, "american-grid", 25_000, 1), ("middle", "ring"));
+    assert_eq!(epoch_zone(&cfg, "american-grid", 25_000, 2), ("edge", "faubourg"));
+    assert_eq!(epoch_zone(&cfg, "cyberpunk", 25_000, 2), ("edge", "ring"));
     assert_eq!(epoch_zone(&cfg, "corporate-arcology", 25_000, 2), ("edge", "ring"));
     assert_eq!(epoch_zone(&cfg, "european-organic", 25_000, 2), ("edge", "ring"));
 }

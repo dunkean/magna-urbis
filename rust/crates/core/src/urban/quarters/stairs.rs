@@ -4,11 +4,13 @@
 //! `stairs` role, so the network passes keep it. `settle` then decides, once the network is final and
 //! before the blocks are carved, what each marked link really is from its profile: a narrow steep lane, and a
 //! flight of stairs along the runs that stay steeper. Runs open above `STAIR_GRADE`, hold down to
-//! `STAIR_HOLD`, and a short level stretch between two of them is a landing of one stair.
+//! `STAIR_HOLD`, and a short level stretch between two of them is a landing of one stair. A run is a stair only
+//! where it is useful (`useful`): short, between two streets, and no ordinary way leads there nearly as directly.
 
 use super::streets::len;
 use crate::rng::Rng;
 use crate::urban::{Enclosure, LayoutConfig, Point, Street, Surface, geometry as g, profiles, routing};
+use std::collections::{BTreeSet, HashMap};
 
 /// Grade over `WINDOW` that opens a stair run, and the one that still prolongs it.
 const STAIR_GRADE: f64 = 0.35;
@@ -27,8 +29,14 @@ const JOINT: f64 = 5.0;
 /// stay lanes, unless they are steeper on average than `TOO_STEEP`.
 const SPACING: f64 = 50.0;
 const TOO_STEEP: f64 = 0.5;
-/// Widest stair (m).
-const WIDE: f64 = 2.2;
+/// Longest stair (m): a longer climb is a lane.
+const MAX_RUN: f64 = 70.0;
+/// A stair is useless where ordinary ways join its ends within this many times its length, or this length (m).
+const DETOUR: f64 = 2.5;
+const SHORT_DETOUR: f64 = 60.0;
+/// A way along the same slope this near (m) already does the work of a stair; a deck this near has its own approach.
+const ALONGSIDE: f64 = 25.0;
+const DECK: f64 = 15.0;
 /// Largest distance (m) of a straight flight from the way it replaces.
 const STRAIGHTEN: f64 = 2.0;
 /// Shortest winding run and the length of one of its bends (m).
@@ -36,12 +44,12 @@ const WINDING: f64 = 36.0;
 const BEND: f64 = 13.0;
 
 /// A path with its cumulative length.
-struct Line<'a> {
+pub(super) struct Line<'a> {
     path: &'a [Point],
     cum: Vec<f64>,
 }
 impl<'a> Line<'a> {
-    fn new(path: &'a [Point]) -> Self {
+    pub(super) fn new(path: &'a [Point]) -> Self {
         let mut cum = vec![0.0];
         for w in path.windows(2) {
             cum.push(cum[cum.len() - 1] + (w[1].x - w[0].x).hypot(w[1].y - w[0].y));
@@ -62,13 +70,13 @@ impl<'a> Line<'a> {
         let (a, b) = (self.path[i], self.path[i + 1]);
         Point { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
     }
-    fn width(&self, widths: &[f64], s: f64) -> f64 {
+    pub(super) fn width(&self, widths: &[f64], s: f64) -> f64 {
         let (i, t) = self.locate(s);
-        let w = |k: usize| widths.get(k).or(widths.last()).copied().unwrap_or(WIDE);
+        let w = |k: usize| widths.get(k).or(widths.last()).copied().unwrap_or(2.2);
         w(i) + (w(i + 1) - w(i)) * t
     }
     /// Arc length of the point of the path nearest to `p`.
-    fn project(&self, p: Point) -> f64 {
+    pub(super) fn project(&self, p: Point) -> f64 {
         self.path
             .windows(2)
             .enumerate()
@@ -132,32 +140,23 @@ fn steep_runs(line: &Line<'_>, surface: Surface<'_>, cfg: &LayoutConfig) -> Vec<
         .collect()
 }
 
-/// Whether most of a short access way is too steep for a lane.
-pub(in crate::urban) fn mostly_stairs(path: &[Point], surface: Surface<'_>, cfg: &LayoutConfig) -> bool {
-    if path.len() < 2 || len(path) < MIN_RUN {
-        return false;
-    }
-    let line = Line::new(path);
-    steep_runs(&line, surface, cfg).iter().map(|r| r.1 - r.0).sum::<f64>() >= 0.5 * line.length()
-}
-
 /// A segment of a street, with the street's index and half width.
-struct Segment {
+pub(super) struct Segment {
     street: usize,
-    a: Point,
-    b: Point,
-    half: f64,
+    pub(super) a: Point,
+    pub(super) b: Point,
+    pub(super) half: f64,
 }
 fn segment_box(a: Point, b: Point) -> (f64, f64, f64, f64) {
     (a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y))
 }
 /// The street segments of the town, by box.
-struct Segments {
+pub(super) struct Segments {
     all: Vec<Segment>,
     grid: g::BoxGrid,
 }
 impl Segments {
-    fn new(streets: &[Street]) -> Self {
+    pub(super) fn new(streets: &[Street]) -> Self {
         let mut all: Vec<Segment> = vec![];
         for (street, s) in streets.iter().enumerate() {
             let half = s.widths.iter().copied().fold(0.0, f64::max) * 0.5;
@@ -167,11 +166,11 @@ impl Segments {
         Self { all, grid }
     }
     /// The segments of the streets other than `own` that may come within `pad` of `a`-`b`.
-    fn near(&self, own: usize, a: Point, b: Point, pad: f64) -> Vec<&Segment> {
+    pub(super) fn near(&self, own: usize, a: Point, b: Point, pad: f64) -> Vec<&Segment> {
         self.grid.query(segment_box(a, b), pad).into_iter().map(|k| &self.all[k]).filter(|s| s.street != own).collect()
     }
     /// The joints of street `own`: its ends and every place another street meets it, in order.
-    fn joints(&self, own: usize, line: &Line<'_>) -> Vec<(f64, Point)> {
+    pub(super) fn joints(&self, own: usize, line: &Line<'_>) -> Vec<(f64, Point)> {
         const TOUCH: f64 = 0.05;
         let mut met: Vec<(f64, Point)> = vec![];
         for (i, w) in line.path.windows(2).enumerate() {
@@ -202,17 +201,17 @@ impl Segments {
 }
 
 /// The curtain segments, by box.
-struct Walls {
+pub(super) struct Walls {
     all: Vec<(Point, Point)>,
     grid: g::BoxGrid,
 }
 impl Walls {
-    fn new(enclosures: &[Enclosure]) -> Self {
+    pub(super) fn new(enclosures: &[Enclosure]) -> Self {
         let all: Vec<(Point, Point)> = enclosures.iter().flat_map(|e| e.path.windows(2).map(|w| (w[0], w[1]))).collect();
         let grid = g::BoxGrid::new(all.iter().map(|&(a, b)| segment_box(a, b)).collect());
         Self { all, grid }
     }
-    fn crossed(&self, a: Point, b: Point) -> bool {
+    pub(super) fn crossed(&self, a: Point, b: Point) -> bool {
         self.grid.query(segment_box(a, b), 0.01).into_iter().any(|k| g::segment_hit(a, b, self.all[k].0, self.all[k].1).is_some())
     }
 }
@@ -240,6 +239,101 @@ fn beside(kept: &Run, r: &Run) -> bool {
     let l = (b.x - a.x).hypot(b.y - a.y).max(1e-6);
     // The next flight of the same climb lies ahead of the kept one, not beside it.
     d < SPACING && (((r.middle.x - q.x) * (b.x - a.x) + (r.middle.y - q.y) * (b.y - a.y)) / l).abs() < 0.7 * d
+}
+
+/// Whether a steep run is worth a stair: short, on a link that joins two streets, crossing none of them, away from
+/// the decks and from any way climbing beside it, and shortening a real detour by the ordinary ways (those not `steep`).
+fn useful(r: &Run, streets: &[Street], segments: &Segments, steep: &BTreeSet<usize>, joints: &mut HashMap<usize, Vec<(f64, Point)>>) -> bool {
+    let length = r.to - r.from;
+    if length > MAX_RUN {
+        return false;
+    }
+    let own = &streets[r.street].path;
+    let joined = |p: Point| segments.near(r.street, p, p, 0.5).iter().any(|s| g::distance(p, s.a, s.b).0 <= 0.5);
+    if !joined(own[0]) || !joined(own[own.len() - 1]) {
+        return false;
+    }
+    let line = Line::new(own);
+    let own_joints = joints.entry(r.street).or_insert_with(|| segments.joints(r.street, &line)).clone();
+    if own_joints.iter().any(|j| j.0 > r.from + JOINT && j.0 < r.to - JOINT) {
+        return false;
+    }
+    let (from, to) = (r.path[0], r.path[r.path.len() - 1]);
+    let l = (to.x - from.x).hypot(to.y - from.y).max(1e-6);
+    let role = |s: &Segment| streets[s.street].role.as_str();
+    let deck = r.path.windows(2).any(|w| {
+        segments.near(r.street, w[0], w[1], DECK).into_iter().any(|s| {
+            matches!(role(s), "bridge" | "ford" | "causeway") && w.iter().map(|&p| g::distance(p, s.a, s.b).0).fold(f64::INFINITY, f64::min) < DECK
+        })
+    });
+    let alongside = segments.near(r.street, r.middle, r.middle, ALONGSIDE).into_iter().any(|s| {
+        let d = (s.b.x - s.a.x).hypot(s.b.y - s.a.y).max(1e-6);
+        let parallel = ((s.b.x - s.a.x) * (to.x - from.x) + (s.b.y - s.a.y) * (to.y - from.y)).abs() > 0.87 * d * l;
+        !steep.contains(&s.street) && parallel && g::distance(r.middle, s.a, s.b).0 < ALONGSIDE
+    });
+    !deck && !alongside && !detour(r, &line, &own_joints, streets, segments, steep, joints, (DETOUR * length).max(SHORT_DETOUR))
+}
+
+/// Whether ordinary ways join the two ends of a run within `limit` metres.
+#[allow(clippy::too_many_arguments)]
+fn detour(
+    r: &Run,
+    line: &Line<'_>,
+    own_joints: &[(f64, Point)],
+    streets: &[Street],
+    segments: &Segments,
+    steep: &BTreeSet<usize>,
+    joints: &mut HashMap<usize, Vec<(f64, Point)>>,
+    limit: f64,
+) -> bool {
+    type Node = (i64, i64);
+    let node = |p: Point| -> Node { ((p.x * 5.0).round() as i64, (p.y * 5.0).round() as i64) };
+    let mut edges: HashMap<Node, Vec<(Node, u64)>> = HashMap::new();
+    let mut add = |stops: &[(f64, Point)], except: (f64, f64)| {
+        for w in stops.windows(2) {
+            if w[0].0 < except.0 - 1e-6 || w[1].0 > except.1 + 1e-6 {
+                let (a, b, d) = (node(w[0].1), node(w[1].1), ((w[1].0 - w[0].0) * 1000.0) as u64);
+                edges.entry(a).or_default().push((b, d));
+                edges.entry(b).or_default().push((a, d));
+            }
+        }
+    };
+    let (from, to) = (line.at(r.from), line.at(r.to));
+    let mut own: Vec<(f64, Point)> = own_joints.iter().copied().filter(|j| j.0 < r.from - 1e-6 || j.0 > r.to + 1e-6).collect();
+    own.extend([(r.from, from), (r.to, to)]);
+    own.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // A run end at a joint keeps the joint's own point.
+    for stop in &mut own {
+        if let Some(j) = own_joints.iter().find(|j| (j.0 - stop.0).abs() < 1e-6) {
+            stop.1 = j.1;
+        }
+    }
+    let end = |at: f64, p: Point| node(own.iter().find(|s| s.0 == at).map_or(p, |s| s.1));
+    let (start, goal) = (end(r.from, from), end(r.to, to));
+    add(&own, (r.from, r.to));
+    let near: BTreeSet<usize> = segments.grid.query(segment_box(from, to), 0.5 * limit).into_iter().map(|k| segments.all[k].street).filter(|s| *s != r.street && !steep.contains(s)).collect();
+    for s in near {
+        if streets[s].path.len() < 2 {
+            continue;
+        }
+        let stops = joints.entry(s).or_insert_with(|| segments.joints(s, &Line::new(&streets[s].path)));
+        add(stops, (f64::INFINITY, f64::NEG_INFINITY));
+    }
+    let limit = (limit * 1000.0) as u64;
+    let mut open = BTreeSet::from([(0u64, start)]);
+    let mut done: BTreeSet<Node> = BTreeSet::new();
+    while let Some((d, n)) = open.pop_first() {
+        if d > limit {
+            return false;
+        }
+        if n == goal {
+            return true;
+        }
+        if done.insert(n) {
+            open.extend(edges.get(&n).into_iter().flatten().map(|&(next, step)| (d + step, next)));
+        }
+    }
+    false
 }
 
 /// Mountain cultures wind their long stairs up the slope; the others lay straight urban flights.
@@ -271,6 +365,9 @@ pub(super) fn settle(streets: &mut Vec<Street>, enclosures: &[Enclosure], surfac
             runs.push(Run { street: i, from, to, grade, path, middle: line.at((from + to) * 0.5) });
         }
     }
+    let steep: BTreeSet<usize> = runs.iter().map(|r| r.street).collect();
+    let mut joints = HashMap::new();
+    runs.retain(|r| useful(r, streets, &segments, &steep, &mut joints));
     // The steepest ways keep their stairs, an alternative beside one stays a lane.
     let mut order: Vec<usize> = (0..runs.len()).collect();
     order.sort_by(|&a, &b| runs[b].grade.total_cmp(&runs[a].grade).then(a.cmp(&b)));
@@ -303,7 +400,7 @@ pub(super) fn settle(streets: &mut Vec<Street>, enclosures: &[Enclosure], surfac
         }
         for (k, (a, b, stair)) in pieces.into_iter().enumerate() {
             let stretch = line.stretch(a, b);
-            let widths = stretch.iter().map(|&(s, _)| line.width(&original.widths, s).min(if stair { WIDE } else { f64::INFINITY })).collect();
+            let widths = stretch.iter().map(|&(s, _)| line.width(&original.widths, s)).collect();
             let piece = Street {
                 path: stretch.into_iter().map(|v| v.1).collect(),
                 widths,
@@ -413,16 +510,25 @@ mod tests {
     fn surface<'a>(height: &'a [f32], water: &'a [u8]) -> Surface<'a> {
         Surface { geometry: None, width: 256.0, n: 128, height, water, interpolation: Default::default() }
     }
-    fn link(y: f64) -> Street {
-        Street { path: vec![Point { x: 20.0, y }, Point { x: 200.0, y }], widths: vec![3.0; 2], rank: 3, role: "stairs".into() }
+    fn way(points: &[(f64, f64)], role: &str) -> Street {
+        Street { path: points.iter().map(|&(x, y)| Point { x, y }).collect(), widths: vec![3.0; points.len()], rank: 3, role: role.into() }
+    }
+    /// Steep links from x = `from` to `to`, each at its y, between two streets across the slope.
+    fn town(from: f64, to: f64, links: &[f64]) -> Vec<Street> {
+        let mut out: Vec<Street> = links.iter().map(|&y| way(&[(from, y), (to, y)], "stairs")).collect();
+        out.extend([from, to].map(|x| way(&[(x, 10.0), (x, 240.0)], "street")));
+        out
+    }
+    fn roles(streets: &[Street], count: usize) -> Vec<&str> {
+        streets[..count].iter().map(|s| s.role.as_str()).collect()
     }
 
     #[test]
     fn a_credible_grade_stays_a_lane() {
         let (height, water) = (ground(|x| x * 0.28), vec![0u8; 128 * 128]);
-        let mut streets = vec![link(100.0)];
+        let mut streets = town(100.0, 150.0, &[100.0]);
         settle(&mut streets, &[], surface(&height, &water), &LayoutConfig::default(), "italian-comune");
-        assert_eq!(streets.len(), 1);
+        assert_eq!(streets.len(), 3);
         assert_eq!(streets[0].role, "lane");
     }
 
@@ -430,35 +536,56 @@ mod tests {
     fn only_the_steep_stretch_of_a_link_is_a_stair() {
         // Steep between 100 and 140 m, gentle elsewhere.
         let (height, water) = (ground(|x| x * 0.1 + (x.clamp(100.0, 140.0) - 100.0) * 0.4), vec![0u8; 128 * 128]);
-        let mut streets = vec![link(100.0)];
+        let mut streets = town(20.0, 200.0, &[100.0]);
         settle(&mut streets, &[], surface(&height, &water), &LayoutConfig::default(), "italian-comune");
-        assert_eq!(streets.len(), 3);
-        assert_eq!(streets.iter().map(|s| s.role.as_str()).collect::<Vec<_>>(), ["lane", "stairs", "lane"]);
-        let length = len(&streets[1].path);
+        assert_eq!(streets.len(), 5);
+        let link = [&streets[0], &streets[3], &streets[4]];
+        assert_eq!(link.map(|s| s.role.as_str()), ["lane", "stairs", "lane"]);
+        let length = len(&link[1].path);
         assert!((30.0..50.0).contains(&length), "{length}");
-        // The pieces stay joined end to end.
-        for end in [streets[0].path[streets[0].path.len() - 1], streets[2].path[0]] {
-            assert!(streets[1].path.iter().any(|p| (p.x - end.x).hypot(p.y - end.y) < 1e-9));
+        // The pieces stay joined end to end, at the width of the lane.
+        for end in [link[0].path[link[0].path.len() - 1], link[2].path[0]] {
+            assert!(link[1].path.iter().any(|p| (p.x - end.x).hypot(p.y - end.y) < 1e-9));
         }
+        assert!(link[1].widths.iter().all(|&w| w == 3.0));
     }
 
     #[test]
     fn a_lane_beside_a_stair_stays_a_lane() {
         let (height, water) = (ground(|x| x * 0.4), vec![0u8; 128 * 128]);
-        let mut streets = vec![link(60.0), link(90.0), link(180.0)];
+        let mut streets = town(100.0, 150.0, &[60.0, 90.0, 180.0]);
         settle(&mut streets, &[], surface(&height, &water), &LayoutConfig::default(), "italian-comune");
-        assert_eq!(streets.iter().map(|s| s.role.as_str()).collect::<Vec<_>>(), ["stairs", "lane", "stairs"]);
+        assert_eq!(roles(&streets, 3), ["stairs", "lane", "stairs"]);
         assert!(streets.iter().all(|s| s.path.len() == 2));
+    }
+
+    #[test]
+    fn a_stair_is_short_joins_two_streets_and_shortens_a_detour() {
+        let (height, water) = (ground(|x| x * 0.4), vec![0u8; 128 * 128]);
+        let settled = |mut streets: Vec<Street>| {
+            settle(&mut streets, &[], surface(&height, &water), &LayoutConfig::default(), "italian-comune");
+            streets[0].role.clone()
+        };
+        assert_eq!(settled(town(100.0, 150.0, &[100.0])), "stairs");
+        // A long flight, a way that ends nowhere, a link across another street, one beside a deck.
+        assert_eq!(settled(town(40.0, 200.0, &[100.0])), "lane");
+        assert_eq!(settled(town(100.0, 150.0, &[100.0])[..2].to_vec()), "lane");
+        let with = |extra: Street| [town(100.0, 150.0, &[100.0]), vec![extra]].concat();
+        assert_eq!(settled(with(way(&[(125.0, 60.0), (125.0, 140.0)], "lane"))), "lane");
+        assert_eq!(settled(with(way(&[(150.0, 108.0), (190.0, 108.0)], "bridge"))), "lane");
+        // An ordinary way round joins both ends within twice the length; a far one does not.
+        assert_eq!(settled(with(way(&[(100.0, 130.0), (150.0, 130.0)], "lane"))), "lane");
+        assert_eq!(settled(with(way(&[(100.0, 230.0), (150.0, 230.0)], "lane"))), "stairs");
     }
 
     #[test]
     fn a_mountain_stair_winds_about_its_way() {
         let (height, water) = (ground(|x| x * 0.45), vec![0u8; 128 * 128]);
-        let mut streets = vec![link(100.0)];
+        let mut streets = town(100.0, 150.0, &[100.0]);
         settle(&mut streets, &[], surface(&height, &water), &LayoutConfig::default(), "himalayan-terraces");
         assert_eq!(streets[0].role, "stairs");
         let reach = streets[0].path.iter().map(|p| (p.y - 100.0).abs()).fold(0.0, f64::max);
         assert!((1.0..5.0).contains(&reach), "{reach}");
-        assert_eq!((streets[0].path[0].x, streets[0].path[streets[0].path.len() - 1].x), (20.0, 200.0));
+        assert_eq!((streets[0].path[0].x, streets[0].path[streets[0].path.len() - 1].x), (100.0, 150.0));
     }
 }

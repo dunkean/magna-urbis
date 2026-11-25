@@ -4,9 +4,9 @@
  */
 import { updateYardEnclosures } from '../../render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../../render/city3dMeshes';
-import { city3dBuildings, city3dFarmBuildings, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
+import { city3dBuildings, city3dFarmBuildings, city3dFarmSources, city3dPadSteps, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
 import { UrbanGroundCuts } from '../urbanGroundCuts';
-import { UrbanGroundShape, groundShapeLots } from '../urbanGroundShape';
+import { UrbanGroundShape, blockOutlines, groundShapeLots } from '../urbanGroundShape';
 import { city3dStairs } from '../../render/city3dStairs';
 import { stairStreetColor, type StairPaintOptions } from '../../render/cityCanvas';
 import { roadGroundKey } from '../../render/roadStyle';
@@ -15,6 +15,7 @@ import { city3dUnderdarkOrnaments, underdarkOrnaments } from '../../render/under
 
 import { type Building3dVisual } from '../../render/urbanBuildingGeometry';
 import type { Point } from '../../../../rust/bridge/housesContract';
+import type { PlacementBatch } from '../../../../rust/bridge/urbanArchitecture';
 import type { City3dContext } from './cityContext';
 /** The options of the ground pass that paints the town's streets in this 3D ground (satellite or plan ink, as tiles draw them). */
 function stairPaintOptions(cityContext: City3dContext): StairPaintOptions {
@@ -42,29 +43,31 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
   const scene = cityContext.options.getProjection?.() ?? cityContext.options.getScene(),
     layouts = cityContext.options.getLayouts?.(),
     regional = cityContext.options.getRegionalStreets?.();
-  // Hillside lots levelled into the 3D ground (Advanced, urbanGroundShape.ts), once per lots, buildings, relief and
-  // choice; off, nothing is built and the terrain keeps its natural ground. Everything below seats on that ground: a new
-  // shaping gives it new samplers, which rebuild it.
-  const shapePartitions = cityContext.groundShaping && !flat ? cityContext.options.getPartitions?.() : undefined,
-    nextShape = [shapePartitions, shapePartitions && scene, shapePartitions && cityContext.surfaceDecor, shapePartitions && cityContext.options.getSurface?.()?.height.data, t];
+  const farmsteads = cityContext.options.getSemantic?.()?.landuse?.farmsteads;
+  const placeholders = cityContext.options.getPlaceholderBuildings?.();
+  // The floors are set on the natural ground and the 3D ground is shaped to them: buildings sunk into the slope, hillside
+  // lots levelled (Advanced, urbanGroundShape.ts), once per lots, buildings, relief and choice. Everything below seats on
+  // that ground: a new shaping gives it new samplers, which rebuild it. Projections of accepted plans keep their recorded
+  // heights, and the caves their floors: nothing is shaped to them.
+  const cut = !cityContext.options.getGroundSettings?.(cityContext.ground)?.underdark,
+    shaped = !flat && cut && !(scene && 'projection' in scene),
+    partitions = shaped ? cityContext.options.getPartitions?.() : undefined,
+    nextShape = [partitions, shaped && scene, shaped && farmsteads, shaped && placeholders, shaped && cityContext.groundShaping, layouts, shaped && cityContext.surfaceDecor, shaped && cityContext.options.getSurface?.()?.height.data, t];
   if (nextShape.some((input, i) => input !== cityContext.groundShapeInputs[i])) {
     cityContext.groundShapeInputs = nextShape;
     const started = performance.now(),
-      lots =
-        shapePartitions?.length && scene
-          ? groundShapeLots(
-              shapePartitions,
-              scene.buildings.map(b => b.footprint),
-            )
-          : [],
-      shape = new UrbanGroundShape(lots, (x, y) => t.naturalGroundAt(x, y));
+      ground = { at: (x: number, y: number): number => t.naturalGroundAt(x, y) ?? NaN, cut, blockAt: blockOutlines(layouts ?? []) };
+    cityContext.seatGround = ground;
+    const steps = city3dPadSteps(shaped ? [...((scene as PlacementBatch | undefined)?.buildings ?? []), ...city3dFarmSources(farmsteads, placeholders, ground.at)] : [], ground, cityContext.stiltWaterAt);
+    let pads = steps.next();
+    while (!pads.done) pads = steps.next();
+    const shape = new UrbanGroundShape(groundShapeLots(partitions ?? [], pads.value, cityContext.groundShaping), ground.at);
     t.setGroundShape(shape.empty ? undefined : shape);
     cityContext.groundShapeStats = { lots: shape.size, ms: Math.round(performance.now() - started) };
     if (cityContext.surfaceDecor) cityContext.seatSamplers(cityContext.surfaceDecor);
     force = true;
   }
-  const farmsteads = cityContext.options.getSemantic?.()?.landuse?.farmsteads;
-  const placeholders = cityContext.options.getPlaceholderBuildings?.();
+  const ground = cityContext.heightAt && cityContext.seatGround;
   if (farmsteads !== cityContext.farmInputs[0] || cityContext.heightAt !== cityContext.farmInputs[1] || placeholders !== cityContext.farmInputs[2]) {
     cityContext.farmInputs = [farmsteads, cityContext.heightAt, placeholders];
     cityContext.farmBuildings = undefined;
@@ -118,7 +121,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     clearTimeout(cityContext.detailTimer);
     cityContext.pendingSwaps.clear();
     const started = performance.now();
-    cityContext.display = city3dBuildings(scene, { heightAt: cityContext.heightAt, waterAt: cityContext.stiltWaterAt, details: cityContext.details, terraces: cityContext.builtTerraces });
+    cityContext.display = city3dBuildings(scene, { heightAt: cityContext.heightAt, ground, waterAt: cityContext.stiltWaterAt, details: cityContext.details, terraces: cityContext.builtTerraces });
     if (nextStructureInputs.some((input, i) => input !== cityContext.structureInputs[i])) {
       cityContext.structureInputs = nextStructureInputs;
       // Architecture edits/colours do not change bridges, walls or quays.
@@ -175,7 +178,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     // Farm buildings and the stand-in houses of places still waiting for their plan stand as meshes like every
     // other building: the massing-to-mesh code, materials, classes, tint and snow of the towns, each on the terrain
     // under its own footprint.
-    cityContext.farmBuildings ??= city3dFarmBuildings(farmsteads, placeholders, cityContext.heightAt);
+    cityContext.farmBuildings ??= city3dFarmBuildings(city3dFarmSources(farmsteads, placeholders, ground?.at ?? cityContext.heightAt), { heightAt: cityContext.heightAt, ground });
     cityContext.display = city3dWithExtras(cityContext.display, [...cityContext.structureBuildings, ...cityContext.stairBuildings, ...yardMeshes, ...cityContext.canopyBuildings, ...cityContext.ornamentBuildings, ...cityContext.farmBuildings]);
     cityContext.displayMs = performance.now() - started;
   }

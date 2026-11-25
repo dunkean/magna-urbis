@@ -7,6 +7,7 @@ mod bridge_leads;
 mod bridge_selection;
 mod crossing_approaches;
 mod curtains;
+mod deck_clearance;
 mod ends;
 mod exits;
 mod hierarchy;
@@ -32,6 +33,9 @@ pub(super) use bridge_leads::bridge_leads;
 pub(super) use bridge_selection::select_bridges;
 pub(super) use bridge_selection::{select_bridges_graded, village_crossings};
 pub(super) use crossing_approaches::join_crossings;
+#[cfg(test)]
+pub(super) use deck_clearance::deck_clashes;
+pub(super) use deck_clearance::uncross_decks;
 pub(super) use ends::{polish_ends, seat_mouths, square_ends, weld_ends};
 pub(super) use exits::{ensure_regional_access, resolve_exits};
 pub(super) use hierarchy::{hierarchy, rank_widths, town_roads, town_table};

@@ -81,12 +81,32 @@ fn curtain(shape: &Shape, cell: f64, small: bool) -> Shape {
 /// A harbour stands outside the walls of its town unless it is asked inside. A canal town keeps its
 /// harbour inside: its water is its street network, and its canals pass the curtain at their mouths.
 fn harbour_inside(culture: &str, cfg: &LayoutConfig) -> bool {
-    cfg.port_enclosure == "inside" || matches!(cfg.port_enclosure.as_str(), "" | "auto") && super::super::lagoon::canal_town(culture, cfg)
+    cfg.port_enclosure == "inside" || matches!(cfg.port_enclosure.as_str(), "" | "auto") && crate::urban::lagoon::canal_town(culture, cfg)
 }
 /// The harbour fronts of a laid plan, as its walls met them when they were traced.
 pub(in crate::urban) fn harbour_fronts(layout: &super::super::Layout) -> Vec<Shape> {
     let inside = layout.config.as_ref().is_some_and(|cfg| harbour_inside(&layout.culture, cfg));
-    macroplan::harbour::fronts(&layout.streets, inside)
+    let mut fronts = macroplan::harbour::fronts(&layout.streets, inside, &layout.culture, 0.0);
+    if layout.config.as_ref().is_some_and(|cfg| crate::urban::lagoon::canal_town(&layout.culture, cfg)) {
+        let rings: Vec<Shape> = layout.enclosures.iter().filter(|e| e.purpose.is_empty() && e.path.len() >= 4).map(closed_shape).collect();
+        fronts.extend(water_side(&rings));
+    }
+    fronts
+}
+/// A canal town stands on its water: its canals open on the shore through the curtain, so every circuit
+/// counts as a quay kept inside, a thin harbour front along its foot, and leaves no beach.
+fn water_side(rings: &[Shape]) -> Vec<Shape> {
+    use geo::Buffer;
+    let grown = |s: &Shape, d: f64| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g::shapes(g::polygon(s).buffer(d)))).unwrap_or_default();
+    rings.iter().flat_map(|ring| {
+        let plain = Shape { outer: ring.outer.clone(), holes: vec![] };
+        let foot = grown(&plain, 1.0);
+        grown(&plain, 2.0).into_iter().flat_map(|s| foot.iter().fold(vec![s], |rest, f| rest.iter().flat_map(|s| g::difference(s, f)).collect())).collect::<Vec<_>>()
+    }).collect()
+}
+/// Ground (m) the works of a curtain take in front of it: its outer half, the berm and the ditch.
+fn works_depth(curtain: f64, ditch: f64) -> f64 {
+    (curtain * 0.5 + ditch + 4.0).min(16.0)
 }
 /// Half the widest gap (m) between two town circuits that stand side by side.
 const JOIN_REACH: f64 = 40.0;
@@ -411,11 +431,16 @@ pub(super) fn fortify(
     let walls = fortification::trace_enclosures(walls, &plan.quarters.iter()
         .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
     let walls = walls.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, style.curtain_width)).collect::<Vec<_>>();
+    // The harbour of a walled port is decided before its walls, on the shore they reach.
+    let yards = macroplan::harbour::town_port(&mut plan.quarters, &mut plan.streets, &walls, surface, cfg, site, culture, morph, harbour_inside(culture, cfg));
     // Walls against water are decided here, on the trace, with the quays the plan already laid:
     // every circuit is a closed ring on dry land behind its wall walk, the harbour outside unless
     // it is asked inside. Nothing later opens the curtain for the water.
     let founding: Vec<Shape> = plan.quarters.iter().map(|q| q.shape.clone()).collect();
-    let harbour = macroplan::harbour::fronts(&plan.streets, harbour_inside(culture, cfg));
+    let mut harbour = macroplan::harbour::fronts(&plan.streets, harbour_inside(culture, cfg), culture, works_depth(style.curtain_width, style.ditch_width[1]));
+    if crate::urban::lagoon::canal_town(culture, cfg) {
+        harbour.extend(water_side(&walls));
+    }
     let dry = |walls: Vec<Shape>, width: f64| fortification::water_fronts(walls, &founding, &harbour, surface, width - fortification::ribbon_half(kind));
     let walls = dry(walls, style.curtain_width);
     // Lopsided growth builds the second enclosure against the old one: the old
@@ -467,20 +492,20 @@ pub(super) fn fortify(
     style.options(cfg);
     style.cave = cave;
     // The land gates of the town circuits are decided here, on the armature, while nothing stands
-    // on the trace: the budget keeps the passages, the curtain turns square to their streets, the
+    // on the trace: the budget keeps the passages, their streets turn square to the curtain, the
     // other crossings close. The quarters are then cut along curtains whose gates are final. A
     // planned rectangle, a bastioned front, a cave barrier and a stretch shared by two circuits
     // keep their line.
     let moat = style.ditch_width[1];
-    let gated = |purpose: &'static str, curtain_width: f64, squared: bool| fortification::Circuit {
-        pop: site.population, purpose, kind, curtain_width, moat, grade: cfg.max_street_grade, squared, key: &site.key,
+    let gated = |purpose: &'static str, curtain_width: f64, squared: bool, streets_turn: bool| fortification::Circuit {
+        pop: site.population, purpose, kind, curtain_width, moat, grade: cfg.max_street_grade, squared, streets_turn, key: &site.key,
         improvisation: cfg.street_improvisation,
     };
     let squared = !(square || attached || cave || style.id == "bastioned");
     let mut passages = vec![];
     let mut decided = Vec::with_capacity(walls.len());
     for wall in &walls {
-        let (wall, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated("", style.curtain_width, squared), surface);
+        let (wall, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated("", style.curtain_width, squared, !(attached || cave)), surface);
         passages.push((kept, shut));
         decided.push(wall);
     }
@@ -500,7 +525,7 @@ pub(super) fn fortify(
     } else {
         fossil
     };
-    // A large planned capital keeps one circuit per epoch (palace/inner/outer city).
+    // A large planned capital draws one circuit per epoch (palace/inner/outer city, see `retained`).
     let circuits = if metropolis || planned && site.population >= 100_000 { walled } else { walled.min(2) };
     // The circuit the extension attaches to is one of the two walls, not a fossil.
     let circuits = if attached { circuits.min(walled - 1) } else { circuits };
@@ -541,7 +566,11 @@ pub(super) fn fortify(
             let old = fortification::trace_enclosures(old, &plan.quarters.iter()
                 .map(|q| q.shape.clone()).collect::<Vec<_>>(), surface);
             partition(&mut plan.quarters, &old);
-            inner_walls.extend(dry(old.into_iter().map(|s| fortification::parameter_trace(s, surface, cfg, culture, inner_style.curtain_width)).collect(), inner_style.curtain_width));
+            // An older circuit parted by a wide water stood on its main bank only.
+            inner_walls.extend(old.into_iter().filter_map(|s| {
+                let trace = fortification::parameter_trace(s, surface, cfg, culture, inner_style.curtain_width);
+                dry(vec![trace], inner_style.curtain_width).into_iter().max_by(|a, b| g::area(a).total_cmp(&g::area(b)))
+            }));
         }
     }
     // An older circuit lies inside the newer one, clear of its curtain: it is
@@ -557,6 +586,13 @@ pub(super) fn fortify(
                 .filter(|k| g::area(k) >= 0.5 * area)
                 .map(|k| if g::area(&k) >= area - 1.0 { s } else { k })
         }).collect();
+        if !citadel {
+            inner_walls = fortification::retained(inner_walls, &walls);
+        }
+    }
+    // The port yards outside the walls belong to the youngest epoch.
+    if let Some(last) = phases.last_mut() {
+        last.shapes.extend(yards);
     }
     // A town's enceinte, square or polygonal, is filled to its wall street (the
     // castle keeps its own ward); a small settlement fills a square circuit and
@@ -599,7 +635,7 @@ pub(super) fn fortify(
         let purpose = if i >= castle_at { "castle" } else if citadel && i >= outer { "citadel" } else { "" };
         let (kept, shut) = if i < outer { std::mem::take(&mut passages[i]) } else {
             let width = if i >= castle_at { style.curtain_width } else { inner_style.curtain_width };
-            let (_, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated(purpose, width, false), surface);
+            let (_, kept, shut) = fortification::decide_gates(wall, &mut plan.streets, &gated(purpose, width, false, false), surface);
             (kept, shut)
         };
         let path = closed(&wall.outer);

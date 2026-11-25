@@ -180,8 +180,10 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
     });
     footprint.push(...clipped.slice(pendingGround.length).flat());
   } else footprint.push(...footprintSources);
-  // Native previews supply occupied houses later; an empty cadastre has no fences.
-  const lotEnclosures: import('../../../../../rust/bridge/urban').LotEnclosure[] = [];
+  // Native previews supply occupied houses later; an empty cadastre has no fences. Imported towns (OSM) bring their
+  // surveyed fences, walls and hedges on the partition: kept as they are, under the derived yard boundaries.
+  const fixedLotEnclosures = partitions.flatMap(p => (layouts.some(l => l.key === p.key) ? (p.lotEnclosures ?? []) : []));
+  const lotEnclosures: import('../../../../../rust/bridge/urban').LotEnclosure[] = [...fixedLotEnclosures];
   const enclosureProfiles = layouts.map(l => partitions.find(p => p.key === l.key)?.enclosure);
   return {
     layouts,
@@ -197,6 +199,7 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
     quays,
     ground,
     lotEnclosures,
+    fixedLotEnclosures,
     enclosureProfiles,
     bins: {
       blocks: new SpatialBins(

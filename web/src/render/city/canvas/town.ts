@@ -259,7 +259,7 @@ export function* drawCitySteps(ctx: CanvasRenderingContext2D, scene: CityScene, 
         }
         stroked.marks.add({ stroke: look.rails.paint, width: look.rails.width, cap: 'butt' }, rails);
       }
-      if (look.stairs) stroked.marks.add({ stroke: look.stairs.paint, width: look.stairs.width }, stairMarks(s.street.path, s.width));
+      if (look.stairs) stroked.marks.add({ stroke: look.stairs.paint, width: look.stairs.width, alpha: look.stairs.alpha }, stairMarks(s.street.path, s.width));
     }
     if (surfaced.length) {
       const streets = surfaced.map(x => ({ ...x.s.street, path: x.s.joined.path, widths: x.s.joined.pathWidths })),

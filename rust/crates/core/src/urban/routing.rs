@@ -184,11 +184,20 @@ pub(super) fn segment_clear(surface: Surface<'_>, a: Point, b: Point, max_grade:
     inspect_segment(surface, a, b, true).is_some_and(|g| g <= max_grade + 1e-8)
 }
 
+/// Dry and within the grade limit all along. A hairpin bend is a levelled platform: it is held to the ground it can be
+/// built on instead.
 pub(super) fn path_clear(surface: Surface<'_>, path: &[Point], max_grade: f64) -> bool {
-    path.len() >= 2
-        && path
-            .windows(2)
-            .all(|p| segment_clear(surface, p[0], p[1], max_grade))
+    use crate::hairpins;
+    if path.len() < 2 {
+        return false;
+    }
+    let mut bends: Option<Vec<bool>> = None;
+    path.windows(2).enumerate().all(|(k, w)| {
+        let Some(grade) = inspect_segment(surface, w[0], w[1], true) else {
+            return false;
+        };
+        grade <= max_grade + 1e-8 || grade <= hairpins::PLATFORM && bends.get_or_insert_with(|| hairpins::bends(path))[k]
+    })
 }
 
 /// Wet intervals, including water between two dry vertices. Keep the exact
@@ -961,7 +970,8 @@ impl<'a> RoutePlanner<'a> {
         }
         // Round the lattice corners (staircase steps, 45° kinks) by corner
         // cutting, keeping each cut only where the new legs stay dry, within
-        // the grade limit and inside the corridor. Hairpins keep their apex.
+        // the grade limit and inside the corridor. Hairpins keep their apex
+        // here; their legs and tip are curved next.
         for _ in 0..2 {
             let mut rounded = vec![simplified[0]];
             for k in 1..simplified.len().saturating_sub(1) {
@@ -993,10 +1003,88 @@ impl<'a> RoutePlanner<'a> {
             simplified = rounded;
         }
         debug_assert!(simplified.windows(2).all(|p| self.inspect(p[0], p[1]).is_some_and(|g| g <= max_grade + 1e-8)));
+        let simplified = self.curve_hairpins(simplified, max_grade, shape);
         debug_assert!(
             shape.is_none_or(|shape| simplified.windows(2).all(|p| shape.inside(p[0], p[1])))
         );
         Some(simplified)
+    }
+
+    /// The legs of a hairpin curve gently with the slope (towards an even climb between their ends, and open
+    /// at the bend) wherever the curve holds the grade, the water and the corridor, and its tip becomes a bend.
+    /// A path without a hairpin is returned as it is.
+    fn curve_hairpins(&self, path: Vec<Point>, max_grade: f64, shape: Option<&InsideIndex<'_>>) -> Vec<Point> {
+        // Shortest leg that curves, largest offset from its chord and length of one piece of the curve (m).
+        const LEG: f64 = 24.0;
+        const REACH: f64 = 9.0;
+        const PIECE: f64 = 8.0;
+        // Width a bend is sized for: the street has none yet (m).
+        const NOMINAL: f64 = 7.0;
+        let n = path.len();
+        let hairpin = |k: usize| {
+            k > 0 && k + 1 < n && {
+                let (a, v, b) = (path[k - 1], path[k], path[k + 1]);
+                (v.x - a.x) * (b.x - v.x) + (v.y - a.y) * (b.y - v.y) < -0.1 * distance(a, v) * distance(v, b)
+            }
+        };
+        if !(1..n.saturating_sub(1)).any(hairpin) {
+            return path;
+        }
+        let clear = |points: &[Point]| {
+            points.windows(2).all(|w| {
+                segment_clear(self.surface, w[0], w[1], max_grade) && shape.is_none_or(|shape| shape.inside(w[0], w[1]))
+            })
+        };
+        let mut out = vec![path[0]];
+        for k in 0..n - 1 {
+            let (a, b) = (path[k], path[k + 1]);
+            let l = distance(a, b);
+            let (start, end) = (hairpin(k), hairpin(k + 1));
+            if l >= LEG && (start || end) {
+                let normal = Point { x: -(b.y - a.y) / l, y: (b.x - a.x) / l };
+                // Away from the other leg of each hairpin.
+                let outward = |from: Point, other: Point| -((other.x - from.x) * normal.x + (other.y - from.y) * normal.y).signum();
+                let at_start = if start { outward(a, path[k - 1]) } else { 0.0 };
+                let at_end = if end { outward(b, path[k + 2]) } else { 0.0 };
+                let reach = (0.1 * l).min(REACH);
+                let pieces = (l / PIECE).ceil().clamp(4.0, 16.0) as usize;
+                let (ha, hb) = (self.surface.height_at(a), self.surface.height_at(b));
+                let moved = |p: Point, d: f64| Point { x: p.x + normal.x * d, y: p.y + normal.y * d };
+                let curve = |scale: f64, side: f64| -> Vec<Point> {
+                    let mut leg = vec![a];
+                    for i in 1..pieces {
+                        let t = i as f64 / pieces as f64;
+                        let p = lerp(a, b, t);
+                        let across = (self.surface.height_at(moved(p, 2.0)) - self.surface.height_at(moved(p, -2.0))) / 4.0;
+                        let above = self.surface.height_at(p) - (ha + (hb - ha) * t);
+                        let level = if across.abs() > 0.02 { (-above / across).clamp(-reach, reach) } else { 0.0 };
+                        // Level with the leg at both ends: the tip keeps its angle.
+                        let swell = (std::f64::consts::PI * t).sin().powi(2);
+                        let bow = 1.3 * reach * swell * (at_start * (1.0 - t) + at_end * t);
+                        leg.push(moved(p, scale * (level * swell + side * bow)));
+                    }
+                    leg.push(b);
+                    leg
+                };
+                let found = [(1.0, 1.0), (1.0, -1.0), (0.5, 1.0), (0.5, -1.0), (0.5, 0.0)]
+                    .into_iter()
+                    .map(|(scale, side)| curve(scale, side))
+                    .find(|leg| clear(leg));
+                out.extend(found.unwrap_or_else(|| vec![a, b]).into_iter().skip(1));
+            } else {
+                out.push(b);
+            }
+        }
+        // The bends are levelled platforms, for a road that keeps to a grade.
+        if max_grade > crate::hairpins::PLATFORM {
+            return out;
+        }
+        let level = |line: &[Point]| {
+            line.windows(2).all(|w| {
+                self.inspect(w[0], w[1]).is_some_and(|g| g <= crate::hairpins::PLATFORM) && shape.is_none_or(|shape| shape.inside(w[0], w[1]))
+            })
+        };
+        crate::hairpins::round(&out, NOMINAL, &[], |_, bend| level(bend)).unwrap_or(out)
     }
 }
 
@@ -1222,6 +1310,25 @@ mod tests {
         let stairs = planner.route(a, b, 0.5).unwrap();
         assert_eq!(stairs.len(), 2);
         assert!(!path_clear(surface, &stairs, 0.12));
+    }
+
+    #[test]
+    fn hairpin_legs_curve_and_their_tip_is_rounded() {
+        let n = 48;
+        let (height, water) = (vec![0.0; n * n], vec![0; n * n]);
+        let surface = Surface { geometry: None, width: 240.0, n, height: &height, water: &water, interpolation: Default::default() };
+        let planner = RoutePlanner::new(surface, (20.0, 20.0, 220.0, 220.0));
+        let path: Vec<Point> = [(40.0, 60.0), (140.0, 80.0), (40.0, 110.0)].iter().map(|&(x, y)| Point { x, y }).collect();
+        let curved = planner.curve_hairpins(path.clone(), 0.12, None);
+        assert_eq!((curved[0], curved[curved.len() - 1]), (path[0], path[2]));
+        let turn = |w: &[Point]| ((w[2].y - w[1].y).atan2(w[2].x - w[1].x) - (w[1].y - w[0].y).atan2(w[1].x - w[0].x)).cos();
+        assert!(curved.windows(3).all(|w| turn(w) > 0.6), "the tip stayed sharp");
+        assert!(path_clear(surface, &curved, 0.12));
+        let off = |p: Point| g::distance(p, path[0], path[1]).0.min(g::distance(p, path[1], path[2]).0);
+        assert!(curved.iter().map(|&p| off(p)).fold(0.0, f64::max) > 2.0, "the legs stayed straight");
+        // A path without a hairpin is untouched.
+        let plain = vec![path[0], path[1], Point { x: 200.0, y: 120.0 }];
+        assert_eq!(planner.curve_hairpins(plain.clone(), 0.12, None), plain);
     }
 
     #[test]

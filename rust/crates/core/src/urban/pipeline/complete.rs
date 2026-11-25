@@ -25,6 +25,9 @@ pub(super) fn complete(town: &Town<'_>, mut layout: Layout, baseline: Option<Lay
     let mut laps = Lap::new("tail");
     network::clear_water(&mut layout, population, town.physical, reclaimed, config.max_street_grade);
     laps.lap("clear_water");
+    // Every deck is known: no two of them cross or overlap.
+    network::uncross_decks(&mut layout, town.physical, config);
+    laps.lap("uncross_decks");
     shanty::extend(town.seed, &mut layout, town.site, config, kind, town.physical, town.roads);
     laps.lap("shanty.extend");
     // Last: boats, jetties, cranes and the other harbour furniture join the finished waterfront
@@ -43,6 +46,7 @@ pub(super) fn complete(town: &Town<'_>, mut layout: Layout, baseline: Option<Lay
     }
     if let Some(mut baseline) = baseline {
         network::clear_water(&mut baseline, population, town.physical, reclaimed, config.max_street_grade);
+        network::uncross_decks(&mut baseline, town.physical, config);
         harbour_furniture::furnish(&town.key_seed, &mut baseline, population, config, town.physical);
         fortification::drop_dead_gates(&mut baseline);
         edits::quarter_baseline::retain(&mut layout, baseline);

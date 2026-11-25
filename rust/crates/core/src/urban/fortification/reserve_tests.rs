@@ -73,9 +73,9 @@ fn walls16_moat_is_continuous_or_absent() {
     let work = |shape: Shape| Work { kind: "dry".into(), shape, height_m: 3.0, passage: None };
     let long = |y0: f64| work(g::rectangle(600.0, y0, 1400.0, y0 + 8.0));
     let stub = work(g::rectangle(600.0, 1420.0, 615.0, 1428.0));
-    let kept = continuous_moat(vec![long(580.0), long(1404.0), work(g::rectangle(1404.0, 600.0, 1412.0, 1400.0)), stub], &path, s);
+    let kept = continuous_moat(vec![long(580.0), long(1404.0), work(g::rectangle(1404.0, 600.0, 1412.0, 1400.0)), stub], &[], &path, s);
     assert_eq!(kept.len(), 3, "the stub stays");
-    let scattered = continuous_moat(vec![long(580.0)], &path, s);
+    let scattered = continuous_moat(vec![long(580.0)], &[], &path, s);
     assert!(scattered.is_empty(), "a quarter of a moat is kept");
 }
 

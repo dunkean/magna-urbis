@@ -6,7 +6,7 @@ import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLo
 import { roofSeasonKey } from '../render/seasonPalette';
 import { townRoofAltitudes } from '../render/roofSnow';
 import { buildingBatches, buildingBounds, type BuildingBounds, type Vec3 } from '../render/world/buildingsMesh';
-import { BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL, ROOF_INK_GLSL } from '../render/world/buildingsShader';
+import { BUILDING_GRAIN_GLSL, BUILDING_NIGHT_GLSL, FACE_EXTRA_GLSL, ROOF_INK_GLSL, ROOF_SNOW_GLSL } from '../render/world/buildingsShader';
 import { buildingBox } from '../render/world/buildingsBlocks';
 
 type Bounds = BuildingBounds;
@@ -68,7 +68,7 @@ uniform float exaggeration;
 uniform vec2 sectorOrigin;
 uniform float uRoofInkDpr;
 layout(location=4) in float groundIn;
-out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float houseLayer;
+out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float houseLayer; flat out vec3 extra;
 out vec3 houseUv;
 out vec3 roofEdge;
 ${HOUSE_SURFACE_VERTEX_GLSL}
@@ -79,23 +79,26 @@ void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(nor
   houseLayer=floor(code/1024.); materialClass=code-houseLayer*1024.;grainPosition=vec3(position.x,groundIn<1e10?position.y-groundIn:position.y,position.z);
   houseUv=vec3(albedo.xy,albedo.z<0.?albedo.y:100.);
   if(houseLayer>.5)base=houseFaceColor(albedo.z);
+${FACE_EXTRA_GLSL}
   gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
 const fragmentColor = `#version 300 es
 precision highp float;
-in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float houseLayer;
+in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float houseLayer; flat in vec3 extra;
 in vec3 houseUv;
 in vec3 roofEdge;
 uniform float uRoofInkDpr;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
+${ROOF_SNOW_GLSL}
 ${HOUSE_SURFACE_GLSL}
 ${ROOF_INK_GLSL}
 void main(){vec3 N=normalize(n);vec3 gx=dFdx(grainPosition),gy=dFdy(grainPosition);float fp=length(abs(gx)+abs(gy));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
   vec3 albedo=houseLayer>.5?houseSurface(base,houseLayer,N,grainPosition,houseUv):materialGrain(base,cls,N,grainPosition,fp);
-  float light=buildingLight(N);vec3 rgb=buildingNight(albedo*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+  if(extra.x>.5&&extra.x<15.5&&uCave.x<.5){vec4 snow=roofSnow(extra.x,N,grainPosition,fp);albedo=mix(albedo,snow.rgb,snow.a);}
+  float light=buildingLight(N);vec3 rgb=buildingNight(albedo*light*baseOcclusion(n,facadePosition),facadePosition,lit,wallGlow(extra,N,grainPosition,facadePosition.y,fp));
   if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
   color=vec4(buildingCave(rgb,facadePosition,lit,N),1.);}`;
 
@@ -164,7 +167,7 @@ void main(){
     base=recolored==1?clamp(mix(material,albedo*tint,.65),0.,1.):albedo*tint;
     N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
-  float light=buildingLight(N);vec3 rgb=buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5);
+  float light=buildingLight(N);vec3 rgb=buildingNight(base*light*baseOcclusion(n,facadePosition),facadePosition,litWindow>.5,0.);
   if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,dp1,dp2,uRoofInkDpr);
   color=vec4(buildingCave(rgb,facadePosition,litWindow>.5,N),1.);
 }`;

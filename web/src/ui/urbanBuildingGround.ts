@@ -1,6 +1,7 @@
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { buildingGroundConstraints } from './urbanBuildingProjection';
 import type { Polygon, Surface } from '../../../rust/bridge/housesContract';
+import type { CutBuilding } from '../render/city3d/terrainSeat';
 import { ringContains } from '../render/ringRows';
 
 const CELL = 64;
@@ -13,6 +14,8 @@ const FOOTING_MARGIN = 2,
 interface Entry {
   shape: Polygon;
   height: number;
+  /** False for a building the ground is already shaped to (urbanGroundShape.ts): nothing moves past its walls. */
+  collar: boolean;
   x0: number;
   y0: number;
   x1: number;
@@ -119,13 +122,14 @@ export class UrbanBuildingGround {
   private cells = new Map<number, Entry[]>();
   constructor(scene?: Building3dScene) {
     for (const building of scene?.occupationBuildings ?? scene?.buildings ?? []) {
-      for (const constraint of buildingGroundConstraints(building)) this.insert(constraint.footprint, constraint.height_m);
+      const collar = !(building as CutBuilding).cutGround;
+      for (const constraint of buildingGroundConstraints(building)) this.insert(constraint.footprint, constraint.height_m, collar);
     }
   }
   private static key(x: number, y: number): number {
     return (x + 32768) * 65536 + (y + 32768);
   }
-  private insert(footprint: Surface, height: number): void {
+  private insert(footprint: Surface, height: number, collar: boolean): void {
     for (const shape of footprint) {
       let x0 = Infinity,
         y0 = Infinity,
@@ -138,7 +142,7 @@ export class UrbanBuildingGround {
         y1 = Math.max(y1, p.y);
       }
       if (!(x0 <= x1 && y0 <= y1)) continue;
-      const entry: Entry = { shape, height, x0, y0, x1, y1 };
+      const entry: Entry = { shape, height, collar, x0, y0, x1, y1 };
       for (let y = Math.floor((y0 - BLEND_MARGIN) / CELL); y <= Math.floor((y1 + BLEND_MARGIN) / CELL); y++)
         for (let x = Math.floor((x0 - BLEND_MARGIN) / CELL); x <= Math.floor((x1 + BLEND_MARGIN) / CELL); x++) {
           const key = UrbanBuildingGround.key(x, y),
@@ -155,7 +159,7 @@ export class UrbanBuildingGround {
       for (const entry of list)
         if (entry.height < original) {
           const d = distance(entry, x, y);
-          if (d >= BLEND_MARGIN) continue;
+          if (d >= BLEND_MARGIN || (d > 0 && !entry.collar)) continue;
           const t = Math.max(0, (d - FOOTING_MARGIN) / (BLEND_MARGIN - FOOTING_MARGIN));
           // Evaluate every constraint against the original surface: overlapping
           // collars must not depend on the insertion order of neighbouring houses.

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { CLIMATE_ZONE_VALUES } from '../../rust/bridge/terrainClimate';
 import { mapGroundSnow, setMapClimateZone, setMapSeason } from '../src/render/seasonPalette';
-import { roofSnowPatches, snowRoofTint, townRoofAltitudes } from '../src/render/roofSnow';
+import { nightSnow, roofSnowPatches, snowRoofTint, townRoofAltitudes } from '../src/render/roofSnow';
 import { roofLight } from '../src/render/cityMassing';
 
 afterEach(() => {
@@ -59,5 +59,10 @@ describe('physical roof snow and relief', () => {
     expect(lit[0]).toBeGreaterThan(shade[0]);
     expect(shade[2]).toBeGreaterThan(shade[0]);
     expect(snowRoofTint([0.3, 0.4, 0.5], 0, -0.4)).toEqual([0.3, 0.4, 0.5]);
+  });
+  it('keeps the snow of a night roof in the moonlight of its cover', () => {
+    const night = snowRoofTint([0.1, 0.12, 0.16], 1, 0, nightSnow);
+    expect(Math.max(...night)).toBeLessThan(0.55);
+    expect(night[2]).toBeGreaterThan(night[0] * 2);
   });
 });

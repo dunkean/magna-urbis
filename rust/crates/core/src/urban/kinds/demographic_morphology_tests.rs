@@ -1,4 +1,4 @@
-use super::*;
+use super::{*, camps::ring_tracks};
 fn site(population: u32) -> Site {
     Site { key: "demographic-morphology".into(), name: String::new(), population,
         culture: "european-organic".into(), center: Point { x: 4000.0, y: 4000.0 }, radius: 200.0,
@@ -22,6 +22,21 @@ fn hamlet_farms_match_the_programmes_cultural_households() {
         assert_eq!(plan.blocks.len(), expected, "{population} / {culture}: one farm per model household");
     }
 }
+    /// A camp ring is as tight as its tents: a small camp keeps one ring, a
+    /// camp of 1 500 pitches several rows round a plausible centre, whole.
+    #[test]
+    fn a_camp_ring_gains_rows_before_its_centre_grows_empty() {
+        let (row, step) = (15.5, 35.0);
+        for tents in [20.0, 60.0, 120.0, 200.0, 330.0, 900.0] {
+            let (radius, tracks) = ring_tracks(tents, 7.0, row, step);
+            let capacity: f64 = (0..tracks).map(|t| 2.0 * std::f64::consts::TAU * (radius + t as f64 * step) / 7.0).sum();
+            assert!(capacity >= tents * 0.999, "{tents}: {capacity}");
+            assert!(radius - row <= 1.5 * tracks as f64 * step, "{tents}: centre {} m", radius - row);
+            assert!(tracks == 1 || radius - row >= 13.9, "{tents}: no centre");
+            assert!(tents > 60.0 || tracks == 1, "{tents}: {tracks} rings");
+        }
+        assert!(ring_tracks(330.0, 7.0, row, step).1 >= 2);
+    }
 #[test]
 fn demographic_morphology_boundaries_are_distinct_without_changing_population() {
     let cfg = LayoutConfig::default();

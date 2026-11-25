@@ -444,6 +444,8 @@ fn fit_to_built(layout: &mut super::super::Layout, population: u32, surface: Sur
     // A refitted front obeys the rule of the first trace (dry land, wall walk, harbour side); the
     // water gates of the circuit keep their place.
     let harbour = harbour_fronts(layout);
+    // A refitted front goes round no strip narrower than an inlet, harbours and castles excepted.
+    let barred: Vec<Shape> = harbour.iter().cloned().chain(layout.enclosures.iter().filter(|e| !e.purpose.is_empty() && e.path.len() >= 4).map(super::curtains::closed_shape)).collect();
     laps.lap("occupied");
     for (e, open) in std::mem::take(&mut layout.enclosures).into_iter().zip(open) {
         if !open { result.push(e); continue; }
@@ -486,8 +488,11 @@ fn fit_to_built(layout: &mut super::super::Layout, population: u32, surface: Sur
                 let plain = g::normalized(Shape { outer: g::unneedled(&ring, SLIVER), holes: vec![] });
                 let trace = if g::simple(&plain) { plain } else { fortification::curtain_trace(&Shape { outer: piece.outer, holes: vec![] }) };
                 if trace.outer.len() < 3 || !g::simple(&trace) { refit.clear(); break; }
-                refit.push(closed(&trace.outer));
+                refit.push(closed(&fortification::over_inlets(&trace, &barred, surface).outer));
             }
+            // Hardly any land given back once its strips are walled in: the curtain stays.
+            let held: f64 = refit.iter().map(|p| g::area(&Shape { outer: p.clone(), holes: vec![] })).sum();
+            if held > area - 0.5 * floor { continue; }
             // A curtain that gives land back never grows: tracing round thin arms of houses
             // would raise a longer, tentacled wall (review 04/11, giant-hold 10k).
             if refit.is_empty() || refit.iter().map(|p| length(p)).sum::<f64>() > MAX_REFIT_GROWTH * length(&e.path) { continue; }
@@ -505,6 +510,7 @@ fn fit_to_built(layout: &mut super::super::Layout, population: u32, surface: Sur
     }
     layout.enclosures = result;
     if !refitted { return; }
+    fortification::drop_twins(&mut layout.enclosures);
     // The wall walk of a curtain that was drawn back is an ordinary lane where
     // it no longer runs along a curtain: it opens a gate where it crosses the
     // new front, and serves lots or goes like any other lane.

@@ -282,7 +282,10 @@ export class ComposedView {
       owners.gpu = ground.gpu;
       owners.terrain = map.native;
       owners.ground = false;
-      live.setLayer('ground', createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), cave: this.volumes.cave, invalidate: map.compose }));
+      live.setLayer(
+        'ground',
+        createLiveGroundLayer(gl, { renderer: () => ground.groundTiles(), mapSize: () => map.world?.mapSize ?? 1, paper: () => map.groundPaper, terrain: () => this.relief(), cave: this.volumes.cave, night: this.volumes.trees.night, invalidate: map.compose }),
+      );
     }
     // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also
     // restarts the compositor's work loop.
@@ -434,7 +437,6 @@ export class ComposedView {
       map = this.map;
     this.enter(live, w, h);
     map.dpr = dpr;
-    // A tilted map drapes the whole-map water raster: the land is cut with it too, never with a raster of the top view.
     this.parts.water.tilted = isTilted(view);
     if (isTilted(view)) {
       this.drawTilted(live, view, w, h, dpr, moved, now);
@@ -525,10 +527,16 @@ export class ComposedView {
       tilted = isTilted(view);
     // The water raster of this frame; a moving view keeps the one it has (a finer one is rasterized at rest). A
     // tilted frame drapes it on the terrain as far as the horizon: it takes the raster of the whole map, and keeps it
-    // while it is tilted (another raster would bake every tile of the map drape again).
+    // while it is tilted (another raster would bake every tile of the map drape again). That raster has metres per pixel:
+    // at rest the raster of the view, the one of the top view it tilts from, goes over it on the tiles it covers.
     const size = map.world!.mapSize,
       vectors = tilted ? water.vectorRaster({ cx: size / 2, cy: size / 2, scale: DRAPED_WATER_PIXELS / size }, DRAPED_WATER_PIXELS, DRAPED_WATER_PIXELS, 1, false) : water.vectorRaster(view, w, h, dpr, !moving);
     live.setWater(vectors?.image, vectors?.region);
+    if (!tilted) live.setWaterDetail(undefined);
+    else if (!moving) {
+      const detail = water.drapedDetail(view, w, h, dpr);
+      live.setWaterDetail(detail?.image, detail?.region, water.vectorDue);
+    }
     live.setPaper(map.groundPaper);
     const exactOverlay = atOrAbove('overlay', this.shownFrom),
       exactCity = atOrAbove('city', this.shownFrom) && (!this.volumeBuildings || this.exactPlan);

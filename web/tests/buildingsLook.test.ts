@@ -92,10 +92,10 @@ describe('building look regression', () => {
       expect([...levels].sort((a, b) => a - b)).toEqual([13, 16, 19]);
     }
     expect(b.volumes.map(v => v.wall_height_m)).toEqual([3, 6, 9]);
-    // A planning record's zero reference must not sink a pyramid into the hill.
+    // A planning record's zero reference is no ground: the nested tiers share one floor, cut into the hill.
     const slope = silhouetteBuilding({ ...source, ground_z_m: 0 }, x => 20 + x / 2);
-    expect(slope.ground_z_m).toBe(26);
-    expect(slope.volumes.map(v => v.z_m + v.wall_height_m)).toEqual([29, 32, 35]);
+    expect(slope.ground_z_m).toBeCloseTo(17, 9);
+    slope.volumes.forEach((v, i) => expect(v.z_m + v.wall_height_m).toBeCloseTo(20 + 3 * i, 9));
     expect(slope.volumes[0].foundation.z_min_m).toBeCloseTo(14 - CITY3D_FOOTING_DEPTH_M);
   });
 

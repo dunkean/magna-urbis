@@ -154,6 +154,7 @@ pub(super) fn tradition(arch: &Value, culture: &str) -> Tradition {
         form: match typology {
             "ger" | "yurt" => "yurt",
             "tipi" | "tepee" => "tipi",
+            "igloo" => "igloo",
             "stilt-house" => "stilt",
             _ => "",
         },

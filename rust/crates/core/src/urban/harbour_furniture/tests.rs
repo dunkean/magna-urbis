@@ -294,15 +294,27 @@ fn villages_and_underdark_ports_land_on_one_plain_strip() {
         assert_eq!(again.structure.as_ref().unwrap().quays.len(), layout.structure.as_ref().unwrap().quays.len());
     }
     // A town: one quay band on the waterline (4.5 m on the bank, 1 m over
-    // the water), no kerb; its quay street stays.
+        // the water), no kerb, finger piers out of it, its boats beside them;
+        // its quay street stays.
     let town = built("hanseatic", 10_000);
     let quays = &town.structure.as_ref().unwrap().quays;
     let bands: Vec<&Quay> = quays.iter().filter(|q| q.kind == "quay").collect();
     assert_eq!(bands.len(), 1, "{:?}", quays.iter().map(|q| q.kind.as_str()).collect::<Vec<_>>());
     let (x0, _, x1, _) = bbox(&bands[0].shape.outer);
     assert!(x0 > 125.5 && x0 < 128.0 && (x1 - x0 - 5.5).abs() < 0.6, "band at x {x0}..{x1}");
-    assert!(!quays.iter().any(|q| matches!(q.kind.as_str(), "kerb" | "breakwater" | "mole")));
+        assert!(!quays.iter().any(|q| q.kind == "kerb"));
     assert!(town.streets.iter().any(|s| s.role == "quay"));
+        assert!(!town.streets.iter().any(|s| s.role == "landing"));
+        let (streets, platforms) = quay(132.0);
+        let mut port: Layout = serde_json::from_value(serde_json::json!({
+            "key": "port", "culture": "hanseatic", "center": {"x": 180.0, "y": 128.0},
+            "quarters": [], "blocks": [], "warnings": [], "structure": {"quays": platforms}, "streets": streets
+        }))
+        .unwrap();
+        furnish("seed", &mut port, 10_000, &LayoutConfig { port_type: "merchant-quay".into(), ..LayoutConfig::default() }, surface);
+        let piers = of(&port, "jetty").into_iter().filter(|q| bbox(&q.shape.outer).0 < 116.0).count();
+        assert!(piers >= 2, "{piers} finger piers");
+        assert!(of(&port, "boat").len() >= 3);
 }
 
 /// A port town on a plateau 40 m above the sea (x < 100), its streets 110 m

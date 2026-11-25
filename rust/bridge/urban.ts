@@ -176,6 +176,8 @@ export interface ResolvedEnclosure {
 }
 export interface Partition {
   enclosure?: ResolvedEnclosure;
+  /** Surveyed fences, walls and hedges of an imported town (OSM import), drawn as lot boundaries; never set by Rust. */
+  lotEnclosures?: (LotEnclosure & { fenceStyle?: 'plank' | 'wattle'; height?: number })[];
   config?: ParcelConfig;
   programme?: UrbanProgramme;
   key: string;

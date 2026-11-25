@@ -11,7 +11,8 @@ pub(in crate::urban) fn is_shape_edit(patch: &Value) -> bool {
 pub(in crate::urban) fn apply_edit(massing: &mut Value, shapes: &[Shape], patch: &Value) -> Result<(), String> {
     if !is_shape_edit(patch) { return Err("This change requires an architectural model generation.".into()); }
     fn volume(v: &mut Value, ring: &[Point], holes: bool, patch: &Value) -> Result<(), String> {
-        if v["minor"] == true { return Ok(()); }
+        // The entrance tunnel of a snow house keeps its vault, like a small decorative volume.
+        if v["minor"] == true || v["form"] == "igloo" && v["roof"] == "barrel" { return Ok(()); }
         let controls = &patch["overrides"];
         if let Some(floors) = controls["floors"].as_u64() {
             if !(1..=100).contains(&floors) { return Err("Storeys must be between 1 and 100.".into()); }

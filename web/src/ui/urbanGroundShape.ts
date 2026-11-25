@@ -1,24 +1,29 @@
 import type { Point, Surface } from '../../../rust/bridge/housesContract';
-import type { Partition } from '../../../rust/bridge/urban';
+import type { Layout, Partition } from '../../../rust/bridge/urban';
+import type { PieceSeat } from '../render/city3d/terrainSeat';
+import { CITY3D_PLINTH_M, edgeDistance } from '../render/city3d/terrainSeat';
 import { ringContains } from '../render/ringRows';
 
-/** Ground shaping under hillside lots (Advanced › "Level hillside lots"): the displayed 3D ground is cut and filled into
- * a level platform per lot, so that a house and its yard stand on near-level ground and the slope is taken by a bank
- * along the lot's edges. A lot meets its street and its neighbours on the natural ground at its boundary (past a short
- * blend where a house stands on that boundary), so streets keep their own profile and two lots at different levels meet
- * by their two banks.
+/** Ground shaping under the buildings of a hillside. Two things move the displayed 3D ground:
  *
- * Built once per settlement content (lots, footprints, relief) by the 3D view (view3d/cityBuildings.ts), which hands it
+ * - every building sunk into the slope (render/city3d/terrainSeat.ts): the ground under its walls and in a strip around them
+ *   is cut to its floor, and rises from there to the hill by a bank. Beyond its block (a street) the bank is steep and starts
+ *   at the wall, so a street keeps its profile. The ground at its downhill walls is held: neither the
+ *   yard nor a neighbour's cut bares its footing;
+ * - its lot (Advanced › "Level hillside lots"): the yard is cut, and filled a little, towards the floor of the main building,
+ *   with a bank along the lot's edges, where it meets its street and its neighbours on the natural ground.
+ *
+ * Built once per settlement content (lots, seats, relief) by the 3D view (view3d/cityBuildings.ts), which hands it
  * to the terrain with `setGroundShape`; a point finds its lot in one cell of a spatial grid. The terrain applies `shape`
- * to the drawn ground before footings and moats carve it (view3d/terrain/surface.ts), so the buildings, stilts, stairs,
+ * to the drawn ground before footings and moats carve it (view3d/terrain/surface.ts), so the stilts, stairs,
  * walls, fences and trees seated on `groundAt` read the same shaped ground as the mesh. The tilted map samples it onto
  * the grid its terrain reads (render/world/groundShape.ts). */
 export const GROUND_SHAPE = Object.freeze({
   /** A lot whose natural ground drops less than this across it is left as it is, m. */
   minDrop: 1,
-  /** Bounds of the cut and of the fill at any point, m. */
-  maxCut: 2.5,
-  maxFill: 2.5,
+  /** Bounds of the cut and of the fill of a yard at any point, m. */
+  maxCut: 1.2,
+  maxFill: 0.6,
   /** Bank width per metre of height taken, and its bounds (m); never wider than a third of the lot's narrow side. */
   bankPerMetre: 1.2,
   minBank: 1,
@@ -28,30 +33,64 @@ export const GROUND_SHAPE = Object.freeze({
 });
 /** Parcel uses that are levelled: house plots, compounds and gardens (not squares, markets or commons). */
 const SHAPED_USES = new Set(['plot', 'compound', 'garden']);
+/** The ground stands this far under a floor cut into it, m. */
+const SILL_M = 0.15;
+/** Level strip around a building in its block (m) and rise of the banks behind it and beyond the block (rise over run). */
+const STRIP_M = 1,
+  BANK_RISE = 2.2,
+  LIMIT_RISE = 4,
+  /** Fall of the bank that holds the ground at a downhill wall, and the strip it holds level, m. */
+  HOLD_FALL = 1,
+  HOLD_M = 2;
 
-/** One lot to level: its outline, its street frontage and the building footprints standing in it. */
-export interface GroundShapeLot {
+/** One piece of a building in the ground: its outline, floor, and the natural ground under its body. */
+export interface GroundShapePad {
   ring: readonly Point[];
-  front?: readonly [Point, Point] | null;
-  footprints: readonly (readonly Point[])[];
+  seat: number;
+  low: number;
+  high: number;
+  /** False where the ground is not shaped to the building (a stilt house): its lot keeps its ground too. */
+  shaped: boolean;
+  /** Outline of the block it stands in, along which streets run. */
+  block?: readonly Point[];
+}
+/** One lot to level: its outline and the buildings in it. `ring` absent: buildings of no such lot. */
+export interface GroundShapeLot {
+  ring?: readonly Point[];
+  pads: readonly GroundShapePad[];
 }
 
-/** The levelled lots of a town: parcels of the shaped uses, each with the footprints whose centre lies in it. */
-export function groundShapeLots(partitions: readonly Partition[], footprints: readonly Surface[]): GroundShapeLot[] {
-  const lots: (GroundShapeLot & { footprints: Point[][] })[] = [],
+/** The pads of a building, from the seats of its footprint pieces: their outlines, and the built terraces they stand on. */
+export const groundShapePads = (footprint: Surface, seats: readonly PieceSeat[]): GroundShapePad[] =>
+  footprint.flatMap((shape, i) => {
+    const { seat, low, high, shaped, block, terrace } = seats[i];
+    return (terrace ? [shape.outer, terrace] : [shape.outer]).map(ring => ({ ring, seat, low, high, shaped, block }));
+  });
+
+/** The block at a point (SeatGround.blockAt). */
+export function blockOutlines(layouts: readonly Layout[]): (x: number, y: number) => readonly Point[] | undefined {
+  const rings = layouts.flatMap(l => l.blocks.map(b => b.shape.outer)),
+    index = new LotGrid();
+  rings.forEach((ring, i) => index.add(i, box(ring)));
+  return (x, y) => rings[index.find(x, y, i => rings[i])];
+}
+
+/** The lots of the shaped uses (none unless `level`) with the pads standing in them (by their centre), the pads of no lot last. */
+export function groundShapeLots(partitions: readonly Partition[], pads: Iterable<GroundShapePad>, level = true): GroundShapeLot[] {
+  const lots: { ring?: readonly Point[]; pads: GroundShapePad[] }[] = [],
     index = new LotGrid();
   for (const partition of partitions)
     for (const parcel of partition.parcels) {
       const ring = parcel.shape?.outer;
-      if (!SHAPED_USES.has(parcel.use) || !ring || ring.length < 3 || Math.abs(ringArea(ring)) > GROUND_SHAPE.maxArea) continue;
-      index.add(lots.push({ ring, front: parcel.front, footprints: [] }) - 1, box(ring));
+      if (!level || !SHAPED_USES.has(parcel.use) || !ring || ring.length < 3 || Math.abs(ringArea(ring)) > GROUND_SHAPE.maxArea) continue;
+      index.add(lots.push({ ring, pads: [] }) - 1, box(ring));
     }
-  for (const footprint of footprints)
-    for (const shape of footprint) {
-      const c = centroid(shape.outer),
-        lot = index.find(c.x, c.y, i => lots[i].ring);
-      if (lot >= 0) lots[lot].footprints.push(shape.outer);
-    }
+  for (const pad of pads) {
+    const c = centroid(pad.ring),
+      lot = index.find(c.x, c.y, i => lots[i].ring!);
+    if (lot >= 0) lots[lot].pads.push(pad);
+    else lots.push({ pads: [pad] });
+  }
   return lots;
 }
 
@@ -61,21 +100,21 @@ interface Box {
   x1: number;
   y1: number;
 }
-interface ShapedLot extends Box {
-  /** The box covers the lot and the blend around its footprints. */
+interface Yard extends Box {
   ring: readonly Point[];
-  /** Level of the platform, width of the bank inside the lot's edge and of the blend around a footprint, m. */
+  /** Level of the yard and width of the bank inside the lot's edge, m. */
   level: number;
   bank: number;
-  blend: number;
-  footprints: (Box & { ring: readonly Point[] })[];
 }
-/** A point this close to a footprint's outline counts as under it (its corners and walls), m; the blend from a footprint
- * back to the natural ground outside its lot (a street, a neighbour) stays within FOOTPRINT_BLEND, m. */
-const CELL = 8,
-  FOOTPRINT_TOLERANCE = 0.3,
-  FOOTPRINT_BLEND = 1.5;
-const INSIDE = 2;
+interface Pad extends Box {
+  /** The box covers the ring and its banks. */
+  ring: readonly Point[];
+  seat: number;
+  /** Ground kept at its downhill walls, m. */
+  hold: number;
+  block?: readonly Point[];
+}
+const CELL = 8;
 const smooth = (s: number): number => (s <= 0 ? 0 : s >= 1 ? 1 : s * s * (3 - 2 * s));
 /** Lots by 8 m cell of their bounding box. */
 class LotGrid {
@@ -102,8 +141,10 @@ class LotGrid {
 }
 
 export class UrbanGroundShape {
-  private readonly lots: ShapedLot[] = [];
-  private readonly grid = new LotGrid();
+  private readonly yards: Yard[] = [];
+  private readonly pads: Pad[] = [];
+  private readonly yardGrid = new LotGrid();
+  private readonly padGrid = new LotGrid();
   /** `natural`: the drawn ground before shaping (no footing or moat cut), m. */
   constructor(
     lots: readonly GroundShapeLot[],
@@ -112,112 +153,107 @@ export class UrbanGroundShape {
     for (const lot of lots) this.add(lot);
   }
   add(lot: GroundShapeLot): void {
-    const shaped = shapeLot(lot, this.natural);
-    if (shaped) this.grid.add(this.lots.push(shaped) - 1, shaped);
+    const yard = lot.ring ? shapeYard(lot.ring, lot.pads, this.natural) : undefined;
+    if (yard) this.yardGrid.add(this.yards.push(yard) - 1, yard);
+    for (const pad of lot.pads) {
+      // Sea and lake surfaces are flat at their level: nothing is shaped under water. A pad on level ground has nothing to
+      // cut, and nothing to hold either unless its yard moves.
+      if (!pad.shaped || pad.low <= 0.05 || pad.high - pad.low < (yard ? 0.01 : 0.3)) continue;
+      const b = box(pad.ring),
+        cut = Math.max(0, pad.high - pad.seat + SILL_M),
+        // The bank climbs at BANK_RISE while the hill climbs too.
+        reach = Math.min(16, Math.max(3, STRIP_M + cut / (BANK_RISE - Math.min(1, (pad.high - pad.low) / Math.max(4, b.x1 - b.x0, b.y1 - b.y0)))));
+      this.padGrid.add(this.pads.length, { x0: (b.x0 -= reach), y0: (b.y0 -= reach), x1: (b.x1 += reach), y1: (b.y1 += reach) });
+      this.pads.push({ ...b, ring: pad.ring, seat: pad.seat, hold: Math.max(pad.low, pad.seat - CITY3D_PLINTH_M), block: pad.block });
+    }
   }
   get empty(): boolean {
-    return !this.lots.length;
+    return !this.yards.length && !this.pads.length;
   }
-  /** What each levelled lot covers, with the blend around its footprints. */
-  boxes(): readonly Box[] {
-    return this.lots;
+  /** What the levelled lots and the sunk buildings cover, banks included. */
+  *boxes(): Generator<Box> {
+    yield* this.yards;
+    yield* this.pads;
   }
   /** Number of levelled lots (diagnostics). */
   get size(): number {
-    return this.lots.length;
+    return this.yards.length;
   }
-  /** Platform weight of a lot at (x, y), continuous everywhere so the terrain grid never samples a step: 1 under a
-   * footprint (its corners and walls, which may lie on the lot's outline), falling to 0 over the blend outside it; inside
-   * the lot, rising from 0 at its edge to 1 past its bank. Strictly inside a footprint: INSIDE (counts as 1). */
-  private weight(lot: ShapedLot, x: number, y: number): number {
-    let w = 0;
-    for (const f of lot.footprints) {
-      if (x < f.x0 || x > f.x1 || y < f.y0 || y > f.y1) continue;
-      if (ringContains(f.ring, x, y)) return INSIDE;
-      w = Math.max(w, 1 - smooth((edgeDistance(f.ring, x, y) - FOOTPRINT_TOLERANCE) / lot.blend));
-      if (w >= 1) return 1;
-    }
-    if (ringContains(lot.ring, x, y)) w = Math.max(w, smooth(edgeDistance(lot.ring, x, y) / lot.bank));
-    return w;
-  }
-  /** Platform level of the lot weighing most at (x, y), or undefined off the levelled lots. */
-  levelAt(x: number, y: number): number | undefined {
-    let best = 0,
-      level: number | undefined;
-    for (const i of this.grid.candidates(x, y) ?? []) {
-      const lot = this.lots[i],
-        w = x < lot.x0 || x > lot.x1 || y < lot.y0 || y > lot.y1 ? 0 : this.weight(lot, x, y);
-      if (Math.min(1, w) > best) {
-        best = Math.min(1, w);
-        level = lot.level;
-      }
-    }
-    return level;
-  }
-  /** The shaped ground at (x, y), given the natural `height` there: cut or filled towards the level of the lots weighing
-   * there (one, except in the blends where a footprint meets its neighbour), within bounds. Strictly under a footprint
-   * its own level alone (most seat reads fall there): a neighbour's blend reaching under the walls is hidden by them. */
+  /** The shaped ground at (x, y), given the natural `height` there. Strictly under a building its own floor alone: the bank of
+   * a neighbour reaching under the walls is hidden by them. */
   shape(x: number, y: number, height: number): number {
-    if (this.empty) return height;
-    const candidates = this.grid.candidates(x, y);
-    if (!candidates) return height;
-    let sum = 0,
-      move = 0;
-    for (let k = 0; k < candidates.length; k++) {
-      const lot = this.lots[candidates[k]];
-      if (x < lot.x0 || x > lot.x1 || y < lot.y0 || y > lot.y1) continue;
-      const w = this.weight(lot, x, y);
-      if (w <= 0) continue;
-      const d = Math.max(-GROUND_SHAPE.maxCut, Math.min(GROUND_SHAPE.maxFill, lot.level - height));
-      if (w === INSIDE) {
-        if (!sum) return height + d;
-        sum += 1;
-        move += d;
+    const pads = this.padGrid.candidates(x, y),
+      yards = this.yardGrid.candidates(x, y);
+    if (!pads && !yards) return height;
+    let ground = height,
+      cut = Infinity,
+      cutFrom = 0,
+      hold = -Infinity,
+      holdFrom = 0,
+      under = Infinity;
+    for (let k = 0; yards && k < yards.length; k++) {
+      const lot = this.yards[yards[k]];
+      if (x < lot.x0 || x > lot.x1 || y < lot.y0 || y > lot.y1 || !ringContains(lot.ring, x, y)) continue;
+      ground = height + smooth(edgeDistance(lot.ring, x, y) / lot.bank) * Math.max(-GROUND_SHAPE.maxCut, Math.min(GROUND_SHAPE.maxFill, lot.level - height));
+      break;
+    }
+    for (let k = 0; pads && k < pads.length; k++) {
+      const pad = this.pads[pads[k]];
+      if (x < pad.x0 || x > pad.x1 || y < pad.y0 || y > pad.y1) continue;
+      const floor = pad.seat - SILL_M;
+      if (ringContains(pad.ring, x, y)) {
+        under = Math.min(under, floor);
         continue;
       }
-      sum += w;
-      move += w * d;
+      const d = edgeDistance(pad.ring, x, y);
+      if (height > floor + Math.max(0, d - STRIP_M) * BANK_RISE) {
+        // Continuous across the block's edge: the terrain grid never samples a step.
+        const own = !pad.block ? 1 : ringContains(pad.block, x, y) ? smooth(edgeDistance(pad.block, x, y) / STRIP_M) : 0;
+        const bank = floor + Math.max(0, d - STRIP_M * own) * (LIMIT_RISE + (BANK_RISE - LIMIT_RISE) * own);
+        if (bank < cut) {
+          cut = bank;
+          cutFrom = d;
+        }
+      }
+      const held = Math.min(height, pad.hold) - Math.max(0, d - HOLD_M) * HOLD_FALL;
+      if (held > hold) {
+        hold = held;
+        // A cell of the terrain grid beside its walls keeps to it.
+        holdFrom = Math.max(0, d - STRIP_M);
+      }
     }
-    return sum ? height + move / Math.max(1, sum) : height;
+    if (under < Infinity) return Math.min(height, under);
+    ground = Math.max(ground, hold);
+    if (cut >= ground) return ground;
+    // Between the wall of a building and the footing of one standing higher, the ground falls from one to the other.
+    return hold > cut ? cut + ((hold - cut) * cutFrom) / Math.max(1e-6, cutFrom + holdFrom) : cut;
   }
 }
 
-/** Platform level of one lot from its natural ground, or undefined when it stays as it is (flat, at the water, unknown). */
-function shapeLot(lot: GroundShapeLot, natural: (x: number, y: number) => number | undefined): ShapedLot | undefined {
-  const b = box(lot.ring);
-  const sample = (p: Point): number => {
-    const h = natural(p.x, p.y);
-    return h === undefined || !Number.isFinite(h) ? NaN : h;
-  };
-  const edge = [...lot.ring, centroid(lot.ring)].map(sample);
-  const under = lot.footprints.flatMap(f => [...f, centroid(f)].map(p => ({ p, h: sample(p) })));
-  const all = [...edge, ...under.map(s => s.h)];
-  if (all.some(h => Number.isNaN(h))) return undefined;
-  const low = Math.min(...all),
-    high = Math.max(...all);
+/** Level of the yard of one lot, or undefined when it stays as it is (flat, at the water, unknown, a stilt house). */
+function shapeYard(ring: readonly Point[], pads: readonly GroundShapePad[], natural: (x: number, y: number) => number | undefined): Yard | undefined {
+  if (pads.some(pad => !pad.shaped)) return undefined;
+  const b = box(ring),
+    edge = [...ring, centroid(ring)].map(p => natural(p.x, p.y) ?? NaN);
+  if (edge.some(h => Number.isNaN(h))) return undefined;
+  const low = Math.min(...edge),
+    high = Math.max(...edge);
   // Sea and lake surfaces are flat at their level: a lot reaching them is not shaped (nothing under water).
   if (high - low < GROUND_SHAPE.minDrop || low <= 0.05) return undefined;
-  // Least earth moved: the median of the ground under the buildings (of the whole lot when it holds none) ...
-  const base = (under.length ? under.map(s => s.h) : edge).sort((a, c) => a - c);
-  let level = base[base.length >> 1];
-  // ... raised to the ground of any footprint corner at the street frontage: the door never ends below the street.
-  if (lot.front) for (const s of under) if (segmentDistance(lot.front[0], lot.front[1], s.p.x, s.p.y) < 2) level = Math.max(level, s.h);
+  // The floor of the main building; least earth moved (the median ground) where none stands.
+  let main = 0,
+    level = NaN;
+  for (const pad of pads) {
+    const area = Math.abs(ringArea(pad.ring));
+    if (area > main) {
+      main = area;
+      level = pad.seat - SILL_M;
+    }
+  }
+  if (Number.isNaN(level)) level = edge.sort((a, c) => a - c)[edge.length >> 1];
   const taken = Math.min(GROUND_SHAPE.maxCut + GROUND_SHAPE.maxFill, Math.max(level - low, high - level));
   const bank = Math.min(Math.max(GROUND_SHAPE.minBank, Math.min(GROUND_SHAPE.maxBank, taken * GROUND_SHAPE.bankPerMetre)), Math.min(b.x1 - b.x0, b.y1 - b.y0) / 3);
-  if (!(bank > 0)) return undefined;
-  const blend = Math.min(bank, FOOTPRINT_BLEND),
-    m = FOOTPRINT_TOLERANCE + blend;
-  const footprints = lot.footprints.map(ring => {
-    const f = box(ring);
-    return { ring, x0: f.x0 - m, y0: f.y0 - m, x1: f.x1 + m, y1: f.y1 + m };
-  });
-  for (const f of footprints) {
-    b.x0 = Math.min(b.x0, f.x0);
-    b.y0 = Math.min(b.y0, f.y0);
-    b.x1 = Math.max(b.x1, f.x1);
-    b.y1 = Math.max(b.y1, f.y1);
-  }
-  return { ring: lot.ring, ...b, level, bank, blend, footprints };
+  return bank > 0 ? { ring, ...b, level, bank } : undefined;
 }
 
 function box(ring: readonly Point[]): Box {
@@ -246,16 +282,4 @@ function ringArea(ring: readonly Point[]): number {
   let s = 0;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += ring[j].x * ring[i].y - ring[i].x * ring[j].y;
   return s / 2;
-}
-function segmentDistance(a: Point, b: Point, x: number, y: number): number {
-  const dx = b.x - a.x,
-    dy = b.y - a.y,
-    l = dx * dx + dy * dy;
-  const t = l ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l)) : 0;
-  return Math.hypot(a.x + t * dx - x, a.y + t * dy - y);
-}
-function edgeDistance(ring: readonly Point[], x: number, y: number): number {
-  let d = Infinity;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) d = Math.min(d, segmentDistance(ring[j], ring[i], x, y));
-  return d;
 }

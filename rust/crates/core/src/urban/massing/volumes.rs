@@ -116,6 +116,35 @@ pub(super) enum Piece {
     Vols(Vec<Vol>, u32),
 }
 
+/// A snow house on the plan `ring`, entered from `toward`: its dome and its
+/// entrance tunnel (ring, axis, width), both inside the plan (`sc`: metres to
+/// plan units). `None` where no tunnel fits.
+#[allow(clippy::type_complexity)]
+pub(super) fn snow_house(ring: &[Point], toward: Point, sc: f64) -> Option<(Vec<Point>, (Vec<Point>, Point, f64))> {
+    let c = ring_centroid(ring);
+    let r = depth_in(ring, c);
+    let l = toward.x.hypot(toward.y);
+    if r < 1.4 * sc || l < 1e-6 {
+        return None;
+    }
+    let d = Point { x: toward.x / l, y: toward.y / l };
+    let n = perp(d);
+    let width = (0.4 * r).clamp(0.9 * sc, 1.6 * sc);
+    let length = (0.45 * r).clamp(0.6 * sc, 2.2 * sc);
+    let at = |s: f64, t: f64| Point { x: c.x + d.x * s + n.x * t, y: c.y + d.y * s + n.y * t };
+    let shell = r - 0.5 * length;
+    let dome = (0..16)
+        .map(|k| {
+            let a = k as f64 * std::f64::consts::TAU / 16.0;
+            at(shell * a.cos() - 0.5 * length, shell * a.sin())
+        })
+        .collect();
+    // From inside the dome's shell to the front of the plan.
+    let h = 0.5 * width;
+    let (back, front) = (r - 1.25 * length, (r * r - h * h).max(0.0).sqrt());
+    Some((dome, (vec![at(back, -h), at(front, -h), at(front, h), at(back, h)], d, width)))
+}
+
 /// Whether `p` lies inside ring `r` (even-odd).
 pub(super) fn within(r: &[Point], p: Point) -> bool {
     let mut inside = false;

@@ -151,6 +151,7 @@ export function mountCity3d(options: City3dOptions): City3d {
   cityContext.groundCutsOf = undefined;
   cityContext.groundCutsOn = undefined;
   cityContext.groundShapeInputs = [];
+  cityContext.seatGround = undefined;
   cityContext.groundShapeStats = { lots: 0, ms: 0 };
 
   cityContext.byId = new Map<string, Building3dVisual>();

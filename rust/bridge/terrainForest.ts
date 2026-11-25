@@ -685,6 +685,8 @@ float v2FloorModulation=1.;
 vec3 v2MacroNormal=vec3(0.,1.,0.);
 vec3 v2MacroCanopy=vec3(0.);
 float v2GroundSnow=0.;
+// Wear of that snow in a town (v2TownSnow): x share of the cover that stays, y how packed it is.
+vec2 v2SnowTread=vec2(1.,0.);
 float v2MeanEnabled=0.,v2ForestReveal=0.;
 uniform int uForestBrushes; uniform highp sampler2DArray uForestBrushAtlas;
 // 3D near trees (terrain3dTrees.ts): eye xy, full radius, end of fade (m); w = 0 when no tree stands.
@@ -1145,8 +1147,8 @@ const float FOREST_BARE=.335;
 // Share of a crown that shows from above: its foliage, or the limbs and twig haze of a leafless crown, so a bare
 // stand is a grey-brown veil over its litter or snow at every zoom.
 float forestCrownShow(float leaf){return leaf+FOREST_BARE*(1.-leaf);}
-// Leafless wood (display RGB): the twig haze is a light grey-brown with a violet cast, the limb bark darker.
-vec3 forestBareColor(float tint,float wood){return mix(vec3(.37,.33,.315),vec3(.20,.17,.155),wood)*(.88+.24*tint);}
+// Leafless wood (display RGB): the twig haze is a light grey-brown, the limb bark darker.
+vec3 forestBareColor(float tint,float wood){return mix(vec3(.41,.375,.34),vec3(.21,.18,.16),wood)*(.88+.24*tint);}
 // Resolve the same tapered limbs as the close mesh. Below four pixels keep the distant crown.
 ${BARE_LIMBS_GLSL}
 vec2 forestBareCrown(float rel,vec2 slope,float tint,float pixels){
@@ -1608,7 +1610,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     float leaf=uRenderV2>0&&(!hit.needle||larch)?v2SeasonLeaf():1.;
     if(leaf<1.){
       // Open limbs: the ground shows through and the cast shadow is the light one of bare branches.
-      float body=mix(bare.x,1.,leaf);
+      // The twig haze is broken by the crown's own clumps (zero mean): no even disc.
+      float body=mix(clamp(bare.x*(1.+1.4*leafClump.x),0.,1.),1.,leaf);
       hit.cover*=body;shade*=mix(.25,1.,leaf);forestResolvedCover*=body;
     }
     forestResolvedShade=clamp(shade,0.,1.)*crownVis*(uRenderV2>0&&v2MeanEnabled>.5?v2ForestReveal:reveal);
@@ -1616,6 +1619,9 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     float clump=uForestBrushes==1?(hit.ink-.5)*2.:0.;
     // A leafless crown is no lit dome: its limbs lie nearly flat to the light.
     vec2 slope=(uForestBrushes==1?.25:mix(.2,1.,leaf))*hit.slope;
+    // A spire is many tiers of boughs, not a bare cone: they share the light of its steep flanks. Its shading normal is a
+    // low dome, level at the tip: no terminator across the crown, and no black far half, flat or draped on a tilted view.
+    if(hit.needle&&uForestBrushes==0)slope*=min(1.,.34*hit.rel/max(length(slope),1e-3));
     // Leaf clumps in the crown's colour and relief, strongest toward the rim: the whole effect on a broadleaf in
     // leaf, a light touch of colour on a spire (its whorls carry the relief), none on bare limbs.
     float foliageDetail=(hit.needle?.3:leaf)*mix(.55,1.,hit.rel);
@@ -1625,21 +1631,23 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     vec3 nCrown=normalize(vec3(-(macroSlope.x+slope.x),1.,-(macroSlope.y+slope.y)));
     // Shaded crowns keep their sky light (no black caps).
     nCrown=forestTilt(nCrown,l,shade*.3);
-    float occCrown=uForestBrushes==1?.94:mix(.92,max(.6+.4*(1.-hit.rel*hit.rel),.5),leaf);
+    float occCrown=uForestBrushes==1?.94:mix(.92,max(.6+.4*(1.-hit.rel*hit.rel),hit.needle?.8:.5),leaf);
     float detailGain=uForestBrushes==1?.36:0.;
     // Branch whorls on a spire, once their rings span a few pixels.
     float branch=dot(hit.slope,jitter)*inversesqrt(1.+dot(hit.slope,hit.slope));
     float tiers=hit.rel*(19.+11.*special)+6.2831853*tint+.9*branch;
-    // Boughs catch the light, the gaps between them fall dark, darkest at the trunk.
+    // Boughs catch the light, the gaps between them fall dark; the tip stands in the light over its skirt.
     float bough=abs(cos(atan(hit.slope.y,hit.slope.x)*(3.5+floor(tint*3.))+tint*6.2831853));
-    float whorl=hit.needle&&uForestBrushes==0?(.10*(cos(tiers+1.2*sin(hit.rel*7.+tint*9.))+.35*cos(tiers*1.73+special*8.))+.05*(bough*bough-.45)*hit.rel-.12*(1.-hit.rel))*groundSmooth(2.,6.,radius/fp):0.;
-    // A spire reads as a cone by its terminator: the sunward flank lit to the rim, the far flank in its own shade.
+    // Whorls run in and out along the boughs: broken tiers, never concentric rings.
+    tiers+=2.2*bough*hit.rel;
+    float whorl=hit.needle&&uForestBrushes==0?(.025*(cos(tiers+1.2*sin(hit.rel*7.+tint*9.))+.35*cos(tiers*1.73+special*8.))+.14*(bough*bough-.45)*hit.rel+.22*(.33-hit.rel*hit.rel))*groundSmooth(2.,6.,radius/fp):0.;
+    // A spire reads as a cone by the soft turn of its light, the sunward rim a little brighter than the far one.
     vec3 flank=vec3(1.);
     if(hit.needle&&uForestBrushes==0){
       float side=-dot(hit.slope,sun)/max(length(hit.slope),1e-3);
-      flank=vec3(mix(1.,mix(.66,1.34,groundSmooth(-.3,.3,side)),groundSmooth(.04,.2,hit.rel)*groundSmooth(1.,3.,radius/fp)));
+      flank=vec3(mix(1.,1.+.14*side,hit.rel*groundSmooth(1.,3.,radius/fp)));
       // A spire among broadleaves takes their stand's dark palette ratio: keep it a dark green, not black.
-      flank*=mix(vec3(1.14,1.3,1.04),vec3(1.),st.needle);
+      flank*=mix(vec3(1.22,1.36,1.1),vec3(1.),st.needle);
     }
     vec3 crown=forestCrownColor(st,forestGuide(),hit.needle?1.:0.,jitter,special)*(1.+detailGain*clump+whorl)*flank*(1.-mix(.12,.3,st.trop)*hit.edge);
     crown*=1.+.3*foliageDetail*leafClump.x;
@@ -1660,7 +1668,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
       crown=forestSnowed(crown,min(forestCrownSnow(hit,sun,hit.needle?bough:.64+foliageDetail*leafClump.x+crownAtlas.z)*mix(1.,mix(1.2,.4,bare.y),1.-leaf),.97));
     }
     // Forest floor under and right around crowns; open ground beyond.
-    float under=uForestBrushes==1?hit.cover:1.-groundSmooth(1.,1.8,hit.near);
+    // Leafless limbs shade no dark ring of floor around them.
+    float under=uForestBrushes==1?hit.cover:(1.-groundSmooth(1.,1.8,hit.near))*mix(.35,1.,leaf);
     vec3 nearAlbedo=mix(forestFloorAlbedo(mix(openGround,litter,under)),groundToLinear(crown),hit.cover);
     vec3 nearNormal=normalize(mix(forestTilt(nGround,l,shade*.3),nCrown,hit.cover));
     float nearOcc=mix(m.occlusion*mix(1.,.72,under),occCrown,hit.cover);

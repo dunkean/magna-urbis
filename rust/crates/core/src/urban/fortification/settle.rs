@@ -7,7 +7,7 @@ use super::build::build;
 use super::crossings::{close_crossings, stop_at_curtains};
 use super::gate_budget::{self, Circuit};
 use super::geometry::{Box2, Cut, closed, dist, pt, terrain};
-use super::moat::{continuous_moat, embedded};
+use super::moat::{self, continuous_moat, embedded};
 use super::reconcile::{guard_main_gates, reconcile_gates};
 use super::reserve::{fronted, gate_masses, release_gate_reserve, trim_blocks};
 use super::street_clearance::{Near, Predicted, near_ribbons};
@@ -88,13 +88,13 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
                 state:"",archetype:&layout.archetype,forced:&cfg.fortification_style,relief},&rng,&mut layout.warnings);
             style.options(&cfg);
             // Its land gates are decided like those of a traced circuit, on the streets as they
-            // stand: a curtain the fit drew back turns square to the streets it now crosses. A gate
+            // stand: the streets are built on, so a passage stays oblique in its straight curtain. A gate
             // point it came with that is no street crossing (a regional road ending on it) stays.
             let crossed = composition::gates(&e.path,&layout.streets);
             let squared = !matches!(style.id.as_str(),"bastioned"|"wengcheng") && e.path.len()>6;
             let (wall,kept,dropped) = gate_budget::decide(&Shape {outer:e.path[..e.path.len()-1].to_vec(),holes:vec![]},&mut layout.streets,
                 &Circuit {pop,purpose:&e.purpose,kind:&e.kind,curtain_width:style.curtain_width,moat:style.ditch_width[1],
-                    grade:cfg.max_street_grade,squared,key:&layout.key,improvisation:cfg.street_improvisation},surface);
+                    grade:cfg.max_street_grade,squared,streets_turn:false,key:&layout.key,improvisation:cfg.street_improvisation},surface);
             e.path = closed(&wall.outer);
             e.gates.retain(|&q|crossed.iter().all(|&c|dist(c,q)>=8.0));
             for p in composition::gates(&e.path,&layout.streets) {
@@ -129,6 +129,7 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
         .collect();
     let mut reserve_all: Vec<(Shape, Box2)> = vec![];
     let culture = layout.culture.clone();
+    let town_state = layout.config.as_ref().map(|c| c.programme.state.clone()).unwrap_or_default();
     let pop = layout.structure.as_ref().map_or_else(|| layout.phases.iter().map(|p| p.population).sum(),
         |s| s.metrics.planned_population).max(500.0).round() as u32;
     // Built land of the final plan, for moats the town has grown round.
@@ -254,7 +255,8 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
             .partition(|w| matches!(w.kind.as_str(), "outer-wall" | "antemural"));
         e.outworks = cut(works, 10.0);
         e.outworks.extend(continuous);
-        e.ditch = continuous_moat(cut(std::mem::take(&mut e.ditch), 20.0), &e.path, surface);
+        let dams = e.moat.as_ref().map(|m| m.dams.clone()).unwrap_or_default();
+        e.ditch = continuous_moat(cut(std::mem::take(&mut e.ditch), 20.0), &dams, &e.path, surface);
         // A moat the town has grown round holds no water. Its wet pieces dry
         // together, when most of their area lies inside the built town.
         let wet_area: f64 = e.ditch.iter().filter(|d| d.kind == "wet").map(|d| g::area(&d.shape)).sum();
@@ -264,6 +266,8 @@ pub(in super::super) fn settle(layout: &mut Layout, surface: Surface<'_>) {
                 d.kind = "dry".into();
             }
         }
+        // The sluices and the dams follow the ditch as it now stands.
+        e.moat = e.moat.take().and_then(|m| moat::spec(&m.form, &e.ditch, m.dams, &town_state, surface));
         e.reserve = ribbons
             .from(std::mem::take(&mut e.reserve))
             .into_iter()

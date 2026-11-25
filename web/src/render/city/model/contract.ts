@@ -137,6 +137,8 @@ export interface CityScene {
   quays?: Quay[];
   /** Walls, hedges and fences round the lots (enclosures hook). */
   lotEnclosures?: import('../../../../../rust/bridge/urban').LotEnclosure[];
+  /** Surveyed boundaries of an imported town (`Partition.lotEnclosures`), always part of `lotEnclosures`. */
+  fixedLotEnclosures?: import('../../../../../rust/bridge/urban').LotEnclosure[];
   enclosureProfiles?: (import('../../../../../rust/bridge/urban').ResolvedEnclosure | undefined)[];
   lotYards?: import('../../cityLotEnclosures').Yard[];
   bins: { blocks: SpatialBins; parcels: SpatialBins; streets: SpatialBins; landmarks: SpatialBins };

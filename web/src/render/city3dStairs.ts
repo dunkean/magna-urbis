@@ -8,11 +8,11 @@
  * broken by landings, and every turn of the way is a level landing. A tread stands at the higher end of its riser, so the
  * top tread is the ground at the top end and the bottom one rises one riser from the ground at the bottom end: both
  * ends meet the surface of the street or lane they join. Each piece is a solid from its top down to a footing below the
- * ground, so its sides read as stone cheeks on the downhill side and nothing floats. */
+ * ground, all in the street's colour, so nothing floats and no edge shows. From afar a flight has no mesh: the painted
+ * street is the whole of it, and the steps appear close up. */
 import type { Layout, Point, Shape } from '../../../rust/bridge/urban';
 import type { ArchitectureVolume, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
-import { buildingTint } from './buildingPalette';
 import { CITY3D_FOOTING_DEPTH_M, type City3dHeight } from './city3dMeshes';
 
 /** Riser range, m: shallow stepped ramps (cordonata) to steep village stairs. */
@@ -211,8 +211,8 @@ function cssRgb(color: string): [number, number, number] | undefined {
   const rgb = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(color);
   return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : undefined;
 }
-/** A lighter tone of the same hue and saturation: HSL lightness raised by `lift`, capped below white. */
-export function stairRiserTone(rgb: readonly number[], lift = 0.15): number[] {
+/** A darker tone of the same hue and saturation (the shade of a riser): HSL lightness lowered by `drop`. */
+export function stairRiserTone(rgb: readonly number[], drop = 0.1): number[] {
   const [r, g, b] = rgb.map(v => v / 255),
     max = Math.max(r, g, b),
     min = Math.min(r, g, b),
@@ -220,7 +220,7 @@ export function stairRiserTone(rgb: readonly number[], lift = 0.15): number[] {
     d = max - min;
   const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1)),
     h = d === 0 ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  const L = Math.min(0.88, l + lift),
+  const L = Math.max(0.06, l - drop),
     c = (1 - Math.abs(2 * L - 1)) * s,
     x = c * (1 - Math.abs((h % 2) - 1)),
     m = L - c / 2;
@@ -230,21 +230,19 @@ export function stairRiserTone(rgb: readonly number[], lift = 0.15): number[] {
 
 /** The stepped streets of the towns as one display building per flight. `heightAt` is the displayed ground before
  * exaggeration; the building pass lifts every vertex with the relief (ids `city3d-stairs`). `streetColor` is the CSS colour
- * the 3D ground paints the street in (cityCanvas `stairStreetColor`): the treads and ramps take it, the risers a lighter
- * tone of it, so a flight continues the street it prolongs; without it, the culture's stone. Cheeks stay in that stone. */
+ * the 3D ground paints the street in (cityCanvas `stairStreetColor`): the whole flight takes it, its risers a darker tone
+ * of it, so a flight continues the street it prolongs. */
 export function city3dStairs(layouts: readonly Layout[], heightAt?: City3dHeight, streetColor?: (street: Layout['streets'][number]) => string): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
   const h = (p: Point): number => (heightAt ? heightAt(p.x, p.y) : 0) || 0;
   layouts.forEach((layout, li) => {
-    const stoneRgb = layout.culture ? buildingTint(layout.culture, 'stone', 'stone', 0.5, 'defence').wall.map(v => v * 255) : undefined;
-    const stone = `city3d:wall:stone${stoneRgb ? `@${hex6(stoneRgb.map(v => v / 255))}` : ''}`;
     layout.streets.forEach((street, si) => {
       if (street.role !== 'stairs' || street.path.length < 2) return;
       // One colour per flight, chosen here: no per-frame work, two materials whatever the number of steps.
-      const bed = (streetColor && cssRgb(streetColor(street))) ?? stoneRgb,
+      const bed = streetColor && cssRgb(streetColor(street)),
         tread = bed ? `city3d:road:stairs@${hex6(bed.map(v => v / 255))}` : 'city3d:road:stairs',
         riser = bed ? `city3d:road:stairs@${hex6(stairRiserTone(bed).map(v => v / 255))}` : 'city3d:road:stairs';
-      const materials: MaterialSlots = { frame: stone, infill: stone, coating: stone, cladding: tread, base: stone, roof_frame: riser };
+      const materials: MaterialSlots = { frame: tread, infill: tread, coating: tread, cladding: tread, base: tread, roof_frame: riser };
       const w = way(street.path);
       if (!w) return;
       const widths = street.widths.filter(v => Number.isFinite(v) && v > 0);
@@ -257,7 +255,7 @@ export function city3dStairs(layouts: readonly Layout[], heightAt?: City3dHeight
         if (a.x * b.x + a.y * b.y < TURN_COS) turns.push(w.cum[i]);
       }
       // The ground under the centre and both edges, read once every SAMPLE_M and interpolated: the profile and the
-      // cheek footings share these samples (the terrain sampler is the cost of this pass).
+      // side footings share these samples (the terrain sampler is the cost of this pass).
       const count = Math.max(2, Math.ceil(w.length / SAMPLE_M)),
         rows: [number, number, number][] = [];
       for (let i = 0; i <= count; i++) {
@@ -271,7 +269,7 @@ export function city3dStairs(layouts: readonly Layout[], heightAt?: City3dHeight
       };
       const pieces = stairPieces(w.length, s => sampled(s, r => Math.max(r[0], r[1], r[2])), turns, width);
       if (!pieces.length) return;
-      const mesh = stairMesh(w, pieces, half, (s, side) => sampled(s, r => (side > 0 ? r[1] : r[2])), tread, riser, stone);
+      const mesh = stairMesh(w, pieces, half, (s, side) => sampled(s, r => (side > 0 ? r[1] : r[2])), tread, riser);
       const footprint: Shape[] = [{ outer: [...w.points.map((_, i) => side(w, i, half)), ...w.points.map((_, i) => side(w, i, -half)).reverse()], holes: [] }];
       const id = `city3d-stairs:${li}:${si}`;
       const volume = {
@@ -290,8 +288,6 @@ export function city3dStairs(layouts: readonly Layout[], heightAt?: City3dHeight
         envelope: 'open',
         roof_mesh: mesh.mesh,
         foundation: { footprint: [], z_min_m: mesh.low, z_max_m: mesh.low },
-        // Far sectors keep the treads alone (the first faces): a stepped ribbon, a quarter of the triangles.
-        overview_faces: [0, mesh.treads],
       } as ArchitectureVolume;
       const origin = w.points[w.points.length >> 1];
       out.push({
@@ -326,8 +322,8 @@ const side = (w: Way, i: number, offset: number): Point => {
   return { x: p.x + n.x * offset, y: p.y + n.y * offset };
 };
 
-/** Faces of a flight: all treads, landings and ramps first (the overview keeps them), then risers, cheeks and end faces. */
-function stairMesh(w: Way, pieces: readonly StairPiece[], half: number, edgeGround: (s: number, side: number) => number, tread: string, riser: string, stone: string): { mesh: RoofMesh; treads: number; low: number; high: number } {
+/** Faces of a flight: all treads, landings and ramps first, then risers, sides and end faces. */
+function stairMesh(w: Way, pieces: readonly StairPiece[], half: number, edgeGround: (s: number, side: number) => number, tread: string, riser: string): { mesh: RoofMesh; low: number; high: number } {
   const mesh: RoofMesh = { vertices: [], faces: [], edges: [], groups: [] };
   let low = Infinity,
     high = -Infinity;
@@ -387,7 +383,6 @@ function stairMesh(w: Way, pieces: readonly StairPiece[], half: number, edgeGrou
       tread,
     );
   });
-  const treads = mesh.faces.length;
   const foot = (s: number, side: number, top: number): number => Math.min(edgeGround(s, side), top) - CITY3D_FOOTING_DEPTH_M;
   const along = (i: number): [number, number, number] => {
     const [a, b] = edges[i],
@@ -399,7 +394,7 @@ function stairMesh(w: Way, pieces: readonly StairPiece[], half: number, edgeGrou
   parts.forEach((p, i) => {
     const [a, b] = edges[i],
       u = along(i);
-    // Cheeks: both sides from the footing up to the top.
+    // Both sides from the footing up to the top.
     for (const [q0, q1, sign] of [
       [a.l, b.l, 1],
       [a.r, b.r, -1],
@@ -412,7 +407,7 @@ function stairMesh(w: Way, pieces: readonly StairPiece[], half: number, edgeGrou
           { ...q0, z: p.z0 },
         ],
         [-u[1] * sign, u[0] * sign, 0],
-        stone,
+        tread,
       );
     // Riser (or drop) to the next piece, facing the lower one; closing faces at both ends of the way.
     const next = parts[i + 1];
@@ -438,7 +433,7 @@ function stairMesh(w: Way, pieces: readonly StairPiece[], half: number, edgeGrou
           { ...b.l, z: p.z1 },
         ],
         u,
-        stone,
+        tread,
       );
     if (i === 0)
       face(
@@ -449,8 +444,8 @@ function stairMesh(w: Way, pieces: readonly StairPiece[], half: number, edgeGrou
           { ...a.l, z: p.z0 },
         ],
         [-u[0], -u[1], 0],
-        stone,
+        tread,
       );
   });
-  return { mesh, treads, low, high };
+  return { mesh, low, high };
 }

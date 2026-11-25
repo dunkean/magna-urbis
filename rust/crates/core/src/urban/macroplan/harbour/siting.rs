@@ -135,6 +135,12 @@ pub(in super::super::super) fn sited(
     if banks.first().is_none_or(|b| b.0 <= reach.max(120.0)) {
         return None;
     }
+    // A town keeps its nucleus and grows a lower port on its own water: a bank no farther than the
+    // town reaches, or than the nearest bank calls for. Room alone never takes a port across the map.
+    if site.population >= 3000 {
+        let nearest = banks.iter().map(|b| b.0).fold(f64::INFINITY, f64::min);
+        banks.retain(|b| b.0 <= site.radius.max(1.5 * nearest + 150.0));
+    }
     // The nearest bank whose town ground is buildable: on the line from the
     // water to the old centre, the first dry point between one and two front
     // distances whose 30 m surroundings stay within a lane grade.
@@ -218,7 +224,7 @@ pub(in super::super::super) fn sited(
 /// Harbour apron: the land between a town domain and its water, within
 /// `reach`, joined to the domain along its shore-facing edges, so quays stand
 /// at the waterline. The footprint's growth grid stops a cell or two short of
-/// a shore; the apron closes that gap where a street could reach the water
+/// a shore; the apron closes that gap where a lane could reach the water
 /// (never down a cliff). Returns the domain unchanged when nothing is added.
 pub(in super::super::super) fn apron(
     domain: &Shape,
@@ -269,7 +275,7 @@ pub(in super::super::super) fn apron(
                                 surface,
                                 p,
                                 add(p, out, d - 2.5),
-                                cfg.max_street_grade,
+                                cfg.max_lane_grade,
                             )
                             && surface.wet(add(p, out, d + 3.5))
                     })

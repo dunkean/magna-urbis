@@ -7,6 +7,7 @@ import { compactBuilding } from '../src/render/city3dMeshes';
 import { UrbanBuildingLodRenderer } from '../src/render/urbanBuildingLod';
 import { eachBuildingTriangle } from '../src/render/urbanBuildingGeometry';
 import { UrbanBuildingPass } from '../src/ui/urbanBuilding3d';
+import { buildingBatches } from '../src/render/world/buildingsMesh';
 import { projectNativeBuildingRecords } from '../src/ui/urbanBuildingProjection';
 import { city3dProjectionScene } from '../src/render/city3dMeshes';
 import { CLIMATE_ZONE_VALUES } from '../../rust/bridge/terrainClimate';
@@ -34,6 +35,24 @@ it('uses satellite ground snow on compact and projected roofs and refreshes the 
       expect(colors().some(c => c[0] > 0.8 && c[1] > 0.8 && c[2] > 0.8)).toBe(false);
       pass.dispose();
     }
+});
+it('carries roof snow beside the cover colour, for the shader to lay over it, and the night light of the walls', () => {
+  const building = city3dProjectionScene(projectNativeBuildingRecords([plan('snow-extra', 1000)])).buildings[0];
+  const extras = (season: number): Set<number> => {
+    const roofSnow = { season, climateZone: 'arctic' as const, climate: CLIMATE_ZONE_VALUES.arctic },
+      out = new Set<number>();
+    for (const batch of buildingBatches([building], [0, 0], { appearance: { style: 'cartographic', diagnostic: 'none', roofSnow }, materials: [], snowAltitudes: new Map() }, false))
+      for (let i = 6; i < batch.data.length; i += batch.stride) {
+        const extra = Math.floor(batch.data[i] / 2);
+        expect(batch.data[i] - 2 * extra).toBeLessThanOrEqual(1);
+        out.add(extra);
+      }
+    return out;
+  };
+  const snowed = (set: Set<number>): boolean => [...set].some(e => e >= 1 && e <= 15);
+  expect(snowed(extras(0))).toBe(true);
+  expect(snowed(extras(0.5))).toBe(false);
+  expect([...extras(0.5)].every(e => e === 0 || (e > 16 && e < 32))).toBe(true);
 });
 it('keeps six-digit palette colours on walls and roofs in flat/textured batches and preserves uses', () => {
   const source = plan('palette', 1000),

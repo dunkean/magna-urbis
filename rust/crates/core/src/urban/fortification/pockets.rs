@@ -158,22 +158,36 @@ fn candidates(shape: &Shape, limits: PocketLimits) -> Vec<Pocket> {
 /// length (stable, discovery order on ties) and only validated in that order,
 /// up to the first that passes.
 pub(super) fn without_invaginations(shape: &Shape, surface: Surface<'_>) -> Shape {
-    fill_pockets(shape, surface, PocketLimits::read(), f64::INFINITY)
+    fill_pockets(shape, PocketLimits::read(), f64::INFINITY, &|chain| dry_pocket(chain, surface))
 }
 /// Re-entrant bends (deeper than a sixth of their chord, chord under 400 m)
 /// of a joined circuit are cut by straight runs: two circuits made one go
 /// straight across where each used to turn in, never across water.
 pub(in super::super) fn straight_across(shape: &Shape, surface: Surface<'_>) -> Shape {
     let limits = PocketLimits { depth_span: 1.0 / 6.0, ..PocketLimits::read() };
-    fill_pockets(shape, surface, limits, 400.0)
+    fill_pockets(shape, limits, 400.0, &|chain| dry_pocket(chain, surface))
 }
-fn fill_pockets(shape: &Shape, surface: Surface<'_>, limits: PocketLimits, max_span: f64) -> Shape {
+/// The pockets of a trace that `fits` accepts (read as the chain of the pocket, from one end of its
+/// mouth to the other) are closed by a straight run across their mouth.
+pub(super) fn closed_at_mouth(shape: &Shape, fits: &dyn Fn(&[Point]) -> bool) -> Shape {
+    fill_pockets(shape, PocketLimits::read(), f64::INFINITY, fits)
+}
+/// The land between a pocket's chain and its mouth.
+pub(super) fn pocket_land(chain: &[Point]) -> Shape {
+    g::normalized(Shape { outer: chain.to_vec(), holes: vec![] })
+}
+/// A pocket cut never creates an empty corner across a river.
+fn dry_pocket(chain: &[Point], surface: Surface<'_>) -> bool {
+    let land = pocket_land(chain);
+    g::area(&land) - area(&g::dry_clip(&surface, &land)) < 1.0
+}
+fn fill_pockets(shape: &Shape, limits: PocketLimits, max_span: f64, fits: &dyn Fn(&[Point]) -> bool) -> Shape {
     if !g::simple(shape) { return shape.clone(); }
     let mut trace = shape.clone();
-    // The dry test of a pocket, by its exact chord and chain: the cut piece is
-    // the region between them (the bridge changes nothing else), so pockets a
-    // repair leaves untouched are not cut and clipped again next round.
-    let mut dry: std::collections::HashMap<Vec<u64>, bool> = Default::default();
+    // The test of a pocket, by its exact chord and chain: the cut piece is the
+    // region between them (the bridge changes nothing else), so pockets a repair
+    // leaves untouched are not tested again next round.
+    let mut tested: std::collections::HashMap<Vec<u64>, bool> = Default::default();
     // A bridge refused because its new sides touch a side of the trace stays
     // refused while that side is on the trace: the same pocket between the
     // same neighbours makes the same new sides (keyed by chain and
@@ -209,9 +223,7 @@ fn fill_pockets(shape: &Shape, surface: Surface<'_>, limits: PocketLimits, max_s
             (g::area(&next) > g::area(&trace)).then_some((chain, next))
         }).find_map(|(chain, next)| {
             let key: Vec<u64> = chain.iter().flat_map(bits).collect();
-            // A pocket cut never creates an empty corner across a river.
-            let ok = *dry.entry(key).or_insert_with(|| g::difference(&next, &trace).iter().all(|s|
-                g::area(s) - area(&g::dry_clip(&surface, s)) < 1.0));
+            let ok = *tested.entry(key).or_insert_with(|| fits(&chain));
             ok.then_some(next)
         }) else { return trace; };
         trace = next;

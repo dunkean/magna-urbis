@@ -230,7 +230,7 @@ pub(super) fn add_landing_rows(
             let links: Vec<usize> = (0..streets.len())
                 .filter(|&i| {
                     let s = &streets[i];
-                    s.role == "street" && s.path.len() == 2 && on_quay(s.path[0])
+                    matches!(s.role.as_str(), "street" | "lane") && s.path.len() == 2 && on_quay(s.path[0])
                 })
                 .collect();
             let mut joins = vec![];
@@ -269,6 +269,23 @@ pub(super) fn add_landing_rows(
             }
             // A row lane steeper than street grade is a lane, as in quarters.
             let street = routing::path_clear(surface, &lane, cfg.max_street_grade);
+            // The landing street nearest a quay end runs on along the lane to that end: one street from
+            // the quay to the town, which passes a wall at a harbour gate. The strip stays one block.
+            if street {
+                for leg in [start_leg, end_leg] {
+                    if leg
+                        && let Some((k, link)) = (1..lane.len().saturating_sub(1)).find_map(|k| {
+                            streets.iter().position(|s| matches!(s.role.as_str(), "street" | "lane") && s.path.len() == 2 && s.path[0] == lane[k]).map(|i| (k, i))
+                        })
+                    {
+                        let mut way: Vec<Point> = lane.drain(..k).collect();
+                        way.extend([lane[0], streets[link].path[1]]);
+                        streets[link].widths = vec![LANE; way.len()];
+                        streets[link].path = way;
+                    }
+                    lane.reverse();
+                }
+            }
             streets.push(Street {
                 widths: vec![LANE; lane.len()],
                 path: lane,

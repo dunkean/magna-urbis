@@ -98,11 +98,13 @@ describe('stairPieces', () => {
     expect(rest).toHaveLength(0);
     const volume = flight.volumes[0],
       mesh = volume.roof_mesh,
-      [, treads] = (volume as unknown as { overview_faces: [number, number] }).overview_faces;
-    for (const face of mesh.faces.slice(0, treads)) expect(face.normal[2]).toBeGreaterThan(0.99);
+      treads = mesh.faces.findIndex(face => face.normal[2] <= 0.99);
+    expect(treads).toBeGreaterThan(0);
     expect(mesh.faces.length).toBeGreaterThan(treads * 2);
+    // From afar the painted street is the whole of it.
+    expect((volume as unknown as { overview_faces?: [number, number] }).overview_faces).toBeUndefined();
     expect(flight.id.startsWith('city3d-stairs')).toBe(true);
-    // Treads in the street's colour, risers a lighter tone of the same hue, cheeks in stone.
+    // Treads and sides in the street's colour, risers a darker tone of the same hue, no stone edge.
     const [painted] = city3dStairs(
       [layout],
       (x, y) => 0.4 * (x + y),
@@ -113,10 +115,9 @@ describe('stairPieces', () => {
     expect(faces[0].material).toBe('city3d:road:stairs@a07850');
     const riser = faces.find(f => f.material.startsWith('city3d:road:stairs@') && f.material !== faces[0].material)!.material,
       [r, g, b] = tone(riser);
-    expect(r).toBeGreaterThan(160);
+    expect(r).toBeLessThan(160);
     expect(r / b).toBeCloseTo(2, 0);
-    expect(r).toBeLessThan(250);
-    expect(g).toBeGreaterThan(120);
-    expect(faces.some(f => f.material.startsWith('city3d:wall:stone'))).toBe(true);
+    expect(g).toBeLessThan(120);
+    expect(faces.every(f => f.material.startsWith('city3d:road:stairs@'))).toBe(true);
   });
 });

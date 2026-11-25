@@ -618,6 +618,80 @@ fn prune_with(layout: &mut Layout, open: &[bool], lots: &[Shape], doors: Option<
     }
 }
 
+/// Slack (m) past a lost way's width: its land in full, whatever the vertices the blocks lost since.
+const CORRIDOR_SLACK: f64 = 0.4;
+/// The land of the access ways a prune took out (`before`: the streets before
+/// it) goes back to a block beside it. A corridor without its way serves
+/// nobody and would stay a dead strip between the walls of two lots: each piece
+/// joins, whole, the block it shares the longest limit with.
+fn return_corridors(layout: &mut Layout, before: &[Street]) {
+    if !before.iter().any(|s| interior(&s.role)) {
+        return;
+    }
+    let grid = g::BoxGrid::new(layout.streets.iter().map(|s| {
+        let r = s.widths.iter().copied().fold(0.0, f64::max) * 0.5;
+        s.path.iter().fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |b, p| (b.0.min(p.x - r), b.1.min(p.y - r), b.2.max(p.x + r), b.3.max(p.y + r)))
+    }).collect());
+    let standing = |p: Point| grid.query((p.x, p.y, p.x, p.y), 0.6).into_iter()
+        .any(|i| layout.streets[i].path.windows(2).any(|w| g::distance(p, w[0], w[1]).0 < 0.6));
+    // The stretches of the lost ways, in pieces of 5 m at most.
+    let mut lost: Vec<(Vec<Point>, f64)> = vec![];
+    for s in before.iter().filter(|s| interior(&s.role)) {
+        let width = s.widths.iter().copied().fold(0.0, f64::max);
+        let mut run: Vec<Point> = vec![];
+        for w in s.path.windows(2) {
+            let k = ((w[1].x - w[0].x).hypot(w[1].y - w[0].y) / 5.0).ceil().max(1.0) as usize;
+            let at = |j: f64| Point { x: w[0].x + (w[1].x - w[0].x) * j / k as f64, y: w[0].y + (w[1].y - w[0].y) * j / k as f64 };
+            for j in 0..k {
+                if standing(at(j as f64 + 0.5)) {
+                    if run.len() >= 2 { lost.push((std::mem::take(&mut run), width)); }
+                    run.clear();
+                } else {
+                    if run.is_empty() { run.push(at(j as f64)); }
+                    run.push(at(j as f64 + 1.0));
+                }
+            }
+        }
+        if run.len() >= 2 { lost.push((run, width)); }
+    }
+    if lost.is_empty() {
+        return;
+    }
+    let outline = |s: &Shape| -> f64 {
+        std::iter::once(&s.outer).chain(&s.holes).map(|r| (0..r.len()).map(|i| { let (a, b) = (r[i], r[(i + 1) % r.len()]); (b.x - a.x).hypot(b.y - a.y) }).sum::<f64>()).sum()
+    };
+    let blocks = g::BoxGrid::new(layout.blocks.iter().map(|b| g::bbox(&b.shape)).collect());
+    for (path, width) in lost {
+        for zone in g::ribbon(&path, &vec![width + 2.0 * CORRIDOR_SLACK; path.len()]) {
+            let zb = g::bbox(&zone);
+            let near: Vec<usize> = blocks.query(zb, 1.0).into_iter().collect();
+            let mut gap = vec![zone];
+            for i in grid.query(zb, 1e-6) {
+                let s = &layout.streets[i];
+                for r in g::ribbon(&s.path, &s.widths).iter().filter(|r| g::boxes_meet(zb, g::bbox(r))) {
+                    gap = gap.iter().flat_map(|x| g::difference(x, r)).collect();
+                }
+            }
+            for &i in &near {
+                gap = gap.iter().flat_map(|x| g::difference(x, &layout.blocks[i].shape)).collect();
+            }
+            for piece in gap.into_iter().filter(|x| g::area(x) >= 1.0) {
+                let joined = near.iter().filter(|&&i| matches!(layout.blocks[i].kind.as_str(), "block" | "reserve")).filter_map(|&i| {
+                    let shape = &layout.blocks[i].shape;
+                    let mut whole = g::union(&[shape.clone(), piece.clone()]);
+                    if whole.len() != 1 { return None; }
+                    let whole = whole.pop()?;
+                    let shared = 0.5 * (outline(shape) + outline(&piece) - outline(&whole));
+                    (shared > 1.0).then_some((i, shared, whole))
+                }).max_by(|a, b| a.1.total_cmp(&b.1));
+                if let Some((i, _, whole)) = joined {
+                    layout.blocks[i].shape = whole;
+                }
+            }
+        }
+    }
+}
+
 fn frontage_road(role: &str) -> bool {
     prunable(role) || matches!(role, "peripheral" | "outbound")
 }
@@ -700,7 +774,9 @@ pub(super) fn run(seed: &str, layout: &mut Layout, config: &LayoutConfig, origin
         verges(layout);
         laps.lap("verges");
         let open: Vec<bool> = layout.blocks.iter().enumerate().map(|(i, b)| (b.kind == "reserve" && !reserved.contains(&i)) || commons.contains(&i)).collect();
+        let ways = layout.streets.clone();
         prune_settled(layout, &open, &occupied);
+        return_corridors(layout, &ways);
         laps.lap("prune");
         released += count;
         let after: f64 = layout.streets.iter().filter(|s| frontage_road(&s.role)).flat_map(|s| s.path.windows(2)).map(|w| (w[1].x-w[0].x).hypot(w[1].y-w[0].y)).sum();
@@ -786,7 +862,9 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
             }
             if doors.iter().any(|d| !d.is_empty()) {
                 let open: Vec<_> = layout.blocks.iter().map(|b| b.kind == "reserve").collect();
+                let ways = layout.streets.clone();
                 prune_with(layout,&open,&occupied,Some((&doors,&sides)),roads);
+                return_corridors(layout, &ways);
             }
             laps.lap("prune");
             if profiled() { eprintln!("  tail.trim.finish.pass: n={} (doors) frontage {before:.0} -> {:.0} m", pass + 1, frontage_length(layout)); }
@@ -822,7 +900,9 @@ fn finish_with(seed: &str, layout: &mut Layout, surface: Surface<'_>, roads: Opt
                 .map(|(_, p)| p.shape.clone()).collect();
             let open: Vec<_> = layout.blocks.iter().map(|b| b.kind == "reserve").collect();
             let reserved = super::network::reserved_streets(layout);
+            let ways = layout.streets.clone();
             prune(layout, &open, &occupied);
+            return_corridors(layout, &ways);
             super::network::remap_reservations(layout, &reserved);
             laps.lap("prune");
             if profiled() { eprintln!("  tail.trim.finish.pass: n={} (dry) frontage {before:.0} -> {:.0} m", pass + 1, frontage_length(layout)); }
@@ -1338,6 +1418,26 @@ mod tests {
         assert_eq!(serde_json::to_value(&l.streets[0]).unwrap(), road);
         assert!(l.streets.iter().skip(1).flat_map(|s| &s.path).all(|p| p.y <= 30.), "empty chains remain: {:?}", l.streets);
         assert!(l.streets.iter().skip(1).any(|s| s.path.iter().any(|p|p.y>=20.)), "occupied frontage lost");
+    }
+
+    /// The corridor of an alley the prune took out is one lot's ground again,
+    /// not a dead strip between two walls; a kept alley keeps its own.
+    #[test]
+    fn the_land_of_a_pruned_alley_goes_back_to_its_block() {
+        let mut l = layout(json!([
+            {"path":[{"x":-100.,"y":0.},{"x":200.,"y":0.}],"widths":[6.,6.],"rank":1,"role":"road"},
+            {"path":[{"x":40.,"y":0.},{"x":40.,"y":60.}],"widths":[2.6,2.6],"rank":4,"role":"private"}
+        ]));
+        let block = |shape: Shape| -> crate::urban::Block { serde_json::from_value(json!({"shape":shape,"quarter":0,"kind":"block","axis":{"x":1.,"y":0.},"zone":"village"})).unwrap() };
+        let alley = g::rectangle(38.7, 3., 41.3, 60.);
+        l.blocks = g::difference(&g::rectangle(0., 3., 80., 90.), &alley).into_iter().map(block).collect();
+        let before = l.streets.clone();
+        return_corridors(&mut l, &before);
+        assert!((g::area(&l.blocks[0].shape) - (80. * 87. - 2.6 * 57.)).abs() < 0.1, "a standing alley keeps its land");
+        l.streets.pop();
+        return_corridors(&mut l, &before);
+        assert_eq!(l.blocks.len(), 1);
+        assert!((g::area(&l.blocks[0].shape) - 80. * 87.).abs() < 1.0, "the strip is left: {}", g::area(&l.blocks[0].shape));
     }
 
     #[test]

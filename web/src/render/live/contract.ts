@@ -184,6 +184,8 @@ export interface LiveGroundOptions {
   terrain(): TerrainHeights | undefined;
   /** The Underdark of the map (render/world/cave.ts): a tilted frame shows its ground in the cave's darkness. */
   cave?(): WorldCave | undefined;
+  /** The look is a night one: a tilted frame stands under a dark sky and a dark haze. */
+  night?(): boolean;
   /** GPU memory the tile cache may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a new frame (a finer tile arrived). */

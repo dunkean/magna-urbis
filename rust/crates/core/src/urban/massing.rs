@@ -137,7 +137,7 @@ use roofing::{Roof, roof_of, split_body};
 mod edits;
 pub(super) use edits::{is_shape_edit, apply_edit};
 mod volumes;
-use volumes::{Vol, Piece, within};
+use volumes::{Vol, Piece, snow_house, within};
 mod details;
 use details::{flavor, depth_in, flat_details, tiered, home_details, lot_look, activity_details, sails_feature};
 /// Massing of every preview piece, aligned with `preview` (empty when none).
@@ -207,6 +207,14 @@ pub(super) fn massing(m: &Input) -> Value {
         .max_by(|&a, &b| areas[a].total_cmp(&areas[b]))
         .or_else(|| (0..m.parts.len()).max_by(|&a, &b| areas[a].total_cmp(&areas[b])))
         .unwrap_or(0);
+    // The part a mage tower replaces: the main body, or the smallest wing of a
+    // house whose role marks it with a tower.
+    let tower_role = traits.form_roles.iter().any(|r| m.role.starts_with(r.as_str()));
+    let tower_part = if tower_role {
+        (0..m.parts.len()).filter(|&i| areas[i] >= 20.0).min_by(|&a, &b| areas[a].total_cmp(&areas[b])).unwrap_or(main)
+    } else {
+        main
+    };
     let landmark_scale = (areas.iter().sum::<f64>().sqrt() / 12.0).clamp(0.8, 2.2);
     // A village's nave stands lower than a city's.
     let nave_eave = (7.5 + 3.5 * landmark_scale) * (0.75 + 0.25 * size);
@@ -274,7 +282,7 @@ pub(super) fn massing(m: &Input) -> Value {
             let mut composable = false;
             // A tent people's landmark is a larger tent of its own tradition,
             // never a stone nave or tower of another one.
-            let tribal = tr.roof == "tent" || matches!(tr.form, "tree" | "mushroom" | "longhouse");
+            let tribal = tr.roof == "tent" || matches!(tr.form, "tree" | "mushroom" | "longhouse" | "igloo");
             // A farm outbuilding (farmsteads.rs): one low storey under its type's roof.
             let out = m.role.starts_with("dwelling") && super::farmsteads::is_outbuilding(label);
             let mut out_stilts = 0.0;
@@ -490,7 +498,8 @@ pub(super) fn massing(m: &Input) -> Value {
                     if multi && si > 0 && !m.landmark && matches!(sk, "gable" | "hip") && rng.chance(0.25) {
                         sk = if sk == "gable" { "hip" } else { "gable" };
                     }
-                    let mage = tr.form == "mage" && i == main && pi == 0 && si == 0 && (m.landmark || drng.chance((0.08 + 0.3 * size) * (0.3 + 0.7 * (1.25 - m.distance).clamp(0.0, 1.0))));
+                    let mage = tr.form == "mage" && i == tower_part && pi == 0 && si == 0
+                        && if traits.form_roles.is_empty() { m.landmark || drng.chance((0.08 + 0.3 * size) * (0.3 + 0.7 * (1.25 - m.distance).clamp(0.0, 1.0))) } else { tower_role };
                     let exterior = if mage { "tower" } else if tr.form == "mage" || out { "" } else { tr.form };
                     if matches!(exterior, "tree" | "mushroom" | "yurt" | "tower") {
                         if let Some(f) = min_frame(&sr) {
@@ -501,6 +510,14 @@ pub(super) fn massing(m: &Input) -> Value {
                                 let r = r * if exterior == "tree" { 0.94 + 0.06 * (5.0 * a).cos() } else { 1.0 };
                                 Point { x: c.x + r * a.cos(), y: c.y + r * a.sin() }
                             }).collect();
+                        }
+                    }
+                    // A snow house: a dome set back on its plan, its entrance tunnel before it.
+                    let mut tunnel = None;
+                    if exterior == "igloo" && sk == "dome" {
+                        let c = ring_centroid(&sr);
+                        if let Some((dome, way)) = snow_house(&sr, to_street(c).unwrap_or(Point { x: 0.0, y: 1.0 }), metric_scale * body) {
+                            (sr, tunnel) = (dome, Some(way));
                         }
                     }
                     if mage { sk = "cone"; }
@@ -586,6 +603,8 @@ pub(super) fn massing(m: &Input) -> Value {
                         "tree" => 11.5,
                         "mushroom" => 2.5 + 2.0 * drng.float(),
                         "longhouse" => 1.5,
+                        // Snow blocks spiral up from the ground: hardly a wall under the dome.
+                        "igloo" => 0.4 * body,
                         "tower" => 9.0 + (6.0 + 22.0 * size) * drng.float(),
                         _ => eave_v,
                     };
@@ -594,7 +613,7 @@ pub(super) fn massing(m: &Input) -> Value {
                     // No thin tall sliver (a tower at most 4.5 × its
                     // width, any other body 2.5 ×); a pitched roof rises at most 0.6 ×
                     // its span, a house roof about its wall height at most.
-                    let (sn, eave_v, roof) = if !matches!(exterior, "tree" | "mushroom" | "yurt" | "tipi" | "tower" | "longhouse") {
+                    let (sn, eave_v, roof) = if !matches!(exterior, "tree" | "mushroom" | "yurt" | "tipi" | "tower" | "longhouse" | "igloo") {
                         let w = min_frame(&sr).map_or(0.0, |f| 2.0 * f.half_w);
                         let tower = matches!(*label, "tower" | "belfry" | "minaret" | "keep");
                         let (mut sn, mut ev) = (sn, eave_v);
@@ -638,8 +657,20 @@ pub(super) fn massing(m: &Input) -> Value {
                         pans: None,
                         gables: vec![],
                         minor: rule.is_some_and(|r| r.minor),
-                        openings: rule.and_then(|r| r.openings.as_deref()).unwrap_or(""),
+                        openings: if tunnel.is_some() { "none" } else { rule.and_then(|r| r.openings.as_deref()).unwrap_or("") },
                     };
+                    // The tunnel comes first: the plan paints the dome over its inner end.
+                    if let Some((ring, axis, width)) = tunnel {
+                        let g = ring_centroid(&ring);
+                        let n = perp(axis);
+                        let t = g.x * n.x + g.y * n.y;
+                        let ridges = chord(&ring, axis, t).map(|(a, b)| seg(at_st(axis, a + 0.05, t), at_st(axis, b - 0.05, t))).into_iter().collect();
+                        vols.push(Vol {
+                            ring, n: 1, eave: 0.4 * width, roof: Roof { kind: "barrel", rise: 0.45 * width, ridges },
+                            cover, wall, tone: vol.tone, parapet: 0.0, features: vec![], overhang: 0.0, trim: "", form: "igloo", stilts: 0.0, body,
+                            base: 0.0, stack: false, axis, high, form_roof: "barrel", pitch: vp, eaves: None, pans: None, gables: vec![], minor: false, openings: "door",
+                        });
+                    }
                     match rule.and_then(|r| r.tiers.as_ref()) {
                         Some(t) => vols.extend(tiered(vol, t, &mut drng)),
                         None => vols.push(vol),

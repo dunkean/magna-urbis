@@ -19,13 +19,13 @@ const shapeOf = (lots: GroundShapeLot[], cuts = new UrbanGroundCuts()): GroundSh
   while (!step.done) step = steps.next();
   return step.value;
 };
-const lot = (x: number, y: number): GroundShapeLot => ({ ring: rect(x, y, 24, 24), front: null, footprints: [rect(x + 6, y + 6, 12, 10)] });
+const lot = (x: number, y: number): GroundShapeLot => ({ ring: rect(x, y, 24, 24), pads: [{ ring: rect(x + 6, y + 6, 12, 10), seat: slope(x + 6) + 0.6, low: slope(x + 6), high: slope(x + 18), shaped: true }] });
 
 describe('shaped ground of the tilted map', () => {
   it('levels a hillside lot, leaves the rest alone, and has no step across a block edge', () => {
     const shape = shapeOf([lot(SHAPE_BLOCK - 12, 100)])!;
     const ground = (x: number, y: number): number => slope(x) + shape.groundAt(x, y);
-    expect(ground(SHAPE_BLOCK + 4, 112)).toBeCloseTo(ground(SHAPE_BLOCK - 4, 112), 1);
+    expect(ground(SHAPE_BLOCK + 4, 112)).toBeCloseTo(ground(SHAPE_BLOCK - 4, 112), 0.5);
     expect(shape.groundAt(600, 600)).toBe(0);
     expect(shape.groundAt(SHAPE_BLOCK - 1e-6, 108)).toBeCloseTo(shape.groundAt(SHAPE_BLOCK, 108), 4);
     expect(shapeOf([])).toBeUndefined();

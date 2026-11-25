@@ -5,14 +5,9 @@ use super::*;
 /// A town's quay ground: one band along the drawn water outline, 4.5 m on
 /// the bank and 1 m over the water (m).
 const BAND: (f64, f64) = (4.5, 1.0);
-/// Width of a pontoon out of the quay band (m).
-const PONTOON_WIDTH: f64 = 2.5;
-/// Ground shapes the quay band replaces: the planner's platforms and the
-/// works of `plan` (the basin stays in a closed port).
-const GROUND: [&str; 10] = ["quay", "landing", "pier", "mole", "breakwater", "kerb", "jetty", "slip", "steps", "basin"];
 /// Parts drawn with the item before them (a boat's cabin, masts and yards, a crane's jib).
 const ATTACHED: [&str; 4] = ["cabin", "mast", "yard", "crane-jib"];
-/// Farthest a boat floats from the quay band or a pontoon (m).
+/// Farthest a boat floats from the works of its harbour (m).
 const BOAT_REACH: f64 = 15.0;
 
 fn ccw(mut outer: Vec<Point>) -> Shape {
@@ -90,17 +85,9 @@ fn bank_runs(streets: &[Street], surface: Surface<'_>) -> Vec<Vec<(Point, Point)
     runs
 }
 
-/// A town's harbour ground (the user's model, nothing more): one quay band
-/// along the drawn water outline of each quay street (`BAND`), a few straight
-/// timber pontoons out of it (one per 4000 people, 1 to 6, shorter than a
-/// third of a river), and for the north-european family a closed port: its
-/// moles become bands of the same width around the basin. The objects of
-/// `items` (boats, cranes, cargo, sheds, posts...) stay, except those that
-/// stood over the water on a removed shape, and boats on the band or adrift
-/// more than `BOAT_REACH` from it; small craft moor along the pontoons.
-#[allow(clippy::too_many_arguments)]
-fn quay_band(seed: &str, streets: &[Street], culture: &str, population: u32, family: &str, items: Vec<Quay>, planner: &[Shape], surface: Surface<'_>) -> Vec<Quay> {
-    let closed = family == "north-european";
+/// A town's quay ground: one band along the drawn water outline of each quay street (`BAND`), and
+/// each planner mole as a band of the same width on its own line (mitred corners).
+fn quay_band(streets: &[Street], culture: &str, surface: Surface<'_>) -> Vec<Quay> {
     let material = if text(family_of(culture), "material", "auto") == "timber" { "timber" } else { "stone" };
     let level = |points: &[Point]| -> f64 {
         let mut h: Vec<f64> = points.iter().filter(|&&p| surface.wet(p)).map(|&p| surface.height_at(p)).collect();
@@ -110,11 +97,10 @@ fn quay_band(seed: &str, streets: &[Street], culture: &str, population: u32, fam
         h.sort_by(f64::total_cmp);
         h[h.len() / 2]
     };
-    let runs = bank_runs(streets, surface);
     let mut ground: Vec<Quay> = vec![];
     // One deck per piece: a run is cut where its water level moves by more
     // than 0.4 m (a descending river), the pieces sharing their ends.
-    for run in &runs {
+    for run in bank_runs(streets, surface) {
         let water: Vec<f64> = run.iter().map(|(b, n)| level(&[add(*b, *n, 1.5)])).collect();
         let mut from = 0;
         while from + 1 < run.len() {
@@ -133,8 +119,6 @@ fn quay_band(seed: &str, streets: &[Street], culture: &str, population: u32, fam
             from = to;
         }
     }
-    // A closed port: each mole a band on its own line (mitred corners).
-    if closed {
         let half = (BAND.0 + BAND.1) * 0.5;
         for s in streets.iter().filter(|s| s.role == "mole" && s.path.len() >= 2) {
             let k = s.path.len();
@@ -152,112 +136,60 @@ fn quay_band(seed: &str, streets: &[Street], culture: &str, population: u32, fam
             outer.extend((0..k).rev().map(|i| add(s.path[i], miter(i), -half)));
             let deck = level(&s.path) + 1.0;
             if deck.is_finite() {
-                ground.push(Quay { kind: "quay".into(), shape: ccw(outer), deck_z_m: deck, material: material.into() });
+            ground.push(Quay { kind: "mole".into(), shape: ccw(outer), deck_z_m: deck, material: material.into() });
             }
         }
+    ground
     }
-    // Pontoons, evenly spaced along the quay banks.
-    let banks: Vec<(Point, Point)> = runs.iter().flat_map(|r| r[1..r.len() - 1].iter().copied()).collect();
-    let count = ((population as f64 / 4000.0).round() as usize).clamp(1, 6).min(banks.len() / 10);
-    let reach = (10.0 + population as f64 / 2500.0).min(30.0);
-    let mut pontoons: Vec<Obb> = vec![];
-    for k in 0..count {
-        let (b, n) = banks[banks.len() * (2 * k + 1) / (2 * count)];
-        let mut open = 0.0;
-        while open < 300.0 && surface.wet(add(b, n, open + 1.0)) {
-            open += 1.0;
-        }
-        let river = harbour::water_code(surface, add(b, n, 2.0)) == 3;
-        let length = reach.min(open * if river { 0.3 } else { 0.6 });
-        if length < 5.0 {
-            continue;
-        }
-        let o = Obb { c: add(b, n, length * 0.5), u: n, hl: length * 0.5, hw: PONTOON_WIDTH * 0.5 };
-        let deck = level(&[add(b, n, 2.0), add(b, n, length)]) + 1.0;
-        if deck.is_finite() {
-            ground.push(Quay { kind: "pier".into(), shape: o.shape(), deck_z_m: deck, material: "timber".into() });
-            pontoons.push(o);
-        }
-    }
-    // The objects: those over the water on a removed shape go, boats on the
-    // new ground or adrift go; a part follows its boat or crane.
-    let removed: Vec<Shape> = planner.iter().cloned().chain(items.iter().filter(|q| GROUND.contains(&q.kind.as_str()) && !(closed && q.kind == "basin")).map(|q| q.shape.clone())).collect();
-    let on_ground = |p: Point| ground.iter().any(|q| inside(&q.shape.outer, p));
-    let basins: Vec<Shape> = if closed { items.iter().filter(|q| q.kind == "basin").map(|q| q.shape.clone()).collect() } else { vec![] };
-    let near = |p: Point| {
-        banks.iter().any(|(b, _)| dist(*b, p) <= BOAT_REACH)
-            || pontoons.iter().any(|o| segment_distance(p, add(o.c, o.u, -o.hl), add(o.c, o.u, o.hl)) <= BOAT_REACH)
-            || basins.iter().any(|s| inside(&s.outer, p))
+
+/// A town's harbour on its quay ground: the works and objects of its harbour types (`plan`), laid from
+/// the edge of the band. The band is its own edge (no coping stroke); a basin is drawn where it lies
+/// wholly on water; a boat floats beside the works or in a basin, never adrift (`BOAT_REACH`).
+fn assemble(ground: Vec<Quay>, items: Vec<Quay>, surface: Surface<'_>) -> Vec<Quay> {
+    let works: Vec<Shape> =
+        ground.iter().chain(items.iter().filter(|q| matches!(q.kind.as_str(), "jetty" | "breakwater" | "steps"))).map(|q| q.shape.clone()).collect();
+    let basins: Vec<Shape> = items.iter().filter(|q| q.kind == "basin").map(|q| q.shape.clone()).collect();
+    let beside = |p: Point, s: &Shape| {
+        let (x0, y0, x1, y1) = bbox(&s.outer);
+        p.x > x0 - BOAT_REACH
+            && p.x < x1 + BOAT_REACH
+            && p.y > y0 - BOAT_REACH
+            && p.y < y1 + BOAT_REACH
+            && (0..s.outer.len()).any(|i| segment_distance(p, s.outer[i], s.outer[(i + 1) % s.outer.len()]) <= BOAT_REACH)
     };
-    let mut kept: Vec<Quay> = vec![];
-    let mut kept_basins: Vec<Quay> = vec![];
+    let on_water = |s: &Shape| s.outer.iter().all(|&p| surface.wet(p) || ground.iter().any(|q| inside(&q.shape.outer, p)));
+    let (mut out, mut kept): (Vec<Quay>, Vec<Quay>) = (vec![], vec![]);
     let mut parent = true;
     for q in items {
-        let kind = q.kind.as_str();
-        if ATTACHED.contains(&kind) {
-            if parent {
-                kept.push(q);
-            }
-            continue;
-        }
-        if kind == "basin" && closed {
-            kept_basins.push(q);
-            continue;
-        }
-        if GROUND.contains(&kind) {
-            parent = false;
-            continue;
-        }
-        let c = mean(&q.shape.outer);
-        parent = if kind == "boat" {
-            !q.shape.outer.iter().any(|&p| on_ground(p)) && near(c)
-        } else {
-            !(surface.wet(c) && removed.iter().any(|s| inside(&s.outer, c)) && !on_ground(c))
-        };
+        match q.kind.as_str() {
+            // A part follows its boat or crane.
+            kind if ATTACHED.contains(&kind) => {
         if parent {
             kept.push(q);
         }
     }
-    // Small craft along the pontoons, one on each side when free.
-    if let Some((class, length, beam)) = small_craft(culture) {
-        let occupied: Vec<Obb> = kept
-            .iter()
-            .filter(|q| q.kind == "boat")
-            .map(|q| {
-                let (x0, y0, x1, y1) = bbox(&q.shape.outer);
-                Obb { c: Point { x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5 }, u: Point { x: 1.0, y: 0.0 }, hl: (x1 - x0) * 0.5, hw: (y1 - y0) * 0.5 }
-            })
-            .collect();
-        let mut b = Builder {
-            surface,
-            platforms: ground.iter().map(|q| (bbox(&q.shape.outer), &q.shape)).collect(),
-            solid: vec![],
-            occupied,
-            items: vec![],
-            rng: Rng::new(&format!("{seed}\u{1}harbour-band-v1")),
-            stone: material == "stone",
-            has_mole: false,
-            boats: 0,
-            boat_cap: 2 * pontoons.len(),
-            posts: 0,
-            cargo: 0,
-            level_at: None,
-        };
-        for o in &pontoons {
-            if length > o.hl * 2.0 + 2.0 {
-                continue;
-            }
-            for sign in [1.0, -1.0] {
-                let c = add(add(o.c, o.u, (o.hl - length * 0.5 - 0.5).max(0.0)), left(o.u), sign * (o.hw + 0.6 + beam * 0.5));
-                b.float(class, c, o.u);
+            "kerb" => {}
+            "basin" => {
+                if on_water(&q.shape) {
+                    out.push(q);
             }
         }
-        let moored = b.items;
-        kept.extend(moored);
+            "boat" => {
+                let c = mean(&q.shape.outer);
+                parent = works.iter().any(|s| beside(c, s)) || basins.iter().any(|s| inside(&s.outer, c));
+                if parent {
+                    kept.push(q);
     }
-    kept_basins.extend(ground);
-    kept_basins.extend(kept);
-    kept_basins
+            }
+            _ => {
+                parent = true;
+                kept.push(q);
+            }
+        }
+    }
+    out.extend(ground);
+    out.extend(kept);
+    out
 }
 
 pub(super) fn furnish_shore(seed: &str, layout: &mut Layout, population: u32, cfg: &LayoutConfig, surface: Surface<'_>) {
@@ -281,18 +213,19 @@ pub(super) fn furnish_shore(seed: &str, layout: &mut Layout, population: u32, cf
         simple_landing(seed, layout, population, surface);
         return;
     }
-    let found = plan(seed, &layout.culture, population, &cfg.port_type, &layout.streets, &structure.quays, surface);
     if cfg.port_type == "bare" {
         let Some(structure) = layout.structure.as_mut() else { return };
         structure.quays.retain(|q| PLATFORM_KINDS.contains(&q.kind.as_str()));
         return;
     }
-    // The quay band in place of the planner's platforms and the works; the
-    // quay streets stay (their quarters' port roles read them) and draw as
-    // ordinary streets; piers, stages and moles go.
-    let planner: Vec<Shape> = structure.quays.iter().filter(|q| PLATFORM_KINDS.contains(&q.kind.as_str())).map(|q| q.shape.clone()).collect();
-    let items = quay_band(seed, &layout.streets, &layout.culture, population, found.family, found.items, &planner, surface);
-    layout.streets.retain(|s| !matches!(s.role.as_str(), "pier" | "landing" | "mole"));
+    // A town: the quay band in place of the planner's platforms, with the
+    // works of its harbour types laid from it (jetties in place of the
+    // planner's piers and stages, its moles as bands). The quay streets stay
+    // (their quarters' port roles read them) and draw as ordinary streets.
+    layout.streets.retain(|s| !matches!(s.role.as_str(), "pier" | "landing"));
+    let ground = quay_band(&layout.streets, &layout.culture, surface);
+    let found = plan(seed, &layout.culture, population, &cfg.port_type, &layout.streets, &ground, surface);
+    layout.streets.retain(|s| s.role != "mole");
     let Some(structure) = layout.structure.as_mut() else { return };
-    structure.quays = items;
+    structure.quays = assemble(ground, found.items, surface);
 }

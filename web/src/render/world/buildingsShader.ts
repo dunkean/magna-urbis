@@ -27,13 +27,16 @@ float baseOcclusion(vec3 normal,vec3 p){
 uniform int uNight;
 ${MOONLIGHT_GLSL}
 ${ROOF_PLANE_LIGHT_GLSL}
-// Night: moonlight on every face; the mesh's own lit windows (LIT_CLASS faces, p on the facade in metres) glow,
-// fading out once a window is no longer resolved (from .45 to 1.2 m per pixel).
-vec3 buildingNight(vec3 color,vec3 p,bool lit){
+// Night: moonlight on every face; the mesh's own lit windows and doors (LIT_CLASS faces, p on the facade in metres)
+// glow until they are no longer resolved (from .6 to 1.8 m per pixel). glow (0 to 1) is the light that falls on a wall
+// around its lit door or window (wallGlow), over the wall's own colour.
+vec3 buildingNight(vec3 color,vec3 p,bool lit,float glow){
   if(uNight==0)return color;
-  color=moonlight(color);
-  if(!lit||uNight==2)return color;
-  return mix(color,vec3(1.,.61,.22),.93*(1.-smoothstep(.45,1.2,length(fwidth(p)))));
+  vec3 moon=moonlight(color);
+  if(uNight==2)return moon;
+  float far=smoothstep(.6,1.8,length(fwidth(p)));
+  if(lit)return mix(moon,vec3(1.,.66,.28),.95-.6*far);
+  return moon+vec3(1.,.58,.24)*glow*(.7*color+.08);
 }
 // Underdark: no sky. The town's own lanterns light it (warm, dimmed by the darkness), its lit openings glow, and
 // far buildings dissolve into the cave's darkness like the ground. uCave: on, light, fog start and end (m); uCaveEye: x, z, height.
@@ -105,7 +108,6 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   else if(c==25){cw=vec4(.5,.9,.1,.1);k=vec4(0.,.012,.02,.03);run=vec2(.4);}                        // wattle and daub
   else if(c==26){bond=0.;cw=vec4(.1,2.2,.05,.35);k=vec4(.012,.04,.02,0.);}                                  // bamboo wall: upright canes
   else if(c==27){cw=vec4(.4,.3,.15,.1);k=vec4(.015,.01,.03,.02);run=vec2(.5);}                      // coral rag under lime
-  else if(c==28){cw=vec4(.9,.9,.1,.1);k=vec4(0.,0.,0.,.03);run=vec2(.6);}                             // snow: a faint even grain, the same on every roof
   else if(c==29){cw=vec4(.9,.45,.06,.05);k=vec4(.03,.02,.025,0.);}                                   // ashlar: large dressed courses
   else if(c==30){bond=0.;cw=vec4(1.2,2.6,.03,.03);k=vec4(.012,.012,.01,.03);run=vec2(.5,2.2);}       // concrete: formwork panels, stains
   else if(c==31){bond=0.;cw=vec4(1.5,3.2,.05,.06);k=vec4(.05,.05,.012,0.);}                          // glass: mullion grid
@@ -119,7 +121,6 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   else if(c==12||c==21)w=vec3(.03,2.5,.4);                                                               // bark sheets, boards, logs: along
   else if(c==29)w=vec3(.02,1.,1.);                                                                       // ashlar: little
   else if(c==31)w=vec3(.008,1.,1.);                                                                      // glass: smooth
-  else if(c==28)w.x=0.;                                                                                  // snow keeps its own drifts
   float row=floor(q.y/cw.y);
   vec2 u=vec2(q.x/cw.x+bond*mod(row,2.),q.y/cw.y),f=fract(u);
   float keepRow=grainKeep(cw.y,fp),keepColumn=grainKeep(cw.x,fp);
@@ -130,6 +131,38 @@ vec3 materialGrain(vec3 color,float cls,vec3 N,vec3 p,float fp){
   float level=log2(max(fp,.002)*6.),lo=floor(level);vec2 s=q/w.yz;
   g+=w.x*(1.-min(keepRow,keepColumn))*(1.-smoothstep(.5,1.,fp))*mix(grainNoise(s*exp2(-lo)+cls*3.7),grainNoise(s*exp2(-lo-1.)+cls*9.1),level-lo);
   return color*(1.+g);
+}
+`;
+/** What a flat-coloured face carries on the integer part of its channels (buildingsMesh.ts): `extra` x 1 to 15, its snow;
+ * 16 to 31, its night light, with the place of the lit opening in y (along the wall) and z (height), in half metres. A
+ * crafted face has no such channels (its colour is packed). */
+export const FACE_EXTRA_GLSL = `
+  extra=vec3(0.);
+  if(houseLayer<.5){extra=floor(base*.5);base-=2.*extra;}`;
+/** Snow of a roof face, over its cover. The mantle is one noise of the plan (5 m and 2.4 m, in metres of the block): it
+ * runs on over ridges and hips, stays on its roof however the camera moves, and leaves the resolved scales before they
+ * alias. The share the face holds (roofSnow.ts: whole on flat, shaded and cold roofs, thin on steep, sunlit and heated
+ * ones) is bent by it, so a deep mantle only thins in places and a thin one breaks into patches. Needs BUILDING_GRAIN_GLSL. */
+export const ROOF_SNOW_GLSL = `
+// Light of the lit opening of a wall: a pool around it, widened with the pixel so a far one does not sparkle.
+float wallGlow(vec3 extra,vec3 N,vec3 p,float height,float fp){
+  if(extra.x<15.5||uNight!=1)return 0.;
+  float h=length(N.xz);
+  if(h<.1)return 0.;
+  float along=mod(dot(p.xz,vec2(-N.z,N.x)/h)-.5*extra.y+15.75,32.)-16.;
+  float rise=height-.5*extra.z,reach=1.5+min(fp,2.5);
+  return (extra.x-16.)/15.*1.6*exp(-(along*along+rise*rise)/(reach*reach));
+}
+// Moonlit snow of a roof: lighter than the ground's, its facets apart by the light of the relief (north-west), a flat
+// roof at 1.
+float moonFacet(vec3 N){return 1.22*(.5+.8*max(dot(N,vec3(-.70,.62,-.36)),0.));}
+// rgb: the snow's own colour (shaded faces take the blue of the sky); a: its cover.
+vec4 roofSnow(float extra,vec3 N,vec3 p,float fp){
+  float drift=0.;
+  if(fp<1.6)drift=.75*grainKeep(5.2,fp)*grainNoise(p.xz/5.2);
+  if(fp<.72)drift+=.4*grainKeep(2.4,fp)*grainNoise(p.xz/2.4+17.3);
+  float shade=clamp((N.x+N.z)*.72,0.,1.);
+  return vec4((vec3(.955,.965,.97)-shade*vec3(.18,.14,.09))*(uNight==0?1.:moonFacet(N))*(1.+.12*drift),mix(.48*smoothstep(0.,.6,extra/15.),1.,smoothstep(.3,.66,extra/15.+.64*drift)));
 }
 `;
 /** V1 roof edges, antialiased in pixels. The caller selects V1 with a uniform branch. */
@@ -166,7 +199,7 @@ uniform vec3 uYard;
 // Eye relative to the target.
 uniform vec3 uEye;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
-flat out float houseLayer;
+flat out float houseLayer; flat out vec3 extra;
 out vec3 houseUv;
 out vec3 roofEdge;
 ${HOUSE_SURFACE_VERTEX_GLSL}
@@ -180,6 +213,7 @@ void main(){
   houseLayer=floor(code/1024.);code-=houseLayer*1024.;
   houseUv=vec3(albedo.xy,albedo.z<0.?albedo.y:100.);
   if(houseLayer>.5)base=houseFaceColor(albedo.z);
+${FACE_EXTRA_GLSL}
   float painted=floor(code/64.);
   materialClass=code-64.*painted;townGain=painted/15.;
   bool roof=materialClass>=35.;
@@ -218,7 +252,7 @@ void main(){
 export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
-flat in float houseLayer;
+flat in float houseLayer; flat in vec3 extra;
 in vec3 houseUv;
 flat in float planGrainFade;
 in vec3 roofEdge; uniform float uRoofInkDpr;
@@ -228,6 +262,7 @@ uniform vec3 uHaze;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
+${ROOF_SNOW_GLSL}
 ${COVER_GRAIN_GLSL}
 ${HOUSE_SURFACE_GLSL}
 ${ROOF_INK_GLSL}
@@ -242,6 +277,11 @@ void main(){
   else if(townGain>0.&&cls>.5&&cls<18.5)rgb=coverGrainMarks(base,cls,N,grainPosition,townGain);
   else rgb=materialGrain(base,cls,N,grainPosition,fp);
   rgb=mix(rgb,base,planGrainFade);
+  // Snow over the cover, in the light the cover is in: a face the town look painted carries its night already.
+  if(extra.x>.5&&extra.x<15.5&&uCave.x<.5){
+    vec4 snow=roofSnow(extra.x,N,grainPosition,fp);
+    rgb=mix(rgb,townGain>0.&&uNight!=0?moonlight(snow.rgb):snow.rgb,snow.a);
+  }
   // The town look already includes slope light and ambience on faces it paints.
   if(townGain<=0.&&uCave.x>.5){
     // Underdark: no sky. The town's lanterns light the walls (warm, dimmed by the darkness), roofs get their side
@@ -250,7 +290,7 @@ void main(){
     if(lit&&uCave.x<1.5)rgb=mix(rgb,vec3(1.,.64,.28),.9*(1.-smoothstep(.45,1.2,length(fwidth(facadePosition)))));
   }else if(townGain<=0.){
     float light=buildingLight(N);
-    rgb=buildingNight(rgb*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+    rgb=buildingNight(rgb*light*baseOcclusion(n,facadePosition),facadePosition,lit,wallGlow(extra,N,grainPosition,facadePosition.y,fp));
   }
   if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
   // The far town dissolves into the cave's darkness as the ground does (uHaze is that darkness then), else into the haze.

@@ -1,13 +1,16 @@
 import type { Point } from '../../../rust/bridge/housesContract';
 import { netPolygonArea } from '../gen/core/geom';
-import { moatDepth, moatSpans, type MoatSpan } from '../render/city3dMoat';
+import { moatSpans, type MoatSpan } from '../render/city3dMoat';
+import { moatSpec, moatWidth, moatBankRise, moatCut, moatCutReach, moatDepth, moatForm, moatOuterEdges, moatScarp, type MoatForm, type MoatSpec } from '../render/moatModel';
 
-/** Ground cuts of the 3D terrain: the moats of the town circuits, dug by their depth with sloped scarp and
- * counterscarp. Built once per set of circuits (`city3d.ts` hands it to the terrain with `setGroundCuts`);
+/** Ground cuts of the 3D terrain: the moats of the town circuits, dug by their depth in the form of the circuit
+ * (render/moatModel.ts: V ditch, earth scarps, revetted flat bottom, double ditch). Built once per set of circuits (`city3d.ts` hands it to the terrain with `setGroundCuts`);
  * the terrain lowers its tile heights through `lower`, as it raises or lowers building footings
  * (urbanBuildingGround.ts). Walls, bridges and quays keep the undug ground (the town's placement height).
- * A moat piece lowers the ground inside its polygon only: depth × smoothstep(distance to its edge / slope).
- * Edges shared by two pieces (tiles of one moat) are not banks, so a moat tiled by the engine digs as one. */
+ * A moat piece lowers the ground inside its polygon only: `moatCut` of the distance to its nearest bank.
+ * Edges shared by two pieces (tiles of one moat) are not banks, so a moat tiled by the engine digs as one.
+ * Where the form has an outer bank (the spoil thrown up beyond the counterscarp), the ground rises outside those edges.
+ * A sluice is a narrow cut from the head of a wet ditch to the water. */
 interface Edge {
   ax: number;
   ay: number;
@@ -15,10 +18,18 @@ interface Edge {
   by: number;
   piece: number;
   bank: boolean;
+  /** A bank edge away from the curtain: the counterscarp. */
+  outer: boolean;
 }
 interface Piece {
   depth: number;
+  form: MoatForm;
+  /** Run of the scarp, distance from the banks to the middle, and how far inside a bank the cut still deepens (m). */
   slope: number;
+  half: number;
+  reach: number;
+  /** Width of the outer bank (m), 0 without one. */
+  bankWidth: number;
   x0: number;
   y0: number;
   x1: number;
@@ -31,6 +42,9 @@ interface Ditch {
 }
 interface Circuit {
   ditch?: readonly Ditch[];
+  moat?: MoatSpec;
+  style?: string;
+  path?: readonly Point[];
   gatehouses?: readonly { kind: string; passage: Point[]; passage_width_m: number }[];
 }
 
@@ -44,15 +58,26 @@ export class UrbanGroundCuts {
   private readonly cells = new Map<number, Edge[]>();
   private readonly boxes = new Map<number, number[]>();
   /** Gate crossings: the moat is dug on under the gate street (a bridge spans it), across the causeway the engine leaves. */
-  private readonly spans: (MoatSpan & { slope: number })[] = [];
+  private readonly spans: (Omit<MoatSpan, 'piece'> & { slope: number })[] = [];
+  /** Counterscarp edges of the pieces whose form raises an outer bank. */
+  private readonly banks: Edge[] = [];
   readonly empty: boolean;
 
   constructor(circuits: readonly Circuit[] = []) {
     const key = (p: Point): string => `${Math.round(p.x * 20)},${Math.round(p.y * 20)}`;
     const shared = new Map<string, number>();
-    const rings: { ring: Point[]; piece: number }[] = [];
-    for (const e of circuits) for (const span of moatSpans(e.gatehouses ?? [], e.ditch ?? [])) this.spans.push({ ...span, slope: Math.max(0.5, Math.min(span.depth * 1.2, 0.45 * (span.last - span.first))) });
+    const rings: { ring: Point[]; piece: number; outer: boolean[] }[] = [];
+    for (const e of circuits) for (const span of moatSpans(e.gatehouses ?? [], e.ditch ?? [], moatForm(e))) this.spans.push({ ...span, slope: Math.max(0.5, Math.min(span.depth * 1.2, 0.45 * (span.last - span.first))) });
+    // A sluice: 3 m wide, 1.5 m deep, from inside the head of the ditch to the water.
     for (const e of circuits)
+      for (const [head, shore] of moatSpec(e)?.sluices ?? []) {
+        const l = Math.hypot(shore.x - head.x, shore.y - head.y);
+        if (l < 0.5) continue;
+        const s = { x: (shore.x - head.x) / l, y: (shore.y - head.y) / l };
+        this.spans.push({ b: head, s, n: { x: -s.y, y: s.x }, first: -3, last: l + 2, half: 1, depth: 1.5, wet: true, slope: 1 });
+      }
+    for (const e of circuits) {
+      const form = moatForm(e);
       for (const d of e.ditch ?? []) {
         const outer = d.shape?.outer;
         if (!outer || outer.length < 3) continue;
@@ -77,22 +102,27 @@ export class UrbanGroundCuts {
             const k = [key(a), key(b)].sort().join('|');
             shared.set(k, (shared.get(k) ?? 0) + 1);
           }
-        const area = netPolygonArea(outer, holes);
-        // Mean band width: area over half the perimeter.
-        const depth = moatDepth(d),
-          width = (2 * area) / Math.max(1, perimeter);
-        // Scarp about 1:1.2, never past the middle of the band.
-        const piece = this.pieces.push({ depth, slope: Math.max(0.5, Math.min(depth * 1.2, 0.45 * width)), x0, y0, x1, y1 }) - 1;
-        for (const ring of all) rings.push({ ring, piece });
+        // Breadth of the piece: between its two banks where the curtain tells them apart.
+        const counterscarp = e.path ? moatOuterEdges({ ...d, shape: { outer, holes } }, e.path) : undefined,
+          depth = moatDepth(d, form),
+          width = counterscarp ? moatWidth({ ...d, shape: { outer, holes } }, counterscarp) : (2 * netPolygonArea(outer, holes)) / Math.max(1, perimeter);
+        const slope = moatScarp(form, depth, width),
+          half = 0.5 * width;
+        const bankWidth = form.bankM?.[0] ?? 0;
+        const piece = this.pieces.push({ depth, form, slope, half, reach: moatCutReach(form, slope, half), bankWidth, x0: x0 - bankWidth, y0: y0 - bankWidth, x1: x1 + bankWidth, y1: y1 + bankWidth }) - 1;
+        all.forEach((ring, ri) => rings.push({ ring, piece, outer: (bankWidth && (counterscarp ?? moatOuterEdges({ ...d, shape: { outer, holes } }))[ri]) || [] }));
       }
-    for (const { ring, piece } of rings)
+    }
+    for (const { ring, piece, outer } of rings)
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i],
-          b = ring[(i + 1) % ring.length];
-        const edge: Edge = { ax: a.x, ay: a.y, bx: b.x, by: b.y, piece, bank: (shared.get([key(a), key(b)].sort().join('|')) ?? 0) < 2 };
+          b = ring[(i + 1) % ring.length],
+          bank = (shared.get([key(a), key(b)].sort().join('|')) ?? 0) < 2;
+        const edge: Edge = { ax: a.x, ay: a.y, bx: b.x, by: b.y, piece, bank, outer: bank && !!outer[i] };
         for (let r = Math.floor(Math.min(a.y, b.y) / ROW); r <= Math.floor(Math.max(a.y, b.y) / ROW); r++) this.at(this.rows, r, edge);
         if (!edge.bank) continue;
-        const reach = this.pieces[piece].slope;
+        if (edge.outer) this.banks.push(edge);
+        const reach = Math.max(this.pieces[piece].reach, edge.outer ? this.pieces[piece].bankWidth : 0);
         for (let y = Math.floor((Math.min(a.y, b.y) - reach) / CELL); y <= Math.floor((Math.max(a.y, b.y) + reach) / CELL); y++)
           for (let x = Math.floor((Math.min(a.x, b.x) - reach) / CELL); x <= Math.floor((Math.max(a.x, b.x) + reach) / CELL); x++) this.at(this.cells, UrbanGroundCuts.key(x, y), edge);
       }
@@ -136,12 +166,22 @@ export class UrbanGroundCuts {
       for (let j = Math.ceil((sp.b.y - reach) / step); j * step <= sp.b.y + reach; j++) for (let i = Math.ceil((sp.b.x - reach) / step); i * step <= sp.b.x + reach; i++) out.push([i, j]);
       yield out;
     }
+    // The outer banks: the nodes within their width of a counterscarp edge.
+    for (let k = 0; k < this.banks.length; k += 64) {
+      const out: [number, number][] = [];
+      for (const e of this.banks.slice(k, k + 64)) {
+        const w = this.pieces[e.piece].bankWidth;
+        for (let j = Math.ceil((Math.min(e.ay, e.by) - w) / step); j * step <= Math.max(e.ay, e.by) + w; j++) for (let i = Math.ceil((Math.min(e.ax, e.bx) - w) / step); i * step <= Math.max(e.ax, e.bx) + w; i++) out.push([i, j]);
+      }
+      yield out;
+    }
   }
 
   /** Height of the dug ground at (x, y), given the undug `height`. */
   lower(x: number, y: number, height: number): number {
     if (this.empty) return height;
-    let cut = 0;
+    let cut = 0,
+      rise = 0;
     for (const sp of this.spans) {
       const dx = x - sp.b.x,
         dy = y - sp.b.y,
@@ -163,19 +203,20 @@ export class UrbanGroundCuts {
         if (e.piece !== i || e.ay > y === e.by > y) continue;
         if (x < ((e.bx - e.ax) * (y - e.ay)) / (e.by - e.ay) + e.ax) inside = !inside;
       }
-      if (!inside) continue;
-      let d = p.slope;
+      if (!inside && !p.bankWidth) continue;
+      let d = inside ? p.reach : p.bankWidth;
       for (const e of this.cells.get(UrbanGroundCuts.key(Math.floor(x / CELL), Math.floor(y / CELL))) ?? []) {
-        if (e.piece !== i) continue;
+        if (e.piece !== i || (!inside && !e.outer)) continue;
         const dx = e.bx - e.ax,
           dy = e.by - e.ay,
           l = dx * dx + dy * dy;
         const t = l ? Math.max(0, Math.min(1, ((x - e.ax) * dx + (y - e.ay) * dy) / l)) : 0;
         d = Math.min(d, Math.hypot(e.ax + t * dx - x, e.ay + t * dy - y));
       }
-      const s = Math.min(1, d / p.slope);
-      cut = Math.max(cut, p.depth * s * s * (3 - 2 * s));
+      if (inside) cut = Math.max(cut, moatCut(p.form, p.depth, p.slope, p.half, d));
+      else rise = Math.max(rise, moatBankRise(p.form, d));
     }
-    return height - cut;
+    // A bank never stands in a ditch or a crossing.
+    return cut > 0 ? height - cut : height + rise;
   }
 }

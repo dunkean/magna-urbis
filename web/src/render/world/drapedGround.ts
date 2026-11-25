@@ -18,7 +18,7 @@ import { createHeightTexture, type TerrainHeights } from './heights';
 import { LATTICE, MAX_PATCHES, PatchList, lodEyeHeight, morphStart, patchLevels, patchRatio, selectPatches, shapedPatchLevels, type PatchQuery } from './patches';
 import { SQUARE_FLOATS, SQUARE_TRIANGLES, TerrainMesh } from './terrainMesh';
 import { tileKey } from './tilePyramid';
-import { hazeDistance } from './volumes';
+import { NIGHT_HAZE, hazeDistance } from './volumes';
 import { CAVE_DUSK, GROUND_LAMPS, caveFogRange, caveGroundLamps, type WorldCave } from './cave';
 
 /** Control heights assumed for a map whose relief is not known: the ground is then draped flat. */
@@ -229,8 +229,8 @@ export class DrapedGround {
   }
 
   /** Draws the ground of a tilted frame over `paper`, the colour around the map (0..1 components); in the Underdark
-   * (`cave`) under no sky, in the cave's own light. */
-  draw(frame: LiveFrame, heights: TerrainHeights | undefined, paper: readonly [number, number, number], cave?: WorldCave): void {
+   * (`cave`) under no sky, in the cave's own light; at `night` under a dark one. */
+  draw(frame: LiveFrame, heights: TerrainHeights | undefined, paper: readonly [number, number, number], cave?: WorldCave, night = false): void {
     const gl = this.gl,
       camera = frame.camera,
       stats = this.stats;
@@ -241,7 +241,7 @@ export class DrapedGround {
     if (!this.selected(frame, heights)) this.select(frame, heights);
     // Beyond the map and above the horizon: the paper in the top view, the haze once the relief stands (the darkness
     // of the cave in the Underdark).
-    const air = cave && heights ? CAVE_DUSK : HAZE;
+    const air = cave && heights ? CAVE_DUSK : night ? NIGHT_HAZE : HAZE;
     gl.clearColor(paper[0] + (air[0] - paper[0]) * rise, paper[1] + (air[1] - paper[1]) * rise, paper[2] + (air[2] - paper[2]) * rise, 1);
     gl.clearDepth(1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);

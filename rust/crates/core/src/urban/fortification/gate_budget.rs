@@ -5,9 +5,10 @@
 //! streets with the trace are ranked and the gate budget keeps the most important ones, spaced along the
 //! circuit (`choose`). A historical walled town opens few gates: about 2 to 4 main gates under 5 000
 //! inhabitants, 5 at 10 000, 6 to 8 for a large city, plus at most `POSTERNS` posterns (`gate_budget`).
-//! - At a kept passage the curtain turns square to its street (`square_passages`): the wall adapts to
-//!   the road while nothing is built on it yet, so the street keeps its line and the gatehouse, the
-//!   lanes and the lots that follow all stand on a square gate.
+//! - At a kept passage the curtain stays straight or turns gently and its street turns square to it,
+//!   over its last metres, while nothing is built along it (`fit_passages`): the gatehouse, the lanes
+//!   and the lots that follow stand on a square gate, and no gate folds its curtain. A bent-axis gate
+//!   is a passage inside its gatehouse (`bab`), never a bend of the wall.
 //! - Every other crossing closes (`close_crossings`): the street ends at the wall on both sides, and a
 //!   main road shut out goes round the wall to a kept gate along a through road (`divert`). A main
 //!   road with no way round keeps its gate, over the budget (`way_round`).
@@ -23,6 +24,9 @@ use super::crossings::close_crossings_at;
 use super::geometry::{V, add, closed, cross, dir, dist, dot, normals, pt};
 use super::shore::water_passages;
 
+/// A walled place under this population is a village: it keeps a gate on each of its few roads, and its
+/// ways pass the hedge, the palisade or the wall as they are trodden.
+const VILLAGE: u32 = 2_000;
 /// Posterns a circuit keeps besides its main gates.
 const POSTERNS: usize = 2;
 /// Main gates for `pop` inhabitants: 2 + sqrt(pop / 1500), rounded, 2 to 8 (2 000 → 3, 5 000 → 4,
@@ -139,7 +143,7 @@ const GRAZING: f64 = 0.26;
 /// The gate budget on the closed `path`: the crossings kept as gates and the ones that close. Main
 /// roads first (regional roads, then main streets, a grazing one last, then the widest), at most the
 /// budget and spaced by about a third of an even share of the circuit; then `POSTERNS` lesser streets.
-/// A walled village (under 2 000) keeps a gate on each of its few roads.
+/// A walled `VILLAGE` keeps a gate on each of its few roads.
 fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, surface: Surface<'_>) -> (Vec<Passage>, Vec<Passage>) {
     let cum = cumulated(path);
     let total = cum[path.len() - 1].max(1.0);
@@ -150,7 +154,7 @@ fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, surface: 
             .then(b.width.total_cmp(&a.width))
             .then(a.arc.total_cmp(&b.arc))
     });
-    let village = pop < 2_000;
+    let village = pop < VILLAGE;
     let (budget, posterns) = if village { (usize::MAX, usize::MAX) } else { (gate_budget(pop, purpose), POSTERNS) };
     let spacing = if village { 0.0 } else { (total / budget as f64 * 0.35).clamp(40.0, 250.0) };
     let apart = |kept: &[Passage], c: &Passage, s: f64| {
@@ -175,82 +179,269 @@ fn choose(path: &[Point], streets: &[Street], pop: u32, purpose: &str, surface: 
     (kept, dropped)
 }
 
-/// A curtain within this angle (rad, 15°) of square to its gate street is left as traced.
+/// A street within this angle (rad, 15°) of square to its curtain passes the gate as it is.
 const SQUARE_TOLERANCE: f64 = 0.26;
-/// Largest turn (rad, 60°) of a gate front away from the line of its curtain.
+/// Largest skew (rad, 60°) of a street that turns to its gate: a more oblique one passes as it is.
 const SQUARE_TURN: f64 = 1.05;
 /// Half length (m) of a gate front beyond the half width of its street: room for the gatehouse masses
-/// and its flanking towers.
+/// and its flanking towers, and for its masses alone. Over it the curtain turns by at most `FRONT_TURN`
+/// (rad, 30°).
 const FRONT: f64 = 12.0;
+const ROOM: f64 = 4.0;
+const FRONT_TURN: f64 = 0.52;
+/// Within `STRAIGHT` m of a gate no corner of the curtain turns by more than `CORNER_TURN` (rad, 60°:
+/// an interior angle of 120°), and the curtain by no more than `BEND` (rad, 120°) in all.
+pub(super) const STRAIGHT: f64 = 25.0;
+pub(super) const CORNER_TURN: f64 = 1.05;
+const BEND: f64 = 2.1;
+/// How far (m) a gate moves along its curtain to leave a corner.
+const MOVE: f64 = 60.0;
+/// Straight run (m) of a street on each side of its gate, and its largest turn (rad, 40°) at a vertex
+/// of the bend that leads there.
+const RUN: f64 = 14.0;
+const STREET_TURN: f64 = 0.7;
+/// Largest angle (rad, 35°) between the line of a street and its run through its gate.
+const STREET_SWING: f64 = 0.61;
 
-/// The circuit `ring` with a gate front at each passage: a straight stretch square to the street
-/// (turned by at most `SQUARE_TURN` from the line of the curtain), joined to the curtain on each side
-/// by a link at 45°. The street keeps its line; the wall bends to meet it, as a gate set in a short
-/// return of the curtain. The front stands inside the trace: the gate point moves back along its
-/// street until the corner that would jut out lies on the old curtain, so the wall yields land of its
-/// own town and takes none outside (a suburb, a neighbour, the moat's far bank). `passages` follow
-/// their gate points.
-///
-/// A passage already square within `SQUARE_TOLERANCE` keeps its curtain. A skewed one that still works
-/// as a gate (up to `SQUARE_TURN` off square) is left as traced with probability `improvisation` (the
-/// layout's `street_improvisation`, one seeded draw per gate point). A front that would stand in water,
-/// reach another passage or tangle the ring is tried at half its margin, then given up.
-fn square_passages(mut ring: Vec<Point>, passages: &mut [Passage], surface: Surface<'_>, key: &str, improvisation: f64) -> Vec<Point> {
+/// Half length (m) of curtain that a gate on a street of `width` m rules.
+fn gate_reach(width: f64) -> f64 {
+    STRAIGHT.max(width * 0.5 + FRONT)
+}
+
+/// Whether a gate may stand at arc `s` of the closed `path`: a straight front (`room` m beyond its
+/// street), no sharp corner and no fold round it.
+fn gentle(path: &[Point], cum: &[f64], s: f64, width: f64, room: f64) -> bool {
+    let n = path.len() - 1;
+    let total = cum[n];
+    let (front, half) = (width * 0.5 + room, gate_reach(width));
+    if total < 4.0 * half {
+        return true;
+    }
+    let mut k = at_arc(path, cum, s - half).1;
+    // The corners met from `s - half` on: their distance to the gate and the heading past them.
+    let mut far = cum[k + 1] - (s - half).rem_euclid(total);
+    let (mut heading, mut bend, mut turned) = (0.0_f64, (0.0_f64, 0.0_f64), None::<(f64, f64)>);
+    while far < 2.0 * half {
+        let next = (k + 1) % n;
+        let (u, v) = (dir(path[k], path[k + 1]), dir(path[next], path[next + 1]));
+        let turn = cross(u, v).atan2(dot(u, v));
+        if turn.abs() > CORNER_TURN {
+            return false;
+        }
+        let before = heading;
+        heading += turn;
+        bend = (bend.0.min(heading), bend.1.max(heading));
+        if (far - half).abs() < front {
+            let (lo, hi) = turned.unwrap_or((before, before));
+            turned = Some((lo.min(heading), hi.max(heading)));
+        }
+        k = next;
+        far += cum[k + 1] - cum[k];
+    }
+    bend.1 - bend.0 <= BEND && turned.is_none_or(|(lo, hi)| hi - lo <= FRONT_TURN)
+}
+
+/// Cubic curve from `a` (leaving along `u`) to `b` (arriving along `v`): its inner points.
+fn bend_between(a: Point, u: V, b: Point, v: V) -> Vec<Point> {
+    let handle = 0.25 * dist(a, b);
+    let (c, d) = (add(a, u, handle), add(b, v, -handle));
+    (1..8)
+        .map(|j| {
+            let t = f64::from(j) / 8.0;
+            let w = [(1.0 - t).powi(3), 3.0 * t * (1.0 - t).powi(2), 3.0 * t * t * (1.0 - t), t.powi(3)];
+            pt(a.x * w[0] + c.x * w[1] + d.x * w[2] + b.x * w[3], a.y * w[0] + c.y * w[1] + d.y * w[2] + b.y * w[3])
+        })
+        .collect()
+}
+
+/// The street of the passage `p` turned to pass the curtain (`path`) square at `gate`, whose outward
+/// normal is `n`, by at most `STREET_SWING`: over its last metres on each side it leaves its line by a
+/// curve and runs straight through. Returns the street, its new line and widths and its direction
+/// through the gate. `None` where the street ends or meets
+/// another too near, or where the new line would stand in water, climb, cross another street or the
+/// wall again, or bend sharply: the street then keeps its line.
+fn turned_street(streets: &[Street], path: &[Point], p: &Passage, gate: Point, n: V, surface: Surface<'_>, grade: f64) -> Option<(usize, Vec<Point>, Vec<f64>, V)> {
+    let (at, wet) = (p.at, surface.wet(p.at));
+    let (_, _, si, k) = streets.iter().enumerate().filter(|(_, s)| !water_way(s, wet))
+        .flat_map(|(si, s)| s.path.windows(2).enumerate()
+            .filter(move |(_, w)| dist(w[0], w[1]) > 1e-6 && g::distance(at, w[0], w[1]).0 < 1.0)
+            .map(move |(k, _)| (priority(s), s.widths.get(k).copied().unwrap_or(4.0), si, k)))
+        .max_by(|x, y| x.0.cmp(&y.0).then(x.1.total_cmp(&y.1)).then(y.2.cmp(&x.2)))?;
+    let line = &streets[si].path;
+    let cum = cumulated(line);
+    let total = cum[line.len() - 1];
+    let here = cum[k] + dist(line[k], p.at).min(dist(line[k], line[k + 1]));
+    let along = dir(line[k], line[k + 1]);
+    let n = if dot(along, n) >= 0.0 { n } else { (-n.0, -n.1) };
+    // Square to the curtain, or oblique by what the street cannot turn.
+    let skew = cross(n, along).atan2(dot(n, along));
+    let (sin, cos) = (skew.signum() * (skew.abs() - STREET_SWING).max(0.0)).sin_cos();
+    let n = (n.0 * cos - n.1 * sin, n.0 * sin + n.1 * cos);
+    let reach = 2.0 * RUN + 60.0 * cross(along, n).abs() + dist(p.at, gate);
+    let (into, out) = (add(gate, n, -RUN), add(gate, n, RUN));
+    [1.0, 0.7].into_iter().find_map(|share| {
+        let (a, b) = ((here - reach * share).max(0.0), (here + reach * share).min(total));
+        if here - a < 2.0 * RUN || b - here < 2.0 * RUN {
+            return None;
+        }
+        let ((from, ka), (to, kb)) = (at_arc_open(line, &cum, a), at_arc_open(line, &cum, b));
+        let mut bend = vec![from];
+        bend.extend(bend_between(from, dir(line[ka], line[ka + 1]), into, n));
+        bend.extend([into, gate, out]);
+        bend.extend(bend_between(out, n, to, dir(line[kb], line[kb + 1])));
+        bend.push(to);
+        let sharp = bend.windows(3).any(|w| {
+            let (u, v) = (dir(w[0], w[1]), dir(w[1], w[2]));
+            cross(u, v).atan2(dot(u, v)).abs() > STREET_TURN
+        });
+        // The wall is passed at the gate and nowhere else.
+        let again = bend.windows(2).any(|w| path.windows(2).any(|q| g::segment_hit(w[0], w[1], q[0], q[1]).is_some_and(|(_, x)| dist(x, gate) > 0.5)));
+        if sharp || again || bend.iter().any(|&q| surface.wet(q)) || !routing::path_clear(surface, &bend, grade) {
+            return None;
+        }
+        // No other street meets the stretch that moves, nor is crossed by the new line.
+        let mut old: Vec<Point> = vec![from];
+        old.extend((0..line.len()).filter(|&j| cum[j] > a && cum[j] < b).map(|j| line[j]));
+        old.push(to);
+        let ends = |q: Point| dist(q, from) < 1.0 || dist(q, to) < 1.0;
+        let met = streets.iter().enumerate().any(|(sj, t)| sj != si
+            && (t.path.iter().any(|&q| !ends(q) && old.windows(2).any(|w| g::distance(q, w[0], w[1]).0 < 1.5))
+                || t.path.windows(2).any(|q| old.windows(2).chain(bend.windows(2)).any(|w| g::segment_hit(w[0], w[1], q[0], q[1]).is_some_and(|(_, x)| !ends(x))))));
+        if met {
+            return None;
+        }
+        let width = |j: usize| streets[si].widths.get(j).or(streets[si].widths.last()).copied().unwrap_or(4.0);
+        let vertices = (0..line.len()).filter(|&j| cum[j] < a - 0.05).map(|j| (line[j], width(j)))
+            .chain(bend.iter().map(|&q| (q, width(k))))
+            .chain((0..line.len()).filter(|&j| cum[j] > b + 0.05).map(|j| (line[j], width(j))));
+        let (moved, widths): (Vec<Point>, Vec<f64>) = vertices.unzip();
+        Some((si, moved, widths, n))
+    })
+}
+
+/// Point of the open `path` at arc `s` (cumulated lengths `cum`), and its segment.
+fn at_arc_open(path: &[Point], cum: &[f64], s: f64) -> (Point, usize) {
+    let n = path.len() - 1;
+    let k = (0..n).find(|&k| cum[k + 1] >= s).unwrap_or(n - 1);
+    (add(path[k], dir(path[k], path[k + 1]), s - cum[k]), k)
+}
+
+/// The `ring` with the corner by the passage `p` cut by a straight gate front, as far along each side of
+/// the corner, and the gate on it. Across a salient the town yields its tip and takes no land outside;
+/// across an inward corner (`inward`) it takes the hollow. `None` when the corner is of the other sort,
+/// the street does not pass the front, or the front leaves a sharp corner or meets water or a passage of
+/// `others`.
+fn cut_corner(ring: &[Point], p: &Passage, others: &[Point], streets: &[Street], surface: Surface<'_>, inward: bool) -> Option<(Vec<Point>, Point)> {
+    let path = closed(ring);
+    let cum = cumulated(&path);
+    let (n, total) = (ring.len(), cum[ring.len()]);
+    let s = arc_of(&path, &cum, p.at);
+    let half = gate_reach(p.width);
+    if total < 8.0 * half {
+        return None;
+    }
+    // The sharpest corner that the gate stands by.
+    let turn = |j: usize| { let (u, v) = (dir(path[(j + n - 1) % n], path[j]), dir(path[j], path[j + 1])); cross(u, v).atan2(dot(u, v)).abs() };
+    let gap = |j: usize| { let d = (cum[j] - s).rem_euclid(total); d.min(total - d) };
+    let at = (0..n).filter(|&j| gap(j) < half).max_by(|&x, &y| turn(x).total_cmp(&turn(y)))?;
+    let hollow = cross(dir(path[(at + n - 1) % n], path[at]), dir(path[at], path[at + 1])) * g::signed(ring) < 0.0;
+    if hollow != inward {
+        return None;
+    }
+    [1.0, 1.4, 2.0].into_iter().find_map(|share| front_across(ring, &path, &cum, p, (cum[at] - half * share, cum[at] + half * share), others, streets, surface, inward))
+}
+
+/// The front of `cut_corner` from arc `from` to arc `to` of the closed `path` of `ring`.
+#[allow(clippy::too_many_arguments)]
+fn front_across(ring: &[Point], path: &[Point], cum: &[f64], p: &Passage, (from, to): (f64, f64), others: &[Point], streets: &[Street], surface: Surface<'_>, inward: bool) -> Option<(Vec<Point>, Point)> {
+    let (n, total) = (ring.len(), cum[ring.len()]);
+    let (a, b) = (at_arc(path, cum, from).0, at_arc(path, cum, to).0);
+    let chord = dir(a, b);
+    // Where the street of the passage meets the front.
+    let wet = surface.wet(p.at);
+    let gate = streets.iter().filter(|s| !water_way(s, wet) && s.path.windows(2).any(|w| g::distance(p.at, w[0], w[1]).0 < 1.0))
+        .flat_map(|s| s.path.windows(2).filter_map(|w| g::segment_hit(w[0], w[1], a, b).map(|h| h.1)).collect::<Vec<_>>())
+        .min_by(|x, y| dist(*x, p.at).total_cmp(&dist(*y, p.at)))?;
+    let shape = Shape { outer: ring.to_vec(), holes: vec![] };
+    let room = dist(a, gate).min(dist(gate, b)) >= p.width * 0.5 + ROOM;
+    let held = (1..8).map(|j| add(a, chord, dist(a, b) * f64::from(j) / 8.0)).all(|q| !surface.wet(q) && (inward || g::contains(&shape, q)));
+    let clear = others.iter().all(|&q| (arc_of(path, cum, q) - from + ROOM).rem_euclid(total) > to - from + 2.0 * ROOM);
+    if !(room && held && clear) {
+        return None;
+    }
+    // The curtain from the far end of the front round to the near one; the front closes it.
+    let k = at_arc(path, cum, to).1;
+    let mut out = vec![b];
+    out.extend((1..=n).map(|j| (k + j) % n).filter(|&j| (cum[j] - from).rem_euclid(total) > to - from + 0.05).map(|j| ring[j]));
+    out.push(a);
+    out.dedup_by(|x, y| dist(*x, *y) < 0.05);
+    let cut = closed(&out);
+    let round = cumulated(&cut);
+    (out.len() >= 4 && g::simple(&Shape { outer: out.clone(), holes: vec![] }) && gentle(&cut, &round, arc_of(&cut, &round, gate), p.width, ROOM)).then_some((out, gate))
+}
+
+/// Invariant (a gate never folds its curtain): the gates of the circuit `ring` on a straight or gently
+/// turning curtain (`gentle`), each square to its street as far as the street can turn. The curtain
+/// keeps its trace; it is the street that turns, over its last metres (`turned_street`).
+/// - A gate by a genuine corner that juts out stands on a straight front across its tip (`cut_corner`).
+///   By any other corner, or on a line that is not to be touched (a planned rectangle, a bastioned
+///   front), it moves along the curtain, up to `MOVE` m, to the nearest straight stretch its street can
+///   follow. An inward corner that holds its gate all the same is filled by a straight front; else the
+///   gate stays as traced.
+/// - A street square within `SQUARE_TOLERANCE` keeps its line. A skewed one is left as drawn with
+///   probability `improvisation` (one seeded draw per gate point), and where it cannot turn: the
+///   passage is then oblique in its straight curtain. So is the passage of a `VILLAGE`, and of a street
+///   that is already built on.
+fn fit_passages(mut ring: Vec<Point>, passages: &mut [Passage], streets: &mut [Street], c: &Circuit<'_>, surface: Surface<'_>) -> Vec<Point> {
+    let turning = c.streets_turn && c.pop >= VILLAGE;
     for i in 0..passages.len() {
+        let others: Vec<Point> = passages.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, q)| q.at).collect();
+        let mut path = closed(&ring);
+        let mut cum = cumulated(&path);
+        let total = cum[ring.len()];
         let p = passages[i];
-        let path = closed(&ring);
-        let cum = cumulated(&path);
-        let total = cum[path.len() - 1];
         let k = segment_of(&path, p.at);
         if g::distance(p.at, path[k], path[k + 1]).0 > 1.0 {
             continue;
         }
         let s = cum[k] + dist(path[k], p.at);
-        let across = (-p.along.1, p.along.0);
-        let local = cross(p.along, dir(path[k], path[k + 1])).abs().clamp(0.0, 1.0).acos();
-        let outward = if g::contains(&Shape { outer: ring.clone(), holes: vec![] }, add(p.at, p.along, 2.0)) { (-p.along.0, -p.along.1) } else { p.along };
-        let from_wall = |q: Point| path.windows(2).map(|w| g::distance(q, w[0], w[1]).0).fold(f64::INFINITY, f64::min);
-        let fronted = |margin: f64| -> Option<(Vec<Point>, Point)> {
-            let half = p.width * 0.5 + margin;
-            // The line of the curtain round the gate: its chord over the front, so a wiggle of the
-            // trace at the gate point does not set the turn.
-            let line = dir(at_arc(&path, &cum, s - half).0, at_arc(&path, &cum, s + half).0);
-            let across = if dot(across, line) >= 0.0 { across } else { (-across.0, -across.1) };
-            let skew = dot(across, line).clamp(-1.0, 1.0).acos();
-            if skew.max(local) <= SQUARE_TOLERANCE {
-                return Some((ring.clone(), p.at));
+        let apart = |t: f64| others.iter().all(|&q| { let d = (arc_of(&path, &cum, q) - t).rem_euclid(total); d.min(total - d) >= 2.0 * STRAIGHT });
+        if !gentle(&path, &cum, s, p.width, ROOM) {
+            let cut = if c.squared { cut_corner(&ring, &p, &others, streets, surface, false) } else { None };
+            let ns = normals(&path);
+            let moved = if cut.is_none() && turning {
+                (1..=(MOVE / 4.0) as i32).flat_map(|m| [4.0, -4.0].map(|step| s + f64::from(m) * step)).find_map(|t| {
+                    let (gate, k) = at_arc(&path, &cum, t);
+                    (gentle(&path, &cum, t, p.width, FRONT) && apart(t) && !surface.wet(gate)).then(|| turned_street(streets, &path, &p, gate, ns[k], surface, c.grade).map(|street| (gate, street)))?
+                })
+            } else {
+                None
+            };
+            if let Some((gate, (si, line, widths, along))) = moved {
+                streets[si].path = line;
+                streets[si].widths = widths;
+                (passages[i].at, passages[i].along) = (gate, along);
+                continue;
             }
-            let turn = skew.min(SQUARE_TURN) * cross(line, across).signum();
-            let front = (line.0 * turn.cos() - line.1 * turn.sin(), line.0 * turn.sin() + line.1 * turn.cos());
-            let at = add(p.at, outward, -half * turn.abs().tan());
-            let (p0, p1) = (add(at, front, -half), add(at, front, half));
-            // Each corner joins the curtain as far along it as it stands off it.
-            let (from, to) = (arc_of(&path, &cum, p0) - from_wall(p0) - 0.5, arc_of(&path, &cum, p1) + from_wall(p1) + 0.5);
-            let span = (to - from).rem_euclid(total);
-            let clear = |q: &Passage| (arc_of(&path, &cum, q.at) - from + margin).rem_euclid(total) > span + 2.0 * margin;
-            if span > 8.0 * half || 2.0 * span >= total || [at, p0, p1].into_iter().any(|q| surface.wet(q)) || !passages.iter().enumerate().all(|(j, q)| j == i || clear(q)) {
-                return None;
-            }
-            // The curtain from the far link round to the near one, then the front.
-            let n = ring.len();
-            let mut out = vec![at_arc(&path, &cum, to).0];
-            out.extend((1..=n).map(|j| (k + j) % n).filter(|&j| (cum[j] - from).rem_euclid(total) > span).map(|j| ring[j]));
-            out.extend([at_arc(&path, &cum, from).0, p0, p1]);
-            out.dedup_by(|a, b| dist(*a, *b) < 0.05);
-            (out.len() >= 4 && g::simple(&Shape { outer: out.clone(), holes: vec![] })).then_some((out, at))
-        };
-        // How far the gate is off square: against the line of the curtain and against its own segment.
-        let lean = {
-            let half = p.width * 0.5 + FRONT;
-            let line = dir(at_arc(&path, &cum, s - half).0, at_arc(&path, &cum, s + half).0);
-            dot(across, line).abs().clamp(0.0, 1.0).acos().max(local)
-        };
-        if lean <= SQUARE_TOLERANCE || lean <= SQUARE_TURN && Rng::new(key).fork(&format!("gate-front:{:.0}:{:.0}", p.at.x, p.at.y)).chance(improvisation) {
+            let cut = cut.or_else(|| if c.squared { cut_corner(&ring, &p, &others, streets, surface, true) } else { None });
+            let Some((cut, gate)) = cut else { continue };
+            ring = cut;
+            passages[i].at = gate;
+            path = closed(&ring);
+            cum = cumulated(&path);
+        }
+        let p = passages[i];
+        let k = segment_of(&path, p.at);
+        let lean = cross(p.along, dir(path[k], path[k + 1])).abs().clamp(0.0, 1.0).acos();
+        let left = Rng::new(c.key).fork(&format!("gate-front:{:.0}:{:.0}", p.at.x, p.at.y)).chance(c.improvisation);
+        if !(turning && c.squared) || lean <= SQUARE_TOLERANCE || lean > SQUARE_TURN || left || !gentle(&path, &cum, arc_of(&path, &cum, p.at), p.width, ROOM) {
             continue;
         }
-        if let Some((squared, at)) = fronted(FRONT).or_else(|| fronted(FRONT * 0.5)) {
-            ring = squared;
-            passages[i].at = at;
+        let n = normals(&path)[k];
+        if let Some((si, line, widths, along)) = turned_street(streets, &path, &p, p.at, n, surface, c.grade) {
+            streets[si].path = line;
+            streets[si].widths = widths;
+            passages[i].along = along;
         }
     }
     ring
@@ -266,9 +457,11 @@ pub(in super::super) struct Circuit<'a> {
     /// Widest moat (m) the style digs, and the steepest street grade: a diversion runs beyond the moat.
     pub(in super::super) moat: f64,
     pub(in super::super) grade: f64,
-    /// The curtain may turn square to its gate streets (not a planned rectangle, a bastioned front or
-    /// a stretch shared with another circuit).
+    /// Its curtain may be fitted to its gates and its streets square to it (`fit_passages`): not a
+    /// planned rectangle, a bastioned front or a stretch shared with another circuit.
     pub(in super::super) squared: bool,
+    /// Its streets may still turn to their gates: nothing is built along them yet.
+    pub(in super::super) streets_turn: bool,
     /// Seed key and share of the gates left as traced (`LayoutConfig::street_improvisation`).
     pub(in super::super) key: &'a str,
     pub(in super::super) improvisation: f64,
@@ -276,8 +469,8 @@ pub(in super::super) struct Circuit<'a> {
 
 /// The land gates of the circuit `wall`, decided on `streets` as they stand: the budget keeps the
 /// passages (`choose`), a main road it shuts out with no way round keeps its gate all the same
-/// (`way_round`), the curtain turns square to the passages (`square_passages`), and every other street
-/// crossing ends at the wall on both sides. Returns the circuit, its passages and the main roads shut
+/// (`way_round`), the gates are fitted to the curtain (`fit_passages`), and every other street crossing
+/// ends at the wall on both sides. Returns the circuit, its passages and the main roads shut
 /// out (for `divert`, once the works of the circuit are built).
 pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circuit<'_>, surface: Surface<'_>) -> (Shape, Vec<Passage>, Vec<Passage>) {
     if wall.outer.len() < 3 {
@@ -296,7 +489,7 @@ pub(in super::super) fn decide(wall: &Shape, streets: &mut Vec<Street>, c: &Circ
             _ => shut.push(p),
         }
     }
-    let ring = if c.squared { square_passages(wall.outer.clone(), &mut kept, surface, c.key, c.improvisation) } else { wall.outer.clone() };
+    let ring = if c.squared || c.streets_turn { fit_passages(wall.outer.clone(), &mut kept, streets, c, surface) } else { wall.outer.clone() };
     let e = Enclosure {
         path: closed(&ring),
         kind: c.kind.into(),

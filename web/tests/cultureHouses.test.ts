@@ -235,7 +235,7 @@ describe('culture house exteriors', () => {
   it('places giant doors outside the wall and scales their opening with the storey', () => {
     const b = silhouetteBuilding(house('giant-hold', rect(30, 20), { body_scale: 3.5 }, 'flat', 17.5)),
       mesh = b.volumes[0].roof_mesh;
-    const doors = mesh.faces.filter(f => f.material === 'city3d:wall:opening@393126').map(f => f.vertices.map(i => mesh.vertices[i]));
+    const doors = mesh.faces.filter(f => 'entrance' in f && f.entrance === true).map(f => f.vertices.map(i => mesh.vertices[i]));
     expect(doors.length).toBeGreaterThan(0);
     expect(doors[0].every(p => p.y < 0 || p.y > 20 || p.x < 0 || p.x > 30)).toBe(true);
     expect(Math.max(...doors[0].map(p => p.z))).toBeCloseTo(7.35);
@@ -248,7 +248,8 @@ describe('culture house exteriors', () => {
         drawings.get(layer)!.add(code % 1024);
       }
     }
-    expect(drawings.get(houseSurfaceLayer('wall', 'giant-hold', 'door'))).toContain(0);
+    // Closed, or standing open on a lit room (the glow class).
+    expect([0, 32].some(code => drawings.get(houseSurfaceLayer('wall', 'giant-hold', 'door'))?.has(code))).toBe(true);
     expect(drawings.get(houseSurfaceLayer('wall', 'giant-hold', 'window'))).toContain(32);
   });
 });

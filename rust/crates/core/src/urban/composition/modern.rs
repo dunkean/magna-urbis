@@ -55,6 +55,18 @@ pub(super) fn generate_modern(
             tick.elapsed().as_secs_f64() * 1000.0
         );
     }
+    // A port town keeps the land of its centre: an outline that spans a bay clips to its islets too,
+    // which no street reaches.
+    if macroplan::harbour::port_town(cfg) && !macroplan::harbour::params(culture).fondamenta && surface.n > 1 {
+        let reach = macroplan::harbour::Reach::new(surface, site.center, roads);
+        let reached = |s: &Shape| reach.holds(g::interior_point(s));
+        if footprint.structure.allocated.iter().any(reached) {
+            footprint.structure.allocated.retain(reached);
+            for shapes in &mut footprint.phases {
+                shapes.retain(reached);
+            }
+        }
+    }
     let kind = Kind::from_id(&cfg.settlement_form);
     if kind == Some(Kind::Metropolis) {
         wards(&mut footprint.structure, site, roads);

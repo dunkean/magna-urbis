@@ -165,6 +165,7 @@ V2Env v2Local(vec3 s,vec2 world,float tpi,float footprint){
   e.snow=sstep(.45-cut,.45+cut,pack);
   // Just past the threshold the snow is a dusting; only resolved zooms show the ground through it.
   v2WinterThin=(1.-sstep(.45,.56,pack))*(1.-sstep(2.,12.,footprint));
+  v2SnowTread=e.snow>0.&&v2OccupationShare.z>0.?v2TownSnow(world,e.temperature,footprint):vec2(1.,0.);
   // Fresh water of this altitude freezes with the level ground around it, not with this fragment's relief or drifts.
   v2WinterFresh=v2WinterFreeze(v2WinterClimate(s.x,0.));
   if(uForest==1){vec4 f=forestField(world,0.);e.woody=f.r;e.height=f.g*50.;e.needle=f.b;e.leaf=mix(e.leaf,1.,e.needle);}
@@ -239,7 +240,9 @@ GroundMaterial v2GroundEnv(V2Env local,vec3 s,vec2 world,float footprint,vec3 li
   float snowRelief=clamp(-.2*snowLee*min(length(light.xz)/max(light.y,.3),2.),-.1,.1);
   vec3 snowColor=vec3(.88,.91,.91)*(1.+.035*clamp(snowDrift*1.7,-1.,1.)+.018*snowGrain+snowRelief);
   // A dusting at the edge of the cover lets the ground and its texture through (v2WinterThin, resolved zooms only).
-  opened=mix(opened,snowColor,e.snow*(1.-.35*v2WinterThin));
+  // Town snow is worn thin and packed (v2TownSnow).
+  snowColor*=mix(vec3(1.),vec3(.84,.83,.815),v2SnowTread.y);
+  opened=mix(opened,snowColor,e.snow*v2SnowTread.x*(1.-.35*v2WinterThin));
   opened=mix(opened,renderGuideSediment,clamp(renderGuideBeach/.8,0.,1.)*(1.-e.snow));
   V2Env canopyPhase=e;canopyPhase.snow=0.;
   V2Env leafOn=canopyPhase;leafOn.leaf=1.;

@@ -217,36 +217,31 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
                         path
                     };
                     path.insert(0, start);
-                    let mut role = if matches!(morph.text("closeOp"), "derbs" | "roji" | "hutong") {
+                    let role = if matches!(morph.text("closeOp"), "derbs" | "roji" | "hutong") {
                         "private"
                     } else {
                         "collective"
                     };
-                    if !routing::path_clear(surface, &path, cfg.max_lane_grade) {
-                        if !stairs || !routing::path_clear(surface, &path, cfg.max_stair_grade) {
-                            continue;
-                        }
-                        if super::quarters::mostly_stairs(&path, surface, cfg) {
-                            role = "stairs";
-                        }
+                    // A stair joins two streets: a way into a block stays a lane, however steep.
+                    let limit = if stairs { cfg.max_stair_grade } else { cfg.max_lane_grade };
+                    if !routing::path_clear(surface, &path, limit) {
+                        continue;
                     }
-                    let base = if role == "stairs" { 2.0 } else { 2.6 };
+                    let base = 2.6;
                     let mut widths = vec![base; path.len()];
-                    if role != "stairs" {
-                        let mouth = parent
-                            .widths
-                            .iter()
-                            .copied()
-                            .fold(base, f64::max)
-                            .min(base * 1.5);
-                        let mut along = 0.0;
-                        for i in 0..path.len() {
-                            if i > 0 {
-                                along += dist(path[i - 1], path[i]);
-                            }
-                            let t = (1.0 - along / 12.0).clamp(0.0, 1.0);
-                            widths[i] = base + (mouth - base) * t * t * (3.0 - 2.0 * t);
+                    let mouth = parent
+                        .widths
+                        .iter()
+                        .copied()
+                        .fold(base, f64::max)
+                        .min(base * 1.5);
+                    let mut along = 0.0;
+                    for i in 0..path.len() {
+                        if i > 0 {
+                            along += dist(path[i - 1], path[i]);
                         }
+                        let t = (1.0 - along / 12.0).clamp(0.0, 1.0);
+                        widths[i] = base + (mouth - base) * t * t * (3.0 - 2.0 * t);
                     }
                     let ribbons = g::ribbon(&path, &widths);
                     if ribbons.iter().any(|r| {

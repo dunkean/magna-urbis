@@ -62,7 +62,7 @@ describe('completed terrain adapter for Rust settlements', () => {
     expect(result.water[15 * n + 15]).toBe(2);
     expect(result.waterLevel[15 * n + 15]).toBe(35);
     expect(result.water[5 * n + 15]).toBe(3);
-    expect(result.riverWidth[5 * n + 15]).toBe(9);
+    expect(result.riverWidth[5 * n + 15]).toBeCloseTo(7.65);
     expect(result.riverIds[5 * n + 15]).toBe(7);
     expect(result.waterLevel[5 * n + 15]).toBeLessThan(30);
   });
@@ -87,6 +87,19 @@ describe('completed terrain adapter for Rust settlements', () => {
     expect(result.physical).toEqual({ n: 64, height: controls, interpolation: 'bspline', floor: 0.3 });
     expect(result.height[0]).toBeCloseTo((source[0] + source[1] + source[64] + source[65]) / 4);
     expect(result.height[0]).not.toBe(source[0]);
+  });
+  it('upsamples the drawn spline, so the slope has no jump at the source cells', () => {
+    const t = terrain(32);
+    // A crease along x: the land falls by 20 m per source cell, then lies flat under the sea.
+    t.physical = { n: 32, height: Float32Array.from({ length: 1024 }, (_, i) => Math.max(-40, 300 - 20 * (i % 32))) };
+    const result = settlementRaster(t, 1024, true),
+      row = result.height.subarray(512 * 1024, 513 * 1024);
+    let bend = 0;
+    for (let x = 1; x < 1023; x++) bend = Math.max(bend, Math.abs(row[x - 1] - 2 * row[x] + row[x + 1]));
+    // Bilinear cells take the whole change of slope (20 m per 32 target cells) in one target cell.
+    expect(bend).toBeLessThan(0.1 * (20 / 32));
+    expect(row[1000]).toBeCloseTo(-40);
+    expect(result.water[512 * 1024 + 1000]).toBe(1);
   });
   it('rejects malformed physical dimensions before upload', () => {
     expect(() => validatePhysicalTerrain({ n: 64, height: new Float32Array(32) })).toThrow('Invalid physical');

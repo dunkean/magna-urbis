@@ -33,7 +33,7 @@ export interface VolumeDetail {
   features?: MassingFeature[];
   overhang_m?: number;
   trim?: string;
-  form?: 'yurt' | 'tipi' | 'tree' | 'mushroom' | 'longhouse' | 'tower' | 'battered';
+  form?: 'yurt' | 'tipi' | 'igloo' | 'tree' | 'mushroom' | 'longhouse' | 'tower' | 'battered';
   stilts_m?: number;
   tree_seed?: string;
   /** Inhabitants' size against a human (doors, windows). */ body_scale?: number;
@@ -187,7 +187,7 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
           parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined,
           overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined,
           trim: v.trim,
-          form: v.form && ['yurt', 'tipi', 'tree', 'mushroom', 'longhouse', 'tower', 'battered'].includes(v.form) ? v.form : undefined,
+          form: v.form && ['yurt', 'tipi', 'igloo', 'tree', 'mushroom', 'longhouse', 'tower', 'battered'].includes(v.form) ? v.form : undefined,
           stilts_m: finite(v.stilts_m) && v.stilts_m > 0 ? Math.min(v.stilts_m, 4) : undefined,
           body_scale: finite(v.body_scale) && v.body_scale > 0 ? v.body_scale : undefined,
           openness: finite(v.openness) && v.openness > 0 && v.openness < 1 ? v.openness : undefined,
@@ -532,6 +532,18 @@ function shed(f: Faces, ring: readonly Point[], [r0, r1]: [Point, Point], eave: 
   for (const p of ring) far = Math.max(far, Math.abs((p.x - r0.x) * nx + (p.y - r0.y) * ny));
   if (far < 1e-6) return;
   f.add(ring.map(p => at(p, eave + rise * (1 - Math.abs((p.x - r0.x) * nx + (p.y - r0.y) * ny) / far))));
+}
+/** Walls between the wall top and a mono-pitch roof derived from its ridge: the high side and the two ends. Their top edge is
+ * the roof's own, so nothing shows through. Empty for any other roof, and for explicit pans (they carry their `gables`). */
+export function shedWalls(v: ResolvedVolume): Vertex3[][] {
+  if (v.roof !== 'shed' || v.pans) return [];
+  const pan = volumeRoof(v, 0, 0)[0]?.points ?? [],
+    low = v.eave_m + 0.02;
+  return pan.flatMap((a, i) => {
+    const b = pan[(i + 1) % pan.length];
+    if (a.z <= low && b.z <= low) return [];
+    return [[at(a, v.eave_m), at(b, v.eave_m), ...(b.z > low ? [b] : []), ...(a.z > low ? [a] : [])]];
+  });
 }
 /** Dome: three courses of the outline shrinking to the centre on a quarter circle. */
 function dome(f: Faces, ring: readonly Point[], eave: number, rise: number): void {

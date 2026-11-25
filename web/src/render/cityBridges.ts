@@ -59,8 +59,60 @@ function townOwns(layouts: readonly Layout[]): (p: Point) => boolean {
   return owns;
 }
 
+const crossed = (a: Point, b: Point, c: Point, d: Point): boolean => {
+  const side = (p: Point, q: Point, r: Point): number => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
+};
+/** Whether two decks cross or lie over each other in plan (the rule of the engine, core `decks.rs`): centre lines that
+ * cross, or run closer than their half widths and a metre away from their ends. Two decks may share an abutment. */
+export function decksMeet(a: { path: Point[]; width: number }, b: { path: Point[]; width: number }): boolean {
+  if (a.path.length < 2 || b.path.length < 2) return false;
+  const reach = (a.width + b.width) / 2 + 1,
+    box = (p: Point[]): number[] => [Math.min(...p.map(v => v.x)), Math.min(...p.map(v => v.y)), Math.max(...p.map(v => v.x)), Math.max(...p.map(v => v.y))],
+    p = box(a.path),
+    q = box(b.path);
+  if (p[0] - reach > q[2] || q[0] - reach > p[2] || p[1] - reach > q[3] || q[1] - reach > p[3]) return false;
+  // An abutment they share: they leave it apart, and do not meet again.
+  const lines = [a.path, [...a.path].reverse()].flatMap(u => [b.path, [...b.path].reverse()].map(v => [u, v])),
+    shared = lines.find(([u, v]) => Math.hypot(u[0].x - v[0].x, u[0].y - v[0].y) <= 0.5);
+  if (shared) {
+    const [u, v] = shared,
+      turn = Math.abs(Math.atan2(u[1].y - u[0].y, u[1].x - u[0].x) - Math.atan2(v[1].y - v[0].y, v[1].x - v[0].x));
+    return Math.min(turn, 2 * Math.PI - turn) < 0.17 || a.path.slice(1).some((q, i) => b.path.slice(1).some((t, j) => crossed(a.path[i], q, b.path[j], t)));
+  }
+  const pairs = (test: (u: Point, v: Point, s: Point, t: Point) => boolean): boolean => a.path.slice(1).some((v, i) => b.path.slice(1).some((t, j) => test(a.path[i], v, b.path[j], t)));
+  if (pairs(crossed)) return true;
+  const ends = [a.path[0], a.path[a.path.length - 1], b.path[0], b.path[b.path.length - 1]],
+    inner = (v: Point): boolean => ends.every(e => Math.hypot(e.x - v.x, e.y - v.y) > reach);
+  // Points along the middle of a deck too near the other one.
+  const along = (path: Point[], other: Point[]): boolean =>
+    path.slice(1).some((v, i) => {
+      const u = path[i],
+        n = Math.max(1, Math.ceil(Math.hypot(v.x - u.x, v.y - u.y) / 2));
+      for (let k = 0; k <= n; k++) {
+        const x = { x: u.x + ((v.x - u.x) * k) / n, y: u.y + ((v.y - u.y) * k) / n };
+        if (inner(x) && other.slice(1).some((t, j) => distance(x, other[j], t) < reach)) return true;
+      }
+      return false;
+    });
+  return along(a.path, b.path) || along(b.path, a.path);
+}
+const deckOf = (s: Street): { path: Point[]; width: number } => ({ path: s.path, width: Math.max(1, ...s.widths.filter(Number.isFinite)) });
+/** The decks of `streets` without those that meet one before them; other streets stay. */
+function unmetDecks(streets: Street[]): Street[] {
+  const kept: { path: Point[]; width: number }[] = [];
+  return streets.filter(s => {
+    if (s.role !== 'bridge' || s.path.length < 2) return true;
+    const deck = deckOf(s);
+    if (kept.some(k => decksMeet(k, deck))) return false;
+    kept.push(deck);
+    return true;
+  });
+}
+
 /** Native urban crossings own their replaced regional artwork, including an
  * oblique old deck and a bank chord that the native street now skirts on land.
+ * A regional deck that would cross or cover one of the town is retired: the town has joined its road to its own deck.
  * A regional deck is also retired when its road was rejected: one of its banks
  * lies where the town draws the roads and no town street meets it there. A deck
  * whose road is still drawn on both banks always stays. */
@@ -72,6 +124,7 @@ export function urbanReplacesCrossing(street: Street, layouts: readonly Layout[]
   const owns = townOwns(layouts),
     served = (p: Point): boolean => layouts.some(l => l.streets.some(s => !['bridge', 'ford', 'causeway', 'pier', 'mole', 'landing'].includes(s.role) && s.path.slice(1).some((q, i) => distance(p, s.path[i], q) < 12 + Math.max(0, ...s.widths.filter(Number.isFinite)) / 2)));
   if ([a, b].some(p => owns(p) && !served(p))) return true;
+  if (layouts.some(l => l.streets.some(s => crossing(s) && s.role !== 'causeway' && decksMeet(deckOf(street), deckOf(s))))) return true;
   return layouts.some(l => {
     const direct = l.streets.some(s => {
       if (s.role === 'approach') return [a, b].every(p => s.path.slice(1).some((q, i) => distance(p, s.path[i], q) < 6));
@@ -107,11 +160,46 @@ export function bridgeRoadOwnership(layouts: Layout[], roads?: RoadOutput): Layo
 }
 
 export function cityBridgeStreets(layouts: readonly Layout[], regional: readonly Street[]): Street[] {
-  return [...layouts.flatMap(l => l.streets), ...regional.filter(s => !urbanReplacesCrossing(s, layouts))];
+  return unmetDecks([...layouts.flatMap(l => l.streets), ...regional.filter(s => !urbanReplacesCrossing(s, layouts))]);
 }
 
 type RegionalRoad = { path: Point[]; width: number };
 type RegionalBridge = { a: Point; b: Point; width: number };
+/** A road without its stretch under each retired deck, from one end of the deck to the other along the road: the town
+ * draws its own deck beside it, and no road lies on the water. */
+function withoutRetiredSpans(path: Point[], retired: readonly RegionalBridge[]): Point[][] {
+  let pieces = [path];
+  for (const { a, b, width } of retired) {
+    const near = Math.max(6, width),
+      length = Math.hypot(b.x - a.x, b.y - a.y);
+    pieces = pieces.flatMap(piece => {
+      /** Point of the piece nearest to `p`, with its segment, station and distance. */
+      const project = (p: Point): { i: number; at: number; off: number; q: Point } => {
+        let best = { i: 1, at: 0, off: Infinity, q: piece[0] };
+        for (let i = 1, s = 0; i < piece.length; i++) {
+          const u = piece[i - 1],
+            dx = piece[i].x - u.x,
+            dy = piece[i].y - u.y,
+            l = Math.hypot(dx, dy),
+            t = l > 0 ? Math.max(0, Math.min(1, ((p.x - u.x) * dx + (p.y - u.y) * dy) / (l * l))) : 0,
+            q = { x: u.x + t * dx, y: u.y + t * dy },
+            off = Math.hypot(p.x - q.x, p.y - q.y);
+          if (off < best.off) best = { i, at: s + t * l, off, q };
+          s += l;
+        }
+        return best;
+      };
+      const [from, to] = [project(a), project(b)].sort((p, q) => p.at - q.at);
+      // Another road, or another leg of a hairpin.
+      if (from.off > near || to.off > near || to.at - from.at < 0.5 * length || to.at - from.at > 2 * length + near) return [piece];
+      return [
+        [...piece.slice(0, from.i), from.q],
+        [to.q, ...piece.slice(to.i)],
+      ].filter(p => p.slice(1).some((q, j) => Math.hypot(q.x - p[j].x, q.y - p[j].y) > 0.1));
+    });
+  }
+  return pieces;
+}
 const shownNetworks = new WeakMap<object, { roads?: readonly RegionalRoad[]; bridges?: readonly RegionalBridge[]; layouts: readonly Layout[]; out: { roads?: RegionalRoad[]; bridges?: RegionalBridge[] } }>();
 /** The regional roads and decks a 2D map draws around native towns, owned exactly as the 3D ground and decks are
  * (city3d `outsideUrbanStreets`, `cityBridgeStreets`): a regional road is drawn outside the towns' road ownership only,
@@ -123,13 +211,14 @@ export function cityRegionalNetwork<R extends RegionalRoad, B extends RegionalBr
   if (!key) return {};
   const memo = shownNetworks.get(key);
   if (memo && memo.roads === roads && memo.bridges === bridges && memo.layouts.length === layouts.length && memo.layouts.every((l, i) => l === layouts[i])) return memo.out as { roads?: R[]; bridges?: B[] };
+  const retired = (bridges ?? []).filter(b => typeof (b as { kind?: unknown }).kind !== 'string' && urbanReplacesCrossing({ path: [b.a, b.b], widths: [b.width, b.width], rank: 0, role: 'bridge' }, layouts));
   const shown =
     roads &&
     outsideUrbanStreets(
-      roads.map((r, i) => ({ path: r.path, widths: r.path.map(() => r.width), rank: i, role: 'regional' })),
+      roads.flatMap((r, i) => withoutRetiredSpans(r.path, retired).map(path => ({ path, widths: path.map(() => r.width), rank: i, role: 'regional' }))),
       layouts as Layout[],
     ).map(s => ({ ...roads[s.rank], path: s.path }));
-  const decks = bridges?.filter(b => typeof (b as { kind?: unknown }).kind === 'string' || !urbanReplacesCrossing({ path: [b.a, b.b], widths: [b.width, b.width], rank: 0, role: 'bridge' }, layouts));
+  const decks = bridges?.filter(b => !retired.includes(b));
   const out = { roads: shown, bridges: decks };
   shownNetworks.set(key, { roads, bridges, layouts: layouts.slice(), out });
   return out;
@@ -383,27 +472,87 @@ export function missedWaterCrossings(road: readonly Point[], crossings: readonly
 
 /** Every crossing of the routed segments snapped onto the drawn water (see snapCrossingToWater); a bridge over no
  * drawn water is dropped, and drawn river water the road crosses without a crossing gets one (missedWaterCrossings),
- * so no road runs over drawn water without a deck or a ford. Run once per routing result, never per frame. */
+ * so no road runs over drawn water without a deck or a ford. No two decks meet: a road over a deck already laid takes it.
+ * Run once per routing result, never per frame. */
 export function snapRoadCrossings<S extends { path: Point[]; class?: string; crossings: { kind?: string; path: Point[] }[] }>(segments: readonly S[], clearance: (x: number, y: number) => number, reach: number): S[] {
-  return segments.map(s => {
-    const snapped = s.crossings.flatMap(c => snapCrossingToWater(s.path, c, clearance, reach) ?? []);
-    const missed = missedWaterCrossings(s.path, snapped, clearance, reach, s.class === 'track' || s.class === 'trail') as S['crossings'];
-    if (!missed.length) return s.crossings.length ? { ...s, crossings: snapped } : s;
-    const first = (c: { path: Point[] }): number => {
-      const p = c.path[0];
-      let best = Infinity,
-        at = 0;
-      s.path.forEach((q, i) => {
-        const o = Math.hypot(q.x - p.x, q.y - p.y);
-        if (o < best) {
-          best = o;
-          at = i;
-        }
-      });
-      return at;
-    };
-    return { ...s, crossings: [...snapped, ...missed].sort((a, b) => first(a) - first(b)) };
+  // Decks already laid, most important road first. A road snapped or found over one of them takes it, along the banks.
+  const laid: { path: Point[]; width: number }[] = [];
+  return segments.flatMap((s, i) => {
+    const snapped = s.crossings.flatMap(c => snapCrossingToWater(s.path, c, clearance, reach) ?? []),
+      missed = missedWaterCrossings(s.path, snapped, clearance, reach, s.class === 'track' || s.class === 'trail') as S['crossings'],
+      width = (s as { width?: number }).width ?? 6;
+    if (!missed.length && !s.crossings.length) return [s];
+    const at = (c: { path: Point[] }): number => stationOn(s.path, c.path[0]).at;
+    const found = missed.length ? [...snapped, ...missed].sort((a, b) => at(a) - at(b)) : snapped;
+    const kept: typeof found = [];
+    let pieces: Point[][] = [s.path];
+    for (const c of found) {
+      const met = c.kind === 'causeway' ? undefined : laid.find(d => decksMeet(d, { path: c.path, width }));
+      if (!met) {
+        laid.push({ path: c.path, width });
+        kept.push(c);
+        continue;
+      }
+      pieces = pieces.flatMap(piece => overDeck(piece, c.path, met.path, clearance, reach) ?? withoutSpan(piece, c.path));
+    }
+    // A road cut at water it cannot cross is said by its pieces, never drawn over it.
+    return pieces.map(path => ({ ...s, path, crossings: pieces.length === 1 ? kept : kept.filter(c => stationOn(path, c.path[0]).off < 1 && stationOn(path, c.path[c.path.length - 1]).off < 1) }));
   });
+}
+
+/** Station of the point of a path nearest to `p`, its segment and its distance. */
+function stationOn(path: readonly Point[], p: Point): { at: number; i: number; off: number; q: Point } {
+  let best = { at: 0, i: 1, off: Infinity, q: path[0] };
+  for (let i = 1, s = 0; i < path.length; i++) {
+    const u = path[i - 1],
+      dx = path[i].x - u.x,
+      dy = path[i].y - u.y,
+      l = Math.hypot(dx, dy),
+      t = l > 0 ? Math.max(0, Math.min(1, ((p.x - u.x) * dx + (p.y - u.y) * dy) / (l * l))) : 0,
+      q = { x: u.x + t * dx, y: u.y + t * dy },
+      off = Math.hypot(p.x - q.x, p.y - q.y);
+    if (off < best.off) best = { at: s + t * l, i, off, q };
+    s += l;
+  }
+  return best;
+}
+/** The two sides of a road about one of its spans, undefined when the span is not on it. */
+function besideSpan(path: Point[], span: Point[]): [Point[], Point[]] | undefined {
+  const [a, b] = [stationOn(path, span[0]), stationOn(path, span[span.length - 1])].sort((u, v) => u.at - v.at);
+  if (a.off > 1 || b.off > 1) return undefined;
+  return [
+    [...path.slice(0, a.i), a.q],
+    [b.q, ...path.slice(b.i)],
+  ];
+}
+function withoutSpan(path: Point[], span: Point[]): Point[][] {
+  const sides = besideSpan(path, span);
+  return sides ? sides.filter(p => p.slice(1).some((q, j) => Math.hypot(q.x - p[j].x, q.y - p[j].y) > 0.1)) : [path];
+}
+/** A road over `span` led over another deck instead: along its bank to the deck, over it, and back along the other
+ * bank. Its sides may be taken some way back for a dry line; undefined when there is none. */
+function overDeck(path: Point[], span: Point[], deck: Point[], clearance: (x: number, y: number) => number, reach: number): Point[][] | undefined {
+  const sides = besideSpan(path, span);
+  if (!sides) return undefined;
+  const dry = (u: Point, v: Point): boolean => {
+    const n = Math.max(1, Math.ceil(Math.hypot(v.x - u.x, v.y - u.y) / 2));
+    for (let k = 0; k <= n; k++) if (clearance(u.x + ((v.x - u.x) * k) / n, u.y + ((v.y - u.y) * k) / n) <= 0) return false;
+    return true;
+  };
+  /** The side of the road (its far end first) led to `end` from its last point, or from one within `reach` before it. */
+  const lead = (side: Point[], end: Point): Point[] | undefined => {
+    for (let k = side.length - 1, back = 0; k >= 0 && back <= reach; k--) {
+      if (dry(side[k], end)) return [...side.slice(0, k + 1), end];
+      if (k) back += Math.hypot(side[k].x - side[k - 1].x, side[k].y - side[k - 1].y);
+    }
+    return undefined;
+  };
+  for (const line of [deck, [...deck].reverse()]) {
+    const front = lead(sides[0], line[0]),
+      back = lead([...sides[1]].reverse(), line[line.length - 1]);
+    if (front && back) return [[...front, ...line.slice(1, -1), ...back.reverse()]];
+  }
+  return undefined;
 }
 
 /** Regional crossing paths can contain long dry approaches. Only their wet

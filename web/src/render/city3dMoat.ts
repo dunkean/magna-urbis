@@ -1,21 +1,24 @@
 import type { Point, Vertex3 } from '../../../rust/bridge/housesContract';
 import { surfaceTriangles } from './urbanBuildingGeometry';
+import { moatBankEdge, moatBucket, moatDepth, moatFill, moatFreeboard, moatInk, moatInward, moatScarp, moatSharedEdges, moatSheet, moatWaterColour, type MoatForm, type MoatPartShape, type MoatSpec, type MoatState } from './moatModel';
 
 /** Moats (fortification ditches) in the 3D view. The ground itself is dug: the terrain lowers its tiles inside every ditch
  * piece by the ditch depth, with a sloped scarp and counterscarp (ui/urbanGroundCuts.ts). Here, built once with the other wall
  * meshes (no per-frame work):
- * - a wet moat's water sheet, at its water level inside the dug ditch (the banks above it hide its edges: it follows the shore);
+ * - a wet moat's water sheet, level, at the height its fill gives it inside the dug ditch (the banks above it hide its edges);
+ * - the revetment of a faced ditch (masonry, timber, dressed stone): a battered face from the lip to the bottom, on both banks;
+ * - the dams between two reaches and the sluice at a head by the water;
  * - at each land gate whose street crosses the moat, a bridge deck with parapets at the undug ground level, spanning the ditch.
  * `g` is the placement height: the undug ground on which walls, bridges and quays stand. `height_m` of a ditch is its depth. */
 const MOAT_WATER_DEFAULT = '#6f8f98';
-/** Drop from the rim of a wet moat to its water: a third of its depth, so the banks show and the water fills the ditch. */
-const freeboard = (depth: number): number => Math.min(1.2, Math.max(0.5, depth / 3));
+/** Water lies level: its surface steps down the ground by this height (m), each step a reach held by a dam. */
+const REACH_STEP = 0.5;
 type Shape = { outer: Point[]; holes: Point[][] };
 type Face = (points: Vertex3[], material: string) => void;
 type Prism = (shape: Shape, bottom: (p: Point) => number, top: (p: Point) => number, side: string, cap: string | undefined, under?: boolean) => void;
 const MAX_EDGE = 6;
 
-export const moatDepth = (d: { kind: string; height_m: number }): number => (d.height_m > 0 ? d.height_m : d.kind === 'wet' ? 2.5 : 3);
+export { moatDepth };
 
 function densify(ring: readonly Point[], step: number): Point[] {
   const out: Point[] = [];
@@ -45,20 +48,176 @@ function fine(t: readonly [Point, Point, Point], out: [Point, Point, Point][], d
   fine([mid, b, c], out, depth + 1);
 }
 
-/** The water of a wet moat piece (nothing for a dry one: the dug ground and the plan texture show it). */
-export function moatFaces(ditch: { kind: string; shape: Shape; height_m: number }, g: (p: Point) => number, face: Face, waterColor = MOAT_WATER_DEFAULT): void {
+/** The water of a wet moat piece (nothing for a dry one: the dug ground and the plan texture show it), in the state its form,
+ * the climate and the season give it (moatModel.ts): brim-full, low, stagnant or frozen. The sheet is level: at each point
+ * the lowest rim within one ditch width, taken down to a whole step, less the freeboard of the fill. It never follows a
+ * slope; where the dug bottom rises above it the ground hides it and the ditch shows dry.
+ * `parts`: the plan parts of this piece (moatModel moatParts). The sheet covers the whole piece when the ditch stands in
+ * water, only its channel or pools when the water is low or the ditch a marsh; what floats (duckweed, lilies, reeds, snow on
+ * ice) lies on it in its own colour. `engraved`: a plan in ink keeps its wash and carries no such detail. */
+export function moatFaces(ditch: { kind: string; shape: Shape; height_m: number }, form: MoatForm, g: (p: Point) => number, face: Face, waterColor = MOAT_WATER_DEFAULT, town: MoatState = '', parts: readonly MoatPartShape[] = [], engraved = false): void {
   const outer = ditch.shape?.outer;
-  if (ditch.kind !== 'wet' || !outer || outer.length < 3) return;
+  if (!outer || outer.length < 3) return;
+  const bucket = moatBucket(outer),
+    fill = moatFill(ditch.kind, bucket, form, undefined, town),
+    drop = moatFreeboard(fill, moatDepth(ditch, form));
+  if (drop === undefined) return;
   const holes = (ditch.shape.holes ?? []).filter(r => r.length >= 3),
-    level = freeboard(moatDepth(ditch)),
+    lies = moatSheet(fill),
     tris: [Point, Point, Point][] = [];
-  for (const t of surfaceTriangles([{ outer: densify(outer, MAX_EDGE), holes: holes.map(h => densify(h, MAX_EDGE)) }])) fine(t, tris);
-  const sheet = `city3d:water@${waterColor.replace('#', '')}`;
+  if (lies.whole) for (const t of surfaceTriangles([{ outer: densify(outer, MAX_EDGE), holes: holes.map(h => densify(h, MAX_EDGE)) }])) fine(t, tris);
+  let perimeter = 0,
+    area = 0;
+  [outer, ...holes].forEach((r, ri) => {
+    let a2 = 0;
+    for (let i = 0; i < r.length; i++) {
+      perimeter += Math.hypot(r[(i + 1) % r.length].x - r[i].x, r[(i + 1) % r.length].y - r[i].y);
+      a2 += r[i].x * r[(i + 1) % r.length].y - r[(i + 1) % r.length].x * r[i].y;
+    }
+    area += (ri ? -1 : 1) * Math.abs(a2 / 2);
+  });
+  // Mean band width: area over half the perimeter.
+  const reach = Math.min(30, (2 * area) / Math.max(1, perimeter)),
+    levels = new Map<string, number>(),
+    rim = (p: Point): number => {
+      const key = `${Math.round(p.x * 10)},${Math.round(p.y * 10)}`;
+      let z = levels.get(key);
+      if (z === undefined) {
+        z = g(p);
+        for (let k = 0; k < 8; k++) z = Math.min(z, g({ x: p.x + Math.cos((k * Math.PI) / 4) * reach, y: p.y + Math.sin((k * Math.PI) / 4) * reach }));
+        levels.set(key, (z = Math.floor(z / REACH_STEP) * REACH_STEP));
+      }
+      return z;
+    };
+  const sheet = `city3d:water@${moatWaterColour(fill, waterColor, engraved).replace('#', '')}`;
   for (const t of tris)
     face(
-      t.map(p => ({ x: p.x, y: p.y, z: g(p) - level })),
+      t.map(p => ({ x: p.x, y: p.y, z: rim(p) - drop })),
       sheet,
     );
+  // The parts are small (a few metres): a fan from their first corner follows the level.
+  const lay = (ring: readonly Point[], lift: number, material: string): void => {
+    for (let i = 1; i + 1 < ring.length; i++)
+      face(
+        [ring[0], ring[i], ring[i + 1]].map(p => ({ x: p.x, y: p.y, z: rim(p) - drop + lift })),
+        material,
+      );
+  };
+  for (const p of parts) {
+    if (lies.water.includes(p.part)) lay(p.shape.outer, 0, sheet);
+    else if (!engraved && lies.afloat.includes(p.part)) {
+      const ink = moatInk(p.part, ditch.kind, bucket, form, waterColor, town);
+      if (ink.fill && ink.alpha > 0) lay(p.shape.outer, 0.06, `city3d:cover:thatch@${ink.fill.replace('#', '')}`);
+    }
+  }
+}
+
+/** The revetment of a faced ditch: along every bank of its pieces, a battered face from just above the lip down to the
+ * bottom, with a coping. The terrain is dug on a grid of a few metres, so its own scarp is a soft ramp; this face stands
+ * over it and gives the ditch its wall. `material`: the facing (stone, wood). Earth forms have none. `only`: the one piece
+ * to face (the others tell which of its edges are no banks). */
+export function moatRevetment(pieces: readonly Ditch[], form: MoatForm, g: (p: Point) => number, face: Face, material: string, coping: string, only?: Ditch): void {
+  if (form.revetment === 'earth') return;
+  const shared = moatSharedEdges(pieces);
+  for (const d of only ? [only] : pieces) {
+    const outer = d.shape?.outer;
+    if (!outer || outer.length < 3) continue;
+    const holes = (d.shape.holes ?? []).filter(r => r.length >= 3);
+    let perimeter = 0,
+      area = 0;
+    [outer, ...holes].forEach((r, ri) => {
+      let a2 = 0;
+      for (let i = 0; i < r.length; i++) {
+        const p = r[i],
+          q = r[(i + 1) % r.length];
+        perimeter += Math.hypot(q.x - p.x, q.y - p.y);
+        a2 += p.x * q.y - q.x * p.y;
+      }
+      area += (ri ? -1 : 1) * Math.abs(a2 / 2);
+    });
+    const width = (2 * area) / Math.max(1, perimeter),
+      depth = moatDepth(d, form),
+      // The foot of the face: past the ramp the terrain grid makes of the scarp, never past the middle of the ditch.
+      run = Math.min(0.42 * width, Math.max(1.8, moatScarp(form, depth, width)));
+    [outer, ...holes].forEach((ring, ri) => {
+      const turn = moatInward(ring, ri);
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i],
+          b = ring[(i + 1) % ring.length],
+          l = Math.hypot(b.x - a.x, b.y - a.y);
+        if (l < 0.2 || !moatBankEdge(shared, a, b)) continue;
+        const nx = (-(b.y - a.y) / l) * turn,
+          ny = ((b.x - a.x) / l) * turn,
+          k = Math.max(1, Math.ceil(l / MAX_EDGE)),
+          at = (j: number, w: number): Point => ({ x: a.x + ((b.x - a.x) * j) / k + nx * w, y: a.y + ((b.y - a.y) * j) / k + ny * w });
+        for (let j = 0; j < k; j++) {
+          const z0 = g(at(j, 0)),
+            z1 = g(at(j + 1, 0)),
+            quad = (w0: number, h0: number, w1: number, h1: number, m: string): void => {
+              const pts = [
+                { ...at(j, w0), z: z0 + h0 },
+                { ...at(j + 1, w0), z: z1 + h0 },
+                { ...at(j + 1, w1), z: z1 + h1 },
+                { ...at(j, w1), z: z0 + h1 },
+              ];
+              // Facing the ditch and the sky whatever way the ring winds.
+              face(turn > 0 ? pts : pts.reverse(), m);
+            };
+          quad(-0.5, 0.18, 0.15, 0.18, coping);
+          quad(0.15, 0.18, run, -depth + 0.06, material);
+        }
+      }
+    });
+  }
+}
+
+/** Dams and sluices of a circuit's ditch: a dam is a wall across the ditch, its crest half a metre under the lip, that holds
+ * the upper reach; a sluice is two cheek walls and a lintel over the channel cut from the head of a wet ditch to the water. */
+export function moatWorks(moat: MoatSpec | undefined, depth: number, g: (p: Point) => number, prism: Prism, side: string, top: string): number {
+  const band = (a: Point, b: Point, o0: number, o1: number, t0 = 0, t1 = 0): Shape => {
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1,
+      s = { x: (b.x - a.x) / l, y: (b.y - a.y) / l },
+      at = (t: number, o: number): Point => ({ x: a.x + s.x * t - s.y * o, y: a.y + s.y * t + s.x * o }),
+      r = [at(t0, o0), at(l + t1, o0), at(l + t1, o1), at(t0, o1)];
+    return { outer: r.reduce((x, p, i) => x + p.x * r[(i + 1) % 4].y - r[(i + 1) % 4].x * p.y, 0) < 0 ? r.reverse() : r, holes: [] };
+  };
+  let n = 0;
+  for (const [a, b] of moat?.dams ?? []) {
+    const crest = Math.min(g(a), g(b)) - 0.5;
+    prism(
+      band(a, b, -0.9, 0.9, -0.5, 0.5),
+      p => Math.min(g(p), crest) - depth - 0.5,
+      () => crest,
+      side,
+      top,
+    );
+    n++;
+  }
+  for (const [head, shore] of moat?.sluices ?? []) {
+    const z = g(head);
+    for (const [o0, o1] of [
+      [-2.1, -1.4],
+      [1.4, 2.1],
+    ])
+      prism(
+        band(head, shore, o0, o1, -1.5, 0),
+        () => z - 2,
+        () => z + 0.3,
+        side,
+        top,
+      );
+    // The gate frame over the channel, at the head.
+    prism(
+      band(head, shore, -2.1, 2.1, -1.5, -Math.hypot(shore.x - head.x, shore.y - head.y) - 0.3),
+      () => z + 0.3,
+      () => z + 1,
+      side,
+      top,
+      true,
+    );
+    n++;
+  }
+  return n;
 }
 
 /** The edges of a ring (x, y of both ends) that can decide whether a point within `reach` of `c` is inside it: an edge off
@@ -94,10 +253,12 @@ export interface MoatSpan {
   half: number;
   depth: number;
   wet: boolean;
+  /** The piece of ditch met first: the span is filled like it. */
+  piece: Ditch;
 }
 /** The 2D walls, the 3D ground cuts and the 3D bridges all ask for the spans of the same circuit: computed once per ditch list. */
 const spanCache = new WeakMap<readonly Ditch[], { gatehouses: readonly Gatehouse[]; spans: MoatSpan[] }>();
-export function moatSpans(gatehouses: readonly Gatehouse[], ditch: readonly Ditch[]): MoatSpan[] {
+export function moatSpans(gatehouses: readonly Gatehouse[], ditch: readonly Ditch[], form: MoatForm): MoatSpan[] {
   const cached = spanCache.get(ditch);
   if (cached?.gatehouses === gatehouses) return cached.spans;
   const pieces = ditch.filter(d => (d.shape?.outer?.length ?? 0) >= 3),
@@ -152,7 +313,8 @@ export function moatSpans(gatehouses: readonly Gatehouse[], ditch: readonly Ditc
     let first = Infinity,
       last = -Infinity,
       depth = 0,
-      wet = false;
+      wet = false,
+      piece: Ditch | undefined;
     for (let t = 0; t <= 60; t += 0.5) {
       let hit = false;
       // Beside the street: the engine cuts the moat at the street ribbon (+1 m), the causeway.
@@ -160,8 +322,9 @@ export function moatSpans(gatehouses: readonly Gatehouse[], ditch: readonly Ditc
         const d = pieceAt({ x: b.x + s.x * t + n.x * o, y: b.y + s.y * t + n.y * o });
         if (d) {
           hit = true;
-          depth = Math.max(depth, moatDepth(d));
+          depth = Math.max(depth, moatDepth(d, form));
           wet ||= d.kind === 'wet';
+          piece ??= d;
         }
       }
       if (hit) {
@@ -169,7 +332,7 @@ export function moatSpans(gatehouses: readonly Gatehouse[], ditch: readonly Ditc
         last = t;
       } else if (last > first && t - last > 3) break;
     }
-    if (last > first) out.push({ b, s, n, first, last, half, depth, wet });
+    if (last > first && piece) out.push({ b, s, n, first, last, half, depth, wet, piece });
   }
   return out;
 }
@@ -183,8 +346,8 @@ export function moatSpanShape({ b, s, n, first, last, half }: MoatSpan): Shape {
   return { outer: r.reduce((a, p, i) => a + p.x * r[(i + 1) % 4].y - r[(i + 1) % 4].x * p.y, 0) < 0 ? r.reverse() : r, holes: [] };
 }
 
-export function moatBridges(gatehouses: readonly Gatehouse[], ditch: readonly Ditch[], g: (p: Point) => number, prism: Prism, side: string, deck: string): number {
-  const spans = moatSpans(gatehouses, ditch);
+export function moatBridges(gatehouses: readonly Gatehouse[], ditch: readonly Ditch[], form: MoatForm, g: (p: Point) => number, prism: Prism, side: string, deck: string): number {
+  const spans = moatSpans(gatehouses, ditch, form);
   for (const { b, s, n, first, last, half } of spans) {
     const t0 = Math.max(0, first - 1.5),
       t1 = last + 1.5;

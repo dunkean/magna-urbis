@@ -80,6 +80,38 @@ export function drawNightBuildings(ctx: CanvasRenderingContext2D, buildings: rea
   ctx.restore();
 }
 
+const lampsOf = new WeakMap<CityScene, Float32Array>();
+/** The lanterns of a town's main streets and squares: x, y, reach (m) and strength of each, kept per scene. */
+export function nightLamps(scene: CityScene): Float32Array {
+  const held = lampsOf.get(scene);
+  if (held) return held;
+  const out: number[] = [];
+  for (const s of scene.streets) {
+    if (s.rank > 2 || s.role === 'track' || s.role === 'ford') continue;
+    const p = s.street.path,
+      spacing = s.rank <= 1 ? 24 : 38;
+    let next = 9 + (hash(`${s.layout}:${s.index}`) % 14);
+    for (let i = 1; i < p.length; i++) {
+      const a = p[i - 1],
+        b = p[i],
+        dx = b.x - a.x,
+        dy = b.y - a.y,
+        len = Math.hypot(dx, dy);
+      if (!len) continue;
+      while (next < len) {
+        const side = s.width * 0.4;
+        out.push(a.x + (dx * next) / len - (dy / len) * side, a.y + (dy * next) / len + (dx / len) * side, s.rank <= 1 ? 15 : 12, 0.42);
+        next += spacing;
+      }
+      next -= len;
+    }
+  }
+  for (const b of scene.blocks) if (b.kind === 'place' && b.shape.outer.length) out.push(b.shape.outer[0].x, b.shape.outer[0].y, 15, 0.42);
+  const lamps = Float32Array.from(out);
+  lampsOf.set(scene, lamps);
+  return lamps;
+}
+
 /** Sparse lanterns on main streets/squares and a restrained pool of warm haze over each town core. */
 export function drawNightTown(ctx: CanvasRenderingContext2D, scene: CityScene, box: BuildingViewport, mpp: number, ink: boolean, streets: boolean): void {
   ctx.save();
@@ -102,35 +134,14 @@ export function drawNightTown(ctx: CanvasRenderingContext2D, scene: CityScene, b
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
-  if (streets)
-    for (const s of scene.streets) {
-      if (s.rank > 2 || s.role === 'track' || s.role === 'ford') continue;
-      const p = s.street.path,
-        spacing = s.rank <= 1 ? 24 : 38;
-      let next = 9 + (hash(`${s.layout}:${s.index}`) % 14);
-      for (let i = 1; i < p.length; i++) {
-        const a = p[i - 1],
-          b = p[i],
-          dx = b.x - a.x,
-          dy = b.y - a.y,
-          len = Math.hypot(dx, dy);
-        if (!len) continue;
-        while (next < len) {
-          const side = s.width * 0.4,
-            x = a.x + (dx * next) / len - (dy / len) * side,
-            y = a.y + (dy * next) / len + (dx / len) * side;
-          const reach = Math.max(s.rank <= 1 ? 15 : 12, 5 * mpp);
-          if (visible(x, y, box, reach)) lamp(ctx, x, y, Math.max(0.4, mpp * 0.9), reach, ink);
-          next += spacing;
-        }
-        next -= len;
-      }
+  if (streets) {
+    const lamps = nightLamps(scene);
+    for (let i = 0; i < lamps.length; i += 4) {
+      const x = lamps[i],
+        y = lamps[i + 1],
+        reach = Math.max(lamps[i + 2], 5 * mpp);
+      if (visible(x, y, box, reach)) lamp(ctx, x, y, Math.max(0.4, mpp * 0.9), reach, ink);
     }
-  for (const b of scene.blocks)
-    if (b.kind === 'place' && b.shape.outer.length) {
-      const p = b.shape.outer[0],
-        reach = Math.max(15, 5 * mpp);
-      if (visible(p.x, p.y, box, reach)) lamp(ctx, p.x, p.y, Math.max(0.5, mpp), reach, ink);
-    }
+  }
   ctx.restore();
 }

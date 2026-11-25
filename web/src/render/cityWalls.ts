@@ -15,21 +15,35 @@ import type { Box, CityLod, CityPalette, CityScene } from './cityCanvas';
 import { META, STROKE_STRIDE, type CityGlStrokes } from './cityGlBuild';
 import { earcut } from './cityGlEarcut';
 import { moatSpans, moatSpanShape } from './city3dMoat';
-import { dryDitchColour } from './waterPalette';
+import { MOAT_FIXED_PARTS, MOAT_PARTS, moatSpec, moatBucket, moatFormId, moatFormOf, moatInk, moatParts, moatPlanInk, moatState, type MoatForm, type MoatPart, type MoatSpec, type MoatState } from './moatModel';
 import { mapSeasonKey } from './seasonPalette';
 import { nightRoof } from './cityNight';
 
 // ---------------------------------------------------------------- geometry
 type Family = 'stone' | 'earth' | 'brick' | 'rampart' | 'timber' | 'hedge';
-type Cat = 'ditchWet' | 'ditchDry' | 'glacis' | 'work' | 'chain' | 'bastion' | 'citadel' | 'tower' | 'gatehouse' | 'attached' | 'gateRoof';
-/** Draw order; ground categories go under the streets. */
-const CATS: Cat[] = ['ditchWet', 'ditchDry', 'glacis', 'citadel', 'bastion', 'work', 'chain', 'tower', 'gatehouse', 'attached', 'gateRoof'];
-const GROUND = new Set<Cat>(['ditchWet', 'ditchDry', 'glacis']);
+/** A part of a moat piece (moatModel.ts): bed, shoal, channel, fringe, scarp... of a piece of one supply (wet, dry, tidal) and one
+ * fill bucket, cut in one form, in a town of one state. */
+type MoatCat = `moat|${MoatPart}|${string}|${number}|${string}|${string}`;
+type WorkCat = 'glacis' | 'sluice' | 'dam' | 'work' | 'chain' | 'bastion' | 'citadel' | 'tower' | 'gatehouse' | 'attached' | 'gateRoof';
+type Cat = MoatCat | WorkCat;
+const isMoat = (cat: Cat): cat is MoatCat => cat.startsWith('moat|');
+const moatCat = (part: MoatPart, kind: string, bucket: number, form: string, state: string): MoatCat => (MOAT_FIXED_PARTS.has(part) ? `moat|${part}|dry|0|${form}|` : `moat|${part}|${kind}|${bucket}|${form}|${state}`);
+const moatCatOf = (cat: MoatCat): { part: MoatPart; kind: string; bucket: number; form: MoatForm; state: MoatState } => {
+  const [, part, kind, bucket, form, state] = cat.split('|');
+  return { part: part as MoatPart, kind, bucket: +bucket, form: moatFormOf(form), state: state as MoatState };
+};
+/** The engine's moat record of a circuit (urban/types.rs `MoatSpec`). */
+const moatOf = (e: Enclosure): MoatSpec | undefined => moatSpec(e as Enclosure & { moat?: MoatSpec });
+/** Draw order; ground categories (the moat parts first, in their own order) go under the streets. */
+const WORK_CATS: WorkCat[] = ['glacis', 'sluice', 'dam', 'citadel', 'bastion', 'work', 'chain', 'tower', 'gatehouse', 'attached', 'gateRoof'];
+const catOrder = (cat: Cat): number => (isMoat(cat) ? MOAT_PARTS.indexOf(moatCatOf(cat).part) : MOAT_PARTS.length + WORK_CATS.indexOf(cat));
+const isGround = (cat: Cat): boolean => isMoat(cat) || cat === 'glacis' || cat === 'sluice' || cat === 'dam';
 const CASTS = new Set<Cat>(['citadel', 'bastion', 'work', 'tower', 'gatehouse', 'attached']);
 // Bastions and the citadel are the trace itself: they show from the town view.
-const CAT_LOD: Record<Cat, CityLod> = { ditchWet: 'mid', ditchDry: 'mid', glacis: 'mid', citadel: 'far', bastion: 'far', work: 'mid', chain: 'mid', tower: 'mid', gatehouse: 'mid', attached: 'near', gateRoof: 'close' };
+const CAT_LOD: Record<WorkCat, CityLod> = { glacis: 'mid', sluice: 'mid', dam: 'mid', citadel: 'far', bastion: 'far', work: 'mid', chain: 'mid', tower: 'mid', gatehouse: 'mid', attached: 'near', gateRoof: 'close' };
 const LOD_ORDER: CityLod[] = ['close', 'near', 'mid', 'far'];
-const shown = (cat: Cat, lod: CityLod): boolean => LOD_ORDER.indexOf(lod) <= LOD_ORDER.indexOf(CAT_LOD[cat]);
+// The lilies of a moat are detail of the near views; everything else of it shows wherever it does.
+const shown = (cat: Cat, lod: CityLod): boolean => LOD_ORDER.indexOf(lod) <= LOD_ORDER.indexOf(isMoat(cat) ? (cat.startsWith('moat|lily') ? 'near' : 'mid') : CAT_LOD[cat]);
 
 /** `attached`: index in `Enclosure.attached` (lean-tos only). */
 export interface WallPoly {
@@ -275,9 +289,40 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
     add = (cat: Cat, shape: Shape | undefined, fam: Family = family): void => {
       if ((shape?.outer?.length ?? 0) >= 3) polys.push({ cat, family: fam, shape: shape! });
     };
-  for (const d of e.ditch ?? []) add(d.kind === 'wet' ? 'ditchWet' : 'ditchDry', d.shape);
+  // The moat: bed, fringe, patches and scarps of each piece (moatModel.ts). Their colours do not depend on the wall family.
+  const form = moatFormId({ moat: moatOf(e), style: e.style }),
+    ditch = (e.ditch ?? []).filter(d => (d.shape?.outer?.length ?? 0) >= 3);
+  const town = moatState({ moat: moatOf(e) });
+  for (const p of moatParts(ditch, moatFormOf(form), e.path)) add(moatCat(p.part, p.kind, p.bucket, form, town), p.shape, 'stone');
   // The moat runs on under each gate street (the bridge is the street drawn over it), in 2D as in the dug 3D ground.
-  for (const span of moatSpans(e.gatehouses ?? [], e.ditch ?? [])) add(span.wet ? 'ditchWet' : 'ditchDry', moatSpanShape(span));
+  for (const span of moatSpans(e.gatehouses ?? [], e.ditch ?? [], moatFormOf(form))) add(moatCat('bed', span.piece.kind, moatBucket(span.piece.shape.outer), form, town), moatSpanShape(span), 'stone');
+  // A dam parts two reaches: a masonry bar across the ditch.
+  for (const [a, b] of moatOf(e)?.dams ?? []) {
+    const l = dist(a, b);
+    if (l < 0.5) continue;
+    const t = { x: ((b.x - a.x) / l) * 0.9, y: ((b.y - a.y) / l) * 0.9 };
+    add(
+      'dam',
+      {
+        outer: [
+          { x: a.x + t.y, y: a.y - t.x },
+          { x: b.x + t.y, y: b.y - t.x },
+          { x: b.x - t.y, y: b.y + t.x },
+          { x: a.x - t.y, y: a.y + t.x },
+        ],
+        holes: [],
+      },
+      'stone',
+    );
+  }
+  // A sluice joins the head of a wet ditch to the water it stops short of: its channel, 3 m wide, through the dam left between them.
+  for (const [head, shore] of moatOf(e)?.sluices ?? []) {
+    const l = dist(head, shore);
+    if (l < 0.5) continue;
+    const t = { x: (shore.x - head.x) / l, y: (shore.y - head.y) / l },
+      at = (along: number, across: number): Point => ({ x: head.x + t.x * along - t.y * across, y: head.y + t.y * along + t.x * across });
+    add('sluice', { outer: [at(-2, -1.5), at(l + 2, -1.5), at(l + 2, 1.5), at(-2, 1.5)], holes: [] }, 'stone');
+  }
   for (const w of e.outworks ?? []) add(w.kind === 'glacis' ? 'glacis' : w.kind === 'citadel' ? 'citadel' : w.kind === 'river-chain' ? 'chain' : ['bridge-tower', 'facing-tower'].includes(w.kind) ? 'tower' : w.kind === 'bridge-gatehouse' ? 'gatehouse' : 'work', w.shape);
   for (const b of e.bastions ?? []) add('bastion', b.shape);
   const towerFamily: Family = family === 'hedge' ? 'timber' : family;
@@ -291,7 +336,7 @@ function buildDetail(e: Enclosure): WallDetail | undefined {
   (e.attached ?? []).forEach((a, i) => {
     if ((a.shape?.outer?.length ?? 0) >= 3) polys.push({ cat: 'attached', family, shape: a.shape, attached: i });
   });
-  polys.sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat));
+  polys.sort((a, b) => catOrder(a.cat) - catOrder(b.cat));
   const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const grow = (p: Point): void => {
     if (p.x < box.minX) box.minX = p.x;
@@ -377,11 +422,22 @@ function polyInk(cat: Cat, family: Family, palette: CityPalette, painted: boolea
   const t = tone(family, palette),
     parch = palette === 'parchment',
     inkP = palette === 'ink';
+  if (isMoat(cat)) {
+    const m = moatCatOf(cat);
+    // Engraved plans keep their medium: washes, hachured scarps, signs (moatPlanInk); the bed alone is outlined.
+    if (parch || inkP) {
+      const edge = parch ? PARCH.edge : INK.edge,
+        k = moatPlanInk(m.part, m.kind, m.bucket, m.form, water ?? (parch ? '#bccbc8' : '#c9d3cc'), parch ? '#d8c79a' : '#c9b48f', edge, m.state);
+      return ink(k.fill, k.alpha, m.part === 'bed' ? edge : undefined, m.part === 'bed' ? 0.6 : 0);
+    }
+    const k = moatInk(m.part, m.kind, m.bucket, m.form, water ?? '#93b8c6', m.state);
+    return ink(k.fill, k.alpha, undefined, 0);
+  }
   switch (cat) {
-    case 'ditchWet':
-      return parch ? ink(water ?? '#bccbc8', 1, PARCH.edge, 0.7) : inkP ? ink(water ?? '#c9d3cc', 1, INK.edge, 0.7) : ink(water ?? '#93b8c6', 1, '#6f624a', 0.7);
-    case 'ditchDry':
-      return parch ? ink('#d8c79a', 0.85, PARCH.edge, 0.45) : inkP ? ink('#c9b48f', 0.55, INK.edge, 0.4) : ink(dryDitchColour(), 0.75, '#6f624a', 0.5);
+    case 'sluice':
+      return ink(water ?? (parch ? '#bccbc8' : inkP ? '#c9d3cc' : '#93b8c6'), 1, parch ? PARCH.edge : inkP ? INK.edge : '#5a544a', 0.8);
+    case 'dam':
+      return ink(parch ? PARCH.tower : inkP ? INK.edge : '#8f8778', 1, t.dark, 0.8);
     case 'glacis':
       return parch ? ink('#efe4c4', 0.6, PARCH.edge, 0.3) : inkP ? ink('#e3d1b5', 0.4, INK.edge, 0.3) : ink('#d8ccb0', 0.35, '#8f8268', 0.35);
     case 'citadel':
@@ -467,7 +523,7 @@ const overlaps = (a: Box, b: Box): boolean => a.minX <= b.maxX && a.maxX >= b.mi
 function fillPolys(ctx: CanvasRenderingContext2D, d: WallDetail, o: CityWallDraw, ground: boolean, painted: boolean): void {
   const px = o.mpp;
   for (const g of canvasOf(d).polys.values()) {
-    if (GROUND.has(g.cat) !== ground || !shown(g.cat, o.lod)) continue;
+    if (isGround(g.cat) !== ground || !shown(g.cat, o.lod)) continue;
     const k = polyInk(g.cat, g.family, o.palette, painted, o.water);
     if (o.night) {
       if (k.fill) k.fill = nightRoof(k.fill, o.palette === 'parchment');
@@ -666,7 +722,7 @@ const WALL_VS = `#version 300 es
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in uint aClass;
 uniform vec4 uView; uniform vec2 uShift; uniform vec4 uTint; uniform int uLines;
-uniform vec4 uFill[48]; uniform vec4 uEdge[48];
+uniform vec4 uFill[120]; uniform vec4 uEdge[120];
 out vec4 vColor;
 void main() {
   int c = int(aClass);
@@ -681,7 +737,8 @@ precision mediump float;
 in vec4 vColor;
 out vec4 outColor;
 void main() { outColor = vec4(vColor.rgb * vColor.a, vColor.a); }`;
-const MAX_CLASSES = 48;
+/** Fill and edge colours are uniforms: twice this many vectors, under the 256 a WebGL2 vertex shader is sure to have. */
+const MAX_CLASSES = 120;
 
 interface WallMesh {
   positions: Float32Array;
@@ -749,7 +806,7 @@ export function cityWallMesh(scene: CityScene, origin: Point): WallMesh | undefi
   };
   const lines0 = { a: 0 };
   section('ground', () => {
-    for (const d of details) for (const p of d.polys) if (GROUND.has(p.cat)) polygon(p.shape, classOf(p.cat, p.family), false);
+    for (const d of details) for (const p of d.polys) if (isGround(p.cat)) polygon(p.shape, classOf(p.cat, p.family), false);
   });
   section('strips', () => {
     const c = classOf('work', 'stone');
@@ -760,7 +817,7 @@ export function cityWallMesh(scene: CityScene, origin: Point): WallMesh | undefi
     for (const d of details) for (const p of d.polys) if (CASTS.has(p.cat)) polygon(p.shape, classOf(p.cat, p.family), true);
   });
   section('rest', () => {
-    for (const d of details) for (const p of d.polys) if (!GROUND.has(p.cat) && !CASTS.has(p.cat)) polygon(p.shape, classOf(p.cat, p.family), true);
+    for (const d of details) for (const p of d.polys) if (!isGround(p.cat) && !CASTS.has(p.cat)) polygon(p.shape, classOf(p.cat, p.family), true);
   });
   return { positions: new Float32Array(pos), classes: new Uint8Array(cls), triangles: new Uint32Array(tri), lines: new Uint32Array(lin), classes_: classes, ...ranges, edges: [lines0.a, lin.length] };
 }
@@ -941,8 +998,9 @@ export function cityWallSvg(e: Enclosure, palette: CityPalette): CityWallSvgPart
   if (parts) return parts;
   parts = [];
   const polys = (ground: boolean): void => {
-    for (const cat of CATS) {
-      if (GROUND.has(cat) !== ground) continue;
+    // The polygons are in draw order: so are their categories.
+    for (const cat of new Set(d.polys.map(p => p.cat))) {
+      if (isGround(cat) !== ground) continue;
       const of = d.polys.filter(p => p.cat === cat),
         families = [...new Set(of.map(p => p.family))];
       for (const family of families) {

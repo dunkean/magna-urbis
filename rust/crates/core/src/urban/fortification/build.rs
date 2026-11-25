@@ -8,13 +8,13 @@ use super::geometry::{
     Cut, TILE, V, area, buffer, curtain_body, dist,
     normals, ribbon_half, segment_relief, tiles, wet_outward,
 };
-use super::moat::{choose_moat, continuous_moat, dig_moat};
+use super::moat::{self, choose_moat, continuous_moat, dig_moat, natural_stops, rounded_ends};
 use super::outworks::{citadel, outer_works};
 use super::shore::{WallWalk, shore_gaps};
 use super::street_clearance::{Predicted, street_clear, street_segments};
 use super::style::Style;
 use super::towers::towers_and_bastions;
-use super::water::{gate_spans, short_of_water};
+use super::water::{bare_beach, gate_spans, short_of_water};
 
 /// Every structure of one circuit. `e.gates` holds its `land` gates (street
 /// crossings); the ends of its water gates are added here. `banks` are the
@@ -129,13 +129,16 @@ pub(in super::super) fn build(
     citadel(&ctx, moat, &mut works.outworks, &mut ditch, rng);
 
     let Works { towers, gatehouses, bastions, outworks, extra_reserve, .. } = works;
-    // Rule: the moat stops short of natural water, and is a ring or nothing (no stubs between cuts).
-    let ditch = continuous_moat(short_of_water(ditch, surface), &path, surface);
+    // Rule: the moat stops short of natural water on a round end, and is a ring or nothing (no stubs
+    // between cuts).
+    let ditch = rounded_ends(short_of_water(ditch, surface), natural_stops(&ctx, moat, 1.0), moat.dw, surface);
+    let ditch = continuous_moat(ditch, &[], &path, surface);
     // Same bounded mitres as the drawn curtain, with a quantisation margin.
     // Rounded buffers leave buildable wedges under its corners.
     let body = curtain_body(&path,c,h);
     let mut reserve: Vec<Shape> = clear.from(tiles(body, TILE));
     reserve.extend(extra_reserve);
+    reserve.extend(clear.from(inner_core.from(tiles(bare_beach(&path, &ns, face, streets, surface), TILE))));
     reserve.extend(towers.iter().map(|t| t.footprint.clone()));
     reserve.extend(gatehouses.iter().flat_map(|gh| gh.masses.clone()));
     reserve.extend(bastions.iter().map(|b| b.shape.clone()));
@@ -146,11 +149,14 @@ pub(in super::super) fn build(
         .into_iter()
         .filter(|s| g::area(s) > 0.5)
         .collect();
+    // The reserve holds the whole ditch; its water lies in reaches, a dam between two.
+    let (ditch, dams) = moat::reaches(&ctx, &walk, moat, ditch);
     e.towers = towers.iter().map(|t| t.anchor).collect();
     e.towers_detail = towers;
     e.gatehouses = gatehouses;
     e.bastions = bastions;
     e.outworks = outworks;
+    e.moat = moat::spec(&style.moat_form, &ditch, dams, "", surface);
     e.ditch = ditch;
     e.attached = attached;
     e.reserve = reserve;

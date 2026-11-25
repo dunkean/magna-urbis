@@ -124,7 +124,7 @@ fn ten_thousand_coastal_and_river_towns_have_built_connected_quays() {
                 }
             }
         } else {
-            assert!(platforms.iter().filter(|q| q.kind == "pier").count() >= 2, "{culture}: multiple coastal piers");
+                assert!(platforms.iter().filter(|q| q.kind == "jetty").count() >= 2, "{culture}: multiple coastal piers");
         }
         for st in &l.streets {
             for w in st.path.windows(2) { for e in &l.enclosures { for edge in e.path.windows(2) {
@@ -152,6 +152,85 @@ fn coast(n: usize) -> (Vec<f32>, Vec<u8>) {
         .map(|i| u8::from(((i % n) as f64 + 0.5) * 256.0 / n as f64 / 4.0 < 32.0))
         .collect();
     (height, water)
+    }
+
+    /// A town wall passes behind the port yard of its culture's harbours, never deeper than a short
+    /// landing is long; a harbour kept inside gives the wall its quay alone.
+    #[test]
+    fn a_harbour_front_holds_the_port_yard_behind_its_quay() {
+        let quay = |l: f64| [Street { path: vec![Point { x: 130.0, y: 0.0 }, Point { x: 130.0, y: l }], widths: vec![6.0; 2], rank: 1, role: "quay".into() }];
+        let depth = |l: f64, inside: bool| {
+            let shapes = fronts(&quay(l), inside, "hanseatic", 0.0);
+            assert_eq!(shapes.len(), 1);
+            let (x0, _, x1, _) = g::bbox(&shapes[0]);
+            (x1 - x0) * 0.5 - 3.0
+        };
+        assert!((depth(300.0, false) - super::super::super::harbour_furniture::yard("hanseatic")).abs() < 0.5);
+        assert!((depth(24.0, false) - 24.0).abs() < 0.5);
+        assert!((depth(300.0, true) - 1.0).abs() < 0.5);
+    }
+
+    /// The quays of a plan that already front the town's own water are its harbour; a quay by a pond
+    /// beyond its radius is none.
+    #[test]
+    fn the_quays_of_the_plan_are_the_harbour_of_the_town_on_its_own_water() {
+        let (height, water) = coast(256);
+        let surface = Surface { geometry: None, width: 256.0, n: 256, height: &height, water: &water, interpolation: Default::default() };
+        let cfg = LayoutConfig { site_archetype: "harbor".into(), ..Default::default() };
+        let site = |radius: f64| Site { key: "own".into(), name: String::new(), population: 10_000, culture: "hanseatic".into(), center: Point { x: 200.0, y: 128.0 }, radius, neighbours: Vec::new() };
+        let quay = [Street { path: vec![Point { x: 134.0, y: 60.0 }, Point { x: 134.0, y: 200.0 }], widths: vec![6.0; 2], rank: 1, role: "quay".into() }];
+        assert!(own_front(&quay, surface, &cfg, &site(120.0), "hanseatic"));
+        assert!(!own_front(&quay, surface, &cfg, &site(40.0), "hanseatic"));
+        assert!(!own_front(&[], surface, &cfg, &site(120.0), "hanseatic"));
+    }
+
+    /// An islet in the bay is no land of the town: its shore takes no quay, unless a bridge joins it.
+    #[test]
+    fn a_harbour_stands_on_the_land_of_its_town() {
+        let (n, width) = (128, 512.0);
+        let cell = width / n as f64;
+        let height = vec![1.0; n * n];
+        let water: Vec<u8> = (0..n * n)
+            .map(|i| {
+                let (x, y) = (((i % n) as f64 + 0.5) * cell, ((i / n) as f64 + 0.5) * cell);
+                u8::from(x < 256.0 && !((40.0..160.0).contains(&x) && (180.0..340.0).contains(&y)))
+            })
+            .collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+        let (town, islet) = (Point { x: 330.0, y: 256.0 }, Point { x: 100.0, y: 256.0 });
+        let reach = Reach::new(surface, town, &[]);
+        assert!(reach.holds(town) && !reach.holds(islet));
+        let bridge = Street { path: vec![Point { x: 150.0, y: 256.0 }, Point { x: 270.0, y: 256.0 }], widths: vec![5.0; 2], rank: 1, role: "bridge".into() };
+        assert!(Reach::new(surface, town, std::slice::from_ref(&bridge)).holds(islet));
+        let cfg = LayoutConfig { site_archetype: "harbor".into(), ..Default::default() };
+        let site = Site { key: "bay".into(), name: String::new(), population: 10_000, culture: "hanseatic".into(), center: town, radius: 200.0, neighbours: Vec::new() };
+        let street = |x: f64, a: f64, b: f64| Street { path: vec![Point { x, y: a }, Point { x, y: b }], widths: vec![5.0; 2], rank: 1, role: "street".into() };
+        let mut streets = vec![street(300.0, 40.0, 470.0), street(100.0, 200.0, 320.0)];
+        let regions = [g::rectangle(256.0, 8.0, 500.0, 504.0), g::rectangle(40.0, 180.0, 160.0, 340.0)];
+        quays(&regions, &mut streets, surface, &cfg, &site, "hanseatic", true);
+        let laid: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
+        assert!(!laid.is_empty() && laid.iter().all(|s| s.path.iter().all(|p| p.x > 250.0)), "quay on the islet");
+    }
+
+    /// Two stretches of quay far apart on one bay are not one harbour: the port keeps one front.
+    #[test]
+    fn a_sea_harbour_is_one_front_not_patches_along_the_bay() {
+        let (height, water) = coast(256);
+        let mut height = height;
+        // A bluff between y = 70 and y = 215: no quay stands at its foot.
+        for j in 70..215 {
+            for i in 0..256 {
+                height[j * 256 + i] = 1.0 + (i as f32 - 127.0).max(0.0) * 0.8;
+            }
+        }
+        let surface = Surface { geometry: None, width: 256.0, n: 256, height: &height, water: &water, interpolation: Default::default() };
+        let cfg = LayoutConfig { site_archetype: "harbor".into(), ..Default::default() };
+        let site = Site { key: "bay".into(), name: String::new(), population: 20_000, culture: "hanseatic".into(), center: Point { x: 160.0, y: 40.0 }, radius: 120.0, neighbours: Vec::new() };
+        let mut streets = vec![Street { path: vec![Point { x: 160.0, y: 4.0 }, Point { x: 160.0, y: 252.0 }], widths: vec![5.0; 2], rank: 1, role: "street".into() }];
+        quays(&[g::rectangle(128.0, 4.0, 254.0, 252.0)], &mut streets, surface, &cfg, &site, "hanseatic", true);
+        let laid: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
+        assert!(!laid.is_empty());
+        assert!(laid.iter().all(|s| s.path.iter().all(|p| p.y < 75.0)), "a second patch across the bluff");
 }
 
 /// One shore, one simple quay line on the water: a folded run goes
@@ -505,8 +584,23 @@ fn a_crossing_is_not_a_harbour_order_and_a_manual_foundation_never_moves() {
     assert!(sited(&site, &cfg, surface).is_none());
 }
 
+    /// A town 240 m from its bay grows its lower port there, whatever the room by a lake a kilometre away.
+    #[test]
+    fn a_town_port_stays_on_its_own_water() {
+        let (n, width) = (256, 2048.0);
+        let height = vec![2.0; n * n];
+        // A narrow bay to the west, a lake to the far east.
+        let water: Vec<u8> = (0..n * n).map(|i| { let x = (i % n) as f64 * 8.0; if x < 200.0 { 1 } else if x >= 1640.0 { 2 } else { 0 } }).collect();
+        let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+        let site = Site { key: "bay".into(), name: String::new(), population: 8000, culture: "european-organic".into(),
+            center: Point { x: 440.0, y: 1000.0 }, radius: 600.0, neighbours: Vec::new() };
+        let cfg = LayoutConfig { site_archetype: "harbor".into(), ..Default::default() };
+        let port = sited(&site, &cfg, surface).expect("a lower port on the bay");
+        assert!(port.center.x < 440.0, "port at {:?}", port.center);
+    }
+
 /// A quay never stands where the land behind it climbs faster than a
-/// street over its 60 m: a ramp-then-cliff shore gets none, a gentle one does.
+    /// lane over its 60 m: a ramp-then-cliff shore gets none, a gentle one does.
 #[test]
 fn a_quay_needs_gentle_land_behind_it() {
     let n = 64;
@@ -520,7 +614,7 @@ fn a_quay_needs_gentle_land_behind_it() {
     };
     let at = |height: &[f32]| {
         let surface = Surface { geometry: None, width: 256.0, n, height, water: &water, interpolation: Default::default(),};
-        gentle_behind(surface, Point { x: 130.0, y: 128.0 }, Point { x: 1.0, y: 0.0 }, 1.0, cfg.max_street_grade)
+            gentle_behind(surface, Point { x: 130.0, y: 128.0 }, Point { x: 1.0, y: 0.0 }, 1.0, cfg.max_lane_grade)
     };
     assert!(at(&shelf(0.5)));
     assert!(!at(&shelf(3.0)));

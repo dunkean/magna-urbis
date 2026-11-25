@@ -11,11 +11,12 @@ mod network;
 pub mod profile;
 mod search;
 mod tunnelling;
+mod uncross;
 
 use crate::urban::warnings;
 use super::grid::Fields;
 use super::{Point, extent_radius};
-use crate::{noise::Noise, rng::Rng};
+use crate::{hairpins, noise::Noise, rng::Rng};
 use network::{Graph, Routed};
 pub use exits::{ExitCounts, ExitReport};
 pub use profile::{CLASSES, LEVELS, PROFILES, SURFACES};
@@ -1004,7 +1005,11 @@ pub(super) fn route(
             f64::INFINITY
         };
         // Shallow bridges turned to the minimum angle on the final path, before its crossings.
-        let path = deck::straighten(f, smooth_path(f, p, &raw, limit), class, limit);
+        let routed = deck::straighten(f, smooth_path(f, p, &raw, limit), class, limit);
+        // The grade of the road as laid: the bends drawn below are levelled platforms.
+        let grade = measured_grade(f, &routed);
+        let width = profile::width(class, level, p);
+        let path = curve_hairpins(f, p, &routed, width, limit);
         let length: f64 = path.windows(2).map(|w| w[0].distance(w[1])).sum();
         *out.length_by_class
             .entry(CLASSES[class].into())
@@ -1016,12 +1021,12 @@ pub(super) fn route(
             class: CLASSES[class].into(),
             surface: SURFACES[surface].into(),
             profile: p.id.into(),
-            width: profile::width(class, level, p),
+            width,
             a: junction_of[&link.vertices[0]],
             b: junction_of[link.vertices.last().unwrap()],
             crossings: crossings(f, &path, class),
             tunnels: tunnelling::spans(f, &path),
-            grade: measured_grade(f, &path),
+            grade,
             importance: link.importance,
             length,
             path,
@@ -1113,13 +1118,15 @@ fn open_water_run(f: &Fields, s: &RoadSegment) -> f64 {
 }
 
 /// Safety net of the road chain, run on the finished network against the full-resolution
-/// terrain (`route_cell`: the cell the routes were searched on). The search and the access
+/// terrain (`route_cell`: the cell the routes were searched on). Its decks never cross nor overlap
+/// ([`uncross`]): a road over another's deck joins it. The search and the access
 /// lines already keep these invariants; whatever still breaks one is removed here and said:
 /// - no road section runs over the sea or a lake but on a causeway (`OPEN_WATER_CELLS`);
 /// - every road end is a destination (a place, a map exit, an activity site, fields) or a
 ///   junction: a section left hanging on a bare end goes too, back to the next junction.
 /// Junctions left without a road are dropped and the others renumbered.
 pub(super) fn enforce(f: &Fields, route_cell: f64, out: &mut RoadOutput) {
+    let joined = uncross::uncross(out, f);
     let allowance = OPEN_WATER_CELLS * route_cell.max(f.cell);
     let mut keep: Vec<bool> = out.segments.iter().map(|s| open_water_run(f, s) <= allowance).collect();
     let wet = keep.iter().filter(|k| !**k).count();
@@ -1142,7 +1149,7 @@ pub(super) fn enforce(f: &Fields, route_cell: f64, out: &mut RoadOutput) {
             dead += 1;
         }
     }
-    if wet == 0 && dead == 0 {
+    if wet == 0 && dead == 0 && !joined {
         return;
     }
     let mut kept = keep.iter();
@@ -1267,28 +1274,25 @@ fn smooth_path(f: &Fields, profile: &Profile, raw: &[Point], limit: f64) -> Vec<
     for i in 1..last {
         let (a, b, c) = (p[i - 1], p[i], p[i + 1]);
         let wet = f.r.water[f.index(b)] != 0;
-        let q = Point {
-            x: 0.75 * b.x + 0.25 * a.x,
-            y: 0.75 * b.y + 0.25 * a.y,
-        };
-        let r = Point {
-            x: 0.75 * b.x + 0.25 * c.x,
-            y: 0.75 * b.y + 0.25 * c.y,
-        };
-        if !wet
-            && clear(f, profile, q, r)
-            && f.r.water[f.index(q)] == 0
-            && f.r.water[f.index(r)] == 0
-            && gentle(q, r, i)
-        {
-            out.push(q);
-            out.push(r);
-        } else {
-            out.push(b);
+        // A hairpin whose full cut is too steep still takes a smaller one.
+        let cut = [0.25, 0.15, 0.08].into_iter().map(|t| [a, c].map(|e| Point { x: b.x + (e.x - b.x) * t, y: b.y + (e.y - b.y) * t })).find(|&[q, r]| {
+            !wet && clear(f, profile, q, r) && f.r.water[f.index(q)] == 0 && f.r.water[f.index(r)] == 0 && gentle(q, r, i)
+        });
+        match cut {
+            Some(pair) => out.extend(pair),
+            None => out.push(b),
         }
     }
     out.push(p[last]);
     out
+}
+/// The hairpins of a laid road with a visible radius and its ruler-straight hillside legs bowed, on dry passable
+/// ground: the legs within the class limit (or the grade they had), the bends on ground that can be levelled.
+fn curve_hairpins(f: &Fields, profile: &Profile, path: &[Point], width: f64, limit: f64) -> Vec<Point> {
+    let dry = |line: &[Point]| line.windows(2).all(|w| clear(f, profile, w[0], w[1])) && line.iter().all(|&q| f.r.water[f.index(q)] == 0);
+    let steepest = |line: &[Point]| line.windows(2).map(|w| grade(f, w[0], w[1])).fold(0.0, f64::max);
+    let bowed = hairpins::bow(path, |q| f.height_at(q), |old, new| dry(new) && steepest(new) <= limit.max(steepest(old)) + 0.005);
+    hairpins::round(&bowed, width, &[], |_, new| dry(new) && steepest(new) <= hairpins::PLATFORM).unwrap_or(bowed)
 }
 /// Wet runs along the path ([`deck::spans`]).
 fn crossings(f: &Fields, path: &[Point], class: usize) -> Vec<Crossing> {

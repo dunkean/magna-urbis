@@ -29,7 +29,7 @@ pub(super) use build::build;
 pub(super) use cave::cave_circuits;
 pub(super) use crossings::enforce;
 pub(super) use dead_gates::drop_dead_gates;
-pub(super) use extension::{attach, dedupe_shared, inner_gates, lopsided, shared_length, trim_shared};
+pub(super) use extension::{attach, dedupe_shared, drop_twins, inner_gates, lopsided, retained, shared_length, trim_shared};
 pub(super) use gate_budget::{Circuit, decide as decide_gates, divert};
 pub(super) use geometry::{ribbon_half, terrain};
 pub(super) use heights::{heights_castle, wrap_castle};
@@ -43,7 +43,7 @@ pub(super) use style::{Inputs, STYLES, family, resolve};
 pub(super) use trace::{
     bastioned_trace, curtain_trace, hill_trace, square_trace, trace_enclosures, village_trace,
 };
-pub(super) use water::{audit_layout as water_audit, kept_fronts, parted_by_water, walled_on_water, water_fronts};
+pub(super) use water::{audit_layout as water_audit, kept_fronts, over_inlets, parted_by_water, walled_on_water, water_fronts};
 
 #[cfg(test)]
 mod reserve_tests;

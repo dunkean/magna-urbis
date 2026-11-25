@@ -90,12 +90,19 @@ export function roofSnowPatches(points: readonly Vertex3[], normal: readonly num
   return [{ points: inset, weight }];
 }
 /** Snow is cooler on the unlit face, while the original cover shows through. A thin cover (`amount` well below 1)
- * shows less than its share: a dusting only whitens the faces that hold snow best, a deep mantle whitens them all. */
-export function snowRoofTint(base: PaletteRgb, amount: number, light: number): PaletteRgb {
+ * shows less than its share: a dusting only whitens the faces that hold snow best, a deep mantle whitens them all.
+ * `grade`: the light the base colour already carries (`nightSnow`), given to the snow too. */
+export function snowRoofTint(base: PaletteRgb, amount: number, light: number, grade?: (snow: PaletteRgb) => PaletteRgb): PaletteRgb {
   const shade = Math.max(0, Math.min(1, -light * 1.8));
   // Never pure white: sunlit snow keeps a warm grey, shaded snow the blue of the sky.
-  const snow = [0.955 - 0.18 * shade, 0.965 - 0.14 * shade, 0.97 - 0.09 * shade];
+  const day: PaletteRgb = [0.955 - 0.18 * shade, 0.965 - 0.14 * shade, 0.97 - 0.09 * shade],
+    snow = grade ? grade(day) : day;
   const a = clamp01(amount),
     t = a * a * (3 - 2 * a);
   return base.map((v, i) => v + (snow[i] - v) * t) as PaletteRgb;
+}
+/** Snow under the moon: the grade of the ground's own snow (MOONLIGHT_GLSL), so roofs and land keep one night. */
+export function nightSnow([r, g, b]: PaletteRgb): PaletteRgb {
+  const y = 0.35 + 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return [r * 0.16 + 0.018 * y, g * 0.23 + 0.029 * y, b * 0.38 + 0.065 * y];
 }

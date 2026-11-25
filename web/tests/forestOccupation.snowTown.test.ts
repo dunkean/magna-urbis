@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ForestOccupation } from '../../rust/bridge/terrainForest';
 import { GROUND_OCCUPATION_GLSL } from '../../rust/bridge/terrainMaterialOccupation';
+import { RENDER_V2_GLSL } from '../../rust/bridge/terrainRenderV2';
 import type { LandUseLayer } from '../src/gen/types';
 import { forestOccupation, withOccupationShapes } from '../src/ui/forestOccupation';
 
@@ -44,11 +45,20 @@ describe('snow on smooth town ground', () => {
       }
   });
 
-  it('places every occupation material below snow without a town exemption', () => {
+  it('places every occupation material below one snow cover, which a town wears without a class exemption', () => {
     const groundPass = GROUND_OCCUPATION_GLSL.slice(GROUND_OCCUPATION_GLSL.indexOf('void applyGroundOccupation('));
     const opacity = groundPass.match(/float a=([^;]+);/)?.[1];
     expect(opacity).toBeDefined();
     expect(opacity).toContain('(1.-snow)*covered');
     expect(opacity).not.toContain('wTown');
+    // The cover is the land's own, snow line and season included, scaled by the treading of the place.
+    expect(groundPass).toContain('cover=v2GroundSnow*v2SnowTread.x,snow=cover;');
+    const local = RENDER_V2_GLSL.slice(RENDER_V2_GLSL.indexOf('V2Env v2Local('));
+    expect(local.indexOf('v2SnowTread=e.snow>0.')).toBeGreaterThan(local.indexOf('e.snow=sstep('));
+    const town = RENDER_V2_GLSL.slice(RENDER_V2_GLSL.indexOf('vec2 v2TownSnow('), RENDER_V2_GLSL.indexOf('V2Env v2Local('));
+    // Nothing is worn off the town's polygon, and never to bare ground by rule: no snow-free disc around a town.
+    expect(town).toContain('sstep(0.,max(10.,cell),groundOccupation(world).x)');
+    expect(town).toContain('if(town<=0.)return vec2(1.,0.);');
+    expect(town).toMatch(/worn=clamp\(.*,0\.,\.5\)\*town;/);
   });
 });

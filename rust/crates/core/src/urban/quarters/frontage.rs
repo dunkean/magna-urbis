@@ -109,7 +109,6 @@ pub(super) fn extend_frontage(
         cfg.culture.as_str()
     };
     lap("fringe.extensions");
-    let port = macroplan::harbour::port_town(cfg);
     let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
     // Dock access obeys the user's stair setting, including in non-terraced towns.
     for shape in macroplan::harbour::extend(&shapes, streets, surface, site, applied, culture) {
@@ -132,7 +131,8 @@ pub(super) fn extend_frontage(
     }
     if cfg.placement == "center" || macroplan::harbour::shelter_weight(cfg)>0.0 || cfg.port_detachment<1.0 {
         let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
-        macroplan::harbour::quays(&shapes, streets, surface, cfg, site, culture, port);
+        let town = enclosures.is_empty() && !macroplan::harbour::own_front(streets, surface, cfg, site, culture);
+        macroplan::harbour::quays(&shapes, streets, surface, cfg, site, culture, town);
     }
     lap("fringe.harbour");
 }

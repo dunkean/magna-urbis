@@ -10,6 +10,11 @@ pub(super) fn family_of(culture: &str) -> &'static Value {
         .and_then(|m| m.values().find(|f| f["cultures"].as_array().is_some_and(|c| c.iter().any(|x| x.as_str() == Some(culture)))))
         .unwrap_or(&families["default"])
 }
+/// Depth (m) of the port yard behind the quays of a culture's harbours (warehouses, sheds and their
+/// lane): a town wall passes behind it (`harbour::fronts`).
+pub(in crate::urban) fn yard(culture: &str) -> f64 {
+    num(family_of(culture), "yard", 34.0)
+}
 /// The small craft of a culture's family: (class, length, beam).
 pub(super) fn small_craft(culture: &str) -> Option<(&'static str, f64, f64)> {
     let family = family_of(culture);

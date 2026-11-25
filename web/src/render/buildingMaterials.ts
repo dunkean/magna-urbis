@@ -37,7 +37,6 @@ export function streetLayer(role: string, rank = 2): number {
       return MATERIALS.road.bridge_timber;
     // A quay street is an ordinary street: the quay is the harbour band beside the water (harbourStyle.ts).
     case 'port-stairs':
-    case 'stairs':
       return MATERIALS.road.stairs;
     case 'market':
       return MATERIALS.road.market;

@@ -24,7 +24,7 @@ import { ROOF_MODES } from '../../src/render/roofMode';
 import { URBAN_PHYSICAL_LAYERS, URBAN_PLAN_LAYERS, resolveAppearance, type AppearanceInput } from '../../src/render/appearanceRecipe';
 import type { V2Settings } from '../../src/v2/contracts';
 import type { Options } from '../../src/gen/types';
-import { city3dScene } from '../../src/render/city3dMeshes';
+import { CITY3D_PLINTH_M, city3dScene } from '../../src/render/city3dMeshes';
 import { pieceShadow, pieceShadows, pieceVolumes, planRoof, volumeRoof, type MassingPiece } from '../../src/render/cityMassing';
 import { buildingRayDistance, eachBuildingTriangle, type BuildingTriangle } from '../../src/render/urbanBuildingGeometry';
 import { PRESET_IDS, isHiddenPreset, styleAvailableOnPage, presetComposition, validateComposition, withCompositionQuality, resolveComposition, townPlanSwitches, DEFAULT_CROWN_DETAIL } from '../../src/render/composition';
@@ -567,7 +567,7 @@ describe('V2 and City Bench stay in sync', () => {
     expect(bench).toContain('terraces: r.city.terraces,');
     expect(bench).toContain("'groundShaping', 'terraces'] as const) setBenchAppearanceField");
     expect(v2).toContain('const levelled = r.city.groundShaping && !r.underdark;');
-    expect(v2).toContain('city3dBuildingsSteps(source, { heightAt, terraces: r.city.terraces })');
+    expect(v2).toContain('city3dBuildingsSteps(source, { heightAt, ground, terraces: r.city.terraces })');
     expect(v2).toContain('heights.groundAt(x, y)');
     expect(buildings).toContain('t.setGroundShape(');
     expect(buildings).toContain('terraces: cityContext.builtTerraces');
@@ -908,8 +908,8 @@ describe('V2 and City Bench stay in sync', () => {
     const v2 = city3dScene(silhouetteScene([request]), { heightAt });
     expect(v2).toEqual(city3dScene(siteVisualScene([projectUrbanSite(request, 0)]), { heightAt }));
     const b = v2.buildings[0];
-    expect(b.volumes.map(v => v.z_m)).toEqual([heightAt(30), heightAt(8)]);
-    expect(b.structural_foundations?.map(f => f.z_max_m)).toEqual([heightAt(30)]);
+    expect(b.volumes.map(v => v.z_m)).toEqual([heightAt(20) + CITY3D_PLINTH_M, heightAt(0) + CITY3D_PLINTH_M]);
+    expect(b.structural_foundations?.map(f => f.z_max_m)).toEqual([heightAt(20) + CITY3D_PLINTH_M]);
   });
 
   it('replaces the compact roof once and tiles a concave native pan without crossing its notch', () => {
@@ -1147,7 +1147,7 @@ describe('V2 and City Bench stay in sync', () => {
     };
     const b = scene(true),
       [lantern, , porch] = b.volumes;
-    const openings = (v: typeof lantern) => v.roof_mesh.faces.filter(f => f.material.includes('wall:opening'));
+    const openings = (v: typeof lantern) => v.roof_mesh.faces.filter(f => /wall:(?:opening|lit)/.test(f.material));
     expect([lantern.z_m, lantern.wall_height_m, lantern.levels[0].z_m, lantern.levels[0].height_m]).toEqual([6, 3, 6, 3]);
     expect(lantern.foundation?.footprint).toEqual([]);
     expect(openings(lantern).length).toBeGreaterThan(0);

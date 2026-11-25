@@ -90,6 +90,9 @@ export interface LiveCompositor {
   lookChanged(): void;
   /** The vector water raster of the frame (the `water` layer); uploaded when the image object changes. */
   setWater(image: TexImageSource | undefined, region?: LiveRasterRegion): void;
+  /** Tilted frames: a finer raster of a part of the map, which the map drape lays instead of the frame's on the tiles
+   * it covers, and the region (`due`) of the one being made: the tiles there are baked again with it. */
+  setWaterDetail(image: TexImageSource | undefined, region?: LiveRasterRegion, due?: LiveRasterRegion): void;
   /** Paper colour behind the layers (CSS colour). */
   setPaper(css: string): void;
   /** True inside a frame or a work slice: a frame request raised meanwhile comes from a live layer, not from new
@@ -248,6 +251,22 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     else uploadRaster(gl, raster, maxTexture);
   };
 
+  /** Gives a raster its image and its region; uploaded at once when the image object changes (true then). */
+  const setRaster = (raster: Raster, image: TexImageSource | undefined, region?: LiveRasterRegion): boolean => {
+    if (region) {
+      raster.minX = region.x;
+      raster.minY = region.y;
+      raster.maxX = region.x + region.width;
+      raster.maxY = region.y + region.height;
+    }
+    if (image === raster.source && !raster.pending) return false;
+    raster.source = image;
+    if (!image) dropRaster(gl, raster);
+    else if (lost || !init()) raster.pending = true;
+    else upload(raster);
+    return true;
+  };
+
   // --- the water layer: the page's vector water raster ---------------------------------------------------------------
   const water: Raster = { pending: false, mipmaps: true, minX: 0, minY: 0, maxX: 0, maxY: 0 };
   /** The raster and the square the tiles of the map drape were last baked with, and their revision. The top view
@@ -255,6 +274,10 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
   let waterRevision = 0,
     drapedWater: TexImageSource | undefined,
     drapedSquare = '';
+  /** The finer raster of a tilted frame, how many came, and the region of the one being made. */
+  const waterDetail: Raster = { pending: false, mipmaps: true, minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  let waterDetails = 0,
+    waterDue: LiveRasterRegion | undefined;
   const waterStats: LiveLayerStats = { drawCalls: 0, triangles: 0, ms: 0 };
   const waterLayer: LiveLayer = {
     name: 'water',
@@ -269,11 +292,18 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         }
         return waterRevision;
       },
-      ready: () => !water.pending,
+      arrivals: () => waterDetails,
+      ready: () => !water.pending && !waterDetail.pending,
       paint: tile => {
-        const w = water.maxX - water.minX,
-          h = water.maxY - water.minY;
-        if (water.texture && w > 0 && h > 0) tile.put(water.texture, (tile.rect.minX - water.minX) / w, (tile.rect.minY - water.minY) / h, (tile.rect.maxX - water.minX) / w, (tile.rect.maxY - water.minY) / h, 1);
+        const t = tile.rect,
+          eps = 1e-6 * t.maxX,
+          covers = (minX: number, minY: number, maxX: number, maxY: number): boolean => minX <= t.minX + eps && minY <= t.minY + eps && maxX >= t.maxX - eps && maxY >= t.maxY - eps,
+          fine = !!waterDetail.texture && covers(waterDetail.minX, waterDetail.minY, waterDetail.maxX, waterDetail.maxY),
+          raster = fine ? waterDetail : water,
+          w = raster.maxX - raster.minX,
+          h = raster.maxY - raster.minY;
+        if (raster.texture && w > 0 && h > 0) tile.put(raster.texture, (t.minX - raster.minX) / w, (t.minY - raster.minY) / h, (t.maxX - raster.minX) / w, (t.maxY - raster.minY) / h, 1);
+        if (!fine && waterDue && covers(waterDue.x, waterDue.y, waterDue.x + waterDue.width, waterDue.y + waterDue.height)) tile.provisional();
       },
     },
     // No water raster (the GPU ground draws natural water itself): ready, and nothing to draw.
@@ -289,12 +319,15 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
     contextLost: () => {
       water.texture = undefined;
       water.pending = !!water.source;
+      waterDetail.texture = undefined;
+      waterDetail.pending = !!waterDetail.source;
       waterRevision++;
     },
     stats: () => waterStats,
     dispose: () => {
       dropRaster(gl, water);
-      water.source = undefined;
+      dropRaster(gl, waterDetail);
+      water.source = waterDetail.source = undefined;
     },
   };
   layers.water = waterLayer;
@@ -632,24 +665,10 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
       }
       schedule();
     },
-    setWater(image, region) {
-      if (region) {
-        water.minX = region.x;
-        water.minY = region.y;
-        water.maxX = region.x + region.width;
-        water.maxY = region.y + region.height;
-      }
-      if (image === water.source && !water.pending) return;
-      water.source = image;
-      if (!image) {
-        dropRaster(gl, water);
-        return;
-      }
-      if (lost || !init()) {
-        water.pending = true;
-        return;
-      }
-      upload(water);
+    setWater: (image, region) => void setRaster(water, image, region),
+    setWaterDetail(image, region, due) {
+      waterDue = due;
+      if (setRaster(waterDetail, image, region) && image) waterDetails++;
     },
     setPaper(css) {
       if (paper !== css) {
@@ -859,6 +878,7 @@ export function createLiveCompositor(options: LiveCompositorOptions): LiveCompos
         }
       }
     if (water.pending) upload(water);
+    if (waterDetail.pending) upload(waterDetail);
     resetLiveState(gl, null, width, height);
     gl.clearColor(0, 0, 0, 0);
     gl.clearDepth(1);

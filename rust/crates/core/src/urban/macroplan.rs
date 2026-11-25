@@ -673,9 +673,8 @@ pub(super) fn generate_oriented_domain(
         }
     }
     // Every navigable waterfront builds quays, independently of culture.
-    let port = harbour::port_town(cfg);
     if surface.n > 1 {
-        harbour::quays(&regions, &mut streets, surface, cfg, site, culture, port);
+        harbour::quays(&regions, &mut streets, surface, cfg, site, culture, false);
         // The landing row gives port services their own waterfront blocks.
         if streets.iter().any(|s| s.role == "quay") {
             add_landing_rows(&regions, &mut streets, roads, surface, cfg, m, culture);

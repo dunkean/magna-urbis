@@ -32,12 +32,7 @@ pub(super) fn add(
             if i > 0 {
                 at += (p.x - path[i - 1].x).hypot(p.y - path[i - 1].y);
             }
-            let width = wa + (wb - wa) * at / length;
-            if role == "stairs" {
-                width.min(2.2)
-            } else {
-                width
-            }
+            wa + (wb - wa) * at / length
         })
         .collect();
     streets.push(Street {

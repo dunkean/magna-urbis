@@ -62,6 +62,9 @@ pub struct Enclosure {
     /// Ditch pieces, kind `dry|wet`, cut by causeways at the gates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ditch: Vec<Work>,
+    /// Form and water joins of the ditch (`fortification::moat`); absent without a ditch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moat: Option<MoatSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attached: Vec<Attached>,
     /// Union of the curtain body and every structure outside the inner face:
@@ -107,6 +110,22 @@ pub struct Gatehouse {
     pub passage: [Point; 2],
     pub passage_width_m: f64,
     pub height_m: f64,
+}
+/// How a circuit's ditch is cut and where it meets natural water. The fill of each piece (dry bottom,
+/// low, stagnant or brim-full water, ice) follows climate and season: the renderers decide it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct MoatSpec {
+    /// Form id of `fortifications.json` `moats` (profile, revetment, scarp).
+    pub form: String,
+    /// Sluices of a wet ditch: from the head of the ditch to the natural water it stops short of.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sluices: Vec<[Point; 2]>,
+    /// Dams between two reaches of a ditch on sloping ground, across it: inner end, outer end.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dams: Vec<[Point; 2]>,
+    /// State of the town (`thriving|declining|abandoned|ruined`, empty: unknown): an unkept ditch silts and grows over.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub state: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Work {

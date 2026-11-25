@@ -483,19 +483,20 @@ void applyGroundOccupation(inout GroundMaterial m,vec2 world,float footprint){
   // byte as landField read it (inside its own holding close up, so the share changes along the true limit); holding
   // limits hold a little less; thin snow lets the strips show through. Full cover and bare ground are unchanged.
   // The share is a smooth function of the byte: a filtered limit or a far view blends it instead of sparkling.
-  float snow=v2GroundSnow;
+  float cover=v2GroundSnow*v2SnowTread.x,snow=cover;
   if(fieldShare>0.&&landFieldCrop>=0.&&snow>0.&&snow<1.){
     float h=.5+.5*sin(landFieldCrop*211.+.7);
     float limit=1.-groundSmooth(0.,max(footprint*.8,1.5),landFieldEdge);
     float own=clamp(snow+(h-.5)*2.8*snow*(1.-snow),0.,1.)*(1.-.3*limit);
     snow=mix(snow,own,fieldShare/covered);
   }
-  // Snow covers every ground class, including town streets and yards. Occupation paint lies below it;
-  // class-dependent snow exemptions expose the coarse class raster as a halo. Roofs have their own snow pass.
+  // Snow covers every ground class, including town streets and yards, where it is worn (v2TownSnow: one cover for the
+  // ground and its paint, no class exemption, which exposed the coarse class raster as a halo). Occupation paint lies
+  // below it. Roofs have their own snow pass.
   // In a dry zone grazed and common land is the natural ground itself: its paint fades out entirely.
   float a=groundSmooth(0.,width,min(o.x,-o.y))*(1.-dry*(.3*(wMeadow+wMarsh)+wPasture+wHeath)*wildShare/covered)*(1.-snow)*covered;
   // A holding whiter than the local mean takes its extra snow over its own cover.
-  float extra=max(snow-v2GroundSnow,0.)*covered;
+  float extra=max(snow-cover,0.)*covered;
   if(a<=0.&&extra<=0.)return;
   renderGuideOpen=mix(renderGuideOpen,target.rgb,a);
   m.albedo=mix(m.albedo,groundToLinear(target.rgb)*v2FloorModulation,a);

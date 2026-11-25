@@ -267,6 +267,10 @@ pub(super) fn compound_dwelling(culture: &str, seed: &str) -> bool {
     !compound_core(&data()["types"][farm_type(culture, seed)]).is_empty()
 }
 
+/// Whether the courts of a farm type adjoin in a settlement (type key `adjoining`): one
+/// wall on the lot limit serves both neighbours. A court of its own ring stands alone.
+pub(super) fn adjoining(kind: &str) -> bool { data()["types"][kind]["adjoining"].as_bool() == Some(true) }
+
 #[allow(clippy::too_many_arguments)]
 fn place(parts: &mut Vec<(Shape, &'static str)>, lot: &Shape, culture: &str, farm: bool, replace: bool, wealth: f64, seed: &str, ancillary: bool) -> Option<Value> {
     let d = data();
@@ -560,6 +564,8 @@ mod tests {
             }
         }
         assert!(!compound_dwelling("european-organic", &pinned("farm", "vierkanthof")));
+        // Court houses of one village row share their wall; a hedged round compound has its own.
+        assert!(["chinese-court", "ksar"].iter().all(|k| adjoining(k)) && !adjoining("agbo-ile") && !adjoining("kraal"));
         assert!(compound_dwelling("european-organic", &pinned("farm", "agbo-ile")));
         let mut cottage = vec![(house(8.0, 1.0, 8.0, 6.0), "building")];
         assert!(build(&mut cottage, &rect(24.0, 30.0), "european-organic", false, false, 0.5, &pinned("cottage", "vierkanthof"), false).is_none());

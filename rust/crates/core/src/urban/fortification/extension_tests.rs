@@ -1,7 +1,7 @@
 //! Shared curtains and gates in attached enclosures.
 
 use crate::urban::{Enclosure, Point, Shape, Tower, geometry as g};
-use super::{attach, dedupe_shared, inner_gates, lopsided, shared_length};
+use super::{attach, dedupe_shared, drop_twins, inner_gates, lopsided, retained, shared_length};
 use super::super::geometry::{disc, pt};
 
 #[test]
@@ -36,4 +36,24 @@ fn an_attached_extension_shares_a_stretch_of_the_old_wall_and_the_union_stays_cl
     inner_gates(&mut o, &ext);
     assert!(e.gates.is_empty() && e.towers_detail.is_empty() && e.towers.is_empty());
     assert_eq!(o.inner_gates, vec![0]);
+}
+
+#[test]
+fn a_town_retains_few_older_circuits_and_none_the_outer_wall_doubles() {
+    let square = |r: f64| g::rectangle(-r, -r, r, r);
+    // Four epochs of one centred town: the founding circuit, one between, the outer wall.
+    let rings = retained(vec![square(500.0), square(700.0), square(850.0)], &[square(1000.0)]);
+    assert_eq!(rings, vec![square(500.0), square(700.0)]);
+    // A strip between two rivers: the older circuits run along both banks with the outer one.
+    let strip = g::rectangle(-300.0, -1400.0, 300.0, 1400.0);
+    let inside = |half: f64| g::rectangle(-288.0, -half, 288.0, half);
+    assert!(retained(vec![inside(500.0), inside(800.0), inside(1100.0)], &[strip]).is_empty());
+    // A twin run of 40 m stays; one of 200 m takes the whole older circuit down.
+    let (outer, short, long) = (square(1000.0), g::rectangle(-985.0, -20.0, 0.0, 20.0), g::rectangle(-985.0, -100.0, 0.0, 100.0));
+    assert_eq!(retained(vec![short.clone()], std::slice::from_ref(&outer)).len(), 1);
+    assert!(retained(vec![long.clone()], std::slice::from_ref(&outer)).is_empty());
+    let ring = |s: &Shape| Enclosure { path: s.outer.iter().copied().chain(s.outer.first().copied()).collect(), ..Default::default() };
+    let mut enclosures = vec![ring(&outer), ring(&long)];
+    drop_twins(&mut enclosures);
+    assert_eq!(enclosures.iter().map(|e| e.path[0]).collect::<Vec<_>>(), vec![outer.outer[0]]);
 }

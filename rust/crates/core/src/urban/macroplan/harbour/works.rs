@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// Farthest (m) a stretch of sea or lake quay stands from the harbour it extends: a port is one front,
+/// not patches of quay along a whole bay. Its piers and jetties make up the berths.
+pub(super) const HARBOUR_REACH: f64 = 120.0;
+
 // A small landing grows linearly with demand; major ports retain longer fronts.
 // Lagoon towns (fondamenta) line every canal: their quays are the street.
 pub(super) fn quay_budget(site: &Site, cfg: &LayoutConfig, h: Harbour) -> f64 {
@@ -142,7 +146,21 @@ pub(super) fn landing_streets(
     surface: Surface<'_>,
     cfg: &LayoutConfig,
 ) -> Option<Vec<Street>> {
+    landing_links(path, streets, surface, cfg, cfg.max_lane_grade, false)
+}
+
+/// `landing_streets` at `grade`. `far`: a quay no straight way joins takes one routed way from its
+/// middle to the nearest street within `FAR`.
+pub(super) fn landing_links(
+    path: &mut Vec<Point>,
+    streets: &[Street],
+    surface: Surface<'_>,
+    cfg: &LayoutConfig,
+    grade: f64,
+    far: bool,
+) -> Option<Vec<Street>> {
     const EVERY: f64 = 120.0;
+    const FAR: f64 = 250.0;
     let total = length(path);
     let town: Vec<Street> = streets
         .iter()
@@ -164,20 +182,40 @@ pub(super) fn landing_streets(
             let s = (base + off).clamp(0.0, total);
             let p = sub_path(path, 0.0, s).last().copied().unwrap_or(path[0]);
             let (d, q, _) = super::super::nearest(p, &town)?;
-            (d < 80.0 && (d <= 1.0 || routing::segment_clear(surface, p, q, cfg.max_street_grade)))
+            (d < 80.0 && (d <= 1.0 || routing::segment_clear(surface, p, q, grade)))
                 .then_some((s, p, q, d))
         });
         if let Some((s, p, q, d)) = found {
             joints.push((s, p));
             if d > 1.0 {
+                // Steeper than a street, the way down to the quay is a lane.
+                let street = routing::segment_clear(surface, p, q, cfg.max_street_grade);
                 links.push(Street {
                     path: vec![p, q],
                     widths: vec![4.0; 2],
-                    rank: 2,
-                    role: "street".into(),
+                    rank: if street { 2 } else { 3 },
+                    role: if street { "street" } else { "lane" }.into(),
                 });
             }
         }
+    }
+    if joints.is_empty() && far {
+        let p = sub_path(path, 0.0, total * 0.5).last().copied()?;
+        let (d, q, _) = super::super::nearest(p, &town)?;
+        if d > FAR {
+            return None;
+        }
+        const MARGIN: f64 = 120.0;
+        let bounds = (p.x.min(q.x) - MARGIN, p.y.min(q.y) - MARGIN, p.x.max(q.x) + MARGIN, p.y.max(q.y) + MARGIN);
+        let way = routing::RoutePlanner::bank(surface, bounds).route(p, q, grade)?;
+        let street = routing::path_clear(surface, &way, cfg.max_street_grade);
+        joints.push((total * 0.5, p));
+        links.push(Street {
+            widths: vec![4.0; way.len()],
+            path: way,
+            rank: if street { 2 } else { 3 },
+            role: if street { "street" } else { "lane" }.into(),
+        });
     }
     if joints.is_empty() {
         return None;

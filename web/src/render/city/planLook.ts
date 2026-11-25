@@ -50,12 +50,13 @@ export const PARCH = {
   tower: '#4e3b28',
 };
 /** The parchment plan under the snow of the date: its grounds whiten, its ink stays. */
-const PARCH_GROUNDS = ['block', 'lot', 'yard', 'garden', 'place', 'market', 'common', 'reserve', 'footprint'] as const;
+/** Share of that snow each ground keeps: squares, markets and yards are trodden, gardens and unused land are not. */
+const PARCH_GROUNDS = { block: 0.6, lot: 0.65, yard: 0.5, garden: 0.9, place: 0.35, market: 0.3, common: 1, reserve: 1, footprint: 0.6 } as const;
 let snowedParch: { snow: number; table: typeof PARCH } | undefined;
 function parchPlan(): typeof PARCH {
   const snow = mapGroundSnow();
   if (!(snow > 0)) return PARCH;
-  if (snowedParch?.snow !== snow) snowedParch = { snow, table: { ...PARCH, ...Object.fromEntries(PARCH_GROUNDS.map(k => [k, mix(PARCH[k], '#f3f4ef', 0.72 * snow)])) } };
+  if (snowedParch?.snow !== snow) snowedParch = { snow, table: { ...PARCH, ...Object.fromEntries(Object.entries(PARCH_GROUNDS).map(([k, kept]) => [k, mix(PARCH[k as keyof typeof PARCH_GROUNDS], '#f3f4ef', 0.72 * snow * kept)])) } };
   return snowedParch.table;
 }
 /** Night plan grounds, matched to render/styles.ts PALETTES.night urban colours and buildingColors (dark slate blocks under dark masses). */

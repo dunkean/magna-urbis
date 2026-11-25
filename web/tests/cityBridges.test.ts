@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Layout, Street } from '../../rust/bridge/urban';
 import type { RoadOutput } from '../../rust/bridge/settlements';
 import { outsideUrbanStreets } from '../../rust/bridge/urbanNetwork';
-import { bridgeRoadOwnership, bridgeWaterHeight, cityBridgeStreets, cityRegionalNetwork, snapCrossingToWater, snapRoadCrossings, urbanReplacesCrossing } from '../src/render/cityBridges';
+import { bridgeRoadOwnership, bridgeWaterHeight, cityBridgeStreets, cityRegionalNetwork, decksMeet, snapCrossingToWater, snapRoadCrossings, urbanReplacesCrossing } from '../src/render/cityBridges';
 import { buildCityScene, drawCity } from '../src/render/cityCanvas';
 import { buildFillMeshSync, buildStreetStrokes, META, packPlan, STROKE_STRIDE } from '../src/render/cityGlBuild';
 import { DEFAULT_LAYERS, planColors } from '../src/render/cityGlStyle';
@@ -192,8 +192,28 @@ describe('bridge visibility and ownership', () => {
         ),
       ],
       x => (x >= 79 ? 8 : 0),
+      () => 0,
     );
     expect(raised[0].volumes.some(v => v.id.includes(':pier:'))).toBe(true);
+    // On dry ground a causeway is an ordinary road: no deck, no parapet.
+    const dry = [
+      street(
+        [
+          [0, 0],
+          [80, 0],
+        ],
+        6,
+        'causeway',
+      ),
+    ];
+    expect(city3dBridges(dry, () => 0)).toEqual([]);
+    expect(
+      city3dBridges(
+        dry,
+        () => 0,
+        () => NaN,
+      ),
+    ).toEqual([]);
   });
 
   it('keeps a dry hillside approach from raising the river deck', () => {
@@ -406,6 +426,93 @@ describe('bridge visibility and ownership', () => {
     expect(shown.roads!.every(r => r.kind === 'major' && r.width === 6 && r.path.every(p => p.x <= -40 + 1e-6 || p.x >= 140 - 1e-6))).toBe(true);
     // Same inputs, same arrays: the scene cache sees no change.
     expect(cityRegionalNetwork(roads, bridges, [city])).toBe(shown);
+  });
+
+  it('cuts a regional road under the deck a town replaced, kinks included', () => {
+    const city = layout([
+      street(
+        [
+          [0, 0],
+          [100, 0],
+        ],
+        6,
+      ),
+    ]);
+    const road = {
+      path: [
+        { x: -200, y: 0 },
+        { x: 0, y: 2 },
+        { x: 50, y: 18 },
+        { x: 100, y: 2 },
+        { x: 300, y: 0 },
+      ],
+      width: 6,
+    };
+    const shown = cityRegionalNetwork([road], [{ a: { x: 0, y: 2 }, b: { x: 100, y: 2 }, width: 6 }], [city]);
+    expect(shown.bridges).toEqual([]);
+    expect(shown.roads!.flatMap(r => r.path).every(p => p.x <= 1e-6 || p.x >= 100 - 1e-6)).toBe(true);
+    expect(shown.roads!.length).toBe(2);
+  });
+
+  it('never draws two decks that cross or cover each other', () => {
+    const deck = (path: [number, number][], width = 6) => ({ path: path.map(([x, y]) => ({ x, y })), width });
+    const across = deck([
+      [0, 0],
+      [60, 0],
+    ]);
+    const meets = (...path: [number, number][]): boolean => decksMeet(across, deck(path));
+    expect(meets([30, -30], [30, 30])).toBe(true);
+    expect(meets([0, 4], [60, 4])).toBe(true);
+    expect(meets([0, 9], [60, 9])).toBe(false);
+    expect(meets([0, 0], [40, 40])).toBe(false);
+    expect(meets([62, 0], [120, 0])).toBe(false);
+    // A town deck wins over a regional one laid across it, and the first of two regional ones stays.
+    const oblique = street(
+        [
+          [10, -40],
+          [50, 40],
+        ],
+        6,
+      ),
+      town = street(
+        [
+          [0, 0],
+          [60, 0],
+        ],
+        6,
+      );
+    expect(cityBridgeStreets([layout([town])], [oblique])).toEqual([town]);
+    expect(cityBridgeStreets([], [town, oblique])).toEqual([town]);
+    // Two roads over each other on the drawn water get one deck.
+    const road = (path: [number, number][]) => ({ path: path.map(([x, y]) => ({ x, y })), width: 6, crossings: [] as { kind?: string; path: { x: number; y: number }[] }[] });
+    const roads = snapRoadCrossings(
+      [
+        road([
+          [0, 0],
+          [200, 0],
+        ]),
+        road([
+          [80, -60],
+          [120, 60],
+        ]),
+      ],
+      x => Math.abs(x - 100) - 10,
+      20,
+    );
+    expect(roads.map(r => r.crossings.length)).toEqual([1, 0]);
+    // The second one takes that deck: over the water it lies on it, and nowhere else.
+    expect(roads).toHaveLength(2);
+    const led = roads[1].path;
+    expect([led[0], led[led.length - 1]]).toEqual([
+      { x: 80, y: -60 },
+      { x: 120, y: 60 },
+    ]);
+    for (let i = 1; i < led.length; i++)
+      for (let k = 0; k <= 20; k++) {
+        const x = led[i - 1].x + ((led[i].x - led[i - 1].x) * k) / 20,
+          y = led[i - 1].y + ((led[i].y - led[i - 1].y) * k) / 20;
+        if (Math.abs(x - 100) < 10) expect(Math.abs(y)).toBeLessThan(0.01);
+      }
   });
 
   it('opens a marine wall at the shore and keeps a river water gate as one span', () => {

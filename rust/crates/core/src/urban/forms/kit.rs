@@ -124,6 +124,9 @@ pub(in crate::urban) struct CultureTraits {
     /// Share of the lots that take `form`, the others keeping the tradition
     /// (0: all; a people that mixes tree dwellings and ordinary houses).
     pub form_share: f64,
+    /// Role prefixes whose buildings alone raise the `mage` tower, on a wing
+    /// beside their body (empty: any home by chance, and every landmark).
+    pub form_roles: Vec<String>,
     /// Homes are one huge storey of massive stone under a flat roof (giants).
     pub massive_storey: bool,
     /// Homes stand on posts whatever their form (light bodies over water or marsh).

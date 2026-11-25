@@ -200,6 +200,21 @@ fn mage_towers_are_a_frequent_varied_culture_feature() {
     assert!(heights.iter().copied().fold(f64::MIN, f64::max) - heights.iter().copied().fold(f64::MAX, f64::min) > 10.0);
 }
 
+    /// A people that reserves its towers (`formRoles`): noble houses only, on a wing.
+    #[test]
+    fn drow_towers_mark_noble_houses_only() {
+        let parts = [(rect(5.0, 0.0, 20.0, 9.0), "hall"), (rect(0.0, 0.0, 5.0, 11.0), "crosswing")];
+        let arch = json!({"roof":"flat","storeys":[2,3],"material":"dark-stone"});
+        let towers = |role: &'static str, landmark: bool| (0..40).map(|k| {
+            let seed = format!("drow-{k}");
+            let m = massing(&Input { culture: "drow-enclave", role, landmark, ..input(&parts, &arch, &[], &seed) });
+            (0..2).map(|i| m[i]["volumes"].as_array().unwrap().iter().filter(|v| v["form"] == "tower").count()).collect::<Vec<_>>()
+        }).collect::<Vec<_>>();
+        assert!(towers("dwelling.townhouse", false).iter().all(|t| t == &[0, 0]));
+        assert!(towers("worship.temple", true).iter().all(|t| t == &[0, 0]));
+        assert!(towers("elite.manor", false).iter().all(|t| t == &[0, 1]));
+    }
+
 #[test]
 fn rear_annex_is_lower_than_the_street_body() {
     let parts = [(rect(0.0, 0.0, 8.0, 10.0), "building"), (rect(2.0, 10.0, 6.0, 15.0), "building")];
@@ -466,6 +481,17 @@ fn yurts_tipis_and_stilt_houses_read_as_themselves() {
     assert!(tipi["rise_m"].as_f64().unwrap() > 4.0 && tipi["eave_m"].as_f64().unwrap() < 0.3, "{tipi}");
     let stilt = vol(&json!({"roof":"thatch-round","typology":"stilt-house","storeys":[1,1],"material":"thatch"}));
     assert!(stilt["stilts_m"].as_f64().unwrap() >= 1.8, "{stilt}");
+        // A snow house: a low dome and its entrance tunnel towards the street.
+        let igloo = massing(&input(&parts, &json!({"roof":"dome","typology":"igloo","storeys":[1,1],"material":"snow"}), &fronts, "k"));
+        let (way, dome) = (&igloo[0]["volumes"][0], &igloo[0]["volumes"][1]);
+        assert_eq!((way["roof"].as_str(), dome["roof"].as_str(), igloo[0]["roof"].as_str()), (Some("barrel"), Some("dome"), Some("dome")), "{igloo}");
+        assert!(dome["eave_m"].as_f64().unwrap() < 1.0 && way["eave_m"].as_f64().unwrap() + way["rise_m"].as_f64().unwrap() < 1.6, "{igloo}");
+        for v in [way, dome] {
+            let r = ring_of(v);
+            let inside: f64 = super::super::geometry::intersection(&parts[0].0, &r).iter().map(super::super::geometry::area).sum();
+            assert!((inside - super::super::geometry::area(&r)).abs() < 0.05, "outside its plan: {v}");
+        }
+        assert!(ring_of(way).outer.iter().any(|p| p.y < 0.3), "the mouth looks on the street: {way}");
     // A landmark of a tent people is a tent, not a stone nave.
     let church = [(rect(0.0, 0.0, 8.0, 14.0), "nave"), (rect(0.0, 14.0, 5.0, 19.0), "tower")];
     let tipi_arch = json!({"roof":"conical","typology":"tipi","storeys":[1,1],"material":"hide"});
@@ -526,8 +552,8 @@ fn modern_styles_tint_their_walls_from_their_palette() {
     assert!(old.as_array().unwrap().iter().all(|p| p.get("tint").is_none()), "{old}");
 }
 
-/// A tower style's height ladder: a core lot of a town of 10 000 stays at
-/// four storeys at most, the same lot in a city of 100 000 or in a quarter
+    /// A tower style's height ladder: a core lot of a town of 6 000 stays at
+    /// four storeys at most (seven at 10 000), the same lot in a city of 100 000 or in a quarter
 /// the user set as core rises to a collective block of nine storeys or more.
 #[test]
 fn modern_heights_climb_the_style_ladder() {
@@ -540,7 +566,8 @@ fn modern_heights_climb_the_style_ladder() {
         let m = massing(&Input { culture: "cyberpunk", role: "dwelling.house", population, user_core, ..input(&parts, &arch, &fronts, &seed) });
         m.as_array().unwrap().iter().filter_map(|p| p["floors"].as_u64()).max().unwrap()
     }).max().unwrap();
-    assert!(top(10_000, false) <= 4, "{}", top(10_000, false));
+        assert!(top(6_000, false) <= 4, "{}", top(6_000, false));
+        assert!(top(10_000, false) <= 7, "{}", top(10_000, false));
     assert!(top(100_000, false) >= TALL_FLOORS as u64, "{}", top(100_000, false));
     assert!(top(10_000, true) >= TALL_FLOORS as u64, "{}", top(10_000, true));
     // A historical tower culture keeps its tradition.

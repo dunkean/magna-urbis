@@ -90,6 +90,8 @@ export interface Water {
   /** Its raster for the last view that needed a finer one, and whether another is being made. */
   readonly vectorView?: VectorRaster;
   readonly vectorPending: boolean;
+  /** The region of the raster being made. */
+  readonly vectorDue?: ViewRasterRegion;
   /** The rivers of the GPU ground, which the town keeps its ground and streets off. */
   readonly cityWater?: Float32Array;
   /** The water pass produced water that no frame has drawn yet; `noteWaterShown` when one has. */
@@ -98,13 +100,16 @@ export interface Water {
   waterDisplay(): WaterDisplay;
   /** The ink water must read above the land-use tints. */
   waterAboveLand(): boolean;
-  /** The map on screen is tilted (set by the composed view): `cutWater` uses the whole-map raster, the one the map
-   * drape lays as water, so no raster made for a top view changes the drape's tiles. */
+  /** The map on screen is tilted (set by the composed view): the map drape lays the whole-map raster as water, and the
+   * raster of the view on the tiles it covers. Only what `vectorDue` covers waits for another one. */
   tilted: boolean;
   /** Erases what `ctx` holds over the vector water. */
   cutWater(ctx: CanvasRenderingContext2D, rect: WorldBox): void;
   /** The raster for a frame; `refine` false keeps the one at hand instead of asking for a finer one. */
   vectorRaster(view: View, w: number, h: number, dpr: number, refine?: boolean): VectorRaster | undefined;
+  /** Tilted: the raster of the view, over the whole-map one; the last one is kept while another is made, which is
+   * asked for when neither is fine enough for this frame. */
+  drapedDetail(view: View, w: number, h: number, dpr: number): VectorRaster | undefined;
   /** Resolves once `vectorRaster` can answer at the density of this frame. */
   vectorsReadyFor(view: View, w: number, h: number, dpr: number): Promise<void>;
 }

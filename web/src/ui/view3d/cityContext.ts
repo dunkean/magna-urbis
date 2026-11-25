@@ -13,6 +13,7 @@ import { type Terrain3d, type Terrain3dTile, type Terrain3dTileContent, type Ter
 import type { Terrain3dBillboards } from '../terrain3dBillboards';
 import type { ForestOccupation } from '../../../../rust/bridge/terrainForest';
 import { type City3dHeight, type City3dDisplayScene } from '../../render/city3dMeshes';
+import type { SeatGround } from '../../render/city3d/terrainSeat';
 import { type Building3dVisual } from '../../render/urbanBuildingGeometry';
 import type { NativeBuildingProjectionScene } from '../urbanBuildingProjection';
 import type { Parent3dScene } from '../urbanParent3d';
@@ -100,6 +101,8 @@ export interface City3dContext {
   groundCutsOf: readonly Layout[] | undefined;
   groundCutsOn: unknown;
   groundShapeInputs: unknown[];
+  /** The natural ground the buildings' floors are cut into. */
+  seatGround: SeatGround | undefined;
   groundShapeStats: { lots: number; ms: number };
   byId: Map<string, Building3dVisual>;
   bridgesOf: [readonly Layout[] | undefined, readonly Street[] | undefined];

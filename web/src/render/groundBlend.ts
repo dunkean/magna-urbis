@@ -90,15 +90,15 @@ export interface SoftStreet {
   edgeAlpha: number;
 }
 const STREET_ALPHA = [0.5, 0.45, 0.4, 0.34, 0.28];
-/** Streets and tracks drawn as one family: earth tone, opacity decaying with rank. Structures (bridges, quays, fords, boardwalks, stairs) keep their classic paint. */
+/** Streets and tracks drawn as one family: earth tone, opacity decaying with rank. Structures (bridges, quays, fords, boardwalks) keep their classic paint. */
 export function softStreet(role: string, rank: number, tone: BlendTone): SoftStreet {
   const r = Math.min(4, Math.max(0, rank)),
     a = role === 'track' ? Math.min(STREET_ALPHA[r], 0.3) : STREET_ALPHA[r];
   return tone === 'sepia' ? { fill: '#a07a4c', alpha: a, edge: '#6b4e2e', edgeAlpha: 0.1 } : { fill: '#a08a62', alpha: a, edge: '#5e4a30', edgeAlpha: 0.12 };
 }
-/** Roles drawn as structures, never washed. A causeway is not one: it is an ordinary raised road, painted as the streets of
- * its rank on every ground (its embankment is the 3D mesh). */
-export const STRUCTURE_ROLES = new Set(['bridge', 'ford', 'stairs', 'port-stairs', 'pier', 'boardwalk', 'walkway']);
+/** Roles drawn as structures, never washed. A causeway or a stair is not one: it is painted as the streets of its rank on
+ * every ground (the deck over water and the steps are 3D meshes). */
+export const STRUCTURE_ROLES = new Set(['bridge', 'ford', 'port-stairs', 'pier', 'boardwalk', 'walkway']);
 
 /** Regional roads, blended: width floors (px) fall smoothly highway → trail, with the same opacity decay. */
 export const BLEND_ROAD_PX = { highway: 2.6, main: 2.1, local: 1.6, track: 1.2, trail: 0.9 } as const;

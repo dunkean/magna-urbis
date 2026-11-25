@@ -6,6 +6,8 @@ pub(super) struct Piece {
     pub(super) path: Vec<Point>,
     pub(super) near: f64,
     pub(super) river: bool,
+    /// Laid by an earlier pass, potentially before a town wall already standing behind it.
+    pub(super) kept: bool,
 }
 
 /// Street segments binned on a 25 m grid, for distance queries.
@@ -153,9 +155,8 @@ pub(super) fn shore_runs(
         .collect()
 }
 
-/// The 60 m of land behind a quay point climbs at most a street grade per
-/// 12 m, so the town reaches its quay on a gentle slope (the same strip `sited`
-/// requires of an inland port's bank).
+/// The 60 m of land behind a quay point climbs at most `grade` per 12 m: the port yard stands on
+/// it and the town reaches its quay by lanes, never down a cliff.
 pub(super) fn gentle_behind(surface: Surface<'_>, p: Point, n: Point, side: f64, grade: f64) -> bool {
     (0..5).all(|k| {
         let a = add(p, n, side * 12.0 * k as f64);
@@ -170,6 +171,11 @@ pub(super) fn gentle_behind(surface: Surface<'_>, p: Point, n: Point, side: f64,
 /// the centre is kept first, up to the culture's quay budget for the port's
 /// size (every shore for a lagoon town). Each quay joins the town streets
 /// by landing streets about every 120 m; a quay that cannot is dropped.
+///
+/// `town`: the pass that decides the harbour of the whole town (no wall is traced behind its quays
+/// yet). It chooses one front among those laid so far and those it finds, reaches it over a longer way
+/// where no street is near, and falls back, in a town of 3 000 people or more, on a beach landing (one
+/// short quay under a steeper shore). Another pass keeps the quays it is given.
 #[allow(clippy::too_many_arguments)]
 pub(in super::super::super) fn quays(
     regions: &[Shape],
@@ -178,7 +184,32 @@ pub(in super::super::super) fn quays(
     cfg: &LayoutConfig,
     site: &Site,
     culture: &str,
-    _port: bool,
+    town: bool,
+) {
+    lay_quays(regions, streets, surface, cfg, site, culture, town, cfg.max_lane_grade, f64::INFINITY);
+    if town && site.population >= 3000 && port_town(cfg) && !streets.iter().any(|s| s.role == "quay") {
+        lay_quays(regions, streets, surface, cfg, site, culture, town, BEACH_GRADE.max(cfg.max_lane_grade), BEACH_QUAY);
+    }
+}
+
+/// Steepest shore (over 12 m) behind a beach landing: a footpath's grade.
+const BEACH_GRADE: f64 = 0.35;
+/// Length (m) of the quay of a beach landing.
+const BEACH_QUAY: f64 = 80.0;
+
+/// One pass of `quays`: the land behind a quay climbs at most `slope`, the quays it lays measure at
+/// most `cap` metres.
+#[allow(clippy::too_many_arguments)]
+fn lay_quays(
+    regions: &[Shape],
+    streets: &mut Vec<Street>,
+    surface: Surface<'_>,
+    cfg: &LayoutConfig,
+    site: &Site,
+    culture: &str,
+    town: bool,
+    slope: f64,
+    cap: f64,
 ) {
     const MIN: f64 = 20.0;
     let inherited: Vec<Street> = {
@@ -247,7 +278,7 @@ pub(in super::super::super) fn quays(
                         // A brook or ditch is a bank, not a harbour front:
                         // no boat berths where the water is not navigable.
                         if channel_width(surface, &path) >= NAVIGABLE && !rock_side(surface, &path) {
-                            pieces.push(Piece { path, near, river });
+                            pieces.push(Piece { path, near, river, kept: false });
                         }
                     } else {
                         piece.clear();
@@ -281,8 +312,8 @@ pub(in super::super::super) fn quays(
                                 let q = add(p, n, s * 12.0);
                                 surface.wet(q)
                                     || (surface.height_at(q) - surface.height_at(p)).abs()
-                                        <= 12.0 * cfg.max_lane_grade
-                                        && gentle_behind(surface, p, n, s, cfg.max_street_grade)
+                                        <= 12.0 * slope
+                                        && gentle_behind(surface, p, n, s, slope)
                             })
                         });
                     if !ok && std::env::var_os("URBAN_PROFILE").is_some() {
@@ -308,21 +339,45 @@ pub(in super::super::super) fn quays(
     // The sea or lake front first, then river quays, nearest the centre.
     {
         pieces.extend(inherited.into_iter().filter(|s| channel_width(surface,&s.path) >= NAVIGABLE && !rock_side(surface,&s.path))
-            .map(|s|Piece {near:s.path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min),river:river_side(surface,&s.path),path:s.path}));
+            .map(|s|Piece {near:s.path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min),river:river_side(surface,&s.path),path:s.path,kept:!town}));
+        if !pieces.is_empty() && !h.fondamenta {
+            let reach = Reach::new(surface, site.center, streets);
+            pieces.retain(|p| reach.holds(p.path[p.path.len() / 2]));
+        }
         if parameterized(cfg) { placement::select(&mut pieces,regions,streets,surface,site,cfg); }
     }
-    pieces.sort_by(|a, b| a.river.cmp(&b.river).then(a.near.total_cmp(&b.near)));
-    let mut budget = quay_budget(site, cfg, h) - streets
+    let mut budget = quay_budget(site, cfg, h).min(cap) - streets
         .iter()
         .filter(|s| s.role == "quay")
         .map(|s| length(&s.path))
         .sum::<f64>();
+    // A sea or lake harbour is one front: the best stretch (the quays of an earlier pass, else a
+    // long one near the centre) is its seed, the others only extend it, the nearest first. A lagoon
+    // town lines every shore, and river quays embank the town wherever it stands.
+    let worth = |p: &Piece| p.near - 0.5 * length(&p.path).min(budget);
+    let seed = pieces.iter().filter(|p| !p.river && !h.fondamenta)
+        .min_by(|a, b| b.kept.cmp(&a.kept).then(worth(a).total_cmp(&worth(b))))
+        .map(|p| p.path[p.path.len() / 2]);
+    let rank = |p: &Piece| match seed {
+        Some(c) if !p.river => p.path.iter().map(|&q| dist(q, c)).fold(f64::INFINITY, f64::min),
+        _ => p.near,
+    };
+    pieces.sort_by(|a, b| a.river.cmp(&b.river).then(b.kept.cmp(&a.kept)).then(rank(a).total_cmp(&rank(b))));
     if std::env::var_os("URBAN_PROFILE").is_some() {eprintln!("harbour quay pieces={} rejected/turn/grade/domain/wet={rejected:?}",pieces.len());}
     // One simple quay line per shore, on the drawn waterline: a piece is cut
     // where it folds over itself, clipped where it runs within a quay width
     // of a quay already laid, and dropped where it does not front the water.
     let mut laid: Vec<Vec<Point>> = vec![];
+    let mut harbour: Vec<Vec<Point>> = vec![];
     for piece in pieces {
+        let open = !piece.river && !h.fondamenta;
+        if open && !harbour.is_empty() && !piece.kept {
+            let gap = piece.path.iter().flat_map(|&p| harbour.iter().flat_map(move |q| q.windows(2).map(move |w| g::distance(p, w[0], w[1]).0)))
+                .fold(f64::INFINITY, f64::min);
+            if gap > HARBOUR_REACH {
+                continue;
+            }
+        }
         for mut path in unlaid(&untangled(piece.path), &laid, width + 1.0, MIN) {
             if budget < MIN {
                 continue;
@@ -334,10 +389,13 @@ pub(in super::super::super) fn quays(
             if l > budget {
                 path = centred(&path, site.center, budget);
             }
-            let Some(links) = landing_streets(&mut path, streets, surface, cfg) else {
+            let Some(links) = landing_links(&mut path, streets, surface, cfg, slope, town) else {
                 continue;
             };
             budget -= length(&path);
+            if open {
+                harbour.push(path.clone());
+            }
             laid.push(path.clone());
             streets.push(Street {
                 widths: vec![width; path.len()],

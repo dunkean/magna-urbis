@@ -20,7 +20,7 @@ try {
       return send.call(this, message, ...args);
     };
   });
-  await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5185'}/v2.html?empty&test=1&lang=fr&camera=dual`);
+  await page.goto(`${process.env.MAGNA_V2_URL ?? 'http://127.0.0.1:5185'}/v2.html?empty&test=1&lang=fr`);
   await page.locator('#boot-splash').waitFor({ state: 'hidden' });
   const fixture = JSON.parse(await readFile(new URL('fixture.json', out), 'utf8'));
   const engineUrl = '/@fs/' + fileURLToPath(new URL('../src/v2/engine.ts', import.meta.url)).replaceAll('\\', '/');

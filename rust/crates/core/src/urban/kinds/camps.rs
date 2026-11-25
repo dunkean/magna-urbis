@@ -2,8 +2,24 @@
 
 use super::*;
 
-/// Tents or huts on both sides of a ring way around an open centre, cut into
-/// sectors; a track joins the ring to the road.
+/// Ring tracks of a camp of `tents`, inside out: first radius and number of
+/// tracks `step` apart, each lined on both sides by a row `row` deep at `pitch`.
+/// As tight as its tents: rows are added until the open centre is at most one
+/// and a half times as wide as the band of tents around it.
+pub(super) fn ring_tracks(tents: f64, pitch: f64, row: f64, step: f64) -> (f64, usize) {
+    // Several tracks: the radial ways take some of the rows, and the pitches narrow towards the centre, so they are
+    // counted in the middle of the inner row.
+    let fit = |tracks: usize| {
+        let (wanted, inner) = if tracks == 1 { (tents, 0.0) } else { (1.15 * tents, 0.5 * row) };
+        wanted * pitch / (2.0 * std::f64::consts::TAU * tracks as f64) - 0.5 * step * (tracks as f64 - 1.0) + inner
+    };
+    let tracks = (1..12).find(|&t| fit(t) - row <= 1.5 * t as f64 * step).unwrap_or(12);
+    // Several rows still leave a ground for herds and gatherings.
+    (fit(tracks).max(if tracks == 1 { 14.0 } else { row + 14.0 }), tracks)
+}
+
+/// Tents or huts on both sides of ring tracks around an open centre, cut into
+/// sectors; a track joins the outer ring to the road.
 pub(super) fn camp(
     site: &Site,
     cfg: &LayoutConfig,
@@ -20,8 +36,10 @@ pub(super) fn camp(
     let tents = (super::super::footprint::capacity::households(culture(site, cfg), site.population) * 1.1).ceil().max(2.0);
     let depth = 14.0;
     let half = 1.5;
-    // Ring length ≈ tents along both sides at ~7 m each.
-    let radius = (tents * 7.0 / 2.0 / std::f64::consts::TAU).clamp(14.0, 220.0);
+    // Ring length ≈ tents along both sides at ~7 m each, on as many tracks as keep it tight.
+    let step = 2.0 * (half + depth) + 4.0;
+    let (radius, tracks) = ring_tracks(tents, 7.0, half + depth, step);
+    let outer = radius + (tracks - 1) as f64 * step;
     let c = site.center;
     // `ringWobble` (culture data, 0 = perfect circle): the contour swells and
     // narrows by up to that share of the radius, smoothly, so it stays a camp circle.
@@ -29,13 +47,18 @@ pub(super) fn camp(
     let phases = if wobble > 0.0 { let mut w = rng.fork("ring-wobble"); [w.range(0.0, std::f64::consts::TAU), w.range(0.0, std::f64::consts::TAU), w.range(0.0, std::f64::consts::TAU)] } else { [0.0; 3] };
     let reach_at = |a: f64| radius * (1.0 + wobble * (0.5 * (2.0 * a + phases[0]).sin() + 0.3 * (3.0 * a + phases[1]).sin() + 0.2 * (5.0 * a + phases[2]).sin()));
     let n = if wobble > 0.0 { 48 } else { 24 };
+    let rings: Vec<Vec<Point>> = (0..tracks)
+        .map(|t| {
     let mut ring: Vec<Point> = (0..=n)
         .map(|i| {
             let a = i as f64 * std::f64::consts::TAU / n as f64;
-            at(c, Point { x: a.cos(), y: a.sin() }, reach_at(a))
+                    at(c, Point { x: a.cos(), y: a.sin() }, reach_at(a) + t as f64 * step)
         })
         .collect();
     ring[n] = ring[0];
+            ring
+        })
+        .collect();
     let sectors = ((tents / 4.0).ceil() as usize).clamp(4, 16);
     let mut bearings = vec![];
     let gaps: Vec<Shape> = (0..sectors)
@@ -49,38 +72,62 @@ pub(super) fn camp(
             g::ribbon(
                 &[
                     at(c, d, reach_at(a) - depth - 6.0),
-                    at(c, d, reach_at(a) + depth + 6.0),
+                    at(c, d, reach_at(a) + outer - radius + depth + 6.0),
                 ],
                 &[2.5],
             )
         })
         .collect();
-    let inner = g::ribbon(&ring, &[half * 2.0]);
-    let band = g::ribbon(&ring, &[(half + depth) * 2.0]);
-    let mut pieces: Vec<Shape> = band
+    // Tracks across the rows join the rings, except where a road already runs beside.
+    let mut spokes: Vec<Vec<Point>> = vec![];
+    if tracks > 1 {
+        let entry_dir = near.as_ref().map_or(0.0, |n| (n.point.y - c.y).atan2(n.point.x - c.x));
+        for j in 0..4 {
+            let a = entry_dir + j as f64 * 0.5 * std::f64::consts::PI;
+            let d = Point { x: a.cos(), y: a.sin() };
+            let spoke = vec![at(c, d, reach_at(a)), at(c, d, reach_at(a) + outer - radius)];
+            let beside = g::ribbon(&spoke, &[4.0 * depth]);
+            if !obstacles.iter().any(|o| beside.iter().any(|r| !g::intersection(o, r).is_empty())) {
+                spokes.push(spoke);
+            }
+        }
+    }
+    let mut pieces: Vec<Shape> = rings
         .iter()
+        .flat_map(|ring| {
+            let inner = g::ribbon(ring, &[half * 2.0]);
+            let band = g::ribbon(ring, &[(half + depth) * 2.0]);
+            band.iter()
         .flat_map(|o| {
             inner.iter().fold(vec![o.clone()], |acc, i| {
                 acc.iter().flat_map(|s| g::difference(s, i)).collect()
             })
         })
+                .collect::<Vec<_>>()
+        })
         .collect();
+    for cut in spokes.iter().flat_map(|spoke| g::ribbon(spoke, &[2.0 * half + 1.0])) {
+        pieces = pieces.iter().flat_map(|p| g::difference(p, &cut)).collect();
+    }
     for gap in &gaps {
         pieces = pieces.iter().flat_map(|p| g::difference(p, gap)).collect();
     }
     // Invariant: one piece per tent. Each sector is cut along the track into
     // pitches of about 7 m (the ring's sizing), so a large camp never folds
     // several households into one sector lot that houses one of them.
-    let pitch_cuts: Vec<Shape> = (0..sectors)
-        .flat_map(|k| {
+    let pitch_cuts: Vec<Shape> = (0..tracks)
+        .flat_map(|t| (0..sectors).map(move |k| (t as f64 * step, k)))
+        .flat_map(|(out, k)| {
             let (a0, a1) = (bearings[k], if k + 1 < sectors { bearings[k + 1] } else { bearings[0] + std::f64::consts::TAU });
-            let mid = reach_at(0.5 * (a0 + a1));
-            let n = ((a1 - a0) * mid / 7.0).round().max(1.0) as usize;
-            (1..n).map(move |j| a0 + (a1 - a0) * j as f64 / n as f64).collect::<Vec<_>>()
+            let mid = reach_at(0.5 * (a0 + a1)) + out;
+            let n = ((a1 - a0) * (if tracks > 1 { mid - 0.5 * (half + depth) } else { mid }) / 7.0).round().max(1.0) as usize;
+            (1..n).map(move |j| (out, a0 + (a1 - a0) * j as f64 / n as f64)).collect::<Vec<_>>()
         })
-        .flat_map(|a| {
+        .flat_map(|(out, a)| {
             let d = Point { x: a.cos(), y: a.sin() };
-            g::ribbon(&[at(c, d, reach_at(a) - depth - 6.0), at(c, d, reach_at(a) + depth + 6.0)], &[1.0])
+            // Within the 4 m between two bands: a cut never reaches the next ring's tents.
+            let (r, reach) = (reach_at(a) + out, half + depth + 1.0);
+            g::ribbon(&[at(c, d, r - reach), at(c, d, r + reach)], &[1.0])
         })
         .collect();
     for cut in &pitch_cuts {
@@ -96,6 +143,18 @@ pub(super) fn camp(
         .filter(|p| g::area(p) > 40.0)
         .map(|p| (p, "block"))
         .collect();
+    // The last ring is left open towards the entry rather than pitched empty.
+    if tracks > 1 {
+        let back = near.as_ref().map_or(std::f64::consts::PI, |n| (c.y - n.point.y).atan2(c.x - n.point.x));
+        let key = |p: &Shape| {
+            let q = g::centroid(p);
+            let a = (q.y - c.y).atan2(q.x - c.x);
+            let turn = (a - back).rem_euclid(std::f64::consts::TAU);
+            if dist(q, c) < reach_at(a) + outer - radius - 0.5 * step { -1.0 } else { turn.min(std::f64::consts::TAU - turn) }
+        };
+        blocks.sort_by(|a, b| key(&a.0).total_cmp(&key(&b.0)));
+        blocks.truncate((tents * 1.1).ceil() as usize);
+    }
     // The open centre: a common for herds, fires and gatherings.
     let centre_radius = radius * (1.0 - wobble) - half - depth - 2.0;
     if centre_radius > 6.0 {
@@ -112,9 +171,9 @@ pub(super) fn camp(
             blocks.push((d, "place"));
         }
     }
-    let mut streets = vec![street(ring.clone(), half * 2.0, 3, "track")];
-    if let Some(n) = near.as_ref().filter(|n| n.distance > radius * (1.0 + wobble)) {
-        let entry = at(c, unit(c, n.point), reach_at((n.point.y - c.y).atan2(n.point.x - c.x)));
+    let mut streets: Vec<Street> = rings.into_iter().chain(spokes).map(|way| street(way, half * 2.0, 3, "track")).collect();
+    if let Some(n) = near.as_ref().filter(|n| n.distance > radius * wobble + outer) {
+        let entry = at(c, unit(c, n.point), reach_at((n.point.y - c.y).atan2(n.point.x - c.x)) + outer - radius);
         // No track when the road cannot be reached over land (`track`).
         let way = track(surface, n.point, entry, cfg.max_lane_grade);
         if way.len() >= 2 {

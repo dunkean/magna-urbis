@@ -104,7 +104,7 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
       volumes = byPiece?.flat(),
       first = volumes?.[0];
     if (volumes) {
-      if (volumes.some(v => v.detail?.stilts_m || ['tree', 'mushroom', 'yurt', 'tower'].includes(v.detail?.form ?? '')))
+      if (volumes.some(v => v.detail?.stilts_m || ['tree', 'mushroom', 'yurt', 'igloo', 'tower'].includes(v.detail?.form ?? '')))
         surface = volumes.flatMap(v =>
           v.detail?.stilts_m
             ? [

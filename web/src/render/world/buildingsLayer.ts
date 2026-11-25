@@ -13,7 +13,7 @@ import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildi
 import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, YARD_HOUSE, blockHidden, blockLevel, worldPaint, worldSeat, yardBlockLevel, yardRise } from './buildingsBlocks';
 import { WORLD_BUILDING_FS, WORLD_BUILDING_VS } from './buildingsShader';
 import type { TerrainHeights } from './heights';
-import { VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
+import { NIGHT_HAZE, VOLUME_HAZE, ViewVolume, hazeDistance, startVolumeProgram, volumeProgramLinked, uniformsOf, volumeDepth, volumeDepthEnd, volumesDrawn, type VolumeLayer } from './volumes';
 import { CAVE_DUSK, caveFogRange, type WorldCave } from './cave';
 import { pickBuilding, type BuildingPick } from './buildingsPick';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
@@ -506,7 +506,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             gl.uniform3f(u.uHaze, CAVE_DUSK[0], CAVE_DUSK[1], CAVE_DUSK[2]);
             gl.uniform4f(u.uCave, cave.lightsOn ? 1 : 2, cave.lightsOn ? 1.25 - 0.35 * cave.settings.darkness : 0.08, fog[0], fog[1]);
           } else {
-            gl.uniform3f(u.uHaze, VOLUME_HAZE[0], VOLUME_HAZE[1], VOLUME_HAZE[2]);
+            const haze = night ? NIGHT_HAZE : VOLUME_HAZE;
+            gl.uniform3f(u.uHaze, haze[0], haze[1], haze[2]);
             gl.uniform4f(u.uCave, 0, 1, 1e9, 2e9);
           }
           gl.uniform1i(u.uNight, night);

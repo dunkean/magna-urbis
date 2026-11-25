@@ -2,8 +2,8 @@
 
 use crate::urban::{Enclosure, Layout, Point, Shape, Street, Surface, composition, geometry as g};
 use super::super::dead_gates::drop_dead_gates;
-use super::{Circuit, FRONT, cumulated, decide, divert, gate_budget, round_outside, segment_of, throat};
-use super::super::geometry::{closed, cross, dir, dist, normals, pt};
+use super::{Circuit, STRAIGHT, cumulated, decide, divert, gate_budget, round_outside, segment_of, throat};
+use super::super::geometry::{closed, cross, dir, dist, dot, normals, pt};
 
 /// Walls review 17/11: the gate budget follows the population (2-4 under 5 000, 5 at 10 000,
 /// 6-8 for large cities) and keeps two for a castle.
@@ -57,7 +57,7 @@ fn road(points: &[(f64, f64)], rank: usize, role: &str) -> Street {
     Street { path: points.iter().map(|&(x, y)| pt(x, y)).collect(), widths: vec![6.0; points.len()], rank, role: role.into() }
 }
 fn circuit(squared: bool, improvisation: f64) -> Circuit<'static> {
-    Circuit { pop: 10_000, purpose: "", kind: "wall", curtain_width: 3.0, moat: 0.0, grade: 0.12, squared, key: "gates", improvisation }
+    Circuit { pop: 10_000, purpose: "", kind: "wall", curtain_width: 3.0, moat: 0.0, grade: 0.12, squared, streets_turn: true, key: "gates", improvisation }
 }
 /// The town of the tests: a square circuit of 800 m centred on (1000, 1000).
 fn town() -> Shape {
@@ -120,27 +120,86 @@ fn a_shore_opening_keeps_its_access_and_a_cut_ramp_keeps_its_deck_end() {
     assert!(streets.iter().any(|s| s.role == "lane" && s.path.last() == Some(&pt(930.0, 750.0))));
 }
 
-/// At a kept passage the curtain turns square to its street, through the same gate point; the street
-/// keeps its line. With every tidying left as drawn (`improvisation` 1) the curtain keeps its trace.
+/// Sharpest turn (degrees) of the closed `path` within `STRAIGHT` m of `gate`, along it.
+fn sharpest(path: &[Point], gate: Point) -> f64 {
+    let n = path.len() - 1;
+    let cum = cumulated(path);
+    let s = { let k = segment_of(path, gate); cum[k] + dist(path[k], gate) };
+    (0..n)
+        .filter(|&j| { let d = (cum[j] - s).rem_euclid(cum[n]); d.min(cum[n] - d) < STRAIGHT })
+        .map(|j| { let (u, v) = (dir(path[(j + n - 1) % n], path[j]), dir(path[j], path[j + 1])); cross(u, v).atan2(dot(u, v)).abs().to_degrees() })
+        .fold(0.0, f64::max)
+}
+
+/// At a kept passage the curtain keeps its trace and the street turns square to it over its last
+/// metres; its far ends keep their place. With every tidying left as drawn (`improvisation` 1) the
+/// street keeps its line. A street 50° off square folded its curtain (review 25/11).
 #[test]
-fn gates_stand_square_to_their_street() {
-    let skew = || vec![road(&[(800.0, 1000.0), (1200.0, 300.0)], 1, "street"), road(&[(1000.0, 1000.0), (1700.0, 1000.0)], 1, "street")];
-    let mut streets = skew();
-    let (wall, kept, _) = decide(&town(), &mut streets, &circuit(true, 0.0), flat());
-    assert!(streets.iter().map(|s| &s.path).eq(skew().iter().map(|s| &s.path)), "a gate street moved");
-    assert!(g::simple(&wall), "the squared circuit crosses itself");
-    let path = closed(&wall.outer);
-    for p in &kept {
-        let k = segment_of(&path, p.at);
-        assert!(g::distance(p.at, path[k], path[k + 1]).0 < 1e-6, "the curtain left the gate {:?}", p.at);
-        let off = cross(p.along, dir(path[k], path[k + 1])).abs().acos().to_degrees();
-        assert!(off < 1.0, "the gate at {:?} is {off:.0}° off square", p.at);
-        assert!(dist(path[k], path[k + 1]) >= 2.0 * FRONT, "a gate front too short for its gatehouse");
+fn gates_stand_square_to_their_street_and_never_fold_their_curtain() {
+    for (skew, most) in [([(800.0, 1000.0), (1200.0, 300.0)], 1.0), ([(762.0, 800.0), (1238.0, 400.0)], 15.5)] {
+        let drawn = || vec![road(&skew, 1, "street"), road(&[(1000.0, 1000.0), (1700.0, 1000.0)], 1, "street")];
+        let mut streets = drawn();
+        let (wall, kept, _) = decide(&town(), &mut streets, &circuit(true, 0.0), flat());
+        assert_eq!(wall.outer, town().outer, "the curtain left its trace");
+        let before = drawn();
+        assert!(streets[0].path.len() > 2 && streets[0].path.first() == before[0].path.first() && streets[0].path.last() == before[0].path.last(), "the ends moved");
+        assert_eq!(streets[0].widths.len(), streets[0].path.len());
+        let path = closed(&wall.outer);
+        assert_eq!(kept.len(), 2);
+        for p in &kept {
+            let k = segment_of(&path, p.at);
+            let s = streets.iter().find(|s| s.path.windows(2).any(|w| g::distance(p.at, w[0], w[1]).0 < 0.1)).expect("no street at the gate");
+            let w = s.path.windows(2).find(|w| g::distance(p.at, w[0], w[1]).0 < 0.1).unwrap();
+            let off = cross(dir(w[0], w[1]), dir(path[k], path[k + 1])).abs().acos().to_degrees();
+            assert!(off < most, "the street at {:?} is {off:.0}° off square", p.at);
+            assert!(sharpest(&path, p.at) <= 60.0);
+        }
+        assert_eq!(crossing_points(&wall, &streets).len(), kept.len(), "the street crosses the wall once");
+        let mut streets = drawn();
+        let (wall, _, _) = decide(&town(), &mut streets, &circuit(true, 1.0), flat());
+        assert!(wall.outer == town().outer && streets.iter().map(|s| &s.path).eq(drawn().iter().map(|s| &s.path)), "a gate left as drawn moved");
     }
-    // The east gate was square already: its front is the old curtain.
-    assert!(wall.outer.iter().any(|&q| dist(q, pt(1400.0, 1400.0)) < 1e-6) && wall.outer.len() == town().outer.len() + 4);
-    let (wall, _, _) = decide(&town(), &mut skew(), &circuit(true, 1.0), flat());
-    assert_eq!(wall.outer, town().outer, "a gate left as drawn moved its curtain");
+}
+
+/// A gate by a corner of the town: across a corner that juts out it stands on a straight front, by an
+/// inward corner it moves to a straight stretch its street can follow. No corner within 25 m of the
+/// gate is sharper than 120°. In a village the street keeps its line all the same.
+#[test]
+fn a_gate_by_a_corner_stands_on_a_front_across_it_or_leaves_it() {
+    let inward = Shape { outer: [(600.0, 600.0), (1000.0, 600.0), (1000.0, 1000.0), (1400.0, 1000.0), (1400.0, 1400.0), (600.0, 1400.0)].map(|(x, y)| pt(x, y)).to_vec(), holes: vec![] };
+    let outward = [(1003.0, 1000.0), (1803.0, 200.0)];
+    // (trace, street, population, streets may turn, the curtain is cut, the street turns)
+    let cases = [
+        (town(), outward, 10_000, true, true, false),
+        (town(), outward, 10_000, false, true, false),
+        (town(), outward, 500, true, true, false),
+        (inward.clone(), [(700.0, 985.0), (1300.0, 985.0)], 10_000, true, false, true),
+        (inward, [(700.0, 985.0), (1300.0, 985.0)], 10_000, false, true, false),
+    ];
+    for (i, (trace, street, pop, streets_turn, cut, turned)) in cases.into_iter().enumerate() {
+        let mut streets = vec![road(&street, 1, "street")];
+        let (wall, kept, _) = decide(&trace, &mut streets, &Circuit { pop, streets_turn, ..circuit(true, 0.0) }, flat());
+        assert_eq!(kept.len(), 1, "case {i}");
+        assert!(g::simple(&wall), "case {i}");
+        let path = closed(&wall.outer);
+        let turn = sharpest(&path, kept[0].at);
+        assert!(turn <= 60.0, "case {i}: a corner of {turn:.0}° by the gate {:?}", kept[0].at);
+        assert!(!path.iter().any(|&q| dist(q, kept[0].at) < 10.0), "case {i}: no room for the gatehouse");
+        assert_eq!((wall.outer != trace.outer, streets[0].path.len() > 2), (cut, turned), "case {i}");
+        let gates = crossing_points(&wall, &streets);
+        assert!(gates.len() == 1 && dist(gates[0], kept[0].at) < 1.0, "case {i}: {gates:?}");
+    }
+}
+
+/// A line that is not to be touched (a planned rectangle) keeps its corner: the gate moves along it.
+#[test]
+fn a_gate_by_the_corner_of_a_planned_rectangle_moves_along_it() {
+    let mut streets = vec![road(&[(1000.0, 790.0), (1390.0, 790.0), (1390.0, 300.0)], 1, "street")];
+    let (wall, kept, _) = decide(&town(), &mut streets, &circuit(false, 0.0), flat());
+    assert_eq!(wall.outer, town().outer, "a planned rectangle moved");
+    assert!(kept.len() == 1 && sharpest(&closed(&wall.outer), kept[0].at) <= 60.0, "{kept:?}");
+    let gates = crossing_points(&wall, &streets);
+    assert!(gates.len() == 1 && dist(gates[0], kept[0].at) < 1.0, "{gates:?}");
 }
 
 /// A main road shut out by the budget goes round outside to the nearest kept gate: a through road

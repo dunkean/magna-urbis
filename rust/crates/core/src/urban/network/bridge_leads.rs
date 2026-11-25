@@ -321,7 +321,7 @@ fn place(
 }
 
 /// The blocks less the new ribbons; none when a block would lose its shape or is reserved.
-fn carved(layout: &Layout, fresh: &[(Vec<Point>, f64, f64)], reserved: &HashSet<usize>) -> Option<Vec<(usize, Shape)>> {
+pub(super) fn carved(layout: &Layout, fresh: &[(Vec<Point>, f64, f64)], reserved: &HashSet<usize>) -> Option<Vec<(usize, Shape)>> {
     let ribbons: Vec<Shape> = fresh.iter().flat_map(|(path, half, _)| g::ribbon(path, &vec![half * 2.0; path.len()])).collect();
     let boxes: Vec<_> = ribbons.iter().map(g::bbox).collect();
     let (x0, y0, x1, y1) = fresh.iter().flat_map(|f| f.0.windows(2).map(|w| segment_box(w[0], w[1], 12.0))).fold(

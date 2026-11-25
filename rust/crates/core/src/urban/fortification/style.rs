@@ -53,6 +53,8 @@ pub(in super::super) struct Style {
     pub ditch_width: [f64; 2],
     /// Ditch depth (m), for the 3D moat; 0: from its width (`build`).
     pub ditch_depth: f64,
+    /// Form of the ditch: an id of the `moats` table (`moat::spec`).
+    pub moat_form: String,
     pub berm: f64,
     pub outworks: Vec<String>,
     pub outer_gap: [f64; 2],
@@ -124,6 +126,7 @@ impl Style {
             ditch_p: num(v, "ditchP", 1.0),
             ditch_width: pair(&v["ditchWidthM"], [0.0, 0.0]),
             ditch_depth: num(v, "ditchDepthM", 0.0),
+            moat_form: text(v, "moatForm", "earth"),
             berm: num(v, "bermM", 2.0),
             outworks: v["outworks"]
                 .as_array()
@@ -232,6 +235,13 @@ impl Style {
         if let Some(d) = o["ditchDepthM"].as_f64() {
             self.ditch_depth = d;
         }
+        if let Some(f) = o["moatForm"].as_str() {
+            self.moat_form = f.into();
+        }
+        // A culture's own breadth of ditch (the broad moats of Angkor, of a Japanese castle town).
+        if o["ditchWidthM"].is_array() || o["ditchWidthM"].is_number() {
+            self.ditch_width = pair(&o["ditchWidthM"], self.ditch_width);
+        }
         if let Some(h) = o["heightM"].as_f64().or_else(|| o["heightM"][1].as_f64()) {
             self.tower_height += h - self.height;
             self.height = h;
@@ -317,6 +327,9 @@ pub(super) fn styled(id: &str, culture: &str, pop: u32) -> Style {
         let t = ((pop as f64 / 20_000.0).max(1.0).log10()).clamp(0.0, 1.0);
         s.curtain_width = 6.0 + 6.0 * t;
     }
+    // The form sets the breadth of the ditch: a double ditch and a ceremonial moat are broad, a ringfort's is slight.
+    let broad = num(&data()["moats"][s.moat_form.as_str()], "widthScale", 1.0);
+    s.ditch_width = [s.ditch_width[0] * broad, s.ditch_width[1] * broad];
     let min = data()["styles"][id]["outworkMinPop"].as_u64().unwrap_or(0);
     if (pop as u64) < min {
         s.outworks.retain(|w| w != "antemural" && w != "citadel");

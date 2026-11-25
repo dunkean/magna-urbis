@@ -3,7 +3,8 @@
  * Reads/writes: Reads enclosures and terrain/water inputs; owns a per-call sampled-height cache and local display meshes.
  */
 import type { BoundaryLine } from '../craftedBoundaries';
-import { moatBridges, moatFaces } from '../city3dMoat';
+import { moatBridges, moatFaces, moatRevetment, moatWorks } from '../city3dMoat';
+import { moatDepth, moatForm, moatParts, moatSpec, moatState, type MoatSpec } from '../moatModel';
 import type { PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
 import type { MaterialPattern, MaterialSlots, Point } from '../../../../rust/bridge/housesContract';
 import type { Enclosure } from '../../../../rust/bridge/urban';
@@ -19,7 +20,7 @@ const ROUND_ROOFED = new Set(['curtain', 'flanked', 'concentric']);
 /** Curtains, towers, gatehouses, bastions, outworks and lean-tos of every
  * enclosure. Stone curtains carry a wall walk and merlons; palisades are a
  * timber line (on an earth bank for `gord`); thorn enclosures follow the same gate cuts. */
-export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dHeight, key = 'w', culture = '', waterColor?: string): PlacedBuilding[] {
+export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dHeight, key = 'w', culture = '', waterColor?: string, engraved = false): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
   // The ground under a point is read once per call: the water sheet of a moat and the prisms of a curtain ask for the
   // same corners again and again (each triangle its three, each piece its neighbour's).
@@ -337,18 +338,46 @@ export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dH
       push(wallPiece(`${id}:${w.kind}:${wi}`, `${style}:${w.kind}`, mesh, pattern), crest([w.shape], height, g));
     });
     // Moat: the terrain digs the ground (ui/urbanGroundCuts.ts); a wet moat's water lies in it, see city3dMoat.ts.
+    const form = moatForm(e),
+      moat = moatSpec(e as Enclosure & { moat?: MoatSpec }),
+      // The plan parts of the ditch (channel, pools, duckweed, lilies...), by piece: the water of each lies as its 2D plan shows it.
+      parts = moatParts(e.ditch ?? [], form, e.path);
     (e.ditch ?? []).forEach((d, di) => {
       if (!d.shape?.outer || d.shape.outer.length < 3) return;
       const mesh = new WallMesh();
-      moatFaces(d, g, (pts, material) => mesh.add(pts, material), waterColor);
+      moatFaces(
+        d,
+        form,
+        g,
+        (pts, material) => mesh.add(pts, material),
+        waterColor,
+        moatState({ moat }),
+        parts.filter(p => p.piece === di),
+        engraved,
+      );
       if (mesh.empty) return;
       mesh.footprint.push({ outer: d.shape.outer, holes: [] });
       push(wallPiece(`${id}:ditch:${di}`, `${style}:ditch:${d.kind}`, mesh, 'earth'));
     });
+    // The facing of a revetted ditch (stone or timber), its dams and sluices.
+    (e.ditch ?? []).forEach((d, di) => {
+      if (!d.shape?.outer || d.shape.outer.length < 3 || form.revetment === 'earth') return;
+      const mesh = new WallMesh(),
+        timber = form.revetment === 'timber';
+      moatRevetment(e.ditch ?? [], form, g, (pts, material) => mesh.add(pts, material), timber ? wood : mat('stone'), timber ? wood : mat('stone'), d);
+      if (mesh.empty) return;
+      mesh.footprint.push({ outer: d.shape.outer, holes: [] });
+      push(wallPiece(`${id}:revetment:${di}`, `${style}:revetment:${form.revetment}`, mesh, timber ? 'wood' : 'stone'));
+    });
+    {
+      const mesh = new WallMesh(),
+        depth = Math.max(0, ...(e.ditch ?? []).map(d => moatDepth(d, form)));
+      if (moatWorks(moat, depth, g, (shape, zb, zt, s, cap, under) => mesh.prism(shape, zb, zt, s, cap, under), mat('stone'), mat('stone'))) push(wallPiece(`${id}:moat-works`, `${style}:moat-works`, mesh, 'stone'));
+    }
     // Bridges over the dug moat at the land gates, standing on the undug ground.
     {
       const mesh = new WallMesh();
-      if (moatBridges(gatehouses, e.ditch ?? [], g, (shape, zb, zt, s, cap, under) => mesh.prism(shape, zb, zt, s, cap, under), wall ? side : wood, wall ? top : wood)) push(wallPiece(`${id}:moat-bridge`, `${style}:moat-bridge`, mesh, wall ? pattern : 'wood'));
+      if (moatBridges(gatehouses, e.ditch ?? [], form, g, (shape, zb, zt, s, cap, under) => mesh.prism(shape, zb, zt, s, cap, under), wall ? side : wood, wall ? top : wood)) push(wallPiece(`${id}:moat-bridge`, `${style}:moat-bridge`, mesh, wall ? pattern : 'wood'));
     }
     // Lean-tos against the outer face: low walls under a pitched roof.
     (e.attached ?? []).forEach((a, ai) => {

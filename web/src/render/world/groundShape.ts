@@ -1,6 +1,6 @@
 /**
- * The ground of the towns of the tilted map, shaped for what stands on it: hillside lots levelled into platforms
- * (ui/urbanGroundShape.ts) and moats dug by their depth (ui/urbanGroundCuts.ts), the rules of the separate 3D view.
+ * The ground of the towns of the tilted map, shaped for what stands on it: buildings sunk into the slopes and hillside lots
+ * levelled (ui/urbanGroundShape.ts) and moats dug by their depth (ui/urbanGroundCuts.ts), the rules of the separate 3D view.
  *
  * One product per town content, made in steps by v2/display/worldVolumes.ts and hung on the relief (heights.ts
  * `TerrainHeights.shape`): a grid of SHAPE_STEP metres over the blocks of SHAPE_BLOCK metres where the ground moves, two
@@ -21,8 +21,8 @@ export const SHAPE_SIDE = CELLS + 1;
 const MAX_BLOCKS = 1024;
 /** A node that moves less is left on the natural ground (m). */
 const LEAST = 0.01;
-/** Lots shaped and moat nodes dug between two steps. */
-const LOTS_PER_STEP = 24,
+/** Lots and buildings shaped, and moat nodes dug, between two steps. */
+const LOTS_PER_STEP = 8,
   NODES_PER_STEP = 1024;
 
 export class GroundShape {
@@ -53,9 +53,9 @@ export class GroundShape {
   level(i: number, j: number, move: number): void {
     if (Math.abs(move) >= LEAST) this.write(i, j, move, false);
   }
-  /** Digs the drawn ground at node (i, j) by `depth` under the levelled ground. */
+  /** Digs the drawn ground at node (i, j) by `depth` under the levelled ground; a negative depth raises it (the outer bank of a moat). */
   dig(i: number, j: number, depth: number): void {
-    if (depth >= LEAST) this.write(i, j, depth, true);
+    if (Math.abs(depth) >= LEAST) this.write(i, j, depth, true);
   }
 
   private sample(nodes: readonly Float32Array[], x: number, y: number): number {
@@ -106,21 +106,29 @@ export function* groundShapeSteps(width: number, towns: Iterable<readonly Ground
   const shape = new GroundShape(width),
     last = Math.floor(width / SHAPE_STEP);
   for (const lots of towns) {
-    const platforms = new UrbanGroundShape([], natural);
+    const platforms = new UrbanGroundShape([], natural),
+      // Overlapping boxes: each node is shaped once.
+      seen = new Map<number, Uint8Array>();
     for (let k = 0; k < lots.length; k++) {
       platforms.add(lots[k]);
       if (k % LOTS_PER_STEP === LOTS_PER_STEP - 1) yield;
     }
-    let done = 0;
+    let shaped = 0;
     for (const box of platforms.boxes()) {
       for (let j = Math.max(0, Math.ceil(box.y0 / SHAPE_STEP)); j <= Math.min(last, Math.floor(box.y1 / SHAPE_STEP)); j++)
         for (let i = Math.max(0, Math.ceil(box.x0 / SHAPE_STEP)); i <= Math.min(last, Math.floor(box.x1 / SHAPE_STEP)); i++) {
+          const block = Math.floor(j / CELLS) * (last + 1) + Math.floor(i / CELLS),
+            node = (j % CELLS) * CELLS + (i % CELLS);
+          let done = seen.get(block);
+          if (!done) seen.set(block, (done = new Uint8Array(CELLS * CELLS)));
+          if (done[node]) continue;
+          done[node] = 1;
           const x = i * SHAPE_STEP,
             y = j * SHAPE_STEP,
             height = natural(x, y);
           shape.level(i, j, platforms.shape(x, y, height) - height);
         }
-      if (++done % LOTS_PER_STEP === 0) yield;
+      if (++shaped % LOTS_PER_STEP === 0) yield;
     }
   }
   for (const nodes of cuts.nodes(SHAPE_STEP)) {

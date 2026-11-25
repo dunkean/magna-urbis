@@ -48,8 +48,8 @@ export interface SurfacePiece {
 
 /** Ways whose loose ends stop square (decks, quays, moles). */
 const BUTT = new Set(['bridge', 'mole', 'pier', 'landing']);
-/** Ways that get no curb return (structures, steps). */
-const SHARP = new Set(['bridge', 'mole', 'pier', 'landing', 'ford', 'causeway', 'stairs', 'port-stairs', 'boardwalk', 'walkway']);
+/** Ways that get no curb return (structures, port steps). */
+const SHARP = new Set(['bridge', 'mole', 'pier', 'landing', 'ford', 'causeway', 'port-stairs', 'boardwalk', 'walkway']);
 const SNAP = 0.02;
 
 /** `length`: the straight run of the arm's first segment, which bounds its curb return. */

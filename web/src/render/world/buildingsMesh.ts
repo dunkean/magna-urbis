@@ -18,7 +18,7 @@ import { craftedMageCity } from '../craftedMageCity';
 import { includeCraftedMassing } from '../craftedMassingBounds';
 import { roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
 import { buildingTint } from '../buildingPalette';
-import { buildingHeat, roofSnowShare, snowRoofTint } from '../roofSnow';
+import { buildingHeat, nightSnow, roofSnowShare, snowRoofTint } from '../roofSnow';
 import { mapGroundSnow } from '../seasonPalette';
 import { buildingPaint, showsCraftedHouses, type UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import { building3dHeight, eachBuildingTriangle, isBuildingProjection, type Building3dVisual, type BuildingTriangle } from '../urbanBuildingGeometry';
@@ -162,8 +162,65 @@ const WALL_CLASS: Record<string, number> = {
   glass: 31,
   steel: 16,
 };
-/** Class of a roof face under snow: the mantle is uneven, thinner in places (materialGrain). */
-const SNOW_CLASS = 28;
+/** What a flat-coloured face carries above its colour, on the integer part of its red channel (red + 2 x extra, decoded
+ * by FACE_EXTRA_GLSL): 1 to 15, the share of a full snow mantle on a roof face in fifteenths, which the shader lays over
+ * the cover; 16 + 1 to 15, the light that falls at night on a wall from a lit door or window of it, whose place then rides
+ * the same way on green (along the wall, half metres modulo 32 m) and blue (height above the ground, half metres). */
+const GLOW_EXTRA = 16;
+const snowExtra = (snow: number): number => Math.max(1, Math.min(15, Math.round(snow * 15)));
+/** Walls lit by electric light: their cities burn brighter than hearths and lanterns. */
+const ELECTRIC_WALLS = new Set(['concrete', 'glass', 'steel']);
+/** Night light of the doors and windows of a house, 0 (dark) to 10: whether its people are up (its use and its own draw),
+ * and its size. Nobody lives in monuments, halls and stores: their walls stay dark. */
+function nightGlow(fn: string | undefined, height: number, draw: number, monument: boolean): number {
+  const up = monument ? 0 : fn === 'mixed' ? 0.85 : fn === 'domestic' ? 0.65 : fn === 'workshop' ? 0.4 : 0;
+  return draw < up ? Math.round(10 * Math.min(1, 0.55 + 0.04 * height) * (0.6 + (0.4 * draw) / up)) : 0;
+}
+/** A wall triangle written this building, waiting for the lit opening nearest it, and those openings. */
+interface LitWall {
+  batch: BuildingBatchData;
+  at: number;
+  normal: readonly number[];
+  plane: number;
+  low: number;
+  high: number;
+  level: number;
+}
+interface LitOpening {
+  normal: readonly number[];
+  plane: number;
+  along: number;
+  height: number;
+}
+/** Place along a wall, in the metres of the block (FACE_EXTRA_GLSL reads the same from the face normal). */
+const alongWall = (x: number, y: number, normal: readonly number[]): number => (y * normal[0] - x * normal[1]) / (Math.hypot(normal[0], normal[1]) || 1);
+/** Writes the light of the lit opening of its plane on each wall triangle, the lowest one (a door) first: both triangles
+ * of a wall take the same. Boxes and overviews draw no opening: one stands every 32 m of their walls, in its own place. */
+function lightWalls(walls: readonly LitWall[], openings: readonly LitOpening[], drawn: number | undefined, crafted: boolean): void {
+  // `at` is the place in a batch that may have grown since: its data is read from the batch.
+  for (const wall of walls) {
+    let lit: LitOpening | undefined;
+    for (const o of openings)
+      if (o.along > wall.low - 0.5 && o.along < wall.high + 0.5 && Math.abs(o.plane - wall.plane) < 0.35 && o.normal[0] * wall.normal[0] + o.normal[1] * wall.normal[1] > 0.95 && (!lit || o.height < lit.height - 0.1 || (o.height < lit.height + 0.1 && o.along < lit.along)))
+        lit = o;
+    if (!lit && (drawn === undefined || crafted)) continue;
+    const along = lit ? lit.along : drawn!,
+      height = lit ? lit.height : 1.4,
+      data = wall.batch.data,
+      q = Math.floor((((along % 32) + 32) % 32) * 2) % 64,
+      h = Math.max(0, Math.min(63, Math.round(height * 2)));
+    for (let i = 0; i < 3; i++) {
+      const at = wall.at + i * BUILDING_STRIDE;
+      const add = (k: number, v: number): void => {
+        const c = data[at + k];
+        data[at + k] = c < 0 || Object.is(c, -0) ? c - 2 * v : c + 2 * v;
+      };
+      add(6, GLOW_EXTRA + wall.level);
+      add(7, q);
+      add(8, h);
+    }
+  }
+}
 /** Class of a window lit at night (city3dMeshes.ts `LIT_WINDOW`), in every appearance and in both programs: past the
  * grain classes, it only tells the shaders which faces glow (buildingNight). */
 const LIT_CLASS = 32;
@@ -252,6 +309,8 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     textured = !!appearance.textured && !crafted;
   const catalogue = { materials: paint.materials as HouseMaterial[] };
   const patterns = showsCraftedHouses(appearance) ? new Map(paint.materials.map(m => [m.id, m.pattern])) : undefined;
+  const litWalls: LitWall[] = [],
+    litOpenings: LitOpening[] = [];
   for (const original of buildings) {
     const building = patterns && original.culture?.culture === 'wizard-city' && !isBuildingProjection(original) ? craftedMageCity(original) : original;
     const colors = new Map<string, Map<string, Vec3>>(),
@@ -267,6 +326,8 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     const house = Number.isFinite(ground) && !building.id.startsWith('city3d-');
     const craftedHouse = house ? patterns : undefined;
     const mapper = craftedHouse ? houseSurfaceMapper(building) : undefined;
+    const glow = house && !textured ? nightGlow(building.function, building3dHeight(building), ((h >>> 8) & 255) / 256, !!programme?.landmark) : 0;
+    litWalls.length = litOpenings.length = 0;
     const canInk = paint.roofInk && house && appearance.diagnostic === 'none';
     // The town item of the building, when the faces take the top view's look; the last roof face painted (the
     // triangles of one face come in a row, with the same normal and slots).
@@ -280,7 +341,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       // triangles of the door reach its threshold, including volumes on a lower terrace.
       let aperture: 'door' | 'window' | undefined;
       if (craftedHouse && (id === 'city3d:wall:opening' || id === 'city3d:wall:lit')) {
-        const threshold = (face.ground?.[0] ?? ground) + .3;
+        const threshold = (face.ground?.[0] ?? ground) + 0.3;
         aperture = face.entrance || face.points.some(p => p[2] <= threshold) ? 'door' : 'window';
       }
       const massing = item && face.surface !== 'yard' ? massingLookOf(face.materials) : undefined;
@@ -332,25 +393,32 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       }
       if (craftedHouse && culture === 'mongol-ordu' && !appearance.colors?.building) {
         const cloth = id === 'city3d:cover:felt' ? GER_CLOTH.roof : id === 'city3d:wall:hide' ? GER_CLOTH.wall : undefined;
-        if (cloth) c = c.map((v, i) => (v + cloth[i]) * .5) as Vec3;
+        if (cloth) c = c.map((v, i) => (v + cloth[i]) * 0.5) as Vec3;
       }
-      if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * 0.4);
       // The original aperture is almost black; leave enough daylight for glazing and joinery to read.
       if (aperture) c = aperture === 'door' ? DOOR_COLOR : WINDOW_COLOR;
       const recolored = appearance.diagnostic === 'none' && ((!!appearance.colors?.building && face.surface === 'roof') || tm?.[1].length === 6 || (!!culture && !building.id.startsWith('city3d-')));
-      // Flat-colour program only: the material class rides on the normal's length (see materialGrain); a snowed face
-      // takes the snow class in place of its cover's.
+      // Flat-colour program only: the material class rides on the normal's length (see materialGrain).
       // A face painted by the town look takes the grain family of its pan (the top view's grain marks, COVER_GRAIN_GLSL).
-      const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
-      const drawing = aperture ? houseSurfaceLayer('wall', culture, aperture) : craftedHouse && snow < .4 && face.surface !== 'yard' ? craftedLayer(face, id ?? '', culture, craftedHouse, programme?.role ?? '') : 0;
+      const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
+      const drawing = aperture ? houseSurfaceLayer('wall', culture, aperture) : craftedHouse && snow < 0.4 && face.surface !== 'yard' ? craftedLayer(face, id ?? '', culture, craftedHouse, programme?.role ?? '') : 0;
       const finish = drawing && !aperture ? drawing + finishOffset : drawing;
       const project = drawing && mapper ? mapper(face, id ?? '', !!aperture) : undefined;
+      // The shader lays the snow of a flat-coloured face over its cover. The other programs take it in the colour, under
+      // the light the top view's look painted the pan with.
+      const bare = c;
+      if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * 0.4, townRoof && paint.look!.frame.night ? nightSnow : undefined);
+      const laid = snow > 0 && !textured && !project,
+        extra = laid ? snowExtra(snow) : 0,
+        red = (laid ? bare[0] : c[0]) + 2 * extra,
+        green = laid ? bare[1] : c[1],
+        blue = laid ? bare[2] : c[2];
       // A complete sRGB8 colour fits exactly in one float. The two released channels carry
       // real per-vertex UVs on the crafted faces only. Plain and PBR meshes retain their original layout.
       const color24 = project ? (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255) : 0;
       const lateral = face.lateral,
-        // Codes 35..63 carry a roof and its underlying grain class (including snow at 28).
-        roofClass = paint.planRoofs && house && face.surface === 'roof' && cls <= SNOW_CLASS ? 35 + cls : cls,
+        // Codes 35..63 carry a roof and its underlying grain class.
+        roofClass = paint.planRoofs && house && face.surface === 'roof' && cls <= 28 ? 35 + cls : cls,
         code = lateral ? (face.normal[2] > 0.5 ? STRIP_TOP_CLASS : STRIP_SIDE_CLASS) : id === 'city3d:wall:lit' ? LIT_CLASS : roofClass,
         unit = (1 + (faceCode(code, townRoof?.gain) + finish * 1024) / 32) / (lateral ? 1 : Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
       const key = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
@@ -376,6 +444,29 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       }
       const data = batch.data;
       let at = group.length;
+      if (glow && !project && !lateral && Math.abs(face.normal[2]) < 0.3) {
+        const n = face.normal,
+          flat = Math.hypot(n[0], n[1]) || 1,
+          plane = (points[0][0] * n[0] + points[0][1] * n[1]) / flat;
+        if (code === LIT_CLASS) {
+          // One record per opening: the facade quads come as two triangles.
+          const along = alongWall((points[0][0] + points[1][0] + points[2][0]) / 3 - origin[0], (points[0][1] + points[1][1] + points[2][1]) / 3 - origin[1], n),
+            height = (Math.min(points[0][2], points[1][2], points[2][2]) + Math.max(points[0][2], points[1][2], points[2][2])) / 2 - ground,
+            twin = litOpenings.at(-1);
+          if (twin && twin.plane === plane && Math.abs(twin.along - along) < 1 && Math.abs(twin.height - height) < 0.2) twin.along = (twin.along + along) / 2;
+          else litOpenings.push({ normal: n, plane, along, height });
+        } else if (face.surface === 'wall' || displayMaterial(id ?? '')?.[1] === 'wall') {
+          let low = Infinity,
+            high = -Infinity;
+          for (let i = 0; i < points.length; i++) {
+            const along = ((points[i][1] - origin[1]) * n[0] - (points[i][0] - origin[0]) * n[1]) / flat;
+            if (along < low) low = along;
+            if (along > high) high = along;
+          }
+          const electric = ELECTRIC_WALLS.has(displayMaterial(id ?? '')?.[2] ?? '');
+          litWalls.push({ batch, at, normal: n, plane, low, high, level: electric ? Math.round(glow * 1.5) : glow });
+        }
+      }
       for (let i = 0; i < points.length; i++) {
         const p = points[i];
         seat(building, ground, p[0], p[1], p[2], face.ground?.[i], seatOut);
@@ -400,9 +491,9 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         } else {
           // A negative channel is zero on that roof edge, positive is one. Interpolation in the
           // shader supplies distance to the side. All wall and interior triangle coordinates stay one.
-          data[at++] = on & 1 ? -c[0] : c[0];
-          data[at++] = on & 2 ? -c[1] : c[1];
-          data[at++] = on & 4 ? -c[2] : c[2];
+          data[at++] = on & 1 ? -red : red;
+          data[at++] = on & 2 ? -green : green;
+          data[at++] = on & 4 ? -blue : blue;
         }
         data[at++] = seatOut[1];
       }
@@ -424,6 +515,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       const masks = roofEdgeMasks(triangles);
       triangles.forEach((face, i) => paintTriangle(face, masks[i]));
     } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel, paint.yardStrips, detailed);
+    if (litWalls.length) lightWalls(litWalls, litOpenings, overview ? (h >>> 16) % 32 : undefined, !!craftedHouse);
   }
   const batches: BuildingBatchData[] = [];
   for (const { batch, length } of groups.values()) {

@@ -102,7 +102,7 @@ fn quarter_pass(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Res
 /// the quarter grammar (`quarters::generate`).
 fn lay_quarters(at: &Attempt<'_, '_>, config: &LayoutConfig, site: &Site) -> Result<Layout, String> {
     let town = at.town;
-    let small = (at.kind.small() && !town.fixed && config.footprint.mechanism != "legacy")
+    let small = (at.kind.small() && (!town.fixed || at.kind.centred()) && config.footprint.mechanism != "legacy")
         .then(|| kinds::lay_out(&town.key_seed, site, config, at.kind, &at.morph, town.surface, town.roads))
         .flatten();
     match small {

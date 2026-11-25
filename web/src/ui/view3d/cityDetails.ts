@@ -75,7 +75,7 @@ export function swapDetail(cityContext: City3dContext, id: string, detail: Place
     cityContext.display.kinds.detailed++;
   }
   // Seated on the displayed terrain like its compact plan (city3dScene); projections keep their recorded heights.
-  const seated = cityContext.sceneOf && 'projection' in cityContext.sceneOf ? detail : seatPlan(detail, cityContext.heightAt);
+  const seated = cityContext.sceneOf && 'projection' in cityContext.sceneOf ? detail : seatPlan(detail, cityContext.heightAt, cityContext.seatGround);
   cityContext.realized.add(seated);
   cityContext.display.buildings[i] = seated;
   cityContext.queueSwap(id, seated);
@@ -86,7 +86,7 @@ export function restoreCompact(cityContext: City3dContext, id: string): void {
   const i = cityContext.slotOf(id),
     base = cityContext.byId.get(id);
   if (!cityContext.display || i < 0 || !base || !cityContext.realized.has(cityContext.display.buildings[i])) return;
-  const compact = isBuildingProjection(base) ? base : compactBuilding(seatPlan(base, cityContext.heightAt));
+  const compact = isBuildingProjection(base) ? base : compactBuilding(seatPlan(base, cityContext.heightAt, cityContext.seatGround));
   cityContext.display.kinds.detailed--;
   cityContext.display.kinds[city3dDisplayKind(base)]++;
   cityContext.display.buildings[i] = compact;

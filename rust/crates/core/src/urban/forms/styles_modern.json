@@ -15,6 +15,7 @@
   "ladders": {
     "metropolis": [[0, 3], [5000, 4], [15000, 5], [30000, 7], [50000, 12], [100000, 24], [200000, 40], [400000, 60]],
     "midrise": [[0, 3], [5000, 4], [15000, 5], [30000, 6], [50000, 8], [100000, 10], [200000, 14]],
+    "megacity": [[0, 3], [5000, 4], [10000, 7], [15000, 8], [30000, 11], [50000, 16], [100000, 28], [200000, 44], [400000, 60]],
     "boulevard": [[0, 4], [5000, 5], [15000, 6], [30000, 7], [200000, 8]]
   },
   "palettes": {
@@ -45,7 +46,7 @@
     "middle-eastern-contemporary": { "homes": { "#e3d5b5": 3, "#d9c79f": 3, "#ece3cc": 2, "#cbb68e": 1.5, "#c2b8a8": 1 }, "special": { "#e8dcc0": 2, "#d4c095": 2, "#f0e9d8": 1, "#6f8fa0": 0.8, "#a9895a": 0.5 } },
     "australian-suburban": { "homes": { "#b7714f": 3, "#c98f66": 2, "#e6dfcf": 2, "#d9c99f": 1, "#9fb2a6": 1 }, "special": { "#d6cbb6": 2, "#b7714f": 1.5, "#8a9aa3": 1, "#e6dfcf": 1 } },
     "post-socialist-european": { "homes": { "#bdbbb4": 2, "#a9a8a3": 2, "#d8cfa8": 1, "#c9d6c1": 1, "#e0c3b0": 1, "#b9c8d6": 1 }, "special": { "#a6a6a1": 2, "#c4c2bb": 2, "#e2b98a": 1, "#7fa6c4": 1, "#d9cf9a": 0.6 } },
-    "cyberpunk": { "homes": { "#5a5d63": 3, "#4a4d52": 3, "#6b6b6b": 2, "#3d4046": 2, "#7a6f66": 1 }, "special": { "#232a33": 3, "#1f3b4d": 2, "#3d2a4a": 1, "#5c6670": 1, "#e0218a": 0.5, "#00b8c8": 0.5, "#f2c230": 0.3 } },
+    "cyberpunk": { "homes": { "#5a5c5e": 3, "#4a4c4e": 3, "#6b6a67": 2, "#3d3f42": 2, "#6a5a4e": 1 }, "special": { "#2a2f34": 3, "#26333b": 2, "#5f6163": 2, "#4a4c4e": 1.5, "#6e4f3e": 0.8, "#b02a72": 0.06, "#1f8a94": 0.06 } },
     "solarpunk": { "homes": { "#e8e2d0": 3, "#d9cfb2": 2, "#cfdcc4": 2, "#e6e9df": 2, "#c8b48e": 1 }, "special": { "#a9c9a0": 2, "#e9efe6": 2, "#7fae8a": 1, "#d7c49a": 1.5, "#bcd8d6": 1, "#e5b85c": 0.4 } },
     "dieselpunk": { "homes": { "#8f5f48": 2, "#7b5241": 2, "#a99a86": 2, "#6f6a63": 1 }, "special": { "#9e8f78": 2, "#7d7468": 2, "#5b5650": 1.5, "#b9a88a": 1, "#4a4440": 1 } },
     "dystopian-brutalism": { "homes": { "#8e8e8a": 3, "#9a9893": 3, "#7f817f": 2, "#a7a49c": 2 }, "special": { "#6f716f": 2, "#858580": 2, "#9c978c": 2, "#5d5f60": 1 } },
@@ -83,7 +84,7 @@
     "middle-eastern-contemporary": { "kit": "masonry-apartment", "traits": { "suburbRing": true, "heightLadder": "midrise", "palette": "middle-eastern-contemporary", "era": "modern", "roleGroups": ["terrace-flat", "modern-flat", "glass-office"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [4, 6], "cover": "plaster", "wall": "ashlar" }, "flavor": "levant" } },
     "australian-suburban": { "kit": "suburban-house", "traits": { "suburbRing": true, "heightLadder": "midrise", "palette": "australian-suburban", "era": "modern", "roleGroups": ["suburban", "tin-roof"], "tradition": { "roof": "hip", "pitch": 24, "storeys": [1, 1], "cover": "metal", "wall": "brick" } } },
     "post-socialist-european": { "kit": "masonry-apartment", "traits": { "suburbRing": true, "heightLadder": "midrise", "palette": "post-socialist-european", "era": "modern", "roleGroups": ["concrete-flat"], "tradition": { "roof": "gable", "pitch": 40, "storeys": [3, 5], "cover": "tile", "wall": "brick" } } },
-    "cyberpunk": { "kit": "concrete-slab", "traits": { "suburbRing": true, "heightLadder": "midrise", "palette": "cyberpunk", "era": "futuristic", "roleGroups": ["concrete-flat", "highrise", "cyberpunk"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 30], "cover": "metal", "wall": "concrete" } } },
+    "cyberpunk": { "kit": "concrete-slab", "traits": { "heightLadder": "megacity", "palette": "cyberpunk", "era": "futuristic", "roleGroups": ["concrete-flat", "highrise", "cyberpunk"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 30], "cover": "metal", "wall": "concrete" } } },
     "solarpunk": { "kit": "eco-block", "traits": { "suburbRing": true, "heightLadder": "midrise", "palette": "solarpunk", "era": "futuristic", "roleGroups": ["green-roof"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [3, 5], "cover": "turf", "wall": "wood" } } },
     "dieselpunk": { "kit": "brick-rowhouse", "traits": { "suburbRing": true, "heightLadder": "midrise", "palette": "dieselpunk", "era": "futuristic", "roleGroups": ["modern-flat", "art-deco"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [5, 8], "cover": "bitumen", "wall": "brick" } } },
     "dystopian-brutalism": { "kit": "concrete-slab", "traits": { "suburbRing": true, "heightLadder": "midrise", "palette": "dystopian-brutalism", "era": "futuristic", "roleGroups": ["concrete-flat", "brutalist"], "tradition": { "roof": "flat", "pitch": 0, "storeys": [12, 20], "cover": "bitumen", "wall": "concrete" } } },

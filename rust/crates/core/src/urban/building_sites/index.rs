@@ -781,7 +781,13 @@ impl BuildingSiteIndex {
             // A closed court or round compound is the dwelling itself: its domestic core
             // stands on every rural home; the share only doses what lies beyond it.
             && (ancillary || lone || super::super::farmsteads::compound_dwelling(building_culture, &site_seed))
-            && let Some(cluster) = super::super::farmsteads::build(&mut parts, &lot, building_culture, farm, farmhouse, wealth, &site_seed, ancillary) {
+            && let Some(mut cluster) = super::super::farmsteads::build(&mut parts, &lot, building_culture, farm, farmhouse, wealth, &site_seed, ancillary) {
+            // Neighbouring courts share one wall along their lot boundaries.
+            if !lone && super::super::farmsteads::adjoining(cluster["type"].as_str().unwrap_or(""))
+                && let Some(compound) = cluster.as_object_mut()
+            {
+                compound.remove("ring");
+            }
             programme["farmstead"] = cluster;
         }
         // City Bench `activity` intent: the template's yard (laid again from the centre and

@@ -43,14 +43,15 @@ export function bridgeCamber(path: readonly Point[], span: number, za: number, z
 }
 
 /** Bridge and causeway streets as decks over the water: the plan drapes
- * streets into the ground texture, which hides them under the water surface.
+ * streets into the ground texture, which hides them under the water surface. On dry ground a causeway is an ordinary
+ * road of that texture (a raised bank approach), without deck nor parapet (`causewayWater`: the water a causeway crosses).
  * The 0.9 m deck joins each bank at the road's height (bridgeCamber) and stands on piers every ~14 m. These are
  * city volumes for the 3D view only, not authoritative architecture. */
-export function city3dBridges(streets: readonly { path: Point[]; widths: number[]; role: string }[], heightAt?: City3dHeight, waterAt?: City3dHeight): PlacedBuilding[] {
+export function city3dBridges(streets: readonly { path: Point[]; widths: number[]; role: string }[], heightAt?: City3dHeight, waterAt?: City3dHeight, causewayWater = waterAt): PlacedBuilding[] {
   const out: PlacedBuilding[] = [];
   const h = (p: Point): number => (heightAt ? heightAt(p.x, p.y) : 0) || 0;
   streets
-    .flatMap(s => wetBridgeSpans(s, waterAt))
+    .flatMap(s => (s.role === 'causeway' ? (causewayWater ? wetBridgeSpans(s, causewayWater) : []) : wetBridgeSpans(s, waterAt)))
     .forEach((street, si) => {
       if ((street.role !== 'bridge' && street.role !== 'causeway') || street.path.length < 2) return;
       const a = street.path[0],

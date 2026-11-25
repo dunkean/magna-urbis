@@ -87,6 +87,28 @@ fn a_fixed_mountain_village_builds_stepped_homes_from_its_exact_foundation() {
     assert!(homes.len() >= 20, "a 39 degree village needs real stepped house requests, got {}: {:?}", homes.len(), l.warnings);
 }
 
+/// A user-placed camp keeps its own ring plan: the quarter grammar stops its
+/// roads at the camp's edge and would leave the heart without a way or a tent.
+#[test]
+fn a_fixed_camp_pitches_its_tents_around_its_exact_foundation() {
+    let (n, width) = (128, 4000.0);
+    let (height, water) = (vec![20.0f32; n * n], vec![0u8; n * n]);
+    let surface = Surface { geometry: None, width, n, height: &height, water: &water, interpolation: Default::default() };
+    let site = Site { key: "fixed-camp".into(), name: String::new(), population: 1500, culture: "nomad-camp".into(),
+        center: Point { x: 2011.0, y: 1997.0 }, radius: crate::settlements::extent_radius(1500), neighbours: vec![] };
+    let roads: Vec<Street> = [(0.0, 2000.0), (4000.0, 1980.0), (2000.0, 0.0), (2030.0, 4000.0)].into_iter().map(|(x, y)| Street {
+        path: vec![Point { x, y }, site.center], widths: vec![6.0, 6.0], rank: 0, role: "regional".into() }).collect();
+    let wanted = 1500.0 / urban::roles::settlement_occupancy("nomad-camp", 1500).household_size;
+    for growth in ["ring", "concentric"] {
+        let cfg = LayoutConfig { fixed_sites: BTreeSet::from([site.key.clone()]), camp_growth: growth.into(), ..Default::default() };
+        let layouts = generate_quarters("fixed-camp", &[site.clone()], &cfg, surface, &roads).unwrap();
+        assert_eq!(layouts[0].structure.as_ref().unwrap().centers[0].point, site.center);
+        let parts = generate_parcels("fixed-camp", &layouts, &ParcelConfig::default()).unwrap();
+        let held: f64 = parts[0].programme.as_ref().unwrap().allocations.iter().map(|a| a.households).sum();
+        assert!(held >= wanted * 0.6, "{growth}: {held} households of {wanted} have a tent");
+    }
+}
+
 #[test]
 fn constrained_medina_keeps_what_fits_and_reports_achieved_population() {
     let (layouts, parts, requests) = town("medina", 8000, 4000.0, 0.0, Some(110.0));

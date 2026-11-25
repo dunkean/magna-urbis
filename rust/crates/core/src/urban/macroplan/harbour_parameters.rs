@@ -151,7 +151,7 @@ pub(super) fn select(pieces: &mut Vec<Piece>, regions: &[Shape], streets: &[Stre
     pieces.clear();
     if let Some((_,path,river,_))=candidates.into_iter().next() {
         let near=path.iter().map(|&p|dist(p,site.center)).fold(f64::INFINITY,f64::min);
-        pieces.push(Piece{path,near,river});
+        pieces.push(Piece{path,near,river,kept:false});
     }
 }
 

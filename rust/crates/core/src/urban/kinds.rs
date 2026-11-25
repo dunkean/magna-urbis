@@ -107,6 +107,11 @@ impl Kind {
                 | Kind::StreetVillage
         )
     }
+    /// A small kind laid out round the site's own centre: a user-fixed
+    /// foundation keeps this plan (the others slide along their road).
+    pub fn centred(self) -> bool {
+        self == Kind::Camp
+    }
 }
 /// French label of a layout archetype (a kind id); empty when unknown.
 pub fn label(id: &str) -> &'static str {
