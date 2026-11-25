@@ -224,7 +224,8 @@ export class Terrain3d {
 
   setLook(look: Terrain3dLookSettings): void {
     const current = this.context.look;
-    if (current.paperMap === look.paperMap && current.ambience === look.ambience && current.waterLook === look.waterLook && current.waterVisible === look.waterVisible && current.groundCover === look.groundCover) return;
+    if (current.paperMap === look.paperMap && current.ambience === look.ambience && current.waterLook === look.waterLook && current.waterVisible === look.waterVisible && current.groundCover === look.groundCover && !!current.craftedBeds === !!look.craftedBeds) return;
+    if (!!current.craftedBeds !== !!look.craftedBeds) this.parts.fungi.reset();
     this.context.look = { ...look };
     this.context.request();
   }

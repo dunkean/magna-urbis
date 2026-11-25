@@ -244,6 +244,7 @@ export class WorldVolumes {
       sparks: Float32Array.from((world.landuse?.farmsteads ?? []).flatMap(farm => [farm.pos.x, farm.pos.y, FARM_LIGHT])),
       lightsOn: !!ground!.townGlow,
       farms: ground!.farmBeds,
+      craftedBeds: ground!.craftedBeds,
       // Read when a mushroom stream starts, in a tilted view only: the ways and lots no wild mushroom grows on.
       get occupation() {
         return v2ForestOccupation(world);

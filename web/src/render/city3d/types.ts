@@ -6,7 +6,7 @@ import type { ArchitectureVolume } from '../../../../rust/bridge/urbanArchitectu
 
 type VolumeRoofMesh = ArchitectureVolume['roof_mesh'];
 
-export type RoofMeshFace = VolumeRoofMesh['faces'][number] & { hiddenEdge?: number };
+export type RoofMeshFace = VolumeRoofMesh['faces'][number] & { hiddenEdge?: number; entrance?: true };
 export type RoofMesh = VolumeRoofMesh & { faces: RoofMeshFace[] };
 
 /** Ground sampler in metres (physical, before display exaggeration). */

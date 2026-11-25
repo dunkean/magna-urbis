@@ -9,6 +9,8 @@ import type { RoofMesh } from './city3d/types';
 import { craftedYurt } from './craftedYurt';
 import { craftedArchitecture } from './craftedArchitecture';
 import { craftedRoofMesh } from './craftedRoofMesh';
+import { craftedMageCity } from './craftedMageCity';
+import { detailedHouseFront } from './houseFronts';
 import { craftedRoofRoom } from './craftedRoofRoom';
 import { craftedIndianMassing } from './craftedIndianMassing';
 
@@ -54,6 +56,7 @@ function emitRoofFaces(mesh: RoofMesh, materials: MaterialSlots, emit: (triangle
       const points = triangles.slice(i, i + 3).map(index => mesh.vertices[index]);
       if (points.some(p => !p)) continue;
       const triangle: BuildingTriangle = { points: points.map(p => [p.x, p.y, p.z]) as BuildingTriangle['points'], normal: face.normal, materials, material: face.material, surface: 'roof' };
+      if ((face as { entrance?: true }).entrance) triangle.entrance = true;
       if (hiddenEdge !== undefined) triangle.hiddenEdge = hiddenEdge;
       emit(triangle);
     }
@@ -68,6 +71,7 @@ export interface BuildingTriangle {
   surface: 'wall' | 'roof' | 'yard';
   materials: MaterialSlots;
   material?: string;
+  entrance?: true;
   /** Side from this vertex to the next, internal to a roof pan. */
   hiddenEdge?: number;
   ground?: [number, number, number];
@@ -334,12 +338,14 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
     // Display-only height extrusion and horizontal roof-outline cap. These are
     // explicitly cartographic proxies, never fabricated native walls, volumes,
     // foundations, gables or source draws. Picking uses these same triangles.
-    const materials = building.materials ?? PROXY_MATERIALS,
+    const height = building.height_m, materials = building.materials ?? PROXY_MATERIALS,
       base = Math.min(building.ground_z_m, (building as FootedProjection).base_z_m ?? Infinity);
-    extrude(building.footprint, base, building.ground_z_m + building.height_m - base, materials, false);
-    for (const triangle of surfaceTriangles(building.roof_footprint)) emit({ points: triangle.map(p => [p.x, p.y, building.ground_z_m + building.height_m]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material: materials.cladding, surface: 'roof' });
+    extrude(building.footprint, base, building.ground_z_m + height - base, materials, false);
+    for (const triangle of surfaceTriangles(building.roof_footprint)) emit({ points: triangle.map(p => [p.x, p.y, building.ground_z_m + height]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material: materials.cladding, surface: 'roof' });
     return;
   }
+  if (crafted && building.culture?.culture === 'wizard-city') building = craftedMageCity(building);
+  const front = crafted && !overview ? detailedHouseFront(building) : null;
   const roofRoom = crafted && !overview ? craftedRoofRoom(building) : null;
   for (const volume of building.volumes as OverviewVolume[]) {
     // Chimneys, dormers and porches are far below a pixel where the overview is shown.
@@ -353,10 +359,12 @@ export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle
             emit(t);
           };
     const foundation = volume.foundation;
-    if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, true);
+    // A footing right under its walls needs no top: its edge would show as a line around the house.
+    if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, volume.envelope === 'open' || foundation.footprint[0] !== volume.levels[0]?.footprint[0]);
     if (volume.envelope !== 'open') for (const level of volume.levels) extrude(level.footprint, level.z_m, level.height_m, level.materials ?? volume.materials, false);
     const mesh = volume.roof_mesh;
     if (!overview) {
+      if (front?.volume === volume) emitRoofFaces(front.mesh, volume.materials, out);
       if (crafted && craftedYurt(volume, building.culture?.culture ?? '', out)) continue;
       if (mesh) emitRoofFaces(crafted ? craftedRoofMesh(volume, building.culture?.culture ?? '') : mesh, volume.materials, out);
       if (crafted && mesh && !volume.displayTree) {

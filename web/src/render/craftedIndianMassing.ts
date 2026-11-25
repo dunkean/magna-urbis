@@ -56,7 +56,7 @@ function openings(v: OverviewVolume): Aperture[] {
     if (face.vertices.length !== 4 || (face.material !== OPENING && face.material !== LIT_WINDOW)) continue;
     const [a, b, c] = face.vertices.map(i => v.roof_mesh.vertices[i]);
     if (Math.abs(a.z - b.z) > 0.03 || c.z - a.z < 0.4) continue;
-    result.push({ center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, foot: a.z - v.z_m, head: c.z - v.z_m, door: face.material === OPENING && Math.abs(a.z - v.z_m) < 0.16 });
+    result.push({ center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, foot: a.z - v.z_m, head: c.z - v.z_m, door: !!(face as { entrance?: true }).entrance || Math.abs(a.z - v.z_m) < 0.16 });
   }
   return result;
 }

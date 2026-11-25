@@ -100,6 +100,7 @@ describe('culture house exteriors', () => {
     ['wizard-city', 'cone', 'tower', 'bronze'],
   ] as const)('adds fitted architectural details to %s only at close range in detailed mode', (culture, roof, form, material) => {
     const b = silhouetteBuilding(house(culture, form === 'tower' ? circle() : rect(), { form, parapet_m: 0.7 }, roof, 18));
+    if (culture === 'wizard-city') Object.assign(b, { programme: { landmark: true } });
     const count = (crafted: boolean, overview: boolean) => {
       let total = 0;
       eachBuildingTriangle(
@@ -177,7 +178,7 @@ describe('culture house exteriors', () => {
     expect(counts.roof).toBeGreaterThan(15);
   });
 
-  it('keeps the picked cap, gill and annulus colours on the drawn mushroom skin', () => {
+  it('keeps the classic mushroom skin in V2 and paints the detailed shelves with their own mineral and ivory tones', () => {
     const b = silhouetteBuilding(house('myconid-colony', circle(), { form: 'mushroom' }));
     const colors = new Set(b.volumes[0].roof_mesh.faces.flatMap(f => f.material.match(/@[a-f0-9]{6}@([a-f0-9]{6})$/)?.slice(1) ?? []));
     expect(colors.size).toBe(3);
@@ -187,10 +188,11 @@ describe('culture house exteriors', () => {
       for (let i = 0; i < data.length; i += BUILDING_STRIDE) {
         if (Math.round((Math.hypot(data[i + 3], data[i + 4], data[i + 5]) - 1) * 32) < 1024) continue;
         const color = data[i + 8].toString(16).padStart(6, '0');
-        if (colors.has(color)) textured.add(color);
+        textured.add(color);
       }
     }
-    expect(textured).toEqual(colors);
+    expect([...colors].filter(c=>textured.has(c))).toHaveLength(0);
+    expect([...textured].some(c=>['c6b99e','bdaa87'].includes(c))).toBe(true);
   });
 
   it('keeps a barrel entirely inside its plan and closes both ends', () => {

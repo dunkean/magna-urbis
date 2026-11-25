@@ -8,6 +8,10 @@ Each section links to the maintained catalogue instead of embedding diagrams tha
 
 Une recette historique décrit un plan, une fourchette de dimensions et une tradition constructive. Pour examiner le résultat actuel, consultez une fiche des 115 cultures, puis observez la maison de près avec le mode de toiture **Architecture détaillée**. Les corps de bâtiment viennent de la volumétrie procédurale. Le rendu ajuste ensuite les ouvrages de façade et de toiture à la place disponible. Les captures générales des fiches et les comparaisons de détail portent chacune leur date. [Catalogue actuel en français](scientific/catalogue-architecture-fr.html#architecture-detail) · [Current English catalogue](scientific/catalogue-architecture.html#architecture-detail)
 
+Les modèles d’entrée de 89 cultures et les 26 profils à ouvrages sud-asiatiques, lucarnes ou édicules de toiture couvrent ensemble les 115 cultures. Certains profils associent une entrée spécifique et un ouvrage de toiture. Le passage libre et la forme du bâtiment déterminent quels ouvrages peuvent apparaître. Comparez par exemple le vestibule d’écorce de la maison longue haudenosaunee et le porche à pignon du wharepuni māori. La même vue permet de distinguer l’auvent organique d’une habitation myconide des lits étagés d’une champignonnière. [Exemples illustrés et sources](scientific/catalogue-architecture-fr.html#culture-frontages)
+
+Sur la planche des variantes, trois parcelles sahéliennes associent différemment terrasses de terre et cases rondes. Trois parcelles vénitiennes montrent une maison à étage, un volume bas et allongé et une maison accompagnée d’une annexe. À graine de ville identique, les parcelles produisent des silhouettes différentes. De près, les appuis vénitiens rejoignent le bas des fenêtres existantes. [Planche légendée](scientific/catalogue-architecture-fr.html#house-variants) · [Télécharger les six vues](scientific/assets/atlas/house-variants.webp)
+
 ## Medieval organic (Europe) (`european-organic`)
 
 [Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#european-organic)

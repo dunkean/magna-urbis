@@ -6,7 +6,7 @@
  */
 import { roofSeasonKey } from '../seasonPalette';
 import type { Building3dScene } from '../urbanBuildingGeometry';
-import type { UrbanBuildingAppearance } from '../urbanBuildingStyle';
+import { showsCraftedHouses, type UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { BUILDING_STRIDE, type BuildingPaint, type BuildingSeat } from './buildingsMesh';
 import { BLOCK_CELL, BLOCK_CELLS, BlockGrouping, YARD_HOUSE, blockHidden, blockLevel, worldPaint, worldSeat, yardBlockLevel, yardRise } from './buildingsBlocks';
@@ -84,7 +84,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
   let cache = newCache();
   /** The block caches of other looks of the town on this relief, by appearance key, most recent last: a switch back to
    * a look finds its meshes. The blocks (grouped) depend on the scene only, which a look may keep. */
-  const dormant = new Map<string, { scene: Building3dScene; heights: TerrainHeights; grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'>; cache: BuildingBlockCache }>();
+  const dormant = new Map<string, { scene: Building3dScene; heights: TerrainHeights; grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'>; cache: BuildingBlockCache; detailed: boolean }>();
   let grouped: Pick<BlockGrouping, 'blocks' | 'altitudes'> | undefined;
   const dropDormant = (lost = false): void => {
     for (const held of dormant.values()) {
@@ -119,7 +119,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     night = 0;
   let paint: BuildingPaint | undefined, seat: BuildingSeat | undefined, appearance: UrbanBuildingAppearance | undefined, look: VolumeTownLook | undefined;
   const grain = new CoverGrainTexture(gl);
-  const houseSurfaces = new HouseSurfaceTexture(gl);
+  let houseSurfaces: HouseSurfaceTexture | undefined;
   let grainFilled = false;
   /** The grouping of a new scene into blocks, while it runs. */
   let grouping: BlockGrouping | undefined;
@@ -143,9 +143,18 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       paint = worldPaint(scene!, appearance, grouped!.altitudes, look);
       return;
     }
-    if (!dirty && scene && heights && grouped && paint) {
+    const leavingDetailed = showsCraftedHouses(appearance) && !showsCraftedHouses(nextAppearance);
+    if (leavingDetailed) {
+      houseSurfaces?.dispose();
+      houseSurfaces = undefined;
+      for (const [saved, held] of dormant) if (held.detailed) {
+        held.cache.clear();
+        dormant.delete(saved);
+      }
+    }
+    if (!leavingDetailed && !dirty && scene && heights && grouped && paint) {
       dormant.delete(appearanceKey);
-      dormant.set(appearanceKey, { scene, heights, grouped, cache });
+      dormant.set(appearanceKey, { scene, heights, grouped, cache, detailed: showsCraftedHouses(appearance) });
       if (dormant.size > DORMANT_LOOKS) {
         const [oldest, held] = dormant.entries().next().value!;
         held.cache.clear();
@@ -415,7 +424,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       const more = cache.work(deadline, tick, paint, seat!, () => {
         if (frame?.camera.tilted || options.topView?.()) options.invalidate();
       });
-      if (appearance?.roof === 'crafted' && houseSurfaces.ready < houseSurfaceCount()) {
+      if (showsCraftedHouses(appearance) && (houseSurfaces?.ready ?? 0) < houseSurfaceCount()) {
+        houseSurfaces ??= new HouseSurfaceTexture(gl);
         const before = houseSurfaces.ready;
         const caughtUp = houseSurfaces.step();
         if (houseSurfaces.ready > before) options.invalidate();
@@ -443,6 +453,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           rise = camera.rise,
           focal = flat ? frame.view.scale : camera.focal / frame.dpr,
           roof = appearance?.roof,
+          detailed = showsCraftedHouses(appearance),
           boxed = roof === 'minimal' || (options.boxed?.() ? (roof === 'flat' || roof === 'v1' || roof === 'crafted' ? 'overview' : true) : false),
           depthSetting = getViewDepth();
         for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
@@ -455,7 +466,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           const x = (b.minX + b.maxX) / 2 - tx,
             y = (b.minY + b.maxY) / 2 - ty,
             z = (low + high) / 2 - tz,
-            radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2 + (roof === 'crafted' && !b.yard ? CRAFTED_BLOCK_MARGIN * Math.hypot(1,rise) : 0);
+            radius = Math.hypot(b.maxX - b.minX, b.maxY - b.minY, high - low) / 2 + (detailed && !b.yard ? CRAFTED_BLOCK_MARGIN * Math.hypot(1,rise) : 0);
           if (!volume.sees(x, y, z, radius)) continue;
           const depth = flat ? 1 : volume.depth(x, y, z);
           // The depth preference extends the subpixel cutoff; maximum depth retains every visible building block.
@@ -491,10 +502,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             gl.uniform4f(u.uCave, 0, 1, 1e9, 2e9);
           }
           gl.uniform1i(u.uNight, night);
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D_ARRAY, houseSurfaces.texture ?? null);
-          gl.uniform1i(u.uHouseSurface, 1);
-          gl.uniform1f(u.uHouseSurfaceReady, houseSurfaces.ready);
+          if (detailed) {
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D_ARRAY, houseSurfaces?.texture ?? null);
+            gl.uniform1i(u.uHouseSurface, 1);
+          }
+          gl.uniform1f(u.uHouseSurfaceReady, detailed ? (houseSurfaces?.ready ?? 0) : 0);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, grain.texture ?? null);
           gl.uniform1i(u.uCoverGrain, 0);
@@ -513,8 +526,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             stats.triangles += drawCount[i] / 3;
           }
           gl.bindVertexArray(null);
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+          if (detailed) {
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+          }
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
           volumeDepthEnd(gl);
@@ -529,7 +544,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       dirty = true;
     },
     pick(origin, direction, rise, limit, accept) {
-      return heights && cache.slots.length ? pickBuilding(cache.blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept, appearance?.roof === 'crafted' && appearance?.diagnostic === 'none' && appearance.style !== 'silhouette') : undefined;
+      return heights && cache.slots.length ? pickBuilding(cache.blocks, origin, direction, rise, heights, heights.exaggeration, limit, accept, showsCraftedHouses(appearance)) : undefined;
     },
     contextLost() {
       // Every handle is dead: forget them without deleting.
@@ -539,7 +554,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       clearSelection();
       warmed = false;
       grain.lost();
-      houseSurfaces.lost();
+      houseSurfaces?.lost();
       grainFilled = false;
     },
     stats: () => stats,
@@ -554,7 +569,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       grouping = grouped = undefined;
       paint = seat = look = undefined;
       grain.dispose();
-      houseSurfaces.dispose();
+      houseSurfaces?.dispose();
       grainFilled = false;
     },
   };

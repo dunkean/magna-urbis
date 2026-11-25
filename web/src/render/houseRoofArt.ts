@@ -9,7 +9,7 @@ type Random = () => number;
 const grey = (value: number): string => `rgb(${Math.round(value)} ${Math.round(value)} ${Math.round(value)})`;
 const pigment = (base: number, r: number, g: number, b: number): string => `rgb(${Math.round(base + r)} ${Math.round(base + g)} ${Math.round(base + b)})`;
 const wrap = (v: number, period: number): number => ((v % period) + period) % period;
-const styles = new Set<string>([...COVER_GRAINS, 'leaf-scale', 'obsidian', 'riveted', 'service-panel', 'cassette', 'glazing', 'solar', 'canopy', 'snow', 'bitumen', 'fungal', 'membrane']);
+const styles = new Set<string>([...COVER_GRAINS, 'leaf-scale', 'obsidian', 'riveted', 'service-panel', 'cassette', 'glazing', 'solar', 'canopy', 'snow', 'bitumen', 'fungal', 'cuticle', 'pores', 'membrane']);
 const indian = new Set(['indian-temple', 'dravidian-temple', 'rajput-fort', 'south-asian-metropolis']);
 const catalogueCovers: Readonly<Record<string, string>> = {
   'MAT-TILE-CLAY': 'tile',
@@ -44,6 +44,7 @@ export function roofFaceForm(normal: readonly number[], role: string): RoofFaceF
 /** Canonical artwork key. Different cultures share a layer when their construction is identical. */
 export function houseRoofStyle(culture: string, raw: string, form: RoofFaceForm = 'pitch', fallback?: string): string {
   // Only catalogue IDs require a pattern fallback. Massing covers already name their material.
+  if(raw==='cuticle'||raw==='pores')return raw;
   const declared = catalogueCovers[raw] ?? raw;
   if (indian.has(culture)) {
     if (declared === 'tile') {
@@ -641,6 +642,13 @@ export function paintHouseRoof(ctx: Brush, size: number, style: string, variant 
             blue = 10;
           }
         }
+      } else if (style === 'cuticle') {
+        const fibre = Math.sin(2*Math.PI*(v*28+clouds(u,v)*1.8+spot*.38));
+        relief = 3.8*fibre + 4*spot;
+        red = 3*spot; blue = -3*spot;
+      } else if (style === 'pores') {
+        const pore = Math.cos(2*Math.PI*u*53+spot)*Math.cos(2*Math.PI*v*48+.6*fleck);
+        relief = -11*Math.max(0,(pore-.40)/.6);
       } else if (turf) {
         // Dry tufts warm to straw while the hollows hold damp moss.
         red = 46 * spot - 6;

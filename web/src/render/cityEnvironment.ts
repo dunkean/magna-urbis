@@ -13,7 +13,7 @@ import { underdarkCavernOf } from './underdarkCavern';
 import { underdarkLightingLook } from './underdarkLighting';
 import { cityBuildingAppearance } from './cityDrawOptions';
 
-export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composition.ambience, underdark: r.underdark, waterLook: r.composition.networks.water.look, waterVisible: r.ground.layers.water, groundCover: r.composition.vegetation.procedural });
+export const cityGroundLook = (r: ResolvedAppearance) => ({ ambience: r.composition.ambience, underdark: r.underdark, craftedBeds: r.composition.buildings.roof === 'crafted', waterLook: r.composition.networks.water.look, waterVisible: r.ground.layers.water, groundCover: r.composition.vegetation.procedural });
 
 export function cityGroundSettings(
   r: ResolvedAppearance,

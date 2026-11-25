@@ -37,6 +37,13 @@ export function facadeQuad(roof: RoofBuilder, a: Point, b: Point, outward: numbe
   roof.face([p(s0, z0), p(s1, z0), p(s1, z1), p(s0, z1)], material);
 }
 
+/** Mark the entry face at construction, including doors raised above the street or cut into a hillside. */
+export function facadeDoor(...args: Parameters<typeof facadeQuad>): void {
+  const roof = args[0], before = roof.faces.length;
+  facadeQuad(...args);
+  if (roof.faces.length > before) roof.faces[before].entrance = true;
+}
+
 /** Box on the roof: four walls and a flat top, turned by `angle`, standing at `z`. */
 export function featureBox(roof: RoofBuilder, x: number, y: number, w: number, d: number, h: number, angle: number, z: number, material: string): void {
   const ca = Math.cos(angle),

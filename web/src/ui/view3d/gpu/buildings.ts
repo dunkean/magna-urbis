@@ -1,4 +1,4 @@
-import { HOUSE_TILE_SIZE, HOUSE_TILE_LAYERS, houseSurfaceCount, houseSurfaceMips } from '../../../render/houseSurfaceTexture';
+import { HOUSE_TILE_SIZE, HOUSE_TILE_LAYERS, houseSurfaceCount, houseSurfaceMips, releaseHouseSurfacePixels } from '../../../render/houseSurfaceTexture';
 /**
  * The building pass of the WebGPU terrain view: UrbanBuildingPass with its upload and draw hooks recorded into the
  * terrain frame's pass and parameter pool.
@@ -61,7 +61,7 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     const slice = this.houseLayers;
-    const mips = houseSurfaceMips(slice + 1);
+    const mips = houseSurfaceMips(slice + 1, this);
     if (!mips.length) return false;
     mips.forEach((source, mipLevel) => {
       device.queue.copyExternalImageToTexture({ source }, { texture: this.gpuHouseAtlas!, mipLevel, origin: [0, 0, slice] }, [source.width, source.height]);
@@ -80,7 +80,7 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
       device = this.gpu.device;
     const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }),
       normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });
-    const houseSurface = (this.crafted && this.gpuHouseAtlas ? this.gpuHouseAtlas : this.placeholder).createView({ dimension: '2d-array' });
+    const houseSurface = this.crafted && this.gpuHouseAtlas ? this.gpuHouseAtlas.createView({ dimension: '2d-array' }) : albedo;
     pass.setPipeline(pipeline);
     p.setArray('matrix', frame.matrix);
     p.set('exaggeration', frame.exaggeration);
@@ -123,11 +123,17 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
       }
     }
   }
+  protected override releaseHouseAtlas(): void {
+    this.gpuHouseAtlas?.destroy();
+    this.gpuHouseAtlas = undefined;
+    this.houseLayers = 0;
+    releaseHouseSurfacePixels(this);
+  }
   protected override disposeBackend(): void {
     this.atlases?.albedo.destroy();
     this.atlases?.normal.destroy();
     this.atlases = undefined;
     this.placeholder.destroy();
-    this.gpuHouseAtlas?.destroy();
+    this.releaseHouseAtlas();
   }
 }

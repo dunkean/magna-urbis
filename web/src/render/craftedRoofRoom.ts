@@ -1,13 +1,14 @@
 import type { Point, Vertex3 } from '../../../rust/bridge/housesContract';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { RoofBuilder, inRing, ringArea, orientedBox } from './city3d/roofGeometry';
+import { culturalRoofWork } from './craftedSkylineRoofs';
 import { hash } from './city3d/massing';
 import { roleFamily } from './city/planLook';
 import type { OverviewVolume } from './urbanBuildingGeometry';
 import type { RoofMesh } from './city3d/types';
 
 const dormers = new Set('european-organic bastide hanseatic flemish-cloth-town industrial-victorian haussmannian garden-city rynek-town wizard-city gnomish'.split(' '));
-const setbacks = new Set('american-grid global-high-rise modernist-functionalist gulf-contemporary chinese-megacity korean-high-rise japanese-contemporary corporate-arcology futuristic-space-colony cyberpunk solarpunk dystopian-brutalism'.split(' '));
+const setbacks = new Set('american-grid global-high-rise modernist-functionalist gulf-contemporary chinese-megacity korean-high-rise japanese-contemporary corporate-arcology futuristic-space-colony cyberpunk solarpunk dystopian-brutalism drow-enclave duergar-hold giant-hold'.split(' '));
 const glass = 'city3d:detail:glazing@51686c',
   joinery = 'city3d:detail:frame@877a66',
   fascia = 'city3d:detail:roof-edge@79756a';
@@ -19,8 +20,9 @@ const cache = new WeakMap<PlacedBuilding, Room | null>();
 /** Select a single convex pan. Its boundary already excludes valleys, eave skirts and courtyard holes. */
 function roofSites(building: PlacedBuilding, flat: boolean): Site[] {
   const sites: Site[] = [];
+  const shortHall = ['drow-enclave','duergar-hold','giant-hold'].includes(building.culture?.culture);
   for (const volume of building.volumes as OverviewVolume[]) {
-    if (volume.role === 'minor' || volume.envelope === 'open' || volume.wall_height_m < (flat ? 4.8 : 2.6)) continue;
+    if (volume.role === 'minor' || volume.envelope === 'open' || volume.wall_height_m < (flat && !shortHall ? 4.8 : 2.45)) continue;
     if (flat ? volume.displayRoofForm !== 'flat' : !['gable', 'hip', 'shed'].includes(volume.displayRoofForm ?? '')) continue;
     const mesh = volume.roof_mesh;
     const [lo, hi] = volume.overview_roof_faces ?? [0, mesh.faces.length];
@@ -133,7 +135,10 @@ function fit(building: PlacedBuilding, site: Site, flat: boolean, seed: number):
     )
       continue;
     const mesh = new RoofBuilder();
-    if (flat) attic(mesh, at, w, depth, 2.25 + (seed % 4) * 0.16, volume);
+    if (flat) {
+      const h=2.25+(seed%4)*.16;
+      if(!culturalRoofWork(building.culture.culture,mesh,at,w,depth,h,seed))attic(mesh,at,w,depth,h,volume);
+    }
     else dormer(mesh, at, w, slope, volume.materials.cladding, volume.materials.coating);
     return { volume, mesh: mesh.mesh() };
   }

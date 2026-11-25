@@ -31,6 +31,7 @@ export class UnderdarkFungi {
   /** The surface changed: the next frame starts a new stream. */
   reset(): void {
     this.key = '';
+    this.count = 0;
   }
 
   prepare(): void {
@@ -46,7 +47,8 @@ export class UnderdarkFungi {
       return;
     }
     const step = FUNGUS_NEAR / 3,
-      key = [Math.round(c.x / step), Math.round(c.y / step), abundance, this.cavern.revision].join('|');
+      craftedBeds = !!context.look.craftedBeds,
+      key = [Math.round(c.x / step), Math.round(c.y / step), abundance, this.cavern.revision, craftedBeds ? this.forest.occupation?.data?.key ?? 'awaiting-beds' : 'standard'].join('|');
     if (key === this.key || (this.jobs > 0 && !context.fullQualityCapture)) return;
     this.key = key;
     const inputs: FungusInputs = {
@@ -55,6 +57,7 @@ export class UnderdarkFungi {
       abundance,
       towns: g!.townSites ?? g!.townGlow,
       farms: g!.farmBeds,
+      craftedBeds,
       occupation: this.forest.occupation?.data,
       raw: (x, y) => spline(layer.data, layer.n, (x - layer.x) / layer.width, (y - layer.y) / layer.width),
       height: (x, y) => this.surface.heightAt(x, y),
@@ -76,6 +79,7 @@ export class UnderdarkFungi {
     void context.preparation
       .run(buildFungiSteps(inputs, view), current, 1e15)
       .then(stream => {
+        if (!current()) return;
         install(stream);
         context.request();
       })
@@ -89,6 +93,7 @@ export class UnderdarkFungi {
       })
       .finally(() => {
         this.jobs--;
+        if (!this.key && !context.disposed) context.request();
       });
   }
 

@@ -121,7 +121,7 @@ export function createWorldCaveLayer(gl: WebGL2RenderingContext, options: WorldC
         cave,
         heights,
         steps: buildFungiSteps(
-          { seed: cave.seed, cavern: cave.field, abundance: cave.settings.fungi, towns: cave.lamps.length ? cave.lamps : undefined, farms: cave.farms, occupation: cave.occupation, raw: cave.raw, height: (px, py) => heights.heightAt(px, py) * unit, water: cave.water },
+          { seed: cave.seed, cavern: cave.field, abundance: cave.settings.fungi, towns: cave.lamps.length ? cave.lamps : undefined, farms: cave.farms, craftedBeds: cave.craftedBeds, occupation: cave.occupation, raw: cave.raw, height: (px, py) => heights.heightAt(px, py) * unit, water: cave.water },
           { x, y },
         ),
       };

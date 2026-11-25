@@ -10,6 +10,8 @@ Code links distinguish methods actually used from scientific references that exp
 
 The Rust urban programme assigns each site a role and raises its footprint into one or more volumes with floor counts, eaves and roof shapes. The optional **Detailed architecture** roof display reads those volumes. At close range, the renderer fits additional geometry to eligible openings and roofs and maps the material in metres around the structure. At town scale, screen size selects simpler meshes and filtered textures. A count of rendered roof fittings and a count of planned building volumes therefore measure different things. [Illustrated method](scientific/index.html#architecture-detail) · [Architectural catalogue](scientific/catalogue-architecture.html#architecture-detail)
 
+The display covers 89 cultures through dedicated entrances alongside 26 profiles with South Asian additions, dormers or rooftop rooms. Several profiles combine an entrance with a roof feature. Building role, available space and viewing distance govern individual placements. A Haudenosaunee bark vestibule and a Māori gabled porch draw on documented precedents. A myconid shelf-shaped hood is an artistic extrapolation. A mushroom-growing site can carry an open harvesting aisle flanked by racks of beds. [Illustrated comparisons and source notes](scientific/catalogue-architecture.html#culture-frontages)
+
 ## 1. System layers
 
 | Layer | Inputs and results | Implementation and status |

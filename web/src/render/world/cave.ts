@@ -29,6 +29,7 @@ export interface WorldCave {
   readonly lightsOn: boolean;
   /** Fungal farm lots (x, y, half-size, angle), where no wild mushroom grows. */
   readonly farms?: Float32Array;
+  readonly craftedBeds?: boolean;
   readonly occupation?: ForestOccupation;
   readonly seed: number;
   /** Height of the layer before the cut, in metres. */

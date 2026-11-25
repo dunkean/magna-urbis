@@ -1,10 +1,12 @@
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import { craftedRoofMesh } from './craftedRoofMesh';
+import { detailedHouseFront } from './houseFronts';
 import { craftedIndianMassing } from './craftedIndianMassing';
 import { craftedRoofRoom } from './craftedRoofRoom';
 
-// The deepest veranda is 2.26 m; the tallest attic including its roof is 2.92 m.
+// Allow for projected entrances, parapets and the raised capstones on giant dwellings.
 // Shared town blocks can be culled before their detailed house meshes have been built.
-export const CRAFTED_BLOCK_MARGIN = 3;
+export const CRAFTED_BLOCK_MARGIN = 5;
 type Bounds = [number, number, number, number, number, number];
 const cached = new WeakMap<PlacedBuilding, Bounds>();
 
@@ -21,6 +23,17 @@ export function includeCraftedMassing(building: PlacedBuilding, bounds: Bounds):
       box[4] = Math.max(box[4], y);
       box[5] = Math.max(box[5], z);
     };
+    if (building.culture?.culture === 'myconid-colony')
+      for (const v of building.volumes) {
+        const mesh = craftedRoofMesh(v, 'myconid-colony');
+        if (mesh !== v.roof_mesh)
+          for (const face of mesh.faces)
+            for (const index of face.vertices) {
+              const p = mesh.vertices[index];
+              point(p.x, p.y, p.z);
+            }
+      }
+    for (const p of detailedHouseFront(building)?.mesh.vertices ?? []) point(p.x, p.y, p.z);
     for (const p of craftedRoofRoom(building)?.mesh.vertices ?? []) point(p.x, p.y, p.z);
     for (const volume of building.volumes)
       craftedIndianMassing(building, volume, face => {

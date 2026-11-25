@@ -43,6 +43,15 @@ function timber(roof: RoofBuilder, a: Vertex3, b: Vertex3, r: number, end: numbe
   roof.face(hi, material);
 }
 
+/** Entrance on the lowest inhabited platform, in the axes of its actual gallery. */
+export function elvenGallerySite(tree: TreeDwelling,base:number) {
+  const p=tree.platforms[0]; if(!p)return;
+  const reach=Math.max(p.radius*1.26,tree.radius*.69),half=Math.max(1.32,Math.min(3.45,reach*.48));
+  const nx=Math.cos(p.angle),ny=Math.sin(p.angle),front=reach*.77;
+  return { x:tree.center.x+tree.lean.x*p.height/tree.height+nx*front, y:tree.center.y+tree.lean.y*p.height/tree.height+ny*front,
+    z:base+p.height+.07,nx,ny,width:half*1.34,depth:reach-front,height:Math.min(2.7,Math.max(1.58,half*.91)) };
+}
+
 function gallery(roof: RoofBuilder, tree: TreeDwelling, p: TreePlatform, base: number, level: number): void {
   const h = tree.height,
     tr = tree.trunkRadius,

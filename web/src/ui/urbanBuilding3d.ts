@@ -1,5 +1,5 @@
 import { HOUSE_SURFACE_GLSL, HOUSE_SURFACE_VERTEX_GLSL, HouseSurfaceTexture } from '../render/houseSurfaceTexture';
-import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
+import { showsCraftedHouses, type UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import { isBuildingProjection, isYardMesh, yardLod, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
 import { loadMaterialImages, uploadMaterialArrays, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
 import { buildingFeatureLod, buildingFeatureMetresPerPixel, hasBuildingFeatureLod, sameBuildingFeatureLod, type BuildingFeatureLod } from '../render/urbanBuildingFeatureLod';
@@ -260,11 +260,13 @@ export class UrbanBuildingPass {
     this.source = scene;
     this.appearance = { ...appearance };
     this.appearanceKey = key;
-    this.crafted = appearance.roof === 'crafted';
+    const crafted = showsCraftedHouses(appearance);
+    if (this.crafted && !crafted) this.releaseHouseAtlas();
+    this.crafted = crafted;
     this.snowAltitudes = townRoofAltitudes(scene?.buildings ?? []);
     const sectors = new Map<string, Sector>();
     for (const building of scene?.buildings ?? []) {
-      const box = buildingBounds(building, this.crafted && appearance.diagnostic === 'none' && appearance.style !== 'silhouette');
+      const box = buildingBounds(building, this.crafted);
       const p = isBuildingProjection(building) ? { x: (box[0] + box[3]) / 2, y: (box[1] + box[4]) / 2 } : building.transform.origin;
       const yard = isYardMesh(building),
         origin: [number, number] = [Math.floor(p.x / SECTOR) * SECTOR, Math.floor(p.y / SECTOR) * SECTOR],
@@ -301,7 +303,7 @@ export class UrbanBuildingPass {
         continue;
       }
       entry.building = building;
-      entry.bounds = buildingBounds(building, this.crafted && this.appearance.diagnostic === 'none' && this.appearance.style !== 'silhouette');
+      entry.bounds = buildingBounds(building, this.crafted);
       touched.add(sector);
     }
     for (const sector of touched) {
@@ -382,7 +384,7 @@ export class UrbanBuildingPass {
     if (!this.sectors.length) return false;
     ++this.tick;
     // Textured materials: the atlases load once (the flat colours show until they arrive).
-    const wantTex = !!this.appearance.textured && !this.crafted;
+    const wantTex = !!this.appearance.textured && this.appearance.roof !== 'crafted';
     if (wantTex && !this.texturesRequested) {
       this.texturesRequested = true;
       loadMaterialImages().then(
@@ -480,11 +482,11 @@ export class UrbanBuildingPass {
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.normal ?? null);
       gl.activeTexture(gl.TEXTURE0);
     }
-    if (!texProgram) {
-      gl.uniform1f(gl.getUniformLocation(p, 'uHouseSurfaceReady'), this.crafted ? (this.houseAtlas?.ready ?? 0) : 0);
+    if (!texProgram && this.crafted) {
+      gl.uniform1f(gl.getUniformLocation(p, 'uHouseSurfaceReady'), this.houseAtlas?.ready ?? 0);
       gl.uniform1i(gl.getUniformLocation(p, 'uHouseSurface'), 10);
       gl.activeTexture(gl.TEXTURE0 + 10);
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.crafted ? this.houseAtlas?.texture ?? null : null);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.houseAtlas?.texture ?? null);
       gl.activeTexture(gl.TEXTURE0);
     }
     gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix);
@@ -514,6 +516,11 @@ export class UrbanBuildingPass {
     }
     gl.disable(gl.POLYGON_OFFSET_FILL);
     gl.bindVertexArray(null);
+    if (!texProgram && this.crafted) {
+      gl.activeTexture(gl.TEXTURE0 + 10);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+      gl.activeTexture(gl.TEXTURE0);
+    }
   }
   pick(origin: BuildingVector, direction: BuildingVector): { id?: string; distance: number } {
     let distance = Infinity,
@@ -558,9 +565,13 @@ export class UrbanBuildingPass {
     this.disposeBackend();
     this.source = undefined;
   }
+  protected releaseHouseAtlas(): void {
+    this.houseAtlas?.dispose();
+    this.houseAtlas = undefined;
+  }
   protected disposeBackend(): void {
     const gl = this.gl!;
-    this.houseAtlas?.dispose();
+    this.releaseHouseAtlas();
     if (this.colorProgram) gl.deleteProgram(this.colorProgram);
     if (this.texProgram) gl.deleteProgram(this.texProgram);
     if (this.textures) {

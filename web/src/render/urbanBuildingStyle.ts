@@ -23,6 +23,9 @@ export interface UrbanBuildingAppearance {
   /** Physical satellite ground driving roof snow, including season cache invalidation. */ roofSnow?: GroundSnowSettings;
   /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean;
 }
+/** Geometry, picking and the surface atlas use the same set of visible detailed houses. */
+export const showsCraftedHouses = (appearance: UrbanBuildingAppearance | undefined): boolean =>
+  appearance?.roof === 'crafted' && appearance.diagnostic === 'none' && appearance.style !== 'silhouette';
 export const buildingColors = (colors: RenderColors | undefined, ambience?: 'day' | 'night'): RenderColors | undefined => (ambience === 'night' ? { building: '#232a42', buildingEdge: '#070a14', road: '#444b62', track: '#3a4054', roadEdge: '#141927', ...colors } : colors);
 export interface BuildingPaint {
   wall: string;

@@ -60,6 +60,8 @@ export interface FungusInputs {
   towns?: Float32Array;
   /** Fungal farm lots (x, y, half-size, angle) × 32. */
   farms?: Float32Array;
+  /** Model the planted occupation beds in the detailed building appearance. */
+  craftedBeds?: boolean;
   occupation?: ForestOccupation;
   /** Abundance 0-2 (composition `effects.underdark.fungi`). */
   abundance: number;
@@ -106,6 +108,58 @@ const ss = (a: number, b: number, v: number): number => {
 
 const wayRooms = new WeakMap<object, ForestRoom>();
 
+type PlaceFungus = (x: number, y: number, z: number, cap: number, height: number, stem: number,
+  form: number, phase: number, flags: number, tint: readonly number[], glow: number, hue: number) => void;
+
+/** Cultivated class-13 plots share the existing instanced stream and its three LODs. Flattened earth-coloured
+ * puffballs overlap into low compost ridges. Oyster fans fruit from a common foot on each ridge, with occasional
+ * young rounded pins. The lattice is anchored to the map, so panning never replants a crop. */
+function* plantCaveBeds(inputs: FungusInputs, view: { x: number; y: number }, bedAt: (x: number, y: number) => boolean,
+                        rockAt: (x: number, y: number) => number, ways: ForestRoom | undefined, place: PlaceFungus): Generator<void> {
+  const occ = inputs.occupation!;
+  const radius = 95;
+  if (view.x + radius < occ.x || view.y + radius < occ.y || view.x - radius > occ.x + occ.width || view.y - radius > occ.y + occ.width) return;
+  const azimuth = udHash(inputs.seed, 4861) * Math.PI, ca = Math.cos(azimuth), sa = Math.sin(azimuth);
+  const along = view.x * ca + view.y * sa, across = view.y * ca - view.x * sa;
+  const rowWidth = 3.12, interval = 1.28;
+  const first = Math.floor((along - radius) / interval), last = Math.ceil((along + radius) / interval);
+  const tau = 2 * Math.PI;
+  for (let row = Math.floor((across - radius) / rowWidth); row <= Math.ceil((across + radius) / rowWidth); row++) {
+    yield;
+    if (row % 6 === 0) continue;
+    const offset = udHash(row, inputs.seed + 769);
+    for (let col = first; col <= last; col++) {
+      // A working aisle crosses the beds every 12-16 m; stagger the ends of neighbouring runs.
+      if ((col + Math.floor(offset * 7)) % 11 === 0) continue;
+      const salt = inputs.seed + row, grain = udHash(col, salt);
+      const u = (col + offset + grain * .12) * interval;
+      const v = (row + (udHash(col + 79, salt) - .5) * .09) * rowWidth;
+      const x = ca * u - sa * v, y = sa * u + ca * v;
+      if ((x - view.x) ** 2 + (y - view.y) ** 2 > radius ** 2 || !bedAt(x, y) || rockAt(x, y) > .18 || inputs.water(x, y) >= .05) continue;
+      if (!bedAt(x + .72 * sa, y - .72 * ca) || !bedAt(x - .72 * sa, y + .72 * ca) || (ways && !ways.keeps(x, y, grain, .8))) continue;
+      const z = inputs.height(x, y);
+      if (z === undefined || cavernRoofAt(inputs.cavern, x, y) - z < 1) continue;
+      const mound = .095 + .04 * grain;
+      place(x, y, z, .75 + .08 * grain, mound, 0, F.puffball, grain * tau, 0, [.25 + .05 * grain, .187 + .035 * grain, .131 + .02 * grain], 0, CYAN);
+      if (udHash(col + 11, salt + 17) > Math.min(.89, .76 * inputs.abundance)) continue;
+      const age = udHash(col + 809, salt + 53), count = 2 + Math.floor(3 * age);
+      const strain = udHash(Math.floor(col / 11), salt) * .18;
+      // The shader exaggerates terrain elevation independently of local instance heights. Root every
+      // layer at the same ground level and vary the fruiting height to keep caps seated on the compost.
+      const phase = grain * tau;
+      for (let k = 0; k < count; k++) {
+        const variation = udHash(col + k * 97, salt + 183);
+        const heading = phase + k * 2.40 + .47 * variation;
+        const px = x + .077 * Math.cos(heading), py = y + .077 * Math.sin(heading);
+        const cap = (.14 + .29 * age) * (1 - .12 * k) * (.88 + .24 * variation);
+        const tint = [.70 - strain - age * .16 + variation * .04, .65 - strain - age * .19, .55 - strain * .64 - age * .17];
+        if (age < .25) place(px, py, z, cap * .66, mound + cap * 1.05, cap * .28, F.dome, heading, 0, tint, 0, CYAN);
+        else place(px, py, z, cap, mound + cap * (.53 + .16 * k), 0, F.bracket, heading, RIBS, tint, 0, CYAN);
+      }
+    }
+  }
+}
+
 /** Builds the instances around (x, y), nearest first, bounded; yields between lattice rows. */
 export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: number }): Generator<void, FungusStream> {
   const { cavern, abundance } = inputs,
@@ -119,7 +173,7 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
       j = Math.floor(((y - occ.y) / occ.width) * occ.n);
     if (i < 0 || j < 0 || i >= occ.n || j >= occ.n) return false;
     const cls = occ.rgba[(j * occ.n + i) * 4 + 2];
-    return cls === 4 || cls === 8 || cls === 9 || cls === 11 || cls === 12;
+    return cls === 4 || cls === 8 || cls === 9 || cls === 11 || cls === 12 || (cls === FUNGUS_BED && !!inputs.craftedBeds);
   };
   // Towns (their built extent and a margin), fungal farms, ways and water are cleared, as the surface trees are.
   const cleared = (x: number, y: number, margin: number): boolean => {
@@ -267,12 +321,13 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
   const FARM = 130,
     farm2 = FARM * FARM,
     BLOCK = 44;
-  for (let by = Math.floor((view.y - FARM) / BLOCK); by <= Math.floor((view.y + FARM) / BLOCK); by++) {
+  if (inputs.craftedBeds && occ) yield* plantCaveBeds(inputs, view, bedAt, rockAt, ways, push);
+  if (UNDERDARK_FARMS && !inputs.craftedBeds) for (let by = Math.floor((view.y - FARM) / BLOCK); by <= Math.floor((view.y + FARM) / BLOCK); by++) {
     for (let bx = Math.floor((view.x - FARM) / BLOCK); bx <= Math.floor((view.x + FARM) / BLOCK); bx++) {
       yield;
       const cxb = (bx + 0.5) * BLOCK,
         cyb = (by + 0.5) * BLOCK;
-      if (!UNDERDARK_FARMS || d2(cxb, cyb) > (FARM + BLOCK) ** 2 || !occ) continue;
+      if (d2(cxb, cyb) > (FARM + BLOCK) ** 2 || !occ) continue;
       const angle = udHash(bx + 3001, by + 7) * Math.PI,
         ca = Math.cos(angle),
         sa = Math.sin(angle);

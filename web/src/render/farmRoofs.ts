@@ -152,7 +152,7 @@ export function farmPlacedBuildings(farmsteads: readonly Farmstead[], altitude: 
         simplification: 'recipe_volumes',
         diagnostics: [],
         resolved: null,
-        programme: { massing: sent ?? [farmPiece(b, culture, tone)] },
+        programme: { massing: sent ?? [farmPiece(b, culture, tone)], ...(f.cultivation === 'fungal' ? { fungalFarm: true } : {}) },
       } as unknown as PlacedBuilding);
     });
     // The lot's works stand as bodies too: rail fences round the pens and paddocks (pieces of at most 8 m, each on

@@ -13,12 +13,13 @@
  */
 import type { HouseMaterial, MaterialPattern } from '../../../../rust/bridge/housesContract';
 import { roofEdgeMasks } from '../roofEdges';
+import { craftedMageCity } from '../craftedMageCity';
 import { includeCraftedMassing } from '../craftedMassingBounds';
 import { roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
 import { buildingTint } from '../buildingPalette';
 import { buildingHeat, roofSnowShare, snowRoofTint } from '../roofSnow';
 import { mapGroundSnow } from '../seasonPalette';
-import { buildingPaint, type UrbanBuildingAppearance } from '../urbanBuildingStyle';
+import { buildingPaint, showsCraftedHouses, type UrbanBuildingAppearance } from '../urbanBuildingStyle';
 import { building3dHeight, eachBuildingTriangle, isBuildingProjection, type Building3dVisual, type BuildingTriangle } from '../urbanBuildingGeometry';
 import type { BuildingFeatureLod } from '../urbanBuildingFeatureLod';
 import { massingLookOf } from '../city3d/materials';
@@ -34,6 +35,7 @@ export const BUILDING_STRIDE = 10;
 
 /** Bounds of a building with its foundations and structural features. */
 export function buildingBounds(building: Building3dVisual, crafted = false): BuildingBounds {
+  if (crafted && building.culture?.culture === 'wizard-city' && !isBuildingProjection(building)) building = craftedMageCity(building);
   const box: BuildingBounds = [Infinity, Infinity, building.ground_z_m, -Infinity, -Infinity, building.ground_z_m + building3dHeight(building)];
   const features = isBuildingProjection(building) ? [] : building.structural_features;
   for (const surface of [building.footprint, building.roof_footprint, ...features.map(f => f.surface)])
@@ -233,8 +235,9 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     crafted = appearance.roof === 'crafted',
     textured = !!appearance.textured && !crafted;
   const catalogue = { materials: paint.materials as HouseMaterial[] };
-  const patterns = crafted ? new Map(paint.materials.map(m => [m.id, m.pattern])) : undefined;
-  for (const building of buildings) {
+  const patterns = showsCraftedHouses(appearance) ? new Map(paint.materials.map(m => [m.id, m.pattern])) : undefined;
+  for (const original of buildings) {
+    const building = patterns && original.culture?.culture === 'wizard-city' && !isBuildingProjection(original) ? craftedMageCity(original) : original;
     const colors = new Map<string, Map<string, Vec3>>(),
       culture = building.culture?.culture ?? '';
     let h = 2166136261;
@@ -246,7 +249,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
     const ground = buildingGround(building);
     const house = Number.isFinite(ground) && !building.id.startsWith('city3d-');
-    const craftedHouse = house && appearance.diagnostic === 'none' && appearance.style !== 'silhouette' ? patterns : undefined;
+    const craftedHouse = house ? patterns : undefined;
     const mapper = craftedHouse ? houseSurfaceMapper(building) : undefined;
     const canInk = paint.roofInk && house && appearance.diagnostic === 'none';
     // The town item of the building, when the faces take the top view's look; the last roof face painted (the
@@ -262,12 +265,12 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       let aperture: 'door' | 'window' | undefined;
       if (craftedHouse && (id === 'city3d:wall:opening' || id === 'city3d:wall:lit')) {
         const threshold = (face.ground?.[0] ?? ground) + .3;
-        aperture = id === 'city3d:wall:opening' && face.points.some(p => p[2] <= threshold) ? 'door' : 'window';
+        aperture = face.entrance || face.points.some(p => p[2] <= threshold) ? 'door' : 'window';
       }
       const massing = item && face.surface !== 'yard' ? massingLookOf(face.materials) : undefined;
       // A face of the volume's cover takes its pan's paint; one of its walls (not an opening) the town's wall colour.
       let townRoof: { color: Vec3; gain: number; family: number } | undefined;
-      const explicitDetailPaint = craftedHouse && id?.includes('@');
+      const explicitDetailPaint = !!craftedHouse && !!tm && (id?.includes('@') || (raw !== face.materials.cladding && raw !== face.materials.coating));
       if (massing && face.surface === 'roof' && id?.startsWith('city3d:cover:') && !explicitDetailPaint) {
         if (face.normal !== lastNormal || face.materials !== lastSlots) {
           const p = volumeRoofPaint(paint.look!.frame, item!, { ...massing, normal: face.normal });
@@ -398,7 +401,7 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
     };
     if (canInk) {
       const triangles: BuildingTriangle[] = [];
-      eachBuildingTriangle(building, face => triangles.push(face), overview, featureLod, yardLevel, paint.yardStrips);
+      eachBuildingTriangle(building, face => triangles.push(face), overview, featureLod, yardLevel, paint.yardStrips, !!craftedHouse);
       const masks = roofEdgeMasks(triangles);
       triangles.forEach((face, i) => paintTriangle(face, masks[i]));
     } else eachBuildingTriangle(building, paintTriangle, overview, featureLod, yardLevel, paint.yardStrips, !!craftedHouse);

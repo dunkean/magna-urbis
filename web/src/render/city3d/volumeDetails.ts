@@ -5,7 +5,7 @@
 import type { Point, Vertex3 } from '../../../../rust/bridge/housesContract';
 import { scaledRing, type ResolvedVolume } from '../cityMassing';
 import { RoofBuilder, ringArea, insetRing, ringCentre } from './roofGeometry';
-import { featureDome, featureBox, facadeQuad } from './features';
+import { featureDome, featureBox, facadeDoor, facadeQuad } from './features';
 import { OPENING, LIT_WINDOW } from './materials';
 import { hash, CITY3D_LEVEL_M } from './massing';
 
@@ -98,7 +98,7 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
         ox = ((m.x - c.x) / ol) * 0.04,
         oy = ((m.y - c.y) / ol) * 0.04,
         w = Math.min(0.5, l * 0.3);
-      if (form === 'yurt') facadeQuad(roof, e.a, e.b, out, l / 2 - w, l / 2 + w, ground + 0.02, ground + Math.min(1.4, v.eave_m - 0.1), 0.04, DARK);
+      if (form === 'yurt') facadeDoor(roof, e.a, e.b, out, l / 2 - w, l / 2 + w, ground + 0.02, ground + Math.min(1.4, v.eave_m - 0.1), 0.04, DARK);
       else {
         const t = 0.4,
           lift = (p: Point, k: number): Vertex3 => ({ x: p.x + (c.x - p.x) * k + ox, y: p.y + (c.y - p.y) * k + oy, z: ground + 0.02 + (top - ground - 0.02) * k });
@@ -210,7 +210,7 @@ export function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: numb
       doorH = (hut ? 1.6 : 2.1) * scale,
       doorAt = Math.max(0.3, Math.min(e.l - doorW - 0.3, (((h >>> (k * 3)) % 100) / 100) * e.l));
     const door = !raised && (k === 0 || (h >>> 5) % 3 === 0);
-    if (door) facadeQuad(roof, e.a, e.b, out, doorAt, doorAt + doorW, ground + 0.02, ground + Math.min(doorH, v.eave_m - 0.2), 0.04, OPENING, batter);
+    if (door) facadeDoor(roof, e.a, e.b, out, doorAt, doorAt + doorW, ground + 0.02, ground + Math.min(doorH, v.eave_m - 0.2), 0.04, OPENING, batter);
     if (hut || d.openings === 'door') return;
     // Openness (culture data): massive warm-climate walls get fewer, smaller windows, spaced by 1/openness and thinned on the street floor.
     const medina = v.roof === 'flat',

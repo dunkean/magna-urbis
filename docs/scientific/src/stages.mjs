@@ -750,19 +750,19 @@ export const stages = [
     name: { en: 'Buildings', fr: 'Bâtiments' },
     en: {
       what: 'Draws buildings as footprints, roofs or 3D volumes. The cadastral and topographic plans show footprints. Parcels, blocks and districts are additional layers.',
-      how: 'The display reads the planned volumes. Detailed architecture fits a material to each wall and roof and adds near-view features such as frames and roof fittings. Screen size governs the switch to simpler geometry. Materials are filtered as their visible area shrinks, and the lighting pass can light windows at night.',
+      how: 'The display reads the planned volumes. Detailed architecture covers 89 cultures with entrance designs alongside the 26 South Asian, dormer and rooftop-room profiles. Some of these also fit a distinctive entrance. Space between volumes, the house opening and roof form constrain placement. Mushroom-growing sites can receive racks beside a working aisle. Screen size governs the switch to simpler geometry and progressively filtered materials.',
       io: 'In: massing and houses. Out: building layers.',
       ctl: 'In the roofs menu, choose Detailed architecture and move the camera close to the building. Parcels, blocks, districts and diagnostic colours have their own display controls.',
       cost: 'The renderer groups buildings into sectors and culls those outside the view. A spatial index narrows picking to nearby candidates. The GPU and workers reuse prepared batches, and urban results from WebAssembly are cached in IndexedDB.',
     },
     fr: {
       what: 'Dessine les bâtiments sous forme d’emprises, de toits ou de volumes 3D. Le cadastre et le plan topographique affichent les emprises. Les parcelles, les îlots et les quartiers sont des couches supplémentaires.',
-      how: 'Le rendu lit les volumes planifiés. Le mode Architecture détaillée ajuste une matière à chaque façade et à chaque toit, puis ajoute de près des ouvrages comme les encadrements et les accessoires de toiture. La taille à l’écran commande le passage à des formes plus simples. Le filtrage atténue les détails des matériaux à distance et l’éclairage peut allumer les fenêtres la nuit.',
+      how: 'Le rendu lit les volumes planifiés. Le mode Architecture détaillée équipe 89 cultures de modèles d’entrée en complément des 26 profils à ouvrages sud-asiatiques, lucarnes et édicules de toiture. Certains de ces derniers possèdent également une entrée spécifique. Le dégagement entre les volumes, les baies de la maison et la forme du toit conditionnent la pose. Une champignonnière peut recevoir des lits étagés autour d’une allée de travail. La taille à l’écran commande le passage à des formes plus simples et à des matières progressivement filtrées.',
       io: 'Entrées : volumétrie et maisons. Sorties : couches de bâtiments.',
       ctl: 'Dans le menu des toits, choisissez Architecture détaillée et rapprochez la caméra du bâtiment. Les parcelles, les îlots, les quartiers et les couleurs de diagnostic disposent de leurs propres commandes.',
       cost: 'Le rendu regroupe les bâtiments par secteur et écarte ceux qui sortent du champ de la caméra. Un index spatial limite la sélection aux objets proches. Le GPU et les traitements en arrière-plan réutilisent les lots préparés. Les résultats urbains de WebAssembly sont mis en cache dans IndexedDB.',
     },
-    code: ['web/src/render/urbanBuildingGeometry.ts', 'web/src/render/craftedArchitecture.ts', 'web/src/render/craftedRoofRoom.ts', 'web/src/render/craftedIndianMassing.ts', 'web/src/render/houseSurfaceUv.ts', 'web/src/render/houseSurfaceTexture.ts', 'web/src/render/world/buildingsMesh.ts'] },
+    code: ['web/src/render/urbanBuildingGeometry.ts', 'web/src/render/houseFronts.ts', 'web/src/render/craftedArchitecture.ts', 'web/src/render/craftedRoofRoom.ts', 'web/src/render/craftedIndianMassing.ts', 'web/src/render/houseSurfaceUv.ts', 'web/src/render/houseSurfaceTexture.ts', 'web/src/render/world/buildingsMesh.ts'] },
 
   { id: 'display-ambience', when: 'display', opt: false,
     name: { en: 'Global effects', fr: 'Effets globaux' },

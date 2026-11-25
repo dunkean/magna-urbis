@@ -12,6 +12,8 @@ The pages are generated; edit the sources in `src/`, never the HTML.
 
 The 25 November 2026 architecture update has a direct link in each reader. The atlas explains how planned volumes become a close-range 3D mesh ([English](index.html#architecture-detail), [French](fr.html#architecture-detail)). The catalogue compares standard and detailed renderings of the same generated Dravidian house ([English](catalogue-architecture.html#architecture-compare), [French](catalogue-architecture-fr.html#architecture-compare)). Its 115 town and village sheets retain the dated November 14 captures.
 
+The entrance comparison shows the myconid and Māori profiles and explains how the entrance collection covers 96 profiles, including seven from the earlier set of 26. [English](catalogue-architecture.html#culture-frontages) · [Français](catalogue-architecture-fr.html#culture-frontages)
+
 - `src/atlas.en.mjs`: atlas chapters, English source. `src/atlas.fr.mjs` is its complete French translation.
 - `src/stages.mjs`: one card per stage id of `web/src/v2/stageRegistry.ts` (EN and FR). The card's HTML id is
   `stage-<id>`, the anchor the V2 links to.

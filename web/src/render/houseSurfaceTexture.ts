@@ -44,9 +44,17 @@ function loadMaterialSheet(): HTMLImageElement {
 }
 
 /** Rasterize each drawing once, then box-filter each successive level. Context restoration reuses the same pixels. */
-export function houseSurfaceMips(layer: number): readonly HTMLCanvasElement[] {
+const pixelUsers = new Set<object>();
+/** Drop the decoded image and mip canvases once the last detailed view releases its atlas. Layer numbers stay stable. */
+export function releaseHouseSurfacePixels(user: object): void {
+  if (!pixelUsers.delete(user) || pixelUsers.size) return;
+  for (const tile of tiles) tile.mips = undefined;
+  materialSheet = undefined;
+}
+export function houseSurfaceMips(layer: number, user?: object): readonly HTMLCanvasElement[] {
   const tile = tiles[layer - 1];
   if (!tile || typeof document === 'undefined') return [];
+  if (user) pixelUsers.add(user);
   if (tile.mips) return tile.mips;
   const sample = samples[tile.style];
   const sheet = sample && typeof Image !== 'undefined' ? loadMaterialSheet() : undefined;
@@ -82,7 +90,7 @@ export class HouseSurfaceTexture {
 
   step(): boolean {
     if (this.ready >= tiles.length) return true;
-    const mips = houseSurfaceMips(this.ready + 1);
+    const mips = houseSurfaceMips(this.ready + 1, this);
     if (!mips.length) return !materialSheet || materialSheet.complete;
     const gl = this.gl;
     if (!this.texture) {
@@ -108,6 +116,7 @@ export class HouseSurfaceTexture {
     this.ready = 0;
   }
   dispose(): void {
+    releaseHouseSurfacePixels(this);
     if (this.texture) this.gl.deleteTexture(this.texture);
     this.lost();
   }

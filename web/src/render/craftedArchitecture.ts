@@ -1,15 +1,16 @@
-import type { Vertex3 } from '../../../rust/bridge/housesContract';
+import type { Point, Vertex3 } from '../../../rust/bridge/housesContract';
 import type { BuildingTriangle, BuildingVector, OverviewVolume } from './urbanBuildingGeometry';
 import { LIT_WINDOW, OPENING } from './city3d/materials';
 import { craftedCrown } from './craftedCrown';
 import { craftedRoofFitting } from './craftedRoofFitting';
 import { craftedTidal } from './craftedTidal';
+import { hash } from './city3d/massing';
 
 type Quad = (a: BuildingVector, b: BuildingVector, c: BuildingVector, d: BuildingVector, material: string) => void;
 const finish = (name: string, hex: string) => 'city3d:detail:' + name + '@' + hex;
 
 /** Frames follow the four corners of the existing opening, including the lean on a battered wall. */
-function joinery(points: Vertex3[], outward: number, culture: string, volume: OverviewVolume, quad: Quad): void {
+function joinery(points: Vertex3[], outward: number, culture: string, volume: OverviewVolume, quad: Quad, entry = false, hoodRoom = 0): void {
   const [a, b, c, d] = points,
     w = Math.hypot(b.x - a.x, b.y - a.y),
     h = d.z - a.z;
@@ -21,13 +22,14 @@ function joinery(points: Vertex3[], outward: number, culture: string, volume: Ov
       s = u / w;
     return [a.x + s * (b.x - a.x) + t * (d.x - a.x + s * (c.x - d.x - b.x + a.x)) + depth * nx, a.y + s * (b.y - a.y) + t * (d.y - a.y + s * (c.y - d.y - b.y + a.y)) + depth * ny, a.z + v];
   };
-  const door = a.z < volume.z_m + 0.18,
+  const door = entry || Math.abs(a.z - volume.z_m) < 0.18,
     tibetan = culture.includes('tibetan'),
     lattice = /chinese|japan|korea|newar|bhutan/.test(culture),
     industrial = /cyber|future|solarpunk|orbital|industrial|arcolog|diesel|space-/.test(culture),
     stone = /stone|ashlar|adobe|earth|brick/.test(volume.materials.coating),
-    jamb = finish('jamb', industrial ? '536267' : tibetan ? '57453c' : lattice ? '73513f' : stone ? '978570' : '776048'),
-    head = finish('lintel', tibetan ? '955641' : industrial ? '728286' : stone ? 'ad987d' : '826b51'),
+    lagoon = culture === 'venetian-lagoon',
+    jamb = finish('jamb', hoodRoom ? (lagoon ? 'ded4be' : 'bea889') : industrial ? '536267' : tibetan ? '57453c' : lattice ? '73513f' : stone ? '978570' : '776048'),
+    head = finish('lintel', hoodRoom ? (lagoon ? 'e4dcca' : 'c8b69a') : tibetan ? '955641' : industrial ? '728286' : stone ? 'ad987d' : '826b51'),
     pane = finish('sash', industrial ? '58686b' : '705b48');
   const trim = Math.min(w * 0.12, tibetan ? 0.15 : 0.095 * Math.max(1, Math.min(2.5, w))),
     sillZ = door ? 0 : -trim * 0.9;
@@ -42,6 +44,26 @@ function joinery(points: Vertex3[], outward: number, culture: string, volume: Ov
   };
   beam(-trim * 1.55, w + trim * 1.55, h, h + trim * (tibetan ? 1.8 : 1.12), tibetan ? 0.16 : 0.105, head);
   if (!door) beam(-trim * 1.4, w + trim * 1.4, sillZ - 0.025, 0.005, 0.13, jamb);
+  if (!door && hoodRoom) {
+    const spring = h + trim * 1.12, thick = Math.min(.125, w * .12);
+    const rise = Math.min(w * (lagoon ? .57 : .42), hoodRoom - trim * 1.12 - thick);
+    if (rise > .05) {
+      // Istrian ogee or a relieving arch of brick and limestone built on the actual window head.
+      const course = lagoon ? [[0,0],[.09,.30],[.24,.52],[.39,.65],[.5,1],[.61,.65],[.76,.52],[.91,.30],[1,0]]
+                            : [[0,0],[.038,.38],[.146,.71],[.31,.92],[.5,1],[.69,.92],[.854,.71],[.962,.38],[1,0]];
+      const hood = finish(lagoon ? 'istrian-hood' : 'brick-arch', lagoon ? 'e5d9c4' : 'ae674c');
+      const rim = (i: number, outside: boolean, depth: number) => {
+        const [u, v] = course[i];
+        return at(u * w + (outside ? thick * (u * 2 - 1) : 0), spring + v * (rise + (outside ? thick : 0)), depth);
+      };
+      for (let i = 1; i < course.length; i++) {
+        const m = lagoon || i % 2 ? hood : head, j = i - 1;
+        quad(rim(j, true, .144), rim(i, true, .144), rim(i, false, .144), rim(j, false, .144), m);
+        quad(rim(j, false, .024), rim(i, false, .024), rim(i, false, .144), rim(j, false, .144), m);
+        quad(rim(j, true, .144), rim(i, true, .144), rim(i, true, .024), rim(j, true, .024), m);
+      }
+    }
+  }
   const bar = (u0: number, u1: number, v0: number, v1: number, mat: string): void => quad(at(u0, v0, 0.023), at(u1, v0, 0.023), at(u1, v1, 0.023), at(u0, v1, 0.023), mat);
   if (door) {
     // An inset wooden leaf below its transom; the old deep opening remains visible in the reveal.
@@ -100,6 +122,28 @@ interface RoofEdge {
   differentSlope: boolean;
 }
 const vertexKey = (p: Vertex3): string => [p.x, p.y, p.z].map(v => Math.round(v * 1000)).join(',');
+
+/** Clearance above the glazing, with room on both sides of the projecting stonework. */
+function windowHoodRoom(pts: Vertex3[], openings: Vertex3[][], volume: OverviewVolume): number {
+  const [a, b, c] = pts, w = Math.hypot(b.x - a.x, b.y - a.y);
+  if (w < .35 || a.z < volume.z_m + .25) return 0;
+  const ux = (b.x - a.x) / w, uy = (b.y - a.y) / w;
+  const along = (p: Point) => (p.x - a.x) * ux + (p.y - a.y) * uy;
+  const across = (p: Point) => (p.x - a.x) * uy - (p.y - a.y) * ux;
+  const ring = volume.footprint[0].outer;
+  if (!ring.some((p,i) => {
+    const q = ring[(i + 1) % ring.length];
+    return Math.abs(across(p)) < .13 && Math.abs(across(q)) < .13 &&
+      Math.min(along(p), along(q)) <= -.16 && Math.max(along(p), along(q)) >= w + .16;
+  })) return 0;
+  let room = volume.z_m + volume.wall_height_m - c.z - .025;
+  for (const other of openings) {
+    if (other === pts || other.some(p => Math.abs(across(p)) > .16) || other[2].z <= c.z) continue;
+    const x0 = along(other[0]), x1 = along(other[1]);
+    if (Math.max(x0, x1) > -.18 && Math.min(x0, x1) < w + .18) room = Math.min(room, other[0].z - c.z - .16);
+  }
+  return room >= .3 ? room : 0;
+}
 
 /** Only the boundary of the roof covering receives a fascia. A ridge is shared by two inclined pans. */
 function roofEdges(volume: OverviewVolume, culture: string, quad: Quad): void {
@@ -195,6 +239,19 @@ export function craftedArchitecture(volume: OverviewVolume, culture: string, emi
     }, 0) >= 0
       ? 1
       : -1;
+  const regional = culture === 'venetian-lagoon' || culture === 'byzantine-greek';
+  const openings = regional ? mesh.faces.filter(f => (f.material === OPENING || f.material === LIT_WINDOW) && f.vertices.length === 4)
+    .map(f => ({ f, points: f.vertices.map(i => mesh.vertices[i]) })) : [];
+  const selected = new Map<OverviewVolume['roof_mesh']['faces'][number], number>();
+  if (openings.length) {
+    const all = openings.map(o => o.points), start = hash(volume.id) % all.length;
+    for (let i = 0; i < all.length && selected.size < 4; i++) {
+      const { f, points } = openings[(start + i) % all.length];
+      if ((f as { entrance?: boolean }).entrance) continue;
+      const room = windowHoodRoom(points, all, volume);
+      if (room) selected.set(f, room);
+    }
+  }
   for (const face of mesh.faces) {
     if ((face.material === OPENING || face.material === LIT_WINDOW) && face.vertices.length === 4)
       joinery(
@@ -203,6 +260,8 @@ export function craftedArchitecture(volume: OverviewVolume, culture: string, emi
         culture,
         volume,
         winding < 0 ? (a, b, c, d, m) => quad(b, a, d, c, m) : quad,
+        !!(face as { entrance?: true }).entrance,
+        selected.get(face),
       );
   }
   roofEdges(volume, culture, quad);

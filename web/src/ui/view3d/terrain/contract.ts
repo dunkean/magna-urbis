@@ -84,6 +84,8 @@ export interface Terrain3dLookSettings {
   townSites?: Float32Array;
   /** Underdark: fungal farm lots (underdarkFarmBeds), up to 32. */
   farmBeds?: Float32Array;
+  /** Cultivated mushroom clusters in the detailed building appearance. */
+  craftedBeds?: boolean;
   /** Underdark 3D display: roof of the section cut, darkness, mushrooms (render/underdarkCavern.ts); defaults when absent. */
   cavern?: UnderdarkCavern3d;
 }

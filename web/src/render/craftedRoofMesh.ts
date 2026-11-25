@@ -1,3 +1,4 @@
+import { fungalDwelling } from './craftedFungalDwelling';
 import type { ArchitectureVolume } from '../../../rust/bridge/urbanArchitecture';
 import type { Vertex3 } from '../../../rust/bridge/housesContract';
 import { RoofBuilder } from './city3d/roofGeometry';
@@ -39,62 +40,6 @@ function heightField(mesh: Mesh, faces: Mesh['faces']): (x: number, y: number) =
 function decoratedMesh(mesh: Mesh, keep: Mesh['faces'], addition: RoofBuilder): Mesh {
   const start = mesh.vertices.length;
   return { ...mesh, vertices: [...mesh.vertices, ...addition.vertices], faces: [...keep, ...addition.faces.map(f => ({ ...f, vertices: f.vertices.map(i => i + start) }))] };
-}
-
-function mushroom(volume: ArchitectureVolume): Mesh {
-  const mesh = volume.roof_mesh,
-    ring = volume.footprint[0]?.outer;
-  if (!ring?.length) return mesh;
-  const cx = ring.reduce((sum, p) => sum + p.x, 0) / ring.length,
-    cy = ring.reduce((sum, p) => sum + p.y, 0) / ring.length;
-  const apex = mesh.faces.find(f => f.material.startsWith('city3d:cover:fungal') && f.vertices.length === 3 && f.normal[2] > 0.7 && f.vertices.some(i => Math.hypot(mesh.vertices[i].x - cx, mesh.vertices[i].y - cy) < 0.02));
-  if (!apex) return mesh;
-  const cap = mesh.faces.filter(f => f.material === apex.material && f.normal[2] > 0.5);
-  const radius = Math.max(...cap.flatMap(f => f.vertices.map(i => Math.hypot(mesh.vertices[i].x - cx, mesh.vertices[i].y - cy))));
-  const zAt = heightField(mesh, cap),
-    out = new RoofBuilder();
-  // The original six-sided flat spots sit on an approximate cap surface. These low, torn
-  // veil remnants follow the actual cap and retain its native rim, gills and stem ring.
-  const keep = mesh.faces.filter(f => !(f.vertices.length === 6 && f.material.startsWith('city3d:cover:fungal') && f.vertices.every(i => Math.abs(mesh.vertices[i].z - mesh.vertices[f.vertices[0]].z) < 0.001)));
-  let state = 2166136261;
-  for (const c of volume.id) state = Math.imul(state ^ c.charCodeAt(0), 16777619);
-  const rand = (): number => {
-    state = (Math.imul(1664525, state) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-  const turn = rand() * Math.PI * 2,
-    count = 17 + Math.floor(rand() * 8);
-  const shades = ['baa586', 'd5c4a0', 'ad9478', 'c1ae90'];
-  for (let i = 0; i < count; i++) {
-    const a = turn + i * 2.39996 + 0.4 * rand(),
-      d = Math.sqrt((i + 0.2 + 0.55 * rand()) / count) * radius * 0.87;
-    const x = cx + Math.cos(a) * d,
-      y = cy + Math.sin(a) * d,
-      z = zAt(x, y);
-    if (z === undefined) continue;
-    const size = radius * (0.022 + 0.028 * rand()),
-      height = size * (0.19 + 0.19 * rand());
-    const sides = 5 + Math.floor(rand() * 3),
-      aspect = 0.65 + 0.5 * rand(),
-      angle = rand() * Math.PI;
-    const toe: Vertex3[] = [],
-      top: Vertex3[] = [];
-    for (let k = 0; k < sides; k++) {
-      const th = angle + (k * 2 * Math.PI) / sides,
-        r = size * (0.72 + 0.45 * rand());
-      const dx = Math.cos(th) * r,
-        dy = Math.sin(th) * r * aspect;
-      toe.push({ x: x + dx, y: y + dy, z: (zAt(x + dx, y + dy) ?? z) + 0.009 });
-      top.push({ x: x + dx * 0.55, y: y + dy * 0.55, z: (zAt(x + dx * 0.55, y + dy * 0.55) ?? z) + height });
-    }
-    const material = 'city3d:detail:scale@' + shades[Math.floor(rand() * shades.length)];
-    out.face(top, material);
-    for (let k = 0; k < sides; k++) {
-      const j = (k + 1) % sides;
-      out.face([toe[k], toe[j], top[j], top[k]], material);
-    }
-  }
-  return decoratedMesh(mesh, keep, out);
 }
 
 /** Clip a planar convex pan in its own 3D plane. */
@@ -201,13 +146,13 @@ function longhouse(volume: ArchitectureVolume): Mesh {
  * Other cultures and standard display modes keep the original roof mesh. */
 export function craftedRoofMesh(volume: OverviewVolume, culture: string): Mesh {
   const raw = volume.materials.cladding;
-  const isCap = culture === 'myconid-colony' && raw.startsWith('city3d:cover:fungal');
+  const isCap = culture === 'myconid-colony' && (raw.startsWith('city3d:cover:fungal') || volume.displayRoofForm === 'dome');
   const isLonghouse = culture === 'native-iroquoian' && raw.startsWith('city3d:cover:bark');
   const tree = culture === 'elven' ? volume.displayTree : undefined;
   if ((!isCap && !isLonghouse && !tree) || !volume.roof_mesh) return volume.roof_mesh;
   let mesh = cache.get(volume);
   if (!mesh) {
-    mesh = tree ? craftedElvenTree(tree, volume.z_m) : isCap ? mushroom(volume) : longhouse(volume);
+    mesh = tree ? craftedElvenTree(tree, volume.z_m) : isCap ? fungalDwelling(volume) : longhouse(volume);
     cache.set(volume, mesh);
   }
   return mesh;
