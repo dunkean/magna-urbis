@@ -1,6 +1,6 @@
 ## Alpha 0.3.11
 
-- Natural rivers show soft shallows, occasional pale riffles on steep reaches, and tea-brown wetland water. Dry channels have subtle silt and gravel tones, and low water follows the outside of bends.
+- Natural rivers show soft shallows, short glints across mountain riffles, and tea-brown wetland water. Dry channels have subtle silt and gravel tones, and low water follows the outside of bends.
 - On Satellite maps the ground around a house blends into the surrounding town earth.
 - Close leafless trees now show a trunk and tapered, forked branches on the map and in 3D.
 

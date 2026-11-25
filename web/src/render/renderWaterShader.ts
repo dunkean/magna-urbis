@@ -88,7 +88,6 @@ void main() {
   float shelf = 1. - smoothstep(0., 3. * uDpr, depth);
   // Shoreline glint about one pixel inside the bank.
   float rim = smoothstep(.2 * uDpr, .9 * uDpr, depth) * (1. - smoothstep(1.2 * uDpr, 2.4 * uDpr, depth));
-  // Gentle surface variation, finer octave only where it stays above a pixel.
   // Wet bank: soft dark shadow on the land side.
   vec3 bankColor = vec3(.055, .085, .045);
   float bankA = .55 * bank * bank;
@@ -101,21 +100,23 @@ void main() {
     float centre = smoothstep(.2 * uDpr, 2.5 * uDpr, depth);
     float dryOn = smoothstep(0., .1, regime.r);
     float pools = mix(1., waterDryPools(world, regime.r, centre), dryOn);
-    // Reuse the two surface-noise octaves for the bed and water. Both live in map metres.
-    float wash = waterSurfaceNoise(world/61.);
+    // Continuous world-space variation shared by the exposed bed and its wet thread.
+    // Warp the narrow bands by the bank distance so highlights turn with the channel.
+    float bankMetres = depth*uPx;
+    float drift = sin(dot(world,vec2(.041,.027)));
+    float wash = .5 + .26*drift + .24*sin(dot(world,vec2(-.036,.071)) + 1.8*drift);
     float close = 1.-smoothstep(.7,3.,uPx);
-    float grain = mix(.5,waterSurfaceNoise(world/5. + vec2(2.7,8.1)),close);
+    float grain = .5 + .5*close*sin(dot(world,vec2(.83,-.38)) + .36*bankMetres + 2.4*sin(dot(world,vec2(.17,.22))));
     // Bare alluvium has long patches of damp silt and lighter gravel nearer the margins.
     // Neutral value variation keeps the red-blue difference used to identify exposed ground.
     vec3 bed = waterDryBed(world, centre) + vec3(.10*(wash-.5) + .035*(grain-.5));
-    float bankMetres = depth*uPx;
     float deep = smoothstep(1.,22.,bankMetres);
     color = freshWaterTone(color*(1.02-.15*deep+.055*(wash-.5)));
     // A few broken pale riffles on descending reaches. Suppress them on unresolved streams,
     // in standing water and under the seasonal bed and ice layers composed below.
     float riffle = clamp(regime.b/.45,0.,1.) * centre * close
-                 * smoothstep(.45,.76,wash) * smoothstep(.45,.81,grain);
-    color = mix(color,vec3(.63,.74,.75),.57*riffle);
+                 * smoothstep(.53,.85,wash) * smoothstep(.68,.97,grain);
+    color = mix(color,vec3(.63,.74,.75),.37*riffle);
     color = mix(bed, color, pools);
     // Ice follows the bed: shore ice grows from both banks (up to 40 m) and closes the whole course when frozen,
     // so a thaw leaves a dark open thread down the fast centre. Hairline streams freeze first. Dark bank line on both sides.
