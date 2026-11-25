@@ -28,6 +28,7 @@ export interface OsmImportOptions {
   zoom: number;
   name: string;
   culture: string;
+  importBuildings?: boolean;
   /** Name of the admin_level=8 boundary in `commune` (log only). */
   communeName?: string;
 }
@@ -45,6 +46,8 @@ export interface OsmImport {
   source: { attribution: typeof OSM_ATTRIBUTION; osmTimestamp: string; bbox: string; center: { lat: number; lon: number }; size: number };
   summary: Record<string, number>;
   log: string[];
+  /** Buildable limits for the street-only import, in map metres. */
+  buildingArea?: Area[];
 }
 
 type P = { x: number; y: number };
@@ -246,6 +249,7 @@ export function importOsm(input: OsmImportInput): OsmImport {
   const { osm, elevations } = input,
     { lat, lon, size: SIZE, grid: GRID, zoom: ZOOM, name: NAME, culture: CULTURE } = input.options;
   const log: string[] = [];
+  const importBuildings = input.options.importBuildings !== false;
   const { bbox, project } = osmProjection({ lat, lon, size: SIZE });
   const half = SIZE / 2,
     cell = SIZE / GRID;
@@ -366,7 +370,7 @@ export function importOsm(input: OsmImportInput): OsmImport {
       }
       continue;
     }
-    if (t.building && t.building !== 'no') {
+    if (importBuildings && t.building && t.building !== 'no') {
       for (const a of areas(el)) {
         if (!a.outer.some(p => inMap(p))) continue;
         const levels = num(t['building:levels']) ?? (KIND[t.building] === 'workshop' ? 1 : 2);
@@ -924,5 +928,6 @@ export function importOsm(input: OsmImportInput): OsmImport {
     names: entries.length,
     population,
   };
-  return { settings, world, source: { attribution: OSM_ATTRIBUTION, osmTimestamp, bbox, center: { lat, lon }, size: SIZE }, summary, log };
+  const buildingArea = !importBuildings && input.commune ? areas(input.commune) : undefined;
+  return { settings, world, source: { attribution: OSM_ATTRIBUTION, osmTimestamp, bbox, center: { lat, lon }, size: SIZE }, summary, log, buildingArea };
 }

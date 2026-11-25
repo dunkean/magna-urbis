@@ -46,6 +46,8 @@ export interface RustTownSnapshot {
   /** Reconciled native programme evidence for this exact retained house scene. */
   capacityKey?: string;
   layouts: Layout[];
+  /** Surveyed streets and the cadastral area served by them. Reruns retain this source plan. */
+  importedLayout?: Layout;
   /** Persistent manual streets, replayed before cadastral/building generation. */
   streetEdits?: UrbanStreetEdit[];
   roadSources?: UrbanRoadSources[];
@@ -414,6 +416,7 @@ export async function generateRustTown(
     onProgress?.(shown);
   };
   const previous = (world.debug?.v2RustCities as Record<string, RustTownSnapshot> | undefined)?.[key];
+  const importedLayout = previous?.importedLayout;
   const roads = townRoadStreets(world);
   const seed = urbanSeed(settings, key, 'composition'),
     streetSeed = urbanSeed(settings, key, 'streets');
@@ -421,7 +424,21 @@ export async function generateRustTown(
   const neighbours = [...(neighbourClaims ?? neighbourClaimsOf(world, settings, key))];
   // The engine build is part of the key: a rebuilt engine recomposes the town instead of reusing the old binary's plan.
   const compositionKey = townCompositionFingerprint(
-    ['household-mix-1', world.stats['v2.terrainKey'], ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []), key, backend, engineIdentityOf(settings, backend), seed, place.center, radius, options.population, options.culture, config.layout],
+    [
+      'household-mix-1',
+      ...(importedLayout ? ['osm-streets'] : []),
+      world.stats['v2.terrainKey'],
+      ...(world.stats['v2.waterEditRevision'] ? [world.stats['v2.waterEditRevision']] : []),
+      key,
+      backend,
+      engineIdentityOf(settings, backend),
+      seed,
+      place.center,
+      radius,
+      options.population,
+      options.culture,
+      config.layout,
+    ],
     roads,
     neighbours.length ? [neighbourFingerprint(neighbours)] : [],
   );
@@ -430,7 +447,7 @@ export async function generateRustTown(
   let snapshot: RustTownSnapshot =
     !retainedLayouts && previous?.layoutKey === layoutKey
       ? cloneRustTownSnapshot(previous)
-      : { backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: retainedLayouts ?? [], streetEdits: previous?.streetEdits, buildingIds: [], warnings: [] };
+      : { backend: backend === 'native' ? 'rust-native-cpu' : 'rust-wasm-cpu', stage: 'layout', layoutKey, compositionKey, compositionLayouts: previousComposition, layouts: retainedLayouts ?? [], importedLayout, streetEdits: previous?.streetEdits, buildingIds: [], warnings: [] };
   // Reuse one terrain handle for this ordered request chain, not one copy for each urban step.
   let engine: UrbanEngine | undefined;
   // Wall time of each stage request as this realm sees it (engine, transfer, decode), kept in the town's stats.
@@ -585,12 +602,15 @@ export async function generateRustTown(
   if (!snapshot.layouts.length) {
     const site = cityNamedSite({ key, name: place.name, population, culture: options.culture, center: place.center, radius }, world.seed, options.language);
     const inputs = { sites: [neighbours.length ? { ...site, neighbours } : site], roads };
-    if (!snapshot.compositionLayouts) {
+    if (!snapshot.compositionLayouts && importedLayout) {
+      const { osmHousingProgramme } = await import('./osm/osmStreetLayout');
+      snapshot.compositionLayouts = [{ ...importedLayout, culture: options.culture, programme: osmHousingProgramme(key, options.population) }];
+    } else if (!snapshot.compositionLayouts) {
       report('urban-layout', `Rust · urban composition… (${place.name ?? key})`, 0);
       snapshot.compositionLayouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: config.layout }), 'layouts');
     }
     snapshot.compositionKey = compositionKey;
-    if (streetSeed === seed) snapshot.layouts = snapshot.compositionLayouts;
+    if (streetSeed === seed || importedLayout) snapshot.layouts = snapshot.compositionLayouts;
     else {
       report('urban-layout', 'Rust · nouveau tracé des rues internes, composition conservée…', 0);
       snapshot.layouts = required<Layout[]>(await request('quarters', { ...inputs, layoutConfig: streetSeedConfig(config.layout, snapshot.compositionLayouts, streetSeed) }), 'layouts');

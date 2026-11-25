@@ -105,7 +105,7 @@ export function communeQuery(bbox: string, commune: string): string {
 }
 
 /** Fetch coordinates and tags for ways. Only relations need their member references and roles. */
-export function overpassImportQuery(bbox: string, commune?: string): string {
+export function overpassImportQuery(bbox: string, commune?: string, importBuildings = true): string {
   const isOneOf = (key: string, values: string[]) => `["${key}"~"^(${values.join('|')})$"]`;
   const building = '["building"]["building"!="no"]';
   const land = isOneOf('landuse', [...Object.keys(LANDUSE), ...URBAN_LANDUSE, 'reservoir', 'basin']);
@@ -113,7 +113,7 @@ export function overpassImportQuery(bbox: string, commune?: string): string {
 (
   way${isOneOf('highway', Object.keys(HIGHWAY))}["footway"!~"^(sidewalk|crossing)$"](${bbox});
   way["highway"="pedestrian"]["area"="yes"](${bbox});
-  way${building}(${bbox});
+  ${importBuildings ? `way${building}(${bbox});` : ''}
   way["natural"="water"](${bbox});
   way${isOneOf('waterway', [...Object.keys(RIVER_WIDTH), 'riverbank'])}(${bbox});
   way${land}(${bbox});
@@ -127,7 +127,7 @@ export function overpassImportQuery(bbox: string, commune?: string): string {
   ${barrierSelectors(bbox)}
 )->.ways;
 (
-  relation${building}(${bbox});
+  ${importBuildings ? `relation${building}(${bbox});` : ''}
   relation["natural"="water"](${bbox});
   relation${land}(${bbox});
   node["barrier"="city_gate"](${bbox});
@@ -225,10 +225,10 @@ export async function fetchOsmFeatures(square: OsmSquare, options: { commune?: s
   return { osm, commune };
 }
 
-export async function fetchOsmImportFeatures(square: OsmSquare, options: { commune?: string }, fetchers: Pick<OsmFetchers, 'overpass'>) {
+export async function fetchOsmImportFeatures(square: OsmSquare, options: { commune?: string; importBuildings?: boolean }, fetchers: Pick<OsmFetchers, 'overpass'>) {
   const { bbox } = osmProjection(square);
   const name = options.commune;
-  const osm = await fetchers.overpass(overpassImportQuery(bbox, name), bbox);
+  const osm = await fetchers.overpass(overpassImportQuery(bbox, name, options.importBuildings), bbox);
   // Restore stable IDs and draw order after the server's faster quadtile output.
   const order = { node: 0, way: 1, relation: 2 };
   osm.elements.sort((a, b) => order[a.type] - order[b.type] || a.id - b.id);

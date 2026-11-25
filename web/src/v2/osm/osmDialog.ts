@@ -19,6 +19,10 @@ const messages = {
   'Centre longitude': 'Longitude du centre',
   'Square side (0.5–20 km)': 'Côté du carré (0,5 à 20 km)',
   'Building style': 'Style des bâtiments',
+  Buildings: 'Bâtiments',
+  'Import OpenStreetMap buildings': 'Reprendre les bâtiments OpenStreetMap',
+  'Generate buildings along OpenStreetMap streets': 'Générer les bâtiments le long des rues OpenStreetMap',
+  'The generated option downloads the streets and generates buildings locally.': 'Le mode généré télécharge les rues et construit les bâtiments localement.',
   'Limit urban features to a commune (optional)': 'Limiter les éléments urbains à une commune (facultatif)',
   'Enter the exact OSM name of an admin level 8 boundary. Relief, regional roads and water cover the full square.': 'Saisissez le nom OSM exact d’une limite administrative de niveau 8. Le relief, les routes régionales et l’eau couvrent tout le carré.',
   'Relief preview': 'Aperçu du relief',
@@ -38,10 +42,12 @@ const messages = {
   'A 6 km square is suggested for this place. Increase the side length to cover more of the area.': 'Un carré de 6 km est proposé pour ce lieu. Augmentez le côté pour couvrir une plus grande zone.',
   'Map import progress': 'Progression de l’import',
   'Building the imported map…': 'Construction de la carte importée…',
+  'Generating buildings along the imported streets…': 'Génération des bâtiments le long des rues importées…',
   'Drawing the imported map…': 'Affichage de la carte importée…',
   'The relief preview could not be loaded.': 'Impossible de charger l’aperçu du relief.',
   'The map could not be imported.': 'Impossible d’importer la carte.',
   'Real place imported.': 'Lieu réel importé.',
+  'The map was imported. No buildable frontage was found along the imported streets.': 'La carte a été importée. Aucun terrain constructible n’a été trouvé le long des rues importées.',
 };
 registerMessages(Object.fromEntries(Object.entries(messages).map(([en, fr]) => [en, { en, fr }])));
 
@@ -60,14 +66,18 @@ function reliefZoom(square: OsmSquare): number {
 
 export const osmCredits = `<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> · <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener noreferrer">AWS Terrain Tiles</a>`;
 
-function convert(input: OsmImportInput, signal: AbortSignal): Promise<OsmImport> {
+function convert(input: OsmImportInput, signal: AbortSignal, onHousing: (completed: number) => void): Promise<OsmImport> {
   signal.throwIfAborted();
   const worker = new OsmWorker(runtimeWorkerOptions());
   let cancel: () => void;
   return new Promise<OsmImport>((resolve, reject) => {
     cancel = () => reject(signal.reason);
     signal.addEventListener('abort', cancel, { once: true });
-    worker.onmessage = ({ data }) => (data.error ? reject(new Error(data.error)) : resolve(data.result));
+    worker.onmessage = ({ data }) => {
+      if (typeof data.housing === 'number') onHousing(data.housing);
+      else if (data.error) reject(new Error(data.error));
+      else resolve(data.result);
+    };
     worker.onerror = event => reject(new Error(event.message));
     worker.onmessageerror = () => reject(new Error('Could not read the imported map.'));
     worker.postMessage(input);
@@ -117,6 +127,8 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
           </div>
           <label><span class="label">Square side (0.5–20 km)</span><input name="side" type="number" min="${MIN_KM}" max="${MAX_KM}" step="any" value="4" required></label>
           <p class="hint" id="osm-size-hint" hidden>A 6 km square is suggested for this place. Increase the side length to cover more of the area.</p>
+          <label><span class="label">Buildings</span><select name="buildings" aria-describedby="osm-buildings-hint"><option value="osm">Import OpenStreetMap buildings</option><option value="generate">Generate buildings along OpenStreetMap streets</option></select></label>
+          <p class="hint" id="osm-buildings-hint">The generated option downloads the streets and generates buildings locally.</p>
           <label><span class="label">Building style</span><select name="culture">${options(CULTURE_LABELS)}</select></label>
           <label><span class="label">Limit urban features to a commune (optional)</span><input name="commune" maxlength="100" aria-describedby="osm-commune-hint"></label>
           <p class="hint" id="osm-commune-hint">Enter the exact OSM name of an admin level 8 boundary. Relief, regional roads and water cover the full square.</p>
@@ -157,6 +169,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   const latitude = inputs('latitude') as HTMLInputElement;
   const longitude = inputs('longitude') as HTMLInputElement;
   const side = inputs('side') as HTMLInputElement;
+  const buildings = inputs('buildings') as HTMLSelectElement;
   const culture = inputs('culture') as HTMLSelectElement;
   const commune = inputs('commune') as HTMLInputElement;
   culture.value = 'european-organic';
@@ -328,7 +341,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       mapName.reportValidity();
       return;
     }
-    const options: OsmImportOptions = { ...square, name, culture: culture.value, grid: GRID, zoom: reliefZoom(square), communeName: commune.value.trim() || undefined };
+    const options: OsmImportOptions = { ...square, name, culture: culture.value, grid: GRID, zoom: reliefZoom(square), communeName: commune.value.trim() || undefined, importBuildings: buildings.value === 'osm' };
     void run('The map could not be imported.', async signal => {
       let relief = 0;
       let osm = 0;
@@ -357,7 +370,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
         }),
         fetchOsmImportFeatures(
           square,
-          { commune: options.communeName },
+          { commune: options.communeName, importBuildings: options.importBuildings },
           browserOsmFetchers(signal, {
             onFallback() {
               fallback = true;
@@ -387,7 +400,9 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       ]);
       transferred.hidden = true;
       showProgress('Building the imported map…', 2);
-      const result = await convert({ ...features, options, elevations: dem.elevations }, signal);
+      const result = await convert({ ...features, options, elevations: dem.elevations }, signal, completed => {
+        showProgress('Generating buildings along the imported streets…', Math.max(progress.value, 2 + completed));
+      });
       signal.throwIfAborted();
       if (state.busy) throw new Error(translate('A computation is already running.'));
       applying = true;
@@ -408,7 +423,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
         actions.selectTab(result.summary.buildings ? 'cities' : 'map');
         actions.log(`OpenStreetMap import: ${options.name} · ${result.summary.buildings} buildings · ${result.summary.roads + result.summary.streets} roads and streets`);
         mapProgress.value = 100;
-        actions.toast('Real place imported.');
+        actions.toast(options.importBuildings === false && !result.summary.buildings ? 'The map was imported. No buildable frontage was found along the imported streets.' : 'Real place imported.');
       } catch (error) {
         actions.reportAppearanceError(error);
       } finally {
