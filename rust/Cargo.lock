@@ -4105,6 +4105,7 @@ dependencies = [
  "geo",
  "i_overlay",
  "magna-urbis-geom",
+ "magna-urbis-graph",
  "magna-urbis-random",
  "magna-urbis-terrain",
  "rayon",

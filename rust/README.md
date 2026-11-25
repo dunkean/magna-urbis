@@ -37,6 +37,12 @@ the current OS. Shared defaults are in `../config/execution.json`. See the
 
 `crates/core/` contains the engine without browser dependencies; `crates/wasm/` exposes bindings; `bridge/` temporarily adapts output to the existing interface and renderer. The current renderer is provisional, and the TypeScript model is not imposed as the permanent Rust engine model.
 
+Rust tools can enable the `street-topology` feature of `magna-urbis-core` and call
+`urban::street_topology(&layout.streets, town_radius_metres)` to inspect a town's
+junctions, street chains, widths and bridge landings. The snapshot uses the street
+cleaner's noding rules and keeps handles local to that snapshot. The feature is
+off by default, and generation never builds a snapshot automatically.
+
 ## Shared benches page
 
 On Windows, run `start-terrainbench.bat` from the repository root (or

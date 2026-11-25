@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 magna-urbis-geom = { path = "../geom" }
+magna-urbis-graph = { path = "../graph", optional = true }
 magna-urbis-random = { path = "../random" }
 magna-urbis-terrain = { path = "../terrain" }
 serde = { version = "1", features = ["derive"] }
@@ -27,6 +28,8 @@ rayon = { version = "1.12", optional = true }
 # Rayon on wasm32 (shared-memory build) for urban and terrain kernels.
 # Native builds always use rayon.
 threads = ["dep:rayon", "magna-urbis-terrain/threads"]
+# Explicit snapshots of the street network's noding step for tools and experiments.
+street-topology = ["dep:magna-urbis-graph"]
 
 [dev-dependencies]
 magna-urbis-geom = { path = "../geom", features = ["test-support"] }

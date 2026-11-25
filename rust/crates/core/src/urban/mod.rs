@@ -92,6 +92,8 @@ pub use overrides::{
     QuarterEdits, QuarterOverride, QuarterPart, UrbanOverrides,
 };
 pub use surface::{HeightInterpolation, Surface};
+#[cfg(feature = "street-topology")]
+pub use street_graph::{street_topology, StreetTopology};
 pub use types::{
     Attached, Block, CapacityPlan, Enclosure, Gatehouse, GrowthPhase, Layout, Parcel, ParcelAccess, ParcelContact, Partition,
     PartitionDiagnostics, PortDistrict, PreparedBlocks, Quarter, Site, Street, Tower, UrbanCenter, UrbanDistrict, UrbanEvent,

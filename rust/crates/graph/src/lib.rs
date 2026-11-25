@@ -14,6 +14,7 @@ mod index;
 mod insert;
 mod key;
 mod remove;
+pub mod street_topology;
 #[cfg(test)]
 mod tests;
 mod topology;

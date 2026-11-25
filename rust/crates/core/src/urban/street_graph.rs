@@ -16,6 +16,11 @@ use super::network::{EPS, Key, Segment, candidates, crossings, key, private, pro
 use super::{Point, Street};
 use std::collections::{BTreeMap, HashMap};
 
+#[cfg(feature = "street-topology")]
+mod snapshot;
+#[cfg(feature = "street-topology")]
+pub use snapshot::{street_topology, StreetTopology};
+
 type Id = u32;
 /// Two positions closer than this are one sample when a seat is placed (m).
 const SNAP: f64 = 1e-3;
@@ -879,6 +884,51 @@ mod tests {
         let (out, _) = run(&input);
         assert_eq!(out.len(), 2);
         assert!(out.iter().all(|s| on_axis(Point { x: 10.0, y: 0.0 }, s) && s.path.len() == 3));
+    }
+
+    #[cfg(feature = "street-topology")]
+    #[test]
+    fn topology_snapshot_keeps_junction_arms_widths_and_deck_landings() {
+        use magna_urbis_graph::Level;
+
+        let mut roads = [
+            street(&[(0.0, 0.0), (40.0, 0.0)], 4.0, 2, "street"),
+            street(&[(20.0, -20.0), (20.0, 20.0)], 4.0, 2, "street"),
+            street(&[(0.0, -10.0), (40.0, 10.0)], 6.0, 1, "bridge"),
+            street(&[(40.0, 10.0), (50.0, 20.0)], 4.0, 3, "lane"),
+        ];
+        roads[0].widths = vec![2.0, 6.0];
+        let graph = street_topology(&roads, 200.0);
+        assert_eq!(graph.chains().len(), 4);
+        let host = graph.chains().iter().find(|c| c.source == 0).unwrap();
+        assert_eq!(host.edges.len(), 2);
+        let first = &graph.edges()[host.edges[0].ix()];
+        let second = &graph.edges()[host.edges[1].ix()];
+        assert_eq!(first.ends[1], second.ends[0]);
+        assert_eq!(first.widths, vec![2.0, 4.0]);
+        assert_eq!(second.widths, vec![4.0, 6.0]);
+        let cross = &graph.nodes()[first.ends[1].ix()];
+        assert_eq!(cross.point, Point { x: 20.0, y: 0.0 });
+        assert_eq!(cross.arms.len(), 4);
+        let arm_point = |arm: magna_urbis_graph::HalfId| {
+            let edge = &graph.edges()[arm.edge().ix()];
+            graph.nodes()[edge.ends[usize::from(arm.is_forward())].ix()].point
+        };
+        assert_eq!(cross.arms.iter().map(|&arm| arm_point(arm)).collect::<Vec<_>>(), [
+            Point { x: 20.0, y: -20.0 },
+            Point { x: 40.0, y: 0.0 },
+            Point { x: 20.0, y: 20.0 },
+            Point { x: 0.0, y: 0.0 },
+        ]);
+        let bridge = graph.chains().iter().find(|c| c.source == 2).unwrap();
+        assert_eq!(bridge.level, Level::Deck);
+        assert_eq!(bridge.edges.len(), 1);
+        let deck = &graph.edges()[bridge.edges[0].ix()];
+        let landing = &graph.nodes()[deck.ends[1].ix()];
+        assert!(landing.bridge_landing);
+        assert_eq!(landing.arms.len(), 2);
+        assert!(graph.connects(landing.arms[0], landing.arms[1]));
+        assert!(!graph.connects(cross.arms[0], landing.arms[0]));
     }
 
     #[test]
