@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Choose Detailed architecture under Houses → Roof to see culture-specific roof coverings and façade finishes up close in 3D.
 - Town walls are continuous closed rings: only land, harbour and water gates interrupt them, and they stand on dry ground back from shores and banks. Wide rivers give each bank its own wall; narrow channels get a water gate.
 - Harbours lie outside the wall by default, reached through harbour gates; choosing “inside” keeps the quays within it. Moats stop short of rivers and the sea.
 - Stairs appear only on really steep stretches, as straight flights in towns or winding flights in mountain cultures; other sloping links stay lanes. Crowded or sharp bridge ends gain a short straight approach.

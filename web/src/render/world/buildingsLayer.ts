@@ -17,6 +17,7 @@ import { CAVE_DUSK, caveFogRange, type WorldCave } from './cave';
 import { pickBuilding, type BuildingPick } from './buildingsPick';
 import type { Building3dVisual } from '../urbanBuildingGeometry';
 import { CoverGrainTexture } from './buildingsGrain';
+import { HouseSurfaceTexture, houseSurfaceCount } from '../houseSurfaceTexture';
 import { BuildingBlockCache, type BuildingLevel as Level, type BuildingSlot as Slot } from './buildingsCache';
 import type { VolumeTownLook } from '../city/buildingLook';
 import { BuildingDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
@@ -67,7 +68,7 @@ const caveFog: [number, number] = [0, 1];
 const yardSizes: [number, number] = [0, 1];
 /** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
 const DORMANT_LOOKS = 2;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uYard', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uYard', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave', 'uHouseSurface', 'uHouseSurfaceReady'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
@@ -117,6 +118,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     night = 0;
   let paint: BuildingPaint | undefined, seat: BuildingSeat | undefined, appearance: UrbanBuildingAppearance | undefined, look: VolumeTownLook | undefined;
   const grain = new CoverGrainTexture(gl);
+  const houseSurfaces = new HouseSurfaceTexture(gl);
   let grainFilled = false;
   /** The grouping of a new scene into blocks, while it runs. */
   let grouping: BlockGrouping | undefined;
@@ -412,6 +414,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       const more = cache.work(deadline, tick, paint, seat!, () => {
         if (frame?.camera.tilted || options.topView?.()) options.invalidate();
       });
+      if (appearance?.roof === 'crafted' && houseSurfaces.ready < houseSurfaceCount()) {
+        const before = houseSurfaces.ready;
+        const caughtUp = houseSurfaces.step();
+        if (houseSurfaces.ready > before) options.invalidate();
+        return slice(started, more || !caughtUp);
+      }
       return slice(started, more);
     },
     draw(frame: LiveFrame) {
@@ -434,7 +442,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           rise = camera.rise,
           focal = flat ? frame.view.scale : camera.focal / frame.dpr,
           roof = appearance?.roof,
-          boxed = roof === 'minimal' || (options.boxed?.() ? (roof === 'flat' || roof === 'v1' ? 'overview' : true) : false),
+          boxed = roof === 'minimal' || (options.boxed?.() ? (roof === 'flat' || roof === 'v1' || roof === 'crafted' ? 'overview' : true) : false),
           depthSetting = getViewDepth();
         for (let s = 0; s < cache.slots.length && visibleCount < visibleZ.length; s++) {
           const slot = cache.slots[s],
@@ -482,6 +490,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             gl.uniform4f(u.uCave, 0, 1, 1e9, 2e9);
           }
           gl.uniform1i(u.uNight, night);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D_ARRAY, houseSurfaces.texture ?? null);
+          gl.uniform1i(u.uHouseSurface, 1);
+          gl.uniform1f(u.uHouseSurfaceReady, houseSurfaces.ready);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, grain.texture ?? null);
           gl.uniform1i(u.uCoverGrain, 0);
@@ -500,6 +512,9 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             stats.triangles += drawCount[i] / 3;
           }
           gl.bindVertexArray(null);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+          gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
           volumeDepthEnd(gl);
         }
@@ -523,6 +538,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       clearSelection();
       warmed = false;
       grain.lost();
+      houseSurfaces.lost();
       grainFilled = false;
     },
     stats: () => stats,
@@ -537,6 +553,7 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
       grouping = grouped = undefined;
       paint = seat = look = undefined;
       grain.dispose();
+      houseSurfaces.dispose();
       grainFilled = false;
     },
   };

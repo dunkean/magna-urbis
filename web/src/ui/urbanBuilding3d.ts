@@ -1,3 +1,4 @@
+import { HOUSE_SURFACE_GLSL, HouseSurfaceTexture } from '../render/houseSurfaceTexture';
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
 import { isBuildingProjection, isYardMesh, yardLod, buildingRayDistance, eachBuildingTriangle, type BuildingVector, type Building3dVisual, type Building3dScene } from '../render/urbanBuildingGeometry';
 import { loadMaterialImages, uploadMaterialArrays, MATERIALS, type MaterialImages } from '../render/buildingMaterials';
@@ -67,26 +68,29 @@ uniform float exaggeration;
 uniform vec2 sectorOrigin;
 uniform float uRoofInkDpr;
 layout(location=4) in float groundIn;
-out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass;
+out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float houseLayer;
 out vec3 roofEdge;
 void main(){float k=position.y>groundIn+.01?1.:exaggeration;n=normalize(vec3(normal.x,normal.y/k,normal.z));base=uRoofInkDpr>0.?abs(albedo):albedo;facadePosition=vec3(position.x+sectorOrigin.x,groundIn<1e10?position.y-groundIn:-10000.,position.z+sectorOrigin.y);
   roofEdge=uRoofInkDpr>0.?vec3(greaterThanEqual(floatBitsToInt(albedo),ivec3(0))):vec3(1.);
   // The normal's length carries the material class (1 + class / 32); sector-local metres keep the grain's hashes exact.
-  materialClass=floor((length(normal)-1.)*32.+.5);grainPosition=vec3(position.x,groundIn<1e10?position.y-groundIn:position.y,position.z);
+  float code=floor((length(normal)-1.)*32.+.5);
+  houseLayer=floor(code/1024.); materialClass=code-houseLayer*1024.;grainPosition=vec3(position.x,groundIn<1e10?position.y-groundIn:position.y,position.z);
   gl_Position=matrix*vec4(vec3(position.x,position.y+groundIn*(exaggeration-1.),position.z)+offset,1.);}`;
 const fragmentColor = `#version 300 es
 precision highp float;
-in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass;
+in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float houseLayer;
 in vec3 roofEdge;
 uniform float uRoofInkDpr;
 out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
+${HOUSE_SURFACE_GLSL}
 ${ROOF_INK_GLSL}
 void main(){vec3 N=normalize(n);vec3 gx=dFdx(grainPosition),gy=dFdy(grainPosition);float fp=length(abs(gx)+abs(gy));
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
-  float light=buildingLight(N);vec3 rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+  vec3 albedo=houseLayer>.5?houseSurface(base,houseLayer,N,grainPosition):materialGrain(base,cls,N,grainPosition,fp);
+  float light=buildingLight(N);vec3 rgb=buildingNight(albedo*light*baseOcclusion(n,facadePosition),facadePosition,lit);
   if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
   color=vec4(buildingCave(rgb,facadePosition,lit,N),1.);}`;
 
@@ -219,6 +223,8 @@ export class UrbanBuildingPass {
   protected night = false;
   protected lightsOn = false;
   protected sectors: Sector[] = [];
+  private houseAtlas?: HouseSurfaceTexture;
+  protected crafted = false;
   private colorProgram?: WebGLProgram;
   /** Draw calls and sectors of the last draw (render stats). */
   lastDraw = { drawCalls: 0, sectors: 0, triangles: 0 };
@@ -249,6 +255,7 @@ export class UrbanBuildingPass {
     this.source = scene;
     this.appearance = { ...appearance };
     this.appearanceKey = key;
+    this.crafted = appearance.roof === 'crafted';
     this.snowAltitudes = townRoofAltitudes(scene?.buildings ?? []);
     const sectors = new Map<string, Sector>();
     for (const building of scene?.buildings ?? []) {
@@ -370,7 +377,7 @@ export class UrbanBuildingPass {
     if (!this.sectors.length) return false;
     ++this.tick;
     // Textured materials: the atlases load once (the flat colours show until they arrive).
-    const wantTex = !!this.appearance.textured;
+    const wantTex = !!this.appearance.textured && !this.crafted;
     if (wantTex && !this.texturesRequested) {
       this.texturesRequested = true;
       loadMaterialImages().then(
@@ -426,6 +433,7 @@ export class UrbanBuildingPass {
       stats.sectors++;
       shown.push(sector);
     }
+    if (this.crafted && shown.length && !this.prepareHouseAtlas()) pending = true;
     this.render(frame, shown, wantTex);
     this.lastDraw = stats;
     let bytes = this.sectors.reduce((total, sector) => total + (sector.cached?.batches.reduce((n, batch) => n + batch.count * batch.stride * 4, 0) ?? 0), 0);
@@ -443,6 +451,9 @@ export class UrbanBuildingPass {
   }
   private drawBuilding(building: Building3dVisual): Building3dVisual {
     return this.appearance.roof === 'minimal' ? buildingBox(building, true) : building;
+  }
+  protected prepareHouseAtlas(): boolean {
+    return (this.houseAtlas ??= new HouseSurfaceTexture(this.gl!)).step();
   }
   protected render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
     const gl = this.gl!;
@@ -462,6 +473,13 @@ export class UrbanBuildingPass {
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.albedo ?? null);
       gl.activeTexture(gl.TEXTURE0 + 11);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures?.normal ?? null);
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    if (!texProgram) {
+      gl.uniform1f(gl.getUniformLocation(p, 'uHouseSurfaceReady'), this.crafted ? (this.houseAtlas?.ready ?? 0) : 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'uHouseSurface'), 10);
+      gl.activeTexture(gl.TEXTURE0 + 10);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.crafted ? this.houseAtlas?.texture ?? null : null);
       gl.activeTexture(gl.TEXTURE0);
     }
     gl.uniformMatrix4fv(gl.getUniformLocation(p, 'matrix'), false, frame.matrix);
@@ -535,6 +553,7 @@ export class UrbanBuildingPass {
   }
   protected disposeBackend(): void {
     const gl = this.gl!;
+    this.houseAtlas?.dispose();
     if (this.colorProgram) gl.deleteProgram(this.colorProgram);
     if (this.texProgram) gl.deleteProgram(this.texProgram);
     if (this.textures) {

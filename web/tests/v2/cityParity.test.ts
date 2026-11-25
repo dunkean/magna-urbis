@@ -654,6 +654,7 @@ describe('V2 and City Bench stay in sync', () => {
   });
 
   it('shares the roof choice across map and 3D hosts and invalidates the city appearance', () => {
+    expect(ROOF_MODES).toContain('crafted');
     for (const target of ['view2d', 'view3d', 'export'] as const) {
       const keys = new Set<string>();
       for (const roof of ROOF_MODES) {

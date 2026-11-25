@@ -5,6 +5,8 @@ import { eachBuildingTriangle } from '../src/render/urbanBuildingGeometry';
 import { buildCityBuildings } from '../src/render/cityCanvas';
 import type { PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 import type { Surface } from '../../rust/bridge/housesContract';
+import { buildingBatches, BUILDING_STRIDE } from '../src/render/world/buildingsMesh';
+import { houseSurfaceLayer } from '../src/render/houseSurfaceTexture';
 
 const rect = (w = 12, d = 8): Surface => [
   {
@@ -74,6 +76,22 @@ describe('culture house exteriors', () => {
     if (culture === 'tibetan-monastery') expect(b.volumes[0].envelope).toBe('open');
   });
 
+  it('keeps the picked cap, gill and annulus colours on the drawn mushroom skin', () => {
+    const b = silhouetteBuilding(house('myconid-colony', circle(), { form: 'mushroom' }));
+    const colors = new Set(b.volumes[0].roof_mesh.faces.flatMap(f => f.material.match(/@[a-f0-9]{6}@([a-f0-9]{6})$/)?.slice(1) ?? []));
+    expect(colors.size).toBe(3);
+    const meshes = buildingBatches([b], [0, 0], { appearance: { style: 'cartographic', diagnostic: 'none', roof: 'crafted' }, materials: [], snowAltitudes: new Map() }, false);
+    const textured = new Set<string>();
+    for (const { data } of meshes) {
+      for (let i = 0; i < data.length; i += BUILDING_STRIDE) {
+        if (Math.round((Math.hypot(data[i + 3], data[i + 4], data[i + 5]) - 1) * 32) < 1024) continue;
+        const color = Array.from(data.slice(i + 6, i + 9), v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+        if (colors.has(color)) textured.add(color);
+      }
+    }
+    expect(textured).toEqual(colors);
+  });
+
   it('keeps a barrel entirely inside its plan and closes both ends', () => {
     const footprint = rect(40, 6.5),
       massing: MassingPiece[] = [{ floors: 1, eave_m: 1.5, rise_m: 2.6, roof: 'barrel', ridges: [[0.05, 3.25, 39.95, 3.25]], cover: 'bark', wall: 'wood' }];
@@ -118,5 +136,16 @@ describe('culture house exteriors', () => {
     expect(doors.length).toBeGreaterThan(0);
     expect(doors[0].every(p => p.y < 0 || p.y > 20 || p.x < 0 || p.x > 30)).toBe(true);
     expect(Math.max(...doors[0].map(p => p.z))).toBeCloseTo(5.25);
+    const drawings = new Map<number, Set<number>>();
+    for (const { data } of buildingBatches([b], [0, 0], { appearance: { style: 'cartographic', diagnostic: 'none', roof: 'crafted' }, materials: [], snowAltitudes: new Map() }, false)) {
+      for (let i = 0; i < data.length; i += BUILDING_STRIDE) {
+        const code = Math.round((Math.hypot(data[i + 3], data[i + 4], data[i + 5]) - 1) * 32);
+        const layer = Math.floor(code / 1024);
+        if (!drawings.has(layer)) drawings.set(layer, new Set());
+        drawings.get(layer)!.add(code % 1024);
+      }
+    }
+    expect(drawings.get(houseSurfaceLayer('wall', 'giant-hold', 'door'))).toContain(0);
+    expect(drawings.get(houseSurfaceLayer('wall', 'giant-hold', 'window'))).toContain(32);
   });
 });

@@ -15,6 +15,7 @@
 import { MOONLIGHT_GLSL } from '../materialLook';
 import { ROOF_PLANE_LIGHT_GLSL } from '../roofPlaneLight';
 import { COVER_GRAIN_GLSL } from '../buildingMaterials';
+import { HOUSE_SURFACE_GLSL } from '../houseSurfaceTexture';
 
 // Walls darken towards their foot (cheap ambient occlusion over the first 2.4 m); roofs and ground-less
 // works (city walls, bridges: facadePosition.y = -10000) are left as they are.
@@ -163,6 +164,7 @@ uniform vec3 uYard;
 // Eye relative to the target.
 uniform vec3 uEye;
 out vec3 n; out vec3 base; out vec3 facadePosition; out vec3 grainPosition; flat out float materialClass; flat out float townGain; out float vDistance;
+flat out float houseLayer;
 out vec3 roofEdge;
 void main(){
   n=normalize(normal);base=uRoofInkDpr>0.?abs(albedo):albedo;
@@ -170,7 +172,9 @@ void main(){
   roofEdge=uRoofInkDpr>0.?vec3(greaterThanEqual(floatBitsToInt(albedo),ivec3(0))):vec3(1.);
   // The normal's length carries 1 + code / 32 (buildingsMesh.ts faceCode): the material class, plus 64 x the grain gain
   // in sixteenths of a face the town look painted (0: not painted). Block-local metres keep the grain's hashes exact.
-  float code=floor((length(normal)-1.)*32.+.5),painted=floor(code/64.);
+  float code=floor((length(normal)-1.)*32.+.5);
+  houseLayer=floor(code/1024.);code-=houseLayer*1024.;
+  float painted=floor(code/64.);
   materialClass=code-64.*painted;townGain=painted/15.;
   vec3 place=position;
   if(materialClass>32.5){
@@ -194,6 +198,7 @@ void main(){
 export const WORLD_BUILDING_FS = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
+flat in float houseLayer;
 in vec3 roofEdge; uniform float uRoofInkDpr;
 // Haze distance (m) and share; haze colour.
 uniform vec2 uAir;
@@ -202,6 +207,7 @@ out vec4 color;
 ${BUILDING_NIGHT_GLSL}
 ${BUILDING_GRAIN_GLSL}
 ${COVER_GRAIN_GLSL}
+${HOUSE_SURFACE_GLSL}
 ${ROOF_INK_GLSL}
 void main(){
   vec3 N=normalize(n);
@@ -210,18 +216,18 @@ void main(){
   // Class 32 marks a lit window (no grain of its own).
   bool lit=materialClass>31.5;float cls=lit?0.:materialClass;
   vec3 rgb;
-  if(townGain>0.){
-    // A roof face painted by the top view's town look: its colour holds the light of its slope and the ambience
-    // (volumeRoofPaint); the grain marks of its cover family are the top view's, the snow class keeps its own.
-    rgb=cls>.5&&cls<18.5?coverGrainMarks(base,cls,N,grainPosition,townGain):materialGrain(base,cls,N,grainPosition,fp);
-  }else if(uCave.x>.5){
+  if(houseLayer>.5)rgb=houseSurface(base,houseLayer,N,grainPosition);
+  else if(townGain>0.&&cls>.5&&cls<18.5)rgb=coverGrainMarks(base,cls,N,grainPosition,townGain);
+  else rgb=materialGrain(base,cls,N,grainPosition,fp);
+  // The town look already includes slope light and ambience on faces it paints.
+  if(townGain<=0.&&uCave.x>.5){
     // Underdark: no sky. The town's lanterns light the walls (warm, dimmed by the darkness), roofs get their side
     // light only, and the lit openings glow while they are resolved.
-    rgb=materialGrain(base,cls,N,grainPosition,fp)*baseOcclusion(n,facadePosition)*vec3(1.,.84,.66)*uCave.y*mix(1.,.5,smoothstep(.45,.8,N.y));
+    rgb*=baseOcclusion(n,facadePosition)*vec3(1.,.84,.66)*uCave.y*mix(1.,.5,smoothstep(.45,.8,N.y));
     if(lit&&uCave.x<1.5)rgb=mix(rgb,vec3(1.,.64,.28),.9*(1.-smoothstep(.45,1.2,length(fwidth(facadePosition)))));
-  }else{
+  }else if(townGain<=0.){
     float light=buildingLight(N);
-    rgb=buildingNight(materialGrain(base,cls,N,grainPosition,fp)*light*baseOcclusion(n,facadePosition),facadePosition,lit);
+    rgb=buildingNight(rgb*light*baseOcclusion(n,facadePosition),facadePosition,lit);
   }
   if(uRoofInkDpr>0.) rgb*=1.-roofInk(roofEdge,gx,gy,uRoofInkDpr);
   // The far town dissolves into the cave's darkness as the ground does (uHaze is that darkness then), else into the haze.

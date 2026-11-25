@@ -56,6 +56,7 @@ const TEXTURES: Record<string, { binding: number; sampler: SamplerKind }> = {
   uOccupation: { binding: 13, sampler: 'linear' },
   uForestBeach: { binding: 14, sampler: 'linear' },
   uForestBrushAtlas: { binding: 15, sampler: 'linear' },
+  uHouseSurface: { binding: 25, sampler: 'repeat' },
   albedoTex: { binding: 16, sampler: 'repeat' },
   normalTex: { binding: 17, sampler: 'repeat' },
   // Only in the map's auxiliary-texture branch (#ifdef AUX_TEXTURE), never compiled here.

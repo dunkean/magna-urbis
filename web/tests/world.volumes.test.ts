@@ -158,7 +158,7 @@ describe('world buildings', () => {
     });
   });
 
-  it('writes four distinct roof treatments in the same vertex format', () => {
+  it('writes five distinct roof treatments in the same vertex format', () => {
     const heights = relief(4000),
       scene = town(1, heights),
       block = grouped(scene, heights)[0],
@@ -167,6 +167,7 @@ describe('world buildings', () => {
     const data = (roof: RoofMode) => blockPart(block, blockLevel(block, 30, roof === 'minimal'), worldPaint(scene, { ...appearance, roof }, new TownAltitudes()), seat, 0, 1);
     const v1 = data('v1'),
       v2 = data('v2'),
+      crafted = data('crafted'),
       flat = data('flat'),
       minimal = data('minimal');
     const color = (i: number) => i % BUILDING_STRIDE >= 6 && i % BUILDING_STRIDE <= 8;
@@ -186,6 +187,23 @@ describe('world buildings', () => {
     };
     const slopes = sloped(v2);
     expect(slopes.length).toBeGreaterThan(0);
+    // A drawing rides above the existing material code in the normal. Both walls and roof slopes
+    // need one, and the special finish must preserve their geometry and the underlying palette.
+    const drawings = { wall: new Set<number>(), roof: new Set<number>() };
+    expect(crafted.length).toBe(v2.length);
+    for (let i = 0; i < crafted.length; i += BUILDING_STRIDE) {
+      const length = Math.hypot(crafted[i + 3], crafted[i + 4], crafted[i + 5]);
+      const code = Math.round((length - 1) * 32);
+      const layer = Math.floor(code / 1024);
+      const up = crafted[i + 4] / length;
+      if (layer && up > .1 && up < .99) drawings.roof.add(layer);
+      if (layer && Math.abs(up) < .01) drawings.wall.add(layer);
+      const original = Math.round((Math.hypot(v2[i + 3], v2[i + 4], v2[i + 5]) - 1) * 32);
+      expect(code % 1024).toBe(original);
+      expect(crafted.slice(i + 6, i + 9)).toEqual(v2.slice(i + 6, i + 9));
+    }
+    expect(drawings.roof.size).toBeGreaterThan(0);
+    expect(drawings.wall.size).toBeGreaterThan(0);
     expect(sloped(flat)).toEqual(slopes);
     for (const i of slopes) {
       expect(flat.slice(i, i + 3)).toEqual(v2.slice(i, i + 3));
@@ -198,6 +216,7 @@ describe('world buildings', () => {
     const textured = (roof: RoofMode) => buildingBatches(scene.buildings, block.origin, { appearance: { ...appearance, roof, textured: true }, roofInk: roof === 'v1', materials: [], snowAltitudes: new TownAltitudes() }, false);
     const pbr = textured('v1'),
       plain = textured('v2');
+    expect(textured('crafted').every(batch => batch.vcolor)).toBe(true);
     expect(pbr.some(batch => batch.data.some((v, i) => i % BUILDING_STRIDE === 8 && !Number.isInteger(v)))).toBe(true);
     expect(pbr.map(batch => batch.data.map((v, i) => (i % BUILDING_STRIDE === 8 ? Math.floor(v) : v)))).toEqual(plain.map(batch => batch.data));
   });

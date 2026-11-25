@@ -46,13 +46,13 @@ export class Gpu3d {
     const texture = (name: string): GPUBindGroupLayoutEntry => ({
       binding: T[name],
       visibility: F,
-      texture: name === 'macroField' ? { sampleType: 'unfilterable-float' } : name === 'uForestBrushAtlas' || name === 'albedoTex' || name === 'normalTex' ? { sampleType: 'float', viewDimension: '2d-array' } : { sampleType: 'float' },
+      texture: name === 'macroField' ? { sampleType: 'unfilterable-float' } : name === 'uForestBrushAtlas' || name === 'uHouseSurface' || name === 'albedoTex' || name === 'normalTex' ? { sampleType: 'float', viewDimension: '2d-array' } : { sampleType: 'float' },
     });
     const sampler = (binding: number, type: GPUSamplerBindingType): GPUBindGroupLayoutEntry => ({ binding, visibility: F, sampler: { type } });
     this.layouts = {
       terrain: device.createBindGroupLayout({ label: 'terrain 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }, sampler(1, 'non-filtering'), sampler(2, 'filtering'), sampler(3, 'filtering'), ...TERRAIN_TEXTURES.map(texture)] }),
       sky: device.createBindGroupLayout({ label: 'sky', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }] }),
-      building: device.createBindGroupLayout({ label: 'buildings 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage', hasDynamicOffset: true } }, sampler(4, 'filtering'), texture('albedoTex'), texture('normalTex')] }),
+      building: device.createBindGroupLayout({ label: 'buildings 3d', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage', hasDynamicOffset: true } }, sampler(4, 'filtering'), texture('albedoTex'), texture('normalTex'), texture('uHouseSurface')] }),
       tree: device.createBindGroupLayout({ label: 'near trees', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }] }),
       billboard: device.createBindGroupLayout({ label: 'relief brushes', entries: [{ binding: 0, visibility: both, buffer: { type: 'read-only-storage' } }, sampler(2, 'filtering'), texture('billboardAtlas')] }),
     };

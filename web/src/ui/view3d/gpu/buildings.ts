@@ -1,3 +1,4 @@
+import { HOUSE_TILE_SIZE, HOUSE_TILE_LAYERS, houseSurfaceCount, houseSurfaceMips } from '../../../render/houseSurfaceTexture';
 /**
  * The building pass of the WebGPU terrain view: UrbanBuildingPass with its upload and draw hooks recorded into the
  * terrain frame's pass and parameter pool.
@@ -15,6 +16,8 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
   target?: { pass: GPURenderPassEncoder; params: Pool; samples: number };
   private readonly params = new Params(WGSL.WGSL3D_PARAMS.building);
   private atlases?: { albedo: GPUTexture; normal: GPUTexture };
+  private gpuHouseAtlas?: GPUTexture;
+  private houseLayers = 0;
   private placeholder: GPUTexture;
   constructor(
     private gpu: Gpu3d,
@@ -47,6 +50,23 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
     this.atlases?.normal.destroy();
     this.atlases = { albedo: make(images.albedo, 'building albedo'), normal: make(images.normal, 'building normals') };
   }
+  protected override prepareHouseAtlas(): boolean {
+    if (this.houseLayers >= houseSurfaceCount()) return true;
+    const device = this.gpu.device;
+    this.gpuHouseAtlas ??= device.createTexture({
+      label: 'detailed architecture',
+      size: [HOUSE_TILE_SIZE, HOUSE_TILE_SIZE, HOUSE_TILE_LAYERS],
+      format: 'rgba8unorm',
+      mipLevelCount: mipCount(HOUSE_TILE_SIZE, HOUSE_TILE_SIZE),
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    const slice = this.houseLayers;
+    houseSurfaceMips(slice + 1).forEach((source, mipLevel) => {
+      device.queue.copyExternalImageToTexture({ source }, { texture: this.gpuHouseAtlas!, mipLevel, origin: [0, 0, slice] }, [source.width, source.height]);
+    });
+    this.houseLayers++;
+    return this.houseLayers >= houseSurfaceCount();
+  }
   protected override render(frame: BuildingFrame, shown: readonly Sector[], textured: boolean): void {
     const target = this.target;
     if (!target || !shown.length) return;
@@ -58,10 +78,12 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
       device = this.gpu.device;
     const albedo = (this.atlases?.albedo ?? this.placeholder).createView({ dimension: '2d-array' }),
       normal = (this.atlases?.normal ?? this.placeholder).createView({ dimension: '2d-array' });
+    const houseSurface = (this.crafted && this.gpuHouseAtlas ? this.gpuHouseAtlas : this.placeholder).createView({ dimension: '2d-array' });
     pass.setPipeline(pipeline);
     p.setArray('matrix', frame.matrix);
     p.set('exaggeration', frame.exaggeration);
     p.set('uRoofInkDpr', this.roofInkDpr(frame));
+    p.set('uHouseSurfaceReady', this.crafted ? this.houseLayers : 0);
     p.set('useTex', this.atlases ? 2 : 0);
     p.set('softFrom', SOFT_LAYER_FROM);
     p.set('uNight', frame.cave || !this.night ? 0 : this.lightsOn ? 1 : 2);
@@ -89,6 +111,7 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
               { binding: 4, resource: this.gpu.samplers.repeat },
               { binding: T.albedoTex, resource: albedo },
               { binding: T.normalTex, resource: normal },
+              { binding: T.uHouseSurface, resource: houseSurface },
             ],
           });
         }
@@ -103,5 +126,6 @@ export class UrbanBuildingPassGpu extends UrbanBuildingPass {
     this.atlases?.normal.destroy();
     this.atlases = undefined;
     this.placeholder.destroy();
+    this.gpuHouseAtlas?.destroy();
   }
 }

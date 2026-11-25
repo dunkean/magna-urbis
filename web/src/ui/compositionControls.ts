@@ -103,7 +103,7 @@ const semanticEntries = [
   ['categorical', 'Category colours', 'Couleurs par catégorie'],
   ['outlines', 'Outline only', 'Contours seuls'],
 ] as const;
-const ROOF_LABELS: Record<RoofMode, readonly [string, string]> = { v1: ['V1 · Edges', 'V1 · Arêtes'], v2: ['V2 · 3D', 'V2 · 3D'], flat: ['Flat', 'Sans texture'], minimal: ['Minimal', 'Minimal'] };
+const ROOF_LABELS: Record<RoofMode, readonly [string, string]> = { v1: ['V1 · Edges', 'V1 · Arêtes'], v2: ['V2 · 3D', 'V2 · 3D'], crafted: ['Detailed architecture', 'Architecture détaillée'], flat: ['Flat', 'Sans texture'], minimal: ['Minimal', 'Minimal'] };
 const styleFrench: Record<string, string> = {
   'parchment-render': 'Satellite peint',
   parchment: 'Parchemin',
@@ -235,8 +235,8 @@ export const compositionFields: Record<string, ParameterField> = Object.fromEntr
       id: 'roof-display',
       defaultValue: DEFAULT_ROOF_MODE,
       help: copy(
-        'V1 traces roof edges. V2 uses 3D shading. Flat keeps the slopes and shading with plain surfaces. Minimal uses flat-topped blocks.',
-        'V1 trace les arêtes. V2 utilise l’ombrage 3D. Sans texture conserve les pentes et l’ombrage sur des surfaces unies. Minimal utilise des volumes à toit plat.',
+        'V1 traces roof edges. V2 uses 3D shading. Detailed architecture adds culture-specific roof and wall finishes, best seen up close in 3D. Flat keeps the slopes and shading with plain surfaces. Minimal uses flat-topped blocks.',
+        'V1 trace les arêtes. V2 utilise l’ombrage 3D. Architecture détaillée habille les toits et les façades selon la culture. Les détails se voient de près en 3D. Sans texture conserve les pentes et l’ombrage sur des surfaces unies. Minimal utilise des volumes à toit plat.',
       ),
       helpDisplay: 'tooltip' as const,
     },

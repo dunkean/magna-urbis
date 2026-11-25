@@ -1,3 +1,7 @@
+import { CULTURES } from '../src/gen/options';
+import { COVERS, WALLS } from '../src/render/city3d/materials';
+import { COVER_GRAINS } from '../src/render/buildingMaterials';
+import { houseSurfaceLayer } from '../src/render/houseSurfaceTexture';
 import { describe, expect, it } from 'vitest';
 import { MATERIALS, coverLayer, wallLayer, streetLayer, placeLayer } from '../src/render/buildingMaterials';
 import { CITY3D_MATERIALS } from '../src/render/city3dMeshes';
@@ -14,6 +18,16 @@ describe('building materials manifest', () => {
     expect(placeLayer()).toBeGreaterThanOrEqual(0);
     for (const group of [MATERIALS.cover, MATERIALS.wall, MATERIALS.road]) for (const i of Object.values(group)) expect(MATERIALS.layers[i]).toBeTruthy();
     expect(MATERIALS.layers.every(l => l.extent_m > 0)).toBe(true);
+  });
+  it('fits the finishes of every culture into the shared house atlas', () => {
+    for (const culture of CULTURES) {
+      for (const material of [...Object.keys(COVERS), ...COVER_GRAINS, 'canopy']) {
+        expect(houseSurfaceLayer('roof', culture, material), culture + '/' + material).toBeGreaterThan(0);
+      }
+      for (const material of [...Object.keys(WALLS), 'door', 'window', 'trunk', 'snow']) {
+        expect(houseSurfaceLayer('wall', culture, material), culture + '/' + material).toBeGreaterThan(0);
+      }
+    }
   });
   it('registers a layered 3D display material for every cover and wall', () => {
     const ids = new Set(CITY3D_MATERIALS.map(m => m.id));

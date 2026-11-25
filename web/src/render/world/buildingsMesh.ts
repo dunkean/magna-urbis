@@ -8,10 +8,10 @@
  * They differ only in where a vertex stands, which `BuildingSeat` decides; colours, classes and geometry are one code.
  *
  * Vertex layout (BUILDING_STRIDE floats): x and y relative to the block origin in the GL frame of the 3D view
- * (x, height, y south), the normal in that frame scaled by 1 + class / 32 (the material class rides on its length),
+ * (x, height, y south), the normal in that frame scaled by 1 + code / 32 (material class, town grain and drawing layer),
  * then either the colour (flat program) or uv + material layer (textured program), then the seat's second value.
  */
-import type { HouseMaterial } from '../../../../rust/bridge/housesContract';
+import type { HouseMaterial, MaterialPattern } from '../../../../rust/bridge/housesContract';
 import { roofEdgeMasks } from '../roofEdges';
 import { roofGrain, coverLayer, wallLayer, layerExtent, MATERIALS, type CoverGrain } from '../buildingMaterials';
 import { buildingTint } from '../buildingPalette';
@@ -22,6 +22,7 @@ import { building3dHeight, eachBuildingTriangle, isBuildingProjection, type Buil
 import type { BuildingFeatureLod } from '../urbanBuildingFeatureLod';
 import { massingLookOf } from '../city3d/materials';
 import { volumeRoofPaint, volumeWallColor, type VolumeTownLook } from '../city/buildingLook';
+import { houseSurfaceLayer, HOUSE_TILE_LAYERS } from '../houseSurfaceTexture';
 
 export type Vec3 = [number, number, number];
 /** min x, min y, min z, max x, max y, max z (map metres, absolute heights). */
@@ -144,6 +145,8 @@ const SNOW_CLASS = 28;
 /** Class of a window lit at night (city3dMeshes.ts `LIT_WINDOW`), in every appearance and in both programs: past the
  * grain classes, it only tells the shaders which faces glow (buildingNight). */
 const LIT_CLASS = 32;
+const WINDOW_COLOR = rgb('#647779');
+const DOOR_COLOR = rgb('#826549');
 /** Classes of a lot boundary strip, whose normal holds the side of the line of each vertex: a side face, the level top. */
 const STRIP_SIDE_CLASS = 33,
   STRIP_TOP_CLASS = 34;
@@ -177,6 +180,31 @@ function materialClass(id: string | undefined, normal: readonly number[], cultur
   const grain = roofGrain(m[2], Math.abs(normal[2]) > 0.995 * (Math.hypot(normal[0], normal[1], normal[2]) || 1), culture);
   return grain ? ROOF_CLASS[grain] : 0;
 }
+
+const roofPatterns: Record<MaterialPattern, string> = { tile: 'tile', thatch: 'thatch', wood: 'shingle', stone: 'slab', earth: 'earth', fabric: 'felt', snow: 'snow', plain: 'lime' };
+const wallPatterns: Record<MaterialPattern, string> = { tile: 'brick', thatch: 'wattle', wood: 'wood', stone: 'stone', earth: 'earth', fabric: 'hide', snow: 'snow', plain: 'plaster' };
+/** Native plans use catalogue IDs. Massing plans also distinguish covers with the same grain, such as zinc and lead. */
+function craftedLayer(face: BuildingTriangle, id: string, culture: string, patterns: Map<string, MaterialPattern>): number {
+  // An ornament can tint an already-painted material again (mushroom caps, gills and skirts).
+  // The face colour keeps that last tint; the drawing follows the underlying construction.
+  const tint = id.indexOf('@');
+  if (tint >= 0 && id.startsWith('city3d:')) id = id.slice(0, tint);
+  if (id === 'city3d:tree:trunk') return houseSurfaceLayer('wall', culture, 'trunk');
+  if (id === 'city3d:tree:crown') return houseSurfaceLayer('roof', culture, 'canopy');
+  const m = displayMaterial(id);
+  if (m?.[1] === 'wall') return m[2] in WALL_CLASS ? houseSurfaceLayer('wall', culture, m[2]) : 0;
+  if (m?.[1] === 'cover') {
+    const cover = m[2];
+    const flat = Math.abs(face.normal[2]) > .995 * Math.hypot(...face.normal);
+    const material = /^(?:zinc|metal|lead|bitumen|glass|fungal|snow|ruin)$/.test(cover) ? cover : roofGrain(cover, flat, culture);
+    return material ? houseSurfaceLayer('roof', culture, material) : 0;
+  }
+  if (id && id !== face.materials.coating && id !== face.materials.cladding) return 0;
+  const pattern = patterns.get(id);
+  const roof = face.surface === 'roof';
+  if (id && !pattern) return 0;
+  return houseSurfaceLayer(roof ? 'roof' : 'wall', culture, (roof ? roofPatterns : wallPatterns)[pattern ?? 'plain']);
+}
 /** Texture coordinates (in tiles) of a point of a face, in world metres: vertical faces along the face and down (image upright),
  * pitched faces u along the ridge and v down the slope (stretched by the slope), flat faces on the plan. */
 function faceUv(p: readonly number[], normal: readonly number[], layer: number): [number, number] {
@@ -202,18 +230,23 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
   // per triangle.
   const appearance = paint.appearance,
     groups = new Map<string, { batch: BuildingBatchData; length: number; seen?: Set<Vec3> }>(),
-    textured = !!appearance.textured;
+    crafted = appearance.roof === 'crafted',
+    textured = !!appearance.textured && !crafted;
   const catalogue = { materials: paint.materials as HouseMaterial[] };
+  const patterns = crafted ? new Map(paint.materials.map(m => [m.id, m.pattern])) : undefined;
   for (const building of buildings) {
     const colors = new Map<string, Map<string, Vec3>>(),
       culture = building.culture?.culture ?? '';
     let h = 2166136261;
     for (let i = 0; i < building.id.length; i++) h = Math.imul(h ^ building.id.charCodeAt(i), 16777619);
+    // Four lots can share one texture while retaining different course offsets and patinas.
+    const finishOffset = (h >>> 30) * HOUSE_TILE_LAYERS;
     const tone = Math.round(((h >>> 0) / 0xffffffff) * 15) / 15;
     const programme = (building as unknown as { programme?: { role?: string; landmark?: boolean } }).programme;
     const role = `${programme?.role ?? ''}${programme?.landmark ? ' monument' : ''}`;
     const ground = buildingGround(building);
     const house = Number.isFinite(ground) && !building.id.startsWith('city3d-');
+    const craftedHouse = house && appearance.diagnostic === 'none' && appearance.style !== 'silhouette' ? patterns : undefined;
     const canInk = paint.roofInk && house && appearance.diagnostic === 'none';
     // The town item of the building, when the faces take the top view's look; the last roof face painted (the
     // triangles of one face come in a row, with the same normal and slots).
@@ -223,6 +256,13 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating),
         tm = materialTint(raw);
       const id = tm ? raw.slice(0, tm.index) : raw;
+      // The massing uses the same aperture ID for ordinary windows and entry doors. Both
+      // triangles of the door reach its threshold, including volumes on a lower terrace.
+      let aperture: 'door' | 'window' | undefined;
+      if (craftedHouse && (id === 'city3d:wall:opening' || id === 'city3d:wall:lit')) {
+        const threshold = (face.ground?.[0] ?? ground) + .3;
+        aperture = id === 'city3d:wall:opening' && face.points.some(p => p[2] <= threshold) ? 'door' : 'window';
+      }
       const massing = item && face.surface !== 'yard' ? massingLookOf(face.materials) : undefined;
       // A face of the volume's cover takes its pan's paint; one of its walls (not an opening) the town's wall colour.
       let townRoof: { color: Vec3; gain: number; family: number } | undefined;
@@ -270,14 +310,18 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
         surfaceColors.set(String(raw), c);
       }
       if (snow) c = snowRoofTint(c, snow, -(face.normal[0] + face.normal[1]) * 0.4);
+      // The original aperture is almost black; leave enough daylight for glazing and joinery to read.
+      if (aperture) c = aperture === 'door' ? DOOR_COLOR : WINDOW_COLOR;
       const recolored = appearance.diagnostic === 'none' && ((!!appearance.colors?.building && face.surface === 'roof') || tm?.[1].length === 6 || (!!culture && !building.id.startsWith('city3d-')));
       // Flat-colour program only: the material class rides on the normal's length (see materialGrain); a snowed face
       // takes the snow class in place of its cover's.
       // A face painted by the town look takes the grain family of its pan (the top view's grain marks, COVER_GRAIN_GLSL).
       const cls = !textured && !solid && face.surface !== 'yard' && appearance.style === 'cartographic' && appearance.diagnostic === 'none' ? (snow >= 0.4 ? SNOW_CLASS : townRoof ? townRoof.family : materialClass(id, face.normal, culture)) : 0;
+      const drawing = aperture ? houseSurfaceLayer('wall', culture, aperture) : craftedHouse && snow < .4 && face.surface !== 'yard' ? craftedLayer(face, id ?? '', culture, craftedHouse) : 0;
+      const finish = drawing && !aperture ? drawing + finishOffset : drawing;
       const lateral = face.lateral,
         code = lateral ? (face.normal[2] > 0.5 ? STRIP_TOP_CLASS : STRIP_SIDE_CLASS) : id === 'city3d:wall:lit' ? LIT_CLASS : cls,
-        unit = (1 + faceCode(code, townRoof?.gain) / 32) / (lateral ? 1 : Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
+        unit = (1 + (faceCode(code, townRoof?.gain) + finish * 1024) / 32) / (lateral ? 1 : Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
       const key = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
       let group = groups.get(key);
       if (!group) {
