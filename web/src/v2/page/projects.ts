@@ -20,6 +20,7 @@ import { nativeCityRecords } from '../nativeProducts';
 import { blockAddress } from '../../../../rust/bridge/urbanBlockEdits';
 import { $ } from './dom';
 import { composeJob, projectJob } from './projectWorkers';
+import { mountOsmImport, osmCredits } from '../osm/osmDialog';
 
 export function createProjectsActions(state: PageState, actions: PageActions) {
   async function loadProject(project: { settings: V2Settings; mods: unknown[]; world?: World }): Promise<void> {
@@ -50,6 +51,7 @@ export function createProjectsActions(state: PageState, actions: PageActions) {
     }
     // The disposed 3D view must also release the 2D viewer (paused) and the bench (suspended), or the next map stays blank.
     else {
+      $('#map-attribution').hidden = true;
       await state.client.clear();
       state.city3d?.dispose();
       state.city3d = undefined;
@@ -78,6 +80,10 @@ registerMessages({
 });
 
 export function mountProjectFiles(state: PageState, actions: PageActions): void {
+  insertHTML($('#import-dialog .file-card'), 'beforebegin', `<div class="file-card"><h3>Import a real place</h3><p class="hint">Import a city or a region with OpenStreetMap data and AWS elevation.</p><button id="osm-open" type="button">Import a real place</button></div>`);
+  insertHTML($('#import-dialog'), 'afterend', '<dialog id="osm-dialog" aria-labelledby="osm-title"></dialog>');
+  insertHTML($('.map-bottom'), 'beforeend', `<div id="map-attribution" hidden>${osmCredits}</div>`);
+  mountOsmImport(state, actions);
   insertHTML(
     $('#project-file'),
     'beforebegin',

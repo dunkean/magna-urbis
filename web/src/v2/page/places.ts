@@ -135,6 +135,7 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
   /** `keepInspector`: a background place arrived; the user's open inspector stays as it is. */
   function updateWorld(keepInspector = false): void {
     if (!state.world) return;
+    $('#map-attribution').hidden = !state.world.stats['osm.attribution'];
     state.labelEditor.sync();
     state.riverEditor.sync();
     state.roadEditor.sync();

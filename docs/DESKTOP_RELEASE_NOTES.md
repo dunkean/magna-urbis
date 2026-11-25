@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Import a real city or region from the Open menu. Search by name or enter coordinates, preview the AWS elevation, and build a map with OpenStreetMap streets, buildings and waterways.
 - Choose Detailed architecture under Houses → Roof for fitted doors and windows, raised roof edges and culture-specific materials that follow curved roofs and wrap around corners.
 - In Detailed architecture, gers have open timber smoke crowns, Iroquoian longhouses have vented bark roofs, and elven and tidal homes have accessible galleries and landings.
 - Town walls are continuous closed rings: only land, harbour and water gates interrupt them, and they stand on dry ground back from shores and banks. Wide rivers give each bank its own wall; narrow channels get a water gate.

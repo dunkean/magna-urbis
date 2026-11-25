@@ -1,0 +1,115 @@
+#osm-dialog {
+  width: 650px;
+}
+
+.osm-search .row {
+  gap: 8px;
+}
+
+.osm-search input {
+  min-width: 0;
+  flex: 1;
+}
+
+#osm-results {
+  width: 100%;
+}
+
+.osm-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 20px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+.osm-fields {
+  display: grid;
+  gap: 9px;
+}
+
+.osm-fields :is(input, select) {
+  width: 100%;
+}
+
+.osm-coordinates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.osm-relief {
+  margin: 3px 0 0;
+}
+
+.osm-preview-frame {
+  display: grid;
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background-color: #1c211b;
+  background-image: linear-gradient(#ffffff0d 1px, transparent 1px), linear-gradient(90deg, #ffffff0d 1px, transparent 1px);
+  background-size: 25% 25%;
+}
+
+.osm-preview-frame canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.osm-preview-frame span {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #1c211be0;
+  font-size: 11px;
+}
+
+.osm-relief figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.osm-feedback {
+  margin: 12px 0;
+}
+
+#osm-error {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.osm-credits {
+  margin-top: 8px;
+}
+
+#map-attribution {
+  align-self: end;
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  background: #25261fe8;
+  color: #e9e5d6;
+}
+
+#map-attribution a {
+  color: inherit;
+}
+
+@media (max-width: 530px) {
+  .osm-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .osm-relief {
+    width: min(100%, 256px);
+  }
+}

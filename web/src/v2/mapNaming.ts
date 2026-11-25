@@ -33,6 +33,14 @@ function namingUrban(source: UrbanLayer | undefined): UrbanLayer | undefined {
 /** Rebuild only names. Retained geometry, heights and random streams are untouched. */
 export function renameMap(source: World, settings: V2Settings, language: Language = 'en'): World {
   const presentation = { mode: settings.naming?.mode ?? ('localized' as const), language: settings.naming?.mapLanguage && settings.naming.mapLanguage !== 'ui' ? settings.naming.mapLanguage : language, script: settings.naming?.script };
+  if (source.stats['osm.attribution'] && source.names?.entries.some(entry => entry.id.startsWith('osm:'))) {
+    const world = { ...source, settlements: source.settlements?.map(place => ({ ...place })), names: { ...source.names, presentation, entries: source.names.entries.map(entry => ({ ...entry })) } };
+    const name = settings.naming?.places?.main ?? settings.region?.placement?.list?.find(place => place.key === 'main')?.name;
+    if (name) setSettlementName(world, 'main', name);
+    if (settings.naming?.title?.trim()) world.names.town = settings.naming.title.trim();
+    applyLabelEdits(world, settings.naming?.labels);
+    return world;
+  }
   const manual = new Map<string, string>();
   const specs = source.options.settlements;
   if (source.options.workflow === 'list' && specs && typeof specs === 'object' && 'list' in specs) {
