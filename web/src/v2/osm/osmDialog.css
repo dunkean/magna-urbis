@@ -105,6 +105,44 @@
   overflow-wrap: anywhere;
 }
 
+.osm-warning {
+  padding: 12px;
+  border: 1px solid #dcb86f99;
+  border-inline-start: 3px solid var(--gold);
+  border-radius: 6px;
+  background: #dcb86f14;
+}
+
+.osm-warning-heading {
+  color: var(--gold);
+}
+
+.osm-warning-heading span {
+  margin-inline-end: 4px;
+}
+
+#osm-warning-message {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.osm-warning-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+
+#osm-warning-details {
+  max-width: 100%;
+}
+
+#osm-warning-details summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .osm-credits {
   margin-top: 8px;
 }

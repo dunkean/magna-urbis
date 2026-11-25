@@ -46,7 +46,12 @@ const messages = {
   'Drawing the imported map…': 'Affichage de la carte importée…',
   'The relief preview could not be loaded.': 'Impossible de charger l’aperçu du relief.',
   'The map could not be imported.': 'Impossible d’importer la carte.',
-  'OpenStreetMap servers are unavailable. You can retry with the same area.': 'Les serveurs OpenStreetMap sont indisponibles. Vous pouvez réessayer avec la même zone.',
+  'OpenStreetMap data unavailable': 'Données OpenStreetMap indisponibles',
+  'The OpenStreetMap servers could not provide data for this area. Retry to fetch the same area again.': 'Les serveurs OpenStreetMap n’ont pas pu fournir les données de cette zone. Tu peux réessayer ici.',
+  'AWS elevation unavailable': 'Relief AWS indisponible',
+  'The elevation download failed. Retry to fetch the relief for this area again.': 'Le téléchargement du relief a échoué. Tu peux réessayer pour la même zone.',
+  Retry: 'Réessayer',
+  'Technical details': 'Détails techniques',
   'Real place imported.': 'Lieu réel importé.',
   'The map was imported. No buildable frontage was found along the imported streets.': 'La carte a été importée. Aucun terrain constructible n’a été trouvé le long des rues importées.',
 };
@@ -56,6 +61,8 @@ const MIN_KM = 0.5;
 const MAX_KM = 20;
 const MAX_SUGGESTED_KM = 6;
 const GRID = 512;
+
+class ReliefUnavailable extends Error {}
 
 function reliefZoom(square: OsmSquare): number {
   const { bounds } = osmProjection(square);
@@ -142,7 +149,10 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
         <div class="osm-progress-heading"><p id="osm-status" role="status" hidden></p><span id="osm-elapsed" class="hint" aria-hidden="true" hidden></span></div>
         <progress id="osm-progress" max="4" aria-label="Map import progress" aria-describedby="osm-status" hidden></progress>
         <p id="osm-bytes" class="hint" hidden></p>
-        <p id="osm-error" class="hint" role="alert" hidden></p>
+        <section id="osm-warning" class="osm-warning" hidden>
+          <div role="alert"><p class="osm-warning-heading"><span aria-hidden="true">⚠</span> <strong id="osm-warning-title"></strong></p><p id="osm-warning-message" hidden></p></div>
+          <div class="osm-warning-actions"><button id="osm-retry" type="button" aria-describedby="osm-warning-title">Retry</button><details id="osm-warning-details"><summary>Technical details</summary><p id="osm-error" class="hint" hidden></p></details></div>
+        </section>
       </div>
       <div class="dialog-actions"><button id="osm-cancel" type="button">Cancel</button><button id="osm-generate" type="submit" class="primary">Import &amp; generate</button></div>
     </form>
@@ -157,6 +167,11 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   const resultRow = $('#osm-results-row');
   const status = $('#osm-status');
   const detail = $('#osm-error');
+  const warning = $('#osm-warning');
+  const warningTitle = $('#osm-warning-title');
+  const warningMessage = $('#osm-warning-message');
+  const warningDetails = $<HTMLDetailsElement>('#osm-warning-details');
+  const retryButton = $<HTMLButtonElement>('#osm-retry');
   const transferred = $('#osm-bytes');
   const sizeHint = $('#osm-size-hint');
   const progress = $<HTMLProgressElement>('#osm-progress');
@@ -179,14 +194,42 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   let active: AbortController | undefined;
   let applying = false;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
+  let retry: (() => void) | undefined;
   let preview: { key: string; data: Awaited<ReturnType<typeof fetchOsmDem>>['dem'] } | undefined;
 
-  function feedback(message = '', error = ''): void {
-    if (status.dataset.i18n !== message) setText(status, message);
-    setUserText(detail, error, '');
-    status.hidden = !message;
-    detail.hidden = !error;
+  function hideWarning(): void {
+    warning.hidden = detail.hidden = true;
+    retry = undefined;
   }
+
+  function feedback(message = ''): void {
+    hideWarning();
+    if (status.dataset.i18n !== message) setText(status, message);
+    status.hidden = !message;
+  }
+
+  function showFailure(fallbackTitle: string, error: unknown, retryTask: () => void): void {
+    feedback();
+    let title = fallbackTitle;
+    let message = '';
+    if (error instanceof OverpassUnavailable) {
+      title = 'OpenStreetMap data unavailable';
+      message = 'The OpenStreetMap servers could not provide data for this area. Retry to fetch the same area again.';
+    } else if (error instanceof ReliefUnavailable) {
+      title = 'AWS elevation unavailable';
+      message = 'The elevation download failed. Retry to fetch the relief for this area again.';
+    }
+    setText(warningTitle, title);
+    setText(warningMessage, message);
+    setUserText(detail, error instanceof Error ? error.message : String(error), '');
+    warningMessage.hidden = !message;
+    warningDetails.open = false;
+    retry = retryTask;
+    warning.hidden = detail.hidden = false;
+  }
+
+  retryButton.onclick = () => retry?.();
+  for (const fields of [form, search]) fields.addEventListener('input', hideWarning);
 
   function showProgress(message: string, completed: number): void {
     if (!progressTimer) {
@@ -216,7 +259,7 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
     try {
       await task(controller.signal);
     } catch (error) {
-      if (!controller.signal.aborted) feedback(error instanceof OverpassUnavailable ? 'OpenStreetMap servers are unavailable. You can retry with the same area.' : failure, error instanceof Error ? error.message : String(error));
+      if (!controller.signal.aborted) showFailure(failure, error, () => void run(failure, task));
     } finally {
       controller.abort();
       if (progressTimer) clearInterval(progressTimer);
@@ -224,6 +267,10 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
       progress.hidden = elapsed.hidden = transferred.hidden = true;
       active = undefined;
       syncBusy(false);
+      if (!warning.hidden) {
+        warning.scrollIntoView({ block: 'nearest' });
+        retryButton.focus({ preventScroll: true });
+      }
     }
   }
 
@@ -247,7 +294,10 @@ export function mountOsmImport(state: PageState, actions: PageActions): void {
   async function getRelief(square: OsmSquare, zoom: number, signal: AbortSignal, onTiles?: (done: number, total: number) => void) {
     const key = JSON.stringify(square);
     if (preview?.key === key) return preview.data;
-    const { dem } = await fetchOsmDem(square, { grid: GRID, zoom }, browserOsmFetchers(signal), onTiles);
+    const { dem } = await fetchOsmDem(square, { grid: GRID, zoom }, browserOsmFetchers(signal), onTiles).catch(error => {
+      signal.throwIfAborted();
+      throw new ReliefUnavailable(error instanceof Error ? error.message : String(error));
+    });
     signal.throwIfAborted();
     preview = { key, data: dem };
     return dem;
