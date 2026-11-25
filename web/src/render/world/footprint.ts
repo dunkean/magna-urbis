@@ -19,3 +19,16 @@ export function drapeTier(focal: number, depth: number, mapSize: number, tilePix
   if (previous >= 0 && previous <= cap && level <= previous + HYSTERESIS && level > previous - 1 - HYSTERESIS) return previous;
   return Math.max(0, Math.min(Math.ceil(level - 1e-9), cap));
 }
+
+/** Finest subdivision needed to carry a tilted view's textures, even on a coarse height grid.
+ * Patch coordinates are unsigned 16-bit indices into each axis of the quadtree. */
+export function drapeLevels(focal: number, eyeHeight: number, mapSize: number, tilePixels: number, finestTier: number): number {
+  return drapeTier(focal, Math.max(.01, eyeHeight), mapSize, tilePixels, 16, finestTier);
+}
+
+/** Equivalent depth for a square's projected pixel area. A ground texel at grazing incidence
+ * covers eyeHeight / depth times the area of a face-on texel. Use that area for distant
+ * tiles so refining the foreground does not also fill the cache with strips near the horizon. */
+export function drapeFootprintDepth(depth: number, eyeHeight: number): number {
+  return depth * Math.sqrt(Math.max(1, depth / eyeHeight));
+}

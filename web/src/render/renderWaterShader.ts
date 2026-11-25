@@ -16,6 +16,7 @@
 import { FRESH_WATER_GLSL } from './waterPalette';
 import { WATER_STYLE_GLSL, WATER_SURFACE_GLSL } from './waterStyle';
 import { WATER_REGIME_GLSL } from './waterRegime';
+import { RIVER_NOISE_GLSL } from './riverSurface';
 
 export const RENDER_WATER_RINGS = 12;
 
@@ -30,6 +31,7 @@ ${WATER_STYLE_GLSL}
 ${WATER_SURFACE_GLSL}
 ${FRESH_WATER_GLSL}
 ${WATER_REGIME_GLSL}
+${RIVER_NOISE_GLSL}
 out vec4 outColor;
 vec4 tap(vec2 f) { return textureLod(uLayer, clamp(f, vec2(.5), uCanvas - .5) / uCanvas, 0.); }
 float cover(vec2 f) { return tap(f).a; }
@@ -53,7 +55,10 @@ void main() {
   // their axis, and it is continuous across lakes. Open water saturates past the band.
   float reach = uRings[uRingCount - 1], depth = reach, wide = 0.;
   vec2 nearest = vec2(0.);
-  if (a > .002) {
+  bool capsule = uRegime == 3;
+  // Open vector water has an analytic cross-section. Only raster water and shore ice
+  // need to search the image for a bank. A tile border never sets a running river's depth.
+  if (a > .002 && (!capsule || own.g < .95*a)) {
     float hits[12], best = 2. * reach;
     nearest = vec2(1, 0);
     for (int i = 0; i < 12; i++) {
@@ -83,7 +88,7 @@ void main() {
   }
   vec2 world = uOrigin + vec2(f.x, uCanvas.y - f.y) * uPx;
   // The style's depth ramp over the distance to the bank, as for the sea and lakes.
-  vec3 color = styledWater(.85 * depth * uPx / uBand);
+  vec3 color = styledWater(capsule ? 0. : .85 * depth * uPx / uBand);
   // Shallow shelf: a lighter, greener teal over the first pixels.
   float shelf = 1. - smoothstep(0., 3. * uDpr, depth);
   // Shoreline glint about one pixel inside the bank.
@@ -100,24 +105,15 @@ void main() {
     float centre = smoothstep(.2 * uDpr, 2.5 * uDpr, depth);
     float dryOn = smoothstep(0., .1, regime.r);
     float pools = mix(1., waterDryPools(world, regime.r, centre), dryOn);
-    // Continuous world-space variation shared by the exposed bed and its wet thread.
-    // Warp the narrow bands by the bank distance so highlights turn with the channel.
-    float bankMetres = depth*uPx;
-    float drift = sin(dot(world,vec2(.041,.027)));
-    float wash = .5 + .26*drift + .24*sin(dot(world,vec2(-.036,.071)) + 1.8*drift);
-    float close = 1.-smoothstep(.7,3.,uPx);
-    float grain = .5 + .5*close*sin(dot(world,vec2(.83,-.38)) + .36*bankMetres + 2.4*sin(dot(world,vec2(.17,.22))));
-    // Bare alluvium has long patches of damp silt and lighter gravel nearer the margins.
-    // Neutral value variation keeps the red-blue difference used to identify exposed ground.
-    vec3 bed = waterDryBed(world, centre) + vec3(.10*(wash-.5) + .035*(grain-.5));
-    float deep = smoothstep(1.,22.,bankMetres);
-    color = freshWaterTone(color*(1.02-.15*deep+.055*(wash-.5)));
-    // A few broken pale riffles on descending reaches. Suppress them on unresolved streams,
-    // in standing water and under the seasonal bed and ice layers composed below.
-    float riffle = clamp(regime.b/.45,0.,1.) * centre * close
-                 * smoothstep(.53,.85,wash) * smoothstep(.68,.97,grain);
-    color = mix(color,vec3(.63,.74,.75),.37*riffle);
-    color = mix(bed, color, pools);
+    float deep = capsule ? min(1.,regime.b/.30) : smoothstep(1.,22.,depth*uPx);
+    color = freshWaterTone(color*(1.02-.15*deep));
+    if(capsule)color=mix(color,vec3(.63,.74,.75),.34*max(0.,(regime.b-.30)/.70));
+    if(pools<1.) {
+      float wash=riverNoise(world/61.);
+      float grain=riverNoise(world/4.7+vec2(3.2*wash,-1.7*wash));
+      vec3 bed=waterDryBed(world,capsule?deep:centre)+vec3(.10*(wash-.5)+.035*(grain-.5)*(1.-smoothstep(.7,3.,uPx)));
+      color=mix(bed,color,pools);
+    }
     // Ice follows the bed: shore ice grows from both banks (up to 40 m) and closes the whole course when frozen,
     // so a thaw leaves a dark open thread down the fast centre. Hairline streams freeze first. Dark bank line on both sides.
     float shelf = 40. * regime.g;

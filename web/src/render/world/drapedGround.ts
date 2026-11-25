@@ -11,7 +11,7 @@
  */
 import type { LiveFrame } from '../live/contract';
 import type { DrapedGroundStats, DrapeTile, DrapeTiles } from './contract';
-import { drapeTier } from './footprint';
+import { drapeFootprintDepth, drapeLevels, drapeTier } from './footprint';
 import type { GroundShape } from './groundShape';
 import { GroundShapeTexture } from './groundShapeTexture';
 import { createHeightTexture, type TerrainHeights } from './heights';
@@ -132,8 +132,13 @@ export class DrapedGround {
     query.mapSize = mapSize;
     const shape = heights?.shape,
       levels = patchLevels(heights?.n ?? FLAT_GRID);
-    // A shaped ground takes a finer mesh near the eye; its squares keep the tiles the natural ground asks for.
-    query.levels = shape ? shapedPatchLevels(levels, mapSize) : levels;
+    // Even a flat or coarsely sampled relief can carry a detailed river outline.
+    // Allow nearby squares to split for the screen's texture density. The distance
+    // walk still emits coarse squares in the distance and retains its patch budget.
+    const finest = tiles.finestTier(frame.dpr);
+    const eyeHeight = lodEyeHeight(camera);
+    const textureLevels = drapeLevels(camera.focal, eyeHeight, mapSize, tiles.tilePixels, finest);
+    query.levels = Math.max(textureLevels, shape ? shapedPatchLevels(levels, mapSize) : levels);
     query.ratio = patchRatio(camera.focal / frame.dpr, frame.quality);
     query.low = heights ? (heights.low + (shape?.low ?? 0) * heights.exaggeration) * camera.rise : 0;
     query.high = heights ? (heights.high + (shape?.high ?? 0) * heights.exaggeration) * camera.rise : 0;
@@ -148,8 +153,7 @@ export class DrapedGround {
       anchorY = Math.round(camera.target[1] / coarsest);
     this.anchorX = anchorX * coarsest - camera.target[0];
     this.anchorY = anchorY * coarsest - camera.target[1];
-    const finest = tiles.finestTier(frame.dpr),
-      tile = this.tile,
+    const tile = this.tile,
       drapeTile = this.drapeTile,
       found = this.found,
       pageOf = this.pageOf;
@@ -172,7 +176,7 @@ export class DrapedGround {
         iy = list.iy[i],
         finer = 2 ** (tier - 1),
         key = tileKey(tier, ix, iy);
-      const shown = drapeTier(camera.focal, list.depth[i], mapSize, tiles.tilePixels, Math.min(tier, levels), finest, previous.get(key) ?? (tier > 0 ? (previous.get(tileKey(tier - 1, ix >> 1, iy >> 1)) ?? -1) : -1));
+      const shown = drapeTier(camera.focal, drapeFootprintDepth(list.depth[i], eyeHeight), mapSize, tiles.tilePixels, tier, finest, previous.get(key) ?? (tier > 0 ? (previous.get(tileKey(tier - 1, ix >> 1, iy >> 1)) ?? -1) : -1));
       current.set(key, shown);
       if (!tiles.resolve(tier, ix, iy, shown, list.centreOffset[i], tile) || tile.page >= MAX_PAGES) continue;
       // The part of the wanted tile under the square: another span means another tier stands in.

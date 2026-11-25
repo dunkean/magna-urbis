@@ -15,10 +15,10 @@
  * both. All the tiles live in one texture array, allocated whole when a frame first tilts and freed after RELEASE_MS
  * back in the top view: the terrain keeps drawing once per page of ground tiles. Its size is the budget
  * (`drapeLayers`): a square of the terrain asks for a tile of its own, and a tilted view of 1600 x 1000 CSS pixels
- * over a 40 km map draws up to 100 squares at one device pixel per CSS pixel and 134 at two (58 and 84 at 55 degrees;
+ * over a 40 km map draws up to 59 distinct tiles at one device pixel per CSS pixel and 102 at two (41 and 75 at 55 degrees;
  * tests/world.drapeBudget.test.ts), in either quality, plus the 5 coarse tiles and the layer a bake goes into. A
- * view of 2560 x 1440 asks for up to 174 at one device pixel; at two (228) it keeps the nearest tiles and shows the
- * far squares by their ancestors (`stats.full`).
+ * view of 2560 x 1440 at 55 or 70 degrees asks for up to 95 at one device pixel and 177 at two. If the budget fills,
+ * the nearest tiles take priority and far squares use their ancestors (`stats.full`).
  *
  * Baking: `work` bakes what the squares of the last tilted frame asked for (tilePyramid.ts: tier 0 first, then the
  * square nearest the centre of the view first), and only while the view rests: a tile costs a recording of the cartography and a draw of

@@ -18,6 +18,7 @@ import { WATER_STYLE_GLSL } from '../../../render/waterStyle';
 import { SHORE_DETAIL_GLSL } from '../../../render/shoreDetail';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL } from '../../../render/materialLook';
 import { WATER_FRESH_ICE_GLSL, WATER_REGIME_GLSL } from '../../../render/waterRegime';
+import { RIVER_NOISE_GLSL } from '../../../render/riverSurface';
 import { LAKE_GLSL } from '../../lakeGeometry';
 import { TERRAIN_3D_NOISE_GLSL } from '../../terrain3dNoise';
 
@@ -762,6 +763,7 @@ out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
 // Unpainted water keeps coverage and replaces encoded seasonal RGB with one palette colour.
 uniform vec4 uFlatWater;
+${RIVER_NOISE_GLSL}
 uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN;
 vec4 bw(float t) { float t2=t*t,t3=t2*t,u=1.-t; return vec4(u*u*u,3.*t3-6.*t2+4.,-3.*t3+3.*t2+3.*t+1.,t3)/6.; }
@@ -780,6 +782,24 @@ void main() {
   if (alpha <= 0.0) discard;
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
   vec3 color = uFlatWater.a > 0. ? uFlatWater.rgb : vColor;
+  // Material capsules already know their bank in metres. Retain that distance cue
+  // with the seasonal channels so it survives tile cuts, overlaps and changes of scale.
+  if (uFlatWater.a < 0.) {
+    float bank=max(0.,(mix(vHalf.x,vHalf.y,h)-d)*uPx);
+    float core=.30*smoothstep(0.,20.,bank);
+    float glint=0.;
+    if(vColor.b>0. && vColor.r>.1 && uPx<2.) {
+      vec2 world=uOrigin+vP*uPx;
+      float pocket=riverNoise(world*.049);
+      // Sparse light on riffle crests. The second field is stretched and warped in
+      // world space; its phase never restarts at the end of a river segment or tile.
+      vec2 q=vec2(dot(world,vec2(.19,.12)),dot(world,vec2(-.26,.41)))+vec2(2.7,-1.3)*pocket;
+      float crest=1.-smoothstep(.025,.14,abs(riverNoise(q)-.54));
+      glint=vColor.b/.45*smoothstep(.48,.80,pocket)*crest
+           *smoothstep(.4,2.,bank)*(1.-smoothstep(.45,2.,uPx));
+    }
+    color.b=core+.70*glint;
+  }
   if (uHasOverlay == 1) { vec4 overlay = texture(uOverlay, (uOrigin + vP * uPx) / uMapW); color = mix(color, overlay.rgb, overlay.a); }
   outColor = vec4(color * alpha, alpha);
 }`;

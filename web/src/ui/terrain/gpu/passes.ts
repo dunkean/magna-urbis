@@ -112,7 +112,7 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   r.float('uMapW', look.mapWidth);
   const flat = rivers.regime && !c.overlay && !c.painted,
     color = hexToRgb(layerWaterInk(look, c.water, c.painted));
-  r.vec4('uFlatWater', color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : 0);
+  r.vec4('uFlatWater', color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : c.painted && rivers.regime && !c.overlay ? -1 : 0);
   r.int('uHasOverlay', c.overlay ? 1 : 0);
   r.int('uHasLake', c.lake ? c.lakeMode : 0);
   r.float('uLakeN', c.lakeN);
@@ -131,7 +131,7 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   encoderPass.setVertexBuffer(0, rivers.buffer);
   encoderPass.draw(4, rivers.count);
   encoderPass.end();
-  composite(c, target.view, destination, c.painted && !c.overlay, rivers.regime);
+  composite(c, target.view, destination, c.painted && !c.overlay, rivers.regime ? 3 : 0);
 }
 
 /** The retained water's viewport raster (repainted on Canvas 2D when the view changed), composited over `destination`. */
