@@ -68,6 +68,23 @@ describe('V2 execution capability boundaries', () => {
     expect(caps.webgpu).toBe(false);
     expect(caps.adapterName).toBeUndefined();
   });
+  it('reports a GPU that answers after the detection deadline, or that it is absent', async () => {
+    vi.useFakeTimers();
+    const device = { destroy: vi.fn() };
+    for (const adapter of [{ requestDevice: async () => device, info: { description: 'Slow GPU' } }, null]) {
+      vi.stubGlobal('navigator', { gpu: { requestAdapter: () => new Promise(resolve => setTimeout(() => resolve(adapter), 6000)) } });
+      const onLateGpu = vi.fn();
+      const detecting = detectPlatform({ profile: 'web', onLateGpu });
+      await vi.advanceTimersByTimeAsync(2600);
+      const caps = await detecting;
+      expect(caps.webgpu).toBe(false);
+      expect(caps.webgpuPending).toBe(true);
+      expect(onLateGpu).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(12000);
+      expect(onLateGpu.mock.calls).toEqual([[adapter ? 'Slow GPU' : undefined]]);
+    }
+    expect(device.destroy).toHaveBeenCalledOnce();
+  });
   it('accepts the internal variation seed at execution without adding it to public recipes', async () => {
     const seed = rerollSeed('terrain-draw', ['relief-noise', 'water-hydrology']);
     bridge.sample.mockResolvedValue({ resolution: 64, height: new Float32Array(64 ** 2).fill(12.125), maxHeight: 12.125, minHeight: 12.125, generationMs: 1, backend: 'wasm', generationBackend: 'cpu' });

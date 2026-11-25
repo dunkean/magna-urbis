@@ -5,7 +5,7 @@ import { desktopReleasesUrl, getLatestDesktopRelease } from './desktopUpdates';
 import type { V2Progress } from './contracts';
 import type { ComputePreference } from './platform';
 import { assertNeuralCompute } from './neuralExecution';
-import { requestWebGpuAdapter } from '../../../rust/bridge/webGpuAdapter';
+import { PATIENT_GPU_MS, requestWebGpuAdapter } from '../../../rust/bridge/webGpuAdapter';
 
 export const NEURAL_NOTICE_KEY = 'magna-urbis-browser-neural-consent-v1';
 
@@ -15,7 +15,7 @@ export async function confirmNeuralDownload(signal?: AbortSignal, stored?: () =>
   signal?.throwIfAborted();
   let device: GPUDevice | undefined;
   try {
-    const adapter = await requestWebGpuAdapter();
+    const adapter = await requestWebGpuAdapter(PATIENT_GPU_MS);
     device = await adapter?.requestDevice();
     if (!device) throw new Error('No WebGPU device');
   } catch {

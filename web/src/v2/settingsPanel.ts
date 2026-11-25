@@ -16,6 +16,8 @@ export interface BackendStatus {
   checked: boolean;
   servicesChecked?: boolean;
   webgpu: boolean;
+  /** The GPU has not answered yet. */
+  webgpuPending?: boolean;
   adapter?: string;
   isolated: boolean;
   sharedMemory: boolean;
@@ -204,13 +206,19 @@ export async function refreshBackends(bindings: SettingsPanelBindings): Promise<
   // The local profile always probes Python: automatic neural relief uses it when the native neural service is not usable.
   const local = runtimeOptions().profile === 'local',
     probePython = local || settings?.runtime?.source === 'neural-python';
-  caps = await detectPlatform({ profile: local ? 'local' : 'web', probePython, localServer, pythonServer, neuralServer: settings?.runtime?.neuralServer, onProgress: event => bindings.log(event.message) });
+  const onLateGpu = (adapter?: string) => {
+    if (!status.webgpuPending) return;
+    status = { ...status, webgpu: !!adapter, webgpuPending: false, adapter };
+    listeners.forEach(listener => listener(status));
+  };
+  caps = await detectPlatform({ profile: local ? 'local' : 'web', probePython, localServer, pythonServer, neuralServer: settings?.runtime?.neuralServer, onProgress: event => bindings.log(event.message), onLateGpu });
   const stats = (window as unknown as { magnaRenderStats?: RenderStats }).magnaRenderStats;
   status = {
     ...status,
     checked: true,
     servicesChecked: local || probePython,
     webgpu: caps.webgpu,
+    webgpuPending: caps.webgpuPending,
     adapter: caps.adapterName,
     isolated: typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated,
     sharedMemory: typeof SharedArrayBuffer !== 'undefined',
@@ -506,7 +514,8 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
       [translate(T.cores).replace('{n}', String(s.cores)), s.isolated ? 'crossOriginIsolated' : 'not isolated', published].filter(Boolean).join(' · '),
       threads,
     );
-    row('backend-webgpu', T.webgpu, s.checked ? (s.webgpu ? 'ok' : 'off') : 'wait', s.checked ? (s.webgpu ? T.available : T.unavailable) : T.checking, s.webgpu ? (s.adapter ?? 'WebGPU') : s.checked ? translate(T.noGpu) : '…');
+    const gpuKnown = s.checked && !s.webgpuPending;
+    row('backend-webgpu', T.webgpu, gpuKnown ? (s.webgpu ? 'ok' : 'off') : 'wait', gpuKnown ? (s.webgpu ? T.available : T.unavailable) : T.checking, s.webgpu ? (s.adapter ?? 'WebGPU') : gpuKnown ? translate(T.noGpu) : '…');
     if (runtimeOptions().profile === 'local' || bindings.getSettings?.().runtime?.source === 'neural-python') section(T.local);
     if (runtimeOptions().profile === 'local')
       row(

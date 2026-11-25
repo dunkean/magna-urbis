@@ -251,7 +251,8 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
         else {
           report(onProgress, 'compute', 'Detecting CPU and WebGPU capabilities…', 0, 0);
           try {
-            const adapter = await gpuSetupDeadline((await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter());
+            const { requestWebGpuAdapter, PATIENT_GPU_MS } = await import('../../../rust/bridge/webGpuAdapter');
+            const adapter = await gpuSetupDeadline(requestWebGpuAdapter(PATIENT_GPU_MS));
             compute = adapter ? 'gpu' : 'cpu';
             softwareGpu = !!adapter?.info?.isFallbackAdapter;
             if (['procedural', 'procedural-phasor'].includes(runtime!.source) && softwareGpu) compute = 'cpu';

@@ -577,10 +577,14 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
     return settings.procedural && height.some(h => h < 0.3) ? height.map(h => Math.max(0.3, h)) : height;
   };
   // Handle compilation failure immediately while preparation runs synchronously.
+  let pipelineFailure: string | undefined;
   const pipelineReady = readyGpu
     ? gpuSetupDeadline(readyGpu.pipeline).then(
         pipeline => ({ pipeline }),
-        () => undefined,
+        error => {
+          pipelineFailure = error instanceof Error ? error.message : String(error);
+          return undefined;
+        },
       )
     : undefined;
   const proceduralGpu = !nativeGeneration && !settings.zones && !settings.sketch && generationMode !== 'cpu' && mode !== 'wasm' && !isNeuralSource(settings.source) && settings.relief !== 'cavern';
@@ -930,7 +934,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
       let coastSampler: GpuTerrainSampler | undefined;
       try {
         const compiled = await pipelineReady;
-        if (!compiled || readyGpu.context.lost) throw new Error('WebGPU unavailable');
+        if (!compiled || readyGpu.context.lost) throw new Error(pipelineFailure ?? 'WebGPU unavailable');
         configureEngineCoast(engine!, coastMask, islandMode, profile);
         coastSampler = new GpuTerrainSampler(readyGpu.context, compiled.pipeline, mode, engine!);
         const source = coastSampler.prepareCoastField(settings);
@@ -1270,7 +1274,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
         const data = await sampler.sample(region, settings, engine!.min_height, engine!.max_height);
         gpuSampled = { ...data, generationMs: performance.now() - started, prepareMs, gpuSetupMs, generationBackend, generationReason, noiseMs, erosionMs, gpuSimulationMs, nativeEnvironmentMs, erosionProfile, coastBackend, coastMs, coastReason };
       }
-      if (!gpuSampled) backendReason = 'WebGPU indisponible';
+      if (!gpuSampled) backendReason = pipelineFailure ? `GPU indisponible : ${pipelineFailure}` : 'WebGPU indisponible';
     } catch (error) {
       backendReason = `GPU indisponible : ${error instanceof Error ? error.message : String(error)}`;
       sampler?.dispose();

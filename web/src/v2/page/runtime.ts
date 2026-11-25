@@ -6,7 +6,7 @@
 import type { PageActions, PageState } from './contract';
 import { insertHTML, setText, translate } from '../i18n';
 import { loopbackServer } from '../platform';
-import { mountSettingsPanel, refreshBackends, backendStatus } from '../settingsPanel';
+import { mountSettingsPanel, onBackendStatus, refreshBackends, backendStatus } from '../settingsPanel';
 import { backendAlternative, backendFailure, F as RUNTIME_FALLBACK } from '../runtimeChoices';
 import { mountNeuralModelManager } from '../neuralModelManager';
 import { mountDesktopNeural } from '../desktopNeural';
@@ -147,6 +147,8 @@ export function mountRuntimeSettings(state: PageState, actions: PageActions): vo
   state.client.runtimeCapabilities = runtimeCapabilities;
 
   state.client.onRuntimeStatusChange = () => state.settingsPanel.render();
+  // A slow GPU answers after the detection: the engine choices follow.
+  onBackendStatus(() => state.chain.sync());
 
   $('#hardware-open').onclick = () => {
     actions.dialog('#hardware-dialog');

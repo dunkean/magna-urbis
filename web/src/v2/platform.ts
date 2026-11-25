@@ -20,6 +20,8 @@ export type PlatformProgress = { phase: 'detecting' | 'loading' | 'ready' | 'una
 export interface PlatformCapabilities {
   cpu: true;
   webgpu: boolean;
+  /** The GPU has not answered within the detection deadline; `onLateGpu` follows. */
+  webgpuPending?: boolean;
   adapterName?: string;
   desktop: boolean;
   local: { available: boolean; server: string; capabilities: string[]; error?: string };
@@ -35,6 +37,8 @@ export interface DetectPlatformOptions {
   neuralServer?: string;
   signal?: AbortSignal;
   onProgress?: (event: PlatformProgress) => void;
+  /** The answer of a GPU that was still pending when detection finished: its name, or nothing when there is none. */
+  onLateGpu?: (adapterName?: string) => void;
 }
 
 /** Native services deliberately accept loopback only; a project cannot redirect requests. */
@@ -91,18 +95,26 @@ export async function detectPlatform(options: DetectPlatformOptions = runtimeOpt
   const gpu = async () => {
     progress({ phase: 'detecting', source: 'browser', message: 'Vérification du périphérique WebGPU…' });
     try {
-      // Bound adapter + device creation together. Late devices are destroyed without
-      // mutating capabilities after detection has already finished.
-      const detected = await gpuSetupDeadline(
-        (async () => {
-          const adapter = await (await import('../../../rust/bridge/webGpuAdapter')).requestWebGpuAdapter();
-          if (!adapter) return undefined;
-          const device = await adapter.requestDevice();
-          device.destroy();
-          return adapter.info?.description || adapter.info?.device || 'WebGPU';
-        })(),
-        2500,
-      );
+      // Bound adapter + device creation together. A late device is destroyed and reported
+      // apart: it never mutates the capabilities of a finished detection.
+      let pending = true;
+      const probe = (async () => {
+        const { requestWebGpuAdapter, PATIENT_GPU_MS } = await import('../../../rust/bridge/webGpuAdapter');
+        const adapter = await requestWebGpuAdapter(PATIENT_GPU_MS);
+        if (!adapter) return undefined;
+        const device = await adapter.requestDevice();
+        device.destroy();
+        return adapter.info?.description || adapter.info?.device || 'WebGPU';
+      })().finally(() => (pending = false));
+      let detected: string | undefined;
+      try {
+        detected = await gpuSetupDeadline(probe, 2500);
+      } finally {
+        if (pending) {
+          result.webgpuPending = true;
+          void probe.then(options.onLateGpu, () => options.onLateGpu?.());
+        }
+      }
       if (detected) {
         result.webgpu = true;
         result.adapterName = detected;

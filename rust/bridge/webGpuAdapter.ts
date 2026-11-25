@@ -1,5 +1,8 @@
+/** Wait of the callers that nothing visible depends on: shader compiles of a slow GPU delay the adapter by several seconds. */
+export const PATIENT_GPU_MS = 15000;
+
 /** Match the neural engine's adapter selection: prefer performance, then let the browser choose. */
-export async function requestWebGpuAdapter(): Promise<GPUAdapter | null> {
+export async function requestWebGpuAdapter(waitMs = 2500): Promise<GPUAdapter | null> {
   const gpu = globalThis.navigator?.gpu;
   if (!gpu) return null;
   // Driver requests occasionally never settle after a reload. Every caller, including
@@ -18,7 +21,7 @@ export async function requestWebGpuAdapter(): Promise<GPUAdapter | null> {
     return await Promise.race([
       request(),
       new Promise<null>(resolve => {
-        timer = setTimeout(() => resolve(null), 2500);
+        timer = setTimeout(() => resolve(null), waitMs);
       }),
     ]);
   } finally {

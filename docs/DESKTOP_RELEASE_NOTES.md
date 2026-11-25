@@ -24,6 +24,7 @@
 - Settlement sizes follow a continuous distribution before places become villages, towns or cities; automatic villages are no longer capped at 999.
 - Shorter share codes: the dice steps to the next seed, quarter and block edits are shared, imported relief is flagged. Fixed lake coverage, landform scale and forest density in share codes.
 - Heightmaps export as 16-bit PNG.
+- Slow laptop GPUs are no longer reported as unavailable: the page waits for a busy GPU, and a generation names the real cause when its GPU shaders fail.
 - Share a map with a short code: a 6-character seed followed only by what differs from the default city (size, biome, relief, coast, terrain engine, parameters, rerolls, simple place edits and pins). The default city is just its seed. The current code is always shown in the top bar with copy buttons; MU3 codes no longer open.
 - Sliders snap to the steps the short code stores, so a shared map shows exactly the values you set.
 - Seeds are 6 characters (digits and letters); the dice draws a new one and any typed seed becomes a valid one. The default map now starts from the seed “magnas”.
