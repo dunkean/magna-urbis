@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Overhead Satellite and Parchment maps separate roofs from the ground with clearer roof slopes and quieter textures at street scale. The effect fades as the map tilts.
+
 - Use Import next to Export in the top bar to bring in a real city or region. Search by name or coordinates, preview the AWS elevation, and generate a map with OpenStreetMap data. A progress bar follows the parallel downloads, map preparation and drawing. Imports keep your current display style.
 - Use Download app in the top bar to open the desktop releases. The Links dialog groups the atlas, project links and build information.
 - Real-place imports request leaner OpenStreetMap data, distinguish server wait from download progress, and suggest a smaller square for large search results.

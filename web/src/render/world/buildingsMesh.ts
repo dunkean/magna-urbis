@@ -82,6 +82,8 @@ export interface BuildingPaint {
   materials: readonly HouseMaterial[];
   /** Keep the separate 3D viewer's inspectable list of distinct face colours. */
   collectPalette?: boolean;
+  /** Mark house roof materials for the world plan shader. */
+  planRoofs?: boolean;
   /** The world shader reads V1 roof edge coordinates from the sign bits of vertex colours. */
   roofInk?: boolean;
   /** The coarse levels of lot boundaries are strips that WORLD_BUILDING_VS widens (urbanBuildingGeometry.ts yardStrip). */
@@ -333,7 +335,9 @@ export function buildingBatches(buildings: Iterable<Building3dVisual>, origin: r
       // real per-vertex UVs on the crafted faces only. Plain and PBR meshes retain their original layout.
       const color24 = project ? (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255) : 0;
       const lateral = face.lateral,
-        code = lateral ? (face.normal[2] > 0.5 ? STRIP_TOP_CLASS : STRIP_SIDE_CLASS) : id === 'city3d:wall:lit' ? LIT_CLASS : cls,
+        // Codes 35..63 carry a roof and its underlying grain class (including snow at 28).
+        roofClass = paint.planRoofs && house && face.surface === 'roof' && cls <= SNOW_CLASS ? 35 + cls : cls,
+        code = lateral ? (face.normal[2] > 0.5 ? STRIP_TOP_CLASS : STRIP_SIDE_CLASS) : id === 'city3d:wall:lit' ? LIT_CLASS : roofClass,
         unit = (1 + (faceCode(code, townRoof?.gain) + finish * 1024) / 32) / (lateral ? 1 : Math.hypot(face.normal[0], face.normal[1], face.normal[2]) || 1);
       const key = textured ? `${c.join(',')}|${layer}|${recolored}|${!!snow}` : snow ? 'vertex-colour|true' : 'vertex-colour|false';
       let group = groups.get(key);

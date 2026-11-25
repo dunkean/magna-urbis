@@ -4,6 +4,7 @@
  * use their nearest built substitute; hidden volumes leave the town plan on the drape. buildingsCache owns mesh jobs,
  * staged uploads and level eviction; buildingsGrain owns roof marks. Draws build and upload no geometry.
  */
+import { mapGroundLightness, roadGroundKey } from '../roadStyle';
 import { roofSeasonKey } from '../seasonPalette';
 import type { Building3dScene } from '../urbanBuildingGeometry';
 import { showsCraftedHouses, type UrbanBuildingAppearance } from '../urbanBuildingStyle';
@@ -69,7 +70,7 @@ const caveFog: [number, number] = [0, 1];
 const yardSizes: [number, number] = [0, 1];
 /** Block caches of other looks kept for a switch back (their GPU levels stay allocated). */
 const DORMANT_LOOKS = 2;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uRoofInkDpr', 'uYard', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave', 'uHouseSurface', 'uHouseSurfaceReady'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRise', 'uTop', 'uPlanRoof', 'uRoofInkDpr', 'uYard', 'uEye', 'uAir', 'uHaze', 'uNight', 'uCoverGrain', 'uCave', 'uHouseSurface', 'uHouseSurfaceReady'] as const;
 
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null> };
 
@@ -486,6 +487,13 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           volumeDepth(gl);
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform1f(u.uRise, rise);
+          // The same camera ramp raises the relief over the first 14 degrees. Keep close-up material detail.
+          const palette = look?.frame.palette;
+          const strength = palette === 'terrain' ? 1 : palette === 'parchment' ? 0.65 : 0;
+          const planRoof = night || appearance?.cave || look?.frame.cave || look?.frame.custom || appearance?.diagnostic !== 'none' || roof === 'v1' ? 0 : strength * (1 - rise);
+          const streetScale = Math.max(0, Math.min(1, (5 - frame.view.scale) / 4));
+          const groundKey = roadGroundKey();
+          gl.uniform2f(u.uPlanRoof, planRoof, streetScale);
           gl.uniform1i(u.uTop, flat ? 1 : 0);
           gl.uniform1f(u.uRoofInkDpr, roof === 'v1' ? frame.dpr : 0);
           yardRise(depthSetting, yardSizes);
@@ -516,7 +524,10 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
             const slot = drawSlot[i];
             if (slot !== block) {
               block = slot;
-              gl.uniform3f(u.uBlock, slot.block.origin[0] - tx, slot.block.origin[1] - ty, -tz);
+              const b = slot.block;
+              if (planRoof > 0 && !b.yard && slot.planGround?.key !== groundKey)
+                slot.planGround = { key: groundKey, lightness: mapGroundLightness((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2) };
+              gl.uniform4f(u.uBlock, b.origin[0] - tx, b.origin[1] - ty, -tz, slot.planGround?.lightness ?? -1);
             }
             const level = drawLevel[i];
             gl.bindVertexArray(level.vao);

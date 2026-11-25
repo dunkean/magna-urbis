@@ -155,7 +155,9 @@ layout(location=2) in vec3 albedo;
 layout(location=4) in float seat;
 uniform mat4 uProjection;
 // Block origin relative to the target (x, y) and minus the target's height.
-uniform vec3 uBlock;
+uniform vec4 uBlock; // w: local ground luma, or -1 without a sample
+uniform vec2 uPlanRoof; // plan strength and street-scale material simplification
+flat out float planGrainFade;
 uniform float uRise;
 uniform bool uTop;
 uniform float uRoofInkDpr;
@@ -180,6 +182,20 @@ void main(){
   if(houseLayer>.5)base=houseFaceColor(albedo.z);
   float painted=floor(code/64.);
   materialClass=code-64.*painted;townGain=painted/15.;
+  bool roof=materialClass>=35.;
+  if(roof)materialClass-=35.;
+  planGrainFade=0.;
+  if(roof&&n.y>.05&&uPlanRoof.x>0.){
+    // A gently sloped luma adjustment keeps the order of light and dark pans.
+    float luma=dot(base,vec3(.30,.59,.11));
+    float nearGround=uBlock.w<0.?0.:1.-smoothstep(0.,.24,abs(luma-uBlock.w));
+    // Favour a dark mass on a pale ground at equal luma, a pale one on dark ground.
+    float split=mix(-.035,.035,smoothstep(.23,.43,uBlock.w));
+    float shift=mix(-.09,.09,smoothstep(split-.035,split+.035,luma-uBlock.w))*nearGround;
+    float pan=dot(n.xz,vec2(-.89,-.46));
+    base=clamp(base*(1.+.23*uPlanRoof.x*pan)+uPlanRoof.x*shift,0.,1.);
+    planGrainFade=.55*uPlanRoof.x*uPlanRoof.y;
+  }
   vec3 place=position;
   if(materialClass>32.5){
     // A strip of lot boundary: its normal is the side of the line the vertex lies on. It stays about a pixel wide however
@@ -204,6 +220,7 @@ precision highp float;
 in vec3 n; in vec3 base; in vec3 facadePosition; in vec3 grainPosition; flat in float materialClass; flat in float townGain; in float vDistance;
 flat in float houseLayer;
 in vec3 houseUv;
+flat in float planGrainFade;
 in vec3 roofEdge; uniform float uRoofInkDpr;
 // Haze distance (m) and share; haze colour.
 uniform vec2 uAir;
@@ -224,6 +241,7 @@ void main(){
   if(houseLayer>.5)rgb=houseSurface(base,houseLayer,N,grainPosition,houseUv);
   else if(townGain>0.&&cls>.5&&cls<18.5)rgb=coverGrainMarks(base,cls,N,grainPosition,townGain);
   else rgb=materialGrain(base,cls,N,grainPosition,fp);
+  rgb=mix(rgb,base,planGrainFade);
   // The town look already includes slope light and ambience on faces it paints.
   if(townGain<=0.&&uCave.x>.5){
     // Underdark: no sky. The town's lanterns light the walls (warm, dimmed by the darkness), roofs get their side

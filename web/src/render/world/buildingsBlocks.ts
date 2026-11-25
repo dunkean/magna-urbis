@@ -197,7 +197,7 @@ export class TownAltitudes {
 /** What paints a scene's buildings in the world view: the flat-colour program (the textured one is the 3D view's), and
  * the top view's town look where the page gives it. */
 export function worldPaint(scene: Building3dScene, appearance: UrbanBuildingAppearance, altitudes: TownAltitudes, look?: VolumeTownLook): BuildingPaint {
-  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], collectPalette: false, roofInk: appearance.roof === 'v1', yardStrips: true, snowAltitudes: altitudes, look };
+  return { appearance: { ...appearance, textured: false, ambience: undefined, lightsOn: undefined }, materials: scene.materials ?? [], collectPalette: false, planRoofs: !!look && appearance.roof !== 'v1', roofInk: appearance.roof === 'v1', yardStrips: true, snowAltitudes: altitudes, look };
 }
 
 /** The vertices of the buildings `from` to `to` of a block at a level, all groups in one array: a block of a dense town

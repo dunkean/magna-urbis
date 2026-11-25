@@ -301,6 +301,14 @@ const groundAt = (x: number, y: number): Rgb | undefined => {
     k = (j * GRID + i) * 4;
   return [ground.data[k], ground.data[k + 1], ground.data[k + 2]];
 };
+// Share the retained land-use colours with roof shading. Open material ground takes the biome soil.
+export function mapGroundLightness(x: number, y: number): number {
+  const c = groundAt(x, y);
+  if (!ground || !c) return -1;
+  const { base, soil } = ground;
+  return lum(soil && c.every((v, i) => v === base[i]) ? soil.ground : c);
+}
+
 /** A low-frequency stain, ±1: the same world cell is the same on every tile. */
 const stain = (i: number, j: number): number => {
   let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263);

@@ -23,6 +23,7 @@ export interface BuildingLevel {
 }
 export interface BuildingSlot {
   block: BuildingBlock;
+  planGround?: { key: string; lightness: number };
   levels: (BuildingLevel | undefined)[];
   /** The levels the last frame that saw the block wanted (bit per level). */
   need: number;

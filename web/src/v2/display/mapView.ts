@@ -269,6 +269,12 @@ export class MapView implements AppearanceListener, ViewStatus {
       if (this.parts.ground.gpuActive) this.parts.ground.gpu!.redrawForCapture();
       return;
     }
+    // The settled compositor already presents the overhead volumes and labels. An exact Canvas
+    // repaint here would replace those roofs with the fallback plan in V2 review shots.
+    if (!isTilted(frame.view) && map.volumeBuildings && this.presenter === 'composed') {
+      this.releaseCapture();
+      return;
+    }
     const canvas = this.captureCanvas;
     // A tilted view is the compositor's frame read back: the exact renderers paint the top view only.
     if (isTilted(frame.view)) {
