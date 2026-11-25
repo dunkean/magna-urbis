@@ -16,9 +16,9 @@ import { ForestRoom, type ForestCorridor } from '../render/forestRoom';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { cavernRoofAt, cavernTexelAt, type CavernField } from '../render/underdarkCavern';
 import { FUNGUS_BED } from './forestOccupation';
-import { UNDERDARK_FARMS } from '../../../rust/bridge/terrainRenderUnderdark';
+import { FUNGUS_CAPS, UNDERDARK_FARMS } from '../../../rust/bridge/terrainRenderUnderdark';
 
-import { FUNGUS_CAPS, FUNGUS_FORM as F, FUNGUS_PARTS, FUNGUS_PROFILES, FUNGUS_RINGS } from '../render/fungusForms';
+import { FUNGUS_FORM as F, FUNGUS_PARTS, FUNGUS_PROFILES, FUNGUS_RINGS } from '../render/fungusForms';
 
 export const FUNGUS_SEGMENTS = 10;
 export const FUNGUS_VERTICES = FUNGUS_SEGMENTS * (FUNGUS_RINGS - 1) * 6;
@@ -617,6 +617,16 @@ void main(){
   vec2 t=after-before;if(dot(t,t)<1e-8)t=vec2(0.,1.);
   vec2 n2=normalize(vec2(t.y,-t.x));
   vec3 local=vec3(dir.x*here.x,here.y,dir.y*here.x)*fade;
+  // Eccentric oyster-like caps, with the growing edge curling upward. The stalk bends into the
+  // fan; using the profile radius keeps the apex closed and the silhouette consistent at every LOD.
+  if(form<=4||form==8){
+    vec2 axis=vec2(cos(phase),sin(phase)),across=vec2(-axis.y,axis.x);
+    float along=dot(dir,axis),side=dot(dir,across),lobe=side*(3.-4.*side*side);
+    float growth=PROFILE[form*${FUNGUS_RINGS}+k].z;
+    vec2 section=axis*(.87*along)+across*(.76*side);
+    local.xz=fade*(axis*(.1*cap*growth*growth)+here.x*section*(1.+.045*lobe));
+    local.y+=fade*here.x*(.075*along+.032*lobe);
+  }
   fungusNormal=normalize(vec3(dir.x*n2.x,n2.y,dir.y*n2.x));
   world=vec3(fungusBase.x-cameraOrigin.x+local.x,fungusBase.z*exaggeration-cameraOrigin.y+local.y,fungusBase.y-cameraOrigin.z+local.z);
   vec2 part=PART[form];
@@ -645,13 +655,20 @@ void main(){
   vec3 n=normalize(fungusNormal),V=normalize(eye-world);
   if(dot(n,V)<0.)n=-n;
   float kind=chart.z,glow=fungusInfo.x,flags=fungusInfo.z,form=fungusInfo.w;
-  vec3 hue=fungusInfo.y<.5?vec3(.35,.95,.85):fungusInfo.y<1.5?vec3(.72,.55,1.):vec3(1.,.68,.32);
-  // Stem pale and matte, underside darker (gills), cap its own colour.
-  vec3 albedo=kind<.5?mix(vec3(.60,.57,.52),tint,.25):kind<1.5?tint*.62:tint;
+  vec3 hue=fungusInfo.y<.5?vec3(.38,.68,.61):fungusInfo.y<1.5?vec3(.57,.47,.68):vec3(.77,.57,.33);
+  // Warm flesh at the lip and along the lamellae, with colour concentrated in the cuticle.
+  float lip=(form<4.5||form==8.)?1.-smoothstep(.04,.24,abs(kind-1.5)):0.;
+  vec3 flesh=mix(vec3(.60,.54,.44),tint,.25);
+  vec3 albedo=kind<.5?flesh*.9:kind<1.5?flesh*.82:tint;
+  albedo=mix(albedo,flesh,.68*lip);
   bool ribs=mod(flags,4.)>=2.,spots=mod(flags,2.)>=1.;
-  if(kind>.5&&kind<1.5&&ribs)albedo*=.78+.22*smoothstep(.2,.8,abs(sin(chart.x*24.)));                // gills
+  float arcPixel=fwidth(chart.x);
+  if(kind>.5&&kind<1.5&&ribs){
+    float gill=cos(24.*chart.x+2.*chart.y);
+    albedo*=.88+.15*gill*(1.-smoothstep(.045,.13,arcPixel));
+  }
   if(kind>1.5&&ribs&&form>5.5&&form<6.5)albedo*=.7+.3*smoothstep(.1,.6,abs(sin(chart.x*7.)*sin(chart.y*26.)));   // morel ridges
-  if(kind>1.5&&spots){vec2 q=vec2(chart.x*3.,chart.y*9.);vec2 i=floor(q);float s=step(.6,fungusHash(i))*(1.-smoothstep(.18,.3,length(fract(q)-.5)));albedo=mix(albedo,vec3(.72,.68,.6),.8*s);}
+  if(kind>1.5&&spots){vec2 q=vec2(chart.x*3.,chart.y*9.);vec2 i=floor(q);float s=step(.6,fungusHash(i))*(1.-smoothstep(.18,.3,length(fract(q)-.5)));albedo=mix(albedo,flesh,.36*s*(1.-smoothstep(.25,.65,max(fwidth(q.x),fwidth(q.y)))));}
   // No sky: a dim ambient that shows the form from the eye, and the warm pools of the town lanterns.
   float dark=uCavern.y,wrap=.45+.55*max(dot(n,V),0.);
   float lantern=0.;
@@ -659,7 +676,7 @@ void main(){
   vec3 light=vec3(.93,.97,1.04)*mix(1.05,.36,dark)*wrap+vec3(1.,.74,.46)*min(lantern,1.3)*mix(.3,1.1,dark);
   vec3 c=albedo*light;
   // Bioluminescence: gills and rim glow softly, the cap faintly; a glowing carpet or cluster glows whole.
-  float own=glow*(kind<.5?.15:kind<1.5?1.:form>4.5&&form<7.5||form<3.5&&chart.y<.7?.55:.3);
+  float own=glow*(kind<.5?.06:kind<1.5?.8:form>4.5&&form<7.5?.4:.10+.42*lip);
   c+=hue*own*mix(.25,.55,dark);
   color=vec4(mix(c,vec3(.005,.005,.007),smoothstep(uCavern.z,uCavern.w,length(world-eye))),1.);
 }`,

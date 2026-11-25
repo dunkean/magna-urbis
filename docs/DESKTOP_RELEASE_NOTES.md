@@ -13,6 +13,7 @@
 - Natural rivers show soft shallows, short glints across mountain riffles, and tea-brown wetland water. Dry channels have subtle silt and gravel tones, and low water follows the outside of bends.
 - On Satellite maps the ground around a house blends into the surrounding town earth.
 - Leafless trees keep their forked branches at every 3D detail level. On tilted Satellite maps, distant crowns look rounder from above and stay solid as the view zooms out.
+- Wild Underdark mushrooms have off-centre caps, curled pale rims and fine gills. Their plum, bronze and verdigris caps carry a soft glow under the rim.
 - Small gorse clumps appear on heathland at close zoom.
 
 - Overhead Satellite and Parchment maps separate roofs from the ground with clearer roof slopes and quieter textures at street scale. The effect fades as the map tilts.

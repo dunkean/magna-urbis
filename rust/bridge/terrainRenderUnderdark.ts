@@ -15,6 +15,9 @@
 /** Fungus-farm look of the cultivated land (occupation class 13) in the satellite looks and the 3D (2D beds and 3D farm
  * mushrooms). Off: the user rejected it; the drawing code stays, unreachable, until a new look is validated. */
 export const UNDERDARK_FARMS = false;
+/** Dusty plum, bronze and verdigris cuticles, shared by painted and modelled wild caps. */
+export const FUNGUS_CAPS = [[0.36, 0.255, 0.365], [0.40, 0.28, 0.19], [0.235, 0.345, 0.32]] as const;
+const capPigments = FUNGUS_CAPS.map(rgb => `vec3(${rgb.join(',')})`);
 export const UNDERDARK_GLSL = `
 // Resolved cover of the mushroom cap drawn at this fragment (0-1), set by underdarkFloor: the water mix keeps it whole.
 float udCapCover=0.;
@@ -49,7 +52,7 @@ float udLight(vec2 gradient){
 // gives way to the even glow of its cluster, so zooming out never sparkles.
 vec3 underdarkFungi(vec2 world,float px,float moss){
   float cluster=smoothstep(.12,.32,udFbm(world+vec2(911.,377.),420.,px)+.3*moss);
-  vec3 cyan=vec3(.15,.85,.90),violet=vec3(.62,.30,.95);
+  vec3 cyan=vec3(.33,.65,.60),violet=vec3(.54,.42,.64);
   if(cluster<=0.)return vec3(0.);
   float CELL=14.;
   vec2 g=world/CELL,i=floor(g),f=g-i;
@@ -106,15 +109,22 @@ vec4 underdarkMushroomCell(vec2 world,float px,float grove,float CELL,vec2 seed,
   if(r>=1.&&shadow<=0.)return vec4(0.);
   // A cap stands only on land: its stem (the cap's centre) out of the water (crownRooted), then drawn whole over the bank.
   if(!crownRooted(crownFootWater((i+c-seed)*CELL))){shadow=0.;return vec4(0.);}
+  // The cap grows outward from its stem. Flatten the cross-axis of the fan like the 3D lip.
+  float phase=6.28318531*udHash(i+vec2(9.,4.));
+  vec2 axis=vec2(cos(phase),sin(phase)),crossAxis=vec2(-axis.y,axis.x);
+  vec2 capUV=vec2((dot(d,axis)/size-.10)/.87,dot(d,crossAxis)/(.76*size));
+  r=length(capUV);
   if(r>=1.)return vec4(0.);
   float k=udHash(i+vec2(88.,13.));
-  vec3 cap=k<.45?vec3(.30,.19,.33):k<.8?vec3(.34,.21,.14):vec3(.20,.30,.27);
+  vec3 cap=k<.45?${capPigments[0]}:k<.8?${capPigments[1]}:${capPigments[2]};
   cap*=.8+.4*udHash(i+vec2(1.,301.));
   vec3 n=normalize(vec3(d/size*1.3,sqrt(max(1.-r*r,0.))));
   float lit=.3+.85*max(dot(n,normalize(vec3(-.55,-.45,.62))),0.);
   vec2 sp=d/size*3.2+vec2(k*9.,h*7.);float spot=step(.72,udHash(floor(sp)+vec2(3.,3.)))*(1.-smoothstep(.18,.32,length(fract(sp)-.5)));
-  vec3 col=mix(cap*lit*(1.-.35*smoothstep(.75,1.,r)),vec3(.62,.58,.52)*lit,.5*spot*step(.55,k));
-  col+=step(.66,udHash(i+vec2(7.,7.)))*smoothstep(.84,.98,r)*vec3(.08,.42,.40);
+  vec3 lip=mix(cap,vec3(.62,.55,.44),.48);
+  vec3 col=mix(cap,lip,smoothstep(.83,.97,r))*lit;
+  col=mix(col,vec3(.62,.58,.52)*lit,.28*spot*step(.55,k)*resolved);
+  col+=step(.66,udHash(i+vec2(7.,7.)))*smoothstep(.84,.98,r)*vec3(.08,.19,.17);
   return vec4(col,(1.-smoothstep(1.-px/size,1.,r))*resolved);
 }
 // Giant mushroom groves on damp floors, seen from above: two jittered lattices of domed caps (violet, rust,

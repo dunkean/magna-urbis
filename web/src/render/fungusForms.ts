@@ -12,13 +12,13 @@ export const FUNGUS_FORM: Readonly<Record<FungusForm, number>> = Object.fromEntr
 export const FUNGUS_RINGS = 9;
 export const FUNGUS_PROFILES: readonly (readonly (readonly [number, number, number])[])[] = [
   [
-    [1.5, 0, -0.02],
+    [1.7, 0, -0.02],
     [1.05, 0, 0.4],
-    [0.9, 0, 0.84],
-    [1.2, 0, 0.86],
-    [0, 0.96, 0.82],
-    [0, 1, 0.85],
-    [0, 0.8, 0.93],
+    [0.88, 0, 0.70],
+    [1.32, 0, 0.76],
+    [0, 0.91, 0.69],
+    [0, 1, 0.74],
+    [0, 0.82, 0.90],
     [0, 0.42, 0.985],
     [0, 0, 1],
   ], // parasol
@@ -134,12 +134,6 @@ export const FUNGUS_PARTS: readonly (readonly [number, number])[] = [
   [-1, -1],
   [-1, 4],
   [-1, -1],
-];
-/** Cap colours of the giant mushrooms, as the 2D ground paints them (underdarkMushroomCell): violet, rust, pale teal. */
-export const FUNGUS_CAPS: readonly (readonly [number, number, number])[] = [
-  [0.3, 0.19, 0.33],
-  [0.34, 0.21, 0.14],
-  [0.2, 0.3, 0.27],
 ];
 /** Amanita cap of the myconid dwellings (render/city3dMushroom.ts): from the gills at the stem, the deep rounded gill
  * skirt down to its belly and out to the rim, then the broad, nearly flat top. (stem factor, cap factor, share of the
