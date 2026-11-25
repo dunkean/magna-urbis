@@ -593,7 +593,7 @@ uniform int fungusLod;
 out vec3 world;
 out vec3 fungusNormal;
 out vec3 tint;
-out vec3 chart;
+out vec4 chart;
 out vec4 fungusInfo;
 out vec2 plan;
 const vec3 PROFILE[${PROFILES.length * FUNGUS_RINGS}]=vec3[${PROFILES.length * FUNGUS_RINGS}](${profileTable});
@@ -612,7 +612,7 @@ void main(){
   float fade=1.-(fungusShape.x<1.5&&fungusShape.x>0.?smoothstep(${(FUNGUS_NEAR * 0.75).toFixed(1)},${FUNGUS_NEAR.toFixed(1)},far):smoothstep(fungusFade.z,fungusFade.w,far));
   // Ceiling stalactites go with the roof where it is cut away.
   if(mod(floor(flags/4.),2.)>=1.&&distance(fungusBase.xy,uReveal.xy)<uReveal.z)fade=0.;
-  if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);fungusNormal=vec3(0.,1.,0.);tint=vec3(0.);chart=vec3(0.);fungusInfo=vec4(0.);plan=vec2(0.);return;}
+  if(fade<=0.){gl_Position=vec4(2.,2.,2.,1.);world=vec3(0.);fungusNormal=vec3(0.,1.,0.);tint=vec3(0.);chart=vec4(0.);fungusInfo=vec4(0.);plan=vec2(0.);return;}
   // A bracket is half a lathe, its back in the wall; every other form a full turn.
   float turn=form==8?3.14159265:6.28318531;
   float angle=float(seg+dseg)*turn/float(sides)+phase-(form==8?1.57079633:0.);
@@ -640,7 +640,7 @@ void main(){
   float kind=float(k)<=part.x?0.:float(k)<=part.y?1.:2.;
   tint=fungusColor.rgb;
   float hue=floor(fungusColor.w/2.);
-  chart=vec3(angle,here.y/max(abs(h),.01),kind);
+  chart=vec4(angle,here.y/max(abs(h),.01),kind,PROFILE[form*${FUNGUS_RINGS}+k].y);
   fungusInfo=vec4(fungusColor.w-2.*hue,hue,flags,float(form));
   plan=vec2(fungusBase.x+local.x,fungusBase.y+local.z);
   gl_Position=matrix*vec4(world,1.);
@@ -650,7 +650,7 @@ precision highp float;
 in vec3 world;
 in vec3 fungusNormal;
 in vec3 tint;
-in vec3 chart;
+in vec4 chart;
 in vec4 fungusInfo;
 in vec2 plan;
 uniform vec3 eye;
@@ -670,6 +670,15 @@ void main(){
   albedo=mix(albedo,flesh,.68*lip);
   bool ribs=mod(flags,4.)>=2.,spots=mod(flags,2.)>=1.;
   float arcPixel=fwidth(chart.x);
+  // Concentric growth zones and a lighter advancing margin are visible on a myconid fan.
+  // Ring radius interpolates over the existing faces; the material averages out at small scales.
+  if(kind>1.5&&(form<4.5||form==8.)){
+    float band=chart.w*4.+.16*sin(chart.x*3.);
+    float seen=1.-smoothstep(.16,.45,fwidth(band));
+    float ring=abs(fract(band)-.5);
+    albedo*=1.+seen*.17*(smoothstep(.03,.37,ring)-.55);
+    albedo=mix(albedo,flesh,.40*smoothstep(.79,1.,chart.w));
+  }
   if(kind>.5&&kind<1.5&&ribs){
     float gill=cos(24.*chart.x+2.*chart.y);
     albedo*=.88+.15*gill*(1.-smoothstep(.045,.13,arcPixel));

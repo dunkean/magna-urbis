@@ -48,7 +48,7 @@ function middleTree(): TreeMesh {
     collar = ring(-3, 1),
     base = ring(0, 1);
   const belly = ring(2, 6),
-    shoulder = ring(3, 6, 0.5),
+    shoulder = ring(4, 6, 0.5),
     tip = ring(5, 1);
   for (let i = 0; i < 4; i++) indices.push(foot + i, foot + ((i + 1) % 4), collar);
   for (let i = 0; i < 6; i++) {
@@ -124,9 +124,10 @@ void main(){
   bool trunk;
   if(uSegments<0){
     vec2 limb=mat2(phase.x,phase.y,-phase.y,phase.x)*meshVertex.xz;
+    if(uSegments==-2)limb+=uFacing.xy*meshVertex.w;
     y=meshVertex.y*h; u=meshVertex.y; offset=r*limb;
     width=0.; dir=vec2(0.); trunk=true;
-    normal=normalize(vec3(limb,meshVertex.w));
+    normal=normalize(vec3(limb,uSegments==-2?.9:meshVertex.w));
   }else if(uSegments==0){
     trunk=id<4;
     float side=(id%2==0)?-1.:1.;
@@ -164,7 +165,7 @@ void main(){
   // metres so the texture remains attached while the camera moves.
   grain=uSegments>0?vec3(vec2(local.x+.71*local.y,y+.29*local.y)*(trunk?vec2(3.6,.72):vec2(spire?2.1:1.42,1.56))+phase*47.,trunk?.34:spire?.26:.35):contour;
   vec3 tint=trunk?uTrunk:treeColor.rgb;
-  if(uSegments<0)tint*=meshVertex.w;
+  if(uSegments==-1)tint*=meshVertex.w;
   if(uRepaint==1)tint=mix(uRepaintLow.rgb,uRepaintHigh.rgb,smoothstep(uRepaintLow.w,uRepaintHigh.w,dot(tint,vec3(.30,.59,.11))));
   float snow=uSegments<0?fract(treeColor.w)*u:trunk?0.:min(fract(treeColor.w)/.45*mix(.45,1.35,u),.95);
   float lit=(.9+.4*max(dot(normal,treeLight),0.))/(.9+.4*max(treeLight.z,0.));

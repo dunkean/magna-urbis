@@ -72,20 +72,46 @@ const middleLinks = [
 ];
 export const bareMiddleMesh = { segments: -1, vertices: bareTreeMesh.vertices, indices: tubeIndices(middleLinks) };
 
-// One tapered stroke per limb in the distant silhouette. Its base spans the limb in plan so forks
-// remain separated overhead. In profile the rising limbs read against the sky.
-const distantLinks = middleLinks.slice(0, 6);
+// Two triangles carry a continuous trunk up to the fork. Four tapered boughs overlap it at
+// their insertion. The shader widens the stem along screen-right to keep it visible on a low orbit.
+const [forkX, forkY, forkZ, forkRadius] = joints[2];
+const distantLimbs = [
+  [1, 8],
+  [1, 15],
+  [2, 13],
+  [2, 11],
+];
 export const bareDistantMesh = {
-  segments: -1,
-  vertices: distantLinks.flatMap(([a, b]) => {
-    const [x, y, z, width] = joints[a],
-      [tx, ty, tz] = joints[b];
-    const scale = (1.4 * width) / Math.hypot(tx - x, tz - z);
-    const dx = (tz - z) * scale,
-      dz = (x - tx) * scale;
-    return [x - dx, y, z - dz, 0.9, x + dx, y, z + dz, 0.9, tx, ty, tz, 1];
-  }),
-  indices: Array.from({ length: distantLinks.length * 3 }, (_, i) => i),
+  segments: -2,
+  vertices: [
+    0,
+    0,
+    0,
+    -joints[0][3],
+    0,
+    0,
+    0,
+    joints[0][3],
+    forkX,
+    forkY,
+    forkZ,
+    -forkRadius,
+    forkX,
+    forkY,
+    forkZ,
+    forkRadius,
+    ...distantLimbs.flatMap(([a, b]) => {
+      const [, y, , width] = joints[a],
+        [tx, ty, tz] = joints[b];
+      const x = (forkX * y) / forkY,
+        z = (forkZ * y) / forkY;
+      const scale = (1.4 * width) / Math.hypot(tx - x, tz - z);
+      const dx = (tz - z) * scale,
+        dz = (x - tx) * scale;
+      return [x - dx, y, z - dz, 0, x + dx, y, z + dz, 0, tx, ty, tz, 0];
+    }),
+  ],
+  indices: [0, 1, 2, 1, 3, 2, ...Array.from({ length: distantLimbs.length * 3 }, (_, i) => i + 4)],
 };
 const gl = (v: number) => v.toFixed(4);
 export const BARE_LIMBS_GLSL = `
