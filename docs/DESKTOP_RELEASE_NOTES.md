@@ -1,12 +1,9 @@
 ## Alpha 0.3.11
 
-<<<<<<< HEAD
 - Detailed architecture extends to isolated dwellings, farm outbuildings and rural sites. Barns and mills gain regional loading bays and louvred openings, and dovecotes gain flight holes and landing ledges.
 - Detailed castles and watchtowers gain fitted gates, narrow openings and regional crowns, including timber galleries on roofed medieval keeps. Shrines and civic halls gain regional entrances and cornices. Carved roadside markers and memorial columns gain stepped mouldings.
 
-=======
 - River highlights and shallows follow the channel across map tiles. Zooming in on the tilted map keeps banks sharp even on a coarse elevation grid.
->>>>>>> 7f5cfa8b (Keep river shading continuous across tiles and resolve tilted banks at screen scale)
 - Natural rivers show soft shallows, short glints across mountain riffles, and tea-brown wetland water. Dry channels have subtle silt and gravel tones, and low water follows the outside of bends.
 - On Satellite maps the ground around a house blends into the surrounding town earth.
 - Close leafless trees now show a trunk and tapered, forked branches on the map and in 3D.
