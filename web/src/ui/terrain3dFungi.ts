@@ -214,6 +214,13 @@ export function* buildFungiSteps(inputs: FungusInputs, view: { x: number; y: num
   };
   const headroom = (x: number, y: number, z: number): number => cavernRoofAt(cavern, x, y) - z;
   const push = (x: number, y: number, z: number, capR: number, h: number, stemR: number, form: number, phase: number, flags: number, c: readonly number[], glow: number, hue: number): void => {
+    // Terrain samples extend past the map edge. Keep the full mesh footprint inside the cavern field.
+    const u = x - cavern.x,
+      v = y - cavern.y,
+      room = Math.min(u, v, cavern.width - u, cavern.width - v);
+    // The eccentric caps contract radially but can shift sideways by up to a tenth of their cap radius.
+    const lean = form <= F.funnel || form === F.bracket ? 0.1 * capR : 0;
+    if (room <= lean || FUNGUS_PROFILES[form].some(([stem, cap]) => stem * stemR + cap * capR + lean > room)) return;
     out.push([d2(x, y), x, y, z, capR, h, stemR, form, (((phase % 6.2831853) + 6.2831853) % 6.2831853) + 8 * flags, c[0], c[1], c[2], Math.min(glow, 0.99) + 2 * hue]);
   };
   const bx0 = view.x - FUNGUS_FAR,

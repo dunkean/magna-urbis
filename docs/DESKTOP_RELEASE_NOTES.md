@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Mushrooms, stalactites and stalagmites stay inside the map boundary in the 3D Underdark view.
 - Kraal thorn enclosures now stand in 3D with open entrances. Detailed architecture adds woven fences, split boards, pasture rails, hedge crowns, pointed palisades and regional masonry to yards and town defences.
 
 - In Detailed architecture, country workshops show their work at the door, from potters’ wheels and drying jars to millstones, winding gear and dressed stone. Farmyards, rural shrines and trade buildings use local materials and fittings. Mine headframes, quarry cranes and other yard works follow their generated footprints.
