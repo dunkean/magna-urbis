@@ -1,5 +1,6 @@
 ## Alpha 0.3.11
 
+- Rural land cover stops at the drawn coastline and follows island shores.
 - Rerolling a whole settlement draws its plan and streets together. Independent street variations remain available.
 - Automatic generation retries multithreaded Rust on a later visit after a temporary worker startup timeout.
 

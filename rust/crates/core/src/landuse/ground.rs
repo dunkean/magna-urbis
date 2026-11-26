@@ -361,11 +361,26 @@ const WATER_TILE: f64 = 1000.0;
 /// ever drawn on a river, lake or sea. Sources, all as drawn by the map:
 /// - `terrain.water`: closed water domains, one even-odd ring group each (sea, lakes, river banks; the V2 sends the
 ///   settlement raster's `geometry.water`, the same domains the towns are built against);
+/// - `terrain.coastline` and `terrain.islands`: the legacy terrain stage's drawn sea, when no domains are supplied;
 /// - `terrain.lakes`: lake outlines;
 /// - `terrain.rivers`: river centre lines with their drawn width per vertex (ribbons).
 pub(crate) fn water_regions(input: &Input) -> Vec<Region> {
     let t = &input.geometry["terrain"];
-    let mut out: Vec<Region> = arr(&t["water"]).iter().flat_map(|g| nest(polygons(g))).collect();
+    let mut out: Vec<Region> = if let Some(domains) = t["water"].as_array() {
+        domains.iter().flat_map(|g| nest(polygons(g))).collect()
+    } else {
+        let mut coast = polygons(&t["coastline"]);
+        let islands = polygons(&t["islands"]);
+        let enclosed: Vec<_> = islands
+            .into_iter()
+            .filter(|island| {
+                island.len() >= 3
+                    && coast.iter().any(|sea| sea.len() >= 3 && contains(sea, island[0]))
+            })
+            .collect();
+        coast.extend(enclosed);
+        nest(coast)
+    };
     out.extend(lake_regions(input));
     for rv in arr(&t["rivers"]) {
         let path = poly(&rv["path"]);

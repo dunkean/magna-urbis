@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generate } from '../src/gen/pipeline';
 import { renderSvg } from '../src/render/svg';
+import { seaWithIslands } from '../src/render/util';
 import { makeOptions, DEFAULT_ROADS, Options } from '../src/gen/options';
 import { Rng } from '../src/gen/core/rng';
 import { dist, distToPolyline, bbox, polygonContains, Vec2 } from '../src/gen/core/geom';
@@ -88,6 +89,34 @@ function checkBridgeBanks(w: World): number {
     }
   }
   return urbanBanks;
+}
+
+function drawnWater(w: World): Vec2[][][] {
+  const { coastline, islands, lakes, rivers, waterGeometry } = w.terrain;
+  const sea = seaWithIslands(coastline, islands);
+  const groups = [...(waterGeometry ?? sea.sea.map((outer, i) => [outer, ...sea.holes[i]])), lakes];
+  // Land use cuts the tapered channel segments and their round inner joins.
+  for (const { path, width } of rivers) {
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1], b = path[i];
+      const length = dist(a, b);
+      if (length < 1e-6) continue;
+      const nx = (a.y - b.y) / length, ny = (b.x - a.x) / length;
+      const ha = Math.max(1, width[i - 1]) / 2, hb = Math.max(1, width[i]) / 2;
+      groups.push([[
+        { x: a.x + nx * ha, y: a.y + ny * ha }, { x: b.x + nx * hb, y: b.y + ny * hb },
+        { x: b.x - nx * hb, y: b.y - ny * hb }, { x: a.x - nx * ha, y: a.y - ny * ha },
+      ]]);
+      if (i + 1 < path.length) {
+        const radius = hb / Math.cos(Math.PI / 12);
+        groups.push([Array.from({ length: 12 }, (_, j) => {
+          const angle = j * Math.PI / 6;
+          return { x: b.x + radius * Math.cos(angle), y: b.y + radius * Math.sin(angle) };
+        })]);
+      }
+    }
+  }
+  return groups;
 }
 
 describe('M2 determinism', () => {
@@ -185,10 +214,16 @@ describe('rural land use', () => {
     for (const w of worlds) {
       const rng = new Rng('lu-test');
       const roads = w.roads!;
-      const clear = (p: Vec2) => {
-        if (waterAt(w, p)) return false;
-        for (const r of roads) if (distToPolyline(p, r.path) < r.width / 2) return false;
-        return true;
+      const water = drawnWater(w).map(rings => ({ rings, bounds: bbox(rings.flat()) }));
+      const checkClear = (p: Vec2) => {
+        const wet = water.some(({ rings, bounds }) => {
+          if (p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) return false;
+          const crossings = rings.reduce((count, ring) => count + Number(polygonContains(ring, p)), 0);
+          // The native overlay rounds its water cuts to the millimetre.
+          return crossings % 2 === 1 && rings.every(ring => distToRing(ring, p) > 0.001);
+        });
+        expect(wet, `seed ${w.seed}: water at (${p.x}, ${p.y})`).toBe(false);
+        expect(roads.some(r => distToPolyline(p, r.path) < r.width / 2), `seed ${w.seed}: road at (${p.x}, ${p.y})`).toBe(false);
       };
       for (const a of w.landuse!.areas) {
         const bb = bbox(a.poly);
@@ -197,11 +232,11 @@ describe('rural land use', () => {
           const p = { x: rng.range(bb.minX, bb.maxX), y: rng.range(bb.minY, bb.maxY) };
           if (polygonContains(a.poly, p) && !(a.holes ?? []).some(h => polygonContains(h, p))) pts.push(p);
         }
-        for (const p of pts) expect(clear(p)).toBe(true);
+        for (const p of pts) checkClear(p);
         for (const s of a.strips ?? []) {
           strips++;
           const c = { x: s.reduce((q, v) => q + v.x, 0) / s.length, y: s.reduce((q, v) => q + v.y, 0) / s.length };
-          if (polygonContains(s, c)) expect(clear(c)).toBe(true);
+          if (polygonContains(s, c)) checkClear(c);
         }
         if (a.kind === 'field') expect(a.stripAngle).toBeDefined();
       }

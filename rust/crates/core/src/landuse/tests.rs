@@ -131,6 +131,28 @@ fn retained_lakes_exclude_smoothed_landuse() {
 }
 
 #[test]
+fn drawn_coast_keeps_islands_dry_without_closed_water_domains() {
+    use super::geom::*;
+    let mut i = input(&fixture());
+    let sea = rect(100.0, 100.0, 100.0, 100.0, 0.0);
+    let island = rect(110.0, 110.0, 10.0, 10.0, 0.0);
+    let outside = rect(200.0, 200.0, 10.0, 10.0, 0.0);
+    i.geometry["terrain"]["coastline"] = serde_json::json!([sea]);
+    i.geometry["terrain"]["islands"] = serde_json::json!([island, outside]);
+
+    let sea_regions = ground::water_regions(&i);
+    assert_eq!(sea_regions.len(), 1);
+    assert_eq!(sea_regions[0].holes.len(), 1);
+    assert!(inside(&sea_regions[0], p(100.0, 100.0)));
+    assert!(!inside(&sea_regions[0], p(110.0, 110.0)));
+    assert!(!inside(&sea_regions[0], p(200.0, 200.0)));
+
+    // An explicit closed-domain payload stays authoritative even when empty.
+    i.geometry["terrain"]["water"] = serde_json::json!([]);
+    assert!(ground::water_regions(&i).is_empty());
+}
+
+#[test]
 fn drawn_rivers_cut_every_class() {
     use super::{boolean as bo, geom::*};
     // A drawn river through a field, as the V2 sends it: a closed water domain (`terrain.water`), with no river cell in
