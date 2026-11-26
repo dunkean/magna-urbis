@@ -1,5 +1,6 @@
 /** Pointer, wheel, keyboard and minimap gestures installed by createViewer. Translates input into viewerNavigation commands. */
 import { WHEEL_STRIDE_S, type ViewerNavigation } from './viewerNavigation';
+import { isTilted, wrapYaw } from '../render/world/camera';
 const WHEEL_NOTCH_PX = 40,
   DRAG_PITCH = 0.006,
   DRAG_YAW = 0.008,
@@ -9,8 +10,12 @@ const WHEEL_NOTCH_PX = 40,
 const MOVE_KEYS = new Set(['KeyW', 'KeyZ', 'KeyS', 'KeyA', 'KeyQ', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight']),
   FLY_KEYS = new Set(['Space', 'KeyE', 'KeyC']);
 const SLIDE_STRIDE = 0.04,
-  GESTURE_TRAVEL = 8;
-type TwoFingers = { d: number; mode: 'undecided' | 'pinch' | 'tilt'; starts: Map<number, { x: number; y: number }> };
+  GESTURE_TRAVEL = 8,
+  /** Turn of the line between two fingers before a twist turns the map: a pinch rarely twists this much by accident. */
+  TWIST_START = (8 * Math.PI) / 180;
+/** Two fingers: their distance and angle at the last move, the gesture read from them, and how far the fingers turned
+ * before a twist starts. */
+type TwoFingers = { d: number; angle: number; turned: number; twisting: boolean; mode: 'undecided' | 'pinch' | 'tilt'; starts: Map<number, { x: number; y: number }> };
 export function installViewerInput(container: HTMLElement, canvas: HTMLCanvasElement, minimap: HTMLCanvasElement | undefined, nav: ViewerNavigation): () => void {
   const pts = new Map<number, { x: number; y: number }>();
   let pinch: TwoFingers | null = null;
@@ -28,12 +33,17 @@ export function installViewerInput(container: HTMLElement, canvas: HTMLCanvasEle
     const [a, b] = [...pts.values()];
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   };
+  /** Screen angle of the line from the first finger to the second (clockwise: y points down). */
+  const angle = (): number => {
+    const [a, b] = [...pts.values()];
+    return Math.atan2(b.y - a.y, b.x - a.x);
+  };
   canvas.addEventListener('pointerdown', e => {
     pts.set(e.pointerId, local(e));
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add('drag');
     orbiting = pts.size === 1 && (e.button === 2 || e.ctrlKey) && nav.tilts();
-    if (pts.size === 2) pinch = { d: dist(), mode: nav.tilts() ? 'undecided' : 'pinch', starts: new Map(pts) };
+    if (pts.size === 2) pinch = { d: dist(), angle: angle(), turned: 0, twisting: false, mode: nav.tilts() ? 'undecided' : 'pinch', starts: new Map(pts) };
     if (nav.free()) orbiting = false;
   });
   // The right button drags the camera of a map that tilts.
@@ -78,13 +88,24 @@ export function installViewerInput(container: HTMLElement, canvas: HTMLCanvasEle
       const m0 = mid();
       pts.set(e.pointerId, cur);
       const m1 = mid(),
-        d = dist();
+        d = dist(),
+        turn = wrapYaw(angle() - pinch.angle);
+      pinch.angle += turn;
+      // A twist past TWIST_START turns a tilted or turned camera, then pans and zooms with the fingers as a pinch; the
+      // parallel slide that tilts never twists. The plain top view does not turn: the map editors work on it alone and
+      // end when the camera turns (page/view3d.ts), so a pinch there must not.
+      if (!pinch.twisting && pinch.mode !== 'tilt' && nav.tilts() && isTilted(nav.camera) && Math.abs((pinch.turned += turn)) >= TWIST_START) {
+        pinch.twisting = true;
+        pinch.mode = 'pinch';
+      }
       if (pinch.mode === 'undecided') readGesture(pinch);
       if (pinch.mode === 'tilt') nav.tiltBy((m0.y - m1.y) * DRAG_PITCH, 0);
       else if (pinch.mode === 'pinch') {
         let v = nav.panned(nav.view, m0.x, m0.y, m1.x, m1.y);
         if (pinch.d > 0 && d > 0) v = nav.zoomed(v, d / pinch.d, m1.x, m1.y);
         nav.set(v);
+        // Fingers turning clockwise on screen turn the map with them: the camera's yaw goes the other way.
+        if (pinch.twisting) nav.turnAt(-turn, m1.x, m1.y);
       }
       pinch.d = d;
     } else if (orbiting) {

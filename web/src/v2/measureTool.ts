@@ -210,6 +210,8 @@ export function mountMeasureTool(api: MeasureToolApi): { deactivate(): void } {
     if (active && e.button === 0 && e.isPrimary) {
       const p = local(e);
       press = { id: e.pointerId, ...p };
+      // A finger has no hover: the preview starts under it and follows it while it moves (pointermove below).
+      if (e.pointerType === 'touch') cursor = toWorld(p);
     }
   });
   canvas.addEventListener('pointerup', e => {
@@ -293,7 +295,8 @@ export function mountMeasureTool(api: MeasureToolApi): { deactivate(): void } {
   map.addEventListener('pointermove', e => {
     pointer = local(e);
     if (!readoutFrame) readoutFrame = requestAnimationFrame(readPointer);
-    if (active) {
+    // A second finger (a pinch) does not move the preview.
+    if (active && e.isPrimary) {
       const p = toWorld(pointer);
       cursor = (e.target as Element).closest('.measure-panel') ? undefined : p;
       if (drag || !(e.buttons & 1)) schedule();

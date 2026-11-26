@@ -5,9 +5,10 @@ import { effectiveTerrainSettings } from '../../src/v2/terrainSettings';
 import type { SavedRecipe } from '../../src/v2/autosave';
 import type { PageActions, PageState } from '../../src/v2/page/contract';
 
-const hooks = vi.hoisted(() => ({ takeAutosave: vi.fn(), armAutosave: vi.fn(), saveAutosaveNow: vi.fn(), load: vi.fn() }));
+const hooks = vi.hoisted(() => ({ takeAutosave: vi.fn(), armAutosave: vi.fn(), saveAutosaveNow: vi.fn(), load: vi.fn(), handheld: false }));
+vi.mock('../../../rust/bridge/deviceClass', async importOriginal => ({ ...(await importOriginal<typeof import('../../../rust/bridge/deviceClass')>()), handheldDevice: () => hooks.handheld }));
 vi.mock('../../src/v2/autosave', () => ({ takeAutosave: hooks.takeAutosave, armAutosave: hooks.armAutosave, saveAutosaveNow: hooks.saveAutosaveNow, mountNewButton: vi.fn() }));
-vi.mock('../../src/v2/i18n', () => ({ setText: vi.fn() }));
+vi.mock('../../src/v2/i18n', () => ({ setText: vi.fn(), registerMessages: vi.fn() }));
 vi.mock('../../src/v2/testHook', () => ({ mountV2TestHook: vi.fn() }));
 vi.mock('../../src/v2/machineTier', () => ({ inspectMachine: () => Promise.resolve({ tier: 'fast' }), releaseMachineStyle: vi.fn() }));
 vi.mock('../../src/v2/page/machineDefault', () => ({ mountMachineDefault: vi.fn(), mountPerformancePolicy: vi.fn(), repairMachinePreset: vi.fn(), persistedSettings: (settings: unknown) => settings }));
@@ -15,6 +16,7 @@ import { mountPageBoot } from '../../src/v2/page/bootstrap';
 import { createSettingsActions } from '../../src/v2/page/settings';
 
 afterEach(() => {
+  hooks.handheld = false;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.clearAllMocks();
@@ -56,6 +58,7 @@ async function boot(restore: boolean, saved: SavedRecipe, search = '') {
     loadProject: hooks.load,
     setBusy: vi.fn(),
     log: vi.fn(),
+    toast: vi.fn(),
     generate: vi.fn(async () => true),
     selectTab: vi.fn(),
   };
@@ -88,6 +91,15 @@ it('keeps the existing restoration path and restores the saved viewport when opt
   expect(actions.generate).toHaveBeenCalledWith('all');
   expect(actions.selectTab).toHaveBeenCalledWith('cities');
   expect(random).not.toHaveBeenCalled();
+});
+
+it('resumes a map left recently on a handheld device without the opt-in', async () => {
+  hooks.handheld = true;
+  const saved = { settings: defaultSettings(), mods: [], view: { cx: 200, cy: 300, scale: 2 }, savedAt: Date.now() - 60_000 };
+  const { actions, viewer } = await boot(false, saved);
+  await vi.waitFor(() => expect(viewer.setView).toHaveBeenCalledWith(saved.view));
+  expect(hooks.load).toHaveBeenCalledWith({ settings: saved.settings, mods: saved.mods });
+  expect(actions.generate).toHaveBeenCalledWith('all');
 });
 
 it('keeps benchmark and explicit test loads stable without reading autosave or drawing random choices', async () => {

@@ -434,3 +434,24 @@ export function zoomAtGround(view: View, factor: number, sx: number, sy: number,
   }
   return { ...view, scale, cx: view.cx + ax - ax / factor, cy: view.cy + ay - ay / factor };
 }
+
+/** Turns a view by `turn` radians of yaw around the ground under the CSS pixel (sx, sy), the plane through the target,
+ * which stays under it: the camera rig turns about the vertical through that point instead of through the centre. */
+export function turnAtGround(view: View, turn: number, sx: number, sy: number, cssW: number, cssH: number): View {
+  const yaw = wrapYaw(wrapYaw(view.yaw) + turn);
+  if (!groundPoint(poseCamera(scratch, view, cssH), sx, sy, cssW, cssH, undefined, from)) return { ...view, yaw };
+  // A point near the horizon is kilometres away: the pivot stays within reach of the centre, as a zoom's anchor.
+  let ax = from[0] - view.cx,
+    ay = from[1] - view.cy;
+  const limit = (PAN_REACH * Math.max(cssW, cssH)) / (2 * view.scale),
+    length = Math.hypot(ax, ay);
+  if (length > limit) {
+    ax *= limit / length;
+    ay *= limit / length;
+  }
+  // The rig turns by R(turn) (camera.ts poseCamera: the ground direction up the screen is (sin yaw, -cos yaw)), so the
+  // centre goes to pivot - R(turn)(pivot - centre).
+  const cos = Math.cos(turn),
+    sin = Math.sin(turn);
+  return { ...view, yaw, cx: view.cx + ax - (ax * cos - ay * sin), cy: view.cy + ay - (ax * sin + ay * cos) };
+}

@@ -13,11 +13,15 @@ import { isCompactProcedural } from '../../../rust/bridge/terrainGenerationRecip
 import { terrainReliefAvailable, type V2TerrainSettings } from './terrainSettings';
 
 export const STARTUP_RESTORE_KEY = 'magna-urbis-v2-reload-previous-map';
-export function reloadPreviousMapAtStartup(): boolean {
+/** A handheld device without a stored preference resumes a map left this recently (phones discard background tabs). */
+export const RESUME_WINDOW_MS = 30 * 60 * 1000;
+/** The stored preference, or undefined while the user never chose. */
+export function reloadPreviousMapAtStartup(): boolean | undefined {
   try {
-    return globalThis.localStorage?.getItem(STARTUP_RESTORE_KEY) === 'true';
+    const value = globalThis.localStorage?.getItem(STARTUP_RESTORE_KEY);
+    return value === 'true' ? true : value === 'false' ? false : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
 export function setReloadPreviousMapAtStartup(value: boolean): void {
@@ -121,13 +125,16 @@ export function randomInitialSettings(previous: V2Settings, random: () => number
   return settings;
 }
 
-/** Explicit links and test pages never draw random numbers or restore unrelated local state. */
+/** Explicit links and test pages never draw random numbers or restore unrelated local state. `restore` is the stored
+ * preference; without one, a handheld device resumes a generated map (it has a saved view) saved less than `RESUME_WINDOW_MS` before `now`. */
 export function startupPlan(
   current: V2Settings,
   saved: SavedRecipe | undefined,
-  options: { explicit: boolean; restore: boolean; random?: () => number },
+  options: { explicit: boolean; restore: boolean | undefined; handheld?: boolean; now?: number; random?: () => number },
 ): { mode: 'explicit'; settings: V2Settings } | { mode: 'restore'; saved: SavedRecipe } | { mode: 'fresh'; settings: V2Settings } {
   if (options.explicit) return { mode: 'explicit', settings: current };
-  if (options.restore && saved) return { mode: 'restore', saved };
+  const age = options.now !== undefined && saved?.savedAt !== undefined ? options.now - saved.savedAt : Infinity;
+  const resume = options.handheld === true && saved?.view !== undefined && age >= 0 && age < RESUME_WINDOW_MS;
+  if ((options.restore ?? resume) && saved) return { mode: 'restore', saved };
   return { mode: 'fresh', settings: randomInitialSettings(saved?.settings ?? current, options.random) };
 }

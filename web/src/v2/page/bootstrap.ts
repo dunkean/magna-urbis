@@ -3,13 +3,17 @@
  * goes), the test hook (`window.__v2Test`), a city code or link, the autosave restore, and the first engine probe.
  */
 import type { PageActions, PageState } from './contract';
-import { setText } from '../i18n';
+import { registerMessages, setText } from '../i18n';
 import { mountV2TestHook } from '../testHook';
 import { armAutosave, takeAutosave, mountNewButton, saveAutosaveNow } from '../autosave';
 import { $ } from './dom';
 import { inspectMachine, releaseMachineStyle } from '../machineTier';
 import { mountMachineDefault, mountPerformancePolicy, persistedSettings, repairMachinePreset } from './machineDefault';
 import { reloadPreviousMapAtStartup, startupPlan } from '../startup';
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
+
+const RESUMING = 'Resuming your last map…';
+registerMessages({ [RESUMING]: { en: RESUMING, fr: 'Reprise de votre dernière carte…' } });
 
 export async function mountPageBoot(state: PageState, actions: PageActions): Promise<void> {
   setText($('#build-info'), `${import.meta.env.VITE_BUILD_DATE ?? 'dev'} · ${import.meta.env.VITE_BUILD_COMMIT ?? 'local'}`);
@@ -43,15 +47,18 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
 
   await state.cityCodeSharing.restoreFromLocation();
 
-  // Explicit links/tests win. Previous-map restoration is opt-in; ordinary openings propose a new landscape.
+  // Explicit links/tests win. Previous-map restoration is opt-in; ordinary openings propose a new landscape, except a
+  // phone or tablet without a stored preference, which resumes a map left recently (see `startupPlan`).
   // Never awaited here: the entry module (main.ts awaits this function) must finish evaluating before the restored run
   // draws its map. In the build, the lazy renderer chunk imports the entry chunk, so `import('./benchRenderer')` waited
   // for the entry module, which waited for the run.
   void (async () => {
     const explicit = new URLSearchParams(location.hash.slice(1)).has('city') || new URLSearchParams(location.search).get('test') === '1';
     const previous = explicit ? undefined : await takeAutosave();
-    const plan = startupPlan(state.settings, previous, { explicit, restore: reloadPreviousMapAtStartup() });
+    const plan = startupPlan(state.settings, previous, { explicit, restore: reloadPreviousMapAtStartup(), handheld: handheldDevice(), now: Date.now() });
     const saved = plan.mode === 'restore' ? plan.saved : undefined;
+    // Until the restored map is drawn, the autosave keeps its view: a tab discarded again meanwhile still resumes it.
+    let restoringView = saved?.view;
     if (plan.mode === 'fresh') {
       repairMachinePreset(plan.settings);
       state.settings = plan.settings;
@@ -60,7 +67,7 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
       actions.syncControls();
     }
     const startAutosave = () =>
-      armAutosave(() => ({ settings: persistedSettings(state.settings), mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab } }));
+      armAutosave(() => ({ settings: persistedSettings(state.settings), mods: state.mods, view: state.world ? state.client.viewer.getView() : restoringView, ui: { tab: state.currentTab } }));
     const machine = await machineProbe;
     if (saved) {
       actions.setBusy(true);
@@ -77,8 +84,11 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     if (!new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
     if (saved) {
       actions.setBusy(false);
+      // The automatic resume of a phone was not asked for: say what the page is doing.
+      if (reloadPreviousMapAtStartup() === undefined) actions.toast(RESUMING);
       startAutosave(); // Save edits and pagehide even while the restored generation is still running.
       await actions.generate('all');
+      restoringView = undefined;
       try {
         if (saved.view) state.client.viewer.setView(saved.view as never);
       } catch {

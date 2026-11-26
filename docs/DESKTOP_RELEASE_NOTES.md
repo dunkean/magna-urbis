@@ -202,6 +202,9 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - On phones, the header fits the screen with a ⋯ menu for secondary actions. The toolbar keeps the map style, 2D/3D and a Display panel for the other view controls. The places list folds into a chip, and the phone layout also applies in landscape.
 - With a finger: fields no longer zoom the page on iOS, buttons, sliders and checkboxes have larger touch areas, parameter help opens from a ? button, dialogs close with a tap outside, and a downward pan no longer reloads the page.
 - The advice to use Chrome or Edge is no longer shown on iPhone and iPad, where it could not help.
+- In the tilted view, twisting two fingers turns the map, together with pinch and pan. On phones and tablets, free flight has on-screen up and down buttons.
+- With a finger, the map editors pick roads, outlines and towns within a wider radius. Moving a town no longer blocks panning and pinching. Settlement placement and outline cuts have a Cancel button, and editor hints describe touch actions.
+- On phones and tablets, a map left less than 30 minutes ago is resumed automatically after the browser discarded the tab. The Reload previous map preference still decides when it has been set.
 
 ## Alpha 0.3.10
 

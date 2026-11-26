@@ -176,3 +176,41 @@
     display: none;
   }
 }
+/* Cancel of a placement waiting for a tap (editingTools.ts): only handheld devices have it, over the top of the map. */
+#app .map-area > #placement-cancel {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 8;
+  min-height: 40px;
+  padding: 8px 18px;
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+#app .map-area > #placement-cancel[hidden] {
+  display: none;
+}
+/* Climb and descend of a free flight (page/worldNavigation.ts), handheld only: held down like the Space and C keys. */
+#app .map-area > .world-flight {
+  position: absolute;
+  right: max(8px, env(safe-area-inset-right));
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+#app .map-area > .world-flight[hidden] {
+  display: none;
+}
+#app .world-flight > button {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  font-size: 18px;
+}

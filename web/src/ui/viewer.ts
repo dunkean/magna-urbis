@@ -76,6 +76,9 @@ export interface Viewer {
    * camera had before. */
   setNavigation(mode: Navigation): void;
   navigation(): Navigation;
+  /** Holds (`down`) or lets go a key that moves a walk or a flight, by its KeyboardEvent.code ('Space' climbs, 'KeyC'
+   * descends): an on-screen button held down moves the eye as the key would. */
+  holdMove(code: string, down: boolean): void;
   /** Where the ground points of the map are on screen for the view on screen (render/world/camera.ts), made again only
    * when the view, the size or the relief changed: the page's overlays follow a tilted camera with it. */
   projection(): ScreenProjection;
@@ -127,6 +130,7 @@ export function createViewer(o: ViewerOptions): Viewer {
     setView: nav.setView,
     setNavigation: nav.setNavigation,
     navigation: nav.navigation,
+    holdMove: nav.holdCode,
     projection: nav.projection,
     tiltTo: nav.tiltTo,
     setTiltLocked: nav.setTiltLocked,

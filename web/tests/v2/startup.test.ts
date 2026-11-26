@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../../src/v2/settings';
 import { effectiveTerrainSettings } from '../../src/v2/terrainSettings';
 import { validateSettings } from '../../src/v2/project';
-import { randomInitialSettings, reloadPreviousMapAtStartup, setReloadPreviousMapAtStartup, STARTUP_RESTORE_KEY, startupPlan } from '../../src/v2/startup';
+import type { SavedRecipe } from '../../src/v2/autosave';
+import { randomInitialSettings, reloadPreviousMapAtStartup, RESUME_WINDOW_MS, setReloadPreviousMapAtStartup, STARTUP_RESTORE_KEY, startupPlan } from '../../src/v2/startup';
 
 afterEach(() => vi.unstubAllGlobals());
 const draws = (...values: number[]) => {
@@ -100,12 +101,31 @@ describe('initial landscape', () => {
     expect(startupPlan(current, saved, { explicit: false, restore: false, random }).mode).toBe('fresh');
     expect(random).toHaveBeenCalled();
   });
+
+  it('resumes a recently generated map on handheld devices only while no preference is stored', () => {
+    const current = defaultSettings(),
+      now = 1_000_000_000,
+      map = { settings: defaultSettings(), mods: [], view: { cx: 1, cy: 2, scale: 3 }, savedAt: now - 60_000 };
+    const old = { ...map, savedAt: now - RESUME_WINDOW_MS - 1 },
+      noMap = { ...map, view: undefined },
+      undated = { ...map, savedAt: undefined };
+    const plan = (saved: SavedRecipe, restore: boolean | undefined, handheld: boolean) => startupPlan(current, saved, { explicit: false, restore, handheld, now, random: () => 0.5 }).mode;
+    expect(plan(map, undefined, true)).toBe('restore');
+    expect(plan(old, undefined, true)).toBe('fresh');
+    expect(plan(noMap, undefined, true)).toBe('fresh');
+    expect(plan(undated, undefined, true)).toBe('fresh');
+    expect(plan(map, false, true)).toBe('fresh');
+    expect(plan(old, true, true)).toBe('restore');
+    expect(plan(noMap, true, false)).toBe('restore');
+    expect(plan(map, undefined, false)).toBe('fresh');
+    expect(startupPlan(current, map, { explicit: true, restore: undefined, handheld: true, now })).toEqual({ mode: 'explicit', settings: current });
+  });
 });
 
-it('defaults previous-map restoration off and persists only the explicit local preference', () => {
+it('defaults previous-map restoration to unset and persists only the explicit local preference', () => {
   const values = new Map<string, string>();
   vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key), setItem: (key: string, value: string) => values.set(key, value) });
-  expect(reloadPreviousMapAtStartup()).toBe(false);
+  expect(reloadPreviousMapAtStartup()).toBeUndefined();
   setReloadPreviousMapAtStartup(true);
   expect(values.get(STARTUP_RESTORE_KEY)).toBe('true');
   expect(reloadPreviousMapAtStartup()).toBe(true);

@@ -12,6 +12,7 @@ import { getDistanceUnit, setDistanceUnit, onUnitsChange, type DistanceUnit } fr
 import { reloadPreviousMapAtStartup, setReloadPreviousMapAtStartup } from './startup';
 import { machineDecision, onMachineDecision, performancePreference, type PerformanceLevel, type PerformancePreference } from './machineTier';
 import { choosePerformance } from './machineView';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 
 export type ThreadsMode = 'auto' | 'on' | 'off' | 'pool';
 export interface BackendStatus {
@@ -44,6 +45,7 @@ const T = {
     'When off, startup proposes a new biome, relief and coastline. Opened projects and shared links keep their own landscape.',
     'Désactivé, le démarrage propose un nouveau biome, relief et littoral. Les projets ouverts et les liens partagés gardent leur paysage.',
   ),
+  resumeHelp: copy('On phones and tablets, a map left less than 30 minutes ago is resumed automatically.', 'Sur téléphone et tablette, une carte quittée depuis moins de 30 minutes est reprise automatiquement.'),
   units: copy('Units', 'Unités'),
   metric: copy('Metric (m / km)', 'Métrique (m / km)'),
   imperial: copy('Imperial (ft / mi)', 'Impérial (ft / mi)'),
@@ -343,7 +345,7 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
     startup.className = 'checkline';
     reloadMap.type = 'checkbox';
     reloadMap.id = 'startup-reload-map';
-    reloadMap.checked = reloadPreviousMapAtStartup();
+    reloadMap.checked = reloadPreviousMapAtStartup() === true;
     reloadMap.onchange = () => setReloadPreviousMapAtStartup(reloadMap.checked);
     setText(startupLabel, T.reloadMap);
     startup.append(reloadMap, startupLabel);
@@ -352,6 +354,12 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
     startupHelp.className = 'hint';
     setText(startupHelp, T.startupHelp);
     host.append(startupHelp);
+    if (handheldDevice()) {
+      const resumeHelp = document.createElement('p');
+      resumeHelp.className = 'hint';
+      setText(resumeHelp, T.resumeHelp);
+      host.append(resumeHelp);
+    }
     section(T.execution);
     if (bindings.getSettings) {
       const settings = bindings.getSettings(),

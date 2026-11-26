@@ -1,6 +1,6 @@
 /** Camera and navigation for createViewer. Owns orbit, walk/fly, easing and projection so input and presentation share one camera. */
 import { View, fitView, clampView, zoomAt, panBy } from '../render/view';
-import { clampLook, clampPitch, panOnGround, screenProjection, wrapYaw, zoomAtGround, type ScreenProjection } from '../render/world/camera';
+import { clampLook, clampPitch, panOnGround, screenProjection, turnAtGround, wrapYaw, zoomAtGround, type ScreenProjection } from '../render/world/camera';
 import type { WorldRelief } from '../render/world/contract';
 import type { Terrain3dCollisions } from '../render/world/terrain3dCollisions';
 import { enterFreeEye, leaveFreeEye, lookFreeEye, moveFreeEye, switchFreeEye, walkingEye, type Navigation } from '../render/world/navigation';
@@ -213,7 +213,27 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
     tiltTarget = { pitch: clampPitch(toPitch), yaw: wrapYaw(toYaw) };
     invalidate();
   };
+  /** Holds or lets go a key that moves a free eye, by its KeyboardEvent.code: the keys, and the on-screen buttons of a
+   * handheld, step it the same way. */
+  const holdCode = (code: string, down: boolean): void => {
+    if (!down) {
+      held.delete(code);
+      return;
+    }
+    if (!held.size) heldStamp = performance.now();
+    held.add(code);
+    invalidate();
+  };
   const easeTiltBy = (lift: number, turn: number): void => tiltTo((tiltTarget?.pitch ?? pitch) + lift, (tiltTarget?.yaw ?? yaw) + turn);
+  /** Turns the orbit at once around the ground under a screen point, which stays under it (two fingers twisting). In
+   * the top view of a map that tilts, this is a turned top view. */
+  const turnAt = (turn: number, sx: number, sy: number): void => {
+    if (!tilts() || navigation !== 'orbit' || !turn) return;
+    tiltTarget = null;
+    const turned = turnAtGround({ ...view, pitch, yaw }, turn, sx, sy, w, h);
+    yaw = turned.yaw!;
+    set({ cx: turned.cx, cy: turned.cy, scale: view.scale });
+  };
 
   return {
     get view() {
@@ -253,6 +273,7 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
     easeZoomBy,
     tiltBy,
     easeTiltBy,
+    turnAt,
     panned,
     zoomed,
     tellCamera,
@@ -288,10 +309,9 @@ export function createViewerNavigation(capable: () => boolean, invalidate: () =>
       if (wasTilting !== tilts() && (pitch !== 0 || yaw !== 0 || navigation !== 'orbit')) invalidate();
     },
     hold(e: KeyboardEvent) {
-      if (!held.size) heldStamp = performance.now();
-      held.add(e.code);
-      invalidate();
+      holdCode(e.code, true);
     },
+    holdCode,
     release(e: KeyboardEvent) {
       if (held.delete(e.code)) e.preventDefault();
     },

@@ -80,6 +80,21 @@ describe('V2 reload recovery', () => {
     window.dispatchEvent(new Event('pagehide'));
     expect(await takeAutosave()).toBeUndefined();
   });
+  it('saves when a phone hides the page, with the time of the save', async () => {
+    const page = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    vi.stubGlobal('document', page);
+    const settings = defaultSettings();
+    armAutosave(() => ({ settings, mods: [], view: { cx: 1, cy: 2, scale: 3 } }));
+    settings.options.seed = 'left-in-background';
+    page.dispatchEvent(new Event('visibilitychange'));
+    expect((await takeAutosave())?.settings.options.seed).not.toBe('left-in-background');
+    page.visibilityState = 'hidden';
+    page.dispatchEvent(new Event('visibilitychange'));
+    const saved = await takeAutosave();
+    expect(saved?.settings.options.seed).toBe('left-in-background');
+    expect(saved?.view).toEqual({ cx: 1, cy: 2, scale: 3 });
+    expect(Math.abs(Date.now() - saved!.savedAt!)).toBeLessThan(60_000);
+  });
   it('discards invalid and incompatible recipes', async () => {
     for (const raw of ['{', JSON.stringify({ tag: 'obsolete', settings: defaultSettings(), mods: [] }), JSON.stringify({ tag, settings: {}, mods: [] })]) {
       storage.set(KEY, raw);

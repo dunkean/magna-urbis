@@ -14,8 +14,11 @@ export interface SavedUi {
 export interface SavedRecipe {
   settings: V2Settings;
   mods: unknown[];
+  /** Written only while a map is displayed (or being restored): it proves that the recipe had been generated. */
   view?: unknown;
   ui?: SavedUi;
+  /** `Date.now()` of the write, set by the autosave itself. */
+  savedAt?: number;
 }
 const DB = 'magna-urbis.v2.autosave',
   STORE = 'entries';
@@ -76,14 +79,15 @@ function write(): void {
       void idbDelete();
       return;
     }
+    const entry = { tag: TAG, settings: recipe.settings, mods: recipe.mods, view: recipe.view, ui: recipe.ui, savedAt: Date.now() };
     // A heightmap import holds typed arrays: the full entry goes to IndexedDB (structured clone), localStorage keeps a marker.
     if (recipe.settings.options.importedHeight || recipe.settings.decor) {
       localStorage.setItem(KEY, JSON.stringify({ tag: TAG, idb: true }));
-      void idbPut({ tag: TAG, settings: recipe.settings, mods: recipe.mods, view: recipe.view, ui: recipe.ui });
+      void idbPut(entry);
       return;
     }
     void idbDelete();
-    localStorage.setItem(KEY, JSON.stringify({ tag: TAG, settings: recipe.settings, mods: recipe.mods, view: recipe.view, ui: recipe.ui }));
+    localStorage.setItem(KEY, JSON.stringify(entry));
   } catch {
     /* Storage unavailable or full: the app works without it. */
   }
@@ -116,7 +120,7 @@ export async function takeAutosave(): Promise<SavedRecipe | undefined> {
     if (!value || value.tag !== TAG) throw new Error(`tag ${String(value?.tag)} differs from ${TAG}`);
     validateSettings(value.settings);
     validateModifications(value.mods);
-    return { settings: value.settings, mods: value.mods, view: value.view, ui: value.ui };
+    return { settings: value.settings, mods: value.mods, view: value.view, ui: value.ui, savedAt: typeof value.savedAt === 'number' ? value.savedAt : undefined };
   } catch (e) {
     try {
       if (localStorage.getItem(KEY) === raw) {
@@ -130,11 +134,16 @@ export async function takeAutosave(): Promise<SavedRecipe | undefined> {
     return undefined;
   }
 }
+/** Phones often discard a background tab without `pagehide`: hiding the page is their last reliable event. */
+const writeWhenHidden = () => {
+  if (document.visibilityState === 'hidden') write();
+};
 /** Start saving (after the boot restore succeeded or was skipped). `read` returns the live recipe. */
 export function armAutosave(read: () => SavedRecipe | undefined): void {
   source = read;
   armed = true;
   window.addEventListener('pagehide', write);
+  globalThis.document?.addEventListener('visibilitychange', writeWhenHidden);
   write();
 }
 export function scheduleAutosave(): void {

@@ -37,6 +37,8 @@ import { namePresentation } from './mapPresentation';
 import { presentName } from '../gen/names/displayNames';
 import { editorButtonIcon, networkToolIcon } from './editorIcons';
 import { confirmAction } from './actionDialog';
+import { pickRadius } from './pickRadius';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 import { editableRuralRoads } from './ruralRoadEditing';
 import { editableUrbanRoads, syncUrbanRoadEdits, adoptUrbanRoad } from './urbanRoadEditing';
 import { identifyRoads, roadControlSegment, translatedRoadSegment, insertRoadControlGeometry, deleteRoadControlSegment } from './roadGestures';
@@ -155,6 +157,14 @@ const T = {
   complete: copy('Road edits applied.', 'Modifications des routes appliquées.'),
   undone: copy('Road edit undone.', 'Modification de route annulée.'),
   redone: copy('Road edit restored.', 'Modification de route rétablie.'),
+  // Phones and tablets have no keyboard: these hints name the touch gestures and the on-screen buttons instead.
+  touchAutoHint: copy('Tap to place waypoints. Tap the last point or Finish road to finish. Tap outside the map to finish at a regional entry.', 'Touchez pour poser les points de passage. Touchez le dernier point ou Terminer la route pour terminer. Touchez hors carte pour terminer sur une entrée régionale.'),
+  touchRoadsHint: copy(
+    'Tap: select line or point. Double-tap: add a point, or select the line from a point. Hold: select a segment. Remove point and Delete road remove them.',
+    'Toucher : ligne ou point. Double toucher : ajouter un point, ou revenir du point à la ligne. Appui long : segment. Retirer le point et Supprimer la route les retirent.',
+  ),
+  touchAddHint: copy('Tap the selected road where you want a new waypoint. Tap Add a waypoint again to cancel.', 'Touchez la route à l’endroit où ajouter une étape. Touchez de nouveau Ajouter une étape pour annuler.'),
+  touchChanged: copy('{n} edits · ↶ to undo', '{n} modifications · ↶ pour annuler'),
 };
 const CLASS_LABEL: Record<RoadClass, string> = { highway: T.highway, main: T.main, local: T.local, track: T.track, trail: T.trail };
 const SVG = 'http://www.w3.org/2000/svg';
@@ -211,6 +221,10 @@ type HistoryEdit = { before: HistoryState; after: HistoryState; validated?: bool
 
 export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   const modeToken = `network:${host.tools?.join('-') ?? 'all'}`;
+  const touch = handheldDevice(),
+    autoHint = touch ? T.touchAutoHint : T.autoHint,
+    roadsHint = touch ? T.touchRoadsHint : T.roadsHint,
+    addHint = touch ? T.touchAddHint : T.addHint;
   if (!document.getElementById(STYLE_ID)) {
     const style = el('style');
     style.id = STYLE_ID;
@@ -334,7 +348,8 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     throughLakes = true;
   let suppressClick = false;
   let lastLineTap: { time: number; road: number; point: Vec2; vertex: number } | undefined;
-  let downAt: { x: number; y: number } | undefined,
+  /** The last press on the map, and its pointer type (the pick radius of the click and double click it makes). */
+  let downAt: { x: number; y: number; type: string } | undefined,
     frame = 0,
     lastBox = '',
     junctionCache: { world: World; points: ReturnType<typeof junctionPoints> } | undefined;
@@ -957,7 +972,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   };
   function onPointerDown(event: PointerEvent): void {
     if (current === 'off') return;
-    downAt = { x: event.clientX, y: event.clientY };
+    downAt = { x: event.clientX, y: event.clientY, type: event.pointerType };
     suppressClick = false;
     const handle = inOverlay(event.target),
       w = world();
@@ -969,7 +984,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       event.stopPropagation();
       return;
     }
-    const hit = roadAt(w, p, PICK_PX / scale()),
+    const hit = roadAt(w, p, pickRadius(event.pointerType, PICK_PX) / scale()),
       index = handle?.dataset.road !== undefined ? Number(handle.dataset.road) : hit?.index;
     if (index === undefined || !w.roads?.[index]) return;
     clearHold();
@@ -980,7 +995,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     const at = role === 'add-control' ? { x: Number(handle!.dataset.x), y: Number(handle!.dataset.y) } : p;
     const inserted = insertion ? insertRoadWaypoint(geometry, at) : undefined;
     const nearest = geometry.controls.map((q, i) => ({ i, d: Math.hypot(p.x - q.x, p.y - q.y) * scale() })).sort((a, b) => a.d - b.d)[0];
-    const vertex = inserted?.index ?? (role === 'vertex' ? Number(handle!.dataset.index) : nearest?.d <= 8 ? nearest.i : -1);
+    const vertex = inserted?.index ?? (role === 'vertex' ? Number(handle!.dataset.index) : nearest?.d <= pickRadius(event.pointerType, 8) ? nearest.i : -1);
     const segment = roadControlSegment(w, index, p),
       keepSegment = wasSelected && oldSegment === segment && vertex < 0 && !insertion;
     const whole = vertex < 0 && !keepSegment;
@@ -1133,7 +1148,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       w = world();
     if (moved || !w || working || host.busy?.()) return;
     const p = toWorld(event.clientX, event.clientY),
-      tolerance = PICK_PX / scale();
+      tolerance = pickRadius(downAt?.type, PICK_PX) / scale();
     if (current === 'draw') {
       const last = draft[draft.length - 1];
       if (handle?.dataset.role === 'draw-last' || (last && draft.length >= 2 && Math.hypot(last.x - p.x, last.y - p.y) <= tolerance)) {
@@ -1219,7 +1234,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
   function addWaypointAt(p: Vec2): void {
     const w = world();
     if (!w || working || host.busy?.()) return;
-    const hit = roadAt(w, p, PICK_PX / scale());
+    const hit = roadAt(w, p, pickRadius(downAt?.type, PICK_PX) / scale());
     if (!hit) return;
     selected = hit.index;
     const geometry = editableRoadGeometry(w.roads![selected], w.mapSize),
@@ -1556,7 +1571,7 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
     sessionBar.dataset.pending = String(dirty);
     sessionBar.setAttribute('aria-busy', String(working));
     sessionBar.setAttribute('aria-label', translate(T.validate));
-    sessionHint.textContent = working ? translate(status || T.working) : dirty ? fmt(T.changed, { n: Math.max(0, undoStack.length - sessionHistoryStart) }) : translate(T.pending);
+    sessionHint.textContent = working ? translate(status || T.working) : dirty ? fmt(touch ? T.touchChanged : T.changed, { n: Math.max(0, undoStack.length - sessionHistoryStart) }) : translate(T.pending);
     feedback.textContent = lastFeedback;
     feedback.hidden = !lastFeedback;
     setText(validateButton, T.validate);
@@ -1576,10 +1591,10 @@ export function mountNetworkEditor(host: NetworkEditorHost): NetworkEditor {
       b.setAttribute('aria-pressed', String(current === b.dataset.networkTool));
       b.disabled = busy || working || !w;
     }
-    setText(hint, current === 'roads' ? (addingPoint ? T.addHint : T.roadsHint) : current === 'draw' ? T.autoHint : current === 'rivers' ? T.riversHint : T.idle);
+    setText(hint, current === 'roads' ? (addingPoint ? addHint : roadsHint) : current === 'draw' ? autoHint : current === 'rivers' ? T.riversHint : T.idle);
     detail.replaceChildren();
     banner.hidden = current === 'off' || !(status || current === 'roads' || current === 'draw' || (current === 'rivers' && !plan));
-    banner.textContent = status ? translate(status) : cutPreview ? translate(T.cutPreview) : current === 'roads' ? translate(addingPoint ? T.addHint : T.roadsHint) : current === 'draw' ? translate(T.autoHint) : translate(T.riversHint);
+    banner.textContent = status ? translate(status) : cutPreview ? translate(T.cutPreview) : current === 'roads' ? translate(addingPoint ? addHint : roadsHint) : current === 'draw' ? translate(autoHint) : translate(T.riversHint);
     if (!w || current === 'off') return;
     if (current === 'roads') {
       const history = el('div', 'v2-network-row');

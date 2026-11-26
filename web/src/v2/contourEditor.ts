@@ -2,6 +2,8 @@ import type { Shape, Point } from '../../../rust/bridge/urban';
 import type { View } from '../render/view';
 import { screenToWorld } from '../render/view';
 import { registerMessages, translate, onLanguageChange } from './i18n';
+import { pickRadius } from './pickRadius';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 import { editableContours, contourAt, type ContourEdit, type ContourKind, type ContourState, type ContourTarget } from './contourEdits';
 import { contourRings, copyContour, contourPointAt, nearestContour, insertContourPoint, translateContour, removeContourSelection, splitContour, contourProblem, type ContourSelection } from './contourGeometry';
 
@@ -28,6 +30,13 @@ const T = {
   cut: copy('Split area from this point', 'Scinder la zone depuis ce point'),
   remove: copy('Delete selection', 'Supprimer la sélection'),
   cutHint: copy('Choose a second point on the outer boundary to split the area. Esc cancels the cut.', 'Choisissez un second point sur le bord extérieur pour scinder la zone. Échap annule la coupe.'),
+  // Phones and tablets have no keyboard: the touch hints name the on-screen controls instead.
+  touchHint: copy(
+    'Tap an outline or a point. Double-tap an edge to add a point, a point to select the outline. Hold to select an edge. The − button removes the selected point.',
+    'Touchez un contour ou un point. Touchez deux fois un bord pour ajouter un point, un point pour choisir le contour. Appui long : segment. Le bouton − retire le point choisi.',
+  ),
+  touchCutHint: copy('Choose a second point on the outer boundary to split the area, or tap Cancel.', 'Choisissez un second point sur le bord extérieur pour scinder la zone, ou touchez Annuler.'),
+  cancelCut: copy('Cancel', 'Annuler'),
   undo: copy('Undo outline edit', 'Annuler la modification du contour'),
   redo: copy('Redo outline edit', 'Rétablir la modification du contour'),
   working: copy('Applying the outline and its dependent objects…', 'Application du contour et des objets qui en dépendent…'),
@@ -85,8 +94,12 @@ export function mountContourEditor(host: ContourEditorHost) {
     undo = document.createElement('button'),
     redo = document.createElement('button'),
     hint = document.createElement('p'),
-    message = document.createElement('p');
-  finish.type = undo.type = redo.type = 'button';
+    message = document.createElement('p'),
+    cancelCut = document.createElement('button');
+  const touch = handheldDevice();
+  finish.type = undo.type = redo.type = cancelCut.type = 'button';
+  cancelCut.dataset.contourCancelCut = '';
+  cancelCut.hidden = true;
   finish.dataset.contourFinish = '';
   finish.className = 'primary';
   undo.dataset.contourUndo = '';
@@ -95,7 +108,7 @@ export function mountContourEditor(host: ContourEditorHost) {
   message.setAttribute('role', 'status');
   message.setAttribute('aria-live', 'polite');
   const actions = document.createElement('div');
-  actions.append(undo, redo);
+  actions.append(undo, redo, cancelCut);
   panel.append(finish, actions, hint, message);
   (host.map.parentElement?.querySelector('.map-bottom') ?? host.map.parentElement)?.append(panel);
   const buttons = (['quarter', 'block', 'parcel'] as const).map(k => {
@@ -164,7 +177,11 @@ export function mountContourEditor(host: ContourEditorHost) {
     redo.textContent = '↷ ' + translate(T.redo);
     undo.disabled = busy || !past.length;
     redo.disabled = busy || !future.length;
-    hint.textContent = translate(working ? T.working : cutStart ? T.cutHint : target ? T.hint : T.pick);
+    hint.textContent = translate(working ? T.working : cutStart ? (touch ? T.touchCutHint : T.cutHint) : target ? (touch ? T.touchHint : T.hint) : T.pick);
+    // Escape cancels a cut; without a keyboard, this button does.
+    cancelCut.hidden = !touch || !cutStart;
+    cancelCut.textContent = translate(T.cancelCut);
+    cancelCut.disabled = busy;
     message.textContent = feedback;
     message.hidden = !feedback;
     layer.setAttribute('aria-busy', String(working));
@@ -367,14 +384,15 @@ export function mountContourEditor(host: ContourEditorHost) {
       state = host.capture();
     if (!state) return;
     if (cutStart && target) {
-      if (nearestContour(target.shape, p).distance < 12 / host.getView().scale) finishCut(p);
+      if (nearestContour(target.shape, p).distance < pickRadius(e.pointerType, 12) / host.getView().scale) finishCut(p);
       e.stopPropagation();
       e.preventDefault();
       return;
     }
     const targets = editableContours(state.world, kind, state.settings),
       retained = target && targets.find(t => t.town === target!.town && t.id === target!.id);
-    const hit = retained && nearestContour(retained.shape, p).distance <= 10 / host.getView().scale ? retained : contourAt(targets, p, 10 / host.getView().scale);
+    const reach = pickRadius(e.pointerType, 10) / host.getView().scale,
+      hit = retained && nearestContour(retained.shape, p).distance <= reach ? retained : contourAt(targets, p, reach);
     if (!hit) {
       target = undefined;
       selection = { kind: 'line' };
@@ -387,7 +405,7 @@ export function mountContourEditor(host: ContourEditorHost) {
     target = hit;
     draft = undefined;
     const boundary = { outer: hit.shape.outer, holes: [] },
-      vertex = contourPointAt(boundary, p, 8 / host.getView().scale),
+      vertex = contourPointAt(boundary, p, pickRadius(e.pointerType, 8) / host.getView().scale),
       edge = nearestContour(boundary, p);
     const keep = same && old.kind === 'segment' && edge.ring === old.ring && edge.index === old.index && !vertex;
     selection = vertex ? { kind: 'point', ...vertex } : keep ? old : { kind: 'line' };
@@ -567,6 +585,10 @@ export function mountContourEditor(host: ContourEditorHost) {
   finish.onclick = () => {
     stop();
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'navigate' }));
+  };
+  cancelCut.onclick = () => {
+    cutStart = undefined;
+    draw();
   };
   undo.onclick = () => void history();
   redo.onclick = () => void history(true);

@@ -12,6 +12,11 @@ import { moveTown } from './townMove';
 import type { V2Settings } from './contracts';
 import { mountTownMoveSelection } from './townMoveSelection';
 import { registerMessages, setText, translate } from './i18n';
+import { pickRadius } from './pickRadius';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
+
+/** Travel (CSS pixels) under which a touch on the map is a tap, not a pan. */
+const TAP_SLOP_PX = 8;
 
 registerMessages({
   'Move towns': { en: 'Edit positions', fr: 'Modifier les positions' },
@@ -22,6 +27,7 @@ registerMessages({
     en: 'Select a place on the map or in Places, then drag it or click its new position. Esc exits.',
     fr: 'Sélectionnez une localité sur la carte ou dans Lieux, puis glissez-la ou cliquez sur sa nouvelle position. Échap pour terminer.',
   },
+  'Select a place on the map or in Places, then drag it or tap its new position.': { en: 'Select a place on the map or in Places, then drag it or tap its new position.', fr: 'Sélectionnez une localité sur la carte ou dans Lieux, puis glissez-la ou touchez sa nouvelle position.' },
 });
 export function mountTownMoveEditor(api: {
   map: HTMLElement;
@@ -48,7 +54,8 @@ export function mountTownMoveEditor(api: {
   api.map.append(svg);
   const hint = document.createElement('div');
   hint.className = 'glass v2-town-move-hint';
-  setText(hint, 'Select a place on the map or in Places, then drag it or click its new position. Esc exits.');
+  // No keyboard on a phone: the tool ends with its own button (or Cancel).
+  setText(hint, handheldDevice() ? 'Select a place on the map or in Places, then drag it or tap its new position.' : 'Select a place on the map or in Places, then drag it or click its new position. Esc exits.');
   hint.hidden = true;
   api.map.parentElement!.append(hint);
   const pending = new Map<string, { x: number; y: number }>();
@@ -211,30 +218,46 @@ export function mountTownMoveEditor(api: {
     if (enabled) stop();
     else void start().catch(api.error);
   };
+  /** The town under a press (its outline, or near its centre), and the ground point pressed. */
+  const pick = (w: World, event: PointerEvent) => {
+    const p = at(event.clientX, event.clientY),
+      tol = pickRadius(event.pointerType, 12) / api.getView().scale;
+    const distance = (s: Settlement) => {
+      const center = pending.get(s.key) ?? s.center;
+      return Math.hypot(center.x - p.x, center.y - p.y);
+    };
+    const picked = w.settlements
+      ?.filter(s => {
+        const center = pending.get(s.key) ?? s.center;
+        return pointInRing(s.extent, { x: p.x - center.x + s.center.x, y: p.y - center.y + s.center.y }) || distance(s) < Math.max(15, s.radius) + tol;
+      })
+      .sort((a, b) => distance(a) - distance(b))[0];
+    return { p, picked };
+  };
+  /** Where a town pressed off its own place jumps: the pressed point, kept on the map. */
+  const jump = (w: World, town: Settlement, p: { x: number; y: number }) => ({ dx: Math.max(0, Math.min(w.mapSize, p.x)) - town.center.x, dy: Math.max(0, Math.min(w.mapSize, p.y)) - town.center.y });
+  /** Touch: fingers down on the map, and a press that may end as a tap. One finger on the selected town drags it; any
+   * other touch pans and pinches the map, and a tap selects the town under it or brings the selected town there. */
+  const touches = new Set<number>();
+  let tap: { id: number; x: number; y: number } | undefined;
   api.map.addEventListener(
     'pointerdown',
     event => {
       if (!enabled || working || api.busy() || event.button !== 0) return;
       const w = api.getWorld();
       if (!w) return;
-      const p = at(event.clientX, event.clientY),
-        tol = 12 / api.getView().scale;
-      const distance = (s: Settlement) => {
-        const center = pending.get(s.key) ?? s.center;
-        return Math.hypot(center.x - p.x, center.y - p.y);
-      };
-      const picked = w.settlements
-        ?.filter(s => {
-          const center = pending.get(s.key) ?? s.center;
-          return pointInRing(s.extent, { x: p.x - center.x + s.center.x, y: p.y - center.y + s.center.y }) || distance(s) < Math.max(15, s.radius) + tol;
-        })
-        .sort((a, b) => distance(a) - distance(b))[0];
+      const { p, picked } = pick(w, event);
+      if (event.pointerType === 'touch') {
+        touches.add(event.pointerId);
+        tap = touches.size === 1 ? { id: event.pointerId, x: event.clientX, y: event.clientY } : undefined;
+        if (touches.size > 1 || !picked || picked.key !== selection.key()) return;
+        tap = undefined;
+      }
       const town = picked ?? w.settlements?.find(s => s.key === selection.key());
       if (!town) return;
       selection.select(town.key);
       const saved = pending.get(town.key),
-        dx = picked ? (saved ? saved.x - town.center.x : 0) : Math.max(0, Math.min(w.mapSize, p.x)) - town.center.x,
-        dy = picked ? (saved ? saved.y - town.center.y : 0) : Math.max(0, Math.min(w.mapSize, p.y)) - town.center.y;
+        { dx, dy } = picked ? { dx: saved ? saved.x - town.center.x : 0, dy: saved ? saved.y - town.center.y : 0 } : jump(w, town, p);
       drag = { town, x: p.x - dx, y: p.y - dy, dx, dy, id: event.pointerId };
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -268,6 +291,26 @@ export function mountTownMoveEditor(api: {
       draw();
       return;
     }
+    await place(done);
+  }
+  /** A touch lifted: a tap (no second finger, little travel) selects the town under it, or brings the selected town
+   * there. The viewer keeps the event: it panned with that finger. */
+  function lift(event: PointerEvent) {
+    touches.delete(event.pointerId);
+    const press = tap;
+    if (!press || press.id !== event.pointerId) return;
+    tap = undefined;
+    const w = api.getWorld();
+    if (event.type !== 'pointerup' || Math.hypot(event.clientX - press.x, event.clientY - press.y) > TAP_SLOP_PX || !enabled || working || api.busy() || !w) return;
+    const { p, picked } = pick(w, event),
+      town = picked ?? w.settlements?.find(s => s.key === selection.key());
+    if (!town) return;
+    if (picked) {
+      selection.select(town.key);
+      draw();
+    } else void place({ town, ...jump(w, town, p) });
+  }
+  async function place(done: { town: Settlement; dx: number; dy: number }) {
     if (Math.hypot(done.dx, done.dy) < 0.1) {
       if (api.deferred) pending.delete(done.town.key);
       draw();
@@ -290,8 +333,15 @@ export function mountTownMoveEditor(api: {
       draw();
     }
   }
-  api.map.addEventListener('pointerup', event => void finish(event), true);
-  api.map.addEventListener('pointercancel', event => void finish(event), true);
+  for (const type of ['pointerup', 'pointercancel'] as const)
+    api.map.addEventListener(
+      type,
+      event => {
+        lift(event);
+        void finish(event);
+      },
+      true,
+    );
   api.map.addEventListener(
     'click',
     event => {

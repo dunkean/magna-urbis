@@ -1,4 +1,5 @@
 import { registerMessages, setText, onLanguageChange, translate } from './i18n';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 
 registerMessages({
   Appearance: { en: 'Appearance', fr: 'Apparence' },
@@ -8,6 +9,7 @@ registerMessages({
   'Network editing': { en: 'Road editing', fr: 'Édition des routes' },
   Rivers: { en: 'Rivers', fr: 'Rivières' },
   'Finish editing': { en: 'Finish editing', fr: 'Terminer l’édition' },
+  Cancel: { en: 'Cancel', fr: 'Annuler' },
   'Preferences & documentation': { en: 'Preferences & documentation', fr: 'Préférences et documentation' },
   'Select a town, district or building on the map to edit its properties.': { en: 'Select a town, district or building on the map to edit its properties.', fr: 'Sélectionnez une ville, un quartier ou un bâtiment sur la carte pour modifier ses propriétés.' },
   'Choose the engine for each process. Available hardware and the last execution are shown separately.': {
@@ -34,6 +36,15 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
   $('#rivers-open').replaceWith(river);
   river.id = 'rivers-open';
   let mode = 'navigate';
+  // A placement waits for a tap on the map, and Escape ends it. On a phone, Finish editing sits in the closed Workshop
+  // sheet: the map carries a Cancel that ends it the same way.
+  const cancelPlacement = document.createElement('button');
+  cancelPlacement.type = 'button';
+  cancelPlacement.id = 'placement-cancel';
+  cancelPlacement.className = 'glass';
+  cancelPlacement.hidden = true;
+  setText(cancelPlacement, 'Cancel');
+  if (handheldDevice()) document.querySelector('.map-area')?.append(cancelPlacement);
   function sync(): void {
     const available = api.canEdit(),
       selectable = api.canSelect();
@@ -72,12 +83,13 @@ export function mountEditingTools(api: { canEdit(): boolean; canSelect(): boolea
     $('#edit-navigate').setAttribute('aria-pressed', String(next === 'navigate'));
     $('#labels-open').setAttribute('aria-pressed', String(next === 'labels'));
     $('#edit-done').hidden = next === 'navigate';
+    cancelPlacement.hidden = next !== 'placement';
     if (next !== 'buildings' && next !== 'selection') inspect.checked = false;
     document.body.classList.toggle('editing-map', !!section);
     sync();
   }
   const finish = () => window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'navigate' }));
-  $('#edit-navigate').onclick = finish;
+  $('#edit-navigate').onclick = cancelPlacement.onclick = finish;
   $('#edit-done').onclick = async () => {
     if (api.roadSession?.() && api.finishRoads && !(await api.finishRoads())) return;
     finish();

@@ -23,6 +23,7 @@ import { wasmWorkerOptions } from '../../../../rust/bridge/wasmThreads';
 import { runtimeWorkerOptions } from '../platform';
 import RoadRouteWorker from '../roadRoute.worker?worker';
 import { options } from './dom';
+import { handheldDevice } from '../../../../rust/bridge/deviceClass';
 
 registerMessages({
   'Add settlement': { en: 'Add settlement', fr: 'Ajouter un lieu' },
@@ -34,6 +35,7 @@ registerMessages({
   'Place on the map': { en: 'Place on the map', fr: 'Placer sur la carte' },
   'Population: {min} to {max} inhabitants.': { en: 'Population: {min} to {max} inhabitants.', fr: 'Population : {min} à {max} habitants.' },
   'Click on the map to place the new settlement. Esc cancels.': { en: 'Click on the map to place the new settlement. Esc cancels.', fr: 'Cliquez sur la carte pour placer le nouveau lieu. Échap pour annuler.' },
+  'Tap the map to place the new settlement, or tap Cancel.': { en: 'Tap the map to place the new settlement, or tap Cancel.', fr: 'Touchez la carte pour placer le nouveau lieu, ou touchez Annuler.' },
   'Settlement placement cancelled.': { en: 'Settlement placement cancelled.', fr: 'Placement du lieu annulé.' },
   'Connecting the new settlement to the roads…': { en: 'Connecting the new settlement to the roads…', fr: 'Raccordement du nouveau lieu aux routes…' },
   Inhabitants: { en: 'Inhabitants', fr: 'Habitants' },
@@ -260,7 +262,8 @@ export function mountSettlementAdd(state: PageState, actions: PageActions, toolb
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'placement' }));
     state.pendingRegionPosition = undefined;
     state.pendingSettlement = point => void place(choice, point).catch(error => actions.toast(String(error), true));
-    actions.toast('Click on the map to place the new settlement. Esc cancels.');
+    // A phone has no Escape: the map's Cancel (editingTools.ts) ends the placement.
+    actions.toast(handheldDevice() ? 'Tap the map to place the new settlement, or tap Cancel.' : 'Click on the map to place the new settlement. Esc cancels.');
   };
   window.addEventListener('v2-edit-mode', event => {
     if ((event as CustomEvent<string>).detail !== 'placement') state.pendingSettlement = undefined;

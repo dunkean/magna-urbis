@@ -26,6 +26,8 @@ registerMessages({
     en: 'Walk and fly: drag to look, slide two fingers to move (down goes forward).',
     fr: 'Marche et vol : glisser pour regarder, glisser à deux doigts pour se déplacer (vers le bas pour avancer).',
   },
+  'Fly up': { en: 'Fly up', fr: 'Monter' },
+  'Fly down': { en: 'Fly down', fr: 'Descendre' },
   'Generated map: drag to pan, pinch to zoom': { en: 'Generated map: drag to pan, pinch to zoom', fr: 'Carte générée : glisser pour déplacer, pincer pour zoomer' },
   PNG: { en: 'PNG', fr: 'PNG' },
   'Export the tilted view as PNG': { en: 'Export the tilted view as PNG', fr: 'Exporter la vue inclinée en PNG' },
@@ -53,9 +55,35 @@ export function mountWorldNavigation(state: PageState, actions: PageActions): vo
   setText(capture, 'PNG');
   capture.setAttribute('data-i18n-title', 'Export the tilted view as PNG');
   capture.title = translate('Export the tilted view as PNG');
+  // A handheld has no Space or C: two buttons over the map, held down, climb and descend in a free flight.
+  let flight: HTMLElement | undefined;
+  if (handheldDevice()) {
+    flight = document.createElement('div');
+    flight.className = 'glass world-flight';
+    flight.hidden = true;
+    for (const [code, label, glyph] of [
+      ['Space', 'Fly up', '▲'],
+      ['KeyC', 'Fly down', '▼'],
+    ] as const) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = glyph;
+      button.setAttribute('data-i18n-aria-label', label);
+      button.setAttribute('aria-label', translate(label));
+      button.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        button.setPointerCapture(event.pointerId);
+        viewer.holdMove(code, true);
+      });
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) button.addEventListener(type, () => viewer.holdMove(code, false));
+      flight.append(button);
+    }
+    $('.map-area').append(flight);
+  }
   let tilted = false;
   viewer.onCamera(view => {
     select.value = viewer.navigation();
+    if (flight) flight.hidden = viewer.navigation() !== 'fly';
     if (tilted === isTilted(view)) return;
     tilted = !tilted;
     // At the end of the toolbar row, before "Advanced". The row is laid out after this
