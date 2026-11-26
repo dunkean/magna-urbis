@@ -10,13 +10,15 @@ import { polygonArea } from '../gen/core/geom';
 
 export function cityEmbedSettings(hints: ExternalCityHints, local: boolean, mode: CityPreviewMode = 'compact'): V2Settings {
   const settings = applyExternalCity(hints, defaultSettings());
+  // The standalone importer leaves room for a region. An FMG preview shows one town and its near fringe.
+  if (typeof settings.extent === 'number') settings.extent = Math.max(1000, Math.round(settings.extent * 0.6 / 100) * 100);
   const backend = local ? 'native' : 'rust';
   settings.generation = 'procedural';
   delete settings.decor;
   settings.local = {};
-  settings.terrain = { ...settings.terrain, resolution: 128, relief: 'flat', erosion: 0, generationCompute: local ? undefined : 'cpu', forest: { ...settings.terrain?.forest, enabled: false } };
+  settings.terrain = { ...settings.terrain, resolution: 96, relief: 'flat', erosion: 0, generationCompute: local ? undefined : 'cpu', forest: { ...settings.terrain?.forest, enabled: false } };
   if (hints.river === 'none') settings.terrain.hydrology = { ...settings.terrain.hydrology, enabled: false };
-  settings.region = { ...settings.region, resolution: 128, autoBuildPopulation: 0 };
+  settings.region = { ...settings.region, resolution: 96, autoBuildPopulation: 0 };
   const site = settings.region.placement?.list?.[0];
   if (site && hints.port && hints.coast && hints.coast !== 'none') site.siteType = 'harbor';
   settings.runtime = { backend, autoBackend: false, source: 'procedural', compute: 'cpu' };

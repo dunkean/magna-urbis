@@ -24,17 +24,16 @@
     </div>
     <div id="detail-actions" class="rail" role="group" aria-label="Map views">
       <button id="plan" type="button" class="icon" data-icon="plan" aria-label="City plan" aria-pressed="false" disabled></button>
-      <button id="detailed" type="button" class="icon" data-icon="terrain" aria-label="Satellite · Fast" aria-pressed="false" disabled></button>
-      <button id="painted" type="button" class="icon" data-icon="paint" aria-label="Painted satellite" aria-pressed="false" disabled></button>
-      <button id="houses" type="button" class="icon" data-icon="houses" aria-label="Architectural houses" aria-pressed="false" disabled></button>
+      <button id="detailed" type="button" class="icon stars" aria-label="Satellite · Fast" aria-pressed="false" disabled>★</button>
+      <button id="painted" type="button" class="icon stars" aria-label="Painted satellite" aria-pressed="false" disabled>★★</button>
       <button id="expand-preview" type="button" class="icon" data-icon="expand" aria-label="Enlarge" aria-expanded="false" hidden></button>
     </div>
     <div id="map-navigation" class="rail" role="group" aria-label="Navigation">
-      <button id="zoom-in" type="button" class="icon" data-icon="plus" disabled aria-label="Zoom in"></button>
-      <button id="zoom-out" type="button" class="icon" data-icon="minus" disabled aria-label="Zoom out"></button>
-      <button id="fit-view" type="button" class="icon" data-icon="compass" disabled aria-label="Recenter city"></button>
-      <button id="save-view" type="button" class="icon" data-icon="save" aria-label="Save view" hidden></button>
+      <button id="zoom-in" type="button" class="icon navigation-icon" data-icon="plus" disabled aria-label="Zoom in"></button>
+      <button id="zoom-out" type="button" class="icon navigation-icon" data-icon="minus" disabled aria-label="Zoom out"></button>
+      <button id="fit-view" type="button" class="icon navigation-icon" data-icon="compass" disabled aria-label="Recenter city"></button>
     </div>
+    <button id="houses" type="button" class="icon" data-icon="houses" aria-label="Architectural houses" disabled></button>
     <a id="open" target="_blank" rel="noopener" aria-label="Open in Magna Urbis ↗">magna-urbis</a>
     <script type="module" src="../v2/cityEmbed.ts"></script>
   </body>

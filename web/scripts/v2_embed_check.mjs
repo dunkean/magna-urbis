@@ -1,5 +1,6 @@
 /** Exercise the built preview in a sandboxed, cross-origin FMG-sized iframe. */
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
@@ -102,6 +103,7 @@ try {
             } else if (data.mode === 'houses') {
               window.__houseScene = Object.values(data.world.debug.v2RustCities)[0].scene?.generator_version;
               window.__houseCount = data.town.buildings;
+              window.__keptLayout = data.world.stats['fmg.keptLayout'];
             }
           }
         });
@@ -169,7 +171,8 @@ try {
       return colors.size;
     });
     assert.ok(pixels > 20, 'The map must contain visible geometry.');
-    assert.equal(workers.size, 0, 'The preview must release its worker after the compact generation.');
+    if (workers.size) await Promise.all([...workers].map(worker => once(worker, 'close', { signal: AbortSignal.timeout(30000) })));
+    assert.equal(workers.size, 0, 'The preview releases its worker after storing the blocks.');
     assert.ok(!requests.some(url => /\/(?:studio-|brushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must not load the studio, brush libraries or neural runtime.');
     page.off('request', remember);
     page.off('response', size);
@@ -274,19 +277,27 @@ try {
   assert.ok(result.fastSatelliteChangedFraction > 0.2, 'Fast Satellite must visibly repaint the town.');
   await capture(page, 'town-satellite-fast');
   const switchStart = performance.now();
+  await repeat.frame.evaluate(() => performance.clearMeasures());
   await repeat.frame.locator('#painted').click();
   await assertCenteredProgress(repeat.frame);
   await repeat.frame.locator('html[data-detail-style="satellite-2"][data-detail="ready"]').waitFor({ timeout: 120000 });
   result.switchMs = Math.round(performance.now() - switchStart);
+  result.backgroundPasses = await repeat.frame.evaluate(() => performance.getEntriesByType('measure').map(e => e.name).filter(name => name.startsWith('v2pass:')));
   const paintedPixels = await mapPixels();
   result.satelliteChangedFraction = (await compareMapPixels(fastSatellite, paintedPixels)).changed;
   assert.ok(result.satelliteChangedFraction > 0.2, 'Painted satellite must visibly repaint the town.');
   assert.equal(await repeat.frame.evaluate(() => window.__detailedGenerations), 1);
   await capture(page, 'town-painted-satellite');
   const housesStart = performance.now();
+  await repeat.frame.evaluate(() => { window.__townProgress = []; window.__rendererBeforeHouses = document.querySelector('.viewer-direct'); performance.clearMeasures(); });
   await repeat.frame.locator('#houses').click();
   await repeat.frame.locator('html[data-tier="houses"][data-detail="ready"]').waitFor({ timeout: 150000 });
   assert.match(await repeat.frame.evaluate(() => window.__houseScene), /architectural|houses/);
+  assert.ok(await repeat.frame.evaluate(() => window.__rendererBeforeHouses === document.querySelector('.viewer-direct')));
+  assert.equal(await repeat.frame.evaluate(() => window.__keptLayout), 1, 'The engine reused the existing layout object.');
+  assert.ok(await repeat.frame.evaluate(() => !window.__townProgress.some(([stage]) => ['terrain-cache', 'sites', 'urban-layout'].includes(stage))));
+  result.housePasses = await repeat.frame.evaluate(() => performance.getEntriesByType('measure').map(e => e.name).filter(name => name.startsWith('v2pass:')));
+  assert.ok(!result.housePasses.includes('v2pass:terrainData'), 'Keep the uploaded ground when adding roofs.');
   result.housesMs = Math.round(performance.now() - housesStart);
   result.housesChangedFraction = (await compareMapPixels(paintedPixels, await mapPixels())).changed;
   assert.ok(result.housesChangedFraction > 0.01, 'Architectural roofs should visibly change the painted view.');
@@ -294,7 +305,6 @@ try {
   if (runtime === 'web') {
     await repeat.frame.locator('html[data-saved="yes"]').waitFor({ timeout: 15000 });
     await repeat.frame.locator('#zoom-in').click();
-    await repeat.frame.locator('#save-view').click();
     await repeat.frame.locator('html[data-saved="yes"]').waitFor({ timeout: 30000 });
     const before = await mapPixels();
     await page.reload();
@@ -371,15 +381,22 @@ try {
   rich.hash = new URLSearchParams({ burg: JSON.stringify(data) }).toString();
   const port = await preview('port-rich', rich.href, true);
   assert.equal(await port.frame.locator('#open').innerText(), 'magna-urbis');
+  assert.ok(await port.frame.locator('#houses').evaluate(el => el.classList.contains('blocks-only')));
+  await port.frame.evaluate(() => { window.__townProgress = []; });
   await port.frame.getByRole('button', { name: 'Générer les maisons détaillées' }).click();
   await port.frame.locator('html[data-tier="houses"][data-detail="ready"]').waitFor({ timeout: 240000 });
   assert.match(await port.frame.evaluate(() => window.__houseScene), /architectural|houses/);
   result.largeHouseCount = await port.frame.evaluate(() => window.__houseCount);
   assert.ok(result.largeHouseCount > 0);
-  assert.equal(await port.frame.locator('#houses').getAttribute('aria-pressed'), 'true');
+  assert.equal(await port.frame.locator('#houses').isVisible(), false);
+  assert.equal(await port.frame.evaluate(() => window.__keptLayout), 1);
+  assert.equal(await port.frame.locator('#plan').getAttribute('aria-pressed'), 'true');
+  assert.ok(await port.frame.evaluate(() => !window.__townProgress.some(([stage]) => ['terrain-cache', 'sites', 'urban-layout'].includes(stage))), 'Unlock on the retained city blocks.');
   await capture(page, 'large-town-houses');
-  await port.frame.locator('#plan').click();
-  await port.frame.locator('html[data-tier="compact"][data-detail="blocks"]').waitFor();
+  const countBeforeBackground = await port.frame.evaluate(() => window.__cityGenerations);
+  await port.frame.locator('#detailed').click();
+  await port.frame.locator('html[data-tier="houses"][data-detail-style="satellite-light"][data-detail="ready"]').waitFor({ timeout: 120000 });
+  assert.equal(await port.frame.evaluate(() => window.__cityGenerations), countBeforeBackground);
 
   // Verify the iframe can open the actual studio, preserving its source data and locale.
   const opened = page.waitForEvent('popup');
@@ -428,6 +445,9 @@ try {
   await demoFrame.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('#randomize').isVisible(), true);
   assert.equal(await demoFrame.locator('#detailed').isEnabled(), true);
+  assert.equal(await demoFrame.locator('#detailed').innerText(), '★');
+  assert.equal(await demoFrame.locator('#painted').innerText(), '★★');
+  assert.equal(await demoFrame.locator('#save-view').count(), 0);
   assert.equal(await page.locator('#preview-population').inputValue(), '2500');
   assert.notEqual(await demoFrame.locator('html').evaluate(() => location.origin), new URL(page.url()).origin);
   assert.equal(await demoFrame.locator('html').evaluate(() => crossOriginIsolated), false);

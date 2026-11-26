@@ -9,6 +9,7 @@ import { MinimalCanvasRenderer } from './minimalCanvas';
 import { cityEmbedText, localizeCityEmbed, cityEmbedSummary, embedLocale, loadEmbedLocale } from './cityEmbedMessages';
 import { cityEmbedStartsWithBlocks, unpackMinimalFeatures, type CityDetailStyle, type CityPreviewResult, type DetailedCityResult, type CityPreviewMode, type CityPreviewResponse, type CityPreviewRequest } from './cityPreviewMap';
 import type { Rect4 } from '../render/view';
+import type { World } from '../gen/types';
 
 const current = new URL(location.href);
 if (window.parent === window && !current.hash && [...current.searchParams.keys()].every(key => key === 'lang')) {
@@ -45,7 +46,6 @@ const host = document.getElementById('map')!;
 let worker: Worker | undefined;
 const detailedButton = document.querySelector<HTMLButtonElement>('#detailed')!;
 const housesButton = document.querySelector<HTMLButtonElement>('#houses')!;
-const saveButton = document.querySelector<HTMLButtonElement>('#save-view')!;
 const planButton = document.querySelector<HTMLButtonElement>('#plan')!;
 const paintedButton = document.querySelector<HTMLButtonElement>('#painted')!;
 const views = [planButton, detailedButton, paintedButton, housesButton];
@@ -60,7 +60,7 @@ function iconLabel(icon: HTMLElement, label: string, sprite: string) {
 function viewControls(selected: HTMLButtonElement) {
   for (const button of views) {
     button.disabled = false;
-    button.setAttribute('aria-pressed', String(button === selected));
+    if (button !== housesButton) button.setAttribute('aria-pressed', String(button === selected));
     button.removeAttribute('aria-busy');
   }
 }
@@ -68,7 +68,6 @@ function viewControls(selected: HTMLButtonElement) {
 function loadingView(target: HTMLButtonElement) {
   for (const button of views) button.disabled = true;
   target.setAttribute('aria-busy', 'true');
-  saveButton.disabled = true;
 }
 type MapRenderer = Pick<MinimalCanvasRenderer, 'drawLive' | 'dispose'> & { element: HTMLElement };
 let renderer: MapRenderer | undefined;
@@ -89,7 +88,6 @@ function fail(error: unknown): void {
   pendingRenderer = undefined;
   if (disposed) return;
   if (root.dataset.state === 'ready') {
-    saveButton.disabled = false;
     status.hidden = true;
     root.dataset.detail = 'unavailable';
     for (const button of views) {
@@ -129,7 +127,7 @@ function start(): void {
   const summary = cityEmbedSummary(hints, current.searchParams.get('cultureBase'), language);
   if (window.parent === window) {
     document.documentElement.classList.add('demo-host');
-    document.querySelectorAll('#map, #status, #map-navigation, #detail-actions, #open, #caption').forEach(el => el.remove());
+    document.querySelectorAll('#map, #status, #map-navigation, #detail-actions, #houses, #open, #caption').forEach(el => el.remove());
     controls.hidden = false;
     mountCityEmbedPopulation(current, hints.population ?? 2500);
     document.getElementById('randomize')!.onclick = () => location.assign(randomCityEmbedUrl(current).href);
@@ -185,8 +183,10 @@ function start(): void {
   let requestedTier: DetailedCityResult['mode'] = tier;
   let cachedFrame: SavedCityView | undefined;
   let saveSerial = 0;
-  let style: CityDetailStyle = 'satellite-light';
-  let compactData: CityPreviewResult | undefined;
+  let style: CityDetailStyle = 'minimal';
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let liveLayout: World | undefined;
+  let layoutReady: Promise<void> | undefined;
   const draw = () => {
     if (!renderer || !bounds || disposed) return;
     const { width, height } = host.getBoundingClientRect();
@@ -210,8 +210,16 @@ function start(): void {
     () => {
       if (root.dataset.detail === 'ready') {
         ++saveSerial;
-        iconLabel(saveButton, 'Save view', 'save');
         delete root.dataset.saved;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          if (!disposed && root.dataset.detail === 'ready' && detail && !cachedFrame) {
+            draw();
+            void detail.renderer.settled().then(() => {
+              if (!disposed && root.dataset.detail === 'ready') void saveFrame().catch(() => {});
+            });
+          }
+        }, 350);
       }
       scheduleDraw();
     },
@@ -242,7 +250,6 @@ function start(): void {
     install(next, map.bounds);
     cachedFrame = undefined;
     detail = undefined;
-    compactData = data;
     root.dataset.runtime = data.runtime;
     if (data.wasm) {
       root.dataset.wasmMode = data.wasm.mode;
@@ -256,45 +263,38 @@ function start(): void {
     status.hidden = true;
     root.dataset.tier = 'compact';
     delete root.dataset.detailStyle;
-    saveButton.hidden = true;
     viewControls(planButton);
-    document.querySelectorAll<HTMLButtonElement>('#map-navigation button:not(#save-view)').forEach(button => {
+    housesButton.hidden = false;
+    housesButton.classList.toggle('blocks-only', blocksOnly);
+    document.querySelectorAll<HTMLButtonElement>('#map-navigation .navigation-icon').forEach(button => {
       button.disabled = false;
     });
   };
   let detailModule: Promise<typeof import('./cityEmbedDetail')> | undefined;
   let detail: ReturnType<typeof import('./cityEmbedDetail').detailedCityMap> | undefined;
   const detailControls = () => {
-    viewControls(tier === 'houses' ? housesButton : style === 'satellite-light' ? detailedButton : paintedButton);
-    saveButton.hidden = saveButton.disabled = false;
+    viewControls(style === 'minimal' ? planButton : style === 'satellite-light' ? detailedButton : paintedButton);
+    housesButton.hidden = tier === 'houses';
+    housesButton.classList.remove('blocks-only');
     root.dataset.tier = tier;
   };
   const saveFrame = async () => {
     const serial = ++saveSerial;
-    if (disposed) return;
-    if (!previewKey || !detail || !bounds) {
-      iconLabel(saveButton, 'Storage unavailable', 'alert');
-      return;
-    }
+    if (disposed || !previewKey || !detail || !bounds) return;
     const canvas = detail.renderer.snapshot();
-    if (!canvas) {
-      iconLabel(saveButton, 'Save view', 'save');
-      return;
-    }
+    if (!canvas) return;
     const { width, height } = host.getBoundingClientRect();
     const metadata = { tier, style, bounds, width, height, camera: navigation!.camera(), view: navigation!.view(cityEmbedView(bounds, width, height)) };
-    iconLabel(saveButton, 'Saving…', 'wait');
     const image = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
     if (disposed || serial !== saveSerial) return;
     const stored = !!image && (await saveCityView(previewKey, { ...metadata, image }));
     if (disposed || serial !== saveSerial) return;
     root.dataset.saved = stored ? 'yes' : 'no';
-    iconLabel(saveButton, stored ? 'View saved' : 'Storage unavailable', stored ? 'saved' : 'alert');
   };
   const paintStyle = async (area: Rect4) => {
     if (!detail || disposed) return;
     root.dataset.detail = 'loading';
-    showProgress(style === 'satellite-light' ? 'Rendering fast satellite…' : 'Rendering painted satellite…');
+    showProgress(style === 'minimal' ? 'Drawing the map…' : style === 'satellite-light' ? 'Rendering fast satellite…' : 'Rendering painted satellite…');
     await detail.setStyle(style);
     if (disposed) return;
     if (renderer !== detail.renderer) install(detail.renderer, area);
@@ -309,9 +309,7 @@ function start(): void {
     tier = requestedTier;
     cachedFrame = undefined;
     detailControls();
-    void saveFrame().catch(() => {
-      iconLabel(saveButton, 'Storage unavailable', 'alert');
-    });
+    void saveFrame().catch(() => {});
   };
   const showDetailed = async (data: DetailedCityResult, fresh: boolean) => {
     showProgress('Drawing the map…', 6);
@@ -319,8 +317,9 @@ function start(): void {
     if (fresh && previewKey) await saveCityWorld(previewKey, data);
     const { detailedCityMap } = await detailModule!;
     if (disposed) return;
-    detail = detailedCityMap(data, scheduleDraw);
-    pendingRenderer = detail.renderer;
+    detail = detailedCityMap(data, scheduleDraw, detail);
+    liveLayout = undefined;
+    if (renderer !== detail.renderer) pendingRenderer = detail.renderer;
     await paintStyle(bounds ?? data.bounds);
   };
   const requestTier = async (mode: DetailedCityResult['mode']) => {
@@ -340,50 +339,35 @@ function start(): void {
     const cached = previewKey && (await readCityWorld(previewKey, mode));
     if (disposed) return;
     if (cached) await showDetailed(cached, false);
-    else generate(mode);
+    else {
+      const packed = detail?.packForUpgrade();
+      const savedBase = !packed && cachedFrame && previewKey ? await readCityWorld(previewKey, cachedFrame.tier) : undefined;
+      await layoutReady;
+      const layout = !packed && !savedBase ? liveLayout : undefined;
+      if (disposed) return;
+      const world = packed?.world ?? savedBase?.world ?? layout;
+      generate(mode, world ? { world, compact: !!layout } : undefined, packed?.transfer);
+    }
   };
   const chooseView = (mode: DetailedCityResult['mode'], nextStyle: CityDetailStyle) => {
     if (root.dataset.detail === 'ready' && tier === mode && style === nextStyle) return;
     style = nextStyle;
     void requestTier(mode).catch(fail);
   };
-  detailedButton.onclick = () => chooseView('detailed', 'satellite-light');
-  paintedButton.onclick = () => chooseView('detailed', 'satellite-2');
-  housesButton.onclick = () => chooseView('houses', 'satellite-2');
-  planButton.onclick = async () => {
-    if (root.dataset.tier === 'compact' && root.dataset.detail !== 'unavailable') return;
-    ++saveSerial;
-    root.dataset.detail = 'loading';
-    loadingView(planButton);
-    showProgress('Drawing the map…');
-    try {
-      const data = compactData ?? (previewKey && await readCompactPreview(previewKey));
-      if (disposed) return;
-      if (data) await showCompactMap(data);
-      else generate('compact');
-    } catch (error) {
-      fail(error);
-    }
+  detailedButton.onclick = () => chooseView(tier, 'satellite-light');
+  paintedButton.onclick = () => chooseView(tier, 'satellite-2');
+  housesButton.onclick = () => chooseView('houses', style);
+  planButton.onclick = () => {
+    if (root.dataset.tier !== 'compact') chooseView(tier, 'minimal');
   };
-  saveButton.onclick = () => {
-    if (cachedFrame) {
-      iconLabel(saveButton, 'View saved', 'saved');
-      return;
-    }
-    draw();
-    if (detail)
-      void detail.renderer
-        .settled()
-        .then(saveFrame)
-        .catch(() => {
-          iconLabel(saveButton, 'Storage unavailable', 'alert');
-        });
-  };
-  const generate = (mode: CityPreviewMode) => {
+  const generate = (mode: CityPreviewMode, base?: CityPreviewRequest['base'], transfer: Transferable[] = []) => {
     try {
       const active = new CityWorker({ name: 'magna-city-' + mode + ' profile=' + (local ? 'local' : 'web') + ' threads=' + (threaded ? 'auto' : 'off') });
+      let finishLayout: (() => void) | undefined;
+      if (mode === 'compact') layoutReady = new Promise(resolve => { finishLayout = resolve; });
       worker = active;
       const stopped = () => {
+        finishLayout?.();
         if (worker === active) fail(new Error('The city generator stopped.'));
       };
       active.onerror = stopped;
@@ -393,16 +377,25 @@ function start(): void {
         if (data.type === 'progress') {
           const milestone = generationSteps[data.progress.stage];
           if (milestone && milestone[0] > bar.value) showProgress(milestone[1], milestone[0]);
-        } else if (data.type === 'error') fail(new Error(data.error));
-        else if (data.type === 'city-preview') {
+        } else if (data.type === 'layout-ready') {
+          liveLayout = data.world;
+          finishLayout?.();
           stopWorker();
+        } else if (data.type === 'error') {
+          finishLayout?.();
+          fail(new Error(data.error));
+        } else if (data.type === 'city-preview') {
           if (data.mode === 'compact') {
-            if (previewKey && data.runtime === 'wasm') saveCompactPreview(previewKey, data);
-            void showCompactMap(data).catch(fail);
-          } else void showDetailed(data, true).catch(fail);
+            void showCompactMap(data).then(() => {
+              if (!disposed && previewKey && data.runtime === 'wasm') saveCompactPreview(previewKey, data);
+            }).catch(fail);
+          } else {
+            stopWorker();
+            void showDetailed(data, true).catch(fail);
+          }
         }
       };
-      active.postMessage({ hints, local, mode } satisfies CityPreviewRequest);
+      active.postMessage({ hints, local, mode, base, layoutKey: previewKey } satisfies CityPreviewRequest, transfer);
     } catch (error) {
       fail(error);
     }
@@ -433,8 +426,7 @@ function start(): void {
         root.dataset.runtime = local ? 'native' : 'wasm';
         status.hidden = true;
         detailControls();
-        iconLabel(saveButton, 'View saved', 'saved');
-        document.querySelectorAll<HTMLButtonElement>('#map-navigation button:not(#save-view)').forEach(button => {
+        document.querySelectorAll<HTMLButtonElement>('#map-navigation .navigation-icon').forEach(button => {
           button.disabled = false;
         });
         scheduleDraw();

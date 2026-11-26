@@ -14,6 +14,8 @@ export interface CityPreviewRequest {
   hints: ExternalCityHints;
   local: boolean;
   mode: CityPreviewMode;
+  base?: { world: World; compact: boolean };
+  layoutKey?: string;
 }
 export interface CityPreviewMap {
   size: number;
@@ -31,8 +33,8 @@ export interface CityPreviewResult {
   map: CityPreviewMap;
 }
 export type DetailedCityResult = Omit<CityPreviewResult, 'mode' | 'map'> & { mode: 'detailed' | 'houses'; world: World; settings: V2Settings; bounds: Rect4 };
-export type CityDetailStyle = 'satellite-light' | 'satellite-2';
-export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | DetailedCityResult | { type: 'error'; error: string };
+export type CityDetailStyle = 'minimal' | 'satellite-light' | 'satellite-2';
+export type CityPreviewResponse = { type: 'progress'; progress: V2Progress } | CityPreviewResult | DetailedCityResult | { type: 'layout-ready'; world?: World } | { type: 'error'; error: string };
 
 interface PackedFeatures {
   layers: string[];

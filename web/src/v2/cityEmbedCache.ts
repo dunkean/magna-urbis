@@ -1,6 +1,7 @@
 import { digestValue, readUrbanCache, writeUrbanCache, tryWriteUrbanCache } from '../../../rust/bridge/urbanResultCache';
 import type { ExternalCityHints } from './externalCity/types';
 import type { Rect4, View } from '../render/view';
+import type { World } from '../gen/types';
 import type { CityDetailStyle, DetailedCityResult, CityPreviewResult } from './cityPreviewMap';
 
 const build = import.meta.env.VITE_BUILD_COMMIT + ':' + import.meta.env.VITE_BUILD_DATE;
@@ -39,6 +40,8 @@ export function saveCompactPreview(key: string, view: CityPreviewResult): void {
   const bytes = geometry.coords.byteLength + geometry.rings.byteLength + 2048;
   if (bytes <= MAX_MAP_BYTES) void writeUrbanCache(key, view, bytes);
 }
+export const readCityLayout = (key: string) => readUrbanCache<World>(key + ':layout');
+export const saveCityLayout = (key: string, world: World) => tryWriteUrbanCache(key + ':layout', world);
 
 export interface SavedCityView {
   image: Blob;

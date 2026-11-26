@@ -2,8 +2,8 @@
 
 The V2 build includes `embed.html`. The fitted 2D map uses real streets, walls and
 building footprints from the V2 Rust generator. Resizing redraws that geometry at
-a uniform scale. **Detailed** starts a new generation with parcel boundaries,
-quarters and terrain context. The current map stays visible while it works.
+a uniform scale. The preview retains the blocks and roads for building generation.
+The current map stays visible while a background or the houses are being prepared.
 
 The public endpoint is `https://magna-urbis.org/embed.html` after publication.
 For an internal native performance run, start the existing V2 engine and open
@@ -14,7 +14,7 @@ uses browser WASM. A cross-origin-isolated preview can use WASM threads. Add
 runtime. Reopening the same browser preview reuses its packed vector geometry when
 storage is available, so it can redraw at any size without rerunning the engine.
 
-The standalone test page hosts a small cross-origin iframe with external population and randomization controls. Its four view icons select the plan, fast satellite, painted satellite or architectural houses. At 20,000 inhabitants the first plan shows blocks. The house icon builds detailed houses on demand at any population.
+The standalone test page hosts a small cross-origin iframe with external population and randomization controls. Select the plan, one star for fast satellite, or two stars for painted satellite. A separate house control adds architecture to the current view. At 20,000 inhabitants the first plan shows blocks and the house icon is crossed out until unlocked. The camera is saved automatically after navigation settles.
 
 ### Locale and floating preview
 
