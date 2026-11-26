@@ -409,7 +409,7 @@ void main() {
           vec2 d=k==0?vec2(1.,0.):k==1?vec2(-1.,0.):k==2?vec2(0.,1.):vec2(0.,-1.);
           near+=texture(uCave,uv+d*1.5*uFieldCell/span).r;far+=texture(uCave,uv+vec2(d.x-d.y,d.x+d.y)*.7071*4.*uFieldCell/span).r;
         }
-        // Crisp wall: the soft field is 128 on the wall and Ã‚Â±96 per source cell, so the edge is antialiased per pixel.
+        // Crisp wall: the soft field is 128 on the wall and ±96 per source cell, so the edge is antialiased per pixel.
         float edge=max(.376*uPx/uFieldCell,1e-3);
         udRock=clamp((raw-.5)/edge+.5,0.,1.);
         ao=clamp(.75*near*.25+.35*far*.25,0.,1.)*(1.-udRock);
@@ -443,7 +443,7 @@ void main() {
       coverage=rock+coverage*(1.-rock);
     }
 #ifndef AUX_PASS
-    // Variant switches alone in their own test: mixed with a runtime uniform, the WebGPU path (Tint Ã¢â€ â€™ DXC)
+    // Variant switches alone in their own test: mixed with a runtime uniform, the WebGPU path (Tint → DXC)
     // kept the dead branch and inlined its whole material, seconds of compilation for every variant.
     if(uForest==1 && uMode!=3 && uRenderV2==0)if(uGroundCapture==0 && !underdark){
       vec3 root=level(0,world);
@@ -742,7 +742,7 @@ void main() {
       bool index = mod(k, 5.0) < 0.5;
       float dist = abs(v - k) / dv;                          // device pixels to the nearest level
       float line = k < 0.5 ? 0.0 : clamp((index ? uIndexW : uThinW) * 0.5 + 0.5 - dist, 0.0, 1.0);
-      // Levels closer than ~2 px alias into moirÃƒÂ©: cross-fade them to their mean ink
+      // Levels closer than ~2 px alias into moiré: cross-fade them to their mean ink
       // (four thin levels in five, then the index levels, five times sparser).
       float thin = mix(index ? 0.0 : line * uThinA, min(1.0, 0.8 * dv * uThinW) * uThinA, smoothstep(0.3, 0.7, dv));
       float main_ = mix(index ? line * uIndexA : 0.0, min(1.0, 0.2 * dv * uIndexW) * uIndexA, smoothstep(0.3, 0.7, dv * 5.0));
@@ -780,7 +780,7 @@ void main() {
   vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
   // Cartographic width: below its physical size on screen, a river keeps a
   // stroke growing with the logarithm of its width: hairline streams (about
-  // 2 kmÃ‚Â² drained, 7 m wide), 1 px at 20 kmÃ‚Â², bold trunks.
+  // 2 km² drained, 7 m wide), 1 px at 20 km², bold trunks.
   vec2 carto = clamp(0.35 + 0.4 * log2(max(aWidth, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
   vec2 half_ = (uPhysicalWidth==1?aWidth/uPx:max(aWidth/uPx,carto))*.5;
   float r = max(half_.x, half_.y) + 1.0;

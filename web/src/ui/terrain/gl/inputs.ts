@@ -53,7 +53,7 @@ export class GlInputs {
   private lakeWidth = 0;
   readonly release = (layer: GlHeightLayer | undefined): void => releaseHeightLayer(this.gl, layer);
 
-  /** The river instance buffer and its layout, and the 1Ã—1 empty texture. */
+  /** The river instance buffer and its layout, and the 1×1 empty texture. */
   constructor(private readonly gl: WebGL2RenderingContext) {
     this.riverBuffer = gl.createBuffer()!;
     this.riverVao = gl.createVertexArray()!;

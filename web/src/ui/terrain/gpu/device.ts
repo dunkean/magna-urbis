@@ -190,7 +190,7 @@ export function sharedGpu(forced: boolean): Promise<GpuShared | undefined> {
       device.destroy();
       throw error;
     }
-    if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la prÃ©paration de la carte.');
+    if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la préparation de la carte.');
     current = gpu;
     return gpu;
   })().catch(error => {

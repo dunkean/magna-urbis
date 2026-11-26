@@ -53,7 +53,7 @@ void main() {
   }
   if (a <= .002 && bank <= .002) discard;
   // Water side: distance to the bank in device pixels. Each of 12 rays brackets the bank on
-  // the geometric rings and bisects it; a soft minimum of the rays (temperature 0.3 Ã— the
+  // the geometric rings and bisects it; a soft minimum of the rays (temperature 0.3 × the
   // nearest) rounds the cross-section between two banks, so channels have no crease on
   // their axis, and it is continuous across lakes. Open water saturates past the band.
   float reach = uRings[uRingCount - 1], depth = reach, wide = 0.;
@@ -84,7 +84,7 @@ void main() {
     }
     float t = .3 * best + .25, sum = 0.;
     for (int i = 0; i < 12; i++) sum += exp(-(min(hits[i], 2. * reach) - best) / t);
-    // A lone straight bank reads 0.755 Ã— its distance: normalized back.
+    // A lone straight bank reads 0.755 × its distance: normalized back.
     depth = max(0., (best - t * log(sum)) / .755 + a - 1.);
     // Wide water: still water a few pixels away from the nearest bank.
     if(uRegime==0)wide = cover(f - nearest * 5. * uDpr);
@@ -114,7 +114,10 @@ void main() {
     // Keep the existing red-minus-blue sediment discriminator for exposed ground.
     if(uRegime==4) {
       float foam=max(0.,(regime.b-.30)/.70);
-      color.gb=mix(color.gb,vec2(.30+.28*foam,.255+.26*(1.-deep)),1.-regime.r);
+      // The winter palette can have a pale red channel. Supply the complete
+      // wet-water marker so it always decodes as water beneath seasonal ice.
+      vec3 opticalWater=vec3(.10,.30+.28*foam,.255+.26*(1.-deep));
+      color=mix(color,opticalWater,1.-regime.r);
     }
     if(pools<1.) {
       // Bend and rotate the sediment fields. Gravel lenses overlap at different
