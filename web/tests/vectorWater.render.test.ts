@@ -243,8 +243,28 @@ describe('continuous vector water', () => {
     const dry = geometry(2), humid = geometry(300);
     expect(new Set(humid.widths).size).toBe(1);
     expect(dry.widths.length).toBeGreaterThan(line.area.length);
-    expect(Math.max(...dry.widths) / Math.min(...dry.widths)).toBeGreaterThan(1.7);
+    const bankfull = humid.widths[0];
+    expect(Math.min(...dry.widths)).toBeGreaterThan(.73 * bankfull);
+    expect(Math.max(...dry.widths)).toBeLessThan(1.30 * bankfull);
+    expect(Math.max(...dry.widths) - Math.min(...dry.widths)).toBeGreaterThan(.16 * bankfull);
     expect(new Set(dry.bankfullWidths)).toEqual(new Set(humid.widths));
+  });
+
+  it('retains seasonal pools in broad savanna beds and only damp silt in dry desert beds', async () => {
+    const source = await basin();
+    const line: RiverLine = { points: [1200, 3250, 2500, 3250, 4000, 3250], area: Array(3).fill(8e6), level: [5, 4, 3], kind: [0, 0, 0], joins: 0 };
+    const water = { ...source, runoff: { ...source.runoff!, r0: 5 }, rivers: { ...source.rivers!, rivers: [line], braids: [], distributaries: [], oxbows: [] } };
+    const retention = (zone: 'desert' | 'savanna', season: number) => {
+      const segments = riverSegments(water, { ...display, material: true, thread: true, season: { zone, season } });
+      const values: number[] = [];
+      for (let i = 0; i < segments.length; i += 9) if (segments[i + 6] === 0) values.push(segments[i + 8] * (segments[i + 4] + segments[i + 5]) / (2 * .45));
+      return values;
+    };
+    const rains = retention('savanna', .5);
+    expect(Math.min(...rains)).toBeLessThan(.97);
+    expect(Math.max(...rains)).toBeGreaterThan(1.14);
+    expect(Math.max(...rains)).toBeGreaterThan(Math.max(...retention('savanna', 0)));
+    expect(Math.max(...retention('desert', .5))).toBe(0);
   });
 
   it('lets the thread of a wide bed wander inside it and stops the bare bed at the coastline', async () => {

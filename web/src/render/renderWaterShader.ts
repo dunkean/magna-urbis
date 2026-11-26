@@ -119,9 +119,10 @@ void main() {
       float lens=riverNoise(vec2(q.x/21.,q.y/9.)+vec2(-2.3,1.6)*wash);
       float fine=(riverNoise(world/2.1+vec2(1.8,-2.4)*lens)-.5)*(1.-smoothstep(.45,1.8,uPx));
       float deposits=smoothstep(.19,.85,.65*wash+.35*lens);
-      float scour=(capsule?deep:centre)*(.24+.76*(1.-deposits));
+      float scour=capsule?deep:centre*(1.-deposits);
+      if(capsule && regime.r>.998) pools=max(pools,.65*smoothstep(.67,.99,deep));
       vec3 gravel=mix(uWaterBed,vec3(.66,.63,.56),.50);
-      vec3 bed=mix(gravel,uWaterBed*1.07,deposits*(1.-.45*scour))*mix(1.,.76,scour)
+      vec3 bed=mix(gravel,uWaterBed*1.07,deposits*(1.-.45*scour))*mix(1.,.47,scour)
               +vec3(.055*(wash-.5)+.048*fine);
       // The satellite decodes exposed sediment by red minus blue before toning.
       bed.b=min(bed.b,bed.r-.155);

@@ -62,14 +62,19 @@ vec4 v2FreshIce(vec2 world,float fp,float freeze,float channel,float still,float
   // warped floes and slush appear within the strip of remaining border ice.
   vec3 ice=vec3(.75,.82,.87);
   if(uQuality==0){
-    vec3 g=vec3(world,0.);
-    float drift=v2Pattern(g,96.,fp,uMaterialSeed+771u);
-    float frost=v2Pattern(g,19.,fp,uMaterialSeed+773u);
+    // The marine pack has 52 m and 140 m floes. A river uses the same
+    // surface at roughly 6 m and 16 m, with the matching pixel footprint.
+    float frequency=still<.5?9.:1.;
+    vec2 iceWorld=world*frequency;
+    float iceFootprint=fp*frequency;
+    vec3 g=vec3(iceWorld,0.);
+    float drift=v2Pattern(g,96.,iceFootprint,uMaterialSeed+771u);
+    float frost=v2Pattern(g,19.,iceFootprint,uMaterialSeed+773u);
     // A refrozen lead and an old snow-covered plate can coexist even at full freeze.
     float snow=sstep(-1.1,1.2,drift+.30*frost);
     float opening=.59*(1.-sstep(.32,.98,freeze))+.24*sstep(.32,1.3,-drift);
     float body,cover;
-    ice=v2PackSurface(vec3(.30,.47,.55),world,fp,1.,opening,vec2(0.),body,cover);
+    ice=v2PackSurface(vec3(.30,.47,.55),iceWorld,iceFootprint,1.,opening,vec2(0.),body,cover);
     ice=mix(ice,ice*vec3(.72,.85,.92),.75*(1.-snow)*body);
   }
   ice=mix(ice,vec3(.47,.60,.67),.42*edge*mix(1.,closed,still));

@@ -512,7 +512,10 @@ void main() {
           // olive, greener than any water colour) is ground too: it darkens the bank. Read as partial water it laid a
           // shallow, bed-coloured fringe along every course, most of what a narrow tributary showed beside its trunk.
           float solid=smoothstep(.05,.15,painted.r-painted.b);
-          float damp=(1.-solid)*smoothstep(.005,.025,painted.g-max(painted.r,painted.b));
+          // Shallow water mixed with ochre silt can also lean green. Only the
+          // dark olive land shadow should cut a hole in the water coverage.
+          float shadow=1.-smoothstep(.10,.16,max(painted.g,max(painted.r,painted.b)));
+          float damp=(1.-solid)*shadow*smoothstep(.005,.025,painted.g-max(painted.r,painted.b));
           // Underdark: no ice or dry beds under the vault; the whole course is cave water.
           if(underdark)solid=0.;
           // A dry course shows through the bank crowns.
@@ -755,7 +758,7 @@ layout(location = 0) in vec4 aSeg;
 layout(location = 1) in vec2 aWidth;
 layout(location = 2) in vec3 aColor;
 uniform vec2 uCanvas; uniform vec2 uOrigin; uniform float uPx; uniform float uDpr;uniform int uPhysicalWidth;
-out vec2 vP; flat out vec4 vSeg; flat out vec2 vHalf; flat out vec3 vColor;
+out vec2 vP; flat out vec4 vSeg; flat out vec4 vWidths; flat out vec3 vColor;
 void main() {
   vec2 a = (aSeg.xy - uOrigin) / uPx, b = (aSeg.zw - uOrigin) / uPx;
   vec2 d = b - a; float l = length(d);
@@ -768,13 +771,13 @@ void main() {
   float r = max(half_.x, half_.y) + 1.0;
   vec2 corner = vec2(gl_VertexID & 1, gl_VertexID >> 1);
   vec2 p = mix(a - dir * r, b + dir * r, corner.x) + nrm * r * (corner.y * 2.0 - 1.0);
-  vP = p; vSeg = vec4(a, b); vHalf = half_; vColor = aColor;
+  vP = p; vSeg = vec4(a, b); vWidths = vec4(half_,aWidth); vColor = aColor;
   gl_Position = vec4(p.x / uCanvas.x * 2.0 - 1.0, 1.0 - p.y / uCanvas.y * 2.0, 0.0, 1.0);
 }`;
 
 export const RIVER_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
-in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
+in vec2 vP; flat in vec4 vSeg; flat in vec4 vWidths; flat in vec3 vColor;
 out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
 // Unpainted water keeps coverage and replaces encoded seasonal RGB with one palette colour.
@@ -790,7 +793,7 @@ void main() {
   vec2 a = vSeg.xy, b = vSeg.zw, pa = vP - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
   float d = length(pa - ba * h);
-  float alpha = clamp(mix(vHalf.x, vHalf.y, h) + 0.5 - d, 0.0, 1.0);
+  float alpha = clamp(mix(vWidths.x, vWidths.y, h) + 0.5 - d, 0.0, 1.0);
   if (uHasLake > 0) {
     float m = lakeShore(uOrigin + vP * uPx, uHasLake == 1);
     alpha *= 1. - clamp(m / max(fwidth(m), 1e-4) + .5, 0., 1.);
@@ -801,7 +804,7 @@ void main() {
     if(uFlatWater.a>=0. || dot(pa,ba)<0.) discard;
     vec2 world=uOrigin+vP*uPx;
     float eddy=riverNoise(world/73.);
-    float lateral=d/max(.5,mix(vHalf.x,vHalf.y,h));
+    float lateral=d/max(.5,mix(vWidths.x,vWidths.y,h));
     alpha*=vColor.r*(1.-smoothstep(.0,1.,h))*
            (1.-smoothstep(.12+.2*eddy,.88+.12*eddy,lateral));
     outColor=vec4(vec3(1.,1.,.12)*alpha,alpha);
@@ -813,7 +816,7 @@ void main() {
   // Material capsules already know their bank in metres. Retain that distance cue
   // with the seasonal channels so it survives tile cuts, overlaps and changes of scale.
   if (uFlatWater.a < 0.) {
-    float bank=max(0.,(mix(vHalf.x,vHalf.y,h)-d)*uPx);
+    float bank=max(0.,(mix(vWidths.x,vWidths.y,h)-d)*uPx);
     float core=.30*smoothstep(0.,20.,bank);
     float glint=0.;
     if(vColor.b>0. && vColor.r>.1 && uPx<2.) {
@@ -829,8 +832,14 @@ void main() {
     if(vColor.r<.001){
       // The radial distance includes each round cap. Adjacent reaches can MAX
       // their interiors without projecting a different stripe across each join.
-      float halfWidth=max(mix(vHalf.x,vHalf.y,h)*uPx,uPx*.5);
-      core=.30*smoothstep(0.,max(.75*halfWidth,uPx),bank);
+      float halfWidth=max(mix(vWidths.x,vWidths.y,h),.5);
+      float hollow=riverNoise((uOrigin+vP*uPx)/39.);
+      float spread=mix(vWidths.z,vWidths.w,h)*vColor.b/.45;
+      float pool=smoothstep(.97,1.14,spread)*smoothstep(.26,.77,hollow);
+      float radius=halfWidth*(.11+.34*pool);
+      // A soft transverse profile fades continuously through a round end cap.
+      float damp=exp2(-1.4*d*d/(radius*radius+.25))*min(1.,radius/.65);
+      core=.30*damp*(.58+.42*pool);
     }
     color.b=core+.70*glint;
   }

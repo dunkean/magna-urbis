@@ -546,17 +546,26 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
         if (i >= geo.sea && (thread || c0[0] + c1[0] < 1)) continue;
         const steps = Math.max(1, Math.min(12, Math.ceil(Math.max(Math.abs(c1[0] - c0[0]), Math.abs(c1[1] - c0[1])) / 0.04)));
         const riffle = !thinner && i < geo.sea && kind[i - 1] < 4 ? riffleStrength(geo.level[i - 1] - geo.level[i], x1 - x0, y1 - y0) : 0;
+        // The shader compares each interpolated bed width to its hydraulic width.
+        // A wetter season lowers the width needed for a hollow to retain water.
+        let inversePoolWidth = 0;
+        if (thread && geo.bankfullWidths && climate) {
+          const bankfull = 0.5 * (geo.bankfullWidths[i - 1] + geo.bankfullWidths[i]);
+          const wetSeason = Math.min(1, climate.rain / 1.4);
+          inversePoolWidth = (1 - smoothstep(0.78, 1, climate.aridity)) * (0.90 + 0.10 * wetSeason) * (1 - riffle / 0.45) / Math.max(2, bankfull);
+        }
         for (let k = 0; k < steps; k++) {
           const t0 = k / steps,
             t1 = (k + 1) / steps,
             t = (t0 + t1) / 2,
             at = (a: number, b: number, u: number): number => a + (b - a) * u;
           if (!thread) {
-            out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), at(c0[0], c1[0], t), at(c0[1], c1[1], t), riffle);
+            const running = at(c0[0], c1[0], t);
+            out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), running, at(c0[1], c1[1], t), running < 0.001 ? 0 : riffle);
             continue;
           }
           // The bed: no running water (r 0), the same ice; the thread runs inside it (below; MAX blend).
-          out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), 0, at(c0[1], c1[1], t), riffle);
+          out.push(at(x0, x1, t0), at(y0, y1, t0), at(x0, x1, t1), at(y0, y1, t1), at(widths[i - 1], widths[i], t0), at(widths[i - 1], widths[i], t1), 0, at(c0[1], c1[1], t), 0.45 * inversePoolWidth);
         }
         continue;
       }
@@ -601,7 +610,7 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
       if (display.material) {
         const state = climate ? riverState(climate, dischargeSize(meanDischarge(a, runoffOf(water)))) : { dry: 0, ice: 0 };
         [r, g] = regimeRgb(state);
-        b = h.sea[next] ? 0 : riffleStrength(h.filled[c] - h.filled[next], (nx - x) * cell, (ny - y) * cell);
+        b = h.sea[next] || r < 0.001 ? 0 : riffleStrength(h.filled[c] - h.filled[next], (nx - x) * cell, (ny - y) * cell);
       }
       out.push((x + 0.5) * cell, (y + 0.5) * cell, (nx + 0.5) * cell, (ny + 0.5) * cell, channelWidth(a, scale), channelWidth(h.accumulation[next], scale), r, g, b);
     }
@@ -946,7 +955,7 @@ function dryBedProfile(water: VectorWater, line: RiverLine) {
     factor(x: number, y: number) {
       const broad = strandNoise(373, (0.83 * x + 0.56 * y) / span);
       const bar = strandNoise(941, (-0.44 * x + 0.9 * y) / (0.57 * span));
-      return 1 + strength * (0.65 * broad + 0.3 * bar + 0.18 * broad * broad);
+      return 1 + strength * (0.20 * broad + 0.065 * bar + 0.025 * broad * broad);
     },
   };
 }
