@@ -1,7 +1,6 @@
 /** Exercise the built preview in a sandboxed, cross-origin FMG-sized iframe. */
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
@@ -61,7 +60,6 @@ const runtime = process.env.MAGNA_EMBED_TEST_PROFILE === 'local' ? 'local' : 'we
 const flat = new URLSearchParams({ profile: runtime, preview: '1', name: 'Brackenford', population: '2500', seed: '12340007', river: '0', coast: '0', walls: '1', cultureBase: 'English' });
 const flatUrl = base + 'embed.html?' + flat;
 const result = { base, latencyMs: addedLatency, cases: [], errors: [], missing: [] };
-const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const capture = (page, name) => page.locator('iframe').screenshot({ path: resolve(artifacts, name + '.png') });
 let browser;
 try {
@@ -123,9 +121,12 @@ try {
     assert.equal(await frame.locator('#status').isVisible(), false);
     assert.equal(await frame.locator('#demo-controls').isVisible(), false);
     assert.equal(await root.getAttribute('data-detail'), 'idle', 'The richer generation must be opt-in.');
-    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), runtime: el.dataset.runtime }));
+    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), runtime: el.dataset.runtime, cached: el.dataset.previewCache === 'hit', threads: Number(el.dataset.wasmThreads) || undefined }));
     if (runtime === 'local') assert.equal(timing.runtime, 'native');
-    const { town, image } = await frame.evaluate(() => ({ town: window.__townResult, image: window.__townFirstImage }));
+    const { generated, image } = await frame.evaluate(() => ({ generated: window.__townResult, image: window.__townFirstImage }));
+    const town = timing.cached ? result.cases[0].town : generated;
+    if (runtime === 'web') assert.equal(timing.threads, 1, 'An ordinary FMG sandbox must run single-threaded.');
+    if (timing.cached) assert.equal(generated, undefined, 'A cached vector map draws without a generation worker.');
     assert.ok(image, 'A completed first canvas paint must precede the context view.');
     await writeFile(resolve(artifacts, name + '-first.png'), Buffer.from(image, 'base64'));
     assert.ok(town?.layouts && town.buildings > 0, 'The map must come from the Rust settlement and contain actual building footprints.');
@@ -150,12 +151,35 @@ try {
     const report = { name, ...timing, checkedMs: Math.round(performance.now() - started), bytes, staticBytes, wasmDownloads, pixels, requests: requests.length, town, progress, largest };
     console.log(JSON.stringify({ ...report, progress: undefined, largest: undefined }));
     result.cases.push(report);
-    return { frame, pixels: hash(await capture(page, name)) };
+    await capture(page, name);
+    return { frame, image };
   }
 
   const cold = await preview('town-cold', flatUrl);
   const repeat = await preview('town-repeat', flatUrl);
-  assert.equal(repeat.pixels, cold.pixels, 'The same burg must reproduce the same drawing.');
+  if (runtime === 'web') assert.equal(result.cases[1].cached, true);
+  // At the same camera the cached geometry must give the same drawing. Canvas can
+  // choose different antialiasing backends as the worker and page settle.
+  const drawingDelta = await repeat.frame.evaluate(
+    async ([left, right]) => {
+      const read = async encoded => {
+        const image = new Image();
+        image.src = 'data:image/png;base64,' + encoded;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0);
+        return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      };
+      const [a, b] = await Promise.all([read(left), read(right)]);
+      if (a.length !== b.length) return Infinity;
+      return a.reduce((sum, row, index) => sum + Math.abs(row - b[index]), 0) / a.length;
+    },
+    [cold.image, repeat.image],
+  );
+  assert.ok(drawingDelta < 0.25, 'The reopened burg must keep the same proportions and visual detail.');
   const compactMap = await repeat.frame.locator('#map canvas').evaluate(canvas => canvas.toDataURL());
   const detailStart = performance.now();
   const detailStarted = page.waitForEvent('worker');
@@ -168,7 +192,7 @@ try {
   assert.equal(workers.has(detailWorker), false, 'Release the detailed generation worker.');
   const detailTown = await repeat.frame.evaluate(() => window.__townDetailed);
   assert.ok(detailTown?.buildings > 0, 'Detailed must return real Rust building footprints.');
-  assert.deepEqual(detailTown, await repeat.frame.evaluate(() => window.__townResult), 'The two V2 passes must retain the same streets and buildings.');
+  assert.deepEqual(detailTown, result.cases[1].town, 'The two V2 passes must retain the same streets and buildings.');
   const detailedLayers = await repeat.frame.evaluate(() => window.__detailedLayers);
   assert.ok(detailedLayers.includes('parcel') && detailedLayers.includes('quarter'), 'Detailed must carry the cadastral and quarter outlines.');
   result.detailedMs = Math.round(performance.now() - detailStart);
@@ -253,7 +277,10 @@ try {
 
   // A discarded frame releases its worker, including when the result is pending.
   const startedWorker = page.waitForEvent('worker');
-  await page.goto(framed(flatUrl + '&holdGeneration=1'));
+  const cancelled = new URL(flatUrl);
+  cancelled.searchParams.set('population', '2501');
+  cancelled.searchParams.set('holdGeneration', '1');
+  await page.goto(framed(cancelled.href));
   const worker = await startedWorker;
   assert.equal(workers.size, 1);
   await Promise.all([new Promise(done => worker.once('close', done)), page.locator('iframe').evaluate(iframe => iframe.remove())]);
@@ -267,6 +294,7 @@ try {
   await page.goto(flatUrl + '&demo=1&lang=fr');
   await page.locator('html[data-state="ready"]').waitFor({ timeout: 30000 });
   assert.equal(await page.locator('#randomize').isVisible(), true);
+  assert.equal(await page.locator('#demo-controls').getByRole('button', { name: 'Améliorer la vue' }).isEnabled(), true);
   assert.equal(await page.locator('#preview-population').inputValue(), '2500');
   await page.locator('#preview-population').fill('1250');
   await page.getByRole('button', { name: 'Appliquer' }).click();

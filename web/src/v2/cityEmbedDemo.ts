@@ -50,6 +50,7 @@ export function randomCityEmbedUrl(current: URL, random: () => number = Math.ran
   const language = current.searchParams.get('lang');
   if (language) url.searchParams.set('lang', language);
   if (current.searchParams.get('profile') === 'local') url.searchParams.set('profile', 'local');
+  if (current.searchParams.get('threads') === 'off') url.searchParams.set('threads', 'off');
   return url;
 }
 

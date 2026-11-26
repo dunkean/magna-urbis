@@ -192,7 +192,7 @@ export function resolveModelAssets(value: string | undefined, assetBase?: string
   }
 }
 
-export async function generateTerrain(settings: V2Settings, onProgress?: ProgressCallback, cache: TerrainCache = terrainCache, assetBase?: string, terrainStage?: string, prepareDisplay = true): Promise<World> {
+export async function generateTerrain(settings: V2Settings, onProgress?: ProgressCallback, cache: TerrainCache = terrainCache, assetBase?: string, terrainStage?: string, { prepareDisplay = true, includeLandCover = true } = {}): Promise<World> {
   validateSettings(settings);
   if (settings.generation === 'neural' && !settings.options.importedHeight && (!settings.runtime || settings.runtime.source === 'procedural')) throw new Error('Le modèle neuronal doit d’abord fournir une heightmap. Aucun calcul procédural ne remplace silencieusement le modèle.');
   const t0 = performance.now(),
@@ -355,53 +355,57 @@ export async function generateTerrain(settings: V2Settings, onProgress?: Progres
     };
   }
   if (prepareDisplay) startTerrainDisplayPreparation(terrain, options.mapSize!);
-  report(onProgress, 'biome', 'Classifying the biome and natural cover…', 2, 3);
-  const retained = terrain as V2TerrainLayer;
-  if (nativeEngine) {
-    const forestKey = key + stableStringify(configuration.forest),
-      cachedForest = forestFields.get(forestKey);
-    if (cachedForest) {
-      retained.v2ForestField = structuredClone(cachedForest.field);
-      retained.v2NaturalForest = cachedForest.cover.slice();
-    } else {
-      const climate = configuration.climateValues!;
-      const forestRuntime = settings.runtime?.backend === 'native' ? { profile: 'local' as const, server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined;
-      const forest = await buildForestField(
-        {
-          seed: seedHash(stepSeed(settings.options.seed, 'cover-climate')),
-          climate: [climate.temperature, climate.precipitation],
-          height: { x: 0, y: 0, width: options.mapSize!, n: terrain.height.w, data: terrain.height.data },
-          water: terrain.water,
-          // The displayed river geometry defines the riverside gallery (displayForest.ts forestDisplayRivers).
-          riverSegments: (await import('./displayForest')).forestDisplayRivers(retained.v2NativeTerrain?.water, configuration.climateZone),
-        },
-        configuration.forest,
-        forestRuntime,
-      );
-      retained.v2ForestField = forest;
-      const cover = new Float32Array(terrain.height.data.length),
-        n = terrain.height.w;
-      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) cover[y * n + x] = forest.rgba[(Math.min(forest.n - 1, Math.floor(((y + 0.5) * forest.n) / n)) * forest.n + Math.min(forest.n - 1, Math.floor(((x + 0.5) * forest.n) / n))) * 4] / 255;
-      retained.v2NaturalForest = cover;
-      forestFields.set(forestKey, { field: structuredClone(forest), cover: cover.slice() });
-      if (forestFields.size > 3) forestFields.delete(forestFields.keys().next().value!);
+  let landuse: World['landuse'];
+  // The compact city plan depends on heights, water and roads. Land cover is a display layer.
+  if (includeLandCover) {
+    report(onProgress, 'biome', 'Classifying the biome and natural cover…', 2, 3);
+    const retained = terrain as V2TerrainLayer;
+    if (nativeEngine) {
+      const forestKey = key + stableStringify(configuration.forest),
+        cachedForest = forestFields.get(forestKey);
+      if (cachedForest) {
+        retained.v2ForestField = structuredClone(cachedForest.field);
+        retained.v2NaturalForest = cachedForest.cover.slice();
+      } else {
+        const climate = configuration.climateValues!;
+        const forestRuntime = settings.runtime?.backend === 'native' ? { profile: 'local' as const, server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined;
+        const forest = await buildForestField(
+          {
+            seed: seedHash(stepSeed(settings.options.seed, 'cover-climate')),
+            climate: [climate.temperature, climate.precipitation],
+            height: { x: 0, y: 0, width: options.mapSize!, n: terrain.height.w, data: terrain.height.data },
+            water: terrain.water,
+            // The displayed river geometry defines the riverside gallery (displayForest.ts forestDisplayRivers).
+            riverSegments: (await import('./displayForest')).forestDisplayRivers(retained.v2NativeTerrain?.water, configuration.climateZone),
+          },
+          configuration.forest,
+          forestRuntime,
+        );
+        retained.v2ForestField = forest;
+        const cover = new Float32Array(terrain.height.data.length),
+          n = terrain.height.w;
+        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) cover[y * n + x] = forest.rgba[(Math.min(forest.n - 1, Math.floor(((y + 0.5) * forest.n) / n)) * forest.n + Math.min(forest.n - 1, Math.floor(((x + 0.5) * forest.n) / n))) * 4] / 255;
+        retained.v2NaturalForest = cover;
+        forestFields.set(forestKey, { field: structuredClone(forest), cover: cover.slice() });
+        if (forestFields.size > 3) forestFields.delete(forestFields.keys().next().value!);
+      }
     }
-  }
-  const biome = options.biome;
-  const coverKey = key + stableStringify([biome, nativeEngine ? configuration.forest : null]);
-  const cachedCover = naturalCovers.get(coverKey);
-  const landuse = cachedCover
-    ? structuredClone(cachedCover)
-    : await generateNaturalCoverNative(
-        terrain,
-        biome,
-        new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'cover-climate')),
-        retained.v2NaturalForest,
-        settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined,
-      );
-  if (!cachedCover) {
-    naturalCovers.set(coverKey, structuredClone(landuse));
-    if (naturalCovers.size > 3) naturalCovers.delete(naturalCovers.keys().next().value!);
+    const biome = options.biome;
+    const coverKey = key + stableStringify([biome, nativeEngine ? configuration.forest : null]);
+    const cachedCover = naturalCovers.get(coverKey);
+    landuse = cachedCover
+      ? structuredClone(cachedCover)
+      : await generateNaturalCoverNative(
+          terrain,
+          biome,
+          new Rng('magna-urbis:' + stepSeed(settings.options.seed, 'cover-climate')),
+          retained.v2NaturalForest,
+          settings.runtime?.backend === 'native' ? { profile: 'local', server: loopbackServer(settings.runtime.localServer ?? 'http://127.0.0.1:8791') } : undefined,
+        );
+    if (!cachedCover) {
+      naturalCovers.set(coverKey, structuredClone(landuse));
+      if (naturalCovers.size > 3) naturalCovers.delete(naturalCovers.keys().next().value!);
+    }
   }
   const world: World = {
     seed: options.seed,

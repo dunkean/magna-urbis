@@ -110,7 +110,8 @@
       #demo-controls[hidden] {
         display: none;
       }
-      #randomize {
+      #randomize,
+      #demo-controls #detailed {
         pointer-events: auto;
         flex: none;
         border: 1px solid #b9a58d;
@@ -122,11 +123,24 @@
         cursor: pointer;
         box-shadow: 0 2px 6px #49372a18;
       }
+      #demo-controls #detailed {
+        background: #6e4c34;
+        color: #fffaf0;
+        border-color: #6e4c34;
+      }
+      #demo-controls #detailed:hover:not(:disabled) {
+        background: #583a28;
+      }
+      #demo-controls #detailed:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
       #randomize:hover {
         background: #f0e4d0;
         border-color: #725c47;
       }
-      #randomize:focus-visible {
+      #randomize:focus-visible,
+      #demo-controls #detailed:focus-visible {
         outline: 2px solid #725c47;
         outline-offset: 2px;
       }

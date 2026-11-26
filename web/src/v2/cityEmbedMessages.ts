@@ -4,6 +4,8 @@ import type { ExternalCityHints } from './externalCity/types';
 
 const rows = [
   ['Magna Urbis · City preview', 'Magna Urbis · Aperçu de ville'],
+  ['Improve map', 'Améliorer la vue'],
+  ['Detailed view', 'Vue détaillée'],
   ['detailing…', 'en cours…'],
   ['retry detail', 'réessayer'],
   ['Generate a detailed map', 'Générer une carte détaillée'],

@@ -1,6 +1,7 @@
 /** FMG displays a real V2 town through the shared Minimal Canvas renderer. */
 import CityWorker from './cityEmbed.worker?worker';
 import { cityEmbedEditorUrl, cityEmbedHints, cityEmbedSource, cityEmbedView } from './cityEmbedInput';
+import { compactPreviewKey, readCompactPreview, saveCompactPreview } from './cityEmbedCache';
 import { mountCityEmbedPopulation, randomCityEmbedUrl } from './cityEmbedDemo';
 import { mountCityEmbedNavigation } from './cityEmbedNavigation';
 import { MinimalCanvasRenderer } from './minimalCanvas';
@@ -67,8 +68,11 @@ function start(): void {
   name.hidden = !name.textContent;
   const controls = document.getElementById('demo-controls')!;
   const demo = window.parent === window || current.searchParams.get('demo') === '1';
+  const detailLabel = demo ? translate('Improve map') : 'detailed';
   controls.hidden = !demo;
   if (demo) {
+    controls.insertBefore(detailedButton, document.getElementById('demo-params'));
+    detailedButton.textContent = detailLabel;
     mountCityEmbedPopulation(current, hints.population ?? 2500);
     document.getElementById('randomize')!.onclick = () => location.assign(randomCityEmbedUrl(current).href);
     document.getElementById('demo-params')!.textContent = cityEmbedSummary(hints, current.searchParams.get('cultureBase'), language);
@@ -76,6 +80,8 @@ function start(): void {
 
   // Local profiling uses the same V2 native engine as the studio and the benches.
   const local = current.searchParams.get('profile') === 'local' && ['127.0.0.1', 'localhost', '[::1]'].includes(current.hostname);
+  const threaded = !local && crossOriginIsolated && typeof SharedArrayBuffer === 'function' && current.searchParams.get('threads') !== 'off';
+  let previewKey: string | undefined;
   let bounds: Rect4 | undefined;
   const draw = () => {
     if (!renderer || !bounds || disposed) return;
@@ -102,10 +108,7 @@ function start(): void {
     const next = new MinimalCanvasRenderer(scheduleDraw);
     pendingRenderer = next;
     const height = map.height;
-    await next.setContent({
-      key: mode, terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [],
-      height: height ? () => height : undefined,
-    }, map.recipe, map.plan, { terrain: mode === 'detailed', landuse: mode === 'detailed', labels: false });
+    await next.setContent({ key: mode, terrainKey: 1, size: map.size, features: unpackMinimalFeatures(map.geometry), places: [], height: height ? () => height : undefined }, map.recipe, map.plan, { terrain: mode === 'detailed', landuse: mode === 'detailed', labels: false });
     if (disposed) return;
     // Paint offscreen first. Throughout generation, panning and resizing still use the live compact map.
     const { width, height: h } = host.getBoundingClientRect();
@@ -116,6 +119,10 @@ function start(): void {
     pendingRenderer = undefined;
     bounds = map.bounds;
     root.dataset.runtime = data.runtime;
+    if (data.wasm) {
+      root.dataset.wasmMode = data.wasm.mode;
+      root.dataset.wasmThreads = String(data.wasm.threads);
+    }
     await afterPaint();
     if (disposed) return;
     if (mode === 'compact') {
@@ -123,20 +130,25 @@ function start(): void {
       root.dataset.readyMs = String(Math.round(performance.now()));
       root.dataset.detail = 'idle';
       status.hidden = true;
-      document.querySelectorAll<HTMLButtonElement>('#map-navigation button').forEach(button => { button.disabled = false; });
+      detailedButton.disabled = false;
+      document.querySelectorAll<HTMLButtonElement>('#map-navigation button').forEach(button => {
+        button.disabled = false;
+      });
     } else {
       root.dataset.detail = 'ready';
       root.dataset.detailMs = String(Math.round(performance.now()));
       detailedButton.removeAttribute('aria-busy');
-      detailedButton.textContent = translate('detailed');
+      detailedButton.textContent = demo ? translate('Detailed view') : detailLabel;
       detailedButton.title = translate('Detailed map shown');
     }
   };
   const generate = (mode: CityPreviewMode) => {
     try {
-      const active = new CityWorker({ name: 'magna-city-' + mode + ' profile=' + (local ? 'local' : 'web') + ' threads=off' });
+      const active = new CityWorker({ name: 'magna-city-' + mode + ' profile=' + (local ? 'local' : 'web') + ' threads=' + (threaded ? 'auto' : 'off') });
       worker = active;
-      const stopped = () => { if (worker === active) fail(new Error('The city generator stopped.')); };
+      const stopped = () => {
+        if (worker === active) fail(new Error('The city generator stopped.'));
+      };
       active.onerror = stopped;
       active.onmessageerror = stopped;
       active.onmessage = ({ data }: MessageEvent<CityPreviewResponse>) => {
@@ -144,6 +156,7 @@ function start(): void {
         if (data.type === 'error') fail(new Error(data.error));
         else if (data.type === 'city-preview') {
           stopWorker();
+          if (mode === 'compact' && previewKey && data.runtime === 'wasm') saveCompactPreview(previewKey, data);
           void show(data).catch(fail);
         }
       };
@@ -161,7 +174,28 @@ function start(): void {
     root.dataset.detail = 'loading';
     generate('detailed');
   };
-  generate('compact');
+  const showCompact = async () => {
+    // A loopback engine can be rebuilt independently of the web app.
+    if (!local) {
+      try {
+        previewKey = await compactPreviewKey(hints, threaded);
+        const stable = previewKey && (await readCompactPreview(previewKey));
+        if (disposed) return;
+        if (stable) {
+          root.dataset.previewCache = 'hit';
+          await show(stable);
+          return;
+        }
+      } catch {
+        pendingRenderer?.dispose();
+        pendingRenderer = undefined;
+      }
+    }
+    if (disposed) return;
+    root.dataset.previewCache = 'miss';
+    generate('compact');
+  };
+  void showCompact().catch(fail);
 }
 
 try {

@@ -189,11 +189,12 @@ try {
       const data = await loaded.evaluate(() => ({
         ...window.__embedProfile,
         navigationAt: performance.timeOrigin,
+        cached: document.documentElement.dataset.previewCache === 'hit',
         isolated: crossOriginIsolated,
         hardwareConcurrency: navigator.hardwareConcurrency,
         resources: performance.getEntriesByType('resource').map(r => ({ name: r.name, ms: r.duration, transferBytes: r.transferSize, bytes: r.encodedBodySize })),
       }));
-      const at = stage => data.stages.find(p => p.stage === stage)?.at;
+      const at = stage => data.stages?.find(p => p.stage === stage)?.at;
       const elapsed = (a, b) => (a && b ? Math.round(b - a) : 0);
       const townEnd = at('urban-complete'),
         resultAt = data.resultAt;
@@ -210,9 +211,9 @@ try {
         receiveAndRender: elapsed(resultAt, data.readyAt),
       };
       const item = { city: test.name, mode, condition, totalMs: elapsed(data.navigationAt, data.readyAt), breakdown, ...data };
-      assert.ok(data.worker.calls.length, 'WASM export instrumentation must have run.');
+      if (!data.cached) assert.ok(data.worker?.calls.length, 'WASM export instrumentation must have run.');
       report.runs.push(item);
-      console.log(JSON.stringify({ city: test.name, mode, condition, totalMs: item.totalMs, breakdown, runtime: data.runtime, buildings: data.buildings, wasmCalls: data.worker?.calls.slice(0, 4) }));
+      console.log(JSON.stringify({ city: test.name, mode, condition, totalMs: item.totalMs, cached: data.cached, breakdown, runtime: data.runtime, buildings: data.buildings, wasmCalls: data.worker?.calls.slice(0, 4) }));
       return loaded;
     }
     const first = await run('cold');

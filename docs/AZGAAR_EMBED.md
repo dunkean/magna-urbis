@@ -9,8 +9,13 @@ The public endpoint is `https://magna-urbis.org/embed.html` after publication.
 For an internal native performance run, start the existing V2 engine and open
 `http://127.0.0.1:5174/embed.html?profile=local&preview=1&name=Brackenford&population=2500&seed=12340007&walls=1`.
 The explicit local profile is accepted on loopback only. The ordinary web preview
-uses browser WASM. Direct previews include **Randomize city** and a **Population**
-field. Enter a new population and apply it to run the same seed with that value.
+uses browser WASM. A cross-origin-isolated preview can use WASM threads. Add
+`threads=off` to test a single thread. Ordinary FMG frames use the single-thread
+runtime. Reopening the same browser preview reuses its packed vector geometry when
+storage is available, so it can redraw at any size without rerunning the engine.
+
+Direct previews include **Randomize city**, **Population** and **Improve map**.
+Apply a new population to run the same seed with that value.
 An embedded iframe hides these test controls unless it receives `demo=1`.
 
 ## Simple link
