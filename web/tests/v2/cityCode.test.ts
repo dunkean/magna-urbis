@@ -249,9 +249,10 @@ describe('short city code', () => {
     settings.urban = { local: { main: { parcels: { overrides: { blocks } } } } };
     const blockOnly = encodeCityCode(settings);
     expect(blockOnly).not.toContain('X');
-    settings.urban.buildings = { [`site-1/${lot}/building`]: { overrides: { floors: 2 } } };
+    const house = { recipe: 'EUR-MED-TOWNHOUSE' };
+    settings.urban.buildings = { [`site-1/${lot}/building`]: house };
     expect(encodeCityCode(settings)).not.toContain('X');
-    settings.urban.buildings = { [`main/${lot}/building`]: { overrides: { floors: 2 } } };
+    settings.urban.buildings = { [`main/${lot}/building`]: house };
     const code = encodeCityCode(settings);
     expect(decodeCityCode(code).settings.urban!.local!.main.parcels!.overrides!.blocks![block].shape).toEqual(shape);
     same(code);
