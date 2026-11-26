@@ -22,6 +22,8 @@ import { groundShapePads, type GroundShapePad } from '../../ui/urbanGroundShape'
 import { buildingSeats, city3dProjectionScene, city3dScene, drawnKind, type City3dDisplayScene, type City3dKind, type City3dSceneOptions } from './scene';
 import type { SeatGround } from './terrainSeat';
 import type { City3dHeight } from './types';
+import { moatMeshInputs } from '../city3dMoat';
+import { SeatedMeshes } from './seatedMeshes';
 import { city3dWalls } from './walls';
 
 /** The buildings of a source scene (a placement batch, or a projection of accepted plans) as display meshes, each on
@@ -50,11 +52,19 @@ export function city3dStructures(
   canalSurfaces: boolean,
   /** The town is drawn as a plan in ink: its moat water keeps the plan's wash. */
   engraved = false,
+  wallReuse?: SeatedMeshes,
 ): { bridges: PlacedBuilding[]; walls: PlacedBuilding[]; quays: PlacedBuilding[]; boardwalks: PlacedBuilding[] } {
   const bridgeStreets = cityBridgeStreets(layouts, regional);
   return {
     bridges: city3dBridges(bridgeStreets, ground.height, ground.bridgeWater, ground.causewayWater),
-    walls: layouts.flatMap((l, li) => city3dWalls(l.enclosures ?? [], ground.height, String(li), l.culture, waterColor, engraved)),
+    walls: SeatedMeshes.compose(wallReuse, batch =>
+      layouts.flatMap((layout, li) => {
+        const circuits = layout.enclosures;
+        if (!circuits?.length) return [];
+        const inputs = wallReuse ? [layout.culture, waterColor, engraved, ...circuits.flatMap(e => [e, ...moatMeshInputs(e, waterColor, engraved)])] : [];
+        return batch(String(li), inputs, ground.height, at => city3dWalls(circuits, at, String(li), layout.culture, waterColor, engraved));
+      }),
+    ),
     quays: [...city3dQuays(layouts, ground.quayHeight, ground.quayWater), ...city3dWaterways(layouts, waterColor, canalSurfaces)],
     boardwalks: city3dBoardwalks(bridgeStreets, ground.height, ground.bridgeWater),
   };

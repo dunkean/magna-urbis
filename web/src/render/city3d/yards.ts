@@ -1,6 +1,6 @@
 /**
  * Yard enclosure runs, gates and material batches. Called by the City 3D scene adapter and sibling mesh builders.
- * Reads/writes: Reads enclosure runs and terrain/palette inputs; writes local batch builders and the existing weak cache keyed by enclosure-list identity.
+ * Reads the globally joined enclosure runs and gates, the palette and ground under each batch.
  */
 import type { PlacedBuilding } from '../../../../rust/bridge/urbanArchitecture';
 import type { MaterialPattern, Point, Surface, Vertex3 } from '../../../../rust/bridge/housesContract';
@@ -8,7 +8,8 @@ import { type YardLine, type YardMesh, type YardStation } from '../urbanBuilding
 import { type CityPalette } from '../cityCanvas';
 import type { LotEnclosure } from '../../../../rust/bridge/urban';
 import type { YardBoundary } from '../cityLotEnclosures';
-import { TOP_LIGHT, yardMeshTint, yardRuns, yardStyle } from '../yardStyle';
+import { TOP_LIGHT, yardMeshTint, yardRuns, yardStyle, type YardRun, type YardGate } from '../yardStyle';
+import { SeatedMeshes } from './seatedMeshes';
 import { City3dHeight } from './types';
 import { RoofBuilder } from './roofGeometry';
 import { mat, tinted, roofMat, slots } from './materials';
@@ -24,7 +25,6 @@ import { baseVolume } from './volume';
  * Batched per 128 m cell, material and culture. The batch footprint is a zero-area diagonal of its box: it gives the
  * renderer its bounds but never constrains the terrain (no trench to the batch's lowest point), excludes trees or
  * draws an overview cap; beyond the near level the pass draws `yard.lines`, a plain ribbon (eachBuildingTriangle). */
-const YARD_MESHES = new WeakMap<readonly LotEnclosure[], { heightAt?: City3dHeight; palette: CityPalette; buildings: PlacedBuilding[] }>();
 
 const YARD_STATION_M = 6,
   POST_M = 3,
@@ -109,22 +109,54 @@ interface YardBatch {
   maxY: number;
 }
 
-export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightAt?: City3dHeight, palette: CityPalette = 'terrain'): PlacedBuilding[] {
-  const cached = YARD_MESHES.get(enclosures);
-  if (cached && cached.heightAt === heightAt && cached.palette === palette) return cached.buildings;
-  const batches = new Map<string, YardBatch>(),
-    { runs, gates } = yardRuns(enclosures as readonly YardBoundary[]),
+interface YardGroup {
+  runs: YardRun[];
+  gates: YardGate[];
+  inputs: unknown[];
+}
+
+/** The join and gate solve is town-wide. Group its final output in encounter order, including jambs that
+ * belong to a gate in a different batch. A change at either end of a run can then invalidate both batches. */
+export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightAt?: City3dHeight, palette: CityPalette = 'terrain', reuse?: SeatedMeshes): PlacedBuilding[] {
+  const { runs, gates } = yardRuns(enclosures as readonly YardBoundary[]),
+    groups = new Map<string, YardGroup>(),
     gatePosts = new Set<Point>();
+  const groupAt = (e: YardBoundary, p: Point): YardGroup => {
+    const key = `${Math.floor(p.x / 128)}/${Math.floor(p.y / 128)}/${e.material}/${e.fenceStyle ?? ''}/${e.culture ?? ''}`;
+    let group = groups.get(key);
+    if (!group) groups.set(key, (group = { runs: [], gates: [], inputs: [palette] }));
+    return group;
+  };
   for (const { a, b } of gates) {
     gatePosts.add(a);
     gatePosts.add(b);
   }
-  const batchAt = (e: YardBoundary, p: Point): YardBatch => {
-    const key = `${Math.floor(p.x / 128)}/${Math.floor(p.y / 128)}/${e.material}/${e.fenceStyle ?? ''}/${e.culture ?? ''}`;
-    let batch = batches.get(key);
-    if (!batch) batches.set(key, (batch = { details: [], sheetFaces: [], culture: e.culture ?? '', roof: new RoofBuilder(), ground: [], lines: [], material: e.material, bottom: Infinity, top: -Infinity, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }));
-    return batch;
-  };
+  for (const run of runs) {
+    const e = run.source,
+      path = run.path,
+      group = groupAt(e, path[path.length >> 1]);
+    group.runs.push(run);
+    if (reuse) {
+      group.inputs.push('run', e.material, e.fenceStyle, e.culture, e.height, run.closed, gatePosts.has(path[0]), gatePosts.has(path[path.length - 1]), path.length);
+      for (const p of path) group.inputs.push(p.x, p.y);
+    }
+  }
+  for (const gate of gates) {
+    const { a, b, source: e } = gate,
+      group = groupAt(e, a);
+    group.gates.push(gate);
+    if (reuse) group.inputs.push('gate', e.material, e.fenceStyle, e.culture, e.height, a.x, a.y, b.x, b.y);
+  }
+  return SeatedMeshes.compose(reuse, batch => {
+    const buildings: PlacedBuilding[] = [];
+    for (const [key, group] of groups) buildings.push(...batch(key, group.inputs, heightAt, at => yardBatch(key, group, gatePosts, palette, at)));
+    return buildings;
+  });
+}
+
+function yardBatch(key: string, { runs, gates }: YardGroup, gatePosts: Set<Point>, palette: CityPalette, heightAt?: City3dHeight): PlacedBuilding[] {
+  const first = runs[0]?.source ?? gates[0].source;
+  const batch: YardBatch = { details: [], sheetFaces: [], culture: first.culture ?? '', roof: new RoofBuilder(), ground: [], lines: [], material: first.material, bottom: Infinity, top: -Infinity, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const tints = (e: YardBoundary): { body: string; alt: string; top: string; wood: string } => {
     const look = yardStyle(e.material, e.culture, palette, e.fenceStyle);
     const id = e.material === 'hedge' ? 'city3d:yard:hedge' : e.material === 'wall' ? mat('stone') : e.fenceStyle === 'plank' ? 'city3d:wall:timber' : 'city3d:wall:wattle';
@@ -187,7 +219,8 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
     };
     return { band, sheet, post };
   };
-  const extend = (batch: YardBatch, p: Point, h: number): void => {
+  const { band, sheet, post } = painter(batch);
+  const extend = (p: Point, h: number): void => {
     batch.minX = Math.min(batch.minX, p.x - h);
     batch.minY = Math.min(batch.minY, p.y - h);
     batch.maxX = Math.max(batch.maxX, p.x + h);
@@ -195,9 +228,7 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
   };
   for (const run of runs) {
     const e = run.source,
-      batch = batchAt(e, run.path[run.path.length >> 1]),
       line = yardStations(run.path, run.closed, heightAt),
-      { band, sheet, post } = painter(batch),
       t = tints(e);
     const ends = !run.closed;
     let half: number, height: number;
@@ -274,13 +305,11 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
     }
     batch.details.push({ points: line, closed: run.closed, kind: e.material === 'hedge' ? 'hedge' : e.material === 'wall' ? 'stone' : e.fenceStyle === 'plank' ? 'boards' : 'woven', height, half, side: t.body, cap: t.top });
     batch.lines.push({ stations: line, closed: run.closed, height, half, side: t.body, top: t.top });
-    for (const p of run.path) extend(batch, p, half + 0.1);
+    for (const p of run.path) extend(p, half + 0.1);
   }
   // Jambs: a post either side of a gate, a pier in a wall.
   for (const g of gates) {
     const e = g.source,
-      batch = batchAt(e, g.a),
-      { band, post } = painter(batch),
       t = tints(e);
     for (const p of [g.a, g.b]) {
       const ground = heightAt?.(p.x, p.y) || 0;
@@ -303,46 +332,41 @@ export function city3dLotEnclosures(enclosures: readonly LotEnclosure[], heightA
           t.top,
         );
       } else post(p, ground, e.material === 'hedge' ? 1.45 : 1.3, 0.09, t.wood);
-      extend(batch, p, 0.4);
+      extend(p, 0.4);
     }
   }
-  const buildings: PlacedBuilding[] = [];
-  for (const [key, b] of batches) {
-    if (!b.roof.faces.length) continue;
-    const lo = { x: b.minX, y: b.minY },
-      hi = { x: b.maxX, y: b.maxY },
-      footprint: Surface = [{ outer: [lo, hi, hi, lo], holes: [] }];
-    const pattern: MaterialPattern = b.material === 'wall' ? 'stone' : 'wood',
-      origin = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2 };
-    const volume = baseVolume(`yard:${key}:v`, footprint, b.bottom, b.top - b.bottom, 0, slots(pattern, pattern), b.roof.mesh(), 'RF-FLAT', { footprint: [], z_min_m: b.bottom, z_max_m: b.bottom }, []);
-    volume.envelope = 'open';
-    const building: import('../craftedBoundaries').BoundaryBuilding & { yard: YardMesh } = {
-      id: `yard:${key}`,
-      parcel_id: '',
-      function: 'collective',
-      culture: { culture: b.culture, pack: '', mode: 'inspired', borrowing: null } as unknown as PlacedBuilding['culture'],
-      recipe_id: 'city3d-yard',
-      variant_id: `yard:${b.material}`,
-      transform: { origin, orientation_deg: 0 },
-      ground_z_m: b.bottom,
-      footprint,
-      roof_footprint: footprint,
-      courtyards: [],
-      circulation: [],
-      entrance: origin,
-      access_id: '',
-      volumes: [volume],
-      useful_area_m2: 0,
-      domestic_units: 0,
-      structural_features: [],
-      simplification: 'recipe_volumes',
-      diagnostics: ['city3d yard enclosure'],
-      resolved: null,
-      boundary: { lines: b.details },
-      yard: { ground: b.ground, lines: b.lines, sheetFaces: b.sheetFaces },
-    };
-    buildings.push(building);
-  }
-  YARD_MESHES.set(enclosures, { heightAt, palette, buildings });
-  return buildings;
+  if (!batch.roof.faces.length) return [];
+  const lo = { x: batch.minX, y: batch.minY },
+    hi = { x: batch.maxX, y: batch.maxY },
+    footprint: Surface = [{ outer: [lo, hi, hi, lo], holes: [] }];
+  const pattern: MaterialPattern = batch.material === 'wall' ? 'stone' : 'wood',
+    origin = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2 };
+  const volume = baseVolume(`yard:${key}:v`, footprint, batch.bottom, batch.top - batch.bottom, 0, slots(pattern, pattern), batch.roof.mesh(), 'RF-FLAT', { footprint: [], z_min_m: batch.bottom, z_max_m: batch.bottom }, []);
+  volume.envelope = 'open';
+  const building: import('../craftedBoundaries').BoundaryBuilding & { yard: YardMesh } = {
+    id: `yard:${key}`,
+    parcel_id: '',
+    function: 'collective',
+    culture: { culture: batch.culture, pack: '', mode: 'inspired', borrowing: null } as unknown as PlacedBuilding['culture'],
+    recipe_id: 'city3d-yard',
+    variant_id: `yard:${batch.material}`,
+    transform: { origin, orientation_deg: 0 },
+    ground_z_m: batch.bottom,
+    footprint,
+    roof_footprint: footprint,
+    courtyards: [],
+    circulation: [],
+    entrance: origin,
+    access_id: '',
+    volumes: [volume],
+    useful_area_m2: 0,
+    domestic_units: 0,
+    structural_features: [],
+    simplification: 'recipe_volumes',
+    diagnostics: ['city3d yard enclosure'],
+    resolved: null,
+    boundary: { lines: batch.details },
+    yard: { ground: batch.ground, lines: batch.lines, sheetFaces: batch.sheetFaces },
+  };
+  return [building];
 }

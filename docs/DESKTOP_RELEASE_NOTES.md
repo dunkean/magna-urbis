@@ -2,6 +2,7 @@
 
 - On newly generated vector maps, the river deletion preview distinguishes separate watercourses even when their drawn endpoints overlap.
 - Rural land cover stops at the drawn coastline and follows island shores.
+- House and parcel edits reuse unchanged 3D fences, hedges and fortifications, reducing redraw work in large towns.
 - Rerolling a whole settlement draws its plan and streets together. Independent street variations remain available.
 - Automatic generation retries multithreaded Rust on a later visit after a temporary worker startup timeout.
 

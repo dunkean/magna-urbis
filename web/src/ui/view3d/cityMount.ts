@@ -3,6 +3,7 @@
  * Terrain3d owns relief, tiles, navigation and the native building pass; this adapter supplies city inputs and exact 2D drapes.
  * Reads/writes: Creates the per-mount context, stable delegates and caches; invokes DOM, selection, controls and API assembly in their original order.
  */
+import { SeatedMeshes } from '../../render/city3d/seatedMeshes';
 import { DrapeTiles } from '../../render/drapeTiles';
 import { TileWaterMask } from '../tileWaterMask';
 import { WaterCellPainter } from '../waterCells';
@@ -165,6 +166,8 @@ export function mountCity3d(options: City3dOptions): City3d {
 
   cityContext.wallStats = { count: 0, pieces: 0, triangles: 0, ms: 0 };
 
+  cityContext.yardReuse = new SeatedMeshes();
+  cityContext.wallReuse = new SeatedMeshes();
   cityContext.structureInputs = [];
   cityContext.structureBuildings = [];
 

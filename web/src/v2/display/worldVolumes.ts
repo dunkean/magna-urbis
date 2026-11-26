@@ -21,6 +21,7 @@
  * on, at its `treeDistance`: the "3D trees" switch and the distance of the map toolbar while the view is tilted
  * (v2/page/view3d.ts).
  */
+import { city3dWorldHeight, SeatedMeshes } from '../../render/city3d/seatedMeshes';
 import type { World } from '../../gen/types';
 import type { ResolvedAppearance } from '../../render/appearanceRecipe';
 import { city3dBuildingsSteps, city3dFarmBuildings, city3dFarmSources, city3dPadSteps, city3dStructures, city3dWithExtras, type City3dReuse } from '../../render/city3d/display';
@@ -139,6 +140,8 @@ export class WorldVolumes {
   private treesOn = false;
   private night = false;
   private yardMeshes = false;
+  private readonly yardReuse = new SeatedMeshes();
+  private readonly wallReuse = new SeatedMeshes();
   /** The trees' colours in the look on screen, as its painted crowns take theirs. */
   private palette: TreePalette = SATELLITE_TREES;
   /** What the products were made for: the map (`content`: MapState.townContent, bumped by every set()), the relief. */
@@ -169,25 +172,27 @@ export class WorldVolumes {
   };
   /** The meshes made for the buildings on one relief and ground options, kept across compositions: a local edit gives
    * back the objects of the buildings it did not change (localEditIntern.ts), which keep their meshes, and the other
-   * volumes (structures, steps, groves, farms) take their previous objects where their content is the same, so the
-   * buildings layer keeps every block the edit did not touch (buildingsCache.ts adoptBlocks). */
-  private meshReuse?: { heights: TerrainHeights; terraces: boolean; levelled: boolean; underdark: boolean; buildings: City3dReuse; volumes: Map<string, Building3dVisual> };
+   * volumes can keep their previous objects too. The buildings layer adopts compatible blocks (buildingsCache.ts). */
+  private meshReuse?: { heights: TerrainHeights; terraces: boolean; levelled: boolean; underdark: boolean; buildings: City3dReuse; extras: Map<string, Building3dVisual>; farms: Map<string, Building3dVisual> };
   private reuseFor(heights: TerrainHeights, terraces: boolean, levelled: boolean, underdark: boolean): NonNullable<WorldVolumes['meshReuse']> {
     const held = this.meshReuse;
     if (held && held.heights === heights && held.terraces === terraces && held.levelled === levelled && held.underdark === underdark) return held;
-    return (this.meshReuse = { heights, terraces, levelled, underdark, buildings: new WeakMap(), volumes: new Map() });
+    return (this.meshReuse = { heights, terraces, levelled, underdark, buildings: new WeakMap(), extras: new Map(), farms: new Map() });
   }
-  /** `made` with the previous object of each volume whose content is the same (by id). */
-  private sameVolumes(made: Building3dVisual[], reuse: NonNullable<WorldVolumes['meshReuse']>): Building3dVisual[] {
-    const held = reuse.volumes,
+  /** Intern the remaining extras against their last composition. Wall and yard producers already retain
+   * their meshes, so their geometry never enters this deep comparison. Farms are composed in an earlier slice. */
+  private compareVolumes(group: 'extras' | 'farms', reuse = this.meshReuse): (volume: Building3dVisual) => Building3dVisual {
+    if (!reuse) return volume => volume;
+    const previous = reuse[group],
+      next = new Map<string, Building3dVisual>(),
       budget = { left: VOLUME_COMPARE_BUDGET };
-    if (held.size > 4 * made.length + 1024) held.clear();
-    return made.map(volume => {
-      const old = held.get(volume.id);
-      if (old && old !== volume && sameContent(old, volume, budget)) return old;
-      held.set(volume.id, volume);
-      return volume;
-    });
+    reuse[group] = next;
+    return function compareVolume(volume) {
+      const old = previous.get(volume.id);
+      const kept = old && old !== volume && sameContent(old, volume, budget) ? old : volume;
+      next.set(volume.id, kept);
+      return kept;
+    };
   }
   /** Displayed water cover of the map the trees keep off, one function per world (the trees compare it by identity). */
   private waterOf?: { world: World; rivers?: Float32Array; at: (x: number, y: number) => number };
@@ -271,6 +276,8 @@ export class WorldVolumes {
       this.townOf = { cities: [], key: '' };
       this.sourceOf = undefined;
       this.townMeshes = undefined;
+      this.wallReuse.clear();
+      this.yardReuse.clear();
       this.yardMeshes = false;
       return;
     }
@@ -435,7 +442,7 @@ export class WorldVolumes {
     // The scene holds real heights; the layer seats it on the relief as drawn.
     const unit = heights.exaggeration > 0 ? 1 / heights.exaggeration : 1,
       naturalAt = (x: number, y: number): number => heights.naturalAt(x, y) * unit,
-      heightAt: City3dHeight = (x, y) => heights.groundAt(x, y) * unit;
+      heightAt = city3dWorldHeight(heights);
     const activities = activityScene(world),
       heldSource = this.sourceOf;
     if (!heldSource || heldSource.activities !== activities || !sameV2NativeInputs(heldSource.cities, cities, 'scene') || !sameV2NativeInputs(heldSource.cities, cities, 'layouts'))
@@ -480,18 +487,18 @@ export class WorldVolumes {
       heights.shape = shape;
       const reuse = this.reuseFor(heights, r.city.terraces, levelled, !!r.underdark);
       const display = yield* city3dBuildingsSteps(source, { heightAt, ground, terraces: r.city.terraces }, reuse.buildings);
-      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, levelled, steepRoads, city, shape, display, farms: this.sameVolumes(city3dFarmBuildings(farms, { heightAt, ground }), reuse), scenes: new Map() };
+      meshes = this.townMeshes = { cities, world, heights, terraces: r.city.terraces, levelled, steepRoads, city, shape, display, farms: city3dFarmBuildings(farms, { heightAt, ground }).map(this.compareVolumes('farms', reuse)), scenes: new Map() };
     }
     const display = meshes!.display;
     yield;
     const structures = buildingsOnly
       ? undefined
-      : city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt, causewayWater: this.stillWater(world, heightAt) }, plan.waterColor, false, r.composition.networks.water.look === 'ink');
+      : city3dStructures(layouts, cityRegionalStreets(r, townRoadStreets(world)), { height: heightAt, quayHeight: heightAt, causewayWater: this.stillWater(world, heightAt) }, plan.waterColor, false, r.composition.networks.water.look === 'ink', this.wallReuse);
     yield;
     // Stepped streets stand as flights of steps on the relief (city3dStairs.ts).
     const stairs = buildingsOnly ? [] : city3dStairs(layouts, heightAt, street => stairStreetColor(street, stairPaint));
     yield;
-    const enclosures = yards && city ? city3dLotEnclosures(yield* city.lotEnclosureSteps(), heightAt, plan.palette) : [];
+    const enclosures = yards && city ? city3dLotEnclosures(yield* city.lotEnclosureSteps(), heightAt, plan.palette, this.yardReuse) : [];
     yield;
     if (!buildingsOnly && !meshes!.grove) {
       // A look change can replace the surrounding composition while the grove is still seating on this ground.
@@ -506,8 +513,9 @@ export class WorldVolumes {
     // Published whole, once made: the buildings layer starts its blocks again for a new scene object.
     this.townOf = { cities, world, heights, city, key };
     this.appearance = appearance;
-    const extras = [...(structures ? [...structures.bridges, ...structures.walls, ...structures.quays, ...structures.boardwalks] : []), ...stairs, ...enclosures, ...ornaments];
-    this.display = city3dWithExtras(display, [...(this.meshReuse?.heights === heights ? this.sameVolumes(extras, this.meshReuse) : extras), ...(grove?.buildings ?? []), ...meshes!.farms], grove?.instances);
+    const compare = this.compareVolumes('extras');
+    const extras = [...(structures?.bridges.map(compare) ?? []), ...(structures?.walls ?? []), ...(structures?.quays.map(compare) ?? []), ...(structures?.boardwalks.map(compare) ?? []), ...stairs.map(compare), ...enclosures, ...ornaments.map(compare)];
+    this.display = city3dWithExtras(display, [...extras, ...(grove?.buildings ?? []), ...meshes!.farms], grove?.instances);
     this.walkCollisions = this.display ? new Terrain3dCollisions(this.display, heights, heights.exaggeration) : undefined;
     meshes!.scenes.set(key, { display: this.display, collisions: this.walkCollisions });
     if (meshes!.scenes.size > LOOK_SCENES) meshes!.scenes.delete(meshes!.scenes.keys().next().value!);

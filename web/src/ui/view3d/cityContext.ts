@@ -2,6 +2,7 @@
  * Per-mount City 3D state and operation contract, supplied by cityMount.
  * Reads/writes: One object per mount; fields initialize at their original positions and stable delegates preserve callback identity. No module-level mutable city state.
  */
+import type { SeatedMeshes } from '../../render/city3d/seatedMeshes';
 import { CITY_3D_MATERIAL_GROUNDS } from '../../render/cityGroundModes';
 import { DrapeTiles } from '../../render/drapeTiles';
 import { TileWaterMask } from '../tileWaterMask';
@@ -110,6 +111,8 @@ export interface City3dContext {
   quayCount: number;
   stairStats: { count: number; triangles: number; ms: number };
   stairInputs: unknown[];
+  yardReuse: SeatedMeshes;
+  wallReuse: SeatedMeshes;
   stairBuildings: PlacedBuilding[];
   wallStats: City3dWallStats;
   structureInputs: unknown[];

@@ -147,7 +147,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
       // Retain these exact meshes until their actual terrain/network changes.
       // heightAt is the undug ground (Terrain3d.groundAt): moat water and gate bridges are not dug a second time.
       const wallStarted = performance.now(),
-        { bridges, walls, quays, boardwalks } = city3dStructures(layouts ?? [], regional ?? [], { height: cityContext.heightAt, bridgeWater: cityContext.bridgeWaterAt, quayHeight: cityContext.quayHeightAt, quayWater: cityContext.quayWaterAt }, waterColor, !canalMaterial);
+        { bridges, walls, quays, boardwalks } = city3dStructures(layouts ?? [], regional ?? [], { height: cityContext.heightAt, bridgeWater: cityContext.bridgeWaterAt, quayHeight: cityContext.quayHeightAt, quayWater: cityContext.quayWaterAt }, waterColor, !canalMaterial, false, cityContext.wallReuse);
       cityContext.bridgeStats = { count: bridges.length, first: bridges[0] && cityContext.center(bridges[0]) };
       const enclosures = new Set(walls.map(w => w.id.split(':').slice(1, 3).join(':'))),
         gate = walls.find(w => w.id.includes(':gate:') && !w.variant_id.endsWith(':water'));
@@ -180,7 +180,7 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     const sharedYards = cityContext.options.getLotEnclosures?.();
     if (yardPlan && sharedYards) yardPlan.lotEnclosures = sharedYards as import('../../../../rust/bridge/urban').LotEnclosure[];
     else if (yardPlan && scene) updateYardEnclosures(yardPlan, scene.buildings, () => scene.buildings);
-    const yardMeshes = yardPlan ? city3dLotEnclosures(yardPlan.lotEnclosures ?? [], cityContext.heightAt, cityContext.options.getPlanOptions?.()?.palette) : [];
+    const yardMeshes = yardPlan ? city3dLotEnclosures(yardPlan.lotEnclosures ?? [], cityContext.heightAt, cityContext.options.getPlanOptions?.()?.palette, cityContext.yardReuse) : [];
     // Town grove, tree platforms and their walkways (cityCanopy.ts): the same derivation as the 2D plan.
     const canopySource = scene && !('projection' in scene) ? scene.buildings : undefined,
       nextCanopyInputs = [layouts, canopySource, cityContext.heightAt];

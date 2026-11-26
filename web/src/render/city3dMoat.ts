@@ -1,6 +1,7 @@
+import type { Enclosure } from '../../../rust/bridge/urban';
 import type { Point, Vertex3 } from '../../../rust/bridge/housesContract';
 import { surfaceTriangles } from './urbanBuildingGeometry';
-import { moatBankEdge, moatBucket, moatDepth, moatFill, moatFreeboard, moatInk, moatInward, moatScarp, moatSharedEdges, moatSheet, moatWaterColour, type MoatForm, type MoatPartShape, type MoatSpec, type MoatState } from './moatModel';
+import { moatForm, moatSpec, moatState, moatBankEdge, moatBucket, moatDepth, moatFill, moatFreeboard, moatInk, moatInward, moatScarp, moatSharedEdges, moatSheet, moatWaterColour, type MoatForm, type MoatPartShape, type MoatSpec, type MoatState } from './moatModel';
 
 /** Moats (fortification ditches) in the 3D view. The ground itself is dug: the terrain lowers its tiles inside every ditch
  * piece by the ditch depth, with a sloped scarp and counterscarp (ui/urbanGroundCuts.ts). Here, built once with the other wall
@@ -46,6 +47,29 @@ function fine(t: readonly [Point, Point, Point], out: [Point, Point, Point][], d
     mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   fine([a, mid, c], out, depth + 1);
   fine([mid, b, c], out, depth + 1);
+}
+
+/** Non-source inputs the walls read from the season and the moat review controls. The enclosure is an
+ * immutable native layout record. Forced sluices/dams supply a fresh spec, so mutable review geometry
+ * is always rebuilt. Compare the resolved fill and inks actually used by the sheet, even between two
+ * dates with the same rounded season key. */
+export function moatMeshInputs(enclosure: Enclosure, waterColor = MOAT_WATER_DEFAULT, engraved = false): unknown[] {
+  const form = moatForm(enclosure),
+    spec = moatSpec(enclosure),
+    town = moatState({ moat: spec });
+  const inputs: unknown[] = [form, spec, town];
+  for (const ditch of enclosure.ditch ?? []) {
+    if (!ditch.shape?.outer || ditch.shape.outer.length < 3) continue;
+    const bucket = moatBucket(ditch.shape.outer),
+      fill = moatFill(ditch.kind, bucket, form, undefined, town);
+    inputs.push(fill);
+    if (!engraved)
+      for (const part of moatSheet(fill).afloat) {
+        const ink = moatInk(part, ditch.kind, bucket, form, waterColor, town);
+        inputs.push(ink.fill, ink.alpha);
+      }
+  }
+  return inputs;
 }
 
 /** The water of a wet moat piece (nothing for a dry one: the dug ground and the plan texture show it), in the state its form,
