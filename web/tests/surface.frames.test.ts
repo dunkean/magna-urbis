@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Decor } from '../src/ui/decor';
+import { encodeWaterField } from '../src/render/terrainWater';
 import { cropTerrain } from '../src/ui/benchTerrainTransfer';
 import { compileFromDecor, exportSurfacePacket } from '../src/surface/adapters/export';
 import { resolveSurfaceFrame, assertSurfaceLiveFrame } from '../src/surface/adapters/frame';
@@ -22,6 +23,10 @@ function source(): Decor {
       stats: {},
       settlements: [],
       waterSvg: '',
+      waterMaterial: {
+        n: 8, width: 80, referenceWidth: 80, path: 'M20,10H50V40H20Z',
+        field: encodeWaterField(Float32Array.from({ length: 64 }, (_, i) => i % 8 >= 2 && i % 8 < 5 && Math.floor(i / 8) >= 1 && Math.floor(i / 8) < 4 ? 1 : -1)),
+      },
       regeneration: { query: 'width=80', crops: [] },
     },
     raster: {
