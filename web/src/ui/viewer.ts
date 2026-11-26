@@ -108,11 +108,14 @@ export function createViewer(o: ViewerOptions): Viewer {
     presentation.draw();
   }
   presentation.size();
-  const ro = new ResizeObserver(() => {
+  const resized = (): void => {
     presentation.size();
     invalidate();
-  });
+  };
+  const ro = new ResizeObserver(resized);
   ro.observe(o.container);
+  // A window resize also follows pixel ratio changes (browser zoom, the live display's ratio cap), which keep the container size.
+  window.addEventListener('resize', resized);
   const removeInput = installViewerInput(o.container, o.canvas, o.minimap, nav);
   return {
     setRenderer: presentation.setRenderer,
@@ -151,6 +154,7 @@ export function createViewer(o: ViewerOptions): Viewer {
     destroy() {
       destroyed = true;
       ro.disconnect();
+      window.removeEventListener('resize', resized);
       removeInput();
       presentation.destroy();
       if (raf) cancelAnimationFrame(raf);

@@ -100,7 +100,7 @@ describe('3D machine capability in the page', () => {
     await setup('veryslow');
     const { mountV2TestHook } = await import('../src/v2/testHook');
     mountV2TestHook({} as never);
-    expect((window as unknown as { __v2Test: { machine(): unknown } }).__v2Test.machine()).toEqual({ tier: 'veryslow', reason: 'forced', available3d: false });
+    expect((window as unknown as { __v2Test: { machine(): unknown } }).__v2Test.machine()).toEqual({ tier: 'veryslow', level: 'minimal', reason: 'forced', handheld: false, available3d: false });
   });
 
   it('shows the saved relief multiplier and persists toolbar changes in the shared appearance', async () => {

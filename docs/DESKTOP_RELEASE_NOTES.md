@@ -194,6 +194,11 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - Parchment woods keep their whole tree symbols: crowns along a wood's edge or a river bank are no longer sliced by straight land-use edges or hidden under the river band.
 - Farmsteads in 2D show only what the farm holds and the 3D view raises: no culture fence round a farmyard the farm left open, pen fences drawn as the rail fences of the 3D view, and roof ridges taken from the raised buildings (no more ridge line across round, domed or flat farm roofs).
 
+- Phones and tablets no longer get stuck in the Minimal style: a temporary loss of the graphics context is no longer treated as a missing graphics card. Maps saved in Minimal or in a fast style by that fault return to their full style.
+- Settings offers a Performance choice: Auto, Economy, Balanced or High. On phones and tablets, Auto starts at Balanced and follows the measured navigation speed instead of the name of the graphics chip. A notice explains any step down and offers full quality.
+- On phones and tablets the live map is drawn at up to twice the CSS resolution (1.5× in Economy) instead of the screen's full pixel density, and generation runs fewer threads and workers to stay within the tab's memory. The same settings and share codes give the same map on every device.
+- On a phone or tablet, the terrain controls warn when a map is likely to exceed the device's memory.
+
 ## Alpha 0.3.10
 
 Replaces 0.3.9, whose build stopped on an outdated test before publication (no 0.3.9 packages exist).

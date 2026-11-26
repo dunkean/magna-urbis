@@ -9,8 +9,8 @@ const hooks = vi.hoisted(() => ({ takeAutosave: vi.fn(), armAutosave: vi.fn(), s
 vi.mock('../../src/v2/autosave', () => ({ takeAutosave: hooks.takeAutosave, armAutosave: hooks.armAutosave, saveAutosaveNow: hooks.saveAutosaveNow, mountNewButton: vi.fn() }));
 vi.mock('../../src/v2/i18n', () => ({ setText: vi.fn() }));
 vi.mock('../../src/v2/testHook', () => ({ mountV2TestHook: vi.fn() }));
-vi.mock('../../src/v2/machineTier', () => ({ inspectMachine: () => Promise.resolve({ tier: 'fast' }) }));
-vi.mock('../../src/v2/page/machineDefault', () => ({ mountMachineDefault: vi.fn() }));
+vi.mock('../../src/v2/machineTier', () => ({ inspectMachine: () => Promise.resolve({ tier: 'fast' }), releaseMachineStyle: vi.fn() }));
+vi.mock('../../src/v2/page/machineDefault', () => ({ mountMachineDefault: vi.fn(), mountPerformancePolicy: vi.fn(), repairMachinePreset: vi.fn(), persistedSettings: (settings: unknown) => settings }));
 import { mountPageBoot } from '../../src/v2/page/bootstrap';
 import { createSettingsActions } from '../../src/v2/page/settings';
 

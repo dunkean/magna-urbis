@@ -16,6 +16,7 @@ import { sourceDefinition } from '../../../rust/bridge/terrainDefinition';
 import { TERRAIN_STAGE_OUTPUTS, TerrainStageOutput, previewTerrainData } from './terrainStagePreview';
 import { responsiveTimeout } from '../../../rust/bridge/nativeAvailability';
 import { gpuSetupDeadline } from '../../../rust/bridge/terrainProgress';
+import { deviceWorkerName } from '../../../rust/bridge/deviceClass';
 export type PlatformProgress = { phase: 'detecting' | 'loading' | 'ready' | 'unavailable'; message: string; source: 'browser' | 'rust' | 'python' };
 export interface PlatformCapabilities {
   cpu: true;
@@ -74,9 +75,9 @@ async function serviceStatus(server: string, signal?: AbortSignal): Promise<Reco
   }
 }
 
-/** Carry the page's execution policy into workers, whose URL is a bundled script. */
+/** Carry the page's execution policy and device class into workers, whose URL is a bundled script. */
 export function runtimeWorkerOptions(options: WorkerOptions = {}): WorkerOptions {
-  return { ...options, name: `${options.name ?? 'magna-v2'} profile=${runtimeOptions().profile}` };
+  return { ...options, name: deviceWorkerName(`${options.name ?? 'magna-v2'} profile=${runtimeOptions().profile}`) };
 }
 
 export async function detectPlatform(options: DetectPlatformOptions = runtimeOptions()): Promise<PlatformCapabilities> {

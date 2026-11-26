@@ -9,6 +9,7 @@ import { internLocalEdit } from './localEditIntern';
 import { createViewer, type Viewer } from '../ui/viewer';
 import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import { displayWorld } from '../render/displayWorld';
+import { liveDevicePixelRatio } from '../render/displayQuality';
 import type { World } from '../gen/types';
 import type { V2Settings, V2Progress, V2TownStage } from './contracts';
 import type { ResourcePayload } from '../../../rust/bridge/resources';
@@ -214,7 +215,7 @@ export class StudioClient {
         clearTimeout(timeout);
         resolve(false);
       };
-      render.postMessage({ type: 'init', dpr: window.devicePixelRatio || 1 });
+      render.postMessage({ type: 'init', dpr: liveDevicePixelRatio() });
     });
     if (!ready) {
       render.terminate();
@@ -546,7 +547,7 @@ export class StudioClient {
         brushes: images ?? undefined,
         vegetation: this.display.vegetation,
         get dpr() {
-          return window.devicePixelRatio || 1;
+          return liveDevicePixelRatio();
         },
       });
       this.syncRenderer.setOverlays({ cartouche: this.display.cartouche ?? false, legend: this.display.legend ?? false, labels: this.display.labels ?? true });

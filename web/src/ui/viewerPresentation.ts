@@ -2,6 +2,7 @@
 import type { CanvasRenderer } from '../render/canvas';
 import { type View, viewRect } from '../render/view';
 import { viewFootprint } from '../render/world/camera';
+import { liveDevicePixelRatio } from '../render/displayQuality';
 import type { ViewerOptions, FrameSource, DirectFrameSource, PresentedFrame } from './viewer';
 import type { ViewerNavigation } from './viewerNavigation';
 const sameView = (a: View, b: View): boolean => a.cx === b.cx && a.cy === b.cy && a.scale === b.scale;
@@ -50,7 +51,7 @@ export function createViewerPresentation(o: ViewerOptions, nav: ViewerNavigation
 
   const size = (): void => {
     const r = container.getBoundingClientRect();
-    dpr = window.devicePixelRatio || 1;
+    dpr = liveDevicePixelRatio();
     w = Math.max(1, Math.round(r.width));
     h = Math.max(1, Math.round(r.height));
     nav.resize(w, h);

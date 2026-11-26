@@ -263,7 +263,6 @@ export class ComposedView {
       return 'no hardware WebGL2';
     }
     if (!live.active()) {
-      reportMachineCompositor(false);
       return 'context lost';
     }
     try {

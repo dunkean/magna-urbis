@@ -16,6 +16,7 @@ import { styleTraits, terrainStyle } from '../../render/terrainStyle';
 import { biomePalette } from '../../render/biomes';
 import { CAVE_WATER_TONE, NO_WATER_TONE, freshWater, mapFreshTone, tonedWater, type WaterTone } from '../../render/waterPalette';
 import type { Rect4, View } from '../../render/view';
+import { liveDevicePixelRatio } from '../../render/displayQuality';
 import type { WaterSurface } from '../../render/terrainWater';
 import type { HeightLayer, TerrainLook } from './contract';
 
@@ -29,7 +30,7 @@ export interface ViewState {
 /** Style pixel ratio of the live 2D map (CSS-pixel strokes, river widths, banks): the live redraw's default.
  * World tiles key the material's detail on their own density and only take this ratio for those screen-sized strokes,
  * so a tile shown at its own tier matches the live view of the same device density. */
-export const liveStyleRatio = (): number => Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+export const liveStyleRatio = (): number => Math.min(2, liveDevicePixelRatio());
 /** Framebuffer pixel ratio of a redraw: two device pixels per CSS pixel at most, 4K stays cheap on modest GPUs. */
 export const displayPixelRatio = (): number => Math.min(2, window.devicePixelRatio || 1);
 

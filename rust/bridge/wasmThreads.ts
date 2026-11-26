@@ -10,6 +10,8 @@
 // worker name (`wasmWorkerOptions()`). The chosen mode is on
 // `window.magnaWasmThreads` (expected mode first, then what a worker reported).
 
+import { deviceWorkerName, handheldDevice } from './deviceClass';
+
 export type WasmThreadsSetting = 'auto' | 'on' | 'off' | 'pool';
 export type WasmThreadsMode = 'threads' | 'single' | 'pool';
 export interface WasmThreadsInfo {
@@ -60,10 +62,10 @@ function rememberedFailure(): string | undefined {
     return undefined;
   }
 }
-/** Options for `new Worker(...)` / Vite `?worker` constructors: carries the setting. */
+/** Options for `new Worker(...)` / Vite `?worker` constructors: carries the setting and the device class. */
 export function wasmWorkerOptions(name = 'magna-wasm'): WorkerOptions {
   const setting = wasmThreadsSetting();
-  return { name: `${name} threads=${workerFailure || (setting === 'auto' && rememberedFailure()) ? 'off' : setting}` };
+  return { name: deviceWorkerName(`${name} threads=${workerFailure || (setting === 'auto' && rememberedFailure()) ? 'off' : setting}`) };
 }
 let workerFailure: string | undefined;
 /**
@@ -80,11 +82,14 @@ export function wasmWorkerFailed(reason: string): void {
 }
 export const threadsIsolated = (): boolean => !!(globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated && typeof SharedArrayBuffer === 'function';
 export const threadsPackageBuilt = (): boolean => !!threadsJsLoad && !!threadsWasmLoad;
-/** Rayon threads / pool workers for this device: cores - 1, capped; at most 3 on a 4 GB device (per-thread scratch memory). */
-export function wasmThreadCount(): number {
+/** Rayon threads / pool workers for this device: cores - 1, capped; at most 3 on a 4 GB device (per-thread scratch memory).
+ * A handheld has 2-4 fast cores among slow ones and a tab killed near 1-1.5 GB: at most min(4, cores - 2), 2 on a 4 GB device. */
+export function wasmThreadCount(handheld = handheldDevice()): number {
   const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : 4;
   const memory = typeof navigator !== 'undefined' ? (navigator as { deviceMemory?: number }).deviceMemory : undefined;
-  return Math.max(1, Math.min(cores - 1, MAX_WASM_THREADS, memory !== undefined && memory <= 4 ? 3 : MAX_WASM_THREADS));
+  const small = memory !== undefined && memory <= 4;
+  if (handheld) return Math.max(1, Math.min(cores - 2, 4, small ? 2 : 4));
+  return Math.max(1, Math.min(cores - 1, MAX_WASM_THREADS, small ? 3 : MAX_WASM_THREADS));
 }
 
 /** What the loader would choose here, without loading anything. */

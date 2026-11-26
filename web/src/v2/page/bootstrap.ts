@@ -7,8 +7,8 @@ import { setText } from '../i18n';
 import { mountV2TestHook } from '../testHook';
 import { armAutosave, takeAutosave, mountNewButton, saveAutosaveNow } from '../autosave';
 import { $ } from './dom';
-import { inspectMachine } from '../machineTier';
-import { mountMachineDefault } from './machineDefault';
+import { inspectMachine, releaseMachineStyle } from '../machineTier';
+import { mountMachineDefault, mountPerformancePolicy, persistedSettings, repairMachinePreset } from './machineDefault';
 import { reloadPreviousMapAtStartup, startupPlan } from '../startup';
 
 export async function mountPageBoot(state: PageState, actions: PageActions): Promise<void> {
@@ -22,6 +22,7 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     document.getElementById('boot-splash')?.remove();
   }
 
+  mountPerformancePolicy();
   const machineProbe = inspectMachine();
 
   mountV2TestHook({
@@ -52,15 +53,15 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
     const plan = startupPlan(state.settings, previous, { explicit, restore: reloadPreviousMapAtStartup() });
     const saved = plan.mode === 'restore' ? plan.saved : undefined;
     if (plan.mode === 'fresh') {
+      repairMachinePreset(plan.settings);
       state.settings = plan.settings;
       state.mods = [];
       state.projectRevision++;
       actions.syncControls();
     }
     const startAutosave = () =>
-      armAutosave(() => ({ settings: state.settings, mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab } }));
+      armAutosave(() => ({ settings: persistedSettings(state.settings), mods: state.mods, view: state.world ? state.client.viewer.getView() : undefined, ui: { tab: state.currentTab } }));
     const machine = await machineProbe;
-    if (!previous && !new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
     if (saved) {
       actions.setBusy(true);
       try {
@@ -69,6 +70,12 @@ export async function mountPageBoot(state: PageState, actions: PageActions): Pro
       } catch (e) {
         console.info('Autosave restore failed, starting fresh:', e);
       }
+      // Loading a project protects its style; the restored autosave is this device's own recipe.
+      releaseMachineStyle();
+    }
+    // Mounted once state.settings is the recipe of this start (fresh or restored): the preset swap applies to it only.
+    if (!new URLSearchParams(location.hash.slice(1)).has('city')) mountMachineDefault(state, actions, machine);
+    if (saved) {
       actions.setBusy(false);
       startAutosave(); // Save edits and pagehide even while the restored generation is still running.
       await actions.generate('all');

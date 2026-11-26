@@ -40,6 +40,7 @@ import { UNDERDARK_CULTURES } from './underdarkCultures';
 import { loadTerrainControlDefaults } from './terrainControlDefaults';
 import { physicalPlan, physicalPlanSummary, sourceDefinition, terrainCapability } from '../../../rust/bridge/terrainDefinition';
 import { isTerrainExpertControl } from './terrainControlAccess';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 import { getDistanceUnit, onUnitsChange, unitFactor, formatDistance, convertUnits, displayUnit, unitInputNumber, type PhysicalUnit } from './units';
 
 export interface TerrainControlBindings {
@@ -59,9 +60,12 @@ export interface TerrainControls {
   access: { get(path: string): unknown; set(path: string, value: unknown): void };
 }
 
+/** Working rasters a handheld tab (killed near 1-1.5 GB with the page and the display) holds comfortably. */
+const HANDHELD_WORKING_BYTES = 300 * 2 ** 20;
 const ui = {
   width: copy('Map width', 'Largeur de la carte'),
   imageResolution: copy('Image resolution: {resolution} {unit} per pixel', 'Résolution de l’image : {resolution} {unit} par pixel'),
+  handheldLarge: copy('Large for this device: generation may run out of memory. Reduce the map width or increase the sample spacing.', 'Carte volumineuse pour cet appareil : la génération risque de manquer de mémoire. Réduisez la largeur de la carte ou augmentez le pas d’échantillonnage.'),
   imagePixels: copy('The image has {pixels} × {pixels} pixels: its size and its resolution go together.', 'L’image a {pixels} × {pixels} pixels : sa taille et sa résolution sont liées.'),
   extentHelp: copy('Square map. Choose its physical width and generation spacing. Changing spacing can change drainage for the same seed.', 'Carte carrée. Choisissez sa largeur physique et son pas de génération. Changer le pas peut modifier le drainage pour une même graine.'),
   unit: copy('Map distance unit', 'Unité de distance de la carte'),
@@ -644,6 +648,14 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
   imageDefinition.className = 'parameter-help';
   const spacingRow = extent.querySelector<HTMLElement>('[data-field-path="terrain.sampleSpacing"]')!;
   spacingRow.append(imageDefinition);
+  // Advice only, never a block: the recipe stays the same on every device.
+  const handheldHint = document.createElement('p');
+  handheldHint.id = 'terrain-handheld-memory-help';
+  handheldHint.className = 'hint';
+  handheldHint.setAttribute('role', 'status');
+  handheldHint.hidden = true;
+  setText(handheldHint, ui.handheldLarge);
+  extent.append(handheldHint);
   const imageDefinitionText = (): string => {
     const settings = bindings.getSettings(),
       pixels = heightmapPixels(settings) ?? 1;
@@ -740,6 +752,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
       spacingSlider.disabled = !!nativePixels || !!spacingControl?.disabled;
     }
     if (nativePixels) setDynamicText(imageDefinition, imageDefinitionText);
+    let handheldLarge = false;
     try {
       const french = document.documentElement.lang.startsWith('fr');
       if (nativePixels) {
@@ -748,6 +761,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
       } else if (isClassicEngine) definitionHint.textContent = french ? 'Source TypeScript classique · définition propre au moteur.' : 'Classic TypeScript source · engine-defined spacing.';
       else {
         const definition = sourceDefinition(effective);
+        handheldLarge = handheldDevice() && definition.estimatedWorkingBytes > HANDHELD_WORKING_BYTES;
         const runtime = settings.runtime;
         const plan = physicalPlan({
           definition,
@@ -768,6 +782,7 @@ export function mountTerrainControls(root: HTMLElement, bindings: TerrainControl
       setText(definitionHint, error instanceof Error ? error.message : String(error));
       spacingControl?.setAttribute('aria-invalid', 'true');
     }
+    handheldHint.hidden = !handheldLarge;
     const hasTrace = !!settings.terrain?.coastTrace;
     const importedSurface = !!(settings.terrain?.sketch?.processing || settings.options.importedHeight);
     const isNeural = !['procedural', 'procedural-phasor'].includes(String(get('runtime.source'))) && !importedSurface,

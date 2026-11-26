@@ -10,6 +10,8 @@ import type { V2Settings } from './contracts';
 import { runtimeChoiceStates, runtimeValues, setRuntimeChoice, type RuntimeKey } from './runtimeChoices';
 import { getDistanceUnit, setDistanceUnit, onUnitsChange, type DistanceUnit } from './units';
 import { reloadPreviousMapAtStartup, setReloadPreviousMapAtStartup } from './startup';
+import { machineDecision, onMachineDecision, performancePreference, type PerformanceLevel, type PerformancePreference } from './machineTier';
+import { choosePerformance } from './machineView';
 
 export type ThreadsMode = 'auto' | 'on' | 'off' | 'pool';
 export interface BackendStatus {
@@ -46,6 +48,11 @@ const T = {
   metric: copy('Metric (m / km)', 'Métrique (m / km)'),
   imperial: copy('Imperial (ft / mi)', 'Impérial (ft / mi)'),
   yards: copy('Yards (yd / mi)', 'Yards (yd / mi)'),
+  performance: copy('Performance', 'Performance'),
+  economy: copy('Economy', 'Économie'),
+  balanced: copy('Balanced', 'Équilibré'),
+  high: copy('High', 'Élevé'),
+  performanceHelp: copy('Higher levels draw sharper and richer maps; lower levels keep navigation fluid.', 'Les niveaux élevés dessinent des cartes plus nettes et plus riches ; les niveaux bas gardent une navigation fluide.'),
   browser: copy('Compute in this browser', 'Calcul dans ce navigateur'),
   local: copy('Local services', 'Services locaux'),
   drawing: copy('Map rendering', 'Rendu de la carte'),
@@ -107,6 +114,13 @@ const T = {
   cores: copy('{n} logical cores', '{n} cœurs logiques'),
   lastPath: copy('Last frame: {path}', 'Dernière image : {path}'),
   used: copy('The log of each generation records the backend actually used.', 'Le journal de chaque génération indique le moteur réellement utilisé.'),
+};
+/** The Auto entry names the level in use. */
+const AUTO_LEVEL: Record<PerformanceLevel, string> = {
+  minimal: copy('Auto · Minimal', 'Auto · Minimal'),
+  economy: copy('Auto · Economy', 'Auto · Économie'),
+  balanced: copy('Auto · Balanced', 'Auto · Équilibré'),
+  high: copy('Auto · High', 'Auto · Élevé'),
 };
 const OVERVIEW = {
   title: copy('Processes & engines', 'Traitements et moteurs'),
@@ -299,6 +313,30 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
       ),
     );
     host.append(units);
+    const level = document.createElement('div');
+    level.className = 'backend-control';
+    const levelLabel = document.createElement('label');
+    levelLabel.htmlFor = 'settings-performance';
+    setText(levelLabel, T.performance);
+    level.append(
+      levelLabel,
+      select(
+        'settings-performance',
+        performancePreference(),
+        [
+          ['auto', AUTO_LEVEL[machineDecision().level], undefined],
+          ['economy', T.economy, undefined],
+          ['balanced', T.balanced, undefined],
+          ['high', T.high, undefined],
+        ],
+        value => choosePerformance(value as PerformancePreference),
+      ),
+    );
+    host.append(level);
+    const levelHelp = document.createElement('p');
+    levelHelp.className = 'hint';
+    setText(levelHelp, T.performanceHelp);
+    host.append(levelHelp);
     const startup = document.createElement('label'),
       reloadMap = document.createElement('input'),
       startupLabel = document.createElement('span');
@@ -576,6 +614,12 @@ export function mountSettingsPanel(host: HTMLElement, bindings: SettingsPanelBin
   onUnitsChange(() => {
     const select = host.querySelector<HTMLSelectElement>('#units-select');
     if (select) select.value = getDistanceUnit();
+  });
+  onMachineDecision(decision => {
+    const select = host.querySelector<HTMLSelectElement>('#settings-performance'),
+      auto = select?.querySelector('option[value="auto"]');
+    if (auto) setText(auto, AUTO_LEVEL[decision.level]);
+    if (select) select.value = performancePreference();
   });
   render();
   return { render };

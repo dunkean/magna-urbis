@@ -5,13 +5,16 @@
  * Roof-coloured town footprints (tilted boxes), no texture/grain or modelled trees; text keeps its full settings.
  * Half-density ground tiers, no finer-tier prefetch and no MSAA keep fill rate and retained work bounded.
  * Recipes retain their full choices so switching quality and exporting never destroys style customizations.
+ * The page's performance level may set a policy: Auto then resolves to it, the static hints and the runtime probe no
+ * longer demote, and a probe that would have demoted notifies `onDisplayStruggle` instead.
  */
 export const DISPLAY_QUALITIES = ['auto', 'full', 'light'] as const;
 export type DisplayQuality = (typeof DISPLAY_QUALITIES)[number];
 export type ResolvedDisplayQuality = Exclude<DisplayQuality, 'auto'>;
 export const DISPLAY_QUALITY_STORAGE_KEY = 'magna-urbis-display-quality';
 type Change = { quality: ResolvedDisplayQuality; reason: 'auto' | 'preference' | 'appearance' };
-const listeners = new Set<(change: Change) => void>();
+const listeners = new Set<(change: Change) => void>(),
+  struggleListeners = new Set<() => void>();
 const valid = (value: unknown): value is DisplayQuality => DISPLAY_QUALITIES.includes(value as DisplayQuality);
 let stored: string | null = null;
 try {
@@ -23,6 +26,8 @@ let override = typeof location === 'undefined' ? null : new URLSearchParams(loca
 if (override !== 'full' && override !== 'light') override = null;
 let preference: DisplayQuality = valid(stored) ? stored : 'auto';
 let appearanceQuality: ResolvedDisplayQuality = 'full';
+let policy: ResolvedDisplayQuality | undefined,
+  pixelRatioCap = Infinity;
 let demoted = false,
   initialized = false,
   started = false,
@@ -46,8 +51,29 @@ export const getDisplayQuality = (): ResolvedDisplayQuality => {
   if (override) return override as ResolvedDisplayQuality;
   if (appearanceQuality === 'light') return 'light';
   const choice = getDisplayQualityPreference();
-  return choice === 'auto' ? (demoted ? 'light' : 'full') : choice;
+  return choice !== 'auto' ? choice : (policy ?? (demoted ? 'light' : 'full'));
 };
+/** The probe measures while Auto decides: under a policy it reports struggles instead of latching a demotion. */
+const probing = (): boolean => getDisplayQualityPreference() === 'auto' && (policy !== undefined || !demoted);
+/** Quality chosen by the page's performance level; undefined restores the hint/probe automatic quality. */
+export function setDisplayQualityPolicy(quality: ResolvedDisplayQuality | undefined): void {
+  if (policy === quality) return;
+  const before = getDisplayQuality();
+  policy = quality;
+  if (getDisplayQuality() !== before) emit('auto');
+}
+export function onDisplayStruggle(listener: () => void): () => void {
+  struggleListeners.add(listener);
+  return () => struggleListeners.delete(listener);
+}
+/** Device pixel ratio of the live display canvases, capped by the performance level. Captures and exports pass their own ratio. */
+export const liveDevicePixelRatio = (): number => Math.min(((typeof window === 'undefined' ? globalThis : window) as { devicePixelRatio?: number }).devicePixelRatio || 1, pixelRatioCap);
+/** Returns whether the cap changed: the owner then re-sizes its live canvases. */
+export function setDisplayPixelRatioCap(cap: number): boolean {
+  if (pixelRatioCap === cap) return false;
+  pixelRatioCap = cap;
+  return true;
+}
 /** Set only from the live view owner, never while resolving controls or exports. */
 export function setDisplayAppearanceQuality(quality: ResolvedDisplayQuality): void {
   if (appearanceQuality === quality) return;
@@ -75,6 +101,13 @@ function stopProbe(): void {
   probeFrame = undefined;
 }
 function stepDown(): void {
+  if (policy !== undefined) {
+    if (getDisplayQualityPreference() !== 'auto') return;
+    // The page's level owns the response; the probe keeps measuring until its window ends.
+    longTasks = slowFrames = frameCount = 0;
+    for (const listener of struggleListeners) listener();
+    return;
+  }
   if (demoted || appearanceQuality === 'light' || getDisplayQualityPreference() !== 'auto') return;
   demoted = true;
   try {
@@ -86,7 +119,7 @@ function stepDown(): void {
   emit('auto');
 }
 function staticHints(): void {
-  if (typeof navigator === 'undefined') return;
+  if (typeof navigator === 'undefined' || policy !== undefined) return;
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   const smallCpu = navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 8 && memory !== undefined && memory <= 8;
   const integrated = /intel.*(?:uhd|iris)|(?:amd\s+)?radeon(?:\(tm\))?\s+(?:graphics|7\d0m)|apple\s+m[12](?!\d|\s+(?:pro|max|ultra))|mali|adreno|swiftshader|llvmpipe|software/i.test(rendererName);
@@ -137,7 +170,7 @@ export function noteDisplayNavigation(time = performance.now()): void {
   started = true;
   probeUntil = time + 30_000;
   staticHints();
-  if (getDisplayQualityPreference() !== 'auto' || demoted) return;
+  if (!probing()) return;
   if (typeof PerformanceObserver !== 'undefined') {
     try {
       observer = new PerformanceObserver(list => {
@@ -166,14 +199,14 @@ export function noteDisplayNavigation(time = performance.now()): void {
     const sample = (stamp: number): void => {
       probeFrame = undefined;
       noteDisplayFrame(stamp);
-      if (!demoted && stamp < probeUntil && getDisplayQualityPreference() === 'auto') probeFrame = requestAnimationFrame(sample);
+      if (stamp < probeUntil && probing()) probeFrame = requestAnimationFrame(sample);
     };
     probeFrame = requestAnimationFrame(sample);
   }
 }
 /** Cheap fallback: sample only consecutive navigation frames, never idle or background gaps. */
 export function noteDisplayFrame(time = performance.now()): void {
-  if (!started || demoted || time > probeUntil || getDisplayQualityPreference() !== 'auto') return;
+  if (!started || time > probeUntil || !probing()) return;
   const gap = time - previousFrame;
   if (typeof document !== 'undefined' && !document.hidden && time - previousNavigation < 200 && gap > 0 && gap < 250) {
     frameCount++;

@@ -12,6 +12,7 @@ import { buildCityBuildings, cityBuildingBins, cityBuildingCulture, cityBuilding
 import { decodeCitySiteVisuals, decodeCitySiteVisualsAt, siteVisualsPackOf } from './cityDisplayBuffers';
 import { siteVisualScene, siteVisualSceneSource } from '../ui/urbanSilhouettes';
 import type { UrbanSiteVisual } from '../ui/urbanSiteStore';
+import { handheldDevice } from '../../../rust/bridge/deviceClass';
 
 /** Below this many buildings the one-thread build is as fast (a 20k town has about 6,500 and builds them in ~1.5 s;
  * a worker takes about 2 s to load its modules from the dev server and JIT them). */
@@ -166,7 +167,13 @@ let warm: Worker[] = [],
   warmTimer: ReturnType<typeof setTimeout> | undefined;
 const WARM_MS = 10 * 60000;
 const spawn = (): Worker => new Worker(new URL('./cityBuildingsWorker.ts', import.meta.url), { type: 'module' });
-const workerCount = (): number => Math.min(MAX_WORKERS, (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4) - 2);
+// Each worker holds its own core WASM instance and site copies: a handheld tab (killed near 1-1.5 GB) keeps 2, 1 on a
+// 4 GB device (below 2 the page builds alone).
+const workerCount = (): number => {
+  const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4,
+    memory = typeof navigator !== 'undefined' ? (navigator as { deviceMemory?: number }).deviceMemory : undefined;
+  return Math.min(MAX_WORKERS, cores - 2, handheldDevice() ? (memory !== undefined && memory <= 4 ? 1 : 2) : MAX_WORKERS);
+};
 /** Starts the build workers while the engine computes a town, so their module load is not on the drawing's path. */
 export function prewarmCityBuildingWorkers(): void {
   if (typeof Worker === 'undefined' || workerCount() < 2) return;
