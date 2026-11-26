@@ -219,6 +219,7 @@ export interface PageActions {
   generate(action: Action, key?: string, townStage?: V2TownStage, terrainStage?: string, keys?: string[], cityOutput?: string, keepCustom?: boolean, local?: boolean): Promise<boolean>;
   smallPlaceRecipeKey(): string;
   // inspectors
+  openInspector(key: string, scope: 'settlement' | 'house' | 'quarter' | 'block' | 'parcel'): void;
   showInspector(key: string, focus?: boolean): void;
   rerollTown(key: string): void;
   showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void;

@@ -292,6 +292,7 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 
 - Editing a quarter reuses city volumes outside it when the surrounding street and block layout stays in place.
 - Water can breach basins with stepped banks again. Both bank profiles follow buried river bends when draining a lake.
+- Editing a house, parcel, block or quarter skips rebuilding the hidden settlement controls.
 
 ## Alpha 0.3.10
 

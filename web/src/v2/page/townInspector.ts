@@ -38,12 +38,7 @@ export function createTownInspector(state: PageState, actions: PageActions) {
     actions.touchRecipe();
     void actions.generate('town', key);
   }
-  function showInspector(key: string, focus = false): void {
-    if (!state.world) return;
-    const source = state.world.settlements?.find(s => s.key === key);
-    if (!source) return;
-    const s = { ...source, name: settlementDisplayName(state.world, key, state.settings) };
-    if (!townUrban(state.world, key)) state.smallPlaces?.prioritize(key);
+  function openInspector(key: string, scope: 'settlement' | 'house' | 'quarter' | 'block' | 'parcel'): void {
     window.dispatchEvent(new CustomEvent('v2-edit-mode', { detail: 'selection' }));
     actions.disposeInspectorForms();
     state.selectedTown = key;
@@ -56,13 +51,27 @@ export function createTownInspector(state: PageState, actions: PageActions) {
     actions.syncCitySelection();
     document.querySelectorAll<HTMLButtonElement>('[data-town]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.town === key)));
     $('#places-panel').hidden = false;
-    state.chain.sync();
+    if (state.chain.family() !== 'cities') state.chain.selectFamily('cities');
+    const inspector = $('#inspector');
+    inspector.dataset.scope = scope;
+    inspector.hidden = false;
+    if (scope !== 'settlement') {
+      // Back to city builds the settlement controls from the world and settings then on screen.
+      const child = document.createElement('div');
+      child.id = 'building-inspector';
+      inspector.replaceChildren(child);
+    }
+  }
+  function showInspector(key: string, focus = false): void {
+    if (!state.world) return;
+    const source = state.world.settlements?.find(s => s.key === key);
+    if (!source) return;
+    const s = { ...source, name: settlementDisplayName(state.world, key, state.settings) };
+    if (!townUrban(state.world, key)) state.smallPlaces?.prioritize(key);
+    openInspector(key, 'settlement');
     const urban = townUrban(state.world, key),
       local = state.settings.local[key] ?? {};
     const current = { ...state.settings.options, sprawl: state.settings.options.sprawl ?? 1, population: s.population, culture: s.culture, ...local } as Record<string, unknown>;
-    if (state.chain.family() !== 'cities') state.chain.selectFamily('cities');
-    $('#inspector').dataset.scope = 'settlement';
-    $('#inspector').hidden = false;
     setHTML(
       $('#inspector'),
       `<button class="close" aria-label="Close inspector">×</button><span class="eyebrow">Local settings</span><h2>${nameHTML(s.name, s.main ? 'Main settlement' : s.key)}</h2><p class="hint">${actions.reachedPopulation(key, s.population) ? actions.populationMarkup(key, s.population) : `${numberHTML(s.population)} inhabitants`} · <span>${esc(s.archetype)}</span></p>${populationShortfallText(actions.reachedPopulation(key, s.population), populationFormat()) ? `<p class="warning">${esc(populationShortfallText(actions.reachedPopulation(key, s.population), populationFormat()))}</p>` : ''}<div class="breadcrumbs">Territory › ${nameHTML(s.name, s.key)}</div><p class="inspect-note">The fields show the current values. Previous stages and other settlements are retained.</p><label class="label">Culture</label><select id="local-culture">${options(CULTURE_LABELS)}</select><div class="control-grid"><div><label class="label">Population</label><input id="local-population" type="number" min="1" max="5000000" value="${current.population}"></div><div><label class="label">Sprawl</label><input id="local-sprawl" type="number" min="0.5" max="2" step="0.1" value="${current.sprawl ?? 1}"></div></div><label class="label">Fortifications</label><select id="local-walls">${options(
@@ -324,5 +333,5 @@ export function createTownInspector(state: PageState, actions: PageActions) {
       state.client.viewer.setView({ cx: seat.x, cy: seat.y, scale: Math.min(3, Math.min($('#map').clientHeight, $('#map').clientWidth) / Math.max(600, s.radius * 3)), pitch: current.eye === undefined ? current.pitch : 1, yaw: current.yaw });
     }
   }
-  return { showInspector, rerollTown, editWall: (town: string, index: number) => editWall(state, actions, town, index) };
+  return { openInspector, showInspector, rerollTown, editWall: (town: string, index: number) => editWall(state, actions, town, index) };
 }

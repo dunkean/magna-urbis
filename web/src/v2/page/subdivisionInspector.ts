@@ -107,8 +107,7 @@ export function createSubdivisionInspector(state: PageState, actions: PageAction
       const item = items.find(item => (selectedId !== undefined ? item.id === selectedId : pointInRing(item.shape.outer, p) && !item.shape.holes?.some(h => pointInRing(h, p))));
       if (!item) continue;
       const nativeId = item.id;
-      actions.showInspector(settlement.key);
-      $('#inspector').dataset.scope = kind;
+      actions.openInspector(settlement.key, kind);
       state.selectedSubdivision = { key: settlement.key, kind, id: nativeId ?? String(item.index), point: p };
       const rings = [item.shape.outer, ...(item.shape.holes ?? [])];
       state.selectionOutline.set(rings);

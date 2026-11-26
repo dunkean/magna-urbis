@@ -136,7 +136,6 @@ export function createStatusActions(state: PageState, actions: PageActions) {
     }
     state.terrainControls.sync();
     state.regionControls.sync();
-    state.urbanControls.sync();
     state.inspectorForms.forEach(form => form.sync());
     if (!value) actions.syncUrbanBackend();
     $<HTMLButtonElement>('#cancel-job').disabled = false;

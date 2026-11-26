@@ -6,7 +6,6 @@ import type { PageActions, PageState } from './contract';
 import { setHTML, insertHTML, translate, nameHTML } from '../i18n';
 import { getDistanceUnit, unitFactor } from '../units';
 import { featureDisplayName } from '../mapPresentation';
-import { groupCultureSelector } from '../workbenchLayout';
 import { organizeInspector } from '../advancedPanel';
 import { nativeCityRecords } from '../nativeProducts';
 import type { UrbanBuilding } from '../../gen/types';
@@ -24,16 +23,14 @@ import { buildingVolumeId } from './worldPicking';
 
 export function createHouseInspector(state: PageState, actions: PageActions) {
   function showBuilding(hit: NonNullable<ReturnType<typeof buildingAt>>): void {
-    actions.showInspector(hit.settlement);
+    actions.openInspector(hit.settlement, 'house');
     state.selectedBuilding = hit;
-    $('#inspector').dataset.scope = 'house';
     const b = hit.building;
     state.selectionOutline.set([b.poly, ...(b.courtyards ?? [])], undefined, buildingVolumeId(b));
     setHTML(
       $('#building-inspector'),
       `<div class="edit-building"><span class="eyebrow">House ${hit.index + 1}</span><h3>The last detail</h3><p class="hint">${esc(b.kind)} · ${esc(b.arch || 'generated typology')}</p><div class="control-grid"><div><label class="label">Storeys</label><input id="house-storeys" type="number" min="1" max="100" value="${b.storeys ?? 1}"></div><div><label class="label"><span data-i18n="Height">${translate('Height')}</span> (<span data-house-height-unit>${getDistanceUnit()}</span>)</label><input id="house-height" data-distance-unit="${getDistanceUnit()}" type="number" min="${0.5 / unitFactor(getDistanceUnit())}" max="${1000 / unitFactor(getDistanceUnit())}" step="any" value="${(b.height ?? 3) / unitFactor(getDistanceUnit())}"></div></div><label class="label">Roof</label><select id="house-roof">${options(['gable', 'hip', 'flat', 'dome', 'pyramidal', 'pagoda', 'thatch-round', 'none', 'tiled-hip', 'conical', 'barrel', 'terraced'])}</select><label class="label">Material</label><input id="house-material" type="text" maxlength="100" value="${esc(b.material ?? '')}"><details class="section"><summary>Building properties</summary><textarea id="house-json" spellcheck="false">${esc(JSON.stringify({ kind: b.kind, arch: b.arch, material: b.material }, null, 2))}</textarea><p class="hint">Architectural metadata is exported; its appearance depends on the renderer.</p></details><button id="house-apply">Save house</button><button id="house-undo" class="quiet small">Undo the last edit</button></div>`,
     );
-    groupCultureSelector($<HTMLSelectElement>('#local-culture'));
     $<HTMLSelectElement>('#house-roof').value = b.roof ?? 'gable';
     $('#house-apply').onclick = () => {
       try {

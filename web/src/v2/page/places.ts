@@ -233,7 +233,6 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
           actions.showInspector(key);
         }),
     );
-    actions.syncCitySelection();
     if (!keepInspector) {
       $('#inspector').hidden = true;
       state.selectedBuilding = null;
@@ -241,7 +240,7 @@ export function createPlacesActions(state: PageState, actions: PageActions) {
       state.selectionOutline.set();
     }
     actions.syncPlacesPanel();
-    state.chain.sync();
+    actions.syncCitySelection();
     actions.syncLocalFacts();
     actions.refreshEntitySheet();
     syncFirstDisplay();
