@@ -6,7 +6,14 @@ import type { World } from '../src/gen/types';
 import type { GRequest, GResponse } from '../src/ui/protocol';
 import type { WorkerRequest, WorkerResponse } from '../src/ui/worker';
 
-const state = vi.hoisted(() => ({ world: null as World | null, measures: [] as number[] }));
+const state = vi.hoisted(() => ({ world: null as World | null, measures: [] as number[], loadCoreWasm: vi.fn(async () => {}) }));
+// Neither the stub generator nor the stub SVG renderer consumes native geometry in this protocol test.
+vi.mock('../../rust/bridge/wasmRuntime', () => ({
+  loadCoreWasm: state.loadCoreWasm,
+  loadSingleWasm: async () => ({}),
+  inWorker: () => false,
+  onCoreWasmReset: () => () => {},
+}));
 vi.mock('../src/gen/pipeline', () => ({ generate: () => state.world, generateSettlementDetail: () => null, createGenerationCache: () => ({}) }));
 vi.mock('../src/render/svg', () => ({
   renderSvg: (_world: World, options: { measure: (text: string, size: number, style: { italic: boolean; bold: boolean }) => number }) => {
@@ -53,7 +60,7 @@ describe('main-render generation worker export messages', () => {
       failures: string[] = [];
     let capability = false;
     const scope = {
-      onmessage: null as ((event: MessageEvent<GRequest | WorkerRequest>) => void) | null,
+      onmessage: null as ((event: MessageEvent<GRequest | WorkerRequest>) => Promise<void>) | null,
       postMessage(message: WorkerResponse | GResponse): void {
         const r = legacyGenerationResponse(message, {
           capabilities: ok => {
@@ -73,17 +80,22 @@ describe('main-render generation worker export messages', () => {
     expect(capability).toBe(true);
     expect(canWorkerExport('svg', capability)).toBe(true);
     const send = (m: GRequest | WorkerRequest) => scope.onmessage!({ data: m } as MessageEvent<GRequest | WorkerRequest>);
-    send({ id: 1, options });
+    let ready!: () => void;
+    state.loadCoreWasm.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
+    const generation = send({ id: 1, options });
+    expect(legacy).toHaveLength(0);
+    ready();
+    await generation;
     expect(legacy).toHaveLength(1);
     expect(legacy[0].world).toBe(state.world);
-    send({ type: 'export', id: 101, gen: 1, kind: 'svg', full: true, display: { style: 'parchment' } });
+    await send({ type: 'export', id: 101, gen: 1, kind: 'svg', full: true, display: { style: 'parchment' } });
     expect(progress).toEqual([1, 2]);
     expect(exports).toHaveLength(1);
     expect(await exports[0].text()).toBe('<svg/>');
     expect(state.measures).toEqual([60]);
     expect(legacy).toHaveLength(1);
     expect(failures).toEqual([]);
-    send({ type: 'export', id: 102, gen: 2, kind: 'svg', display: { style: 'parchment' } });
+    await send({ type: 'export', id: 102, gen: 2, kind: 'svg', display: { style: 'parchment' } });
     expect(failures).toEqual(['the requested map is no longer available']);
     expect(legacy).toHaveLength(1);
   });

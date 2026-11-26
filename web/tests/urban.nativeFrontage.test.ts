@@ -50,7 +50,8 @@ describe('native longhouses on merged street frontages', () => {
     expect(unreachableBuildings(w).n).toBe(0);
     const report = checkWorld(w);
     expect(report.overlapsPlots + report.overlapsBuildings + report.bldgOutside + report.noFrontage).toBe(0);
-    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('32983d4c9f91fe7d156e9d5d4b45d1daac900be5d07ea3578d2694ee2da07e7d');
+    // The original fabric now carries 134 street keys and 11 quarter keys.
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('48e9cbf508c2dade1eb89a3d5915ae7b5f0ba9066f77e92ad602e053accb0d75');
   });
 
   it('keeps both rounded ends when a renewed frontage runs across several boundary edges', () => {
