@@ -54,8 +54,8 @@ function fixture(streetX = -1) {
 
 describe('real private pedestrian passages', () => {
   it('protects the visible private entrance from replayed natural ground inside the block', () => {
-    const urban = { parcels: [], squares: [], landmarks: [], streets: [{ path, width: 0.8, private: true }] };
-    const material = { gardens: [], naturalParcels: new Set(), earthStreets: false };
+    const urban = { phases: [], buildings: [], blocks: [], blockInfo: [], backLand: [], parcels: [], squares: [], landmarks: [], streets: [{ path, width: 0.8, private: true }] };
+    const material = { gardens: [], natural: [], naturalParcels: new Set(), earthStreets: false };
     const protectedLand = protectedGround(urban as never, undefined, material as never);
     const hit = tryIntersection(rect(1, 8.7, 7, 9.3), protectedLand);
     expect(hit.failed).toBe(false);
