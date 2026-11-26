@@ -1,4 +1,6 @@
 /** Indexed tree silhouettes. All three levels read the same instances, palette and seasonal colours. */
+import { GROUND_PAGE_LAYERS } from './contract';
+import { TREE_PAINT_PAGES } from './treePaint';
 import { TREE_PROFILE_GLSL } from '../../ui/terrain3dTrees';
 
 interface TreeMesh {
@@ -86,6 +88,7 @@ precision highp float;
 layout(location=0) in vec4 treeBase;
 layout(location=1) in vec4 treeShape;
 layout(location=2) in vec4 treeColor;
+layout(location=4) in vec4 paintedRoot; // texel xy, page/layer, expected painted crown tag
 layout(location=3) in vec4 meshVertex; // profile ring, bough parity, unit cross-section direction
 uniform mat4 uProjection;
 uniform vec4 uBlock; // origin relative to target, terrain height offset, unused
@@ -110,6 +113,31 @@ flat out vec3 crownCentre;
 flat out vec4 crownAxes; // xyz radii, w marks a distant fir
 flat out float crownPhase;
 
+${Array.from({length:TREE_PAINT_PAGES},(_,i)=>`uniform highp sampler2DArray uPaint${i},uKeys${i};`).join('\n')}
+vec4 readCrown(highp sampler2DArray image,highp sampler2DArray keys,int layer,uint tag){
+  vec3 sum=vec3(0.);float hits=0.;
+  // When a neighbour hides the root, look for an exposed part of this same crown.
+  const vec2 ring[8]=vec2[8](vec2(.38,0.),vec2(0.,.38),vec2(-.38,0.),vec2(0.,-.38),
+                             vec2(.52,.52),vec2(-.52,.52),vec2(.52,-.52),vec2(-.52,-.52));
+  float radius=float(int(paintedRoot.z)/${TREE_PAINT_PAGES * GROUND_PAGE_LAYERS});
+  for(int i=0;i<11;i++){
+    if(i>=3&&hits>0.)break;
+    ivec2 delta=i==0?ivec2(0):i==1?ivec2(-1,1):i==2?ivec2(1,-1):ivec2(round(ring[clamp(i-3,0,7)]*radius));
+    ivec2 xy=ivec2(paintedRoot.xy)+delta, size=textureSize(image,0).xy;
+    if(any(lessThan(xy,ivec2(0)))||any(greaterThanEqual(xy,size)))continue;
+    uvec3 key=uvec3(round(texelFetch(keys,ivec3(xy,layer+${GROUND_PAGE_LAYERS}),0).rgb*255.));
+    if((key.x|(key.y<<8u)|(key.z<<16u))!=tag)continue;
+    sum+=texelFetch(image,ivec3(xy,layer),0).rgb;hits++;
+  }
+  return vec4(sum/max(hits,1.),min(hits,1.));
+}
+vec4 crownPaint(){
+  if(paintedRoot.w<65536.)return vec4(0.);
+  int index=int(paintedRoot.z)%${TREE_PAINT_PAGES * GROUND_PAGE_LAYERS},page=index/${GROUND_PAGE_LAYERS},layer=index%${GROUND_PAGE_LAYERS};
+  uint tag=uint(paintedRoot.w);
+  ${Array.from({length:TREE_PAINT_PAGES},(_,i)=>`if(page==${i})return readCrown(uPaint${i},uKeys${i},layer,tag);`).join('\n')}
+  return vec4(0.);
+}
 ${TREE_PROFILE_GLSL}
 const float WORLD_NEEDLE_R[6]=float[6](1.,.69,.86,.51,.61,0.);
 void main(){
@@ -196,6 +224,12 @@ void main(){
   float lit=(.9+.4*max(dot(normal,treeLight),0.))/(.9+.4*max(treeLight.z,0.));
   colour=mix(tint,vec3(.84,.88,.90),snow)*lit*mix(.84,1.,u);
   if(solidCrown)colour=mix(tint,vec3(.84,.88,.90),min(fract(treeColor.w)/.45,.95));
+  // The unmodified ground tile already contains the style, season, snow and species hue.
+  // Only the light on the model changes with its orientation. A neighbouring crown never supplies its colour.
+  if(!trunk){
+    vec4 paint=crownPaint();
+    if(paint.a>0.)colour=paint.rgb*(solidCrown?1.:lit*mix(.87,1.,u));
+  }
   if(uNight==1)colour*=vec3(.149,.196,.31);
   vec3 d=((solidCrown?crownCentre:pos)-eye)/fogDistance;
   float fog=min(.62,1.-exp(-dot(d,d)*.11));

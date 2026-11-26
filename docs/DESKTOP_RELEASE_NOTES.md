@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Low riverbank shrubs rise from their painted crowns in tilted satellite views. Dense conifer stands retain distant silhouettes across the field of view, and tree crowns follow local snow conditions in every climate. Modelled foliage takes its colour from the matching crown in the current map style.
+
 - Broadleaf crowns catch the light on irregular facets, and firs have a flat skirt of lower branches. Changing the display biome refreshes the visible forest first and clears old trees from other views.
 - Steppe rivers keep their water through winter. Mediterranean streams recede in the dry summer and refill in the rainy season. In satellite views, snow covers exposed riverbeds and lake shores along with the surrounding ground.
 

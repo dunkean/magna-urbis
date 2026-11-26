@@ -6,6 +6,7 @@ import { BARE_LIMBS_GLSL } from '../../../rust/bridge/bareTree';
  * uploaded and within range. Instances take over at a stable, tree-specific distance. Height and crown
  * form follow the tree's social class in its stand and its biome (terrainForestStature.ts, treeForm), with rare giants. Colours follow the crown palette and its grade per forest type, zone and season approximately (
  * autumn hues, leaf fall, snow load from a climate proxy): the painted crown keeps the exact Render colour. Display only. */
+import { groundSnowAtAltitude } from '../render/seasonPalette';
 import { ForestClearingRoom } from '../render/forestClearance';
 import { ForestRoom, forestCrownSetback, type ForestCorridor } from '../render/forestRoom';
 import { calendarSeason, seasonWeights, type SeasonCalendar } from '../../../rust/bridge/terrainRenderV2Zones';
@@ -78,6 +79,8 @@ export interface TreeInputs {
   season: number;
   /** Calendar setting 'crownSnow' (0 bare crowns, 1 heavily laden); the zone default when absent. */
   crownSnow?: number;
+  /** Repaint the standalone terrain mesh in the paper ground palette. */
+  paperMap?: boolean;
   /** Climate zone and calendar of the map: the deciduous leaf state and the larch share, as the painted crowns read them
    * (v2SeasonLeaf, v2SeasonClimate). Absent: a climate proxy. */
   climateZone?: ClimateZone;
@@ -117,36 +120,6 @@ const V2_ZONE_FOREST: readonly (readonly [number, number, number])[] = [
   [1, 0, 1],
   [0.55, 0.08, 0.7],
 ];
-/** V2_ZONE_CANOPY.rgb (rust/bridge/terrainRenderV2Zones.ts): the zone's tint of the painted canopy. */
-const V2_ZONE_CANOPY: readonly (readonly [number, number, number])[] = [
-  [1, 1, 1],
-  [1.06, 1.03, 0.86],
-  [0.97, 1, 1],
-  [0.86, 0.95, 1.02],
-  [0.9, 0.97, 1],
-  [1.05, 1, 0.9],
-  [1.05, 1.03, 0.86],
-  [1, 1.06, 0.86],
-  [1.1, 1.05, 0.76],
-  [0.86, 1.1, 0.86],
-  [1, 1.02, 0.9],
-];
-/** forestGrade (rust/bridge/terrainForest.ts): the painted crown's grade of a forest type in the look's season (0 winter,
- * .5 summer); `needle` 0 broadleaf, 1 conifer. The painted crowns darken and cool conifers against broadleaves with it. */
-export function forestCrownGrade(kind: readonly [number, number, number], needle: number, season: number): [number, number, number] {
-  const t = 6.2831853 * season,
-    fall = Math.max(-Math.sin(t), 0),
-    spring = Math.max(Math.sin(t), 0),
-    summer = 0.5 - 0.5 * Math.cos(t),
-    temperate = 1 - kind[0] - kind[1] - kind[2];
-  const grade = (k: number): number => {
-    const tempered = mix(mix([1.02, 1.04, 0.92][k], [1.1, 1.1, 0.82][k], spring), [1.5, 0.98, 0.5][k], 0.75 * fall),
-      savanna = mix([1.12, 1, 0.66][k], [0.94, 1.02, 0.76][k], summer),
-      broad = tempered * temperate + [0.58, 0.68, 0.66][k] * kind[0] + [0.7, 1.06, 0.62][k] * kind[1] + savanna * kind[2];
-    return mix(broad, mix([0.6, 0.7, 0.7][k], [0.62, 0.76, 0.74][k], summer), needle);
-  };
-  return [grade(0), grade(1), grade(2)];
-}
 const CROWN_CDF = [0, 0, 0, 0.0005, 0.0063, 0.0336, 0.1125, 0.2742, 0.4998, 0.7261, 0.8874, 0.9665, 0.9936, 0.9994, 1, 1, 1];
 const sstep = (a: number, b: number, v: number): number => {
   let t = (v - a) / (b - a);
@@ -458,20 +431,16 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     w = seasonWeights(season);
   const leaf = year ? clamp(year.leaf.reduce((sum, v, i) => sum + v * w[i], 0)) : 1 - winter * (1 - evergreen) * 0.9,
     larchShare = year?.larch ?? 0;
-  const snow = inputs.renderV2 > 0 ? winter * (1 - sstep(2, 10, T)) : 0,
-    crownSnow = clamp(inputs.crownSnow ?? 0.7);
-  // Mean crown load of forestSnowLoad; the tree shader spreads it over the crown (instance colour w, fraction).
-  const snowLoad = (needle: boolean): number => 0.45 * snow * (needle ? mix(0.24, 0.62, crownSnow) : mix(0.2, 0.8, crownSnow));
+  const snowAt = inputs.renderV2 > 0 ? groundSnowAtAltitude({ season, climate: inputs.climate, climateZone: inputs.climateZone ?? 'temperate', calendar: inputs.calendar }) : () => 0;
+  const crownSnow = clamp(inputs.crownSnow ?? inputs.calendar?.crownSnow ?? 0.7);
+  // Same local snow and species retention as the painted crown, packed below the leafless flag.
+  const snowLoad = (needle: boolean, z: number): number => 0.45 * snowAt(z) * (needle ? mix(0.24, 0.62, crownSnow) : mix(0.2, 0.8, crownSnow));
   const temperate = 1 - kind[0] - kind[1] - kind[2];
   const pigments = FOREST_CROWN_PIGMENTS;
-  // The painted crown is its stand's canopy times forestGrade and, on a V2 zone, the zone's canopy tint
-  // (forestCrownBaseColor, terrainRenderV2 baseClosed): the same constants keep the tilted view on the 2D map.
-  const lookSeason = inputs.renderV2 > 0 ? season : 0.5,
-    zoneCanopy = zone ? V2_ZONE_CANOPY[clamp(inputs.zone - 1, 0, 10)] : [1, 1, 1],
-    coniferGrade = forestCrownGrade(kind, 1, lookSeason),
-    broadGrade = forestCrownGrade(kind, 0, lookSeason);
-  const conifer = pigments.conifer.map((c, i) => mix(c, pigments.dryConifer[i], dry) * coniferGrade[i] * zoneCanopy[i]);
-  const broadleaf = pigments.broad.map((c, i) => mix(mix(c, pigments.tropical[i], trop), pigments.dry[i], dry * (1 - 0.5 * trop)) * broadGrade[i] * zoneCanopy[i]);
+  // Resolved satellite crowns use forestPalette directly. forestGrade and the zone canopy tint
+  // belong to the unresolved stand, and applying them here turned conifers blue at the hand-off.
+  const conifer = pigments.conifer.map((c, i) => mix(c, pigments.dryConifer[i], dry));
+  const broadleaf = pigments.broad.map((c, i) => mix(mix(c, pigments.tropical[i], trop), pigments.dry[i], dry * (1 - 0.5 * trop)));
   // Instance stream in a typed array grown by doubling: partial installs hand out a view of it (the uploads copy it),
   // the finished stream a copy cut to length.
   let out = new Float32Array(1024 * TREE_STRIDE),
@@ -493,6 +462,13 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
     out[count + 5] = depth;
     out[count + 6] = needle;
     out[count + 7] = phase;
+    if (inputs.paperMap && w < .5) {
+      const luma = .30 * cr + .59 * cg + .11 * cb;
+      const ink = sstep(.06, .30, luma);
+      cr = mix(.16, .31, ink);
+      cg = mix(.18, .33, ink);
+      cb = mix(.05, .12, ink);
+    }
     out[count + 8] = cr;
     out[count + 9] = cg;
     out[count + 10] = cb;
@@ -564,7 +540,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         c = c.map((v, k) => mix(mix(v, [0.47, 0.34, 0.12][k], fall), [0.31, 0.27, 0.23][k] * (0.85 + 0.3 * tint), 1 - fruitLeaf));
         // Standard fruit trees: a 2.4-2.9 m stem under the crown (crown 60 % of the height).
         inputs.emittedId?.(h2, (i & 255) | ((j & 255) << 8) | (7 << 16));
-        emit(x, y, z, radius, height, 0.6 * height, 0, tint * 6.2831853, c[0], c[1], c[2], (fruitLeaf < 0.5 ? 1 : 0) + snowLoad(false));
+        emit(x, y, z, radius, height, 0.6 * height, 0, tint * 6.2831853, c[0], c[1], c[2], (fruitLeaf < 0.5 ? 1 : 0) + snowLoad(false, z));
         if (count >= cap) return out.slice(0, count);
       }
     }
@@ -590,6 +566,16 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         blocks.push([view.inView && !view.inView((bx + 0.5) * block, (by + 0.5) * block) ? d2 + unseen : d2, bx, by]);
       }
   blocks.sort((a, b) => a[0] - b[0]);
+  // Divide the finite standalone mesh budget across the visible cone. Short, dense gallery shrubs
+  // and firs may fill one block, but cannot spend the triangles of the remaining river or mountainside.
+  const distributed = !area && !!view.inView;
+  const weight = (d2: number) => 1 / (1 + (d2 % unseen) / (.12 * far2));
+  let visibleWeight = 0, hiddenWeight = 0;
+  if (distributed) for (const [d2] of blocks) {
+    if (d2 < unseen) visibleWeight += weight(d2);
+    else hiddenWeight += weight(d2);
+  }
+  const blockIds: number[] = [];
   const social: ForestSocial = { share: 1, width: 1, rank: 4 },
     form: TreeForm = { height: 1, crown: 0.5, shape: 0 };
   let shown = count;
@@ -599,8 +585,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
       shown = count;
       partial(out.subarray(0, count));
     }
-    const bx = blocks[b][1],
-      by = blocks[b][2];
+    const [priority, bx, by] = blocks[b];
+    const blockStart = count;
+    blockIds.length = 0;
     for (let level = 0; level <= 6; level++) {
       const s = 2 * Math.pow(2, level * 0.5);
       // A crown centre lies at (cell + .1514 .. .8486) * s: only the cells whose centre range meets the block are visited.
@@ -715,8 +702,11 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           const giant = lone ? !field && !hedgeRow && u8(h2, 24) < Math.min(FOREST_LANDMARK * biome.giant, FOREST_LANDMARK_MAX) * giantGate : forestGiant(cx, cy, u8(h2, 24), biome.giant * giantGate, crownSeed, forestHash);
           const r = Math.min(rho * s * (0.8 + 0.4 * u8(h, 24)) * (giant ? biome.giantWiden : social.width) * (lone ? (hedgeRow ? FOREST_HEDGE_WIDEN : FOREST_LONE_WIDEN) : 1 + 0.2 * margin) * (1 + 0.3 * krumm), 1.14 * s);
           if (clearingRoom && !clearingRoom.keeps(cx, cy, r)) continue;
-          // The painted crown's height (forestCrown) decides, as there, whether a tree stands here; its 3D form is below.
-          if (height * (giant ? FOREST_GIANT_PAINTED : social.share) < 1.5 || r < 0.4) continue;
+          // The bank envelope can carry living shrubs even where background stand height is zero.
+          // The ground draws their crowns from the lattice radius, so keep those exact roots in 3D.
+          const lowCrown = height * (giant ? FOREST_GIANT_PAINTED : social.share) < 1.5;
+          const bankShrub = gal > 0 && lowCrown;
+          if (gal <= 0 && (lowCrown || r < 0.4)) continue;
           const z = inputs.height(cx, cy);
           if (z === undefined || z <= 0) continue;
           const hf = forestHash(i, j, level * 2 + 83, crownSeed);
@@ -763,7 +753,11 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
             // A giant's widened crown stays a conifer's: a cone taller than wide, whatever its painted crown.
             if (krumm < 0.5) width = Math.min(width, 0.2 * tree + 1);
           }
-          tree = Math.max(1.5, tree);
+          if (bankShrub) {
+            form.shape = FORM_BROAD;
+            form.crown = .94;
+            tree = clamp(1.35 * width, .6, 2.4);
+          } else tree = Math.max(1.5, tree);
           const crown = form.shape === FORM_SPIRE ? Math.max(form.crown * tree, tree - Math.min(3.5, 1.6 * width)) : form.crown * tree;
           // Keep the whole modelled forest crown off planted parcels, including sub-texel boundary slivers.
           if (orchardRoom && open > -1.5 * radius) {
@@ -777,10 +771,33 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
             }
             if (overlaps) continue;
           }
-          inputs.emittedId?.(h2, (i & 255) | ((j & 255) << 8) | (level << 16));
-          emit(cx, cy, z, width, tree, crown, form.shape, tint * 6.2831853, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
-          if (count >= cap) return out.slice(0, count);
+          const cellId = (i & 255) | ((j & 255) << 8) | (level << 16);
+          if (distributed && inputs.emittedId) blockIds.push(h2, cellId);
+          else inputs.emittedId?.(h2, cellId);
+          emit(cx, cy, z, width, tree, crown, form.shape, tint * 6.2831853, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle, z));
+          if (!distributed && count >= cap) return out.slice(0, count);
         }
+    }
+    if (distributed) {
+      const w = weight(priority), visible = priority < unseen;
+      const remainingWeight = visible ? visibleWeight : hiddenWeight;
+      const candidates = (count - blockStart) / TREE_STRIDE;
+      const available = (cap - blockStart) / TREE_STRIDE;
+      const quota = Math.min(available, Math.ceil(available * w / Math.max(w, remainingWeight)));
+      const keep = Math.min(candidates, quota);
+      const phase = u8(forestHash(bx, by, 617, crownSeed), 0);
+      for (let j = 0; j < keep; j++) {
+        const source = keep === candidates ? j : Math.floor((j + phase) * candidates / keep);
+        if (source !== j) {
+          const from = blockStart + source * TREE_STRIDE;
+          out.copyWithin(blockStart + j * TREE_STRIDE, from, from + TREE_STRIDE);
+        }
+        inputs.emittedId?.(blockIds[2 * source], blockIds[2 * source + 1]);
+      }
+      count = blockStart + keep * TREE_STRIDE;
+      if (visible) visibleWeight -= w;
+      else hiddenWeight -= w;
+      if (count >= cap) break;
     }
   }
   return out.slice(0, count);

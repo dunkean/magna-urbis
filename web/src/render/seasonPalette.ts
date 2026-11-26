@@ -78,6 +78,11 @@ function snowSupply(terms: SnowTerms, altitude: number): number {
     supply = smooth(0.12, 0.7, terms[3] / Math.max(120, terms[2] - 20 * lapse));
   return Math.max(smooth(2, -5, terms[0] - lapse), smooth(2.5, -2.5, terms[1] - lapse)) * supply;
 }
+/** Precompute the date and climate once for a batch of crowns at different elevations. */
+export function groundSnowAtAltitude(settings: GroundSnowSettings): (altitude: number) => number {
+  const terms = snowTerms(settings);
+  return altitude => smooth(0.405, 0.465, snowSupply(terms, altitude));
+}
 const groundSnowSupply = (altitude: number, settings?: GroundSnowSettings): number => snowSupply(snowTerms(settings), altitude);
 
 /** The relief the land snow reads: B-spline control heights (m), row by row from the north-west corner, `n` per side

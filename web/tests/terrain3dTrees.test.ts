@@ -27,6 +27,41 @@ const column = (trees: Float32Array, k: number): number[] => Array.from({ length
 /** Field height byte of a zone's typical stand (its default climate's field height, terrainForestStature.ts). */
 const fieldByte = (metres: number): number => Math.round((metres / 50) * 255);
 
+it('keeps the painted gallery roots as low 3D shrubs where canopy stature is zero', () => {
+  const inputs = stand(0, 0, 0);
+  const bank = new Uint8Array(inputs.field.rgba.length);
+  for (let i = 0; i < bank.length; i += 4) bank.set([128, 128, 48, 180], i);
+  inputs.field.bank = bank;
+  const area = { minX: 0, minY: 0, maxX: 96, maxY: 96 };
+  const roots: number[] = [];
+  inputs.emittedId = (_hash, cell) => roots.push(cell);
+  inputs.water = x => Number(x < 32);
+  const plants = buildNearTrees(inputs, { ...view, area });
+  expect(roots.length).toBeGreaterThan(30);
+  expect(roots.length).toBe(plants.length / TREE_STRIDE);
+  for (let i = 0; i < plants.length; i += TREE_STRIDE) {
+    expect(plants[i]).toBeGreaterThanOrEqual(32);
+    expect(plants[i + 4]).toBeLessThan(2.5);
+  }
+});
+
+it.each(['alpine', 'continental', 'steppe'] as const)('loads %s crowns with the snow at their elevation', zone => {
+  const inputs = stand(215, 100, 255, zone);
+  inputs.climateZone = zone;
+  inputs.season = .12;
+  inputs.climate = { temperature: 24, precipitation: 800 };
+  const bank = new Uint8Array(inputs.field.rgba.length);
+  for (let i = 0; i < bank.length; i += 4) bank.set([128, 128, 48, 180], i);
+  inputs.field.bank = bank;
+  const area = { minX: 0, minY: 0, maxX: 96, maxY: 96 };
+  const load = (z: number) => {
+    inputs.height = () => z;
+    return column(buildNearTrees(inputs, { ...view, area }), 11).map(n => n % 1);
+  };
+  expect(Math.max(...load(20))).toBe(0);
+  expect(Math.max(...load(4000))).toBeGreaterThan(.1);
+});
+
 describe('near trees: stand structure', () => {
   it('spreads heights over the social classes of a stand, with crowns that fit the stem', () => {
     for (const needle of [20, 230]) {
@@ -73,16 +108,15 @@ describe('near trees: stand structure', () => {
     }
   });
 
-  it('grades conifers against broadleaves as the painted crowns do (forestGrade)', () => {
+  it('uses the resolved conifer and broadleaf pigments for the 3D handoff', () => {
     const meanGreen = (trees: Float32Array, form: number): number => {
       const greens = column(trees, 9).filter((_, i) => trees[i * TREE_STRIDE + 6] === form);
       expect(greens.length).toBeGreaterThan(100);
       return greens.reduce((s, g) => s + g, 0) / greens.length;
     };
-    // Temperate summer: painted grades .76 (conifer) and 1.04 (broadleaf) on pigments .25 and .31, a ratio of about .59.
+    // Resolved summer crowns use forestPalette directly. The stand grade only applies at map scale.
     const ratio = meanGreen(buildNearTrees(stand(235, 110, 230), view), 1) / meanGreen(buildNearTrees(stand(235, 110, 20), view), 0);
-    expect(ratio).toBeGreaterThan(0.51);
-    expect(ratio).toBeLessThan(0.67);
+    expect(ratio).toBeCloseTo(.25 / .31, 1);
   });
 });
 

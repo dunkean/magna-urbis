@@ -102,7 +102,9 @@ export class WaterProducts implements Water {
         this.cityWater = rivers && !ink && !isFantasyStyle(style) ? rivers : undefined;
         this.parts.ground.gpu!.setOverlay(vectorOverlayPixels(t.water, water.overlay, t.conditioning?.delta ? { values: t.conditioning.delta, n: t.conditioning.n } : undefined));
       } else if (t.hydrology) {
-        this.parts.ground.gpu!.setWater(visible ? { lake: water.showLakes ? t.hydrology.waterField : undefined, shore: 'exact', n: t.hydrology.resolution, rivers: hydrologySegments(t.hydrology, hydrologyWaterColour(style, colors)) } : undefined);
+        const rivers = visible ? hydrologySegments(t.hydrology, hydrologyWaterColour(style, colors)) : undefined;
+        this.parts.ground.gpu!.setWater(rivers ? { lake: water.showLakes ? t.hydrology.waterField : undefined, shore: 'exact', n: t.hydrology.resolution, rivers } : undefined);
+        this.cityWater = !ink && !isFantasyStyle(style) ? rivers : undefined;
         this.parts.ground.gpu!.setOverlay(undefined);
       } else this.parts.ground.gpu!.setWater(undefined);
     }

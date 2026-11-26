@@ -5,6 +5,7 @@ import type { LiveFrame, LiveLayerStats } from '../live/contract';
 import { TreeDiagnostics, layerDiagnosticsEnabled } from '../live/layerDiagnostics';
 import { TREE_STRIDE, treeBiomeKey, treeLimits, type TreeInputs, type TreeLimits } from '../../ui/terrain3dTrees';
 import type { TerrainHeights } from './heights';
+import { TREE_PAINT_PAGES, type TreePaintPage, type TreePaintSource } from './treePaint';
 import type { GroundShape } from './groundShape';
 import type { Building3dScene } from '../urbanBuildingGeometry';
 import { treeBuildings, type TreeBuildings } from './treesBuildings';
@@ -35,6 +36,7 @@ export interface WorldTreesOptions {
   night?(): boolean;
   /** The colours of the look (SATELLITE_TREES when absent): uniforms, so a change of look rebuilds no block. */
   palette?(): TreePalette;
+  paint?(): TreePaintSource | undefined;
   /** GPU memory the blocks may use, in bytes. */
   budgetBytes?: number;
   /** Asks for a frame (a wanted block was built). */
@@ -71,9 +73,17 @@ interface Slot {
   /** The footprints its trees keep off (TreeBuildings.blockKey). */
   town: number;
   samples: TreeSamples;
-  admitted: number;
   drawn?: number;
-  heights: Float32Array;
+  data: Float32Array;
+  cells?: Uint32Array;
+  roots: Uint32Array;
+  paintBuffer?: WebGLBuffer;
+  paintSource?: TreePaintSource;
+  paintRevision: number;
+  paintPages: TreePaintPage[];
+  eligible: number;
+  viewRevision: number;
+  wasVisible: Uint8Array;
   ids?: Uint32Array;
   barePrefix?: Uint32Array;
   vao?: WebGLVertexArrayObject;
@@ -121,6 +131,9 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     visibleClose = new Int32Array(TREE_MAX_BLOCKS),
     depths = new Float64Array(TREE_MAX_BLOCKS);
   const nearest: number[] = [];
+  let viewRevision = 0;
+  const lastPose = new Float64Array(27).fill(NaN);
+  let packed = new Float32Array(0), paintCoords = new Float32Array(0);
   let visibleCount = 0;
   let wanted = 0,
     tick = 0,
@@ -145,6 +158,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
 
   const drop = (slot: Slot): void => {
     if (slot.buffer) gl.deleteBuffer(slot.buffer);
+    if (slot.paintBuffer) gl.deleteBuffer(slot.paintBuffer);
     if (slot.vao) gl.deleteVertexArray(slot.vao);
     bytes -= slot.bytes;
   };
@@ -229,12 +243,17 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         centreHeight,
         centreRevision: reliefRevision,
         radius: 0,
-        admitted: 0,
-        heights: new Float32Array(count),
+        data,
+        cells: block.ids,
+        roots: Uint32Array.from({ length: count }, (_, i) => i),
+        eligible: count,
+        paintRevision: -1,
+        paintPages: [],
+        viewRevision: -1,
+        wasVisible: new Uint8Array(count),
         first: 0,
       };
     for (let i = 0; i < count * TREE_STRIDE; i += TREE_STRIDE) {
-      slot.heights[i / TREE_STRIDE] = data[i + 4];
       slot.low = Math.min(slot.low, data[i + 2]);
       slot.high = Math.max(slot.high, data[i + 2]);
       slot.top = Math.max(slot.top, data[i + 4]);
@@ -268,11 +287,20 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         slot.barePrefix = prefix;
         slot.bytes += prefix.byteLength;
       }
-      gl.bufferData(gl.ARRAY_BUFFER, ordered, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, ordered, gl.DYNAMIC_DRAW);
       for (let i = 0; i < 3; i++) {
         gl.enableVertexAttribArray(i);
         gl.vertexAttribPointer(i, 4, gl.FLOAT, false, TREE_STRIDE * 4, i * 16);
         gl.vertexAttribDivisor(i, 1);
+      }
+      if (options.paint && block.ids) {
+        slot.paintBuffer = gl.createBuffer()!;
+        gl.bindBuffer(gl.ARRAY_BUFFER, slot.paintBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, count * 16, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(4);
+        gl.vertexAttribPointer(4, 4, gl.FLOAT, false, 16, 0);
+        gl.vertexAttribDivisor(4, 1);
+        slot.bytes += count * 16;
       }
       gl.bindVertexArray(null);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -316,6 +344,11 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, INDICES, gl.STATIC_DRAW);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     program = { program: linking, u: uniformsOf(gl, linking, UNIFORMS), indices, vertices };
+    gl.useProgram(linking);
+    for (let i = 0; i < TREE_PAINT_PAGES; i++) {
+      gl.uniform1i(gl.getUniformLocation(linking, 'uPaint' + i), i * 2);
+      gl.uniform1i(gl.getUniformLocation(linking, 'uKeys' + i), i * 2 + 1);
+    }
     linking = undefined;
     preparedFor[0] = NaN;
     options.invalidate();
@@ -363,6 +396,12 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       wanted = 0;
       visibleCount = 0;
       volume.set(camera);
+      const pose = [...camera.targetViewProjection, tx, ty, tz, gx, gy, drawnPerMetre, rise, focal, opacity, far, camera.pitch];
+      if (pose.some((v, i) => v !== lastPose[i])) {
+        lastPose.set(pose);
+        viewRevision++;
+      }
+      const reliefPixels = focal * rise * Math.abs(Math.sin(camera.pitch)) * opacity;
 
       const last = Math.ceil(relief.width / TREES_BLOCK) - 1,
         bx0 = Math.max(0, Math.floor((Math.min(tx, gx) - far) / TREES_BLOCK)),
@@ -408,20 +447,48 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             centre = (low + high) / 2 - tz,
             radius = Math.hypot(TREES_BLOCK * 0.71 + slot.radius * 1.25, (high - low) / 2);
           if (!volume.sees(x, y, centre, radius)) continue;
-          // Screen displacement of the tree top with respect to its root, in CSS pixels.
-          const parallax = (focal * rise * Math.abs(Math.sin(camera.pitch)) * opacity) / Math.max(depth, closest);
-          let lowIndex = 0,
-            highIndex = slot.count;
-          while (lowIndex < highIndex) {
-            const mid = (lowIndex + highIndex) >>> 1;
-            if (slot.heights[mid] * parallax >= (mid < slot.admitted ? 2 : 4)) lowIndex = mid + 1;
-            else highIndex = mid;
+          // Cull individual roots at the curved range boundary and the frustum sides. Only upload
+          // when the membership changes; static camera frames reuse the same GPU ranges and owner IDs.
+          if (slot.viewRevision !== viewRevision) {
+            slot.viewRevision = viewRevision;
+            let kept = 0, changed = false;
+            for (let root = 0; root < slot.count; root++) {
+              const j = root * TREE_STRIDE, data = slot.data;
+              const rx = minX - tx + data[j], ry = minY - ty + data[j + 1];
+              const rz = data[j + 2] * drawnPerMetre - tz, h = data[j + 4] * rise, r = data[j + 3];
+              const range = far * (.88 + .12 * data[j + 7] / (2 * Math.PI));
+              const dx = rx + tx - gx, dy = ry + ty - gy;
+              const pixelHeight = data[j + 4] * reliefPixels / Math.max(closest, volume.depth(rx, ry, rz + .5 * h));
+              const show = pixelHeight >= (slot.wasVisible[root] ? 2 : 4) &&
+                Math.min(rx * rx + ry * ry, dx * dx + dy * dy) <= range * range &&
+                volume.sees(rx, ry, rz + .5 * h, r + .5 * h);
+              slot.wasVisible[root] = Number(show);
+              if (!show) continue;
+              if (slot.roots[kept] !== root) changed = true;
+              slot.roots[kept++] = root;
+            }
+            if (changed || kept !== slot.eligible) {
+              slot.eligible = kept;
+              slot.paintRevision = -1;
+              if (slot.cells) slot.ids = Uint32Array.from(slot.roots.subarray(0, kept), root => slot.cells![root]);
+              const prefix = slot.barePrefix;
+              if (prefix) for (let j = 0; j < kept; j++) prefix[j + 1] = prefix[j] + Number(slot.data[slot.roots[j] * TREE_STRIDE + 11] > .5);
+              const floats = kept * TREE_STRIDE;
+              if (packed.length < floats) packed = new Float32Array(floats);
+              let leafy = 0, bare = kept - (prefix?.[kept] ?? 0);
+              for (let j = 0; j < kept; j++) {
+                const start = slot.roots[j] * TREE_STRIDE;
+                const to = slot.data[start + 11] > .5 ? bare++ : leafy++;
+                packed.set(slot.data.subarray(start, start + TREE_STRIDE), to * TREE_STRIDE);
+              }
+              if (kept) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer!);
+                gl.bufferSubData(gl.ARRAY_BUFFER, 0, packed.subarray(0, floats));
+              }
+            }
           }
-          const all = lowIndex;
-          if (!all) {
-            slot.admitted = 0;
-            continue;
-          }
+          const all = slot.eligible;
+          if (!all) continue;
           visible[visibleCount] = slot;
           visibleKey[visibleCount] = key;
           visibleAll[visibleCount] = all;
@@ -436,28 +503,40 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       nearest.length = visibleCount;
       nearest.sort((a, b) => depths[a] - depths[b] || visibleKey[a] - visibleKey[b]);
       const budget = treeTriangleBudget(far);
-      let remaining = budget;
+      // Buy a silhouette throughout the visible range before spending triangles on close detail.
+      // In an exceptionally dense stand reserve some distant coverage as well as a full foreground.
+      const baseBudget = Math.floor(budget * .75);
+      const nearBudget = baseBudget * .65, tail = baseBudget - nearBudget;
+      const cumulative = (cost: number) => {
+        if (cost <= nearBudget) return cost;
+        const extra = cost - nearBudget;
+        return Math.floor(nearBudget + tail * extra / (tail + extra));
+      };
+      let passed = 0, detailLeft = budget - baseBudget;
       for (const i of nearest) {
-        const slot = visible[i],
-          all = visibleAll[i];
+        const slot = visible[i];
+        let all = visibleAll[i];
         const cost = (n: number, lod: number) => {
           const bare = slot.barePrefix?.[n] ?? 0;
           return (n - bare) * TRIANGLES[lod] + bare * TRIANGLES[BRANCH_LEVEL + lod];
         };
         const cheap = cost(all, 2);
-        // Buy whole foreground stands. Under pressure, shorten the range and spend
-        // remaining detail on the largest silhouettes of the nearest admitted stands.
-        if (cheap > remaining) {
-          remaining = 0;
-          visibleAll[i] = slot.admitted = 0;
-          continue;
+        const quota = cumulative(passed + cheap) - cumulative(passed);
+        passed += cheap;
+        if (quota < cheap) {
+          let low = 0, high = all;
+          while (low < high) {
+            const mid = (low + high + 1) >>> 1;
+            if (cost(mid, 2) <= quota) low = mid;
+            else high = mid - 1;
+          }
+          visibleAll[i] = all = low;
         }
-        slot.admitted = all;
+        if (!all) continue;
         slot.drawn = tick;
-        const solid = visibleSolid[i],
-          close = visibleClose[i];
+        const solid = Math.min(all, visibleSolid[i]), close = Math.min(solid, visibleClose[i]);
         const extra = cost(solid, 1) - cost(solid, 2) + cost(close, 0) - cost(close, 1);
-        const allowance = Math.min(remaining - cheap, budget * 0.065);
+        const allowance = Math.min(detailLeft, budget * 0.065);
         let lo = 0,
           hi = solid;
         if (extra > allowance)
@@ -472,7 +551,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           c = Math.floor((n * close) / Math.max(1, solid));
         visibleSolid[i] = n;
         visibleClose[i] = c;
-        remaining -= cheap + cost(n, 1) - cost(n, 2) + cost(c, 0) - cost(c, 1);
+        detailLeft -= cost(n, 1) - cost(n, 2) + cost(c, 0) - cost(c, 1);
         if (slot.ids) selected.select(visibleKey[i], slot.ids, all);
       }
     } else wanted = 0;
@@ -599,6 +678,10 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             if (slot.first !== first) {
               gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer!);
               for (let a = 0; a < 3; a++) gl.vertexAttribPointer(a, 4, gl.FLOAT, false, TREE_STRIDE * 4, first * TREE_STRIDE * 4 + a * 16);
+              if (slot.paintBuffer) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, slot.paintBuffer);
+                gl.vertexAttribPointer(4, 4, gl.FLOAT, false, 16, first * 16);
+              }
               slot.first = first;
             }
             gl.drawElementsInstanced(gl.TRIANGLES, mesh.indices.length, gl.UNSIGNED_SHORT, INDEX_OFFSETS[level], count);
@@ -606,6 +689,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             stats.instances += count;
             stats.triangles += count * TRIANGLES[level];
           };
+          const paint = options.paint?.(), revision = paint?.revision();
+          const bound: TreePaintPage[] = [];
           for (let i = 0; i < visibleCount; i++) {
             const slot = visible[i],
               key = visibleKey[i],
@@ -618,6 +703,34 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             if (!all) continue;
             gl.uniform4f(u.uBlock, minX - tx, minY - ty, -tz, 1);
             gl.bindVertexArray(slot.vao!);
+            if (paint && slot.paintBuffer && slot.cells) {
+              if (paint !== slot.paintSource || slot.paintRevision !== revision) {
+                slot.paintPages.length = 0;
+                const size = slot.eligible * 4;
+                if (paintCoords.length < size) paintCoords = new Float32Array(size);
+                let leafy = 0, bare = slot.eligible - (slot.barePrefix?.[slot.eligible] ?? 0);
+                const parity = ((key & 1) * 8 + ((Math.floor(key / 65536) & 1) * 16) + 1) << 16;
+                for (let j = 0; j < slot.eligible; j++) {
+                  const root = slot.roots[j], at = root * TREE_STRIDE;
+                  const leafless = slot.data[at + 11] > .5, dst = (leafless ? bare++ : leafy++) * 4;
+                  const found = !leafless && paint.locate(minX + slot.data[at], minY + slot.data[at + 1], slot.data[at + 3], slot.paintPages, paintCoords, dst);
+                  paintCoords[dst + 3] = found ? slot.cells[root] + parity : 0;
+                }
+                gl.bindBuffer(gl.ARRAY_BUFFER, slot.paintBuffer);
+                gl.bufferSubData(gl.ARRAY_BUFFER, 0, paintCoords.subarray(0, size));
+                slot.paintSource = paint;
+                slot.paintRevision = revision!;
+              }
+              for (let j = 0; j < slot.paintPages.length; j++) {
+                const page = slot.paintPages[j];
+                if (bound[j]?.colour === page.colour && bound[j]?.crowns === page.crowns) continue;
+                gl.activeTexture(gl.TEXTURE0 + 2*j);
+                gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.colour);
+                gl.activeTexture(gl.TEXTURE0 + 2*j + 1);
+                gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.crowns);
+                bound[j] = page;
+              }
+            }
             let first = 0;
             for (let level = 0; level < TREE_MESHES.length; level++) {
               const end = level === 0 ? close : level === 1 ? solid : all;
@@ -626,7 +739,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
                 const lo = prefix[first],
                   hi = prefix[end];
                 draw(slot, level, first - lo, end - first - (hi - lo));
-                draw(slot, BRANCH_LEVEL + level, slot.count - prefix[slot.count] + lo, hi - lo);
+                draw(slot, BRANCH_LEVEL + level, slot.eligible - prefix[slot.eligible] + lo, hi - lo);
               } else draw(slot, level, first, end - first);
               first = end;
             }
@@ -638,6 +751,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           diagnostics?.levels(1, 1 / Math.max(0.01, leastDensity));
           gl.bindVertexArray(null);
           gl.bindBuffer(gl.ARRAY_BUFFER, null);
+          gl.activeTexture(gl.TEXTURE0);
           volumeDepthEnd(gl);
         }
       } else wanted = 0;

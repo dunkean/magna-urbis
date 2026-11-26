@@ -168,6 +168,7 @@ export class ComposedView {
   /** The volume id of the selected building (highlightBuilding), kept for a layer made later. */
   private highlighted?: string;
   private trees?: WorldTreesLayer;
+  private groundLayer?: ReturnType<typeof createLiveGroundLayer>;
   private displayedClimate?: string;
   private volumeBuildings = false;
   private exactPlan = false;
@@ -299,7 +300,7 @@ export class ComposedView {
       owners.ground = false;
       live.setLayer(
         'ground',
-        createLiveGroundLayer(gl, {
+        (this.groundLayer = createLiveGroundLayer(gl, {
           renderer: () => ground.groundTiles(),
           treeMaterials: () => !!this.volumes.trees.inputs(),
           treeSelection: frame => this.trees?.selection(frame),
@@ -309,7 +310,7 @@ export class ComposedView {
           cave: this.volumes.cave,
           night: this.volumes.trees.night,
           invalidate: map.compose,
-        }),
+        })),
       );
     }
     // The ground layer's work stops while it has no renderer to bake from: when one appears it is told, which also
@@ -327,7 +328,7 @@ export class ComposedView {
       owners.volumes = true;
       live.setLayer('buildings', (this.buildings = createWorldBuildingsLayer(gl, this.volumes.buildings)));
       this.buildings.highlight(this.highlighted);
-      live.setLayer('trees', (this.trees = createWorldTreesLayer(gl, this.volumes.trees)));
+      live.setLayer('trees', (this.trees = createWorldTreesLayer(gl, { ...this.volumes.trees, paint: () => this.groundLayer?.treePaint })));
       live.setLayer('banks', createWorldBankPlantsLayer(gl, this.volumes.trees));
       live.setLayer('cave', createWorldCaveLayer(gl, { cave: this.volumes.cave, terrain: () => this.relief(), invalidate: map.compose }));
     }

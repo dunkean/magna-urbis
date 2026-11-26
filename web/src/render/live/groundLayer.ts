@@ -35,6 +35,7 @@
  * table of tiles.
  */
 import type { GroundTileRenderer, LiveFrame, LiveGroundOptions, LiveLayer, LiveLayerStats } from './contract';
+import { TREE_PAINT_PAGES, type TreePaintSource } from '../world/treePaint';
 import { MAX_SCALE, type Rect4 } from '../view';
 import { GROUND_PAGE_LAYERS as LAYERS, type DrapeTile, type DrapeTiles } from '../world/contract';
 import { DrapedGround } from '../world/drapedGround';
@@ -162,7 +163,7 @@ function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
   return program;
 }
 
-export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveGroundOptions): LiveLayer {
+export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveGroundOptions): LiveLayer & { treePaint: TreePaintSource } {
   let state: GlState | undefined;
   /** Baked tiles only (slot >= 0), by tileKey. */
   const tiles = new Map<number, Tile>();
@@ -215,7 +216,8 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     wantedDepth = new Float32Array(MAX_WANTED);
   let wantedCount = 0;
   /** Bumped whenever a tile is baked, dropped or made stale (DrapeTiles.revision). */
-  let tileRevision = 0;
+  let tileRevision = 0, paintIndexRevision = -1;
+  let paintTiers: number[] = [];
   // Scan result of nextBake.
   let foundTier = 0,
     foundX = 0,
@@ -647,6 +649,37 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
 
   return {
     name: 'ground',
+    treePaint: {
+      revision: () => tileRevision,
+      locate(x, y, radius, pages, target, offset) {
+        if (!treeMaterials || !state || !gridSize) return false;
+        // Select the finest resident current tile at the root; never read back the GPU or request a bake.
+        if (paintIndexRevision !== tileRevision) {
+          const current = new Set<number>();
+          for (const tile of tiles.values()) if (tile.crowns && tile.generation === generation) current.add(tile.tier);
+          paintTiers = [...current].sort((a, b) => b - a);
+          paintIndexRevision = tileRevision;
+        }
+        for (const tier of paintTiers) {
+          const scale = 2 ** tier / gridSize, u = x * scale, v = y * scale;
+          const ix = Math.floor(u), iy = Math.floor(v), tile = tiles.get(tileKey(tier, ix, iy));
+          if (!tile?.crowns || tile.generation !== generation) continue;
+          const page = Math.floor(tile.slot / LAYERS), colour = state.pages[page], crowns = state.crownPages.get(page);
+          if (!crowns) continue;
+          let index = pages.findIndex(p => p.colour === colour);
+          if (index < 0) {
+            if (pages.length === TREE_PAINT_PAGES) continue;
+            index = pages.push({ colour, crowns }) - 1;
+          }
+          target[offset] = Math.min(TILE - 1, Math.floor((u - ix) * TILE));
+          target[offset + 1] = Math.min(TILE - 1, Math.floor((v - iy) * TILE));
+          const radiusTexels = Math.min(TILE, Math.ceil(radius * scale * TILE));
+          target[offset + 2] = (radiusTexels * TREE_PAINT_PAGES + index) * LAYERS + tile.slot % LAYERS;
+          return true;
+        }
+        return false;
+      },
+    },
     tilts: true,
 
     ready(frame: LiveFrame): boolean {
