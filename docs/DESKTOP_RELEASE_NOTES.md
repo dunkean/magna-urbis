@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- The Azgaar FMG iframe draws a lightweight schematic city map, adds street and building detail in place, and links to the full terrain editor.
+
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.
 - Selecting a map feature keeps its outline aligned as you move or tilt the camera and lets the page rest when the view is still.

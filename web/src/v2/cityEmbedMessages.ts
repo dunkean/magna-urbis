@@ -1,11 +1,14 @@
-/** Copy for cityEmbed's standalone preview. Register with the page's i18n service so English source text also works in French. */
-import { numberLocale, translate } from './i18n';
-import type { V2Settings } from './contracts';
+/** Copy for cityEmbed's standalone preview. Keep the iframe's copy independent of the studio catalogue. */
+import { LANGUAGES, type Language } from './languages';
+import type { ExternalCityHints } from './externalCity/types';
 
 const rows = [
   ['Magna Urbis · City preview', 'Magna Urbis · Aperçu de ville'],
   ['City map: drag to pan, scroll to zoom', 'Carte de la ville : glisser pour déplacer, molette pour zoomer'],
   ['Generating city…', 'Génération de la ville…'],
+  ['Schematic preview', 'Aperçu schématique'],
+  ['Open in Magna Urbis ↗', 'Ouvrir dans Magna Urbis ↗'],
+  ['The city map could not be drawn.', 'Impossible de dessiner la carte de la ville.'],
   ['Randomize culture, population, geography and buildings', 'Changer la culture, la population, la géographie et les bâtiments'],
   ['🎲 Randomize city', '🎲 Tout changer'],
   ['Navigation', 'Navigation'],
@@ -26,15 +29,32 @@ const rows = [
   ['River', 'Rivière'],
   ['Walls', 'Remparts'],
 ] as const;
-export const cityEmbedMessages = Object.fromEntries(rows.map(([en, fr]) => [en, { en, fr }]));
+const french = new Map<string, string>(rows);
+
+export function cityEmbedText(text: string, language: Language): string {
+  return language === 'fr' ? french.get(text) ?? text : text;
+}
+
+export function localizeCityEmbed(root: HTMLElement, language: Language): void {
+  if (language !== 'fr') return;
+  for (const element of Array.from(root.querySelectorAll<HTMLElement>('[data-embed-text], [aria-label], [title]'))) {
+    if (element.hasAttribute('data-embed-text')) element.textContent = cityEmbedText(element.textContent!.trim(), language);
+    for (const attribute of ['aria-label', 'title']) {
+      const value = element.getAttribute(attribute);
+      if (value) element.setAttribute(attribute, cityEmbedText(value, language));
+    }
+  }
+}
 
 /** Labels are translated independently; imported culture names and compass directions remain user data. */
-export function cityEmbedSummary(options: V2Settings['options'], cultureBase: string | null): string {
+export function cityEmbedSummary(hints: ExternalCityHints, cultureBase: string | null, language: Language = 'en'): string {
+  const translate = (text: string) => cityEmbedText(text, language);
+  const numberLocale = LANGUAGES.find(item => item.code === language)!.locale;
   return [
-    cultureBase ?? options.culture.replaceAll('-', ' '),
-    `${options.population.toLocaleString(numberLocale())} ${translate('people')}`,
-    options.coast !== 'none' ? `${translate('Coast')} ${options.coast}` : translate('Inland'),
-    options.river !== 'none' ? translate('River') : '',
-    options.walls !== 'none' ? translate('Walls') : '',
+    cultureBase ?? hints.culture?.replaceAll('-', ' '),
+    `${(hints.population ?? 2500).toLocaleString(numberLocale)} ${translate('people')}`,
+    (hints.lakeShore ?? hints.coast ?? 'none') !== 'none' ? `${translate('Coast')} ${hints.lakeShore ?? hints.coast}` : translate('Inland'),
+    hints.river && hints.river !== 'none' ? translate('River') : '',
+    hints.walls ? translate('Walls') : '',
   ].filter(Boolean).join(' · ');
 }

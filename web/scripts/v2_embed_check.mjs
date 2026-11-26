@@ -1,211 +1,219 @@
-/** Manual production-embed qualification CLI. Serves the existing Vite artifact in a sandboxed iframe; never builds the engine. */
-import { chromium } from 'playwright';
+/** Exercise the built preview in a sandboxed, cross-origin FMG-sized iframe. */
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
-import { resolve, sep, extname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { extname, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
-const output = resolve(web, 'dist-v2'),
-  artifacts = resolve(web, 'out/city-embed');
+const output = resolve(web, 'dist-v2');
+const artifacts = resolve(web, 'out/city-embed');
 const prefix = '/magna-urbis/v2/';
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp' };
+const compressed = new Map();
+const addedLatency = Number(process.env.MAGNA_EMBED_TEST_LATENCY_MS ?? 0);
 const assets = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://localhost');
-    if (!url.pathname.startsWith(prefix)) {
-      response.writeHead(404).end();
-      return;
-    }
-    const path = resolve(output, decodeURIComponent(url.pathname.slice(prefix.length)) || 'index.html');
-    if (!path.startsWith(output + sep) || !(await stat(path)).isFile()) {
-      response.writeHead(404).end();
-      return;
-    }
-    response.writeHead(200, { 'Content-Type': mime[extname(path)] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600' });
-    response.end(await readFile(path));
+    if (!url.pathname.startsWith(prefix)) return response.writeHead(404).end();
+    const path = resolve(output, decodeURIComponent(url.pathname.slice(prefix.length)));
+    if (!path.startsWith(output + sep)) return response.writeHead(404).end();
+    const ext = extname(path);
+    const gzip = !!request.headers['accept-encoding']?.includes('gzip') && ['.html', '.js', '.css', '.json'].includes(ext);
+    const bytes = (gzip && compressed.get(path)) || (await readFile(path));
+    const body = gzip && !compressed.has(path) ? gzipSync(bytes) : bytes;
+    if (gzip) compressed.set(path, body);
+    if (addedLatency > 0) await new Promise(done => setTimeout(done, addedLatency));
+    response.writeHead(200, { 'Content-Type': mime[ext] ?? 'application/octet-stream', 'Cache-Control': 'public, max-age=3600', 'Content-Length': body.length, Vary: 'Accept-Encoding', ...(gzip ? { 'Content-Encoding': 'gzip' } : {}) });
+    response.end(body);
   } catch {
     response.writeHead(404).end();
   }
 });
 await new Promise(ready => assets.listen(0, '127.0.0.1', ready));
-const base = `http://127.0.0.1:${assets.address().port}${prefix}`;
+const base = 'http://127.0.0.1:' + assets.address().port + prefix;
 const parent = createServer((request, response) => {
-  const source = new URL(request.url, 'http://localhost').searchParams.get('src');
+  const src = new URL(request.url, 'http://localhost').searchParams.get('src');
   response.writeHead(200, { 'Content-Type': 'text/html' });
   response.end(
-    `<!doctype html><style>body{margin:0;background:#ddd}iframe{width:440px;height:320px;border:0;pointer-events:auto}</style><iframe title="City preview" sandbox="allow-scripts allow-same-origin"></iframe><script>document.querySelector('iframe').src=${JSON.stringify(source)};</script>`,
+    '<!doctype html><style>body{margin:0}iframe{width:440px;height:320px;border:0}</style><iframe title="City preview" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><script>document.querySelector("iframe").src=' +
+      JSON.stringify(src).replaceAll('<', '\\u003c') +
+      '</script>',
   );
 });
 await new Promise(ready => parent.listen(0, '127.0.0.1', ready));
-const host = `http://127.0.0.1:${parent.address().port}/`;
-const result = { base, cases: [], errors: [], missing: [] };
+const host = 'http://127.0.0.1:' + parent.address().port + '/';
+const framed = source => host + '?' + new URLSearchParams({ src: source });
+const flat = new URLSearchParams({ preview: '1', name: 'Brackenford', population: '2500', seed: '12340007', river: '0', coast: '0', walls: '1', cultureBase: 'English' });
+const flatUrl = base + 'embed.html?' + flat;
+const result = { base, latencyMs: addedLatency, cases: [], errors: [], missing: [] };
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const capture = (page, name) => page.locator('iframe').screenshot({ path: resolve(artifacts, name + '.png') });
 let browser;
 try {
   await mkdir(artifacts, { recursive: true });
   browser = await chromium.launch({ channel: process.env.MAGNA_BROWSER_CHANNEL ?? 'msedge', headless: true });
   const context = await browser.newContext({ viewport: { width: 700, height: 500 } });
   await context.addInitScript(() => {
+    if (!new URLSearchParams(location.search).has('holdDetail')) return;
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
-      constructor(...args) {
-        super(...args);
-        this.addEventListener('message', ({ data }) => {
-          if (data.type === 'progress') (window.__embedProgress ??= []).push({ ms: Math.round(performance.now()), ...data.progress });
-          if (data.type === 'result') window.__embedStats = Object.fromEntries(Object.entries(data.world.stats).filter(([key]) => key.startsWith('ms.')));
-        });
+      postMessage(message, ...rest) {
+        if (message.type === 'detail') window.__releasePreviewDetail = () => super.postMessage(message, ...rest);
+        else super.postMessage(message, ...rest);
       }
     };
   });
-  const page = await context.newPage(),
-    liveWorkers = new Set();
+  const page = await context.newPage();
+  const workers = new Set();
   page.on('worker', worker => {
-    liveWorkers.add(worker);
-    worker.on('close', () => liveWorkers.delete(worker));
+    workers.add(worker);
+    worker.on('close', () => workers.delete(worker));
   });
   page.on('pageerror', error => result.errors.push(error.message));
   page.on('response', response => {
     if (response.status() >= 400) result.missing.push(response.url());
   });
-  const flat = `${base}embed.html?preview=1&name=Brackenford&population=2500&seed=12340007&river=0&coast=0&walls=1&cultureBase=English`;
-  async function preview(name, source) {
-    const requested = [];
-    const record = request => requested.push(request.url());
-    page.on('request', record);
+  async function preview(name, source, hold = false) {
+    const requests = [];
+    const responses = [];
+    const remember = request => requests.push(request.url());
+    const size = response => responses.push(response.headerValue('content-length').then(value => Number(value ?? 0)));
+    page.on('request', remember);
+    page.on('response', size);
     const started = performance.now();
-    await page.goto(`${host}?${new URLSearchParams({ src: source })}`, { waitUntil: 'domcontentloaded' });
-    const iframe = page.frameLocator('iframe');
-    await iframe.locator('html[data-state="ready"],html[data-state="error"]').waitFor({ timeout: 180000 });
-    const state = await iframe.locator('html').getAttribute('data-state');
-    assert.equal(state, 'ready', await iframe.locator('#status').textContent());
+    await page.goto(framed(source), { waitUntil: 'commit' });
+    const root = page.frameLocator('iframe').locator('html');
+    await root.and(page.frameLocator('iframe').locator('[data-state="ready"]')).waitFor({ timeout: 4000 });
     const frame = page.frames().find(candidate => candidate.url().startsWith(base));
     assert.equal(await frame.evaluate(() => crossOriginIsolated), false);
     assert.equal(await frame.locator('#status').isVisible(), false);
+    assert.equal(await frame.locator('#demo-controls').isVisible(), false);
+    if (hold) {
+      assert.equal(await root.getAttribute('data-detail'), null);
+      await capture(page, name + '-first');
+      await frame.evaluate(() => window.__releasePreviewDetail());
+    }
+    await root.and(page.frameLocator('iframe').locator('[data-detail="ready"]')).waitFor({ timeout: 15000 });
+    const timing = await root.evaluate(el => ({ firstMs: Number(el.dataset.readyMs), detailMs: Number(el.dataset.detailMs) }));
+    assert.ok(timing.firstMs < 4000);
+    if (!hold) assert.ok(timing.detailMs < 15000);
+    assert.ok(timing.detailMs > timing.firstMs);
     const pixels = await frame.locator('#map canvas').evaluate(canvas => {
       const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
       const colors = new Set();
-      for (let i = 0; i < data.length; i += 16) colors.add(`${data[i]},${data[i + 1]},${data[i + 2]}`);
+      for (let i = 0; i < data.length; i += 16) colors.add((data[i] << 16) + (data[i + 1] << 8) + data[i + 2]);
       return colors.size;
     });
-    assert.ok(pixels > 20, 'The city must contain visible geometry.');
-    const png = await page.locator('iframe').screenshot({ path: resolve(artifacts, `${name}.png`) });
-    const readyMs = Number(await iframe.locator('html').getAttribute('data-ready-ms'));
-    const timing = await frame.evaluate(() => performance.getEntriesByType('resource').map(entry => ({ name: entry.name, bytes: entry.encodedBodySize })));
-    assert.ok(!requested.some(url => /\/(?:studio-|brushAssets-|fantasyBrushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must not load the workbench or optional painters/models.');
-    assert.equal(liveWorkers.size, 0, 'The preview must release its generation worker.');
-    result.cases.push({
-      name,
-      readyMs,
-      navigationMs: Math.round(performance.now() - started),
-      pixels,
-      requests: requested.length,
-      resourceBytes: timing.reduce((sum, entry) => sum + entry.bytes, 0),
-      stats: await frame.evaluate(() => window.__embedStats),
-      progress: await frame.evaluate(() => window.__embedProgress),
-    });
-    page.off('request', record);
-    console.log(JSON.stringify({ name, readyMs, cached: await frame.locator('html').getAttribute('data-cached'), stats: result.cases.at(-1).stats }));
-    return { frame, hash: createHash('sha256').update(png).digest('hex') };
+    assert.ok(pixels > 20, 'The map must contain visible geometry.');
+    assert.equal(workers.size, 0, 'The preview must release its worker after enrichment.');
+    assert.ok(!requests.some(url => /\.wasm|\/(?:studio-|engine\.worker-|brushAssets-|neuralRuntime-|terrainGpu-)/.test(url)), 'The preview must only load its lightweight generation entry.');
+    page.off('request', remember);
+    page.off('response', size);
+    const bytes = (await Promise.all(responses)).reduce((sum, count) => sum + count, 0);
+    assert.ok(bytes < 300_000, 'Keep the full compressed preview within 300 KB.');
+    const report = { name, ...timing, checkedMs: Math.round(performance.now() - started), bytes, pixels, requests: requests.length };
+    console.log(JSON.stringify(report));
+    result.cases.push(report);
+    return { frame, pixels: hash(await capture(page, name)) };
   }
-  async function navigation(frame) {
-    const box = await frame.locator('#map').boundingBox();
-    await page.mouse.move(box.x + box.width * 0.65, box.y + box.height * 0.55);
-    await page.mouse.wheel(0, -350);
-    await frame.waitForFunction(() => Number(document.querySelector('#map').dataset.zoom) > 1);
-    const before = await frame.locator('#map').getAttribute('data-pan-x');
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.65 + 45, box.y + box.height * 0.55 + 30, { steps: 5 });
-    await page.mouse.up();
-    assert.notEqual(await frame.locator('#map').getAttribute('data-pan-x'), before, 'Dragging must pan the city.');
-    await frame.locator('#fit-view').click();
-    assert.equal(await frame.locator('#map').getAttribute('data-zoom'), '1');
-    assert.equal(await frame.locator('#map').getAttribute('data-pan-x'), '0');
-    await page.mouse.move(680, 480);
-  }
-  const cold = await preview('town-cold', flat);
-  await navigation(cold.frame);
-  const warm = await preview('town-cached', flat);
-  assert.equal(warm.hash, cold.hash, 'The same city input must reproduce the same preview.');
-  await navigation(warm.frame);
+
+  const cold = await preview('town-cold', flatUrl);
+  const repeat = await preview('town-repeat', flatUrl);
+  assert.equal(repeat.pixels, cold.pixels, 'The same burg must reproduce the same drawing.');
+  await repeat.frame.locator('#zoom-in').click();
+  assert.equal(await repeat.frame.locator('#map').getAttribute('data-zoom'), '1.5');
+  const pos = await repeat.frame.locator('#map').boundingBox();
+  await page.mouse.move(pos.x + 100, pos.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(pos.x + 135, pos.y + 110);
+  await page.mouse.up();
+  assert.notEqual(await repeat.frame.locator('#map').getAttribute('data-pan-x'), '0');
+  await repeat.frame.locator('#fit-view').click();
+  assert.equal(await repeat.frame.locator('#map').getAttribute('data-zoom'), '1');
+  assert.equal(await repeat.frame.locator('#map').getAttribute('data-pan-x'), '0');
   await page.locator('iframe').evaluate(element => {
     element.style.width = '620px';
     element.style.height = '420px';
   });
-  await warm.frame.waitForFunction(() => document.querySelector('#map canvas')?.getBoundingClientRect().width === 620);
-  await page.locator('iframe').screenshot({ path: resolve(artifacts, 'town-resized.png') });
+  await repeat.frame.waitForFunction(() => document.querySelector('#map canvas')?.getBoundingClientRect().width === 620);
+  await capture(page, 'town-resized');
+
   const data = {
     format: 'fmg-burg-v1',
     i: 12,
     name: 'Port Skarholm',
-    population: 5000,
+    population: 10000,
     mfcgSeed: '12340012',
     capital: true,
     port: true,
     citadel: true,
     walls: true,
-    river: false,
+    plaza: true,
+    river: true,
     coast: { sea: 0.5, water: 'ocean' },
     elevation: 40,
     temperature: 8,
     precipitation: 900,
     culture: { base: 'Nordic', type: 'Naval' },
-    biome: { id: 6, name: 'Temperate deciduous forest' },
   };
-  const rich = new URL(`${base}embed.html?preview=1`);
+  const rich = new URL(base + 'embed.html?preview=1&lang=fr');
   rich.hash = new URLSearchParams({ burg: JSON.stringify(data) }).toString();
-  await preview('port-rich', rich.href);
-  // The direct preview is an exploration surface; the ordinary FMG iframe keeps the controls hidden.
-  assert.equal(await page.frameLocator('iframe').locator('#demo-controls').isVisible(), false);
-  await page.goto(flat + '&demo=1', { waitUntil: 'domcontentloaded' });
-  await page.locator('html[data-state="ready"]').waitFor({ timeout: 180000 });
-  assert.equal(await page.locator('#randomize').isVisible(), true);
-  await page.evaluate(() => {
-    Math.random = () => 0.3;
-  });
-  await page.locator('#randomize').click();
-  await page.waitForURL(url => url.searchParams.get('cultureBase') === 'Chinese');
-  await page.locator('html[data-state="ready"],html[data-state="error"]').waitFor({ timeout: 180000 });
-  assert.equal(await page.locator('html').getAttribute('data-state'), 'ready', await page.locator('#status').textContent());
-  assert.match(await page.locator('#demo-params').textContent(), /Chinese.*people/);
-  await page.screenshot({ path: resolve(artifacts, 'randomized.png') });
-  result.randomized = page.url();
-  await page.goto(`${host}?${new URLSearchParams({ src: `${base}embed.html?preview=1#burg=bad` })}`);
-  await page.frameLocator('iframe').locator('html[data-state="error"]').waitFor();
-  assert.equal(liveWorkers.size, 0);
-  assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.missing, []);
-  // The build still bundles the intended four latest changelog sections.
-  const studio = await context.newPage();
-  await studio.setViewportSize({ width: 1440, height: 960 });
-  await studio.goto(`${base}v2.html?test=1&threads=off`, { waitUntil: 'domcontentloaded' });
-  await studio.locator('#changelog-open').waitFor();
+  const port = await preview('port-rich', rich.href);
+  const held = new URL(rich);
+  held.searchParams.set('holdDetail', '1');
+  const firstPort = await preview('port-phases', held.href, true);
+  assert.notEqual(hash(await readFile(resolve(artifacts, 'port-phases-first.png'))), firstPort.pixels, 'The detail phase must change the map.');
+  assert.equal(firstPort.pixels, port.pixels, 'Holding detail does not change its result.');
+  assert.equal(await firstPort.frame.locator('#open').innerText(), 'Ouvrir dans Magna Urbis ↗');
+
+  // Verify the iframe can open the actual studio, preserving its source data and locale.
+  const opened = page.waitForEvent('popup');
+  await firstPort.frame.locator('#open').click();
+  const studio = await opened;
+  await studio.waitForURL(url => url.pathname.endsWith('/v2.html'));
+  const target = new URL(studio.url());
+  assert.equal(target.searchParams.get('lang'), 'fr');
+  assert.equal(new URLSearchParams(target.hash.slice(1)).get('city'), JSON.stringify(data));
+  await studio.locator('#changelog-open').waitFor({ state: 'attached' });
   const headings = await studio.locator('.changelog-versions h3').allTextContents();
   const notes = await readFile(resolve(web, '../docs/DESKTOP_RELEASE_NOTES.md'), 'utf8');
   assert.deepEqual(
     headings,
     [...notes.matchAll(/^## (.+)$/gm)].slice(0, 4).map(match => match[1].trim()),
   );
-  assert.match(await studio.locator('.changelog-versions').textContent(), /compact city preview/);
+  assert.match(await studio.locator('.changelog-versions').textContent(), /lightweight schematic city map/);
   result.changelog = headings;
-  console.log(JSON.stringify({ changelog: headings }));
-  // Review the shared Minimal changes on the V2 reference page too.
-  await studio.waitForFunction(() => window.__v2Test?.ready);
-  await studio.locator('#map-style').selectOption('minimal');
-  await studio.evaluate(async () => {
-    await window.__v2Test.runRegion({
-      options: { seed: 'embed-outline-review', population: 500, culture: 'european-organic', coast: 'none', river: 'none' },
-      extent: 2000,
-      places: 'main',
-      runtime: { backend: 'rust', autoBackend: false, compute: 'cpu', source: 'procedural' },
-      terrain: { resolution: 128, erosion: 0, generationCompute: 'cpu', forest: { enabled: false } },
-      region: { resolution: 128, autoBuildPopulation: 0, placement: { mode: 'list', farmDensity: 0, remotePlaces: 0, list: [{ key: 'main', name: 'Outline review', population: 500, culture: 'european-organic', siteType: 'auto', sitePrefs: {} }] } },
-    });
-    await window.__v2Test.view('2d-core');
-    await window.__v2Test.prepareCapture();
+  await studio.close();
+
+  // Closing the burg while the second phase is pending releases the old worker.
+  await page.goto(framed(held.href));
+  await page.frameLocator('iframe').locator('html[data-state="ready"]').waitFor();
+  assert.equal(workers.size, 1);
+  const [worker] = workers;
+  await Promise.all([new Promise(done => worker.once('close', done)), page.locator('iframe').evaluate(iframe => iframe.remove())]);
+  assert.equal(workers.size, 0);
+
+  await preview('river-town', base + 'embed.html?preview=1&name=Longxi&seed=1288490188&population=3050&river=1&coast=0&walls=1&cultureBase=Chinese&temple=1');
+  await preview('nomad-camp', base + 'embed.html?preview=1&name=Karak%20Ordu&seed=3521165402&population=1250&river=0&coast=0&walls=0&cultureBase=Mongolian&cultureType=Nomadic&temple=1');
+  await page.goto(framed(base + 'embed.html?preview=1#burg=bad'));
+  await page.frameLocator('iframe').locator('html[data-state="error"]').waitFor();
+  assert.equal(workers.size, 0);
+  await page.goto(flatUrl + '&demo=1&lang=fr');
+  await page.locator('html[data-detail="ready"]').waitFor();
+  assert.equal(await page.locator('#randomize').isVisible(), true);
+  await page.evaluate(() => {
+    Math.random = () => 0.3;
   });
-  await studio.locator('#map').screenshot({ path: resolve(artifacts, 'v2-minimal.png') });
+  await page.locator('#randomize').click();
+  await page.waitForURL(url => url.searchParams.get('cultureBase') === 'Chinese');
+  await page.locator('html[data-detail="ready"]').waitFor();
+  assert.match(await page.locator('#demo-params').textContent(), /Chinese.*hab\./);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.missing, []);
 } finally {
   await writeFile(resolve(artifacts, 'report.json'), JSON.stringify(result, null, 2));
   await browser?.close();

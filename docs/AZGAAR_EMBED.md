@@ -1,35 +1,31 @@
 # City iframe preview
 
-The V2 build includes `embed.html`. It generates one procedural city and displays it in the same
-Minimal Canvas renderer as the full application. It has no workbench, hardware dialog, GPU
-requirement, neural download or optional local service. Its generation worker stops after the
-result arrives. The view fits the city and redraws when the iframe is resized. Up to six small
-thumbnails are cached locally, so reopening a burg at the same frame size does not start the
-engine. Cached thumbnails scale to fit on resize; a fresh generation at another initial size
-retains the full vector renderer. A new application build invalidates these thumbnails.
+The V2 build includes `embed.html`. It draws a schematic Canvas 2D plan on flat
+ground, with the burg's approximate water, primary streets, blocks, and requested walls
+and landmarks. After the first paint, the preview worker adds lanes and roofs to that
+same plan. The canvas keeps its framing, water, roads and gates. Both passes use a
+small deterministic TypeScript worker. It exits after the detail pass. The WASM city
+engine is loaded by the full editor when the user opens it.
 
-After web publication, the endpoint is `https://magna-urbis.org/embed.html`.
-For development, use `http://127.0.0.1:5174/embed.html` with `npm run dev:v2`.
+The public endpoint is `https://magna-urbis.org/embed.html` after publication.
+In the development checkout, run `npm run dev:v2` in `web/` and open
+`http://127.0.0.1:5174/embed.html?preview=1&name=Brackenford&population=2500&seed=12340007&walls=1`.
 
-Opened directly, the preview includes **Randomize city** (French: **Tout changer**), which randomizes culture, population,
-geography and settlement features, with a short parameter summary. An ordinary embedded iframe
-keeps these demonstration controls hidden; add `demo=1` to show them inside an iframe too.
-The map supports drag-to-pan, wheel zoom towards the cursor, touch pinch, double-click zoom,
-and + / − / recenter buttons. The `lang` query parameter and the saved interface preference
-select the same language as the studio; English is the default. With the map focused, +, −, 0 and arrow keys also work. Cached
-thumbnails can be panned and zoomed as images; freshly generated maps retain vector detail.
+Opened directly, the preview includes **Randomize city** (French: **Tout changer**).
+An embedded iframe hides these demonstration controls unless it receives `demo=1`.
+The map supports drag, wheel, touch pinch, double-click, zoom buttons, and keyboard
+navigation. English and French follow the `lang` query parameter or the stored V2 preference.
 
 ## Simple link
 
 ```html
-<iframe title="City map" src="https://magna-urbis.org/embed.html?preview=1&amp;name=Brackenford&amp;population=2500&amp;seed=12340007&amp;coast=0&amp;river=0&amp;walls=1" sandbox="allow-scripts allow-same-origin" style="width:440px;height:320px;border:0"></iframe>
+<iframe title="City map" src="https://magna-urbis.org/embed.html?preview=1&amp;name=Brackenford&amp;population=2500&amp;seed=12340007&amp;coast=0&amp;river=0&amp;walls=1" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" style="width:440px;height:320px;border:0"></iframe>
 ```
 
-`preview=1` displays only the map and a small attribution/editor link. Without `preview=1`, the
-same endpoint opens the full V2 editor with the source city inputs and generates automatically.
-The full editor uses its normal terrain quality; the preview uses a 128-cell terrain and regional
-raster, skips erosion and forest generation, and renders building footprints from the native
-silhouette architecture. It does not replace the Rust city generator with an approximation.
+`preview=1` displays the schematic map and the **Open in Magna Urbis** link.
+Without `preview=1`, the same endpoint opens V2 in the current tab. The iframe link
+opens V2 in a new tab. Both hand the original burg constraints to the regular city
+importer. The full terrain can change where streets and buildings are laid out.
 
 Flat query parameters reuse the existing Watabou city importer:
 
@@ -41,7 +37,7 @@ Flat query parameters reuse the existing Watabou city importer:
 
 Boolean parameters accept `0`/`1` or `false`/`true`. The shared importer determines which fields
 affect generation: currently `plaza` and `farms` are parsed but do not force generation options,
-`hub=1` requests four regional exits, and a coast angle is reduced to a cardinal side.
+`hub=1` requests four regional exits, and a coast angle is reduced to a cardinal side. The schematic preview uses the plaza flag and can place a lake shore from a rich payload.
 Missing parameters retain the importer's defaults. These links describe constraints, not an
 exact terrain, coastline or river course.
 
@@ -103,9 +99,10 @@ FMG integration points (upstream checked at `74136292b8012abe0d57a11ac7780ddc43d
   method returning the `{link, preview}` pair above.
 - `src/controllers/political/burgs/burg-group-editor.ts`: add the provider to the preview selector.
 - `src/controllers/political/burgs/burg-editor.ts` already embeds `preview` and opens `link`
-  externally. Its iframe uses `allow-scripts allow-same-origin`, which this endpoint supports.
-  For Magna Urbis, set the iframe's `pointerEvents` to `auto` instead of `none` so pointer and
-  wheel events reach its built-in map navigation; leave the existing behavior for other providers.
+  externally. For the Magna Urbis provider, let the iframe handle pointer and wheel
+  navigation and add `allow-popups allow-popups-to-escape-sandbox` to the existing sandbox
+  permissions so its editor link can open the full studio. Keep the FMG editor's own
+  open action as another way to reach the studio. Custom burg links retain priority.
 
 The fragment supports at most 65,536 decoded characters. Invalid payloads display an error in
 the iframe. No geometry import or terrain-constrained river tracing is added in this step.
@@ -118,8 +115,10 @@ npm run build:v2
 node scripts/v2_embed_check.mjs
 ```
 
-The check serves the production artifact under a subpath, embeds it from another origin with
-FMG's sandbox restrictions, records cold/cached generation timings, checks deterministic output,
-resize, a rich coastal burg, invalid input, released workers, and the four bundled changelog
-sections. Reports and screenshots go to `web/out/city-embed/`. Its local timings exclude public
-network transfer time. The shared WASM engine remains a substantial first-download asset.
+The check serves a compressed production build under a subpath, with an FMG-sized iframe
+on a second origin. It records first-plan and detail timings and bytes, checks phase order,
+repeatability, resize, worker shutdown, invalid input and studio navigation from the iframe.
+It also checks the four bundled changelog sections. Reports and screenshots are written to
+`web/out/city-embed/`. Set `MAGNA_EMBED_TEST_LATENCY_MS` to add an HTTP response delay.
+These are local measurements. The archived WASM generation profiles are documented in
+[the previous handoff](HANDOFF_AZGAAR_EMBED_2026-11-19.md).

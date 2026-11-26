@@ -1,4 +1,4 @@
-/** cityEmbed's pointer and keyboard navigation; the shared view math drives both retained maps and cached thumbnails. */
+/** Pointer and keyboard navigation for the two preview phases. */
 import { panBy, zoomAt, type View } from '../render/view';
 
 export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, enabled: () => boolean) {
@@ -107,11 +107,5 @@ export function mountCityEmbedNavigation(host: HTMLElement, draw: () => void, en
     { signal },
   );
   changed();
-  return {
-    zoom,
-    reset,
-    view: (base: View): View => ({ cx: base.cx + camera.cx / base.scale, cy: base.cy + camera.cy / base.scale, scale: base.scale * camera.scale }),
-    bitmapTransform: () => `translate(${-camera.cx * camera.scale}px,${-camera.cy * camera.scale}px) scale(${camera.scale})`,
-    dispose: () => controller.abort(),
-  };
+  return { zoom, reset, view: (base: View): View => ({ cx: base.cx + camera.cx / base.scale, cy: base.cy + camera.cy / base.scale, scale: base.scale * camera.scale }), dispose: () => controller.abort() };
 }
