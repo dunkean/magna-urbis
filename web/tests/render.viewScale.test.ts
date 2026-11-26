@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCanvasRenderer, type CanvasLike } from '../src/render/canvas';
 import { buildScene } from '../src/render/scene';
+import { defaultText } from '../src/render/textLayer';
 import { viewRect, zoomAt } from '../src/render/view';
 import { VIEW_RASTER_COARSE, VIEW_RASTER_MAX_PX, viewRasterFits, viewRasterRegion } from '../src/render/viewRaster';
 import { fakeWorld, MockPath2D } from '../scripts/fakeworld';
@@ -11,7 +12,7 @@ import { fakeWorld, MockPath2D } from '../scripts/fakeworld';
 function arcCanvas(w: number, h: number) {
   const arcs: { r: number; k: number }[] = [];
   let k = 1;
-  const state: Record<string, unknown> = { fillStyle: '', strokeStyle: '', globalAlpha: 1 };
+  const state: Record<string, unknown> = { fillStyle: '', strokeStyle: '', globalAlpha: 1, measureText: (text: string) => ({ width: text.length * 8 }) };
   const ctx = new Proxy(state, {
     get(t, name: string) {
       if (name in t) return t[name];
@@ -38,6 +39,7 @@ describe('view scale invariants', () => {
     const radii = [0.1, 1, 6].map(scale => {
       const m = arcCanvas(800, 600);
       const r = createCanvasRenderer(m.canvas as unknown as CanvasLike, world, 'parchment', { Path2D: MockPath2D as never, dpr: 1, scene, terrain: () => null, raster: false });
+      r.setOverlays({ labels: true, text: defaultText({ levels: { pins: 100 } }) });
       r.draw({ cx: 4000, cy: 4000, scale });
       // The marker ring: the largest arc of the frame, in screen pixels.
       return Math.max(...m.arcs.map(a => a.r * a.k));
