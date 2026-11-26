@@ -31,7 +31,7 @@ const SLOPE_LIGHT = 0.5;
 const HAZE: readonly [number, number, number] = [0.77, 0.85, 0.88];
 /** Pages of baked tiles a frame may show (the ground layer holds at most 32). */
 const MAX_PAGES = 64;
-/** First of the two texture units of the shaped ground (GroundShapeTexture.bind). */
+/** First of the three texture units of the shaped ground (GroundShapeTexture.bind). */
 const SHAPE_UNIT = 3;
 
 export class DrapedGround {
@@ -282,6 +282,8 @@ export class DrapedGround {
     gl.uniform1i(u.uShape, SHAPE_UNIT);
     gl.uniform1i(u.uShapeIndex, SHAPE_UNIT + 1);
     gl.uniform1i(u.uShapeSide, this.shape.side);
+    gl.uniform1i(u.uSqueeze, SHAPE_UNIT + 2);
+    gl.uniform1i(u.uSqueezeSide, this.shape.squeezeSide);
     this.shape.bind(SHAPE_UNIT);
     const ranges = this.ranges,
       drape = this.draped && frame.drape && frame.drape.pageCount() > 0 ? frame.drape.page(0) : undefined;

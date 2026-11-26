@@ -10,13 +10,15 @@
  * The fragment shader shows the baked ground tile of the square, then the tile of the map drape over it (mapDrape.ts:
  * water, cartography, town plan; premultiplied, transparent where the ground shows). The tiles carry the map's own
  * relief shading, lit from above; a tilted view adds a slope light that is zero on flat ground and scaled by the rise
- * of the relief, and haze with the distance, so the top view is the tiles unchanged.
+ * of the relief, and haze with the distance, so the top view is the tiles unchanged. Where a regional road crosses a steep
+ * slope, both tiles are read squeezed across the road (render/steepRoads.ts): draped from above, the road would smear
+ * down the slope; squeezed by the slope's stretch it keeps its width, per pixel and whatever the mesh.
  *
  * In the Underdark (cave.ts, uCave) there is no sky: steep rock is a wall of dark columnar stone, the ground takes a
  * dim ambient and the warm light of the lanterns of the towns and of the nearest isolated buildings, and the far cave dissolves into darkness instead of the haze.
  */
 import { GROUND_LAMPS } from './cave';
-import { GROUND_SHAPE_GLSL } from './groundShapeTexture';
+import { GROUND_SHAPE_GLSL, ROAD_SQUEEZE_FIELD_GLSL } from './groundShapeTexture';
 import { LATTICE } from './patches';
 
 export const TERRAIN_VS = `#version 300 es
@@ -42,6 +44,8 @@ uniform vec4 uGrid;
 uniform sampler2D uHeights;
 ${GROUND_SHAPE_GLSL}
 out vec3 vUv; out vec3 vDrapeUv; out vec2 vSlope; out float vDistance; out vec3 vWorld;
+// Texture coordinates per metre of the ground tile and of the drape tile of the square.
+flat out vec2 vPerMetre;
 const float CELLS = ${LATTICE}.0;
 vec4 weights(float t) { float t2 = t * t, t3 = t2 * t, s = 1.0 - t; return vec4(s * s * s, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0; }
 vec4 slopes(float t) { float t2 = t * t, s = 1.0 - t; return vec4(-s * s, 3.0 * t2 - 4.0 * t, -3.0 * t2 + 2.0 * t + 1.0, t2) * 0.5; }
@@ -77,6 +81,7 @@ void main() {
   gl_Position = uProjection * vec4(position, 1.0);
   vUv = vec3(aTile.xy + lattice / CELLS * aTile.z, aSquare.w);
   vDrapeUv = vec3(aDrape.xy + lattice / CELLS * aDrape.z, aDrape.w);
+  vPerMetre = vec2(aTile.z, aDrape.z) / (CELLS * cell);
   vSlope = slope * uGrid.w;
   vDistance = length(position - uEye);
   vWorld = vec3(uTarget.xy + place, height * uGrid.w);
@@ -95,7 +100,11 @@ uniform vec3 uHaze;
 uniform vec4 uCave;
 // Lanterns of the towns and of the nearest isolated buildings: map x, y and radius (m).
 uniform vec4 uCaveLamps[${GROUND_LAMPS}]; uniform int uCaveLampCount;
+// Metres drawn per metre of height, in w.
+uniform vec4 uGrid;
+${ROAD_SQUEEZE_FIELD_GLSL}
 in vec3 vUv; in vec3 vDrapeUv; in vec2 vSlope; in float vDistance; in vec3 vWorld;
+flat in vec2 vPerMetre;
 out vec4 outColor;
 float caveHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float caveNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(caveHash(i), caveHash(i + vec2(1.0, 0.0)), f.x), mix(caveHash(i + vec2(0.0, 1.0)), caveHash(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -128,16 +137,19 @@ vec3 caveGround(vec3 rgb, vec3 normal) {
 void main() {
   // Ground seen at a low angle is squeezed along the screen's vertical, and a tile minified there shimmers: four
   // samples along that axis, spread by what the squeeze exceeds the other axis by. Unsqueezed, they are one sample.
-  vec2 along = dFdy(vUv.xy);
-  float squeeze = length(along) / max(length(dFdx(vUv.xy)), 1e-9);
+  vec2 push = vec2(0.0);
+  if (uSqueezeSide > 0) push = roadSqueeze(vWorld.xy, uGrid.w);
+  vec2 uv = vUv.xy + push * vPerMetre.x, drapeUv = vDrapeUv.xy + push * vPerMetre.y;
+  vec2 along = dFdy(uv);
+  float squeeze = length(along) / max(length(dFdx(uv)), 1e-9);
   float excess = max(0.0, 1.0 - 1.0 / max(squeeze, 1e-9));
   vec2 spread = along * excess;
-  vec3 rgb = 0.25 * (texture(uTiles, vec3(vUv.xy - 0.375 * spread, vUv.z)).rgb + texture(uTiles, vec3(vUv.xy - 0.125 * spread, vUv.z)).rgb + texture(uTiles, vec3(vUv.xy + 0.125 * spread, vUv.z)).rgb + texture(uTiles, vec3(vUv.xy + 0.375 * spread, vUv.z)).rgb);
+  vec3 rgb = 0.25 * (texture(uTiles, vec3(uv - 0.375 * spread, vUv.z)).rgb + texture(uTiles, vec3(uv - 0.125 * spread, vUv.z)).rgb + texture(uTiles, vec3(uv + 0.125 * spread, vUv.z)).rgb + texture(uTiles, vec3(uv + 0.375 * spread, vUv.z)).rgb);
   // The map drape over the ground, with the same four samples: its tile is of the same tiling, so its coordinates
   // are squeezed as the ground's. The level is explicit (the tiles have one) because the lookup is inside a branch.
-  vec2 drapeSpread = dFdy(vDrapeUv.xy) * excess;
+  vec2 drapeSpread = dFdy(drapeUv) * excess;
   if (vDrapeUv.z >= 0.0) {
-    vec4 drape = 0.25 * (textureLod(uDrape, vec3(vDrapeUv.xy - 0.375 * drapeSpread, vDrapeUv.z), 0.0) + textureLod(uDrape, vec3(vDrapeUv.xy - 0.125 * drapeSpread, vDrapeUv.z), 0.0) + textureLod(uDrape, vec3(vDrapeUv.xy + 0.125 * drapeSpread, vDrapeUv.z), 0.0) + textureLod(uDrape, vec3(vDrapeUv.xy + 0.375 * drapeSpread, vDrapeUv.z), 0.0));
+    vec4 drape = 0.25 * (textureLod(uDrape, vec3(drapeUv - 0.375 * drapeSpread, vDrapeUv.z), 0.0) + textureLod(uDrape, vec3(drapeUv - 0.125 * drapeSpread, vDrapeUv.z), 0.0) + textureLod(uDrape, vec3(drapeUv + 0.125 * drapeSpread, vDrapeUv.z), 0.0) + textureLod(uDrape, vec3(drapeUv + 0.375 * drapeSpread, vDrapeUv.z), 0.0));
     rgb = drape.rgb + rgb * (1.0 - drape.a);
   }
   vec3 normal = normalize(vec3(-vSlope, 1.0));

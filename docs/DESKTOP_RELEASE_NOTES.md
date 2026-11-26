@@ -169,7 +169,7 @@ The Apple Silicon DMG is signed ad hoc and distributed without Apple notarizatio
 - Bridges never cross or overlap. Gates seldom fold the wall into sharp corners. Hairpin bends are rounded.
 - In winter, cliffs and steep slopes keep snow patches on their ledges and in their gullies instead of standing bare, in 2D and 3D.
 - Snowy streets, country roads and squares now take the snow of the land they cross: no more white roads over bare slopes. Town ground is cleared and trodden into patches, never whiter than the land around the town.
-- Mountain roads climb cliffs in clean switchbacks: every turn is a single rounded hairpin, with no doubled or notched tip at a corner. In 3D they run on a smooth shelf cut into the slope at their true width instead of a band smeared down the face.
+- Mountain roads climb cliffs in clean switchbacks: every turn is a single tight hairpin at the tip of straight legs, with no doubled or notched tip at a corner. In 3D they keep their true width on the cliff instead of a band smeared down the face.
 
 ## Alpha 0.3.10
 

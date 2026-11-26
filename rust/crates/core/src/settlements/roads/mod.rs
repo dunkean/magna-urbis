@@ -1302,7 +1302,7 @@ fn curve_hairpins(f: &Fields, profile: &Profile, path: &[Point], width: f64, lim
     let unjogged = hairpins::unjog(path, |old, new| dry(new) && steepest(new) <= limit.max(legs(old)) + 0.005);
     let path = unjogged.as_deref().unwrap_or(path);
     let bowed = hairpins::bow(path, |q| f.height_at(q), |old, new| dry(new) && steepest(new) <= limit.max(steepest(old)) + 0.005);
-    hairpins::round(&bowed, width, &[], |_, new| dry(new)).unwrap_or(bowed)
+    hairpins::round_as(&bowed, width, &[], &hairpins::TIGHT, |_, new| dry(new)).unwrap_or(bowed)
 }
 /// Wet runs along the path ([`deck::spans`]).
 fn crossings(f: &Fields, path: &[Point], class: usize) -> Vec<Crossing> {

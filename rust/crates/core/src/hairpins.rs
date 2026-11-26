@@ -15,6 +15,19 @@ const TIP: f64 = 100.0;
 /// Widest radius (m), and the share of the bend's radius each leg gives to it: wished, and at least.
 const WIDEST: f64 = 14.0;
 const LEAD: (f64, f64) = (3.5, 2.6);
+
+/// The size of the bends [`round_as`] draws: radius per metre of width, between `least` and `widest` (m), and the
+/// share of the radius each leg gives to it (wished, at least).
+pub(crate) struct Bends {
+    per_width: f64,
+    least: f64,
+    widest: f64,
+    lead: (f64, f64),
+}
+/// Town streets: wide bends whose legs swing round to meet them, a U.
+pub(crate) const WIDE: Bends = Bends { per_width: 1.5, least: 9.0, widest: WIDEST, lead: LEAD };
+/// Roads on a mountain face: a tight bend at the tip of legs that keep their V, the look of a mountain switchback.
+pub(crate) const TIGHT: Bends = Bends { per_width: 1.1, least: 6.0, widest: 8.0, lead: (3.0, 2.4) };
 /// Angle (radians) of one piece of a bend.
 const ARC: f64 = 0.32;
 /// A straight run of a leg: largest deviation, shortest and longest length, piece and largest bow (m).
@@ -153,13 +166,17 @@ fn bend(path: &[Point], cum: &[f64], i: usize, r: f64, reach: f64) -> Option<Vec
 /// bend that replaces it. The path is kept as it is from each of `joints` (arc lengths where other ways meet it) on,
 /// save a joint on the tip itself, which stays on the bend. None when nothing changes.
 pub(crate) fn round(path: &[Point], width: f64, joints: &[f64], fits: impl Fn(&[Point], &[Point]) -> bool) -> Option<Vec<Point>> {
+    round_as(path, width, joints, &WIDE, fits)
+}
+/// [`round`] with bends of the size `bends`.
+pub(crate) fn round_as(path: &[Point], width: f64, joints: &[f64], bends: &Bends, fits: impl Fn(&[Point], &[Point]) -> bool) -> Option<Vec<Point>> {
     if path.len() < 3 {
         return None;
     }
     let cum = stations(path);
     let length = cum[cum.len() - 1];
     let found = tips(path, &cum);
-    let big = (1.5 * width).clamp(9.0, WIDEST);
+    let big = (bends.per_width * width).clamp(bends.least, bends.widest);
     let mut out: Vec<Point> = vec![];
     let mut from = 0.0;
     let mut changed = false;
@@ -177,8 +194,8 @@ pub(crate) fn round(path: &[Point], width: f64, joints: &[f64], fits: impl Fn(&[
         }
         let room = (s - low).min(high - s);
         let bent = [big, 0.8 * big, 0.65 * big, (0.5 * width + 2.0).max(5.0)].into_iter().find_map(|r| {
-            let reach = (LEAD.0 * r).min(room);
-            if reach < LEAD.1 * r {
+            let reach = (bends.lead.0 * r).min(room);
+            if reach < bends.lead.1 * r {
                 return None;
             }
             // The neck of a wide bend stays open: legs closer than their own width would draw a closed loop.
@@ -434,6 +451,18 @@ mod tests {
         assert!(round(&path, 7.0, &[], |_, _| false).is_none());
         // A plain corner is no tip.
         assert!(round(&points(&[(0.0, 0.0), (80.0, 0.0), (120.0, 60.0)]), 7.0, &[], |_, _| true).is_none());
+    }
+
+    #[test]
+    fn a_mountain_road_keeps_its_legs_and_a_tight_bend() {
+        let path = points(&[(0.0, 0.0), (50.0, 8.0), (100.0, 16.0), (50.0, 24.0), (0.0, 32.0)]);
+        let wide = round(&path, 6.0, &[], |_, _| true).expect("a wide bend");
+        let tight = round_as(&path, 6.0, &[], &TIGHT, |_, _| true).expect("a tight bend");
+        // The legs of a narrow V swing out to the bend over a short stretch: the curve stays wider than half the road.
+        assert!(tight.contains(&path[2]) && radius(&tight) >= 3.0, "{}", radius(&tight));
+        // The legs keep more of their line: the bend leaves them nearer the tip.
+        let leaves = |p: &[Point]| p.iter().filter(|q| !path.contains(q)).map(|q| q.x).fold(f64::INFINITY, f64::min);
+        assert!(radius(&tight) < radius(&wide) && leaves(&tight) > leaves(&wide) + 5.0, "{tight:?}");
     }
 
     #[test]

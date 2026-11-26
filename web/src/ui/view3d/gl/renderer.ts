@@ -202,7 +202,7 @@ export class GlTerrainRenderer {
     return mask;
   }
 
-  /** Patch vertex buffer (10 floats per vertex, see PatchMeshes); sets patch.vao and patch.vertices. */
+  /** Patch vertex buffer (14 floats per vertex, see PatchMeshes); sets patch.vao and patch.vertices. */
   uploadMesh(patch: Patch, values: Float32Array): void {
     const gl = this.gl;
     patch.vao = gl.createVertexArray()!;
@@ -211,15 +211,17 @@ export class GlTerrainRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, patch.vertices);
     gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 40, 0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 56, 0);
     gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 40, 12);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 56, 12);
     gl.enableVertexAttribArray(2);
-    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 40, 20);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 56, 20);
     gl.enableVertexAttribArray(3);
-    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 40, 28);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 56, 28);
     gl.enableVertexAttribArray(4);
-    gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 40, 32);
+    gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 56, 32);
+    gl.enableVertexAttribArray(6);
+    gl.vertexAttribPointer(6, 4, gl.FLOAT, false, 56, 40);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indices);
     gl.bindVertexArray(null);
   }

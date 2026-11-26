@@ -9,6 +9,7 @@ import type { HeightLayer } from '../../terrain/contract';
 import { UrbanBuildingGround } from '../../urbanBuildingGround';
 import { UrbanGroundCuts } from '../../urbanGroundCuts';
 import type { UrbanGroundShape } from '../../urbanGroundShape';
+import type { RoadSqueeze } from '../../../render/steepRoads';
 import { clamp } from './policy';
 import type { TerrainViewContext } from './context';
 import type { WaterSurface } from './contract';
@@ -80,6 +81,8 @@ export class TerrainSurface {
   heightSampler?: (x: number, y: number, metresPerPixel: number) => number;
   /** Hillside lots levelled into the ground (Advanced › "Level hillside lots"), when on and any lot slopes. */
   groundShape?: UrbanGroundShape;
+  /** Squeeze of the regional roads that cross steep slopes (render/steepRoads.ts), held by the vertices of the meshes. */
+  roadSqueeze?: RoadSqueeze;
   /** Building footings and town moats carved into the ground. */
   buildingGround = new UrbanBuildingGround();
   groundCuts = new UrbanGroundCuts();

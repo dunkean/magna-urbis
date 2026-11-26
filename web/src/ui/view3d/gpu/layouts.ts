@@ -32,13 +32,14 @@ export type TerrainTexture = (typeof TERRAIN_TEXTURES)[number];
 
 export const PATCH_BUFFERS: GPUVertexBufferLayout[] = [
   {
-    arrayStride: 40,
+    arrayStride: 56,
     attributes: [
       { shaderLocation: 0, offset: 0, format: 'float32x3' },
       { shaderLocation: 1, offset: 12, format: 'float32x2' },
       { shaderLocation: 2, offset: 20, format: 'float32x2' },
       { shaderLocation: 3, offset: 28, format: 'float32' },
       { shaderLocation: 4, offset: 32, format: 'float32x2' },
+      { shaderLocation: 6, offset: 40, format: 'float32x4' },
     ],
   },
   { arrayStride: 12, attributes: [{ shaderLocation: 5, offset: 0, format: 'float32x3' }] },

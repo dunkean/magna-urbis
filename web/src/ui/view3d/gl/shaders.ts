@@ -13,6 +13,13 @@ import { CITY_WATER_3D_GLSL } from '../../../../../rust/bridge/cityWater3d';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../../../rust/bridge/terrainMaterial3d';
 import { MATERIAL_WATER_GLSL, MOONLIGHT_GLSL } from '../../../render/materialLook';
 import { RAISED_MATERIAL_GLSL } from '../../terrain3dBillboards';
+import { ROAD_SQUEEZE_GLSL } from '../../../render/steepRoads';
+
+/** `pictureCoord()`: where a fragment reads the pictures of its tile. Across a road on a steep slope they are read
+ * squeezed (render/steepRoads.ts), so the road draped from above keeps its width; `squeezeField` is the field of the
+ * vertices, in metres, its slope as drawn. */
+const PICTURE_COORD_GLSL = `${ROAD_SQUEEZE_GLSL}
+vec2 pictureCoord(){return texcoord+squeezePush(squeezeField,1.)/patchRect.z;}`;
 
 const mapWaterGlsl = `
 uniform int uNaturalWater; uniform int uNight; uniform int displayWaterVisible; uniform float displayWaterBand;
@@ -56,10 +63,14 @@ in vec2 texcoord;
 in vec3 normal;
 in vec3 world;
 in vec3 physical;
+// Declared for its place among the inputs: the WGSL translation numbers them in order, as the outputs of the vertex shader.
+in vec2 physicalSlope;
+in vec4 squeezeField;
 uniform sampler2D material;
 uniform sampler2D previousMaterial;
 uniform vec4 textureRect;
 uniform vec4 previousRect;
+uniform vec3 patchRect;
 uniform float textureBlend;
 uniform vec3 eye;
 uniform float fogDistance;
@@ -67,8 +78,10 @@ uniform int showTileBounds;
 out vec4 color;
 ${mapWaterGlsl}
 ${RAISED_MATERIAL_GLSL}
+${PICTURE_COORD_GLSL}
 void main() {
-  vec3 base=mix(reliefPrevious(previousRect.xy+texcoord*previousRect.zw),reliefCurrent(textureRect.xy+texcoord*textureRect.zw),textureBlend).rgb;
+  vec2 picture=pictureCoord();
+  vec3 base=mix(reliefPrevious(previousRect.xy+picture*previousRect.zw),reliefCurrent(textureRect.xy+picture*textureRect.zw),textureBlend).rgb;
   base*=.89+.11*max(0.,dot(normalize(normal),normalize(vec3(-.4,.8,-.3))));
   base=naturalMapWater(base,physical,max(length(dFdx(physical)),length(dFdy(physical))));
   float fog=1.-exp(-pow(length(world-eye)/fogDistance,2.)*.11);
@@ -89,6 +102,8 @@ layout(location=2) in vec2 gradient;
 layout(location=3) in float parentHeight;
 layout(location=4) in vec2 parentGradient;
 layout(location=5) in vec3 seamCorrection;
+// Squeeze of the roads on steep slopes at the vertex (RoadSqueeze.at): metres, and the cross slope of the natural ground.
+layout(location=6) in vec4 roadSqueeze;
 uniform mat4 matrix;
 uniform float exaggeration;
 uniform float morph;
@@ -99,6 +114,7 @@ out vec3 normal;
 out vec3 world;
 out vec3 physical;
 out vec2 physicalSlope;
+out vec4 squeezeField;
 void main() {
   float height = mix(parentHeight, position.y, morph) + seamCorrection.x;
   vec2 slope = mix(parentGradient, gradient, morph) + seamCorrection.yz;
@@ -107,6 +123,7 @@ void main() {
   physical=vec3(position.x,height,position.z)+physicalOrigin;
   physicalSlope=slope;
   texcoord = uv;
+  squeezeField = vec4(roadSqueeze.xy, roadSqueeze.z * exaggeration, roadSqueeze.w);
   gl_Position = matrix * vec4(world, 1.);
 }`;
 
@@ -152,7 +169,9 @@ in vec3 normal;
 in vec3 world;
 in vec3 physical;
 in vec2 physicalSlope;
+in vec4 squeezeField;
 out vec4 color;
+${PICTURE_COORD_GLSL}
 ${mapWaterGlsl}
 ${RAISED_MATERIAL_GLSL}
 ${GROUND_COVER_WATER_GLSL}
@@ -178,7 +197,7 @@ float crownFootWater(vec2 p){return displayWaterVisible==0?0.:displayWaterCover(
 ${UNDERDARK_GLSL}
 ${CAVERN_3D_GLSL}
 vec4 groundTileSample(vec4 rect,bool previous,int slot){
-  vec2 uv=rect.xy+texcoord*rect.zw;
+  vec2 uv=rect.xy+pictureCoord()*rect.zw;
   if(slot<0){if(previous)return texture(previousSemanticTile,uv);return texture(semanticTile,uv);}
   vec2 size=previous?vec2(textureSize(previousSemanticTile,0)):vec2(textureSize(semanticTile,0));
   vec2 dx=dFdx(uv)*size,dy=dFdy(uv)*size;
@@ -237,7 +256,8 @@ float forestRootCell(){return macroRect.z/float(macroN);}
 ${CITY_WATER_3D_GLSL}
 
 void main() {
-  vec4 projected = mix(reliefPrevious(previousRect.xy+texcoord*previousRect.zw),reliefCurrent(textureRect.xy+texcoord*textureRect.zw),textureBlend);
+  vec2 picture=pictureCoord();
+  vec4 projected = mix(reliefPrevious(previousRect.xy+picture*previousRect.zw),reliefCurrent(textureRect.xy+picture*textureRect.zw),textureBlend);
   // Cartographic styles retain their projected lighting. Render3D instead
   // evaluates its world-space material here, then composites water and ink.
   vec3 base=projected.rgb;

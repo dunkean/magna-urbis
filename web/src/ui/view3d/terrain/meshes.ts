@@ -13,8 +13,11 @@ import type { Node, Patch, Terrain3dTile, TerrainResources } from './contract';
 import type { TerrainCameraRig } from './camera';
 import type { PatchTree } from './patchTree';
 
-/** One patch mesh, rebuilt then copied by the upload (10 floats per vertex, skirts included). */
-const meshValues = new Float32Array(((GRID + 1) * (GRID + 1) + 4 * (GRID + 1)) * 10);
+/** Floats of a vertex: position (3), texture coordinates (2), slope (2), height and slope of the parent (3), and the
+ * squeeze of the roads on steep slopes (4, render/steepRoads.ts). */
+const VERTEX = 14;
+/** One patch mesh, rebuilt then copied by the upload (skirts included). */
+const meshValues = new Float32Array(((GRID + 1) * (GRID + 1) + 4 * (GRID + 1)) * VERTEX);
 
 const parentValue = new Float64Array(3);
 
@@ -183,7 +186,9 @@ export class PatchMeshes {
       count = side * side;
     const heights = yield* this.grid(patch);
     const values = new Float32Array(meshValues.length),
-      field = new Float32Array(count * 6);
+      field = new Float32Array(count * 6),
+      squeeze = this.surface.roadSqueeze,
+      squeezed = new Float32Array(4);
     const step = tile.width / GRID,
       [level, ix, iy] = tile.key.split('/').map(Number);
     const parent = level ? this.tree.patch(level - 1, Math.floor(ix / 2), Math.floor(iy / 2)) : patch;
@@ -193,7 +198,7 @@ export class PatchMeshes {
     for (let y = 0; y < side; y++) {
       for (let x = 0; x < side; x++) {
         const i = y * side + x,
-          at = i * 10;
+          at = i * VERTEX;
         const x0 = Math.max(0, x - 1),
           x1 = Math.min(GRID, x + 1),
           y0 = Math.max(0, y - 1),
@@ -209,6 +214,7 @@ export class PatchMeshes {
         values[at + 7] = parentValue[0] - patch.heightOrigin;
         values[at + 8] = parentValue[1];
         values[at + 9] = parentValue[2];
+        if (squeeze?.at(tile.x + x * step, tile.y + y * step, squeezed)) values.set(squeezed, at + 10);
         const out = i * 6;
         field[out] = values[at + 1];
         field[out + 1] = values[at + 5];
@@ -221,9 +227,9 @@ export class PatchMeshes {
     }
     for (let edge = 0; edge < 4; edge++)
       for (let i = 0; i < side; i++) {
-        const from = gridEdgeVertex(edge, i) * 10,
-          to = (count + edge * side + i) * 10;
-        for (let k = 0; k < 10; k++) values[to + k] = values[from + k];
+        const from = gridEdgeVertex(edge, i) * VERTEX,
+          to = (count + edge * side + i) * VERTEX;
+        for (let k = 0; k < VERTEX; k++) values[to + k] = values[from + k];
         values[to + 1] -= skirt;
         values[to + 7] -= skirt;
       }

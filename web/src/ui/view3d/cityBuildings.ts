@@ -6,7 +6,8 @@ import { updateYardEnclosures } from '../../render/cityLotEnclosures';
 import { city3dLotEnclosures } from '../../render/city3dMeshes';
 import { city3dBuildings, city3dFarmBuildings, city3dFarmSources, city3dPadSteps, city3dStructures, city3dWithExtras } from '../../render/city3d/display';
 import { UrbanGroundCuts } from '../urbanGroundCuts';
-import { RoadLedges, UrbanGroundShape, blockOutlines, groundShapeLots } from '../urbanGroundShape';
+import { UrbanGroundShape, blockOutlines, groundShapeLots } from '../urbanGroundShape';
+import { RoadSqueeze } from '../../render/steepRoads';
 import { city3dStairs } from '../../render/city3dStairs';
 import { stairStreetColor, type StairPaintOptions } from '../../render/cityCanvas';
 import { roadGroundKey } from '../../render/roadStyle';
@@ -25,6 +26,8 @@ function stairPaintOptions(cityContext: City3dContext): StairPaintOptions {
     ? { palette: 'terrain', roadLook: 'natural', groundBlend: true, materialGround: true, roadEmphasis: plan?.roadEmphasis }
     : { palette: plan?.palette ?? 'terrain', roadLook: plan?.roadLook, roadEmphasis: plan?.roadEmphasis, streetPalette: plan?.streetPalette, colors: plan?.colors, groundBlend: plan?.groundBlend ?? false, night: plan?.night, appearance: plan?.appearance };
 }
+/** How far from a steep road the vertices of the terrain still hold the vector to it (m): the cells of a far tile. */
+const SQUEEZE_PAD_M = 64;
 // ------------------------------------------------------------ buildings
 export function syncBuildings(cityContext: City3dContext, force = false): void {
   const t = cityContext.terrain;
@@ -52,7 +55,19 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
   const cut = !cityContext.options.getGroundSettings?.(cityContext.ground)?.underdark,
     shaped = !flat && cut && !(scene && 'projection' in scene),
     partitions = shaped ? cityContext.options.getPartitions?.() : undefined,
-    nextShape = [partitions, shaped && scene, shaped && farmsteads, shaped && placeholders, shaped && cityContext.groundShaping, layouts, shaped && cityContext.surfaceDecor, shaped && cityContext.options.getSurface?.()?.height.data, t, shaped && regional];
+    nextShape = [
+      partitions,
+      shaped && scene,
+      shaped && farmsteads,
+      shaped && placeholders,
+      shaped && cityContext.groundShaping,
+      layouts,
+      shaped && cityContext.surfaceDecor,
+      shaped && cityContext.options.getSurface?.()?.height.data,
+      t,
+      !flat && regional,
+      !flat && cityContext.options.getSurface?.()?.height.data,
+    ];
   if (nextShape.some((input, i) => input !== cityContext.groundShapeInputs[i])) {
     cityContext.groundShapeInputs = nextShape;
     const started = performance.now(),
@@ -61,11 +76,13 @@ export function syncBuildings(cityContext: City3dContext, force = false): void {
     const steps = city3dPadSteps(shaped ? [...((scene as PlacementBatch | undefined)?.buildings ?? []), ...city3dFarmSources(farmsteads, placeholders, ground.at)] : [], ground, cityContext.stiltWaterAt);
     let pads = steps.next();
     while (!pads.done) pads = steps.next();
-    // The regional roads are cut into the steep slopes they cross, as on the tilted map (worldVolumes.ts).
-    const lots = groundShapeLots(partitions ?? [], pads.value, cityContext.groundShaping),
-      roads = shaped && cityContext.groundShaping ? (regional ?? []).filter(road => road.role === 'regional') : [],
-      shape = new UrbanGroundShape(lots, ground.at, roads.length ? new RoadLedges(roads, ground.at, lots) : undefined);
+    const shape = new UrbanGroundShape(groundShapeLots(partitions ?? [], pads.value, cityContext.groundShaping), ground.at);
     t.setGroundShape(shape.empty ? undefined : shape);
+    // The regional roads keep their width where they cross steep slopes, as on the tilted map (v2/display/worldVolumes.ts):
+    // the terrain reads its pictures squeezed across them. The vertices hold the field, far ones included.
+    const steep = flat ? [] : (regional ?? []).filter(road => road.role === 'regional'),
+      squeeze = steep.length ? new RoadSqueeze(steep, ground.at, undefined, SQUEEZE_PAD_M) : undefined;
+    t.setRoadSqueeze(squeeze?.empty ? undefined : squeeze);
     cityContext.groundShapeStats = { lots: shape.size, ms: Math.round(performance.now() - started) };
     if (cityContext.surfaceDecor) cityContext.seatSamplers(cityContext.surfaceDecor);
     force = true;

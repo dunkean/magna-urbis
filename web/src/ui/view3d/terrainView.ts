@@ -14,6 +14,7 @@ import type { Building3dVisual, Building3dScene } from '../../render/urbanBuildi
 import { UrbanBuildingPass } from '../urbanBuilding3d';
 import type { UrbanGroundCuts } from '../urbanGroundCuts';
 import type { UrbanGroundShape } from '../urbanGroundShape';
+import type { RoadSqueeze } from '../../render/steepRoads';
 import type { Terrain3dBillboard, Terrain3dBillboards } from '../terrain3dBillboards';
 import { TerrainViewContext } from './terrain/context';
 import type { FrameGeometry, Patch, PatchDraw, Terrain3dCamera, Terrain3dForestSettings, Terrain3dGroundSettings, Terrain3dLookSettings, Terrain3dOptions, Terrain3dStatus, Terrain3dTile, Terrain3dTileContent, TerrainResources, WaterSurface } from './terrain/contract';
@@ -252,6 +253,15 @@ export class Terrain3d {
     this.context.request();
   }
 
+  /** Squeeze of the regional roads on steep slopes (render/steepRoads.ts), undefined when none is steep: built once per
+   * roads and relief by the 3D view on `naturalGroundAt`; a new one rebuilds the meshes, whose vertices hold it. */
+  setRoadSqueeze(squeeze: RoadSqueeze | undefined): void {
+    if (squeeze === this.parts.surface.roadSqueeze) return;
+    this.parts.surface.roadSqueeze = squeeze;
+    this.clearPatches();
+    this.context.request();
+  }
+
   /** Presentation consumes the same immutable native scene as the map. */
   setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
     const { buildings, billboards, forest } = this.parts;
@@ -467,6 +477,7 @@ export class Terrain3d {
     target.setHeightSampler(surface.heightSampler);
     target.setGroundCuts(surface.groundCuts);
     target.setGroundShape(surface.groundShape);
+    target.setRoadSqueeze(surface.roadSqueeze);
     target.setTileBoundaries(context.tileBounds);
     target.setBuildings(buildings.scene, buildings.appearance, buildings.visible);
     const replaced = buildings.pass.replacedBuildings();
@@ -512,6 +523,7 @@ export class Terrain3d {
     surface.water = undefined;
     surface.heightSampler = undefined;
     surface.groundShape = undefined;
+    surface.roadSqueeze = undefined;
     tiles.loader = undefined;
     this.navigation.forgetPointers();
     billboards.source = undefined;
