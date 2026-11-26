@@ -990,6 +990,28 @@ pub(crate) fn urban_natural_ground(input: &Input) -> Vec<Region> {
     .collect()
 }
 
+/// Clip vector ground using polygon inputs. This operation has no raster planes.
+pub(crate) fn dry_ground(v: &Value) -> Vec<Region> {
+    if ["source", "protection", "water"].iter().any(|&key| invalid_coordinates(&v[key])) {
+        return vec![];
+    }
+    let source = regions(&v["source"]);
+    let protection = regions(&v["protection"]);
+    let water = regions(&v["water"]);
+    if source.is_empty() || !valid(&source) || !valid(&protection) || !valid(&water) {
+        return vec![];
+    }
+    let boxes: Vec<_> = source.iter().map(|r| bbox(&r.outer)).collect();
+    let near = |a: Vec<Region>| {
+        a.into_iter()
+            .filter(|r| boxes.iter().any(|b| b.meets(bbox(&r.outer))))
+            .collect::<Vec<_>>()
+    };
+    let protect = bo::union_many(&near(protection));
+    let ground = bo::safe(&bo::union_many(&source), &protect, Op::Difference);
+    bo::safe(&ground, &bo::union_many(&near(water)), Op::Difference)
+}
+
 pub(crate) fn operation(input: &Input, v: &Value) -> Result<Vec<Region>, String> {
     if ["urban", "owner", "source", "protection", "water"]
         .iter()
@@ -1017,23 +1039,6 @@ pub(crate) fn operation(input: &Input, v: &Value) -> Result<Vec<Region>, String>
                 v["footprint"].is_array().then(|| poly(&v["footprint"])),
                 v["owner"].is_object().then_some(&v["owner"]),
             )
-        }
-        "dry-ground" => {
-            let source = regions(&v["source"]);
-            let protection = regions(&v["protection"]);
-            let water = regions(&v["water"]);
-            if source.is_empty() || !valid(&source) || !valid(&protection) || !valid(&water) {
-                return Ok(vec![]);
-            }
-            let boxes: Vec<_> = source.iter().map(|r| bbox(&r.outer)).collect();
-            let near = |a: Vec<Region>| {
-                a.into_iter()
-                    .filter(|r| boxes.iter().any(|b| b.meets(bbox(&r.outer))))
-                    .collect::<Vec<_>>()
-            };
-            let protect = bo::union_many(&near(protection));
-            let ground = bo::safe(&bo::union_many(&source), &protect, Op::Difference);
-            bo::safe(&ground, &bo::union_many(&near(water)), Op::Difference)
         }
         _ => vec![],
     })

@@ -379,6 +379,23 @@ fn overlay_sanitizes_degenerate_rings_and_keeps_horticulture_seed() {
 }
 
 #[test]
+fn dry_ground_wire_clips_water_polygons_and_protected_land() {
+    let strip = |left: i32, right: i32| serde_json::json!({
+        "outer": [{"x":left,"y":0},{"x":right,"y":0},{"x":right,"y":10},{"x":left,"y":10}],
+        "holes": []
+    });
+    let header = serde_json::json!({
+        "operation": "dry-ground", "seed":"", "w":2, "h":2, "cell":8,
+        "source":[strip(0,10)], "protection":[strip(0,1)], "water":[strip(6,12)]
+    });
+    let reply = wire::execute(&header.to_string(), &[]).unwrap();
+    let clipped = regions(&wire::decode_reply(&reply).unwrap());
+    assert_eq!(clipped.len(), 1);
+    assert!((region_area(&clipped[0]) - 50.0).abs() < 1e-6);
+    assert!(clipped[0].outer.iter().all(|p| (1.0..=6.0).contains(&p.x)));
+}
+
+#[test]
 fn numeric_planes_and_bad_river_widths_return_errors() {
     let bytes: Vec<_> = [1.0_f64 / 3.0, 2.5]
         .iter()

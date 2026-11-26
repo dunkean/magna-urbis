@@ -11,6 +11,10 @@ pub fn execute(header: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut lap = super::timing::Lap::new("landuse");
     let mut v = decode_header(header, bytes)?;
     lap.lap("decode");
+    // Dry-ground water is a list of polygons, while Input::water holds raster bytes.
+    if s(&v["operation"]) == "dry-ground" {
+        return encode(&ground::dry_ground(&v));
+    }
     // Move the large trees into Input instead of cloning and deserializing them twice.
     let geometry = v["geometry"].take();
     let options = v["options"].take();
@@ -83,7 +87,7 @@ pub fn execute(header: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
         "landscape" => encode(&urban_landscape_ground(&input, yes(&v["appearance"]))),
         "natural-ground" => encode(&ground::urban_natural_ground(&input)),
         "cover-ground" => encode(&landscape_cover_ground(&input, &regions(&v["ground"]))),
-        "water-ground" | "protected-ground" | "layer-ground" | "dry-ground" => {
+        "water-ground" | "protected-ground" | "layer-ground" => {
             encode(&ground::operation(&input, &v)?)
         }
         _ => return Err("Unknown landuse operation".into()),
