@@ -1,35 +1,43 @@
 # Documentation
 
-Start with the [project README](../README.md), the illustrated atlas [How it works?](https://magna-urbis.org/scientific/index.html) (sources in [scientific/](scientific/README.md)) and the [architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html). These are the entry points for the V2 pipeline and its current cultures; dated studies below retain earlier implementation details and proposals.
+New here? Start with **[Getting started](GETTING_STARTED.md)** and the **[FAQ](FAQ.md)**, then the [project README](../README.md), the illustrated atlas **[How it works?](https://magna-urbis.org/scientific/index.html)** (sources in [scientific/](scientific/README.md)) and the **[architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html)**. Questions are welcome on [Discord](https://discord.gg/3yFq8t8Q2W) and in [Discussions](https://github.com/dunkean/magna-urbis/discussions).
 
-## Development and usage
+## Using Magna Urbis
 
-- [Repository map and component status](REPOSITORY_LAYOUT.md): maintained applications, developer tools, optional modules and experiments.
+- [Map styles, layers, diagnostics and masks](RENDERING.md) ([FR](RENDERING_FR.md)) and [sharing recipes](MAP_RECIPES.md).
+- [Importing an Azgaar FMG burg](AZGAAR_IMPORT.md) and the [city iframe preview / embed](AZGAAR_EMBED.md).
+- [Underdark](UNDERDARK.md) ([FR](UNDERDARK_FR.md)).
+- [Fantasy cartography layers](FANTASY_CARTOGRAPHY.md).
+- [Desktop release notes](DESKTOP_RELEASE_NOTES.md).
+- [V2 workshop guide](V2_WORKSHOP.md) ([FR](V2_ATELIER_FR.md)), [map appearance settings](render-settings.md) ([FR](render-settings_FR.md)), [urban editing contract](URBAN_EDITING.md) ([FR](URBAN_EDITING_FR.md)).
+
+## Contributing
+
 - [Contribution guide](../CONTRIBUTING.md): setup, checks and documentation policy.
-- [V2 desktop and web setup](../rust/desktop-v2/README.md).
-- [Web publication and custom domains](WEB_PUBLICATION_FR.md).
-- [Repeatable desktop releases with GitHub Actions](DESKTOP_RELEASE.md).
-- [Rust engine](../rust/README.md) and [workshop workflow](RUST_BENCH_PIPELINE.md).
-- [Generation and rendering methods](methods/README.md).
-- [Stage registry contract](stage-registry-contract.md).
-- [Rendering styles and layers](RENDERING.md), [render settings](render-settings.md) and [sharing recipes](MAP_RECIPES.md).
+- [Repository map and component status](REPOSITORY_LAYOUT.md).
+- [V2 desktop and web setup](../rust/desktop-v2/README.md), the [Rust engine](../rust/README.md) and the [workshop workflow](RUST_BENCH_PIPELINE.md).
+- [Generation and rendering methods](methods/README.md) and the [stage registry contract](stage-registry-contract.md).
+- Releases: [desktop releases with GitHub Actions](DESKTOP_RELEASE.md), [web publication](WEB_PUBLICATION.md) ([FR](WEB_PUBLICATION_FR.md)), [preparing a desktop release](V2_RELEASE.md) ([FR](V2_RELEASE_FR.md)).
 
-## Architecture, designs and sources
+## Cultures, buildings and names
 
-- [Interface design specifications](design/README.md).
-- [Surface rendering design](RENDER_SURFACE_DESIGN.md) and [render layers](SURFACE_RENDER_LAYERS.md).
-- [Ground materials](GROUND_MATERIAL_MAPPING.md) and [ground texture mapping](GROUND_TEXTURE_MAPPING_V1.md).
-- [Urban cultures](CITY_CULTURES.md), [settlement variation](CITY_VARIATION_VARIABLES.md) and [settlement catalog](catalogue_settlements_antiquite_moyen_age_rpg.md).
-- [Architectural sources](sources/) and [model documentation](models-release/README.md).
-- [Toponym cultural sources](NAMEBENCH_CULTURAL_SOURCES.md) and [grammar sources](NAMEBENCH_GRAMMAR_SOURCES.md).
+- [Urban cultures](CITY_CULTURES.md), [world atlas of settlement morphologies](styles_architecturaux_mondiaux_city_mapper.md), [settlement catalogue, Antiquity to the Middle Ages](catalogue_settlements_antiquite_moyen_age_rpg.md), [modern cities review](Modern_cities_review.md).
+- [Settlement variation variables](CITY_VARIATION_VARIABLES.md), [building forms](BUILDING_FORMS.md) ([FR](BUILDING_FORMS_FR.md)), [building texture library](BUILDING_TEXTURE_LIBRARY.md), [architectural sources](sources/).
+- [Place-name cultural sources](NAMEBENCH_CULTURAL_SOURCES.md), [grammar sources](NAMEBENCH_GRAMMAR_SOURCES.md), [Namebench integration](NAMEBENCH_TOPONYMS.md) ([FR](NAMEBENCH_TOPONYMS_FR.md)).
+- [Cultures, environments and place names](CULTURE_ENVIRONMENTS.md), [named, inhabited and historical regions](INHABITED_REGIONS_DESIGN.md), [regional population](REGIONAL_POPULATION.md), [resource tile refinement](RESOURCE_TILE_REFINEMENT.md), [Neural Earth resource methods](RESOURCES_NEURAL_EARTH_TRANSFER.md). French originals keep the `_FR` suffix.
 
-## Historical studies and reference snapshots
+## Design and engine notes
 
-- [Technical and scientific overview, October 14](TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md): method foundations and the architecture before V2 integration; source links follow the current crate layout.
-- [Urban redesign study, October 13](REFONTE_GENERATION_URBAINE_2026-10-13.md): complete English version in three parts, followed by an [implementation report](REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md).
-- [City generation scaling review, November 14](CITY_GENERATION_SCALING_2026-11-14.md) and [growth-until-housed proposal, November 15](GROW_UNTIL_HOUSED_2026-11-15.md): measured optimisation work and a remaining design proposal, rather than current performance promises.
-- [Earlier 79-culture architectural reference](CATALOGUE_ARCHITECTURE_FR.md): historical French recipe descriptions, with links to the maintained 115-culture catalogue.
+- [Design specifications](design/README.md): interface, town engine 2, street graph, planner stability, render composition, terrain controls.
+- [Surface and ground rendering](surface/): surface world design, render layers, ground materials, canopy, geology, vegetation and water notes. See also [ground material mapping](GROUND_MATERIAL_MAPPING.md) and the [texture generation review](RENDER_REVIEW.md).
+- [Neural relief models](models-release/README.md).
+- [Technical and scientific overview, October 14](TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md): method foundations before V2 integration.
+- [Devlogs](devlog/kofi-devlogs.md).
 
-English is the preferred language for maintained documentation. French-only reference documents remain where there is no complete English equivalent, including the [V2 usage guide](V2_ATELIER_FR.md), [Namebench integration](NAMEBENCH_TOPONYMS_FR.md) and [inhabited-region design](DESIGN_REGIONS_HABITEES_FR.md). The illustrated atlas retains its bilingual publication assets.
+## Archive
 
-Dated studies and proposals describe their stated scope and date, rather than guaranteeing current implementation. AI instructions, session notes, reviews, diagnostic captures and validation campaigns are local working material, excluded from Git. Published illustrations, attribution, scientific references, reproducible fixtures and their required metadata remain versioned with the documentation or code that uses them.
+The [archive](archive/README.md) keeps dated studies, audits and release verification records: the October urban redesign study, scaling and road audits, parity reports, relief and river studies, and desktop/web qualification campaigns. They describe their stated date and scope, not the current implementation.
+
+---
+
+English is the reference language for maintained documentation. French originals are kept next to their English translation with the `_FR` suffix. AI instructions, session notes, reviews, diagnostic captures and validation campaigns are local working material and stay out of Git. Published illustrations, attribution, scientific references, reproducible fixtures and their required metadata remain versioned with the documentation or code that uses them.

@@ -16,10 +16,10 @@ The documents have complementary roles:
 
 | Document | Contribution retained |
 | --- | --- |
-| [MATERIALS_REVIEW.md](MATERIALS_REVIEW.md), §§1–5 | Catalog of appearances, variants, contexts, and patterns to cover |
-| [RENDER_SURFACE_DESIGN.md](RENDER_SURFACE_DESIGN.md), §§5 and 7 | Relationships among forms, substrate, deposits, water, soil, and recipes; context/rendering separation |
+| [MATERIALS_REVIEW.md](archive/studies/MATERIALS_REVIEW.md), §§1–5 | Catalog of appearances, variants, contexts, and patterns to cover |
+| [RENDER_SURFACE_DESIGN.md](surface/RENDER_SURFACE_DESIGN.md), §§5 and 7 | Relationships among forms, substrate, deposits, water, soil, and recipes; context/rendering separation |
 | [RENDER_REVIEW.md](RENDER_REVIEW.md), §§3 and 7–9 | Probabilistic `{weight, orientation, scale}` composition, component arrangement, material-specific techniques, and zoom stability |
-| [SURFACE_RENDER_LAYERS.md](SURFACE_RENDER_LAYERS.md) | Physical separation between support, low cover, and trees; litter distinct from humus |
+| [SURFACE_RENDER_LAYERS.md](surface/SURFACE_RENDER_LAYERS.md) | Physical separation between support, low cover, and trees; litter distinct from humus |
 
 Input state is that of the [Test-Render compiler](../godot-render/tools/surface_context.py) and its [tile contract](surface/TILE_VIEWER.md), originally examined in worktree `magna-urbis-render-godot-original`. These links point to their repository locations, not to that local worktree. The study's `ground.version=2` schema must not be confused with SurfaceWorld contracts.
 

@@ -1,191 +1,134 @@
-# Magna Urbis V2 · web et application installable
+# Magna Urbis V2 · web and installable app
 
 **Desktop alpha 0.3 and newer:** the [maintained desktop release guide](../../docs/DESKTOP_RELEASE.md)
 documents the included native neural service, verified model downloads and repeatable GitHub Actions releases.
 The Python/CUDA instructions below describe separate optional modules.
 
-Cette application Tauri est indépendante du lanceur V1 dans `rust/desktop`.
-Elle ouvre la nouvelle interface V2 et démarre son moteur Rust natif sur un port
-loopback libre. Son identifiant d’application et sa distribution sont distincts.
+This Tauri application is independent of the V1 launcher in `rust/desktop`.
+It opens the new V2 interface and starts its native Rust engine on a free
+loopback port. Its application identifier and its distribution are distinct.
 
-La [préparation de la release desktop](../../docs/V2_RELEASE_FR.md) précise le
-périmètre Windows/Linux, les installations IA facultatives et la diffusion des
-poids originaux et distillés sur Hugging Face. Cette préparation reste évolutive
-pendant le chantier V2 et ne fige pas les interfaces des moteurs.
+The [desktop release preparation](../../docs/V2_RELEASE.md) specifies the
+Windows/Linux scope, the optional AI installations and the distribution of the
+original and distilled weights on Hugging Face. This preparation remains open to
+change during the V2 project and does not freeze the engine interfaces.
 
-## Utiliser la version Windows
+## Using the Windows version
 
-Deux formats x64 sont prévus : l'installateur NSIS `.exe`, ou une archive
-portable `.zip`. Pour l'archive, extraire **tout son contenu** dans un dossier,
-puis lancer `magna-urbis-v2-desktop.exe` depuis ce dossier. Conserver les fichiers
-et le dossier `resources` ensemble ; ne pas lancer le programme directement
-depuis l'aperçu du ZIP. Le ZIP évite l'installation, mais les réglages,
-environnements et caches restent dans les dossiers utilisateur Windows
-(`%LOCALAPPDATA%\MagnaUrbis`), partagés avec la version installée ; ils ne sont
-pas automatiquement conservés sur une clé USB. Windows et le runtime WebView2
-sont nécessaires. Les paquets sont non signés et Windows peut afficher un
-avertissement.
+Two x64 formats are provided: the NSIS `.exe` installer, or a portable
+`.zip` archive. For the archive, extract **all of its contents** into a folder,
+then launch `magna-urbis-v2-desktop.exe` from that folder. Keep the files
+and the `resources` folder together; do not launch the program directly
+from the ZIP preview. The ZIP avoids installation, but settings, environments and
+caches remain in the Windows user folders (`%LOCALAPPDATA%\MagnaUrbis`), shared
+with the installed version; they are not automatically kept on a USB key.
+Windows and the WebView2 runtime are required. The packages are unsigned and
+Windows may display a warning.
 
-Le moteur procédural est inclus ; Python, CUDA, les poids neuronaux et les
-dépendances d'illustration sont facultatifs et ne sont pas inclus. Ils peuvent
-être configurés ou installés séparément depuis les réglages. Consulter les
-sommes SHA-256 fournies avec chaque distribution.
+The procedural engine is included; Python, CUDA, the neural weights and the
+illustration dependencies are optional and are not included. They can be
+configured or installed separately from the settings. Check the SHA-256
+checksums provided with each distribution.
 
-Depuis `web/` :
+From `web/`:
 
 ```sh
 npm ci
-npm run prepare:v2                  # Terrain + maisons Rust/WASM release
-node scripts/v2.mjs dev             # Web complet, http://127.0.0.1:5174/v2.html
-node scripts/v2.mjs build           # Distribution statique dans web/dist-v2
-node scripts/v2.mjs local           # Web V2 + Rust natif + Python optionnel
-npm run app:v2:dev                  # Application de bureau en développement
-npm run app:v2:build                # Application et installateur pour cet OS
+npm run prepare:v2                  # Terrain + houses Rust/WASM release
+node scripts/v2.mjs dev             # Full web, http://127.0.0.1:5174/v2.html
+node scripts/v2.mjs build           # Static distribution in web/dist-v2
+node scripts/v2.mjs local           # Web V2 + native Rust + optional Python
+npm run app:v2:dev                  # Desktop application in development
+npm run app:v2:build                # Application and installer for this OS
 ```
 
-Les noms npm sont définis dans `web/package.json`. `--no-build` réutilise le binaire
-Rust release existant; `--no-neural` ignore Python pour le lanceur navigateur.
-Les services déjà ouverts sont réutilisés sans être arrêtés par le lanceur.
+The npm names are defined in `web/package.json`. `--no-build` reuses the existing
+Rust release binary; `--no-neural` ignores Python for the browser launcher.
+Services that are already open are reused without being stopped by the launcher.
 
-## Mises à jour de l’application
+## Application updates
 
-Au démarrage, la version desktop vérifie les releases publiques GitHub de
-`dunkean/magna-urbis`, y compris les préversions portant un tag `desktop-vX.Y.Z`.
-Si une version supérieure possède un installeur pour la plateforme courante,
-un lien **Télécharger l’installeur** apparaît dans l’en-tête et dans
-**Réglages & moteurs → Mises à jour de l’application**. Ce panneau indique aussi
-la version installée et permet de relancer la vérification. Hors connexion ou
-si GitHub est indisponible, l’application reste utilisable.
+At startup, the desktop version checks the public GitHub releases of
+`dunkean/magna-urbis`, including pre-releases tagged `desktop-vX.Y.Z`.
+If a higher version has an installer for the current platform,
+a **Download installer** link appears in the header and in
+**Settings & engines → Application updates**. This panel also shows the
+installed version and lets you rerun the check. When offline or
+if GitHub is unavailable, the application remains usable.
 
-Le lien ouvre le téléchargement dans le navigateur système. Fermer Magna Urbis,
-puis lancer le nouvel installeur : il remplace l’installation existante.
-Windows utilise le `.exe` NSIS ; Linux propose le `.deb` ou, à défaut, l’AppImage.
-Une AppImage téléchargée doit remplacer manuellement l’ancienne. Le ZIP portable
-reste disponible dans les releases ; le lien de mise à jour propose l’installeur.
-Aucun contrôle de compatibilité des projets, moteurs ou modules, ni migration
-des données n’est effectué. Les données utilisateur restent dans leur dossier
-existant. L’édition web n’effectue pas cette vérification.
+The link opens the download in the system browser. Close Magna Urbis,
+then launch the new installer: it replaces the existing installation.
+Windows uses the NSIS `.exe`; Linux offers the `.deb` or, failing that, the AppImage.
+A downloaded AppImage must manually replace the old one. The portable ZIP
+remains available in the releases; the update link offers the installer.
+No compatibility check of projects, engines or modules, nor any data migration,
+is performed. User data remains in its existing folder. The web edition does not
+perform this check.
 
-Pour diffuser une mise à jour, aligner les versions de `Cargo.toml` et
-`tauri.conf.json`, puis publier le tag `desktop-v<version>` via le workflow
-desktop existant. La release publiée avec ses installeurs suffit ; aucun
-manifeste de mise à jour ni signature d’updater n’est nécessaire.
+To distribute an update, align the versions in `Cargo.toml` and
+`tauri.conf.json`, then publish the `desktop-v<version>` tag via the existing
+desktop workflow. The published release with its installers is sufficient; no
+update manifest or updater signature is needed.
 
-Contrôles ciblés depuis `web/` :
+Targeted checks from `web/`:
 
 ```sh
 npx vitest run tests/v2DesktopUpdates.test.ts tests/v2Platform.test.ts
 node scripts/v2_updates_check.mjs
 ```
 
-Le second contrôle utilise Edge headless et des releases simulées, sans télécharger
-ni lancer d’installeur. Pour vérifier les commandes natives, depuis `rust/` :
+The second check uses Edge headless and simulated releases, without downloading
+or launching any installer. To verify the native commands, from `rust/`:
 `cargo test --manifest-path desktop-v2/Cargo.toml updates::tests`.
 
-## Préparer un checkout neuf
+## Preparing a fresh checkout
 
-`rust/pkg` est volontairement ignoré par Git. Installer Node/npm, Rust/rustup
-et `wasm-pack` (`cargo install wasm-pack --locked`), puis exécuter `npm ci` et
-`npm run prepare:v2` depuis `web/`. La toolchain et la cible WASM sont définies
-dans `rust/rust-toolchain.toml`; rustup les installe à la première compilation.
-La préparation compile **uniquement** le terrain et les maisons en release,
-sans reconstruire ni déplacer l’interface ou les bancs V1. `build:v2` explique
-la commande de préparation si un package WASM manque.
+`rust/pkg` is deliberately ignored by Git. Install Node/npm, Rust/rustup
+and `wasm-pack` (`cargo install wasm-pack --locked`), then run `npm ci` and
+`npm run prepare:v2` from `web/`. The toolchain and the WASM target are defined
+in `rust/rust-toolchain.toml`; rustup installs them on the first build.
+The preparation compiles **only** the terrain and the houses in release mode,
+without rebuilding or moving the V1 interface or benches. `build:v2` explains
+the preparation command if a WASM package is missing.
 
-Le terrain Python utilise aussi un petit module WASM de conditionnement CPU.
-Les commandes desktop le compilent automatiquement si `../infinite_map` contient
-`native/neural-earth` et `tools/wasm`. On peut aussi le préparer explicitement
-avec `node scripts/neural_wasm.mjs --conditioning-only` depuis `web/` : aucun
-poids navigateur n’est nécessaire. Le workflow de release récupère ces sources
-à la révision `20fd8543b50da1d6ae839c01e0230cb8ee59ee8a`.
+The Python terrain also uses a small WASM module for CPU conditioning.
+The desktop commands compile it automatically if `../infinite_map` contains
+`native/neural-earth` and `tools/wasm`. It can also be prepared explicitly
+with `node scripts/neural_wasm.mjs --conditioning-only` from `web/`: no browser
+weights are needed. The release workflow fetches these sources
+at revision `20fd8543b50da1d6ae839c01e0230cb8ee59ee8a`.
 
-Le relief neuronal du navigateur reste facultatif. Pour l’embarquer :
+The browser neural terrain remains optional. To embed it:
 
 ```sh
 npm run prepare:v2 -- --neural
 npm run build:v2
 ```
 
-Le préparateur neuronal existant attend le checkout `../infinite_map` à côté
-de ce dépôt, avec `native/neural-earth`, `terrain-diffusion` et les sous-modules
-initialisés, ainsi que ses dépendances et accès aux poids Terrain Diffusion.
-Il construit le runtime et copie les modèles dans `rust/pkg/neural-web`.
-Ces modèles externes ne sont pas nécessaires à l’application procédurale.
-Le neuronal Python utilise un environnement séparé, décrit plus bas; les
-deux préparations ne se substituent pas l’une à l’autre.
+The existing neural preparer expects the `../infinite_map` checkout next to
+this repository, with `native/neural-earth`, `terrain-diffusion` and the initialised submodules,
+along with its dependencies and access to the Terrain Diffusion weights.
+It builds the runtime and copies the models into `rust/pkg/neural-web`.
+These external models are not needed for the procedural application.
+The Python neural code uses a separate environment, described below; the
+two preparations do not replace each other.
+## Web Distribution
 
-## Distribution Web
+Publish **the contents of `web/dist-v2`** at the root of https://magna-urbis.org/. It keeps the relative links, workers, WASM binaries and the scientific documentation under `scientific/`. `index.html` and `v2.html` open the same application. No local API is contacted in the Web profile.
 
-Publier **le contenu de `web/dist-v2`** à la racine de https://magna-urbis.org/
-conserve les liens relatifs, les workers, les binaires WASM et la
-documentation scientifique sous `scientific/`. `index.html` et `v2.html` ouvrent
-la même application. Aucune API locale n’est contactée en profil Web.
+`web/dist-v2` is the static artifact ready to host. V1 is published separately at https://v1.magna-urbis.org/; see the [publication guide](../../docs/WEB_PUBLICATION.md). Building does not publish anything. The check `node scripts/v2_static_check.mjs` serves exactly this artifact under `/magna-urbis/v2/` and verifies the workers, a real generation, and the illustrated documentation resources.
 
-`web/dist-v2` constitue l’artifact statique prêt à héberger. La V1 est publiée
-séparément sur https://v1.magna-urbis.org/ ; voir le
-[guide de publication](../../docs/WEB_PUBLICATION_FR.md).
-La construction ne publie rien. Le contrôle `node scripts/v2_static_check.mjs`
-sert exactement cet artifact sous `/magna-urbis/v2/` et vérifie les workers,
-une génération réelle et les ressources illustrées de la documentation.
+The CPU remains available without a GPU. WebGPU is only offered after a device has been successfully created; the engine reports the backend it actually uses. A forced GPU choice fails explicitly if the device is no longer usable. The existing neural engines use **WebGPU** or **Python/CUDA**: they do not currently provide CPU inference. The procedural engine provides the CPU path.
 
-Le CPU reste disponible sans GPU. WebGPU n’est proposé qu’après création réussie
-d’un périphérique; le moteur restitue son backend réellement utilisé. Un choix
-GPU forcé échoue explicitement si le périphérique n’est plus utilisable. Les
-moteurs neuronaux existants utilisent **WebGPU** ou **Python/CUDA** : ils ne
-fournissent pas actuellement d’inférence CPU. Le procédural offre le chemin CPU.
+## Optional Python Modules
 
-## Modules Python facultatifs
+The package includes the Rust service, the Python scripts and `uv` 0.13.6; it does not contain a Python interpreter, a CUDA driver or external weights. The build downloads the `uv` archive for the platform and verifies its SHA-256. The procedural engine works without installing Python. In the installed application, open **Settings & engines → Optional modules for desktop** to configure an existing interpreter, separately install the terrain or illustration dependencies, check their environment and start the service. An empty Python path selects the managed environment; the Neural Earth path is optional.
 
-Le paquet inclut le service Rust, les scripts Python et `uv` 0.13.6 ; il ne
-contient ni interpréteur Python, ni pilote CUDA, ni poids externes. La construction
-télécharge l’archive `uv` propre à la plateforme et vérifie son SHA-256. Le
-procédural fonctionne sans installer Python. Dans l’application installée, ouvrir
-**Réglages & moteurs → Modules facultatifs pour ordinateur** pour configurer un
-interpréteur existant, installer séparément les dépendances du terrain ou de
-l’illustration, vérifier leur environnement et démarrer le service. Un chemin
-Python vide sélectionne l’environnement géré ; le chemin Neural Earth est facultatif.
+Assisted installation downloads Python and dependencies that may amount to several GB; for terrain, it also fetches Neural Earth source archives at fixed revisions if no path is provided. It does not download weights. The model download buttons are separate: the originals use the revision indicated in the inventory; the fields for the distilled models propose the published Hugging Face repository and its commit, both editable. No weights are downloaded at startup. After a service starts, the reload button reruns detection in the interface. Logs and data/cache folders are shown in the panel. The availability of CUDA and of the models depends on the machine.
 
-L’installation assistée télécharge Python et des dépendances pouvant représenter
-plusieurs Go ; pour le terrain, elle récupère aussi des archives de sources Neural
-Earth à des révisions fixées si aucun chemin n’est fourni. Elle ne télécharge pas
-les poids. Les boutons de téléchargement des modèles sont distincts : les
-originaux utilisent la révision indiquée dans l’inventaire ; les champs distillés
-proposent le dépôt Hugging Face publié et son commit, modifiables. Aucun poids n’est téléchargé
-au démarrage. Après le démarrage d’un service, le bouton de rechargement relance la
-détection dans l’interface. Les journaux et dossiers de données/cache sont indiqués
-dans le panneau. La disponibilité de CUDA et des modèles dépend de la machine.
+The [manual Python procedure](../../python_runtime/README.md) also describes the `uv` commands, paths and environment variables. Model operations and their possible publication are detailed in the [Hugging Face guide](../../docs/models-release/README.md). Optional environments remain independent, and their absence does not block the procedural engine. A compatible service that is already running can be reused even if no local interpreter is configured. The panel distinguishes its state from that of the environment; detection is refreshed during startup. A targeted test also covers the switch from procedural terrain to Python.
 
-La [procédure manuelle Python](../../python_runtime/README.md) décrit aussi les
-commandes `uv`, les chemins et les variables d’environnement. Les opérations sur
-les modèles et leur éventuelle publication sont détaillées dans le
-[guide Hugging Face](../../docs/models-release/README.md). Les environnements
-optionnels restent indépendants et leur absence ne bloque pas le moteur procédural.
-Un service compatible déjà démarré peut être réutilisé même si aucun interpréteur
-local n'est configuré. Le panneau distingue son état de celui de l'environnement ;
-la détection est actualisée pendant le démarrage. Un test ciblé couvre aussi le
-passage du relief procédural à Python.
+The system prerequisites and package limitations remain those of [Tauri 2](https://v2.tauri.app/start/prerequisites/). Build each installer on its target OS. Outputs are in the Cargo directory indicated by Tauri, under `release/bundle/`. Optional browser models are copied only if they exist in `rust/pkg/neural-web`, without copying local neural caches. The [desktop V2 workflow](../../.github/workflows/desktop-v2-release.yml) prepares unsigned Windows x64 and Linux x64 packages; its manual launch does not publish a release. Under WSL2 Ubuntu 22.04, the `.deb` extracted from the latest build and the AppImage extracted from an earlier build displayed the interface under WSLg and closed their Rust service normally; a Rust procedural computation produced 4,096 finite heights. The AppImage build required preloading the tools from Tauri's official URLs after a timeout of its internal download. Tests on clean machines remain to be done; see the details and GPU limitations in the [release preparation](../../docs/V2_RELEASE.md).
+The package icon is generated from [`app-icon-v2.png`](assets/app-icon-v2.png).
 
-Les prérequis système et les limites des paquets restent ceux de
-[Tauri 2](https://v2.tauri.app/start/prerequisites/). Construire chaque installateur
-sur son OS cible. Les sorties sont dans le répertoire Cargo indiqué par Tauri,
-sous `release/bundle/`. Les modèles navigateur facultatifs sont copiés seulement
-s’ils existent dans `rust/pkg/neural-web`, sans copier les caches neuronaux locaux.
-Le workflow [desktop V2](../../.github/workflows/desktop-v2-release.yml) prépare
-des paquets Windows x64 et Linux x64 non signés ; son lancement manuel ne publie
-pas de release. Sous WSL2 Ubuntu 22.04, le `.deb` extrait de la dernière
-construction et l'AppImage extrait d'une construction précédente ont affiché
-l'interface sous WSLg et fermé leur service Rust normalement ; un
-calcul procédural Rust a produit 4 096 hauteurs finies. La construction AppImage
-a nécessité le préchargement des outils aux URL officielles de Tauri après un
-timeout de son téléchargement interne. Les essais sur machines propres restent
-à effectuer ; voir les détails et les limites GPU dans la
-[préparation de release](../../docs/V2_RELEASE_FR.md).
-L'icône du paquet est générée depuis [`app-icon-v2.png`](assets/app-icon-v2.png).
-
-Sous Windows, l'archive portable ZIP est une alternative à l'installateur :
-extraire tout le dossier puis lancer `magna-urbis-v2-desktop.exe`, en conservant
-`resources` à côté. L'application ne nécessite pas d'installation ni de droits
-administrateur pour fonctionner ; le runtime Microsoft Edge WebView2 est requis.
-Les réglages, environnements Python optionnels et caches restent dans les données
-de l'utilisateur, partagés avec l'édition installée ; ils ne sont pas portables
-avec le dossier extrait.
+On Windows, the portable ZIP archive is an alternative to the installer: extract the whole folder, then run `magna-urbis-v2-desktop.exe`, keeping `resources` next to it. The application requires no installation or administrator rights to run; the Microsoft Edge WebView2 runtime is required. Settings, optional Python environments and caches remain in the user's data folder, shared with the installed edition; they are not portable with the extracted folder.

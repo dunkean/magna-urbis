@@ -1,85 +1,84 @@
-Pour Magna Urbis V3, j'ajouterais une vraie famille de styles Modern & Contemporary, couvrant approximativement 1850 à aujourd'hui, avec également des variantes futuristes et dystopiques pour le jeu de rôle.
+# Magna Urbis V3: Modern & Contemporary Styles
 
-Mais il y a une différence importante avec tes villes médiévales : les villes modernes sont autant définies par leur urbanisme, leurs infrastructures et leur organisation fonctionnelle que par leur architecture.
+For Magna Urbis V3, I would add a proper family of Modern & Contemporary styles, covering roughly 1850 to the present, along with futuristic and dystopian variants for roleplaying.
 
-New York, Tokyo, Paris, Brasília ou Los Angeles ne sont pas simplement cinq styles architecturaux. Ce sont cinq façons très différentes de construire et d'organiser une ville.
+There is an important difference from your medieval cities, however: modern cities are defined as much by their urban planning, infrastructure and functional organisation as by their architecture.
 
-Je viserais environ 25 à 35 presets modernes, combinant une morphologie urbaine, une identité architecturale et une période historique.
+New York, Tokyo, Paris, Brasília or Los Angeles are not simply five architectural styles. They are five very different ways of building and organising a city.
 
-## 1. Les grands styles urbains modernes
+I would aim for about 25 to 35 modern presets, combining an urban morphology, an architectural identity and a historical period.
 
-Voici les familles que je retiendrais en priorité.
+## 1. The Major Modern Urban Styles
 
-| Style (nom anglais)         | Références                        | Particularités de génération                                                           |
+These are the families I would prioritise.
+
+| Style (English name)        | References                        | Generation features                                                                    |
 | --------------------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
-| Industrial Victorian        | Manchester, Liverpool, Birmingham | Usines en briques, cheminées, rangées ouvrières, canaux, voies ferrées                 |
-| Haussmannian European       | Paris, Bruxelles                  | Boulevards, avenues rayonnantes, îlots denses, immeubles homogènes                     |
-| European Belle Époque       | Vienne, Budapest                  | Grands îlots, places monumentales, immeubles bourgeois, tramways                       |
-| American Grid City          | Chicago, Manhattan                | Grille orthogonale, blocs réguliers, avenues, CBD vertical                             |
-| Mediterranean Modern        | Barcelone, Naples                 | Îlots denses, patios, immeubles mitoyens, fronts de mer                                |
-| Garden City                 | Letchworth, Welwyn                | Quartiers paysagers, rues courbes, maisons et jardins, centres secondaires             |
-| Art Deco Metropolis         | New York, Miami                   | Tours à retraits, façades géométriques, grands axes monumentaux                        |
-| Modernist Functionalist     | Brasília, Chandigarh              | Superblocks, bâtiments isolés, séparation fonctionnelle, vastes espaces                |
-| Soviet Socialist City       | Moscou, Minsk                     | Grandes avenues, ensembles résidentiels, monuments, quartiers planifiés                |
-| American Suburbia           | Los Angeles, Phoenix              | Pavillons, cul-de-sac, garages, centres commerciaux, échangeurs                        |
-| European Contemporary       | Copenhague, Amsterdam             | Îlots mixtes, transports collectifs, pistes cyclables, espaces verts                   |
-| Global High-Rise City       | Hong Kong, Shenzhen               | Tours résidentielles, forte densité, podiums commerciaux, infrastructures multiniveaux |
-| Gulf Contemporary           | Dubaï, Doha                       | Tours iconiques, grands axes, ensembles climatisés, urbanisation discontinue           |
-| Informal Urban Expansion    | Lagos, Nairobi, Lima              | Tissu dense, parcelles irrégulières, voies étroites, extensions incrémentales          |
-| Eco-City / Sustainable City | Écoquartiers contemporains        | Bâtiments bas carbone, végétalisation, transports doux, trames vertes                  |
+| Industrial Victorian        | Manchester, Liverpool, Birmingham | Brick factories, chimneys, workers' terraces, canals, railway lines                    |
+| Haussmannian European       | Paris, Brussels                   | Boulevards, radiating avenues, dense blocks, uniform buildings                         |
+| European Belle Époque       | Vienna, Budapest                  | Large blocks, monumental squares, bourgeois apartment buildings, tramways              |
+| American Grid City          | Chicago, Manhattan                | Orthogonal grid, regular blocks, avenues, vertical CBD                                 |
+| Mediterranean Modern        | Barcelona, Naples                 | Dense blocks, courtyards, terraced buildings, seafronts                                |
+| Garden City                 | Letchworth, Welwyn                | Landscaped neighbourhoods, curved streets, houses and gardens, secondary centres       |
+| Art Deco Metropolis         | New York, Miami                   | Setback towers, geometric facades, major monumental axes                               |
+| Modernist Functionalist     | Brasília, Chandigarh              | Superblocks, detached buildings, functional separation, vast open spaces               |
+| Soviet Socialist City       | Moscow, Minsk                     | Large avenues, residential complexes, monuments, planned neighbourhoods                |
+| American Suburbia           | Los Angeles, Phoenix              | Detached houses, cul-de-sacs, garages, shopping centres, interchanges                  |
+| European Contemporary       | Copenhagen, Amsterdam             | Mixed-use blocks, public transport, cycle lanes, green spaces                          |
+| Global High-Rise City       | Hong Kong, Shenzhen               | Residential towers, high density, commercial podiums, multi-level infrastructure       |
+| Gulf Contemporary           | Dubai, Doha                       | Iconic towers, major axes, air-conditioned complexes, discontinuous urbanisation       |
+| Informal Urban Expansion    | Lagos, Nairobi, Lima              | Dense fabric, irregular plots, narrow streets, incremental extensions                  |
+| Eco-City / Sustainable City | Contemporary eco-districts        | Low-carbon buildings, greening, soft mobility, green corridors                         |
 
-La distinction entre ces modèles n'est pas qu'esthétique : les recherches en morphologie urbaine montrent de grandes différences de dimensions et de structure des îlots entre ville industrielle, cité-jardin, modernisme et urbanisation informelle.&#x20;
+The distinction between these models is not merely aesthetic: research in urban morphology shows large differences in block size and structure between industrial city, garden city, modernism and informal urbanisation.
 
 [image](https://www.google.com/s2/favicons?domain=https://strathprints.strath.ac.uk\&sz=32)
 
 Strathprints+1
 
-
-
-## 2. Quelques morphologies immédiatement reconnaissables
+## 2. A Few Immediately Recognisable Morphologies
 
 [Париж с высоты | ФОТО НОВОСТИ](https://images.openai.com/static-rsc-4/Wk8mTIRfUfQWPDSQL84qs1avad-AGzUrwbebMI8eJSDcaQrErMZdKo0pq2THSB0ivEErpvJuwfO5MxVF_GpcsJgNmEC72IPlN3cW_OHPBdkB8Mpe86Jpu-jR0cTw9Le6KIVQx0sGJ3-kDvSshCFTTZZvWD2qt28F3bd7onEOFgg?purpose=inline)
 
 Haussmannian
 
-Axes monumentaux, îlots fermés et alignements continus.
+Monumental axes, closed blocks and continuous building lines.
 
 [Podcast: Aerial Photography, with Jeffrey Milstein | B&H eXplora](https://images.openai.com/static-rsc-4/nmH4GMIELXFvwqxteaGwC-jhg2UcForDQFg4ivRqpyuw9YPJIvwyLpY6lQDkkgrByip-Te3dQ04eHkGr7Do6kp9i9NCQaMNuqIB6FV5nPcZ8hqTaxrDM0WmS9ILsX_a4TKo_0ScXUmT36zv6sgUK-0YfaoNKaY-UANE19NmRGWc?purpose=inline)
 
 American Grid
 
-Trame régulière, densité progressive et noyaux de gratte-ciel.
+Regular grid, progressive density and skyscraper cores.
 
 Modernist
 
-Grands blocs, bâtiments libres et espaces ouverts.
+Large blocks, free-standing buildings and open spaces.
 
 [Los Angeles California Residential Cul-de-sac](https://images.openai.com/static-rsc-4/XODipWWfq2XiLH0DIuWwwfvmlJ4araH9qKHlSSDSe3hdOo5s0IoXLg1QSej2po_T1o6j5UUVVTNyklQAsEMnHfRafNzFd6MfPXcVmmz4-f5l-c_HFL7KhgcMCTzewR7faCEKYxS0IsgEUONPCuCoCVfJrF5o2lg8kc_hdHq2GLPenVPi-s0CdSH1QU1y3Sz0?purpose=inline)
 
 Suburban Sprawl
 
-Faible densité, routes hiérarchisées et parcelles individuelles.
+Low density, hierarchical roads and individual plots.
+## 3. Geographic and cultural variants
 
-## 3. Les variantes géographiques et culturelles
+To prevent all modern cities from looking like European or American cities, I would add these presets.
 
-Pour éviter que toutes les villes modernes ressemblent à des villes européennes ou américaines, j'ajouterais ces presets.
-
-| Style                          | Références                 | Caractéristiques                                                             |
+| Style                          | References                 | Characteristics                                                              |
 | ------------------------------ | -------------------------- | ---------------------------------------------------------------------------- |
-| Japanese Contemporary          | Tokyo, Osaka               | Petites parcelles, rues locales étroites, tissu hétérogène, forte mixité     |
-| Chinese Megacity               | Shanghai, Guangzhou        | Super-îlots, tours résidentielles groupées, grands axes, centres commerciaux |
-| Korean High-Rise City          | Séoul, Busan               | Tours d'appartements en ensembles, tissu ancien dense, collines urbanisées   |
-| Southeast Asian Tropical       | Bangkok, Hô Chi Minh-Ville | Shophouses, ruelles, marchés, canaux, tissu dense                            |
-| South Asian Metropolis         | Mumbai, Delhi              | Densité extrême, îlots mixtes, extensions planifiées et informelles          |
-| Latin American Grid City       | Buenos Aires, Mexico       | Quadrillage hérité, îlots compacts, patios, grandes avenues                  |
-| Latin American Hillside City   | Rio, Medellín              | Habitat accroché aux pentes, forte densité, escaliers, réseau irrégulier     |
-| North African Contemporary     | Casablanca, Tunis          | Médina ancienne, extensions coloniales, immeubles modernes, périphéries      |
-| Sub-Saharan African Metropolis | Dakar, Accra, Lagos        | Quartiers hétérogènes, concessions, marchés, densification progressive       |
-| Middle Eastern Contemporary    | Amman, Beyrouth            | Immeubles en pierre/béton, terrasses, rues en pente, centres denses          |
-| Australian Suburban            | Perth, Brisbane            | Faible densité, maisons individuelles, larges routes, zones commerciales     |
-| Post-Socialist European        | Varsovie, Bucarest         | Centres historiques, grands ensembles, extensions commerciales et modernes   |
+| Japanese Contemporary          | Tokyo, Osaka               | Small plots, narrow local streets, heterogeneous fabric, strong mixed use    |
+| Chinese Megacity               | Shanghai, Guangzhou        | Superblocks, clustered residential towers, major boulevards, shopping centres |
+| Korean High-Rise City          | Seoul, Busan               | Apartment towers in complexes, dense old fabric, urbanised hills             |
+| Southeast Asian Tropical       | Bangkok, Ho Chi Minh City  | Shophouses, alleys, markets, canals, dense fabric                            |
+| South Asian Metropolis         | Mumbai, Delhi              | Extreme density, mixed blocks, planned and informal extensions               |
+| Latin American Grid City       | Buenos Aires, Mexico City  | Inherited grid, compact blocks, patios, large avenues                        |
+| Latin American Hillside City   | Rio, Medellín              | Housing clinging to slopes, high density, stairways, irregular network       |
+| North African Contemporary     | Casablanca, Tunis          | Old medina, colonial extensions, modern buildings, peripheries               |
+| Sub-Saharan African Metropolis | Dakar, Accra, Lagos        | Heterogeneous districts, compounds, markets, gradual densification           |
+| Middle Eastern Contemporary    | Amman, Beirut              | Stone/concrete buildings, terraces, sloping streets, dense centres           |
+| Australian Suburban            | Perth, Brisbane            | Low density, detached houses, wide roads, commercial zones                   |
+| Post-Socialist European        | Warsaw, Bucharest          | Historic centres, large housing estates, commercial and modern extensions    |
 
-Ces styles doivent décrire des archétypes et non reproduire une ville entière : Tokyo conserve beaucoup de rues locales irrégulières malgré ses infrastructures modernes, tandis que l'urbanisation informelle présente elle-même différentes morphologies, parfois très régulières.&#x20;
+These styles should describe archetypes, not reproduce an entire city: Tokyo retains many irregular local streets despite its modern infrastructure, while informal urbanisation itself displays different morphologies, sometimes highly regular ones.&#x20;
 
 [image](https://www.google.com/s2/favicons?domain=https://www.tandfonline.com\&sz=32)
 
@@ -87,43 +86,43 @@ Taylor & Francis Online+2
 
 
 
-## 4. Styles fictionnels et alternatifs
+## 4. Fictional and alternative styles
 
-Pour Magna Urbis et son orientation RPG, j'en garderais aussi une dizaine.
+For Magna Urbis and its RPG orientation, I would also keep about ten of these.
 
 [Futuristic cyberpunk cityscape with bustling streets neon lights highrise buildings and airborne vehicles creating a scifi atmosphere | Premium Photo](https://images.openai.com/static-rsc-4/tZ3MEkpf9rv6eq1I-EApvSHabnGL1RaQnMFLaPD3Y-3EeZkI9bdPU6mfDRuxV6KIG4An9LCSwrhh8l30AuqLfQcTAKXu9dKCR0KUVFkKgXC1l7EVgAqLvev9tWjsDoiK5ANmdtg037Q6MaiEqYfp7H8JmC3kmgRHJk32bLiVyIo?purpose=inline)
 
 Cyberpunk
 
-Mégatours, structures multiniveaux, densité verticale extrême.
+Megatowers, multilevel structures, extreme vertical density.
 
 [Solarpunk City Ai Image Generator | Morphic](https://images.openai.com/static-rsc-4/nM_r4u88yfASOav6i0YvgSaWaDYu5A6-UWtoVkdWLoxx1kh7_s4LOKbyW_GnYzi846h3w75yYwWO5mFRTL0O42zGYfemPVURnEriFnXEZ03LFNwc6PEgznyBHkAQvR6sCpX4Uo9516hA-ax5eTEpCdg3bL5mcDELHsJvbr-jD5Q?purpose=inline)
 
 Solarpunk
 
-Architecture végétalisée, réseaux verts, faible emprise automobile.
+Green architecture, green networks, limited space given to cars.
 
 [12 Artists Showcase "DieselPunk" 3D Art \[Article + Images\]          – KitBash3D](https://images.openai.com/static-rsc-4/zbar9kcA1lc_mqZJQc3HBXJkBcnjTVdpt3f0zTq0DRImRQ_lEfLEOMTpP25MuLthHrOn1OLVNjFkLSFAtnzoNqz6tIao1LHDlCDMpQMgtoR9Ng9E8jbjZnTouZoBamADt8ke7lm4mdd9PxseQvoYYSYlgVClv-EdKRVQXRL6Yvo?purpose=inline)
 
 Dieselpunk
 
-Ville industrielle monumentale, usines et architecture Art déco.
+Monumental industrial city, factories and Art Deco architecture.
 
 [Dystopian Blocks - Brutalist Structures Kitbash Buildings - Superhive (formerly Blender Market)](https://images.openai.com/static-rsc-4/LULK9Dk52AqoRHlQaWf18-AhQrubTWNeEv7WZVOlRoTbok8nCDE4IfamRT46GCSWO9rKCoWo9rASl89MDaMm23jhDeSqZkJE5g_dsdcnAVEeOXvu1PINtcF2C007HDHBiJo1xnG4wdVU6ItIUBCpwGNT6Hbqh9p4_VUsUUv3Rng?purpose=inline)
 
 Dystopian Brutalism
 
-Béton monumental, tours répétitives, infrastructures massives.
+Monumental concrete, repetitive towers, massive infrastructure.
 
-J'ajouterais également Atompunk / Retrofuturist, Post-Apocalyptic Ruins, Corporate Arcology, Biopunk Organic City et Futuristic Space Colony.
+I would also add Atompunk / Retrofuturist, Post-Apocalyptic Ruins, Corporate Arcology, Biopunk Organic City and Futuristic Space Colony.
 
-## 5. Comment je structurerais ça dans Magna Urbis
+## 5. How I would structure this in Magna Urbis
 
-Je garderais tes styles culturels existants, mais je séparerais plusieurs dimensions aujourd'hui souvent confondues.
+I would keep your existing cultural styles, but I would separate several dimensions that are often conflated today.
 
 City Preset
 
-Ex. Japanese Contemporary, Industrial Victorian, Cyberpunk
+E.g. Japanese Contemporary, Industrial Victorian, Cyberpunk
 
 Urban morphology
 
@@ -135,11 +134,11 @@ Materials, façades, roofs, building heights
 
 Land use & density
 
-CBD, résidentiel, industriel, commercial
+CBD, residential, industrial, commercial
 
 Infrastructure
 
-Rail, métro, autoroutes, ports, utilities
+Rail, metro, motorways, ports, utilities
 
 Historical period
 
@@ -147,145 +146,132 @@ Industrial, early modern, contemporary, future
 
 Socioeconomic pattern
 
-Densité, revenus, formel/informel
+Density, income, formal/informal
 
-Le vrai changement de moteur serait la coexistence de plusieurs styles dans une même ville.
+The real change to the engine would be the coexistence of several styles within a single city.
 
-Par exemple, une ville européenne de 800 000 habitants pourrait avoir un cœur médiéval, une extension haussmannienne, une ceinture industrielle du XIXe siècle, des quartiers modernistes des années 1960, des banlieues pavillonnaires et un CBD contemporain.
+For example, a European city of 800,000 inhabitants could have a medieval core, a Haussmannian extension, a 19th-century industrial belt, 1960s modernist districts, suburbs of detached houses and a contemporary CBD.
 
-À l'inverse, une ville nouvelle de 30 000 habitants pourrait n'avoir qu'un style dominant. Il faut donc que le choix des styles soit aussi contrôlé par l'histoire de la ville, son rythme de croissance et ses quartiers.
+Conversely, a new town of 30,000 inhabitants could have only one dominant style. The choice of styles should therefore also be governed by the city's history, its growth rate and its districts.
 
-Je distinguerais aussi les styles de villes des styles de quartiers : Industrial Victorian peut caractériser une ville entière du XIXe siècle, mais Industrial District, Airport District, University Campus, Business Park ou Shopping Mall sont plutôt des modules fonctionnels à insérer dans différents styles.
+I would also distinguish city styles from district styles: Industrial Victorian can characterise an entire 19th-century city, whereas Industrial District, Airport District, University Campus, Business Park or Shopping Mall are rather functional modules to insert into different styles.
+## 6. What I would develop first
 
-## 6. Ce que je développerais en premier
-
-Pour un premier lot, je choisirais ces huit presets :
+For a first batch, I would choose these eight presets:
 
 1
 
 American Grid City
 
-Grille et CBD vertical
+Grid and vertical CBD
 
 2
 
 Haussmannian European
 
-Boulevards et îlots denses
+Boulevards and dense blocks
 
 3
 
 Industrial Victorian
 
-Usines et quartiers ouvriers
+Factories and working-class districts
 
 4
 
 American Suburbia
 
-Réseau routier et faible densité
+Road network and low density
 
 5
 
 Modernist Functionalist
 
-Superblocks et zonage
+Superblocks and zoning
 
 6
 
 Japanese Contemporary
 
-Tissu compact et hétérogène
+Compact, heterogeneous fabric
 
 7
 
 Global High-Rise City
 
-Verticalité et grands ensembles
+Verticality and large housing estates
 
 8
 
 Cyberpunk
 
-Réutilisation extrême des systèmes modernes
+Extreme reuse of modern systems
 
-Avec ces huit styles, tu couvres déjà des morphologies extrêmement différentes et tu peux ensuite décliner les variantes architecturales et régionales.
+With these eight styles, you already cover extremely different morphologies, and you can then develop architectural and regional variants.
 
-La priorité technique, à mon sens, n'est pas de multiplier les bâtiments modernes : c'est d'introduire la hiérarchie des routes, les superblocks, les infrastructures de transport et le zonage fonctionnel. Sans cela, même avec des gratte-ciel impeccables, Magna Urbis risque de produire des villes médiévales habillées en moderne.
+In my view, the technical priority is not to multiply modern buildings: it is to introduce road hierarchy, superblocks, transport infrastructure and functional zoning. Without these, even with impeccable skyscrapers, Magna Urbis risks producing medieval cities dressed up as modern ones.
 
+I knew that Magna Urbis V2 already offered many cultural styles, but I had not inspected the code that handles their combination. My proposal on the coexistence of styles was therefore a suggestion, not an observation of a missing feature. I should have made the distinction.
 
+Here is the summary of the 36 proposed modern and fictional styles, without going into implementation questions.
 
-
-
-
-
-
-
-
-
-
-
-Je savais que Magna Urbis V2 proposait déjà de nombreux styles culturels, mais je n'ai pas inspecté le code qui gère leur combinaison. Ma proposition sur la coexistence des styles était donc une suggestion, pas un constat sur une fonctionnalité manquante. J'aurais dû faire la distinction.
-
-Voici le récapitulatif des 36 styles modernes et fictionnels proposés, sans entrer dans les questions d'implémentation.
-
-| #  | Catégorie    | Style (anglais)                | Références / caractéristiques                                                |
+| #  | Category     | Style (English)                | References / characteristics                                                 |
 | -- | ------------ | ------------------------------ | ---------------------------------------------------------------------------- |
-| 1  | Historique   | Industrial Victorian           | Manchester, Liverpool — briques, usines, cheminées, habitat ouvrier          |
-| 2  | Historique   | Haussmannian European          | Paris — boulevards, immeubles alignés, îlots fermés                          |
-| 3  | Historique   | European Belle Époque          | Vienne, Budapest — architecture monumentale, places, grands immeubles        |
-| 4  | Historique   | American Grid City             | Chicago, New York — quadrillage, avenues, CBD                                |
-| 5  | Historique   | Mediterranean Modern           | Barcelone, Naples — îlots denses, patios, immeubles mitoyens                 |
-| 6  | Historique   | Garden City                    | Letchworth — maisons et jardins, rues courbes, parcs                         |
-| 7  | Historique   | Art Deco Metropolis            | New York, Miami — tours Art déco, façades géométriques                       |
-| 8  | Historique   | Modernist Functionalist        | Brasília, Chandigarh — superblocks, espaces ouverts, zonage                  |
-| 9  | Historique   | Soviet Socialist City          | Moscou, Minsk — grands ensembles, avenues monumentales                       |
-| 10 | Contemporain | American Suburbia              | Los Angeles, Phoenix — pavillons, cul-de-sac, centres commerciaux            |
-| 11 | Contemporain | European Contemporary          | Amsterdam, Copenhague — quartiers mixtes, mobilité douce                     |
-| 12 | Contemporain | Global High-Rise City          | Hong Kong, Shenzhen — tours, forte densité, infrastructures superposées      |
-| 13 | Contemporain | Gulf Contemporary              | Dubaï, Doha — gratte-ciel iconiques, grands axes, urbanisme automobile       |
-| 14 | Contemporain | Informal Urban Expansion       | Lagos, Lima — quartiers auto-construits, extensions progressives             |
-| 15 | Contemporain | Eco-City / Sustainable City    | Écoquartiers — végétalisation, architecture durable, réseaux verts           |
-| 16 | Régional     | Japanese Contemporary          | Tokyo, Osaka — petites parcelles, forte mixité, rues étroites                |
-| 17 | Régional     | Chinese Megacity               | Shanghai, Guangzhou — super-îlots, tours résidentielles, larges avenues      |
-| 18 | Régional     | Korean High-Rise City          | Séoul, Busan — ensembles de tours, collines urbanisées                       |
-| 19 | Régional     | Southeast Asian Tropical       | Bangkok, Hô Chi Minh-Ville — shophouses, ruelles, marchés, canaux            |
-| 20 | Régional     | South Asian Metropolis         | Mumbai, Delhi — forte densité, quartiers hétérogènes                         |
-| 21 | Régional     | Latin American Grid City       | Buenos Aires, Mexico — quadrillage colonial, avenues, îlots compacts         |
-| 22 | Régional     | Latin American Hillside City   | Rio, Medellín — habitat en pente, escaliers, quartiers denses                |
-| 23 | Régional     | North African Contemporary     | Casablanca, Tunis — extensions modernes, héritage colonial et médinas        |
-| 24 | Régional     | Sub-Saharan African Metropolis | Dakar, Accra — marchés, concessions, quartiers en expansion                  |
-| 25 | Régional     | Middle Eastern Contemporary    | Amman, Beyrouth — terrasses, immeubles en béton/pierre, relief marqué        |
-| 26 | Régional     | Australian Suburban            | Perth, Brisbane — pavillons, grandes parcelles, routes larges                |
-| 27 | Régional     | Post-Socialist European        | Varsovie, Bucarest — grands ensembles, centres anciens et quartiers modernes |
-| 28 | Fictionnel   | Cyberpunk                      | Mégatours, néons, densité verticale, infrastructures multiniveaux            |
-| 29 | Fictionnel   | Solarpunk                      | Architecture végétalisée, énergies renouvelables, quartiers verts            |
-| 30 | Fictionnel   | Dieselpunk                     | Industrialisme rétrofuturiste, acier, fumée, architecture années 1930        |
-| 31 | Fictionnel   | Dystopian Brutalism            | Béton massif, blocs monumentaux, urbanisme autoritaire                       |
-| 32 | Fictionnel   | Atompunk / Retrofuturist       | Années 1950–1960 futuristes, dômes, tours aérodynamiques                     |
-| 33 | Fictionnel   | Post-Apocalyptic Ruins         | Villes abandonnées, ruines, végétation envahissante, reconstructions         |
-| 34 | Fictionnel   | Corporate Arcology             | Mégastructures intégrées, complexes privés, ville verticale                  |
-| 35 | Fictionnel   | Biopunk Organic City           | Architecture biomorphique, structures vivantes, formes organiques            |
-| 36 | Fictionnel   | Futuristic Space Colony        | Dômes, habitats modulaires, structures pressurisées                          |
+| 1  | Historical   | Industrial Victorian           | Manchester, Liverpool — brick, factories, chimneys, working-class housing    |
+| 2  | Historical   | Haussmannian European          | Paris — boulevards, aligned buildings, closed blocks                         |
+| 3  | Historical   | European Belle Époque          | Vienna, Budapest — monumental architecture, squares, large buildings         |
+| 4  | Historical   | American Grid City             | Chicago, New York — grid, avenues, CBD                                       |
+| 5  | Historical   | Mediterranean Modern           | Barcelona, Naples — dense blocks, patios, adjoining buildings                |
+| 6  | Historical   | Garden City                    | Letchworth — houses and gardens, curved streets, parks                       |
+| 7  | Historical   | Art Deco Metropolis            | New York, Miami — Art Deco towers, geometric façades                         |
+| 8  | Historical   | Modernist Functionalist        | Brasília, Chandigarh — superblocks, open spaces, zoning                      |
+| 9  | Historical   | Soviet Socialist City          | Moscow, Minsk — large housing estates, monumental avenues                    |
+| 10 | Contemporary | American Suburbia              | Los Angeles, Phoenix — single-family houses, cul-de-sacs, shopping centres   |
+| 11 | Contemporary | European Contemporary          | Amsterdam, Copenhagen — mixed districts, soft mobility                       |
+| 12 | Contemporary | Global High-Rise City          | Hong Kong, Shenzhen — towers, high density, stacked infrastructure           |
+| 13 | Contemporary | Gulf Contemporary              | Dubai, Doha — iconic skyscrapers, major axes, car-oriented urbanism          |
+| 14 | Contemporary | Informal Urban Expansion       | Lagos, Lima — self-built neighbourhoods, progressive extensions              |
+| 15 | Contemporary | Eco-City / Sustainable City    | Eco-districts — greening, sustainable architecture, green networks           |
+| 16 | Regional     | Japanese Contemporary          | Tokyo, Osaka — small plots, strong mix of uses, narrow streets               |
+| 17 | Regional     | Chinese Megacity               | Shanghai, Guangzhou — super-blocks, residential towers, wide avenues         |
+| 18 | Regional     | Korean High-Rise City          | Seoul, Busan — clusters of towers, urbanised hills                           |
+| 19 | Regional     | Southeast Asian Tropical       | Bangkok, Ho Chi Minh City — shophouses, alleys, markets, canals              |
+| 20 | Regional     | South Asian Metropolis         | Mumbai, Delhi — high density, heterogeneous neighbourhoods                   |
+| 21 | Regional     | Latin American Grid City       | Buenos Aires, Mexico City — colonial grid, avenues, compact blocks           |
+| 22 | Regional     | Latin American Hillside City   | Rio, Medellín — hillside housing, stairways, dense neighbourhoods            |
+| 23 | Regional     | North African Contemporary     | Casablanca, Tunis — modern extensions, colonial heritage and medinas         |
+| 24 | Regional     | Sub-Saharan African Metropolis | Dakar, Accra — markets, compounds, expanding neighbourhoods                  |
+| 25 | Regional     | Middle Eastern Contemporary    | Amman, Beirut — terraces, concrete/stone buildings, pronounced relief        |
+| 26 | Regional     | Australian Suburban            | Perth, Brisbane — single-family houses, large plots, wide roads              |
+| 27 | Regional     | Post-Socialist European        | Warsaw, Bucharest — large housing estates, historic centres and modern districts |
+| 28 | Fictional    | Cyberpunk                      | Megatowers, neon signs, vertical density, multilevel infrastructure          |
+| 29 | Fictional    | Solarpunk                      | Vegetated architecture, renewable energy, green neighbourhoods               |
+| 30 | Fictional    | Dieselpunk                     | Retro-futuristic industrialism, steel, smoke, 1930s architecture             |
+| 31 | Fictional    | Dystopian Brutalism            | Massive concrete, monumental blocks, authoritarian urbanism                  |
+| 32 | Fictional    | Atompunk / Retrofuturist       | Futuristic 1950s–1960s, domes, streamlined towers                            |
+| 33 | Fictional    | Post-Apocalyptic Ruins         | Abandoned cities, ruins, invasive vegetation, reconstructions                |
+| 34 | Fictional    | Corporate Arcology             | Integrated megastructures, private complexes, vertical city                  |
+| 35 | Fictional    | Biopunk Organic City           | Biomorphic architecture, living structures, organic forms                    |
+| 36 | Fictional    | Futuristic Space Colony        | Domes, modular habitats, pressurised structures                              |
 
-### Bilan
+### Summary
 
 # 9
 
-Historiques
+Historical
 
 # 6
 
-Contemporains
+Contemporary
 
 # 12
 
-Régionaux
+Regional
 
 # 9
 
-Fictionnels
+Fictional
 
-Remarque : certains styles se recoupent volontairement, notamment American Grid City et Latin American Grid City, ou Soviet Socialist City et Post-Socialist European. Ce sont des presets distincts, mais ils peuvent partager des paramètres de génération.
+Note: some styles deliberately overlap, notably American Grid City and Latin American Grid City, or Soviet Socialist City and Post-Socialist European. They are distinct presets, but they may share generation parameters.
 
-Il y aurait aussi un choix de périmètre à faire : Post-Apocalyptic Ruins est davantage un état de la ville qu'un style urbain, tandis que Corporate Arcology et Futuristic Space Colony introduisent de véritables morphologies nouvelles.
+There is also a scope decision to make: Post-Apocalyptic Ruins is more a state of the city than an urban style, whereas Corporate Arcology and Futuristic Space Colony introduce genuinely new morphologies.

@@ -4,15 +4,15 @@ Local review alpha, 28 October 2026. This document distinguishes **parameter acc
 
 ## Authoritative inventory
 
-The V2 city inspector reads the native [urban catalogue](../rust/crates/core/src/urban/catalogue.json), not a separate small set of V2 aliases. At this revision it contains **79 cultures, 443 morphology presets, 26 street/layout morphology fields and 10 parcel morphology fields**. Tuple endpoints, street ranks and growth-zone ranges are individual numeric fields. The generated scalar schema currently contains **222 fields**, before repeatable phase rules, house mixtures, site rules and outline vertices.
+The V2 city inspector reads the native [urban catalogue](../../../rust/crates/core/src/urban/catalogue.json), not a separate small set of V2 aliases. At this revision it contains **79 cultures, 443 morphology presets, 26 street/layout morphology fields and 10 parcel morphology fields**. Tuple endpoints, street ranks and growth-zone ranges are individual numeric fields. The generated scalar schema currently contains **222 fields**, before repeatable phase rules, house mixtures, site rules and outline vertices.
 
 The sources of truth are:
 
-- [urbanConfig.ts](../rust/bridge/urbanConfig.ts): `LayoutConfig`, `FootprintConfig`, `ProgrammeContext`, `ParcelConfig`, phase rules, quarter/parcel overrides and native normalisation.
-- [urbanArchitecture.ts](../rust/bridge/urbanArchitecture.ts): `PlacementBatchSettings`, `HouseSettings`, per-lot placement constraints and retained architectural plans.
-- [housesContract.ts](../rust/bridge/housesContract.ts) and [houses.ts](../rust/bridge/houses.ts): native source models, overrides, workshop presets and default house settings.
-- [terrainUrban.ts](../web/src/ui/terrainUrban.ts), [urbanMainPanel.ts](../web/src/ui/urbanMainPanel.ts), [urbanBuildingsPanel.ts](../web/src/ui/urbanBuildingsPanel.ts): existing City Bench controls and stage behaviour.
-- [urbanControlSchema.ts](../web/src/v2/urbanControlSchema.ts), [urbanControls.ts](../web/src/v2/urbanControls.ts): V2 structured controls, inheritance and scoped writes.
+- [urbanConfig.ts](../../../rust/bridge/urbanConfig.ts): `LayoutConfig`, `FootprintConfig`, `ProgrammeContext`, `ParcelConfig`, phase rules, quarter/parcel overrides and native normalisation.
+- [urbanArchitecture.ts](../../../rust/bridge/urbanArchitecture.ts): `PlacementBatchSettings`, `HouseSettings`, per-lot placement constraints and retained architectural plans.
+- [housesContract.ts](../../../rust/bridge/housesContract.ts) and [houses.ts](../../../rust/bridge/houses.ts): native source models, overrides, workshop presets and default house settings.
+- [terrainUrban.ts](../../../web/src/ui/terrainUrban.ts), [urbanMainPanel.ts](../../../web/src/ui/urbanMainPanel.ts), [urbanBuildingsPanel.ts](../../../web/src/ui/urbanBuildingsPanel.ts): existing City Bench controls and stage behaviour.
+- [urbanControlSchema.ts](../../../web/src/v2/urbanControlSchema.ts), [urbanControls.ts](../../../web/src/v2/urbanControls.ts): V2 structured controls, inheritance and scoped writes.
 
 ## Parameter parity
 
@@ -40,9 +40,9 @@ Urban placement owns **one request per lot, its transform and the batch seed**. 
 
 ## Retained rendering and execution
 
-[rustUrban.ts](../web/src/v2/rustUrban.ts) sends the merged configurations to the existing Rust bridge. Layout, parcel, programme, request and house fingerprints retain reusable products. `capacityKey` associates reconciled built-programme evidence with the exact scene. Terrain is reused between urban stages. Per-house edits keep the native source baseline and binding neighbour occupations; they do not rerun terrain, layout or cadastral subdivision.
+[rustUrban.ts](../../../web/src/v2/rustUrban.ts) sends the merged configurations to the existing Rust bridge. Layout, parcel, programme, request and house fingerprints retain reusable products. `capacityKey` associates reconciled built-programme evidence with the exact scene. Terrain is reused between urban stages. Per-house edits keep the native source baseline and binding neighbour occupations; they do not rerun terrain, layout or cadastral subdivision.
 
-[urban3d.ts](../web/src/v2/urban3d.ts) mounts the **same City Bench 3D renderer** inside V2. It supplies the actual physical raster, native layouts, partitions, regional streets, fortifications and retained house scenes. It preserves compressed native plan archives. Close-up exteriors use the existing bounded detail controller and the V2-selected WASM/native runtime. Rendering is not a new admission or a source of capacity certification. The 3D view uses WebGL2; native urban construction itself uses CPU, while terrain generation can use its supported CPU/GPU paths.
+[urban3d.ts](../../../web/src/v2/urban3d.ts) mounts the **same City Bench 3D renderer** inside V2. It supplies the actual physical raster, native layouts, partitions, regional streets, fortifications and retained house scenes. It preserves compressed native plan archives. Close-up exteriors use the existing bounded detail controller and the V2-selected WASM/native runtime. Rendering is not a new admission or a source of capacity certification. The 3D view uses WebGL2; native urban construction itself uses CPU, while terrain generation can use its supported CPU/GPU paths.
 
 The urban optimisation audit (historical validation, archived locally) records measured cache/projection/form/3D work reductions, exact-output checks and the remaining software-driver shader compilation limit.
 
@@ -56,8 +56,8 @@ The urban optimisation audit (historical validation, archived locally) records m
 
 ## Validation
 
-[v2UrbanControls.test.ts](../web/tests/v2UrbanControls.test.ts) checks coverage against every native default leaf and native morphology field, parity with shared house defaults, exact range edits, inherited/native-null semantics, settlement/id isolation, unchanged transport into the real native configuration normalisers, and English/French captions without translating identifiers or numeric counters.
+[v2UrbanControls.test.ts](../../../web/tests/v2UrbanControls.test.ts) checks coverage against every native default leaf and native morphology field, parity with shared house defaults, exact range edits, inherited/native-null semantics, settlement/id isolation, unchanged transport into the real native configuration normalisers, and English/French captions without translating identifiers or numeric counters.
 
-[v2_rust_browser_check.mjs](../web/scripts/v2_rust_browser_check.mjs) drives actual structured controls in the local V2 app and verifies the generated snapshots: real stage stops; advanced layout values; selected quarter/parcel edits; global/local/house floor priority; one-house changes with neighbours retained; native rejection and retry; and snapshot-free recipe reconstruction. Built-programme evidence may change after houses; the test compares the retained cadastral geometry separately from that evidence. Its artifacts are written under `web/out/v2-rust-browser/` for local review.
+[v2_rust_browser_check.mjs](../../../web/scripts/v2_rust_browser_check.mjs) drives actual structured controls in the local V2 app and verifies the generated snapshots: real stage stops; advanced layout values; selected quarter/parcel edits; global/local/house floor priority; one-house changes with neighbours retained; native rejection and retry; and snapshot-free recipe reconstruction. Built-programme evidence may change after houses; the test compares the retained cadastral geometry separately from that evidence. Its artifacts are written under `web/out/v2-rust-browser/` for local review.
 
 No publication or deployment is implied by these checks. The V1 remains separate and the alpha stays in local review.

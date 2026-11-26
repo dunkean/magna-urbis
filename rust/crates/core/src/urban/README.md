@@ -33,7 +33,7 @@ Parceling offers cultural recipes, strips, oriented subdivision, competing front
 
 Native corpus: `cargo run --release -p magna-urbis-core --example urban_refonte -- --repeat --out out/urban-refonte.json`. Options `--case`, `--population`, `--seed` and `--geometry` allow replay and measurements on fixed inputs. Browser: `node scripts/urban_refactor_ui_check.mjs http://localhost:5173/urbanbench.html` from `web/`. To compare footprints on plain and valley: `node scripts/urban_natural_scenes_check.mjs`. Replay of the reported site uses `node scripts/urban_natural_ui_check.mjs` and its local decor.
 
-See the [implementation note](../../../../../docs/REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) for validation and limits. History remains a light chronology of footprints and mergers; houses and a complete economic simulation remain independent stages. Water precision still depends on the terrain-provided raster, up to 512².
+See the [implementation note](../../../../../docs/archive/urban-redesign-2026-10/REFONTE_URBAINE_IMPLEMENTATION_2026-10-13.md) for validation and limits. History remains a light chronology of footprints and mergers; houses and a complete economic simulation remain independent stages. Water precision still depends on the terrain-provided raster, up to 512².
 
 Stage **6 · Neighborhoods and blocks**, then stage **7 · Parcels**, use `crates/core/src/urban/` exclusively in Rust/WASM. TypeScript transports inputs, presents controls and draws results. These structures are a temporary bench contract, not the engine's permanent model.
 

@@ -37,8 +37,8 @@ The first delivery must show differences in terrain character from the regional 
 
 ### 2.1. The two starting reviews
 
-- **[RENDER_REVIEW.md](RENDER_REVIEW.md)**, especially §§3 and 7–10: example-based material combinations, structured patterns, deterministic scatter, filtering, and continuity across scales. This report contributes synthesis techniques and the distinction between continuous matter and recognizable objects.
-- **[MATERIALS_REVIEW.md](MATERIALS_REVIEW.md)**, especially §§1–3 and 5: a landscape catalog and separation between material, morphology, pattern, cover, and state. This report defines what the system must be able to express; its material/generator counts indicate scale, rather than a scientific classification or a scope to implement all at once.
+- **[RENDER_REVIEW.md](../RENDER_REVIEW.md)**, especially §§3 and 7–10: example-based material combinations, structured patterns, deterministic scatter, filtering, and continuity across scales. This report contributes synthesis techniques and the distinction between continuous matter and recognizable objects.
+- **[MATERIALS_REVIEW.md](../archive/studies/MATERIALS_REVIEW.md)**, especially §§1–3 and 5: a landscape catalog and separation between material, morphology, pattern, cover, and state. This report defines what the system must be able to express; its material/generator counts indicate scale, rather than a scientific classification or a scope to implement all at once.
 
 The catalog places many patterns at **0.2–5 m/px**. The project must therefore solve two related problems: produce this mesoscopic organization, then extend it down to the centimeter. A detailed PBR texture replaces neither an alluvial bar nor a scree front.
 
@@ -55,7 +55,7 @@ Both working directories were on `main`. Snapshot branches were read without swi
 
 Existing code paths cited below are integration points. Modules proposed later have yet to be created. Snapshot measurements and checks are results documented by these projects; **no new rendering benchmark was run for this design**.
 
-Additional internal sources: [RENDERING.md](RENDERING.md), [Render3D ground](methods/render3d-ground.md), [Render3D vegetation](methods/render3d-vegetation.md), [technical overview](TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md), [Magna Urbis v2 note at the snapshot](https://github.com/dunkean/magna-urbis/blob/bf3ccc7b5976dac059f902d914450f9bf60900be/docs/methods/render-v2.md), [Neural Earth v2 implementation](https://github.com/dunkean/neural-earth/blob/ce7f8cbef03218ce7977dc4591e83b637c5231dc/docs/design/render-v2-implementation.fr.md).
+Additional internal sources: [RENDERING.md](../RENDERING.md), [Render3D ground](../methods/render3d-ground.md), [Render3D vegetation](../methods/render3d-vegetation.md), [technical overview](../TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md), [Magna Urbis v2 note at the snapshot](https://github.com/dunkean/magna-urbis/blob/bf3ccc7b5976dac059f902d914450f9bf60900be/docs/methods/render-v2.md), [Neural Earth v2 implementation](https://github.com/dunkean/neural-earth/blob/ce7f8cbef03218ce7977dc4591e83b637c5231dc/docs/design/render-v2-implementation.fr.md).
 
 ## 3. Current state: strengths, limits, and necessary changes
 

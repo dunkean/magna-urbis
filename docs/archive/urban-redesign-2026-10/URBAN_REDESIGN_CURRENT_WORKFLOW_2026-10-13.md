@@ -13,7 +13,7 @@ There are currently two relevant urban implementations.
 | Historical TypeScript application | Complete site and settlement generation, with phases, streets, blocks, parcels, buildings and amenities | Richest reference for behaviors and special cases |
 | Rust Terrain Bench / Urban Bench | Settlement composition, neighborhoods, streets and blocks, then parcels; geography and roads come from terrain or an imported decor | Current prototype for stages to reconsider, independent of houses |
 
-General READMEs still say Rust urban generation is forthcoming, whereas the [Rust urban-stage guide](../rust/crates/core/src/urban/README.md) and sources already contain it. For this analysis, the sources and specialized guide take precedence over that general presentation.
+General READMEs still say Rust urban generation is forthcoming, whereas the [Rust urban-stage guide](../../../rust/crates/core/src/urban/README.md) and sources already contain it. For this analysis, the sources and specialized guide take precedence over that general presentation.
 
 The Watabou heritage explains the project's origin, but the current TypeScript engine is no longer just a set of Voronoi cells. Its central organization is now a succession of guided partitions.
 
@@ -196,10 +196,10 @@ Archived bugs on neighborhood boundaries, ports, open contours and streets witho
 
 The main materials consulted are:
 
-- [TypeScript orchestration](../web/src/gen/urban/index.ts), [phase planning](../web/src/gen/urban/phases.ts), [axes and neighborhoods](../web/src/gen/urban/primary.ts).
-- [Orientation fields](../web/src/gen/urban/field.ts), [subdivision and blocks](../web/src/gen/urban/blocks.ts), [parcels](../web/src/gen/urban/plots.ts), [served footprint](../web/src/gen/urban/footprint.ts).
-- [Rust guide](../rust/crates/core/src/urban/README.md), [composition](../rust/crates/core/src/urban/composition.rs), [macroplan](../rust/crates/core/src/urban/macroplan.rs), [neighborhoods](../rust/crates/core/src/urban/quarters.rs), [parcels](../rust/crates/core/src/urban/parcels.rs), [routing](../rust/crates/core/src/urban/routing.rs), [network](../rust/crates/core/src/urban/network.rs).
+- [TypeScript orchestration](../../../web/src/gen/urban/index.ts), [phase planning](../../../web/src/gen/urban/phases.ts), [axes and neighborhoods](../../../web/src/gen/urban/primary.ts).
+- [Orientation fields](../../../web/src/gen/urban/field.ts), [subdivision and blocks](../../../web/src/gen/urban/blocks.ts), [parcels](../../../web/src/gen/urban/plots.ts), [served footprint](../../../web/src/gen/urban/footprint.ts).
+- [Rust guide](../../../rust/crates/core/src/urban/README.md), [composition](../../../rust/crates/core/src/urban/composition.rs), [macroplan](../../../rust/crates/core/src/urban/macroplan.rs), [neighborhoods](../../../rust/crates/core/src/urban/quarters.rs), [parcels](../../../rust/crates/core/src/urban/parcels.rs), [routing](../../../rust/crates/core/src/urban/routing.rs), [network](../../../rust/crates/core/src/urban/network.rs).
 - Local study inputs: `HANDOFF.md`, `BUGS.md`, `web/URBAN_GEOMETRY.md` and `web/URBAN_MORPHOLOGY.md` from the October 9 working archive. These session documents are not distributed; their historical observations are summarised in this study.
-- [Local historical settlement catalogue](catalogue_settlements_antiquite_moyen_age_rpg.md), to retain distinctions between form, use, environment and origin.
+- [Local historical settlement catalogue](../../catalogue_settlements_antiquite_moyen_age_rpg.md), to retain distinctions between form, use, environment and origin.
 
 Archived documents sometimes express older intentions different from observed current methods; they were used as context, not sole proof of implementation.

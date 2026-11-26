@@ -15,8 +15,17 @@
   <a href="https://github.com/dunkean/magna-urbis/releases">Desktop downloads</a> ·
   <a href="https://github.com/dunkean/magna-urbis/releases/download/desktop-v0.3.10/Magna.Urbis.V2_0.3.10_aarch64.dmg">macOS (Apple Silicon)</a> ·
   <a href="https://magna-urbis.org/gallery/v2/">Gallery</a> ·
+  <a href="https://discord.gg/3yFq8t8Q2W">Discord</a> ·
   <a href="https://github.com/dunkean/magna-urbis/discussions">Discussions</a> ·
   <a href="README_FR.md">Français</a>
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/3yFq8t8Q2W"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://github.com/dunkean/magna-urbis/stargazers"><img src="https://img.shields.io/github/stars/dunkean/magna-urbis?style=flat&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/dunkean/magna-urbis/releases"><img src="https://img.shields.io/github/v/release/dunkean/magna-urbis?include_prereleases&label=desktop" alt="Latest desktop release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
+  <a href="https://ko-fi.com/dunkean"><img src="https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
 </p>
 
 <p align="center">
@@ -132,6 +141,7 @@ Many more in the [V2 gallery](https://magna-urbis.org/gallery/v2/).
 - **[Architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html)** ([français](https://magna-urbis.org/scientific/catalogue-architecture-fr.html)): the 115 cultures in 2D and 3D.
 - [Technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md): system layers, erosion, hydrology, neural terrain, settlements, references.
 - [Method notes](docs/methods/README.md): one short note per implemented technique, with its sources and limits.
+- [Getting started](docs/GETTING_STARTED.md) and [FAQ](docs/FAQ.md).
 - [Documentation index](docs/README.md): rendering, recipes, cultures, designs and studies.
 
 Under the hood: a **Rust** engine (terrain, water, settlements, cities, buildings) compiled twice, as **WebAssembly** for the browser and as a **native** local service for the desktop app. The interface and renderers are **TypeScript** with **WebGL2** and **WebGPU**. Neural relief runs in Rust too, with [Burn](https://burn.dev/) on the desktop and a small dedicated WGSL engine in the browser.
@@ -177,7 +187,7 @@ npm run app:v2:build   # desktop app and installer for this OS
 npm run test:v2        # V2 tests
 ```
 
-The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native engine, browser neural relief and the optional Python modules. The [Rust README](rust/README.md) describes the engine crates. Releases follow the [desktop release guide](docs/DESKTOP_RELEASE.md); the web build follows the [web publication guide](docs/WEB_PUBLICATION_FR.md).
+The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native engine, browser neural relief and the optional Python modules. The [Rust README](rust/README.md) describes the engine crates. Releases follow the [desktop release guide](docs/DESKTOP_RELEASE.md); the web build follows the [web publication guide](docs/WEB_PUBLICATION.md).
 
 ```text
 rust/crates/terrain/   relief, erosion, hydrology, Underdark
@@ -192,7 +202,9 @@ docs/                  documentation, method notes and the illustrated atlas
 
 ## Contributing and feedback
 
-Ideas, questions and generated maps are welcome in [Discussions](https://github.com/dunkean/magna-urbis/discussions). For bugs, open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, and a screenshot if you can. Read the [contribution guide](CONTRIBUTING.md) before a pull request.
+Join the **[Discord](https://discord.gg/3yFq8t8Q2W)** to share maps, ask for help and follow development. Ideas and questions are also welcome in [Discussions](https://github.com/dunkean/magna-urbis/discussions). For bugs, open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, and a screenshot if you can.
+
+**Want to contribute code?** The engine is Rust (compiled to WebAssembly and native), rendering is WebGL2/WebGPU, the interface is TypeScript. Look for [`good first issue`](https://github.com/dunkean/magna-urbis/labels/good%20first%20issue) and [`help wanted`](https://github.com/dunkean/magna-urbis/labels/help%20wanted), read the [contribution guide](CONTRIBUTING.md), and say hello in `#contributors` on Discord. Translations are plain JSON in [`web/src/locales/`](web/src/locales/README.md).
 
 Magna Urbis is mostly written by AI coding agents (Claude and Codex) under one human architect and reviewer. The [Ko-fi devlogs](docs/devlog/kofi-devlogs.md) tell how it is built, what broke and what worked.
 

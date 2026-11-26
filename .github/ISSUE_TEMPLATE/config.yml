@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Discord community
+    url: https://discord.gg/3yFq8t8Q2W
+    about: Quick questions, help, sharing maps and chatting with other users and contributors.
   - name: Questions, ideas and generated maps
     url: https://github.com/dunkean/magna-urbis/discussions
     about: Use Discussions for help, proposals and sharing your maps.

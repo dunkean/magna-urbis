@@ -1,22 +1,22 @@
 # Architectural reference — historical 79-culture snapshot
 
-This reference preserves the French recipe descriptions of an earlier 79-culture catalogue. Its dimensions, recipe IDs and layout rules describe that snapshot, not the current defaults. The maintained [architectural styles catalogue](scientific/catalogue-architecture.html) and its [French edition](scientific/catalogue-architecture-fr.html) cover all 115 cultures with current V2 captures.
+This reference preserves the French recipe descriptions of an earlier 79-culture catalogue. Its dimensions, recipe IDs and layout rules describe that snapshot, not the current defaults. The maintained [architectural styles catalogue](../../scientific/catalogue-architecture.html) and its [French edition](../../scientific/catalogue-architecture-fr.html) cover all 115 cultures with current V2 captures.
 
-Each section links to the maintained catalogue instead of embedding diagrams that are no longer distributed. The historical fields below remain useful for tracing the older recipe choices; use the current [Rust catalogue](../rust/crates/core/src/urban/catalogue.json) when changing generation.
+Each section links to the maintained catalogue instead of embedding diagrams that are no longer distributed. The historical fields below remain useful for tracing the older recipe choices; use the current [Rust catalogue](../../../rust/crates/core/src/urban/catalogue.json) when changing generation.
 
 ### Lire ces recettes avec la V2 actuelle
 
-Une recette historique décrit un plan, une fourchette de dimensions et une tradition constructive. Pour examiner le résultat actuel, consultez une fiche des 115 cultures, puis observez la maison de près avec le mode de toiture **Architecture détaillée**. Les corps de bâtiment viennent de la volumétrie procédurale. Le rendu ajuste ensuite les ouvrages de façade et de toiture à la place disponible. Les captures générales des fiches et les comparaisons de détail portent chacune leur date. [Catalogue actuel en français](scientific/catalogue-architecture-fr.html#architecture-detail) · [Current English catalogue](scientific/catalogue-architecture.html#architecture-detail)
+Une recette historique décrit un plan, une fourchette de dimensions et une tradition constructive. Pour examiner le résultat actuel, consultez une fiche des 115 cultures, puis observez la maison de près avec le mode de toiture **Architecture détaillée**. Les corps de bâtiment viennent de la volumétrie procédurale. Le rendu ajuste ensuite les ouvrages de façade et de toiture à la place disponible. Les captures générales des fiches et les comparaisons de détail portent chacune leur date. [Catalogue actuel en français](../../scientific/catalogue-architecture-fr.html#architecture-detail) · [Current English catalogue](../../scientific/catalogue-architecture.html#architecture-detail)
 
-Dans les 115 cultures, la graine de la maison fait varier la construction de son entrée. La même façade peut ainsi recevoir un auvent sur corbeaux ou un porche sur poteaux. La graine reproduit le même choix à chaque visite. Le passage libre et la forme du bâtiment déterminent quels ouvrages peuvent apparaître. [Comparer trois porches sur la même façade](scientific/catalogue-architecture-fr.html#porch-variants)
+Dans les 115 cultures, la graine de la maison fait varier la construction de son entrée. La même façade peut ainsi recevoir un auvent sur corbeaux ou un porche sur poteaux. La graine reproduit le même choix à chaque visite. Le passage libre et la forme du bâtiment déterminent quels ouvrages peuvent apparaître. [Comparer trois porches sur la même façade](../../scientific/catalogue-architecture-fr.html#porch-variants)
 
-Comparez par exemple le vestibule d’écorce de la maison longue haudenosaunee et le porche à pignon du wharepuni māori. La même vue permet de distinguer l’auvent organique d’une habitation myconide des lits étagés d’une champignonnière. [Exemples illustrés et sources](scientific/catalogue-architecture-fr.html#culture-frontages)
+Comparez par exemple le vestibule d’écorce de la maison longue haudenosaunee et le porche à pignon du wharepuni māori. La même vue permet de distinguer l’auvent organique d’une habitation myconide des lits étagés d’une champignonnière. [Exemples illustrés et sources](../../scientific/catalogue-architecture-fr.html#culture-frontages)
 
-Sur la planche des variantes, trois parcelles sahéliennes associent différemment terrasses de terre et cases rondes. Trois parcelles vénitiennes montrent une maison à étage, un volume bas et allongé et une maison accompagnée d’une annexe. À graine de ville identique, les parcelles produisent des silhouettes différentes. De près, les appuis vénitiens rejoignent le bas des fenêtres existantes. [Planche légendée](scientific/catalogue-architecture-fr.html#house-variants) · [Télécharger les six vues](scientific/assets/atlas/house-variants.webp)
+Sur la planche des variantes, trois parcelles sahéliennes associent différemment terrasses de terre et cases rondes. Trois parcelles vénitiennes montrent une maison à étage, un volume bas et allongé et une maison accompagnée d’une annexe. À graine de ville identique, les parcelles produisent des silhouettes différentes. De près, les appuis vénitiens rejoignent le bas des fenêtres existantes. [Planche légendée](../../scientific/catalogue-architecture-fr.html#house-variants) · [Télécharger les six vues](../../scientific/assets/atlas/house-variants.webp)
 
 ## Medieval organic (Europe) (`european-organic`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#european-organic)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#european-organic)
 
 Plan : Organique · Maison illustrée : Maison mitoyenne étroite · Recette native : EUR-MED-B02 · Agencement : strip · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–3 · Dimensions : 4–6 m × 10–18 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TILE-CLAY
 
@@ -28,7 +28,7 @@ Recettes : european-organic/core, european-organic/ring, european-organic/faubou
 
 ## Bastide (planned grid) (`bastide`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#bastide)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#bastide)
 
 Plan : Grille · Maison illustrée : Chaumière rectangulaire · Recette native : EUR-MED-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -40,7 +40,7 @@ Recettes : bastide/core, bastide/faubourg, bastide/village, bastide/hamlet
 
 ## Medina (North Africa) (`medina`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#medina)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#medina)
 
 Plan : Organique · Maison illustrée : Dar à patio · Recette native : AF-MAG-B02 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AF-MAG · Parcellaire : burgage · Bâti urbain : shopRow · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -52,7 +52,7 @@ Recettes : medina/core, medina/ring, medina/faubourg, medina/village, medina/ham
 
 ## Chinese walled city (`chinese`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#chinese)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#chinese)
 
 Plan : Grille · Maison illustrée : Siheyuan de cour · Recette native : AS-CHI-B02 · Agencement : siheyuan · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 22–32 m × 24–36 m · Famille architecturale : AS-CHI · Parcellaire : siheyuan · Bâti urbain : pavilionCompound · Matériau porteur : MAT-WOOD-MORTISE · Remplissage : MAT-BURNT-BRICK · Couverture : MAT-TILE-CLAY
 
@@ -64,7 +64,7 @@ Recettes : chinese/core, chinese/ring, chinese/faubourg, chinese/village, chines
 
 ## Japanese castle town (jōkamachi) (`japanese-jokamachi`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#japanese-jokamachi)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#japanese-jokamachi)
 
 Plan : Organique · Maison illustrée : Maison paysanne bois et chaume · Recette native : AS-JAP-B01 · Agencement : single · Toiture native : RF-REED-HIP · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AS-JAP · Parcellaire : compound · Bâti urbain : yashiki · Matériau porteur : MAT-WOOD-MORTISE · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -76,7 +76,7 @@ Recettes : japanese-jokamachi/core, japanese-jokamachi/ring, japanese-jokamachi/
 
 ## Indian temple town (`indian-temple`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#indian-temple)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#indian-temple)
 
 Plan : Grille · Maison illustrée : Maison harappéenne en brique · Recette native : AS-IND-B02 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : masonry · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-IND · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-BURNT-BRICK · Remplissage : MAT-BURNT-BRICK · Couverture : MAT-MUD-PLASTER
 
@@ -88,7 +88,7 @@ Recettes : indian-temple/core, indian-temple/ring, indian-temple/faubourg, india
 
 ## Roman castrum core (`roman-core`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#roman-core)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#roman-core)
 
 Plan : Grille · Maison illustrée : Domus à atrium · Recette native : MED-ANT-B02 · Agencement : atrium · Toiture native : RF-GABLE · Structure : masonry · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : MED-ANT · Parcellaire : courtyard · Bâti urbain : courtyardHouse · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-TILE-CLAY
 
@@ -100,7 +100,7 @@ Recettes : roman-core/core, roman-core/ring, roman-core/faubourg, roman-core/vil
 
 ## Elven forest town (`elven`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#elven)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#elven)
 
 Plan : Organique · Maison illustrée : Maison longue nordique · Recette native : EUR-NOR-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 6–10 m × 18–36 m · Famille architecturale : EUR-NOR · Parcellaire : compound · Bâti urbain : treeHouse · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TURF
 
@@ -112,7 +112,7 @@ Recettes : elven/core, elven/ring, elven/village, elven/hamlet
 
 ## Dwarven hold (`dwarven`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#dwarven)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#dwarven)
 
 Plan : Terrasses · Maison illustrée : Isba/maison forestière en rondins · Recette native : EUR-EAST-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : log · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-EAST · Parcellaire : burgage · Bâti urbain : hall · Matériau porteur : MAT-LOG · Remplissage : MAT-LOG · Couverture : MAT-WOOD-SHINGLES
 
@@ -124,7 +124,7 @@ Recettes : dwarven/core, dwarven/faubourg, dwarven/village, dwarven/hamlet
 
 ## Necropolis (city of the dead) (`necropolis`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#necropolis)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#necropolis)
 
 Plan : Grille · Maison illustrée : Maison égyptienne en adobe · Recette native : AF-NILE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 10–16 m × 12–18 m · Famille architecturale : AF-NILE · Parcellaire : courtyard · Bâti urbain : tomb · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -136,7 +136,7 @@ Recettes : necropolis/core, necropolis/ring, necropolis/village, necropolis/haml
 
 ## Russian kremlin and posad (`russian-kremlin`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#russian-kremlin)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#russian-kremlin)
 
 Plan : Organique · Maison illustrée : Isba/maison forestière en rondins · Recette native : EUR-EAST-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : log · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-EAST · Parcellaire : burgage · Bâti urbain : yardHouse · Matériau porteur : MAT-LOG · Remplissage : MAT-LOG · Couverture : MAT-WOOD-SHINGLES
 
@@ -148,7 +148,7 @@ Recettes : russian-kremlin/core, russian-kremlin/ring, russian-kremlin/faubourg,
 
 ## Aztec city (Tenochtitlan) (`aztec`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#aztec)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#aztec)
 
 Plan : Grille · Maison illustrée : Maison urbaine en adobe · Recette native : AM-MESO-B04 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 12–18 m × 14–20 m · Famille architecturale : AM-MESO · Parcellaire : courtyard · Bâti urbain : courtyardHouse · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -160,7 +160,7 @@ Recettes : aztec/core, aztec/ring, aztec/faubourg, aztec/village, aztec/hamlet
 
 ## Inca city (Cusco) (`inca`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#inca)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#inca)
 
 Plan : Terrasses · Maison illustrée : Kancha inca · Recette native : AM-AND-B02 · Agencement : kancha · Toiture native : RF-GABLE · Structure : masonry · Étages : 1–2 · Dimensions : 22–36 m × 22–34 m · Famille architecturale : AM-AND · Parcellaire : courtyard · Bâti urbain : kancha · Matériau porteur : MAT-STONE-DRY · Remplissage : MAT-STONE-DRY · Couverture : MAT-THATCH
 
@@ -172,7 +172,7 @@ Recettes : inca/core, inca/ring, inca/faubourg, inca/village, inca/hamlet
 
 ## Byzantine hill town (Mystras) (`byzantine-greek`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#byzantine-greek)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#byzantine-greek)
 
 Plan : Terrasses · Maison illustrée : Maison urbaine byzantine · Recette native : EUR-EAST-B06 · Agencement : courtyard · Toiture native : RF-GABLE · Structure : masonry · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : EUR-EAST · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-TILE-CLAY
 
@@ -184,7 +184,7 @@ Recettes : byzantine-greek/core, byzantine-greek/ring, byzantine-greek/faubourg,
 
 ## Venetian lagoon town (`venetian-lagoon`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#venetian-lagoon)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#venetian-lagoon)
 
 Plan : Organique · Maison illustrée : Maison mitoyenne étroite · Recette native : EUR-MED-B02 · Agencement : strip · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–3 · Dimensions : 4–6 m × 10–18 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : venetian · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TILE-CLAY
 
@@ -196,7 +196,7 @@ Recettes : venetian-lagoon/core, venetian-lagoon/ring, venetian-lagoon/faubourg,
 
 ## Persian city (Isfahan) (`persian`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#persian)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#persian)
 
 Plan : Organique · Maison illustrée : Maison levantine à cour · Recette native : AS-MIDE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-MIDE · Parcellaire : burgage · Bâti urbain : shopRow · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -208,7 +208,7 @@ Recettes : persian/core, persian/ring, persian/faubourg, persian/village, persia
 
 ## Ottoman town (Bursa) (`ottoman`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#ottoman)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#ottoman)
 
 Plan : Organique · Maison illustrée : Maison levantine à cour · Recette native : AS-MIDE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-MIDE · Parcellaire : burgage · Bâti urbain : shopRow · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -220,7 +220,7 @@ Recettes : ottoman/core, ottoman/ring, ottoman/faubourg, ottoman/village, ottoma
 
 ## Sahelian mud town (Djenne) (`sahel`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#sahel)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#sahel)
 
 Plan : Organique · Maison illustrée : Hutte sahélienne ronde · Recette native : AF-SAHEL-B01 · Agencement : single · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AF-SAHEL · Parcellaire : courtyard · Bâti urbain : courtyardHouse · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -232,7 +232,7 @@ Recettes : sahel/core, sahel/ring, sahel/faubourg, sahel/village, sahel/hamlet
 
 ## Hanseatic port (Lubeck) (`hanseatic`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#hanseatic)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#hanseatic)
 
 Plan : Grille · Maison illustrée : Maison mitoyenne étroite · Recette native : EUR-MED-B02 · Agencement : strip · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–3 · Dimensions : 4–6 m × 10–18 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : giebelhaus · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TILE-CLAY
 
@@ -244,7 +244,7 @@ Recettes : hanseatic/core, hanseatic/ring, hanseatic/faubourg, hanseatic/village
 
 ## Korean walled town (Hanyang) (`korean`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#korean)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#korean)
 
 Plan : Organique · Maison illustrée : Hanok à cour · Recette native : AS-KOR-B02 · Agencement : courtyard · Toiture native : RF-EAVES · Structure : post_beam · Étages : 1–1 · Dimensions : 18–26 m × 16–24 m · Famille architecturale : AS-KOR · Parcellaire : burgage · Bâti urbain : hanok · Matériau porteur : MAT-WOOD-MORTISE · Remplissage : MAT-BURNT-BRICK · Couverture : MAT-TILE-CLAY
 
@@ -256,7 +256,7 @@ Recettes : korean/core, korean/ring, korean/faubourg, korean/village, korean/ham
 
 ## Wizard city (`wizard-city`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#wizard-city)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#wizard-city)
 
 Plan : Radial · Maison illustrée : Chaumière rectangulaire · Recette native : EUR-MED-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -268,7 +268,7 @@ Recettes : wizard-city/core, wizard-city/ring, wizard-city/faubourg, wizard-city
 
 ## Gnomish canal town (`gnomish`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#gnomish)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#gnomish)
 
 Plan : Organique · Maison illustrée : Chaumière rectangulaire · Recette native : EUR-MED-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : gnome · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -280,7 +280,7 @@ Recettes : gnomish/core, gnomish/ring, gnomish/faubourg, gnomish/village, gnomis
 
 ## Stilt town (marsh folk) (`stilt-town`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#stilt-town)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#stilt-town)
 
 Plan : Dispersé · Maison illustrée : Maison austronésienne sur pilotis · Recette native : AS-ISL-B01 · Agencement : platform · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AS-ISL · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-BAMBOO · Couverture : MAT-PALM
 
@@ -292,7 +292,7 @@ Recettes : stilt-town/core, stilt-town/village, stilt-town/hamlet
 
 ## Barbarian: Germanic village (`barbarian`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#barbarian)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#barbarian)
 
 Plan : Dispersé · Maison illustrée : Roundhouse en torchis · Recette native : ATL-CEL-B01 · Agencement : single · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : ATL-CEL · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -304,7 +304,7 @@ Recettes : barbarian/core, barbarian/village, barbarian/hamlet, barbarian/grown-
 
 ## Barbarian: Celtic ringfort (`barbarian-celtic`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#barbarian-celtic)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#barbarian-celtic)
 
 Plan : Radial · Maison illustrée : Roundhouse en torchis · Recette native : ATL-CEL-B01 · Agencement : single · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : ATL-CEL · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -316,7 +316,7 @@ Recettes : barbarian-celtic/core, barbarian-celtic/village, barbarian-celtic/ham
 
 ## Barbarian: Norse farmstead cluster (`barbarian-norse`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#barbarian-norse)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#barbarian-norse)
 
 Plan : Dispersé · Maison illustrée : Maison longue nordique · Recette native : EUR-NOR-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 6–10 m × 18–36 m · Famille architecturale : EUR-NOR · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TURF
 
@@ -328,7 +328,7 @@ Recettes : barbarian-norse/core, barbarian-norse/village, barbarian-norse/hamlet
 
 ## Norse ring fortress (Trelleborg) (`norse-ringfort`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#norse-ringfort)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#norse-ringfort)
 
 Plan : Radial · Maison illustrée : Maison longue nordique · Recette native : EUR-NOR-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 6–10 m × 18–36 m · Famille architecturale : EUR-NOR · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TURF
 
@@ -340,7 +340,7 @@ Recettes : norse-ringfort/core, norse-ringfort/village, norse-ringfort/hamlet, n
 
 ## Maya city (ceremonial core, sacbeob) (`maya`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#maya)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#maya)
 
 Plan : Dispersé · Maison illustrée : Ensemble résidentiel teotihuacain · Recette native : AM-MESO-B03 · Agencement : multiyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 36–56 m × 40–60 m · Famille architecturale : AM-MESO · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -352,7 +352,7 @@ Recettes : maya/core, maya/village, maya/hamlet
 
 ## Khmer city (Angkor) (`khmer`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#khmer)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#khmer)
 
 Plan : Grille · Maison illustrée : Maison thaïe/loase sur pilotis · Recette native : AS-SEA-B03 · Agencement : kancha · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AS-SEA · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-BAMBOO · Couverture : MAT-PALM
 
@@ -364,7 +364,7 @@ Recettes : khmer/core, khmer/village, khmer/hamlet
 
 ## Celtic oppidum (`celtic-oppidum`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#celtic-oppidum)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#celtic-oppidum)
 
 Plan : Organique · Maison illustrée : Roundhouse en torchis · Recette native : ATL-CEL-B01 · Agencement : single · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : ATL-CEL · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -376,7 +376,7 @@ Recettes : celtic-oppidum/core, celtic-oppidum/village, celtic-oppidum/hamlet, c
 
 ## Orcish war camp (`orcish`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#orcish)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#orcish)
 
 Plan : Dispersé · Maison illustrée : Roundhouse en torchis · Recette native : ATL-CEL-B01 · Agencement : single · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : ATL-CEL · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -388,7 +388,7 @@ Recettes : orcish/core, orcish/village, orcish/hamlet, orcish/grown-core, orcish
 
 ## Halfling shire (`halfling`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#halfling)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#halfling)
 
 Plan : Dispersé · Maison illustrée : Chaumière rectangulaire · Recette native : EUR-MED-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -400,7 +400,7 @@ Recettes : halfling/core, halfling/village, halfling/hamlet, halfling/grown-core
 
 ## Kraal (African homestead) (`kraal`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#kraal)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#kraal)
 
 Plan : Radial · Maison illustrée : Concession familiale à plusieurs huttes · Recette native : AF-SOUTH-B05 · Agencement : hut_compound · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 20–34 m × 20–34 m · Famille architecturale : AF-SOUTH · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -412,7 +412,7 @@ Recettes : kraal/core, kraal/village, kraal/hamlet, kraal/grown-core, kraal/grow
 
 ## Native American: Iroquoian longhouse village (`native-iroquoian`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#native-iroquoian)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#native-iroquoian)
 
 Plan : Linéaire · Maison illustrée : Wigwam / wickiup en dôme · Recette native : AM-WOODS-B01 · Agencement : single · Toiture native : RF-DOME · Structure : flexible_frame · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AM-WOODS · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-BARK · Couverture : MAT-BARK
 
@@ -424,7 +424,7 @@ Recettes : native-iroquoian/core, native-iroquoian/village, native-iroquoian/ham
 
 ## Native American: Pueblo (`native-pueblo`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#native-pueblo)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#native-pueblo)
 
 Plan : Terrasses · Maison illustrée : Maison pueblo en adobe · Recette native : AM-PUEB-B01 · Agencement : single · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AM-PUEB · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -436,7 +436,7 @@ Recettes : native-pueblo/core, native-pueblo/village, native-pueblo/hamlet, nati
 
 ## Native American: Plains tipi camp (`native-plains`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#native-plains)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#native-plains)
 
 Plan : Radial · Maison illustrée : Wigwam / wickiup en dôme · Recette native : AM-WOODS-B01 · Agencement : single · Toiture native : RF-DOME · Structure : flexible_frame · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AM-WOODS · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-BARK · Couverture : MAT-BARK
 
@@ -448,7 +448,7 @@ Recettes : native-plains/core, native-plains/village, native-plains/hamlet, nati
 
 ## Nomad camp (steppe ordu) (`nomad-camp`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#nomad-camp)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#nomad-camp)
 
 Plan : Radial · Maison illustrée : Yourte / ger · Recette native : AS-STEP-B01 · Agencement : single · Toiture native : RF-DOME · Structure : flexible_frame · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AS-STEP · Parcellaire : burgage · Bâti urbain : streetFrontRow · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-FELT · Couverture : MAT-FELT
 
@@ -460,7 +460,7 @@ Recettes : nomad-camp/core, nomad-camp/village, nomad-camp/hamlet, nomad-camp/gr
 
 ## Swahili stone town (Lamu / Zanzibar) (`swahili-stone-town`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#swahili-stone-town)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#swahili-stone-town)
 
 Plan : Organique · Maison illustrée : Maison swahilie de corail · Recette native : AF-EAST-B02 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : masonry · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AF-EAST · Parcellaire : courtyard · Bâti urbain : courtyardHouse · Matériau porteur : MAT-CORAL · Remplissage : MAT-CORAL · Couverture : MAT-MUD-PLASTER
 
@@ -472,7 +472,7 @@ Recettes : swahili-stone-town/core, swahili-stone-town/core-sector-0, swahili-st
 
 ## Drow enclave (`drow-enclave`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#drow-enclave)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#drow-enclave)
 
 Plan : Organique · Maison illustrée : Maison levantine à cour · Recette native : AS-MIDE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-MIDE · Parcellaire : courtyard · Bâti urbain : courtyardHouse · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -484,7 +484,7 @@ Recettes : drow-enclave/core, drow-enclave/ring, drow-enclave/faubourg, drow-enc
 
 ## Duergar industrial hold (`duergar-hold`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#duergar-hold)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#duergar-hold)
 
 Plan : Terrasses · Maison illustrée : Isba/maison forestière en rondins · Recette native : EUR-EAST-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : log · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-EAST · Parcellaire : burgage · Bâti urbain : duergarHall · Matériau porteur : MAT-LOG · Remplissage : MAT-LOG · Couverture : MAT-WOOD-SHINGLES
 
@@ -496,7 +496,7 @@ Recettes : duergar-hold/core, duergar-hold/faubourg, duergar-hold/village, duerg
 
 ## Myconid colony (`myconid-colony`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#myconid-colony)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#myconid-colony)
 
 Plan : Radial · Maison illustrée : Maison de palmes légère · Recette native : AM-TROP-B01 · Agencement : single · Toiture native : RF-REED-HIP · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AM-TROP · Parcellaire : compound · Bâti urbain : fungalHouse · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -508,7 +508,7 @@ Recettes : myconid-colony/core, myconid-colony/village, myconid-colony/hamlet
 
 ## Égypte · ville planifiée du Nil (`egyptian-planned`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#egyptian-planned)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#egyptian-planned)
 
 Plan : Grille · Maison illustrée : Maison égyptienne en adobe · Recette native : AF-NILE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 10–16 m × 12–18 m · Famille architecturale : AF-NILE · Parcellaire : courtyard · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -520,7 +520,7 @@ Recettes : egyptian-planned/core, egyptian-planned/ring, egyptian-planned/faubou
 
 ## Nubie · ville fortifiée (`nubian-fortified`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#nubian-fortified)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#nubian-fortified)
 
 Plan : Grille · Maison illustrée : Maison égyptienne en adobe · Recette native : AF-NILE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 10–16 m × 12–18 m · Famille architecturale : AF-NILE · Parcellaire : courtyard · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -532,7 +532,7 @@ Recettes : nubian-fortified/core, nubian-fortified/ring, nubian-fortified/faubou
 
 ## Mésopotamie · quartiers de cours (`mesopotamian`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#mesopotamian)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#mesopotamian)
 
 Plan : Organique · Maison illustrée : Maison levantine à cour · Recette native : AS-MIDE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-MIDE · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -544,7 +544,7 @@ Recettes : mesopotamian/core, mesopotamian/ring, mesopotamian/faubourg, mesopota
 
 ## Levant · ville fortifiée sur tell (`levantine-tell`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#levantine-tell)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#levantine-tell)
 
 Plan : Terrasses · Maison illustrée : Maison levantine à cour · Recette native : AS-MIDE-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-MIDE · Parcellaire : courtyard · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -556,7 +556,7 @@ Recettes : levantine-tell/core, levantine-tell/ring, levantine-tell/faubourg, le
 
 ## Asie centrale · cité caravanière d’oasis (`oasis-caravan`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#oasis-caravan)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#oasis-caravan)
 
 Plan : Organique · Maison illustrée : Maison à cour de Transoxiane · Recette native : AS-STEP-B04 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-STEP · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -568,7 +568,7 @@ Recettes : oasis-caravan/core, oasis-caravan/ring, oasis-caravan/faubourg, oasis
 
 ## Maghreb · ksar d’oasis (`ksar-oasis`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#ksar-oasis)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#ksar-oasis)
 
 Plan : Organique · Maison illustrée : Dar à patio · Recette native : AF-MAG-B02 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AF-MAG · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -580,7 +580,7 @@ Recettes : ksar-oasis/core, ksar-oasis/ring, ksar-oasis/faubourg, ksar-oasis/vil
 
 ## Yoruba · ville de concessions (`yoruba`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#yoruba)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#yoruba)
 
 Plan : Organique · Maison illustrée : Maison de chef à cour(s) successives · Recette native : AF-WEST-B05 · Agencement : multiyard · Toiture native : RF-HIP · Structure : post_beam · Étages : 1–2 · Dimensions : 38–48 m × 56–72 m · Famille architecturale : AF-WEST · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-COB · Couverture : MAT-THATCH
 
@@ -592,7 +592,7 @@ Recettes : yoruba/core, yoruba/ring, yoruba/faubourg, yoruba/village, yoruba/ham
 
 ## Tibet et Ladakh · habitat en terrasses (`himalayan-terraces`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#himalayan-terraces)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#himalayan-terraces)
 
 Plan : Terrasses · Maison illustrée : Maison tibétaine blanchie · Recette native : AS-HIM-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 2–3 · Dimensions : 10–16 m × 10–16 m · Famille architecturale : AS-HIM · Parcellaire : courtyard · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-MUD-PLASTER
 
@@ -604,7 +604,7 @@ Recettes : himalayan-terraces/core, himalayan-terraces/ring, himalayan-terraces/
 
 ## Népal newar · ville à places rituelles (`newar`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#newar)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#newar)
 
 Plan : Organique · Maison illustrée : Maison tibétaine blanchie · Recette native : AS-HIM-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 2–3 · Dimensions : 10–16 m × 10–16 m · Famille architecturale : AS-HIM · Parcellaire : courtyard · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-MUD-PLASTER
 
@@ -616,7 +616,7 @@ Recettes : newar/core, newar/ring, newar/faubourg, newar/village, newar/hamlet
 
 ## Indus · cité harappéenne (`indus-planned`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#indus-planned)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#indus-planned)
 
 Plan : Grille · Maison illustrée : Maison rectangulaire indienne · Recette native : AS-IND-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : masonry · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AS-IND · Parcellaire : courtyard · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-TILE-CLAY
 
@@ -628,7 +628,7 @@ Recettes : indus-planned/core, indus-planned/ring, indus-planned/faubourg, indus
 
 ## Java · ville de cours et enclos (`javanese-courts`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#javanese-courts)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#javanese-courts)
 
 Plan : Grille · Maison illustrée : Maison balinaise en concession · Recette native : AS-ISL-B05 · Agencement : kancha · Toiture native : RF-EAVES · Structure : post_beam · Étages : 1–1 · Dimensions : 20–30 m × 20–30 m · Famille architecturale : AS-ISL · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-WOOD-MORTISE · Remplissage : MAT-BAMBOO · Couverture : MAT-TILE-CLAY
 
@@ -640,7 +640,7 @@ Recettes : javanese-courts/core, javanese-courts/ring, javanese-courts/faubourg,
 
 ## Mississippien · centre à place palissadée (`mississippian`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#mississippian)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#mississippian)
 
 Plan : Radial · Maison illustrée : Maison mississippienne rectangulaire · Recette native : AM-MISS-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AM-MISS · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -652,7 +652,7 @@ Recettes : mississippian/core, mississippian/ring, mississippian/faubourg, missi
 
 ## Al-Andalus · médina ibérique à patios (`al-andalus`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#al-andalus)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#al-andalus)
 
 Plan : Organique · Maison illustrée : Dar à patio · Recette native : AF-MAG-B02 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AF-MAG · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -664,7 +664,7 @@ Recettes : al-andalus/core, al-andalus/ring, al-andalus/faubourg, al-andalus/vil
 
 ## Italie · commune à piazza et tours (`italian-comune`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#italian-comune)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#italian-comune)
 
 Plan : Organique · Maison illustrée : Maison de portique italien · Recette native : EUR-MED-B09 · Agencement : strip · Toiture native : RF-GABLE · Structure : masonry · Étages : 2–3 · Dimensions : 6–10 m × 12–18 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-TILE-CLAY
 
@@ -676,7 +676,7 @@ Recettes : italian-comune/core, italian-comune/ring, italian-comune/faubourg, it
 
 ## Flandre · ville drapière à beffroi (`flemish-cloth-town`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#flemish-cloth-town)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#flemish-cloth-town)
 
 Plan : Organique · Maison illustrée : Maison aux pignons à redents · Recette native : EUR-MED-B11 · Agencement : single · Toiture native : RF-STEEP-STEP · Structure : masonry · Étages : 2–3 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-BURNT-BRICK · Remplissage : MAT-BURNT-BRICK · Couverture : MAT-TILE-CLAY
 
@@ -688,7 +688,7 @@ Recettes : flemish-cloth-town/core, flemish-cloth-town/ring, flemish-cloth-town/
 
 ## Europe centrale · ville à rynek (`rynek-town`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#rynek-town)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#rynek-town)
 
 Plan : Grille · Maison illustrée : Maison à pans de bois en encorbellement · Recette native : EUR-MED-B03 · Agencement : strip · Toiture native : RF-GABLE · Structure : half_timber · Étages : 2–3 · Dimensions : 4–6 m × 10–18 m · Famille architecturale : EUR-MED · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-HALF-TIMBER · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TILE-CLAY
 
@@ -700,7 +700,7 @@ Recettes : rynek-town/core, rynek-town/ring, rynek-town/faubourg, rynek-town/vil
 
 ## Slaves · gród palissadé et podgrodzie (`slavic-gord`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#slavic-gord)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#slavic-gord)
 
 Plan : Radial · Maison illustrée : Isba/maison forestière en rondins · Recette native : EUR-EAST-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : log · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-EAST · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-LOG · Remplissage : MAT-LOG · Couverture : MAT-WOOD-SHINGLES
 
@@ -712,7 +712,7 @@ Recettes : slavic-gord/core, slavic-gord/ring, slavic-gord/faubourg, slavic-gord
 
 ## Caucase · bourg fortifié géorgien et arménien (`caucasian-highland`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#caucasian-highland)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#caucasian-highland)
 
 Plan : Terrasses · Maison illustrée : Maison caucasienne en pierre · Recette native : EUR-EAST-B03 · Agencement : single · Toiture native : RF-FLAT · Structure : masonry · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : EUR-EAST · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-MUD-PLASTER
 
@@ -724,7 +724,7 @@ Recettes : caucasian-highland/core, caucasian-highland/ring, caucasian-highland/
 
 ## Éthiopie · cité d’altitude (Aksum, Lalibela) (`ethiopian-highland`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#ethiopian-highland)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#ethiopian-highland)
 
 Plan : Organique · Maison illustrée : Tukul du plateau · Recette native : AF-EAST-B01 · Agencement : single · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AF-EAST · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -736,7 +736,7 @@ Recettes : ethiopian-highland/core, ethiopian-highland/ring, ethiopian-highland/
 
 ## Zimbabwe · enclos de pierre sèche (`great-zimbabwe`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#great-zimbabwe)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#great-zimbabwe)
 
 Plan : Organique · Maison illustrée : Concession familiale à plusieurs huttes · Recette native : AF-SOUTH-B05 · Agencement : hut_compound · Toiture native : RF-CONE · Structure : post_beam · Étages : 1–1 · Dimensions : 20–34 m × 20–34 m · Famille architecturale : AF-SOUTH · Parcellaire : compound · Bâti urbain : roundHouse · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-THATCH
 
@@ -748,7 +748,7 @@ Recettes : great-zimbabwe/core, great-zimbabwe/ring, great-zimbabwe/faubourg, gr
 
 ## Hausa · cité-État à enceinte de terre (Kano) (`hausa-kano`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#hausa-kano)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#hausa-kano)
 
 Plan : Organique · Maison illustrée : Maison de banco à terrasse · Recette native : AF-SAHEL-B02 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AF-SAHEL · Parcellaire : courtyard · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -760,7 +760,7 @@ Recettes : hausa-kano/core, hausa-kano/ring, hausa-kano/faubourg, hausa-kano/vil
 
 ## Hadramaout · cité verticale de maisons-tours (Shibam) (`hadhrami-tower`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#hadhrami-tower)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#hadhrami-tower)
 
 Plan : Organique · Maison illustrée : Maison-tour hadramie haute · Recette native : AS-MIDE-B13 · Agencement : single · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 4–7 · Dimensions : 5–7 m × 8–12 m · Famille architecturale : AS-MIDE · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-ADOBE · Remplissage : MAT-ADOBE · Couverture : MAT-MUD-PLASTER
 
@@ -772,7 +772,7 @@ Recettes : hadhrami-tower/core, hadhrami-tower/village, hadhrami-tower/hamlet
 
 ## Rajputana · ville au pied du fort (Jaisalmer, Amber) (`rajput-fort`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#rajput-fort)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#rajput-fort)
 
 Plan : Organique · Maison illustrée : Maison harappéenne en brique · Recette native : AS-IND-B02 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : masonry · Étages : 1–2 · Dimensions : 16–24 m × 16–24 m · Famille architecturale : AS-IND · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-BURNT-BRICK · Remplissage : MAT-BURNT-BRICK · Couverture : MAT-MUD-PLASTER
 
@@ -784,7 +784,7 @@ Recettes : rajput-fort/core, rajput-fort/ring, rajput-fort/faubourg, rajput-fort
 
 ## Inde du Sud · ville-temple à rues concentriques (Madurai) (`dravidian-temple`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#dravidian-temple)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#dravidian-temple)
 
 Plan : Grille · Maison illustrée : Maison rectangulaire indienne · Recette native : AS-IND-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : masonry · Étages : 1–2 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AS-IND · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-TILE-CLAY
 
@@ -796,7 +796,7 @@ Recettes : dravidian-temple/core, dravidian-temple/ring, dravidian-temple/faubou
 
 ## Birmanie · cité royale de Pagan (`bagan`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#bagan)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#bagan)
 
 Plan : Grille · Maison illustrée : Maison sur pilotis de mousson · Recette native : AS-SEA-B01 · Agencement : platform · Toiture native : RF-REED-HIP · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AS-SEA · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-BAMBOO · Couverture : MAT-THATCH
 
@@ -808,7 +808,7 @@ Recettes : bagan/core, bagan/ring, bagan/faubourg, bagan/village, bagan/hamlet
 
 ## Viêt · citadelle et quartier marchand (Thăng Long) (`vietnamese-citadel`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#vietnamese-citadel)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#vietnamese-citadel)
 
 Plan : Grille · Maison illustrée : Maison vietnamienne traditionnelle à cour · Recette native : AS-SEA-B04 · Agencement : kancha · Toiture native : RF-GABLE · Structure : masonry · Étages : 1–2 · Dimensions : 22–32 m × 20–28 m · Famille architecturale : AS-SEA · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-TILE-CLAY
 
@@ -820,7 +820,7 @@ Recettes : vietnamese-citadel/core, vietnamese-citadel/ring, vietnamese-citadel/
 
 ## Tibet · bourg monastique de pente (`tibetan-monastery`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#tibetan-monastery)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#tibetan-monastery)
 
 Plan : Terrasses · Maison illustrée : Maison tibétaine blanchie · Recette native : AS-HIM-B01 · Agencement : courtyard · Toiture native : RF-FLAT · Structure : earth_wall · Étages : 2–3 · Dimensions : 10–16 m × 10–16 m · Famille architecturale : AS-HIM · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-STONE-MORTAR · Remplissage : MAT-STONE-MORTAR · Couverture : MAT-MUD-PLASTER
 
@@ -832,7 +832,7 @@ Recettes : tibetan-monastery/core, tibetan-monastery/ring, tibetan-monastery/fau
 
 ## Mongols · ordu, camp princier de yourtes (`mongol-ordu`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#mongol-ordu)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#mongol-ordu)
 
 Plan : Radial · Maison illustrée : Yourte / ger · Recette native : AS-STEP-B01 · Agencement : single · Toiture native : RF-DOME · Structure : flexible_frame · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AS-STEP · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-FELT · Couverture : MAT-FELT
 
@@ -844,7 +844,7 @@ Recettes : mongol-ordu/core, mongol-ordu/village, mongol-ordu/hamlet, mongol-ord
 
 ## Māori · pā fortifié en terrasses (`maori-pa`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#maori-pa)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#maori-pa)
 
 Plan : Terrasses · Maison illustrée : Fale samoan ouvert · Recette native : OC-PAC-B01 · Agencement : single · Toiture native : RF-REED-HIP · Structure : post_beam · Étages : 1–1 · Dimensions : 5–8 m × 8–14 m · Famille architecturale : OC-PAC · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-PALM · Couverture : MAT-PALM
 
@@ -856,7 +856,7 @@ Recettes : maori-pa/core, maori-pa/village, maori-pa/hamlet
 
 ## Côte Nord-Ouest · village de maisons de planches (`pnw-plank-village`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#pnw-plank-village)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#pnw-plank-village)
 
 Plan : Linéaire · Maison illustrée : Longhouse côtière en planches · Recette native : AM-PNW-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 10–18 m × 22–40 m · Famille architecturale : AM-PNW · Parcellaire : burgage · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WOOD-SHINGLES · Couverture : MAT-WOOD-SHINGLES
 
@@ -868,7 +868,7 @@ Recettes : pnw-plank-village/core, pnw-plank-village/village, pnw-plank-village/
 
 ## Arctique · camp inuit d’hiver (`inuit-camp`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#inuit-camp)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#inuit-camp)
 
 Plan : Dispersé · Maison illustrée : Tente de peaux arctique · Recette native : AM-ARC-B01 · Agencement : single · Toiture native : RF-DOME · Structure : flexible_frame · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AM-ARC · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-HIDE · Couverture : MAT-HIDE
 
@@ -880,7 +880,7 @@ Recettes : inuit-camp/core, inuit-camp/village, inuit-camp/hamlet
 
 ## Sibérie · campement de chums des éleveurs de rennes (`siberian-camp`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#siberian-camp)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#siberian-camp)
 
 Plan : Radial · Maison illustrée : Chum conique · Recette native : AS-SIB-B01 · Agencement : single · Toiture native : RF-TENT · Structure : flexible_frame · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : AS-SIB · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-HIDE · Couverture : MAT-HIDE
 
@@ -892,7 +892,7 @@ Recettes : siberian-camp/core, siberian-camp/village, siberian-camp/hamlet
 
 ## Guaraní · village de grandes maisons (tekoha) (`guarani-village`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#guarani-village)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#guarani-village)
 
 Plan : Radial · Maison illustrée : Longhouse guaraní · Recette native : AM-SOUTH-B03 · Agencement : single · Toiture native : RF-HIP · Structure : post_beam · Étages : 1–1 · Dimensions : 6–10 m × 18–36 m · Famille architecturale : AM-SOUTH · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-PALM
 
@@ -904,7 +904,7 @@ Recettes : guarani-village/core, guarani-village/village, guarani-village/hamlet
 
 ## Australie · village de pierre du Budj Bim (`budj-bim`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#budj-bim)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#budj-bim)
 
 Plan : Dispersé · Maison illustrée : Cabane de pierre locale · Recette native : OC-AUS-B03 · Agencement : single · Toiture native : RF-CONE · Structure : masonry · Étages : 1–1 · Dimensions : 4–8 m × 4–8 m · Famille architecturale : OC-AUS · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-BASALT · Remplissage : MAT-BASALT · Couverture : MAT-THATCH
 
@@ -916,7 +916,7 @@ Recettes : budj-bim/core, budj-bim/village, budj-bim/hamlet
 
 ## Hommes-lézards · cité lacustre sur pilotis (`lizardfolk-swamp`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#lizardfolk-swamp)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#lizardfolk-swamp)
 
 Plan : Dispersé · Maison illustrée : Maison sur pilotis de lagune · Recette native : AM-TROP-B05 · Agencement : platform · Toiture native : RF-REED-HIP · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : AM-TROP · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-BAMBOO · Couverture : MAT-PALM
 
@@ -928,7 +928,7 @@ Recettes : lizardfolk-swamp/core, lizardfolk-swamp/ring, lizardfolk-swamp/faubou
 
 ## Ondins · village de grève et de grottes marines (`merfolk-tidal`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#merfolk-tidal)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#merfolk-tidal)
 
 Plan : Organique · Maison illustrée : Maison sur pilotis de lagune · Recette native : OC-PAC-B08 · Agencement : platform · Toiture native : RF-REED-HIP · Structure : post_beam · Étages : 1–1 · Dimensions : 5–9 m × 7–12 m · Famille architecturale : OC-PAC · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-BAMBOO · Couverture : MAT-PALM
 
@@ -940,7 +940,7 @@ Recettes : merfolk-tidal/core, merfolk-tidal/ring, merfolk-tidal/faubourg, merfo
 
 ## Géants · bourg mégalithique (`giant-hold`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#giant-hold)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#giant-hold)
 
 Plan : Radial · Maison illustrée : Maison longue nordique · Recette native : EUR-NOR-B01 · Agencement : single · Toiture native : RF-GABLE · Structure : post_beam · Étages : 1–1 · Dimensions : 6–10 m × 18–36 m · Famille architecturale : EUR-NOR · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-WATTLE-DAUB · Couverture : MAT-TURF
 
@@ -952,7 +952,7 @@ Recettes : giant-hold/core, giant-hold/ring, giant-hold/faubourg, giant-hold/vil
 
 ## Gobelins · terrier à flanc de colline (`goblin-warren`)
 
-[Current 2D/3D captures and culture sheet](scientific/catalogue-architecture-fr.html#goblin-warren)
+[Current 2D/3D captures and culture sheet](../../scientific/catalogue-architecture-fr.html#goblin-warren)
 
 Plan : Organique · Maison illustrée : Maison semi-souterraine complexe · Recette native : AS-SIB-B08 · Agencement : parallel · Toiture native : RF-FLAT · Structure : post_beam · Étages : 1–1 · Dimensions : 16–24 m × 14–22 m · Famille architecturale : AS-SIB · Parcellaire : compound · Bâti urbain : — · Matériau porteur : MAT-TIMBER-POST · Remplissage : MAT-TURF · Couverture : MAT-TURF
 

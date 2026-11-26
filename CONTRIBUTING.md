@@ -4,7 +4,8 @@ Magna Urbis V2 is an alpha. Interfaces, recipes and saved formats may change bet
 
 ## Feedback
 
-- Questions, ideas and generated maps: [Discussions](https://github.com/dunkean/magna-urbis/discussions).
+- Questions, ideas and generated maps: [Discord](https://discord.gg/3yFq8t8Q2W) or [Discussions](https://github.com/dunkean/magna-urbis/discussions).
+- Translations: community locales are plain JSON in `web/src/locales/` (see its [README](web/src/locales/README.md)); fixes from native speakers are welcome.
 - Bugs: open an [issue](https://github.com/dunkean/magna-urbis/issues) with the version, the share code or recipe, the browser or desktop edition, and a screenshot if possible.
 
 ## Setup

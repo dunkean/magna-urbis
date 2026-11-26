@@ -15,6 +15,7 @@
   <a href="https://github.com/dunkean/magna-urbis/releases">Téléchargements desktop</a> ·
   <a href="https://github.com/dunkean/magna-urbis/releases/download/desktop-v0.3.10/Magna.Urbis.V2_0.3.10_aarch64.dmg">macOS (Apple Silicon)</a> ·
   <a href="https://magna-urbis.org/gallery/v2/">Galerie</a> ·
+  <a href="https://discord.gg/3yFq8t8Q2W">Discord</a> ·
   <a href="https://github.com/dunkean/magna-urbis/discussions">Discussions</a> ·
   <a href="README.md">English</a>
 </p>
@@ -192,7 +193,7 @@ docs/                  documentation, notes de méthode et atlas illustré
 
 ## Contribuer et donner son avis
 
-Idées, questions et cartes générées sont les bienvenues dans les [Discussions](https://github.com/dunkean/magna-urbis/discussions). Pour un bug, ouvrez une [issue](https://github.com/dunkean/magna-urbis/issues) avec la version, le code de partage ou la recette, et une capture si possible. Lisez le [guide de contribution](CONTRIBUTING.md) (en anglais) avant une pull request.
+Rejoignez le **[Discord](https://discord.gg/3yFq8t8Q2W)** pour partager vos cartes, demander de l'aide et suivre le développement. Idées, questions et cartes générées sont aussi les bienvenues dans les [Discussions](https://github.com/dunkean/magna-urbis/discussions). Pour un bug, ouvrez une [issue](https://github.com/dunkean/magna-urbis/issues) avec la version, le code de partage ou la recette, et une capture si possible. Lisez le [guide de contribution](CONTRIBUTING.md) (en anglais) avant une pull request.
 
 Magna Urbis est en grande partie écrit par des agents de code IA (Claude et Codex), sous la direction d'un architecte et relecteur humain. Les [devlogs Ko-fi](docs/devlog/kofi-devlogs_FR.md) racontent comment il est construit, ce qui a cassé et ce qui a marché.
 

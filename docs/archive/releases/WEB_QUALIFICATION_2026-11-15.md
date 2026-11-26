@@ -40,7 +40,7 @@ vérifient aussi `Grahams Gate` / `Porte de Grahams`.
 - Test Rust ciblé du site civique : succès ; suite `urban::` : 683 succès,
   25 tests déjà ignorés, aucun échec.
 - Première génération neuronale réelle avec un profil navigateur vierge : succès.
-- Parcours complet [`v2_live_check.mjs`](../web/scripts/v2_live_check.mjs) : succès.
+- Parcours complet [`v2_live_check.mjs`](../../../web/scripts/v2_live_check.mjs) : succès.
   La région par défaut mesure 6 km et demande 2 500 habitants pour le lieu principal.
   La génération complète depuis la 3D affiche 860 bâtiments dans ce scénario.
 - Toit civique `hip` → `flat`, sélection rouge, emprise et relief inchangés : succès.
@@ -83,4 +83,4 @@ pas la génération.
 
 Les captures, les exports de projet et `report.json` sont conservés localement
 dans `.tmp/web-live-public-published/`. La commande reproductible est
-`npm run test:v2:live` depuis `web/` ; voir le [guide de publication](WEB_PUBLICATION_FR.md).
+`npm run test:v2:live` depuis `web/` ; voir le [guide de publication](../../WEB_PUBLICATION_FR.md).
