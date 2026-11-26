@@ -397,7 +397,7 @@ vec4 v2IcePlate(vec2 world,float scale,uint salt){
   return vec4((second-first)/max(2.*length(secondDelta-firstDelta),1e-5)*scale,identity,firstDelta*scale);
 }
 // The shore-fast sheet and drifting pack share one surface on salt and fresh water.
-vec3 v2PackSurface(vec3 water,vec2 world,float footprint,float c,float raw,vec2 gradT,out float iceCover,out float packCover){
+vec3 v2PackSurface(vec3 water,vec2 world,float footprint,float c,float raw,vec2 gradT,out float iceCover,out float packCover,out float fractureDistance){
   float t=clamp(raw,0.,1.);
   float pw=max(footprint,.3),resolved=1.-sstep(25.,60.,footprint),gate=v2SeaIceGate(c);
   vec3 g=vec3(world,0.);
@@ -405,6 +405,7 @@ vec3 v2PackSurface(vec3 water,vec2 world,float footprint,float c,float raw,vec2 
   vec2 q=world;float erode=0.;
   if(resolved>0.){q+=38.*vec2(v2Pattern(g,260.,footprint,uMaterialSeed+755u),v2Pattern(g+vec3(517.,-293.,0.),260.,footprint,uMaterialSeed+756u));erode=v2Pattern(g,16.,footprint,uMaterialSeed+757u);}
   vec4 floe=v2IcePlate(q,140.,uMaterialSeed+751u);
+  fractureDistance=floe.x;
   float tf=clamp(raw+dot(gradT,floe.zw),0.,1.),scale=140.;
   // Hairline leads whose width varies along the edge and grows a little offshore; none in the solid sheet.
   float lead=sstep(0.,.15,tf)*(.3+(.6+1.6*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
@@ -413,6 +414,7 @@ vec3 v2PackSurface(vec3 water,vec2 world,float footprint,float c,float raw,vec2 
   if(resolved>0.&&tf>.15+.55*floe.y){
     floe=v2IcePlate(q,52.,uMaterialSeed+754u);tf=clamp(raw+dot(gradT,floe.zw),0.,1.);scale=52.;
     lead=(.3+(.5+1.4*tf)*fract(floe.y*3.17))*max(1.+.9*erode,.15);
+    fractureDistance=min(fractureDistance,1.6*floe.x); // Finer secondary seams on the smaller plates.
     body*=1.-v2IceLead(floe.x,lead,pw);
   }
   float id2=fract(floe.y*7.13),id3=fract(floe.y*3.17);
@@ -505,7 +507,8 @@ vec3 v2WaterColor(V2Env local,vec2 world,float footprint,float cover,float kind,
     // near the sheet. Every decision (break, melt) is taken at a floe's seed, so no depth contour cuts a floe, and
     // nothing blurs the coastline (the land/water cover draws it). Leads are box-filtered: crisp, never aliased.
     if(c>0.&&raw<1.6){
-      water=v2PackSurface(water,world,footprint,c,raw,gradT,iceCover,v2SeaIceCover);
+      float fractureDistance;
+      water=v2PackSurface(water,world,footprint,c,raw,gradT,iceCover,v2SeaIceCover,fractureDistance);
     }
   }
   if(uRenderV2==5)water=mix(vec3(.08,.17,.24),vec3(.85,.94,1.),iceCover);

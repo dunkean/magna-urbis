@@ -64,7 +64,7 @@ vec4 v2FreshIce(vec2 world,float fp,float freeze,float channel,float still,float
   if(uQuality==0){
     // The marine pack has 52 m and 140 m floes. A river uses the same
     // surface at roughly 6 m and 16 m, with the matching pixel footprint.
-    float frequency=still<.5?9.:1.;
+    float frequency=still<.5?9.:1.35;
     vec2 iceWorld=world*frequency;
     float iceFootprint=fp*frequency;
     vec3 g=vec3(iceWorld,0.);
@@ -73,9 +73,14 @@ vec4 v2FreshIce(vec2 world,float fp,float freeze,float channel,float still,float
     // A refrozen lead and an old snow-covered plate can coexist even at full freeze.
     float snow=sstep(-1.1,1.2,drift+.30*frost);
     float opening=.59*(1.-sstep(.32,.98,freeze))+.24*sstep(.32,1.3,-drift);
-    float body,cover;
-    ice=v2PackSurface(vec3(.30,.47,.55),iceWorld,iceFootprint,1.,opening,vec2(0.),body,cover);
+    float body,cover,fractureDistance;
+    ice=v2PackSurface(vec3(.30,.47,.55),iceWorld,iceFootprint,1.,opening,vec2(0.),body,cover,fractureDistance);
     ice=mix(ice,ice*vec3(.72,.85,.92),.75*(1.-snow)*body);
+    // Refrozen cracks remain visible even on a closed sheet. Wind-packed snow
+    // conceals stretches of the same seam. Integrate thin lines over the pixel.
+    float width=mix(.72,1.25,still)*sstep(-.65,.85,.24-.68*drift+.48*frost);
+    float seam=v2IceLead(fractureDistance,width,max(.3,iceFootprint));
+    ice=mix(ice,vec3(.36,.50,.59),.72*body*seam*(1.-sstep(16.,42.,iceFootprint)));
   }
   ice=mix(ice,vec3(.47,.60,.67),.42*edge*mix(1.,closed,still));
   return vec4(ice,mix(river,lake,still));
