@@ -32,8 +32,7 @@ export function createSelectionOverlay(map: HTMLElement, getView: () => View, pr
   Object.assign(caption.style, { position: 'absolute', pointerEvents: 'none', zIndex: '12', transform: 'translate(-50%, -100%)', background: '#fff9ed', color: '#9f1c25', border: '1px solid #e52b36', borderRadius: '4px', padding: '4px 7px', fontSize: '12px', maxWidth: '240px' });
   caption.hidden = true;
   map.append(caption);
-  let frame = 0,
-    anchor: Vec2 | undefined,
+  let anchor: Vec2 | undefined,
     shown: readonly (readonly Vec2[])[] = [],
     /** The path of the rings in world metres (top view), and the projection the screen path was last made for. */
     worldPath = '',
@@ -44,14 +43,16 @@ export function createSelectionOverlay(map: HTMLElement, getView: () => View, pr
     halo.setAttribute('d', d);
     path.setAttribute('d', d);
   };
-  function update(): void {
+  function refresh(): void {
+    if (!anchor && !shown.length) return;
+    // Viewer navigation retains this projection until the camera, size or relief changes.
+    const current = projection();
+    if (current === projected) return;
     const view = getView(),
       w = map.clientWidth,
-      h = map.clientHeight,
-      current = projection();
+      h = map.clientHeight;
     if (!current.tilted) {
-      if (projected) {
-        projected = undefined;
+      if (projected?.tilted) {
         setPath(worldPath);
         caption.hidden = !named || !anchor;
       }
@@ -60,8 +61,7 @@ export function createSelectionOverlay(map: HTMLElement, getView: () => View, pr
         caption.style.left = `${w / 2 + (anchor.x - view.cx) * view.scale}px`;
         caption.style.top = `${h / 2 + (anchor.y - view.cy) * view.scale - 10}px`;
       }
-    } else if (current !== projected) {
-      projected = current;
+    } else {
       svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
       let d = '';
       for (const ring of shown) {
@@ -84,12 +84,12 @@ export function createSelectionOverlay(map: HTMLElement, getView: () => View, pr
         caption.style.top = `${at[1] - 10}px`;
       }
     }
-    frame = requestAnimationFrame(update);
+    projected = current;
   }
   return {
+    refresh,
     /** Outlines `rings` with an optional caption; `volume`: the volume id of the building selected, if any. */
     set(rings?: readonly (readonly Vec2[])[], name?: string, volume?: string): void {
-      cancelAnimationFrame(frame);
       highlight(volume);
       svg.style.display = rings?.length ? '' : 'none';
       shown = (rings ?? []).filter(ring => ring.length >= 3);
@@ -101,7 +101,7 @@ export function createSelectionOverlay(map: HTMLElement, getView: () => View, pr
       caption.textContent = name ?? '';
       named = !!name;
       caption.hidden = !name || !anchor;
-      if (rings?.length) update();
+      refresh();
     },
   };
 }

@@ -2,6 +2,7 @@
 
 - Town streets render again on WebGL2 devices that enforce reserved shader names.
 - The live map keeps its cartographic overlay when town buildings first appear.
+- Selecting a map feature keeps its outline aligned as you move or tilt the camera and lets the page rest when the view is still.
 
 - Low riverbank shrubs rise from their painted crowns in tilted satellite views. Dense conifer stands retain distant silhouettes across the field of view, and tree crowns follow local snow conditions in every climate. Modelled foliage takes its colour from the matching crown in the current map style.
 - Close satellite views reveal gravel bars, scoured bends and shallow side channels in dry riverbeds. Low water tapers through tributary junctions and opens into lakes across exposed shores.

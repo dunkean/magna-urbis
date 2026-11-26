@@ -38,6 +38,7 @@ export function mountMapClient(state: PageState, actions: PageActions): void {
     actions.updateProgress,
     e => void actions.reportGenerationFailure(e.message),
     () => {
+      state.selectionOutline?.refresh();
       if (scaleLabelTimer !== undefined) return;
       const wait = SCALE_LABEL_MS - (performance.now() - scaleLabelAt);
       if (wait <= 0) writeScaleLabel();
