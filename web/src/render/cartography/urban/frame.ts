@@ -10,7 +10,7 @@ import { drawPanelCanvas } from '../../legend';
 import { underdarkMark } from '../../underdark';
 import type { CartographyContext } from '../context';
 import type { VectorFrame } from '../frame';
-import { mixHex, TAU } from '../geometry';
+import { TAU } from '../geometry';
 import type { Palette } from '../../styles';
 
 /** Building masses in view up to which they are outlined and shadowed; past BUILDING_BUDGET_MAX none are drawn. */
@@ -33,7 +33,7 @@ export interface UrbanFrame {
   /** Open ground (camps, barbarian villages): no street space or block fill (same rules as render/urban.ts). */
   readonly open: boolean;
   /** Trampled earth of the open ground's paths. */
-  readonly earth: string;
+  readonly earth: MapInk;
   /** Close enough for patterns. */
   readonly near: boolean;
   /** A fill, then its pattern when near. */
@@ -92,7 +92,7 @@ export function urbanFrame(c: CartographyContext, f: VectorFrame): UrbanFrame {
   const stilts = !!c.world.urban?.renderHints?.stilts;
   // open ground (camps, barbarian villages): no street space or block fill (same rules as render/urban.ts)
   const open = !!c.world.urban?.renderHints?.openGround && !stilts;
-  const earth = mixHex(pal.trackFill, U.street, 0.52);
+  const earth = c.ink('pathEarth');
   const near = lod.band >= 2;
   const paved = (name: string, base: MapInk, pat: CanvasPattern | null, patAlpha = 1): void => {
     fillPolys(name, base);

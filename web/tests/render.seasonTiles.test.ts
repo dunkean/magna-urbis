@@ -10,6 +10,7 @@ import { TileIndex, boxesOf } from '../src/render/tileindex';
 import type { TextureLayer } from '../src/render/scene';
 import { BandLook } from '../src/render/cartography/bandRecording';
 import { urbanFrame } from '../src/render/cartography/urban/frame';
+import { drawVector } from '../src/render/cartography/vector';
 import type { VectorFrame } from '../src/render/cartography/frame';
 import { selectLod } from '../src/render/lod';
 import { RecordingContext, setMapInk } from '../src/render/gpu/recorder';
@@ -207,6 +208,111 @@ it('rebinds density coverage and warm town paving to their current inks, keeping
     c.scene.density = { ...c.scene.density, cov: new Float32Array([1, 0]) };
     expect(rebound.pixelsMatch()).toBe(false);
     expect(retained.replay()).toBeUndefined();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('recolours camp mud in a retained map recording and in native Canvas', () => {
+  vi.stubGlobal(
+    'DOMMatrix',
+    class {
+      private angle = 0;
+      rotate(degrees: number) {
+        this.angle = (degrees * Math.PI) / 180;
+        return this;
+      }
+      scale(a: number) {
+        const c = Math.cos(this.angle) * a, s = Math.sin(this.angle) * a;
+        return { a: c, b: s, c: -s, d: c, e: 0, f: 0 };
+      }
+    },
+  );
+  try {
+    const world = fakeWorld({ mapSize: 128, buildings: 0, streets: 0, landAreas: 0 });
+    world.roads = [];
+    world.terrain.rivers = [];
+    const urban = world.urban!;
+    urban.walls = [];
+    urban.renderHints = { towerShape: 'round', openGround: true };
+    urban.landmarks = [{ kind: 'mud', poly: [{ x: 24, y: 24 }, { x: 104, y: 24 }, { x: 104, y: 104 }, { x: 24, y: 104 }] }];
+    let pal = { ...PALETTES.engraving, trackFill: '#804020', farmYard: '#c0a080' };
+    const traces = new WeakMap<CanvasImageSource, unknown[]>();
+    const nativePatterns: { source: CanvasImageSource }[] = [];
+    const native = mockCanvas(128, 128);
+    const nativeContext = native.canvas.getContext('2d') as CanvasRenderingContext2D;
+    nativeContext.createPattern = source => {
+      const pattern = { source, setTransform() {} };
+      nativePatterns.push(pattern);
+      return pattern;
+    };
+    const c = new CartographyContext(native.canvas as unknown as CanvasLike, world, 'engraving', {
+      palette: () => pal,
+      terrain: () => null,
+      mask: { water: false },
+      transparentBackground: true,
+      createCanvas: (width, height) => {
+        const { canvas } = mockCanvas(width, height);
+        const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+        const trace: unknown[] = [];
+        for (const op of ['beginPath', 'moveTo', 'lineTo', 'arc'] as const) {
+          Object.defineProperty(ctx, op, { value: (...args: number[]) => trace.push([op, ...args]), configurable: true });
+        }
+        ctx.stroke = () => trace.push(['stroke', ctx.strokeStyle, ctx.globalAlpha, ctx.lineWidth, ctx.lineCap]);
+        ctx.fill = () => trace.push(['fill', ctx.fillStyle, ctx.globalAlpha]);
+        traces.set(canvas as unknown as CanvasImageSource, trace);
+        return canvas as unknown as CanvasLike;
+      },
+    });
+    const view = { cx: 64, cy: 64, scale: 1 };
+    const record = () => {
+      const canvas = createMapRecording(128, 128);
+      const look = new BandLook(c.pal);
+      const palette = c.pal;
+      c.pal = look.palette;
+      try {
+        drawVector(c, view, canvas, 'map');
+        return { list: canvas.finish(), look };
+      } finally {
+        c.pal = palette;
+      }
+    };
+    const mud = (list: DisplayList) => {
+      const pattern = list.ops.find(op => op.type === 'fill' && op.paint.kind === 'pattern');
+      const base = list.ops.find(op => op.type === 'fill' && op.paint.kind === 'color' && op.paint.slot?.css === c.ink('mudFill').css);
+      if (pattern?.type !== 'fill' || pattern.paint.kind !== 'pattern' || base?.type !== 'fill' || base.paint.kind !== 'color') throw Error('Missing camp mud');
+      return { pattern, paint: pattern.paint, base, basePaint: base.paint };
+    };
+    record(); // The band records with the mud bitmap already cached.
+    const old = record();
+    const retained = seasonRecording(c, old.list, old.look)!;
+    const first = mud(old.list);
+    const firstTrace = traces.get(first.paint.source)!;
+    expect(firstTrace).toContainEqual(['stroke', '#603018', 0.55, 0.35 * 14, 'round']);
+    expect(firstTrace).toContainEqual(['fill', '#603018', 0.55]);
+    expect(first.base.alpha).toBe(0.75);
+    expect(first.basePaint.slot?.css).toBe('#a87c5c');
+
+    pal = { ...pal, trackFill: '#4080c0' };
+    c.syncPalette();
+    expect(retained.pixelsMatch()).toBe(false);
+    const replay = retained.replay()!;
+    const changed = mud(replay.list);
+    expect(replay.pixelsMatch()).toBe(true);
+    expect(changed.base.paths).toBe(first.base.paths);
+    expect(changed.base.alpha).toBe(first.base.alpha);
+    expect(changed.basePaint.slot?.css).toBe('#8f9498');
+    expect(changed.pattern.paths).toBe(first.pattern.paths);
+    expect(changed.paint.transform).toBe(first.paint.transform);
+    expect(changed.paint.source).not.toBe(first.paint.source);
+    const changedTrace = traces.get(changed.paint.source)!;
+    expect(changedTrace).toEqual(firstTrace.map(op => Array.isArray(op) && (op[0] === 'fill' || op[0] === 'stroke') ? [op[0], '#306090', ...op.slice(2)] : op));
+
+    drawVector(c, view, c.canvas, 'map');
+    const painted = native.log.fills.find(({ style }) => nativePatterns.includes(style as { source: CanvasImageSource }));
+    expect(painted?.alpha).toBe(1);
+    expect(traces.get((painted?.style as { source: CanvasImageSource }).source)).toEqual(changedTrace);
+    expect(native.log.fills.some(({ style, alpha }) => style === '#8f9498' && alpha === 0.75)).toBe(true);
   } finally {
     vi.unstubAllGlobals();
   }

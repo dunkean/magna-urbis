@@ -10,7 +10,6 @@ import { TERRACE_STROKES as TS, terraceDetailAlpha } from '../../terraces';
 import { LineLayer, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from '../../scene';
 import type { CartographyContext } from '../context';
 import type { VectorFrame } from '../frame';
-import { mixHex } from '../geometry';
 import type { UrbanFrame } from './frame';
 
 export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFrame): void {
@@ -145,7 +144,7 @@ export function paintPlanLines(c: CartographyContext, f: VectorFrame, u: UrbanFr
     l => minPx(l) / sc,
     open ? 0.8 : 1,
   );
-  strokeLines(thin.filter(isEarth), mixHex(pal.farmYard, pal.trackFill, 0.12), l => minPx(l) / sc, 0.8);
+  strokeLines(thin.filter(isEarth), c.ink('yardEarth'), l => minPx(l) / sc, 0.8);
   ctx.restore();
   if (polyL('landmarks') && near) strokePolys('landmarks', U.landmark, lw(0.45, 0.5), 0.4);
   // zoomed out: the landmark sites (wells, crosses, markets, compounds' named buildings) as a solid outline of at

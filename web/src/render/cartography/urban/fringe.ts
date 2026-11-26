@@ -14,7 +14,7 @@ import { drawPanelCanvas } from '../../legend';
 import { underdarkMark } from '../../underdark';
 import type { CartographyContext } from '../context';
 import type { VectorFrame } from '../frame';
-import { mixHex, TAU, polyPath } from '../geometry';
+import { TAU, polyPath } from '../geometry';
 import { forestClip } from '../forest';
 import { drawTexture } from '../symbols';
 import type { UrbanFrame } from './frame';
@@ -178,7 +178,7 @@ export function paintRestoredGround(c: CartographyContext, f: VectorFrame, u: Ur
           l => Math.max(1.2, l.width * 0.92, 0.8 / sc),
         );
       }
-      if (c.scene.earthStreets && restored.name === 'u-landscape-ground') strokeLines(uStreets.filter(isEarth), mixHex(pal.farmYard, pal.trackFill, 0.12), l => Math.max(1.2, l.width * 0.92, 0.8 / sc), 0.8);
+      if (c.scene.earthStreets && restored.name === 'u-landscape-ground') strokeLines(uStreets.filter(isEarth), c.ink('yardEarth'), l => Math.max(1.2, l.width * 0.92, 0.8 / sc), 0.8);
       ctx.restore();
     }
   }

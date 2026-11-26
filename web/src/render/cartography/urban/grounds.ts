@@ -10,8 +10,29 @@ import { drawPanelCanvas } from '../../legend';
 import { underdarkMark } from '../../underdark';
 import type { CartographyContext } from '../context';
 import type { VectorFrame } from '../frame';
-import { mixHex, TAU } from '../geometry';
+import { TAU } from '../geometry';
 import type { UrbanFrame } from './frame';
+
+function drawMud(cx: CanvasRenderingContext2D, k: number): void {
+  cx.globalAlpha = 0.55;
+  cx.lineWidth = 0.35 * k;
+  cx.lineCap = 'round';
+  cx.beginPath();
+  for (const [x0, y0, x1, y1] of [
+    [1, 1.5, 2.6, 1.9],
+    [5.5, 4.8, 6.7, 4.3],
+    [2.4, 5.6, 3.3, 6.2],
+    [7.2, 1.2, 7.7, 2.2],
+  ]) {
+    cx.moveTo(x0 * k, y0 * k);
+    cx.lineTo(x1 * k, y1 * k);
+  }
+  cx.stroke();
+  cx.beginPath();
+  cx.arc(4.2 * k, 2.4 * k, 0.32 * k, 0, TAU);
+  cx.arc(7.8 * k, 5.9 * k, 0.25 * k, 0, TAU);
+  cx.fill();
+}
 
 /** Open ground, boardwalks or street space. */
 export function paintStreetSpace(c: CartographyContext, f: VectorFrame, u: UrbanFrame): void {
@@ -66,44 +87,20 @@ export function paintStreetSpace(c: CartographyContext, f: VectorFrame, u: Urban
     if (!isUnderdarkBiome(c.world.options.biome) && polyL('u-open-field')) strokePolys('u-open-field', c.ink('furrow'), lw(0.4, 0.4), 0.4);
     tint('u-open-commons', c.ink('pasture'), pal.landOpacity * 0.8, null);
     // churned mud (a war camp), puddles
-    if (polyL('u-mud')) {
-      const dk = mixHex(pal.trackFill, '#000000', 0.25);
-      fillPolys('u-mud', mixHex(pal.trackFill, pal.farmYard, 0.62), 0.75);
-      const mudPat = near
-        ? getPattern(ctx, 'mud', 9, 7, 17, (cx, k) => {
-            cx.globalAlpha = 0.55;
-            cx.strokeStyle = dk;
-            cx.lineWidth = 0.35 * k;
-            cx.lineCap = 'round';
-            cx.beginPath();
-            for (const [x0, y0, x1, y1] of [
-              [1, 1.5, 2.6, 1.9],
-              [5.5, 4.8, 6.7, 4.3],
-              [2.4, 5.6, 3.3, 6.2],
-              [7.2, 1.2, 7.7, 2.2],
-            ]) {
-              cx.moveTo(x0 * k, y0 * k);
-              cx.lineTo(x1 * k, y1 * k);
-            }
-            cx.stroke();
-            cx.fillStyle = dk;
-            cx.beginPath();
-            cx.arc(4.2 * k, 2.4 * k, 0.32 * k, 0, TAU);
-            cx.arc(7.8 * k, 5.9 * k, 0.25 * k, 0, TAU);
-            cx.fill();
-          })
-        : null;
+    const mud = polyL('u-mud');
+    if (mud) {
+      fillPolys('u-mud', c.ink('mudFill'), 0.75);
+      const mudPat = near ? getPattern(ctx, 'mud', 9, 7, 17, drawMud, 'mudInk') : null;
       if (mudPat) {
-        const l = polyL('u-mud')!;
         ctx.fillStyle = mudPat;
-        for (const p of polyPaths(l)) ctx.fill(p, 'evenodd');
+        for (const p of polyPaths(mud)) ctx.fill(p, 'evenodd');
       }
     }
     if (polyL('u-puddle')) {
       fillPolys('u-puddle', c.ink('riverFill'), 0.7);
-      strokePolys('u-puddle', mixHex(pal.trackFill, '#000000', 0.2), lw(0.3, 0.3), 0.6);
+      strokePolys('u-puddle', c.ink('puddleEdge'), lw(0.3, 0.3), 0.6);
     }
-    fillPolys('u-yard-earth', mixHex(pal.farmYard, pal.trackFill, 0.12), 0.85);
+    fillPolys('u-yard-earth', c.ink('yardEarth'), 0.85);
     // paths: trampled earth (wide causeways keep the street colour)
     strokeLines(
       uStreets.filter(l => !(l.width >= 6.5 && Number(l.kind.slice(1, 2)) <= 1)),

@@ -20,6 +20,7 @@
 - Changing the Parchment map date reuses the summer relief, grass and reed marks, and overlay tiles whose colours stay the same.
 - Switching map colours reuses overlay geometry, and Parchment reuses grass and reed drawings when zooming. Fast looks render at a lower resolution and skip a second quality pass when the map stops moving.
 - Changing map colours now reuses the outlines of painted fields, patterned town grounds and textured roads, including on compatible tilted-map tiles.
+- Changing track colours reuses camp mud outlines and updates the colour of the mud marks.
 - Dry landscape ground beside water stays visible up to the shoreline and around protected plots.
 
 - Low riverbank shrubs rise from their painted crowns in tilted satellite views. Dense conifer stands retain distant silhouettes across the field of view, and tree crowns follow local snow conditions in every climate. Modelled foliage takes its colour from the matching crown in the current map style.
