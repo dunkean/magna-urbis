@@ -1,6 +1,8 @@
 ## Alpha 0.3.11
 
 - Low riverbank shrubs rise from their painted crowns in tilted satellite views. Dense conifer stands retain distant silhouettes across the field of view, and tree crowns follow local snow conditions in every climate. Modelled foliage takes its colour from the matching crown in the current map style.
+- Close satellite views reveal gravel bars, scoured bends and shallow side channels in dry riverbeds. Low water tapers through tributary junctions and opens into lakes across exposed shores.
+- Dry clay flats have broken fissures and curled plate edges. Salt flats show patches of pale mineral crust with raised seams.
 
 - Broadleaf crowns catch the light on irregular facets, and firs have a flat skirt of lower branches. Changing the display biome refreshes the visible forest first and clears old trees from other views.
 - Steppe rivers keep their water through winter. Mediterranean streams recede in the dry summer and refill in the rainy season. In satellite views, snow covers exposed riverbeds and lake shores along with the surrounding ground.

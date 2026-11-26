@@ -134,6 +134,22 @@ void main() {
       vec3 gravel=mix(uWaterBed,vec3(.66,.63,.56),.50);
       vec3 bed=mix(gravel,uWaterBed*1.07,deposits*(1.-.45*scour))*mix(1.,.47,scour)
               +vec3(.055*(wash-.5)+.048*fine);
+      if(capsule && uPx<2.){
+        // Gravel accumulates on raised bars. A jittered clast and its own lit face share a
+        // cell, with a bare-sand margin between cells; unresolved grains average away.
+        vec2 g=q/1.1+vec2(.48*lens,.38*wash);
+        ivec2 cell=ivec2(floor(g));
+        vec2 jitter=vec2(riverCorner(cell),riverCorner(cell+ivec2(13,37)));
+        vec2 stone=(fract(g)-(.30+.40*jitter))/vec2(.19,.13);
+        float r=length(stone),aa=max(.09,6.*uPx);
+        float pebble=(1.-smoothstep(.72-aa,1.+aa,r))*(1.-smoothstep(.14,.62,uPx));
+        float shoal=(1.-smoothstep(.12,.56,scour))*smoothstep(.23,.71,lens+.45*(wash-.5));
+        float shingle=riverNoise(world/1.7+vec2(1.3,-.7)*wash);
+        float bench=shoal*(1.-smoothstep(.9,2.,uPx));
+        bed=mix(bed,vec3(.73,.68,.58),.58*bench);
+        bed+=bench*(.15*(shingle-.5)+pebble*(.21*jitter.x-.12*stone.y-.08*stone.x));
+        bed*=1.-(.13+.13*wash)*smoothstep(.12,.56,scour)*(1.-smoothstep(1.,2.,uPx));
+      }
       // The satellite decodes exposed sediment by red minus blue before toning.
       bed.b=min(bed.b,bed.r-.155);
       color=mix(bed,color,pools);

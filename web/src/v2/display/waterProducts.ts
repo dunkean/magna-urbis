@@ -90,7 +90,7 @@ export class WaterProducts implements Water {
         const material = !ink && water.overlay === 'none',
           mouthMix: number[] | undefined = material && r.ground.traits.satelliteVariant === 1 && !r.ground.traits.paperMap ? [] : undefined,
           rivers = visible ? riverSegments(t.water, { ...water, material, thread: true }, mouthMix) : undefined;
-        // Only the colour pass sees dissolved sediment. Towns keep the physical banks.
+          // The colour pass also carries sediment plumes and openings in exposed lake shores. Towns keep the physical banks.
         let painted = rivers;
         if (rivers && mouthMix?.length) {
           painted = new Float32Array(rivers.length + mouthMix.length);

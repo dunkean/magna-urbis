@@ -288,6 +288,44 @@ describe('continuous vector water', () => {
     expect(Math.min(...running('mediterranean', 0.5))).toBe(0);
   });
 
+  it('tapers a dry tributary into the running thread between two vertices of its receiver', async () => {
+    const source = await basin();
+    const stream = (points: number[], area: number, id: number, joins: number): RiverLine => ({ points, area: Array(points.length / 2).fill(area), level: Array(points.length / 2).fill(5), kind: Array(points.length / 2).fill(0), id, joins });
+    const host = stream([500, 1200, 2400, 1200, 4400, 1200], 300e6, 0, -1);
+    const branch = stream([1850, 2350, 1850, 1700, 1850, 1200], 0.08e6, 1, 0);
+    const water = { ...source, runoff: { ...source.runoff, r0: 18 }, rivers: { ...source.rivers!, rivers: [branch, host], braids: [], distributaries: [], oxbows: [] } } as VectorWater;
+    const seg = riverSegments(water, { ...display, material: true, thread: true, season: { zone: 'mediterranean', season: 0.5 } });
+    const wet: number[][] = [];
+    for (let k = 0; k < seg.length; k += 9) if (seg[k + 6] > 0.99) wet.push([...seg.slice(k, k + 9)]);
+    const inflow = wet.filter(s => Math.abs(s[2] - 1850) < 8 && s[1] > s[3] && s[3] >= 1200);
+    expect(inflow.length).toBeGreaterThan(2);
+    expect(inflow.at(-1)![3]).toBe(1200);
+    expect(inflow[0][4]).toBeLessThan(inflow.at(-1)![5] * 0.5);
+    expect(wet.some(s => s[0] <= 1850 && s[2] >= 1850 && distance(1850, 1200, s.slice(0, 4)) < 0.5 * s[5])).toBe(true);
+  });
+
+  it('widens the wet channel towards a visible lake and keeps an inlet across its exposed shore', async () => {
+    const source = await basin(),
+      y = 3250;
+    let x = 600;
+    while (x < 6000 && lakeSample(source.lakeField, 6400, x, y) < 0) x += 10;
+    expect(x).toBeLessThan(6000);
+    const line: RiverLine = { points: [x - 1100, y, x - 500, y, x, y], area: [0.08e6, 0.08e6, 0.08e6], level: [3.5, 3, 3], kind: [0, 0, 0], joins: -1 };
+    const water = { ...source, runoff: { ...source.runoff, r0: 18 }, rivers: { ...source.rivers!, rivers: [line], braids: [], distributaries: [], oxbows: [], lakeLinks: [] } } as VectorWater;
+    const d: WaterDisplay = { ...display, material: true, thread: true, season: { zone: 'mediterranean', season: 0.5 } };
+    const mouths: number[] = [],
+      seg = riverSegments(water, d, mouths),
+      hidden: number[] = [];
+    riverSegments(water, { ...d, showLakes: false }, hidden);
+    expect(mouths.length).toBe(9);
+    expect(mouths[8]).toBe(-2);
+    expect(hidden).toEqual([]);
+    const ends: number[] = [];
+    for (let k = 0; k < seg.length; k += 9) if (seg[k + 6] === 1) ends.push(seg[k + 5]);
+    expect(ends.at(-1)).toBeGreaterThan(ends[0]);
+    expect(vectorWaterSvg(water, d)).toContain('mask="url(#water-inlets)"');
+  });
+
   it('lets the thread of a wide bed wander inside it and stops the bare bed at the coastline', async () => {
     const source = await basin(),
       points = Array.from({ length: 30 }, (_, k) => [6000 - 200 * k, 3250])

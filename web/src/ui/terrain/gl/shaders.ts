@@ -524,7 +524,7 @@ void main() {
     // and the swell lie under the sea ice, so a frozen sea is ice to the coastline and across its river mouths.
     float wSeaIce=0.;
     // Open share of a lake fragment (0 along its shore, 1 well inside), for the lake's surface tone (v2LakeSurface).
-    float wLake=0.,lakeBed=0.;
+    float wLake=0.,lakeBed=0.,inlet=0.,inletOpening=0.;
     if (uUseWaterLayer==1) {
       vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
       if(uNight==1 && uMode<2 && uRenderV2==0 && uNaturalWater==1)water.rgb=moonlight(water.rgb);
@@ -587,6 +587,14 @@ void main() {
           if(m>0.){
             float d=lakeDistance(world);wKind=2.;wDepth=v2LakeDepth(d,grad);wLake=smoothstep(150.,600.,d);
             if(uRenderV2==1)lakeBed=lakeBedTransmission(m,inside,d,grad,world);
+            // A channel crosses the old shoreline below the exposed shelf. Its depth and
+            // surface colour persist into the opening, then dissipate across the lake.
+            if(uHasOverlay==2){
+              inletOpening=texelFetch(uOverlay,ivec2(gl_FragCoord.xy),0).g;
+              inlet=inletOpening*exp2(-max(0.,inside*uPx)/22.);
+              wEst=inlet;lakeBed*=1.-inlet;
+              riverLight=mix(riverLight,-.10,inlet);riverFoam*=1.-inlet;
+            }
           }
           // Cave water is one colour: no shallow lakes beside deep rivers.
           if(underdark)wDepth=8.;
@@ -597,6 +605,7 @@ void main() {
             float deposit=v2Pattern(vec3(world,0.),180.,uPx,uMaterialSeed+905u);
             float retreat=drop*mix(.16,1.,smoothstep(-1.,1.,deposit)) / (1.+8.*grad);
             float ring=step(0.,inside)*(1.-smoothstep(.58*retreat,retreat,inside*uPx));
+            ring*=1.-inletOpening;
             wBase=mix(wBase,waterExposedShore(world),wCover*ring*bareGround);wCover*=1.-ring;
           }
           // Fresh water freezes with the snow of the land at its own altitude (v2WinterFresh, set by v2Local): a lake
@@ -727,17 +736,18 @@ void main() {
       }
       if(wKind>1.5&&wKind<2.5&&uRenderV2==1&&uNaturalWater==1&&lakeBed>.002)
         color=satelliteBed(color,lakeBed,wCover,world);
-      if(wKind>2.5&&uRenderV2==1&&wCover>0.){
+      if((wKind>2.5||inlet>.002)&&uRenderV2==1&&wCover>0.){
+        float streamCover=wCover*(wKind>2.5?1.:inlet);
         // Broad sky reflections reveal the free surface even in rust-coloured water.
         vec2 wind=vec2(.89*world.x+.46*world.y,-.46*world.x+.89*world.y);
         float sheen=v2Pattern(vec3(wind*vec2(.28,1.),0.),18.,uPx,uMaterialSeed+907u);
-        color=mix(color,vec3(.51,.62,.65),wCover*(.035+.085*smoothstep(.05,1.45,sheen)));
+        color=mix(color,vec3(.51,.62,.65),streamCover*(.035+.085*smoothstep(.05,1.45,sheen)));
         if(uNaturalWater==1){
           // Less bottom light returns through turbid red/brown water. Where the
           // inside of a bend shoals, the local mineral colour shows through.
           float shallow=clamp((riverLight+.105)/.26,0.,1.);
-          color=satelliteBed(color*(1.-.12*wCover*(1.-shallow)),shallow,wCover,world);
-          color+=vec3(.74,.91,1.)*(.15*riverFoam*wCover);
+          color=satelliteBed(color*(1.-.12*streamCover*(1.-shallow)),shallow,streamCover,world);
+          color+=vec3(.74,.91,1.)*(.15*riverFoam*streamCover);
         }
       }
     }
@@ -852,6 +862,15 @@ void main() {
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
   float d = length(pa - ba * h);
   float alpha = clamp(mix(vWidths.x, vWidths.y, h) + 0.5 - d, 0.0, 1.0);
+  // One optical channel holds lake inlet coverage on lakes and sediment concentration at sea.
+  if(vColor.b < -1.5){
+    if(uFlatWater.a>=-1.5 || uHasLake==0 || alpha<=0.) discard;
+    float shore=lakeShore(uOrigin+vP*uPx,uHasLake==1);
+    float halfWidth=max(.5,mix(vWidths.x,vWidths.y,h));
+    float mixing=(1.-smoothstep(.56,1.,h))*(1.-smoothstep(.68,1.04,d/halfWidth));
+    outColor=vec4(0.,alpha*mixing*clamp(shore/max(fwidth(shore),1e-4)+.5,0.,1.),0.,0.);
+    return;
+  }
   if (uHasLake > 0) {
     float m = lakeShore(uOrigin + vP * uPx, uHasLake == 1);
     alpha *= 1. - clamp(m / max(fwidth(m), 1e-4) + .5, 0., 1.);
@@ -882,6 +901,14 @@ void main() {
     return;
   }
   if (alpha <= 0.0) discard;
+  if(uFlatWater.a < -1.5 && vColor.r<.001 && uPx<4.){
+    // Sand spills onto the bank in uneven tongues. The inset is measured in metres and
+    // disappears on narrow channels, where a pixel already spans the margin.
+    float halfWidth=mix(vWidths.x,vWidths.y,h),room=min(6./uPx,.16*halfWidth);
+    vec2 world=uOrigin+vP*uPx;
+    float margin=room*(.50*riverNoise(world/16.)+.35*riverNoise(world/5.));
+    alpha*=smoothstep(-.5,1.+.45*room,halfWidth-d-margin);
+  }
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
   vec3 color = uFlatWater.a > 0. ? uFlatWater.rgb : vColor;
   // Material capsules already know their bank in metres. Retain that distance cue
@@ -931,7 +958,28 @@ void main() {
       float radius=halfWidth*(.11+.34*pool);
       // A soft transverse profile fades continuously through a round end cap.
       float damp=exp2(-1.4*d*d/(radius*radius+.25))*min(1.,radius/.65);
-      core=.30*damp*(.58+.42*pool);
+      float scour=damp*(.58+.42*pool);
+      float nearBed=smoothstep(2.,8.,halfWidth)*(1.-smoothstep(2.,7.,uPx));
+      if(nearBed>0.){
+        vec2 world=uOrigin+vP*uPx, tangent=ba/max(length(ba),.001);
+        float side=dot(pa-ba*h,vec2(-tangent.y,tangent.x))/halfWidth;
+        float bend=mix(vProfile.x,vProfile.y,h);
+        float wander=riverNoise(world/65.)-.5;
+        float axis=clamp(.72*wander-.53*bend+.19*(riverNoise(world/17.)-.5),-.72,.72);
+        float split=smoothstep(8.,26.,halfWidth*uPx)*smoothstep(.28,.78,hollow);
+        float flank=axis<0.?1.:-1.;
+        float gut=side-axis, bypass=side-(axis+flank*.62*split);
+        float cut=exp2(-25.*gut*gut);
+        float chute=split*exp2(-68.*bypass*bypass);
+        float margin=smoothstep(.67,.91,d/halfWidth)*(1.-smoothstep(.92,1.03,d/halfWidth));
+        float scarp=margin*(.24+.48*max(0.,-side*bend))*(.45+.55*hollow);
+        // A gravel bar parts the narrow threads. Only hollows with actual pool retention
+        // can reach the compositor's wet threshold; a dark groove alone stays dry.
+        float form=max(.56*cut,max(.37*chute,scarp))*(1.-smoothstep(.95,1.04,d/halfWidth));
+        float pastEnd=abs(dot(pa,tangent)-h*length(ba))/halfWidth;
+        scour=mix(scour,max(form,cut*pool)*(1.-smoothstep(.04,.4,pastEnd)),nearBed);
+      }
+      core=.30*scour;
     }
     color.b=core+.70*glint;
     if(uFlatWater.a < -1.5)color.g=0.; // Reserved for the sea-side concentration above.

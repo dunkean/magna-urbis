@@ -409,11 +409,11 @@ const vec4 V2_ZONE_GRAVEL[11]=vec4[11](
   vec4(.50,.46,.40,0.),vec4(.66,.62,.54,0.),vec4(.50,.46,.40,0.),vec4(.58,.57,.54,0.),
   vec4(.64,.63,.61,0.),vec4(.54,.53,.50,0.),vec4(.60,.55,.45,.25),vec4(.69,.61,.48,.8),
   vec4(.60,.44,.32,.3),vec4(.50,.40,.30,0.),vec4(.45,.42,.36,0.));
-// Pan colour (salt pan, saline flat, clay pan) and the contrast of its polygon cracks.
+// Pan colour (salt pan, saline flat, clay pan) and amount of salt bloom.
 const vec4 V2_ZONE_PAN[11]=vec4[11](
   vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),
   vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.),vec4(.76,.73,.66,.6),vec4(.85,.81,.72,1.),
-  vec4(.74,.67,.55,.7),vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.));
+  vec4(.74,.67,.55,.12),vec4(.80,.78,.72,0.),vec4(.80,.78,.72,0.));
 bool v2Zoned(){return uMaterialZone>0&&uRenderV2>0;}
 int v2Zone(){return clamp(uMaterialZone-1,0,10);}
 ${RENDER_V2_SEASON_GLSL}

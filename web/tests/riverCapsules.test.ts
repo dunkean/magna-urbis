@@ -28,13 +28,12 @@ describe('riverSegmentsInBox', () => {
 });
 
 it('puts the shallow side inside the turn, matches both ends at joins and restarts at a disconnected reach', () => {
-  const course = (y: number): Float32Array => new Float32Array([
-    0, 0, 20, 0, 12, 12, 1, 1, 0,
-    20, 0, 40, y, 12, 12, 1, 1, 0,
-    150, 30, 160, 30, 12, 12, 1, 1, 0,
-  ]);
+  const course = (y: number, running = 1): Float32Array => new Float32Array([0, 0, 20, 0, 12, 12, running, 1, 0, 20, 0, 40, y, 12, 12, running, 1, 0, 150, 30, 160, 30, 12, 12, running, 1, 0]);
   const left = riverInstances(course(9), true), right = riverInstances(course(-9), true);
   const stride = RIVER_INSTANCE_FLOATS;
+  const bed = riverInstances(course(9, 0), true);
+  expect(bed[10]).toBe(left[10]);
+  expect(bed[stride + 11]).toBe(20);
   expect(left[10]).toBeGreaterThan(0);
   expect(right[10]).toBe(-left[10]);
   expect(left[stride + 9]).toBe(left[10]);

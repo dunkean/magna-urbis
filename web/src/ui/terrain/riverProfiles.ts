@@ -20,10 +20,14 @@ export function riverInstances(segments: Float32Array, material: boolean): Float
     }
     return lo;
   };
-  const wet = (i: number): boolean => segments[9 * i + 6] > 0.1 && segments[9 * i + 8] >= 0 && segments[9 * i + 8] < 0.5;
+  // Keep the bed and the running thread as separate continuous profiles. Optical masks have no bed.
+  const course = (i: number): number => {
+    const blue = segments[9 * i + 8];
+    return blue < 0 || blue >= 0.5 ? 0 : segments[9 * i + 6] > 0.1 ? 1 : 2;
+  };
   for (let start = 0; start < count; ) {
     let end = start + 1;
-    while (end < count && wet(end - 1) && wet(end) && segments[9 * (end - 1) + 2] === segments[9 * end] && segments[9 * (end - 1) + 3] === segments[9 * end + 1]) end++;
+    while (end < count && course(start) !== 0 && course(start) === course(end) && segments[9 * (end - 1) + 2] === segments[9 * end] && segments[9 * (end - 1) + 3] === segments[9 * end + 1]) end++;
     distance[start] = 0;
     for (let i = start; i < end; i++) {
       const p = 9 * i;

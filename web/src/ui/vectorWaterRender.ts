@@ -8,6 +8,7 @@ import { channelArea, channelWidth, type RiverLine } from './riverVectors';
 import type { VectorWater } from './vectorWater';
 import { marchingSquares } from '../gen/terrain/contour';
 import { lakeSample } from './lakeGeometry';
+import { waterConnections, lakeInlets, inletPaths, shoreRing, type Junction, type LakeMouth } from './riverJunctions';
 import { GridIndex } from '../gen/geo/spatial';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
@@ -149,15 +150,19 @@ export function widthRegimeSize(width: number, scale: number, r0: number): numbe
 }
 /** Width of the running water inside a bed of width `width` (m) on this network: see `threadShare`. */
 export const threadWidth = (water: VectorWater, width: number): number => width * threadShare(runoffOf(water));
-/** Seasonal state per drawn vertex, from the absolute mean discharge of the course there (not its rank on the map). */
-function riverStates(water: VectorWater, geo: DrawnCourse, climate: WaterClimate, _threshold: number, line?: RiverLine): RiverState[] {
+interface ReachState extends RiverState {
+  /** Fraction of the bed inundated by the adjacent lake. */
+  backwater?: number;
+}
+/** Seasonal state of the channel and backwater at its junctions. */
+function riverStates(water: VectorWater, geo: DrawnCourse, climate: WaterClimate, showLakes: boolean, line: RiverLine): ReachState[] {
   const scale = water.widthScale ?? water.rivers?.widthScale ?? 1,
     r0 = runoffOf(water);
   const p = geo.points,
     n = geo.widths.length,
     arc = new Float64Array(n);
   for (let i = 1; i < n; i++) arc[i] = arc[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
-  const out: RiverState[] = [];
+  const out: ReachState[] = [];
   const bankfull = geo.bankfullWidths ?? geo.widths;
   for (let i = 0; i < n; i++) out.push(riverState(climate, widthRegimeSize(bankfull[i], scale, r0)));
   // A course dries over a distance, not at a vertex: dryness is averaged over about 500 m of channel.
@@ -169,43 +174,42 @@ function riverStates(water: VectorWater, geo: DrawnCourse, climate: WaterClimate
       out[i].dry = sum / (b - a);
     }
   }
-  // Through a confluence the water is one: over its last 400 m a tributary takes the dryness of the course it
-  // joins, so a silt bed never switches to running water at the junction.
-  const joined = line && climate.lowWater > 0 && n > 1 ? receiverDry(water, line, climate, scale, r0) : undefined;
-  if (joined !== undefined)
-    for (let i = n - 1; i >= 0 && arc[n - 1] - arc[i] < 400; i--) {
-      const t = 1 - (arc[n - 1] - arc[i]) / 400;
-      out[i].dry += (joined - out[i].dry) * t * t * (3 - 2 * t);
+  if (!climate.lowWater || n < 2) return out;
+  const connections = waterConnections(water);
+  const blendEnd = (start: boolean, targetDry: number, width: number, lake?: LakeMouth) => {
+    const end = start ? 0 : n - 1;
+    const dir = start ? 1 : -1;
+    // Network endpoints can lie inside the lake. Measure the backwater from its actual shore.
+    const origin = arc[end] + dir * (lake?.distanceFromEnd ?? 0);
+    const reach = Math.min(800, Math.max(160, 18 * width));
+    for (let i = start ? 0 : n - 1; i >= 0 && i < n; i += dir) {
+      const distance = Math.max(0, (arc[i] - origin) * dir);
+      if (distance >= reach) break;
+      const rise = Math.abs(geo.level[i] - (lake?.level ?? geo.level[end]));
+      const influence = (1 - smoothstep(0.06 * reach, reach, distance)) * (1 - smoothstep(0.35, 2.5, rise));
+      out[i].dry += (targetDry - out[i].dry) * influence;
+      if (lake) out[i].backwater = Math.max(out[i].backwater ?? 0, influence);
     }
+  };
+  // Smoothing and braid splits can change the receiver state at its mouth. Centre both
+  // ribbons on the same local hydraulic width before blending back to their own states.
+  const incoming = connections.incoming.get(line) ?? [];
+  let from = 0;
+  for (const join of incoming) {
+    const reach = Math.max(24, 3 * join.width);
+    while (from + 1 < n && arc[from + 1] < join.station) from++;
+    let first = from;
+    while (first > 0 && arc[first - 1] > join.station - reach) first--;
+    const target = riverState(climate, widthRegimeSize(join.width, scale, r0)).dry;
+    for (let i = first; i < n && arc[i] < join.station + reach; i++) {
+      const influence = 1 - smoothstep(0.5 * join.width, reach, Math.abs(arc[i] - join.station));
+      out[i].dry += (target - out[i].dry) * influence;
+    }
+  }
+  const join = connections.downstream.get(line);
+  if (join) blendEnd(false, riverState(climate, widthRegimeSize(join.width, scale, r0)).dry, join.width);
+  if (showLakes) for (const mouth of connections.lakes.get(line) ?? []) blendEnd(mouth.k === 0, 0, mouth.width, mouth);
   return out;
-}
-const receivers = new WeakMap<VectorWater, Map<number, RiverLine>>();
-/** Dryness of the course a line joins, from the size of the receiving channel at the junction; undefined where the
- * line ends in the sea, a lake or at the map edge. */
-function receiverDry(water: VectorWater, line: RiverLine, climate: WaterClimate, scale: number, r0: number): number | undefined {
-  if (line.joins === undefined || line.joins < 0) return;
-  let byId = receivers.get(water);
-  if (!byId) {
-    byId = new Map();
-    for (const l of water.rivers?.rivers ?? []) if (l.id !== undefined) byId.set(l.id, l);
-    receivers.set(water, byId);
-  }
-  const to = byId.get(line.joins),
-    m = line.area.length - 1;
-  if (!to || m < 0) return;
-  const x = line.points[2 * m],
-    y = line.points[2 * m + 1];
-  let best = Infinity,
-    at = 0;
-  for (let k = 0; k < to.area.length; k++) {
-    const d = (to.points[2 * k] - x) ** 2 + (to.points[2 * k + 1] - y) ** 2;
-    if (d < best) {
-      best = d;
-      at = k;
-    }
-  }
-  const width = channelWidth(to.area[at] / (to.threads?.[at] ?? 1), scale);
-  return riverState(climate, widthRegimeSize(width, scale, r0)).dry;
 }
 const mean = (a: RiverState, b: RiverState): RiverState => ({ dry: (a.dry + b.dry) / 2, ice: (a.ice + b.ice) / 2 });
 
@@ -252,7 +256,6 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
   const network = water.rivers!,
     { colourOf } = waterInk(display);
   const groups = new Map<string, RegimeGroup>();
-  const threshold = display.riverArea * 1e6;
   const lines: [RiverLine, number][] = [
     ...(display.showOxbows ? network.oxbows.map(l => [l, 1] as [RiverLine, number]) : []),
     ...network.braids.map(l => [l, 0] as [RiverLine, number]),
@@ -266,7 +269,7 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
       widths = geo.widths,
       packed = new Float32Array(widths.length * 4);
     for (let k = 0; k < widths.length; k++) packed.set([geo.points[2 * k], geo.points[2 * k + 1], widths[k], geo.level[k]], k * 4);
-    const states = climate ? riverStates(water, geo, climate, threshold, line) : undefined;
+    const states = climate ? riverStates(water, geo, climate, display.showLakes, line) : undefined;
     // A bed wider than its water: the running reaches draw as a dry bed, the water as a thread inside (below).
     const thread = threadWidths(water, widths, climate, states);
     const symbolAt = (k: number): RiverSymbol => (states ? riverSymbol(mean(states[k], states[k + 1])) : 'water');
@@ -309,7 +312,7 @@ function regimeGroups(water: VectorWater, display: WaterDisplay): RegimeGroup[] 
     if (thread) {
       // One thread per stretch of running water: it fades into the dry bed (width to zero), without caps there; the
       // ends of the course keep their caps (a confluence, a lake shore, the sea), the source its taper.
-      for (const strand of threadStrands(geo, states!, thread)) {
+      for (const strand of threadStrands(geo, states!, thread, waterConnections(water).incoming.get(line))) {
         const last = strand.widths.length - 1,
           packedThread = new Float32Array(strand.widths.length * 4);
         strand.widths.forEach((w, k) => packedThread.set([strand.points[2 * k], strand.points[2 * k + 1], w, 0], k * 4));
@@ -342,10 +345,10 @@ function seasonalThreadShare(water: VectorWater, climate?: WaterClimate): number
   return 1 - (climate?.lowWater ?? 0) * (1 - threadShare(runoffOf(water)));
 }
 /** Width per vertex (m), fading to zero where the course dries or freezes. */
-function threadWidths(water: VectorWater, widths: ArrayLike<number>, climate?: WaterClimate, states?: RiverState[]): Float64Array | undefined {
+function threadWidths(water: VectorWater, widths: ArrayLike<number>, climate?: WaterClimate, states?: ReachState[]): Float64Array | undefined {
   const share = seasonalThreadShare(water, climate);
   if (!states || share >= 1) return;
-  return Float64Array.from(widths, (w, k) => (states[k].ice >= 0.55 ? 0 : w * share * Math.max(0, Math.min(1, (0.85 - states[k].dry) / 0.85))));
+  return Float64Array.from(widths, (w, k) => (states[k].ice >= 0.55 ? 0 : w * (share + (1 - share) * (states[k].backwater ?? 0)) * Math.max(0, Math.min(1, (0.85 - states[k].dry) / 0.85))));
 }
 
 /** A strand of running water inside a bed wider than it: its vertices, widths (m), course style and ice. */
@@ -371,7 +374,7 @@ const strandNoise = (seed: number, t: number): number => {
  * instead of following the axis, breaks into tapered pools where the course is intermittent, and splits into a second
  * strand that leaves and rejoins it in the wide beds. Deterministic per course; its ends stay on the axis (confluence,
  * lake, sea). Built with the network, never per frame. */
-function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: Float64Array): Strand[] {
+function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: Float64Array, junctions: readonly Junction[] = []): Strand[] {
   const p = geo.points,
     n = geo.widths.length,
     seed = Math.imul(Math.round(p[0]) ^ Math.imul(Math.round(p[1]), 668265263), 374761393),
@@ -379,7 +382,8 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
     ny = new Float64Array(n),
     outerBend = new Float64Array(n),
     // Distance along the course, in bed widths.
-    along = new Float64Array(n);
+    along = new Float64Array(n),
+    station = new Float64Array(n);
   for (let k = 0; k < n; k++) {
     const a = Math.max(0, k - 1),
       b = Math.min(n - 1, k + 1),
@@ -392,11 +396,13 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
     // The signed sagitta in bed widths is bounded even at a sharp polyline joint.
     const sagitta = (p[2 * k] - 0.5 * (p[2 * a] + p[2 * b])) * nx[k] + (p[2 * k + 1] - 0.5 * (p[2 * a + 1] + p[2 * b + 1])) * ny[k];
     outerBend[k] = Math.max(-1, Math.min(1, (2 * sagitta) / Math.max(1, geo.widths[k])));
+    if (k) station[k] = station[k - 1] + Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]);
     if (k) along[k] = along[k - 1] + Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]) / Math.max(2, (geo.widths[k] + geo.widths[k - 1]) / 2);
   }
   const main: Strand = { points: [], widths: [], kind: [], ice: [] },
     side: Strand = { points: [], widths: [], kind: [], ice: [] };
-  let braided = false;
+  let braided = false,
+    joinIndex = 0;
   const sample = (k: number, t: number): void => {
     const next = Math.min(n - 1, k + 1),
       at = (a: ArrayLike<number>): number => a[k] + (a[next] - a[k]) * t,
@@ -405,8 +411,12 @@ function threadStrands(geo: DrawnCourse, states: readonly RiverState[], thread: 
       y = mix(p[2 * k + 1], p[2 * next + 1]),
       bed = at(geo.widths),
       q = at(along),
-      end = smoothstep(0, 3, Math.min(q, along[n - 1] - q)),
-      broken = smoothstep(0.4, 0.8, mix(states[k].dry, states[next].dry)),
+      distance = at(station);
+    while (joinIndex < junctions.length && junctions[joinIndex].station < distance) joinIndex++;
+    const toJoin = Math.min((junctions[joinIndex]?.station ?? Infinity) - distance, distance - (junctions[joinIndex - 1]?.station ?? -Infinity));
+    const junctionRoom = smoothstep(0.55 * bed, 3 * bed + 1, toJoin),
+      end = smoothstep(0, 3, Math.min(q, along[n - 1] - q)) * junctionRoom,
+      broken = smoothstep(0.4, 0.8, mix(states[k].dry, states[next].dry)) * end,
       pool = 1 - broken * (1 - smoothstep(-0.05, 0.4, strandNoise(seed + 3, q / 3))),
       // Shallow crossings spread across the bed; deeper runs leave wider bars.
       // Taper the variation at joins so tributaries still meet their trunk.
@@ -454,9 +464,6 @@ function wetStretches(widths: readonly number[]): [number, number][] {
   return out;
 }
 
-/** Lake draw-down ring width (m): the shore the dry season exposes. */
-const shoreRing = (climate: WaterClimate | undefined): number => (climate ? 80 * climate.drop : 0);
-
 /** Shared water colour and per-vertex diagnostic colours. */
 function waterInk(display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay' | 'colors'>): { edge: string; colourOf: (kind: number) => string } {
   const s = display.style;
@@ -500,10 +507,11 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
   };
   const climate = displayClimate(display),
     ink = climate && !display.material ? regimeInk(display.style, edge) : undefined;
+  if (mouthMix && display.showLakes && climate) for (const value of lakeInlets(water, climate)) mouthMix.push(value);
   const line = (l: RiverLine, thinner: number): void => {
     const geo = riverGeometry(water, l, thinner, display.riverArea),
       { points, kind, widths } = geo;
-    const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, lowWater: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, threshold, l) : undefined;
+    const states = climate || display.material ? riverStates(water, geo, climate ?? { aridity: 0, lowWater: 0, rain: 1, ice: 0, sediment: 0, drop: 0 }, display.showLakes, l) : undefined;
     const thread = display.thread && climate ? threadWidths(water, widths, climate, states) : undefined;
     if (mouthMix && !thinner && geo.sea > 1 && geo.sea < widths.length) {
       const k = geo.sea - 1,
@@ -584,7 +592,7 @@ export function riverSegments(water: VectorWater, display: WaterDisplay, mouthMi
     }
     // The running water inside its bed. Its width and pools already carry the dryness: it is plain water.
     if (thread)
-      for (const strand of threadStrands(geo, states!, thread))
+      for (const strand of threadStrands(geo, states!, thread, waterConnections(water).incoming.get(l)))
         for (let i = 1; i < strand.widths.length; i++) {
           const w0 = strand.widths[i - 1],
             w1 = strand.widths[i];
@@ -1107,7 +1115,12 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, materi
   }
   if (material && display.showLakes && !lakeFrozen) svg += vectorLakeMaterial(water, display.style, display.colors);
   // The exposed shore lies over the lake material and the river mouths, inside the lake only.
-  if (lakes && ring > 1) svg += `<clipPath id="water-regime-lakes"><path d="${lakes}" clip-rule="evenodd"/></clipPath><path d="${lakes}" fill="none" stroke="${ink.bed}" stroke-width="${format(2 * ring)}" stroke-linejoin="round" clip-path="url(#water-regime-lakes)"/>`;
+  if (lakes && ring > 1 && climate) {
+    const inlet = inletPaths(water, climate),
+      span = water.hydro.width;
+    if (inlet) svg += `<mask id="water-inlets" maskUnits="userSpaceOnUse" x="0" y="0" width="${span}" height="${span}"><rect width="${span}" height="${span}" fill="white"/><path d="${inlet}" fill="black"/></mask>`;
+    svg += `<clipPath id="water-regime-lakes"><path d="${lakes}" clip-rule="evenodd"/></clipPath><path d="${lakes}" fill="none" stroke="${ink.bed}" stroke-width="${format(2 * ring)}" stroke-linejoin="round" clip-path="url(#water-regime-lakes)"${inlet ? ' mask="url(#water-inlets)"' : ''}/>`;
+  }
   return svg + '</g>';
 }
 
@@ -1128,6 +1141,15 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
   const paths = groups.map(g => ({ ...g, banksPath: new Path2D(g.banks), axesPath: new Path2D(g.axes), innerPath: g.inner ? new Path2D(g.inner) : undefined }));
   const lakeFrozen = climate.ice >= 0.5,
     ring = lakeFrozen ? 0 : shoreRing(climate);
+  const clipShore = (shore: Path2D) => {
+    ctx.clip(shore, 'evenodd');
+    const mouths = inletPaths(water, climate);
+    if (mouths) {
+      const outside = new Path2D(mouths);
+      outside.rect(0, 0, water.hydro.width, water.hydro.width);
+      ctx.clip(outside, 'evenodd');
+    }
+  };
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -1146,7 +1168,7 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
     if (lakeFrozen && lakes) ctx.fill(lakes, 'evenodd');
     if (ring > 1 && lakes) {
       ctx.save();
-      ctx.clip(lakes, 'evenodd');
+      clipShore(lakes);
       ctx.lineWidth = 2 * ring;
       ctx.stroke(lakes);
       ctx.restore();
@@ -1184,7 +1206,7 @@ export function paintWaterRegime(ctx: CanvasRenderingContext2D, water: VectorWat
   }
   if (lakes && ring > 1 && dryOn) {
     ctx.save();
-    ctx.clip(lakes, 'evenodd');
+    clipShore(lakes);
     ctx.strokeStyle = ink.bed;
     ctx.lineWidth = 2 * ring;
     ctx.stroke(lakes);

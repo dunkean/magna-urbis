@@ -144,22 +144,52 @@ float v2GroundDunes(vec2 world,float fp,float amount){
 // darker damp rim; washes are pale sand threaded along the fall line. Frost zones (pavement.a) sort their stones:
 // coarse dark borders around polygons on level ground, stripes down the slopes ('stripe', a fall-line streak).
 // 'thread' is the zero-mean line pattern of the same streak at the scale of the washes.
+// Evaporation leaves pale salt bloom in patches; exposed clay curls into plates with dark, interrupted fissures.
+vec3 v2PanFloor(vec4 pan,V2Env e,vec2 world,float fp){
+  float basin=v2Pattern(vec3(world,0.),85.,fp,uMaterialSeed+1701u);
+  float clayTone=v2Pattern(vec3(world,0.),19.,fp,uMaterialSeed+1702u);
+  float salt=pan.a*sstep(-1.05,.85,basin+.48*clayTone);
+  vec3 clay=mix(pan.rgb*vec3(.79,.68,.56),pan.rgb*vec3(1.02,.90,.76),sstep(-1.,1.2,clayTone+.32*basin));
+  vec3 crust=mix(vec3(.78,.75,.67),vec3(.91,.90,.83),sstep(-1.,1.,basin+.65*clayTone));
+  vec3 floorColor=mix(clay,crust,salt)*(.97+.06*e.tone);
+  if(uQuality==0 && fp<3.){
+    // Bend and stretch the plate boundaries. Smaller fractures terminate within larger plates
+    // or disappear beneath powder, leaving sizeable stretches of unbroken ground.
+    vec2 warp=vec2(clayTone,v2Pattern(vec3(world,0.),17.,fp,uMaterialSeed+1703u));
+    vec2 q=mat2(.85,.53,-.53,.85)*world+1.05*warp;
+    float grain=v2Pattern(vec3(world,0.),1.3,fp,uMaterialSeed+1704u);
+    for(int k=0;k<2;k++){
+      float size=k==0?8.:1.35, pixel=fp/size;
+      if(pixel>.30)continue;
+      vec2 p=k==0?q/vec2(size,.73*size):mat2(.79,-.62,.62,.79)*q/size;
+      vec4 plate=surfaceFacets(p+vec2(.12,-.09)*grain/size,uMaterialSeed+1705u+uint(k));
+      float broken=sstep(-.9,.65,clayTone+.50*grain+(k==0?.65:-.45));
+      float lipWidth=(k==0?.024:.040)*(.65+.7*broken);
+      float aa=max(.006,pixel),edge=plate.y;
+      float gap=1.-sstep(max(0.,lipWidth-aa),lipWidth+aa,edge);
+      float lip=(1.-sstep(lipWidth,lipWidth*2.5+aa,edge))*(1.-gap);
+      float visible=broken*(1.-sstep(.045,.26,pixel));
+      floorColor+=visible*(.035*plate.x+lip*(.052+.065*salt)-gap*(.20-.16*salt));
+    }
+    floorColor+=.016*grain+.022*v2Pattern(vec3(world,0.),.48,fp,uMaterialSeed+1710u);
+  }
+  return floorColor;
+}
 vec3 v2GroundPaint(vec3 c,int z,V2Env e,vec2 world,float fp,float stripe,float thread){
   vec4 U=v2GroundUnit,pave=V2_ZONE_PAVEMENT[z],grav=V2_ZONE_GRAVEL[z],pan=V2_ZONE_PAN[z];
   float rim=v2GroundSite.x,fan=v2GroundSite.y,tone=.93+.14*e.tone;
   vec3 micro=surfaceMicroTone,grit=vec3(1.)+1.6*(micro-vec3(1.));
   vec3 sand=V2_ZONE_BARE[z].rgb*vec3(1.07,1.04,.97);
   float block=0.,joint=0.,border=0.;
-  float celled=U.y+U.z+U.w*pan.a;
+  float celled=U.y+U.z;
   if(uQuality==0&&celled>.01&&fp<7.5){
-    bool wide=U.w>U.y+U.z;
     for(int k=0;k<2;k++){
-      float size=k==0?(wide?30.:14.):(wide?7.:3.2),keep=1.-sstep(size*.1,size*.25,fp);
+      float size=k==0?14.:3.2,keep=1.-sstep(size*.1,size*.25,fp);
       if(keep>0.){
         vec4 f=surfaceFacets(world/size,uMaterialSeed+791u+uint(k));
         block+=keep*(k==0?.10:.07)*f.x;
-        // Rock shows the joints of its small blocks only; a pan cracks in broad polygons too.
-        if(k==1||wide)joint=max(joint,keep*surfaceJoint(f.y,fp/size));
+        // Rock shows the joints of its small blocks only.
+        if(k==1)joint=max(joint,keep*surfaceJoint(f.y,fp/size));
         // Centred share of a cell that lies near its joints: the coarse border of a sorted polygon.
         if(k==1)border=keep*(.55-sstep(.03,.2,f.y));
       }
@@ -167,11 +197,11 @@ vec3 v2GroundPaint(vec3 c,int z,V2Env e,vec2 world,float fp,float stripe,float t
   }
   vec3 gravel=grav.rgb*tone*grit*(1.+(.35+.25*pave.a)*block+pave.a*(.09*stripe-.10*border));
   vec3 rock=pave.rgb*tone*micro*(1.+1.3*block-.16*joint+.07*pave.a*stripe);
-  vec3 floored=pan.rgb*(vec3(1.)+.5*(micro-vec3(1.)))*(1.+pan.a*(.3*block-.22*joint));
   c=mix(c,gravel,U.y);c=mix(c,rock,U.z);c=mix(c,sand*tone*micro,U.x);
   c=mix(c,sand*micro*(1.+.10*thread),.6*fan);
   c=mix(c,pan.rgb*.56*micro,.75*rim);
-  return mix(c,floored,U.w);
+  if(U.w>.001)c=mix(c,v2PanFloor(pan,e,world,fp),U.w);
+  return c;
 }
 // Waterlogged low ground. Paddy zones keep rectangular parcels (one hash per rotated cell). Elsewhere the mosaic
 // is organic: reed and sedge mats split along a ragged line, dark pools in the lowest ground (the wet mottle and
