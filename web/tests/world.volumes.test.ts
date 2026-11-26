@@ -110,6 +110,21 @@ function frame(gl: WebGL2RenderingContext, view: View, heights: TerrainHeights):
 }
 
 describe('world buildings', () => {
+  it('assigns the building samplers before the warm-up draw', () => {
+    const gl = mockGl(),
+      heights = relief(4000),
+      scene = town(1, heights),
+      layer = createWorldBuildingsLayer(gl, { scene: () => scene, appearance: () => ({ style: 'cartographic', diagnostic: 'none' }), terrain: () => heights, invalidate: () => {} });
+    vi.mocked(gl.getUniformLocation).mockImplementation((program, name) => ({ program, name }));
+    vi.mocked(gl.drawArrays).mockImplementationOnce(() => {
+      const program = vi.mocked(gl.useProgram).mock.lastCall![0];
+      for (const [unit, name] of ['uCoverGrain', 'uHouseSurface', 'uLook', 'uSelection'].entries()) expect(gl.uniform1i).toHaveBeenCalledWith({ program, name }, unit);
+    });
+    while (layer.work!(8, undefined)) {}
+    expect(gl.drawArrays).toHaveBeenCalledWith(gl.TRIANGLES, 0, 3);
+    layer.dispose();
+  });
+
   it('marks V1 eaves and changes of roof plane without marking coplanar triangle seams', () => {
     const materials = { cladding: 'city3d:cover:tile' } as BuildingTriangle['materials'];
     const roof = (points: BuildingTriangle['points'], normal: BuildingTriangle['normal']): BuildingTriangle => ({ points, normal, materials, surface: 'roof' });

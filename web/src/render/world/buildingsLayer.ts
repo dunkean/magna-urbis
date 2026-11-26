@@ -335,6 +335,12 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
     linking ??= startVolumeProgram(gl, WORLD_BUILDING_VS, WORLD_BUILDING_FS);
     if (!volumeProgramLinked(gl, linking, 'World buildings')) return false;
     program = { program: linking, u: uniformsOf(gl, linking, UNIFORMS) };
+    // Samplers default to unit zero. Separate the array and 2D textures before even the warm-up draw.
+    gl.useProgram(linking);
+    gl.uniform1i(program.u.uCoverGrain, 0);
+    gl.uniform1i(program.u.uHouseSurface, 1);
+    gl.uniform1i(program.u.uLook, 2);
+    gl.uniform1i(program.u.uSelection, 3);
     linking = undefined;
     return true;
   };
@@ -660,23 +666,16 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           if (detailed) {
             gl.activeTexture(gl.TEXTURE1);
             gl.bindTexture(gl.TEXTURE_2D_ARRAY, houseSurfaces?.texture ?? null);
-            gl.uniform1i(u.uHouseSurface, 1);
           }
           gl.uniform1f(u.uHouseSurfaceReady, detailed ? (houseSurfaces?.ready ?? 0) : 0);
           gl.activeTexture(gl.TEXTURE2);
           gl.bindTexture(gl.TEXTURE_2D, shown!.texture!);
-          gl.uniform1i(u.uLook, 2);
-          // Without a selection the mask sampler reads the look table's unit (same sampler type), never sampled.
           const marked = syncMask();
-          if (marked) {
-            gl.activeTexture(gl.TEXTURE3);
-            gl.bindTexture(gl.TEXTURE_2D, mask!);
-          }
-          gl.uniform1i(u.uSelection, marked ? 3 : 2);
+          gl.activeTexture(gl.TEXTURE3);
+          gl.bindTexture(gl.TEXTURE_2D, marked ? mask! : shown!.texture!);
           gl.uniform1i(u.uSelected, marked ? 1 : 0);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, grain.texture ?? null);
-          gl.uniform1i(u.uCoverGrain, 0);
           let block: Slot | undefined;
           for (let i = 0; i < drawTotal; i++) {
             const slot = drawSlot[i];
@@ -700,10 +699,8 @@ export function createWorldBuildingsLayer(gl: WebGL2RenderingContext, options: W
           }
           gl.activeTexture(gl.TEXTURE2);
           gl.bindTexture(gl.TEXTURE_2D, null);
-          if (marked) {
-            gl.activeTexture(gl.TEXTURE3);
-            gl.bindTexture(gl.TEXTURE_2D, null);
-          }
+          gl.activeTexture(gl.TEXTURE3);
+          gl.bindTexture(gl.TEXTURE_2D, null);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
           volumeDepthEnd(gl);
