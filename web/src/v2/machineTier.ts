@@ -2,8 +2,9 @@
  * Four levels; `tier` is their coarse view for 3D availability, tree distance and volume buildings.
  * ?machine=capable|slow|veryslow forces detection for tests, but never overrides a saved recipe, project, city code or explicit style selection.
  * Missing optional hints are neutral. No benchmark or GPU work is added to the startup critical path.
- * Desktop Auto reads hardware hints and one navigation sample. Handheld Auto starts from its learned level and moves by
- * measured navigation windows: GPU names do not tell phones apart.
+ * Desktop Auto reads hardware hints and one navigation sample. Handheld Auto starts from its learned level, or from its
+ * GPU family, and moves by measured navigation windows within what that family may try: on a phone a level that is too
+ * heavy does not show as slow frames but as a lost GPU context, so it is not found by trying.
  */
 import type { PresetId } from '../render/composition';
 import { SOFTWARE_GL } from '../render/softwareGl';
@@ -36,8 +37,8 @@ export interface MachineSignals {
   adapter?: { name?: string; maxTextureDimension2D?: number; maxStorageBufferBindingSize?: number };
   frameMs?: number;
 }
-export const PERFORMANCE_STORAGE_KEY = 'magna-urbis-performance';
-export const PERFORMANCE_AUTO_KEY = 'magna-urbis-performance-auto';
+export const PERFORMANCE_STORAGE_KEY = 'magna-urbis-performance-level';
+export const PERFORMANCE_AUTO_KEY = 'magna-urbis-performance-learned';
 export const PERFORMANCE_LEVELS: readonly PerformanceLevel[] = ['minimal', 'economy', 'balanced', 'high'];
 export const PERFORMANCE_PREFERENCES: readonly PerformancePreference[] = ['auto', 'economy', 'balanced', 'high'];
 /** Four logical threads alone are inconclusive; combine with RAM or a restricted/integrated GPU. */
@@ -98,8 +99,16 @@ export function decideMachineTier(s: MachineSignals, force?: MachineTier): TierD
 export function machineDefaultPreset(level: PerformanceLevel, full: PresetId): PresetId {
   return level === 'minimal' ? 'minimal' : level === 'economy' && (full === 'satellite' || full === 'parchment') ? `${full}-light` : full;
 }
-/** A handheld without a learned level: Economy only when both CPU and memory are known to be small. */
-export const handheldStartLevel = (cores?: number, memory?: number): PerformanceLevel => (cores && memory && cores <= LOW_CPU_THREADS && memory <= LOW_MEMORY_GB ? 'economy' : 'balanced');
+/** Handheld GPU families that compile and hold the full styles: Apple, and the flagship Adreno (650, 660, 730 and up),
+ * Mali (G77, G78, G710 and up), Immortalis and Xclipse lines. A mid-range chip (an Adreno 619) loses its GPU context
+ * on the full Satellite shader. */
+const STRONG_HANDHELD_GPU = /apple|adreno[^0-9]*(?:6[56]\d|7[3-9]\d|8\d\d)|mali-g(?:7[78](?!\d)|7[12]\d|9\d\d)|immortalis|xclipse\s*9\d\d/i;
+/** A handheld without a learned level. A strong GPU with enough CPU and memory starts at Balanced and may climb by
+ * measurement; any other starts at Economy and stays there in Auto (the user can still choose a level). */
+export function handheldStart(s: Pick<MachineSignals, 'cores' | 'memory' | 'renderer' | 'adapter'>): LearnedPerformance {
+  const small = !!s.cores && !!s.memory && s.cores <= LOW_CPU_THREADS && s.memory <= LOW_MEMORY_GB;
+  return STRONG_HANDHELD_GPU.test(`${s.renderer ?? ''} ${s.adapter?.name ?? ''}`) && !small ? { level: 'balanced', ceiling: 'high' } : { level: 'economy', ceiling: 'economy' };
+}
 const demoted = (state: LearnedPerformance, level: PerformanceLevel): LearnedPerformance => (level === state.level ? state : { level, ceiling: level });
 /** One measured navigation window on a handheld; returns `state` itself when nothing changes. */
 export function handheldWindowStep(state: LearnedPerformance, meanMs: number, first: boolean, memory?: number): LearnedPerformance {
@@ -130,7 +139,7 @@ export function decidePerformance(s: MachineSignals, c: PerformanceContext): Mac
     return made(tierLevel(desktop.tier), desktop.reason);
   }
   if (c.learned) return made(c.learned.level, rank(c.learned.level) >= rank('balanced') ? 'normal' : c.learned.graphics ? 'graphics' : 'frames');
-  const start = handheldStartLevel(s.cores, s.memory);
+  const start = handheldStart(s).level;
   return made(start, start === 'economy' ? 'resources' : 'normal');
 }
 function readPreference(): PerformancePreference {
@@ -169,7 +178,11 @@ let sampleUntil = 0,
   sampleStart = 0,
   windows = 0,
   slowWindow = false;
-let compositor: boolean | undefined;
+let compositor: boolean | undefined,
+  compositorProbes = 0,
+  compositorTimer: ReturnType<typeof setTimeout> | undefined;
+/** The map lost its GPU context in this session: its level is already set for the next visit. */
+let gpuLost = false;
 let preference = readPreference(),
   handheld = false,
   learned: LearnedPerformance | undefined;
@@ -221,16 +234,45 @@ export function claimPerformancePreference(): boolean {
     return false;
   }
 }
+/** A temporary context, released at once: whether WebGL2 starts, and on which renderer. */
+function probeWebgl2(): { webgl2: boolean; renderer: string } {
+  let gl: WebGL2RenderingContext | null = null;
+  try {
+    gl = document.createElement('canvas').getContext('webgl2', { failIfMajorPerformanceCaveat: false });
+  } catch {
+    /* Privacy policy can deny context creation. */
+  }
+  const debug = gl?.getExtension('WEBGL_debug_renderer_info');
+  const renderer = gl ? String(gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER)) : '';
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  return { webgl2: !!gl, renderer };
+}
+/** Waits before a handheld asks again whether a refused compositor can start. */
+const COMPOSITOR_PROBES_MS = [8000, 20000, 45000];
+/** On a handheld a refusal is often a moment of GPU trouble (a restarting GPU process refuses new contexts), not a
+ * missing capability: ask again a few times, further apart, and lift the verdict once a hardware context starts. */
+function probeCompositor(): void {
+  if (!handheld || compositor !== false || compositorTimer !== undefined || compositorProbes >= COMPOSITOR_PROBES_MS.length) return;
+  compositorTimer = setTimeout(() => {
+    compositorTimer = undefined;
+    if (compositor !== false) return;
+    const probe = probeWebgl2();
+    if (!probe.webgl2 || SOFTWARE_GL.test(probe.renderer)) return probeCompositor();
+    compositor = undefined;
+    refresh();
+  }, COMPOSITOR_PROBES_MS[compositorProbes++]);
+}
 /** Compositor failures are capabilities, independent of an explicit style. Defer changes until its draw returns. */
 export function reportMachineCompositor(available: boolean): void {
   if (compositor === available) return;
   compositor = available;
+  if (!available) probeCompositor();
   queueMicrotask(refresh);
 }
 /** A handheld level change from a measurement; published after the compositor frame that measured it has returned.
  * Only frame windows are saved for later visits: a struggle is session-only. */
 function learn(step: (state: LearnedPerformance) => LearnedPerformance, persist: boolean): void {
-  const current: LearnedPerformance = learned ?? { level: handheldStartLevel(signals!.cores, signals!.memory), ceiling: 'high' },
+  const current: LearnedPerformance = learned ?? handheldStart(signals!),
     next = step(current);
   if (next === current) return;
   learned = next;
@@ -239,7 +281,7 @@ function learn(step: (state: LearnedPerformance) => LearnedPerformance, persist:
 }
 /** Handheld: windows of twenty frames within ten seconds, each one a decision, at most HANDHELD_WINDOWS per session. */
 function sampleHandheld(ms: number): void {
-  if (preference !== 'auto' || windows >= HANDHELD_WINDOWS) return;
+  if (preference !== 'auto' || gpuLost || windows >= HANDHELD_WINDOWS) return;
   const now = performance.now();
   if (!samples.length || now - sampleStart > FRAME_SAMPLE_WINDOW_MS) {
     samples = [];
@@ -276,14 +318,18 @@ export function reportMachineFrame(ms: number): void {
  * Long tasks before the first measured window (shader compilation, first tile bakes) are warm-up, and later ones never
  * become a lasting verdict. */
 export function reportMachineStruggle(): void {
-  if (!signals || force || !handheld || preference !== 'auto' || windows === 0) return;
+  if (!signals || force || !handheld || preference !== 'auto' || gpuLost || windows === 0) return;
   learn(handheldStruggleStep, false);
 }
-/** The map lost its GPU context for lack of resources (glContextRecovery.ts): measured evidence that the level is too
- * heavy for this handheld. One step down, never below Economy, kept for later visits. */
+/** The map lost its GPU context for lack of resources (glContextRecovery.ts): the level is too heavy for this handheld.
+ * The next visit starts at Economy in Auto, whatever level was chosen. Nothing changes in this session: the renderer has
+ * already switched to its light profile, and another style and canvas density now would add shader compilation and
+ * bakes to a GPU that is recovering. */
 export function reportMachineGpuLoss(): void {
-  if (!signals || force || !handheld || preference !== 'auto') return;
-  learn(state => ({ ...handheldStruggleStep(state), graphics: true }), true);
+  if (!signals || force || !handheld) return;
+  gpuLost = true;
+  store(PERFORMANCE_AUTO_KEY, JSON.stringify({ level: 'economy', ceiling: 'economy', graphics: true } satisfies LearnedPerformance));
+  if (preference !== 'auto') store(PERFORMANCE_STORAGE_KEY, 'auto');
 }
 /** Deferred by the boot module until after client initialization. A tiny temporary GL context is released immediately.
  * Optional WebGPU adapter hints have a bounded wait; absence of WebGPU never implies slow WebGL.
@@ -292,16 +338,7 @@ export async function inspectMachine(): Promise<MachineDecision> {
   force = forcedMachineTier(new URLSearchParams(location.search).get('machine'));
   handheld = handheldDevice();
   learned = handheld ? readLearned() : undefined;
-  const canvas = document.createElement('canvas');
-  let gl: WebGL2RenderingContext | null = null;
-  try {
-    gl = canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: false });
-  } catch {
-    /* Privacy policy can deny context creation. */
-  }
-  const debug = gl?.getExtension('WEBGL_debug_renderer_info');
-  signals = { webgl2: !!gl, renderer: gl ? String(gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER)) : '', cores: navigator.hardwareConcurrency, memory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory };
-  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  signals = { ...probeWebgl2(), cores: navigator.hardwareConcurrency, memory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory };
   let timer: number | undefined;
   try {
     const adapter = await Promise.race([

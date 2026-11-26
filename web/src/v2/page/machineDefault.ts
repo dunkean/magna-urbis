@@ -79,20 +79,25 @@ export function mountMachineDefault(state: PageState, actions: PageActions, choi
     if (full) show(full);
   };
   const apply = (next: MachineDecision): void => {
-    const key = next.reason !== 'preference' && (next.level === 'minimal' || next.level === 'economy') ? `${next.level}|${next.reason}` : undefined;
+    // A handheld that starts at Economy for its GPU family gets no notice: Settings › Performance shows its level.
+    const quiet = next.reason === 'preference' || (next.handheld && next.reason === 'resources');
+    const key = !quiet && (next.level === 'minimal' || next.level === 'economy') ? `${next.level}|${next.reason}` : undefined;
     if (key !== noticed) {
       noticed = key;
       removeNotice?.();
-      removeNotice = key
-        ? showMachineNotice(next, () => {
-            // A hard limit keeps the level at Minimal: only protecting the style shows the full look then.
-            if (next.reason === 'software' || next.reason === 'webgl' || next.reason === 'compositor') {
-              if (!machineStyleProtected()) restore();
-              protectMachineStyle();
-            }
-            choosePerformance(next.handheld ? 'balanced' : 'high');
-          })
-        : undefined;
+      // On a handheld the notice only informs: a heavier level there can cost the GPU context, so it is chosen in Settings.
+      removeNotice = !key
+        ? undefined
+        : next.handheld
+          ? showMachineNotice(next)
+          : showMachineNotice(next, () => {
+              // A hard limit keeps the level at Minimal: only protecting the style shows the full look then.
+              if (next.reason === 'software' || next.reason === 'webgl' || next.reason === 'compositor') {
+                if (!machineStyleProtected()) restore();
+                protectMachineStyle();
+              }
+              choosePerformance('high');
+            });
     }
     // A picked style, a loaded project or a restored autosave protects the recipe: its composition is the user's.
     if (machineStyleProtected() || state.settings !== settings) return;

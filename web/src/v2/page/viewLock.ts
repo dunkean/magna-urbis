@@ -40,7 +40,8 @@ export function mountViewLock(viewer: Viewer): void {
     /* Optional storage. */
   }
   const apply = (): void => {
-    const available = machineViewDefaults(machineDecision().tier).available,
+    const decision = machineDecision(),
+      available = machineViewDefaults(decision.tier).available,
       locked = !available || preferred;
     viewer.setTiltLocked(locked);
     lock.disabled = !available;
@@ -50,7 +51,9 @@ export function mountViewLock(viewer: Viewer): void {
     const action = !available ? UNAVAILABLE : locked ? 'Unlock the 3D view' : 'Lock the map in 2D';
     label(lock, 'title', action);
     label(lock, 'aria-label', action);
-    button.disabled = locked;
+    // A greyed button cannot say why on a touch screen: on a handheld it stays pressable while 3D is unavailable, and
+    // its press explains (view3d.ts).
+    button.disabled = available ? preferred : !decision.handheld;
     label(button, 'title', !available ? UNAVAILABLE : locked ? LOCKED : undefined);
   };
   onMachineDecision(apply);

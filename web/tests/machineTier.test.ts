@@ -1,7 +1,7 @@
 /** Pure machine policy checks: optional hints are neutral, combined constraints demote, hard limits beat preferences,
  * and the handheld ladder moves by measured windows. */
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { decideMachineTier, decidePerformance, forcedMachineTier, machineDefaultPreset, handheldStartLevel, handheldStruggleStep, handheldWindowStep, type LearnedPerformance } from '../src/v2/machineTier';
+import { decideMachineTier, decidePerformance, forcedMachineTier, machineDefaultPreset, handheldStart, handheldStruggleStep, handheldWindowStep, type LearnedPerformance } from '../src/v2/machineTier';
 import { machineViewDefaults, performanceKnobs } from '../src/v2/machineView';
 import { TREE_DISTANCE_MIN, TREE_DISTANCE_DEFAULT } from '../src/ui/terrain3dTrees';
 import { VIEW_DEPTH_DEFAULT } from '../src/render/world/viewDepth';
@@ -16,7 +16,7 @@ async function page(search = '', storage = memoryStorage()) {
   vi.stubGlobal('localStorage', storage);
   vi.stubGlobal('navigator', { hardwareConcurrency: 16, deviceMemory: 8 });
   vi.stubGlobal('window', { setTimeout, clearTimeout });
-  vi.stubGlobal('document', { createElement: () => ({ getContext: () => ({ getExtension: () => null, getParameter: () => 'Hardware GPU' }) }) });
+  vi.stubGlobal('document', { createElement: () => ({ getContext: () => ({ getExtension: () => null, getParameter: () => 'Apple GPU' }) }) });
   const policy = await import('../src/v2/machineTier');
   await policy.inspectMachine();
   return policy;
@@ -75,13 +75,22 @@ describe('machine defaults', () => {
       expect(decidePerformance({ webgl2: true, frameMs: 90 }, { preference: 'balanced', handheld, learned: { level: 'economy', ceiling: 'economy' } })).toEqual({ tier: 'slow', level: 'balanced', reason: 'preference', handheld });
     }
   });
-  it('starts a handheld from measurement, not GPU names', () => {
-    expect(handheldStartLevel(4, 4)).toBe('economy');
-    expect(handheldStartLevel(4)).toBe('balanced');
-    expect(handheldStartLevel(undefined, 4)).toBe('balanced');
-    expect(handheldStartLevel(8, 4)).toBe('balanced');
+  it('starts a handheld from its GPU family: Balanced on strong families, Economy with no automatic climb on the others', () => {
+    const modest = { level: 'economy', ceiling: 'economy' },
+      strong = { level: 'balanced', ceiling: 'high' };
+    expect(handheldStart({ renderer: 'ANGLE (Qualcomm, Adreno (TM) 619, OpenGL ES 3.2)', cores: 8, memory: 8 })).toEqual(modest);
+    expect(handheldStart({ renderer: 'Adreno (TM) 720' })).toEqual(modest);
+    expect(handheldStart({ renderer: 'Mali-G57 MC2' })).toEqual(modest);
+    expect(handheldStart({ renderer: 'Mali-G72 MP3' })).toEqual(modest);
+    expect(handheldStart({})).toEqual(modest);
+    expect(handheldStart({ renderer: 'Adreno (TM) 740', cores: 8, memory: 8 })).toEqual(strong);
+    expect(handheldStart({ renderer: 'Adreno (TM) 660' })).toEqual(strong);
+    expect(handheldStart({ renderer: 'Mali-G78 MP14' })).toEqual(strong);
+    expect(handheldStart({ renderer: 'Mali-G710 MC10' })).toEqual(strong);
+    expect(handheldStart({ renderer: 'Apple GPU' })).toEqual(strong);
+    expect(handheldStart({ renderer: 'Apple GPU', cores: 4, memory: 4 })).toEqual(modest);
+    expect(decidePerformance({ webgl2: true, renderer: 'Adreno (TM) 619', cores: 8, memory: 8 }, { preference: 'auto', handheld: true })).toMatchObject({ level: 'economy', reason: 'resources' });
     expect(decidePerformance({ webgl2: true, renderer: 'Mali-G78', cores: 8, memory: 8 }, { preference: 'auto', handheld: true })).toEqual({ tier: 'slow', level: 'balanced', reason: 'normal', handheld: true });
-    expect(decidePerformance({ webgl2: true, cores: 4, memory: 4 }, { preference: 'auto', handheld: true })).toMatchObject({ level: 'economy', reason: 'resources' });
     expect(decidePerformance({ webgl2: true }, { preference: 'auto', handheld: true, learned: { level: 'high', ceiling: 'high' } })).toMatchObject({ level: 'high', tier: 'capable' });
   });
   it('moves a handheld by window means, with ceilings and the memory gate for High', () => {
@@ -150,15 +159,15 @@ describe('machine defaults', () => {
     expect(policy.machineDecision().tier).toBe('capable');
   });
   it('stores the preference, and choosing Auto again forgets the learned handheld level', async () => {
-    const storage = memoryStorage({ 'magna-urbis-performance-auto': JSON.stringify({ level: 'minimal', ceiling: 'minimal' }) });
+    const storage = memoryStorage({ 'magna-urbis-performance-learned': JSON.stringify({ level: 'minimal', ceiling: 'minimal' }) });
     const policy = await page('?device=handheld', storage);
     // Minimal is learned for a session only: the next visit retries from Economy.
     expect(policy.machineDecision()).toMatchObject({ level: 'economy', handheld: true, reason: 'frames' });
     policy.setPerformancePreference('high');
     expect(policy.machineDecision()).toMatchObject({ level: 'high', reason: 'preference' });
-    expect(storage.values.get('magna-urbis-performance')).toBe('high');
+    expect(storage.values.get('magna-urbis-performance-level')).toBe('high');
     policy.setPerformancePreference('auto');
-    expect(storage.values.has('magna-urbis-performance-auto')).toBe(false);
+    expect(storage.values.has('magna-urbis-performance-learned')).toBe(false);
     expect(policy.machineDecision()).toMatchObject({ level: 'balanced', reason: 'normal' });
   });
   it('learns from handheld windows and struggles, even with a protected style', async () => {
@@ -172,7 +181,7 @@ describe('machine defaults', () => {
     for (let i = 0; i < 20; i++) policy.reportMachineFrame(40);
     await Promise.resolve();
     expect(policy.machineDecision()).toMatchObject({ level: 'economy', tier: 'slow', reason: 'frames' });
-    expect(JSON.parse(storage.values.get('magna-urbis-performance-auto')!)).toEqual({ level: 'economy', ceiling: 'economy' });
+    expect(JSON.parse(storage.values.get('magna-urbis-performance-learned')!)).toEqual({ level: 'economy', ceiling: 'economy' });
     for (let i = 0; i < 20; i++) policy.reportMachineFrame(10);
     await Promise.resolve();
     expect(policy.machineDecision().level).toBe('economy');
@@ -183,10 +192,17 @@ describe('machine defaults', () => {
   it('steps a handheld down for good when the map loses its GPU context', async () => {
     const storage = memoryStorage();
     const policy = await page('?device=handheld', storage);
+    policy.setPerformancePreference('high');
     policy.reportMachineGpuLoss();
     await Promise.resolve();
-    expect(policy.machineDecision()).toMatchObject({ level: 'economy', reason: 'graphics' });
-    expect(JSON.parse(storage.values.get('magna-urbis-performance-auto')!)).toEqual({ level: 'economy', ceiling: 'economy', graphics: true });
+    // Nothing moves while the GPU recovers; the next visit starts at Economy in Auto, whatever was chosen.
+    expect(policy.machineDecision().level).toBe('high');
+    expect(storage.values.get('magna-urbis-performance-level')).toBe('auto');
+    expect(JSON.parse(storage.values.get('magna-urbis-performance-learned')!)).toEqual({ level: 'economy', ceiling: 'economy', graphics: true });
+    for (let i = 0; i < 40; i++) policy.reportMachineFrame(10);
+    expect(JSON.parse(storage.values.get('magna-urbis-performance-learned')!).graphics).toBe(true);
+    const next = await page('?device=handheld', storage);
+    expect(next.machineDecision()).toMatchObject({ level: 'economy', reason: 'graphics' });
   });
   it('keeps a struggle for the session only', async () => {
     const storage = memoryStorage();
@@ -200,6 +216,6 @@ describe('machine defaults', () => {
     policy.reportMachineStruggle();
     await Promise.resolve();
     expect(policy.machineDecision()).toMatchObject({ level: 'economy', reason: 'frames' });
-    expect(storage.values.has('magna-urbis-performance-auto')).toBe(false);
+    expect(storage.values.has('magna-urbis-performance-learned')).toBe(false);
   });
 });

@@ -69,6 +69,8 @@ import { volumeTownBuildings } from '../../render/cityDrawOptions';
 
 /** Why the composed view waits (`blocked`): the ground layer has no tile yet. Its baking goes on while it waits. */
 export const GROUND_WARMING = 'ground warming';
+/** Waits before each new try of a refused compositor. */
+const COMPOSITOR_RETRY_MS = [5000, 15000, 40000];
 /** What a CSS pixel of the map shows: the point (map metres), in a tilted view the building volume in front of the
  * ground, and the metres a CSS pixel spans at the depth of what it shows (1 / scale in the top view). */
 export interface MapPick {
@@ -115,8 +117,11 @@ type RestPicture = 'due' | 'live' | 'awaiting' | 'painting' | 'exact';
 
 export class ComposedView {
   private live?: LiveCompositor;
-  /** No WebGL2, a software renderer or a layer factory that threw: `blocked` for good. */
-  private refused = false;
+  /** No WebGL2, a software renderer or a layer factory that threw: not composed before this time (Infinity: for good).
+   * A refusal is often a moment of GPU trouble (a restarting GPU process refuses new contexts), so the compositor is
+   * tried again a few times, further apart. */
+  private refusedUntil = 0;
+  private refusals = 0;
   /** The objects the live layers were made from: a new terrain renderer, cartography or city map gets new layers. */
   private owners: { gpu?: TerrainRenderer; terrain?: TerrainData; cartography?: CanvasRenderer; city?: NativeCityMap; text?: boolean; volumes?: boolean; /** The ground layer had a renderer to bake from. */ ground?: boolean } = {};
   /** The compositor's canvas and the exact canvases are in the page. */
@@ -246,7 +251,7 @@ export class ComposedView {
   blocked(view: View, w: number, h: number, dpr: number): string | undefined {
     const map = this.map,
       { ground } = this.parts;
-    if (this.refused) return 'no hardware WebGL2';
+    if (performance.now() < this.refusedUntil) return 'no hardware WebGL2';
     const r = map.resolved;
     if (!r || !map.world) return 'no map';
     if (r.target !== 'view2d') return 'not the 2D view';
@@ -261,8 +266,7 @@ export class ComposedView {
       restPending: () => this.motion.restOwed || this.rest === 'due' || this.rest === 'painting' || !!this.awaited,
     }));
     if (!live) {
-      this.refused = true;
-      reportMachineCompositor(false);
+      this.refuse();
       return 'no hardware WebGL2';
     }
     if (!live.active()) {
@@ -273,8 +277,11 @@ export class ComposedView {
     } catch (error) {
       // A layer factory of another module threw: the map is not composed, rather than failing every frame.
       console.warn('Live compositor: layer setup failed, the map is not composed.', error);
-      this.refused = true;
-      reportMachineCompositor(false);
+      // The next try starts from a new compositor and new layers.
+      this.leave();
+      this.dispose();
+      this.owners = {};
+      this.refuse();
       map.stats.liveError = String(error);
       return 'layer setup failed';
     }
@@ -287,6 +294,13 @@ export class ComposedView {
     return undefined;
   }
 
+  /** Notes a refusal and schedules the frame of the next try. */
+  private refuse(): void {
+    const wait = COMPOSITOR_RETRY_MS[this.refusals++];
+    this.refusedUntil = wait === undefined ? Infinity : performance.now() + wait;
+    if (wait !== undefined) setTimeout(this.map.compose, wait + 50);
+    reportMachineCompositor(false);
+  }
   private syncLayers(live: LiveCompositor): void {
     const gl = live.gl,
       owners = this.owners,

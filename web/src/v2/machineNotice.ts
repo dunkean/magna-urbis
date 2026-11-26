@@ -21,7 +21,8 @@ registerMessages({
   Minimal: { en: 'Minimal', fr: 'Minimal' },
   Economy: { en: 'Economy', fr: 'Économie' },
 });
-export function showMachineNotice(choice: MachineDecision, full: () => void): () => void {
+/** `full`: what "Use full quality" does; without it the notice only informs. */
+export function showMachineNotice(choice: MachineDecision, full?: () => void): () => void {
   const banner = document.createElement('div'),
     text = document.createElement('span'),
     restore = document.createElement('button'),
@@ -46,9 +47,10 @@ export function showMachineNotice(choice: MachineDecision, full: () => void): ()
       off();
       banner.remove();
     };
+  restore.hidden = !full;
   restore.onclick = () => {
     remove();
-    full();
+    full?.();
   };
   close.onclick = remove;
   sync();
