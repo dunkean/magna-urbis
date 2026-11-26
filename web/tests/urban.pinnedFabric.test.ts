@@ -36,7 +36,8 @@ describe('the two pinned curved town regressions', () => {
     const urban = world.urban!;
     expect(urban.buildings).toHaveLength(832);
     expect(urban.parcels).toHaveLength(424);
-    expect(createHash('sha256').update(JSON.stringify(urban)).digest('hex')).toBe('1aa4858c2a2470a5a529662c88decce6ed4e5ab30cdb053315a42227791f88ee');
+    // The pinned map now records 46 street keys, 34 quarter keys and its generated fortress name.
+    expect(createHash('sha256').update(JSON.stringify(urban)).digest('hex')).toBe('235db02161a994074785f5a707b62c085d54a32ac0f81dabb2ca313d99e720fc');
     const audit = auditUrban(world);
     expect(audit.malformed).toEqual([]);
     expect(audit.failed).toBe(0);

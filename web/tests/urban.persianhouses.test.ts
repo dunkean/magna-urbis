@@ -84,7 +84,8 @@ describe('Persian courtyard roof corners', () => {
     // acute fixtures above. Its complete urban output matches the pre-optimization graph.
     expect(u.buildings).toHaveLength(290);
     expect(u.parcels).toHaveLength(268);
-    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('f661ad76e9465cd4431041ce432859e9e7b185018c2aa1eab62503a763253673');
+    // Geometry is unchanged. The village now retains 96 street keys and six quarter keys.
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe('58c515115eca39a50e058ba214cfce2b2958acc763954e6412c11600bd248827');
     expectInvariants(w); // original angle, width, partition and containment budgets unchanged
     expect(u.buildings.reduce((sum, b) => sum + (b.courtyards?.length ?? 0), 0)).toBe(198);
     for (const b of u.buildings) {
