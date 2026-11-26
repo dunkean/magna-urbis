@@ -1,5 +1,7 @@
 ## Alpha 0.3.11
 
+- Town streets render again on WebGL2 devices that enforce reserved shader names.
+
 - Low riverbank shrubs rise from their painted crowns in tilted satellite views. Dense conifer stands retain distant silhouettes across the field of view, and tree crowns follow local snow conditions in every climate. Modelled foliage takes its colour from the matching crown in the current map style.
 - Close satellite views reveal gravel bars, scoured bends and shallow side channels in dry riverbeds. Low water tapers through tributary junctions and opens into lakes across exposed shores.
 - Dry clay flats have broken fissures and curled plate edges. Salt flats show patches of pale mineral crust with raised seams.

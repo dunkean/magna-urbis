@@ -293,16 +293,16 @@ void main() {
   if (uRoadFeather == 1 && (vMeta & 272u) == 0u && vHw > uMpp) {
     float loose = float((vMeta & 15u) >= 3u);
     float fringe = min(mix(1.6, 1.2, loose), vHw * mix(0.26, 0.5, loose)) * smoothstep(1.0, 2.0, vHw / uMpp);
-    float patch = vnoise(vRoadWorld * 0.19);
+    float mottle = vnoise(vRoadWorld * 0.19);
     uint traffic = (vMeta >> 9u) & 3u;
     if (traffic != 0u) {
       float bed = clamp(t / vHw, 0., 1.);
-      float margin = smoothstep(.68, .99, bed + .10 * (patch - .5));
+      float margin = smoothstep(.68, .99, bed + .10 * (mottle - .5));
       float detail = smoothstep(1.2, 3.5, vHw / uMpp);
       float gravel = vnoise(vRoadWorld * 1.7);
       float turning = ((vMeta & 32u) != 0u ? smoothstep(.4,vHw+1.,s) : 1.) *
                       ((vMeta & 64u) != 0u ? smoothstep(.4,vHw+1.,vLen-s) : 1.);
-      color *= 1. + detail * ((.08 * (1. - margin) - .11 * margin) * turning + .19 * (patch - .5) + .10 * (gravel - .5) * smoothstep(.0,.8,.85-uMpp));
+      color *= 1. + detail * ((.08 * (1. - margin) - .11 * margin) * turning + .19 * (mottle - .5) + .10 * (gravel - .5) * smoothstep(.0,.8,.85-uMpp));
       if (traffic == 1u) {
         float wander = .19 * sin(dot(vRoadWorld, vec2(.13,.17))) + .12 * sin(dot(vRoadWorld, vec2(.29,-.09)));
         float wheel = abs(abs(vLocal.y - wander) - .72);
@@ -318,7 +318,7 @@ void main() {
       }
       cover *= 1. - .36 * smoothstep(-min(fringe, .48), .001, d);
     } else {
-      cover *= 1.0 - (0.76 - 0.22 * patch) * smoothstep(-max(0.001, fringe) * (0.65 + patch), 0.0, d);
+      cover *= 1.0 - (0.76 - 0.22 * mottle) * smoothstep(-max(0.001, fringe) * (0.65 + mottle), 0.0, d);
     }
   }
   if (a <= 0.0) discard;
