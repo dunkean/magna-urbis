@@ -141,6 +141,7 @@ Many more in the [V2 gallery](https://magna-urbis.org/gallery/v2/).
 - **[Architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html)** ([français](https://magna-urbis.org/scientific/catalogue-architecture-fr.html)): the 115 cultures in 2D and 3D.
 - [Technical and scientific overview](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md): system layers, erosion, hydrology, neural terrain, settlements, references.
 - [Method notes](docs/methods/README.md): one short note per implemented technique, with its sources and limits.
+- [Getting started](docs/GETTING_STARTED.md) and [FAQ](docs/FAQ.md).
 - [Documentation index](docs/README.md): rendering, recipes, cultures, designs and studies.
 
 Under the hood: a **Rust** engine (terrain, water, settlements, cities, buildings) compiled twice, as **WebAssembly** for the browser and as a **native** local service for the desktop app. The interface and renderers are **TypeScript** with **WebGL2** and **WebGPU**. Neural relief runs in Rust too, with [Burn](https://burn.dev/) on the desktop and a small dedicated WGSL engine in the browser.
@@ -186,7 +187,7 @@ npm run app:v2:build   # desktop app and installer for this OS
 npm run test:v2        # V2 tests
 ```
 
-The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native engine, browser neural relief and the optional Python modules. The [Rust README](rust/README.md) describes the engine crates. Releases follow the [desktop release guide](docs/DESKTOP_RELEASE.md); the web build follows the [web publication guide](docs/WEB_PUBLICATION_FR.md).
+The [V2 launch and packaging guide](rust/desktop-v2/README.md) covers the native engine, browser neural relief and the optional Python modules. The [Rust README](rust/README.md) describes the engine crates. Releases follow the [desktop release guide](docs/DESKTOP_RELEASE.md); the web build follows the [web publication guide](docs/WEB_PUBLICATION.md).
 
 ```text
 rust/crates/terrain/   relief, erosion, hydrology, Underdark

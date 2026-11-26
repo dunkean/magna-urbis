@@ -1,6 +1,6 @@
 # Documentation
 
-New here? Start with the [project README](../README.md), the illustrated atlas **[How it works?](https://magna-urbis.org/scientific/index.html)** (sources in [scientific/](scientific/README.md)) and the **[architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html)**. Questions are welcome on [Discord](https://discord.gg/3yFq8t8Q2W) and in [Discussions](https://github.com/dunkean/magna-urbis/discussions).
+New here? Start with **[Getting started](GETTING_STARTED.md)** and the **[FAQ](FAQ.md)**, then the [project README](../README.md), the illustrated atlas **[How it works?](https://magna-urbis.org/scientific/index.html)** (sources in [scientific/](scientific/README.md)) and the **[architectural styles catalogue](https://magna-urbis.org/scientific/catalogue-architecture.html)**. Questions are welcome on [Discord](https://discord.gg/3yFq8t8Q2W) and in [Discussions](https://github.com/dunkean/magna-urbis/discussions).
 
 ## Using Magna Urbis
 
@@ -9,7 +9,7 @@ New here? Start with the [project README](../README.md), the illustrated atlas *
 - [Underdark](UNDERDARK.md) ([FR](UNDERDARK_FR.md)).
 - [Fantasy cartography layers](FANTASY_CARTOGRAPHY.md).
 - [Desktop release notes](DESKTOP_RELEASE_NOTES.md).
-- French-only guides: [V2 workshop guide](V2_ATELIER_FR.md), [map appearance settings](render-settings.md), [urban editing contract](URBAN_EDITING_FR.md).
+- [V2 workshop guide](V2_WORKSHOP.md) ([FR](V2_ATELIER_FR.md)), [map appearance settings](render-settings.md) ([FR](render-settings_FR.md)), [urban editing contract](URBAN_EDITING.md) ([FR](URBAN_EDITING_FR.md)).
 
 ## Contributing
 
@@ -17,14 +17,14 @@ New here? Start with the [project README](../README.md), the illustrated atlas *
 - [Repository map and component status](REPOSITORY_LAYOUT.md).
 - [V2 desktop and web setup](../rust/desktop-v2/README.md), the [Rust engine](../rust/README.md) and the [workshop workflow](RUST_BENCH_PIPELINE.md).
 - [Generation and rendering methods](methods/README.md) and the [stage registry contract](stage-registry-contract.md).
-- Releases: [desktop releases with GitHub Actions](DESKTOP_RELEASE.md), [web publication](WEB_PUBLICATION_FR.md) (FR), [preparing a desktop release](V2_RELEASE_FR.md) (FR).
+- Releases: [desktop releases with GitHub Actions](DESKTOP_RELEASE.md), [web publication](WEB_PUBLICATION.md) ([FR](WEB_PUBLICATION_FR.md)), [preparing a desktop release](V2_RELEASE.md) ([FR](V2_RELEASE_FR.md)).
 
 ## Cultures, buildings and names
 
 - [Urban cultures](CITY_CULTURES.md), [world atlas of settlement morphologies](styles_architecturaux_mondiaux_city_mapper.md), [settlement catalogue, Antiquity to the Middle Ages](catalogue_settlements_antiquite_moyen_age_rpg.md), [modern cities review](Modern_cities_review.md).
 - [Settlement variation variables](CITY_VARIATION_VARIABLES.md), [building forms](BUILDING_FORMS.md) ([FR](BUILDING_FORMS_FR.md)), [building texture library](BUILDING_TEXTURE_LIBRARY.md), [architectural sources](sources/).
-- [Place-name cultural sources](NAMEBENCH_CULTURAL_SOURCES.md), [grammar sources](NAMEBENCH_GRAMMAR_SOURCES.md), [Namebench integration](NAMEBENCH_TOPONYMS_FR.md) (FR).
-- French-only: [cultures, environments and place names](CULTURE_ENVIRONMENTS_FR.md), [named, inhabited and historical regions](DESIGN_REGIONS_HABITEES_FR.md), [regional population](REGIONAL_POPULATION_FR.md), [resource tile refinement](RESOURCE_TILE_REFINEMENT.md), [Neural Earth resource methods](ressources_transfert_neural_earth.md).
+- [Place-name cultural sources](NAMEBENCH_CULTURAL_SOURCES.md), [grammar sources](NAMEBENCH_GRAMMAR_SOURCES.md), [Namebench integration](NAMEBENCH_TOPONYMS.md) ([FR](NAMEBENCH_TOPONYMS_FR.md)).
+- [Cultures, environments and place names](CULTURE_ENVIRONMENTS.md), [named, inhabited and historical regions](INHABITED_REGIONS_DESIGN.md), [regional population](REGIONAL_POPULATION.md), [resource tile refinement](RESOURCE_TILE_REFINEMENT.md), [Neural Earth resource methods](RESOURCES_NEURAL_EARTH_TRANSFER.md). French originals keep the `_FR` suffix.
 
 ## Design and engine notes
 
@@ -40,4 +40,4 @@ The [archive](archive/README.md) keeps dated studies, audits and release verific
 
 ---
 
-English is the preferred language for maintained documentation. French-only documents remain where there is no complete English equivalent yet; translations are welcome. AI instructions, session notes, reviews, diagnostic captures and validation campaigns are local working material and stay out of Git. Published illustrations, attribution, scientific references, reproducible fixtures and their required metadata remain versioned with the documentation or code that uses them.
+English is the reference language for maintained documentation. French originals are kept next to their English translation with the `_FR` suffix. AI instructions, session notes, reviews, diagnostic captures and validation campaigns are local working material and stay out of Git. Published illustrations, attribution, scientific references, reproducible fixtures and their required metadata remain versioned with the documentation or code that uses them.

@@ -1,261 +1,248 @@
-# Magna Urbis V2 — Spécification de composition des rendus 2D et 3D
+# Magna Urbis V2: 2D and 3D Rendering Composition Specification
 
-**Statut :** proposition d'architecture et plan d'implémentation pour Codex  
-**Date :** 5 novembre 2026  
-**Portée :** affichage des scènes existantes ; aucune modification des algorithmes de génération de terrain, d'hydrologie, de villes ou d'occupation des sols.
+**Status:** architecture proposal and implementation plan for Codex
+**Date:** 5 November 2026
+**Scope:** display of existing scenes; no changes to the terrain, hydrology, city or land-use generation algorithms.
 
-## Statut d'implémentation (6 novembre 2026)
+## Implementation status (6 November 2026)
 
-**Implémenté** (code sous `web/src/`) :
+**Implemented** (code under `web/src/`):
 
-- `render/composition.ts` : `CompositionRecipe`, 6 styles (`StyleId` : `atlas`, `cadastre`, `topographic`, `satellite`, `parchment`, `illustration`, à la fois préréglages et fonds ; `atlas-night` est supprimé), `presetComposition`, `GROUND_VARIANTS` (variante par défaut du cadastre : `cadastre`), `applyComposition`, `resolveComposition` (`r.composition` sur chaque `ResolvedAppearance`), `limitationsOf`, `withGroundVariant`, `validateComposition`.
-- Effets globaux : le bloc `effects { ambience, season, relief, lighting }` de la recette remplace `ambience`, `ground.relief` et les réglages avancés `season` / `lighting` ; la nuit est un effet, pas un style. La saison n'agit encore que sur le style satellite (limitation déclarée ailleurs). Le ton de la forêt d'occupation du sol vit aussi dans la recette (`vegetation.forestTone`).
-- `render/textLayer.ts` : groupes, densité, halo et police des toponymes (`TextSettings`, `cityTextLabels`, `textPlacement`).
-- `render/semanticLayer.ts` : peintre sémantique partagé (classes rurales et urbaines, légendes `ruralSemanticLegend` / `urbanSemanticLegend`).
-- `render/roadStyle.ts` : encre ou rendu naturel des routes, emphase, utilisé par le canvas 2D, les tuiles et la 3D.
-- `ui/compositionControls.ts` : panneau Composition (une ligne par passe) et raisons de limitation en français.
-- `ui/textOverlay3d.ts`, `ui/semanticLimits3d.ts`, `ui/legendOverlay3d.ts` : toponymes, limites sémantiques (profondeur `readable`) et légende/cartouche en 3D.
-- `ui/benchComposition.ts` : recette des benches (URL `composition`, `localStorage`), capacités, `syncBenchAnnotations`.
+- `render/composition.ts`: `CompositionRecipe`, 6 styles (`StyleId`: `atlas`, `cadastre`, `topographic`, `satellite`, `parchment`, `illustration`, both as presets and backgrounds; `atlas-night` is removed), `presetComposition`, `GROUND_VARIANTS` (default cadastre variant: `cadastre`), `applyComposition`, `resolveComposition` (`r.composition` on each `ResolvedAppearance`), `limitationsOf`, `withGroundVariant`, `validateComposition`.
+- Global effects: the recipe's `effects { ambience, season, relief, lighting }` block replaces `ambience`, `ground.relief`, and the advanced `season` / `lighting` settings. Night is an effect, not a style. Season only affects the satellite style for now (limitation declared elsewhere). The land-use forest tone also lives in the recipe (`vegetation.forestTone`).
+- `render/textLayer.ts`: groups, density, halo and font for place names (`TextSettings`, `cityTextLabels`, `textPlacement`).
+- `render/semanticLayer.ts`: shared semantic painter (rural and urban classes, legends `ruralSemanticLegend` / `urbanSemanticLegend`).
+- `render/roadStyle.ts`: ink or natural rendering of roads, emphasis; used by the 2D canvas, the tiles and 3D.
+- `ui/compositionControls.ts`: Composition panel (one line per pass) and limitation reasons in French.
+- `ui/textOverlay3d.ts`, `ui/semanticLimits3d.ts`, `ui/legendOverlay3d.ts`: place names, semantic boundaries (`readable` depth) and legend/title block in 3D.
+- `ui/benchComposition.ts`: bench recipe (URL `composition`, `localStorage`), capabilities, `syncBenchAnnotations`.
 
-**Abandonné volontairement** : la section 10 (migration et compatibilité) et le test d'acceptation 10 (héritage). Règle du projet : pas de migration ni d'alias ; `legacyAppearanceToComposition` n'existe pas, les anciennes recettes et URLs peuvent casser.
+**Deliberately dropped**: section 10 (migration and compatibility) and acceptance test 10 (inheritance). Project rule: no migration and no aliases; `legacyAppearanceToComposition` does not exist, and old recipes and URLs may break.
 
-### Matrice de capacités
+### Capability matrix
 
-Lue dans `limitationsOf` (`render/composition.ts`) et `ui/benchComposition.ts` (`setBenchRenderCapabilities`, `benchVegetationLimitations`), plus les limites posées par `ui/citybench.ts` et `ui/terrainbench.ts`. « OK » = aucune limitation déclarée dans le code ; « données » = limitation dépendante des produits retenus ; « à vérifier » = le code ne tranche pas.
+Read from `limitationsOf` (`render/composition.ts`) and `ui/benchComposition.ts` (`setBenchRenderCapabilities`, `benchVegetationLimitations`), plus the limits set by `ui/citybench.ts` and `ui/terrainbench.ts`. "OK" = no limitation declared in the code; "data" = limitation depending on the chosen products; "to verify" = the code does not settle it.
 
-| Passe | 2D | 3D | Export | City Bench | Terrain Bench |
+| Pass | 2D | 3D | Export | City Bench | Terrain Bench |
 | --- | --- | --- | --- | --- | --- |
-| Sol | OK ; données : sans raster de terrain, réglages d'éclairage, forêt et fantasy indisponibles | OK ; mêmes limites de données | à vérifier (`exportSnapshot.ts` reçoit des options, pas la recette) | pas de diagnostics de ressources ; diagnostic sans données retenues signalé | idem ; diagnostics selon la source (vecteur, Rust, aucune) |
-| Végétation | canopée procédurale absente si le relief est masqué (benches) | « peint » absent hors sols Illustrés (pas d'atlas 3D) | à vérifier | canopée procédurale impossible sur sol cartographique avec le backend raster | forêts des sols Illustrés toujours peintes, quel que soit le choix |
-| Occupation rurale | données : exige `landuse` | limites seulement (`semanticLimits3d.ts`, profondeur `readable`) ; aplats 3D à vérifier | à vérifier | données : exige `landuse` | données : exige `landuse` |
-| Occupation urbaine | données : exige des villes natives | limites seulement (profondeur `readable`) ; aplats 3D à vérifier | à vérifier | données : exige les layouts urbains | idem |
-| Routes | OK (`roadStyle.ts`) | OK (`roadInk`) ; détail à vérifier | à vérifier | OK | OK |
-| Eau | OK | OK | à vérifier | méandres abandonnés (oxbows) absents | à vérifier |
-| Bâtiments | données : exige des bâtiments ; parcelles exigent des partitions | pas de drapage d'emprises depuis les projections si aucune scène n'est retenue | à vérifier | idem 3D | idem 3D |
-| Ambiance | aucune limitation déclarée ; nuit appliquée aux sols carte | aucune limitation déclarée ; à vérifier | à vérifier | aucune déclarée | aucune déclarée |
-| Texte | OK (`syncBenchAnnotations`) | OK (`textOverlay3d.ts`) | calque « Names » : lien avec la recette à vérifier | OK | OK |
-| Légende et cartouche | OK ; la légende n'apparaît que s'il y a des classes à lister | OK (`legendOverlay3d.ts`) | à vérifier (calque « Frame, title & legend ») | OK | OK |
+| Ground | OK; data: without a terrain raster, lighting settings, forest and fantasy unavailable | OK; same data limits | to verify (`exportSnapshot.ts` receives options, not the recipe) | no resource diagnostics; diagnostic without retained data reported | same; diagnostics depend on the source (vector, Rust, none) |
+| Vegetation | procedural canopy absent if relief is hidden (benches) | "painted" absent outside Illustrated grounds (no 3D atlas) | to verify | procedural canopy impossible on cartographic ground with the raster backend | forests on Illustrated grounds always painted, whatever the choice |
+| Rural land use | data: requires `landuse` | boundaries only (`semanticLimits3d.ts`, `readable` depth); 3D flat fills to verify | to verify | data: requires `landuse` | data: requires `landuse` |
+| Urban land use | data: requires native cities | boundaries only (`readable` depth); 3D flat fills to verify | to verify | data: requires urban layouts | same |
+| Roads | OK (`roadStyle.ts`) | OK (`roadInk`); detail to verify | to verify | OK | OK |
+| Water | OK | OK | to verify | oxbow meanders missing | to verify |
+| Buildings | data: requires buildings; parcels require subdivisions | no footprint draping from projections if no scene is retained | to verify | same as 3D | same as 3D |
+| Ambience | no limitation declared; night applied to map grounds | no limitation declared; to verify | to verify | none declared | none declared |
+| Text | OK (`syncBenchAnnotations`) | OK (`textOverlay3d.ts`) | "Names" layer: link with the recipe to verify | OK | OK |
+| Legend and title block | OK; legend appears only if there are classes to list | OK (`legendOverlay3d.ts`) | to verify ("Frame, title & legend" layer) | OK | OK |
 
 ---
 
-## 0. Décision fondamentale
+## 0. Core decision
 
-**Un style global n'est pas un renderer monolithique : c'est une recette qui configure plusieurs passes de rendu indépendantes.**
+**A global style is not a monolithic renderer: it is a recipe that configures several independent rendering passes.**
 
-L'utilisateur doit pouvoir afficher simultanément, par exemple :
+The user must be able to display simultaneously, for example:
 
-> Fond Parchemin + arbres volumiques produits par shader + occupation du sol en aplats discrets + routes tracées à l'encre + bâtiments en emprises de plan + toponymes.
+> Parchment background + shader-produced volumetric trees + land use as discreet flat fills + roads drawn in ink + buildings as plan footprints + place names.
 
-Ou :
+Or:
 
-> Fond satellite réaliste + arbres procéduraux + limites de cultures en traits contrastés + quartiers colorés selon leur usage + bâtiments 3D, de jour ou de nuit.
+> Realistic satellite background + procedural trees + crop boundaries as high-contrast lines + districts coloured by their use + 3D buildings, by day or by night.
 
-**Ne pas limiter les combinaisons au nom du style sélectionné.** Les noms « Atlas », « Parchemin », « Plan », « Illustré », « Topographique » et « Naturel » restent de bons **presets cohérents**, pas des types de scènes exclusifs. « Atlas nuit » est un preset/une variante conservée. Chaque passe peut être ajustée indépendamment, avec un nombre maîtrisé de moteurs visuels.
+**Do not limit combinations because of the selected style.** The names "Atlas", "Parchment", "Plan", "Illustrated", "Topographic" and "Natural" remain good **coherent presets**, not exclusive scene types. "Atlas night" is a preset/variant that is kept. Each pass can be adjusted independently, with a controlled number of visual engines.
 
-Le système sépare **cinq concepts orthogonaux** :
+The system separates **five orthogonal concepts**:
 
-1. **Données géographiques sémantiques** : relief, biomes, occupation rurale, zones urbaines, voies, eau, bâtiments, noms. Elles ne dépendent jamais du style.
-2. **Représentation physique** : matériaux du sol, végétation et bâtiments volumétriques, défrichements. Elle peut être réaliste ou stylisée.
-3. **Représentation cartographique/thématique** : aplats, hachures, frontières de zones, contours, symboles, étiquettes. Elle explique les données indépendamment de leur aspect physique.
-4. **Composition** : ordre, visibilité, masques, opacité, fusion raster/vecteur, projection sur relief en 3D.
-5. **Présentation** : preset global, caméra (2D/3D), éclairage jour/nuit, variantes artistiques, options d'export et de partage.
+1. **Semantic geographic data**: relief, biomes, rural land use, urban zones, roads, water, buildings, names. These never depend on the style.
+2. **Physical representation**: ground materials, vegetation and volumetric buildings, clearings. It can be realistic or stylised.
+3. **Cartographic/thematic representation**: flat fills, hatching, zone boundaries, contours, symbols, labels. It explains the data independently of its physical appearance.
+4. **Composition**: order, visibility, masks, opacity, raster/vector blending, projection onto relief in 3D.
+5. **Presentation**: global preset, camera (2D/3D), day/night lighting, artistic variants, export and sharing options.
 
-La visibilité d'un overlay sémantique ne doit **jamais** modifier la réalité physique : masquer l'affichage de la zone « champ » ne doit pas y faire réapparaître une forêt.
+The visibility of a semantic overlay must **never** change the physical reality: hiding the display of the "field" zone must not make a forest reappear there.
+
+---
+## 1. Verified findings in the repository
+
+References:
+
+- [`web/src/render/appearanceRecipe.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/appearanceRecipe.ts): `AppearanceInput`, `ResolvedAppearance`, `StyleTraits`, components `ground`, `vegetation`, `cartography`, `city`, pass keys; a good starting point to **evolve**, not to replace blindly.
+- [`web/src/render/terrainStyle.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/terrainStyle.ts): legacy styles, `cartographicVegetation`, `ground3d`, `forestBrushes` traits, satellite variants. Some layer behaviours are therefore still implicitly determined by the background style.
+- [`web/src/v2/benchRenderer.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/benchRenderer.ts): distinct passes `terrainData`, `terrainLook`, `forest`, `water`, `frame`, `cartography`, `overlays`, `city`. The WebGL background is already separated from the Canvas overlay. **Precise blocking issue:** the `cartographyPass` excludes `forest`, `meadow`, `marsh`, `commons` via `CARTOGRAPHIC_ONLY_VEGETATION` as soon as the style does not request `cartographicVegetation`; the semantics visually disappear even though these uses exist in the data.
+- [`web/src/v2/renderScene.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/renderScene.ts): retained data accessible by reference and revisions `terrain`, `roads`, `landuse`, `settlements`, `names`, `cities`. Exploit this separation for the caches.
+- [`web/src/gen/types.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/gen/types.ts): `LandUseLayer.areas` and eight `field`, `meadow`, `pasture`, `forest`, `orchard`, `garden`, `marsh`, `commons` types, plus reserves, paths, farms, agricultural strips. Uses of districts/buildings are in the urban products, not in this single enum.
+- [`web/src/render/landuse.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/landuse.ts): SVG of rural land uses, patterns, strips, silhouettes and vegetation sub-layers; a base to reuse or to decouple into **semantics** and **vegetation drawing**.
+- [`web/src/ui/forestOccupation.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/ui/forestOccupation.ts): occupation texture rasterised with signed distances, classes and forest clearing zones; an existing **physical tool**, not a complete semantic layer. The `marsh` class in particular is not registered in its `CLASS`, and detailed urban uses are not listed there.
+- [`web/src/ui/city3d.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/ui/city3d.ts): accepts `getForest()?.occupation`, can drape a texture over a relief, and already draws roads and city plans into texture tiles; very useful infrastructure for the 3D MVP.
+- [`web/src/v2/urban3d.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/urban3d.ts): its `getForest` binding currently returns the forest field, **without exposing the rural occupation from V2**; the `getPlanOptions` concern the urban plan. So the fact that a `ForestOccupation` exists elsewhere does not mean that the V2 3D rendering shows the occupation categories.
+- [`web/src/render/cityCanvas.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/cityCanvas.ts): `tissue`, `uses`, `parcels`, `buildings`, `roles` views, urban palettes and numerous switches. Do not confuse **urban use** with **building appearance**.
+- [`web/src/v2/renderControls.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/renderControls.ts) and [`web/src/v2/appearance.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/appearance.ts): persistence/validation to migrate without losing the existing recipes.
+
+**To preserve:** the CPU/WebGL engines, the retained data, the logic of the passes and their caches, shape fidelity, the export functions and the existing styles. No "rewrite" of the Rust pipeline or of all the renderers.
 
 ---
 
-## 1. Constat vérifié dans le dépôt
+## 2. Mental model: data layers ≠ visual layers ≠ technology
 
-Références :
+A *data layer* (e.g. forest) can produce several rendering effects:
 
-- [`web/src/render/appearanceRecipe.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/appearanceRecipe.ts) : `AppearanceInput`, `ResolvedAppearance`, `StyleTraits`, composants `ground`, `vegetation`, `cartography`, `city`, clés de passes ; un bon point de départ à **faire évoluer**, pas à remplacer aveuglément.
-- [`web/src/render/terrainStyle.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/terrainStyle.ts) : styles hérités, traits `cartographicVegetation`, `ground3d`, `forestBrushes`, variantes satellite. Certains comportements de couches sont donc encore implicitement déterminés par le style du fond.
-- [`web/src/v2/benchRenderer.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/benchRenderer.ts) : passes distinctes `terrainData`, `terrainLook`, `forest`, `water`, `frame`, `cartography`, `overlays`, `city`. Le fond WebGL est déjà séparé de l'overlay Canvas. **Point bloquant précis :** la passe `cartographyPass` exclut `forest`, `meadow`, `marsh`, `commons` via `CARTOGRAPHIC_ONLY_VEGETATION` dès que le style ne réclame pas `cartographicVegetation` ; la sémantique disparaît visuellement alors même que les usages existent dans les données.
-- [`web/src/v2/renderScene.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/renderScene.ts) : données retenues accessibles par référence et révisions `terrain`, `roads`, `landuse`, `settlements`, `names`, `cities`. Exploiter cette séparation pour les caches.
-- [`web/src/gen/types.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/gen/types.ts) : `LandUseLayer.areas` et huit types `field`, `meadow`, `pasture`, `forest`, `orchard`, `garden`, `marsh`, `commons`, plus réserves, chemins, fermes, bandes agricoles. Les usages de quartiers/bâtiments sont dans les produits urbains, pas dans cette unique enum.
-- [`web/src/render/landuse.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/landuse.ts) : SVG des occupations rurales, motifs, bandes, silhouettes et sous-couches végétales ; base à réutiliser ou à découpler en **sémantique** et **dessin de végétation**.
-- [`web/src/ui/forestOccupation.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/ui/forestOccupation.ts) : texture d'occupation rasterisée avec distances signées, classes et zones de dégagement de forêt ; **outil physique** existant, pas une couche sémantique complète. La classe `marsh` n'est notamment pas inscrite dans son `CLASS`, et les usages urbains détaillés n'y figurent pas.
-- [`web/src/ui/city3d.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/ui/city3d.ts) : accepte `getForest()?.occupation`, sait draper une texture sur un relief et dessine déjà les voies et plans de ville dans des tuiles de texture ; infrastructure très utile pour le MVP 3D.
-- [`web/src/v2/urban3d.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/urban3d.ts) : son raccord `getForest` retourne actuellement le champ forestier, **sans exposer l'occupation rurale depuis V2** ; les `getPlanOptions` concernent le plan urbain. Donc le fait qu'un `ForestOccupation` existe ailleurs ne signifie pas que le rendu 3D V2 montre les catégories d'occupation.
-- [`web/src/render/cityCanvas.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/render/cityCanvas.ts) : vues `tissue`, `uses`, `parcels`, `buildings`, `roles`, palettes urbaines et nombreux switches. Ne pas confondre **usage urbain** et **apparence d'un bâtiment**.
-- [`web/src/v2/renderControls.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/renderControls.ts) et [`web/src/v2/appearance.ts`](https://github.com/dunkean/magna-urbis/blob/main/web/src/v2/appearance.ts) : persistance/validation à faire migrer sans perdre les anciennes recettes.
+- **physical**: the shader places trees, changes the albedo, removes trees within a field;
+- **cartographic**: light green polygons, a forest boundary, hatching, a symbol;
+- **informational**: the label "Forest of X", a legend, a tooltip, an interactive sheet.
 
-**À préserver :** les moteurs CPU/WebGL, les données retenues, la logique des passes et leurs caches, la fidélité des formes, les fonctions d'export et les styles existants. Pas de « rewrite » du pipeline Rust ou de tous les renderers.
+A *rendering pass* can combine several technologies: terrain shader, precomputed raster, raster tiles produced on the fly, vectors, 3D geometry, screen-space text. These formats are not the units of the user's choice: they are backends.
 
----
-
-## 2. Modèle mental : couches de données ≠ couches visuelles ≠ technologie
-
-Une *couche de données* (ex. forêt) peut produire plusieurs effets de rendu :
-
-- **physique** : le shader place des arbres, change l'albédo, supprime les arbres dans un champ ;
-- **cartographique** : des polygones vert clair, une limite forestière, des hachures, un symbole ;
-- **informationnel** : le label « Forêt de X », une légende, un tooltip, une fiche interactive.
-
-Une *passe de rendu* peut combiner plusieurs technologies : shader de terrain, raster pré-calculé, tuiles raster produites à la volée, vecteurs, géométries 3D, texte en espace écran. Ces formats ne sont pas les unités de choix de l'utilisateur : ce sont des backends.
-
-### Ordre logique de composition
+### Logical composition order
 
 ```
-ÉCRAN / IMAGE FINALE
-  P8  Interface / annotations / lieux / labels / secrets filtrés
-  P7  Bâtiments et constructions : empreintes, toits, volumes 3D
-  P6  Urbanisme thématique : quartiers, blocs, parcelles, usages
-  P5  Réseaux visibles : routes, chemins, rues, ponts, rivières, berges
-  P4  Occupation rurale THÉMATIQUE : aplats, contours, hachures, labels
-  P3  Couverture PHYSIQUE : arbres, canopées, cultures, rochers, broussailles
-  P2  Sol et eau PHYSIQUES : matières, ombres, altitudes, surface de l'eau
-  P1  Fond géographique : papier, atlas, hypsométrie, image, shader
-  P0  Relief / coordonnées / données : support, non graphique
+SCREEN / FINAL IMAGE
+  P8  Interface / annotations / places / labels / filtered secrets
+  P7  Buildings and constructions: footprints, roofs, 3D volumes
+  P6  Thematic urbanism: districts, blocks, parcels, uses
+  P5  Visible networks: roads, paths, streets, bridges, rivers, banks
+  P4  THEMATIC rural occupation: flat fills, outlines, hatching, labels
+  P3  PHYSICAL cover: trees, canopies, crops, rocks, scrub
+  P2  PHYSICAL ground and water: materials, shadows, altitudes, water surface
+  P1  Geographic background: paper, atlas, hypsometry, image, shader
+  P0  Relief / coordinates / data: support, non-graphic
 ```
 
-**Important :** il s'agit d'un **ordre logique** et non d'une obligation de créer neuf canvases. L'eau peut être physiquement intégrée au shader du sol, puis ses berges/vecteurs dessinés dans P5 ; les volumes 3D sont soumis au depth-test, et les overlays thématiques peuvent être projetés ou dessinés après la scène selon la visibilité voulue. Ne pas dupliquer la même surface d'eau ou la même forêt dans deux passes. Les passes P6 et P7 sont distinctes précisément pour autoriser « bâtiments en emprise plan sur fond satellite ».
+**Important:** this is a **logical order** and not an obligation to create nine canvases. Water may be physically integrated into the ground shader, then its banks/vectors drawn in P5; 3D volumes are subject to depth-testing, and thematic overlays may be projected or drawn after the scene depending on the desired visibility. Do not duplicate the same water surface or the same forest in two passes. Passes P6 and P7 are distinct precisely to allow "building footprints in plan over a satellite background".
 
-### Diagramme de données
+### Data diagram
 
 ```mermaid
 flowchart TD
-    D[World et produits retenus] --> G[Géométrie physique et données]
-    D --> S[Classes et usages sémantiques]
-    G --> PG[Sol / eau / végétation / routes / bâti]
-    S --> M[Masques physiques : dégagements / exclusions]
-    S --> O[Overlays thématiques : fills / borders / patterns / labels]
+    D[World and retained products] --> G[Physical geometry and data]
+    D --> S[Semantic classes and uses]
+    G --> PG[Ground / water / vegetation / roads / built]
+    S --> M[Physical masks: clearings / exclusions]
+    S --> O[Thematic overlays: fills / borders / patterns / labels]
     M --> PG
-    PG --> C[Compositeur 2D ou 3D]
+    PG --> C[2D or 3D compositor]
     O --> C
-    R[Recette + caméra + éclairage] --> PG
+    R[Recipe + camera + lighting] --> PG
     R --> O
-    C --> E[Vue ou export]
+    C --> E[View or export]
 ```
 
-**Couplage permis :** des données d'occupation influencent physiquement arbres et matériaux. **Couplage interdit :** le style visuel du sol décide si les classes d'occupation sont affichables ou non.
+**Permitted coupling:** occupation data influence trees and materials physically. **Forbidden coupling:** the visual style of the ground decides whether occupation classes are displayable or not.
+## 3. Final component catalogue, not "monolithic styles"
 
----
+Here is the **functional minimum** of independent modes to expose, with the rest under "Advanced".
 
-## 3. Catalogue final des composants, pas des « styles monolithiques »
-
-Voici le **minimum fonctionnel** de modes indépendants à exposer, avec le reste dans « Avancé ».
-
-| Passe | Sélecteur utilisateur | Valeurs recommandées | Backends existants / cible |
+| Pass | User selector | Recommended values | Existing / target backends |
 |---|---|---|---|
-| **Fond / terrain** | Aspect du fond | Atlas, Parchemin, Plan clair, Topographique, Naturel/satellite, Illustré | Palette SVG/Canvas ; raster et shader WebGL ; pinceaux |
-| **Couverture / arbres** | Végétation visible | Auto, Aucune, Symboles, Peinte, Volumique/procédurale | Canvas/SVG/brush ; shader/forest field |
-| **Occupation rurale** | Lecture du territoire | Aucune, Discrète, Catégorielle, Contours | Polygones/raster thématique indépendant |
-| **Réseaux** | Aspect des voies/eaux | Adapté au fond, Encré/plan, Matériaux naturels | Vecteurs, textures, matériaux et géométries |
-| **Ville / usages** | Urbanisme thématique | Aucun, Discret, Catégoriel, Contours | Polygones quartiers/îlots/parcelles, couleurs de rôles |
-| **Bâtiments** | Représentation du bâti | Emprises, Toits cartographiques, Volumes simples, Volumes détaillés | CityBench Canvas/GL ; géométrie 3D |
-| **Annotations** | Informations | Noms, lieux, frontières, légendes, annotations ; filtres MJ/joueur | Vecteur + interface |
-| **Ambiance** | Éclairage | Jour, Nuit ; éclairage personnalisable | Palette `night` ou shader selon backend |
+| **Background / terrain** | Background appearance | Atlas, Parchment, Plain map, Topographic, Natural/satellite, Illustrated | SVG/Canvas palette; raster and WebGL shader; brushes |
+| **Cover / trees** | Visible vegetation | Auto, None, Symbols, Painted, Volumetric/procedural | Canvas/SVG/brush; shader/forest field |
+| **Rural land use** | Territory reading | None, Subtle, Categorical, Outlines | Independent polygons/thematic raster |
+| **Networks** | Roads/water appearance | Background-adapted, Ink/plan, Natural materials | Vectors, textures, materials and geometries |
+| **City / uses** | Thematic urban planning | None, Subtle, Categorical, Outlines | Polygons for quarters/blocks/parcels, role colours |
+| **Buildings** | Building representation | Footprints, Cartographic roofs, Simple volumes, Detailed volumes | CityBench Canvas/GL; 3D geometry |
+| **Annotations** | Information | Names, places, borders, legends, annotations; GM/player filters | Vector + interface |
+| **Ambiance** | Lighting | Day, Night; customisable lighting | `night` palette or shader depending on backend |
 
-**Auto** signifie « valeur préférée du preset », jamais « choix technique déterminé silencieusement par le fond ». Si l'utilisateur choisit *Volumique*, le moteur doit essayer ce rendu même sur Parchemin, en 2D comme en 3D si le backend le supporte. Un support indisponible doit être **signalé explicitement**, pas remplacé en silence par une autre catégorie de données.
+**Auto** means "the preset's preferred value", never "a technical choice silently determined by the background". If the user chooses *Volumetric*, the engine must attempt this rendering even on Parchment, in 2D as well as in 3D if the backend supports it. An unavailable feature must be **explicitly reported**, not silently replaced by another data category.
 
-Ne pas exposer pour chaque passe une liste de 19 styles historiques. Le fond détermine son matériau/palette ; la végétation détermine son mode ; l'occupation détermine son code graphique ; les bâtiments déterminent leur représentation. Cette limitation empêche l'explosion combinatoire.
+Do not expose a list of 19 historical styles for each pass. The background determines its material/palette; the vegetation determines its mode; land use determines its graphic code; the buildings determine their representation. This limitation avoids combinatorial explosion.
 
-### Cas de référence obligatoires
+### Mandatory reference cases
 
-**Cas A — la combinaison volontairement hétérogène :**
-- Fond `parchment`.
-- Végétation `procedural-canopy` (shader de couronnes, avec transparences correctes).
-- Occupation rurale `categorical` ou `subtle` indépendante, visible sur le papier et sous/à travers la canopée selon le mode de lisibilité.
-- Routes `ink`.
-- Bâtiments `footprints`, y compris si la scène possède des volumes détaillés.
-- Ville `district-outlines` et couches cadastrales optionnelles.
+**Case A — the deliberately heterogeneous combination:**
+- Background `parchment`.
+- Vegetation `procedural-canopy` (crown shader, with correct transparencies).
+- Rural land use `categorical` or `subtle`, independent, visible on the paper and under/through the canopy depending on the readability mode.
+- Roads `ink`.
+- Buildings `footprints`, including when the scene has detailed volumes.
+- City `district-outlines` and optional cadastral layers.
 
-**Cas B — satellite cartographiquement lisible :**
-- Fond `render-v2`, végétation volumique.
-- Champs : matériau de champ **et** contours fins contrastés ; forêts : canopée **et** bordure facultative ; marais : sol humide **et** hachures facultatives.
-- Quartiers urbains colorés de manière translucide selon leur rôle, même si bâtiments/sol sont réalistes.
-- Routes et hydrographie visibles ; bâtiments `volumes-detailed` ou `footprints` au choix.
+**Case B — cartographically readable satellite view:**
+- Background `render-v2`, volumetric vegetation.
+- Fields: field material **and** contrasting fine outlines; forests: canopy **and** optional border; marshes: wet ground **and** optional hatching.
+- Urban quarters coloured translucently according to their role, even when buildings/ground are realistic.
+- Roads and hydrography visible; buildings `volumes-detailed` or `footprints`, as preferred.
 
-**Cas C — plan de travail :**
-- Fond `plain`, végétation `none` ou `symbols`, occupation `categorical`, usages urbains `categorical`, bâtiments `footprints`, parcelles activées. Vue 2D orthographique ; option 3D maquette.
+**Case C — working map:**
+- Background `plain`, vegetation `none` or `symbols`, land use `categorical`, urban uses `categorical`, buildings `footprints`, parcels enabled. Orthographic 2D view; optional 3D mock-up view.
 
-**Cas D — présentation au joueur :**
-- Fond `atlas-night` (conserver le rendu actuel), végétation choisie par le preset, occupation `subtle`, bâtiments `roofs`, annotations filtrées par visibilité joueur.
+**Case D — player presentation:**
+- Background `atlas-night` (keep the current rendering), vegetation chosen by the preset, land use `subtle`, buildings `roofs`, annotations filtered by player visibility.
+## 4. Land-use schemes: filling the real gap
 
----
+The **physical** rendering and the **semantic** rendering of the same land use are two different products, both derived from the existing data. Never force the user to choose one *instead of* the other.
 
-## 4. Schémas d'occupation du sol : combler le vrai manque
+### 4.1 Canonical classes
 
-Le rendu **physique** et le rendu **sémantique** d'une même occupation sont deux produits différents, tous deux dérivés des données existantes. Ne jamais forcer l'utilisateur à choisir l'un *à la place* de l'autre.
+For rural land use, start from the eight existing values of `LandKind` and keep their geometries (holes included):
 
-### 4.1 Classes canoniques
-
-Pour l'occupation rurale, partir des huit valeurs existantes de `LandKind` et conserver leurs géométries (trous inclus) :
-
-| Classe | Manifestation physique possible | Manifestation thématique 2D/3D |
+| Class | Possible physical manifestation | Thematic 2D/3D manifestation |
 |---|---|---|
-| `field` | Culture, rangs, sol travaillé | Jaune/ocre, limites de champs, rayures ou sillons |
-| `meadow` | Herbe, prairie | Vert clair, bordure discrète |
-| `pasture` | Herbe pâturée, faible végétation | Vert olive et pointillés |
-| `forest` | Couronnes/arbres/shader | Vert profond, contours ou hachures forestières |
-| `orchard` | Arbres alignés | Vert moyen, points réguliers, parcelles |
-| `garden` | Jardins, potagers | Vert jardin, motifs fins |
-| `marsh` | Sol humide, roseaux, eau intermittente | Bleu-vert, hachures humides |
-| `commons` | Sol partagé variable | Lavis neutre, bordure et/ou label |
+| `field` | Crops, rows, tilled soil | Yellow/ochre, field boundaries, stripes or furrows |
+| `meadow` | Grass, meadow | Light green, discreet border |
+| `pasture` | Grazed grass, sparse vegetation | Olive green and dotted lines |
+| `forest` | Crowns/trees/shader | Deep green, forest outlines or hatching |
+| `orchard` | Aligned trees | Medium green, regular dots, plots |
+| `garden` | Gardens, kitchen gardens | Garden green, fine patterns |
+| `marsh` | Wet ground, reeds, intermittent water | Blue-green, wet hatching |
+| `commons` | Variable shared ground | Neutral wash, border and/or label |
 
-Les zones de réserve urbaine, passages agricoles et emprises de constructions ne sont **pas** à confondre avec ces huit catégories : elles peuvent influencer physiquement le couvert, mais elles ont leur propre logique d'affichage.
+Urban reserve zones, agricultural passages and building footprints must **not** be confused with these eight categories: they may physically influence the cover, but they have their own display logic.
 
-Pour la ville, créer un **second canal sémantique** à partir des données de `CityScene`, allocations, districts et usages des bâtiments. Exemples : résidence, commerce, artisanat/tanneries, religion, administration, entrepôts, port, défense, espaces publics. **Ne pas inventer une classification exhaustive qui n'est pas dans les produits retenus :** réutiliser rôles, fonctions et labels existants, avec un fallback « autre/inconnu ».
+For the town, create a **second semantic channel** based on the data from `CityScene`, allocations, districts and building uses. Examples: residence, commerce, crafts/tanneries, religion, administration, warehouses, port, defence, public spaces. **Do not invent an exhaustive classification that is not part of the retained products:** reuse existing roles, functions and labels, with an "other/unknown" fallback.
 
-### 4.2 Quatre schémas visuels utiles
+### 4.2 Four useful visual schemes
 
-| Mode | Apparence | Usage | 2D / 3D |
+| Mode | Appearance | Use | 2D / 3D |
 |---|---|---|---|
-| **Off** | Aucun overlay sémantique | Image immersive | Oui / Oui |
-| **Subtle** | Contours et teintes très transparents, sans cacher la matière | **Défaut sur fond Naturel** | Oui / Oui |
-| **Categorical** | Aplats contrastés semi-transparents, motifs éventuels, légende | **Défaut en Plan / Analyse** | Oui / Oui |
-| **Outlines** | Limites, contours, hachures sélectives, pas d'aplat | Lecture sans recouvrir le satellite | Oui / Oui |
+| **Off** | No semantic overlay | Immersive image | Yes / Yes |
+| **Subtle** | Very transparent outlines and tints, without hiding the material | **Default on Natural background** | Yes / Yes |
+| **Categorical** | Contrasting semi-transparent flat fills, optional patterns, legend | **Default in Map / Analysis** | Yes / Yes |
+| **Outlines** | Boundaries, contours, selective hatching, no flat fill | Reading without covering the satellite view | Yes / Yes |
 
-Les quatre modes concernent **l'information sur les usages** : ils ne remplacent pas les rendus physiques des champs/forêts. Paramètres avancés partagés : opacité, largeur des frontières, motifs, classes visibles, palette, légende, profondeur de projection. Les couleurs devraient être déterminées **par classe**, stables entre 2D et 3D, distinctes de la couleur du matériau naturel et modifiables ; hachures/patterns et contours assurent la lecture en niveaux de gris.
+The four modes concern **information about uses**: they do not replace the physical renderings of fields/forests. Shared advanced parameters: opacity, border width, patterns, visible classes, palette, legend, projection depth. Colours should be determined **per class**, stable between 2D and 3D, distinct from the colour of the natural material, and editable; hatching/patterns and outlines ensure readability in greyscale.
 
-**Point critique :** un shader de forêt ne donne pas à lui seul les limites du polygone « forêt », et un champ peint n'indique pas systématiquement la catégorie « pâture », « jardin », etc. La couche thématique doit rester rendue même quand le fond/les arbres sont physiques.
+**Critical point:** a forest shader alone does not provide the limits of the "forest" polygon, and a painted field does not systematically indicate the category "pasture", "garden", etc. The thematic layer must remain rendered even when the ground/trees are physical.
 
-### 4.3 Deux ressources GPU distinctes
+### 4.3 Two distinct GPU resources
 
-Ne pas transformer `ForestOccupation` en source unique de vérité pour le thématique. Conserver / généraliser :
+Do not turn `ForestOccupation` into the single source of truth for the thematic layer. Keep / generalise:
 
-1. **`PhysicalOccupationMask`** : coupes de canopée, réserves, sols bâtis, chemins, exclusion d'arbres ; peut réutiliser le SDF existant. Sa validité dépend **des données**, non du style ou de la visibilité de l'overlay.
-2. **`SemanticLanduseIndex`** : masque d'ID de catégorie, emprises, trous, éventuellement IDs d'entités pour picking/labels ; rasterisation dérivée des **polygones canoniques**. Sa visualisation dépend du mode `subtle/categorical/outlines`.
+1. **`PhysicalOccupationMask`**: canopy cuts, reserves, built ground, paths, tree exclusion; may reuse the existing SDF. Its validity depends on the **data**, not on the style or visibility of the overlay.
+2. **`SemanticLanduseIndex`**: category ID mask, footprints, holes, optionally entity IDs for picking/labels; rasterisation derived from the **canonical polygons**. Its visualisation depends on the `subtle/categorical/outlines` mode.
 
-Garder en source de vérité les polygones et les référentiels de classes ; les textures ne sont que des caches tuilés ou résolutions adaptées. L'information sur les usages urbains constitue une troisième couche sémantique, construite à partir des données urbaines, pour éviter de forcer des catégories rurales sur les quartiers.
+Keep the polygons and class reference data as the source of truth; textures are only tiled caches or resolutions adapted to need. The information on urban uses constitutes a third semantic layer, built from urban data, to avoid forcing rural categories onto neighbourhoods.
+## 5. 3D Implementation of Land Use: Essential
 
----
+### 5.1 Objective
 
-## 5. Implémentation 3D de l'occupation : indispensable
+The 3D view must be able to show **simultaneously** a realistic terrain, physical land clearings, the boundaries of rural uses, the functional zones of neighbourhoods and the 3D buildings. An "land use visible" button must concern the overlay, not the existence of fields.
 
-### 5.1 Objectif
+### 5.2 Reasonable MVP (reuse the existing 3D tiles)
 
-La vue 3D doit pouvoir montrer **simultanément** une terre réaliste, les défrichements physiques, les limites des usages ruraux, les zones fonctionnelles des quartiers et les bâtiments 3D. Un bouton « occupation visible » doit concerner l'overlay, pas l'existence des champs.
+1. Pass `World.landuse` and a physical land-use resource to `mountV2Urban3d` (via the `RenderScene` or dedicated callbacks); do not generate a new land use.
+2. Use **the same semantic overlay producer** for the 2D view and for the map draped over the 3D terrain. In `city3d.ts`, the loading of `loadTile` tiles already provides a place to compose elements on the ground, **before** drawing roads and the urban plan. In procedural material mode, check the actual alpha composition of the shader (the "texture" already serves the water masks and the plan) before adding the new tints: they must be overlaid on the material and not replace it.
+3. Raise/project the boundaries onto the relief with a slight bias managed in depth space; do not physically move the vertices of the map. Take into account exaggerated relief, multiscale displacement, tile cutting, polygon holes and areas under water.
+4. Draw uses and footprints only once. When a physical base already provides trees/crops, **disable only their illustrated duplicate**, not the boundaries or the thematic flat fills.
+5. Keep `city.view = uses/roles/parcels` and the urban uses available in 3D; decouple these views from `ground=render-v2`.
 
-### 5.2 MVP raisonnable (réutiliser les tuiles 3D existantes)
+### 5.3 If draping is not enough
 
-1. Faire parvenir le `World.landuse` et une ressource d'occupation physique à `mountV2Urban3d` (via le `RenderScene` ou des callbacks dédiés) ; ne pas générer une nouvelle occupation.
-2. Utiliser **le même producteur d'overlay sémantique** pour la vue 2D et pour la carte drapée sur le terrain 3D. Dans `city3d.ts`, le chargement des tuiles `loadTile` fournit déjà un endroit pour composer les éléments sur le sol, **avant** le dessin des voies et du plan urbain. Dans le mode matériau procédural, vérifier la composition alpha réelle du shader (le « texture » sert déjà aux masques d'eau et au plan) avant d'y ajouter les nouvelles teintes : elles doivent se superposer au matériau et non le remplacer.
-3. Surélever/projeter les limites sur le relief avec un léger bias géré en espace profondeur ; ne pas déplacer physiquement les sommets de la carte. Prendre en compte relief exagéré, déplacement multiscale, coupure des tuiles, trous de polygones, zones sous l'eau.
-4. Dessiner une seule fois les usages et les emprises. Quand un fond physique fournit déjà des arbres/cultures, **désactiver uniquement leur doublon illustré**, pas les limites ni les aplats thématiques.
-5. Garder `city.view = uses/roles/parcels` et les usages urbains disponibles en 3D ; décorréler ces vues de `ground=render-v2`.
+The raster draped on the ground becomes masked by large tree crowns or buildings. Propose **a single** advanced setting `semanticDepth`:
 
-### 5.3 Si le drapage ne suffit pas
+- `surface` (immersive default): the thematic layer is actually on the terrain, occludable by physical objects;
+- `readable` (default in Analysis/Plan mode): boundaries and labels have a readability rendering (screen-space or line passes with controlled depth handling) that remains visible above crowns and buildings, without turning the whole terrain into an "X-ray" layer.
 
-Le raster drapé sur le sol devient masqué par de grandes couronnes ou les bâtiments. Proposer **un seul** réglage avancé `semanticDepth` :
+The transparency of the thematic layer must remain reasonable. For neighbourhood boundaries located under buildings, the readable mode must prioritise the **boundaries** and labels, rather than filling the roofs with an opaque layer.
 
-- `surface` (défaut immersif) : le thématique est effectivement sur le terrain, occultable par les objets physiques ;
-- `readable` (défaut en Analyse/Plan) : limites et labels ont un rendu de lecture (screen-space ou passes de traits avec gestion contrôlée de profondeur) qui reste visible au-dessus des couronnes et bâtiments, sans transformer tout le terrain en calque « rayons X ».
+### 5.4 Behaviour without detailed geometry
 
-La transparence du thématique doit rester raisonnable. Pour les limites de quartiers situées sous les bâtiments, le mode lisible doit prioriser les **limites** et les labels, pas remplir les toits d'une couche opaque.
+The `footprints` representation must be possible in 3D **even when volumes exist**: hide the meshes, keep the footprint and its outline draped on the ground. Conversely, showing volumes must not force the cadastral overlay nor hide neighbourhood boundaries.
 
-### 5.4 Comportement sans géométrie détaillée
+The absence of detailed buildings must not prevent the display of their canonical footprints. If a 3D backend cannot display a mode, the UI indicates the limitation and explicitly proposes a substitute; do not alter the saved recipe.
+## 6. Proposed TypeScript contract
 
-La représentation `footprints` doit être possible en 3D **même lorsque les volumes existent** ; masquer les meshes, conserver l'empreinte et son contour drapés sur le sol. Inversement, montrer les volumes ne doit pas forcer l'overlay cadastral ni cacher les limites de quartiers.
-
-L'absence de bâtis détaillés ne doit pas empêcher l'affichage de leurs empreintes canoniques. Si un backend 3D ne peut pas afficher un mode, l'UI indique la limitation et propose explicitement une substitution ; ne pas altérer la recette enregistrée.
-
----
-
-## 6. Contrat TypeScript proposé
-
-**Ce contrat est un objectif conceptuel**, à ajuster aux noms existants, pas une API dont il faut faire une copie littérale en cassant `V2Appearance`. En particulier, réutiliser `appearanceRecipe.ts`, le resolver et les `StyleTraits`, tout en retirant les dépendances inappropriées entre fond et overlays.
+**This contract is a conceptual target**, to be adjusted to the existing names, not an API to copy literally while breaking `V2Appearance`. In particular, reuse `appearanceRecipe.ts`, the resolver and the `StyleTraits`, while removing the inappropriate dependencies between ground and overlays.
 
 ```ts
 export type BaseLook =
@@ -315,7 +302,7 @@ export interface CompositionRecipeV2 {
     labels: boolean;
     legend: boolean;
     cartouche: boolean;
-    // MJ/joueur : contrôlé par autorisation des données, pas le shader.
+    // GM/player: controlled by data authorization, not the shader.
   };
   lighting: {
     mode: 'day' | 'night' | 'custom';
@@ -325,15 +312,15 @@ export interface CompositionRecipeV2 {
 }
 ```
 
-### Résolution et capacités
+### Resolution and capabilities
 
-- `resolveComposition(recipe, dataCapabilities, rendererCapabilities, target)` renvoie une **recette résolue par passe**, ses dépendances et les limitations explicites. Ne pas perdre les choix sauvegardés si la cible ne sait pas les rendre.
-- Différencier la disponibilité des **données** et celle du **backend**. Exemple : `landuse data available`, `3d semantic overlay renderer not available`, `procedural canopy not supported on this hardware`.
-- L'héritage de palette est une **valeur par défaut**, pas un verrou. Les `StyleTraits` peuvent déclarer les capacités d'un backend mais ne doivent plus supprimer le rendu sémantique en fonction du style de fond.
-- Fournir un registre d'adaptateurs ou des `canRender(pass, mode, target)` pour 2D Canvas, WebGL et 3D ; éviter les `if (styleId === ...)` éparpillés dans les couches métiers.
-- Ne pas permettre d'ordre z arbitraire dans l'interface initiale : la topologie des passes est fixe, avec une poignée d'options de profondeur compatibles avec les contraintes physiques.
+- `resolveComposition(recipe, dataCapabilities, rendererCapabilities, target)` returns a **resolved recipe per pass**, its dependencies and the explicit limitations. Do not lose the saved choices if the target cannot render them.
+- Differentiate the availability of **data** from that of the **backend**. Example: `landuse data available`, `3d semantic overlay renderer not available`, `procedural canopy not supported on this hardware`.
+- Palette inheritance is a **default value**, not a lock. `StyleTraits` may declare the capabilities of a backend but must no longer suppress semantic rendering based on the ground style.
+- Provide an adapter registry or `canRender(pass, mode, target)` functions for 2D Canvas, WebGL and 3D; avoid scattered `if (styleId === ...)` checks in the business layers.
+- Do not allow arbitrary z-ordering in the initial interface: the pass topology is fixed, with a handful of depth options compatible with the physical constraints.
 
-### Exemple de recette à rendre sans perte
+### Example recipe to render without loss
 
 ```json
 {
@@ -366,227 +353,218 @@ export interface CompositionRecipeV2 {
 }
 ```
 
-*Le JSON ci-dessus est un contrat cible, pas une recette actuellement acceptée par Magna Urbis.*
+*The JSON above is a target contract, not a recipe currently accepted by Magna Urbis.*
 
 ---
 
-## 7. Presets : les styles reviennent comme recettes pratiques
+## 7. Presets: styles return as practical recipes
 
-Créer un **catalogue de recettes**, composé de valeurs des passes précédentes. La sélection d'un preset **remplit** les composantes ; les changements d'une passe placent l'interface en « Personnalisé » sans modifier les autres.
+Create a **catalogue of recipes**, composed of values from the previous passes. Selecting a preset **fills in** the components; changing one pass switches the interface to "Custom" without modifying the others.
 
-| Preset | Fond | Végétation | Occupation rurale | Urbanisme | Bâtiment | Éclairage |
+| Preset | Ground | Vegetation | Rural landuse | Urban planning | Building | Lighting |
 |---|---|---|---|---|---|---|
-| Atlas | Atlas | Symboles/canopy | Subtle | Discret | Toits cartographiques | Jour |
-| Parchemin | Parchemin | Symboles/peinte | Subtle | Discret | Toits | Jour |
-| Illustré | Illustré | Peinte | Subtle | Discret | Toits | Jour |
-| Plan | Plan clair | Aucune/symboles | Categorical | Categorical | Emprises | Jour |
-| Topographique | Topographique | Symboles | Outlines | Outlines | Emprises | Jour |
-| Naturel | Naturel `render-v2` | Procédurale | **Subtle, non Off** | Discret | Volumes | Jour |
-| Atlas nuit | Atlas, palette `night` | Selon atlas | Subtle | Discret | Toits/fenêtres éclairées | **Nuit artistique** |
+| Atlas | Atlas | Symbols/canopy | Subtle | Discreet | Cartographic roofs | Day |
+| Parchment | Parchment | Symbols/painted | Subtle | Discreet | Roofs | Day |
+| Illustrated | Illustrated | Painted | Subtle | Discreet | Roofs | Day |
+| Plan | Light plan | None/symbols | Categorical | Categorical | Footprints | Day |
+| Topographic | Topographic | Symbols | Outlines | Outlines | Footprints | Day |
+| Natural | Natural `render-v2` | Procedural | **Subtle, not Off** | Discreet | Volumes | Day |
+| Atlas night | Atlas, `night` palette | Depends on atlas | Subtle | Discreet | Roofs/lit windows | **Artistic night** |
 
-Les variantes historiques restent accessibles **sans devenir des moteurs supplémentaires** : Gravure et Enluminure sous Parchemin ; Aquarelle et Encre sous Illustré ; Cadastre, Blueprint et Classique sous Plan ; Night sous Atlas. Les rendus physiques jour/nuit sont séparés de la palette Night artistique : ne pas promettre que la nuit est physiquement éclairée en 3D si le pipeline ne possède pas les lumières correspondantes.
+The historical variants remain accessible **without becoming additional engines**: Engraving and Illumination under Parchment; Watercolour and Ink under Illustrated; Cadastre, Blueprint and Classic under Plan; Night under Atlas. Physical day/night renderings are separate from the artistic Night palette: do not promise that the night is physically lit in 3D if the pipeline does not have the corresponding lights.
 
-Les presets métier (Cartographe, Urbanisme, MJ, Joueur, Analyse) sont un **second axe** : ils choisissent les couches visibles, la caméra et les annotations, mais pas une technologie de rendu exclusive. Ainsi « MJ + fond Naturel + parcelles visibles » reste parfaitement valide.
+The role-based presets (Cartographer, Urban planner, GM, Player, Analysis) are a **second axis**: they choose the visible layers, the camera and the annotations, but not an exclusive rendering technology. Thus "GM + Natural ground + parcels visible" remains perfectly valid.
+## 8. Technical composition and performance
 
----
+### 8.1 In 2D
 
-## 8. Composition technique et performances
+- **Raster / GPU** for the material background and the procedural (tree) crowns.
+- **Thematic passes** rasterised from the vector geometry, by tile or by viewport, in premultiplied alpha; borders and vector text kept for as long as their density allows.
+- **Urban passes** (roads, networks, blocks, parcels, buildings) kept, with the representation of built-up areas chosen independently.
+- Avoid re-rasterising the entire terrain after a change of class colour, parcel display or label: only their passes should be invalidated.
+- Draw trees only once; `forest shader visible` and `forest polygons thematic visible` do **not** constitute a duplicate, since they are physical and semantic respectively.
 
-### 8.1 En 2D
+### 8.2 In 3D
 
-- **Raster / GPU** pour le fond matériel et les couronnes procédurales.
-- **Passes thématiques** rasterisées depuis la géométrie vectorielle, par tuiles ou par viewport, en alpha prémultiplié ; bordures et textes vectoriels aussi longtemps que leur densité le permet.
-- **Passes urbaines** (routes, réseaux, blocs, parcelles, bâtiments) conservées, avec représentation du bâti choisie indépendamment.
-- Éviter de rerasteriser tout le terrain après changement de couleur d'une classe, d'affichage de parcelles ou de label : seules leurs passes doivent être invalidées.
-- Ne dessiner les arbres qu'une seule fois ; `forest shader visible` et `forest polygons thematic visible` ne constituent **pas** un doublon, puisqu'ils sont physique et sémantique.
+- Keep the existing canonical terrain and its sampler. The physical components remain in their 3D pass.
+- 2D text/categories converted into projection tiles or into line geometries on the terrain; provide for mips, geographic alignment, anti-aliasing and slight depth correction.
+- Respect polygons with holes, tile clipping, rivers, coasts, sea level, water surfaces and vertical geometry (bridges and quays are not reduced to the ground).
+- Ensure that the **same rural and urban uses** have a cartographic representation available in both 2D and 3D; only the techniques change.
+- The free 3D view must not lose thematic information simply because the objects have become volumetric.
 
-### 8.2 En 3D
+### 8.3 Caches and dependency keys
 
-- Conserver le terrain canonique existant et son échantillonneur. Les composantes physiques restent dans leur passe 3D.
-- Texte/catégories 2D convertis en tuiles de projection ou en géométries de lignes sur terrain ; prévoir mips, alignement géographique, anti-aliasing et légère correction de profondeur.
-- Respecter les polygones avec trous, les découpes des tuiles, les rivières, les côtes, le niveau de la mer, les surfaces d'eau et la géométrie verticale (ponts et quais ne se réduisent pas au sol).
-- S'assurer que les **mêmes usages ruraux et urbains** ont une représentation cartographique disponible en 2D et en 3D ; seules les techniques changent.
-- La vue 3D libre ne doit pas perdre l'information thématique simplement parce que les objets sont devenus volumétriques.
+Reuse `PassState`, `ResourceCache`, `PassKeys` and the revisions of `RenderScene`:
 
-### 8.3 Caches et clés de dépendance
-
-Réutiliser `PassState`, `ResourceCache`, `PassKeys` et les révisions de `RenderScene` :
-
-| Changement | À invalider | À conserver |
+| Change | To invalidate | To keep |
 |---|---|---|
-| Fond Parchemin → Naturel | Shader/fond | Géométrie, index sémantiques, bâtiments |
-| Végétation symboles → shader | Dessin de végétation | Classes d'occupation, routes, relief source |
-| Occupation Off → Categorical | Overlay rural/urbain | Champ forestier, terrain, eau, géométries |
-| Opacité de l'occupation | Uniforme/overlay seul | Texture d'IDs de classes |
-| Routes masquées | Passe routes | Occupation physique et rendu forestier |
-| Bâtiments 3D → empreintes | Passe bâtiments, éventuellement plan tile | Position et matériaux du terrain |
-| Nuit ↔ jour | Palette/éclairage concerné | Géométries, champs physiques |
-| Zoom, translation | Tuiles visibles / LOD | Champs et données canoniques |
+| Background Parchment → Natural | Shader/background | Geometry, semantic indices, buildings |
+| Vegetation symbols → shader | Vegetation drawing | Land-use classes, roads, source relief |
+| Land use Off → Categorical | Rural/urban overlay | Forest field, terrain, water, geometries |
+| Land-use opacity | Uniform/overlay only | Class ID texture |
+| Roads hidden | Road pass | Physical land use and forest rendering |
+| 3D buildings → footprints | Building pass, possibly tile plane | Terrain position and materials |
+| Night ↔ day | Affected palette/lighting | Geometries, physical fields |
+| Zoom, translation | Visible tiles / LOD | Fields and canonical data |
 
-Les masques physiques dépendent des données et de leurs révisions ; les masques sémantiques dépendent des polygones ; **les palettes ne changent ni l'un ni l'autre**. Si l'index spatial/les textures sémantiques sont recalculés à chaque frame, l'implémentation est incorrecte.
+Physical masks depend on the data and its revisions; semantic masks depend on the polygons; **palettes change neither one**. If the spatial index/semantic textures are recalculated every frame, the implementation is incorrect.
 
-### 8.4 Arbitrages graphiques
+### 8.4 Graphic trade-offs
 
-- Composition alpha cohérente entre WebGL, Canvas et export (attention espaces colorimétriques, `premultipliedAlpha` et double-blending).
-- Modes `Subtle` et `Categorical` doivent avoir des contours lisibles en clair, sombre, relief élevé et sur texture satellite contrastée ; ne pas dépendre uniquement d'une faible teinte.
-- Rivières et routes à priorité visuelle explicite sur les aplats de catégories ; les limites de parcelles ne sont pas des routes.
-- Conservation du contraste labels/fond en 2D/3D ; cadrages identiques lors des comparaisons.
-- Pas de z-fighting ou de scintillement des limites de parcelles sur un terrain bruité/déplacé.
+- Consistent alpha compositing between WebGL, Canvas and export (watch colour spaces, `premultipliedAlpha` and double-blending).
+- `Subtle` and `Categorical` modes must have legible outlines in light, dark, high relief and on high-contrast satellite texture; do not rely solely on a faint tint.
+- Rivers and roads with explicit visual priority over category flat fills; parcel boundaries are not roads.
+- Preservation of label/background contrast in 2D/3D; identical framing when making comparisons.
+- No z-fighting or flickering of parcel boundaries on noisy/displaced terrain.
 
 ---
 
-## 9. UI utilisateur : simple malgré la composition libre
+## 9. User UI: simple despite free composition
 
-### Niveau 1 : choix rapide
+### Level 1: quick choice
 
-- **Preset visuel** : Atlas, Parchemin, Illustré, Plan, Topographique, Naturel, Atlas nuit.
-- **Vue** : 2D, oblique 3D, libre 3D.
-- **Couches** : Nature, Civilisation, Territoires, Lieux/entités, Aventure (grands groupes de visibilité).
+- **Visual preset**: Atlas, Parchment, Illustrated, Plan, Topographic, Natural, Atlas night.
+- **View**: 2D, oblique 3D, free 3D.
+- **Layers**: Nature, Civilisation, Territories, Places/entities, Adventure (broad visibility groups).
 
-### Niveau 2 : Composition (accessible et persistante)
+### Level 2: Composition (accessible and persistent)
 
 ```
-Fond             [Parchemin                 v]
-Végétation       [Arbres procéduraux        v]
-Occupation rurale [Aplats + contours        v]   Opacité [40%]
-Occupation ville [Contours quartiers        v]
-Routes / eau     [Encre / Adapté au fond    v]
-Bâtiments        [Emprises                  v]
-Ambiance         [Jour                      v]
+Background       [Parchment                 v]
+Vegetation       [Procedural trees          v]
+Rural land use   [Flat fills + outlines     v]   Opacity [40%]
+Urban land use   [District outlines         v]
+Roads / water    [Ink / Adapted to background v]
+Buildings        [Footprints                v]
+Mood             [Day                       v]
 ```
 
-### Niveau 3 : avancé
+### Level 3: advanced
 
-Réglages détaillés des palettes/couleurs, largeur/contraste, filtres de classes, trames, lumière, saison, détail LOD, relief exagéré, ajustements GPU et diagnostics techniques.
+Detailed settings for palettes/colours, width/contrast, class filters, hatching, light, season, LOD detail, exaggerated relief, GPU adjustments and technical diagnostics.
 
-**Ne pas présenter** « occupation du territoire visible » comme un switch qui supprime en même temps ses manifestations naturelles. Le sous-menu doit séparer :
+**Do not present** "land use visible" as a switch that simultaneously removes its natural manifestations. The sub-menu must separate:
 
-- `Effets sur le paysage` (toujours activés lorsqu'ils représentent la réalité générée : défrichements, disposition physique du sol) ;
-- `Affichage des usages` (Off/Subtle/Categorical/Outlines et classes visibles) ;
-- `Annotations` (étiquettes, frontières, rôle des quartiers).
+- `Effects on the landscape` (always enabled when they represent the generated reality: clearings, physical layout of the ground);
+- `Display of uses` (Off/Subtle/Categorical/Outlines and visible classes);
+- `Annotations` (labels, borders, role of districts).
 
-Dans l'interface, l'option « fonds / style » ne doit donc jamais désactiver ou redéfinir un autre menu. Un changement manuel de composante conserve les autres valeurs (pas de reset du reste de la recette).
-
----
-
-## 10. Migration et compatibilité
-
-1. Introduire un objet `composition` **optionnel** dans le schéma d'apparence V2 ; le code actuel peut rester un chemin de compatibilité. Une recette ancienne doit continuer à donner le même rendu sans migration destructrice.
-2. Écrire une **fonction pure** `legacyAppearanceToComposition(...)` et, si utile, un adaptateur inverse *partiel* (ne pas fabriquer un `terrainStyle` qui prétend coder toutes les nouvelles combinaisons).
-3. Garder les anciens IDs/URLs (`night`, `render3d-brush`, `render-v2-*`, `cadastre`, etc.) et la fidélité de leur rendu historique lorsqu'ils sont lus sans composition explicite. Les diagnostics de matière `render-v2-substrate`, `moisture`, etc. restent accessibles comme diagnostics, pas comme presets globaux obligatoires.
-4. Séparer explicitement `appearance.landuse` (ancien toggle) du futur `composition.landuse.rural` et de son effet physique ; ne pas réutiliser le même booléen pour deux responsabilités.
-5. Ne **pas** modifier les données retenues ni re-générer un monde pour une préférence d'affichage.
-6. Export raster, capture 2D, capture 3D et liens sauvegardés utilisent la recette résolue ; annoncer les éventuelles limites SVG vectoriel au lieu d'exporter un document qui ne ressemble pas à l'écran.
+In the interface, the "background / style" option must therefore never disable or redefine another menu. A manual change to one component keeps the other values (no reset of the rest of the recipe).
 
 ---
 
-## 11. Plan Codex en six PRs testables
+## 10. Migration and compatibility
 
-### PR 1 — Modèle et resolver
+1. Introduce an **optional** `composition` object in the V2 appearance schema; the current code may remain as a compatibility path. An old recipe must continue to produce the same rendering without destructive migration.
+2. Write a **pure function** `legacyAppearanceToComposition(...)` and, if useful, a *partial* reverse adapter (do not fabricate a `terrainStyle` that claims to encode all the new combinations).
+3. Keep the old IDs/URLs (`night`, `render3d-brush`, `render-v2-*`, `cadastre`, etc.) and the fidelity of their historical rendering when read without explicit composition. The material diagnostics `render-v2-substrate`, `moisture`, etc. remain accessible as diagnostics, not as mandatory global presets.
+4. Explicitly separate `appearance.landuse` (old toggle) from the future `composition.landuse.rural` and its physical effect; do not reuse the same boolean for two responsibilities.
+5. Do **not** modify retained data or regenerate a world for a display preference.
+6. Raster export, 2D capture, 3D capture and saved links use the resolved recipe; announce any SVG vector limitations instead of exporting a document that does not look like the screen.
+## 11. Codex plan in six testable PRs
 
-- Ajouter contrats TS, recettes nommées, migration compatibilité et validation.
-- Réorganiser `appearanceRecipe.ts` autour d'une résolution indépendante du fond, de la végétation, des deux thématiques (rurale/urbaine), des réseaux, du bâti et de l'ambiance.
-- Conserver `PassState`, `ResourceCache` et l'ancienne API ; tests unitaires resolver/compatibilité. Aucun changement d'affichage attendu par défaut.
+### PR 1 — Model and resolver
 
-### PR 2 — Occupation sémantique 2D indépendante
+- Add TS contracts, named recipes, compatibility migration and validation.
+- Reorganise `appearanceRecipe.ts` around an independent resolution of the background, vegetation, both themes (rural/urban), networks, buildings and mood.
+- Keep `PassState`, `ResourceCache` and the old API; unit tests for resolver/compatibility. No display change expected by default.
 
-- Détacher les overlays de classes de la réalisation physique/des pinceaux dans le flux `render/landuse.ts` et `v2/benchRenderer.ts`.
-- Retirer l'exclusion **globale** via `CARTOGRAPHIC_ONLY_VEGETATION` : exclure uniquement les duplications de **symboles végétaux**, jamais les frontières et aplats thématiques explicitement demandés.
-- Implémenter Off/Subtle/Categorical/Outlines, par catégorie, sur fond Atlas, Parchemin et Render v2 ; export cohérent.
+### PR 2 — Independent 2D semantic land use
 
-### PR 3 — Couverture procédurale indépendante du fond
+- Detach class overlays from the physical rendering/brushes in the `render/landuse.ts` and `v2/benchRenderer.ts` flow.
+- Remove the **global** exclusion via `CARTOGRAPHIC_ONLY_VEGETATION`: exclude only duplications of **vegetation symbols**, never the boundaries and thematic flat fills explicitly requested.
+- Implement Off/Subtle/Categorical/Outlines, per category, on Atlas, Parchment and Render v2 backgrounds; consistent export.
 
-- Définir `vegetation.look` distinct de `ground.look` avec capacité par backend.
-- Autoriser le rendu de canopée shader sur fond Parchemin / Atlas quand le moteur le permet, via une composante alpha/composite, sans basculer le fond vers `render-v2`.
-- Séparer masque de défrichement physique et visibilité de l'overlay. Tests « champ sans forêt, mais limites visibles ou masquées indépendamment ».
+### PR 3 — Procedural coverage independent of the background
 
-### PR 4 — Occupation thématique 3D
+- Define `vegetation.look` distinct from `ground.look`, with a capability per backend.
+- Allow shader canopy rendering on Parchment / Atlas backgrounds when the engine supports it, via an alpha/composite component, without switching the background to `render-v2`.
+- Separate the physical clearing mask from the overlay visibility. Tests: "field without forest, but boundaries visible or hidden independently".
 
-- Exposer les données d'occupation retenues au pipeline `v2/urban3d.ts` ; réutiliser les tuiles déjà drapées par `city3d.ts` ou introduire une petite passe projetée dédiée selon la composition réelle du shader.
-- Activer la représentation rurale et urbaine en 3D, avec `surface` et `readable` si le second est possible sans complexité excessive ; au minimum, mode surface avec contours visibles.
-- Intégrer correctement terrain, canopée, eau, routes et bâtiments, sans modifier leur géométrie.
+### PR 4 — Thematic 3D land use
 
-### PR 5 — Bâtiments et réseaux indépendants
+- Expose the retained land-use data to the `v2/urban3d.ts` pipeline; reuse the tiles already draped by `city3d.ts` or introduce a small dedicated projected pass, depending on the actual shader composition.
+- Enable rural and urban representation in 3D, with `surface` and `readable` if the latter is possible without excessive complexity; at minimum, surface mode with visible outlines.
+- Integrate terrain, canopy, water, roads and buildings correctly, without modifying their geometry.
 
-- Pouvoir choisir empreintes/toits/volumes simples/volumes détaillés sans changement de fond.
-- Conserver le rendu des quartiers, rôles, parcelles et emprises sur tout fond, y compris satellite et en 3D.
-- Dissocier le « fond urbain » du choix du fond de carte global et les routes/rivières de leurs styles de base.
+### PR 5 — Independent buildings and networks
 
-### PR 6 — UI, presets et tests de régression
+- Allow choosing footprints/roofs/simple volumes/detailed volumes without changing the background.
+- Keep the rendering of districts, roles, parcels and plot extents (or 'land extents/rights-of-way') on any background, including satellite and 3D.
+- Decouple the "urban background" from the choice of global map background, and roads/rivers from their base styles.
 
-- Ajouter deux niveaux de contrôle (preset puis composition) ; Night conservé comme Atlas nuit.
-- Tests de combinaisons, export, sauvegarde/chargement, mêmes cartes 2D/3D, comparaison d'images et invalidations de passes.
-- Documenter la table des capacités de chaque backend et leurs limites ; supprimer/masquer les anciens sélecteurs redondants dans l'UI, **pas** dans la compatibilité.
+### PR 6 — UI, presets and regression tests
 
-Chaque PR doit être intégrable et testable isolément. Si une PR n'est pas entièrement implémentable, garder les contrats et un diagnostic explicite plutôt que de masquer la limitation en changeant silencieusement de style.
+- Add two levels of control (preset, then composition); Night kept as Atlas night.
+- Tests for combinations, export, save/load, identical 2D/3D maps, image comparison and pass invalidations.
+- Document the capability table of each backend and its limits; remove/hide the old redundant selectors in the UI, **not** in compatibility.
 
----
-
-## 12. Tests d'acceptation fonctionnels (non négociables)
-
-1. **Mix demandé** : Parchemin + canopée procédurale + occupation catégorielle + routes encrées + bâtiments en empreintes s'affiche avec les mêmes géométries et cadrage qu'avant.
-2. **Satellite lisible** : Render v2 + couverture forestière physique + frontières des huit classes rurales ; les champs, pâtures, jardins, vergers et marais restent identifiables (pas seulement les forêts).
-3. **3D fonctionnelle** : occupation rurale et zones urbaines visibles sur le terrain 3D ; même emprise et mêmes catégories qu'en 2D.
-4. **Dissociation** : masquer `landuse.rural` n'efface pas les champs physiques et ne recrée aucun arbre ; masquer la canopée n'efface pas l'overlay forestier.
-5. **Bâtiments** : passer de volumes détaillés à empreintes conserve exactement les implantations et ne modifie ni le terrain ni les quartiers.
-6. **Ordre** : routes et rivières restent lisibles au-dessus des aplats ; plans urbains et toits visibles sans double peinture ; labels ne disparaissent pas sous un calque opaque.
-7. **Holes** : parcelles, bâtiments, lacs et zones à trous ne sont pas remplis incorrectement par les overlays.
-8. **Zoom/LOD** : absence de déplacement des limites entre niveaux de détail, pas de halo, de z-fighting ni de couture au bord des tuiles.
-9. **Export** : capture et export 2D reproduisent les couches affichées ; capture 3D suit la même recette et la même politique de visibilité.
-10. **Héritage** : une ancienne URL `style=night` ouvre toujours une carte visuellement équivalente ; les anciens exports/recettes restent lisibles.
-11. **Caches** : changer seulement l'opacité des usages du sol ne regénère ni le terrain, ni les villes, ni le champ d'arbres.
-12. **Robustesse** : backend incapable ou données absentes donnent un état de capacité clair ; le choix de l'utilisateur reste stocké.
-13. **Identité** : une catégorie d'occupation a le même sens, le même ID et une symbologie compatible en 2D/3D, même si ses textures naturelles sont différentes.
-14. **Nuit** : Atlas nuit conserve le rendu sombre et ses fenêtres éclairées ; le style n'est pas effacé au nom du découplage.
-
-### Tests automatiques à privilégier
-
-- Unitaires : migration, validation, resolver, dépendances de caches, priorité des polygones et masques, filtres par classes.
-- Intégration : tests sur une scène retenue contenant forêt + champ + pâture + verger + marais + rivière + route + ville + bâtiment.
-- Visuels : captures 2D et 3D comparées aux combinaisons A/B/C/D, avant/après zoom et permutation des passes ; pas de simple test de code qui conclut que l'image est correcte.
-- Performance : vérifier que les grandes tuiles conservent le LOD, que les mises à jour visuelles n'entraînent aucune recalculation de géométrie.
+Each PR must be integrable and testable in isolation. If a PR cannot be fully implemented, keep the contracts and an explicit diagnostic rather than hiding the limitation by silently changing style.
 
 ---
 
-## 13. Périmètre et points de décision
+## 12. Functional acceptance tests (non-negotiable)
 
-### Décisions recommandées par défaut
+1. **Requested mix**: Parchment + procedural canopy + categorical land use + inked roads + buildings as footprints displays with the same geometries and framing as before.
+2. **Readable satellite**: Render v2 + physical forest cover + boundaries of the eight rural classes; fields, pastures, gardens, orchards and marshes remain identifiable (not only forests).
+3. **Working 3D**: rural land use and urban areas visible on the 3D terrain; same extent and same categories as in 2D.
+4. **Decoupling**: hiding `landuse.rural` does not erase the physical fields and does not recreate any tree; hiding the canopy does not erase the forest overlay.
+5. **Buildings**: switching from detailed volumes to footprints keeps the exact placements and modifies neither the terrain nor the districts.
+6. **Order**: roads and rivers remain readable above the flat fills; urban plans and roofs visible without double painting; labels do not disappear under an opaque layer.
+7. **Holes**: parcels, buildings, lakes and areas with holes are not incorrectly filled by the overlays.
+8. **Zoom/LOD**: no shifting of boundaries between levels of detail, no halo, z-fighting or seam at tile edges.
+9. **Export**: 2D capture and export reproduce the displayed layers; 3D capture follows the same recipe and the same visibility policy.
+10. **Legacy**: an old `style=night` URL still opens a visually equivalent map; old exports/recipes remain readable.
+11. **Caches**: changing only the opacity of land-use layers regenerates neither the terrain, nor the cities, nor the tree field.
+12. **Robustness**: an incapable backend or missing data gives a clear capability state; the user's choice remains stored.
+13. **Identity**: a land-use category has the same meaning, the same ID and a compatible symbology in 2D/3D, even if its natural textures differ.
+14. **Night**: Atlas night keeps its dark rendering and its lit windows; the style is not erased in the name of decoupling.
 
-- **Fond et végétation sont totalement dissociés.** Le shader de couronnes est réutilisable sur un fond Parchemin si le framebuffer/composite et le matériel le permettent.
-- **Occupation rurale et urbaine ont des rendus sémantiques séparés.** Le premier s'appuie sur `LandUseLayer`, le second sur `CityScene`/rôles/allocations.
-- **L'occupation existe en 3D** ; la première version utilise le drapage et des contours plutôt qu'une seconde simulation réaliste des cultures.
-- **Les effets physiques de l'occupation sont indépendants de son affichage** ; le masque de défrichement ne peut pas être désactivé en cachant un calque de carte.
-- **Styles = presets** ; réglages de composition = source d'autorité si personnalisés.
-- **Nuit reste visible** : Atlas nuit comme recette graphique distincte ; nuit physique 3D à traiter séparément.
+### Automated tests to prioritise
 
-### Points facultatifs à arbitrer après le MVP (ne bloquent pas Codex)
+- Unit: migration, validation, resolver, cache dependencies, polygon priority and masks, class filters.
+- Integration: tests on a selected scene containing forest + field + pasture + orchard + marsh + river + road + city + building.
+- Visual: 2D and 3D captures compared against combinations A/B/C/D, before/after zoom and pass permutation; no mere code test concluding that the image is correct.
+- Performance: verify that large tiles keep their LOD, and that visual updates trigger no geometry recalculation.
+## 13. Scope and decision points
 
-1. Jusqu'où pousser `readable` en 3D : contours et labels au-dessus de la canopée, ou vrai mode x-ray des zones ? Recommandation : contours + labels uniquement.
-2. Faut-il autoriser des palettes totalement personnalisées **par classe d'occupation**, ou d'abord une palette thématique fixe avec opacité ? Recommandation : palette fixe puis overrides avancés.
-3. Le rendu volumique sur fond non physique doit-il réutiliser les couronnes du shader ou représenter de véritables arbres 3D individuels ? Recommandation : réutiliser le champ et les couronnes procédurales déjà existants, pas générer des meshes nouveaux.
-4. Le « style Illustré » nécessite-t-il d'emblée un équivalent 3D entièrement dessiné ? Recommandation : non, commencer par le drapage illustré et la végétation peinte.
+### Recommended default decisions
+
+- **Background and vegetation are fully decoupled.** The crown shader can be reused on a Parchment background if the framebuffer/composite and the hardware allow it.
+- **Rural and urban land use have separate semantic renderings.** The former relies on `LandUseLayer`, the latter on `CityScene`/roles/allocations.
+- **Land use exists in 3D**; the first version uses draping and outlines rather than a second realistic simulation of crops.
+- **The physical effects of land use are independent of its display**; the clearing mask cannot be disabled by hiding a map layer.
+- **Styles = presets**; composition settings = source of authority if customized.
+- **Night stays visible**: Atlas night as a distinct graphic recipe; physical 3D night to be handled separately.
+
+### Optional points to decide after the MVP (these do not block Codex)
+
+1. How far to push `readable` in 3D: outlines and labels above the canopy, or a true x-ray mode for zones? Recommendation: outlines and labels only.
+2. Should fully custom palettes be allowed **per land-use class**, or first a fixed thematic palette with opacity? Recommendation: fixed palette first, then advanced overrides.
+3. Should the volumetric rendering on a non-physical background reuse the shader's crowns, or represent true individual 3D trees? Recommendation: reuse the existing procedural field and procedural crowns, and do not generate new meshes.
+4. Does the "Illustrated" style require a fully drawn 3D equivalent from the outset? Recommendation: no, start with illustrated draping and painted vegetation.
 
 ---
 
-## 14. Brief opérationnel à donner à Codex
+## 14. Operational brief for Codex
 
-> **Mission :** implémenter progressivement la composition indépendante des passes visuelles dans Magna Urbis V2, en conservant les géométries, les comportements historiques et la compatibilité des recettes.
+> **Mission:** progressively implement the independent composition of visual passes in Magna Urbis V2, while preserving geometries, historical behaviours and recipe compatibility.
 >
-> **Priorité fonctionnelle :** permettre les mélanges *fond Parchemin + végétation shader + occupation rurale thématique + routes encrées + bâtiments en empreintes*, ainsi que *fond satellite + occupation rurale lisible + quartiers/usages visibles en 3D*. Les quatre problèmes sont : le style de fond commande encore indirectement la végétation et la présence de classes thématiques ; les usages ruraux ne sont pas exposés visuellement en 3D V2 ; les choix du bâti sont trop liés à ceux du fond ; l'UI présente des techniques de rendu comme des styles exclusifs.
+> **Functional priority:** enable mixes of *Parchment background + shader vegetation + thematic rural land use + inked roads + footprint buildings*, as well as *satellite background + readable rural land use + districts/uses visible in 3D*. The four problems are: the background style still indirectly controls vegetation and the presence of thematic classes; rural uses are not visually exposed in 3D V2; building choices are too tied to those of the background; and the UI presents rendering techniques as exclusive styles.
 >
-> **Approche :** inspecter d'abord les fichiers cités en §1, relever leurs contrats actifs, établir une matrice réelle des capacités, puis commencer par PR 1 et PR 2. Réutiliser `appearanceRecipe.ts`, `RenderScene`, `PassState`, `ResourceCache`, `forestOccupation.ts`, `city3d.ts`, `cityCanvas.ts`. Éviter un nouveau moteur généraliste si les passes et callbacks existants suffisent. Après chaque étape, démontrer les cas A/B/C/D et les tests du §12.
+> **Approach:** first inspect the files cited in §1, record their active contracts, establish a real capability matrix, then start with PR 1 and PR 2. Reuse `appearanceRecipe.ts`, `RenderScene`, `PassState`, `ResourceCache`, `forestOccupation.ts`, `city3d.ts`, `cityCanvas.ts`. Avoid a new general-purpose engine if the existing passes and callbacks are sufficient. After each step, demonstrate cases A/B/C/D and the tests from §12.
 >
-> **Contraintes :** aucune régénération de monde sur un changement de style ; aucune disparition silencieuse des données sémantiques ; pas de dédoublement d'arbres/routes/eau ; parité des coordonnées et des classes en 2D/3D ; rétrocompatibilité ; suivi des invalidations et des performances ; conserver la variante Night.
+> **Constraints:** no world regeneration on a style change; no silent loss of semantic data; no duplication of trees/roads/water; parity of coordinates and classes in 2D/3D; backward compatibility; tracking of invalidations and performance; keep the Night variant.
 >
-> **Livrables attendus pour chaque PR :** fichiers modifiés, responsabilités des nouvelles passes, captures avant/après, matrice de capacités mise à jour, tests automatisés, limitations résiduelles et impacts de performance.
+> **Deliverables expected for each PR:** modified files, responsibilities of the new passes, before/after screenshots, updated capability matrix, automated tests, residual limitations and performance impacts.
 
-## Saisons
+## Seasons
 
-Le curseur `effects.season` (0 hiver, .25 printemps, .5 été, .75 automne) vaut pour tous les styles.
+The `effects.season` slider (0 winter, .25 spring, .5 summer, .75 autumn) applies to all styles.
 
-- `ZONE_SEASONS` (`rust/bridge/terrainRenderV2Zones.ts`) décrit l’année de chaque zone climatique : herbes, feuillage, banquise, nappe, neige, pluie, froid hivernal, mélèzes.
-- Les styles matière lisent ce calendrier dans leurs shaders, en 2D comme en 3D : couleur et forme des cimes, conifères enneigés, feuillus nus, sol, gel des eaux.
-- Les styles vectoriels passent par `seasonPalette.ts`, appliqué dans `biomePalette` : seule l’occupation du sol change (champs, prés, forêts, arbres, haies) ; le papier, le relief et l’eau restent fixes.
-- La banquise de Neural Earth (`v2Ice`) reçoit un plancher de concentration par zone : l’arctique toute l’année, le nordique en hiver. Sa taille est ramenée à l’échelle locale par `V2_ICE_ZOOM`.
-- Réglages : `effects.calendar` (panneau « Effets globaux », V2 et bancs Rust) remplace champ par champ le calendrier de la zone : dégel de printemps et d’automne, froid hivernal, morcellement de la neige, régime des pluies, intensité des couleurs, feuillage caduc, mélèzes, banquise par saison. Vide = valeur de la zone.
-- Planche de contrôle : `web/scripts/season_sheet.mjs`, puis `season_sheet_page.py`.
+- `ZONE_SEASONS` (`rust/bridge/terrainRenderV2Zones.ts`) describes the yearly cycle of each climate zone: grasses, foliage, pack ice, water table, snow, rain, winter cold, larches.
+- Material styles read this calendar in their shaders, in 2D as well as 3D: colour and shape of crowns, snow-covered conifers, bare broadleaves, ground, water freezing.
+- Vector styles go through `seasonPalette.ts`, applied in `biomePalette`: only land cover changes (fields, meadows, forests, trees, hedges); paper, relief and water remain fixed.
+- Neural Earth's pack ice (`v2Ice`) receives a concentration floor per zone: the Arctic all year round, the northern zone in winter. Its size is brought back to local scale by `V2_ICE_ZOOM`.
+- Settings: `effects.calendar` ("Global effects" panel, V2 and Rust benches) replaces the zone's calendar field by field: spring and autumn thaw, winter cold, snow fragmentation, rainfall regime, colour intensity, deciduous foliage, larches, pack ice by season. Empty = zone value.
+- Control sheet: `web/scripts/season_sheet.mjs`, then `season_sheet_page.py`.

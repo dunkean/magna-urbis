@@ -1,82 +1,81 @@
-# Ressources : raffinement de tuile et consommation par les cités
+# Resources: Tile Refinement and Consumption by Cities
 
-Date : 26 octobre 2026. Note courte, compagne de `docs/RESOURCE_LAYERS.md` du dépôt Neural Earth (branche `resources-layers`). Statut : **proposé** ; aucun code de ce dépôt n'est modifié.
+Date: 26 October 2026. Short note, companion to `docs/RESOURCE_LAYERS.md` in the Neural Earth repository (branch `resources-layers`). Status: **proposed**; no code in this repository is modified.
 
-## 1. Place de ce dépôt dans la chaîne
+## 1. Place of this repository in the chain
 
-Neural Earth est le seul système multi-échelle, de la planète au centimètre. L'autorité des ressources est calculée au LOD 10 (30,72 km) à partir d'Orogen. Les positions de gisements et les budgets de surface sont répartis au LOD 3 (240 m). La tuile de 40 km à 30 m (LOD 0) ne fait que répartir ce que le LOD 3 a engagé.
+Neural Earth is the only multi-scale system, from the planet down to the centimetre. Resource authority is computed at LOD 10 (30.72 km) from Orogen. Deposit positions and surface budgets are distributed at LOD 3 (240 m). The 40 km tile at 30 m (LOD 0) only distributes what LOD 3 has committed.
 
-`godot-render/tools/surface_context.py`, `ground_surface.py` et le choix des textures constituent ce traitement de LOD 0, hébergé ici provisoirement et destiné à migrer dans Neural Earth. Magna Urbis reste le module des cités : il **consomme** les ressources locales et ne les recalcule pas.
+`godot-render/tools/surface_context.py`, `ground_surface.py` and the texture selection constitute this LOD 0 processing, hosted here provisionally and intended to migrate into Neural Earth. Magna Urbis remains the city module: it **consumes** local resources and does not recompute them.
 
-## 2. Constat sur `geology()`
+## 2. Findings on `geology()`
 
-`geology(n, width, seed, scenario)` produit cinq fractions continues : granite, calcaire, grès, argilo-marneux, basalte. Elles ont des strates plissées, des intrusions et des coulées, à des échelles de 70 m à 8 km. Mais la fonction a trois défauts pour la chaîne :
+`geology(n, width, seed, scenario)` produces five continuous fractions: granite, limestone, sandstone, argillo-marl, basalt. They have folded strata, intrusions and flows, at scales from 70 m to 8 km. However, the function has three defects for the chain:
 
-1. **Proportions fixes.** Les bandes de phase (0,20 / 0,56 / 0,86) et les seuils d'intrusion sont les mêmes partout. Une tuile de craton et une tuile d'arc ont la même géologie.
-2. **Hasard local à la tuile.** `default_rng(sha256(seed))` remplit des réseaux de bruit dimensionnés sur la tuile. Ce bruit n'est pas évaluable en un point du monde, et deux tuiles voisines ne se raccordent pas.
-3. **Aucun lien au monde.** La seed de la tuile n'est pas une coordonnée.
+1. **Fixed proportions.** The phase bands (0.20 / 0.56 / 0.86) and the intrusion thresholds are the same everywhere. A craton tile and an arc tile have the same geology.
+2. **Tile-local randomness.** `default_rng(sha256(seed))` fills noise grids sized to the tile. This noise cannot be evaluated at a point in the world, and two neighbouring tiles do not join up.
+3. **No link to the world.** The tile seed is not a coordinate.
 
-## 3. Migration en raffinement du parent
+## 3. Migration to refinement of the parent
 
-1. **Géoréférencer la tuile sur la grille LOD 0** :
-   - origine `(i0, j0)` en cellules de 30 m exactement, au lieu de 29,985 m aujourd'hui ;
-   - largeur étendue de 1 334 à 1 336 cellules, soit 167 blocs complets de 240 m ;
-   - la tuile ne raffine que des blocs complets ; les cellules hors de l'emprise d'affichage servent de halo.
-2. **Remplacer le bruit par du bruit adressé** :
-   - `value_noise(seed, "geology-<échelle>", LOD, x, y)` de Neural Earth (`terrain_resources.value_noise`), qui utilise la clé de Chronos ;
-   - mêmes échelles physiques (8 000 m → LOD 8, …, 70 m → LOD 1) ;
-   - la valeur en un point ne dépend plus de la tuile : plus de raccords et plus d'état aléatoire.
-3. **Conditionner les proportions par le parent** :
-   - Neural Earth fournit, pour chaque bloc de 240 m, les fractions des 8 classes de roche, interpolées depuis le LOD 10.
-   - `geology()` garde sa structure (plis, contacts, intrusions, coulées). Elle calcule des facteurs `α_k` par bloc, de sorte que la moyenne des fractions fines du bloc égale la cible : `w'_k = w_k·α_k / Σ_j w_j·α_j`, en 3 à 5 itérations d'ajustement proportionnel.
-   - Les `α` sont interpolés entre les centres de blocs pour éviter des marches visibles. L'écart résiduel de moyenne par bloc est à mesurer ; cible proposée : moins de 0,02. Il est accepté, car une fraction de roche est une intensité, pas un budget conservé.
-   - Les quantités extensives restent exactes (§4).
-4. **Classes** : passer de 5 à 8 classes (métamorphique, ultrabasique, évaporites), ou, à défaut, projeter les 8 classes sur 5 :
-   - métamorphique → granite 0,5 / argilo-marneux 0,3 / grès 0,2 ;
-   - ultrabasique → basalte ;
-   - évaporites → argilo-marneux, avec un drapeau O1 qui conserve l'information pour les textures.
-5. **Les gisements imposent leur roche hôte.** Dans l'emprise d'un gisement, la fraction de la roche hôte est relevée à un minimum : coupole de granite pour Sn-W, calcaire pour Pb-Zn type Mississippi, basalte pour les sulfures massifs. Le fait parent prime sur le bruit fin, jamais l'inverse.
+1. **Georeference the tile on the LOD 0 grid**:
+   - origin `(i0, j0)` in exact 30 m cells, instead of 29.985 m today;
+   - width extended from 1,334 to 1,336 cells, i.e. 167 complete blocks of 240 m;
+   - the tile refines only complete blocks; cells outside the display footprint serve as a halo.
+2. **Replace the noise with addressed noise**:
+   - `value_noise(seed, "geology-<scale>", LOD, x, y)` from Neural Earth (`terrain_resources.value_noise`), which uses the Chronos key;
+   - same physical scales (8,000 m → LOD 8, …, 70 m → LOD 1);
+   - the value at a point no longer depends on the tile: no more seams and no more random state.
+3. **Condition the proportions on the parent**:
+   - Neural Earth provides, for each 240 m block, the fractions of the 8 rock classes, interpolated from LOD 10.
+   - `geology()` keeps its structure (folds, contacts, intrusions, flows). It computes per-block factors `α_k` so that the mean of the fine fractions within the block equals the target: `w'_k = w_k·α_k / Σ_j w_j·α_j`, in 3 to 5 proportional adjustment iterations.
+   - The `α` values are interpolated between block centres to avoid visible steps. The residual per-block mean deviation is to be measured; proposed target: less than 0.02. It is accepted, because a rock fraction is an intensity, not a conserved budget.
+   - Extensive quantities remain exact (§4).
+4. **Classes**: move from 5 to 8 classes (metamorphic, ultramafic, evaporites), or failing that, project the 8 classes onto 5:
+   - metamorphic → granite 0.5 / argillo-marl 0.3 / sandstone 0.2;
+   - ultramafic → basalt;
+   - evaporites → argillo-marl, with an O1 flag that preserves the information for textures.
+5. **Deposits impose their host rock.** Within the footprint of a deposit, the host-rock fraction is raised to a minimum: granite cupola for Sn-W, limestone for Mississippi-type Pb-Zn, basalt for massive sulphides. The parent fact takes precedence over fine noise, never the reverse.
 
-## 4. Budgets et objets au LOD 0
+## 4. Budgets and objects at LOD 0
 
-- **Répartition exacte** de chaque budget de bloc de 240 m entre ses 64 cellules par `apportion` (entiers, égalités par identifiant). Les poids viennent des champs de tuile :
+- **Exact apportionment** of each 240 m block budget among its 64 cells by `apportion` (integers, ties broken by identifier). The weights come from the tile fields:
 
-| Budget | Poids |
+| Budget | Weight |
 |---|---|
-| Surface arable | `exp(−pente/10°) × soilDepth × (1 − stoniness) × drainage acceptable` |
-| Bois | `forestPotential` |
-| Argile | `clay × faible pente × (alluvial + argilo-marneux)` |
-| Pierre | `exposedRock × hardness × accès` |
-| Tourbe | `drainage = 1 × organic × faible HAND` |
+| Arable land | `exp(−slope/10°) × soilDepth × (1 − stoniness) × acceptable drainage` |
+| Timber | `forestPotential` |
+| Clay | `clay × low slope × (alluvial + argillo-marl)` |
+| Stone | `exposedRock × hardness × access` |
+| Peat | `drainage = 1 × organic × low HAND` |
 
-- **Position fine d'un gisement** : choix pondéré par course exponentielle adressée parmi les 64 cellules de son bloc du LOD 3. Le poids est la roche hôte × une faible couverture (`depositDepth` petit). L'emprise est une ellipse orientée par `structureAzimuth`, de taille liée au tonnage.
-- **Affleurement visible** : seulement si le toit est à moins de 5 m et si le dépôt meuble local ne le masque pas. Un chapeau de fer suit le drapeau `gossan` du gisement.
-- **Placers** : transport de la masse érodée des emprises le long du graphe receveur de la tuile, sur le modèle de `route_context`. Ce sont les placers « fins ». Leur total reste celui des placers du LOD 10 qui sont positionnés dans la tuile.
+- **Fine position of a deposit**: choice weighted by an addressed exponential race among the 64 cells of its LOD 3 block. The weight is the host rock × a low cover (small `depositDepth`). The footprint is an ellipse oriented by `structureAzimuth`, sized according to tonnage.
+- **Visible outcrop**: only if the top is less than 5 m deep and the local unconsolidated deposit does not mask it. An iron cap (gossan) follows the `gossan` flag of the deposit.
+- **Placers**: transport of the eroded mass of the footprints along the tile's receiver graph, modelled on `route_context`. These are the "fine" placers. Their total remains that of the LOD 10 placers positioned within the tile.
 
-## 5. Réinjection dans `ground_surface.py`
+## 5. Re-injection into `ground_surface.py`
 
-Les points d'insertion sont dans `scores_for_chunk`, sans nouveau tirage de palette (`ground_textures.gd` tire une fois par type) :
+The insertion points are in `scores_for_chunk`, without a new palette draw (`ground_textures.gd` draws once per type):
 
-- **Groupe B** : B11 « Terre chaude ocre ou rougeâtre » reçoit `oxyde × chaleur` dans les emprises à chapeau de fer. B02 et H02 reçoivent `tourbe`.
-- **Groupe R** : les poids des parents R01–R20 viennent des fractions conditionnées.
-- **Nouveaux types de catalogue** à prévoir : croûte saline (M15), gypse (M16), tourbe exposée (M10). Ils sont absents des 90 types actuels et ne doivent s'activer que si le sel, le gypse ou la tourbe sont déclarés.
+- **Group B**: B11 "Warm ochre or reddish earth" receives `oxide × heat` within iron-cap footprints. B02 and H02 receive `peat`.
+- **Group R**: the weights of the parents R01–R20 come from the conditioned fractions.
+- **New catalogue types** to be provided: saline crust (M15), gypsum (M16), exposed peat (M10). They are absent from the 90 current types and must only activate when salt, gypsum or peat is declared.
 
-La doctrine est celle de `GROUND_MATERIAL_MAPPING.md` §5.3 et du tableau §12 de l'étude Neural Earth.
+The doctrine follows `GROUND_MATERIAL_MAPPING.md` §5.3 and the table in §12 of the Neural Earth study.
 
-## 6. Ce que consomment les cités et établissements
+## 6. What cities and settlements consume
 
-| Besoin | Lu depuis Neural Earth | Granularité | Remarque |
+| Need | Read from Neural Earth | Granularity | Remark |
 |---|---|---|---|
-| Pierre de taille, chaux, ardoise | potentiels du LOD 10, roche exposée et dureté du LOD 0, budgets « pierre » par bloc | blocs de 240 m, puis 30 m | carrière candidate = roche dure exposée à portée de transport |
-| Argile (brique, poterie, torchis) | potentiel argile, budget par bloc | 240 m → 30 m | glaisières en fond de vallée |
-| Bois d'œuvre et de feu | stock, accroissement, part bois d'œuvre, part résineuse, mois d'abattage et de débardage | région → bloc | coupe et défrichement = deltas Chronos |
-| Eau | hydrologie de Neural Earth (débits mensuels, navigabilité) | tronçons | aucune eau locale inventée |
-| Terres arables et pâture | budgets de surface du LOD 3, puis LOD 0 ; capacité UGB mensuelle | finage de village | la surface cultivée réelle est un delta Chronos |
-| Sel, fer, métaux | gisements (affleurement, accessibilité médiévale), sel marin | objets | l'exploitation est datée par Chronos |
+| Dressed stone, lime, slate | LOD 10 potentials, exposed rock and hardness at LOD 0, per-block "stone" budgets | 240 m blocks, then 30 m | quarry candidate = hard exposed rock within transport range |
+| Clay (brick, pottery, wattle and daub) | clay potential, per-block budget | 240 m → 30 m | clay pits in valley bottoms |
+| Timber for construction and fuel | stock, growth, share of construction timber, share of conifers, felling and skidding months | region → block | felling and clearing = Chronos deltas |
+| Water | Neural Earth hydrology (monthly flows, navigability) | reaches | no local water invented |
+| Arable land and pasture | surface budgets at LOD 3, then LOD 0; monthly livestock-unit (LU) capacity | village land (finage) | actual cultivated area is a Chronos delta |
+| Salt, iron, metals | deposits (outcrop, medieval accessibility), marine salt | objects | exploitation is dated by Chronos |
 
-`programme.resources`, qui réagit aux déclencheurs timber, stone, ore et clay pour ajouter des ateliers, devrait lire ces valeurs au lieu de déclencheurs déclaratifs.
+`programme.resources`, which reacts to the timber, stone, ore and clay triggers to add workshops, should read these values instead of declarative triggers.
+## 7. Not done
 
-## 7. Non réalisé
-
-- Aucune modification de `surface_context.py`, de `ground_surface.py`, du catalogue ni des shaders. Aucun test côté Magna Urbis.
-- L'écart de moyenne par bloc après conditionnement et le coût par tuile (environ 1,8 M cellules) sont à mesurer.
+- No changes to `surface_context.py`, `ground_surface.py`, the catalogue or the shaders. No tests on the Magna Urbis side.
+- The per-block mean deviation after conditioning and the cost per tile (about 1.8 M cells) remain to be measured.

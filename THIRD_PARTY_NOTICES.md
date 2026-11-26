@@ -13,7 +13,7 @@ versions; this change does not revoke earlier GPL grants.
 ## Locked software dependencies
 
 The embedded Namebench toponym resources are documented separately in the
-[naming guide](docs/NAMEBENCH_TOPONYMS_FR.md) and their
+[naming guide](docs/NAMEBENCH_TOPONYMS.md) and their
 [source and transformation manifest](web/src/gen/names/data/names-manifest.json).
 The place-name selection comes from the local Namebench import of GeoNames;
 the selected generator arrays and patterns come from its Snake4life

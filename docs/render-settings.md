@@ -1,50 +1,50 @@
-# Apparence de la carte
+# Appearance of the map
 
-Le bouton **Apparence** utilise le même composant dans V2, Terrainbench et Citybench, y compris leurs ouvertures depuis Rustbench et le lanceur local. Les contrôles des bancs sont déplacés avec leurs gestionnaires existants ; les champs de génération restent dans leurs étapes.
+The **Appearance** button uses the same component in V2, Terrainbench and Citybench, including when they are opened from Rustbench and the local launcher. The bench controls are moved along with their existing handlers; the generation fields remain in their steps.
 
-Les réglages sont classés dans six familles :
+The settings are grouped into six families:
 
-- **Relief et ombres** : ombrage, direction et hauteur du soleil, intensité, exagération ; raffinement et exagération verticale de la vue 3D.
-- **Sol : couleurs et style** : style cartographique ou matériaux, fond du terrain, hypsométrie, couleurs basse et haute altitude, fond de carte.
-- **Couverture du sol et courbes** : occupation vectorielle, végétation, textures peintes, courbes de niveau, pinceaux fantasy, saison satellite, canopée, densité et clairières.
-- **Routes et rues** : visibilité indépendante des routes régionales et des rues urbaines, intégration au sol, styles et épaisseurs disponibles dans chaque banc, couleurs des chaussées, bords et chemins.
-- **Rivières, lacs et mer** : visibilité de l’eau, lacs et anciens chenaux, couleurs de l’eau peu profonde, profonde et des rivières.
-- **Bâtiments et plan de ville** : visibilité des bâtiments, styles de toiture, matériaux et ombres, palettes et couches du plan urbain, couleurs des toits/emprises et des contours. Masquer les bâtiments conserve rues, parcelles et jardins.
+- **Relief and shadows**: shading, sun direction and height, intensity, exaggeration; refinement and vertical exaggeration of the 3D view.
+- **Ground: colors and style**: map style or materials, terrain background, hypsometry, low and high altitude colors, map background.
+- **Ground cover and contours**: vector land use, vegetation, painted textures, contour lines, fantasy brushes, satellite season, canopy, density and clearings.
+- **Roads and streets**: independent visibility of regional roads and urban streets, ground integration, styles and widths available in each bench, colors of carriageways, edges and paths.
+- **Rivers, lakes and sea**: visibility of water, lakes and former channels, colors of shallow water, deep water and rivers.
+- **Buildings and city plan**: building visibility, roof styles, materials and shadows, city plan palettes and layers, colors of roofs/footprints and outlines. Hiding buildings keeps streets, parcels and gardens.
 
-La présentation générale (toponymes, cadre, légende, cartouche) et les diagnostics possèdent leurs propres sections. Les contrôles dépendant d’un moteur restent conditionnels. Le panneau se ferme avec Échap ou un clic extérieur et reste dans la fenêtre sur ordinateur et mobile.
+General presentation (place names, frame, legend, title block) and diagnostics have their own sections. Controls that depend on an engine remain conditional. The panel closes with Esc or a click outside it, and stays within the window on desktop and mobile.
 
-Un **astérisque à côté du nom du style** signale des réglages de rendu personnalisés : `Parchemin *`, par exemple. Il suit les couleurs, l’éclairage, les couches, la végétation, les routes et les bâtiments. Revenir aux valeurs du style retire l’astérisque. Le marqueur reste correct après changement de langue, rechargement d’un projet ou ouverture d’un lien personnalisé ; l’identifiant du style sauvegardé ne contient jamais cette étoile.
+An **asterisk next to the style name** indicates custom rendering settings: `Parchment *`, for example. It applies to colors, lighting, layers, vegetation, roads and buildings. Returning to the style's values removes the asterisk. The marker remains correct after a language change, a project reload or the opening of a custom link; the saved style identifier never contains this asterisk.
 
-## Couleurs et compatibilité
+## Colors and compatibility
 
-Chaque couleur possède un sélecteur et un bouton **Rétablir**, qui supprime sa surcharge et retrouve la valeur du style courant. Changer de style conserve les couleurs personnalisées. Les palettes enregistrées ne sont jamais modifiées globalement.
+Each color has a picker and a **Reset** button, which removes its override and restores the value of the current style. Changing style keeps custom colors. Saved palettes are never modified globally.
 
-Les couleurs des matériaux satellite et des échelles de diagnostic restent contrôlées par leur rendu : les champs incompatibles sont désactivés et expliqués. Les couleurs de végétation vectorielle sont distinctes des matériaux de la canopée satellite. Dans Citybench, un fond déjà calculé sous forme d’image ne peut pas être recoloré par ses seuls paramètres d’affichage.
+The colors of satellite materials and diagnostic scales remain controlled by their renderer: incompatible fields are disabled and explained. Vector vegetation colors are distinct from the satellite canopy materials. In Citybench, a background already computed as an image cannot be recolored through its display parameters alone.
 
-Les toits natifs conservent leur géométrie et leur ombrage par facettes lors d’un changement de couleur. Les caches de bâtiments incluent les couleurs, afin de ne pas conserver des tuiles d’une ancienne palette. Une couleur explicite de chaussée s’applique aussi lorsque des textures ou une intégration au sol sont sélectionnées.
+Native roofs keep their geometry and facet-based shading when a color changes. Building caches include colors, so that no tiles from an old palette are kept. An explicit carriageway color also applies when textures or ground integration are selected.
 
-Les styles Render, Render3D et Render v2 utilisent WebGL2, y compris pour composer leurs images SVG/PNG. Dans V2, le compositeur et les exports réutilisent le contexte de la carte, y compris un contexte logiciel. Un framebuffer RGBA séparé conserve l’image, les dimensions et l’état graphique de la carte. Sans contexte partagé, le compositeur essaie `OffscreenCanvas`, puis un canvas classique dans la page. Un contexte perdu est recréé. Si le worker ne peut pas composer l’image, il transmet tout de même les altitudes calculées à la page. En l’absence totale de WebGL2, un changement d’apparence conserve la carte précédente et affiche une indication persistante ; les styles cartographiques restent disponibles.
+The Render, Render3D and Render v2 styles use WebGL2, including to compose their SVG/PNG images. In V2, the compositor and exports reuse the map context, including a software context. A separate RGBA framebuffer keeps the image, dimensions and graphics state of the map. Without a shared context, the compositor tries `OffscreenCanvas`, then a classic canvas in the page. A lost context is recreated. If the worker cannot compose the image, it still passes the computed altitudes to the page. In the complete absence of WebGL2, an appearance change keeps the previous map and displays a persistent notice; the map styles remain available.
 
-Les tuiles 2D gardent leurs marges pour le filtrage, mais chaque pixel affiché appartient à une seule tuile. Cela évite que les couches de sol transparentes deviennent plus opaques aux raccords. Le canevas de composition est effacé entre deux images pour empêcher l’accumulation d’opacité.
+2D tiles keep their margins for filtering, but each displayed pixel belongs to a single tile. This prevents transparent ground layers from becoming more opaque at the seams. The composition canvas is cleared between two images to prevent opacity from accumulating.
 
-## Persistance et données conservées
+## Persistence and retained data
 
-V2 sauvegarde `appearance.colors`, `appearance.roads`, `appearance.buildings` et les éventuelles surcharges `appearance.forest`. Les couleurs sont des valeurs `#RRGGBB` validées à l’import. Les exports utilisent les mêmes préférences que la carte. Les liens des bancs conservent les couleurs sous `color_<nom>` ; leurs autres réglages d’affichage gardent leur format existant.
+V2 saves `appearance.colors`, `appearance.roads`, `appearance.buildings` and any `appearance.forest` overrides. Colors are `#RRGGBB` values validated on import. Exports use the same preferences as the map. Bench links keep colors under `color_<name>`; their other display settings keep their existing format.
 
-La canopée personnalisée est recalculée à partir des altitudes et de l’eau conservées, avec un cache séparé. Aucun changement d’apparence ne lance les générateurs de relief, d’hydrologie, d’implantation ou de bâtiments.
+Custom canopy is recalculated from the retained altitudes and water, with a separate cache. No appearance change runs the relief, hydrology, settlement or building generators.
 
-## Implémentation et vérification
+## Implementation and verification
 
-- `web/src/ui/renderSettingsPanel.ts` : structure commune, catégories, sélecteurs et réinitialisation des couleurs.
-- `web/src/ui/benchRenderSettings.ts` : adaptation des contrôles existants de Terrainbench et Citybench.
-- `web/src/v2/renderControls.ts` : adaptation des préférences V2 et des traductions français/anglais.
-- `web/src/render/customColors.ts` : surcharges de palette isolées et capacités des rendus.
-- `web/src/v2/displayForest.ts` : adaptation de la forêt sur les données conservées.
+- `web/src/ui/renderSettingsPanel.ts`: common structure, categories, pickers and color reset.
+- `web/src/ui/benchRenderSettings.ts`: adaptation of the existing Terrainbench and Citybench controls.
+- `web/src/v2/renderControls.ts`: adaptation of the V2 preferences and French/English translations.
+- `web/src/render/customColors.ts`: isolated palette overrides and rendering capabilities.
+- `web/src/v2/displayForest.ts`: adaptation of the forest to the retained data.
 
-Les tests ciblés couvrent validation, conservation des données, indépendance des couches, export, restauration des palettes, caches et éclairage des toits. `scripts/render_settings_panel_check.mjs` vérifie les trois interfaces et les dimensions mobiles. `scripts/render_custom_colors_browser_check.mjs` importe une carte native conservée, vérifie les pixels personnalisés dans la carte et le PNG exporté, puis contrôle l’identité des altitudes et des villes après sauvegarde du projet. Ces scripts se lancent depuis `web`, avec `V2_CHECK_URL` et `BENCH_CHECK_URL` pour choisir les serveurs.
+The targeted tests cover validation, data retention, layer independence, export, palette restoration, caches and roof lighting. `scripts/render_settings_panel_check.mjs` verifies the three interfaces and the mobile dimensions. `scripts/render_custom_colors_browser_check.mjs` imports a retained native map, checks the custom pixels in the map and in the exported PNG, then verifies the identity of altitudes and cities after saving the project. These scripts are run from `web`, with `V2_CHECK_URL` and `BENCH_CHECK_URL` used to choose the servers.
 
-`scripts/render_material_canvas_check.mjs` refuse volontairement WebGL2 sur `OffscreenCanvas`. Il compare les pixels des shaders d’origine et satellite avec leur composition sur un canvas classique, recharge une carte native dans V2 avec **Render · Neural Earth** et vérifie son export PNG sans appel de génération.
+`scripts/render_material_canvas_check.mjs` deliberately refuses WebGL2 on `OffscreenCanvas`. It compares the pixels of the original and satellite shaders with their composition on a classic canvas, reloads a native map in V2 with **Render · Neural Earth** and verifies its PNG export without any generation call.
 
-`scripts/render_style_customization_check.mjs` vérifie les astérisques des trois interfaces : modification, retour aux valeurs d’origine, changement de style/langue et restauration des liens.
+`scripts/render_style_customization_check.mjs` verifies the asterisks in the three interfaces: modification, return to the original values, style/language change and restoration of links.
 
-`scripts/render_material_shared_check.mjs` vérifie les pixels RGBA et la restauration de l’état d’un contexte opaque partagé, puis les trois matériaux et un export PNG avec un seul contexte WebGL autorisé. Il vérifie aussi la conservation de la carte quand aucun contexte n’est disponible. `scripts/render_tile_seams_check.mjs` compare 180 images tuilées à leur rendu direct : cinq palettes, trois densités de pixels, fond opaque ou transparent, déplacements fractionnaires et réutilisation du cache.
+`scripts/render_material_shared_check.mjs` verifies the RGBA pixels and state restoration of a shared opaque context, then the three materials and a PNG export with a single WebGL context allowed. It also verifies that the map is kept when no context is available. `scripts/render_tile_seams_check.mjs` compares 180 tiled images against their direct rendering: five palettes, three pixel densities, opaque or transparent background, fractional offsets and cache reuse.

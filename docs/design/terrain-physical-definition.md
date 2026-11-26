@@ -1,105 +1,45 @@
-# Définition physique du terrain
+# Physical terrain definition
 
-La largeur de région est exprimée en mètres. `terrain.sampleSpacing` choisit le
-pas demandé de la source physique ; `terrain.resolution` choisit uniquement la
-grille d’aperçu (64 à 1024). Le nombre d’échantillons physiques est
-`ceil(width / sampleSpacing)` et le pas effectif est `width / n`.
+The region width is expressed in metres. `terrain.sampleSpacing` chooses the requested step of the physical source; `terrain.resolution` only chooses the preview grid (64 to 1024). The number of physical samples is `ceil(width / sampleSpacing)` and the effective step is `width / n`.
 
-Les contraintes sont vérifiées avant génération : au moins 16 échantillons par
-côté, au plus 8192, et un budget estimé de rasters de travail de 1536 Mio. Cette
-estimation exclut les poids et activations des modèles ainsi que les caches du
-rendu. Une combinaison impossible est refusée, sans réduire silencieusement la
-définition demandée.
+Constraints are checked before generation: at least 16 samples per side, at most 8192, and an estimated working-raster budget of 1536 MiB. This estimate excludes the model weights and activations as well as the render caches. An impossible combination is refused, without silently reducing the requested definition.
 
-| Technologie | Étendue | Définition |
+| Technology | Extent | Definition |
 | --- | --- | --- |
-| Procédural Rust | 500 m à 100 km | Pas choisi, sous réserve du budget |
-| Neuronal régional conventionnel | 500 m à 200 km | Source native 30 m, sortie éventuellement moins dense |
-| Profil expérimental Tile40 / residual8k | 40 km | Sortie fixe 1024² ; contrat propre au modèle |
-| Heightmap | 500 m à 100 km | Limitée par les échantillons réellement importés |
-| TypeScript classique | 600 m à 40 km | Définition propre au moteur ; pas de promesse de source Rust plus fine |
+| Rust procedural | 500 m to 100 km | Chosen step, subject to the budget |
+| Conventional regional neural | 500 m to 200 km | Native 30 m source, output possibly less dense |
+| Experimental profile Tile40 / residual8k | 40 km | Fixed 1024² output; contract specific to the model |
+| Heightmap | 500 m to 100 km | Limited by the samples actually imported |
+| Classic TypeScript | 600 m to 40 km | Definition specific to the engine; no promise of a finer Rust source |
 
-Les fenêtres neuronales se recouvrent : coarse 64/48, base 64/32, décodeur
-512/384. La région conventionnelle est placée de manière déterministe dans une
-seule fenêtre coarse avec les contributions nécessaires à la reconstruction.
-La borne de 200 km conserve les marges de ce placement. Tile40 conserve son
-propre contexte d’inférence et ne doit pas être assimilé au profil régional.
-Ce profil expérimental évalue quatre fenêtres coarse ; son conditionnement
-couvre aussi leurs marges, sans réplication artificielle du bord.
-Ce champ de contexte contient 113² cellules coarse, distinctes des 1024²
-échantillons de sa sortie physique.
-Les facteurs 32 puis 8 décrivent les rapports de résolution entre cellules,
-pas une subdivision en tuiles indépendantes. Une fenêtre coarse couvre
-491,52 km (cellules de 7,68 km), mais les fenêtres voisines se recouvrent sur
-122,88 km. Une fenêtre base couvre 15,36 km avec un pas de 7,68 km ; une fenêtre
-décodeur couvre aussi 15,36 km avec un pas de 11,52 km. Les marges requises à
-chaque étage s’ajoutent : soustraire seulement deux marges de 15,36 km à la
-fenêtre coarse ne donne donc pas sa zone exploitable avec une unique inférence
-coarse. Le plan régional testé reste dans une fenêtre jusqu’à 6688 cellules
-natives (200,64 km) ; le produit borne cette largeur à 200 km.
-Le conditionnement neuronal reste à 7,68 km : un pas de sortie de 30 m ne
-garantit pas un contrôle de l’esquisse ou du littoral à cette finesse.
-Une sortie neuronale plus grossière réduit les données conservées et transmises
-aux villes ; elle ne réduit pas le travail initial du modèle à 30 m. Les rasters
-intermédiaires de cette inférence ne sont pas inclus dans le budget de la source
-conservée.
+The neural windows overlap: coarse 64/48, base 64/32, decoder 512/384. The conventional region is placed deterministically within a single coarse window, with the contributions needed for reconstruction. The 200 km bound preserves the margins of this placement. Tile40 keeps its own inference context and must not be equated with the regional profile. This experimental profile evaluates four coarse windows; its conditioning also covers their margins, without artificial replication of the edge.
 
-Le calcul procédural GPU produit toute source de 16² à 4096². La taille est lue
-dans le bloc uniforme : la changer ne recompile aucun pipeline. L’appareil
-demande les limites de buffers de l’adaptateur. En automatique, une taille que
-l’adaptateur refuse, ou dont le coût fixe GPU dépasse le calcul CPU estimé,
-utilise le pipeline CPU et l’activité indique ce choix. Un forçage GPU impossible
-est refusé avec la taille maximale de l’adaptateur.
+This context field contains 113² coarse cells, distinct from the 1024² samples of its physical output.
 
-La grille régionale ne dépend pas de la source. La grille d’érosion de surface
-vaut sa base physique (640² à 1024²), jamais plus que la source ; au-delà de
-1024², elle suit 0,6 × la source, plafonnée à 2048². Une itération de surface
-représente le même temps physique sur toute grille : l’incision implicite suit
-1/pas et la reptation thermique et la diffusion 1/pas², dans leurs limites de
-stabilité. Les budgets et coefficients d’érosion sont dans les contrôles
-« Super avancé ». La définition effective de l’érosion peut être moins fine que
-celle de la source ; elle est indiquée séparément.
-Changer le pas peut changer le drainage, même avec la même graine.
-La pleine mer reste grossière : une fois la côte découpée, un masque de 128²
-marque les cellules de mer plus éloignées de la terre que ce qu’atteignent les
-étapes ignorées (détail, Phasor, surface). Elles gardent leur bathymétrie
-reconstruite. Tant que la côte n’est pas connue, rien n’est ignoré.
-L’hydrologie garde sa propre grille, plafonnée à 1024² dans les moteurs actuels :
-à 200 km, son meilleur pas régional est donc 195,31 m, même avec une source
-neuronale à 30 m. Elle ne dépasse pas non plus la puissance de deux qui contient
-la source, avec un minimum de 256² : une source de 200² draine sur 256². Le
-panneau affiche séparément ce pas ; une source plus dense ne signifie pas que les
-bassins et écoulements ont été calculés à la même finesse.
+The factors 32 and then 8 describe the resolution ratios between cells, not a subdivision into independent tiles. A coarse window covers 491.52 km (cells of 7.68 km), but neighbouring windows overlap over 122.88 km. A base window covers 15.36 km with a step of 7.68 km; a decoder window also covers 15.36 km with a step of 11.52 km. The margins required at each stage add together: subtracting only two margins of 15.36 km from the coarse window therefore does not give its usable area with a single coarse inference. The tested regional plan remains within one window up to 6688 native cells (200.64 km); the product caps this width at 200 km.
 
-## Transmission aux villes
+The neural conditioning remains at 7.68 km: a 30 m output step does not guarantee control of the sketch or the coastline at this fineness. A coarser neural output reduces the data kept and transmitted to the cities; it does not reduce the model's initial work at 30 m. The intermediate rasters of this inference are not included in the budget of the retained source.
 
-Le monde conserve la source physique indépendamment de l’aperçu. Les grilles
-de planification, de routage et de ressources restent bornées à 1024² : il
-n’est pas nécessaire de dupliquer chaque masque à la définition des altitudes.
-Les requêtes urbaines transmettent séparément la surface continue utilisée
-pour les hauteurs, les pentes locales et les fondations. Les contrôles
-B-spline, lorsqu’ils sont disponibles, utilisent le même noyau et le même
-plancher que la surface du terrain. Les patchs de sol contiennent des mètres
-évalués, et non des coefficients d’interpolation.
+The GPU procedural computation produces any source from 16² to 4096². The size is read from the uniform block: changing it recompiles no pipeline. The device requests the adapter's buffer limits. In automatic mode, a size that the adapter refuses, or whose fixed GPU cost exceeds the estimated CPU computation, uses the CPU pipeline, and the activity panel indicates this choice. A forced GPU choice that is impossible is refused, with the adapter's maximum size reported.
 
-Le transport natif `/raster` ajoute `physicalN`, éventuellement
-`physicalInterpolation: "bspline"` et `physicalFloor`, puis une couche float32
-après les couches de planification existantes. Une seule couche physique est
-conservée dans le moteur urbain. Les pools de workers sont soumis à un budget
-de copies.
+The regional grid does not depend on the source. The surface erosion grid equals its physical base (640² to 1024²), never more than the source; beyond 1024², it follows 0.6 × the source, capped at 2048². One surface iteration represents the same physical time on any grid: implicit incision scales with 1/step, and thermal creep and diffusion with 1/step², within their stability limits. The erosion budgets and coefficients are in the "Super advanced" controls. The effective erosion definition may be coarser than that of the source; it is indicated separately.
 
-Le moteur urbain TypeScript classique refuse une surface physique différente
-de sa grille de planification. Il faut alors choisir Rust ou le moteur natif.
-Les détails visuels sous la maille source restent distincts des informations
-de génération ; augmenter les pixels d’un aperçu ne crée pas de relief.
+Changing the step can change the drainage, even with the same seed.
 
-## Vérifications du 6 novembre 2026
+Open sea remains coarse: once the coastline has been cut out, a 128² mask marks the sea cells that are further from land than the skipped stages (detail, Phasor, surface) reach. They keep their reconstructed bathymetry. As long as the coastline is not known, nothing is skipped.
 
-Choix revus avec Opus 5.5 high via CLI. Validation : 605 tests Rust réussis
-(23 ignorés), 80 tests TypeScript, 5 tests Python, vérification TypeScript
-complète, contrôles navigateur V2 et rustBench, transport physique natif et
-vérifications CPU des binaires WASM, dont les bornes du contexte Tile40.
-Les artefacts natifs et les trois variantes WASM sont reconstruits. Les services
-déjà lancés restent en place pendant le chantier de rendu ; leur mise à jour
-et leur redémarrage restent à faire ensuite. Une inférence neuronale complète
-sur 200 km n’a pas été exécutée pendant ce chantier.
+Hydrology keeps its own grid, capped at 1024² in the current engines: at 200 km, its best regional step is therefore 195.31 m, even with a 30 m neural source. It also does not exceed the power of two that contains the source, with a minimum of 256²: a 200² source drains on 256². The panel displays this step separately; a denser source does not mean that the basins and flow paths were computed at the same fineness.
+
+## Transmission to cities
+
+The world keeps the physical source independently of the preview. The planning, routing and resource grids remain capped at 1024²: there is no need to duplicate every mask at the elevation definition. Urban queries transmit separately the continuous surface used for heights, local slopes and foundations. The B-spline controls, when available, use the same kernel and the same floor as the terrain surface. Ground patches contain evaluated metres, not interpolation coefficients.
+
+The native `/raster` transport adds `physicalN`, optionally `physicalInterpolation: "bspline"` and `physicalFloor`, then a float32 layer after the existing planning layers. A single physical layer is kept in the urban engine. Worker pools are subject to a copy budget.
+
+The classic TypeScript urban engine refuses a physical surface that differs from its planning grid. In that case, one must choose Rust or the native engine.
+
+Visual details finer than the source grid spacing (source cell size) remain distinct from the generation information; increasing the pixels of a preview does not create relief.
+
+## Checks of 6 November 2026
+
+Choices reviewed with Opus 5.5 high via CLI. Validation: 605 Rust tests passed (23 skipped), 80 TypeScript tests, 5 Python tests, full TypeScript check, V2 browser checks and rustBench, native physical transport and CPU checks of the WASM binaries, including the Tile40 context bounds. The native artefacts and the three WASM variants have been rebuilt. Services already running remain in place during the rendering work; their update and restart remain to be done afterwards. A full neural inference over 200 km has not been run during this work.
