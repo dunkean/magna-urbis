@@ -12,13 +12,14 @@ it('direct-small and isolated lists match the real native consumers; fallback is
   const source = readFileSync(new URL('../../rust/crates/core/src/urban/kinds.rs', import.meta.url), 'utf8');
   const idBody = source.slice(source.indexOf('pub fn id('), source.indexOf('pub fn label('));
   const ids = new Map([...idBody.matchAll(/Kind::(\w+)\s*=>\s*"([^"]+)"/g)].map(m => [m[1], m[2]]));
-  const smallBody = source.slice(source.indexOf('pub fn small('), source.indexOf('/// French label of a layout archetype'));
-  expect([...smallBody.matchAll(/Kind::(\w+)/g)].map(m => ids.get(m[1])).sort()).toEqual([...DIRECT_SMALL_KINDS].sort());
+  const smallBody = source.match(/pub fn small\(self\) -> bool\s*\{\s*matches!\(([^)]+)\)/)?.[1];
+  expect(smallBody).toBeDefined();
+  expect([...smallBody!.matchAll(/Kind::(\w+)/g)].map(m => ids.get(m[1])).sort()).toEqual([...DIRECT_SMALL_KINDS].sort());
   const services = JSON.parse(readFileSync(new URL('../../rust/crates/core/src/urban/services.json', import.meta.url), 'utf8'));
   expect([...ISOLATED_INTENTS].sort()).toEqual(Object.keys(services.isolated).sort());
-  const native = readFileSync(new URL('../../rust/crates/core/src/urban/mod.rs', import.meta.url), 'utf8');
-  expect(native).toMatch(/Some\(layout\)\s*=>\s*layout,\s*None\s*=>\s*quarters::generate/);
-  expect(native).toContain('kind.small() && config.footprint.mechanism != "legacy"');
+  const native = readFileSync(new URL('../../rust/crates/core/src/urban/pipeline/plan.rs', import.meta.url), 'utf8');
+  expect(native).toMatch(/Some\(layout\)\s*=>\s*Ok\(layout\),\s*None\s*=>\s*quarters::generate/);
+  expect(native).toContain('at.kind.small() && own_plan && config.footprint.mechanism != "legacy"');
 });
 it('explicit kinds take priority over an isolated intent, while nucleated-village is correctly a quarter grammar', () => {
   for (const form of ['city', 'metropolis', 'market-town', 'walled-town', 'nucleated-village'] as const) {
@@ -142,7 +143,7 @@ it('actual snapshot/MU/import/normalization and request-config preparation keep 
   expect(restored.parcelConfig).toEqual(state.parcelConfig);
 });
 it('production themed roots bind refresh for actual draft read, programme apply and retained draw; no generation route is replaced', () => {
-  const source = readFileSync(new URL('../src/ui/terrainUrban.ts', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../src/ui/terrainUrban.ts', import.meta.url), 'utf8').replace(/\s+/g, ' ');
   expect(source).toContain("plan.controls.insertAdjacentHTML('beforeend', controlRelevanceControlsHtml())");
   expect(source).toContain("controlRelevance = bindControlRelevance(one<HTMLElement>('quarters', '[data-control-relevance]'))");
   expect(source).toContain("if (kind === 'quarters') { controlRelevance?.sync(layoutConfig, layouts); generationControls(); }");

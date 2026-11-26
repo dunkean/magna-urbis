@@ -7,6 +7,7 @@ import { VOCAB } from '../src/gen/names/grammar';
 import { familyFor, generateNames, NAME_FAMILIES } from '../src/gen/names';
 import { heightFromImage } from '../src/gen/terrain/import';
 import { PALETTES } from '../src/render/styles';
+import { defaultText } from '../src/render/textLayer';
 import { buildMapLabels, placeMapLabels, layoutGlyphs, estimateWidth } from '../src/render/mapLabels';
 import { renderSvg } from '../src/render/svg';
 import { cartoucheModel, legendModel, niceLength, fmtPop } from '../src/render/legend';
@@ -73,7 +74,8 @@ describe('names on a generated world', () => {
 describe('label engine', () => {
   const w = generate(makeOptions({ seed: '7', size: 'town' }));
   const pal = PALETTES.parchment;
-  const labels = buildMapLabels(w, 'parchment', pal);
+  // Exercise zoom and collisions with all street candidates. The quiet default selects at most three.
+  const labels = buildMapLabels(w, 'parchment', pal, defaultText({ levels: { streets: 100 } }));
   const c = w.site!.center;
   const box = (p: ReturnType<typeof placeMapLabels>[number]) => {
     const xs = p.glyphs.map(g => g.x),
@@ -110,9 +112,11 @@ describe('label engine', () => {
     const placed = placeMapLabels(labels, { cx: c.x, cy: c.y, scale: 1.4 }, 1100, 800, measure);
     const curved = placed.filter(p => p.path);
     expect(curved.length).toBeGreaterThan(3);
+    expect(curved.some(p => p.glyphs.some(g => Math.abs(g.a - p.glyphs[0].a) > 0.02))).toBe(true);
     for (const p of curved) {
-      // first glyph never upside down; up to ~96° is still read left to right on near-vertical paths
-      expect(Math.cos(p.glyphs[0].a)).toBeGreaterThanOrEqual(-0.1);
+      // Orientation follows the centre tangent. The first glyph can lean back on a near-vertical bend.
+      expect(Math.cos(p.glyphs[Math.floor(p.glyphs.length / 2)].a)).toBeGreaterThanOrEqual(0);
+      expect(p.glyphs[p.glyphs.length - 1].x).toBeGreaterThanOrEqual(p.glyphs[0].x);
       expect(p.glyphs.length).toBe(p.label.text.length);
     }
   });
