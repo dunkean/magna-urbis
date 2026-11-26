@@ -86,7 +86,12 @@ export interface FrameCamera {
 }
 
 /** The baked tile that shows a square of the map, as `DrapeTiles.resolve` fills it. */
+/** Ground and companion texture planes have the same number of tile slots per page. */
+export const GROUND_PAGE_LAYERS = 16;
+
 export interface DrapeTile {
+  /** Matching floor colour and crown keys are available in this slot. */
+  crowns?: boolean;
   /** Index of the texture array page, and the layer in it. */
   page: number;
   layer: number;
@@ -116,6 +121,7 @@ export interface DrapeTiles {
   resolve(squareTier: number, sx: number, sy: number, tier: number, priority: number, out: DrapeTile): boolean;
   pageCount(): number;
   page(index: number): WebGLTexture;
+  crownPage?(index: number): WebGLTexture | undefined;
 }
 
 /** One tile of the map drape while it is baked, as a `DrapeSource` paints it. The tile is premultiplied RGBA,

@@ -28,8 +28,11 @@ export class GlWorldTiles {
     if (!look || !inputs.base || this.gl.isContextLost() || !(size > 0) || px < 1 || !linked(look)) return undefined;
     const ratio = liveStyleRatio();
     // A tile is drawn again only when its content changed: never reuse the previous tile's auxiliary pass or water raster.
-    this.targets.auxKey.invalidate();
-    this.targets.retained.invalidate();
+    // The companion planes immediately follow their colour tile and share its exact aux/water inputs.
+    if (!look.treePlane) {
+      this.targets.auxKey.invalidate();
+      this.targets.retained.invalidate();
+    }
     const drawn = this.redraw.draw({ look, view: tileViewState(box, px, ratio), details: settledDetails(inputs.details), enhanced: inputs.enhanced.map(settled), pixelRatio: ratio, stylePixelRatio: ratio, framebuffer: null, targets: this.targets, capturing: false, tile: true });
     return drawn ? this.canvas : undefined;
   }

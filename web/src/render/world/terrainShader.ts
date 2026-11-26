@@ -1,3 +1,5 @@
+import { GROUND_PAGE_LAYERS } from './contract';
+import { TREE_VOLUME_BLOCK } from '../../../../rust/bridge/treeOwnership';
 /**
  * GLSL of the terrain of the world view (contract.ts), linked by terrainMesh.ts.
  *
@@ -88,8 +90,11 @@ void main() {
 }`;
 
 export const TERRAIN_FS = `#version 300 es
-precision highp float; precision highp sampler2DArray;
+precision highp float; precision highp int; precision highp sampler2DArray;
 uniform sampler2DArray uTiles;
+uniform highp usampler2D uTreeIds;
+uniform sampler2DArray uCrownTiles;
+uniform int uHasTrees;
 uniform sampler2DArray uDrape;
 // Direction of the slope light (x east, y south, z up).
 uniform vec3 uLight;
@@ -134,6 +139,32 @@ vec3 caveGround(vec3 rgb, vec3 normal) {
   }
   return rgb * (vec3(0.92, 0.97, 1.05) * ambient + lamps * mix(0.45, 0.9, dark));
 }
+// RGB8 stores lattice X/Y modulo 256 and the level plus the parity of the root block.
+bool modelAt(vec2 uv,vec2 world){
+  ivec2 n=textureSize(uTiles,0).xy;
+  ivec2 pixel=clamp(ivec2(uv*vec2(n)),ivec2(0),n-1);
+  uvec3 k=uvec3(round(texelFetch(uCrownTiles,ivec3(pixel,int(vUv.z)+${GROUND_PAGE_LAYERS}),0).rgb*255.));
+  if(k.z==0u)return false;
+  uint tag=k.z-1u,cell=k.x|(k.y<<8u)|((tag&7u)<<16u);
+  vec2 p=world/${TREE_VOLUME_BLOCK}.0;
+  ivec2 b=ivec2(floor(p)),parity=ivec2(tag>>3u,tag>>4u)&1;
+  // Even at a tile seam the winning crown's root is less than half a block away.
+  b+=((b&1)^parity)*ivec2(sign(fract(p)-.5));
+  uint block=uint(b.y*65536+b.x),id=(cell^(block*0x9e3779b9u))*0x85ebca6bu;id^=id>>16u;
+  ivec2 dims=textureSize(uTreeIds,0);uint mask=uint(dims.x*dims.y-1),at=id&mask;
+  for(uint i=0u;i<=mask;i++){
+    uvec2 entry=texelFetch(uTreeIds,ivec2(int(at)%dims.x,int(at)/dims.x),0).rg;
+    if(entry.y==0u)return false;
+    if(entry.x==id&&entry.y==block+1u)return true;
+    at=(at+1u)&mask;
+  }
+  return false;
+}
+vec3 groundSample(vec2 uv,vec2 world){
+  if(uHasTrees==1&&fract(vUv.z)>.125&&modelAt(uv,world))
+    return textureLod(uCrownTiles,vec3(uv,floor(vUv.z)),0.).rgb;
+  return textureLod(uTiles,vec3(uv,vUv.z),0.).rgb;
+}
 void main() {
   // Ground seen at a low angle is squeezed along the screen's vertical, and a tile minified there shimmers: four
   // samples along that axis, spread by what the squeeze exceeds the other axis by. Unsqueezed, they are one sample.
@@ -144,7 +175,15 @@ void main() {
   float squeeze = length(along) / max(length(dFdx(uv)), 1e-9);
   float excess = max(0.0, 1.0 - 1.0 / max(squeeze, 1e-9));
   vec2 spread = along * excess;
-  vec3 rgb = 0.25 * (texture(uTiles, vec3(uv - 0.375 * spread, vUv.z)).rgb + texture(uTiles, vec3(uv - 0.125 * spread, vUv.z)).rgb + texture(uTiles, vec3(uv + 0.125 * spread, vUv.z)).rgb + texture(uTiles, vec3(uv + 0.375 * spread, vUv.z)).rgb);
+  vec2 world=vWorld.xy+push;
+  vec3 rgb;
+  if(dot(spread,spread)*float(textureSize(uTiles,0).x*textureSize(uTiles,0).x)<.04){
+    rgb=groundSample(uv,world);
+  }else{
+    vec2 ds=spread/vPerMetre.x;
+    rgb=.25*(groundSample(uv-.375*spread,world-.375*ds)+groundSample(uv-.125*spread,world-.125*ds)
+            +groundSample(uv+.125*spread,world+.125*ds)+groundSample(uv+.375*spread,world+.375*ds));
+  }
   // The map drape over the ground, with the same four samples: its tile is of the same tiling, so its coordinates
   // are squeezed as the ground's. The level is explicit (the tiles have one) because the lookup is inside a branch.
   vec2 drapeSpread = dFdy(drapeUv) * excess;

@@ -29,8 +29,8 @@ export interface HeightLayer {
 export interface TerrainLook {
   /** Internal draw policy; captures pin false, live readiness follows displayQuality when absent. */
   displayLight?: boolean;
-  /** Tilted tile bake: rooted crowns represented by the world instance layer. */
-  treeOwners?: import('../../../../rust/bridge/treeOwnership').TreeIdImage | 'stands';
+  /** Static companion tile of the painted forest. */
+  treePlane?: 'floor' | 'keys';
   ambience?: 'day' | 'night';
   waterLook?: 'ink' | 'natural';
   /** Satellite looks: swell crests and surf along exposed sea coasts (terrainRenderV2Coast). */

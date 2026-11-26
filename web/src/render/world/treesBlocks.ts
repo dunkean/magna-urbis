@@ -26,7 +26,7 @@ export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buil
   const emitted: number[] = [];
   const observed: TreeInputs = {
     ...inputs,
-    emittedId: id => emitted.push(id),
+    emittedId: (_id, cell) => emitted.push(cell),
     water: (x, y) => {
       const value = inputs.water(x, y);
       water.push(x, y, value);
@@ -48,24 +48,11 @@ export function* treeBlockSteps(inputs: TreeInputs, bx: number, by: number, buil
     trees[to] -= minX;
     trees[to + 1] -= minY;
   }
-  const ids = Uint32Array.from(emitted.slice(0, count));
-  const data = trees.subarray(0, count * TREE_STRIDE);
-  // Shuffle once. All levels and all density changes address ranges of this same array.
-  let state = Math.imul(bx, 0x9e3779b1) ^ Math.imul(by, 0x85ebca77) ^ 0x2545f491 || 1;
-  for (let i = count - 1; i > 0; i--) {
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    const j = (state >>> 0) % (i + 1);
-    const id = ids[i];
-    ids[i] = ids[j];
-    ids[j] = id;
-    for (let k = 0; k < TREE_STRIDE; k++) {
-      const value = data[i * TREE_STRIDE + k];
-      data[i * TREE_STRIDE + k] = data[j * TREE_STRIDE + k];
-      data[j * TREE_STRIDE + k] = value;
-    }
-  }
+  // Tall crowns acquire visible relief first. Preserve the lattice order for equal heights.
+  const order = Array.from({ length: count }, (_, i) => i).sort((a, b) => trees[b * TREE_STRIDE + 4] - trees[a * TREE_STRIDE + 4]);
+  const ids = Uint32Array.from(order, i => emitted[i]);
+  const data = new Float32Array(count * TREE_STRIDE);
+  order.forEach((from, to) => data.set(trees.subarray(from * TREE_STRIDE, (from + 1) * TREE_STRIDE), to * TREE_STRIDE));
   return { data, count, ids, samples: { water: Float64Array.from(water), height: Float64Array.from(height) } };
 }
 

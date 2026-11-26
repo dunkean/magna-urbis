@@ -1,4 +1,6 @@
 /** World metre grids used by instance streaming and painted crown ownership. */
+/** Angle measured from the vertical. A rotated overhead map keeps its painted crowns. */
+export const TREE_PLAN_ANGLE = Math.PI / 30;
 export const TREE_CELL_BLOCK = 24;
 export const TREE_VOLUME_BLOCK = 4 * TREE_CELL_BLOCK;
 

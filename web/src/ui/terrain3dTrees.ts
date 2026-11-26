@@ -68,7 +68,7 @@ export const TREE_STRIDE = 12;
 
 export interface TreeInputs {
   /** Retain the procedural crown ID in emission order for the terrain hand-off. */
-  emittedId?(id: number): void;
+  emittedId?(id: number, cell: number): void;
   field: ForestField;
   occupation?: ForestOccupation;
   seed: number;
@@ -235,7 +235,6 @@ const CROWN_RATIO: readonly (readonly [number, number])[] = [
   [0.88, 0.92],
 ];
 /** Lightness of a class: young foliage reads lighter, shade crowns under the canopy darker. */
-const CLASS_TONE = [1.05, 0.93, 0.97, 1, 1, 1];
 /** Tree forms (instance float 6, read by TREE_3D_GLSL): broadleaf ovoid, conifer spire, broadleaf parasol, conifer parasol. */
 const FORM_BROAD = 0,
   FORM_SPIRE = 1,
@@ -251,12 +250,11 @@ const SPIRE_MAX = 40,
 const CONIFER_GIANT = 1.2;
 const tallest = (shape: number, tropical: number): number => (shape >= FORM_PARASOL ? (shape === FORM_PARASOL ? PARASOL_MAX : UMBRELLA_MAX) : shape === FORM_SPIRE ? SPIRE_MAX : mix(BROAD_MAX, EMERGENT_MAX, tropical));
 /** 3D form of one tree on top of its painted crown's class: `height` over the stand top height, `crown` the live crown
- * ratio, `shape` the instance form, `tone`. */
+ * ratio and `shape` the instance form. */
 interface TreeForm {
   height: number;
   crown: number;
   shape: number;
-  tone: number;
 }
 /** Giants keep a full crown on a stout stem: temperate veterans about 0.7 of their height, tropical emergents a clear bole
  * of about half their height, landmark trees in open land 0.85. Conifer spires retain low boughs.
@@ -267,7 +265,6 @@ function treeForm(form: TreeForm, social: ForestSocial, biome: ForestBiome, gian
   if (giant) {
     form.height = (needle ? CONIFER_GIANT : biome.giantHeight) * (0.9 + 0.2 * v);
     crown = social.rank === 5 ? 0.85 : needle ? 0.82 : mix(0.7, 0.5, kind[1]);
-    form.tone = 1;
   } else {
     form.height = social.share;
     crown = CROWN_RATIO[social.rank][needle ? 1 : 0] + biome.crown;
@@ -275,7 +272,6 @@ function treeForm(form: TreeForm, social: ForestSocial, biome: ForestBiome, gian
     if (needle && social.rank < 5) crown = mix(0.8, crown, sstep(15, 30, top * social.share));
     // Crowns at a margin get side light and keep their lower branches.
     if (social.rank < 5) crown += margin * (needle ? 0.2 : 0.1);
-    form.tone = CLASS_TONE[social.rank];
   }
   const desert = biome === FOREST_BIOMES[7];
   const parasol = krumm < 0.5 && pick < (needle ? 0.5 * kind[0] : desert ? 0.75 : kind[2]);
@@ -418,21 +414,6 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
   const kappaOf = (height: number, needle: number): number => climate.kappaBase * mix(0.55, 1, sstep(3, 10, height)) * mix(1, 0.85, needle);
   const density = (c: number, kappa: number): number => clamp(c + kappa * (1 - 0.5 * sstep(0.55, 0.9, c)) * (0.985 - c), c, 0.985);
 
-  // Lattice levels a fragment at (x, y) searches (forestCanopyNear): its stand's level and the next.
-  const levelsAt = (x: number, y: number): [number, number, number] | undefined => {
-    const st = fieldAt(x, y);
-    if (!st) return undefined;
-    const o = occAt(x, y);
-    const cover = o && o[1] > 0 && o[0] < 0 ? Math.max(st.cover, 0.25 * heightGate(st.height)) : st.cover;
-    const b = bankAt(x, y),
-      near = b[0] > -16 ? bankDens(b[1]) : 0;
-    const dl = Math.max(density(cover, kappaOf(st.height, st.needle)), near);
-    const level = clamp(2 * Math.log2(radiusOf(st.height, st.needle, dry, biome) / rhoOf(tauOf(dl)) / 2), 0, 5.999),
-      l0 = Math.floor(level),
-      w = level - l0;
-    return [l0, 1 - Math.pow(1 - dl, 1 - w), 1 - Math.pow(1 - dl, w)];
-  };
-
   const season = inputs.season,
     sx = Math.max(-Math.sin(6.2831853 * season), 0);
   const at = (((season % 1) + 1) % 1) * 4,
@@ -542,7 +523,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
         let c = [mix(0.25, 0.22, summer) * tone, mix(0.34, 0.37, summer) * tone, mix(0.15, 0.16, summer) * tone];
         c = c.map((v, k) => mix(mix(v, [0.47, 0.34, 0.12][k], fall), [0.31, 0.27, 0.23][k] * (0.85 + 0.3 * tint), 1 - fruitLeaf));
         // Standard fruit trees: a 2.4-2.9 m stem under the crown (crown 60 % of the height).
-        inputs.emittedId?.(h2);
+        inputs.emittedId?.(h2, (i & 255) | ((j & 255) << 8) | (7 << 16));
         emit(x, y, z, radius, height, 0.6 * height, 0, tint * 6.2831853, c[0], c[1], c[2], (fruitLeaf < 0.5 ? 1 : 0) + snowLoad(false));
         if (count >= cap) return out.slice(0, count);
       }
@@ -570,7 +551,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
       }
   blocks.sort((a, b) => a[0] - b[0]);
   const social: ForestSocial = { share: 1, width: 1, rank: 4 },
-    form: TreeForm = { height: 1, crown: 0.5, shape: 0, tone: 1 };
+    form: TreeForm = { height: 1, crown: 0.5, shape: 0 };
   let shown = count;
   for (let b = 0; b < blocks.length; b++) {
     yield;
@@ -579,15 +560,9 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
       partial(out.subarray(0, count));
     }
     const bx = blocks[b][1],
-      by = blocks[b][2],
-      cxm = (bx + 0.5) * block,
-      cym = (by + 0.5) * block;
-    const levels = levelsAt(cxm, cym);
-    if (!levels) continue;
-    for (let k = 0; k < 2; k++) {
-      if ((k === 0 ? levels[1] : levels[2]) <= 0.002) continue;
-      const level = levels[0] + k,
-        s = 2 * Math.pow(2, level * 0.5);
+      by = blocks[b][2];
+    for (let level = 0; level <= 6; level++) {
+      const s = 2 * Math.pow(2, level * 0.5);
       // A crown centre lies at (cell + .1514 .. .8486) * s: only the cells whose centre range meets the block are visited.
       const i0 = Math.ceil((bx * block) / s - 0.849),
         i1 = Math.floor(((bx + 1) * block) / s - 0.151),
@@ -663,6 +638,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           if (occupied) continue;
           const centreLevel = clamp(2 * Math.log2(radius / rhoOf(tauOf(dens)) / 2), 0, 5.999);
           const weight = Math.max(0, 1 - Math.abs(centreLevel - level));
+          if (weight <= 0) continue;
           const tau = tauOf(1 - Math.pow(1 - dens, weight)),
             q = Math.min(1, tau / 0.55),
             rho = rhoOf(tau);
@@ -697,12 +673,6 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           forestSocial(social, biomeRow, u8(h2, 16), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(h, 24), margin, closure, krumm, kind[1], lone);
           const giantGate = (1 - krumm) * sstep(4, 10, height);
           const giant = lone ? !field && !hedgeRow && u8(h2, 24) < Math.min(FOREST_LANDMARK * biome.giant, FOREST_LANDMARK_MAX) * giantGate : forestGiant(cx, cy, u8(h2, 24), biome.giant * giantGate, crownSeed, forestHash);
-          // The ground carries the closed tropical understory. Model a stable sample of canopy stems;
-          // bank galleries, forest margins, lone trees and emergents keep their original locations.
-          if (tropicalCanopy > 0 && !giant && !lone && !riparian) {
-            const omit = tropicalCanopy * closure * (social.rank < 3 ? 0.88 : 0.56);
-            if (u8(forestHash(i, j, level * 2 + 89, crownSeed), 8) < omit) continue;
-          }
           const r = Math.min(rho * s * (0.8 + 0.4 * u8(h, 24)) * (giant ? biome.giantWiden : social.width) * (lone ? (hedgeRow ? FOREST_HEDGE_WIDEN : FOREST_LONE_WIDEN) : 1 + 0.2 * margin) * (1 + 0.3 * krumm), 1.14 * s);
           if (clearingRoom && !clearingRoom.keeps(cx, cy, r)) continue;
           // The painted crown's height (forestCrown) decides, as there, whether a tree stands here; its 3D form is below.
@@ -713,7 +683,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
           treeForm(form, social, biome, giant, isNeedle, margin, krumm, kind, softCap(height * biome.stature, biome.cap), u8(Math.imul(h2, 0x85ebca6b) >>> 0, 24), u8(hf, 16), u8(hf, 0));
           // Use the paint's species pigments and local field tone, preserving the seasonal tint of each crown.
           const tint = u8(Math.imul(h2, 0x9e3779b9) >>> 0, 0),
-            tone = (0.86 + 0.28 * tint) * form.tone * (1 + 0.34 * (centre.tone - 0.5));
+            tone = (0.86 + 0.28 * tint) * (1 + 0.34 * (centre.tone - 0.5));
           const pigment = isNeedle ? conifer : broadleaf;
           let c: [number, number, number] = riparian ? [pigment[0] * 1.06, pigment[1] * 1.08, pigment[2] * 0.96] : [pigment[0], pigment[1], pigment[2]];
           c = [c[0] * tone, c[1] * tone, c[2] * tone];
@@ -767,7 +737,7 @@ export function* buildNearTreesSteps(inputs: TreeInputs, view: TreeView, partial
             }
             if (overlaps) continue;
           }
-          inputs.emittedId?.(h2);
+          inputs.emittedId?.(h2, (i & 255) | ((j & 255) << 8) | (level << 16));
           emit(cx, cy, z, width, tree, crown, form.shape, tint * 6.2831853, c[0], c[1], c[2], ((!isNeedle || larch) && leaf < 0.5 ? 1 : 0) + snowLoad(isNeedle));
           if (count >= cap) return out.slice(0, count);
         }

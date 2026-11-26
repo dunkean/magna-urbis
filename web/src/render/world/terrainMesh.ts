@@ -11,7 +11,31 @@ export const SQUARE_FLOATS = 12;
 const INDICES = LATTICE * LATTICE * 6;
 export const SQUARE_TRIANGLES = LATTICE * LATTICE * 2;
 
-const UNIFORMS = ['uProjection', 'uAnchor', 'uTarget', 'uEye', 'uLevel', 'uGrid', 'uHeights', 'uTiles', 'uDrape', 'uShape', 'uShapeIndex', 'uShapeSide', 'uSqueeze', 'uSqueezeSide', 'uLight', 'uAir', 'uHaze', 'uCave', 'uCaveLamps', 'uCaveLampCount'] as const;
+const UNIFORMS = [
+  'uProjection',
+  'uAnchor',
+  'uTarget',
+  'uEye',
+  'uLevel',
+  'uGrid',
+  'uHeights',
+  'uTiles',
+  'uTreeIds',
+  'uCrownTiles',
+  'uHasTrees',
+  'uDrape',
+  'uShape',
+  'uShapeIndex',
+  'uShapeSide',
+  'uSqueeze',
+  'uSqueezeSide',
+  'uLight',
+  'uAir',
+  'uHaze',
+  'uCave',
+  'uCaveLamps',
+  'uCaveLampCount',
+] as const;
 type UniformName = (typeof UNIFORMS)[number];
 
 function link(gl: WebGL2RenderingContext): WebGLProgram {

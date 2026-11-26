@@ -1,3 +1,4 @@
+import { TREE_PLAN_ANGLE } from '../../../../rust/bridge/treeOwnership';
 /** Camera-dependent coverage of modelled trees. treesLayer uses it before selection and work; the terrain's painted
  * crowns take over when the visible ground around the target outgrows the modelled radius. No geometry changes. */
 import type { LiveFrame } from '../live/contract';
@@ -19,6 +20,7 @@ export class TreeCoverage {
     radius = clampTreeDistance(radius);
     const camera = frame.camera,
       pose = this.pose;
+    if (camera.pitch <= TREE_PLAN_ANGLE) return 0; // Includes a rotated vertical map.
     pose.eye.set(camera.eye);
     pose.target.set(camera.target);
     pose.right.set(camera.right);

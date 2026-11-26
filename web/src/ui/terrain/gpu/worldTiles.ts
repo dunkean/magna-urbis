@@ -29,8 +29,11 @@ export class GpuWorldTiles {
     const surface = this.tileSurface();
     const ratio = liveStyleRatio();
     // A tile is drawn again only when its content changed: never reuse the previous tile's auxiliary pass or water raster.
-    this.targets.auxKey.invalidate();
-    this.targets.retained.invalidate();
+    // The companion planes immediately follow their colour tile and share its exact aux/water inputs.
+    if (!look.treePlane) {
+      this.targets.auxKey.invalidate();
+      this.targets.retained.invalidate();
+    }
     const drawn = this.redraw.draw({
       look,
       view: tileViewState(box, px, ratio),

@@ -31,8 +31,8 @@ function solidTree(segments: number, crown: readonly number[]): TreeMesh {
   return { segments, vertices, indices };
 }
 
-// Spend the intermediate mesh on the silhouette: two staggered six-sided crown rings close on
-// a bottom and top point (24 triangles). The four-sided stem tapers inside the crown (4 triangles).
+// Spend the intermediate mesh on the silhouette: two staggered eight-sided crown rings close on
+// a bottom and top point (32 triangles). The four-sided stem tapers inside the crown (4 triangles).
 function middleTree(): TreeMesh {
   const vertices: number[] = [],
     indices: number[] = [];
@@ -47,19 +47,20 @@ function middleTree(): TreeMesh {
   const foot = ring(-2, 4),
     collar = ring(-3, 1),
     base = ring(0, 1);
-  const belly = ring(2, 6),
-    shoulder = ring(4, 6, 0.5),
+  const sides = 8,
+    belly = ring(2, sides),
+    shoulder = ring(4, sides, 0.5),
     tip = ring(5, 1);
   for (let i = 0; i < 4; i++) indices.push(foot + i, foot + ((i + 1) % 4), collar);
-  for (let i = 0; i < 6; i++) {
-    const j = (i + 1) % 6;
+  for (let i = 0; i < sides; i++) {
+    const j = (i + 1) % sides;
     indices.push(base, belly + j, belly + i, belly + i, belly + j, shoulder + i, belly + j, shoulder + j, shoulder + i, shoulder + i, shoulder + j, tip);
   }
-  return { segments: 6, vertices, indices };
+  return { segments: sides, vertices, indices };
 }
 
 export const TREE_MESHES: readonly TreeMesh[] = [
-  solidTree(6, [0, 1, 2, 3, 4, 5]),
+  solidTree(10, [0, 1, 2, 3, 4, 5]),
   middleTree(),
   // Upright stem and two crown bands with a curved outer contour, six triangles altogether.
   { segments: 0, vertices: Array.from({ length: 10 }, (_, id) => [id, 0, 0, 0]).flat(), indices: [0, 1, 2, 1, 3, 2, 4, 5, 6, 5, 7, 6, 6, 7, 8, 7, 9, 8] },
@@ -87,12 +88,12 @@ layout(location=1) in vec4 treeShape;
 layout(location=2) in vec4 treeColor;
 layout(location=3) in vec4 meshVertex; // profile ring, bough parity, unit cross-section direction
 uniform mat4 uProjection;
-uniform vec4 uBlock; // origin relative to target, terrain height offset, streaming opacity
+uniform vec4 uBlock; // origin relative to target, terrain height offset, unused
 uniform vec2 uRelief;
-uniform vec4 uFade; // local eye, start and end of the horizontal fade
-uniform float uVisibility;
+
 uniform highp int uSegments;
 uniform vec3 uFacing; // screen-right direction on the ground (xy), vertical component toward the eye (z)
+uniform vec3 uTreeUp;
 uniform vec3 uTrunk;
 uniform vec4 uRepaintLow;
 uniform vec4 uRepaintHigh;
@@ -103,15 +104,16 @@ uniform float fogDistance;
 uniform int uNight;
 out vec3 colour;
 out vec3 grain;
+out vec3 ray;
+flat out vec3 crownAlbedo;
+flat out vec3 crownCentre;
+flat out vec3 crownAxes;
+flat out float crownPhase;
 
 ${TREE_PROFILE_GLSL}
 const float WORLD_NEEDLE_R[6]=float[6](1.,.69,.86,.51,.61,0.);
 void main(){
   vec2 place=uBlock.xy+treeBase.xy;
-  float coverage=(1.-smoothstep(uFade.z,uFade.w,min(distance(place,uFade.xy),length(place))))*uVisibility*uBlock.w;
-  // Retire whole trees in a fixed order as their painted symbols take over. The same
-  // seed follows an instance through all three LODs and never depends on screen pixels.
-  float rank=fract(treeShape.w*73.271+treeBase.x*.75488+treeBase.y*.56984);
   int id=int(meshVertex.x),form=int(treeShape.z+.5);
   bool spire=form==1,parasol=form>=2,needle=form==1||form==3;
   float h=treeShape.x,r=treeBase.w,bottom=clamp(h-treeShape.y,.02*h,.75*h);
@@ -157,14 +159,23 @@ void main(){
     normal=trunk?vec3(dir,0.):normalize(vec3(dir*(u>=1.?0.:1.),spire?.42:(u-.32)*2.6));
   }
   if(!trunk&&parasol)offset+=phase*(.14*r*u);
-  // Between full volume and the painted forest, the same instance supplies its plan.
-  // Project the branch scaffold or crown onto the ground at the same root.
-  if(rank>=coverage){
-    if(uSegments==0&&!trunk)offset=vec2(uFacing.y,-uFacing.x)*r*contour.y;
-    y=0.;
-  }
   vec2 local=offset+dir*width;
   vec3 pos=vec3(place+local,treeBase.z*uRelief.x+y*uRelief.y+uBlock.z);
+  // A broadleaf is a solid ellipsoid at all three mesh budgets. These triangles only
+  // bound its fragments; the fragment shader computes the same surface and depth.
+  bool roundCrown=form==0&&!trunk&&uSegments>=0;
+  crownAxes=roundCrown?vec3(r,.96*r,.5*(h-bottom)*uRelief.y):vec3(0.);
+  crownCentre=vec3(place,treeBase.z*uRelief.x+uBlock.z+.5*(h+bottom)*uRelief.y);
+  crownPhase=treeShape.w;
+  if(roundCrown){
+    if(uSegments==0){
+      float bound=max(r,crownAxes.z)*1.35;
+      pos=crownCentre+bound*(vec3(uFacing.xy,0.)*contour.x+uTreeUp*contour.y);
+    }else{
+      pos=crownCentre+vec3(dir*r*1.16,(id<=2?-1.:1.)*crownAxes.z);
+    }
+  }
+  ray=pos-eye;
   gl_Position=uProjection*vec4(pos,1.);
   // Anisotropic bark grain, larger crown clumps. Coordinates stay in local
   // metres so the texture remains attached while the camera moves.
@@ -174,13 +185,19 @@ void main(){
   vec3 tint=trunk?uTrunk:treeColor.rgb;
   if(uSegments<0)tint=vec3(.26,.235,.21)*(uSegments==-1?meshVertex.w:1.);
   if(uRepaint==1&&uSegments>=0)tint=mix(uRepaintLow.rgb,uRepaintHigh.rgb,smoothstep(uRepaintLow.w,uRepaintHigh.w,dot(tint,vec3(.30,.59,.11))));
+  // Diffuse skylight on satellite foliage matches the lifted dark colours of the
+  // terrain material. Paper foliage already carries the ink-and-wash ramp.
+  vec3 sky=vec3(.77,.85,.88);
+  if(!trunk&&uRepaint==0)tint=mix(tint,sky,.065);
   float snow=uSegments<0?fract(treeColor.w)*u:trunk?0.:min(fract(treeColor.w)/.45*mix(.45,1.35,u),.95);
   float lit=(.9+.4*max(dot(normal,treeLight),0.))/(.9+.4*max(treeLight.z,0.));
   colour=mix(tint,vec3(.84,.88,.90),snow)*lit*mix(.84,1.,u);
+  if(roundCrown)colour=mix(tint,vec3(.84,.88,.90),min(fract(treeColor.w)/.45,.95));
   if(uNight==1)colour*=vec3(.149,.196,.31);
-  vec3 d=(pos-eye)/fogDistance;
+  vec3 d=((roundCrown?crownCentre:pos)-eye)/fogDistance;
   float fog=min(.62,1.-exp(-dot(d,d)*.11));
-  colour=mix(colour,uNight==1?vec3(.018,.028,.065):vec3(.77,.85,.88),fog);
+  colour=mix(colour,uNight==1?vec3(.018,.028,.065):sky,fog);
+  crownAlbedo=colour;
 }`;
 
 /** Opaque silhouettes. Only the outside corners of the far crown card are clipped. */
@@ -188,6 +205,14 @@ export const WORLD_TREE_FS = `#version 300 es
 precision highp float;
 in vec3 colour;
 in vec3 grain;
+in vec3 ray;
+flat in vec3 crownAlbedo;
+flat in vec3 crownCentre;
+flat in vec3 crownAxes;
+flat in float crownPhase;
+uniform vec3 eye;
+uniform vec3 treeLight;
+uniform mat4 uProjection;
 uniform highp int uSegments;
 out vec4 color;
 float grainHash(vec2 p){
@@ -202,7 +227,34 @@ float grainNoise(vec2 p){
 }
 void main(){
   vec3 base=colour;
-  if(uSegments==0&&grain.z>.5&&dot(grain.xy,grain.xy)>1.)discard;
+  gl_FragDepth=gl_FragCoord.z;
+  if(crownAxes.x>0.){
+    vec3 d=ray/crownAxes,start=(eye-crownCentre)/crownAxes;
+    float a=dot(d,d),mid=-dot(start,d)/a;
+    vec3 closest=start+mid*d;
+    float disc=1.-dot(closest,closest);
+    if(disc<0.)discard;
+    float halfChord=sqrt(disc/a),t=mid-halfChord;
+    if(t<=0.)t=mid+halfChord;
+    if(t<=0.)discard;
+    vec3 surface=start+t*d,normal=normalize(surface/crownAxes);
+    vec4 clip=uProjection*vec4(eye+t*ray,1.);
+    gl_FragDepth=.5+.5*clip.z/clip.w;
+    // Clumps follow the surface in three dimensions, including when its silhouette is a few pixels wide.
+    float cs=cos(crownPhase),sn=sin(crownPhase);
+    vec3 p=vec3(mat2(cs,sn,-sn,cs)*surface.xy,surface.z)*4.+crownPhase*13.;
+    float slice=floor(p.z),f=fract(p.z);
+    float noise=mix(grainNoise(p.xy+vec2(17.,37.)*slice),grainNoise(p.xy+vec2(17.,37.)*(slice+1.)),f*f*(3.-2.*f));
+    float detail=1.-smoothstep(.35,.9,max(length(dFdx(p)),length(dFdy(p))));
+    float lit=(.82+.52*max(dot(normal,treeLight),0.))/(.82+.52*treeLight.z);
+    color=vec4(crownAlbedo*lit*(1.+.48*detail*noise),1.);
+    return;
+  }
+  if(uSegments==0&&grain.z>.5){
+    float rr=dot(grain.xy,grain.xy);
+    if(rr>1.)discard;
+    base*=.87+.17*sqrt(1.-rr)-.035*grain.x;
+  }
   // Billboards are too small for any grain. A derivative gate removes the
   // pattern before its clumps or strands are subpixel, including on a tilt.
   if(uSegments>0){

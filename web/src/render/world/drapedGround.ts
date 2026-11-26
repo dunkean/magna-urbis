@@ -1,3 +1,4 @@
+import type { TreeIdImage } from '../../../../rust/bridge/treeOwnership';
 /**
  * The ground of a tilted frame (contract.ts): the terrain as a displaced grid, draped with the baked tiles of the
  * live ground layer and, over them, with the tiles of the map drape of the frame (`LiveFrame.drape`: water,
@@ -36,6 +37,9 @@ const SHAPE_UNIT = 3;
 
 export class DrapedGround {
   readonly stats: DrapedGroundStats = { drawCalls: 0, triangles: 0, patches: 0, uploads: 0, otherTier: 0, drapeOtherTier: 0 };
+  private treeTexture?: WebGLTexture;
+  private treeTextureReady = false;
+  private treeImage?: TreeIdImage;
   private mesh?: TerrainMesh;
   /** The height texture and the grid it holds; `flat` stands in for a map without relief. */
   private heightTexture?: WebGLTexture;
@@ -186,7 +190,8 @@ export class DrapedGround {
       found[o] = ix * LATTICE - anchorX * finer;
       found[o + 1] = iy * LATTICE - anchorY * finer;
       found[o + 2] = coarsest / finer;
-      found[o + 3] = tile.layer;
+      // Texture arrays round the layer to the nearest integer; a quarter marks the companion planes.
+      found[o + 3] = tile.layer + (tile.crowns ? 0.25 : 0);
       found[o + 4] = tile.u0;
       found[o + 5] = tile.v0;
       found[o + 6] = tile.span;
@@ -230,7 +235,7 @@ export class DrapedGround {
 
   /** Draws the ground of a tilted frame over `paper`, the colour around the map (0..1 components); in the Underdark
    * (`cave`) under no sky, in the cave's own light; at `night` under a dark one. */
-  draw(frame: LiveFrame, heights: TerrainHeights | undefined, paper: readonly [number, number, number], cave?: WorldCave, night = false): void {
+  draw(frame: LiveFrame, heights: TerrainHeights | undefined, paper: readonly [number, number, number], cave?: WorldCave, night = false, trees?: TreeIdImage): void {
     const gl = this.gl,
       camera = frame.camera,
       stats = this.stats;
@@ -276,6 +281,21 @@ export class DrapedGround {
       gl.uniform4f(u.uCave, 0, 0, 1, 0);
       gl.uniform1i(u.uCaveLampCount, 0);
     }
+    // Tile colours, floor and crown keys stay immutable under camera motion. Only this
+    // small lookup changes when a streamed tree acquires or loses its volume.
+    gl.activeTexture(gl.TEXTURE0 + 7);
+    this.treeTexture ??= gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.treeTexture);
+    if (trees !== this.treeImage || !this.treeTextureReady) {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32UI, trees?.width ?? 1, trees?.height ?? 1, 0, gl.RG_INTEGER, gl.UNSIGNED_INT, trees?.data ?? new Uint32Array(2));
+      this.treeImage = trees;
+      this.treeTextureReady = true;
+    }
+    gl.uniform1i(u.uTreeIds, 7);
+    gl.uniform1i(u.uCrownTiles, 8);
+    gl.uniform1i(u.uHasTrees, trees ? 1 : 0);
     gl.uniform1i(u.uTiles, 0);
     gl.uniform1i(u.uHeights, 1);
     gl.uniform1i(u.uDrape, 2);
@@ -294,7 +314,11 @@ export class DrapedGround {
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, drape ?? this.tiles.page(ranges[0]));
     gl.activeTexture(gl.TEXTURE0);
     for (let d = 0; d < this.draws; d++) {
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.tiles.page(ranges[d * 3]));
+      const page = ranges[d * 3];
+      gl.activeTexture(gl.TEXTURE0 + 8);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.tiles.crownPage?.(page) ?? this.tiles.page(page));
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.tiles.page(page));
       mesh.drawSquares(ranges[d * 3 + 1], ranges[d * 3 + 2]);
     }
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
@@ -311,6 +335,8 @@ export class DrapedGround {
 
   /** Every GL handle is dead; the next `prepare` builds them again. */
   contextLost(): void {
+    this.treeTextureReady = false;
+    this.treeTexture = this.treeImage = undefined;
     this.mesh = undefined;
     this.shape.contextLost();
     this.heightTexture = undefined;
@@ -322,6 +348,7 @@ export class DrapedGround {
 
   dispose(): void {
     const gl = this.gl;
+    if (this.treeTexture) gl.deleteTexture(this.treeTexture);
     this.mesh?.dispose();
     this.shape.dispose();
     if (this.heightTexture) gl.deleteTexture(this.heightTexture);

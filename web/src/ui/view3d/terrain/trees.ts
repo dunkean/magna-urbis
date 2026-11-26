@@ -12,7 +12,7 @@ import type { TerrainCameraRig } from './camera';
 import type { TerrainForest } from './forest';
 import type { TerrainSurface } from './surface';
 
-import { treeIdImage, TREE_VOLUME_BLOCK, type TreeIdImage } from '../../../../../rust/bridge/treeOwnership';
+import { treeIdImage, TREE_PLAN_ANGLE, TREE_VOLUME_BLOCK, type TreeIdImage } from '../../../../../rust/bridge/treeOwnership';
 
 export class NearTrees {
   /** Admitted crown IDs and their root blocks, read on the unused brush atlas binding. */
@@ -26,6 +26,7 @@ export class NearTrees {
   count = 0;
   /** Streams queued in the preparation: the view's readiness does not wait for them (trees stream in after). */
   jobs = 0;
+  private projected = true;
   private key = '';
   private readyKey = '';
   /** Whether the displayed stream is a finished one: a later stream then replaces it whole, never by partial blocks. */
@@ -84,7 +85,13 @@ export class NearTrees {
   /** Rebuilds the near-tree instances once the eye has moved about 40 m or turned, or the inputs changed. The ground
    * LOD is not an input: tree heights read the canonical surface (heightAt), whose changes clear the patches and key. */
   prepare(frame: FrameGeometry): void {
-    this.update(frame);
+    const sine = Math.hypot(frame.forward[0], frame.forward[2]);
+    const camera = this.rig.camera;
+    // Walking/flying can resolve nearby trees even with a distant look target.
+    const depth = camera.navigation === 'walk' || camera.navigation === 'fly' ? 1 : Math.max(1, camera.distance);
+    const pixels = (15 * camera.exaggeration * frame.focal * sine) / depth;
+    this.projected = frame.forward[1] >= 0 || (sine > Math.sin(TREE_PLAN_ANGLE) && pixels >= (this.projected ? 2 : 4));
+    if (this.projected) this.update(frame);
     // Test probe (forest flicker): drawn tree count and stream starts per frame, when a page installs the array.
     const trace = (globalThis as { magnaTreeTrace?: number[][] }).magnaTreeTrace;
     trace?.push([performance.now(), this.shown() ? this.count : 0, this.streams]);
@@ -222,7 +229,7 @@ export class NearTrees {
 
   /** Whether near trees are drawn this frame. */
   shown(): boolean {
-    return this.enabled && this.count > 0;
+    return this.enabled && this.projected && this.count > 0;
   }
 
   /** The 3D view's "3D trees" switch: built lazily on first use, then only hidden or shown. */

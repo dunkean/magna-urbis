@@ -36,7 +36,7 @@
  */
 import type { GroundTileRenderer, LiveFrame, LiveGroundOptions, LiveLayer, LiveLayerStats } from './contract';
 import { MAX_SCALE, type Rect4 } from '../view';
-import type { DrapeTile, DrapeTiles } from '../world/contract';
+import { GROUND_PAGE_LAYERS as LAYERS, type DrapeTile, type DrapeTiles } from '../world/contract';
 import { DrapedGround } from '../world/drapedGround';
 import { findTile, tileKey } from '../world/tilePyramid';
 import { GroundDiagnostics, layerDiagnosticsEnabled } from './layerDiagnostics';
@@ -47,7 +47,6 @@ const TILE = 512;
 const GUTTER = 32;
 const RENDER = TILE + 2 * GUTTER;
 /** Tiles per TEXTURE_2D_ARRAY page (16 MiB). */
-const LAYERS = 16;
 const TILE_BYTES = TILE * TILE * 4;
 const PAGE_BYTES = TILE_BYTES * LAYERS;
 /** At most 512 MiB whatever the budget: bounds the draws of a frame (one per page and pass). */
@@ -101,7 +100,7 @@ interface Tile {
   iy: number;
   slot: number;
   generation: number;
-  treeOwner: number;
+  crowns: boolean;
   shownAt: number;
   used: number;
 }
@@ -114,6 +113,7 @@ interface GlState {
   staging: WebGLTexture;
   stagingFbo: WebGLFramebuffer;
   pages: WebGLTexture[];
+  crownPages: Map<number, WebGLTexture>;
   free: number[];
 }
 
@@ -174,7 +174,14 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
   let seenRenderer: GroundTileRenderer | undefined,
     seenRevision = NaN;
   let blockedUntil = 0;
-  const pagesFor = (quality: 'full' | 'light'): number => Math.max(2, Math.min(MAX_PAGES, Math.floor((options.budgetBytes ?? (quality === 'light' ? 96 : 192) * 1048576) / PAGE_BYTES)));
+  let treeMaterials = false;
+  const pagesFor = (quality: 'full' | 'light'): number => {
+    const planes = treeMaterials ? 3 : 1;
+    // Retain enough draped patches at low pitch; the full forest cache stays under 512 MiB.
+    const bytes = options.budgetBytes ?? Math.min(512, (quality === 'light' ? 96 : 192) * planes) * 1048576;
+    const limit = options.treeMaterials ? Math.floor((512 * 1048576) / (3 * PAGE_BYTES)) : MAX_PAGES;
+    return Math.max(2, Math.min(limit, Math.floor(bytes / (planes * PAGE_BYTES))));
+  };
   let maxPages = pagesFor('full');
   let light = false;
   /** Draw counter: tiles drawn by the last frame (`used === stamp`) are never evicted. */
@@ -240,7 +247,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, stagingFbo);
     gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, staging, 0);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-    state = { program, uSize: gl.getUniformLocation(program, 'uSize'), uTiles: gl.getUniformLocation(program, 'uTiles'), vao, instances, staging, stagingFbo, pages: [], free: [] };
+    state = { program, uSize: gl.getUniformLocation(program, 'uSize'), uTiles: gl.getUniformLocation(program, 'uTiles'), vao, instances, staging, stagingFbo, pages: [], crownPages: new Map(), free: [] };
     return state;
   }
 
@@ -251,6 +258,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       gl.deleteBuffer(state.instances);
       gl.deleteTexture(state.staging);
       gl.deleteFramebuffer(state.stagingFbo);
+      for (const page of state.crownPages.values()) gl.deleteTexture(page);
       for (const page of state.pages) gl.deleteTexture(page);
     }
     state = undefined;
@@ -305,34 +313,15 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     for (let a = tier - 1; a >= 0; a--) if (tiles.has(tileKey(a, ix >> (tier - a), iy >> (tier - a)))) return true;
     return false;
   }
-  let selection: ReturnType<NonNullable<LiveGroundOptions['treeSelection']>>,
-    selectionRevision = -1;
-  function syncRegion(frame: LiveFrame): void {
-    const next = options.treeSelection?.(frame),
-      revision = next?.revision ?? -1;
-    if (next === selection && revision === selectionRevision) return;
-    selection = next;
-    selectionRevision = revision;
-    tileRevision++;
-  }
-  function treeOwner(tier: number, ix: number, iy: number): number {
-    if (!selection) return 0;
-    const size = gridSize / 2 ** tier;
-    if (size / TILE >= 40) return 0;
-    // A stand-only ancestor remains valid while the selected instance ranges change.
-    if (tier === 0) return -1;
-    return selection.stamp(ix * size, iy * size, size, 32 + (GUTTER * size) / TILE);
-  }
-  const matchesRegion = (tile: Tile): boolean => tile.treeOwner === treeOwner(tile.tier, tile.ix, tile.iy);
   const needs = (tier: number, ix: number, iy: number): boolean => {
     const tile = tiles.get(tileKey(tier, ix, iy));
-    return !tile || tile.generation !== generation || !matchesRegion(tile);
+    return !tile || tile.generation !== generation;
   };
   /** Tier 0 holds the current look: the whole map can be shown in it. */
   const lookBaked = (): boolean => (tiles.get(0)?.generation ?? -1) >= lookGeneration;
   /** The generation from which tiles may be drawn by this frame. */
   const drawFloor = (): number => (shownFrom = lookBaked() ? lookGeneration : -1);
-  const drawable = (tile: Tile): boolean => tile.generation >= shownFrom && matchesRegion(tile);
+  const drawable = (tile: Tile): boolean => tile.generation >= shownFrom && (!treeMaterials || tile.crowns || gridSize / (2 ** tile.tier * TILE) >= 32);
 
   /** The tile needing a bake nearest to (cx, cy) (distance from its centre: the picture refines from the centre of the
    * view outwards, in rings, never in rows or columns), within the world rectangle grown by `pad` tiles. */
@@ -481,35 +470,62 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       y = iy * ts;
     const box: Rect4 = { minX: x - g, minY: y - g, maxX: x + ts + g, maxY: y + ts + g };
     // Render first: a refused render must not cost an eviction.
-    const owner = treeOwner(tier, ix, iy);
-    const source = renderer.renderWorldTile(box, RENDER, owner === -1 ? 'stands' : owner ? selection?.image() : undefined);
-    if (!source) return 'blocked';
-    const size = source as { width?: number; height?: number };
-    if (size.width !== RENDER || size.height !== RENDER) return 'blocked';
+    const crowns = treeMaterials && ts / TILE < 32;
+    const source = renderer.renderWorldTile(box, RENDER);
+    if (!source || (source as HTMLCanvasElement).width !== RENDER || (source as HTMLCanvasElement).height !== RENDER) return 'blocked';
     const slot = existing ? existing.slot : allocate(s);
     if (slot < 0) return 'full';
-    // Same task as the render: the source canvas (WebGL drawing buffer, WebGPU current texture) is only valid now.
-    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
-    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, s.staging);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    // Texel row 0 of the staging texture is the canvas' top row (world minY): the layer keeps that orientation.
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.stagingFbo);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, s.pages[Math.floor(slot / LAYERS)]);
-    gl.copyTexSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, slot % LAYERS, GUTTER, GUTTER, TILE, TILE);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    const copy = (pixels: TexImageSource, plane: number): void => {
+      gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, s.staging);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.stagingFbo);
+      const page = Math.floor(slot / LAYERS);
+      let texture = s.pages[page];
+      if (plane > 0) {
+        const held = s.crownPages.get(page);
+        if (held) texture = held;
+        else {
+          texture = gl.createTexture()!;
+          gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+          gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, TILE, TILE, 2 * LAYERS);
+          gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          s.crownPages.set(page, texture);
+        }
+      }
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+      gl.copyTexSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, (slot % LAYERS) + (plane === 2 ? LAYERS : 0), GUTTER, GUTTER, TILE, TILE);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    };
+    copy(source, 0);
+    if (crowns) {
+      for (const mode of ['floor', 'keys'] as const) {
+        const extra = renderer.renderWorldTile(box, RENDER, mode);
+        if (!extra) {
+          tiles.delete(key);
+          s.free.push(slot);
+          return 'blocked';
+        }
+        copy(extra, mode === 'floor' ? 1 : 2);
+      }
+    }
     if (existing) {
       // Replaced in place: no fade over its stale self; a tile of another look was not drawn, it fades in over its ancestor.
       if (existing.generation < lookGeneration) existing.shownAt = tier > 0 ? performance.now() : -Infinity;
       existing.generation = generation;
-      existing.treeOwner = owner;
-    } else tiles.set(key, { tier, ix, iy, slot, generation, treeOwner: owner, used: stamp, shownAt: hasBakedAncestor(tier, ix, iy) ? performance.now() : -Infinity });
+      existing.crowns = crowns;
+    } else tiles.set(key, { tier, ix, iy, slot, generation, crowns, used: stamp, shownAt: hasBakedAncestor(tier, ix, iy) ? performance.now() : -Infinity });
     tileRevision++;
     return 'ok';
   }
@@ -583,10 +599,12 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       tile.used = stamp;
       out.page = Math.floor(tile.slot / LAYERS);
       out.layer = tile.slot % LAYERS;
+      out.crowns = tile.crowns;
       return true;
     },
     pageCount: () => state?.pages.length ?? 0,
     page: index => state!.pages[index],
+    crownPage: index => state!.crownPages.get(index),
   };
   /** The ground of the tilted frames; made with the first relief or the first tilted frame. */
   let draped: DrapedGround | undefined;
@@ -604,11 +622,10 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
     tilts: true,
 
     ready(frame: LiveFrame): boolean {
-      syncRegion(frame);
       // Tier 0 covers the whole map (any generation: stale tiles stay on screen); the paper covers the rest.
       // After a look switch, tier 0 of the new look first: until then the page keeps its last picture whole rather than
       // show the old look's tiles under the new look's other layers.
-      return !!state && gridSize > 0 && options.mapSize() === gridSize && tiles.has(0) && matchesRegion(tiles.get(0)!) && frame.width > 0 && (lookBaked() || performance.now() - lookAt > LOOK_HOLD_MS);
+      return !!state && gridSize > 0 && options.mapSize() === gridSize && tiles.has(0) && frame.width > 0 && (lookBaked() || performance.now() - lookAt > LOOK_HOLD_MS);
     },
 
     /** The tiles are the ground: a finer tile that arrives refines this picture, no other renderer replaces it. */
@@ -618,11 +635,10 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       const s = state;
       if (!s) return;
       const started = performance.now();
-      syncRegion(frame);
       light = frame.quality === 'light';
       if (frame.camera.tilted) {
         draped ??= new DrapedGround(gl, drapeTiles);
-        draped.draw(frame, options.terrain(), paperRgb(), options.cave?.(), options.night?.());
+        draped.draw(frame, options.terrain(), paperRgb(), options.cave?.(), options.night?.(), options.treeSelection?.(frame)?.image());
         stats.drawCalls = draped.stats.drawCalls;
         stats.triangles = draped.stats.triangles;
         stats.patches = draped.stats.patches;
@@ -741,7 +757,6 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       const s = ensure();
       if (!s) return false;
       if (size !== gridSize) resetTiles(size);
-      if (frame) syncRegion(frame);
       // A tilted frame shows up to 134 tiles of several tiers (tests/world.drapeBudget.test.ts) whatever the quality:
       // the light budget (96 tiles) would evict, as the camera moves, tiles a few frames from being shown again.
       if (frame) maxPages = pagesFor(frame.camera.tilted ? 'full' : frame.quality);
@@ -752,7 +767,9 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
       if (!renderer) return false;
       const revision = renderer.contentRevision();
       light = frame?.quality === 'light';
-      if (renderer !== seenRenderer || revision !== seenRevision) {
+      const crowns = options.treeMaterials?.() ?? false;
+      if (renderer !== seenRenderer || revision !== seenRevision || crowns !== treeMaterials) {
+        treeMaterials = crowns;
         seenRenderer = renderer;
         seenRevision = revision;
         generation++;
@@ -788,7 +805,7 @@ export function createLiveGroundLayer(gl: WebGL2RenderingContext, options: LiveG
         gl.bindFramebuffer(gl.FRAMEBUFFER, frame?.target ?? null);
       }
       stats.tiles = tiles.size;
-      stats.bytes = s.pages.length * PAGE_BYTES;
+      stats.bytes = (s.pages.length + s.crownPages.size * 2) * PAGE_BYTES;
       stats.pending = countPending(frame);
       if (arrived) options.invalidate();
       return pending;

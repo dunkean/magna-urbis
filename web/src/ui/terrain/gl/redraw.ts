@@ -53,8 +53,6 @@ export class GlRedraw {
   readonly liveTargets = new GlViewTargets();
   /** Last frame's GPU submission time, ms (CPU side). */
   drawMs = 0;
-  private ownerTexture?: WebGLTexture;
-  private ownerImage?: TerrainLook['treeOwners'];
   private emptyAux?: WebGLTexture;
   private readonly params: LookBindings;
   /** The request being drawn (the look bindings read its refinements and look). */
@@ -199,18 +197,6 @@ export class GlRedraw {
         gl.useProgram(aux);
         writeLookParams(this.params, state);
         if (estuaries) this.bindEstuaries(estuaries);
-        const owners = look.treeOwners;
-        if (owners && owners !== 'stands') {
-          this.ownerTexture ??= gl.createTexture()!;
-          gl.activeTexture(gl.TEXTURE15);
-          gl.bindTexture(gl.TEXTURE_2D, this.ownerTexture);
-          if (this.ownerImage !== owners) {
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32UI, owners.width, owners.height, 0, gl.RG_INTEGER, gl.UNSIGNED_INT, owners.data);
-            this.ownerImage = owners;
-          }
-        }
         const p = this.params;
         // The same water layer and base relief as the map pass.
         p.int('uWaterLayer', 10);
@@ -376,7 +362,7 @@ export class GlRedraw {
     for (const detail of req.details) animating = this.drawLayer(detail, false, frame, now) || animating;
     // The live view's details: a detail fully faded in hides (and releases) the older ones.
     if (req.details === inputs.details) inputs.details = dropHiddenDetails(inputs.details, now, inputs.release);
-    if (!separateWater) {
+    if (!separateWater && look.treePlane !== 'keys') {
       renderRivers(water, rivers, framebuffer);
       renderRetainedWater(water, inputs.retainedWater, framebuffer);
     }
@@ -387,7 +373,6 @@ export class GlRedraw {
   }
 
   dispose(): void {
-    if (this.ownerTexture) this.gl.deleteTexture(this.ownerTexture);
     if (this.emptyAux) this.gl.deleteTexture(this.emptyAux);
     this.liveTargets.dispose(this.gl);
   }

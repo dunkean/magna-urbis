@@ -62,8 +62,6 @@ export class GpuRedraw {
   /** Last frame's GPU submission time, ms (CPU side). */
   drawMs = 0;
   private readonly device: GPUDevice;
-  private ownerTexture?: GpuImage;
-  private ownerImage?: TerrainLook['treeOwners'];
   private readonly emptyUint: GpuImage;
   private readonly brushAtlas: GpuBrushAtlas;
   private readonly terrainParams = new Params(WGSL.WGSL_PARAMS.terrain);
@@ -340,15 +338,6 @@ export class GpuRedraw {
           targets.aux = gpuTarget(device, width, height, 'rgba32uint', targets.aux);
           this.savedParams.set(p.bytes);
           this.writeLook(this.auxTextures, state);
-          const owners = look.treeOwners;
-          if (owners && owners !== 'stands') {
-            if (this.ownerImage !== owners) {
-              releaseImage(this.ownerTexture);
-              this.ownerTexture = gpuImage(device, owners.width, owners.height, 'rg32uint', owners.data, 8);
-              this.ownerImage = owners;
-            }
-            this.auxTextures.uAux = this.ownerTexture!.view;
-          }
           this.auxTextures.uWaterLayer = this.mapTextures.uWaterLayer;
           if (estuaries) {
             this.auxTextures.uOverlay = estuaries;
@@ -375,7 +364,7 @@ export class GpuRedraw {
     mapPass.end();
     // The live view's details: a detail fully faded in hides (and releases) the older ones.
     if (req.details === inputs.details) inputs.details = dropHiddenDetails(inputs.details, now, releaseGpuLayer);
-    if (!separateWater) {
+    if (!separateWater && look.treePlane !== 'keys') {
       renderRivers(water, rivers, mapTarget);
       renderRetainedWater(water, inputs.retainedWater, mapTarget);
     }
@@ -394,7 +383,6 @@ export class GpuRedraw {
 
   dispose(): void {
     this.liveTargets.dispose();
-    releaseImage(this.ownerTexture);
     releaseImage(this.emptyUint);
     this.brushAtlas.dispose();
     this.slots.buffer.destroy();

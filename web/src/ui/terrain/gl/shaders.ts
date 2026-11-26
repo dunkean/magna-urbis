@@ -368,6 +368,13 @@ void main() {
   uvec3 auxCanopy = uForest == 1 ? forestCanopyPack(forestCanopyNear(forestPrep(world, uPx), normalize(uLight.xzy))) : uvec3(0u);
   if (uRenderV2 == 0) { outAux = uvec4(auxCanopy, 0u); return; }
 #endif
+#ifdef AUX_TEXTURE
+  if(uForestTrees.w==-4.){
+    uvec2 meta=texelFetch(uAux,ivec2(gl_FragCoord.xy),0).xy;
+    outColor=vec4(vec3((meta.x>>16u)&255u,meta.x>>24u,meta.y>>24u)/255.,1.);
+    return;
+  }
+#endif
   bool inside = world.x >= 0.0 && world.y >= 0.0 && world.x <= uMapW && world.y <= uMapW;
   if (!inside) {
 #ifdef AUX_PASS

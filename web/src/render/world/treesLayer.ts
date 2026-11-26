@@ -46,10 +46,9 @@ export interface WorldTreesLayer extends VolumeLayer {
   pendingPresentation(): boolean;
 }
 
-const STREAM_FADE_MS = 280;
 /** Brought forward before every other wanted block (m): the blocks whose trees stand on a town built since. */
 const RETIRED_FIRST = 1e6;
-const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uFade', 'uVisibility', 'uSegments', 'uFacing', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
+const UNIFORMS = ['uProjection', 'uBlock', 'uRelief', 'uSegments', 'uFacing', 'uTreeUp', 'uTrunk', 'uRepaintLow', 'uRepaintHigh', 'uRepaint', 'eye', 'treeLight', 'fogDistance', 'uNight'] as const;
 type Program = { program: WebGLProgram; u: Record<(typeof UNIFORMS)[number], WebGLUniformLocation | null>; indices: WebGLBuffer; vertices: WebGLBuffer };
 const BRANCH_LEVEL = TREE_MESHES.length;
 const meshes = [...TREE_MESHES, bareTreeMesh, bareMiddleMesh, bareDistantMesh];
@@ -72,7 +71,8 @@ interface Slot {
   /** The footprints its trees keep off (TreeBuildings.blockKey). */
   town: number;
   samples: TreeSamples;
-  admitted?: number;
+  admitted: number;
+  heights: Float32Array;
   ids?: Uint32Array;
   barePrefix?: Uint32Array;
   vao?: WebGLVertexArrayObject;
@@ -87,7 +87,7 @@ interface Slot {
   /** Ground under the block centre, used by the streamer's coarse visibility test. */
   centreHeight: number;
   centreRevision: number;
-  born: number;
+
   /** Base instance currently bound in the VAO. */
   first: number;
   radius: number;
@@ -114,7 +114,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
     visibleAll = new Int32Array(TREE_MAX_BLOCKS),
     visibleSolid = new Int32Array(TREE_MAX_BLOCKS),
     visibleClose = new Int32Array(TREE_MAX_BLOCKS),
-    visibleWeight = new Float64Array(TREE_MAX_BLOCKS);
+    depths = new Float64Array(TREE_MAX_BLOCKS);
+  const nearest: number[] = [];
   let visibleCount = 0;
   let wanted = 0,
     tick = 0,
@@ -206,10 +207,12 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         centreHeight,
         centreRevision: reliefRevision,
         radius: 0,
-        born: previous?.count ? previous.born : performance.now(),
+        admitted: 0,
+        heights: new Float32Array(count),
         first: 0,
       };
     for (let i = 0; i < count * TREE_STRIDE; i += TREE_STRIDE) {
+      slot.heights[i / TREE_STRIDE] = data[i + 4];
       slot.low = Math.min(slot.low, data[i + 2]);
       slot.high = Math.max(slot.high, data[i + 2]);
       slot.top = Math.max(slot.top, data[i + 4]);
@@ -333,7 +336,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       wanted = 0;
       visibleCount = 0;
       volume.set(camera);
-      let demand = 0;
+
       const last = Math.ceil(relief.width / TREES_BLOCK) - 1,
         bx0 = Math.max(0, Math.floor((Math.min(tx, gx) - far) / TREES_BLOCK)),
         bx1 = Math.min(last, Math.floor((Math.max(tx, gx) + far) / TREES_BLOCK)),
@@ -359,10 +362,6 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             solidShare = treeSolidShare(pixels),
             closeShare = treeCloseShare(pixels);
           if (!density) continue;
-          // Reserve once from the view, including empty and unbuilt blocks.
-          // The local mesh cost gives near, solid crowns most of the budget.
-          const weight = density * (TRIANGLES[2] + solidShare * (TRIANGLES[1] - TRIANGLES[2]) + closeShare * (TRIANGLES[0] - TRIANGLES[1])) * (0.7 + 0.3 * solidShare);
-          demand += weight;
           let retired = false;
           if (!slot || slot.checked !== revision) {
             retired = !!slot && !!buildings && slot.town !== buildings.blockKey(bx, by);
@@ -382,35 +381,71 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             centre = (low + high) / 2 - tz,
             radius = Math.hypot(TREES_BLOCK * 0.71 + slot.radius * 1.25, (high - low) / 2);
           if (!volume.sees(x, y, centre, radius)) continue;
-          const all = Math.round(slot.count * density);
-          if (!all) continue;
+          // Screen displacement of the tree top with respect to its root, in CSS pixels.
+          const parallax = (focal * rise * Math.abs(Math.sin(camera.pitch)) * opacity) / Math.max(depth, closest);
+          let lowIndex = 0,
+            highIndex = slot.count;
+          while (lowIndex < highIndex) {
+            const mid = (lowIndex + highIndex) >>> 1;
+            if (slot.heights[mid] * parallax >= (mid < slot.admitted ? 2 : 4)) lowIndex = mid + 1;
+            else highIndex = mid;
+          }
+          const all = lowIndex;
+          if (!all) {
+            slot.admitted = 0;
+            continue;
+          }
           visible[visibleCount] = slot;
           visibleKey[visibleCount] = key;
           visibleAll[visibleCount] = all;
           visibleSolid[visibleCount] = Math.round(all * solidShare);
           visibleClose[visibleCount] = Math.round(all * closeShare);
-          visibleWeight[visibleCount++] = weight;
+          depths[visibleCount] = depth;
+          nearest[visibleCount] = visibleCount;
+          visibleCount++;
         }
       visible.length = visibleCount;
       presentationPending = wanted > 0;
-      const trianglesPerWeight = treeTriangleBudget(far) / Math.max(demand, 1e-6);
-      for (let i = 0; i < visibleCount; i++) {
-        const base = visibleAll[i] * TRIANGLES[2],
-          extra = visibleSolid[i] * (TRIANGLES[1] - TRIANGLES[2]) + visibleClose[i] * (TRIANGLES[0] - TRIANGLES[1]),
-          // Reduce the density of each tier together under pressure, so a
-          // resolved crown never becomes a billboard just to save triangles.
-          share = Math.min(1, (visibleWeight[i] * trianglesPerWeight) / (base + extra)),
-          limit = Math.floor(visibleAll[i] * share),
-          previous = visible[i].admitted ?? 0,
-          // Small camera movements should not rebake a tile to add a single tree.
-          all = previous > 0 && previous <= limit && limit < previous * 1.12 ? previous : limit,
-          solid = Math.floor(visibleSolid[i] * share),
-          close = Math.floor(visibleClose[i] * share);
-        visible[i].admitted = visibleAll[i] = all;
-        visibleSolid[i] = Math.min(all, solid);
-        visibleClose[i] = Math.min(all, close);
-        const ids = visible[i].ids;
-        if (ids) selected.select(visibleKey[i], ids, all);
+      nearest.length = visibleCount;
+      nearest.sort((a, b) => depths[a] - depths[b] || visibleKey[a] - visibleKey[b]);
+      const budget = treeTriangleBudget(far);
+      let remaining = budget;
+      for (const i of nearest) {
+        const slot = visible[i],
+          all = visibleAll[i];
+        const cost = (n: number, lod: number) => {
+          const bare = slot.barePrefix?.[n] ?? 0;
+          return (n - bare) * TRIANGLES[lod] + bare * TRIANGLES[BRANCH_LEVEL + lod];
+        };
+        const cheap = cost(all, 2);
+        // Buy whole foreground stands. Under pressure, shorten the range and spend
+        // remaining detail on the largest silhouettes of the nearest admitted stands.
+        if (cheap > remaining) {
+          remaining = 0;
+          visibleAll[i] = slot.admitted = 0;
+          continue;
+        }
+        slot.admitted = all;
+        const solid = visibleSolid[i],
+          close = visibleClose[i];
+        const extra = cost(solid, 1) - cost(solid, 2) + cost(close, 0) - cost(close, 1);
+        const allowance = Math.min(remaining - cheap, budget * 0.065);
+        let lo = 0,
+          hi = solid;
+        if (extra > allowance)
+          while (lo < hi) {
+            const n = Math.ceil((lo + hi) / 2),
+              c = Math.floor((n * close) / Math.max(1, solid));
+            const upgraded = cost(n, 1) - cost(n, 2) + cost(c, 0) - cost(c, 1);
+            if (upgraded <= allowance) lo = n;
+            else hi = n - 1;
+          }
+        const n = extra <= allowance ? solid : lo,
+          c = Math.floor((n * close) / Math.max(1, solid));
+        visibleSolid[i] = n;
+        visibleClose[i] = c;
+        remaining -= cheap + cost(n, 1) - cost(n, 2) + cost(c, 0) - cost(c, 1);
+        if (slot.ids) selected.select(visibleKey[i], slot.ids, all);
       }
     } else wanted = 0;
     selected.end();
@@ -439,7 +474,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
         if (!building) {
           // The nearest block the last frame wanted that is not built yet.
           let best = -1;
-          for (let i = 0; i < wanted; i++) if (slots.get(wantKey[i])?.checked !== revision && (best < 0 || wantPriority[i] < wantPriority[best])) best = i;
+          for (let i = 0; i < wanted; i++) if (slots.get(wantKey[i])?.checked !== revision && (best < 0 || wantPriority[i] < wantPriority[best] || (wantPriority[i] === wantPriority[best] && wantKey[i] < wantKey[best]))) best = i;
           if (best < 0) {
             wanted = 0;
             break;
@@ -480,14 +515,11 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
       prepare(frame);
       stats.drawCalls = stats.triangles = stats.instances = 0;
       const camera = frame.camera,
-        relief = heights,
-        opacity = stats.opacity ?? 0;
+        relief = heights;
       if (relief && program) {
         const tx = camera.target[0],
           ty = camera.target[1],
           tz = camera.target[2],
-          gx = camera.eye[0],
-          gy = camera.eye[1],
           rise = camera.rise,
           drawnPerMetre = relief.exaggeration * rise,
           far = limits.far;
@@ -497,9 +529,6 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
           volumeDepth(gl);
           gl.uniformMatrix4fv(u.uProjection, false, camera.targetViewProjection);
           gl.uniform2f(u.uRelief, drawnPerMetre, rise);
-          // Ring coverage and zoom coverage are multiplied in the shader, without changing geometry or caches.
-          gl.uniform4f(u.uFade, gx - tx, gy - ty, limits.near, limits.far);
-          gl.uniform1f(u.uVisibility, opacity);
           gl.uniform3f(u.eye, camera.eye[0] - tx, camera.eye[1] - ty, camera.eye[2] - tz);
           gl.uniform3f(u.treeLight, VOLUME_LIGHT[0], VOLUME_LIGHT[1], VOLUME_LIGHT[2]);
           gl.uniform1f(u.fogDistance, hazeDistance(camera));
@@ -512,9 +541,9 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             gl.uniform4f(u.uRepaintLow, repaint.low[0], repaint.low[1], repaint.low[2], repaint.from);
             gl.uniform4f(u.uRepaintHigh, repaint.high[0], repaint.high[1], repaint.high[2], repaint.to);
           }
+          gl.uniform3f(u.uTreeUp, camera.up[0], camera.up[1], camera.up[2]);
           gl.uniform3f(u.uFacing, camera.right[0], camera.right[1], -camera.forward[2]);
-          let fading = false,
-            previousLevel = -1,
+          let previousLevel = -1,
             leastDensity = 1;
           const draw = (slot: Slot, level: number, first: number, count: number) => {
             if (!count) return;
@@ -543,9 +572,7 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
               close = visibleClose[i];
             if (diagnostics) leastDensity = Math.min(leastDensity, all / Math.max(slot.count, 1));
             if (!all) continue;
-            const t = Math.min(1, Math.max(0, (started - slot.born) / STREAM_FADE_MS));
-            if (t < 1) fading = true;
-            gl.uniform4f(u.uBlock, minX - tx, minY - ty, -tz, t * t * (3 - 2 * t));
+            gl.uniform4f(u.uBlock, minX - tx, minY - ty, -tz, 1);
             gl.bindVertexArray(slot.vao!);
             let first = 0;
             for (let level = 0; level < TREE_MESHES.length; level++) {
@@ -561,12 +588,8 @@ export function createWorldTreesLayer(gl: WebGL2RenderingContext, options: World
             }
             if (diagnostics) {
               visibleAll[i] = all;
-              diagnostics.block(visibleAll, i, i + 1, minX, minY, TREES_BLOCK, tx, ty, gx, gy, far);
+              diagnostics.block(visibleAll, i, i + 1, minX, minY, TREES_BLOCK, tx, ty, camera.eye[0], camera.eye[1], far);
             }
-          }
-          if (fading) {
-            presentationPending = true;
-            options.invalidate();
           }
           diagnostics?.levels(1, 1 / Math.max(0.01, leastDensity));
           gl.bindVertexArray(null);

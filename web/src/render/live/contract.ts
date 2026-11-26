@@ -168,12 +168,13 @@ export interface GroundTileRenderer {
    * device pixels, with the look, water, forest and season of the live 2D map and the detail level of that density
    * (`px / (box.maxX - box.minX)` device pixels per metre), into a surface that can be uploaded with `texImage2D` in
    * the same task. Undefined when the renderer cannot draw now (programs compiling, device lost). Never shows on screen. */
-  renderWorldTile(box: Rect4, px: number, treeOwners?: import('../../../../rust/bridge/treeOwnership').TreeIdImage | 'stands'): TexImageSource | undefined;
+  renderWorldTile(box: Rect4, px: number, treePlane?: 'floor' | 'keys'): TexImageSource | undefined;
   /** Changes whenever the pixels `renderWorldTile` would produce change (base, detail, look, season, water, forest, overlay). */
   contentRevision(): number;
 }
 
 export interface LiveGroundOptions {
+  treeMaterials?(): boolean;
   treeSelection?(frame: LiveFrame): import('../world/treeSelection').TreeSelection | undefined;
   /** The current terrain renderer; undefined while none is ready (the layer is then not `ready`). */
   renderer(): GroundTileRenderer | undefined;

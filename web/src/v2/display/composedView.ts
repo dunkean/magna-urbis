@@ -286,6 +286,7 @@ export class ComposedView {
         'ground',
         createLiveGroundLayer(gl, {
           renderer: () => ground.groundTiles(),
+          treeMaterials: () => !!this.volumes.trees.inputs(),
           treeSelection: frame => this.trees?.selection(frame),
           mapSize: () => map.world?.mapSize ?? 1,
           paper: () => map.groundPaper,

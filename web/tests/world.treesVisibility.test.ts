@@ -13,6 +13,11 @@ function frame(scale: number, pitch = (55 * Math.PI) / 180, yaw = 0, dpr = 1, te
 }
 
 describe('tree ground coverage', () => {
+  it('keeps the rotated overhead map painted at every zoom', () => {
+    const coverage = new TreeCoverage();
+    for (const angle of [0, 0.02, 0.07]) for (const zoom of [2, 16, 64]) expect(coverage.opacity(frame(zoom, angle, 1.3), relief, 600)).toBe(0);
+  });
+
   it('keeps nearby trees when lowering an orbit toward the horizon', () => {
     const coverage = new TreeCoverage();
     for (const degrees of [80, 85, 89]) expect(coverage.opacity(frame(2, (degrees * Math.PI) / 180), relief, 600)).toBe(1);
