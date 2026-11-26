@@ -6,6 +6,7 @@
  * compiling every heavy look competes with the selected one in Tint/DXC and retains unused pipelines.
  * The device is prepared once per page (again after a loss), ahead of the first map when possible.
  */
+import { RIVER_INSTANCE_FLOATS } from '../riverProfiles';
 import { PREVIEW_VARIANT, hasAuxPass, variantKey, type TerrainVariant } from '../variant';
 import * as WGSL from '../../terrainWgsl.generated';
 
@@ -134,12 +135,13 @@ export class GpuShared {
             entryPoint: 'main',
             buffers: [
               {
-                arrayStride: 36,
+                arrayStride: 4 * RIVER_INSTANCE_FLOATS,
                 stepMode: 'instance',
                 attributes: [
                   { shaderLocation: 0, offset: 0, format: 'float32x4' },
                   { shaderLocation: 1, offset: 16, format: 'float32x2' },
                   { shaderLocation: 2, offset: 24, format: 'float32x3' },
+                  { shaderLocation: 3, offset: 36, format: 'float32x3' },
                 ],
               },
             ],
@@ -188,7 +190,7 @@ export function sharedGpu(forced: boolean): Promise<GpuShared | undefined> {
       device.destroy();
       throw error;
     }
-    if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la préparation de la carte.');
+    if (gpu.lost) throw new Error('WebGPU : appareil perdu pendant la prÃ©paration de la carte.');
     current = gpu;
     return gpu;
   })().catch(error => {

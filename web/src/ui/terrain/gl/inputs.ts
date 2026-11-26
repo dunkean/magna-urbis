@@ -4,6 +4,7 @@
  * ring, the river instances and the retained water. Owns their GL objects and the CPU inputs needed to replay them on
  * a restored context. Setters say what changed; the renderer bumps its content revision and redraws.
  */
+import { riverInstances, RIVER_INSTANCE_FLOATS } from '../riverProfiles';
 import { shoreRingPixels, shoreRingTexture } from '../../../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../../../rust/bridge/terrainForest';
 import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../../../render/terrainWater';
@@ -52,21 +53,24 @@ export class GlInputs {
   private lakeWidth = 0;
   readonly release = (layer: GlHeightLayer | undefined): void => releaseHeightLayer(this.gl, layer);
 
-  /** The river instance buffer and its layout, and the 1×1 empty texture. */
+  /** The river instance buffer and its layout, and the 1Ã—1 empty texture. */
   constructor(private readonly gl: WebGL2RenderingContext) {
     this.riverBuffer = gl.createBuffer()!;
     this.riverVao = gl.createVertexArray()!;
     gl.bindVertexArray(this.riverVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.riverBuffer);
     gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 36, 0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 4 * RIVER_INSTANCE_FLOATS, 0);
     gl.vertexAttribDivisor(0, 1);
     gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 36, 16);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 4 * RIVER_INSTANCE_FLOATS, 16);
     gl.vertexAttribDivisor(1, 1);
     gl.enableVertexAttribArray(2);
-    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 24);
+    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 4 * RIVER_INSTANCE_FLOATS, 24);
     gl.vertexAttribDivisor(2, 1);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 4 * RIVER_INSTANCE_FLOATS, 36);
+    gl.vertexAttribDivisor(3, 1);
     gl.bindVertexArray(null);
     this.empty = glTexture(gl, 1, 1, gl.R8, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(1), gl.NEAREST);
   }
@@ -157,10 +161,10 @@ export class GlInputs {
       }
     }
     this.lakeMode = water?.shore === 'exact' ? 2 : 1;
-    const rivers = water?.rivers ?? new Float32Array();
+    const rivers = riverInstances(water?.rivers ?? new Float32Array(), !!water?.regime);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.riverBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, rivers.byteLength ? rivers : new Float32Array(9), gl.STATIC_DRAW);
-    this.riverCount = rivers.length / 9;
+    gl.bufferData(gl.ARRAY_BUFFER, rivers.byteLength ? rivers : new Float32Array(RIVER_INSTANCE_FLOATS), gl.STATIC_DRAW);
+    this.riverCount = rivers.length / RIVER_INSTANCE_FLOATS;
     this.riverRegime = !!water?.regime;
     return 'content';
   }

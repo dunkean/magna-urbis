@@ -9,7 +9,7 @@ import { hexToRgb } from '../../../render/styles';
 import { waterUniforms } from '../../../render/waterStyle';
 import { styleTraits } from '../../../render/terrainStyle';
 import { rgbaTarget, type GlViewTargets } from './resources';
-import { layerFreshWater, layerWaterInk, waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
+import { capsuleRegime, layerFreshWater, layerWaterInk, waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import type { GlPrograms } from './programs';
 import type { RetainedWaterSource } from '../retainedWater';
 import type { TerrainLook } from '../contract';
@@ -96,10 +96,11 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.uniform1i(r('uLake'), 2);
   gl.uniform1f(r('uMapW'), look.mapWidth);
   // Until the painted program links, a regime layer must use real water ink, never its encoded RGB.
+  const regime = capsuleRegime(look, rivers.regime);
   const paint = c.painted && !c.overlay && !!c.programs.water(c.waitPainted),
     flat = rivers.regime && !c.overlay && !paint,
     color = hexToRgb(layerWaterInk(look, c.water, c.painted));
-  gl.uniform4f(r('uFlatWater'), color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : paint && rivers.regime ? -1 : 0);
+  gl.uniform4f(r('uFlatWater'), color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : paint && rivers.regime ? (regime === 4 ? -2 : -1) : 0);
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, c.overlay ?? c.empty);
   gl.uniform1i(r('uOverlay'), 3);
@@ -118,7 +119,7 @@ export function renderRivers(c: GlWaterPass, rivers: { vao: WebGLVertexArrayObje
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, target.texture);
   if (paint) {
-    paintWater(c, 0, rivers.regime ? 3 : 0);
+    paintWater(c, 0, regime);
     return;
   }
   c.programs.drawComposite(0);

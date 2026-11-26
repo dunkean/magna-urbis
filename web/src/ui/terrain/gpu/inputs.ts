@@ -4,6 +4,7 @@
  * river instances and the retained water. Owns their GPU images and the CPU inputs needed to rebuild them on a new
  * device or to hand them to the TerrainGl of a definitive loss (snapshot, replayInputs). Setters say what changed.
  */
+import { riverInstances, RIVER_INSTANCE_FLOATS } from '../riverProfiles';
 import { shoreRingPixels } from '../../../../../rust/bridge/terrainForestBeach';
 import type { ForestField, ForestOccupation, LandDetail } from '../../../../../rust/bridge/terrainForest';
 import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../../../render/terrainWater';
@@ -168,8 +169,8 @@ export class GpuInputs {
       }
     }
     this.lakeMode = water?.shore === 'exact' ? 2 : 1;
-    const rivers = water?.rivers ?? new Float32Array();
-    this.riverCount = rivers.length / 9;
+    const rivers = riverInstances(water?.rivers ?? new Float32Array(), !!water?.regime);
+    this.riverCount = rivers.length / RIVER_INSTANCE_FLOATS;
     this.riverRegime = !!water?.regime;
     if (rivers.byteLength) {
       if (!this.riverBuffer || this.riverBuffer.size < rivers.byteLength) {

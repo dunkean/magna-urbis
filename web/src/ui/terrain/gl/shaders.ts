@@ -409,7 +409,7 @@ void main() {
           vec2 d=k==0?vec2(1.,0.):k==1?vec2(-1.,0.):k==2?vec2(0.,1.):vec2(0.,-1.);
           near+=texture(uCave,uv+d*1.5*uFieldCell/span).r;far+=texture(uCave,uv+vec2(d.x-d.y,d.x+d.y)*.7071*4.*uFieldCell/span).r;
         }
-        // Crisp wall: the soft field is 128 on the wall and ±96 per source cell, so the edge is antialiased per pixel.
+        // Crisp wall: the soft field is 128 on the wall and Ã‚Â±96 per source cell, so the edge is antialiased per pixel.
         float edge=max(.376*uPx/uFieldCell,1e-3);
         udRock=clamp((raw-.5)/edge+.5,0.,1.);
         ao=clamp(.75*near*.25+.35*far*.25,0.,1.)*(1.-udRock);
@@ -443,7 +443,7 @@ void main() {
       coverage=rock+coverage*(1.-rock);
     }
 #ifndef AUX_PASS
-    // Variant switches alone in their own test: mixed with a runtime uniform, the WebGPU path (Tint → DXC)
+    // Variant switches alone in their own test: mixed with a runtime uniform, the WebGPU path (Tint Ã¢â€ â€™ DXC)
     // kept the dead branch and inlined its whole material, seconds of compilation for every variant.
     if(uForest==1 && uMode!=3 && uRenderV2==0)if(uGroundCapture==0 && !underdark){
       vec3 root=level(0,world);
@@ -485,7 +485,7 @@ void main() {
     // Open cover of a river's water in the fragment (land side: its wet bed; sea side: its share of the estuary), kept
     // through the antialiased coastline below.
     float wRiver=0.;
-    float riverLight=0.;
+    float riverLight=0.,riverFoam=0.;
     // Frozen share of a sea fragment (v2SeaIceCover of its sea evaluation): the estuary's river water, the climate tints
     // and the swell lie under the sea ice, so a frozen sea is ice to the coastline and across its river mouths.
     float wSeaIce=0.;
@@ -507,7 +507,10 @@ void main() {
           // The natural-water pass already resolved banks and individual riffles. Its blue
           // stop at the shore is 92/255. Transfer the light around that value onto the
           // satellite or paper palette; their own water hue and winter cover stay authoritative.
-          if(uNaturalWater==1)riverLight=clamp(painted.b-92./255.,-.18,.35);
+          if(uNaturalWater==1){
+            riverLight=clamp(painted.b-92./255.,-.18,.35);
+            riverFoam=clamp((painted.g-.30)/.28,0.,1.);
+          }
           // Sandy beds lean red: they are ground. The compositor's damp shadow on the land beside the water (dark
           // olive, greener than any water colour) is ground too: it darkens the bank. Read as partial water it laid a
           // shallow, bed-coloured fringe along every course, most of what a narrow tributary showed beside its trunk.
@@ -681,7 +684,18 @@ void main() {
         vec2 wind=vec2(.89*world.x+.46*world.y,-.46*world.x+.89*world.y);
         float sheen=v2Pattern(vec3(wind*vec2(.28,1.),0.),18.,uPx,uMaterialSeed+907u);
         color=mix(color,vec3(.51,.62,.65),wCover*(.035+.085*smoothstep(.05,1.45,sheen)));
-        color+=vec3(.74,.91,1.)*(.72*riverLight*wCover);
+        if(uNaturalWater==1){
+          // Less bottom light returns through turbid red/brown water. Where the
+          // inside of a bend shoals, the local mineral colour shows through.
+          float shallow=clamp((riverLight+.105)/.26,0.,1.);
+          float sediment=smoothstep(-.075,.23,color.r-color.b);
+          vec3 gravel=mix(vec3(.47,.49,.33),vec3(.63,.46,.28),sediment);
+          float grains=v2Pattern(vec3(world,0.),2.8,uPx,uMaterialSeed+908u);
+          gravel+=vec3(.075,.067,.050)*clamp(grains,-1.2,1.2);
+          float bottom=shallow*mix(sqrt(shallow),.88,sediment)*(.60-.18*sediment);
+          color=mix(color*(1.-.12*wCover*(1.-shallow)),gravel,bottom*wCover);
+          color+=vec3(.74,.91,1.)*(.15*riverFoam*wCover);
+        }
       }
     }
     if(uPaperMap==1&&v2w&&wCover>0.&&!underdark){
@@ -728,7 +742,7 @@ void main() {
       bool index = mod(k, 5.0) < 0.5;
       float dist = abs(v - k) / dv;                          // device pixels to the nearest level
       float line = k < 0.5 ? 0.0 : clamp((index ? uIndexW : uThinW) * 0.5 + 0.5 - dist, 0.0, 1.0);
-      // Levels closer than ~2 px alias into moiré: cross-fade them to their mean ink
+      // Levels closer than ~2 px alias into moirÃƒÂ©: cross-fade them to their mean ink
       // (four thin levels in five, then the index levels, five times sparser).
       float thin = mix(index ? 0.0 : line * uThinA, min(1.0, 0.8 * dv * uThinW) * uThinA, smoothstep(0.3, 0.7, dv));
       float main_ = mix(index ? line * uIndexA : 0.0, min(1.0, 0.2 * dv * uIndexW) * uIndexA, smoothstep(0.3, 0.7, dv * 5.0));
@@ -757,27 +771,28 @@ precision highp float;
 layout(location = 0) in vec4 aSeg;
 layout(location = 1) in vec2 aWidth;
 layout(location = 2) in vec3 aColor;
+layout(location = 3) in vec3 aProfile;
 uniform vec2 uCanvas; uniform vec2 uOrigin; uniform float uPx; uniform float uDpr;uniform int uPhysicalWidth;
-out vec2 vP; flat out vec4 vSeg; flat out vec4 vWidths; flat out vec3 vColor;
+out vec2 vP; flat out vec4 vSeg; flat out vec4 vWidths; flat out vec3 vColor; flat out vec3 vProfile;
 void main() {
   vec2 a = (aSeg.xy - uOrigin) / uPx, b = (aSeg.zw - uOrigin) / uPx;
   vec2 d = b - a; float l = length(d);
   vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
   // Cartographic width: below its physical size on screen, a river keeps a
   // stroke growing with the logarithm of its width: hairline streams (about
-  // 2 km² drained, 7 m wide), 1 px at 20 km², bold trunks.
+  // 2 kmÃ‚Â² drained, 7 m wide), 1 px at 20 kmÃ‚Â², bold trunks.
   vec2 carto = clamp(0.35 + 0.4 * log2(max(aWidth, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
   vec2 half_ = (uPhysicalWidth==1?aWidth/uPx:max(aWidth/uPx,carto))*.5;
   float r = max(half_.x, half_.y) + 1.0;
   vec2 corner = vec2(gl_VertexID & 1, gl_VertexID >> 1);
   vec2 p = mix(a - dir * r, b + dir * r, corner.x) + nrm * r * (corner.y * 2.0 - 1.0);
-  vP = p; vSeg = vec4(a, b); vWidths = vec4(half_,aWidth); vColor = aColor;
+  vP = p; vSeg = vec4(a, b); vWidths = vec4(half_,aWidth); vColor = aColor; vProfile = aProfile;
   gl_Position = vec4(p.x / uCanvas.x * 2.0 - 1.0, 1.0 - p.y / uCanvas.y * 2.0, 0.0, 1.0);
 }`;
 
 export const RIVER_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
-in vec2 vP; flat in vec4 vSeg; flat in vec4 vWidths; flat in vec3 vColor;
+in vec2 vP; flat in vec4 vSeg; flat in vec4 vWidths; flat in vec3 vColor; flat in vec3 vProfile;
 out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
 // Unpainted water keeps coverage and replaces encoded seasonal RGB with one palette colour.
@@ -818,6 +833,27 @@ void main() {
   if (uFlatWater.a < 0.) {
     float bank=max(0.,(mix(vWidths.x,vWidths.y,h)-d)*uPx);
     float core=.30*smoothstep(0.,20.,bank);
+    if(uFlatWater.a < -1.5 && vColor.r>.1){
+      float radius=max(.5,mix(vWidths.x,vWidths.y,h));
+      vec2 tangent=ba/max(length(ba),.001);
+      float offset=dot(pa-ba*h,vec2(-tangent.y,tangent.x));
+      float side=clamp(offset/radius,-1.,1.);
+      float bend=mix(vProfile.x,vProfile.y,h);
+      // The bed shelves gradually on the inside of a turn and drops steeply
+      // under the cutbank. Use radial distance so the end caps join smoothly.
+      float bed=max(0.,1.-pow(min(d/radius,1.),2.8));
+      float run=vProfile.z+h*length(ba)*uPx;
+      vec2 bedCoord=vec2(run/42.,offset*uPx/8.);
+      float bars=riverNoise(bedCoord+vec2(0.,1.7*riverNoise(vec2(run/99.,.7))));
+      // Flow stretches suspended sediment into intermittent streaks. Warp their
+      // cross-channel position so they follow the bend without striping its whole length.
+      float filament=riverNoise(vec2(run/24.,offset*uPx/2.9)+vec2(.7,3.1)*bars);
+      float resolved=1.-smoothstep(.7,2.9,uPx);
+      float streak=smoothstep(.48,.82,filament)*smoothstep(.26,.67,bars)*resolved;
+      float depth=min(1.,bed*exp2(-2.8*bend*side+.9*(bars-.55)))*(1.-.29*streak);
+      // At overview scale a subpixel channel integrates to its open-water tone.
+      core=.30*mix(.77,min(1.,depth),smoothstep(1.3,5.,radius));
+    }
     float glint=0.;
     if(vColor.b>0. && vColor.r>.1 && uPx<2.) {
       vec2 world=uOrigin+vP*uPx;

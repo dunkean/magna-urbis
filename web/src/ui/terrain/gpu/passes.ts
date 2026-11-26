@@ -9,7 +9,7 @@ import { waterBed } from '../../../render/waterPalette';
 import { hexToRgb } from '../../../render/styles';
 import { waterUniforms } from '../../../render/waterStyle';
 import { styleTraits } from '../../../render/terrainStyle';
-import { layerFreshWater, layerWaterInk, waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
+import { capsuleRegime, layerFreshWater, layerWaterInk, waterDrawn, type LookPalettes, type RedrawFrame } from '../redraw';
 import { MAP_FORMAT, type GpuShared } from './device';
 import { gpuTarget, type GpuImage, type GpuViewTargets, type Target } from './resources';
 import type { Params } from './params';
@@ -110,9 +110,10 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   r.float('uDpr', c.stylePixelRatio);
   r.int('uPhysicalWidth', styleTraits(look.style).physicalRiverWidth ? 1 : 0);
   r.float('uMapW', look.mapWidth);
+  const regime = capsuleRegime(look, rivers.regime);
   const flat = rivers.regime && !c.overlay && !c.painted,
     color = hexToRgb(layerWaterInk(look, c.water, c.painted));
-  r.vec4('uFlatWater', color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : c.painted && rivers.regime && !c.overlay ? -1 : 0);
+  r.vec4('uFlatWater', color[0] / 255, color[1] / 255, color[2] / 255, flat ? 1 : c.painted && rivers.regime && !c.overlay ? (regime === 4 ? -2 : -1) : 0);
   r.int('uHasOverlay', c.overlay ? 1 : 0);
   r.int('uHasLake', c.lake ? c.lakeMode : 0);
   r.float('uLakeN', c.lakeN);
@@ -131,7 +132,7 @@ export function renderRivers(c: GpuWaterPass, rivers: { buffer?: GPUBuffer; coun
   encoderPass.setVertexBuffer(0, rivers.buffer);
   encoderPass.draw(4, rivers.count);
   encoderPass.end();
-  composite(c, target.view, destination, c.painted && !c.overlay, rivers.regime ? 3 : 0);
+  composite(c, target.view, destination, c.painted && !c.overlay, regime);
 }
 
 /** The retained water's viewport raster (repainted on Canvas 2D when the view changed), composited over `destination`. */

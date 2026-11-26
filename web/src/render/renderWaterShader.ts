@@ -53,12 +53,12 @@ void main() {
   }
   if (a <= .002 && bank <= .002) discard;
   // Water side: distance to the bank in device pixels. Each of 12 rays brackets the bank on
-  // the geometric rings and bisects it; a soft minimum of the rays (temperature 0.3 × the
+  // the geometric rings and bisects it; a soft minimum of the rays (temperature 0.3 Ã— the
   // nearest) rounds the cross-section between two banks, so channels have no crease on
   // their axis, and it is continuous across lakes. Open water saturates past the band.
   float reach = uRings[uRingCount - 1], depth = reach, wide = 0.;
   vec2 nearest = vec2(0.);
-  bool capsule = uRegime == 3;
+  bool capsule = uRegime >= 3;
   // Open vector water has an analytic cross-section. Only raster water and shore ice
   // need to search the image for a bank. A tile border never sets a running river's depth.
   if (a > .002 && (!capsule || own.g < .95*a)) {
@@ -84,7 +84,7 @@ void main() {
     }
     float t = .3 * best + .25, sum = 0.;
     for (int i = 0; i < 12; i++) sum += exp(-(min(hits[i], 2. * reach) - best) / t);
-    // A lone straight bank reads 0.755 × its distance: normalized back.
+    // A lone straight bank reads 0.755 Ã— its distance: normalized back.
     depth = max(0., (best - t * log(sum)) / .755 + a - 1.);
     // Wide water: still water a few pixels away from the nearest bank.
     if(uRegime==0)wide = cover(f - nearest * 5. * uDpr);
@@ -110,6 +110,12 @@ void main() {
     float deep = capsule ? min(1.,regime.b/.30) : smoothstep(1.,22.,depth*uPx);
     color = freshWaterTone(color*(1.02-.15*deep));
     if(capsule)color=mix(color,vec3(.63,.74,.75),.34*max(0.,(regime.b-.30)/.70));
+    // Satellite open water carries the bed transmission through the blue stop.
+    // Keep the existing red-minus-blue sediment discriminator for exposed ground.
+    if(uRegime==4) {
+      float foam=max(0.,(regime.b-.30)/.70);
+      color.gb=mix(color.gb,vec2(.30+.28*foam,.255+.26*(1.-deep)),1.-regime.r);
+    }
     if(pools<1.) {
       // Bend and rotate the sediment fields. Gravel lenses overlap at different
       // scales so individual lattice cells never form squares across a broad bar.

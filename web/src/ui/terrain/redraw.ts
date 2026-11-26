@@ -81,6 +81,12 @@ export function lookFreshWater(look: TerrainLook, water: LookPalettes['water']):
 }
 /** Tone of the water layers (rivers, retained water): none where the satellite map pass tones the water it reads. */
 export const layerFreshWater = (look: TerrainLook, water: LookPalettes['water'], painted: boolean): WaterTone => (painted && styleTraits(look.style).satelliteVariant > 0 ? NO_WATER_TONE : lookFreshWater(look, water));
+/** Mode 4 carries optical depth to the satellite ground; mode 3 paints ordinary material capsules. */
+export function capsuleRegime(look: TerrainLook, material: boolean): number {
+  if (!material) return 0;
+  const traits = styleTraits(look.style);
+  return traits.satelliteVariant === 1 && !traits.paperMap && !look.underdark ? 4 : 3;
+}
 /** Plain colour of a water layer, '#rrggbb'. */
 export const layerWaterInk = (look: TerrainLook, water: LookPalettes['water'], painted: boolean): string => tonedWater(water.stops[0][1], layerFreshWater(look, water, painted));
 
