@@ -19,7 +19,7 @@ import { choosePopulation, chooseArchetype, planServedPhases, planFaubourgs, Enc
 import { buildPrimary, Quarter } from './primary';
 import { Streets, LAB_OPEN, LAB_WALL } from './streets';
 import { addOpenFringe, openEdgeFade, streetStrips } from './openfringe';
-import { mpArea, MultiPoly, differenceS, differenceSafeS, intersectionS } from '../geo/bool';
+import { mpArea, MultiPoly, differenceS, intersectionS } from '../geo/bool';
 import { ribbon } from '../geo/offset';
 import { GuidanceField } from './field';
 import { splitQuarter, addCloses, carveBlocks, buildRibbonIndex, Piece, CarvedBlock } from './blocks';
@@ -49,6 +49,7 @@ import { registerRussian } from './russian';
 import { registerFantasy } from './fantasy';
 import { registerByzantine, stairLanes } from './byzantine';
 import { registerVenice, lagoonWaterways, reserveArsenal } from './venice';
+import { canalClearance } from './canalClearance';
 import { registerPersian, bazaarRoofs, qanats } from './persian';
 import { registerOttoman } from './ottoman';
 import { registerSwahili, swahiliDoorLines, swahiliBazaarQuarter, hasSwahiliBazaar } from './swahili';
@@ -1331,31 +1332,9 @@ export function generateUrban(world: World, root: Rng): UrbanResult {
   if (hints.canals) lines.push(...canals(ctx, prim.footprint));
   // ---- hill towns: stair treads on the lanes that climb the slope
   if (hints.stairs) lines.push(...stairLanes(ctx, streets));
-  // ---- lagoon towns: water down the canals, footbridges where the calli cross them
-  if (hints.lagoon) {
-    const wet = ctx.water.map(w => ({ w, box: bboxOf(w.outer) }));
-    const isWet = (p: Vec2) => wet.some(({ w, box }) => p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1 && pointInRing(w.outer, p) && !w.holes.some(h => pointInRing(h, p)));
-    const occupied = new GridIndex<Polygon>(40);
-    for (const b of carved) occupied.insertPts(b.poly, b.poly);
-    const canOutlet = (path: Polyline, width: number) => {
-      const strip = ribbon(path, width),
-        box = bboxOf(strip);
-      const near = occupied.query(box.x0, box.y0, box.x1, box.y1);
-      return (
-        areaOf(strip) > 0.05 &&
-        (!near.length ||
-          areaOf(strip) -
-            mpArea(
-              differenceSafeS(
-                strip,
-                near.map(outer => ({ outer, holes: [] })),
-              ),
-            ) <
-            0.05)
-      );
-    };
-    lines.push(...lagoonWaterways(streets, rng.fork('canals'), hints.locks ? ctx.isWater : isWet, l2First, !!hints.locks, canOutlet));
-  }
+  // Engineered inland locks use the original street plan. Tidal cuts need the completed lots below.
+  const lagoonLinesAt = lines.length;
+  if (hints.lagoon && hints.locks) lines.push(...lagoonWaterways(streets, rng.fork('canals'), ctx.isWater, l2First, true));
   // ---- Persian city: the vaulted bazaar spine through the old town, the qanats across the fields
   if (hints.bazaarRoof && archetype === 'town')
     lines.push(
@@ -1512,6 +1491,22 @@ export function generateUrban(world: World, root: Rng): UrbanResult {
     });
   }
 
+  if (hints.lagoon && !hints.locks) {
+    const wet = ctx.water.map(w => ({ w, box: bboxOf(w.outer) }));
+    const isWet = (p: Vec2, clearance = 0) =>
+      wet.some(
+        ({ w, box }) =>
+          p.x >= box.x0 + clearance &&
+          p.x <= box.x1 - clearance &&
+          p.y >= box.y0 + clearance &&
+          p.y <= box.y1 - clearance &&
+          pointInRing(w.outer, p) &&
+          (!clearance || distToRing(w.outer, p) >= clearance) &&
+          !w.holes.some(h => pointInRing(h, p) || (clearance > 0 && distToRing(h, p) < clearance)),
+      );
+    const corridor = canalClearance([...carved.map(b => b.poly), ...buildings.map(b => b.poly), ...privatePassages.map(p => ribbon(p.path, p.width))]);
+    lines.splice(lagoonLinesAt, 0, ...lagoonWaterways(streets, rng.fork('canals'), isWet, l2First, false, corridor.clear, corridor.fitCut));
+  }
   const keptQ = prim.quarters.map((_, qi) => qi).filter(qi => urbanized.has(qi));
   const qMap: number[] = [];
   keptQ.forEach((qi, k) => {

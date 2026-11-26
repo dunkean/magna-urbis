@@ -3,6 +3,7 @@ import type { Vec2, Polyline } from '../core/geom';
 import { dist } from '../core/geom';
 import { MinHeap } from '../core/pq';
 import type { Streets, StreetRec } from './streets';
+import { fitChannel, MIN_CHANNEL_WIDTH } from './canalClearance';
 
 interface Edge {
   a: number;
@@ -33,10 +34,10 @@ function project(p: Vec2, a: Vec2, b: Vec2) {
 }
 
 /** A canal needs a real wet outlet. Prefer existing canals, then short narrow channels along wide streets. */
-export function connectedWaterways(streets: Streets, candidates: StreetRec[], isWater: (p: Vec2) => boolean, canOutlet: (path: Polyline, width: number) => boolean = () => true): WaterwayNetwork {
-  const navigable = candidates.filter(c => c.ribbon && c.path.length >= 2 && Math.min(...c.widths) >= 4.6);
-  const canalIds = new Set(navigable.map(c => c.id));
-  const eligible = streets.list.filter(s => s.ribbon && s.path.length >= 2 && (canalIds.has(s.id) || (s.rank <= 2 && Math.min(...s.widths) >= 5)));
+export function connectedWaterways(streets: Streets, candidates: StreetRec[], isWater: (p: Vec2) => boolean, canDig: (path: Polyline, width: number) => boolean = () => true): WaterwayNetwork {
+  const navigable = candidates.filter(c => !c.private && c.ribbon && c.path.length >= 2 && Math.min(...c.widths) >= 4.6);
+  const cuts = new Map(navigable.map(c => [c.id, c]));
+  const eligible = streets.list.filter(s => !s.private && s.ribbon && s.path.length >= 2 && (cuts.has(s.id) || (s.rank <= 2 && Math.min(...s.widths) >= 5))).map(s => cuts.get(s.id) ?? s);
   const allowed = new Set(eligible.map(s => s.id));
   const points: Vec2[] = [],
     lookup = new Map<string, number>(),
@@ -85,14 +86,17 @@ export function connectedWaterways(streets: Streets, candidates: StreetRec[], is
         seen = new Set<string>();
       streets.forEachSeg(p.x - 1.2, p.y - 1.2, p.x + 1.2, p.y + 1.2, (host, i) => {
         const key = `${host.id}:${i}`;
-        if (host === s || !allowed.has(host.id) || seen.has(key)) return;
+        if (host.id === s.id || !allowed.has(host.id) || seen.has(key)) return;
         seen.add(key);
         const seg = bySegment.get(key)!;
         const r = project(p, seg.a, seg.b);
         if (dist(p, r.q) > 1.2) return;
         const to = node(r.q);
+        if (from !== to) {
+          if (!canDig([points[from], points[to]], MIN_CHANNEL_WIDTH)) return;
+          joins.push({ a: from, b: to, street: s, width: MIN_CHANNEL_WIDTH, cost: dist(p, r.q), connector: true });
+        }
         seg.cuts.push({ t: r.t, node: to });
-        if (from !== to) joins.push({ a: from, b: to, street: s, width: 2.2, cost: dist(p, r.q), connector: true });
       });
     }
   const outlets: Edge[] = [];
@@ -107,13 +111,12 @@ export function connectedWaterways(streets: Streets, candidates: StreetRec[], is
       for (let d = 1; d <= 12; d++) {
         const q = { x: p.x + ((p.x - back.x) * d) / length, y: p.y + ((p.y - back.y) * d) / length };
         if (!isWater(q)) continue;
-        if (canOutlet([p, q], 2.2)) {
-          // Different-width flat caps can separate after centimetre node and millimetre
-          // polygon snapping. Overlap two centimetres inside the existing public canal.
-          const overlap = Math.min(0.02, length / 2);
-          const overlapStart = { x: p.x + ((back.x - p.x) * overlap) / length, y: p.y + ((back.y - p.y) * overlap) / length };
-          outlets.push({ a: node(p), b: node(q), street: c, width: 2.2, cost: d * 0.08, connector: true, overlapStart });
-        }
+        // Check the emitted, overlapping cap as well as the extension into open water.
+        const overlap = Math.min(0.02, length / 2);
+        const overlapStart = { x: p.x + ((back.x - p.x) * overlap) / length, y: p.y + ((back.y - p.y) * overlap) / length };
+        const a = node(p),
+          b = node(q);
+        if (canDig([overlapStart, points[a], points[b]], MIN_CHANNEL_WIDTH)) outlets.push({ a, b, street: c, width: MIN_CHANNEL_WIDTH, cost: d * 0.08, connector: true, overlapStart });
         break;
       }
     }
@@ -126,7 +129,15 @@ export function connectedWaterways(streets: Streets, candidates: StreetRec[], is
       const a = seg.cuts[i - 1].node,
         b = seg.cuts[i].node;
       if (a === b || dist(points[a], points[b]) < 0.01) continue;
-      edges.push({ a, b, street: seg.street, width, cost: dist(points[a], points[b]) * (canalIds.has(seg.street.id) ? 0.08 : 4), connector: !canalIds.has(seg.street.id) });
+      const connector = !cuts.has(seg.street.id);
+      let fittedWidth = width;
+      if (connector) {
+        const path = [points[a], points[b]];
+        const fitted = fitChannel(width, w => (canDig(path, w) ? path : undefined));
+        if (!fitted) continue;
+        fittedWidth = fitted.width;
+      }
+      edges.push({ a, b, street: seg.street, width: fittedWidth, cost: dist(points[a], points[b]) * (connector ? 4 : 0.08), connector });
     }
   }
   for (let i = 0; i < edges.length; i++) {

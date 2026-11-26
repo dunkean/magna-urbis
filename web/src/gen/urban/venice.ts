@@ -27,6 +27,7 @@ import { giveAccess, phaseAt, type M4State } from './m4/reserve';
 import { mpArea } from '../geo/bool';
 import { connectedWaterways } from './waterways';
 import { lockedWaterways } from './lockwater';
+import { fitChannel, MIN_CHANNEL_WIDTH, type Channel } from './canalClearance';
 
 const overlap = (A: Polygon, B: Polygon): boolean => A.some(q => pointInRing(B, q)) || B.some(q => pointInRing(A, q));
 const meanW = (s: StreetRec): number => s.widths.reduce((a, b) => a + b, 0) / s.widths.length;
@@ -59,25 +60,42 @@ function onPath(pl: Polyline, p: Vec2): { q: Vec2; t: Vec2; d: number } {
  * water on some), extended across a land street where the canal goes on beyond it (a bridge carries the street),
  * and a footbridge wherever a calle ends on a canal with a fondamenta (or another calle) across.
  */
-export function lagoonWaterways(streets: Streets, rng: Rng, isWater: (p: Vec2) => boolean, l2First: number, locks = false, canOutlet?: (path: Polyline, width: number) => boolean): UrbanLine[] {
+export function lagoonWaterways(streets: Streets, rng: Rng, isWater: (p: Vec2, bankClearance?: number) => boolean, l2First: number, locks = false, canDig?: (path: Polyline, width: number) => boolean, fitCut?: (path: Polyline, width: number) => Channel | undefined): UrbanLine[] {
   if (locks) return lockedWaterways(streets, rng, isWater, l2First, true);
   const out: UrbanLine[] = [];
+  const cuts: StreetRec[] = [],
+    limits = new Map<number, number>();
+  for (const s of streets.list) {
+    if (s.private || !isCanal(s, l2First)) continue;
+    // Reserve a 1.2 m quay on either side, then fit the wet section to the actual lots.
+    const streetWidth = Math.min(...s.widths);
+    if (streetWidth < 4.6) continue;
+    const preferred = Math.max(MIN_CHANNEL_WIDTH, streetWidth - 2.4);
+    const channel = fitCut ? fitCut(s.path, preferred) : fitChannel(preferred, w => (!canDig || canDig(s.path, w) ? s.path : undefined));
+    if (!channel) continue;
+    cuts.push(channel.path === s.path ? s : { ...s, path: channel.path });
+    limits.set(s.id, channel.width);
+  }
   const network = connectedWaterways(
     streets,
-    streets.list.filter(s => isCanal(s, l2First)),
-    isWater,
-    canOutlet,
+    cuts,
+    // A flat cap whose centre only touches the shore can leave the entire channel on dry land.
+    // Half a metre of open water at the root fits inside even the narrowest (2.2 m) channel.
+    p => isWater(p, 0.5),
+    canDig,
   );
-  const canals = network.canals;
-  if (!canals.length) return out;
-  const land = streets.list.filter(s => s.ribbon && !canals.includes(s) && s.path.length >= 2);
-  const fond = new Map<number, number>();
-  for (const c of canals) {
-    const desired = rng.chance(0.72) ? Math.min(2, Math.max(1.2, meanW(c) * 0.18)) : 1.2;
-    fond.set(c.id, Math.min(desired, (Math.min(...c.widths) - 2.2) / 2));
-  }
-  const water = (c: StreetRec) => Math.max(2.2, Math.min(...c.widths) - 2 * (fond.get(c.id) ?? 0));
-  const wetPaths = [...canals.map(c => ({ path: c.path, width: water(c), street: c.id })), ...network.connectors];
+  if (!network.canals.length) return out;
+  const canalIds = new Set(network.canals.map(c => c.id));
+  const land = streets.list.filter(s => !s.private && s.ribbon && !canalIds.has(s.id) && s.path.length >= 2);
+  const canals = network.canals.map(c => {
+    const quay = rng.chance(0.72) ? Math.min(2, Math.max(1.2, meanW(c) * 0.18)) : 1.2;
+    const limit = limits.get(c.id)!;
+    const width = Math.min(limit, Math.max(MIN_CHANNEL_WIDTH, Math.min(...c.widths) - 2 * quay));
+    // On a folded cut ribbon repair may select a different loop at a different width.
+    const fittedWidth = width < limit && canDig && !canDig(c.path, width) ? limit : width;
+    return { path: c.path, width: fittedWidth, street: c.id };
+  });
+  const wetPaths = [...canals, ...network.connectors];
   const submerged = (p: Vec2) => isWater(p) || wetPaths.some(c => onPath(c.path, p).d < c.width / 2 + 0.1);
   const bridges: { a: Vec2; b: Vec2; w: number }[] = [];
   const addBridge = (at: Vec2, channel: (typeof wetPaths)[number], w: number) => {
@@ -92,27 +110,25 @@ export function lagoonWaterways(streets: Streets, rng: Rng, isWater: (p: Vec2) =
       const a = { x: c.x - (d.x * len) / 2, y: c.y - (d.y * len) / 2 },
         b = { x: c.x + (d.x * len) / 2, y: c.y + (d.y * len) / 2 };
       const landings = [a, b].flatMap(p => [-0.5, 0, 0.5].map(t => ({ x: p.x + r.t.x * w * t, y: p.y + r.t.y * w * t })));
-      if (landings.some(submerged) || (canOutlet && !canOutlet([a, b], w))) continue;
+      if (landings.some(submerged) || (canDig && !canDig([a, b], w))) continue;
       if (bridges.some(b => dist({ x: (b.a.x + b.b.x) / 2, y: (b.a.y + b.b.y) / 2 }, c) < 6)) return;
       bridges.push({ a, b, w });
       return;
     }
   };
   for (const c of canals) {
-    const cw = water(c);
-    const pl = c.path.slice();
     // An arterial crossing a canal's mouth needs a bridge even when the mouth is between its vertices.
-    for (const e of [pl[0], pl[pl.length - 1]]) {
+    for (const e of [c.path[0], c.path[c.path.length - 1]]) {
       if (isWater(e)) continue;
       for (const host of land) {
         const r = onPath(host.path, e);
         if (r.d < 1.2) {
-          addBridge(e, { path: pl, width: cw, street: c.id }, Math.max(2.2, Math.min(4, meanW(host) - 0.4)));
+          addBridge(e, c, Math.max(2.2, Math.min(4, meanW(host) - 0.4)));
           break;
         }
       }
     }
-    out.push({ kind: 'canal', path: pl, width: cw });
+    out.push({ kind: 'canal', path: c.path.slice(), width: c.width });
   }
   for (const channel of network.connectors) out.push({ kind: 'canal', path: channel.path, width: channel.width });
   // Cross the entire final wet network, including narrow calli ending midway along an outlet.
