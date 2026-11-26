@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/logo_magna_urbis.png" alt="Magna Urbis logo: a city map inside a compass" width="220">
+  <img src="docs/logo_magna_urbis.png" alt="Magna Urbis logo: a city map inside a compass" width="300">
 </p>
 
-<h1 align="center">Magna Urbis</h1>
+<!--<h1 align="center">Magna Urbis</h1>-->
 
 <p align="center">
   <b>Procedural regions, towns and cities for maps and tabletop role-playing games.</b><br>
