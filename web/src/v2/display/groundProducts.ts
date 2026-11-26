@@ -26,7 +26,7 @@ import { MAP_GPU_FAILED_MESSAGE, MAP_GPU_LIGHTER_MESSAGE, MapContextLostError, e
 import { registerFantasyBrushes, isFantasyStyle, renderFantasyTerrain, prepareFantasyTerrain } from '../../../../rust/bridge/fantasyTerrain';
 import { fantasyClearance, prepareFantasyRaster, type FantasyRaster } from '../../ui/fantasyRaster';
 import { BackgroundJob, passKeys } from '../passes/pass';
-import { reportDisplayRenderer } from '../../render/displayQuality';
+import { getDisplayQuality, reportDisplayRenderer } from '../../render/displayQuality';
 import type { GroundTileRenderer } from '../../render/live/contract';
 import { underdarkSceneLook } from '../../render/underdarkLighting';
 import { nativeCitiesOf } from '../nativeProducts';
@@ -421,7 +421,8 @@ export class GroundProducts implements Ground {
   miniGround(): HTMLCanvasElement | undefined {
     if (!this.gpuActive || this.programWork || this.programError) return undefined;
     if (this.forestJob) return this.backgroundImage;
-    const gpu = this.gpu!;
+    const gpu = this.gpu!,
+      light = getDisplayQuality() === 'light';
     if (this.backgroundImage && this.backgroundRegions) {
       const image = this.backgroundImage,
         native = this.map.native!,
@@ -429,10 +430,21 @@ export class GroundProducts implements Ground {
       const water = terrainStyle(r.composition.networks.water.look === 'natural' ? 'render3d' : r.composition.networks.water.look === 'ink' ? r.palette.mapStyle : r.ground.style, r.palette.colors).water;
       const rings = renderWaterRings(native.width / image.width, (native.waterSurface?.referenceWidth ?? native.width) * water.bandFraction);
       const halo = Math.ceil(Math.max(32, rings[rings.length - 1])) + 2;
-      if (!patchBackgroundCapture(image, native.width, this.backgroundRegions, halo, (region, size) => gpu.captureMapPatch(region, size))) this.backgroundImage = undefined;
+      if (!patchBackgroundCapture(image, native.width, this.backgroundRegions, halo, (region, size) => (light ? this.captureLiveGround(gpu, region, size) : gpu.captureMapPatch(region, size)))) this.backgroundImage = undefined;
       this.backgroundRegions = undefined;
     }
+    if (light) return (this.backgroundImage ??= this.captureLiveGround(gpu, { x: 0, y: 0, width: this.map.native!.width }, 1024));
     return (this.backgroundImage ??= gpu.captureMap(1024));
+  }
+
+  /** The miniature and the first live frames reuse the light display program without waiting for a full-quality shader. */
+  private captureLiveGround(gpu: TerrainRenderer, { x, y, width }: { x: number; y: number; width: number }, size: number): HTMLCanvasElement | undefined {
+    const tile = gpu.renderWorldTile({ minX: x, minY: y, maxX: x + width, maxY: y + width }, size);
+    if (!(tile instanceof HTMLCanvasElement)) return undefined;
+    const copy = document.createElement('canvas');
+    copy.width = copy.height = size;
+    copy.getContext('2d')!.drawImage(tile, 0, 0);
+    return copy;
   }
   /** The terrain renderer as the ground layer bakes from it, or the CPU raster of a look without relief (topographic,
    * minimal: paper, sea and crowns), so that such a map is composed, and tilts, like the others; undefined while
