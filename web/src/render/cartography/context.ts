@@ -159,7 +159,7 @@ export class CartographyContext {
   readonly forestWashes = new Map<string, ForestWash>();
   readonly treeMarks = new Map<TextureLayer, Map<number, Mark[]>>();
   /** GPU recording: canopy sprite data per index tile and atlas resolution (woods.ts recordTreeSprites). */
-  readonly treeSprites = new Map<TextureLayer, Map<string, { image: CanvasImageSource; data: Float32Array; marks: Mark[] } | null>>();
+  readonly treeSprites = new Map<TextureLayer, Map<string, { data: Float32Array; marks: Mark[] }>>();
   readonly penMarks = new Map<string, PenMark[]>();
   readonly penBlocks = new RasterTileCache<{ instances: Float32Array; clip: Path2D } | null>(24 * 1024 * 1024);
   penMask?: ParchmentSymbols;
@@ -222,7 +222,6 @@ export class CartographyContext {
       this.canopyKey = key;
       this.canopy?.dispose();
       this.canopy = canopy ? new CanvasCanopy(world.seed, pal, this.makeCanvas) : undefined;
-      this.treeSprites.clear();
     }
     const source = supportsPaintedBiome(world.options.biome) ? deps.brushes : undefined;
     const tint = source ? JSON.stringify(brushColorMatrix(pal)) : '';
@@ -246,7 +245,10 @@ export class CartographyContext {
     if (next && (next !== this.basePalette || changedLook)) {
       const densityInk = this.densityImg && this.ink('densityInk').css;
       const sameSource = seasonSource(next) === seasonSource(this.basePalette);
-      if (!sameSource || changedLook) this.lookId = ++paletteCount;
+      if (!sameSource || changedLook) {
+        this.lookId = ++paletteCount;
+        this.treeSprites.clear();
+      }
       this.basePalette = next;
       this.pal = applyRenderColors(next, this.deps.colors);
       this.paletteId = paletteIdOf(this.pal);

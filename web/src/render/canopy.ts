@@ -498,13 +498,12 @@ export class CanvasCanopy {
   resolutionFor(scale: number, dpr: number): number {
     return Math.min(this.engraved ? 4 : Infinity, Math.max(1, 2 ** Math.ceil(Math.log2(Math.max(1, scale * dpr)))));
   }
-  /** What `draw` stamps for `marks`, as data: the atlas and 8 floats per mark (sx, sy, sw, sh, dx, dy, dw, dh), same
-   * order, alpha 1. Undefined where `draw` paints vector glyphs instead (no atlas at this resolution). */
-  spriteData(marks: readonly Mark[], kind: CanopyKind, scale: number, dpr: number, conifer?: (m: Mark) => boolean): { image: CanvasImageSource; data: Float32Array } | undefined {
-    const resolution = this.resolutionFor(scale, dpr),
-      mixed = kind === 'forest' && !!conifer;
-    const atlas = mixed ? this.mixedAtlas(resolution) : this.atlas(kind, resolution);
-    if (!atlas) return undefined;
+  /** Current pigments for the fixed sprite layout. Undefined at vector-only zooms. */
+  spriteImage(kind: CanopyKind, resolution: number, mixed: boolean): CanvasImageSource | undefined {
+    return (mixed ? this.mixedAtlas(resolution) : this.atlas(kind, resolution))?.image;
+  }
+  /** Eight floats per mark: source atlas rectangle then destination world rectangle. Independent of the date. */
+  spriteGeometry(marks: readonly Mark[], resolution: number, conifer?: (m: Mark) => boolean): Float32Array {
     const cell = 20 * resolution,
       data = new Float32Array(marks.length * 8);
     for (let i = 0; i < marks.length; i++) {
@@ -512,7 +511,7 @@ export class CanvasCanopy {
         { variant, tone } = canopyAppearance(this.seed, m),
         o = i * 8;
       data[o] = variant * cell;
-      data[o + 1] = (tone + (mixed && conifer!(m) ? 12 : 0)) * cell;
+      data[o + 1] = (tone + (conifer?.(m) ? 12 : 0)) * cell;
       data[o + 2] = cell;
       data[o + 3] = cell;
       data[o + 4] = m.x - 10 * m.r;
@@ -520,7 +519,7 @@ export class CanvasCanopy {
       data[o + 6] = 20 * m.r;
       data[o + 7] = 20 * m.r;
     }
-    return { image: atlas.image, data };
+    return data;
   }
 
   private stamp(ctx: CanvasRenderingContext2D, m: Mark, kind: CanopyKind, atlas: { image: CanvasImageSource } | undefined, resolution: number, row = 0): void {
