@@ -13,6 +13,7 @@
 
 - The river editor can undo and redo a deletion, including all the channels it removed.
 - Changing the map date reuses tree placements when redrawing engraved woodland and orchard sprites.
+- A coastal cathedral can keep its full nave length on a close that narrows beside the market.
 - Town edits require a valid terrain after a replacement fails to load.
 - Canals in classic Venetian lagoon towns reach open water and leave houses and private passages dry.
 - Fantasy maps keep brush marks in the same positions where detailed views overlap.

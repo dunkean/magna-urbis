@@ -74,8 +74,8 @@ export function buildCathedralClose(Bk: Polygon, cx: CompoundCtx): Out {
   const ang = d?.ang ?? 0;
   const c0 = inscribed(Bk, [], 1).c;
   const [umin, umax, vmin, vmax] = extent(Bk, c0, ang);
-  let Lc = Math.min(d?.Lc ?? 90, umax - umin - 24);
-  const pd = Math.max(16, Math.min(32, 0.22 * Lc));
+  const desiredLength = Math.min(d?.Lc ?? 90, umax - umin - 24);
+  const pd = Math.max(16, Math.min(32, 0.22 * desiredLength));
   // parvis: the west part of the lot
   const cutP = frameAt(c0, ang, umin + pd, 0);
   const [eastP, westP] = splitLine(Bk, cutP, { x: Math.cos(ang), y: Math.sin(ang) });
@@ -96,28 +96,41 @@ export function buildCathedralClose(Bk: Polygon, cx: CompoundCtx): Out {
   };
   // cathedral: the longest cruciform that fits (west front on the parvis), north of the middle so the cloister
   // fits on the south side; positions across the lot and a short west shift are tried before shrinking
-  let placed = false;
-  for (let it = 0; it < 12 && !placed; it++, Lc *= 0.95) {
-    const ht = 0.24 * Lc,
-      W = 0.26 * Lc;
-    let pick: { u0: number; vc: number; body: Polygon } | null = null;
+  const findPosition = (length: number, firstRow: number, lastRow: number) => {
+    const ht = 0.24 * length;
     for (const du of [3, 8, 14]) {
       const u0 = umin + pd + du;
-      for (let f = 0.15; f <= 0.75 && !pick; f += 0.1) {
+      for (let f = firstRow; f <= lastRow; f += 0.1) {
         const vc = vmin + 2 + ht + f * Math.max(0, vmax - vmin - 4 - 2 * ht);
-        const parts = cathedralParts(c0, ang, u0, vc, Lc);
+        const parts = cathedralParts(c0, ang, u0, vc, length);
         if (!parts.every(p => fits(close, p, 1.2))) continue;
         const u = unionS(parts[0], ...parts.slice(1).map(p => [{ outer: p, holes: [] }]));
         const body = largest(u.filter(ph => !ph.holes.length).map(ph => ph.outer));
-        if (body && fits(close, body, 1)) pick = { u0, vc, body };
+        if (body && fits(close, body, 1)) return { u0, vc, body };
       }
-      if (pick) break;
     }
+    return null;
+  };
+  for (let it = 0, Lc = desiredLength; it < 12; it++, Lc *= 0.95) {
+    let pick = findPosition(Lc, 0.15, 0.75);
     if (!pick) continue;
+    // A market notch can leave the full cruciform room near the edge of the close.
+    // Keep existing full-size plans and try those outer rows before accepting a short nave.
+    if (Lc < 80) {
+      for (let length = Math.max(80, desiredLength); ; length = Math.max(80, length * 0.95)) {
+        const edge = findPosition(length, 0.05, 0.05) ?? findPosition(length, 0.85, 0.95);
+        if (edge) {
+          pick = edge;
+          Lc = length;
+          break;
+        }
+        if (length === 80) break;
+      }
+    }
+    const W = 0.26 * Lc;
     const { u0, vc, body } = pick;
     out.buildings.push({ poly: body, kind: 'cathedral', parcel: ci, arch: 'gothic-cathedral', roof: 'gable', material: 'stone', storeys: 3, orientation: ang });
     out.landmarks.push({ kind: 'cathedral', poly: body });
-    placed = true;
     // cloister on the south side of the nave (else the north side), ranges round the garth
     const rw = Math.max(5, 0.065 * Lc);
     let done = false;
@@ -153,6 +166,7 @@ export function buildCathedralClose(Bk: Polygon, cx: CompoundCtx): Out {
         break;
       }
     }
+    break;
   }
   // canons' houses along the close wall
   const P = orientPos(close);

@@ -99,6 +99,7 @@ describe('M4 landmarks, port, suburbs, shanty towns', () => {
         expect(m.castle.minEdge, 'castle curtains ≥ 12 m').toBeGreaterThanOrEqual(12);
         expect(m.castle.gapToWall, 'castle at the edge of the town').toBeLessThan(5);
       }
+      if (c.expect.includes('cathedral-close')) expect(m.cathedral, 'the close contains its cathedral').not.toBeNull();
       if (m.cathedral) {
         expect(m.cathedral.len, 'cathedral 80–140 m').toBeGreaterThanOrEqual(80);
         expect(m.cathedral.len).toBeLessThanOrEqual(140);
